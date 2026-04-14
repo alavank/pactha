@@ -157,11 +157,17 @@ def main():
                         :vg, :vr, :vc, :ve, :vd,
                         :di, :df, :ano, :raw
                     ) ON CONFLICT (nr_convenio) DO UPDATE SET
+                        orgao_concedente = EXCLUDED.orgao_concedente,
+                        objeto = EXCLUDED.objeto,
                         situacao = EXCLUDED.situacao,
                         valor_global = EXCLUDED.valor_global,
+                        valor_repasse = EXCLUDED.valor_repasse,
+                        valor_contrapartida = EXCLUDED.valor_contrapartida,
                         valor_empenhado = EXCLUDED.valor_empenhado,
                         valor_desembolsado = EXCLUDED.valor_desembolsado,
+                        dt_inicio = EXCLUDED.dt_inicio,
                         dt_fim_vigencia = EXCLUDED.dt_fim_vigencia,
+                        ano = EXCLUDED.ano,
                         raw_data = EXCLUDED.raw_data,
                         updated_at = NOW()
                 """), {
