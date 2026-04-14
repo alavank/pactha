@@ -173,6 +173,63 @@ def main():
 
     print(f"\n  Total inseridos: {inserted}")
 
+    # Re-generate prestacao_contas for all active estadual convenios
+    print("\n  Regenerando prestacoes...")
+    from datetime import date, timedelta
+    SIGCON_DOCS = [
+        "Plano de trabalho", "Cronograma fisico-financeiro",
+        "Comprovantes de pagamento", "Notas fiscais",
+        "Relatorio de execucao", "Termo de recebimento",
+    ]
+    prestacao_count = 0
+    with engine.connect() as conn:
+        rows = conn.execute(text("""
+            SELECT id, municipio_id, situacao, dt_vigencia_atual, dt_vigencia_final
+            FROM convenios_estadual
+        """)).fetchall()
+        for row in rows:
+            # Infer stage from situacao
+            sit = (row[2] or "").lower()
+            etapa_nr, etapa_nome = 7, "Execucao"
+            if "concluido" in sit or "encerr" in sit:
+                etapa_nr, etapa_nome = 16, "Encerramento"
+            elif "prestacao" in sit:
+                etapa_nr, etapa_nome = 12, "Prest. Contas - Analise"
+            elif "analise" in sit:
+                etapa_nr, etapa_nome = 3, "Analise Tecnica"
+            elif "celebrado" in sit:
+                etapa_nr, etapa_nome = 6, "Celebracao"
+
+            # Override if vigencia passed
+            dt_vig = row[3] or row[4]
+            if dt_vig and dt_vig < date.today() and etapa_nr < 12:
+                etapa_nr, etapa_nome = 12, "Prest. Contas - Analise"
+
+            status = "em_andamento"
+            if etapa_nr >= 14:
+                status = "concluido"
+            elif etapa_nr <= 4:
+                status = "pendente"
+
+            result = conn.execute(text("""
+                INSERT INTO prestacao_contas (convenio_estadual_id, municipio_id, etapa_atual, etapa_nome, status)
+                VALUES (:c, :m, :en, :enm, :s)
+                RETURNING id
+            """), {"c": row[0], "m": row[1], "en": etapa_nr, "enm": etapa_nome, "s": status})
+            pid = result.scalar()
+
+            for doc in SIGCON_DOCS:
+                enviado = etapa_nr >= 11
+                conn.execute(text("""
+                    INSERT INTO prestacao_documentos (prestacao_id, documento_nome, enviado, dt_envio)
+                    VALUES (:p, :d, :e, :dt)
+                """), {"p": pid, "d": doc, "e": enviado,
+                       "dt": date.today() - timedelta(days=30) if enviado else None})
+            prestacao_count += 1
+
+        conn.commit()
+    print(f"  Prestacoes regeneradas: {prestacao_count}")
+
 
 if __name__ == "__main__":
     try:

@@ -62,7 +62,8 @@
       "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('Status:', d['status'], 'Conclusion:', d.get\\('conclusion'\\)\\); [print\\(' ', s['name'], ':', s.get\\('conclusion','running'\\)\\) for j in d['jobs'] for s in j['steps']]\")",
       "Bash(git -c user.email=\"dev@pacta.com.br\" -c user.name=\"PACTA Dev\" commit -m \"fix: strip BOM characters \\(latin-1 decoded\\) from CSV column names\")",
       "Bash(git -c user.email=dev@pacta.com.br -c 'user.name=PACTA Dev' commit -m 'feat: accent normalization in all ingestion pipelines + run_sigcon.py full pipeline:*)",
-      "Bash(git -c user.email=dev@pacta.com.br -c 'user.name=PACTA Dev' commit -m 'feat: real emendas federais + prestacao nr_convenio + cleanup mock:*)"
+      "Bash(git -c user.email=dev@pacta.com.br -c 'user.name=PACTA Dev' commit -m 'feat: real emendas federais + prestacao nr_convenio + cleanup mock:*)",
+      "Bash(git -c user.email=\"dev@pacta.com.br\" -c user.name=\"PACTA Dev\" commit -m \"fix: emendas_federais via SICONV \\(has parlamentar names\\) + regenerate prestacoes\")"
     ]
   }
 }
