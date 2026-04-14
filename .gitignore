@@ -1,0 +1,21 @@
+.env
+.env.local
+.env*.local
+__pycache__/
+*.pyc
+.venv/
+node_modules/
+.next/
+out/
+*.csv
+*.zip
+*.gz
+/data/
+.DS_Store
+.vercel
+.idea/
+.vscode/
+
+# Source documents (not for repo)
+*.pdf
+*.xlsx

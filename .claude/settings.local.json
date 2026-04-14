@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip install:*)",
+      "Bash(python3 -c ':*)",
+      "Bash(PYTHONIOENCODING=utf-8 python3 setup_db.py)",
+      "Bash(PYTHONIOENCODING=utf-8 python3 ingestion/transferegov.py)",
+      "Bash(npx create-next-app@latest frontend --typescript --tailwind --eslint --app --src-dir --import-alias \"@/*\" --no-turbopack --use-npm)",
+      "Bash(npm install:*)",
+      "Bash(npx shadcn@latest init -d)",
+      "Bash(npx shadcn@latest add button card table badge select input dialog tabs checkbox separator dropdown-menu sheet avatar -y)",
+      "Bash(npx next:*)",
+      "Bash(PYTHONIOENCODING=utf-8 python3 ingestion/sigcon.py)",
+      "Bash(python3 -m uvicorn main:app --host 0.0.0.0 --port 8000)",
+      "Bash(curl -s http://localhost:8000/api/health)",
+      "Bash(curl -s -X POST http://localhost:8000/api/auth/login -H \"Content-Type: application/json\" -d '{\"email\":\"admin@pacta.com.br\",\"password\":\"pacta2026\"}')",
+      "Bash(curl -s http://localhost:8000/api/municipios -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjEsImV4cCI6MTc3NjE1NDgyM30.KeGBXxor7cwTKpOXeFv4t46OzT9XmtACujV6lLxYN_s')",
+      "Bash(curl -s -X POST http://localhost:8000/api/auth/login -H \"Content-Type: application/json\" -d \"{\\\\\"email\\\\\":\\\\\"admin@pacta.com.br\\\\\",\\\\\"password\\\\\":\\\\\"pacta2026\\\\\"}\")",
+      "Bash(taskkill //F //IM uvicorn.exe)",
+      "Bash(pkill -f uvicorn)",
+      "Bash(python3 -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload)",
+      "Bash(netstat -ano)",
+      "Bash(taskkill //PID 29500 //F)",
+      "Bash(taskkill //PID 6124 //F //T)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(PYTHONIOENCODING=utf-8 python3 ingestion/run_federal.py)",
+      "Bash(gh auth:*)",
+      "Bash(vercel --version)",
+      "Bash(git --version)",
+      "Bash(git init:*)",
+      "Bash(git add:*)"
+    ]
+  }
+}

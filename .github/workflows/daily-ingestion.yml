@@ -1,0 +1,44 @@
+name: Daily Data Ingestion
+
+on:
+  schedule:
+    # Runs daily at 12:00 UTC (09:00 BRT) - after TransfereGov publishes new data
+    - cron: '0 12 * * *'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        working-directory: backend
+        run: |
+          pip install -r requirements.txt
+
+      - name: Run SIGCON ingestion
+        working-directory: backend
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL_SYNC: ${{ secrets.DATABASE_URL_SYNC }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+        run: python ingestion/sigcon.py
+        continue-on-error: true
+
+      - name: Run TransfereGov ingestion
+        working-directory: backend
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL_SYNC: ${{ secrets.DATABASE_URL_SYNC }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+        run: python ingestion/run_federal.py
+        continue-on-error: true
