@@ -42,3 +42,12 @@ jobs:
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
         run: python ingestion/run_federal.py
         continue-on-error: true
+
+      - name: Run TSE ingestion (electoral data)
+        working-directory: backend
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL_SYNC: ${{ secrets.DATABASE_URL_SYNC }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+        run: python ingestion/tse.py
+        continue-on-error: true

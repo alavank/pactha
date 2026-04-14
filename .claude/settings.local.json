@@ -54,7 +54,11 @@
       "Bash(PYTHONIOENCODING=utf-8 python3 -u seed_advanced.py)",
       "Bash(git -c user.email=dev@pacta.com.br -c 'user.name=PACTA Dev' commit -m 'feat: TSE eleicoes + cruzamento + funcao + fontes + pendencias:*)",
       "Bash(git push:*)",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(gh workflow:*)",
+      "Bash(gh run:*)",
+      "Bash(PYTHONIOENCODING=utf-8 python3 -u ingestion/tse.py)",
+      "Bash(git -c user.email=\"dev@pacta.com.br\" -c user.name=\"PACTA Dev\" commit -m \"fix: add psycopg2-binary for sync ingestion scripts + TSE workflow\")"
     ]
   }
 }
