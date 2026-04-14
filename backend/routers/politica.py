@@ -111,13 +111,18 @@ async def cruzamento_eleitoral(
     result = await db.execute(q)
     items = []
     for de, nome, partido, esfera in result.all():
+        # Match by direct id OR by same parlamentar name (unidecoded uppercase)
         emenda_q = await db.execute(
             select(
                 func.coalesce(func.sum(Emenda.valor), 0),
                 func.count(Emenda.id),
             )
-            .where(Emenda.parlamentar_id == de.parlamentar_id)
+            .select_from(Emenda.__table__.join(Parlamentar.__table__, Emenda.parlamentar_id == Parlamentar.id))
             .where(Emenda.municipio_id == municipio_id)
+            .where(
+                (Emenda.parlamentar_id == de.parlamentar_id) |
+                (func.upper(Parlamentar.nome) == func.upper(nome))
+            )
         )
         total_valor, total_count = emenda_q.one()
         items.append({
@@ -184,11 +189,15 @@ async def top_deputados(
     result = await db.execute(q)
     deputados = []
     for de, nome, partido in result.all():
-        # Get total emendas for this deputy in this municipality
+        # Get total emendas for this deputy - match by id or by name (upper)
         emenda_q = await db.execute(
             select(func.coalesce(func.sum(Emenda.valor), 0))
-            .where(Emenda.parlamentar_id == de.parlamentar_id)
+            .select_from(Emenda.__table__.join(Parlamentar.__table__, Emenda.parlamentar_id == Parlamentar.id))
             .where(Emenda.municipio_id == municipio_id)
+            .where(
+                (Emenda.parlamentar_id == de.parlamentar_id) |
+                (func.upper(Parlamentar.nome) == func.upper(nome))
+            )
         )
         total_emendas = float(emenda_q.scalar())
 
