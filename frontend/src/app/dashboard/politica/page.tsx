@@ -110,38 +110,38 @@ export default function PoliticaPage() {
   useEffect(() => {
     if (!municipioId) return;
     setLoadingTop(true);
+    const params: Record<string, string | number> = { municipio_id: municipioId };
+    if (anoFilter !== "todos") params.ano = anoFilter;
     api
-      .get<TopDeputado[]>("/politica/top-deputados", {
-        params: { municipio_id: municipioId },
-      })
+      .get<TopDeputado[]>("/politica/top-deputados", { params })
       .then((res) => setTopDeputados(Array.isArray(res.data) ? res.data : []))
       .catch(() => {})
       .finally(() => setLoadingTop(false));
-  }, [municipioId]);
+  }, [municipioId, anoFilter]);
 
   useEffect(() => {
     if (!municipioId) return;
     setLoadingCruz(true);
+    const params: Record<string, string | number> = { municipio_id: municipioId };
+    if (anoFilter !== "todos") params.ano = anoFilter;
     api
-      .get<CruzamentoItem[]>("/politica/cruzamento-eleitoral", {
-        params: { municipio_id: municipioId },
-      })
+      .get<CruzamentoItem[]>("/politica/cruzamento-eleitoral", { params })
       .then((res) => setCruzamento(Array.isArray(res.data) ? res.data : []))
       .catch(() => {})
       .finally(() => setLoadingCruz(false));
-  }, [municipioId]);
+  }, [municipioId, anoFilter]);
 
   useEffect(() => {
     if (!municipioId) return;
     setLoadingFuncoes(true);
+    const params: Record<string, string | number> = { municipio_id: municipioId };
+    if (anoFilter !== "todos") params.ano = anoFilter;
     api
-      .get<FuncaoItem[]>("/politica/emendas-por-funcao", {
-        params: { municipio_id: municipioId },
-      })
+      .get<FuncaoItem[]>("/politica/emendas-por-funcao", { params })
       .then((res) => setFuncoes(Array.isArray(res.data) ? res.data : []))
       .catch(() => {})
       .finally(() => setLoadingFuncoes(false));
-  }, [municipioId]);
+  }, [municipioId, anoFilter]);
 
   if (!municipioId) {
     return (

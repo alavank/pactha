@@ -100,12 +100,14 @@ async def benchmark_municipios(
 async def cruzamento_eleitoral(
     municipio_id: int,
     ano_eleicao: int = 2022,
+    ano: Optional[int] = None,
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
     """
     Cross-reference TSE eleicoes with SICONV emendas.
     Returns ONLY parlamentares with: partido + votos>0 + emendas>0.
+    ano: filtra as emendas por ano (opcional)
     """
     # TSE entries with partido and votos > 0
     tse_q = await db.execute(
@@ -128,8 +130,8 @@ async def cruzamento_eleitoral(
             "norm": norm_name(nome),
         })
 
-    # Emendas grouped by normalized name (excluding collective entries)
-    emendas_q = await db.execute(
+    # Emendas grouped by normalized name (excluding collective entries, filter by ano)
+    em_q = (
         select(
             Parlamentar.nome,
             func.coalesce(func.sum(Emenda.valor), 0),
@@ -141,6 +143,9 @@ async def cruzamento_eleitoral(
         .where(Emenda.municipio_id == municipio_id)
         .group_by(Parlamentar.nome)
     )
+    if ano:
+        em_q = em_q.where(Emenda.ano == ano)
+    emendas_q = await db.execute(em_q)
     emendas_by_norm = {}
     for e_nome, e_valor, e_count in emendas_q.all():
         if not e_nome:
@@ -205,6 +210,7 @@ async def cruzamento_eleitoral(
 @router.get("/emendas-por-funcao")
 async def emendas_por_funcao(
     municipio_id: Optional[int] = None,
+    ano: Optional[int] = None,
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
@@ -219,6 +225,8 @@ async def emendas_por_funcao(
     )
     if municipio_id:
         q = q.where(Emenda.municipio_id == municipio_id)
+    if ano:
+        q = q.where(Emenda.ano == ano)
     q = q.order_by(func.sum(Emenda.valor).desc())
 
     result = await db.execute(q)
@@ -232,6 +240,7 @@ async def emendas_por_funcao(
 async def top_deputados(
     municipio_id: int,
     ano_eleicao: Optional[int] = None,
+    ano: Optional[int] = None,
     limit: int = 30,
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
@@ -239,6 +248,7 @@ async def top_deputados(
     """
     Retorna deputados com votos>0 E emendas>0 E partido preenchido,
     cruzando TSE com SICONV via match fuzzy por nome.
+    ano: filtra as emendas por ano (opcional)
     """
     # Get all TSE votes grouped by normalized name
     tse_q = await db.execute(
@@ -260,8 +270,8 @@ async def top_deputados(
             "norm": norm_name(nome),
         })
 
-    # Get all emendas grouped by normalized name
-    emendas_q = await db.execute(
+    # Get all emendas grouped by normalized name (filter by ano if provided)
+    em_q = (
         select(
             Parlamentar.nome,
             func.coalesce(func.sum(Emenda.valor), 0),
@@ -272,6 +282,9 @@ async def top_deputados(
         .where(Emenda.municipio_id == municipio_id)
         .group_by(Parlamentar.nome)
     )
+    if ano:
+        em_q = em_q.where(Emenda.ano == ano)
+    emendas_q = await db.execute(em_q)
     emendas_by_norm = {}
     for e_nome, e_valor in emendas_q.all():
         if not e_nome:
