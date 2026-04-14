@@ -14,10 +14,18 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import httpx
 import zipfile
 import io
+import unicodedata
 import pandas as pd
 from sqlalchemy import create_engine, text
 from config import get_settings
 from ingestion.base import clean_string
+
+
+def norm_name(s):
+    if s is None:
+        return ""
+    s = str(s).strip().upper()
+    return "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))
 
 settings = get_settings()
 db_url = settings.DATABASE_URL_SYNC or settings.DATABASE_URL.replace("+asyncpg", "")
@@ -89,8 +97,9 @@ def ingest_tse():
     df_filt = df[df[col_map["cargo"]].astype(str).str.upper().isin(cargos_alvo)]
     print(f"  Dep. federais/estaduais: {len(df_filt)}")
 
-    # Filter to pilot municipalities
-    df_filt = df_filt[df_filt[col_map["municipio"]].astype(str).str.upper().isin(PILOTOS_NOMES)]
+    # Filter to pilot municipalities (with accent normalization)
+    df_filt["_mun_norm"] = df_filt[col_map["municipio"]].apply(norm_name)
+    df_filt = df_filt[df_filt["_mun_norm"].isin(PILOTOS_NOMES)]
     print(f"  Em municipios piloto: {len(df_filt)}")
 
     if len(df_filt) == 0:
@@ -102,7 +111,7 @@ def ingest_tse():
     # Aggregate (a candidate has multiple zonas in same municipio - sum)
     name_col = col_map.get("nome_urna") or col_map["nome"]
     grouped = df_filt.groupby(
-        [col_map["municipio"], name_col, col_map["partido"], col_map["cargo"]]
+        ["_mun_norm", name_col, col_map["partido"], col_map["cargo"]]
     ).agg({
         "votos_int": "sum",
         col_map["situacao"]: "first" if col_map.get("situacao") else lambda x: "",
@@ -114,16 +123,16 @@ def ingest_tse():
     inserted_eleicoes = 0
 
     with engine.connect() as conn:
-        # Get municipios
-        mun_result = conn.execute(text("SELECT id, UPPER(nome) FROM municipios"))
-        mun_map = {row[1]: row[0] for row in mun_result.fetchall()}
+        # Get municipios (normalized)
+        mun_result = conn.execute(text("SELECT id, nome FROM municipios"))
+        mun_map = {norm_name(row[1]): row[0] for row in mun_result.fetchall()}
 
         # Clear existing electoral data for 2022
         conn.execute(text("DELETE FROM dados_eleitorais WHERE ano_eleicao = 2022"))
 
         # Process each row
         for _, row in grouped.iterrows():
-            mun_name = str(row[col_map["municipio"]]).upper().strip()
+            mun_name = str(row["_mun_norm"]).strip()
             mun_id = mun_map.get(mun_name)
             if not mun_id:
                 continue

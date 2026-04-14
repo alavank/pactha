@@ -26,8 +26,16 @@ RESOURCES = {
     "dm_situacao": "https://dados.mg.gov.br/dataset/52fcf7e5-d9a6-4b17-a491-12a5a978aecd/resource/b36f8d3d-dce1-4e9a-a82e-d38a9a86915d/download/dm_situacao_convenio.csv.gz",
 }
 
+import unicodedata
 IBGE_CODES = ["3104502", "3145208", "3107406", "3164704", "3169406"]
 MUNICIPIO_NAMES = ["ARAUJOS", "NOVA SERRANA", "BOM DESPACHO", "SAO TIAGO", "TOLEDO"]
+
+
+def norm_name(s):
+    if s is None:
+        return ""
+    s = str(s).strip().upper()
+    return "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))
 
 
 def download_csv_gz(url: str) -> pd.DataFrame:

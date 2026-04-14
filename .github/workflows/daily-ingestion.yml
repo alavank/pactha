@@ -25,13 +25,13 @@ jobs:
         run: |
           pip install -r requirements.txt
 
-      - name: Run SIGCON ingestion
+      - name: Run SIGCON full ingestion
         working-directory: backend
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DATABASE_URL_SYNC: ${{ secrets.DATABASE_URL_SYNC }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
-        run: python ingestion/sigcon.py
+        run: python ingestion/run_sigcon.py
         continue-on-error: true
 
       - name: Run TransfereGov ingestion

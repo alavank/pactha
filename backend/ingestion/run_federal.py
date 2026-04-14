@@ -2,7 +2,7 @@
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-import httpx, zipfile, io, pandas as pd, json, time
+import httpx, zipfile, io, pandas as pd, json, time, unicodedata
 from sqlalchemy import create_engine, text
 from ingestion.base import parse_date_br, parse_decimal_br, clean_string
 from config import get_settings
@@ -15,6 +15,14 @@ MUNICIPIO_NAMES = {
     "ARAUJOS": 1, "NOVA SERRANA": 2, "BOM DESPACHO": 3,
     "SAO TIAGO": 4, "TOLEDO": 5,
 }
+
+
+def normalize_name(s):
+    """Remove accents and uppercase."""
+    if s is None:
+        return ""
+    s = str(s).strip().upper()
+    return "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))
 
 
 def download_with_retry(filename, retries=3):
@@ -88,7 +96,7 @@ def main():
 
     if search_col:
         for name in MUNICIPIO_NAMES.keys():
-            m = df_mg[df_mg[search_col].astype(str).str.upper().str.strip().str.contains(name, na=False)]
+            m = df_mg[df_mg[search_col].astype(str).apply(normalize_name).str.contains(name, na=False)]
             matched = pd.concat([matched, m])
             print(f"  {name}: {len(m)} propostas")
 
@@ -106,7 +114,7 @@ def main():
     prop_to_mun = {}
     for _, row in matched.iterrows():
         pid = str(row["ID_PROPOSTA"]).strip()
-        mname = str(row[search_col]).upper().strip()
+        mname = normalize_name(row[search_col])
         for name, db_id in MUNICIPIO_NAMES.items():
             if name in mname:
                 prop_to_mun[pid] = db_id
