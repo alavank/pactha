@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import Optional
 from database import get_db
-from models import PrestacaoContas, PrestacaoDocumento
+from models import PrestacaoContas, PrestacaoDocumento, ConvenioEstadual, ConvenioFederal
 from schemas.prestacao import PrestacaoResponse, PrestacaoUpdate, DocumentoCreate, DocumentoUpdate, DocumentoResponse
 from services.auth import get_current_user
 
@@ -51,6 +51,21 @@ async def list_prestacoes(
             select(PrestacaoDocumento).where(PrestacaoDocumento.prestacao_id == p.id)
         )
         docs = [DocumentoResponse.model_validate(d) for d in docs_result.scalars().all()]
+
+        # Load convenio info for number and objeto
+        nr = None
+        objeto = None
+        if p.convenio_estadual_id:
+            ce = await db.get(ConvenioEstadual, p.convenio_estadual_id)
+            if ce:
+                nr = ce.nr_sigcon
+                objeto = ce.objeto
+        elif p.convenio_federal_id:
+            cf = await db.get(ConvenioFederal, p.convenio_federal_id)
+            if cf:
+                nr = cf.nr_convenio
+                objeto = cf.objeto
+
         resp = PrestacaoResponse(
             id=p.id,
             convenio_estadual_id=p.convenio_estadual_id,
@@ -62,6 +77,8 @@ async def list_prestacoes(
             status=p.status,
             observacoes=p.observacoes,
             documentos=docs,
+            nr_convenio=nr,
+            objeto=objeto,
         )
         responses.append(resp)
     return responses

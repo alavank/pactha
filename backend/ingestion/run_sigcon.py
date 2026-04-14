@@ -92,7 +92,10 @@ def main():
 
     inserted = 0
     with engine.connect() as conn:
-        # Clear old data to avoid duplicates
+        # Clear dependent data first (FK constraints)
+        conn.execute(text("DELETE FROM prestacao_documentos"))
+        conn.execute(text("DELETE FROM prestacao_contas WHERE convenio_estadual_id IS NOT NULL"))
+        conn.execute(text("DELETE FROM emendas WHERE convenio_estadual_id IS NOT NULL"))
         conn.execute(text("DELETE FROM convenios_estadual"))
 
         for _, fact in filt_facts.iterrows():

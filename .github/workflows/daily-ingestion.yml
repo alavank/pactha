@@ -51,3 +51,12 @@ jobs:
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
         run: python ingestion/tse.py
         continue-on-error: true
+
+      - name: Run Emendas Federais ingestion
+        working-directory: backend
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL_SYNC: ${{ secrets.DATABASE_URL_SYNC }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+        run: python ingestion/emendas_federais.py
+        continue-on-error: true
