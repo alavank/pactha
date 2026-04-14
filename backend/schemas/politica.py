@@ -27,3 +27,4 @@ class TopDeputado(BaseModel):
     cargo: Optional[str] = None
     eleito: bool = False
     total_emendas_valor: Optional[float] = None
+    status: Optional[str] = None  # "completo", "sem_tse", "sem_emendas", "coletivo"

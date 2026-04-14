@@ -105,11 +105,10 @@ async def cruzamento_eleitoral(
     _=Depends(get_current_user),
 ):
     """
-    Cross-reference TSE eleicoes with SICONV emendas.
-    Returns ONLY parlamentares with: partido + votos>0 + emendas>0.
-    ano: filtra as emendas por ano (opcional)
+    Cross-reference TSE eleicoes with emendas (federal+estadual).
+    Retorna TODOS com status: completo, sem_emendas, sem_tse, coletivo.
     """
-    # TSE entries with partido and votos > 0
+    # TSE entries (com votos > 0)
     tse_q = await db.execute(
         select(
             Parlamentar.id, Parlamentar.nome, Parlamentar.partido, Parlamentar.esfera,
@@ -122,18 +121,19 @@ async def cruzamento_eleitoral(
     )
     tse_entries = []
     for pid, nome, partido, esfera, votos, cargo, eleito in tse_q.all():
-        if not partido:
-            continue
         tse_entries.append({
             "id": pid, "nome": nome, "partido": partido, "esfera": esfera,
             "votos": votos, "cargo": cargo, "eleito": eleito,
             "norm": norm_name(nome),
         })
 
-    # Emendas grouped by normalized name (excluding collective entries, filter by ano)
+    # Get ALL emendas with parlamentar info
     em_q = (
         select(
+            Parlamentar.id,
             Parlamentar.nome,
+            Parlamentar.partido,
+            Parlamentar.esfera,
             func.coalesce(func.sum(Emenda.valor), 0),
             func.count(Emenda.id),
         )
@@ -141,68 +141,89 @@ async def cruzamento_eleitoral(
             Emenda.__table__.join(Parlamentar.__table__, Emenda.parlamentar_id == Parlamentar.id)
         )
         .where(Emenda.municipio_id == municipio_id)
-        .group_by(Parlamentar.nome)
+        .group_by(Parlamentar.id, Parlamentar.nome, Parlamentar.partido, Parlamentar.esfera)
     )
     if ano:
         em_q = em_q.where(Emenda.ano == ano)
     emendas_q = await db.execute(em_q)
-    emendas_by_norm = {}
-    for e_nome, e_valor, e_count in emendas_q.all():
-        if not e_nome:
-            continue
-        upper = e_nome.upper().strip()
-        # Skip collective/non-individual entries
-        if any(
-            kw in upper
-            for kw in ["RELATOR", "COM.", "COMISS", "BANCADA", "SUBCOM", "GABINETE"]
-        ):
-            continue
-        key = norm_name(e_nome)
-        if key in emendas_by_norm:
-            emendas_by_norm[key] = (
-                emendas_by_norm[key][0] + float(e_valor),
-                emendas_by_norm[key][1] + int(e_count),
-            )
-        else:
-            emendas_by_norm[key] = (float(e_valor), int(e_count))
 
-    items = []
-    seen_ids = set()
-    for t in tse_entries:
-        if t["id"] in seen_ids:
+    emendas_entries = []
+    for pid, pnome, ppart, pesfera, e_valor, e_count in emendas_q.all():
+        if not pnome:
             continue
+        upper = pnome.upper().strip()
+        is_coletivo = any(
+            kw in upper
+            for kw in ["RELATOR", "COM.", "COMISS", "BANCADA", "SUBCOM", "GABINETE", "BLOCO"]
+        )
+        emendas_entries.append({
+            "id": pid, "nome": pnome, "partido": ppart, "esfera": pesfera,
+            "valor": float(e_valor), "count": int(e_count),
+            "norm": norm_name(pnome),
+            "is_coletivo": is_coletivo,
+        })
+
+    result_map = {}
+    matched_emenda_ids = set()
+
+    for t in tse_entries:
         total_valor = 0.0
         total_count = 0
-        if t["norm"] in emendas_by_norm:
-            total_valor, total_count = emendas_by_norm[t["norm"]]
-        else:
-            tse_words = set(t["norm"].split())
-            if len(tse_words) >= 2:
-                for em_norm, (em_v, em_c) in emendas_by_norm.items():
-                    em_words = set(em_norm.split())
-                    if len(em_words) >= 2:
-                        common = tse_words & em_words
-                        if len(common) >= 2:
-                            total_valor += em_v
-                            total_count += em_c
+        matched_partido = t["partido"]
+        for em in emendas_entries:
+            if em["id"] in matched_emenda_ids or em["is_coletivo"]:
+                continue
+            exact = em["norm"] == t["norm"]
+            fuzzy = False
+            if not exact:
+                tse_words = set(t["norm"].split())
+                em_words = set(em["norm"].split())
+                if len(tse_words) >= 2 and len(em_words) >= 2:
+                    common = tse_words & em_words
+                    if len(common) >= 2:
+                        fuzzy = True
+            if exact or fuzzy:
+                total_valor += em["valor"]
+                total_count += em["count"]
+                matched_emenda_ids.add(em["id"])
+                if not matched_partido and em["partido"]:
+                    matched_partido = em["partido"]
 
-        # Only include if emendas > 0
-        if total_valor > 0:
-            items.append({
-                "parlamentar_id": t["id"],
-                "parlamentar_nome": t["nome"],
-                "partido": t["partido"],
-                "esfera": t["esfera"],
-                "cargo": t["cargo"],
-                "votos": t["votos"],
-                "eleito": t["eleito"],
-                "total_emendas_valor": float(total_valor),
-                "total_emendas_count": total_count,
-                "valor_por_voto": float(total_valor) / t["votos"] if t["votos"] > 0 else 0,
-            })
-            seen_ids.add(t["id"])
+        status = "completo" if total_valor > 0 else "sem_emendas"
+        result_map[t["id"]] = {
+            "parlamentar_id": t["id"],
+            "parlamentar_nome": t["nome"],
+            "partido": matched_partido,
+            "esfera": t["esfera"],
+            "cargo": t["cargo"],
+            "votos": t["votos"],
+            "eleito": t["eleito"],
+            "total_emendas_valor": total_valor,
+            "total_emendas_count": total_count,
+            "valor_por_voto": total_valor / t["votos"] if t["votos"] > 0 else 0,
+            "status": status,
+        }
 
-    # Sort by emendas desc
+    # Unmatched emendas (sem TSE ou coletivos)
+    for em in emendas_entries:
+        if em["id"] in matched_emenda_ids or em["id"] in result_map:
+            continue
+        status = "coletivo" if em["is_coletivo"] else "sem_tse"
+        result_map[em["id"]] = {
+            "parlamentar_id": em["id"],
+            "parlamentar_nome": em["nome"],
+            "partido": em["partido"],
+            "esfera": em["esfera"],
+            "cargo": "Coletivo/Comissao" if em["is_coletivo"] else "Deputado",
+            "votos": 0,
+            "eleito": False,
+            "total_emendas_valor": em["valor"],
+            "total_emendas_count": em["count"],
+            "valor_por_voto": 0,
+            "status": status,
+        }
+
+    items = list(result_map.values())
     items.sort(key=lambda x: (x["total_emendas_valor"], x["votos"]), reverse=True)
     return items
 
@@ -241,16 +262,19 @@ async def top_deputados(
     municipio_id: int,
     ano_eleicao: Optional[int] = None,
     ano: Optional[int] = None,
-    limit: int = 30,
+    limit: int = 50,
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
     """
-    Retorna deputados com votos>0 E emendas>0 E partido preenchido,
-    cruzando TSE com SICONV via match fuzzy por nome.
-    ano: filtra as emendas por ano (opcional)
+    Retorna deputados cruzando TSE com SICONV/SIGCON.
+    Inclui tanto os com votos quanto os com emendas, com status:
+    - completo: tem votos > 0 E emendas > 0 (match TSE+SICONV)
+    - sem_emendas: tem votos mas nao enviou emendas para este municipio
+    - sem_tse: enviou emendas mas nao tem match no TSE (nome diferente ou fora do pilot)
+    - coletivo: nao e pessoa fisica (COM./BANCADA/RELATOR)
     """
-    # Get all TSE votes grouped by normalized name
+    # Get all TSE votes (all votos > 0)
     tse_q = await db.execute(
         select(
             Parlamentar.id, Parlamentar.nome, Parlamentar.partido,
@@ -262,8 +286,6 @@ async def top_deputados(
     )
     tse_entries = []
     for pid, nome, partido, votos, cargo, eleito in tse_q.all():
-        if not partido:
-            continue
         tse_entries.append({
             "id": pid, "nome": nome, "partido": partido,
             "votos": votos, "cargo": cargo, "eleito": eleito,
@@ -273,63 +295,90 @@ async def top_deputados(
     # Get all emendas grouped by normalized name (filter by ano if provided)
     em_q = (
         select(
+            Parlamentar.id,
             Parlamentar.nome,
+            Parlamentar.partido,
             func.coalesce(func.sum(Emenda.valor), 0),
         )
         .select_from(
             Emenda.__table__.join(Parlamentar.__table__, Emenda.parlamentar_id == Parlamentar.id)
         )
         .where(Emenda.municipio_id == municipio_id)
-        .group_by(Parlamentar.nome)
+        .group_by(Parlamentar.id, Parlamentar.nome, Parlamentar.partido)
     )
     if ano:
         em_q = em_q.where(Emenda.ano == ano)
     emendas_q = await db.execute(em_q)
-    emendas_by_norm = {}
-    for e_nome, e_valor in emendas_q.all():
-        if not e_nome:
+    # Build emendas list with full parlamentar info
+    emendas_entries = []
+    for pid, pnome, ppart, e_valor in emendas_q.all():
+        if not pnome:
             continue
-        # Skip collective entries (RELATOR GERAL, COM., BANCADA, etc.)
-        upper = e_nome.upper().strip()
-        if any(
+        upper = pnome.upper().strip()
+        is_coletivo = any(
             kw in upper
-            for kw in ["RELATOR", "COM.", "COMISS", "BANCADA", "SUBCOM", "GABINETE"]
-        ):
-            continue
-        key = norm_name(e_nome)
-        emendas_by_norm[key] = emendas_by_norm.get(key, 0) + float(e_valor)
+            for kw in ["RELATOR", "COM.", "COMISS", "BANCADA", "SUBCOM", "GABINETE", "BLOCO"]
+        )
+        emendas_entries.append({
+            "id": pid, "nome": pnome, "partido": ppart,
+            "valor": float(e_valor),
+            "norm": norm_name(pnome),
+            "is_coletivo": is_coletivo,
+        })
 
-    # Cross-reference: for each TSE entry, find matching emenda
-    deputados = []
-    seen_ids = set()
+    # Cross-reference TSE with emendas
+    result_map = {}
+    matched_emenda_ids = set()
+
     for t in tse_entries:
-        if t["id"] in seen_ids:
+        total_emendas = 0.0
+        matched_partido = t["partido"]
+        for em in emendas_entries:
+            if em["id"] in matched_emenda_ids or em["is_coletivo"]:
+                continue
+            exact = em["norm"] == t["norm"]
+            fuzzy = False
+            if not exact:
+                tse_words = set(t["norm"].split())
+                em_words = set(em["norm"].split())
+                if len(tse_words) >= 2 and len(em_words) >= 2:
+                    common = tse_words & em_words
+                    if len(common) >= 2:
+                        fuzzy = True
+            if exact or fuzzy:
+                total_emendas += em["valor"]
+                matched_emenda_ids.add(em["id"])
+                if not matched_partido and em["partido"]:
+                    matched_partido = em["partido"]
+
+        status = "completo" if total_emendas > 0 else "sem_emendas"
+        result_map[t["id"]] = {
+            "parlamentar_id": t["id"],
+            "parlamentar_nome": t["nome"],
+            "partido": matched_partido,
+            "votos": t["votos"],
+            "cargo": t["cargo"],
+            "eleito": t["eleito"],
+            "total_emendas_valor": total_emendas,
+            "status": status,
+        }
+
+    # Add unmatched emenda entries (have emendas but no TSE match)
+    for em in emendas_entries:
+        if em["id"] in matched_emenda_ids or em["id"] in result_map:
             continue
-        total_emendas = emendas_by_norm.get(t["norm"], 0)
-        if total_emendas == 0:
-            # Try fuzzy word match
-            tse_words = set(t["norm"].split())
-            if tse_words and len(tse_words) >= 2:
-                for em_norm, em_v in emendas_by_norm.items():
-                    em_words = set(em_norm.split())
-                    if len(em_words) >= 2:
-                        common = tse_words & em_words
-                        if len(common) >= 2:  # at least 2 words in common
-                            total_emendas += em_v
+        status = "coletivo" if em["is_coletivo"] else "sem_tse"
+        result_map[em["id"]] = {
+            "parlamentar_id": em["id"],
+            "parlamentar_nome": em["nome"],
+            "partido": em["partido"],
+            "votos": 0,
+            "cargo": "Coletivo/Comissao" if em["is_coletivo"] else "Deputado",
+            "eleito": False,
+            "total_emendas_valor": em["valor"],
+            "status": status,
+        }
 
-        # Only include if has emendas > 0
-        if total_emendas > 0:
-            deputados.append(TopDeputado(
-                parlamentar_id=t["id"],
-                parlamentar_nome=t["nome"],
-                partido=t["partido"],
-                votos=t["votos"],
-                cargo=t["cargo"],
-                eleito=t["eleito"],
-                total_emendas_valor=total_emendas,
-            ))
-            seen_ids.add(t["id"])
-
-    # Sort by emendas desc, then votos desc
-    deputados.sort(key=lambda d: (d.total_emendas_valor or 0, d.votos or 0), reverse=True)
-    return deputados[:limit]
+    items = list(result_map.values())
+    items.sort(key=lambda x: (x["total_emendas_valor"], x["votos"]), reverse=True)
+    return [TopDeputado(**it) for it in items[:limit]]

@@ -44,6 +44,7 @@ interface TopDeputado {
   cargo?: string;
   eleito?: boolean;
   total_emendas_valor: number;
+  status?: "completo" | "sem_tse" | "sem_emendas" | "coletivo";
 }
 
 interface CruzamentoItem {
@@ -57,6 +58,44 @@ interface CruzamentoItem {
   total_emendas_valor: number;
   total_emendas_count: number;
   valor_por_voto: number;
+  status?: "completo" | "sem_tse" | "sem_emendas" | "coletivo";
+}
+
+const STATUS_BADGE: Record<string, { color: string; label: string; tip: string }> = {
+  completo: {
+    color: "bg-green-100 text-green-700",
+    label: "OK",
+    tip: "Tem votos TSE e emendas",
+  },
+  sem_emendas: {
+    color: "bg-orange-100 text-orange-700",
+    label: "Sem emendas",
+    tip: "Foi votado aqui mas nao enviou emendas",
+  },
+  sem_tse: {
+    color: "bg-blue-100 text-blue-700",
+    label: "Sem match TSE",
+    tip: "Enviou emendas mas nao consta no TSE deste municipio (nome diferente ou candidato fora dos piloto)",
+  },
+  coletivo: {
+    color: "bg-gray-100 text-gray-600",
+    label: "Coletivo",
+    tip: "Emenda de Bancada, Comissao ou Relator (nao e pessoa fisica)",
+  },
+};
+
+function StatusBadge({ status }: { status?: string }) {
+  if (!status) return null;
+  const cfg = STATUS_BADGE[status];
+  if (!cfg) return null;
+  return (
+    <span
+      title={cfg.tip}
+      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${cfg.color}`}
+    >
+      {cfg.label}
+    </span>
+  );
 }
 
 interface FuncaoItem {
@@ -391,6 +430,7 @@ export default function PoliticaPage() {
                       <TableHead className="text-right">Votos</TableHead>
                       <TableHead className="text-center">Eleito</TableHead>
                       <TableHead className="text-right">Valor em Emendas</TableHead>
+                      <TableHead>Status</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -418,11 +458,16 @@ export default function PoliticaPage() {
                           {dep.eleito ? (
                             <span className="text-green-600 font-bold text-xs">SIM</span>
                           ) : (
-                            <span className="text-gray-400 text-xs">nao</span>
+                            <span className="text-gray-400 text-xs">-</span>
                           )}
                         </TableCell>
                         <TableCell className="text-right">
-                          {formatCurrency(dep.total_emendas_valor)}
+                          {dep.total_emendas_valor > 0
+                            ? formatCurrency(dep.total_emendas_valor)
+                            : "-"}
+                        </TableCell>
+                        <TableCell>
+                          <StatusBadge status={dep.status} />
                         </TableCell>
                       </TableRow>
                     ))}
@@ -464,6 +509,7 @@ export default function PoliticaPage() {
                       <TableHead className="text-center">Eleito</TableHead>
                       <TableHead className="text-right">Emendas (R$)</TableHead>
                       <TableHead className="text-right">R$ / Voto</TableHead>
+                      <TableHead>Status</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -471,28 +517,35 @@ export default function PoliticaPage() {
                       <TableRow key={c.parlamentar_id}>
                         <TableCell className="font-medium">{c.parlamentar_nome}</TableCell>
                         <TableCell>
-                          {c.partido && (
+                          {c.partido ? (
                             <span className="inline-flex items-center rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">
                               {c.partido}
                             </span>
+                          ) : (
+                            "-"
                           )}
                         </TableCell>
                         <TableCell className="text-xs">{c.cargo}</TableCell>
                         <TableCell className="text-right font-mono">
-                          {c.votos.toLocaleString("pt-BR")}
+                          {c.votos > 0 ? c.votos.toLocaleString("pt-BR") : "-"}
                         </TableCell>
                         <TableCell className="text-center">
                           {c.eleito ? (
                             <span className="text-green-600 font-bold">SIM</span>
                           ) : (
-                            <span className="text-gray-400">nao</span>
+                            <span className="text-gray-400">-</span>
                           )}
                         </TableCell>
                         <TableCell className="text-right">
-                          {formatCurrency(c.total_emendas_valor)}
+                          {c.total_emendas_valor > 0
+                            ? formatCurrency(c.total_emendas_valor)
+                            : "-"}
                         </TableCell>
                         <TableCell className="text-right font-mono">
                           {c.valor_por_voto > 0 ? formatCurrency(c.valor_por_voto) : "-"}
+                        </TableCell>
+                        <TableCell>
+                          <StatusBadge status={c.status} />
                         </TableCell>
                       </TableRow>
                     ))}

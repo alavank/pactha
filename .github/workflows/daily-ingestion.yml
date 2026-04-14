@@ -61,6 +61,15 @@ jobs:
         run: python ingestion/emendas_federais.py
         continue-on-error: true
 
+      - name: Run Emendas Estaduais extraction
+        working-directory: backend
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL_SYNC: ${{ secrets.DATABASE_URL_SYNC }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+        run: python ingestion/emendas_estaduais.py
+        continue-on-error: true
+
       - name: Run Editais PNCP ingestion
         working-directory: backend
         env:
