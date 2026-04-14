@@ -151,16 +151,26 @@ def ingest_tse():
             if not nome or votos == 0:
                 continue
 
-            # Upsert parlamentar
-            result = conn.execute(text("""
-                INSERT INTO parlamentares (nome, partido, esfera, uf, legislatura)
-                VALUES (:n, :p, :e, 'MG', '2023-2027')
-                ON CONFLICT (nome, partido, esfera) DO UPDATE SET
-                    uf = EXCLUDED.uf
-                RETURNING id
-            """), {"n": nome, "p": partido, "e": esfera})
-            parl_id = result.scalar()
-            inserted_parl += 1
+            # Upsert parlamentar - match by normalized name first
+            existing = conn.execute(text("""
+                SELECT id FROM parlamentares
+                WHERE UPPER(nome) = UPPER(:n) AND esfera = :e
+                LIMIT 1
+            """), {"n": nome, "e": esfera}).scalar()
+            if existing:
+                conn.execute(text("""
+                    UPDATE parlamentares SET partido = COALESCE(partido, :p), uf = 'MG', legislatura = '2023-2027'
+                    WHERE id = :id
+                """), {"p": partido, "id": existing})
+                parl_id = existing
+            else:
+                result = conn.execute(text("""
+                    INSERT INTO parlamentares (nome, partido, esfera, uf, legislatura)
+                    VALUES (:n, :p, :e, 'MG', '2023-2027')
+                    RETURNING id
+                """), {"n": nome, "p": partido, "e": esfera})
+                parl_id = result.scalar()
+                inserted_parl += 1
 
             # Insert electoral data
             conn.execute(text("""

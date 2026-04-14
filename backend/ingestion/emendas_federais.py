@@ -8,10 +8,52 @@ Linkamos via ID_PROPOSTA ao convenio federal ja ingerido.
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-import httpx, zipfile, io, pandas as pd, time
+import httpx, zipfile, io, pandas as pd, time, unicodedata
 from sqlalchemy import create_engine, text
 from config import get_settings
 from ingestion.base import parse_decimal_br, clean_string
+
+
+def norm_name(s):
+    if s is None:
+        return ""
+    s = str(s).strip().upper()
+    return "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))
+
+
+OBJETO_TO_FUNCAO = {
+    "saude": ("Saude", "Atencao Basica"),
+    "ubs": ("Saude", "Atencao Basica"),
+    "hospital": ("Saude", "Assistencia Hospitalar"),
+    "onibus": ("Educacao", "Transporte Escolar"),
+    "transporte escolar": ("Educacao", "Transporte Escolar"),
+    "escola": ("Educacao", "Ensino Fundamental"),
+    "educacao": ("Educacao", "Ensino Fundamental"),
+    "creche": ("Educacao", "Educacao Infantil"),
+    "cultura": ("Cultura", "Difusao Cultural"),
+    "biblioteca": ("Cultura", "Difusao Cultural"),
+    "esporte": ("Desporto e Lazer", "Desporto Comunitario"),
+    "quadra": ("Desporto e Lazer", "Desporto Comunitario"),
+    "ginasio": ("Desporto e Lazer", "Desporto Comunitario"),
+    "pavimenta": ("Urbanismo", "Infra-estrutura Urbana"),
+    "asfalto": ("Urbanismo", "Infra-estrutura Urbana"),
+    "drenagem": ("Saneamento", "Saneamento Basico"),
+    "habitacao": ("Habitacao", "Habitacao Urbana"),
+    "social": ("Assistencia Social", "Assistencia Comunitaria"),
+    "agricultura": ("Agricultura", "Extensao Rural"),
+    "trator": ("Agricultura", "Extensao Rural"),
+    "obra": ("Urbanismo", "Infra-estrutura Urbana"),
+}
+
+
+def classify_funcao(objeto):
+    if not objeto:
+        return None, None
+    obj = objeto.lower()
+    for kw, (f, sf) in OBJETO_TO_FUNCAO.items():
+        if kw in obj:
+            return f, sf
+    return "Outros", None
 
 settings = get_settings()
 engine = create_engine(settings.DATABASE_URL_SYNC or settings.DATABASE_URL.replace("+asyncpg", ""))
@@ -39,7 +81,7 @@ def read_zip_csv(data):
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
         csv_name = [n for n in zf.namelist() if n.endswith(".csv")][0]
         with zf.open(csv_name) as f:
-            df = pd.read_csv(io.BytesIO(f.read()), sep=";", encoding="latin-1", dtype=str, low_memory=False)
+            df = pd.read_csv(io.BytesIO(f.read()), sep=";", encoding="utf-8-sig", dtype=str, low_memory=False)
             df.columns = [c.strip().lstrip("\ufeff").lstrip("\u00ef\u00bb\u00bf") for c in df.columns]
             return df
 
@@ -91,7 +133,22 @@ def main():
     if len(filt) == 0:
         return 0
 
+    # Pre-build normalized parlamentar lookup from TSE data (for matching)
+    tse_parl_lookup = {}  # normalized name -> (id, partido)
+    with engine.connect() as conn:
+        r = conn.execute(text("SELECT id, nome, partido FROM parlamentares WHERE partido IS NOT NULL"))
+        for row in r.fetchall():
+            tse_parl_lookup[norm_name(row[1])] = (row[0], row[2])
+    print(f"  TSE parlamentares no DB: {len(tse_parl_lookup)}")
+
+    # Need convenios details for objeto (to classify funcao)
+    conv_obj_map = {}
+    for _, row in df_conv.iterrows():
+        nr = str(row.get("NR_CONVENIO", "")).strip()
+        conv_obj_map[nr] = clean_string(row.get("OBJETO_PROPOSTA"))
+
     inserted = 0
+    matched_tse = 0
     with engine.connect() as conn:
         # Clear existing federal emendas
         conn.execute(text("DELETE FROM emendas WHERE esfera = 'federal'"))
@@ -111,23 +168,54 @@ def main():
             nr_emenda = clean_string(row.get("NR_EMENDA"))
             valor = parse_decimal_br(row.get("VALOR_REPASSE_EMENDA")) or parse_decimal_br(row.get("VALOR_REPASSE_PROPOSTA_EMENDA"))
 
-            # Upsert parlamentar (match TSE if exists)
-            parl_result = conn.execute(text("""
-                INSERT INTO parlamentares (nome, esfera, uf)
-                VALUES (:n, 'federal', 'MG')
-                ON CONFLICT (nome, partido, esfera) DO UPDATE SET uf = EXCLUDED.uf
-                RETURNING id
-            """), {"n": parl_nome})
-            parl_id = parl_result.scalar()
+            # Try to match existing TSE parlamentar by normalized name
+            norm = norm_name(parl_nome)
+            parl_id = None
+            partido = None
+            if norm in tse_parl_lookup:
+                parl_id, partido = tse_parl_lookup[norm]
+                matched_tse += 1
+            else:
+                # Check partial match (first and last name)
+                for tse_norm, (tid, tpart) in tse_parl_lookup.items():
+                    # Match if all words of parl_nome appear in tse_norm
+                    parl_words = set(norm.split())
+                    tse_words = set(tse_norm.split())
+                    if parl_words and parl_words.issubset(tse_words):
+                        parl_id, partido = tid, tpart
+                        matched_tse += 1
+                        break
+
+            if not parl_id:
+                # Insert new parlamentar (not in TSE) - no constraint now
+                parl_result = conn.execute(text("""
+                    INSERT INTO parlamentares (nome, esfera, uf)
+                    VALUES (:n, 'federal', 'MG')
+                    RETURNING id
+                """), {"n": parl_nome.upper()})
+                parl_id = parl_result.scalar()
+                # Add to lookup to prevent duplicates in same run
+                tse_parl_lookup[norm] = (parl_id, None)
+
+            # Classify funcao from convenio objeto
+            # Get nr_convenio for this prop
+            nr_conv = None
+            for nr, (cid, _) in db_convs.items():
+                if cid == conv_id:
+                    nr_conv = nr
+                    break
+            objeto = conv_obj_map.get(nr_conv) if nr_conv else None
+            funcao, subfuncao = classify_funcao(objeto)
 
             conn.execute(text("""
                 INSERT INTO emendas (
                     nr_emenda, parlamentar_id, municipio_id, convenio_federal_id,
-                    valor, tipo, esfera
-                ) VALUES (:ne, :p, :m, :cf, :v, :tipo, 'federal')
+                    valor, tipo, esfera, funcao, subfuncao
+                ) VALUES (:ne, :p, :m, :cf, :v, :tipo, 'federal', :f, :sf)
             """), {
                 "ne": nr_emenda, "p": parl_id, "m": mun_id,
                 "cf": conv_id, "v": valor, "tipo": tipo,
+                "f": funcao, "sf": subfuncao,
             })
             inserted += 1
 
@@ -137,7 +225,7 @@ def main():
         """), {"n": inserted})
         conn.commit()
 
-    print(f"\nEmendas inseridas: {inserted}")
+    print(f"\nEmendas inseridas: {inserted} (matched TSE: {matched_tse})")
     return inserted
 
 

@@ -45,7 +45,7 @@ def read_zip_csv(data):
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
         csv_name = [n for n in zf.namelist() if n.endswith(".csv")][0]
         with zf.open(csv_name) as f:
-            df = pd.read_csv(io.BytesIO(f.read()), sep=";", encoding="latin-1", dtype=str, low_memory=False)
+            df = pd.read_csv(io.BytesIO(f.read()), sep=";", encoding="utf-8-sig", dtype=str, low_memory=False)
             df.columns = [c.strip().lstrip("\ufeff").lstrip("\u00ef\u00bb\u00bf") for c in df.columns]
             return df
 

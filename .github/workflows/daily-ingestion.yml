@@ -60,3 +60,21 @@ jobs:
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
         run: python ingestion/emendas_federais.py
         continue-on-error: true
+
+      - name: Run Editais PNCP ingestion
+        working-directory: backend
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL_SYNC: ${{ secrets.DATABASE_URL_SYNC }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+        run: python ingestion/editais.py
+        continue-on-error: true
+
+      - name: Deduplicate parlamentares
+        working-directory: backend
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL_SYNC: ${{ secrets.DATABASE_URL_SYNC }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+        run: python ingestion/dedupe_parlamentares.py
+        continue-on-error: true
