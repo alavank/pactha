@@ -34,8 +34,9 @@ interface TopDeputado {
   parlamentar_nome: string;
   partido?: string;
   votos?: number;
-  total_emendas: number;
-  total_valor: number;
+  cargo?: string;
+  eleito?: boolean;
+  total_emendas_valor: number;
 }
 
 interface CruzamentoItem {
@@ -361,9 +362,10 @@ export default function PoliticaPage() {
                     <TableRow>
                       <TableHead>Parlamentar</TableHead>
                       <TableHead>Partido</TableHead>
+                      <TableHead>Cargo</TableHead>
                       <TableHead className="text-right">Votos</TableHead>
-                      <TableHead className="text-right">Emendas</TableHead>
-                      <TableHead className="text-right">Valor Total</TableHead>
+                      <TableHead className="text-center">Eleito</TableHead>
+                      <TableHead className="text-right">Valor em Emendas</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -381,14 +383,21 @@ export default function PoliticaPage() {
                             "-"
                           )}
                         </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {dep.cargo || "-"}
+                        </TableCell>
                         <TableCell className="text-right font-mono">
                           {dep.votos?.toLocaleString("pt-BR") ?? "-"}
                         </TableCell>
-                        <TableCell className="text-right font-mono">
-                          {dep.total_emendas}
+                        <TableCell className="text-center">
+                          {dep.eleito ? (
+                            <span className="text-green-600 font-bold text-xs">SIM</span>
+                          ) : (
+                            <span className="text-gray-400 text-xs">nao</span>
+                          )}
                         </TableCell>
                         <TableCell className="text-right">
-                          {formatCurrency(dep.total_valor)}
+                          {formatCurrency(dep.total_emendas_valor)}
                         </TableCell>
                       </TableRow>
                     ))}
