@@ -103,24 +103,32 @@ async def cruzamento_eleitoral(
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
-    """Cross-reference electoral data with parliamentary amendments."""
-    q = (
+    """
+    Cross-reference TSE eleicoes with SICONV emendas.
+    Returns ONLY parlamentares with: partido + votos>0 + emendas>0.
+    """
+    # TSE entries with partido and votos > 0
+    tse_q = await db.execute(
         select(
-            DadosEleitorais,
-            Parlamentar.nome,
-            Parlamentar.partido,
-            Parlamentar.esfera,
+            Parlamentar.id, Parlamentar.nome, Parlamentar.partido, Parlamentar.esfera,
+            DadosEleitorais.votos, DadosEleitorais.cargo, DadosEleitorais.eleito,
         )
         .join(Parlamentar, Parlamentar.id == DadosEleitorais.parlamentar_id)
         .where(DadosEleitorais.municipio_id == municipio_id)
         .where(DadosEleitorais.ano_eleicao == ano_eleicao)
-        .order_by(DadosEleitorais.votos.desc())
-        .limit(30)
+        .where(DadosEleitorais.votos > 0)
     )
-    result = await db.execute(q)
-    rows = result.all()
+    tse_entries = []
+    for pid, nome, partido, esfera, votos, cargo, eleito in tse_q.all():
+        if not partido:
+            continue
+        tse_entries.append({
+            "id": pid, "nome": nome, "partido": partido, "esfera": esfera,
+            "votos": votos, "cargo": cargo, "eleito": eleito,
+            "norm": norm_name(nome),
+        })
 
-    # Preload all emendas for this municipio grouped by normalized parlamentar name
+    # Emendas grouped by normalized name (excluding collective entries)
     emendas_q = await db.execute(
         select(
             Parlamentar.nome,
@@ -135,6 +143,15 @@ async def cruzamento_eleitoral(
     )
     emendas_by_norm = {}
     for e_nome, e_valor, e_count in emendas_q.all():
+        if not e_nome:
+            continue
+        upper = e_nome.upper().strip()
+        # Skip collective/non-individual entries
+        if any(
+            kw in upper
+            for kw in ["RELATOR", "COM.", "COMISS", "BANCADA", "SUBCOM", "GABINETE"]
+        ):
+            continue
         key = norm_name(e_nome)
         if key in emendas_by_norm:
             emendas_by_norm[key] = (
@@ -145,79 +162,42 @@ async def cruzamento_eleitoral(
             emendas_by_norm[key] = (float(e_valor), int(e_count))
 
     items = []
-    for de, nome, partido, esfera in rows:
-        tse_norm = norm_name(nome)
+    seen_ids = set()
+    for t in tse_entries:
+        if t["id"] in seen_ids:
+            continue
         total_valor = 0.0
         total_count = 0
-        # Exact match
-        if tse_norm in emendas_by_norm:
-            total_valor, total_count = emendas_by_norm[tse_norm]
+        if t["norm"] in emendas_by_norm:
+            total_valor, total_count = emendas_by_norm[t["norm"]]
         else:
-            # Partial match: TSE words subset of emenda name or vice-versa
-            tse_words = set(tse_norm.split())
-            if tse_words:
+            tse_words = set(t["norm"].split())
+            if len(tse_words) >= 2:
                 for em_norm, (em_v, em_c) in emendas_by_norm.items():
                     em_words = set(em_norm.split())
-                    # match if surname (first word of 2+) matches
-                    if tse_words.issubset(em_words) or em_words.issubset(tse_words):
-                        total_valor += em_v
-                        total_count += em_c
+                    if len(em_words) >= 2:
+                        common = tse_words & em_words
+                        if len(common) >= 2:
+                            total_valor += em_v
+                            total_count += em_c
 
-        items.append({
-            "parlamentar_id": de.parlamentar_id,
-            "parlamentar_nome": nome,
-            "partido": partido,
-            "esfera": esfera,
-            "cargo": de.cargo,
-            "votos": de.votos,
-            "eleito": de.eleito,
-            "total_emendas_valor": float(total_valor),
-            "total_emendas_count": total_count,
-            "valor_por_voto": float(total_valor) / de.votos if de.votos > 0 else 0,
-        })
+        # Only include if emendas > 0
+        if total_valor > 0:
+            items.append({
+                "parlamentar_id": t["id"],
+                "parlamentar_nome": t["nome"],
+                "partido": t["partido"],
+                "esfera": t["esfera"],
+                "cargo": t["cargo"],
+                "votos": t["votos"],
+                "eleito": t["eleito"],
+                "total_emendas_valor": float(total_valor),
+                "total_emendas_count": total_count,
+                "valor_por_voto": float(total_valor) / t["votos"] if t["votos"] > 0 else 0,
+            })
+            seen_ids.add(t["id"])
 
-    # Add deputados with emendas not in top voted
-    existing_norms = {norm_name(it["parlamentar_nome"]) for it in items}
-    extra_q = await db.execute(
-        select(
-            Parlamentar.id, Parlamentar.nome, Parlamentar.partido, Parlamentar.esfera,
-            func.coalesce(func.sum(Emenda.valor), 0),
-            func.count(Emenda.id),
-        )
-        .select_from(
-            Parlamentar.__table__.join(Emenda.__table__, Parlamentar.id == Emenda.parlamentar_id)
-        )
-        .where(Emenda.municipio_id == municipio_id)
-        .group_by(Parlamentar.id, Parlamentar.nome, Parlamentar.partido, Parlamentar.esfera)
-        .order_by(func.sum(Emenda.valor).desc())
-    )
-    for pid, pnome, ppart, pesfera, pval, pcnt in extra_q.all():
-        pnorm = norm_name(pnome)
-        already = pnorm in existing_norms
-        if not already:
-            pwords = set(pnorm.split())
-            for ex in existing_norms:
-                ex_words = set(ex.split())
-                if pwords and (pwords.issubset(ex_words) or ex_words.issubset(pwords)):
-                    already = True
-                    break
-        if already:
-            continue
-        items.append({
-            "parlamentar_id": pid,
-            "parlamentar_nome": pnome,
-            "partido": ppart,
-            "esfera": pesfera or "federal",
-            "cargo": "Deputado Federal",
-            "votos": 0,
-            "eleito": False,
-            "total_emendas_valor": float(pval or 0),
-            "total_emendas_count": int(pcnt or 0),
-            "valor_por_voto": 0,
-        })
-        existing_norms.add(pnorm)
-
-    # Sort by emendas desc, then votos desc
+    # Sort by emendas desc
     items.sort(key=lambda x: (x["total_emendas_valor"], x["votos"]), reverse=True)
     return items
 
@@ -252,27 +232,35 @@ async def emendas_por_funcao(
 async def top_deputados(
     municipio_id: int,
     ano_eleicao: Optional[int] = None,
-    limit: int = 20,
+    limit: int = 30,
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
-    q = (
+    """
+    Retorna deputados com votos>0 E emendas>0 E partido preenchido,
+    cruzando TSE com SICONV via match fuzzy por nome.
+    """
+    # Get all TSE votes grouped by normalized name
+    tse_q = await db.execute(
         select(
-            DadosEleitorais,
-            Parlamentar.nome,
-            Parlamentar.partido,
+            Parlamentar.id, Parlamentar.nome, Parlamentar.partido,
+            DadosEleitorais.votos, DadosEleitorais.cargo, DadosEleitorais.eleito,
         )
         .join(Parlamentar, Parlamentar.id == DadosEleitorais.parlamentar_id)
         .where(DadosEleitorais.municipio_id == municipio_id)
+        .where(DadosEleitorais.votos > 0)
     )
-    if ano_eleicao:
-        q = q.where(DadosEleitorais.ano_eleicao == ano_eleicao)
-    q = q.order_by(DadosEleitorais.votos.desc()).limit(limit)
+    tse_entries = []
+    for pid, nome, partido, votos, cargo, eleito in tse_q.all():
+        if not partido:
+            continue
+        tse_entries.append({
+            "id": pid, "nome": nome, "partido": partido,
+            "votos": votos, "cargo": cargo, "eleito": eleito,
+            "norm": norm_name(nome),
+        })
 
-    result = await db.execute(q)
-    rows = result.all()
-
-    # Preload emendas grouped by normalized name
+    # Get all emendas grouped by normalized name
     emendas_q = await db.execute(
         select(
             Parlamentar.nome,
@@ -286,69 +274,49 @@ async def top_deputados(
     )
     emendas_by_norm = {}
     for e_nome, e_valor in emendas_q.all():
+        if not e_nome:
+            continue
+        # Skip collective entries (RELATOR GERAL, COM., BANCADA, etc.)
+        upper = e_nome.upper().strip()
+        if any(
+            kw in upper
+            for kw in ["RELATOR", "COM.", "COMISS", "BANCADA", "SUBCOM", "GABINETE"]
+        ):
+            continue
         key = norm_name(e_nome)
         emendas_by_norm[key] = emendas_by_norm.get(key, 0) + float(e_valor)
 
+    # Cross-reference: for each TSE entry, find matching emenda
     deputados = []
-    for de, nome, partido in rows:
-        tse_norm = norm_name(nome)
-        total_emendas = emendas_by_norm.get(tse_norm, 0)
+    seen_ids = set()
+    for t in tse_entries:
+        if t["id"] in seen_ids:
+            continue
+        total_emendas = emendas_by_norm.get(t["norm"], 0)
         if total_emendas == 0:
-            tse_words = set(tse_norm.split())
-            if tse_words:
+            # Try fuzzy word match
+            tse_words = set(t["norm"].split())
+            if tse_words and len(tse_words) >= 2:
                 for em_norm, em_v in emendas_by_norm.items():
                     em_words = set(em_norm.split())
-                    if tse_words.issubset(em_words) or em_words.issubset(tse_words):
-                        total_emendas += em_v
+                    if len(em_words) >= 2:
+                        common = tse_words & em_words
+                        if len(common) >= 2:  # at least 2 words in common
+                            total_emendas += em_v
 
-        deputados.append(TopDeputado(
-            parlamentar_id=de.parlamentar_id,
-            parlamentar_nome=nome,
-            partido=partido,
-            votos=de.votos,
-            cargo=de.cargo,
-            eleito=de.eleito,
-            total_emendas_valor=total_emendas,
-        ))
+        # Only include if has emendas > 0
+        if total_emendas > 0:
+            deputados.append(TopDeputado(
+                parlamentar_id=t["id"],
+                parlamentar_nome=t["nome"],
+                partido=t["partido"],
+                votos=t["votos"],
+                cargo=t["cargo"],
+                eleito=t["eleito"],
+                total_emendas_valor=total_emendas,
+            ))
+            seen_ids.add(t["id"])
 
-    # Add deputados that have emendas but are not in top voted list
-    existing_norms = {norm_name(d.parlamentar_nome) for d in deputados}
-    extra_q = await db.execute(
-        select(
-            Parlamentar.id, Parlamentar.nome, Parlamentar.partido,
-            func.coalesce(func.sum(Emenda.valor), 0),
-        )
-        .select_from(
-            Parlamentar.__table__.join(Emenda.__table__, Parlamentar.id == Emenda.parlamentar_id)
-        )
-        .where(Emenda.municipio_id == municipio_id)
-        .group_by(Parlamentar.id, Parlamentar.nome, Parlamentar.partido)
-        .order_by(func.sum(Emenda.valor).desc())
-    )
-    for pid, pnome, ppart, pval in extra_q.all():
-        pnorm = norm_name(pnome)
-        # Skip if already in top voted list (by direct or fuzzy match)
-        already = pnorm in existing_norms
-        if not already:
-            pwords = set(pnorm.split())
-            for ex in existing_norms:
-                ex_words = set(ex.split())
-                if pwords and (pwords.issubset(ex_words) or ex_words.issubset(pwords)):
-                    already = True
-                    break
-        if already:
-            continue
-        deputados.append(TopDeputado(
-            parlamentar_id=pid,
-            parlamentar_nome=pnome,
-            partido=ppart,
-            votos=0,
-            cargo="Deputado Federal",
-            eleito=False,
-            total_emendas_valor=float(pval or 0),
-        ))
-        existing_norms.add(pnorm)
-
-    # Sort by total_emendas_valor desc, then by votos desc
+    # Sort by emendas desc, then votos desc
     deputados.sort(key=lambda d: (d.total_emendas_valor or 0, d.votos or 0), reverse=True)
-    return deputados[:30]
+    return deputados[:limit]
