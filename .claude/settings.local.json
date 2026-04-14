@@ -50,7 +50,10 @@
       "Bash(PYTHONIOENCODING=utf-8 python3 -u enrich_data.py)",
       "Bash(tasklist)",
       "Bash(taskkill //PID 13228 //F)",
-      "Bash(python3 -u -c ':*)"
+      "Bash(python3 -u -c ':*)",
+      "Bash(PYTHONIOENCODING=utf-8 python3 -u seed_advanced.py)",
+      "Bash(git -c user.email=dev@pacta.com.br -c 'user.name=PACTA Dev' commit -m 'feat: TSE eleicoes + cruzamento + funcao + fontes + pendencias:*)",
+      "Bash(git push:*)"
     ]
   }
 }

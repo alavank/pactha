@@ -79,10 +79,32 @@ export default function ConveniosPage() {
     fetchData();
   }, [fetchData]);
 
-  const handleExport = () => {
+  const handleExport = (format: "xlsx" | "pdf" = "xlsx") => {
     if (!municipioId) return;
-    const url = `${api.defaults.baseURL}/export/convenios?municipio_id=${municipioId}`;
-    window.open(url, "_blank");
+    const token = localStorage.getItem("pacta_token");
+    const url = `${api.defaults.baseURL}/export/convenios?municipio_id=${municipioId}&format=${format}`;
+    // Open with auth via fetch
+    fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => r.blob())
+      .then((blob) => {
+        const blobUrl = URL.createObjectURL(blob);
+        window.open(blobUrl, "_blank");
+      });
+  };
+
+  const handleExportPendencias = () => {
+    if (!municipioId) return;
+    const token = localStorage.getItem("pacta_token");
+    const url = `${api.defaults.baseURL}/export/pendencias?municipio_id=${municipioId}`;
+    fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => r.blob())
+      .then((blob) => {
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = blobUrl;
+        a.download = "pendencias_pacta.xlsx";
+        a.click();
+      });
   };
 
   if (!municipioId) {
@@ -100,10 +122,20 @@ export default function ConveniosPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Convenios</h1>
-        <Button variant="outline" onClick={handleExport}>
-          <Download className="mr-2 size-4" />
-          Exportar
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={handleExportPendencias}>
+            <Download className="mr-2 size-4" />
+            Pendencias
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => handleExport("pdf")}>
+            <Download className="mr-2 size-4" />
+            PDF
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => handleExport("xlsx")}>
+            <Download className="mr-2 size-4" />
+            Excel
+          </Button>
+        </div>
       </div>
 
       {/* Filter bar */}

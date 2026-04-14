@@ -14,6 +14,7 @@ import {
   ChevronDown,
   Menu,
   KeyRound,
+  Database,
 } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -39,6 +40,7 @@ const NAV_ITEMS = [
   { href: "/dashboard/prestacao", label: "Prestacao", icon: ClipboardCheck },
   { href: "/dashboard/politica", label: "Politica", icon: BarChart3 },
   { href: "/dashboard/cofre", label: "Cofre de Senhas", icon: KeyRound },
+  { href: "/dashboard/fontes", label: "Fontes de Dados", icon: Database },
 ];
 
 function SidebarContent({

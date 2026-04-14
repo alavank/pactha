@@ -88,6 +88,79 @@ async def benchmark_municipios(
     return results
 
 
+@router.get("/cruzamento-eleitoral")
+async def cruzamento_eleitoral(
+    municipio_id: int,
+    ano_eleicao: int = 2022,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Cross-reference electoral data with parliamentary amendments."""
+    q = (
+        select(
+            DadosEleitorais,
+            Parlamentar.nome,
+            Parlamentar.partido,
+            Parlamentar.esfera,
+        )
+        .join(Parlamentar, Parlamentar.id == DadosEleitorais.parlamentar_id)
+        .where(DadosEleitorais.municipio_id == municipio_id)
+        .where(DadosEleitorais.ano_eleicao == ano_eleicao)
+        .order_by(DadosEleitorais.votos.desc())
+    )
+    result = await db.execute(q)
+    items = []
+    for de, nome, partido, esfera in result.all():
+        emenda_q = await db.execute(
+            select(
+                func.coalesce(func.sum(Emenda.valor), 0),
+                func.count(Emenda.id),
+            )
+            .where(Emenda.parlamentar_id == de.parlamentar_id)
+            .where(Emenda.municipio_id == municipio_id)
+        )
+        total_valor, total_count = emenda_q.one()
+        items.append({
+            "parlamentar_id": de.parlamentar_id,
+            "parlamentar_nome": nome,
+            "partido": partido,
+            "esfera": esfera,
+            "cargo": de.cargo,
+            "votos": de.votos,
+            "eleito": de.eleito,
+            "total_emendas_valor": float(total_valor),
+            "total_emendas_count": total_count,
+            "valor_por_voto": float(total_valor) / de.votos if de.votos > 0 else 0,
+        })
+    return items
+
+
+@router.get("/emendas-por-funcao")
+async def emendas_por_funcao(
+    municipio_id: Optional[int] = None,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Group emendas by area/funcao."""
+    q = (
+        select(
+            Emenda.funcao,
+            func.coalesce(func.sum(Emenda.valor), 0).label("total"),
+            func.count(Emenda.id).label("count"),
+        )
+        .group_by(Emenda.funcao)
+    )
+    if municipio_id:
+        q = q.where(Emenda.municipio_id == municipio_id)
+    q = q.order_by(func.sum(Emenda.valor).desc())
+
+    result = await db.execute(q)
+    return [
+        {"funcao": row[0] or "Nao classificada", "total_valor": float(row[1]), "count": row[2]}
+        for row in result.all()
+    ]
+
+
 @router.get("/top-deputados", response_model=list[TopDeputado])
 async def top_deputados(
     municipio_id: int,

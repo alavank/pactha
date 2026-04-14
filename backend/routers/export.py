@@ -176,6 +176,89 @@ async def _export_convenios_pdf(municipio_id, esfera, db):
     )
 
 
+@router.get("/pendencias")
+async def export_pendencias(
+    municipio_id: Optional[int] = None,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Relatorio de pendencias: convenios vencendo + prestacoes em diligencia + documentos faltantes."""
+    from models import PrestacaoContas, PrestacaoDocumento
+    from datetime import timedelta
+
+    wb = openpyxl.Workbook()
+
+    # Sheet 1: Convenios vencendo
+    ws1 = wb.active
+    ws1.title = "Vigencias proximas"
+    ws1.append(["Esfera", "Numero", "Orgao", "Objeto", "Vigencia", "Dias Restantes", "Valor", "Situacao"])
+
+    limite = date.today() + timedelta(days=120)
+
+    q = select(ConvenioFederal).where(
+        ConvenioFederal.dt_fim_vigencia <= limite,
+        ConvenioFederal.dt_fim_vigencia >= date.today(),
+    )
+    if municipio_id:
+        q = q.where(ConvenioFederal.municipio_id == municipio_id)
+    for c in (await db.execute(q)).scalars().all():
+        dias = (c.dt_fim_vigencia - date.today()).days
+        ws1.append([
+            "Federal", c.nr_convenio, c.orgao_concedente or "-",
+            (c.objeto or "")[:200], str(c.dt_fim_vigencia), dias,
+            float(c.valor_global) if c.valor_global else 0, c.situacao or "-",
+        ])
+
+    q = select(ConvenioEstadual).where(
+        ConvenioEstadual.dt_vigencia_atual <= limite,
+        ConvenioEstadual.dt_vigencia_atual >= date.today(),
+    )
+    if municipio_id:
+        q = q.where(ConvenioEstadual.municipio_id == municipio_id)
+    for c in (await db.execute(q)).scalars().all():
+        dias = (c.dt_vigencia_atual - date.today()).days
+        ws1.append([
+            "Estadual", c.nr_sigcon, c.orgao_concedente or "-",
+            (c.objeto or "")[:200], str(c.dt_vigencia_atual), dias,
+            float(c.valor_total) if c.valor_total else 0, c.situacao or "-",
+        ])
+
+    # Sheet 2: Documentos pendentes
+    ws2 = wb.create_sheet("Documentos pendentes")
+    ws2.append(["Convenio", "Etapa", "Documento", "Status"])
+
+    q = select(PrestacaoContas, PrestacaoDocumento).join(
+        PrestacaoDocumento, PrestacaoDocumento.prestacao_id == PrestacaoContas.id
+    ).where(PrestacaoDocumento.enviado == False)  # noqa
+    if municipio_id:
+        q = q.where(PrestacaoContas.municipio_id == municipio_id)
+
+    for prest, doc in (await db.execute(q)).all():
+        ws2.append([
+            f"#{prest.id}", f"{prest.etapa_atual}/16 - {prest.etapa_nome or ''}",
+            doc.documento_nome, "Pendente",
+        ])
+
+    # Style headers
+    from openpyxl.styles import Font, PatternFill
+    for sheet in [ws1, ws2]:
+        for cell in sheet[1]:
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = PatternFill(start_color="C00000", end_color="C00000", fill_type="solid")
+        for col in sheet.columns:
+            max_len = max(len(str(cell.value or "")) for cell in col)
+            sheet.column_dimensions[col[0].column_letter].width = min(max_len + 2, 50)
+
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=pendencias_pacta.xlsx"},
+    )
+
+
 @router.get("/emendas")
 async def export_emendas(
     municipio_id: Optional[int] = None,

@@ -1,7 +1,7 @@
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import auth, municipios, convenios, editais, prestacao, politica, export, cofre
+from routers import auth, municipios, convenios, editais, prestacao, politica, export, cofre, fontes
 
 app = FastAPI(
     title="PACTA API",
@@ -36,6 +36,7 @@ app.include_router(prestacao.router)
 app.include_router(politica.router)
 app.include_router(export.router)
 app.include_router(cofre.router)
+app.include_router(fontes.router)
 
 
 @app.get("/api/health")
