@@ -28,7 +28,29 @@
       "Bash(vercel --version)",
       "Bash(git --version)",
       "Bash(git init:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(grep -E \"\\\\.\\(pdf|xlsx|env\\)$\")",
+      "Bash(git -c user.email=dev@pacta.com.br -c 'user.name=PACTA Dev' commit -m ':*)",
+      "Bash(gh repo:*)",
+      "Bash(gh secret:*)",
+      "Bash(vercel whoami:*)",
+      "Bash(vercel --yes --prod)",
+      "Bash(vercel --yes --prod --scope diretoria-2737s-projects)",
+      "Bash(render --version)",
+      "Bash(vercel env:*)",
+      "Bash(curl -s https://backend-iota-liard-20.vercel.app/api/health)",
+      "Bash(curl -s -X POST https://backend-iota-liard-20.vercel.app/api/auth/login -H \"Content-Type: application/json\" -d '{\"email\":\"admin@pacta.com.br\",\"password\":\"pacta2026\"}')",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(f'Total convenios Araujos: {d[\\\\\"total\\\\\"]}'\\)\")",
+      "Bash(vercel ls:*)",
+      "Bash(vercel inspect:*)",
+      "Bash(vercel --yes --prod --scope diretoria-2737s-projects --name pacta-frontend)",
+      "Bash(PYTHONIOENCODING=utf-8 python3 enrich_data.py)",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(python3 enrich_data.py)",
+      "Bash(PYTHONIOENCODING=utf-8 python3 -u enrich_data.py)",
+      "Bash(tasklist)",
+      "Bash(taskkill //PID 13228 //F)",
+      "Bash(python3 -u -c ':*)"
     ]
   }
 }

@@ -13,6 +13,7 @@ import {
   Building2,
   ChevronDown,
   Menu,
+  KeyRound,
 } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -37,6 +38,7 @@ const NAV_ITEMS = [
   { href: "/dashboard/editais", label: "Editais", icon: Search },
   { href: "/dashboard/prestacao", label: "Prestacao", icon: ClipboardCheck },
   { href: "/dashboard/politica", label: "Politica", icon: BarChart3 },
+  { href: "/dashboard/cofre", label: "Cofre de Senhas", icon: KeyRound },
 ];
 
 function SidebarContent({

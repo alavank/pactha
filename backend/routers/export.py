@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -17,10 +17,12 @@ router = APIRouter(prefix="/api/export", tags=["export"])
 async def export_convenios(
     municipio_id: Optional[int] = None,
     esfera: Optional[str] = None,
-    format: str = Query("xlsx", regex="^(xlsx)$"),
+    format: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
+    if format == "pdf":
+        return await _export_convenios_pdf(municipio_id, esfera, db)
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Convenios"
@@ -93,10 +95,91 @@ async def export_convenios(
     )
 
 
+async def _export_convenios_pdf(municipio_id, esfera, db):
+    """Generate simple HTML-based PDF (no external deps)."""
+    from sqlalchemy import select
+    from datetime import date as ddate
+    rows = []
+
+    if esfera in (None, "federal"):
+        q = select(ConvenioFederal)
+        if municipio_id:
+            q = q.where(ConvenioFederal.municipio_id == municipio_id)
+        result = await db.execute(q)
+        for c in result.scalars().all():
+            rows.append({
+                "esfera": "Federal", "nr": c.nr_convenio,
+                "orgao": c.orgao_concedente or "-",
+                "objeto": (c.objeto or "")[:120],
+                "situacao": c.situacao or "-",
+                "valor": float(c.valor_global) if c.valor_global else 0,
+                "vigencia": str(c.dt_fim_vigencia) if c.dt_fim_vigencia else "-",
+            })
+
+    if esfera in (None, "estadual"):
+        q = select(ConvenioEstadual)
+        if municipio_id:
+            q = q.where(ConvenioEstadual.municipio_id == municipio_id)
+        result = await db.execute(q)
+        for c in result.scalars().all():
+            dt_v = c.dt_vigencia_atual or c.dt_vigencia_final
+            rows.append({
+                "esfera": "Estadual", "nr": c.nr_sigcon,
+                "orgao": c.orgao_concedente or "-",
+                "objeto": (c.objeto or "")[:120],
+                "situacao": c.situacao or "-",
+                "valor": float(c.valor_total) if c.valor_total else 0,
+                "vigencia": str(dt_v) if dt_v else "-",
+            })
+
+    total_valor = sum(r["valor"] for r in rows)
+    html = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Relatorio PACTA</title>
+<style>
+  body {{ font-family: Arial, sans-serif; margin: 30px; color: #333; }}
+  h1 {{ color: #1f4e79; border-bottom: 2px solid #1f4e79; padding-bottom: 10px; }}
+  .meta {{ color: #666; margin-bottom: 20px; font-size: 12px; }}
+  .summary {{ background: #f0f4f8; padding: 12px; border-radius: 6px; margin-bottom: 20px; }}
+  table {{ width: 100%; border-collapse: collapse; font-size: 11px; }}
+  th {{ background: #1f4e79; color: white; padding: 8px; text-align: left; }}
+  td {{ padding: 6px 8px; border-bottom: 1px solid #eee; }}
+  tr:nth-child(even) {{ background: #f9f9f9; }}
+  .right {{ text-align: right; }}
+  .badge {{ display: inline-block; padding: 2px 6px; border-radius: 3px; font-size: 10px; }}
+  .fed {{ background: #dbeafe; color: #1e40af; }}
+  .est {{ background: #e0e7ff; color: #4338ca; }}
+</style></head><body>
+<h1>PACTA - Relatorio de Convenios</h1>
+<div class="meta">Gerado em {ddate.today().strftime('%d/%m/%Y')} | Total de registros: {len(rows)}</div>
+<div class="summary"><strong>Valor Total:</strong> R$ {total_valor:,.2f}</div>
+<table>
+<thead><tr><th>Esfera</th><th>Numero</th><th>Orgao</th><th>Objeto</th><th>Situacao</th><th class="right">Valor</th><th>Vigencia</th></tr></thead>
+<tbody>
+"""
+    for r in rows:
+        cls = "fed" if r["esfera"] == "Federal" else "est"
+        html += f"""<tr>
+<td><span class="badge {cls}">{r['esfera']}</span></td>
+<td>{r['nr'] or '-'}</td>
+<td>{r['orgao']}</td>
+<td>{r['objeto']}</td>
+<td>{r['situacao']}</td>
+<td class="right">R$ {r['valor']:,.2f}</td>
+<td>{r['vigencia']}</td>
+</tr>
+"""
+    html += "</tbody></table></body></html>"
+
+    return Response(
+        content=html, media_type="text/html",
+        headers={"Content-Disposition": "inline; filename=convenios_pacta.html"},
+    )
+
+
 @router.get("/emendas")
 async def export_emendas(
     municipio_id: Optional[int] = None,
-    format: str = Query("xlsx", regex="^(xlsx)$"),
+    format: str = Query("xlsx", pattern="^(xlsx)$"),
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
