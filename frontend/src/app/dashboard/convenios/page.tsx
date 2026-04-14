@@ -41,8 +41,11 @@ export default function ConveniosPage() {
   const [page, setPage] = useState(1);
   const [esfera, setEsfera] = useState("todos");
   const [situacao, setSituacao] = useState("todos");
+  const [ano, setAno] = useState("todos");
   const [searchTerm, setSearchTerm] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+
+  const anosDisponiveis = Array.from({ length: 20 }, (_, i) => 2026 - i);
 
   // Debounce search input
   useEffect(() => {
@@ -53,7 +56,7 @@ export default function ConveniosPage() {
   // Reset page on filter change
   useEffect(() => {
     setPage(1);
-  }, [esfera, situacao, debouncedSearch]);
+  }, [esfera, situacao, ano, debouncedSearch]);
 
   const fetchData = useCallback(() => {
     if (!municipioId) return;
@@ -66,6 +69,7 @@ export default function ConveniosPage() {
     };
     if (esfera !== "todos") params.esfera = esfera;
     if (situacao !== "todos") params.situacao = situacao;
+    if (ano !== "todos") params.ano = ano;
     if (debouncedSearch) params.search = debouncedSearch;
 
     api
@@ -73,7 +77,7 @@ export default function ConveniosPage() {
       .then((res) => setData(res.data))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [municipioId, page, esfera, situacao, debouncedSearch]);
+  }, [municipioId, page, esfera, situacao, ano, debouncedSearch]);
 
   useEffect(() => {
     fetchData();
@@ -162,6 +166,20 @@ export default function ConveniosPage() {
             <SelectItem value="Concluido">Concluido</SelectItem>
             <SelectItem value="Cancelado">Cancelado</SelectItem>
             <SelectItem value="Em proposta">Em proposta</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Select value={ano} onValueChange={(v) => setAno(v ?? "todos")}>
+          <SelectTrigger className="w-32">
+            <SelectValue placeholder="Ano" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="todos">Todos Anos</SelectItem>
+            {anosDisponiveis.map((a) => (
+              <SelectItem key={a} value={String(a)}>
+                {a}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
 

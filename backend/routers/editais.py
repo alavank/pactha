@@ -16,10 +16,12 @@ async def list_editais(
     area: Optional[str] = None,
     esfera: Optional[str] = None,
     status: Optional[str] = None,
+    ano: Optional[int] = None,
     municipio_id: Optional[int] = None,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    from sqlalchemy import extract
     q = select(Edital)
     if area:
         q = q.where(Edital.area == area)
@@ -27,6 +29,8 @@ async def list_editais(
         q = q.where(Edital.esfera == esfera)
     if status:
         q = q.where(Edital.status == status)
+    if ano:
+        q = q.where(extract("year", Edital.dt_publicacao) == ano)
     q = q.order_by(Edital.dt_encerramento.asc().nullslast())
     result = await db.execute(q)
     editais = result.scalars().all()

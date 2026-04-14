@@ -15,6 +15,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type { PrestacaoContas, PrestacaoDocumento } from "@/types";
 
 const TOTAL_STEPS = 16;
@@ -112,18 +119,21 @@ export default function PrestacaoPage() {
   const [prestacoes, setPrestacoes] = useState<PrestacaoContas[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [anoFilter, setAnoFilter] = useState("todos");
+
+  const anosDisponiveis = Array.from({ length: 20 }, (_, i) => 2026 - i);
 
   useEffect(() => {
     if (!municipioId) return;
     setLoading(true);
+    const params: Record<string, string | number> = { municipio_id: municipioId };
+    if (anoFilter !== "todos") params.ano = anoFilter;
     api
-      .get<PrestacaoContas[]>("/prestacao", {
-        params: { municipio_id: municipioId },
-      })
+      .get<PrestacaoContas[]>("/prestacao", { params })
       .then((res) => setPrestacoes(Array.isArray(res.data) ? res.data : []))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [municipioId]);
+  }, [municipioId, anoFilter]);
 
   if (!municipioId) {
     return (
@@ -135,7 +145,22 @@ export default function PrestacaoPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-900">Prestacao de Contas</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-gray-900">Prestacao de Contas</h1>
+        <Select value={anoFilter} onValueChange={(v) => setAnoFilter(v ?? "todos")}>
+          <SelectTrigger className="w-32">
+            <SelectValue placeholder="Ano" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="todos">Todos Anos</SelectItem>
+            {anosDisponiveis.map((a) => (
+              <SelectItem key={a} value={String(a)}>
+                {a}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
 
       {loading ? (
         <div className="space-y-2">

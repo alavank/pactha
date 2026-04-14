@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import type { Edital } from "@/types";
 
@@ -129,16 +130,23 @@ export default function EditaisPage() {
   const [loadingAcomp, setLoadingAcomp] = useState(true);
   const [toggleLoadingId, setToggleLoadingId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState("abertos");
+  const [areaFilter, setAreaFilter] = useState("todos");
+  const [anoFilter, setAnoFilter] = useState("todos");
+
+  const anosDisponiveis = Array.from({ length: 5 }, (_, i) => 2026 - i);
 
   const fetchEditais = useCallback(() => {
     if (!municipioId) return;
     setLoading(true);
+    const params: Record<string, string | number> = { municipio_id: municipioId };
+    if (areaFilter !== "todos") params.area = areaFilter;
+    if (anoFilter !== "todos") params.ano = anoFilter;
     api
-      .get<Edital[]>("/editais", { params: { municipio_id: municipioId } })
+      .get<Edital[]>("/editais", { params })
       .then((res) => setEditais(Array.isArray(res.data) ? res.data : []))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [municipioId]);
+  }, [municipioId, areaFilter, anoFilter]);
 
   const fetchAcompanhados = useCallback(() => {
     if (!municipioId) return;
@@ -198,6 +206,38 @@ export default function EditaisPage() {
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-gray-900">Radar de Editais</h1>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <Select value={areaFilter} onValueChange={(v) => setAreaFilter(v ?? "todos")}>
+          <SelectTrigger className="w-48">
+            <SelectValue placeholder="Area" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="todos">Todas Areas</SelectItem>
+            <SelectItem value="Saude">Saude</SelectItem>
+            <SelectItem value="Educacao">Educacao</SelectItem>
+            <SelectItem value="Obras/Infraestrutura">Obras/Infraestrutura</SelectItem>
+            <SelectItem value="Esporte">Esporte</SelectItem>
+            <SelectItem value="Cultura">Cultura</SelectItem>
+            <SelectItem value="Assistencia Social">Assistencia Social</SelectItem>
+            <SelectItem value="Outros">Outros</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Select value={anoFilter} onValueChange={(v) => setAnoFilter(v ?? "todos")}>
+          <SelectTrigger className="w-32">
+            <SelectValue placeholder="Ano" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="todos">Todos Anos</SelectItem>
+            {anosDisponiveis.map((a) => (
+              <SelectItem key={a} value={String(a)}>
+                {a}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>

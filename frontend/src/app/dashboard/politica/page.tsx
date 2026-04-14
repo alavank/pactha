@@ -26,6 +26,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { formatCurrency } from "@/lib/utils";
 import type { EmendaPorDeputado, BenchmarkMunicipio } from "@/types";
 
@@ -75,18 +82,21 @@ export default function PoliticaPage() {
   const [loadingTop, setLoadingTop] = useState(true);
   const [loadingCruz, setLoadingCruz] = useState(true);
   const [loadingFuncoes, setLoadingFuncoes] = useState(true);
+  const [anoFilter, setAnoFilter] = useState("todos");
+
+  const anosDisponiveis = Array.from({ length: 20 }, (_, i) => 2026 - i);
 
   useEffect(() => {
     if (!municipioId) return;
     setLoadingEmendas(true);
+    const params: Record<string, string | number> = { municipio_id: municipioId };
+    if (anoFilter !== "todos") params.ano = anoFilter;
     api
-      .get<EmendaPorDeputado[]>("/politica/emendas-por-deputado", {
-        params: { municipio_id: municipioId },
-      })
+      .get<EmendaPorDeputado[]>("/politica/emendas-por-deputado", { params })
       .then((res) => setEmendas(Array.isArray(res.data) ? res.data : []))
       .catch(() => {})
       .finally(() => setLoadingEmendas(false));
-  }, [municipioId]);
+  }, [municipioId, anoFilter]);
 
   useEffect(() => {
     setLoadingBenchmark(true);
@@ -153,7 +163,22 @@ export default function PoliticaPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-900">Analise Politica</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-gray-900">Analise Politica</h1>
+        <Select value={anoFilter} onValueChange={(v) => setAnoFilter(v ?? "todos")}>
+          <SelectTrigger className="w-32">
+            <SelectValue placeholder="Ano" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="todos">Todos Anos</SelectItem>
+            {anosDisponiveis.map((a) => (
+              <SelectItem key={a} value={String(a)}>
+                {a}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>

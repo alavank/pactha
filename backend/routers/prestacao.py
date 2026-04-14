@@ -33,6 +33,7 @@ SIGCON_STAGES = {
 async def list_prestacoes(
     municipio_id: Optional[int] = None,
     status: Optional[str] = None,
+    ano: Optional[int] = None,
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
@@ -41,6 +42,12 @@ async def list_prestacoes(
         q = q.where(PrestacaoContas.municipio_id == municipio_id)
     if status:
         q = q.where(PrestacaoContas.status == status)
+    if ano:
+        # Filter by convenio ano (join)
+        q = q.join(
+            ConvenioEstadual, ConvenioEstadual.id == PrestacaoContas.convenio_estadual_id,
+            isouter=True,
+        ).where(ConvenioEstadual.ano == ano)
     q = q.order_by(PrestacaoContas.etapa_atual.asc())
     result = await db.execute(q)
     prestacoes = result.scalars().all()
