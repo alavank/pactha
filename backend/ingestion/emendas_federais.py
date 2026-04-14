@@ -25,24 +25,37 @@ OBJETO_TO_FUNCAO = {
     "saude": ("Saude", "Atencao Basica"),
     "ubs": ("Saude", "Atencao Basica"),
     "hospital": ("Saude", "Assistencia Hospitalar"),
-    "onibus": ("Educacao", "Transporte Escolar"),
-    "transporte escolar": ("Educacao", "Transporte Escolar"),
+    "ambulanc": ("Saude", "Atencao Basica"),
+    "onibus": ("Transporte Escolar", "Transporte Escolar"),
+    "transporte escolar": ("Transporte Escolar", "Transporte Escolar"),
     "escola": ("Educacao", "Ensino Fundamental"),
-    "educacao": ("Educacao", "Ensino Fundamental"),
+    "educa": ("Educacao", "Ensino Fundamental"),
     "creche": ("Educacao", "Educacao Infantil"),
-    "cultura": ("Cultura", "Difusao Cultural"),
     "biblioteca": ("Cultura", "Difusao Cultural"),
-    "esporte": ("Desporto e Lazer", "Desporto Comunitario"),
-    "quadra": ("Desporto e Lazer", "Desporto Comunitario"),
-    "ginasio": ("Desporto e Lazer", "Desporto Comunitario"),
-    "pavimenta": ("Urbanismo", "Infra-estrutura Urbana"),
-    "asfalto": ("Urbanismo", "Infra-estrutura Urbana"),
+    "cultura": ("Cultura", "Difusao Cultural"),
+    "esporte": ("Esporte", "Desporto Comunitario"),
+    "quadra": ("Esporte", "Desporto Comunitario"),
+    "ginasio": ("Esporte", "Desporto Comunitario"),
+    "futebol": ("Esporte", "Desporto Comunitario"),
+    "academia": ("Esporte", "Desporto Comunitario"),
+    "pavimenta": ("Obras/Infraestrutura", "Infra-estrutura Urbana"),
+    "asfalto": ("Obras/Infraestrutura", "Infra-estrutura Urbana"),
+    "recapeamento": ("Obras/Infraestrutura", "Infra-estrutura Urbana"),
+    "calcament": ("Obras/Infraestrutura", "Infra-estrutura Urbana"),
     "drenagem": ("Saneamento", "Saneamento Basico"),
-    "habitacao": ("Habitacao", "Habitacao Urbana"),
+    "agua": ("Saneamento", "Saneamento Basico"),
+    "esgoto": ("Saneamento", "Saneamento Basico"),
+    "habita": ("Habitacao", "Habitacao Urbana"),
     "social": ("Assistencia Social", "Assistencia Comunitaria"),
-    "agricultura": ("Agricultura", "Extensao Rural"),
+    "agric": ("Agricultura", "Extensao Rural"),
     "trator": ("Agricultura", "Extensao Rural"),
-    "obra": ("Urbanismo", "Infra-estrutura Urbana"),
+    "rural": ("Agricultura", "Extensao Rural"),
+    "implementos": ("Agricultura", "Extensao Rural"),
+    "veiculo": ("Equipamentos", "Aquisicao"),
+    "equipamento": ("Equipamentos", "Aquisicao"),
+    "material permanente": ("Equipamentos", "Aquisicao"),
+    "praca": ("Urbanismo", "Servicos Urbanos"),
+    "obra": ("Obras/Infraestrutura", "Infra-estrutura Urbana"),
 }
 
 
@@ -141,11 +154,13 @@ def main():
             tse_parl_lookup[norm_name(row[1])] = (row[0], row[2])
     print(f"  TSE parlamentares no DB: {len(tse_parl_lookup)}")
 
-    # Need convenios details for objeto (to classify funcao)
-    conv_obj_map = {}
-    for _, row in df_conv.iterrows():
-        nr = str(row.get("NR_CONVENIO", "")).strip()
-        conv_obj_map[nr] = clean_string(row.get("OBJETO_PROPOSTA"))
+    # Load objetos from DB (already ingested by run_federal.py)
+    conv_obj_by_id = {}
+    with engine.connect() as conn:
+        r = conn.execute(text("SELECT id, objeto FROM convenios_federal WHERE objeto IS NOT NULL"))
+        for row in r.fetchall():
+            conv_obj_by_id[row[0]] = row[1]
+    print(f"  Convenios com objeto: {len(conv_obj_by_id)}")
 
     inserted = 0
     matched_tse = 0
@@ -197,14 +212,8 @@ def main():
                 # Add to lookup to prevent duplicates in same run
                 tse_parl_lookup[norm] = (parl_id, None)
 
-            # Classify funcao from convenio objeto
-            # Get nr_convenio for this prop
-            nr_conv = None
-            for nr, (cid, _) in db_convs.items():
-                if cid == conv_id:
-                    nr_conv = nr
-                    break
-            objeto = conv_obj_map.get(nr_conv) if nr_conv else None
+            # Classify funcao from convenio objeto (already in DB)
+            objeto = conv_obj_by_id.get(conv_id)
             funcao, subfuncao = classify_funcao(objeto)
 
             conn.execute(text("""
