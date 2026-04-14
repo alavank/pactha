@@ -127,6 +127,7 @@ async def list_convenios(
     esfera: Optional[str] = None,
     ano: Optional[int] = None,
     situacao: Optional[str] = None,
+    fonte: Optional[str] = None,
     parlamentar_id: Optional[int] = None,
     search: Optional[str] = None,
     page: int = Query(1, ge=1),
@@ -150,6 +151,9 @@ async def list_convenios(
         if situacao:
             q = q.where(ConvenioFederal.situacao.ilike(f"%{situacao}%"))
             q_count = q_count.where(ConvenioFederal.situacao.ilike(f"%{situacao}%"))
+        if fonte:
+            q = q.where(ConvenioFederal.fonte == fonte)
+            q_count = q_count.where(ConvenioFederal.fonte == fonte)
         if search:
             q = q.where(or_(
                 ConvenioFederal.objeto.ilike(f"%{search}%"),
@@ -189,6 +193,9 @@ async def list_convenios(
         if situacao:
             q = q.where(ConvenioEstadual.situacao.ilike(f"%{situacao}%"))
             q_count = q_count.where(ConvenioEstadual.situacao.ilike(f"%{situacao}%"))
+        if fonte:
+            q = q.where(ConvenioEstadual.fonte == fonte)
+            q_count = q_count.where(ConvenioEstadual.fonte == fonte)
         if search:
             q = q.where(or_(
                 ConvenioEstadual.objeto.ilike(f"%{search}%"),

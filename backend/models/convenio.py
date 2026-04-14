@@ -25,6 +25,7 @@ class ConvenioFederal(Base):
     ano = Column(Integer)
     programa = Column(String(500))
     modalidade = Column(String(200))
+    fonte = Column(String(50), default="TransfereGov")  # TransfereGov, FNS, SIMEC, SISMOB, SUAS, Upload
     raw_data = Column(JSONB)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -55,6 +56,7 @@ class ConvenioEstadual(Base):
     ano = Column(Integer)
     etapa_sigcon = Column(String(200))
     etapa_sigcon_nr = Column(Integer)
+    fonte = Column(String(50), default="SIGCON-MG")
     raw_data = Column(JSONB)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
