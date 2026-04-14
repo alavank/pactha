@@ -66,7 +66,8 @@
       "Bash(git -c user.email=\"dev@pacta.com.br\" -c user.name=\"PACTA Dev\" commit -m \"fix: emendas_federais via SICONV \\(has parlamentar names\\) + regenerate prestacoes\")",
       "Bash(git -c user.email=\"dev@pacta.com.br\" -c user.name=\"PACTA Dev\" commit -m \"fix: encoding utf-8-sig + dedup parlamentares + editais PNCP real + funcao classification\")",
       "Bash(git -c user.email=\"dev@pacta.com.br\" -c user.name=\"PACTA Dev\" commit -m \"fix: UPDATE all fields in ON CONFLICT \\(including objeto/orgao\\) to fix encoding on re-ingest\")",
-      "Bash(git -c user.email=\"dev@pacta.com.br\" -c user.name=\"PACTA Dev\" commit -m \"fix: classify funcao from DB objeto \\(not proposta CSV\\) + expand keywords\")"
+      "Bash(git -c user.email=\"dev@pacta.com.br\" -c user.name=\"PACTA Dev\" commit -m \"fix: classify funcao from DB objeto \\(not proposta CSV\\) + expand keywords\")",
+      "Bash(git -c user.email=\"dev@pacta.com.br\" -c user.name=\"PACTA Dev\" commit -m \"fix: emendas federais agora persistem o ano do convenio\")"
     ]
   }
 }

@@ -154,13 +154,18 @@ def main():
             tse_parl_lookup[norm_name(row[1])] = (row[0], row[2])
     print(f"  TSE parlamentares no DB: {len(tse_parl_lookup)}")
 
-    # Load objetos from DB (already ingested by run_federal.py)
+    # Load objetos and years from DB (already ingested by run_federal.py)
     conv_obj_by_id = {}
+    conv_ano_by_id = {}
     with engine.connect() as conn:
-        r = conn.execute(text("SELECT id, objeto FROM convenios_federal WHERE objeto IS NOT NULL"))
+        r = conn.execute(text("SELECT id, objeto, ano FROM convenios_federal"))
         for row in r.fetchall():
-            conv_obj_by_id[row[0]] = row[1]
+            if row[1]:
+                conv_obj_by_id[row[0]] = row[1]
+            if row[2]:
+                conv_ano_by_id[row[0]] = int(row[2])
     print(f"  Convenios com objeto: {len(conv_obj_by_id)}")
+    print(f"  Convenios com ano: {len(conv_ano_by_id)}")
 
     inserted = 0
     matched_tse = 0
@@ -216,15 +221,18 @@ def main():
             objeto = conv_obj_by_id.get(conv_id)
             funcao, subfuncao = classify_funcao(objeto)
 
+            # Get ano from convenio
+            conv_ano = conv_ano_by_id.get(conv_id)
+
             conn.execute(text("""
                 INSERT INTO emendas (
                     nr_emenda, parlamentar_id, municipio_id, convenio_federal_id,
-                    valor, tipo, esfera, funcao, subfuncao
-                ) VALUES (:ne, :p, :m, :cf, :v, :tipo, 'federal', :f, :sf)
+                    valor, tipo, esfera, funcao, subfuncao, ano
+                ) VALUES (:ne, :p, :m, :cf, :v, :tipo, 'federal', :f, :sf, :ano)
             """), {
                 "ne": nr_emenda, "p": parl_id, "m": mun_id,
                 "cf": conv_id, "v": valor, "tipo": tipo,
-                "f": funcao, "sf": subfuncao,
+                "f": funcao, "sf": subfuncao, "ano": conv_ano,
             })
             inserted += 1
 
