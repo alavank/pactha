@@ -65,6 +65,62 @@ def estadual_to_response(c: ConvenioEstadual) -> ConvenioResponse:
     )
 
 
+@router.get("/situacoes")
+async def list_situacoes(
+    municipio_id: Optional[int] = None,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Distinct situacoes from both federal and estadual, optionally filtered by municipio."""
+    situacoes = set()
+
+    q1 = select(ConvenioFederal.situacao).distinct().where(ConvenioFederal.situacao.is_not(None))
+    if municipio_id:
+        q1 = q1.where(ConvenioFederal.municipio_id == municipio_id)
+    r1 = await db.execute(q1)
+    for row in r1.all():
+        if row[0]:
+            situacoes.add(row[0].strip())
+
+    q2 = select(ConvenioEstadual.situacao).distinct().where(ConvenioEstadual.situacao.is_not(None))
+    if municipio_id:
+        q2 = q2.where(ConvenioEstadual.municipio_id == municipio_id)
+    r2 = await db.execute(q2)
+    for row in r2.all():
+        if row[0]:
+            situacoes.add(row[0].strip())
+
+    return sorted(situacoes)
+
+
+@router.get("/anos")
+async def list_anos(
+    municipio_id: Optional[int] = None,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Distinct years with convenios."""
+    anos = set()
+
+    q1 = select(ConvenioFederal.ano).distinct().where(ConvenioFederal.ano.is_not(None))
+    if municipio_id:
+        q1 = q1.where(ConvenioFederal.municipio_id == municipio_id)
+    r1 = await db.execute(q1)
+    for row in r1.all():
+        if row[0]:
+            anos.add(int(row[0]))
+
+    q2 = select(ConvenioEstadual.ano).distinct().where(ConvenioEstadual.ano.is_not(None))
+    if municipio_id:
+        q2 = q2.where(ConvenioEstadual.municipio_id == municipio_id)
+    r2 = await db.execute(q2)
+    for row in r2.all():
+        if row[0]:
+            anos.add(int(row[0]))
+
+    return sorted(anos, reverse=True)
+
+
 @router.get("", response_model=ConvenioListResponse)
 async def list_convenios(
     municipio_id: Optional[int] = None,

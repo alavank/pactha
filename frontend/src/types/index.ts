@@ -123,6 +123,14 @@ export interface PrestacaoContas {
   documentos: PrestacaoDocumento[];
   nr_convenio?: string;
   objeto?: string;
+  esfera?: string;
+  orgao_concedente?: string;
+  valor_total?: number;
+  dt_inicio?: string;
+  dt_fim_vigencia?: string;
+  dias_restantes?: number;
+  ano?: number;
+  situacao?: string;
 }
 
 export interface PrestacaoDocumento {

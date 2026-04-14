@@ -44,8 +44,21 @@ export default function ConveniosPage() {
   const [ano, setAno] = useState("todos");
   const [searchTerm, setSearchTerm] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [situacoes, setSituacoes] = useState<string[]>([]);
+  const [anos, setAnos] = useState<number[]>([]);
 
-  const anosDisponiveis = Array.from({ length: 20 }, (_, i) => 2026 - i);
+  // Load distinct situacoes and anos for this municipio
+  useEffect(() => {
+    if (!municipioId) return;
+    api
+      .get<string[]>("/convenios/situacoes", { params: { municipio_id: municipioId } })
+      .then((res) => setSituacoes(Array.isArray(res.data) ? res.data : []))
+      .catch(() => {});
+    api
+      .get<number[]>("/convenios/anos", { params: { municipio_id: municipioId } })
+      .then((res) => setAnos(Array.isArray(res.data) ? res.data : []))
+      .catch(() => {});
+  }, [municipioId]);
 
   // Debounce search input
   useEffect(() => {
@@ -156,16 +169,16 @@ export default function ConveniosPage() {
         </Select>
 
         <Select value={situacao} onValueChange={(v) => setSituacao(v ?? "todos")}>
-          <SelectTrigger className="w-48">
+          <SelectTrigger className="w-56">
             <SelectValue placeholder="Situacao" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="todos">Todas Situacoes</SelectItem>
-            <SelectItem value="Em execucao">Em execucao</SelectItem>
-            <SelectItem value="Prestacao de contas">Prestacao de contas</SelectItem>
-            <SelectItem value="Concluido">Concluido</SelectItem>
-            <SelectItem value="Cancelado">Cancelado</SelectItem>
-            <SelectItem value="Em proposta">Em proposta</SelectItem>
+            {situacoes.map((s) => (
+              <SelectItem key={s} value={s}>
+                {s}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
 
@@ -175,7 +188,7 @@ export default function ConveniosPage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="todos">Todos Anos</SelectItem>
-            {anosDisponiveis.map((a) => (
+            {anos.map((a) => (
               <SelectItem key={a} value={String(a)}>
                 {a}
               </SelectItem>

@@ -1,3 +1,4 @@
+import unicodedata
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -6,6 +7,13 @@ from database import get_db
 from models import Emenda, Parlamentar, Municipio, DadosEleitorais, ConvenioFederal, ConvenioEstadual
 from schemas.politica import EmendaPorDeputado, BenchmarkMunicipio, TopDeputado
 from services.auth import get_current_user
+
+
+def norm_name(s):
+    if not s:
+        return ""
+    s = str(s).strip().upper()
+    return "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))
 
 router = APIRouter(prefix="/api/politica", tags=["politica"])
 
@@ -109,22 +117,51 @@ async def cruzamento_eleitoral(
         .order_by(DadosEleitorais.votos.desc())
     )
     result = await db.execute(q)
-    items = []
-    for de, nome, partido, esfera in result.all():
-        # Match by direct id OR by same parlamentar name (unidecoded uppercase)
-        emenda_q = await db.execute(
-            select(
-                func.coalesce(func.sum(Emenda.valor), 0),
-                func.count(Emenda.id),
-            )
-            .select_from(Emenda.__table__.join(Parlamentar.__table__, Emenda.parlamentar_id == Parlamentar.id))
-            .where(Emenda.municipio_id == municipio_id)
-            .where(
-                (Emenda.parlamentar_id == de.parlamentar_id) |
-                (func.upper(Parlamentar.nome) == func.upper(nome))
-            )
+    rows = result.all()
+
+    # Preload all emendas for this municipio grouped by normalized parlamentar name
+    emendas_q = await db.execute(
+        select(
+            Parlamentar.nome,
+            func.coalesce(func.sum(Emenda.valor), 0),
+            func.count(Emenda.id),
         )
-        total_valor, total_count = emenda_q.one()
+        .select_from(
+            Emenda.__table__.join(Parlamentar.__table__, Emenda.parlamentar_id == Parlamentar.id)
+        )
+        .where(Emenda.municipio_id == municipio_id)
+        .group_by(Parlamentar.nome)
+    )
+    emendas_by_norm = {}
+    for e_nome, e_valor, e_count in emendas_q.all():
+        key = norm_name(e_nome)
+        if key in emendas_by_norm:
+            emendas_by_norm[key] = (
+                emendas_by_norm[key][0] + float(e_valor),
+                emendas_by_norm[key][1] + int(e_count),
+            )
+        else:
+            emendas_by_norm[key] = (float(e_valor), int(e_count))
+
+    items = []
+    for de, nome, partido, esfera in rows:
+        tse_norm = norm_name(nome)
+        total_valor = 0.0
+        total_count = 0
+        # Exact match
+        if tse_norm in emendas_by_norm:
+            total_valor, total_count = emendas_by_norm[tse_norm]
+        else:
+            # Partial match: TSE words subset of emenda name or vice-versa
+            tse_words = set(tse_norm.split())
+            if tse_words:
+                for em_norm, (em_v, em_c) in emendas_by_norm.items():
+                    em_words = set(em_norm.split())
+                    # match if surname (first word of 2+) matches
+                    if tse_words.issubset(em_words) or em_words.issubset(tse_words):
+                        total_valor += em_v
+                        total_count += em_c
+
         items.append({
             "parlamentar_id": de.parlamentar_id,
             "parlamentar_nome": nome,
@@ -187,19 +224,36 @@ async def top_deputados(
     q = q.order_by(DadosEleitorais.votos.desc()).limit(10)
 
     result = await db.execute(q)
-    deputados = []
-    for de, nome, partido in result.all():
-        # Get total emendas for this deputy - match by id or by name (upper)
-        emenda_q = await db.execute(
-            select(func.coalesce(func.sum(Emenda.valor), 0))
-            .select_from(Emenda.__table__.join(Parlamentar.__table__, Emenda.parlamentar_id == Parlamentar.id))
-            .where(Emenda.municipio_id == municipio_id)
-            .where(
-                (Emenda.parlamentar_id == de.parlamentar_id) |
-                (func.upper(Parlamentar.nome) == func.upper(nome))
-            )
+    rows = result.all()
+
+    # Preload emendas grouped by normalized name
+    emendas_q = await db.execute(
+        select(
+            Parlamentar.nome,
+            func.coalesce(func.sum(Emenda.valor), 0),
         )
-        total_emendas = float(emenda_q.scalar())
+        .select_from(
+            Emenda.__table__.join(Parlamentar.__table__, Emenda.parlamentar_id == Parlamentar.id)
+        )
+        .where(Emenda.municipio_id == municipio_id)
+        .group_by(Parlamentar.nome)
+    )
+    emendas_by_norm = {}
+    for e_nome, e_valor in emendas_q.all():
+        key = norm_name(e_nome)
+        emendas_by_norm[key] = emendas_by_norm.get(key, 0) + float(e_valor)
+
+    deputados = []
+    for de, nome, partido in rows:
+        tse_norm = norm_name(nome)
+        total_emendas = emendas_by_norm.get(tse_norm, 0)
+        if total_emendas == 0:
+            tse_words = set(tse_norm.split())
+            if tse_words:
+                for em_norm, em_v in emendas_by_norm.items():
+                    em_words = set(em_norm.split())
+                    if tse_words.issubset(em_words) or em_words.issubset(tse_words):
+                        total_emendas += em_v
 
         deputados.append(TopDeputado(
             parlamentar_id=de.parlamentar_id,

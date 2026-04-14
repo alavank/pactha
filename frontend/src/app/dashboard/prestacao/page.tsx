@@ -8,6 +8,12 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
+  formatCurrency,
+  formatDate,
+  diasRestantesBadge,
+  situacaoBadgeColor,
+} from "@/lib/utils";
+import {
   Table,
   TableBody,
   TableCell,
@@ -173,16 +179,19 @@ export default function PrestacaoPage() {
           Nenhum dado encontrado.
         </div>
       ) : (
-        <div className="rounded-lg border bg-white">
+        <div className="rounded-lg border bg-white overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead className="w-10" />
+                <TableHead>Esfera</TableHead>
                 <TableHead>Nr Convenio</TableHead>
+                <TableHead className="max-w-[320px]">Objeto</TableHead>
+                <TableHead>Orgao Concedente</TableHead>
+                <TableHead className="text-right">Valor Total</TableHead>
+                <TableHead>Vigencia</TableHead>
                 <TableHead>Etapa</TableHead>
-                <TableHead>Nome da Etapa</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Progresso</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -203,15 +212,62 @@ export default function PrestacaoPage() {
                           <ChevronDown className="size-4 text-muted-foreground" />
                         )}
                       </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant="secondary"
+                          className={`text-xs uppercase ${
+                            prest.esfera === "federal"
+                              ? "bg-blue-100 text-blue-700"
+                              : "bg-indigo-100 text-indigo-700"
+                          }`}
+                        >
+                          {prest.esfera || "-"}
+                        </Badge>
+                      </TableCell>
                       <TableCell className="font-medium">
                         {prest.nr_convenio || "-"}
                       </TableCell>
-                      <TableCell>
-                        <span className="font-mono text-sm">
-                          {prest.etapa_atual}/{TOTAL_STEPS}
+                      <TableCell className="max-w-[320px]">
+                        <span className="line-clamp-2 text-sm">
+                          {prest.objeto
+                            ? prest.objeto.length > 100
+                              ? prest.objeto.slice(0, 100) + "..."
+                              : prest.objeto
+                            : "-"}
                         </span>
                       </TableCell>
-                      <TableCell>{prest.etapa_nome || "-"}</TableCell>
+                      <TableCell className="max-w-[180px] truncate text-sm">
+                        {prest.orgao_concedente || "-"}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {formatCurrency(prest.valor_total)}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-col text-xs">
+                          <span>{formatDate(prest.dt_fim_vigencia)}</span>
+                          {prest.dias_restantes != null && (
+                            <span
+                              className={`inline-flex w-fit items-center rounded-full px-2 py-0.5 text-xs ${diasRestantesBadge(
+                                prest.dias_restantes
+                              )}`}
+                            >
+                              {prest.dias_restantes < 0
+                                ? `${Math.abs(prest.dias_restantes)}d vencido`
+                                : `${prest.dias_restantes}d restantes`}
+                            </span>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-col">
+                          <span className="font-mono text-xs">
+                            {prest.etapa_atual}/{TOTAL_STEPS}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {prest.etapa_nome || "-"}
+                          </span>
+                        </div>
+                      </TableCell>
                       <TableCell>
                         <span
                           className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${statusBadgeColor(
@@ -221,24 +277,50 @@ export default function PrestacaoPage() {
                           {prest.status}
                         </span>
                       </TableCell>
-                      <TableCell className="min-w-[200px]">
-                        <WorkflowTimeline etapaAtual={prest.etapa_atual} />
-                      </TableCell>
                     </TableRow>
                     {isExpanded && (
                       <TableRow>
-                        <TableCell colSpan={6} className="bg-gray-50 p-4">
+                        <TableCell colSpan={9} className="bg-gray-50 p-4">
                           <div className="space-y-3">
-                            {prest.objeto && (
-                              <p className="text-sm text-muted-foreground">
-                                <strong>Objeto:</strong> {prest.objeto}
-                              </p>
-                            )}
-                            {prest.observacoes && (
-                              <p className="text-sm text-muted-foreground">
-                                <strong>Observacoes:</strong> {prest.observacoes}
-                              </p>
-                            )}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                              {prest.objeto && (
+                                <div>
+                                  <strong className="text-muted-foreground">Objeto completo:</strong>
+                                  <p className="mt-1">{prest.objeto}</p>
+                                </div>
+                              )}
+                              <div className="space-y-1">
+                                {prest.situacao && (
+                                  <p>
+                                    <strong className="text-muted-foreground">Situacao:</strong>{" "}
+                                    <span
+                                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${situacaoBadgeColor(
+                                        prest.situacao
+                                      )}`}
+                                    >
+                                      {prest.situacao}
+                                    </span>
+                                  </p>
+                                )}
+                                {prest.ano && (
+                                  <p>
+                                    <strong className="text-muted-foreground">Ano:</strong> {prest.ano}
+                                  </p>
+                                )}
+                                {prest.dt_inicio && (
+                                  <p>
+                                    <strong className="text-muted-foreground">Inicio:</strong>{" "}
+                                    {formatDate(prest.dt_inicio)}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                            <div>
+                              <h4 className="mb-2 text-sm font-semibold">
+                                Workflow (16 etapas)
+                              </h4>
+                              <WorkflowTimeline etapaAtual={prest.etapa_atual} />
+                            </div>
                             <div>
                               <h4 className="mb-2 text-sm font-semibold">
                                 Checklist de Documentos

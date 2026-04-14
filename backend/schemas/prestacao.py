@@ -28,6 +28,14 @@ class PrestacaoResponse(BaseModel):
     documentos: List[DocumentoResponse] = []
     nr_convenio: Optional[str] = None
     objeto: Optional[str] = None
+    esfera: Optional[str] = None
+    orgao_concedente: Optional[str] = None
+    valor_total: Optional[float] = None
+    dt_inicio: Optional[date] = None
+    dt_fim_vigencia: Optional[date] = None
+    dias_restantes: Optional[int] = None
+    ano: Optional[int] = None
+    situacao: Optional[str] = None
 
     class Config:
         from_attributes = True

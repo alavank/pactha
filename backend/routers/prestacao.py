@@ -59,19 +59,39 @@ async def list_prestacoes(
         )
         docs = [DocumentoResponse.model_validate(d) for d in docs_result.scalars().all()]
 
-        # Load convenio info for number and objeto
-        nr = None
-        objeto = None
+        # Load full convenio info
+        from datetime import date as ddate
+        nr = objeto = orgao = esfera = situacao = None
+        valor_total = None
+        dt_inicio = dt_fim = None
+        ano = None
+
         if p.convenio_estadual_id:
             ce = await db.get(ConvenioEstadual, p.convenio_estadual_id)
             if ce:
                 nr = ce.nr_sigcon
                 objeto = ce.objeto
+                orgao = ce.orgao_concedente
+                esfera = "estadual"
+                situacao = ce.situacao
+                valor_total = float(ce.valor_total) if ce.valor_total else None
+                dt_inicio = ce.dt_vigencia_inicial
+                dt_fim = ce.dt_vigencia_atual or ce.dt_vigencia_final
+                ano = ce.ano
         elif p.convenio_federal_id:
             cf = await db.get(ConvenioFederal, p.convenio_federal_id)
             if cf:
                 nr = cf.nr_convenio
                 objeto = cf.objeto
+                orgao = cf.orgao_concedente
+                esfera = "federal"
+                situacao = cf.situacao
+                valor_total = float(cf.valor_global) if cf.valor_global else None
+                dt_inicio = cf.dt_inicio
+                dt_fim = cf.dt_fim_vigencia
+                ano = cf.ano
+
+        dias_rest = (dt_fim - ddate.today()).days if dt_fim else None
 
         resp = PrestacaoResponse(
             id=p.id,
@@ -86,6 +106,14 @@ async def list_prestacoes(
             documentos=docs,
             nr_convenio=nr,
             objeto=objeto,
+            esfera=esfera,
+            orgao_concedente=orgao,
+            valor_total=valor_total,
+            dt_inicio=dt_inicio,
+            dt_fim_vigencia=dt_fim,
+            dias_restantes=dias_rest,
+            ano=ano,
+            situacao=situacao,
         )
         responses.append(resp)
     return responses
