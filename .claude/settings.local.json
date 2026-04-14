@@ -53,7 +53,8 @@
       "Bash(python3 -u -c ':*)",
       "Bash(PYTHONIOENCODING=utf-8 python3 -u seed_advanced.py)",
       "Bash(git -c user.email=dev@pacta.com.br -c 'user.name=PACTA Dev' commit -m 'feat: TSE eleicoes + cruzamento + funcao + fontes + pendencias:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(npm run:*)"
     ]
   }
 }

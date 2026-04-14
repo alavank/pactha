@@ -249,7 +249,7 @@ export default function PoliticaPage() {
                         cx="50%"
                         cy="50%"
                         outerRadius={120}
-                        label={(entry) => entry.funcao}
+                        label={(props: object) => (props as { funcao?: string }).funcao || ""}
                       >
                         {funcoes.map((_, idx) => (
                           <Cell key={idx} fill={PIE_COLORS[idx % PIE_COLORS.length]} />
