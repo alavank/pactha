@@ -30,11 +30,23 @@ TEMPLATE_COLUMNS = [
     "orgao_concedente",
     "objeto",
     "situacao",
-    "valor_total",
+    "valor_global",
+    "valor_repasse",
+    "valor_contrapartida",
     "dt_inicio",
     "dt_fim_vigencia",
     "municipio_ibge",
     "ano",
+    "parlamentar_indicacao",
+    "tipo_programa",
+    "banco",
+    "agencia",
+    "conta_corrente",
+    "saldo_bancario",
+    "dt_saldo",
+    "nr_sei",
+    "dt_empenho",
+    "dt_desembolso",
 ]
 
 
@@ -74,31 +86,30 @@ async def download_template(
     _=Depends(get_current_user),
 ):
     """Baixa template de upload (csv ou xlsx)."""
-    df = pd.DataFrame(columns=TEMPLATE_COLUMNS)
-    # Add 2 example rows
     example1 = {
-        "nr_convenio": "EX123",
-        "orgao_concedente": "FNS - Fundo Nacional de Saude",
-        "objeto": "Aquisicao de equipamento hospitalar",
-        "situacao": "Em execucao",
-        "valor_total": "150000.00",
-        "dt_inicio": "2025-01-15",
-        "dt_fim_vigencia": "2026-06-30",
-        "municipio_ibge": "3145208",
+        "nr_convenio": "989480/2025",
+        "orgao_concedente": "Ministerio da Saude",
+        "objeto": "Cama Hospitalar Tipo Fawler Eletrica",
+        "situacao": "Empenhado",
+        "valor_global": "200800.00",
+        "valor_repasse": "200800.00",
+        "valor_contrapartida": "0",
+        "dt_inicio": "2025-12-18",
+        "dt_fim_vigencia": "2026-04-21",
+        "municipio_ibge": "3107406",
         "ano": "2025",
+        "parlamentar_indicacao": "Domingos Savio",
+        "tipo_programa": "Incremento MAC",
+        "banco": "Caixa Economica Federal",
+        "agencia": "1060-0",
+        "conta_corrente": "574194984-0",
+        "saldo_bancario": "0.00",
+        "dt_saldo": "2026-04-10",
+        "nr_sei": "",
+        "dt_empenho": "2025-12-18",
+        "dt_desembolso": "",
     }
-    example2 = {
-        "nr_convenio": "EX456",
-        "orgao_concedente": "MDS - Estrutura SUAS",
-        "objeto": "Construcao de CRAS",
-        "situacao": "Em vigor",
-        "valor_total": "80000.00",
-        "dt_inicio": "2024-03-01",
-        "dt_fim_vigencia": "2026-12-31",
-        "municipio_ibge": "3104502",
-        "ano": "2024",
-    }
-    df = pd.DataFrame([example1, example2])
+    df = pd.DataFrame([example1])
 
     if format == "csv":
         output = io.StringIO()
@@ -181,11 +192,22 @@ async def upload_convenios(
                 "orgao_concedente": str(row.get("orgao_concedente", "") or "")[:500],
                 "objeto": str(row.get("objeto", "") or "")[:2000],
                 "situacao": str(row.get("situacao", "") or "")[:200],
-                "valor_global": parse_decimal(row.get("valor_total")),
+                "valor_global": parse_decimal(row.get("valor_global") or row.get("valor_total")),
+                "valor_repasse": parse_decimal(row.get("valor_repasse")),
+                "valor_contrapartida": parse_decimal(row.get("valor_contrapartida")),
                 "dt_inicio": parse_date(row.get("dt_inicio")),
                 "dt_fim_vigencia": parse_date(row.get("dt_fim_vigencia")),
                 "ano": int(row["ano"]) if row.get("ano") and str(row["ano"]).strip().isdigit() else None,
                 "fonte": fonte,
+                "tipo_programa": str(row.get("tipo_programa", "") or "")[:100] or None,
+                "banco": str(row.get("banco", "") or "")[:100] or None,
+                "agencia": str(row.get("agencia", "") or "")[:20] or None,
+                "conta_corrente": str(row.get("conta_corrente", "") or "")[:50] or None,
+                "saldo_bancario": parse_decimal(row.get("saldo_bancario")),
+                "dt_saldo": parse_date(row.get("dt_saldo")),
+                "nr_sei": str(row.get("nr_sei", "") or "")[:100] or None,
+                "dt_empenho": parse_date(row.get("dt_empenho")),
+                "dt_desembolso": parse_date(row.get("dt_desembolso")),
             }
 
             if exists:

@@ -137,9 +137,30 @@ export default function ConveniosPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-bold text-gray-900">Convenios</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="default"
+            size="sm"
+            onClick={() => {
+              if (!municipioId) return;
+              const token = localStorage.getItem("pacta_token");
+              fetch(`${api.defaults.baseURL}/relatorio-monitoramento?municipio_id=${municipioId}`, {
+                headers: { Authorization: `Bearer ${token}` },
+              })
+                .then((r) => r.text())
+                .then((html) => {
+                  const blob = new Blob([html], { type: "text/html" });
+                  const url = URL.createObjectURL(blob);
+                  window.open(url, "_blank");
+                });
+            }}
+            className="bg-indigo-600 hover:bg-indigo-700"
+          >
+            <Download className="mr-2 size-4" />
+            Gerar Relatorio Mensal (RM)
+          </Button>
           <Button variant="outline" size="sm" onClick={handleExportPendencias}>
             <Download className="mr-2 size-4" />
             Pendencias
