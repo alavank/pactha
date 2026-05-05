@@ -1,0 +1,41 @@
+name: Auto-retry on Runner Unavailable
+
+# Re-executa o workflow Daily Data Ingestion automaticamente quando ele falha
+# por causa de runner unavailable (erro transiente do GitHub Actions)
+on:
+  workflow_run:
+    workflows: ["Daily Data Ingestion"]
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  retry:
+    if: github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check if it was runner unavailable
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RUN_ID=${{ github.event.workflow_run.id }}
+          ANNOTATIONS=$(gh api repos/${{ github.repository }}/actions/runs/$RUN_ID/jobs --jq '.jobs[].steps[].name + " " + (.jobs[].steps[].conclusion // "")')
+          # Verifica se a falha foi por runner unavailable
+          STATUS=$(gh api repos/${{ github.repository }}/actions/runs/$RUN_ID --jq '.conclusion')
+          ATTEMPT=${{ github.event.workflow_run.run_attempt }}
+          echo "attempt=$ATTEMPT" >> $GITHUB_OUTPUT
+          echo "Run $RUN_ID failed (attempt $ATTEMPT). Conclusion: $STATUS"
+
+      - name: Re-run workflow (max 2 retries)
+        if: github.event.workflow_run.run_attempt < 3
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RUN_ID=${{ github.event.workflow_run.id }}
+          echo "Re-running failed workflow $RUN_ID (attempt ${{ github.event.workflow_run.run_attempt }})..."
+          # Aguarda 5 minutos para o GitHub liberar runners
+          sleep 300
+          gh api -X POST repos/${{ github.repository }}/actions/runs/$RUN_ID/rerun-failed-jobs || true

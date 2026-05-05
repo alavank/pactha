@@ -2,18 +2,33 @@ name: Daily Data Ingestion
 
 on:
   schedule:
-    # Runs daily at 12:00 UTC (09:00 BRT) - after TransfereGov publishes new data
+    # Roda diariamente as 12:00 UTC (09:00 BRT) - apos TransfereGov publicar
     - cron: '0 12 * * *'
-  workflow_dispatch:  # Allow manual trigger
+  workflow_dispatch:
+
+# Cancela runs antigas se uma nova for disparada (evita filas longas)
+concurrency:
+  group: daily-ingestion
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: write
 
 jobs:
   ingest:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 25
+    # Retry automatico em caso de falha transiente do runner
+    strategy:
+      fail-fast: false
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
-      - name: Setup Python
+      - name: Setup Python 3.12
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -23,9 +38,11 @@ jobs:
       - name: Install dependencies
         working-directory: backend
         run: |
+          pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run SIGCON full ingestion
+      # === SIGCON-MG (estadual) - critico, fonte estavel ===
+      - name: SIGCON full ingestion
         working-directory: backend
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -33,8 +50,10 @@ jobs:
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
         run: python ingestion/run_sigcon.py
         continue-on-error: true
+        timeout-minutes: 8
 
-      - name: Run TransfereGov ingestion
+      # === TransfereGov (federal) ===
+      - name: TransfereGov ingestion
         working-directory: backend
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -42,8 +61,11 @@ jobs:
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
         run: python ingestion/run_federal.py
         continue-on-error: true
+        timeout-minutes: 6
 
-      - name: Run TSE ingestion (electoral data)
+      # === TSE - executa apenas 1x por semana (segundas) - dados de 2022 nao mudam ===
+      - name: TSE ingestion (semanal)
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'schedule' && contains(fromJson('["1"]'), format('{0}', github.event.schedule)))
         working-directory: backend
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -51,8 +73,10 @@ jobs:
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
         run: python ingestion/tse.py
         continue-on-error: true
+        timeout-minutes: 8
 
-      - name: Run Emendas Federais ingestion
+      # === Emendas Federais (SICONV) ===
+      - name: Emendas Federais ingestion
         working-directory: backend
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -60,8 +84,10 @@ jobs:
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
         run: python ingestion/emendas_federais.py
         continue-on-error: true
+        timeout-minutes: 5
 
-      - name: Run Emendas Estaduais extraction
+      # === Emendas Estaduais (extraidas do SIGCON) ===
+      - name: Emendas Estaduais extraction
         working-directory: backend
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -69,8 +95,10 @@ jobs:
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
         run: python ingestion/emendas_estaduais.py
         continue-on-error: true
+        timeout-minutes: 3
 
-      - name: Run Editais PNCP ingestion
+      # === Editais PNCP ===
+      - name: Editais PNCP ingestion
         working-directory: backend
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -78,7 +106,9 @@ jobs:
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
         run: python ingestion/editais.py
         continue-on-error: true
+        timeout-minutes: 5
 
+      # === Deduplicar parlamentares ===
       - name: Deduplicate parlamentares
         working-directory: backend
         env:
@@ -87,3 +117,4 @@ jobs:
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
         run: python ingestion/dedupe_parlamentares.py
         continue-on-error: true
+        timeout-minutes: 2
