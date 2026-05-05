@@ -69,7 +69,10 @@
       "Bash(git -c user.email=\"dev@pacta.com.br\" -c user.name=\"PACTA Dev\" commit -m \"fix: classify funcao from DB objeto \\(not proposta CSV\\) + expand keywords\")",
       "Bash(git -c user.email=\"dev@pacta.com.br\" -c user.name=\"PACTA Dev\" commit -m \"fix: emendas federais agora persistem o ano do convenio\")",
       "Bash(PYTHONIOENCODING=utf-8 python3 -u ingestion/emendas_estaduais.py)",
-      "Bash(python3 -c ' *)"
+      "Bash(python3 -c ' *)",
+      "Bash(curl -s -X POST https://backend-iota-liard-20.vercel.app/api/auth/login -H 'Content-Type: application/json' -d '{\\\\\"email\\\\\":\\\\\"admin@pacta.com.br\\\\\",\\\\\"password\\\\\":\\\\\"pacta2026\\\\\"}')",
+      "Bash(curl -s \"https://backend-iota-liard-20.vercel.app/api/relatorio-monitoramento?municipio_id=3\" -H \"Authorization: Bearer $\\(curl -s -X POST https://backend-iota-liard-20.vercel.app/api/auth/login -H 'Content-Type: application/json' -d '{\\\\\"email\\\\\":\\\\\"admin@pacta.com.br\\\\\",\\\\\"password\\\\\":\\\\\"pacta2026\\\\\"}')",
+      "Bash(vercel logs *)"
     ]
   }
 }

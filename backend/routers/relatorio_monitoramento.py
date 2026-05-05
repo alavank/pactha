@@ -52,10 +52,19 @@ MESES_PT = {
 }
 
 
+def get_dt_vigencia(c, esfera):
+    """Retorna data de vigencia, normalizando entre federal e estadual."""
+    if esfera == "federal":
+        return getattr(c, "dt_fim_vigencia", None)
+    else:
+        return getattr(c, "dt_vigencia_atual", None) or getattr(c, "dt_vigencia_final", None)
+
+
 def categorize_part(c, esfera):
     """Determina em qual parte do relatorio o convenio entra."""
     sit = (c.situacao or "").lower()
     ano_atual = date.today().year
+    dt_vig = get_dt_vigencia(c, esfera)
 
     # Parte 4: Propostas voluntarias
     if "proposta" in sit and "voluntar" in sit:
@@ -74,7 +83,7 @@ def categorize_part(c, esfera):
     # Parte 3: Prestacoes / pagamentos historicos
     if "prestacao" in sit or "concluido" in sit or "encerr" in sit or "pago" in sit or "anulado" in sit:
         return 3
-    if c.dt_fim_vigencia and c.dt_fim_vigencia < date.today():
+    if dt_vig and dt_vig < date.today():
         return 3
 
     # Parte 2: Demandas em execucao

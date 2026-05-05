@@ -49,38 +49,48 @@
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  /* Identidade visual institucional - PACTA / Prefeitura */
+  --gov-blue-50: #eff6ff;
+  --gov-blue-100: #dbeafe;
+  --gov-blue-600: #1e40af;   /* Azul institucional Brasil */
+  --gov-blue-700: #1e3a8a;   /* Azul mais escuro */
+  --gov-blue-900: #172554;
+  --gov-green-600: #15803d;  /* Verde Brasil */
+  --gov-yellow: #fbbf24;
+  --gov-cream: #faf8f3;      /* Bege/papel oficial */
+
+  --background: #f8fafc;     /* Cinza muito claro institucional */
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --popover: #ffffff;
+  --popover-foreground: #0f172a;
+  --primary: #1e40af;        /* Azul institucional */
+  --primary-foreground: #ffffff;
+  --secondary: #f1f5f9;
+  --secondary-foreground: #1e293b;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
+  --accent: #dbeafe;
+  --accent-foreground: #1e40af;
+  --destructive: #dc2626;
+  --border: #e2e8f0;
+  --input: #e2e8f0;
+  --ring: #3b82f6;
+  --chart-1: #1e40af;
+  --chart-2: #0e7490;
+  --chart-3: #15803d;
+  --chart-4: #ca8a04;
+  --chart-5: #b91c1c;
+  --radius: 0.5rem;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #1e293b;
+  --sidebar-primary: #1e40af;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #eff6ff;
+  --sidebar-accent-foreground: #1e40af;
+  --sidebar-border: #e2e8f0;
+  --sidebar-ring: #3b82f6;
 }
 
 .dark {
@@ -123,8 +133,48 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
   html {
     @apply font-sans;
   }
+
+  /* Government-style headings */
+  h1 {
+    @apply tracking-tight text-slate-900;
+  }
+
+  /* Cards have subtle institutional shadow */
+  [data-slot="card"] {
+    @apply shadow-sm border-slate-200;
+  }
+}
+
+/* Estilo institucional - barra de identidade visual */
+.gov-stripe {
+  background: linear-gradient(90deg, #15803d 0%, #15803d 33%, #fbbf24 33%, #fbbf24 66%, #1e40af 66%, #1e40af 100%);
+  height: 3px;
+  width: 100%;
+}
+
+/* Sidebar institucional */
+.sidebar-pacta {
+  border-right: 1px solid #e2e8f0;
+  background: #ffffff;
+}
+
+/* Botao primario gov */
+.btn-gov-primary {
+  @apply bg-blue-700 text-white hover:bg-blue-800 transition-colors;
+}
+
+/* Cards de resumo institucional */
+.card-summary-gov {
+  @apply bg-white border-l-4 border-blue-700 rounded-r-lg shadow-sm;
+}
+
+/* Tipografia oficial */
+.font-official {
+  font-family: 'Calibri', 'Segoe UI', Arial, sans-serif;
+  letter-spacing: -0.01em;
 }

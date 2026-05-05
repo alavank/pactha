@@ -61,26 +61,40 @@ function SidebarContent({
   onLogout: () => void;
 }) {
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex items-center gap-2 border-b px-4 py-4">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white font-bold text-sm">
-          P
+    <div className="flex h-full flex-col bg-white">
+      {/* Faixa institucional - cores do governo */}
+      <div className="gov-stripe" />
+
+      {/* Header com brasao */}
+      <div className="border-b border-slate-200 px-4 py-5 bg-gradient-to-br from-blue-700 to-blue-900 text-white">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-md bg-white/15 backdrop-blur-sm border border-white/20">
+            <svg viewBox="0 0 24 24" className="size-6" fill="none" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 21h18M5 21V7l7-4 7 4v14M9 9h1m-1 4h1m-1 4h1m4-8h1m-1 4h1m-1 4h1" />
+            </svg>
+          </div>
+          <div>
+            <div className="text-base font-bold tracking-tight">PACTA</div>
+            <div className="text-[10px] uppercase tracking-wider text-blue-100/90">
+              Plataforma de Acompanhamento
+            </div>
+          </div>
         </div>
-        <span className="text-lg font-bold text-indigo-700">PACTA</span>
       </div>
 
-      <div className="px-3 py-3">
-        <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-          Municipio
+      {/* Seletor de municipio */}
+      <div className="px-3 py-3 border-b border-slate-100 bg-slate-50/60">
+        <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+          Municipio Atendido
         </label>
         <Select
           value={selectedMunicipioId}
           onValueChange={(v) => v && onMunicipioChange(v)}
         >
-          <SelectTrigger className="w-full">
-            <Building2 className="mr-1.5 size-4 text-muted-foreground" />
+          <SelectTrigger className="w-full bg-white border-slate-300">
+            <Building2 className="mr-1.5 size-4 text-blue-700" />
             <SelectValue placeholder="Selecionar municipio" />
-            <ChevronDown className="ml-auto size-4 text-muted-foreground" />
+            <ChevronDown className="ml-auto size-4 text-slate-400" />
           </SelectTrigger>
           <SelectContent>
             {municipios.map((m) => (
@@ -92,7 +106,11 @@ function SidebarContent({
         </Select>
       </div>
 
-      <nav className="flex-1 space-y-1 px-3 py-2">
+      {/* Navegacao */}
+      <nav className="flex-1 space-y-0.5 px-2 py-3 overflow-y-auto">
+        <div className="px-3 mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+          Modulos
+        </div>
         {NAV_ITEMS.map((item) => {
           const isActive =
             pathname === item.href ||
@@ -102,32 +120,42 @@ function SidebarContent({
             <Link
               key={item.href}
               href={`${item.href}${selectedMunicipioId ? `?municipio_id=${selectedMunicipioId}` : ""}`}
-              className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+              className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-all ${
                 isActive
-                  ? "bg-indigo-50 text-indigo-700"
-                  : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                  ? "bg-blue-50 text-blue-800 border-l-3 border-blue-700 shadow-sm"
+                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900 border-l-3 border-transparent"
               }`}
             >
-              <Icon className="size-5" />
-              {item.label}
+              <Icon className={`size-4 ${isActive ? "text-blue-700" : "text-slate-500"}`} />
+              <span className="text-[13px]">{item.label}</span>
             </Link>
           );
         })}
       </nav>
 
-      <div className="border-t px-3 py-3">
+      {/* Footer institucional */}
+      <div className="border-t border-slate-200 px-3 py-3 bg-slate-50/60">
         {user && (
-          <div className="mb-2 px-3 text-sm text-muted-foreground truncate">
-            {user.name}
+          <div className="mb-2 px-2 py-2 rounded-md bg-white border border-slate-200">
+            <div className="text-[10px] uppercase tracking-wider text-slate-400">
+              Usuario
+            </div>
+            <div className="text-sm font-medium text-slate-700 truncate">
+              {user.name}
+            </div>
+            <div className="text-[10px] text-slate-500 truncate">
+              {user.email}
+            </div>
           </div>
         )}
         <Button
           variant="ghost"
-          className="w-full justify-start gap-3 text-red-600 hover:bg-red-50 hover:text-red-700"
+          size="sm"
+          className="w-full justify-start gap-2 text-red-700 hover:bg-red-50 hover:text-red-800 text-xs"
           onClick={onLogout}
         >
-          <LogOut className="size-5" />
-          Sair
+          <LogOut className="size-4" />
+          Sair do sistema
         </Button>
       </div>
     </div>
