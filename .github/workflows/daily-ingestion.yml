@@ -63,9 +63,9 @@ jobs:
         continue-on-error: true
         timeout-minutes: 6
 
-      # === TSE - executa apenas 1x por semana (segundas) - dados de 2022 nao mudam ===
-      - name: TSE ingestion (semanal)
-        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'schedule' && contains(fromJson('["1"]'), format('{0}', github.event.schedule)))
+      # === TSE - so executa em workflow manual (dados de 2022 nao mudam) ===
+      - name: TSE ingestion (sob demanda)
+        if: github.event_name == 'workflow_dispatch'
         working-directory: backend
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
