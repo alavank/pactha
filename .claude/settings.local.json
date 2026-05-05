@@ -72,7 +72,10 @@
       "Bash(python3 -c ' *)",
       "Bash(curl -s -X POST https://backend-iota-liard-20.vercel.app/api/auth/login -H 'Content-Type: application/json' -d '{\\\\\"email\\\\\":\\\\\"admin@pacta.com.br\\\\\",\\\\\"password\\\\\":\\\\\"pacta2026\\\\\"}')",
       "Bash(curl -s \"https://backend-iota-liard-20.vercel.app/api/relatorio-monitoramento?municipio_id=3\" -H \"Authorization: Bearer $\\(curl -s -X POST https://backend-iota-liard-20.vercel.app/api/auth/login -H 'Content-Type: application/json' -d '{\\\\\"email\\\\\":\\\\\"admin@pacta.com.br\\\\\",\\\\\"password\\\\\":\\\\\"pacta2026\\\\\"}')",
-      "Bash(vercel logs *)"
+      "Bash(vercel logs *)",
+      "Bash(xargs -I {} echo \"Total convenios renderizados: {}\")",
+      "mcp__Claude_in_Chrome__tabs_context_mcp",
+      "mcp__Claude_in_Chrome__browser_batch"
     ]
   }
 }

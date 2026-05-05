@@ -61,32 +61,61 @@ def get_dt_vigencia(c, esfera):
 
 
 def categorize_part(c, esfera):
-    """Determina em qual parte do relatorio o convenio entra."""
+    """Determina em qual parte do relatorio o convenio entra.
+    Logica refinada para se aproximar do modelo Freitas:
+    - Parte 1: Federais ano corrente, ainda pendentes em Brasilia (sem desembolso)
+    - Parte 2: Em execucao ATIVA (vigencia futura, status nao final)
+    - Parte 3: Concluidos, anulados, cancelados, prestacao em analise, vigencia vencida
+    - Parte 4: Propostas voluntarias (proposta/plano de trabalho enviado)
+    """
     sit = (c.situacao or "").lower()
     ano_atual = date.today().year
     dt_vig = get_dt_vigencia(c, esfera)
+    has_desembolso = bool(getattr(c, "dt_desembolso", None))
+    valor_desembolsado = float(getattr(c, "valor_desembolsado", 0) or 0)
 
-    # Parte 4: Propostas voluntarias
-    if "proposta" in sit and "voluntar" in sit:
-        return 4
-    if "proposta" in sit and ("enviado" in sit or "analise" in sit):
-        return 4
+    # --- PARTE 4: Propostas voluntarias ---
+    if any(kw in sit for kw in ["proposta", "plano de trabalho"]):
+        if any(kw in sit for kw in ["enviad", "analise", "voluntar", "elabora"]):
+            return 4
 
-    # Parte 1: Demandas em Brasilia (federais pendentes ano atual)
+    # --- PARTE 3: Historico (encerrados, prestacao, anulados, vigencia vencida) ---
+    historico_keywords = [
+        "concluido", "concluid", "encerr", "anulado", "anulada",
+        "cancelado", "cancelada", "rescindido", "rescindida",
+        "aprovada", "ressalvas", "recurso", "diligencia",
+    ]
+    if any(kw in sit for kw in historico_keywords):
+        return 3
+    # Vigencia vencida ha mais de 6 meses
+    if dt_vig:
+        dias_vencido = (date.today() - dt_vig).days
+        if dias_vencido > 180:
+            return 3
+    # Pagamento ja realizado
+    if "pago" in sit or "pagamento" in sit and "realiz" in sit:
+        return 3
+    if has_desembolso and (dt_vig and dt_vig < date.today()):
+        return 3
+
+    # --- PARTE 1: Demandas em Brasilia (federais ano corrente pendentes) ---
     if esfera == "federal":
         ano = c.ano or 0
+        # Ano corrente ou anterior + sem desembolso + situacao pendente
         if ano >= ano_atual - 1:
-            if "pendente" in sit or "empenh" in sit or sit in ("", "em analise"):
-                if "concluid" not in sit and "pago" not in sit and "realiz" not in sit:
+            pendente_keywords = ["pendente", "empenh", "aguardando", "analise", "elabora"]
+            if any(kw in sit for kw in pendente_keywords) or sit == "":
+                # Nao pago, nao desembolsado
+                if not has_desembolso and valor_desembolsado == 0:
                     return 1
 
-    # Parte 3: Prestacoes / pagamentos historicos
-    if "prestacao" in sit or "concluido" in sit or "encerr" in sit or "pago" in sit or "anulado" in sit:
+    # --- PARTE 2: Em execucao ativa (default para vigencia futura) ---
+    # Apenas se tem vigencia futura (em vigor real)
+    if dt_vig and dt_vig >= date.today():
+        return 2
+    # Sem data de vigencia mas sem outros indicadores -> historico
+    if not dt_vig:
         return 3
-    if dt_vig and dt_vig < date.today():
-        return 3
-
-    # Parte 2: Demandas em execucao
     return 2
 
 
@@ -300,8 +329,14 @@ async def gerar_relatorio_monitoramento(
 <p class="data-titulo">{titulo_data}</p>
 
 <div class="summary-stats">
-  <strong>Resumo:</strong>
-  Federais: {len(federais)} | Estaduais: {len(estaduais)} | Total: {len(federais) + len(estaduais)} convenios
+  <strong>Resumo Executivo:</strong><br>
+  <span style="display:inline-block;margin:4px 8px 4px 0">Total geral: <strong>{len(federais) + len(estaduais)}</strong> convenios</span> |
+  <span style="display:inline-block;margin:4px 8px">Federais: <strong>{len(federais)}</strong></span> |
+  <span style="display:inline-block;margin:4px 8px">Estaduais: <strong>{len(estaduais)}</strong></span><br>
+  <span style="display:inline-block;margin:4px 8px 4px 0">Parte 1 (Brasilia): <strong>{len(parte1)}</strong></span> |
+  <span style="display:inline-block;margin:4px 8px">Parte 2 (Em execucao): <strong>{len(parte2_fed) + len(parte2_est)}</strong></span> |
+  <span style="display:inline-block;margin:4px 8px">Parte 3 (Historico): <strong>{len(parte3_fed) + len(parte3_est)}</strong></span> |
+  <span style="display:inline-block;margin:4px 8px">Parte 4 (Voluntarias): <strong>{len(parte4)}</strong></span>
 </div>
 
 <h2>INSTRUMENTOS DE REPASSE FEDERAIS</h2>

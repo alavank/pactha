@@ -84,15 +84,39 @@ export default function UploadPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-          <Upload className="size-6 text-indigo-600" />
+      <div className="border-b border-slate-200 pb-4">
+        <div className="flex items-center gap-2 text-xs text-slate-500 mb-1">
+          <span>Inicio</span>
+          <span>›</span>
+          <span className="text-slate-700">Upload de Dados</span>
+        </div>
+        <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2 tracking-tight">
+          <Upload className="size-6 text-blue-700" />
           Upload de Convenios (Fontes sem API)
         </h1>
-        <p className="text-sm text-muted-foreground mt-1">
+        <p className="text-sm text-slate-500 mt-1">
           Importe dados de FNS, SIMEC, SISMOB, Estrutura SUAS e outras fontes que nao possuem API publica
         </p>
       </div>
+
+      <Card className="border-l-4 border-l-amber-500 bg-amber-50/40">
+        <CardContent className="pt-6">
+          <h3 className="font-semibold text-amber-900 mb-2">Quando usar Upload Manual?</h3>
+          <p className="text-sm text-slate-700 mb-2">
+            Use este modulo para incluir convenios e propostas que NAO vem das APIs automaticas (TransfereGov e SIGCON-MG).
+            Sao especialmente importantes para o <strong>Relatorio de Monitoramento (RM)</strong>:
+          </p>
+          <ul className="text-sm text-slate-700 list-disc list-inside space-y-1">
+            <li><strong>FNS (consultafns.saude.gov.br)</strong>: Propostas e parcelas pagas do Fundo Nacional de Saude</li>
+            <li><strong>SISMOB (sismobcidadao.saude.gov.br)</strong>: Obras de saude</li>
+            <li><strong>SIMEC/PAR (simec.mec.gov.br)</strong>: Obras de educacao FNDE</li>
+            <li><strong>Estrutura SUAS (estruturasuas.mds.gov.br)</strong>: Construcao de CRAS/CREAS</li>
+          </ul>
+          <p className="text-xs text-slate-500 mt-3">
+            <strong>Dica:</strong> Apos upload, os dados aparecem automaticamente no Dashboard, Convenios e no Relatorio Mensal (RM) gerado para o cliente.
+          </p>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
