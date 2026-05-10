@@ -91,7 +91,31 @@
       "Bash(git commit -m ' *)",
       "Bash(npx vercel *)",
       "Read(//c/Users/mathe/.vercel/**)",
-      "Bash(curl -s -H \"Authorization: Bearer $\\(cat ~/.vercel/auth.json)"
+      "Bash(curl -s -H \"Authorization: Bearer $\\(cat ~/.vercel/auth.json)",
+      "Bash(railway --version)",
+      "Bash(npx @railway/cli --version)",
+      "Bash(railway whoami *)",
+      "Bash(railway list *)",
+      "Bash(railway init *)",
+      "Bash(railway add *)",
+      "Bash(railway status *)",
+      "Bash(grep -v \"^$\")",
+      "Bash(railway service *)",
+      "Bash(railway variables *)",
+      "Bash(railway up *)",
+      "Bash(railway domain *)",
+      "Bash(COFRE_KEY=\"OFdh3UIdWM_VTe9Q4uju2g8LK9vdHvXx2MCWa0xkqsI\" python migrations/encrypt_cofre.py)",
+      "Bash(python -c \"import jwt; print\\('jwt ok', jwt.__version__\\)\")",
+      "Bash(curl -s -o /dev/null -w \"Backend: %{http_code}\\\\n\" https://pacta-api-production-9c11.up.railway.app/api/health)",
+      "Bash(curl -s -o /dev/null -w \"Frontend: %{http_code}\\\\n\" https://pacta-production.up.railway.app)",
+      "Bash(curl -s -f https://pacta-api-production-9c11.up.railway.app/api/health)",
+      "Bash(curl -s -o /dev/null -w \"Backend health: %{http_code}\\\\n\" https://pacta-api-production-9c11.up.railway.app/api/health)",
+      "Bash(railway logs *)",
+      "Bash(curl -s https://pacta-api-production-9c11.up.railway.app/api/health)",
+      "Bash(curl -s -o /dev/null -w \"Backend: %{http_code}\\\\nFrontend: \" https://pacta-api-production-9c11.up.railway.app/api/health)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" https://pacta-production.up.railway.app)",
+      "Bash(curl -s \"https://pacta-api-production-9c11.up.railway.app/api/health\")",
+      "Bash(curl -s -w \"\\\\nHTTP %{http_code}\\\\n\" https://pacta-api-production-9c11.up.railway.app/api/health)"
     ]
   }
 }
