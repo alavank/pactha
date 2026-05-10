@@ -11,18 +11,24 @@ settings = get_settings()
 engine = create_engine(settings.DATABASE_URL_SYNC or settings.DATABASE_URL.replace("+asyncpg", ""))
 BASE_URL = settings.TRANSFEREGOV_BASE_URL
 
-MUNICIPIO_NAMES = {
-    "ARAUJOS": 1, "NOVA SERRANA": 2, "BOM DESPACHO": 3,
-    "SAO TIAGO": 4, "TOLEDO": 5,
-}
-
-
 def normalize_name(s):
     """Remove accents and uppercase."""
     if s is None:
         return ""
     s = str(s).strip().upper()
     return "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))
+
+
+def _load_municipios():
+    """Carrega municipios ativos do DB. {NOME_NORM: id}."""
+    with engine.connect() as conn:
+        rows = conn.execute(text(
+            "SELECT id, nome FROM municipios WHERE active=true AND uf='MG'"
+        )).fetchall()
+    return {normalize_name(nome): mid for mid, nome in rows}
+
+
+MUNICIPIO_NAMES = _load_municipios()
 
 
 def download_with_retry(filename, retries=3):

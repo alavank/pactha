@@ -118,7 +118,10 @@
       "Bash(curl -s -w \"\\\\nHTTP %{http_code}\\\\n\" https://pacta-api-production-9c11.up.railway.app/api/health)",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" https://pacta-production.up.railway.app)",
       "Bash(curl -s -w \"\\\\nHTTP %{http_code}\\\\n\" https://pacta-production.up.railway.app/)",
-      "Bash(curl -s -X POST https://pacta-api-production-9c11.up.railway.app/api/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"admin@pacta.com.br\",\"password\":\"HcmIBr59x1v53s\"}' -w '\\\\nHTTP %{http_code}\\\\n')"
+      "Bash(curl -s -X POST https://pacta-api-production-9c11.up.railway.app/api/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"admin@pacta.com.br\",\"password\":\"HcmIBr59x1v53s\"}' -w '\\\\nHTTP %{http_code}\\\\n')",
+      "Bash(python ingestion/run_federal.py)",
+      "Bash(python ingestion/dedupe_parlamentares.py)",
+      "Bash(python ingestion/emendas_federais.py)"
     ]
   }
 }

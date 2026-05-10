@@ -23,7 +23,23 @@ RESOURCES = {
     "convenente": ("3b9d9df2-1a50-451d-bc7e-3a0b82fcf821", "dm_convenente.csv.gz"),
 }
 
-TARGET_NAMES = ["ARAUJOS", "NOVA SERRANA", "BOM DESPACHO", "SAO TIAGO", "TOLEDO"]
+def _load_target_names():
+    """Carrega nomes dos municipios ativos do DB (normalizados)."""
+    eng = create_engine(settings.DATABASE_URL_SYNC or settings.DATABASE_URL.replace("+asyncpg", ""))
+    with eng.connect() as conn:
+        rows = conn.execute(text(
+            "SELECT nome FROM municipios WHERE active=true AND uf='MG'"
+        )).fetchall()
+    out = []
+    for (nome,) in rows:
+        s = str(nome).strip().upper()
+        s = "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))
+        out.append(s)
+    return out
+
+
+TARGET_NAMES = _load_target_names()
+print(f"SIGCON municipios alvo: {TARGET_NAMES}")
 
 
 def norm(s):
