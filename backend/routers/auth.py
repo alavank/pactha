@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
+import time
+from collections import defaultdict
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from database import get_db
@@ -8,9 +10,26 @@ from services.auth import hash_password, verify_password, create_access_token, g
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
+# Rate limit simples in-memory: 5 tentativas por (IP+email) em 60s
+_LOGIN_ATTEMPTS: dict[str, list[float]] = defaultdict(list)
+_RATE_WINDOW = 60.0
+_RATE_MAX = 5
+
+
+def _rate_limit_check(key: str):
+    now = time.time()
+    arr = [t for t in _LOGIN_ATTEMPTS[key] if now - t < _RATE_WINDOW]
+    if len(arr) >= _RATE_MAX:
+        raise HTTPException(status_code=429, detail="Muitas tentativas. Aguarde 1 minuto.")
+    arr.append(now)
+    _LOGIN_ATTEMPTS[key] = arr
+
 
 @router.post("/login", response_model=LoginResponse)
-async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
+async def login(req: LoginRequest, request: Request, db: AsyncSession = Depends(get_db)):
+    ip = request.client.host if request.client else "?"
+    _rate_limit_check(f"{ip}:{req.email}")
+
     result = await db.execute(select(User).where(User.email == req.email))
     user = result.scalar_one_or_none()
     if not user or not verify_password(req.password, user.password_hash):

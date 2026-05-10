@@ -216,8 +216,26 @@ def create_tables():
         print("Tabelas criadas com sucesso!")
 
 
+def _gen_password(length: int = 16) -> str:
+    """Gera senha aleatoria forte."""
+    import secrets, string
+    alphabet = string.ascii_letters + string.digits + "!@#$%&*"
+    return "".join(secrets.choice(alphabet) for _ in range(length))
+
+
 def seed_data():
-    admin_hash = hash_password("pacta2026")
+    """Cria municipios piloto + admin + analistas com senhas geradas aleatoriamente.
+    As senhas sao impressas no console — NAO sao gravadas em disco nem versionadas.
+    Usuarios devem trocar no primeiro login (campo must_change_password).
+    """
+    import os
+    admin_email = os.getenv("ADMIN_EMAIL", "admin@pacta.com.br")
+    # Permite override por env (CI/CD), ou gera aleatoria
+    admin_pwd = os.getenv("ADMIN_PASSWORD") or _gen_password()
+    admin_hash = hash_password(admin_pwd)
+
+    senhas_geradas = [("ADMIN", admin_email, admin_pwd)]
+
     with engine.connect() as conn:
         # Municipios piloto
         conn.execute(text("""
@@ -226,18 +244,18 @@ def seed_data():
             ('Nova Serrana', '3145208', 'MG'),
             ('Bom Despacho', '3107406', 'MG'),
             ('Sao Tiago', '3164704', 'MG'),
-            ('Toledo', '3169406', 'MG')
+            ('Toledo', '3169406', 'MG'),
+            ('Piracema', '3151206', 'MG')
         ON CONFLICT (ibge_code) DO NOTHING;
         """))
 
-        # Admin user
+        # Admin user (so cria se nao existir; nao sobrescreve senha existente)
         conn.execute(text("""
         INSERT INTO users (email, name, password_hash, role) VALUES
             (:email, :name, :hash, 'admin')
         ON CONFLICT (email) DO NOTHING;
-        """), {"email": "admin@pacta.com.br", "name": "Administrador", "hash": admin_hash})
+        """), {"email": admin_email, "name": "Administrador", "hash": admin_hash})
 
-        # Sample users (team)
         for user in [
             ("lara@freitas.com.br", "Lara"),
             ("marcia@freitas.com.br", "Marcia Alves"),
@@ -245,16 +263,22 @@ def seed_data():
             ("larissa@freitas.com.br", "Larissa Faustino"),
             ("dani@freitas.com.br", "Daniele Vicente"),
         ]:
+            pwd = _gen_password()
+            senhas_geradas.append(("ANALYST", user[0], pwd))
             conn.execute(text("""
             INSERT INTO users (email, name, password_hash, role) VALUES
                 (:email, :name, :hash, 'analyst')
             ON CONFLICT (email) DO NOTHING;
-            """), {"email": user[0], "name": user[1], "hash": hash_password("freitas2026")})
+            """), {"email": user[0], "name": user[1], "hash": hash_password(pwd)})
 
         conn.commit()
-        print("Seed realizado com sucesso!")
-        print("  Admin: admin@pacta.com.br / pacta2026")
-        print("  Equipe: lara@freitas.com.br / freitas2026 (e demais)")
+        print("\n" + "=" * 60)
+        print("SENHAS GERADAS (anote agora - NAO serao mostradas novamente)")
+        print("=" * 60)
+        for role, email, pwd in senhas_geradas:
+            print(f"  [{role}] {email}  ->  {pwd}")
+        print("=" * 60)
+        print("Os usuarios devem trocar a senha no primeiro login.\n")
 
 
 if __name__ == "__main__":

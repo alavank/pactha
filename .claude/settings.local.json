@@ -77,7 +77,18 @@
       "mcp__Claude_in_Chrome__tabs_context_mcp",
       "mcp__Claude_in_Chrome__browser_batch",
       "Bash(git -c user.email=\"dev@pacta.com.br\" -c user.name=\"PACTA Dev\" commit -m \"fix: workflow resiliente + auto-retry em runner unavailable + TSE semanal\")",
-      "Bash(git -c user.email=\"dev@pacta.com.br\" -c user.name=\"PACTA Dev\" commit -m \"fix: TSE apenas em workflow manual \\(dado fixo de 2022\\)\")"
+      "Bash(git -c user.email=\"dev@pacta.com.br\" -c user.name=\"PACTA Dev\" commit -m \"fix: TSE apenas em workflow manual \\(dado fixo de 2022\\)\")",
+      "Bash(gh api *)",
+      "Bash(curl -s -o /dev/null -w \"Status: %{http_code} | Tempo: %{time_total}s | URL: %{url_effective}\\\\n\" -L \"https://pacta-frontend-liart.vercel.app/login\")",
+      "Bash(curl -s -i \"https://backend-iota-liard-20.vercel.app/api/health\")",
+      "Bash(curl -s -X POST https://backend-iota-liard-20.vercel.app/api/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"admin@pacta.com.br\",\"password\":\"pacta2026\"}')",
+      "Bash(python -c ' *)",
+      "Bash(python ingestion/emendas_estaduais.py)",
+      "Bash(python ingestion/run_sigcon.py)",
+      "Bash(tail -40 /tmp/claude/C--CONVPREF/aa75af0d-97a3-4213-8f80-125e69785c9a/tasks/bjjze7f1t.output 2>/dev/null || tail -40 \"C:/Users/mathe/AppData/Local/Temp/claude/C--CONVPREF/aa75af0d-97a3-4213-8f80-125e69785c9a/tasks/bjjze7f1t.output\")",
+      "PowerShell($f = \"C:/Users/mathe/AppData/Local/Temp/claude/C--CONVPREF/aa75af0d-97a3-4213-8f80-125e69785c9a/tasks/bjjze7f1t.output\"; \\(Get-Item $f\\).Length; Get-Content $f -Raw)",
+      "Bash(git remote *)",
+      "Bash(git commit -m ' *)"
     ]
   }
 }

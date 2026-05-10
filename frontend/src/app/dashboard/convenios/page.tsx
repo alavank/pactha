@@ -161,6 +161,27 @@ export default function ConveniosPage() {
             <Download className="mr-2 size-4" />
             Gerar Relatorio Mensal (RM)
           </Button>
+          <Button
+            variant="default"
+            size="sm"
+            onClick={() => {
+              if (!municipioId) return;
+              const token = localStorage.getItem("pacta_token");
+              fetch(`${api.defaults.baseURL}/levantamento-parlamentar?municipio_id=${municipioId}`, {
+                headers: { Authorization: `Bearer ${token}` },
+              })
+                .then((r) => r.text())
+                .then((html) => {
+                  const blob = new Blob([html], { type: "text/html" });
+                  const url = URL.createObjectURL(blob);
+                  window.open(url, "_blank");
+                });
+            }}
+            className="bg-emerald-700 hover:bg-emerald-800"
+          >
+            <Download className="mr-2 size-4" />
+            Levantamento por Parlamentar
+          </Button>
           <Button variant="outline" size="sm" onClick={handleExportPendencias}>
             <Download className="mr-2 size-4" />
             Pendencias

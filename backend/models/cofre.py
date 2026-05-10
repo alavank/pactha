@@ -11,7 +11,7 @@ class CofreSenha(Base):
     sistema = Column(String(200), nullable=False)  # ex: "TransfereGov", "SIGCON-MG", "FNS"
     url = Column(Text)
     usuario = Column(String(200))
-    senha_hash = Column(Text)  # encrypted in real prod, plain for MVP per requisito
+    senha_encrypted = Column("senha_hash", Text)  # AES-GCM encrypted via services.crypto
     observacao = Column(Text)
     categoria = Column(String(100))  # ex: "Federal", "Estadual", "Saude", "Educacao"
     atualizado_por_id = Column(Integer, ForeignKey("users.id"))

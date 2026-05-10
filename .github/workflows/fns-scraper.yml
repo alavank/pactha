@@ -1,0 +1,48 @@
+name: FNS Scraper
+
+# Roda semanalmente (segundas 14h UTC = 11h BRT) - portais governamentais
+# nao mudam diariamente, semanal e suficiente para FNS
+on:
+  schedule:
+    - cron: '0 14 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        working-directory: backend
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Playwright Chromium
+        working-directory: backend
+        run: |
+          playwright install --with-deps chromium
+
+      - name: Run FNS scraper
+        working-directory: backend
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL_SYNC: ${{ secrets.DATABASE_URL_SYNC }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          FNS_CPF: ${{ secrets.FNS_CPF }}
+          FNS_SENHA: ${{ secrets.FNS_SENHA }}
+        run: python ingestion/fns_scraper.py
+        continue-on-error: true

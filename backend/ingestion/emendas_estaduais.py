@@ -25,14 +25,39 @@ def norm_name(s):
     return "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))
 
 
-# Regex para extrair nome do parlamentar do objeto
-# Exemplos: "TRANSFERENCIA ESPECIAL: FABIO AVELAR - INDICACAO: 78797"
-#           "TRANSFERENCIA ESPECIAL: JOAO VITOR XAVIER DE INDICACAO"
+# Regex para extrair nome do parlamentar/bloco/comissao do objeto
+# Exemplos reais SIGCON:
+#   "TRANSFERENCIA ESPECIAL: FABIO AVELAR DE OLIVEIRA - INDICACAO: 78139"
+#   "TRANSFERENCIA ESPECIAL: BLOCO LIBERDADE E PROGRESSO - INDICACAO: 62571"
+#   "TRANSFERENCIA ESPECIAL: PARTIDO LIBERAL - INDICACAO: 115305"
+#   "TRANSFERENCIA ESPECIAL: COMISSAO DE SAUDE - INDICACAO: 99999"
 PATTERNS = [
-    re.compile(r"TRANSFERENCIA\s+ESPECIAL\s*[:\-]?\s*([A-ZÁÉÍÓÚÀÂÊÔÃÕÇ][A-ZÁÉÍÓÚÀÂÊÔÃÕÇ\s]+?)(?:\s*[-–]\s*INDICACAO|$)", re.IGNORECASE),
-    re.compile(r"INDICACAO\s+DE\s+([A-ZÁÉÍÓÚÀÂÊÔÃÕÇ][A-ZÁÉÍÓÚÀÂÊÔÃÕÇ\s]+)", re.IGNORECASE),
-    re.compile(r"EMENDA\s+PARLAMENTAR\s*[:\-]?\s*([A-ZÁÉÍÓÚÀÂÊÔÃÕÇ][A-ZÁÉÍÓÚÀÂÊÔÃÕÇ\s]+)", re.IGNORECASE),
+    # Pattern principal: tudo entre "TRANSFERENCIA ESPECIAL:" e "- INDICACAO:" (ou final)
+    re.compile(
+        r"TRANSFERENC[IÍ]A\s+ESPECIAL\s*[:\-]?\s*([^-\n]+?)(?:\s*[-–]\s*INDICA[CÇ][AÃ]O|\s*$)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"INDICA[CÇ][AÃ]O\s+(?:DE\s+|DO\s+|DA\s+)?([A-ZÁÉÍÓÚÀÂÊÔÃÕÇ][A-ZÁÉÍÓÚÀÂÊÔÃÕÇ\s]+?)(?:\s*[-–]|$)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"EMENDA\s+PARLAMENTAR\s*[:\-]?\s*([A-ZÁÉÍÓÚÀÂÊÔÃÕÇ][A-ZÁÉÍÓÚÀÂÊÔÃÕÇ\s]+?)(?:\s*[-–]|$)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"DEPUTAD[OA]\s+(?:ESTADUAL\s+|FEDERAL\s+)?([A-ZÁÉÍÓÚÀÂÊÔÃÕÇ][A-ZÁÉÍÓÚÀÂÊÔÃÕÇ\s]+?)(?:\s*[-–]|$)",
+        re.IGNORECASE,
+    ),
+    # SES-MG e SEGOV-MG: padroes de "RESOLUCAO" + numero podem indicar grupo
+    re.compile(
+        r"RESOLU[CÇ][AÃ]O\s+(\d{4,5}\s*/?\s*SES)",
+        re.IGNORECASE,
+    ),
 ]
+
+# Stopwords no inicio do nome (devem ser removidas)
+LEAD_NOISE = re.compile(r"^(SR\.?|SR[AO]\.?|DEPUTAD[OA]|DEP\.?)\s+", re.IGNORECASE)
 
 
 def extract_name(objeto):
@@ -43,10 +68,13 @@ def extract_name(objeto):
         m = pat.search(obj)
         if m:
             name = m.group(1).strip()
-            # Clean up trailing words
-            name = re.sub(r"\s+(DE|DA|DO|DOS|DAS)\s*$", "", name, flags=re.IGNORECASE)
+            # Limpa ruido inicial e final
+            name = LEAD_NOISE.sub("", name)
+            name = re.sub(r"\s+(DE|DA|DO|DOS|DAS|E|EM|PARA)\s*$", "", name, flags=re.IGNORECASE)
             name = re.sub(r"\s+", " ", name).strip()
-            if 3 <= len(name) <= 60:
+            # Remove pontuacao no final
+            name = name.rstrip(".,;:")
+            if 3 <= len(name) <= 80:
                 return name.upper()
     return None
 
@@ -83,8 +111,8 @@ def main():
             name = extract_name(objeto)
             if not name:
                 continue
-            if float(valor or 0) <= 0:
-                continue
+            # Aceitar valor 0 desde que seja indicacao real (PDF mostra varios pendentes/em analise)
+            valor_f = float(valor or 0)
 
             # Try to match with TSE (exact or fuzzy)
             norm = norm_name(name)
@@ -126,7 +154,7 @@ def main():
                 ) VALUES (:p, :m, :c, :v, 'Transferencia Especial', 'estadual', :a)
             """), {
                 "p": parl_id, "m": mun_id, "c": cid,
-                "v": float(valor), "a": int(ano) if ano else None,
+                "v": valor_f, "a": int(ano) if ano else None,
             })
             extracted += 1
 

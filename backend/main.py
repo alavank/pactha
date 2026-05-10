@@ -1,7 +1,7 @@
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import auth, municipios, convenios, editais, prestacao, politica, export, cofre, fontes, upload, relatorio_monitoramento
+from routers import auth, municipios, convenios, editais, prestacao, politica, export, cofre, fontes, upload, relatorio_monitoramento, levantamento_parlamentar
 
 app = FastAPI(
     title="PACTA API",
@@ -10,22 +10,28 @@ app = FastAPI(
     redirect_slashes=False,
 )
 
-# CORS: localhost + production frontend URL
+# CORS: localhost + production frontend URL (whitelist explicita)
 allowed_origins = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
 ]
-frontend_url = os.getenv("FRONTEND_URL")
-if frontend_url:
-    allowed_origins.append(frontend_url)
+# FRONTEND_URL: domain principal (railway, custom). Pode ser CSV.
+frontend_urls = os.getenv("FRONTEND_URL", "")
+for url in frontend_urls.split(","):
+    url = url.strip()
+    if url:
+        allowed_origins.append(url)
+
+# Regex restrito: apenas domains do projeto PACTA (railway/custom)
+allow_regex = os.getenv("CORS_ORIGIN_REGEX") or r"^https://(pacta|.*\.pacta).*\.(up\.railway\.app|railway\.app)$"
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
-    allow_origin_regex=r"https://.*\.vercel\.app",
+    allow_origin_regex=allow_regex,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "Origin"],
 )
 
 app.include_router(auth.router)
@@ -39,6 +45,7 @@ app.include_router(cofre.router)
 app.include_router(fontes.router)
 app.include_router(upload.router)
 app.include_router(relatorio_monitoramento.router)
+app.include_router(levantamento_parlamentar.router)
 
 
 @app.get("/api/health")

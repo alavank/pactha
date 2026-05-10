@@ -25,6 +25,7 @@ interface Senha {
   url?: string;
   usuario?: string;
   senha?: string;
+  senha_mascarada?: string;
   observacao?: string;
   categoria?: string;
 }
@@ -60,13 +61,18 @@ export default function CofrePage() {
 
   useEffect(fetchSenhas, [municipioId]);
 
-  const toggleReveal = (id: number) => {
-    setRevealedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  const toggleReveal = async (id: number) => {
+    if (revealedIds.has(id)) {
+      // hide: remove from revealed e limpa senha do estado
+      setSenhas((prev) => prev.map((s) => (s.id === id ? { ...s, senha: undefined } : s)));
+      setRevealedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    } else {
+      await revealSenha(id);
+    }
   };
 
   const handleCreate = async () => {
@@ -96,8 +102,31 @@ export default function CofrePage() {
     }
   };
 
-  const copySenha = (senha: string) => {
-    navigator.clipboard.writeText(senha);
+  const revealSenha = async (id: number) => {
+    try {
+      const res = await api.get<{ senha: string }>(`/cofre/${id}/reveal`);
+      setSenhas((prev) =>
+        prev.map((s) => (s.id === id ? { ...s, senha: res.data.senha } : s))
+      );
+      setRevealedIds((prev) => new Set(prev).add(id));
+    } catch (e: unknown) {
+      const err = e as { response?: { status?: number } };
+      if (err.response?.status === 403) {
+        toast.error("Apenas administradores podem revelar senhas");
+      } else {
+        toast.error("Erro ao revelar senha");
+      }
+    }
+  };
+
+  const copySenha = async (s: Senha) => {
+    if (!s.senha) {
+      await revealSenha(s.id);
+      const updated = senhas.find((x) => x.id === s.id);
+      if (updated?.senha) navigator.clipboard.writeText(updated.senha);
+    } else {
+      navigator.clipboard.writeText(s.senha);
+    }
     toast.success("Senha copiada");
   };
 
@@ -248,9 +277,9 @@ export default function CofrePage() {
                           <span className="text-muted-foreground">Senha:</span>
                           <span
                             className="font-mono cursor-pointer"
-                            onClick={() => s.senha && copySenha(s.senha)}
+                            onClick={() => copySenha(s)}
                           >
-                            {revealedIds.has(s.id) ? s.senha || "-" : "••••••••"}
+                            {revealedIds.has(s.id) ? s.senha || "-" : (s.senha_mascarada || "••••••••")}
                           </span>
                           <button
                             onClick={() => toggleReveal(s.id)}

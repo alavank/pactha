@@ -142,8 +142,18 @@ async def upload_convenios(
     if fonte not in FONTES_VALIDAS:
         raise HTTPException(status_code=400, detail=f"Fonte deve ser uma de: {FONTES_VALIDAS}")
 
+    # Limite de tamanho: 10 MB
+    MAX_BYTES = 10 * 1024 * 1024
+    if file.size and file.size > MAX_BYTES:
+        raise HTTPException(status_code=413, detail="Arquivo excede 10 MB")
+
     content = await file.read()
+    if len(content) > MAX_BYTES:
+        raise HTTPException(status_code=413, detail="Arquivo excede 10 MB")
+
     filename = file.filename.lower() if file.filename else ""
+    if not filename.endswith((".csv", ".xlsx", ".xls")):
+        raise HTTPException(status_code=400, detail="Formato deve ser CSV ou XLSX")
 
     try:
         if filename.endswith(".csv"):
@@ -158,7 +168,10 @@ async def upload_convenios(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Erro ao ler arquivo: {e}")
+        # nao expor stack trace ao client
+        import logging
+        logging.getLogger("upload").exception("Erro ao parsear arquivo")
+        raise HTTPException(status_code=400, detail="Falha ao ler arquivo. Verifique o formato.")
 
     # Normalize column names
     df.columns = [c.strip().lower().replace(" ", "_") for c in df.columns]

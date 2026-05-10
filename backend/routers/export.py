@@ -156,16 +156,17 @@ async def _export_convenios_pdf(municipio_id, esfera, db):
 <thead><tr><th>Esfera</th><th>Numero</th><th>Orgao</th><th>Objeto</th><th>Situacao</th><th class="right">Valor</th><th>Vigencia</th></tr></thead>
 <tbody>
 """
+    from html import escape as _esc
     for r in rows:
         cls = "fed" if r["esfera"] == "Federal" else "est"
         html += f"""<tr>
-<td><span class="badge {cls}">{r['esfera']}</span></td>
-<td>{r['nr'] or '-'}</td>
-<td>{r['orgao']}</td>
-<td>{r['objeto']}</td>
-<td>{r['situacao']}</td>
+<td><span class="badge {cls}">{_esc(r['esfera'])}</span></td>
+<td>{_esc(str(r['nr'] or '-'))}</td>
+<td>{_esc(str(r['orgao']))}</td>
+<td>{_esc(str(r['objeto']))}</td>
+<td>{_esc(str(r['situacao']))}</td>
 <td class="right">R$ {r['valor']:,.2f}</td>
-<td>{r['vigencia']}</td>
+<td>{_esc(str(r['vigencia']))}</td>
 </tr>
 """
     html += "</tbody></table></body></html>"
