@@ -88,7 +88,10 @@
       "Bash(tail -40 /tmp/claude/C--CONVPREF/aa75af0d-97a3-4213-8f80-125e69785c9a/tasks/bjjze7f1t.output 2>/dev/null || tail -40 \"C:/Users/mathe/AppData/Local/Temp/claude/C--CONVPREF/aa75af0d-97a3-4213-8f80-125e69785c9a/tasks/bjjze7f1t.output\")",
       "PowerShell($f = \"C:/Users/mathe/AppData/Local/Temp/claude/C--CONVPREF/aa75af0d-97a3-4213-8f80-125e69785c9a/tasks/bjjze7f1t.output\"; \\(Get-Item $f\\).Length; Get-Content $f -Raw)",
       "Bash(git remote *)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash(npx vercel *)",
+      "Read(//c/Users/mathe/.vercel/**)",
+      "Bash(curl -s -H \"Authorization: Bearer $\\(cat ~/.vercel/auth.json)"
     ]
   }
 }

@@ -173,18 +173,19 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
   const selectedMunicipioId = searchParams.get("municipio_id") || "";
 
   useEffect(() => {
-    const storedUser = localStorage.getItem("pacta_user");
-    if (storedUser) {
-      try {
-        setUser(JSON.parse(storedUser));
-      } catch {
-        /* ignore */
-      }
-    }
-    const token = localStorage.getItem("pacta_token");
-    if (!token) {
-      router.push("/login");
-    }
+    // Verifica sessao via /auth/me (cookie httpOnly ou Bearer)
+    api
+      .get<User & { must_change_password?: boolean }>("/auth/me")
+      .then((res) => {
+        setUser(res.data);
+        localStorage.setItem("pacta_user", JSON.stringify(res.data));
+        if (res.data.must_change_password) {
+          router.replace("/change-password?first=1");
+        }
+      })
+      .catch(() => {
+        // 401 e tratado pelo interceptor (tenta refresh + redireciona)
+      });
   }, [router]);
 
   useEffect(() => {
@@ -211,7 +212,12 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
     [pathname, router, searchParams]
   );
 
-  const handleLogout = useCallback(() => {
+  const handleLogout = useCallback(async () => {
+    try {
+      await api.post("/auth/logout");
+    } catch {
+      /* ignore */
+    }
     localStorage.removeItem("pacta_token");
     localStorage.removeItem("pacta_user");
     router.push("/login");

@@ -4,6 +4,7 @@ export interface User {
   name: string;
   role: string;
   active: boolean;
+  must_change_password?: boolean;
 }
 
 export interface Municipio {

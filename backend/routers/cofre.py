@@ -18,6 +18,7 @@ from models.cofre import CofreSenha
 from models.user import User
 from services.auth import get_current_user
 from services import crypto
+from services.audit import log_event
 
 router = APIRouter(prefix="/api/cofre", tags=["cofre"])
 logger = logging.getLogger("cofre.audit")
@@ -105,10 +106,10 @@ async def reveal_senha(
     item = await db.get(CofreSenha, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Senha nao encontrada")
-    ip = request.client.host if request.client else "?"
-    logger.warning(
-        "COFRE_REVEAL user_id=%s email=%s item_id=%s sistema=%s ip=%s",
-        user.id, user.email, item.id, item.sistema, ip,
+    await log_event(
+        db, action="cofre.reveal", user=user, request=request,
+        target_type="cofre_senha", target_id=item.id,
+        details={"sistema": item.sistema, "municipio_id": item.municipio_id},
     )
     return {"senha": crypto.decrypt(item.senha_encrypted) if item.senha_encrypted else ""}
 
@@ -116,6 +117,7 @@ async def reveal_senha(
 @router.post("", response_model=CofreResponse)
 async def create_senha(
     data: CofreCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -133,6 +135,11 @@ async def create_senha(
     db.add(item)
     await db.commit()
     await db.refresh(item)
+    await log_event(
+        db, action="cofre.create", user=user, request=request,
+        target_type="cofre_senha", target_id=item.id,
+        details={"sistema": item.sistema, "municipio_id": item.municipio_id},
+    )
     return _to_response(item)
 
 
@@ -140,6 +147,7 @@ async def create_senha(
 async def update_senha(
     item_id: int,
     data: CofreUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -149,7 +157,8 @@ async def update_senha(
         raise HTTPException(status_code=404, detail="Senha nao encontrada")
 
     fields = data.model_dump(exclude_unset=True)
-    if "senha" in fields:
+    senha_changed = "senha" in fields
+    if senha_changed:
         senha = fields.pop("senha")
         item.senha_encrypted = crypto.encrypt(senha) if senha else None
     for k, v in fields.items():
@@ -158,12 +167,18 @@ async def update_senha(
 
     await db.commit()
     await db.refresh(item)
+    await log_event(
+        db, action="cofre.update", user=user, request=request,
+        target_type="cofre_senha", target_id=item.id,
+        details={"sistema": item.sistema, "senha_changed": senha_changed},
+    )
     return _to_response(item)
 
 
 @router.delete("/{item_id}")
 async def delete_senha(
     item_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -171,6 +186,12 @@ async def delete_senha(
     item = await db.get(CofreSenha, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Senha nao encontrada")
+    sistema = item.sistema
     await db.delete(item)
     await db.commit()
+    await log_event(
+        db, action="cofre.delete", user=user, request=request,
+        target_type="cofre_senha", target_id=item_id,
+        details={"sistema": sistema},
+    )
     return {"status": "deleted"}

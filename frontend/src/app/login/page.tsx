@@ -18,12 +18,25 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const res = await api.post("/auth/login", { email, password });
-      localStorage.setItem("pacta_token", res.data.access_token);
+      // Cookies httpOnly sao setados pelo backend. Mantemos pacta_user para UI.
       localStorage.setItem("pacta_user", JSON.stringify(res.data.user));
+      // Compat: alguns componentes ainda leem token do localStorage
+      if (res.data.access_token) {
+        localStorage.setItem("pacta_token", res.data.access_token);
+      }
       toast.success(`Bem-vindo, ${res.data.user.name}!`);
-      router.push("/dashboard");
-    } catch {
-      toast.error("Email ou senha incorretos");
+      if (res.data.must_change_password) {
+        router.push("/change-password?first=1");
+      } else {
+        router.push("/dashboard");
+      }
+    } catch (e: unknown) {
+      const err = e as { response?: { status?: number; data?: { detail?: string } } };
+      if (err.response?.status === 429) {
+        toast.error("Muitas tentativas. Aguarde 1 minuto.");
+      } else {
+        toast.error(err.response?.data?.detail || "Email ou senha incorretos");
+      }
     } finally {
       setLoading(false);
     }
