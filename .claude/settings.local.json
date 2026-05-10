@@ -115,7 +115,10 @@
       "Bash(curl -s -o /dev/null -w \"Backend: %{http_code}\\\\nFrontend: \" https://pacta-api-production-9c11.up.railway.app/api/health)",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" https://pacta-production.up.railway.app)",
       "Bash(curl -s \"https://pacta-api-production-9c11.up.railway.app/api/health\")",
-      "Bash(curl -s -w \"\\\\nHTTP %{http_code}\\\\n\" https://pacta-api-production-9c11.up.railway.app/api/health)"
+      "Bash(curl -s -w \"\\\\nHTTP %{http_code}\\\\n\" https://pacta-api-production-9c11.up.railway.app/api/health)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" https://pacta-production.up.railway.app)",
+      "Bash(curl -s -w \"\\\\nHTTP %{http_code}\\\\n\" https://pacta-production.up.railway.app/)",
+      "Bash(curl -s -X POST https://pacta-api-production-9c11.up.railway.app/api/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"admin@pacta.com.br\",\"password\":\"HcmIBr59x1v53s\"}' -w '\\\\nHTTP %{http_code}\\\\n')"
     ]
   }
 }
