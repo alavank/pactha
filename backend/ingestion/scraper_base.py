@@ -41,15 +41,28 @@ class ScraperBase(ABC):
     uses_govbr: bool = False
 
     async def _fetch_one(self, key: str) -> list[dict]:
-        async with httpx.AsyncClient(timeout=30) as client:
-            r = await client.get(
-                f"{self.api_url}/internal/secrets/{key}",
-                headers={"X-Service-Token": self.token},
-            )
-            if r.status_code in (403, 404):
-                return []
-            r.raise_for_status()
-            return r.json().get("secrets", [])
+        # Retry para lidar com connection drops do Neon (3 tentativas)
+        for attempt in range(3):
+            try:
+                async with httpx.AsyncClient(timeout=30) as client:
+                    r = await client.get(
+                        f"{self.api_url}/internal/secrets/{key}",
+                        headers={"X-Service-Token": self.token},
+                    )
+                if r.status_code in (403, 404):
+                    return []
+                if r.status_code >= 500:
+                    if attempt < 2:
+                        await asyncio.sleep(2)
+                        continue
+                r.raise_for_status()
+                return r.json().get("secrets", [])
+            except (httpx.HTTPStatusError, httpx.TransportError):
+                if attempt < 2:
+                    await asyncio.sleep(2)
+                    continue
+                raise
+        return []
 
     async def fetch_credentials(self) -> list[dict]:
         """Busca credenciais especificas + fallback gov.br se aplicavel."""

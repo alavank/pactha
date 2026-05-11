@@ -149,7 +149,18 @@
       "Bash(python -m playwright install chromium)",
       "Bash(PACTA_API_URL=https://pacta-api-production-9c11.up.railway.app/api PACTA_SERVICE_TOKEN=pacta_st_R6xEbM55tPOr5qdtnVd5H-QUybAk0YlIXOokziq4G-d9CdAqlAlxPQ python ingestion/simec_scraper.py)",
       "Bash(curl -s -X POST https://pacta-api-production-9c11.up.railway.app/api/auth/login -H \"Content-Type: application/json\" -d '{\"email\":\"admin@pacta.com.br\",\"password\":\"Pacta@2026Admin\"}')",
-      "Bash(npx --prefix frontend tsc --project frontend --noEmit)"
+      "Bash(npx --prefix frontend tsc --project frontend --noEmit)",
+      "Bash(curl -s -H 'X-Service-Token: pacta_st_EFH-1eHQ01ppkymwY1yZzJLo2mv_dd03NUqZmPWGerkLiUnktLc48g' https://pacta-api-production-9c11.up.railway.app/api/internal/secrets/govbr)",
+      "Bash(PACTA_API_URL=https://pacta-api-production-9c11.up.railway.app/api PACTA_SERVICE_TOKEN=pacta_st_EFH-1eHQ01ppkymwY1yZzJLo2mv_dd03NUqZmPWGerkLiUnktLc48g python ingestion/simec_scraper.py)",
+      "Bash(python -c \"from playwright_stealth import stealth_async; print\\('stealth ok'\\)\")",
+      "Bash(python -c \"import playwright_stealth; print\\(dir\\(playwright_stealth\\)\\)\")",
+      "Bash(python -c \"from playwright_stealth import Stealth; print\\(Stealth.__doc__\\)\")",
+      "Bash(python -m patchright install chromium)",
+      "Bash(python -c \"from patchright.async_api import async_playwright; print\\('patchright ok'\\)\")",
+      "Bash(python test_patchright_govbr.py)",
+      "Bash(python test_govbr_http.py)",
+      "Bash(python -c \"import certifi; print\\(certifi.where\\(\\)\\)\")",
+      "Bash(curl -s \"https://pacta-api-production-9c11.up.railway.app/openapi.json\")"
     ]
   }
 }

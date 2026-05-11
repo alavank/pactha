@@ -50,103 +50,61 @@ class SIMECScraper(ScraperBase):
             logger.warning("Credencial SIMEC sem usuario/senha")
             return []
 
+        from ingestion.stealth_helper import (
+            create_stealth_browser_context, human_type, human_click, human_wait,
+        )
+
         items = []
         async with async_playwright() as pw:
-            browser = await pw.chromium.launch(headless=True)
-            ctx = await browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-                viewport={"width": 1366, "height": 768},
-                locale="pt-BR",
-            )
+            browser, ctx = await create_stealth_browser_context(pw)
             page = await ctx.new_page()
 
-            # 1. Login via gov.br SSO (SIMEC moderno usa sso gov.br)
+            # 1. Login via gov.br SSO com STEALTH + comportamento humanizado
             try:
                 await page.goto("https://simec.mec.gov.br/login.php", timeout=30_000)
                 await page.wait_for_load_state("networkidle", timeout=10_000)
+                await human_wait(1.5, 3.0)
 
-                # Clicar no botao "gov.br" / "Entrar com gov.br"
+                # Click humanizado no botao gov.br
                 clicked = False
-                for sel in ['a:has-text("gov.br")', 'button:has-text("gov.br")', 'a[href*="acesso.gov.br"]', 'a[href*="sso.acesso.gov.br"]']:
+                for sel in ['a:has-text("gov.br")', 'a[href*="acesso.gov.br"]']:
                     try:
-                        await page.click(sel, timeout=3_000)
+                        await human_click(page, sel)
                         clicked = True
                         logger.info(f"  Click gov.br via {sel}")
                         break
                     except Exception:
                         continue
-
                 if not clicked:
-                    logger.error("Botao gov.br nao clicavel - portal pode ter mudado")
-                    await browser.close()
-                    return []
+                    raise RuntimeError("Botao gov.br nao encontrado")
 
-                # Aguarda redirect para gov.br
-                await page.wait_for_url(lambda u: "acesso.gov.br" in u or "sso.acesso.gov.br" in u, timeout=20_000)
-                logger.info(f"  Redirecionado para: {page.url}")
+                await page.wait_for_url(lambda u: "acesso.gov.br" in u, timeout=20_000)
+                await page.wait_for_load_state("networkidle", timeout=10_000)
+                await human_wait(2, 4)
+                logger.info(f"  Redirecionado: {page.url}")
 
-                # Login gov.br: passo 1 = CPF (input pode ser tel/text/numeric)
-                # Aguardar bem mais e tentar varios seletores
-                await asyncio.sleep(2)  # gov.br tem JS pesado
-                cpf_filled = False
-                for sel in ['input#accountId', 'input[name="accountId"]', 'input[type="tel"]', 'input[placeholder*="CPF"]']:
-                    try:
-                        el = await page.wait_for_selector(sel, timeout=8_000, state="visible")
-                        if el:
-                            await el.click()
-                            await el.fill(cpf)
-                            cpf_filled = True
-                            logger.info(f"  CPF preenchido em {sel}")
-                            break
-                    except Exception:
-                        continue
-                if not cpf_filled:
-                    raise RuntimeError("Campo CPF nao encontrado no SSO gov.br")
+                # Digitacao humana do CPF
+                await human_type(page, 'input#accountId', cpf)
+                logger.info(f"  CPF digitado humanizado")
+                await human_wait(0.5, 1.5)
 
-                await asyncio.sleep(1)
-                # Botao "Continuar" / submit
-                for sel in ['button[type="submit"]', 'button:has-text("Continuar")', 'button:has-text("Avançar")', '#enter']:
-                    try:
-                        await page.click(sel, timeout=3_000)
-                        break
-                    except Exception:
-                        continue
-                await asyncio.sleep(3)
+                # Click humanizado em Continuar
+                await human_click(page, 'button[type="submit"]')
+                await human_wait(3, 5)
 
-                # Passo 2 = pode aparecer tela "Como deseja entrar?" - escolher senha
+                # Caso aparece "Como deseja entrar?" -> escolher senha
                 try:
-                    senha_btn = await page.wait_for_selector(
-                        'a:has-text("senha"), button:has-text("Acessar com senha"), [data-method="password"]',
-                        timeout=5_000,
-                    )
-                    if senha_btn:
-                        await senha_btn.click()
-                        await asyncio.sleep(2)
+                    await human_click(page, 'a:has-text("senha"), button:has-text("senha")')
+                    await human_wait(2, 4)
                 except Exception:
                     pass
 
-                # Passo 3 = senha
-                senha_filled = False
-                for sel in ['input[name="password"]', 'input[type="password"]', 'input#password']:
-                    try:
-                        el = await page.wait_for_selector(sel, timeout=10_000, state="visible")
-                        if el:
-                            await el.fill(senha)
-                            senha_filled = True
-                            logger.info(f"  Senha preenchida em {sel}")
-                            break
-                    except Exception:
-                        continue
-                if not senha_filled:
-                    raise RuntimeError("Campo senha nao encontrado")
+                # Digitar senha
+                await human_type(page, 'input[name="password"]', senha)
+                logger.info(f"  Senha digitada humanizado")
+                await human_wait(0.5, 1.5)
 
-                # Submit final
-                for sel in ['button[type="submit"]', 'button:has-text("Entrar")', '#submit-button']:
-                    try:
-                        await page.click(sel, timeout=3_000)
-                        break
-                    except Exception:
-                        continue
+                await human_click(page, 'button[type="submit"]')
 
                 # Aguardar volta ao SIMEC apos SSO
                 await page.wait_for_url(lambda u: "simec.mec.gov.br" in u, timeout=30_000)

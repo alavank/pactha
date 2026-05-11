@@ -41,6 +41,7 @@ const NAV_ITEMS = [
   { href: "/dashboard/prestacao", label: "Prestacao", icon: ClipboardCheck },
   { href: "/dashboard/politica", label: "Politica", icon: BarChart3 },
   { href: "/dashboard/cofre", label: "Cofre de Senhas", icon: KeyRound },
+  { href: "/dashboard/sessoes", label: "Sessoes (gov.br)", icon: KeyRound },
   { href: "/dashboard/fontes", label: "Fontes de Dados", icon: Database },
   { href: "/dashboard/upload", label: "Upload de Dados", icon: UploadCloud },
 ];
