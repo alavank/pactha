@@ -11,6 +11,9 @@ from models.ingestion_log import IngestionLog
 from models.cofre import CofreSenha
 from models.audit import AuditLog
 from models.service_token import ServiceToken
+from models.camara import CamaraDespesa, CamaraProposicao, CamaraVotacao, EmendaCamara
+from models.dou import DouPublicacao
+from models.compliance import SancaoCEIS, ProgramaFederal
 
 __all__ = [
     "User", "Municipio", "ConvenioFederal", "ConvenioEstadual",
@@ -18,4 +21,6 @@ __all__ = [
     "PrestacaoContas", "PrestacaoDocumento", "PlanoTrabalho", "NotaFiscal",
     "DadosEleitorais", "IngestionLog",
     "CofreSenha", "AuditLog", "ServiceToken",
+    "CamaraDespesa", "CamaraProposicao", "CamaraVotacao", "EmendaCamara",
+    "DouPublicacao", "SancaoCEIS", "ProgramaFederal",
 ]
