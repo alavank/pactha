@@ -80,6 +80,17 @@ def extract_programa_estadual(objeto):
     return None
 
 
+def is_institucional_keyword(name):
+    """Detecta se o nome extraido contem keyword institucional.
+    Usado para padronizar capitalizacao quando insere parlamentar novo."""
+    if not name: return False
+    nu = name.upper()
+    return any(k in nu for k in [
+        "BANCADA", "COMISS", "BLOCO", "RELATOR", "PROGRAMA",
+        "DOACAO", "RESOLUC", "FETAEMG", "FAEMG",
+    ])
+
+
 PATTERNS = [
     # Pattern principal: tudo entre "TRANSFERENCIA ESPECIAL:" e "- INDICACAO:" (ou final)
     re.compile(

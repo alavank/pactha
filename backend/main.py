@@ -1,14 +1,30 @@
 import os
+import logging
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import auth, municipios, convenios, editais, prestacao, politica, export, cofre, fontes, upload, relatorio_monitoramento, levantamento_parlamentar, internal, service_tokens, prestacao_avancada, session_capture, export_relatorios, ia, fontes_extras, prestacao_calculo, prestacao_calculo
+from routers import auth, municipios, convenios, editais, prestacao, politica, export, cofre, fontes, upload, relatorio_monitoramento, levantamento_parlamentar, internal, service_tokens, prestacao_avancada, session_capture, export_relatorios, ia, fontes_extras, prestacao_calculo
 from services.security_headers import SecurityHeadersMiddleware
+from services.startup import run_migrations
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] [%(name)s] %(message)s")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Roda migrations idempotentes no boot (ANTES das rotas atenderem).
+    Garante que seed institucional + tabelas estao sempre atualizadas."""
+    logging.getLogger("startup").info("=== PACTA boot - rodando migrations ===")
+    run_migrations()
+    yield
+
 
 app = FastAPI(
     title="PACTA API",
     description="Sistema de Monitoramento de Convenios e Transferencias Governamentais",
     version="1.0.0",
     redirect_slashes=False,
+    lifespan=lifespan,
 )
 
 # CORS: localhost + production frontend URL (whitelist explicita)
@@ -56,7 +72,6 @@ app.include_router(export_relatorios.router)
 app.include_router(prestacao_calculo.router)
 app.include_router(ia.router)
 app.include_router(fontes_extras.router)
-app.include_router(prestacao_calculo.router)
 
 
 @app.get("/api/health")
