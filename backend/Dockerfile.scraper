@@ -15,6 +15,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN playwright install --with-deps chromium
 
 COPY ingestion/ ./ingestion/
+COPY models/ ./models/
+COPY services/ ./services/
+COPY schemas/ ./schemas/
+COPY config.py database.py ./
 
-# Comando padrao (override por env CMD_OVERRIDE)
-CMD ["python", "ingestion/fns_scraper.py"]
+# Orquestrador roda os pipelines do tier configurado via CRON_TIER
+# (daily/weekly/monthly/full). Default: weekly.
+CMD ["python", "-u", "ingestion/run_all.py"]
