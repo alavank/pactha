@@ -111,17 +111,39 @@ export default function ConveniosPage() {
 
   const handleExportPendencias = () => {
     if (!municipioId) return;
+    // Endpoint novo (frente F): pendencias com aba Resumo + highlight visual
+    // (vermelho para vencidas, salmao para vigencia <=30 dias)
+    downloadAuth(`/export-relatorios/pendencias-xlsx?municipio_id=${municipioId}`,
+                 `Pendencias_${municipioId}.xlsx`);
+  };
+
+  // Helper para downloads autenticados (substitui o boilerplate fetch+blob+anchor)
+  const downloadAuth = (path: string, filename: string) => {
     const token = localStorage.getItem("pacta_token");
-    const url = `${api.defaults.baseURL}/export/pendencias?municipio_id=${municipioId}`;
-    fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+    fetch(`${api.defaults.baseURL}${path}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
       .then((r) => r.blob())
       .then((blob) => {
         const blobUrl = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = blobUrl;
-        a.download = "pendencias_pacta.xlsx";
+        a.download = filename;
         a.click();
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
       });
+  };
+
+  const handleRMWord = () => {
+    if (!municipioId) return;
+    downloadAuth(`/export-relatorios/rm-word?municipio_id=${municipioId}`,
+                 `RM_${municipioId}.docx`);
+  };
+
+  const handleRMPdf = () => {
+    if (!municipioId) return;
+    downloadAuth(`/export-relatorios/rm-pdf?municipio_id=${municipioId}`,
+                 `RM_${municipioId}.pdf`);
   };
 
   if (!municipioId) {
@@ -181,6 +203,14 @@ export default function ConveniosPage() {
           >
             <Download className="mr-2 size-4" />
             Levantamento por Parlamentar
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleRMWord}>
+            <Download className="mr-2 size-4" />
+            RM Word
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleRMPdf}>
+            <Download className="mr-2 size-4" />
+            RM PDF
           </Button>
           <Button variant="outline" size="sm" onClick={handleExportPendencias}>
             <Download className="mr-2 size-4" />
