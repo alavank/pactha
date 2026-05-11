@@ -45,6 +45,10 @@ const NAV_ITEMS = [
   { href: "/dashboard/upload", label: "Upload de Dados", icon: UploadCloud },
 ];
 
+const ADMIN_NAV_ITEMS = [
+  { href: "/dashboard/service-tokens", label: "Service Tokens", icon: KeyRound },
+];
+
 function SidebarContent({
   pathname,
   municipios,
@@ -131,6 +135,32 @@ function SidebarContent({
             </Link>
           );
         })}
+
+        {user?.role === "admin" && (
+          <>
+            <div className="px-3 mt-4 mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              Administracao
+            </div>
+            {ADMIN_NAV_ITEMS.map((item) => {
+              const isActive = pathname.startsWith(item.href);
+              const Icon = item.icon;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-all ${
+                    isActive
+                      ? "bg-amber-50 text-amber-800 border-l-3 border-amber-700"
+                      : "text-slate-600 hover:bg-slate-50 hover:text-slate-900 border-l-3 border-transparent"
+                  }`}
+                >
+                  <Icon className={`size-4 ${isActive ? "text-amber-700" : "text-slate-500"}`} />
+                  <span className="text-[13px]">{item.label}</span>
+                </Link>
+              );
+            })}
+          </>
+        )}
       </nav>
 
       {/* Footer institucional */}

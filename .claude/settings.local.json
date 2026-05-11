@@ -121,7 +121,15 @@
       "Bash(curl -s -X POST https://pacta-api-production-9c11.up.railway.app/api/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"admin@pacta.com.br\",\"password\":\"HcmIBr59x1v53s\"}' -w '\\\\nHTTP %{http_code}\\\\n')",
       "Bash(python ingestion/run_federal.py)",
       "Bash(python ingestion/dedupe_parlamentares.py)",
-      "Bash(python ingestion/emendas_federais.py)"
+      "Bash(python ingestion/emendas_federais.py)",
+      "Bash(git commit -m 'security: Zero-Trust Credentials - Service Tokens + Cofre integrado *)",
+      "Bash(curl -s -v -X POST https://pacta-api-production-9c11.up.railway.app/api/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"admin@pacta.com.br\",\"password\":\"PactaAdmin2026!Sec\"}')",
+      "Bash(curl -s -X POST https://pacta-api-production-9c11.up.railway.app/api/admin/service-tokens -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwicm9sZSI6ImFkbWluIiwidHlwIjoiYWNjZXNzIiwiaWF0IjoxNzc4NDYyNDYwLCJleHAiOjE3Nzg0NjYwNjAsImp0aSI6Ijk1MWE2YTMzZTFiOTQxYjNiYjk5NzU5MmY5YjdlNTQzIiwiaXNzIjoicGFjdGEtYXBpIn0.OPgHKX4dXPNwOJ5r2u1D6tUAHhfQrK_XqktlUajd2gQ' -H 'Content-Type: application/json' -d '{\"name\":\"fns_scraper\",\"scopes\":[\"secret:read:fns\"],\"description\":\"Scraper FNS - Railway worker isolado\"}')",
+      "Bash(curl -s -w \"\\\\nHTTP %{http_code}\\\\n\" https://pacta-api-production-9c11.up.railway.app/api/internal/secrets/fns)",
+      "Bash(curl -s -H 'X-Service-Token: invalid_token_xxxxxxxxxxxxxxxx' -w '\\\\nHTTP %{http_code}\\\\n' https://pacta-api-production-9c11.up.railway.app/api/internal/secrets/fns)",
+      "Bash(curl -s -H 'X-Service-Token: pacta_st_DGIXwBTi6-195obkRE7qBupb2N2TFkEpBwM7PBdgqBNFqWj3ph1h2A' -w '\\\\nHTTP %{http_code}\\\\n' https://pacta-api-production-9c11.up.railway.app/api/internal/secrets/simec)",
+      "Bash(curl -s -H 'X-Service-Token: pacta_st_DGIXwBTi6-195obkRE7qBupb2N2TFkEpBwM7PBdgqBNFqWj3ph1h2A' -w '\\\\nHTTP %{http_code}\\\\n' https://pacta-api-production-9c11.up.railway.app/api/internal/secrets/fns)",
+      "Bash(git commit -m 'feat: 4 scrapers \\(FNS/SIMEC/SISMOB/SUAS\\) + UI Service Tokens *)"
     ]
   }
 }
