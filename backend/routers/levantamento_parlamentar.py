@@ -90,6 +90,15 @@ async def gerar_levantamento_parlamentar(
     if not mun:
         raise HTTPException(status_code=404, detail="Municipio nao encontrado")
 
+    # Default: ultimos 5 anos completos (corresponde ao escopo Freitas 2022-2026).
+    # Sem isso, a API trazia indicacoes 2009-2018 (ex.: "RELATOR GERAL" R$ 4M/2018)
+    # que polui o relatorio.
+    today_year = date.today().year
+    if ano_inicio is None:
+        ano_inicio = today_year - 4
+    if ano_fim is None:
+        ano_fim = today_year
+
     # Carregar todos os convenios
     fed_q = await db.execute(
         select(ConvenioFederal).where(ConvenioFederal.municipio_id == municipio_id)
@@ -252,12 +261,7 @@ async def gerar_levantamento_parlamentar(
     )
     soma_total = sum(i["valor"] for i in indicacoes)
 
-    # Periodo
-    anos_validos = [i["ano"] for i in indicacoes if isinstance(i["ano"], int)]
-    if ano_inicio is None:
-        ano_inicio = min(anos_validos) if anos_validos else 2022
-    if ano_fim is None:
-        ano_fim = max(anos_validos) if anos_validos else date.today().year
+    # Periodo (ja garantido nao-None acima)
     periodo = f"{ano_inicio} - {ano_fim}"
 
     today = date.today()

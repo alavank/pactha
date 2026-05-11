@@ -101,6 +101,143 @@ def fetch_convenios(client, ibge: str, ano_inicial=2015, ano_final=2026):
     return out
 
 
+def fetch_emendas(client, ibge: str, ano_inicial=2020, ano_final=2026):
+    """Lista emendas parlamentares federais para o municipio (via Portal CGU).
+
+    Endpoint: /emendas?codigoMunicipioBeneficiario=...&ano=...
+    Retorna nome do parlamentar autor + ID da emenda + valor empenhado.
+    Permite linkar parlamentar ao convenio via raw_data['id_pt'] ou nrEmenda.
+    """
+    out = []
+    for ano in range(ano_inicial, ano_final + 1):
+        for pag in range(1, 100):
+            try:
+                r = client.get(
+                    f"{BASE}/emendas",
+                    params={
+                        "codigoMunicipioBeneficiario": ibge,
+                        "ano": ano,
+                        "pagina": pag,
+                    },
+                )
+            except Exception as e:
+                logger.error(f"  emendas {ano} pag {pag}: {e}")
+                break
+            if r.status_code == 404:
+                break
+            if r.status_code != 200:
+                logger.warning(f"  emendas HTTP {r.status_code} {ano}/{pag}: {r.text[:200]}")
+                break
+            data = r.json() or []
+            if not data:
+                break
+            out.extend(data)
+            time.sleep(0.4)
+    return out
+
+
+def link_emendas_to_convenios(conn, mun_id: int, emendas: list[dict], ibge: str | None = None):
+    """Cria registros em `emendas` linkando convenios federais ao parlamentar.
+
+    Estrategia de match (apenas emendas REAIS do municipio):
+    1. id_proposta/id_pt presente no raw_data do convenio do municipio
+    2. nr_convenio textual em algum campo da emenda
+    3. (opcional) IBGE do beneficiario igual ao do municipio alvo
+
+    Emendas que NAO matcham nenhum convenio do municipio sao DESCARTADAS.
+    Sem isso, o endpoint /emendas da CGU retorna autores de emendas que
+    beneficiaram outros municipios e contaminava o levantamento (ex.: 2250
+    emendas com 590 parlamentares falsos em Piracema).
+    """
+    if not emendas:
+        return 0
+
+    # Mapa convenio: id_pt -> (id, nr_convenio)
+    rows = conn.execute(text("""
+        SELECT id, nr_convenio, COALESCE(raw_data->>'id_pt', '') as id_pt
+        FROM convenios_federal WHERE municipio_id = :m
+    """), {"m": mun_id}).fetchall()
+    by_id_pt = {r[2]: (r[0], r[1]) for r in rows if r[2]}
+    by_nr = {r[1]: r[0] for r in rows if r[1]}
+
+    inserted = 0
+    descartados = 0
+    parl_cache: dict[str, int] = {}
+    for em in emendas:
+        # Achar convenio ANTES de criar parlamentar (evita poluir tabela)
+        conv_id = None
+        id_pt_raw = em.get("idConvenio")
+        if not id_pt_raw and isinstance(em.get("convenio"), dict):
+            id_pt_raw = em["convenio"].get("id")
+        id_pt = str(id_pt_raw) if id_pt_raw else ""
+        if id_pt and id_pt in by_id_pt:
+            conv_id = by_id_pt[id_pt][0]
+        elif em.get("numeroConvenio"):
+            nr = str(em.get("numeroConvenio"))[:50]
+            if nr in by_nr:
+                conv_id = by_nr[nr]
+
+        # Validacao adicional: se a emenda traz IBGE do beneficiario, exigir
+        # que bata com o do municipio alvo. Sem isso, a CGU as vezes retorna
+        # emendas de outros municipios (3164704 -> retorna 3151206 por engano).
+        if ibge and not conv_id:
+            ibge_em = None
+            for k in ("codigoMunicipioBeneficiario", "ibgeBeneficiario"):
+                if em.get(k):
+                    ibge_em = str(em[k]); break
+            if ibge_em and ibge_em != ibge:
+                descartados += 1; continue
+
+        # Sem conv_id E sem nome do parlamentar conhecido, descarta
+        if not conv_id:
+            descartados += 1
+            continue
+
+        nome_parl = (
+            em.get("nomeAutor")
+            or (em.get("autor", {}).get("nome") if isinstance(em.get("autor"), dict) else em.get("autor"))
+            or em.get("nomeParlamentar")
+        )
+        if not nome_parl:
+            descartados += 1
+            continue
+        nome_parl = str(nome_parl).strip().upper()[:300]
+        nr_emenda = str(em.get("numeroEmenda") or em.get("codigoEmenda") or "")[:100] or None
+        valor = parse_dec(em.get("valorEmpenhado") or em.get("valor") or em.get("valorPago")) or 0
+        ano = em.get("ano")
+
+        if nome_parl in parl_cache:
+            parl_id = parl_cache[nome_parl]
+        else:
+            r = conn.execute(text("""
+                SELECT id FROM parlamentares
+                WHERE upper(nome) = :n LIMIT 1
+            """), {"n": nome_parl}).first()
+            if r:
+                parl_id = r[0]
+            else:
+                ins = conn.execute(text("""
+                    INSERT INTO parlamentares (nome, esfera, uf)
+                    VALUES (:n, 'federal', 'MG') RETURNING id
+                """), {"n": nome_parl})
+                parl_id = ins.scalar()
+            parl_cache[nome_parl] = parl_id
+
+        conn.execute(text("""
+            INSERT INTO emendas (
+                nr_emenda, parlamentar_id, municipio_id, convenio_federal_id,
+                valor, tipo, esfera, ano
+            ) VALUES (:ne, :p, :m, :cf, :v, 'Indicacao Parlamentar', 'federal', :a)
+        """), {
+            "ne": nr_emenda, "p": parl_id, "m": mun_id, "cf": conv_id,
+            "v": float(valor), "a": int(ano) if ano else None,
+        })
+        inserted += 1
+    if descartados:
+        logger.info(f"  ({descartados} emendas descartadas - nao matcham convenio do municipio)")
+    return inserted
+
+
 def upsert_convenio(conn, mun_id: int, c: dict):
     """Insere ou atualiza convenio_federal."""
     dim = c.get("dimConvenio") or {}
@@ -189,13 +326,59 @@ def main():
                     orgaos[o] = orgaos.get(o, 0) + 1
                 logger.info(f"  Orgaos: {orgaos}")
 
-                # Filtrar SO os que realmente sao do municipio (API as vezes ignora filtro)
-                convs_validos = [
-                    c for c in convs
-                    if (c.get("municipioConvenente") or {}).get("codigoIBGE") == ibge
-                ]
+                # Filtrar SO os que realmente sao do municipio.
+                # ATENCAO: a CGU TEM BUG DE DADOS. Para Piracema (IBGE 3151206)
+                # ela retorna convenios cujo convenente e "MUNICIPIO DE PIRAPORA"
+                # mesmo com municipioConvenente.codigoIBGE=3151206 no JSON.
+                # Logo, NAO podemos confiar no IBGE da CGU - precisamos cruzar
+                # com nome do convenente E objeto.
+                #
+                # Regra:
+                # 1. Se convenente OU objeto menciona claramente outro municipio
+                #    conhecido -> descarta.
+                # 2. Se convenente OU objeto menciona o nome do municipio alvo -> aceita.
+                # 3. Fallback (sem nome no convenente): aceita se IBGE bate
+                #    e convenente nao for "Municipio de X" diferente.
+                nome_norm = (nome or "").upper().strip()
+                # Nomes de outros municipios MG conhecidos por causar colisao
+                # com IBGE proximo (lexicografico). Sao apenas pistas para descarte.
+                CONFLITOS = ["PIRAPORA", "PIRAPETINGA", "PIRAJUBA", "PIRANGA",
+                             "PIRANGUCU", "PIRANGUINHO", "PIRAUBA", "PIRAJUI"]
+                # Remover o proprio nome alvo dos conflitos
+                CONFLITOS = [c for c in CONFLITOS if c != nome_norm]
+
+                def is_valid(c):
+                    conv_nome = ((c.get("convenente") or {}).get("nome") or "").upper()
+                    objeto = ((c.get("dimConvenio") or {}).get("objeto") or "").upper()
+                    haystack = f"{conv_nome} {objeto}"
+
+                    # 1. Aceita explicitamente se mencionar o municipio alvo
+                    if nome_norm and nome_norm in haystack:
+                        return True
+
+                    # 2. Descarta se mencionar outro municipio MG conhecido
+                    for outro in CONFLITOS:
+                        if outro in haystack:
+                            return False
+
+                    # 3. Sem pista: aceita se IBGE bate E convenente nao for
+                    # "MUNICIPIO DE X" sem mencionar nome alvo (caso "Atletico X"
+                    # ou "Associacao Y" nao deveria entrar sem evidencia).
+                    mc = c.get("municipioConvenente") or {}
+                    if mc.get("codigoIBGE") == ibge:
+                        if conv_nome.startswith("MUNICIPIO DE "):
+                            # Convenente Municipio diferente - se nao mencionou alvo,
+                            # melhor descartar para evitar contaminacao.
+                            return False
+                        return True
+                    return False
+
+                convs_validos = [c for c in convs if is_valid(c)]
                 if len(convs_validos) != len(convs):
-                    logger.info(f"  {len(convs) - len(convs_validos)} convenios descartados (IBGE diferente)")
+                    logger.info(
+                        f"  {len(convs) - len(convs_validos)} convenios descartados "
+                        f"(municipio diferente - bug CGU cross-IBGE)"
+                    )
 
                 with engine.begin() as conn:
                     for c in convs_validos:
@@ -204,6 +387,21 @@ def main():
                             total_inseridos += 1
                         except Exception as e:
                             logger.error(f"  Falha upsert {c.get('id')}: {e}")
+
+                # Coletar emendas e linkar ao parlamentar
+                try:
+                    emendas = fetch_emendas(cli, ibge, ano_inicial=2020, ano_final=2026)
+                    if emendas:
+                        with engine.begin() as conn:
+                            # Limpar emendas federais previas DESTE municipio antes de reinserir
+                            conn.execute(text(
+                                "DELETE FROM emendas WHERE municipio_id=:m AND esfera='federal' "
+                                "AND tipo='Indicacao Parlamentar'"
+                            ), {"m": mid})
+                            n = link_emendas_to_convenios(conn, mid, emendas, ibge=ibge)
+                            logger.info(f"  + {n} emendas parlamentares linkadas")
+                except Exception as e:
+                    logger.error(f"  Falha emendas {nome}: {e}")
             except Exception as e:
                 logger.error(f"  ERRO {nome}: {e}")
             time.sleep(1)

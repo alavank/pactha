@@ -104,6 +104,26 @@ interface FuncaoItem {
   count: number;
 }
 
+interface RelatorioEleitoralEntry {
+  parlamentar_id: number;
+  nome: string;
+  partido: string;
+  cargo: string;
+  eleito: boolean;
+  votos: number;
+  qtd_emendas: number;
+  valor_emendas: number;
+  reais_por_voto: number;
+}
+
+interface RelatorioEleitoral {
+  municipio_id: number;
+  ano_eleicao: number;
+  periodo_emenda: string;
+  federal: RelatorioEleitoralEntry[];
+  estadual: RelatorioEleitoralEntry[];
+}
+
 const PIE_COLORS = ["#4f46e5", "#06b6d4", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#84cc16"];
 
 export default function PoliticaPage() {
@@ -122,6 +142,8 @@ export default function PoliticaPage() {
   const [loadingCruz, setLoadingCruz] = useState(true);
   const [loadingFuncoes, setLoadingFuncoes] = useState(true);
   const [anoFilter, setAnoFilter] = useState("todos");
+  const [relatorioEleitoral, setRelatorioEleitoral] = useState<RelatorioEleitoral | null>(null);
+  const [loadingEleitoral, setLoadingEleitoral] = useState(true);
 
   const anosDisponiveis = Array.from({ length: 20 }, (_, i) => 2026 - i);
 
@@ -169,6 +191,19 @@ export default function PoliticaPage() {
       .catch(() => {})
       .finally(() => setLoadingCruz(false));
   }, [municipioId, anoFilter]);
+
+  // Frente 2: Relatorio Eleitoral (Top 10 mais votados + emendas no periodo)
+  useEffect(() => {
+    if (!municipioId) return;
+    setLoadingEleitoral(true);
+    api
+      .get<RelatorioEleitoral>("/politica/relatorio-eleitoral", {
+        params: { municipio_id: municipioId, limit: 10 },
+      })
+      .then((res) => setRelatorioEleitoral(res.data))
+      .catch(() => setRelatorioEleitoral(null))
+      .finally(() => setLoadingEleitoral(false));
+  }, [municipioId]);
 
   useEffect(() => {
     if (!municipioId) return;
@@ -226,6 +261,7 @@ export default function PoliticaPage() {
           <TabsTrigger value="benchmark">Benchmark</TabsTrigger>
           <TabsTrigger value="top">Top Deputados</TabsTrigger>
           <TabsTrigger value="cruzamento">Cruzamento Eleitoral</TabsTrigger>
+          <TabsTrigger value="eleitoral">Top 10 + Emendas</TabsTrigger>
         </TabsList>
 
         {/* Tab 1: Emendas por Deputado */}
@@ -551,6 +587,87 @@ export default function PoliticaPage() {
                     ))}
                   </TableBody>
                 </Table>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="eleitoral" className="mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>
+                Top 10 mais votados + valor de emendas
+                {relatorioEleitoral && (
+                  <span className="ml-2 text-sm text-muted-foreground">
+                    (eleicao {relatorioEleitoral.ano_eleicao}, emendas {relatorioEleitoral.periodo_emenda})
+                  </span>
+                )}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {loadingEleitoral ? (
+                <div className="h-32 animate-pulse rounded bg-gray-100" />
+              ) : !relatorioEleitoral ? (
+                <div className="text-sm text-muted-foreground">
+                  Dados eleitorais ausentes para este municipio. Rode <code>backend/ingestion/tse.py</code>.
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {(["federal", "estadual"] as const).map((esfera) => (
+                    <div key={esfera}>
+                      <h3 className="mb-2 text-sm font-semibold uppercase text-gray-700">
+                        Esfera {esfera}
+                      </h3>
+                      {relatorioEleitoral[esfera].length === 0 ? (
+                        <p className="text-xs text-muted-foreground">Sem dados.</p>
+                      ) : (
+                        <table className="w-full text-sm">
+                          <thead className="bg-gray-50 text-left">
+                            <tr>
+                              <th className="p-2">#</th>
+                              <th className="p-2">Nome</th>
+                              <th className="p-2">Partido</th>
+                              <th className="p-2 text-right">Votos</th>
+                              <th className="p-2 text-right">Qtd Emendas</th>
+                              <th className="p-2 text-right">Valor Emendas</th>
+                              <th className="p-2 text-right">R$/voto</th>
+                              <th className="p-2 text-center">Eleito</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {relatorioEleitoral[esfera].map((p, i) => (
+                              <tr key={p.parlamentar_id}>
+                                <td className="p-2">{i + 1}</td>
+                                <td className="p-2 font-medium">{p.nome}</td>
+                                <td className="p-2">{p.partido || "-"}</td>
+                                <td className="p-2 text-right">
+                                  {p.votos.toLocaleString("pt-BR")}
+                                </td>
+                                <td className="p-2 text-right">{p.qtd_emendas}</td>
+                                <td className="p-2 text-right">
+                                  {p.valor_emendas.toLocaleString("pt-BR", {
+                                    style: "currency",
+                                    currency: "BRL",
+                                  })}
+                                </td>
+                                <td className="p-2 text-right text-xs">
+                                  {p.reais_por_voto
+                                    ? `R$ ${p.reais_por_voto.toLocaleString("pt-BR", {
+                                        maximumFractionDigits: 2,
+                                      })}`
+                                    : "-"}
+                                </td>
+                                <td className="p-2 text-center">
+                                  {p.eleito ? "✓" : "—"}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  ))}
+                </div>
               )}
             </CardContent>
           </Card>

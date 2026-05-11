@@ -126,10 +126,12 @@ export default function EditaisPage() {
 
   const [editais, setEditais] = useState<Edital[]>([]);
   const [acompanhados, setAcompanhados] = useState<Edital[]>([]);
+  const [radarEditais, setRadarEditais] = useState<Edital[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingAcomp, setLoadingAcomp] = useState(true);
+  const [loadingRadar, setLoadingRadar] = useState(true);
   const [toggleLoadingId, setToggleLoadingId] = useState<number | null>(null);
-  const [activeTab, setActiveTab] = useState("abertos");
+  const [activeTab, setActiveTab] = useState("radar");
   const [areaFilter, setAreaFilter] = useState("todos");
   const [anoFilter, setAnoFilter] = useState("todos");
 
@@ -160,10 +162,25 @@ export default function EditaisPage() {
       .finally(() => setLoadingAcomp(false));
   }, [municipioId]);
 
+  const fetchRadar = useCallback(() => {
+    setLoadingRadar(true);
+    api
+      .get<{ total: number; por_area: Record<string, Edital[]> }>("/editais/radar")
+      .then((res) => {
+        // achatar agrupamento por_area em uma lista
+        const flat: Edital[] = [];
+        Object.values(res.data.por_area || {}).forEach((arr) => flat.push(...arr));
+        setRadarEditais(flat);
+      })
+      .catch(() => setRadarEditais([]))
+      .finally(() => setLoadingRadar(false));
+  }, []);
+
   useEffect(() => {
     fetchEditais();
     fetchAcompanhados();
-  }, [fetchEditais, fetchAcompanhados]);
+    fetchRadar();
+  }, [fetchEditais, fetchAcompanhados, fetchRadar]);
 
   const handleToggleAcompanhar = useCallback(
     async (id: number, currentlyAcompanhando: boolean) => {
@@ -241,11 +258,35 @@ export default function EditaisPage() {
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
+          <TabsTrigger value="radar">
+            Radar Freitas ({radarEditais.length})
+          </TabsTrigger>
           <TabsTrigger value="abertos">Editais Abertos</TabsTrigger>
           <TabsTrigger value="acompanhados">
             Acompanhados ({acompanhados.length})
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="radar" className="mt-4">
+          {loadingRadar ? (
+            <SkeletonGrid />
+          ) : radarEditais.length === 0 ? (
+            <div className="flex h-48 items-center justify-center rounded-lg border text-muted-foreground">
+              Nenhum edital no radar Freitas. Rode <code>backend/ingestion/editais.py</code>.
+            </div>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {radarEditais.map((edital) => (
+                <EditalCard
+                  key={edital.id}
+                  edital={edital}
+                  onToggleAcompanhar={handleToggleAcompanhar}
+                  loadingId={toggleLoadingId}
+                />
+              ))}
+            </div>
+          )}
+        </TabsContent>
 
         <TabsContent value="abertos" className="mt-4">
           {loading ? (

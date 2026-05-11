@@ -381,6 +381,36 @@ export default function PrestacaoPage() {
                               >
                                 Gerar Relatorio Prestacao
                               </button>
+                              {/* Frente 1 nova: comparativo NF x plano de trabalho */}
+                              <button
+                                className="text-xs bg-purple-700 hover:bg-purple-800 text-white px-3 py-1.5 rounded"
+                                title="Baixa Excel comparando NFs entregues pelo cliente com itens do plano de trabalho"
+                                onClick={async () => {
+                                  const token = localStorage.getItem("pacta_token");
+                                  const baseURL = (await import("@/lib/api")).default.defaults.baseURL;
+                                  const res = await fetch(
+                                    `${baseURL}/prestacao-calculo/${prest.id}/comparativo-xlsx`,
+                                    { headers: { Authorization: `Bearer ${token}` } }
+                                  );
+                                  if (!res.ok) {
+                                    alert("Erro: faca upload do plano de trabalho e das NFs primeiro");
+                                    return;
+                                  }
+                                  const blob = await res.blob();
+                                  const a = document.createElement("a");
+                                  a.href = URL.createObjectURL(blob);
+                                  a.download = `comparativo_${prest.id}.xlsx`;
+                                  a.click();
+                                }}
+                              >
+                                Comparativo NF x Plano (XLSX)
+                              </button>
+                              <a
+                                className="text-xs bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-1.5 rounded"
+                                href={`/dashboard/prestacao/${prest.id}/calculo`}
+                              >
+                                Upload Plano + NFs
+                              </a>
                             </div>
                           </div>
                         </TableCell>

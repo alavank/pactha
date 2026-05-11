@@ -50,6 +50,33 @@ async def list_editais(
     return responses
 
 
+@router.get("/radar")
+async def list_editais_radar(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Lista apenas editais marcados como [RADAR FREITAS] - foco em areas
+    de interesse dos clientes (Cultura, Esporte, Obras, Saude, Educacao).
+    Equivalente ao processo manual da planilha 5_Editais_Radar.
+    """
+    q = (select(Edital)
+         .where(Edital.resumo.like("%RADAR FREITAS%"))
+         .where(Edital.status == "aberto")
+         .order_by(Edital.dt_encerramento.asc().nullslast()))
+    result = await db.execute(q)
+    editais = result.scalars().all()
+
+    # Agrupar por area para visualizacao
+    from collections import defaultdict
+    by_area = defaultdict(list)
+    for e in editais:
+        by_area[e.area or "Outros"].append(EditalResponse.model_validate(e))
+    return {
+        "total": len(editais),
+        "por_area": {a: [e.model_dump() for e in lst] for a, lst in by_area.items()},
+    }
+
+
 @router.post("", response_model=EditalResponse)
 async def create_edital(
     data: EditalCreate,

@@ -18,6 +18,7 @@ import locale
 from database import get_db
 from models import ConvenioFederal, ConvenioEstadual, Municipio, Emenda, Parlamentar
 from services.auth import get_current_user
+from services.status_resolver import resolve_status
 
 router = APIRouter(prefix="/api/relatorio-monitoramento", tags=["relatorio"])
 
@@ -139,16 +140,7 @@ def render_convenio_federal(c, parlamentar_nome=None):
     parl = parlamentar_nome or c.proponente_nome or "Programa"
     objeto = c.objeto or "-"
 
-    sit_html = c.situacao or "Em andamento"
-    extra_situacao = []
-    if c.dt_empenho:
-        extra_situacao.append(f"Empenhado em {fmt_date(c.dt_empenho)}")
-    if c.dt_desembolso:
-        extra_situacao.append(f"Pagamento realizado em {fmt_date(c.dt_desembolso)}")
-
-    sit_full = sit_html
-    if extra_situacao:
-        sit_full = ". ".join([sit_html] + extra_situacao)
+    sit_full = resolve_status(c, "federal")
 
     html = f"""
     <div class="convenio">
@@ -189,9 +181,7 @@ def render_convenio_estadual(c, parlamentar_nome=None):
     parl = parlamentar_nome or "Verificar"
     objeto = c.objeto or "-"
 
-    sit_full = c.situacao or "Em andamento"
-    if c.dt_desembolso:
-        sit_full += f". Pagamento realizado em {fmt_date(c.dt_desembolso)}"
+    sit_full = resolve_status(c, "estadual")
 
     label = "Convenio" if c.nr_sigcon and "SIGCON" not in (c.fonte or "") else "Proposta"
     if c.resolucao:

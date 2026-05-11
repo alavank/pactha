@@ -1,6 +1,15 @@
 """
 Scraper FNS - Fundo Nacional de Saude.
 Le credenciais via Service Token (Cofre PACTA).
+
+Estrategia em 2 etapas:
+1. Listar pagamentos por ano (tabela com proposta, programa, valor, situacao)
+2. Para cada proposta, abrir o detalhe e raspar o parlamentar autor da indicacao.
+   No portal FNS (consultafns.saude.gov.br) o parlamentar aparece dentro da
+   tela "Detalhamento da Proposta" - campo "Indicador" ou "Parlamentar autor".
+
+A captura de parlamentar e o gap maior do RM Bom Despacho: ~30 das 73
+propostas sao FNS (PAP/MAC/Custeio).
 """
 import os
 import sys
@@ -22,13 +31,55 @@ def parse_money_br(s: str) -> float:
         return 0.0
 
 
+def extract_parlamentar(texto: str) -> str | None:
+    """Extrai nome do parlamentar de um trecho de texto livre."""
+    if not texto:
+        return None
+    t = re.sub(r"\s+", " ", texto).strip()
+    # Padroes encontrados no FNS:
+    # "Indicador: DEPUTADO LUIS TIBE"
+    # "Parlamentar autor: COMISSAO DA SAUDE"
+    # "Autor da Emenda: BANCADA DE MINAS GERAIS"
+    # "Indicacao parlamentar: Newton Cardoso Jr"
+    PATS = [
+        r"(?:Indicador|Parlamentar autor|Autor da Emenda|Indica[cç][aã]o parlamentar|Parlamentar)[:\s]+([^\n;|]+)",
+        r"(?:DEPUTAD[OA]|SENADOR[A]?)\s+([A-ZÁÉÍÓÚÂÊÔÃÕÇ][A-ZÁÉÍÓÚÂÊÔÃÕÇ\s\.]{4,60})",
+        r"BANCADA\s+(?:DE\s+|DO\s+)?(MINAS GERAIS|EBPM|NORDESTE|MG)",
+        r"(COMISS[AÃ]O\s+DA?\s+(?:SA[UÚ]DE|EDUCA[CÇ][AÃ]O|EXTERIOR))",
+        r"BLOCO\s+([A-ZÁÉÍÓÚÂÊÔÃÕÇ][A-ZÁÉÍÓÚÂÊÔÃÕÇ\s]{4,40})",
+        r"RELATOR\s+GERAL",
+    ]
+    for pat in PATS:
+        m = re.search(pat, t, re.IGNORECASE)
+        if m:
+            nome = (m.group(1) if m.lastindex else m.group(0)).strip()
+            # Limpar prefixos
+            nome = re.sub(r"^(DEPUTAD[OA]|SENADOR[A]?|SR\.?|SRA\.?)\s+", "", nome, flags=re.IGNORECASE)
+            nome = nome.rstrip(".,;:")
+            if 3 <= len(nome) <= 80:
+                return nome.upper()
+    # Fallback: se aparece "Programa" como indicador, e indicacao programatica
+    if re.search(r"\b(Programa|Programatic[ao])\b", t, re.IGNORECASE):
+        return "Programa"
+    return None
+
+
 class FNSScraper(ScraperBase):
     automation_key = "fns"
     name = "FNS Scraper"
     uses_govbr = True
 
     async def collect(self, credential: dict) -> list[dict]:
-        """Login no FNS via gov.br + coleta pagamentos."""
+        """Login no FNS + listagem de pagamentos + detalhe de cada proposta
+        para capturar parlamentar autor.
+
+        Suporta 2 modos:
+        - SENHA PLAIN: credential['senha'] e a senha gov.br -> faz login SSO
+        - SESSAO CAPTURADA: credential['senha'] e JSON {format:'cookies_full',cookies:[...]}
+          (vindo do bookmarklet/extension PACTA) -> injeta cookies no contexto
+          Playwright e pula o login (gov.br tem anti-bot que bloqueia
+          login automatizado em Playwright).
+        """
         try:
             from playwright.async_api import async_playwright
         except ImportError:
@@ -36,30 +87,71 @@ class FNSScraper(ScraperBase):
             return []
 
         cpf = credential.get("usuario")
-        senha = credential.get("senha")
-        if not cpf or not senha:
+        senha = credential.get("senha") or ""
+        if not cpf and not senha:
             return []
+
+        # Detectar modo session capturada (JSON cookies_full)
+        import json as jsonlib
+        cookies_session = None
+        if senha.startswith("{") and "cookies_full" in senha[:200]:
+            try:
+                data = jsonlib.loads(senha)
+                if data.get("format") == "cookies_full":
+                    cookies_session = data.get("cookies", [])
+            except Exception:
+                pass
 
         items = []
         async with async_playwright() as pw:
             browser = await pw.chromium.launch(headless=True)
-            ctx = await browser.new_context()
-            page = await ctx.new_page()
+            ctx = await browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            )
 
-            await page.goto("https://consultafns.saude.gov.br", timeout=30_000)
-            try:
-                await page.click("text=Entrar com gov.br", timeout=5_000)
-            except Exception:
-                pass
+            if cookies_session:
+                # MODO SESSAO: injeta cookies e pula login
+                for c in cookies_session:
+                    try:
+                        ck = {
+                            "name": c["name"], "value": c["value"],
+                            "domain": c.get("domain") or "consultafns.saude.gov.br",
+                            "path": c.get("path") or "/",
+                            "secure": bool(c.get("secure")),
+                            "httpOnly": bool(c.get("httpOnly")),
+                        }
+                        if c.get("sameSite"):
+                            ck["sameSite"] = {"strict":"Strict","lax":"Lax","none":"None"}.get(
+                                c["sameSite"].lower(), "Lax")
+                        await ctx.add_cookies([ck])
+                    except Exception:
+                        continue
+                page = await ctx.new_page()
+                await page.goto("https://consultafns.saude.gov.br/", timeout=30_000)
+                # Validar que esta logado
+                body = await page.inner_text("body")
+                if "login" in body[:1500].lower() and "sair" not in body.lower():
+                    print("  AVISO: cookies de sessao expirados - re-capture via bookmarklet")
+                    await browser.close()
+                    return []
+            else:
+                # MODO SENHA: login via gov.br SSO
+                if not cpf or not senha:
+                    return []
+                page = await ctx.new_page()
+                await page.goto("https://consultafns.saude.gov.br", timeout=30_000)
+                try:
+                    await page.click("text=Entrar com gov.br", timeout=5_000)
+                except Exception:
+                    pass
+                await page.fill("input[name='accountId']", cpf, timeout=30_000)
+                await page.click("button[type='submit']")
+                await page.wait_for_selector("input[name='password']", timeout=30_000)
+                await page.fill("input[name='password']", senha)
+                await page.click("button[type='submit']")
+                await page.wait_for_url("https://consultafns.saude.gov.br/**", timeout=30_000)
 
-            await page.fill("input[name='accountId']", cpf, timeout=30_000)
-            await page.click("button[type='submit']")
-            await page.wait_for_selector("input[name='password']", timeout=30_000)
-            await page.fill("input[name='password']", senha)
-            await page.click("button[type='submit']")
-            await page.wait_for_url("https://consultafns.saude.gov.br/**", timeout=30_000)
-
-            # Coleta pagamentos por ano
+            # 2. Coletar listagem de pagamentos por ano + detalhe parlamentar
             for ano in range(2022, datetime.now().year + 1):
                 url = f"https://consultafns.saude.gov.br/pagamentos?ano={ano}"
                 await page.goto(url, timeout=30_000)
@@ -71,8 +163,21 @@ class FNSScraper(ScraperBase):
                         if len(cells) < 4:
                             continue
                         texts = [(await c.inner_text()).strip() for c in cells]
+
+                        nr_prop = texts[0] if texts else ""
+
+                        # Best-effort: parlamentar pode estar em coluna extra
+                        parl = None
+                        for t in texts[5:]:
+                            parl = extract_parlamentar(t)
+                            if parl: break
+
+                        # Se nao achou na linha, abrir o detalhe da proposta
+                        if not parl and nr_prop:
+                            parl = await self._fetch_parlamentar_detail(page, nr_prop)
+
                         items.append({
-                            "nr_proposta": texts[0] if len(texts) > 0 else "",
+                            "nr_proposta": nr_prop,
                             "programa": texts[1] if len(texts) > 1 else "",
                             "competencia": texts[2] if len(texts) > 2 else "",
                             "valor": parse_money_br(texts[3] if len(texts) > 3 else "0"),
@@ -80,12 +185,40 @@ class FNSScraper(ScraperBase):
                             "ano": ano,
                             "fonte": "FNS",
                             "orgao_concedente": "Min. Saude - FNS",
+                            "parlamentar_nome": parl,
                         })
-                except Exception:
+                except Exception as e:
+                    print(f"  Falha ano {ano}: {e}")
                     continue
 
             await browser.close()
         return items
+
+    async def _fetch_parlamentar_detail(self, page, nr_proposta: str) -> str | None:
+        """Abre tela de detalhe da proposta e raspa o parlamentar autor.
+        Tenta varias URLs/seletores comuns no portal FNS.
+        """
+        if not nr_proposta:
+            return None
+        try:
+            # Tentar URL direta primeiro
+            for url_pat in [
+                f"https://consultafns.saude.gov.br/proposta/{nr_proposta}",
+                f"https://consultafns.saude.gov.br/proposta?nr={nr_proposta}",
+                f"https://consultafns.saude.gov.br/detalhamento?nr_proposta={nr_proposta}",
+            ]:
+                try:
+                    resp = await page.goto(url_pat, timeout=15_000, wait_until="domcontentloaded")
+                    if resp and resp.status < 400:
+                        body = await page.inner_text("body")
+                        parl = extract_parlamentar(body)
+                        if parl:
+                            return parl
+                except Exception:
+                    continue
+        except Exception:
+            return None
+        return None
 
 
 if __name__ == "__main__":

@@ -4,12 +4,20 @@ NUNCA expor publicamente, NUNCA usar JWT de usuario aqui.
 """
 from datetime import datetime
 import re
+import unicodedata
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
 from pydantic import BaseModel
+
+
+def _norm_parl_name(s: str | None) -> str:
+    if not s:
+        return ""
+    s = str(s).strip().upper()
+    return "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))
 
 from database import get_db
 from models.cofre import CofreSenha
@@ -33,6 +41,10 @@ class UpsertItem(BaseModel):
     ano: int | None = None
     fonte: str
     orgao_concedente: str | None = None
+    # Vinculo com parlamentar (opcional). Quando informado, o endpoint cria
+    # ou atualiza um registro em `emendas` ligado ao convenio inserido.
+    parlamentar_nome: str | None = None
+    nr_emenda: str | None = None
 
 
 class UpsertRequest(BaseModel):
@@ -103,6 +115,7 @@ async def upsert_from_scraper(
 
     inserted = 0
     skipped = 0
+    emendas_linked = 0
     for it in payload.items:
         # Gerar nr_convenio uniforme
         nr = (it.nr_proposta or "").strip()
@@ -110,7 +123,7 @@ async def upsert_from_scraper(
             nr = f"{automation_key.upper()}-{it.municipio_id}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{inserted}"
         nr = nr[:50]
         try:
-            await db.execute(text("""
+            res = await db.execute(text("""
                 INSERT INTO convenios_federal (
                     nr_convenio, municipio_id, orgao_concedente, objeto,
                     situacao, valor_repasse, ano, programa, tipo_programa,
@@ -124,6 +137,7 @@ async def upsert_from_scraper(
                     situacao = EXCLUDED.situacao,
                     raw_data = EXCLUDED.raw_data,
                     updated_at = NOW()
+                RETURNING id
             """), {
                 "nr": nr,
                 "mun": it.municipio_id,
@@ -137,8 +151,26 @@ async def upsert_from_scraper(
                 "fonte": it.fonte,
                 "raw": "{}",
             })
+            convenio_id = res.scalar()
             inserted += 1
-        except Exception as e:
+
+            # Cria/atualiza emenda quando o scraper informa parlamentar
+            if it.parlamentar_nome and convenio_id:
+                parl_id = await _upsert_parlamentar(db, it.parlamentar_nome)
+                if parl_id:
+                    await db.execute(text("""
+                        INSERT INTO emendas (
+                            nr_emenda, parlamentar_id, municipio_id, convenio_federal_id,
+                            valor, tipo, esfera, ano
+                        ) VALUES (:ne, :p, :m, :cf, :v, 'Indicacao Parlamentar', 'federal', :a)
+                        ON CONFLICT DO NOTHING
+                    """), {
+                        "ne": (it.nr_emenda or "")[:100] or None,
+                        "p": parl_id, "m": it.municipio_id, "cf": convenio_id,
+                        "v": float(it.valor or 0), "a": it.ano,
+                    })
+                    emendas_linked += 1
+        except Exception:
             skipped += 1
             continue
     await db.commit()
@@ -151,6 +183,36 @@ async def upsert_from_scraper(
             "n_items": len(payload.items),
             "inserted": inserted,
             "skipped": skipped,
+            "emendas_linked": emendas_linked,
         },
     )
-    return {"inserted": inserted, "skipped": skipped, "total": len(payload.items)}
+    return {
+        "inserted": inserted, "skipped": skipped,
+        "emendas_linked": emendas_linked, "total": len(payload.items),
+    }
+
+
+async def _upsert_parlamentar(db: AsyncSession, nome: str) -> int | None:
+    """Busca parlamentar por nome normalizado; cria se nao existir.
+
+    Usado por scrapers (FNS/SIMEC/SUAS/PortalTransparencia/CODEVASF) para
+    linkar uma indicacao a um deputado/senador. Tenta match exato pelo nome
+    normalizado primeiro; senao, cria um registro novo.
+    """
+    norm = _norm_parl_name(nome)
+    if not norm or len(norm) < 3:
+        return None
+
+    # Match por nome normalizado em Python (Postgres unaccent nem sempre disponivel)
+    r = await db.execute(text("SELECT id, nome FROM parlamentares"))
+    for pid, pnome in r.fetchall():
+        if _norm_parl_name(pnome) == norm:
+            return pid
+
+    # Criar novo (esfera/uf placeholder; pode ser corrigido por dedupe_parlamentares)
+    res = await db.execute(text("""
+        INSERT INTO parlamentares (nome, esfera, uf)
+        VALUES (:n, 'federal', 'MG')
+        RETURNING id
+    """), {"n": nome.strip().upper()[:300]})
+    return res.scalar()

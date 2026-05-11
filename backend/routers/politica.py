@@ -257,6 +257,68 @@ async def emendas_por_funcao(
     ]
 
 
+@router.get("/relatorio-eleitoral")
+async def relatorio_eleitoral(
+    municipio_id: int,
+    ano_eleicao: int = 2022,
+    ano_emenda_inicio: int = 2023,
+    ano_emenda_fim: int = 2026,
+    limit: int = 10,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Atende a aba 6 da Planilha_Mapeamento_Processos: Top N mais votados +
+    valor total de emendas no periodo.
+
+    Retorno separado por esfera (federal/estadual). Para cada deputado:
+    nome, partido, votos no municipio, qtd e valor de emendas no periodo,
+    R$/voto (eficiencia da indicacao).
+    """
+    # 1. TSE: top N mais votados deste municipio + esfera
+    out = {"municipio_id": municipio_id, "ano_eleicao": ano_eleicao,
+           "periodo_emenda": f"{ano_emenda_inicio}-{ano_emenda_fim}",
+           "federal": [], "estadual": []}
+
+    for esfera in ("federal", "estadual"):
+        tse = (await db.execute(
+            select(
+                Parlamentar.id, Parlamentar.nome, Parlamentar.partido,
+                DadosEleitorais.votos, DadosEleitorais.cargo, DadosEleitorais.eleito,
+            )
+            .join(Parlamentar, Parlamentar.id == DadosEleitorais.parlamentar_id)
+            .where(DadosEleitorais.municipio_id == municipio_id)
+            .where(DadosEleitorais.ano_eleicao == ano_eleicao)
+            .where(DadosEleitorais.votos > 0)
+            .where(Parlamentar.esfera == esfera)
+            .order_by(DadosEleitorais.votos.desc())
+            .limit(limit)
+        )).all()
+
+        for pid, nome, part, votos, cargo, eleito in tse:
+            # Buscar emendas do mesmo parlamentar OU de homonimo (match por nome)
+            em_q = (await db.execute(
+                select(
+                    func.coalesce(func.sum(Emenda.valor), 0),
+                    func.count(Emenda.id),
+                )
+                .select_from(
+                    Emenda.__table__.join(Parlamentar.__table__, Emenda.parlamentar_id == Parlamentar.id)
+                )
+                .where(Emenda.municipio_id == municipio_id)
+                .where(Emenda.ano.between(ano_emenda_inicio, ano_emenda_fim))
+                .where(func.upper(Parlamentar.nome) == nome.upper())
+            )).first()
+            valor = float(em_q[0] or 0)
+            qtd = int(em_q[1] or 0)
+            out[esfera].append({
+                "parlamentar_id": pid, "nome": nome, "partido": part,
+                "cargo": cargo, "eleito": bool(eleito), "votos": votos,
+                "qtd_emendas": qtd, "valor_emendas": valor,
+                "reais_por_voto": (valor / votos) if votos else 0,
+            })
+    return out
+
+
 @router.get("/top-deputados", response_model=list[TopDeputado])
 async def top_deputados(
     municipio_id: int,

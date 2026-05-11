@@ -22,19 +22,72 @@ PNCP_BASE = "https://pncp.gov.br/api/consulta/v1"
 
 def classify_area(objeto):
     obj = (objeto or "").lower()
-    if any(k in obj for k in ["saude", "ubs", "hospital", "medic", "sus"]):
+    if any(k in obj for k in ["saude", "ubs", "hospital", "medic", "sus", "ambulancia", "samu"]):
         return "Saude"
-    if any(k in obj for k in ["escola", "educa", "creche", "escolar"]):
+    if any(k in obj for k in ["escola", "educa", "creche", "escolar", "merenda", "transporte escolar"]):
         return "Educacao"
-    if any(k in obj for k in ["quadra", "ginasio", "esporte", "esportiv"]):
+    if any(k in obj for k in ["quadra", "ginasio", "esporte", "esportiv", "arena", "campo de futebol"]):
         return "Esporte"
-    if any(k in obj for k in ["cultura", "biblioteca", "teatro", "museu"]):
+    if any(k in obj for k in ["cultura", "biblioteca", "teatro", "museu", "centro cultural"]):
         return "Cultura"
-    if any(k in obj for k in ["pavimenta", "asfalto", "obra", "drenagem", "calcamento", "recapeamento"]):
+    if any(k in obj for k in ["pavimenta", "asfalto", "obra", "drenagem", "calcamento", "recapeamento", "recape"]):
         return "Obras/Infraestrutura"
-    if any(k in obj for k in ["social", "assistencia"]):
+    if any(k in obj for k in ["social", "assistencia", "cras", "creas", "suas"]):
         return "Assistencia Social"
+    if any(k in obj for k in ["agric", "trator", "rural", "pecuari"]):
+        return "Agricultura"
+    if any(k in obj for k in ["turismo", "evento"]):
+        return "Turismo"
     return "Outros"
+
+
+# Palavras-chave por area (planilha "5_Editais_Radar")
+# Usado para filtrar editais relevantes para os clientes Freitas
+RADAR_KEYWORDS = {
+    "Cultura": ["teatro", "biblioteca", "centro cultural", "patrimonio cultural"],
+    "Esporte": ["quadra", "ginasio", "arena", "campo de futebol", "academia ao ar livre"],
+    "Obras": ["asfalto", "pavimentacao", "drenagem", "ponte", "estrada vicinal"],
+    "Saude": ["UBS", "hospital", "ambulancia", "samu", "academia da saude"],
+    "Educacao": ["escola", "creche", "reforma de escola", "transporte escolar"],
+    "Assistencia Social": ["CRAS", "CREAS", "centro de convivencia"],
+}
+
+
+def is_radar_relevant(titulo: str) -> tuple[bool, str | None]:
+    """Retorna (relevante, area_chave) para os editais do radar Freitas."""
+    if not titulo:
+        return False, None
+    t = titulo.lower()
+    for area, kws in RADAR_KEYWORDS.items():
+        for kw in kws:
+            if kw.lower() in t:
+                return True, area
+    return False, None
+
+
+# Orgaos federais e estaduais MG monitorados pela Freitas (planilha)
+ORGAOS_RADAR = {
+    "federal": [
+        "Ministerio da Cultura", "Ministerio do Esporte", "Ministerio das Cidades",
+        "Ministerio da Saude", "FNDE",
+    ],
+    "estadual": [
+        "SEGOV", "SEDESE", "SEINFRA", "SECULT", "SEE",
+    ],
+}
+
+
+def is_orgao_radar(orgao: str) -> bool:
+    """Verifica se o orgao concedente esta na lista do radar Freitas."""
+    if not orgao:
+        return False
+    o = orgao.upper()
+    keywords = [
+        "CULTURA", "ESPORTE", "CIDADES", "SAUDE", "FNDE",
+        "SEGOV", "SEDESE", "SEINFRA", "SECULT", "SEE",
+        "EDUCACAO", "INFRAESTRUTURA",
+    ]
+    return any(k in o for k in keywords)
 
 
 def fetch_editais_pncp():
@@ -137,15 +190,26 @@ def ingest_editais():
                 area = classify_area(titulo)
                 url_pncp = f"https://pncp.gov.br/app/editais/{e.get('numeroControlePNCP', '')}" if e.get("numeroControlePNCP") else None
 
+                # Flag radar: edital de interesse Freitas (palavra-chave + orgao)
+                radar_match, radar_area = is_radar_relevant(titulo)
+                no_radar = radar_match or is_orgao_radar(orgao)
+
+                # Esfera baseada no orgao
+                esfera_v = "estadual" if any(s in (orgao or "").upper()
+                                              for s in ("SEGOV", "SEDESE", "SEINFRA", "SECULT",
+                                                        "SEE", "GOVERNO DE MINAS", "ESTADO DE MINAS")) else "federal"
+
                 conn.execute(text("""
                     INSERT INTO editais (
                         titulo, orgao, area, esfera, url,
                         dt_publicacao, dt_encerramento, valor_total, resumo, status
-                    ) VALUES (:t, :o, :a, 'federal', :u, :dp, :de, :v, :r, 'aberto')
+                    ) VALUES (:t, :o, :a, :esf, :u, :dp, :de, :v, :r, 'aberto')
                 """), {
-                    "t": titulo, "o": orgao, "a": area, "u": url_pncp,
+                    "t": titulo, "o": orgao, "a": radar_area or area,
+                    "esf": esfera_v, "u": url_pncp,
                     "dp": dt_pub_d, "de": dt_end_d, "v": valor,
-                    "r": f"Modalidade: {e.get('modalidadeNome', '-')}",
+                    "r": ("[RADAR FREITAS] " if no_radar else "") +
+                         f"Modalidade: {e.get('modalidadeNome', '-')}",
                 })
                 inserted += 1
             except Exception as ex:
