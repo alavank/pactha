@@ -133,7 +133,9 @@
       "Bash(python ingestion/editais.py)",
       "Read(//c/tmp/**)",
       "Bash(python)",
-      "Bash(git commit -m 'feat: 4 ultimos gaps da planilha Freitas - cobertura 100% *)"
+      "Bash(git commit -m 'feat: 4 ultimos gaps da planilha Freitas - cobertura 100% *)",
+      "Bash(curl -s -X POST https://pacta-api-production-9c11.up.railway.app/api/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"admin@pacta.com.br\",\"password\":\"Pacta@2026Admin\"}')",
+      "Bash(git commit -m 'feat: Cofre com flag Integracao + dropdown sistemas pre-configurados *)"
     ]
   }
 }

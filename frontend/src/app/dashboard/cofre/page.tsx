@@ -32,6 +32,55 @@ interface Senha {
 
 const CATEGORIAS = ["Federal", "Estadual", "Saude", "Educacao", "Assistencia Social", "Outro"];
 
+// Sistemas com integracao automatica (scraper) - URL/categoria/automation_key pre-vinculados
+const INTEGRACOES = [
+  {
+    automation_key: "fns",
+    label: "FNS - Fundo Nacional de Saude",
+    sistema: "FNS - Fundo Nacional de Saude",
+    url: "https://consultafns.saude.gov.br",
+    categoria: "Saude",
+    usuario_hint: "CPF (gov.br)",
+    senha_hint: "Senha gov.br",
+  },
+  {
+    automation_key: "sismob",
+    label: "SISMOB - Obras de Saude",
+    sistema: "SISMOB - Obras de Saude",
+    url: "https://sismobcidadao.saude.gov.br",
+    categoria: "Saude",
+    usuario_hint: "CPF (gov.br)",
+    senha_hint: "Senha gov.br",
+  },
+  {
+    automation_key: "simec",
+    label: "SIMEC / PAR - Educacao (FNDE)",
+    sistema: "SIMEC/PAR - FNDE",
+    url: "https://simec.mec.gov.br/par/",
+    categoria: "Educacao",
+    usuario_hint: "CPF",
+    senha_hint: "Senha SIMEC",
+  },
+  {
+    automation_key: "suas",
+    label: "Estrutura SUAS - Assistencia (MDS)",
+    sistema: "Estrutura SUAS",
+    url: "https://estruturasuas.mds.gov.br",
+    categoria: "Assistencia Social",
+    usuario_hint: "CPF",
+    senha_hint: "Senha gov.br",
+  },
+  {
+    automation_key: "investsus",
+    label: "InvestSUS - Painel Saude",
+    sistema: "InvestSUS",
+    url: "https://investsuspaineis.saude.gov.br",
+    categoria: "Saude",
+    usuario_hint: "CPF (gov.br)",
+    senha_hint: "Senha gov.br",
+  },
+];
+
 export default function CofrePage() {
   const searchParams = useSearchParams();
   const municipioId = searchParams.get("municipio_id");
@@ -49,6 +98,36 @@ export default function CofrePage() {
     observacao: "",
     automation_key: "",
   });
+  // Flag "Integracao": se true, usuario escolhe sistema da lista (URL/automation_key vinculados)
+  // Se false, cadastro livre sem automacao
+  const [isIntegracao, setIsIntegracao] = useState(true);
+  const [integracaoSelecionada, setIntegracaoSelecionada] = useState<string>("");
+
+  const handleSelecionarIntegracao = (key: string) => {
+    setIntegracaoSelecionada(key);
+    const integ = INTEGRACOES.find((i) => i.automation_key === key);
+    if (integ) {
+      setForm((prev) => ({
+        ...prev,
+        sistema: integ.sistema,
+        url: integ.url,
+        categoria: integ.categoria,
+        automation_key: integ.automation_key,
+      }));
+    } else {
+      // Limpa quando deseleciona
+      setForm((prev) => ({ ...prev, sistema: "", url: "", automation_key: "" }));
+    }
+  };
+
+  const handleToggleIntegracao = (checked: boolean) => {
+    setIsIntegracao(checked);
+    if (!checked) {
+      // Modo manual: limpa sistema/url/automation
+      setIntegracaoSelecionada("");
+      setForm((prev) => ({ ...prev, sistema: "", url: "", automation_key: "" }));
+    }
+  };
 
   const fetchSenhas = () => {
     if (!municipioId) return;
@@ -86,6 +165,8 @@ export default function CofrePage() {
       toast.success("Senha cadastrada");
       setDialogOpen(false);
       setForm({ sistema: "", url: "", usuario: "", senha: "", categoria: "Federal", observacao: "", automation_key: "" });
+      setIsIntegracao(true);
+      setIntegracaoSelecionada("");
       fetchSenhas();
     } catch {
       toast.error("Erro ao cadastrar");
@@ -172,82 +253,168 @@ export default function CofrePage() {
               <DialogTitle>Cadastrar nova senha</DialogTitle>
             </DialogHeader>
             <div className="space-y-3">
-              <div>
-                <label className="text-sm font-medium">Sistema *</label>
-                <Input
-                  value={form.sistema}
-                  onChange={(e) => setForm({ ...form, sistema: e.target.value })}
-                  placeholder="Ex: TransfereGov"
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium">URL</label>
-                <Input
-                  value={form.url}
-                  onChange={(e) => setForm({ ...form, url: e.target.value })}
-                  placeholder="https://..."
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium">Usuario</label>
-                <Input
-                  value={form.usuario}
-                  onChange={(e) => setForm({ ...form, usuario: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium">Senha</label>
-                <Input
-                  type="password"
-                  value={form.senha}
-                  onChange={(e) => setForm({ ...form, senha: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium">Categoria</label>
-                <select
-                  className="w-full border rounded-md p-2 text-sm"
-                  value={form.categoria}
-                  onChange={(e) => setForm({ ...form, categoria: e.target.value })}
-                >
-                  {CATEGORIAS.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-sm font-medium">Observacao</label>
-                <Input
-                  value={form.observacao}
-                  onChange={(e) => setForm({ ...form, observacao: e.target.value })}
-                />
-              </div>
-              <div className="border-t pt-3 mt-2">
-                <label className="text-sm font-medium flex items-center gap-2">
-                  Automacao (opcional)
-                  <span className="text-xs text-amber-700 bg-amber-50 px-2 py-0.5 rounded">
-                    avancado
-                  </span>
+              {/* FLAG INTEGRACAO - controla todo o resto */}
+              <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={isIntegracao}
+                    onChange={(e) => handleToggleIntegracao(e.target.checked)}
+                    className="mt-1 size-4"
+                  />
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-blue-900">
+                      Integracao com sistema PACTA
+                    </div>
+                    <div className="text-xs text-blue-700 mt-0.5">
+                      {isIntegracao
+                        ? "Selecione o sistema abaixo. So precisa preencher usuario e senha - o resto ja vem configurado."
+                        : "Cadastro livre - voce preenche tudo manualmente, sem automacao."}
+                    </div>
+                  </div>
                 </label>
-                <select
-                  className="w-full border rounded-md p-2 text-sm"
-                  value={form.automation_key}
-                  onChange={(e) => setForm({ ...form, automation_key: e.target.value })}
-                >
-                  <option value="">Sem automacao (manual apenas)</option>
-                  <option value="fns">FNS - Saude (scraper FNS)</option>
-                  <option value="simec">SIMEC/PAR - Educacao</option>
-                  <option value="sismob">SISMOB - Obras Saude</option>
-                  <option value="suas">Estrutura SUAS - Assistencia</option>
-                  <option value="investsus">InvestSUS</option>
-                </select>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Se marcar, esta credencial sera lida pelo scraper desse sistema.
-                  Apenas Service Tokens com escopo correspondente acessam.
-                </p>
               </div>
+
+              {isIntegracao ? (
+                <>
+                  {/* MODO INTEGRACAO: dropdown de sistemas pre-configurados */}
+                  <div>
+                    <label className="text-sm font-medium">Sistema integrado *</label>
+                    <select
+                      className="w-full border rounded-md p-2 text-sm"
+                      value={integracaoSelecionada}
+                      onChange={(e) => handleSelecionarIntegracao(e.target.value)}
+                    >
+                      <option value="">-- Selecione o sistema --</option>
+                      {INTEGRACOES.map((i) => (
+                        <option key={i.automation_key} value={i.automation_key}>
+                          {i.label}
+                        </option>
+                      ))}
+                    </select>
+                    {integracaoSelecionada && (
+                      <div className="mt-2 text-xs text-slate-600 bg-slate-50 rounded p-2 space-y-0.5">
+                        <div>
+                          <strong>URL:</strong>{" "}
+                          <a
+                            href={form.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:underline"
+                          >
+                            {form.url}
+                          </a>
+                        </div>
+                        <div>
+                          <strong>Categoria:</strong> {form.categoria}
+                        </div>
+                        <div>
+                          <strong>Automacao:</strong> ativa via scraper{" "}
+                          <code className="bg-amber-100 px-1 rounded">
+                            {form.automation_key}
+                          </code>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {integracaoSelecionada && (
+                    <>
+                      <div>
+                        <label className="text-sm font-medium">
+                          Usuario *
+                          <span className="text-xs text-slate-500 ml-2">
+                            ({INTEGRACOES.find((i) => i.automation_key === integracaoSelecionada)?.usuario_hint})
+                          </span>
+                        </label>
+                        <Input
+                          value={form.usuario}
+                          onChange={(e) => setForm({ ...form, usuario: e.target.value })}
+                          placeholder="000.000.000-00"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium">
+                          Senha *
+                          <span className="text-xs text-slate-500 ml-2">
+                            ({INTEGRACOES.find((i) => i.automation_key === integracaoSelecionada)?.senha_hint})
+                          </span>
+                        </label>
+                        <Input
+                          type="password"
+                          value={form.senha}
+                          onChange={(e) => setForm({ ...form, senha: e.target.value })}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium">Observacao</label>
+                        <Input
+                          value={form.observacao}
+                          onChange={(e) => setForm({ ...form, observacao: e.target.value })}
+                          placeholder="Opcional"
+                        />
+                      </div>
+                    </>
+                  )}
+                </>
+              ) : (
+                <>
+                  {/* MODO LIVRE: tudo manual, sem automacao */}
+                  <div>
+                    <label className="text-sm font-medium">Sistema *</label>
+                    <Input
+                      value={form.sistema}
+                      onChange={(e) => setForm({ ...form, sistema: e.target.value })}
+                      placeholder="Ex: TransfereGov, Portal interno, etc"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">URL</label>
+                    <Input
+                      value={form.url}
+                      onChange={(e) => setForm({ ...form, url: e.target.value })}
+                      placeholder="https://..."
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">Usuario</label>
+                    <Input
+                      value={form.usuario}
+                      onChange={(e) => setForm({ ...form, usuario: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">Senha</label>
+                    <Input
+                      type="password"
+                      value={form.senha}
+                      onChange={(e) => setForm({ ...form, senha: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">Categoria</label>
+                    <select
+                      className="w-full border rounded-md p-2 text-sm"
+                      value={form.categoria}
+                      onChange={(e) => setForm({ ...form, categoria: e.target.value })}
+                    >
+                      {CATEGORIAS.map((c) => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">Observacao</label>
+                    <Input
+                      value={form.observacao}
+                      onChange={(e) => setForm({ ...form, observacao: e.target.value })}
+                    />
+                  </div>
+                  <p className="text-xs text-slate-500 italic">
+                    Sem flag de integracao = senha apenas armazenada (sem automacao).
+                  </p>
+                </>
+              )}
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setDialogOpen(false)}>
@@ -280,7 +447,7 @@ export default function CofrePage() {
                 <div key={s.id} className="border rounded-lg p-4 hover:bg-gray-50">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-2">
+                      <div className="flex items-center gap-2 mb-2 flex-wrap">
                         <h3 className="font-semibold text-gray-900">{s.sistema}</h3>
                         {s.url && (
                           <a
@@ -291,6 +458,15 @@ export default function CofrePage() {
                           >
                             <ExternalLink className="size-4" />
                           </a>
+                        )}
+                        {s.automation_key ? (
+                          <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100 text-xs">
+                            ⚡ Integracao: {s.automation_key}
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-xs text-slate-500">
+                            Avulsa
+                          </Badge>
                         )}
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
