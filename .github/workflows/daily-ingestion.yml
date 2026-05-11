@@ -108,6 +108,18 @@ jobs:
         continue-on-error: true
         timeout-minutes: 5
 
+      # === Portal da Transparencia (CGU) - convenios federais detalhados ===
+      - name: Portal da Transparencia ingestion
+        working-directory: backend
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL_SYNC: ${{ secrets.DATABASE_URL_SYNC }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          PORTAL_TRANSPARENCIA_KEY: ${{ secrets.PORTAL_TRANSPARENCIA_KEY }}
+        run: python ingestion/portal_transparencia.py
+        continue-on-error: true
+        timeout-minutes: 10
+
       # === Deduplicar parlamentares ===
       - name: Deduplicate parlamentares
         working-directory: backend

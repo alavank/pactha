@@ -161,7 +161,9 @@
       "Bash(python test_govbr_http.py)",
       "Bash(python -c \"import certifi; print\\(certifi.where\\(\\)\\)\")",
       "Bash(curl -s \"https://pacta-api-production-9c11.up.railway.app/openapi.json\")",
-      "Bash(curl -s -I -H \"Origin: https://www.gov.br\" -X OPTIONS \"https://pacta-api-production-9c11.up.railway.app/api/session-capture\" -H \"Access-Control-Request-Method: POST\" -H \"Access-Control-Request-Headers: content-type,authorization\")"
+      "Bash(curl -s -I -H \"Origin: https://www.gov.br\" -X OPTIONS \"https://pacta-api-production-9c11.up.railway.app/api/session-capture\" -H \"Access-Control-Request-Method: POST\" -H \"Access-Control-Request-Headers: content-type,authorization\")",
+      "PowerShell(Start-Process \"chrome.exe\" -ArgumentList \"chrome://extensions/\")",
+      "Bash(PORTAL_TRANSPARENCIA_KEY=9dca75bc705ead7e8ebde0a8ee43dfb3 python ingestion/portal_transparencia.py)"
     ]
   }
 }
