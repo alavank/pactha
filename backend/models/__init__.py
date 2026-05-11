@@ -14,6 +14,7 @@ from models.service_token import ServiceToken
 from models.camara import CamaraDespesa, CamaraProposicao, CamaraVotacao, EmendaCamara
 from models.dou import DouPublicacao
 from models.compliance import SancaoCEIS, ProgramaFederal
+from models.saude import EstabelecimentoCNES
 
 __all__ = [
     "User", "Municipio", "ConvenioFederal", "ConvenioEstadual",
@@ -22,5 +23,5 @@ __all__ = [
     "DadosEleitorais", "IngestionLog",
     "CofreSenha", "AuditLog", "ServiceToken",
     "CamaraDespesa", "CamaraProposicao", "CamaraVotacao", "EmendaCamara",
-    "DouPublicacao", "SancaoCEIS", "ProgramaFederal",
+    "DouPublicacao", "SancaoCEIS", "ProgramaFederal", "EstabelecimentoCNES",
 ]

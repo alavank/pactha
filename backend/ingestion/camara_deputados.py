@@ -117,7 +117,7 @@ def fetch_proposicoes_autor(client, id_dep, ano):
     pag = 1
     while pag <= 20:
         data = _get(client, "/proposicoes",
-                    {"idAutor": id_dep, "ano": ano, "pagina": pag, "itens": 100})
+                    {"idDeputadoAutor": id_dep, "ano": ano, "pagina": pag, "itens": 100})
         if not data: break
         items = data.get("dados", [])
         if not items: break
@@ -156,7 +156,10 @@ def main():
                     id_map[d["id"]] = pid
             logger.info(f"  {len(id_map)} parlamentares MG sincronizados com Camara")
 
-        # Despesas + proposicoes de cada deputado para os anos 2022-2026
+        # Despesas + proposicoes - batch insert via psycopg2 raw (10x mais rapido)
+        import psycopg2.extras
+        from sqlalchemy import event as sa_event
+
         with httpx.Client(timeout=30, verify=False) as client:
             for i, dep in enumerate(deps):
                 id_dep = dep["id"]
@@ -165,71 +168,78 @@ def main():
 
                 logger.info(f"  [{i+1}/{len(deps)}] {dep.get('nome','?')}")
 
-                # Despesas
-                with engine.begin() as conn:
-                    conn.execute(text("DELETE FROM camara_despesas WHERE id_camara=:i AND ano>=2022"),
-                                  {"i": id_dep})
-                    total_desp = 0
-                    for ano in range(2022, ano_atual + 1):
-                        desp = fetch_despesas(client, id_dep, ano)
-                        for d in desp:
-                            try:
-                                conn.execute(text("""
-                                  INSERT INTO camara_despesas (
-                                    parlamentar_id, id_camara, ano, mes, tipo_despesa, fornecedor,
-                                    cnpj_cpf, valor_documento, valor_liquido, dt_documento,
-                                    url_documento, nr_documento, raw_data
-                                  ) VALUES (:p, :i, :a, :m, :t, :f, :c, :vd, :vl, :dt, :url, :nr, CAST(:raw AS jsonb))
-                                """), {
-                                    "p": parl_id, "i": id_dep, "a": d.get("ano"),
-                                    "m": d.get("mes"), "t": (d.get("tipoDespesa") or "")[:200],
-                                    "f": (d.get("nomeFornecedor") or "")[:300],
-                                    "c": d.get("cnpjCpfFornecedor"),
-                                    "vd": d.get("valorDocumento"), "vl": d.get("valorLiquido"),
-                                    "dt": parse_date(d.get("dataDocumento")),
-                                    "url": (d.get("urlDocumento") or "")[:500],
-                                    "nr": (d.get("numDocumento") or "")[:50],
-                                    "raw": json.dumps(d, ensure_ascii=False, default=str),
-                                })
-                                total_desp += 1
-                            except Exception as e:
-                                pass
-                        time.sleep(0.15)
-                    logger.info(f"    despesas: +{total_desp}")
+                # ==== DESPESAS (batch) ====
+                rows_desp = []
+                for ano in range(2022, ano_atual + 1):
+                    desp = fetch_despesas(client, id_dep, ano)
+                    for d in desp:
+                        rows_desp.append((
+                            parl_id, id_dep, d.get("ano"), d.get("mes"),
+                            (d.get("tipoDespesa") or "")[:200],
+                            (d.get("nomeFornecedor") or "")[:300],
+                            d.get("cnpjCpfFornecedor"),
+                            d.get("valorDocumento"), d.get("valorLiquido"),
+                            parse_date(d.get("dataDocumento")),
+                            (d.get("urlDocumento") or "")[:500],
+                            (d.get("numDocumento") or "")[:50],
+                            json.dumps(d, ensure_ascii=False, default=str),
+                        ))
+                    time.sleep(0.1)
 
-                # Proposicoes (apenas ano corrente + anterior para limitar)
-                with engine.begin() as conn:
-                    total_prop = 0
-                    for ano in (ano_atual - 1, ano_atual):
-                        props = fetch_proposicoes_autor(client, id_dep, ano)
-                        for p in props:
-                            try:
-                                conn.execute(text("""
-                                  INSERT INTO camara_proposicoes (
-                                    id_camara, sigla_tipo, numero, ano, ementa, descricao_tipo,
-                                    autor_id_camara, autor_nome, autor_partido, autor_uf,
-                                    dt_apresentacao, url, raw_data
-                                  ) VALUES (:i, :s, :n, :a, :e, :d, :aut, :anome, :ap, :au, :dt, :url, CAST(:raw AS jsonb))
-                                  ON CONFLICT (id_camara) DO NOTHING
-                                """), {
-                                    "i": p.get("id"),
-                                    "s": (p.get("siglaTipo") or "")[:20],
-                                    "n": p.get("numero"), "a": p.get("ano"),
-                                    "e": (p.get("ementa") or "")[:5000],
-                                    "d": (p.get("descricaoTipo") or "")[:200],
-                                    "aut": id_dep,
-                                    "anome": (dep.get("nome") or "")[:300],
-                                    "ap": (dep.get("siglaPartido") or "")[:20],
-                                    "au": (dep.get("siglaUf") or "")[:2],
-                                    "dt": parse_date(p.get("dataApresentacao")),
-                                    "url": (p.get("uri") or "")[:500],
-                                    "raw": json.dumps(p, ensure_ascii=False, default=str),
-                                })
-                                total_prop += 1
-                            except Exception:
-                                pass
-                        time.sleep(0.15)
-                    logger.info(f"    proposicoes: +{total_prop}")
+                if rows_desp:
+                    raw_conn = engine.raw_connection()
+                    try:
+                        cur = raw_conn.cursor()
+                        cur.execute("DELETE FROM camara_despesas WHERE id_camara=%s AND ano>=2022", (id_dep,))
+                        psycopg2.extras.execute_batch(cur, """
+                          INSERT INTO camara_despesas (
+                            parlamentar_id, id_camara, ano, mes, tipo_despesa, fornecedor,
+                            cnpj_cpf, valor_documento, valor_liquido, dt_documento,
+                            url_documento, nr_documento, raw_data
+                          ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)
+                        """, rows_desp, page_size=500)
+                        raw_conn.commit()
+                    finally:
+                        raw_conn.close()
+                logger.info(f"    despesas: +{len(rows_desp)}")
+
+                # ==== PROPOSICOES (batch) ====
+                rows_prop = []
+                for ano in (ano_atual - 1, ano_atual):
+                    props = fetch_proposicoes_autor(client, id_dep, ano)
+                    for p in props:
+                        rows_prop.append((
+                            p.get("id"),
+                            (p.get("siglaTipo") or "")[:20],
+                            p.get("numero"), p.get("ano"),
+                            (p.get("ementa") or "")[:5000],
+                            (p.get("descricaoTipo") or "")[:200],
+                            id_dep,
+                            (dep.get("nome") or "")[:300],
+                            (dep.get("siglaPartido") or "")[:20],
+                            (dep.get("siglaUf") or "")[:2],
+                            parse_date(p.get("dataApresentacao")),
+                            (p.get("uri") or "")[:500],
+                            json.dumps(p, ensure_ascii=False, default=str),
+                        ))
+                    time.sleep(0.1)
+
+                if rows_prop:
+                    raw_conn = engine.raw_connection()
+                    try:
+                        cur = raw_conn.cursor()
+                        psycopg2.extras.execute_batch(cur, """
+                          INSERT INTO camara_proposicoes (
+                            id_camara, sigla_tipo, numero, ano, ementa, descricao_tipo,
+                            autor_id_camara, autor_nome, autor_partido, autor_uf,
+                            dt_apresentacao, url, raw_data
+                          ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)
+                          ON CONFLICT (id_camara) DO NOTHING
+                        """, rows_prop, page_size=200)
+                        raw_conn.commit()
+                    finally:
+                        raw_conn.close()
+                logger.info(f"    proposicoes: +{len(rows_prop)}")
 
     with engine.begin() as conn:
         conn.execute(text("""
