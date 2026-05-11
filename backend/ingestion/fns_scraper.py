@@ -71,7 +71,15 @@ class FNSScraper(ScraperBase):
 
     async def collect(self, credential: dict) -> list[dict]:
         """Login no FNS + listagem de pagamentos + detalhe de cada proposta
-        para capturar parlamentar autor."""
+        para capturar parlamentar autor.
+
+        Suporta 2 modos:
+        - SENHA PLAIN: credential['senha'] e a senha gov.br -> faz login SSO
+        - SESSAO CAPTURADA: credential['senha'] e JSON {format:'cookies_full',cookies:[...]}
+          (vindo do bookmarklet/extension PACTA) -> injeta cookies no contexto
+          Playwright e pula o login (gov.br tem anti-bot que bloqueia
+          login automatizado em Playwright).
+        """
         try:
             from playwright.async_api import async_playwright
         except ImportError:
@@ -79,28 +87,69 @@ class FNSScraper(ScraperBase):
             return []
 
         cpf = credential.get("usuario")
-        senha = credential.get("senha")
-        if not cpf or not senha:
+        senha = credential.get("senha") or ""
+        if not cpf and not senha:
             return []
+
+        # Detectar modo session capturada (JSON cookies_full)
+        import json as jsonlib
+        cookies_session = None
+        if senha.startswith("{") and "cookies_full" in senha[:200]:
+            try:
+                data = jsonlib.loads(senha)
+                if data.get("format") == "cookies_full":
+                    cookies_session = data.get("cookies", [])
+            except Exception:
+                pass
 
         items = []
         async with async_playwright() as pw:
             browser = await pw.chromium.launch(headless=True)
-            ctx = await browser.new_context()
-            page = await ctx.new_page()
+            ctx = await browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            )
 
-            # 1. Login via gov.br
-            await page.goto("https://consultafns.saude.gov.br", timeout=30_000)
-            try:
-                await page.click("text=Entrar com gov.br", timeout=5_000)
-            except Exception:
-                pass
-            await page.fill("input[name='accountId']", cpf, timeout=30_000)
-            await page.click("button[type='submit']")
-            await page.wait_for_selector("input[name='password']", timeout=30_000)
-            await page.fill("input[name='password']", senha)
-            await page.click("button[type='submit']")
-            await page.wait_for_url("https://consultafns.saude.gov.br/**", timeout=30_000)
+            if cookies_session:
+                # MODO SESSAO: injeta cookies e pula login
+                for c in cookies_session:
+                    try:
+                        ck = {
+                            "name": c["name"], "value": c["value"],
+                            "domain": c.get("domain") or "consultafns.saude.gov.br",
+                            "path": c.get("path") or "/",
+                            "secure": bool(c.get("secure")),
+                            "httpOnly": bool(c.get("httpOnly")),
+                        }
+                        if c.get("sameSite"):
+                            ck["sameSite"] = {"strict":"Strict","lax":"Lax","none":"None"}.get(
+                                c["sameSite"].lower(), "Lax")
+                        await ctx.add_cookies([ck])
+                    except Exception:
+                        continue
+                page = await ctx.new_page()
+                await page.goto("https://consultafns.saude.gov.br/", timeout=30_000)
+                # Validar que esta logado
+                body = await page.inner_text("body")
+                if "login" in body[:1500].lower() and "sair" not in body.lower():
+                    print("  AVISO: cookies de sessao expirados - re-capture via bookmarklet")
+                    await browser.close()
+                    return []
+            else:
+                # MODO SENHA: login via gov.br SSO
+                if not cpf or not senha:
+                    return []
+                page = await ctx.new_page()
+                await page.goto("https://consultafns.saude.gov.br", timeout=30_000)
+                try:
+                    await page.click("text=Entrar com gov.br", timeout=5_000)
+                except Exception:
+                    pass
+                await page.fill("input[name='accountId']", cpf, timeout=30_000)
+                await page.click("button[type='submit']")
+                await page.wait_for_selector("input[name='password']", timeout=30_000)
+                await page.fill("input[name='password']", senha)
+                await page.click("button[type='submit']")
+                await page.wait_for_url("https://consultafns.saude.gov.br/**", timeout=30_000)
 
             # 2. Coletar listagem de pagamentos por ano + detalhe parlamentar
             for ano in range(2022, datetime.now().year + 1):
