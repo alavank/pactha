@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "PACTA - Captura de Sessao",
+  "version": "1.0.0",
+  "description": "Captura cookies de sessao dos portais governamentais (gov.br, FNS, SIMEC, SISMOB, SUAS) para a plataforma PACTA. Funciona sem precisar fazer login automatico.",
+  "permissions": [
+    "cookies",
+    "activeTab",
+    "storage",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://*.gov.br/*",
+    "https://gov.br/*",
+    "https://pacta-api-production-9c11.up.railway.app/*",
+    "https://*.up.railway.app/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "PACTA - Capturar sessao",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "background": {
+    "service_worker": "background.js"
+  }
+}

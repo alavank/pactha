@@ -160,7 +160,8 @@
       "Bash(python test_patchright_govbr.py)",
       "Bash(python test_govbr_http.py)",
       "Bash(python -c \"import certifi; print\\(certifi.where\\(\\)\\)\")",
-      "Bash(curl -s \"https://pacta-api-production-9c11.up.railway.app/openapi.json\")"
+      "Bash(curl -s \"https://pacta-api-production-9c11.up.railway.app/openapi.json\")",
+      "Bash(curl -s -I -H \"Origin: https://www.gov.br\" -X OPTIONS \"https://pacta-api-production-9c11.up.railway.app/api/session-capture\" -H \"Access-Control-Request-Method: POST\" -H \"Access-Control-Request-Headers: content-type,authorization\")"
     ]
   }
 }

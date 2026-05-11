@@ -25,12 +25,25 @@ from services.audit import log_event
 router = APIRouter(prefix="/api/session-capture", tags=["session"])
 
 
+class CookieFull(BaseModel):
+    name: str
+    value: str
+    domain: Optional[str] = None
+    path: Optional[str] = None
+    httpOnly: Optional[bool] = False
+    secure: Optional[bool] = False
+    sameSite: Optional[str] = None
+    expirationDate: Optional[float] = None
+
+
 class CapturedSession(BaseModel):
     automation_key: str   # ex: "fns", "govbr", "simec"
     municipio_id: int
-    cookie: str
+    cookie: str  # formato Cookie header: "name=val; name2=val2"
+    cookies_full: Optional[list[CookieFull]] = None  # estrutura completa (extension)
     url_atual: Optional[str] = None
     user_agent: Optional[str] = None
+    domain_capturado: Optional[str] = None
 
 
 @router.post("")
@@ -47,6 +60,20 @@ async def capture_session(
     # Limita tamanho
     cookie_clean = payload.cookie[:8000]
 
+    # Se temos cookies_full (da extension), usa esse formato JSON cifrado
+    # Senao, fallback para Cookie header simples
+    import json
+    if payload.cookies_full:
+        # Usa formato estruturado (preserva httpOnly, expiry, etc)
+        storage_payload = json.dumps({
+            "format": "cookies_full",
+            "cookies": [c.dict() for c in payload.cookies_full],
+            "url": payload.url_atual,
+            "domain": payload.domain_capturado,
+        })[:64000]  # limit razoavel
+    else:
+        storage_payload = cookie_clean
+
     # Encontra credencial existente para esse automation_key + municipio
     q = select(CofreSenha).where(
         CofreSenha.automation_key == payload.automation_key,
@@ -56,15 +83,18 @@ async def capture_session(
     item = res.scalar_one_or_none()
 
     captured_at = datetime.now(timezone.utc).isoformat()
+    n_cookies = len(payload.cookies_full) if payload.cookies_full else len(cookie_clean.split(";"))
+    n_httponly = sum(1 for c in (payload.cookies_full or []) if c.httpOnly)
     obs = (
         f"[SESSION] capturado em {captured_at} | "
-        f"url={payload.url_atual or '?'} | "
-        f"ua={(payload.user_agent or '?')[:80]}"
+        f"cookies={n_cookies} httpOnly={n_httponly} | "
+        f"url={(payload.url_atual or '?')[:100]} | "
+        f"ua={(payload.user_agent or '?')[:60]}"
     )
 
     if item:
         # Atualiza observacao + senha (com cookie cifrado)
-        item.senha_encrypted = crypto.encrypt(cookie_clean)
+        item.senha_encrypted = crypto.encrypt(storage_payload)
         item.observacao = obs
         item.atualizado_por_id = user.id
         await db.commit()
@@ -76,7 +106,7 @@ async def capture_session(
             sistema=f"Sessao {payload.automation_key.upper()}",
             url=payload.url_atual,
             usuario="(cookie)",
-            senha_encrypted=crypto.encrypt(cookie_clean),
+            senha_encrypted=crypto.encrypt(storage_payload),
             observacao=obs,
             categoria="Sessao",
             automation_key=payload.automation_key,
