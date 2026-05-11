@@ -1,7 +1,7 @@
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import auth, municipios, convenios, editais, prestacao, politica, export, cofre, fontes, upload, relatorio_monitoramento, levantamento_parlamentar, internal, service_tokens
+from routers import auth, municipios, convenios, editais, prestacao, politica, export, cofre, fontes, upload, relatorio_monitoramento, levantamento_parlamentar, internal, service_tokens, prestacao_avancada
 from services.security_headers import SecurityHeadersMiddleware
 
 app = FastAPI(
@@ -50,6 +50,7 @@ app.include_router(relatorio_monitoramento.router)
 app.include_router(levantamento_parlamentar.router)
 app.include_router(internal.router)
 app.include_router(service_tokens.router)
+app.include_router(prestacao_avancada.router)
 
 
 @app.get("/api/health")

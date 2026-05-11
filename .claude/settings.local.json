@@ -129,7 +129,11 @@
       "Bash(curl -s -H 'X-Service-Token: invalid_token_xxxxxxxxxxxxxxxx' -w '\\\\nHTTP %{http_code}\\\\n' https://pacta-api-production-9c11.up.railway.app/api/internal/secrets/fns)",
       "Bash(curl -s -H 'X-Service-Token: pacta_st_DGIXwBTi6-195obkRE7qBupb2N2TFkEpBwM7PBdgqBNFqWj3ph1h2A' -w '\\\\nHTTP %{http_code}\\\\n' https://pacta-api-production-9c11.up.railway.app/api/internal/secrets/simec)",
       "Bash(curl -s -H 'X-Service-Token: pacta_st_DGIXwBTi6-195obkRE7qBupb2N2TFkEpBwM7PBdgqBNFqWj3ph1h2A' -w '\\\\nHTTP %{http_code}\\\\n' https://pacta-api-production-9c11.up.railway.app/api/internal/secrets/fns)",
-      "Bash(git commit -m 'feat: 4 scrapers \\(FNS/SIMEC/SISMOB/SUAS\\) + UI Service Tokens *)"
+      "Bash(git commit -m 'feat: 4 scrapers \\(FNS/SIMEC/SISMOB/SUAS\\) + UI Service Tokens *)",
+      "Bash(python ingestion/editais.py)",
+      "Read(//c/tmp/**)",
+      "Bash(python)",
+      "Bash(git commit -m 'feat: 4 ultimos gaps da planilha Freitas - cobertura 100% *)"
     ]
   }
 }

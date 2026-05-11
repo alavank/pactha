@@ -329,6 +329,59 @@ export default function PrestacaoPage() {
                                 documentos={prest.documentos || []}
                               />
                             </div>
+                            <div className="flex flex-wrap gap-2 pt-2 border-t">
+                              <button
+                                className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded"
+                                onClick={async () => {
+                                  const token = localStorage.getItem("pacta_token");
+                                  const res = await fetch(
+                                    `${(await import("@/lib/api")).default.defaults.baseURL}/prestacao/${prest.id}/calculo`,
+                                    { headers: { Authorization: `Bearer ${token}` } }
+                                  );
+                                  const data = await res.json();
+                                  alert(
+                                    `CALCULO PRESTACAO\n\n` +
+                                    `Aprovado: R$ ${data.calculos.valor_aprovado.toLocaleString("pt-BR")}\n` +
+                                    `Empenhado (${data.calculos.pct_empenhado}%): R$ ${data.calculos.valor_empenhado.toLocaleString("pt-BR")}\n` +
+                                    `Desembolsado (${data.calculos.pct_desembolsado}%): R$ ${data.calculos.valor_desembolsado.toLocaleString("pt-BR")}\n` +
+                                    `Executado (${data.calculos.pct_executado}%): R$ ${data.calculos.valor_executado_estimado.toLocaleString("pt-BR")}\n` +
+                                    `Saldo banco: R$ ${data.calculos.saldo_bancario.toLocaleString("pt-BR")}\n` +
+                                    `Dias restantes vigencia: ${data.calculos.dias_restantes_vigencia}\n\n` +
+                                    `ALERTAS: ${data.alertas.map((a: { msg: string }) => a.msg).join("; ") || "Nenhum"}`
+                                  );
+                                }}
+                              >
+                                Calcular Prestacao
+                              </button>
+                              <button
+                                className="text-xs bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded"
+                                onClick={async () => {
+                                  const token = localStorage.getItem("pacta_token");
+                                  await fetch(
+                                    `${(await import("@/lib/api")).default.defaults.baseURL}/prestacao/${prest.id}/checklist/auto-criar`,
+                                    { method: "POST", headers: { Authorization: `Bearer ${token}` } }
+                                  );
+                                  window.location.reload();
+                                }}
+                              >
+                                Criar Checklist Padrao
+                              </button>
+                              <button
+                                className="text-xs bg-emerald-700 hover:bg-emerald-800 text-white px-3 py-1.5 rounded"
+                                onClick={async () => {
+                                  const token = localStorage.getItem("pacta_token");
+                                  const res = await fetch(
+                                    `${(await import("@/lib/api")).default.defaults.baseURL}/prestacao/${prest.id}/relatorio`,
+                                    { headers: { Authorization: `Bearer ${token}` } }
+                                  );
+                                  const html = await res.text();
+                                  const blob = new Blob([html], { type: "text/html" });
+                                  window.open(URL.createObjectURL(blob), "_blank");
+                                }}
+                              >
+                                Gerar Relatorio Prestacao
+                              </button>
+                            </div>
                           </div>
                         </TableCell>
                       </TableRow>
