@@ -7,15 +7,25 @@ from routers import auth, municipios, convenios, editais, prestacao, politica, e
 from services.security_headers import SecurityHeadersMiddleware
 from services.startup import run_migrations
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] [%(name)s] %(message)s")
+# force=True: uvicorn ja configurou o root logger, basicConfig sem force seria no-op
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] [%(name)s] %(message)s",
+    force=True,
+)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Roda migrations idempotentes no boot (ANTES das rotas atenderem).
     Garante que seed institucional + tabelas estao sempre atualizadas."""
-    logging.getLogger("startup").info("=== PACTA boot - rodando migrations ===")
-    run_migrations()
+    # print() para garantir que aparece nos logs do Railway mesmo se logging falhar
+    print("=== PACTA boot - rodando migrations ===", flush=True)
+    logging.getLogger("startup").warning("=== PACTA boot - rodando migrations ===")
+    try:
+        run_migrations()
+    except Exception as e:
+        print(f"[STARTUP] run_migrations falhou: {e}", flush=True)
     yield
 
 

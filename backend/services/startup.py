@@ -27,28 +27,35 @@ MIGRATION_FILES = [
 ]
 
 
+def _log(msg: str):
+    """Log + print (garante visibilidade nos logs Railway)."""
+    print(f"[STARTUP] {msg}", flush=True)
+    logger.warning(msg)
+
+
 def run_migrations():
     """Roda todas as migrations SQL na ordem. Idempotente."""
     sync_url = os.getenv("DATABASE_URL_SYNC") or os.getenv("DATABASE_URL", "").replace("+asyncpg", "")
     if not sync_url:
-        logger.warning("DATABASE_URL_SYNC nao configurada - pulando migrations")
+        _log("DATABASE_URL_SYNC nao configurada - pulando migrations")
         return
 
     try:
         import psycopg2
     except ImportError:
-        logger.warning("psycopg2 nao instalado - pulando migrations")
+        _log("psycopg2 nao instalado - pulando migrations")
         return
 
     base = Path(__file__).parent.parent / "migrations"
     if not base.exists():
-        logger.warning(f"Pasta migrations nao encontrada: {base}")
+        _log(f"Pasta migrations nao encontrada: {base}")
         return
 
     rodadas = 0
     for fname in MIGRATION_FILES:
         path = base / fname
         if not path.exists():
+            _log(f"  Migration ausente: {fname}")
             continue
         try:
             with psycopg2.connect(sync_url) as conn:
@@ -56,13 +63,13 @@ def run_migrations():
                     cur.execute(path.read_text(encoding="utf-8"))
                 conn.commit()
             rodadas += 1
-            logger.info(f"  Migration OK: {fname}")
+            _log(f"  Migration OK: {fname}")
         except Exception as e:
             # Erros tipicos: tabela ja existe, coluna ja adicionada - sao seguros
             msg = str(e)[:200]
             if any(k in msg.lower() for k in ["already exists", "duplicate", "ja existe"]):
-                logger.info(f"  Migration {fname}: ja aplicada (skip)")
+                _log(f"  Migration {fname}: ja aplicada (skip)")
             else:
-                logger.warning(f"  Migration {fname} falhou: {msg}")
+                _log(f"  Migration {fname} falhou: {msg}")
 
-    logger.info(f"Startup migrations: {rodadas}/{len(MIGRATION_FILES)} executadas")
+    _log(f"Startup migrations: {rodadas}/{len(MIGRATION_FILES)} executadas")
