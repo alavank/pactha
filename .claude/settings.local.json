@@ -141,7 +141,14 @@
       "Bash(npx tsc *)",
       "Bash(curl -sI https://pacta-production.up.railway.app/dashboard/cofre)",
       "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" https://pacta-production.up.railway.app/dashboard/cofre/)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(curl -s -H 'X-Service-Token: pacta_st_R6xEbM55tPOr5qdtnVd5H-QUybAk0YlIXOokziq4G-d9CdAqlAlxPQ' https://pacta-api-production-9c11.up.railway.app/api/internal/secrets/simec)",
+      "Bash(curl -s -o /dev/null -w \"SIMEC login HTTP: %{http_code} | URL final: %{url_effective}\\\\n\" -L https://simec.mec.gov.br/par/)",
+      "Bash(curl -s -L https://simec.mec.gov.br/login.php)",
+      "Bash(curl -s -L \"https://simec.mec.gov.br/valida_documento.php?chave=99430878620\")",
+      "Bash(python -m playwright install chromium)",
+      "Bash(PACTA_API_URL=https://pacta-api-production-9c11.up.railway.app/api PACTA_SERVICE_TOKEN=pacta_st_R6xEbM55tPOr5qdtnVd5H-QUybAk0YlIXOokziq4G-d9CdAqlAlxPQ python ingestion/simec_scraper.py)",
+      "Bash(curl -s -X POST https://pacta-api-production-9c11.up.railway.app/api/auth/login -H \"Content-Type: application/json\" -d '{\"email\":\"admin@pacta.com.br\",\"password\":\"Pacta@2026Admin\"}')"
     ]
   }
 }

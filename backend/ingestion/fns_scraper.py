@@ -25,6 +25,7 @@ def parse_money_br(s: str) -> float:
 class FNSScraper(ScraperBase):
     automation_key = "fns"
     name = "FNS Scraper"
+    uses_govbr = True
 
     async def collect(self, credential: dict) -> list[dict]:
         """Login no FNS via gov.br + coleta pagamentos."""

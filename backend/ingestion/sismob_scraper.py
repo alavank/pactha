@@ -14,6 +14,7 @@ from ingestion.fns_scraper import parse_money_br
 class SISMOBScraper(ScraperBase):
     automation_key = "sismob"
     name = "SISMOB Scraper"
+    uses_govbr = True
 
     async def collect(self, credential: dict) -> list[dict]:
         try:

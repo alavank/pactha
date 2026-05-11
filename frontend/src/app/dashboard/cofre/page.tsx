@@ -36,8 +36,17 @@ const CATEGORIAS = ["Federal", "Estadual", "Saude", "Educacao", "Assistencia Soc
 // Sistemas com integracao automatica (scraper) - URL/categoria/automation_key pre-vinculados
 const INTEGRACOES = [
   {
+    automation_key: "govbr",
+    label: "gov.br SSO (acesso unico federal)",
+    sistema: "gov.br - Conta Unica",
+    url: "https://www.gov.br",
+    categoria: "Federal",
+    usuario_hint: "CPF",
+    senha_hint: "Senha gov.br",
+  },
+  {
     automation_key: "fns",
-    label: "FNS - Fundo Nacional de Saude",
+    label: "FNS - Fundo Nacional de Saude (login proprio)",
     sistema: "FNS - Fundo Nacional de Saude",
     url: "https://consultafns.saude.gov.br",
     categoria: "Saude",

@@ -36,17 +36,30 @@ class ScraperBase(ABC):
                 f"com scope 'secret:read:{self.automation_key}'."
             )
 
-    async def fetch_credentials(self) -> list[dict]:
+    # Se o portal usa gov.br SSO, scrapers podem definir uses_govbr=True
+    # para tentar credencial gov.br como fallback quando a especifica nao existir
+    uses_govbr: bool = False
+
+    async def _fetch_one(self, key: str) -> list[dict]:
         async with httpx.AsyncClient(timeout=30) as client:
             r = await client.get(
-                f"{self.api_url}/internal/secrets/{self.automation_key}",
+                f"{self.api_url}/internal/secrets/{key}",
                 headers={"X-Service-Token": self.token},
             )
-            if r.status_code == 404:
-                logger.warning("Endpoint internal/secrets nao encontrado (deploy nao atualizado?)")
+            if r.status_code in (403, 404):
                 return []
             r.raise_for_status()
             return r.json().get("secrets", [])
+
+    async def fetch_credentials(self) -> list[dict]:
+        """Busca credenciais especificas + fallback gov.br se aplicavel."""
+        creds = await self._fetch_one(self.automation_key)
+        if creds:
+            return creds
+        if self.uses_govbr:
+            logger.info(f"  Sem credencial '{self.automation_key}' - tentando gov.br SSO compartilhada")
+            return await self._fetch_one("govbr")
+        return []
 
     async def upsert(self, items: list[dict]) -> int:
         """Envia items para upsert via endpoint interno."""
