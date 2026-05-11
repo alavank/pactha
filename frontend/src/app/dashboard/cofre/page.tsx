@@ -41,8 +41,8 @@ const INTEGRACOES = [
     sistema: "gov.br - Conta Unica",
     url: "https://www.gov.br",
     categoria: "Federal",
-    usuario_hint: "CPF",
-    senha_hint: "Senha gov.br",
+    usuario_hint: "Login (usuario, email ou CPF)",
+    senha_hint: "Senha",
   },
   {
     automation_key: "fns",
@@ -50,8 +50,8 @@ const INTEGRACOES = [
     sistema: "FNS - Fundo Nacional de Saude",
     url: "https://consultafns.saude.gov.br",
     categoria: "Saude",
-    usuario_hint: "CPF (gov.br)",
-    senha_hint: "Senha gov.br",
+    usuario_hint: "Login (CPF, email ou usuario)",
+    senha_hint: "Senha do portal",
   },
   {
     automation_key: "sismob",
@@ -59,8 +59,8 @@ const INTEGRACOES = [
     sistema: "SISMOB - Obras de Saude",
     url: "https://sismobcidadao.saude.gov.br",
     categoria: "Saude",
-    usuario_hint: "CPF (gov.br)",
-    senha_hint: "Senha gov.br",
+    usuario_hint: "Login (CPF, email ou usuario)",
+    senha_hint: "Senha do portal",
   },
   {
     automation_key: "simec",
@@ -68,8 +68,8 @@ const INTEGRACOES = [
     sistema: "SIMEC/PAR - FNDE",
     url: "https://simec.mec.gov.br/par/",
     categoria: "Educacao",
-    usuario_hint: "CPF",
-    senha_hint: "Senha SIMEC",
+    usuario_hint: "Login (CPF, email ou usuario)",
+    senha_hint: "Senha do portal",
   },
   {
     automation_key: "suas",
@@ -77,8 +77,8 @@ const INTEGRACOES = [
     sistema: "Estrutura SUAS",
     url: "https://estruturasuas.mds.gov.br",
     categoria: "Assistencia Social",
-    usuario_hint: "CPF",
-    senha_hint: "Senha gov.br",
+    usuario_hint: "Login (CPF, email ou usuario)",
+    senha_hint: "Senha do portal",
   },
   {
     automation_key: "investsus",
@@ -86,8 +86,8 @@ const INTEGRACOES = [
     sistema: "InvestSUS",
     url: "https://investsuspaineis.saude.gov.br",
     categoria: "Saude",
-    usuario_hint: "CPF (gov.br)",
-    senha_hint: "Senha gov.br",
+    usuario_hint: "Login (CPF, email ou usuario)",
+    senha_hint: "Senha do portal",
   },
 ];
 
