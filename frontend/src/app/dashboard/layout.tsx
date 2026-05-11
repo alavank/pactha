@@ -16,6 +16,10 @@ import {
   KeyRound,
   Database,
   UploadCloud,
+  Sparkles,
+  Newspaper,
+  ShieldAlert,
+  Target,
 } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -38,8 +42,12 @@ const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/dashboard/convenios", label: "Convenios", icon: FileText },
   { href: "/dashboard/editais", label: "Editais", icon: Search },
+  { href: "/dashboard/oportunidades", label: "Oportunidades", icon: Target },
   { href: "/dashboard/prestacao", label: "Prestacao", icon: ClipboardCheck },
   { href: "/dashboard/politica", label: "Politica", icon: BarChart3 },
+  { href: "/dashboard/dou", label: "Diario Oficial", icon: Newspaper },
+  { href: "/dashboard/sancoes", label: "Sancoes (CEIS)", icon: ShieldAlert },
+  { href: "/dashboard/ia", label: "PACTA IA", icon: Sparkles },
   { href: "/dashboard/cofre", label: "Cofre de Senhas", icon: KeyRound },
   { href: "/dashboard/sessoes", label: "Sessoes (gov.br)", icon: KeyRound },
   { href: "/dashboard/fontes", label: "Fontes de Dados", icon: Database },
