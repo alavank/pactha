@@ -40,6 +40,7 @@ class CofreCreate(BaseModel):
     senha: Optional[str] = None
     observacao: Optional[str] = None
     categoria: Optional[str] = None
+    automation_key: Optional[str] = None  # ex: "fns", "simec", "sismob", "suas"
 
 
 class CofreUpdate(BaseModel):
@@ -49,6 +50,7 @@ class CofreUpdate(BaseModel):
     senha: Optional[str] = None
     observacao: Optional[str] = None
     categoria: Optional[str] = None
+    automation_key: Optional[str] = None
 
 
 class CofreResponse(BaseModel):
@@ -60,6 +62,7 @@ class CofreResponse(BaseModel):
     senha_mascarada: Optional[str] = None
     observacao: Optional[str] = None
     categoria: Optional[str] = None
+    automation_key: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -76,6 +79,7 @@ def _to_response(item: CofreSenha) -> CofreResponse:
         senha_mascarada=crypto.mask(senha_clear),
         observacao=item.observacao,
         categoria=item.categoria,
+        automation_key=item.automation_key,
     )
 
 
@@ -130,6 +134,7 @@ async def create_senha(
         senha_encrypted=crypto.encrypt(data.senha) if data.senha else None,
         observacao=data.observacao,
         categoria=data.categoria,
+        automation_key=data.automation_key,
         atualizado_por_id=user.id,
     )
     db.add(item)

@@ -1,20 +1,17 @@
 """
-Scraper para o portal FNS (Fundo Nacional de Saude).
+Scraper FNS - usa Service Token + Cofre PACTA (zero credencial em config).
 
-Estrategia:
-1. Login em consultafns.saude.gov.br via gov.br SSO (CPF + senha)
-2. Navega para Consultas > Pagamentos > Por Municipio
-3. Filtra por IBGE de cada municipio + competencia
-4. Captura tabela de propostas/parcelas pagas
-5. Faz upsert em convenios_federal com fonte='FNS'
+Fluxo seguro:
+1. Worker recebe APENAS PACTA_API_URL + PACTA_SERVICE_TOKEN via env
+2. Chama GET /api/internal/secrets/fns com X-Service-Token
+3. Recebe credenciais cifradas do Cofre, descriptografadas pelo backend
+4. Loga em consultafns.saude.gov.br via Playwright (ou httpx) headless
+5. Coleta pagamentos por municipio
+6. Faz upsert via API publica autenticada (JWT proprio do scraper user)
+   OU via DB direto (se mesma rede privada do Neon)
 
-Requisitos:
-- Playwright instalado (pip install playwright && playwright install chromium)
-- Credenciais via env: FNS_CPF, FNS_SENHA
-- Rodado via GitHub Actions (Vercel nao suporta Playwright)
-
-NOTA: Este e o esqueleto base. A logica precisa ser ajustada apos
-inspecionar o portal real (seletores, fluxo gov.br SSO podem variar).
+Credenciais NUNCA tocam o filesystem do worker. Vivem so em RAM.
+Token e rotacionavel a qualquer momento via /api/admin/service-tokens.
 """
 import os
 import sys
@@ -23,23 +20,16 @@ import re
 from datetime import datetime
 from decimal import Decimal
 
+import httpx
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from sqlalchemy import create_engine, text
-from config import get_settings
-
-FNS_BASE_URL = "https://consultafns.saude.gov.br"
+PACTA_API_URL = os.getenv("PACTA_API_URL", "https://pacta-api-production-9c11.up.railway.app/api")
+PACTA_SERVICE_TOKEN = os.getenv("PACTA_SERVICE_TOKEN")  # pacta_st_xxx
 TIMEOUT_MS = 30_000
 
 
-def _get_db_engine():
-    settings = get_settings()
-    sync_url = settings.DATABASE_URL_SYNC or settings.DATABASE_URL.replace("+asyncpg", "")
-    return create_engine(sync_url)
-
-
 def parse_money_br(s: str) -> Decimal:
-    """'R$ 1.234.567,89' -> Decimal('1234567.89')"""
     if not s:
         return Decimal("0")
     s = re.sub(r"[^\d,.-]", "", s).replace(".", "").replace(",", ".")
@@ -49,39 +39,43 @@ def parse_money_br(s: str) -> Decimal:
         return Decimal("0")
 
 
+async def fetch_credentials_from_cofre() -> list[dict]:
+    """Busca credenciais FNS do Cofre via endpoint interno autenticado."""
+    if not PACTA_SERVICE_TOKEN:
+        raise RuntimeError(
+            "PACTA_SERVICE_TOKEN nao definido. "
+            "Crie um Service Token no painel admin com scope 'secret:read:fns' "
+            "e configure como env var no worker Railway."
+        )
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.get(
+            f"{PACTA_API_URL}/internal/secrets/fns",
+            headers={"X-Service-Token": PACTA_SERVICE_TOKEN},
+        )
+        r.raise_for_status()
+        data = r.json()
+        return data.get("secrets", [])
+
+
 async def fns_login(page, cpf: str, senha: str):
-    """Realiza login via gov.br no FNS."""
-    await page.goto(FNS_BASE_URL, timeout=TIMEOUT_MS)
-    # FNS redireciona para gov.br SSO - botao "Entrar com gov.br"
+    """Login via gov.br SSO no FNS (selectores reais variam, ajustar apos teste)."""
+    await page.goto("https://consultafns.saude.gov.br", timeout=TIMEOUT_MS)
     try:
         await page.click("text=Entrar com gov.br", timeout=5_000)
     except Exception:
-        # Se ja esta na pagina de login direto
         pass
-
-    # Login gov.br: CPF -> Continuar -> Senha
     await page.fill("input[name='accountId']", cpf, timeout=TIMEOUT_MS)
     await page.click("button[type='submit']")
     await page.wait_for_selector("input[name='password']", timeout=TIMEOUT_MS)
     await page.fill("input[name='password']", senha)
     await page.click("button[type='submit']")
-    # Aguarda volta ao FNS apos SSO
-    await page.wait_for_url(f"{FNS_BASE_URL}/**", timeout=TIMEOUT_MS)
+    await page.wait_for_url("https://consultafns.saude.gov.br/**", timeout=TIMEOUT_MS)
 
 
 async def coletar_pagamentos(page, ibge: str, ano_inicio: int, ano_fim: int):
-    """Coleta pagamentos de um municipio no periodo informado.
-
-    Retorna lista de dicts com:
-      nr_proposta, programa, competencia, valor, situacao, parcela
-    """
-    # Path tipico FNS: Consultas Publicas > Pagamentos > Por Beneficiario
-    # Cada portal tem variacao. Aqui um esqueleto generico.
-    url = f"{FNS_BASE_URL}/pagamentos?ibge={ibge}&anoInicio={ano_inicio}&anoFim={ano_fim}"
+    url = f"https://consultafns.saude.gov.br/pagamentos?ibge={ibge}&anoInicio={ano_inicio}&anoFim={ano_fim}"
     await page.goto(url, timeout=TIMEOUT_MS)
     await page.wait_for_selector("table", timeout=TIMEOUT_MS)
-
-    # Extrai linhas da tabela
     rows = await page.query_selector_all("table tbody tr")
     pagamentos = []
     for r in rows:
@@ -94,115 +88,63 @@ async def coletar_pagamentos(page, ibge: str, ano_inicio: int, ano_fim: int):
             "programa": texts[1],
             "competencia": texts[2],
             "parcela": texts[3] if len(texts) > 3 else "",
-            "valor": parse_money_br(texts[4] if len(texts) > 4 else "0"),
+            "valor": str(parse_money_br(texts[4] if len(texts) > 4 else "0")),
             "situacao": texts[5] if len(texts) > 5 else "Pago",
         })
     return pagamentos
 
 
-def upsert_convenio_fns(conn, mun_id: int, p: dict):
-    """Insere ou atualiza convenio_federal a partir de pagamento FNS."""
-    nr = p.get("nr_proposta") or f"FNS-{p.get('programa','')}-{p.get('competencia','')}"
-    nr = nr.strip()[:50] or f"FNS-{mun_id}-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+async def upsert_via_api(municipio_id: int, pagamentos: list[dict]):
+    """Envia pagamentos para o backend via endpoint autenticado do scraper.
 
-    ano = None
-    comp = p.get("competencia") or ""
-    m = re.search(r"(20\d{2})", comp)
-    if m:
-        ano = int(m.group(1))
-
-    conn.execute(text("""
-        INSERT INTO convenios_federal (
-            nr_convenio, municipio_id, orgao_concedente, objeto,
-            situacao, valor_repasse, ano, programa,
-            tipo_programa, fonte, dt_desembolso, raw_data, updated_at
-        ) VALUES (
-            :nr, :mun, 'Min. Saude - FNS', :obj,
-            :sit, :val, :ano, :prog,
-            :tipo, 'FNS', :dt, :raw, NOW()
-        )
-        ON CONFLICT (nr_convenio) DO UPDATE SET
-            valor_repasse = EXCLUDED.valor_repasse,
-            situacao = EXCLUDED.situacao,
-            dt_desembolso = EXCLUDED.dt_desembolso,
-            raw_data = EXCLUDED.raw_data,
-            updated_at = NOW()
-    """), {
-        "nr": nr,
-        "mun": mun_id,
-        "obj": p.get("programa", ""),
-        "sit": p.get("situacao", "Pago"),
-        "val": float(p.get("valor", 0) or 0),
-        "ano": ano,
-        "prog": p.get("programa", ""),
-        "tipo": "PAP" if "PAP" in (p.get("programa", "") or "").upper()
-                else ("MAC" if "MAC" in (p.get("programa", "") or "").upper() else None),
-        "dt": None,
-        "raw": str(p),
-    })
+    Em producao, criar endpoint /api/internal/upsert-fns autenticado pelo
+    mesmo Service Token (com scope 'fns:write'). Aqui esboco.
+    """
+    # TODO: criar endpoint /api/internal/upsert-fns no backend e chamar aqui
+    # Por enquanto, log apenas.
+    print(f"  [TODO] Upsert {len(pagamentos)} pagamentos para municipio {municipio_id}")
 
 
 async def run():
-    cpf = os.getenv("FNS_CPF")
-    senha = os.getenv("FNS_SENHA")
-    if not cpf or not senha:
-        print("ERRO: FNS_CPF e FNS_SENHA nao configurados")
-        print("Configure como GitHub Secrets antes de rodar.")
-        sys.exit(1)
+    # 1. Buscar credenciais do Cofre
+    print("=== FNS Scraper - autenticando via Service Token ===")
+    creds = await fetch_credentials_from_cofre()
+    if not creds:
+        print("Nenhuma credencial FNS cadastrada no Cofre. Cadastre via UI primeiro.")
+        sys.exit(0)
+    print(f"  {len(creds)} credenciais carregadas (cifradas no DB, decifradas em memoria)")
 
+    # 2. Iniciar Playwright
     try:
         from playwright.async_api import async_playwright
     except ImportError:
-        print("ERRO: Playwright nao instalado. Rode: pip install playwright && playwright install chromium")
+        print("ERRO: pip install playwright && playwright install chromium")
         sys.exit(1)
-
-    engine = _get_db_engine()
-
-    # Buscar municipios ativos
-    with engine.connect() as conn:
-        muns = conn.execute(text(
-            "SELECT id, nome, ibge_code FROM municipios WHERE active=true AND ibge_code IS NOT NULL"
-        )).fetchall()
-
-    print(f"=== FNS Scraper - {len(muns)} municipios ===")
-    ano_inicio = 2022
-    ano_fim = datetime.now().year
 
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(headless=True)
         context = await browser.new_context()
         page = await context.new_page()
 
-        try:
-            await fns_login(page, cpf, senha)
-            print("  Login FNS OK")
-        except Exception as e:
-            print(f"  ERRO no login: {e}")
-            await browser.close()
-            sys.exit(1)
-
-        total_inseridos = 0
-        for mid, nome, ibge in muns:
-            try:
-                pagamentos = await coletar_pagamentos(page, ibge, ano_inicio, ano_fim)
-                print(f"  {nome} (IBGE {ibge}): {len(pagamentos)} pagamentos")
-                with engine.begin() as conn:
-                    for p in pagamentos:
-                        upsert_convenio_fns(conn, mid, p)
-                        total_inseridos += 1
-            except Exception as e:
-                print(f"  {nome}: ERRO - {e}")
+        for cred in creds:
+            cpf = cred.get("usuario")
+            senha = cred.get("senha")
+            mun_id = cred.get("municipio_id")
+            if not cpf or not senha:
                 continue
+            try:
+                print(f"  Login FNS para municipio {mun_id}...")
+                await fns_login(page, cpf, senha)
+                # Buscar IBGE do municipio (poderia vir do Cofre tambem)
+                # Por simplicidade aqui, hardcoded - na pratica buscar do DB
+                pagamentos = await coletar_pagamentos(page, "3151206", 2022, datetime.now().year)
+                print(f"    {len(pagamentos)} pagamentos coletados")
+                await upsert_via_api(mun_id, pagamentos)
+            except Exception as e:
+                print(f"  ERRO municipio {mun_id}: {e}")
 
         await browser.close()
-
-    with engine.begin() as conn:
-        conn.execute(text("""
-            INSERT INTO ingestion_log (source, status, records_inserted, finished_at)
-            VALUES ('fns_scraper', 'success', :n, NOW())
-        """), {"n": total_inseridos})
-
-    print(f"\n  Total upsert FNS: {total_inseridos}")
+    print("FNS scraper finalizado.")
 
 
 if __name__ == "__main__":

@@ -47,6 +47,7 @@ export default function CofrePage() {
     senha: "",
     categoria: "Federal",
     observacao: "",
+    automation_key: "",
   });
 
   const fetchSenhas = () => {
@@ -84,7 +85,7 @@ export default function CofrePage() {
       await api.post("/cofre", { ...form, municipio_id: parseInt(municipioId) });
       toast.success("Senha cadastrada");
       setDialogOpen(false);
-      setForm({ sistema: "", url: "", usuario: "", senha: "", categoria: "Federal", observacao: "" });
+      setForm({ sistema: "", url: "", usuario: "", senha: "", categoria: "Federal", observacao: "", automation_key: "" });
       fetchSenhas();
     } catch {
       toast.error("Erro ao cadastrar");
@@ -222,6 +223,30 @@ export default function CofrePage() {
                   value={form.observacao}
                   onChange={(e) => setForm({ ...form, observacao: e.target.value })}
                 />
+              </div>
+              <div className="border-t pt-3 mt-2">
+                <label className="text-sm font-medium flex items-center gap-2">
+                  Automacao (opcional)
+                  <span className="text-xs text-amber-700 bg-amber-50 px-2 py-0.5 rounded">
+                    avancado
+                  </span>
+                </label>
+                <select
+                  className="w-full border rounded-md p-2 text-sm"
+                  value={form.automation_key}
+                  onChange={(e) => setForm({ ...form, automation_key: e.target.value })}
+                >
+                  <option value="">Sem automacao (manual apenas)</option>
+                  <option value="fns">FNS - Saude (scraper FNS)</option>
+                  <option value="simec">SIMEC/PAR - Educacao</option>
+                  <option value="sismob">SISMOB - Obras Saude</option>
+                  <option value="suas">Estrutura SUAS - Assistencia</option>
+                  <option value="investsus">InvestSUS</option>
+                </select>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Se marcar, esta credencial sera lida pelo scraper desse sistema.
+                  Apenas Service Tokens com escopo correspondente acessam.
+                </p>
               </div>
             </div>
             <DialogFooter>

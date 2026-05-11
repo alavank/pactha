@@ -10,10 +10,11 @@ from models.dados_eleitorais import DadosEleitorais
 from models.ingestion_log import IngestionLog
 from models.cofre import CofreSenha
 from models.audit import AuditLog
+from models.service_token import ServiceToken
 
 __all__ = [
     "User", "Municipio", "ConvenioFederal", "ConvenioEstadual",
     "Emenda", "Desembolso", "Parlamentar", "Edital", "EditalAcompanhamento",
     "PrestacaoContas", "PrestacaoDocumento", "DadosEleitorais", "IngestionLog",
-    "CofreSenha", "AuditLog",
+    "CofreSenha", "AuditLog", "ServiceToken",
 ]

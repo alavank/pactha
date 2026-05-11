@@ -12,6 +12,9 @@ class CofreSenha(Base):
     url = Column(Text)
     usuario = Column(String(200))
     senha_encrypted = Column("senha_hash", Text)  # AES-GCM encrypted via services.crypto
+    # Identificador de automacao: ex "fns", "simec", "sismob", "suas".
+    # Scrapers leem apenas credenciais com scope = secret:read:<automation_key>
+    automation_key = Column(String(50), index=True)
     observacao = Column(Text)
     categoria = Column(String(100))  # ex: "Federal", "Estadual", "Saude", "Educacao"
     atualizado_por_id = Column(Integer, ForeignKey("users.id"))
