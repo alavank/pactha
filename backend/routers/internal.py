@@ -195,24 +195,33 @@ async def upsert_from_scraper(
 async def _upsert_parlamentar(db: AsyncSession, nome: str) -> int | None:
     """Busca parlamentar por nome normalizado; cria se nao existir.
 
+    Detecta automaticamente se o nome e institucional (Comissao/Bancada/Bloco/
+    Programa/etc) e padroniza para UPPER sem acentos. Para individuais,
+    mantem capitalizacao original.
+
     Usado por scrapers (FNS/SIMEC/SUAS/PortalTransparencia/CODEVASF) para
-    linkar uma indicacao a um deputado/senador. Tenta match exato pelo nome
-    normalizado primeiro; senao, cria um registro novo.
+    linkar uma indicacao a um deputado/senador OU rotulo institucional.
     """
+    from services.institucional import is_institucional, normalize_institucional
     norm = _norm_parl_name(nome)
     if not norm or len(norm) < 3:
         return None
 
-    # Match por nome normalizado em Python (Postgres unaccent nem sempre disponivel)
+    # Match por nome normalizado em Python
     r = await db.execute(text("SELECT id, nome FROM parlamentares"))
     for pid, pnome in r.fetchall():
         if _norm_parl_name(pnome) == norm:
             return pid
 
-    # Criar novo (esfera/uf placeholder; pode ser corrigido por dedupe_parlamentares)
+    # Cadastra novo - se for institucional, normaliza UPPER sem acentos
+    inst = is_institucional(nome)
+    nome_db = normalize_institucional(nome) if inst else nome.strip()[:300]
+    esfera = "federal"
+    uf = "BR" if inst and any(k in norm for k in ["BANCADA", "COMISS", "BLOCO", "RELATOR"]) else "MG"
+
     res = await db.execute(text("""
         INSERT INTO parlamentares (nome, esfera, uf)
-        VALUES (:n, 'federal', 'MG')
+        VALUES (:n, :e, :u)
         RETURNING id
-    """), {"n": nome.strip().upper()[:300]})
+    """), {"n": nome_db, "e": esfera, "u": uf})
     return res.scalar()

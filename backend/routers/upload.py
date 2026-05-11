@@ -259,11 +259,16 @@ async def upload_convenios(
                 if norm and len(norm) >= 3:
                     parl_id = parl_cache.get(norm)
                     if not parl_id:
+                        # Auto-detect institucional para padronizar nome
+                        from services.institucional import is_institucional, normalize_institucional
+                        inst = is_institucional(parl_nome)
+                        nome_db = normalize_institucional(parl_nome) if inst else parl_nome.strip()[:300]
+                        uf = "BR" if inst and any(k in norm for k in ["BANCADA","COMISS","BLOCO","RELATOR"]) else "MG"
                         ins = await db.execute(text("""
                             INSERT INTO parlamentares (nome, esfera, uf)
-                            VALUES (:n, 'federal', 'MG')
+                            VALUES (:n, 'federal', :u)
                             RETURNING id
-                        """), {"n": parl_nome.upper()[:300]})
+                        """), {"n": nome_db, "u": uf})
                         parl_id = ins.scalar()
                         parl_cache[norm] = parl_id
 
