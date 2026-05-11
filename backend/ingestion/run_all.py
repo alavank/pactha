@@ -66,18 +66,45 @@ def main():
     sucessos, falhas = [], []
     inicio = datetime.now()
 
+    # Mapeamento: alguns modulos legacy nao tem main(), executam funcao especifica
+    LEGACY_FN = {
+        "transferegov": ["main", "ingest_convenios", "ingest_emendas"],
+        "sigcon": ["main", "ingest_sigcon", "main_sigcon"],
+        "editais": ["main", "ingest_editais"],
+        "tse": ["main", "ingest_tse"],
+    }
+
     for mod_name in modules:
         logger.info(f"--- Rodando: ingestion.{mod_name} ---")
         try:
             mod = importlib.import_module(f"ingestion.{mod_name}")
-            if hasattr(mod, "main"):
-                mod.main()
-            else:
-                logger.warning(f"  Modulo {mod_name} sem funcao main()")
+            # Tenta funcoes em ordem
+            candidates = LEGACY_FN.get(mod_name, ["main"])
+            fn = next((getattr(mod, c) for c in candidates if hasattr(mod, c)), None)
+            if fn is None:
+                # Fallback: tenta executar como script (chamando o codigo do __main__)
+                logger.warning(f"  Modulo {mod_name} sem funcao callable - executando como script")
+                spec_path = mod.__file__
+                import subprocess
+                r = subprocess.run([sys.executable, "-u", spec_path],
+                                   capture_output=True, text=True, timeout=3600,
+                                   env={**os.environ})
+                if r.returncode == 0:
+                    sucessos.append(mod_name)
+                else:
+                    logger.error(f"  {mod_name} script exit {r.returncode}: {r.stderr[-500:]}")
+                    falhas.append((mod_name, f"script exit {r.returncode}"))
                 continue
+            # Para transferegov, chama as 2 funcoes em sequencia
+            if mod_name == "transferegov":
+                if hasattr(mod, "ingest_convenios"):
+                    mod.ingest_convenios()
+                if hasattr(mod, "ingest_emendas"):
+                    mod.ingest_emendas()
+            else:
+                fn()
             sucessos.append(mod_name)
         except SystemExit as e:
-            # Modulos que dao sys.exit(1) em falha
             if e.code:
                 logger.error(f"  {mod_name} encerrou com codigo {e.code}")
                 falhas.append((mod_name, f"exit {e.code}"))
