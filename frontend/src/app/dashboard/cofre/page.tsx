@@ -28,6 +28,7 @@ interface Senha {
   senha_mascarada?: string;
   observacao?: string;
   categoria?: string;
+  automation_key?: string;
 }
 
 const CATEGORIAS = ["Federal", "Estadual", "Saude", "Educacao", "Assistencia Social", "Outro"];
