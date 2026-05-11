@@ -71,6 +71,16 @@ class FNSScraper(ScraperBase):
                         if len(cells) < 4:
                             continue
                         texts = [(await c.inner_text()).strip() for c in cells]
+                        # Heuristica: alguns relatorios FNS expoem o nome do
+                        # parlamentar autor da indicacao em colunas extras.
+                        # Captura best-effort - quando ausente, fica None e o
+                        # endpoint /upsert apenas insere o convenio sem emenda.
+                        parl = None
+                        for t in texts[5:]:
+                            t_up = t.upper()
+                            if any(k in t_up for k in ("DEPUTAD", "SENADOR", "EMENDA")):
+                                parl = re.sub(r"^(DEPUTAD[OA]|SENADOR[A]?|EMENDA\s+DE\s+)", "", t_up).strip()
+                                break
                         items.append({
                             "nr_proposta": texts[0] if len(texts) > 0 else "",
                             "programa": texts[1] if len(texts) > 1 else "",
@@ -80,6 +90,7 @@ class FNSScraper(ScraperBase):
                             "ano": ano,
                             "fonte": "FNS",
                             "orgao_concedente": "Min. Saude - FNS",
+                            "parlamentar_nome": parl,
                         })
                 except Exception:
                     continue

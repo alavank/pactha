@@ -123,18 +123,29 @@ def main():
                 parl_id, parl_partido = tse_by_norm[norm]
                 matched_tse += 1
             else:
-                # Fuzzy: 2+ words in common
-                name_words = set(norm.split())
-                if len(name_words) >= 2:
+                # Fuzzy mais rigoroso: ignorar conectivos e exigir match de nome+sobrenome
+                # ou um sobrenome distintivo (4+ chars, nao em STOP).
+                # 2 palavras compartilhadas sao insuficientes (ex.: "DE OLIVEIRA" causava
+                # falsos positivos: "FABIO AVELAR DE OLIVEIRA" -> "MAERCIO DE OLIVEIRA").
+                STOP = {
+                    "DE", "DA", "DO", "DOS", "DAS", "E", "EM",
+                    "BLOCO", "PARTIDO", "DEPUTADO", "DEPUTADA", "SR", "SRA",
+                    "JUNIOR", "FILHO", "NETO",
+                }
+                name_core = [w for w in norm.split() if w not in STOP and len(w) >= 3]
+                if len(name_core) >= 2:
                     for tse_norm, (tid, tpart) in tse_by_norm.items():
-                        tse_words = set(tse_norm.split())
-                        if len(tse_words) >= 2:
-                            common = name_words & tse_words
-                            if len(common) >= 2:
-                                parl_id = tid
-                                parl_partido = tpart
-                                matched_tse += 1
-                                break
+                        tse_core = [w for w in tse_norm.split() if w not in STOP and len(w) >= 3]
+                        if len(tse_core) < 2:
+                            continue
+                        common = set(name_core) & set(tse_core)
+                        # exige: 2+ tokens comuns E ratio >= 0.6 dos tokens distintivos
+                        # do nome do banco (evita "MINAS" sozinho casar bloco generico)
+                        if len(common) >= 2 and len(common) / max(len(tse_core), 1) >= 0.6:
+                            parl_id = tid
+                            parl_partido = tpart
+                            matched_tse += 1
+                            break
 
             if not parl_id:
                 # Create new parlamentar

@@ -8,10 +8,11 @@ Template CSV esperado:
 Template XLSX com mesmas colunas.
 """
 import io
+import unicodedata
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, text
 from typing import Optional
 from datetime import datetime
 import pandas as pd
@@ -19,6 +20,13 @@ import pandas as pd
 from database import get_db
 from models import ConvenioFederal, Municipio
 from services.auth import get_current_user
+
+
+def _norm_parl(s: str | None) -> str:
+    if not s:
+        return ""
+    s = str(s).strip().upper()
+    return "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))
 
 router = APIRouter(prefix="/api/upload", tags=["upload"])
 
@@ -181,7 +189,12 @@ async def upload_convenios(
     mun_by_ibge = {m.ibge_code: m.id for m in mun_result.scalars().all()}
 
     inserted = 0
+    emendas_linked = 0
     errors = []
+
+    # Cache de parlamentares (nome normalizado -> id) para evitar N queries
+    parl_rows = (await db.execute(text("SELECT id, nome FROM parlamentares"))).fetchall()
+    parl_cache: dict[str, int] = {_norm_parl(n): pid for pid, n in parl_rows}
 
     for idx, row in df.iterrows():
         try:
@@ -227,10 +240,52 @@ async def upload_convenios(
                 for k, v in data.items():
                     if k != "nr_convenio":
                         setattr(exists, k, v)
+                convenio_obj = exists
             else:
-                db.add(ConvenioFederal(**data))
+                convenio_obj = ConvenioFederal(**data)
+                db.add(convenio_obj)
 
             inserted += 1
+
+            # Vincular parlamentar -> emenda (se a planilha trouxer o nome).
+            # Aceita inclusive blocos, comissoes, programas (Bancada MG, Comissao
+            # Saude, SIMEC/PAR4, Doacao/Novo PAC, Resolucao 9814/SES, PROMAQ,
+            # Vilson/FETAEMG etc) - o "nome" vai para a tabela parlamentares como
+            # rotulo, sem partido, e o relatorio agrupa pelo mesmo identificador.
+            parl_nome_raw = (row.get("parlamentar_indicacao") or "")
+            parl_nome = str(parl_nome_raw).strip() if parl_nome_raw else ""
+            if parl_nome and parl_nome.lower() not in ("nan", "none", "-", ""):
+                norm = _norm_parl(parl_nome)
+                if norm and len(norm) >= 3:
+                    parl_id = parl_cache.get(norm)
+                    if not parl_id:
+                        ins = await db.execute(text("""
+                            INSERT INTO parlamentares (nome, esfera, uf)
+                            VALUES (:n, 'federal', 'MG')
+                            RETURNING id
+                        """), {"n": parl_nome.upper()[:300]})
+                        parl_id = ins.scalar()
+                        parl_cache[norm] = parl_id
+
+                    # Garantir convenio.id (precisa flush para new objects)
+                    await db.flush()
+                    cf_id = convenio_obj.id
+
+                    # Substituir emenda anterior do mesmo convenio (idempotencia)
+                    await db.execute(text(
+                        "DELETE FROM emendas WHERE convenio_federal_id=:c"
+                    ), {"c": cf_id})
+                    await db.execute(text("""
+                        INSERT INTO emendas (
+                            parlamentar_id, municipio_id, convenio_federal_id,
+                            valor, tipo, esfera, ano
+                        ) VALUES (:p, :m, :c, :v, 'Indicacao Manual', 'federal', :a)
+                    """), {
+                        "p": parl_id, "m": mun_by_ibge[ibge], "c": cf_id,
+                        "v": float(data["valor_repasse"] or data["valor_global"] or 0),
+                        "a": data["ano"],
+                    })
+                    emendas_linked += 1
         except Exception as e:
             errors.append(f"Linha {idx+2}: {str(e)[:100]}")
 
@@ -238,6 +293,7 @@ async def upload_convenios(
 
     return {
         "inseridos": inserted,
+        "emendas_linkadas": emendas_linked,
         "fonte": fonte,
         "erros": errors[:20],
         "total_erros": len(errors),
