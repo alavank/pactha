@@ -136,6 +136,18 @@ def parse_date(s):
         return None
 
 
+def fetch_comissoes_blocos(client):
+    """Ingere comissoes permanentes da Camara como 'parlamentares' institucionais.
+    Permite vincular emendas RP9 que vem com autor='Comissao da Saude' etc."""
+    out_comissoes = []
+    data = _get(client, "/orgaos", {"itens": 100, "tipo": "1"})  # tipo 1 = comissao permanente
+    if data:
+        out_comissoes = data.get("dados", []) or []
+    data_b = _get(client, "/blocos", {"itens": 100, "idLegislatura": 57})
+    out_blocos = data_b.get("dados", []) if data_b else []
+    return out_comissoes, out_blocos
+
+
 def main():
     logger.info("=== Pipeline Camara dos Deputados ===")
     from datetime import datetime
@@ -155,6 +167,45 @@ def main():
                 if pid:
                     id_map[d["id"]] = pid
             logger.info(f"  {len(id_map)} parlamentares MG sincronizados com Camara")
+
+            # Ingerir comissoes e blocos como "parlamentares" institucionais
+            # para vincular emendas RP9 que vem com autor "Comissao da Saude" etc.
+            try:
+                comissoes, blocos = fetch_comissoes_blocos(client)
+                comissao_inseridas = 0
+                for c in comissoes:
+                    nome = (c.get("nome") or "").strip().upper()
+                    sigla = (c.get("sigla") or "").strip().upper()
+                    if not nome: continue
+                    nome_full = f"COMISSAO {sigla}" if sigla else nome
+                    r = conn.execute(text("""
+                      SELECT id FROM parlamentares WHERE upper(nome)=:n LIMIT 1
+                    """), {"n": nome_full}).first()
+                    if not r:
+                        conn.execute(text("""
+                          INSERT INTO parlamentares (nome, esfera, uf, legislatura, external_id)
+                          VALUES (:n, 'federal', 'BR', '2023-2027', :ext)
+                        """), {"n": nome_full[:300], "ext": f"camara_orgao:{c.get('id')}"})
+                        comissao_inseridas += 1
+                logger.info(f"  Comissoes inseridas: {comissao_inseridas}/{len(comissoes)}")
+
+                bloco_inseridos = 0
+                for b in blocos:
+                    nome = (b.get("nome") or "").strip().upper()
+                    if not nome: continue
+                    nome_full = f"BLOCO {nome}" if not nome.startswith("BLOCO") else nome
+                    r = conn.execute(text("""
+                      SELECT id FROM parlamentares WHERE upper(nome)=:n LIMIT 1
+                    """), {"n": nome_full}).first()
+                    if not r:
+                        conn.execute(text("""
+                          INSERT INTO parlamentares (nome, esfera, uf, legislatura, external_id)
+                          VALUES (:n, 'federal', 'BR', '2023-2027', :ext)
+                        """), {"n": nome_full[:300], "ext": f"camara_bloco:{b.get('idBloco') or b.get('id')}"})
+                        bloco_inseridos += 1
+                logger.info(f"  Blocos inseridos: {bloco_inseridos}/{len(blocos)}")
+            except Exception as e:
+                logger.warning(f"  Falha comissoes/blocos: {e}")
 
         # Despesas + proposicoes - batch insert via psycopg2 raw (10x mais rapido)
         import psycopg2.extras

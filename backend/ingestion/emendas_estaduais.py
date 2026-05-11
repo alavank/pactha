@@ -31,6 +31,55 @@ def norm_name(s):
 #   "TRANSFERENCIA ESPECIAL: BLOCO LIBERDADE E PROGRESSO - INDICACAO: 62571"
 #   "TRANSFERENCIA ESPECIAL: PARTIDO LIBERAL - INDICACAO: 115305"
 #   "TRANSFERENCIA ESPECIAL: COMISSAO DE SAUDE - INDICACAO: 99999"
+#   "TRANSFERENCIA ESPECIAL: FRED COSTA / REGINALDO LOPES - INDICACAO: ..."  (compartilhada)
+#   "TRANSFERENCIA ESPECIAL: VILSON / FETAEMG - INDICACAO: ..."
+
+# Programas estaduais MG conhecidos (rotulos institucionais sem deputado)
+# Quando aparecem no objeto, classificam como autor da indicacao.
+PROGRAMAS_ESTADUAIS = [
+    "PROMAQ",         # Programa Mineiro de Aquisicao de Equipamentos
+    "FETAEMG",        # Federacao Trabalhadores Agricultura MG
+    "VIVAVALE",       # Programa estadual
+    "MINAS COMUNICA", # Programa SEAPA
+    "AGUA PARA TODOS",
+    "TRAVESSIA",
+    "AGENTES DO BEM",
+    # Resolucoes SES costumam vir com numero
+    # Bancada / Bloco / Comissao identificados por keywords no PATTERNS
+]
+
+# Regex para indicacao compartilhada: "X / Y" ou "X E Y"
+RE_COMPARTILHADA = re.compile(
+    r"TRANSFERENC[IÍ]A\s+ESPECIAL\s*[:\-]?\s*"
+    r"([A-ZÁÉÍÓÚÀÂÊÔÃÕÇ][A-ZÁÉÍÓÚÀÂÊÔÃÕÇ\s\.]+?)\s*[\/]\s*"
+    r"([A-ZÁÉÍÓÚÀÂÊÔÃÕÇ][A-ZÁÉÍÓÚÀÂÊÔÃÕÇ\s\.]+?)"
+    r"(?:\s*[-–]\s*INDICA[CÇ][AÃ]O|\s*$)",
+    re.IGNORECASE,
+)
+
+
+def extract_shared(objeto):
+    """Detecta indicacao compartilhada 'NomeA / NomeB'.
+    Retorna lista de nomes [A, B] ou None."""
+    if not objeto: return None
+    m = RE_COMPARTILHADA.search(objeto)
+    if not m: return None
+    nomes = [m.group(1).strip().upper(), m.group(2).strip().upper()]
+    # Filtrar ruido
+    return [n for n in nomes if 3 <= len(n) <= 60]
+
+
+def extract_programa_estadual(objeto):
+    """Detecta programa estadual conhecido no objeto.
+    Retorna nome do programa ou None."""
+    if not objeto: return None
+    obj_u = objeto.upper()
+    for prog in PROGRAMAS_ESTADUAIS:
+        if prog in obj_u:
+            return prog
+    return None
+
+
 PATTERNS = [
     # Pattern principal: tudo entre "TRANSFERENCIA ESPECIAL:" e "- INDICACAO:" (ou final)
     re.compile(
@@ -107,12 +156,66 @@ def main():
 
         extracted = 0
         matched_tse = 0
+        shared_count = 0
+        programa_count = 0
         for cid, mun_id, objeto, valor, ano in rows:
+            valor_f = float(valor or 0)
+
+            # === 1. INDICACAO COMPARTILHADA (X / Y) ===
+            shared = extract_shared(objeto)
+            if shared:
+                # Cria 2 emendas, uma para cada parlamentar, dividindo o valor
+                valor_share = valor_f / 2
+                shared_pids = []
+                for nome_s in shared:
+                    norm_s = norm_name(nome_s)
+                    pid_s = tse_by_norm.get(norm_s, (None, None))[0]
+                    if not pid_s:
+                        res = conn.execute(text("""
+                            INSERT INTO parlamentares (nome, esfera, uf)
+                            VALUES (:n, 'estadual', 'MG') RETURNING id
+                        """), {"n": nome_s[:300]})
+                        pid_s = res.scalar()
+                        tse_by_norm[norm_s] = (pid_s, None)
+                    shared_pids.append(pid_s)
+                for pid_s in shared_pids:
+                    conn.execute(text("""
+                        INSERT INTO emendas (parlamentar_id, municipio_id, convenio_estadual_id,
+                                              valor, tipo, esfera, ano)
+                        VALUES (:p, :m, :c, :v, 'Transferencia Especial Compartilhada', 'estadual', :a)
+                    """), {"p": pid_s, "m": mun_id, "c": cid, "v": valor_share,
+                            "a": int(ano) if ano else None})
+                shared_count += 1
+                extracted += 2
+                continue
+
+            # === 2. PROGRAMA ESTADUAL conhecido (PROMAQ, FETAEMG, etc) ===
+            prog = extract_programa_estadual(objeto)
+            if prog:
+                norm_p = norm_name(prog)
+                pid_p = tse_by_norm.get(norm_p, (None, None))[0]
+                if not pid_p:
+                    res = conn.execute(text("""
+                        INSERT INTO parlamentares (nome, esfera, uf)
+                        VALUES (:n, 'estadual', 'MG') RETURNING id
+                    """), {"n": prog})
+                    pid_p = res.scalar()
+                    tse_by_norm[norm_p] = (pid_p, None)
+                conn.execute(text("""
+                    INSERT INTO emendas (parlamentar_id, municipio_id, convenio_estadual_id,
+                                          valor, tipo, esfera, ano)
+                    VALUES (:p, :m, :c, :v, 'Programa Estadual', 'estadual', :a)
+                """), {"p": pid_p, "m": mun_id, "c": cid, "v": valor_f,
+                        "a": int(ano) if ano else None})
+                programa_count += 1
+                extracted += 1
+                continue
+
+            # === 3. PARLAMENTAR INDIVIDUAL (regex padrao) ===
             name = extract_name(objeto)
             if not name:
                 continue
             # Aceitar valor 0 desde que seja indicacao real (PDF mostra varios pendentes/em analise)
-            valor_f = float(valor or 0)
 
             # Try to match with TSE (exact or fuzzy)
             norm = norm_name(name)
@@ -177,6 +280,8 @@ def main():
 
     print(f"\n  Emendas estaduais extraidas: {extracted}")
     print(f"  Matchadas com TSE: {matched_tse}")
+    print(f"  Compartilhadas (X / Y): {shared_count}")
+    print(f"  Programas estaduais (PROMAQ/FETAEMG/etc): {programa_count}")
 
 
 if __name__ == "__main__":

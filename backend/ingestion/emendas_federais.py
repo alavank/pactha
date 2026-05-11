@@ -181,12 +181,27 @@ def main():
             conv_id, mun_id = prop_to_db[pid]
 
             parl_nome = clean_string(row.get("NOME_PARLAMENTAR"))
-            if not parl_nome:
-                continue
-
             tipo = clean_string(row.get("TIPO_PARLAMENTAR"))
             nr_emenda = clean_string(row.get("NR_EMENDA"))
             valor = parse_decimal_br(row.get("VALOR_REPASSE_EMENDA")) or parse_decimal_br(row.get("VALOR_REPASSE_PROPOSTA_EMENDA"))
+
+            # Auto-classificar emendas sem autor identificavel (RP6 individual,
+            # RP7 bancada, RP8 relator-geral, RP9 emenda coletiva) baseado em TIPO_PARLAMENTAR
+            # e/ou padroes do nome:
+            #   "" + tipo="BANCADA" -> "Bancada de Minas Gerais"
+            #   "" + tipo="COMISSAO" -> "Comissao parlamentar"
+            #   "RELATOR GERAL" -> mantem
+            #   "" sem tipo -> "Programa (sem indicacao parlamentar)"
+            if not parl_nome:
+                tipo_up = (tipo or "").upper()
+                if "BANCADA" in tipo_up:
+                    parl_nome = "BANCADA DE MINAS GERAIS"
+                elif "COMISS" in tipo_up:
+                    parl_nome = "COMISSAO PARLAMENTAR"
+                elif "RELATOR" in tipo_up:
+                    parl_nome = "RELATOR GERAL"
+                else:
+                    parl_nome = "PROGRAMA (SEM INDICACAO PARLAMENTAR)"
 
             # Try to match existing TSE parlamentar by normalized name
             norm = norm_name(parl_nome)
