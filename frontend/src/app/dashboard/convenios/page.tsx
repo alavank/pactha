@@ -297,8 +297,10 @@ export default function ConveniosPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Nr Convenio</TableHead>
+                  <TableHead>Fonte</TableHead>
                   <TableHead>Orgao</TableHead>
-                  <TableHead className="max-w-[300px]">Objeto</TableHead>
+                  <TableHead className="max-w-[280px]">Objeto</TableHead>
+                  <TableHead>Programa</TableHead>
                   <TableHead>Situacao</TableHead>
                   <TableHead className="text-right">Valor Total</TableHead>
                   <TableHead>Vigencia</TableHead>
@@ -311,10 +313,17 @@ export default function ConveniosPage() {
                     <TableCell className="font-medium">
                       {conv.nr_convenio || conv.nr_sigcon || "-"}
                     </TableCell>
+                    <TableCell>
+                      {conv.fonte && (
+                        <span className="inline-flex items-center rounded-md bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 text-[10px] font-mono text-indigo-700">
+                          {conv.fonte}
+                        </span>
+                      )}
+                    </TableCell>
                     <TableCell className="max-w-[150px] truncate">
                       {conv.orgao_concedente || "-"}
                     </TableCell>
-                    <TableCell className="max-w-[300px]">
+                    <TableCell className="max-w-[280px]">
                       <span className="line-clamp-2 text-sm">
                         {conv.objeto
                           ? conv.objeto.length > 80
@@ -322,6 +331,9 @@ export default function ConveniosPage() {
                             : conv.objeto
                           : "-"}
                       </span>
+                    </TableCell>
+                    <TableCell className="max-w-[140px] truncate text-xs text-muted-foreground">
+                      {conv.tipo_programa || conv.programa || "-"}
                     </TableCell>
                     <TableCell>
                       <span

@@ -34,6 +34,16 @@ def federal_to_response(c: ConvenioFederal) -> ConvenioResponse:
         dias_restantes=dias,
         ano=c.ano,
         programa=c.programa,
+        fonte=c.fonte,
+        tipo_programa=c.tipo_programa,
+        banco=c.banco,
+        agencia=c.agencia,
+        conta_corrente=c.conta_corrente,
+        saldo_bancario=float(c.saldo_bancario) if c.saldo_bancario else None,
+        dt_saldo=c.dt_saldo,
+        nr_sei=c.nr_sei,
+        dt_empenho=c.dt_empenho,
+        dt_desembolso=c.dt_desembolso,
     )
 
 
@@ -62,6 +72,16 @@ def estadual_to_response(c: ConvenioEstadual) -> ConvenioResponse:
         ano=c.ano,
         etapa_sigcon=c.etapa_sigcon,
         etapa_sigcon_nr=c.etapa_sigcon_nr,
+        fonte=c.fonte,
+        tipo_programa=c.tipo_programa,
+        banco=c.banco,
+        agencia=c.agencia,
+        conta_corrente=c.conta_corrente,
+        saldo_bancario=float(c.saldo_bancario) if c.saldo_bancario else None,
+        dt_saldo=c.dt_saldo,
+        nr_sei=c.nr_sei,
+        dt_empenho=c.dt_empenho,
+        dt_desembolso=c.dt_desembolso,
     )
 
 

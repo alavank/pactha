@@ -28,6 +28,8 @@ MIGRATION_FILES = [
     "dedupe_parlamentares_unique.sql",
     # Fix +30 anos SIGCON-MG (idempotente)
     "fix_sigcon_year_offset.sql",
+    # Dedupe convenios + UNIQUE INDEX (idempotente)
+    "dedupe_convenios_unique.sql",
 ]
 
 
