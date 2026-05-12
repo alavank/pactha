@@ -46,6 +46,16 @@ export interface Convenio {
   programa?: string;
   etapa_sigcon?: string;
   etapa_sigcon_nr?: number;
+  fonte?: string;
+  tipo_programa?: string;
+  banco?: string;
+  agencia?: string;
+  conta_corrente?: string;
+  saldo_bancario?: number;
+  dt_saldo?: string;
+  nr_sei?: string;
+  dt_empenho?: string;
+  dt_desembolso?: string;
 }
 
 export interface ConvenioList {

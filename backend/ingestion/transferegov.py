@@ -34,32 +34,54 @@ MUNICIPIO_NAMES = {
 }
 
 
-def download_csv(filename: str, max_attempts: int = 3) -> pd.DataFrame:
-    """Download a zip file from TransfereGov and extract the CSV.
-    Retry com backoff: o servidor `repositorio.dados.gov.br` derruba conexao
-    com frequencia em arquivos > 100MB."""
+def download_csv(filename: str, max_attempts: int = 8) -> pd.DataFrame:
+    """Download a zip file com HTTP Range/resume.
+
+    Servidor `repositorio.dados.gov.br` trunca consistentemente arquivos
+    > 100MB (~80MB e ele mata). Estratégia:
+    1. Pede HEAD para saber tamanho total esperado
+    2. Faz Range requests (parciais) ate completar
+    3. Se uma tentativa falha, retoma de onde parou
+    """
     import time
     url = BASE_URL + filename
-    last_err = None
+
+    # Descobrir tamanho total (HEAD request)
+    total_size = None
+    try:
+        h = httpx.head(url, timeout=30, follow_redirects=True)
+        if "content-length" in h.headers:
+            total_size = int(h.headers["content-length"])
+            print(f"  Tamanho esperado: {total_size/1024/1024:.1f} MB")
+    except Exception:
+        pass
+
+    data = bytearray()
     for attempt in range(1, max_attempts + 1):
-        print(f"  Baixando {url} (tentativa {attempt}/{max_attempts})...")
-        try:
-            with httpx.stream("GET", url, timeout=900, follow_redirects=True) as r:
-                data = b""
-                for chunk in r.iter_bytes():
-                    data += chunk
-            print(f"  Tamanho: {len(data)/1024/1024:.1f} MB")
+        already = len(data)
+        if total_size and already >= total_size:
             break
+
+        headers = {"Range": f"bytes={already}-"} if already > 0 else {}
+        try:
+            print(f"  Baixando {url} (tentativa {attempt}, ja={already/1024/1024:.1f}MB)...")
+            with httpx.stream("GET", url, timeout=900, follow_redirects=True, headers=headers) as r:
+                for chunk in r.iter_bytes(chunk_size=1 << 16):  # 64KB chunks
+                    data.extend(chunk)
+            if total_size and len(data) >= total_size:
+                break
+            print(f"  Conexao OK mas terminou cedo ({len(data)/1024/1024:.1f}MB de {total_size/1024/1024 if total_size else '?'}MB) - tentando resume")
         except (httpx.ReadError, httpx.RemoteProtocolError, httpx.ConnectError, httpx.ReadTimeout) as e:
-            last_err = e
-            backoff = 2 ** attempt * 5  # 10s, 20s, 40s
-            print(f"  Falha (tentando novamente em {backoff}s): {e}")
-            if attempt < max_attempts:
-                time.sleep(backoff)
-            else:
-                raise
-    else:
-        raise last_err
+            print(f"  Drop em {len(data)/1024/1024:.1f}MB: {e}")
+            if attempt == max_attempts:
+                if total_size and len(data) < total_size * 0.95:
+                    raise RuntimeError(f"Download incompleto apos {max_attempts} tentativas ({len(data)}/{total_size} bytes)")
+                else:
+                    print(f"  Aceitando download parcial ({len(data)/1024/1024:.1f}MB)")
+                    break
+            time.sleep(min(60, 2 ** attempt))
+    print(f"  Download final: {len(data)/1024/1024:.1f} MB")
+    data = bytes(data)
 
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
         csv_name = [n for n in zf.namelist() if n.endswith(".csv")][0]
@@ -70,9 +92,8 @@ def download_csv(filename: str, max_attempts: int = 3) -> pd.DataFrame:
                 sep=";", encoding="latin-1", dtype=str,
                 on_bad_lines="skip", low_memory=False,
             )
-            # Clean BOM from first column name
-            if df.columns[0].startswith("\ufeff"):
-                df.columns = [c.lstrip("\ufeff") for c in df.columns]
+            # Clean BOM from first column name (UTF-8 BOM ou latin-1 decoded "\u00ef\u00bb\u00bf")
+            df.columns = [c.lstrip("\ufeff").lstrip("\u00ef\u00bb\u00bf").strip() for c in df.columns]
             print(f"  Lido: {len(df)} linhas, {len(df.columns)} colunas")
             return df
 

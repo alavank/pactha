@@ -25,6 +25,17 @@ class ConvenioResponse(BaseModel):
     programa: Optional[str] = None
     etapa_sigcon: Optional[str] = None
     etapa_sigcon_nr: Optional[int] = None
+    # Campos extras (PDF Freitas / RM Word)
+    fonte: Optional[str] = None
+    tipo_programa: Optional[str] = None
+    banco: Optional[str] = None
+    agencia: Optional[str] = None
+    conta_corrente: Optional[str] = None
+    saldo_bancario: Optional[float] = None
+    dt_saldo: Optional[date] = None
+    nr_sei: Optional[str] = None
+    dt_empenho: Optional[date] = None
+    dt_desembolso: Optional[date] = None
 
     class Config:
         from_attributes = True

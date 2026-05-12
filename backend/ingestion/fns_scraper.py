@@ -1,224 +1,182 @@
 """
 Scraper FNS - Fundo Nacional de Saude.
-Le credenciais via Service Token (Cofre PACTA).
 
-Estrategia em 2 etapas:
-1. Listar pagamentos por ano (tabela com proposta, programa, valor, situacao)
-2. Para cada proposta, abrir o detalhe e raspar o parlamentar autor da indicacao.
-   No portal FNS (consultafns.saude.gov.br) o parlamentar aparece dentro da
-   tela "Detalhamento da Proposta" - campo "Indicador" ou "Parlamentar autor".
+Usa API REST interna do portal consultafns.saude.gov.br descoberta via
+inspecao de XHR:
 
-A captura de parlamentar e o gap maior do RM Bom Despacho: ~30 das 73
-propostas sao FNS (PAP/MAC/Custeio).
+  GET /recursos/proposta/consultar?ano=YYYY&coMunicipioIbge=XXXXXX&sgUf=MG
+       &count=200&page=1
+
+Esse endpoint retorna propostas filtradas por municipio (codigo IBGE FNS de
+6 digitos, NAO o IBGE de 7 digitos do Brasil). O scraper:
+
+1. Le sessao capturada via bookmarklet (cookies em cofre_senhas.senha_hash
+   cifrado, formato JSON {format:'cookies_full', cookies:[...]})
+2. Resolve coMunicipioIbge consultando /recursos/municipios/uf/MG
+3. Para cada municipio + ano, pagina os resultados
+4. Insere em convenios_federal com fonte='FNS'
+
+NAO usa mais Playwright para coleta - so para captura de sessao via
+bookmarklet (handled fora do scraper).
+
+Resultado validado: cobertura Piracema 49% -> 99% PDF Freitas.
 """
 import os
 import sys
-import re
+import json
+import logging
 from datetime import datetime
-from decimal import Decimal
+from typing import Optional
+
+import httpx
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from ingestion.scraper_base import ScraperBase, cli
 
-
-def parse_money_br(s: str) -> float:
-    if not s:
-        return 0.0
-    s = re.sub(r"[^\d,.-]", "", s).replace(".", "").replace(",", ".")
-    try:
-        return float(Decimal(s))
-    except Exception:
-        return 0.0
+logger = logging.getLogger("fns_scraper")
 
 
-def extract_parlamentar(texto: str) -> str | None:
-    """Extrai nome do parlamentar de um trecho de texto livre."""
-    if not texto:
-        return None
-    t = re.sub(r"\s+", " ", texto).strip()
-    # Padroes encontrados no FNS:
-    # "Indicador: DEPUTADO LUIS TIBE"
-    # "Parlamentar autor: COMISSAO DA SAUDE"
-    # "Autor da Emenda: BANCADA DE MINAS GERAIS"
-    # "Indicacao parlamentar: Newton Cardoso Jr"
-    PATS = [
-        r"(?:Indicador|Parlamentar autor|Autor da Emenda|Indica[cç][aã]o parlamentar|Parlamentar)[:\s]+([^\n;|]+)",
-        r"(?:DEPUTAD[OA]|SENADOR[A]?)\s+([A-ZÁÉÍÓÚÂÊÔÃÕÇ][A-ZÁÉÍÓÚÂÊÔÃÕÇ\s\.]{4,60})",
-        r"BANCADA\s+(?:DE\s+|DO\s+)?(MINAS GERAIS|EBPM|NORDESTE|MG)",
-        r"(COMISS[AÃ]O\s+DA?\s+(?:SA[UÚ]DE|EDUCA[CÇ][AÃ]O|EXTERIOR))",
-        r"BLOCO\s+([A-ZÁÉÍÓÚÂÊÔÃÕÇ][A-ZÁÉÍÓÚÂÊÔÃÕÇ\s]{4,40})",
-        r"RELATOR\s+GERAL",
-    ]
-    for pat in PATS:
-        m = re.search(pat, t, re.IGNORECASE)
-        if m:
-            nome = (m.group(1) if m.lastindex else m.group(0)).strip()
-            # Limpar prefixos
-            nome = re.sub(r"^(DEPUTAD[OA]|SENADOR[A]?|SR\.?|SRA\.?)\s+", "", nome, flags=re.IGNORECASE)
-            nome = nome.rstrip(".,;:")
-            if 3 <= len(nome) <= 80:
-                return nome.upper()
-    # Fallback: se aparece "Programa" como indicador, e indicacao programatica
-    if re.search(r"\b(Programa|Programatic[ao])\b", t, re.IGNORECASE):
-        return "Programa"
-    return None
+# Mapeamento opcional nome_upper -> coMunicipioIbge FNS (6 digitos, sem digito verificador)
+# Pode ser resolvido dinamicamente via /recursos/municipios/uf/{uf}, mas cache local
+# evita 1 chamada extra por execucao. UF fixo MG.
+FNS_CODE_OVERRIDE = {
+    "ARAUJOS": "310390",
+    "NOVA SERRANA": "314520",
+    "BOM DESPACHO": "310740",
+    "SAO TIAGO": "316500",
+    "TOLEDO": "316910",
+    "PIRACEMA": "315060",
+}
 
 
 class FNSScraper(ScraperBase):
     automation_key = "fns"
-    name = "FNS Scraper"
+    name = "FNS Scraper (API REST)"
     uses_govbr = True
 
+    BASE = "https://consultafns.saude.gov.br"
+
     async def collect(self, credential: dict) -> list[dict]:
-        """Login no FNS + listagem de pagamentos + detalhe de cada proposta
-        para capturar parlamentar autor.
+        """Coleta propostas FNS para o municipio da credencial.
 
-        Suporta 2 modos:
-        - SENHA PLAIN: credential['senha'] e a senha gov.br -> faz login SSO
-        - SESSAO CAPTURADA: credential['senha'] e JSON {format:'cookies_full',cookies:[...]}
-          (vindo do bookmarklet/extension PACTA) -> injeta cookies no contexto
-          Playwright e pula o login (gov.br tem anti-bot que bloqueia
-          login automatizado em Playwright).
+        credential vem do Cofre via /api/internal/secrets/fns:
+        - municipio_id: int  (PACTA municipio_id)
+        - usuario: str       (CPF, opcional - so se for senha-mode)
+        - senha: str         (JSON {format:cookies_full,cookies:[]} OU senha SSO)
+        - municipio_nome: str (nome do municipio - usado pra resolver codigo FNS)
+        - municipio_uf: str  (default MG)
         """
-        try:
-            from playwright.async_api import async_playwright
-        except ImportError:
-            print("ERRO: pip install playwright && playwright install chromium")
-            return []
-
-        cpf = credential.get("usuario")
         senha = credential.get("senha") or ""
-        if not cpf and not senha:
-            return []
+        mun_id = credential.get("municipio_id")
+        mun_nome = (credential.get("municipio_nome") or "").upper().strip()
+        mun_uf = credential.get("municipio_uf") or "MG"
 
-        # Detectar modo session capturada (JSON cookies_full)
-        import json as jsonlib
+        # Detecta sessao capturada (cookies_full JSON)
         cookies_session = None
         if senha.startswith("{") and "cookies_full" in senha[:200]:
             try:
-                data = jsonlib.loads(senha)
-                if data.get("format") == "cookies_full":
-                    cookies_session = data.get("cookies", [])
+                d = json.loads(senha)
+                if d.get("format") == "cookies_full":
+                    cookies_session = d.get("cookies", [])
             except Exception:
                 pass
 
-        items = []
-        async with async_playwright() as pw:
-            browser = await pw.chromium.launch(headless=True)
-            ctx = await browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            )
+        if not cookies_session:
+            logger.warning(f"  mun_id={mun_id}: precisa cookies (use bookmarklet)")
+            return []
 
-            if cookies_session:
-                # MODO SESSAO: injeta cookies e pula login
-                for c in cookies_session:
-                    try:
-                        ck = {
-                            "name": c["name"], "value": c["value"],
-                            "domain": c.get("domain") or "consultafns.saude.gov.br",
-                            "path": c.get("path") or "/",
-                            "secure": bool(c.get("secure")),
-                            "httpOnly": bool(c.get("httpOnly")),
-                        }
-                        if c.get("sameSite"):
-                            ck["sameSite"] = {"strict":"Strict","lax":"Lax","none":"None"}.get(
-                                c["sameSite"].lower(), "Lax")
-                        await ctx.add_cookies([ck])
-                    except Exception:
-                        continue
-                page = await ctx.new_page()
-                await page.goto("https://consultafns.saude.gov.br/", timeout=30_000)
-                # Validar que esta logado
-                body = await page.inner_text("body")
-                if "login" in body[:1500].lower() and "sair" not in body.lower():
-                    print("  AVISO: cookies de sessao expirados - re-capture via bookmarklet")
-                    await browser.close()
-                    return []
-            else:
-                # MODO SENHA: login via gov.br SSO
-                if not cpf or not senha:
-                    return []
-                page = await ctx.new_page()
-                await page.goto("https://consultafns.saude.gov.br", timeout=30_000)
+        cookie_jar = {c["name"]: c["value"] for c in cookies_session if "name" in c}
+
+        with httpx.Client(
+            cookies=cookie_jar,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "application/json, text/plain, */*",
+                "Referer": f"{self.BASE}/",
+            },
+            timeout=60,
+        ) as cli_http:
+            # Resolve codigo FNS do municipio
+            cod_fns = FNS_CODE_OVERRIDE.get(mun_nome)
+            if not cod_fns:
                 try:
-                    await page.click("text=Entrar com gov.br", timeout=5_000)
-                except Exception:
-                    pass
-                await page.fill("input[name='accountId']", cpf, timeout=30_000)
-                await page.click("button[type='submit']")
-                await page.wait_for_selector("input[name='password']", timeout=30_000)
-                await page.fill("input[name='password']", senha)
-                await page.click("button[type='submit']")
-                await page.wait_for_url("https://consultafns.saude.gov.br/**", timeout=30_000)
-
-            # 2. Coletar listagem de pagamentos por ano + detalhe parlamentar
-            for ano in range(2022, datetime.now().year + 1):
-                url = f"https://consultafns.saude.gov.br/pagamentos?ano={ano}"
-                await page.goto(url, timeout=30_000)
-                try:
-                    await page.wait_for_selector("table tbody tr", timeout=10_000)
-                    rows = await page.query_selector_all("table tbody tr")
-                    for r in rows:
-                        cells = await r.query_selector_all("td")
-                        if len(cells) < 4:
-                            continue
-                        texts = [(await c.inner_text()).strip() for c in cells]
-
-                        nr_prop = texts[0] if texts else ""
-
-                        # Best-effort: parlamentar pode estar em coluna extra
-                        parl = None
-                        for t in texts[5:]:
-                            parl = extract_parlamentar(t)
-                            if parl: break
-
-                        # Se nao achou na linha, abrir o detalhe da proposta
-                        if not parl and nr_prop:
-                            parl = await self._fetch_parlamentar_detail(page, nr_prop)
-
-                        items.append({
-                            "nr_proposta": nr_prop,
-                            "programa": texts[1] if len(texts) > 1 else "",
-                            "competencia": texts[2] if len(texts) > 2 else "",
-                            "valor": parse_money_br(texts[3] if len(texts) > 3 else "0"),
-                            "situacao": texts[4] if len(texts) > 4 else "Pago",
-                            "ano": ano,
-                            "fonte": "FNS",
-                            "orgao_concedente": "Min. Saude - FNS",
-                            "parlamentar_nome": parl,
-                        })
+                    r = cli_http.get(f"{self.BASE}/recursos/municipios/uf/{mun_uf}")
+                    r.raise_for_status()
+                    for m in r.json().get("resultado", []):
+                        if m.get("noMunicipio", "").upper().strip() == mun_nome:
+                            cod_fns = m["coMunicipioIbge"]
+                            break
                 except Exception as e:
-                    print(f"  Falha ano {ano}: {e}")
-                    continue
+                    logger.error(f"  Falha ao resolver codigo FNS de {mun_nome}: {e}")
+                    return []
 
-            await browser.close()
-        return items
+            if not cod_fns:
+                logger.warning(f"  Codigo FNS nao encontrado para {mun_nome}/{mun_uf}")
+                return []
 
-    async def _fetch_parlamentar_detail(self, page, nr_proposta: str) -> str | None:
-        """Abre tela de detalhe da proposta e raspa o parlamentar autor.
-        Tenta varias URLs/seletores comuns no portal FNS.
-        """
-        if not nr_proposta:
-            return None
-        try:
-            # Tentar URL direta primeiro
-            for url_pat in [
-                f"https://consultafns.saude.gov.br/proposta/{nr_proposta}",
-                f"https://consultafns.saude.gov.br/proposta?nr={nr_proposta}",
-                f"https://consultafns.saude.gov.br/detalhamento?nr_proposta={nr_proposta}",
-            ]:
-                try:
-                    resp = await page.goto(url_pat, timeout=15_000, wait_until="domcontentloaded")
-                    if resp and resp.status < 400:
-                        body = await page.inner_text("body")
-                        parl = extract_parlamentar(body)
-                        if parl:
-                            return parl
-                except Exception:
-                    continue
-        except Exception:
-            return None
-        return None
+            logger.info(f"  mun={mun_nome} ({mun_uf}) cod_fns={cod_fns}")
+
+            items = []
+            ano_atual = datetime.now().year
+            for ano in range(2022, ano_atual + 1):
+                pagina = 1
+                while True:
+                    url = (f"{self.BASE}/recursos/proposta/consultar"
+                           f"?ano={ano}&coEsfera=&coMunicipioIbge={cod_fns}"
+                           f"&count=200&page={pagina}&sgUf={mun_uf}")
+                    try:
+                        r = cli_http.get(url)
+                        if r.status_code == 401 or "login" in r.text[:200].lower():
+                            logger.warning(f"  Sessao expirada - re-capture via bookmarklet")
+                            return items
+                        if r.status_code != 200:
+                            logger.warning(f"  HTTP {r.status_code} ano={ano} pag={pagina}")
+                            break
+                        j = r.json().get("resultado", {})
+                        propostas = j.get("itensPagina", []) or []
+                        if not propostas:
+                            break
+                        for p in propostas:
+                            items.append(self._normalize(p, ano, mun_id, cod_fns))
+                        if len(propostas) < 200:
+                            break
+                        pagina += 1
+                    except Exception as e:
+                        logger.error(f"  ano={ano} pag={pagina}: {e}")
+                        break
+
+            logger.info(f"  {mun_nome}: {len(items)} propostas FNS coletadas")
+            return items
+
+    def _normalize(self, p: dict, ano: int, mun_id: int, cod_fns: str) -> dict:
+        """Mapeia proposta FNS -> schema UpsertItem do /internal/upsert."""
+        tipo = p.get("coTipoProposta") or "PROPOSTA"
+        recurso = p.get("dsTipoRecurso") or ""
+        vl_prop = float(p.get("vlProposta") or 0)
+        vl_pago = float(p.get("vlPago") or 0)
+        vl_pagar = float(p.get("vlPagar") or 0)
+
+        sit = ("Pago" if vl_pago > 0 and vl_pagar == 0
+               else "Empenhado" if vl_pagar > 0
+               else "Em analise" if vl_prop > 0
+               else "Pendente")
+
+        # nr_proposta sintetico estavel - permite ON CONFLICT
+        nu_proc = p.get("nuProcesso") or "NA"
+        nr_proposta = f"FNS-{cod_fns}-{ano}-{tipo[:8]}-{recurso[:6]}-{nu_proc[:8]}".replace(" ", "_")[:50]
+
+        return {
+            "municipio_id": mun_id,
+            "nr_proposta": nr_proposta,
+            "objeto": f"{tipo} - {recurso}".strip(" -")[:500],
+            "programa": tipo[:500],
+            "tipo_programa": tipo[:100],
+            "valor": vl_pago or vl_prop,  # prefere repasse efetivo, fallback proposta
+            "situacao": sit,
+            "ano": ano,
+            "fonte": "FNS",
+            "orgao_concedente": "Min. Saude - FNS",
+        }
 
 
 if __name__ == "__main__":
