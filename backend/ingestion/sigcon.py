@@ -237,7 +237,9 @@ def ingest_sigcon():
                     "dp": dt_pub,
                     "di": dt_ini,
                     "df": dt_fim,
-                    "ano": dt_ini.year if dt_ini else (dt_pub.year if dt_pub else None),
+                    # Ano = dt_publicacao (referencia real da indicacao); dt_vigencia
+                    # pode ser +30 anos em "Transferencias Especiais" e desclassificaria.
+                    "ano": (dt_pub.year if dt_pub else (dt_ini.year if dt_ini else None)),
                     "raw": json.dumps(raw, ensure_ascii=False, default=str),
                 })
                 inserted += 1
