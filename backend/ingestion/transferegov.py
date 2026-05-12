@@ -30,18 +30,36 @@ MUNICIPIO_NAMES = {
     "BOM DESPACHO": "3107406",
     "SAO TIAGO": "3164704",
     "TOLEDO": "3169406",
+    "PIRACEMA": "3151206",
 }
 
 
-def download_csv(filename: str) -> pd.DataFrame:
-    """Download a zip file from TransfereGov and extract the CSV."""
+def download_csv(filename: str, max_attempts: int = 3) -> pd.DataFrame:
+    """Download a zip file from TransfereGov and extract the CSV.
+    Retry com backoff: o servidor `repositorio.dados.gov.br` derruba conexao
+    com frequencia em arquivos > 100MB."""
+    import time
     url = BASE_URL + filename
-    print(f"  Baixando {url}...")
-    with httpx.stream("GET", url, timeout=600, follow_redirects=True) as r:
-        data = b""
-        for chunk in r.iter_bytes():
-            data += chunk
-    print(f"  Tamanho: {len(data)/1024/1024:.1f} MB")
+    last_err = None
+    for attempt in range(1, max_attempts + 1):
+        print(f"  Baixando {url} (tentativa {attempt}/{max_attempts})...")
+        try:
+            with httpx.stream("GET", url, timeout=900, follow_redirects=True) as r:
+                data = b""
+                for chunk in r.iter_bytes():
+                    data += chunk
+            print(f"  Tamanho: {len(data)/1024/1024:.1f} MB")
+            break
+        except (httpx.ReadError, httpx.RemoteProtocolError, httpx.ConnectError, httpx.ReadTimeout) as e:
+            last_err = e
+            backoff = 2 ** attempt * 5  # 10s, 20s, 40s
+            print(f"  Falha (tentando novamente em {backoff}s): {e}")
+            if attempt < max_attempts:
+                time.sleep(backoff)
+            else:
+                raise
+    else:
+        raise last_err
 
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
         csv_name = [n for n in zf.namelist() if n.endswith(".csv")][0]
