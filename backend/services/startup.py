@@ -24,6 +24,8 @@ MIGRATION_FILES = [
     "add_camara_dou_compliance.sql",
     # Seeds (idempotentes)
     "seed_parlamentares_institucionais.sql",
+    # Dedupe historico + UNIQUE INDEX (idempotente)
+    "dedupe_parlamentares_unique.sql",
 ]
 
 

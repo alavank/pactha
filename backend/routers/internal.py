@@ -219,9 +219,29 @@ async def _upsert_parlamentar(db: AsyncSession, nome: str) -> int | None:
     esfera = "federal"
     uf = "BR" if inst and any(k in norm for k in ["BANCADA", "COMISS", "BLOCO", "RELATOR"]) else "MG"
 
+    # ON CONFLICT DO NOTHING usa o UNIQUE INDEX ix_parlamentares_nome_unaccent
+    # para evitar duplicatas em race conditions (varios scrapers paralelos)
     res = await db.execute(text("""
         INSERT INTO parlamentares (nome, esfera, uf)
         VALUES (:n, :e, :u)
+        ON CONFLICT (upper(translate(nome,
+            'ÁÉÍÓÚÀÂÊÔÃÕÇáéíóúàâêôãõç',
+            'AEIOUAAEOAOCAEIOUAAEOAOC'))) DO NOTHING
         RETURNING id
     """), {"n": nome_db, "e": esfera, "u": uf})
-    return res.scalar()
+    new_id = res.scalar()
+    if new_id:
+        return new_id
+
+    # Conflito (alguem inseriu antes) - re-buscar
+    r2 = await db.execute(text("""
+        SELECT id FROM parlamentares
+        WHERE upper(translate(nome,
+            'ÁÉÍÓÚÀÂÊÔÃÕÇáéíóúàâêôãõç',
+            'AEIOUAAEOAOCAEIOUAAEOAOC'))
+            = upper(translate(:n,
+            'ÁÉÍÓÚÀÂÊÔÃÕÇáéíóúàâêôãõç',
+            'AEIOUAAEOAOCAEIOUAAEOAOC'))
+        LIMIT 1
+    """), {"n": nome_db})
+    return r2.scalar()
