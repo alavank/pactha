@@ -168,7 +168,9 @@ def main():
                     "vt": parse_decimal_br(fact.get("vr_total_atual")),
                     "vrep": parse_decimal_br(fact.get("vr_rep_concede_atual")),
                     "dp": dt_pub, "di": dt_ini, "df": dt_fim, "da": dt_atual,
-                    "ano": (dt_ini.year if dt_ini else (dt_pub.year if dt_pub else None)),
+                    # Ano = dt_publicacao (referencia real); dt_vigencia pode ser
+                    # +30 anos em Transferencia Especial MG (vigencia indeterminada)
+                    "ano": (dt_pub.year if dt_pub else (dt_ini.year if dt_ini else None)),
                     "sit": "Em vigor" if dt_atual else None,
                     "raw": json.dumps(
                         {k: clean_string(v) for k, v in {**crow.to_dict(), **fact.to_dict()}.items() if clean_string(v)},

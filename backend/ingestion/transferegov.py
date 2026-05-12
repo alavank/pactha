@@ -325,11 +325,126 @@ def log_ingestion(source, status, records, error=None):
         conn.commit()
 
 
+def ingest_propostas_pendentes():
+    """Ingere propostas SICONV que ainda nao viraram convenio formalizado.
+
+    Motivacao: PDF Freitas mostra que muitas indicacoes 2025/2026 estao em fase
+    de proposta (Festa do Ruralista R$398k, Pavimentacao Dr. Frederico R$398k,
+    etc) - ainda em analise pelo concedente, sem nr_convenio formalizado. O
+    ingest_convenios() so pega convenios formalizados e perde tudo isso.
+
+    Esta funcao pega propostas 2025+ que NAO tem convenio correspondente, e
+    insere como stub com situacao='Proposta em analise' usando ID_PROPOSTA
+    como nr_convenio (prefixo 'PROP-' para nao conflitar).
+    """
+    print("\n=== Ingestao de Propostas Pendentes (sem convenio) ===")
+    mun_map = get_municipio_map()
+
+    df_proposta = download_csv("siconv_proposta.csv.zip")
+    df_proposta.columns = [c.strip().lstrip("﻿") for c in df_proposta.columns]
+
+    mun_col = next((c for c in df_proposta.columns if "MUNIC_PROPONENTE" in c.upper() or "NM_MUNICIPIO" in c.upper()), None)
+    uf_col = next((c for c in df_proposta.columns if "UF_PROPONENTE" in c.upper() or c.upper().strip() == "UF"), None)
+    if not mun_col:
+        print("  AVISO: coluna municipio nao encontrada")
+        return 0
+
+    if uf_col:
+        df_proposta = df_proposta[df_proposta[uf_col].astype(str).str.strip() == "MG"]
+
+    df_proposta[mun_col + "_upper"] = df_proposta[mun_col].astype(str).str.upper().str.strip()
+    matched = pd.DataFrame()
+    for name in MUNICIPIO_NAMES.keys():
+        matched = pd.concat([matched, df_proposta[df_proposta[mun_col + "_upper"].str.contains(name, na=False)]])
+
+    if len(matched) == 0:
+        return 0
+
+    # Filtrar so propostas 2025+ (cobrem o gap atual; antigas ja viraram convenio)
+    ano_col = next((c for c in matched.columns if c.upper().strip() == "ANO_PROP"), None)
+    if ano_col:
+        matched = matched[matched[ano_col].astype(str).str.strip().isin(["2025", "2026"])]
+    print(f"  Propostas 2025/2026 nos municipios-alvo: {len(matched)}")
+
+    # Identificar propostas SEM convenio formalizado
+    df_conv = download_csv("siconv_convenio.csv.zip")
+    df_conv.columns = [c.strip().lstrip("﻿") for c in df_conv.columns]
+    convenios_props = set(df_conv["ID_PROPOSTA"].astype(str).str.strip())
+
+    matched_pending = matched[~matched["ID_PROPOSTA"].astype(str).str.strip().isin(convenios_props)]
+    print(f"  Propostas SEM convenio formalizado: {len(matched_pending)}")
+
+    if len(matched_pending) == 0:
+        return 0
+
+    inserted = 0
+    with engine.connect() as conn:
+        for _, row in matched_pending.iterrows():
+            prop_id = str(row["ID_PROPOSTA"]).strip()
+            mun_name = str(row[mun_col]).upper().strip()
+            mun_id = None
+            for name, ibge in MUNICIPIO_NAMES.items():
+                if name in mun_name:
+                    mun_id = mun_map.get(ibge)
+                    break
+            if not mun_id:
+                continue
+
+            nr = f"PROP-{prop_id}"
+            objeto = next((clean_string(row.get(c)) for c in row.index if "OBJETO" in c.upper()), None)
+            orgao = next((clean_string(row.get(c)) for c in row.index if "ORGAO" in c.upper()), None)
+            programa = next((clean_string(row.get(c)) for c in row.index if "PROGRAMA" in c.upper() and "DESC" in c.upper()), None)
+            sit = next((clean_string(row.get(c)) for c in row.index if "SIT_PROPOSTA" in c.upper()), "Proposta em analise")
+            ano = None
+            if ano_col:
+                try: ano = int(str(row.get(ano_col, "")).strip())
+                except: pass
+
+            raw = {k: clean_string(v) for k, v in row.to_dict().items() if clean_string(v)}
+            try:
+                conn.execute(text("""
+                    INSERT INTO convenios_federal (
+                        nr_convenio, municipio_id, proponente_nome, orgao_concedente,
+                        objeto, situacao, valor_global, valor_repasse, ano, programa, fonte, raw_data
+                    ) VALUES (
+                        :nr, :mun, :prop, :orgao, :obj, :sit, :vg, :vr, :ano, :prog, 'TransfereGov-Proposta', :raw
+                    )
+                    ON CONFLICT (nr_convenio) DO UPDATE SET
+                        situacao = EXCLUDED.situacao,
+                        valor_global = EXCLUDED.valor_global,
+                        valor_repasse = EXCLUDED.valor_repasse,
+                        raw_data = EXCLUDED.raw_data,
+                        updated_at = NOW()
+                """), {
+                    "nr": nr,
+                    "mun": mun_id,
+                    "prop": clean_string(row.get("NM_PROPONENTE")) or orgao,
+                    "orgao": orgao,
+                    "obj": objeto,
+                    "sit": sit,
+                    "vg": parse_decimal_br(row.get("VL_GLOBAL_PROP") or row.get("VL_GLOBAL")),
+                    "vr": parse_decimal_br(row.get("VL_REPASSE_PROP") or row.get("VL_REPASSE")),
+                    "ano": ano,
+                    "prog": programa,
+                    "raw": json.dumps(raw, ensure_ascii=False, default=str),
+                })
+                inserted += 1
+            except Exception as e:
+                if "duplicate" not in str(e).lower():
+                    print(f"  Erro inserindo proposta {nr}: {e}")
+                continue
+        conn.commit()
+
+    print(f"  Propostas pendentes inseridas: {inserted}")
+    return inserted
+
+
 if __name__ == "__main__":
     print("Iniciando ingestao TransfereGov...")
     try:
         total = ingest_convenios()
         total += ingest_emendas()
+        total += ingest_propostas_pendentes()
         log_ingestion("transferegov", "success", total)
         print(f"\nIngestao concluida: {total} registros total")
     except Exception as e:
