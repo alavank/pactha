@@ -72,15 +72,32 @@ async def get_secret_for_automation(
     result = await db.execute(q)
     items = result.scalars().all()
 
+    # Para resolver nome/UF do municipio, faz join leve
+    from models import Municipio
+    mun_ids = {it.municipio_id for it in items if it.municipio_id}
+    mun_meta = {}
+    if mun_ids:
+        mres = await db.execute(select(Municipio).where(Municipio.id.in_(mun_ids)))
+        for m in mres.scalars().all():
+            mun_meta[m.id] = (m.nome, m.uf)
+
     out = []
     for it in items:
+        nome, uf = mun_meta.get(it.municipio_id, (None, None))
+        # Tenta decrypt; tolera senhas legadas em texto puro
+        try:
+            senha = crypto.decrypt(it.senha_encrypted) if it.senha_encrypted else ""
+        except Exception:
+            senha = it.senha_encrypted or ""
         out.append({
             "id": it.id,
             "municipio_id": it.municipio_id,
+            "municipio_nome": nome,
+            "municipio_uf": uf,
             "sistema": it.sistema,
             "url": it.url,
             "usuario": it.usuario,
-            "senha": crypto.decrypt(it.senha_encrypted) if it.senha_encrypted else "",
+            "senha": senha,
         })
 
     # Auditoria
