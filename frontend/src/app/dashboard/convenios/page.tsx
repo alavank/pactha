@@ -32,6 +32,44 @@ import type { Convenio, ConvenioList } from "@/types";
 
 const PER_PAGE = 20;
 
+// Mapeia secretarias estaduais MG e ministerios federais para sigla curta
+const SIGLAS: Record<string, string> = {
+  "SECRETARIA DE ESTADO DE SAUDE": "SES",
+  "SECRETARIA DE ESTADO DE GOVERNO": "SEGOV",
+  "SECRETARIA DE ESTADO DE EDUCACAO": "SEE",
+  "SECRETARIA DE ESTADO DE DESENVOLVIMENTO ECONOMICO": "SEDE",
+  "SECRETARIA DE ESTADO DE DESENVOLVIMENTO SOCIAL": "SEDESE",
+  "SECRETARIA DE ESTADO DE INFRAESTRUTURA": "SEINFRA",
+  "SECRETARIA DE ESTADO DE AGRICULTURA": "SEAPA",
+  "SECRETARIA DE ESTADO DE CULTURA": "SECULT",
+  "SECRETARIA DE ESTADO DE ESPORTES": "SEESP",
+  "SECRETARIA DE ESTADO DE TURISMO": "SETUR",
+  "SECRETARIA DE ESTADO DE MEIO AMBIENTE": "SEMAD",
+  "SECRETARIA DE ESTADO DE PLANEJAMENTO": "SEPLAG",
+  "MINISTERIO DA SAUDE": "Min. Saude",
+  "MINISTERIO DA FAZENDA": "Min. Fazenda",
+  "MINISTERIO DA EDUCACAO": "Min. Educacao",
+  "MINISTERIO DO ESPORTE": "Min. Esporte",
+  "MINISTERIO DA INTEGRACAO": "MI",
+  "MINISTERIO DA INTEGRA": "MI",
+  "MINISTERIO DO DESENVOLVIMENTO": "MDS",
+  "MINISTERIO DA AGRICULTURA": "Min. Agricultura",
+  "MINISTERIO DAS CIDADES": "Min. Cidades",
+};
+
+function siglaOrgao(o?: string | null): string {
+  if (!o) return "-";
+  const up = o.toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  for (const [k, sig] of Object.entries(SIGLAS)) {
+    if (up.startsWith(k)) return sig;
+  }
+  return o.length > 18 ? o.slice(0, 18) + "..." : o;
+}
+
+function isTE(objeto?: string | null): boolean {
+  return !!objeto && /TRANSFER[ÊE]NCIA\s+ESPECIAL/i.test(objeto);
+}
+
 export default function ConveniosPage() {
   const searchParams = useSearchParams();
   const municipioId = searchParams.get("municipio_id");
@@ -298,19 +336,21 @@ export default function ConveniosPage() {
                 <TableRow>
                   <TableHead>Nr Convenio</TableHead>
                   <TableHead>Fonte</TableHead>
-                  <TableHead>Orgao</TableHead>
-                  <TableHead className="max-w-[280px]">Objeto</TableHead>
-                  <TableHead>Programa</TableHead>
+                  <TableHead className="w-[100px]">Orgao</TableHead>
+                  <TableHead className="max-w-[260px]">Objeto</TableHead>
+                  <TableHead>Tipo</TableHead>
                   <TableHead>Situacao</TableHead>
-                  <TableHead className="text-right">Valor Total</TableHead>
+                  <TableHead className="text-right">Repasse</TableHead>
+                  <TableHead className="text-right">Contrap.</TableHead>
+                  <TableHead>Assinatura</TableHead>
                   <TableHead>Vigencia</TableHead>
-                  <TableHead>Dias Restantes</TableHead>
+                  <TableHead>Dias</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {items.map((conv: Convenio) => (
                   <TableRow key={conv.id}>
-                    <TableCell className="font-medium">
+                    <TableCell className="font-medium text-xs">
                       {conv.nr_convenio || conv.nr_sigcon || "-"}
                     </TableCell>
                     <TableCell>
@@ -320,19 +360,24 @@ export default function ConveniosPage() {
                         </span>
                       )}
                     </TableCell>
-                    <TableCell className="max-w-[150px] truncate">
-                      {conv.orgao_concedente || "-"}
+                    <TableCell className="w-[100px]" title={conv.orgao_concedente || ""}>
+                      <span className="text-xs font-mono">{siglaOrgao(conv.orgao_concedente)}</span>
                     </TableCell>
-                    <TableCell className="max-w-[280px]">
+                    <TableCell className="max-w-[260px]">
+                      {isTE(conv.objeto) && (
+                        <span className="inline-flex items-center rounded-md bg-purple-50 border border-purple-200 px-1.5 py-0.5 text-[10px] font-mono text-purple-700 mr-1">
+                          TE
+                        </span>
+                      )}
                       <span className="line-clamp-2 text-sm">
                         {conv.objeto
-                          ? conv.objeto.length > 80
-                            ? conv.objeto.slice(0, 80) + "..."
+                          ? conv.objeto.length > 70
+                            ? conv.objeto.slice(0, 70) + "..."
                             : conv.objeto
                           : "-"}
                       </span>
                     </TableCell>
-                    <TableCell className="max-w-[140px] truncate text-xs text-muted-foreground">
+                    <TableCell className="max-w-[120px] truncate text-xs text-muted-foreground">
                       {conv.tipo_programa || conv.programa || "-"}
                     </TableCell>
                     <TableCell>
@@ -344,19 +389,23 @@ export default function ConveniosPage() {
                         {conv.situacao || "-"}
                       </span>
                     </TableCell>
-                    <TableCell className="text-right">
-                      {formatCurrency(conv.valor_total)}
+                    <TableCell className="text-right text-xs">
+                      {formatCurrency(conv.valor_repasse ?? conv.valor_total)}
                     </TableCell>
-                    <TableCell>{formatDate(conv.dt_fim_vigencia)}</TableCell>
+                    <TableCell className="text-right text-xs text-muted-foreground">
+                      {conv.valor_contrapartida ? formatCurrency(conv.valor_contrapartida) : "-"}
+                    </TableCell>
+                    <TableCell className="text-xs">{formatDate(conv.dt_inicio)}</TableCell>
+                    <TableCell className="text-xs">{formatDate(conv.dt_fim_vigencia)}</TableCell>
                     <TableCell>
                       <span
-                        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${diasRestantesBadge(
+                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${diasRestantesBadge(
                           conv.dias_restantes
                         )}`}
                       >
                         {conv.dias_restantes != null
                           ? conv.dias_restantes < 0
-                            ? `${Math.abs(conv.dias_restantes)}d vencido`
+                            ? `${Math.abs(conv.dias_restantes)}d venc`
                             : `${conv.dias_restantes}d`
                           : "-"}
                       </span>

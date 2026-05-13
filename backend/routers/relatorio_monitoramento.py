@@ -52,6 +52,85 @@ MESES_PT = {
     9: "Setembro", 10: "Outubro", 11: "Novembro", 12: "Dezembro",
 }
 
+# Codigo de orgao (5 digitos) -> Nome do Ministerio/Secretaria
+# Cobre os principais que aparecem em SICONV/TransfereGov
+ORGAO_NOMES = {
+    "20000": "Casa Civil PR",
+    "22000": "Min. Agricultura, Pecuaria e Abastecimento",
+    "24000": "Min. Ciencia, Tecnologia e Inovacao",
+    "26000": "Min. Educacao",
+    "28000": "Min. Defesa",
+    "30000": "Min. Justica e Seguranca Publica",
+    "30201": "Min. Educacao - FNDE",
+    "32000": "Min. Trabalho e Previdencia",
+    "33000": "Min. Previdencia Social",
+    "34000": "Min. Comunicacoes",
+    "36000": "Min. Saude",
+    "36201": "Min. Saude - FNS",
+    "38000": "Min. Meio Ambiente",
+    "39000": "Min. Transportes",
+    "40000": "Min. Industria, Comercio Exterior e Servicos",
+    "41000": "Min. Cultura",
+    "42000": "Min. Esporte",
+    "44000": "Min. Turismo",
+    "47000": "Min. Planejamento e Orcamento",
+    "49000": "Min. Desenvolvimento Agrario",
+    "51000": "Min. Esportes",
+    "52000": "Min. Defesa - FAB/EB/MB",
+    "53000": "Min. Integracao e Desenvolvimento Regional",
+    "54000": "Min. Desenvolvimento Social, Familia e Combate a Fome",
+    "55000": "Min. Cidades",
+    "56000": "Min. Direitos Humanos e Cidadania",
+    "57000": "Min. Mulheres",
+    "58000": "Min. Igualdade Racial",
+    "59000": "Min. Povos Indigenas",
+    "73000": "Min. Pesca e Aquicultura",
+    "74000": "Min. Empreendedorismo (MEI)",
+}
+
+
+def resolve_orgao_nome(orgao_raw: str | None) -> str:
+    """Converte codigo numerico em nome de ministerio. Mantem nome se ja vem texto."""
+    if not orgao_raw:
+        return "Outros"
+    s = str(orgao_raw).strip()
+    # Se for so digitos -> e codigo, tentar mapear
+    if s.isdigit():
+        return ORGAO_NOMES.get(s, f"Orgao {s}")
+    # Se vem com codigo no inicio (ex "51000 - Esportes"), pega tudo
+    parts = s.split(" - ", 1)
+    if len(parts) == 2 and parts[0].strip().isdigit():
+        nome = ORGAO_NOMES.get(parts[0].strip())
+        return nome if nome else parts[1].strip()
+    return s
+
+
+# Siglas de orgaos estaduais MG (para tela /convenios)
+SIGLAS_ESTADUAIS = {
+    "SECRETARIA DE ESTADO DE SAUDE": "SES",
+    "SECRETARIA DE ESTADO DE GOVERNO": "SEGOV",
+    "SECRETARIA DE ESTADO DE EDUCACAO": "SEE",
+    "SECRETARIA DE ESTADO DE DESENVOLVIMENTO ECONOMICO": "SEDE",
+    "SECRETARIA DE ESTADO DE DESENVOLVIMENTO SOCIAL": "SEDESE",
+    "SECRETARIA DE ESTADO DE INFRAESTRUTURA": "SEINFRA",
+    "SECRETARIA DE ESTADO DE AGRICULTURA": "SEAPA",
+    "SECRETARIA DE ESTADO DE CULTURA": "SECULT",
+    "SECRETARIA DE ESTADO DE ESPORTES": "SEESP",
+    "SECRETARIA DE ESTADO DE TURISMO": "SETUR",
+    "SECRETARIA DE ESTADO DE MEIO AMBIENTE": "SEMAD",
+    "SECRETARIA DE ESTADO DE PLANEJAMENTO": "SEPLAG",
+}
+
+
+def sigla_orgao(orgao: str | None) -> str:
+    if not orgao: return "-"
+    s = str(orgao).upper().strip()
+    for key, sig in SIGLAS_ESTADUAIS.items():
+        if s.startswith(key):
+            return sig
+    # Fallback: pega iniciais (max 8)
+    return orgao[:30]
+
 
 def get_dt_vigencia(c, esfera):
     """Retorna data de vigencia, normalizando entre federal e estadual."""
@@ -99,22 +178,25 @@ def categorize_part(c, esfera):
     if has_desembolso and (dt_vig and dt_vig < date.today()):
         return 3
 
-    # --- PARTE 1: Demandas em Brasilia (federais ano corrente pendentes) ---
+    # --- PARTE 1 = SO FEDERAIS (Demandas em Brasilia) ---
+    # Toda federal vai para Brasilia (Parte 1 ou 3 conforme execucao)
+    # Estadual nunca vai pra PARTE 1.
     if esfera == "federal":
         ano = c.ano or 0
-        # Ano corrente ou anterior + sem desembolso + situacao pendente
+        # Federais pendentes (ano corrente +/-) -> PARTE 1
         if ano >= ano_atual - 1:
-            pendente_keywords = ["pendente", "empenh", "aguardando", "analise", "elabora"]
-            if any(kw in sit for kw in pendente_keywords) or sit == "":
-                # Nao pago, nao desembolsado
+            pendente_keywords = ["pendente", "empenh", "aguardando", "analise", "elabora", "proposta"]
+            if any(kw in sit for kw in pendente_keywords) or sit == "" or sit == "-":
                 if not has_desembolso and valor_desembolsado == 0:
                     return 1
+        # Federais em execucao com vigencia futura -> PARTE 1 tambem (todas demandas Brasilia)
+        if dt_vig and dt_vig >= date.today():
+            return 1
+        return 3  # Federal historica
 
-    # --- PARTE 2: Em execucao ativa (default para vigencia futura) ---
-    # Apenas se tem vigencia futura (em vigor real)
+    # --- ESTADUAL: PARTE 2 (Demandas Municipio) se em execucao, senao PARTE 3 ---
     if dt_vig and dt_vig >= date.today():
         return 2
-    # Sem data de vigencia mas sem outros indicadores -> historico
     if not dt_vig:
         return 3
     return 2
@@ -336,7 +418,7 @@ async def gerar_relatorio_monitoramento(
     if parte1:
         current_orgao = None
         for c in parte1:
-            orgao = c.orgao_concedente or "Outros"
+            orgao = resolve_orgao_nome(c.orgao_concedente)
             if orgao != current_orgao:
                 html += f'<h3>● {orgao}</h3>'
                 current_orgao = orgao
@@ -354,7 +436,7 @@ async def gerar_relatorio_monitoramento(
     if parte2_fed:
         current_orgao = None
         for c in parte2_fed:
-            orgao = c.orgao_concedente or "Outros"
+            orgao = resolve_orgao_nome(c.orgao_concedente)
             if orgao != current_orgao:
                 html += f'<h3>● {orgao}</h3>'
                 current_orgao = orgao
@@ -367,7 +449,7 @@ async def gerar_relatorio_monitoramento(
     if parte2_est:
         current_orgao = None
         for c in parte2_est:
-            orgao = c.orgao_concedente or "SIGCON"
+            orgao = sigla_orgao(c.orgao_concedente) if c.orgao_concedente else "SIGCON-MG"
             if orgao != current_orgao:
                 html += f'<h3>{orgao}</h3>'
                 current_orgao = orgao
@@ -385,7 +467,7 @@ async def gerar_relatorio_monitoramento(
     if parte3_fed:
         current_orgao = None
         for c in parte3_fed:
-            orgao = c.orgao_concedente or "Outros"
+            orgao = resolve_orgao_nome(c.orgao_concedente)
             if orgao != current_orgao:
                 html += f'<h3>● {orgao}</h3>'
                 current_orgao = orgao
@@ -398,7 +480,7 @@ async def gerar_relatorio_monitoramento(
     if parte3_est:
         current_orgao = None
         for c in parte3_est:
-            orgao = c.orgao_concedente or "SIGCON"
+            orgao = sigla_orgao(c.orgao_concedente) if c.orgao_concedente else "SIGCON-MG"
             if orgao != current_orgao:
                 html += f'<h3>{orgao}</h3>'
                 current_orgao = orgao
@@ -415,7 +497,7 @@ async def gerar_relatorio_monitoramento(
     if parte4:
         current_orgao = None
         for c in parte4:
-            orgao = c.orgao_concedente or "Outros"
+            orgao = resolve_orgao_nome(c.orgao_concedente)
             if orgao != current_orgao:
                 html += f'<h3>● {orgao}</h3>'
                 current_orgao = orgao
