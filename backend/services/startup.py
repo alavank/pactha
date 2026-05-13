@@ -28,9 +28,32 @@ MIGRATION_FILES = [
     "dedupe_parlamentares_unique.sql",
     # Fix +30 anos SIGCON-MG (idempotente)
     "fix_sigcon_year_offset.sql",
-    # Dedupe convenios + UNIQUE INDEX (idempotente)
-    "dedupe_convenios_unique.sql",
+    # NOTA: dedupe_convenios_unique.sql nao roda no boot (UPDATEs gigantes,
+    # passa do healthcheck timeout). Foi aplicado uma vez via psycopg2 e o
+    # UNIQUE INDEX nr_sigcon previne reincidencia. Rodar manual se preciso.
 ]
+
+
+def run_migrations_full():
+    """Inclui migrations longas - usar so manual via SSH ou cron."""
+    import os, logging
+    from pathlib import Path
+    extras = ["dedupe_convenios_unique.sql"]
+    sync_url = os.getenv("DATABASE_URL_SYNC") or os.getenv("DATABASE_URL", "").replace("+asyncpg", "")
+    if not sync_url: return
+    import psycopg2
+    base = Path(__file__).parent.parent / "migrations"
+    for f in extras:
+        path = base / f
+        if not path.exists(): continue
+        try:
+            with psycopg2.connect(sync_url) as conn:
+                with conn.cursor() as cur:
+                    cur.execute(path.read_text(encoding="utf-8"))
+                conn.commit()
+            print(f"[STARTUP_FULL] {f}: OK", flush=True)
+        except Exception as e:
+            print(f"[STARTUP_FULL] {f}: {e}", flush=True)
 
 
 def _log(msg: str):
@@ -40,7 +63,10 @@ def _log(msg: str):
 
 
 def run_migrations():
-    """Roda todas as migrations SQL na ordem. Idempotente."""
+    """Roda todas as migrations SQL na ordem. Idempotente.
+
+    Usa advisory lock pra garantir que so 1 worker rode (uvicorn --workers 2
+    inicializaria 2 boots paralelos, criando deadlocks em DDL)."""
     sync_url = os.getenv("DATABASE_URL_SYNC") or os.getenv("DATABASE_URL", "").replace("+asyncpg", "")
     if not sync_url:
         _log("DATABASE_URL_SYNC nao configurada - pulando migrations")
@@ -51,6 +77,19 @@ def run_migrations():
     except ImportError:
         _log("psycopg2 nao instalado - pulando migrations")
         return
+
+    # Tenta pegar advisory lock - se outro worker ja tem, pula
+    try:
+        with psycopg2.connect(sync_url) as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT pg_try_advisory_lock(987654321)")
+                got_lock = cur.fetchone()[0]
+            conn.commit()
+        if not got_lock:
+            _log("Outro worker rodando migrations - pulando")
+            return
+    except Exception as e:
+        _log(f"Falha ao adquirir lock - tentando sem: {e}")
 
     base = Path(__file__).parent.parent / "migrations"
     if not base.exists():

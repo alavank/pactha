@@ -58,7 +58,8 @@ def fetch_programas_transferegov():
         logger.info(f"  Filtrado por situacao=Disponibilizado: {before} -> {len(df)}")
 
     # Filtrar prazo de inscricao em aberto
-    fim_col = next((cols[c] for c in cols if "DT_FIM_RECEB_PROP" in c.upper() or "DT_FIM_REC" in c.upper()), None)
+    # CSV SICONV usa DT_PROG_FIM_RECEB_PROP (com prefixo PROG_)
+    fim_col = next((cols[c] for c in cols if "FIM_RECEB_PROP" in c.upper() or "FIM_REC" in c.upper()), None)
     if fim_col:
         from datetime import datetime
         hoje = datetime.now().date()
@@ -99,58 +100,77 @@ def main():
         logger.warning("  Nenhum dado")
         return
 
-    with engine.begin() as conn:
-        # Replace integral (refletir status atual)
-        conn.execute(text("DELETE FROM programas_federais"))
-        inserted = 0
-        # Mapear colunas do CSV SICONV (caixa alta + variantes)
-        def gp(p, *keys):
-            for k in keys:
-                for col in p.keys():
-                    if k.upper() == str(col).upper().strip():
-                        v = p[col]
-                        if v is not None and str(v).strip().lower() not in ("nan","null","",""):
-                            return str(v).strip()
-            return None
+    # Mapear colunas do CSV SICONV (caixa alta + variantes)
+    def gp(p, *keys):
+        for k in keys:
+            for col in p.keys():
+                if k.upper() == str(col).upper().strip():
+                    v = p[col]
+                    if v is not None and str(v).strip().lower() not in ("nan","null","",""):
+                        return str(v).strip()
+        return None
 
-        for p in progs:
-            try:
-                id_prog = gp(p, "ID_PROGRAMA", "id_programa", "idPrograma", "id")
-                if not id_prog or not str(id_prog).strip().isdigit(): continue
-                nome = (gp(p, "NM_PROGRAMA", "nome_programa", "nomePrograma") or "")[:500]
-                orgao = (gp(p, "DESC_ORGAO", "NM_ORGAO_EXECUTOR", "orgao_executor", "orgaoExecutor", "orgao") or "")[:300]
-                obj = gp(p, "OBJ_PROGRAMA", "DS_OBJETIVO", "descricao", "objetivo")
-                situacao = (gp(p, "SIT_PROGRAMA", "status_programa", "statusPrograma") or "Aberto")[:100]
-                modalidade = gp(p, "MODALIDADE_PROGRAMA", "modalidade")
-                conn.execute(text("""
-                  INSERT INTO programas_federais
-                    (id_programa, nome_programa, orgao, objetivo, situacao, modalidade,
-                     dt_inicio_inscricao, dt_fim_inscricao,
-                     valor_minimo, valor_maximo, raw_data)
-                  VALUES (:i, :n, :o, :ob, :s, :md, :dii, :dif, :vmi, :vma, CAST(:raw AS jsonb))
-                  ON CONFLICT (id_programa) DO UPDATE SET
-                    nome_programa = EXCLUDED.nome_programa,
-                    orgao = EXCLUDED.orgao,
-                    situacao = EXCLUDED.situacao,
-                    modalidade = EXCLUDED.modalidade,
-                    raw_data = EXCLUDED.raw_data,
-                    updated_at = NOW()
-                """), {
-                    "i": int(id_prog), "n": nome, "o": orgao, "ob": obj, "s": situacao,
-                    "md": (modalidade or "")[:200] or None,
-                    "dii": parse_dt(gp(p, "DT_INIC_RECEB_PROP", "data_inicio_recebimento_propostas")),
-                    "dif": parse_dt(gp(p, "DT_FIM_RECEB_PROP", "data_fim_recebimento_propostas")),
-                    "vmi": parse_money(gp(p, "VL_GLOBAL_PROG_MIN", "valor_minimo")),
-                    "vma": parse_money(gp(p, "VL_GLOBAL_PROG", "valor_maximo")),
-                    "raw": json.dumps({k: (str(v)[:200] if v is not None else None) for k,v in p.items()},
-                                       ensure_ascii=False, default=str)[:30000],
-                })
-                inserted += 1
-            except Exception as e:
-                continue
-        conn.execute(text("""INSERT INTO ingestion_log (source, status, records_inserted, finished_at)
-                              VALUES ('oportunidades', 'success', :n, NOW())"""), {"n": inserted})
-    logger.info(f"=== Oportunidades concluido: {inserted} programas ===")
+    # 1) Filtros agressivos pra reduzir 999k -> ~milhares
+    from datetime import datetime, timedelta
+    hoje = datetime.now().date()
+    futuro = hoje + timedelta(days=365 * 2)  # ate 2 anos no futuro
+
+    rows = []
+    skipped = 0
+    for p in progs:
+        id_prog = gp(p, "ID_PROGRAMA", "id_programa", "idPrograma", "id")
+        if not id_prog or not str(id_prog).strip().isdigit():
+            skipped += 1; continue
+        # Filtro CRITICO: prazo de inscricao em aberto (hoje<=dt_fim<=2anos)
+        dt_fim = parse_dt(gp(p, "DT_PROG_FIM_RECEB_PROP", "DT_FIM_RECEB_PROP"))
+        if not dt_fim or dt_fim < hoje or dt_fim > futuro:
+            skipped += 1; continue
+
+        nome = (gp(p, "NOME_PROGRAMA", "NM_PROGRAMA", "nome_programa") or "")[:500]
+        orgao = (gp(p, "DESC_ORGAO_SUP_PROGRAMA", "DESC_ORGAO", "NM_ORGAO_EXECUTOR", "orgao") or "")[:300]
+        obj = gp(p, "OBJ_PROGRAMA", "DS_OBJETIVO", "descricao", "objetivo")
+        situacao = (gp(p, "SIT_PROGRAMA", "status_programa") or "Aberto")[:100]
+        modalidade = (gp(p, "MODALIDADE_PROGRAMA", "modalidade") or "")[:200] or None
+        dt_ini = parse_dt(gp(p, "DT_PROG_INI_RECEB_PROP", "DT_INIC_RECEB_PROP"))
+        vmi = parse_money(gp(p, "VL_GLOBAL_PROG_MIN", "valor_minimo"))
+        vma = parse_money(gp(p, "VL_GLOBAL_PROG", "valor_maximo"))
+        raw = json.dumps({k: (str(v)[:200] if v is not None else None) for k,v in p.items()},
+                          ensure_ascii=False, default=str)[:30000]
+
+        rows.append((int(id_prog), nome, orgao, obj, situacao, modalidade,
+                     dt_ini, dt_fim, vmi, vma, raw))
+
+    logger.info(f"  Apos filtro prazo aberto: {len(rows)} programas (skipped={skipped})")
+
+    # 2) Bulk insert via psycopg2 execute_values (1000x mais rapido que tx-per-row)
+    if not rows:
+        logger.warning("  Sem programas com prazo aberto - encerrando")
+        return
+
+    import psycopg2
+    from psycopg2.extras import execute_values
+    sync_url = os.getenv("DATABASE_URL_SYNC") or settings.DATABASE_URL.replace("+asyncpg", "")
+    inserted = 0
+    with psycopg2.connect(sync_url) as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM programas_federais")
+            execute_values(cur, """
+                INSERT INTO programas_federais
+                  (id_programa, nome_programa, orgao, objetivo, situacao, modalidade,
+                   dt_inicio_inscricao, dt_fim_inscricao, valor_minimo, valor_maximo, raw_data)
+                VALUES %s
+                ON CONFLICT (id_programa) DO UPDATE SET
+                  nome_programa = EXCLUDED.nome_programa,
+                  orgao = EXCLUDED.orgao,
+                  situacao = EXCLUDED.situacao,
+                  raw_data = EXCLUDED.raw_data,
+                  updated_at = NOW()
+            """, rows, template="(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)", page_size=500)
+            inserted = cur.rowcount
+            cur.execute("""INSERT INTO ingestion_log (source, status, records_inserted, finished_at)
+                            VALUES ('oportunidades', 'success', %s, NOW())""", (inserted,))
+        conn.commit()
+    logger.info(f"=== Oportunidades concluido: {inserted} programas inseridos ===")
 
 
 if __name__ == "__main__":
