@@ -194,7 +194,9 @@ async def list_convenios(
         count_result = await db.execute(q_count)
         total += count_result.scalar()
 
-        q = q.order_by(ConvenioFederal.dt_fim_vigencia.asc().nullslast())
+        # Default: mais recentes primeiro (evita lixo historico de 1997 no topo).
+        # Para 'todos', o sort combined em Python aplica logica de vigencia depois.
+        q = q.order_by(ConvenioFederal.dt_inicio.desc().nullslast())
         if esfera == "federal":
             q = q.offset((page - 1) * per_page).limit(per_page)
         result = await db.execute(q)
@@ -229,14 +231,25 @@ async def list_convenios(
         count_result = await db.execute(q_count)
         total += count_result.scalar()
 
-        q = q.order_by(ConvenioEstadual.dt_vigencia_atual.asc().nullslast())
+        q = q.order_by(ConvenioEstadual.dt_publicacao.desc().nullslast())
         if esfera == "estadual":
             q = q.offset((page - 1) * per_page).limit(per_page)
         result = await db.execute(q)
         items.extend([estadual_to_response(c) for c in result.scalars().all()])
 
-    # Sort combined by dias_restantes
-    items.sort(key=lambda x: x.dias_restantes if x.dias_restantes is not None else 99999)
+    # Sort combined:
+    # 1) Vigentes (dias_restantes >= 0) primeiro, ordenados ASC (mais urgentes primeiro)
+    # 2) Vencidos (dias_restantes < 0) ordenados DESC (menos vencido = mais recente primeiro)
+    # 3) NULL (sem data) por ultimo
+    # Isso evita que convenios de 1997 (-10271 dias) ocupem o topo da lista.
+    def _sort_key(x):
+        d = x.dias_restantes
+        if d is None:
+            return (2, 0)
+        if d >= 0:
+            return (0, d)          # vigente: urgencia ASC
+        return (1, -d)             # vencido: |dias| ASC (mais recente primeiro)
+    items.sort(key=_sort_key)
 
     # Paginate combined
     if esfera is None:
