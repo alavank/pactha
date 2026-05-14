@@ -140,18 +140,23 @@ def main():
             dt_atual = parse_date_br(crow.get("dt_vigencia_atual"))
 
             try:
+                # Extrair Numero do Plano de Trabalho (= nr_plano_sigcon no CSV)
+                # e Data Assinatura (proxy = dt_publicacao no SIGCON-MG)
+                nr_plano_trab = clean_string(crow.get("nr_plano_sigcon"))
                 res = conn.execute(text("""
                     INSERT INTO convenios_estadual (
                         nr_sigcon, nr_siafi, municipio_id, orgao_concedente,
                         objeto, objetivo, tp_instrumento,
                         valor_concedente, valor_emenda_parlamentar, valor_contrapartida, valor_total, valor_repassado,
                         dt_publicacao, dt_vigencia_inicial, dt_vigencia_final, dt_vigencia_atual,
-                        ano, situacao, raw_data
+                        ano, situacao, raw_data,
+                        nr_plano_trabalho, dt_assinatura
                     ) VALUES (
                         :nr, :siafi, :mun, :orgao, :obj, :objetivo, :tp,
                         :vc, :ve, :vcp, :vt, :vrep,
                         :dp, :di, :df, :da,
-                        :ano, :sit, :raw
+                        :ano, :sit, :raw,
+                        :npt, :dass
                     )
                     ON CONFLICT (nr_sigcon) DO UPDATE SET
                         valor_concedente = EXCLUDED.valor_concedente,
@@ -162,6 +167,8 @@ def main():
                         dt_vigencia_atual = EXCLUDED.dt_vigencia_atual,
                         situacao = EXCLUDED.situacao,
                         raw_data = EXCLUDED.raw_data,
+                        nr_plano_trabalho = COALESCE(EXCLUDED.nr_plano_trabalho, convenios_estadual.nr_plano_trabalho),
+                        dt_assinatura = COALESCE(EXCLUDED.dt_assinatura, convenios_estadual.dt_assinatura),
                         updated_at = NOW()
                     RETURNING (xmax = 0) AS inserted
                 """), {
@@ -186,6 +193,8 @@ def main():
                         {k: clean_string(v) for k, v in {**crow.to_dict(), **fact.to_dict()}.items() if clean_string(v)},
                         ensure_ascii=False, default=str,
                     ),
+                    "npt": nr_plano_trab,
+                    "dass": dt_pub,
                 })
                 row = res.fetchone()
                 if row and row[0]:
