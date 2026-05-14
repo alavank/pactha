@@ -73,26 +73,39 @@ def upsert_parlamentar_camara(conn, dep):
     if not nome:
         return None
 
+    # Lookup pelo MESMO normalize do UNIQUE INDEX ix_parlamentares_nome_unaccent
+    # (upper + translate de acentos) - se existir, atualiza e retorna ID
     r = conn.execute(text("""
       SELECT id FROM parlamentares
-      WHERE upper(nome) = :n AND COALESCE(esfera,'') = 'federal'
+      WHERE upper(translate(nome, 'áéíóúàâêôãõçÁÉÍÓÚÀÂÊÔÃÕÇ', 'AEIOUAAEOAOCAEIOUAAEOAOC'))
+          = upper(translate(:n, 'áéíóúàâêôãõçÁÉÍÓÚÀÂÊÔÃÕÇ', 'AEIOUAAEOAOCAEIOUAAEOAOC'))
       LIMIT 1
     """), {"n": nome}).first()
     if r:
-        # Atualizar partido e external_id
         conn.execute(text("""
           UPDATE parlamentares SET partido = COALESCE(:p, partido), uf = COALESCE(:u, uf),
                                     external_id = COALESCE(NULLIF(external_id, ''), :ext)
           WHERE id = :id
         """), {"p": partido, "u": uf, "ext": str(id_camara), "id": r[0]})
         return r[0]
-    # Criar
+    # Criar com ON CONFLICT defensivo (race entre workers)
     ins = conn.execute(text("""
       INSERT INTO parlamentares (nome, partido, uf, esfera, legislatura, external_id)
       VALUES (:n, :p, :u, 'federal', '2023-2027', :ext)
+      ON CONFLICT DO NOTHING
       RETURNING id
     """), {"n": nome[:300], "p": partido, "u": uf, "ext": str(id_camara)})
-    return ins.scalar()
+    new_id = ins.scalar()
+    if new_id:
+        return new_id
+    # Conflito: lookup novamente pelo unaccent
+    r = conn.execute(text("""
+      SELECT id FROM parlamentares
+      WHERE upper(translate(nome, 'áéíóúàâêôãõçÁÉÍÓÚÀÂÊÔÃÕÇ', 'AEIOUAAEOAOCAEIOUAAEOAOC'))
+          = upper(translate(:n, 'áéíóúàâêôãõçÁÉÍÓÚÀÂÊÔÃÕÇ', 'AEIOUAAEOAOCAEIOUAAEOAOC'))
+      LIMIT 1
+    """), {"n": nome}).first()
+    return r[0] if r else None
 
 
 def fetch_despesas(client, id_dep, ano):
@@ -185,6 +198,7 @@ def main():
                         conn.execute(text("""
                           INSERT INTO parlamentares (nome, esfera, uf, legislatura, external_id)
                           VALUES (:n, 'federal', 'BR', '2023-2027', :ext)
+                          ON CONFLICT DO NOTHING
                         """), {"n": nome_full[:300], "ext": f"camara_orgao:{c.get('id')}"})
                         comissao_inseridas += 1
                 logger.info(f"  Comissoes inseridas: {comissao_inseridas}/{len(comissoes)}")
@@ -201,6 +215,7 @@ def main():
                         conn.execute(text("""
                           INSERT INTO parlamentares (nome, esfera, uf, legislatura, external_id)
                           VALUES (:n, 'federal', 'BR', '2023-2027', :ext)
+                          ON CONFLICT DO NOTHING
                         """), {"n": nome_full[:300], "ext": f"camara_bloco:{b.get('idBloco') or b.get('id')}"})
                         bloco_inseridos += 1
                 logger.info(f"  Blocos inseridos: {bloco_inseridos}/{len(blocos)}")
