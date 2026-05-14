@@ -30,6 +30,8 @@ MIGRATION_FILES = [
     "fix_sigcon_year_offset.sql",
     # Fix mojibake UTF-8 (PrestaÃ§Ã£o -> Prestação)
     "fix_mojibake_utf8.sql",
+    # UNIQUE INDEX nr_sigcon total (preciso pra ON CONFLICT no UPSERT)
+    "fix_unique_nrsigcon_full.sql",
     # NOTA: dedupe_convenios_unique.sql nao roda no boot (UPDATEs gigantes,
     # passa do healthcheck timeout). Foi aplicado uma vez via psycopg2 e o
     # UNIQUE INDEX nr_sigcon previne reincidencia. Rodar manual se preciso.
