@@ -43,9 +43,12 @@ def main():
                 partido = (d.get("partido") or "").strip().upper() or None
                 id_almg = d.get("id")
 
+                # Lookup pelo MESMO unaccent do UNIQUE INDEX ix_parlamentares_nome_unaccent
                 r = conn.execute(text("""
                   SELECT id FROM parlamentares
-                  WHERE upper(nome) = :n AND esfera='estadual' LIMIT 1
+                  WHERE upper(translate(nome, 'áéíóúàâêôãõçÁÉÍÓÚÀÂÊÔÃÕÇ', 'AEIOUAAEOAOCAEIOUAAEOAOC'))
+                      = upper(translate(:n, 'áéíóúàâêôãõçÁÉÍÓÚÀÂÊÔÃÕÇ', 'AEIOUAAEOAOCAEIOUAAEOAOC'))
+                  LIMIT 1
                 """), {"n": nome}).first()
                 if r:
                     conn.execute(text("""
@@ -60,6 +63,7 @@ def main():
                     conn.execute(text("""
                       INSERT INTO parlamentares (nome, partido, uf, esfera, legislatura, external_id)
                       VALUES (:n, :p, 'MG', 'estadual', '2023-2027', :ext)
+                      ON CONFLICT DO NOTHING
                     """), {"n": nome[:300], "p": partido, "ext": f"almg:{id_almg}"})
                     criados += 1
             conn.execute(text("""

@@ -149,6 +149,13 @@ def main():
 
     logger.info(f"  Apos filtro prazo aberto: {len(rows)} programas (skipped={skipped})")
 
+    # Dedupe por id_programa (CSV pode ter linhas duplicadas) - mantem o ultimo (mais recente)
+    seen = {}
+    for r in rows:
+        seen[r[0]] = r  # r[0] = id_programa
+    rows = list(seen.values())
+    logger.info(f"  Apos dedupe id_programa: {len(rows)} programas")
+
     # 2) Bulk insert via psycopg2 execute_values (1000x mais rapido que tx-per-row)
     if not rows:
         logger.warning("  Sem programas com prazo aberto - encerrando")
@@ -156,7 +163,11 @@ def main():
 
     import psycopg2
     from psycopg2.extras import execute_values
-    sync_url = os.getenv("DATABASE_URL_SYNC") or settings.DATABASE_URL.replace("+asyncpg", "")
+    # DATABASE_URL_SYNC vem com sslmode (psycopg2). DATABASE_URL eh asyncpg (ssl=require)
+    # que psycopg2 nao entende - precisa converter ssl=require -> sslmode=require
+    sync_url = os.getenv("DATABASE_URL_SYNC") or settings.DATABASE_URL.replace("+asyncpg", "").replace("ssl=require", "sslmode=require")
+    # Strip channel_binding (Neon): causa hang silencioso em psycopg2
+    sync_url = sync_url.replace("&channel_binding=require", "").replace("?channel_binding=require", "")
     inserted = 0
     with psycopg2.connect(sync_url) as conn:
         with conn.cursor() as cur:
