@@ -107,12 +107,11 @@ def main():
     filt_convs = df_conv[df_conv["id_convenio"].astype(str).isin(target_conv_ids)]
 
     inserted = 0
+    updated = 0
     with engine.connect() as conn:
-        # Clear dependent data first (FK constraints)
-        conn.execute(text("DELETE FROM prestacao_documentos"))
-        conn.execute(text("DELETE FROM prestacao_contas WHERE convenio_estadual_id IS NOT NULL"))
-        conn.execute(text("DELETE FROM emendas WHERE convenio_estadual_id IS NOT NULL"))
-        conn.execute(text("DELETE FROM convenios_estadual"))
+        # NAO faz DELETE antes - SIGCON-MG bulk e capped em 5000 facts (paginacao CKAN).
+        # DELETE+INSERT perderia historico real se nova execucao trouxesse menos dados.
+        # Usa UPSERT em nr_sigcon (UNIQUE INDEX existe).
 
         for _, fact in filt_facts.iterrows():
             conv_id = str(fact["id_convenio"])
@@ -141,7 +140,7 @@ def main():
             dt_atual = parse_date_br(crow.get("dt_vigencia_atual"))
 
             try:
-                conn.execute(text("""
+                res = conn.execute(text("""
                     INSERT INTO convenios_estadual (
                         nr_sigcon, nr_siafi, municipio_id, orgao_concedente,
                         objeto, objetivo, tp_instrumento,
@@ -154,6 +153,17 @@ def main():
                         :dp, :di, :df, :da,
                         :ano, :sit, :raw
                     )
+                    ON CONFLICT (nr_sigcon) DO UPDATE SET
+                        valor_concedente = EXCLUDED.valor_concedente,
+                        valor_emenda_parlamentar = EXCLUDED.valor_emenda_parlamentar,
+                        valor_contrapartida = EXCLUDED.valor_contrapartida,
+                        valor_total = EXCLUDED.valor_total,
+                        valor_repassado = EXCLUDED.valor_repassado,
+                        dt_vigencia_atual = EXCLUDED.dt_vigencia_atual,
+                        situacao = EXCLUDED.situacao,
+                        raw_data = EXCLUDED.raw_data,
+                        updated_at = NOW()
+                    RETURNING (xmax = 0) AS inserted
                 """), {
                     "nr": nr_sigcon,
                     "siafi": clean_string(crow.get("nr_siafi")),
@@ -177,7 +187,11 @@ def main():
                         ensure_ascii=False, default=str,
                     ),
                 })
-                inserted += 1
+                row = res.fetchone()
+                if row and row[0]:
+                    inserted += 1
+                else:
+                    updated += 1
             except Exception as e:
                 if "duplicate" not in str(e).lower():
                     print(f"  Error: {e}")
