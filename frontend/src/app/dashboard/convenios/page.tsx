@@ -330,88 +330,85 @@ export default function ConveniosPage() {
         </div>
       ) : (
         <>
-          <div className="rounded-lg border bg-white">
-            <Table>
+          <div className="rounded-lg border bg-white overflow-hidden">
+            <Table className="text-xs table-fixed w-full">
               <TableHeader>
-                <TableRow>
-                  <TableHead>Nr Convenio</TableHead>
-                  <TableHead>Fonte</TableHead>
-                  <TableHead className="w-[100px]">Orgao</TableHead>
-                  <TableHead className="max-w-[260px]">Objeto</TableHead>
-                  <TableHead>Tipo</TableHead>
-                  <TableHead>Situacao</TableHead>
-                  <TableHead className="text-right">Repasse</TableHead>
-                  <TableHead className="text-right">Contrap.</TableHead>
-                  <TableHead>Assinatura</TableHead>
-                  <TableHead>Vigencia</TableHead>
-                  <TableHead>Dias</TableHead>
+                <TableRow className="[&>th]:py-1.5 [&>th]:px-2 [&>th]:text-[11px] [&>th]:font-semibold [&>th]:whitespace-nowrap">
+                  <TableHead className="w-[100px]">Nr</TableHead>
+                  <TableHead className="w-[60px]">Fonte</TableHead>
+                  <TableHead className="w-[80px]">Orgao</TableHead>
+                  <TableHead className="min-w-0">Objeto</TableHead>
+                  <TableHead className="w-[110px]">Situacao</TableHead>
+                  <TableHead className="w-[95px] text-right">Repasse</TableHead>
+                  <TableHead className="w-[80px] text-right">Contrap.</TableHead>
+                  <TableHead className="w-[75px]">Assinat.</TableHead>
+                  <TableHead className="w-[75px]">Vigencia</TableHead>
+                  <TableHead className="w-[55px]">Dias</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {items.map((conv: Convenio) => (
-                  <TableRow key={conv.id}>
-                    <TableCell className="font-medium text-xs">
+                {items.map((conv: Convenio) => {
+                  const objeto = conv.objeto || "";
+                  const programa = conv.tipo_programa || conv.programa || "";
+                  const orgao = conv.orgao_concedente || "";
+                  const tipTitle = `${isTE(conv.objeto) ? "[TE] " : ""}${objeto}${programa ? "\n\nPrograma: " + programa : ""}`;
+                  return (
+                  <TableRow key={conv.id} className="[&>td]:py-1.5 [&>td]:px-2 [&>td]:text-[11px] hover:bg-gray-50">
+                    <TableCell className="font-mono whitespace-nowrap truncate" title={conv.nr_convenio || conv.nr_sigcon || ""}>
                       {conv.nr_convenio || conv.nr_sigcon || "-"}
                     </TableCell>
-                    <TableCell>
+                    <TableCell title={conv.fonte || ""}>
                       {conv.fonte && (
-                        <span className="inline-flex items-center rounded-md bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 text-[10px] font-mono text-indigo-700">
-                          {conv.fonte}
+                        <span className="inline-flex items-center rounded bg-indigo-50 border border-indigo-200 px-1 py-0.5 text-[9px] font-mono text-indigo-700">
+                          {conv.fonte
+                            .replace("TransfereGov-Proposta","TG-P")
+                            .replace("TransfereGov","TG")
+                            .replace("PortalTransparencia","PT")
+                            .replace("SIGCON-MG","SIGCON")
+                            .replace("CODEVASF","CODE")}
                         </span>
                       )}
                     </TableCell>
-                    <TableCell className="w-[100px]" title={conv.orgao_concedente || ""}>
-                      <span className="text-xs font-mono">{siglaOrgao(conv.orgao_concedente)}</span>
+                    <TableCell className="font-mono whitespace-nowrap truncate" title={orgao}>
+                      {siglaOrgao(conv.orgao_concedente)}
                     </TableCell>
-                    <TableCell className="max-w-[260px]">
-                      {isTE(conv.objeto) && (
-                        <span className="inline-flex items-center rounded-md bg-purple-50 border border-purple-200 px-1.5 py-0.5 text-[10px] font-mono text-purple-700 mr-1">
-                          TE
-                        </span>
-                      )}
-                      <span className="line-clamp-2 text-sm">
-                        {conv.objeto
-                          ? conv.objeto.length > 70
-                            ? conv.objeto.slice(0, 70) + "..."
-                            : conv.objeto
-                          : "-"}
-                      </span>
+                    <TableCell title={tipTitle}>
+                      <div className="flex items-center gap-1 min-w-0">
+                        {isTE(conv.objeto) && (
+                          <span className="shrink-0 inline-flex items-center rounded bg-purple-50 border border-purple-200 px-1 text-[9px] font-mono text-purple-700">TE</span>
+                        )}
+                        <span className="truncate">{objeto || "-"}</span>
+                      </div>
                     </TableCell>
-                    <TableCell className="max-w-[120px] truncate text-xs text-muted-foreground">
-                      {conv.tipo_programa || conv.programa || "-"}
-                    </TableCell>
-                    <TableCell>
-                      <span
-                        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${situacaoBadgeColor(
-                          conv.situacao
-                        )}`}
-                      >
+                    <TableCell title={conv.situacao || ""}>
+                      <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium truncate max-w-full ${situacaoBadgeColor(conv.situacao)}`}>
                         {conv.situacao || "-"}
                       </span>
                     </TableCell>
-                    <TableCell className="text-right text-xs">
+                    <TableCell className="text-right whitespace-nowrap" title={`Repasse: ${formatCurrency(conv.valor_repasse ?? conv.valor_total)}\nGlobal: ${formatCurrency(conv.valor_total)}`}>
                       {formatCurrency(conv.valor_repasse ?? conv.valor_total)}
                     </TableCell>
-                    <TableCell className="text-right text-xs text-muted-foreground">
+                    <TableCell className="text-right text-muted-foreground whitespace-nowrap" title={conv.valor_contrapartida ? `Contrapartida: ${formatCurrency(conv.valor_contrapartida)}` : "Sem contrapartida"}>
                       {conv.valor_contrapartida ? formatCurrency(conv.valor_contrapartida) : "-"}
                     </TableCell>
-                    <TableCell className="text-xs">{formatDate(conv.dt_inicio)}</TableCell>
-                    <TableCell className="text-xs">{formatDate(conv.dt_fim_vigencia)}</TableCell>
-                    <TableCell>
-                      <span
-                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${diasRestantesBadge(
-                          conv.dias_restantes
-                        )}`}
-                      >
+                    <TableCell className="whitespace-nowrap" title={`Assinatura: ${formatDate(conv.dt_inicio)}`}>
+                      {formatDate(conv.dt_inicio)}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap" title={`Vigencia: ${formatDate(conv.dt_fim_vigencia)}`}>
+                      {formatDate(conv.dt_fim_vigencia)}
+                    </TableCell>
+                    <TableCell title={conv.dias_restantes != null ? `${conv.dias_restantes} dias restantes` : ""}>
+                      <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ${diasRestantesBadge(conv.dias_restantes)}`}>
                         {conv.dias_restantes != null
                           ? conv.dias_restantes < 0
-                            ? `${Math.abs(conv.dias_restantes)}d venc`
+                            ? `${Math.abs(conv.dias_restantes)}d`
                             : `${conv.dias_restantes}d`
                           : "-"}
                       </span>
                     </TableCell>
                   </TableRow>
-                ))}
+                );
+                })}
               </TableBody>
             </Table>
           </div>

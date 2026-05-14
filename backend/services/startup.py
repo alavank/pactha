@@ -28,6 +28,8 @@ MIGRATION_FILES = [
     "dedupe_parlamentares_unique.sql",
     # Fix +30 anos SIGCON-MG (idempotente)
     "fix_sigcon_year_offset.sql",
+    # Fix mojibake UTF-8 (PrestaÃ§Ã£o -> Prestação)
+    "fix_mojibake_utf8.sql",
     # NOTA: dedupe_convenios_unique.sql nao roda no boot (UPDATEs gigantes,
     # passa do healthcheck timeout). Foi aplicado uma vez via psycopg2 e o
     # UNIQUE INDEX nr_sigcon previne reincidencia. Rodar manual se preciso.
