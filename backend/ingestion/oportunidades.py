@@ -44,9 +44,16 @@ def fetch_programas_transferegov():
     with zipfile.ZipFile(io.BytesIO(r.content)) as zf:
         csv_name = [n for n in zf.namelist() if n.endswith(".csv")][0]
         with zf.open(csv_name) as f:
-            df = pd.read_csv(f, sep=";", encoding="latin-1", dtype=str,
-                             on_bad_lines="skip", low_memory=False)
-            df.columns = [c.strip().lstrip("﻿") for c in df.columns]
+            content = f.read()
+        # Detecta encoding (SICONV migrou pra UTF-8 em 2024); evita mojibake
+        try:
+            content[:65536].decode("utf-8")
+            enc = "utf-8"
+        except UnicodeDecodeError:
+            enc = "latin-1"
+        df = pd.read_csv(io.BytesIO(content), sep=";", encoding=enc, dtype=str,
+                         on_bad_lines="skip", low_memory=False)
+        df.columns = [c.strip().lstrip("﻿") for c in df.columns]
     logger.info(f"  Total programas bulk: {len(df)}")
 
     # Filtrar so disponibilizados E com prazo de inscricao aberto (dt_fim >= hoje)

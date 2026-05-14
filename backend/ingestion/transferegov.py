@@ -87,9 +87,19 @@ def download_csv(filename: str, max_attempts: int = 8) -> pd.DataFrame:
         csv_name = [n for n in zf.namelist() if n.endswith(".csv")][0]
         with zf.open(csv_name) as f:
             content = f.read()
+            # Detecta encoding real: tenta UTF-8 primeiro (a partir de 2024 SICONV migrou),
+            # fallback para latin-1. Ler latin-1 quando o arquivo eh UTF-8 cria mojibake
+            # (Presta\u00c3\u00a7\u00c3\u00a3o em vez de Prestacao) ao gravar no Postgres UTF-8.
+            sample = content[:65536]
+            try:
+                sample.decode("utf-8")
+                enc = "utf-8"
+            except UnicodeDecodeError:
+                enc = "latin-1"
+            print(f"  Encoding detectado: {enc}")
             df = pd.read_csv(
                 io.BytesIO(content),
-                sep=";", encoding="latin-1", dtype=str,
+                sep=";", encoding=enc, dtype=str,
                 on_bad_lines="skip", low_memory=False,
             )
             # Clean BOM from first column name (UTF-8 BOM ou latin-1 decoded "\u00ef\u00bb\u00bf")
