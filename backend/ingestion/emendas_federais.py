@@ -222,15 +222,35 @@ def main():
                         break
 
             if not parl_id:
-                # Insert new parlamentar (not in TSE) - no constraint now
-                parl_result = conn.execute(text("""
-                    INSERT INTO parlamentares (nome, esfera, uf)
-                    VALUES (:n, 'federal', 'MG')
-                    RETURNING id
-                """), {"n": parl_nome.upper()})
-                parl_id = parl_result.scalar()
-                # Add to lookup to prevent duplicates in same run
-                tse_parl_lookup[norm] = (parl_id, None)
+                # Insert new parlamentar - ON CONFLICT pra evitar UniqueViolation
+                # (UNIQUE INDEX ix_parlamentares_nome_unaccent existe). Re-busca se ja existe.
+                try:
+                    parl_result = conn.execute(text("""
+                        INSERT INTO parlamentares (nome, esfera, uf)
+                        VALUES (:n, 'federal', 'MG')
+                        ON CONFLICT (upper(translate(nome,
+                            'ÁÉÍÓÚÀÂÊÔÃÕÇáéíóúàâêôãõç',
+                            'AEIOUAAEOAOCAEIOUAAEOAOC'))) DO NOTHING
+                        RETURNING id
+                    """), {"n": parl_nome.upper()})
+                    parl_id = parl_result.scalar()
+                    if not parl_id:
+                        # Foi conflito - busca o existente
+                        r2 = conn.execute(text("""
+                            SELECT id FROM parlamentares
+                            WHERE upper(translate(nome,'ÁÉÍÓÚÀÂÊÔÃÕÇáéíóúàâêôãõç','AEIOUAAEOAOCAEIOUAAEOAOC'))
+                                = upper(translate(:n,'ÁÉÍÓÚÀÂÊÔÃÕÇáéíóúàâêôãõç','AEIOUAAEOAOCAEIOUAAEOAOC'))
+                            LIMIT 1
+                        """), {"n": parl_nome.upper()})
+                        parl_id = r2.scalar()
+                except Exception as e:
+                    # Se falhou tudo, skip esta emenda
+                    conn.rollback()
+                    continue
+                if parl_id:
+                    tse_parl_lookup[norm] = (parl_id, None)
+                else:
+                    continue
 
             # Classify funcao from convenio objeto (already in DB)
             objeto = conv_obj_by_id.get(conv_id)
