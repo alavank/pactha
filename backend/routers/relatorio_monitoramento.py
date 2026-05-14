@@ -178,19 +178,33 @@ def categorize_part(c, esfera):
     if has_desembolso and (dt_vig and dt_vig < date.today()):
         return 3
 
-    # --- PARTE 1 = SO FEDERAIS (Demandas em Brasilia) ---
-    # Toda federal vai para Brasilia (Parte 1 ou 3 conforme execucao)
-    # Estadual nunca vai pra PARTE 1.
+    # --- PARTE 1 = FEDERAIS pendentes em Brasilia ---
+    # Conforme spec Freitas: aparecer apenas situacoes pendentes especificas
+    # - Pendente de empenho
+    # - Pendente de desembolso
+    # - Pendente de aceite do processo licitatorio
+    # - Pendente de aceite da proposta/plano de trabalho
+    # Estaduais NUNCA vao pra PARTE 1 (vao pra PARTE 2).
     if esfera == "federal":
-        ano = c.ano or 0
-        # Federais pendentes (ano corrente +/-) -> PARTE 1
-        if ano >= ano_atual - 1:
-            pendente_keywords = ["pendente", "empenh", "aguardando", "analise", "elabora", "proposta"]
-            if any(kw in sit for kw in pendente_keywords) or sit == "" or sit == "-":
-                if not has_desembolso and valor_desembolsado == 0:
-                    return 1
-        # Federais em execucao com vigencia futura -> PARTE 1 tambem (todas demandas Brasilia)
-        if dt_vig and dt_vig >= date.today():
+        # Mapeia keywords das situacoes que sao "pendentes em Brasilia"
+        brasilia_keywords = [
+            "pendente", "aguardando",
+            "empenh",  # Empenhado / Pendente de Empenho
+            "proposta/plano de trabalho enviado",  # = pendente aceite proposta
+            "proposta/plano de trabalho aprovado",  # aprovado mas pendente empenho
+            "em execu",  # ja em execucao mas ainda pendente de pagamento total
+            "elabora",  # em elaboracao
+            "analise",  # em analise
+            "rejeitad",  # rejeitado tambem fica em Brasilia ate resolver
+        ]
+        if any(kw in sit for kw in brasilia_keywords):
+            if not has_desembolso and valor_desembolsado == 0:
+                return 1
+            # Se ja teve desembolso parcial, segue Brasilia ate completar
+            if dt_vig and dt_vig >= date.today():
+                return 1
+        # Sem situacao OU vigencia futura ativa = ainda em execucao = Brasilia
+        if (not sit or sit in ("-", "normal", "adimplente")) and dt_vig and dt_vig >= date.today():
             return 1
         return 3  # Federal historica
 
@@ -259,7 +273,12 @@ def render_convenio_federal(c, parlamentar_nome=None):
 
 
 def render_convenio_estadual(c, parlamentar_nome=None):
-    """Renderiza um bloco de convenio estadual no formato Freitas (SIGCON, SIG, SES, SEINFRA, etc)."""
+    """Renderiza um bloco de convenio estadual no formato SIGCON-MG (Freitas).
+    Conforme spec: Numero do Convenio, Status, Nº SIAFI, Data Assinatura,
+    Data Publicacao, Dias Restantes, Programa, Orgao, Convenente,
+    Valor Indicacao (=Concedente), Valor Contrapartida, Valor Total,
+    Numero Proposta, Numero Plano de Trabalho, Quantidade Alteracoes."""
+    from datetime import date as _date
     parl = parlamentar_nome or "Verificar"
     objeto = c.objeto or "-"
 
@@ -269,19 +288,42 @@ def render_convenio_estadual(c, parlamentar_nome=None):
     if c.resolucao:
         label = "Indicacao"
 
+    dt_fim = c.dt_vigencia_atual or c.dt_vigencia_final
+    dias_restantes = None
+    if dt_fim:
+        dias_restantes = (dt_fim - _date.today()).days
+
     html = f"""
     <div class="convenio">
-      <p class="conv-num">{label}: <strong>{c.nr_sigcon or c.nr_indicacao or '-'}</strong></p>
+      <p class="conv-num">{label} Publicado: <strong>{c.nr_sigcon or c.nr_indicacao or '-'}</strong>
+        &nbsp; <strong>Status:</strong> <span style="color:#0a7d33">{sit_full}</span>
+        {f' &nbsp; <strong>N° SIAFI:</strong> {c.nr_siafi}' if c.nr_siafi else ''}</p>
       <ul>
-        <li><strong>Objeto:</strong> {objeto}</li>
+        <li><strong>Titulo:</strong> {objeto}</li>
+        <li><strong>Concedente/Orgao:</strong> {c.orgao_concedente or '-'}</li>
+        <li><strong>Convenente:</strong> {c.convenente_nome or '-'}</li>
         <li><strong>Parlamentar responsavel pela indicacao:</strong> {parl}</li>
-        <li><strong>Valor global:</strong> {fmt_money(c.valor_total)}</li>
-        <li><strong>Valor de repasse:</strong> {fmt_money(c.valor_concedente)}</li>
-        <li><strong>Valor de contrapartida:</strong> {fmt_money(c.valor_contrapartida)}</li>
     """
-    dt_fim = c.dt_vigencia_atual or c.dt_vigencia_final
+    # Datas
+    if c.dt_assinatura or c.dt_publicacao:
+        html += f'<li><strong>Data Assinatura:</strong> {fmt_date(c.dt_assinatura)} &nbsp; <strong>Data Publicacao:</strong> {fmt_date(c.dt_publicacao)}</li>'
     if dt_fim:
-        html += f'<li><strong>Final da Vigencia:</strong> {fmt_date(dt_fim)}</li>'
+        d_str = fmt_date(dt_fim)
+        if dias_restantes is not None:
+            cor = "red" if dias_restantes < 30 else ("orange" if dias_restantes < 90 else "#0a7d33")
+            d_str += f' &nbsp; <strong>Dias Restantes:</strong> <span style="color:{cor}">{dias_restantes}</span>'
+        html += f'<li><strong>Vigencia:</strong> {d_str}</li>'
+    # Valores
+    html += f'<li><strong>Valor Indicacao/Concedente:</strong> {fmt_money(c.valor_concedente)} &nbsp; '
+    html += f'<strong>Contrapartida:</strong> {fmt_money(c.valor_contrapartida)} &nbsp; '
+    html += f'<strong>Total:</strong> {fmt_money(c.valor_total)}</li>'
+    # Numero proposta + plano trabalho + alteracoes
+    if c.nr_proposta or c.nr_plano_trabalho or (c.qt_alteracoes and c.qt_alteracoes > 0):
+        extras = []
+        if c.nr_proposta: extras.append(f'<strong>Nr Proposta:</strong> {c.nr_proposta}')
+        if c.nr_plano_trabalho: extras.append(f'<strong>Nr Plano Trabalho:</strong> {c.nr_plano_trabalho}')
+        if c.qt_alteracoes and c.qt_alteracoes > 0: extras.append(f'<strong>Qtde Alteracoes:</strong> {c.qt_alteracoes}')
+        html += f'<li>{" &nbsp; ".join(extras)}</li>'
     if c.banco:
         html += f'<li><strong>Banco:</strong> {c.banco}</li>'
     if c.agencia:
