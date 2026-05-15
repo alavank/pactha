@@ -302,16 +302,20 @@ async def _run():
         # sem precisar fazer click-through em cada plano.
         ano = rec.get("ano")
         dt_pub_proxy = date(ano, 1, 1) if ano else None
+        valor = rec.get("valor_repasse")
         try:
             cur.execute("""
                 INSERT INTO convenios_estadual (
                     nr_sigcon, nr_siafi, municipio_id, orgao_concedente,
-                    convenente_nome, objeto, situacao, valor_repassado,
+                    convenente_nome, objeto, situacao,
+                    valor_concedente, valor_total, valor_repassado,
                     raw_data, tp_instrumento,
                     nr_plano_trabalho, ano, dt_publicacao
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s)
                 ON CONFLICT (nr_sigcon) DO UPDATE SET
                     situacao = EXCLUDED.situacao,
+                    valor_concedente = COALESCE(EXCLUDED.valor_concedente, convenios_estadual.valor_concedente),
+                    valor_total = COALESCE(EXCLUDED.valor_total, convenios_estadual.valor_total),
                     valor_repassado = COALESCE(EXCLUDED.valor_repassado, convenios_estadual.valor_repassado),
                     convenente_nome = COALESCE(EXCLUDED.convenente_nome, convenios_estadual.convenente_nome),
                     nr_plano_trabalho = COALESCE(EXCLUDED.nr_plano_trabalho, convenios_estadual.nr_plano_trabalho),
@@ -328,7 +332,9 @@ async def _run():
                 rec.get("convenente"),
                 rec.get("objeto"),
                 sit_label,
-                rec.get("valor_repasse"),
+                valor,  # valor_concedente (lido pelo front como valor_repasse)
+                valor,  # valor_total
+                valor,  # valor_repassado
                 json.dumps({**rec, "_source": "sigcon_scraper"}, ensure_ascii=False, default=str),
                 rec.get("tipo"),
                 rec.get("nr_plano") or None,

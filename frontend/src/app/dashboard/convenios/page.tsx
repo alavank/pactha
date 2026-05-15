@@ -57,13 +57,55 @@ const SIGLAS: Record<string, string> = {
   "MINISTERIO DAS CIDADES": "Min. Cidades",
 };
 
+// Codigos numericos SIAFI dos orgaos federais (TransfereGov usa esses)
+// Ref: https://www.planejamento.gov.br/transferegov - cod orgao superior
+const ORGAO_FED_CODIGOS: Record<string, { sigla: string; nome: string }> = {
+  "20000": { sigla: "PR",          nome: "Presidência da República" },
+  "22000": { sigla: "MAPA",        nome: "Min. Agricultura, Pecuária e Abastecimento" },
+  "24000": { sigla: "MCTI",        nome: "Min. Ciência, Tecnologia e Inovação" },
+  "25000": { sigla: "MF",          nome: "Min. Fazenda" },
+  "26000": { sigla: "MEC",         nome: "Min. Educação" },
+  "30000": { sigla: "MJ",          nome: "Min. Justiça e Segurança Pública" },
+  "33000": { sigla: "MPS",         nome: "Min. Previdência Social" },
+  "35000": { sigla: "MRE",         nome: "Min. Relações Exteriores" },
+  "36000": { sigla: "Min. Saúde",  nome: "Min. Saúde" },
+  "38000": { sigla: "MTb",         nome: "Min. Trabalho e Emprego" },
+  "39000": { sigla: "MT",          nome: "Min. Transportes" },
+  "41000": { sigla: "MinC",        nome: "Min. Cultura" },
+  "42000": { sigla: "MinC",        nome: "Min. Cultura" },
+  "44000": { sigla: "MMA",         nome: "Min. Meio Ambiente" },
+  "49000": { sigla: "MDA",         nome: "Min. Desenvolvimento Agrário" },
+  "51000": { sigla: "Min. Esporte", nome: "Min. Esporte" },
+  "52000": { sigla: "MD",          nome: "Min. Defesa" },
+  "53000": { sigla: "MIDR",        nome: "Min. Integração e Desenvolvimento Regional" },
+  "54000": { sigla: "MTur",        nome: "Min. Turismo" },
+  "55000": { sigla: "MDS",         nome: "Min. Desenvolvimento Social" },
+  "56000": { sigla: "MCID",        nome: "Min. Cidades" },
+  "58000": { sigla: "MPO",         nome: "Min. Planejamento e Orçamento" },
+};
+
 function siglaOrgao(o?: string | null): string {
   if (!o) return "-";
-  const up = o.toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  const trimmed = o.trim();
+  // Codigo numerico federal (ex: "22000")
+  if (/^\d{4,6}$/.test(trimmed) && ORGAO_FED_CODIGOS[trimmed]) {
+    return ORGAO_FED_CODIGOS[trimmed].sigla;
+  }
+  const up = trimmed.toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
   for (const [k, sig] of Object.entries(SIGLAS)) {
     if (up.startsWith(k)) return sig;
   }
-  return o.length > 18 ? o.slice(0, 18) + "..." : o;
+  return trimmed.length > 18 ? trimmed.slice(0, 18) + "..." : trimmed;
+}
+
+function nomeOrgaoFull(o?: string | null): string {
+  if (!o) return "";
+  const trimmed = o.trim();
+  if (/^\d{4,6}$/.test(trimmed) && ORGAO_FED_CODIGOS[trimmed]) {
+    const m = ORGAO_FED_CODIGOS[trimmed];
+    return `${trimmed} - ${m.nome}`;
+  }
+  return trimmed;
 }
 
 function isTE(objeto?: string | null): boolean {
@@ -369,7 +411,7 @@ export default function ConveniosPage() {
                         </span>
                       )}
                     </TableCell>
-                    <TableCell className="font-mono whitespace-nowrap truncate" title={orgao}>
+                    <TableCell className="font-mono whitespace-nowrap truncate" title={nomeOrgaoFull(conv.orgao_concedente) || orgao}>
                       {siglaOrgao(conv.orgao_concedente)}
                     </TableCell>
                     <TableCell title={tipTitle}>
