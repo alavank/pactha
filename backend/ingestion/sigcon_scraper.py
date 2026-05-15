@@ -68,13 +68,32 @@ def _parse_money(s: str) -> Optional[float]:
         return None
 
 
+PARSE_TABLE_JS = r"""
+() => {
+    const tbody = document.querySelector('tbody[id$="dtTblExibeListaPlanosDeTrabalho_data"]');
+    if (!tbody) return {error: 'no plans tbody'};
+    const trs = Array.from(tbody.querySelectorAll(':scope > tr'))
+        .filter(tr => !tr.classList.contains('ui-datatable-empty-message'));
+    const rows = trs.map(tr => Array.from(tr.children).map(td => td.innerText.trim().replace(/\n+/g, ' | ')));
+    // Tambem retorna paginacao
+    const pagInfo = (document.body.innerText.match(/P[aá]gina\s+\d+\s+de\s+\d+/i) || [''])[0];
+    return {count: rows.length, rows: rows, pag: pagInfo};
+}
+"""
+
+
 async def _scrape_municipio(page, municipio_nome: str) -> list[dict]:
-    """Faz pesquisa filtrada (ou nao-filtrada se usuario soh ve seu mun) + download CSV."""
-    # Navega para Pesquisa Unificada
+    """Faz pesquisa unificada e parseia tabela HTML diretamente.
+
+    A tabela tem colunas:
+    [0] expander | [1] Nº Proposta | [2] Nº Plano | [3] Nº Instrumento |
+    [4] Instrumento (text) | [5] SIAFI | [6] Tipo | [7] Concedente | [8] Convenente |
+    [9] Municipio | [10] Valor | [11] Titulo | [12] Status | [13] Conta | [14] Remessa | [15] Acao
+    """
     await page.goto(SEARCH_URL, timeout=60000, wait_until="domcontentloaded")
     await page.wait_for_timeout(8000)
 
-    # Tenta selecionar municipio no dropdown PrimeFaces (UI label hidden as vezes)
+    # Filtro municipio (best effort; nao bloqueia se PF nao expor select normal)
     try:
         await page.evaluate("""(target) => {
             const sel = document.getElementById('frmListaPlanosDeTrabalho:selMunicipio_input');
@@ -83,62 +102,83 @@ async def _scrape_municipio(page, municipio_nome: str) -> list[dict]:
                 sel.dispatchEvent(new Event('change', {bubbles: true}));
             }
         }""", municipio_nome)
-    except Exception as e:
-        logger.warning(f"  select municipio falhou (segue sem filtro): {e}")
-
-    await page.wait_for_timeout(1500)
+        await page.wait_for_timeout(1500)
+    except Exception:
+        pass
 
     # Pesquisar
     await page.click('button[id="frmListaPlanosDeTrabalho:cmdBtnPesquisarListaPlanosDeTrabalho"]')
-    await page.wait_for_timeout(15000)
+    # Espera tabela popular (nao soh vazio)
+    try:
+        await page.wait_for_function("""() => {
+            const tb = document.querySelector('tbody[id$="dtTblExibeListaPlanosDeTrabalho_data"]');
+            if (!tb) return false;
+            const tr = tb.querySelector(':scope > tr');
+            return tr && !tr.classList.contains('ui-datatable-empty-message');
+        }""", timeout=90000)
+    except Exception:
+        logger.warning(f"  Tabela nao carregou apos pesquisa de {municipio_nome}")
+        return []
 
-    # Download CSV
-    async with page.expect_download(timeout=120000) as dl_info:
-        await page.locator('button:has-text("CSV")').first.click()
-    dl = await dl_info.value
-    tmp_path = f"/tmp/sigcon_{_norm(municipio_nome).lower().replace(' ', '_')}.csv"
-    if os.name == "nt":
-        tmp_path = os.path.join(os.environ.get("TEMP", "C:/Windows/Temp"), os.path.basename(tmp_path))
-    await dl.save_as(tmp_path)
+    all_rows = []
+    page_n = 1
+    while True:
+        await page.wait_for_timeout(2000)
+        data = await page.evaluate(PARSE_TABLE_JS)
+        rows = data.get("rows", [])
+        logger.info(f"  Pag {page_n} ({data.get('pag','')}): {len(rows)} linhas")
+        for r in rows:
+            # Padding pra evitar IndexError
+            cells = r + [""] * (16 - len(r))
+            nr_proposta = cells[1].strip()
+            nr_plano = cells[2].strip()
+            nr_instrumento = cells[3].strip()
+            siafi = cells[5].strip() if cells[5] != "ui-button" else ""
+            tipo = cells[6].strip()
+            orgao = cells[7].strip()
+            convenente = cells[8].strip()
+            mun = cells[9].strip()
+            valor = _parse_money(cells[10])
+            objeto = cells[11].strip()
+            status = cells[12].strip()
+            # Extrai ano do numero "/YYYY"
+            import re
+            ano = None
+            for fld in (nr_plano, nr_proposta, nr_instrumento):
+                m = re.search(r"/(\d{4})$", fld)
+                if m:
+                    ano = int(m.group(1))
+                    break
+            all_rows.append({
+                "nr_proposta": nr_proposta,
+                "nr_plano": nr_plano,
+                "nr_instrumento": nr_instrumento,
+                "nr_siafi": siafi or None,
+                "tipo": tipo,
+                "orgao": orgao,
+                "convenente": convenente,
+                "municipio": mun,
+                "valor_repasse": valor,
+                "objeto": objeto,
+                "status": status,
+                "ano": ano,
+            })
+        # Tenta proxima pagina
+        next_btn = page.locator('a.ui-paginator-next:not(.ui-state-disabled)').first
+        if await next_btn.count() == 0:
+            break
+        try:
+            await next_btn.click(timeout=10000)
+            await page.wait_for_timeout(5000)
+            page_n += 1
+            if page_n > 50:  # safety
+                break
+        except Exception as e:
+            logger.warning(f"  Paginacao parou em {page_n}: {e}")
+            break
 
-    # Parse CSV (latin-1)
-    import csv
-    with open(tmp_path, encoding="latin-1") as f:
-        reader = csv.DictReader(f)
-        rows = list(reader)
-
-    # Normaliza chaves (header em latin-1 com caracteres especiais)
-    out = []
-    for r in rows:
-        # mapeia cols latin-1 (ex: 'N\xb0 do SIAFI') -> nomes limpos
-        clean = {}
-        for k, v in r.items():
-            kk = (k or "").strip()
-            kk_norm = _norm(kk)
-            if "SIAFI" in kk_norm:
-                clean["nr_siafi"] = (v or "").strip()
-            elif "TIPO DE INSTRUMENTO" in kk_norm:
-                clean["tipo"] = (v or "").strip()
-            elif "CONCEDENTE" in kk_norm:
-                clean["orgao"] = (v or "").strip()
-            elif "CONVENENTE" in kk_norm or "OSC" in kk_norm:
-                clean["convenente"] = (v or "").strip()
-            elif "MUNIC" in kk_norm:
-                clean["municipio"] = (v or "").strip()
-            elif "VALOR" in kk_norm and "REPASSE" in kk_norm:
-                clean["valor_repasse"] = _parse_money(v or "")
-            elif "TITULO" in kk_norm or "T\xcdTULO" in kk_norm or "T?TULO" in kk_norm:
-                clean["objeto"] = (v or "").strip()
-            elif "STATUS" in kk_norm:
-                clean["status"] = (v or "").strip()
-            elif "CONTA" in kk_norm:
-                clean["conta_bancaria"] = (v or "").strip()
-            elif "REMESSA" in kk_norm:
-                clean["remessa"] = (v or "").strip()
-        if clean.get("convenente") or clean.get("nr_siafi") or clean.get("objeto"):
-            out.append(clean)
-    logger.info(f"  CSV parsed: {len(out)} convenios para {municipio_nome}")
-    return out
+    logger.info(f"  Total parsed: {len(all_rows)} convenios para {municipio_nome}")
+    return all_rows
 
 
 async def _login(page, cpf: str, senha: str):
@@ -244,23 +284,39 @@ async def _run():
     sync_url = sync_url.replace("&channel_binding=require", "").replace("?channel_binding=require", "")
     conn = psycopg2.connect(sync_url)
     cur = conn.cursor()
+    from datetime import date
     inserted = updated = 0
     for mun_id, rec in all_records:
-        # nr_sigcon: usar SIAFI se existir, senao chave sintetica
-        nr_sigcon = rec.get("nr_siafi") or f"SIGCON-PORTAL-{mun_id}-{abs(hash(rec.get('objeto') or '')) % 10**8}"
+        # nr_sigcon: prioridade SIAFI > Plano > Proposta > sintetica.
+        # SIAFI eh o id do convenio "vigente"; Plano/Proposta sao do trackeamento pre-celebracao.
+        nr_sigcon = (
+            rec.get("nr_siafi")
+            or rec.get("nr_plano")
+            or rec.get("nr_proposta")
+            or f"SIGCON-PORTAL-{mun_id}-{abs(hash(rec.get('objeto') or '')) % 10**8}"
+        )
         sit_norm = _norm(rec.get("status") or "")
         sit_label = STATUS_MAP.get(sit_norm, rec.get("status"))
+        # dt_publicacao proxy: 1o jan do ano (extraido de "/YYYY" no Plano/Proposta).
+        # NAO eh data exata, mas permite ordenacao correta no front (recentes 1o)
+        # sem precisar fazer click-through em cada plano.
+        ano = rec.get("ano")
+        dt_pub_proxy = date(ano, 1, 1) if ano else None
         try:
             cur.execute("""
                 INSERT INTO convenios_estadual (
                     nr_sigcon, nr_siafi, municipio_id, orgao_concedente,
                     convenente_nome, objeto, situacao, valor_repassado,
-                    raw_data, tp_instrumento
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s)
+                    raw_data, tp_instrumento,
+                    nr_plano_trabalho, ano, dt_publicacao
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s)
                 ON CONFLICT (nr_sigcon) DO UPDATE SET
                     situacao = EXCLUDED.situacao,
                     valor_repassado = COALESCE(EXCLUDED.valor_repassado, convenios_estadual.valor_repassado),
                     convenente_nome = COALESCE(EXCLUDED.convenente_nome, convenios_estadual.convenente_nome),
+                    nr_plano_trabalho = COALESCE(EXCLUDED.nr_plano_trabalho, convenios_estadual.nr_plano_trabalho),
+                    ano = COALESCE(EXCLUDED.ano, convenios_estadual.ano),
+                    dt_publicacao = COALESCE(EXCLUDED.dt_publicacao, convenios_estadual.dt_publicacao),
                     raw_data = convenios_estadual.raw_data || EXCLUDED.raw_data,
                     updated_at = NOW()
                 RETURNING (xmax = 0) AS is_insert
@@ -275,6 +331,9 @@ async def _run():
                 rec.get("valor_repasse"),
                 json.dumps({**rec, "_source": "sigcon_scraper"}, ensure_ascii=False, default=str),
                 rec.get("tipo"),
+                rec.get("nr_plano") or None,
+                ano,
+                dt_pub_proxy,
             ))
             row = cur.fetchone()
             if row and row[0]:
