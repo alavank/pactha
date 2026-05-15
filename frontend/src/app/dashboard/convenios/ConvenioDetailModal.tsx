@@ -74,7 +74,7 @@ export default function ConvenioDetailModal({ conv, onClose }: Props) {
 
   return (
     <Dialog open={isOpen} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="!max-w-[1280px] !w-[95vw] sm:!max-w-[1280px] max-h-[92vh] overflow-y-auto">
         <DialogTitle className="sr-only">Detalhes do Convênio</DialogTitle>
         <div className="relative">
           <button
