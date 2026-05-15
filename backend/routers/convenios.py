@@ -387,3 +387,177 @@ async def alertas_vigencia(
 
     alertas.sort(key=lambda x: x.dias_restantes)
     return alertas
+
+
+# Workflow SIGCON-MG (etapas oficiais do portal Pesquisa Unificada)
+SIGCON_WORKFLOW = [
+    "CADASTRAMENTO",
+    "PREENCHIMENTO DE CHECKLIST",
+    "VALIDACAO DA PROPOSTA PELO RESPONSAVEL LEGAL",
+    "ANALISE - CHECKLIST DE CELEBRACAO",
+    "RECEBIDO PELO ORGAO / ANALISE TECNICA / ADEQUACAO",
+    "ANALISE JURIDICA",
+    "AGUARDANDO ENVIO PARA SEGOV",
+    "SEGOV ANALISE",
+    "PLANO AUTORIZADO",
+    "ANEXACAO DO INSTRUMENTO",
+    "PROCESSO DE ASSINATURA - CONVENENTE/OSC",
+    "PROCESSO DE ASSINATURA - CONCEDENTE/OEEP",
+    "PROCESSO DE PUBLICACAO",
+    "INSTRUMENTO CADASTRADO / VIGENTE",
+    "INSTRUMENTO ENCERRADO",
+]
+
+
+def _norm_workflow(s: str) -> str:
+    if not s: return ""
+    import unicodedata as u
+    return "".join(c for c in u.normalize("NFKD", s.upper()) if not u.combining(c)).strip()
+
+
+def _build_workflow_state(situacao: str | None) -> dict:
+    """Mapeia situacao atual -> indice no workflow + lista marcada."""
+    sit_norm = _norm_workflow(situacao or "")
+    # Aliases do banco -> nomes oficiais
+    aliases = {
+        "EM VIGOR": "INSTRUMENTO CADASTRADO / VIGENTE",
+        "VIGENTE": "INSTRUMENTO CADASTRADO / VIGENTE",
+        "ENCERRADO": "INSTRUMENTO ENCERRADO",
+        "CADASTRAMENTO": "CADASTRAMENTO",
+        "PREENCHIMENTO CHECKLIST": "PREENCHIMENTO DE CHECKLIST",
+        "ANALISE CELEBRACAO": "ANALISE - CHECKLIST DE CELEBRACAO",
+        "ANALISE TECNICA": "RECEBIDO PELO ORGAO / ANALISE TECNICA / ADEQUACAO",
+        "PLANO AUTORIZADO": "PLANO AUTORIZADO",
+        "PROPOSTA/PLANO DE TRABALHO ENVIADO PARA ANALISE": "PREENCHIMENTO DE CHECKLIST",
+        "PROPOSTA/PLANO DE TRABALHO REJEITADOS": "ANALISE - CHECKLIST DE CELEBRACAO",
+    }
+    target = aliases.get(sit_norm, sit_norm)
+    cur_idx = -1
+    for i, step in enumerate(SIGCON_WORKFLOW):
+        if _norm_workflow(step) == target:
+            cur_idx = i
+            break
+    return {
+        "current_index": cur_idx,
+        "current_label": situacao,
+        "steps": [
+            {"label": s, "completed": cur_idx >= i, "current": cur_idx == i}
+            for i, s in enumerate(SIGCON_WORKFLOW)
+        ],
+    }
+
+
+@router.get("/estadual/{conv_id}")
+async def get_convenio_estadual_detail(
+    conv_id: int,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Detalhes ricos de um convenio estadual: campos + workflow SIGCON + raw_data util."""
+    q = select(ConvenioEstadual).where(ConvenioEstadual.id == conv_id)
+    r = await db.execute(q)
+    c = r.scalar_one_or_none()
+    if not c:
+        from fastapi import HTTPException
+        raise HTTPException(404, "Convenio nao encontrado")
+
+    raw = c.raw_data if isinstance(c.raw_data, dict) else {}
+    import re
+    nr_proposta = raw.get("nr_proposta")
+    nr_instrumento = raw.get("nr_instrumento")
+    if not nr_instrumento and c.nr_sigcon and re.match(r"^\d{8,12}/\d{4}$", c.nr_sigcon):
+        nr_instrumento = c.nr_sigcon
+
+    # Vigencia em dias (dt_fim - dt_ini)
+    dias_vig = None
+    if c.dt_vigencia_inicial and (c.dt_vigencia_atual or c.dt_vigencia_final):
+        dt_fim = c.dt_vigencia_atual or c.dt_vigencia_final
+        dias_vig = (dt_fim - c.dt_vigencia_inicial).days
+
+    dias_rest = None
+    dias_rest_label = None
+    if c.dt_vigencia_atual or c.dt_vigencia_final:
+        dt_fim = c.dt_vigencia_atual or c.dt_vigencia_final
+        dias_rest = (dt_fim - date.today()).days
+        if dias_rest < 0:
+            dias_rest_label = "VENCIDO"
+
+    return {
+        "id": c.id,
+        "esfera": "estadual",
+        "nr_convenio_publicado": c.nr_sigcon,
+        "nr_siafi": c.nr_siafi,
+        "nr_proposta": nr_proposta,
+        "nr_plano_trabalho": c.nr_plano_trabalho,
+        "nr_instrumento": nr_instrumento,
+        "status": c.situacao,
+        "dt_assinatura": c.dt_assinatura,
+        "dt_publicacao": c.dt_publicacao,
+        "dias_vigencia_atual": dias_vig,
+        "vigencia_inicial": c.dt_vigencia_inicial,
+        "vigencia_atual": c.dt_vigencia_atual or c.dt_vigencia_final,
+        "dias_restantes": dias_rest,
+        "dias_restantes_label": dias_rest_label,
+        "titulo": c.objeto,
+        "objetivo": c.objetivo,
+        "prestacao_contas": raw.get("prestacao_contas") or raw.get("status_prestacao"),
+        "concedente_orgao": c.orgao_concedente,
+        "convenente_nome": c.convenente_nome or raw.get("convenente"),
+        "municipio_nome": raw.get("municipio"),
+        "tipo_convenente": raw.get("tipo_beneficiario") or raw.get("tipo_convenente") or "ADMINISTRACAO MUNICIPAL",
+        "valor_concedente": float(c.valor_concedente) if c.valor_concedente else None,
+        "valor_contrapartida": float(c.valor_contrapartida) if c.valor_contrapartida else None,
+        "valor_total": float(c.valor_total) if c.valor_total else None,
+        "responsaveis": raw.get("responsaveis") or raw.get("responsavel"),
+        "qt_alteracoes": c.qt_alteracoes if hasattr(c, "qt_alteracoes") else 0,
+        "ano": c.ano,
+        "tp_instrumento": c.tp_instrumento or raw.get("tipo"),
+        "fonte": c.fonte,
+        "workflow": _build_workflow_state(c.situacao),
+        "raw_data": raw,
+    }
+
+
+@router.get("/federal/{conv_id}")
+async def get_convenio_federal_detail(
+    conv_id: int,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Detalhes de convenio federal (sem workflow SIGCON, mas mesma estrutura)."""
+    q = select(ConvenioFederal).where(ConvenioFederal.id == conv_id)
+    r = await db.execute(q)
+    c = r.scalar_one_or_none()
+    if not c:
+        from fastapi import HTTPException
+        raise HTTPException(404, "Convenio nao encontrado")
+    raw = c.raw_data if isinstance(c.raw_data, dict) else {}
+    dias_rest = (c.dt_fim_vigencia - date.today()).days if c.dt_fim_vigencia else None
+    return {
+        "id": c.id,
+        "esfera": "federal",
+        "nr_convenio_publicado": c.nr_convenio,
+        "nr_siafi": raw.get("nr_siafi"),
+        "nr_proposta": raw.get("nr_proposta") or raw.get("ID_PROPOSTA"),
+        "nr_plano_trabalho": raw.get("nr_plano"),
+        "status": c.situacao,
+        "dt_assinatura": c.dt_inicio,
+        "dt_publicacao": c.dt_inicio,
+        "vigencia_inicial": c.dt_inicio,
+        "vigencia_atual": c.dt_fim_vigencia,
+        "dias_restantes": dias_rest,
+        "dias_restantes_label": "VENCIDO" if dias_rest is not None and dias_rest < 0 else None,
+        "titulo": c.objeto,
+        "concedente_orgao": c.orgao_concedente,
+        "convenente_nome": c.proponente_nome,
+        "valor_repasse": float(c.valor_repasse) if c.valor_repasse else None,
+        "valor_contrapartida": float(c.valor_contrapartida) if c.valor_contrapartida else None,
+        "valor_total": float(c.valor_global) if c.valor_global else None,
+        "valor_empenhado": float(c.valor_empenhado) if c.valor_empenhado else None,
+        "valor_desembolsado": float(c.valor_desembolsado) if c.valor_desembolsado else None,
+        "ano": c.ano,
+        "programa": c.programa,
+        "fonte": c.fonte,
+        "workflow": _build_workflow_state(c.situacao),
+        "raw_data": raw,
+    }

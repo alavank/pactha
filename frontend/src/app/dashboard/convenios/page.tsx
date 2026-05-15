@@ -29,6 +29,7 @@ import {
   situacaoBadgeColor,
 } from "@/lib/utils";
 import type { Convenio, ConvenioList } from "@/types";
+import ConvenioDetailModal from "./ConvenioDetailModal";
 
 const PER_PAGE = 20;
 
@@ -119,6 +120,7 @@ export default function ConveniosPage() {
   const [data, setData] = useState<ConvenioList | null>(null);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
+  const [selectedConv, setSelectedConv] = useState<{ id: number; esfera: string } | null>(null);
   const [esfera, setEsfera] = useState("todos");
   const [situacao, setSituacao] = useState("todos");
   const [ano, setAno] = useState("todos");
@@ -398,7 +400,11 @@ export default function ConveniosPage() {
                   const orgao = conv.orgao_concedente || "";
                   const tipTitle = `${isTE(conv.objeto) ? "[TE] " : ""}${objeto}${programa ? "\n\nPrograma: " + programa : ""}`;
                   return (
-                  <TableRow key={conv.id} className="[&>td]:py-1.5 [&>td]:px-2 [&>td]:text-[11px] hover:bg-gray-50">
+                  <TableRow
+                    key={conv.id}
+                    className="[&>td]:py-1.5 [&>td]:px-2 [&>td]:text-[11px] hover:bg-blue-50 cursor-pointer"
+                    onClick={() => setSelectedConv({ id: conv.id, esfera: conv.esfera })}
+                  >
                     <TableCell className="font-mono whitespace-nowrap truncate" title={`Nr: ${conv.nr_convenio || conv.nr_sigcon || "-"}${conv.nr_siafi ? "\nSIAFI: " + conv.nr_siafi : ""}`}>
                       {conv.nr_convenio || conv.nr_sigcon || "-"}
                     </TableCell>
@@ -495,6 +501,8 @@ export default function ConveniosPage() {
           </div>
         </>
       )}
+
+      <ConvenioDetailModal conv={selectedConv} onClose={() => setSelectedConv(null)} />
     </div>
   );
 }
