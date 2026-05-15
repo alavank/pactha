@@ -34,6 +34,8 @@ MIGRATION_FILES = [
     "fix_unique_nrsigcon_full.sql",
     # nr_proposta + nr_plano_trabalho + qt_alteracoes + dt_assinatura (SIGCON view)
     "add_nr_proposta_estadual.sql",
+    # Tabela emendas_estaduais (SIGCON Pesquisar Emendas Por Convenente)
+    "add_emendas_estaduais.sql",
     # NOTA: dedupe_convenios_unique.sql nao roda no boot (UPDATEs gigantes,
     # passa do healthcheck timeout). Foi aplicado uma vez via psycopg2 e o
     # UNIQUE INDEX nr_sigcon previne reincidencia. Rodar manual se preciso.

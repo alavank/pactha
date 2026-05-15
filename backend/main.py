@@ -3,7 +3,7 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import auth, municipios, convenios, editais, prestacao, politica, export, cofre, fontes, upload, relatorio_monitoramento, levantamento_parlamentar, internal, service_tokens, prestacao_avancada, session_capture, export_relatorios, ia, fontes_extras, prestacao_calculo
+from routers import auth, municipios, convenios, editais, prestacao, politica, export, cofre, fontes, upload, relatorio_monitoramento, levantamento_parlamentar, internal, service_tokens, prestacao_avancada, session_capture, export_relatorios, ia, fontes_extras, prestacao_calculo, emendas_estaduais
 from services.security_headers import SecurityHeadersMiddleware
 from services.startup import run_migrations
 
@@ -80,6 +80,7 @@ app.include_router(prestacao_avancada.router)
 app.include_router(session_capture.router)
 app.include_router(export_relatorios.router)
 app.include_router(prestacao_calculo.router)
+app.include_router(emendas_estaduais.router)
 app.include_router(ia.router)
 app.include_router(fontes_extras.router)
 
