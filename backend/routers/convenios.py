@@ -53,11 +53,17 @@ def estadual_to_response(c: ConvenioEstadual) -> ConvenioResponse:
         dias = (c.dt_vigencia_atual - date.today()).days
     elif c.dt_vigencia_final:
         dias = (c.dt_vigencia_final - date.today()).days
-    # Numeros SIGCON: nr_proposta/nr_instrumento vem do raw_data (scraper),
-    # nr_plano_trabalho e nr_siafi sao colunas dedicadas.
-    raw = c.raw_data or {}
-    nr_proposta = raw.get("nr_proposta") if isinstance(raw, dict) else None
-    nr_instrumento = raw.get("nr_instrumento") if isinstance(raw, dict) else None
+    # Numeros SIGCON: extrai os 3 identificadores principais (Proposta/Plano/Instrumento)
+    # do raw_data (scraper preenche tudo) com fallback inteligente para CKAN bulk:
+    # - CKAN guarda nr_instrumento em nr_sigcon (formato 10 digits/YYYY)
+    # - CKAN guarda nr_plano em raw_data.nr_plano_sigcon ou nr_plano_trabalho col
+    raw = c.raw_data if isinstance(c.raw_data, dict) else {}
+    import re
+    nr_proposta = raw.get("nr_proposta")
+    nr_instrumento = raw.get("nr_instrumento")
+    # Fallback: nr_sigcon eh nr_instrumento se for formato "XXXXXXXXXX/YYYY"
+    if not nr_instrumento and c.nr_sigcon and re.match(r"^\d{8,12}/\d{4}$", c.nr_sigcon):
+        nr_instrumento = c.nr_sigcon
     return ConvenioResponse(
         id=c.id,
         esfera="estadual",
