@@ -53,6 +53,11 @@ def estadual_to_response(c: ConvenioEstadual) -> ConvenioResponse:
         dias = (c.dt_vigencia_atual - date.today()).days
     elif c.dt_vigencia_final:
         dias = (c.dt_vigencia_final - date.today()).days
+    # Numeros SIGCON: nr_proposta/nr_instrumento vem do raw_data (scraper),
+    # nr_plano_trabalho e nr_siafi sao colunas dedicadas.
+    raw = c.raw_data or {}
+    nr_proposta = raw.get("nr_proposta") if isinstance(raw, dict) else None
+    nr_instrumento = raw.get("nr_instrumento") if isinstance(raw, dict) else None
     return ConvenioResponse(
         id=c.id,
         esfera="estadual",
@@ -82,6 +87,10 @@ def estadual_to_response(c: ConvenioEstadual) -> ConvenioResponse:
         nr_sei=c.nr_sei,
         dt_empenho=c.dt_empenho,
         dt_desembolso=c.dt_desembolso,
+        nr_proposta=nr_proposta or None,
+        nr_plano_trabalho=c.nr_plano_trabalho,
+        nr_instrumento=nr_instrumento or None,
+        nr_siafi=c.nr_siafi,
     )
 
 
