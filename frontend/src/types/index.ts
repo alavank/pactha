@@ -56,6 +56,11 @@ export interface Convenio {
   nr_sei?: string;
   dt_empenho?: string;
   dt_desembolso?: string;
+  // SIGCON tracking
+  nr_proposta?: string;
+  nr_plano_trabalho?: string;
+  nr_instrumento?: string;
+  nr_siafi?: string;
 }
 
 export interface ConvenioList {

@@ -36,6 +36,11 @@ class ConvenioResponse(BaseModel):
     nr_sei: Optional[str] = None
     dt_empenho: Optional[date] = None
     dt_desembolso: Optional[date] = None
+    # SIGCON: numeros de tracking (Pesquisa Unificada)
+    nr_proposta: Optional[str] = None
+    nr_plano_trabalho: Optional[str] = None
+    nr_instrumento: Optional[str] = None
+    nr_siafi: Optional[str] = None
 
     class Config:
         from_attributes = True

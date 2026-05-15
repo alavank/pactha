@@ -376,16 +376,19 @@ export default function ConveniosPage() {
             <Table className="text-xs table-fixed w-full">
               <TableHeader>
                 <TableRow className="[&>th]:py-1.5 [&>th]:px-2 [&>th]:text-[11px] [&>th]:font-semibold [&>th]:whitespace-nowrap">
-                  <TableHead className="w-[100px]">Nr</TableHead>
-                  <TableHead className="w-[60px]">Fonte</TableHead>
-                  <TableHead className="w-[80px]">Orgao</TableHead>
+                  <TableHead className="w-[90px]">Nr</TableHead>
+                  <TableHead className="w-[55px]">Fonte</TableHead>
+                  <TableHead className="w-[75px]">Proposta</TableHead>
+                  <TableHead className="w-[75px]">Plano</TableHead>
+                  <TableHead className="w-[100px]">Instrumento</TableHead>
+                  <TableHead className="w-[75px]">Orgao</TableHead>
                   <TableHead className="min-w-0">Objeto</TableHead>
-                  <TableHead className="w-[110px]">Situacao</TableHead>
-                  <TableHead className="w-[95px] text-right">Repasse</TableHead>
-                  <TableHead className="w-[80px] text-right">Contrap.</TableHead>
-                  <TableHead className="w-[75px]">Assinat.</TableHead>
-                  <TableHead className="w-[75px]">Vigencia</TableHead>
-                  <TableHead className="w-[55px]">Dias</TableHead>
+                  <TableHead className="w-[105px]">Situacao</TableHead>
+                  <TableHead className="w-[90px] text-right">Repasse</TableHead>
+                  <TableHead className="w-[70px] text-right">Contrap.</TableHead>
+                  <TableHead className="w-[70px]">Assinat.</TableHead>
+                  <TableHead className="w-[70px]">Vigencia</TableHead>
+                  <TableHead className="w-[50px]">Dias</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -396,7 +399,7 @@ export default function ConveniosPage() {
                   const tipTitle = `${isTE(conv.objeto) ? "[TE] " : ""}${objeto}${programa ? "\n\nPrograma: " + programa : ""}`;
                   return (
                   <TableRow key={conv.id} className="[&>td]:py-1.5 [&>td]:px-2 [&>td]:text-[11px] hover:bg-gray-50">
-                    <TableCell className="font-mono whitespace-nowrap truncate" title={conv.nr_convenio || conv.nr_sigcon || ""}>
+                    <TableCell className="font-mono whitespace-nowrap truncate" title={`Nr: ${conv.nr_convenio || conv.nr_sigcon || "-"}${conv.nr_siafi ? "\nSIAFI: " + conv.nr_siafi : ""}`}>
                       {conv.nr_convenio || conv.nr_sigcon || "-"}
                     </TableCell>
                     <TableCell title={conv.fonte || ""}>
@@ -410,6 +413,15 @@ export default function ConveniosPage() {
                             .replace("CODEVASF","CODE")}
                         </span>
                       )}
+                    </TableCell>
+                    <TableCell className="font-mono text-[10px] whitespace-nowrap truncate text-muted-foreground" title={conv.nr_proposta ? `Nº Proposta: ${conv.nr_proposta}` : "Sem nº de proposta"}>
+                      {conv.nr_proposta || "-"}
+                    </TableCell>
+                    <TableCell className="font-mono text-[10px] whitespace-nowrap truncate text-muted-foreground" title={conv.nr_plano_trabalho ? `Nº Plano de Trabalho: ${conv.nr_plano_trabalho}` : "Sem nº de plano"}>
+                      {conv.nr_plano_trabalho || "-"}
+                    </TableCell>
+                    <TableCell className="font-mono text-[10px] whitespace-nowrap truncate text-muted-foreground" title={conv.nr_instrumento ? `Nº Instrumento: ${conv.nr_instrumento}` : "Sem nº de instrumento"}>
+                      {conv.nr_instrumento || "-"}
                     </TableCell>
                     <TableCell className="font-mono whitespace-nowrap truncate" title={nomeOrgaoFull(conv.orgao_concedente) || orgao}>
                       {siglaOrgao(conv.orgao_concedente)}
