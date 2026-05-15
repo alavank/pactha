@@ -190,14 +190,18 @@ async def list_convenios(
             q = q.where(ConvenioFederal.fonte == fonte)
             q_count = q_count.where(ConvenioFederal.fonte == fonte)
         if search:
-            q = q.where(or_(
-                ConvenioFederal.objeto.ilike(f"%{search}%"),
-                ConvenioFederal.nr_convenio.ilike(f"%{search}%"),
-            ))
-            q_count = q_count.where(or_(
-                ConvenioFederal.objeto.ilike(f"%{search}%"),
-                ConvenioFederal.nr_convenio.ilike(f"%{search}%"),
-            ))
+            # Busca em campos textuais + chaves do raw_data (JSONB)
+            term = f"%{search}%"
+            search_filter = or_(
+                ConvenioFederal.objeto.ilike(term),
+                ConvenioFederal.nr_convenio.ilike(term),
+                ConvenioFederal.raw_data["nr_proposta"].astext.ilike(term),
+                ConvenioFederal.raw_data["nr_plano"].astext.ilike(term),
+                ConvenioFederal.raw_data["nr_instrumento"].astext.ilike(term),
+                ConvenioFederal.raw_data["nr_siafi"].astext.ilike(term),
+            )
+            q = q.where(search_filter)
+            q_count = q_count.where(search_filter)
         if parlamentar_id:
             q = q.join(Emenda, Emenda.convenio_federal_id == ConvenioFederal.id).where(
                 Emenda.parlamentar_id == parlamentar_id
@@ -234,14 +238,20 @@ async def list_convenios(
             q = q.where(ConvenioEstadual.fonte == fonte)
             q_count = q_count.where(ConvenioEstadual.fonte == fonte)
         if search:
-            q = q.where(or_(
-                ConvenioEstadual.objeto.ilike(f"%{search}%"),
-                ConvenioEstadual.nr_sigcon.ilike(f"%{search}%"),
-            ))
-            q_count = q_count.where(or_(
-                ConvenioEstadual.objeto.ilike(f"%{search}%"),
-                ConvenioEstadual.nr_sigcon.ilike(f"%{search}%"),
-            ))
+            # Busca em colunas dedicadas + chaves raw_data (JSONB) usando ->>
+            term = f"%{search}%"
+            search_filter = or_(
+                ConvenioEstadual.objeto.ilike(term),
+                ConvenioEstadual.nr_sigcon.ilike(term),
+                ConvenioEstadual.nr_siafi.ilike(term),
+                ConvenioEstadual.nr_plano_trabalho.ilike(term),
+                ConvenioEstadual.raw_data["nr_proposta"].astext.ilike(term),
+                ConvenioEstadual.raw_data["nr_instrumento"].astext.ilike(term),
+                ConvenioEstadual.raw_data["nr_plano"].astext.ilike(term),
+                ConvenioEstadual.raw_data["nr_plano_sigcon"].astext.ilike(term),
+            )
+            q = q.where(search_filter)
+            q_count = q_count.where(search_filter)
 
         count_result = await db.execute(q_count)
         total += count_result.scalar()
