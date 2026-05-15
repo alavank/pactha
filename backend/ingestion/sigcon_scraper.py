@@ -37,6 +37,7 @@ logger = logging.getLogger("sigcon_scraper")
 
 LOGIN_URL = "https://www.convenios.mg.gov.br/sigconv2/public/pages/login.jsf"
 SEARCH_URL = "https://www.convenios.mg.gov.br/sigconv2/pages/GerirPropostaDePlanoDeTrabalho/pesquisaUnificada.jsf"
+EMENDAS_URL = "https://www.convenios.mg.gov.br/sigconv2/pages/EmendaParlamentar/pesquisarEmendasPorConvenente.jsf"
 
 # Mapeia status SIGCON pra "Em vigor" / "Encerrado" / etc
 STATUS_MAP = {
@@ -181,6 +182,105 @@ async def _scrape_municipio(page, municipio_nome: str) -> list[dict]:
     return all_rows
 
 
+PARSE_EMENDAS_JS = r"""
+() => {
+    // Tabela de emendas: tbody[id$="dataTableEmendasConvenente_data"]
+    const tbody = document.querySelector('tbody[id$="dataTableEmendasConvenente_data"]');
+    if (!tbody) return {error: 'no emendas tbody'};
+    const trs = Array.from(tbody.querySelectorAll(':scope > tr'))
+        .filter(tr => !tr.classList.contains('ui-datatable-empty-message'));
+    const rows = trs.map(tr => Array.from(tr.children).map(td => td.innerText.trim().replace(/\n+/g, ' | ')));
+    const pagInfo = (document.body.innerText.match(/P[aá]gina\s+\d+\s+de\s+\d+/i) || [''])[0];
+    return {count: rows.length, rows: rows, pag: pagInfo};
+}
+"""
+
+
+async def _scrape_emendas(page, anos: list[int]) -> list[dict]:
+    """Coleta emendas parlamentares estaduais para o convenente do usuario.
+
+    Itera ano-a-ano (dropdown anoInciso) e usa convenente default (do usuario logado).
+    Tabela de resultado: dataTableEmendasConvenente
+    Colunas: [0]Nº Indicacao | [1]Nome do Responsavel | [2]Tipo de Indicacao |
+    [3]UO | [4]Sigla UO | [5]CNPJ Beneficiario | [6]Beneficiario |
+    [7]Grupo de Despesa | [8]Tipo de Atendimento/Aplicacao | [9]Valor da Indicacao |
+    [10]Status da Indicacao
+    """
+    all_rows = []
+    await page.goto(EMENDAS_URL, timeout=60000, wait_until="domcontentloaded")
+    await page.wait_for_timeout(8000)
+
+    for ano in anos:
+        try:
+            await page.evaluate("""(target) => {
+                const sel = document.getElementById('frmPesquisaEmendasPorConvenentes:anoInciso_input');
+                if (sel) {
+                    sel.value = String(target);
+                    sel.dispatchEvent(new Event('change', {bubbles: true}));
+                }
+            }""", ano)
+            await page.wait_for_timeout(1500)
+        except Exception as e:
+            logger.warning(f"  set ano {ano} falhou: {e}")
+            continue
+
+        try:
+            await page.click('button[id="frmPesquisaEmendasPorConvenentes:cmdBtnEnviar"]', timeout=10000)
+        except Exception as e:
+            logger.warning(f"  click pesquisar emendas {ano} falhou: {e}")
+            continue
+
+        # Espera tabela carregar OU mensagem "sem registros"
+        try:
+            await page.wait_for_function("""() => {
+                const tb = document.querySelector('tbody[id$="dataTableEmendasConvenente_data"]');
+                if (!tb) return false;
+                return tb.querySelectorAll(':scope > tr').length > 0;
+            }""", timeout=60000)
+        except Exception:
+            logger.info(f"  Ano {ano}: tabela nao carregou")
+            continue
+
+        await page.wait_for_timeout(2000)
+        page_n = 1
+        while True:
+            data = await page.evaluate(PARSE_EMENDAS_JS)
+            rows = data.get("rows", []) or []
+            logger.info(f"  Ano {ano} pag {page_n} ({data.get('pag','')}): {len(rows)} emendas")
+            for r in rows:
+                cells = r + [""] * (12 - len(r))
+                rec = {
+                    "ano": ano,
+                    "nr_indicacao": cells[0].strip(),
+                    "nome_responsavel": cells[1].strip(),
+                    "tipo_indicacao": cells[2].strip(),
+                    "uo_codigo": cells[3].strip(),
+                    "uo_sigla": cells[4].strip(),
+                    "cnpj_beneficiario": cells[5].strip(),
+                    "beneficiario": cells[6].strip(),
+                    "grupo_despesa": cells[7].strip(),
+                    "tipo_atendimento": cells[8].strip(),
+                    "valor_indicacao": _parse_money(cells[9]),
+                    "status_indicacao": cells[10].strip(),
+                }
+                all_rows.append(rec)
+            # Proxima pagina
+            next_btn = page.locator('a.ui-paginator-next:not(.ui-state-disabled)').first
+            if await next_btn.count() == 0:
+                break
+            try:
+                await next_btn.click(timeout=10000)
+                await page.wait_for_timeout(4000)
+                page_n += 1
+                if page_n > 30:
+                    break
+            except Exception:
+                break
+
+    logger.info(f"  Total emendas parsed: {len(all_rows)}")
+    return all_rows
+
+
 async def _login(page, cpf: str, senha: str):
     await page.goto(LOGIN_URL, timeout=60000, wait_until="networkidle")
     await page.fill('input[id="frmLogin:iptTxtUsuario"]', cpf)
@@ -254,7 +354,9 @@ async def _run():
     mun_map = _municipio_id_lookup()
     logger.info(f"Credenciais SIGCON-MG: {len(creds)}, municipios DB: {len(mun_map)}")
 
-    all_records = []  # [(municipio_db_id, dict)]
+    all_records = []  # [(municipio_db_id, dict)] convenios
+    all_emendas = []  # [(municipio_db_id, dict)] emendas estaduais
+    anos_emendas = list(range(2022, datetime.now().year + 1))  # 2022..ano atual
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True, args=["--ignore-certificate-errors"])
         try:
@@ -268,9 +370,17 @@ async def _run():
                 page = await ctx.new_page()
                 try:
                     await _login(page, cred["cpf"], cred["senha"])
+                    # 1) Convenios (Pesquisa Unificada)
                     rows = await _scrape_municipio(page, _norm(cred["municipio_nome"]))
                     for r in rows:
                         all_records.append((cred["municipio_id"], r))
+                    # 2) Emendas (Emendas / Pesquisar Por Convenente)
+                    try:
+                        emendas = await _scrape_emendas(page, anos_emendas)
+                        for e in emendas:
+                            all_emendas.append((cred["municipio_id"], e))
+                    except Exception as e:
+                        logger.warning(f"  Emendas falharam para {cred['municipio_nome']}: {e}")
                 except Exception as e:
                     logger.error(f"  Falha {cred['municipio_nome']}: {e}")
                 finally:
@@ -357,9 +467,60 @@ async def _run():
         (inserted + updated,)
     )
     conn.commit()
+
+    # === EMENDAS ESTADUAIS ===
+    em_inserted = em_updated = 0
+    for mun_id, em in all_emendas:
+        nr_ind = em.get("nr_indicacao")
+        ano_em = em.get("ano")
+        if not nr_ind or not ano_em:
+            continue
+        try:
+            cur.execute("""
+                INSERT INTO emendas_estaduais (
+                    municipio_id, nr_indicacao, nome_responsavel, tipo_indicacao,
+                    uo_codigo, uo_sigla, cnpj_beneficiario, beneficiario,
+                    grupo_despesa, tipo_atendimento, valor_indicacao, status_indicacao,
+                    ano, raw_data
+                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)
+                ON CONFLICT (nr_indicacao, ano) DO UPDATE SET
+                    nome_responsavel = EXCLUDED.nome_responsavel,
+                    tipo_indicacao = EXCLUDED.tipo_indicacao,
+                    uo_codigo = EXCLUDED.uo_codigo,
+                    uo_sigla = EXCLUDED.uo_sigla,
+                    cnpj_beneficiario = EXCLUDED.cnpj_beneficiario,
+                    beneficiario = EXCLUDED.beneficiario,
+                    grupo_despesa = EXCLUDED.grupo_despesa,
+                    tipo_atendimento = EXCLUDED.tipo_atendimento,
+                    valor_indicacao = EXCLUDED.valor_indicacao,
+                    status_indicacao = EXCLUDED.status_indicacao,
+                    raw_data = EXCLUDED.raw_data,
+                    updated_at = NOW()
+                RETURNING (xmax = 0) AS is_insert
+            """, (
+                mun_id, nr_ind[:50], em.get("nome_responsavel","")[:300],
+                em.get("tipo_indicacao","")[:100],
+                em.get("uo_codigo","")[:20], em.get("uo_sigla","")[:50],
+                em.get("cnpj_beneficiario","")[:20], em.get("beneficiario","")[:300],
+                em.get("grupo_despesa","")[:200], em.get("tipo_atendimento","")[:300],
+                em.get("valor_indicacao"), em.get("status_indicacao","")[:50],
+                ano_em,
+                json.dumps({**em, "_source": "sigcon_scraper"}, ensure_ascii=False, default=str),
+            ))
+            row = cur.fetchone()
+            if row and row[0]:
+                em_inserted += 1
+            else:
+                em_updated += 1
+        except Exception as e:
+            logger.warning(f"  Erro UPSERT emenda {nr_ind}: {str(e)[:200]}")
+            conn.rollback()
+            continue
+    conn.commit()
     conn.close()
 
-    logger.info(f"\n=== Concluido: {inserted} inseridos, {updated} atualizados (total {inserted+updated}) ===")
+    logger.info(f"\n=== Convenios: {inserted} inseridos, {updated} atualizados (total {inserted+updated}) ===")
+    logger.info(f"=== Emendas estaduais: {em_inserted} inseridas, {em_updated} atualizadas ===")
 
 
 def main():

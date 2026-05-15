@@ -41,6 +41,7 @@ import type { Municipio, User } from "@/types";
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/dashboard/convenios", label: "Convenios", icon: FileText },
+  { href: "/dashboard/emendas", label: "Emendas Estaduais", icon: FileText },
   { href: "/dashboard/editais", label: "Editais", icon: Search },
   { href: "/dashboard/oportunidades", label: "Oportunidades", icon: Target },
   { href: "/dashboard/prestacao", label: "Prestacao", icon: ClipboardCheck },
