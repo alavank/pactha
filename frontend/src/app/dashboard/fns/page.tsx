@@ -20,7 +20,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatCurrency } from "@/lib/utils";
-import { Search, Loader2, Eraser, Printer } from "lucide-react";
+import { Search, Loader2, Eraser, Printer, Eye, X } from "lucide-react";
 
 interface Item {
   tipo_proposta?: string;
@@ -76,6 +76,8 @@ export default function PropostasFNSPage() {
   const [data, setData] = useState<Resp | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Modal de detalhamento (clique no botao olho)
+  const [detalheItem, setDetalheItem] = useState<Item | null>(null);
 
   useEffect(() => {
     api.get<Mun[]>("/fns/municipios").then((r) => setMunicipios(r.data || [])).catch(() => {});
@@ -232,6 +234,7 @@ export default function PropostasFNSPage() {
                     <TableHead className="text-right">Valor Pago</TableHead>
                     <TableHead className="text-right">A Pagar</TableHead>
                     <TableHead>Parlamentares</TableHead>
+                    <TableHead className="w-[60px] text-center">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -252,6 +255,15 @@ export default function PropostasFNSPage() {
                           ? <span className="text-[10px]">{(it.parlamentares || []).slice(0, 2).map((p) => p.nome).join(", ")}{(it.parlamentares || []).length > 2 ? ` +${(it.parlamentares || []).length - 2}` : ""}</span>
                           : <span className="text-gray-400">-</span>}
                       </TableCell>
+                      <TableCell className="text-center">
+                        <button
+                          onClick={() => setDetalheItem(it)}
+                          className="inline-flex items-center justify-center w-7 h-7 rounded bg-blue-500 hover:bg-blue-600 text-white"
+                          title="Ver detalhamento"
+                        >
+                          <Eye className="size-3.5" />
+                        </button>
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -260,6 +272,71 @@ export default function PropostasFNSPage() {
           )}
         </div>
       )}
+
+      {/* Modal Detalhamento */}
+      {detalheItem && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center p-4 overflow-y-auto" onClick={() => setDetalheItem(null)}>
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl mt-8" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-blue-50 px-4 py-3 rounded-t-lg flex items-center justify-between border-b">
+              <h3 className="font-bold text-blue-900">Detalhamento por Tipo de Proposta e Tipo de Recurso</h3>
+              <button onClick={() => setDetalheItem(null)} className="text-gray-500 hover:text-gray-700"><X className="size-5" /></button>
+            </div>
+            <div className="p-4 space-y-4">
+              {/* Dados Entidade + Proposta */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3 border-b pb-3 text-sm">
+                <div><span className="font-medium text-gray-600">Estado:</span> {data?.params?.uf}</div>
+                <div><span className="font-medium text-gray-600">Município:</span> {data?.params?.municipio}</div>
+                <div><span className="font-medium text-gray-600">Ano:</span> {data?.params?.ano}</div>
+                <div><span className="font-medium text-gray-600">Tipo Recurso:</span> <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium border ${recursoColor(detalheItem.tipo_recurso)}`}>{detalheItem.tipo_recurso}</span></div>
+              </div>
+
+              <div className="bg-gray-50 rounded p-3">
+                <h4 className="font-semibold text-sm mb-2">Dados da Proposta Agrupada</h4>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                  <Field label="Tipo de Proposta" value={detalheItem.tipo_proposta || "-"} />
+                  <Field label="Tipo de Recurso" value={detalheItem.tipo_recurso || "-"} />
+                  <Field label="Nº Processo" value={detalheItem.nu_processo || "-"} mono />
+                  <Field label="Processo Constituído" value={detalheItem.constituido_processo ? "Sim" : "Não"} />
+                  <Field label="Valor Proposta" value={formatCurrency(detalheItem.valor_proposta)} mono className="text-blue-700" />
+                  <Field label="Valor Pago" value={formatCurrency(detalheItem.valor_pago)} mono className="text-green-700" />
+                  <Field label="A Pagar" value={formatCurrency(detalheItem.valor_pagar)} mono className="text-amber-700" />
+                  <Field label="Qtd. Pagamentos" value={String(detalheItem.pagamentos_count ?? 0)} mono />
+                </div>
+              </div>
+
+              {/* Parlamentares */}
+              {(detalheItem.parlamentares || []).length > 0 && (
+                <div className="bg-gray-50 rounded p-3">
+                  <h4 className="font-semibold text-sm mb-2">Parlamentares ({detalheItem.parlamentares?.length})</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {(detalheItem.parlamentares || []).map((p, i) => (
+                      <span key={i} className="inline-flex items-center rounded bg-purple-50 border border-purple-200 px-2 py-0.5 text-[11px] text-purple-800">
+                        {p.nome}{p.partido ? ` (${p.partido})` : ""}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="bg-amber-50 border border-amber-200 rounded p-3 text-xs text-amber-900">
+                <strong>Detalhamento por proposta individual:</strong> esse nível mostra as propostas agrupadas
+                por (Tipo + Recurso). Para ver propostas individuais (Nº 21441367000125001, Entidade, Valor, Status detalhado, Etapas)
+                use o link <a href="https://consultafns.saude.gov.br/#/proposta" target="_blank" rel="noreferrer" className="underline">consultafns.saude.gov.br</a>
+                — o endpoint dessa página ainda não está exposto via API REST.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Field({ label, value, mono, className = "" }: { label: string; value: string; mono?: boolean; className?: string }) {
+  return (
+    <div>
+      <div className="text-[10px] uppercase font-semibold text-gray-500">{label}</div>
+      <div className={`text-sm mt-0.5 ${mono ? "font-mono" : ""} ${className}`}>{value}</div>
     </div>
   );
 }
