@@ -16,30 +16,52 @@ export default function LoginPage() {
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
-    try {
-      const res = await api.post("/auth/login", { email, password });
-      // Cookies httpOnly sao setados pelo backend. Mantemos pacta_user para UI.
-      localStorage.setItem("pacta_user", JSON.stringify(res.data.user));
-      // Compat: alguns componentes ainda leem token do localStorage
-      if (res.data.access_token) {
-        localStorage.setItem("pacta_token", res.data.access_token);
+
+    // Auto-retry transparente em cold-start (502/503/504/network err).
+    // NAO retry em 401 (senha errada real) nem 429 (rate limit).
+    // Resolve o sintoma de "email ou senha incorretos" na primeira tentativa
+    // quando o container Railway estava hibernando.
+    const COLD_START_STATUS = new Set([0, 502, 503, 504]);
+    let lastErr: unknown = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const res = await api.post("/auth/login", { email, password }, {
+          timeout: attempt === 1 ? 8000 : 30000,
+        });
+        localStorage.setItem("pacta_user", JSON.stringify(res.data.user));
+        if (res.data.access_token) {
+          localStorage.setItem("pacta_token", res.data.access_token);
+        }
+        toast.success(`Bem-vindo, ${res.data.user.name}!`);
+        if (res.data.must_change_password) {
+          router.push("/change-password?first=1");
+        } else {
+          router.push("/dashboard");
+        }
+        setLoading(false);
+        return;
+      } catch (e: unknown) {
+        const err = e as { response?: { status?: number; data?: { detail?: string } }; code?: string };
+        const status = err.response?.status ?? 0;
+        const isColdStart = COLD_START_STATUS.has(status) || err.code === "ECONNABORTED" || err.code === "ERR_NETWORK";
+        // 401 e 429 sao erros REAIS - nao retry
+        if (status === 401 || status === 429) {
+          if (status === 429) toast.error("Muitas tentativas. Aguarde 1 minuto.");
+          else toast.error(err.response?.data?.detail || "Email ou senha incorretos");
+          setLoading(false);
+          return;
+        }
+        if (isColdStart && attempt < 3) {
+          // Backoff: 500ms, 1500ms
+          await new Promise(r => setTimeout(r, attempt * 500));
+          continue;
+        }
+        lastErr = err;
       }
-      toast.success(`Bem-vindo, ${res.data.user.name}!`);
-      if (res.data.must_change_password) {
-        router.push("/change-password?first=1");
-      } else {
-        router.push("/dashboard");
-      }
-    } catch (e: unknown) {
-      const err = e as { response?: { status?: number; data?: { detail?: string } } };
-      if (err.response?.status === 429) {
-        toast.error("Muitas tentativas. Aguarde 1 minuto.");
-      } else {
-        toast.error(err.response?.data?.detail || "Email ou senha incorretos");
-      }
-    } finally {
-      setLoading(false);
     }
+    const err = lastErr as { response?: { data?: { detail?: string } } };
+    toast.error(err?.response?.data?.detail || "Servidor indisponível. Tente novamente em 1 minuto.");
+    setLoading(false);
   }
 
   return (
