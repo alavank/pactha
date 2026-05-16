@@ -248,7 +248,12 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
     (value: string) => {
       const params = new URLSearchParams(searchParams.toString());
       params.set("municipio_id", value);
-      router.push(`${pathname}?${params.toString()}`);
+      // page=1 reset evita "Pagina 3 vazia" ao trocar de municipio
+      params.delete("page");
+      // replace + refresh garante re-render do Client Component se cache local
+      // do useSearchParams nao acompanhou (bug recorrente em Next 16 com Suspense)
+      router.replace(`${pathname}?${params.toString()}`);
+      router.refresh();
     },
     [pathname, router, searchParams]
   );
