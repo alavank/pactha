@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import NotificacoesBell from "@/components/NotificacoesBell";
 import {
   Select,
   SelectContent,
@@ -306,6 +307,12 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
 
       {/* Main content */}
       <main className="flex-1 overflow-y-auto">
+        {/* Top bar com Bell de notificacoes */}
+        <div className="sticky top-0 z-30 bg-white/95 backdrop-blur border-b">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex justify-end items-center h-12">
+            <NotificacoesBell municipioId={selectedMunicipioId ? Number(selectedMunicipioId) : null} />
+          </div>
+        </div>
         <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
           {children}
         </div>
