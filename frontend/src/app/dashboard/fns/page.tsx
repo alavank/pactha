@@ -59,6 +59,24 @@ interface EtapaWorkflow {
   atual: boolean;
 }
 
+interface ParlamentarFNS {
+  nome?: string;
+  partido?: string;
+  nu_emenda?: string;
+  ano?: string;
+  valor?: number;
+}
+
+interface PagamentoFNS {
+  parcela?: string;
+  data?: number;  // ms epoch
+  valor?: number;
+  valor_acumulado?: number;
+  ordem_bancaria?: string;
+  nu_processo?: string;
+  localizacao?: string;
+}
+
 interface PropostaDetalhe {
   nu_proposta: string;
   uf: string;
@@ -74,11 +92,12 @@ interface PropostaDetalhe {
   nu_processo: string;
   situacao_descricao: string;
   situacao_data?: number;
+  data_portaria?: number;
   vl_empenhado: number;
   vl_pago: number;
   vl_pagar: number;
-  parlamentares: Array<{ nome?: string; partido?: string }>;
-  pagamentos: unknown[];
+  parlamentares: ParlamentarFNS[];
+  pagamentos: PagamentoFNS[];
   constituido_processo: boolean;
   etapas: EtapaWorkflow[];
   etapa_atual?: number;
@@ -495,7 +514,7 @@ export default function PropostasFNSPage() {
                     <Field label="Ano" value={propostaDetalhe.ano} />
                     <Field label="Valor da Proposta" value={formatCurrency(propostaDetalhe.valor_proposta)} mono className="text-blue-700" />
                     <Field label="Nº Portaria" value={propostaDetalhe.nu_portaria || "-"} mono />
-                    <Field label="Data Portaria" value="-" />
+                    <Field label="Data Portaria" value={propostaDetalhe.data_portaria ? new Date(propostaDetalhe.data_portaria).toLocaleDateString("pt-BR") : "-"} />
                     <Field label="Valor Total de Empenho" value={formatCurrency(propostaDetalhe.vl_empenhado)} mono />
                     <Field label="Valor a Pagar" value={formatCurrency(propostaDetalhe.vl_pagar)} mono className="text-amber-700" />
                   </Section>
@@ -533,17 +552,66 @@ export default function PropostasFNSPage() {
                     </div>
                   )}
 
-                  {/* Parlamentares se houver */}
+                  {/* Dados do Parlamentar */}
                   {propostaDetalhe.parlamentares && propostaDetalhe.parlamentares.length > 0 && (
-                    <Section title={`Parlamentares (${propostaDetalhe.parlamentares.length})`}>
-                      <div className="col-span-4 flex flex-wrap gap-2">
-                        {propostaDetalhe.parlamentares.map((p, i) => (
-                          <span key={i} className="inline-flex items-center rounded bg-purple-50 border border-purple-200 px-2 py-0.5 text-[11px] text-purple-800">
-                            {p.nome}{p.partido ? ` (${p.partido})` : ""}
-                          </span>
-                        ))}
-                      </div>
-                    </Section>
+                    <div className="border rounded p-3 bg-white">
+                      <h4 className="font-semibold text-sm text-blue-900 border-b pb-1 mb-2">Dados do Parlamentar</h4>
+                      <Table className="text-xs">
+                        <TableHeader>
+                          <TableRow className="[&>th]:py-1 [&>th]:px-2 [&>th]:text-[10px] [&>th]:font-semibold bg-blue-50">
+                            <TableHead>Partido</TableHead>
+                            <TableHead>Nome Parlamentar</TableHead>
+                            <TableHead>Nº da Emenda</TableHead>
+                            <TableHead>Ano</TableHead>
+                            <TableHead className="text-right">Valor da Emenda</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {propostaDetalhe.parlamentares.map((p, i) => (
+                            <TableRow key={i} className="[&>td]:py-1 [&>td]:px-2 [&>td]:text-[11px]">
+                              <TableCell className="font-mono">{p.partido || "-"}</TableCell>
+                              <TableCell className="font-medium">{p.nome || "-"}</TableCell>
+                              <TableCell className="font-mono">{p.nu_emenda || "-"}</TableCell>
+                              <TableCell>{p.ano || "-"}</TableCell>
+                              <TableCell className="text-right font-mono text-blue-700">{formatCurrency(p.valor)}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+
+                  {/* Dados do Pagamento */}
+                  {propostaDetalhe.pagamentos && propostaDetalhe.pagamentos.length > 0 && (
+                    <div className="border rounded p-3 bg-white">
+                      <h4 className="font-semibold text-sm text-blue-900 border-b pb-1 mb-2">Dados do Pagamento</h4>
+                      <Table className="text-xs">
+                        <TableHeader>
+                          <TableRow className="[&>th]:py-1 [&>th]:px-2 [&>th]:text-[10px] [&>th]:font-semibold bg-blue-50">
+                            <TableHead>Parcela</TableHead>
+                            <TableHead>Data Pagamento</TableHead>
+                            <TableHead className="text-right">Valor</TableHead>
+                            <TableHead className="text-right">Acumulado</TableHead>
+                            <TableHead>Ordem Bancária</TableHead>
+                            <TableHead>Nº Processo Pgto</TableHead>
+                            <TableHead>Localização</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {propostaDetalhe.pagamentos.map((pg, i) => (
+                            <TableRow key={i} className="[&>td]:py-1 [&>td]:px-2 [&>td]:text-[11px]">
+                              <TableCell>{pg.parcela || "-"}</TableCell>
+                              <TableCell>{pg.data ? new Date(pg.data).toLocaleDateString("pt-BR") : "-"}</TableCell>
+                              <TableCell className="text-right font-mono text-green-700">{formatCurrency(pg.valor)}</TableCell>
+                              <TableCell className="text-right font-mono">{formatCurrency(pg.valor_acumulado)}</TableCell>
+                              <TableCell className="font-mono">{pg.ordem_bancaria || "-"}</TableCell>
+                              <TableCell className="font-mono">{pg.nu_processo || "-"}</TableCell>
+                              <TableCell className="text-[10px]">{pg.localizacao || "-"}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
                   )}
 
                   <div className="flex justify-end gap-2 pt-2 border-t">
