@@ -77,7 +77,7 @@ export default function ConvenioDetailModal({ conv, onClose }: Props) {
 
   return (
     <Dialog open={!!conv} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="!max-w-[960px] !w-[96vw] sm:!max-w-[960px] max-h-[92vh] overflow-y-auto p-3">
+      <DialogContent className="!max-w-[880px] !w-[94vw] sm:!max-w-[880px] max-h-[92vh] overflow-y-auto overflow-x-hidden p-2.5">
         <DialogTitle className="sr-only">Detalhes do Convênio</DialogTitle>
         <div className="relative">
           <button onClick={onClose} className="absolute right-0 top-0 text-gray-400 hover:text-gray-600 z-10" aria-label="Fechar">
@@ -150,10 +150,13 @@ export default function ConvenioDetailModal({ conv, onClose }: Props) {
 
                 <hr className="my-2 border-orange-200" />
 
-                {/* Título + Prestação */}
+                {/* Título + Prestação (destacada) */}
                 <Grid cols={6}>
                   <Field label="Título" value={d.titulo || "-"} span={4} fullValue />
-                  <Field label="Prestação de Contas" value={d.prestacao_contas || "-"} span={2} />
+                  <div className="col-span-2 min-w-0 bg-amber-100 border border-amber-300 rounded px-2 py-1" title={`Prestação de Contas: ${d.prestacao_contas || "-"}`}>
+                    <div className="text-[9.5px] font-semibold text-amber-900 leading-tight uppercase tracking-tight">Prestação de Contas</div>
+                    <div className="text-[11px] mt-0.5 font-semibold text-amber-900 truncate">{d.prestacao_contas || "-"}</div>
+                  </div>
                 </Grid>
 
                 <hr className="my-2 border-orange-200" />
