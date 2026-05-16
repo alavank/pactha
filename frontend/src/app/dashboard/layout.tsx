@@ -43,6 +43,7 @@ const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/dashboard/convenios", label: "Convenios", icon: FileText },
   { href: "/dashboard/emendas", label: "Emendas Estaduais", icon: FileText },
+  { href: "/dashboard/fns", label: "Propostas FNS", icon: Target },
   { href: "/dashboard/editais", label: "Editais", icon: Search },
   { href: "/dashboard/oportunidades", label: "Oportunidades", icon: Target },
   { href: "/dashboard/politica", label: "Politica", icon: BarChart3 },
