@@ -36,6 +36,8 @@ MIGRATION_FILES = [
     "add_nr_proposta_estadual.sql",
     # Tabela emendas_estaduais (SIGCON Pesquisar Emendas Por Convenente)
     "add_emendas_estaduais.sql",
+    # Notificacoes push (deltas detectados pelos scrapers)
+    "add_notificacoes.sql",
     # NOTA: dedupe_convenios_unique.sql nao roda no boot (UPDATEs gigantes,
     # passa do healthcheck timeout). Foi aplicado uma vez via psycopg2 e o
     # UNIQUE INDEX nr_sigcon previne reincidencia. Rodar manual se preciso.
