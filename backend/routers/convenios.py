@@ -163,6 +163,7 @@ async def list_convenios(
     ano: Optional[int] = None,
     situacao: Optional[str] = None,
     fonte: Optional[str] = None,
+    fontes: Optional[list[str]] = Query(None, description="Multi-select fonte (alternativa a 'fonte' single)"),
     parlamentar_id: Optional[int] = None,
     search: Optional[str] = None,
     page: int = Query(1, ge=1),
@@ -186,7 +187,10 @@ async def list_convenios(
         if situacao:
             q = q.where(ConvenioFederal.situacao.ilike(f"%{situacao}%"))
             q_count = q_count.where(ConvenioFederal.situacao.ilike(f"%{situacao}%"))
-        if fonte:
+        if fontes:
+            q = q.where(ConvenioFederal.fonte.in_(fontes))
+            q_count = q_count.where(ConvenioFederal.fonte.in_(fontes))
+        elif fonte:
             q = q.where(ConvenioFederal.fonte == fonte)
             q_count = q_count.where(ConvenioFederal.fonte == fonte)
         if search:
@@ -234,7 +238,21 @@ async def list_convenios(
         if situacao:
             q = q.where(ConvenioEstadual.situacao.ilike(f"%{situacao}%"))
             q_count = q_count.where(ConvenioEstadual.situacao.ilike(f"%{situacao}%"))
-        if fonte:
+        if fontes:
+            # SIGCON estadual tem fonte=NULL ou 'SIGCON-MG'. Adicionar mapeamento.
+            est_fontes = []
+            for f in fontes:
+                if f.upper() == "SIGCON":
+                    est_fontes.extend(["SIGCON-MG", "SIGCON"])
+                else:
+                    est_fontes.append(f)
+            from sqlalchemy import or_ as _or, and_ as _and
+            cond = ConvenioEstadual.fonte.in_(est_fontes)
+            if "SIGCON" in [f.upper() for f in fontes] or "SIGCON-MG" in fontes:
+                cond = _or(cond, ConvenioEstadual.fonte.is_(None))
+            q = q.where(cond)
+            q_count = q_count.where(cond)
+        elif fonte:
             q = q.where(ConvenioEstadual.fonte == fonte)
             q_count = q_count.where(ConvenioEstadual.fonte == fonte)
         if search:
