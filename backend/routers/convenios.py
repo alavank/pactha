@@ -61,9 +61,22 @@ def estadual_to_response(c: ConvenioEstadual) -> ConvenioResponse:
     import re
     nr_proposta = raw.get("nr_proposta")
     nr_instrumento = raw.get("nr_instrumento")
-    # Fallback: nr_sigcon eh nr_instrumento se for formato "XXXXXXXXXX/YYYY"
+    nr_plano = c.nr_plano_trabalho
+    # Heuristicas para CKAN bulk (raw_data costuma vir vazio):
+    # - nr_instrumento SIGCON: 8-12 digits + "/" + 4-digit year (ex: "1481000677/2026")
+    # - nr_proposta SIGCON:   6 digits + "/" + 4-digit year       (ex: "001030/2026")
+    # - nr_plano_trabalho real eh um inteiro curto (5-7 digits sem barra)
     if not nr_instrumento and c.nr_sigcon and re.match(r"^\d{8,12}/\d{4}$", c.nr_sigcon):
         nr_instrumento = c.nr_sigcon
+    # Se nr_plano_trabalho tem cara de proposta (6 digitos / ano), reatribui
+    if not nr_proposta and nr_plano and re.match(r"^\d{6}/\d{4}$", nr_plano):
+        nr_proposta = nr_plano
+        nr_plano = None  # nao mostra na coluna Plano pra evitar duplicacao
+    # Fallback adicional: raw_data.nr_plano_sigcon tambem eh proposta
+    if not nr_proposta:
+        rps = raw.get("nr_plano_sigcon")
+        if rps and re.match(r"^\d{6}/\d{4}$", rps):
+            nr_proposta = rps
     return ConvenioResponse(
         id=c.id,
         esfera="estadual",
@@ -94,7 +107,7 @@ def estadual_to_response(c: ConvenioEstadual) -> ConvenioResponse:
         dt_empenho=c.dt_empenho,
         dt_desembolso=c.dt_desembolso,
         nr_proposta=nr_proposta or None,
-        nr_plano_trabalho=c.nr_plano_trabalho,
+        nr_plano_trabalho=nr_plano,
         nr_instrumento=nr_instrumento or None,
         nr_siafi=c.nr_siafi,
     )

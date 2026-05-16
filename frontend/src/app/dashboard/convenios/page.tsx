@@ -446,11 +446,10 @@ export default function ConveniosPage() {
             <Table className="text-xs table-fixed w-full">
               <TableHeader>
                 <TableRow className="[&>th]:py-1.5 [&>th]:px-2 [&>th]:text-[11px] [&>th]:font-semibold [&>th]:whitespace-nowrap">
-                  <TableHead className="w-[90px]">Nr</TableHead>
                   <TableHead className="w-[55px]">Fonte</TableHead>
-                  <TableHead className="w-[75px]">Proposta</TableHead>
+                  <TableHead className="w-[85px]">Proposta</TableHead>
                   <TableHead className="w-[75px]">Plano</TableHead>
-                  <TableHead className="w-[100px]">Instrumento</TableHead>
+                  <TableHead className="w-[110px]">Instrumento</TableHead>
                   <TableHead className="w-[75px]">Orgao</TableHead>
                   <TableHead className="min-w-0">Objeto</TableHead>
                   <TableHead className="w-[105px]">Situacao</TableHead>
@@ -473,9 +472,6 @@ export default function ConveniosPage() {
                     className="[&>td]:py-1.5 [&>td]:px-2 [&>td]:text-[11px] hover:bg-blue-50 cursor-pointer"
                     onClick={() => setSelectedConv({ id: conv.id, esfera: conv.esfera })}
                   >
-                    <TableCell className="font-mono whitespace-nowrap truncate" title={`Nr: ${conv.nr_convenio || conv.nr_sigcon || "-"}${conv.nr_siafi ? "\nSIAFI: " + conv.nr_siafi : ""}`}>
-                      {conv.nr_convenio || conv.nr_sigcon || "-"}
-                    </TableCell>
                     <TableCell title={conv.fonte || ""}>
                       {conv.fonte && (
                         <span className="inline-flex items-center rounded bg-indigo-50 border border-indigo-200 px-1 py-0.5 text-[9px] font-mono text-indigo-700">
