@@ -18,7 +18,11 @@ logging.basicConfig(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Roda migrations idempotentes no boot (ANTES das rotas atenderem).
-    Garante que seed institucional + tabelas estao sempre atualizadas."""
+    Garante que seed institucional + tabelas estao sempre atualizadas.
+
+    Tambem aquece o pool asyncpg pra evitar primeira request travada
+    (cold start no Railway gerava 'email ou senha incorretos' fantasma
+    porque o connect demorava mais que o timeout do frontend)."""
     # print() para garantir que aparece nos logs do Railway mesmo se logging falhar
     print("=== PACTA boot - rodando migrations ===", flush=True)
     logging.getLogger("startup").warning("=== PACTA boot - rodando migrations ===")
@@ -26,6 +30,16 @@ async def lifespan(app: FastAPI):
         run_migrations()
     except Exception as e:
         print(f"[STARTUP] run_migrations falhou: {e}", flush=True)
+    # Warmup do pool asyncpg: faz SELECT 1 ANTES de yield pra primeira request
+    # nao pagar o custo de criar conexao.
+    try:
+        from database import engine
+        from sqlalchemy import text
+        async with engine.begin() as conn:
+            await conn.execute(text("SELECT 1"))
+        print("[STARTUP] DB pool warmup OK", flush=True)
+    except Exception as e:
+        print(f"[STARTUP] DB pool warmup falhou: {e}", flush=True)
     yield
 
 
