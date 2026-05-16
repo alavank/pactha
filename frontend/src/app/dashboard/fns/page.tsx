@@ -43,6 +43,47 @@ interface Resp {
 
 interface Mun { nome: string; cod_ibge: string }
 
+interface Individual {
+  nu_proposta: string;
+  entidade: string;
+  tipo_proposta?: string;
+  tipo_recurso?: string;
+  valor_proposta: number;
+  valor_pago: number;
+}
+
+interface EtapaWorkflow {
+  numero: number;
+  descricao: string;
+  completada: boolean;
+  atual: boolean;
+}
+
+interface PropostaDetalhe {
+  nu_proposta: string;
+  uf: string;
+  municipio: string;
+  cnpj: string;
+  entidade: string;
+  tipo_proposta: string;
+  valor_proposta: number;
+  ano: string;
+  tipo_recurso: string;
+  esfera: string;
+  nu_portaria?: string;
+  nu_processo: string;
+  situacao_descricao: string;
+  situacao_data?: number;
+  vl_empenhado: number;
+  vl_pago: number;
+  vl_pagar: number;
+  parlamentares: Array<{ nome?: string; partido?: string }>;
+  pagamentos: unknown[];
+  constituido_processo: boolean;
+  etapas: EtapaWorkflow[];
+  etapa_atual?: number;
+}
+
 const TIPOS_EMENDA = [
   "TODOS",
   "PROGRAMA",
@@ -78,6 +119,45 @@ export default function PropostasFNSPage() {
   const [error, setError] = useState<string | null>(null);
   // Modal de detalhamento (clique no botao olho)
   const [detalheItem, setDetalheItem] = useState<Item | null>(null);
+  const [individuais, setIndividuais] = useState<Array<Individual> | null>(null);
+  const [loadingIndiv, setLoadingIndiv] = useState(false);
+  const [propostaDetalhe, setPropostaDetalhe] = useState<PropostaDetalhe | null>(null);
+  const [loadingDetalhe, setLoadingDetalhe] = useState(false);
+
+  // Quando abre modal nivel 1, busca lista de propostas individuais
+  useEffect(() => {
+    if (!detalheItem || !data) {
+      setIndividuais(null);
+      return;
+    }
+    setLoadingIndiv(true);
+    api.get<{items: Individual[]}>("/fns/listar-individuais", {
+      params: {
+        municipio: data.params?.municipio,
+        ano: data.params?.ano,
+        uf: data.params?.uf,
+        tipo_proposta: detalheItem.tipo_proposta,
+        tipo_recurso: detalheItem.tipo_recurso,
+      }
+    }).then((r) => setIndividuais(r.data.items || []))
+      .catch(() => setIndividuais([]))
+      .finally(() => setLoadingIndiv(false));
+  }, [detalheItem, data]);
+
+  const abrirDetalheProposta = async (nuProposta: string) => {
+    setLoadingDetalhe(true);
+    setPropostaDetalhe(null);
+    try {
+      const r = await api.get<PropostaDetalhe>(`/fns/proposta/${nuProposta}`);
+      setPropostaDetalhe(r.data);
+    } catch (e) {
+      const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+        || (e as Error).message;
+      alert(`Falha: ${msg}`);
+    } finally {
+      setLoadingDetalhe(false);
+    }
+  };
 
   useEffect(() => {
     api.get<Mun[]>("/fns/municipios").then((r) => setMunicipios(r.data || [])).catch(() => {});
@@ -318,16 +398,175 @@ export default function PropostasFNSPage() {
                 </div>
               )}
 
-              <div className="bg-amber-50 border border-amber-200 rounded p-3 text-xs text-amber-900">
-                <strong>Detalhamento por proposta individual:</strong> esse nível mostra as propostas agrupadas
-                por (Tipo + Recurso). Para ver propostas individuais (Nº 21441367000125001, Entidade, Valor, Status detalhado, Etapas)
-                use o link <a href="https://consultafns.saude.gov.br/#/proposta" target="_blank" rel="noreferrer" className="underline">consultafns.saude.gov.br</a>
-                — o endpoint dessa página ainda não está exposto via API REST.
+              {/* Propostas individuais (nivel 1 listagem) */}
+              <div className="bg-white border rounded p-3">
+                <h4 className="font-semibold text-sm mb-2">Propostas Individuais (Nº SIPA)</h4>
+                {loadingIndiv ? (
+                  <div className="text-center text-sm text-gray-500 py-3">Carregando...</div>
+                ) : (individuais && individuais.length > 0) ? (
+                  <Table className="text-xs">
+                    <TableHeader>
+                      <TableRow className="[&>th]:py-1 [&>th]:px-2 [&>th]:text-[10px] [&>th]:font-semibold bg-blue-50">
+                        <TableHead>Nº da Proposta</TableHead>
+                        <TableHead>Entidade</TableHead>
+                        <TableHead className="text-right">Valor Proposta</TableHead>
+                        <TableHead className="text-right">Valor Pago</TableHead>
+                        <TableHead className="w-[60px] text-center">Ação</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {individuais.map((i, idx) => (
+                        <TableRow key={idx} className="[&>td]:py-1 [&>td]:px-2 [&>td]:text-[11px] hover:bg-gray-50">
+                          <TableCell className="font-mono">{i.nu_proposta}</TableCell>
+                          <TableCell>{i.entidade}</TableCell>
+                          <TableCell className="text-right font-mono">{formatCurrency(i.valor_proposta)}</TableCell>
+                          <TableCell className="text-right font-mono text-green-700">{formatCurrency(i.valor_pago)}</TableCell>
+                          <TableCell className="text-center">
+                            <button
+                              onClick={() => abrirDetalheProposta(i.nu_proposta)}
+                              className="inline-flex items-center justify-center w-6 h-6 rounded bg-blue-500 hover:bg-blue-600 text-white"
+                              title="Ver detalhes"
+                            >
+                              <Eye className="size-3" />
+                            </button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-xs text-gray-600">A listagem agrupada não retornou propostas individuais nessa categoria. Para ver detalhe completo, digite o nº da proposta:</p>
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="Ex: 21441367000125001"
+                        id="nu-proposta-manual"
+                        className="flex-1"
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            const v = (e.target as HTMLInputElement).value.trim();
+                            if (v) abrirDetalheProposta(v);
+                          }
+                        }}
+                      />
+                      <Button
+                        onClick={() => {
+                          const el = document.getElementById("nu-proposta-manual") as HTMLInputElement;
+                          if (el?.value.trim()) abrirDetalheProposta(el.value.trim());
+                        }}
+                        className="bg-blue-600 hover:bg-blue-700"
+                      >
+                        Ver Detalhe
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
         </div>
       )}
+
+      {/* Modal NÍVEL 2: Detalhe Completo da Proposta Individual */}
+      {(propostaDetalhe || loadingDetalhe) && (
+        <div className="fixed inset-0 z-[60] bg-black/50 flex items-start justify-center p-4 overflow-y-auto" onClick={() => setPropostaDetalhe(null)}>
+          <div className="bg-white rounded-lg shadow-2xl w-full max-w-5xl mt-4" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-blue-100 px-4 py-3 rounded-t-lg flex items-center justify-between border-b">
+              <h3 className="font-bold text-blue-900">Detalhe da Proposta {propostaDetalhe?.nu_proposta || ""}</h3>
+              <button onClick={() => setPropostaDetalhe(null)} className="text-gray-500 hover:text-gray-700"><X className="size-5" /></button>
+            </div>
+            <div className="p-4 space-y-3">
+              {loadingDetalhe && <div className="text-center py-12 text-gray-500">Carregando detalhes...</div>}
+
+              {propostaDetalhe && (
+                <>
+                  {/* Dados da Entidade */}
+                  <Section title="Dados da Entidade">
+                    <Field label="Estado" value={propostaDetalhe.uf} />
+                    <Field label="Município" value={propostaDetalhe.municipio} />
+                    <Field label="Entidade" value={propostaDetalhe.entidade} />
+                    <Field label="CNPJ" value={propostaDetalhe.cnpj} mono />
+                  </Section>
+
+                  {/* Dados da Proposta */}
+                  <Section title="Dados da Proposta">
+                    <Field label="Nº da Proposta" value={propostaDetalhe.nu_proposta} mono />
+                    <Field label="Tipo de Proposta" value={propostaDetalhe.tipo_proposta} />
+                    <Field label="Ano" value={propostaDetalhe.ano} />
+                    <Field label="Valor da Proposta" value={formatCurrency(propostaDetalhe.valor_proposta)} mono className="text-blue-700" />
+                    <Field label="Nº Portaria" value={propostaDetalhe.nu_portaria || "-"} mono />
+                    <Field label="Data Portaria" value="-" />
+                    <Field label="Valor Total de Empenho" value={formatCurrency(propostaDetalhe.vl_empenhado)} mono />
+                    <Field label="Valor a Pagar" value={formatCurrency(propostaDetalhe.vl_pagar)} mono className="text-amber-700" />
+                  </Section>
+
+                  {/* Dados da Situação */}
+                  <Section title="Dados da Situação da Proposta">
+                    <Field label="Situação Atual" value={propostaDetalhe.situacao_descricao} className="text-green-800 font-semibold" />
+                    <Field label="Data da Última Atualização" value={propostaDetalhe.situacao_data ? new Date(propostaDetalhe.situacao_data).toLocaleDateString("pt-BR") : "-"} />
+                  </Section>
+
+                  {/* Principais etapas - workflow 12 dots */}
+                  {propostaDetalhe.etapas && propostaDetalhe.etapas.length > 0 && (
+                    <div className="bg-gray-50 rounded p-3">
+                      <h4 className="font-semibold text-sm mb-3">Principais etapas da proposta</h4>
+                      <div className="flex items-center justify-between overflow-x-auto">
+                        {propostaDetalhe.etapas.map((et, i) => (
+                          <React.Fragment key={i}>
+                            <div className="flex flex-col items-center text-center min-w-[60px]" title={et.descricao}>
+                              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold text-white ${
+                                et.completada ? "bg-blue-500" : "bg-gray-300"
+                              } ${et.atual ? "ring-2 ring-blue-300" : ""}`}>
+                                {et.numero}
+                              </div>
+                              <div className="text-[9px] text-gray-600 mt-1 max-w-[60px] leading-tight">{et.descricao}</div>
+                            </div>
+                            {i < propostaDetalhe.etapas.length - 1 && (
+                              <div className={`h-1 flex-1 mx-0.5 ${et.completada && propostaDetalhe.etapas[i+1].completada ? "bg-blue-500" : "bg-gray-300"}`} />
+                            )}
+                          </React.Fragment>
+                        ))}
+                      </div>
+                      {!propostaDetalhe.constituido_processo && (
+                        <p className="text-xs text-amber-700 italic mt-3">Não foi constituído processo para essa proposta.</p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Parlamentares se houver */}
+                  {propostaDetalhe.parlamentares && propostaDetalhe.parlamentares.length > 0 && (
+                    <Section title={`Parlamentares (${propostaDetalhe.parlamentares.length})`}>
+                      <div className="col-span-4 flex flex-wrap gap-2">
+                        {propostaDetalhe.parlamentares.map((p, i) => (
+                          <span key={i} className="inline-flex items-center rounded bg-purple-50 border border-purple-200 px-2 py-0.5 text-[11px] text-purple-800">
+                            {p.nome}{p.partido ? ` (${p.partido})` : ""}
+                          </span>
+                        ))}
+                      </div>
+                    </Section>
+                  )}
+
+                  <div className="flex justify-end gap-2 pt-2 border-t">
+                    <Button variant="outline" onClick={() => setPropostaDetalhe(null)}>Voltar</Button>
+                    <Button onClick={() => window.print()} className="bg-blue-600 hover:bg-blue-700">
+                      <Printer className="size-4 mr-1" /> Imprimir
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="border rounded p-3 bg-white">
+      <h4 className="font-semibold text-sm text-blue-900 border-b pb-1 mb-2">{title}</h4>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">{children}</div>
     </div>
   );
 }

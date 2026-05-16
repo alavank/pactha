@@ -166,3 +166,138 @@ async def anos(db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
 async def municipios_pacta(db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
     """Lista municipios PACTA com codigo IBGE FNS."""
     return [{"nome": n, "cod_ibge": c} for n, c in FNS_CODE_OVERRIDE.items()]
+
+
+@router.get("/proposta/{nu_proposta}")
+async def detalhe_proposta(
+    nu_proposta: str,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Detalhe completo de uma proposta individual.
+
+    Endpoint upstream:
+      GET /recursos/proposta/obter-proposta?nuProposta=XXX
+      GET /recursos/proposta/obter-proposta-etapa  (mapa de 12 etapas)
+    """
+    cookies = await _get_cookies(db)
+    try:
+        with httpx.Client(cookies=cookies, timeout=20, verify=False) as cli:
+            # Detalhe principal
+            r1 = cli.get(
+                f"{FNS_BASE}/recursos/proposta/obter-proposta",
+                params={"nuProposta": nu_proposta},
+                headers={"Accept": "application/json", "User-Agent": "Mozilla/5.0",
+                         "Referer": f"{FNS_BASE}/"},
+            )
+            r1.raise_for_status()
+            d = r1.json().get("resultado", {}) or {}
+
+            # Etapas
+            r2 = cli.get(
+                f"{FNS_BASE}/recursos/proposta/obter-proposta-etapa",
+                headers={"Accept": "application/json", "User-Agent": "Mozilla/5.0",
+                         "Referer": f"{FNS_BASE}/"},
+            )
+            etapas_map = r2.json().get("resultado", {}) if r2.status_code == 200 else {}
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(e.response.status_code, f"FNS: {e.response.text[:200]}")
+    except Exception as e:
+        raise HTTPException(502, f"Falha FNS: {e}")
+
+    # Determina workflow ativo (Contrato de Repasse, Outros Tipos, etc)
+    # Por padrao, usa Contrato de Repasse (12 etapas)
+    workflow_key = "Contrato de Repasse"
+    etapas_list = etapas_map.get(workflow_key, []) or []
+    sit_cod = (d.get("situacao") or {}).get("codigoSituacaoProjeto")
+    current_etapa = None
+    for et in etapas_list:
+        if sit_cod and sit_cod in (et.get("situacoes") or []):
+            current_etapa = et.get("etapa")
+            break
+
+    return {
+        "nu_proposta": d.get("nuProposta"),
+        "uf": d.get("sgUf"),
+        "municipio": d.get("noMunicipio"),
+        "cnpj": d.get("cnpjFormatado") or d.get("cnpj"),
+        "entidade": d.get("noEntidade"),
+        "tipo_proposta": d.get("coTipoProposta"),
+        "valor_proposta": float(d.get("vlProposta") or 0),
+        "ano": d.get("nuAnoProposta"),
+        "tipo_recurso": d.get("dsTipoRecurso"),
+        "esfera": d.get("coEsfera"),
+        "nu_portaria": d.get("nuPortaria") or None,
+        "nu_processo": d.get("nuProcesso"),
+        "situacao_descricao": (d.get("situacao") or {}).get("descricaoSituacaoproposta"),
+        "situacao_data": (d.get("situacao") or {}).get("dataSituacaoProjeto"),  # ms epoch
+        "vl_empenhado": float(d.get("vlEmpenhado") or 0),
+        "vl_pago": float(d.get("vlPago") or 0),
+        "vl_pagar": float(d.get("vlPagar") or 0),
+        "parlamentares": d.get("parlamentares", []),
+        "pagamentos": d.get("pagamentos", []),
+        "constituido_processo": d.get("constituidoProcesso"),
+        "situacao_ultima_analise": d.get("situacaoUltimaAnalise"),
+        "ultimo_processo": d.get("ultimoProcesso"),
+        "etapas": [
+            {
+                "numero": et.get("etapa"),
+                "descricao": et.get("descricao"),
+                "completada": (et.get("etapa") or 0) <= (current_etapa or 0),
+                "atual": et.get("etapa") == current_etapa,
+            }
+            for et in etapas_list
+        ],
+        "etapa_atual": current_etapa,
+    }
+
+
+@router.get("/listar-individuais")
+async def listar_individuais(
+    municipio: str = Query(...),
+    ano: int = Query(...),
+    uf: str = Query("MG"),
+    tipo_proposta: str = Query(..., description="Ex: EQUIPAMENTO, CUSTEIO MAC, INCREMENTO PAP"),
+    tipo_recurso: str = Query(..., description="PROGRAMA / EMENDA INDIVIDUAL / etc"),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Lista propostas individuais agrupadas (nivel 1 do detalhamento).
+
+    Como o endpoint dedicado nao foi descoberto via XHR, fallback usa
+    /consultar com filtros adicionais coTipoProposta + dsTipoRecurso e
+    captura linhaPropostas[] que vem populado quando ha agrupamento.
+    """
+    cod = FNS_CODE_OVERRIDE.get(municipio.upper().strip(), municipio)
+    cookies = await _get_cookies(db)
+    params = {
+        "ano": str(ano), "coEsfera": "", "coMunicipioIbge": cod,
+        "count": "100", "page": "1", "sgUf": uf,
+        "coTipoProposta": tipo_proposta, "dsTipoRecurso": tipo_recurso,
+    }
+    try:
+        with httpx.Client(cookies=cookies, timeout=20, verify=False) as cli:
+            r = cli.get(f"{FNS_BASE}/recursos/proposta/consultar", params=params,
+                        headers={"Accept": "application/json", "User-Agent": "Mozilla/5.0",
+                                 "Referer": f"{FNS_BASE}/"})
+            r.raise_for_status()
+            res = r.json().get("resultado", {}) or {}
+    except Exception as e:
+        raise HTTPException(502, f"Falha FNS: {e}")
+
+    # Coleta linhaPropostas[] de cada item agrupado
+    items = res.get("itensPagina", []) or []
+    individuais = []
+    for it in items:
+        for lp in (it.get("linhaPropostas") or []):
+            individuais.append({
+                "tipo_proposta": it.get("coTipoProposta"),
+                "tipo_recurso": it.get("dsTipoRecurso"),
+                "nu_proposta": lp.get("nuProposta"),
+                "entidade": lp.get("noEntidade") or "FUNDO MUNICIPAL DE SAUDE",
+                "valor_proposta": float(lp.get("vlProposta") or 0),
+                "valor_pago": float(lp.get("vlPago") or 0),
+            })
+    return {"items": individuais, "total": len(individuais),
+            "grupo": {"tipo_proposta": tipo_proposta, "tipo_recurso": tipo_recurso,
+                      "municipio": municipio, "ano": ano, "uf": uf}}
