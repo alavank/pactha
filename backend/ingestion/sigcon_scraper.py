@@ -182,6 +182,153 @@ async def _scrape_municipio(page, municipio_nome: str) -> list[dict]:
     return all_rows
 
 
+async def _scrape_detalhes(page, max_planos: int = 100) -> dict:
+    """Para cada linha visivel na tabela de pesquisa unificada, clica no link
+    do Plano/Proposta e captura campos da pagina de detalhe.
+
+    Retorna: {nr_proposta_or_plano: {responsaveis, proposta_vigencia, ...}}
+    NAO recarrega a tabela entre iteracoes - usa o botao "Retornar para
+    Pesquisa Proposta" pra voltar mantendo o state.
+    """
+    out: dict = {}
+    # Selector amplo: cmdLinkPropostaResult, cmdLinkPlanoResult, cmdLinkInstrumento, cmdLinkConvenio
+    LINK_SELECTOR = (
+        'a[id*="cmdLinkPropostaResult"], a[id*="cmdLinkPlanoResult"], '
+        'a[id*="cmdLinkInstrumento"], a[id*="cmdLinkConvenio"], '
+        'a[id*="cmdLinkSiafi"]'
+    )
+    n_links = await page.locator(LINK_SELECTOR).count()
+    logger.info(f"  Detalhe: {n_links} links cmdLink na tabela")
+    if n_links == 0:
+        return out
+
+    iter_count = min(n_links, max_planos)
+    for idx in range(iter_count):
+        try:
+            # Re-busca o locator a cada iteracao (DOM muda apos voltar)
+            links = page.locator(LINK_SELECTOR)
+            cur_count = await links.count()
+            if idx >= cur_count:
+                logger.warning(f"  Detalhe iter {idx}: locator sem links suficientes ({cur_count})")
+                break
+            link = links.nth(idx)
+            # Pega texto antes de clicar pra usar como key (eh o nr_proposta ou nr_plano)
+            link_text = (await link.text_content() or "").strip()
+            await link.click(timeout=15000)
+            # Espera carregar a pagina de detalhe (PrimeFaces AJAX) - guard pra body null
+            await page.wait_for_function("""() => {
+                if (!document.body) return false;
+                const t = document.body.innerText || "";
+                return t.includes('Responsável(is)') || t.includes('Responsavel(is)')
+                    || t.includes('Fase-Etapa-Status') || t.includes('Fase-Etapa')
+                    || t.includes('Vigência Atual') || t.includes('Vigencia Atual');
+            }""", timeout=25000)
+            await page.wait_for_timeout(800)
+            data = await page.evaluate(PARSE_DETALHE_JS)
+            if data and (data.get("responsaveis") or data.get("fase_etapa_status")):
+                key = data.get("nr_proposta_detalhe") or data.get("nr_plano_detalhe") or link_text
+                out[key] = data
+                logger.info(f"    [{idx+1}/{iter_count}] {key}: resp={data.get('responsaveis','-')[:30]} fase={data.get('fase_etapa_status','-')[:40]}")
+            # Volta pra pesquisa
+            try:
+                btn_voltar = page.locator(
+                    'a:has-text("Retornar para Pesquisa"), button:has-text("Retornar"), '
+                    'a:has-text("Voltar"), button:has-text("Voltar")'
+                ).first
+                if await btn_voltar.count() > 0:
+                    await btn_voltar.click(timeout=10000)
+                    await page.wait_for_function("""() => {
+                        const tb = document.querySelector('tbody[id$=\"dtTblExibeListaPlanosDeTrabalho_data\"]');
+                        return tb && tb.querySelectorAll(':scope > tr:not(.ui-datatable-empty-message)').length > 0;
+                    }""", timeout=30000)
+                    await page.wait_for_timeout(1500)
+                else:
+                    # Fallback: navigate + re-search
+                    await page.goto(SEARCH_URL, wait_until="domcontentloaded", timeout=30000)
+                    await page.wait_for_timeout(5000)
+                    await page.click('button[id="frmListaPlanosDeTrabalho:cmdBtnPesquisarListaPlanosDeTrabalho"]')
+                    await page.wait_for_function("""() => {
+                        const tb = document.querySelector('tbody[id$=\"dtTblExibeListaPlanosDeTrabalho_data\"]');
+                        return tb && tb.querySelectorAll(':scope > tr:not(.ui-datatable-empty-message)').length > 0;
+                    }""", timeout=60000)
+                    await page.wait_for_timeout(2000)
+            except Exception as e:
+                logger.warning(f"  Falha ao voltar pra pesquisa: {e}")
+                break
+        except Exception as e:
+            logger.warning(f"  Detalhe iter {idx} falhou: {str(e)[:120]}")
+            # Tenta restaurar navegando direto
+            try:
+                await page.goto(SEARCH_URL, wait_until="domcontentloaded", timeout=30000)
+                await page.wait_for_timeout(5000)
+                await page.click('button[id="frmListaPlanosDeTrabalho:cmdBtnPesquisarListaPlanosDeTrabalho"]')
+                await page.wait_for_function("""() => {
+                    const tb = document.querySelector('tbody[id$=\"dtTblExibeListaPlanosDeTrabalho_data\"]');
+                    return tb && tb.querySelectorAll(':scope > tr:not(.ui-datatable-empty-message)').length > 0;
+                }""", timeout=60000)
+                await page.wait_for_timeout(2000)
+            except Exception as e2:
+                logger.error(f"  Restore falhou: {e2}")
+                break
+    logger.info(f"  Detalhes capturados: {len(out)}")
+    return out
+
+
+PARSE_DETALHE_JS = r"""
+() => {
+    // Parseia campos da pagina de detalhe do Plano/Proposta SIGCON
+    // Formato observado: "Label:\tValue\n" e "Label:\tValue\tLabel2:\tValue2\n"
+    const text = document.body.innerText;
+    // Splita em linhas e tenta extrair pares label:value
+    const out = {};
+    const wanted = {
+        "Numero da Proposta": "nr_proposta_detalhe",
+        "Numero do Plano de Trabalho": "nr_plano_detalhe",
+        "Status": "status_detalhe",
+        "Data da Criacao": "data_criacao",
+        "Concedente": "concedente_full",
+        "Beneficiario": "beneficiario_full",
+        "Municipio": "municipio_full",
+        "Tipo de Beneficiario": "tipo_beneficiario",
+        "Valor Concedente": "valor_concedente_str",
+        "Valor Dotacao Complementar": "valor_dotacao_complementar",
+        "Proposta de Vigencia": "proposta_vigencia",
+        "Responsavel(is)": "responsaveis",
+        "Tipo de Instrumento": "tp_instrumento_detalhe",
+        "Numero da Transferencia Especial": "nr_te",
+        "Fase-Etapa-Status": "fase_etapa_status",
+        "Setor": "setor",
+        "Titulo": "titulo_detalhe",
+    };
+    function norm(s) {
+        return s.normalize("NFD").replace(/[̀-ͯ]/g, "");
+    }
+    // Cria regex pra cada label
+    const lines = text.split(/\n+/);
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        // Split por tab pra pegar pares
+        const parts = line.split(/\t+/);
+        for (let j = 0; j < parts.length - 1; j++) {
+            const labelRaw = parts[j].trim();
+            if (!labelRaw.endsWith(":")) continue;
+            const labelClean = norm(labelRaw.replace(/:$/, "").trim());
+            const key = wanted[labelClean];
+            if (key && !out[key]) {
+                let val = (parts[j + 1] || "").trim();
+                // Fase-Etapa-Status as vezes vem na proxima linha (multiline)
+                if (key === "fase_etapa_status" && !val && i + 1 < lines.length) {
+                    val = lines[i + 1].trim();
+                }
+                out[key] = val;
+            }
+        }
+    }
+    return out;
+}
+"""
+
+
 PARSE_EMENDAS_JS = r"""
 () => {
     // Tabela de emendas: tbody[id$="dataTableEmendasConvenente_data"]
@@ -372,7 +519,21 @@ async def _run():
                     await _login(page, cred["cpf"], cred["senha"])
                     # 1) Convenios (Pesquisa Unificada)
                     rows = await _scrape_municipio(page, _norm(cred["municipio_nome"]))
+                    # 1b) Detalhes (Responsavel, Proposta Vigencia, Valor Dot Compl,
+                    # Fase-Etapa-Status, Setor, Data Criacao) - click-through em cada plano
+                    detalhes: dict = {}
+                    try:
+                        detalhes = await _scrape_detalhes(page, max_planos=100)
+                    except Exception as e:
+                        logger.warning(f"  Detalhes failed: {e}")
+                    # Merge detalhes nas rows (key = nr_proposta OR nr_plano)
                     for r in rows:
+                        det = detalhes.get(r.get("nr_proposta")) or detalhes.get(r.get("nr_plano"))
+                        if det:
+                            # Adiciona campos novos sem sobrescrever os ja parseados da tabela
+                            for k, v in det.items():
+                                if v and not r.get(k):
+                                    r[k] = v
                         all_records.append((cred["municipio_id"], r))
                     # 2) Emendas (Emendas / Pesquisar Por Convenente)
                     try:
