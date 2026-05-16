@@ -77,9 +77,9 @@ export default function ConvenioDetailModal({ conv, onClose }: Props) {
 
   return (
     <Dialog open={!!conv} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="!max-w-[880px] !w-[94vw] sm:!max-w-[880px] max-h-[92vh] overflow-y-auto overflow-x-hidden p-2.5">
+      <DialogContent className="!max-w-[880px] !w-[94vw] sm:!max-w-[880px] !block max-h-[92vh] overflow-y-auto overflow-x-hidden p-2.5">
         <DialogTitle className="sr-only">Detalhes do Convênio</DialogTitle>
-        <div className="relative">
+        <div className="relative w-full max-w-full overflow-x-hidden">
           <button onClick={onClose} className="absolute right-0 top-0 text-gray-400 hover:text-gray-600 z-10" aria-label="Fechar">
             <X className="size-5" />
           </button>
@@ -222,7 +222,7 @@ export default function ConvenioDetailModal({ conv, onClose }: Props) {
 
 function Grid({ cols, children }: { cols: number; children: React.ReactNode }) {
   const gridClass = cols === 6 ? "grid-cols-6" : cols === 4 ? "grid-cols-4" : "grid-cols-3";
-  return <div className={`grid ${gridClass} gap-x-3 gap-y-2`}>{children}</div>;
+  return <div className={`grid ${gridClass} gap-x-2 gap-y-2 w-full min-w-0`}>{children}</div>;
 }
 
 function Field({
@@ -244,9 +244,9 @@ function Field({
 }) {
   const spanClass = span === 2 ? "col-span-2" : span === 3 ? "col-span-3" : span === 4 ? "col-span-4" : span === 5 ? "col-span-5" : span === 6 ? "col-span-6" : "";
   return (
-    <div className={`min-w-0 ${spanClass}`} title={`${label}: ${value}`}>
-      <div className="text-[9.5px] font-semibold text-gray-600 leading-tight uppercase tracking-tight">{label}</div>
-      <div className={`text-[11px] mt-0.5 ${mono ? "font-mono" : ""} ${highlight ? "inline-block bg-orange-200 px-1.5 py-0.5 rounded text-[10px]" : ""} ${!fullValue ? "truncate" : ""} ${valueClass}`}>
+    <div className={`min-w-0 overflow-hidden ${spanClass}`} title={`${label}: ${value}`}>
+      <div className="text-[9.5px] font-semibold text-gray-600 leading-tight uppercase tracking-tight truncate">{label}</div>
+      <div className={`text-[11px] mt-0.5 max-w-full ${mono ? "font-mono" : ""} ${highlight ? "inline-block max-w-full bg-orange-200 px-1.5 py-0.5 rounded text-[10px] truncate align-bottom" : (fullValue ? "break-words whitespace-normal" : "truncate")} ${valueClass}`}>
         {value}
       </div>
     </div>
