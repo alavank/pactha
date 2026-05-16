@@ -45,7 +45,6 @@ const NAV_ITEMS = [
   { href: "/dashboard/emendas", label: "Emendas Estaduais", icon: FileText },
   { href: "/dashboard/editais", label: "Editais", icon: Search },
   { href: "/dashboard/oportunidades", label: "Oportunidades", icon: Target },
-  { href: "/dashboard/prestacao", label: "Prestacao", icon: ClipboardCheck },
   { href: "/dashboard/politica", label: "Politica", icon: BarChart3 },
   { href: "/dashboard/dou", label: "Diario Oficial", icon: Newspaper },
   { href: "/dashboard/sancoes", label: "Sancoes (CEIS)", icon: ShieldAlert },

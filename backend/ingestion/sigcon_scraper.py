@@ -229,29 +229,17 @@ async def _scrape_detalhes(page, max_planos: int = 100) -> dict:
                 key = data.get("nr_proposta_detalhe") or data.get("nr_plano_detalhe") or link_text
                 out[key] = data
                 logger.info(f"    [{idx+1}/{iter_count}] {key}: resp={data.get('responsaveis','-')[:30]} fase={data.get('fase_etapa_status','-')[:40]}")
-            # Volta pra pesquisa
+            # Volta pra pesquisa: SEMPRE via navigate (mais confiavel que botao
+            # Retornar que as vezes nao dispara navigation).
             try:
-                btn_voltar = page.locator(
-                    'a:has-text("Retornar para Pesquisa"), button:has-text("Retornar"), '
-                    'a:has-text("Voltar"), button:has-text("Voltar")'
-                ).first
-                if await btn_voltar.count() > 0:
-                    await btn_voltar.click(timeout=10000)
-                    await page.wait_for_function("""() => {
-                        const tb = document.querySelector('tbody[id$=\"dtTblExibeListaPlanosDeTrabalho_data\"]');
-                        return tb && tb.querySelectorAll(':scope > tr:not(.ui-datatable-empty-message)').length > 0;
-                    }""", timeout=30000)
-                    await page.wait_for_timeout(1500)
-                else:
-                    # Fallback: navigate + re-search
-                    await page.goto(SEARCH_URL, wait_until="domcontentloaded", timeout=30000)
-                    await page.wait_for_timeout(5000)
-                    await page.click('button[id="frmListaPlanosDeTrabalho:cmdBtnPesquisarListaPlanosDeTrabalho"]')
-                    await page.wait_for_function("""() => {
-                        const tb = document.querySelector('tbody[id$=\"dtTblExibeListaPlanosDeTrabalho_data\"]');
-                        return tb && tb.querySelectorAll(':scope > tr:not(.ui-datatable-empty-message)').length > 0;
-                    }""", timeout=60000)
-                    await page.wait_for_timeout(2000)
+                await page.goto(SEARCH_URL, wait_until="domcontentloaded", timeout=30000)
+                await page.wait_for_timeout(4000)
+                await page.click('button[id="frmListaPlanosDeTrabalho:cmdBtnPesquisarListaPlanosDeTrabalho"]')
+                await page.wait_for_function("""() => {
+                    const tb = document.querySelector('tbody[id$=\"dtTblExibeListaPlanosDeTrabalho_data\"]');
+                    return tb && tb.querySelectorAll(':scope > tr:not(.ui-datatable-empty-message)').length > 0;
+                }""", timeout=60000)
+                await page.wait_for_timeout(1500)
             except Exception as e:
                 logger.warning(f"  Falha ao voltar pra pesquisa: {e}")
                 break
@@ -526,14 +514,32 @@ async def _run():
                         detalhes = await _scrape_detalhes(page, max_planos=100)
                     except Exception as e:
                         logger.warning(f"  Detalhes failed: {e}")
-                    # Merge detalhes nas rows (key = nr_proposta OR nr_plano)
+                    # Merge detalhes nas rows + DEDUPE por nr_plano/nr_proposta
+                    # (uma Proposta gera um Plano que vira Instrumento - tudo MESMO convenio)
+                    by_key: dict = {}
                     for r in rows:
                         det = detalhes.get(r.get("nr_proposta")) or detalhes.get(r.get("nr_plano"))
                         if det:
-                            # Adiciona campos novos sem sobrescrever os ja parseados da tabela
                             for k, v in det.items():
                                 if v and not r.get(k):
                                     r[k] = v
+                            # Detalhe pode revelar nr_plano que nao estava no row da tabela
+                            if det.get("nr_plano_detalhe") and not r.get("nr_plano"):
+                                r["nr_plano"] = det["nr_plano_detalhe"]
+                        # Dedupe key: prefere nr_siafi > nr_plano > nr_proposta
+                        key = r.get("nr_siafi") or r.get("nr_plano") or r.get("nr_proposta")
+                        if not key:
+                            all_records.append((cred["municipio_id"], r))
+                            continue
+                        if key in by_key:
+                            # Merge: pega o mais completo (tem mais campos com valor)
+                            existing = by_key[key]
+                            for k, v in r.items():
+                                if v and not existing.get(k):
+                                    existing[k] = v
+                        else:
+                            by_key[key] = r
+                    for r in by_key.values():
                         all_records.append((cred["municipio_id"], r))
                     # 2) Emendas (Emendas / Pesquisar Por Convenente)
                     try:
