@@ -32,6 +32,8 @@ MIGRATION_FILES = [
     "add_emendas_estaduais.sql",
     # Refactor lean (2026-05): drop tabelas das features removidas
     "drop_lean_tables.sql",
+    # UNIQUE INDEX em nr_siafi (previne duplicacao scraper+CKAN)
+    "add_unique_nr_siafi.sql",
 ]
 
 

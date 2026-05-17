@@ -581,8 +581,13 @@ async def _run():
         ano = rec.get("ano")
         dt_pub_proxy = date(ano, 1, 1) if ano else None
         valor = rec.get("valor_repasse")
+        # Conflito de dedupe: prioriza nr_siafi (estavel entre CKAN bulk
+        # e scraper Playwright). Se SIAFI presente, usa ON CONFLICT (nr_siafi)
+        # pra atualizar o registro existente. Se nao, usa nr_sigcon como fallback.
+        nr_siafi = rec.get("nr_siafi") or None
+        conflict_col = "nr_siafi" if nr_siafi else "nr_sigcon"
         try:
-            cur.execute("""
+            cur.execute(f"""
                 INSERT INTO convenios_estadual (
                     nr_sigcon, nr_siafi, municipio_id, orgao_concedente,
                     convenente_nome, objeto, situacao,
@@ -590,7 +595,9 @@ async def _run():
                     raw_data, tp_instrumento,
                     nr_plano_trabalho, ano, dt_publicacao
                 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s)
-                ON CONFLICT (nr_sigcon) DO UPDATE SET
+                ON CONFLICT ({conflict_col}) DO UPDATE SET
+                    nr_sigcon = COALESCE(convenios_estadual.nr_sigcon, EXCLUDED.nr_sigcon),
+                    nr_siafi = COALESCE(convenios_estadual.nr_siafi, EXCLUDED.nr_siafi),
                     situacao = EXCLUDED.situacao,
                     valor_concedente = COALESCE(EXCLUDED.valor_concedente, convenios_estadual.valor_concedente),
                     valor_total = COALESCE(EXCLUDED.valor_total, convenios_estadual.valor_total),
@@ -604,7 +611,7 @@ async def _run():
                 RETURNING (xmax = 0) AS is_insert
             """, (
                 nr_sigcon[:80],
-                rec.get("nr_siafi") or None,
+                nr_siafi,
                 mun_id,
                 rec.get("orgao"),
                 rec.get("convenente"),

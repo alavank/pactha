@@ -230,7 +230,12 @@ def main():
                 # Extrair Numero do Plano de Trabalho (= nr_plano_sigcon no CSV)
                 # e Data Assinatura (proxy = dt_publicacao no SIGCON-MG)
                 nr_plano_trab = clean_string(crow.get("nr_plano_sigcon"))
-                res = conn.execute(text("""
+                nr_siafi_val = clean_string(crow.get("nr_siafi"))
+                # Conflito de dedupe: prioriza nr_siafi (estavel entre fontes).
+                # Sem siafi, fallback nr_sigcon. UNIQUE INDEX ux_convenios_estadual_nr_siafi
+                # garante que CKAN + scraper Playwright nao dupliquem o mesmo convenio.
+                conflict_col = "nr_siafi" if nr_siafi_val else "nr_sigcon"
+                res = conn.execute(text(f"""
                     INSERT INTO convenios_estadual (
                         nr_sigcon, nr_siafi, municipio_id, orgao_concedente,
                         objeto, objetivo, tp_instrumento,
@@ -245,7 +250,9 @@ def main():
                         :ano, :sit, :raw,
                         :npt, :dass
                     )
-                    ON CONFLICT (nr_sigcon) DO UPDATE SET
+                    ON CONFLICT ({conflict_col}) DO UPDATE SET
+                        nr_sigcon = COALESCE(convenios_estadual.nr_sigcon, EXCLUDED.nr_sigcon),
+                        nr_siafi = COALESCE(convenios_estadual.nr_siafi, EXCLUDED.nr_siafi),
                         valor_concedente = EXCLUDED.valor_concedente,
                         valor_emenda_parlamentar = EXCLUDED.valor_emenda_parlamentar,
                         valor_contrapartida = EXCLUDED.valor_contrapartida,
@@ -253,14 +260,14 @@ def main():
                         valor_repassado = EXCLUDED.valor_repassado,
                         dt_vigencia_atual = EXCLUDED.dt_vigencia_atual,
                         situacao = EXCLUDED.situacao,
-                        raw_data = EXCLUDED.raw_data,
+                        raw_data = convenios_estadual.raw_data || EXCLUDED.raw_data,
                         nr_plano_trabalho = COALESCE(EXCLUDED.nr_plano_trabalho, convenios_estadual.nr_plano_trabalho),
                         dt_assinatura = COALESCE(EXCLUDED.dt_assinatura, convenios_estadual.dt_assinatura),
                         updated_at = NOW()
                     RETURNING (xmax = 0) AS inserted
                 """), {
                     "nr": nr_sigcon,
-                    "siafi": clean_string(crow.get("nr_siafi")),
+                    "siafi": nr_siafi_val,
                     "mun": mun_db_id,
                     "orgao": orgao_name,
                     "obj": clean_string(crow.get("nome")),
