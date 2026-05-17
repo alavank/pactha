@@ -234,8 +234,31 @@ async def detalhe_proposta(
         "vl_empenhado": float(d.get("vlEmpenhado") or 0),
         "vl_pago": float(d.get("vlPago") or 0),
         "vl_pagar": float(d.get("vlPagar") or 0),
-        "parlamentares": d.get("parlamentares", []),
-        "pagamentos": d.get("pagamentos", []),
+        # Normaliza parlamentares (campo upstream: noApelidoPolitico, sgPartido, vlIndObjeto, coEmendaPolitica, nuAnoExercicio)
+        "parlamentares": [
+            {
+                "nome": p.get("noApelidoPolitico") or p.get("nome"),
+                "partido": p.get("sgPartido") or p.get("partido") or "",
+                "nu_emenda": p.get("coEmendaPolitica"),
+                "ano": p.get("nuAnoExercicio"),
+                "valor": float(p.get("vlIndObjeto") or 0),
+            }
+            for p in (d.get("parlamentares") or [])
+        ],
+        # Normaliza pagamentos (campo upstream: dtCriacaoSiafi (ms), nuParcela, localizacao, nuProcesso, nuOb, vlLiquido, vlAcumulado)
+        "pagamentos": [
+            {
+                "parcela": pg.get("nuParcela"),
+                "data": pg.get("dtCriacaoSiafi"),  # ms epoch
+                "valor": float(pg.get("vlLiquido") or 0),
+                "valor_acumulado": float(pg.get("vlAcumulado") or 0),
+                "ordem_bancaria": pg.get("nuOb"),
+                "nu_processo": pg.get("nuProcesso"),
+                "localizacao": pg.get("localizacao"),
+            }
+            for pg in (d.get("pagamentos") or [])
+        ],
+        "data_portaria": d.get("dtPortaria"),  # ms epoch
         "constituido_processo": d.get("constituidoProcesso"),
         "situacao_ultima_analise": d.get("situacaoUltimaAnalise"),
         "ultimo_processo": d.get("ultimoProcesso"),

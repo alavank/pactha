@@ -20,12 +20,6 @@ MIGRATION_FILES = [
     # Tabelas core
     "add_audit_and_user_cols.sql",
     "add_service_tokens.sql",
-    "add_plano_trabalho_nf.sql",
-    "add_camara_dou_compliance.sql",
-    # Seeds (idempotentes)
-    "seed_parlamentares_institucionais.sql",
-    # Dedupe historico + UNIQUE INDEX (idempotente)
-    "dedupe_parlamentares_unique.sql",
     # Fix +30 anos SIGCON-MG (idempotente)
     "fix_sigcon_year_offset.sql",
     # Fix mojibake UTF-8 (PrestaÃ§Ã£o -> Prestação)
@@ -36,11 +30,8 @@ MIGRATION_FILES = [
     "add_nr_proposta_estadual.sql",
     # Tabela emendas_estaduais (SIGCON Pesquisar Emendas Por Convenente)
     "add_emendas_estaduais.sql",
-    # Notificacoes push (deltas detectados pelos scrapers)
-    "add_notificacoes.sql",
-    # NOTA: dedupe_convenios_unique.sql nao roda no boot (UPDATEs gigantes,
-    # passa do healthcheck timeout). Foi aplicado uma vez via psycopg2 e o
-    # UNIQUE INDEX nr_sigcon previne reincidencia. Rodar manual se preciso.
+    # Refactor lean (2026-05): drop tabelas das features removidas
+    "drop_lean_tables.sql",
 ]
 
 

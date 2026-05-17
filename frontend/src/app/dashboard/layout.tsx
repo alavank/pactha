@@ -6,24 +6,16 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   LayoutDashboard,
   FileText,
-  Search,
-  ClipboardCheck,
-  BarChart3,
   LogOut,
   Building2,
   ChevronDown,
   Menu,
   KeyRound,
-  Database,
-  UploadCloud,
-  Sparkles,
   Newspaper,
-  ShieldAlert,
   Target,
 } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import NotificacoesBell from "@/components/NotificacoesBell";
 import {
   Select,
   SelectContent,
@@ -41,19 +33,12 @@ import type { Municipio, User } from "@/types";
 
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/dashboard/convenios", label: "Convenios", icon: FileText },
+  { href: "/dashboard/convenios", label: "Convenios (SIGCON)", icon: FileText },
   { href: "/dashboard/emendas", label: "Emendas Estaduais", icon: FileText },
   { href: "/dashboard/fns", label: "Propostas FNS", icon: Target },
-  { href: "/dashboard/editais", label: "Editais", icon: Search },
-  { href: "/dashboard/oportunidades", label: "Oportunidades", icon: Target },
-  { href: "/dashboard/politica", label: "Politica", icon: BarChart3 },
   { href: "/dashboard/dou", label: "Diario Oficial", icon: Newspaper },
-  { href: "/dashboard/sancoes", label: "Sancoes (CEIS)", icon: ShieldAlert },
-  { href: "/dashboard/ia", label: "PACTA IA", icon: Sparkles },
   { href: "/dashboard/cofre", label: "Cofre de Senhas", icon: KeyRound },
   { href: "/dashboard/sessoes", label: "Sessoes (gov.br)", icon: KeyRound },
-  { href: "/dashboard/fontes", label: "Fontes de Dados", icon: Database },
-  { href: "/dashboard/upload", label: "Upload de Dados", icon: UploadCloud },
 ];
 
 const ADMIN_NAV_ITEMS = [
@@ -248,7 +233,12 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
     (value: string) => {
       const params = new URLSearchParams(searchParams.toString());
       params.set("municipio_id", value);
-      router.push(`${pathname}?${params.toString()}`);
+      // page=1 reset evita "Pagina 3 vazia" ao trocar de municipio
+      params.delete("page");
+      // replace + refresh garante re-render do Client Component se cache local
+      // do useSearchParams nao acompanhou (bug recorrente em Next 16 com Suspense)
+      router.replace(`${pathname}?${params.toString()}`);
+      router.refresh();
     },
     [pathname, router, searchParams]
   );
@@ -307,12 +297,6 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
 
       {/* Main content */}
       <main className="flex-1 overflow-y-auto">
-        {/* Top bar com Bell de notificacoes */}
-        <div className="sticky top-0 z-30 bg-white/95 backdrop-blur border-b">
-          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex justify-end items-center h-12">
-            <NotificacoesBell municipioId={selectedMunicipioId ? Number(selectedMunicipioId) : null} />
-          </div>
-        </div>
         <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
           {children}
         </div>

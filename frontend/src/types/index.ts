@@ -17,12 +17,9 @@ export interface Municipio {
 
 export interface MunicipioSummary {
   municipio: Municipio;
-  total_convenios_federal: number;
   total_convenios_estadual: number;
-  valor_total_federal: number;
   valor_total_estadual: number;
   alertas_vigencia: number;
-  editais_acompanhados: number;
 }
 
 export interface Convenio {
@@ -92,68 +89,4 @@ export interface AlertaVigencia {
   dias_restantes: number;
   valor_total?: number;
   situacao?: string;
-}
-
-export interface Edital {
-  id: number;
-  titulo: string;
-  orgao?: string;
-  area?: string;
-  esfera?: string;
-  url?: string;
-  dt_publicacao?: string;
-  dt_encerramento?: string;
-  valor_total?: number;
-  resumo?: string;
-  status: string;
-  acompanhando?: boolean;
-}
-
-export interface EmendaPorDeputado {
-  parlamentar_id: number;
-  parlamentar_nome: string;
-  partido?: string;
-  total_valor: number;
-  total_emendas: number;
-  esfera?: string;
-}
-
-export interface BenchmarkMunicipio {
-  municipio_id: number;
-  municipio_nome: string;
-  total_emendas: number;
-  total_convenios: number;
-  total_valor_convenios: number;
-}
-
-export interface PrestacaoContas {
-  id: number;
-  convenio_estadual_id?: number;
-  convenio_federal_id?: number;
-  municipio_id: number;
-  etapa_atual: number;
-  etapa_nome?: string;
-  responsavel_id?: number;
-  status: string;
-  observacoes?: string;
-  documentos: PrestacaoDocumento[];
-  nr_convenio?: string;
-  objeto?: string;
-  esfera?: string;
-  orgao_concedente?: string;
-  valor_total?: number;
-  dt_inicio?: string;
-  dt_fim_vigencia?: string;
-  dias_restantes?: number;
-  ano?: number;
-  situacao?: string;
-}
-
-export interface PrestacaoDocumento {
-  id: number;
-  documento_nome: string;
-  enviado: boolean;
-  dt_envio?: string;
-  responsavel_id?: number;
-  observacao?: string;
 }

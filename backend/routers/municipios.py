@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from datetime import date, timedelta
 from database import get_db
-from models import Municipio, ConvenioFederal, ConvenioEstadual, EditalAcompanhamento
+from models import Municipio, ConvenioEstadual
 from schemas.municipio import MunicipioResponse, MunicipioSummary
 from services.auth import get_current_user
 
@@ -33,16 +33,6 @@ async def municipio_summary(
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Municipio nao encontrado")
 
-    # Federal counts
-    fed_count = await db.execute(
-        select(func.count()).select_from(ConvenioFederal).where(ConvenioFederal.municipio_id == municipio_id)
-    )
-    fed_valor = await db.execute(
-        select(func.coalesce(func.sum(ConvenioFederal.valor_global), 0))
-        .where(ConvenioFederal.municipio_id == municipio_id)
-    )
-
-    # Estadual counts
     est_count = await db.execute(
         select(func.count()).select_from(ConvenioEstadual).where(ConvenioEstadual.municipio_id == municipio_id)
     )
@@ -51,33 +41,17 @@ async def municipio_summary(
         .where(ConvenioEstadual.municipio_id == municipio_id)
     )
 
-    # Alertas vigencia (120 dias)
     limite = date.today() + timedelta(days=120)
-    alertas_fed = await db.execute(
-        select(func.count()).select_from(ConvenioFederal)
-        .where(ConvenioFederal.municipio_id == municipio_id)
-        .where(ConvenioFederal.dt_fim_vigencia <= limite)
-        .where(ConvenioFederal.dt_fim_vigencia >= date.today())
-    )
-    alertas_est = await db.execute(
+    alertas = await db.execute(
         select(func.count()).select_from(ConvenioEstadual)
         .where(ConvenioEstadual.municipio_id == municipio_id)
         .where(ConvenioEstadual.dt_vigencia_atual <= limite)
         .where(ConvenioEstadual.dt_vigencia_atual >= date.today())
     )
 
-    # Editais acompanhados
-    editais_count = await db.execute(
-        select(func.count()).select_from(EditalAcompanhamento)
-        .where(EditalAcompanhamento.municipio_id == municipio_id)
-    )
-
     return MunicipioSummary(
         municipio=MunicipioResponse.model_validate(mun),
-        total_convenios_federal=fed_count.scalar(),
         total_convenios_estadual=est_count.scalar(),
-        valor_total_federal=float(fed_valor.scalar()),
         valor_total_estadual=float(est_valor.scalar()),
-        alertas_vigencia=alertas_fed.scalar() + alertas_est.scalar(),
-        editais_acompanhados=editais_count.scalar(),
+        alertas_vigencia=alertas.scalar(),
     )
