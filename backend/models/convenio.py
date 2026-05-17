@@ -4,43 +4,6 @@ from sqlalchemy.sql import func
 from database import Base
 
 
-class ConvenioFederal(Base):
-    __tablename__ = "convenios_federal"
-
-    id = Column(Integer, primary_key=True, index=True)
-    nr_convenio = Column(String(50), unique=True, nullable=False, index=True)
-    municipio_id = Column(Integer, ForeignKey("municipios.id"), index=True)
-    proponente_nome = Column(String(500))
-    orgao_concedente = Column(String(500))
-    objeto = Column(Text)
-    situacao = Column(String(200), index=True)
-    valor_global = Column(Numeric(18, 2))
-    valor_repasse = Column(Numeric(18, 2))
-    valor_contrapartida = Column(Numeric(18, 2))
-    valor_empenhado = Column(Numeric(18, 2))
-    valor_desembolsado = Column(Numeric(18, 2))
-    dt_inicio = Column(Date)
-    dt_fim = Column(Date)
-    dt_fim_vigencia = Column(Date, index=True)
-    ano = Column(Integer)
-    programa = Column(String(500))
-    modalidade = Column(String(200))
-    fonte = Column(String(50), default="TransfereGov")  # TransfereGov, FNS, SIMEC, SISMOB, SUAS, Upload
-    # Campos do Relatorio de Monitoramento (RM)
-    banco = Column(String(100))
-    agencia = Column(String(20))
-    conta_corrente = Column(String(50))
-    saldo_bancario = Column(Numeric(18, 2))
-    dt_saldo = Column(Date)
-    nr_sei = Column(String(100))
-    dt_empenho = Column(Date)
-    dt_desembolso = Column(Date)
-    tipo_programa = Column(String(100))  # MAC, PAP, Custeio, Incremento, etc.
-    raw_data = Column(JSONB)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-
-
 class ConvenioEstadual(Base):
     __tablename__ = "convenios_estadual"
 

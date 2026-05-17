@@ -6,7 +6,6 @@ import {
   FileText,
   DollarSign,
   AlertTriangle,
-  Search,
 } from "lucide-react";
 import {
   BarChart,
@@ -145,11 +144,11 @@ export default function DashboardPage() {
           ))}
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Card className="border-l-4 border-l-blue-700 hover:shadow-md transition-shadow">
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
               <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">
-                Total de Convenios
+                Total de Convenios (SIGCON)
               </CardTitle>
               <div className="size-9 rounded-md bg-blue-50 flex items-center justify-center">
                 <FileText className="size-4 text-blue-700" />
@@ -157,16 +156,7 @@ export default function DashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold text-slate-900">
-                {(summary?.total_convenios_federal ?? 0) +
-                  (summary?.total_convenios_estadual ?? 0)}
-              </div>
-              <div className="flex gap-3 mt-2 text-xs">
-                <span className="text-slate-600">
-                  <strong className="text-blue-700">{summary?.total_convenios_federal ?? 0}</strong> federal
-                </span>
-                <span className="text-slate-600">
-                  <strong className="text-blue-700">{summary?.total_convenios_estadual ?? 0}</strong> estadual
-                </span>
+                {summary?.total_convenios_estadual ?? 0}
               </div>
             </CardContent>
           </Card>
@@ -182,16 +172,8 @@ export default function DashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold text-slate-900">
-                {formatCurrency(
-                  (summary?.valor_total_federal ?? 0) +
-                    (summary?.valor_total_estadual ?? 0)
-                )}
+                {formatCurrency(summary?.valor_total_estadual ?? 0)}
               </div>
-              <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-                Fed: {formatCurrency(summary?.valor_total_federal)}
-                <br />
-                Est: {formatCurrency(summary?.valor_total_estadual)}
-              </p>
             </CardContent>
           </Card>
 
@@ -210,25 +192,6 @@ export default function DashboardPage() {
               </div>
               <p className="text-xs text-slate-500 mt-2">
                 Vencendo nos proximos 120 dias
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className="border-l-4 border-l-cyan-700 hover:shadow-md transition-shadow">
-            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">
-                Editais Acompanhados
-              </CardTitle>
-              <div className="size-9 rounded-md bg-cyan-50 flex items-center justify-center">
-                <Search className="size-4 text-cyan-700" />
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-slate-900">
-                {summary?.editais_acompanhados ?? 0}
-              </div>
-              <p className="text-xs text-slate-500 mt-2">
-                Em monitoramento ativo
               </p>
             </CardContent>
           </Card>

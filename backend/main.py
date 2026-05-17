@@ -3,7 +3,10 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import auth, municipios, convenios, editais, prestacao, politica, export, cofre, fontes, upload, relatorio_monitoramento, levantamento_parlamentar, internal, service_tokens, prestacao_avancada, session_capture, export_relatorios, ia, fontes_extras, prestacao_calculo, emendas_estaduais, dou_mg, notificacoes, fns
+from routers import (
+    auth, municipios, convenios, cofre, service_tokens,
+    session_capture, emendas_estaduais, dou_mg, fns,
+)
 from services.security_headers import SecurityHeadersMiddleware
 from services.startup import run_migrations
 
@@ -79,27 +82,12 @@ app.add_middleware(SecurityHeadersMiddleware)
 app.include_router(auth.router)
 app.include_router(municipios.router)
 app.include_router(convenios.router)
-app.include_router(editais.router)
-app.include_router(prestacao.router)
-app.include_router(politica.router)
-app.include_router(export.router)
-app.include_router(cofre.router)
-app.include_router(fontes.router)
-app.include_router(upload.router)
-app.include_router(relatorio_monitoramento.router)
-app.include_router(levantamento_parlamentar.router)
-app.include_router(internal.router)
-app.include_router(service_tokens.router)
-app.include_router(prestacao_avancada.router)
-app.include_router(session_capture.router)
-app.include_router(export_relatorios.router)
-app.include_router(prestacao_calculo.router)
 app.include_router(emendas_estaduais.router)
-app.include_router(dou_mg.router)
-app.include_router(notificacoes.router)
 app.include_router(fns.router)
-app.include_router(ia.router)
-app.include_router(fontes_extras.router)
+app.include_router(dou_mg.router)
+app.include_router(cofre.router)
+app.include_router(session_capture.router)
+app.include_router(service_tokens.router)
 
 
 @app.get("/api/health")

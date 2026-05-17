@@ -563,20 +563,6 @@ async def _run():
     cur = conn.cursor()
     from datetime import date
 
-    # === Snapshot pre-UPSERT pra detectar deltas (notificacoes push) ===
-    # Mapeia nr_sigcon -> (situacao, valor) ANTES do upsert
-    pre_snapshot: dict = {}
-    keys_check = [r.get("nr_siafi") or r.get("nr_plano") or r.get("nr_proposta") for _, r in all_records]
-    keys_check = [k for k in keys_check if k]
-    if keys_check:
-        cur.execute(
-            "SELECT nr_sigcon, situacao, valor_concedente, id FROM convenios_estadual WHERE nr_sigcon = ANY(%s)",
-            (keys_check,)
-        )
-        for nr, sit, val, _id in cur.fetchall():
-            pre_snapshot[nr] = {"situacao": sit, "valor": float(val) if val else None, "id": _id}
-
-    notif_payload = []  # acumula notificacoes a inserir depois
     inserted = updated = 0
     for mun_id, rec in all_records:
         # nr_sigcon: prioridade SIAFI > Plano > Proposta > sintetica.
@@ -637,70 +623,12 @@ async def _run():
             is_insert = bool(row and row[0])
             if is_insert:
                 inserted += 1
-                # NOTIF: novo convenio descoberto
-                notif_payload.append({
-                    "tipo": "sigcon_novo",
-                    "municipio_id": mun_id,
-                    "nr_sigcon": nr_sigcon[:80],
-                    "titulo": f"Novo convenio: {(rec.get('orgao') or '?')} - {(rec.get('objeto') or '?')[:60]}",
-                    "mensagem": f"Valor: {valor or 0:,.2f} | Status: {sit_label}",
-                    "severidade": "success",
-                    "payload": {"nr_proposta": rec.get("nr_proposta"), "nr_plano": rec.get("nr_plano"),
-                                "valor": valor, "status": sit_label, "tipo": rec.get("tipo")},
-                })
             else:
                 updated += 1
-                # NOTIF: status mudou ou valor mudou?
-                prev = pre_snapshot.get(nr_sigcon[:80])
-                if prev:
-                    if prev.get("situacao") and sit_label and prev["situacao"] != sit_label:
-                        notif_payload.append({
-                            "tipo": "sigcon_status",
-                            "municipio_id": mun_id,
-                            "nr_sigcon": nr_sigcon[:80],
-                            "titulo": f"Status mudou: {prev['situacao']} -> {sit_label}",
-                            "mensagem": f"{(rec.get('orgao') or '?')} - {(rec.get('objeto') or '?')[:60]}",
-                            "severidade": "warning",
-                            "payload": {"old": prev["situacao"], "new": sit_label},
-                        })
-                    if valor and prev.get("valor") and abs(valor - prev["valor"]) > 0.01:
-                        notif_payload.append({
-                            "tipo": "sigcon_valor",
-                            "municipio_id": mun_id,
-                            "nr_sigcon": nr_sigcon[:80],
-                            "titulo": f"Valor atualizado: R$ {prev['valor']:,.2f} -> R$ {valor:,.2f}",
-                            "mensagem": f"{(rec.get('orgao') or '?')} - {(rec.get('objeto') or '?')[:60]}",
-                            "severidade": "info",
-                            "payload": {"old": prev["valor"], "new": valor},
-                        })
         except Exception as e:
             logger.warning(f"  Erro UPSERT {nr_sigcon}: {str(e)[:200]}")
             conn.rollback()
             continue
-
-    # Insere notificacoes em batch
-    if notif_payload:
-        # Resolve convenio_estadual_id pra cada notif
-        cur.execute(
-            "SELECT nr_sigcon, id FROM convenios_estadual WHERE nr_sigcon = ANY(%s)",
-            ([n["nr_sigcon"] for n in notif_payload],)
-        )
-        sigcon_to_id = {nr: _id for nr, _id in cur.fetchall()}
-        for n in notif_payload:
-            try:
-                cur.execute("""
-                    INSERT INTO notificacoes (tipo, municipio_id, convenio_estadual_id,
-                                              titulo, mensagem, severidade, payload)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb)
-                """, (
-                    n["tipo"], n["municipio_id"], sigcon_to_id.get(n["nr_sigcon"]),
-                    n["titulo"][:300], n["mensagem"][:500], n["severidade"],
-                    json.dumps(n["payload"], default=str),
-                ))
-            except Exception as e:
-                logger.warning(f"  Notif falhou: {e}")
-                conn.rollback()
-        logger.info(f"\n  Notificacoes geradas: {len(notif_payload)} (novos+status+valor mudou)")
 
     cur.execute(
         "INSERT INTO ingestion_log (source, status, records_inserted, finished_at) "

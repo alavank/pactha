@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
-import { Download, Search as SearchIcon, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search as SearchIcon, ChevronLeft, ChevronRight } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -208,56 +208,6 @@ export default function ConveniosPage() {
     fetchData();
   }, [fetchData]);
 
-  const handleExport = (format: "xlsx" | "pdf" = "xlsx") => {
-    if (!municipioId) return;
-    const token = localStorage.getItem("pacta_token");
-    const url = `${api.defaults.baseURL}/export/convenios?municipio_id=${municipioId}&format=${format}`;
-    // Open with auth via fetch
-    fetch(url, { headers: { Authorization: `Bearer ${token}` } })
-      .then((r) => r.blob())
-      .then((blob) => {
-        const blobUrl = URL.createObjectURL(blob);
-        window.open(blobUrl, "_blank");
-      });
-  };
-
-  const handleExportPendencias = () => {
-    if (!municipioId) return;
-    // Endpoint novo (frente F): pendencias com aba Resumo + highlight visual
-    // (vermelho para vencidas, salmao para vigencia <=30 dias)
-    downloadAuth(`/export-relatorios/pendencias-xlsx?municipio_id=${municipioId}`,
-                 `Pendencias_${municipioId}.xlsx`);
-  };
-
-  // Helper para downloads autenticados (substitui o boilerplate fetch+blob+anchor)
-  const downloadAuth = (path: string, filename: string) => {
-    const token = localStorage.getItem("pacta_token");
-    fetch(`${api.defaults.baseURL}${path}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((r) => r.blob())
-      .then((blob) => {
-        const blobUrl = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = blobUrl;
-        a.download = filename;
-        a.click();
-        setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
-      });
-  };
-
-  const handleRMWord = () => {
-    if (!municipioId) return;
-    downloadAuth(`/export-relatorios/rm-word?municipio_id=${municipioId}`,
-                 `RM_${municipioId}.docx`);
-  };
-
-  const handleRMPdf = () => {
-    if (!municipioId) return;
-    downloadAuth(`/export-relatorios/rm-pdf?municipio_id=${municipioId}`,
-                 `RM_${municipioId}.pdf`);
-  };
-
   if (!municipioId) {
     return (
       <div className="flex h-64 items-center justify-center text-muted-foreground">
@@ -272,71 +222,7 @@ export default function ConveniosPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-2xl font-bold text-gray-900">Convenios</h1>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant="default"
-            size="sm"
-            onClick={() => {
-              if (!municipioId) return;
-              const token = localStorage.getItem("pacta_token");
-              fetch(`${api.defaults.baseURL}/relatorio-monitoramento?municipio_id=${municipioId}`, {
-                headers: { Authorization: `Bearer ${token}` },
-              })
-                .then((r) => r.text())
-                .then((html) => {
-                  const blob = new Blob([html], { type: "text/html" });
-                  const url = URL.createObjectURL(blob);
-                  window.open(url, "_blank");
-                });
-            }}
-            className="bg-indigo-600 hover:bg-indigo-700"
-          >
-            <Download className="mr-2 size-4" />
-            Gerar Relatorio Mensal (RM)
-          </Button>
-          <Button
-            variant="default"
-            size="sm"
-            onClick={() => {
-              if (!municipioId) return;
-              const token = localStorage.getItem("pacta_token");
-              fetch(`${api.defaults.baseURL}/levantamento-parlamentar?municipio_id=${municipioId}`, {
-                headers: { Authorization: `Bearer ${token}` },
-              })
-                .then((r) => r.text())
-                .then((html) => {
-                  const blob = new Blob([html], { type: "text/html" });
-                  const url = URL.createObjectURL(blob);
-                  window.open(url, "_blank");
-                });
-            }}
-            className="bg-emerald-700 hover:bg-emerald-800"
-          >
-            <Download className="mr-2 size-4" />
-            Levantamento por Parlamentar
-          </Button>
-          <Button variant="outline" size="sm" onClick={handleRMWord}>
-            <Download className="mr-2 size-4" />
-            RM Word
-          </Button>
-          <Button variant="outline" size="sm" onClick={handleRMPdf}>
-            <Download className="mr-2 size-4" />
-            RM PDF
-          </Button>
-          <Button variant="outline" size="sm" onClick={handleExportPendencias}>
-            <Download className="mr-2 size-4" />
-            Pendencias
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => handleExport("pdf")}>
-            <Download className="mr-2 size-4" />
-            PDF
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => handleExport("xlsx")}>
-            <Download className="mr-2 size-4" />
-            Excel
-          </Button>
-        </div>
+        <h1 className="text-2xl font-bold text-gray-900">Convenios (SIGCON-MG)</h1>
       </div>
 
       {/* Filter bar */}
