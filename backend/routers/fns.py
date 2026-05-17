@@ -285,18 +285,22 @@ async def listar_individuais(
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
-    """Lista propostas individuais agrupadas (nivel 1 do detalhamento).
+    """Lista propostas individuais de um grupo (nivel 1 do detalhamento).
 
-    Como o endpoint dedicado nao foi descoberto via XHR, fallback usa
-    /consultar com filtros adicionais coTipoProposta + dsTipoRecurso e
-    captura linhaPropostas[] que vem populado quando ha agrupamento.
+    Descoberto via portalCtrl.grid2() do FNS: quando o usuario clica no
+    botao olho, o portal chama /recursos/proposta/consultar com OS MESMOS
+    params da listagem MAS substitui `coTipoProposta/dsTipoRecurso` por
+    `tpProposta/tpRecurso` (URL-encoded). Esses dois parametros
+    "destravam" o agrupamento: a resposta vem com 1 item POR PROPOSTA
+    individual (cada um com nuProposta), ao inves do agregado.
     """
     cod = FNS_CODE_OVERRIDE.get(municipio.upper().strip(), municipio)
     cookies = await _get_cookies(db)
     params = {
         "ano": str(ano), "coEsfera": "", "coMunicipioIbge": cod,
-        "count": "100", "page": "1", "sgUf": uf,
-        "coTipoProposta": tipo_proposta, "dsTipoRecurso": tipo_recurso,
+        "count": "200", "page": "1", "sgUf": uf,
+        # Note: httpx faz urlencode automaticamente
+        "tpProposta": tipo_proposta, "tpRecurso": tipo_recurso,
     }
     try:
         with httpx.Client(cookies=cookies, timeout=20, verify=False) as cli:
@@ -308,19 +312,23 @@ async def listar_individuais(
     except Exception as e:
         raise HTTPException(502, f"Falha FNS: {e}")
 
-    # Coleta linhaPropostas[] de cada item agrupado
     items = res.get("itensPagina", []) or []
     individuais = []
     for it in items:
-        for lp in (it.get("linhaPropostas") or []):
-            individuais.append({
-                "tipo_proposta": it.get("coTipoProposta"),
-                "tipo_recurso": it.get("dsTipoRecurso"),
-                "nu_proposta": lp.get("nuProposta"),
-                "entidade": lp.get("noEntidade") or "FUNDO MUNICIPAL DE SAUDE",
-                "valor_proposta": float(lp.get("vlProposta") or 0),
-                "valor_pago": float(lp.get("vlPago") or 0),
-            })
+        individuais.append({
+            "tipo_proposta": it.get("coTipoProposta"),
+            "tipo_recurso": it.get("dsTipoRecurso"),
+            "nu_proposta": it.get("nuProposta"),
+            "entidade": it.get("noEntidade") or "FUNDO MUNICIPAL DE SAUDE",
+            "municipio": it.get("noMunicipio"),
+            "nu_processo": it.get("nuProcesso"),
+            "valor_proposta": float(it.get("vlProposta") or 0),
+            "valor_pago": float(it.get("vlPago") or 0),
+            "valor_pagar": float(it.get("vlPagar") or 0),
+            "constituido_processo": it.get("constituidoProcesso"),
+            "qtd_parlamentares": len(it.get("parlamentares") or []),
+            "qtd_pagamentos": len(it.get("pagamentos") or []),
+        })
     return {"items": individuais, "total": len(individuais),
             "grupo": {"tipo_proposta": tipo_proposta, "tipo_recurso": tipo_recurso,
                       "municipio": municipio, "ano": ano, "uf": uf}}

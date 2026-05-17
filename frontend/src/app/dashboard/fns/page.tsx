@@ -454,31 +454,9 @@ export default function PropostasFNSPage() {
                     </TableBody>
                   </Table>
                 ) : (
-                  <div className="space-y-2">
-                    <p className="text-xs text-gray-600">A listagem agrupada não retornou propostas individuais nessa categoria. Para ver detalhe completo, digite o nº da proposta:</p>
-                    <div className="flex gap-2">
-                      <Input
-                        placeholder="Ex: 21441367000125001"
-                        id="nu-proposta-manual"
-                        className="flex-1"
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            const v = (e.target as HTMLInputElement).value.trim();
-                            if (v) abrirDetalheProposta(v);
-                          }
-                        }}
-                      />
-                      <Button
-                        onClick={() => {
-                          const el = document.getElementById("nu-proposta-manual") as HTMLInputElement;
-                          if (el?.value.trim()) abrirDetalheProposta(el.value.trim());
-                        }}
-                        className="bg-blue-600 hover:bg-blue-700"
-                      >
-                        Ver Detalhe
-                      </Button>
-                    </div>
-                  </div>
+                  <p className="text-xs text-gray-500 italic text-center py-3">
+                    Nenhuma proposta individual encontrada para esse grupo no FNS.
+                  </p>
                 )}
               </div>
             </div>
