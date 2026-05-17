@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routers import (
     auth, municipios, convenios, cofre, service_tokens,
-    session_capture, emendas_estaduais, dou_mg, fns,
+    session_capture, emendas_estaduais, dou_mg, fns, transferegov, export_pdf,
 )
 from services.security_headers import SecurityHeadersMiddleware
 from services.startup import run_migrations
@@ -88,6 +88,8 @@ app.include_router(dou_mg.router)
 app.include_router(cofre.router)
 app.include_router(session_capture.router)
 app.include_router(service_tokens.router)
+app.include_router(transferegov.router)
+app.include_router(export_pdf.router)
 
 
 @app.get("/api/health")

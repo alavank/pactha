@@ -14,3 +14,4 @@ playwright>=1.49.0
 cryptography>=43.0.0
 slowapi>=0.1.9
 beautifulsoup4>=4.12.0
+reportlab>=4.2.0

@@ -34,6 +34,7 @@ import type { Municipio, User } from "@/types";
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/dashboard/convenios", label: "Convenios (SIGCON)", icon: FileText },
+  { href: "/dashboard/transferegov", label: "Plano Acao (TransfereGov)", icon: FileText },
   { href: "/dashboard/emendas", label: "Emendas Estaduais", icon: FileText },
   { href: "/dashboard/fns", label: "Propostas FNS", icon: Target },
   { href: "/dashboard/dou", label: "Diario Oficial", icon: Newspaper },

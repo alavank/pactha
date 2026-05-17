@@ -127,10 +127,24 @@ export default function EmendasEstaduaisPage() {
     return <div className="flex h-64 items-center justify-center text-muted-foreground">Selecione um municipio.</div>;
   }
 
+  const exportPdf = () => {
+    const token = localStorage.getItem("pacta_token");
+    const url = `${api.defaults.baseURL}/export-pdf/emendas?municipio_id=${municipioId}`;
+    fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => r.blob())
+      .then((blob) => {
+        const u = URL.createObjectURL(blob);
+        window.open(u, "_blank");
+      });
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-bold text-gray-900">Emendas Parlamentares Estaduais</h1>
+        <Button onClick={exportPdf} size="sm" variant="outline" title="Exportar para PDF">
+          📄 PDF
+        </Button>
       </div>
 
       {stats && (

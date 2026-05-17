@@ -246,6 +246,17 @@ export default function ConveniosPage() {
   const items = data?.items ?? [];
   const totalPages = data?.pages ?? 1;
 
+  const exportPdf = () => {
+    const token = localStorage.getItem("pacta_token");
+    const url = `${api.defaults.baseURL}/export-pdf/convenios?municipio_id=${municipioId}`;
+    fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => r.blob())
+      .then((blob) => {
+        const u = URL.createObjectURL(blob);
+        window.open(u, "_blank");
+      });
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -254,6 +265,9 @@ export default function ConveniosPage() {
           {refreshMsg && (
             <span className="text-xs text-slate-600 italic">{refreshMsg}</span>
           )}
+          <Button onClick={exportPdf} size="sm" variant="outline" title="Exportar para PDF">
+            📄 PDF
+          </Button>
           <Button
             onClick={handleRefreshSigcon}
             disabled={refreshing}

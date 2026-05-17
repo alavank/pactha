@@ -173,9 +173,34 @@ export default function DouMGPage() {
       {/* Resultados */}
       {data && (
         <div className="rounded-lg border bg-white p-4 space-y-3">
-          <div className="text-sm text-muted-foreground border-b pb-2">
-            <span className="font-semibold text-foreground">{data.total_registros} resultados</span> encontrados
-            {texto ? ` para "${texto}"` : ""}, no período de {fmtDate(dataIni)} até {fmtDate(dataFim)}
+          <div className="flex items-center justify-between border-b pb-2">
+            <div className="text-sm text-muted-foreground">
+              <span className="font-semibold text-foreground">{data.total_registros} resultados</span> encontrados
+              {texto ? ` para "${texto}"` : ""}, no período de {fmtDate(dataIni)} até {fmtDate(dataFim)}
+            </div>
+            {data.items.length > 0 && (
+              <Button
+                size="sm" variant="outline"
+                onClick={() => {
+                  const titulos = data.items.map((it) => (it.texto_resultado || "").slice(0, 200));
+                  const edicoes = data.items.map((it) => `${it.data_publicacao}/${it.tipo_caderno}/p.${it.pagina}`);
+                  const qs = new URLSearchParams();
+                  // municipio_id é só pro nome do arquivo - usa 0 como placeholder
+                  qs.append("municipio_id", "0");
+                  titulos.forEach((t) => qs.append("titulos", t));
+                  edicoes.forEach((e) => qs.append("edicoes", e));
+                  const token = localStorage.getItem("pacta_token");
+                  fetch(`${api.defaults.baseURL}/export-pdf/dou?${qs.toString()}`, {
+                    headers: { Authorization: `Bearer ${token}` },
+                  }).then((r) => r.blob()).then((blob) => {
+                    const u = URL.createObjectURL(blob);
+                    window.open(u, "_blank");
+                  });
+                }}
+              >
+                📄 PDF
+              </Button>
+            )}
           </div>
 
           {data.items.length === 0 ? (
