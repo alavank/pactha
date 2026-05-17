@@ -19,7 +19,8 @@ export interface MunicipioSummary {
   municipio: Municipio;
   total_convenios_estadual: number;
   valor_total_estadual: number;
-  alertas_vigencia: number;
+  alertas_vigencia: number;        // 120 dias
+  alertas_vigencia_60d: number;    // 60 dias (critico)
 }
 
 export interface Convenio {

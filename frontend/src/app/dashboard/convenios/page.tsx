@@ -208,6 +208,33 @@ export default function ConveniosPage() {
     fetchData();
   }, [fetchData]);
 
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshMsg, setRefreshMsg] = useState<string | null>(null);
+
+  const handleRefreshSigcon = useCallback(async () => {
+    setRefreshing(true);
+    setRefreshMsg(null);
+    try {
+      const r = await api.post<{ status: string; message: string }>("/convenios/refresh-sigcon");
+      setRefreshMsg(r.data.message || "Sincronizando...");
+      // Polling: refaz fetchData a cada 30s ate 3min
+      let tries = 0;
+      const interval = setInterval(() => {
+        tries++;
+        fetchData();
+        if (tries >= 6) {
+          clearInterval(interval);
+          setRefreshing(false);
+          setRefreshMsg(null);
+        }
+      }, 30_000);
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: string } } };
+      setRefreshMsg(err.response?.data?.detail || "Falha ao iniciar refresh");
+      setRefreshing(false);
+    }
+  }, [fetchData]);
+
   if (!municipioId) {
     return (
       <div className="flex h-64 items-center justify-center text-muted-foreground">
@@ -223,6 +250,21 @@ export default function ConveniosPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-bold text-gray-900">Convenios (SIGCON-MG)</h1>
+        <div className="flex items-center gap-2">
+          {refreshMsg && (
+            <span className="text-xs text-slate-600 italic">{refreshMsg}</span>
+          )}
+          <Button
+            onClick={handleRefreshSigcon}
+            disabled={refreshing}
+            size="sm"
+            className="bg-blue-600 hover:bg-blue-700"
+            title="Forca atualizacao via portal SIGCON-MG (Pesquisa Unificada)"
+          >
+            <SearchIcon className="size-4 mr-1" />
+            {refreshing ? "Sincronizando..." : "Pesquisar SIGCON"}
+          </Button>
+        </div>
       </div>
 
       {/* Filter bar */}

@@ -41,17 +41,26 @@ async def municipio_summary(
         .where(ConvenioEstadual.municipio_id == municipio_id)
     )
 
-    limite = date.today() + timedelta(days=120)
-    alertas = await db.execute(
+    hoje = date.today()
+    limite120 = hoje + timedelta(days=120)
+    limite60 = hoje + timedelta(days=60)
+    alertas120 = await db.execute(
         select(func.count()).select_from(ConvenioEstadual)
         .where(ConvenioEstadual.municipio_id == municipio_id)
-        .where(ConvenioEstadual.dt_vigencia_atual <= limite)
-        .where(ConvenioEstadual.dt_vigencia_atual >= date.today())
+        .where(ConvenioEstadual.dt_vigencia_atual <= limite120)
+        .where(ConvenioEstadual.dt_vigencia_atual >= hoje)
+    )
+    alertas60 = await db.execute(
+        select(func.count()).select_from(ConvenioEstadual)
+        .where(ConvenioEstadual.municipio_id == municipio_id)
+        .where(ConvenioEstadual.dt_vigencia_atual <= limite60)
+        .where(ConvenioEstadual.dt_vigencia_atual >= hoje)
     )
 
     return MunicipioSummary(
         municipio=MunicipioResponse.model_validate(mun),
         total_convenios_estadual=est_count.scalar(),
         valor_total_estadual=float(est_valor.scalar()),
-        alertas_vigencia=alertas.scalar(),
+        alertas_vigencia=alertas120.scalar(),
+        alertas_vigencia_60d=alertas60.scalar(),
     )

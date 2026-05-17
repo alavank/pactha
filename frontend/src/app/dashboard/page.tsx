@@ -144,7 +144,7 @@ export default function DashboardPage() {
           ))}
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Card className="border-l-4 border-l-blue-700 hover:shadow-md transition-shadow">
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
               <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">
@@ -177,10 +177,29 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
 
+          <Card className="border-l-4 border-l-red-600 hover:shadow-md transition-shadow">
+            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+              <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">
+                Vence em 60 dias
+              </CardTitle>
+              <div className="size-9 rounded-md bg-red-50 flex items-center justify-center">
+                <AlertTriangle className="size-4 text-red-600" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold text-red-700">
+                {summary?.alertas_vigencia_60d ?? 0}
+              </div>
+              <p className="text-xs text-slate-500 mt-2">
+                Critico - acao imediata
+              </p>
+            </CardContent>
+          </Card>
+
           <Card className="border-l-4 border-l-amber-600 hover:shadow-md transition-shadow">
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
               <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">
-                Alertas de Vigencia
+                Vence em 120 dias
               </CardTitle>
               <div className="size-9 rounded-md bg-amber-50 flex items-center justify-center">
                 <AlertTriangle className="size-4 text-amber-600" />
@@ -191,7 +210,7 @@ export default function DashboardPage() {
                 {summary?.alertas_vigencia ?? 0}
               </div>
               <p className="text-xs text-slate-500 mt-2">
-                Vencendo nos proximos 120 dias
+                Atencao - planejar renovacao
               </p>
             </CardContent>
           </Card>
