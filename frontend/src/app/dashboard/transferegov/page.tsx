@@ -128,7 +128,7 @@ export default function TransfereGovPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-3">
           <div>
             <label className="text-xs text-slate-600 mb-1 block">Situacao do Plano de Acao</label>
-            <Select value={situacao} onValueChange={setSituacao}>
+            <Select value={situacao} onValueChange={(v) => setSituacao(v ?? "TODAS")}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 {SITUACOES_PA.map(s => <SelectItem key={s} value={s}>{s.replace("_", " ")}</SelectItem>)}
