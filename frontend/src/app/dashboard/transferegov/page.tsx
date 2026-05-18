@@ -40,6 +40,48 @@ interface BuscarResp {
   cache_age_seconds: number;
 }
 
+interface DetalhePlano {
+  plano?: {
+    id: number;
+    codigo?: string;
+    codigoSufixo?: number;
+    ano?: number;
+    modalidade?: string;
+    situacao?: string;
+    motivoImpedimento?: string;
+    programaF?: string;
+    valorCusteio?: number;
+    valorInvestimento?: number;
+    valorTotal?: number;
+    objeto?: string;
+    objetoDetalhe?: string;
+    emailCamara?: string;
+    beneficiario?: {
+      cnpj?: string; nome?: string; uf?: string; ibge?: number;
+      idh?: number; enteId?: number; email?: string;
+    };
+    emendaParlamentar?: {
+      codigoEmendaFormatado?: string;
+      nomeParlamentar?: string;
+      codigoParlamentar?: string;
+      ano?: number;
+      valorCusteio?: number;
+      valorInvestimento?: number;
+    };
+    listaPO?: unknown[];
+    listaAPP?: unknown[];
+  };
+  resumo?: {
+    nrMesesExecucao?: number;
+    valorTotalCusteio?: number;
+    valorTotalInvestimento?: number;
+    valorTotalExecutado?: number;
+    valorTotalPendente?: number;
+    valorTotalCusteioExecutado?: number;
+    valorTotalInvestimentoExecutado?: number;
+  };
+}
+
 const SITUACOES_PA = ["TODAS", "CIENTE", "EM_ANALISE", "IMPEDIDO", "EM_ELABORACAO", "CONCLUIDA"];
 
 export default function TransfereGovPage() {
@@ -57,8 +99,9 @@ export default function TransfereGovPage() {
   const [emenda, setEmenda] = useState("");
   const [objeto, setObjeto] = useState("");
 
-  const [detalhe, setDetalhe] = useState<unknown | null>(null);
+  const [detalhe, setDetalhe] = useState<DetalhePlano | null>(null);
   const [loadingDetalhe, setLoadingDetalhe] = useState(false);
+  const [tab, setTab] = useState<"basicos" | "orcamento" | "execucao">("basicos");
 
   const buscar = useCallback(async (refresh = false) => {
     if (!municipioId) return;
@@ -93,9 +136,10 @@ export default function TransfereGovPage() {
 
   const abrirDetalhe = async (id: number) => {
     setDetalhe(null);
+    setTab("basicos");
     setLoadingDetalhe(true);
     try {
-      const r = await api.get(`/transferegov/plano-acao/${id}`);
+      const r = await api.get<DetalhePlano>(`/transferegov/plano-acao/${id}`);
       setDetalhe(r.data);
     } catch (e) {
       console.error(e);
@@ -224,27 +268,161 @@ export default function TransfereGovPage() {
         )}
       </div>
 
-      {/* Modal Detalhe */}
+      {/* Modal Detalhe - replica layout TransfereGov oficial */}
       {(detalhe !== null || loadingDetalhe) && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-start justify-center p-4 overflow-y-auto"
              onClick={() => setDetalhe(null)}>
-          <div className="bg-white rounded-lg shadow-2xl w-full max-w-5xl mt-4 mb-8" onClick={(e) => e.stopPropagation()}>
-            <div className="bg-blue-100 px-4 py-3 rounded-t-lg flex items-center justify-between border-b">
-              <h3 className="font-bold text-blue-900">Dados do Plano de Acao</h3>
+          <div className="bg-white rounded-lg shadow-2xl w-full max-w-6xl mt-4 mb-8" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-white px-5 py-3 rounded-t-lg flex items-center justify-between border-b">
+              <h3 className="text-xl font-light text-slate-900">Dados do Plano de Ação</h3>
               <button onClick={() => setDetalhe(null)}><X className="size-5 text-gray-500 hover:text-gray-700" /></button>
             </div>
-            <div className="p-4">
-              {loadingDetalhe ? (
-                <div className="text-center py-12"><Loader2 className="size-8 animate-spin mx-auto" /></div>
-              ) : (
-                <pre className="text-xs bg-slate-50 p-3 rounded overflow-x-auto max-h-[70vh]">
-                  {JSON.stringify(detalhe, null, 2)}
-                </pre>
-              )}
-            </div>
+            {loadingDetalhe ? (
+              <div className="text-center py-16"><Loader2 className="size-8 animate-spin mx-auto text-blue-600" /></div>
+            ) : detalhe?.plano && (
+              <>
+                {/* Header cinza */}
+                <div className="bg-slate-100 px-5 py-3 grid grid-cols-3 gap-4 text-sm border-b">
+                  <div>
+                    <span className="font-semibold">Plano de Ação:</span>{" "}
+                    {detalhe.plano.programaF}-{String(detalhe.plano.codigoSufixo || "").padStart(6,"0")} / {detalhe.plano.ano}
+                  </div>
+                  <div><span className="font-semibold">Programa:</span> {detalhe.plano.programaF}</div>
+                  <div><span className="font-semibold">Situação:</span> {detalhe.plano.situacao}</div>
+                  <div className="col-span-2">
+                    <span className="font-semibold">Beneficiário:</span> {detalhe.plano.beneficiario?.cnpj} - {detalhe.plano.beneficiario?.nome} ({detalhe.plano.beneficiario?.uf})
+                  </div>
+                  <div><span className="font-semibold">Emenda Parlamentar:</span> {detalhe.plano.emendaParlamentar?.codigoEmendaFormatado}</div>
+                </div>
+
+                {/* Tabs */}
+                <div className="border-b flex gap-1 px-5">
+                  {[
+                    {k:"basicos", l:"Dados Básicos"},
+                    {k:"orcamento", l:"Dados Orçamentários"},
+                    {k:"execucao", l:"Execução / Relatório"},
+                  ].map((t) => (
+                    <button
+                      key={t.k}
+                      onClick={() => setTab(t.k as "basicos"|"orcamento"|"execucao")}
+                      className={`px-4 py-2.5 text-sm border-b-2 ${tab === t.k ? "border-blue-600 text-blue-700 font-semibold" : "border-transparent text-slate-600 hover:text-slate-900"}`}
+                    >
+                      {t.l}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="p-5 space-y-6 max-h-[70vh] overflow-y-auto">
+                  {tab === "basicos" && (
+                    <>
+                      <Section title="Dados do Beneficiário">
+                        <Grid>
+                          <Field label="Beneficiário (Obrigatório)" value={`${detalhe.plano.beneficiario?.cnpj} - ${detalhe.plano.beneficiario?.nome}`} />
+                          <Field label="UF (Obrigatório)" value={detalhe.plano.beneficiario?.uf} />
+                          <Field label="Código IBGE" value={detalhe.plano.beneficiario?.ibge} />
+                          <Field label="IDH" value={detalhe.plano.beneficiario?.idh} />
+                          <Field label="E-mail Câmara" value={detalhe.plano.emailCamara || "-"} />
+                        </Grid>
+                      </Section>
+                      <Section title="Dados da Emenda Parlamentar">
+                        <Grid>
+                          <Field label="Emenda Parlamentar (Obrigatório)" value={detalhe.plano.emendaParlamentar?.codigoEmendaFormatado} />
+                          <Field label="Parlamentar" value={detalhe.plano.emendaParlamentar?.nomeParlamentar} />
+                          <Field label="Código Parlamentar" value={detalhe.plano.emendaParlamentar?.codigoParlamentar} />
+                          <Field label="Ano" value={detalhe.plano.emendaParlamentar?.ano} />
+                          <Field label="Valor de Custeio (Obrigatório)" value={formatCurrency(detalhe.plano.valorCusteio)} />
+                          <Field label="Valor de Investimento (Obrigatório)" value={formatCurrency(detalhe.plano.valorInvestimento)} />
+                        </Grid>
+                      </Section>
+                      <Section title="Dados Complementares do Plano">
+                        <Grid cols={2}>
+                          <Field label="Modalidade" value={detalhe.plano.modalidade} />
+                          <Field label="Objeto" value={detalhe.plano.objeto || detalhe.plano.objetoDetalhe || "-"} />
+                          <Field label="Motivo Impedimento" value={detalhe.plano.motivoImpedimento || "-"} />
+                          <Field label="Anexos" value={(detalhe.plano.listaAPP?.length || 0).toString()} />
+                        </Grid>
+                      </Section>
+                    </>
+                  )}
+                  {tab === "orcamento" && (
+                    <Section title="Orçamento do Plano">
+                      <Grid>
+                        <Field label="Valor de Custeio" value={formatCurrency(detalhe.plano.valorCusteio)} />
+                        <Field label="Valor de Investimento" value={formatCurrency(detalhe.plano.valorInvestimento)} />
+                        <Field label="Valor Total" value={formatCurrency(detalhe.plano.valorTotal)} />
+                      </Grid>
+                      {detalhe.plano.emendaParlamentar && (
+                        <div className="mt-4">
+                          <h5 className="text-xs font-semibold text-slate-700 mb-2">Da Emenda Parlamentar</h5>
+                          <Grid>
+                            <Field label="Custeio na Emenda" value={formatCurrency(detalhe.plano.emendaParlamentar.valorCusteio)} />
+                            <Field label="Investimento na Emenda" value={formatCurrency(detalhe.plano.emendaParlamentar.valorInvestimento)} />
+                          </Grid>
+                        </div>
+                      )}
+                    </Section>
+                  )}
+                  {tab === "execucao" && (
+                    detalhe.resumo ? (
+                      <Section title="Relatório de Gestão">
+                        <Grid>
+                          <Field label="Meses em Execução" value={detalhe.resumo.nrMesesExecucao} />
+                          <Field label="Custeio Previsto" value={formatCurrency(detalhe.resumo.valorTotalCusteio)} />
+                          <Field label="Investimento Previsto" value={formatCurrency(detalhe.resumo.valorTotalInvestimento)} />
+                          <Field label="Custeio Executado" value={formatCurrency(detalhe.resumo.valorTotalCusteioExecutado)} />
+                          <Field label="Investimento Executado" value={formatCurrency(detalhe.resumo.valorTotalInvestimentoExecutado)} />
+                          <Field label="Total Executado" value={formatCurrency(detalhe.resumo.valorTotalExecutado)} highlight="green" />
+                          <Field label="Total Pendente" value={formatCurrency(detalhe.resumo.valorTotalPendente)} highlight="amber" />
+                        </Grid>
+                      </Section>
+                    ) : (
+                      <p className="text-sm text-slate-500 italic">Sem relatório de gestão registrado para este plano.</p>
+                    )
+                  )}
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <h4 className="text-sm font-semibold text-slate-800 border-b border-blue-600 pb-1 mb-3">
+        {title}
+      </h4>
+      <div>{children}</div>
+    </div>
+  );
+}
+
+function Grid({ children, cols = 4 }: { children: React.ReactNode; cols?: 2 | 3 | 4 }) {
+  const cls = cols === 2 ? "md:grid-cols-2" : cols === 3 ? "md:grid-cols-3" : "md:grid-cols-4";
+  return <div className={`grid grid-cols-1 ${cls} gap-3`}>{children}</div>;
+}
+
+function Field({
+  label, value, highlight,
+}: {
+  label: string;
+  value?: string | number | null;
+  highlight?: "green" | "amber" | "red";
+}) {
+  const valStr = value === null || value === undefined || value === "" ? "-" : String(value);
+  const color =
+    highlight === "green" ? "text-green-700" :
+    highlight === "amber" ? "text-amber-700" :
+    highlight === "red" ? "text-red-700" : "text-slate-900";
+  return (
+    <div>
+      <div className="text-[11px] text-slate-600 mb-0.5">{label}</div>
+      <div className={`border border-slate-300 rounded px-2 py-1.5 bg-slate-50 text-sm ${color}`}>
+        {valStr}
+      </div>
     </div>
   );
 }
