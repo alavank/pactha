@@ -256,11 +256,26 @@ export default function TransfereGovVoluntariasPage() {
 
                 {Array.isArray(detalhe.detalhe?._documentos) && (detalhe.detalhe!._documentos as string[]).length > 0 && (
                   <Section title="Documentos Digitalizados">
-                    <ul className="text-sm list-disc pl-5 space-y-1">
-                      {(detalhe.detalhe!._documentos as string[]).map((d, i) => (
-                        <li key={i} className="text-slate-700">{d}</li>
-                      ))}
+                    <ul className="text-sm space-y-1.5">
+                      {(detalhe.detalhe!._documentos as string[]).map((d, i) => {
+                        // remove o sufixo "Baixar"/"Baixar Contrapartida" do texto capturado
+                        const nome = d.replace(/\s*Baixar( Contrapartida)?\s*$/i, "").trim();
+                        return (
+                          <li key={i} className="flex items-start gap-2 text-slate-700">
+                            <span className="text-indigo-500 mt-0.5">📄</span>
+                            <span className="break-words">{nome}</span>
+                          </li>
+                        );
+                      })}
                     </ul>
+                    <a href={PORTAL_BASE} target="_blank" rel="noreferrer noopener"
+                       className="inline-flex items-center gap-1 mt-3 text-xs text-white bg-blue-600 hover:bg-blue-700 rounded px-3 py-1.5">
+                      <ExternalLink className="size-3" /> Baixar no portal (Acesso Livre)
+                    </a>
+                    <p className="text-[11px] text-slate-500 mt-1.5">
+                      Os anexos do TransfereGov exigem sessão do portal. Clique acima, pesquise o município/proposta
+                      e baixe os PDFs diretamente no Acesso Livre.
+                    </p>
                   </Section>
                 )}
               </div>

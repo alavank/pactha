@@ -125,26 +125,10 @@ export default function ConveniosPage() {
   const [esfera, setEsfera] = useState("todos");
   const [situacao, setSituacao] = useState("todos");
   const [ano, setAno] = useState("todos");
-  // Fontes default: SIGCON marcado (preferencia do usuario)
-  const [fontes, setFontes] = useState<string[]>(["SIGCON"]);
-  const [fontesOpen, setFontesOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [situacoes, setSituacoes] = useState<string[]>([]);
   const [anos, setAnos] = useState<number[]>([]);
-
-  const FONTES_OPCOES = [
-    { value: "SIGCON", label: "SIGCON-MG (Estadual)" },
-    { value: "TransfereGov", label: "TransfereGov (Federal)" },
-    { value: "TransfereGov-Proposta", label: "TG Proposta" },
-    { value: "PortalTransparencia", label: "Portal Transparência" },
-    { value: "FNS", label: "FNS Saúde" },
-    { value: "CODEVASF", label: "CODEVASF" },
-  ];
-
-  const toggleFonte = (v: string) => {
-    setFontes((prev) => prev.includes(v) ? prev.filter((f) => f !== v) : [...prev, v]);
-  };
 
   // Load distinct situacoes and anos for this municipio
   useEffect(() => {
@@ -168,13 +152,13 @@ export default function ConveniosPage() {
   // Reset page on filter change
   useEffect(() => {
     setPage(1);
-  }, [esfera, situacao, ano, debouncedSearch, fontes]);
+  }, [esfera, situacao, ano, debouncedSearch]);
 
   const fetchData = useCallback(() => {
     if (!municipioId) return;
     setLoading(true);
 
-    const params: Record<string, string | number | string[]> = {
+    const params: Record<string, string | number> = {
       municipio_id: municipioId,
       page,
       per_page: PER_PAGE,
@@ -183,27 +167,13 @@ export default function ConveniosPage() {
     if (situacao !== "todos") params.situacao = situacao;
     if (ano !== "todos") params.ano = ano;
     if (debouncedSearch) params.search = debouncedSearch;
-    if (fontes.length > 0 && fontes.length < FONTES_OPCOES.length) {
-      // axios serializa array com mesmo nome repetido (fontes=SIGCON&fontes=TG)
-      params.fontes = fontes;
-    }
 
     api
-      .get<ConvenioList>("/convenios", {
-        params,
-        paramsSerializer: (p) => {
-          const parts: string[] = [];
-          for (const [k, v] of Object.entries(p)) {
-            if (Array.isArray(v)) v.forEach((x) => parts.push(`${k}=${encodeURIComponent(x)}`));
-            else if (v != null) parts.push(`${k}=${encodeURIComponent(String(v))}`);
-          }
-          return parts.join("&");
-        },
-      })
+      .get<ConvenioList>("/convenios", { params })
       .then((res) => setData(res.data))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [municipioId, page, esfera, situacao, ano, debouncedSearch, fontes]);
+  }, [municipioId, page, esfera, situacao, ano, debouncedSearch]);
 
   useEffect(() => {
     fetchData();
@@ -322,44 +292,6 @@ export default function ConveniosPage() {
             ))}
           </SelectContent>
         </Select>
-
-        {/* Multi-select Fonte */}
-        <div className="relative w-48">
-          <button
-            type="button"
-            onClick={() => setFontesOpen((o) => !o)}
-            className="w-full h-9 px-3 text-sm border rounded-md bg-white text-left flex items-center justify-between hover:bg-gray-50"
-          >
-            <span className="truncate">
-              {fontes.length === FONTES_OPCOES.length ? "Todas as fontes" :
-               fontes.length === 0 ? "Nenhuma fonte" :
-               fontes.length === 1 ? fontes[0] : `${fontes.length} fontes`}
-            </span>
-            <span className="ml-2 text-xs text-muted-foreground">▼</span>
-          </button>
-          {fontesOpen && (
-            <>
-              <div className="fixed inset-0 z-40" onClick={() => setFontesOpen(false)} />
-              <div className="absolute top-full left-0 mt-1 w-64 bg-white border rounded-md shadow-lg z-50 p-2">
-                <div className="flex justify-between text-xs mb-2 border-b pb-1">
-                  <button onClick={() => setFontes(FONTES_OPCOES.map((o) => o.value))} className="text-blue-600 hover:underline">Todas</button>
-                  <button onClick={() => setFontes([])} className="text-gray-600 hover:underline">Nenhuma</button>
-                </div>
-                {FONTES_OPCOES.map((opt) => (
-                  <label key={opt.value} className="flex items-center gap-2 py-1 px-1 hover:bg-gray-50 cursor-pointer text-sm">
-                    <input
-                      type="checkbox"
-                      checked={fontes.includes(opt.value)}
-                      onChange={() => toggleFonte(opt.value)}
-                      className="rounded"
-                    />
-                    {opt.label}
-                  </label>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
 
         <div className="relative flex-1 min-w-[200px]">
           <SearchIcon className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
