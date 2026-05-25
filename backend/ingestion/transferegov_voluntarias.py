@@ -132,13 +132,15 @@ async def _extrai_detalhe(page) -> dict:
     """Captura todos os pares label:valor + campos do topo da tela Dados da Proposta."""
     return await page.evaluate("""() => {
         const out = {};
-        // Pares label|valor (linhas com 2 celulas)
+        const setKV = (k, v) => { if (k && k.length < 70 && v && !out[k]) out[k] = v.slice(0, 600); };
+        // Pares label|valor: linhas com 2 OU 4 celulas (label|valor|label|valor)
         document.querySelectorAll('tr').forEach(tr => {
             const tds = [...tr.querySelectorAll('td,th')];
             if (tds.length === 2) {
-                const k = tds[0].innerText.trim();
-                const v = tds[1].innerText.trim();
-                if (k && k.length < 70 && v) out[k] = v.slice(0, 600);
+                setKV(tds[0].innerText.trim(), tds[1].innerText.trim());
+            } else if (tds.length === 4) {
+                setKV(tds[0].innerText.trim(), tds[1].innerText.trim());
+                setKV(tds[2].innerText.trim(), tds[3].innerText.trim());
             }
         });
         // Campos do topo (Modalidade, Situacao SIAFI, Codigo Instrumento, etc) - layout em divs/spans
