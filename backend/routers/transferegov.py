@@ -160,7 +160,9 @@ async def voluntarias(
         where.append("(numero_proposta ILIKE :s OR proponente ILIKE :s)"); params["s"] = f"%{search}%"
     sql = f"""
         SELECT numero_proposta, situacao, orgao, proponente, possui_parecer,
-               identificacao, updated_at
+               identificacao, codigo_instrumento, modalidade, situacao_siafi,
+               numero_processo, objeto, programa, dt_inicio_vigencia,
+               dt_fim_vigencia, dt_proposta, dt_assinatura, updated_at
         FROM transferegov_propostas
         WHERE {' AND '.join(where)}
         ORDER BY numero_proposta DESC
@@ -169,13 +171,45 @@ async def voluntarias(
     items = [{
         "numero_proposta": row[0], "situacao": row[1], "orgao": row[2],
         "proponente": row[3], "possui_parecer": row[4], "identificacao": row[5],
-        "atualizado_em": row[6].isoformat() if row[6] else None,
+        "codigo_instrumento": row[6], "modalidade": row[7], "situacao_siafi": row[8],
+        "numero_processo": row[9], "objeto": row[10], "programa": row[11],
+        "dt_inicio_vigencia": row[12], "dt_fim_vigencia": row[13],
+        "dt_proposta": row[14], "dt_assinatura": row[15],
+        "atualizado_em": row[16].isoformat() if row[16] else None,
     } for row in r.fetchall()]
-    # ultima atualizacao
     last = None
     if items:
         last = max((i["atualizado_em"] for i in items if i["atualizado_em"]), default=None)
     return {"items": items, "total": len(items), "atualizado_em": last}
+
+
+@router.get("/voluntarias/{numero_proposta:path}")
+async def voluntarias_detalhe(
+    numero_proposta: str,
+    municipio_id: int = Query(...),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Detalhe completo de uma proposta (todos os campos capturados do portal)."""
+    r = await db.execute(text("""
+        SELECT numero_proposta, situacao, orgao, proponente, identificacao,
+               codigo_instrumento, modalidade, situacao_siafi, numero_processo,
+               objeto, programa, dt_inicio_vigencia, dt_fim_vigencia,
+               dt_proposta, dt_assinatura, detalhe
+        FROM transferegov_propostas
+        WHERE municipio_id = :mun AND numero_proposta = :num
+    """), {"mun": municipio_id, "num": numero_proposta})
+    row = r.first()
+    if not row:
+        raise HTTPException(404, "Proposta nao encontrada")
+    return {
+        "numero_proposta": row[0], "situacao": row[1], "orgao": row[2],
+        "proponente": row[3], "identificacao": row[4], "codigo_instrumento": row[5],
+        "modalidade": row[6], "situacao_siafi": row[7], "numero_processo": row[8],
+        "objeto": row[9], "programa": row[10], "dt_inicio_vigencia": row[11],
+        "dt_fim_vigencia": row[12], "dt_proposta": row[13], "dt_assinatura": row[14],
+        "detalhe": row[15] or {},
+    }
 
 
 @router.get("/plano-acao/{plano_acao_id}")

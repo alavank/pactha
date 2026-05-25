@@ -88,30 +88,86 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0) -> list[dict]:
     }""")
     await page.wait_for_timeout(9000)
 
-    # Extrai a grid (maior tabela)
+    # Extrai a grid (maior tabela) + link de detalhe de cada proposta
     grid = await page.evaluate("""() => {
         const tables=[...document.querySelectorAll('table')];
         let best=null,max=0;
         for(const t of tables){const r=t.querySelectorAll('tr');if(r.length>max){max=r.length;best=t;}}
         if(!best)return[];
         const trs=[...best.querySelectorAll('tr')];
-        const head=[...trs[0].querySelectorAll('th,td')].map(c=>c.innerText.trim());
         return trs.slice(1).map(tr=>{
             const tds=[...tr.querySelectorAll('td')].map(c=>c.innerText.trim());
-            return tds;
-        }).filter(r=>r.length>=6);
+            const a=tr.querySelector('td a');
+            return {cols: tds, href: a ? a.href : null};
+        }).filter(r=>r.cols.length>=6);
     }""")
     propostas = []
     for row in grid:
         propostas.append({
-            "numero_proposta": row[0],
-            "situacao": row[1],
-            "orgao": row[2],
-            "proponente": row[3],
-            "possui_parecer": row[4],
-            "identificacao": row[5],
+            "numero_proposta": row["cols"][0],
+            "situacao": row["cols"][1],
+            "orgao": row["cols"][2],
+            "proponente": row["cols"][3],
+            "possui_parecer": row["cols"][4],
+            "identificacao": row["cols"][5],
+            "_detalhe_url": row["href"],
         })
+
+    # Enriquece cada proposta com o detalhe (Dados da Proposta)
+    for prop in propostas:
+        url = prop.pop("_detalhe_url", None)
+        if not url:
+            continue
+        try:
+            await page.goto(url, timeout=40000, wait_until="domcontentloaded")
+            await page.wait_for_timeout(2500)
+            det = await _extrai_detalhe(page)
+            prop["detalhe"] = det
+        except Exception as e:
+            logger.warning(f"    detalhe {prop['numero_proposta']}: {str(e)[:80]}")
     return propostas
+
+
+async def _extrai_detalhe(page) -> dict:
+    """Captura todos os pares label:valor + campos do topo da tela Dados da Proposta."""
+    return await page.evaluate("""() => {
+        const out = {};
+        // Pares label|valor (linhas com 2 celulas)
+        document.querySelectorAll('tr').forEach(tr => {
+            const tds = [...tr.querySelectorAll('td,th')];
+            if (tds.length === 2) {
+                const k = tds[0].innerText.trim();
+                const v = tds[1].innerText.trim();
+                if (k && k.length < 70 && v) out[k] = v.slice(0, 600);
+            }
+        });
+        // Campos do topo (Modalidade, Situacao SIAFI, Codigo Instrumento, etc) - layout em divs/spans
+        const txt = document.body.innerText;
+        const grab = (label) => {
+            const re = new RegExp(label + '\\\\s*[:\\\\n]\\\\s*([^\\\\n]{1,120})', 'i');
+            const m = txt.match(re);
+            return m ? m[1].trim() : null;
+        };
+        for (const lbl of ['Modalidade','Situação no SIAFI','Código do Instrumento',
+                           'Número da Proposta','Número do Processo','Situação de Contratação Atual']) {
+            const v = grab(lbl);
+            if (v && !out[lbl]) out[lbl] = v;
+        }
+        // Documentos digitalizados (nomes dos PDFs)
+        const docs = [];
+        document.querySelectorAll('a').forEach(a => {
+            const t = (a.innerText||'').trim();
+            if (t.toLowerCase().includes('baixar') && a.closest('tr')) {
+                const row = a.closest('tr').innerText.replace(/\\s+/g,' ').trim();
+                if (row.includes('.pdf') || row.toLowerCase().includes('.pdf')) docs.push(row.slice(0,160));
+            }
+        });
+        if (docs.length) out['_documentos'] = docs;
+        // Situacao macro (campo destacado)
+        const sitM = txt.match(/Situação\\s*\\n\\s*([^\\n]+)/);
+        if (sitM) out['_situacao_macro'] = sitM[1].trim().slice(0,100);
+        return out;
+    }""")
 
 
 def _upsert(mun_id: int, propostas: list[dict]):
@@ -123,19 +179,48 @@ def _upsert(mun_id: int, propostas: list[dict]):
     for p in propostas:
         if not p.get("numero_proposta"):
             continue
+        det = p.get("detalhe") or {}
+        def g(*keys):
+            for k in keys:
+                if det.get(k):
+                    return str(det[k])
+            return None
+        codigo_instr = g("Código do Instrumento")
+        modalidade = g("Modalidade")
+        situacao_siafi = g("Situação no SIAFI")
+        num_processo = g("Número do Processo")
+        objeto = g("Objeto do Instrumento")
+        programa = g("Programa", "Nome do Programa")
+        dt_ini_vig = g("Data Início de Vigência")
+        dt_fim_vig = g("Data Término de Vigência Atual", "Data Término de Vigência")
+        dt_prop = g("Data da Proposta")
+        dt_assin = g("Data Assinatura")
         cur.execute("""
             INSERT INTO transferegov_propostas
                 (municipio_id, numero_proposta, situacao, orgao, proponente,
-                 possui_parecer, identificacao, raw_data, updated_at)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s::jsonb,NOW())
+                 possui_parecer, identificacao, codigo_instrumento, modalidade,
+                 situacao_siafi, numero_processo, objeto, programa,
+                 dt_inicio_vigencia, dt_fim_vigencia, dt_proposta, dt_assinatura,
+                 detalhe, raw_data, updated_at)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,NOW())
             ON CONFLICT (municipio_id, numero_proposta) DO UPDATE SET
                 situacao=EXCLUDED.situacao, orgao=EXCLUDED.orgao,
                 proponente=EXCLUDED.proponente, possui_parecer=EXCLUDED.possui_parecer,
-                identificacao=EXCLUDED.identificacao, raw_data=EXCLUDED.raw_data,
-                updated_at=NOW()
+                identificacao=EXCLUDED.identificacao,
+                codigo_instrumento=EXCLUDED.codigo_instrumento, modalidade=EXCLUDED.modalidade,
+                situacao_siafi=EXCLUDED.situacao_siafi, numero_processo=EXCLUDED.numero_processo,
+                objeto=EXCLUDED.objeto, programa=EXCLUDED.programa,
+                dt_inicio_vigencia=EXCLUDED.dt_inicio_vigencia, dt_fim_vigencia=EXCLUDED.dt_fim_vigencia,
+                dt_proposta=EXCLUDED.dt_proposta, dt_assinatura=EXCLUDED.dt_assinatura,
+                detalhe=EXCLUDED.detalhe, raw_data=EXCLUDED.raw_data, updated_at=NOW()
         """, (mun_id, p["numero_proposta"][:20], p["situacao"][:300], p["orgao"][:300],
               p["proponente"][:300], p["possui_parecer"][:10], p["identificacao"][:30],
-              json.dumps(p, ensure_ascii=False)))
+              (codigo_instr or "")[:30] or None, (modalidade or "")[:100] or None,
+              (situacao_siafi or "")[:200] or None, (num_processo or "")[:50] or None,
+              objeto, (programa or "")[:300] or None,
+              (dt_ini_vig or "")[:20] or None, (dt_fim_vig or "")[:20] or None,
+              (dt_prop or "")[:20] or None, (dt_assin or "")[:20] or None,
+              json.dumps(det, ensure_ascii=False), json.dumps(p, ensure_ascii=False)))
         ins += 1
     conn.commit(); cur.close(); conn.close()
     return ins
