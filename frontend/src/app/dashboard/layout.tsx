@@ -13,6 +13,7 @@ import {
   KeyRound,
   Newspaper,
   Target,
+  Users,
 } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -43,6 +44,7 @@ const NAV_ITEMS = [
 ];
 
 const ADMIN_NAV_ITEMS = [
+  { href: "/dashboard/usuarios", label: "Usuarios", icon: Users },
   { href: "/dashboard/service-tokens", label: "Service Tokens", icon: KeyRound },
 ];
 
