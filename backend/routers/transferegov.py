@@ -14,7 +14,7 @@ import time
 from typing import Optional
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, text
 from database import get_db
 from models import Municipio
 from services.auth import get_current_user
@@ -134,6 +134,48 @@ async def buscar(
         "municipio": {"id": mun.id, "nome": mun.nome, "uf": mun.uf},
         "cache_age_seconds": int(time.time() - (_CACHE.get(mun.uf, (time.time(), []))[0])),
     }
+
+
+@router.get("/voluntarias")
+async def voluntarias(
+    municipio_id: int = Query(...),
+    situacao: Optional[str] = Query(None),
+    orgao: Optional[str] = Query(None),
+    search: Optional[str] = Query(None, description="busca em numero/proponente"),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Lista propostas de Transferencias Voluntarias (SICONV) de um municipio.
+
+    Dados coletados pelo scraper Playwright (acesso livre guest) em
+    transferegov_propostas. Refresh via cron/ on-demand.
+    """
+    where = ["municipio_id = :mun"]
+    params: dict = {"mun": municipio_id}
+    if situacao:
+        where.append("situacao ILIKE :sit"); params["sit"] = f"%{situacao}%"
+    if orgao:
+        where.append("orgao ILIKE :org"); params["org"] = f"%{orgao}%"
+    if search:
+        where.append("(numero_proposta ILIKE :s OR proponente ILIKE :s)"); params["s"] = f"%{search}%"
+    sql = f"""
+        SELECT numero_proposta, situacao, orgao, proponente, possui_parecer,
+               identificacao, updated_at
+        FROM transferegov_propostas
+        WHERE {' AND '.join(where)}
+        ORDER BY numero_proposta DESC
+    """
+    r = await db.execute(text(sql), params)
+    items = [{
+        "numero_proposta": row[0], "situacao": row[1], "orgao": row[2],
+        "proponente": row[3], "possui_parecer": row[4], "identificacao": row[5],
+        "atualizado_em": row[6].isoformat() if row[6] else None,
+    } for row in r.fetchall()]
+    # ultima atualizacao
+    last = None
+    if items:
+        last = max((i["atualizado_em"] for i in items if i["atualizado_em"]), default=None)
+    return {"items": items, "total": len(items), "atualizado_em": last}
 
 
 @router.get("/plano-acao/{plano_acao_id}")
