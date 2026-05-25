@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { Search as SearchIcon, ChevronLeft, ChevronRight } from "lucide-react";
+import RelacionadosButton from "@/components/RelacionadosModal";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -400,6 +401,7 @@ export default function ConveniosPage() {
                   <TableHead className="w-[70px]">Assinat.</TableHead>
                   <TableHead className="w-[70px]">Vigencia</TableHead>
                   <TableHead className="w-[50px]">Dias</TableHead>
+                  <TableHead className="w-[40px]">Rel.</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -471,6 +473,14 @@ export default function ConveniosPage() {
                             : `${conv.dias_restantes}d`
                           : "-"}
                       </span>
+                    </TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <RelacionadosButton params={{
+                        municipio_id: municipioId, fonte: "convenios",
+                        proposta: conv.nr_proposta, plano: conv.nr_plano_trabalho,
+                        instrumento: conv.nr_instrumento, siafi: conv.nr_siafi,
+                        objeto: conv.objeto,
+                      }} />
                     </TableCell>
                   </TableRow>
                 );

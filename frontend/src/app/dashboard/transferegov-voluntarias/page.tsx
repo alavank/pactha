@@ -6,6 +6,7 @@ import { Search, Eraser, Loader2, ExternalLink, Eye, X } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import RelacionadosButton from "@/components/RelacionadosModal";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -152,6 +153,7 @@ export default function TransfereGovVoluntariasPage() {
                 <TableHead className="w-[80px]">Fim Vig.</TableHead>
                 <TableHead>Objeto</TableHead>
                 <TableHead className="w-[50px] text-center">Ver</TableHead>
+                <TableHead className="w-[40px] text-center">Rel.</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -174,6 +176,13 @@ export default function TransfereGovVoluntariasPage() {
                             className="inline-flex w-6 h-6 items-center justify-center rounded bg-blue-500 hover:bg-blue-600 text-white">
                       <Eye className="size-3" />
                     </button>
+                  </TableCell>
+                  <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
+                    <RelacionadosButton params={{
+                      municipio_id: municipioId, fonte: "voluntarias",
+                      proposta: p.numero_proposta, instrumento: p.codigo_instrumento,
+                      processo: p.numero_processo, objeto: p.objeto,
+                    }} />
                   </TableCell>
                 </TableRow>
               ))}

@@ -4,6 +4,7 @@ import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronRight, Search as SearchIcon, ChevronDown, ChevronUp } from "lucide-react";
 import api from "@/lib/api";
+import RelacionadosButton from "@/components/RelacionadosModal";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -227,6 +228,7 @@ export default function EmendasEstaduaisPage() {
                         <TableHead className="min-w-0">Atendimento</TableHead>
                         <TableHead className="w-[95px] text-right">Valor</TableHead>
                         <TableHead className="w-[85px]">Status</TableHead>
+                        <TableHead className="w-[40px]">Rel.</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -246,6 +248,13 @@ export default function EmendasEstaduaisPage() {
                           <TableCell className="text-right font-mono whitespace-nowrap" title={`Valor: ${formatCurrency(em.valor_indicacao)}`}>{formatCurrency(em.valor_indicacao)}</TableCell>
                           <TableCell title={em.status_indicacao || ""}>
                             <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-medium border truncate max-w-full ${statusColor(em.status_indicacao)}`}>{em.status_indicacao || "-"}</span>
+                          </TableCell>
+                          <TableCell>
+                            <RelacionadosButton params={{
+                              municipio_id: municipioId, fonte: "emendas",
+                              proposta: em.nr_indicacao, parlamentar: em.nome_responsavel,
+                              objeto: `${em.beneficiario || ""} ${em.tipo_atendimento || ""}`.trim(),
+                            }} />
                           </TableCell>
                         </TableRow>
                       ))}
