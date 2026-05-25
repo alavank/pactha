@@ -6,6 +6,7 @@ import { Search, Eye, X, Loader2, Eraser, RefreshCw } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import RelacionadosButton from "@/components/RelacionadosModal";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -233,6 +234,7 @@ export default function TransfereGovPage() {
                 <TableHead className="w-[100px]">Sit. P. Acao</TableHead>
                 <TableHead className="w-[160px]">Sit. P. Trabalho</TableHead>
                 <TableHead className="w-[60px] text-center">Acoes</TableHead>
+                <TableHead className="w-[40px] text-center">Rel.</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -260,6 +262,13 @@ export default function TransfereGovPage() {
                             className="inline-flex w-6 h-6 items-center justify-center rounded bg-blue-500 hover:bg-blue-600 text-white" title="Detalhar">
                       <Eye className="size-3" />
                     </button>
+                  </TableCell>
+                  <TableCell className="text-center">
+                    <RelacionadosButton params={{
+                      municipio_id: municipioId, fonte: "plano-acao",
+                      proposta: p.codigo, parlamentar: p.emenda_codigo,
+                      objeto: p.politicas_publicas,
+                    }} />
                   </TableCell>
                 </TableRow>
               ))}

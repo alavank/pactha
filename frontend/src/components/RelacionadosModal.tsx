@@ -5,7 +5,8 @@ import { Link2, X, Loader2 } from "lucide-react";
 import api from "@/lib/api";
 
 export interface RelacionadosParams {
-  municipio_id: string | number;
+  municipio_id?: string | number;
+  municipio_nome?: string; // alternativa (FNS usa nome)
   fonte: string; // convenios | plano-acao | emendas | fns | voluntarias
   proposta?: string;
   plano?: string;
@@ -43,7 +44,9 @@ export default function RelacionadosButton({ params, label }: { params: Relacion
     setLoading(true);
     setData(null);
     try {
-      const qs: Record<string, string> = { municipio_id: String(params.municipio_id), fonte: params.fonte };
+      const qs: Record<string, string> = { fonte: params.fonte };
+      if (params.municipio_id) qs.municipio_id = String(params.municipio_id);
+      if (params.municipio_nome) qs.municipio_nome = String(params.municipio_nome);
       for (const k of ["proposta", "plano", "instrumento", "siafi", "processo", "parlamentar", "objeto"] as const) {
         const v = params[k];
         if (v) qs[k] = String(v);
