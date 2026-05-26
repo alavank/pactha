@@ -1,9 +1,11 @@
-# Worker para scrapers + orquestrador run_all.py
-# Build context e ROOT do repo (Railway config: RAILWAY_DOCKERFILE_PATH=backend/Dockerfile.scraper)
-# entao todos os COPY usam prefixo backend/.
+# Worker p/ scrapers Playwright (SIGCON, TransfereGov Voluntarias).
+# Build context = RAIZ do repo, entao COPY usa prefixo backend/.
+# Cada cron service define seu proprio Start Command (ex:
+# "python ingestion/transferegov_voluntarias.py" ou
+# "python ingestion/run_sigcon_cron.py"), que sobrescreve o CMD abaixo.
 FROM python:3.12-slim
 
-# Playwright deps
+# Deps de sistema p/ Playwright
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wget gnupg ca-certificates \
     && rm -rf /var/lib/apt/lists/*
@@ -12,6 +14,7 @@ WORKDIR /app
 
 COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+# Instala o Chromium + libs do sistema (essencial: RAILPACK nao faz isso)
 RUN playwright install --with-deps chromium
 
 COPY backend/ingestion/ ./ingestion/
@@ -20,6 +23,5 @@ COPY backend/services/ ./services/
 COPY backend/schemas/ ./schemas/
 COPY backend/config.py backend/database.py ./
 
-# Orquestrador roda os pipelines do tier configurado via CRON_TIER
-# (daily/weekly/monthly/full). Default: weekly.
-CMD ["python", "-u", "ingestion/run_all.py"]
+# CMD default (sobrescrito pelo Start Command de cada cron service)
+CMD ["python", "-u", "ingestion/run_sigcon_cron.py"]
