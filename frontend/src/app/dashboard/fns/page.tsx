@@ -104,13 +104,14 @@ interface PropostaDetalhe {
   etapa_atual?: number;
 }
 
+// Valores exatos aceitos pelo FNS no parametro tpEmenda (valorEmenda do portal)
 const TIPOS_EMENDA = [
   "TODOS",
-  "PROGRAMA",
-  "EMENDA INDIVIDUAL",
-  "EMENDA BANCADA",
-  "EMENDA COMISSAO",
-  "EMENDA BANCADA OBRIGATORIA",
+  "INDIVIDUAL",
+  "BANCADA",
+  "BANCADA OBRIGATÓRIA",
+  "COMISSAO",
+  "RELATOR",
 ];
 
 function recursoColor(s?: string): string {

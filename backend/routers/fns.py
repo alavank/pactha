@@ -96,8 +96,11 @@ async def buscar(
     }
     if nr_proposta:
         params["nuProposta"] = nr_proposta
+    # Filtro de emenda: o FNS usa o parametro `tpEmenda` com o valor exato do
+    # portal (INDIVIDUAL, BANCADA, BANCADA OBRIGATÓRIA com acento, COMISSAO,
+    # RELATOR). dsTipoRecurso NAO filtra (e ignorado pelo servidor).
     if tipo_emenda and tipo_emenda.upper() != "TODOS":
-        params["dsTipoRecurso"] = tipo_emenda
+        params["tpEmenda"] = tipo_emenda
 
     try:
         with httpx.Client(cookies=cookies, timeout=30, verify=False) as cli:
