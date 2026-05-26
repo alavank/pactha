@@ -39,6 +39,14 @@ def _norm(s: str) -> str:
     return "".join(c for c in unicodedata.normalize("NFKD", s.upper()) if not unicodedata.combining(c)).strip()
 
 
+def _clean(s):
+    """Remove o caractere de substituicao U+FFFD que o portal TransfereGov as
+    vezes serve no lugar de acentos (corrompido na origem, irrecuperavel)."""
+    if not isinstance(s, str):
+        return s
+    return s.replace("�", "").replace("  ", " ").strip()
+
+
 def _municipios_pacta() -> list[dict]:
     import psycopg2
     url = os.getenv("DATABASE_URL_SYNC", "")
@@ -104,12 +112,12 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0) -> list[dict]:
     propostas = []
     for row in grid:
         propostas.append({
-            "numero_proposta": row["cols"][0],
-            "situacao": row["cols"][1],
-            "orgao": row["cols"][2],
-            "proponente": row["cols"][3],
-            "possui_parecer": row["cols"][4],
-            "identificacao": row["cols"][5],
+            "numero_proposta": _clean(row["cols"][0]),
+            "situacao": _clean(row["cols"][1]),
+            "orgao": _clean(row["cols"][2]),
+            "proponente": _clean(row["cols"][3]),
+            "possui_parecer": _clean(row["cols"][4]),
+            "identificacao": _clean(row["cols"][5]),
             "_detalhe_url": row["href"],
         })
 
@@ -122,7 +130,12 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0) -> list[dict]:
             await page.goto(url, timeout=40000, wait_until="domcontentloaded")
             await page.wait_for_timeout(2500)
             det = await _extrai_detalhe(page)
-            prop["detalhe"] = det
+            # Limpa U+FFFD de chaves e valores
+            prop["detalhe"] = {
+                _clean(k): (_clean(v) if isinstance(v, str)
+                            else [_clean(x) for x in v] if isinstance(v, list) else v)
+                for k, v in (det or {}).items()
+            }
         except Exception as e:
             logger.warning(f"    detalhe {prop['numero_proposta']}: {str(e)[:80]}")
     return propostas

@@ -109,7 +109,8 @@ async def reset_password(
     u = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
     if not u:
         raise HTTPException(404, "Usuario nao encontrado")
-    senha = _gen_senha()
+    # Senha padrao "1234" - o usuario sera obrigado a troca-la no primeiro login
+    senha = "1234"
     u.password_hash = hash_password(senha)
     u.must_change_password = True
     await db.commit()
