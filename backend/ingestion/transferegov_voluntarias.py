@@ -110,23 +110,63 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0) -> list[dict]:
     }""")
     await page.wait_for_timeout(9000)
 
-    # Extrai a grid (maior tabela) + link de detalhe de cada proposta
-    grid = await page.evaluate("""() => {
+    # Extrai a grid (maior tabela) + links de paginacao displaytag (d-XXXX-p=N).
+    # A consulta rapida mostra 20 itens/pagina -> precisamos visitar TODAS as paginas.
+    grid_js = """() => {
         const tables=[...document.querySelectorAll('table')];
         let best=null,max=0;
         for(const t of tables){const r=t.querySelectorAll('tr');if(r.length>max){max=r.length;best=t;}}
-        if(!best)return[];
-        const trs=[...best.querySelectorAll('tr')];
-        return trs.slice(1).map(tr=>{
-            const tds=[...tr.querySelectorAll('td')].map(c=>c.innerText.trim());
-            const a=tr.querySelector('td a');
-            return {cols: tds, href: a ? a.href : null};
-        }).filter(r=>r.cols.length>=6);
-    }""")
+        let rows=[];
+        if(best){
+            rows=[...best.querySelectorAll('tr')].slice(1).map(tr=>{
+                const tds=[...tr.querySelectorAll('td')].map(c=>c.innerText.trim());
+                const a=tr.querySelector('td a');
+                return {cols: tds, href: a ? a.href : null};
+            }).filter(r=>r.cols.length>=6);
+        }
+        const links=[];
+        document.querySelectorAll('a').forEach(a=>{
+            const t=(a.innerText||'').trim();
+            if(/^\\d+$/.test(t) && /-p=\\d/.test(a.href||'')) links.push({num: parseInt(t,10), href: a.href});
+        });
+        return {rows, links};
+    }"""
+
+    all_rows = []
+    page_links = {}      # num -> href (displaytag mostra janela de paginas)
+    visited = set()
+    res = await page.evaluate(grid_js)
+    visited.add(1)
+    all_rows.extend(res["rows"])
+    for l in res["links"]:
+        page_links.setdefault(l["num"], l["href"])
+    safety = 0
+    while safety < 100:
+        safety += 1
+        pending = [n for n in sorted(page_links) if n not in visited]
+        if not pending:
+            break
+        n = pending[0]
+        try:
+            await page.goto(page_links[n], timeout=40000, wait_until="domcontentloaded")
+            await page.wait_for_timeout(2500)
+            res = await page.evaluate(grid_js)
+            all_rows.extend(res["rows"])
+            for l in res["links"]:
+                page_links.setdefault(l["num"], l["href"])
+        except Exception as e:
+            logger.warning(f"  {mun['nome']}: pagina {n} falhou: {str(e)[:80]}")
+        visited.add(n)
+
     propostas = []
-    for row in grid:
+    seen_num = set()
+    for row in all_rows:
+        num = _clean(row["cols"][0])
+        if not num or num in seen_num:
+            continue
+        seen_num.add(num)
         propostas.append({
-            "numero_proposta": _clean(row["cols"][0]),
+            "numero_proposta": num,
             "situacao": _clean(row["cols"][1]),
             "orgao": _clean(row["cols"][2]),
             "proponente": _clean(row["cols"][3]),
@@ -134,6 +174,7 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0) -> list[dict]:
             "identificacao": _clean(row["cols"][5]),
             "_detalhe_url": row["href"],
         })
+    logger.info(f"  {mun['nome']}: {len(visited)} pagina(s) -> {len(propostas)} propostas")
 
     # Enriquece cada proposta com o detalhe (Dados da Proposta)
     for prop in propostas:
