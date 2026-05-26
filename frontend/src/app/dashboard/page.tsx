@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import {
   FileText,
   DollarSign,
@@ -43,7 +43,20 @@ function SkeletonCard() {
 
 export default function DashboardPage() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const municipioId = searchParams.get("municipio_id");
+
+  // Navega para os lançamentos (Convênios SIGCON) com o filtro de vigência do KPI
+  const goConvenios = (vigencia?: string) => {
+    if (!municipioId) return;
+    const qs = new URLSearchParams({ municipio_id: municipioId });
+    if (vigencia) qs.set("vigencia", vigencia);
+    router.push(`/dashboard/convenios?${qs.toString()}`);
+  };
+  const goVoluntarias = () => {
+    if (!municipioId) return;
+    router.push(`/dashboard/transferegov-voluntarias?municipio_id=${municipioId}`);
+  };
 
   const [summary, setSummary] = useState<MunicipioSummary | null>(null);
   const [alertas, setAlertas] = useState<AlertaVigencia[]>([]);
@@ -151,7 +164,10 @@ export default function DashboardPage() {
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-          <Card className="border-l-4 border-l-blue-700 hover:shadow-md transition-shadow">
+          <Card
+            onClick={() => goConvenios()}
+            className="border-l-4 border-l-blue-700 hover:shadow-md transition-shadow cursor-pointer"
+          >
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
               <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">
                 Total de Convenios (SIGCON)
@@ -167,7 +183,10 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
 
-          <Card className="border-l-4 border-l-cyan-700 hover:shadow-md transition-shadow">
+          <Card
+            onClick={goVoluntarias}
+            className="border-l-4 border-l-cyan-700 hover:shadow-md transition-shadow cursor-pointer"
+          >
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
               <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">
                 TransfereGov Voluntarias
@@ -200,7 +219,10 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
 
-          <Card className="border-l-4 border-l-red-600 hover:shadow-md transition-shadow">
+          <Card
+            onClick={() => goConvenios("vence60")}
+            className="border-l-4 border-l-red-600 hover:shadow-md transition-shadow cursor-pointer"
+          >
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
               <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">
                 Vence em 60 dias
@@ -219,7 +241,10 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
 
-          <Card className="border-l-4 border-l-amber-600 hover:shadow-md transition-shadow">
+          <Card
+            onClick={() => goConvenios("vence120")}
+            className="border-l-4 border-l-amber-600 hover:shadow-md transition-shadow cursor-pointer"
+          >
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
               <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">
                 Vence em 120 dias
@@ -238,7 +263,10 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
 
-          <Card className="border-l-4 border-l-purple-700 hover:shadow-md transition-shadow">
+          <Card
+            onClick={() => goConvenios("prestacao")}
+            className="border-l-4 border-l-purple-700 hover:shadow-md transition-shadow cursor-pointer"
+          >
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
               <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">
                 Prestacao de Contas

@@ -114,9 +114,16 @@ function isTE(objeto?: string | null): boolean {
   return !!objeto && /TRANSFER[ÊE]NCIA\s+ESPECIAL/i.test(objeto);
 }
 
+const VIGENCIA_LABELS: Record<string, string> = {
+  vence60: "Vence em 60 dias",
+  vence120: "Vence em 120 dias",
+  prestacao: "Prestacao de Contas (+90d vencido)",
+};
+
 export default function ConveniosPage() {
   const searchParams = useSearchParams();
   const municipioId = searchParams.get("municipio_id");
+  const vigenciaParam = searchParams.get("vigencia");
 
   const [data, setData] = useState<ConvenioList | null>(null);
   const [loading, setLoading] = useState(true);
@@ -125,6 +132,7 @@ export default function ConveniosPage() {
   const [esfera, setEsfera] = useState("todos");
   const [situacao, setSituacao] = useState("todos");
   const [ano, setAno] = useState("todos");
+  const [vigencia, setVigencia] = useState(vigenciaParam ?? "todos");
   const [searchTerm, setSearchTerm] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [situacoes, setSituacoes] = useState<string[]>([]);
@@ -149,10 +157,15 @@ export default function ConveniosPage() {
     return () => clearTimeout(timer);
   }, [searchTerm]);
 
+  // Sincroniza filtro de vigencia com o parametro da URL (vindo dos KPIs do dashboard)
+  useEffect(() => {
+    setVigencia(vigenciaParam ?? "todos");
+  }, [vigenciaParam]);
+
   // Reset page on filter change
   useEffect(() => {
     setPage(1);
-  }, [esfera, situacao, ano, debouncedSearch]);
+  }, [esfera, situacao, ano, vigencia, debouncedSearch]);
 
   const fetchData = useCallback(() => {
     if (!municipioId) return;
@@ -166,6 +179,7 @@ export default function ConveniosPage() {
     if (esfera !== "todos") params.esfera = esfera;
     if (situacao !== "todos") params.situacao = situacao;
     if (ano !== "todos") params.ano = ano;
+    if (vigencia !== "todos") params.vigencia = vigencia;
     if (debouncedSearch) params.search = debouncedSearch;
 
     api
@@ -173,7 +187,7 @@ export default function ConveniosPage() {
       .then((res) => setData(res.data))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [municipioId, page, esfera, situacao, ano, debouncedSearch]);
+  }, [municipioId, page, esfera, situacao, ano, vigencia, debouncedSearch]);
 
   useEffect(() => {
     fetchData();
@@ -293,6 +307,18 @@ export default function ConveniosPage() {
           </SelectContent>
         </Select>
 
+        <Select value={vigencia} onValueChange={(v) => setVigencia(v ?? "todos")}>
+          <SelectTrigger className="w-52">
+            <SelectValue placeholder="Vigencia" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="todos">Toda Vigencia</SelectItem>
+            <SelectItem value="vence60">Vence em 60 dias</SelectItem>
+            <SelectItem value="vence120">Vence em 120 dias</SelectItem>
+            <SelectItem value="prestacao">Prestacao de Contas (+90d)</SelectItem>
+          </SelectContent>
+        </Select>
+
         <div className="relative flex-1 min-w-[200px]">
           <SearchIcon className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -303,6 +329,23 @@ export default function ConveniosPage() {
           />
         </div>
       </div>
+
+      {/* Chip do filtro ativo de vigencia (vindo dos KPIs do dashboard) */}
+      {vigencia !== "todos" && (
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-slate-500">Filtro ativo:</span>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 border border-blue-200 px-2.5 py-0.5 text-xs font-medium text-blue-700">
+            {VIGENCIA_LABELS[vigencia] ?? vigencia}
+            <button
+              onClick={() => setVigencia("todos")}
+              className="text-blue-500 hover:text-blue-800"
+              aria-label="Limpar filtro"
+            >
+              ×
+            </button>
+          </span>
+        </div>
+      )}
 
       {/* Table */}
       {loading ? (

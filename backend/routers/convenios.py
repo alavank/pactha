@@ -4,7 +4,7 @@ Apos refactor lean, mantemos apenas a esfera estadual. Federal foi removida.
 """
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_, text
+from sqlalchemy import select, func, or_, and_, text
 from datetime import date, timedelta
 from typing import Optional
 from database import get_db
@@ -111,6 +111,7 @@ async def list_convenios(
     situacao: Optional[str] = None,
     fonte: Optional[str] = None,
     fontes: Optional[list[str]] = Query(None, description="Multi-select fonte"),
+    vigencia: Optional[str] = Query(None, description="vence60 | vence120 | prestacao"),
     search: Optional[str] = None,
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
@@ -145,6 +146,20 @@ async def list_convenios(
     elif fonte:
         q = q.where(ConvenioEstadual.fonte == fonte)
         q_count = q_count.where(ConvenioEstadual.fonte == fonte)
+    if vigencia:
+        hoje = date.today()
+        vcond = None
+        if vigencia == "vence60":
+            vcond = and_(ConvenioEstadual.dt_vigencia_atual >= hoje,
+                         ConvenioEstadual.dt_vigencia_atual <= hoje + timedelta(days=60))
+        elif vigencia == "vence120":
+            vcond = and_(ConvenioEstadual.dt_vigencia_atual >= hoje,
+                         ConvenioEstadual.dt_vigencia_atual <= hoje + timedelta(days=120))
+        elif vigencia == "prestacao":
+            vcond = ConvenioEstadual.dt_vigencia_atual < hoje - timedelta(days=90)
+        if vcond is not None:
+            q = q.where(vcond)
+            q_count = q_count.where(vcond)
     if search:
         term = f"%{search}%"
         search_filter = or_(
