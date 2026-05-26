@@ -22,7 +22,9 @@ export interface MunicipioSummary {
   valor_total_estadual: number;
   alertas_vigencia: number;        // 120 dias (estadual + voluntarias)
   alertas_vigencia_60d: number;    // 60 dias (critico)
-  alertas_prestacao_contas: number; // vencidos ha +90 dias (prestacao de contas)
+  alertas_prestacao_contas: number; // vencidos ha +90 dias (total estadual + federal)
+  alertas_prestacao_contas_estadual: number; // SIGCON vencidos ha +90 dias
+  alertas_prestacao_contas_federal: number;  // Voluntarias vencidas ha +90 dias
 }
 
 export interface Convenio {

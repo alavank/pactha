@@ -156,6 +156,7 @@ async def voluntarias(
     situacao: Optional[str] = Query(None),
     orgao: Optional[str] = Query(None),
     search: Optional[str] = Query(None, description="busca em numero/proponente"),
+    vigencia: Optional[str] = Query(None, description="vence60 | vence120 | prestacao"),
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
@@ -192,6 +193,20 @@ async def voluntarias(
         "dias_restantes": _dias_restantes(row[13]),
         "atualizado_em": row[16].isoformat() if row[16] else None,
     } for row in r.fetchall()]
+
+    # Filtro de vigencia (vindo dos KPIs do dashboard)
+    if vigencia:
+        def _match_vig(d):
+            if d is None:
+                return False
+            if vigencia == "vence60":
+                return 0 <= d <= 60
+            if vigencia == "vence120":
+                return 0 <= d <= 120
+            if vigencia == "prestacao":
+                return d < -90
+            return True
+        items = [i for i in items if _match_vig(i["dias_restantes"])]
 
     # Mesma ordenacao do SIGCON: vigentes por urgencia ASC, vencidos depois
     # (|dias| ASC), sem data por ultimo.

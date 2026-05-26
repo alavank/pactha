@@ -62,9 +62,16 @@ function badgeColor(sit: string): string {
   return "bg-gray-100 text-gray-700";
 }
 
+const VIGENCIA_LABELS: Record<string, string> = {
+  vence60: "Vence em 60 dias",
+  vence120: "Vence em 120 dias",
+  prestacao: "Prestacao de Contas (+90d vencido)",
+};
+
 export default function TransfereGovVoluntariasPage() {
   const sp = useSearchParams();
   const municipioId = sp.get("municipio_id");
+  const vigenciaParam = sp.get("vigencia");
 
   const [items, setItems] = useState<Proposta[]>([]);
   const [total, setTotal] = useState(0);
@@ -72,6 +79,7 @@ export default function TransfereGovVoluntariasPage() {
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [situacao, setSituacao] = useState("");
+  const [vigencia, setVigencia] = useState(vigenciaParam ?? "");
 
   const [detalhe, setDetalhe] = useState<Detalhe | null>(null);
   const [loadingDet, setLoadingDet] = useState(false);
@@ -83,12 +91,17 @@ export default function TransfereGovVoluntariasPage() {
       const params: Record<string, string> = { municipio_id: municipioId };
       if (search.trim()) params.search = search.trim();
       if (situacao.trim()) params.situacao = situacao.trim();
+      if (vigencia) params.vigencia = vigencia;
       const r = await api.get<Resp>("/transferegov/voluntarias", { params });
       setItems(r.data.items); setTotal(r.data.total); setAtualizadoEm(r.data.atualizado_em);
     } catch (e) { console.error(e); } finally { setLoading(false); }
-  }, [municipioId, search, situacao]);
+  }, [municipioId, search, situacao, vigencia]);
 
-  useEffect(() => { if (municipioId) buscar(); }, [municipioId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Sincroniza filtro de vigencia com o parametro da URL (vindo dos KPIs)
+  useEffect(() => { setVigencia(vigenciaParam ?? ""); }, [vigenciaParam]);
+
+  // Busca ao montar e sempre que municipio ou filtro de vigencia mudarem
+  useEffect(() => { if (municipioId) buscar(); }, [municipioId, vigencia]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const abrirDetalhe = async (numero: string) => {
     setDetalhe(null); setLoadingDet(true);
@@ -135,12 +148,29 @@ export default function TransfereGovVoluntariasPage() {
             <Button onClick={buscar} disabled={loading} className="bg-blue-600 hover:bg-blue-700">
               {loading ? <Loader2 className="size-4 animate-spin mr-1" /> : <Search className="size-4 mr-1" />} Filtrar
             </Button>
-            <Button variant="outline" onClick={() => { setSearch(""); setSituacao(""); setTimeout(buscar, 100); }}>
+            <Button variant="outline" onClick={() => { setSearch(""); setSituacao(""); setVigencia(""); setTimeout(buscar, 100); }}>
               <Eraser className="size-4 mr-1" /> Limpar
             </Button>
           </div>
         </div>
       </div>
+
+      {/* Chip do filtro ativo de vigencia (vindo dos KPIs do dashboard) */}
+      {vigencia && (
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-slate-500">Filtro ativo:</span>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-fuchsia-50 border border-fuchsia-200 px-2.5 py-0.5 text-xs font-medium text-fuchsia-700">
+            {VIGENCIA_LABELS[vigencia] ?? vigencia}
+            <button
+              onClick={() => setVigencia("")}
+              className="text-fuchsia-500 hover:text-fuchsia-800"
+              aria-label="Limpar filtro"
+            >
+              ×
+            </button>
+          </span>
+        </div>
+      )}
 
       <div className="bg-white border rounded overflow-hidden">
         <div className="px-3 py-2 border-b bg-slate-50 text-sm"><strong>{total}</strong> propostas</div>

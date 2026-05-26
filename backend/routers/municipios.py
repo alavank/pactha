@@ -93,6 +93,7 @@ async def municipio_summary(
         elif d < venc90:
             vol_prest += 1
 
+    prest_est = prest_contas.scalar()
     return MunicipioSummary(
         municipio=MunicipioResponse.model_validate(mun),
         total_convenios_estadual=est_count.scalar(),
@@ -100,5 +101,7 @@ async def municipio_summary(
         total_voluntarias=total_vol,
         alertas_vigencia=alertas120.scalar() + vol_120,
         alertas_vigencia_60d=alertas60.scalar() + vol_60,
-        alertas_prestacao_contas=prest_contas.scalar() + vol_prest,
+        alertas_prestacao_contas=prest_est + vol_prest,
+        alertas_prestacao_contas_estadual=prest_est,
+        alertas_prestacao_contas_federal=vol_prest,
     )
