@@ -144,7 +144,13 @@ export default function ConvenioDetailModal({ conv, onClose }: Props) {
                   <Field
                     label="Dias Restantes"
                     value={d.dias_restantes_label || (d.dias_restantes != null ? `${d.dias_restantes}d` : "-")}
-                    valueClass={d.dias_restantes_label === "VENCIDO" ? "text-red-600 font-bold" : ""}
+                    valueClass={
+                      d.dias_restantes_label?.includes("PRESTACAO")
+                        ? "text-purple-700 font-bold"
+                        : d.dias_restantes_label?.startsWith("VENCIDO")
+                        ? "text-red-600 font-bold"
+                        : ""
+                    }
                   />
                 </Grid>
 

@@ -264,6 +264,59 @@ async def alertas_vigencia(
     return alertas
 
 
+@router.get("/prestacao-contas", response_model=list[AlertaVigencia])
+async def alertas_prestacao_contas(
+    municipio_id: Optional[int] = None,
+    dias: int = Query(90, ge=1, description="Dias minimos apos o vencimento"),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Convenios vencidos ha mais de `dias` (default 90) -> prestacao de contas obrigatoria."""
+    corte = date.today() - timedelta(days=dias)
+    alertas = []
+
+    q = select(ConvenioEstadual).where(ConvenioEstadual.dt_vigencia_atual < corte)
+    if municipio_id:
+        q = q.where(ConvenioEstadual.municipio_id == municipio_id)
+    q = q.order_by(ConvenioEstadual.dt_vigencia_atual.desc())
+    for c in (await db.execute(q)).scalars().all():
+        dias_rest = (c.dt_vigencia_atual - date.today()).days
+        alertas.append(AlertaVigencia(
+            id=c.id, esfera="estadual", nr_sigcon=c.nr_sigcon,
+            objeto=c.objeto, orgao_concedente=c.orgao_concedente,
+            dt_fim_vigencia=c.dt_vigencia_atual, dias_restantes=dias_rest,
+            valor_total=float(c.valor_total) if c.valor_total else None,
+            situacao=c.situacao,
+        ))
+
+    # TransfereGov Voluntarias (dt_fim_vigencia eh string dd/mm/yyyy)
+    if municipio_id:
+        from datetime import datetime as _dt
+        vol = await db.execute(text("""
+            SELECT numero_proposta, codigo_instrumento, objeto, orgao, situacao, dt_fim_vigencia
+            FROM transferegov_propostas WHERE municipio_id = :m
+        """), {"m": municipio_id})
+        for row in vol.fetchall():
+            dtf = None
+            for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
+                try:
+                    dtf = _dt.strptime(str(row[5]).strip()[:10], fmt).date(); break
+                except (ValueError, AttributeError, TypeError):
+                    continue
+            if not dtf or dtf >= corte:
+                continue
+            alertas.append(AlertaVigencia(
+                id=0, esfera="voluntaria", nr_convenio=row[1] or row[0],
+                nr_sigcon=row[0], objeto=row[2], orgao_concedente=row[3],
+                dt_fim_vigencia=dtf, dias_restantes=(dtf - date.today()).days,
+                valor_total=None, situacao=row[4],
+            ))
+
+    # Mais recentemente vencidos primeiro (|dias| menor primeiro)
+    alertas.sort(key=lambda x: -x.dias_restantes)
+    return alertas
+
+
 # Workflow SIGCON-MG (etapas oficiais do portal Pesquisa Unificada)
 SIGCON_WORKFLOW = [
     "CADASTRAMENTO",
@@ -338,6 +391,9 @@ async def get_convenio_estadual_detail(
     nr_instrumento = raw.get("nr_instrumento")
     if not nr_instrumento and c.nr_sigcon and re.match(r"^\d{8,12}/\d{4}$", c.nr_sigcon):
         nr_instrumento = c.nr_sigcon
+    # Nº Convenio Publicado = numero do INSTRUMENTO (formato XXXXXXXXXX/YYYY).
+    # Quando o registro veio do scraper, nr_sigcon eh o SIAFI numerico -> nao usar.
+    nr_conv_pub = nr_instrumento or (c.nr_sigcon if c.nr_sigcon and "/" in c.nr_sigcon else None)
 
     dias_vig = None
     if c.dt_vigencia_inicial and (c.dt_vigencia_atual or c.dt_vigencia_final):
@@ -349,13 +405,15 @@ async def get_convenio_estadual_detail(
     if c.dt_vigencia_atual or c.dt_vigencia_final:
         dt_fim = c.dt_vigencia_atual or c.dt_vigencia_final
         dias_rest = (dt_fim - date.today()).days
-        if dias_rest < 0:
+        if dias_rest < -90:
+            dias_rest_label = "VENCIDO +90 DIAS - PRESTACAO DE CONTAS"
+        elif dias_rest < 0:
             dias_rest_label = "VENCIDO"
 
     return {
         "id": c.id,
         "esfera": "estadual",
-        "nr_convenio_publicado": c.nr_sigcon,
+        "nr_convenio_publicado": nr_conv_pub,
         "nr_siafi": c.nr_siafi,
         "nr_proposta": nr_proposta,
         "nr_plano_trabalho": c.nr_plano_trabalho,

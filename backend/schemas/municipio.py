@@ -19,3 +19,4 @@ class MunicipioSummary(BaseModel):
     valor_total_estadual: float = 0
     alertas_vigencia: int = 0       # vencendo em ate 120 dias (estadual + voluntarias)
     alertas_vigencia_60d: int = 0   # vencendo em ate 60 dias (critico)
+    alertas_prestacao_contas: int = 0  # vencidos ha +90 dias (prestacao de contas)

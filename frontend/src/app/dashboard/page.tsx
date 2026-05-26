@@ -6,6 +6,7 @@ import {
   FileText,
   DollarSign,
   AlertTriangle,
+  ClipboardList,
 } from "lucide-react";
 import {
   BarChart,
@@ -46,6 +47,7 @@ export default function DashboardPage() {
 
   const [summary, setSummary] = useState<MunicipioSummary | null>(null);
   const [alertas, setAlertas] = useState<AlertaVigencia[]>([]);
+  const [prestacao, setPrestacao] = useState<AlertaVigencia[]>([]);
   const [stats, setStats] = useState<ConvenioStats | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -61,11 +63,15 @@ export default function DashboardPage() {
       api.get<ConvenioStats>("/convenios/stats", {
         params: { municipio_id: municipioId },
       }),
+      api.get<AlertaVigencia[]>("/convenios/prestacao-contas", {
+        params: { municipio_id: municipioId },
+      }),
     ])
-      .then(([summaryRes, alertasRes, statsRes]) => {
+      .then(([summaryRes, alertasRes, statsRes, prestacaoRes]) => {
         setSummary(summaryRes.data);
         setAlertas(Array.isArray(alertasRes.data) ? alertasRes.data : []);
         setStats(statsRes.data);
+        setPrestacao(Array.isArray(prestacaoRes.data) ? prestacaoRes.data : []);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -138,13 +144,13 @@ export default function DashboardPage() {
 
       {/* Summary cards - estilo prefeitura */}
       {loading ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-          {Array.from({ length: 5 }).map((_, i) => (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          {Array.from({ length: 6 }).map((_, i) => (
             <SkeletonCard key={i} />
           ))}
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
           <Card className="border-l-4 border-l-blue-700 hover:shadow-md transition-shadow">
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
               <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">
@@ -231,6 +237,25 @@ export default function DashboardPage() {
               </p>
             </CardContent>
           </Card>
+
+          <Card className="border-l-4 border-l-purple-700 hover:shadow-md transition-shadow">
+            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+              <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">
+                Prestacao de Contas
+              </CardTitle>
+              <div className="size-9 rounded-md bg-purple-50 flex items-center justify-center">
+                <ClipboardList className="size-4 text-purple-700" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold text-purple-700">
+                {summary?.alertas_prestacao_contas ?? 0}
+              </div>
+              <p className="text-xs text-slate-500 mt-2">
+                Vencidos ha +90 dias
+              </p>
+            </CardContent>
+          </Card>
         </div>
       )}
 
@@ -295,6 +320,53 @@ export default function DashboardPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Prestacao de Contas: convenios vencidos ha +90 dias */}
+      {!loading && prestacao.length > 0 && (
+        <Card className="border-l-4 border-l-purple-700">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <ClipboardList className="size-5 text-purple-700" />
+              Prestacao de Contas (vencidos ha +90 dias)
+              <Badge variant="secondary" className="ml-1">{prestacao.length}</Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {prestacao.slice(0, 10).map((alerta, idx) => (
+                <div
+                  key={`${alerta.esfera}-${alerta.id}-${idx}`}
+                  className="flex items-center justify-between rounded-lg border border-purple-100 bg-purple-50/40 p-3"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-sm">
+                        {alerta.nr_convenio || alerta.nr_sigcon || "-"}
+                      </span>
+                      <Badge className="text-xs uppercase" variant="secondary">
+                        {alerta.esfera}
+                      </Badge>
+                    </div>
+                    <p className="truncate text-sm text-muted-foreground">
+                      {alerta.objeto || alerta.orgao_concedente || "-"}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3 ml-4">
+                    <span className="text-sm text-muted-foreground">
+                      {formatDate(alerta.dt_fim_vigencia)}
+                    </span>
+                    <span className="inline-flex items-center rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-medium text-purple-800 whitespace-nowrap">
+                      {alerta.dias_restantes != null
+                        ? `${Math.abs(alerta.dias_restantes)}d vencido`
+                        : "-"}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Chart */}
       <Card>

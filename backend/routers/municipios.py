@@ -55,6 +55,8 @@ async def municipio_summary(
     hoje = date.today()
     limite120 = hoje + timedelta(days=120)
     limite60 = hoje + timedelta(days=60)
+    # Vencidos ha +90 dias -> prestacao de contas obrigatoria
+    venc90 = hoje - timedelta(days=90)
     alertas120 = await db.execute(
         select(func.count()).select_from(ConvenioEstadual)
         .where(ConvenioEstadual.municipio_id == municipio_id)
@@ -67,6 +69,11 @@ async def municipio_summary(
         .where(ConvenioEstadual.dt_vigencia_atual <= limite60)
         .where(ConvenioEstadual.dt_vigencia_atual >= hoje)
     )
+    prest_contas = await db.execute(
+        select(func.count()).select_from(ConvenioEstadual)
+        .where(ConvenioEstadual.municipio_id == municipio_id)
+        .where(ConvenioEstadual.dt_vigencia_atual < venc90)
+    )
 
     # TransfereGov Voluntarias (dt_fim_vigencia eh string dd/mm/yyyy -> parse em Python)
     vol = await db.execute(text(
@@ -74,13 +81,17 @@ async def municipio_summary(
     ), {"m": municipio_id})
     vol_rows = vol.fetchall()
     total_vol = len(vol_rows)
-    vol_120 = vol_60 = 0
+    vol_120 = vol_60 = vol_prest = 0
     for (dtf,) in vol_rows:
         d = _parse_dt(dtf)
-        if d and hoje <= d <= limite120:
+        if not d:
+            continue
+        if hoje <= d <= limite120:
             vol_120 += 1
             if d <= limite60:
                 vol_60 += 1
+        elif d < venc90:
+            vol_prest += 1
 
     return MunicipioSummary(
         municipio=MunicipioResponse.model_validate(mun),
@@ -89,4 +100,5 @@ async def municipio_summary(
         total_voluntarias=total_vol,
         alertas_vigencia=alertas120.scalar() + vol_120,
         alertas_vigencia_60d=alertas60.scalar() + vol_60,
+        alertas_prestacao_contas=prest_contas.scalar() + vol_prest,
     )
