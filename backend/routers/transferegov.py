@@ -192,6 +192,18 @@ async def voluntarias(
         "dias_restantes": _dias_restantes(row[13]),
         "atualizado_em": row[16].isoformat() if row[16] else None,
     } for row in r.fetchall()]
+
+    # Mesma ordenacao do SIGCON: vigentes por urgencia ASC, vencidos depois
+    # (|dias| ASC), sem data por ultimo.
+    def _sort_key(x):
+        d = x["dias_restantes"]
+        if d is None:
+            return (2, 0)
+        if d >= 0:
+            return (0, d)
+        return (1, -d)
+    items.sort(key=_sort_key)
+
     last = None
     if items:
         last = max((i["atualizado_em"] for i in items if i["atualizado_em"]), default=None)
