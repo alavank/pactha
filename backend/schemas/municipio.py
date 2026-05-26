@@ -17,6 +17,7 @@ class MunicipioSummary(BaseModel):
     total_convenios_estadual: int = 0
     total_voluntarias: int = 0      # propostas TransfereGov Voluntarias
     valor_total_estadual: float = 0
+    valor_total_federal: float = 0  # soma valor_global/repasse das Voluntarias
     alertas_vigencia: int = 0       # vencendo em ate 120 dias (estadual + voluntarias)
     alertas_vigencia_60d: int = 0   # vencendo em ate 60 dias (critico)
     alertas_prestacao_contas: int = 0  # vencidos ha +90 dias (total estadual + federal)

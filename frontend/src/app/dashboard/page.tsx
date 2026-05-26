@@ -28,6 +28,26 @@ import {
 } from "@/lib/utils";
 import type { MunicipioSummary, AlertaVigencia, ConvenioStats } from "@/types";
 
+function EsferaTag({ tipo }: { tipo: "estadual" | "federal" | "ambos" }) {
+  const styles: Record<string, string> = {
+    estadual: "bg-blue-50 text-blue-700 border-blue-200",
+    federal: "bg-cyan-50 text-cyan-700 border-cyan-200",
+    ambos: "bg-slate-100 text-slate-600 border-slate-200",
+  };
+  const labels: Record<string, string> = {
+    estadual: "Estadual",
+    federal: "Federal",
+    ambos: "Estadual + Federal",
+  };
+  return (
+    <span
+      className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${styles[tipo]}`}
+    >
+      {labels[tipo]}
+    </span>
+  );
+}
+
 function SkeletonCard() {
   return (
     <Card>
@@ -159,155 +179,191 @@ export default function DashboardPage() {
 
       {/* Summary cards - estilo prefeitura */}
       {loading ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {Array.from({ length: 7 }).map((_, i) => (
-            <SkeletonCard key={i} />
-          ))}
+        <div className="space-y-6">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)}
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)}
+          </div>
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          <Card
-            onClick={() => goConvenios()}
-            className="border-l-4 border-l-blue-700 hover:shadow-md transition-shadow cursor-pointer"
-          >
-            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">
-                Total de Convenios (SIGCON)
-              </CardTitle>
-              <div className="size-9 rounded-md bg-blue-50 flex items-center justify-center">
-                <FileText className="size-4 text-blue-700" />
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-slate-900">
-                {summary?.total_convenios_estadual ?? 0}
-              </div>
-            </CardContent>
-          </Card>
+        <div className="space-y-6">
+          {/* Grupo 1: Totais e Valores */}
+          <div>
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">
+              Totais e Valores
+            </h2>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <Card
+                onClick={() => goConvenios()}
+                className="border-l-4 border-l-blue-700 hover:shadow-md transition-shadow cursor-pointer"
+              >
+                <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+                  <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">
+                    Total de Convenios (SIGCON)
+                  </CardTitle>
+                  <div className="size-9 rounded-md bg-blue-50 flex items-center justify-center">
+                    <FileText className="size-4 text-blue-700" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold text-slate-900">
+                    {summary?.total_convenios_estadual ?? 0}
+                  </div>
+                  <div className="mt-2"><EsferaTag tipo="estadual" /></div>
+                </CardContent>
+              </Card>
 
-          <Card
-            onClick={() => goVoluntarias()}
-            className="border-l-4 border-l-cyan-700 hover:shadow-md transition-shadow cursor-pointer"
-          >
-            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">
-                TransfereGov Voluntarias
-              </CardTitle>
-              <div className="size-9 rounded-md bg-cyan-50 flex items-center justify-center">
-                <FileText className="size-4 text-cyan-700" />
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-slate-900">
-                {summary?.total_voluntarias ?? 0}
-              </div>
-              <p className="text-xs text-slate-500 mt-2">Convenios federais</p>
-            </CardContent>
-          </Card>
+              <Card
+                onClick={() => goVoluntarias()}
+                className="border-l-4 border-l-cyan-700 hover:shadow-md transition-shadow cursor-pointer"
+              >
+                <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+                  <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">
+                    TransfereGov Voluntarias
+                  </CardTitle>
+                  <div className="size-9 rounded-md bg-cyan-50 flex items-center justify-center">
+                    <FileText className="size-4 text-cyan-700" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold text-slate-900">
+                    {summary?.total_voluntarias ?? 0}
+                  </div>
+                  <div className="mt-2"><EsferaTag tipo="federal" /></div>
+                </CardContent>
+              </Card>
 
-          <Card className="border-l-4 border-l-green-700 hover:shadow-md transition-shadow">
-            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">
-                Valor Total
-              </CardTitle>
-              <div className="size-9 rounded-md bg-green-50 flex items-center justify-center">
-                <DollarSign className="size-4 text-green-700" />
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="text-xl font-bold text-slate-900 break-words leading-tight">
-                {formatCurrency(summary?.valor_total_estadual ?? 0)}
-              </div>
-            </CardContent>
-          </Card>
+              <Card className="border-l-4 border-l-green-700 hover:shadow-md transition-shadow">
+                <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+                  <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">
+                    Valor Estadual
+                  </CardTitle>
+                  <div className="size-9 rounded-md bg-green-50 flex items-center justify-center">
+                    <DollarSign className="size-4 text-green-700" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-xl font-bold text-slate-900 break-words leading-tight">
+                    {formatCurrency(summary?.valor_total_estadual ?? 0)}
+                  </div>
+                  <div className="mt-2"><EsferaTag tipo="estadual" /></div>
+                </CardContent>
+              </Card>
 
-          <Card
-            onClick={() => goConvenios("vence60")}
-            className="border-l-4 border-l-red-600 hover:shadow-md transition-shadow cursor-pointer"
-          >
-            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">
-                Vence em 60 dias
-              </CardTitle>
-              <div className="size-9 rounded-md bg-red-50 flex items-center justify-center">
-                <AlertTriangle className="size-4 text-red-600" />
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-red-700">
-                {summary?.alertas_vigencia_60d ?? 0}
-              </div>
-              <p className="text-xs text-slate-500 mt-2">
-                Critico - acao imediata
-              </p>
-            </CardContent>
-          </Card>
+              <Card className="border-l-4 border-l-teal-600 hover:shadow-md transition-shadow">
+                <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+                  <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">
+                    Valor Federal
+                  </CardTitle>
+                  <div className="size-9 rounded-md bg-teal-50 flex items-center justify-center">
+                    <DollarSign className="size-4 text-teal-600" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-xl font-bold text-slate-900 break-words leading-tight">
+                    {formatCurrency(summary?.valor_total_federal ?? 0)}
+                  </div>
+                  <div className="mt-2"><EsferaTag tipo="federal" /></div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
 
-          <Card
-            onClick={() => goConvenios("vence120")}
-            className="border-l-4 border-l-amber-600 hover:shadow-md transition-shadow cursor-pointer"
-          >
-            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">
-                Vence em 120 dias
-              </CardTitle>
-              <div className="size-9 rounded-md bg-amber-50 flex items-center justify-center">
-                <AlertTriangle className="size-4 text-amber-600" />
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-amber-700">
-                {summary?.alertas_vigencia ?? 0}
-              </div>
-              <p className="text-xs text-slate-500 mt-2">
-                Atencao - planejar renovacao
-              </p>
-            </CardContent>
-          </Card>
+          {/* Grupo 2: Vencimentos e Prestacao de Contas */}
+          <div>
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">
+              Vencimentos e Prestacao de Contas
+            </h2>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <Card
+                onClick={() => goConvenios("vence60")}
+                className="border-l-4 border-l-red-600 hover:shadow-md transition-shadow cursor-pointer"
+              >
+                <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+                  <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">
+                    Vence em 60 dias
+                  </CardTitle>
+                  <div className="size-9 rounded-md bg-red-50 flex items-center justify-center">
+                    <AlertTriangle className="size-4 text-red-600" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold text-red-700">
+                    {summary?.alertas_vigencia_60d ?? 0}
+                  </div>
+                  <div className="mt-2"><EsferaTag tipo="ambos" /></div>
+                </CardContent>
+              </Card>
 
-          <Card
-            onClick={() => goConvenios("prestacao")}
-            className="border-l-4 border-l-purple-700 hover:shadow-md transition-shadow cursor-pointer"
-          >
-            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">
-                Prest. Contas Estadual
-              </CardTitle>
-              <div className="size-9 rounded-md bg-purple-50 flex items-center justify-center">
-                <ClipboardList className="size-4 text-purple-700" />
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-purple-700">
-                {summary?.alertas_prestacao_contas_estadual ?? 0}
-              </div>
-              <p className="text-xs text-slate-500 mt-2">
-                SIGCON · vencidos +90d
-              </p>
-            </CardContent>
-          </Card>
+              <Card
+                onClick={() => goConvenios("vence120")}
+                className="border-l-4 border-l-amber-600 hover:shadow-md transition-shadow cursor-pointer"
+              >
+                <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+                  <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">
+                    Vence em 120 dias
+                  </CardTitle>
+                  <div className="size-9 rounded-md bg-amber-50 flex items-center justify-center">
+                    <AlertTriangle className="size-4 text-amber-600" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold text-amber-700">
+                    {summary?.alertas_vigencia ?? 0}
+                  </div>
+                  <div className="mt-2"><EsferaTag tipo="ambos" /></div>
+                </CardContent>
+              </Card>
 
-          <Card
-            onClick={() => goVoluntarias("prestacao")}
-            className="border-l-4 border-l-fuchsia-700 hover:shadow-md transition-shadow cursor-pointer"
-          >
-            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">
-                Prest. Contas Federal
-              </CardTitle>
-              <div className="size-9 rounded-md bg-fuchsia-50 flex items-center justify-center">
-                <ClipboardList className="size-4 text-fuchsia-700" />
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-fuchsia-700">
-                {summary?.alertas_prestacao_contas_federal ?? 0}
-              </div>
-              <p className="text-xs text-slate-500 mt-2">
-                Voluntarias · vencidos +90d
-              </p>
-            </CardContent>
-          </Card>
+              <Card
+                onClick={() => goConvenios("prestacao")}
+                className="border-l-4 border-l-purple-700 hover:shadow-md transition-shadow cursor-pointer"
+              >
+                <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+                  <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">
+                    Prest. Contas Estadual
+                  </CardTitle>
+                  <div className="size-9 rounded-md bg-purple-50 flex items-center justify-center">
+                    <ClipboardList className="size-4 text-purple-700" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold text-purple-700">
+                    {summary?.alertas_prestacao_contas_estadual ?? 0}
+                  </div>
+                  <div className="mt-2 flex items-center gap-1.5">
+                    <EsferaTag tipo="estadual" />
+                    <span className="text-[10px] text-slate-400">vencidos +90d</span>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card
+                onClick={() => goVoluntarias("prestacao")}
+                className="border-l-4 border-l-fuchsia-700 hover:shadow-md transition-shadow cursor-pointer"
+              >
+                <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+                  <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">
+                    Prest. Contas Federal
+                  </CardTitle>
+                  <div className="size-9 rounded-md bg-fuchsia-50 flex items-center justify-center">
+                    <ClipboardList className="size-4 text-fuchsia-700" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold text-fuchsia-700">
+                    {summary?.alertas_prestacao_contas_federal ?? 0}
+                  </div>
+                  <div className="mt-2 flex items-center gap-1.5">
+                    <EsferaTag tipo="federal" />
+                    <span className="text-[10px] text-slate-400">vencidos +90d</span>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
         </div>
       )}
 

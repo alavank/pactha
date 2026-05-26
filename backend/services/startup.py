@@ -34,6 +34,8 @@ MIGRATION_FILES = [
     "drop_lean_tables.sql",
     # UNIQUE INDEX em nr_siafi (previne duplicacao scraper+CKAN)
     "add_unique_nr_siafi.sql",
+    # Valores monetarios das Voluntarias (valor_global/repasse/contrapartida)
+    "add_voluntarias_valores.sql",
 ]
 
 

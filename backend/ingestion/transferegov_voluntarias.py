@@ -47,6 +47,20 @@ def _clean(s):
     return s.replace("�", "").replace("  ", " ").strip()
 
 
+def _money(s):
+    """Converte 'R$ 1.234.567,89' (pt-BR) em float. Retorna None se vazio/invalido."""
+    if not s:
+        return None
+    import re as _re
+    cleaned = _re.sub(r"[^\d,.-]", "", str(s))      # remove 'R$', espacos, etc
+    cleaned = cleaned.replace(".", "").replace(",", ".")  # milhar . -> nada; decimal , -> .
+    try:
+        v = float(cleaned)
+        return v if v != 0 else None
+    except ValueError:
+        return None
+
+
 def _municipios_pacta() -> list[dict]:
     import psycopg2
     url = os.getenv("DATABASE_URL_SYNC", "")
@@ -168,6 +182,24 @@ async def _extrai_detalhe(page) -> dict:
             const v = grab(lbl);
             if (v && !out[lbl]) out[lbl] = v;
         }
+        // Valores monetarios (Valor Global/Repasse/Contrapartida) - podem estar em
+        // tabelas financeiras com layout variado; busca o proximo R$ apos o rotulo.
+        const grabMoney = (label) => {
+            const re = new RegExp(label + '[\\\\s\\\\S]{0,40}?(R\\\\$\\\\s*[\\\\d.]+,\\\\d{2})', 'i');
+            const m = txt.match(re);
+            return m ? m[1].trim() : null;
+        };
+        const moneyLabels = {
+            'Valor Global': ['Valor Global do Instrumento','Valor Global'],
+            'Valor de Repasse': ['Valor de Repasse da União','Valor de Repasse','Valor do Repasse'],
+            'Valor de Contrapartida': ['Valor da Contrapartida','Valor de Contrapartida','Valor Contrapartida'],
+        };
+        for (const [outKey, variants] of Object.entries(moneyLabels)) {
+            for (const lbl of variants) {
+                const v = grabMoney(lbl);
+                if (v) { out[outKey] = v; break; }
+            }
+        }
         // Documentos digitalizados (nomes dos PDFs)
         const docs = [];
         document.querySelectorAll('a').forEach(a => {
@@ -210,14 +242,18 @@ def _upsert(mun_id: int, propostas: list[dict]):
         dt_fim_vig = g("Data Término de Vigência Atual", "Data Término de Vigência")
         dt_prop = g("Data da Proposta")
         dt_assin = g("Data Assinatura")
+        valor_global = _money(g("Valor Global", "Valor Global do Instrumento"))
+        valor_repasse = _money(g("Valor de Repasse", "Valor de Repasse da União", "Valor do Repasse"))
+        valor_contrap = _money(g("Valor de Contrapartida", "Valor da Contrapartida"))
         cur.execute("""
             INSERT INTO transferegov_propostas
                 (municipio_id, numero_proposta, situacao, orgao, proponente,
                  possui_parecer, identificacao, codigo_instrumento, modalidade,
                  situacao_siafi, numero_processo, objeto, programa,
                  dt_inicio_vigencia, dt_fim_vigencia, dt_proposta, dt_assinatura,
+                 valor_global, valor_repasse, valor_contrapartida,
                  detalhe, raw_data, updated_at)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,NOW())
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,NOW())
             ON CONFLICT (municipio_id, numero_proposta) DO UPDATE SET
                 situacao=EXCLUDED.situacao, orgao=EXCLUDED.orgao,
                 proponente=EXCLUDED.proponente, possui_parecer=EXCLUDED.possui_parecer,
@@ -227,6 +263,9 @@ def _upsert(mun_id: int, propostas: list[dict]):
                 objeto=EXCLUDED.objeto, programa=EXCLUDED.programa,
                 dt_inicio_vigencia=EXCLUDED.dt_inicio_vigencia, dt_fim_vigencia=EXCLUDED.dt_fim_vigencia,
                 dt_proposta=EXCLUDED.dt_proposta, dt_assinatura=EXCLUDED.dt_assinatura,
+                valor_global=COALESCE(EXCLUDED.valor_global, transferegov_propostas.valor_global),
+                valor_repasse=COALESCE(EXCLUDED.valor_repasse, transferegov_propostas.valor_repasse),
+                valor_contrapartida=COALESCE(EXCLUDED.valor_contrapartida, transferegov_propostas.valor_contrapartida),
                 detalhe=EXCLUDED.detalhe, raw_data=EXCLUDED.raw_data, updated_at=NOW()
         """, (mun_id, p["numero_proposta"][:20], p["situacao"][:300], p["orgao"][:300],
               p["proponente"][:300], p["possui_parecer"][:10], p["identificacao"][:30],
@@ -235,6 +274,7 @@ def _upsert(mun_id: int, propostas: list[dict]):
               objeto, (programa or "")[:300] or None,
               (dt_ini_vig or "")[:20] or None, (dt_fim_vig or "")[:20] or None,
               (dt_prop or "")[:20] or None, (dt_assin or "")[:20] or None,
+              valor_global, valor_repasse, valor_contrap,
               json.dumps(det, ensure_ascii=False), json.dumps(p, ensure_ascii=False)))
         ins += 1
     conn.commit(); cur.close(); conn.close()

@@ -77,12 +77,18 @@ async def municipio_summary(
 
     # TransfereGov Voluntarias (dt_fim_vigencia eh string dd/mm/yyyy -> parse em Python)
     vol = await db.execute(text(
-        "SELECT dt_fim_vigencia FROM transferegov_propostas WHERE municipio_id = :m"
+        "SELECT dt_fim_vigencia, COALESCE(valor_global, valor_repasse, 0) "
+        "FROM transferegov_propostas WHERE municipio_id = :m"
     ), {"m": municipio_id})
     vol_rows = vol.fetchall()
     total_vol = len(vol_rows)
     vol_120 = vol_60 = vol_prest = 0
-    for (dtf,) in vol_rows:
+    vol_valor = 0.0
+    for (dtf, val) in vol_rows:
+        try:
+            vol_valor += float(val or 0)
+        except (TypeError, ValueError):
+            pass
         d = _parse_dt(dtf)
         if not d:
             continue
@@ -98,6 +104,7 @@ async def municipio_summary(
         municipio=MunicipioResponse.model_validate(mun),
         total_convenios_estadual=est_count.scalar(),
         valor_total_estadual=float(est_valor.scalar()),
+        valor_total_federal=vol_valor,
         total_voluntarias=total_vol,
         alertas_vigencia=alertas120.scalar() + vol_120,
         alertas_vigencia_60d=alertas60.scalar() + vol_60,
