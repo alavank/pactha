@@ -173,8 +173,8 @@ export default function TransfereGovVoluntariasPage() {
                   <TableCell className="font-mono">{p.codigo_instrumento || "-"}</TableCell>
                   <TableCell className="font-mono">{p.numero_proposta}</TableCell>
                   <TableCell className="truncate" title={p.orgao}>{p.orgao}</TableCell>
-                  <TableCell>
-                    <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] ${badgeColor(p.situacao)}`}>
+                  <TableCell className="max-w-[200px]" title={p.situacao}>
+                    <span className={`block truncate px-1.5 py-0.5 rounded text-[10px] ${badgeColor(p.situacao)}`}>
                       {p.situacao}
                     </span>
                   </TableCell>

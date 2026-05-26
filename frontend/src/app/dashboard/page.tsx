@@ -138,13 +138,13 @@ export default function DashboardPage() {
 
       {/* Summary cards - estilo prefeitura */}
       {loading ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
           {Array.from({ length: 5 }).map((_, i) => (
             <SkeletonCard key={i} />
           ))}
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
           <Card className="border-l-4 border-l-blue-700 hover:shadow-md transition-shadow">
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
               <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">
@@ -188,7 +188,7 @@ export default function DashboardPage() {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-slate-900">
+              <div className="text-xl font-bold text-slate-900 break-words leading-tight">
                 {formatCurrency(summary?.valor_total_estadual ?? 0)}
               </div>
             </CardContent>
