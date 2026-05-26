@@ -28,10 +28,19 @@ interface Proposta {
   dt_fim_vigencia?: string;
   dt_proposta?: string;
   dt_assinatura?: string;
+  dias_restantes?: number | null;
   atualizado_em?: string;
 }
 
 interface Resp { items: Proposta[]; total: number; atualizado_em?: string; }
+
+function diasBadge(d?: number | null): { txt: string; cls: string } {
+  if (d === null || d === undefined) return { txt: "-", cls: "bg-gray-100 text-gray-500" };
+  if (d < 0) return { txt: `${Math.abs(d)}d`, cls: "bg-red-100 text-red-700" };
+  if (d <= 60) return { txt: `${d}d`, cls: "bg-amber-100 text-amber-700" };
+  if (d <= 180) return { txt: `${d}d`, cls: "bg-yellow-50 text-yellow-700" };
+  return { txt: `${d}d`, cls: "bg-green-100 text-green-700" };
+}
 
 interface Detalhe extends Proposta {
   detalhe?: Record<string, string | string[]>;
@@ -151,6 +160,7 @@ export default function TransfereGovVoluntariasPage() {
                 <TableHead className="w-[200px]">Situação</TableHead>
                 <TableHead className="w-[80px]">Início Vig.</TableHead>
                 <TableHead className="w-[80px]">Fim Vig.</TableHead>
+                <TableHead className="w-[55px]">Dias</TableHead>
                 <TableHead>Objeto</TableHead>
                 <TableHead className="w-[50px] text-center">Ver</TableHead>
                 <TableHead className="w-[40px] text-center">Rel.</TableHead>
@@ -170,6 +180,11 @@ export default function TransfereGovVoluntariasPage() {
                   </TableCell>
                   <TableCell>{p.dt_inicio_vigencia || "-"}</TableCell>
                   <TableCell>{p.dt_fim_vigencia || "-"}</TableCell>
+                  <TableCell>
+                    {(() => { const b = diasBadge(p.dias_restantes); return (
+                      <span className={`inline-block px-1.5 py-0.5 rounded-full text-[10px] font-medium ${b.cls}`}>{b.txt}</span>
+                    ); })()}
+                  </TableCell>
                   <TableCell className="truncate" title={p.objeto || ""}>{p.objeto || "-"}</TableCell>
                   <TableCell className="text-center">
                     <button onClick={(e) => { e.stopPropagation(); abrirDetalhe(p.numero_proposta); }}

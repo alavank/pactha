@@ -41,6 +41,20 @@ def _norm(s: str) -> str:
     return "".join(c for c in unicodedata.normalize("NFKD", s.upper()) if not unicodedata.combining(c)).strip()
 
 
+def _dias_restantes(dt_str: Optional[str]) -> Optional[int]:
+    """Calcula dias entre hoje e a data de fim de vigencia (dd/mm/yyyy)."""
+    if not dt_str:
+        return None
+    from datetime import date, datetime as _dt
+    for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
+        try:
+            d = _dt.strptime(dt_str.strip()[:10], fmt).date()
+            return (d - date.today()).days
+        except (ValueError, AttributeError):
+            continue
+    return None
+
+
 async def _fetch_listagem(uf: str = "MG") -> list[dict]:
     """Busca lista completa de planos de acao de uma UF (com cache)."""
     now = time.time()
@@ -175,6 +189,7 @@ async def voluntarias(
         "numero_processo": row[9], "objeto": row[10], "programa": row[11],
         "dt_inicio_vigencia": row[12], "dt_fim_vigencia": row[13],
         "dt_proposta": row[14], "dt_assinatura": row[15],
+        "dias_restantes": _dias_restantes(row[13]),
         "atualizado_em": row[16].isoformat() if row[16] else None,
     } for row in r.fetchall()]
     last = None

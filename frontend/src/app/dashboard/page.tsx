@@ -138,13 +138,13 @@ export default function DashboardPage() {
 
       {/* Summary cards - estilo prefeitura */}
       {loading ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          {Array.from({ length: 5 }).map((_, i) => (
             <SkeletonCard key={i} />
           ))}
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
           <Card className="border-l-4 border-l-blue-700 hover:shadow-md transition-shadow">
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
               <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">
@@ -158,6 +158,23 @@ export default function DashboardPage() {
               <div className="text-3xl font-bold text-slate-900">
                 {summary?.total_convenios_estadual ?? 0}
               </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-l-4 border-l-cyan-700 hover:shadow-md transition-shadow">
+            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+              <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">
+                TransfereGov Voluntarias
+              </CardTitle>
+              <div className="size-9 rounded-md bg-cyan-50 flex items-center justify-center">
+                <FileText className="size-4 text-cyan-700" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold text-slate-900">
+                {summary?.total_voluntarias ?? 0}
+              </div>
+              <p className="text-xs text-slate-500 mt-2">Convenios federais</p>
             </CardContent>
           </Card>
 

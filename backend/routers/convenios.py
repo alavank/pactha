@@ -4,7 +4,7 @@ Apos refactor lean, mantemos apenas a esfera estadual. Federal foi removida.
 """
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func, or_, text
 from datetime import date, timedelta
 from typing import Optional
 from database import get_db
@@ -236,6 +236,29 @@ async def alertas_vigencia(
             valor_total=float(c.valor_total) if c.valor_total else None,
             situacao=c.situacao,
         ))
+
+    # TransfereGov Voluntarias (dt_fim_vigencia eh string dd/mm/yyyy)
+    if municipio_id:
+        from datetime import datetime as _dt
+        vol = await db.execute(text("""
+            SELECT numero_proposta, codigo_instrumento, objeto, orgao, situacao, dt_fim_vigencia
+            FROM transferegov_propostas WHERE municipio_id = :m
+        """), {"m": municipio_id})
+        for row in vol.fetchall():
+            dtf = None
+            for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
+                try:
+                    dtf = _dt.strptime(str(row[5]).strip()[:10], fmt).date(); break
+                except (ValueError, AttributeError, TypeError):
+                    continue
+            if not dtf or not (date.today() <= dtf <= limite):
+                continue
+            alertas.append(AlertaVigencia(
+                id=0, esfera="voluntaria", nr_convenio=row[1] or row[0],
+                nr_sigcon=row[0], objeto=row[2], orgao_concedente=row[3],
+                dt_fim_vigencia=dtf, dias_restantes=(dtf - date.today()).days,
+                valor_total=None, situacao=row[4],
+            ))
 
     alertas.sort(key=lambda x: x.dias_restantes)
     return alertas

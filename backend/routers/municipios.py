@@ -1,13 +1,24 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
-from datetime import date, timedelta
+from sqlalchemy import select, func, text
+from datetime import date, datetime, timedelta
 from database import get_db
 from models import Municipio, ConvenioEstadual
 from schemas.municipio import MunicipioResponse, MunicipioSummary
 from services.auth import get_current_user
 
 router = APIRouter(prefix="/api/municipios", tags=["municipios"])
+
+
+def _parse_dt(s) -> date | None:
+    if not s:
+        return None
+    for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(str(s).strip()[:10], fmt).date()
+        except (ValueError, AttributeError):
+            continue
+    return None
 
 
 @router.get("", response_model=list[MunicipioResponse])
@@ -57,10 +68,25 @@ async def municipio_summary(
         .where(ConvenioEstadual.dt_vigencia_atual >= hoje)
     )
 
+    # TransfereGov Voluntarias (dt_fim_vigencia eh string dd/mm/yyyy -> parse em Python)
+    vol = await db.execute(text(
+        "SELECT dt_fim_vigencia FROM transferegov_propostas WHERE municipio_id = :m"
+    ), {"m": municipio_id})
+    vol_rows = vol.fetchall()
+    total_vol = len(vol_rows)
+    vol_120 = vol_60 = 0
+    for (dtf,) in vol_rows:
+        d = _parse_dt(dtf)
+        if d and hoje <= d <= limite120:
+            vol_120 += 1
+            if d <= limite60:
+                vol_60 += 1
+
     return MunicipioSummary(
         municipio=MunicipioResponse.model_validate(mun),
         total_convenios_estadual=est_count.scalar(),
         valor_total_estadual=float(est_valor.scalar()),
-        alertas_vigencia=alertas120.scalar(),
-        alertas_vigencia_60d=alertas60.scalar(),
+        total_voluntarias=total_vol,
+        alertas_vigencia=alertas120.scalar() + vol_120,
+        alertas_vigencia_60d=alertas60.scalar() + vol_60,
     )

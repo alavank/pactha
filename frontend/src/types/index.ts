@@ -18,8 +18,9 @@ export interface Municipio {
 export interface MunicipioSummary {
   municipio: Municipio;
   total_convenios_estadual: number;
+  total_voluntarias: number;       // propostas TransfereGov Voluntarias
   valor_total_estadual: number;
-  alertas_vigencia: number;        // 120 dias
+  alertas_vigencia: number;        // 120 dias (estadual + voluntarias)
   alertas_vigencia_60d: number;    // 60 dias (critico)
 }
 
