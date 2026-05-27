@@ -19,3 +19,5 @@ out/
 # Source documents (not for repo)
 *.pdf
 *.xlsx
+
+.claude/
