@@ -109,6 +109,7 @@ async def list_convenios(
     municipio_id: Optional[int] = None,
     ano: Optional[int] = None,
     situacao: Optional[str] = None,
+    situacoes: Optional[list[str]] = Query(None, description="Multi-select de situacao (match exato)"),
     fonte: Optional[str] = None,
     fontes: Optional[list[str]] = Query(None, description="Multi-select fonte"),
     vigencia: Optional[str] = Query(None, description="vence60 | vence120 | prestacao"),
@@ -127,7 +128,10 @@ async def list_convenios(
     if ano:
         q = q.where(ConvenioEstadual.ano == ano)
         q_count = q_count.where(ConvenioEstadual.ano == ano)
-    if situacao:
+    if situacoes:
+        q = q.where(ConvenioEstadual.situacao.in_(situacoes))
+        q_count = q_count.where(ConvenioEstadual.situacao.in_(situacoes))
+    elif situacao:
         q = q.where(ConvenioEstadual.situacao.ilike(f"%{situacao}%"))
         q_count = q_count.where(ConvenioEstadual.situacao.ilike(f"%{situacao}%"))
     if fontes:

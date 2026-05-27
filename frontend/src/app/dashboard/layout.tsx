@@ -14,6 +14,7 @@ import {
   Newspaper,
   Target,
   Users,
+  Landmark,
 } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -32,13 +33,24 @@ import {
 } from "@/components/ui/sheet";
 import type { Municipio, User } from "@/types";
 
-const NAV_ITEMS = [
+type NavLeaf = { href: string; label: string; icon?: React.ComponentType<{ className?: string }> };
+type NavGroup = { label: string; icon: React.ComponentType<{ className?: string }>; children: NavLeaf[] };
+type NavEntry = NavLeaf | NavGroup;
+
+const NAV_ITEMS: NavEntry[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/dashboard/convenios", label: "Convenios (SIGCON)", icon: FileText },
-  { href: "/dashboard/transferegov", label: "TransfereGov - Plano Acao", icon: FileText },
-  { href: "/dashboard/transferegov-voluntarias", label: "TransfereGov - Voluntarias", icon: FileText },
+  {
+    label: "Transfere Gov",
+    icon: Landmark,
+    children: [
+      { href: "/dashboard/transferegov-geral", label: "Geral" },
+      { href: "/dashboard/transferegov", label: "Especiais" },
+      { href: "/dashboard/transferegov-voluntarias", label: "Voluntarias" },
+    ],
+  },
   { href: "/dashboard/emendas", label: "Emendas Estaduais", icon: FileText },
-  { href: "/dashboard/fns", label: "Propostas FNS", icon: Target },
+  { href: "/dashboard/fns", label: "Fundo Nacional de Saude", icon: Target },
   { href: "/dashboard/dou", label: "Diario Oficial", icon: Newspaper },
   { href: "/dashboard/cofre", label: "Cofre de Senhas", icon: KeyRound },
   { href: "/dashboard/sessoes", label: "Sessoes (gov.br)", icon: KeyRound },
@@ -97,7 +109,12 @@ function SidebarContent({
         >
           <SelectTrigger className="w-full bg-white border-slate-300">
             <Building2 className="mr-1.5 size-4 text-blue-700" />
-            <SelectValue placeholder="Selecionar municipio" />
+            <SelectValue placeholder="Selecionar municipio">
+              {() => {
+                const m = municipios.find((x) => String(x.id) === selectedMunicipioId);
+                return m ? `${m.nome} - ${m.uf}` : "Selecionar municipio";
+              }}
+            </SelectValue>
             <ChevronDown className="ml-auto size-4 text-slate-400" />
           </SelectTrigger>
           <SelectContent>
@@ -116,6 +133,44 @@ function SidebarContent({
           Modulos
         </div>
         {NAV_ITEMS.map((item) => {
+          const qs = selectedMunicipioId ? `?municipio_id=${selectedMunicipioId}` : "";
+          // Grupo com submenus (ex: Transfere Gov -> Geral / Especiais / Voluntarias)
+          if ("children" in item) {
+            const Icon = item.icon;
+            const groupActive = item.children.some(
+              (c) => pathname === c.href || pathname.startsWith(c.href + "/")
+            );
+            return (
+              <div key={item.label} className="pt-1">
+                <div
+                  className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-semibold ${
+                    groupActive ? "text-blue-800" : "text-slate-600"
+                  }`}
+                >
+                  <Icon className={`size-4 ${groupActive ? "text-blue-700" : "text-slate-500"}`} />
+                  <span className="text-[13px]">{item.label}</span>
+                </div>
+                <div className="ml-3 border-l border-slate-200 pl-2 space-y-0.5">
+                  {item.children.map((c) => {
+                    const isActive = pathname === c.href || pathname.startsWith(c.href + "/");
+                    return (
+                      <Link
+                        key={c.href}
+                        href={`${c.href}${qs}`}
+                        className={`flex items-center gap-3 rounded-md px-3 py-1.5 text-sm font-medium transition-all ${
+                          isActive
+                            ? "bg-blue-50 text-blue-800 border-l-3 border-blue-700 shadow-sm"
+                            : "text-slate-600 hover:bg-slate-50 hover:text-slate-900 border-l-3 border-transparent"
+                        }`}
+                      >
+                        <span className="text-[13px]">{c.label}</span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          }
           const isActive =
             pathname === item.href ||
             (item.href !== "/dashboard" && pathname.startsWith(item.href + "/"));
@@ -123,14 +178,14 @@ function SidebarContent({
           return (
             <Link
               key={item.href}
-              href={`${item.href}${selectedMunicipioId ? `?municipio_id=${selectedMunicipioId}` : ""}`}
+              href={`${item.href}${qs}`}
               className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-all ${
                 isActive
                   ? "bg-blue-50 text-blue-800 border-l-3 border-blue-700 shadow-sm"
                   : "text-slate-600 hover:bg-slate-50 hover:text-slate-900 border-l-3 border-transparent"
               }`}
             >
-              <Icon className={`size-4 ${isActive ? "text-blue-700" : "text-slate-500"}`} />
+              {Icon && <Icon className={`size-4 ${isActive ? "text-blue-700" : "text-slate-500"}`} />}
               <span className="text-[13px]">{item.label}</span>
             </Link>
           );

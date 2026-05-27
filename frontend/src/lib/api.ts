@@ -3,6 +3,8 @@ import axios, { AxiosError, InternalAxiosRequestConfig } from "axios";
 const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api",
   withCredentials: true, // envia cookies httpOnly em cross-origin
+  // arrays viram chaves repetidas (situacoes=a&situacoes=b) p/ casar com FastAPI list[str]
+  paramsSerializer: { indexes: null },
 });
 
 // Helper: le CSRF token do cookie pacta_csrf (nao httpOnly)

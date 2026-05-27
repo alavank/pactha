@@ -21,7 +21,6 @@ import {
 } from "@/components/ui/table";
 import { formatCurrency } from "@/lib/utils";
 import { Search, Loader2, Eraser, Printer, Eye, X } from "lucide-react";
-import RelacionadosButton from "@/components/RelacionadosModal";
 
 interface Item {
   tipo_proposta?: string;
@@ -223,8 +222,8 @@ export default function PropostasFNSPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold text-blue-800">Propostas FAF - FNS</h1>
-        <p className="text-sm text-muted-foreground">Consulta em tempo real no Fundo Nacional de Saúde (consultafns.saude.gov.br)</p>
+        <h1 className="text-2xl font-bold text-blue-800">Fundo Nacional de Saúde</h1>
+        <p className="text-sm text-muted-foreground">Consulta em tempo real de propostas/emendas no FNS (consultafns.saude.gov.br)</p>
       </div>
 
       {/* Formulario */}
@@ -595,12 +594,6 @@ export default function PropostasFNSPage() {
                   )}
 
                   <div className="flex justify-end items-center gap-2 pt-2 border-t">
-                    <RelacionadosButton params={{
-                      municipio_nome: municipio, fonte: "fns",
-                      proposta: propostaDetalhe.nu_proposta, processo: propostaDetalhe.nu_processo,
-                      parlamentar: (propostaDetalhe.parlamentares || []).map((p) => p.nome).join(" "),
-                      objeto: propostaDetalhe.tipo_proposta,
-                    }} label="Relacionados" />
                     <Button variant="outline" onClick={() => setPropostaDetalhe(null)}>Voltar</Button>
                     <Button onClick={() => window.print()} className="bg-blue-600 hover:bg-blue-700">
                       <Printer className="size-4 mr-1" /> Imprimir

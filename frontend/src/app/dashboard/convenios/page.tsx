@@ -3,8 +3,8 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { Search as SearchIcon, ChevronLeft, ChevronRight } from "lucide-react";
-import RelacionadosButton from "@/components/RelacionadosModal";
 import api from "@/lib/api";
+import MultiSelect from "@/components/MultiSelect";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -130,7 +130,7 @@ export default function ConveniosPage() {
   const [page, setPage] = useState(1);
   const [selectedConv, setSelectedConv] = useState<{ id: number; esfera: string } | null>(null);
   const [esfera, setEsfera] = useState("todos");
-  const [situacao, setSituacao] = useState("todos");
+  const [situacoesSel, setSituacoesSel] = useState<string[]>([]);
   const [ano, setAno] = useState("todos");
   const [vigencia, setVigencia] = useState(vigenciaParam ?? "todos");
   const [searchTerm, setSearchTerm] = useState("");
@@ -165,19 +165,19 @@ export default function ConveniosPage() {
   // Reset page on filter change
   useEffect(() => {
     setPage(1);
-  }, [esfera, situacao, ano, vigencia, debouncedSearch]);
+  }, [esfera, situacoesSel, ano, vigencia, debouncedSearch]);
 
   const fetchData = useCallback(() => {
     if (!municipioId) return;
     setLoading(true);
 
-    const params: Record<string, string | number> = {
+    const params: Record<string, string | number | string[]> = {
       municipio_id: municipioId,
       page,
       per_page: PER_PAGE,
     };
     if (esfera !== "todos") params.esfera = esfera;
-    if (situacao !== "todos") params.situacao = situacao;
+    if (situacoesSel.length) params.situacoes = situacoesSel;
     if (ano !== "todos") params.ano = ano;
     if (vigencia !== "todos") params.vigencia = vigencia;
     if (debouncedSearch) params.search = debouncedSearch;
@@ -187,7 +187,7 @@ export default function ConveniosPage() {
       .then((res) => setData(res.data))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [municipioId, page, esfera, situacao, ano, vigencia, debouncedSearch]);
+  }, [municipioId, page, esfera, situacoesSel, ano, vigencia, debouncedSearch]);
 
   useEffect(() => {
     fetchData();
@@ -279,19 +279,13 @@ export default function ConveniosPage() {
           </SelectContent>
         </Select>
 
-        <Select value={situacao} onValueChange={(v) => setSituacao(v ?? "todos")}>
-          <SelectTrigger className="w-56">
-            <SelectValue placeholder="Situacao" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="todos">Todas Situacoes</SelectItem>
-            {situacoes.map((s) => (
-              <SelectItem key={s} value={s}>
-                {s}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <MultiSelect
+          options={situacoes}
+          selected={situacoesSel}
+          onChange={setSituacoesSel}
+          placeholder="Todas Situacoes"
+          width="w-56"
+        />
 
         <Select value={ano} onValueChange={(v) => setAno(v ?? "todos")}>
           <SelectTrigger className="w-32">
@@ -376,7 +370,6 @@ export default function ConveniosPage() {
                   <TableHead className="w-[70px]">Assinat.</TableHead>
                   <TableHead className="w-[70px]">Vigencia</TableHead>
                   <TableHead className="w-[50px]">Dias</TableHead>
-                  <TableHead className="w-[40px]">Rel.</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -448,14 +441,6 @@ export default function ConveniosPage() {
                             : `${conv.dias_restantes}d`
                           : "-"}
                       </span>
-                    </TableCell>
-                    <TableCell onClick={(e) => e.stopPropagation()}>
-                      <RelacionadosButton params={{
-                        municipio_id: municipioId, fonte: "convenios",
-                        proposta: conv.nr_proposta, plano: conv.nr_plano_trabalho,
-                        instrumento: conv.nr_instrumento, siafi: conv.nr_siafi,
-                        objeto: conv.objeto,
-                      }} />
                     </TableCell>
                   </TableRow>
                 );

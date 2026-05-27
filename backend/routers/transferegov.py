@@ -150,6 +150,12 @@ async def buscar(
     }
 
 
+# Status que identifica uma proposta VOLUNTARIA (FREITAS): "Proposta/Plano de
+# Trabalho enviado para Analise" (amarelo). O acento de "Analise" pode vir
+# corrompido (U+FFFD) -> usamos ILIKE com curinga no lugar do acento.
+_VOLUNTARIA_LIKE = "%enviado para an%lise%"
+
+
 @router.get("/voluntarias")
 async def voluntarias(
     municipio_id: int = Query(...),
@@ -157,16 +163,23 @@ async def voluntarias(
     orgao: Optional[str] = Query(None),
     search: Optional[str] = Query(None, description="busca em numero/proponente"),
     vigencia: Optional[str] = Query(None, description="vence60 | vence120 | prestacao"),
+    categoria: Optional[str] = Query(None, description="geral | voluntarias"),
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
-    """Lista propostas de Transferencias Voluntarias (SICONV) de um municipio.
+    """Lista propostas de Transferencias Voluntarias/Gerais (SICONV) de um municipio.
 
     Dados coletados pelo scraper Playwright (acesso livre guest) em
-    transferegov_propostas. Refresh via cron/ on-demand.
+    transferegov_propostas. Split por categoria:
+      - voluntarias: situacao = "Proposta/Plano de Trabalho enviado para Analise"
+      - geral: todo o resto (Em execucao, Aprovados, Rejeitados, etc.)
     """
     where = ["municipio_id = :mun"]
     params: dict = {"mun": municipio_id}
+    if categoria == "voluntarias":
+        where.append("situacao ILIKE :volpat"); params["volpat"] = _VOLUNTARIA_LIKE
+    elif categoria == "geral":
+        where.append("(situacao IS NULL OR situacao NOT ILIKE :volpat)"); params["volpat"] = _VOLUNTARIA_LIKE
     if situacao:
         where.append("situacao ILIKE :sit"); params["sit"] = f"%{situacao}%"
     if orgao:
