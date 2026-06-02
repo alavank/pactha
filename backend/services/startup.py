@@ -36,6 +36,8 @@ MIGRATION_FILES = [
     "add_unique_nr_siafi.sql",
     # Valores monetarios das Voluntarias (valor_global/repasse/contrapartida)
     "add_voluntarias_valores.sql",
+    # SIMEC PAR (consulta publica MEC) - dimensoes + liberacoes
+    "add_simec_par.sql",
 ]
 
 

@@ -59,6 +59,7 @@ const NAV_ITEMS: NavEntry[] = [
     ],
   },
   { href: "/dashboard/fns", label: "Fundo Nacional de Saude", icon: Target },
+  { href: "/dashboard/simec", label: "SIMEC - PAR (MEC)", icon: Target },
   { href: "/dashboard/dou", label: "Diario Oficial", icon: Newspaper },
   { href: "/dashboard/cofre", label: "Cofre de Senhas", icon: KeyRound },
   { href: "/dashboard/sessoes", label: "Sessoes (gov.br)", icon: KeyRound },

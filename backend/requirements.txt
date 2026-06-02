@@ -9,6 +9,7 @@ pyjwt[crypto]>=2.9.0
 bcrypt>=4.2.0
 pandas>=2.2.0
 httpx>=0.28.0
+curl_cffi>=0.7.0
 python-multipart>=0.0.9
 playwright>=1.49.0
 cryptography>=43.0.0
