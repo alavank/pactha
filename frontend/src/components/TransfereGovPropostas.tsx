@@ -73,7 +73,7 @@ export default function TransfereGovPropostas({
   titulo,
   subtitulo,
 }: {
-  categoria: "geral" | "voluntarias";
+  categoria: "geral" | "voluntarias" | "rejeitadas";
   titulo: string;
   subtitulo: string;
 }) {

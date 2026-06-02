@@ -154,6 +154,9 @@ async def buscar(
 # Trabalho enviado para Analise" (amarelo). O acento de "Analise" pode vir
 # corrompido (U+FFFD) -> usamos ILIKE com curinga no lugar do acento.
 _VOLUNTARIA_LIKE = "%enviado para an%lise%"
+# REJEITADAS: qualquer status contendo "rejeitad" (Rejeitados / Rejeitados por
+# Impedimento tecnico). Tratamos como categoria propria; nao entram na Geral.
+_REJEITADA_LIKE = "%rejeitad%"
 
 
 @router.get("/voluntarias")
@@ -163,23 +166,29 @@ async def voluntarias(
     orgao: Optional[str] = Query(None),
     search: Optional[str] = Query(None, description="busca em numero/proponente"),
     vigencia: Optional[str] = Query(None, description="vence60 | vence120 | prestacao"),
-    categoria: Optional[str] = Query(None, description="geral | voluntarias"),
+    categoria: Optional[str] = Query(None, description="geral | voluntarias | rejeitadas"),
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
-    """Lista propostas de Transferencias Voluntarias/Gerais (SICONV) de um municipio.
+    """Lista propostas SICONV de um municipio, filtradas por categoria.
 
     Dados coletados pelo scraper Playwright (acesso livre guest) em
-    transferegov_propostas. Split por categoria:
-      - voluntarias: situacao = "Proposta/Plano de Trabalho enviado para Analise"
-      - geral: todo o resto (Em execucao, Aprovados, Rejeitados, etc.)
+    transferegov_propostas. Categorias:
+      - voluntarias: status "Proposta/Plano de Trabalho enviado para Analise"
+      - rejeitadas: status com "Rejeitad" (Rejeitados + Rejeitados por Impedimento)
+      - geral: o restante (Em execucao, Aprovados, Prestacao de Contas, etc.)
+              -- exclui voluntarias E rejeitadas
     """
     where = ["municipio_id = :mun"]
     params: dict = {"mun": municipio_id}
     if categoria == "voluntarias":
         where.append("situacao ILIKE :volpat"); params["volpat"] = _VOLUNTARIA_LIKE
+    elif categoria == "rejeitadas":
+        where.append("situacao ILIKE :rejpat"); params["rejpat"] = _REJEITADA_LIKE
     elif categoria == "geral":
-        where.append("(situacao IS NULL OR situacao NOT ILIKE :volpat)"); params["volpat"] = _VOLUNTARIA_LIKE
+        where.append("(situacao IS NULL OR (situacao NOT ILIKE :volpat AND situacao NOT ILIKE :rejpat))")
+        params["volpat"] = _VOLUNTARIA_LIKE
+        params["rejpat"] = _REJEITADA_LIKE
     if situacao:
         where.append("situacao ILIKE :sit"); params["sit"] = f"%{situacao}%"
     if orgao:

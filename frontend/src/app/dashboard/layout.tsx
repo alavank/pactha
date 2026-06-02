@@ -34,12 +34,25 @@ import {
 import type { Municipio, User } from "@/types";
 
 type NavLeaf = { href: string; label: string; icon?: React.ComponentType<{ className?: string }> };
-type NavGroup = { label: string; icon: React.ComponentType<{ className?: string }>; children: NavLeaf[] };
+type NavSection = { sectionLabel: string; children: NavLeaf[] };
+type NavGroup = { label: string; icon: React.ComponentType<{ className?: string }>; children: Array<NavLeaf | NavSection> };
 type NavEntry = NavLeaf | NavGroup;
 
 const NAV_ITEMS: NavEntry[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/dashboard/convenios", label: "Convenios (SIGCON)", icon: FileText },
+  {
+    label: "Convenios",
+    icon: FileText,
+    children: [
+      {
+        sectionLabel: "Estaduais",
+        children: [
+          { href: "/dashboard/convenios", label: "SIGCON" },
+          { href: "/dashboard/emendas", label: "Emendas Estaduais" },
+        ],
+      },
+    ],
+  },
   {
     label: "Transfere Gov",
     icon: Landmark,
@@ -47,9 +60,9 @@ const NAV_ITEMS: NavEntry[] = [
       { href: "/dashboard/transferegov-geral", label: "Geral" },
       { href: "/dashboard/transferegov", label: "Especiais" },
       { href: "/dashboard/transferegov-voluntarias", label: "Voluntarias" },
+      { href: "/dashboard/transferegov-rejeitadas", label: "Rejeitadas" },
     ],
   },
-  { href: "/dashboard/emendas", label: "Emendas Estaduais", icon: FileText },
   { href: "/dashboard/fns", label: "Fundo Nacional de Saude", icon: Target },
   { href: "/dashboard/dou", label: "Diario Oficial", icon: Newspaper },
   { href: "/dashboard/cofre", label: "Cofre de Senhas", icon: KeyRound },
@@ -134,10 +147,30 @@ function SidebarContent({
         </div>
         {NAV_ITEMS.map((item) => {
           const qs = selectedMunicipioId ? `?municipio_id=${selectedMunicipioId}` : "";
-          // Grupo com submenus (ex: Transfere Gov -> Geral / Especiais / Voluntarias)
+          const renderLeaf = (leaf: NavLeaf) => {
+            const isActive = pathname === leaf.href || pathname.startsWith(leaf.href + "/");
+            return (
+              <Link
+                key={leaf.href}
+                href={`${leaf.href}${qs}`}
+                className={`flex items-center gap-3 rounded-md px-3 py-1.5 text-sm font-medium transition-all ${
+                  isActive
+                    ? "bg-blue-50 text-blue-800 border-l-3 border-blue-700 shadow-sm"
+                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900 border-l-3 border-transparent"
+                }`}
+              >
+                <span className="text-[13px]">{leaf.label}</span>
+              </Link>
+            );
+          };
+          // Grupo com submenus (ex: Transfere Gov -> Geral / Especiais / Voluntarias / Rejeitadas)
+          // Suporta children diretos (NavLeaf) ou sub-secoes (NavSection com children proprios).
           if ("children" in item) {
             const Icon = item.icon;
-            const groupActive = item.children.some(
+            const flat: NavLeaf[] = item.children.flatMap((c) =>
+              "sectionLabel" in c ? c.children : [c]
+            );
+            const groupActive = flat.some(
               (c) => pathname === c.href || pathname.startsWith(c.href + "/")
             );
             return (
@@ -152,20 +185,19 @@ function SidebarContent({
                 </div>
                 <div className="ml-3 border-l border-slate-200 pl-2 space-y-0.5">
                   {item.children.map((c) => {
-                    const isActive = pathname === c.href || pathname.startsWith(c.href + "/");
-                    return (
-                      <Link
-                        key={c.href}
-                        href={`${c.href}${qs}`}
-                        className={`flex items-center gap-3 rounded-md px-3 py-1.5 text-sm font-medium transition-all ${
-                          isActive
-                            ? "bg-blue-50 text-blue-800 border-l-3 border-blue-700 shadow-sm"
-                            : "text-slate-600 hover:bg-slate-50 hover:text-slate-900 border-l-3 border-transparent"
-                        }`}
-                      >
-                        <span className="text-[13px]">{c.label}</span>
-                      </Link>
-                    );
+                    if ("sectionLabel" in c) {
+                      return (
+                        <div key={c.sectionLabel} className="pt-1">
+                          <div className="px-3 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                            {c.sectionLabel}
+                          </div>
+                          <div className="ml-2 border-l border-slate-100 pl-2 space-y-0.5">
+                            {c.children.map((leaf) => renderLeaf(leaf))}
+                          </div>
+                        </div>
+                      );
+                    }
+                    return renderLeaf(c);
                   })}
                 </div>
               </div>
