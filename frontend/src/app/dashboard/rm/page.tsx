@@ -28,7 +28,6 @@ export default function RmListPage() {
   const [loading, setLoading] = useState(false);
   const [criando, setCriando] = useState(false);
   const [novaData, setNovaData] = useState<string>(() => new Date().toISOString().slice(0, 10));
-  const [autoPopular, setAutoPopular] = useState(true);
 
   const buscar = useCallback(async () => {
     if (!municipioId) return;
@@ -51,7 +50,7 @@ export default function RmListPage() {
         municipio_id: Number(municipioId),
         data_referencia: novaData,
         cidade_emissao: "Brasília/DF",
-        auto_popular: autoPopular,
+        auto_popular: true,
       });
       router.push(`/dashboard/rm/${r.data.id}?municipio_id=${municipioId}`);
     } catch (e) {
@@ -92,16 +91,16 @@ export default function RmListPage() {
 
       {/* Form de novo RM */}
       <div className="bg-white border rounded p-4">
-        <h2 className="text-sm font-semibold mb-3">Novo RM</h2>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+        <h2 className="text-sm font-semibold mb-1">Novo RM</h2>
+        <p className="text-xs text-slate-500 mb-3">
+          O conteúdo será preenchido automaticamente com os dados atuais do banco (SIGCON, Voluntárias, SIMEC, Emendas).
+          Você edita livremente depois.
+        </p>
+        <div className="flex flex-wrap gap-3 items-end">
           <div>
             <label className="text-xs text-slate-600 mb-1 block">Data de referencia</label>
             <Input type="date" value={novaData} onChange={(e) => setNovaData(e.target.value)} />
           </div>
-          <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <input type="checkbox" checked={autoPopular} onChange={(e) => setAutoPopular(e.target.checked)} />
-            Pre-popular com dados do banco
-          </label>
           <Button onClick={criar} disabled={criando} className="bg-blue-600 hover:bg-blue-700">
             {criando ? <Loader2 className="size-4 animate-spin mr-1" /> : <Plus className="size-4 mr-1" />}
             Criar RM

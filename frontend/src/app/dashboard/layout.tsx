@@ -88,6 +88,22 @@ function SidebarContent({
   user: User | null;
   onLogout: () => void;
 }) {
+  // Estado de collapse dos grupos (persiste em localStorage)
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set();
+    try {
+      const raw = localStorage.getItem("pacta_nav_collapsed");
+      return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
+    } catch { return new Set(); }
+  });
+  const toggleGroup = (label: string) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label); else next.add(label);
+      try { localStorage.setItem("pacta_nav_collapsed", JSON.stringify([...next])); } catch { /* ignore */ }
+      return next;
+    });
+  };
   return (
     <div className="flex h-full flex-col bg-white">
       {/* Faixa institucional - cores do governo */}
@@ -172,33 +188,46 @@ function SidebarContent({
             const groupActive = flat.some(
               (c) => pathname === c.href || pathname.startsWith(c.href + "/")
             );
+            const isCollapsed = collapsed.has(item.label) && !groupActive;
+            // Auto-expande quando o grupo tem submenu ativo, mesmo se usuario colapsou
             return (
               <div key={item.label} className="pt-1">
-                <div
-                  className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-semibold ${
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(item.label)}
+                  className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-semibold w-full text-left hover:bg-slate-50 transition-colors ${
                     groupActive ? "text-blue-800" : "text-slate-600"
                   }`}
+                  aria-expanded={!isCollapsed}
+                  aria-label={`${isCollapsed ? "Expandir" : "Recolher"} ${item.label}`}
                 >
                   <Icon className={`size-4 ${groupActive ? "text-blue-700" : "text-slate-500"}`} />
-                  <span className="text-[13px]">{item.label}</span>
-                </div>
-                <div className="ml-3 border-l border-slate-200 pl-2 space-y-0.5">
-                  {item.children.map((c) => {
-                    if ("sectionLabel" in c) {
-                      return (
-                        <div key={c.sectionLabel} className="pt-1">
-                          <div className="px-3 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                            {c.sectionLabel}
+                  <span className="text-[13px] flex-1">{item.label}</span>
+                  <ChevronDown
+                    className={`size-4 text-slate-400 transition-transform duration-150 ${
+                      isCollapsed ? "-rotate-90" : "rotate-0"
+                    }`}
+                  />
+                </button>
+                {!isCollapsed && (
+                  <div className="ml-3 border-l border-slate-200 pl-2 space-y-0.5">
+                    {item.children.map((c) => {
+                      if ("sectionLabel" in c) {
+                        return (
+                          <div key={c.sectionLabel} className="pt-1">
+                            <div className="px-3 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                              {c.sectionLabel}
+                            </div>
+                            <div className="ml-2 border-l border-slate-100 pl-2 space-y-0.5">
+                              {c.children.map((leaf) => renderLeaf(leaf))}
+                            </div>
                           </div>
-                          <div className="ml-2 border-l border-slate-100 pl-2 space-y-0.5">
-                            {c.children.map((leaf) => renderLeaf(leaf))}
-                          </div>
-                        </div>
-                      );
-                    }
-                    return renderLeaf(c);
-                  })}
-                </div>
+                        );
+                      }
+                      return renderLeaf(c);
+                    })}
+                  </div>
+                )}
               </div>
             );
           }
