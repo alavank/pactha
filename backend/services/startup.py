@@ -38,6 +38,8 @@ MIGRATION_FILES = [
     "add_voluntarias_valores.sql",
     # SIMEC PAR (consulta publica MEC) - dimensoes + liberacoes
     "add_simec_par.sql",
+    # Relatorio de Monitoramento (RM) - padrao Freitas
+    "add_rm.sql",
 ]
 
 

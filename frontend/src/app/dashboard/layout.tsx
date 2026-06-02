@@ -40,6 +40,7 @@ type NavEntry = NavLeaf | NavGroup;
 
 const NAV_ITEMS: NavEntry[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/dashboard/rm", label: "Relatório de Monitoramento", icon: FileText },
   {
     label: "Estaduais",
     icon: FileText,
