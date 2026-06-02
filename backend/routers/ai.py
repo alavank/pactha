@@ -495,6 +495,32 @@ class ChatResponse(BaseModel):
     usage: dict[str, Any]
 
 
+@router.get("/_ping")
+async def ping(_=Depends(get_current_user)):
+    """Diagnostico: chama Claude com prompt minimo (sem tools, sem DB)."""
+    try:
+        import anthropic
+    except ImportError:
+        raise HTTPException(503, "anthropic nao instalada")
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise HTTPException(503, "ANTHROPIC_API_KEY ausente")
+    client = anthropic.AsyncAnthropic(api_key=api_key)
+    try:
+        r = await client.messages.create(
+            model=MODEL, max_tokens=80,
+            messages=[{"role": "user", "content": "Diga 'pong' em uma palavra."}],
+        )
+        text = next((b.text for b in r.content if b.type == "text"), "")
+        return {"ok": True, "model": MODEL, "reply": text,
+                "usage": {"in": r.usage.input_tokens, "out": r.usage.output_tokens}}
+    except anthropic.APIStatusError as e:
+        raise HTTPException(502, f"Anthropic {e.status_code}: {str(e.message)[:300]}")
+    except Exception as e:
+        logger.exception("Ping IA falhou")
+        raise HTTPException(500, f"{type(e).__name__}: {str(e)[:300]}")
+
+
 @router.post("/chat", response_model=ChatResponse)
 async def chat(
     body: ChatRequest,
@@ -511,7 +537,11 @@ async def chat(
     if not api_key:
         raise HTTPException(503, "ANTHROPIC_API_KEY nao configurada no servidor.")
 
-    client = anthropic.AsyncAnthropic(api_key=api_key)
+    try:
+        client = anthropic.AsyncAnthropic(api_key=api_key)
+    except Exception as e:
+        logger.exception("Falha criando cliente Anthropic")
+        raise HTTPException(503, f"Falha criando cliente IA: {type(e).__name__}: {str(e)[:200]}")
 
     # Constroi mensagens
     messages: list[dict[str, Any]] = []

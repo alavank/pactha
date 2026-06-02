@@ -71,9 +71,22 @@ export default function AiChatPage() {
           },
         ]);
       } catch (e: unknown) {
-        const err = e as { response?: { data?: { detail?: string } } };
-        const detail = err.response?.data?.detail || "Erro ao chamar a IA.";
-        setError(detail);
+        const err = e as {
+          response?: { status?: number; statusText?: string; data?: { detail?: string | object } };
+          message?: string;
+          code?: string;
+        };
+        console.error("AI chat error", err);
+        let msg = "Erro ao chamar a IA.";
+        if (err.response) {
+          const status = err.response.status;
+          const detail = err.response.data?.detail;
+          const detailStr = typeof detail === "string" ? detail : detail ? JSON.stringify(detail).slice(0, 300) : "";
+          msg = `HTTP ${status} ${err.response.statusText || ""}${detailStr ? ` - ${detailStr}` : ""}`;
+        } else if (err.message) {
+          msg = `${err.code || "Network"}: ${err.message}`;
+        }
+        setError(msg);
       } finally {
         setLoading(false);
       }
