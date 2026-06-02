@@ -41,16 +41,11 @@ type NavEntry = NavLeaf | NavGroup;
 const NAV_ITEMS: NavEntry[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   {
-    label: "Convenios",
+    label: "Estaduais",
     icon: FileText,
     children: [
-      {
-        sectionLabel: "Estaduais",
-        children: [
-          { href: "/dashboard/convenios", label: "SIGCON" },
-          { href: "/dashboard/emendas", label: "Emendas Estaduais" },
-        ],
-      },
+      { href: "/dashboard/convenios", label: "SIGCON" },
+      { href: "/dashboard/emendas", label: "Emendas Estaduais" },
     ],
   },
   {
