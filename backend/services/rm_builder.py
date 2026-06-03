@@ -212,11 +212,25 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int) -> dict:
         })
 
     # === Converte dict -> lista ordenada (formato final) ===
+    # Ordem das secoes dentro de cada Parte: FEDERAIS primeiro, ESTADUAIS depois,
+    # outras secoes (se houver) preservam ordem de insercao no fim.
+    SECAO_PRIORIDADE = [
+        "INSTRUMENTOS DE REPASSE FEDERAIS",
+        "INSTRUMENTOS DE REPASSE ESTADUAIS",
+    ]
+
+    def _ordena_secoes(secoes_dict):
+        nomes = list(secoes_dict.keys())
+        ordenados = [s for s in SECAO_PRIORIDADE if s in secoes_dict]
+        # outras secoes nao previstas — vao depois, preservando ordem original
+        ordenados += [s for s in nomes if s not in SECAO_PRIORIDADE]
+        return [(n, secoes_dict[n]) for n in ordenados]
+
     out_partes = []
     for n in sorted(partes_data.keys()):
         p = partes_data[n]
         secoes_out = []
-        for s_idx, (s_titulo, grupos) in enumerate(p["secoes"].items(), start=1):
+        for s_idx, (s_titulo, grupos) in enumerate(_ordena_secoes(p["secoes"]), start=1):
             grupos_out = []
             for g_idx, (orgao, itens) in enumerate(grupos.items(), start=1):
                 # ordena itens por ano descendente (extraindo do numero) + numero
