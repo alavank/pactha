@@ -23,6 +23,10 @@ interface TgSessionStatus {
   observacao?: string;
   updated_at?: string;
   message?: string;
+  user_id_exp_minutes?: number;
+  expira_em?: string;
+  vinculo?: number;
+  nivel?: number;
 }
 
 // Sistemas que suportam captura de sessao via bookmarklet
@@ -193,12 +197,16 @@ function SessoesInner() {
               <span>Sessão TransfereGov (gov.br SSO)</span>
               {tgStatus.has_session ? (
                 tgStatus.expired ? (
+                  <Badge className="bg-red-100 text-red-800 hover:bg-red-100">
+                    EXPIROU{tgStatus.user_id_exp_minutes != null ? ` (${Math.abs(tgStatus.user_id_exp_minutes).toFixed(0)} min atrás)` : ""}
+                  </Badge>
+                ) : tgStatus.user_id_exp_minutes != null && tgStatus.user_id_exp_minutes < 5 ? (
                   <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">
-                    Provavelmente expirou ({tgStatus.age_hours}h)
+                    Expira em {tgStatus.user_id_exp_minutes.toFixed(1)} min — RODE AGORA
                   </Badge>
                 ) : (
                   <Badge className="bg-green-100 text-green-800 hover:bg-green-100">
-                    Válida ({tgStatus.age_hours}h)
+                    Válida — expira em {tgStatus.user_id_exp_minutes?.toFixed(0) ?? "?"} min
                   </Badge>
                 )
               ) : (
@@ -213,14 +221,28 @@ function SessoesInner() {
               </div>
             )}
             {tgStatus.expired && (
-              <div className="rounded bg-amber-100 border border-amber-300 p-3 text-amber-900 text-xs space-y-1">
-                <strong>Sessão expirou.</strong> Para capturar parlamentar, situação de contratação detalhada
-                e cláusula suspensiva no próximo scraping, re-capture a sessão:
+              <div className="rounded bg-red-100 border border-red-300 p-3 text-red-900 text-xs space-y-1">
+                <strong>⚠️ Sessão expirou.</strong> A sessão do parcerias.transferegov dura
+                apenas <strong>~20 minutos</strong> após inatividade. Para capturar parlamentar,
+                situação de contratação detalhada e cláusula suspensiva, refaça os 4 passos:
                 <ol className="list-decimal ml-5 space-y-0.5 mt-1">
-                  <li>Abra <code className="bg-white px-1 rounded">parcerias.transferegov.sistema.gov.br/ep-atos-prep-web/home</code> em nova aba</li>
+                  <li>Abra <code className="bg-white px-1 rounded">parcerias.transferegov.sistema.gov.br/ep-atos-prep-web/home</code></li>
                   <li>Clique <strong>Entrar com gov.br</strong> e complete o login</li>
-                  <li>Após autenticar, clique no bookmarklet <strong>📎 PACTA Capturar gov.br</strong> (abaixo)</li>
+                  <li>Clique no bookmarklet <strong>📎 PACTA Capturar gov.br</strong></li>
+                  <li><strong>IMEDIATAMENTE</strong> volte aqui e clique <strong>▶ Rodar scraper</strong> abaixo (você tem 20 min)</li>
                 </ol>
+              </div>
+            )}
+            {!tgStatus.expired && tgStatus.user_id_exp_minutes != null && tgStatus.user_id_exp_minutes < 10 && (
+              <div className="rounded bg-amber-100 border border-amber-300 p-3 text-amber-900 text-xs">
+                <strong>⏰ Atenção:</strong> a sessão expira em <strong>{tgStatus.user_id_exp_minutes.toFixed(1)} minutos</strong>.
+                Rode o scraper AGORA antes que expire.
+              </div>
+            )}
+            {!tgStatus.expired && tgStatus.vinculo && (
+              <div className="rounded bg-green-100 border border-green-300 p-3 text-green-900 text-xs">
+                Sessão válida (vínculo {tgStatus.vinculo}, nível {tgStatus.nivel}). Expira em{" "}
+                {tgStatus.user_id_exp_minutes?.toFixed(0) ?? "?"} minutos.
               </div>
             )}
             <div className="flex gap-2 pt-2">

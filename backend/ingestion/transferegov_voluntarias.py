@@ -126,8 +126,48 @@ def _municipios_pacta() -> list[dict]:
     return out
 
 
-async def _scrape_municipio(page, mun: dict, _retry: int = 0) -> list[dict]:
-    """Consulta rapida por UF + Municipio, retorna lista de propostas."""
+async def _bootstrap_auth_discricionarias(auth_page):
+    """Estabelece sessao autenticada em discricionarias.transferegov.
+    Os cookies SSO sao para parcerias.* (sub-dominio diferente). Pra ver
+    campos gated no /voluntarias/ precisamos bootstrappar JSESSIONID nesse
+    sub-dominio — fazemos via OAuth SSO (gov.br cookies cross-domain).
+    """
+    try:
+        # Vai pra URL autenticada do discricionarias — deve dispatcher SSO OAuth
+        # pra estabelecer JSESSIONID com sessao autenticada
+        await auth_page.goto(
+            "https://discricionarias.transferegov.sistema.gov.br/voluntarias/",
+            timeout=45000, wait_until="domcontentloaded"
+        )
+        await auth_page.wait_for_timeout(6000)  # SSO redirects + SAML
+        url_final = auth_page.url
+        body = (await auth_page.locator("body").inner_text()).lower()[:600]
+        if "sair" in body or "trocar" in body or "perfil" in body:
+            logger.info(f"  [auth] discricionarias autenticado: {url_final[:100]}")
+            return True
+        elif "captcha" in body or "verifica" in body:
+            logger.warning(f"  [auth] CAPTCHA no discricionarias")
+            return False
+        elif "acessar" in body or "entrar" in body:
+            # Mostra link Entrar — auth falhou
+            logger.warning(f"  [auth] discricionarias nao autenticou (mostra Entrar)")
+            return False
+        # Pode ter caido numa tela de selecao de perfil
+        logger.info(f"  [auth] discricionarias resposta: url={url_final[:100]}")
+        return True
+    except Exception as e:
+        logger.warning(f"  [auth] bootstrap falhou: {e}")
+        return False
+
+
+async def _scrape_municipio(page, mun: dict, _retry: int = 0, auth_page=None) -> list[dict]:
+    """Consulta rapida por UF + Municipio, retorna lista de propostas.
+
+    page = pagina GUEST (sem cookies SSO) — listagem via select Acesso Livre
+    auth_page = pagina AUTENTICADA opcional (com cookies SSO + JSESSIONID
+                bootstrappado em discricionarias) — usada nos detalhes pra
+                ver campos gated (parlamentar, sit_contratacao_detalhe)
+    """
     await page.goto(ENTRY, timeout=60000, wait_until="domcontentloaded")
     await page.wait_for_timeout(6000 + _retry * 4000)  # SAML auto-submits (mais tempo no retry)
 
@@ -229,18 +269,21 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0) -> list[dict]:
         })
     logger.info(f"  {mun['nome']}: {len(visited)} pagina(s) -> {len(propostas)} propostas")
 
-    # Enriquece cada proposta com o detalhe (Dados da Proposta)
+    # Enriquece cada proposta com o detalhe (Dados da Proposta).
+    # Se temos auth_page (cookies SSO), usa ela pra ver campos gated
+    # (parlamentar + Detalhar Situacao Contratacao). Senao, usa page guest.
+    detail_page = auth_page or page
     for prop in propostas:
         url = prop.pop("_detalhe_url", None)
         if not url:
             continue
         try:
-            await page.goto(url, timeout=40000, wait_until="domcontentloaded")
-            await page.wait_for_timeout(2500)
-            det = await _extrai_detalhe(page)
+            await detail_page.goto(url, timeout=40000, wait_until="domcontentloaded")
+            await detail_page.wait_for_timeout(2500)
+            det = await _extrai_detalhe(detail_page)
             # Tenta capturar parlamentar (best-effort via texto livre na tela)
             try:
-                parl = await _extrai_parlamentar(page)
+                parl = await _extrai_parlamentar(detail_page)
                 if parl:
                     det["_parlamentar"] = parl
             except Exception:
@@ -257,9 +300,9 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0) -> list[dict]:
             # (qualquer tipo: Clausula Suspensiva, Liminar Judicial, Pendencia, etc.)
             if sit_det_url:
                 try:
-                    await page.goto(sit_det_url, timeout=40000, wait_until="domcontentloaded")
-                    await page.wait_for_timeout(2000)
-                    sd = await _extrai_situacao_detalhe(page)
+                    await detail_page.goto(sit_det_url, timeout=40000, wait_until="domcontentloaded")
+                    await detail_page.wait_for_timeout(2000)
+                    sd = await _extrai_situacao_detalhe(detail_page)
                     if sd:
                         prop["detalhe"]["_situacao_detalhe"] = {
                             "_label_botao": _clean(sit_det_label) if sit_det_label else None,
@@ -600,23 +643,31 @@ async def run():
     total = 0
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True, args=["--ignore-certificate-errors", "--no-sandbox"])
-        ctx = await browser.new_context(ignore_https_errors=True, user_agent="Mozilla/5.0 Chrome/131")
-        # Best-effort: injeta cookies SSO gov.br para habilitar campos extras
-        # (cláusula suspensiva, parlamentar, detalhamento). Se a sessao tiver
-        # expirado, segue como guest sem erro.
+        # Contexto GUEST (sem cookies): listagem via Acesso Livre
+        ctx_guest = await browser.new_context(ignore_https_errors=True, user_agent="Mozilla/5.0 Chrome/131")
+        page_guest = await ctx_guest.new_page()
+        # Contexto AUTH (com cookies SSO opcional): visita detalhes pra ver
+        # campos gated (parlamentar, sit_contratacao_detalhe)
         govbr_cks = _load_govbr_cookies()
+        page_auth = None
         if govbr_cks:
             try:
-                await ctx.add_cookies(govbr_cks)
-                logger.info(f"  cookies SSO gov.br injetados: {len(govbr_cks)} cookies")
+                ctx_auth = await browser.new_context(ignore_https_errors=True, user_agent="Mozilla/5.0 Chrome/131")
+                await ctx_auth.add_cookies(govbr_cks)
+                page_auth = await ctx_auth.new_page()
+                logger.info(f"  contexto AUTH criado com {len(govbr_cks)} cookies SSO")
+                # Bootstrappa JSESSIONID no discricionarias (sub-dominio diferente)
+                ok = await _bootstrap_auth_discricionarias(page_auth)
+                if not ok:
+                    logger.warning("  [auth] bootstrap nao confirmou autenticacao, mas continuando")
             except Exception as e:
-                logger.warning(f"  falha ao injetar cookies SSO: {e}")
+                logger.warning(f"  falha ao criar contexto AUTH: {e}")
+                page_auth = None
         else:
-            logger.info("  sem sessao gov.br no Cofre, rodando como guest")
-        page = await ctx.new_page()
+            logger.info("  sem sessao gov.br no Cofre, detalhes em guest")
         for mun in municipios:
             try:
-                props = await _scrape_municipio(page, mun)
+                props = await _scrape_municipio(page_guest, mun, auth_page=page_auth)
                 n = _upsert(mun["id"], props)
                 logger.info(f"  {mun['nome']}: {len(props)} propostas -> {n} upsert")
                 total += n
@@ -646,17 +697,22 @@ async def run_one(municipio_id: int):
     mun = muns[0]
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True, args=["--ignore-certificate-errors", "--no-sandbox"])
-        ctx = await browser.new_context(ignore_https_errors=True, user_agent="Mozilla/5.0 Chrome/131")
+        ctx_guest = await browser.new_context(ignore_https_errors=True, user_agent="Mozilla/5.0 Chrome/131")
+        page_guest = await ctx_guest.new_page()
         govbr_cks = _load_govbr_cookies()
+        page_auth = None
         if govbr_cks:
-            await ctx.add_cookies(govbr_cks)
-            logger.info(f"  cookies SSO gov.br injetados: {len(govbr_cks)}")
-        page = await ctx.new_page()
+            ctx_auth = await browser.new_context(ignore_https_errors=True, user_agent="Mozilla/5.0 Chrome/131")
+            await ctx_auth.add_cookies(govbr_cks)
+            page_auth = await ctx_auth.new_page()
+            logger.info(f"  contexto AUTH criado com {len(govbr_cks)} cookies SSO")
+            ok = await _bootstrap_auth_discricionarias(page_auth)
+            if not ok:
+                logger.warning("  [auth] bootstrap nao confirmou autenticacao, mas continuando")
         try:
-            props = await _scrape_municipio(page, mun)
+            props = await _scrape_municipio(page_guest, mun, auth_page=page_auth)
             n = _upsert(mun["id"], props)
             logger.info(f"{mun['nome']}: {len(props)} propostas -> {n} upsert")
-            # Conta enrich
             com_parl = sum(1 for p in props if (p.get("detalhe") or {}).get("_parlamentar"))
             com_sit_det = sum(1 for p in props if (p.get("detalhe") or {}).get("_situacao_detalhe"))
             logger.info(f"  ENRICH: parlamentar={com_parl} sit_det={com_sit_det}")

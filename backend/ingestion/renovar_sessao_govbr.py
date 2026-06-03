@@ -134,7 +134,7 @@ def _save_session(municipio_id: int, cookies_pw: list, sistema_label: str = "gov
     return rid
 
 
-async def renovar() -> bool:
+async def renovar(headless: bool = True) -> bool:
     cred, _, sess_mun, old_cookies = _load_credentials()
     if not cred:
         log.error("Sem credenciais CPF+senha no Cofre")
@@ -144,10 +144,39 @@ async def renovar() -> bool:
     log.info(f"Cookies antigas disponiveis: {len(old_cookies) if old_cookies else 0}")
 
     from playwright.async_api import async_playwright
-    from ingestion.stealth_helper import create_stealth_browser_context
+    from playwright_stealth import Stealth
+    import random as _r
+
+    # Usa profile persistente em ./tmp/chromium_govbr_profile — cookies/storage
+    # se acumulam entre runs, dando score reCAPTCHA mais alto.
+    profile_dir = Path(__file__).resolve().parent / "_chromium_govbr_profile"
+    profile_dir.mkdir(parents=True, exist_ok=True)
 
     async with async_playwright() as p:
-        browser, context = await create_stealth_browser_context(p)
+        # launch_persistent_context = browser + context unico, com user_data_dir
+        context = await p.chromium.launch_persistent_context(
+            str(profile_dir),
+            headless=headless,
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+                "--disable-infobars",
+                "--lang=pt-BR",
+                "--window-size=1366,768",
+            ],
+            viewport={"width": 1366, "height": 768},
+            locale="pt-BR",
+            timezone_id="America/Sao_Paulo",
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                       "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            extra_http_headers={
+                "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            },
+        )
+        stealth = Stealth()
+        await stealth.apply_stealth_async(context)
+        browser = context.browser  # may be None for persistent context
         # injeta cookies antigas (Govbrid persistente ajuda a lembrar do CPF)
         if old_cookies:
             try:
@@ -332,11 +361,11 @@ async def renovar() -> bool:
         if "captcha" in body or "verifica" in body:
             log.error("CAPTCHA ou desafio adicional detectado")
             await page.screenshot(path=str(Path(__file__).resolve().parent / "_renovar_captcha.png"))
-            await browser.close(); return False
+            await context.close(); return False
         if "senha" in page.url.lower() or "login" in page.url.lower():
             log.error(f"login falhou — ainda na pagina de login: {page.url}")
             await page.screenshot(path=str(Path(__file__).resolve().parent / "_renovar_loginfail.png"))
-            await browser.close(); return False
+            await context.close(); return False
 
         log.info("LOGIN OK! Visitando subdominios para gerar JSESSIONIDs...")
         for sd in SUBDOMINIOS_TG:
@@ -362,10 +391,12 @@ async def renovar() -> bool:
         target_mun = sess_mun or cmun or 6
         new_id = _save_session(target_mun, relevant)
         log.info(f"Sessao salva: id={new_id} municipio_id={target_mun}")
-        await browser.close()
+        await context.close()
         return True
 
 
 if __name__ == "__main__":
-    ok = asyncio.run(renovar())
+    # Por padrao tenta headless (Railway); flag --visible roda visivel
+    visible = "--visible" in sys.argv
+    ok = asyncio.run(renovar(headless=not visible))
     sys.exit(0 if ok else 1)

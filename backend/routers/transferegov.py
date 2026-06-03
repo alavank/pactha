@@ -346,11 +346,17 @@ async def sessao_status(
     db: AsyncSession = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    """Retorna idade/validade da sessao gov.br no Cofre (usada pelo scraper p/
-    extrair campos gated como parlamentar e situacao_contratacao_detalhe)."""
+    """Retorna idade/validade REAL da sessao gov.br no Cofre.
+
+    Decodifica o JWT 'user-id' das cookies (sessao parcerias.transferegov tem
+    expiracao curta ~20min, refrescada com atividade). Retorna minutos
+    restantes REAIS, nao so idade da captura."""
     from datetime import datetime, timezone
+    from services import crypto
+    import base64
+    import json as _json
     r = await db.execute(text("""
-        SELECT id, municipio_id, updated_at, observacao, length(senha_hash) AS lh
+        SELECT id, municipio_id, updated_at, observacao, senha_hash
         FROM cofre_senhas
         WHERE automation_key='govbr' AND length(senha_hash) > 1000
         ORDER BY updated_at DESC LIMIT 1
@@ -359,15 +365,42 @@ async def sessao_status(
     if not row:
         return {"has_session": False, "message": "Nenhuma sessao gov.br capturada"}
     age_h = (datetime.now(timezone.utc) - row[2]).total_seconds() / 3600
-    return {
+    base: dict = {
         "has_session": True,
         "id": row[0],
         "municipio_id": row[1],
         "updated_at": row[2].isoformat(),
-        "age_hours": round(age_h, 1),
-        "expired": age_h > 2,  # sessao SSO gov.br dura ~2h de inatividade
+        "age_hours": round(age_h, 2),
         "observacao": row[3],
     }
+    # Decodifica o JWT 'user-id' (sem validar assinatura) pra ver exp real
+    try:
+        dec = crypto.decrypt(row[4]) or ""
+        data = _json.loads(dec)
+        cookies = data.get("cookies", [])
+        uid_cookie = next((c for c in cookies if c.get("name") == "user-id"), None)
+        if uid_cookie:
+            token = uid_cookie.get("value", "")
+            parts = token.split(".")
+            if len(parts) >= 2:
+                payload_b64 = parts[1] + "=" * (-len(parts[1]) % 4)
+                payload = _json.loads(base64.urlsafe_b64decode(payload_b64))
+                exp_ts = payload.get("exp")
+                if exp_ts:
+                    now_ts = datetime.now(timezone.utc).timestamp()
+                    mins = (exp_ts - now_ts) / 60
+                    base["user_id_exp_minutes"] = round(mins, 1)
+                    base["expired"] = mins <= 0
+                    base["expira_em"] = datetime.fromtimestamp(
+                        exp_ts, tz=timezone.utc).isoformat()
+                    base["vinculo"] = payload.get("vinculo")
+                    base["nivel"] = payload.get("nivel")
+                    return base
+    except Exception as e:
+        base["decode_error"] = str(e)[:100]
+    # Fallback: usa idade da captura (sessao tipica ~20 min)
+    base["expired"] = age_h > 0.33
+    return base
 
 
 @router.post("/admin/run-scraper")
