@@ -42,6 +42,8 @@ MIGRATION_FILES = [
     "add_rm.sql",
     # Voluntarias: situacao contratacao + clausula suspensiva detalhe + parlamentar
     "add_voluntarias_clausula_parlamentar.sql",
+    # Voluntarias: detalhe generico da Situacao de Contratacao (qualquer tipo)
+    "add_voluntarias_situacao_detalhe.sql",
 ]
 
 

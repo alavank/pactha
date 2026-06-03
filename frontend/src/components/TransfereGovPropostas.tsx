@@ -37,6 +37,7 @@ interface Proposta {
   valor_global?: number | null;
   valor_repasse?: number | null;
   valor_contrapartida?: number | null;
+  situacao_contratacao_detalhe?: Record<string, string | null> | null;
 }
 
 interface Resp { items: Proposta[]; total: number; atualizado_em?: string; }
@@ -286,21 +287,29 @@ export default function TransfereGovPropostas({
                   </Grid>
                 </Section>
 
-                {(detalhe.situacao_contratacao || detalhe.parlamentar) && (
+                {(detalhe.situacao_contratacao || detalhe.parlamentar || detalhe.situacao_contratacao_detalhe) && (
                   <Section title="Contratação e Indicação">
                     <Grid>
                       <Field label="Situação de Contratação Atual" value={detalhe.situacao_contratacao} />
                       <Field label="Parlamentar Responsável" value={detalhe.parlamentar} />
                     </Grid>
-                    {(detalhe.clausula_suspensiva_dt_prevista || detalhe.clausula_suspensiva_motivo) && (
+                    {detalhe.situacao_contratacao_detalhe && Object.keys(detalhe.situacao_contratacao_detalhe).filter(k => !k.startsWith("_")).length > 0 && (
                       <div className="mt-3 rounded border-l-4 border-amber-400 bg-amber-50 p-3">
-                        <div className="text-xs font-semibold text-amber-900 mb-1.5">
-                          Detalhe da Cláusula Suspensiva / Liminar Judicial
+                        <div className="text-xs font-semibold text-amber-900 mb-2">
+                          Detalhe da Situação de Contratação
+                          {detalhe.situacao_contratacao_detalhe._label_botao && (
+                            <span className="ml-1 text-amber-700 font-normal">
+                              ({String(detalhe.situacao_contratacao_detalhe._label_botao)})
+                            </span>
+                          )}
                         </div>
-                        <Grid cols={2}>
-                          <Field label="Data Prevista para Resolução" value={detalhe.clausula_suspensiva_dt_prevista} />
-                          <Field label="Motivo" value={detalhe.clausula_suspensiva_motivo} />
-                        </Grid>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                          {Object.entries(detalhe.situacao_contratacao_detalhe)
+                            .filter(([k]) => !k.startsWith("_"))
+                            .map(([k, v]) => (
+                              <Field key={k} label={k} value={v == null ? "-" : String(v)} />
+                            ))}
+                        </div>
                       </div>
                     )}
                   </Section>

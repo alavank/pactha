@@ -201,7 +201,8 @@ async def voluntarias(
                numero_processo, objeto, programa, dt_inicio_vigencia,
                dt_fim_vigencia, dt_proposta, dt_assinatura, updated_at,
                situacao_contratacao, clausula_suspensiva_dt_prevista,
-               clausula_suspensiva_motivo, parlamentar
+               clausula_suspensiva_motivo, parlamentar,
+               situacao_contratacao_detalhe
         FROM transferegov_propostas
         WHERE {' AND '.join(where)}
         ORDER BY numero_proposta DESC
@@ -220,6 +221,7 @@ async def voluntarias(
         "clausula_suspensiva_dt_prevista": row[18].isoformat() if row[18] else None,
         "clausula_suspensiva_motivo": row[19],
         "parlamentar": row[20],
+        "situacao_contratacao_detalhe": row[21],
     } for row in r.fetchall()]
 
     # Filtro de vigencia (vindo dos KPIs do dashboard)
@@ -268,7 +270,8 @@ async def voluntarias_detalhe(
                dt_proposta, dt_assinatura, detalhe,
                situacao_contratacao, clausula_suspensiva_dt_prevista,
                clausula_suspensiva_motivo, parlamentar,
-               valor_global, valor_repasse, valor_contrapartida
+               valor_global, valor_repasse, valor_contrapartida,
+               situacao_contratacao_detalhe
         FROM transferegov_propostas
         WHERE municipio_id = :mun AND numero_proposta = :num
     """), {"mun": municipio_id, "num": numero_proposta})
@@ -289,6 +292,7 @@ async def voluntarias_detalhe(
         "valor_global": float(row[20]) if row[20] is not None else None,
         "valor_repasse": float(row[21]) if row[21] is not None else None,
         "valor_contrapartida": float(row[22]) if row[22] is not None else None,
+        "situacao_contratacao_detalhe": row[23],
     }
 
 

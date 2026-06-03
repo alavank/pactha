@@ -192,43 +192,51 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0) -> list[dict]:
                     det["_parlamentar"] = parl
             except Exception:
                 pass
-            clausula_url = det.pop("_clausula_url", None)
+            sit_det_url = det.pop("_situacao_det_url", None)
+            sit_det_label = det.pop("_situacao_det_label", None)
             # Limpa U+FFFD de chaves e valores
             prop["detalhe"] = {
                 _clean(k): (_clean(v) if isinstance(v, str)
                             else [_clean(x) for x in v] if isinstance(v, list) else v)
                 for k, v in (det or {}).items()
             }
-            # Se for Clausula Suspensiva, segue o link de detalhe
-            sit_contr = (prop["detalhe"].get("Situação de Contratação Atual") or "").lower()
-            if clausula_url and "suspensiv" in sit_contr:
+            # Segue o botao "Detalhar..." da linha Situacao de Contratacao Atual
+            # (qualquer tipo: Clausula Suspensiva, Liminar Judicial, Pendencia, etc.)
+            if sit_det_url:
                 try:
-                    await page.goto(clausula_url, timeout=40000, wait_until="domcontentloaded")
+                    await page.goto(sit_det_url, timeout=40000, wait_until="domcontentloaded")
                     await page.wait_for_timeout(2000)
-                    cl = await _extrai_clausula_suspensiva(page)
-                    if cl:
-                        prop["detalhe"]["_clausula"] = {
-                            _clean(k): _clean(v) if isinstance(v, str) else v
-                            for k, v in cl.items()
+                    sd = await _extrai_situacao_detalhe(page)
+                    if sd:
+                        prop["detalhe"]["_situacao_detalhe"] = {
+                            "_label_botao": _clean(sit_det_label) if sit_det_label else None,
+                            **{_clean(k): _clean(v) if isinstance(v, str) else v
+                               for k, v in sd.items()},
                         }
                 except Exception as e:
-                    logger.warning(f"    clausula {prop['numero_proposta']}: {str(e)[:80]}")
+                    logger.warning(f"    situacao_det {prop['numero_proposta']}: {str(e)[:80]}")
         except Exception as e:
             logger.warning(f"    detalhe {prop['numero_proposta']}: {str(e)[:80]}")
     return propostas
 
 
-async def _extrai_clausula_suspensiva(page) -> dict:
-    """Le a pagina DetalharClausulaSuspensiva. Retorna dict com data_prevista e motivo."""
+async def _extrai_situacao_detalhe(page) -> dict:
+    """Pagina de detalhe da Situacao de Contratacao Atual (qualquer tipo).
+    Captura todos os pares label:valor de forma generica, ignorando linhas
+    de cabecalho/rodape e celulas vazias. Funciona para Clausula Suspensiva,
+    Liminar Judicial, Pendencia etc."""
     return await page.evaluate("""() => {
         const out = {};
         document.querySelectorAll('tr').forEach(tr => {
             const tds = [...tr.querySelectorAll('td,th')].map(c => c.innerText.trim());
-            if (tds.length >= 2) {
-                const k = tds[0].toLowerCase();
-                if (k.includes('data prevista')) out['data_prevista'] = tds[1];
-                else if (k.includes('motivo')) out['motivo'] = tds[1];
-                else if (k.includes('situa') && k.includes('contrato')) out['situacao_atual'] = tds[1];
+            if (tds.length === 2) {
+                const k = tds[0]; const v = tds[1];
+                if (k && v && k.length < 80 && v.length < 600 && !out[k]) out[k] = v;
+            } else if (tds.length === 4) {
+                for (const i of [0, 2]) {
+                    const k = tds[i]; const v = tds[i + 1];
+                    if (k && v && k.length < 80 && v.length < 600 && !out[k]) out[k] = v;
+                }
             }
         });
         return out;
@@ -304,34 +312,41 @@ async def _extrai_detalhe(page) -> dict:
                 if (v) { out[outKey] = v; break; }
             }
         }
-        // URL do botao "Detalhar Clausula Suspensiva/Liminar Judicial"
-        // Pode ser <a href=...> OU <input type=button onclick="..."> OU form action
-        const clausulaSelectors = [
-            'a[href*="DetalharClausulaSuspensiva"]',
-            'a[href*="ClausulaSuspensiva"]',
-        ];
-        for (const sel of clausulaSelectors) {
-            const el = document.querySelector(sel);
-            if (el && el.href) { out['_clausula_url'] = el.href; break; }
-        }
-        if (!out['_clausula_url']) {
-            // Tenta inputs/buttons com onclick que aponta para a URL
-            const btn = [...document.querySelectorAll('input,button,a')].find(b => {
-                const t = (b.value||b.innerText||'').toLowerCase();
-                return t.includes('detalhar') && (t.includes('clausula') || t.includes('clàusula') || t.includes('cláusula') || t.includes('suspensiva'));
+        // URL do botao "Detalhar..." da linha "Situacao de Contratacao Atual".
+        // O texto varia conforme o tipo (Clausula Suspensiva, Liminar Judicial,
+        // Pendencia, etc.) — buscamos qualquer botao "Detalhar" dentro da linha.
+        // Tambem captura o label do botao para identificar o tipo de detalhe.
+        try {
+            const sitRow = [...document.querySelectorAll('tr')].find(tr => {
+                const txt = tr.innerText.toLowerCase();
+                return txt.includes('situa') && (txt.includes('contrata') || txt.includes('contrato'))
+                    && txt.includes('atual');
             });
-            if (btn) {
-                const oc = btn.getAttribute('onclick') || '';
-                const m = oc.match(/['"]([^'"]*DetalharClausulaSuspensiva[^'"]*)['"]/i);
-                if (m) {
-                    let u = m[1];
-                    if (!u.startsWith('http')) {
-                        u = (u.startsWith('/') ? location.origin : location.origin + '/voluntarias/execucao/') + u.replace(/^\//, '');
+            if (sitRow) {
+                const det = [...sitRow.querySelectorAll('a, input[type="button"], button')].find(el => {
+                    const t = (el.value || el.innerText || '').toLowerCase().trim();
+                    return t.startsWith('detalhar') || (el.href || '').toLowerCase().includes('detalhar');
+                });
+                if (det) {
+                    const label = (det.value || det.innerText || '').trim();
+                    let url = det.href || '';
+                    if (!url) {
+                        const oc = det.getAttribute('onclick') || '';
+                        const m = oc.match(/['"]([^'"]*Detalhar[^'"]*)['"]/i);
+                        if (m) {
+                            url = m[1];
+                            if (!url.startsWith('http')) {
+                                url = (url.startsWith('/') ? location.origin : location.origin + '/voluntarias/execucao/') + url.replace(/^\//, '');
+                            }
+                        }
                     }
-                    out['_clausula_url'] = u;
+                    if (url) {
+                        out['_situacao_det_url'] = url;
+                        if (label) out['_situacao_det_label'] = label.slice(0, 80);
+                    }
                 }
             }
-        }
+        } catch (e) { /* ignore */ }
         // Documentos digitalizados (nomes dos PDFs)
         const docs = [];
         document.querySelectorAll('a').forEach(a => {
@@ -379,19 +394,28 @@ def _upsert(mun_id: int, propostas: list[dict]):
         valor_contrap = _money(g("Valor de Contrapartida", "Valor da Contrapartida"))
         situacao_contr = g("Situação de Contratação Atual")
         parlamentar = g("_parlamentar")
-        cl = det.get("_clausula") if isinstance(det.get("_clausula"), dict) else {}
+        # Detalhe generico da situacao de contratacao (qualquer tipo)
+        sd = det.get("_situacao_detalhe") if isinstance(det.get("_situacao_detalhe"), dict) else {}
+        sit_det_json = sd if sd else None
+        # Deriva campos especificos de Clausula Suspensiva quando aplicavel
         cl_dt = None
-        cl_dt_raw = (cl.get("data_prevista") or "").strip()
-        if cl_dt_raw:
+        cl_motivo = None
+        if sd:
             import re as _re
             from datetime import datetime as _dt
-            m = _re.match(r"(\d{1,2})/(\d{1,2})/(\d{4})", cl_dt_raw)
-            if m:
-                try:
-                    cl_dt = _dt(int(m.group(3)), int(m.group(2)), int(m.group(1))).date()
-                except (ValueError, TypeError):
-                    pass
-        cl_motivo = (cl.get("motivo") or "").strip() or None
+            for k, v in sd.items():
+                if not isinstance(v, str):
+                    continue
+                kl = k.lower()
+                if ("data" in kl and "prevista" in kl) or ("prazo" in kl):
+                    m = _re.match(r"(\d{1,2})/(\d{1,2})/(\d{4})", v.strip())
+                    if m:
+                        try:
+                            cl_dt = _dt(int(m.group(3)), int(m.group(2)), int(m.group(1))).date()
+                        except (ValueError, TypeError):
+                            pass
+                elif "motivo" in kl:
+                    cl_motivo = v.strip() or None
         cur.execute("""
             INSERT INTO transferegov_propostas
                 (municipio_id, numero_proposta, situacao, orgao, proponente,
@@ -400,9 +424,9 @@ def _upsert(mun_id: int, propostas: list[dict]):
                  dt_inicio_vigencia, dt_fim_vigencia, dt_proposta, dt_assinatura,
                  valor_global, valor_repasse, valor_contrapartida,
                  situacao_contratacao, clausula_suspensiva_dt_prevista,
-                 clausula_suspensiva_motivo, parlamentar,
+                 clausula_suspensiva_motivo, parlamentar, situacao_contratacao_detalhe,
                  detalhe, raw_data, updated_at)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,NOW())
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s::jsonb,NOW())
             ON CONFLICT (municipio_id, numero_proposta) DO UPDATE SET
                 situacao=EXCLUDED.situacao, orgao=EXCLUDED.orgao,
                 proponente=EXCLUDED.proponente, possui_parecer=EXCLUDED.possui_parecer,
@@ -419,6 +443,7 @@ def _upsert(mun_id: int, propostas: list[dict]):
                 clausula_suspensiva_dt_prevista=COALESCE(EXCLUDED.clausula_suspensiva_dt_prevista, transferegov_propostas.clausula_suspensiva_dt_prevista),
                 clausula_suspensiva_motivo=COALESCE(EXCLUDED.clausula_suspensiva_motivo, transferegov_propostas.clausula_suspensiva_motivo),
                 parlamentar=COALESCE(EXCLUDED.parlamentar, transferegov_propostas.parlamentar),
+                situacao_contratacao_detalhe=COALESCE(EXCLUDED.situacao_contratacao_detalhe, transferegov_propostas.situacao_contratacao_detalhe),
                 detalhe=EXCLUDED.detalhe, raw_data=EXCLUDED.raw_data, updated_at=NOW()
         """, (mun_id, p["numero_proposta"][:20], p["situacao"][:300], p["orgao"][:300],
               p["proponente"][:300], p["possui_parecer"][:10], p["identificacao"][:30],
@@ -430,6 +455,7 @@ def _upsert(mun_id: int, propostas: list[dict]):
               valor_global, valor_repasse, valor_contrap,
               (situacao_contr or "")[:100] or None, cl_dt, cl_motivo,
               (parlamentar or "")[:200] or None,
+              json.dumps(sit_det_json, ensure_ascii=False) if sit_det_json else None,
               json.dumps(det, ensure_ascii=False), json.dumps(p, ensure_ascii=False)))
         ins += 1
     conn.commit(); cur.close(); conn.close()
