@@ -26,6 +26,8 @@ interface Item {
   dt_saldo?: string | null;
   dt_fim_vigencia?: string | null;
   situacao_atual?: string;
+  situacao_contratacao?: string;
+  situacao_contratacao_detalhe?: Record<string, unknown> | null;
   fonte?: string;
   fonte_ref?: string;
 }
@@ -54,8 +56,32 @@ const ITEM_FIELDS: Array<[keyof Item, string, "text" | "number" | "date" | "text
   ["saldo_bancario", "Saldo Bancario (R$)", "number"],
   ["dt_saldo", "Data do Saldo", "date"],
   ["dt_fim_vigencia", "Final da Vigencia", "date"],
+  ["situacao_contratacao", "Situação de Contratação", "text"],
   ["situacao_atual", "Situacao Atual", "textarea"],
 ];
+
+function formatSitDet(det: Record<string, unknown> | null | undefined): string {
+  if (!det || typeof det !== "object") return "";
+  const parts: string[] = [];
+  for (const [k, v] of Object.entries(det)) {
+    if (k.startsWith("_") || v == null || v === "") continue;
+    if (typeof v === "string" || typeof v === "number") {
+      parts.push(`${k}: ${v}`);
+    }
+  }
+  const label = (det._label_botao as string) || "";
+  return (label ? `(${label}) ` : "") + parts.join("\n");
+}
+
+function parseSitDet(txt: string): Record<string, unknown> {
+  // Reverse of formatSitDet, melhor esforço: cada linha "K: V"
+  const out: Record<string, unknown> = {};
+  for (const line of (txt || "").split("\n")) {
+    const m = line.match(/^\s*([^:]{1,80}):\s*(.+)$/);
+    if (m) out[m[1].trim()] = m[2].trim();
+  }
+  return out;
+}
 
 function moveItem<T>(arr: T[], idx: number, delta: number): T[] {
   const ni = idx + delta;
@@ -314,6 +340,22 @@ export default function RmEditorPage() {
                                             </div>
                                             {iopen && (
                                               <div className="grid grid-cols-1 md:grid-cols-2 gap-2 p-3 pt-1">
+                                                {/* Detalhamento da Situação de Contratação (JSONB) */}
+                                                <div className="md:col-span-2">
+                                                  <label className="text-[11px] text-slate-600 mb-0.5 block">
+                                                    Detalhamento da Situação <span className="text-slate-400">(uma linha por campo: <code>Chave: Valor</code>)</span>
+                                                  </label>
+                                                  <textarea
+                                                    className="w-full rounded border border-slate-300 px-2 py-1 text-sm min-h-[60px] font-mono"
+                                                    value={formatSitDet(item.situacao_contratacao_detalhe)}
+                                                    onChange={(e) => update((c) => {
+                                                      const it = c.partes[pi].secoes[si].grupos[gi].itens[ii] as Item;
+                                                      it.situacao_contratacao_detalhe = parseSitDet(e.target.value);
+                                                      return c;
+                                                    })}
+                                                    placeholder="Ex: Data Prevista: 30/06/2026&#10;Motivo: Pendência de documentação"
+                                                  />
+                                                </div>
                                                 {ITEM_FIELDS.map(([k, label, type]) => (
                                                   <div key={k} className={type === "textarea" ? "md:col-span-2" : ""}>
                                                     <label className="text-[11px] text-slate-600 mb-0.5 block">{label}</label>

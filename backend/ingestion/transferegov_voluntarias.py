@@ -33,6 +33,59 @@ ENTRY = ("https://discricionarias.transferegov.sistema.gov.br/voluntarias/Forwar
          "?modulo=Principal&path=/MostraPrincipalConsultarProposta.do&Usr=guest&Pwd=guest")
 
 
+def _load_govbr_cookies() -> list[dict] | None:
+    """Best-effort: carrega cookies SSO gov.br do Cofre (qualquer municipio).
+    Se houver, retorna lista de cookies em formato Playwright. Se nao houver
+    (ou se nao decifrar / for invalido), retorna None e o scraper segue como guest.
+    """
+    try:
+        import psycopg2
+        from services import crypto
+        url = os.getenv("DATABASE_URL_SYNC", "")
+        url = url.replace("&channel_binding=require", "").replace("?channel_binding=require", "")
+        conn = psycopg2.connect(url)
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT senha_hash FROM cofre_senhas "
+            "WHERE automation_key='govbr' AND length(senha_hash) > 1000 "
+            "ORDER BY updated_at DESC LIMIT 1"
+        )
+        row = cur.fetchone()
+        cur.close(); conn.close()
+        if not row:
+            return None
+        dec = crypto.decrypt(row[0])
+        if not dec or not dec.startswith("{"):
+            return None
+        data = json.loads(dec)
+        out = []
+        for c in data.get("cookies", []):
+            n, v = c.get("name"), c.get("value")
+            if not n or v is None:
+                continue
+            ck = {
+                "name": n, "value": v, "path": c.get("path") or "/",
+                "secure": bool(c.get("secure")), "httpOnly": bool(c.get("httpOnly")),
+            }
+            if c.get("domain"):
+                ck["domain"] = c["domain"]
+            ss = c.get("sameSite")
+            if ss:
+                ck["sameSite"] = {"no_restriction": "None", "lax": "Lax", "strict": "Strict",
+                                  "None": "None", "Lax": "Lax", "Strict": "Strict"}.get(ss, "Lax")
+            exp = c.get("expirationDate")
+            if exp:
+                try:
+                    ck["expires"] = float(exp)
+                except (TypeError, ValueError):
+                    pass
+            out.append(ck)
+        return out or None
+    except Exception as e:
+        logger.warning(f"_load_govbr_cookies: ignorando ({e})")
+        return None
+
+
 def _norm(s: str) -> str:
     if not s:
         return ""
@@ -244,27 +297,105 @@ async def _extrai_situacao_detalhe(page) -> dict:
 
 
 async def _extrai_parlamentar(page) -> str | None:
-    """Tenta extrair parlamentar/autor da indicacao. Procura em texto livre por
-    'Autor da Emenda', 'Parlamentar', 'Indicacao'. Retorna primeiro encontrado."""
-    return await page.evaluate("""() => {
+    """Tenta extrair parlamentar/autor da indicacao. Combina abordagens:
+      1) Procura em <tr> com 2 ou 4 celulas (label-valor)
+      2) Procura em texto livre por varios padroes
+      3) Tenta seguir botao 'Histórico de Indicações' / 'Indicações Parlamentares'
+         na pagina de detalhe, se aparecer (best-effort, ignora se nao houver)."""
+    parl = await page.evaluate("""() => {
+        const LABELS = [
+            'Autor da Emenda', 'Parlamentar', 'Nome do Autor', 'Indica',
+            'Nome do Parlamentar', 'Autor', 'Indicado por',
+            'Parlamentar Indicador', 'Beneficiario da Emenda',
+        ];
+        const cleanVal = (v) => {
+            v = (v || '').replace(/\\s+/g, ' ').trim();
+            if (!v) return null;
+            if (v.length < 5 || v.length > 200) return null;
+            // descarta sentinelas e valores nao-nome
+            if (/^(numero|data|valor|tipo|sim|n[ãa]o|n[/.]\\s*a|\\-+|0+)$/i.test(v)) return null;
+            // descarta datas (DD/MM/YYYY) e numeros puros
+            if (/^\\d{1,2}\\/\\d{1,2}\\/\\d{2,4}$/.test(v)) return null;
+            if (/^[\\d.,\\s]+$/.test(v)) return null;
+            // descarta funcional programatica e codigos longos sem espaco
+            if (/^\\d{6,}/.test(v)) return null;
+            // exige PELO MENOS 2 palavras com letras (nomes proprios tem nome+sobrenome)
+            const palavras = v.split(/\\s+/).filter(w => /[A-Za-zÀ-ú]{2,}/.test(w));
+            if (palavras.length < 2) return null;
+            // exige pelo menos uma letra maiuscula (nome proprio)
+            if (!/[A-ZÀ-Ú]/.test(v)) return null;
+            return v;
+        };
+
+        // 1) Tabelas label:valor
+        const trs = [...document.querySelectorAll('tr')];
+        for (const tr of trs) {
+            const tds = [...tr.querySelectorAll('td,th')].map(c => c.innerText.trim());
+            if (tds.length === 2 && LABELS.some(l => tds[0].toLowerCase().includes(l.toLowerCase()))) {
+                const v = cleanVal(tds[1]);
+                if (v) return v;
+            } else if (tds.length === 4) {
+                for (const i of [0, 2]) {
+                    if (LABELS.some(l => tds[i].toLowerCase().includes(l.toLowerCase()))) {
+                        const v = cleanVal(tds[i+1]);
+                        if (v) return v;
+                    }
+                }
+            }
+        }
+
+        // 2) Texto livre (regex)
         const txt = document.body.innerText;
         const patterns = [
             /Autor\\s+da\\s+Emenda\\s*[:\\n]\\s*([^\\n]{3,120})/i,
-            /Parlamentar\\s*[:\\n]\\s*([^\\n]{3,120})/i,
-            /Nome\\s+do\\s+Autor\\s*[:\\n]\\s*([^\\n]{3,120})/i,
-            /Indica[çc][ãa]o\\s*[:\\n]\\s*([^\\n]{3,120})/i,
+            /Parlamentar(?:\\s+Indicador)?\\s*[:\\n]\\s*([^\\n]{3,120})/i,
+            /Nome\\s+do\\s+(?:Autor|Parlamentar)\\s*[:\\n]\\s*([^\\n]{3,120})/i,
+            /Indica[çc][ãa]o\\s+Parlamentar\\s*[:\\n]\\s*([^\\n]{3,120})/i,
+            /Indicado\\s+por\\s*[:\\n]\\s*([^\\n]{3,120})/i,
+            /Benefici[áa]rio\\s+da\\s+Emenda\\s*[:\\n]\\s*([^\\n]{3,120})/i,
         ];
         for (const re of patterns) {
             const m = txt.match(re);
             if (m) {
-                const v = m[1].trim();
-                if (v && v.length < 120 && !/^(numero|data|valor|tipo|sim|nao)$/i.test(v)) {
-                    return v;
-                }
+                const v = cleanVal(m[1]);
+                if (v) return v;
             }
         }
         return null;
     }""")
+    if parl:
+        return parl
+    # Fallback: tenta clicar em "Histórico de Indicações" / "Emendas"
+    try:
+        link = page.locator(
+            "xpath=//a[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'indica')] | "
+            "//a[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'emenda')]"
+        ).first
+        if await link.count() > 0:
+            href = await link.get_attribute("href")
+            if href and "javascript" not in href.lower():
+                cur = page.url
+                await page.goto(href, timeout=30000, wait_until="domcontentloaded")
+                await page.wait_for_timeout(2500)
+                p2 = await page.evaluate("""() => {
+                    const trs=[...document.querySelectorAll('tr')];
+                    for (const tr of trs) {
+                        const tds=[...tr.querySelectorAll('td,th')].map(c=>c.innerText.trim());
+                        // procura linha que comece com nome de parlamentar
+                        for (const t of tds) {
+                            const m = t.match(/(?:Deputad[oa]|Senador[a]?|Vereador[a]?|Dr\\.|Dra\\.)\\s+([A-Z][A-ZÀ-Úa-zà-ú\\s'.-]{4,80})/i);
+                            if (m) return m[0].trim();
+                        }
+                    }
+                    return null;
+                }""")
+                await page.goto(cur, timeout=30000, wait_until="domcontentloaded")
+                await page.wait_for_timeout(1500)
+                if p2:
+                    return p2
+    except Exception:
+        pass
+    return None
 
 
 async def _extrai_detalhe(page) -> dict:
@@ -470,6 +601,18 @@ async def run():
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True, args=["--ignore-certificate-errors", "--no-sandbox"])
         ctx = await browser.new_context(ignore_https_errors=True, user_agent="Mozilla/5.0 Chrome/131")
+        # Best-effort: injeta cookies SSO gov.br para habilitar campos extras
+        # (cláusula suspensiva, parlamentar, detalhamento). Se a sessao tiver
+        # expirado, segue como guest sem erro.
+        govbr_cks = _load_govbr_cookies()
+        if govbr_cks:
+            try:
+                await ctx.add_cookies(govbr_cks)
+                logger.info(f"  cookies SSO gov.br injetados: {len(govbr_cks)} cookies")
+            except Exception as e:
+                logger.warning(f"  falha ao injetar cookies SSO: {e}")
+        else:
+            logger.info("  sem sessao gov.br no Cofre, rodando como guest")
         page = await ctx.new_page()
         for mun in municipios:
             try:
@@ -493,5 +636,37 @@ async def run():
         pass
 
 
+async def run_one(municipio_id: int):
+    """Versao test: roda so para um municipio (debug)."""
+    from playwright.async_api import async_playwright
+    muns = [m for m in _municipios_pacta() if m["id"] == municipio_id]
+    if not muns:
+        logger.error(f"municipio_id={municipio_id} nao encontrado")
+        return
+    mun = muns[0]
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True, args=["--ignore-certificate-errors", "--no-sandbox"])
+        ctx = await browser.new_context(ignore_https_errors=True, user_agent="Mozilla/5.0 Chrome/131")
+        govbr_cks = _load_govbr_cookies()
+        if govbr_cks:
+            await ctx.add_cookies(govbr_cks)
+            logger.info(f"  cookies SSO gov.br injetados: {len(govbr_cks)}")
+        page = await ctx.new_page()
+        try:
+            props = await _scrape_municipio(page, mun)
+            n = _upsert(mun["id"], props)
+            logger.info(f"{mun['nome']}: {len(props)} propostas -> {n} upsert")
+            # Conta enrich
+            com_parl = sum(1 for p in props if (p.get("detalhe") or {}).get("_parlamentar"))
+            com_sit_det = sum(1 for p in props if (p.get("detalhe") or {}).get("_situacao_detalhe"))
+            logger.info(f"  ENRICH: parlamentar={com_parl} sit_det={com_sit_det}")
+        finally:
+            await browser.close()
+
+
 if __name__ == "__main__":
-    asyncio.run(run())
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1].isdigit():
+        asyncio.run(run_one(int(sys.argv[1])))
+    else:
+        asyncio.run(run())

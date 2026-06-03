@@ -115,6 +115,42 @@ def _on_page(canvas, doc, rodape_txt: str):
     canvas.restoreState()
 
 
+_SIT_DET_PRIORIDADE = [
+    "Data Prevista", "Data Prevista Atendimento", "Data Limite",
+    "Prazo", "Motivo", "Justificativa", "Descrição", "Descricao",
+    "Tipo", "Status", "Situação", "Situacao",
+    "Número do Processo", "Número Documento", "Documento",
+    "Observação", "Observacao",
+]
+
+
+def _fmt_situacao_detalhe(det) -> str:
+    """Achata o dict situacao_contratacao_detalhe em texto legível para o PDF.
+    Prioriza chaves típicas (Data Prevista, Motivo, ...) na ordem _SIT_DET_PRIORIDADE."""
+    if not det or not isinstance(det, dict):
+        return ""
+    parts: list[str] = []
+    seen = set()
+    label_botao = det.get("_label_botao") or det.get("_label") or ""
+    for chave in _SIT_DET_PRIORIDADE:
+        for k, v in det.items():
+            if k in seen or k.startswith("_") or not v or not isinstance(v, str):
+                continue
+            if chave.lower() in k.lower():
+                parts.append(f"<b>{_escape(k)}:</b> {_escape(v)}")
+                seen.add(k)
+    # adiciona quaisquer chaves restantes
+    for k, v in det.items():
+        if k in seen or k.startswith("_") or not v or not isinstance(v, str):
+            continue
+        parts.append(f"<b>{_escape(k)}:</b> {_escape(v)}")
+        seen.add(k)
+    if not parts:
+        return ""
+    prefix = f"({_escape(label_botao)}) " if label_botao else ""
+    return prefix + "; ".join(parts) + "."
+
+
 def _campos_do_item(item: dict) -> list[tuple[str, str]]:
     """Retorna lista [(label, valor), ...] de campos nao vazios do item."""
     out = []
@@ -143,6 +179,13 @@ def _campos_do_item(item: dict) -> list[tuple[str, str]]:
         if item.get("dt_saldo"):
             saldo_txt += f" atualizado em {_fmt_dt(item['dt_saldo'])}"
         out.append(("Saldo Bancário", saldo_txt))
+    # Situação de Contratação Atual (campo dedicado, vindo do TransfereGov)
+    if item.get("situacao_contratacao"):
+        out.append(("Situação de Contratação", item["situacao_contratacao"]))
+    # Detalhamento da Situação de Contratação (JSONB achatado)
+    det_txt = _fmt_situacao_detalhe(item.get("situacao_contratacao_detalhe"))
+    if det_txt:
+        out.append(("Detalhamento da Situação", det_txt))
     if item.get("situacao_atual"):
         out.append(("Situação atual", item["situacao_atual"]))
     return out

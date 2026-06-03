@@ -220,6 +220,7 @@ export default function TransfereGovPropostas({
                 <TableHead className="w-[90px]">Nº Proposta</TableHead>
                 <TableHead>Órgão</TableHead>
                 <TableHead className="w-[200px]">Situação</TableHead>
+                <TableHead className="w-[150px]">Sit. Contratação</TableHead>
                 <TableHead className="w-[80px]">Início Vig.</TableHead>
                 <TableHead className="w-[80px]">Fim Vig.</TableHead>
                 <TableHead className="w-[55px]">Dias</TableHead>
@@ -239,6 +240,22 @@ export default function TransfereGovPropostas({
                     <span className={`block truncate px-1.5 py-0.5 rounded text-[10px] ${badgeColor(p.situacao)}`}>
                       {p.situacao}
                     </span>
+                  </TableCell>
+                  <TableCell className="max-w-[150px]">
+                    <div className="flex items-center gap-1">
+                      <span className="truncate" title={p.situacao_contratacao || ""}>
+                        {p.situacao_contratacao || "-"}
+                      </span>
+                      {p.situacao_contratacao_detalhe && Object.keys(p.situacao_contratacao_detalhe).filter(k => !k.startsWith("_")).length > 0 && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); abrirDetalhe(p.numero_proposta); }}
+                          className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-blue-600 hover:bg-blue-700 text-white text-[9px] font-medium"
+                          title="Ver detalhamento da situação de contratação"
+                        >
+                          Detalhar
+                        </button>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell>{p.dt_inicio_vigencia || "-"}</TableCell>
                   <TableCell>{p.dt_fim_vigencia || "-"}</TableCell>
