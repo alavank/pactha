@@ -30,6 +30,13 @@ interface Proposta {
   dt_assinatura?: string;
   dias_restantes?: number | null;
   atualizado_em?: string;
+  situacao_contratacao?: string | null;
+  clausula_suspensiva_dt_prevista?: string | null;
+  clausula_suspensiva_motivo?: string | null;
+  parlamentar?: string | null;
+  valor_global?: number | null;
+  valor_repasse?: number | null;
+  valor_contrapartida?: number | null;
 }
 
 interface Resp { items: Proposta[]; total: number; atualizado_em?: string; }
@@ -278,6 +285,26 @@ export default function TransfereGovPropostas({
                     <Field label="Programa" value={detalhe.programa} />
                   </Grid>
                 </Section>
+
+                {(detalhe.situacao_contratacao || detalhe.parlamentar) && (
+                  <Section title="Contratação e Indicação">
+                    <Grid>
+                      <Field label="Situação de Contratação Atual" value={detalhe.situacao_contratacao} />
+                      <Field label="Parlamentar Responsável" value={detalhe.parlamentar} />
+                    </Grid>
+                    {(detalhe.clausula_suspensiva_dt_prevista || detalhe.clausula_suspensiva_motivo) && (
+                      <div className="mt-3 rounded border-l-4 border-amber-400 bg-amber-50 p-3">
+                        <div className="text-xs font-semibold text-amber-900 mb-1.5">
+                          Detalhe da Cláusula Suspensiva / Liminar Judicial
+                        </div>
+                        <Grid cols={2}>
+                          <Field label="Data Prevista para Resolução" value={detalhe.clausula_suspensiva_dt_prevista} />
+                          <Field label="Motivo" value={detalhe.clausula_suspensiva_motivo} />
+                        </Grid>
+                      </div>
+                    )}
+                  </Section>
+                )}
 
                 <Section title="Vigência e Datas">
                   <Grid>

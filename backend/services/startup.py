@@ -40,6 +40,8 @@ MIGRATION_FILES = [
     "add_simec_par.sql",
     # Relatorio de Monitoramento (RM) - padrao Freitas
     "add_rm.sql",
+    # Voluntarias: situacao contratacao + clausula suspensiva detalhe + parlamentar
+    "add_voluntarias_clausula_parlamentar.sql",
 ]
 
 

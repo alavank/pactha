@@ -111,7 +111,9 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int) -> dict:
     # === TransfereGov Voluntarias (SICONV) ===
     vol = await db.execute(text("""
         SELECT id, numero_proposta, codigo_instrumento, situacao, orgao, objeto,
-               dt_fim_vigencia, valor_global, valor_repasse, valor_contrapartida
+               dt_fim_vigencia, valor_global, valor_repasse, valor_contrapartida,
+               situacao_contratacao, clausula_suspensiva_dt_prevista,
+               clausula_suspensiva_motivo, parlamentar
         FROM transferegov_propostas WHERE municipio_id = :m
     """), {"m": municipio_id})
     for row in vol.fetchall():
@@ -128,18 +130,32 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int) -> dict:
         tipo_label = "Convênio" if row[2] else "Proposta"
         parte = _classifica_parte(sit, dt_fim)
         orgao = (row[4] or "Outros - Federal").strip()
+        # Monta narrativa de Situação Atual incluindo situacao_contratacao + clausula
+        situacao_contr = row[10]
+        cl_dt = row[11]; cl_motivo = row[12]
+        narrativa_parts = [sit] if sit else []
+        if situacao_contr:
+            narrativa_parts.append(f"Situação de Contratação: {situacao_contr}.")
+        if cl_dt:
+            narrativa_parts.append(f"Cláusula Suspensiva vence em {cl_dt.strftime('%d/%m/%Y')}.")
+        if cl_motivo:
+            narrativa_parts.append(f"Motivo: {cl_motivo}.")
+        situacao_atual = " ".join(narrativa_parts)
         add_item(parte, "INSTRUMENTOS DE REPASSE FEDERAIS", orgao, {
             "tipo": tipo_label,
             "numero": row[2] or row[1],
             "objeto": row[5] or "",
-            "parlamentar": "",
+            "parlamentar": row[13] or "",
             "valor_global": _money(row[7]),
             "valor_repasse": _money(row[8]),
             "valor_contrapartida": _money(row[9]),
             "banco": "", "agencia": "", "conta": "",
             "saldo_bancario": None, "dt_saldo": None,
             "dt_fim_vigencia": _iso(dt_fim),
-            "situacao_atual": sit,
+            "situacao_atual": situacao_atual,
+            "situacao_contratacao": situacao_contr or "",
+            "clausula_suspensiva_dt_prevista": _iso(cl_dt),
+            "clausula_suspensiva_motivo": cl_motivo or "",
             "fonte": "voluntaria",
             "fonte_ref": row[1],
         })
