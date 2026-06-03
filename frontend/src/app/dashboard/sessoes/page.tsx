@@ -14,6 +14,15 @@ interface SessionStatus {
   observacao?: string;
 }
 
+interface TgSessionStatus {
+  has_session: boolean;
+  age_hours?: number;
+  expired?: boolean;
+  observacao?: string;
+  updated_at?: string;
+  message?: string;
+}
+
 // Sistemas que suportam captura de sessao via bookmarklet
 const PORTAIS = [
   { key: "govbr", nome: "gov.br", url: "https://acesso.gov.br" },
@@ -27,6 +36,8 @@ function SessoesInner() {
   const search = useSearchParams();
   const municipioId = search.get("municipio_id");
   const [status, setStatus] = useState<Record<string, SessionStatus>>({});
+  const [tgStatus, setTgStatus] = useState<TgSessionStatus | null>(null);
+  const [scraperRunning, setScraperRunning] = useState(false);
 
   const apiBase = api.defaults.baseURL || "";
 
@@ -66,6 +77,32 @@ function SessoesInner() {
       }
     }
     setStatus(results);
+    // status especifico da sessao TransfereGov (mais detalhado: age + expired)
+    try {
+      const r = await api.get<TgSessionStatus>("/transferegov/admin/sessao-status");
+      setTgStatus(r.data);
+    } catch {
+      setTgStatus(null);
+    }
+  };
+
+  const rodarScraperTransferegov = async () => {
+    if (!confirm(
+      "Rodar o scraper TransfereGov agora?\n\n" +
+      "Vai capturar propostas + parlamentar + situação de contratação dos\n" +
+      "municípios cadastrados (usa a sessão gov.br atual do Cofre).\n\n" +
+      "Pode levar 5-10 minutos."
+    )) return;
+    setScraperRunning(true);
+    try {
+      await api.post(`/transferegov/admin/run-scraper${municipioId ? `?municipio_id=${municipioId}` : ""}`);
+      toast.success("Scraper iniciado em background. Acompanhe via /Logs.");
+    } catch (e) {
+      toast.error("Falha ao iniciar scraper");
+      console.error(e);
+    } finally {
+      setScraperRunning(false);
+    }
   };
 
   useEffect(() => { fetchAll(); }, [municipioId]);
@@ -145,6 +182,63 @@ function SessoesInner() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Card destacado: status especifico TransfereGov + rodar scraper */}
+      {tgStatus && (
+        <Card className={`border-l-4 ${tgStatus.expired ? "border-l-amber-500 bg-amber-50/40" : "border-l-green-500 bg-green-50/40"}`}>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center justify-between">
+              <span>Sessão TransfereGov (gov.br SSO)</span>
+              {tgStatus.has_session ? (
+                tgStatus.expired ? (
+                  <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">
+                    Provavelmente expirou ({tgStatus.age_hours}h)
+                  </Badge>
+                ) : (
+                  <Badge className="bg-green-100 text-green-800 hover:bg-green-100">
+                    Válida ({tgStatus.age_hours}h)
+                  </Badge>
+                )
+              ) : (
+                <Badge variant="outline" className="text-slate-500">Sem sessão</Badge>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            {tgStatus.has_session && (
+              <div className="text-xs text-slate-600">
+                Última captura: {new Date(tgStatus.updated_at || "").toLocaleString("pt-BR")}
+              </div>
+            )}
+            {tgStatus.expired && (
+              <div className="rounded bg-amber-100 border border-amber-300 p-3 text-amber-900 text-xs space-y-1">
+                <strong>Sessão expirou.</strong> Para capturar parlamentar, situação de contratação detalhada
+                e cláusula suspensiva no próximo scraping, re-capture a sessão:
+                <ol className="list-decimal ml-5 space-y-0.5 mt-1">
+                  <li>Abra <code className="bg-white px-1 rounded">parcerias.transferegov.sistema.gov.br/ep-atos-prep-web/home</code> em nova aba</li>
+                  <li>Clique <strong>Entrar com gov.br</strong> e complete o login</li>
+                  <li>Após autenticar, clique no bookmarklet <strong>📎 PACTA Capturar gov.br</strong> (abaixo)</li>
+                </ol>
+              </div>
+            )}
+            <div className="flex gap-2 pt-2">
+              <button
+                onClick={rodarScraperTransferegov}
+                disabled={scraperRunning}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm font-medium disabled:opacity-50"
+              >
+                {scraperRunning ? "Iniciando..." : "▶ Rodar scraper TransfereGov agora"}
+              </button>
+              <button
+                onClick={fetchAll}
+                className="border border-slate-300 hover:bg-slate-50 px-4 py-2 rounded text-sm"
+              >
+                <RefreshCw className="inline size-3 mr-1" /> Atualizar status
+              </button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Lista de portais */}
       <div className="grid gap-3">

@@ -335,3 +335,61 @@ async def detalhe(plano_acao_id: int, _=Depends(get_current_user)):
         except Exception:
             pass
         return {"plano": plano, "resumo": resumo, "extrato": extrato}
+
+
+# ============================================================================
+# ADMIN: status da sessao gov.br + dispara scraper manualmente apos re-captura
+# ============================================================================
+
+@router.get("/admin/sessao-status")
+async def sessao_status(
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Retorna idade/validade da sessao gov.br no Cofre (usada pelo scraper p/
+    extrair campos gated como parlamentar e situacao_contratacao_detalhe)."""
+    from datetime import datetime, timezone
+    r = await db.execute(text("""
+        SELECT id, municipio_id, updated_at, observacao, length(senha_hash) AS lh
+        FROM cofre_senhas
+        WHERE automation_key='govbr' AND length(senha_hash) > 1000
+        ORDER BY updated_at DESC LIMIT 1
+    """))
+    row = r.first()
+    if not row:
+        return {"has_session": False, "message": "Nenhuma sessao gov.br capturada"}
+    age_h = (datetime.now(timezone.utc) - row[2]).total_seconds() / 3600
+    return {
+        "has_session": True,
+        "id": row[0],
+        "municipio_id": row[1],
+        "updated_at": row[2].isoformat(),
+        "age_hours": round(age_h, 1),
+        "expired": age_h > 2,  # sessao SSO gov.br dura ~2h de inatividade
+        "observacao": row[3],
+    }
+
+
+@router.post("/admin/run-scraper")
+async def run_scraper_manual(
+    municipio_id: Optional[int] = Query(None, description="se None, roda todos"),
+    user=Depends(get_current_user),
+):
+    """Dispara o scraper voluntarias manualmente (background). Util apos
+    re-capturar a sessao gov.br via bookmarklet."""
+    import asyncio as _aio
+    from ingestion.transferegov_voluntarias import run, run_one
+
+    async def _bg():
+        try:
+            if municipio_id:
+                await run_one(municipio_id)
+            else:
+                await run()
+        except Exception as e:
+            import logging
+            logging.getLogger("scraper-manual").exception(f"erro: {e}")
+
+    _aio.create_task(_bg())
+    return {"ok": True, "scope": "single" if municipio_id else "all",
+            "message": "Scraper iniciado em background. Acompanhe via logs."}
