@@ -136,18 +136,40 @@ async def session_status(
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
-    """Verifica se ha sessao ativa cadastrada para esse portal/municipio."""
+    """Verifica se ha sessao ativa cadastrada para esse portal/municipio.
+
+    Distingue cookies de sessao (JSON, capturado via bookmarklet) de credencial
+    cadastrada (senha em texto, util como referencia mas NAO permite scraping)."""
     q = select(CofreSenha).where(
         CofreSenha.automation_key == automation_key,
-        CofreSenha.municipio_id == municipio_id,
-    )
-    res = await db.execute(q)
-    item = res.scalar_one_or_none()
-    if not item:
-        return {"has_session": False}
+    ).order_by(CofreSenha.updated_at.desc())
+    items = (await db.execute(q)).scalars().all()
+
+    def _is_cookies(it: CofreSenha) -> bool:
+        if not it or not it.senha_encrypted:
+            return False
+        dec = crypto.decrypt(it.senha_encrypted) or ""
+        return dec.startswith("{") and '"cookies"' in dec
+
+    # Prefere cookies do MESMO municipio; senao, cookies de qualquer mun
+    # (sessao SSO gov.br serve cross-mun)
+    cookies_item = next((it for it in items
+                         if _is_cookies(it) and it.municipio_id == municipio_id), None)
+    if not cookies_item:
+        cookies_item = next((it for it in items if _is_cookies(it)), None)
+    senha_item = next((it for it in items
+                       if it.municipio_id == municipio_id and not _is_cookies(it)), None)
+
+    if not cookies_item and not senha_item:
+        return {"has_session": False, "tipo": None}
+
+    pick = cookies_item or senha_item
     return {
         "has_session": True,
-        "id": item.id,
-        "atualizado_em": item.updated_at.isoformat() if item.updated_at else None,
-        "observacao": item.observacao,
+        "tipo": "cookies" if cookies_item else "senha_apenas",
+        "has_cookies": cookies_item is not None,
+        "id": pick.id,
+        "municipio_id": pick.municipio_id,
+        "atualizado_em": pick.updated_at.isoformat() if pick.updated_at else None,
+        "observacao": pick.observacao,
     }

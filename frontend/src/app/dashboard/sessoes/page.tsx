@@ -9,6 +9,8 @@ import toast from "react-hot-toast";
 
 interface SessionStatus {
   has_session: boolean;
+  has_cookies?: boolean;
+  tipo?: "cookies" | "senha_apenas" | null;
   id?: number;
   atualizado_em?: string;
   observacao?: string;
@@ -251,10 +253,14 @@ function SessoesInner() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       <h3 className="font-semibold text-slate-900">{p.nome}</h3>
-                      {st.has_session ? (
+                      {st.has_cookies ? (
                         <Badge className="bg-green-100 text-green-800 hover:bg-green-100">
                           <CheckCircle2 className="size-3 mr-1" />
-                          Sessao ativa
+                          Cookies capturados
+                        </Badge>
+                      ) : st.has_session ? (
+                        <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">
+                          Apenas senha (sem cookies)
                         </Badge>
                       ) : (
                         <Badge variant="outline" className="text-slate-500">
@@ -264,8 +270,10 @@ function SessoesInner() {
                       )}
                     </div>
                     <div className="text-xs text-slate-500">
-                      {st.has_session ? (
-                        <>Capturado em: {formatDate(st.atualizado_em)}</>
+                      {st.has_cookies ? (
+                        <>Cookies capturados em: {formatDate(st.atualizado_em)}</>
+                      ) : st.has_session ? (
+                        <>Credencial cadastrada em: {formatDate(st.atualizado_em)} (faltam cookies — use o bookmarklet)</>
                       ) : (
                         <>Faca login no portal e clique no bookmarklet</>
                       )}
