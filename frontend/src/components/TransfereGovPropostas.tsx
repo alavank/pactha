@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { Search, Eraser, Loader2, ExternalLink, Eye, X } from "lucide-react";
 import api from "@/lib/api";
 import MultiSelect from "@/components/MultiSelect";
+import AnotacaoButton from "@/components/AnotacaoButton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -81,7 +82,7 @@ export default function TransfereGovPropostas({
   titulo,
   subtitulo,
 }: {
-  categoria: "geral" | "voluntarias" | "rejeitadas";
+  categoria: "geral" | "voluntarias" | "rejeitadas" | "encerradas";
   titulo: string;
   subtitulo: string;
 }) {
@@ -224,6 +225,7 @@ export default function TransfereGovPropostas({
                 <TableHead className="w-[55px]">Dias</TableHead>
                 <TableHead>Objeto</TableHead>
                 <TableHead className="w-[50px] text-center">Ver</TableHead>
+                <TableHead className="w-[40px] text-center" title="Gestão Interna">📝</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -251,6 +253,14 @@ export default function TransfereGovPropostas({
                             className="inline-flex w-6 h-6 items-center justify-center rounded bg-blue-500 hover:bg-blue-600 text-white">
                       <Eye className="size-3" />
                     </button>
+                  </TableCell>
+                  <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
+                    <AnotacaoButton
+                      fonte="voluntaria"
+                      fonteRef={p.numero_proposta}
+                      municipioId={Number(municipioId)}
+                      numero={p.codigo_instrumento || p.numero_proposta}
+                    />
                   </TableCell>
                 </TableRow>
               ))}

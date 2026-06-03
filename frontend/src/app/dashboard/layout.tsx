@@ -16,6 +16,7 @@ import {
   Users,
   Landmark,
   Sparkles,
+  Edit2,
 } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -42,6 +43,7 @@ type NavEntry = NavLeaf | NavGroup;
 const NAV_ITEMS: NavEntry[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/dashboard/ai", label: "IA PACTA", icon: Sparkles },
+  { href: "/dashboard/gestao", label: "Gestão Interna", icon: Edit2 },
   { href: "/dashboard/rm", label: "Relatório de Monitoramento", icon: FileText },
   {
     label: "Estaduais",
@@ -59,6 +61,7 @@ const NAV_ITEMS: NavEntry[] = [
       { href: "/dashboard/transferegov", label: "Especiais" },
       { href: "/dashboard/transferegov-voluntarias", label: "Voluntarias" },
       { href: "/dashboard/transferegov-rejeitadas", label: "Rejeitadas" },
+      { href: "/dashboard/transferegov-encerradas", label: "Encerradas" },
     ],
   },
   { href: "/dashboard/fns", label: "Fundo Nacional de Saude", icon: Target },

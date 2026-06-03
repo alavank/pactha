@@ -157,6 +157,13 @@ _VOLUNTARIA_LIKE = "%enviado para an%lise%"
 # REJEITADAS: qualquer status contendo "rejeitad" (Rejeitados / Rejeitados por
 # Impedimento tecnico). Tratamos como categoria propria; nao entram na Geral.
 _REJEITADA_LIKE = "%rejeitad%"
+# ENCERRADAS: instrumento finalizado. Inclui Anulado, Rescindido e Prestacao
+# de Contas finalizada (Concluida/Aprovada/Aprovada com Ressalvas).
+# Usamos SQL composto pra excluir do Geral.
+_ENCERRADA_SQL = (
+    "(situacao ILIKE '%anulad%' OR situacao ILIKE '%rescind%' OR "
+    "(situacao ILIKE '%presta%' AND (situacao ILIKE '%conclu%' OR situacao ILIKE '%aprovad%')))"
+)
 
 
 @router.get("/voluntarias")
@@ -166,7 +173,7 @@ async def voluntarias(
     orgao: Optional[str] = Query(None),
     search: Optional[str] = Query(None, description="busca em numero/proponente"),
     vigencia: Optional[str] = Query(None, description="vence60 | vence120 | prestacao"),
-    categoria: Optional[str] = Query(None, description="geral | voluntarias | rejeitadas"),
+    categoria: Optional[str] = Query(None, description="geral | voluntarias | rejeitadas | encerradas"),
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
@@ -175,9 +182,10 @@ async def voluntarias(
     Dados coletados pelo scraper Playwright (acesso livre guest) em
     transferegov_propostas. Categorias:
       - voluntarias: status "Proposta/Plano de Trabalho enviado para Analise"
-      - rejeitadas: status com "Rejeitad" (Rejeitados + Rejeitados por Impedimento)
-      - geral: o restante (Em execucao, Aprovados, Prestacao de Contas, etc.)
-              -- exclui voluntarias E rejeitadas
+      - rejeitadas: status com "Rejeitad"
+      - encerradas: Anulado / Rescindido / Prestacao de Contas Concluida/Aprovada
+      - geral: o restante (Em execucao, Aprovados em curso, em analise, etc.)
+              -- exclui voluntarias, rejeitadas E encerradas
     """
     where = ["municipio_id = :mun"]
     params: dict = {"mun": municipio_id}
@@ -185,8 +193,10 @@ async def voluntarias(
         where.append("situacao ILIKE :volpat"); params["volpat"] = _VOLUNTARIA_LIKE
     elif categoria == "rejeitadas":
         where.append("situacao ILIKE :rejpat"); params["rejpat"] = _REJEITADA_LIKE
+    elif categoria == "encerradas":
+        where.append(_ENCERRADA_SQL)
     elif categoria == "geral":
-        where.append("(situacao IS NULL OR (situacao NOT ILIKE :volpat AND situacao NOT ILIKE :rejpat))")
+        where.append(f"(situacao IS NULL OR (situacao NOT ILIKE :volpat AND situacao NOT ILIKE :rejpat AND NOT {_ENCERRADA_SQL}))")
         params["volpat"] = _VOLUNTARIA_LIKE
         params["rejpat"] = _REJEITADA_LIKE
     if situacao:

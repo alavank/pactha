@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { Search as SearchIcon, ChevronLeft, ChevronRight } from "lucide-react";
 import api from "@/lib/api";
 import MultiSelect from "@/components/MultiSelect";
+import AnotacaoButton from "@/components/AnotacaoButton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -370,6 +371,7 @@ export default function ConveniosPage() {
                   <TableHead className="w-[70px]">Assinat.</TableHead>
                   <TableHead className="w-[70px]">Vigencia</TableHead>
                   <TableHead className="w-[50px]">Dias</TableHead>
+                  <TableHead className="w-[40px] text-center" title="Gestão Interna (anotações, protocolos, anexos)">📝</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -441,6 +443,14 @@ export default function ConveniosPage() {
                             : `${conv.dias_restantes}d`
                           : "-"}
                       </span>
+                    </TableCell>
+                    <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
+                      <AnotacaoButton
+                        fonte="sigcon"
+                        fonteRef={String(conv.id)}
+                        municipioId={Number(municipioId)}
+                        numero={conv.nr_instrumento || conv.nr_sigcon || conv.nr_proposta || String(conv.id)}
+                      />
                     </TableCell>
                   </TableRow>
                 );
