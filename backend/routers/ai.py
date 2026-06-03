@@ -65,14 +65,28 @@ FONTES DE DADOS:
 - **Emendas Estaduais**: indicacoes parlamentares estaduais (SIGCON Pesquisar Emendas).
   Use `query_emendas_estaduais`.
 
+BUSCA POR PARLAMENTAR:
+- Se o usuario perguntar por um parlamentar especifico (deputado/senador), use
+  `search_by_parlamentar` — retorna TUDO daquele nome em uma chamada:
+  convenios SIGCON, propostas SICONV, indicacoes/emendas. Cross-fonte.
+- Se for um filtro DENTRO de uma fonte, use o parametro `parlamentar` da tool
+  especifica (query_convenios_sigcon, query_voluntarias, query_emendas_estaduais).
+
 ESTRUTURA TEMPORAL:
 - "Vence em 60d" = convenios com fim de vigencia nos proximos 60 dias.
 - "Vence em 120d" = idem para 120 dias.
 - "Prestacao de Contas" = convenios vencidos ha mais de 90 dias (precisam prestar contas).
 
-Quando o usuario pede um RELATORIO, gere markdown estruturado com cabecalhos,
-tabelas e totais. Diferencie federal (SICONV/SIMEC/FNS) de estadual (SIGCON/Emendas)
-quando relevante."""
+FORMATO DA RESPOSTA (importante para a UI renderizar bem):
+- Use **markdown** SEMPRE: headings (## Titulo), listas (- item), negrito (**chave**).
+- Para dados tabulares, use TABELAS markdown reais:
+  | Coluna A | Coluna B |
+  | --- | --- |
+  | valor | valor |
+  (Sempre com o separador `---` na segunda linha.)
+- Quando o resultado tiver MULTIPLAS fontes, divida em SECOES com `##` ou `###`.
+- Quando o resultado eh longo, comece com um resumo TL;DR de 2-3 linhas, depois detalhe.
+- Valores monetarios SEMPRE como `**R$ 1.234.567,89**` em negrito quando forem totais."""
 
 
 # --------------------------------------------------------------------------
@@ -95,7 +109,7 @@ TOOLS = [
     },
     {
         "name": "query_convenios_sigcon",
-        "description": "Busca convenios estaduais SIGCON-MG do municipio. Filtros opcionais: situacoes (lista), ano de assinatura, busca textual (n° instrumento/proposta/plano/SIAFI/objeto), vigencia (vence em 60d, 120d, ou prestacao de contas +90d vencido).",
+        "description": "Busca convenios estaduais SIGCON-MG do municipio. Filtros opcionais: situacoes (lista), ano de assinatura, busca textual (n° instrumento/proposta/plano/SIAFI/objeto), parlamentar (nome do deputado responsavel/indicador), vigencia (vence em 60d, 120d, ou prestacao de contas +90d vencido).",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -103,6 +117,7 @@ TOOLS = [
                 "situacoes": {"type": "array", "items": {"type": "string"}, "description": "Lista de situacoes exatas (ex: ['INSTRUMENTO CADASTRADO / VIGENTE', 'PRESTACAO DE CONTAS APROVADA']). Veja query_situacoes_sigcon para a lista disponivel."},
                 "ano": {"type": "integer", "description": "Ano de assinatura"},
                 "search": {"type": "string", "description": "Busca em n° instrumento, proposta, plano, SIAFI ou objeto"},
+                "parlamentar": {"type": "string", "description": "Nome do parlamentar/responsavel (busca parcial em raw_data->responsaveis). Ex: 'EDUARDO AZEVEDO', 'AVELAR'"},
                 "vigencia": {"type": "string", "enum": ["vence60", "vence120", "prestacao"], "description": "Filtro de vigencia"},
                 "limit": {"type": "integer", "description": "Max resultados (default 30, max 100)"},
             },
@@ -120,16 +135,30 @@ TOOLS = [
     },
     {
         "name": "query_voluntarias",
-        "description": "Busca propostas SICONV (federal) do municipio. Categorias: geral (em execucao/aprovados/prestacao de contas), voluntarias (enviado para analise), rejeitadas. Inclui orgao, situacao, valores (global/repasse/contrapartida), vigencia.",
+        "description": "Busca propostas SICONV (federal) do municipio. Categorias: geral (em execucao/aprovados/prestacao de contas), voluntarias (enviado para analise), rejeitadas. Inclui orgao, situacao, valores (global/repasse/contrapartida), vigencia, parlamentar autor.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "municipio_id": {"type": "integer"},
                 "categoria": {"type": "string", "enum": ["geral", "voluntarias", "rejeitadas"], "description": "Categoria (omite para todas)"},
                 "search": {"type": "string", "description": "Busca em n° proposta ou proponente"},
+                "parlamentar": {"type": "string", "description": "Nome do parlamentar autor da indicacao (busca parcial)"},
                 "limit": {"type": "integer", "description": "Max resultados (default 30, max 100)"},
             },
             "required": ["municipio_id"],
+        },
+    },
+    {
+        "name": "search_by_parlamentar",
+        "description": "Busca UNIFICADA por nome de parlamentar em TODAS as fontes: convenios SIGCON-MG (estaduais, campo responsaveis), propostas SICONV (federais, campo parlamentar), emendas estaduais (nome_responsavel). Use quando o usuario pede 'tudo do deputado X' ou 'convenios indicados por Y'. Retorna agrupado por fonte.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "nome": {"type": "string", "description": "Nome ou parte do nome do parlamentar (ex: 'AVELAR', 'EDUARDO AZEVEDO'). Match case-insensitive parcial."},
+                "municipio_id": {"type": "integer", "description": "Opcional: filtra um municipio. Sem isso, busca nos 6 municipios."},
+                "limit": {"type": "integer", "description": "Max resultados por fonte (default 50)"},
+            },
+            "required": ["nome"],
         },
     },
     {
@@ -308,6 +337,10 @@ async def _tool_query_convenios_sigcon(db: AsyncSession, inp: dict) -> str:
             ConvenioEstadual.nr_siafi.ilike(term),
             ConvenioEstadual.nr_plano_trabalho.ilike(term),
         ))
+    if inp.get("parlamentar"):
+        # raw_data->>'responsaveis' tem o parlamentar (SIGCON-MG)
+        q = q.where(text("raw_data->>'responsaveis' ILIKE :parl"))
+        q = q.params(parl=f"%{inp['parlamentar']}%")
     if inp.get("vigencia"):
         from sqlalchemy import and_
         hoje = date.today()
@@ -329,11 +362,17 @@ async def _tool_query_convenios_sigcon(db: AsyncSession, inp: dict) -> str:
     for c in rows:
         raw = c.raw_data if isinstance(c.raw_data, dict) else {}
         instr = raw.get("nr_instrumento") or (c.nr_sigcon if c.nr_sigcon and "/" in c.nr_sigcon else None)
+        parl = raw.get("responsaveis") or raw.get("parlamentar") or raw.get("indicacao")
+        if isinstance(parl, list):
+            parl = ", ".join(str(x) for x in parl if x)
+        if isinstance(parl, str):
+            parl = parl.replace("�", "").strip()
         out.append(
             f"- {instr or c.nr_sigcon or '(sem nº)'}\n"
             f"  Orgao: {c.orgao_concedente or '-'}\n"
             f"  Objeto: {(c.objeto or '')[:180]}\n"
             f"  Situacao: {c.situacao or '-'} | Ano: {c.ano or '-'}\n"
+            f"  Parlamentar: {parl or '-'}\n"
             f"  Valor total: {_fmt_money(c.valor_total)} | Repasse: {_fmt_money(c.valor_concedente)}\n"
             f"  Vigencia: {_fmt_dt(c.dt_vigencia_inicial)} -> {_fmt_dt(c.dt_vigencia_atual or c.dt_vigencia_final)}\n"
             f"  SIAFI: {c.nr_siafi or '-'} | Conta: {c.conta_corrente or '-'}"
@@ -355,10 +394,13 @@ async def _tool_query_voluntarias(db: AsyncSession, inp: dict) -> str:
         params["vp"] = _VOL_LIKE; params["rp"] = _REJ_LIKE
     if inp.get("search"):
         where.append("(numero_proposta ILIKE :s OR proponente ILIKE :s)"); params["s"] = f"%{inp['search']}%"
+    if inp.get("parlamentar"):
+        where.append("parlamentar ILIKE :parl"); params["parl"] = f"%{inp['parlamentar']}%"
     limit = min(int(inp.get("limit", 30)), 100)
     sql = f"""
         SELECT numero_proposta, situacao, orgao, objeto, dt_fim_vigencia,
-               valor_global, valor_repasse, valor_contrapartida, codigo_instrumento
+               valor_global, valor_repasse, valor_contrapartida, codigo_instrumento,
+               parlamentar, situacao_contratacao
         FROM transferegov_propostas WHERE {' AND '.join(where)}
         ORDER BY numero_proposta DESC LIMIT {limit}
     """
@@ -368,14 +410,104 @@ async def _tool_query_voluntarias(db: AsyncSession, inp: dict) -> str:
         return f"Nenhuma proposta SICONV encontrada (categoria={categoria or 'todas'})."
     out = [f"{len(rows)} proposta(s) SICONV (categoria={categoria or 'todas'}):"]
     for row in rows:
+        extra = []
+        if row[9]:  # parlamentar
+            extra.append(f"Parlamentar: {row[9]}")
+        if row[10]:  # situacao_contratacao
+            extra.append(f"Sit. Contratacao: {row[10]}")
+        extra_txt = ("\n  " + " | ".join(extra)) if extra else ""
         out.append(
             f"- N° proposta: {row[0]}{' / Instrumento ' + row[8] if row[8] else ''}\n"
             f"  Orgao: {row[2]}\n"
-            f"  Situacao: {row[1]}\n"
+            f"  Situacao: {row[1]}{extra_txt}\n"
             f"  Objeto: {(row[3] or '')[:180]}\n"
             f"  Valores: global {_fmt_money(row[5])} / repasse {_fmt_money(row[6])} / contrap {_fmt_money(row[7])}\n"
             f"  Fim vigencia: {row[4] or '-'}"
         )
+    return "\n".join(out)
+
+
+async def _tool_search_by_parlamentar(db: AsyncSession, inp: dict) -> str:
+    """Busca cross-fonte por nome de parlamentar:
+       - convenios_estadual.raw_data->>'responsaveis' (SIGCON-MG)
+       - transferegov_propostas.parlamentar (SICONV federal)
+       - emendas_estaduais.nome_responsavel
+       Agrupa por fonte + municipio."""
+    nome = (inp.get("nome") or "").strip()
+    if not nome or len(nome) < 3:
+        return "Erro: informe nome com ao menos 3 caracteres."
+    limit_per_source = min(int(inp.get("limit", 50)), 200)
+    mun_filter = inp.get("municipio_id")
+    out: list[str] = [f"## Busca por parlamentar: \"{nome}\""]
+    # 1) Convenios SIGCON estaduais
+    sql = """
+        SELECT c.id, c.municipio_id, m.nome, c.nr_sigcon, c.objeto, c.situacao,
+               c.valor_total, c.raw_data->>'responsaveis' AS responsaveis,
+               c.dt_vigencia_atual, c.ano
+        FROM convenios_estadual c LEFT JOIN municipios m ON m.id = c.municipio_id
+        WHERE c.raw_data->>'responsaveis' ILIKE :n
+    """
+    params: dict = {"n": f"%{nome}%"}
+    if mun_filter:
+        sql += " AND c.municipio_id = :mun"
+        params["mun"] = int(mun_filter)
+    sql += f" ORDER BY c.ano DESC NULLS LAST, c.dt_publicacao DESC NULLS LAST LIMIT {limit_per_source}"
+    rows = (await db.execute(text(sql), params)).fetchall()
+    out.append(f"\n### SIGCON-MG (estaduais): {len(rows)} resultado(s)")
+    for r in rows:
+        out.append(
+            f"- **{r[3] or '(sem nº)'}** ({r[9] or '-'}) — {r[2]}/{r[1]}\n"
+            f"  Responsavel: {r[7]}\n"
+            f"  Objeto: {(r[4] or '')[:140]}\n"
+            f"  Situacao: {r[5] or '-'} | Valor: {_fmt_money(r[6])} | Vig: {_fmt_dt(r[8])}"
+        )
+
+    # 2) Voluntarias SICONV federais
+    sql2 = """
+        SELECT id, municipio_id, (SELECT nome FROM municipios WHERE id=v.municipio_id) AS mun,
+               numero_proposta, codigo_instrumento, objeto, situacao,
+               valor_global, parlamentar, situacao_contratacao
+        FROM transferegov_propostas v
+        WHERE parlamentar ILIKE :n
+    """
+    params2: dict = {"n": f"%{nome}%"}
+    if mun_filter:
+        sql2 += " AND municipio_id = :mun"
+        params2["mun"] = int(mun_filter)
+    sql2 += f" ORDER BY numero_proposta DESC LIMIT {limit_per_source}"
+    rows = (await db.execute(text(sql2), params2)).fetchall()
+    out.append(f"\n### TransfereGov / SICONV (federais): {len(rows)} resultado(s)")
+    for r in rows:
+        out.append(
+            f"- **{r[4] or r[3]}** — {r[2]}/{r[1]}\n"
+            f"  Parlamentar: {r[8]}\n"
+            f"  Objeto: {(r[5] or '')[:140]}\n"
+            f"  Situacao: {r[6] or '-'} | Sit. Contr.: {r[9] or '-'} | Valor: {_fmt_money(r[7])}"
+        )
+
+    # 3) Emendas estaduais (indicacoes SIGCON)
+    sql3 = """
+        SELECT e.id, e.municipio_id, (SELECT nome FROM municipios WHERE id=e.municipio_id) AS mun,
+               e.nr_indicacao, e.ano, e.beneficiario, e.tipo_atendimento,
+               e.valor_indicacao, e.nome_responsavel, e.status_indicacao
+        FROM emendas_estaduais e
+        WHERE e.nome_responsavel ILIKE :n
+    """
+    params3: dict = {"n": f"%{nome}%"}
+    if mun_filter:
+        sql3 += " AND e.municipio_id = :mun"
+        params3["mun"] = int(mun_filter)
+    sql3 += f" ORDER BY e.ano DESC NULLS LAST LIMIT {limit_per_source}"
+    rows = (await db.execute(text(sql3), params3)).fetchall()
+    out.append(f"\n### Emendas Estaduais (indicacoes): {len(rows)} resultado(s)")
+    for r in rows:
+        out.append(
+            f"- **Indicacao {r[3]}/{r[4] or '?'}** — {r[2]}/{r[1]}\n"
+            f"  Responsavel: {r[8]}\n"
+            f"  Beneficiario: {r[5] or '-'} | Tipo: {r[6] or '-'}\n"
+            f"  Valor: {_fmt_money(r[7])} | Status: {r[9] or '-'}"
+        )
+
     return "\n".join(out)
 
 
@@ -472,6 +604,7 @@ TOOL_FUNCS = {
     "query_simec_liberacoes": _tool_query_simec_liberacoes,
     "query_simec_dimensoes": _tool_query_simec_dimensoes,
     "query_emendas_estaduais": _tool_query_emendas_estaduais,
+    "search_by_parlamentar": _tool_search_by_parlamentar,
 }
 
 

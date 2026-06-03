@@ -3,6 +3,8 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { Send, Loader2, Sparkles, Wrench, User, Bot, Eraser, FileText } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 
@@ -21,11 +23,11 @@ interface Message {
 
 const SUGESTOES_PROMPT = [
   "Quais convênios vencem nos próximos 60 dias?",
-  "Quanto recebi em PNATE em 2026?",
-  "Liste os convênios estaduais em prestação de contas vencidos.",
-  "Gere um relatório de monitoramento federal do município.",
-  "Quais propostas voluntárias estão aguardando análise?",
+  "Liste TUDO do deputado Eduardo Azevedo (estadual e federal)",
   "Resumo de tudo do município hoje.",
+  "Convênios estaduais em prestação de contas vencidos.",
+  "Quais propostas voluntárias estão aguardando análise?",
+  "Quanto recebi em PNATE em 2026?",
 ];
 
 export default function AiChatPage() {
@@ -104,31 +106,50 @@ export default function AiChatPage() {
     setError(null);
   };
 
-  // Markdown bem simples (negrito, listas, code blocks, headings)
-  const renderContent = (text: string) => {
-    return text.split("\n").map((line, i) => {
-      if (line.startsWith("### ")) return <h3 key={i} className="text-base font-bold mt-3 mb-1">{line.slice(4)}</h3>;
-      if (line.startsWith("## ")) return <h2 key={i} className="text-lg font-bold mt-4 mb-1">{line.slice(3)}</h2>;
-      if (line.startsWith("# ")) return <h1 key={i} className="text-xl font-bold mt-4 mb-2">{line.slice(2)}</h1>;
-      if (line.startsWith("- ") || line.startsWith("* ")) {
-        return <li key={i} className="ml-5 list-disc">{renderInline(line.slice(2))}</li>;
-      }
-      if (line.match(/^\d+\.\s/)) {
-        return <li key={i} className="ml-5 list-decimal">{renderInline(line.replace(/^\d+\.\s/, ""))}</li>;
-      }
-      if (line.trim() === "") return <div key={i} className="h-2" />;
-      return <p key={i} className="leading-snug">{renderInline(line)}</p>;
-    });
-  };
-  const renderInline = (text: string) => {
-    // **bold** e `code` simples
-    const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
-    return parts.map((p, i) => {
-      if (p.startsWith("**") && p.endsWith("**")) return <strong key={i}>{p.slice(2, -2)}</strong>;
-      if (p.startsWith("`") && p.endsWith("`")) return <code key={i} className="bg-slate-100 px-1 rounded text-[12px] font-mono">{p.slice(1, -1)}</code>;
-      return <span key={i}>{p}</span>;
-    });
-  };
+  // Markdown completo via react-markdown + remark-gfm (tabelas, listas, code, etc.)
+  const renderContent = (text: string) => (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={{
+        h1: (props) => <h1 className="text-xl font-bold mt-4 mb-2 text-slate-900" {...props} />,
+        h2: (props) => <h2 className="text-lg font-bold mt-4 mb-2 text-blue-800 border-b border-blue-200 pb-1" {...props} />,
+        h3: (props) => <h3 className="text-base font-bold mt-3 mb-1 text-slate-800" {...props} />,
+        h4: (props) => <h4 className="text-sm font-bold mt-2 mb-1 text-slate-700" {...props} />,
+        p: (props) => <p className="leading-relaxed my-2" {...props} />,
+        ul: (props) => <ul className="list-disc ml-5 my-2 space-y-1" {...props} />,
+        ol: (props) => <ol className="list-decimal ml-5 my-2 space-y-1" {...props} />,
+        li: (props) => <li className="leading-snug" {...props} />,
+        strong: (props) => <strong className="font-semibold text-slate-900" {...props} />,
+        em: (props) => <em className="italic text-slate-700" {...props} />,
+        code: (props) => (
+          <code className="bg-slate-100 px-1.5 py-0.5 rounded text-[12px] font-mono text-rose-700" {...props} />
+        ),
+        pre: (props) => (
+          <pre className="bg-slate-900 text-slate-100 rounded p-3 my-2 text-xs overflow-x-auto" {...props} />
+        ),
+        blockquote: (props) => (
+          <blockquote className="border-l-4 border-blue-300 pl-3 my-2 italic text-slate-600" {...props} />
+        ),
+        table: (props) => (
+          <div className="my-3 overflow-x-auto rounded border border-slate-200">
+            <table className="min-w-full text-xs" {...props} />
+          </div>
+        ),
+        thead: (props) => <thead className="bg-blue-50 text-blue-900" {...props} />,
+        th: (props) => (
+          <th className="text-left font-semibold px-3 py-1.5 border-b border-slate-200" {...props} />
+        ),
+        td: (props) => <td className="px-3 py-1.5 border-b border-slate-100 align-top" {...props} />,
+        tr: (props) => <tr className="even:bg-slate-50/50" {...props} />,
+        a: (props) => (
+          <a className="text-blue-600 underline hover:text-blue-800" target="_blank" rel="noopener" {...props} />
+        ),
+        hr: () => <hr className="my-3 border-slate-200" />,
+      }}
+    >
+      {text}
+    </ReactMarkdown>
+  );
 
   if (!municipioId) {
     return <div className="flex h-64 items-center justify-center text-muted-foreground">Selecione um municipio.</div>;
@@ -180,7 +201,7 @@ export default function AiChatPage() {
                 <Bot className="size-5 text-violet-700" />
               </div>
             )}
-            <div className={`max-w-[80%] ${m.role === "user" ? "order-1" : ""}`}>
+            <div className={`${m.role === "user" ? "max-w-[80%] order-1" : "max-w-[92%] flex-1"}`}>
               {m.role === "assistant" && m.tool_calls && m.tool_calls.length > 0 && (
                 <details className="mb-2 text-xs text-slate-500 bg-slate-50 border rounded px-2 py-1">
                   <summary className="cursor-pointer flex items-center gap-1">
@@ -209,7 +230,7 @@ export default function AiChatPage() {
                 {m.role === "user" ? (
                   <div className="whitespace-pre-wrap">{m.content}</div>
                 ) : (
-                  <div className="prose prose-sm max-w-none">{renderContent(m.content)}</div>
+                  <div className="text-[13px] leading-relaxed">{renderContent(m.content)}</div>
                 )}
               </div>
               {m.usage && m.role === "assistant" && (

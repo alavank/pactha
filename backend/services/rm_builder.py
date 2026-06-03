@@ -89,11 +89,24 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int) -> dict:
         dt_fim = c.dt_vigencia_atual or c.dt_vigencia_final
         parte = _classifica_parte(c.situacao, dt_fim)
         orgao = (c.orgao_concedente or "Outros - SIGCON").strip() + " - SIGCON"
+        # SIGCON-MG armazena o parlamentar como 'responsaveis' no raw_data
+        # (deputado estadual/federal autor da indicacao). Fallbacks: indicacao,
+        # nome_responsavel, autor_emenda. Limpa U+FFFD do encoding portugues.
+        _parl = (
+            raw.get("parlamentar") or raw.get("responsaveis")
+            or raw.get("indicacao") or raw.get("nome_responsavel")
+            or raw.get("autor_emenda") or ""
+        )
+        if isinstance(_parl, list):
+            _parl = ", ".join(str(x) for x in _parl if x)
+        elif not isinstance(_parl, str):
+            _parl = str(_parl) if _parl else ""
+        _parl = _parl.replace("�", "").replace("  ", " ").strip()
         add_item(parte, "INSTRUMENTOS DE REPASSE ESTADUAIS", orgao, {
             "tipo": tipo_label,
             "numero": identificador,
             "objeto": c.objeto or "",
-            "parlamentar": raw.get("parlamentar") or raw.get("indicacao") or "",
+            "parlamentar": _parl,
             "valor_global": _money(c.valor_total),
             "valor_repasse": _money(c.valor_concedente),
             "valor_contrapartida": _money(c.valor_contrapartida),
