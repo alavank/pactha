@@ -126,7 +126,40 @@ async def capture_session(
             "cookie_size": len(cookie_clean),
         },
     )
-    return {"status": "ok", "id": item.id, "automation_key": payload.automation_key}
+
+    # AUTO-DISPATCH: se for gov.br, dispara scraper TransfereGov em background
+    # imediatamente. A janela do JWT user-id e ~20min — captura+scrape automatico
+    # maximiza o aproveitamento.
+    auto_scrape = False
+    if payload.automation_key == "govbr":
+        try:
+            import asyncio as _aio
+            from ingestion.transferegov_voluntarias import run as _run_tg
+
+            async def _bg_scrape():
+                try:
+                    await _run_tg()
+                except Exception as ex:
+                    import logging
+                    logging.getLogger("auto-scrape").exception(f"erro: {ex}")
+
+            _aio.create_task(_bg_scrape())
+            auto_scrape = True
+        except Exception as e:
+            import logging
+            logging.getLogger("auto-scrape").warning(f"nao disparou: {e}")
+
+    return {
+        "status": "ok",
+        "id": item.id,
+        "automation_key": payload.automation_key,
+        "auto_scrape_started": auto_scrape,
+        "message": (
+            "Sessao capturada + scraper TransfereGov iniciado em background "
+            "(janela 20min). Acompanhe via /dashboard/sessoes."
+            if auto_scrape else "Sessao capturada."
+        ),
+    }
 
 
 @router.get("/status/{automation_key}")

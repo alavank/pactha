@@ -50,7 +50,7 @@ function SessoesInner() {
   // Bookmarklet JS - substitui {{API}} {{KEY}} {{MUN}} em runtime
   const buildBookmarklet = (key: string) => {
     const code = `(function(){
-      var token=prompt('Cole seu JWT do PACTA (campo "Cole token" abaixo na pagina de Sessoes):');
+      var token=prompt('Cole seu JWT do PACTA (use o botão "Copiar token" na página de Sessões):');
       if(!token)return;
       fetch('${apiBase}/session-capture',{
         method:'POST',
@@ -63,8 +63,12 @@ function SessoesInner() {
           url_atual:location.href,
           user_agent:navigator.userAgent
         })
-      }).then(r=>r.json()).then(d=>alert('PACTA: sessao '+(d.status==='ok'?'capturada':'erro')+': '+JSON.stringify(d)))
-       .catch(e=>alert('PACTA erro: '+e.message));
+      }).then(r=>r.json()).then(d=>{
+        var msg = d.status==='ok'
+          ? 'PACTA: SESSAO CAPTURADA!' + (d.auto_scrape_started ? '\\n\\n>>> Scraper TransfereGov iniciado automaticamente em background (janela 20min).\\n\\nVoce pode FECHAR esta aba — o scrape continua no servidor.' : '')
+          : 'PACTA erro: ' + JSON.stringify(d);
+        alert(msg);
+      }).catch(e=>alert('PACTA erro: '+e.message));
     })();`;
     return "javascript:" + encodeURIComponent(code.replace(/\s+/g, " "));
   };

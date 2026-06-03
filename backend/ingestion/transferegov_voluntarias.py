@@ -33,6 +33,50 @@ ENTRY = ("https://discricionarias.transferegov.sistema.gov.br/voluntarias/Forwar
          "?modulo=Principal&path=/MostraPrincipalConsultarProposta.do&Usr=guest&Pwd=guest")
 
 
+def _jwt_minutos_restantes(cookies: list[dict]) -> float:
+    """Retorna minutos restantes do JWT user-id (parcerias.transferegov).
+    Retorna -inf se nao houver user-id ou nao decodificar.
+    Retorna 0 se ja expirou."""
+    import base64
+    import json as _json
+    import time
+    uid = next((c for c in cookies if c.get("name") == "user-id"), None)
+    if not uid:
+        return float("-inf")
+    token = uid.get("value", "")
+    parts = token.split(".")
+    if len(parts) < 2:
+        return float("-inf")
+    try:
+        pb = parts[1] + "=" * (-len(parts[1]) % 4)
+        payload = _json.loads(base64.urlsafe_b64decode(pb))
+        exp = payload.get("exp")
+        if exp:
+            return (exp - time.time()) / 60
+    except Exception:
+        pass
+    return float("-inf")
+
+
+def _propostas_ja_enriquecidas(municipio_id: int) -> set:
+    """Retorna numero_proposta das que JA tem parlamentar OU sit_det.
+    Permite priorizar as pendentes quando rodando com janela curta de auth."""
+    try:
+        import psycopg2
+        url = os.getenv("DATABASE_URL_SYNC", "").replace("&channel_binding=require", "").replace("?channel_binding=require", "")
+        conn = psycopg2.connect(url); cur = conn.cursor()
+        cur.execute(
+            "SELECT numero_proposta FROM transferegov_propostas "
+            "WHERE municipio_id=%s AND (parlamentar IS NOT NULL OR situacao_contratacao_detalhe IS NOT NULL)",
+            (municipio_id,)
+        )
+        out = {r[0] for r in cur.fetchall()}
+        cur.close(); conn.close()
+        return out
+    except Exception:
+        return set()
+
+
 def _load_govbr_cookies() -> list[dict] | None:
     """Best-effort: carrega cookies SSO gov.br do Cofre (qualquer municipio).
     Se houver, retorna lista de cookies em formato Playwright. Se nao houver
@@ -124,40 +168,6 @@ def _municipios_pacta() -> list[dict]:
     out = [{"id": r[0], "nome": r[1], "uf": r[2]} for r in cur.fetchall()]
     cur.close(); conn.close()
     return out
-
-
-async def _bootstrap_auth_discricionarias(auth_page):
-    """Estabelece sessao autenticada em discricionarias.transferegov.
-    Os cookies SSO sao para parcerias.* (sub-dominio diferente). Pra ver
-    campos gated no /voluntarias/ precisamos bootstrappar JSESSIONID nesse
-    sub-dominio — fazemos via OAuth SSO (gov.br cookies cross-domain).
-    """
-    try:
-        # Vai pra URL autenticada do discricionarias — deve dispatcher SSO OAuth
-        # pra estabelecer JSESSIONID com sessao autenticada
-        await auth_page.goto(
-            "https://discricionarias.transferegov.sistema.gov.br/voluntarias/",
-            timeout=45000, wait_until="domcontentloaded"
-        )
-        await auth_page.wait_for_timeout(6000)  # SSO redirects + SAML
-        url_final = auth_page.url
-        body = (await auth_page.locator("body").inner_text()).lower()[:600]
-        if "sair" in body or "trocar" in body or "perfil" in body:
-            logger.info(f"  [auth] discricionarias autenticado: {url_final[:100]}")
-            return True
-        elif "captcha" in body or "verifica" in body:
-            logger.warning(f"  [auth] CAPTCHA no discricionarias")
-            return False
-        elif "acessar" in body or "entrar" in body:
-            # Mostra link Entrar — auth falhou
-            logger.warning(f"  [auth] discricionarias nao autenticou (mostra Entrar)")
-            return False
-        # Pode ter caido numa tela de selecao de perfil
-        logger.info(f"  [auth] discricionarias resposta: url={url_final[:100]}")
-        return True
-    except Exception as e:
-        logger.warning(f"  [auth] bootstrap falhou: {e}")
-        return False
 
 
 async def _scrape_municipio(page, mun: dict, _retry: int = 0, auth_page=None) -> list[dict]:
@@ -272,14 +282,27 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, auth_page=None) ->
     # Enriquece cada proposta com o detalhe (Dados da Proposta).
     # Se temos auth_page (cookies SSO), usa ela pra ver campos gated
     # (parlamentar + Detalhar Situacao Contratacao). Senao, usa page guest.
+    # OTIMIZACAO 1: quando auth disponivel, prioriza propostas SEM enrich
+    #               (que sao as que mais ganham com auth — janela JWT 20min)
+    # OTIMIZACAO 2: reduz wait_for_timeout pra acelerar
     detail_page = auth_page or page
+    # Re-ordena: quando auth ativa, propostas pendentes de enrich primeiro
+    # (assim se a sessao expirar no meio, as ja-enriquecidas nao perdem chance)
+    if auth_page:
+        try:
+            _ja_enriquecidos = _propostas_ja_enriquecidas(mun["id"])
+            propostas.sort(key=lambda p: 0 if p["numero_proposta"] not in _ja_enriquecidos else 1)
+            n_pend = sum(1 for p in propostas if p["numero_proposta"] not in _ja_enriquecidos)
+            logger.info(f"  {mun['nome']}: {n_pend} propostas SEM enrich serao priorizadas")
+        except Exception:
+            pass
     for prop in propostas:
         url = prop.pop("_detalhe_url", None)
         if not url:
             continue
         try:
-            await detail_page.goto(url, timeout=40000, wait_until="domcontentloaded")
-            await detail_page.wait_for_timeout(2500)
+            await detail_page.goto(url, timeout=30000, wait_until="domcontentloaded")
+            await detail_page.wait_for_timeout(1800)
             det = await _extrai_detalhe(detail_page)
             # Tenta capturar parlamentar (best-effort via texto livre na tela)
             try:
@@ -648,23 +671,38 @@ async def run():
         page_guest = await ctx_guest.new_page()
         # Contexto AUTH (com cookies SSO opcional): visita detalhes pra ver
         # campos gated (parlamentar, sit_contratacao_detalhe)
+        # Detecta sessao gov.br + valida JWT antes de criar contexto auth
         govbr_cks = _load_govbr_cookies()
         page_auth = None
+        if govbr_cks:
+            # Carrega cookies originais (com expiration) para chefar JWT
+            try:
+                import psycopg2 as _pg
+                _u = os.getenv("DATABASE_URL_SYNC","").replace("&channel_binding=require","").replace("?channel_binding=require","")
+                _c = _pg.connect(_u); _cur = _c.cursor()
+                _cur.execute("SELECT senha_hash FROM cofre_senhas WHERE automation_key='govbr' "
+                             "AND length(senha_hash) > 1000 ORDER BY updated_at DESC LIMIT 1")
+                _row = _cur.fetchone(); _cur.close(); _c.close()
+                from services import crypto as _crypto
+                _data = json.loads(_crypto.decrypt(_row[0]))
+                jwt_mins = _jwt_minutos_restantes(_data["cookies"])
+                logger.info(f"  JWT user-id: {jwt_mins:+.1f} minutos restantes")
+                if jwt_mins <= 1:
+                    logger.warning(f"  JWT expirado/expirando — pulando auth, indo direto guest")
+                    govbr_cks = None  # forca guest
+            except Exception as e:
+                logger.warning(f"  nao validou JWT: {e}")
         if govbr_cks:
             try:
                 ctx_auth = await browser.new_context(ignore_https_errors=True, user_agent="Mozilla/5.0 Chrome/131")
                 await ctx_auth.add_cookies(govbr_cks)
                 page_auth = await ctx_auth.new_page()
                 logger.info(f"  contexto AUTH criado com {len(govbr_cks)} cookies SSO")
-                # Bootstrappa JSESSIONID no discricionarias (sub-dominio diferente)
-                ok = await _bootstrap_auth_discricionarias(page_auth)
-                if not ok:
-                    logger.warning("  [auth] bootstrap nao confirmou autenticacao, mas continuando")
             except Exception as e:
                 logger.warning(f"  falha ao criar contexto AUTH: {e}")
                 page_auth = None
         else:
-            logger.info("  sem sessao gov.br no Cofre, detalhes em guest")
+            logger.info("  sem sessao gov.br valida, detalhes em guest")
         for mun in municipios:
             try:
                 props = await _scrape_municipio(page_guest, mun, auth_page=page_auth)
@@ -701,14 +739,29 @@ async def run_one(municipio_id: int):
         page_guest = await ctx_guest.new_page()
         govbr_cks = _load_govbr_cookies()
         page_auth = None
+        # Valida JWT antes de criar contexto
+        if govbr_cks:
+            try:
+                import psycopg2 as _pg
+                _u = os.getenv("DATABASE_URL_SYNC","").replace("&channel_binding=require","").replace("?channel_binding=require","")
+                _c = _pg.connect(_u); _cur = _c.cursor()
+                _cur.execute("SELECT senha_hash FROM cofre_senhas WHERE automation_key='govbr' "
+                             "AND length(senha_hash) > 1000 ORDER BY updated_at DESC LIMIT 1")
+                _row = _cur.fetchone(); _cur.close(); _c.close()
+                from services import crypto as _crypto
+                _data = json.loads(_crypto.decrypt(_row[0]))
+                jwt_mins = _jwt_minutos_restantes(_data["cookies"])
+                logger.info(f"  JWT user-id: {jwt_mins:+.1f}min")
+                if jwt_mins <= 1:
+                    logger.warning("  JWT expirou — indo direto guest")
+                    govbr_cks = None
+            except Exception as e:
+                logger.warning(f"  nao validou JWT: {e}")
         if govbr_cks:
             ctx_auth = await browser.new_context(ignore_https_errors=True, user_agent="Mozilla/5.0 Chrome/131")
             await ctx_auth.add_cookies(govbr_cks)
             page_auth = await ctx_auth.new_page()
             logger.info(f"  contexto AUTH criado com {len(govbr_cks)} cookies SSO")
-            ok = await _bootstrap_auth_discricionarias(page_auth)
-            if not ok:
-                logger.warning("  [auth] bootstrap nao confirmou autenticacao, mas continuando")
         try:
             props = await _scrape_municipio(page_guest, mun, auth_page=page_auth)
             n = _upsert(mun["id"], props)
