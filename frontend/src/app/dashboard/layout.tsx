@@ -345,13 +345,32 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
         const data = Array.isArray(res.data) ? res.data : [];
         setMunicipios(data);
         if (!selectedMunicipioId && data.length > 0) {
+          // Prefere ultimo municipio usado (localStorage); senao primeiro da lista
+          const lastId = typeof window !== "undefined"
+            ? localStorage.getItem("pacta_last_municipio_id")
+            : null;
+          const chosen = (lastId && data.some(m => String(m.id) === lastId))
+            ? lastId
+            : String(data[0].id);
           const params = new URLSearchParams(searchParams.toString());
-          params.set("municipio_id", String(data[0].id));
+          params.set("municipio_id", chosen);
+          // replace + refresh — em Next 16 o replace sozinho NAO re-renderiza
+          // children client components que dependem de useSearchParams (bug
+          // recorrente). refresh garante que o /dashboard carregue os KPIs
+          // ja na primeira visita sem precisar dar F5.
           router.replace(`${pathname}?${params.toString()}`);
+          router.refresh();
         }
       })
       .catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Persiste municipio selecionado pra proxima visita lembrar
+  useEffect(() => {
+    if (selectedMunicipioId && typeof window !== "undefined") {
+      localStorage.setItem("pacta_last_municipio_id", selectedMunicipioId);
+    }
+  }, [selectedMunicipioId]);
 
   const handleMunicipioChange = useCallback(
     (value: string) => {

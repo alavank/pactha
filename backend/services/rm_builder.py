@@ -41,20 +41,26 @@ def _iso(d) -> str | None:
     return str(d)
 
 
-def _classifica_parte(situacao: str | None, dt_fim: date | None, situacao_atual: str = "") -> int:
-    """Heuristica: decide qual PARTE o item entra (1, 2 ou 3)."""
+def _is_prestacao_contas(situacao: str | None, dt_fim: date | None, situacao_atual: str = "") -> bool:
+    """Retorna True quando o item deve cair em PARTE 3 (prestacao de contas /
+    pagamento ja realizado / vigencia ja vencida)."""
     s = (situacao or "").lower() + " " + (situacao_atual or "").lower()
-    hoje = date.today()
-    # PARTE 3: pagamento realizado + vencido OU prestacao de contas
     if "presta" in s and "conta" in s:
+        return True
+    if dt_fim and dt_fim < date.today():
+        return True
+    return False
+
+
+def _classifica_parte(esfera: str, situacao: str | None, dt_fim: date | None, situacao_atual: str = "") -> int:
+    """Decide a PARTE baseado em FONTE/ESFERA:
+      - federal  → PARTE 1 (DEMANDAS EM BRASILIA)
+      - estadual → PARTE 2 (DEMANDAS DO MUNICIPIO)
+      - prestacao_contas (qualquer fonte com status de prestacao ou vencido) → PARTE 3
+    """
+    if _is_prestacao_contas(situacao, dt_fim, situacao_atual):
         return 3
-    if dt_fim and dt_fim < hoje:
-        return 3
-    # PARTE 2: em execucao / aprovado / vigencia futura
-    if any(k in s for k in ["execu", "aprovad", "assinad", "pagament", "celebrad"]):
-        return 2
-    # PARTE 1 (default): demandas em Brasilia (analise / pendente / proposta)
-    return 1
+    return 1 if esfera == "federal" else 2
 
 
 async def montar_conteudo(db: AsyncSession, municipio_id: int) -> dict:
@@ -63,8 +69,8 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int) -> dict:
     #   [{ordem, orgao, itens: [...]}]}]}]}
     # Build incrementally then convert.
     partes_data = {
-        1: {"titulo": "PARTE 1 - DEMANDAS EM BRASÍLIA", "secoes": {}},
-        2: {"titulo": "PARTE 2 - DEMANDAS DO MUNICÍPIO", "secoes": {}},
+        1: {"titulo": "PARTE 1 - DEMANDAS EM BRASÍLIA (Instrumentos Federais)", "secoes": {}},
+        2: {"titulo": "PARTE 2 - DEMANDAS DO MUNICÍPIO (Instrumentos Estaduais)", "secoes": {}},
         3: {"titulo": "PARTE 3 - PRESTAÇÕES DE CONTAS / PAGAMENTOS DE ANOS ANTERIORES", "secoes": {}},
     }
 
@@ -87,7 +93,8 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int) -> dict:
         identificador = nr_instr or nr_proposta or c.nr_sigcon or ""
         tipo_label = "Convênio" if nr_instr else "Proposta"
         dt_fim = c.dt_vigencia_atual or c.dt_vigencia_final
-        parte = _classifica_parte(c.situacao, dt_fim)
+        # SIGCON-MG => estadual => PARTE 2 (ou PARTE 3 se prestacao)
+        parte = _classifica_parte("estadual", c.situacao, dt_fim)
         orgao = (c.orgao_concedente or "Outros - SIGCON").strip() + " - SIGCON"
         # SIGCON-MG armazena o parlamentar como 'responsaveis' no raw_data
         # (deputado estadual/federal autor da indicacao). Fallbacks: indicacao,
@@ -141,7 +148,8 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int) -> dict:
         except (ValueError, TypeError):
             pass
         tipo_label = "Convênio" if row[2] else "Proposta"
-        parte = _classifica_parte(sit, dt_fim)
+        # TransfereGov/SICONV => federal => PARTE 1 (ou PARTE 3 se prestacao)
+        parte = _classifica_parte("federal", sit, dt_fim)
         orgao = (row[4] or "Outros - Federal").strip()
         # Monta narrativa de Situação Atual incluindo situacao_contratacao + detalhe generico
         situacao_contr = row[10]
@@ -205,7 +213,8 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int) -> dict:
     """), {"m": municipio_id})
     for r in em.fetchall():
         sit = r[8] or ""
-        parte = _classifica_parte(sit, None)
+        # Emendas SIGCON => estadual => PARTE 2
+        parte = _classifica_parte("estadual", sit, None)
         orgao = (r[5] or "SIGCON Estadual") + " - Indicação"
         objeto = f"{r[3] or ''} {r[4] or ''}".strip()
         add_item(parte, "INSTRUMENTOS DE REPASSE ESTADUAIS", orgao, {
