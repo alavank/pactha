@@ -17,6 +17,7 @@ import {
   Landmark,
   Sparkles,
   Edit2,
+  UserCircle2,
 } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -43,6 +44,7 @@ type NavEntry = NavLeaf | NavGroup;
 const NAV_ITEMS: NavEntry[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/dashboard/ai", label: "IA PACTA", icon: Sparkles },
+  { href: "/dashboard/parlamentares", label: "Parlamentares", icon: UserCircle2 },
   { href: "/dashboard/gestao", label: "Gestão Interna", icon: Edit2 },
   { href: "/dashboard/rm", label: "Relatório de Monitoramento", icon: FileText },
   {
