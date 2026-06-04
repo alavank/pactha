@@ -31,7 +31,8 @@ interface TgSessionStatus {
 
 // Sistemas que suportam captura de sessao via bookmarklet
 const PORTAIS = [
-  { key: "govbr", nome: "gov.br", url: "https://acesso.gov.br" },
+  { key: "govbr", nome: "gov.br (parcerias.transferegov)", url: "https://parcerias.transferegov.sistema.gov.br/ep-atos-prep-web/home" },
+  { key: "siconv_legado", nome: "SICONV Legado (discricionarias) — Cláusula Suspensiva", url: "https://discricionarias.transferegov.sistema.gov.br/voluntarias/" },
   { key: "fns", nome: "FNS - Saude", url: "https://consultafns.saude.gov.br" },
   { key: "simec", nome: "SIMEC/PAR - Educacao", url: "https://simec.mec.gov.br" },
   { key: "sismob", nome: "SISMOB - Obras Saude", url: "https://sismobcidadao.saude.gov.br" },
@@ -232,9 +233,17 @@ function SessoesInner() {
                 <ol className="list-decimal ml-5 space-y-0.5 mt-1">
                   <li>Abra <code className="bg-white px-1 rounded">parcerias.transferegov.sistema.gov.br/ep-atos-prep-web/home</code></li>
                   <li>Clique <strong>Entrar com gov.br</strong> e complete o login</li>
-                  <li>Clique no bookmarklet <strong>📎 PACTA Capturar gov.br</strong></li>
+                  <li>Clique no bookmarklet <strong>📎 PACTA Capturar gov.br (parcerias.transferegov)</strong></li>
                   <li><strong>IMEDIATAMENTE</strong> volte aqui e clique <strong>▶ Rodar scraper</strong> abaixo (você tem 20 min)</li>
                 </ol>
+                <div className="mt-2 pt-2 border-t border-red-200">
+                  <strong>Para CLÁUSULA SUSPENSIVA / SICONV legado:</strong>
+                  <ol className="list-decimal ml-5 space-y-0.5 mt-1">
+                    <li>Já logado no gov.br, abra <code className="bg-white px-1 rounded">discricionarias.transferegov.sistema.gov.br/voluntarias/</code></li>
+                    <li>Acesse qualquer convênio (precisa entrar na área autenticada)</li>
+                    <li>Clique o bookmarklet <strong>📎 PACTA Capturar SICONV Legado</strong> ENQUANTO ESTIVER nessa página</li>
+                  </ol>
+                </div>
               </div>
             )}
             {!tgStatus.expired && tgStatus.user_id_exp_minutes != null && tgStatus.user_id_exp_minutes < 10 && (
@@ -272,9 +281,20 @@ function SessoesInner() {
       <div className="grid gap-3">
         {PORTAIS.map((p) => {
           const st = status[p.key] || { has_session: false };
+          const isSiconvLegado = p.key === "siconv_legado";
           return (
-            <Card key={p.key} className={st.has_session ? "border-green-200" : ""}>
+            <Card key={p.key} className={
+              st.has_cookies ? "border-green-200" :
+              isSiconvLegado ? "border-l-4 border-l-violet-500 bg-violet-50/30" : ""
+            }>
               <CardContent className="p-4">
+                {isSiconvLegado && !st.has_cookies && (
+                  <div className="mb-3 text-xs bg-violet-100 border border-violet-200 rounded p-2 text-violet-900">
+                    <strong>📌 Necessário para Cláusula Suspensiva:</strong> faça login em{" "}
+                    <code className="bg-white px-1 rounded">discricionarias.transferegov</code>{" "}
+                    (via SSO gov.br) e clique este bookmarklet enquanto estiver em uma página dessa URL.
+                  </div>
+                )}
                 <div className="flex items-center justify-between flex-wrap gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">

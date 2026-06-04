@@ -127,11 +127,12 @@ async def capture_session(
         },
     )
 
-    # AUTO-DISPATCH: se for gov.br, dispara scraper TransfereGov em background
-    # imediatamente. A janela do JWT user-id e ~20min — captura+scrape automatico
-    # maximiza o aproveitamento.
+    # AUTO-DISPATCH: se for gov.br OU siconv_legado, dispara scraper TransfereGov
+    # em background imediatamente. A janela do JWT user-id (parcerias) e ~20min,
+    # JSESSIONID do siconv_legado tambem expira rapido por inatividade.
+    # captura+scrape automatico maximiza o aproveitamento.
     auto_scrape = False
-    if payload.automation_key == "govbr":
+    if payload.automation_key in ("govbr", "siconv_legado"):
         try:
             import asyncio as _aio
             from ingestion.transferegov_voluntarias import run as _run_tg

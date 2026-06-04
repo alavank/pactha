@@ -77,11 +77,8 @@ def _propostas_ja_enriquecidas(municipio_id: int) -> set:
         return set()
 
 
-def _load_govbr_cookies() -> list[dict] | None:
-    """Best-effort: carrega cookies SSO gov.br do Cofre (qualquer municipio).
-    Se houver, retorna lista de cookies em formato Playwright. Se nao houver
-    (ou se nao decifrar / for invalido), retorna None e o scraper segue como guest.
-    """
+def _load_session_cookies(automation_key: str) -> list[dict] | None:
+    """Carrega cookies do Cofre p/ uma chave de automacao (best-effort)."""
     try:
         import psycopg2
         from services import crypto
@@ -91,8 +88,9 @@ def _load_govbr_cookies() -> list[dict] | None:
         cur = conn.cursor()
         cur.execute(
             "SELECT senha_hash FROM cofre_senhas "
-            "WHERE automation_key='govbr' AND length(senha_hash) > 1000 "
-            "ORDER BY updated_at DESC LIMIT 1"
+            "WHERE automation_key=%s AND length(senha_hash) > 1000 "
+            "ORDER BY updated_at DESC LIMIT 1",
+            (automation_key,),
         )
         row = cur.fetchone()
         cur.close(); conn.close()
@@ -126,8 +124,30 @@ def _load_govbr_cookies() -> list[dict] | None:
             out.append(ck)
         return out or None
     except Exception as e:
-        logger.warning(f"_load_govbr_cookies: ignorando ({e})")
+        logger.warning(f"_load_session_cookies({automation_key}): ignorando ({e})")
         return None
+
+
+def _load_govbr_cookies() -> list[dict] | None:
+    """Carrega cookies das DUAS sessoes (govbr + siconv_legado) consolidadas.
+    govbr = cookies de parcerias.transferegov + SSO gov.br
+    siconv_legado = cookies de discricionarias.transferegov (JSESSIONID p/
+                    acessar Cláusula Suspensiva e demais campos gated do SICONV antigo)
+    Retorna lista consolidada (deduplicada por nome+dominio)."""
+    out: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+    for key in ("govbr", "siconv_legado"):
+        cks = _load_session_cookies(key)
+        if not cks:
+            continue
+        for c in cks:
+            sig = (c.get("name", ""), c.get("domain", ""))
+            if sig in seen:
+                continue
+            seen.add(sig)
+            out.append(c)
+        logger.info(f"  cofre[{key}]: {len(cks)} cookies carregados")
+    return out or None
 
 
 def _norm(s: str) -> str:
