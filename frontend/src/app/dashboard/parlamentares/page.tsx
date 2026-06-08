@@ -371,9 +371,9 @@ function Table({ headers, children }: { headers: string[]; children: React.React
   );
 }
 
-function Td({ children, mono, className }: { children: React.ReactNode; mono?: boolean; className?: string }) {
+function Td({ children, mono, className, title }: { children: React.ReactNode; mono?: boolean; className?: string; title?: string }) {
   return (
-    <td className={`px-3 py-1.5 border-b border-slate-100 ${mono ? "font-mono" : ""} ${className || ""}`}>
+    <td className={`px-3 py-1.5 border-b border-slate-100 ${mono ? "font-mono" : ""} ${className || ""}`} title={title}>
       {children}
     </td>
   );
