@@ -46,6 +46,8 @@ MIGRATION_FILES = [
     "add_voluntarias_situacao_detalhe.sql",
     # Modulo Gestao Interna (anotacoes + anexos por item)
     "add_gestao_anotacoes.sql",
+    # Integracao Telegram (telegram_users + telegram_link_codes)
+    "add_telegram.sql",
 ]
 
 

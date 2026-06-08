@@ -654,13 +654,15 @@ async def ping(_=Depends(get_current_user)):
         raise HTTPException(500, f"{type(e).__name__}: {str(e)[:300]}")
 
 
-@router.post("/chat", response_model=ChatResponse)
-async def chat(
-    body: ChatRequest,
-    db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
-):
-    """Chat com a IA. Pode usar ferramentas para consultar o DB."""
+async def _run_ai_chat(
+    db: AsyncSession,
+    message: str,
+    history: list,
+    municipio_id: int | None = None,
+    user_name: str | None = None,
+) -> dict:
+    """Roda chat com a IA. Reusavel — usado por /chat e pelo bot Telegram.
+    Retorna {reply, tool_calls, usage}."""
     try:
         import anthropic
     except ImportError:
@@ -678,13 +680,31 @@ async def chat(
 
     # Constroi mensagens
     messages: list[dict[str, Any]] = []
-    for h in body.history:
-        if h.role in ("user", "assistant"):
-            messages.append({"role": h.role, "content": h.content})
-    user_msg = body.message
-    if body.municipio_id:
-        user_msg = f"[contexto: municipio_id={body.municipio_id}]\n\n{user_msg}"
+    for h in history or []:
+        # Aceita objeto ChatMessage (com .role/.content) ou dict {"role","content"}
+        role = getattr(h, "role", None) or (h.get("role") if isinstance(h, dict) else None)
+        content = getattr(h, "content", None) or (h.get("content") if isinstance(h, dict) else None)
+        if role in ("user", "assistant") and content:
+            messages.append({"role": role, "content": content})
+    user_msg = message
+    contexto_parts = []
+    if municipio_id:
+        contexto_parts.append(f"municipio_id={municipio_id}")
+    if user_name:
+        contexto_parts.append(f"usuario={user_name}")
+    if contexto_parts:
+        user_msg = f"[contexto: {', '.join(contexto_parts)}]\n\n{user_msg}"
     messages.append({"role": "user", "content": user_msg})
+
+    return await _execute_loop(client, db, messages)
+
+
+async def _execute_loop(client, db, messages) -> dict:
+    """Loop de chamadas IA + tool_use ate end_turn."""
+    try:
+        import anthropic
+    except ImportError:
+        raise HTTPException(503, "anthropic nao instalada")
 
     # Cacheia o system prompt + tools (sao estaveis entre requests)
     system = [{
@@ -723,26 +743,26 @@ async def chat(
         if response.stop_reason == "end_turn":
             # Resposta final
             reply = "".join(b.text for b in response.content if b.type == "text")
-            return ChatResponse(
-                reply=reply,
-                tool_calls=tool_calls_log,
-                usage={
+            return {
+                "reply": reply,
+                "tool_calls": tool_calls_log,
+                "usage": {
                     "input_tokens": total_in, "output_tokens": total_out,
                     "cache_read": cache_read, "cache_create": cache_create,
                     "iterations": iteration + 1,
                 },
-            )
+            }
 
         if response.stop_reason != "tool_use":
             # max_tokens, refusal, etc.
             text_out = "".join(b.text for b in response.content if b.type == "text")
-            return ChatResponse(
-                reply=text_out or f"(IA parou: {response.stop_reason})",
-                tool_calls=tool_calls_log,
-                usage={"input_tokens": total_in, "output_tokens": total_out,
-                       "cache_read": cache_read, "cache_create": cache_create,
-                       "stop_reason": response.stop_reason},
-            )
+            return {
+                "reply": text_out or f"(IA parou: {response.stop_reason})",
+                "tool_calls": tool_calls_log,
+                "usage": {"input_tokens": total_in, "output_tokens": total_out,
+                          "cache_read": cache_read, "cache_create": cache_create,
+                          "stop_reason": response.stop_reason},
+            }
 
         # Tool use: executa cada ferramenta e devolve resultado
         messages.append({"role": "assistant", "content": response.content})
@@ -769,3 +789,23 @@ async def chat(
         messages.append({"role": "user", "content": tool_results})
 
     raise HTTPException(500, "Loop de IA atingiu limite de iteracoes sem resposta final.")
+
+
+@router.post("/chat", response_model=ChatResponse)
+async def chat(
+    body: ChatRequest,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Chat com a IA. Pode usar ferramentas para consultar o DB."""
+    result = await _run_ai_chat(
+        db=db,
+        message=body.message,
+        history=body.history,
+        municipio_id=body.municipio_id,
+    )
+    return ChatResponse(
+        reply=result["reply"],
+        tool_calls=result.get("tool_calls", []),
+        usage=result.get("usage", {}),
+    )
