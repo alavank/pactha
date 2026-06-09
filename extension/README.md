@@ -1,57 +1,105 @@
-# PACTA Captura de Sessão — Extensão Chrome
+# PACTA Captura Automática — Extensão Chrome
 
-Extensão Chrome que captura cookies de sessão (incluindo `httpOnly`) dos portais governamentais (gov.br, FNS, SIMEC, SISMOB, SUAS) e envia cifrado para a plataforma PACTA. Permite que os scrapers façam requisições HTTP autenticadas sem precisar burlar anti-bot (F5 Bot Defense).
+Extensão Chrome v2 que **captura sozinha** os cookies dos portais gov.br /
+TransfereGov / FNS / SIMEC (incluindo `httpOnly`) e envia ao PACTA toda vez
+que você navega ou as cookies mudam. Mantém a sessão viva no servidor via
+keep-alive a cada 12min enquanto o Chrome estiver aberto.
 
-## Instalação (modo desenvolvedor)
+## Por que essa extensão existe
 
-1. **Baixe esta pasta** `extension/` do repositório PACTA para seu computador.
-   - Pode clonar o repo: `git clone https://github.com/MattMatiins/PACTA.git`
-   - A pasta fica em `PACTA/extension/`
-2. **Abra o Chrome** e vá em `chrome://extensions/`
-3. Ative o **"Modo do desenvolvedor"** (toggle no canto superior direito)
-4. Clique em **"Carregar sem compactação"**
-5. Selecione a pasta `extension/` (a que tem o `manifest.json`)
-6. Pronto! Ícone PACTA aparece na barra de extensões do Chrome
+O bookmarklet antigo dependia de clique manual e só capturava cookies
+acessíveis pelo `document.cookie` — ou seja, **deixava de fora todos os
+`httpOnly`** (geralmente o JSESSIONID JEE do SICONV legado e tokens SSO mais
+sensíveis). A extensão usa a permissão `chrome.cookies` que tem acesso
+completo, incluindo httpOnly.
 
-## Configuração inicial (1x apenas)
+Além disso, mantém a sessão viva pingando o servidor a cada 12min — a sessão
+JEE típica expira em 20-30min de inatividade, então sem keep-alive ela
+morria entre logins.
+
+## Instalação (1x, em <2 min)
+
+1. **Clone ou baixe** este repositório:
+   ```
+   git clone https://github.com/MattMatiins/PACTA.git
+   ```
+   A pasta da extensão fica em `PACTA/extension/`.
+
+2. Abra o Chrome em `chrome://extensions/`
+
+3. Ative **"Modo do desenvolvedor"** (canto superior direito)
+
+4. Clique em **"Carregar sem compactação"** e selecione a pasta
+   `PACTA/extension/`
+
+5. O ícone PACTA aparece na barra. Fixe-o (📌) pra ficar sempre visível.
+
+## Configuração inicial (1x, em 30s)
 
 1. Faça login em https://pacta-production.up.railway.app
-2. Abra o Console do navegador (F12 → Console)
-3. Cole: `localStorage.getItem('pacta_token')` e copie o token (entre aspas)
-4. Clique no ícone PACTA na barra → **"Configurar token PACTA"**
-5. Cole o token → **Salvar**
+2. Vá em **/dashboard/sessoes** → clica **"Copiar token"** no topo
+3. Clica no ícone da extensão → **"Configurar token PACTA"**
+4. Cola o token → **Salvar configuração**
 
-## Uso (toda vez que precisar capturar)
+Pronto. A partir de agora, **não precisa mais clicar em nada**.
 
-1. Faça login no portal desejado (gov.br, consultafns.saude.gov.br, simec.mec.gov.br, etc)
-2. Permaneça na aba do portal já logado
-3. Clique no ícone PACTA na barra
-4. Confirme **Sistema** e **Município ID** (auto-detectados pelo domínio)
-5. Clique em **"Capturar e enviar para PACTA"**
-6. Pronto - cookies enviados cifrados para o Cofre
+## Como funciona o modo automático
 
-## Como funciona tecnicamente
+A extensão tem 3 mecanismos rodando em paralelo:
 
-- A permissão `cookies` da extensão acessa `chrome.cookies.getAll()` que retorna **TODOS** os cookies do domínio, incluindo os marcados como `httpOnly` (que JavaScript regular não consegue ler)
-- Cookies são empacotados em JSON estruturado (com `name`, `value`, `domain`, `httpOnly`, `expirationDate`, etc)
-- Enviado via HTTPS com seu JWT PACTA para `/api/session-capture`
-- Backend cifra com AES-256-GCM e salva no Cofre
-- Scrapers usam esses cookies em `Cookie:` header para fazer requests HTTP autenticados
+### 1. Auto-captura em cada navegação
+Quando você abre qualquer URL em `*.transferegov.sistema.gov.br`,
+`*.acesso.gov.br`, `gov.br/transferegov` ou portais de saúde monitorados:
+- Espera 1.5s pra cookies da resposta settlearem
+- Lê TODOS os cookies dos domínios relevantes (incluindo subdomínios irmãos
+  do transferegov que compartilham SSO)
+- POSTa pro `/api/session-capture` automaticamente
+
+### 2. Cookie listener
+Sempre que um cookie crítico (`JSESSIONID`, `user-id`, `Session_Gov_Br_Prod`,
+`Govbrid`, `XSRF-TOKEN`) é criado ou renovado em domínio alvo:
+- Aguarda 2.5s pro conjunto inteiro chegar
+- Captura e envia
+
+Isso significa: assim que você termina de logar no gov.br, a extensão envia
+a sessão sozinha — sem você precisar abrir o popup ou clicar em nada.
+
+### 3. Keep-alive (Chrome alarms)
+A cada 12 minutos:
+- Faz um `GET` em `https://discricionarias.transferegov.sistema.gov.br/voluntarias/`
+  e outras URLs alvo
+- Mantém a sessão JEE viva no servidor (que expiraria em 20-30min de
+  inatividade)
+- Após cada ping bem-sucedido, re-captura cookies (servidor pode rotacionar
+  o JSESSIONID)
+
+**Resultado**: você loga no gov.br/TransfereGov uma vez por dia (ou quando
+o SSO expirar de verdade — pode durar horas), deixa o Chrome aberto, e o
+PACTA sempre tem cookies frescos pra rodar scrapers enriquecidos.
+
+## Debounce e privacidade
+
+- **Debounce**: captura do mesmo domínio só repete depois de 30s, pra evitar
+  spam quando você navega rápido entre páginas.
+- **Domínios**: só captura nos hosts listados no `manifest.json` host_permissions
+  (transferegov, gov.br/acesso, saúde, MEC). Não toca outros sites.
+- **Modo automático pode ser desligado** no popup (toggle "Modo automático")
+  — quando off, só responde ao botão "Capturar agora (manual)".
+
+## O popup mostra status
+
+Abrindo o ícone PACTA você vê:
+- ✅ **Modo automático ativo** (verde) ou ⚠️ desligado (âmbar)
+- Domínio atual da aba
+- **Última captura**: `✓ discricionarias.transferegov.sistema.gov.br · 13
+  cookies (6 httpOnly) · 1min atrás · scraper disparado`
+- Botão de captura manual (override)
 
 ## Segurança
 
-- Token PACTA fica em `chrome.storage.local` (criptografado pelo Chrome em disco)
-- Cookies trafegam via HTTPS direto entre seu Chrome e o backend PACTA
-- Backend cifra antes de gravar no banco (AES-256-GCM, chave separada)
+- Token PACTA fica em `chrome.storage.local` (criptografado pelo Chrome em
+  disco do seu PC, isolado da WebApp)
+- Cookies trafegam HTTPS direto entre seu Chrome e o backend Railway
+- Backend cifra com AES-256-GCM antes de gravar no Cofre (chave separada)
 - Nenhum servidor intermediário vê seus cookies
-- Você pode revogar a qualquer momento: faça logout no portal de origem
-
-## Privacidade
-
-A extensão NÃO:
-- Envia cookies sem você clicar no botão
-- Acessa cookies de outros domínios além do que você está vendo
-- Coleta histórico de navegação
-- Faz requisições em background
-
-A extensão SÓ pega os cookies do domínio atual, e SÓ quando você clica em "Capturar".
+- Para parar: desinstale a extensão OU desligue o toggle automático no popup

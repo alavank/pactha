@@ -1,16 +1,20 @@
-// PACTA Captura de Sessao - popup logic
+// PACTA Captura Automática — popup logic
 const DEFAULT_API = "https://pacta-api-production-9c11.up.railway.app/api";
 
 const $ = (id) => document.getElementById(id);
 
 async function getConfig() {
   return new Promise((res) => {
-    chrome.storage.local.get(["pacta_api", "pacta_token"], (data) => {
-      res({
+    chrome.storage.local.get(
+      ["pacta_api", "pacta_token", "pacta_municipio_id", "pacta_auto_enabled", "pacta_last_capture"],
+      (data) => res({
         api: data.pacta_api || DEFAULT_API,
         token: data.pacta_token || "",
-      });
-    });
+        municipio_id: data.pacta_municipio_id || "6",
+        auto_enabled: data.pacta_auto_enabled !== false,
+        last_capture: data.pacta_last_capture || null,
+      })
+    );
   });
 }
 
@@ -33,138 +37,120 @@ async function getCurrentTab() {
 }
 
 function getDomainFromUrl(url) {
-  try {
-    const u = new URL(url);
-    return u.hostname;
-  } catch (e) {
-    return null;
-  }
+  try { return new URL(url).hostname; } catch (e) { return null; }
 }
 
-// Pega o "registrable domain" (ex: gov.br para www.gov.br ou consultafns.saude.gov.br)
 function getRegistrableDomain(host) {
-  // Lista simples para .gov.br - pega os ultimos 2 niveis
-  // Para *.gov.br pega "gov.br"
-  // Para *.saude.gov.br pega "saude.gov.br" (subdominio relevante)
-  // Vamos pegar o dominio + um nivel (ex: "saude.gov.br")
   const parts = host.split(".");
   if (parts.length <= 2) return host;
-  // Para gov.br, pegar os ultimos 3 niveis (saude.gov.br, mds.gov.br) ou 2 (gov.br)
-  if (parts.slice(-2).join(".") === "gov.br") {
-    return parts.slice(-3).join(".");
-  }
+  if (parts.slice(-2).join(".") === "gov.br") return parts.slice(-3).join(".");
   return parts.slice(-2).join(".");
 }
 
 async function getAllCookiesForDomain(host) {
-  // chrome.cookies.getAll com domain= pega TODOS (incluindo httpOnly).
-  // Pega cookies para o host exato e todos os parentes
-  return new Promise((res) => {
-    const allCookies = [];
-    const seen = new Set();
-
-    // Lista de dominios a buscar: exato, .host, dominio raiz, .dominio raiz
-    const root = getRegistrableDomain(host);
-    const domains = [host, "." + host, root, "." + root, "gov.br", ".gov.br"];
-
-    let pending = domains.length;
-    for (const d of domains) {
+  const root = getRegistrableDomain(host);
+  const domains = new Set([host, "." + host, root, "." + root, "gov.br", ".gov.br"]);
+  if (host.endsWith(".transferegov.sistema.gov.br")) {
+    [
+      "discricionarias","mandatarias","fiscalizacao","transfere",
+      "idp","parcerias","cadastro","especiais","fundos","ted",
+    ].forEach((sub) => {
+      domains.add(`${sub}.transferegov.sistema.gov.br`);
+      domains.add(`.${sub}.transferegov.sistema.gov.br`);
+    });
+    domains.add(".transferegov.sistema.gov.br");
+    domains.add("transferegov.sistema.gov.br");
+  }
+  const seen = new Set();
+  const out = [];
+  await Promise.all([...domains].map((d) =>
+    new Promise((resolve) => {
       chrome.cookies.getAll({ domain: d }, (cookies) => {
-        if (cookies) {
-          for (const c of cookies) {
-            const key = `${c.domain}|${c.name}|${c.path}`;
-            if (!seen.has(key)) {
-              seen.add(key);
-              allCookies.push(c);
-            }
-          }
+        for (const c of cookies || []) {
+          const key = `${c.domain}|${c.name}|${c.path}`;
+          if (!seen.has(key)) { seen.add(key); out.push(c); }
         }
-        pending--;
-        if (pending === 0) res(allCookies);
+        resolve();
       });
-    }
-  });
+    })
+  ));
+  return out;
 }
 
-function formatCookieHeader(cookies) {
-  // Formato Cookie: name=value; name2=value2
-  return cookies.map((c) => `${c.name}=${c.value}`).join("; ");
-}
-
-async function capture() {
+async function captureManual() {
   const cfg = await getConfig();
   if (!cfg.token) {
     showStatus("Configure o token PACTA primeiro", "error");
     return;
   }
-
   const tab = await getCurrentTab();
   const host = getDomainFromUrl(tab.url);
   if (!host) {
     showStatus("Aba atual sem URL valida", "error");
     return;
   }
-
   showStatus("Coletando cookies (incluindo httpOnly)...", "info");
   const cookies = await getAllCookiesForDomain(host);
   if (!cookies.length) {
-    showStatus("Nenhum cookie encontrado neste dominio", "error");
+    showStatus("Nenhum cookie encontrado", "error");
     return;
   }
+  const httpOnly = cookies.filter((c) => c.httpOnly).length;
+  showStatus(`Enviando ${cookies.length} cookies (${httpOnly} httpOnly)...`, "info");
 
-  const cookieHeader = formatCookieHeader(cookies);
-  const httpOnlyCount = cookies.filter((c) => c.httpOnly).length;
-
-  showStatus(
-    `Capturando ${cookies.length} cookies (${httpOnlyCount} httpOnly) e enviando...`,
-    "info"
-  );
-
-  // Monta payload com metadados uteis (cookies estruturados + header simples)
   const payload = {
     automation_key: $("automation-key").value,
-    municipio_id: parseInt($("municipio-id").value, 10),
-    cookie: cookieHeader,
+    municipio_id: parseInt($("municipio-id").value || "6", 10),
+    cookie: cookies.map((c) => `${c.name}=${c.value}`).join("; "),
     cookies_full: cookies.map((c) => ({
-      name: c.name,
-      value: c.value,
-      domain: c.domain,
-      path: c.path,
-      httpOnly: c.httpOnly,
-      secure: c.secure,
-      sameSite: c.sameSite,
+      name: c.name, value: c.value, domain: c.domain, path: c.path,
+      httpOnly: c.httpOnly, secure: c.secure, sameSite: c.sameSite,
       expirationDate: c.expirationDate,
     })),
     url_atual: tab.url,
     user_agent: navigator.userAgent,
     domain_capturado: host,
   };
-
   try {
     const res = await fetch(`${cfg.api}/session-capture`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${cfg.token}`,
-      },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${cfg.token}` },
       body: JSON.stringify(payload),
     });
-    if (res.status === 401) {
-      showStatus("Token PACTA invalido/expirado. Reconfigure.", "error");
-      return;
-    }
-    if (!res.ok) {
-      const txt = await res.text();
-      showStatus(`Erro ${res.status}: ${txt.slice(0, 100)}`, "error");
-      return;
-    }
+    if (res.status === 401) { showStatus("Token PACTA invalido. Reconfigure.", "error"); return; }
+    if (!res.ok) { showStatus(`Erro ${res.status}`, "error"); return; }
     const data = await res.json();
     showStatus(
-      `OK! ${cookies.length} cookies enviados (${httpOnlyCount} httpOnly). ID=${data.id}`,
+      `OK! ${cookies.length} cookies (${httpOnly} httpOnly) ${data.auto_scrape_started ? "+ scraper disparado" : ""}`,
       "success"
     );
   } catch (e) {
-    showStatus(`Erro de rede: ${e.message}`, "error");
+    showStatus(`Erro: ${e.message}`, "error");
+  }
+}
+
+function fmtTimeAgo(ts) {
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 60) return `${s}s atrás`;
+  if (s < 3600) return `${Math.floor(s/60)}min atrás`;
+  return `${Math.floor(s/3600)}h atrás`;
+}
+
+async function refreshLastCapture() {
+  const cfg = await getConfig();
+  const el = $("last-capture-info");
+  if (!cfg.last_capture) {
+    el.textContent = "Aguardando primeira captura...";
+    el.className = "info";
+    return;
+  }
+  const lc = cfg.last_capture;
+  if (lc.ok) {
+    el.innerHTML = `✓ Última: <strong>${lc.host}</strong> · ${lc.n} cookies (${lc.httpOnly} httpOnly) · ${fmtTimeAgo(lc.at)}${lc.auto_scrape ? " · scraper disparado" : ""}`;
+    el.className = "info";
+  } else {
+    el.innerHTML = `✗ Última falhou: ${lc.host} · ${lc.error} · ${fmtTimeAgo(lc.at)}`;
+    el.className = "info";
   }
 }
 
@@ -173,11 +159,18 @@ async function init() {
   const tab = await getCurrentTab();
   const host = getDomainFromUrl(tab.url);
 
-  $("domain-info").innerHTML = host
-    ? `<strong>Dominio atual:</strong> ${host}`
-    : "Nenhum dominio detectado";
+  // Estado do toggle auto
+  $("toggle-auto").checked = cfg.auto_enabled;
+  if (!cfg.auto_enabled) {
+    $("auto-card").classList.add("off");
+    $("auto-title").textContent = "Modo automático DESLIGADO";
+  }
 
-  // Auto-detect automation_key baseado no dominio
+  $("domain-info").innerHTML = host
+    ? `<strong>Domínio atual:</strong> ${host}`
+    : "Nenhum domínio detectado";
+
+  // Auto-detect select baseado no domínio
   if (host) {
     if (host.includes("consultafns")) $("automation-key").value = "fns";
     else if (host.includes("simec")) $("automation-key").value = "simec";
@@ -187,7 +180,26 @@ async function init() {
     else if (host.includes("gov.br")) $("automation-key").value = "govbr";
   }
 
-  $("btn-capture").addEventListener("click", capture);
+  $("municipio-id").value = cfg.municipio_id;
+
+  // Eventos
+  $("toggle-auto").addEventListener("change", async (e) => {
+    await new Promise((r) => chrome.storage.local.set({ pacta_auto_enabled: e.target.checked }, r));
+    if (e.target.checked) {
+      $("auto-card").classList.remove("off");
+      $("auto-title").textContent = "Modo automático ativo";
+    } else {
+      $("auto-card").classList.add("off");
+      $("auto-title").textContent = "Modo automático DESLIGADO";
+    }
+  });
+
+  $("municipio-id").addEventListener("change", async (e) => {
+    await new Promise((r) => chrome.storage.local.set({ pacta_municipio_id: e.target.value }, r));
+  });
+
+  $("btn-capture").addEventListener("click", captureManual);
+
   $("btn-config").addEventListener("click", () => {
     $("main").classList.add("hidden");
     $("config").classList.remove("hidden");
@@ -197,14 +209,11 @@ async function init() {
   $("btn-save-config").addEventListener("click", async () => {
     const api = $("cfg-api-url").value.trim();
     const token = $("cfg-token").value.trim();
-    if (!api || !token) {
-      alert("Preencha API URL e Token");
-      return;
-    }
+    if (!api || !token) { alert("Preencha API URL e Token"); return; }
     await saveConfig(api, token);
     $("config").classList.add("hidden");
     $("main").classList.remove("hidden");
-    showStatus("Configuracao salva", "success");
+    showStatus("Configuração salva. Auto-captura ativa.", "success");
   });
   $("btn-cancel-config").addEventListener("click", () => {
     $("config").classList.add("hidden");
@@ -215,8 +224,12 @@ async function init() {
   });
 
   if (!cfg.token) {
-    showStatus("Clique em 'Configurar token PACTA' antes de capturar", "info");
+    showStatus("Configure o token PACTA antes de capturar", "info");
   }
+
+  refreshLastCapture();
+  // Atualiza relógio do "última captura" a cada segundo
+  setInterval(refreshLastCapture, 2000);
 }
 
 init();
