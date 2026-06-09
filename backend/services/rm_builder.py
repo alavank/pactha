@@ -82,34 +82,47 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int) -> dict:
             p["secoes"][secao][orgao] = []
         p["secoes"][secao][orgao].append(item)
 
-    # === SIGCON Estaduais (convenios_estaduais) ===
+    # === Convenios estaduais E FNS (mesma tabela, diferenciados por c.fonte) ===
+    # SIGCON-MG => estadual => PARTE 2 / INSTRUMENTOS ESTADUAIS
+    # FNS (Min Saude) => federal => PARTE 1 / INSTRUMENTOS FEDERAIS
     rs = await db.execute(
         select(ConvenioEstadual).where(ConvenioEstadual.municipio_id == municipio_id)
     )
     for c in rs.scalars().all():
         raw = c.raw_data if isinstance(c.raw_data, dict) else {}
+        fonte_db = (c.fonte or "").upper()
+        is_fns = "FNS" in fonte_db or "MS" in fonte_db
         nr_proposta = raw.get("nr_proposta") or c.nr_plano_trabalho
         nr_instr = raw.get("nr_instrumento") or (c.nr_sigcon if c.nr_sigcon and "/" in c.nr_sigcon else None)
         identificador = nr_instr or nr_proposta or c.nr_sigcon or ""
-        tipo_label = "Convênio" if nr_instr else "Proposta"
+        tipo_label = "Convênio" if nr_instr else ("Proposta SUS" if is_fns else "Proposta")
         dt_fim = c.dt_vigencia_atual or c.dt_vigencia_final
-        # SIGCON-MG => estadual => PARTE 2 (ou PARTE 3 se prestacao)
-        parte = _classifica_parte("estadual", c.situacao, dt_fim)
-        orgao = (c.orgao_concedente or "Outros - SIGCON").strip() + " - SIGCON"
+        if is_fns:
+            esfera = "federal"
+            secao = "INSTRUMENTOS DE REPASSE FEDERAIS"
+            orgao = (c.orgao_concedente or "Ministério da Saúde — FNS").strip()
+            fonte_label = "fns"
+        else:
+            esfera = "estadual"
+            secao = "INSTRUMENTOS DE REPASSE ESTADUAIS"
+            orgao = (c.orgao_concedente or "Outros - SIGCON").strip() + " - SIGCON"
+            fonte_label = "sigcon"
+        parte = _classifica_parte(esfera, c.situacao, dt_fim)
         # SIGCON-MG armazena o parlamentar como 'responsaveis' no raw_data
-        # (deputado estadual/federal autor da indicacao). Fallbacks: indicacao,
-        # nome_responsavel, autor_emenda. Limpa U+FFFD do encoding portugues.
+        # (deputado estadual/federal autor da indicacao). FNS pode ter
+        # 'nuEmenda' ou 'noAutor' do parlamentar autor da emenda.
         _parl = (
             raw.get("parlamentar") or raw.get("responsaveis")
             or raw.get("indicacao") or raw.get("nome_responsavel")
-            or raw.get("autor_emenda") or ""
+            or raw.get("autor_emenda") or raw.get("noAutor")
+            or raw.get("noParlamentar") or ""
         )
         if isinstance(_parl, list):
             _parl = ", ".join(str(x) for x in _parl if x)
         elif not isinstance(_parl, str):
             _parl = str(_parl) if _parl else ""
         _parl = _parl.replace("�", "").replace("  ", " ").strip()
-        add_item(parte, "INSTRUMENTOS DE REPASSE ESTADUAIS", orgao, {
+        add_item(parte, secao, orgao, {
             "tipo": tipo_label,
             "numero": identificador,
             "objeto": c.objeto or "",
@@ -124,7 +137,7 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int) -> dict:
             "dt_saldo": _iso(c.dt_saldo),
             "dt_fim_vigencia": _iso(dt_fim),
             "situacao_atual": (c.situacao or "").strip(),
-            "fonte": "sigcon",
+            "fonte": fonte_label,
             "fonte_ref": str(c.id),
         })
 

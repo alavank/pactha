@@ -75,16 +75,31 @@ async def listar(
         where_extra = " AND municipio_id = :mun"
         params["mun"] = municipio_id
 
-    # 1) SIGCON Estadual (responsaveis)
+    # 1) convenios_estadual: SIGCON (responsaveis) E FNS (noAutor/noParlamentar)
+    # Federal FNS pode ter campos noAutor, noParlamentar, dsAutor — variações
+    # diferentes entre cadastros antigos e emendas individuais.
     sql_sigcon = f"""
         SELECT
-            COALESCE(raw_data->>'responsaveis','') AS nome,
+            COALESCE(
+                raw_data->>'responsaveis',
+                raw_data->>'noAutor',
+                raw_data->>'noParlamentar',
+                raw_data->>'dsAutor',
+                raw_data->>'parlamentar',
+                ''
+            ) AS nome,
             municipio_id,
             (SELECT nome FROM municipios WHERE id=convenios_estadual.municipio_id) AS mun_nome,
-            COALESCE(valor_total, valor_concedente, 0) AS valor
+            COALESCE(valor_total, valor_concedente, 0) AS valor,
+            COALESCE(fonte, '') AS fonte_db
         FROM convenios_estadual
-        WHERE raw_data->>'responsaveis' IS NOT NULL
-        AND LENGTH(TRIM(raw_data->>'responsaveis')) >= 3
+        WHERE (
+            raw_data->>'responsaveis' IS NOT NULL
+            OR raw_data->>'noAutor' IS NOT NULL
+            OR raw_data->>'noParlamentar' IS NOT NULL
+            OR raw_data->>'dsAutor' IS NOT NULL
+            OR raw_data->>'parlamentar' IS NOT NULL
+        )
         {where_extra}
     """
     for row in (await db.execute(text(sql_sigcon), params)).fetchall():
@@ -101,7 +116,12 @@ async def listar(
             entry["valor_total"] += _money(row[3])
             if row[2]:
                 entry["municipios"].add(row[2])
-            entry["por_fonte"]["sigcon"] += 1
+            # classifica por fonte: FNS é federal, SIGCON-MG é estadual
+            fonte_db = (row[4] or "").upper()
+            if "FNS" in fonte_db or "MS" in fonte_db:
+                entry["por_fonte"]["voluntaria"] += 1  # contagem federal usa esse bucket
+            else:
+                entry["por_fonte"]["sigcon"] += 1
 
     # 2) TransfereGov Voluntarias (parlamentar)
     sql_vol = f"""
