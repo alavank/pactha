@@ -695,23 +695,35 @@ async def run():
         govbr_cks = _load_govbr_cookies()
         page_auth = None
         if govbr_cks:
-            # Carrega cookies originais (com expiration) para chefar JWT
+            # Carrega cookies originais (com expiration) para checar validade.
+            # Auth do scraper usa principalmente JSESSIONID de discricionarias
+            # (capturado quando user faz bookmarklet em /voluntarias/...).
+            # user-id JWT do parcerias eh OPCIONAL (so usado pra extracoes
+            # adicionais no parcerias). Pula auth APENAS se NAO tiver
+            # JSESSIONID de discricionarias E o user-id estiver expirado.
             try:
                 import psycopg2 as _pg
                 _u = os.getenv("DATABASE_URL_SYNC","").replace("&channel_binding=require","").replace("?channel_binding=require","")
                 _c = _pg.connect(_u); _cur = _c.cursor()
-                _cur.execute("SELECT senha_hash FROM cofre_senhas WHERE automation_key='govbr' "
-                             "AND length(senha_hash) > 1000 ORDER BY updated_at DESC LIMIT 1")
-                _row = _cur.fetchone(); _cur.close(); _c.close()
+                _cur.execute("SELECT senha_hash FROM cofre_senhas WHERE automation_key IN ('govbr','siconv_legado') "
+                             "AND length(senha_hash) > 1000 ORDER BY updated_at DESC")
+                _all = _cur.fetchall(); _cur.close(); _c.close()
                 from services import crypto as _crypto
-                _data = json.loads(_crypto.decrypt(_row[0]))
-                jwt_mins = _jwt_minutos_restantes(_data["cookies"])
-                logger.info(f"  JWT user-id: {jwt_mins:+.1f} minutos restantes")
-                if jwt_mins <= 1:
-                    logger.warning(f"  JWT expirado/expirando — pulando auth, indo direto guest")
-                    govbr_cks = None  # forca guest
+                has_discric_session = False
+                best_jwt_mins = float("-inf")
+                for _row in _all:
+                    _data = json.loads(_crypto.decrypt(_row[0]))
+                    cks = _data.get("cookies", [])
+                    if any('discricionarias' in (c.get('domain','') or '') and c.get('name')=='JSESSIONID' for c in cks):
+                        has_discric_session = True
+                    jm = _jwt_minutos_restantes(cks)
+                    if jm > best_jwt_mins: best_jwt_mins = jm
+                logger.info(f"  auth status: JSESSIONID-discric={has_discric_session} | user-id JWT={best_jwt_mins:+.1f}min")
+                if not has_discric_session and best_jwt_mins <= 1:
+                    logger.warning("  sem JSESSIONID e JWT expirado — pulando auth, indo direto guest")
+                    govbr_cks = None
             except Exception as e:
-                logger.warning(f"  nao validou JWT: {e}")
+                logger.warning(f"  nao validou sessao: {e}")
         if govbr_cks:
             try:
                 ctx_auth = await browser.new_context(ignore_https_errors=True, user_agent="Mozilla/5.0 Chrome/131")
@@ -759,24 +771,33 @@ async def run_one(municipio_id: int):
         page_guest = await ctx_guest.new_page()
         govbr_cks = _load_govbr_cookies()
         page_auth = None
-        # Valida JWT antes de criar contexto
+        # Auth eh por JSESSIONID de discricionarias (capturado via bookmarklet
+        # em /voluntarias/...) OU user-id JWT do parcerias. Pula auth APENAS
+        # se nenhum estiver valido.
         if govbr_cks:
             try:
                 import psycopg2 as _pg
                 _u = os.getenv("DATABASE_URL_SYNC","").replace("&channel_binding=require","").replace("?channel_binding=require","")
                 _c = _pg.connect(_u); _cur = _c.cursor()
-                _cur.execute("SELECT senha_hash FROM cofre_senhas WHERE automation_key='govbr' "
-                             "AND length(senha_hash) > 1000 ORDER BY updated_at DESC LIMIT 1")
-                _row = _cur.fetchone(); _cur.close(); _c.close()
+                _cur.execute("SELECT senha_hash FROM cofre_senhas WHERE automation_key IN ('govbr','siconv_legado') "
+                             "AND length(senha_hash) > 1000 ORDER BY updated_at DESC")
+                _all = _cur.fetchall(); _cur.close(); _c.close()
                 from services import crypto as _crypto
-                _data = json.loads(_crypto.decrypt(_row[0]))
-                jwt_mins = _jwt_minutos_restantes(_data["cookies"])
-                logger.info(f"  JWT user-id: {jwt_mins:+.1f}min")
-                if jwt_mins <= 1:
-                    logger.warning("  JWT expirou — indo direto guest")
+                has_discric_session = False
+                best_jwt_mins = float("-inf")
+                for _row in _all:
+                    _data = json.loads(_crypto.decrypt(_row[0]))
+                    cks = _data.get("cookies", [])
+                    if any('discricionarias' in (c.get('domain','') or '') and c.get('name')=='JSESSIONID' for c in cks):
+                        has_discric_session = True
+                    jm = _jwt_minutos_restantes(cks)
+                    if jm > best_jwt_mins: best_jwt_mins = jm
+                logger.info(f"  auth: JSESSIONID-discric={has_discric_session} | user-id JWT={best_jwt_mins:+.1f}min")
+                if not has_discric_session and best_jwt_mins <= 1:
+                    logger.warning("  sem JSESSIONID e JWT expirado — pulando auth")
                     govbr_cks = None
             except Exception as e:
-                logger.warning(f"  nao validou JWT: {e}")
+                logger.warning(f"  nao validou sessao: {e}")
         if govbr_cks:
             ctx_auth = await browser.new_context(ignore_https_errors=True, user_agent="Mozilla/5.0 Chrome/131")
             await ctx_auth.add_cookies(govbr_cks)
