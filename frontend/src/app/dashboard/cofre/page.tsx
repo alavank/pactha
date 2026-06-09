@@ -33,6 +33,28 @@ interface Senha {
 
 const CATEGORIAS = ["Federal", "Estadual", "Saude", "Educacao", "Assistencia Social", "Outro"];
 
+// Detecta se a senha é na verdade um payload de sessão capturada
+// (cookies JSON em vez de senha texto) — vem do bookmarklet/extensão PACTA.
+function parseSessionPayload(senha?: string): { isSession: boolean; cookieCount?: number; httpOnlyCount?: number; url?: string; domain?: string } {
+  if (!senha || senha.length < 30) return { isSession: false };
+  const s = senha.trim();
+  if (!s.startsWith("{") || !s.includes('"cookies"')) return { isSession: false };
+  try {
+    const obj = JSON.parse(s);
+    if (obj.format === "cookies_full" && Array.isArray(obj.cookies)) {
+      const cookies = obj.cookies;
+      return {
+        isSession: true,
+        cookieCount: cookies.length,
+        httpOnlyCount: cookies.filter((c: { httpOnly?: boolean }) => c.httpOnly).length,
+        url: obj.url,
+        domain: obj.domain,
+      };
+    }
+  } catch { /* ignore */ }
+  return { isSession: false };
+}
+
 // Sistemas com integracao automatica (scraper) - URL/categoria/automation_key pre-vinculados
 const INTEGRACOES = [
   {
@@ -486,12 +508,26 @@ export default function CofrePage() {
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="text-muted-foreground">Senha:</span>
-                          <span
-                            className="font-mono cursor-pointer"
-                            onClick={() => copySenha(s)}
-                          >
-                            {revealedIds.has(s.id) ? s.senha || "-" : (s.senha_mascarada || "••••••••")}
-                          </span>
+                          {(() => {
+                            const sess = revealedIds.has(s.id) ? parseSessionPayload(s.senha) : { isSession: false };
+                            if (sess.isSession) {
+                              return (
+                                <span className="inline-flex items-center gap-1.5 text-xs bg-violet-50 border border-violet-200 px-2 py-0.5 rounded">
+                                  <span className="size-2 rounded-full bg-violet-500"></span>
+                                  Sessão capturada · <strong>{sess.cookieCount}</strong> cookies
+                                  {sess.httpOnlyCount! > 0 && ` (${sess.httpOnlyCount} httpOnly)`}
+                                </span>
+                              );
+                            }
+                            return (
+                              <span
+                                className="font-mono cursor-pointer"
+                                onClick={() => copySenha(s)}
+                              >
+                                {revealedIds.has(s.id) ? s.senha || "-" : (s.senha_mascarada || "••••••••")}
+                              </span>
+                            );
+                          })()}
                           <button
                             onClick={() => toggleReveal(s.id)}
                             className="text-gray-500 hover:text-gray-700"

@@ -68,6 +68,24 @@ class CofreResponse(BaseModel):
         from_attributes = True
 
 
+def _mask_smart(senha_clear: str) -> str:
+    """Mascara inteligente: se for JSON de cookies (sessao capturada),
+    mostra placeholder semantico ao inves de tentar mascarar JSON."""
+    if not senha_clear:
+        return ""
+    s = senha_clear.strip()
+    if s.startswith("{") and '"cookies"' in s:
+        try:
+            import json as _json
+            obj = _json.loads(s)
+            if obj.get("format") == "cookies_full":
+                n = len(obj.get("cookies", []))
+                return f"[Sessao capturada · {n} cookies]"
+        except Exception:
+            pass
+    return crypto.mask(senha_clear)
+
+
 def _to_response(item: CofreSenha) -> CofreResponse:
     senha_clear = crypto.decrypt(item.senha_encrypted) if item.senha_encrypted else ""
     return CofreResponse(
@@ -76,7 +94,7 @@ def _to_response(item: CofreSenha) -> CofreResponse:
         sistema=item.sistema,
         url=item.url,
         usuario=item.usuario,
-        senha_mascarada=crypto.mask(senha_clear),
+        senha_mascarada=_mask_smart(senha_clear),
         observacao=item.observacao,
         categoria=item.categoria,
         automation_key=item.automation_key,
