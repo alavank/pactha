@@ -36,10 +36,19 @@ morria entre logins.
 
 ## Configuração inicial (1x, em 30s)
 
-1. Faça login em https://pacta-production.up.railway.app
-2. Vá em **/dashboard/sessoes** → clica **"Copiar token"** no topo
-3. Clica no ícone da extensão → **"Configurar token PACTA"**
-4. Cola o token → **Salvar configuração**
+**IMPORTANTE — use o TOKEN LONGEVO (service token), não o JWT da web.**
+O JWT da web app expira em 60 minutos; se você usar ele, a auto-captura
+para de funcionar silenciosamente após 1h (era a causa da "sessão que
+morria sozinha"). O **service token** (prefixo `pacta_`) nunca expira.
+
+1. Peça/gere o **service token de captura** (scope `session:write`,
+   prefixo `pacta_ext_...`) — fornecido pelo admin do PACTA.
+2. Clica no ícone da extensão → **"Configurar token PACTA"**.
+3. Cola o service token → **Salvar configuração**.
+
+A extensão detecta automaticamente: token que começa com `pacta_` é
+enviado como `X-Service-Token` (longevo); qualquer outro vai como
+`Authorization: Bearer` (JWT, compat legado de 60min).
 
 Pronto. A partir de agora, **não precisa mais clicar em nada**.
 
