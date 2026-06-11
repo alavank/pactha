@@ -585,7 +585,15 @@ async def _run():
         # e scraper Playwright). Se SIAFI presente, usa ON CONFLICT (nr_siafi)
         # pra atualizar o registro existente. Se nao, usa nr_sigcon como fallback.
         nr_siafi = rec.get("nr_siafi") or None
-        conflict_col = "nr_siafi" if nr_siafi else "nr_sigcon"
+        # IMPORTANTE: o indice unico de nr_siafi e PARCIAL
+        # (ux_convenios_estadual_nr_siafi WHERE nr_siafi IS NOT NULL AND <> '').
+        # Um "ON CONFLICT (nr_siafi)" simples NAO casa com indice parcial —
+        # precisa repetir o predicado. Sem isso, TODO registro com SIAFI
+        # falhava silenciosamente (causa real do SIGCON travado ha ~24 dias).
+        if nr_siafi:
+            conflict_target = "(nr_siafi) WHERE nr_siafi IS NOT NULL AND nr_siafi <> ''"
+        else:
+            conflict_target = "(nr_sigcon)"
         try:
             # SAVEPOINT por registro: erro em 1 nao descarta os anteriores
             # (antes, conn.rollback() perdia TODO o batch desde o ultimo commit)
@@ -598,7 +606,7 @@ async def _run():
                     raw_data, tp_instrumento,
                     nr_plano_trabalho, ano, dt_publicacao
                 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s)
-                ON CONFLICT ({conflict_col}) DO UPDATE SET
+                ON CONFLICT {conflict_target} DO UPDATE SET
                     nr_sigcon = COALESCE(convenios_estadual.nr_sigcon, EXCLUDED.nr_sigcon),
                     nr_siafi = COALESCE(convenios_estadual.nr_siafi, EXCLUDED.nr_siafi),
                     situacao = EXCLUDED.situacao,
