@@ -492,30 +492,48 @@ async def _run():
     all_records = []  # [(municipio_db_id, dict)] convenios
     all_emendas = []  # [(municipio_db_id, dict)] emendas estaduais
     anos_emendas = list(range(2022, datetime.now().year + 1))  # 2022..ano atual
+    # DESCOBERTA: a Pesquisa Unificada do SIGCON-MG eh GLOBAL — uma unica
+    # credencial autenticada consegue pesquisar QUALQUER municipio (testado:
+    # login Araujos retorna convenios de Piracema). Entao logamos UMA vez e
+    # iteramos TODOS os municipios PACTA, em vez de exigir 1 login por municipio.
+    cred = creds[0]
+    logger.info(f"Sessao SIGCON: {cred['municipio_nome']} (CPF={cred['cpf'][:4]}***) — busca GLOBAL p/ {len(mun_map)} municipios")
+
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True, args=["--ignore-certificate-errors"])
         try:
-            for cred in creds:
-                logger.info(f"\n=== Login: {cred['municipio_nome']} (CPF={cred['cpf'][:4]}***) ===")
-                ctx = await browser.new_context(
-                    ignore_https_errors=True,
-                    accept_downloads=True,
-                    user_agent="Mozilla/5.0 (Windows NT 10.0) Chrome/131 Safari/537.36",
-                )
-                page = await ctx.new_page()
+            ctx = await browser.new_context(
+                ignore_https_errors=True, accept_downloads=True,
+                user_agent="Mozilla/5.0 (Windows NT 10.0) Chrome/131 Safari/537.36",
+            )
+            page = await ctx.new_page()
+            try:
+                await _login(page, cred["cpf"], cred["senha"])
+                logger.info("  LOGIN OK — iniciando varredura por municipio")
+            except Exception as e:
+                logger.error(f"  Login SIGCON falhou: {e}")
+                await browser.close()
+                return
+
+            for nome_norm, db_id in mun_map.items():
+                logger.info(f"\n  --- Municipio: {nome_norm} (db_id={db_id}) ---")
                 try:
-                    await _login(page, cred["cpf"], cred["senha"])
-                    # 1) Convenios (Pesquisa Unificada)
-                    rows = await _scrape_municipio(page, _norm(cred["municipio_nome"]))
-                    # 1b) Detalhes (Responsavel, Proposta Vigencia, Valor Dot Compl,
-                    # Fase-Etapa-Status, Setor, Data Criacao) - click-through em cada plano
+                    # 1) Convenios — com 1 retry se "Tabela nao carregou" (transitorio)
+                    rows = await _scrape_municipio(page, nome_norm)
+                    if not rows:
+                        logger.info(f"    {nome_norm}: 0 na 1a tentativa, retry...")
+                        await page.wait_for_timeout(2000)
+                        rows = await _scrape_municipio(page, nome_norm)
+                    if not rows:
+                        logger.warning(f"    {nome_norm}: sem convenios (ou falha persistente)")
+                        continue
+                    # 1b) Detalhes (Responsavel/parlamentar, vigencia, etc.)
                     detalhes: dict = {}
                     try:
                         detalhes = await _scrape_detalhes(page, max_planos=100)
                     except Exception as e:
-                        logger.warning(f"  Detalhes failed: {e}")
-                    # Merge detalhes nas rows + DEDUPE por nr_plano/nr_proposta
-                    # (uma Proposta gera um Plano que vira Instrumento - tudo MESMO convenio)
+                        logger.warning(f"    Detalhes {nome_norm} falhou: {e}")
+                    # Merge + dedup por nr_siafi > nr_plano > nr_proposta
                     by_key: dict = {}
                     for r in rows:
                         det = detalhes.get(r.get("nr_proposta")) or detalhes.get(r.get("nr_plano"))
@@ -523,16 +541,13 @@ async def _run():
                             for k, v in det.items():
                                 if v and not r.get(k):
                                     r[k] = v
-                            # Detalhe pode revelar nr_plano que nao estava no row da tabela
                             if det.get("nr_plano_detalhe") and not r.get("nr_plano"):
                                 r["nr_plano"] = det["nr_plano_detalhe"]
-                        # Dedupe key: prefere nr_siafi > nr_plano > nr_proposta
                         key = r.get("nr_siafi") or r.get("nr_plano") or r.get("nr_proposta")
                         if not key:
-                            all_records.append((cred["municipio_id"], r))
+                            all_records.append((db_id, r))
                             continue
                         if key in by_key:
-                            # Merge: pega o mais completo (tem mais campos com valor)
                             existing = by_key[key]
                             for k, v in r.items():
                                 if v and not existing.get(k):
@@ -540,18 +555,24 @@ async def _run():
                         else:
                             by_key[key] = r
                     for r in by_key.values():
-                        all_records.append((cred["municipio_id"], r))
-                    # 2) Emendas (Emendas / Pesquisar Por Convenente)
-                    try:
-                        emendas = await _scrape_emendas(page, anos_emendas)
-                        for e in emendas:
-                            all_emendas.append((cred["municipio_id"], e))
-                    except Exception as e:
-                        logger.warning(f"  Emendas falharam para {cred['municipio_nome']}: {e}")
+                        all_records.append((db_id, r))
+                    logger.info(f"    {nome_norm}: {len(by_key)} convenios coletados")
                 except Exception as e:
-                    logger.error(f"  Falha {cred['municipio_nome']}: {e}")
-                finally:
-                    await ctx.close()
+                    logger.error(f"    Falha {nome_norm}: {str(e)[:150]}")
+
+            # 2) Emendas — a busca "Por Convenente" eh escopada ao login;
+            # so retorna as do municipio da credencial. As emendas dos demais
+            # municipios sao derivadas do objeto dos convenios (emendas_estaduais.py)
+            # + campo responsaveis. Roda 1x p/ o municipio da credencial.
+            try:
+                emendas = await _scrape_emendas(page, anos_emendas)
+                cred_db_id = cred.get("municipio_id")
+                for e in emendas:
+                    all_emendas.append((cred_db_id, e))
+            except Exception as e:
+                logger.warning(f"  Emendas falharam: {e}")
+
+            await ctx.close()
         finally:
             await browser.close()
 
