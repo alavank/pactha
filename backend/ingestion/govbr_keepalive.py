@@ -111,21 +111,19 @@ AUTH_PROBE_URL = ("https://discricionarias.transferegov.sistema.gov.br/voluntari
 
 
 def _is_authenticated(resp: httpx.Response) -> bool:
-    """True se a resposta indica sessao AUTENTICADA viva (nao guest, nao login)."""
+    """True se a sessao AUTENTICADA esta viva. CALIBRADO contra sessao real:
+    - viva: AUTH_PROBE_URL responde 200, final em /voluntarias/, body tem 'Sair'.
+    - morta: redireciona p/ /idp/ (ou body 'Acesso Restrito'/'Identifique-se').
+    OBS: 'Acesso Livre' aparece no header MESMO logado — NAO e marcador de morte."""
     final = str(resp.url).lower()
-    if "/idp/" in final or "/login" in final or "sso.acesso.gov.br" in final:
+    if "/idp/" in final or "sso.acesso.gov.br" in final or "/login" in final:
         return False
-    body = resp.text[:5000].lower()
-    # marcadores de NAO-autenticado
-    if any(m in body for m in ("acesso restrito", "entrar com gov.br",
-                               "identifique-se", "acesso livre", "usr=guest")):
+    body = resp.text.lower()
+    if any(m in body for m in ("acesso restrito", "identifique-se", "entrar com gov.br")):
         return False
-    # marcadores positivos de sessao autenticada
-    if any(m in body for m in ("sair do sistema", "trocar perfil", "meu perfil",
-                               "alfredo", "037.543")):
-        return True
-    # sem marcador claro: considera vivo so se 200 e nao for o host guest
-    return resp.status_code == 200
+    # positivo: link "Sair" (do sistema) so existe autenticado, e ficou numa
+    # pagina interna do modulo voluntarias
+    return resp.status_code == 200 and "voluntarias" in final and "sair" in body
 
 
 def _mark_alive(cofre_id: int):

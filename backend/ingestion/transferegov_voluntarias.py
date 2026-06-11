@@ -32,6 +32,14 @@ logger = logging.getLogger("tg_voluntarias")
 ENTRY = ("https://discricionarias.transferegov.sistema.gov.br/voluntarias/ForwardAction.do"
          "?modulo=Principal&path=/MostraPrincipalConsultarProposta.do&Usr=guest&Pwd=guest")
 
+# Entrada AUTENTICADA (sem Usr=guest): mesma tela de consulta, mas os detalhes
+# resultantes sao a versao logada — com o botao "Detalhar Clausula Suspensiva/
+# Liminar Judicial" e os campos gated (parlamentar). O guest NAO renderiza esse
+# botao (TagFuncionalidade resultado='false'). Por isso, quando ha sessao viva,
+# a LISTAGEM tambem precisa rodar autenticada (nao so o detalhe).
+ENTRY_AUTH = ("https://discricionarias.transferegov.sistema.gov.br/voluntarias/ForwardAction.do"
+              "?modulo=Principal&path=/MostraPrincipalConsultarProposta.do")
+
 
 def _jwt_minutos_restantes(cookies: list[dict]) -> float:
     """Retorna minutos restantes do JWT user-id (parcerias.transferegov).
@@ -212,15 +220,17 @@ async def _goto_with_retry(page, url: str, max_retries: int = 3, base_delay: flo
     return False
 
 
-async def _scrape_municipio(page, mun: dict, _retry: int = 0, auth_page=None) -> list[dict]:
-    """Consulta rapida por UF + Municipio, retorna lista de propostas.
+async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = False) -> list[dict]:
+    """Consulta por UF + Municipio, retorna lista de propostas COM detalhe.
 
-    page = pagina GUEST (sem cookies SSO) — listagem via select Acesso Livre
-    auth_page = pagina AUTENTICADA opcional (com cookies SSO + JSESSIONID
-                bootstrappado em discricionarias) — usada nos detalhes pra
-                ver campos gated (parlamentar, sit_contratacao_detalhe)
+    page    = pagina onde roda listagem E detalhe (mesma sessao).
+    is_auth = True quando 'page' tem cookies SSO validos. Nesse caso usa a
+              entrada AUTENTICADA (ENTRY_AUTH) — a listagem gera links de
+              detalhe LOGADOS, que renderizam o botao "Detalhar Clausula
+              Suspensiva" e os campos gated (parlamentar). Guest usa ENTRY.
     """
-    await page.goto(ENTRY, timeout=60000, wait_until="domcontentloaded")
+    entry = ENTRY_AUTH if is_auth else ENTRY
+    await page.goto(entry, timeout=60000, wait_until="domcontentloaded")
     await page.wait_for_timeout(6000 + _retry * 4000)  # SAML auto-submits (mais tempo no retry)
 
     # Seleciona UF (com retry se a sessao SAML nao estabeleceu)
@@ -230,7 +240,7 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, auth_page=None) ->
     except Exception:
         if _retry < 2:
             logger.warning(f"  {mun['nome']}: select UF ausente, retry {_retry+1}")
-            return await _scrape_municipio(page, mun, _retry + 1)
+            return await _scrape_municipio(page, mun, _retry + 1, is_auth=is_auth)
         logger.warning(f"  {mun['nome']}: select UF nao encontrado apos retries (sessao falhou)")
         return []
     await page.wait_for_timeout(3500)  # carrega municipios via ajax
@@ -322,15 +332,12 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, auth_page=None) ->
     logger.info(f"  {mun['nome']}: {len(visited)} pagina(s) -> {len(propostas)} propostas")
 
     # Enriquece cada proposta com o detalhe (Dados da Proposta).
-    # Se temos auth_page (cookies SSO), usa ela pra ver campos gated
-    # (parlamentar + Detalhar Situacao Contratacao). Senao, usa page guest.
-    # OTIMIZACAO 1: quando auth disponivel, prioriza propostas SEM enrich
-    #               (que sao as que mais ganham com auth — janela JWT 20min)
-    # OTIMIZACAO 2: reduz wait_for_timeout pra acelerar
-    detail_page = auth_page or page
-    # Re-ordena: quando auth ativa, propostas pendentes de enrich primeiro
-    # (assim se a sessao expirar no meio, as ja-enriquecidas nao perdem chance)
-    if auth_page:
+    # Listagem e detalhe rodam na MESMA page (mesma sessao). Quando is_auth,
+    # os links de detalhe sao logados → renderizam o botao Detalhar Clausula
+    # Suspensiva + campos gated (parlamentar).
+    # OTIMIZACAO: quando auth, prioriza propostas SEM enrich (janela curta).
+    detail_page = page
+    if is_auth:
         try:
             _ja_enriquecidos = _propostas_ja_enriquecidas(mun["id"])
             propostas.sort(key=lambda p: 0 if p["numero_proposta"] not in _ja_enriquecidos else 1)
@@ -559,38 +566,55 @@ async def _extrai_detalhe(page) -> dict:
                 if (v) { out[outKey] = v; break; }
             }
         }
-        // URL do botao "Detalhar..." da linha "Situacao de Contratacao Atual".
-        // O texto varia conforme o tipo (Clausula Suspensiva, Liminar Judicial,
-        // Pendencia, etc.) — buscamos qualquer botao "Detalhar" dentro da linha.
-        // Tambem captura o label do botao para identificar o tipo de detalhe.
+        // Botao "Detalhar Clausula Suspensiva/Liminar Judicial".
+        // Busca na PAGINA INTEIRA (nao so numa linha especifica) qualquer
+        // anchor/button cujo onclick/href/texto aponte para o detalhe da
+        // CLAUSULA SUSPENSIVA (ou liminar judicial). Ignora "Detalhar" generico
+        // de habilitacao etc. Extrai a URL do onclick (location.href='...').
         try {
-            const sitRow = [...document.querySelectorAll('tr')].find(tr => {
-                const txt = tr.innerText.toLowerCase();
-                return txt.includes('situa') && (txt.includes('contrata') || txt.includes('contrato'))
-                    && txt.includes('atual');
-            });
-            if (sitRow) {
-                const det = [...sitRow.querySelectorAll('a, input[type="button"], button')].find(el => {
-                    const t = (el.value || el.innerText || '').toLowerCase().trim();
-                    return t.startsWith('detalhar') || (el.href || '').toLowerCase().includes('detalhar');
-                });
-                if (det) {
-                    const label = (det.value || det.innerText || '').trim();
-                    let url = det.href || '';
-                    if (!url) {
-                        const oc = det.getAttribute('onclick') || '';
-                        const m = oc.match(/['"]([^'"]*Detalhar[^'"]*)['"]/i);
-                        if (m) {
-                            url = m[1];
-                            if (!url.startsWith('http')) {
-                                url = (url.startsWith('/') ? location.origin : location.origin + '/voluntarias/execucao/') + url.replace(/^\//, '');
-                            }
+            const extractUrl = (el) => {
+                let url = el.href || '';
+                if (!url || url.toLowerCase().startsWith('javascript')) {
+                    const oc = el.getAttribute('onclick') || '';
+                    // location.href='...'  ou  window.location='...'
+                    const m = oc.match(/(?:location\\.href|window\\.location)\\s*=\\s*['"]([^'"]+)['"]/i)
+                            || oc.match(/['"]([^'"]*Detalhar[^'"]*)['"]/i);
+                    if (m) {
+                        url = m[1];
+                        if (!url.startsWith('http')) {
+                            url = (url.startsWith('/') ? location.origin : location.origin + '/voluntarias/execucao/') + url.replace(/^\\//, '');
                         }
                     }
-                    if (url) {
-                        out['_situacao_det_url'] = url;
-                        if (label) out['_situacao_det_label'] = label.slice(0, 80);
-                    }
+                }
+                return url;
+            };
+            const isClausula = (s) => /clausula|cláusula|suspensiva|liminar/i.test(s || '');
+            const cands = [...document.querySelectorAll('a, input[type="button"], button')];
+            let chosen = null;
+            // 1) prioridade: onclick/href aponta p/ DetalharClausulaSuspensiva
+            for (const el of cands) {
+                const oc = (el.getAttribute('onclick') || '') + ' ' + (el.href || '');
+                if (/detalharclausulasuspensiva|clausulasuspensiva|liminarjudicial/i.test(oc)) { chosen = el; break; }
+            }
+            // 2) fallback: texto "Detalhar ... Clausula/Suspensiva/Liminar"
+            if (!chosen) {
+                for (const el of cands) {
+                    const t = (el.value || el.innerText || '').trim();
+                    if (/detalhar/i.test(t) && isClausula(t)) { chosen = el; break; }
+                }
+            }
+            // 3) fallback final: dentro de uma linha que mencione contratacao + clausula
+            if (!chosen) {
+                const row = [...document.querySelectorAll('tr')].find(tr =>
+                    isClausula(tr.innerText) && /detalhar/i.test(tr.innerText));
+                if (row) chosen = row.querySelector('a, input[type="button"], button');
+            }
+            if (chosen) {
+                const url = extractUrl(chosen);
+                const label = (chosen.value || chosen.innerText || '').trim();
+                if (url && /detalhar|clausula|suspensiva|liminar/i.test(url + label)) {
+                    out['_situacao_det_url'] = url;
+                    if (label) out['_situacao_det_label'] = label.slice(0, 80);
                 }
             }
         } catch (e) { /* ignore */ }
@@ -767,7 +791,12 @@ async def run():
             logger.info("  sem sessao gov.br valida, detalhes em guest")
         for mun in municipios:
             try:
-                props = await _scrape_municipio(page_guest, mun, auth_page=page_auth)
+                # Com sessao viva: lista+detalha autenticado (pega clausula
+                # suspensiva). Senao: guest (so base, sem botao Detalhar).
+                if page_auth:
+                    props = await _scrape_municipio(page_auth, mun, is_auth=True)
+                else:
+                    props = await _scrape_municipio(page_guest, mun, is_auth=False)
                 n = _upsert(mun["id"], props)
                 logger.info(f"  {mun['nome']}: {len(props)} propostas -> {n} upsert")
                 total += n
@@ -834,7 +863,10 @@ async def run_one(municipio_id: int):
             page_auth = await ctx_auth.new_page()
             logger.info(f"  contexto AUTH criado com {len(govbr_cks)} cookies SSO")
         try:
-            props = await _scrape_municipio(page_guest, mun, auth_page=page_auth)
+            if page_auth:
+                props = await _scrape_municipio(page_auth, mun, is_auth=True)
+            else:
+                props = await _scrape_municipio(page_guest, mun, is_auth=False)
             n = _upsert(mun["id"], props)
             logger.info(f"{mun['nome']}: {len(props)} propostas -> {n} upsert")
             com_parl = sum(1 for p in props if (p.get("detalhe") or {}).get("_parlamentar"))
