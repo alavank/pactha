@@ -373,21 +373,29 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
                             else [_clean(x) for x in v] if isinstance(v, list) else v)
                 for k, v in (det or {}).items()
             }
-            # Segue o botao "Detalhar..." da linha Situacao de Contratacao Atual
-            # (qualquer tipo: Clausula Suspensiva, Liminar Judicial, Pendencia, etc.)
-            if sit_det_url:
+            # Detalhe da Situacao de Contratacao Atual (Clausula Suspensiva,
+            # Liminar Judicial, Pendencia, etc).
+            # 1) CLICA no botao (JSF/Struts = submit com estado; GET direto da 401).
+            # 2) fallback: se houver URL http real (nao-javascript), tenta goto.
+            sd = None
+            try:
+                sd = await _abrir_situacao_via_click(detail_page)
+            except Exception as e:
+                logger.warning(f"    clausula_click {prop['numero_proposta']}: {str(e)[:80]}")
+            if not sd and sit_det_url and sit_det_url.lower().startswith("http") \
+                    and "javascript" not in sit_det_url.lower():
                 try:
                     if await _goto_with_retry(detail_page, sit_det_url, timeout=40000):
                         await detail_page.wait_for_timeout(2000)
                         sd = await _extrai_situacao_detalhe(detail_page)
-                        if sd:
-                            prop["detalhe"]["_situacao_detalhe"] = {
-                                "_label_botao": _clean(sit_det_label) if sit_det_label else None,
-                                **{_clean(k): _clean(v) if isinstance(v, str) else v
-                                   for k, v in sd.items()},
-                            }
                 except Exception as e:
                     logger.warning(f"    situacao_det {prop['numero_proposta']}: {str(e)[:80]}")
+            if sd:
+                prop["detalhe"]["_situacao_detalhe"] = {
+                    "_label_botao": _clean(sit_det_label) if sit_det_label else None,
+                    **{_clean(k): _clean(v) if isinstance(v, str) else v
+                       for k, v in sd.items()},
+                }
             if det.get("_parlamentar") or prop["detalhe"].get("_situacao_detalhe"):
                 _enr += 1
         except Exception as e:
@@ -417,6 +425,69 @@ async def _extrai_situacao_detalhe(page) -> dict:
         });
         return out;
     }""")
+
+
+async def _abrir_situacao_via_click(page) -> dict | None:
+    """Abre o detalhe da Situacao de Contratacao (Clausula Suspensiva / Liminar
+    Judicial / etc) CLICANDO no botao — e nao via GET na URL.
+
+    POR QUE CLICAR: o "Detalhar Clausula Suspensiva" e um submit JSF/Struts que
+    depende do estado da sessao (ViewState/flash). Um GET direto na URL extraida
+    do onclick retorna 401 (era exatamente o que falhava). Clicar dispara o
+    submit com o estado correto e renderiza a tela moderna
+    /voluntarias/br/gov/mp/siconv/uc/execucao/detalharClausulaSuspensiva/.
+
+    Trata os dois comportamentos: (a) navega na MESMA pagina; (b) abre POPUP."""
+    selectors = [
+        # 1) onclick/href apontando ao detalhe da clausula/liminar
+        "css=a[onclick*='ClausulaSuspensiva' i], a[onclick*='clausulaSuspensiva' i], "
+        "a[onclick*='LiminarJudicial' i], a[href*='detalharClausulaSuspensiva' i], "
+        "input[onclick*='ClausulaSuspensiva' i], input[onclick*='LiminarJudicial' i]",
+        # 2) texto/value "Detalhar ... Clausula/Suspensiva/Liminar"
+        "xpath=//a[contains(translate(.,'CLÁUSULASUPENVIRMJD','cláusulasupenvirmjd'),'clá') "
+        "or contains(translate(.,'SUSPENSIVA','suspensiva'),'suspensiva') "
+        "or contains(translate(.,'LIMINAR','liminar'),'liminar')]"
+        "[contains(translate(.,'DETALHAR','detalhar'),'detalhar')]",
+        "xpath=//input[(contains(@value,'láusula') or contains(@value,'uspensiva') "
+        "or contains(@value,'iminar')) and contains(@value,'etalhar')]",
+    ]
+    loc = None
+    for sel in selectors:
+        try:
+            cand = page.locator(sel).first
+            if await cand.count() > 0:
+                loc = cand
+                break
+        except Exception:
+            continue
+    if loc is None:
+        return None
+    target = page
+    popup = None
+    try:
+        # o clique pode abrir popup OU navegar/AJAX na mesma pagina
+        async with page.context.expect_page(timeout=4000) as pinfo:
+            await loc.click(timeout=8000)
+        popup = await pinfo.value
+        target = popup
+        await target.wait_for_load_state("domcontentloaded", timeout=30000)
+    except Exception:
+        # sem popup: clicou e navegou (ou fez AJAX) na propria pagina
+        try:
+            await page.wait_for_load_state("networkidle", timeout=15000)
+        except Exception:
+            pass
+        target = page
+    await target.wait_for_timeout(2000)
+    try:
+        sd = await _extrai_situacao_detalhe(target)
+    finally:
+        if popup is not None:
+            try:
+                await popup.close()
+            except Exception:
+                pass
+    return sd or None
 
 
 async def _extrai_parlamentar(page) -> str | None:
