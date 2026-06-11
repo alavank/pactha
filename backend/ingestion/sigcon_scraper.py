@@ -94,18 +94,29 @@ async def _scrape_municipio(page, municipio_nome: str) -> list[dict]:
     await page.goto(SEARCH_URL, timeout=60000, wait_until="domcontentloaded")
     await page.wait_for_timeout(8000)
 
-    # Filtro municipio (best effort; nao bloqueia se PF nao expor select normal)
-    try:
-        await page.evaluate("""(target) => {
-            const sel = document.getElementById('frmListaPlanosDeTrabalho:selMunicipio_input');
-            if (sel) {
-                sel.value = target;
-                sel.dispatchEvent(new Event('change', {bubbles: true}));
-            }
-        }""", municipio_nome)
-        await page.wait_for_timeout(1500)
-    except Exception:
-        pass
+    # Filtro municipio — e um PrimeFaces selectonemenu com ~854 opcoes cujo
+    # VALUE e o codigo IBGE (NAO o nome). O codigo antigo fazia sel.value=NOME,
+    # que nunca casava → filtro ficava no default (Araujos). Aqui buscamos a
+    # opcao pelo TEXTO normalizado e setamos o VALUE correto + sincronizamos
+    # o label do widget PrimeFaces.
+    matched = await page.evaluate("""(target) => {
+        const norm = (s) => (s||'').toUpperCase()
+            .normalize('NFKD').replace(/[\\u0300-\\u036f]/g,'').trim();
+        const sel = document.getElementById('frmListaPlanosDeTrabalho:selMunicipio_input');
+        if (!sel) return 'no_select';
+        const t = norm(target);
+        let opt = [...sel.options].find(o => norm(o.text) === t);
+        if (!opt) opt = [...sel.options].find(o => norm(o.text).startsWith(t));
+        if (!opt) opt = [...sel.options].find(o => norm(o.text).includes(t));
+        if (!opt) return 'no_match';
+        sel.value = opt.value;
+        sel.dispatchEvent(new Event('change', {bubbles: true}));
+        const label = document.getElementById('frmListaPlanosDeTrabalho:selMunicipio_label');
+        if (label) label.textContent = opt.text;
+        return 'ok:' + opt.value + ':' + opt.text;
+    }""", municipio_nome)
+    logger.info(f"    filtro municipio {municipio_nome}: {matched}")
+    await page.wait_for_timeout(1800)
 
     # Pesquisar
     await page.click('button[id="frmListaPlanosDeTrabalho:cmdBtnPesquisarListaPlanosDeTrabalho"]')
@@ -492,48 +503,31 @@ async def _run():
     all_records = []  # [(municipio_db_id, dict)] convenios
     all_emendas = []  # [(municipio_db_id, dict)] emendas estaduais
     anos_emendas = list(range(2022, datetime.now().year + 1))  # 2022..ano atual
-    # DESCOBERTA: a Pesquisa Unificada do SIGCON-MG eh GLOBAL — uma unica
-    # credencial autenticada consegue pesquisar QUALQUER municipio (testado:
-    # login Araujos retorna convenios de Piracema). Entao logamos UMA vez e
-    # iteramos TODOS os municipios PACTA, em vez de exigir 1 login por municipio.
-    cred = creds[0]
-    logger.info(f"Sessao SIGCON: {cred['municipio_nome']} (CPF={cred['cpf'][:4]}***) — busca GLOBAL p/ {len(mun_map)} municipios")
-
+    # CONFIRMADO empiricamente: a Pesquisa Unificada do SIGCON-MG eh ESCOPADA
+    # ao convenente logado. Mesmo setando o filtro de municipio corretamente
+    # (option value = codigo IBGE), o login de Araujos retorna 0 convenios de
+    # Piracema/Nova Serrana/etc. Ou seja: cada municipio EXIGE seu proprio login
+    # SIGCON (CPF+senha do convenente). Hoje so existe credencial de Araujos no
+    # Cofre -> por isso so Araujos tem convenios/parlamentar estaduais.
+    # Solucao p/ os demais: cadastrar 1 credencial SIGCON por municipio.
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True, args=["--ignore-certificate-errors"])
         try:
-            ctx = await browser.new_context(
-                ignore_https_errors=True, accept_downloads=True,
-                user_agent="Mozilla/5.0 (Windows NT 10.0) Chrome/131 Safari/537.36",
-            )
-            page = await ctx.new_page()
-            try:
-                await _login(page, cred["cpf"], cred["senha"])
-                logger.info("  LOGIN OK — iniciando varredura por municipio")
-            except Exception as e:
-                logger.error(f"  Login SIGCON falhou: {e}")
-                await browser.close()
-                return
-
-            for nome_norm, db_id in mun_map.items():
-                logger.info(f"\n  --- Municipio: {nome_norm} (db_id={db_id}) ---")
+            for cred in creds:
+                logger.info(f"\n=== Login: {cred['municipio_nome']} (CPF={cred['cpf'][:4]}***) ===")
+                ctx = await browser.new_context(
+                    ignore_https_errors=True, accept_downloads=True,
+                    user_agent="Mozilla/5.0 (Windows NT 10.0) Chrome/131 Safari/537.36",
+                )
+                page = await ctx.new_page()
                 try:
-                    # 1) Convenios — com 1 retry se "Tabela nao carregou" (transitorio)
-                    rows = await _scrape_municipio(page, nome_norm)
-                    if not rows:
-                        logger.info(f"    {nome_norm}: 0 na 1a tentativa, retry...")
-                        await page.wait_for_timeout(2000)
-                        rows = await _scrape_municipio(page, nome_norm)
-                    if not rows:
-                        logger.warning(f"    {nome_norm}: sem convenios (ou falha persistente)")
-                        continue
-                    # 1b) Detalhes (Responsavel/parlamentar, vigencia, etc.)
+                    await _login(page, cred["cpf"], cred["senha"])
+                    rows = await _scrape_municipio(page, _norm(cred["municipio_nome"]))
                     detalhes: dict = {}
                     try:
                         detalhes = await _scrape_detalhes(page, max_planos=100)
                     except Exception as e:
-                        logger.warning(f"    Detalhes {nome_norm} falhou: {e}")
-                    # Merge + dedup por nr_siafi > nr_plano > nr_proposta
+                        logger.warning(f"  Detalhes failed: {e}")
                     by_key: dict = {}
                     for r in rows:
                         det = detalhes.get(r.get("nr_proposta")) or detalhes.get(r.get("nr_plano"))
@@ -545,7 +539,7 @@ async def _run():
                                 r["nr_plano"] = det["nr_plano_detalhe"]
                         key = r.get("nr_siafi") or r.get("nr_plano") or r.get("nr_proposta")
                         if not key:
-                            all_records.append((db_id, r))
+                            all_records.append((cred["municipio_id"], r))
                             continue
                         if key in by_key:
                             existing = by_key[key]
@@ -555,24 +549,18 @@ async def _run():
                         else:
                             by_key[key] = r
                     for r in by_key.values():
-                        all_records.append((db_id, r))
-                    logger.info(f"    {nome_norm}: {len(by_key)} convenios coletados")
+                        all_records.append((cred["municipio_id"], r))
+                    logger.info(f"  {cred['municipio_nome']}: {len(by_key)} convenios")
+                    try:
+                        emendas = await _scrape_emendas(page, anos_emendas)
+                        for e in emendas:
+                            all_emendas.append((cred["municipio_id"], e))
+                    except Exception as e:
+                        logger.warning(f"  Emendas falharam para {cred['municipio_nome']}: {e}")
                 except Exception as e:
-                    logger.error(f"    Falha {nome_norm}: {str(e)[:150]}")
-
-            # 2) Emendas — a busca "Por Convenente" eh escopada ao login;
-            # so retorna as do municipio da credencial. As emendas dos demais
-            # municipios sao derivadas do objeto dos convenios (emendas_estaduais.py)
-            # + campo responsaveis. Roda 1x p/ o municipio da credencial.
-            try:
-                emendas = await _scrape_emendas(page, anos_emendas)
-                cred_db_id = cred.get("municipio_id")
-                for e in emendas:
-                    all_emendas.append((cred_db_id, e))
-            except Exception as e:
-                logger.warning(f"  Emendas falharam: {e}")
-
-            await ctx.close()
+                    logger.error(f"  Falha {cred['municipio_nome']}: {e}")
+                finally:
+                    await ctx.close()
         finally:
             await browser.close()
 
