@@ -587,6 +587,9 @@ async def _run():
         nr_siafi = rec.get("nr_siafi") or None
         conflict_col = "nr_siafi" if nr_siafi else "nr_sigcon"
         try:
+            # SAVEPOINT por registro: erro em 1 nao descarta os anteriores
+            # (antes, conn.rollback() perdia TODO o batch desde o ultimo commit)
+            cur.execute("SAVEPOINT sp_conv")
             cur.execute(f"""
                 INSERT INTO convenios_estadual (
                     nr_sigcon, nr_siafi, municipio_id, orgao_concedente,
@@ -627,6 +630,7 @@ async def _run():
                 dt_pub_proxy,
             ))
             row = cur.fetchone()
+            cur.execute("RELEASE SAVEPOINT sp_conv")
             is_insert = bool(row and row[0])
             if is_insert:
                 inserted += 1
@@ -634,7 +638,10 @@ async def _run():
                 updated += 1
         except Exception as e:
             logger.warning(f"  Erro UPSERT {nr_sigcon}: {str(e)[:200]}")
-            conn.rollback()
+            try:
+                cur.execute("ROLLBACK TO SAVEPOINT sp_conv")
+            except Exception:
+                conn.rollback()  # fallback se a conexao inteira caiu
             continue
 
     cur.execute(
@@ -652,6 +659,7 @@ async def _run():
         if not nr_ind or not ano_em:
             continue
         try:
+            cur.execute("SAVEPOINT sp_em")
             cur.execute("""
                 INSERT INTO emendas_estaduais (
                     municipio_id, nr_indicacao, nome_responsavel, tipo_indicacao,
@@ -684,13 +692,17 @@ async def _run():
                 json.dumps({**em, "_source": "sigcon_scraper"}, ensure_ascii=False, default=str),
             ))
             row = cur.fetchone()
+            cur.execute("RELEASE SAVEPOINT sp_em")
             if row and row[0]:
                 em_inserted += 1
             else:
                 em_updated += 1
         except Exception as e:
             logger.warning(f"  Erro UPSERT emenda {nr_ind}: {str(e)[:200]}")
-            conn.rollback()
+            try:
+                cur.execute("ROLLBACK TO SAVEPOINT sp_em")
+            except Exception:
+                conn.rollback()
             continue
     conn.commit()
     conn.close()

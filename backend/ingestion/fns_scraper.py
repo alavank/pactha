@@ -161,9 +161,12 @@ class FNSScraper(ScraperBase):
                else "Em analise" if vl_prop > 0
                else "Pendente")
 
-        # nr_proposta sintetico estavel - permite ON CONFLICT
+        # nr_proposta sintetico estavel + hash anti-colisao (alinhado com
+        # run_fns_local.py para que os dois scrapers produzam a MESMA chave)
+        import hashlib
         nu_proc = p.get("nuProcesso") or "NA"
-        nr_proposta = f"FNS-{cod_fns}-{ano}-{tipo[:8]}-{recurso[:6]}-{nu_proc[:8]}".replace(" ", "_")[:50]
+        h = hashlib.md5(json.dumps(p, sort_keys=True, default=str).encode()).hexdigest()[:8]
+        nr_proposta = f"FNS-{cod_fns}-{ano}-{tipo[:8]}-{recurso[:6]}-{nu_proc[:8]}-{h}".replace(" ", "_")[:60]
 
         return {
             "municipio_id": mun_id,
@@ -176,6 +179,7 @@ class FNSScraper(ScraperBase):
             "ano": ano,
             "fonte": "FNS",
             "orgao_concedente": "Min. Saude - FNS",
+            "raw_data": p,  # destrava tela Parlamentares (le raw_data->>'parlamentares' etc)
         }
 
 

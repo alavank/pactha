@@ -190,6 +190,28 @@ def _municipios_pacta() -> list[dict]:
     return out
 
 
+async def _goto_with_retry(page, url: str, max_retries: int = 3, base_delay: float = 0.5,
+                           timeout: int = 30000) -> bool:
+    """goto() com backoff exponencial. True=sucesso, False=falhou.
+    Nao retenta 404/403 (erro permanente). Recupera de 'connection closed',
+    'ERR_NAME_NOT_RESOLVED' e timeouts transitorios."""
+    import random
+    for attempt in range(max_retries):
+        try:
+            await page.goto(url, timeout=timeout, wait_until="domcontentloaded")
+            return True
+        except Exception as e:
+            es = str(e).lower()
+            if "404" in es or "403" in es or "not found" in es:
+                return False
+            if attempt < max_retries - 1:
+                await asyncio.sleep(base_delay * (2 ** attempt) + random.uniform(0, 0.4))
+            else:
+                logger.warning(f"    goto {url[:55]} falhou {max_retries}x: {str(e)[:60]}")
+                return False
+    return False
+
+
 async def _scrape_municipio(page, mun: dict, _retry: int = 0, auth_page=None) -> list[dict]:
     """Consulta rapida por UF + Municipio, retorna lista de propostas.
 
@@ -316,12 +338,17 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, auth_page=None) ->
             logger.info(f"  {mun['nome']}: {n_pend} propostas SEM enrich serao priorizadas")
         except Exception:
             pass
-    for prop in propostas:
+    _tot = len(propostas)
+    _enr = 0
+    for _i, prop in enumerate(propostas, 1):
+        if _i % 10 == 0:
+            logger.info(f"    {mun['nome']}: detalhe {_i}/{_tot} (enriquecidos: {_enr})")
         url = prop.pop("_detalhe_url", None)
         if not url:
             continue
         try:
-            await detail_page.goto(url, timeout=30000, wait_until="domcontentloaded")
+            if not await _goto_with_retry(detail_page, url):
+                continue
             await detail_page.wait_for_timeout(1800)
             det = await _extrai_detalhe(detail_page)
             # Tenta capturar parlamentar (best-effort via texto livre na tela)
@@ -343,19 +370,22 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, auth_page=None) ->
             # (qualquer tipo: Clausula Suspensiva, Liminar Judicial, Pendencia, etc.)
             if sit_det_url:
                 try:
-                    await detail_page.goto(sit_det_url, timeout=40000, wait_until="domcontentloaded")
-                    await detail_page.wait_for_timeout(2000)
-                    sd = await _extrai_situacao_detalhe(detail_page)
-                    if sd:
-                        prop["detalhe"]["_situacao_detalhe"] = {
-                            "_label_botao": _clean(sit_det_label) if sit_det_label else None,
-                            **{_clean(k): _clean(v) if isinstance(v, str) else v
-                               for k, v in sd.items()},
-                        }
+                    if await _goto_with_retry(detail_page, sit_det_url, timeout=40000):
+                        await detail_page.wait_for_timeout(2000)
+                        sd = await _extrai_situacao_detalhe(detail_page)
+                        if sd:
+                            prop["detalhe"]["_situacao_detalhe"] = {
+                                "_label_botao": _clean(sit_det_label) if sit_det_label else None,
+                                **{_clean(k): _clean(v) if isinstance(v, str) else v
+                                   for k, v in sd.items()},
+                            }
                 except Exception as e:
                     logger.warning(f"    situacao_det {prop['numero_proposta']}: {str(e)[:80]}")
+            if det.get("_parlamentar") or prop["detalhe"].get("_situacao_detalhe"):
+                _enr += 1
         except Exception as e:
             logger.warning(f"    detalhe {prop['numero_proposta']}: {str(e)[:80]}")
+    logger.info(f"  {mun['nome']}: enrich concluido — {_enr}/{_tot} propostas enriquecidas")
     return propostas
 
 
