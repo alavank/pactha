@@ -11,18 +11,80 @@ Fluxo:
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 from pydantic import BaseModel
 
 from database import get_db
 from models import CofreSenha, User
-from services.auth import get_current_user
+from services.auth import get_current_user, decode_access, COOKIE_NAME_ACCESS
+from services.service_auth import hash_token, require_scope
+from models.service_token import ServiceToken
 from services import crypto
 from services.audit import log_event
 
 router = APIRouter(prefix="/api/session-capture", tags=["session"])
+
+
+class _CapturePrincipal:
+    """Resultado da autenticacao flexivel: JWT de usuario OU service token.
+    Expoe .user_id (None se service token) e .label para auditoria."""
+    def __init__(self, user_id: Optional[int], label: str, via: str):
+        self.user_id = user_id
+        self.label = label
+        self.via = via  # 'jwt' | 'service_token'
+
+
+async def get_capture_principal(
+    request: Request,
+    x_service_token: Optional[str] = Header(None, alias="X-Service-Token"),
+    db: AsyncSession = Depends(get_db),
+) -> _CapturePrincipal:
+    """Aceita DOIS modos de auth para captura de sessao:
+
+    1. X-Service-Token (extensao Chrome) — token LONGEVO com scope
+       'session:write'. Resolve o problema do JWT de 60min que fazia a
+       auto-captura da extensao morrer silenciosamente apos 1h.
+    2. Authorization Bearer / cookie JWT (usuario logado no PACTA web).
+
+    Tenta service token primeiro; se ausente, cai pro JWT.
+    """
+    # Modo 1: service token (preferido pela extensao — nao expira em 60min)
+    if x_service_token and len(x_service_token) >= 32:
+        th = hash_token(x_service_token)
+        res = await db.execute(select(ServiceToken).where(ServiceToken.token_hash == th))
+        tok = res.scalar_one_or_none()
+        if not tok or not tok.active:
+            raise HTTPException(401, "Service token invalido ou revogado")
+        if tok.expires_at and tok.expires_at < datetime.now(timezone.utc):
+            raise HTTPException(401, "Service token expirado")
+        require_scope(tok, "session:write")
+        tok.last_used_at = datetime.now(timezone.utc)
+        if request.client:
+            tok.last_used_ip = request.client.host
+        await db.commit()
+        return _CapturePrincipal(user_id=None, label=f"service:{tok.name}", via="service_token")
+
+    # Modo 2: JWT de usuario (web app) — aceita Bearer header OU cookie
+    token = None
+    auth_h = request.headers.get("Authorization") or ""
+    if auth_h.lower().startswith("bearer "):
+        token = auth_h[7:].strip()
+    if not token:
+        token = request.cookies.get(COOKIE_NAME_ACCESS)
+    if not token:
+        raise HTTPException(401, "Nao autenticado (sem service token nem JWT)")
+    try:
+        payload = decode_access(token)
+        uid = int(payload.get("sub"))
+    except Exception:
+        raise HTTPException(401, "JWT invalido ou expirado")
+    res = await db.execute(select(User).where(User.id == uid))
+    user = res.scalar_one_or_none()
+    if not user:
+        raise HTTPException(401, "Usuario nao encontrado")
+    return _CapturePrincipal(user_id=user.id, label=f"user:{user.email}", via="jwt")
 
 
 class CookieFull(BaseModel):
@@ -51,9 +113,10 @@ async def capture_session(
     payload: CapturedSession,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: _CapturePrincipal = Depends(get_capture_principal),
 ):
-    """Salva cookie de sessao capturado pelo bookmarklet no Cofre."""
+    """Salva cookie de sessao capturado pelo bookmarklet/extensao no Cofre.
+    Auth: service token longevo (extensao) OU JWT de usuario (web)."""
     if not payload.cookie or len(payload.cookie) < 10:
         raise HTTPException(status_code=400, detail="Cookie vazio ou invalido")
 
@@ -96,7 +159,7 @@ async def capture_session(
         # Atualiza observacao + senha (com cookie cifrado)
         item.senha_encrypted = crypto.encrypt(storage_payload)
         item.observacao = obs
-        item.atualizado_por_id = user.id
+        item.atualizado_por_id = principal.user_id
         await db.commit()
         action = "session.update"
     else:
@@ -110,7 +173,7 @@ async def capture_session(
             observacao=obs,
             categoria="Sessao",
             automation_key=payload.automation_key,
-            atualizado_por_id=user.id,
+            atualizado_por_id=principal.user_id,
         )
         db.add(item)
         await db.commit()
@@ -118,12 +181,14 @@ async def capture_session(
         action = "session.create"
 
     await log_event(
-        db, action=action, user=user, request=request,
+        db, action=action, user=None, request=request,
         target_type="cofre_session", target_id=item.id,
         details={
             "automation_key": payload.automation_key,
             "municipio_id": payload.municipio_id,
             "cookie_size": len(cookie_clean),
+            "auth_via": principal.via,
+            "principal": principal.label,
         },
     )
 

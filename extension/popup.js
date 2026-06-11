@@ -112,9 +112,13 @@ async function captureManual() {
     domain_capturado: host,
   };
   try {
+    const isServiceToken = cfg.token.startsWith("pacta_");
+    const authHeaders = isServiceToken
+      ? { "X-Service-Token": cfg.token }
+      : { Authorization: `Bearer ${cfg.token}` };
     const res = await fetch(`${cfg.api}/session-capture`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${cfg.token}` },
+      headers: { "Content-Type": "application/json", ...authHeaders },
       body: JSON.stringify(payload),
     });
     if (res.status === 401) { showStatus("Token PACTA invalido. Reconfigure.", "error"); return; }

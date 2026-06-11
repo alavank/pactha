@@ -170,12 +170,15 @@ async function capture(host, reason) {
   };
 
   try {
+    // Token longevo (service token, prefixo 'pacta_') vai como X-Service-Token
+    // — NAO expira em 60min como o JWT. JWT antigo ainda funciona via Bearer.
+    const isServiceToken = cfg.token.startsWith("pacta_");
+    const authHeaders = isServiceToken
+      ? { "X-Service-Token": cfg.token }
+      : { Authorization: `Bearer ${cfg.token}` };
     const res = await fetch(`${cfg.api}/session-capture`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${cfg.token}`,
-      },
+      headers: { "Content-Type": "application/json", ...authHeaders },
       body: JSON.stringify(payload),
     });
     if (res.ok) {
