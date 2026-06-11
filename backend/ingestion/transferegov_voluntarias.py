@@ -21,6 +21,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import sys
 import unicodedata
 
@@ -220,16 +221,20 @@ async def _goto_with_retry(page, url: str, max_retries: int = 3, base_delay: flo
     return False
 
 
-async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = False) -> list[dict]:
+async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = False,
+                            page_auth=None) -> list[dict]:
     """Consulta por UF + Municipio, retorna lista de propostas COM detalhe.
 
-    page    = pagina onde roda listagem E detalhe (mesma sessao).
-    is_auth = True quando 'page' tem cookies SSO validos. Nesse caso usa a
-              entrada AUTENTICADA (ENTRY_AUTH) — a listagem gera links de
-              detalhe LOGADOS, que renderizam o botao "Detalhar Clausula
-              Suspensiva" e os campos gated (parlamentar). Guest usa ENTRY.
+    page      = pagina GUEST (sem cookies) p/ listagem+detalhe via Acesso Livre.
+                A listagem SO funciona em guest: com cookies de sessao, o
+                ForwardAction redireciona p/ a consulta do convenente (sem o
+                form ufAcessoLivre) e a listagem falha.
+    page_auth = pagina AUTENTICADA (com cookies gov.br) p/ abrir o INSTRUMENTO
+                e capturar o detalhe da Clausula Suspensiva (motivo + data).
+                None = sem sessao -> captura so o status, sem motivo/data.
+    is_auth   = mantido por compat; nao altera mais a entrada (sempre guest).
     """
-    entry = ENTRY_AUTH if is_auth else ENTRY
+    entry = ENTRY  # listagem SEMPRE via Acesso Livre (guest)
     await page.goto(entry, timeout=60000, wait_until="domcontentloaded")
     await page.wait_for_timeout(6000 + _retry * 4000)  # SAML auto-submits (mais tempo no retry)
 
@@ -240,7 +245,8 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
     except Exception:
         if _retry < 2:
             logger.warning(f"  {mun['nome']}: select UF ausente, retry {_retry+1}")
-            return await _scrape_municipio(page, mun, _retry + 1, is_auth=is_auth)
+            return await _scrape_municipio(page, mun, _retry + 1, is_auth=is_auth,
+                                           page_auth=page_auth)
         logger.warning(f"  {mun['nome']}: select UF nao encontrado apos retries (sessao falhou)")
         return []
     await page.wait_for_timeout(3500)  # carrega municipios via ajax
@@ -337,7 +343,7 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
     # Suspensiva + campos gated (parlamentar).
     # OTIMIZACAO: quando auth, prioriza propostas SEM enrich (janela curta).
     detail_page = page
-    if is_auth:
+    if page_auth is not None:
         try:
             _ja_enriquecidos = _propostas_ja_enriquecidas(mun["id"])
             propostas.sort(key=lambda p: 0 if p["numero_proposta"] not in _ja_enriquecidos else 1)
@@ -365,37 +371,33 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
                     det["_parlamentar"] = parl
             except Exception:
                 pass
-            sit_det_url = det.pop("_situacao_det_url", None)
-            sit_det_label = det.pop("_situacao_det_label", None)
+            det.pop("_situacao_det_url", None)
+            det.pop("_situacao_det_label", None)
             # Limpa U+FFFD de chaves e valores
             prop["detalhe"] = {
                 _clean(k): (_clean(v) if isinstance(v, str)
                             else [_clean(x) for x in v] if isinstance(v, list) else v)
                 for k, v in (det or {}).items()
             }
-            # Detalhe da Situacao de Contratacao Atual (Clausula Suspensiva,
-            # Liminar Judicial, Pendencia, etc).
-            # 1) CLICA no botao (JSF/Struts = submit com estado; GET direto da 401).
-            # 2) fallback: se houver URL http real (nao-javascript), tenta goto.
-            sd = None
-            try:
-                sd = await _abrir_situacao_via_click(detail_page)
-            except Exception as e:
-                logger.warning(f"    clausula_click {prop['numero_proposta']}: {str(e)[:80]}")
-            if not sd and sit_det_url and sit_det_url.lower().startswith("http") \
-                    and "javascript" not in sit_det_url.lower():
-                try:
-                    if await _goto_with_retry(detail_page, sit_det_url, timeout=40000):
-                        await detail_page.wait_for_timeout(2000)
-                        sd = await _extrai_situacao_detalhe(detail_page)
-                except Exception as e:
-                    logger.warning(f"    situacao_det {prop['numero_proposta']}: {str(e)[:80]}")
-            if sd:
-                prop["detalhe"]["_situacao_detalhe"] = {
-                    "_label_botao": _clean(sit_det_label) if sit_det_label else None,
-                    **{_clean(k): _clean(v) if isinstance(v, str) else v
-                       for k, v in sd.items()},
-                }
+            # Detalhe da Clausula Suspensiva / Liminar Judicial (motivo + data
+            # prevista). So existe quando a Situacao de Contratacao e clausula/
+            # liminar E ha sessao autenticada com acesso ao instrumento. O botao
+            # NAO fica na pagina da proposta — fica no INSTRUMENTO. Por isso
+            # navegamos proposta->instrumento->Detalhar na page_auth (cookies).
+            _sit = (prop["detalhe"].get("Situação de Contratação Atual")
+                    or prop.get("situacao") or "")
+            if page_auth is not None and _RE_CLAUSULA.search(_sit):
+                _idp = _id_proposta_from_url(url)
+                if _idp:
+                    try:
+                        sd = await _extrai_clausula_via_instrumento(page_auth, _idp)
+                        if sd:
+                            prop["detalhe"]["_situacao_detalhe"] = {
+                                _clean(k): _clean(v) if isinstance(v, str) else v
+                                for k, v in sd.items()
+                            }
+                    except Exception as e:
+                        logger.warning(f"    clausula {prop['numero_proposta']}: {str(e)[:90]}")
             if det.get("_parlamentar") or prop["detalhe"].get("_situacao_detalhe"):
                 _enr += 1
         except Exception as e:
@@ -427,66 +429,77 @@ async def _extrai_situacao_detalhe(page) -> dict:
     }""")
 
 
-async def _abrir_situacao_via_click(page) -> dict | None:
-    """Abre o detalhe da Situacao de Contratacao (Clausula Suspensiva / Liminar
-    Judicial / etc) CLICANDO no botao — e nao via GET na URL.
+_RE_CLAUSULA = re.compile(r"cl[áa]usula|suspensiv|liminar", re.I)
 
-    POR QUE CLICAR: o "Detalhar Clausula Suspensiva" e um submit JSF/Struts que
-    depende do estado da sessao (ViewState/flash). Um GET direto na URL extraida
-    do onclick retorna 401 (era exatamente o que falhava). Clicar dispara o
-    submit com o estado correto e renderiza a tela moderna
-    /voluntarias/br/gov/mp/siconv/uc/execucao/detalharClausulaSuspensiva/.
+# Botao "Detalhar Clausula Suspensiva/Liminar Judicial" na tela do INSTRUMENTO
+# (EditarDadosProposta.do). E um submit Struts (setaAcao(...)), gated pela
+# funcionalidade EXECUCAO_DETALHAR_CLAUSULA_SUSPENSIVA -> so renderiza logado.
+_CLAUSULA_BTN_SELECTORS = [
+    "css=input[name='editarDadosPropostaDetalharPropostaDetalharClausulaSuspensivaForm']",
+    "css=input[onclick*='DetalharClausulaSuspensiva' i]",
+    "css=input[onclick*='ClausulaSuspensiva' i], a[onclick*='ClausulaSuspensiva' i]",
+    "xpath=//input[contains(@value,'etalhar') and (contains(@value,'láusula') "
+    "or contains(@value,'uspensiva') or contains(@value,'iminar'))]",
+]
 
-    Trata os dois comportamentos: (a) navega na MESMA pagina; (b) abre POPUP."""
-    selectors = [
-        # 1) onclick/href apontando ao detalhe da clausula/liminar
-        "css=a[onclick*='ClausulaSuspensiva' i], a[onclick*='clausulaSuspensiva' i], "
-        "a[onclick*='LiminarJudicial' i], a[href*='detalharClausulaSuspensiva' i], "
-        "input[onclick*='ClausulaSuspensiva' i], input[onclick*='LiminarJudicial' i]",
-        # 2) texto/value "Detalhar ... Clausula/Suspensiva/Liminar"
-        "xpath=//a[contains(translate(.,'CLÁUSULASUPENVIRMJD','cláusulasupenvirmjd'),'clá') "
-        "or contains(translate(.,'SUSPENSIVA','suspensiva'),'suspensiva') "
-        "or contains(translate(.,'LIMINAR','liminar'),'liminar')]"
-        "[contains(translate(.,'DETALHAR','detalhar'),'detalhar')]",
-        "xpath=//input[(contains(@value,'láusula') or contains(@value,'uspensiva') "
-        "or contains(@value,'iminar')) and contains(@value,'etalhar')]",
-    ]
-    loc = None
-    for sel in selectors:
+
+def _id_proposta_from_url(url: str) -> str | None:
+    """Extrai idProposta=NNN da URL de detalhe (guest) p/ navegar o instrumento."""
+    if not url:
+        return None
+    m = re.search(r"[?&]idProposta=(\d+)", url)
+    return m.group(1) if m else None
+
+
+async def _extrai_clausula_via_instrumento(page_auth, id_proposta: str) -> dict | None:
+    """Captura motivo + data prevista da Clausula Suspensiva (ou Liminar).
+
+    FLUXO CONFIRMADO ao vivo (sessao gov.br viva + conta com acesso ao
+    instrumento). O botao NAO existe na pagina de detalhe da proposta — fica na
+    tela do INSTRUMENTO:
+      1) ResultadoDaConsultaDePropostaDetalharProposta.do?idProposta=ID  (seta contexto)
+      2) ForwardAction.do ... MostraPrincipalEditarDadosProposta.do      (abre instrumento)
+      3) clica 'Detalhar Clausula Suspensiva/Liminar Judicial' (submit Struts setaAcao)
+      4) le os pares label:valor de /voluntarias/execucao/DetalharClausulaSuspensiva
+
+    Retorna {'Situacao Atual do Contrato':..., 'Data prevista...':..., 'Motivo...':...}
+    ou None (conta sem acesso ao instrumento, ou instrumento sem clausula)."""
+    base = "https://discricionarias.transferegov.sistema.gov.br/voluntarias"
+    det_url = (f"{base}/ConsultarProposta/ResultadoDaConsultaDePropostaDetalharProposta.do"
+               f"?idProposta={id_proposta}&")
+    fwd_url = (f"{base}/ForwardAction.do?modulo=Principal"
+               f"&path=/MostraPrincipalEditarDadosProposta.do")
+    if not await _goto_with_retry(page_auth, det_url, timeout=40000):
+        return None
+    await page_auth.wait_for_timeout(1500)
+    if not await _goto_with_retry(page_auth, fwd_url, timeout=40000):
+        return None
+    await page_auth.wait_for_timeout(3500)
+    btn = None
+    for sel in _CLAUSULA_BTN_SELECTORS:
         try:
-            cand = page.locator(sel).first
+            cand = page_auth.locator(sel).first
             if await cand.count() > 0:
-                loc = cand
+                btn = cand
                 break
         except Exception:
             continue
-    if loc is None:
+    if btn is None:
         return None
-    target = page
-    popup = None
     try:
-        # o clique pode abrir popup OU navegar/AJAX na mesma pagina
-        async with page.context.expect_page(timeout=4000) as pinfo:
-            await loc.click(timeout=8000)
-        popup = await pinfo.value
-        target = popup
-        await target.wait_for_load_state("domcontentloaded", timeout=30000)
-    except Exception:
-        # sem popup: clicou e navegou (ou fez AJAX) na propria pagina
+        await btn.click(timeout=8000)
+        # submit Struts navega na MESMA pagina -> espera a tela de execucao
         try:
-            await page.wait_for_load_state("networkidle", timeout=15000)
+            await page_auth.wait_for_url("**/DetalharClausulaSuspensiva**", timeout=15000)
         except Exception:
-            pass
-        target = page
-    await target.wait_for_timeout(2000)
-    try:
-        sd = await _extrai_situacao_detalhe(target)
-    finally:
-        if popup is not None:
             try:
-                await popup.close()
+                await page_auth.wait_for_load_state("networkidle", timeout=12000)
             except Exception:
                 pass
+        await page_auth.wait_for_timeout(1500)
+    except Exception:
+        return None
+    sd = await _extrai_situacao_detalhe(page_auth)
     return sd or None
 
 
@@ -862,12 +875,10 @@ async def run():
             logger.info("  sem sessao gov.br valida, detalhes em guest")
         for mun in municipios:
             try:
-                # Com sessao viva: lista+detalha autenticado (pega clausula
-                # suspensiva). Senao: guest (so base, sem botao Detalhar).
-                if page_auth:
-                    props = await _scrape_municipio(page_auth, mun, is_auth=True)
-                else:
-                    props = await _scrape_municipio(page_guest, mun, is_auth=False)
+                # Listagem SEMPRE guest (Acesso Livre). Com sessao viva, o
+                # detalhe da Clausula Suspensiva (motivo+data) e capturado via
+                # page_auth navegando o instrumento. Sem sessao: so o status.
+                props = await _scrape_municipio(page_guest, mun, page_auth=page_auth)
                 n = _upsert(mun["id"], props)
                 logger.info(f"  {mun['nome']}: {len(props)} propostas -> {n} upsert")
                 total += n
@@ -934,10 +945,7 @@ async def run_one(municipio_id: int):
             page_auth = await ctx_auth.new_page()
             logger.info(f"  contexto AUTH criado com {len(govbr_cks)} cookies SSO")
         try:
-            if page_auth:
-                props = await _scrape_municipio(page_auth, mun, is_auth=True)
-            else:
-                props = await _scrape_municipio(page_guest, mun, is_auth=False)
+            props = await _scrape_municipio(page_guest, mun, page_auth=page_auth)
             n = _upsert(mun["id"], props)
             logger.info(f"{mun['nome']}: {len(props)} propostas -> {n} upsert")
             com_parl = sum(1 for p in props if (p.get("detalhe") or {}).get("_parlamentar"))
