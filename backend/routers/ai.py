@@ -59,6 +59,12 @@ FONTES DE DADOS:
     * `rejeitadas`: status com "Rejeitad"
     * `geral`: o restante (Em execucao, Aprovados, Prestacao de Contas, etc.)
   Use `query_voluntarias`.
+  * **Situacao de Contratacao** (Normal / Clausula Suspensiva / Liminar Judicial) e um
+    campo FEDERAL das Voluntarias. Para "quais estao em clausula suspensiva/liminar",
+    chame `query_voluntarias` com `situacao_contratacao` e SEM `municipio_id` (busca
+    os 6 de uma vez, 1 chamada so). A resposta ja traz Empenhado (Sim/Nao) e, na
+    clausula, o Motivo + Data prevista para resolucao. NUNCA use query_situacoes_sigcon
+    para isso (aquilo e estadual e nao tem clausula suspensiva).
 - **SIMEC PAR (MEC)**: liberacoes federais de PNAE, PNATE, QUOTA Salario-Educacao,
   PDDE. Tambem tem sintese do diagnostico do PAR por dimensao.
   Use `query_simec_liberacoes` ou `query_simec_dimensoes`.
@@ -135,17 +141,18 @@ TOOLS = [
     },
     {
         "name": "query_voluntarias",
-        "description": "Busca propostas SICONV (federal) do municipio. Categorias: geral (em execucao/aprovados/prestacao de contas), voluntarias (enviado para analise), rejeitadas. Inclui orgao, situacao, valores (global/repasse/contrapartida), vigencia, parlamentar autor.",
+        "description": "Busca propostas/convenios SICONV (FEDERAL) das Voluntarias. municipio_id e OPCIONAL — sem ele busca nos 6 municipios de uma vez (ideal p/ 'quais em clausula suspensiva'). Categorias: geral (em execucao/aprovados/prestacao), voluntarias (enviado p/ analise), rejeitadas. Retorna orgao, situacao, valores, vigencia, parlamentar, Empenhado (Sim/Nao) e, quando aplicavel, Situacao de Contratacao + Motivo/Data da Clausula Suspensiva. Use situacao_contratacao p/ filtrar 'Clausula Suspensiva' ou 'Liminar Judicial' (isso e FEDERAL — NAO use query_situacoes_sigcon).",
         "input_schema": {
             "type": "object",
             "properties": {
-                "municipio_id": {"type": "integer"},
+                "municipio_id": {"type": "integer", "description": "Opcional. Sem ele, busca nos 6 municipios."},
                 "categoria": {"type": "string", "enum": ["geral", "voluntarias", "rejeitadas"], "description": "Categoria (omite para todas)"},
+                "situacao_contratacao": {"type": "string", "description": "Filtra a situacao de contratacao (ex: 'Clausula Suspensiva', 'Liminar Judicial', 'Normal'). Busca parcial."},
                 "search": {"type": "string", "description": "Busca em n° proposta ou proponente"},
                 "parlamentar": {"type": "string", "description": "Nome do parlamentar autor da indicacao (busca parcial)"},
-                "limit": {"type": "integer", "description": "Max resultados (default 30, max 100)"},
+                "limit": {"type": "integer", "description": "Max resultados (default 50, max 200)"},
             },
-            "required": ["municipio_id"],
+            "required": [],
         },
     },
     {
@@ -381,45 +388,68 @@ async def _tool_query_convenios_sigcon(db: AsyncSession, inp: dict) -> str:
 
 
 async def _tool_query_voluntarias(db: AsyncSession, inp: dict) -> str:
-    mun_id = int(inp["municipio_id"])
-    where = ["municipio_id = :m"]
-    params: dict = {"m": mun_id}
+    where: list[str] = []
+    params: dict = {}
+    mun_id = inp.get("municipio_id")
+    if mun_id:
+        where.append("v.municipio_id = :m"); params["m"] = int(mun_id)
     categoria = inp.get("categoria")
     if categoria == "voluntarias":
-        where.append("situacao ILIKE :vp"); params["vp"] = _VOL_LIKE
+        where.append("v.situacao ILIKE :vp"); params["vp"] = _VOL_LIKE
     elif categoria == "rejeitadas":
-        where.append("situacao ILIKE :rp"); params["rp"] = _REJ_LIKE
+        where.append("v.situacao ILIKE :rp"); params["rp"] = _REJ_LIKE
     elif categoria == "geral":
-        where.append("(situacao IS NULL OR (situacao NOT ILIKE :vp AND situacao NOT ILIKE :rp))")
+        where.append("(v.situacao IS NULL OR (v.situacao NOT ILIKE :vp AND v.situacao NOT ILIKE :rp))")
         params["vp"] = _VOL_LIKE; params["rp"] = _REJ_LIKE
     if inp.get("search"):
-        where.append("(numero_proposta ILIKE :s OR proponente ILIKE :s)"); params["s"] = f"%{inp['search']}%"
+        where.append("(v.numero_proposta ILIKE :s OR v.proponente ILIKE :s)"); params["s"] = f"%{inp['search']}%"
     if inp.get("parlamentar"):
-        where.append("parlamentar ILIKE :parl"); params["parl"] = f"%{inp['parlamentar']}%"
-    limit = min(int(inp.get("limit", 30)), 100)
+        where.append("v.parlamentar ILIKE :parl"); params["parl"] = f"%{inp['parlamentar']}%"
+    if inp.get("situacao_contratacao"):
+        where.append("v.situacao_contratacao ILIKE :sc"); params["sc"] = f"%{inp['situacao_contratacao']}%"
+    limit = min(int(inp.get("limit", 50)), 200)
+    where_sql = (" WHERE " + " AND ".join(where)) if where else ""
     sql = f"""
-        SELECT numero_proposta, situacao, orgao, objeto, dt_fim_vigencia,
-               valor_global, valor_repasse, valor_contrapartida, codigo_instrumento,
-               parlamentar, situacao_contratacao
-        FROM transferegov_propostas WHERE {' AND '.join(where)}
-        ORDER BY numero_proposta DESC LIMIT {limit}
+        SELECT v.numero_proposta, v.situacao, v.orgao, v.objeto, v.dt_fim_vigencia,
+               v.valor_global, v.valor_repasse, v.valor_contrapartida, v.codigo_instrumento,
+               v.parlamentar, v.situacao_contratacao, v.clausula_suspensiva_motivo,
+               v.clausula_suspensiva_dt_prevista, v.detalhe->>'Empenhado',
+               (SELECT nome FROM municipios WHERE id = v.municipio_id) AS mun
+        FROM transferegov_propostas v{where_sql}
+        ORDER BY v.municipio_id, v.numero_proposta DESC LIMIT {limit}
     """
     r = await db.execute(text(sql), params)
     rows = r.fetchall()
+    escopo = f"municipio_id={mun_id}" if mun_id else "TODOS os 6 municipios"
     if not rows:
-        return f"Nenhuma proposta SICONV encontrada (categoria={categoria or 'todas'})."
-    out = [f"{len(rows)} proposta(s) SICONV (categoria={categoria or 'todas'}):"]
+        return f"Nenhuma proposta SICONV encontrada ({escopo}, categoria={categoria or 'todas'})."
+    out = [f"{len(rows)} proposta(s) SICONV ({escopo}, categoria={categoria or 'todas'}):"]
     for row in rows:
+        empenhado = (row[13] or "").strip()
+        empenhado = {"sim": "Sim", "não": "Não", "nao": "Não"}.get(empenhado.lower(), empenhado)
         extra = []
-        if row[9]:  # parlamentar
+        if not mun_id and row[14]:
+            extra.append(f"Municipio: {row[14]}")
+        if row[9]:
             extra.append(f"Parlamentar: {row[9]}")
-        if row[10]:  # situacao_contratacao
+        if empenhado:
+            extra.append(f"Empenhado: {empenhado}")
+        if row[10]:
             extra.append(f"Sit. Contratacao: {row[10]}")
         extra_txt = ("\n  " + " | ".join(extra)) if extra else ""
+        # Detalhe da clausula suspensiva (motivo + data prevista), quando houver
+        clausula_txt = ""
+        if row[11] or row[12]:
+            partes = []
+            if row[12]:
+                partes.append(f"Data prevista p/ resolucao: {_fmt_dt(row[12])}")
+            if row[11]:
+                partes.append(f"Motivo: {row[11]}")
+            clausula_txt = "\n  Clausula Suspensiva -> " + " | ".join(partes)
         out.append(
             f"- N° proposta: {row[0]}{' / Instrumento ' + row[8] if row[8] else ''}\n"
             f"  Orgao: {row[2]}\n"
-            f"  Situacao: {row[1]}{extra_txt}\n"
+            f"  Situacao: {row[1]}{extra_txt}{clausula_txt}\n"
             f"  Objeto: {(row[3] or '')[:180]}\n"
             f"  Valores: global {_fmt_money(row[5])} / repasse {_fmt_money(row[6])} / contrap {_fmt_money(row[7])}\n"
             f"  Fim vigencia: {row[4] or '-'}"

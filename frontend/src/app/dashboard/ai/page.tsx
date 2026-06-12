@@ -62,6 +62,9 @@ export default function AiChatPage() {
           message: msg.trim(),
           municipio_id: municipioId ? Number(municipioId) : null,
           history: messages.map((m) => ({ role: m.role, content: m.content })),
+        }, {
+          // a IA pode consultar varias fontes; da folga (a resposta tipica < 40s)
+          timeout: 180000,
         });
         setMessages([
           ...next,
@@ -85,6 +88,10 @@ export default function AiChatPage() {
           const detail = err.response.data?.detail;
           const detailStr = typeof detail === "string" ? detail : detail ? JSON.stringify(detail).slice(0, 300) : "";
           msg = `HTTP ${status} ${err.response.statusText || ""}${detailStr ? ` - ${detailStr}` : ""}`;
+        } else if (err.code === "ECONNABORTED") {
+          msg = "A IA demorou demais para responder. Tente uma pergunta mais específica (ex.: filtre por município) e tente de novo.";
+        } else if (err.code === "ERR_NETWORK") {
+          msg = "Falha de conexão com a IA — a resposta pode ter demorado ou o servidor estava reiniciando. Aguarde alguns segundos e tente novamente.";
         } else if (err.message) {
           msg = `${err.code || "Network"}: ${err.message}`;
         }
