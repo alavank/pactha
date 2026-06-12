@@ -146,7 +146,8 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int) -> dict:
         SELECT id, numero_proposta, codigo_instrumento, situacao, orgao, objeto,
                dt_fim_vigencia, valor_global, valor_repasse, valor_contrapartida,
                situacao_contratacao, clausula_suspensiva_dt_prevista,
-               clausula_suspensiva_motivo, parlamentar, situacao_contratacao_detalhe
+               clausula_suspensiva_motivo, parlamentar, situacao_contratacao_detalhe,
+               detalhe->>'Empenhado'
         FROM transferegov_propostas WHERE municipio_id = :m
     """), {"m": municipio_id})
     for row in vol.fetchall():
@@ -164,18 +165,13 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int) -> dict:
         # TransfereGov/SICONV => federal => PARTE 1 (ou PARTE 3 se prestacao)
         parte = _classifica_parte("federal", sit, dt_fim)
         orgao = (row[4] or "Outros - Federal").strip()
-        # Monta narrativa de Situação Atual incluindo situacao_contratacao + detalhe generico
+        # Campos SEPARADOS (sem duplicar): situacao do ciclo, contratacao,
+        # detalhe da clausula (motivo/data) e empenho — cada um no seu campo.
         situacao_contr = row[10]
-        sit_det = row[14] if isinstance(row[14], dict) else None
-        narrativa_parts = [sit] if sit else []
-        if situacao_contr:
-            narrativa_parts.append(f"Situação de Contratação: {situacao_contr}.")
-        if sit_det:
-            for k, v in sit_det.items():
-                if k.startswith("_") or not v or not isinstance(v, str):
-                    continue
-                narrativa_parts.append(f"{k}: {v}.")
-        situacao_atual = " ".join(narrativa_parts)
+        clausula_dt = row[11]
+        clausula_motivo = row[12]
+        empenhado_raw = (row[15] or "").strip().lower()
+        empenhado = {"sim": "Sim", "não": "Não", "nao": "Não"}.get(empenhado_raw, "")
         add_item(parte, "INSTRUMENTOS DE REPASSE FEDERAIS", orgao, {
             "tipo": tipo_label,
             "numero": row[2] or row[1],
@@ -187,9 +183,11 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int) -> dict:
             "banco": "", "agencia": "", "conta": "",
             "saldo_bancario": None, "dt_saldo": None,
             "dt_fim_vigencia": _iso(dt_fim),
-            "situacao_atual": situacao_atual,
+            "situacao_atual": sit,  # status do ciclo (ex.: "Em execução") — sem narrativa
+            "empenhado": empenhado,
             "situacao_contratacao": situacao_contr or "",
-            "situacao_contratacao_detalhe": sit_det or {},
+            "clausula_motivo": clausula_motivo or "",
+            "clausula_dt": _iso(clausula_dt) if clausula_dt else "",
             "fonte": "voluntaria",
             "fonte_ref": row[1],
         })
