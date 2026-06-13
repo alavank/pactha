@@ -6,7 +6,7 @@
   },
   "deploy": {
     "restartPolicyType": "NEVER",
-    "startCommand": "python -u ingestion/govbr_keepalive.py --once",
-    "cronSchedule": "*/5 * * * *"
+    "startCommand": "python -u ingestion/govbr_renew.py",
+    "cronSchedule": "*/15 * * * *"
   }
 }

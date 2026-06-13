@@ -231,11 +231,9 @@ def cycle() -> str:
                 pass
         if authed:
             _mark_alive(cofre_id)
-            _clear_dead_alert()  # rearma o alerta p/ a proxima morte
             log.info("sessao VIVA ✓ — timer resetado")
             return "alive"
         log.warning("sessao MORTA/guest — precisa re-captura via extensao (gov.br)")
-        _alert_session_dead()  # avisa no Telegram (dedup 6h)
         return "dead"
 
 
