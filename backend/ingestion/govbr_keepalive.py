@@ -30,6 +30,7 @@ import sys
 import json
 import time
 import logging
+from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -140,6 +141,71 @@ def _mark_alive(cofre_id: int):
         log.warning(f"_mark_alive: {e}")
 
 
+_TG_API = "https://api.telegram.org/bot{tok}/sendMessage"
+_ALERT_COOLDOWN_H = 6  # nao repete o alerta de sessao morta por X horas
+
+
+def _alert_session_dead():
+    """Avisa via Telegram que a sessao gov.br EXPIROU — no maximo 1x a cada
+    _ALERT_COOLDOWN_H horas (dedup persistente em automation_kv, pois cada ciclo
+    roda em container efemero). Best-effort: nunca quebra o keep-alive.
+
+    Por que existe: o login gov.br tem reCAPTCHA e NAO pode ser re-feito
+    automaticamente. Quando a sessao expira (teto duro do SSO), so a re-captura
+    manual resolve — entao o minimo e AVISAR na hora, pra re-captura ser rapida."""
+    tok = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+    if not tok:
+        return
+    try:
+        conn = psycopg2.connect(_sync_url(), connect_timeout=10)
+        cur = conn.cursor()
+        cur.execute("CREATE TABLE IF NOT EXISTS automation_kv "
+                    "(k text PRIMARY KEY, v text, updated_at timestamptz DEFAULT now())")
+        cur.execute("SELECT updated_at FROM automation_kv WHERE k='govbr_dead_alert'")
+        row = cur.fetchone()
+        if row and row[0] and (datetime.now(timezone.utc) - row[0]).total_seconds() < _ALERT_COOLDOWN_H * 3600:
+            cur.close(); conn.close(); return  # ja avisou ha pouco
+        cur.execute("SELECT chat_id FROM telegram_users")
+        chats = [r[0] for r in cur.fetchall()]
+        # marca ANTES de enviar (evita repetir se o envio demorar/repetir o ciclo)
+        cur.execute("INSERT INTO automation_kv (k,v,updated_at) VALUES ('govbr_dead_alert','dead',now()) "
+                    "ON CONFLICT (k) DO UPDATE SET v='dead', updated_at=now()")
+        conn.commit(); cur.close(); conn.close()
+    except Exception as e:
+        log.warning(f"_alert dedup: {str(e)[:80]}")
+        return
+    if not chats:
+        log.info("sessao morta mas nenhum chat Telegram registrado p/ avisar")
+        return
+    msg = ("⚠️ *PACTA* — a sessão gov.br/TransfereGov *expirou*.\n\n"
+           "Os dados *federais* (TransfereGov + cláusula suspensiva) não atualizam "
+           "sozinhos até você *recapturar* a sessão pela extensão do navegador.\n\n"
+           "_Estadual (SIGCON/Emendas) e Saúde (FNS) seguem atualizando normalmente._")
+    sent = 0
+    for cid in chats:
+        try:
+            httpx.post(_TG_API.format(tok=tok),
+                       json={"chat_id": cid, "text": msg, "parse_mode": "Markdown",
+                             "disable_web_page_preview": True}, timeout=20)
+            sent += 1
+        except Exception as e:
+            log.warning(f"_alert send {cid}: {str(e)[:60]}")
+    log.info(f"alerta de sessao morta enviado p/ {sent} chat(s) Telegram")
+
+
+def _clear_dead_alert():
+    """Rearma o alerta quando a sessao volta a ficar viva (apaga o marcador)."""
+    try:
+        conn = psycopg2.connect(_sync_url(), connect_timeout=10)
+        cur = conn.cursor()
+        cur.execute("CREATE TABLE IF NOT EXISTS automation_kv "
+                    "(k text PRIMARY KEY, v text, updated_at timestamptz DEFAULT now())")
+        cur.execute("DELETE FROM automation_kv WHERE k='govbr_dead_alert'")
+        conn.commit(); cur.close(); conn.close()
+    except Exception:
+        pass
+
+
 def cycle() -> str:
     """Um ciclo de keep-alive. Retorna 'alive' | 'dead' | 'no_session'."""
     cofre_id, data = _load_govbr()
@@ -165,9 +231,11 @@ def cycle() -> str:
                 pass
         if authed:
             _mark_alive(cofre_id)
+            _clear_dead_alert()  # rearma o alerta p/ a proxima morte
             log.info("sessao VIVA ✓ — timer resetado")
             return "alive"
         log.warning("sessao MORTA/guest — precisa re-captura via extensao (gov.br)")
+        _alert_session_dead()  # avisa no Telegram (dedup 6h)
         return "dead"
 
 
