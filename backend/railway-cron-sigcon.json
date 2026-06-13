@@ -7,6 +7,6 @@
   "deploy": {
     "restartPolicyType": "NEVER",
     "startCommand": "python ingestion/run_sigcon_cron.py",
-    "cronSchedule": "*/5 * * * *"
+    "cronSchedule": "0 */6 * * *"
   }
 }
