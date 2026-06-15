@@ -26,3 +26,10 @@ if __name__ == "__main__":
     )
     from ingestion.sigcon_scraper import main
     main()
+    # Backfill de contrapartida + vigencia a partir do dataset CKAN do Estado
+    # (cobre TODOS os convenios — o detalhe logado pega so alguns por rodada).
+    try:
+        from ingestion.sigcon_ckan_backfill import backfill
+        backfill()
+    except Exception as e:
+        logging.getLogger("run_sigcon_cron").warning(f"ckan backfill falhou: {e}")
