@@ -69,6 +69,38 @@ def _parse_money(s: str) -> Optional[float]:
         return None
 
 
+def _parse_date(s: str):
+    """Primeira data DD/MM/YYYY na string -> datetime.date (ou None)."""
+    import re as _re
+    from datetime import date as _date
+    if not s:
+        return None
+    m = _re.search(r"(\d{1,2})/(\d{1,2})/(\d{4})", str(s))
+    if not m:
+        return None
+    try:
+        return _date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+    except (ValueError, TypeError):
+        return None
+
+
+def _parse_vigencia_range(s: str):
+    """'10/06/2026 a 08/06/2028' -> (date inicio, date fim). 1a e ultima data."""
+    import re as _re
+    from datetime import date as _date
+    if not s:
+        return (None, None)
+    ds = _re.findall(r"(\d{1,2})/(\d{1,2})/(\d{4})", str(s))
+    def _mk(t):
+        try:
+            return _date(int(t[2]), int(t[1]), int(t[0]))
+        except (ValueError, TypeError):
+            return None
+    ini = _mk(ds[0]) if ds else None
+    fim = _mk(ds[-1]) if len(ds) > 1 else None
+    return (ini, fim)
+
+
 PARSE_TABLE_JS = r"""
 () => {
     const tbody = document.querySelector('tbody[id$="dtTblExibeListaPlanosDeTrabalho_data"]');
@@ -290,8 +322,18 @@ PARSE_DETALHE_JS = r"""
         "Municipio": "municipio_full",
         "Tipo de Beneficiario": "tipo_beneficiario",
         "Valor Concedente": "valor_concedente_str",
+        "Valor Concedente Atual": "valor_concedente_atual_str",
+        "Valor Contrapartida": "valor_contrapartida_str",
+        "Valor Contrapartida Atual": "valor_contrapartida_atual_str",
         "Valor Dotacao Complementar": "valor_dotacao_complementar",
         "Proposta de Vigencia": "proposta_vigencia",
+        "Proposta de Dias de Vigencia": "proposta_dias_vigencia",
+        "Data da Assinatura": "dt_assinatura_str",
+        "Data de Publicacao": "dt_publicacao_str",
+        "Vigencia Atual": "vigencia_atual_str",
+        "Dias de Vigencia Atual": "dias_vigencia_atual_str",
+        "Dias Restantes de Vigencia": "dias_restantes_str",
+        "Quantidade de Alteracoes Concluidas": "qt_alteracoes_str",
         "Responsavel(is)": "responsaveis",
         "Tipo de Instrumento": "tp_instrumento_detalhe",
         "Numero da Transferencia Especial": "nr_te",
@@ -590,6 +632,18 @@ async def _run():
         ano = rec.get("ano")
         dt_pub_proxy = date(ano, 1, 1) if ano else None
         valor = rec.get("valor_repasse")
+        # Campos do detalhe (contrapartida, assinatura, vigencia, alteracoes)
+        v_contrap = _parse_money(rec.get("valor_contrapartida_atual_str")
+                                 or rec.get("valor_contrapartida_str"))
+        dt_assin = _parse_date(rec.get("dt_assinatura_str"))
+        dt_pub_real = _parse_date(rec.get("dt_publicacao_str"))
+        vig_ini, vig_fim = _parse_vigencia_range(rec.get("vigencia_atual_str"))
+        _qa = (rec.get("qt_alteracoes_str") or "").strip()
+        qt_alt = int(_qa) if _qa.isdigit() else None
+        # valor_total = concedente (repasse) + contrapartida quando houver
+        v_total = ((valor or 0) + (v_contrap or 0)) if (valor or v_contrap) else valor
+        # dt_publicacao: usa a data real do detalhe se houver, senao o proxy (1o jan)
+        dt_pub = dt_pub_real or dt_pub_proxy
         # Conflito de dedupe: prioriza nr_siafi (estavel entre CKAN bulk
         # e scraper Playwright). Se SIAFI presente, usa ON CONFLICT (nr_siafi)
         # pra atualizar o registro existente. Se nao, usa nr_sigcon como fallback.
@@ -611,10 +665,12 @@ async def _run():
                 INSERT INTO convenios_estadual (
                     nr_sigcon, nr_siafi, municipio_id, orgao_concedente,
                     convenente_nome, objeto, situacao,
-                    valor_concedente, valor_total, valor_repassado,
+                    valor_concedente, valor_total, valor_repassado, valor_contrapartida,
                     raw_data, tp_instrumento,
-                    nr_plano_trabalho, ano, dt_publicacao
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s)
+                    nr_plano_trabalho, ano, dt_publicacao,
+                    dt_assinatura, dt_vigencia_inicial, dt_vigencia_atual,
+                    dt_vigencia_final, qt_alteracoes
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT {conflict_target} DO UPDATE SET
                     nr_sigcon = COALESCE(convenios_estadual.nr_sigcon, EXCLUDED.nr_sigcon),
                     nr_siafi = COALESCE(convenios_estadual.nr_siafi, EXCLUDED.nr_siafi),
@@ -622,10 +678,16 @@ async def _run():
                     valor_concedente = COALESCE(EXCLUDED.valor_concedente, convenios_estadual.valor_concedente),
                     valor_total = COALESCE(EXCLUDED.valor_total, convenios_estadual.valor_total),
                     valor_repassado = COALESCE(EXCLUDED.valor_repassado, convenios_estadual.valor_repassado),
+                    valor_contrapartida = COALESCE(EXCLUDED.valor_contrapartida, convenios_estadual.valor_contrapartida),
                     convenente_nome = COALESCE(EXCLUDED.convenente_nome, convenios_estadual.convenente_nome),
                     nr_plano_trabalho = COALESCE(EXCLUDED.nr_plano_trabalho, convenios_estadual.nr_plano_trabalho),
                     ano = COALESCE(EXCLUDED.ano, convenios_estadual.ano),
                     dt_publicacao = COALESCE(EXCLUDED.dt_publicacao, convenios_estadual.dt_publicacao),
+                    dt_assinatura = COALESCE(EXCLUDED.dt_assinatura, convenios_estadual.dt_assinatura),
+                    dt_vigencia_inicial = COALESCE(EXCLUDED.dt_vigencia_inicial, convenios_estadual.dt_vigencia_inicial),
+                    dt_vigencia_atual = COALESCE(EXCLUDED.dt_vigencia_atual, convenios_estadual.dt_vigencia_atual),
+                    dt_vigencia_final = COALESCE(EXCLUDED.dt_vigencia_final, convenios_estadual.dt_vigencia_final),
+                    qt_alteracoes = COALESCE(EXCLUDED.qt_alteracoes, convenios_estadual.qt_alteracoes),
                     raw_data = convenios_estadual.raw_data || EXCLUDED.raw_data,
                     updated_at = NOW()
                 RETURNING (xmax = 0) AS is_insert
@@ -638,13 +700,19 @@ async def _run():
                 rec.get("objeto"),
                 sit_label,
                 valor,  # valor_concedente (lido pelo front como valor_repasse)
-                valor,  # valor_total
+                v_total,  # valor_total = concedente + contrapartida
                 valor,  # valor_repassado
+                v_contrap,  # valor_contrapartida
                 json.dumps({**rec, "_source": "sigcon_scraper"}, ensure_ascii=False, default=str),
                 rec.get("tipo"),
                 rec.get("nr_plano") or None,
                 ano,
-                dt_pub_proxy,
+                dt_pub,
+                dt_assin,
+                vig_ini,
+                vig_fim,  # dt_vigencia_atual = fim da vigencia atual
+                vig_fim,  # dt_vigencia_final = mesma (fim atual)
+                qt_alt,
             ))
             row = cur.fetchone()
             cur.execute("RELEASE SAVEPOINT sp_conv")
