@@ -67,6 +67,15 @@ const INTEGRACOES = [
     senha_hint: "Senha",
   },
   {
+    automation_key: "sigcon",
+    label: "SIGCON-MG - Convenios Estaduais (login do convenente do municipio)",
+    sistema: "SIGCON-MG",
+    url: "https://www.convenios.mg.gov.br/sigconv2/public/pages/login.jsf",
+    categoria: "Estadual",
+    usuario_hint: "CPF do gestor do Convenente (cadastrado no SIGCON-MG deste municipio)",
+    senha_hint: "Senha do SIGCON-MG",
+  },
+  {
     automation_key: "fns",
     label: "FNS - Fundo Nacional de Saude (login proprio)",
     sistema: "FNS - Fundo Nacional de Saude",
