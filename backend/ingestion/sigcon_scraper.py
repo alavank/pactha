@@ -225,40 +225,76 @@ async def _scrape_municipio(page, municipio_nome: str) -> list[dict]:
     return all_rows
 
 
-async def _scrape_detalhes(page, max_planos: int = 100) -> dict:
-    """Para cada linha visivel na tabela de pesquisa unificada, clica no link
-    do Plano/Proposta e captura campos da pagina de detalhe.
+LINK_SELECTOR_DET = (
+    'a[id*="cmdLinkPropostaResult"], a[id*="cmdLinkPlanoResult"], '
+    'a[id*="cmdLinkInstrumento"], a[id*="cmdLinkConvenio"], '
+    'a[id*="cmdLinkSiafi"]'
+)
 
-    Retorna: {nr_proposta_or_plano: {responsaveis, proposta_vigencia, ...}}
-    NAO recarrega a tabela entre iteracoes - usa o botao "Retornar para
-    Pesquisa Proposta" pra voltar mantendo o state.
+
+async def _estabelecer_grid(page, tries: int = 3) -> bool:
+    """(Re)estabelece a grade da Pesquisa Unificada: goto SEARCH_URL + Pesquisar
+    + espera as linhas. Com retries. Retorna True se a grade tem linhas."""
+    for t in range(tries):
+        try:
+            await page.goto(SEARCH_URL, wait_until="domcontentloaded", timeout=40000)
+            await page.wait_for_timeout(2500)
+            await page.click('button[id="frmListaPlanosDeTrabalho:cmdBtnPesquisarListaPlanosDeTrabalho"]',
+                             timeout=15000)
+            await page.wait_for_function("""() => {
+                const tb = document.querySelector('tbody[id$="dtTblExibeListaPlanosDeTrabalho_data"]');
+                return tb && tb.querySelectorAll(':scope > tr:not(.ui-datatable-empty-message)').length > 0;
+            }""", timeout=60000)
+            await page.wait_for_timeout(1200)
+            return True
+        except Exception as e:
+            logger.warning(f"  estabelecer_grid try {t+1}/{tries}: {str(e)[:70]}")
+            await page.wait_for_timeout(2000)
+    return False
+
+
+async def _scrape_detalhes(page, max_planos: int = 100) -> dict:
+    """Para cada linha da Pesquisa Unificada, abre o detalhe e captura os campos.
+
+    RESILIENTE: clique via DOM (el.click() — passa por cima de overlay/scroll do
+    PrimeFaces), re-estabelece a grade entre registros, e NUNCA quebra o loop por
+    1 falha — pula o registro e segue (aborta so apos muitas falhas seguidas).
     """
     out: dict = {}
-    # Selector amplo: cmdLinkPropostaResult, cmdLinkPlanoResult, cmdLinkInstrumento, cmdLinkConvenio
-    LINK_SELECTOR = (
-        'a[id*="cmdLinkPropostaResult"], a[id*="cmdLinkPlanoResult"], '
-        'a[id*="cmdLinkInstrumento"], a[id*="cmdLinkConvenio"], '
-        'a[id*="cmdLinkSiafi"]'
-    )
-    n_links = await page.locator(LINK_SELECTOR).count()
+    n_links = await page.locator(LINK_SELECTOR_DET).count()
     logger.info(f"  Detalhe: {n_links} links cmdLink na tabela")
     if n_links == 0:
         return out
 
     iter_count = min(n_links, max_planos)
-    for idx in range(iter_count):
+    falhas_seguidas = 0
+    idx = 0
+    while idx < iter_count:
+        if falhas_seguidas >= 6:
+            logger.warning(f"  {falhas_seguidas} falhas seguidas — abortando detalhes (capturados {len(out)})")
+            break
         try:
-            # Re-busca o locator a cada iteracao (DOM muda apos voltar)
-            links = page.locator(LINK_SELECTOR)
+            links = page.locator(LINK_SELECTOR_DET)
             cur_count = await links.count()
             if idx >= cur_count:
-                logger.warning(f"  Detalhe iter {idx}: locator sem links suficientes ({cur_count})")
-                break
+                # grade nao restaurada -> tenta restabelecer antes de desistir do idx
+                if not await _estabelecer_grid(page):
+                    falhas_seguidas += 1
+                    idx += 1
+                    continue
+                links = page.locator(LINK_SELECTOR_DET)
+                if idx >= await links.count():
+                    idx += 1
+                    continue
             link = links.nth(idx)
-            # Pega texto antes de clicar pra usar como key (eh o nr_proposta ou nr_plano)
             link_text = (await link.text_content() or "").strip()
-            await link.click(timeout=15000)
-            # Espera carregar a pagina de detalhe (PrimeFaces AJAX) - guard pra body null
+            # Clique via DOM (bypassa overlay/scroll). Fallback: Playwright click.
+            try:
+                await link.evaluate("el => el.click()")
+            except Exception:
+                await link.scroll_into_view_if_needed(timeout=4000)
+                await link.click(timeout=10000)
+            # Espera a pagina de detalhe (PrimeFaces AJAX)
             await page.wait_for_function("""() => {
                 if (!document.body) return false;
                 const t = document.body.innerText || "";
@@ -266,7 +302,7 @@ async def _scrape_detalhes(page, max_planos: int = 100) -> dict:
                     || t.includes('Fase-Etapa-Status') || t.includes('Fase-Etapa')
                     || t.includes('Vigência Atual') || t.includes('Vigencia Atual');
             }""", timeout=25000)
-            await page.wait_for_timeout(800)
+            await page.wait_for_timeout(700)
             data = await page.evaluate(PARSE_DETALHE_JS)
             if data and (data.get("responsaveis") or data.get("fase_etapa_status")
                          or data.get("dt_assinatura_str") or data.get("valor_contrapartida_atual_str")
@@ -276,35 +312,17 @@ async def _scrape_detalhes(page, max_planos: int = 100) -> dict:
                 logger.info(f"    [{idx+1}/{iter_count}] {key}: resp={data.get('responsaveis','-')[:24]} "
                             f"contrap={data.get('valor_contrapartida_atual_str') or data.get('valor_contrapartida_str','-')} "
                             f"assin={data.get('dt_assinatura_str','-')}")
-            # Volta pra pesquisa: SEMPRE via navigate (mais confiavel que botao
-            # Retornar que as vezes nao dispara navigation).
-            try:
-                await page.goto(SEARCH_URL, wait_until="domcontentloaded", timeout=30000)
-                await page.wait_for_timeout(4000)
-                await page.click('button[id="frmListaPlanosDeTrabalho:cmdBtnPesquisarListaPlanosDeTrabalho"]')
-                await page.wait_for_function("""() => {
-                    const tb = document.querySelector('tbody[id$=\"dtTblExibeListaPlanosDeTrabalho_data\"]');
-                    return tb && tb.querySelectorAll(':scope > tr:not(.ui-datatable-empty-message)').length > 0;
-                }""", timeout=60000)
-                await page.wait_for_timeout(1500)
-            except Exception as e:
-                logger.warning(f"  Falha ao voltar pra pesquisa: {e}")
-                break
+            falhas_seguidas = 0
+            idx += 1
+            # Re-estabelece a grade para o proximo registro
+            if idx < iter_count and not await _estabelecer_grid(page):
+                logger.warning("  nao restabeleceu a grade apos detalhe — tentando seguir")
+                falhas_seguidas += 1
         except Exception as e:
-            logger.warning(f"  Detalhe iter {idx} falhou: {str(e)[:120]}")
-            # Tenta restaurar navegando direto
-            try:
-                await page.goto(SEARCH_URL, wait_until="domcontentloaded", timeout=30000)
-                await page.wait_for_timeout(5000)
-                await page.click('button[id="frmListaPlanosDeTrabalho:cmdBtnPesquisarListaPlanosDeTrabalho"]')
-                await page.wait_for_function("""() => {
-                    const tb = document.querySelector('tbody[id$=\"dtTblExibeListaPlanosDeTrabalho_data\"]');
-                    return tb && tb.querySelectorAll(':scope > tr:not(.ui-datatable-empty-message)').length > 0;
-                }""", timeout=60000)
-                await page.wait_for_timeout(2000)
-            except Exception as e2:
-                logger.error(f"  Restore falhou: {e2}")
-                break
+            logger.warning(f"  Detalhe iter {idx} falhou: {str(e)[:110]}")
+            falhas_seguidas += 1
+            idx += 1
+            await _estabelecer_grid(page)  # restaura p/ o proximo
     logger.info(f"  Detalhes capturados: {len(out)}")
     return out
 
