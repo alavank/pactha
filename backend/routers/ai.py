@@ -70,6 +70,9 @@ FONTES DE DADOS:
   Use `query_simec_liberacoes` ou `query_simec_dimensoes`.
 - **Emendas Estaduais**: indicacoes parlamentares estaduais (SIGCON Pesquisar Emendas).
   Use `query_emendas_estaduais`.
+- **FNS (Fundo Nacional de Saude / Ministerio da Saude)**: emendas e recursos
+  federais de SAUDE do municipio. **SAO PROPOSTAS FNS — NUNCA chame de "convenio".**
+  Sempre se refira a elas como "proposta(s) FNS". Use `query_fns`.
 
 BUSCA POR PARLAMENTAR:
 - Se o usuario perguntar por um parlamentar especifico (deputado/senador), use
@@ -204,6 +207,20 @@ TOOLS = [
             "required": ["municipio_id"],
         },
     },
+    {
+        "name": "query_fns",
+        "description": "Busca PROPOSTAS do FNS (Fundo Nacional de Saude / Min. Saude) do municipio — emendas e recursos de saude. ATENCAO: sao PROPOSTAS FNS, NUNCA 'convenios'. Tem objeto, situacao (Empenhado/Pago/etc), valor, ano e parlamentar autor da emenda. Use para qualquer pergunta de saude/FNS.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "municipio_id": {"type": "integer"},
+                "ano": {"type": "integer", "description": "Filtra por ano"},
+                "situacao": {"type": "string", "description": "Filtra situacao (ex: 'Pago', 'Empenhado')"},
+                "limit": {"type": "integer", "description": "default 50, max 200"},
+            },
+            "required": ["municipio_id"],
+        },
+    },
 ]
 
 
@@ -330,7 +347,11 @@ async def _tool_query_situacoes_sigcon(db: AsyncSession, inp: dict) -> str:
 async def _tool_query_convenios_sigcon(db: AsyncSession, inp: dict) -> str:
     from datetime import timedelta
     mun_id = int(inp["municipio_id"])
+    from sqlalchemy import or_ as _or
     q = select(ConvenioEstadual).where(ConvenioEstadual.municipio_id == mun_id)
+    # convenios_estadual tambem guarda PROPOSTAS do FNS (fonte=FNS). Aqui e a
+    # ferramenta de CONVENIOS SIGCON estaduais -> exclui FNS (sao propostas federais).
+    q = q.where(_or(ConvenioEstadual.fonte.is_(None), ~ConvenioEstadual.fonte.ilike("%FNS%")))
     if inp.get("ano"):
         q = q.where(ConvenioEstadual.ano == int(inp["ano"]))
     if inp.get("situacoes"):
@@ -476,6 +497,7 @@ async def _tool_search_by_parlamentar(db: AsyncSession, inp: dict) -> str:
                c.dt_vigencia_atual, c.ano
         FROM convenios_estadual c LEFT JOIN municipios m ON m.id = c.municipio_id
         WHERE c.raw_data->>'responsaveis' ILIKE :n
+          AND (c.fonte IS NULL OR c.fonte NOT ILIKE '%FNS%')
     """
     params: dict = {"n": f"%{nome}%"}
     if mun_filter:
@@ -624,6 +646,44 @@ async def _tool_query_emendas_estaduais(db: AsyncSession, inp: dict) -> str:
     return "\n".join(out)
 
 
+async def _tool_query_fns(db: AsyncSession, inp: dict) -> str:
+    """Propostas FNS (saude) do municipio — armazenadas em convenios_estadual
+    com fonte=FNS. Sao PROPOSTAS, nao convenios."""
+    mun_id = int(inp["municipio_id"])
+    where = ["municipio_id = :m", "fonte ILIKE '%FNS%'"]
+    params: dict = {"m": mun_id}
+    if inp.get("ano"):
+        where.append("ano = :a"); params["a"] = int(inp["ano"])
+    if inp.get("situacao"):
+        where.append("situacao ILIKE :s"); params["s"] = f"%{inp['situacao']}%"
+    limit = min(int(inp.get("limit", 50)), 200)
+    sql = f"""
+        SELECT nr_sigcon, objeto, situacao, valor_concedente, ano, orgao_concedente,
+               raw_data->>'nu_proposta', raw_data->>'noAutor',
+               raw_data->>'parlamentar', raw_data->>'nome_responsavel'
+        FROM convenios_estadual WHERE {' AND '.join(where)}
+        ORDER BY ano DESC NULLS LAST, valor_concedente DESC NULLS LAST LIMIT {limit}
+    """
+    rows = (await db.execute(text(sql), params)).fetchall()
+    if not rows:
+        return "Nenhuma proposta FNS encontrada para este municipio."
+    total = sum(float(r[3] or 0) for r in rows)
+    out = [f"{len(rows)} PROPOSTA(s) FNS (saude/Min. Saude), total {_fmt_money(total)}:"]
+    for r in rows:
+        parl = r[7] or r[8] or r[9] or ""
+        nprop = r[6] or r[0]
+        linha = (
+            f"- Proposta FNS {nprop}\n"
+            f"  Orgao: {r[5] or 'MS - FNS'} | Ano: {r[4] or '-'}\n"
+            f"  Objeto: {(r[1] or '')[:160]}\n"
+            f"  Situacao: {r[2] or '-'} | Valor: {_fmt_money(r[3])}"
+        )
+        if parl:
+            linha += f" | Parlamentar: {parl}"
+        out.append(linha)
+    return "\n".join(out)
+
+
 # Dispatcher
 TOOL_FUNCS = {
     "list_municipios": _tool_list_municipios,
@@ -634,6 +694,7 @@ TOOL_FUNCS = {
     "query_simec_liberacoes": _tool_query_simec_liberacoes,
     "query_simec_dimensoes": _tool_query_simec_dimensoes,
     "query_emendas_estaduais": _tool_query_emendas_estaduais,
+    "query_fns": _tool_query_fns,
     "search_by_parlamentar": _tool_search_by_parlamentar,
 }
 

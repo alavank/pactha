@@ -94,8 +94,10 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int) -> dict:
         is_fns = "FNS" in fonte_db or "MS" in fonte_db
         nr_proposta = raw.get("nr_proposta") or c.nr_plano_trabalho
         nr_instr = raw.get("nr_instrumento") or (c.nr_sigcon if c.nr_sigcon and "/" in c.nr_sigcon else None)
-        identificador = nr_instr or nr_proposta or c.nr_sigcon or ""
-        tipo_label = "Convênio" if nr_instr else ("Proposta SUS" if is_fns else "Proposta")
+        identificador = (nr_proposta or nr_instr or c.nr_sigcon or "") if is_fns else (nr_instr or nr_proposta or c.nr_sigcon or "")
+        # FNS sao PROPOSTAS (Min. Saude), nunca "Convenio" — o nr_sigcon do FNS
+        # contem "N/A" (com /), que antes disparava o rotulo "Convenio" por engano.
+        tipo_label = "Proposta FNS" if is_fns else ("Convênio" if nr_instr else "Proposta")
         dt_fim = c.dt_vigencia_atual or c.dt_vigencia_final
         if is_fns:
             esfera = "federal"

@@ -150,6 +150,14 @@ async def list_convenios(
     elif fonte:
         q = q.where(ConvenioEstadual.fonte == fonte)
         q_count = q_count.where(ConvenioEstadual.fonte == fonte)
+    # Esta e a tela de CONVENIOS SIGCON-MG (estadual). convenios_estadual tambem
+    # guarda PROPOSTAS do FNS (fonte=FNS, saude) — que NAO sao convenios e tem tela
+    # propria. Exclui FNS por padrao, exceto se o caller pediu FNS explicitamente.
+    _asked_fns = (fonte and "FNS" in fonte.upper()) or (fontes and any("FNS" in f.upper() for f in fontes))
+    if not _asked_fns:
+        _fns_excl = or_(ConvenioEstadual.fonte.is_(None), ~ConvenioEstadual.fonte.ilike("%FNS%"))
+        q = q.where(_fns_excl)
+        q_count = q_count.where(_fns_excl)
     if vigencia:
         hoje = date.today()
         vcond = None
