@@ -268,10 +268,14 @@ async def _scrape_detalhes(page, max_planos: int = 100) -> dict:
             }""", timeout=25000)
             await page.wait_for_timeout(800)
             data = await page.evaluate(PARSE_DETALHE_JS)
-            if data and (data.get("responsaveis") or data.get("fase_etapa_status")):
+            if data and (data.get("responsaveis") or data.get("fase_etapa_status")
+                         or data.get("dt_assinatura_str") or data.get("valor_contrapartida_atual_str")
+                         or data.get("valor_contrapartida_str") or data.get("vigencia_atual_str")):
                 key = data.get("nr_proposta_detalhe") or data.get("nr_plano_detalhe") or link_text
                 out[key] = data
-                logger.info(f"    [{idx+1}/{iter_count}] {key}: resp={data.get('responsaveis','-')[:30]} fase={data.get('fase_etapa_status','-')[:40]}")
+                logger.info(f"    [{idx+1}/{iter_count}] {key}: resp={data.get('responsaveis','-')[:24]} "
+                            f"contrap={data.get('valor_contrapartida_atual_str') or data.get('valor_contrapartida_str','-')} "
+                            f"assin={data.get('dt_assinatura_str','-')}")
             # Volta pra pesquisa: SEMPRE via navigate (mais confiavel que botao
             # Retornar que as vezes nao dispara navigation).
             try:
