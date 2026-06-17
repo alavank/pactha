@@ -50,6 +50,8 @@ MIGRATION_FILES = [
     "add_telegram.sql",
     # Voluntarias: id_proposta_siconv (casa com open data p/ backfill parlamentar)
     "add_voluntarias_id_proposta_siconv.sql",
+    # Log de mudancas de status (trigger) -> aviso no dashboard
+    "add_status_changes.sql",
 ]
 
 

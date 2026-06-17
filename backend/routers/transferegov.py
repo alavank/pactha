@@ -150,10 +150,20 @@ async def buscar(
     }
 
 
-# Status que identifica uma proposta VOLUNTARIA (FREITAS): "Proposta/Plano de
-# Trabalho enviado para Analise" (amarelo). O acento de "Analise" pode vir
-# corrompido (U+FFFD) -> usamos ILIKE com curinga no lugar do acento.
-_VOLUNTARIA_LIKE = "%enviado para an%lise%"
+# Status que identifica uma proposta VOLUNTARIA (FREITAS). Alem do classico
+# "Proposta/Plano de Trabalho enviado para Analise", a Freitas considera tambem
+# voluntarias todas as propostas/planos no PIPELINE de analise/aprovacao/
+# complementacao (antes da celebracao): "Aprovados", "em Analise", "em
+# Complementacao", "complementado enviada para Analise", "Proposta Aprovada e
+# Plano de Trabalho ...", etc. NAO inclui: Prestacao de Contas, Rejeitadas,
+# "Em execucao" (convenio ja celebrado). O acento corrompido (U+FFFD) e tratado
+# com curinga (an%lise).
+_VOLUNTARIA_LIKE = "%enviado para an%lise%"  # mantido p/ compat
+_VOLUNTARIA_SQL = (
+    "(situacao ILIKE '%plano de trabalho%' "
+    "AND (situacao ILIKE '%an%lise%' OR situacao ILIKE '%aprovad%' OR situacao ILIKE '%complementa%') "
+    "AND situacao NOT ILIKE '%presta%' AND situacao NOT ILIKE '%rejeitad%')"
+)
 # REJEITADAS: qualquer status contendo "rejeitad" (Rejeitados / Rejeitados por
 # Impedimento tecnico). Tratamos como categoria propria; nao entram na Geral.
 _REJEITADA_LIKE = "%rejeitad%"
@@ -194,14 +204,15 @@ async def voluntarias(
     where = ["municipio_id = :mun"]
     params: dict = {"mun": municipio_id}
     if categoria == "voluntarias":
-        where.append("situacao ILIKE :volpat"); params["volpat"] = _VOLUNTARIA_LIKE
+        where.append(_VOLUNTARIA_SQL)
     elif categoria == "rejeitadas":
         where.append("situacao ILIKE :rejpat"); params["rejpat"] = _REJEITADA_LIKE
     elif categoria == "encerradas":
         where.append(_ENCERRADA_SQL)
     elif categoria == "geral":
-        where.append(f"(situacao IS NULL OR (situacao NOT ILIKE :volpat AND situacao NOT ILIKE :rejpat AND NOT {_ENCERRADA_SQL}))")
-        params["volpat"] = _VOLUNTARIA_LIKE
+        # Geral = o que sobra: nem voluntaria (pipeline de analise), nem rejeitada,
+        # nem encerrada/prestacao. Sobra basicamente "Em execucao" + legados.
+        where.append(f"(situacao IS NULL OR (NOT {_VOLUNTARIA_SQL} AND situacao NOT ILIKE :rejpat AND NOT {_ENCERRADA_SQL}))")
         params["rejpat"] = _REJEITADA_LIKE
     if situacao:
         where.append("situacao ILIKE :sit"); params["sit"] = f"%{situacao}%"

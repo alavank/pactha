@@ -7,6 +7,8 @@ import {
   DollarSign,
   AlertTriangle,
   ClipboardList,
+  Bell,
+  ArrowRight,
 } from "lucide-react";
 import {
   BarChart,
@@ -27,6 +29,17 @@ import {
   diasRestantesBadge,
 } from "@/lib/utils";
 import type { MunicipioSummary, AlertaVigencia, ConvenioStats } from "@/types";
+
+interface StatusChange {
+  id: number;
+  fonte: string;
+  ref: string;
+  orgao: string;
+  objeto: string;
+  status_anterior: string;
+  status_novo: string;
+  changed_at: string;
+}
 
 function EsferaTag({ tipo }: { tipo: "estadual" | "federal" | "ambos" }) {
   const styles: Record<string, string> = {
@@ -84,6 +97,7 @@ export default function DashboardPage() {
   const [alertas, setAlertas] = useState<AlertaVigencia[]>([]);
   const [prestacao, setPrestacao] = useState<AlertaVigencia[]>([]);
   const [stats, setStats] = useState<ConvenioStats | null>(null);
+  const [mudancas, setMudancas] = useState<StatusChange[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -101,16 +115,33 @@ export default function DashboardPage() {
       api.get<AlertaVigencia[]>("/convenios/prestacao-contas", {
         params: { municipio_id: municipioId },
       }),
+      api.get<{ items: StatusChange[] }>("/status-changes", {
+        params: { municipio_id: municipioId, days: 30 },
+      }),
     ])
-      .then(([summaryRes, alertasRes, statsRes, prestacaoRes]) => {
+      .then(([summaryRes, alertasRes, statsRes, prestacaoRes, mudancasRes]) => {
         setSummary(summaryRes.data);
         setAlertas(Array.isArray(alertasRes.data) ? alertasRes.data : []);
         setStats(statsRes.data);
         setPrestacao(Array.isArray(prestacaoRes.data) ? prestacaoRes.data : []);
+        setMudancas(mudancasRes.data?.items ?? []);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [municipioId]);
+
+  const fonteBadge = (f: string): { label: string; cls: string } => {
+    if (f === "fns") return { label: "FNS", cls: "bg-rose-50 text-rose-700 border-rose-200" };
+    if (f === "voluntaria") return { label: "Federal", cls: "bg-cyan-50 text-cyan-700 border-cyan-200" };
+    return { label: "Estadual (SIGCON)", cls: "bg-blue-50 text-blue-700 border-blue-200" };
+  };
+  const statusCor = (s: string): string => {
+    const t = (s || "").toLowerCase();
+    if (t.includes("aprovad") || t.includes("execu") || t.includes("vigor") || t.includes("conclu")) return "text-green-700";
+    if (t.includes("rejeitad") || t.includes("anulad") || t.includes("cancelad") || t.includes("rescind") || t.includes("impedi")) return "text-red-700";
+    if (t.includes("análise") || t.includes("an") || t.includes("complementa")) return "text-amber-700";
+    return "text-slate-700";
+  };
 
   if (!municipioId) {
     return (
@@ -366,6 +397,65 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+
+      {/* Mudanças de status detectadas nas atualizações diárias */}
+      <Card className="border-l-4 border-l-indigo-600">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Bell className="size-5 text-indigo-600" />
+            Mudanças de Status (últimos 30 dias)
+            {mudancas.length > 0 && (
+              <Badge variant="secondary" className="ml-1">{mudancas.length}</Badge>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="space-y-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="h-12 animate-pulse rounded bg-gray-100" />
+              ))}
+            </div>
+          ) : mudancas.length === 0 ? (
+            <p className="py-4 text-center text-muted-foreground">
+              Nenhuma mudança de status detectada nas últimas atualizações.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {mudancas.slice(0, 15).map((m) => {
+                const fb = fonteBadge(m.fonte);
+                return (
+                  <div key={m.id} className="flex items-center justify-between rounded-lg border p-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-sm">{m.ref || "-"}</span>
+                        <span className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${fb.cls}`}>
+                          {fb.label}
+                        </span>
+                      </div>
+                      <p className="truncate text-sm text-muted-foreground">
+                        {m.objeto || m.orgao || "-"}
+                      </p>
+                      <div className="mt-1 flex items-center gap-2 text-xs flex-wrap">
+                        <span className={`${statusCor(m.status_anterior)} line-through opacity-70`}>
+                          {m.status_anterior || "—"}
+                        </span>
+                        <ArrowRight className="size-3 text-slate-400 shrink-0" />
+                        <span className={`font-semibold ${statusCor(m.status_novo)}`}>
+                          {m.status_novo || "—"}
+                        </span>
+                      </div>
+                    </div>
+                    <span className="text-xs text-muted-foreground ml-4 shrink-0">
+                      {formatDate(m.changed_at)}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Alerts section */}
       <Card>
