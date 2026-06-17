@@ -48,6 +48,8 @@ MIGRATION_FILES = [
     "add_gestao_anotacoes.sql",
     # Integracao Telegram (telegram_users + telegram_link_codes)
     "add_telegram.sql",
+    # Voluntarias: id_proposta_siconv (casa com open data p/ backfill parlamentar)
+    "add_voluntarias_id_proposta_siconv.sql",
 ]
 
 

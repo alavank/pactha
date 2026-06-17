@@ -114,6 +114,70 @@ async def export_convenios_pdf(
         headers={"Content-Disposition": f"attachment; filename=convenios_{mun.nome.replace(' ','_')}.pdf"})
 
 
+@router.get("/voluntarias")
+async def export_voluntarias_pdf(
+    municipio_id: int = Query(...),
+    categoria: Optional[str] = Query(None),
+    situacao: Optional[str] = Query(None),
+    orgao: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+    parlamentar: Optional[str] = Query(None),
+    situacao_contratacao: Optional[str] = Query(None),
+    vigencia: Optional[str] = Query(None),
+    vig_fim_de: Optional[str] = Query(None),
+    vig_fim_ate: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """PDF dos instrumentos FEDERAIS (TransfereGov) com os MESMOS filtros da tela —
+    relatorio personalizado da selecao (parlamentar, vigencia, situacao, etc.)."""
+    mun = (await db.execute(select(Municipio).where(Municipio.id == municipio_id))).scalar_one_or_none()
+    if not mun:
+        raise HTTPException(404, "Municipio nao encontrado")
+    # Reusa a mesma logica de filtro do endpoint da tela
+    from routers.transferegov import voluntarias as _voluntarias
+    res = await _voluntarias(
+        municipio_id=municipio_id, situacao=situacao, orgao=orgao, search=search,
+        parlamentar=parlamentar, situacao_contratacao=situacao_contratacao,
+        vigencia=vigencia, vig_fim_de=vig_fim_de, vig_fim_ate=vig_fim_ate,
+        categoria=categoria, db=db, _=None,
+    )
+    items = res.get("items", [])
+    rows = []
+    for it in items:
+        rows.append([
+            (it.get("codigo_instrumento") or it.get("numero_proposta") or "-")[:14],
+            (it.get("orgao") or "")[:16],
+            Paragraph((it.get("objeto") or "")[:110], ParagraphStyle("o", fontSize=7)),
+            (it.get("parlamentar") or "-")[:18],
+            (it.get("situacao") or "")[:16],
+            (it.get("situacao_contratacao") or "-")[:14],
+            it.get("dt_inicio_vigencia") or "-",
+            it.get("dt_fim_vigencia") or "-",
+            str(it["dias_restantes"]) if it.get("dias_restantes") is not None else "-",
+        ])
+    # Subtitulo com os filtros ativos (deixa claro o recorte do relatorio)
+    _f = []
+    if parlamentar: _f.append(f"parlamentar: {parlamentar}")
+    if orgao: _f.append(f"orgao: {orgao}")
+    if situacao_contratacao: _f.append(f"sit.contratacao: {situacao_contratacao}")
+    _VIG = {"vence30": "vence 30d", "vence60": "vence 60d", "vence90": "vence 90d",
+            "vence120": "vence 120d", "prestacao": "prestacao de contas"}
+    if vigencia: _f.append(_VIG.get(vigencia, vigencia))
+    if vig_fim_de: _f.append(f"fim vig. de {vig_fim_de}")
+    if vig_fim_ate: _f.append(f"fim vig. ate {vig_fim_ate}")
+    if search: _f.append(f"busca: {search}")
+    filtros = " | ".join(_f) if _f else "sem filtros (todos)"
+    pdf = _build_pdf(
+        f"Instrumentos Federais (TransfereGov) - {mun.nome}/{mun.uf}",
+        f"Categoria: {categoria or 'geral'} · Filtros: {filtros} · {len(rows)} instrumento(s)",
+        ["Instrumento", "Orgao", "Objeto", "Parlamentar", "Situacao", "Sit.Contr.", "Inicio Vig.", "Fim Vig.", "Dias"],
+        rows,
+    )
+    return StreamingResponse(pdf, media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=federais_{mun.nome.replace(' ','_')}.pdf"})
+
+
 @router.get("/emendas")
 async def export_emendas_pdf(
     municipio_id: int = Query(...),

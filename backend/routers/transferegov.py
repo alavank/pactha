@@ -172,7 +172,11 @@ async def voluntarias(
     situacao: Optional[str] = Query(None),
     orgao: Optional[str] = Query(None),
     search: Optional[str] = Query(None, description="busca em numero/proponente"),
-    vigencia: Optional[str] = Query(None, description="vence60 | vence120 | prestacao"),
+    parlamentar: Optional[str] = Query(None, description="filtra pelo parlamentar (ILIKE)"),
+    situacao_contratacao: Optional[str] = Query(None, description="Normal | Clausula Suspensiva | Liminar Judicial"),
+    vigencia: Optional[str] = Query(None, description="vence30 | vence60 | vence90 | vence120 | prestacao"),
+    vig_fim_de: Optional[str] = Query(None, description="fim de vigencia >= AAAA-MM-DD"),
+    vig_fim_ate: Optional[str] = Query(None, description="fim de vigencia <= AAAA-MM-DD"),
     categoria: Optional[str] = Query(None, description="geral | voluntarias | rejeitadas | encerradas"),
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
@@ -203,6 +207,10 @@ async def voluntarias(
         where.append("situacao ILIKE :sit"); params["sit"] = f"%{situacao}%"
     if orgao:
         where.append("orgao ILIKE :org"); params["org"] = f"%{orgao}%"
+    if parlamentar:
+        where.append("parlamentar ILIKE :parl"); params["parl"] = f"%{parlamentar}%"
+    if situacao_contratacao:
+        where.append("situacao_contratacao ILIKE :sc"); params["sc"] = f"%{situacao_contratacao}%"
     if search:
         where.append("(numero_proposta ILIKE :s OR proponente ILIKE :s)"); params["s"] = f"%{search}%"
     sql = f"""
@@ -234,19 +242,43 @@ async def voluntarias(
         "situacao_contratacao_detalhe": row[21],
     } for row in r.fetchall()]
 
-    # Filtro de vigencia (vindo dos KPIs do dashboard)
+    # Filtro de vigencia (presets: dias para vencer) — vindo dos KPIs ou do filtro
     if vigencia:
+        _LIMITES = {"vence30": 30, "vence60": 60, "vence90": 90, "vence120": 120}
         def _match_vig(d):
             if d is None:
                 return False
-            if vigencia == "vence60":
-                return 0 <= d <= 60
-            if vigencia == "vence120":
-                return 0 <= d <= 120
+            if vigencia in _LIMITES:
+                return 0 <= d <= _LIMITES[vigencia]
             if vigencia == "prestacao":
                 return d < -90
             return True
         items = [i for i in items if _match_vig(i["dias_restantes"])]
+
+    # Filtro por intervalo de DATA de fim de vigencia (de / ate, ISO AAAA-MM-DD)
+    if vig_fim_de or vig_fim_ate:
+        from datetime import datetime as _dt2
+        def _parse_fim(s):
+            if not s:
+                return None
+            for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
+                try:
+                    return _dt2.strptime(str(s).strip()[:10], fmt).date()
+                except (ValueError, TypeError):
+                    continue
+            return None
+        de = _parse_fim(vig_fim_de)
+        ate = _parse_fim(vig_fim_ate)
+        def _match_range(it):
+            d = _parse_fim(it.get("dt_fim_vigencia"))
+            if d is None:
+                return False
+            if de and d < de:
+                return False
+            if ate and d > ate:
+                return False
+            return True
+        items = [i for i in items if _match_range(i)]
 
     # Mesma ordenacao do SIGCON: vigentes por urgencia ASC, vencidos depois
     # (|dias| ASC), sem data por ultimo.

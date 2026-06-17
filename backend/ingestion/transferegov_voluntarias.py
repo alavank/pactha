@@ -359,6 +359,11 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
         url = prop.pop("_detalhe_url", None)
         if not url:
             continue
+        # Guarda o idProposta (da URL) -> casa com o open data siconv_emenda p/
+        # backfill do parlamentar sem precisar do arquivo nacional de 199 MB.
+        _idp = _id_proposta_from_url(url)
+        if _idp:
+            prop["id_proposta_siconv"] = _idp
         try:
             if not await _goto_with_retry(detail_page, url):
                 continue
@@ -780,8 +785,8 @@ def _upsert(mun_id: int, propostas: list[dict]):
                  valor_global, valor_repasse, valor_contrapartida,
                  situacao_contratacao, clausula_suspensiva_dt_prevista,
                  clausula_suspensiva_motivo, parlamentar, situacao_contratacao_detalhe,
-                 detalhe, raw_data, updated_at)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s::jsonb,NOW())
+                 id_proposta_siconv, detalhe, raw_data, updated_at)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s::jsonb,%s::jsonb,NOW())
             ON CONFLICT (municipio_id, numero_proposta) DO UPDATE SET
                 situacao=EXCLUDED.situacao, orgao=EXCLUDED.orgao,
                 proponente=EXCLUDED.proponente, possui_parecer=EXCLUDED.possui_parecer,
@@ -799,6 +804,7 @@ def _upsert(mun_id: int, propostas: list[dict]):
                 clausula_suspensiva_motivo=COALESCE(EXCLUDED.clausula_suspensiva_motivo, transferegov_propostas.clausula_suspensiva_motivo),
                 parlamentar=COALESCE(EXCLUDED.parlamentar, transferegov_propostas.parlamentar),
                 situacao_contratacao_detalhe=COALESCE(EXCLUDED.situacao_contratacao_detalhe, transferegov_propostas.situacao_contratacao_detalhe),
+                id_proposta_siconv=COALESCE(EXCLUDED.id_proposta_siconv, transferegov_propostas.id_proposta_siconv),
                 detalhe=EXCLUDED.detalhe, raw_data=EXCLUDED.raw_data, updated_at=NOW()
         """, (mun_id, p["numero_proposta"][:20], p["situacao"][:300], p["orgao"][:300],
               p["proponente"][:300], p["possui_parecer"][:10], p["identificacao"][:30],
@@ -811,6 +817,7 @@ def _upsert(mun_id: int, propostas: list[dict]):
               (situacao_contr or "")[:100] or None, cl_dt, cl_motivo,
               (parlamentar or "")[:200] or None,
               json.dumps(sit_det_json, ensure_ascii=False) if sit_det_json else None,
+              (p.get("id_proposta_siconv") or None),
               json.dumps(det, ensure_ascii=False), json.dumps(p, ensure_ascii=False)))
         ins += 1
     conn.commit(); cur.close(); conn.close()
@@ -886,6 +893,18 @@ async def run():
                 logger.error(f"  {mun['nome']}: ERRO {str(e)[:200]}")
         await browser.close()
     logger.info(f"=== Finalizado: {total} propostas ===")
+    # Backfill do parlamentar (autor da emenda) via open data SICONV. O scraper
+    # ja gravou id_proposta_siconv acima, entao aqui so baixa o arquivo barato
+    # (siconv_emenda ~7.6 MB) e casa id->NOME_PARLAMENTAR. Best-effort.
+    try:
+        from ingestion import siconv_emenda_backfill as _bf
+        # SO o passo barato (7.6 MB). O id_proposta_siconv vem do scraper acima;
+        # backfill_ids (199 MB) e' so manual/one-time (evita download recorrente
+        # por causa de propostas sem link de detalhe). no Railway = sem cache.
+        npb = _bf.backfill_parlamentar(use_cache=False)
+        logger.info(f"  backfill parlamentar: {npb} linha(s) atualizadas")
+    except Exception as e:
+        logger.warning(f"  backfill parlamentar falhou: {str(e)[:160]}")
     # Log de ingestao
     try:
         import psycopg2

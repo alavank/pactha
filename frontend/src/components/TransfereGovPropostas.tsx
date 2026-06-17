@@ -96,21 +96,49 @@ export default function TransfereGovPropostas({
   const [search, setSearch] = useState("");
   const [situacoesSel, setSituacoesSel] = useState<string[]>([]);
   const [vigencia, setVigencia] = useState(vigenciaParam ?? "");
+  const [parlamentar, setParlamentar] = useState("");
+  const [orgao, setOrgao] = useState("");
+  const [sitContratacao, setSitContratacao] = useState("");
+  const [vigFimDe, setVigFimDe] = useState("");
+  const [vigFimAte, setVigFimAte] = useState("");
+  const [baixandoPdf, setBaixandoPdf] = useState(false);
 
   const [detalhe, setDetalhe] = useState<Detalhe | null>(null);
   const [loadingDet, setLoadingDet] = useState(false);
+
+  const buildParams = useCallback((): Record<string, string> => {
+    const params: Record<string, string> = { municipio_id: municipioId || "", categoria };
+    if (search.trim()) params.search = search.trim();
+    if (vigencia) params.vigencia = vigencia;
+    if (parlamentar.trim()) params.parlamentar = parlamentar.trim();
+    if (orgao.trim()) params.orgao = orgao.trim();
+    if (sitContratacao) params.situacao_contratacao = sitContratacao;
+    if (vigFimDe) params.vig_fim_de = vigFimDe;
+    if (vigFimAte) params.vig_fim_ate = vigFimAte;
+    return params;
+  }, [municipioId, categoria, search, vigencia, parlamentar, orgao, sitContratacao, vigFimDe, vigFimAte]);
 
   const buscar = useCallback(async () => {
     if (!municipioId) return;
     setLoading(true);
     try {
-      const params: Record<string, string> = { municipio_id: municipioId, categoria };
-      if (search.trim()) params.search = search.trim();
-      if (vigencia) params.vigencia = vigencia;
-      const r = await api.get<Resp>("/transferegov/voluntarias", { params });
+      const r = await api.get<Resp>("/transferegov/voluntarias", { params: buildParams() });
       setItems(r.data.items); setAtualizadoEm(r.data.atualizado_em);
     } catch (e) { console.error(e); } finally { setLoading(false); }
-  }, [municipioId, search, vigencia, categoria]);
+  }, [municipioId, buildParams]);
+
+  const gerarPdf = useCallback(async () => {
+    if (!municipioId) return;
+    setBaixandoPdf(true);
+    try {
+      const r = await api.get("/export-pdf/voluntarias", { params: buildParams(), responseType: "blob" });
+      const url = window.URL.createObjectURL(new Blob([r.data], { type: "application/pdf" }));
+      const a = document.createElement("a");
+      a.href = url; a.download = `relatorio-federais-${categoria}.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e) { console.error(e); } finally { setBaixandoPdf(false); }
+  }, [municipioId, categoria, buildParams]);
 
   // Sincroniza filtro de vigencia com o parametro da URL (vindo dos KPIs)
   useEffect(() => { setVigencia(vigenciaParam ?? ""); }, [vigenciaParam]);
@@ -167,21 +195,69 @@ export default function TransfereGovPropostas({
                    placeholder="Ex: 048291/2025" onKeyDown={(e) => { if (e.key === "Enter") buscar(); }} />
           </div>
           <div>
-            <label className="text-xs text-slate-600 mb-1 block">Situacao (multi)</label>
+            <label className="text-xs text-slate-600 mb-1 block">Parlamentar</label>
+            <Input value={parlamentar} onChange={(e) => setParlamentar(e.target.value)}
+                   placeholder="Ex: Cleitinho" onKeyDown={(e) => { if (e.key === "Enter") buscar(); }} />
+          </div>
+          <div>
+            <label className="text-xs text-slate-600 mb-1 block">Órgão</label>
+            <Input value={orgao} onChange={(e) => setOrgao(e.target.value)}
+                   placeholder="Ex: Ministério do Esporte" onKeyDown={(e) => { if (e.key === "Enter") buscar(); }} />
+          </div>
+          <div>
+            <label className="text-xs text-slate-600 mb-1 block">Situação de Contratação</label>
+            <select className="w-full border rounded-md p-2 text-sm h-9"
+                    value={sitContratacao} onChange={(e) => setSitContratacao(e.target.value)}>
+              <option value="">Todas</option>
+              <option value="Normal">Normal</option>
+              <option value="Cláusula Suspensiva">Cláusula Suspensiva</option>
+              <option value="Liminar Judicial">Liminar Judicial</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-slate-600 mb-1 block">Vencimento (fim de vigência)</label>
+            <select className="w-full border rounded-md p-2 text-sm h-9"
+                    value={vigencia} onChange={(e) => setVigencia(e.target.value)}>
+              <option value="">Todos</option>
+              <option value="vence30">Vence em 30 dias</option>
+              <option value="vence60">Vence em 60 dias</option>
+              <option value="vence90">Vence em 90 dias</option>
+              <option value="vence120">Vence em 120 dias</option>
+              <option value="prestacao">Prestação de Contas (vencido +90d)</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-slate-600 mb-1 block">Situação (multi)</label>
             <MultiSelect
               options={situacaoOptions}
               selected={situacoesSel}
               onChange={setSituacoesSel}
-              placeholder="Todas as situacoes"
+              placeholder="Todas as situações"
               width="w-full"
             />
           </div>
-          <div className="flex items-end gap-2">
+          <div>
+            <label className="text-xs text-slate-600 mb-1 block">Fim de vigência (de)</label>
+            <Input type="date" value={vigFimDe} onChange={(e) => setVigFimDe(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-xs text-slate-600 mb-1 block">Fim de vigência (até)</label>
+            <Input type="date" value={vigFimAte} onChange={(e) => setVigFimAte(e.target.value)} />
+          </div>
+          <div className="flex items-end gap-2 flex-wrap">
             <Button onClick={buscar} disabled={loading} className="bg-blue-600 hover:bg-blue-700">
               {loading ? <Loader2 className="size-4 animate-spin mr-1" /> : <Search className="size-4 mr-1" />} Filtrar
             </Button>
-            <Button variant="outline" onClick={() => { setSearch(""); setSituacoesSel([]); setVigencia(""); setTimeout(buscar, 100); }}>
+            <Button variant="outline" onClick={() => {
+              setSearch(""); setSituacoesSel([]); setVigencia("");
+              setParlamentar(""); setOrgao(""); setSitContratacao(""); setVigFimDe(""); setVigFimAte("");
+              setTimeout(buscar, 100);
+            }}>
               <Eraser className="size-4 mr-1" /> Limpar
+            </Button>
+            <Button variant="outline" onClick={gerarPdf} disabled={baixandoPdf}
+                    title="Gera um PDF só com os instrumentos filtrados">
+              {baixandoPdf ? <Loader2 className="size-4 animate-spin mr-1" /> : null} 📄 Gerar PDF (filtrado)
             </Button>
           </div>
         </div>
@@ -219,6 +295,7 @@ export default function TransfereGovPropostas({
                 <TableHead className="w-[95px]">Código Instr.</TableHead>
                 <TableHead className="w-[90px]">Nº Proposta</TableHead>
                 <TableHead>Órgão</TableHead>
+                <TableHead className="w-[130px]">Parlamentar</TableHead>
                 <TableHead className="w-[200px]">Situação</TableHead>
                 <TableHead className="w-[150px]">Sit. Contratação</TableHead>
                 <TableHead className="w-[80px]">Início Vig.</TableHead>
@@ -236,6 +313,7 @@ export default function TransfereGovPropostas({
                   <TableCell className="font-mono">{p.codigo_instrumento || "-"}</TableCell>
                   <TableCell className="font-mono">{p.numero_proposta}</TableCell>
                   <TableCell className="truncate" title={p.orgao}>{p.orgao}</TableCell>
+                  <TableCell className="truncate" title={p.parlamentar || ""}>{p.parlamentar || "-"}</TableCell>
                   <TableCell className="max-w-[200px]" title={p.situacao}>
                     <span className={`block truncate px-1.5 py-0.5 rounded text-[10px] ${badgeColor(p.situacao)}`}>
                       {p.situacao}
