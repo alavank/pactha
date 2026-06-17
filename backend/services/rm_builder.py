@@ -14,14 +14,21 @@ Estrutura gerada (3 partes seguindo o padrao Freitas):
 O usuario depois reorganiza tudo manualmente (edicao completa por item).
 """
 from __future__ import annotations
+import logging
 from datetime import date
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from models import ConvenioEstadual, Municipio
 
+logger = logging.getLogger("rm_builder")
 
 _VOL_LIKE = "%enviado para an%lise%"
 _REJ_LIKE = "%rejeitad%"
+
+# Secoes federais (mesmo rotulo em qualquer Parte)
+_SEC_FED = "INSTRUMENTOS DE REPASSE FEDERAIS"
+_SEC_FED_REJ = "INSTRUMENTOS FEDERAIS REJEITADOS / INDEFERIDOS"
+_SEC_EST = "INSTRUMENTOS DE REPASSE ESTADUAIS"
 
 
 def _money(x) -> float | None:
@@ -63,6 +70,35 @@ def _classifica_parte(esfera: str, situacao: str | None, dt_fim: date | None, si
     return 1 if esfera == "federal" else 2
 
 
+def _federal_bucket(situacao: str | None) -> str:
+    """Classifica um instrumento FEDERAL por STATUS (nao por data de vigencia —
+    proposta em analise com data planejada vencida AINDA e demanda ativa):
+      - 'rejeitada'  -> rejeitada/indeferida (vai p/ secao propria de Rejeitados)
+      - 'paga'       -> ja paga/encerrada/prestacao de contas -> PARTE 3
+      - 'ativa'      -> demanda viva (analise, aprovacao, execucao, empenho,
+                        pendente) -> PARTE 1 (DEMANDAS EM BRASILIA)
+    """
+    s = (situacao or "").strip().lower()
+    if not s:
+        return "ativa"
+    if "rejeitad" in s or "indeferid" in s:
+        return "rejeitada"
+    if (("presta" in s and "conta" in s) or "conclu" in s or "encerrad" in s
+            or "anulad" in s or "rescind" in s or s == "pago" or "pagamento" in s):
+        return "paga"
+    return "ativa"
+
+
+def _federal_destino(situacao: str | None) -> tuple[int, str]:
+    """(parte, secao) para um instrumento federal a partir do status."""
+    b = _federal_bucket(situacao)
+    if b == "rejeitada":
+        return (1, _SEC_FED_REJ)
+    if b == "paga":
+        return (3, _SEC_FED)
+    return (1, _SEC_FED)
+
+
 async def montar_conteudo(db: AsyncSession, municipio_id: int) -> dict:
     """Monta o conteudo JSONB de um RM a partir dos dados do banco."""
     # Estrutura: {partes: [{ordem, titulo, secoes: [{ordem, titulo, grupos:
@@ -82,6 +118,10 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int) -> dict:
             p["secoes"][secao][orgao] = []
         p["secoes"][secao][orgao].append(item)
 
+    mun = (await db.execute(
+        select(Municipio).where(Municipio.id == municipio_id)
+    )).scalar_one_or_none()
+
     # === Convenios estaduais E FNS (mesma tabela, diferenciados por c.fonte) ===
     # SIGCON-MG => estadual => PARTE 2 / INSTRUMENTOS ESTADUAIS
     # FNS (Min Saude) => federal => PARTE 1 / INSTRUMENTOS FEDERAIS
@@ -100,16 +140,16 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int) -> dict:
         tipo_label = "Proposta FNS" if is_fns else ("Convênio" if nr_instr else "Proposta")
         dt_fim = c.dt_vigencia_atual or c.dt_vigencia_final
         if is_fns:
-            esfera = "federal"
-            secao = "INSTRUMENTOS DE REPASSE FEDERAIS"
+            # FNS (federal): classifica por STATUS — "Pago" sai das demandas e vai
+            # p/ PARTE 3; "Empenhado"/"Pendente" continuam demandas ativas (PARTE 1).
+            parte, secao = _federal_destino(c.situacao)
             orgao = (c.orgao_concedente or "Ministério da Saúde — FNS").strip()
             fonte_label = "fns"
         else:
-            esfera = "estadual"
-            secao = "INSTRUMENTOS DE REPASSE ESTADUAIS"
+            secao = _SEC_EST
             orgao = (c.orgao_concedente or "Outros - SIGCON").strip() + " - SIGCON"
             fonte_label = "sigcon"
-        parte = _classifica_parte(esfera, c.situacao, dt_fim)
+            parte = _classifica_parte("estadual", c.situacao, dt_fim)
         # SIGCON-MG armazena o parlamentar como 'responsaveis' no raw_data
         # (deputado estadual/federal autor da indicacao). FNS pode ter
         # 'nuEmenda' ou 'noAutor' do parlamentar autor da emenda.
@@ -154,9 +194,6 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int) -> dict:
     """), {"m": municipio_id})
     for row in vol.fetchall():
         sit = row[3] or ""
-        # pula rejeitadas no rascunho inicial
-        if "rejeitad" in sit.lower():
-            continue
         dt_fim = None
         try:
             from datetime import datetime as _dt
@@ -164,8 +201,10 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int) -> dict:
         except (ValueError, TypeError):
             pass
         tipo_label = "Convênio" if row[2] else "Proposta"
-        # TransfereGov/SICONV => federal => PARTE 1 (ou PARTE 3 se prestacao)
-        parte = _classifica_parte("federal", sit, dt_fim)
+        # Classifica por STATUS (nao por data): proposta "em analise" com data
+        # planejada vencida AINDA e demanda ativa (PARTE 1). Pagas/encerradas ->
+        # PARTE 3. Rejeitadas -> secao propria (Esporte de Araujos cai aqui).
+        parte, secao = _federal_destino(sit)
         orgao = (row[4] or "Outros - Federal").strip()
         # Campos SEPARADOS (sem duplicar): situacao do ciclo, contratacao,
         # detalhe da clausula (motivo/data) e empenho — cada um no seu campo.
@@ -174,7 +213,7 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int) -> dict:
         clausula_motivo = row[12]
         empenhado_raw = (row[15] or "").strip().lower()
         empenhado = {"sim": "Sim", "não": "Não", "nao": "Não"}.get(empenhado_raw, "")
-        add_item(parte, "INSTRUMENTOS DE REPASSE FEDERAIS", orgao, {
+        add_item(parte, secao, orgao, {
             "tipo": tipo_label,
             "numero": row[2] or row[1],
             "objeto": row[5] or "",
@@ -193,6 +232,44 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int) -> dict:
             "fonte": "voluntaria",
             "fonte_ref": row[1],
         })
+
+    # === Transferencia Especial / Plano de Acao (Emenda Pix) — federal, API ao vivo ===
+    # NAO fica em tabela: vem da listagem publica (cache 1h). Best-effort: se a API
+    # estiver fora, o RM e gerado sem TE (nao quebra).
+    if mun is not None:
+        try:
+            from routers.transferegov import _fetch_listagem, _norm as _norm_tg
+            planos = await _fetch_listagem(mun.uf)
+            mn = _norm_tg(mun.nome)
+            for it in planos:
+                ben = _norm_tg(it.get("beneficiarioNome") or "")
+                if not (mn in ben or ben.endswith(mn)):
+                    continue
+                sit = it.get("planoAcaoSituacao") or ""
+                sl = sit.lower()
+                # TE: CONCLUIDA/paga -> PARTE 3; demais (CIENTE/EM_ANALISE/
+                # IMPEDIDO/EM_ELABORACAO) sao demandas ativas -> PARTE 1.
+                parte_te = 3 if ("conclu" in sl or "pag" in sl or "finaliz" in sl) else 1
+                cod_em = it.get("codigoEmendaFormatado") or ""
+                parl = cod_em.split("-", 1)[1].strip() if "-" in cod_em else ""
+                valor = _money(it.get("valorTotal"))
+                add_item(parte_te, _SEC_FED, "Transferência Especial (Emenda Pix)", {
+                    "tipo": "Transferência Especial",
+                    "numero": it.get("planoAcaoCodigo") or "",
+                    "objeto": it.get("objetoDescricao") or it.get("politicasPublicas") or "",
+                    "parlamentar": parl,
+                    "valor_global": valor,
+                    "valor_repasse": valor,
+                    "valor_contrapartida": 0,
+                    "banco": "", "agencia": "", "conta": "",
+                    "saldo_bancario": None, "dt_saldo": None,
+                    "dt_fim_vigencia": None,
+                    "situacao_atual": sit,
+                    "fonte": "transferencia_especial",
+                    "fonte_ref": str(it.get("planoAcaoId") or ""),
+                })
+        except Exception as ex:
+            logger.warning(f"RM: TE/plano-acao indisponivel p/ {municipio_id}: {str(ex)[:120]}")
 
     # === SIMEC liberacoes (MEC) -> agrupado por programa, ja sao pagamentos => PARTE 3 ===
     lb = await db.execute(text("""
@@ -250,8 +327,9 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int) -> dict:
     # Ordem das secoes dentro de cada Parte: FEDERAIS primeiro, ESTADUAIS depois,
     # outras secoes (se houver) preservam ordem de insercao no fim.
     SECAO_PRIORIDADE = [
-        "INSTRUMENTOS DE REPASSE FEDERAIS",
-        "INSTRUMENTOS DE REPASSE ESTADUAIS",
+        _SEC_FED,
+        _SEC_EST,
+        _SEC_FED_REJ,
     ]
 
     def _ordena_secoes(secoes_dict):
