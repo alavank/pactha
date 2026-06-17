@@ -135,29 +135,80 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int) -> dict:
         nr_proposta = raw.get("nr_proposta") or c.nr_plano_trabalho
         nr_instr = raw.get("nr_instrumento") or (c.nr_sigcon if c.nr_sigcon and "/" in c.nr_sigcon else None)
         identificador = (nr_proposta or nr_instr or c.nr_sigcon or "") if is_fns else (nr_instr or nr_proposta or c.nr_sigcon or "")
-        # FNS sao PROPOSTAS (Min. Saude), nunca "Convenio" — o nr_sigcon do FNS
-        # contem "N/A" (com /), que antes disparava o rotulo "Convenio" por engano.
-        tipo_label = "Proposta FNS" if is_fns else ("Convênio" if nr_instr else "Proposta")
         dt_fim = c.dt_vigencia_atual or c.dt_vigencia_final
+
         if is_fns:
-            # FNS (federal): classifica por STATUS — "Pago" sai das demandas e vai
-            # p/ PARTE 3; "Empenhado"/"Pendente" continuam demandas ativas (PARTE 1).
-            parte, secao = _federal_destino(c.situacao)
+            # FNS = PROPOSTAS do Min. Saude. O scraper guarda em raw_data o
+            # tipo/recurso e a lista de propostas INDIVIDUAIS (Nº SIPA) em
+            # linhaPropostas. Expandimos 1 item por proposta individual com o
+            # NUMERO REAL (SIPA) + ano — em vez do agregado/chave sintetica.
+            tipo = (raw.get("coTipoProposta") or c.tipo_programa or "").strip()
+            recurso = (raw.get("dsTipoRecurso") or "").strip()
+            objeto_fns = tipo.title() if tipo else (c.objeto or "").strip()
+            recurso_label = recurso.title() if recurso else ""
             orgao = (c.orgao_concedente or "Ministério da Saúde — FNS").strip()
-            fonte_label = "fns"
-        else:
-            secao = _SEC_EST
-            orgao = (c.orgao_concedente or "Outros - SIGCON").strip() + " - SIGCON"
-            fonte_label = "sigcon"
-            parte = _classifica_parte("estadual", c.situacao, dt_fim)
-        # SIGCON-MG armazena o parlamentar como 'responsaveis' no raw_data
-        # (deputado estadual/federal autor da indicacao). FNS pode ter
-        # 'nuEmenda' ou 'noAutor' do parlamentar autor da emenda.
+            individuais = raw.get("linhaPropostas") if isinstance(raw.get("linhaPropostas"), list) else []
+            if individuais:
+                for ind in individuais:
+                    nuprop = str(ind.get("nuProposta") or "").strip()
+                    if not nuprop:
+                        continue
+                    vlprop = _money(ind.get("vlProposta"))
+                    vlpago = _money(ind.get("vlPago"))
+                    vlpagar = _money(ind.get("vlPagar")) or 0
+                    sit = ("Pago" if (vlpago or 0) > 0 and vlpagar == 0
+                           else "Empenhado" if vlpagar > 0
+                           else "Em análise" if (vlprop or 0) > 0 else "Pendente")
+                    parls = ind.get("parlamentares") or []
+                    nomes = [(_p.get("noApelidoPolitico") or _p.get("noParlamentar") or _p.get("nome"))
+                             for _p in parls if isinstance(_p, dict)]
+                    nomes = [n for n in nomes if n]
+                    resp = ", ".join(nomes) if nomes else recurso_label
+                    parte, secao = _federal_destino(sit)
+                    add_item(parte, secao, orgao, {
+                        "tipo": "Proposta",
+                        "numero": f"{nuprop} - {c.ano}" if c.ano else nuprop,
+                        "objeto": objeto_fns,
+                        "parlamentar": resp,
+                        "valor_global": vlprop or vlpago,
+                        "valor_repasse": vlpago,
+                        "valor_contrapartida": 0,
+                        "banco": "", "agencia": "", "conta": "",
+                        "saldo_bancario": None, "dt_saldo": None,
+                        "dt_fim_vigencia": None,
+                        "situacao_atual": sit,
+                        "fonte": "fns",
+                        "fonte_ref": str(c.id),
+                    })
+            else:
+                # Fallback: bucket sem individuais (dados ainda nao re-coletados).
+                parte, secao = _federal_destino(c.situacao)
+                add_item(parte, secao, orgao, {
+                    "tipo": "Proposta",
+                    "numero": f"{objeto_fns} - {c.ano}" if c.ano else (objeto_fns or "Proposta FNS"),
+                    "objeto": objeto_fns,
+                    "parlamentar": recurso_label,
+                    "valor_global": _money(c.valor_total),
+                    "valor_repasse": _money(c.valor_concedente),
+                    "valor_contrapartida": 0,
+                    "banco": "", "agencia": "", "conta": "",
+                    "saldo_bancario": None, "dt_saldo": None,
+                    "dt_fim_vigencia": _iso(dt_fim),
+                    "situacao_atual": (c.situacao or "").strip(),
+                    "fonte": "fns",
+                    "fonte_ref": str(c.id),
+                })
+            continue
+
+        # === SIGCON-MG (estadual) -> PARTE 2 ===
+        secao = _SEC_EST
+        orgao = (c.orgao_concedente or "Outros - SIGCON").strip() + " - SIGCON"
+        parte = _classifica_parte("estadual", c.situacao, dt_fim)
+        tipo_label = "Convênio" if nr_instr else "Proposta"
+        # SIGCON-MG armazena o parlamentar como 'responsaveis' no raw_data.
         _parl = (
             raw.get("parlamentar") or raw.get("responsaveis")
-            or raw.get("indicacao") or raw.get("nome_responsavel")
-            or raw.get("autor_emenda") or raw.get("noAutor")
-            or raw.get("noParlamentar") or ""
+            or raw.get("indicacao") or raw.get("nome_responsavel") or ""
         )
         if isinstance(_parl, list):
             _parl = ", ".join(str(x) for x in _parl if x)
@@ -166,7 +217,7 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int) -> dict:
         _parl = _parl.replace("�", "").replace("  ", " ").strip()
         add_item(parte, secao, orgao, {
             "tipo": tipo_label,
-            "numero": identificador,
+            "numero": nr_instr or nr_proposta or c.nr_sigcon or "",
             "objeto": c.objeto or "",
             "parlamentar": _parl,
             "valor_global": _money(c.valor_total),
@@ -179,7 +230,7 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int) -> dict:
             "dt_saldo": _iso(c.dt_saldo),
             "dt_fim_vigencia": _iso(dt_fim),
             "situacao_atual": (c.situacao or "").strip(),
-            "fonte": fonte_label,
+            "fonte": "sigcon",
             "fonte_ref": str(c.id),
         })
 

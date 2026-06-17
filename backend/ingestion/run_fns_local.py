@@ -109,13 +109,16 @@ def _normalize(p: dict, ano: int, mun_id: int, cod_fns: str) -> dict:
            else "Em analise" if vl_prop > 0
            else "Pendente")
     nu_proc = p.get("nuProcesso") or "NA"
-    # ID estavel + UNICO usando hash do payload pra desambiguar mesmo tipo/recurso
-    h = hashlib.md5(json.dumps(p, sort_keys=True).encode()).hexdigest()[:8]
+    # ID estavel + UNICO usando hash do payload pra desambiguar mesmo tipo/recurso.
+    # EXCLUI linhaPropostas (enriquecimento, nao identidade) p/ a chave nao mudar
+    # quando as propostas individuais sao anexadas -> evita duplicar linhas.
+    _hp = {k: v for k, v in p.items() if k != "linhaPropostas"}
+    h = hashlib.md5(json.dumps(_hp, sort_keys=True, default=str).encode()).hexdigest()[:8]
     nr_proposta = f"FNS-{cod_fns}-{ano}-{tipo[:8]}-{recurso[:6]}-{nu_proc[:8]}-{h}".replace(" ", "_")[:60]
     return {
         "municipio_id": mun_id,
         "nr_proposta": nr_proposta,
-        "objeto": (f"{tipo} - {recurso}".strip(" -") + (f" — Proc {nu_proc}" if nu_proc != "NA" else ""))[:500],
+        "objeto": (f"{tipo} - {recurso}".strip(" -") + (f" — Proc {nu_proc}" if nu_proc not in ("NA", "N/A") else ""))[:500],
         "tipo_programa": tipo[:100],
         "valor": vl_pago or vl_prop or 0,
         "situacao": sit,
@@ -124,6 +127,44 @@ def _normalize(p: dict, ano: int, mun_id: int, cod_fns: str) -> dict:
         "orgao_concedente": "MS - FNS",
         "raw_data": p,
     }
+
+
+async def _fetch_individuais(client: httpx.AsyncClient, cod_fns: str, ano: int,
+                             tipo: str, recurso: str) -> list[dict]:
+    """Propostas INDIVIDUAIS (Nº SIPA) de um grupo tipo/recurso. O portal usa
+    tpProposta/tpRecurso (em vez de co.../ds...) p/ destravar o agrupamento e
+    retornar 1 item por proposta, cada um com nuProposta."""
+    if not tipo:
+        return []
+    try:
+        r = await client.get(
+            f"{BASE}/recursos/proposta/consultar",
+            params={"ano": ano, "coEsfera": "", "coMunicipioIbge": cod_fns,
+                    "count": 200, "page": 1, "sgUf": "MG",
+                    "tpProposta": tipo, "tpRecurso": recurso},
+            timeout=30,
+        )
+        if r.status_code != 200:
+            return []
+        its = r.json().get("resultado", {}).get("itensPagina", []) or []
+        out = []
+        for it in its:
+            nup = it.get("nuProposta")
+            if not nup:
+                continue
+            out.append({
+                "nuProposta": nup,
+                "entidade": it.get("noEntidade") or "FUNDO MUNICIPAL DE SAUDE",
+                "nuProcesso": it.get("nuProcesso"),
+                "vlProposta": float(it.get("vlProposta") or 0),
+                "vlPago": float(it.get("vlPago") or 0),
+                "vlPagar": float(it.get("vlPagar") or 0),
+                "parlamentares": it.get("parlamentares") or [],
+            })
+        return out
+    except Exception as ex:
+        log.warning(f"  individuais {tipo}/{recurso} {ano}: {str(ex)[:80]}")
+        return []
 
 
 async def collect_for_municipio(client: httpx.AsyncClient, mun_id: int, cod_fns: str, nome: str) -> list[dict]:
@@ -154,6 +195,13 @@ async def collect_for_municipio(client: httpx.AsyncClient, mun_id: int, cod_fns:
                 if not propostas:
                     break
                 for p in propostas:
+                    # Enriquece o agregado com as propostas INDIVIDUAIS (Nº SIPA)
+                    # p/ o RM mostrar o numero real de cada proposta.
+                    p["linhaPropostas"] = await _fetch_individuais(
+                        client, cod_fns, ano,
+                        (p.get("coTipoProposta") or "").strip(),
+                        (p.get("dsTipoRecurso") or "").strip(),
+                    )
                     items.append(_normalize(p, ano, mun_id, cod_fns))
                 if len(propostas) < 200:
                     break
