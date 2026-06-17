@@ -808,22 +808,39 @@ async def _execute_loop(client, db, messages) -> dict:
     total_in = total_out = cache_read = cache_create = 0
     max_iter = 8
 
+    import asyncio as _asyncio
+
     for iteration in range(max_iter):
-        try:
-            response = await client.messages.create(
-                model=MODEL,
-                max_tokens=16000,
-                thinking={"type": "adaptive"},
-                system=system,
-                tools=TOOLS,
-                messages=messages,
-            )
-        except anthropic.APIStatusError as e:
-            logger.error(f"Anthropic API error: {e.status_code} - {e.message}")
-            raise HTTPException(502, f"Erro Anthropic ({e.status_code}): {e.message[:200]}")
-        except Exception as e:
-            logger.exception("Erro na chamada Anthropic")
-            raise HTTPException(500, f"Erro IA: {str(e)[:200]}")
+        # Retry com backoff p/ erros transitorios de sobrecarga (529 Overloaded,
+        # 503, 500, 429). A API da Anthropic devolve 529 quando esta saturada —
+        # antes isso virava 502 na cara do usuario. Agora tentamos ate 3x.
+        response = None
+        last_err = None
+        for attempt in range(4):
+            try:
+                response = await client.messages.create(
+                    model=MODEL,
+                    max_tokens=16000,
+                    thinking={"type": "adaptive"},
+                    system=system,
+                    tools=TOOLS,
+                    messages=messages,
+                )
+                break
+            except anthropic.APIStatusError as e:
+                last_err = e
+                if e.status_code in (429, 500, 503, 529) and attempt < 3:
+                    logger.warning(f"Anthropic {e.status_code} (sobrecarga) — retry {attempt+1}/3")
+                    await _asyncio.sleep(1.5 * (2 ** attempt))  # 1.5s, 3s, 6s
+                    continue
+                logger.error(f"Anthropic API error: {e.status_code} - {e.message}")
+                raise HTTPException(502, f"Erro Anthropic ({e.status_code}): {e.message[:200]}")
+            except Exception as e:
+                logger.exception("Erro na chamada Anthropic")
+                raise HTTPException(500, f"Erro IA: {str(e)[:200]}")
+        if response is None:
+            sc = getattr(last_err, "status_code", "?")
+            raise HTTPException(503, f"IA temporariamente sobrecarregada ({sc}). Tente de novo em instantes.")
 
         u = response.usage
         total_in += u.input_tokens
