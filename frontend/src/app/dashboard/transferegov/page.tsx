@@ -102,17 +102,23 @@ export default function TransfereGovPage() {
   const [detalhe, setDetalhe] = useState<DetalhePlano | null>(null);
   const [loadingDetalhe, setLoadingDetalhe] = useState(false);
   const [tab, setTab] = useState<"basicos" | "orcamento" | "execucao">("basicos");
+  const [baixandoPdf, setBaixandoPdf] = useState(false);
+
+  const filtrosParams = useCallback((): Record<string, string> => {
+    const params: Record<string, string> = { municipio_id: municipioId || "" };
+    if (situacao !== "TODAS") params.situacao = situacao;
+    if (programa.trim()) params.programa = programa.trim();
+    if (parlamentar.trim()) params.parlamentar = parlamentar.trim();
+    if (emenda.trim()) params.emenda = emenda.trim();
+    if (objeto.trim()) params.objeto = objeto.trim();
+    return params;
+  }, [municipioId, situacao, programa, parlamentar, emenda, objeto]);
 
   const buscar = useCallback(async (refresh = false) => {
     if (!municipioId) return;
     setLoading(true);
     try {
-      const params: Record<string, string | boolean> = { municipio_id: municipioId };
-      if (situacao !== "TODAS") params.situacao = situacao;
-      if (programa.trim()) params.programa = programa.trim();
-      if (parlamentar.trim()) params.parlamentar = parlamentar.trim();
-      if (emenda.trim()) params.emenda = emenda.trim();
-      if (objeto.trim()) params.objeto = objeto.trim();
+      const params: Record<string, string | boolean> = { ...filtrosParams() };
       if (refresh) params.refresh = true;
       const r = await api.get<BuscarResp>("/transferegov/buscar", { params });
       setItems(r.data.items);
@@ -123,7 +129,20 @@ export default function TransfereGovPage() {
     } finally {
       setLoading(false);
     }
-  }, [municipioId, situacao, programa, parlamentar, emenda, objeto]);
+  }, [municipioId, filtrosParams]);
+
+  const gerarPdf = useCallback(async () => {
+    if (!municipioId) return;
+    setBaixandoPdf(true);
+    try {
+      const r = await api.get("/export-pdf/plano-acao", { params: filtrosParams(), responseType: "blob" });
+      const url = window.URL.createObjectURL(new Blob([r.data], { type: "application/pdf" }));
+      const a = document.createElement("a");
+      a.href = url; a.download = "relatorio-plano-acao.pdf";
+      document.body.appendChild(a); a.click(); a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e) { console.error(e); } finally { setBaixandoPdf(false); }
+  }, [municipioId, filtrosParams]);
 
   useEffect(() => {
     if (municipioId) buscar(false);
@@ -204,6 +223,10 @@ export default function TransfereGovPage() {
           <Button onClick={() => buscar(false)} disabled={loading} className="bg-blue-600 hover:bg-blue-700">
             {loading ? <Loader2 className="size-4 mr-1 animate-spin" /> : <Search className="size-4 mr-1" />}
             Filtrar
+          </Button>
+          <Button variant="outline" onClick={gerarPdf} disabled={baixandoPdf || items.length === 0}
+                  title="Gera um PDF só com os planos filtrados">
+            {baixandoPdf ? <Loader2 className="size-4 animate-spin mr-1" /> : null} 📄 Gerar PDF (filtrado)
           </Button>
         </div>
       </div>

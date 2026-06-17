@@ -178,6 +178,70 @@ async def export_voluntarias_pdf(
         headers={"Content-Disposition": f"attachment; filename=federais_{mun.nome.replace(' ','_')}.pdf"})
 
 
+def _parse_emenda(cod: str):
+    """codigoEmendaFormatado "202341760002-Vilson da Fetaemg" -> (codigo, parlamentar)."""
+    if not cod:
+        return ("", "")
+    if "-" in cod:
+        c, n = cod.split("-", 1)
+        return (c.strip(), n.strip())
+    return (cod.strip(), "")
+
+
+@router.get("/plano-acao")
+async def export_plano_acao_pdf(
+    municipio_id: int = Query(...),
+    situacao: Optional[str] = Query(None),
+    programa: Optional[str] = Query(None),
+    parlamentar: Optional[str] = Query(None),
+    emenda: Optional[str] = Query(None),
+    objeto: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """PDF dos Planos de Acao (Transferencia Especial / Pix Parlamentar) com os
+    MESMOS filtros da tela Especiais."""
+    mun = (await db.execute(select(Municipio).where(Municipio.id == municipio_id))).scalar_one_or_none()
+    if not mun:
+        raise HTTPException(404, "Municipio nao encontrado")
+    from routers.transferegov import buscar as _buscar
+    res = await _buscar(
+        municipio_id=municipio_id,
+        situacao=(situacao if situacao and situacao != "TODAS" else None),
+        programa=programa, parlamentar=parlamentar, emenda=emenda, objeto=objeto,
+        refresh=False, db=db, _=None,
+    )
+    items = res.get("items", [])
+    rows = []
+    for it in items:
+        cod, parl = _parse_emenda(it.get("emenda_codigo") or "")
+        benef = f"{it.get('beneficiario_cnpj') or ''} - {it.get('beneficiario_nome') or ''}".strip(" -")
+        rows.append([
+            (it.get("codigo") or "")[:16],
+            cod[:14] or "-",
+            Paragraph((parl or "-")[:50], ParagraphStyle("p", fontSize=7)),
+            Paragraph(benef[:70], ParagraphStyle("b", fontSize=7)),
+            _br(it.get("valor_total")),
+            (it.get("situacao_plano_acao") or "")[:14],
+            (it.get("situacao_plano_trabalho") or "-")[:22],
+        ])
+    _f = []
+    if situacao and situacao != "TODAS": _f.append(f"situacao: {situacao}")
+    if programa: _f.append(f"programa: {programa}")
+    if parlamentar: _f.append(f"parlamentar/emenda: {parlamentar}")
+    if emenda: _f.append(f"emenda: {emenda}")
+    if objeto: _f.append(f"objeto: {objeto}")
+    filtros = " | ".join(_f) if _f else "sem filtros (todos)"
+    pdf = _build_pdf(
+        f"Planos de Acao - Transferencia Especial - {mun.nome}/{mun.uf}",
+        f"Filtros: {filtros} · {len(rows)} plano(s)",
+        ["Codigo", "Emenda", "Parlamentar", "Beneficiario", "Valor", "Sit. P. Acao", "Sit. P. Trabalho"],
+        rows,
+    )
+    return StreamingResponse(pdf, media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=plano_acao_{mun.nome.replace(' ','_')}.pdf"})
+
+
 @router.get("/emendas")
 async def export_emendas_pdf(
     municipio_id: int = Query(...),
