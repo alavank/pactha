@@ -135,6 +135,11 @@ export default function DashboardPage() {
     if (f === "voluntaria") return { label: "Federal", cls: "bg-cyan-50 text-cyan-700 border-cyan-200" };
     return { label: "Estadual (SIGCON)", cls: "bg-blue-50 text-blue-700 border-blue-200" };
   };
+  const fmtDataHora = (iso?: string): string => {
+    if (!iso) return "-";
+    const d = new Date(iso);
+    return isNaN(d.getTime()) ? "-" : d.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
+  };
   const statusCor = (s: string): string => {
     const t = (s || "").toLowerCase();
     if (t.includes("aprovad") || t.includes("execu") || t.includes("vigor") || t.includes("conclu")) return "text-green-700";
@@ -447,7 +452,7 @@ export default function DashboardPage() {
                       </div>
                     </div>
                     <span className="text-xs text-muted-foreground ml-4 shrink-0">
-                      {formatDate(m.changed_at)}
+                      {fmtDataHora(m.changed_at)}
                     </span>
                   </div>
                 );
