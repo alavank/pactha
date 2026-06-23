@@ -52,6 +52,8 @@ MIGRATION_FILES = [
     "add_voluntarias_id_proposta_siconv.sql",
     # Log de mudancas de status (trigger) -> aviso no dashboard
     "add_status_changes.sql",
+    # Modulo Geracao de Documentos (plano de sustentabilidade etc.)
+    "add_documentos.sql",
 ]
 
 

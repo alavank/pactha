@@ -19,6 +19,7 @@ import {
   Edit2,
   UserCircle2,
   Send,
+  FileSignature,
 } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -49,6 +50,7 @@ const NAV_ITEMS: NavEntry[] = [
   { href: "/dashboard/parlamentares", label: "Parlamentares", icon: UserCircle2 },
   { href: "/dashboard/gestao", label: "Gestão Interna", icon: Edit2 },
   { href: "/dashboard/rm", label: "Relatório de Monitoramento", icon: FileText },
+  { href: "/dashboard/documentos", label: "Geração de Documentos", icon: FileSignature },
   {
     label: "Estaduais",
     icon: FileText,
