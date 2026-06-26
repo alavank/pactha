@@ -70,37 +70,76 @@ def _classifica_parte(esfera: str, situacao: str | None, dt_fim: date | None, si
     return 1 if esfera == "federal" else 2
 
 
-def _federal_bucket(situacao: str | None) -> str:
-    """Classifica um instrumento FEDERAL por STATUS (nao por data de vigencia —
-    proposta em analise com data planejada vencida AINDA e demanda ativa):
-      - 'rejeitada'  -> rejeitada/indeferida (vai p/ secao propria de Rejeitados)
-      - 'paga'       -> ja paga/encerrada/prestacao de contas -> PARTE 3
-      - 'ativa'      -> demanda viva (analise, aprovacao, execucao, empenho,
-                        pendente) -> PARTE 1 (DEMANDAS EM BRASILIA)
+def _fed_status(situacao: str | None) -> str:
+    """Status FEDERAL CONFIÁVEL (pelo estado do sistema, ignorando o flag
+    detalhe->>'Empenhado' que é furado — havia propostas só "Aprovadas" marcadas
+    como empenhadas sem empenho real):
+      - 'dead'      -> rejeitada/indeferida/anulada/rescindida/legado (seção Rejeitados)
+      - 'paga'      -> prestação de contas / paga / concluída -> PARTE 3
+      - 'empenhada' -> empenhada, falta pagamento (Em execução / FNS Empenhado) -> PARTE 1
+      - 'ativa'     -> pré-empenho (análise/aprovada/complementação/ciente/pendente)
     """
     s = (situacao or "").strip().lower()
-    if not s:
-        return "ativa"
-    if "rejeitad" in s or "indeferid" in s:
-        return "rejeitada"
-    if (("presta" in s and "conta" in s) or "conclu" in s or "encerrad" in s
-            or "anulad" in s or "rescind" in s or s == "pago" or "pagamento" in s):
+    if any(x in s for x in ("rejeitad", "indeferid", "anulad", "rescind", "legado")):
+        return "dead"
+    if ("presta" in s and "conta" in s) or "conclu" in s or s == "pago" or "pagamento" in s or "finaliz" in s:
         return "paga"
+    if "execu" in s or "empenhad" in s:
+        return "empenhada"
     return "ativa"
+
+
+def _fed_empenhada(situacao: str | None) -> bool:
+    """True quando o instrumento foi, no mínimo, empenhado (inclui pago/prestação)."""
+    return _fed_status(situacao) in ("empenhada", "paga")
+
+
+def _fed_retem(ano_prop: int | None, ano_emissao: int, situacao: str | None) -> bool:
+    """Regra de permanência no RM, por ANO DE EMISSÃO:
+      - empenhada/paga -> sempre permanece (qualquer ano)
+      - dead           -> permanece (vai p/ seção Rejeitados à parte)
+      - ativa (pré-empenho) -> só permanece se for do ano de emissão (ou posterior)
+    """
+    st = _fed_status(situacao)
+    if st in ("empenhada", "paga", "dead"):
+        return True
+    return ano_prop is not None and ano_prop >= ano_emissao
 
 
 def _federal_destino(situacao: str | None) -> tuple[int, str]:
     """(parte, secao) para um instrumento federal a partir do status."""
-    b = _federal_bucket(situacao)
-    if b == "rejeitada":
+    st = _fed_status(situacao)
+    if st == "dead":
         return (1, _SEC_FED_REJ)
-    if b == "paga":
+    if st == "paga":
         return (3, _SEC_FED)
     return (1, _SEC_FED)
 
 
-async def montar_conteudo(db: AsyncSession, municipio_id: int) -> dict:
-    """Monta o conteudo JSONB de um RM a partir dos dados do banco."""
+def _ano_de(*vals) -> int | None:
+    """Extrai um ano (YYYY) de 'NNNNNN/2025', '202541760003-...', int, etc."""
+    import re as _re
+    for v in vals:
+        if v is None:
+            continue
+        if isinstance(v, int):
+            if 2000 <= v <= 2100:
+                return v
+            continue
+        m = _re.search(r"(20\d{2})", str(v))
+        if m:
+            return int(m.group(1))
+    return None
+
+
+async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int | None = None) -> dict:
+    """Monta o conteudo JSONB de um RM a partir dos dados do banco.
+
+    ano_emissao: ano-base da janela do relatório (year da data de referência).
+    Mantém só propostas federais do ano de emissão (em análise/aprovação) + todas
+    as empenhadas (qualquer ano). Default = ano atual."""
+    if not ano_emissao:
+        ano_emissao = date.today().year
     # Estrutura: {partes: [{ordem, titulo, secoes: [{ordem, titulo, grupos:
     #   [{ordem, orgao, itens: [...]}]}]}]}
     # Build incrementally then convert.
@@ -164,6 +203,11 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int) -> dict:
                              for _p in parls if isinstance(_p, dict)]
                     nomes = [n for n in nomes if n]
                     resp = ", ".join(nomes) if nomes else recurso_label
+                    # Regra do ano de emissão: empenhada/paga sempre; "em análise"
+                    # só do ano de emissão. Empenho validado pelo valor (vlPagar/
+                    # vlPago), não por flag.
+                    if not _fed_retem(c.ano, ano_emissao, sit):
+                        continue
                     parte, secao = _federal_destino(sit)
                     add_item(parte, secao, orgao, {
                         "tipo": "Proposta",
@@ -177,10 +221,11 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int) -> dict:
                         "saldo_bancario": None, "dt_saldo": None,
                         "dt_fim_vigencia": None,
                         "situacao_atual": sit,
+                        "empenhado": "Sim" if _fed_empenhada(sit) else "Não",
                         "fonte": "fns",
                         "fonte_ref": str(c.id),
                     })
-            else:
+            elif _fed_retem(c.ano, ano_emissao, c.situacao):
                 # Fallback: bucket sem individuais (dados ainda nao re-coletados).
                 parte, secao = _federal_destino(c.situacao)
                 add_item(parte, secao, orgao, {
@@ -195,6 +240,7 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int) -> dict:
                     "saldo_bancario": None, "dt_saldo": None,
                     "dt_fim_vigencia": _iso(dt_fim),
                     "situacao_atual": (c.situacao or "").strip(),
+                    "empenhado": "Sim" if _fed_empenhada(c.situacao) else "Não",
                     "fonte": "fns",
                     "fonte_ref": str(c.id),
                 })
@@ -245,6 +291,13 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int) -> dict:
     """), {"m": municipio_id})
     for row in vol.fetchall():
         sit = row[3] or ""
+        # Regra do ANO DE EMISSÃO: empenhada/paga (Em execução / Prestação) fica
+        # sempre; "em análise/aprovada" só do ano de emissão; antigas não-avançadas
+        # saem. Empenho validado pelo STATUS (não pelo flag detalhe->>'Empenhado',
+        # que estava marcando "Aprovadas" como empenhadas sem empenho real).
+        ano_prop = _ano_de(row[1], row[2])  # numero_proposta NNNNNN/AAAA / codigo
+        if not _fed_retem(ano_prop, ano_emissao, sit):
+            continue
         dt_fim = None
         try:
             from datetime import datetime as _dt
@@ -252,9 +305,6 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int) -> dict:
         except (ValueError, TypeError):
             pass
         tipo_label = "Convênio" if row[2] else "Proposta"
-        # Classifica por STATUS (nao por data): proposta "em analise" com data
-        # planejada vencida AINDA e demanda ativa (PARTE 1). Pagas/encerradas ->
-        # PARTE 3. Rejeitadas -> secao propria (Esporte de Araujos cai aqui).
         parte, secao = _federal_destino(sit)
         orgao = (row[4] or "Outros - Federal").strip()
         # Campos SEPARADOS (sem duplicar): situacao do ciclo, contratacao,
@@ -262,8 +312,7 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int) -> dict:
         situacao_contr = row[10]
         clausula_dt = row[11]
         clausula_motivo = row[12]
-        empenhado_raw = (row[15] or "").strip().lower()
-        empenhado = {"sim": "Sim", "não": "Não", "nao": "Não"}.get(empenhado_raw, "")
+        empenhado = "Sim" if _fed_empenhada(sit) else "Não"  # validado pelo status
         add_item(parte, secao, orgao, {
             "tipo": tipo_label,
             "numero": row[2] or row[1],
@@ -298,10 +347,15 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int) -> dict:
                     continue
                 sit = it.get("planoAcaoSituacao") or ""
                 sl = sit.lower()
-                # TE: CONCLUIDA/paga -> PARTE 3; demais (CIENTE/EM_ANALISE/
-                # IMPEDIDO/EM_ELABORACAO) sao demandas ativas -> PARTE 1.
-                parte_te = 3 if ("conclu" in sl or "pag" in sl or "finaliz" in sl) else 1
                 cod_em = it.get("codigoEmendaFormatado") or ""
+                # Mesma regra do ano de emissão: TE concluída fica (PARTE 3);
+                # TE ativa (CIENTE/análise) só do ano de emissão; antiga não-
+                # concluída sai. Ano vem do código da emenda (AAAA...) ou do plano.
+                ano_te = _ano_de(cod_em, it.get("planoAcaoCodigo"))
+                if not _fed_retem(ano_te, ano_emissao, sit):
+                    continue
+                # CONCLUIDA/paga -> PARTE 3; demais (CIENTE/EM_ANALISE/...) -> PARTE 1.
+                parte_te = 3 if ("conclu" in sl or "pag" in sl or "finaliz" in sl) else 1
                 parl = cod_em.split("-", 1)[1].strip() if "-" in cod_em else ""
                 valor = _money(it.get("valorTotal"))
                 add_item(parte_te, _SEC_FED, "Transferência Especial (Emenda Pix)", {

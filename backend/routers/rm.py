@@ -96,7 +96,14 @@ async def criar(
     user=Depends(get_current_user),
 ):
     mun = await _get_municipio(db, body.municipio_id)
-    conteudo = await montar_conteudo(db, body.municipio_id) if body.auto_popular else {"partes": []}
+    # ano de emissão = ano da data de referência (janela do relatório por ANO)
+    _ano = None
+    try:
+        _dr = body.data_referencia
+        _ano = _dr.year if hasattr(_dr, "year") else int(str(_dr)[:4])
+    except (ValueError, TypeError):
+        _ano = None
+    conteudo = await montar_conteudo(db, body.municipio_id, _ano) if body.auto_popular else {"partes": []}
     titulo = body.titulo or f"RELATÓRIO DE MONITORAMENTO – {mun.nome.upper()}/{mun.uf}"
     # ON CONFLICT: se ja existe RM nessa data, atualiza conteudo
     sql = text("""
@@ -180,11 +187,12 @@ async def repopular(
 ):
     """Substitui conteudo pelo gerado automaticamente a partir do DB atual."""
     row = (await db.execute(text(
-        "SELECT municipio_id FROM rm_relatorios WHERE id = :id"
+        "SELECT municipio_id, data_referencia FROM rm_relatorios WHERE id = :id"
     ), {"id": rid})).first()
     if not row:
         raise HTTPException(404, "RM não encontrado")
-    conteudo = await montar_conteudo(db, row[0])
+    _ano = row[1].year if row[1] and hasattr(row[1], "year") else None
+    conteudo = await montar_conteudo(db, row[0], _ano)
     await db.execute(text(
         "UPDATE rm_relatorios SET conteudo = CAST(:c AS JSONB), updated_at = NOW() WHERE id = :id"
     ), {"c": json.dumps(conteudo), "id": rid})

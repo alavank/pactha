@@ -103,6 +103,14 @@ def _styles():
         "Rodape", parent=base["Normal"], fontName="Helvetica",
         fontSize=8, alignment=TA_CENTER, textColor=colors.HexColor("#475569"),
     )
+    # DESTAQUE da Cláusula Suspensiva / Liminar Judicial (caixa âmbar)
+    s["clausula"] = ParagraphStyle(
+        "Clausula", parent=base["Normal"], fontName="Helvetica",
+        fontSize=9.5, leftIndent=28, rightIndent=10, spaceBefore=3, spaceAfter=3,
+        leading=13, backColor=colors.HexColor("#FEF3C7"),
+        borderColor=colors.HexColor("#D97706"), borderWidth=1, borderPadding=5,
+        textColor=colors.HexColor("#7c2d12"),
+    )
     return s
 
 
@@ -149,15 +157,33 @@ def _campos_do_item(item: dict) -> list[tuple[str, str]]:
     # Empenhado (TransfereGov: Sim/Não)
     if item.get("empenhado"):
         out.append(("Empenhado", item["empenhado"]))
-    # Situação de Contratação (Normal / Cláusula Suspensiva / Liminar Judicial)
-    if item.get("situacao_contratacao"):
-        out.append(("Situação de Contratação", item["situacao_contratacao"]))
-    # Detalhe da Cláusula Suspensiva — cada informação em sua própria linha
-    if item.get("clausula_motivo"):
-        out.append(("Motivo da Cláusula Suspensiva", item["clausula_motivo"]))
-    if item.get("clausula_dt"):
-        out.append(("Data prevista para resolução", _fmt_dt(item["clausula_dt"])))
+    # Situação de Contratação "Normal" aparece como linha simples; Cláusula
+    # Suspensiva / Liminar Judicial vão para a CAIXA DE DESTAQUE (_clausula_destaque),
+    # então NÃO entram aqui.
+    sc = (item.get("situacao_contratacao") or "")
+    if sc and not _tem_clausula(item):
+        out.append(("Situação de Contratação", sc))
     return out
+
+
+def _tem_clausula(item: dict) -> bool:
+    """True quando o item tem Cláusula Suspensiva / Liminar Judicial (merece destaque)."""
+    sc = (item.get("situacao_contratacao") or "").lower()
+    return ("clausula" in sc or "cláusula" in sc or "suspensiv" in sc or "liminar" in sc
+            or bool(item.get("clausula_motivo")) or bool(item.get("clausula_dt")))
+
+
+def _clausula_destaque(item: dict) -> str | None:
+    """Texto (markup) da caixa de destaque da cláusula, ou None se não houver."""
+    if not _tem_clausula(item):
+        return None
+    sc = item.get("situacao_contratacao") or "Cláusula Suspensiva"
+    partes = [f"⚠ <b>Situação de Contratação:</b> {_escape(sc)}"]
+    if item.get("clausula_motivo"):
+        partes.append(f"<b>Motivo:</b> {_escape(item['clausula_motivo'])}")
+    if item.get("clausula_dt"):
+        partes.append(f"<b>Data prevista para resolução:</b> {_escape(_fmt_dt(item['clausula_dt']))}")
+    return "<br/>".join(partes)
 
 
 def _escape(s: str) -> str:
@@ -211,6 +237,11 @@ def gerar_pdf(meta: dict, conteudo: dict, municipio_nome: str) -> bytes:
                             f"➢ <b>{_escape(label)}:</b> {_escape(str(val))}",
                             s["item_campo"],
                         ))
+                    # Caixa de DESTAQUE p/ Cláusula Suspensiva / Liminar Judicial
+                    destaque = _clausula_destaque(item)
+                    if destaque:
+                        bloco.append(Spacer(1, 2))
+                        bloco.append(Paragraph(destaque, s["clausula"]))
                     bloco.append(Spacer(1, 4))
                     story.append(KeepTogether(bloco))
 
