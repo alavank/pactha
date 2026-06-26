@@ -6,7 +6,6 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { FileText, Plus, Trash2, Eye, Download, Loader2 } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 
 interface RmListItem {
   id: number;
@@ -27,7 +26,9 @@ export default function RmListPage() {
   const [items, setItems] = useState<RmListItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [criando, setCriando] = useState(false);
-  const [novaData, setNovaData] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const anoAtual = new Date().getFullYear();
+  const [novoAno, setNovoAno] = useState<number>(anoAtual);
+  const anosOpcoes = [anoAtual + 1, anoAtual, anoAtual - 1, anoAtual - 2];
 
   const buscar = useCallback(async () => {
     if (!municipioId) return;
@@ -48,7 +49,8 @@ export default function RmListPage() {
     try {
       const r = await api.post<{ id: number }>("/rm", {
         municipio_id: Number(municipioId),
-        data_referencia: novaData,
+        // RM é ANUAL: a janela usa o ANO. Guardamos 01/01 do ano como referência.
+        data_referencia: `${novoAno}-01-01`,
         cidade_emissao: "Brasília/DF",
         auto_popular: true,
       });
@@ -93,17 +95,20 @@ export default function RmListPage() {
       <div className="bg-white border rounded p-4">
         <h2 className="text-sm font-semibold mb-1">Novo RM</h2>
         <p className="text-xs text-slate-500 mb-3">
-          O conteúdo será preenchido automaticamente com os dados atuais do banco (SIGCON, Voluntárias, SIMEC, Emendas).
-          Você edita livremente depois.
+          O RM é <strong>anual</strong> (por ano de emissão). O conteúdo é preenchido automaticamente com os dados
+          atuais do banco: propostas do ano em análise/aprovação + todas as empenhadas. Você edita livremente depois.
         </p>
         <div className="flex flex-wrap gap-3 items-end">
           <div>
-            <label className="text-xs text-slate-600 mb-1 block">Data de referencia</label>
-            <Input type="date" value={novaData} onChange={(e) => setNovaData(e.target.value)} />
+            <label className="text-xs text-slate-600 mb-1 block">Ano de referência</label>
+            <select className="border border-slate-300 rounded-md p-2 text-sm h-9"
+                    value={novoAno} onChange={(e) => setNovoAno(Number(e.target.value))}>
+              {anosOpcoes.map((a) => <option key={a} value={a}>{a}</option>)}
+            </select>
           </div>
           <Button onClick={criar} disabled={criando} className="bg-blue-600 hover:bg-blue-700">
             {criando ? <Loader2 className="size-4 animate-spin mr-1" /> : <Plus className="size-4 mr-1" />}
-            Criar RM
+            Criar RM {novoAno}
           </Button>
         </div>
       </div>
@@ -121,10 +126,10 @@ export default function RmListPage() {
               <li key={rm.id} className="flex items-center justify-between gap-3 px-3 py-2.5 hover:bg-slate-50">
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-semibold text-slate-900">
-                    {rm.titulo || `RM - ${rm.municipio_nome || ""} - ${rm.data_referencia}`}
+                    {rm.titulo || `RM ${(rm.data_referencia || "").slice(0, 4)} - ${rm.municipio_nome || ""}`}
                   </div>
                   <div className="text-xs text-slate-500">
-                    Data ref.: {rm.data_referencia} ·
+                    Exercício: {(rm.data_referencia || "").slice(0, 4)} ·
                     <span className={`ml-1.5 inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold ${rm.status === "finalizado" ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-800"}`}>
                       {rm.status}
                     </span>

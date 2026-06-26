@@ -221,7 +221,7 @@ export default function RmEditorPage() {
           </Button>
           <div>
             <h1 className="text-xl font-bold text-blue-800">
-              RM - {rm.municipio_nome}/{rm.uf} - {rm.data_referencia}
+              RM {(rm.data_referencia || "").slice(0, 4)} - {rm.municipio_nome}/{rm.uf}
             </h1>
             <div className="text-xs text-slate-500">
               <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold ${rm.status === "finalizado" ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-800"}`}>
@@ -256,8 +256,14 @@ export default function RmEditorPage() {
           <Input value={rm.titulo || ""} onChange={(e) => setRm({ ...rm, titulo: e.target.value })} />
         </div>
         <div>
-          <label className="text-xs text-slate-600 mb-1 block">Data Referencia</label>
-          <Input type="date" value={rm.data_referencia} onChange={(e) => setRm({ ...rm, data_referencia: e.target.value })} />
+          <label className="text-xs text-slate-600 mb-1 block">Ano de referência</label>
+          <select className="w-full border border-slate-300 rounded-md p-2 text-sm h-9"
+                  value={(rm.data_referencia || "").slice(0, 4)}
+                  onChange={(e) => setRm({ ...rm, data_referencia: `${e.target.value}-01-01` })}>
+            {(() => { const a = new Date().getFullYear(); return [a + 1, a, a - 1, a - 2, a - 3]; })().map((y) => (
+              <option key={y} value={String(y)}>{y}</option>
+            ))}
+          </select>
         </div>
         <div>
           <label className="text-xs text-slate-600 mb-1 block">Cidade de emissao</label>
