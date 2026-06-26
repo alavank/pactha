@@ -195,8 +195,12 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
                     vlprop = _money(ind.get("vlProposta"))
                     vlpago = _money(ind.get("vlPago"))
                     vlpagar = _money(ind.get("vlPagar")) or 0
+                    # Empenho CONFIRMADO exige REPASSE EFETIVO (vlPago>0). vlPagar>0
+                    # com vlPago=0 é só o valor proposto "a pagar" — NÃO é empenho real
+                    # (havia propostas 2014/2017 marcadas "Empenhado" com repasse R$0).
+                    # Sem vlPago, cai em "Em análise" (pré-empenho) e segue a regra do ano.
                     sit = ("Pago" if (vlpago or 0) > 0 and vlpagar == 0
-                           else "Empenhado" if vlpagar > 0
+                           else "Empenhado" if (vlpago or 0) > 0
                            else "Em análise" if (vlprop or 0) > 0 else "Pendente")
                     parls = ind.get("parlamentares") or []
                     nomes = [(_p.get("noApelidoPolitico") or _p.get("noParlamentar") or _p.get("nome"))
