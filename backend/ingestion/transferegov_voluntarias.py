@@ -834,12 +834,13 @@ async def run():
         # Contexto GUEST (sem cookies): listagem via Acesso Livre
         ctx_guest = await browser.new_context(ignore_https_errors=True, user_agent="Mozilla/5.0 Chrome/131")
         page_guest = await ctx_guest.new_page()
-        # Contexto AUTH (com cookies SSO opcional): visita detalhes pra ver
-        # campos gated (parlamentar, sit_contratacao_detalhe)
-        # Detecta sessao gov.br + valida JWT antes de criar contexto auth
-        govbr_cks = _load_govbr_cookies()
+        # GUEST-ONLY: a Cláusula Suspensiva (situação + motivo + data) agora vem do
+        # OPEN DATA (siconv_convenio_backfill), então NÃO usamos mais a sessão
+        # autenticada gov.br aqui. Isso elimina a dependência de re-captura
+        # (reCAPTCHA) e acelera o scrape (sem navegar o instrumento por proposta).
+        govbr_cks = None
         page_auth = None
-        if govbr_cks:
+        if govbr_cks:  # desativado de propósito (guest-only) — bloco abaixo nunca roda
             # Carrega cookies originais (com expiration) para checar validade.
             # Auth do scraper usa principalmente JSESSIONID de discricionarias
             # (capturado quando user faz bookmarklet em /voluntarias/...).
@@ -905,6 +906,16 @@ async def run():
         logger.info(f"  backfill parlamentar: {npb} linha(s) atualizadas")
     except Exception as e:
         logger.warning(f"  backfill parlamentar falhou: {str(e)[:160]}")
+    # Backfill SITUACAO DE CONTRATACAO + CLAUSULA SUSPENSIVA via OPEN DATA
+    # (siconv_convenio) — substitui a dependencia da sessao gov.br autenticada.
+    # Assim o detalhe da clausula (motivo + data prevista) atualiza sozinho, sem
+    # re-captura/reCAPTCHA.
+    try:
+        from ingestion import siconv_convenio_backfill as _cb
+        ncl = _cb.backfill(use_cache=False)
+        logger.info(f"  backfill clausula/contratacao: {ncl} linha(s) atualizadas")
+    except Exception as e:
+        logger.warning(f"  backfill clausula falhou: {str(e)[:160]}")
     # Log de ingestao
     try:
         import psycopg2
