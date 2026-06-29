@@ -65,12 +65,12 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-900 via-blue-800 to-indigo-900 p-4">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#16315c] via-[#1b3a6b] to-[#102a4d] p-4">
       <Card className="w-full max-w-md shadow-2xl border-0">
         <CardHeader className="text-center pb-2">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/pacta-logo.png" alt="PACTA" className="mx-auto mb-1 h-28 w-auto" />
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-base-content/60">
             Monitoramento de Convênios e Transferências
           </p>
         </CardHeader>

@@ -81,54 +81,54 @@ export default function DocumentosPage() {
 
   return (
     <div className="space-y-5">
-      <div className="border-b border-slate-200 pb-4 flex flex-wrap items-end justify-between gap-3">
+      <div className="border-b border-base-300 pb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2 text-xs text-slate-500 mb-1">
-            <span>Início</span><span>›</span><span className="text-slate-700">Geração de Documentos</span>
+          <div className="flex items-center gap-2 text-xs text-base-content/60 mb-1">
+            <span>Início</span><span>›</span><span className="text-base-content/70">Geração de Documentos</span>
           </div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-            <FileSignature className="size-6 text-blue-700" /> Geração de Documentos
+          <h1 className="text-2xl font-bold text-base-content tracking-tight flex items-center gap-2">
+            <FileSignature className="size-6 text-primary" /> Geração de Documentos
           </h1>
-          <p className="text-sm text-slate-500 mt-1">
+          <p className="text-sm text-base-content/60 mt-1">
             Preencha, salve e exporte documentos (DOCX/PDF) com edição e exclusão.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           {tipos.map((t) => (
-            <Button key={t.tipo} onClick={() => novo(t.tipo)} className="bg-blue-600 hover:bg-blue-700">
+            <Button key={t.tipo} onClick={() => novo(t.tipo)} className="bg-primary hover:bg-primary/90">
               <Plus className="size-4 mr-1" /> Novo {t.titulo}
             </Button>
           ))}
         </div>
       </div>
 
-      <div className="bg-white border rounded overflow-hidden">
-        <div className="px-3 py-2 border-b bg-slate-50 text-sm">
+      <div className="bg-base-100 border rounded overflow-hidden">
+        <div className="px-3 py-2 border-b bg-base-200 text-sm">
           <strong>{docs.length}</strong> documento(s){municipioId ? " neste município" : ""}
         </div>
         {loading ? (
           <div className="p-3 space-y-2">
-            {Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-16 animate-pulse bg-gray-100 rounded" />)}
+            {Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-16 animate-pulse bg-base-200 rounded" />)}
           </div>
         ) : docs.length === 0 ? (
-          <div className="p-12 text-center text-slate-500">
+          <div className="p-12 text-center text-base-content/60">
             Nenhum documento criado ainda. Clique em <strong>Novo</strong> acima para começar.
           </div>
         ) : (
           <div className="divide-y">
             {docs.map((d) => (
-              <div key={d.id} className="flex flex-wrap items-center justify-between gap-3 p-3 hover:bg-slate-50">
+              <div key={d.id} className="flex flex-wrap items-center justify-between gap-3 p-3 hover:bg-base-200">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="font-medium text-slate-900 truncate">{d.titulo || "(sem título)"}</span>
-                    <span className="inline-flex items-center rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-blue-700">
+                    <span className="font-medium text-base-content truncate">{d.titulo || "(sem título)"}</span>
+                    <span className="inline-flex items-center rounded border border-primary bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-primary">
                       {tipos.find((t) => t.tipo === d.tipo)?.titulo || d.tipo}
                     </span>
                     {d.status && d.status !== "rascunho" && (
-                      <span className="text-[10px] uppercase text-green-700">{d.status}</span>
+                      <span className="text-[10px] uppercase text-success">{d.status}</span>
                     )}
                   </div>
-                  <div className="text-xs text-slate-500">Atualizado: {fmt(d.updated_at)}</div>
+                  <div className="text-xs text-base-content/60">Atualizado: {fmt(d.updated_at)}</div>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <Button variant="outline" size="sm" onClick={() => editar(d.id)}>
@@ -142,7 +142,7 @@ export default function DocumentosPage() {
                           disabled={baixando === `${d.id}-docx`} title="Exportar DOCX">
                     {baixando === `${d.id}-docx` ? <Loader2 className="size-3.5 animate-spin mr-1" /> : <FileType className="size-3.5 mr-1" />} DOCX
                   </Button>
-                  <Button variant="ghost" size="sm" className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                  <Button variant="ghost" size="sm" className="text-error hover:bg-error/10 hover:text-error"
                           onClick={() => excluir(d.id)} title="Excluir">
                     <Trash2 className="size-3.5" />
                   </Button>

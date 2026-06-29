@@ -121,30 +121,30 @@ export default function UsuariosPage() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Usuarios</h1>
-        <p className="text-sm text-slate-500">Gerenciamento de acessos a plataforma PACTA</p>
+        <h1 className="text-2xl font-bold text-base-content">Usuarios</h1>
+        <p className="text-sm text-base-content/60">Gerenciamento de acessos a plataforma PACTA</p>
       </div>
 
       {erro && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{erro}</div>
+        <div className="rounded-lg border border-error bg-error/15 p-3 text-sm text-error">{erro}</div>
       )}
 
       {/* Criar novo */}
-      <div className="bg-white border rounded-lg p-4">
-        <h2 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
+      <div className="bg-base-100 border rounded-lg p-4">
+        <h2 className="text-sm font-semibold text-base-content/70 mb-3 flex items-center gap-2">
           <UserPlus className="size-4" /> Novo usuario
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
           <div>
-            <label className="text-xs text-slate-600 mb-1 block">Nome</label>
+            <label className="text-xs text-base-content/70 mb-1 block">Nome</label>
             <Input value={novoNome} onChange={(e) => setNovoNome(e.target.value)} placeholder="Nome completo" />
           </div>
           <div>
-            <label className="text-xs text-slate-600 mb-1 block">E-mail</label>
+            <label className="text-xs text-base-content/70 mb-1 block">E-mail</label>
             <Input value={novoEmail} onChange={(e) => setNovoEmail(e.target.value)} placeholder="email@exemplo.com" type="email" />
           </div>
           <div>
-            <label className="text-xs text-slate-600 mb-1 block">Perfil</label>
+            <label className="text-xs text-base-content/70 mb-1 block">Perfil</label>
             <Select value={novoRole} onValueChange={(v) => setNovoRole(v ?? "admin")}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -154,27 +154,27 @@ export default function UsuariosPage() {
           </div>
           <div className="flex items-end">
             <Button onClick={criar} disabled={criando || !novoEmail.trim() || !novoNome.trim()}
-                    className="w-full bg-blue-600 hover:bg-blue-700">
+                    className="w-full bg-primary hover:bg-primary/90">
               {criando ? <Loader2 className="size-4 animate-spin mr-1" /> : <UserPlus className="size-4 mr-1" />}
               Criar
             </Button>
           </div>
         </div>
-        <p className="text-[11px] text-slate-500 mt-2">
+        <p className="text-[11px] text-base-content/60 mt-2">
           Uma senha temporaria sera gerada automaticamente. O usuario sera obrigado a troca-la no primeiro login.
         </p>
       </div>
 
       {/* Lista */}
-      <div className="bg-white border rounded-lg overflow-hidden">
+      <div className="bg-base-100 border rounded-lg overflow-hidden">
         {loading ? (
           <div className="p-4 space-y-2">
-            {Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-10 animate-pulse bg-gray-100 rounded" />)}
+            {Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-10 animate-pulse bg-base-200 rounded" />)}
           </div>
         ) : (
           <Table className="text-sm">
             <TableHeader>
-              <TableRow className="[&>th]:py-2 [&>th]:px-3 [&>th]:text-xs [&>th]:font-semibold bg-slate-50">
+              <TableRow className="[&>th]:py-2 [&>th]:px-3 [&>th]:text-xs [&>th]:font-semibold bg-base-200">
                 <TableHead className="w-[50px]">ID</TableHead>
                 <TableHead>Nome</TableHead>
                 <TableHead>E-mail</TableHead>
@@ -185,17 +185,17 @@ export default function UsuariosPage() {
             </TableHeader>
             <TableBody>
               {users.map((u) => (
-                <TableRow key={u.id} className="[&>td]:py-2 [&>td]:px-3 hover:bg-slate-50">
-                  <TableCell className="text-slate-500">{u.id}</TableCell>
+                <TableRow key={u.id} className="[&>td]:py-2 [&>td]:px-3 hover:bg-base-200">
+                  <TableCell className="text-base-content/60">{u.id}</TableCell>
                   <TableCell className="font-medium">
                     {u.name}
                     {u.must_change_password && (
-                      <span className="ml-2 text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">
+                      <span className="ml-2 text-[10px] bg-warning/15 text-warning px-1.5 py-0.5 rounded">
                         troca pendente
                       </span>
                     )}
                   </TableCell>
-                  <TableCell className="text-slate-600">{u.email}</TableCell>
+                  <TableCell className="text-base-content/70">{u.email}</TableCell>
                   <TableCell>
                     <Select value={u.role} onValueChange={(v) => v && mudarRole(u, v)}>
                       <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
@@ -206,7 +206,7 @@ export default function UsuariosPage() {
                   </TableCell>
                   <TableCell className="text-center">
                     <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] ${
-                      u.active ? "bg-green-100 text-green-800" : "bg-gray-200 text-gray-600"
+                      u.active ? "bg-success/15 text-success" : "bg-base-300 text-base-content/70"
                     }`}>
                       {u.active ? "Ativo" : "Inativo"}
                     </span>
@@ -233,28 +233,28 @@ export default function UsuariosPage() {
       {senhaGerada && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
              onClick={() => setSenhaGerada(null)}>
-          <div className="bg-white rounded-lg shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-            <div className="bg-green-50 px-4 py-3 rounded-t-lg flex items-center justify-between border-b">
-              <h3 className="font-bold text-green-900">Senha temporaria gerada</h3>
-              <button onClick={() => setSenhaGerada(null)}><X className="size-5 text-gray-500" /></button>
+          <div className="bg-base-100 rounded-lg shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-success/15 px-4 py-3 rounded-t-lg flex items-center justify-between border-b">
+              <h3 className="font-bold text-success">Senha temporaria gerada</h3>
+              <button onClick={() => setSenhaGerada(null)}><X className="size-5 text-base-content/60" /></button>
             </div>
             <div className="p-4 space-y-3">
               <div className="text-sm">
-                <div className="text-slate-600">Usuario:</div>
+                <div className="text-base-content/70">Usuario:</div>
                 <div className="font-medium">{senhaGerada.name} - {senhaGerada.email}</div>
               </div>
               <div>
-                <div className="text-xs text-slate-600 mb-1">Senha temporaria (copie e envie por canal seguro):</div>
+                <div className="text-xs text-base-content/70 mb-1">Senha temporaria (copie e envie por canal seguro):</div>
                 <div className="flex gap-2">
-                  <code className="flex-1 bg-slate-100 border rounded px-3 py-2 font-mono text-sm select-all">
+                  <code className="flex-1 bg-base-200 border rounded px-3 py-2 font-mono text-sm select-all">
                     {senhaGerada.senha_temporaria}
                   </code>
                   <Button size="sm" variant="outline" onClick={() => copiar(senhaGerada.senha_temporaria)}>
-                    {copiado ? <Check className="size-4 text-green-600" /> : <Copy className="size-4" />}
+                    {copiado ? <Check className="size-4 text-success" /> : <Copy className="size-4" />}
                   </Button>
                 </div>
               </div>
-              <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+              <p className="text-[11px] text-warning bg-warning/15 border border-warning rounded p-2">
                 Esta senha NAO sera exibida novamente. O usuario sera obrigado a troca-la no primeiro login.
                 Nao envie por e-mail em texto puro.
               </p>

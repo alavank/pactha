@@ -98,14 +98,14 @@ export default function DouMGPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Diário Oficial MG</h1>
+        <h1 className="text-2xl font-bold text-base-content">Diário Oficial MG</h1>
         <p className="text-sm text-muted-foreground">
           Busca em tempo real no Jornal Minas Gerais (jornalminasgerais.mg.gov.br)
         </p>
       </div>
 
       {/* Formulario */}
-      <div className="bg-gray-900 text-white rounded-lg p-4 space-y-3">
+      <div className="bg-primary text-white rounded-lg p-4 space-y-3">
         <div className="flex items-center gap-2 font-bold text-lg">
           <Search className="size-5" />
           Busca de conteúdo
@@ -118,7 +118,7 @@ export default function DouMGPage() {
               value={texto}
               onChange={(e) => setTexto(e.target.value)}
               placeholder="Ex: 1261002768/2025 ou MUNICIPIO DE ARAUJOS"
-              className="bg-white text-black"
+              className="bg-base-100 text-base-content"
               onKeyDown={(e) => { if (e.key === "Enter") buscar(1); }}
             />
           </div>
@@ -129,7 +129,7 @@ export default function DouMGPage() {
               type="date"
               value={dataIni}
               onChange={(e) => setDataIni(e.target.value)}
-              className="bg-white text-black"
+              className="bg-base-100 text-base-content"
             />
           </div>
           <div>
@@ -138,7 +138,7 @@ export default function DouMGPage() {
               type="date"
               value={dataFim}
               onChange={(e) => setDataFim(e.target.value)}
-              className="bg-white text-black"
+              className="bg-base-100 text-base-content"
             />
           </div>
         </div>
@@ -153,11 +153,11 @@ export default function DouMGPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-3 justify-end pt-2 border-t border-gray-700">
-          <Button variant="ghost" onClick={limpar} className="text-white hover:bg-gray-800">
+        <div className="flex items-center gap-3 justify-end pt-2 border-t border-primary-content/20">
+          <Button variant="ghost" onClick={limpar} className="text-white hover:bg-primary/80">
             Limpar filtros
           </Button>
-          <Button onClick={() => buscar(1)} disabled={loading} className="bg-white text-black hover:bg-gray-100">
+          <Button onClick={() => buscar(1)} disabled={loading} className="bg-base-100 text-base-content hover:bg-base-200">
             {loading ? <Loader2 className="size-4 animate-spin mr-2" /> : <Search className="size-4 mr-2" />}
             Pesquisar
           </Button>
@@ -165,14 +165,14 @@ export default function DouMGPage() {
       </div>
 
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+        <div className="rounded-lg border border-error bg-error/15 p-3 text-sm text-error">
           {error}
         </div>
       )}
 
       {/* Resultados */}
       {data && (
-        <div className="rounded-lg border bg-white p-4 space-y-3">
+        <div className="rounded-lg border bg-base-100 p-4 space-y-3">
           <div className="flex items-center justify-between border-b pb-2">
             <div className="text-sm text-muted-foreground">
               <span className="font-semibold text-foreground">{data.total_registros} resultados</span> encontrados
@@ -214,13 +214,13 @@ export default function DouMGPage() {
                     <span className="font-medium"> Caderno:</span> {it.tipo_caderno} |
                     <span className="font-medium"> Página:</span> {it.pagina}
                   </div>
-                  <div className="text-sm text-gray-800 whitespace-pre-wrap mb-2">{it.texto_resultado}</div>
+                  <div className="text-sm text-base-content whitespace-pre-wrap mb-2">{it.texto_resultado}</div>
                   <div className="flex items-center gap-3 text-xs">
                     <a
                       href={it.url_visualizar}
                       target="_blank"
                       rel="noreferrer noopener"
-                      className="inline-flex items-center gap-1 text-blue-700 hover:underline"
+                      className="inline-flex items-center gap-1 text-primary hover:underline"
                     >
                       <ExternalLink className="size-3" /> Visualizar publicação
                     </a>
@@ -228,7 +228,7 @@ export default function DouMGPage() {
                       href={it.url_baixar}
                       target="_blank"
                       rel="noreferrer noopener"
-                      className="inline-flex items-center gap-1 text-blue-700 hover:underline"
+                      className="inline-flex items-center gap-1 text-primary hover:underline"
                     >
                       <ExternalLink className="size-3" /> Baixar publicação
                     </a>
@@ -276,12 +276,12 @@ function Toggle({ label, checked, onChange }: { label: string; checked: boolean;
         type="button"
         onClick={() => onChange(!checked)}
         className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-          checked ? "bg-green-500" : "bg-red-500"
+          checked ? "bg-success" : "bg-error"
         }`}
         aria-pressed={checked}
       >
         <span
-          className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${
+          className={`inline-block h-4 w-4 transform rounded-full bg-base-100 transition ${
             checked ? "translate-x-4" : "translate-x-0.5"
           }`}
         />

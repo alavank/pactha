@@ -141,51 +141,51 @@ function SessoesInner() {
 
   return (
     <div className="space-y-6">
-      <div className="border-b border-slate-200 pb-4">
-        <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-          <Bookmark className="size-6 text-purple-700" />
+      <div className="border-b border-base-300 pb-4">
+        <h1 className="text-2xl font-bold text-base-content flex items-center gap-2">
+          <Bookmark className="size-6 text-info" />
           Captura de Sessao
         </h1>
-        <p className="text-sm text-slate-500 mt-1">
+        <p className="text-sm text-base-content/60 mt-1">
           Solucao gratuita para portais com anti-bot (gov.br, FNS, etc).
           Voce loga manualmente e captura a sessao com 1 clique.
         </p>
       </div>
 
       {/* Como funciona */}
-      <Card className="border-l-4 border-l-blue-500 bg-blue-50/40">
+      <Card className="border-l-4 border-l-primary bg-primary/10">
         <CardHeader>
           <CardTitle className="text-base">Como funciona (3 passos)</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
           <div className="flex gap-3">
-            <span className="bg-blue-600 text-white rounded-full size-6 flex items-center justify-center font-bold text-xs flex-shrink-0">1</span>
+            <span className="bg-primary text-white rounded-full size-6 flex items-center justify-center font-bold text-xs flex-shrink-0">1</span>
             <div>
               <strong>Copie seu token PACTA:</strong>
               <button
                 onClick={copyToken}
-                className="ml-2 inline-block bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-xs"
+                className="ml-2 inline-block bg-primary hover:bg-primary/90 text-white px-3 py-1 rounded text-xs"
               >
                 Copiar token
               </button>
             </div>
           </div>
           <div className="flex gap-3">
-            <span className="bg-blue-600 text-white rounded-full size-6 flex items-center justify-center font-bold text-xs flex-shrink-0">2</span>
+            <span className="bg-primary text-white rounded-full size-6 flex items-center justify-center font-bold text-xs flex-shrink-0">2</span>
             <div>
               <strong>Arraste o link &quot;Capturar sessao&quot; (abaixo) para a barra de favoritos do Chrome.</strong>
               <br />
-              <span className="text-xs text-slate-600">
+              <span className="text-xs text-base-content/70">
                 Cada portal tem o seu. Faca isso uma unica vez.
               </span>
             </div>
           </div>
           <div className="flex gap-3">
-            <span className="bg-blue-600 text-white rounded-full size-6 flex items-center justify-center font-bold text-xs flex-shrink-0">3</span>
+            <span className="bg-primary text-white rounded-full size-6 flex items-center justify-center font-bold text-xs flex-shrink-0">3</span>
             <div>
               <strong>Quando logar no portal (FNS, SIMEC...), clique no favorito &quot;PACTA Capturar [portal]&quot;.</strong>
               <br />
-              <span className="text-xs text-slate-600">
+              <span className="text-xs text-base-content/70">
                 Vai pedir para colar o token. Cole e pronto - sessao capturada.
                 Repita 1x/mes ou quando expirar.
               </span>
@@ -196,50 +196,50 @@ function SessoesInner() {
 
       {/* Card destacado: status especifico TransfereGov + rodar scraper */}
       {tgStatus && (
-        <Card className={`border-l-4 ${tgStatus.expired ? "border-l-amber-500 bg-amber-50/40" : "border-l-green-500 bg-green-50/40"}`}>
+        <Card className={`border-l-4 ${tgStatus.expired ? "border-l-warning bg-warning/15" : "border-l-success bg-success/15"}`}>
           <CardHeader>
             <CardTitle className="text-base flex items-center justify-between">
               <span>Sessão TransfereGov (gov.br SSO)</span>
               {tgStatus.has_session ? (
                 tgStatus.expired ? (
-                  <Badge className="bg-red-100 text-red-800 hover:bg-red-100">
+                  <Badge className="bg-error/15 text-error hover:bg-error/15">
                     EXPIROU{tgStatus.user_id_exp_minutes != null ? ` (${Math.abs(tgStatus.user_id_exp_minutes).toFixed(0)} min atrás)` : ""}
                   </Badge>
                 ) : tgStatus.user_id_exp_minutes != null && tgStatus.user_id_exp_minutes < 5 ? (
-                  <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">
+                  <Badge className="bg-warning/15 text-warning hover:bg-warning/15">
                     Expira em {tgStatus.user_id_exp_minutes.toFixed(1)} min — RODE AGORA
                   </Badge>
                 ) : (
-                  <Badge className="bg-green-100 text-green-800 hover:bg-green-100">
+                  <Badge className="bg-success/15 text-success hover:bg-success/15">
                     Válida — expira em {tgStatus.user_id_exp_minutes?.toFixed(0) ?? "?"} min
                   </Badge>
                 )
               ) : (
-                <Badge variant="outline" className="text-slate-500">Sem sessão</Badge>
+                <Badge variant="outline" className="text-base-content/60">Sem sessão</Badge>
               )}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             {tgStatus.has_session && (
-              <div className="text-xs text-slate-600">
+              <div className="text-xs text-base-content/70">
                 Última captura: {new Date(tgStatus.updated_at || "").toLocaleString("pt-BR")}
               </div>
             )}
             {tgStatus.expired && (
-              <div className="rounded bg-red-100 border border-red-300 p-3 text-red-900 text-xs space-y-1">
+              <div className="rounded bg-error/15 border border-error p-3 text-error text-xs space-y-1">
                 <strong>⚠️ Sessão expirou.</strong> A sessão do parcerias.transferegov dura
                 apenas <strong>~20 minutos</strong> após inatividade. Para capturar parlamentar,
                 situação de contratação detalhada e cláusula suspensiva, refaça os 4 passos:
                 <ol className="list-decimal ml-5 space-y-0.5 mt-1">
-                  <li>Abra <code className="bg-white px-1 rounded">parcerias.transferegov.sistema.gov.br/ep-atos-prep-web/home</code></li>
+                  <li>Abra <code className="bg-base-100 px-1 rounded">parcerias.transferegov.sistema.gov.br/ep-atos-prep-web/home</code></li>
                   <li>Clique <strong>Entrar com gov.br</strong> e complete o login</li>
                   <li>Clique no bookmarklet <strong>📎 PACTA Capturar gov.br (parcerias.transferegov)</strong></li>
                   <li><strong>IMEDIATAMENTE</strong> volte aqui e clique <strong>▶ Rodar scraper</strong> abaixo (você tem 20 min)</li>
                 </ol>
-                <div className="mt-2 pt-2 border-t border-red-200">
+                <div className="mt-2 pt-2 border-t border-error">
                   <strong>Para CLÁUSULA SUSPENSIVA / SICONV legado:</strong>
                   <ol className="list-decimal ml-5 space-y-0.5 mt-1">
-                    <li>Já logado no gov.br, abra <code className="bg-white px-1 rounded">discricionarias.transferegov.sistema.gov.br/voluntarias/</code></li>
+                    <li>Já logado no gov.br, abra <code className="bg-base-100 px-1 rounded">discricionarias.transferegov.sistema.gov.br/voluntarias/</code></li>
                     <li>Acesse qualquer convênio (precisa entrar na área autenticada)</li>
                     <li>Clique o bookmarklet <strong>📎 PACTA Capturar SICONV Legado</strong> ENQUANTO ESTIVER nessa página</li>
                   </ol>
@@ -247,13 +247,13 @@ function SessoesInner() {
               </div>
             )}
             {!tgStatus.expired && tgStatus.user_id_exp_minutes != null && tgStatus.user_id_exp_minutes < 10 && (
-              <div className="rounded bg-amber-100 border border-amber-300 p-3 text-amber-900 text-xs">
+              <div className="rounded bg-warning/15 border border-warning p-3 text-warning text-xs">
                 <strong>⏰ Atenção:</strong> a sessão expira em <strong>{tgStatus.user_id_exp_minutes.toFixed(1)} minutos</strong>.
                 Rode o scraper AGORA antes que expire.
               </div>
             )}
             {!tgStatus.expired && tgStatus.vinculo && (
-              <div className="rounded bg-green-100 border border-green-300 p-3 text-green-900 text-xs">
+              <div className="rounded bg-success/15 border border-success p-3 text-success text-xs">
                 Sessão válida (vínculo {tgStatus.vinculo}, nível {tgStatus.nivel}). Expira em{" "}
                 {tgStatus.user_id_exp_minutes?.toFixed(0) ?? "?"} minutos.
               </div>
@@ -262,13 +262,13 @@ function SessoesInner() {
               <button
                 onClick={rodarScraperTransferegov}
                 disabled={scraperRunning}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm font-medium disabled:opacity-50"
+                className="bg-primary hover:bg-primary/90 text-white px-4 py-2 rounded text-sm font-medium disabled:opacity-50"
               >
                 {scraperRunning ? "Iniciando..." : "▶ Rodar scraper TransfereGov agora"}
               </button>
               <button
                 onClick={fetchAll}
-                className="border border-slate-300 hover:bg-slate-50 px-4 py-2 rounded text-sm"
+                className="border border-base-300 hover:bg-base-200 px-4 py-2 rounded text-sm"
               >
                 <RefreshCw className="inline size-3 mr-1" /> Atualizar status
               </button>
@@ -284,38 +284,38 @@ function SessoesInner() {
           const isSiconvLegado = p.key === "siconv_legado";
           return (
             <Card key={p.key} className={
-              st.has_cookies ? "border-green-200" :
-              isSiconvLegado ? "border-l-4 border-l-violet-500 bg-violet-50/30" : ""
+              st.has_cookies ? "border-success" :
+              isSiconvLegado ? "border-l-4 border-l-info bg-info/15" : ""
             }>
               <CardContent className="p-4">
                 {isSiconvLegado && !st.has_cookies && (
-                  <div className="mb-3 text-xs bg-violet-100 border border-violet-200 rounded p-2 text-violet-900">
+                  <div className="mb-3 text-xs bg-info/15 border border-info rounded p-2 text-info">
                     <strong>📌 Necessário para Cláusula Suspensiva:</strong> faça login em{" "}
-                    <code className="bg-white px-1 rounded">discricionarias.transferegov</code>{" "}
+                    <code className="bg-base-100 px-1 rounded">discricionarias.transferegov</code>{" "}
                     (via SSO gov.br) e clique este bookmarklet enquanto estiver em uma página dessa URL.
                   </div>
                 )}
                 <div className="flex items-center justify-between flex-wrap gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                      <h3 className="font-semibold text-slate-900">{p.nome}</h3>
+                      <h3 className="font-semibold text-base-content">{p.nome}</h3>
                       {st.has_cookies ? (
-                        <Badge className="bg-green-100 text-green-800 hover:bg-green-100">
+                        <Badge className="bg-success/15 text-success hover:bg-success/15">
                           <CheckCircle2 className="size-3 mr-1" />
                           Cookies capturados
                         </Badge>
                       ) : st.has_session ? (
-                        <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">
+                        <Badge className="bg-warning/15 text-warning hover:bg-warning/15">
                           Apenas senha (sem cookies)
                         </Badge>
                       ) : (
-                        <Badge variant="outline" className="text-slate-500">
+                        <Badge variant="outline" className="text-base-content/60">
                           <XCircle className="size-3 mr-1" />
                           Sem sessao
                         </Badge>
                       )}
                     </div>
-                    <div className="text-xs text-slate-500">
+                    <div className="text-xs text-base-content/60">
                       {st.has_cookies ? (
                         <>Cookies capturados em: {formatDate(st.atualizado_em)}</>
                       ) : st.has_session ? (
@@ -324,7 +324,7 @@ function SessoesInner() {
                         <>Faca login no portal e clique no bookmarklet</>
                       )}
                     </div>
-                    <div className="text-xs text-slate-400 mt-1">
+                    <div className="text-xs text-base-content/40 mt-1">
                       <a href={p.url} target="_blank" rel="noopener" className="hover:underline">
                         {p.url} <ExternalLink className="inline size-3" />
                       </a>
@@ -338,7 +338,7 @@ function SessoesInner() {
                         e.preventDefault();
                       }
                     }}
-                    className="bg-purple-700 hover:bg-purple-800 text-white px-4 py-2 rounded text-sm font-medium"
+                    className="bg-info hover:bg-info/90 text-white px-4 py-2 rounded text-sm font-medium"
                     draggable
                   >
                     📎 PACTA Capturar {p.nome}
@@ -350,10 +350,10 @@ function SessoesInner() {
         })}
       </div>
 
-      <Card className="bg-amber-50 border-amber-200">
+      <Card className="bg-warning/15 border-warning">
         <CardContent className="p-4 text-sm">
-          <strong className="text-amber-900">Sobre seguranca:</strong>
-          <p className="text-amber-800 mt-1">
+          <strong className="text-warning">Sobre seguranca:</strong>
+          <p className="text-warning mt-1">
             O cookie capturado e cifrado com AES-256-GCM antes de salvar. Apenas
             os scrapers PACTA conseguem decifrar. O token JWT que voce cola e do
             seu proprio login no PACTA - nunca compartilhe. Para invalidar uma sessao,
@@ -365,7 +365,7 @@ function SessoesInner() {
       <div className="flex justify-center">
         <button
           onClick={fetchAll}
-          className="text-sm text-slate-600 hover:text-slate-900 flex items-center gap-1"
+          className="text-sm text-base-content/70 hover:text-base-content flex items-center gap-1"
         >
           <RefreshCw className="size-3" /> Atualizar status
         </button>

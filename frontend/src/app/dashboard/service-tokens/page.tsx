@@ -131,14 +131,14 @@ export default function ServiceTokensPage() {
 
   return (
     <div className="space-y-6">
-      <div className="border-b border-slate-200 pb-4">
+      <div className="border-b border-base-300 pb-4">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-              <KeyRound className="size-6 text-indigo-600" />
+            <h1 className="text-2xl font-bold text-base-content flex items-center gap-2">
+              <KeyRound className="size-6 text-primary" />
               Service Tokens
             </h1>
-            <p className="text-sm text-slate-500 mt-1">
+            <p className="text-sm text-base-content/60 mt-1">
               Tokens de automacao para scrapers (FNS, SIMEC, etc).
               Cada chamada e auditada.
             </p>
@@ -193,27 +193,27 @@ export default function ServiceTokensPage() {
 
       {/* Modal de exibicao do token recem-criado */}
       {showSecret && (
-        <Card className="border-l-4 border-l-amber-500 bg-amber-50">
+        <Card className="border-l-4 border-l-warning bg-warning/15">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-amber-900">
+            <CardTitle className="flex items-center gap-2 text-warning">
               <ShieldAlert className="size-5" />
               Token criado: {showSecret.name}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <p className="text-sm text-amber-900 font-medium">
+            <p className="text-sm text-warning font-medium">
               ANOTE AGORA. Este token NAO sera mostrado novamente.
             </p>
-            <div className="flex items-center gap-2 bg-white border rounded p-2 font-mono text-sm break-all">
+            <div className="flex items-center gap-2 bg-base-100 border rounded p-2 font-mono text-sm break-all">
               <span className="flex-1">{showSecret.token}</span>
               <button
                 onClick={() => copyToClipboard(showSecret.token)}
-                className="p-2 hover:bg-gray-100 rounded"
+                className="p-2 hover:bg-base-200 rounded"
               >
                 <Copy className="size-4" />
               </button>
             </div>
-            <p className="text-xs text-amber-800">
+            <p className="text-xs text-warning">
               Configure no Railway worker: <code>PACTA_SERVICE_TOKEN={showSecret.token.slice(0, 20)}...</code>
             </p>
             <Button variant="outline" size="sm" onClick={() => setShowSecret(null)}>
@@ -227,7 +227,7 @@ export default function ServiceTokensPage() {
       {loading ? (
         <div className="space-y-2">
           {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="h-20 animate-pulse rounded bg-gray-100" />
+            <div key={i} className="h-20 animate-pulse rounded bg-base-200" />
           ))}
         </div>
       ) : tokens.length === 0 ? (
@@ -242,9 +242,9 @@ export default function ServiceTokensPage() {
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                      <h3 className="font-semibold text-slate-900">{t.name}</h3>
+                      <h3 className="font-semibold text-base-content">{t.name}</h3>
                       {t.active ? (
-                        <Badge className="bg-green-100 text-green-800 hover:bg-green-100">
+                        <Badge className="bg-success/15 text-success hover:bg-success/15">
                           Ativo
                         </Badge>
                       ) : (
@@ -278,7 +278,7 @@ export default function ServiceTokensPage() {
                     {t.active && (
                       <button
                         onClick={() => handleRotate(t.id, t.name)}
-                        className="p-2 hover:bg-blue-50 rounded text-blue-600"
+                        className="p-2 hover:bg-primary/10 rounded text-primary"
                         title="Rotacionar token"
                       >
                         <RotateCw className="size-4" />
@@ -287,7 +287,7 @@ export default function ServiceTokensPage() {
                     {t.active && (
                       <button
                         onClick={() => handleRevoke(t.id, t.name)}
-                        className="p-2 hover:bg-red-50 rounded text-red-600"
+                        className="p-2 hover:bg-error/10 rounded text-error"
                         title="Revogar token"
                       >
                         <Trash2 className="size-4" />

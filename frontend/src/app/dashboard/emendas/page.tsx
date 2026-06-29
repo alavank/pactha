@@ -43,12 +43,12 @@ interface Emenda {
 const PER_PAGE = 100; // todos por ano
 
 function statusColor(s?: string): string {
-  if (!s) return "bg-gray-100 text-gray-700";
+  if (!s) return "bg-base-200 text-base-content/70";
   const u = s.toUpperCase();
-  if (u.includes("APROVAD")) return "bg-green-100 text-green-800 border-green-300";
-  if (u.includes("REJEIT") || u.includes("CANCEL")) return "bg-red-100 text-red-800 border-red-300";
-  if (u.includes("ANALIS") || u.includes("AGUARD")) return "bg-yellow-100 text-yellow-800 border-yellow-300";
-  return "bg-blue-100 text-blue-800 border-blue-300";
+  if (u.includes("APROVAD")) return "bg-success/15 text-success border-success";
+  if (u.includes("REJEIT") || u.includes("CANCEL")) return "bg-error/15 text-error border-error";
+  if (u.includes("ANALIS") || u.includes("AGUARD")) return "bg-warning/15 text-warning border-warning";
+  return "bg-primary/10 text-primary border-primary";
 }
 
 function siglaTipo(t?: string): string {
@@ -141,7 +141,7 @@ export default function EmendasEstaduaisPage() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-2xl font-bold text-gray-900">Emendas Parlamentares Estaduais</h1>
+        <h1 className="text-2xl font-bold text-base-content">Emendas Parlamentares Estaduais</h1>
         <Button onClick={exportPdf} size="sm" variant="outline" title="Exportar para PDF">
           📄 PDF
         </Button>
@@ -188,7 +188,7 @@ export default function EmendasEstaduaisPage() {
 
       {loading ? (
         <div className="space-y-2">
-          {Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-12 animate-pulse rounded bg-gray-100" />)}
+          {Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-12 animate-pulse rounded bg-base-200" />)}
         </div>
       ) : grouped.length === 0 ? (
         <div className="flex h-48 items-center justify-center rounded-lg border text-muted-foreground">
@@ -200,10 +200,10 @@ export default function EmendasEstaduaisPage() {
             const isCollapsed = collapsedYears.has(y);
             const totalAno = list.reduce((s, e) => s + (e.valor_indicacao ?? 0), 0);
             return (
-              <div key={y} className="rounded-lg border bg-white overflow-hidden">
+              <div key={y} className="rounded-lg border bg-base-100 overflow-hidden">
                 <button
                   onClick={() => toggleYear(y)}
-                  className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 hover:bg-gray-100 border-b"
+                  className="w-full flex items-center justify-between px-3 py-2 bg-base-200 hover:bg-base-300 border-b"
                 >
                   <div className="flex items-center gap-2">
                     {isCollapsed ? <ChevronRight className="size-4" /> : <ChevronDown className="size-4" />}
@@ -231,11 +231,11 @@ export default function EmendasEstaduaisPage() {
                     </TableHeader>
                     <TableBody>
                       {list.map((em) => (
-                        <TableRow key={em.id} className="[&>td]:py-1 [&>td]:px-2 [&>td]:text-[11px] hover:bg-gray-50">
+                        <TableRow key={em.id} className="[&>td]:py-1 [&>td]:px-2 [&>td]:text-[11px] hover:bg-base-200">
                           <TableCell className="font-mono text-[10px]" title={`Nº Indicação: ${em.nr_indicacao || "-"}`}>{em.nr_indicacao || "-"}</TableCell>
                           <TableCell className="truncate font-medium" title={em.nome_responsavel || ""}>{em.nome_responsavel || "-"}</TableCell>
                           <TableCell title={em.tipo_indicacao || ""}>
-                            <span className="inline-flex items-center rounded bg-purple-50 border border-purple-200 px-1 py-0.5 text-[9px] font-mono text-purple-700">{siglaTipo(em.tipo_indicacao)}</span>
+                            <span className="inline-flex items-center rounded bg-info/15 border border-info px-1 py-0.5 text-[9px] font-mono text-info">{siglaTipo(em.tipo_indicacao)}</span>
                           </TableCell>
                           <TableCell className="font-mono text-[10px]" title={`UO ${em.uo_codigo || "-"}`}>{em.uo_codigo || "-"}</TableCell>
                           <TableCell className="font-mono text-[10px] truncate" title={em.uo_sigla || ""}>{em.uo_sigla || "-"}</TableCell>
@@ -263,7 +263,7 @@ export default function EmendasEstaduaisPage() {
 
 function StatCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border bg-white p-3">
+    <div className="rounded-lg border bg-base-100 p-3">
       <div className="text-xs text-muted-foreground">{label}</div>
       <div className="text-lg font-bold mt-1">{value}</div>
     </div>

@@ -20,28 +20,28 @@ export function formatDate(date: string | null | undefined): string {
 }
 
 export function diasRestantesColor(dias: number | null | undefined): string {
-  if (dias == null) return "text-gray-400";
-  if (dias < 0) return "text-red-600 font-bold";
-  if (dias <= 30) return "text-red-500 font-semibold";
-  if (dias <= 120) return "text-orange-500 font-medium";
-  return "text-green-600";
+  if (dias == null) return "text-base-content/40";
+  if (dias < 0) return "text-error font-bold";
+  if (dias <= 30) return "text-error font-semibold";
+  if (dias <= 120) return "text-warning font-medium";
+  return "text-success";
 }
 
 export function diasRestantesBadge(dias: number | null | undefined): string {
-  if (dias == null) return "bg-gray-100 text-gray-600";
-  if (dias < 0) return "bg-red-100 text-red-800";
-  if (dias <= 30) return "bg-red-100 text-red-700";
-  if (dias <= 120) return "bg-orange-100 text-orange-700";
-  return "bg-green-100 text-green-700";
+  if (dias == null) return "bg-base-200 text-base-content/60";
+  if (dias < 0) return "bg-error/15 text-error";
+  if (dias <= 30) return "bg-error/15 text-error";
+  if (dias <= 120) return "bg-warning/15 text-warning";
+  return "bg-success/15 text-success";
 }
 
 export function situacaoBadgeColor(situacao: string | null | undefined): string {
-  if (!situacao) return "bg-gray-100 text-gray-600";
+  if (!situacao) return "bg-base-200 text-base-content/60";
   const s = situacao.toLowerCase();
-  if (s.includes("execu")) return "bg-blue-100 text-blue-700";
-  if (s.includes("presta")) return "bg-purple-100 text-purple-700";
-  if (s.includes("conclu") || s.includes("finaliz") || s.includes("encerr")) return "bg-green-100 text-green-700";
-  if (s.includes("cancel") || s.includes("anulad")) return "bg-red-100 text-red-700";
-  if (s.includes("proposta") || s.includes("analise")) return "bg-yellow-100 text-yellow-700";
-  return "bg-gray-100 text-gray-600";
+  if (s.includes("execu")) return "bg-primary/10 text-primary";
+  if (s.includes("presta")) return "bg-info/15 text-info";
+  if (s.includes("conclu") || s.includes("finaliz") || s.includes("encerr")) return "bg-success/15 text-success";
+  if (s.includes("cancel") || s.includes("anulad")) return "bg-error/15 text-error";
+  if (s.includes("proposta") || s.includes("analise")) return "bg-warning/15 text-warning";
+  return "bg-base-200 text-base-content/60";
 }

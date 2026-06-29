@@ -207,7 +207,7 @@ export default function RmEditorPage() {
   };
 
   if (loading || !rm) {
-    return <div className="flex h-64 items-center justify-center"><Loader2 className="size-6 animate-spin text-blue-600" /></div>;
+    return <div className="flex h-64 items-center justify-center"><Loader2 className="size-6 animate-spin text-primary" /></div>;
   }
 
   return (
@@ -220,11 +220,11 @@ export default function RmEditorPage() {
             <ArrowLeft className="size-4" />
           </Button>
           <div>
-            <h1 className="text-xl font-bold text-blue-800">
+            <h1 className="text-xl font-bold text-primary">
               RM {(rm.data_referencia || "").slice(0, 4)} - {rm.municipio_nome}/{rm.uf}
             </h1>
-            <div className="text-xs text-slate-500">
-              <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold ${rm.status === "finalizado" ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-800"}`}>
+            <div className="text-xs text-base-content/60">
+              <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold ${rm.status === "finalizado" ? "bg-success/15 text-success" : "bg-warning/15 text-warning"}`}>
                 {rm.status}
               </span>
               {" "}-{" "}{rm.cidade_emissao}
@@ -239,25 +239,25 @@ export default function RmEditorPage() {
           <Button variant="outline" onClick={() => setRm({ ...rm, status: rm.status === "finalizado" ? "rascunho" : "finalizado" })}>
             <FileCheck className="size-4 mr-1" /> {rm.status === "finalizado" ? "Reabrir" : "Finalizar"}
           </Button>
-          <Button onClick={salvar} disabled={saving} className="bg-blue-600 hover:bg-blue-700">
+          <Button onClick={salvar} disabled={saving} className="bg-primary hover:bg-primary/90">
             {saving ? <Loader2 className="size-4 animate-spin mr-1" /> : <Save className="size-4 mr-1" />}
             Salvar
           </Button>
-          <Button onClick={exportarPdf} className="bg-emerald-600 hover:bg-emerald-700">
+          <Button onClick={exportarPdf} className="bg-success hover:bg-success/90">
             <Download className="size-4 mr-1" /> PDF
           </Button>
         </div>
       </div>
 
       {/* Metadata edit */}
-      <div className="bg-white border rounded p-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div className="bg-base-100 border rounded p-3 grid grid-cols-1 md:grid-cols-3 gap-3">
         <div>
-          <label className="text-xs text-slate-600 mb-1 block">Titulo</label>
+          <label className="text-xs text-base-content/70 mb-1 block">Titulo</label>
           <Input value={rm.titulo || ""} onChange={(e) => setRm({ ...rm, titulo: e.target.value })} />
         </div>
         <div>
-          <label className="text-xs text-slate-600 mb-1 block">Ano de referência</label>
-          <select className="w-full border border-slate-300 rounded-md p-2 text-sm h-9"
+          <label className="text-xs text-base-content/70 mb-1 block">Ano de referência</label>
+          <select className="w-full border border-base-300 rounded-md p-2 text-sm h-9"
                   value={(rm.data_referencia || "").slice(0, 4)}
                   onChange={(e) => setRm({ ...rm, data_referencia: `${e.target.value}-01-01` })}>
             {(() => { const a = new Date().getFullYear(); return [a + 1, a, a - 1, a - 2, a - 3]; })().map((y) => (
@@ -266,7 +266,7 @@ export default function RmEditorPage() {
           </select>
         </div>
         <div>
-          <label className="text-xs text-slate-600 mb-1 block">Cidade de emissao</label>
+          <label className="text-xs text-base-content/70 mb-1 block">Cidade de emissao</label>
           <Input value={rm.cidade_emissao} onChange={(e) => setRm({ ...rm, cidade_emissao: e.target.value })} />
         </div>
       </div>
@@ -276,16 +276,16 @@ export default function RmEditorPage() {
         {rm.conteudo.partes.map((parte, pi) => {
           const popen = openPartes.has(pi);
           return (
-            <div key={pi} className="border rounded bg-white">
-              <div className="flex items-center gap-2 p-2 bg-blue-50 border-b">
+            <div key={pi} className="border rounded bg-base-100">
+              <div className="flex items-center gap-2 p-2 bg-primary/10 border-b">
                 <button onClick={() => toggle(openPartes as Set<string | number>, pi, (s) => setOpenPartes(s as Set<number>))}>
                   {popen ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
                 </button>
                 <Input className="flex-1 font-bold" value={parte.titulo}
                   onChange={(e) => update((c) => { c.partes[pi].titulo = e.target.value; return c; })} />
-                <button onClick={() => movParte(pi, -1)} className="text-slate-500 hover:text-slate-700"><ArrowUp className="size-4" /></button>
-                <button onClick={() => movParte(pi, 1)} className="text-slate-500 hover:text-slate-700"><ArrowDown className="size-4" /></button>
-                <button onClick={() => delParte(pi)} className="text-red-600 hover:text-red-800"><Trash2 className="size-4" /></button>
+                <button onClick={() => movParte(pi, -1)} className="text-base-content/60 hover:text-base-content/70"><ArrowUp className="size-4" /></button>
+                <button onClick={() => movParte(pi, 1)} className="text-base-content/60 hover:text-base-content/70"><ArrowDown className="size-4" /></button>
+                <button onClick={() => delParte(pi)} className="text-error hover:text-error"><Trash2 className="size-4" /></button>
               </div>
               {popen && (
                 <div className="p-3 space-y-2">
@@ -294,15 +294,15 @@ export default function RmEditorPage() {
                     const sopen = openSecoes.has(skey);
                     return (
                       <div key={si} className="border rounded">
-                        <div className="flex items-center gap-2 p-2 bg-slate-50 border-b">
+                        <div className="flex items-center gap-2 p-2 bg-base-200 border-b">
                           <button onClick={() => toggle(openSecoes, skey, (s) => setOpenSecoes(s as Set<string>))}>
                             {sopen ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
                           </button>
                           <Input className="flex-1 font-semibold text-sm" value={secao.titulo}
                             onChange={(e) => update((c) => { c.partes[pi].secoes[si].titulo = e.target.value; return c; })} />
-                          <button onClick={() => movSecao(pi, si, -1)} className="text-slate-500"><ArrowUp className="size-4" /></button>
-                          <button onClick={() => movSecao(pi, si, 1)} className="text-slate-500"><ArrowDown className="size-4" /></button>
-                          <button onClick={() => delSecao(pi, si)} className="text-red-600"><Trash2 className="size-4" /></button>
+                          <button onClick={() => movSecao(pi, si, -1)} className="text-base-content/60"><ArrowUp className="size-4" /></button>
+                          <button onClick={() => movSecao(pi, si, 1)} className="text-base-content/60"><ArrowDown className="size-4" /></button>
+                          <button onClick={() => delSecao(pi, si)} className="text-error"><Trash2 className="size-4" /></button>
                         </div>
                         {sopen && (
                           <div className="p-2 space-y-2">
@@ -311,17 +311,17 @@ export default function RmEditorPage() {
                               const gopen = openGrupos.has(gkey);
                               return (
                                 <div key={gi} className="border rounded">
-                                  <div className="flex items-center gap-2 p-2 bg-amber-50/60 border-b">
+                                  <div className="flex items-center gap-2 p-2 bg-warning/15 border-b">
                                     <button onClick={() => toggle(openGrupos, gkey, (s) => setOpenGrupos(s as Set<string>))}>
                                       {gopen ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
                                     </button>
-                                    <span className="text-amber-800">●</span>
+                                    <span className="text-warning">●</span>
                                     <Input className="flex-1 font-medium text-sm" value={grupo.orgao}
                                       onChange={(e) => update((c) => { c.partes[pi].secoes[si].grupos[gi].orgao = e.target.value; return c; })} />
-                                    <span className="text-xs text-slate-500">{grupo.itens.length} itens</span>
-                                    <button onClick={() => movGrupo(pi, si, gi, -1)} className="text-slate-500"><ArrowUp className="size-4" /></button>
-                                    <button onClick={() => movGrupo(pi, si, gi, 1)} className="text-slate-500"><ArrowDown className="size-4" /></button>
-                                    <button onClick={() => delGrupo(pi, si, gi)} className="text-red-600"><Trash2 className="size-4" /></button>
+                                    <span className="text-xs text-base-content/60">{grupo.itens.length} itens</span>
+                                    <button onClick={() => movGrupo(pi, si, gi, -1)} className="text-base-content/60"><ArrowUp className="size-4" /></button>
+                                    <button onClick={() => movGrupo(pi, si, gi, 1)} className="text-base-content/60"><ArrowDown className="size-4" /></button>
+                                    <button onClick={() => delGrupo(pi, si, gi)} className="text-error"><Trash2 className="size-4" /></button>
                                   </div>
                                   {gopen && (
                                     <div className="p-2 space-y-1.5">
@@ -329,30 +329,30 @@ export default function RmEditorPage() {
                                         const ikey = `${gkey}-${ii}`;
                                         const iopen = openItens.has(ikey);
                                         return (
-                                          <div key={ii} className="border rounded bg-slate-50/40">
+                                          <div key={ii} className="border rounded bg-base-200/40">
                                             <div className="flex items-center gap-2 p-2">
                                               <button onClick={() => toggle(openItens, ikey, (s) => setOpenItens(s as Set<string>))}>
                                                 {iopen ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
                                               </button>
-                                              <span className="text-xs text-slate-600 font-mono shrink-0">
+                                              <span className="text-xs text-base-content/70 font-mono shrink-0">
                                                 {item.tipo}: {item.numero || "(sem nº)"}
                                               </span>
-                                              <span className="flex-1 text-xs text-slate-700 truncate" title={item.objeto}>
+                                              <span className="flex-1 text-xs text-base-content/70 truncate" title={item.objeto}>
                                                 {item.objeto || ""}
                                               </span>
-                                              <button onClick={() => movItem(pi, si, gi, ii, -1)} className="text-slate-500"><ArrowUp className="size-3.5" /></button>
-                                              <button onClick={() => movItem(pi, si, gi, ii, 1)} className="text-slate-500"><ArrowDown className="size-3.5" /></button>
-                                              <button onClick={() => delItem(pi, si, gi, ii)} className="text-red-600"><Trash2 className="size-3.5" /></button>
+                                              <button onClick={() => movItem(pi, si, gi, ii, -1)} className="text-base-content/60"><ArrowUp className="size-3.5" /></button>
+                                              <button onClick={() => movItem(pi, si, gi, ii, 1)} className="text-base-content/60"><ArrowDown className="size-3.5" /></button>
+                                              <button onClick={() => delItem(pi, si, gi, ii)} className="text-error"><Trash2 className="size-3.5" /></button>
                                             </div>
                                             {iopen && (
                                               <div className="grid grid-cols-1 md:grid-cols-2 gap-2 p-3 pt-1">
                                                 {/* Detalhamento da Situação de Contratação (JSONB) */}
                                                 <div className="md:col-span-2">
-                                                  <label className="text-[11px] text-slate-600 mb-0.5 block">
-                                                    Detalhamento da Situação <span className="text-slate-400">(uma linha por campo: <code>Chave: Valor</code>)</span>
+                                                  <label className="text-[11px] text-base-content/70 mb-0.5 block">
+                                                    Detalhamento da Situação <span className="text-base-content/40">(uma linha por campo: <code>Chave: Valor</code>)</span>
                                                   </label>
                                                   <textarea
-                                                    className="w-full rounded border border-slate-300 px-2 py-1 text-sm min-h-[60px] font-mono"
+                                                    className="w-full rounded border border-base-300 px-2 py-1 text-sm min-h-[60px] font-mono"
                                                     value={formatSitDet(item.situacao_contratacao_detalhe)}
                                                     onChange={(e) => update((c) => {
                                                       const it = c.partes[pi].secoes[si].grupos[gi].itens[ii] as Item;
@@ -364,10 +364,10 @@ export default function RmEditorPage() {
                                                 </div>
                                                 {ITEM_FIELDS.map(([k, label, type]) => (
                                                   <div key={k} className={type === "textarea" ? "md:col-span-2" : ""}>
-                                                    <label className="text-[11px] text-slate-600 mb-0.5 block">{label}</label>
+                                                    <label className="text-[11px] text-base-content/70 mb-0.5 block">{label}</label>
                                                     {type === "textarea" ? (
                                                       <textarea
-                                                        className="w-full rounded border border-slate-300 px-2 py-1 text-sm min-h-[60px]"
+                                                        className="w-full rounded border border-base-300 px-2 py-1 text-sm min-h-[60px]"
                                                         value={(item[k] as string) || ""}
                                                         onChange={(e) => update((c) => {
                                                           (c.partes[pi].secoes[si].grupos[gi].itens[ii] as Record<string, unknown>)[k] = e.target.value;
@@ -389,8 +389,8 @@ export default function RmEditorPage() {
                                                   </div>
                                                 ))}
                                                 {item.fonte && (
-                                                  <div className="md:col-span-2 text-[10px] text-slate-400">
-                                                    Origem: <code className="bg-slate-100 px-1 rounded">{item.fonte}</code>
+                                                  <div className="md:col-span-2 text-[10px] text-base-content/40">
+                                                    Origem: <code className="bg-base-200 px-1 rounded">{item.fonte}</code>
                                                     {item.fonte_ref && <span> (ref: {item.fonte_ref})</span>}
                                                   </div>
                                                 )}
@@ -400,7 +400,7 @@ export default function RmEditorPage() {
                                         );
                                       })}
                                       <button onClick={() => addItem(pi, si, gi)}
-                                        className="w-full text-xs text-blue-600 hover:bg-blue-50 rounded py-1.5 flex items-center justify-center gap-1">
+                                        className="w-full text-xs text-primary hover:bg-primary/10 rounded py-1.5 flex items-center justify-center gap-1">
                                         <Plus className="size-3.5" /> Adicionar item
                                       </button>
                                     </div>
@@ -409,7 +409,7 @@ export default function RmEditorPage() {
                               );
                             })}
                             <button onClick={() => addGrupo(pi, si)}
-                              className="w-full text-xs text-amber-700 hover:bg-amber-50 rounded py-1.5 flex items-center justify-center gap-1">
+                              className="w-full text-xs text-warning hover:bg-warning/15 rounded py-1.5 flex items-center justify-center gap-1">
                               <Plus className="size-3.5" /> Adicionar grupo (Órgão)
                             </button>
                           </div>
@@ -418,7 +418,7 @@ export default function RmEditorPage() {
                     );
                   })}
                   <button onClick={() => addSecao(pi)}
-                    className="w-full text-sm text-slate-600 hover:bg-slate-50 rounded py-1.5 flex items-center justify-center gap-1 border border-dashed">
+                    className="w-full text-sm text-base-content/70 hover:bg-base-200 rounded py-1.5 flex items-center justify-center gap-1 border border-dashed">
                     <Plus className="size-4" /> Adicionar seção
                   </button>
                 </div>
@@ -427,7 +427,7 @@ export default function RmEditorPage() {
           );
         })}
         <button onClick={addParte}
-          className="w-full text-sm font-semibold text-blue-700 hover:bg-blue-50 rounded py-2 flex items-center justify-center gap-2 border-2 border-dashed border-blue-300">
+          className="w-full text-sm font-semibold text-primary hover:bg-primary/10 rounded py-2 flex items-center justify-center gap-2 border-2 border-dashed border-primary">
           <Plus className="size-4" /> Adicionar PARTE
         </button>
       </div>

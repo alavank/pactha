@@ -83,30 +83,30 @@ export default function RmListPage() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-2xl font-bold text-blue-800 flex items-center gap-2">
+        <h1 className="text-2xl font-bold text-primary flex items-center gap-2">
           <FileText className="size-6" /> Relatorio de Monitoramento (RM)
         </h1>
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-base-content/60">
           Gestao dos RMs do municipio - padrao Freitas (criar, editar, exportar PDF).
         </p>
       </div>
 
       {/* Form de novo RM */}
-      <div className="bg-white border rounded p-4">
+      <div className="bg-base-100 border rounded p-4">
         <h2 className="text-sm font-semibold mb-1">Novo RM</h2>
-        <p className="text-xs text-slate-500 mb-3">
+        <p className="text-xs text-base-content/60 mb-3">
           O RM é <strong>anual</strong> (por ano de emissão). O conteúdo é preenchido automaticamente com os dados
           atuais do banco: propostas do ano em análise/aprovação + todas as empenhadas. Você edita livremente depois.
         </p>
         <div className="flex flex-wrap gap-3 items-end">
           <div>
-            <label className="text-xs text-slate-600 mb-1 block">Ano de referência</label>
-            <select className="border border-slate-300 rounded-md p-2 text-sm h-9"
+            <label className="text-xs text-base-content/70 mb-1 block">Ano de referência</label>
+            <select className="border border-base-300 rounded-md p-2 text-sm h-9"
                     value={novoAno} onChange={(e) => setNovoAno(Number(e.target.value))}>
               {anosOpcoes.map((a) => <option key={a} value={a}>{a}</option>)}
             </select>
           </div>
-          <Button onClick={criar} disabled={criando} className="bg-blue-600 hover:bg-blue-700">
+          <Button onClick={criar} disabled={criando} className="bg-primary hover:bg-primary/90">
             {criando ? <Loader2 className="size-4 animate-spin mr-1" /> : <Plus className="size-4 mr-1" />}
             Criar RM {novoAno}
           </Button>
@@ -114,23 +114,23 @@ export default function RmListPage() {
       </div>
 
       {/* Lista */}
-      <div className="bg-white border rounded overflow-hidden">
-        <div className="px-3 py-2 border-b bg-slate-50 text-sm"><strong>{items.length}</strong> RM(s) cadastrado(s)</div>
+      <div className="bg-base-100 border rounded overflow-hidden">
+        <div className="px-3 py-2 border-b bg-base-200 text-sm"><strong>{items.length}</strong> RM(s) cadastrado(s)</div>
         {loading ? (
-          <div className="p-8 text-center"><Loader2 className="size-6 animate-spin mx-auto text-blue-600" /></div>
+          <div className="p-8 text-center"><Loader2 className="size-6 animate-spin mx-auto text-primary" /></div>
         ) : items.length === 0 ? (
-          <div className="p-12 text-center text-slate-500">Nenhum RM ainda. Crie o primeiro acima.</div>
+          <div className="p-12 text-center text-base-content/60">Nenhum RM ainda. Crie o primeiro acima.</div>
         ) : (
           <ul className="divide-y">
             {items.map((rm) => (
-              <li key={rm.id} className="flex items-center justify-between gap-3 px-3 py-2.5 hover:bg-slate-50">
+              <li key={rm.id} className="flex items-center justify-between gap-3 px-3 py-2.5 hover:bg-base-200">
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-semibold text-slate-900">
+                  <div className="text-sm font-semibold text-base-content">
                     {rm.titulo || `RM ${(rm.data_referencia || "").slice(0, 4)} - ${rm.municipio_nome || ""}`}
                   </div>
-                  <div className="text-xs text-slate-500">
+                  <div className="text-xs text-base-content/60">
                     Exercício: {(rm.data_referencia || "").slice(0, 4)} ·
-                    <span className={`ml-1.5 inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold ${rm.status === "finalizado" ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-800"}`}>
+                    <span className={`ml-1.5 inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold ${rm.status === "finalizado" ? "bg-success/15 text-success" : "bg-warning/15 text-warning"}`}>
                       {rm.status}
                     </span>
                     {rm.updated_at && <span className="ml-2">atualizado {new Date(rm.updated_at).toLocaleString("pt-BR")}</span>}
@@ -139,16 +139,16 @@ export default function RmListPage() {
                 <div className="flex items-center gap-1.5">
                   <Link
                     href={`/dashboard/rm/${rm.id}?municipio_id=${municipioId}`}
-                    className="inline-flex items-center gap-1 rounded bg-blue-50 hover:bg-blue-100 px-2.5 py-1 text-xs text-blue-700"
+                    className="inline-flex items-center gap-1 rounded bg-primary/10 hover:bg-primary/10 px-2.5 py-1 text-xs text-primary"
                   >
                     <Eye className="size-3.5" /> Abrir
                   </Link>
                   <button onClick={() => exportarPdf(rm.id)}
-                    className="inline-flex items-center gap-1 rounded bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 text-xs text-emerald-700">
+                    className="inline-flex items-center gap-1 rounded bg-success/15 hover:bg-success/15 px-2.5 py-1 text-xs text-success">
                     <Download className="size-3.5" /> PDF
                   </button>
                   <button onClick={() => remover(rm.id)}
-                    className="inline-flex items-center gap-1 rounded bg-red-50 hover:bg-red-100 px-2.5 py-1 text-xs text-red-700">
+                    className="inline-flex items-center gap-1 rounded bg-error/15 hover:bg-error/10 px-2.5 py-1 text-xs text-error">
                     <Trash2 className="size-3.5" />
                   </button>
                 </div>

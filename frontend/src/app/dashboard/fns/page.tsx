@@ -114,14 +114,14 @@ const TIPOS_EMENDA = [
 ];
 
 function recursoColor(s?: string): string {
-  if (!s) return "bg-gray-100";
+  if (!s) return "bg-base-200";
   const u = s.toUpperCase();
-  if (u.includes("INDIVIDUAL")) return "bg-blue-100 text-blue-800 border-blue-300";
-  if (u.includes("BANCADA OBRIGAT")) return "bg-purple-100 text-purple-800 border-purple-300";
-  if (u.includes("BANCADA")) return "bg-purple-100 text-purple-700 border-purple-200";
-  if (u.includes("COMISSAO") || u.includes("COMISSÃO")) return "bg-amber-100 text-amber-800 border-amber-300";
-  if (u.includes("PROGRAMA")) return "bg-green-100 text-green-800 border-green-300";
-  return "bg-gray-100 text-gray-700 border-gray-300";
+  if (u.includes("INDIVIDUAL")) return "bg-primary/10 text-primary border-primary";
+  if (u.includes("BANCADA OBRIGAT")) return "bg-info/15 text-info border-info";
+  if (u.includes("BANCADA")) return "bg-info/15 text-info border-info";
+  if (u.includes("COMISSAO") || u.includes("COMISSÃO")) return "bg-warning/15 text-warning border-warning";
+  if (u.includes("PROGRAMA")) return "bg-success/15 text-success border-success";
+  return "bg-base-200 text-base-content/70 border-base-300";
 }
 
 export default function PropostasFNSPage() {
@@ -222,15 +222,15 @@ export default function PropostasFNSPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold text-blue-800">Fundo Nacional de Saúde</h1>
+        <h1 className="text-2xl font-bold text-primary">Fundo Nacional de Saúde</h1>
         <p className="text-sm text-muted-foreground">Consulta em tempo real de propostas/emendas no FNS (consultafns.saude.gov.br)</p>
       </div>
 
       {/* Formulario */}
-      <div className="bg-white border rounded-lg p-4 space-y-3 shadow-sm">
+      <div className="bg-base-100 border rounded-lg p-4 space-y-3 shadow-sm">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div>
-            <label className="text-xs font-medium text-gray-700">Nº da Proposta</label>
+            <label className="text-xs font-medium text-base-content/70">Nº da Proposta</label>
             <Input
               value={nrProposta}
               onChange={(e) => setNrProposta(e.target.value)}
@@ -239,7 +239,7 @@ export default function PropostasFNSPage() {
             />
           </div>
           <div>
-            <label className="text-xs font-medium text-gray-700">Ano</label>
+            <label className="text-xs font-medium text-base-content/70">Ano</label>
             <Select value={ano} onValueChange={(v) => setAno(v ?? String(currentYear))}>
               <SelectTrigger><SelectValue placeholder="Ano" /></SelectTrigger>
               <SelectContent>
@@ -248,7 +248,7 @@ export default function PropostasFNSPage() {
             </Select>
           </div>
           <div>
-            <label className="text-xs font-medium text-gray-700"><span className="text-red-600">*</span> Estado</label>
+            <label className="text-xs font-medium text-base-content/70"><span className="text-error">*</span> Estado</label>
             <Select value={estado} onValueChange={(v) => setEstado(v ?? "MG")}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -257,7 +257,7 @@ export default function PropostasFNSPage() {
             </Select>
           </div>
           <div>
-            <label className="text-xs font-medium text-gray-700"><span className="text-red-600">*</span> Município</label>
+            <label className="text-xs font-medium text-base-content/70"><span className="text-error">*</span> Município</label>
             <Select value={municipio} onValueChange={(v) => setMunicipio(v ?? "ARAUJOS")}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -266,7 +266,7 @@ export default function PropostasFNSPage() {
             </Select>
           </div>
           <div>
-            <label className="text-xs font-medium text-gray-700">Tipo de Emenda</label>
+            <label className="text-xs font-medium text-base-content/70">Tipo de Emenda</label>
             <Select value={tipoEmenda} onValueChange={(v) => setTipoEmenda(v ?? "TODOS")}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -280,7 +280,7 @@ export default function PropostasFNSPage() {
           <Button variant="outline" onClick={limpar}>
             <Eraser className="size-4 mr-1" /> Limpar
           </Button>
-          <Button onClick={consultar} disabled={loading} className="bg-blue-600 hover:bg-blue-700">
+          <Button onClick={consultar} disabled={loading} className="bg-primary hover:bg-primary/90">
             {loading ? <Loader2 className="size-4 animate-spin mr-2" /> : <Search className="size-4 mr-2" />}
             Consultar
           </Button>
@@ -288,13 +288,13 @@ export default function PropostasFNSPage() {
       </div>
 
       {error && (
-        <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</div>
+        <div className="rounded border border-error bg-error/15 p-3 text-sm text-error">{error}</div>
       )}
 
       {/* Resultado */}
       {data && (
         <div className="space-y-3">
-          <div className="bg-gray-50 border rounded-lg p-3">
+          <div className="bg-base-200 border rounded-lg p-3">
             <div className="flex items-center justify-between mb-2">
               <h2 className="font-semibold">Resultado da Consulta</h2>
               <Button variant="outline" size="sm" onClick={() => window.print()}>
@@ -302,10 +302,10 @@ export default function PropostasFNSPage() {
               </Button>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-sm">
-              <div><span className="font-medium text-gray-600">Estado:</span> {data.params?.uf}</div>
-              <div><span className="font-medium text-gray-600">Município:</span> {data.params?.municipio}</div>
-              <div><span className="font-medium text-gray-600">Ano:</span> {data.params?.ano}</div>
-              <div><span className="font-medium text-gray-600">Registros:</span> {data.total}</div>
+              <div><span className="font-medium text-base-content/70">Estado:</span> {data.params?.uf}</div>
+              <div><span className="font-medium text-base-content/70">Município:</span> {data.params?.municipio}</div>
+              <div><span className="font-medium text-base-content/70">Ano:</span> {data.params?.ano}</div>
+              <div><span className="font-medium text-base-content/70">Registros:</span> {data.total}</div>
             </div>
           </div>
 
@@ -313,20 +313,20 @@ export default function PropostasFNSPage() {
           {data.totais && (
             <div className="grid grid-cols-3 gap-3">
               <StatCard label="Valor Proposta" value={formatCurrency(data.totais.valor_proposta)} />
-              <StatCard label="Valor Pago" value={formatCurrency(data.totais.valor_pago)} className="text-green-700" />
-              <StatCard label="A Pagar" value={formatCurrency(data.totais.valor_pagar)} className="text-amber-700" />
+              <StatCard label="Valor Pago" value={formatCurrency(data.totais.valor_pago)} className="text-success" />
+              <StatCard label="A Pagar" value={formatCurrency(data.totais.valor_pagar)} className="text-warning" />
             </div>
           )}
 
           {data.items.length === 0 ? (
-            <div className="text-center text-muted-foreground py-8 border rounded-lg bg-white">
+            <div className="text-center text-muted-foreground py-8 border rounded-lg bg-base-100">
               Nenhuma proposta encontrada para os filtros aplicados.
             </div>
           ) : (
-            <div className="rounded-lg border bg-white overflow-hidden">
+            <div className="rounded-lg border bg-base-100 overflow-hidden">
               <Table className="text-xs">
                 <TableHeader>
-                  <TableRow className="[&>th]:py-2 [&>th]:px-2 [&>th]:text-[11px] [&>th]:font-semibold bg-blue-50">
+                  <TableRow className="[&>th]:py-2 [&>th]:px-2 [&>th]:text-[11px] [&>th]:font-semibold bg-primary/10">
                     <TableHead>Tipo de Proposta</TableHead>
                     <TableHead>Tipo de Recurso</TableHead>
                     <TableHead>Nº Processo</TableHead>
@@ -339,7 +339,7 @@ export default function PropostasFNSPage() {
                 </TableHeader>
                 <TableBody>
                   {data.items.map((it, idx) => (
-                    <TableRow key={idx} className="[&>td]:py-1.5 [&>td]:px-2 [&>td]:text-[11px] hover:bg-gray-50">
+                    <TableRow key={idx} className="[&>td]:py-1.5 [&>td]:px-2 [&>td]:text-[11px] hover:bg-base-200">
                       <TableCell className="font-medium">{it.tipo_proposta || "-"}</TableCell>
                       <TableCell>
                         <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium border ${recursoColor(it.tipo_recurso)}`}>
@@ -348,17 +348,17 @@ export default function PropostasFNSPage() {
                       </TableCell>
                       <TableCell className="font-mono">{it.nu_processo || "-"}</TableCell>
                       <TableCell className="text-right font-mono">{formatCurrency(it.valor_proposta)}</TableCell>
-                      <TableCell className="text-right font-mono text-green-700">{formatCurrency(it.valor_pago)}</TableCell>
-                      <TableCell className="text-right font-mono text-amber-700">{formatCurrency(it.valor_pagar)}</TableCell>
+                      <TableCell className="text-right font-mono text-success">{formatCurrency(it.valor_pago)}</TableCell>
+                      <TableCell className="text-right font-mono text-warning">{formatCurrency(it.valor_pagar)}</TableCell>
                       <TableCell title={(it.parlamentares || []).map((p) => p.nome).join(", ")}>
                         {(it.parlamentares || []).length > 0
                           ? <span className="text-[10px]">{(it.parlamentares || []).slice(0, 2).map((p) => p.nome).join(", ")}{(it.parlamentares || []).length > 2 ? ` +${(it.parlamentares || []).length - 2}` : ""}</span>
-                          : <span className="text-gray-400">-</span>}
+                          : <span className="text-base-content/40">-</span>}
                       </TableCell>
                       <TableCell className="text-center">
                         <button
                           onClick={() => setDetalheItem(it)}
-                          className="inline-flex items-center justify-center w-7 h-7 rounded bg-blue-500 hover:bg-blue-600 text-white"
+                          className="inline-flex items-center justify-center w-7 h-7 rounded bg-primary hover:bg-primary/90 text-white"
                           title="Ver detalhamento"
                         >
                           <Eye className="size-3.5" />
@@ -376,41 +376,41 @@ export default function PropostasFNSPage() {
       {/* Modal Detalhamento */}
       {detalheItem && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center p-4 overflow-y-auto" onClick={() => setDetalheItem(null)}>
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl mt-8" onClick={(e) => e.stopPropagation()}>
-            <div className="bg-blue-50 px-4 py-3 rounded-t-lg flex items-center justify-between border-b">
-              <h3 className="font-bold text-blue-900">Detalhamento por Tipo de Proposta e Tipo de Recurso</h3>
-              <button onClick={() => setDetalheItem(null)} className="text-gray-500 hover:text-gray-700"><X className="size-5" /></button>
+          <div className="bg-base-100 rounded-lg shadow-xl w-full max-w-4xl mt-8" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-primary/10 px-4 py-3 rounded-t-lg flex items-center justify-between border-b">
+              <h3 className="font-bold text-primary">Detalhamento por Tipo de Proposta e Tipo de Recurso</h3>
+              <button onClick={() => setDetalheItem(null)} className="text-base-content/60 hover:text-base-content"><X className="size-5" /></button>
             </div>
             <div className="p-4 space-y-4">
               {/* Dados Entidade + Proposta */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-3 border-b pb-3 text-sm">
-                <div><span className="font-medium text-gray-600">Estado:</span> {data?.params?.uf}</div>
-                <div><span className="font-medium text-gray-600">Município:</span> {data?.params?.municipio}</div>
-                <div><span className="font-medium text-gray-600">Ano:</span> {data?.params?.ano}</div>
-                <div><span className="font-medium text-gray-600">Tipo Recurso:</span> <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium border ${recursoColor(detalheItem.tipo_recurso)}`}>{detalheItem.tipo_recurso}</span></div>
+                <div><span className="font-medium text-base-content/70">Estado:</span> {data?.params?.uf}</div>
+                <div><span className="font-medium text-base-content/70">Município:</span> {data?.params?.municipio}</div>
+                <div><span className="font-medium text-base-content/70">Ano:</span> {data?.params?.ano}</div>
+                <div><span className="font-medium text-base-content/70">Tipo Recurso:</span> <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium border ${recursoColor(detalheItem.tipo_recurso)}`}>{detalheItem.tipo_recurso}</span></div>
               </div>
 
-              <div className="bg-gray-50 rounded p-3">
+              <div className="bg-base-200 rounded p-3">
                 <h4 className="font-semibold text-sm mb-2">Dados da Proposta Agrupada</h4>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                   <Field label="Tipo de Proposta" value={detalheItem.tipo_proposta || "-"} />
                   <Field label="Tipo de Recurso" value={detalheItem.tipo_recurso || "-"} />
                   <Field label="Nº Processo" value={detalheItem.nu_processo || "-"} mono />
                   <Field label="Processo Constituído" value={detalheItem.constituido_processo ? "Sim" : "Não"} />
-                  <Field label="Valor Proposta" value={formatCurrency(detalheItem.valor_proposta)} mono className="text-blue-700" />
-                  <Field label="Valor Pago" value={formatCurrency(detalheItem.valor_pago)} mono className="text-green-700" />
-                  <Field label="A Pagar" value={formatCurrency(detalheItem.valor_pagar)} mono className="text-amber-700" />
+                  <Field label="Valor Proposta" value={formatCurrency(detalheItem.valor_proposta)} mono className="text-primary" />
+                  <Field label="Valor Pago" value={formatCurrency(detalheItem.valor_pago)} mono className="text-success" />
+                  <Field label="A Pagar" value={formatCurrency(detalheItem.valor_pagar)} mono className="text-warning" />
                   <Field label="Qtd. Pagamentos" value={String(detalheItem.pagamentos_count ?? 0)} mono />
                 </div>
               </div>
 
               {/* Parlamentares */}
               {(detalheItem.parlamentares || []).length > 0 && (
-                <div className="bg-gray-50 rounded p-3">
+                <div className="bg-base-200 rounded p-3">
                   <h4 className="font-semibold text-sm mb-2">Parlamentares ({detalheItem.parlamentares?.length})</h4>
                   <div className="flex flex-wrap gap-2">
                     {(detalheItem.parlamentares || []).map((p, i) => (
-                      <span key={i} className="inline-flex items-center rounded bg-purple-50 border border-purple-200 px-2 py-0.5 text-[11px] text-purple-800">
+                      <span key={i} className="inline-flex items-center rounded bg-info/15 border border-info px-2 py-0.5 text-[11px] text-info">
                         {p.nome}{p.partido ? ` (${p.partido})` : ""}
                       </span>
                     ))}
@@ -419,14 +419,14 @@ export default function PropostasFNSPage() {
               )}
 
               {/* Propostas individuais (nivel 1 listagem) */}
-              <div className="bg-white border rounded p-3">
+              <div className="bg-base-100 border rounded p-3">
                 <h4 className="font-semibold text-sm mb-2">Propostas Individuais (Nº SIPA)</h4>
                 {loadingIndiv ? (
-                  <div className="text-center text-sm text-gray-500 py-3">Carregando...</div>
+                  <div className="text-center text-sm text-base-content/60 py-3">Carregando...</div>
                 ) : (individuais && individuais.length > 0) ? (
                   <Table className="text-xs">
                     <TableHeader>
-                      <TableRow className="[&>th]:py-1 [&>th]:px-2 [&>th]:text-[10px] [&>th]:font-semibold bg-blue-50">
+                      <TableRow className="[&>th]:py-1 [&>th]:px-2 [&>th]:text-[10px] [&>th]:font-semibold bg-primary/10">
                         <TableHead>Nº da Proposta</TableHead>
                         <TableHead>Entidade</TableHead>
                         <TableHead className="text-right">Valor Proposta</TableHead>
@@ -436,15 +436,15 @@ export default function PropostasFNSPage() {
                     </TableHeader>
                     <TableBody>
                       {individuais.map((i, idx) => (
-                        <TableRow key={idx} className="[&>td]:py-1 [&>td]:px-2 [&>td]:text-[11px] hover:bg-gray-50">
+                        <TableRow key={idx} className="[&>td]:py-1 [&>td]:px-2 [&>td]:text-[11px] hover:bg-base-200">
                           <TableCell className="font-mono">{i.nu_proposta}</TableCell>
                           <TableCell>{i.entidade}</TableCell>
                           <TableCell className="text-right font-mono">{formatCurrency(i.valor_proposta)}</TableCell>
-                          <TableCell className="text-right font-mono text-green-700">{formatCurrency(i.valor_pago)}</TableCell>
+                          <TableCell className="text-right font-mono text-success">{formatCurrency(i.valor_pago)}</TableCell>
                           <TableCell className="text-center">
                             <button
                               onClick={() => abrirDetalheProposta(i.nu_proposta)}
-                              className="inline-flex items-center justify-center w-6 h-6 rounded bg-blue-500 hover:bg-blue-600 text-white"
+                              className="inline-flex items-center justify-center w-6 h-6 rounded bg-primary hover:bg-primary/90 text-white"
                               title="Ver detalhes"
                             >
                               <Eye className="size-3" />
@@ -455,7 +455,7 @@ export default function PropostasFNSPage() {
                     </TableBody>
                   </Table>
                 ) : (
-                  <p className="text-xs text-gray-500 italic text-center py-3">
+                  <p className="text-xs text-base-content/60 italic text-center py-3">
                     Nenhuma proposta individual encontrada para esse grupo no FNS.
                   </p>
                 )}
@@ -468,13 +468,13 @@ export default function PropostasFNSPage() {
       {/* Modal NÍVEL 2: Detalhe Completo da Proposta Individual */}
       {(propostaDetalhe || loadingDetalhe) && (
         <div className="fixed inset-0 z-[60] bg-black/50 flex items-start justify-center p-4 overflow-y-auto" onClick={() => setPropostaDetalhe(null)}>
-          <div className="bg-white rounded-lg shadow-2xl w-full max-w-5xl mt-4" onClick={(e) => e.stopPropagation()}>
-            <div className="bg-blue-100 px-4 py-3 rounded-t-lg flex items-center justify-between border-b">
-              <h3 className="font-bold text-blue-900">Detalhe da Proposta {propostaDetalhe?.nu_proposta || ""}</h3>
-              <button onClick={() => setPropostaDetalhe(null)} className="text-gray-500 hover:text-gray-700"><X className="size-5" /></button>
+          <div className="bg-base-100 rounded-lg shadow-2xl w-full max-w-5xl mt-4" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-primary/10 px-4 py-3 rounded-t-lg flex items-center justify-between border-b">
+              <h3 className="font-bold text-primary">Detalhe da Proposta {propostaDetalhe?.nu_proposta || ""}</h3>
+              <button onClick={() => setPropostaDetalhe(null)} className="text-base-content/60 hover:text-base-content"><X className="size-5" /></button>
             </div>
             <div className="p-4 space-y-3">
-              {loadingDetalhe && <div className="text-center py-12 text-gray-500">Carregando detalhes...</div>}
+              {loadingDetalhe && <div className="text-center py-12 text-base-content/60">Carregando detalhes...</div>}
 
               {propostaDetalhe && (
                 <>
@@ -491,53 +491,53 @@ export default function PropostasFNSPage() {
                     <Field label="Nº da Proposta" value={propostaDetalhe.nu_proposta} mono />
                     <Field label="Tipo de Proposta" value={propostaDetalhe.tipo_proposta} />
                     <Field label="Ano" value={propostaDetalhe.ano} />
-                    <Field label="Valor da Proposta" value={formatCurrency(propostaDetalhe.valor_proposta)} mono className="text-blue-700" />
+                    <Field label="Valor da Proposta" value={formatCurrency(propostaDetalhe.valor_proposta)} mono className="text-primary" />
                     <Field label="Nº Portaria" value={propostaDetalhe.nu_portaria || "-"} mono />
                     <Field label="Data Portaria" value={propostaDetalhe.data_portaria ? new Date(propostaDetalhe.data_portaria).toLocaleDateString("pt-BR") : "-"} />
                     <Field label="Valor Total de Empenho" value={formatCurrency(propostaDetalhe.vl_empenhado)} mono />
-                    <Field label="Valor a Pagar" value={formatCurrency(propostaDetalhe.vl_pagar)} mono className="text-amber-700" />
+                    <Field label="Valor a Pagar" value={formatCurrency(propostaDetalhe.vl_pagar)} mono className="text-warning" />
                   </Section>
 
                   {/* Dados da Situação */}
                   <Section title="Dados da Situação da Proposta">
-                    <Field label="Situação Atual" value={propostaDetalhe.situacao_descricao} className="text-green-800 font-semibold" />
+                    <Field label="Situação Atual" value={propostaDetalhe.situacao_descricao} className="text-success font-semibold" />
                     <Field label="Data da Última Atualização" value={propostaDetalhe.situacao_data ? new Date(propostaDetalhe.situacao_data).toLocaleDateString("pt-BR") : "-"} />
                   </Section>
 
                   {/* Principais etapas - workflow 12 dots */}
                   {propostaDetalhe.etapas && propostaDetalhe.etapas.length > 0 && (
-                    <div className="bg-gray-50 rounded p-3">
+                    <div className="bg-base-200 rounded p-3">
                       <h4 className="font-semibold text-sm mb-3">Principais etapas da proposta</h4>
                       <div className="flex items-center justify-between overflow-x-auto">
                         {propostaDetalhe.etapas.map((et, i) => (
                           <React.Fragment key={i}>
                             <div className="flex flex-col items-center text-center min-w-[60px]" title={et.descricao}>
                               <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold text-white ${
-                                et.completada ? "bg-blue-500" : "bg-gray-300"
-                              } ${et.atual ? "ring-2 ring-blue-300" : ""}`}>
+                                et.completada ? "bg-primary" : "bg-base-300"
+                              } ${et.atual ? "ring-2 ring-primary/40" : ""}`}>
                                 {et.numero}
                               </div>
-                              <div className="text-[9px] text-gray-600 mt-1 max-w-[60px] leading-tight">{et.descricao}</div>
+                              <div className="text-[9px] text-base-content/70 mt-1 max-w-[60px] leading-tight">{et.descricao}</div>
                             </div>
                             {i < propostaDetalhe.etapas.length - 1 && (
-                              <div className={`h-1 flex-1 mx-0.5 ${et.completada && propostaDetalhe.etapas[i+1].completada ? "bg-blue-500" : "bg-gray-300"}`} />
+                              <div className={`h-1 flex-1 mx-0.5 ${et.completada && propostaDetalhe.etapas[i+1].completada ? "bg-primary" : "bg-base-300"}`} />
                             )}
                           </React.Fragment>
                         ))}
                       </div>
                       {!propostaDetalhe.constituido_processo && (
-                        <p className="text-xs text-amber-700 italic mt-3">Não foi constituído processo para essa proposta.</p>
+                        <p className="text-xs text-warning italic mt-3">Não foi constituído processo para essa proposta.</p>
                       )}
                     </div>
                   )}
 
                   {/* Dados do Parlamentar */}
                   {propostaDetalhe.parlamentares && propostaDetalhe.parlamentares.length > 0 && (
-                    <div className="border rounded p-3 bg-white">
-                      <h4 className="font-semibold text-sm text-blue-900 border-b pb-1 mb-2">Dados do Parlamentar</h4>
+                    <div className="border rounded p-3 bg-base-100">
+                      <h4 className="font-semibold text-sm text-primary border-b pb-1 mb-2">Dados do Parlamentar</h4>
                       <Table className="text-xs">
                         <TableHeader>
-                          <TableRow className="[&>th]:py-1 [&>th]:px-2 [&>th]:text-[10px] [&>th]:font-semibold bg-blue-50">
+                          <TableRow className="[&>th]:py-1 [&>th]:px-2 [&>th]:text-[10px] [&>th]:font-semibold bg-primary/10">
                             <TableHead>Partido</TableHead>
                             <TableHead>Nome Parlamentar</TableHead>
                             <TableHead>Nº da Emenda</TableHead>
@@ -552,7 +552,7 @@ export default function PropostasFNSPage() {
                               <TableCell className="font-medium">{p.nome || "-"}</TableCell>
                               <TableCell className="font-mono">{p.nu_emenda || "-"}</TableCell>
                               <TableCell>{p.ano || "-"}</TableCell>
-                              <TableCell className="text-right font-mono text-blue-700">{formatCurrency(p.valor)}</TableCell>
+                              <TableCell className="text-right font-mono text-primary">{formatCurrency(p.valor)}</TableCell>
                             </TableRow>
                           ))}
                         </TableBody>
@@ -562,11 +562,11 @@ export default function PropostasFNSPage() {
 
                   {/* Dados do Pagamento */}
                   {propostaDetalhe.pagamentos && propostaDetalhe.pagamentos.length > 0 && (
-                    <div className="border rounded p-3 bg-white">
-                      <h4 className="font-semibold text-sm text-blue-900 border-b pb-1 mb-2">Dados do Pagamento</h4>
+                    <div className="border rounded p-3 bg-base-100">
+                      <h4 className="font-semibold text-sm text-primary border-b pb-1 mb-2">Dados do Pagamento</h4>
                       <Table className="text-xs">
                         <TableHeader>
-                          <TableRow className="[&>th]:py-1 [&>th]:px-2 [&>th]:text-[10px] [&>th]:font-semibold bg-blue-50">
+                          <TableRow className="[&>th]:py-1 [&>th]:px-2 [&>th]:text-[10px] [&>th]:font-semibold bg-primary/10">
                             <TableHead>Parcela</TableHead>
                             <TableHead>Data Pagamento</TableHead>
                             <TableHead className="text-right">Valor</TableHead>
@@ -581,7 +581,7 @@ export default function PropostasFNSPage() {
                             <TableRow key={i} className="[&>td]:py-1 [&>td]:px-2 [&>td]:text-[11px]">
                               <TableCell>{pg.parcela || "-"}</TableCell>
                               <TableCell>{pg.data ? new Date(pg.data).toLocaleDateString("pt-BR") : "-"}</TableCell>
-                              <TableCell className="text-right font-mono text-green-700">{formatCurrency(pg.valor)}</TableCell>
+                              <TableCell className="text-right font-mono text-success">{formatCurrency(pg.valor)}</TableCell>
                               <TableCell className="text-right font-mono">{formatCurrency(pg.valor_acumulado)}</TableCell>
                               <TableCell className="font-mono">{pg.ordem_bancaria || "-"}</TableCell>
                               <TableCell className="font-mono">{pg.nu_processo || "-"}</TableCell>
@@ -595,7 +595,7 @@ export default function PropostasFNSPage() {
 
                   <div className="flex justify-end items-center gap-2 pt-2 border-t">
                     <Button variant="outline" onClick={() => setPropostaDetalhe(null)}>Voltar</Button>
-                    <Button onClick={() => window.print()} className="bg-blue-600 hover:bg-blue-700">
+                    <Button onClick={() => window.print()} className="bg-primary hover:bg-primary/90">
                       <Printer className="size-4 mr-1" /> Imprimir
                     </Button>
                   </div>
@@ -611,8 +611,8 @@ export default function PropostasFNSPage() {
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="border rounded p-3 bg-white">
-      <h4 className="font-semibold text-sm text-blue-900 border-b pb-1 mb-2">{title}</h4>
+    <div className="border rounded p-3 bg-base-100">
+      <h4 className="font-semibold text-sm text-primary border-b pb-1 mb-2">{title}</h4>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">{children}</div>
     </div>
   );
@@ -621,7 +621,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function Field({ label, value, mono, className = "" }: { label: string; value: string; mono?: boolean; className?: string }) {
   return (
     <div>
-      <div className="text-[10px] uppercase font-semibold text-gray-500">{label}</div>
+      <div className="text-[10px] uppercase font-semibold text-base-content/60">{label}</div>
       <div className={`text-sm mt-0.5 ${mono ? "font-mono" : ""} ${className}`}>{value}</div>
     </div>
   );
@@ -629,7 +629,7 @@ function Field({ label, value, mono, className = "" }: { label: string; value: s
 
 function StatCard({ label, value, className = "" }: { label: string; value: string; className?: string }) {
   return (
-    <div className="rounded-lg border bg-white p-3">
+    <div className="rounded-lg border bg-base-100 p-3">
       <div className="text-xs text-muted-foreground">{label}</div>
       <div className={`text-lg font-bold mt-1 ${className}`}>{value}</div>
     </div>

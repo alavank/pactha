@@ -118,40 +118,40 @@ export default function AiChatPage() {
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
       components={{
-        h1: (props) => <h1 className="text-xl font-bold mt-4 mb-2 text-slate-900" {...props} />,
-        h2: (props) => <h2 className="text-lg font-bold mt-4 mb-2 text-blue-800 border-b border-blue-200 pb-1" {...props} />,
-        h3: (props) => <h3 className="text-base font-bold mt-3 mb-1 text-slate-800" {...props} />,
-        h4: (props) => <h4 className="text-sm font-bold mt-2 mb-1 text-slate-700" {...props} />,
+        h1: (props) => <h1 className="text-xl font-bold mt-4 mb-2 text-base-content" {...props} />,
+        h2: (props) => <h2 className="text-lg font-bold mt-4 mb-2 text-primary border-b border-base-300 pb-1" {...props} />,
+        h3: (props) => <h3 className="text-base font-bold mt-3 mb-1 text-base-content" {...props} />,
+        h4: (props) => <h4 className="text-sm font-bold mt-2 mb-1 text-base-content/70" {...props} />,
         p: (props) => <p className="leading-relaxed my-2" {...props} />,
         ul: (props) => <ul className="list-disc ml-5 my-2 space-y-1" {...props} />,
         ol: (props) => <ol className="list-decimal ml-5 my-2 space-y-1" {...props} />,
         li: (props) => <li className="leading-snug" {...props} />,
-        strong: (props) => <strong className="font-semibold text-slate-900" {...props} />,
-        em: (props) => <em className="italic text-slate-700" {...props} />,
+        strong: (props) => <strong className="font-semibold text-base-content" {...props} />,
+        em: (props) => <em className="italic text-base-content/70" {...props} />,
         code: (props) => (
-          <code className="bg-slate-100 px-1.5 py-0.5 rounded text-[12px] font-mono text-rose-700" {...props} />
+          <code className="bg-base-200 px-1.5 py-0.5 rounded text-[12px] font-mono text-error" {...props} />
         ),
         pre: (props) => (
-          <pre className="bg-slate-900 text-slate-100 rounded p-3 my-2 text-xs overflow-x-auto" {...props} />
+          <pre className="bg-base-300 text-base-content rounded p-3 my-2 text-xs overflow-x-auto" {...props} />
         ),
         blockquote: (props) => (
-          <blockquote className="border-l-4 border-blue-300 pl-3 my-2 italic text-slate-600" {...props} />
+          <blockquote className="border-l-4 border-base-300 pl-3 my-2 italic text-base-content/70" {...props} />
         ),
         table: (props) => (
-          <div className="my-3 overflow-x-auto rounded border border-slate-200">
+          <div className="my-3 overflow-x-auto rounded border border-base-300">
             <table className="min-w-full text-xs" {...props} />
           </div>
         ),
-        thead: (props) => <thead className="bg-blue-50 text-blue-900" {...props} />,
+        thead: (props) => <thead className="bg-primary/10 text-primary" {...props} />,
         th: (props) => (
-          <th className="text-left font-semibold px-3 py-1.5 border-b border-slate-200" {...props} />
+          <th className="text-left font-semibold px-3 py-1.5 border-b border-base-300" {...props} />
         ),
-        td: (props) => <td className="px-3 py-1.5 border-b border-slate-100 align-top" {...props} />,
-        tr: (props) => <tr className="even:bg-slate-50/50" {...props} />,
+        td: (props) => <td className="px-3 py-1.5 border-b border-base-300 align-top" {...props} />,
+        tr: (props) => <tr className="even:bg-base-200/50" {...props} />,
         a: (props) => (
-          <a className="text-blue-600 underline hover:text-blue-800" target="_blank" rel="noopener" {...props} />
+          <a className="text-primary underline hover:text-primary/90" target="_blank" rel="noopener" {...props} />
         ),
-        hr: () => <hr className="my-3 border-slate-200" />,
+        hr: () => <hr className="my-3 border-base-300" />,
       }}
     >
       {text}
@@ -167,10 +167,10 @@ export default function AiChatPage() {
       {/* Header */}
       <div className="flex items-center justify-between gap-2 pb-3 border-b">
         <div>
-          <h1 className="text-2xl font-bold text-blue-800 flex items-center gap-2">
-            <Sparkles className="size-6 text-violet-600" /> IA PACTA
+          <h1 className="text-2xl font-bold text-primary flex items-center gap-2">
+            <Sparkles className="size-6 text-info" /> IA PACTA
           </h1>
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-base-content/60">
             Assistente que consulta o banco em tempo real e gera relatórios. Pergunte em português.
           </p>
         </div>
@@ -185,16 +185,16 @@ export default function AiChatPage() {
       <div className="flex-1 overflow-y-auto py-4 space-y-4">
         {messages.length === 0 && (
           <div className="text-center py-8">
-            <Sparkles className="size-12 mx-auto text-violet-300 mb-3" />
-            <p className="text-slate-600 mb-4">Sugestões para começar:</p>
+            <Sparkles className="size-12 mx-auto text-info/40 mb-3" />
+            <p className="text-base-content/70 mb-4">Sugestões para começar:</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-w-2xl mx-auto">
               {SUGESTOES_PROMPT.map((s, i) => (
                 <button
                   key={i}
                   onClick={() => enviar(s)}
-                  className="text-left text-sm bg-white border rounded-lg px-3 py-2 hover:border-blue-400 hover:bg-blue-50 transition"
+                  className="text-left text-sm bg-base-100 border rounded-lg px-3 py-2 hover:border-primary hover:bg-primary/10 transition"
                 >
-                  <FileText className="inline size-3.5 mr-1 text-blue-600" />
+                  <FileText className="inline size-3.5 mr-1 text-primary" />
                   {s}
                 </button>
               ))}
@@ -204,13 +204,13 @@ export default function AiChatPage() {
         {messages.map((m, i) => (
           <div key={i} className={`flex gap-3 ${m.role === "user" ? "justify-end" : ""}`}>
             {m.role === "assistant" && (
-              <div className="shrink-0 size-8 rounded-full bg-violet-100 flex items-center justify-center">
-                <Bot className="size-5 text-violet-700" />
+              <div className="shrink-0 size-8 rounded-full bg-info/15 flex items-center justify-center">
+                <Bot className="size-5 text-info" />
               </div>
             )}
             <div className={`${m.role === "user" ? "max-w-[80%] order-1" : "max-w-[92%] flex-1"}`}>
               {m.role === "assistant" && m.tool_calls && m.tool_calls.length > 0 && (
-                <details className="mb-2 text-xs text-slate-500 bg-slate-50 border rounded px-2 py-1">
+                <details className="mb-2 text-xs text-base-content/60 bg-base-200 border rounded px-2 py-1">
                   <summary className="cursor-pointer flex items-center gap-1">
                     <Wrench className="size-3" />
                     {m.tool_calls.length} consulta(s) no banco
@@ -220,7 +220,7 @@ export default function AiChatPage() {
                       <li key={j}>
                         <code className="font-mono text-[11px]">{tc.tool}</code>
                         {Object.keys(tc.input).length > 0 && (
-                          <span className="text-slate-400"> ({JSON.stringify(tc.input)})</span>
+                          <span className="text-base-content/40"> ({JSON.stringify(tc.input)})</span>
                         )}
                       </li>
                     ))}
@@ -230,8 +230,8 @@ export default function AiChatPage() {
               <div
                 className={`rounded-lg px-3.5 py-2.5 text-sm ${
                   m.role === "user"
-                    ? "bg-blue-600 text-white"
-                    : "bg-white border border-slate-200 text-slate-800"
+                    ? "bg-primary text-white"
+                    : "bg-base-100 border border-base-300 text-base-content"
                 }`}
               >
                 {m.role === "user" ? (
@@ -241,31 +241,31 @@ export default function AiChatPage() {
                 )}
               </div>
               {m.usage && m.role === "assistant" && (
-                <div className="text-[10px] text-slate-400 mt-1">
+                <div className="text-[10px] text-base-content/40 mt-1">
                   {String(m.usage.input_tokens)} in / {String(m.usage.output_tokens)} out tokens
                   {Number(m.usage.cache_read) > 0 && ` · cache hit ${m.usage.cache_read}`}
                 </div>
               )}
             </div>
             {m.role === "user" && (
-              <div className="shrink-0 size-8 rounded-full bg-blue-100 flex items-center justify-center">
-                <User className="size-5 text-blue-700" />
+              <div className="shrink-0 size-8 rounded-full bg-primary/10 flex items-center justify-center">
+                <User className="size-5 text-primary" />
               </div>
             )}
           </div>
         ))}
         {loading && (
           <div className="flex gap-3">
-            <div className="shrink-0 size-8 rounded-full bg-violet-100 flex items-center justify-center">
-              <Bot className="size-5 text-violet-700" />
+            <div className="shrink-0 size-8 rounded-full bg-info/15 flex items-center justify-center">
+              <Bot className="size-5 text-info" />
             </div>
-            <div className="bg-white border border-slate-200 rounded-lg px-3.5 py-2.5 text-sm flex items-center gap-2 text-slate-500">
+            <div className="bg-base-100 border border-base-300 rounded-lg px-3.5 py-2.5 text-sm flex items-center gap-2 text-base-content/60">
               <Loader2 className="size-4 animate-spin" /> Consultando o banco e pensando...
             </div>
           </div>
         )}
         {error && (
-          <div className="bg-red-50 border border-red-200 text-red-800 rounded-lg px-3 py-2 text-sm">
+          <div className="bg-error/15 border border-error text-error rounded-lg px-3 py-2 text-sm">
             {error}
           </div>
         )}
@@ -279,10 +279,10 @@ export default function AiChatPage() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Pergunte algo sobre os convênios do município..."
-          className="flex-1 rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500"
+          className="flex-1 rounded-lg border border-base-300 px-3 py-2.5 text-sm focus:outline-none focus:border-primary"
           disabled={loading}
         />
-        <Button type="submit" disabled={loading || !input.trim()} className="bg-violet-600 hover:bg-violet-700">
+        <Button type="submit" disabled={loading || !input.trim()} className="bg-info hover:bg-info/90">
           {loading ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
         </Button>
       </form>

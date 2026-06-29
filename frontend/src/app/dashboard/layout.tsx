@@ -114,34 +114,34 @@ function SidebarContent({
     });
   };
   return (
-    <div className="flex h-full flex-col bg-white">
+    <div className="flex h-full flex-col bg-base-100">
       {/* Faixa institucional - cores do governo */}
       <div className="gov-stripe" />
 
       {/* Header com logo PACTA */}
-      <div className="border-b border-slate-200 px-4 py-4 bg-white flex flex-col items-center">
+      <div className="border-b border-base-300 px-4 py-4 bg-base-100 flex flex-col items-center">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/pacta-logo.png" alt="PACTA — Plataforma de Acompanhamento" className="h-20 w-auto" />
       </div>
 
       {/* Seletor de municipio */}
-      <div className="px-3 py-3 border-b border-slate-100 bg-slate-50/60">
-        <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+      <div className="px-3 py-3 border-b border-base-300 bg-base-200/50">
+        <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-base-content/50">
           Municipio Atendido
         </label>
         <Select
           value={selectedMunicipioId}
           onValueChange={(v) => v && onMunicipioChange(v)}
         >
-          <SelectTrigger className="w-full bg-white border-slate-300">
-            <Building2 className="mr-1.5 size-4 text-blue-700" />
+          <SelectTrigger className="w-full">
+            <Building2 className="mr-1.5 size-4 text-primary" />
             <SelectValue placeholder="Selecionar municipio">
               {() => {
                 const m = municipios.find((x) => String(x.id) === selectedMunicipioId);
                 return m ? `${m.nome} - ${m.uf}` : "Selecionar municipio";
               }}
             </SelectValue>
-            <ChevronDown className="ml-auto size-4 text-slate-400" />
+            <ChevronDown className="ml-auto size-4 text-base-content/40" />
           </SelectTrigger>
           <SelectContent>
             {municipios.map((m) => (
@@ -155,7 +155,7 @@ function SidebarContent({
 
       {/* Navegacao */}
       <nav className="flex-1 space-y-0.5 px-2 py-3 overflow-y-auto">
-        <div className="px-3 mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+        <div className="px-3 mb-2 text-[10px] font-semibold uppercase tracking-wider text-base-content/40">
           Modulos
         </div>
         {NAV_ITEMS.map((item) => {
@@ -168,8 +168,8 @@ function SidebarContent({
                 href={`${leaf.href}${qs}`}
                 className={`flex items-center gap-3 rounded-md px-3 py-1.5 text-sm font-medium transition-all ${
                   isActive
-                    ? "bg-blue-50 text-blue-800 border-l-3 border-blue-700 shadow-sm"
-                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900 border-l-3 border-transparent"
+                    ? "bg-primary/10 text-primary font-semibold"
+                    : "text-base-content/70 hover:bg-base-200 hover:text-base-content"
                 }`}
               >
                 <span className="text-[13px]">{leaf.label}</span>
@@ -193,30 +193,30 @@ function SidebarContent({
                 <button
                   type="button"
                   onClick={() => toggleGroup(item.label)}
-                  className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-semibold w-full text-left hover:bg-slate-50 transition-colors ${
-                    groupActive ? "text-blue-800" : "text-slate-600"
+                  className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-semibold w-full text-left hover:bg-base-200 transition-colors ${
+                    groupActive ? "text-primary" : "text-base-content/70"
                   }`}
                   aria-expanded={!isCollapsed}
                   aria-label={`${isCollapsed ? "Expandir" : "Recolher"} ${item.label}`}
                 >
-                  <Icon className={`size-4 ${groupActive ? "text-blue-700" : "text-slate-500"}`} />
+                  <Icon className={`size-4 ${groupActive ? "text-primary" : "text-base-content/50"}`} />
                   <span className="text-[13px] flex-1">{item.label}</span>
                   <ChevronDown
-                    className={`size-4 text-slate-400 transition-transform duration-150 ${
+                    className={`size-4 text-base-content/40 transition-transform duration-150 ${
                       isCollapsed ? "-rotate-90" : "rotate-0"
                     }`}
                   />
                 </button>
                 {!isCollapsed && (
-                  <div className="ml-3 border-l border-slate-200 pl-2 space-y-0.5">
+                  <div className="ml-3 border-l border-base-300 pl-2 space-y-0.5">
                     {item.children.map((c) => {
                       if ("sectionLabel" in c) {
                         return (
                           <div key={c.sectionLabel} className="pt-1">
-                            <div className="px-3 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                            <div className="px-3 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-base-content/40">
                               {c.sectionLabel}
                             </div>
-                            <div className="ml-2 border-l border-slate-100 pl-2 space-y-0.5">
+                            <div className="ml-2 border-l border-base-300 pl-2 space-y-0.5">
                               {c.children.map((leaf) => renderLeaf(leaf))}
                             </div>
                           </div>
@@ -239,11 +239,11 @@ function SidebarContent({
               href={`${item.href}${qs}`}
               className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-all ${
                 isActive
-                  ? "bg-blue-50 text-blue-800 border-l-3 border-blue-700 shadow-sm"
-                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900 border-l-3 border-transparent"
+                  ? "bg-primary/10 text-primary font-semibold"
+                  : "text-base-content/70 hover:bg-base-200 hover:text-base-content"
               }`}
             >
-              {Icon && <Icon className={`size-4 ${isActive ? "text-blue-700" : "text-slate-500"}`} />}
+              {Icon && <Icon className={`size-4 ${isActive ? "text-primary" : "text-base-content/50"}`} />}
               <span className="text-[13px]">{item.label}</span>
             </Link>
           );
@@ -251,7 +251,7 @@ function SidebarContent({
 
         {user?.role === "admin" && (
           <>
-            <div className="px-3 mt-4 mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+            <div className="px-3 mt-4 mb-2 text-[10px] font-semibold uppercase tracking-wider text-base-content/40">
               Administracao
             </div>
             {ADMIN_NAV_ITEMS.map((item) => {
@@ -263,11 +263,11 @@ function SidebarContent({
                   href={item.href}
                   className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-all ${
                     isActive
-                      ? "bg-amber-50 text-amber-800 border-l-3 border-amber-700"
-                      : "text-slate-600 hover:bg-slate-50 hover:text-slate-900 border-l-3 border-transparent"
+                      ? "bg-warning/15 text-warning font-semibold"
+                      : "text-base-content/70 hover:bg-base-200 hover:text-base-content"
                   }`}
                 >
-                  <Icon className={`size-4 ${isActive ? "text-amber-700" : "text-slate-500"}`} />
+                  <Icon className={`size-4 ${isActive ? "text-warning" : "text-base-content/50"}`} />
                   <span className="text-[13px]">{item.label}</span>
                 </Link>
               );
@@ -277,16 +277,16 @@ function SidebarContent({
       </nav>
 
       {/* Footer institucional */}
-      <div className="border-t border-slate-200 px-3 py-3 bg-slate-50/60">
+      <div className="border-t border-base-300 px-3 py-3 bg-base-200/50">
         {user && (
-          <div className="mb-2 px-2 py-2 rounded-md bg-white border border-slate-200">
-            <div className="text-[10px] uppercase tracking-wider text-slate-400">
+          <div className="mb-2 px-2 py-2 rounded-md bg-base-100 border border-base-300">
+            <div className="text-[10px] uppercase tracking-wider text-base-content/40">
               Usuario
             </div>
-            <div className="text-sm font-medium text-slate-700 truncate">
+            <div className="text-sm font-medium text-base-content truncate">
               {user.name}
             </div>
-            <div className="text-[10px] text-slate-500 truncate">
+            <div className="text-[10px] text-base-content/50 truncate">
               {user.email}
             </div>
           </div>
@@ -294,7 +294,7 @@ function SidebarContent({
         <Button
           variant="ghost"
           size="sm"
-          className="w-full justify-start gap-2 text-red-700 hover:bg-red-50 hover:text-red-800 text-xs"
+          className="w-full justify-start gap-2 text-error hover:bg-error/10 text-xs"
           onClick={onLogout}
         >
           <LogOut className="size-4" />
@@ -391,9 +391,9 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
   }, [router]);
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-50">
+    <div className="flex h-screen overflow-hidden bg-base-200">
       {/* Desktop sidebar */}
-      <aside className="hidden w-64 flex-shrink-0 border-r bg-white lg:block">
+      <aside className="hidden w-64 flex-shrink-0 border-r border-base-300 bg-base-100 lg:block">
         <SidebarContent
           pathname={pathname}
           municipios={municipios}
@@ -450,7 +450,7 @@ export default function DashboardLayout({
     <Suspense
       fallback={
         <div className="flex h-screen items-center justify-center">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent" />
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
         </div>
       }
     >

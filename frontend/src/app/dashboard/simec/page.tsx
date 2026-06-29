@@ -42,11 +42,11 @@ const PORTAL = "https://simec.mec.gov.br/cte/relatoriopublico/principal.php";
 
 function programColor(p: string): string {
   const s = p.toUpperCase();
-  if (s.includes("PNATE")) return "bg-blue-100 text-blue-800";
-  if (s.includes("QUOTA")) return "bg-emerald-100 text-emerald-800";
-  if (s.includes("PNAE") || s.includes("ALIMENT")) return "bg-orange-100 text-orange-800";
-  if (s.includes("PDDE")) return "bg-violet-100 text-violet-800";
-  return "bg-slate-100 text-slate-700";
+  if (s.includes("PNATE")) return "bg-primary/10 text-primary";
+  if (s.includes("QUOTA")) return "bg-success/15 text-success";
+  if (s.includes("PNAE") || s.includes("ALIMENT")) return "bg-warning/15 text-warning";
+  if (s.includes("PDDE")) return "bg-info/15 text-info";
+  return "bg-base-200 text-base-content/70";
 }
 
 export default function SimecPage() {
@@ -118,13 +118,13 @@ export default function SimecPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-2xl font-bold text-blue-800">SIMEC - PAR (MEC)</h1>
-          <p className="text-sm text-slate-500">
+          <h1 className="text-2xl font-bold text-primary">SIMEC - PAR (MEC)</h1>
+          <p className="text-sm text-base-content/60">
             Plano de Acoes Articuladas + Liberacoes de recursos federais (PNAE, PNATE, QUOTA, PDDE, etc.)
           </p>
         </div>
         <a href={PORTAL} target="_blank" rel="noreferrer noopener"
-           className="text-xs text-blue-700 hover:underline inline-flex items-center gap-1">
+           className="text-xs text-primary hover:underline inline-flex items-center gap-1">
           <ExternalLink className="size-3" /> Portal oficial SIMEC
         </a>
       </div>
@@ -132,22 +132,22 @@ export default function SimecPage() {
       {/* Resumo no topo */}
       {resumo && !loading && (
         <div className="grid gap-3 sm:grid-cols-3">
-          <div className="rounded-lg border bg-white p-3">
-            <div className="text-[11px] uppercase tracking-wider text-slate-500">Total liberado</div>
-            <div className="text-xl font-bold text-emerald-700 mt-1">{formatCurrency(resumo.total_geral)}</div>
-            <div className="text-[11px] text-slate-500 mt-1">{liberacoes.length} pagamentos</div>
+          <div className="rounded-lg border bg-base-100 p-3">
+            <div className="text-[11px] uppercase tracking-wider text-base-content/60">Total liberado</div>
+            <div className="text-xl font-bold text-success mt-1">{formatCurrency(resumo.total_geral)}</div>
+            <div className="text-[11px] text-base-content/60 mt-1">{liberacoes.length} pagamentos</div>
           </div>
-          <div className="rounded-lg border bg-white p-3">
-            <div className="text-[11px] uppercase tracking-wider text-slate-500">Programas</div>
-            <div className="text-xl font-bold text-blue-700 mt-1">{resumo.por_programa.length}</div>
-            <div className="text-[11px] text-slate-500 mt-1 truncate">
+          <div className="rounded-lg border bg-base-100 p-3">
+            <div className="text-[11px] uppercase tracking-wider text-base-content/60">Programas</div>
+            <div className="text-xl font-bold text-primary mt-1">{resumo.por_programa.length}</div>
+            <div className="text-[11px] text-base-content/60 mt-1 truncate">
               {resumo.por_programa.slice(0, 4).map((p) => p.programa).join(", ")}
             </div>
           </div>
-          <div className="rounded-lg border bg-white p-3">
-            <div className="text-[11px] uppercase tracking-wider text-slate-500">Anos cobertos</div>
-            <div className="text-xl font-bold text-violet-700 mt-1">{resumo.por_ano.length}</div>
-            <div className="text-[11px] text-slate-500 mt-1">
+          <div className="rounded-lg border bg-base-100 p-3">
+            <div className="text-[11px] uppercase tracking-wider text-base-content/60">Anos cobertos</div>
+            <div className="text-xl font-bold text-info mt-1">{resumo.por_ano.length}</div>
+            <div className="text-[11px] text-base-content/60 mt-1">
               {resumo.por_ano.length ? `${Math.min(...resumo.por_ano.map((a) => a.ano))} - ${Math.max(...resumo.por_ano.map((a) => a.ano))}` : "-"}
             </div>
           </div>
@@ -159,7 +159,7 @@ export default function SimecPage() {
         <button
           onClick={() => setTab("dim")}
           className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
-            tab === "dim" ? "border-blue-600 text-blue-700" : "border-transparent text-slate-500 hover:text-slate-700"
+            tab === "dim" ? "border-primary text-primary" : "border-transparent text-base-content/60 hover:text-base-content/70"
           }`}
         >
           <BarChart3 className="inline size-4 mr-1" />
@@ -168,7 +168,7 @@ export default function SimecPage() {
         <button
           onClick={() => setTab("lib")}
           className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
-            tab === "lib" ? "border-blue-600 text-blue-700" : "border-transparent text-slate-500 hover:text-slate-700"
+            tab === "lib" ? "border-primary text-primary" : "border-transparent text-base-content/60 hover:text-base-content/70"
           }`}
         >
           <Wallet className="inline size-4 mr-1" />
@@ -177,21 +177,21 @@ export default function SimecPage() {
       </div>
 
       {loading ? (
-        <div className="p-8 text-center"><Loader2 className="size-6 animate-spin mx-auto text-blue-600" /></div>
+        <div className="p-8 text-center"><Loader2 className="size-6 animate-spin mx-auto text-primary" /></div>
       ) : tab === "dim" ? (
-        <div className="bg-white border rounded overflow-hidden">
+        <div className="bg-base-100 border rounded overflow-hidden">
           {dimensoes.length === 0 ? (
-            <div className="p-12 text-center text-slate-500">Nenhuma dimensao encontrada.</div>
+            <div className="p-12 text-center text-base-content/60">Nenhuma dimensao encontrada.</div>
           ) : (
             <Table className="text-sm">
               <TableHeader>
-                <TableRow className="[&>th]:py-2 [&>th]:px-3 [&>th]:font-semibold bg-blue-50 [&>th]:text-xs">
+                <TableRow className="[&>th]:py-2 [&>th]:px-3 [&>th]:font-semibold bg-primary/10 [&>th]:text-xs">
                   <TableHead>Dimensao do PAR</TableHead>
                   <TableHead className="text-center w-[80px]">Total</TableHead>
-                  <TableHead className="text-center w-[70px] bg-green-50">Score 4</TableHead>
-                  <TableHead className="text-center w-[70px] bg-emerald-50">Score 3</TableHead>
-                  <TableHead className="text-center w-[70px] bg-amber-50">Score 2</TableHead>
-                  <TableHead className="text-center w-[70px] bg-red-50">Score 1</TableHead>
+                  <TableHead className="text-center w-[70px] bg-success/15">Score 4</TableHead>
+                  <TableHead className="text-center w-[70px] bg-success/15">Score 3</TableHead>
+                  <TableHead className="text-center w-[70px] bg-warning/15">Score 2</TableHead>
+                  <TableHead className="text-center w-[70px] bg-error/15">Score 1</TableHead>
                   <TableHead className="text-center w-[60px]">N/A</TableHead>
                 </TableRow>
               </TableHeader>
@@ -200,41 +200,41 @@ export default function SimecPage() {
                   <TableRow key={i} className="[&>td]:py-2 [&>td]:px-3 [&>td]:text-sm">
                     <TableCell className="font-medium">{d.dimensao}</TableCell>
                     <TableCell className="text-center font-mono">{d.total}</TableCell>
-                    <TableCell className="text-center font-mono bg-green-50/60 font-semibold">{d.score_4}</TableCell>
-                    <TableCell className="text-center font-mono bg-emerald-50/60">{d.score_3}</TableCell>
-                    <TableCell className="text-center font-mono bg-amber-50/60">{d.score_2}</TableCell>
-                    <TableCell className="text-center font-mono bg-red-50/60">{d.score_1}</TableCell>
-                    <TableCell className="text-center font-mono text-slate-400">{d.score_na}</TableCell>
+                    <TableCell className="text-center font-mono bg-success/15 font-semibold">{d.score_4}</TableCell>
+                    <TableCell className="text-center font-mono bg-success/15">{d.score_3}</TableCell>
+                    <TableCell className="text-center font-mono bg-warning/15">{d.score_2}</TableCell>
+                    <TableCell className="text-center font-mono bg-error/15">{d.score_1}</TableCell>
+                    <TableCell className="text-center font-mono text-base-content/40">{d.score_na}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           )}
-          <div className="px-3 py-2 bg-slate-50 border-t text-[11px] text-slate-500">
+          <div className="px-3 py-2 bg-base-200 border-t text-[11px] text-base-content/60">
             Escala: 4 = situacao boa / 3 = adequada / 2 = a melhorar / 1 = critica. Fonte: SIMEC publico (PAR diagnostico).
           </div>
         </div>
       ) : (
         <div className="space-y-3">
           {/* Filtros liberacoes */}
-          <div className="bg-white border rounded p-3 grid gap-3 md:grid-cols-4">
+          <div className="bg-base-100 border rounded p-3 grid gap-3 md:grid-cols-4">
             <MultiSelect options={anoOptions} selected={anosSel} onChange={setAnosSel} placeholder="Todos os anos" width="w-full" />
             <MultiSelect options={progOptions} selected={progsSel} onChange={setProgsSel} placeholder="Todos os programas" width="w-full" />
             <Input placeholder="Buscar descricao/OB" value={search} onChange={(e) => setSearch(e.target.value)} />
             <Button variant="outline" onClick={() => { setAnosSel([]); setProgsSel([]); setSearch(""); }}>Limpar</Button>
           </div>
 
-          <div className="bg-white border rounded overflow-hidden">
-            <div className="px-3 py-2 bg-slate-50 border-b text-sm flex items-center justify-between">
+          <div className="bg-base-100 border rounded overflow-hidden">
+            <div className="px-3 py-2 bg-base-200 border-b text-sm flex items-center justify-between">
               <span><strong>{displayLib.length}</strong> liberacoes</span>
-              <span className="font-mono font-semibold text-emerald-700">{formatCurrency(displayTotal)}</span>
+              <span className="font-mono font-semibold text-success">{formatCurrency(displayTotal)}</span>
             </div>
             {displayLib.length === 0 ? (
-              <div className="p-12 text-center text-slate-500">Nenhuma liberacao encontrada.</div>
+              <div className="p-12 text-center text-base-content/60">Nenhuma liberacao encontrada.</div>
             ) : (
               <Table className="text-xs">
                 <TableHeader>
-                  <TableRow className="[&>th]:py-1.5 [&>th]:px-2 [&>th]:font-semibold [&>th]:text-[11px] bg-blue-50">
+                  <TableRow className="[&>th]:py-1.5 [&>th]:px-2 [&>th]:font-semibold [&>th]:text-[11px] bg-primary/10">
                     <TableHead className="w-[90px]">Data Pgto</TableHead>
                     <TableHead className="w-[70px]">Programa</TableHead>
                     <TableHead>Descricao</TableHead>
@@ -257,7 +257,7 @@ export default function SimecPage() {
                         {l.descricao || l.programa_full || "-"}
                       </TableCell>
                       <TableCell className="font-mono">{l.ob || "-"}</TableCell>
-                      <TableCell className="text-right font-mono font-semibold text-emerald-700">{formatCurrency(l.valor || 0)}</TableCell>
+                      <TableCell className="text-right font-mono font-semibold text-success">{formatCurrency(l.valor || 0)}</TableCell>
                       <TableCell className="text-[10px] truncate" title={l.banco || ""}>
                         {l.banco || "-"} {l.agencia ? `/ ${l.agencia}` : ""}
                       </TableCell>

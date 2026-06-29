@@ -136,12 +136,12 @@ function ParlamentaresInner() {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="border-b border-slate-200 pb-4">
-        <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-          <UserCircle2 className="size-6 text-violet-700" />
+      <div className="border-b border-base-300 pb-4">
+        <h1 className="text-2xl font-bold text-base-content flex items-center gap-2">
+          <UserCircle2 className="size-6 text-info" />
           Parlamentares
         </h1>
-        <p className="text-sm text-slate-500 mt-1">
+        <p className="text-sm text-base-content/60 mt-1">
           Lista agregada dos parlamentares (deputados estaduais/federais e senadores)
           com lançamentos vinculados — convênios SIGCON-MG, propostas TransfereGov/SICONV
           e emendas estaduais. Clique para ver os lançamentos.
@@ -149,9 +149,9 @@ function ParlamentaresInner() {
       </div>
 
       {/* Filtro */}
-      <div className="bg-white border rounded p-4 flex flex-wrap gap-3 items-end">
+      <div className="bg-base-100 border rounded p-4 flex flex-wrap gap-3 items-end">
         <div className="flex-1 min-w-[200px]">
-          <label className="text-xs text-slate-600 mb-1 block">Buscar parlamentar</label>
+          <label className="text-xs text-base-content/70 mb-1 block">Buscar parlamentar</label>
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -159,7 +159,7 @@ function ParlamentaresInner() {
             onKeyDown={(e) => { if (e.key === "Enter") carregar(); }}
           />
         </div>
-        <Button onClick={carregar} className="bg-violet-600 hover:bg-violet-700">
+        <Button onClick={carregar} className="bg-info hover:bg-info/90">
           <Search className="size-4 mr-1" /> Buscar
         </Button>
         {(search || municipioId) && (
@@ -170,7 +170,7 @@ function ParlamentaresInner() {
       </div>
 
       {/* Resumo */}
-      <div className="text-xs text-slate-500">
+      <div className="text-xs text-base-content/60">
         {loading ? "Carregando..." : (
           <>
             <strong>{items.length}</strong> parlamentares
@@ -184,11 +184,11 @@ function ParlamentaresInner() {
       <div className="space-y-2">
         {loading && (
           <div className="flex justify-center py-12">
-            <Loader2 className="size-8 animate-spin text-violet-600" />
+            <Loader2 className="size-8 animate-spin text-info" />
           </div>
         )}
         {!loading && items.length === 0 && (
-          <div className="bg-slate-50 border border-slate-200 rounded p-12 text-center text-slate-500">
+          <div className="bg-base-200 border border-base-300 rounded p-12 text-center text-base-content/60">
             Nenhum parlamentar encontrado. Os parlamentares são extraídos automaticamente
             dos campos: SIGCON (responsáveis), TransfereGov (parlamentar) e emendas estaduais
             (nome_responsavel). Se a lista estiver vazia, é porque essas fontes ainda não foram
@@ -199,31 +199,31 @@ function ParlamentaresInner() {
           const expanded = expandedKeys.has(p.nome_normalizado);
           const detail = detailCache[p.nome_normalizado];
           return (
-            <div key={p.nome_normalizado} className="bg-white border rounded">
+            <div key={p.nome_normalizado} className="bg-base-100 border rounded">
               <button
                 onClick={() => toggle(p)}
-                className="w-full flex items-center gap-3 p-3 hover:bg-violet-50/40 transition text-left"
+                className="w-full flex items-center gap-3 p-3 hover:bg-info/10 transition text-left"
               >
-                {expanded ? <ChevronDown className="size-4 text-violet-600 shrink-0" /> : <ChevronRight className="size-4 text-slate-400 shrink-0" />}
-                <UserCircle2 className="size-8 text-violet-500 shrink-0" />
+                {expanded ? <ChevronDown className="size-4 text-info shrink-0" /> : <ChevronRight className="size-4 text-base-content/40 shrink-0" />}
+                <UserCircle2 className="size-8 text-info shrink-0" />
                 <div className="flex-1 min-w-0">
-                  <div className="font-semibold text-slate-900">{p.nome_display}</div>
-                  <div className="text-xs text-slate-500 flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
+                  <div className="font-semibold text-base-content">{p.nome_display}</div>
+                  <div className="text-xs text-base-content/60 flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
                     <span>{p.total_lancamentos} lançamentos</span>
-                    <span className="font-medium text-emerald-700">{fmtMoney(p.valor_total)}</span>
-                    <span className="text-slate-400">·</span>
+                    <span className="font-medium text-success">{fmtMoney(p.valor_total)}</span>
+                    <span className="text-base-content/40">·</span>
                     {p.por_fonte.sigcon > 0 && (
-                      <span className="text-blue-700">SIGCON: {p.por_fonte.sigcon}</span>
+                      <span className="text-primary">SIGCON: {p.por_fonte.sigcon}</span>
                     )}
                     {p.por_fonte.voluntaria > 0 && (
-                      <span className="text-emerald-700">TransfereGov: {p.por_fonte.voluntaria}</span>
+                      <span className="text-success">TransfereGov: {p.por_fonte.voluntaria}</span>
                     )}
                     {p.por_fonte.emenda > 0 && (
-                      <span className="text-amber-700">Emendas: {p.por_fonte.emenda}</span>
+                      <span className="text-warning">Emendas: {p.por_fonte.emenda}</span>
                     )}
                     {p.municipios.length > 0 && (
                       <>
-                        <span className="text-slate-400">·</span>
+                        <span className="text-base-content/40">·</span>
                         <span>{p.municipios.join(", ")}</span>
                       </>
                     )}
@@ -232,34 +232,34 @@ function ParlamentaresInner() {
               </button>
 
               {expanded && (
-                <div className="border-t bg-slate-50/50 p-4 space-y-4">
+                <div className="border-t bg-base-200/50 p-4 space-y-4">
                   {detail === "loading" && (
                     <div className="flex justify-center py-6">
-                      <Loader2 className="size-5 animate-spin text-violet-600" />
+                      <Loader2 className="size-5 animate-spin text-info" />
                     </div>
                   )}
                   {detail === "error" && (
-                    <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded p-3">
+                    <div className="text-sm text-error bg-error/15 border border-error rounded p-3">
                       Erro ao carregar lançamentos. Tente novamente.
                     </div>
                   )}
                   {detail && typeof detail === "object" && (
                     <>
                       {/* Resumo dentro do expand */}
-                      <div className="text-xs text-slate-600 flex flex-wrap gap-4 pb-2 border-b border-slate-200">
+                      <div className="text-xs text-base-content/70 flex flex-wrap gap-4 pb-2 border-b border-base-300">
                         <span><strong>{detail.total_geral}</strong> lançamentos totais</span>
-                        <span className="text-emerald-700 font-semibold">{fmtMoney(detail.valor_total)}</span>
+                        <span className="text-success font-semibold">{fmtMoney(detail.valor_total)}</span>
                       </div>
 
                       {/* SIGCON */}
                       {detail.sigcon.length > 0 && (
                         <Section
-                          icon={<Building2 className="size-4 text-blue-600" />}
+                          icon={<Building2 className="size-4 text-primary" />}
                           title={`SIGCON-MG (Estadual) — ${detail.sigcon.length} convênio(s)`}
                         >
                           <Table headers={["Município", "Nº SIGCON", "Órgão", "Situação", "Valor Total", "Vigência", "Objeto"]}>
                             {detail.sigcon.map((s) => (
-                              <tr key={s.id} className="even:bg-white">
+                              <tr key={s.id} className="even:bg-base-100">
                                 <Td>{s.municipio_nome}</Td>
                                 <Td mono>{s.numero || "-"}</Td>
                                 <Td className="text-xs">{s.orgao || "-"}</Td>
@@ -278,12 +278,12 @@ function ParlamentaresInner() {
                       {/* Voluntarias */}
                       {detail.voluntarias.length > 0 && (
                         <Section
-                          icon={<Landmark className="size-4 text-emerald-600" />}
+                          icon={<Landmark className="size-4 text-success" />}
                           title={`TransfereGov / SICONV (Federal) — ${detail.voluntarias.length} proposta(s)`}
                         >
                           <Table headers={["Município", "Nº Proposta", "Instrumento", "Órgão", "Situação", "Sit. Contrat.", "Valor Global", "Fim Vig.", "Objeto"]}>
                             {detail.voluntarias.map((v) => (
-                              <tr key={v.id} className="even:bg-white">
+                              <tr key={v.id} className="even:bg-base-100">
                                 <Td>{v.municipio_nome}</Td>
                                 <Td mono>{v.numero_proposta}</Td>
                                 <Td mono>{v.codigo_instrumento || "-"}</Td>
@@ -304,12 +304,12 @@ function ParlamentaresInner() {
                       {/* Emendas */}
                       {detail.emendas.length > 0 && (
                         <Section
-                          icon={<FileText className="size-4 text-amber-600" />}
+                          icon={<FileText className="size-4 text-warning" />}
                           title={`Emendas Estaduais — ${detail.emendas.length} indicação(ões)`}
                         >
                           <Table headers={["Município", "Indicação", "Ano", "UO", "Beneficiário", "Tipo", "Valor", "Status"]}>
                             {detail.emendas.map((e) => (
-                              <tr key={e.id} className="even:bg-white">
+                              <tr key={e.id} className="even:bg-base-100">
                                 <Td>{e.municipio_nome}</Td>
                                 <Td mono>{e.nr_indicacao}</Td>
                                 <Td>{e.ano || "-"}</Td>
@@ -325,7 +325,7 @@ function ParlamentaresInner() {
                       )}
 
                       {detail.total_geral === 0 && (
-                        <div className="text-sm text-slate-500 italic text-center py-4">
+                        <div className="text-sm text-base-content/60 italic text-center py-4">
                           Nenhum lançamento encontrado para este parlamentar.
                         </div>
                       )}
@@ -344,10 +344,10 @@ function ParlamentaresInner() {
 function Section({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
   return (
     <div>
-      <h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2 mb-2">
+      <h3 className="text-sm font-semibold text-base-content flex items-center gap-2 mb-2">
         {icon} {title}
       </h3>
-      <div className="overflow-x-auto rounded border border-slate-200 bg-white">
+      <div className="overflow-x-auto rounded border border-base-300 bg-base-100">
         {children}
       </div>
     </div>
@@ -357,7 +357,7 @@ function Section({ icon, title, children }: { icon: React.ReactNode; title: stri
 function Table({ headers, children }: { headers: string[]; children: React.ReactNode }) {
   return (
     <table className="min-w-full text-xs">
-      <thead className="bg-slate-50 text-slate-700">
+      <thead className="bg-base-200 text-base-content/70">
         <tr>
           {headers.map((h, i) => (
             <th key={i} className="text-left font-semibold px-3 py-1.5 border-b">
@@ -373,7 +373,7 @@ function Table({ headers, children }: { headers: string[]; children: React.React
 
 function Td({ children, mono, className, title }: { children: React.ReactNode; mono?: boolean; className?: string; title?: string }) {
   return (
-    <td className={`px-3 py-1.5 border-b border-slate-100 ${mono ? "font-mono" : ""} ${className || ""}`} title={title}>
+    <td className={`px-3 py-1.5 border-b border-base-300 ${mono ? "font-mono" : ""} ${className || ""}`} title={title}>
       {children}
     </td>
   );
@@ -381,7 +381,7 @@ function Td({ children, mono, className, title }: { children: React.ReactNode; m
 
 export default function ParlamentaresPage() {
   return (
-    <Suspense fallback={<div className="flex h-64 items-center justify-center"><Loader2 className="size-6 animate-spin text-violet-600" /></div>}>
+    <Suspense fallback={<div className="flex h-64 items-center justify-center"><Loader2 className="size-6 animate-spin text-info" /></div>}>
       <ParlamentaresInner />
     </Suspense>
   );

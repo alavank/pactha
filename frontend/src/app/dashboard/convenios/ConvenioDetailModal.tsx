@@ -80,11 +80,11 @@ export default function ConvenioDetailModal({ conv, onClose }: Props) {
       <DialogContent className="!max-w-[880px] !w-[94vw] sm:!max-w-[880px] !block max-h-[92vh] overflow-y-auto overflow-x-hidden p-2.5">
         <DialogTitle className="sr-only">Detalhes do Convênio</DialogTitle>
         <div className="relative w-full max-w-full overflow-x-hidden">
-          <button onClick={onClose} className="absolute right-0 top-0 text-gray-400 hover:text-gray-600 z-10" aria-label="Fechar">
+          <button onClick={onClose} className="absolute right-0 top-0 text-base-content/40 hover:text-base-content/70 z-10" aria-label="Fechar">
             <X className="size-5" />
           </button>
 
-          {loading && <div className="py-12 text-center text-gray-500">Carregando...</div>}
+          {loading && <div className="py-12 text-center text-base-content/60">Carregando...</div>}
 
           {d && (
             <>
@@ -95,16 +95,16 @@ export default function ConvenioDetailModal({ conv, onClose }: Props) {
                     {d.workflow.steps.map((s, i) => (
                       <React.Fragment key={i}>
                         <div className="flex flex-col items-center text-center" style={{ width: 80 }} title={s.label}>
-                          <div className="text-[8px] font-semibold uppercase mb-1 text-gray-700 leading-tight" style={{ minHeight: 32 }}>
+                          <div className="text-[8px] font-semibold uppercase mb-1 text-base-content/70 leading-tight" style={{ minHeight: 32 }}>
                             {s.label}
                           </div>
                           <div className={`rounded-full ${s.current ? "size-4" : "size-3"} ${
-                            s.completed ? "bg-blue-500" : "bg-gray-300"
-                          } ${s.current ? "ring-2 ring-blue-300" : ""}`} />
+                            s.completed ? "bg-primary" : "bg-base-300"
+                          } ${s.current ? "ring-2 ring-primary/40" : ""}`} />
                         </div>
                         {i < d.workflow!.steps.length - 1 && (
                           <div className={`h-0.5 mt-[32px] flex-1 min-w-1 ${
-                            s.completed && d.workflow!.steps[i + 1].completed ? "bg-blue-500" : "bg-gray-300"
+                            s.completed && d.workflow!.steps[i + 1].completed ? "bg-primary" : "bg-base-300"
                           }`} />
                         )}
                       </React.Fragment>
@@ -118,7 +118,7 @@ export default function ConvenioDetailModal({ conv, onClose }: Props) {
               </h2>
 
               {/* Bloco compacto: 6 colunas para max densidade */}
-              <div className="bg-orange-50 border border-orange-200 rounded p-2.5 text-[11px]">
+              <div className="bg-warning/15 border border-warning rounded p-2.5 text-[11px]">
                 {/* Identificadores principais */}
                 <Grid cols={6}>
                   <Field label="Nº Convênio Publ." value={d.nr_convenio_publicado || "-"} highlight mono span={2} />
@@ -127,7 +127,7 @@ export default function ConvenioDetailModal({ conv, onClose }: Props) {
                   <Field label="Data Criação" value={formatDate(d.data_criacao) || formatDate(d.dt_publicacao) || "-"} />
                 </Grid>
 
-                <hr className="my-2 border-orange-200" />
+                <hr className="my-2 border-warning" />
 
                 {/* Datas + vigência */}
                 <Grid cols={6}>
@@ -146,26 +146,26 @@ export default function ConvenioDetailModal({ conv, onClose }: Props) {
                     value={d.dias_restantes_label || (d.dias_restantes != null ? `${d.dias_restantes}d` : "-")}
                     valueClass={
                       d.dias_restantes_label?.includes("PRESTACAO")
-                        ? "text-purple-700 font-bold"
+                        ? "text-info font-bold"
                         : d.dias_restantes_label?.startsWith("VENCIDO")
-                        ? "text-red-600 font-bold"
+                        ? "text-error font-bold"
                         : ""
                     }
                   />
                 </Grid>
 
-                <hr className="my-2 border-orange-200" />
+                <hr className="my-2 border-warning" />
 
                 {/* Título + Prestação (destacada) */}
                 <Grid cols={6}>
                   <Field label="Título" value={d.titulo || "-"} span={4} fullValue />
-                  <div className="col-span-2 min-w-0 bg-amber-100 border border-amber-300 rounded px-2 py-1" title={`Prestação de Contas: ${d.prestacao_contas || "-"}`}>
-                    <div className="text-[9.5px] font-semibold text-amber-900 leading-tight uppercase tracking-tight">Prestação de Contas</div>
-                    <div className="text-[11px] mt-0.5 font-semibold text-amber-900 truncate">{d.prestacao_contas || "-"}</div>
+                  <div className="col-span-2 min-w-0 bg-warning/15 border border-warning rounded px-2 py-1" title={`Prestação de Contas: ${d.prestacao_contas || "-"}`}>
+                    <div className="text-[9.5px] font-semibold text-warning leading-tight uppercase tracking-tight">Prestação de Contas</div>
+                    <div className="text-[11px] mt-0.5 font-semibold text-warning truncate">{d.prestacao_contas || "-"}</div>
                   </div>
                 </Grid>
 
-                <hr className="my-2 border-orange-200" />
+                <hr className="my-2 border-warning" />
 
                 {/* Concedente + convenente + municipio */}
                 <Grid cols={6}>
@@ -179,7 +179,7 @@ export default function ConvenioDetailModal({ conv, onClose }: Props) {
                   <Field label="Setor" value={d.setor || "-"} span={2} />
                 </Grid>
 
-                <hr className="my-2 border-orange-200" />
+                <hr className="my-2 border-warning" />
 
                 {/* Valores */}
                 <Grid cols={6}>
@@ -197,7 +197,7 @@ export default function ConvenioDetailModal({ conv, onClose }: Props) {
                   <Field label="Qt. Alterações" value={d.qt_alteracoes?.toString() || "0"} />
                 </Grid>
 
-                <hr className="my-2 border-orange-200" />
+                <hr className="my-2 border-warning" />
 
                 {/* Tracking SIGCON + fase */}
                 <Grid cols={6}>
@@ -211,7 +211,7 @@ export default function ConvenioDetailModal({ conv, onClose }: Props) {
 
                 {d.fase_etapa_status && d.fase_etapa_status !== d.status && (
                   <>
-                    <hr className="my-2 border-orange-200" />
+                    <hr className="my-2 border-warning" />
                     <Grid cols={6}>
                       <Field label="Fase-Etapa-Status" value={d.fase_etapa_status} span={6} fullValue />
                     </Grid>
@@ -251,8 +251,8 @@ function Field({
   const spanClass = span === 2 ? "col-span-2" : span === 3 ? "col-span-3" : span === 4 ? "col-span-4" : span === 5 ? "col-span-5" : span === 6 ? "col-span-6" : "";
   return (
     <div className={`min-w-0 overflow-hidden ${spanClass}`} title={`${label}: ${value}`}>
-      <div className="text-[9.5px] font-semibold text-gray-600 leading-tight uppercase tracking-tight truncate">{label}</div>
-      <div className={`text-[11px] mt-0.5 max-w-full ${mono ? "font-mono" : ""} ${highlight ? "inline-block max-w-full bg-orange-200 px-1.5 py-0.5 rounded text-[10px] truncate align-bottom" : (fullValue ? "break-words whitespace-normal" : "truncate")} ${valueClass}`}>
+      <div className="text-[9.5px] font-semibold text-base-content/70 leading-tight uppercase tracking-tight truncate">{label}</div>
+      <div className={`text-[11px] mt-0.5 max-w-full ${mono ? "font-mono" : ""} ${highlight ? "inline-block max-w-full bg-warning/15 px-1.5 py-0.5 rounded text-[10px] truncate align-bottom" : (fullValue ? "break-words whitespace-normal" : "truncate")} ${valueClass}`}>
         {value}
       </div>
     </div>

@@ -43,9 +43,9 @@ interface StatusChange {
 
 function EsferaTag({ tipo }: { tipo: "estadual" | "federal" | "ambos" }) {
   const styles: Record<string, string> = {
-    estadual: "bg-blue-50 text-blue-700 border-blue-200",
-    federal: "bg-cyan-50 text-cyan-700 border-cyan-200",
-    ambos: "bg-slate-100 text-slate-600 border-slate-200",
+    estadual: "bg-primary/10 text-primary border-primary",
+    federal: "bg-info/15 text-info border-info",
+    ambos: "bg-base-200 text-base-content/70 border-base-300",
   };
   const labels: Record<string, string> = {
     estadual: "Estadual",
@@ -65,10 +65,10 @@ function SkeletonCard() {
   return (
     <Card>
       <CardHeader>
-        <div className="h-4 w-24 animate-pulse rounded bg-gray-200" />
+        <div className="h-4 w-24 animate-pulse rounded bg-base-300" />
       </CardHeader>
       <CardContent>
-        <div className="h-8 w-32 animate-pulse rounded bg-gray-200" />
+        <div className="h-8 w-32 animate-pulse rounded bg-base-300" />
       </CardContent>
     </Card>
   );
@@ -131,9 +131,9 @@ export default function DashboardPage() {
   }, [municipioId]);
 
   const fonteBadge = (f: string): { label: string; cls: string } => {
-    if (f === "fns") return { label: "FNS", cls: "bg-rose-50 text-rose-700 border-rose-200" };
-    if (f === "voluntaria") return { label: "Federal", cls: "bg-cyan-50 text-cyan-700 border-cyan-200" };
-    return { label: "Estadual (SIGCON)", cls: "bg-blue-50 text-blue-700 border-blue-200" };
+    if (f === "fns") return { label: "FNS", cls: "bg-error/15 text-error border-error" };
+    if (f === "voluntaria") return { label: "Federal", cls: "bg-info/15 text-info border-info" };
+    return { label: "Estadual (SIGCON)", cls: "bg-primary/10 text-primary border-primary" };
   };
   const fmtDataHora = (iso?: string): string => {
     if (!iso) return "-";
@@ -142,10 +142,10 @@ export default function DashboardPage() {
   };
   const statusCor = (s: string): string => {
     const t = (s || "").toLowerCase();
-    if (t.includes("aprovad") || t.includes("execu") || t.includes("vigor") || t.includes("conclu")) return "text-green-700";
-    if (t.includes("rejeitad") || t.includes("anulad") || t.includes("cancelad") || t.includes("rescind") || t.includes("impedi")) return "text-red-700";
-    if (t.includes("análise") || t.includes("an") || t.includes("complementa")) return "text-amber-700";
-    return "text-slate-700";
+    if (t.includes("aprovad") || t.includes("execu") || t.includes("vigor") || t.includes("conclu")) return "text-success";
+    if (t.includes("rejeitad") || t.includes("anulad") || t.includes("cancelad") || t.includes("rescind") || t.includes("impedi")) return "text-error";
+    if (t.includes("análise") || t.includes("an") || t.includes("complementa")) return "text-warning";
+    return "text-base-content/70";
   };
 
   if (!municipioId) {
@@ -199,16 +199,16 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       {/* Cabecalho institucional */}
-      <div className="border-b border-slate-200 pb-4">
-        <div className="flex items-center gap-2 text-xs text-slate-500 mb-1">
+      <div className="border-b border-base-300 pb-4">
+        <div className="flex items-center gap-2 text-xs text-base-content/60 mb-1">
           <span>Inicio</span>
           <span>›</span>
-          <span className="text-slate-700">Painel de Monitoramento</span>
+          <span className="text-base-content/70">Painel de Monitoramento</span>
         </div>
-        <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
+        <h1 className="text-2xl font-bold text-base-content tracking-tight">
           Painel de Monitoramento
         </h1>
-        <p className="text-sm text-slate-500 mt-1">
+        <p className="text-sm text-base-content/60 mt-1">
           Visao consolidada de convenios, emendas e indicadores do municipio
         </p>
       </div>
@@ -227,24 +227,24 @@ export default function DashboardPage() {
         <div className="space-y-6">
           {/* Grupo 1: Totais e Valores */}
           <div>
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-base-content/60 mb-2">
               Totais e Valores
             </h2>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <Card
                 onClick={() => goConvenios()}
-                className="border-l-4 border-l-blue-700 hover:shadow-md transition-shadow cursor-pointer"
+                className="border-l-4 border-l-primary hover:shadow-md transition-shadow cursor-pointer"
               >
                 <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-                  <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">
+                  <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-base-content/70">
                     Total de Convenios (SIGCON)
                   </CardTitle>
-                  <div className="size-9 rounded-md bg-blue-50 flex items-center justify-center">
-                    <FileText className="size-4 text-blue-700" />
+                  <div className="size-9 rounded-md bg-primary/10 flex items-center justify-center">
+                    <FileText className="size-4 text-primary" />
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-bold text-slate-900">
+                  <div className="text-3xl font-bold text-base-content">
                     {summary?.total_convenios_estadual ?? 0}
                   </div>
                   <div className="mt-2"><EsferaTag tipo="estadual" /></div>
@@ -253,52 +253,52 @@ export default function DashboardPage() {
 
               <Card
                 onClick={() => goVoluntarias()}
-                className="border-l-4 border-l-cyan-700 hover:shadow-md transition-shadow cursor-pointer"
+                className="border-l-4 border-l-info hover:shadow-md transition-shadow cursor-pointer"
               >
                 <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-                  <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">
+                  <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-base-content/70">
                     TransfereGov Voluntarias
                   </CardTitle>
-                  <div className="size-9 rounded-md bg-cyan-50 flex items-center justify-center">
-                    <FileText className="size-4 text-cyan-700" />
+                  <div className="size-9 rounded-md bg-info/15 flex items-center justify-center">
+                    <FileText className="size-4 text-info" />
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-bold text-slate-900">
+                  <div className="text-3xl font-bold text-base-content">
                     {summary?.total_voluntarias ?? 0}
                   </div>
                   <div className="mt-2"><EsferaTag tipo="federal" /></div>
                 </CardContent>
               </Card>
 
-              <Card className="border-l-4 border-l-green-700 hover:shadow-md transition-shadow">
+              <Card className="border-l-4 border-l-success hover:shadow-md transition-shadow">
                 <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-                  <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">
+                  <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-base-content/70">
                     Valor Estadual
                   </CardTitle>
-                  <div className="size-9 rounded-md bg-green-50 flex items-center justify-center">
-                    <DollarSign className="size-4 text-green-700" />
+                  <div className="size-9 rounded-md bg-success/15 flex items-center justify-center">
+                    <DollarSign className="size-4 text-success" />
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-xl font-bold text-slate-900 break-words leading-tight">
+                  <div className="text-xl font-bold text-base-content break-words leading-tight">
                     {formatCurrency(summary?.valor_total_estadual ?? 0)}
                   </div>
                   <div className="mt-2"><EsferaTag tipo="estadual" /></div>
                 </CardContent>
               </Card>
 
-              <Card className="border-l-4 border-l-teal-600 hover:shadow-md transition-shadow">
+              <Card className="border-l-4 border-l-success hover:shadow-md transition-shadow">
                 <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-                  <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">
+                  <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-base-content/70">
                     Valor Federal
                   </CardTitle>
-                  <div className="size-9 rounded-md bg-teal-50 flex items-center justify-center">
-                    <DollarSign className="size-4 text-teal-600" />
+                  <div className="size-9 rounded-md bg-success/15 flex items-center justify-center">
+                    <DollarSign className="size-4 text-success" />
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-xl font-bold text-slate-900 break-words leading-tight">
+                  <div className="text-xl font-bold text-base-content break-words leading-tight">
                     {formatCurrency(summary?.valor_total_federal ?? 0)}
                   </div>
                   <div className="mt-2"><EsferaTag tipo="federal" /></div>
@@ -309,24 +309,24 @@ export default function DashboardPage() {
 
           {/* Grupo 2: Vencimentos e Prestacao de Contas */}
           <div>
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-base-content/60 mb-2">
               Vencimentos e Prestacao de Contas
             </h2>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <Card
                 onClick={() => goConvenios("vence60")}
-                className="border-l-4 border-l-red-600 hover:shadow-md transition-shadow cursor-pointer"
+                className="border-l-4 border-l-error hover:shadow-md transition-shadow cursor-pointer"
               >
                 <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-                  <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">
+                  <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-base-content/70">
                     Vence em 60 dias
                   </CardTitle>
-                  <div className="size-9 rounded-md bg-red-50 flex items-center justify-center">
-                    <AlertTriangle className="size-4 text-red-600" />
+                  <div className="size-9 rounded-md bg-error/15 flex items-center justify-center">
+                    <AlertTriangle className="size-4 text-error" />
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-bold text-red-700">
+                  <div className="text-3xl font-bold text-error">
                     {summary?.alertas_vigencia_60d ?? 0}
                   </div>
                   <div className="mt-2"><EsferaTag tipo="ambos" /></div>
@@ -335,18 +335,18 @@ export default function DashboardPage() {
 
               <Card
                 onClick={() => goConvenios("vence120")}
-                className="border-l-4 border-l-amber-600 hover:shadow-md transition-shadow cursor-pointer"
+                className="border-l-4 border-l-warning hover:shadow-md transition-shadow cursor-pointer"
               >
                 <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-                  <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">
+                  <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-base-content/70">
                     Vence em 120 dias
                   </CardTitle>
-                  <div className="size-9 rounded-md bg-amber-50 flex items-center justify-center">
-                    <AlertTriangle className="size-4 text-amber-600" />
+                  <div className="size-9 rounded-md bg-warning/15 flex items-center justify-center">
+                    <AlertTriangle className="size-4 text-warning" />
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-bold text-amber-700">
+                  <div className="text-3xl font-bold text-warning">
                     {summary?.alertas_vigencia ?? 0}
                   </div>
                   <div className="mt-2"><EsferaTag tipo="ambos" /></div>
@@ -355,46 +355,46 @@ export default function DashboardPage() {
 
               <Card
                 onClick={() => goConvenios("prestacao")}
-                className="border-l-4 border-l-purple-700 hover:shadow-md transition-shadow cursor-pointer"
+                className="border-l-4 border-l-info hover:shadow-md transition-shadow cursor-pointer"
               >
                 <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-                  <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">
+                  <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-base-content/70">
                     Prest. Contas Estadual
                   </CardTitle>
-                  <div className="size-9 rounded-md bg-purple-50 flex items-center justify-center">
-                    <ClipboardList className="size-4 text-purple-700" />
+                  <div className="size-9 rounded-md bg-info/15 flex items-center justify-center">
+                    <ClipboardList className="size-4 text-info" />
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-bold text-purple-700">
+                  <div className="text-3xl font-bold text-info">
                     {summary?.alertas_prestacao_contas_estadual ?? 0}
                   </div>
                   <div className="mt-2 flex items-center gap-1.5">
                     <EsferaTag tipo="estadual" />
-                    <span className="text-[10px] text-slate-400">vencidos +90d</span>
+                    <span className="text-[10px] text-base-content/40">vencidos +90d</span>
                   </div>
                 </CardContent>
               </Card>
 
               <Card
                 onClick={() => goVoluntarias("prestacao")}
-                className="border-l-4 border-l-fuchsia-700 hover:shadow-md transition-shadow cursor-pointer"
+                className="border-l-4 border-l-info hover:shadow-md transition-shadow cursor-pointer"
               >
                 <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-                  <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">
+                  <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-base-content/70">
                     Prest. Contas Federal
                   </CardTitle>
-                  <div className="size-9 rounded-md bg-fuchsia-50 flex items-center justify-center">
-                    <ClipboardList className="size-4 text-fuchsia-700" />
+                  <div className="size-9 rounded-md bg-info/15 flex items-center justify-center">
+                    <ClipboardList className="size-4 text-info" />
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-bold text-fuchsia-700">
+                  <div className="text-3xl font-bold text-info">
                     {summary?.alertas_prestacao_contas_federal ?? 0}
                   </div>
                   <div className="mt-2 flex items-center gap-1.5">
                     <EsferaTag tipo="federal" />
-                    <span className="text-[10px] text-slate-400">vencidos +90d</span>
+                    <span className="text-[10px] text-base-content/40">vencidos +90d</span>
                   </div>
                 </CardContent>
               </Card>
@@ -404,10 +404,10 @@ export default function DashboardPage() {
       )}
 
       {/* Mudanças de status detectadas nas atualizações diárias */}
-      <Card className="border-l-4 border-l-indigo-600">
+      <Card className="border-l-4 border-l-primary">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Bell className="size-5 text-indigo-600" />
+            <Bell className="size-5 text-primary" />
             Mudanças de Status (últimos 30 dias)
             {mudancas.length > 0 && (
               <Badge variant="secondary" className="ml-1">{mudancas.length}</Badge>
@@ -418,7 +418,7 @@ export default function DashboardPage() {
           {loading ? (
             <div className="space-y-3">
               {Array.from({ length: 3 }).map((_, i) => (
-                <div key={i} className="h-12 animate-pulse rounded bg-gray-100" />
+                <div key={i} className="h-12 animate-pulse rounded bg-base-200" />
               ))}
             </div>
           ) : mudancas.length === 0 ? (
@@ -445,7 +445,7 @@ export default function DashboardPage() {
                         <span className={`${statusCor(m.status_anterior)} line-through opacity-70`}>
                           {m.status_anterior || "—"}
                         </span>
-                        <ArrowRight className="size-3 text-slate-400 shrink-0" />
+                        <ArrowRight className="size-3 text-base-content/40 shrink-0" />
                         <span className={`font-semibold ${statusCor(m.status_novo)}`}>
                           {m.status_novo || "—"}
                         </span>
@@ -466,7 +466,7 @@ export default function DashboardPage() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <AlertTriangle className="size-5 text-orange-500" />
+            <AlertTriangle className="size-5 text-warning" />
             Alertas de Vigencia
           </CardTitle>
         </CardHeader>
@@ -474,7 +474,7 @@ export default function DashboardPage() {
           {loading ? (
             <div className="space-y-3">
               {Array.from({ length: 3 }).map((_, i) => (
-                <div key={i} className="h-12 animate-pulse rounded bg-gray-100" />
+                <div key={i} className="h-12 animate-pulse rounded bg-base-200" />
               ))}
             </div>
           ) : alertas.length === 0 ? (
@@ -526,10 +526,10 @@ export default function DashboardPage() {
 
       {/* Prestacao de Contas: convenios vencidos ha +90 dias */}
       {!loading && prestacao.length > 0 && (
-        <Card className="border-l-4 border-l-purple-700">
+        <Card className="border-l-4 border-l-info">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <ClipboardList className="size-5 text-purple-700" />
+              <ClipboardList className="size-5 text-info" />
               Prestacao de Contas (vencidos ha +90 dias)
               <Badge variant="secondary" className="ml-1">{prestacao.length}</Badge>
             </CardTitle>
@@ -539,7 +539,7 @@ export default function DashboardPage() {
               {prestacao.slice(0, 10).map((alerta, idx) => (
                 <div
                   key={`${alerta.esfera}-${alerta.id}-${idx}`}
-                  className="flex items-center justify-between rounded-lg border border-purple-100 bg-purple-50/40 p-3"
+                  className="flex items-center justify-between rounded-lg border border-info bg-info/15 p-3"
                 >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
@@ -558,7 +558,7 @@ export default function DashboardPage() {
                     <span className="text-sm text-muted-foreground">
                       {formatDate(alerta.dt_fim_vigencia)}
                     </span>
-                    <span className="inline-flex items-center rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-medium text-purple-800 whitespace-nowrap">
+                    <span className="inline-flex items-center rounded-full bg-info/15 px-2.5 py-0.5 text-xs font-medium text-info whitespace-nowrap">
                       {alerta.dias_restantes != null
                         ? `${Math.abs(alerta.dias_restantes)}d vencido`
                         : "-"}
@@ -578,7 +578,7 @@ export default function DashboardPage() {
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="h-64 animate-pulse rounded bg-gray-100" />
+            <div className="h-64 animate-pulse rounded bg-base-200" />
           ) : chartData.length === 0 ? (
             <p className="py-8 text-center text-muted-foreground">
               Nenhum dado encontrado.

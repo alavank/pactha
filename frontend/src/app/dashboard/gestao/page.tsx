@@ -32,13 +32,13 @@ const FONTE_LABEL: Record<string, string> = {
   rm: "Item de RM",
 };
 const FONTE_COLOR: Record<string, string> = {
-  sigcon: "bg-blue-100 text-blue-800",
-  voluntaria: "bg-cyan-100 text-cyan-800",
-  plano_acao: "bg-amber-100 text-amber-800",
-  fns: "bg-emerald-100 text-emerald-800",
-  simec: "bg-teal-100 text-teal-800",
-  emenda: "bg-purple-100 text-purple-800",
-  rm: "bg-slate-100 text-slate-800",
+  sigcon: "bg-primary/10 text-primary",
+  voluntaria: "bg-info/15 text-info",
+  plano_acao: "bg-warning/15 text-warning",
+  fns: "bg-success/15 text-success",
+  simec: "bg-info/15 text-info",
+  emenda: "bg-info/15 text-info",
+  rm: "bg-base-200 text-base-content",
 };
 
 function fmtData(d?: string | null) {
@@ -83,32 +83,32 @@ export default function GestaoPage() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-2xl font-bold text-violet-800 flex items-center gap-2">
+        <h1 className="text-2xl font-bold text-info flex items-center gap-2">
           <Edit2 className="size-6" /> Gestão Interna
         </h1>
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-base-content/60">
           Anotações paralelas aos dados oficiais. Marque status próprio (ex: &quot;prestação enviada
           fisicamente&quot;), protocolos, datas, observações e anexe PDFs/imagens sem alterar
           os dados brutos do scraper.
         </p>
       </div>
 
-      <div className="bg-white border rounded p-3 flex flex-wrap items-end gap-3">
+      <div className="bg-base-100 border rounded p-3 flex flex-wrap items-end gap-3">
         <div>
-          <label className="text-xs text-slate-600 mb-1 block">Fonte</label>
+          <label className="text-xs text-base-content/70 mb-1 block">Fonte</label>
           <select
             value={filtroFonte} onChange={(e) => setFiltroFonte(e.target.value)}
-            className="rounded border border-slate-300 px-2 py-1.5 text-sm bg-white"
+            className="rounded border border-base-300 px-2 py-1.5 text-sm bg-base-100"
           >
             <option value="">Todas</option>
             {Object.entries(FONTE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
         </div>
         <div>
-          <label className="text-xs text-slate-600 mb-1 block">Status</label>
+          <label className="text-xs text-base-content/70 mb-1 block">Status</label>
           <select
             value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)}
-            className="rounded border border-slate-300 px-2 py-1.5 text-sm bg-white"
+            className="rounded border border-base-300 px-2 py-1.5 text-sm bg-base-100"
           >
             <option value="">Todos</option>
             {statusOpcoes.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -119,15 +119,15 @@ export default function GestaoPage() {
         </Button>
       </div>
 
-      <div className="bg-white border rounded">
-        <div className="px-3 py-2 border-b bg-slate-50 text-sm">
+      <div className="bg-base-100 border rounded">
+        <div className="px-3 py-2 border-b bg-base-200 text-sm">
           <strong>{items.length}</strong> anotação(ões)
         </div>
         {loading ? (
-          <div className="p-8 text-center"><Loader2 className="size-6 animate-spin mx-auto text-violet-600" /></div>
+          <div className="p-8 text-center"><Loader2 className="size-6 animate-spin mx-auto text-info" /></div>
         ) : items.length === 0 ? (
-          <div className="p-12 text-center text-slate-500">
-            Nenhuma anotação ainda. Use o ícone <Edit2 className="inline size-4 text-violet-600" /> nas telas
+          <div className="p-12 text-center text-base-content/60">
+            Nenhuma anotação ainda. Use o ícone <Edit2 className="inline size-4 text-info" /> nas telas
             de Convênios, Voluntárias ou outras para criar anotações.
           </div>
         ) : (
@@ -135,39 +135,39 @@ export default function GestaoPage() {
             {items.map((a) => (
               <li key={a.id}
                   onClick={() => setOpenItem(a)}
-                  className="px-3 py-3 hover:bg-slate-50 cursor-pointer">
+                  className="px-3 py-3 hover:bg-base-200 cursor-pointer">
                 <div className="flex items-start gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex flex-wrap items-center gap-2 mb-1">
-                      <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide ${FONTE_COLOR[a.fonte] || "bg-slate-100"}`}>
+                      <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide ${FONTE_COLOR[a.fonte] || "bg-base-200"}`}>
                         {FONTE_LABEL[a.fonte] || a.fonte}
                       </span>
-                      <span className="text-sm font-mono text-slate-700">
+                      <span className="text-sm font-mono text-base-content/70">
                         {a.numero_referencia || a.fonte_ref}
                       </span>
                       {a.status_interno && (
-                        <span className="inline-block bg-violet-100 text-violet-800 px-2 py-0.5 rounded text-[11px] font-semibold">
+                        <span className="inline-block bg-info/15 text-info px-2 py-0.5 rounded text-[11px] font-semibold">
                           {a.status_interno === "Outro" ? a.status_custom : a.status_interno}
                         </span>
                       )}
                       {a.protocolo && (
-                        <span className="text-[11px] text-slate-600">
-                          Protocolo <code className="bg-slate-100 px-1 rounded font-mono">{a.protocolo}</code>
+                        <span className="text-[11px] text-base-content/70">
+                          Protocolo <code className="bg-base-200 px-1 rounded font-mono">{a.protocolo}</code>
                         </span>
                       )}
                       {a.data_protocolo && (
-                        <span className="text-[11px] text-slate-600">📅 {fmtData(a.data_protocolo)}</span>
+                        <span className="text-[11px] text-base-content/70">📅 {fmtData(a.data_protocolo)}</span>
                       )}
                       {a.anexos && a.anexos.length > 0 && (
-                        <span className="text-[11px] text-slate-500 inline-flex items-center gap-0.5">
+                        <span className="text-[11px] text-base-content/60 inline-flex items-center gap-0.5">
                           <Paperclip className="size-3" /> {a.anexos.length}
                         </span>
                       )}
                     </div>
                     {a.observacoes && (
-                      <p className="text-sm text-slate-700 line-clamp-2">{a.observacoes}</p>
+                      <p className="text-sm text-base-content/70 line-clamp-2">{a.observacoes}</p>
                     )}
-                    <div className="text-[10px] text-slate-400 mt-1">
+                    <div className="text-[10px] text-base-content/40 mt-1">
                       Atualizado {fmtData(a.updated_at)}
                     </div>
                   </div>

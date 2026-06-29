@@ -246,10 +246,10 @@ export default function ConveniosPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-2xl font-bold text-gray-900">Convenios (SIGCON-MG)</h1>
+        <h1 className="text-2xl font-bold text-base-content">Convenios (SIGCON-MG)</h1>
         <div className="flex items-center gap-2">
           {refreshMsg && (
-            <span className="text-xs text-slate-600 italic">{refreshMsg}</span>
+            <span className="text-xs text-base-content/70 italic">{refreshMsg}</span>
           )}
           <Button onClick={exportPdf} size="sm" variant="outline" title="Exportar para PDF">
             📄 PDF
@@ -258,7 +258,7 @@ export default function ConveniosPage() {
             onClick={handleRefreshSigcon}
             disabled={refreshing}
             size="sm"
-            className="bg-blue-600 hover:bg-blue-700"
+            className="bg-primary hover:bg-primary/90"
             title="Forca atualizacao via portal SIGCON-MG (Pesquisa Unificada)"
           >
             <SearchIcon className="size-4 mr-1" />
@@ -328,12 +328,12 @@ export default function ConveniosPage() {
       {/* Chip do filtro ativo de vigencia (vindo dos KPIs do dashboard) */}
       {vigencia !== "todos" && (
         <div className="flex items-center gap-2">
-          <span className="text-xs text-slate-500">Filtro ativo:</span>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 border border-blue-200 px-2.5 py-0.5 text-xs font-medium text-blue-700">
+          <span className="text-xs text-base-content/60">Filtro ativo:</span>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 border border-primary px-2.5 py-0.5 text-xs font-medium text-primary">
             {VIGENCIA_LABELS[vigencia] ?? vigencia}
             <button
               onClick={() => setVigencia("todos")}
-              className="text-blue-500 hover:text-blue-800"
+              className="text-primary hover:text-primary/90"
               aria-label="Limpar filtro"
             >
               ×
@@ -346,7 +346,7 @@ export default function ConveniosPage() {
       {loading ? (
         <div className="space-y-2">
           {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="h-12 animate-pulse rounded bg-gray-100" />
+            <div key={i} className="h-12 animate-pulse rounded bg-base-200" />
           ))}
         </div>
       ) : items.length === 0 ? (
@@ -355,7 +355,7 @@ export default function ConveniosPage() {
         </div>
       ) : (
         <>
-          <div className="rounded-lg border bg-white overflow-hidden">
+          <div className="rounded-lg border bg-base-100 overflow-hidden">
             <Table className="text-xs table-fixed w-full">
               <TableHeader>
                 <TableRow className="[&>th]:py-1.5 [&>th]:px-2 [&>th]:text-[11px] [&>th]:font-semibold [&>th]:whitespace-nowrap">
@@ -383,12 +383,12 @@ export default function ConveniosPage() {
                   return (
                   <TableRow
                     key={conv.id}
-                    className="[&>td]:py-1.5 [&>td]:px-2 [&>td]:text-[11px] hover:bg-blue-50 cursor-pointer"
+                    className="[&>td]:py-1.5 [&>td]:px-2 [&>td]:text-[11px] hover:bg-primary/10 cursor-pointer"
                     onClick={() => setSelectedConv({ id: conv.id, esfera: conv.esfera })}
                   >
                     <TableCell title={conv.fonte || ""}>
                       {conv.fonte && (
-                        <span className="inline-flex items-center rounded bg-indigo-50 border border-indigo-200 px-1 py-0.5 text-[9px] font-mono text-indigo-700">
+                        <span className="inline-flex items-center rounded bg-primary/10 border border-primary px-1 py-0.5 text-[9px] font-mono text-primary">
                           {conv.fonte
                             .replace("TransfereGov-Proposta","TG-P")
                             .replace("TransfereGov","TG")
@@ -413,7 +413,7 @@ export default function ConveniosPage() {
                     <TableCell title={tipTitle}>
                       <div className="flex items-center gap-1 min-w-0">
                         {isTE(conv.objeto) && (
-                          <span className="shrink-0 inline-flex items-center rounded bg-purple-50 border border-purple-200 px-1 text-[9px] font-mono text-purple-700">TE</span>
+                          <span className="shrink-0 inline-flex items-center rounded bg-info/15 border border-info px-1 text-[9px] font-mono text-info">TE</span>
                         )}
                         <span className="truncate">{objeto || "-"}</span>
                       </div>

@@ -16,7 +16,7 @@ type Schema = { tipo: string; titulo: string; descricao?: string; secoes: Secao[
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Dados = Record<string, any>;
 
-const inputCls = "w-full border border-slate-300 rounded-md p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200";
+const inputCls = "w-full border border-base-300 rounded-md p-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20";
 
 function CampoInput({ campo, value, onChange }: { campo: Campo; value: unknown; onChange: (v: string) => void }) {
   const v = (value as string) ?? "";
@@ -42,8 +42,8 @@ function CampoInput({ campo, value, onChange }: { campo: Campo; value: unknown; 
 function CampoBlock({ campo, value, onChange }: { campo: Campo; value: unknown; onChange: (v: string) => void }) {
   return (
     <div className="mb-4">
-      <label className="block text-sm font-semibold text-slate-800">{campo.label}</label>
-      {campo.ajuda && <p className="text-xs text-slate-500 mt-0.5 mb-1.5 leading-snug">{campo.ajuda}</p>}
+      <label className="block text-sm font-semibold text-base-content">{campo.label}</label>
+      {campo.ajuda && <p className="text-xs text-base-content/60 mt-0.5 mb-1.5 leading-snug">{campo.ajuda}</p>}
       <CampoInput campo={campo} value={value} onChange={onChange} />
     </div>
   );
@@ -150,21 +150,21 @@ function EditorInner() {
     router.push(`/dashboard/documentos${qs}`);
   };
 
-  if (loading) return <div className="flex h-64 items-center justify-center"><Loader2 className="size-7 animate-spin text-blue-600" /></div>;
-  if (!schema) return <div className="p-8 text-center text-slate-500">Tipo de documento não encontrado.</div>;
+  if (loading) return <div className="flex h-64 items-center justify-center"><Loader2 className="size-7 animate-spin text-primary" /></div>;
+  if (!schema) return <div className="p-8 text-center text-base-content/60">Tipo de documento não encontrado.</div>;
 
   return (
     <div className="space-y-5 max-w-4xl mx-auto pb-24">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3">
         <div>
-          <button onClick={voltar} className="text-xs text-blue-700 hover:underline inline-flex items-center gap-1 mb-1">
+          <button onClick={voltar} className="text-xs text-primary hover:underline inline-flex items-center gap-1 mb-1">
             <ArrowLeft className="size-3" /> Voltar
           </button>
-          <h1 className="text-xl font-bold text-slate-900">{schema.titulo}</h1>
-          {schema.descricao && <p className="text-sm text-slate-500">{schema.descricao}</p>}
+          <h1 className="text-xl font-bold text-base-content">{schema.titulo}</h1>
+          {schema.descricao && <p className="text-sm text-base-content/60">{schema.descricao}</p>}
         </div>
         <div className="flex items-center gap-2">
-          <Button onClick={() => salvar()} disabled={salvando} className="bg-blue-600 hover:bg-blue-700">
+          <Button onClick={() => salvar()} disabled={salvando} className="bg-primary hover:bg-primary/90">
             {salvando ? <Loader2 className="size-4 animate-spin mr-1" /> : <Save className="size-4 mr-1" />} Salvar
           </Button>
           <Button variant="outline" onClick={() => exportar("pdf")} disabled={!!baixando}>
@@ -177,8 +177,8 @@ function EditorInner() {
       </div>
 
       {schema.secoes.map((secao) => (
-        <div key={secao.titulo} className="bg-white border rounded-lg p-4">
-          <h2 className="text-sm font-bold uppercase tracking-wide text-blue-800 border-b border-blue-100 pb-1.5 mb-3">
+        <div key={secao.titulo} className="bg-base-100 border rounded-lg p-4">
+          <h2 className="text-sm font-bold uppercase tracking-wide text-primary border-b border-primary/10 pb-1.5 mb-3">
             {secao.titulo}
           </h2>
           {secao.tipo === "lista" ? (
@@ -193,7 +193,7 @@ function EditorInner() {
         </div>
       ))}
 
-      <p className="text-xs text-slate-400">As alterações são salvas ao clicar em <strong>Salvar</strong>. Exportar salva automaticamente antes de gerar o arquivo.</p>
+      <p className="text-xs text-base-content/40">As alterações são salvas ao clicar em <strong>Salvar</strong>. Exportar salva automaticamente antes de gerar o arquivo.</p>
     </div>
   );
 }
@@ -205,13 +205,13 @@ function ListaSecao({ secao, itens, onItemChange, onAdd, onRemove }: {
 }) {
   return (
     <div className="space-y-4">
-      {secao.ajuda && <p className="text-xs text-slate-500 -mt-1">{secao.ajuda}</p>}
-      {itens.length === 0 && <p className="text-sm text-slate-400 italic">Nenhum {(secao.item_label || "item").toLowerCase()} cadastrado.</p>}
+      {secao.ajuda && <p className="text-xs text-base-content/60 -mt-1">{secao.ajuda}</p>}
+      {itens.length === 0 && <p className="text-sm text-base-content/40 italic">Nenhum {(secao.item_label || "item").toLowerCase()} cadastrado.</p>}
       {itens.map((item, idx) => (
-        <div key={idx} className="border border-slate-200 rounded-md p-3 bg-slate-50/50">
+        <div key={idx} className="border border-base-300 rounded-md p-3 bg-base-200/50">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-semibold text-slate-700">{secao.item_label || "Item"} {idx + 1}</span>
-            <Button variant="ghost" size="sm" className="text-red-600 hover:bg-red-50 hover:text-red-700"
+            <span className="text-sm font-semibold text-base-content/70">{secao.item_label || "Item"} {idx + 1}</span>
+            <Button variant="ghost" size="sm" className="text-error hover:bg-error/10 hover:text-error"
                     onClick={() => onRemove(idx)}>
               <Trash2 className="size-3.5 mr-1" /> Remover
             </Button>
@@ -230,7 +230,7 @@ function ListaSecao({ secao, itens, onItemChange, onAdd, onRemove }: {
 
 export default function EditorPage() {
   return (
-    <Suspense fallback={<div className="flex h-64 items-center justify-center"><Loader2 className="size-7 animate-spin text-blue-600" /></div>}>
+    <Suspense fallback={<div className="flex h-64 items-center justify-center"><Loader2 className="size-7 animate-spin text-primary" /></div>}>
       <EditorInner />
     </Suspense>
   );

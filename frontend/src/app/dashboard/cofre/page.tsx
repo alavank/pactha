@@ -272,8 +272,8 @@ export default function CofrePage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <KeyRound className="size-6 text-indigo-600" />
+          <h1 className="text-2xl font-bold text-base-content flex items-center gap-2">
+            <KeyRound className="size-6 text-primary" />
             Cofre de Senhas
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
@@ -295,7 +295,7 @@ export default function CofrePage() {
             </DialogHeader>
             <div className="space-y-3">
               {/* FLAG INTEGRACAO - controla todo o resto */}
-              <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
+              <div className="bg-primary/10 border border-primary rounded-md p-3">
                 <label className="flex items-start gap-3 cursor-pointer">
                   <input
                     type="checkbox"
@@ -304,10 +304,10 @@ export default function CofrePage() {
                     className="mt-1 size-4"
                   />
                   <div className="flex-1">
-                    <div className="text-sm font-medium text-blue-900">
+                    <div className="text-sm font-medium text-primary">
                       Integracao com sistema PACTA
                     </div>
-                    <div className="text-xs text-blue-700 mt-0.5">
+                    <div className="text-xs text-primary mt-0.5">
                       {isIntegracao
                         ? "Selecione o sistema abaixo. So precisa preencher usuario e senha - o resto ja vem configurado."
                         : "Cadastro livre - voce preenche tudo manualmente, sem automacao."}
@@ -334,14 +334,14 @@ export default function CofrePage() {
                       ))}
                     </select>
                     {integracaoSelecionada && (
-                      <div className="mt-2 text-xs text-slate-600 bg-slate-50 rounded p-2 space-y-0.5">
+                      <div className="mt-2 text-xs text-base-content/70 bg-base-200 rounded p-2 space-y-0.5">
                         <div>
                           <strong>URL:</strong>{" "}
                           <a
                             href={form.url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-blue-600 hover:underline"
+                            className="text-primary hover:underline"
                           >
                             {form.url}
                           </a>
@@ -351,7 +351,7 @@ export default function CofrePage() {
                         </div>
                         <div>
                           <strong>Automacao:</strong> ativa via scraper{" "}
-                          <code className="bg-amber-100 px-1 rounded">
+                          <code className="bg-warning/15 px-1 rounded">
                             {form.automation_key}
                           </code>
                         </div>
@@ -364,7 +364,7 @@ export default function CofrePage() {
                       <div>
                         <label className="text-sm font-medium">
                           Usuario *
-                          <span className="text-xs text-slate-500 ml-2">
+                          <span className="text-xs text-base-content/60 ml-2">
                             ({INTEGRACOES.find((i) => i.automation_key === integracaoSelecionada)?.usuario_hint})
                           </span>
                         </label>
@@ -377,7 +377,7 @@ export default function CofrePage() {
                       <div>
                         <label className="text-sm font-medium">
                           Senha *
-                          <span className="text-xs text-slate-500 ml-2">
+                          <span className="text-xs text-base-content/60 ml-2">
                             ({INTEGRACOES.find((i) => i.automation_key === integracaoSelecionada)?.senha_hint})
                           </span>
                         </label>
@@ -451,7 +451,7 @@ export default function CofrePage() {
                       onChange={(e) => setForm({ ...form, observacao: e.target.value })}
                     />
                   </div>
-                  <p className="text-xs text-slate-500 italic">
+                  <p className="text-xs text-base-content/60 italic">
                     Sem flag de integracao = senha apenas armazenada (sem automacao).
                   </p>
                 </>
@@ -470,7 +470,7 @@ export default function CofrePage() {
       {loading ? (
         <div className="space-y-2">
           {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="h-20 animate-pulse rounded bg-gray-100" />
+            <div key={i} className="h-20 animate-pulse rounded bg-base-200" />
           ))}
         </div>
       ) : senhas.length === 0 ? (
@@ -485,27 +485,27 @@ export default function CofrePage() {
             </CardHeader>
             <CardContent className="space-y-3">
               {items.map((s) => (
-                <div key={s.id} className="border rounded-lg p-4 hover:bg-gray-50">
+                <div key={s.id} className="border rounded-lg p-4 hover:bg-base-200">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-2 flex-wrap">
-                        <h3 className="font-semibold text-gray-900">{s.sistema}</h3>
+                        <h3 className="font-semibold text-base-content">{s.sistema}</h3>
                         {s.url && (
                           <a
                             href={s.url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-blue-600 hover:underline"
+                            className="text-primary hover:underline"
                           >
                             <ExternalLink className="size-4" />
                           </a>
                         )}
                         {s.automation_key ? (
-                          <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100 text-xs">
+                          <Badge className="bg-warning/15 text-warning hover:bg-warning/15 text-xs">
                             ⚡ Integracao: {s.automation_key}
                           </Badge>
                         ) : (
-                          <Badge variant="outline" className="text-xs text-slate-500">
+                          <Badge variant="outline" className="text-xs text-base-content/60">
                             Avulsa
                           </Badge>
                         )}
@@ -521,8 +521,8 @@ export default function CofrePage() {
                             const sess = revealedIds.has(s.id) ? parseSessionPayload(s.senha) : { isSession: false };
                             if (sess.isSession) {
                               return (
-                                <span className="inline-flex items-center gap-1.5 text-xs bg-violet-50 border border-violet-200 px-2 py-0.5 rounded">
-                                  <span className="size-2 rounded-full bg-violet-500"></span>
+                                <span className="inline-flex items-center gap-1.5 text-xs bg-info/15 border border-info px-2 py-0.5 rounded">
+                                  <span className="size-2 rounded-full bg-info"></span>
                                   Sessão capturada · <strong>{sess.cookieCount}</strong> cookies
                                   {sess.httpOnlyCount! > 0 && ` (${sess.httpOnlyCount} httpOnly)`}
                                 </span>
@@ -539,7 +539,7 @@ export default function CofrePage() {
                           })()}
                           <button
                             onClick={() => toggleReveal(s.id)}
-                            className="text-gray-500 hover:text-gray-700"
+                            className="text-base-content/60 hover:text-base-content/70"
                           >
                             {revealedIds.has(s.id) ? (
                               <EyeOff className="size-4" />
@@ -555,7 +555,7 @@ export default function CofrePage() {
                     </div>
                     <button
                       onClick={() => handleDelete(s.id)}
-                      className="text-red-500 hover:text-red-700 p-1"
+                      className="text-error hover:text-error p-1"
                     >
                       <Trash2 className="size-4" />
                     </button>

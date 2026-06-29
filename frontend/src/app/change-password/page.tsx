@@ -56,19 +56,19 @@ function ChangePasswordInner() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-900 via-blue-800 to-indigo-900 p-4">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#16315c] via-[#1b3a6b] to-[#102a4d] p-4">
       <Card className="w-full max-w-md shadow-2xl border-0">
         <CardHeader className="text-center pb-2">
-          <div className="mx-auto mb-3 w-14 h-14 bg-amber-500 rounded-xl flex items-center justify-center">
-            <KeyRound className="size-7 text-white" />
+          <div className="mx-auto mb-3 w-14 h-14 bg-warning rounded-[var(--radius-box)] flex items-center justify-center">
+            <KeyRound className="size-7 text-warning-content" />
           </div>
           <CardTitle className="text-xl font-bold">
             {isFirstLogin ? "Trocar senha (primeiro acesso)" : "Trocar senha"}
           </CardTitle>
           {isFirstLogin && (
-            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2 mt-2">
-              Voce esta usando uma senha temporaria. Defina uma nova senha para continuar.
-            </p>
+            <div role="alert" className="alert alert-warning alert-soft mt-2 text-xs">
+              <span>Voce esta usando uma senha temporaria. Defina uma nova senha para continuar.</span>
+            </div>
           )}
         </CardHeader>
         <CardContent>
@@ -100,17 +100,17 @@ function ChangePasswordInner() {
                         className={`h-1 flex-1 rounded ${
                           i <= strength.score
                             ? strength.score >= 3
-                              ? "bg-green-500"
-                              : "bg-amber-500"
-                            : "bg-gray-200"
+                              ? "bg-success"
+                              : "bg-warning"
+                            : "bg-base-300"
                         }`}
                       />
                     ))}
                   </div>
-                  <span className="text-gray-600 w-16">{strength.label}</span>
+                  <span className="text-base-content/60 w-16">{strength.label}</span>
                 </div>
               )}
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-base-content/50 mt-1">
                 Min 10 caracteres. Use letras, numeros e simbolos.
               </p>
             </div>
