@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import toast from "react-hot-toast";
 
 export default function LoginPage() {
@@ -68,12 +68,10 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-900 via-blue-800 to-indigo-900 p-4">
       <Card className="w-full max-w-md shadow-2xl border-0">
         <CardHeader className="text-center pb-2">
-          <div className="mx-auto mb-4 w-16 h-16 bg-blue-600 rounded-xl flex items-center justify-center">
-            <span className="text-white text-2xl font-bold">P</span>
-          </div>
-          <CardTitle className="text-2xl font-bold">PACTA</CardTitle>
-          <p className="text-sm text-muted-foreground mt-1">
-            Monitoramento de Convenios e Transferencias
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/pacta-logo.png" alt="PACTA" className="mx-auto mb-1 h-28 w-auto" />
+          <p className="text-sm text-muted-foreground">
+            Monitoramento de Convênios e Transferências
           </p>
         </CardHeader>
         <CardContent>
