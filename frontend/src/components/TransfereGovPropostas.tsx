@@ -44,11 +44,11 @@ interface Proposta {
 interface Resp { items: Proposta[]; total: number; atualizado_em?: string; }
 
 function diasBadge(d?: number | null): { txt: string; cls: string } {
-  if (d === null || d === undefined) return { txt: "-", cls: "bg-gray-100 text-gray-500" };
-  if (d < 0) return { txt: `${Math.abs(d)}d`, cls: "bg-red-100 text-red-700" };
-  if (d <= 60) return { txt: `${d}d`, cls: "bg-amber-100 text-amber-700" };
-  if (d <= 180) return { txt: `${d}d`, cls: "bg-yellow-50 text-yellow-700" };
-  return { txt: `${d}d`, cls: "bg-green-100 text-green-700" };
+  if (d === null || d === undefined) return { txt: "-", cls: "bg-base-200 text-base-content/60" };
+  if (d < 0) return { txt: `${Math.abs(d)}d`, cls: "bg-error/15 text-error" };
+  if (d <= 60) return { txt: `${d}d`, cls: "bg-warning/15 text-warning" };
+  if (d <= 180) return { txt: `${d}d`, cls: "bg-warning/15 text-warning" };
+  return { txt: `${d}d`, cls: "bg-success/15 text-success" };
 }
 
 interface Detalhe extends Proposta {
@@ -70,11 +70,11 @@ function fmtData(iso?: string): string {
 }
 function badgeColor(sit: string): string {
   const s = (sit || "").toLowerCase();
-  if (s.includes("execu")) return "bg-blue-100 text-blue-800";
-  if (s.includes("aprovad") || s.includes("assinado")) return "bg-green-100 text-green-800";
-  if (s.includes("rejeitad") || s.includes("impedimento")) return "bg-red-100 text-red-800";
-  if (s.includes("nlise") || s.includes("análise")) return "bg-amber-100 text-amber-800";
-  return "bg-gray-100 text-gray-700";
+  if (s.includes("execu")) return "bg-primary/10 text-primary";
+  if (s.includes("aprovad") || s.includes("assinado")) return "bg-success/15 text-success";
+  if (s.includes("rejeitad") || s.includes("impedimento")) return "bg-error/15 text-error";
+  if (s.includes("nlise") || s.includes("análise")) return "bg-warning/15 text-warning";
+  return "bg-base-200 text-base-content/70";
 }
 
 export default function TransfereGovPropostas({
@@ -175,38 +175,38 @@ export default function TransfereGovPropostas({
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">{titulo}</h1>
-          <p className="text-sm text-slate-500">
+          <h1 className="text-2xl font-bold text-base-content">{titulo}</h1>
+          <p className="text-sm text-base-content/60">
             {subtitulo}
             {atualizadoEm && <span className="ml-2 text-xs">· Atualizado: {fmtData(atualizadoEm)}</span>}
           </p>
         </div>
         <a href={PORTAL_BASE} target="_blank" rel="noreferrer noopener"
-           className="text-xs text-blue-700 hover:underline inline-flex items-center gap-1">
+           className="text-xs text-primary hover:underline inline-flex items-center gap-1">
           <ExternalLink className="size-3" /> Portal oficial
         </a>
       </div>
 
-      <div className="bg-white border rounded p-4">
+      <div className="bg-base-100 border rounded p-4">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div>
-            <label className="text-xs text-slate-600 mb-1 block">Buscar (nº / proponente)</label>
+            <label className="text-xs text-base-content/70 mb-1 block">Buscar (nº / proponente)</label>
             <Input value={search} onChange={(e) => setSearch(e.target.value)}
                    placeholder="Ex: 048291/2025" onKeyDown={(e) => { if (e.key === "Enter") buscar(); }} />
           </div>
           <div>
-            <label className="text-xs text-slate-600 mb-1 block">Parlamentar</label>
+            <label className="text-xs text-base-content/70 mb-1 block">Parlamentar</label>
             <Input value={parlamentar} onChange={(e) => setParlamentar(e.target.value)}
                    placeholder="Ex: Cleitinho" onKeyDown={(e) => { if (e.key === "Enter") buscar(); }} />
           </div>
           <div>
-            <label className="text-xs text-slate-600 mb-1 block">Órgão</label>
+            <label className="text-xs text-base-content/70 mb-1 block">Órgão</label>
             <Input value={orgao} onChange={(e) => setOrgao(e.target.value)}
                    placeholder="Ex: Ministério do Esporte" onKeyDown={(e) => { if (e.key === "Enter") buscar(); }} />
           </div>
           <div>
-            <label className="text-xs text-slate-600 mb-1 block">Situação de Contratação</label>
-            <select className="w-full border rounded-md p-2 text-sm h-9"
+            <label className="text-xs text-base-content/70 mb-1 block">Situação de Contratação</label>
+            <select className="w-full border border-base-300 rounded-md p-2 text-sm h-9 bg-base-100 text-base-content"
                     value={sitContratacao} onChange={(e) => setSitContratacao(e.target.value)}>
               <option value="">Todas</option>
               <option value="Normal">Normal</option>
@@ -215,8 +215,8 @@ export default function TransfereGovPropostas({
             </select>
           </div>
           <div>
-            <label className="text-xs text-slate-600 mb-1 block">Vencimento (fim de vigência)</label>
-            <select className="w-full border rounded-md p-2 text-sm h-9"
+            <label className="text-xs text-base-content/70 mb-1 block">Vencimento (fim de vigência)</label>
+            <select className="w-full border border-base-300 rounded-md p-2 text-sm h-9 bg-base-100 text-base-content"
                     value={vigencia} onChange={(e) => setVigencia(e.target.value)}>
               <option value="">Todos</option>
               <option value="vence30">Vence em 30 dias</option>
@@ -227,7 +227,7 @@ export default function TransfereGovPropostas({
             </select>
           </div>
           <div>
-            <label className="text-xs text-slate-600 mb-1 block">Situação (multi)</label>
+            <label className="text-xs text-base-content/70 mb-1 block">Situação (multi)</label>
             <MultiSelect
               options={situacaoOptions}
               selected={situacoesSel}
@@ -237,15 +237,15 @@ export default function TransfereGovPropostas({
             />
           </div>
           <div>
-            <label className="text-xs text-slate-600 mb-1 block">Fim de vigência (de)</label>
+            <label className="text-xs text-base-content/70 mb-1 block">Fim de vigência (de)</label>
             <Input type="date" value={vigFimDe} onChange={(e) => setVigFimDe(e.target.value)} />
           </div>
           <div>
-            <label className="text-xs text-slate-600 mb-1 block">Fim de vigência (até)</label>
+            <label className="text-xs text-base-content/70 mb-1 block">Fim de vigência (até)</label>
             <Input type="date" value={vigFimAte} onChange={(e) => setVigFimAte(e.target.value)} />
           </div>
           <div className="flex items-end gap-2 flex-wrap">
-            <Button onClick={buscar} disabled={loading} className="bg-blue-600 hover:bg-blue-700">
+            <Button onClick={buscar} disabled={loading} className="bg-primary hover:bg-primary/90">
               {loading ? <Loader2 className="size-4 animate-spin mr-1" /> : <Search className="size-4 mr-1" />} Filtrar
             </Button>
             <Button variant="outline" onClick={() => {
@@ -266,12 +266,12 @@ export default function TransfereGovPropostas({
       {/* Chip do filtro ativo de vigencia (vindo dos KPIs do dashboard) */}
       {vigencia && (
         <div className="flex items-center gap-2">
-          <span className="text-xs text-slate-500">Filtro ativo:</span>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-fuchsia-50 border border-fuchsia-200 px-2.5 py-0.5 text-xs font-medium text-fuchsia-700">
+          <span className="text-xs text-base-content/60">Filtro ativo:</span>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-info/15 border border-info px-2.5 py-0.5 text-xs font-medium text-info">
             {VIGENCIA_LABELS[vigencia] ?? vigencia}
             <button
               onClick={() => setVigencia("")}
-              className="text-fuchsia-500 hover:text-fuchsia-800"
+              className="text-info hover:text-info/80"
               aria-label="Limpar filtro"
             >
               ×
@@ -280,18 +280,18 @@ export default function TransfereGovPropostas({
         </div>
       )}
 
-      <div className="bg-white border rounded overflow-hidden">
-        <div className="px-3 py-2 border-b bg-slate-50 text-sm"><strong>{displayItems.length}</strong> propostas</div>
+      <div className="bg-base-100 border rounded overflow-hidden">
+        <div className="px-3 py-2 border-b bg-base-200 text-sm"><strong>{displayItems.length}</strong> propostas</div>
         {loading ? (
           <div className="p-3 space-y-2">
-            {Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-10 animate-pulse bg-gray-100 rounded" />)}
+            {Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-10 animate-pulse bg-base-200 rounded" />)}
           </div>
         ) : displayItems.length === 0 ? (
-          <div className="p-12 text-center text-slate-500">Nenhuma proposta encontrada.</div>
+          <div className="p-12 text-center text-base-content/60">Nenhuma proposta encontrada.</div>
         ) : (
           <Table className="text-xs table-fixed w-full">
             <TableHeader>
-              <TableRow className="[&>th]:py-1.5 [&>th]:px-2 [&>th]:text-[11px] [&>th]:font-semibold bg-blue-50">
+              <TableRow className="[&>th]:py-1.5 [&>th]:px-2 [&>th]:text-[11px] [&>th]:font-semibold bg-primary/10">
                 <TableHead className="w-[95px]">Código Instr.</TableHead>
                 <TableHead className="w-[90px]">Nº Proposta</TableHead>
                 <TableHead>Órgão</TableHead>
@@ -308,7 +308,7 @@ export default function TransfereGovPropostas({
             </TableHeader>
             <TableBody>
               {displayItems.map((p, i) => (
-                <TableRow key={i} className="[&>td]:py-1.5 [&>td]:px-2 [&>td]:text-[11px] hover:bg-blue-50 cursor-pointer"
+                <TableRow key={i} className="[&>td]:py-1.5 [&>td]:px-2 [&>td]:text-[11px] hover:bg-primary/10 cursor-pointer"
                           onClick={() => abrirDetalhe(p.numero_proposta)}>
                   <TableCell className="font-mono">{p.codigo_instrumento || "-"}</TableCell>
                   <TableCell className="font-mono">{p.numero_proposta}</TableCell>
@@ -327,7 +327,7 @@ export default function TransfereGovPropostas({
                       {p.situacao_contratacao_detalhe && Object.keys(p.situacao_contratacao_detalhe).filter(k => !k.startsWith("_")).length > 0 && (
                         <button
                           onClick={(e) => { e.stopPropagation(); abrirDetalhe(p.numero_proposta); }}
-                          className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-blue-600 hover:bg-blue-700 text-white text-[9px] font-medium"
+                          className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-primary hover:bg-primary/90 text-white text-[9px] font-medium"
                           title="Ver detalhamento da situação de contratação"
                         >
                           Detalhar
@@ -345,7 +345,7 @@ export default function TransfereGovPropostas({
                   <TableCell className="truncate" title={p.objeto || ""}>{p.objeto || "-"}</TableCell>
                   <TableCell className="text-center">
                     <button onClick={(e) => { e.stopPropagation(); abrirDetalhe(p.numero_proposta); }}
-                            className="inline-flex w-6 h-6 items-center justify-center rounded bg-blue-500 hover:bg-blue-600 text-white">
+                            className="inline-flex w-6 h-6 items-center justify-center rounded bg-primary hover:bg-primary/90 text-white">
                       <Eye className="size-3" />
                     </button>
                   </TableCell>
@@ -366,17 +366,17 @@ export default function TransfereGovPropostas({
 
       {/* Modal detalhe */}
       {(detalhe !== null || loadingDet) && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-start justify-center p-4 overflow-y-auto"
+        <div className="fixed inset-0 z-50 bg-neutral/50 flex items-start justify-center p-4 overflow-y-auto"
              onClick={() => setDetalhe(null)}>
-          <div className="bg-white rounded-lg shadow-2xl w-full max-w-5xl mt-4 mb-8" onClick={(e) => e.stopPropagation()}>
-            <div className="bg-white px-5 py-3 rounded-t-lg flex items-center justify-between border-b">
-              <h3 className="text-xl font-light text-slate-900">
+          <div className="bg-base-100 rounded-lg shadow-2xl w-full max-w-5xl mt-4 mb-8" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-base-100 px-5 py-3 rounded-t-lg flex items-center justify-between border-b">
+              <h3 className="text-xl font-light text-base-content">
                 Consultar Pré-Instrumento/Instrumento {detalhe?.codigo_instrumento || detalhe?.numero_proposta || ""}
               </h3>
-              <button onClick={() => setDetalhe(null)}><X className="size-5 text-gray-500 hover:text-gray-700" /></button>
+              <button onClick={() => setDetalhe(null)}><X className="size-5 text-base-content/60 hover:text-base-content/70" /></button>
             </div>
             {loadingDet ? (
-              <div className="text-center py-16"><Loader2 className="size-8 animate-spin mx-auto text-blue-600" /></div>
+              <div className="text-center py-16"><Loader2 className="size-8 animate-spin mx-auto text-primary" /></div>
             ) : detalhe && (
               <div className="p-5 space-y-5 max-h-[75vh] overflow-y-auto">
                 <Section title="Dados da Proposta">
@@ -399,11 +399,11 @@ export default function TransfereGovPropostas({
                       <Field label="Parlamentar Responsável" value={detalhe.parlamentar} />
                     </Grid>
                     {detalhe.situacao_contratacao_detalhe && Object.keys(detalhe.situacao_contratacao_detalhe).filter(k => !k.startsWith("_")).length > 0 && (
-                      <div className="mt-3 rounded border-l-4 border-amber-400 bg-amber-50 p-3">
-                        <div className="text-xs font-semibold text-amber-900 mb-2">
+                      <div className="mt-3 rounded border-l-4 border-warning bg-warning/15 p-3">
+                        <div className="text-xs font-semibold text-warning mb-2">
                           Detalhe da Situação de Contratação
                           {detalhe.situacao_contratacao_detalhe._label_botao && (
-                            <span className="ml-1 text-amber-700 font-normal">
+                            <span className="ml-1 text-warning font-normal">
                               ({String(detalhe.situacao_contratacao_detalhe._label_botao)})
                             </span>
                           )}
@@ -437,7 +437,7 @@ export default function TransfereGovPropostas({
                 </Section>
 
                 <Section title="Objeto">
-                  <p className="text-sm text-slate-800 bg-slate-50 border rounded p-3">{detalhe.objeto || "-"}</p>
+                  <p className="text-sm text-base-content bg-base-200 border rounded p-3">{detalhe.objeto || "-"}</p>
                 </Section>
 
                 {detalhe.detalhe && Object.keys(detalhe.detalhe).length > 0 && (
@@ -446,9 +446,9 @@ export default function TransfereGovPropostas({
                       {Object.entries(detalhe.detalhe)
                         .filter(([k]) => !k.startsWith("_") && !["Modalidade","Situação no SIAFI","Código do Instrumento","Número da Proposta","Número do Processo","Órgão","Objeto do Instrumento"].includes(k))
                         .map(([k, v]) => (
-                          <div key={k} className="text-sm border-b border-slate-100 pb-1">
-                            <span className="text-[11px] font-semibold text-slate-600">{k}: </span>
-                            <span className="text-slate-800">{Array.isArray(v) ? v.join(" | ") : v}</span>
+                          <div key={k} className="text-sm border-b border-base-300 pb-1">
+                            <span className="text-[11px] font-semibold text-base-content/70">{k}: </span>
+                            <span className="text-base-content">{Array.isArray(v) ? v.join(" | ") : v}</span>
                           </div>
                         ))}
                     </div>
@@ -461,18 +461,18 @@ export default function TransfereGovPropostas({
                       {(detalhe.detalhe!._documentos as string[]).map((d, i) => {
                         const nome = d.replace(/\s*Baixar( Contrapartida)?\s*$/i, "").trim();
                         return (
-                          <li key={i} className="flex items-start gap-2 text-slate-700">
-                            <span className="text-indigo-500 mt-0.5">📄</span>
+                          <li key={i} className="flex items-start gap-2 text-base-content/70">
+                            <span className="text-info mt-0.5">📄</span>
                             <span className="break-words">{nome}</span>
                           </li>
                         );
                       })}
                     </ul>
                     <a href={PORTAL_BASE} target="_blank" rel="noreferrer noopener"
-                       className="inline-flex items-center gap-1 mt-3 text-xs text-white bg-blue-600 hover:bg-blue-700 rounded px-3 py-1.5">
+                       className="inline-flex items-center gap-1 mt-3 text-xs text-white bg-primary hover:bg-primary/90 rounded px-3 py-1.5">
                       <ExternalLink className="size-3" /> Baixar no portal (Acesso Livre)
                     </a>
-                    <p className="text-[11px] text-slate-500 mt-1.5">
+                    <p className="text-[11px] text-base-content/60 mt-1.5">
                       Os anexos do TransfereGov exigem sessão do portal. Clique acima, pesquise o município/proposta
                       e baixe os PDFs diretamente no Acesso Livre.
                     </p>
@@ -490,7 +490,7 @@ export default function TransfereGovPropostas({
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div>
-      <h4 className="text-sm font-semibold text-slate-800 border-b border-blue-600 pb-1 mb-3">{title}</h4>
+      <h4 className="text-sm font-semibold text-base-content border-b border-primary pb-1 mb-3">{title}</h4>
       {children}
     </div>
   );
@@ -503,8 +503,8 @@ function Field({ label, value }: { label: string; value?: string | null }) {
   const v = value === null || value === undefined || value === "" ? "-" : String(value);
   return (
     <div>
-      <div className="text-[11px] text-slate-600 mb-0.5">{label}</div>
-      <div className="border border-slate-300 rounded px-2 py-1.5 bg-slate-50 text-sm text-slate-900 break-words">{v}</div>
+      <div className="text-[11px] text-base-content/70 mb-0.5">{label}</div>
+      <div className="border border-base-300 rounded px-2 py-1.5 bg-base-200 text-sm text-base-content break-words">{v}</div>
     </div>
   );
 }

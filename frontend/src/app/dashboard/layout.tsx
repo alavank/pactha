@@ -119,10 +119,12 @@ function SidebarContent({
       {/* Faixa institucional - cores do governo */}
       <div className="gov-stripe" />
 
-      {/* Header com logo PACTA */}
-      <div className="border-b border-base-300 px-4 py-4 bg-base-100 flex flex-col items-center">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/pacta-logo.png" alt="PACTA — Plataforma de Acompanhamento" className="h-20 w-auto" />
+      {/* Header com logo PACTA — chip branco arredondado (legível no claro e no escuro) */}
+      <div className="border-b border-base-300 px-4 py-4 flex justify-center">
+        <div className="rounded-2xl bg-white p-2.5 shadow-sm ring-1 ring-black/5">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/pacta-logo.png" alt="PACTA — Plataforma de Acompanhamento" className="h-16 w-auto" />
+        </div>
       </div>
 
       {/* Seletor de municipio */}

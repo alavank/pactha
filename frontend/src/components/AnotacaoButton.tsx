@@ -44,12 +44,12 @@ export default function AnotacaoButton({ fonte, fonteRef, municipioId, numero, s
     <>
       <button
         onClick={(e) => { e.stopPropagation(); setOpen(true); }}
-        className={`relative inline-flex ${cls} items-center justify-center rounded ${count > 0 ? "bg-violet-100 hover:bg-violet-200 text-violet-700" : "bg-slate-100 hover:bg-slate-200 text-slate-500"}`}
+        className={`relative inline-flex ${cls} items-center justify-center rounded ${count > 0 ? "bg-info/15 hover:bg-info/25 text-info" : "bg-base-200 hover:bg-base-300 text-base-content/60"}`}
         title={count > 0 ? `${count} anotação(ões) interna(s)` : "Adicionar anotação interna"}
       >
         <Edit2 className="size-3.5" />
         {count > 0 && (
-          <span className="absolute -top-1 -right-1 bg-violet-600 text-white rounded-full size-3.5 text-[8px] font-bold flex items-center justify-center">
+          <span className="absolute -top-1 -right-1 bg-info text-white rounded-full size-3.5 text-[8px] font-bold flex items-center justify-center">
             {count > 9 ? "9+" : count}
           </span>
         )}

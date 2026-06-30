@@ -50,7 +50,7 @@ export default function MultiSelect({
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex h-8 w-full items-center justify-between gap-1.5 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none hover:bg-slate-50"
+        className="flex h-8 w-full items-center justify-between gap-1.5 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none hover:bg-base-200"
       >
         <span className={`truncate text-left ${selected.length === 0 ? "text-muted-foreground" : ""}`}>
           {label}
@@ -58,18 +58,18 @@ export default function MultiSelect({
         <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
       </button>
       {open && (
-        <div className="absolute z-50 mt-1 max-h-72 w-full min-w-56 overflow-y-auto rounded-lg border bg-white p-1 shadow-md">
+        <div className="absolute z-50 mt-1 max-h-72 w-full min-w-56 overflow-y-auto rounded-lg border bg-base-100 p-1 shadow-md">
           {selected.length > 0 && (
             <button
               type="button"
               onClick={() => onChange([])}
-              className="mb-1 w-full rounded px-2 py-1 text-left text-xs font-medium text-blue-600 hover:bg-slate-50"
+              className="mb-1 w-full rounded px-2 py-1 text-left text-xs font-medium text-primary hover:bg-base-200"
             >
               Limpar selecao ({selected.length})
             </button>
           )}
           {options.length === 0 && (
-            <div className="px-2 py-2 text-xs text-slate-400">Nenhuma opcao</div>
+            <div className="px-2 py-2 text-xs text-base-content/40">Nenhuma opcao</div>
           )}
           {options.map((opt) => {
             const checked = selected.includes(opt);
@@ -78,11 +78,11 @@ export default function MultiSelect({
                 key={opt}
                 type="button"
                 onClick={() => toggle(opt)}
-                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-slate-50"
+                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-base-200"
               >
                 <span
                   className={`flex size-4 shrink-0 items-center justify-center rounded border ${
-                    checked ? "border-blue-600 bg-blue-600 text-white" : "border-slate-300"
+                    checked ? "border-primary bg-primary text-white" : "border-base-300"
                   }`}
                 >
                   {checked && <Check className="size-3" />}
