@@ -15,17 +15,17 @@
   color-scheme: light;
 
   --color-base-100: #ffffff;   /* superfícies / cards */
-  --color-base-200: #f4f6fa;   /* fundo da aplicação */
-  --color-base-300: #e2e8f0;   /* bordas / divisores */
-  --color-base-content: #1e293b;
+  --color-base-200: #f4f4f5;   /* fundo da aplicação */
+  --color-base-300: #e4e4e7;   /* bordas / divisores */
+  --color-base-content: #18181b;
 
-  --color-primary: #1b3a6b;            /* navy da marca */
+  --color-primary: #18181b;            /* preto (marca P&B) */
   --color-primary-content: #ffffff;
-  --color-secondary: #eef2f7;          /* neutro claro (ações secundárias) */
-  --color-secondary-content: #1e293b;
-  --color-accent: #e8eef6;             /* realce sutil (hover) */
-  --color-accent-content: #1b3a6b;
-  --color-neutral: #1e293b;
+  --color-secondary: #f4f4f5;          /* neutro claro (ações secundárias) */
+  --color-secondary-content: #18181b;
+  --color-accent: #ececee;             /* realce sutil (hover) */
+  --color-accent-content: #18181b;
+  --color-neutral: #18181b;
   --color-neutral-content: #ffffff;
 
   --color-info: #0e7490;
@@ -94,44 +94,44 @@
 }
 
 :root {
-  /* Identidade visual PACTA */
-  --brand-navy: #1b3a6b;
-  --brand-navy-700: #16315c;
-  --brand-green: #15803d;
-  --brand-green-600: #1f9d4b;
+  /* Identidade visual PACTA — P&B */
+  --brand-navy: #18181b;
+  --brand-navy-700: #000000;
+  --brand-green: #52525b;
+  --brand-green-600: #3f3f46;
 
-  --background: #f4f6fa;
-  --foreground: #1e293b;
+  --background: #f4f4f5;
+  --foreground: #18181b;
   --card: #ffffff;
-  --card-foreground: #1e293b;
+  --card-foreground: #18181b;
   --popover: #ffffff;
-  --popover-foreground: #1e293b;
-  --primary: #1b3a6b;
+  --popover-foreground: #18181b;
+  --primary: #18181b;
   --primary-foreground: #ffffff;
-  --secondary: #eef2f7;
-  --secondary-foreground: #1e293b;
-  --muted: #f1f5f9;
-  --muted-foreground: #64748b;
-  --accent: #e8eef6;
-  --accent-foreground: #1b3a6b;
+  --secondary: #f4f4f5;
+  --secondary-foreground: #18181b;
+  --muted: #f4f4f5;
+  --muted-foreground: #71717a;
+  --accent: #ececee;
+  --accent-foreground: #18181b;
   --destructive: #dc2626;
-  --border: #e2e8f0;
-  --input: #e2e8f0;
-  --ring: #1b3a6b;
-  --chart-1: #1b3a6b;
-  --chart-2: #0e7490;
+  --border: #e4e4e7;
+  --input: #e4e4e7;
+  --ring: #18181b;
+  --chart-1: #18181b;
+  --chart-2: #52525b;
   --chart-3: #15803d;
   --chart-4: #ca8a04;
   --chart-5: #b91c1c;
   --radius: 0.6rem;
   --sidebar: #ffffff;
-  --sidebar-foreground: #1e293b;
-  --sidebar-primary: #1b3a6b;
+  --sidebar-foreground: #18181b;
+  --sidebar-primary: #18181b;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #eef4fb;
-  --sidebar-accent-foreground: #1b3a6b;
-  --sidebar-border: #e2e8f0;
-  --sidebar-ring: #1b3a6b;
+  --sidebar-accent: #f4f4f5;
+  --sidebar-accent-foreground: #18181b;
+  --sidebar-border: #e4e4e7;
+  --sidebar-ring: #18181b;
 }
 
 @layer base {
