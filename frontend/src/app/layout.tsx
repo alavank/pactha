@@ -26,6 +26,11 @@ export default function RootLayout({
   return (
     <html lang="pt-BR" data-theme="pacta" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col bg-base-200">
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{var t=localStorage.getItem('pacta_theme');if(t==='pacta-dark'||t==='pacta')document.documentElement.setAttribute('data-theme',t);}catch(e){}`,
+          }}
+        />
         {children}
         <Toaster position="top-right" />
       </body>

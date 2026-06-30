@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import {
   Select,
   SelectContent,
@@ -291,6 +292,7 @@ function SidebarContent({
             </div>
           </div>
         )}
+        <ThemeToggle className="w-full mb-1" />
         <Button
           variant="ghost"
           size="sm"

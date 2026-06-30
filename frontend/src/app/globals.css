@@ -3,34 +3,33 @@
 @import "shadcn/tailwind.css";
 
 @plugin "daisyui" {
-  themes: pacta --default;
+  themes: pacta --default, pacta-dark;
 }
 
-/* Tema institucional PACTA — navy + verde (daisyUI v5).
-   Fonte da paleta para os componentes daisyUI (btn, card, input, modal, table…). */
+/* Tema CLARO (white) — PACTA navy + verde */
 @plugin "daisyui/theme" {
   name: "pacta";
   default: true;
   prefersdark: false;
   color-scheme: light;
 
-  --color-base-100: #ffffff;   /* superfícies / cards */
-  --color-base-200: #f4f4f5;   /* fundo da aplicação */
-  --color-base-300: #e4e4e7;   /* bordas / divisores */
-  --color-base-content: #18181b;
+  --color-base-100: #ffffff;
+  --color-base-200: #f4f6fa;
+  --color-base-300: #e2e8f0;
+  --color-base-content: #1e293b;
 
-  --color-primary: #18181b;            /* preto (marca P&B) */
+  --color-primary: #1b3a6b;
   --color-primary-content: #ffffff;
-  --color-secondary: #f4f4f5;          /* neutro claro (ações secundárias) */
-  --color-secondary-content: #18181b;
-  --color-accent: #ececee;             /* realce sutil (hover) */
-  --color-accent-content: #18181b;
-  --color-neutral: #18181b;
+  --color-secondary: #eef2f7;
+  --color-secondary-content: #1e293b;
+  --color-accent: #e8eef6;
+  --color-accent-content: #1b3a6b;
+  --color-neutral: #1e293b;
   --color-neutral-content: #ffffff;
 
   --color-info: #0e7490;
   --color-info-content: #ffffff;
-  --color-success: #15803d;            /* verde da marca */
+  --color-success: #15803d;
   --color-success-content: #ffffff;
   --color-warning: #b45309;
   --color-warning-content: #ffffff;
@@ -47,11 +46,50 @@
   --noise: 0;
 }
 
-@custom-variant dark (&:is(.dark *));
+/* Tema ESCURO (black) — mesmas cores PACTA sobre fundo escuro */
+@plugin "daisyui/theme" {
+  name: "pacta-dark";
+  default: false;
+  prefersdark: true;
+  color-scheme: dark;
 
-/* Tokens shadcn que o daisyUI NÃO fornece (card, popover, muted, *-foreground,
-   border, input, ring, sidebar, chart). primary/secondary/accent/base/estado
-   ficam por conta do daisyUI para evitar dupla definição. */
+  --color-base-100: #131c2b;
+  --color-base-200: #0c1320;
+  --color-base-300: #243349;
+  --color-base-content: #e6edf6;
+
+  --color-primary: #4f83cc;          /* navy clareado p/ contraste no escuro */
+  --color-primary-content: #ffffff;
+  --color-secondary: #1c2940;
+  --color-secondary-content: #e6edf6;
+  --color-accent: #22304a;
+  --color-accent-content: #cfe0f5;
+  --color-neutral: #e6edf6;
+  --color-neutral-content: #0c1320;
+
+  --color-info: #38bdf8;
+  --color-info-content: #06212e;
+  --color-success: #2ecc71;
+  --color-success-content: #06210f;
+  --color-warning: #f59e0b;
+  --color-warning-content: #241600;
+  --color-error: #f87171;
+  --color-error-content: #2b0a0a;
+
+  --radius-selector: 0.5rem;
+  --radius-field: 0.5rem;
+  --radius-box: 0.85rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 1;
+  --noise: 0;
+}
+
+@custom-variant dark (&:is([data-theme="pacta-dark"] *));
+
+/* Tokens shadcn que o daisyUI não fornece (card, popover, muted, *-foreground,
+   border, input, ring, sidebar, chart). */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -93,45 +131,85 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* ---- CLARO (default) ---- */
 :root {
-  /* Identidade visual PACTA — P&B */
-  --brand-navy: #18181b;
-  --brand-navy-700: #000000;
-  --brand-green: #52525b;
-  --brand-green-600: #3f3f46;
+  --brand-navy: #1b3a6b;
+  --brand-navy-700: #16315c;
+  --brand-green: #15803d;
+  --brand-green-600: #1f9d4b;
 
-  --background: #f4f4f5;
-  --foreground: #18181b;
+  --background: #f4f6fa;
+  --foreground: #1e293b;
   --card: #ffffff;
-  --card-foreground: #18181b;
+  --card-foreground: #1e293b;
   --popover: #ffffff;
-  --popover-foreground: #18181b;
-  --primary: #18181b;
+  --popover-foreground: #1e293b;
+  --primary: #1b3a6b;
   --primary-foreground: #ffffff;
-  --secondary: #f4f4f5;
-  --secondary-foreground: #18181b;
-  --muted: #f4f4f5;
-  --muted-foreground: #71717a;
-  --accent: #ececee;
-  --accent-foreground: #18181b;
+  --secondary: #eef2f7;
+  --secondary-foreground: #1e293b;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
+  --accent: #e8eef6;
+  --accent-foreground: #1b3a6b;
   --destructive: #dc2626;
-  --border: #e4e4e7;
-  --input: #e4e4e7;
-  --ring: #18181b;
-  --chart-1: #18181b;
-  --chart-2: #52525b;
+  --border: #e2e8f0;
+  --input: #e2e8f0;
+  --ring: #1b3a6b;
+  --chart-1: #1b3a6b;
+  --chart-2: #0e7490;
   --chart-3: #15803d;
   --chart-4: #ca8a04;
   --chart-5: #b91c1c;
   --radius: 0.6rem;
   --sidebar: #ffffff;
-  --sidebar-foreground: #18181b;
-  --sidebar-primary: #18181b;
+  --sidebar-foreground: #1e293b;
+  --sidebar-primary: #1b3a6b;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #f4f4f5;
-  --sidebar-accent-foreground: #18181b;
-  --sidebar-border: #e4e4e7;
-  --sidebar-ring: #18181b;
+  --sidebar-accent: #eef4fb;
+  --sidebar-accent-foreground: #1b3a6b;
+  --sidebar-border: #e2e8f0;
+  --sidebar-ring: #1b3a6b;
+}
+
+/* ---- ESCURO ---- */
+[data-theme="pacta-dark"] {
+  --brand-navy: #4f83cc;
+  --brand-navy-700: #3f6fb0;
+  --brand-green: #2ecc71;
+  --brand-green-600: #25a85d;
+
+  --background: #0c1320;
+  --foreground: #e6edf6;
+  --card: #131c2b;
+  --card-foreground: #e6edf6;
+  --popover: #131c2b;
+  --popover-foreground: #e6edf6;
+  --primary: #4f83cc;
+  --primary-foreground: #ffffff;
+  --secondary: #1c2940;
+  --secondary-foreground: #e6edf6;
+  --muted: #1c2940;
+  --muted-foreground: #9fb3cd;
+  --accent: #22304a;
+  --accent-foreground: #cfe0f5;
+  --destructive: #f87171;
+  --border: #243349;
+  --input: #243349;
+  --ring: #4f83cc;
+  --chart-1: #5b8ed6;
+  --chart-2: #38bdf8;
+  --chart-3: #2ecc71;
+  --chart-4: #f59e0b;
+  --chart-5: #f87171;
+  --sidebar: #0f1726;
+  --sidebar-foreground: #e6edf6;
+  --sidebar-primary: #4f83cc;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #1c2940;
+  --sidebar-accent-foreground: #cfe0f5;
+  --sidebar-border: #243349;
+  --sidebar-ring: #4f83cc;
 }
 
 @layer base {
