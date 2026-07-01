@@ -182,9 +182,11 @@ async def update_user(
     u = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
     if not u:
         raise HTTPException(404, "Usuario nao encontrado")
-    # Protecao: nao deixar o admin se auto-desativar nem rebaixar o ultimo admin
+    # Protecao: nao deixar o admin se auto-desativar nem se auto-rebaixar
     if req.active is False and u.id == current.id:
         raise HTTPException(400, "Voce nao pode desativar a si mesmo")
+    if req.role and req.role != "admin" and u.id == current.id and current.role == "admin":
+        raise HTTPException(400, "Voce nao pode rebaixar o proprio perfil de administrador (evita se trancar pra fora)")
     if req.role and req.role not in ("admin", "analyst", "user"):
         raise HTTPException(400, "Role invalida")
     if req.name is not None:
