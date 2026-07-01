@@ -324,7 +324,7 @@ export default function TransfereGovPropostas({
                       <span className="truncate" title={p.situacao_contratacao || ""}>
                         {p.situacao_contratacao || "-"}
                       </span>
-                      {p.situacao_contratacao_detalhe && Object.keys(p.situacao_contratacao_detalhe).filter(k => !k.startsWith("_")).length > 0 && (
+                      {((p.situacao_contratacao_detalhe && Object.keys(p.situacao_contratacao_detalhe).filter(k => !k.startsWith("_")).length > 0) || p.clausula_suspensiva_motivo || p.clausula_suspensiva_dt_prevista) && (
                         <button
                           onClick={(e) => { e.stopPropagation(); abrirDetalhe(p.numero_proposta); }}
                           className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-primary hover:bg-primary/90 text-white text-[9px] font-medium"
@@ -392,7 +392,7 @@ export default function TransfereGovPropostas({
                   </Grid>
                 </Section>
 
-                {(detalhe.situacao_contratacao || detalhe.parlamentar || detalhe.situacao_contratacao_detalhe) && (
+                {(detalhe.situacao_contratacao || detalhe.parlamentar || detalhe.situacao_contratacao_detalhe || detalhe.clausula_suspensiva_motivo || detalhe.clausula_suspensiva_dt_prevista) && (
                   <Section title="Contratação e Indicação">
                     <Grid>
                       <Field label="Situação de Contratação Atual" value={detalhe.situacao_contratacao} />
@@ -414,6 +414,15 @@ export default function TransfereGovPropostas({
                             .map(([k, v]) => (
                               <Field key={k} label={k} value={v == null ? "-" : String(v)} />
                             ))}
+                        </div>
+                      </div>
+                    )}
+                    {(!detalhe.situacao_contratacao_detalhe || Object.keys(detalhe.situacao_contratacao_detalhe).filter(k => !k.startsWith("_")).length === 0) && (detalhe.clausula_suspensiva_motivo || detalhe.clausula_suspensiva_dt_prevista) && (
+                      <div className="mt-3 rounded border-l-4 border-warning bg-warning/15 p-3">
+                        <div className="text-xs font-semibold text-warning mb-2">Detalhe da Cláusula Suspensiva</div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                          <Field label="Motivo" value={detalhe.clausula_suspensiva_motivo || "-"} />
+                          <Field label="Data Prevista" value={detalhe.clausula_suspensiva_dt_prevista || "-"} />
                         </div>
                       </div>
                     )}
