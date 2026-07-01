@@ -75,7 +75,7 @@ async def _fetch_listagem(uf: str = "MG") -> list[dict]:
 
 @router.get("/buscar")
 async def buscar(
-    municipio_id: int = Query(..., description="ID do municipio PACTA"),
+    municipio_id: int = Query(..., description="ID do municipio PACTHA"),
     situacao: Optional[str] = Query(None, description="CIENTE, EM_ANALISE, IMPEDIDO, etc"),
     programa: Optional[str] = Query(None, description="codigo do programa (ex: 09032022)"),
     parlamentar: Optional[str] = Query(None, description="texto livre - busca em codigoEmendaFormatado"),
@@ -89,7 +89,7 @@ async def buscar(
 
     A API do TransfereGov nao oferece filtro server-side por municipio, entao
     baixa lista completa de MG (com cache 1h) e filtra por nome do municipio
-    do PACTA + filtros adicionais.
+    do PACTHA + filtros adicionais.
     """
     ensure_municipio_access(current, municipio_id)
     ensure_tela(current, "transferegov")

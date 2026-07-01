@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "PACTA - Monitoramento de Convenios",
+  title: "PACTHA - Monitoramento de Convenios",
   description: "Sistema de Monitoramento de Convenios e Transferencias Governamentais",
 };
 

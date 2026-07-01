@@ -6,7 +6,7 @@
   themes: pacta --default, pacta-dark;
 }
 
-/* Tema CLARO (white) — PACTA navy + verde */
+/* Tema CLARO (white) — PACTHA navy + verde */
 @plugin "daisyui/theme" {
   name: "pacta";
   default: true;
@@ -46,7 +46,7 @@
   --noise: 0;
 }
 
-/* Tema ESCURO (black) — mesmas cores PACTA sobre fundo escuro */
+/* Tema ESCURO (black) — mesmas cores PACTHA sobre fundo escuro */
 @plugin "daisyui/theme" {
   name: "pacta-dark";
   default: false;

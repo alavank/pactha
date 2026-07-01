@@ -60,7 +60,7 @@ class FNSScraper(ScraperBase):
         """Coleta propostas FNS para o municipio da credencial.
 
         credential vem do Cofre via /api/internal/secrets/fns:
-        - municipio_id: int  (PACTA municipio_id)
+        - municipio_id: int  (PACTHA municipio_id)
         - usuario: str       (CPF, opcional - so se for senha-mode)
         - senha: str         (JSON {format:cookies_full,cookies:[]} OU senha SSO)
         - municipio_nome: str (nome do municipio - usado pra resolver codigo FNS)

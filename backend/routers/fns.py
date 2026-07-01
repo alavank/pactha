@@ -27,7 +27,7 @@ logger = logging.getLogger("fns")
 
 FNS_BASE = "https://consultafns.saude.gov.br"
 
-# Codigos IBGE FNS dos municipios PACTA (6 digitos, sem digito verificador)
+# Codigos IBGE FNS dos municipios PACTHA (6 digitos, sem digito verificador)
 FNS_CODE_OVERRIDE = {
     "ARAUJOS": "310390",
     "NOVA SERRANA": "314520",
@@ -190,7 +190,7 @@ async def anos(db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
 
 @router.get("/municipios")
 async def municipios_pacta(db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
-    """Lista municipios PACTA com codigo IBGE FNS."""
+    """Lista municipios PACTHA com codigo IBGE FNS."""
     return [{"nome": n, "cod_ibge": c} for n, c in FNS_CODE_OVERRIDE.items()]
 
 

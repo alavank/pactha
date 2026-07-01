@@ -1,4 +1,4 @@
-# PACTA - Sistema de Monitoramento de Convenios
+# PACTHA - Sistema de Monitoramento de Convenios
 
 Plataforma de monitoramento de convenios e transferencias governamentais para municipios de MG.
 

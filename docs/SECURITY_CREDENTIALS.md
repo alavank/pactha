@@ -1,4 +1,4 @@
-# Modelo de Segurança de Credenciais — PACTA
+# Modelo de Segurança de Credenciais — PACTHA
 
 ## Princípio: Zero-Trust Credentials
 
@@ -114,14 +114,14 @@ curl -X POST https://pacta-api-.../api/admin/service-tokens/1/revoke
 
 | Método | Senha guardada onde | Quem vê | Rotação | Auditoria |
 |--------|--------------------|--------|---------|-----------|
-| **PACTA Cofre + Service Token** ✅ | DB cifrado AES-GCM | Ninguém após cadastro | API rotate, instantâneo | Por chamada, por token |
+| **PACTHA Cofre + Service Token** ✅ | DB cifrado AES-GCM | Ninguém após cadastro | API rotate, instantâneo | Por chamada, por token |
 | GitHub Secrets | env GitHub Actions | Admins do repo | Manual | Apenas eventos do repo |
 | Vercel/Railway env vars | Painel cloud | Quem tem acesso ao painel | Manual | Limitada |
 | HashiCorp Vault | Vault server | Operadores Vault | Política | Completa |
 | AWS Secrets Manager | AWS | IAM roles | Auto via lambda | CloudTrail |
 | .env local | Disco | Quem acessa máquina | Manual | Nenhuma |
 
-PACTA Cofre + Service Token = **equivalente a HashiCorp Vault** para nosso escopo, sem custo adicional.
+PACTHA Cofre + Service Token = **equivalente a HashiCorp Vault** para nosso escopo, sem custo adicional.
 
 ## Hardening adicional aplicado
 

@@ -8,7 +8,7 @@ O fluxo passa por SAML auto-submit (forms com onload=submit), que SO funciona
 em browser real -> por isso Playwright (igual SIGCON). httpx puro nao resolve
 porque o IdP exige JS.
 
-Para cada municipio PACTA:
+Para cada municipio PACTHA:
   1. Entra via guest
   2. Consulta Rapida: seleciona UF + Municipio (match por nome normalizado)
   3. Clica Consultar

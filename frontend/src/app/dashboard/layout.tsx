@@ -87,7 +87,7 @@ function allLeafHrefs(items: NavEntry[]): string[] {
 
 const NAV_ITEMS: NavEntry[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/dashboard/ai", label: "IA PACTA", icon: Sparkles },
+  { href: "/dashboard/ai", label: "IA PACTHA", icon: Sparkles },
   { href: "/dashboard/telegram", label: "Telegram", icon: Send },
   { href: "/dashboard/parlamentares", label: "Parlamentares", icon: UserCircle2 },
   { href: "/dashboard/gestao", label: "Gestão Interna", icon: Edit2 },
@@ -162,11 +162,11 @@ function SidebarContent({
       {/* Faixa institucional - cores do governo */}
       <div className="gov-stripe" />
 
-      {/* Header com logo PACTA — chip branco arredondado (legível no claro e no escuro) */}
+      {/* Header com logo PACTHA — chip branco arredondado (legível no claro e no escuro) */}
       <div className="border-b border-base-300 px-4 py-4 flex justify-center">
         <div className="rounded-2xl bg-white p-2.5 shadow-sm ring-1 ring-black/5">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/pacta-logo.png" alt="PACTA — Plataforma de Acompanhamento" className="h-16 w-auto" />
+          <img src="/pacta-logo.png" alt="PACTHA — Plataforma de Acompanhamento" className="h-16 w-auto" />
         </div>
       </div>
 

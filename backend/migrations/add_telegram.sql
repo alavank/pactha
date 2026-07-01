@@ -1,4 +1,4 @@
--- Integração Telegram: vincula chat_id ao user_id PACTA.
+-- Integração Telegram: vincula chat_id ao user_id PACTHA.
 -- chat_id Telegram pode ter ate 19 digitos (BIGINT seguro).
 
 CREATE TABLE IF NOT EXISTS telegram_users (

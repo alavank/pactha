@@ -9,7 +9,7 @@ export interface TelaDef {
 
 export const TELAS: TelaDef[] = [
   { key: "dashboard", label: "Dashboard" },
-  { key: "ai", label: "IA PACTA" },
+  { key: "ai", label: "IA PACTHA" },
   { key: "telegram", label: "Telegram" },
   { key: "parlamentares", label: "Parlamentares" },
   { key: "gestao", label: "Gestão Interna" },

@@ -249,7 +249,7 @@ export default function UsuariosPage() {
     <div className="space-y-5">
       <div>
         <h1 className="text-2xl font-bold text-base-content">Usuarios</h1>
-        <p className="text-sm text-base-content/60">Gerenciamento de acessos a plataforma PACTA</p>
+        <p className="text-sm text-base-content/60">Gerenciamento de acessos a plataforma PACTHA</p>
       </div>
 
       {erro && (

@@ -9,11 +9,11 @@ Endpoints:
   DELETE /api/telegram/my-link         (logado)  desvincula
 
 Fluxo de vinculacao:
-  1. User PACTA loga, vai em /dashboard/telegram, clica "Gerar codigo"
+  1. User PACTHA loga, vai em /dashboard/telegram, clica "Gerar codigo"
   2. Backend gera codigo aleatorio (10 min validade), retorna
   3. User abre o bot no Telegram, manda /start CODIGO
   4. Bot valida codigo -> grava telegram_users (chat_id <-> user_id)
-  5. A partir dali, qualquer mensagem do user no bot vai pra IA PACTA
+  5. A partir dali, qualquer mensagem do user no bot vai pra IA PACTHA
 """
 from __future__ import annotations
 import os
@@ -106,7 +106,7 @@ async def _cmd_start(db: AsyncSession, chat_id: int, args: str, telegram_user: s
                 f"Você já está vinculado à conta `{row[1]}`"
                 + (f" — município *{row[2]}*" if row[2] else "") + ".\n\n"
                 "Envie qualquer pergunta sobre seus convênios, propostas ou parlamentares "
-                "e eu consulto o banco PACTA pra você.\n\n"
+                "e eu consulto o banco PACTHA pra você.\n\n"
                 "Comandos:\n"
                 "/help — ajuda\n"
                 "/municipio — trocar município padrão\n"
@@ -115,9 +115,9 @@ async def _cmd_start(db: AsyncSession, chat_id: int, args: str, telegram_user: s
         else:
             await tg.send_message(
                 chat_id,
-                "👋 *Bem-vindo ao bot PACTA!*\n\n"
-                "Para usar este bot, você precisa vincular sua conta PACTA:\n\n"
-                "1. Acesse a plataforma PACTA → menu *Telegram*\n"
+                "👋 *Bem-vindo ao bot PACTHA!*\n\n"
+                "Para usar este bot, você precisa vincular sua conta PACTHA:\n\n"
+                "1. Acesse a plataforma PACTHA → menu *Telegram*\n"
                 "2. Clique em *Gerar código de vinculação*\n"
                 "3. Envie aqui:\n"
                 "`/start SEU_CODIGO`\n\n"
@@ -136,7 +136,7 @@ async def _cmd_start(db: AsyncSession, chat_id: int, args: str, telegram_user: s
         await tg.send_message(chat_id, "❌ Código inválido. Verifique e tente novamente.")
         return
     if row[2]:
-        await tg.send_message(chat_id, "❌ Código já foi usado. Gere um novo na plataforma PACTA.")
+        await tg.send_message(chat_id, "❌ Código já foi usado. Gere um novo na plataforma PACTHA.")
         return
     if row[1] < now:
         await tg.send_message(chat_id, "❌ Código expirado. Gere um novo (validade 10 min).")
@@ -177,7 +177,7 @@ async def _cmd_start(db: AsyncSession, chat_id: int, args: str, telegram_user: s
 async def _cmd_help(chat_id: int):
     await tg.send_message(
         chat_id,
-        "🤖 *Bot PACTA — Ajuda*\n\n"
+        "🤖 *Bot PACTHA — Ajuda*\n\n"
         "Mande qualquer pergunta em português sobre convênios, propostas, parlamentares ou "
         "liberações dos 6 municípios atendidos.\n\n"
         "*Comandos:*\n"
@@ -301,7 +301,7 @@ async def _handle_message(db: AsyncSession, message: dict):
         await tg.send_message(
             chat_id,
             "⚠️ Você precisa vincular sua conta primeiro.\n\n"
-            "Acesse o PACTA → menu *Telegram* → *Gerar código*\n"
+            "Acesse o PACTHA → menu *Telegram* → *Gerar código*\n"
             "Depois envie aqui: `/start SEU_CODIGO`"
         )
         return
@@ -428,7 +428,7 @@ async def gerar_link_code(
         "instrucoes": (
             f"1. Abra @{bot_username} no Telegram\n"
             "2. Envie: /start " + code if bot_username
-            else "Abra o bot PACTA no Telegram e envie: /start " + code
+            else "Abra o bot PACTHA no Telegram e envie: /start " + code
         ),
         "bot_username": bot_username,
         "bot_link": f"https://t.me/{bot_username}?start={code}" if bot_username else None,

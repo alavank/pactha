@@ -34,7 +34,7 @@ interface Senha {
 const CATEGORIAS = ["Federal", "Estadual", "Saude", "Educacao", "Assistencia Social", "Outro"];
 
 // Detecta se a senha é na verdade um payload de sessão capturada
-// (cookies JSON em vez de senha texto) — vem do bookmarklet/extensão PACTA.
+// (cookies JSON em vez de senha texto) — vem do bookmarklet/extensão PACTHA.
 function parseSessionPayload(senha?: string): { isSession: boolean; cookieCount?: number; httpOnlyCount?: number; url?: string; domain?: string } {
   if (!senha || senha.length < 30) return { isSession: false };
   const s = senha.trim();
@@ -305,7 +305,7 @@ export default function CofrePage() {
                   />
                   <div className="flex-1">
                     <div className="text-sm font-medium text-primary">
-                      Integracao com sistema PACTA
+                      Integracao com sistema PACTHA
                     </div>
                     <div className="text-xs text-primary mt-0.5">
                       {isIntegracao

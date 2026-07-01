@@ -69,7 +69,7 @@ export default function LoginPage() {
       <Card className="w-full max-w-md shadow-2xl border-0">
         <CardHeader className="text-center pb-2">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/pacta-logo.png" alt="PACTA" className="mx-auto mb-1 h-28 w-auto" />
+          <img src="/pacta-logo.png" alt="PACTHA" className="mx-auto mb-1 h-28 w-auto" />
           <p className="text-sm text-base-content/60">
             Monitoramento de Convênios e Transferências
           </p>

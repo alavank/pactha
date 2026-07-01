@@ -3,9 +3,9 @@ Endpoint para o bookmarklet enviar cookie de sessao do portal governamental.
 
 Fluxo:
 1. Cliente loga manualmente no portal (FNS/SIMEC/etc)
-2. Clica no bookmarklet PACTA na barra de favoritos
+2. Clica no bookmarklet PACTHA na barra de favoritos
 3. JavaScript captura document.cookie + URL atual
-4. POST aqui com X-Service-Token (do bookmarklet) ou JWT (logado em PACTA)
+4. POST aqui com X-Service-Token (do bookmarklet) ou JWT (logado em PACTHA)
 5. Backend criptografa e salva no Cofre como observacao da credencial
 """
 from datetime import datetime, timezone
@@ -46,7 +46,7 @@ async def get_capture_principal(
     1. X-Service-Token (extensao Chrome) — token LONGEVO com scope
        'session:write'. Resolve o problema do JWT de 60min que fazia a
        auto-captura da extensao morrer silenciosamente apos 1h.
-    2. Authorization Bearer / cookie JWT (usuario logado no PACTA web).
+    2. Authorization Bearer / cookie JWT (usuario logado no PACTHA web).
 
     Tenta service token primeiro; se ausente, cai pro JWT.
     """

@@ -168,7 +168,7 @@ export default function AiChatPage() {
       <div className="flex items-center justify-between gap-2 pb-3 border-b">
         <div>
           <h1 className="text-2xl font-bold text-primary flex items-center gap-2">
-            <Sparkles className="size-6 text-info" /> IA PACTA
+            <Sparkles className="size-6 text-info" /> IA PACTHA
           </h1>
           <p className="text-sm text-base-content/60">
             Assistente que consulta o banco em tempo real e gera relatórios. Pergunte em português.

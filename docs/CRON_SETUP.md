@@ -1,4 +1,4 @@
-# PACTA - Configuração de Cron no Railway
+# PACTHA - Configuração de Cron no Railway
 
 Os pipelines de ingestão rodam em 3 tiers de frequência. Cada tier deve ser
 criado como um **service separado** no Railway:
@@ -39,7 +39,7 @@ criado como um **service separado** no Railway:
 
 Para cada tier:
 1. **Settings → New Service → Empty Service**
-2. **Settings → Source → Repo:** `PACTA` branch `main`
+2. **Settings → Source → Repo:** `PACTHA` branch `main`
 3. **Settings → Root Directory:** `backend`
 4. **Settings → Config file:** apontar para o `railway-cron-{tier}.json` correspondente
 5. **Variables:** copiar do backend principal + adicionar `CRON_TIER`

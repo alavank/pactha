@@ -1,7 +1,7 @@
-# PACTA Captura Automática — Extensão Chrome
+# PACTHA Captura Automática — Extensão Chrome
 
 Extensão Chrome v2 que **captura sozinha** os cookies dos portais gov.br /
-TransfereGov / FNS / SIMEC (incluindo `httpOnly`) e envia ao PACTA toda vez
+TransfereGov / FNS / SIMEC (incluindo `httpOnly`) e envia ao PACTHA toda vez
 que você navega ou as cookies mudam. Mantém a sessão viva no servidor via
 keep-alive a cada 12min enquanto o Chrome estiver aberto.
 
@@ -32,7 +32,7 @@ morria entre logins.
 4. Clique em **"Carregar sem compactação"** e selecione a pasta
    `PACTA/extension/`
 
-5. O ícone PACTA aparece na barra. Fixe-o (📌) pra ficar sempre visível.
+5. O ícone PACTHA aparece na barra. Fixe-o (📌) pra ficar sempre visível.
 
 ## Configuração inicial (1x, em 30s)
 
@@ -42,8 +42,8 @@ para de funcionar silenciosamente após 1h (era a causa da "sessão que
 morria sozinha"). O **service token** (prefixo `pacta_`) nunca expira.
 
 1. Peça/gere o **service token de captura** (scope `session:write`,
-   prefixo `pacta_ext_...`) — fornecido pelo admin do PACTA.
-2. Clica no ícone da extensão → **"Configurar token PACTA"**.
+   prefixo `pacta_ext_...`) — fornecido pelo admin do PACTHA.
+2. Clica no ícone da extensão → **"Configurar token PACTHA"**.
 3. Cola o service token → **Salvar configuração**.
 
 A extensão detecta automaticamente: token que começa com `pacta_` é
@@ -84,7 +84,7 @@ A cada 12 minutos:
 
 **Resultado**: você loga no gov.br/TransfereGov uma vez por dia (ou quando
 o SSO expirar de verdade — pode durar horas), deixa o Chrome aberto, e o
-PACTA sempre tem cookies frescos pra rodar scrapers enriquecidos.
+PACTHA sempre tem cookies frescos pra rodar scrapers enriquecidos.
 
 ## Debounce e privacidade
 
@@ -97,7 +97,7 @@ PACTA sempre tem cookies frescos pra rodar scrapers enriquecidos.
 
 ## O popup mostra status
 
-Abrindo o ícone PACTA você vê:
+Abrindo o ícone PACTHA você vê:
 - ✅ **Modo automático ativo** (verde) ou ⚠️ desligado (âmbar)
 - Domínio atual da aba
 - **Última captura**: `✓ discricionarias.transferegov.sistema.gov.br · 13
@@ -106,7 +106,7 @@ Abrindo o ícone PACTA você vê:
 
 ## Segurança
 
-- Token PACTA fica em `chrome.storage.local` (criptografado pelo Chrome em
+- Token PACTHA fica em `chrome.storage.local` (criptografado pelo Chrome em
   disco do seu PC, isolado da WebApp)
 - Cookies trafegam HTTPS direto entre seu Chrome e o backend Railway
 - Backend cifra com AES-256-GCM antes de gravar no Cofre (chave separada)

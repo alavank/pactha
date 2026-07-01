@@ -177,7 +177,7 @@ def _alert_session_dead():
     if not chats:
         log.info("sessao morta mas nenhum chat Telegram registrado p/ avisar")
         return
-    msg = ("⚠️ *PACTA* — a sessão gov.br/TransfereGov *expirou*.\n\n"
+    msg = ("⚠️ *PACTHA* — a sessão gov.br/TransfereGov *expirou*.\n\n"
            "Os dados *federais* (TransfereGov + cláusula suspensiva) não atualizam "
            "sozinhos até você *recapturar* a sessão pela extensão do navegador.\n\n"
            "_Estadual (SIGCON/Emendas) e Saúde (FNS) seguem atualizando normalmente._")

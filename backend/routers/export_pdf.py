@@ -65,7 +65,7 @@ def _build_pdf(title: str, subtitle: str, headers: list, rows: list, landscape_m
     story.append(t)
     story.append(Spacer(1, 8))
     story.append(Paragraph(
-        f"Gerado em {datetime.now().strftime('%d/%m/%Y %H:%M')} | Total: {len(rows)} registros | PACTA - Plataforma de Acompanhamento",
+        f"Gerado em {datetime.now().strftime('%d/%m/%Y %H:%M')} | Total: {len(rows)} registros | PACTHA - Plataforma de Acompanhamento",
         ParagraphStyle("Footer", parent=styles["Normal"], fontSize=7,
                        textColor=colors.HexColor("#64748b"), alignment=2)))
     doc.build(story)

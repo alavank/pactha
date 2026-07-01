@@ -29,8 +29,8 @@ async def lifespan(app: FastAPI):
     (cold start no Railway gerava 'email ou senha incorretos' fantasma
     porque o connect demorava mais que o timeout do frontend)."""
     # print() para garantir que aparece nos logs do Railway mesmo se logging falhar
-    print("=== PACTA boot - rodando migrations ===", flush=True)
-    logging.getLogger("startup").warning("=== PACTA boot - rodando migrations ===")
+    print("=== PACTHA boot - rodando migrations ===", flush=True)
+    logging.getLogger("startup").warning("=== PACTHA boot - rodando migrations ===")
     try:
         run_migrations()
     except Exception as e:
@@ -49,7 +49,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="PACTA API",
+    title="PACTHA API",
     description="Sistema de Monitoramento de Convenios e Transferencias Governamentais",
     version="1.0.0",
     redirect_slashes=False,
@@ -68,7 +68,7 @@ for url in frontend_urls.split(","):
     if url:
         allowed_origins.append(url)
 
-# Regex restrito: apenas domains do projeto PACTA (railway/custom)
+# Regex restrito: apenas domains do projeto PACTHA (railway/custom)
 allow_regex = os.getenv("CORS_ORIGIN_REGEX") or r"^https://(pacta|.*\.pacta).*\.(up\.railway\.app|railway\.app)$"
 
 app.add_middleware(
@@ -105,4 +105,4 @@ app.include_router(documentos.router)
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "service": "PACTA API"}
+    return {"status": "ok", "service": "PACTHA API"}

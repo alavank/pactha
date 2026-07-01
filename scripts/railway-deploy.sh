@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PACTA - Helper de deploy Railway
+# PACTHA - Helper de deploy Railway
 # Uso:
 #   ./scripts/railway-deploy.sh backend   # deploy so backend
 #   ./scripts/railway-deploy.sh frontend  # deploy so frontend

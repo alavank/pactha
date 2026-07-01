@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "PACTA - Captura Automática",
+  "name": "PACTHA - Captura Automática",
   "version": "2.0.0",
-  "description": "Captura cookies do gov.br/TransfereGov/FNS e envia ao PACTA automaticamente toda vez que a sessão renova. Keep-alive a cada 15min mantém a sessão viva enquanto o Chrome estiver aberto.",
+  "description": "Captura cookies do gov.br/TransfereGov/FNS e envia ao PACTHA automaticamente toda vez que a sessão renova. Keep-alive a cada 15min mantém a sessão viva enquanto o Chrome estiver aberto.",
   "permissions": [
     "cookies",
     "activeTab",
@@ -19,7 +19,7 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "PACTA - Captura Automática",
+    "default_title": "PACTHA - Captura Automática",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",

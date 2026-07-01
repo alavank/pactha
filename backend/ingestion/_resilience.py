@@ -1,4 +1,4 @@
-"""Helpers de resiliencia compartilhados pelos scrapers PACTA.
+"""Helpers de resiliencia compartilhados pelos scrapers PACTHA.
 
 Centraliza:
   - get_sync_db_url(): DATABASE_URL_SYNC limpo de channel_binding

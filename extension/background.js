@@ -1,8 +1,8 @@
-// PACTA Captura Automática — service worker
+// PACTHA Captura Automática — service worker
 //
 // 3 mecanismos automáticos:
 //   1) AUTO-CAPTURA: ao navegar em domínios alvo (transferegov/gov.br/saúde),
-//      coleta cookies (httpOnly inclusive) e POSTa pro PACTA. Re-captura
+//      coleta cookies (httpOnly inclusive) e POSTa pro PACTHA. Re-captura
 //      automática quando a página é navegada/recarregada.
 //   2) COOKIE LISTENER: dispara captura quando JSESSIONID/user-id/Session_Gov_Br_Prod
 //      são criados/atualizados em domínios alvo (significa que user acabou de

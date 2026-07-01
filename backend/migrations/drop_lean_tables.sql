@@ -1,4 +1,4 @@
--- Refactor lean PACTA (2026-05-16): mantemos apenas
+-- Refactor lean PACTHA (2026-05-16): mantemos apenas
 --   SIGCON (convenios_estadual), FNS (real-time, sem tabela),
 --   DOU/DOU-MG (real-time), Emendas estaduais, Cofre, Sessoes, Service Tokens.
 -- Tudo o que e federal/transferego/portal-transparencia/prestacao/politica vai embora.

@@ -1,4 +1,4 @@
-// PACTA Captura Automática — popup logic
+// PACTHA Captura Automática — popup logic
 const DEFAULT_API = "https://pacta-api-production-9c11.up.railway.app/api";
 
 const $ = (id) => document.getElementById(id);
@@ -80,7 +80,7 @@ async function getAllCookiesForDomain(host) {
 async function captureManual() {
   const cfg = await getConfig();
   if (!cfg.token) {
-    showStatus("Configure o token PACTA primeiro", "error");
+    showStatus("Configure o token PACTHA primeiro", "error");
     return;
   }
   const tab = await getCurrentTab();
@@ -121,7 +121,7 @@ async function captureManual() {
       headers: { "Content-Type": "application/json", ...authHeaders },
       body: JSON.stringify(payload),
     });
-    if (res.status === 401) { showStatus("Token PACTA invalido. Reconfigure.", "error"); return; }
+    if (res.status === 401) { showStatus("Token PACTHA invalido. Reconfigure.", "error"); return; }
     if (!res.ok) { showStatus(`Erro ${res.status}`, "error"); return; }
     const data = await res.json();
     showStatus(
@@ -228,7 +228,7 @@ async function init() {
   });
 
   if (!cfg.token) {
-    showStatus("Configure o token PACTA antes de capturar", "info");
+    showStatus("Configure o token PACTHA antes de capturar", "info");
   }
 
   refreshLastCapture();

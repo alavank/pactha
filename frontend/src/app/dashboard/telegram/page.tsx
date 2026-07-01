@@ -120,8 +120,8 @@ export default function TelegramPage() {
           Integração Telegram
         </h1>
         <p className="text-sm text-base-content/60 mt-1">
-          Converse com a IA PACTA direto no Telegram. Pergunte sobre convênios, propostas,
-          parlamentares, vigências — em português, com as mesmas ferramentas da IA PACTA web.
+          Converse com a IA PACTHA direto no Telegram. Pergunte sobre convênios, propostas,
+          parlamentares, vigências — em português, com as mesmas ferramentas da IA PACTHA web.
         </p>
       </div>
 
@@ -289,7 +289,7 @@ export default function TelegramPage() {
             <div><code className="bg-base-100 px-1 rounded">/limpar</code> — apagar histórico de contexto</div>
             <div><code className="bg-base-100 px-1 rounded">/desvincular</code> — desconectar conta</div>
             <div className="pt-2 text-xs text-base-content/60">
-              Fora dos comandos, qualquer mensagem é enviada à IA PACTA. Exemplos:
+              Fora dos comandos, qualquer mensagem é enviada à IA PACTHA. Exemplos:
               <ul className="list-disc ml-5 mt-1 space-y-0.5">
                 <li>&ldquo;Convênios vencendo em 60 dias&rdquo;</li>
                 <li>&ldquo;Liste tudo do deputado Eduardo Azevedo&rdquo;</li>

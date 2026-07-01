@@ -51,7 +51,7 @@ function SessoesInner() {
   // Bookmarklet JS - substitui {{API}} {{KEY}} {{MUN}} em runtime
   const buildBookmarklet = (key: string) => {
     const code = `(function(){
-      var token=prompt('Cole seu JWT do PACTA (use o botão "Copiar token" na página de Sessões):');
+      var token=prompt('Cole seu JWT do PACTHA (use o botão "Copiar token" na página de Sessões):');
       if(!token)return;
       fetch('${apiBase}/session-capture',{
         method:'POST',
@@ -66,10 +66,10 @@ function SessoesInner() {
         })
       }).then(r=>r.json()).then(d=>{
         var msg = d.status==='ok'
-          ? 'PACTA: SESSAO CAPTURADA!' + (d.auto_scrape_started ? '\\n\\n>>> Scraper TransfereGov iniciado automaticamente em background (janela 20min).\\n\\nVoce pode FECHAR esta aba — o scrape continua no servidor.' : '')
-          : 'PACTA erro: ' + JSON.stringify(d);
+          ? 'PACTHA: SESSAO CAPTURADA!' + (d.auto_scrape_started ? '\\n\\n>>> Scraper TransfereGov iniciado automaticamente em background (janela 20min).\\n\\nVoce pode FECHAR esta aba — o scrape continua no servidor.' : '')
+          : 'PACTHA erro: ' + JSON.stringify(d);
         alert(msg);
-      }).catch(e=>alert('PACTA erro: '+e.message));
+      }).catch(e=>alert('PACTHA erro: '+e.message));
     })();`;
     return "javascript:" + encodeURIComponent(code.replace(/\s+/g, " "));
   };
@@ -161,7 +161,7 @@ function SessoesInner() {
           <div className="flex gap-3">
             <span className="bg-primary text-white rounded-full size-6 flex items-center justify-center font-bold text-xs flex-shrink-0">1</span>
             <div>
-              <strong>Copie seu token PACTA:</strong>
+              <strong>Copie seu token PACTHA:</strong>
               <button
                 onClick={copyToken}
                 className="ml-2 inline-block bg-primary hover:bg-primary/90 text-white px-3 py-1 rounded text-xs"
@@ -183,7 +183,7 @@ function SessoesInner() {
           <div className="flex gap-3">
             <span className="bg-primary text-white rounded-full size-6 flex items-center justify-center font-bold text-xs flex-shrink-0">3</span>
             <div>
-              <strong>Quando logar no portal (FNS, SIMEC...), clique no favorito &quot;PACTA Capturar [portal]&quot;.</strong>
+              <strong>Quando logar no portal (FNS, SIMEC...), clique no favorito &quot;PACTHA Capturar [portal]&quot;.</strong>
               <br />
               <span className="text-xs text-base-content/70">
                 Vai pedir para colar o token. Cole e pronto - sessao capturada.
@@ -233,7 +233,7 @@ function SessoesInner() {
                 <ol className="list-decimal ml-5 space-y-0.5 mt-1">
                   <li>Abra <code className="bg-base-100 px-1 rounded">parcerias.transferegov.sistema.gov.br/ep-atos-prep-web/home</code></li>
                   <li>Clique <strong>Entrar com gov.br</strong> e complete o login</li>
-                  <li>Clique no bookmarklet <strong>📎 PACTA Capturar gov.br (parcerias.transferegov)</strong></li>
+                  <li>Clique no bookmarklet <strong>📎 PACTHA Capturar gov.br (parcerias.transferegov)</strong></li>
                   <li><strong>IMEDIATAMENTE</strong> volte aqui e clique <strong>▶ Rodar scraper</strong> abaixo (você tem 20 min)</li>
                 </ol>
                 <div className="mt-2 pt-2 border-t border-error">
@@ -241,7 +241,7 @@ function SessoesInner() {
                   <ol className="list-decimal ml-5 space-y-0.5 mt-1">
                     <li>Já logado no gov.br, abra <code className="bg-base-100 px-1 rounded">discricionarias.transferegov.sistema.gov.br/voluntarias/</code></li>
                     <li>Acesse qualquer convênio (precisa entrar na área autenticada)</li>
-                    <li>Clique o bookmarklet <strong>📎 PACTA Capturar SICONV Legado</strong> ENQUANTO ESTIVER nessa página</li>
+                    <li>Clique o bookmarklet <strong>📎 PACTHA Capturar SICONV Legado</strong> ENQUANTO ESTIVER nessa página</li>
                   </ol>
                 </div>
               </div>
@@ -334,14 +334,14 @@ function SessoesInner() {
                     href={buildBookmarklet(p.key)}
                     onClick={(e) => {
                       // Impede que o navegador execute o JS quando clicar (so quando arrastado)
-                      if (!confirm(`Arraste este link para a barra de favoritos como "PACTA Capturar ${p.nome}".\n\nClique OK so se quiser executar AGORA (precisa estar logado em ${p.url}).`)) {
+                      if (!confirm(`Arraste este link para a barra de favoritos como "PACTHA Capturar ${p.nome}".\n\nClique OK so se quiser executar AGORA (precisa estar logado em ${p.url}).`)) {
                         e.preventDefault();
                       }
                     }}
                     className="bg-info hover:bg-info/90 text-white px-4 py-2 rounded text-sm font-medium"
                     draggable
                   >
-                    📎 PACTA Capturar {p.nome}
+                    📎 PACTHA Capturar {p.nome}
                   </a>
                 </div>
               </CardContent>
@@ -355,8 +355,8 @@ function SessoesInner() {
           <strong className="text-warning">Sobre seguranca:</strong>
           <p className="text-warning mt-1">
             O cookie capturado e cifrado com AES-256-GCM antes de salvar. Apenas
-            os scrapers PACTA conseguem decifrar. O token JWT que voce cola e do
-            seu proprio login no PACTA - nunca compartilhe. Para invalidar uma sessao,
+            os scrapers PACTHA conseguem decifrar. O token JWT que voce cola e do
+            seu proprio login no PACTHA - nunca compartilhe. Para invalidar uma sessao,
             faca logout no portal de origem.
           </p>
         </CardContent>

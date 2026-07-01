@@ -1,4 +1,4 @@
-"""IA Assistant - Claude consulta o banco de dados PACTA via tool use.
+"""IA Assistant - Claude consulta o banco de dados PACTHA via tool use.
 
 Endpoint:
   POST /api/ai/chat - recebe pergunta + municipio_id + historico, devolve resposta
@@ -37,7 +37,7 @@ _REJ_LIKE = "%rejeitad%"
 
 MODEL = "claude-opus-4-8"
 
-SYSTEM_PROMPT = """Voce eh o assistente IA da PACTA, plataforma da Freitas Consultoria que monitora
+SYSTEM_PROMPT = """Voce eh o assistente IA da PACTHA, plataforma da Freitas Consultoria que monitora
 convenios federais e estaduais de 6 municipios de Minas Gerais. Voce ajuda os
 consultores e gestores municipais a responderem perguntas e gerarem relatorios
 sobre os lancamentos, valores, vigencias, parlamentares e situacoes.
@@ -105,7 +105,7 @@ FORMATO DA RESPOSTA (importante para a UI renderizar bem):
 TOOLS = [
     {
         "name": "list_municipios",
-        "description": "Lista os 6 municipios atendidos pela PACTA com ID e nome (use o ID nas outras ferramentas).",
+        "description": "Lista os 6 municipios atendidos pela PACTHA com ID e nome (use o ID nas outras ferramentas).",
         "input_schema": {"type": "object", "properties": {}, "required": []},
     },
     {
