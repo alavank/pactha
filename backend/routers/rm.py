@@ -19,7 +19,7 @@ from sqlalchemy import text
 import json
 from database import get_db
 from models import Municipio
-from services.auth import get_current_user, ensure_municipio_access
+from services.auth import get_current_user, ensure_municipio_access, ensure_tela
 from models.user import User
 from services.rm_builder import montar_conteudo
 from services.rm_pdf import gerar_pdf
@@ -70,6 +70,7 @@ async def listar(
     current: User = Depends(get_current_user),
 ):
     ensure_municipio_access(current, municipio_id)
+    ensure_tela(current, "rm")
     where = []
     params: dict = {}
     if municipio_id:

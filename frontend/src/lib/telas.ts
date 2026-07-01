@@ -1,0 +1,51 @@
+// Telas/modulos da plataforma para o RBAC por tela.
+// A chave (`key`) e o que fica salvo em user_telas; o backend valida por ela.
+// O `hrefToTela` mapeia rotas da sidebar -> chave (todas as rotas transferegov* -> "transferegov").
+
+export interface TelaDef {
+  key: string;
+  label: string;
+}
+
+export const TELAS: TelaDef[] = [
+  { key: "dashboard", label: "Dashboard" },
+  { key: "ai", label: "IA PACTA" },
+  { key: "telegram", label: "Telegram" },
+  { key: "parlamentares", label: "Parlamentares" },
+  { key: "gestao", label: "Gestão Interna" },
+  { key: "rm", label: "Relatório de Monitoramento" },
+  { key: "documentos", label: "Geração de Documentos" },
+  { key: "convenios", label: "SIGCON (Estaduais)" },
+  { key: "emendas", label: "Emendas Estaduais" },
+  { key: "transferegov", label: "Transfere Gov" },
+  { key: "fns", label: "Fundo Nacional de Saúde" },
+  { key: "simec", label: "SIMEC - PAR (MEC)" },
+  { key: "dou", label: "Diário Oficial" },
+  { key: "cofre", label: "Cofre de Senhas" },
+  { key: "sessoes", label: "Sessões (gov.br)" },
+];
+
+export const TELA_LABELS: Record<string, string> = Object.fromEntries(
+  TELAS.map((t) => [t.key, t.label])
+);
+
+/** Deriva a chave de tela a partir de um href da sidebar. */
+export function hrefToTela(href: string): string {
+  // "/dashboard" -> "dashboard"
+  const seg = href.replace(/^\/dashboard\/?/, "").split("/")[0] || "dashboard";
+  if (seg.startsWith("transferegov")) return "transferegov";
+  return seg;
+}
+
+/**
+ * Conjunto de telas permitidas p/ um usuario.
+ * null = acesso total (admin ou ainda carregando). Set = escopo do nao-admin.
+ */
+export function allowedTelasOf(
+  user: { role?: string; telas?: string[] | null } | null
+): Set<string> | null {
+  if (!user) return null; // carregando -> nao esconde nada ainda
+  if (user.role === "admin") return null; // admin ve tudo
+  if (Array.isArray(user.telas)) return new Set(user.telas);
+  return null; // fallback seguro (sem info -> nao trava)
+}

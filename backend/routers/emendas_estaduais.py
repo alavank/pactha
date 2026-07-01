@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from typing import Optional
 from database import get_db
-from services.auth import get_current_user, ensure_municipio_access
+from services.auth import get_current_user, ensure_municipio_access, ensure_tela
 from models.user import User
 
 router = APIRouter(prefix="/api/emendas-estaduais", tags=["emendas-estaduais"])
@@ -23,6 +23,7 @@ async def list_emendas_estaduais(
     current: User = Depends(get_current_user),
 ):
     ensure_municipio_access(current, municipio_id)
+    ensure_tela(current, "emendas")
     where_parts = ["1=1"]
     params: dict = {}
     if municipio_id:
@@ -78,6 +79,7 @@ async def list_anos(
 ):
     """Anos distintos com emendas."""
     ensure_municipio_access(current, municipio_id)
+    ensure_tela(current, "emendas")
     params: dict = {}
     where = "ano IS NOT NULL"
     if municipio_id:
@@ -95,6 +97,7 @@ async def list_responsaveis(
 ):
     """Responsaveis distintos."""
     ensure_municipio_access(current, municipio_id)
+    ensure_tela(current, "emendas")
     params: dict = {}
     where = "nome_responsavel IS NOT NULL AND nome_responsavel != ''"
     if municipio_id:
@@ -112,6 +115,7 @@ async def stats(
     current: User = Depends(get_current_user),
 ):
     ensure_municipio_access(current, municipio_id)
+    ensure_tela(current, "emendas")
     where = "1=1"
     params: dict = {}
     if municipio_id:

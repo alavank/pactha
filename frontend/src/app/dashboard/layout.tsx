@@ -38,11 +38,52 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import type { Municipio, User } from "@/types";
+import { hrefToTela, allowedTelasOf } from "@/lib/telas";
 
 type NavLeaf = { href: string; label: string; icon?: React.ComponentType<{ className?: string }> };
 type NavSection = { sectionLabel: string; children: NavLeaf[] };
 type NavGroup = { label: string; icon: React.ComponentType<{ className?: string }>; children: Array<NavLeaf | NavSection> };
 type NavEntry = NavLeaf | NavGroup;
+
+// Filtra a navegacao pelas telas permitidas (null = ve tudo: admin ou carregando).
+// Grupos so aparecem se sobrar ao menos um filho; secoes idem.
+function filterNav(items: NavEntry[], allowed: Set<string> | null): NavEntry[] {
+  if (!allowed) return items;
+  const out: NavEntry[] = [];
+  for (const item of items) {
+    if ("children" in item) {
+      const children = item.children
+        .map((c): NavLeaf | NavSection | null => {
+          if ("sectionLabel" in c) {
+            const kids = c.children.filter((l) => allowed.has(hrefToTela(l.href)));
+            return kids.length ? { ...c, children: kids } : null;
+          }
+          return allowed.has(hrefToTela(c.href)) ? c : null;
+        })
+        .filter((c): c is NavLeaf | NavSection => c !== null);
+      if (children.length) out.push({ ...item, children });
+    } else if (allowed.has(hrefToTela(item.href))) {
+      out.push(item);
+    }
+  }
+  return out;
+}
+
+// Lista plana de hrefs (ordem da sidebar) — usada pelo guard de rota.
+function allLeafHrefs(items: NavEntry[]): string[] {
+  const out: string[] = [];
+  for (const item of items) {
+    if ("children" in item) {
+      for (const c of item.children) {
+        if ("sectionLabel" in c) out.push(...c.children.map((l) => l.href));
+        else out.push(c.href);
+      }
+    } else {
+      out.push(item.href);
+    }
+  }
+  return out;
+}
 
 const NAV_ITEMS: NavEntry[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -114,6 +155,8 @@ function SidebarContent({
       return next;
     });
   };
+  // Sidebar so mostra as telas permitidas ao usuario (admin/carregando = todas)
+  const visibleNav = filterNav(NAV_ITEMS, allowedTelasOf(user));
   return (
     <div className="flex h-full flex-col bg-base-100">
       {/* Faixa institucional - cores do governo */}
@@ -161,7 +204,7 @@ function SidebarContent({
         <div className="px-3 mb-2 text-[10px] font-semibold uppercase tracking-wider text-base-content/40">
           Modulos
         </div>
-        {NAV_ITEMS.map((item) => {
+        {visibleNav.map((item) => {
           const qs = selectedMunicipioId ? `?municipio_id=${selectedMunicipioId}` : "";
           const renderLeaf = (leaf: NavLeaf) => {
             const isActive = pathname === leaf.href || pathname.startsWith(leaf.href + "/");
@@ -368,6 +411,16 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
       localStorage.setItem("pacta_last_municipio_id", selectedMunicipioId);
     }
   }, [selectedMunicipioId]);
+
+  // Guard de rota: nao-admin sem acesso a tela atual -> 1a tela permitida.
+  // Seguranca real e no backend (ensure_tela / 403); isto e UX.
+  useEffect(() => {
+    const allowed = allowedTelasOf(user);
+    if (!allowed) return; // admin ou ainda carregando
+    if (allowed.has(hrefToTela(pathname))) return;
+    const firstAllowed = allLeafHrefs(NAV_ITEMS).find((h) => allowed.has(hrefToTela(h)));
+    if (firstAllowed && firstAllowed !== pathname) router.replace(firstAllowed);
+  }, [user, pathname, router]);
 
   const handleMunicipioChange = useCallback(
     (value: string) => {

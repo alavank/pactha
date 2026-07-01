@@ -14,6 +14,9 @@ class UserResponse(BaseModel):
     role: str
     active: bool
     must_change_password: Optional[bool] = False
+    # None = admin (acesso total). Lista = escopo do nao-admin.
+    telas: Optional[list[str]] = None
+    municipio_ids: Optional[list[int]] = None
 
     class Config:
         from_attributes = True

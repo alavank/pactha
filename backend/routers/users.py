@@ -10,7 +10,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from database import get_db
 from models.user import User
@@ -37,6 +37,7 @@ class CreateUserRequest(BaseModel):
     name: str
     role: str = "admin"  # default admin (preferencia atual do cliente)
     municipio_ids: Optional[list[int]] = None  # municipios que o usuario pode acessar
+    telas: Optional[list[str]] = None  # telas/modulos que o usuario pode acessar
 
 
 class UpdateUserRequest(BaseModel):
@@ -44,6 +45,7 @@ class UpdateUserRequest(BaseModel):
     role: Optional[str] = None
     active: Optional[bool] = None
     municipio_ids: Optional[list[int]] = None
+    telas: Optional[list[str]] = None
 
 
 async def _set_user_municipios(db: AsyncSession, user_id: int, ids) -> None:
@@ -54,6 +56,20 @@ async def _set_user_municipios(db: AsyncSession, user_id: int, ids) -> None:
             text("INSERT INTO user_municipios (user_id, municipio_id) VALUES (:u, :m) "
                  "ON CONFLICT DO NOTHING"),
             {"u": user_id, "m": int(mid)},
+        )
+
+
+async def _set_user_telas(db: AsyncSession, user_id: int, telas) -> None:
+    """Substitui o conjunto de telas/modulos permitidos do usuario."""
+    await db.execute(text("DELETE FROM user_telas WHERE user_id = :u"), {"u": user_id})
+    for tela in (telas or []):
+        t = str(tela).strip()
+        if not t:
+            continue
+        await db.execute(
+            text("INSERT INTO user_telas (user_id, tela) VALUES (:u, :t) "
+                 "ON CONFLICT DO NOTHING"),
+            {"u": user_id, "t": t},
         )
 
 
@@ -76,10 +92,15 @@ async def list_users(
     by_user: dict[int, list[int]] = {}
     for uid, mid in mr.fetchall():
         by_user.setdefault(uid, []).append(mid)
+    tr = await db.execute(text("SELECT user_id, tela FROM user_telas"))
+    telas_by_user: dict[int, list[str]] = {}
+    for uid, tela in tr.fetchall():
+        telas_by_user.setdefault(uid, []).append(tela)
     return [{
         "id": u.id, "email": u.email, "name": u.name, "role": u.role,
         "active": u.active, "must_change_password": u.must_change_password,
         "municipio_ids": by_user.get(u.id, []),
+        "telas": sorted(telas_by_user.get(u.id, [])),
     } for u in users]
 
 
@@ -114,6 +135,9 @@ async def create_user(
     await db.refresh(user)
     if req.municipio_ids is not None:
         await _set_user_municipios(db, user.id, req.municipio_ids)
+        await db.commit()
+    if req.telas is not None:
+        await _set_user_telas(db, user.id, req.telas)
         await db.commit()
     await log_event(
         db, action="user.create", user=current, request=request,
@@ -171,6 +195,8 @@ async def update_user(
         u.active = req.active
     if req.municipio_ids is not None:
         await _set_user_municipios(db, u.id, req.municipio_ids)
+    if req.telas is not None:
+        await _set_user_telas(db, u.id, req.telas)
     await db.commit()
     await db.refresh(u)
     await log_event(

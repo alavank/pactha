@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from database import get_db
-from services.auth import get_current_user, ensure_municipio_access
+from services.auth import get_current_user, ensure_municipio_access, ensure_tela
 from models.user import User
 
 router = APIRouter(prefix="/api/parlamentares", tags=["parlamentares"])
@@ -61,6 +61,7 @@ async def listar(
       }, ...]
     """
     ensure_municipio_access(current, municipio_id)
+    ensure_tela(current, "parlamentares")
     by_norm: dict[str, dict] = defaultdict(lambda: {
         "nome_normalizado": "",
         "nome_display": "",
@@ -217,6 +218,7 @@ async def detalhe(
 ):
     """Retorna todos os lancamentos (convenios/propostas/emendas) desse parlamentar."""
     ensure_municipio_access(current, municipio_id)
+    ensure_tela(current, "parlamentares")
     # Aceita tanto chave normalizada quanto nome livre
     nome_param = nome_normalizado.replace("+", " ")
     # Busca por ILIKE em cada fonte com o nome original (case-insensitive)

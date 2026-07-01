@@ -18,10 +18,21 @@ from services.auth import (
     decode_refresh, revoke_jti,
     set_auth_cookies, clear_auth_cookies, decode_access,
     get_current_user, COOKIE_NAME_REFRESH, COOKIE_NAME_ACCESS,
+    load_user_scopes,
 )
 from services.audit import log_event
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+
+def _user_resp(user) -> UserResponse:
+    """UserResponse com escopos (telas/municipios). None = admin (acesso total)."""
+    resp = UserResponse.model_validate(user)
+    at = getattr(user, "allowed_telas", None)
+    am = getattr(user, "allowed_municipio_ids", None)
+    resp.telas = None if at is None else sorted(at)
+    resp.municipio_ids = None if am is None else sorted(am)
+    return resp
 
 # Rate limit in-memory: 5 tentativas/(IP+email)/60s
 _LOGIN_ATTEMPTS: dict[str, list[float]] = defaultdict(list)
@@ -71,10 +82,11 @@ async def login(
 
     await log_event(db, action="login.success", user=user, request=request)
 
+    await load_user_scopes(db, user)
     return LoginResponse(
         access_token=access,
         must_change_password=bool(user.must_change_password),
-        user=UserResponse.model_validate(user),
+        user=_user_resp(user),
     )
 
 
@@ -140,7 +152,7 @@ async def logout(
 
 @router.get("/me", response_model=UserResponse)
 async def me(user: User = Depends(get_current_user)):
-    return UserResponse.model_validate(user)
+    return _user_resp(user)
 
 
 @router.post("/change-password")

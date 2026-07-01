@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useEffect, useState, useCallback } from "react";
-import { UserPlus, KeyRound, Power, Loader2, Copy, Check, X, Building2 } from "lucide-react";
+import { UserPlus, KeyRound, Power, Loader2, Copy, Check, X, Building2, ListChecks } from "lucide-react";
 import api from "@/lib/api";
+import { TELAS, TELA_LABELS } from "@/lib/telas";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -20,6 +21,7 @@ interface Usuario {
   active: boolean;
   must_change_password?: boolean;
   municipio_ids?: number[];
+  telas?: string[];
 }
 
 interface Municipio { id: number; nome: string; uf: string; }
@@ -72,6 +74,37 @@ function MunicipioPicker({
   );
 }
 
+// Seletor de telas/modulos (chips com checkbox)
+function TelaPicker({
+  selected, onToggle,
+}: {
+  selected: Set<string>;
+  onToggle: (key: string) => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {TELAS.map((t) => {
+        const on = selected.has(t.key);
+        return (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => onToggle(t.key)}
+            className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors ${
+              on
+                ? "border-primary bg-primary/10 text-primary font-medium"
+                : "border-base-300 text-base-content/70 hover:bg-base-200"
+            }`}
+          >
+            {on && <Check className="size-3" />}
+            {t.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function UsuariosPage() {
   const [users, setUsers] = useState<Usuario[]>([]);
   const [municipios, setMunicipios] = useState<Municipio[]>([]);
@@ -83,11 +116,13 @@ export default function UsuariosPage() {
   const [novoNome, setNovoNome] = useState("");
   const [novoRole, setNovoRole] = useState("admin");
   const [novoMunis, setNovoMunis] = useState<Set<number>>(new Set());
+  const [novoTelas, setNovoTelas] = useState<Set<string>>(new Set());
   const [criando, setCriando] = useState(false);
 
-  // Editar acesso de municipios (modal)
+  // Editar acesso (modal): municipios + telas
   const [editUser, setEditUser] = useState<Usuario | null>(null);
   const [editSel, setEditSel] = useState<Set<number>>(new Set());
+  const [editTelas, setEditTelas] = useState<Set<string>>(new Set());
   const [salvandoAcesso, setSalvandoAcesso] = useState(false);
 
   // Senha gerada (modal)
@@ -128,6 +163,10 @@ export default function UsuariosPage() {
     setNovoMunis((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const toggleEdit = (id: number) =>
     setEditSel((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggleNovoTela = (k: string) =>
+    setNovoTelas((prev) => { const n = new Set(prev); n.has(k) ? n.delete(k) : n.add(k); return n; });
+  const toggleEditTela = (k: string) =>
+    setEditTelas((prev) => { const n = new Set(prev); n.has(k) ? n.delete(k) : n.add(k); return n; });
 
   const criar = async () => {
     if (!novoEmail.trim() || !novoNome.trim()) return;
@@ -136,9 +175,11 @@ export default function UsuariosPage() {
       const r = await api.post<SenhaResp>("/users", {
         email: novoEmail.trim(), name: novoNome.trim(), role: novoRole,
         municipio_ids: novoRole === "admin" ? [] : [...novoMunis],
+        telas: novoRole === "admin" ? [] : [...novoTelas],
       });
       setSenhaGerada(r.data);
-      setNovoEmail(""); setNovoNome(""); setNovoRole("admin"); setNovoMunis(new Set());
+      setNovoEmail(""); setNovoNome(""); setNovoRole("admin");
+      setNovoMunis(new Set()); setNovoTelas(new Set());
       await carregar();
     } catch (e: unknown) {
       alert((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || "Erro ao criar usuario");
@@ -150,13 +191,17 @@ export default function UsuariosPage() {
   const abrirAcesso = (u: Usuario) => {
     setEditUser(u);
     setEditSel(new Set(u.municipio_ids ?? []));
+    setEditTelas(new Set(u.telas ?? []));
   };
 
   const salvarAcesso = async () => {
     if (!editUser) return;
     setSalvandoAcesso(true);
     try {
-      await api.patch(`/users/${editUser.id}`, { municipio_ids: [...editSel] });
+      await api.patch(`/users/${editUser.id}`, {
+        municipio_ids: [...editSel],
+        telas: [...editTelas],
+      });
       setEditUser(null);
       await carregar();
     } catch (e: unknown) {
@@ -255,9 +300,21 @@ export default function UsuariosPage() {
           )}
         </div>
 
+        {/* Telas com acesso (so p/ nao-admin) */}
+        <div className="mt-3">
+          <label className="text-xs text-base-content/70 mb-1.5 flex items-center gap-1">
+            <ListChecks className="size-3.5" /> Telas com acesso
+          </label>
+          {novoRole === "admin" ? (
+            <p className="text-xs text-base-content/50 italic">Administrador enxerga todas as telas.</p>
+          ) : (
+            <TelaPicker selected={novoTelas} onToggle={toggleNovoTela} />
+          )}
+        </div>
+
         <p className="text-[11px] text-base-content/60 mt-2">
           Uma senha temporaria sera gerada automaticamente. O usuario sera obrigado a troca-la no primeiro login.
-          O usuario so vera dados dos municipios selecionados.
+          O usuario so vera os municipios e as telas selecionados.
         </p>
       </div>
 
@@ -276,6 +333,7 @@ export default function UsuariosPage() {
                 <TableHead>E-mail</TableHead>
                 <TableHead className="w-[150px]">Perfil</TableHead>
                 <TableHead>Municipios</TableHead>
+                <TableHead>Telas</TableHead>
                 <TableHead className="w-[90px] text-center">Status</TableHead>
                 <TableHead className="w-[210px] text-center">Acoes</TableHead>
               </TableRow>
@@ -314,6 +372,17 @@ export default function UsuariosPage() {
                       <span className="text-error/80">Nenhum</span>
                     )}
                   </TableCell>
+                  <TableCell className="text-xs">
+                    {u.role === "admin" ? (
+                      <span className="text-base-content/50 italic">Todas</span>
+                    ) : (u.telas && u.telas.length > 0) ? (
+                      <span className="text-base-content/70" title={u.telas.map((t) => TELA_LABELS[t] || t).join(", ")}>
+                        {u.telas.length >= TELAS.length ? "Todas" : `${u.telas.length} telas`}
+                      </span>
+                    ) : (
+                      <span className="text-error/80">Nenhuma</span>
+                    )}
+                  </TableCell>
                   <TableCell className="text-center">
                     <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] ${
                       u.active ? "bg-success/15 text-success" : "bg-base-300 text-base-content/70"
@@ -350,15 +419,29 @@ export default function UsuariosPage() {
           <div className="bg-base-100 rounded-lg shadow-2xl w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
             <div className="px-4 py-3 rounded-t-lg flex items-center justify-between border-b">
               <h3 className="font-bold text-base-content flex items-center gap-2">
-                <Building2 className="size-4 text-primary" /> Municipios de {editUser.name}
+                <Building2 className="size-4 text-primary" /> Acesso de {editUser.name}
               </h3>
               <button onClick={() => setEditUser(null)}><X className="size-5 text-base-content/60" /></button>
             </div>
-            <div className="p-4 space-y-3">
-              <p className="text-xs text-base-content/60">
-                Selecione os municipios que este usuario pode acessar. Ele so vera dados desses.
-              </p>
-              <MunicipioPicker municipios={municipios} selected={editSel} onToggle={toggleEdit} />
+            <div className="p-4 space-y-4">
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-base-content/70 flex items-center gap-1">
+                  <Building2 className="size-3.5" /> Municipios
+                </p>
+                <p className="text-[11px] text-base-content/60">
+                  O usuario so vera dados dos municipios marcados.
+                </p>
+                <MunicipioPicker municipios={municipios} selected={editSel} onToggle={toggleEdit} />
+              </div>
+              <div className="space-y-2 border-t pt-3">
+                <p className="text-xs font-semibold text-base-content/70 flex items-center gap-1">
+                  <ListChecks className="size-3.5" /> Telas
+                </p>
+                <p className="text-[11px] text-base-content/60">
+                  Somente as telas marcadas aparecem no menu do usuario.
+                </p>
+                <TelaPicker selected={editTelas} onToggle={toggleEditTela} />
+              </div>
               <div className="flex justify-end gap-2 pt-2">
                 <Button variant="outline" size="sm" onClick={() => setEditUser(null)}>Cancelar</Button>
                 <Button size="sm" className="bg-primary hover:bg-primary/90" onClick={salvarAcesso} disabled={salvandoAcesso}>

@@ -170,16 +170,23 @@ async def get_current_user(
     user = result.scalar_one_or_none()
     if user is None or not user.active:
         raise HTTPException(status_code=401, detail="Usuario nao encontrado")
-    # Escopo de municipios: admin -> None (todos); demais -> set atribuido no cadastro
+    await load_user_scopes(db, user)
+    return user
+
+
+async def load_user_scopes(db: AsyncSession, user: User) -> None:
+    """Anexa ao user os escopos de acesso: municipios + telas.
+    Admin -> None (tudo). Nao-admin -> conjuntos atribuidos (vazio = nenhum)."""
     if user.role == "admin":
         user.allowed_municipio_ids = None
-    else:
-        rows = await db.execute(
-            text("SELECT municipio_id FROM user_municipios WHERE user_id = :u"),
-            {"u": user.id},
-        )
-        user.allowed_municipio_ids = {r[0] for r in rows.fetchall()}
-    return user
+        user.allowed_telas = None
+        return
+    mrows = await db.execute(
+        text("SELECT municipio_id FROM user_municipios WHERE user_id = :u"), {"u": user.id})
+    user.allowed_municipio_ids = {r[0] for r in mrows.fetchall()}
+    trows = await db.execute(
+        text("SELECT tela FROM user_telas WHERE user_id = :u"), {"u": user.id})
+    user.allowed_telas = {r[0] for r in trows.fetchall()}
 
 
 def ensure_municipio_access(user: User, municipio_id) -> None:
@@ -197,3 +204,12 @@ def ensure_municipio_access(user: User, municipio_id) -> None:
         raise HTTPException(status_code=403, detail="Municipio invalido")
     if mid not in allowed:
         raise HTTPException(status_code=403, detail="Voce nao tem acesso a este municipio")
+
+
+def ensure_tela(user: User, tela: str) -> None:
+    """403 se o usuario nao tem acesso a tela/modulo (admin sempre passa)."""
+    allowed = getattr(user, "allowed_telas", None)
+    if allowed is None:
+        return
+    if tela not in allowed:
+        raise HTTPException(status_code=403, detail="Voce nao tem acesso a esta tela")

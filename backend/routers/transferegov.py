@@ -18,7 +18,7 @@ from sqlalchemy import select, text
 from database import get_db
 from models import Municipio
 from models.user import User
-from services.auth import get_current_user, ensure_municipio_access
+from services.auth import get_current_user, ensure_municipio_access, ensure_tela
 import httpx
 import unicodedata
 
@@ -92,6 +92,7 @@ async def buscar(
     do PACTA + filtros adicionais.
     """
     ensure_municipio_access(current, municipio_id)
+    ensure_tela(current, "transferegov")
     mun = (await db.execute(select(Municipio).where(Municipio.id == municipio_id))).scalar_one_or_none()
     if not mun:
         raise HTTPException(404, "Municipio nao encontrado")
@@ -204,6 +205,7 @@ async def voluntarias(
               -- exclui voluntarias, rejeitadas E encerradas
     """
     ensure_municipio_access(current, municipio_id)
+    ensure_tela(current, "transferegov")
     where = ["municipio_id = :mun"]
     params: dict = {"mun": municipio_id}
     if categoria == "voluntarias":
@@ -320,6 +322,7 @@ async def voluntarias_detalhe(
 ):
     """Detalhe completo de uma proposta (todos os campos capturados do portal)."""
     ensure_municipio_access(current, municipio_id)
+    ensure_tela(current, "transferegov")
     r = await db.execute(text("""
         SELECT numero_proposta, situacao, orgao, proponente, identificacao,
                codigo_instrumento, modalidade, situacao_siafi, numero_processo,
@@ -458,6 +461,7 @@ async def run_scraper_manual(
     """Dispara o scraper voluntarias manualmente (background). Util apos
     re-capturar a sessao gov.br via bookmarklet."""
     ensure_municipio_access(user, municipio_id)
+    ensure_tela(user, "transferegov")
     import asyncio as _aio
     from ingestion.transferegov_voluntarias import run, run_one
 

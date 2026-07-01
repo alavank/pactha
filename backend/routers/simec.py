@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from database import get_db
-from services.auth import get_current_user, ensure_municipio_access
+from services.auth import get_current_user, ensure_municipio_access, ensure_tela
 from models.user import User
 
 router = APIRouter(prefix="/api/simec", tags=["simec"])
@@ -34,6 +34,7 @@ async def dimensoes(
 ):
     """Sintese do PAR por dimensao (contagem de indicadores por pontuacao 1-4)."""
     ensure_municipio_access(current, municipio_id)
+    ensure_tela(current, "simec")
     r = await db.execute(text("""
         SELECT dimensao, score_4, score_3, score_2, score_1, score_na, updated_at
         FROM simec_par_dimensoes
@@ -63,6 +64,7 @@ async def liberacoes(
 ):
     """Liberacoes de recursos MEC (PNAE, PNATE, QUOTA, PDDE, etc)."""
     ensure_municipio_access(current, municipio_id)
+    ensure_tela(current, "simec")
     where = ["municipio_id = :mun"]
     params: dict = {"mun": municipio_id}
     if ano:
@@ -103,6 +105,7 @@ async def resumo(
 ):
     """Totais por programa e por ano (para sumario rapido na tela)."""
     ensure_municipio_access(current, municipio_id)
+    ensure_tela(current, "simec")
     rp = await db.execute(text("""
         SELECT programa, COUNT(*), COALESCE(SUM(valor), 0)
         FROM simec_par_liberacoes

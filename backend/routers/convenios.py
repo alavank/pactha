@@ -10,7 +10,7 @@ from typing import Optional
 from database import get_db
 from models import ConvenioEstadual
 from schemas.convenio import ConvenioResponse, ConvenioListResponse, ConvenioStats, AlertaVigencia
-from services.auth import get_current_user, ensure_municipio_access
+from services.auth import get_current_user, ensure_municipio_access, ensure_tela
 from models.user import User
 import math
 import os
@@ -86,6 +86,7 @@ async def list_situacoes(
     current: User = Depends(get_current_user),
 ):
     ensure_municipio_access(current, municipio_id)
+    ensure_tela(current, "convenios")
     q = select(ConvenioEstadual.situacao).distinct().where(ConvenioEstadual.situacao.is_not(None))
     if municipio_id:
         q = q.where(ConvenioEstadual.municipio_id == municipio_id)
@@ -100,6 +101,7 @@ async def list_anos(
     current: User = Depends(get_current_user),
 ):
     ensure_municipio_access(current, municipio_id)
+    ensure_tela(current, "convenios")
     q = select(ConvenioEstadual.ano).distinct().where(ConvenioEstadual.ano.is_not(None))
     if municipio_id:
         q = q.where(ConvenioEstadual.municipio_id == municipio_id)
@@ -123,6 +125,7 @@ async def list_convenios(
     current: User = Depends(get_current_user),
 ):
     ensure_municipio_access(current, municipio_id)
+    ensure_tela(current, "convenios")
     q = select(ConvenioEstadual)
     q_count = select(func.count()).select_from(ConvenioEstadual)
 
@@ -219,6 +222,7 @@ async def convenio_stats(
     current: User = Depends(get_current_user),
 ):
     ensure_municipio_access(current, municipio_id)
+    ensure_tela(current, "convenios")
     stats = ConvenioStats()
 
     q = select(
@@ -250,6 +254,7 @@ async def alertas_vigencia(
     current: User = Depends(get_current_user),
 ):
     ensure_municipio_access(current, municipio_id)
+    ensure_tela(current, "convenios")
     limite = date.today() + timedelta(days=dias)
     alertas = []
 
@@ -306,6 +311,7 @@ async def alertas_prestacao_contas(
 ):
     """Convenios vencidos ha mais de `dias` (default 90) -> prestacao de contas obrigatoria."""
     ensure_municipio_access(current, municipio_id)
+    ensure_tela(current, "convenios")
     corte = date.today() - timedelta(days=dias)
     alertas = []
 

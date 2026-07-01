@@ -5,6 +5,9 @@ export interface User {
   role: string;
   active: boolean;
   must_change_password?: boolean;
+  // null = admin (todas). Lista = escopo do nao-admin.
+  telas?: string[] | null;
+  municipio_ids?: number[] | null;
 }
 
 export interface Municipio {

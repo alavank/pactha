@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from database import get_db
-from services.auth import get_current_user
+from services.auth import get_current_user, ensure_tela
 from models.user import User
 from services.crypto import decrypt
 
@@ -40,6 +40,7 @@ FNS_CODE_OVERRIDE = {
 
 async def _ensure_fns_municipio(current, municipio: str, db: AsyncSession) -> None:
     """Non-admin so consulta FNS de municipio no seu escopo (casa por nome ou IBGE)."""
+    ensure_tela(current, "fns")
     allowed = getattr(current, "allowed_municipio_ids", None)
     if allowed is None:  # admin -> todos
         return
