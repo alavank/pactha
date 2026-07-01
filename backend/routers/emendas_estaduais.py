@@ -4,7 +4,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from typing import Optional
 from database import get_db
-from services.auth import get_current_user
+from services.auth import get_current_user, ensure_municipio_access
+from models.user import User
 
 router = APIRouter(prefix="/api/emendas-estaduais", tags=["emendas-estaduais"])
 
@@ -19,8 +20,9 @@ async def list_emendas_estaduais(
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=2000),
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
+    ensure_municipio_access(current, municipio_id)
     where_parts = ["1=1"]
     params: dict = {}
     if municipio_id:
@@ -72,9 +74,10 @@ async def list_emendas_estaduais(
 async def list_anos(
     municipio_id: Optional[int] = None,
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
     """Anos distintos com emendas."""
+    ensure_municipio_access(current, municipio_id)
     params: dict = {}
     where = "ano IS NOT NULL"
     if municipio_id:
@@ -88,9 +91,10 @@ async def list_anos(
 async def list_responsaveis(
     municipio_id: Optional[int] = None,
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
     """Responsaveis distintos."""
+    ensure_municipio_access(current, municipio_id)
     params: dict = {}
     where = "nome_responsavel IS NOT NULL AND nome_responsavel != ''"
     if municipio_id:
@@ -105,8 +109,9 @@ async def stats(
     municipio_id: Optional[int] = None,
     ano: Optional[int] = None,
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
+    ensure_municipio_access(current, municipio_id)
     where = "1=1"
     params: dict = {}
     if municipio_id:

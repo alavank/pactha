@@ -24,7 +24,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text, func
 from database import get_db
 from models import ConvenioEstadual, Municipio
-from services.auth import get_current_user
+from services.auth import get_current_user, ensure_municipio_access
+from models.user import User
 
 logger = logging.getLogger("ai")
 
@@ -903,9 +904,10 @@ async def _execute_loop(client, db, messages) -> dict:
 async def chat(
     body: ChatRequest,
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
     """Chat com a IA. Pode usar ferramentas para consultar o DB."""
+    ensure_municipio_access(current, body.municipio_id)
     result = await _run_ai_chat(
         db=db,
         message=body.message,

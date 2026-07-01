@@ -9,7 +9,8 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from database import get_db
-from services.auth import get_current_user
+from services.auth import get_current_user, ensure_municipio_access
+from models.user import User
 
 router = APIRouter(prefix="/api/status-changes", tags=["status-changes"])
 
@@ -26,9 +27,10 @@ async def listar(
     days: int = Query(30, description="janela em dias"),
     limit: int = Query(100),
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
     """Lista as mudancas de status recentes de um municipio (mais novas primeiro)."""
+    ensure_municipio_access(current, municipio_id)
     rows = (await db.execute(text("""
         SELECT id, fonte, tabela, ref, orgao, objeto,
                status_anterior, status_novo, changed_at

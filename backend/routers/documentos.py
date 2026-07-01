@@ -17,7 +17,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
 from models import Municipio
-from services.auth import get_current_user
+from services.auth import get_current_user, ensure_municipio_access
+from models.user import User
 from services.documentos_schema import get_schema, listar_tipos
 from services.documento_docx import gerar_docx
 from services.documento_pdf import gerar_pdf
@@ -68,8 +69,9 @@ async def listar(
     municipio_id: Optional[int] = Query(None),
     tipo: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
+    ensure_municipio_access(current, municipio_id)
     where, params = [], {}
     if municipio_id:
         where.append("municipio_id = :m"); params["m"] = municipio_id

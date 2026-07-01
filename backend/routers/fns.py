@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from database import get_db
 from services.auth import get_current_user
+from models.user import User
 from services.crypto import decrypt
 
 router = APIRouter(prefix="/api/fns", tags=["fns"])
@@ -35,6 +36,26 @@ FNS_CODE_OVERRIDE = {
     "TOLEDO": "316910",
     "PIRACEMA": "315060",
 }
+
+
+async def _ensure_fns_municipio(current, municipio: str, db: AsyncSession) -> None:
+    """Non-admin so consulta FNS de municipio no seu escopo (casa por nome ou IBGE)."""
+    allowed = getattr(current, "allowed_municipio_ids", None)
+    if allowed is None:  # admin -> todos
+        return
+    if not allowed:
+        raise HTTPException(403, "Voce nao tem municipios atribuidos")
+    rows = await db.execute(
+        text("SELECT nome, ibge_code FROM municipios WHERE id = ANY(:ids)"),
+        {"ids": list(allowed)},
+    )
+    alvo = (municipio or "").strip().upper()
+    for nome, ibge in rows.fetchall():
+        n = (nome or "").strip().upper()
+        ib = (ibge or "").strip()
+        if alvo in (n, ib, ib[:6]) or FNS_CODE_OVERRIDE.get(n) == alvo:
+            return
+    raise HTTPException(403, "Voce nao tem acesso a este municipio")
 
 
 async def _get_cookies(db: AsyncSession) -> dict:
@@ -62,9 +83,10 @@ async def buscar(
     pagina: int = Query(1, ge=1),
     tamanho: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
     """Busca propostas FAF no FNS em tempo real."""
+    await _ensure_fns_municipio(current, municipio, db)
     # Resolve codigo IBGE FNS
     cod = municipio
     if not cod.isdigit():
@@ -286,7 +308,7 @@ async def listar_individuais(
     tipo_proposta: str = Query(..., description="Ex: EQUIPAMENTO, CUSTEIO MAC, INCREMENTO PAP"),
     tipo_recurso: str = Query(..., description="PROGRAMA / EMENDA INDIVIDUAL / etc"),
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
     """Lista propostas individuais de um grupo (nivel 1 do detalhamento).
 
@@ -297,6 +319,7 @@ async def listar_individuais(
     "destravam" o agrupamento: a resposta vem com 1 item POR PROPOSTA
     individual (cada um com nuProposta), ao inves do agregado.
     """
+    await _ensure_fns_municipio(current, municipio, db)
     cod = FNS_CODE_OVERRIDE.get(municipio.upper().strip(), municipio)
     cookies = await _get_cookies(db)
     params = {

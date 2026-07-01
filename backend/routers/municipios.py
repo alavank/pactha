@@ -4,8 +4,9 @@ from sqlalchemy import select, func, text
 from datetime import date, datetime, timedelta
 from database import get_db
 from models import Municipio, ConvenioEstadual
+from models.user import User
 from schemas.municipio import MunicipioResponse, MunicipioSummary
-from services.auth import get_current_user
+from services.auth import get_current_user, ensure_municipio_access
 
 router = APIRouter(prefix="/api/municipios", tags=["municipios"])
 
@@ -24,11 +25,16 @@ def _parse_dt(s) -> date | None:
 @router.get("", response_model=list[MunicipioResponse])
 async def list_municipios(
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(Municipio).where(Municipio.active == True).order_by(Municipio.nome)
-    )
+    q = select(Municipio).where(Municipio.active == True)
+    # Escopo: nao-admin so ve os municipios atribuidos a ele
+    allowed = getattr(current, "allowed_municipio_ids", None)
+    if allowed is not None:
+        if not allowed:
+            return []
+        q = q.where(Municipio.id.in_(allowed))
+    result = await db.execute(q.order_by(Municipio.nome))
     return [MunicipioResponse.model_validate(m) for m in result.scalars().all()]
 
 
@@ -36,8 +42,9 @@ async def list_municipios(
 async def municipio_summary(
     municipio_id: int,
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
+    ensure_municipio_access(current, municipio_id)
     result = await db.execute(select(Municipio).where(Municipio.id == municipio_id))
     mun = result.scalar_one_or_none()
     if not mun:

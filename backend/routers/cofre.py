@@ -16,7 +16,7 @@ import logging
 from database import get_db
 from models.cofre import CofreSenha
 from models.user import User
-from services.auth import get_current_user
+from services.auth import get_current_user, ensure_municipio_access
 from services import crypto
 from services.audit import log_event
 
@@ -107,6 +107,7 @@ async def list_senhas(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    ensure_municipio_access(user, municipio_id)
     q = select(CofreSenha)
     if municipio_id:
         q = q.where(CofreSenha.municipio_id == municipio_id)

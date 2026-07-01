@@ -17,7 +17,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
 from database import get_db
 from models import Municipio
-from services.auth import get_current_user
+from models.user import User
+from services.auth import get_current_user, ensure_municipio_access
 import httpx
 import unicodedata
 
@@ -82,7 +83,7 @@ async def buscar(
     objeto: Optional[str] = Query(None, description="busca em politicasPublicas"),
     refresh: bool = Query(False, description="forca refresh do cache"),
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
     """Lista planos de acao filtrados pelo municipio + filtros opcionais.
 
@@ -90,6 +91,7 @@ async def buscar(
     baixa lista completa de MG (com cache 1h) e filtra por nome do municipio
     do PACTA + filtros adicionais.
     """
+    ensure_municipio_access(current, municipio_id)
     mun = (await db.execute(select(Municipio).where(Municipio.id == municipio_id))).scalar_one_or_none()
     if not mun:
         raise HTTPException(404, "Municipio nao encontrado")
@@ -189,7 +191,7 @@ async def voluntarias(
     vig_fim_ate: Optional[str] = Query(None, description="fim de vigencia <= AAAA-MM-DD"),
     categoria: Optional[str] = Query(None, description="geral | voluntarias | rejeitadas | encerradas"),
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
     """Lista propostas SICONV de um municipio, filtradas por categoria.
 
@@ -201,6 +203,7 @@ async def voluntarias(
       - geral: o restante (Em execucao, Aprovados em curso, em analise, etc.)
               -- exclui voluntarias, rejeitadas E encerradas
     """
+    ensure_municipio_access(current, municipio_id)
     where = ["municipio_id = :mun"]
     params: dict = {"mun": municipio_id}
     if categoria == "voluntarias":
@@ -313,9 +316,10 @@ async def voluntarias_detalhe(
     numero_proposta: str,
     municipio_id: int = Query(...),
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
     """Detalhe completo de uma proposta (todos os campos capturados do portal)."""
+    ensure_municipio_access(current, municipio_id)
     r = await db.execute(text("""
         SELECT numero_proposta, situacao, orgao, proponente, identificacao,
                codigo_instrumento, modalidade, situacao_siafi, numero_processo,
@@ -453,6 +457,7 @@ async def run_scraper_manual(
 ):
     """Dispara o scraper voluntarias manualmente (background). Util apos
     re-capturar a sessao gov.br via bookmarklet."""
+    ensure_municipio_access(user, municipio_id)
     import asyncio as _aio
     from ingestion.transferegov_voluntarias import run, run_one
 

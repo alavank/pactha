@@ -17,7 +17,7 @@ import jwt as pyjwt
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from models.user import User
 from database import get_db
@@ -170,4 +170,30 @@ async def get_current_user(
     user = result.scalar_one_or_none()
     if user is None or not user.active:
         raise HTTPException(status_code=401, detail="Usuario nao encontrado")
+    # Escopo de municipios: admin -> None (todos); demais -> set atribuido no cadastro
+    if user.role == "admin":
+        user.allowed_municipio_ids = None
+    else:
+        rows = await db.execute(
+            text("SELECT municipio_id FROM user_municipios WHERE user_id = :u"),
+            {"u": user.id},
+        )
+        user.allowed_municipio_ids = {r[0] for r in rows.fetchall()}
     return user
+
+
+def ensure_municipio_access(user: User, municipio_id) -> None:
+    """Barra (403) acesso a municipio fora do escopo do usuario.
+    Admin (allowed_municipio_ids=None) sempre passa. Nao-admin precisa informar
+    um municipio_id que esteja no seu conjunto atribuido."""
+    allowed = getattr(user, "allowed_municipio_ids", None)
+    if allowed is None:
+        return
+    if municipio_id is None:
+        raise HTTPException(status_code=403, detail="Selecione um municipio permitido")
+    try:
+        mid = int(municipio_id)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=403, detail="Municipio invalido")
+    if mid not in allowed:
+        raise HTTPException(status_code=403, detail="Voce nao tem acesso a este municipio")

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useCallback } from "react";
-import { UserPlus, KeyRound, Power, Loader2, Copy, Check, X } from "lucide-react";
+import { UserPlus, KeyRound, Power, Loader2, Copy, Check, X, Building2 } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,7 +19,10 @@ interface Usuario {
   role: string;
   active: boolean;
   must_change_password?: boolean;
+  municipio_ids?: number[];
 }
+
+interface Municipio { id: number; nome: string; uf: string; }
 
 interface SenhaResp {
   id: number;
@@ -34,8 +37,44 @@ const ROLES = [
   { value: "user", label: "Usuario" },
 ];
 
+// Seletor de municipios (chips com checkbox)
+function MunicipioPicker({
+  municipios, selected, onToggle,
+}: {
+  municipios: Municipio[];
+  selected: Set<number>;
+  onToggle: (id: number) => void;
+}) {
+  if (municipios.length === 0) {
+    return <p className="text-xs text-base-content/50">Nenhum municipio disponivel.</p>;
+  }
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {municipios.map((m) => {
+        const on = selected.has(m.id);
+        return (
+          <button
+            key={m.id}
+            type="button"
+            onClick={() => onToggle(m.id)}
+            className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors ${
+              on
+                ? "border-primary bg-primary/10 text-primary font-medium"
+                : "border-base-300 text-base-content/70 hover:bg-base-200"
+            }`}
+          >
+            {on && <Check className="size-3" />}
+            {m.nome} - {m.uf}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function UsuariosPage() {
   const [users, setUsers] = useState<Usuario[]>([]);
+  const [municipios, setMunicipios] = useState<Municipio[]>([]);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -43,17 +82,35 @@ export default function UsuariosPage() {
   const [novoEmail, setNovoEmail] = useState("");
   const [novoNome, setNovoNome] = useState("");
   const [novoRole, setNovoRole] = useState("admin");
+  const [novoMunis, setNovoMunis] = useState<Set<number>>(new Set());
   const [criando, setCriando] = useState(false);
+
+  // Editar acesso de municipios (modal)
+  const [editUser, setEditUser] = useState<Usuario | null>(null);
+  const [editSel, setEditSel] = useState<Set<number>>(new Set());
+  const [salvandoAcesso, setSalvandoAcesso] = useState(false);
 
   // Senha gerada (modal)
   const [senhaGerada, setSenhaGerada] = useState<SenhaResp | null>(null);
   const [copiado, setCopiado] = useState(false);
 
+  const munNome = useCallback(
+    (id: number) => {
+      const m = municipios.find((x) => x.id === id);
+      return m ? `${m.nome}-${m.uf}` : `#${id}`;
+    },
+    [municipios]
+  );
+
   const carregar = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await api.get<Usuario[]>("/users");
-      setUsers(r.data);
+      const [ru, rm] = await Promise.all([
+        api.get<Usuario[]>("/users"),
+        api.get<Municipio[]>("/municipios"),
+      ]);
+      setUsers(ru.data);
+      setMunicipios(Array.isArray(rm.data) ? rm.data : []);
       setErro(null);
     } catch (e: unknown) {
       const msg = (e as { response?: { status?: number } })?.response?.status === 403
@@ -67,20 +124,45 @@ export default function UsuariosPage() {
 
   useEffect(() => { carregar(); }, [carregar]);
 
+  const toggleNovo = (id: number) =>
+    setNovoMunis((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggleEdit = (id: number) =>
+    setEditSel((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
   const criar = async () => {
     if (!novoEmail.trim() || !novoNome.trim()) return;
     setCriando(true);
     try {
       const r = await api.post<SenhaResp>("/users", {
         email: novoEmail.trim(), name: novoNome.trim(), role: novoRole,
+        municipio_ids: novoRole === "admin" ? [] : [...novoMunis],
       });
       setSenhaGerada(r.data);
-      setNovoEmail(""); setNovoNome(""); setNovoRole("admin");
+      setNovoEmail(""); setNovoNome(""); setNovoRole("admin"); setNovoMunis(new Set());
       await carregar();
     } catch (e: unknown) {
       alert((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || "Erro ao criar usuario");
     } finally {
       setCriando(false);
+    }
+  };
+
+  const abrirAcesso = (u: Usuario) => {
+    setEditUser(u);
+    setEditSel(new Set(u.municipio_ids ?? []));
+  };
+
+  const salvarAcesso = async () => {
+    if (!editUser) return;
+    setSalvandoAcesso(true);
+    try {
+      await api.patch(`/users/${editUser.id}`, { municipio_ids: [...editSel] });
+      setEditUser(null);
+      await carregar();
+    } catch (e: unknown) {
+      alert((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || "Erro ao salvar acesso");
+    } finally {
+      setSalvandoAcesso(false);
     }
   };
 
@@ -160,8 +242,22 @@ export default function UsuariosPage() {
             </Button>
           </div>
         </div>
+
+        {/* Municipios com acesso (so p/ nao-admin) */}
+        <div className="mt-3">
+          <label className="text-xs text-base-content/70 mb-1.5 flex items-center gap-1">
+            <Building2 className="size-3.5" /> Municipios com acesso
+          </label>
+          {novoRole === "admin" ? (
+            <p className="text-xs text-base-content/50 italic">Administrador enxerga todos os municipios.</p>
+          ) : (
+            <MunicipioPicker municipios={municipios} selected={novoMunis} onToggle={toggleNovo} />
+          )}
+        </div>
+
         <p className="text-[11px] text-base-content/60 mt-2">
           Uma senha temporaria sera gerada automaticamente. O usuario sera obrigado a troca-la no primeiro login.
+          O usuario so vera dados dos municipios selecionados.
         </p>
       </div>
 
@@ -179,8 +275,9 @@ export default function UsuariosPage() {
                 <TableHead>Nome</TableHead>
                 <TableHead>E-mail</TableHead>
                 <TableHead className="w-[150px]">Perfil</TableHead>
+                <TableHead>Municipios</TableHead>
                 <TableHead className="w-[90px] text-center">Status</TableHead>
-                <TableHead className="w-[180px] text-center">Acoes</TableHead>
+                <TableHead className="w-[210px] text-center">Acoes</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -204,6 +301,19 @@ export default function UsuariosPage() {
                       </SelectContent>
                     </Select>
                   </TableCell>
+                  <TableCell className="text-xs">
+                    {u.role === "admin" ? (
+                      <span className="text-base-content/50 italic">Todos</span>
+                    ) : (u.municipio_ids && u.municipio_ids.length > 0) ? (
+                      <span className="text-base-content/70" title={u.municipio_ids.map(munNome).join(", ")}>
+                        {u.municipio_ids.length === 1
+                          ? munNome(u.municipio_ids[0])
+                          : `${u.municipio_ids.length} municipios`}
+                      </span>
+                    ) : (
+                      <span className="text-error/80">Nenhum</span>
+                    )}
+                  </TableCell>
                   <TableCell className="text-center">
                     <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] ${
                       u.active ? "bg-success/15 text-success" : "bg-base-300 text-base-content/70"
@@ -213,8 +323,12 @@ export default function UsuariosPage() {
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center justify-center gap-1">
+                      <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => abrirAcesso(u)}
+                              title="Editar municipios com acesso" disabled={u.role === "admin"}>
+                        <Building2 className="size-3 mr-1" /> Acesso
+                      </Button>
                       <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => resetarSenha(u)} title="Resetar senha">
-                        <KeyRound className="size-3 mr-1" /> Senha
+                        <KeyRound className="size-3" />
                       </Button>
                       <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => toggleAtivo(u)}
                               title={u.active ? "Desativar" : "Ativar"}>
@@ -229,9 +343,37 @@ export default function UsuariosPage() {
         )}
       </div>
 
+      {/* Modal editar acesso de municipios */}
+      {editUser && (
+        <div className="fixed inset-0 z-50 bg-neutral/50 flex items-center justify-center p-4"
+             onClick={() => setEditUser(null)}>
+          <div className="bg-base-100 rounded-lg shadow-2xl w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
+            <div className="px-4 py-3 rounded-t-lg flex items-center justify-between border-b">
+              <h3 className="font-bold text-base-content flex items-center gap-2">
+                <Building2 className="size-4 text-primary" /> Municipios de {editUser.name}
+              </h3>
+              <button onClick={() => setEditUser(null)}><X className="size-5 text-base-content/60" /></button>
+            </div>
+            <div className="p-4 space-y-3">
+              <p className="text-xs text-base-content/60">
+                Selecione os municipios que este usuario pode acessar. Ele so vera dados desses.
+              </p>
+              <MunicipioPicker municipios={municipios} selected={editSel} onToggle={toggleEdit} />
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="outline" size="sm" onClick={() => setEditUser(null)}>Cancelar</Button>
+                <Button size="sm" className="bg-primary hover:bg-primary/90" onClick={salvarAcesso} disabled={salvandoAcesso}>
+                  {salvandoAcesso ? <Loader2 className="size-4 animate-spin mr-1" /> : <Check className="size-4 mr-1" />}
+                  Salvar
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal senha gerada */}
       {senhaGerada && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
+        <div className="fixed inset-0 z-50 bg-neutral/50 flex items-center justify-center p-4"
              onClick={() => setSenhaGerada(null)}>
           <div className="bg-base-100 rounded-lg shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
             <div className="bg-success/15 px-4 py-3 rounded-t-lg flex items-center justify-between border-b">

@@ -9,7 +9,7 @@ import string
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, text
 from pydantic import BaseModel, Field
 
 from database import get_db
@@ -36,12 +36,25 @@ class CreateUserRequest(BaseModel):
     email: str
     name: str
     role: str = "admin"  # default admin (preferencia atual do cliente)
+    municipio_ids: Optional[list[int]] = None  # municipios que o usuario pode acessar
 
 
 class UpdateUserRequest(BaseModel):
     name: Optional[str] = None
     role: Optional[str] = None
     active: Optional[bool] = None
+    municipio_ids: Optional[list[int]] = None
+
+
+async def _set_user_municipios(db: AsyncSession, user_id: int, ids) -> None:
+    """Substitui o conjunto de municipios permitidos do usuario."""
+    await db.execute(text("DELETE FROM user_municipios WHERE user_id = :u"), {"u": user_id})
+    for mid in (ids or []):
+        await db.execute(
+            text("INSERT INTO user_municipios (user_id, municipio_id) VALUES (:u, :m) "
+                 "ON CONFLICT DO NOTHING"),
+            {"u": user_id, "m": int(mid)},
+        )
 
 
 class SenhaResetResponse(BaseModel):
@@ -51,14 +64,23 @@ class SenhaResetResponse(BaseModel):
     senha_temporaria: str
 
 
-@router.get("", response_model=list[UserResponse])
+@router.get("")
 async def list_users(
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
     _require_admin(current)
     r = await db.execute(select(User).order_by(User.id))
-    return [UserResponse.model_validate(u) for u in r.scalars().all()]
+    users = r.scalars().all()
+    mr = await db.execute(text("SELECT user_id, municipio_id FROM user_municipios"))
+    by_user: dict[int, list[int]] = {}
+    for uid, mid in mr.fetchall():
+        by_user.setdefault(uid, []).append(mid)
+    return [{
+        "id": u.id, "email": u.email, "name": u.name, "role": u.role,
+        "active": u.active, "must_change_password": u.must_change_password,
+        "municipio_ids": by_user.get(u.id, []),
+    } for u in users]
 
 
 @router.post("", response_model=SenhaResetResponse)
@@ -90,6 +112,9 @@ async def create_user(
     db.add(user)
     await db.commit()
     await db.refresh(user)
+    if req.municipio_ids is not None:
+        await _set_user_municipios(db, user.id, req.municipio_ids)
+        await db.commit()
     await log_event(
         db, action="user.create", user=current, request=request,
         target_type="user", target_id=user.id,
@@ -144,6 +169,8 @@ async def update_user(
         u.role = req.role
     if req.active is not None:
         u.active = req.active
+    if req.municipio_ids is not None:
+        await _set_user_municipios(db, u.id, req.municipio_ids)
     await db.commit()
     await db.refresh(u)
     await log_event(

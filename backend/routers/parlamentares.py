@@ -20,7 +20,8 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from database import get_db
-from services.auth import get_current_user
+from services.auth import get_current_user, ensure_municipio_access
+from models.user import User
 
 router = APIRouter(prefix="/api/parlamentares", tags=["parlamentares"])
 
@@ -45,7 +46,7 @@ async def listar(
     municipio_id: Optional[int] = Query(None, description="Filtra um municipio (None=todos)"),
     q: Optional[str] = Query(None, description="Busca parcial no nome"),
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
     """Lista agregada de parlamentares, com totais cross-fonte.
 
@@ -59,6 +60,7 @@ async def listar(
         por_fonte: {sigcon: 8, voluntaria: 2, emenda: 2},
       }, ...]
     """
+    ensure_municipio_access(current, municipio_id)
     by_norm: dict[str, dict] = defaultdict(lambda: {
         "nome_normalizado": "",
         "nome_display": "",
@@ -211,9 +213,10 @@ async def detalhe(
     nome_normalizado: str,
     municipio_id: Optional[int] = Query(None),
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
     """Retorna todos os lancamentos (convenios/propostas/emendas) desse parlamentar."""
+    ensure_municipio_access(current, municipio_id)
     # Aceita tanto chave normalizada quanto nome livre
     nome_param = nome_normalizado.replace("+", " ")
     # Busca por ILIKE em cada fonte com o nome original (case-insensitive)

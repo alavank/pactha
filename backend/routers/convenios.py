@@ -10,7 +10,8 @@ from typing import Optional
 from database import get_db
 from models import ConvenioEstadual
 from schemas.convenio import ConvenioResponse, ConvenioListResponse, ConvenioStats, AlertaVigencia
-from services.auth import get_current_user
+from services.auth import get_current_user, ensure_municipio_access
+from models.user import User
 import math
 import os
 import re
@@ -82,8 +83,9 @@ def estadual_to_response(c: ConvenioEstadual) -> ConvenioResponse:
 async def list_situacoes(
     municipio_id: Optional[int] = None,
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
+    ensure_municipio_access(current, municipio_id)
     q = select(ConvenioEstadual.situacao).distinct().where(ConvenioEstadual.situacao.is_not(None))
     if municipio_id:
         q = q.where(ConvenioEstadual.municipio_id == municipio_id)
@@ -95,8 +97,9 @@ async def list_situacoes(
 async def list_anos(
     municipio_id: Optional[int] = None,
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
+    ensure_municipio_access(current, municipio_id)
     q = select(ConvenioEstadual.ano).distinct().where(ConvenioEstadual.ano.is_not(None))
     if municipio_id:
         q = q.where(ConvenioEstadual.municipio_id == municipio_id)
@@ -117,8 +120,9 @@ async def list_convenios(
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
+    ensure_municipio_access(current, municipio_id)
     q = select(ConvenioEstadual)
     q_count = select(func.count()).select_from(ConvenioEstadual)
 
@@ -212,8 +216,9 @@ async def list_convenios(
 async def convenio_stats(
     municipio_id: Optional[int] = None,
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
+    ensure_municipio_access(current, municipio_id)
     stats = ConvenioStats()
 
     q = select(
@@ -242,8 +247,9 @@ async def alertas_vigencia(
     municipio_id: Optional[int] = None,
     dias: int = Query(120, ge=1),
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
+    ensure_municipio_access(current, municipio_id)
     limite = date.today() + timedelta(days=dias)
     alertas = []
 
@@ -296,9 +302,10 @@ async def alertas_prestacao_contas(
     municipio_id: Optional[int] = None,
     dias: int = Query(90, ge=1, description="Dias minimos apos o vencimento"),
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
     """Convenios vencidos ha mais de `dias` (default 90) -> prestacao de contas obrigatoria."""
+    ensure_municipio_access(current, municipio_id)
     corte = date.today() - timedelta(days=dias)
     alertas = []
 

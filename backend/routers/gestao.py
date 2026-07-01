@@ -24,7 +24,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from database import get_db
-from services.auth import get_current_user
+from services.auth import get_current_user, ensure_municipio_access
+from models.user import User
 
 router = APIRouter(prefix="/api/gestao", tags=["gestao"])
 
@@ -137,8 +138,9 @@ async def listar(
     fonte: Optional[str] = Query(None),
     status: Optional[str] = Query(None, description="Filtra por status_interno"),
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
+    ensure_municipio_access(current, municipio_id)
     where = []
     params: dict = {}
     if municipio_id:

@@ -19,7 +19,8 @@ from sqlalchemy import text
 import json
 from database import get_db
 from models import Municipio
-from services.auth import get_current_user
+from services.auth import get_current_user, ensure_municipio_access
+from models.user import User
 from services.rm_builder import montar_conteudo
 from services.rm_pdf import gerar_pdf
 
@@ -66,8 +67,9 @@ def _row_to_dict(row) -> dict:
 async def listar(
     municipio_id: Optional[int] = Query(None),
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
+    ensure_municipio_access(current, municipio_id)
     where = []
     params: dict = {}
     if municipio_id:

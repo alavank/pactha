@@ -8,7 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
 from database import get_db
 from models import ConvenioEstadual, Municipio
-from services.auth import get_current_user
+from models.user import User
+from services.auth import get_current_user, ensure_municipio_access
 
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib import colors
@@ -76,8 +77,9 @@ def _build_pdf(title: str, subtitle: str, headers: list, rows: list, landscape_m
 async def export_convenios_pdf(
     municipio_id: int = Query(...),
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
+    ensure_municipio_access(current, municipio_id)
     mun = (await db.execute(select(Municipio).where(Municipio.id == municipio_id))).scalar_one_or_none()
     if not mun:
         raise HTTPException(404, "Municipio nao encontrado")
@@ -127,10 +129,11 @@ async def export_voluntarias_pdf(
     vig_fim_de: Optional[str] = Query(None),
     vig_fim_ate: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
     """PDF dos instrumentos FEDERAIS (TransfereGov) com os MESMOS filtros da tela —
     relatorio personalizado da selecao (parlamentar, vigencia, situacao, etc.)."""
+    ensure_municipio_access(current, municipio_id)
     mun = (await db.execute(select(Municipio).where(Municipio.id == municipio_id))).scalar_one_or_none()
     if not mun:
         raise HTTPException(404, "Municipio nao encontrado")
@@ -197,10 +200,11 @@ async def export_plano_acao_pdf(
     emenda: Optional[str] = Query(None),
     objeto: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
     """PDF dos Planos de Acao (Transferencia Especial / Pix Parlamentar) com os
     MESMOS filtros da tela Especiais."""
+    ensure_municipio_access(current, municipio_id)
     mun = (await db.execute(select(Municipio).where(Municipio.id == municipio_id))).scalar_one_or_none()
     if not mun:
         raise HTTPException(404, "Municipio nao encontrado")
@@ -246,8 +250,9 @@ async def export_plano_acao_pdf(
 async def export_emendas_pdf(
     municipio_id: int = Query(...),
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
+    ensure_municipio_access(current, municipio_id)
     mun = (await db.execute(select(Municipio).where(Municipio.id == municipio_id))).scalar_one_or_none()
     if not mun:
         raise HTTPException(404, "Municipio nao encontrado")
@@ -282,9 +287,10 @@ async def export_dou_pdf(
     municipio_id: int = Query(...),
     edicoes: list[str] = Query(...),
     titulos: list[str] = Query(default=[]),
-    _=Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
     """DOU eh real-time. Frontend envia os titulos/edicoes ja filtrados via query."""
+    ensure_municipio_access(current, municipio_id)
     rows = []
     for i, (titulo, edicao) in enumerate(zip(titulos, edicoes)):
         rows.append([
