@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Eye, EyeOff, KeyRound, Plus, Trash2, ExternalLink } from "lucide-react";
+import { Eye, EyeOff, KeyRound, Plus, Trash2, ExternalLink, Pencil } from "lucide-react";
 import api from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -144,6 +144,10 @@ export default function CofrePage() {
   const [isIntegracao, setIsIntegracao] = useState(true);
   const [integracaoSelecionada, setIntegracaoSelecionada] = useState<string>("");
 
+  // Edicao de uma senha existente (troca usuario/senha/observacao sem perder a integracao)
+  const [editItem, setEditItem] = useState<Senha | null>(null);
+  const [editForm, setEditForm] = useState({ usuario: "", senha: "", observacao: "" });
+
   const handleSelecionarIntegracao = (key: string) => {
     setIntegracaoSelecionada(key);
     const integ = INTEGRACOES.find((i) => i.automation_key === key);
@@ -222,6 +226,29 @@ export default function CofrePage() {
       fetchSenhas();
     } catch {
       toast.error("Erro ao remover");
+    }
+  };
+
+  const openEdit = (s: Senha) => {
+    setEditItem(s);
+    setEditForm({ usuario: s.usuario || "", senha: "", observacao: s.observacao || "" });
+  };
+
+  const handleUpdate = async () => {
+    if (!editItem) return;
+    // senha so e enviada se preenchida (em branco = mantem a atual)
+    const payload: Record<string, string> = {
+      usuario: editForm.usuario,
+      observacao: editForm.observacao,
+    };
+    if (editForm.senha) payload.senha = editForm.senha;
+    try {
+      await api.put(`/cofre/${editItem.id}`, payload);
+      toast.success(editForm.senha ? "Senha atualizada" : "Dados atualizados");
+      setEditItem(null);
+      fetchSenhas();
+    } catch {
+      toast.error("Erro ao atualizar");
     }
   };
 
@@ -553,12 +580,22 @@ export default function CofrePage() {
                         <p className="text-xs text-muted-foreground mt-2">{s.observacao}</p>
                       )}
                     </div>
-                    <button
-                      onClick={() => handleDelete(s.id)}
-                      className="text-error hover:text-error p-1"
-                    >
-                      <Trash2 className="size-4" />
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => openEdit(s)}
+                        className="text-base-content/60 hover:text-primary p-1"
+                        title="Editar / trocar senha"
+                      >
+                        <Pencil className="size-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(s.id)}
+                        className="text-error hover:text-error p-1"
+                        title="Remover"
+                      >
+                        <Trash2 className="size-4" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -566,6 +603,51 @@ export default function CofrePage() {
           </Card>
         ))
       )}
+
+      {/* Dialog de edicao (troca usuario/senha sem perder a integracao) */}
+      <Dialog open={!!editItem} onOpenChange={(o) => { if (!o) setEditItem(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Editar — {editItem?.sistema}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <label className="text-sm font-medium">Usuario</label>
+              <Input
+                value={editForm.usuario}
+                onChange={(e) => setEditForm({ ...editForm, usuario: e.target.value })}
+                placeholder="Login / CPF"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium">Nova senha</label>
+              <Input
+                type="password"
+                value={editForm.senha}
+                onChange={(e) => setEditForm({ ...editForm, senha: e.target.value })}
+                placeholder="Deixe em branco para manter a senha atual"
+              />
+              <p className="text-xs text-base-content/60 mt-1">
+                Preencha para gravar uma nova senha; em branco mantem a atual.
+              </p>
+            </div>
+            <div>
+              <label className="text-sm font-medium">Observacao</label>
+              <Input
+                value={editForm.observacao}
+                onChange={(e) => setEditForm({ ...editForm, observacao: e.target.value })}
+                placeholder="Opcional"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditItem(null)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleUpdate}>Salvar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
