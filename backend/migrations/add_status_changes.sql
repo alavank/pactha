@@ -34,11 +34,16 @@ BEGIN
                               OR upper(COALESCE(NEW.fonte, '')) LIKE '%MS%' THEN 'fns'
                             ELSE 'sigcon' END;
         END IF;
-        INSERT INTO status_changes
-            (municipio_id, fonte, tabela, ref, orgao, objeto, status_anterior, status_novo)
-        VALUES
-            (NEW.municipio_id, v_fonte, TG_TABLE_NAME, v_ref, v_orgao, NEW.objeto,
-             OLD.situacao, NEW.situacao);
+        -- Nao registra lixo: convenio sem objeto util ou sem referencia valida
+        -- (ex.: linhas mal parseadas do SIGCON com objeto 'AA' / ref 'Nao ha')
+        IF length(trim(coalesce(NEW.objeto, ''))) > 3
+           AND coalesce(v_ref, '') !~* 'n[aã]o h' THEN
+            INSERT INTO status_changes
+                (municipio_id, fonte, tabela, ref, orgao, objeto, status_anterior, status_novo)
+            VALUES
+                (NEW.municipio_id, v_fonte, TG_TABLE_NAME, v_ref, v_orgao, NEW.objeto,
+                 OLD.situacao, NEW.situacao);
+        END IF;
     END IF;
     RETURN NEW;
 END;

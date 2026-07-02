@@ -124,6 +124,7 @@ def _index_dataset(gz_bytes: bytes):
             n += 1
             rec = {
                 "id": (g(row, "id_convenio") or "").strip(),
+                "obj": (g(row, "nome") or g(row, "objetivo") or "").strip(),
                 "contra": _money(g(row, "vr_contra_public")),
                 "vig_ini": _dt(g(row, "dt_vigencia_inicial")),
                 "vig_fim": _dt(g(row, "dt_vigencia_final")),
@@ -183,11 +184,13 @@ def backfill() -> int:
             dt_vigencia_inicial = COALESCE(dt_vigencia_inicial, %s),
             dt_vigencia_atual   = COALESCE(dt_vigencia_atual, %s),
             dt_vigencia_final   = COALESCE(dt_vigencia_final, %s),
+            objeto = CASE WHEN length(trim(coalesce(objeto, ''))) <= 3
+                          THEN COALESCE(NULLIF(%s, ''), objeto) ELSE objeto END,
             valor_repassado = CASE WHEN %s::numeric IS NOT NULL THEN %s::numeric ELSE valor_repassado END,
             updated_at = NOW()
           WHERE id = %s""",
           (rec["contra"], rec["vig_ini"], rec["vig_atual"] or rec["vig_fim"], rec["vig_fim"],
-           repassado, repassado, cid))
+           rec.get("obj"), repassado, repassado, cid))
         if cur.rowcount:
             upd += 1
     conn.commit()

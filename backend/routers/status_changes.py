@@ -37,6 +37,8 @@ async def listar(
         FROM status_changes
         WHERE municipio_id = :m
           AND changed_at >= NOW() - make_interval(days => :days)
+          AND length(trim(coalesce(objeto, ''))) > 3
+          AND coalesce(ref, '') !~* 'n[aã]o h'
         ORDER BY changed_at DESC
         LIMIT :lim
     """), {"m": municipio_id, "days": days, "lim": limit})).fetchall()
