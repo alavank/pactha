@@ -492,11 +492,47 @@ async def _scrape_emendas(page, anos: list[int]) -> list[dict]:
 
 
 async def _login(page, cpf: str, senha: str):
-    await page.goto(LOGIN_URL, timeout=60000, wait_until="networkidle")
-    await page.fill('input[id="frmLogin:iptTxtUsuario"]', cpf)
-    await page.fill('input[id="frmLogin:iptTxtSenha"]', senha)
-    await page.click('button[id="frmLogin:j_idt28"]')
-    await page.wait_for_timeout(8000)
+    # Submit robusto: o id do botao e auto-gerado do JSF (frmLogin:j_idtNN) e
+    # VARIA entre sessoes/municipios -> por isso Piracema/Toledo/Perdigao falhavam.
+    # Tenta o id conhecido, depois selectors estaveis (type=submit), depois Enter.
+    async def _attempt() -> bool:
+        await page.goto(LOGIN_URL, timeout=60000, wait_until="networkidle")
+        await page.wait_for_selector('input[id="frmLogin:iptTxtSenha"]', timeout=30000)
+        await page.fill('input[id="frmLogin:iptTxtUsuario"]', cpf)
+        await page.fill('input[id="frmLogin:iptTxtSenha"]', senha)
+        submitted = False
+        for sel in ('button[id="frmLogin:j_idt28"]',
+                    '#frmLogin button[type="submit"]',
+                    'button[id^="frmLogin:"][type="submit"]'):
+            try:
+                await page.click(sel, timeout=6000)
+                submitted = True
+                break
+            except Exception:
+                continue
+        if not submitted:
+            try:
+                await page.press('input[id="frmLogin:iptTxtSenha"]', "Enter")
+                submitted = True
+            except Exception:
+                pass
+        await page.wait_for_timeout(8000)
+        # Sucesso = saiu da tela de login (o campo senha nao existe mais)
+        return (await page.locator('input[id="frmLogin:iptTxtSenha"]').count()) == 0
+
+    ok = False
+    for tent in range(2):
+        try:
+            ok = await _attempt()
+        except Exception as e:
+            logger.warning(f"  login tentativa {tent + 1} falhou: {str(e)[:90]}")
+            ok = False
+        if ok:
+            break
+        await page.wait_for_timeout(3000)
+    if not ok:
+        raise RuntimeError("login SIGCON nao completou (form nao submeteu ou credencial invalida)")
+
     # Fecha modal CAGEC se aparecer
     for sel in ['#modalBloqueiosIrregularidades .ui-dialog-titlebar-close',
                 'a.ui-dialog-titlebar-close']:
@@ -560,6 +596,14 @@ async def _run():
     if not creds:
         logger.warning("Nenhuma credencial SIGCON-MG no cofre - cadastre via UI")
         return
+
+    # Filtro opcional: SIGCON_ONLY="Nome1,Nome2" reprocessa so esses municipios
+    # (util p/ re-tentar quem falhou no login sem re-scrapear todos). Default = todos.
+    _only = os.getenv("SIGCON_ONLY", "").strip()
+    if _only:
+        _wanted = {_norm(x) for x in _only.split(",") if x.strip()}
+        creds = [c for c in creds if _norm(c["municipio_nome"]) in _wanted]
+        logger.info(f"SIGCON_ONLY ativo: {[c['municipio_nome'] for c in creds]}")
 
     mun_map = _municipio_id_lookup()
     logger.info(f"Credenciais SIGCON-MG: {len(creds)}, municipios DB: {len(mun_map)}")
@@ -723,7 +767,7 @@ async def _run():
                 sit_label,
                 valor,  # valor_concedente (lido pelo front como valor_repasse)
                 v_total,  # valor_total = concedente + contrapartida
-                valor,  # valor_repassado
+                None,  # valor_repassado -> preenchido pelo backfill CKAN (ft_convenio)
                 v_contrap,  # valor_contrapartida
                 json.dumps({**rec, "_source": "sigcon_scraper"}, ensure_ascii=False, default=str),
                 rec.get("tipo"),

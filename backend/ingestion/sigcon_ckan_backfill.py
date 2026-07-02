@@ -30,7 +30,17 @@ log = logging.getLogger("sigcon_ckan_backfill")
 # Recurso "Convênio" (dm_convenio) do pacote convenios-saida (dados.mg.gov.br)
 DM_CONVENIO_URL = ("https://dados.mg.gov.br/dataset/52fcf7e5-d9a6-4b17-a491-12a5a978aecd/"
                    "resource/23de2c3f-cbf6-494a-8b32-4c9c151fb999/download/dm_convenio.csv.gz")
+# Recurso "Convênio de Saída" (ft_convenio) — traz vr_rep_concede_atual = valor
+# EFETIVAMENTE REPASSADO pelo concedente (o "pagamento" real). Chaveado por
+# id_convenio (liga ao nr_siafi/nr_sigcon via dm_convenio).
+FT_CONVENIO_URL = ("https://dados.mg.gov.br/dataset/52fcf7e5-d9a6-4b17-a491-12a5a978aecd/"
+                   "resource/d8b48c2b-c2ec-451a-99f0-0421987ceeba/download/ft_convenio.csv.gz")
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/131 Safari/537.36"
+
+
+def _clean_col(c: str) -> str:
+    """Normaliza cabecalho CSV: remove BOM (UTF-8 lido como latin-1 vira 'ï»¿')."""
+    return (c or "").strip().lstrip("ï»¿﻿ ").strip()
 
 
 def _sync_url() -> str:
@@ -62,12 +72,38 @@ def _dt(s: str):
     return None
 
 
-def _baixar_dataset() -> bytes:
+def _baixar(url: str) -> bytes:
     with httpx.Client(timeout=180, follow_redirects=True, verify=False,
                       headers={"User-Agent": UA}) as cli:
-        r = cli.get(DM_CONVENIO_URL)
+        r = cli.get(url)
         r.raise_for_status()
         return r.content
+
+
+def _baixar_dataset() -> bytes:
+    return _baixar(DM_CONVENIO_URL)
+
+
+def _repasse_por_id(gz_bytes: bytes) -> dict:
+    """id_convenio -> valor repassado real (vr_rep_concede_atual, versao mais recente)."""
+    tmp: dict = {}
+    with gzip.open(io.BytesIO(gz_bytes), "rt", encoding="latin-1") as f:
+        rd = csv.reader(f, delimiter=";")
+        idx = {_clean_col(c): i for i, c in enumerate(next(rd))}
+
+        def g(row, c):
+            i = idx.get(c)
+            return row[i] if i is not None and i < len(row) else ""
+
+        for row in rd:
+            idc = (g(row, "id_convenio") or "").strip()
+            if not idc:
+                continue
+            ano = int(g(row, "ano_particao") or 0)
+            rep = _money(g(row, "vr_rep_concede_atual"))
+            if idc not in tmp or ano >= tmp[idc][0]:
+                tmp[idc] = (ano, rep)
+    return {k: v[1] for k, v in tmp.items()}
 
 
 def _index_dataset(gz_bytes: bytes):
@@ -78,7 +114,7 @@ def _index_dataset(gz_bytes: bytes):
     with gzip.open(io.BytesIO(gz_bytes), "rt", encoding="latin-1") as f:
         rd = csv.reader(f, delimiter=";")
         cols = next(rd)
-        idx = {c.strip().lstrip("﻿"): i for i, c in enumerate(cols)}
+        idx = {_clean_col(c): i for i, c in enumerate(cols)}
 
         def g(row, c):
             i = idx.get(c)
@@ -87,6 +123,7 @@ def _index_dataset(gz_bytes: bytes):
         for row in rd:
             n += 1
             rec = {
+                "id": (g(row, "id_convenio") or "").strip(),
                 "contra": _money(g(row, "vr_contra_public")),
                 "vig_ini": _dt(g(row, "dt_vigencia_inicial")),
                 "vig_fim": _dt(g(row, "dt_vigencia_final")),
@@ -112,11 +149,18 @@ def backfill() -> int:
         log.error(f"falha ao baixar dataset CKAN: {str(e)[:120]}")
         return 0
     by_siafi, by_sigcon = _index_dataset(gz)
+    # ft_convenio: valor EFETIVAMENTE REPASSADO por id_convenio (o "pagamento")
+    try:
+        rep_by_id = _repasse_por_id(_baixar(FT_CONVENIO_URL))
+        log.info(f"ft_convenio: {len(rep_by_id)} convenios com repasse")
+    except Exception as e:
+        rep_by_id = {}
+        log.warning(f"ft_convenio (repasse) falhou: {str(e)[:120]}")
     conn = psycopg2.connect(_sync_url()); cur = conn.cursor()
     cur.execute("SELECT id, nr_siafi, nr_sigcon, nr_proposta, nr_plano_trabalho "
                 "FROM convenios_estadual WHERE fonte ILIKE 'SIGCON%'")
     ours = cur.fetchall()
-    matched = upd = 0
+    matched = upd = rep_set = 0
     for cid, siafi, sigcon, prop, plano in ours:
         rec = None
         for k in (siafi, sigcon, prop, plano):
@@ -130,18 +174,24 @@ def backfill() -> int:
         if not rec:
             continue
         matched += 1
+        # repasse real (vr_rep_concede_atual). None = desconhecido -> mantem; 0 = nao repassado
+        repassado = rep_by_id.get(rec.get("id")) if rec.get("id") else None
+        if repassado is not None:
+            rep_set += 1
         cur.execute("""UPDATE convenios_estadual SET
             valor_contrapartida = COALESCE(valor_contrapartida, %s),
             dt_vigencia_inicial = COALESCE(dt_vigencia_inicial, %s),
             dt_vigencia_atual   = COALESCE(dt_vigencia_atual, %s),
             dt_vigencia_final   = COALESCE(dt_vigencia_final, %s),
+            valor_repassado = CASE WHEN %s::numeric IS NOT NULL THEN %s::numeric ELSE valor_repassado END,
             updated_at = NOW()
-          WHERE id = %s AND (valor_contrapartida IS NULL OR dt_vigencia_atual IS NULL)""",
-          (rec["contra"], rec["vig_ini"], rec["vig_atual"] or rec["vig_fim"], rec["vig_fim"], cid))
+          WHERE id = %s""",
+          (rec["contra"], rec["vig_ini"], rec["vig_atual"] or rec["vig_fim"], rec["vig_fim"],
+           repassado, repassado, cid))
         if cur.rowcount:
             upd += 1
     conn.commit()
-    log.info(f"SIGCON: {len(ours)} convenios | casados no dataset={matched} | atualizados={upd}")
+    log.info(f"SIGCON: {len(ours)} convenios | casados={matched} | atualizados={upd} | repasse_preenchido={rep_set}")
     try:
         cur.execute("INSERT INTO ingestion_log (source, status, records_inserted, finished_at) "
                     "VALUES ('sigcon_ckan_backfill','success',%s,NOW())", (upd,))

@@ -367,6 +367,7 @@ export default function ConveniosPage() {
                   <TableHead className="min-w-0">Objeto</TableHead>
                   <TableHead className="w-[105px]">Situacao</TableHead>
                   <TableHead className="w-[90px] text-right">Repasse</TableHead>
+                  <TableHead className="w-[58px] text-center" title="% efetivamente repassado (pago) pelo Estado — fonte: dados abertos MG">Pago</TableHead>
                   <TableHead className="w-[70px] text-right">Contrap.</TableHead>
                   <TableHead className="w-[70px]">Assinat.</TableHead>
                   <TableHead className="w-[70px]">Vigencia</TableHead>
@@ -425,6 +426,25 @@ export default function ConveniosPage() {
                     </TableCell>
                     <TableCell className="text-right whitespace-nowrap" title={`Repasse: ${formatCurrency(conv.valor_repasse ?? conv.valor_total)}\nGlobal: ${formatCurrency(conv.valor_total)}`}>
                       {formatCurrency(conv.valor_repasse ?? conv.valor_total)}
+                    </TableCell>
+                    <TableCell className="text-center whitespace-nowrap">
+                      {(() => {
+                        const rep = conv.valor_desembolsado;
+                        if (rep == null) return <span className="text-muted-foreground text-[10px]">-</span>;
+                        const base = conv.valor_repasse ?? conv.valor_total ?? 0;
+                        const pct = base ? Math.round((rep / base) * 100) : 0;
+                        const cls = pct >= 100 ? "bg-success/15 text-success"
+                          : pct > 0 ? "bg-warning/15 text-warning"
+                          : "bg-base-300 text-base-content/60";
+                        return (
+                          <span
+                            className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ${cls}`}
+                            title={`Repassado (pago): ${formatCurrency(rep)} de ${formatCurrency(base)}`}
+                          >
+                            {pct}%
+                          </span>
+                        );
+                      })()}
                     </TableCell>
                     <TableCell className="text-right text-muted-foreground whitespace-nowrap" title={conv.valor_contrapartida ? `Contrapartida: ${formatCurrency(conv.valor_contrapartida)}` : "Sem contrapartida"}>
                       {conv.valor_contrapartida ? formatCurrency(conv.valor_contrapartida) : "-"}
