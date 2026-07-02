@@ -90,6 +90,10 @@ async def list_situacoes(
     q = select(ConvenioEstadual.situacao).distinct().where(ConvenioEstadual.situacao.is_not(None))
     if municipio_id:
         q = q.where(ConvenioEstadual.municipio_id == municipio_id)
+    # Exclui FNS (tem tela propria). Sem isso, situacoes exclusivas do FNS
+    # ('Pago','Empenhado','Pendente') apareciam no filtro do SIGCON e casavam 0
+    # convenios (a lista SIGCON exclui FNS) -> filtro "vazio".
+    q = q.where(or_(ConvenioEstadual.fonte.is_(None), ~ConvenioEstadual.fonte.ilike("%FNS%")))
     r = await db.execute(q)
     return sorted({row[0].strip() for row in r.all() if row[0]})
 
@@ -118,6 +122,7 @@ async def list_convenios(
     fonte: Optional[str] = None,
     fontes: Optional[list[str]] = Query(None, description="Multi-select fonte"),
     vigencia: Optional[str] = Query(None, description="vence60 | vence120 | prestacao"),
+    pagamento: Optional[str] = Query(None, description="pago | parcial | nao_pago (via valor_repassado)"),
     search: Optional[str] = None,
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
@@ -141,6 +146,19 @@ async def list_convenios(
     elif situacao:
         q = q.where(ConvenioEstadual.situacao.ilike(f"%{situacao}%"))
         q_count = q_count.where(ConvenioEstadual.situacao.ilike(f"%{situacao}%"))
+    if pagamento:
+        vr = ConvenioEstadual.valor_repassado
+        vc = ConvenioEstadual.valor_concedente
+        pcond = None
+        if pagamento == "pago":       # repasse integral (>= concedente)
+            pcond = and_(vr.is_not(None), vr > 0, vc.is_not(None), vr >= vc)
+        elif pagamento == "parcial":  # repassou algo, mas < concedente
+            pcond = and_(vr.is_not(None), vr > 0, or_(vc.is_(None), vr < vc))
+        elif pagamento == "nao_pago":  # nada repassado
+            pcond = or_(vr.is_(None), vr == 0)
+        if pcond is not None:
+            q = q.where(pcond)
+            q_count = q_count.where(pcond)
     if fontes:
         # SIGCON estadual tem fonte=NULL ou 'SIGCON-MG'. Adiciona mapeamento.
         est_fontes = []

@@ -132,6 +132,7 @@ export default function ConveniosPage() {
   const [selectedConv, setSelectedConv] = useState<{ id: number; esfera: string } | null>(null);
   const [esfera, setEsfera] = useState("todos");
   const [situacoesSel, setSituacoesSel] = useState<string[]>([]);
+  const [pagamento, setPagamento] = useState("todos");
   const [ano, setAno] = useState("todos");
   const [vigencia, setVigencia] = useState(vigenciaParam ?? "todos");
   const [searchTerm, setSearchTerm] = useState("");
@@ -166,7 +167,7 @@ export default function ConveniosPage() {
   // Reset page on filter change
   useEffect(() => {
     setPage(1);
-  }, [esfera, situacoesSel, ano, vigencia, debouncedSearch]);
+  }, [esfera, situacoesSel, pagamento, ano, vigencia, debouncedSearch]);
 
   const fetchData = useCallback(() => {
     if (!municipioId) return;
@@ -179,6 +180,7 @@ export default function ConveniosPage() {
     };
     if (esfera !== "todos") params.esfera = esfera;
     if (situacoesSel.length) params.situacoes = situacoesSel;
+    if (pagamento !== "todos") params.pagamento = pagamento;
     if (ano !== "todos") params.ano = ano;
     if (vigencia !== "todos") params.vigencia = vigencia;
     if (debouncedSearch) params.search = debouncedSearch;
@@ -188,7 +190,7 @@ export default function ConveniosPage() {
       .then((res) => setData(res.data))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [municipioId, page, esfera, situacoesSel, ano, vigencia, debouncedSearch]);
+  }, [municipioId, page, esfera, situacoesSel, pagamento, ano, vigencia, debouncedSearch]);
 
   useEffect(() => {
     fetchData();
@@ -311,6 +313,18 @@ export default function ConveniosPage() {
             <SelectItem value="vence60">Vence em 60 dias</SelectItem>
             <SelectItem value="vence120">Vence em 120 dias</SelectItem>
             <SelectItem value="prestacao">Prestacao de Contas (+90d)</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Select value={pagamento} onValueChange={(v) => setPagamento(v ?? "todos")}>
+          <SelectTrigger className="w-40">
+            <SelectValue placeholder="Pagamento" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="todos">Todo Pagamento</SelectItem>
+            <SelectItem value="pago">Pago (integral)</SelectItem>
+            <SelectItem value="parcial">Parcial</SelectItem>
+            <SelectItem value="nao_pago">Nao pago</SelectItem>
           </SelectContent>
         </Select>
 
