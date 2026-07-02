@@ -324,7 +324,7 @@ export default function ConveniosPage() {
             <SelectItem value="todos">Todo Pagamento</SelectItem>
             <SelectItem value="pago">Pago (integral)</SelectItem>
             <SelectItem value="parcial">Parcial</SelectItem>
-            <SelectItem value="nao_pago">Nao pago</SelectItem>
+            <SelectItem value="nao_pago">Pendente (nao pago)</SelectItem>
           </SelectContent>
         </Select>
 
