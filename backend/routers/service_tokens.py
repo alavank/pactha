@@ -23,9 +23,13 @@ from services.audit import log_event
 router = APIRouter(prefix="/api/admin/service-tokens", tags=["admin"])
 
 
+SUPER_ADMIN_EMAIL = "admin@pacta.com.br"
+
+
 def _require_admin(user: User):
-    if (user.role or "").lower() != "admin":
-        raise HTTPException(status_code=403, detail="Apenas admins")
+    # Service Tokens sao credenciais longevas poderosas -> so o admin principal.
+    if (user.email or "").lower() != SUPER_ADMIN_EMAIL:
+        raise HTTPException(status_code=403, detail="Acesso restrito ao administrador principal")
 
 
 class CreateTokenRequest(BaseModel):

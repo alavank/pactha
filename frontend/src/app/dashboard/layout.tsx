@@ -124,6 +124,10 @@ const ADMIN_NAV_ITEMS = [
   { href: "/dashboard/service-tokens", label: "Service Tokens", icon: KeyRound },
 ];
 
+// Itens visiveis SO para o super-admin (nao para os demais admins).
+const SUPER_ADMIN_EMAIL = "admin@pacta.com.br";
+const SUPER_ADMIN_ONLY = new Set<string>(["/dashboard/sessoes", "/dashboard/service-tokens"]);
+
 function SidebarContent({
   pathname,
   municipios,
@@ -156,7 +160,12 @@ function SidebarContent({
     });
   };
   // Sidebar so mostra as telas permitidas ao usuario (admin/carregando = todas)
-  const visibleNav = filterNav(NAV_ITEMS, allowedTelasOf(user));
+  const isSuper = user?.email === SUPER_ADMIN_EMAIL;
+  let visibleNav = filterNav(NAV_ITEMS, allowedTelasOf(user));
+  if (!isSuper) {
+    // Sessoes (captura gov.br) so p/ super-admin
+    visibleNav = visibleNav.filter((it) => !("href" in it && SUPER_ADMIN_ONLY.has(it.href)));
+  }
   return (
     <div className="flex h-full flex-col bg-base-100">
       {/* Faixa institucional - cores do governo */}
@@ -300,7 +309,7 @@ function SidebarContent({
             <div className="px-3 mt-4 mb-2 text-[10px] font-semibold uppercase tracking-wider text-base-content/40">
               Administracao
             </div>
-            {ADMIN_NAV_ITEMS.map((item) => {
+            {ADMIN_NAV_ITEMS.filter((item) => isSuper || !SUPER_ADMIN_ONLY.has(item.href)).map((item) => {
               const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
               const Icon = item.icon;
               return (
@@ -420,6 +429,14 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
     if (allowed.has(hrefToTela(pathname))) return;
     const firstAllowed = allLeafHrefs(NAV_ITEMS).find((h) => allowed.has(hrefToTela(h)));
     if (firstAllowed && firstAllowed !== pathname) router.replace(firstAllowed);
+  }, [user, pathname, router]);
+
+  // Guard super-admin: Sessoes / Service Tokens so p/ admin@pacta.com.br
+  useEffect(() => {
+    if (!user) return;
+    if (user.email !== SUPER_ADMIN_EMAIL && SUPER_ADMIN_ONLY.has(pathname)) {
+      router.replace("/dashboard");
+    }
   }, [user, pathname, router]);
 
   const handleMunicipioChange = useCallback(
