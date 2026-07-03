@@ -199,30 +199,26 @@ async def por_cnpj(
     except httpx.HTTPError:
         pass  # API fora do ar -> retorna so o que der
 
-    # 2) Voluntarias (do banco). Nao-admin: limita aos municipios do escopo.
-    where = ["regexp_replace(coalesce(identificacao,''), '\\D', '', 'g') = :c"]
-    params: dict = {"c": alvo}
-    allowed = getattr(current, "allowed_municipio_ids", None)
-    if allowed is not None:  # nao-admin
-        if not allowed:
-            where.append("false")
-        else:
-            where.append("municipio_id = ANY(:muns)")
-            params["muns"] = list(allowed)
-    rows = (await db.execute(text(f"""
-        SELECT numero_proposta, situacao, orgao, proponente, identificacao,
-               codigo_instrumento, valor_repasse, valor_contrapartida, municipio_id
-        FROM transferegov_propostas
-        WHERE {' AND '.join(where)}
-        ORDER BY numero_proposta DESC
-        LIMIT 500
-    """), params)).fetchall()
+    # 2) Voluntarias/Convenios: base SICONV federal (Brasil inteiro, dados abertos),
+    #    por CNPJ. Dado publico -> nao escopado por municipio.
+    rows = (await db.execute(text("""
+        SELECT nr_proposta, situacao, proponente, municipio, uf, ano, objeto,
+               vl_global, vl_repasse, nr_convenio, situacao_convenio,
+               vl_desembolsado, dt_assinatura, dt_fim_vigencia
+        FROM siconv_federal
+        WHERE cnpj = :c
+        ORDER BY ano DESC NULLS LAST, id_proposta DESC
+        LIMIT 800
+    """), {"c": alvo})).fetchall()
     voluntarias = [{
-        "numero_proposta": r[0], "situacao": r[1], "orgao": r[2], "proponente": r[3],
-        "identificacao": r[4], "codigo_instrumento": r[5],
-        "valor_repasse": float(r[6]) if r[6] else None,
-        "valor_contrapartida": float(r[7]) if r[7] else None,
-        "municipio_id": r[8],
+        "numero_proposta": r[0], "situacao": r[1], "proponente": r[2],
+        "municipio": r[3], "uf": r[4], "ano": r[5], "objeto": r[6],
+        "valor_global": float(r[7]) if r[7] else None,
+        "valor_repasse": float(r[8]) if r[8] else None,
+        "nr_convenio": r[9], "situacao_convenio": r[10],
+        "valor_desembolsado": float(r[11]) if r[11] else None,
+        "dt_assinatura": r[12].isoformat() if r[12] else None,
+        "dt_fim_vigencia": r[13].isoformat() if r[13] else None,
     } for r in rows]
 
     return {

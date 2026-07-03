@@ -17,9 +17,12 @@ interface Especial {
   objeto_descricao?: string;
 }
 interface Voluntaria {
-  numero_proposta?: string; situacao?: string; orgao?: string; proponente?: string;
-  identificacao?: string; codigo_instrumento?: string;
-  valor_repasse?: number | null; valor_contrapartida?: number | null;
+  numero_proposta?: string; situacao?: string; proponente?: string;
+  municipio?: string; uf?: string; ano?: number; objeto?: string;
+  valor_global?: number | null; valor_repasse?: number | null;
+  nr_convenio?: string | null; situacao_convenio?: string | null;
+  valor_desembolsado?: number | null;
+  dt_assinatura?: string | null; dt_fim_vigencia?: string | null;
 }
 interface Resp {
   cnpj: string;
@@ -133,7 +136,7 @@ export default function TransfereGovCnpjPage() {
           <div className="bg-base-100 border rounded-lg overflow-hidden">
             <div className="px-4 py-2.5 bg-base-200 border-b flex items-center gap-2">
               <Landmark className="size-4 text-primary" />
-              <span className="font-semibold text-sm">Voluntárias (convênios) — dados já coletados</span>
+              <span className="font-semibold text-sm">Voluntárias / Convênios (SICONV — base federal)</span>
               <span className="ml-auto text-xs text-base-content/60">{data.total_voluntarias} resultado(s)</span>
             </div>
             {data.voluntarias.length === 0 ? (
@@ -145,22 +148,26 @@ export default function TransfereGovCnpjPage() {
                 <TableHeader>
                   <TableRow className="[&>th]:py-1.5 [&>th]:px-2 [&>th]:text-[11px] bg-base-200/50">
                     <TableHead>Proposta</TableHead>
-                    <TableHead>Instrumento</TableHead>
-                    <TableHead>Proponente</TableHead>
-                    <TableHead>Órgão</TableHead>
+                    <TableHead>Ano</TableHead>
                     <TableHead>Situação</TableHead>
+                    <TableHead>Objeto</TableHead>
+                    <TableHead>Município/UF</TableHead>
+                    <TableHead>Convênio</TableHead>
                     <TableHead className="text-right">Repasse</TableHead>
+                    <TableHead className="text-right">Pago</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {data.voluntarias.map((v, i) => (
                     <TableRow key={(v.numero_proposta ?? "") + i} className="[&>td]:py-1.5 [&>td]:px-2 hover:bg-base-200">
                       <TableCell className="font-mono">{v.numero_proposta || "-"}</TableCell>
-                      <TableCell className="font-mono">{v.codigo_instrumento || "-"}</TableCell>
-                      <TableCell title={v.proponente} className="max-w-[220px] truncate">{v.proponente || "-"}</TableCell>
-                      <TableCell>{v.orgao || "-"}</TableCell>
-                      <TableCell title={v.situacao} className="max-w-[200px] truncate">{v.situacao || "-"}</TableCell>
-                      <TableCell className="text-right whitespace-nowrap">{formatCurrency(v.valor_repasse)}</TableCell>
+                      <TableCell>{v.ano || "-"}</TableCell>
+                      <TableCell title={v.situacao} className="max-w-[180px] truncate">{v.situacao || "-"}</TableCell>
+                      <TableCell title={v.objeto} className="max-w-[240px] truncate">{v.objeto || "-"}</TableCell>
+                      <TableCell className="whitespace-nowrap">{v.municipio ? `${v.municipio}/${v.uf || ""}` : "-"}</TableCell>
+                      <TableCell className="font-mono" title={v.situacao_convenio || ""}>{v.nr_convenio || "-"}</TableCell>
+                      <TableCell className="text-right whitespace-nowrap">{formatCurrency(v.valor_repasse ?? v.valor_global)}</TableCell>
+                      <TableCell className="text-right whitespace-nowrap">{v.valor_desembolsado != null ? formatCurrency(v.valor_desembolsado) : "-"}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
