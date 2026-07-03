@@ -345,17 +345,18 @@ def _sec_table(headers: list, rows: list, col_widths_mm: list) -> Table:
 async def export_parlamentares_pdf(
     municipio_id: Optional[int] = Query(None),
     q: Optional[str] = Query(None),
+    ano: Optional[int] = Query(None),
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
     """PDF da tela Parlamentares — uma secao por parlamentar (respeita a busca
-    `q` e o filtro de municipio), com TODOS os lancamentos: SIGCON-MG (estadual),
-    TransfereGov/SICONV (federal) e Emendas estaduais."""
+    `q`, o ano e o filtro de municipio), com TODOS os lancamentos: SIGCON-MG
+    (estadual), TransfereGov/SICONV (federal) e Emendas estaduais."""
     ensure_tela(current, "parlamentares")
     ensure_municipio_access(current, municipio_id)
 
     from routers.parlamentares import listar as _listar, detalhe as _detalhe
-    lista = await _listar(municipio_id=municipio_id, q=q, db=db, current=current)
+    lista = await _listar(municipio_id=municipio_id, q=q, ano=ano, db=db, current=current)
     items = lista.get("items", [])
 
     styles = getSampleStyleSheet()
@@ -376,6 +377,7 @@ async def export_parlamentares_pdf(
     filtros = []
     if q:
         filtros.append(f"busca: \"{q}\"")
+    filtros.append(f"ano: {ano}" if ano else "todos os anos")
     filtros.append(f"municipio: {municipio_id}" if municipio_id else "todos os municipios")
     story = [
         Paragraph("Relatorio de Parlamentares", title_style),
@@ -385,7 +387,7 @@ async def export_parlamentares_pdf(
     for p in items:
         try:
             det = await _detalhe(nome_normalizado=p["nome_display"],
-                                 municipio_id=municipio_id, db=db, current=current)
+                                 municipio_id=municipio_id, ano=ano, db=db, current=current)
         except HTTPException:
             det = {"sigcon": [], "voluntarias": [], "emendas": []}
 
@@ -465,5 +467,7 @@ async def export_parlamentares_pdf(
     fn = "parlamentares"
     if q:
         fn += "_" + "".join(ch for ch in q if ch.isalnum())[:20]
+    if ano:
+        fn += f"_{ano}"
     return StreamingResponse(buf, media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename={fn}.pdf"})

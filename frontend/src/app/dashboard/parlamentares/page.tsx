@@ -84,6 +84,7 @@ function ParlamentaresInner() {
   const [items, setItems] = useState<ParlamentarItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [ano, setAno] = useState("");
   const [pdfLoading, setPdfLoading] = useState(false);
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
   const [detailCache, setDetailCache] = useState<Record<string, ParlamentarDetalhe | "loading" | "error">>({});
@@ -94,6 +95,7 @@ function ParlamentaresInner() {
       const params: Record<string, string> = {};
       if (municipioId) params.municipio_id = municipioId;
       if (search.trim()) params.q = search.trim();
+      if (ano) params.ano = ano;
       const r = await api.get<{ items: ParlamentarItem[] }>("/parlamentares", { params });
       setItems(r.data.items);
     } catch (e) {
@@ -102,7 +104,7 @@ function ParlamentaresInner() {
     } finally {
       setLoading(false);
     }
-  }, [municipioId, search]);
+  }, [municipioId, search, ano]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -124,6 +126,7 @@ function ParlamentaresInner() {
     try {
       const params: Record<string, string> = {};
       if (municipioId) params.municipio_id = municipioId;
+      if (ano) params.ano = ano;
       // Backend faz ILIKE — usa o nome display original do registro
       const nome = encodeURIComponent(item.nome_display);
       const r = await api.get<ParlamentarDetalhe>(`/parlamentares/${nome}`, { params });
@@ -140,6 +143,7 @@ function ParlamentaresInner() {
       const qs = new URLSearchParams();
       if (municipioId) qs.set("municipio_id", municipioId);
       if (search.trim()) qs.set("q", search.trim());
+      if (ano) qs.set("ano", ano);
       const token = localStorage.getItem("pacta_token");
       const res = await fetch(`${api.defaults.baseURL}/export-pdf/parlamentares?${qs.toString()}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -183,6 +187,19 @@ function ParlamentaresInner() {
             onKeyDown={(e) => { if (e.key === "Enter") carregar(); }}
           />
         </div>
+        <div>
+          <label className="text-xs text-base-content/70 mb-1 block">Ano</label>
+          <select
+            value={ano}
+            onChange={(e) => { setAno(e.target.value); setDetailCache({}); setExpandedKeys(new Set()); }}
+            className="h-9 rounded-md border border-base-300 bg-base-100 px-3 text-sm text-base-content min-w-[110px]"
+          >
+            <option value="">Todos</option>
+            {Array.from({ length: new Date().getFullYear() - 2009 }, (_, i) => new Date().getFullYear() - i).map((y) => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
+        </div>
         <Button onClick={carregar} className="bg-info hover:bg-info/90">
           <Search className="size-4 mr-1" /> Buscar
         </Button>
@@ -195,8 +212,8 @@ function ParlamentaresInner() {
           {pdfLoading ? <Loader2 className="size-4 mr-1 animate-spin" /> : <FileText className="size-4 mr-1" />}
           Gerar PDF
         </Button>
-        {(search || municipioId) && (
-          <Button variant="outline" onClick={() => { setSearch(""); }}>
+        {(search || ano || municipioId) && (
+          <Button variant="outline" onClick={() => { setSearch(""); setAno(""); setDetailCache({}); setExpandedKeys(new Set()); }}>
             <Eraser className="size-4 mr-1" /> Limpar
           </Button>
         )}

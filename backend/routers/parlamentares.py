@@ -45,6 +45,7 @@ def _money(v) -> float:
 async def listar(
     municipio_id: Optional[int] = Query(None, description="Filtra um municipio (None=todos)"),
     q: Optional[str] = Query(None, description="Busca parcial no nome"),
+    ano: Optional[int] = Query(None, description="Filtra por ano (None=todos)"),
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
@@ -78,6 +79,17 @@ async def listar(
         where_extra = " AND municipio_id = :mun"
         params["mun"] = municipio_id
 
+    # Filtro de ano — a fonte do ano difere por tabela:
+    #   convenios_estadual/emendas_estaduais -> coluna `ano`
+    #   transferegov_propostas -> derivado do sufixo do numero_proposta ("xxx/AAAA")
+    ano_sig = ano_vol = ano_em = ""
+    if ano:
+        ano_sig = " AND ano = :ano"
+        ano_em = " AND ano = :ano"
+        ano_vol = " AND split_part(numero_proposta, '/', 2) = :ano_txt"
+        params["ano"] = ano
+        params["ano_txt"] = str(ano)
+
     # 1) convenios_estadual: SIGCON (responsaveis) E FNS (noAutor/noParlamentar)
     # Federal FNS pode ter campos noAutor, noParlamentar, dsAutor — variações
     # diferentes entre cadastros antigos e emendas individuais.
@@ -103,7 +115,7 @@ async def listar(
             OR raw_data->>'dsAutor' IS NOT NULL
             OR raw_data->>'parlamentar' IS NOT NULL
         )
-        {where_extra}
+        {where_extra}{ano_sig}
     """
     for row in (await db.execute(text(sql_sigcon), params)).fetchall():
         for nm in str(row[0] or "").split(","):
@@ -136,7 +148,7 @@ async def listar(
         FROM transferegov_propostas
         WHERE parlamentar IS NOT NULL
         AND LENGTH(TRIM(parlamentar)) >= 3
-        {where_extra}
+        {where_extra}{ano_vol}
     """
     for row in (await db.execute(text(sql_vol), params)).fetchall():
         for nm in str(row[0] or "").split(","):
@@ -164,7 +176,7 @@ async def listar(
         FROM emendas_estaduais
         WHERE nome_responsavel IS NOT NULL
         AND LENGTH(TRIM(nome_responsavel)) >= 3
-        {where_extra}
+        {where_extra}{ano_em}
     """
     for row in (await db.execute(text(sql_em), params)).fetchall():
         for nm in str(row[0] or "").split(","):
@@ -213,6 +225,7 @@ async def listar(
 async def detalhe(
     nome_normalizado: str,
     municipio_id: Optional[int] = Query(None),
+    ano: Optional[int] = Query(None, description="Filtra por ano (None=todos)"),
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
@@ -231,6 +244,13 @@ async def detalhe(
         params["mun"] = municipio_id
     else:
         where_extra_sigcon = where_extra_vol = where_extra_em = ""
+    # Filtro de ano (fonte do ano difere por tabela — ver endpoint listar)
+    if ano:
+        where_extra_sigcon += " AND c.ano = :ano"
+        where_extra_vol += " AND split_part(v.numero_proposta, '/', 2) = :ano_txt"
+        where_extra_em += " AND e.ano = :ano"
+        params["ano"] = ano
+        params["ano_txt"] = str(ano)
 
     # SIGCON
     sql1 = f"""
