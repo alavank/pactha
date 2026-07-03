@@ -20,6 +20,7 @@ import {
   Tooltip,
   ResponsiveContainer,
   Cell,
+  LabelList,
 } from "recharts";
 import api from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
@@ -237,15 +238,17 @@ export default function DashboardPage() {
 
   const getBarColor = (sit: string) => {
     const s = sit.toLowerCase();
-    if (s.includes("aprovada")) return "#16a34a";
-    if (s.includes("concluida") || s.includes("concluído")) return "#059669";
-    if (s.includes("recurso")) return "#0ea5e9";
-    if (s.includes("vigor") || s.includes("execu")) return "#2563eb";
-    if (s.includes("anulado")) return "#dc2626";
-    if (s.includes("cancelado")) return "#ef4444";
-    if (s.includes("rescindido")) return "#f97316";
-    if (s.includes("proposta")) return "#a855f7";
-    return "#64748b";
+    if (s.includes("pago")) return "#16a34a";               // verde — pago
+    if (s.includes("aprovad") || s.includes("conclu")) return "#059669";
+    if (s.includes("vigor") || s.includes("execu")) return "#2563eb"; // azul — ativo
+    if (s.includes("empenhad")) return "#0891b2";           // ciano — empenhado
+    if (s.includes("anulad") || s.includes("cancelad") || s.includes("rescind") || s.includes("rejeitad") || s.includes("impedi"))
+      return "#dc2626";                                     // vermelho — negativo
+    if (s.includes("analise") || s.includes("análise") || s.includes("pendente") || s.includes("cadastr") ||
+        s.includes("checklist") || s.includes("processo") || s.includes("adequa") || s.includes("jur") || s.includes("autorizad"))
+      return "#d97706";                                     // âmbar — em andamento
+    if (s.includes("encerrad")) return "#64748b";           // cinza — encerrado
+    return "#94a3b8";
   };
 
   const secLabel = "text-xs font-semibold uppercase tracking-wider text-base-content/50 mb-3";
@@ -461,19 +464,27 @@ export default function DashboardPage() {
         ) : chartData.length === 0 ? (
           <p className="py-8 text-center text-sm text-base-content/50">Nenhum dado encontrado.</p>
         ) : (
-          <ResponsiveContainer width="100%" height={340}>
-            <BarChart data={chartData} margin={{ top: 10, right: 20, bottom: 80, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
-              <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#475569" }} interval={0} angle={-30} textAnchor="end" height={100} />
-              <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: "#475569" }} />
+          <ResponsiveContainer width="100%" height={Math.max(260, chartData.length * 38)}>
+            <BarChart data={chartData} layout="vertical" margin={{ top: 4, right: 44, bottom: 4, left: 8 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" horizontal={false} />
+              <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11, fill: "#475569" }} />
+              <YAxis
+                type="category"
+                dataKey="name"
+                width={150}
+                interval={0}
+                tick={{ fontSize: 11, fill: "#334155" }}
+              />
               <Tooltip
                 formatter={(value, _name, props) => [`${value} convênios`, props.payload.fullName]}
                 contentStyle={{ borderRadius: 12, border: "1px solid #cbd5e1" }}
+                cursor={{ fill: "rgba(0,0,0,0.03)" }}
               />
-              <Bar dataKey="quantidade" radius={[6, 6, 0, 0]}>
+              <Bar dataKey="quantidade" radius={[0, 6, 6, 0]} barSize={18}>
                 {chartData.map((entry, idx) => (
                   <Cell key={idx} fill={getBarColor(entry.fullName)} />
                 ))}
+                <LabelList dataKey="quantidade" position="right" style={{ fontSize: 11, fill: "#475569", fontWeight: 600 }} />
               </Bar>
             </BarChart>
           </ResponsiveContainer>
