@@ -307,7 +307,15 @@ async def voluntarias(
     if situacao_contratacao:
         where.append("situacao_contratacao ILIKE :sc"); params["sc"] = f"%{situacao_contratacao}%"
     if search:
-        where.append("(numero_proposta ILIKE :s OR proponente ILIKE :s)"); params["s"] = f"%{search}%"
+        # Busca por numero / proponente (nome) / CNPJ (identificacao). Aceita CNPJ
+        # com ou sem mascara: compara tambem so os digitos.
+        conds = ["numero_proposta ILIKE :s", "proponente ILIKE :s", "identificacao ILIKE :s"]
+        params["s"] = f"%{search}%"
+        _sd = _digits(search)
+        if _sd:
+            conds.append(r"regexp_replace(coalesce(identificacao,''), '\D', '', 'g') LIKE :sd")
+            params["sd"] = f"%{_sd}%"
+        where.append("(" + " OR ".join(conds) + ")")
     sql = f"""
         SELECT numero_proposta, situacao, orgao, proponente, possui_parecer,
                identificacao, codigo_instrumento, modalidade, situacao_siafi,

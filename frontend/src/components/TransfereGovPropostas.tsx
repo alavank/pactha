@@ -190,9 +190,9 @@ export default function TransfereGovPropostas({
       <div className="bg-base-100 border rounded p-4">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div>
-            <label className="text-xs text-base-content/70 mb-1 block">Buscar (nº / proponente)</label>
+            <label className="text-xs text-base-content/70 mb-1 block">Buscar (nº / proponente / CNPJ)</label>
             <Input value={search} onChange={(e) => setSearch(e.target.value)}
-                   placeholder="Ex: 048291/2025" onKeyDown={(e) => { if (e.key === "Enter") buscar(); }} />
+                   placeholder="Ex: 048291/2025 ou CNPJ" onKeyDown={(e) => { if (e.key === "Enter") buscar(); }} />
           </div>
           <div>
             <label className="text-xs text-base-content/70 mb-1 block">Parlamentar</label>
