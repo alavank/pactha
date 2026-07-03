@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import api from "@/lib/api";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { ExternalLink, Search, Loader2 } from "lucide-react";
+import { Search, Loader2, Eye, Download } from "lucide-react";
 
 interface JmgItem {
   id_jornal: number;
@@ -51,6 +51,38 @@ export default function DouMGPage() {
   const [data, setData] = useState<JmgResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [abrindo, setAbrindo] = useState<number | null>(null);
+
+  // Ve/baixa a publicacao PELA plataforma (proxy backend extrai o PDF do JMG).
+  const abrirPublicacao = async (id: number, download: boolean) => {
+    setAbrindo(id);
+    setError(null);
+    try {
+      const token = localStorage.getItem("pacta_token");
+      const res = await fetch(`${api.defaults.baseURL}/dou-mg/publicacao/${id}?download=${download}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error(String(res.status));
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      if (download) {
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `dou-mg-${id}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      } else {
+        window.open(url, "_blank");
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch {
+      setError("Não foi possível abrir a publicação. Tente novamente.");
+    } finally {
+      setAbrindo(null);
+    }
+  };
 
   const buscar = async (p = 1) => {
     if (!texto.trim()) {
@@ -215,23 +247,23 @@ export default function DouMGPage() {
                     <span className="font-medium"> Página:</span> {it.pagina}
                   </div>
                   <div className="text-sm text-base-content whitespace-pre-wrap mb-2">{it.texto_resultado}</div>
-                  <div className="flex items-center gap-3 text-xs">
-                    <a
-                      href={it.url_visualizar}
-                      target="_blank"
-                      rel="noreferrer noopener"
-                      className="inline-flex items-center gap-1 text-primary hover:underline"
+                  <div className="flex items-center gap-4 text-xs">
+                    <button
+                      onClick={() => abrirPublicacao(it.id_jornal, false)}
+                      disabled={abrindo === it.id_jornal}
+                      className="inline-flex items-center gap-1 text-primary hover:underline disabled:opacity-60"
                     >
-                      <ExternalLink className="size-3" /> Visualizar publicação
-                    </a>
-                    <a
-                      href={it.url_baixar}
-                      target="_blank"
-                      rel="noreferrer noopener"
-                      className="inline-flex items-center gap-1 text-primary hover:underline"
+                      {abrindo === it.id_jornal ? <Loader2 className="size-3 animate-spin" /> : <Eye className="size-3" />}
+                      Visualizar publicação
+                    </button>
+                    <button
+                      onClick={() => abrirPublicacao(it.id_jornal, true)}
+                      disabled={abrindo === it.id_jornal}
+                      className="inline-flex items-center gap-1 text-primary hover:underline disabled:opacity-60"
                     >
-                      <ExternalLink className="size-3" /> Baixar publicação
-                    </a>
+                      {abrindo === it.id_jornal ? <Loader2 className="size-3 animate-spin" /> : <Download className="size-3" />}
+                      Baixar publicação
+                    </button>
                   </div>
                 </div>
               ))}
