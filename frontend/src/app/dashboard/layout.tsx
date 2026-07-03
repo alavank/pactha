@@ -110,6 +110,7 @@ const NAV_ITEMS: NavEntry[] = [
       { href: "/dashboard/transferegov-voluntarias", label: "Voluntarias" },
       { href: "/dashboard/transferegov-rejeitadas", label: "Rejeitadas" },
       { href: "/dashboard/transferegov-encerradas", label: "Encerradas" },
+      { href: "/dashboard/transferegov-cnpj", label: "CNPJ" },
     ],
   },
   { href: "/dashboard/fns", label: "Fundo Nacional de Saude", icon: Target },

@@ -153,6 +153,82 @@ async def buscar(
     }
 
 
+def _digits(s) -> str:
+    return "".join(c for c in (s or "") if c.isdigit())
+
+
+@router.get("/por-cnpj")
+async def por_cnpj(
+    cnpj: str = Query(..., description="CNPJ do proponente (com ou sem mascara)"),
+    uf: str = Query("MG", description="UF p/ buscar Transferencia Especial (Plano de Acao)"),
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """Consulta TransfereGov por CNPJ (nao entra em relatorio). Junta:
+    - Especiais/Plano de Acao: ao vivo na API publica (por UF, filtra pelo CNPJ);
+    - Voluntarias: do que ja foi coletado no banco (identificacao = CNPJ).
+    Nao e escopado por municipio (e o proposito). Voluntarias respeita o escopo
+    de municipios do usuario nao-admin.
+    """
+    ensure_tela(current, "transferegov")
+    alvo = _digits(cnpj)
+    if len(alvo) != 14:
+        raise HTTPException(400, "Informe um CNPJ valido (14 digitos)")
+
+    # 1) Especiais / Plano de Acao (API publica, por UF)
+    especiais = []
+    try:
+        for it in await _fetch_listagem((uf or "MG").upper()):
+            if _digits(it.get("beneficiarioCnpj")) == alvo:
+                especiais.append({
+                    "id": it.get("planoAcaoId"),
+                    "codigo": it.get("planoAcaoCodigo"),
+                    "programa_codigo": it.get("programaCodigo"),
+                    "situacao": it.get("planoAcaoSituacao"),
+                    "beneficiario_nome": it.get("beneficiarioNome"),
+                    "beneficiario_cnpj": it.get("beneficiarioCnpj"),
+                    "uf": it.get("uf"),
+                    "politicas_publicas": it.get("politicasPublicas"),
+                    "emenda_codigo": it.get("codigoEmendaFormatado"),
+                    "valor_total": float(it.get("valorTotal") or 0),
+                    "objeto_descricao": it.get("objetoDescricao"),
+                })
+    except httpx.HTTPError:
+        pass  # API fora do ar -> retorna so o que der
+
+    # 2) Voluntarias (do banco). Nao-admin: limita aos municipios do escopo.
+    where = ["regexp_replace(coalesce(identificacao,''), '\\D', '', 'g') = :c"]
+    params: dict = {"c": alvo}
+    allowed = getattr(current, "allowed_municipio_ids", None)
+    if allowed is not None:  # nao-admin
+        if not allowed:
+            where.append("false")
+        else:
+            where.append("municipio_id = ANY(:muns)")
+            params["muns"] = list(allowed)
+    rows = (await db.execute(text(f"""
+        SELECT numero_proposta, situacao, orgao, proponente, identificacao,
+               codigo_instrumento, valor_repasse, valor_contrapartida, municipio_id
+        FROM transferegov_propostas
+        WHERE {' AND '.join(where)}
+        ORDER BY numero_proposta DESC
+        LIMIT 500
+    """), params)).fetchall()
+    voluntarias = [{
+        "numero_proposta": r[0], "situacao": r[1], "orgao": r[2], "proponente": r[3],
+        "identificacao": r[4], "codigo_instrumento": r[5],
+        "valor_repasse": float(r[6]) if r[6] else None,
+        "valor_contrapartida": float(r[7]) if r[7] else None,
+        "municipio_id": r[8],
+    } for r in rows]
+
+    return {
+        "cnpj": alvo, "uf": (uf or "MG").upper(),
+        "especiais": especiais, "voluntarias": voluntarias,
+        "total_especiais": len(especiais), "total_voluntarias": len(voluntarias),
+    }
+
+
 # Status que identifica uma proposta VOLUNTARIA (FREITAS). Alem do classico
 # "Proposta/Plano de Trabalho enviado para Analise", a Freitas considera tambem
 # voluntarias todas as propostas/planos no PIPELINE de analise/aprovacao/
