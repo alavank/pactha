@@ -84,6 +84,7 @@ function ParlamentaresInner() {
   const [items, setItems] = useState<ParlamentarItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [pdfLoading, setPdfLoading] = useState(false);
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
   const [detailCache, setDetailCache] = useState<Record<string, ParlamentarDetalhe | "loading" | "error">>({});
 
@@ -133,6 +134,29 @@ function ParlamentaresInner() {
     }
   };
 
+  const gerarPdf = async () => {
+    setPdfLoading(true);
+    try {
+      const qs = new URLSearchParams();
+      if (municipioId) qs.set("municipio_id", municipioId);
+      if (search.trim()) qs.set("q", search.trim());
+      const token = localStorage.getItem("pacta_token");
+      const res = await fetch(`${api.defaults.baseURL}/export-pdf/parlamentares?${qs.toString()}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error(String(res.status));
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch {
+      alert("Não foi possível gerar o PDF. Tente novamente.");
+    } finally {
+      setPdfLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -161,6 +185,15 @@ function ParlamentaresInner() {
         </div>
         <Button onClick={carregar} className="bg-info hover:bg-info/90">
           <Search className="size-4 mr-1" /> Buscar
+        </Button>
+        <Button
+          variant="outline"
+          onClick={gerarPdf}
+          disabled={pdfLoading || loading || items.length === 0}
+          title="Gera um PDF com todos os lançamentos por parlamentar, respeitando a busca atual"
+        >
+          {pdfLoading ? <Loader2 className="size-4 mr-1 animate-spin" /> : <FileText className="size-4 mr-1" />}
+          Gerar PDF
         </Button>
         {(search || municipioId) && (
           <Button variant="outline" onClick={() => { setSearch(""); }}>

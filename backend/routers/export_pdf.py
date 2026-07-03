@@ -9,13 +9,13 @@ from sqlalchemy import select, text
 from database import get_db
 from models import ConvenioEstadual, Municipio
 from models.user import User
-from services.auth import get_current_user, ensure_municipio_access
+from services.auth import get_current_user, ensure_municipio_access, ensure_tela
 
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, KeepTogether
 
 router = APIRouter(prefix="/api/export-pdf", tags=["export-pdf"])
 
@@ -307,3 +307,163 @@ async def export_dou_pdf(
     )
     return StreamingResponse(pdf, media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename=dou_{municipio_id}.pdf"})
+
+
+# ---------------------------------------------------------------------------
+# Parlamentares — relatorio por parlamentar (respeita a busca da tela)
+# ---------------------------------------------------------------------------
+_CELL = ParagraphStyle("cell", fontSize=7, leading=8.5)
+
+
+def _pc(txt, limit: int = 400):
+    """Celula que quebra linha (Paragraph). '-' quando vazio."""
+    s = "" if txt is None else str(txt)
+    s = s.replace("\n", " ").strip()
+    return Paragraph((s[:limit] or "-"), _CELL)
+
+
+def _sec_table(headers: list, rows: list, col_widths_mm: list) -> Table:
+    t = Table([headers] + rows, repeatRows=1, hAlign="LEFT",
+              colWidths=[w * mm for w in col_widths_mm])
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#334155")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 7),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f1f5f9")]),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#cbd5e1")),
+        ("LEFTPADDING", (0, 0), (-1, -1), 3),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+    ]))
+    return t
+
+
+@router.get("/parlamentares")
+async def export_parlamentares_pdf(
+    municipio_id: Optional[int] = Query(None),
+    q: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """PDF da tela Parlamentares — uma secao por parlamentar (respeita a busca
+    `q` e o filtro de municipio), com TODOS os lancamentos: SIGCON-MG (estadual),
+    TransfereGov/SICONV (federal) e Emendas estaduais."""
+    ensure_tela(current, "parlamentares")
+    ensure_municipio_access(current, municipio_id)
+
+    from routers.parlamentares import listar as _listar, detalhe as _detalhe
+    lista = await _listar(municipio_id=municipio_id, q=q, db=db, current=current)
+    items = lista.get("items", [])
+
+    styles = getSampleStyleSheet()
+    name_style = ParagraphStyle("pname", parent=styles["Heading2"], fontSize=11,
+                                textColor=colors.HexColor("#1e40af"),
+                                spaceBefore=10, spaceAfter=1)
+    meta_style = ParagraphStyle("pmeta", parent=styles["Normal"], fontSize=8,
+                                textColor=colors.HexColor("#475569"), spaceAfter=3)
+    sub_style = ParagraphStyle("psub", parent=styles["Normal"], fontSize=8.5,
+                               fontName="Helvetica-Bold",
+                               textColor=colors.HexColor("#0f766e"),
+                               spaceBefore=4, spaceAfter=2)
+    title_style = ParagraphStyle("Title", parent=styles["Heading1"], fontSize=15,
+                                 textColor=colors.HexColor("#1e40af"), spaceAfter=2)
+    subt_style = ParagraphStyle("Sub", parent=styles["Normal"], fontSize=9,
+                                textColor=colors.HexColor("#475569"), spaceAfter=10)
+
+    filtros = []
+    if q:
+        filtros.append(f"busca: \"{q}\"")
+    filtros.append(f"municipio: {municipio_id}" if municipio_id else "todos os municipios")
+    story = [
+        Paragraph("Relatorio de Parlamentares", title_style),
+        Paragraph(f"{len(items)} parlamentar(es) · {' · '.join(filtros)}", subt_style),
+    ]
+
+    for p in items:
+        try:
+            det = await _detalhe(nome_normalizado=p["nome_display"],
+                                 municipio_id=municipio_id, db=db, current=current)
+        except HTTPException:
+            det = {"sigcon": [], "voluntarias": [], "emendas": []}
+
+        pf = p.get("por_fonte", {})
+        muns = ", ".join(p.get("municipios", []))
+        cab = [
+            Paragraph(p["nome_display"], name_style),
+            Paragraph(
+                f"{p['total_lancamentos']} lancamento(s) · Total {_br(p['valor_total'])} · "
+                f"SIGCON: {pf.get('sigcon', 0)} · TransfereGov: {pf.get('voluntaria', 0)} · "
+                f"Emendas: {pf.get('emenda', 0)}"
+                + (f" · Municipios: {muns}" if muns else ""),
+                meta_style),
+        ]
+        story.append(KeepTogether(cab))
+
+        sig = det.get("sigcon", [])
+        if sig:
+            rows = [[
+                _pc(s.get("municipio_nome"), 30), _pc(s.get("numero"), 20),
+                _pc(s.get("orgao"), 60), _pc(s.get("situacao"), 40),
+                _pc(_br(s.get("valor_total"))),
+                _pc(s.get("dt_vigencia_atual") or s.get("dt_vigencia_final")),
+                _pc(s.get("objeto"), 500),
+            ] for s in sig]
+            story.append(Paragraph(f"SIGCON-MG (Estadual) — {len(sig)} convenio(s)", sub_style))
+            story.append(_sec_table(
+                ["Municipio", "Nº SIGCON", "Orgao", "Situacao", "Valor Total", "Vigencia", "Objeto"],
+                rows, [24, 22, 34, 30, 26, 22, 119]))
+
+        vol = det.get("voluntarias", [])
+        if vol:
+            rows = [[
+                _pc(v.get("municipio_nome"), 30), _pc(v.get("numero_proposta"), 20),
+                _pc(v.get("codigo_instrumento"), 20), _pc(v.get("orgao"), 40),
+                _pc(v.get("situacao"), 40), _pc(v.get("situacao_contratacao"), 30),
+                _pc(_br(v.get("valor_global"))),
+                _pc(_br(v.get("dt_fim_vigencia")) if v.get("dt_fim_vigencia") else "-"),
+                _pc(v.get("objeto"), 500),
+            ] for v in vol]
+            story.append(Paragraph(f"TransfereGov / SICONV (Federal) — {len(vol)} proposta(s)", sub_style))
+            story.append(_sec_table(
+                ["Municipio", "Nº Proposta", "Instrumento", "Orgao", "Situacao", "Sit.Contr.", "Valor Global", "Fim Vig.", "Objeto"],
+                rows, [22, 22, 22, 26, 26, 22, 26, 20, 91]))
+
+        em = det.get("emendas", [])
+        if em:
+            rows = [[
+                _pc(e.get("municipio_nome"), 30), _pc(e.get("nr_indicacao"), 20),
+                _pc(e.get("ano")), _pc(e.get("uo_sigla"), 14),
+                _pc(e.get("beneficiario"), 120), _pc(e.get("tipo_atendimento"), 60),
+                _pc(_br(e.get("valor_indicacao"))), _pc(e.get("status_indicacao"), 40),
+            ] for e in em]
+            story.append(Paragraph(f"Emendas Estaduais — {len(em)} indicacao(oes)", sub_style))
+            story.append(_sec_table(
+                ["Municipio", "Indicacao", "Ano", "UO", "Beneficiario", "Tipo", "Valor", "Status"],
+                rows, [24, 24, 12, 16, 70, 45, 26, 60]))
+
+        if not (sig or vol or em):
+            story.append(Paragraph("Sem lancamentos detalhados.", meta_style))
+        story.append(Spacer(1, 6))
+
+    if not items:
+        story.append(Paragraph("Nenhum parlamentar para o filtro atual.", meta_style))
+    story.append(Spacer(1, 8))
+    story.append(Paragraph(
+        f"Gerado em {datetime.now().strftime('%d/%m/%Y %H:%M')} | PACTHA - Plataforma de Acompanhamento",
+        ParagraphStyle("Footer", parent=styles["Normal"], fontSize=7,
+                       textColor=colors.HexColor("#64748b"), alignment=2)))
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=landscape(A4),
+                            leftMargin=10*mm, rightMargin=10*mm,
+                            topMargin=10*mm, bottomMargin=10*mm)
+    doc.build(story)
+    buf.seek(0)
+    fn = "parlamentares"
+    if q:
+        fn += "_" + "".join(ch for ch in q if ch.isalnum())[:20]
+    return StreamingResponse(buf, media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={fn}.pdf"})
