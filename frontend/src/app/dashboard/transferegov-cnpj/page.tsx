@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Search as SearchIcon, Loader2, Landmark, Building2 } from "lucide-react";
+import { Search as SearchIcon, Loader2, Landmark, Building2, X } from "lucide-react";
 import api from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -39,11 +39,31 @@ function maskCnpj(v: string): string {
     .replace(/(\d{4})(\d)/, "$1-$2");
 }
 
+function fmtDate(iso?: string | null): string {
+  if (!iso) return "-";
+  try {
+    return new Date(iso).toLocaleDateString("pt-BR", { timeZone: "UTC" });
+  } catch {
+    return iso.slice(0, 10);
+  }
+}
+
+function Field({ label, value, mono, wide }: { label: string; value?: React.ReactNode; mono?: boolean; wide?: boolean }) {
+  return (
+    <div className={wide ? "sm:col-span-2" : ""}>
+      <div className="text-[11px] uppercase tracking-wide text-base-content/50">{label}</div>
+      <div className={`text-sm text-base-content ${mono ? "font-mono" : ""}`}>{value ?? "-"}</div>
+    </div>
+  );
+}
+
 export default function TransfereGovCnpjPage() {
   const [cnpj, setCnpj] = useState("");
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [data, setData] = useState<Resp | null>(null);
+  const [selVol, setSelVol] = useState<Voluntaria | null>(null);
+  const [selEsp, setSelEsp] = useState<Especial | null>(null);
 
   const consultar = async () => {
     const digits = cnpj.replace(/\D/g, "");
@@ -117,7 +137,7 @@ export default function TransfereGovCnpjPage() {
                 </TableHeader>
                 <TableBody>
                   {data.especiais.map((e, i) => (
-                    <TableRow key={e.id ?? i} className="[&>td]:py-1.5 [&>td]:px-2 hover:bg-base-200">
+                    <TableRow key={e.id ?? i} onClick={() => setSelEsp(e)} className="cursor-pointer [&>td]:py-1.5 [&>td]:px-2 hover:bg-base-200">
                       <TableCell className="font-mono">{e.codigo || "-"}</TableCell>
                       <TableCell>{e.uf || "-"}</TableCell>
                       <TableCell title={e.beneficiario_nome}>{e.beneficiario_nome || "-"}</TableCell>
@@ -159,7 +179,7 @@ export default function TransfereGovCnpjPage() {
                 </TableHeader>
                 <TableBody>
                   {data.voluntarias.map((v, i) => (
-                    <TableRow key={(v.numero_proposta ?? "") + i} className="[&>td]:py-1.5 [&>td]:px-2 hover:bg-base-200">
+                    <TableRow key={(v.numero_proposta ?? "") + i} onClick={() => setSelVol(v)} className="cursor-pointer [&>td]:py-1.5 [&>td]:px-2 hover:bg-base-200">
                       <TableCell className="font-mono">{v.numero_proposta || "-"}</TableCell>
                       <TableCell>{v.ano || "-"}</TableCell>
                       <TableCell title={v.situacao} className="max-w-[180px] truncate">{v.situacao || "-"}</TableCell>
@@ -176,6 +196,64 @@ export default function TransfereGovCnpjPage() {
           </div>
         </div>
       )}
+
+      {/* Modal Voluntaria / Convenio */}
+      {selVol && (
+        <Modal onClose={() => setSelVol(null)} title={`Proposta ${selVol.numero_proposta || ""}`} subtitle={selVol.situacao}>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
+            <Field label="Nº Proposta" value={selVol.numero_proposta} mono />
+            <Field label="Ano" value={selVol.ano} />
+            <Field label="Situação da proposta" value={selVol.situacao} wide />
+            <Field label="Proponente" value={selVol.proponente} wide />
+            <Field label="Município / UF" value={selVol.municipio ? `${selVol.municipio}/${selVol.uf || ""}` : "-"} />
+            <Field label="Nº Convênio" value={selVol.nr_convenio} mono />
+            <Field label="Situação do convênio" value={selVol.situacao_convenio} wide />
+            <Field label="Valor global" value={formatCurrency(selVol.valor_global)} />
+            <Field label="Valor repasse" value={formatCurrency(selVol.valor_repasse)} />
+            <Field label="Valor desembolsado (pago)" value={selVol.valor_desembolsado != null ? formatCurrency(selVol.valor_desembolsado) : "-"} />
+            <Field label="Assinatura" value={fmtDate(selVol.dt_assinatura)} />
+            <Field label="Fim da vigência" value={fmtDate(selVol.dt_fim_vigencia)} />
+            <Field label="Objeto" value={<span className="whitespace-pre-wrap">{selVol.objeto || "-"}</span>} wide />
+          </div>
+        </Modal>
+      )}
+
+      {/* Modal Especial / Plano de Acao */}
+      {selEsp && (
+        <Modal onClose={() => setSelEsp(null)} title={`Plano de Ação ${selEsp.codigo || ""}`} subtitle={selEsp.situacao}>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
+            <Field label="Código" value={selEsp.codigo} mono />
+            <Field label="Programa" value={selEsp.programa_codigo} mono />
+            <Field label="Situação" value={selEsp.situacao} wide />
+            <Field label="Beneficiário" value={selEsp.beneficiario_nome} />
+            <Field label="CNPJ" value={selEsp.beneficiario_cnpj ? maskCnpj(selEsp.beneficiario_cnpj) : "-"} mono />
+            <Field label="UF" value={selEsp.uf} />
+            <Field label="Emenda" value={selEsp.emenda_codigo} mono />
+            <Field label="Valor total" value={formatCurrency(selEsp.valor_total)} />
+            <Field label="Políticas públicas" value={selEsp.politicas_publicas} wide />
+            <Field label="Objeto" value={<span className="whitespace-pre-wrap">{selEsp.objeto_descricao || "-"}</span>} wide />
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function Modal({ title, subtitle, onClose, children }: { title: string; subtitle?: string; onClose: () => void; children: React.ReactNode }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div className="bg-base-100 rounded-2xl shadow-xl w-full max-w-2xl max-h-[85vh] overflow-y-auto" onClick={(ev) => ev.stopPropagation()}>
+        <div className="sticky top-0 bg-base-100 border-b px-5 py-3 flex items-start gap-3">
+          <div className="min-w-0">
+            <div className="font-semibold text-base-content truncate">{title}</div>
+            {subtitle && <div className="text-xs text-base-content/60 truncate">{subtitle}</div>}
+          </div>
+          <button onClick={onClose} className="ml-auto text-base-content/50 hover:text-base-content shrink-0">
+            <X className="size-5" />
+          </button>
+        </div>
+        <div className="p-5">{children}</div>
+      </div>
     </div>
   );
 }

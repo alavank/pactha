@@ -73,7 +73,9 @@ def _open_csv(url: str):
     zf = zipfile.ZipFile(io.BytesIO(content))
     fn = zf.namelist()[0]
     f = zf.open(fn)
-    rd = csv.reader(io.TextIOWrapper(f, encoding="latin-1"), delimiter=";")
+    # Os CSVs do SICONV vem em UTF-8 (com BOM). Ler como latin-1 gera mojibake
+    # ("Aquisicao" -> "AquisiÃ§Ã£o"). utf-8-sig remove o BOM automaticamente.
+    rd = csv.reader(io.TextIOWrapper(f, encoding="utf-8-sig"), delimiter=";")
     cols = [_clean(x) for x in next(rd)]
     idx = {c: i for i, c in enumerate(cols)}
     return rd, idx
