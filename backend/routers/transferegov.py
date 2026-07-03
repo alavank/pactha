@@ -56,20 +56,24 @@ def _dias_restantes(dt_str: Optional[str]) -> Optional[int]:
     return None
 
 
-async def _fetch_listagem(uf: str = "MG") -> list[dict]:
-    """Busca lista completa de planos de acao de uma UF (com cache)."""
+async def _fetch_listagem(uf: Optional[str] = "MG") -> list[dict]:
+    """Lista de planos de acao (com cache 1h). uf vazio/None => NACIONAL (todos
+    os estados: ~58k itens). A API nao filtra por CNPJ no servidor -> filtramos local."""
+    key = (uf or "BR").upper()
     now = time.time()
-    cached = _CACHE.get(uf)
+    cached = _CACHE.get(key)
     if cached and (now - cached[0]) < _CACHE_TTL:
         return cached[1]
-    async with httpx.AsyncClient(timeout=60, verify=False) as cli:
+    params: dict = {"page": 0, "size": 99999}
+    if uf:
+        params["uf"] = uf  # omitir uf => nacional
+    async with httpx.AsyncClient(timeout=120, verify=False) as cli:
         r = await cli.get(f"{API_BASE}/public/plano-acao/listagem",
-                          params={"uf": uf, "page": 0, "size": 99999},
-                          headers=HEADERS)
+                          params=params, headers=HEADERS)
         r.raise_for_status()
         data = r.json()
     items = data.get("listaPlanosAcao") or []
-    _CACHE[uf] = (now, items)
+    _CACHE[key] = (now, items)
     return items
 
 
@@ -160,12 +164,11 @@ def _digits(s) -> str:
 @router.get("/por-cnpj")
 async def por_cnpj(
     cnpj: str = Query(..., description="CNPJ do proponente (com ou sem mascara)"),
-    uf: str = Query("MG", description="UF p/ buscar Transferencia Especial (Plano de Acao)"),
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
-    """Consulta TransfereGov por CNPJ (nao entra em relatorio). Junta:
-    - Especiais/Plano de Acao: ao vivo na API publica (por UF, filtra pelo CNPJ);
+    """Consulta TransfereGov por CNPJ (nao entra em relatorio). So o CNPJ, sem UF.
+    - Especiais/Plano de Acao: API publica NACIONAL (cache 1h), filtra pelo CNPJ;
     - Voluntarias: do que ja foi coletado no banco (identificacao = CNPJ).
     Nao e escopado por municipio (e o proposito). Voluntarias respeita o escopo
     de municipios do usuario nao-admin.
@@ -175,10 +178,10 @@ async def por_cnpj(
     if len(alvo) != 14:
         raise HTTPException(400, "Informe um CNPJ valido (14 digitos)")
 
-    # 1) Especiais / Plano de Acao (API publica, por UF)
+    # 1) Especiais / Plano de Acao (API publica NACIONAL, filtra por CNPJ)
     especiais = []
     try:
-        for it in await _fetch_listagem((uf or "MG").upper()):
+        for it in await _fetch_listagem(None):
             if _digits(it.get("beneficiarioCnpj")) == alvo:
                 especiais.append({
                     "id": it.get("planoAcaoId"),
@@ -223,7 +226,7 @@ async def por_cnpj(
     } for r in rows]
 
     return {
-        "cnpj": alvo, "uf": (uf or "MG").upper(),
+        "cnpj": alvo,
         "especiais": especiais, "voluntarias": voluntarias,
         "total_especiais": len(especiais), "total_voluntarias": len(voluntarias),
     }

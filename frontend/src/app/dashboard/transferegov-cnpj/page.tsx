@@ -7,9 +7,6 @@ import { formatCurrency } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
-import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 
@@ -25,12 +22,10 @@ interface Voluntaria {
   valor_repasse?: number | null; valor_contrapartida?: number | null;
 }
 interface Resp {
-  cnpj: string; uf: string;
+  cnpj: string;
   especiais: Especial[]; voluntarias: Voluntaria[];
   total_especiais: number; total_voluntarias: number;
 }
-
-const UFS = ["AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG","PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"];
 
 function maskCnpj(v: string): string {
   const d = v.replace(/\D/g, "").slice(0, 14);
@@ -43,7 +38,6 @@ function maskCnpj(v: string): string {
 
 export default function TransfereGovCnpjPage() {
   const [cnpj, setCnpj] = useState("");
-  const [uf, setUf] = useState("MG");
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [data, setData] = useState<Resp | null>(null);
@@ -53,7 +47,7 @@ export default function TransfereGovCnpjPage() {
     if (digits.length !== 14) { setErro("Informe um CNPJ com 14 dígitos."); return; }
     setLoading(true); setErro(null);
     try {
-      const r = await api.get<Resp>("/transferegov/por-cnpj", { params: { cnpj: digits, uf } });
+      const r = await api.get<Resp>("/transferegov/por-cnpj", { params: { cnpj: digits } });
       setData(r.data);
     } catch (e: unknown) {
       setErro((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || "Erro na consulta.");
@@ -86,15 +80,6 @@ export default function TransfereGovCnpjPage() {
             className="w-56 font-mono"
           />
         </div>
-        <div>
-          <label className="text-xs text-base-content/70 mb-1 block">UF (Especiais)</label>
-          <Select value={uf} onValueChange={(v) => setUf(v ?? "MG")}>
-            <SelectTrigger className="w-24"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {UFS.map((u) => <SelectItem key={u} value={u}>{u}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </div>
         <Button onClick={consultar} disabled={loading} className="bg-primary hover:bg-primary/90">
           {loading ? <Loader2 className="size-4 animate-spin mr-1" /> : <SearchIcon className="size-4 mr-1" />}
           Consultar
@@ -109,16 +94,17 @@ export default function TransfereGovCnpjPage() {
           <div className="bg-base-100 border rounded-lg overflow-hidden">
             <div className="px-4 py-2.5 bg-base-200 border-b flex items-center gap-2">
               <Landmark className="size-4 text-primary" />
-              <span className="font-semibold text-sm">Transferência Especial (Plano de Ação) — {uf}</span>
+              <span className="font-semibold text-sm">Transferência Especial (Plano de Ação)</span>
               <span className="ml-auto text-xs text-base-content/60">{data.total_especiais} resultado(s)</span>
             </div>
             {data.especiais.length === 0 ? (
-              <div className="p-4 text-sm text-base-content/60">Nenhum plano de ação para este CNPJ em {uf}.</div>
+              <div className="p-4 text-sm text-base-content/60">Nenhum plano de ação para este CNPJ.</div>
             ) : (
               <Table className="text-xs">
                 <TableHeader>
                   <TableRow className="[&>th]:py-1.5 [&>th]:px-2 [&>th]:text-[11px] bg-base-200/50">
                     <TableHead>Código</TableHead>
+                    <TableHead>UF</TableHead>
                     <TableHead>Beneficiário</TableHead>
                     <TableHead>Situação</TableHead>
                     <TableHead>Emenda</TableHead>
@@ -130,6 +116,7 @@ export default function TransfereGovCnpjPage() {
                   {data.especiais.map((e, i) => (
                     <TableRow key={e.id ?? i} className="[&>td]:py-1.5 [&>td]:px-2 hover:bg-base-200">
                       <TableCell className="font-mono">{e.codigo || "-"}</TableCell>
+                      <TableCell>{e.uf || "-"}</TableCell>
                       <TableCell title={e.beneficiario_nome}>{e.beneficiario_nome || "-"}</TableCell>
                       <TableCell>{e.situacao || "-"}</TableCell>
                       <TableCell className="font-mono">{e.emenda_codigo || "-"}</TableCell>
