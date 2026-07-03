@@ -64,14 +64,23 @@ async def _get_cookies(db: AsyncSession) -> dict:
     r = await db.execute(text("SELECT senha_hash FROM cofre_senhas WHERE sistema = 'Sessao FNS' LIMIT 1"))
     row = r.first()
     if not row:
-        raise HTTPException(503, "Sessao FNS nao cadastrada no cofre. Capture via bookmarklet.")
+        raise HTTPException(503, "Sessao FNS nao cadastrada. Capture pela tela Sessoes (bookmarklet 'Capturar FNS').")
     sessao = decrypt(row[0])
     try:
         data = json.loads(sessao)
         cookies = data.get("cookies", [])
-        return {c["name"]: c["value"] for c in cookies if "name" in c}
-    except Exception as e:
-        raise HTTPException(500, f"Sessao FNS invalida: {e}")
+        cd = {c["name"]: c["value"] for c in cookies if "name" in c}
+        if not cd:
+            raise ValueError("sem cookies")
+        return cd
+    except Exception:
+        # senha digitada por engano, sessao expirada ou cifrada com chave antiga
+        raise HTTPException(
+            503,
+            "Sessao FNS invalida ou expirada. Recapture pela tela Sessoes: abra o "
+            "portal consultafns.saude.gov.br logado e clique no bookmarklet 'Capturar FNS'. "
+            "(A sessao do FNS NAO e senha — e um login capturado, que expira.)",
+        )
 
 
 @router.get("/buscar")
