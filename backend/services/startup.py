@@ -54,6 +54,8 @@ MIGRATION_FILES = [
     "add_status_changes.sql",
     # Modulo Geracao de Documentos (plano de sustentabilidade etc.)
     "add_documentos.sql",
+    # CAUC - regularidade fiscal federal do municipio (dados abertos STN)
+    "add_cauc.sql",
 ]
 
 
