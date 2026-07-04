@@ -56,6 +56,8 @@ MIGRATION_FILES = [
     "add_documentos.sql",
     # CAUC - regularidade fiscal federal do municipio (dados abertos STN)
     "add_cauc.sql",
+    # Acordo FES - divida da saude estadual (SES-MG) com os municipios
+    "add_acordofes.sql",
 ]
 
 

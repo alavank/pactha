@@ -19,6 +19,7 @@ export const TELAS: TelaDef[] = [
   { key: "emendas", label: "Emendas Estaduais" },
   { key: "transferegov", label: "Transfere Gov" },
   { key: "cauc", label: "CAUC (regularidade federal)" },
+  { key: "acordofes", label: "Acordo FES (dívida saúde MG)" },
   { key: "fns", label: "Fundo Nacional de Saúde" },
   { key: "simec", label: "SIMEC - PAR (MEC)" },
   { key: "dou", label: "Diário Oficial" },
