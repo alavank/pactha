@@ -6,7 +6,30 @@
   themes: pacta --default, pacta-dark;
 }
 
-/* Tema CLARO (white) — PACTHA navy + verde */
+/* Escala da marca (violeta) + acentos pastel — design "Base".
+   Só cores aqui; a fonte fica no @theme inline (evita referencia circular). */
+@theme {
+  --color-brand-50: #eeeefe;
+  --color-brand-100: #e0e0fd;
+  --color-brand-200: #c6c6fb;
+  --color-brand-300: #a3a3f7;
+  --color-brand-400: #8486f4;
+  --color-brand-500: #5d5fef;
+  --color-brand-600: #4a4cdb;
+  --color-brand-700: #3d3fbf;
+  --color-brand-800: #33359b;
+  --color-brand-900: #2e307c;
+
+  --color-accent-blue: #5b93ff;
+  --color-accent-coral: #ff8f6b;
+  --color-accent-amber: #ffc327;
+  --color-accent-teal: #22cce2;
+  --color-accent-pink: #ffc7d4;
+  --color-accent-purple: #ae8ff7;
+  --color-accent-mint: #2bcf8f;
+}
+
+/* Tema CLARO — "Base" (violeta calmo, fundo cinza-claro, cards brancos flat) */
 @plugin "daisyui/theme" {
   name: "pacta";
   default: true;
@@ -14,88 +37,91 @@
   color-scheme: light;
 
   --color-base-100: #ffffff;
-  --color-base-200: #f4f6fa;
-  --color-base-300: #e2e8f0;
-  --color-base-content: #1e293b;
+  --color-base-200: #f4f5fa;
+  --color-base-300: #eaecf3;
+  --color-base-content: #1b1c31;
 
-  --color-primary: #1b3a6b;
+  --color-primary: #5d5fef;
   --color-primary-content: #ffffff;
-  --color-secondary: #eef2f7;
-  --color-secondary-content: #1e293b;
-  --color-accent: #e8eef6;
-  --color-accent-content: #1b3a6b;
-  --color-neutral: #1e293b;
+  --color-secondary: #eef0fb;
+  --color-secondary-content: #5d5fef;
+  --color-accent: #ecebfe;
+  --color-accent-content: #5d5fef;
+  --color-neutral: #1b1c31;
   --color-neutral-content: #ffffff;
 
-  --color-info: #0e7490;
+  /* status calibrados p/ WCAG AA como texto sobre branco */
+  --color-info: #2a75c9;
   --color-info-content: #ffffff;
-  --color-success: #15803d;
+  --color-success: #159068;
   --color-success-content: #ffffff;
-  --color-warning: #b45309;
+  --color-warning: #b9770e;
   --color-warning-content: #ffffff;
-  --color-error: #dc2626;
+  --color-error: #d1335a;
   --color-error-content: #ffffff;
 
-  --radius-selector: 0.5rem;
-  --radius-field: 0.5rem;
-  --radius-box: 0.85rem;
+  --radius-selector: 0.75rem;
+  --radius-field: 0.7rem;
+  --radius-box: 1.25rem;
   --size-selector: 0.25rem;
   --size-field: 0.25rem;
   --border: 1px;
-  --depth: 1;
+  --depth: 0;
   --noise: 0;
 }
 
-/* Tema ESCURO (black) — mesmas cores PACTHA sobre fundo escuro */
+/* Tema ESCURO — "Base" */
 @plugin "daisyui/theme" {
   name: "pacta-dark";
   default: false;
   prefersdark: true;
   color-scheme: dark;
 
-  --color-base-100: #131c2b;
-  --color-base-200: #0c1320;
-  --color-base-300: #243349;
-  --color-base-content: #e6edf6;
+  --color-base-100: #262840;
+  --color-base-200: #1b1c2e;
+  --color-base-300: #33354e;
+  --color-base-content: #e7e8f4;
 
-  --color-primary: #4f83cc;          /* navy clareado p/ contraste no escuro */
+  --color-primary: #6d6ef2;
   --color-primary-content: #ffffff;
-  --color-secondary: #1c2940;
-  --color-secondary-content: #e6edf6;
-  --color-accent: #22304a;
-  --color-accent-content: #cfe0f5;
-  --color-neutral: #e6edf6;
-  --color-neutral-content: #0c1320;
+  --color-secondary: #2c2e48;
+  --color-secondary-content: #cfd0f6;
+  --color-accent: #2f3152;
+  --color-accent-content: #c3c4fb;
+  --color-neutral: #e7e8f4;
+  --color-neutral-content: #1b1c2e;
 
-  --color-info: #38bdf8;
+  --color-info: #57a5ef;
   --color-info-content: #06212e;
-  --color-success: #2ecc71;
+  --color-success: #2bcf8f;
   --color-success-content: #06210f;
-  --color-warning: #f59e0b;
+  --color-warning: #f0b040;
   --color-warning-content: #241600;
-  --color-error: #f87171;
+  --color-error: #f26d86;
   --color-error-content: #2b0a0a;
 
-  --radius-selector: 0.5rem;
-  --radius-field: 0.5rem;
-  --radius-box: 0.85rem;
+  --radius-selector: 0.75rem;
+  --radius-field: 0.7rem;
+  --radius-box: 1.25rem;
   --size-selector: 0.25rem;
   --size-field: 0.25rem;
   --border: 1px;
-  --depth: 1;
+  --depth: 0;
   --noise: 0;
 }
 
 @custom-variant dark (&:is([data-theme="pacta-dark"] *));
 
 /* Tokens shadcn que o daisyUI não fornece (card, popover, muted, *-foreground,
-   border, input, ring, sidebar, chart). */
+   border, input, ring, sidebar, chart) + fonte.
+   IMPORTANTE: a fonte é definida SÓ aqui (Nunito). Não duplicar --font-sans no
+   @theme normal — a duplicação cria referência circular e a fonte não aplica. */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
-  --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-sans);
+  --font-sans: var(--font-nunito), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-nunito), ui-monospace, monospace;
+  --font-heading: var(--font-nunito), ui-sans-serif, system-ui, sans-serif;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -131,85 +157,85 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/* ---- CLARO (default) ---- */
+/* ---- CLARO (default) — "Base" ---- */
 :root {
-  --brand-navy: #1b3a6b;
-  --brand-navy-700: #16315c;
-  --brand-green: #15803d;
-  --brand-green-600: #1f9d4b;
+  --brand-navy: #5d5fef;
+  --brand-navy-700: #4a4cdb;
+  --brand-green: #159068;
+  --brand-green-600: #1aa578;
 
-  --background: #f4f6fa;
-  --foreground: #1e293b;
+  --background: #f4f5fa;
+  --foreground: #1b1c31;
   --card: #ffffff;
-  --card-foreground: #1e293b;
+  --card-foreground: #1b1c31;
   --popover: #ffffff;
-  --popover-foreground: #1e293b;
-  --primary: #1b3a6b;
+  --popover-foreground: #1b1c31;
+  --primary: #5d5fef;
   --primary-foreground: #ffffff;
-  --secondary: #eef2f7;
-  --secondary-foreground: #1e293b;
-  --muted: #f1f5f9;
-  --muted-foreground: #64748b;
-  --accent: #e8eef6;
-  --accent-foreground: #1b3a6b;
-  --destructive: #dc2626;
-  --border: #e2e8f0;
-  --input: #e2e8f0;
-  --ring: #1b3a6b;
-  --chart-1: #1b3a6b;
-  --chart-2: #0e7490;
-  --chart-3: #15803d;
-  --chart-4: #ca8a04;
-  --chart-5: #b91c1c;
-  --radius: 0.6rem;
+  --secondary: #eef0fb;
+  --secondary-foreground: #5d5fef;
+  --muted: #f1f2f8;
+  --muted-foreground: #8b8fa6;
+  --accent: #ecebfe;
+  --accent-foreground: #5d5fef;
+  --destructive: #d1335a;
+  --border: #eaecf3;
+  --input: #eef0f6;
+  --ring: #5d5fef;
+  --chart-1: #5d5fef;
+  --chart-2: #5b93ff;
+  --chart-3: #ff8f6b;
+  --chart-4: #ffc327;
+  --chart-5: #22cce2;
+  --radius: 0.7rem;
   --sidebar: #ffffff;
-  --sidebar-foreground: #1e293b;
-  --sidebar-primary: #1b3a6b;
+  --sidebar-foreground: #1b1c31;
+  --sidebar-primary: #5d5fef;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #eef4fb;
-  --sidebar-accent-foreground: #1b3a6b;
-  --sidebar-border: #e2e8f0;
-  --sidebar-ring: #1b3a6b;
+  --sidebar-accent: #ecebfe;
+  --sidebar-accent-foreground: #5d5fef;
+  --sidebar-border: #eaecf3;
+  --sidebar-ring: #5d5fef;
 }
 
-/* ---- ESCURO ---- */
+/* ---- ESCURO — "Base" ---- */
 [data-theme="pacta-dark"] {
-  --brand-navy: #4f83cc;
-  --brand-navy-700: #3f6fb0;
-  --brand-green: #2ecc71;
-  --brand-green-600: #25a85d;
+  --brand-navy: #6d6ef2;
+  --brand-navy-700: #5658e0;
+  --brand-green: #2bcf8f;
+  --brand-green-600: #22b87d;
 
-  --background: #0c1320;
-  --foreground: #e6edf6;
-  --card: #131c2b;
-  --card-foreground: #e6edf6;
-  --popover: #131c2b;
-  --popover-foreground: #e6edf6;
-  --primary: #4f83cc;
+  --background: #1b1c2e;
+  --foreground: #e7e8f4;
+  --card: #262840;
+  --card-foreground: #e7e8f4;
+  --popover: #262840;
+  --popover-foreground: #e7e8f4;
+  --primary: #6d6ef2;
   --primary-foreground: #ffffff;
-  --secondary: #1c2940;
-  --secondary-foreground: #e6edf6;
-  --muted: #1c2940;
-  --muted-foreground: #9fb3cd;
-  --accent: #22304a;
-  --accent-foreground: #cfe0f5;
-  --destructive: #f87171;
-  --border: #243349;
-  --input: #243349;
-  --ring: #4f83cc;
-  --chart-1: #5b8ed6;
-  --chart-2: #38bdf8;
-  --chart-3: #2ecc71;
-  --chart-4: #f59e0b;
-  --chart-5: #f87171;
-  --sidebar: #0f1726;
-  --sidebar-foreground: #e6edf6;
-  --sidebar-primary: #4f83cc;
+  --secondary: #2c2e48;
+  --secondary-foreground: #cfd0f6;
+  --muted: #2c2e48;
+  --muted-foreground: #9a9dc0;
+  --accent: #2f3152;
+  --accent-foreground: #c3c4fb;
+  --destructive: #f26d86;
+  --border: #33354e;
+  --input: #33354e;
+  --ring: #6d6ef2;
+  --chart-1: #6d6ef2;
+  --chart-2: #5b93ff;
+  --chart-3: #ff8f6b;
+  --chart-4: #f0b040;
+  --chart-5: #22cce2;
+  --sidebar: #212236;
+  --sidebar-foreground: #e7e8f4;
+  --sidebar-primary: #6d6ef2;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #1c2940;
-  --sidebar-accent-foreground: #cfe0f5;
-  --sidebar-border: #243349;
-  --sidebar-ring: #4f83cc;
+  --sidebar-accent: #2f3152;
+  --sidebar-accent-foreground: #c3c4fb;
+  --sidebar-border: #33354e;
+  --sidebar-ring: #6d6ef2;
 }
 
 @layer base {
@@ -218,7 +244,6 @@
   }
   body {
     @apply bg-base-200 text-base-content;
-    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
   html {
     @apply font-sans;
@@ -228,9 +253,29 @@
   }
 }
 
-/* Faixa de identidade institucional (navy → verde) */
+/* Sombras suaves do tema "Base" — o namespace --shadow-* do @theme NÃO vira
+   utilitário neste pipeline (daisyUI+shadcn), então são declaradas aqui. */
+@layer utilities {
+  .shadow-theme-xs { box-shadow: 0 1px 2px 0 rgba(27, 28, 49, 0.05); }
+  .shadow-theme-sm {
+    box-shadow: 0 1px 3px 0 rgba(27, 28, 49, 0.06), 0 1px 2px -1px rgba(27, 28, 49, 0.04);
+  }
+  .shadow-theme-md {
+    box-shadow: 0 4px 8px -2px rgba(27, 28, 49, 0.08), 0 2px 4px -2px rgba(27, 28, 49, 0.04);
+  }
+  .shadow-theme-lg {
+    box-shadow: 0 12px 20px -4px rgba(27, 28, 49, 0.10), 0 4px 8px -4px rgba(27, 28, 49, 0.05);
+  }
+  .shadow-theme-xl {
+    box-shadow: 0 20px 32px -8px rgba(27, 28, 49, 0.12);
+  }
+  /* Nunito renderiza os números melhor com tabular-nums onde havia font-mono */
+  .font-mono { font-variant-numeric: tabular-nums; }
+}
+
+/* Faixa de identidade — agora violeta (marca "Base") */
 .gov-stripe {
-  background: linear-gradient(90deg, var(--brand-navy) 0%, var(--brand-navy) 55%, var(--brand-green) 55%, var(--brand-green) 100%);
+  background: linear-gradient(90deg, #5d5fef 0%, #8486f4 55%, #ae8ff7 100%);
   height: 3px;
   width: 100%;
 }

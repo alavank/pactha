@@ -315,7 +315,7 @@ function ParlamentaresInner() {
                                 <Td className="text-xs">{s.situacao || "-"}</Td>
                                 <Td>{fmtMoney(s.valor_total)}</Td>
                                 <Td>{s.dt_vigencia_atual || "-"}</Td>
-                                <Td className="text-xs max-w-[280px] truncate" title={s.objeto || ""}>
+                                <Td className="max-w-[320px] whitespace-normal break-words leading-snug align-top" title={s.objeto || ""}>
                                   {s.objeto || "-"}
                                 </Td>
                               </tr>
@@ -341,7 +341,7 @@ function ParlamentaresInner() {
                                 <Td className="text-xs">{v.situacao_contratacao || "-"}</Td>
                                 <Td>{fmtMoney(v.valor_global)}</Td>
                                 <Td>{v.dt_fim_vigencia || "-"}</Td>
-                                <Td className="text-xs max-w-[280px] truncate" title={v.objeto || ""}>
+                                <Td className="max-w-[320px] whitespace-normal break-words leading-snug align-top" title={v.objeto || ""}>
                                   {v.objeto || "-"}
                                 </Td>
                               </tr>
@@ -405,7 +405,7 @@ function Section({ icon, title, children }: { icon: React.ReactNode; title: stri
 
 function Table({ headers, children }: { headers: string[]; children: React.ReactNode }) {
   return (
-    <table className="min-w-full text-xs">
+    <table className="min-w-full text-[13px]">
       <thead className="bg-base-200 text-base-content/70">
         <tr>
           {headers.map((h, i) => (

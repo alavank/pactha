@@ -65,8 +65,11 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#16315c] via-[#1b3a6b] to-[#102a4d] p-4">
-      <Card className="w-full max-w-md shadow-2xl border-0">
+    <div className="relative min-h-screen flex items-center justify-center overflow-hidden bg-base-200 p-4">
+      {/* brilho de marca (design "Base") */}
+      <div className="pointer-events-none absolute -top-40 left-1/2 h-[28rem] w-[40rem] -translate-x-1/2 rounded-full bg-primary/15 blur-3xl" />
+      <div className="pointer-events-none absolute -bottom-24 right-[-6rem] h-80 w-80 rounded-full bg-accent-purple/15 blur-3xl" />
+      <Card className="relative w-full max-w-md border border-base-300/60 shadow-theme-lg">
         <CardHeader className="text-center pb-2">
           {process.env.NEXT_PUBLIC_TENANT === "ciesp" ? (
             <div className="mx-auto mb-1 flex items-center justify-center gap-4">
@@ -80,6 +83,7 @@ export default function LoginPage() {
             /* eslint-disable-next-line @next/next/no-img-element */
             <img src="/pacta-logo.png" alt="PACTHA" className="mx-auto mb-1 h-28 w-auto" />
           )}
+          <h1 className="text-lg font-bold text-base-content">Bem-vindo de volta</h1>
           <p className="text-sm text-base-content/60">
             Monitoramento de Convênios e Transferências
           </p>

@@ -245,22 +245,22 @@ export default function SimecPage() {
                 </TableHeader>
                 <TableBody>
                   {displayLib.map((l, i) => (
-                    <TableRow key={i} className="[&>td]:py-1.5 [&>td]:px-2 [&>td]:text-[11px]">
+                    <TableRow key={i} className="[&>td]:py-2 [&>td]:px-3 [&>td]:text-[13px]">
                       <TableCell className="whitespace-nowrap">{formatDate(l.dt_pgto)}</TableCell>
                       <TableCell>
-                        <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${programColor(l.programa)}`}>
+                        <span className={`inline-block px-1.5 py-0.5 rounded text-[11px] font-medium ${programColor(l.programa)}`}>
                           {l.programa}
                         </span>
                       </TableCell>
-                      <TableCell className="truncate" title={l.descricao || l.programa_full}>
+                      <TableCell className="whitespace-normal break-words leading-snug align-top min-w-[200px] max-w-[320px]" title={l.descricao || l.programa_full}>
                         {l.descricao || l.programa_full || "-"}
                       </TableCell>
                       <TableCell className="font-mono">{l.ob || "-"}</TableCell>
                       <TableCell className="text-right font-mono font-semibold text-success">{formatCurrency(l.valor || 0)}</TableCell>
-                      <TableCell className="text-[10px] truncate" title={l.banco || ""}>
+                      <TableCell className="whitespace-normal break-words min-w-[130px]" title={l.banco || ""}>
                         {l.banco || "-"} {l.agencia ? `/ ${l.agencia}` : ""}
                       </TableCell>
-                      <TableCell className="font-mono text-[10px]">{l.conta || "-"}</TableCell>
+                      <TableCell className="font-mono">{l.conta || "-"}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

@@ -230,9 +230,9 @@ function SidebarContent({
               <Link
                 key={leaf.href}
                 href={`${leaf.href}${qs}`}
-                className={`flex items-center gap-3 rounded-md px-3 py-1.5 text-sm font-medium transition-all ${
+                className={`flex items-center gap-3 rounded-lg px-3 py-1.5 text-sm font-medium transition-all ${
                   isActive
-                    ? "bg-primary/10 text-primary font-semibold"
+                    ? "bg-accent text-primary font-semibold"
                     : "text-base-content/70 hover:bg-base-200 hover:text-base-content"
                 }`}
               >
@@ -301,9 +301,9 @@ function SidebarContent({
             <Link
               key={item.href}
               href={`${item.href}${qs}`}
-              className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-all ${
+              className={`relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
                 isActive
-                  ? "bg-primary/10 text-primary font-semibold"
+                  ? "bg-accent text-primary font-semibold before:absolute before:-left-2 before:top-1/2 before:h-6 before:w-1 before:-translate-y-1/2 before:rounded-r-full before:bg-primary"
                   : "text-base-content/70 hover:bg-base-200 hover:text-base-content"
               }`}
             >
