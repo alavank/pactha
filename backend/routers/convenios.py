@@ -236,6 +236,7 @@ async def list_convenios(
 @router.get("/stats", response_model=ConvenioStats)
 async def convenio_stats(
     municipio_id: Optional[int] = None,
+    ano: Optional[int] = Query(None, description="Filtra por ano (None=todos)"),
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
@@ -249,6 +250,8 @@ async def convenio_stats(
     )
     if municipio_id:
         q = q.where(ConvenioEstadual.municipio_id == municipio_id)
+    if ano:
+        q = q.where(ConvenioEstadual.ano == ano)
     row = (await db.execute(q)).one()
     stats.total_convenios = row.cnt
     stats.valor_total = float(row.total)
@@ -257,6 +260,8 @@ async def convenio_stats(
     q = select(ConvenioEstadual.situacao, func.count()).group_by(ConvenioEstadual.situacao)
     if municipio_id:
         q = q.where(ConvenioEstadual.municipio_id == municipio_id)
+    if ano:
+        q = q.where(ConvenioEstadual.ano == ano)
     for sit, cnt in (await db.execute(q)).all():
         if sit:
             stats.por_situacao[sit] = cnt
@@ -268,6 +273,7 @@ async def convenio_stats(
 async def alertas_vigencia(
     municipio_id: Optional[int] = None,
     dias: int = Query(120, ge=1),
+    ano: Optional[int] = Query(None, description="Filtra por ano (None=todos)"),
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
@@ -282,6 +288,8 @@ async def alertas_vigencia(
     )
     if municipio_id:
         q = q.where(ConvenioEstadual.municipio_id == municipio_id)
+    if ano:
+        q = q.where(ConvenioEstadual.ano == ano)
     q = q.order_by(ConvenioEstadual.dt_vigencia_atual.asc())
     for c in (await db.execute(q)).scalars().all():
         dias_rest = (c.dt_vigencia_atual - date.today()).days
@@ -296,10 +304,14 @@ async def alertas_vigencia(
     # TransfereGov Voluntarias (dt_fim_vigencia eh string dd/mm/yyyy)
     if municipio_id:
         from datetime import datetime as _dt
-        vol = await db.execute(text("""
+        _vp = {"m": municipio_id}
+        _vsql = "AND split_part(numero_proposta, '/', 2) = :ano_txt" if ano else ""
+        if ano:
+            _vp["ano_txt"] = str(ano)
+        vol = await db.execute(text(f"""
             SELECT numero_proposta, codigo_instrumento, objeto, orgao, situacao, dt_fim_vigencia
-            FROM transferegov_propostas WHERE municipio_id = :m
-        """), {"m": municipio_id})
+            FROM transferegov_propostas WHERE municipio_id = :m {_vsql}
+        """), _vp)
         for row in vol.fetchall():
             dtf = None
             for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
@@ -324,6 +336,7 @@ async def alertas_vigencia(
 async def alertas_prestacao_contas(
     municipio_id: Optional[int] = None,
     dias: int = Query(90, ge=1, description="Dias minimos apos o vencimento"),
+    ano: Optional[int] = Query(None, description="Filtra por ano (None=todos)"),
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
@@ -336,6 +349,8 @@ async def alertas_prestacao_contas(
     q = select(ConvenioEstadual).where(ConvenioEstadual.dt_vigencia_atual < corte)
     if municipio_id:
         q = q.where(ConvenioEstadual.municipio_id == municipio_id)
+    if ano:
+        q = q.where(ConvenioEstadual.ano == ano)
     q = q.order_by(ConvenioEstadual.dt_vigencia_atual.desc())
     for c in (await db.execute(q)).scalars().all():
         dias_rest = (c.dt_vigencia_atual - date.today()).days
@@ -350,10 +365,14 @@ async def alertas_prestacao_contas(
     # TransfereGov Voluntarias (dt_fim_vigencia eh string dd/mm/yyyy)
     if municipio_id:
         from datetime import datetime as _dt
-        vol = await db.execute(text("""
+        _vp = {"m": municipio_id}
+        _vsql = "AND split_part(numero_proposta, '/', 2) = :ano_txt" if ano else ""
+        if ano:
+            _vp["ano_txt"] = str(ano)
+        vol = await db.execute(text(f"""
             SELECT numero_proposta, codigo_instrumento, objeto, orgao, situacao, dt_fim_vigencia
-            FROM transferegov_propostas WHERE municipio_id = :m
-        """), {"m": municipio_id})
+            FROM transferegov_propostas WHERE municipio_id = :m {_vsql}
+        """), _vp)
         for row in vol.fetchall():
             dtf = None
             for fmt in ("%d/%m/%Y", "%Y-%m-%d"):

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, text
 from datetime import date, datetime, timedelta
@@ -41,6 +41,7 @@ async def list_municipios(
 @router.get("/{municipio_id}/summary", response_model=MunicipioSummary)
 async def municipio_summary(
     municipio_id: int,
+    ano: int | None = Query(None, description="Filtra os KPIs por ano (None=todos)"),
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
@@ -51,42 +52,52 @@ async def municipio_summary(
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Municipio nao encontrado")
 
-    est_count = await db.execute(
+    # Filtro de ano — SIGCON usa a coluna `ano`; TransfereGov deriva do sufixo do
+    # numero_proposta ("xxx/AAAA"). None = todos os anos.
+    def _ano_est(q):
+        return q.where(ConvenioEstadual.ano == ano) if ano else q
+    ano_txt = str(ano) if ano else None
+    vol_ano_sql = " AND split_part(numero_proposta, '/', 2) = :ano_txt" if ano else ""
+
+    est_count = await db.execute(_ano_est(
         select(func.count()).select_from(ConvenioEstadual).where(ConvenioEstadual.municipio_id == municipio_id)
-    )
-    est_valor = await db.execute(
+    ))
+    est_valor = await db.execute(_ano_est(
         select(func.coalesce(func.sum(ConvenioEstadual.valor_total), 0))
         .where(ConvenioEstadual.municipio_id == municipio_id)
-    )
+    ))
 
     hoje = date.today()
     limite120 = hoje + timedelta(days=120)
     limite60 = hoje + timedelta(days=60)
     # Vencidos ha +90 dias -> prestacao de contas obrigatoria
     venc90 = hoje - timedelta(days=90)
-    alertas120 = await db.execute(
+    alertas120 = await db.execute(_ano_est(
         select(func.count()).select_from(ConvenioEstadual)
         .where(ConvenioEstadual.municipio_id == municipio_id)
         .where(ConvenioEstadual.dt_vigencia_atual <= limite120)
         .where(ConvenioEstadual.dt_vigencia_atual >= hoje)
-    )
-    alertas60 = await db.execute(
+    ))
+    alertas60 = await db.execute(_ano_est(
         select(func.count()).select_from(ConvenioEstadual)
         .where(ConvenioEstadual.municipio_id == municipio_id)
         .where(ConvenioEstadual.dt_vigencia_atual <= limite60)
         .where(ConvenioEstadual.dt_vigencia_atual >= hoje)
-    )
-    prest_contas = await db.execute(
+    ))
+    prest_contas = await db.execute(_ano_est(
         select(func.count()).select_from(ConvenioEstadual)
         .where(ConvenioEstadual.municipio_id == municipio_id)
         .where(ConvenioEstadual.dt_vigencia_atual < venc90)
-    )
+    ))
 
     # TransfereGov Voluntarias (dt_fim_vigencia eh string dd/mm/yyyy -> parse em Python)
+    vol_params = {"m": municipio_id}
+    if ano:
+        vol_params["ano_txt"] = ano_txt
     vol = await db.execute(text(
         "SELECT dt_fim_vigencia, COALESCE(valor_global, valor_repasse, 0) "
-        "FROM transferegov_propostas WHERE municipio_id = :m"
-    ), {"m": municipio_id})
+        "FROM transferegov_propostas WHERE municipio_id = :m" + vol_ano_sql
+    ), vol_params)
     vol_rows = vol.fetchall()
     total_vol = len(vol_rows)
     vol_120 = vol_60 = vol_prest = 0

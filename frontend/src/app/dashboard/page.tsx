@@ -144,6 +144,7 @@ function MetricSkeleton() {
 export default function DashboardPage() {
   const router = useRouter();
   const { municipioId } = useMunicipio();
+  const [ano, setAno] = useState("");
 
   const goConvenios = (vigencia?: string) => {
     if (!municipioId) return;
@@ -168,12 +169,13 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!municipioId) return;
     setLoading(true);
+    const anoP = ano ? { ano } : {};
 
     Promise.all([
-      api.get<MunicipioSummary>(`/municipios/${municipioId}/summary`),
-      api.get<AlertaVigencia[]>("/convenios/alertas", { params: { municipio_id: municipioId } }),
-      api.get<ConvenioStats>("/convenios/stats", { params: { municipio_id: municipioId } }),
-      api.get<AlertaVigencia[]>("/convenios/prestacao-contas", { params: { municipio_id: municipioId } }),
+      api.get<MunicipioSummary>(`/municipios/${municipioId}/summary`, { params: { ...anoP } }),
+      api.get<AlertaVigencia[]>("/convenios/alertas", { params: { municipio_id: municipioId, ...anoP } }),
+      api.get<ConvenioStats>("/convenios/stats", { params: { municipio_id: municipioId, ...anoP } }),
+      api.get<AlertaVigencia[]>("/convenios/prestacao-contas", { params: { municipio_id: municipioId, ...anoP } }),
       api.get<{ items: StatusChange[] }>("/status-changes", { params: { municipio_id: municipioId, days: 30 } }),
     ])
       .then(([summaryRes, alertasRes, statsRes, prestacaoRes, mudancasRes]) => {
@@ -185,7 +187,7 @@ export default function DashboardPage() {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [municipioId]);
+  }, [municipioId, ano]);
 
   const fonteBadge = (f: string): { label: string; cls: string } => {
     if (f === "fns") return { label: "FNS", cls: "bg-error/15 text-error border-error/30" };
@@ -253,16 +255,33 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       {/* Cabecalho */}
-      <div>
-        <div className="mb-1 flex items-center gap-1.5 text-xs text-base-content/50">
-          <span>Início</span>
-          <span>›</span>
-          <span className="text-base-content/70">Painel de Monitoramento</span>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="mb-1 flex items-center gap-1.5 text-xs text-base-content/50">
+            <span>Início</span>
+            <span>›</span>
+            <span className="text-base-content/70">Painel de Monitoramento</span>
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight text-base-content">Painel de Monitoramento</h1>
+          <p className="mt-1 text-sm text-base-content/60">
+            Visão consolidada de convênios, emendas e indicadores do município
+          </p>
         </div>
-        <h1 className="text-2xl font-bold tracking-tight text-base-content">Painel de Monitoramento</h1>
-        <p className="mt-1 text-sm text-base-content/60">
-          Visão consolidada de convênios, emendas e indicadores do município
-        </p>
+        {/* Filtro de ano — os KPIs, o gráfico e os alertas respeitam a seleção */}
+        <div className="flex items-center gap-2">
+          <label htmlFor="dash-ano" className="text-xs font-medium text-base-content/60">Ano</label>
+          <select
+            id="dash-ano"
+            value={ano}
+            onChange={(e) => setAno(e.target.value)}
+            className="h-9 rounded-lg border border-base-300 bg-base-100 px-3 text-sm text-base-content"
+          >
+            <option value="">Todos</option>
+            {Array.from({ length: new Date().getFullYear() - 2009 }, (_, i) => new Date().getFullYear() - i).map((y) => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {/* KPIs */}
