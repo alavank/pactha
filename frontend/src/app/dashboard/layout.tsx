@@ -20,6 +20,7 @@ import {
   UserCircle2,
   Send,
   FileSignature,
+  ShieldCheck,
 } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -114,6 +115,7 @@ const NAV_ITEMS: NavEntry[] = [
       { href: "/dashboard/transferegov-cnpj", label: "CNPJ" },
     ],
   },
+  { href: "/dashboard/cauc", label: "CAUC (Regularidade)", icon: ShieldCheck },
   { href: "/dashboard/fns", label: "Fundo Nacional de Saude", icon: Target },
   { href: "/dashboard/simec", label: "SIMEC - PAR (MEC)", icon: Target },
   { href: "/dashboard/dou", label: "Diario Oficial", icon: Newspaper },
