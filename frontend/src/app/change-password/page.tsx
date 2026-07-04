@@ -56,11 +56,14 @@ function ChangePasswordInner() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#16315c] via-[#1b3a6b] to-[#102a4d] p-4">
-      <Card className="w-full max-w-md shadow-2xl border-0">
+    <div className="relative min-h-screen flex items-center justify-center overflow-hidden bg-base-200 p-4">
+      {/* brilho de marca (design "Base") */}
+      <div className="pointer-events-none absolute -top-40 left-1/2 h-[28rem] w-[40rem] -translate-x-1/2 rounded-full bg-primary/15 blur-3xl" />
+      <div className="pointer-events-none absolute -bottom-24 right-[-6rem] h-80 w-80 rounded-full bg-accent-purple/15 blur-3xl" />
+      <Card className="relative w-full max-w-md border border-base-300/60 shadow-theme-lg">
         <CardHeader className="text-center pb-2">
-          <div className="mx-auto mb-3 w-14 h-14 bg-warning rounded-[var(--radius-box)] flex items-center justify-center">
-            <KeyRound className="size-7 text-warning-content" />
+          <div className="mx-auto mb-3 w-14 h-14 bg-primary/10 rounded-[var(--radius-box)] flex items-center justify-center">
+            <KeyRound className="size-7 text-primary" />
           </div>
           <CardTitle className="text-xl font-bold">
             {isFirstLogin ? "Trocar senha (primeiro acesso)" : "Trocar senha"}
