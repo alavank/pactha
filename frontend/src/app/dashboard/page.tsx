@@ -238,17 +238,17 @@ export default function DashboardPage() {
 
   const getBarColor = (sit: string) => {
     const s = sit.toLowerCase();
-    if (s.includes("pago")) return "#16a34a";               // verde — pago
-    if (s.includes("aprovad") || s.includes("conclu")) return "#059669";
-    if (s.includes("vigor") || s.includes("execu")) return "#2563eb"; // azul — ativo
-    if (s.includes("empenhad")) return "#0891b2";           // ciano — empenhado
+    if (s.includes("pago")) return "#159068";               // verde — pago (Base success)
+    if (s.includes("aprovad") || s.includes("conclu")) return "#2bcf8f"; // mint
+    if (s.includes("vigor") || s.includes("execu")) return "#5b93ff"; // azul — ativo (Base)
+    if (s.includes("empenhad")) return "#22cce2";           // teal — empenhado (Base)
     if (s.includes("anulad") || s.includes("cancelad") || s.includes("rescind") || s.includes("rejeitad") || s.includes("impedi"))
-      return "#dc2626";                                     // vermelho — negativo
+      return "#d1335a";                                     // vermelho-rosa — negativo (Base)
     if (s.includes("analise") || s.includes("análise") || s.includes("pendente") || s.includes("cadastr") ||
         s.includes("checklist") || s.includes("processo") || s.includes("adequa") || s.includes("jur") || s.includes("autorizad"))
-      return "#d97706";                                     // âmbar — em andamento
-    if (s.includes("encerrad")) return "#64748b";           // cinza — encerrado
-    return "#94a3b8";
+      return "#ffc327";                                     // âmbar — em andamento (Base)
+    if (s.includes("encerrad")) return "#a3a7bd";           // cinza — encerrado
+    return "#8b8fa6";
   };
 
   const secLabel = "text-xs font-semibold uppercase tracking-wider text-base-content/50 mb-3";
@@ -466,25 +466,25 @@ export default function DashboardPage() {
         ) : (
           <ResponsiveContainer width="100%" height={Math.max(260, chartData.length * 38)}>
             <BarChart data={chartData} layout="vertical" margin={{ top: 4, right: 44, bottom: 4, left: 8 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" horizontal={false} />
-              <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11, fill: "#475569" }} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#eaecf3" horizontal={false} />
+              <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11, fill: "#8b8fa6" }} />
               <YAxis
                 type="category"
                 dataKey="name"
                 width={150}
                 interval={0}
-                tick={{ fontSize: 11, fill: "#334155" }}
+                tick={{ fontSize: 11, fill: "#8b8fa6" }}
               />
               <Tooltip
                 formatter={(value, _name, props) => [`${value} convênios`, props.payload.fullName]}
-                contentStyle={{ borderRadius: 12, border: "1px solid #cbd5e1" }}
-                cursor={{ fill: "rgba(0,0,0,0.03)" }}
+                contentStyle={{ borderRadius: 12, border: "1px solid #eaecf3" }}
+                cursor={{ fill: "rgba(93,95,239,0.06)" }}
               />
               <Bar dataKey="quantidade" radius={[0, 6, 6, 0]} barSize={18}>
                 {chartData.map((entry, idx) => (
                   <Cell key={idx} fill={getBarColor(entry.fullName)} />
                 ))}
-                <LabelList dataKey="quantidade" position="right" style={{ fontSize: 11, fill: "#475569", fontWeight: 600 }} />
+                <LabelList dataKey="quantidade" position="right" style={{ fontSize: 11, fill: "#8b8fa6", fontWeight: 600 }} />
               </Bar>
             </BarChart>
           </ResponsiveContainer>

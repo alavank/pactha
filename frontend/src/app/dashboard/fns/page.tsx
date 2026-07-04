@@ -339,7 +339,7 @@ export default function PropostasFNSPage() {
                 </TableHeader>
                 <TableBody>
                   {data.items.map((it, idx) => (
-                    <TableRow key={idx} className="[&>td]:py-1.5 [&>td]:px-2 [&>td]:text-[11px] hover:bg-base-200">
+                    <TableRow key={idx} className="[&>td]:py-2 [&>td]:px-3 [&>td]:text-[13px] hover:bg-base-200">
                       <TableCell className="font-medium">{it.tipo_proposta || "-"}</TableCell>
                       <TableCell>
                         <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium border ${recursoColor(it.tipo_recurso)}`}>
@@ -352,7 +352,7 @@ export default function PropostasFNSPage() {
                       <TableCell className="text-right font-mono text-warning">{formatCurrency(it.valor_pagar)}</TableCell>
                       <TableCell title={(it.parlamentares || []).map((p) => p.nome).join(", ")}>
                         {(it.parlamentares || []).length > 0
-                          ? <span className="text-[10px]">{(it.parlamentares || []).slice(0, 2).map((p) => p.nome).join(", ")}{(it.parlamentares || []).length > 2 ? ` +${(it.parlamentares || []).length - 2}` : ""}</span>
+                          ? <span className="whitespace-normal leading-tight">{(it.parlamentares || []).slice(0, 2).map((p) => p.nome).join(", ")}{(it.parlamentares || []).length > 2 ? ` +${(it.parlamentares || []).length - 2}` : ""}</span>
                           : <span className="text-base-content/40">-</span>}
                       </TableCell>
                       <TableCell className="text-center">
