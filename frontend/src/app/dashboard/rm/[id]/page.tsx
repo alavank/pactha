@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useCallback } from "react";
-import { useParams, useSearchParams, useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import {
   Save, Download, RefreshCw, ChevronDown, ChevronRight, Plus, Trash2,
   ArrowUp, ArrowDown, Loader2, ArrowLeft, FileCheck,
@@ -9,6 +9,7 @@ import {
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useMunicipio } from "@/contexts/MunicipioContext";
 
 interface Item {
   ordem?: number;
@@ -93,10 +94,9 @@ function moveItem<T>(arr: T[], idx: number, delta: number): T[] {
 
 export default function RmEditorPage() {
   const params = useParams<{ id: string }>();
-  const sp = useSearchParams();
   const router = useRouter();
   const rid = params.id;
-  const municipioId = sp.get("municipio_id");
+  const { municipioId } = useMunicipio();
 
   const [rm, setRm] = useState<Rm | null>(null);
   const [loading, setLoading] = useState(true);

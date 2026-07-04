@@ -1,9 +1,9 @@
 "use client";
 
 import React, { useEffect, useState, useCallback } from "react";
-import { useSearchParams } from "next/navigation";
 import { Edit2, Loader2, Eraser, Paperclip } from "lucide-react";
 import api from "@/lib/api";
+import { useMunicipio } from "@/contexts/MunicipioContext";
 import { Button } from "@/components/ui/button";
 import AnotacaoModal from "@/components/AnotacaoModal";
 
@@ -47,8 +47,7 @@ function fmtData(d?: string | null) {
 }
 
 export default function GestaoPage() {
-  const sp = useSearchParams();
-  const municipioId = sp.get("municipio_id");
+  const { municipioId } = useMunicipio();
 
   const [items, setItems] = useState<Anotacao[]>([]);
   const [loading, setLoading] = useState(false);

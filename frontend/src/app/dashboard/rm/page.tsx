@@ -2,10 +2,11 @@
 
 import React, { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { FileText, Plus, Trash2, Eye, Download, Loader2 } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { useMunicipio } from "@/contexts/MunicipioContext";
 
 interface RmListItem {
   id: number;
@@ -19,9 +20,8 @@ interface RmListItem {
 }
 
 export default function RmListPage() {
-  const sp = useSearchParams();
   const router = useRouter();
-  const municipioId = sp.get("municipio_id");
+  const { municipioId } = useMunicipio();
 
   const [items, setItems] = useState<RmListItem[]>([]);
   const [loading, setLoading] = useState(false);

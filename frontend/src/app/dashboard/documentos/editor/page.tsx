@@ -4,6 +4,7 @@ import React, { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { ArrowLeft, Save, Plus, Trash2, FileText, FileType, Loader2 } from "lucide-react";
 import api from "@/lib/api";
+import { useMunicipio } from "@/contexts/MunicipioContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -52,7 +53,7 @@ function CampoBlock({ campo, value, onChange }: { campo: Campo; value: unknown; 
 function EditorInner() {
   const sp = useSearchParams();
   const router = useRouter();
-  const municipioId = sp.get("municipio_id");
+  const { municipioId } = useMunicipio();
   const tipoParam = sp.get("tipo");
   const idParam = sp.get("id");
 

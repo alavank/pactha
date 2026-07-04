@@ -1,9 +1,9 @@
 "use client";
 
 import React, { useEffect, useState, useCallback, useMemo } from "react";
-import { useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronRight, Search as SearchIcon, ChevronDown, ChevronUp } from "lucide-react";
 import api from "@/lib/api";
+import { useMunicipio } from "@/contexts/MunicipioContext";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -61,8 +61,7 @@ function siglaTipo(t?: string): string {
 }
 
 export default function EmendasEstaduaisPage() {
-  const searchParams = useSearchParams();
-  const municipioId = searchParams.get("municipio_id");
+  const { municipioId } = useMunicipio();
 
   const [items, setItems] = useState<Emenda[]>([]);
   const [loading, setLoading] = useState(true);

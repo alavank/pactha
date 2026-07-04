@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
+import { useMunicipio } from "@/contexts/MunicipioContext";
 import { Search as SearchIcon, ChevronLeft, ChevronRight } from "lucide-react";
 import api from "@/lib/api";
 import MultiSelect from "@/components/MultiSelect";
@@ -123,7 +124,7 @@ const VIGENCIA_LABELS: Record<string, string> = {
 
 export default function ConveniosPage() {
   const searchParams = useSearchParams();
-  const municipioId = searchParams.get("municipio_id");
+  const municipioId = useMunicipio().municipioId || null;
   const vigenciaParam = searchParams.get("vigencia");
 
   const [data, setData] = useState<ConvenioList | null>(null);

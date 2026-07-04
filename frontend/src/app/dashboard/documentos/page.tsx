@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useEffect, useState, useCallback } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { FileSignature, Plus, Pencil, Trash2, FileText, FileType, Loader2 } from "lucide-react";
 import api from "@/lib/api";
+import { useMunicipio } from "@/contexts/MunicipioContext";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
@@ -24,9 +25,8 @@ function fmt(iso?: string): string {
 }
 
 export default function DocumentosPage() {
-  const sp = useSearchParams();
   const router = useRouter();
-  const municipioId = sp.get("municipio_id");
+  const { municipioId } = useMunicipio();
 
   const [docs, setDocs] = useState<Doc[]>([]);
   const [tipos, setTipos] = useState<TipoDoc[]>([]);

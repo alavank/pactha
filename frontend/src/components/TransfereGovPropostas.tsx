@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
+import { useMunicipio } from "@/contexts/MunicipioContext";
 import { Search, Eraser, Loader2, ExternalLink, Eye, X } from "lucide-react";
 import api from "@/lib/api";
 import MultiSelect from "@/components/MultiSelect";
@@ -87,7 +88,7 @@ export default function TransfereGovPropostas({
   subtitulo: string;
 }) {
   const sp = useSearchParams();
-  const municipioId = sp.get("municipio_id");
+  const { municipioId } = useMunicipio();
   const vigenciaParam = sp.get("vigencia");
 
   const [items, setItems] = useState<Proposta[]>([]);

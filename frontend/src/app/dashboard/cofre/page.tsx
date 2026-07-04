@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useMunicipio } from "@/contexts/MunicipioContext";
 import { Eye, EyeOff, KeyRound, Plus, Trash2, ExternalLink, Pencil } from "lucide-react";
 import api from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -123,8 +123,7 @@ const INTEGRACOES = [
 ];
 
 export default function CofrePage() {
-  const searchParams = useSearchParams();
-  const municipioId = searchParams.get("municipio_id");
+  const { municipioId } = useMunicipio();
 
   const [senhas, setSenhas] = useState<Senha[]>([]);
   const [loading, setLoading] = useState(true);

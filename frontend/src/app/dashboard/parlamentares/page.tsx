@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useCallback, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { useMunicipio } from "@/contexts/MunicipioContext";
 import {
   UserCircle2, Loader2, Search, ChevronDown, ChevronRight,
   Landmark, Building2, FileText, Eraser,
@@ -78,8 +78,7 @@ function fmtMoney(v: number | null | undefined): string {
 }
 
 function ParlamentaresInner() {
-  const sp = useSearchParams();
-  const municipioId = sp.get("municipio_id");
+  const municipioId = useMunicipio().municipioId || null;
 
   const [items, setItems] = useState<ParlamentarItem[]>([]);
   const [loading, setLoading] = useState(true);

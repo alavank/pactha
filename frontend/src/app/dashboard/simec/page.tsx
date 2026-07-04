@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useEffect, useState, useMemo, useCallback } from "react";
-import { useSearchParams } from "next/navigation";
 import { Loader2, ExternalLink, BarChart3, Wallet } from "lucide-react";
+import { useMunicipio } from "@/contexts/MunicipioContext";
 import api from "@/lib/api";
 import MultiSelect from "@/components/MultiSelect";
 import { Input } from "@/components/ui/input";
@@ -50,8 +50,7 @@ function programColor(p: string): string {
 }
 
 export default function SimecPage() {
-  const sp = useSearchParams();
-  const municipioId = sp.get("municipio_id");
+  const { municipioId } = useMunicipio();
 
   const [tab, setTab] = useState<"dim" | "lib">("dim");
   const [dimensoes, setDimensoes] = useState<Dimensao[]>([]);

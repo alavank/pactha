@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
+import { useMunicipio } from "@/contexts/MunicipioContext";
 import {
   FileText,
   DollarSign,
@@ -62,8 +63,8 @@ function EsferaTag({ tipo }: { tipo: "estadual" | "federal" | "ambos" }) {
   );
 }
 
-// Card de metrica no estilo TailAdmin: icone em caixa arredondada, rotulo,
-// numero grande, e um chip a direita.
+// Card de metrica padronizado: icone (caixa arredondada) -> nome -> valor ->
+// esfera (Estadual/Federal) embaixo. Layout vertical uniforme em todos os KPIs.
 function MetricCard({
   icon: Icon,
   iconBg,
@@ -86,20 +87,16 @@ function MetricCard({
   return (
     <div
       onClick={onClick}
-      className={`rounded-2xl border border-base-300 bg-base-100 p-5 transition-all ${
+      className={`flex flex-col rounded-2xl border border-base-300 bg-base-100 p-5 transition-all ${
         onClick ? "cursor-pointer hover:-translate-y-0.5 hover:shadow-lg hover:shadow-base-300/40" : ""
       }`}
     >
       <div className={`flex size-11 items-center justify-center rounded-xl ${iconBg}`}>
         <Icon className={`size-5 ${iconText}`} />
       </div>
-      <div className="mt-4 flex items-end justify-between gap-2">
-        <div className="min-w-0">
-          <p className="text-xs font-medium text-base-content/50">{label}</p>
-          <h4 className={`mt-1.5 font-bold leading-tight break-words ${valueClass}`}>{value}</h4>
-        </div>
-        {right && <div className="shrink-0 pb-0.5">{right}</div>}
-      </div>
+      <p className="mt-4 text-xs font-medium text-base-content/50">{label}</p>
+      <h4 className={`mt-1.5 font-bold leading-tight break-words ${valueClass}`}>{value}</h4>
+      {right && <div className="mt-3">{right}</div>}
     </div>
   );
 }
@@ -145,9 +142,8 @@ function MetricSkeleton() {
 }
 
 export default function DashboardPage() {
-  const searchParams = useSearchParams();
   const router = useRouter();
-  const municipioId = searchParams.get("municipio_id");
+  const { municipioId } = useMunicipio();
 
   const goConvenios = (vigencia?: string) => {
     if (!municipioId) return;

@@ -1,12 +1,12 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { useSearchParams } from "next/navigation";
 import { Send, Loader2, Sparkles, Wrench, User, Bot, Eraser, FileText } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { useMunicipio } from "@/contexts/MunicipioContext";
 
 interface ToolCallLog {
   tool: string;
@@ -31,8 +31,7 @@ const SUGESTOES_PROMPT = [
 ];
 
 export default function AiChatPage() {
-  const sp = useSearchParams();
-  const municipioId = sp.get("municipio_id");
+  const { municipioId } = useMunicipio();
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");

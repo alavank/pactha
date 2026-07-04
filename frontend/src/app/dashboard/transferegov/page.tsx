@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useEffect, useState, useCallback } from "react";
-import { useSearchParams } from "next/navigation";
 import { Search, Eye, X, Loader2, Eraser, RefreshCw } from "lucide-react";
+import { useMunicipio } from "@/contexts/MunicipioContext";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -85,8 +85,7 @@ interface DetalhePlano {
 const SITUACOES_PA = ["TODAS", "CIENTE", "EM_ANALISE", "IMPEDIDO", "EM_ELABORACAO", "CONCLUIDA"];
 
 export default function TransfereGovPage() {
-  const sp = useSearchParams();
-  const municipioId = sp.get("municipio_id");
+  const { municipioId } = useMunicipio();
 
   const [items, setItems] = useState<Plano[]>([]);
   const [loading, setLoading] = useState(false);

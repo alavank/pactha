@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useCallback, Suspense } from "react";
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
   FileText,
@@ -39,6 +39,7 @@ import {
 } from "@/components/ui/sheet";
 import type { Municipio, User } from "@/types";
 import { hrefToTela, allowedTelasOf } from "@/lib/telas";
+import { MunicipioProvider, useMunicipio } from "@/contexts/MunicipioContext";
 
 type NavLeaf = { href: string; label: string; icon?: React.ComponentType<{ className?: string }> };
 type NavSection = { sectionLabel: string; children: NavLeaf[] };
@@ -372,12 +373,10 @@ function SidebarContent({
 function DashboardShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const { municipioId: selectedMunicipioId, setMunicipioId } = useMunicipio();
   const [municipios, setMunicipios] = useState<Municipio[]>([]);
   const [user, setUser] = useState<User | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
-
-  const selectedMunicipioId = searchParams.get("municipio_id") || "";
 
   useEffect(() => {
     // Verifica sessao via /auth/me (cookie httpOnly ou Bearer)
@@ -409,14 +408,9 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
           const chosen = (lastId && data.some(m => String(m.id) === lastId))
             ? lastId
             : String(data[0].id);
-          const params = new URLSearchParams(searchParams.toString());
-          params.set("municipio_id", chosen);
-          // replace + refresh — em Next 16 o replace sozinho NAO re-renderiza
-          // children client components que dependem de useSearchParams (bug
-          // recorrente). refresh garante que o /dashboard carregue os KPIs
-          // ja na primeira visita sem precisar dar F5.
-          router.replace(`${pathname}?${params.toString()}`);
-          router.refresh();
+          // Estado no context -> telas re-renderizam e carregam os KPIs na hora
+          // (sem router.refresh / sem recarregar a pagina).
+          setMunicipioId(chosen);
         }
       })
       .catch(() => {});
@@ -447,19 +441,9 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
     }
   }, [user, pathname, router]);
 
-  const handleMunicipioChange = useCallback(
-    (value: string) => {
-      const params = new URLSearchParams(searchParams.toString());
-      params.set("municipio_id", value);
-      // page=1 reset evita "Pagina 3 vazia" ao trocar de municipio
-      params.delete("page");
-      // replace + refresh garante re-render do Client Component se cache local
-      // do useSearchParams nao acompanhou (bug recorrente em Next 16 com Suspense)
-      router.replace(`${pathname}?${params.toString()}`);
-      router.refresh();
-    },
-    [pathname, router, searchParams]
-  );
+  // Troca de municipio = so estado no context (instantaneo, client-side).
+  // O context ja sincroniza a URL (history.replaceState) e reseta a paginacao.
+  const handleMunicipioChange = setMunicipioId;
 
   const handleLogout = useCallback(async () => {
     try {
@@ -536,7 +520,9 @@ export default function DashboardLayout({
         </div>
       }
     >
-      <DashboardShell>{children}</DashboardShell>
+      <MunicipioProvider>
+        <DashboardShell>{children}</DashboardShell>
+      </MunicipioProvider>
     </Suspense>
   );
 }

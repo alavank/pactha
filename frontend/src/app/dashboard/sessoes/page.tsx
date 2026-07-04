@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
 import { CheckCircle2, XCircle, Bookmark, ExternalLink, RefreshCw } from "lucide-react";
+import { useMunicipio } from "@/contexts/MunicipioContext";
 import api from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -40,8 +40,7 @@ const PORTAIS = [
 ];
 
 function SessoesInner() {
-  const search = useSearchParams();
-  const municipioId = search.get("municipio_id");
+  const { municipioId } = useMunicipio();
   const [status, setStatus] = useState<Record<string, SessionStatus>>({});
   const [tgStatus, setTgStatus] = useState<TgSessionStatus | null>(null);
   const [scraperRunning, setScraperRunning] = useState(false);
