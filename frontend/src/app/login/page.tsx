@@ -68,8 +68,18 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#16315c] via-[#1b3a6b] to-[#102a4d] p-4">
       <Card className="w-full max-w-md shadow-2xl border-0">
         <CardHeader className="text-center pb-2">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/pacta-logo.png" alt="PACTHA" className="mx-auto mb-1 h-28 w-auto" />
+          {process.env.NEXT_PUBLIC_TENANT === "ciesp" ? (
+            <div className="mx-auto mb-1 flex items-center justify-center gap-4">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/pacta-logo.png" alt="PACTHA" className="h-24 w-auto" />
+              <div className="h-16 w-px bg-base-300" />
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/ciesp-logo.png" alt="CIESP — Consórcio Intermunicipal de Especialidades" className="h-16 w-auto" />
+            </div>
+          ) : (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img src="/pacta-logo.png" alt="PACTHA" className="mx-auto mb-1 h-28 w-auto" />
+          )}
           <p className="text-sm text-base-content/60">
             Monitoramento de Convênios e Transferências
           </p>

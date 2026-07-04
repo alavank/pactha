@@ -172,12 +172,19 @@ function SidebarContent({
       {/* Faixa institucional - cores do governo */}
       <div className="gov-stripe" />
 
-      {/* Header com logo PACTHA — chip branco arredondado (legível no claro e no escuro) */}
-      <div className="border-b border-base-300 px-4 py-4 flex justify-center">
+      {/* Header com logo PACTHA — chip branco arredondado (legível no claro e no escuro).
+          No ambiente CIESP (PACTA2) exibe o co-branding CIESP ao lado. */}
+      <div className="border-b border-base-300 px-4 py-4 flex justify-center items-center gap-2">
         <div className="rounded-2xl bg-white p-2.5 shadow-sm ring-1 ring-black/5">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/pacta-logo.png" alt="PACTHA — Plataforma de Acompanhamento" className="h-16 w-auto" />
         </div>
+        {process.env.NEXT_PUBLIC_TENANT === "ciesp" && (
+          <div className="rounded-2xl bg-white p-2.5 shadow-sm ring-1 ring-black/5">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/ciesp-logo.png" alt="CIESP — Consórcio Intermunicipal de Especialidades" className="h-12 w-auto" />
+          </div>
+        )}
       </div>
 
       {/* Seletor de municipio */}
