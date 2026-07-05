@@ -24,6 +24,13 @@ if __name__ == "__main__":
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s",
     )
+    # Fontes de DADOS ABERTOS (CAUC + Acordo FES) — leves, idempotentes e sem
+    # login. Rodam PRIMEIRO (sempre executam, mesmo se o scraper SIGCON falhar).
+    try:
+        from ingestion.run_dadosabertos_cron import run_all
+        run_all()
+    except Exception as e:
+        logging.getLogger("run_sigcon_cron").warning(f"dados abertos falhou: {e}")
     from ingestion.sigcon_scraper import main
     main()
     # Backfill de contrapartida + vigencia a partir do dataset CKAN do Estado
