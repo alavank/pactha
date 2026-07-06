@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import api from "@/lib/api";
+import { useMunicipio } from "@/contexts/MunicipioContext";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -41,7 +42,7 @@ interface Resp {
   params?: Record<string, string | number>;
 }
 
-interface Mun { nome: string; cod_ibge: string; uf?: string }
+interface Mun { id?: number; nome: string; cod_ibge: string; uf?: string }
 
 interface Individual {
   nu_proposta: string;
@@ -127,13 +128,17 @@ function recursoColor(s?: string): string {
 export default function PropostasFNSPage() {
   const currentYear = new Date().getFullYear();
 
+  const { municipioId } = useMunicipio();
   const [municipios, setMunicipios] = useState<Mun[]>([]);
   const [anos, setAnos] = useState<string[]>([]);
   const [nrProposta, setNrProposta] = useState("");
   const [ano, setAno] = useState(String(currentYear));
-  const [estado, setEstado] = useState("MG");
-  const [municipio, setMunicipio] = useState("");
   const [tipoEmenda, setTipoEmenda] = useState("TODOS");
+  // FNS SEGUE o filtro geral (Município Atendido): travado no município selecionado
+  // na sidebar. Assim o usuário não filtra o FNS de município fora da sua permissão.
+  const selMun = municipios.find((m) => String(m.id) === municipioId) || null;
+  const municipio = selMun?.nome || "";
+  const estado = selMun?.uf || "MG";
   const [data, setData] = useState<Resp | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -180,15 +185,7 @@ export default function PropostasFNSPage() {
   };
 
   useEffect(() => {
-    api.get<Mun[]>("/fns/municipios").then((r) => {
-      const list = r.data || [];
-      setMunicipios(list);
-      // Default: 1o municipio do ambiente + Estado = UF dele (evita default fixo errado)
-      if (list.length > 0) {
-        setMunicipio((cur) => cur || list[0].nome);
-        if (list[0].uf) setEstado((cur) => cur || list[0].uf!);
-      }
-    }).catch(() => {});
+    api.get<Mun[]>("/fns/municipios").then((r) => setMunicipios(r.data || [])).catch(() => {});
     api.get<string[]>("/fns/anos").then((r) => setAnos(r.data || [])).catch(() => {
       // Fallback se /anos falha
       const list = [];
@@ -198,6 +195,10 @@ export default function PropostasFNSPage() {
   }, [currentYear]);
 
   const consultar = async () => {
+    if (!municipio) {
+      setError("Selecione um município no menu lateral (Município Atendido).");
+      return;
+    }
     setError(null);
     setLoading(true);
     try {
@@ -256,33 +257,10 @@ export default function PropostasFNSPage() {
             </Select>
           </div>
           <div>
-            <label className="text-xs font-medium text-base-content/70"><span className="text-error">*</span> Estado</label>
-            <Select value={estado} onValueChange={(v) => v && setEstado(v)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {(Array.from(new Set(municipios.map((m) => m.uf).filter(Boolean))) as string[]).sort().map((uf) => (
-                  <SelectItem key={uf} value={uf}>{uf}</SelectItem>
-                ))}
-                {municipios.length === 0 && <SelectItem value="MG">MG</SelectItem>}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <label className="text-xs font-medium text-base-content/70"><span className="text-error">*</span> Município</label>
-            <Select
-              value={municipio}
-              onValueChange={(v) => {
-                if (!v) return;
-                setMunicipio(v);
-                const m = municipios.find((x) => x.nome === v);
-                if (m?.uf) setEstado(m.uf); // Estado acompanha o municipio
-              }}
-            >
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {municipios.map((m) => <SelectItem key={m.cod_ibge} value={m.nome}>{m.nome}{m.uf ? ` (${m.uf})` : ""}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <label className="text-xs font-medium text-base-content/70">Município (filtro geral)</label>
+            <div className="h-9 flex items-center rounded-lg bg-base-200 px-3 text-sm text-base-content">
+              {selMun ? `${selMun.nome}${selMun.uf ? ` / ${selMun.uf}` : ""}` : "Selecione o município no menu lateral"}
+            </div>
           </div>
           <div>
             <label className="text-xs font-medium text-base-content/70">Tipo de Emenda</label>
@@ -299,7 +277,7 @@ export default function PropostasFNSPage() {
           <Button variant="outline" onClick={limpar}>
             <Eraser className="size-4 mr-1" /> Limpar
           </Button>
-          <Button onClick={consultar} disabled={loading} className="bg-primary hover:bg-primary/90">
+          <Button onClick={consultar} disabled={loading || !selMun} className="bg-primary hover:bg-primary/90">
             {loading ? <Loader2 className="size-4 animate-spin mr-2" /> : <Search className="size-4 mr-2" />}
             Consultar
           </Button>

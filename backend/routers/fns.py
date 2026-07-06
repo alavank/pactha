@@ -207,9 +207,9 @@ async def municipios_pacta(db: AsyncSession = Depends(get_db), _=Depends(get_cur
     """Lista os municipios do AMBIENTE (prod ou PACTA2) com codigo IBGE FNS
     (6 digitos = ibge_code sem o digito verificador) + UF, ordenados por nome."""
     rows = (await db.execute(text(
-        "SELECT nome, ibge_code, uf FROM municipios WHERE active = true "
+        "SELECT id, nome, ibge_code, uf FROM municipios WHERE active = true "
         "AND ibge_code IS NOT NULL ORDER BY nome"))).fetchall()
-    return [{"nome": n, "cod_ibge": str(ib)[:6], "uf": uf} for n, ib, uf in rows]
+    return [{"id": i, "nome": n, "cod_ibge": str(ib)[:6], "uf": uf} for i, n, ib, uf in rows]
 
 
 @router.get("/proposta/{nu_proposta}")

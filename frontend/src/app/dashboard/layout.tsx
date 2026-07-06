@@ -130,6 +130,9 @@ const ADMIN_NAV_ITEMS = [
   { href: "/dashboard/service-tokens", label: "Service Tokens", icon: KeyRound },
 ];
 
+// Co-branding por tenant (PACTA2). NEXT_PUBLIC_TENANT=trust -> /trust-logo.png.
+const TENANT_LOGO = process.env.NEXT_PUBLIC_TENANT ? `/${process.env.NEXT_PUBLIC_TENANT}-logo.png` : "";
+
 // Itens visiveis SO para o super-admin (nao para os demais admins).
 const SUPER_ADMIN_EMAIL = "admin@pacta.com.br";
 const SUPER_ADMIN_ONLY = new Set<string>(["/dashboard/sessoes", "/dashboard/service-tokens"]);
@@ -184,10 +187,10 @@ function SidebarContent({
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/pacta-logo.png" alt="PACTHA — Plataforma de Acompanhamento" className="h-16 w-auto" />
         </div>
-        {process.env.NEXT_PUBLIC_TENANT === "ciesp" && (
+        {TENANT_LOGO && (
           <div className="rounded-2xl bg-white p-2.5 shadow-sm ring-1 ring-black/5">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/ciesp-logo.png" alt="CIESP — Consórcio Intermunicipal de Especialidades" className="h-12 w-auto" />
+            <img src={TENANT_LOGO} alt="Logo do parceiro" className="h-12 w-auto" />
           </div>
         )}
       </div>

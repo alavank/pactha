@@ -7,6 +7,9 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import toast from "react-hot-toast";
 
+// Co-branding por tenant (PACTA2). NEXT_PUBLIC_TENANT=trust -> /trust-logo.png.
+const TENANT_LOGO = process.env.NEXT_PUBLIC_TENANT ? `/${process.env.NEXT_PUBLIC_TENANT}-logo.png` : "";
+
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -71,13 +74,13 @@ export default function LoginPage() {
       <div className="pointer-events-none absolute -bottom-24 right-[-6rem] h-80 w-80 rounded-full bg-accent-purple/15 blur-3xl" />
       <Card className="relative w-full max-w-md border border-base-300/60 shadow-theme-lg">
         <CardHeader className="text-center pb-2">
-          {process.env.NEXT_PUBLIC_TENANT === "ciesp" ? (
+          {TENANT_LOGO ? (
             <div className="mx-auto mb-1 flex items-center justify-center gap-4">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src="/pacta-logo.png" alt="PACTHA" className="h-24 w-auto" />
               <div className="h-16 w-px bg-base-300" />
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/ciesp-logo.png" alt="CIESP — Consórcio Intermunicipal de Especialidades" className="h-16 w-auto" />
+              <img src={TENANT_LOGO} alt="Logo do parceiro" className="h-16 w-auto" />
             </div>
           ) : (
             /* eslint-disable-next-line @next/next/no-img-element */
