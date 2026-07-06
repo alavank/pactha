@@ -37,6 +37,7 @@ export default function AiChatPage() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pdfIdx, setPdfIdx] = useState<number | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -110,6 +111,34 @@ export default function AiChatPage() {
   const limpar = () => {
     setMessages([]);
     setError(null);
+  };
+
+  // Exporta uma resposta da IA (markdown) em PDF. Usa a pergunta anterior como contexto.
+  const baixarPdf = async (msg: Message, idx: number) => {
+    setPdfIdx(idx);
+    try {
+      const pergunta = idx > 0 && messages[idx - 1]?.role === "user" ? messages[idx - 1].content : "";
+      const titulo = pergunta ? pergunta.slice(0, 90) : "Relatório - IA PACTHA";
+      const token = localStorage.getItem("pacta_token");
+      const res = await fetch(`${api.defaults.baseURL}/export-pdf/ai`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        credentials: "include",
+        body: JSON.stringify({ titulo, pergunta, conteudo: msg.content }),
+      });
+      if (!res.ok) throw new Error(String(res.status));
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch {
+      setError("Não foi possível gerar o PDF. Tente novamente.");
+    } finally {
+      setPdfIdx(null);
+    }
   };
 
   // Markdown completo via react-markdown + remark-gfm (tabelas, listas, code, etc.)
@@ -244,6 +273,17 @@ export default function AiChatPage() {
                   {String(m.usage.input_tokens)} in / {String(m.usage.output_tokens)} out tokens
                   {Number(m.usage.cache_read) > 0 && ` · cache hit ${m.usage.cache_read}`}
                 </div>
+              )}
+              {m.role === "assistant" && m.content && (
+                <button
+                  onClick={() => baixarPdf(m, i)}
+                  disabled={pdfIdx === i}
+                  title="Exportar esta resposta em PDF"
+                  className="mt-1.5 inline-flex items-center gap-1 text-xs text-primary hover:underline disabled:opacity-60"
+                >
+                  {pdfIdx === i ? <Loader2 className="size-3 animate-spin" /> : <FileText className="size-3" />}
+                  Baixar PDF
+                </button>
               )}
             </div>
             {m.role === "user" && (

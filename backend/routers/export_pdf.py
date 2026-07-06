@@ -1,8 +1,10 @@
 """Export PDF: Convenios SIGCON-MG, Emendas Estaduais, Diario Oficial MG."""
+import re
+import html
 from io import BytesIO
 from datetime import date, datetime
 from typing import Optional
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, Body
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
@@ -471,3 +473,115 @@ async def export_parlamentares_pdf(
         fn += f"_{ano}"
     return StreamingResponse(buf, media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename={fn}.pdf"})
+
+
+# ---------------------------------------------------------------------------
+# IA PACTHA — exporta uma resposta da IA (markdown) em PDF
+# ---------------------------------------------------------------------------
+def _md_inline(t: str) -> str:
+    """Markdown inline -> markup do reportlab Paragraph (<b>, <i>, code)."""
+    t = html.escape(t or "", quote=False)
+    t = re.sub(r"`([^`]+)`", r'<font face="Courier">\1</font>', t)
+    t = re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", t)
+    t = re.sub(r"__([^_]+)__", r"<b>\1</b>", t)
+    t = re.sub(r"(?<![\*\w])\*([^*\n]+)\*(?!\*)", r"<i>\1</i>", t)
+    return t
+
+
+def _md_to_flowables(md: str, styles) -> list:
+    """Converte markdown (headings, listas, tabelas, negrito) em flowables."""
+    body = ParagraphStyle("mdbody", parent=styles["Normal"], fontSize=10, leading=14, spaceAfter=4)
+    h1 = ParagraphStyle("mdh1", parent=styles["Heading1"], fontSize=14, textColor=colors.HexColor("#1e40af"), spaceBefore=8, spaceAfter=4)
+    h2 = ParagraphStyle("mdh2", parent=styles["Heading2"], fontSize=12, textColor=colors.HexColor("#1e40af"), spaceBefore=6, spaceAfter=3)
+    h3 = ParagraphStyle("mdh3", parent=styles["Heading3"], fontSize=11, textColor=colors.HexColor("#334155"), spaceBefore=4, spaceAfter=2)
+    cell = ParagraphStyle("mdcell", parent=styles["Normal"], fontSize=8, leading=10)
+
+    out = []
+    lines = (md or "").replace("\r\n", "\n").split("\n")
+    i = 0
+    while i < len(lines):
+        ln = lines[i]
+        s = ln.strip()
+        # Tabela markdown (linha com | e proxima com ---)
+        if "|" in s and i + 1 < len(lines) and re.match(r"^\s*\|?[\s:\-|]+\|?\s*$", lines[i + 1]) and "-" in lines[i + 1]:
+            def _cells(row):
+                row = row.strip().strip("|")
+                return [c.strip() for c in row.split("|")]
+            header = _cells(s)
+            data = [[Paragraph(_md_inline(c), cell) for c in header]]
+            i += 2
+            while i < len(lines) and "|" in lines[i]:
+                data.append([Paragraph(_md_inline(c), cell) for c in _cells(lines[i])])
+                i += 1
+            t = Table(data, repeatRows=1, hAlign="LEFT")
+            t.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1e40af")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 8),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f1f5f9")]),
+                ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#cbd5e1")),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 4), ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ]))
+            out.append(t)
+            out.append(Spacer(1, 6))
+            continue
+        if not s:
+            out.append(Spacer(1, 4))
+        elif s.startswith("### "):
+            out.append(Paragraph(_md_inline(s[4:]), h3))
+        elif s.startswith("## "):
+            out.append(Paragraph(_md_inline(s[3:]), h2))
+        elif s.startswith("# "):
+            out.append(Paragraph(_md_inline(s[2:]), h1))
+        elif re.match(r"^([-*+])\s+", s):
+            out.append(Paragraph("• " + _md_inline(re.sub(r"^([-*+])\s+", "", s)), body, bulletText=None))
+        elif re.match(r"^\d+\.\s+", s):
+            out.append(Paragraph(_md_inline(s), body))
+        elif re.match(r"^[-=]{3,}$", s):
+            out.append(Spacer(1, 4))
+        else:
+            out.append(Paragraph(_md_inline(s), body))
+        i += 1
+    return out
+
+
+@router.post("/ai")
+async def export_ai_pdf(
+    payload: dict = Body(...),
+    current: User = Depends(get_current_user),
+):
+    """Exporta uma resposta da IA PACTHA (markdown) em PDF. Body: {titulo?, pergunta?, conteudo}."""
+    conteudo = (payload.get("conteudo") or "").strip()
+    if not conteudo:
+        raise HTTPException(400, "conteudo vazio")
+    titulo = (payload.get("titulo") or "Relatorio - IA PACTHA").strip()[:120]
+    pergunta = (payload.get("pergunta") or "").strip()
+
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle("Title", parent=styles["Heading1"], fontSize=15,
+                                 textColor=colors.HexColor("#1e40af"), spaceAfter=2)
+    q_style = ParagraphStyle("Q", parent=styles["Normal"], fontSize=9,
+                             textColor=colors.HexColor("#475569"), spaceAfter=2,
+                             leftIndent=6, borderPadding=4)
+    story = [Paragraph(html.escape(titulo), title_style)]
+    if pergunta:
+        story.append(Paragraph("<b>Solicitação:</b> " + _md_inline(pergunta), q_style))
+    story.append(Spacer(1, 6))
+    story.extend(_md_to_flowables(conteudo, styles))
+    story.append(Spacer(1, 10))
+    story.append(Paragraph(
+        f"Gerado pela IA PACTHA em {datetime.now().strftime('%d/%m/%Y %H:%M')} · "
+        "confira os dados na plataforma antes de usar.",
+        ParagraphStyle("Footer", parent=styles["Normal"], fontSize=7,
+                       textColor=colors.HexColor("#94a3b8"), alignment=1)))
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=15*mm, rightMargin=15*mm,
+                            topMargin=15*mm, bottomMargin=12*mm)
+    doc.build(story)
+    buf.seek(0)
+    return StreamingResponse(buf, media_type="application/pdf",
+        headers={"Content-Disposition": "attachment; filename=ia-pactha.pdf"})
