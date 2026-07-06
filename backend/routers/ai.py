@@ -74,11 +74,20 @@ FONTES DE DADOS:
 - **FNS (Fundo Nacional de Saude / Ministerio da Saude)**: emendas e recursos
   federais de SAUDE do municipio. **SAO PROPOSTAS FNS — NUNCA chame de "convenio".**
   Sempre se refira a elas como "proposta(s) FNS". Use `query_fns`.
+- **Transferencia Especial / Plano de Acao (RP9, "emenda Pix", Federal)**:
+  transferencias especiais indicadas por EMENDA PARLAMENTAR INDIVIDUAL, pagas
+  direto ao municipio (Ministerio da Fazenda). Cada Plano de Acao tem o codigo +
+  AUTOR da emenda (o parlamentar), politica publica, situacao e valores
+  (custeio/investimento). Use `query_plano_acao`. Fonte AO VIVO (API nacional),
+  nao fica no banco. **CRITICO: a maioria das emendas de DEPUTADO/SENADOR FEDERAL
+  chega por AQUI, e NAO nas Voluntarias SICONV.** Em qualquer pergunta sobre
+  emendas de parlamentar federal, SEMPRE consulte esta fonte.
 
 BUSCA POR PARLAMENTAR:
 - Se o usuario perguntar por um parlamentar especifico (deputado/senador), use
   `search_by_parlamentar` — retorna TUDO daquele nome em uma chamada:
-  convenios SIGCON, propostas SICONV, indicacoes/emendas. Cross-fonte.
+  convenios SIGCON, propostas SICONV, emendas estaduais E Planos de Acao /
+  Transferencia Especial (RP9). Cross-fonte.
 - Se for um filtro DENTRO de uma fonte, use o parametro `parlamentar` da tool
   especifica (query_convenios_sigcon, query_voluntarias, query_emendas_estaduais).
 
@@ -218,6 +227,19 @@ TOOLS = [
                 "ano": {"type": "integer", "description": "Filtra por ano"},
                 "situacao": {"type": "string", "description": "Filtra situacao (ex: 'Pago', 'Empenhado')"},
                 "limit": {"type": "integer", "description": "default 50, max 200"},
+            },
+            "required": ["municipio_id"],
+        },
+    },
+    {
+        "name": "query_plano_acao",
+        "description": "Planos de Acao / Transferencia Especial (RP9, 'emenda Pix', FEDERAL) do municipio — transferencias indicadas por emenda parlamentar individual, pagas direto ao municipio. Consulta AO VIVO a API nacional (nao esta no banco). Retorna, por plano: codigo, AUTOR da emenda (parlamentar), politica publica, situacao e valores (custeio/investimento/total). MUITAS emendas de deputado federal vem por aqui — use sempre que a pergunta envolver emenda de parlamentar federal. Filtro opcional por parlamentar/situacao.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "municipio_id": {"type": "integer"},
+                "parlamentar": {"type": "string", "description": "Filtra pelo nome do autor da emenda (busca parcial). Ex: 'Luis Tibe', 'Tibe'"},
+                "situacao": {"type": "string", "description": "Filtra a situacao do plano (ex: 'CIENTE', 'EM_ANALISE', 'IMPEDIDO')"},
             },
             "required": ["municipio_id"],
         },
@@ -561,6 +583,38 @@ async def _tool_search_by_parlamentar(db: AsyncSession, inp: dict) -> str:
             f"  Valor: {_fmt_money(r[7])} | Status: {r[9] or '-'}"
         )
 
+    # 4) Planos de Acao / Transferencia Especial (RP9) — AO VIVO, por municipio
+    from routers.transferegov import _norm as _tgnorm
+    nome_norm = _tgnorm(nome)
+    muns_sql = "SELECT id, nome, uf FROM municipios WHERE active = true"
+    params_m: dict = {}
+    if mun_filter:
+        muns_sql += " AND id = :mid"
+        params_m["mid"] = int(mun_filter)
+    muns = (await db.execute(text(muns_sql), params_m)).fetchall()
+    pa_rows: list = []
+    pa_erro = None
+    for m in muns:
+        try:
+            for p in await _planos_acao_municipio(m):
+                if p["autor"] and nome_norm in _tgnorm(p["autor"]):
+                    pa_rows.append((m, p))
+        except Exception as e:  # fonte ao vivo pode cair; nao derruba as outras
+            pa_erro = f"{type(e).__name__}: {str(e)[:80]}"
+    if pa_erro and not pa_rows:
+        out.append(f"\n### Transferencia Especial / Plano de Acao (RP9): fonte ao vivo indisponivel ({pa_erro})")
+    else:
+        pa_rows.sort(key=lambda t: t[1]["vtot"], reverse=True)
+        out.append(f"\n### Transferencia Especial / Plano de Acao (RP9): {len(pa_rows)} resultado(s)")
+        for m, p in pa_rows[:limit_per_source]:
+            obj = (p["objeto"] or p["politicas"] or "-")[:140]
+            out.append(
+                f"- **Plano {p['codigo']}** (emenda {p['emenda'] or '-'}) — {m.nome}/{m.id}\n"
+                f"  Parlamentar: {p['autor'] or '-'}\n"
+                f"  Objeto/Politica: {obj}\n"
+                f"  Situacao: {p['situacao'] or '-'} | Valor: {_fmt_money(p['vtot'])}"
+            )
+
     return "\n".join(out)
 
 
@@ -685,6 +739,83 @@ async def _tool_query_fns(db: AsyncSession, inp: dict) -> str:
     return "\n".join(out)
 
 
+def _parse_emenda_autor(codigo_emenda_formatado: str) -> tuple[str, str]:
+    """`codigoEmendaFormatado` vem como '<codigo>-<Nome do Parlamentar>'
+    (ex: '202141760007-Vilson da Fetaemg'). Retorna (codigo, nome_autor)."""
+    s = (codigo_emenda_formatado or "").strip()
+    code, sep, autor = s.partition("-")
+    return code.strip(), autor.strip()
+
+
+async def _planos_acao_municipio(mun) -> list[dict]:
+    """Busca AO VIVO os Planos de Acao (Transferencia Especial/RP9) do municipio
+    na API nacional (reusa o fetch com cache do router transferegov). Filtra por
+    nome do municipio e ja extrai o parlamentar autor do codigo da emenda."""
+    from routers.transferegov import _fetch_listagem, _norm as _tgnorm
+    items = await _fetch_listagem(mun.uf)
+    mn = _tgnorm(mun.nome)
+    out = []
+    for it in items:
+        ben = _tgnorm(it.get("beneficiarioNome") or "")
+        if not (mn in ben or ben.endswith(mn)):
+            continue
+        code, autor = _parse_emenda_autor(it.get("codigoEmendaFormatado") or "")
+        out.append({
+            "codigo": it.get("planoAcaoCodigo"),
+            "autor": autor,
+            "emenda": code,
+            "situacao": it.get("planoAcaoSituacao") or "",
+            "pt": it.get("planoTrabalhoSituacao") or "",
+            "politicas": it.get("politicasPublicas") or "",
+            "objeto": it.get("objetoDescricao") or "",
+            "vcust": float(it.get("valorCusteio") or 0),
+            "vinv": float(it.get("valorInvestimento") or 0),
+            "vtot": float(it.get("valorTotal") or 0),
+        })
+    return out
+
+
+async def _tool_query_plano_acao(db: AsyncSession, inp: dict) -> str:
+    mun_id = int(inp["municipio_id"])
+    mun = (await db.execute(select(Municipio).where(Municipio.id == mun_id))).scalar_one_or_none()
+    if not mun:
+        return f"Erro: municipio_id={mun_id} nao encontrado."
+    try:
+        planos = await _planos_acao_municipio(mun)
+    except Exception as e:
+        return (f"Erro ao consultar a API de Transferencia Especial (Plano de Acao): "
+                f"{type(e).__name__}: {str(e)[:150]}. A fonte e ao vivo; tente de novo em instantes.")
+    from routers.transferegov import _norm as _tgnorm
+    parl = _tgnorm(inp.get("parlamentar") or "")
+    situ = _tgnorm(inp.get("situacao") or "")
+    rows = [
+        p for p in planos
+        if (not parl or parl in _tgnorm(p["autor"]))
+        and (not situ or situ in _tgnorm(p["situacao"]))
+    ]
+    if not rows:
+        extra = f" para parlamentar '{inp.get('parlamentar')}'" if inp.get("parlamentar") else ""
+        return (f"Nenhum Plano de Acao (Transferencia Especial/RP9){extra} encontrado para "
+                f"{mun.nome}. (Foram vistos {len(planos)} plano(s) no total do municipio.)")
+    rows.sort(key=lambda r: r["vtot"], reverse=True)
+    total = sum(r["vtot"] for r in rows)
+    out = [f"{len(rows)} Plano(s) de Acao — Transferencia Especial (RP9/emenda Pix) de "
+           f"{mun.nome}/{mun.uf}, total {_fmt_money(total)}:"]
+    for r in rows:
+        obj = (r["objeto"] or r["politicas"] or "-")[:180]
+        autor = r["autor"] or "(sem emenda nominal / institucional)"
+        pt = f" | Plano de Trabalho: {r['pt']}" if r["pt"] else ""
+        out.append(
+            f"- Plano {r['codigo']} | Emenda {r['emenda'] or '-'}\n"
+            f"  Parlamentar: {autor}\n"
+            f"  Objeto/Politica: {obj}\n"
+            f"  Situacao: {r['situacao'] or '-'}{pt}\n"
+            f"  Valores: total {_fmt_money(r['vtot'])} "
+            f"(custeio {_fmt_money(r['vcust'])} / investimento {_fmt_money(r['vinv'])})"
+        )
+    return "\n".join(out)
+
+
 # Dispatcher
 TOOL_FUNCS = {
     "list_municipios": _tool_list_municipios,
@@ -696,6 +827,7 @@ TOOL_FUNCS = {
     "query_simec_dimensoes": _tool_query_simec_dimensoes,
     "query_emendas_estaduais": _tool_query_emendas_estaduais,
     "query_fns": _tool_query_fns,
+    "query_plano_acao": _tool_query_plano_acao,
     "search_by_parlamentar": _tool_search_by_parlamentar,
 }
 
