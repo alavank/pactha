@@ -41,7 +41,7 @@ interface Resp {
   params?: Record<string, string | number>;
 }
 
-interface Mun { nome: string; cod_ibge: string }
+interface Mun { nome: string; cod_ibge: string; uf?: string }
 
 interface Individual {
   nu_proposta: string;
@@ -132,7 +132,7 @@ export default function PropostasFNSPage() {
   const [nrProposta, setNrProposta] = useState("");
   const [ano, setAno] = useState(String(currentYear));
   const [estado, setEstado] = useState("MG");
-  const [municipio, setMunicipio] = useState("ARAUJOS");
+  const [municipio, setMunicipio] = useState("");
   const [tipoEmenda, setTipoEmenda] = useState("TODOS");
   const [data, setData] = useState<Resp | null>(null);
   const [loading, setLoading] = useState(false);
@@ -180,7 +180,15 @@ export default function PropostasFNSPage() {
   };
 
   useEffect(() => {
-    api.get<Mun[]>("/fns/municipios").then((r) => setMunicipios(r.data || [])).catch(() => {});
+    api.get<Mun[]>("/fns/municipios").then((r) => {
+      const list = r.data || [];
+      setMunicipios(list);
+      // Default: 1o municipio do ambiente + Estado = UF dele (evita default fixo errado)
+      if (list.length > 0) {
+        setMunicipio((cur) => cur || list[0].nome);
+        if (list[0].uf) setEstado((cur) => cur || list[0].uf!);
+      }
+    }).catch(() => {});
     api.get<string[]>("/fns/anos").then((r) => setAnos(r.data || [])).catch(() => {
       // Fallback se /anos falha
       const list = [];
@@ -249,19 +257,30 @@ export default function PropostasFNSPage() {
           </div>
           <div>
             <label className="text-xs font-medium text-base-content/70"><span className="text-error">*</span> Estado</label>
-            <Select value={estado} onValueChange={(v) => setEstado(v ?? "MG")}>
+            <Select value={estado} onValueChange={(v) => v && setEstado(v)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="MG">MINAS GERAIS</SelectItem>
+                {(Array.from(new Set(municipios.map((m) => m.uf).filter(Boolean))) as string[]).sort().map((uf) => (
+                  <SelectItem key={uf} value={uf}>{uf}</SelectItem>
+                ))}
+                {municipios.length === 0 && <SelectItem value="MG">MG</SelectItem>}
               </SelectContent>
             </Select>
           </div>
           <div>
             <label className="text-xs font-medium text-base-content/70"><span className="text-error">*</span> Município</label>
-            <Select value={municipio} onValueChange={(v) => setMunicipio(v ?? "ARAUJOS")}>
+            <Select
+              value={municipio}
+              onValueChange={(v) => {
+                if (!v) return;
+                setMunicipio(v);
+                const m = municipios.find((x) => x.nome === v);
+                if (m?.uf) setEstado(m.uf); // Estado acompanha o municipio
+              }}
+            >
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                {municipios.map((m) => <SelectItem key={m.cod_ibge} value={m.nome}>{m.nome}</SelectItem>)}
+                {municipios.map((m) => <SelectItem key={m.cod_ibge} value={m.nome}>{m.nome}{m.uf ? ` (${m.uf})` : ""}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>

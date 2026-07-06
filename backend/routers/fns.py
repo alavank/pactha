@@ -75,6 +75,34 @@ async def _get_cookies(db: AsyncSession) -> dict:
         return {}
 
 
+async def _resolve_cod(municipio: str, uf: str, db: AsyncSession) -> Optional[str]:
+    """Nome do municipio -> codigo IBGE 6 digitos (FNS). Usa a tabela `municipios`
+    do AMBIENTE (ibge_code sem o digito verificador). Fallbacks: override legado
+    e a API de municipios do FNS. Assim funciona em prod E no PACTA2."""
+    m = (municipio or "").strip()
+    if m.isdigit():
+        return m
+    row = (await db.execute(
+        text("SELECT ibge_code FROM municipios WHERE upper(nome) = upper(:m) LIMIT 1"),
+        {"m": m})).first()
+    if row and row[0]:
+        return str(row[0])[:6]
+    cod = FNS_CODE_OVERRIDE.get(m.upper())
+    if cod:
+        return cod
+    try:
+        cookies = await _get_cookies(db)
+        with httpx.Client(cookies=cookies, timeout=15, verify=False) as cli:
+            r = cli.get(f"{FNS_BASE}/recursos/municipios/uf/{uf}",
+                        headers={"Accept": "application/json", "User-Agent": "Mozilla/5.0"})
+            for mm in r.json().get("resultado", []):
+                if (mm.get("noMunicipio", "") or "").upper().strip() == m.upper():
+                    return mm.get("coMunicipioIbge")
+    except Exception:
+        pass
+    return None
+
+
 @router.get("/buscar")
 async def buscar(
     municipio: str = Query(..., description="Nome do municipio (ex: ARAUJOS) ou codigo IBGE 6 digitos"),
@@ -89,25 +117,10 @@ async def buscar(
 ):
     """Busca propostas FAF no FNS em tempo real."""
     await _ensure_fns_municipio(current, municipio, db)
-    # Resolve codigo IBGE FNS
-    cod = municipio
-    if not cod.isdigit():
-        cod = FNS_CODE_OVERRIDE.get(municipio.upper().strip())
-        if not cod:
-            # Fallback: chama API de municipios
-            cookies = await _get_cookies(db)
-            try:
-                with httpx.Client(cookies=cookies, timeout=15, verify=False) as cli:
-                    r = cli.get(f"{FNS_BASE}/recursos/municipios/uf/{uf}",
-                                headers={"Accept": "application/json", "User-Agent": "Mozilla/5.0"})
-                    for m in r.json().get("resultado", []):
-                        if m.get("noMunicipio", "").upper().strip() == municipio.upper().strip():
-                            cod = m.get("coMunicipioIbge")
-                            break
-            except Exception:
-                pass
-        if not cod:
-            raise HTTPException(404, f"Municipio '{municipio}' nao mapeado")
+    # Resolve codigo IBGE FNS (tabela municipios do ambiente + fallbacks)
+    cod = await _resolve_cod(municipio, uf, db)
+    if not cod:
+        raise HTTPException(404, f"Municipio '{municipio}' nao mapeado")
 
     cookies = await _get_cookies(db)
     params = {
@@ -191,8 +204,12 @@ async def anos(db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
 
 @router.get("/municipios")
 async def municipios_pacta(db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
-    """Lista municipios PACTHA com codigo IBGE FNS."""
-    return [{"nome": n, "cod_ibge": c} for n, c in FNS_CODE_OVERRIDE.items()]
+    """Lista os municipios do AMBIENTE (prod ou PACTA2) com codigo IBGE FNS
+    (6 digitos = ibge_code sem o digito verificador) + UF, ordenados por nome."""
+    rows = (await db.execute(text(
+        "SELECT nome, ibge_code, uf FROM municipios WHERE active = true "
+        "AND ibge_code IS NOT NULL ORDER BY nome"))).fetchall()
+    return [{"nome": n, "cod_ibge": str(ib)[:6], "uf": uf} for n, ib, uf in rows]
 
 
 @router.get("/proposta/{nu_proposta}")
@@ -322,7 +339,7 @@ async def listar_individuais(
     individual (cada um com nuProposta), ao inves do agregado.
     """
     await _ensure_fns_municipio(current, municipio, db)
-    cod = FNS_CODE_OVERRIDE.get(municipio.upper().strip(), municipio)
+    cod = await _resolve_cod(municipio, uf, db) or municipio
     cookies = await _get_cookies(db)
     params = {
         "ano": str(ano), "coEsfera": "", "coMunicipioIbge": cod,
