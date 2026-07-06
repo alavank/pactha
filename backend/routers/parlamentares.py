@@ -70,7 +70,7 @@ async def listar(
         "total_lancamentos": 0,
         "valor_total": 0.0,
         "municipios": set(),
-        "por_fonte": {"sigcon": 0, "voluntaria": 0, "emenda": 0},
+        "por_fonte": {"sigcon": 0, "voluntaria": 0, "emenda": 0, "plano_acao": 0},
     })
 
     where_extra = ""
@@ -193,6 +193,51 @@ async def listar(
             if row[2]:
                 entry["municipios"].add(row[2])
             entry["por_fonte"]["emenda"] += 1
+
+    # 4) Transferencia Especial / Plano de Acao (RP9, "emenda Pix") — AO VIVO.
+    # Fonte federal que NAO fica no banco (API nacional, cache 1h no router
+    # transferegov). E por onde chega a maioria das emendas de deputado FEDERAL.
+    # O autor vem embutido em codigoEmendaFormatado ('<codigo>-<Nome>').
+    # Degrada em silencio se a API cair — nao pode derrubar a tela.
+    try:
+        from routers.transferegov import _fetch_listagem
+        muns_sql = "SELECT id, nome, uf FROM municipios WHERE active = true"
+        mparams: dict = {}
+        if municipio_id:
+            muns_sql += " AND id = :mid"; mparams["mid"] = municipio_id
+        muns = (await db.execute(text(muns_sql), mparams)).fetchall()
+        listagens: dict[str, list] = {}
+        for m in muns:
+            if m.uf not in listagens:
+                try:
+                    listagens[m.uf] = await _fetch_listagem(m.uf)
+                except Exception:
+                    listagens[m.uf] = []
+        for m in muns:
+            mn = _norm(m.nome)
+            for it in listagens.get(m.uf, []):
+                ben = _norm(it.get("beneficiarioNome") or "")
+                if not (mn in ben or ben.endswith(mn)):
+                    continue
+                if ano:
+                    pc = str(it.get("programaCodigo") or "")
+                    if (pc[4:8] if len(pc) >= 8 else "") != str(ano):
+                        continue
+                _, _, autor = (it.get("codigoEmendaFormatado") or "").partition("-")
+                autor = autor.strip()
+                if not autor or len(autor) < 3:
+                    continue  # sem emenda nominal (institucional) -> fora do ranking
+                key = _norm(autor)
+                if not key:
+                    continue
+                entry = by_norm[key]
+                entry["nome_variants"].add(autor)
+                entry["total_lancamentos"] += 1
+                entry["valor_total"] += _money(it.get("valorTotal"))
+                entry["municipios"].add(m.nome)
+                entry["por_fonte"]["plano_acao"] += 1
+    except Exception:
+        pass
 
     # Resolve nome_display: prefere a variante mais comum sem U+FFFD
     out = []
@@ -325,7 +370,55 @@ async def detalhe(
         "fonte": "emenda",
     } for r in (await db.execute(text(sql3), params)).fetchall()]
 
-    if not (sigcon or voluntarias or emendas):
+    # Plano de Acao / Transferencia Especial (RP9) — AO VIVO (mesma fonte da tela
+    # TransfereGov). Autor vem em codigoEmendaFormatado ('<codigo>-<Nome>').
+    plano_acao: list = []
+    try:
+        from routers.transferegov import _fetch_listagem
+        alvo = _norm(nome_param)
+        muns_sql = "SELECT id, nome, uf FROM municipios WHERE active = true"
+        mp: dict = {}
+        if municipio_id:
+            muns_sql += " AND id = :mun"; mp["mun"] = municipio_id
+        muns = (await db.execute(text(muns_sql), mp)).fetchall()
+        listagens: dict[str, list] = {}
+        for m in muns:
+            if m.uf not in listagens:
+                try:
+                    listagens[m.uf] = await _fetch_listagem(m.uf)
+                except Exception:
+                    listagens[m.uf] = []
+        for m in muns:
+            mn = _norm(m.nome)
+            for it in listagens.get(m.uf, []):
+                ben = _norm(it.get("beneficiarioNome") or "")
+                if not (mn in ben or ben.endswith(mn)):
+                    continue
+                code, _, autor = (it.get("codigoEmendaFormatado") or "").partition("-")
+                if not autor or alvo not in _norm(autor):
+                    continue
+                if ano:
+                    pc = str(it.get("programaCodigo") or "")
+                    if (pc[4:8] if len(pc) >= 8 else "") != str(ano):
+                        continue
+                plano_acao.append({
+                    "id": it.get("planoAcaoId"),
+                    "municipio_id": m.id, "municipio_nome": m.nome,
+                    "codigo": it.get("planoAcaoCodigo"),
+                    "emenda": code.strip(),
+                    "parlamentar": autor.strip(),
+                    "objeto": it.get("objetoDescricao") or it.get("politicasPublicas"),
+                    "situacao": it.get("planoAcaoSituacao"),
+                    "valor_total": _money(it.get("valorTotal")),
+                    "valor_custeio": _money(it.get("valorCusteio")),
+                    "valor_investimento": _money(it.get("valorInvestimento")),
+                    "fonte": "plano_acao",
+                })
+    except Exception:
+        pass
+    plano_acao.sort(key=lambda x: x["valor_total"], reverse=True)
+
+    if not (sigcon or voluntarias or emendas or plano_acao):
         raise HTTPException(404, f"Nenhum lancamento encontrado para '{nome_param}'")
 
     return {
@@ -333,13 +426,16 @@ async def detalhe(
         "sigcon": sigcon,
         "voluntarias": voluntarias,
         "emendas": emendas,
+        "plano_acao": plano_acao,
         "total_sigcon": len(sigcon),
         "total_voluntarias": len(voluntarias),
         "total_emendas": len(emendas),
-        "total_geral": len(sigcon) + len(voluntarias) + len(emendas),
+        "total_plano_acao": len(plano_acao),
+        "total_geral": len(sigcon) + len(voluntarias) + len(emendas) + len(plano_acao),
         "valor_total": (
             sum(x["valor_total"] for x in sigcon)
             + sum(x["valor_global"] for x in voluntarias)
             + sum(x["valor_indicacao"] for x in emendas)
+            + sum(x["valor_total"] for x in plano_acao)
         ),
     }

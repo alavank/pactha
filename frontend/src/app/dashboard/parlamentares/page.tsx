@@ -4,7 +4,7 @@ import React, { useEffect, useState, useCallback, Suspense } from "react";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 import {
   UserCircle2, Loader2, Search, ChevronDown, ChevronRight,
-  Landmark, Building2, FileText, Eraser,
+  Landmark, Building2, FileText, Eraser, Coins,
 } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,7 @@ interface ParlamentarItem {
   total_lancamentos: number;
   valor_total: number;
   municipios: string[];
-  por_fonte: { sigcon: number; voluntaria: number; emenda: number };
+  por_fonte: { sigcon: number; voluntaria: number; emenda: number; plano_acao: number };
 }
 
 interface DetalheSigcon {
@@ -60,14 +60,29 @@ interface DetalheEmenda {
   uo_sigla: string | null;
 }
 
+interface DetalhePlanoAcao {
+  id: number;
+  municipio_nome: string;
+  codigo: string | null;
+  emenda: string | null;
+  parlamentar: string | null;
+  objeto: string | null;
+  situacao: string | null;
+  valor_total: number;
+  valor_custeio: number;
+  valor_investimento: number;
+}
+
 interface ParlamentarDetalhe {
   nome_consulta: string;
   sigcon: DetalheSigcon[];
   voluntarias: DetalheVoluntaria[];
   emendas: DetalheEmenda[];
+  plano_acao: DetalhePlanoAcao[];
   total_sigcon: number;
   total_voluntarias: number;
   total_emendas: number;
+  total_plano_acao: number;
   total_geral: number;
   valor_total: number;
 }
@@ -170,8 +185,8 @@ function ParlamentaresInner() {
         </h1>
         <p className="text-sm text-base-content/60 mt-1">
           Lista agregada dos parlamentares (deputados estaduais/federais e senadores)
-          com lançamentos vinculados — convênios SIGCON-MG, propostas TransfereGov/SICONV
-          e emendas estaduais. Clique para ver os lançamentos.
+          com lançamentos vinculados — convênios SIGCON-MG, propostas TransfereGov/SICONV,
+          emendas estaduais e Transferência Especial / Plano de Ação (RP9). Clique para ver os lançamentos.
         </p>
       </div>
 
@@ -239,9 +254,9 @@ function ParlamentaresInner() {
         {!loading && items.length === 0 && (
           <div className="bg-base-200 border border-base-300 rounded p-12 text-center text-base-content/60">
             Nenhum parlamentar encontrado. Os parlamentares são extraídos automaticamente
-            dos campos: SIGCON (responsáveis), TransfereGov (parlamentar) e emendas estaduais
-            (nome_responsavel). Se a lista estiver vazia, é porque essas fontes ainda não foram
-            populadas pelos scrapers.
+            dos campos: SIGCON (responsáveis), TransfereGov (parlamentar), emendas estaduais
+            (nome_responsavel) e Transferência Especial / Plano de Ação (RP9, autor da emenda).
+            Se a lista estiver vazia, é porque essas fontes ainda não foram populadas.
           </div>
         )}
         {!loading && items.map((p) => {
@@ -269,6 +284,9 @@ function ParlamentaresInner() {
                     )}
                     {p.por_fonte.emenda > 0 && (
                       <span className="text-warning">Emendas: {p.por_fonte.emenda}</span>
+                    )}
+                    {p.por_fonte.plano_acao > 0 && (
+                      <span className="text-info">Transf. Especial: {p.por_fonte.plano_acao}</span>
                     )}
                     {p.municipios.length > 0 && (
                       <>
@@ -367,6 +385,31 @@ function ParlamentaresInner() {
                                 <Td className="text-xs">{e.tipo_atendimento || "-"}</Td>
                                 <Td>{fmtMoney(e.valor_indicacao)}</Td>
                                 <Td className="text-xs">{e.status_indicacao || "-"}</Td>
+                              </tr>
+                            ))}
+                          </Table>
+                        </Section>
+                      )}
+
+                      {/* Transferencia Especial / Plano de Acao (RP9) */}
+                      {detail.plano_acao && detail.plano_acao.length > 0 && (
+                        <Section
+                          icon={<Coins className="size-4 text-info" />}
+                          title={`Transferência Especial / Plano de Ação (RP9) — ${detail.plano_acao.length} plano(s)`}
+                        >
+                          <Table headers={["Município", "Plano", "Emenda", "Situação", "Custeio", "Investimento", "Valor Total", "Objeto/Política"]}>
+                            {detail.plano_acao.map((pa) => (
+                              <tr key={pa.id} className="even:bg-base-100">
+                                <Td>{pa.municipio_nome}</Td>
+                                <Td mono>{pa.codigo || "-"}</Td>
+                                <Td mono className="text-xs">{pa.emenda || "-"}</Td>
+                                <Td className="text-xs">{pa.situacao || "-"}</Td>
+                                <Td>{fmtMoney(pa.valor_custeio)}</Td>
+                                <Td>{fmtMoney(pa.valor_investimento)}</Td>
+                                <Td>{fmtMoney(pa.valor_total)}</Td>
+                                <Td className="max-w-[320px] whitespace-normal break-words leading-snug align-top" title={pa.objeto || ""}>
+                                  {pa.objeto || "-"}
+                                </Td>
                               </tr>
                             ))}
                           </Table>
