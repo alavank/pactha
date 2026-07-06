@@ -273,7 +273,7 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
 
     # Extrai a grid (maior tabela) + links de paginacao displaytag (d-XXXX-p=N).
     # A consulta rapida mostra 20 itens/pagina -> precisamos visitar TODAS as paginas.
-    grid_js = """() => {
+    grid_js = r"""() => {
         const tables=[...document.querySelectorAll('table')];
         let best=null,max=0;
         for(const t of tables){const r=t.querySelectorAll('tr');if(r.length>max){max=r.length;best=t;}}
@@ -285,39 +285,83 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
                 return {cols: tds, href: a ? a.href : null};
             }).filter(r=>r.cols.length>=6);
         }
+        const denude = s => (s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
         const links=[];
+        let prox=null;
         document.querySelectorAll('a').forEach(a=>{
-            const t=(a.innerText||'').trim();
-            if(/^\\d+$/.test(t) && /-p=\\d/.test(a.href||'')) links.push({num: parseInt(t,10), href: a.href});
+            const raw=(a.innerText||'').trim();
+            const href=a.href||'';
+            // links NUMERICOS da janela: tem -p= E -g= (ex ...-p=3&-g=3)
+            if(/^\d+$/.test(raw) && /-p=\d+/.test(href)) links.push({num: parseInt(raw,10), href});
+            // link "Prox" (proxima janela): so tem -g= (SEM -p=). Desliza a janela.
+            const t=denude(raw);
+            if((t.indexOf('prox')===0 || t==='>' || t==='>>' || t.indexOf('seguinte')>=0 || t.indexOf('next')>=0)
+               && /-g=\d+/.test(href)) prox=href;
         });
-        return {rows, links};
+        // info "Pagina X de Y (Z item(s))" p/ validar avanco e saber a ultima pagina
+        let info=null;
+        document.querySelectorAll('.pagelinks').forEach(b=>{
+            const mm=denude(b.innerText).match(/pagina\s+(\d+)\s+de\s+(\d+)\s*\((\d+)/);
+            if(mm) info={cur:+mm[1], total:+mm[2], items:+mm[3]};
+        });
+        return {rows, links, prox, info};
     }"""
 
     all_rows = []
-    page_links = {}      # num -> href (displaytag mostra janela de paginas)
-    visited = set()
     res = await page.evaluate(grid_js)
-    visited.add(1)
     all_rows.extend(res["rows"])
-    for l in res["links"]:
-        page_links.setdefault(l["num"], l["href"])
-    safety = 0
-    while safety < 100:
-        safety += 1
-        pending = [n for n in sorted(page_links) if n not in visited]
-        if not pending:
-            break
-        n = pending[0]
-        try:
-            await page.goto(page_links[n], timeout=40000, wait_until="domcontentloaded")
-            await page.wait_for_timeout(2500)
+
+    # Paginacao SEM TETO. O displaytag mostra so uma JANELA fixa de numeros
+    # (ex 1-10) e NAO desliza clicando nos numeros. Para ir alem, ha o link
+    # "[Prox]" (proxima janela), que usa APENAS -g=<pag> (SEM -p=) e recarrega
+    # a grid deslizando a janela (10 -> 11..16). Estrategia:
+    #   - dentro da janela: navega pelo link NUMERICO de cur+1 (tem -p= & -g=);
+    #   - na borda da janela: usa o link "[Prox]" (so -g=).
+    # Valida o avanco pelo banner "Pagina X de Y" e re-tenta se a grid vier
+    # vazia (carga incompleta). Para na ultima pagina (cur == total).
+    def _key(r):
+        return _clean(r["cols"][0]) if r.get("cols") else ""
+    seen_keys = {_key(r) for r in res["rows"] if _key(r)}
+    total = (res.get("info") or {}).get("total")
+    cur = 1
+    paginas = 1
+    tried = set()
+    while (total is None or cur < total) and paginas < 2000:
+        nxt = next((l["href"] for l in res.get("links", []) if l["num"] == cur + 1), None)
+        if not nxt:
+            nxt = res.get("prox")  # borda da janela -> desliza via [Prox] (so -g=)
+        if not nxt or nxt in tried:
+            break  # ultima pagina (nem cur+1 numerico nem [Prox])
+        tried.add(nxt)
+        # navega com retry: as vezes a grid vem vazia/incompleta (recarrega)
+        loaded = False
+        for attempt in range(3):
+            try:
+                await page.goto(nxt, timeout=40000, wait_until="domcontentloaded")
+            except Exception as e:
+                logger.warning(f"  {mun['nome']}: goto pagina {cur + 1} falhou: {str(e)[:70]}")
+                await page.wait_for_timeout(1500)
+                continue
+            await page.wait_for_timeout(2500 + attempt * 1500)
             res = await page.evaluate(grid_js)
-            all_rows.extend(res["rows"])
-            for l in res["links"]:
-                page_links.setdefault(l["num"], l["href"])
-        except Exception as e:
-            logger.warning(f"  {mun['nome']}: pagina {n} falhou: {str(e)[:80]}")
-        visited.add(n)
+            info = res.get("info") or {}
+            # ok se veio linha(s) E a pagina reportada avancou p/ cur+1 (ou sem info)
+            if res["rows"] and (not info or info.get("cur") == cur + 1):
+                loaded = True
+                break
+        if not loaded:
+            logger.warning(f"  {mun['nome']}: pagina {cur + 1} nao carregou (grid vazia/errada), parando em {len(all_rows)} linhas")
+            break
+        novos = 0
+        for r in res["rows"]:
+            k = _key(r)
+            if k and k not in seen_keys:
+                seen_keys.add(k); novos += 1
+        all_rows.extend(res["rows"])
+        cur += 1
+        paginas += 1
+        if novos == 0:
+            break  # nada novo -> fim (evita loop se algo repetir)
 
     propostas = []
     seen_num = set()
@@ -335,7 +379,7 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
             "identificacao": _clean(row["cols"][5]),
             "_detalhe_url": row["href"],
         })
-    logger.info(f"  {mun['nome']}: {len(visited)} pagina(s) -> {len(propostas)} propostas")
+    logger.info(f"  {mun['nome']}: {paginas} pagina(s) -> {len(propostas)} propostas")
 
     # Enriquece cada proposta com o detalhe (Dados da Proposta).
     # Listagem e detalhe rodam na MESMA page (mesma sessao). Quando is_auth,
