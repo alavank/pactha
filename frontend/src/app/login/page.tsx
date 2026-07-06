@@ -86,7 +86,6 @@ export default function LoginPage() {
             /* eslint-disable-next-line @next/next/no-img-element */
             <img src="/pacta-logo.png" alt="PACTHA" className="mx-auto mb-1 h-28 w-auto" />
           )}
-          <h1 className="text-lg font-bold text-base-content">Bem-vindo de volta</h1>
           <p className="text-sm text-base-content/60">
             Monitoramento de Convênios e Transferências
           </p>
