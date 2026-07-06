@@ -270,6 +270,14 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
         if (c) c.click();
     }""")
     await page.wait_for_timeout(9000)
+    # Aguarda o banner de paginacao (.pagelinks) renderizar. Sem isso, as vezes
+    # a 1a leitura pega a grid (20 linhas) ANTES dos controles de paginacao ->
+    # o loop nao acha "proxima"/total e para na pagina 1 (subestima o total).
+    try:
+        await page.wait_for_selector(".pagelinks", timeout=15000)
+        await page.wait_for_timeout(1200)
+    except Exception:
+        pass
 
     # Extrai a grid (maior tabela) + links de paginacao displaytag (d-XXXX-p=N).
     # A consulta rapida mostra 20 itens/pagina -> precisamos visitar TODAS as paginas.
