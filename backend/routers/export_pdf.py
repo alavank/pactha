@@ -391,7 +391,7 @@ async def export_parlamentares_pdf(
             det = await _detalhe(nome_normalizado=p["nome_display"],
                                  municipio_id=municipio_id, ano=ano, db=db, current=current)
         except HTTPException:
-            det = {"sigcon": [], "voluntarias": [], "emendas": []}
+            det = {"sigcon": [], "voluntarias": [], "emendas": [], "plano_acao": []}
 
         pf = p.get("por_fonte", {})
         muns = ", ".join(p.get("municipios", []))
@@ -400,7 +400,7 @@ async def export_parlamentares_pdf(
             Paragraph(
                 f"{p['total_lancamentos']} lancamento(s) · Total {_br(p['valor_total'])} · "
                 f"SIGCON: {pf.get('sigcon', 0)} · TransfereGov: {pf.get('voluntaria', 0)} · "
-                f"Emendas: {pf.get('emenda', 0)}"
+                f"Emendas: {pf.get('emenda', 0)} · Transf. Especial: {pf.get('plano_acao', 0)}"
                 + (f" · Municipios: {muns}" if muns else ""),
                 meta_style),
         ]
@@ -448,7 +448,20 @@ async def export_parlamentares_pdf(
                 ["Municipio", "Indicacao", "Ano", "UO", "Beneficiario", "Tipo", "Valor", "Status"],
                 rows, [24, 24, 12, 16, 70, 45, 26, 60]))
 
-        if not (sig or vol or em):
+        pa = det.get("plano_acao", [])
+        if pa:
+            rows = [[
+                _pc(x.get("municipio_nome"), 30), _pc(x.get("codigo"), 20),
+                _pc(x.get("emenda"), 16), _pc(x.get("situacao"), 16),
+                _pc(_br(x.get("valor_custeio"))), _pc(_br(x.get("valor_investimento"))),
+                _pc(_br(x.get("valor_total"))), _pc(x.get("objeto"), 500),
+            ] for x in pa]
+            story.append(Paragraph(f"Transferencia Especial / Plano de Acao (RP9) — {len(pa)} plano(s)", sub_style))
+            story.append(_sec_table(
+                ["Municipio", "Plano", "Emenda", "Situacao", "Custeio", "Investim.", "Valor Total", "Objeto/Politica"],
+                rows, [24, 26, 26, 22, 26, 26, 26, 101]))
+
+        if not (sig or vol or em or pa):
             story.append(Paragraph("Sem lancamentos detalhados.", meta_style))
         story.append(Spacer(1, 6))
 
