@@ -381,6 +381,20 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
         })
     logger.info(f"  {mun['nome']}: {paginas} pagina(s) -> {len(propostas)} propostas")
 
+    # Modo rapido (re-run "carregar todos"): pula o enrich por-proposta (lento,
+    # ~2.5s cada). As linhas-base (numero, situacao, orgao, proponente, parecer,
+    # CNPJ) sao gravadas mesmo assim; o detalhe (valores/objeto/parlamentar) e
+    # preenchido depois pelo cron diario. O detalhe ja existente e preservado
+    # (upsert usa COALESCE). Mantemos id_proposta_siconv pois vem so da URL.
+    if os.getenv("TG_SKIP_ENRICH") == "1":
+        for prop in propostas:
+            _u = prop.pop("_detalhe_url", None)
+            _idp = _id_proposta_from_url(_u) if _u else None
+            if _idp:
+                prop["id_proposta_siconv"] = _idp
+        logger.info(f"  {mun['nome']}: enrich pulado (TG_SKIP_ENRICH=1) — {len(propostas)} propostas base")
+        return propostas
+
     # Enriquece cada proposta com o detalhe (Dados da Proposta).
     # Listagem e detalhe rodam na MESMA page (mesma sessao). Quando is_auth,
     # os links de detalhe sao logados → renderizam o botao Detalhar Clausula
@@ -849,7 +863,8 @@ def _upsert(mun_id: int, propostas: list[dict]):
                 parlamentar=COALESCE(EXCLUDED.parlamentar, transferegov_propostas.parlamentar),
                 situacao_contratacao_detalhe=COALESCE(EXCLUDED.situacao_contratacao_detalhe, transferegov_propostas.situacao_contratacao_detalhe),
                 id_proposta_siconv=COALESCE(EXCLUDED.id_proposta_siconv, transferegov_propostas.id_proposta_siconv),
-                detalhe=EXCLUDED.detalhe, raw_data=EXCLUDED.raw_data, updated_at=NOW()
+                detalhe=COALESCE(EXCLUDED.detalhe, transferegov_propostas.detalhe),
+                raw_data=EXCLUDED.raw_data, updated_at=NOW()
         """, (mun_id, p["numero_proposta"][:20], p["situacao"][:300], p["orgao"][:300],
               p["proponente"][:300], p["possui_parecer"][:10], p["identificacao"][:30],
               (codigo_instr or "")[:30] or None, (modalidade or "")[:100] or None,
@@ -862,7 +877,7 @@ def _upsert(mun_id: int, propostas: list[dict]):
               (parlamentar or "")[:200] or None,
               json.dumps(sit_det_json, ensure_ascii=False) if sit_det_json else None,
               (p.get("id_proposta_siconv") or None),
-              json.dumps(det, ensure_ascii=False), json.dumps(p, ensure_ascii=False)))
+              (json.dumps(det, ensure_ascii=False) if det else None), json.dumps(p, ensure_ascii=False)))
         ins += 1
     conn.commit(); cur.close(); conn.close()
     return ins
