@@ -152,6 +152,19 @@ async def _fetch_individuais(client: httpx.AsyncClient, cod_fns: str, ano: int,
             nup = it.get("nuProposta")
             if not nup:
                 continue
+            # Situacao REAL do portal (ex.: "EM ANALISE PELA AREA FINALISTICA") NAO
+            # vem na listagem — so no detalhe (obter-proposta). 1 chamada por proposta.
+            sit_desc = None
+            try:
+                rd = await client.get(
+                    f"{BASE}/recursos/proposta/obter-proposta",
+                    params={"nuProposta": nup}, timeout=20,
+                )
+                if rd.status_code == 200:
+                    dd = rd.json().get("resultado", {}) or {}
+                    sit_desc = (dd.get("situacao") or {}).get("descricaoSituacaoproposta")
+            except Exception:
+                pass
             out.append({
                 "nuProposta": nup,
                 "entidade": it.get("noEntidade") or "FUNDO MUNICIPAL DE SAUDE",
@@ -160,6 +173,7 @@ async def _fetch_individuais(client: httpx.AsyncClient, cod_fns: str, ano: int,
                 "vlPago": float(it.get("vlPago") or 0),
                 "vlPagar": float(it.get("vlPagar") or 0),
                 "parlamentares": it.get("parlamentares") or [],
+                "situacao_desc": sit_desc,
             })
         return out
     except Exception as ex:

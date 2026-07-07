@@ -224,7 +224,11 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
                         "banco": "", "agencia": "", "conta": "",
                         "saldo_bancario": None, "dt_saldo": None,
                         "dt_fim_vigencia": None,
-                        "situacao_atual": sit,
+                        # Situacao REAL do portal FNS (ex.: "EM ANALISE PELA AREA
+                        # FINALISTICA"), capturada por proposta no scraper. Fallback
+                        # p/ o rotulo computado (Pago/Empenhado/Em analise) quando
+                        # ainda nao re-coletado.
+                        "situacao_atual": (ind.get("situacao_desc") or sit),
                         "empenhado": "Sim" if _fed_empenhada(sit) else "Não",
                         "fonte": "fns",
                         "fonte_ref": str(c.id),
@@ -351,6 +355,14 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
                     continue
                 sit = it.get("planoAcaoSituacao") or ""
                 sl = sit.lower()
+                # Situacao exibida: Plano de Acao (CIENTE/...) + Plano de Trabalho
+                # (a fase real: EM_ANALISE, APROVADO, CONCLUIDO..., EMPENHADO...).
+                # So "ciente" (plano de acao) e pouco informativo p/ o relatorio.
+                _hz = lambda s: (s or "").replace("_", " ").strip()
+                sit_pt = _hz(it.get("planoTrabalhoSituacao"))
+                sit_te = _hz(sit)
+                if sit_pt and _hz(sit).lower() != sit_pt.lower():
+                    sit_te = f"{_hz(sit)} · Plano de Trabalho: {sit_pt}"
                 cod_em = it.get("codigoEmendaFormatado") or ""
                 # Mesma regra do ano de emissão: TE concluída fica (PARTE 3);
                 # TE ativa (CIENTE/análise) só do ano de emissão; antiga não-
@@ -373,7 +385,7 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
                     "banco": "", "agencia": "", "conta": "",
                     "saldo_bancario": None, "dt_saldo": None,
                     "dt_fim_vigencia": None,
-                    "situacao_atual": sit,
+                    "situacao_atual": sit_te,
                     "fonte": "transferencia_especial",
                     "fonte_ref": str(it.get("planoAcaoId") or ""),
                 })
