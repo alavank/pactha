@@ -87,7 +87,7 @@ export default function LoginPage() {
             <img src="/pacta-logo.png" alt="PACTHA" className="mx-auto mb-1 h-28 w-auto" />
           )}
           <p className="text-sm text-base-content/60">
-            Monitoramento de Convênios e Transferências
+            Monitoramento de Convênios
           </p>
         </CardHeader>
         <CardContent>
