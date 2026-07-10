@@ -20,6 +20,7 @@ FROM node:20-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
+    HOSTNAME=0.0.0.0 \
     PORT=3000
 # Saida standalone (next.config.ts: output: 'standalone')
 COPY --from=build /app/public ./public

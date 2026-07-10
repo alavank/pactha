@@ -120,6 +120,25 @@ def run_migrations():
     except Exception as e:
         _log(f"Falha ao adquirir lock - tentando sem: {e}")
 
+    # Schema base (tabelas + seed) antes das migrations incrementais. No Coolify
+    # nao existe o passo manual "rodar setup_db.py uma vez"; e idempotente
+    # (CREATE TABLE IF NOT EXISTS + INSERT ON CONFLICT DO NOTHING). O seed so roda
+    # quando a tabela users esta vazia (evita re-hash/print de senha a cada boot).
+    try:
+        import setup_db
+        setup_db.create_tables()
+        with psycopg2.connect(sync_url) as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) FROM users")
+                n_users = cur.fetchone()[0]
+            conn.commit()
+        if n_users == 0:
+            setup_db.seed_data()
+            _log("Seed inicial aplicado (users estava vazio)")
+        _log("Schema base (setup_db) OK")
+    except Exception as e:
+        _log(f"setup_db falhou (seguindo assim mesmo): {str(e)[:200]}")
+
     base = Path(__file__).parent.parent / "migrations"
     if not base.exists():
         _log(f"Pasta migrations nao encontrada: {base}")
