@@ -1,8 +1,8 @@
 # Worker p/ scrapers Playwright (SIGCON, TransfereGov Voluntarias).
 # Build context = RAIZ do repo, entao COPY usa prefixo backend/.
-# Cada cron service define seu proprio Start Command (ex:
-# "python ingestion/transferegov_voluntarias.py" ou
-# "python ingestion/run_sigcon_cron.py"), que sobrescreve o CMD abaixo.
+# No Coolify, este container fica OCIOSO (CMD sleep infinity) e as Scheduled
+# Tasks executam cada cron via `docker exec` (ex.:
+# "python -u ingestion/run_sigcon_cron.py").
 FROM python:3.12-slim
 
 # Deps de sistema p/ Playwright
@@ -23,5 +23,5 @@ COPY backend/services/ ./services/
 COPY backend/schemas/ ./schemas/
 COPY backend/config.py backend/database.py ./
 
-# CMD default (sobrescrito pelo Start Command de cada cron service)
-CMD ["python", "-u", "ingestion/run_sigcon_cron.py"]
+# Container ocioso: as Scheduled Tasks do Coolify executam os crons via docker exec.
+CMD ["sleep", "infinity"]
