@@ -127,7 +127,7 @@ export default function EmendasEstaduaisPage() {
   }
 
   const exportPdf = () => {
-    const token = localStorage.getItem("pacta_token");
+    const token = localStorage.getItem("pactha_token");
     const url = `${api.defaults.baseURL}/export-pdf/emendas?municipio_id=${municipioId}`;
     fetch(url, { headers: { Authorization: `Bearer ${token}` } })
       .then((r) => r.blob())

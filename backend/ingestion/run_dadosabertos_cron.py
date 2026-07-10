@@ -3,8 +3,8 @@
   - Acordo FES (divida da saude estadual SES-MG)
 
 Sao ingestoes leves e idempotentes (TRUNCATE/UPSERT). Rodam via o cron
-existente `pacta-cron-sigcon` (run_sigcon_cron.py chama run_all()), entao NAO
-precisam de serviço Railway novo. Precisam so de DATABASE_URL_SYNC.
+existente (run_sigcon_cron.py chama run_all()), entao NAO precisam de uma
+Scheduled Task nova no Coolify. Precisam so de DATABASE_URL_SYNC.
 
 Uso direto: DATABASE_URL_SYNC=... python ingestion/run_dadosabertos_cron.py
 """

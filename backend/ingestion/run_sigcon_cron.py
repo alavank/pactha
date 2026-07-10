@@ -1,10 +1,9 @@
 """
 Cron entry-point para SIGCON-MG scraper.
 
-Configurar no Railway:
-  - Service: pacta-cron-sigcon
+Coolify: Scheduled Task no resource Worker
   - Cron schedule: 0 */6 * * *   (a cada 6 horas = 4x/dia: 00:00, 06:00, 12:00, 18:00)
-  - Start command: python ingestion/run_sigcon_cron.py
+  - Comando: python -u ingestion/run_sigcon_cron.py
   - Env: COFRE_KEY, DATABASE_URL_SYNC
 
 Cada execucao:

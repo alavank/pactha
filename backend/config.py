@@ -26,7 +26,7 @@ def get_settings() -> Settings:
     s = Settings()
     # Hardening: rejeita JWT_SECRET fraco em producao
     if os.getenv("ENV", "").lower() == "production":
-        weak_markers = ["secret", "changeme", "pacta_secret_key_2026", "test", "dev"]
+        weak_markers = ["secret", "changeme", "pactha_secret_key_2026", "test", "dev"]
         if len(s.JWT_SECRET) < 32 or any(m in s.JWT_SECRET.lower() for m in weak_markers):
             raise RuntimeError(
                 "JWT_SECRET fraco/previsivel em producao. "

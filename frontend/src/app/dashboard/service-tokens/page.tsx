@@ -163,7 +163,7 @@ export default function ServiceTokensPage() {
                   <Input
                     value={form.description}
                     onChange={(e) => setForm({ ...form, description: e.target.value })}
-                    placeholder="Worker Railway de scraping FNS"
+                    placeholder="Worker de scraping FNS"
                   />
                 </div>
                 <div>
@@ -214,7 +214,7 @@ export default function ServiceTokensPage() {
               </button>
             </div>
             <p className="text-xs text-warning">
-              Configure no Railway worker: <code>PACTA_SERVICE_TOKEN={showSecret.token.slice(0, 20)}...</code>
+              Configure no Worker: <code>PACTHA_SERVICE_TOKEN={showSecret.token.slice(0, 20)}...</code>
             </p>
             <Button variant="outline" size="sm" onClick={() => setShowSecret(null)}>
               Fechar (ja anotei)

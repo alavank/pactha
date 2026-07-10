@@ -119,7 +119,7 @@ export default function AiChatPage() {
     try {
       const pergunta = idx > 0 && messages[idx - 1]?.role === "user" ? messages[idx - 1].content : "";
       const titulo = pergunta ? pergunta.slice(0, 90) : "Relatório - IA PACTHA";
-      const token = localStorage.getItem("pacta_token");
+      const token = localStorage.getItem("pactha_token");
       const res = await fetch(`${api.defaults.baseURL}/export-pdf/ai`, {
         method: "POST",
         headers: {

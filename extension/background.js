@@ -10,7 +10,7 @@
 //   3) KEEP-ALIVE (chrome.alarms): a cada 12 minutos, faz HEAD em uma URL leve
 //      do servidor alvo pra evitar session timeout no JEE (~20-30min inatividade).
 
-const DEFAULT_API = "https://pacta-api-production-9c11.up.railway.app/api";
+const DEFAULT_API = "https://pactha.alavank.com.br/api";
 
 // Mapeamento host → automation_key + URL de keep-alive
 const TARGETS = [
@@ -81,12 +81,12 @@ function getRegistrableDomain(host) {
 }
 
 async function getConfig() {
-  const data = await chrome.storage.local.get(["pacta_api", "pacta_token", "pacta_municipio_id", "pacta_auto_enabled"]);
+  const data = await chrome.storage.local.get(["pactha_api", "pactha_token", "pactha_municipio_id", "pactha_auto_enabled"]);
   return {
-    api: data.pacta_api || DEFAULT_API,
-    token: data.pacta_token || "",
-    municipio_id: parseInt(data.pacta_municipio_id || "0", 10),
-    auto_enabled: data.pacta_auto_enabled !== false, // default ON
+    api: data.pactha_api || DEFAULT_API,
+    token: data.pactha_token || "",
+    municipio_id: parseInt(data.pactha_municipio_id || "0", 10),
+    auto_enabled: data.pactha_auto_enabled !== false, // default ON
   };
 }
 
@@ -128,11 +128,11 @@ async function getAllCookiesForDomain(host) {
 async function capture(host, reason) {
   const cfg = await getConfig();
   if (!cfg.token) {
-    console.log("[PACTA] sem token configurado, ignorando captura");
+    console.log("[PACTHA] sem token configurado, ignorando captura");
     return;
   }
   if (!cfg.auto_enabled) {
-    console.log("[PACTA] auto-captura desabilitada");
+    console.log("[PACTHA] auto-captura desabilitada");
     return;
   }
 
@@ -142,18 +142,18 @@ async function capture(host, reason) {
   const now = Date.now();
   const dKey = `${target.key}:${host}`;
   if (lastCaptureAt.has(dKey) && now - lastCaptureAt.get(dKey) < DEBOUNCE_MS) {
-    console.log(`[PACTA] debounce ativo p/ ${dKey}`);
+    console.log(`[PACTHA] debounce ativo p/ ${dKey}`);
     return;
   }
   lastCaptureAt.set(dKey, now);
 
   const cookies = await getAllCookiesForDomain(host);
   if (!cookies.length) {
-    console.log(`[PACTA] nenhum cookie pra ${host}`);
+    console.log(`[PACTHA] nenhum cookie pra ${host}`);
     return;
   }
   const httpOnlyCount = cookies.filter((c) => c.httpOnly).length;
-  console.log(`[PACTA] capturando ${cookies.length} cookies (${httpOnlyCount} httpOnly) de ${host} [${reason}]`);
+  console.log(`[PACTHA] capturando ${cookies.length} cookies (${httpOnlyCount} httpOnly) de ${host} [${reason}]`);
 
   const payload = {
     automation_key: target.key,
@@ -170,9 +170,9 @@ async function capture(host, reason) {
   };
 
   try {
-    // Token longevo (service token, prefixo 'pacta_') vai como X-Service-Token
+    // Token longevo (service token, prefixo 'pactha_') vai como X-Service-Token
     // — NAO expira em 60min como o JWT. JWT antigo ainda funciona via Bearer.
-    const isServiceToken = cfg.token.startsWith("pacta_");
+    const isServiceToken = cfg.token.startsWith("pactha_");
     const authHeaders = isServiceToken
       ? { "X-Service-Token": cfg.token }
       : { Authorization: `Bearer ${cfg.token}` };
@@ -183,25 +183,25 @@ async function capture(host, reason) {
     });
     if (res.ok) {
       const data = await res.json();
-      console.log(`[PACTA] ✓ enviado: id=${data.id} auto_scrape=${data.auto_scrape_started}`);
+      console.log(`[PACTHA] ✓ enviado: id=${data.id} auto_scrape=${data.auto_scrape_started}`);
       // Notifica popup via storage
       chrome.storage.local.set({
-        pacta_last_capture: {
+        pactha_last_capture: {
           host, reason, n: cookies.length, httpOnly: httpOnlyCount,
           ok: true, at: now, auto_scrape: !!data.auto_scrape_started,
         },
       });
     } else {
       const text = (await res.text()).slice(0, 200);
-      console.warn(`[PACTA] ✗ ${res.status}: ${text}`);
+      console.warn(`[PACTHA] ✗ ${res.status}: ${text}`);
       chrome.storage.local.set({
-        pacta_last_capture: { host, reason, ok: false, error: `HTTP ${res.status}`, at: now },
+        pactha_last_capture: { host, reason, ok: false, error: `HTTP ${res.status}`, at: now },
       });
     }
   } catch (e) {
-    console.error("[PACTA] erro de rede:", e);
+    console.error("[PACTHA] erro de rede:", e);
     chrome.storage.local.set({
-      pacta_last_capture: { host, reason, ok: false, error: e.message, at: now },
+      pactha_last_capture: { host, reason, ok: false, error: e.message, at: now },
     });
   }
 }
@@ -232,16 +232,16 @@ chrome.cookies.onChanged.addListener(async (changeInfo) => {
 
 // 3) KEEP-ALIVE periódico — chama URLs alvo pra manter sessão JEE viva
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.alarms.create("pacta_keep_alive", { periodInMinutes: 12 });
-  console.log("[PACTA] keep-alive alarm criado (12min)");
+  chrome.alarms.create("pactha_keep_alive", { periodInMinutes: 12 });
+  console.log("[PACTHA] keep-alive alarm criado (12min)");
 });
 
 chrome.runtime.onStartup.addListener(() => {
-  chrome.alarms.create("pacta_keep_alive", { periodInMinutes: 12 });
+  chrome.alarms.create("pactha_keep_alive", { periodInMinutes: 12 });
 });
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
-  if (alarm.name !== "pacta_keep_alive") return;
+  if (alarm.name !== "pactha_keep_alive") return;
   const cfg = await getConfig();
   if (!cfg.token || !cfg.auto_enabled) return;
   // Para cada target com keepAliveUrl, faz GET (mantém JSESSIONID vivo no servidor)
@@ -253,7 +253,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
         credentials: "include",
         cache: "no-store",
       });
-      console.log(`[PACTA] keep-alive ${t.keepAliveUrl} → HTTP ${r.status}`);
+      console.log(`[PACTHA] keep-alive ${t.keepAliveUrl} → HTTP ${r.status}`);
       // Após ping bem-sucedido, re-captura cookies (servidor pode ter rotacionado)
       if (r.ok) {
         try {
@@ -262,9 +262,9 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
         } catch (e) { /* ignore */ }
       }
     } catch (e) {
-      console.warn(`[PACTA] keep-alive falhou ${t.keepAliveUrl}: ${e.message}`);
+      console.warn(`[PACTHA] keep-alive falhou ${t.keepAliveUrl}: ${e.message}`);
     }
   }
 });
 
-console.log("[PACTA] service worker carregado");
+console.log("[PACTHA] service worker carregado");

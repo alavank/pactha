@@ -61,15 +61,17 @@ allowed_origins = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
 ]
-# FRONTEND_URL: domain principal (railway, custom). Pode ser CSV.
+# FRONTEND_URL: domain principal (Coolify/custom). Pode ser CSV.
 frontend_urls = os.getenv("FRONTEND_URL", "")
 for url in frontend_urls.split(","):
     url = url.strip()
     if url:
         allowed_origins.append(url)
 
-# Regex restrito: apenas domains do projeto PACTHA (railway/custom)
-allow_regex = os.getenv("CORS_ORIGIN_REGEX") or r"^https://(pacta|.*\.pacta).*\.(up\.railway\.app|railway\.app)$"
+# Regex opcional p/ dominios extras (ex.: previews). Sem fallback: em producao o
+# FRONTEND_URL cobre o dominio, e no deploy subpath (front + API no MESMO host) o
+# CORS e inocuo por ser same-origin.
+allow_regex = os.getenv("CORS_ORIGIN_REGEX") or None
 
 app.add_middleware(
     CORSMiddleware,

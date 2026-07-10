@@ -149,8 +149,8 @@ export default function TelegramPage() {
               <ol className="list-decimal ml-5 space-y-1">
                 <li>Crie um bot no Telegram com <a href="https://t.me/BotFather" target="_blank" rel="noopener" className="underline">@BotFather</a> — comando <code className="bg-base-100 px-1">/newbot</code></li>
                 <li>Copie o token retornado</li>
-                <li>No Railway, adicione a env var <code className="bg-base-100 px-1">TELEGRAM_BOT_TOKEN</code> com o token</li>
-                <li>Reinicie o backend (redeploy do Railway)</li>
+                <li>No Coolify (resource API), adicione a env var <code className="bg-base-100 px-1">TELEGRAM_BOT_TOKEN</code> com o token</li>
+                <li>Reinicie o backend (redeploy no Coolify)</li>
                 <li>Como admin, abra o <a href="/api/docs" target="_blank" rel="noopener" className="underline">Swagger</a> e chame <code className="bg-base-100 px-1">POST /api/telegram/setup-webhook</code> com a URL do backend</li>
               </ol>
             </div>

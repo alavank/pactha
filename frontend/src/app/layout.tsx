@@ -21,11 +21,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="pt-BR" data-theme="pacta" className={`${nunito.variable} h-full antialiased`}>
+    <html lang="pt-BR" data-theme="pactha" className={`${nunito.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col bg-base-200">
         <script
           dangerouslySetInnerHTML={{
-            __html: `try{var t=localStorage.getItem('pacta_theme');if(t==='pacta-dark'||t==='pacta')document.documentElement.setAttribute('data-theme',t);}catch(e){}`,
+            __html: `try{var t=localStorage.getItem('pactha_theme');if(t==='pactha-dark'||t==='pactha')document.documentElement.setAttribute('data-theme',t);}catch(e){}`,
           }}
         />
         {children}

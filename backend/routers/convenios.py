@@ -15,7 +15,6 @@ from models.user import User
 import math
 import os
 import re
-import httpx
 
 router = APIRouter(prefix="/api/convenios", tags=["convenios"])
 
@@ -530,52 +529,34 @@ async def get_convenio_estadual_detail(
 
 @router.post("/refresh-sigcon")
 async def refresh_sigcon(
+    db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
-    """Dispara execucao on-demand do scraper SIGCON-MG via Railway API.
+    """Enfileira execucao on-demand do scraper SIGCON-MG (sem depender de plataforma).
 
-    O scraper roda como cron-job no service `pacta-cron-sigcon` (Dockerfile
-    com Chromium + Playwright). Esse endpoint chama a mutation
-    `serviceInstanceRedeploy` no Railway pra promover o ultimo build do cron,
-    o que faz Railway iniciar nova instancia que executa
-    `python ingestion/run_sigcon_cron.py` automaticamente.
+    Insere um job 'pending' na tabela `scraper_jobs`. O Worker (Scheduled Task
+    no Coolify) roda `ingestion/run_queue_sigcon.py` a cada ~2min, consome o job
+    (FOR UPDATE SKIP LOCKED) e executa `run_sigcon_cron.py`. Dedup: nao enfileira
+    se ja houver um job 'pending'/'running'.
 
-    Levarah ~1-2min ate o resultado aparecer no banco. Frontend deve fazer
-    polling em /municipios/{id}/summary apos o trigger.
-
-    Requer env vars no pacta-api: RAILWAY_API_TOKEN, RAILWAY_CRON_SERVICE_ID,
-    RAILWAY_ENVIRONMENT_ID.
+    Leva ~1-2min ate o resultado aparecer no banco. Frontend deve fazer polling
+    em /municipios/{id}/summary apos o trigger.
     """
-    token = os.getenv("RAILWAY_API_TOKEN")
-    service_id = os.getenv("RAILWAY_CRON_SERVICE_ID")
-    env_id = os.getenv("RAILWAY_ENVIRONMENT_ID")
-    if not (token and service_id and env_id):
-        raise HTTPException(503,
-            "Refresh manual desabilitado: faltam env vars "
-            "(RAILWAY_API_TOKEN, RAILWAY_CRON_SERVICE_ID, RAILWAY_ENVIRONMENT_ID).")
-
-    mutation = (
-        'mutation{serviceInstanceRedeploy('
-        f'serviceId:"{service_id}",environmentId:"{env_id}"'
-        ')}'
-    )
-    try:
-        async with httpx.AsyncClient(timeout=15) as cli:
-            r = await cli.post(
-                "https://backboard.railway.com/graphql/v2",
-                headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-                json={"query": mutation},
-            )
-            data = r.json()
-            if data.get("errors"):
-                raise HTTPException(502, f"Railway API: {data['errors'][0].get('message')}")
-            if not data.get("data", {}).get("serviceInstanceRedeploy"):
-                raise HTTPException(502, "Railway recusou redeploy")
-    except httpx.HTTPError as e:
-        raise HTTPException(502, f"Erro chamando Railway: {e}")
-
+    row = (await db.execute(text(
+        "INSERT INTO scraper_jobs (tipo, status) "
+        "SELECT 'sigcon', 'pending' "
+        "WHERE NOT EXISTS ("
+        " SELECT 1 FROM scraper_jobs WHERE tipo = 'sigcon' AND status IN ('pending', 'running')"
+        ") RETURNING id"
+    ))).first()
+    await db.commit()
+    if row is None:
+        return {
+            "status": "already_queued",
+            "message": "Uma atualizacao do SIGCON ja esta na fila ou em execucao.",
+        }
     return {
         "status": "triggered",
-        "message": "Scraper SIGCON iniciado em background. Os dados serao atualizados em 1-2 minutos.",
-        "service": "pacta-cron-sigcon",
+        "message": "Scraper SIGCON enfileirado. Os dados serao atualizados em 1-2 minutos.",
+        "job_id": row[0],
     }

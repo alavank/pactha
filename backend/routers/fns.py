@@ -78,7 +78,7 @@ async def _get_cookies(db: AsyncSession) -> dict:
 async def _resolve_cod(municipio: str, uf: str, db: AsyncSession) -> Optional[str]:
     """Nome do municipio -> codigo IBGE 6 digitos (FNS). Usa a tabela `municipios`
     do AMBIENTE (ibge_code sem o digito verificador). Fallbacks: override legado
-    e a API de municipios do FNS. Assim funciona em prod E no PACTA2."""
+    e a API de municipios do FNS. Funciona em qualquer ambiente/instalacao."""
     m = (municipio or "").strip()
     if m.isdigit():
         return m
@@ -204,7 +204,7 @@ async def anos(db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
 
 @router.get("/municipios")
 async def municipios_pacta(db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
-    """Lista os municipios do AMBIENTE (prod ou PACTA2) com codigo IBGE FNS
+    """Lista os municipios do AMBIENTE com codigo IBGE FNS
     (6 digitos = ibge_code sem o digito verificador) + UF, ordenados por nome."""
     rows = (await db.execute(text(
         "SELECT id, nome, ibge_code, uf FROM municipios WHERE active = true "

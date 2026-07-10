@@ -168,7 +168,7 @@ export default function AnotacaoModal({
   };
 
   const baixarAnexo = (anotId: number, idx: number, nome: string) => {
-    const token = localStorage.getItem("pacta_token");
+    const token = localStorage.getItem("pactha_token");
     fetch(`${api.defaults.baseURL}/gestao/anotacoes/${anotId}/anexo/${idx}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     })

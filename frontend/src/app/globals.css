@@ -3,7 +3,7 @@
 @import "shadcn/tailwind.css";
 
 @plugin "daisyui" {
-  themes: pacta --default, pacta-dark;
+  themes: pactha --default, pactha-dark;
 }
 
 /* Escala da marca (violeta) + acentos pastel — design "Base".
@@ -31,7 +31,7 @@
 
 /* Tema CLARO — "Base" (violeta calmo, fundo cinza-claro, cards brancos flat) */
 @plugin "daisyui/theme" {
-  name: "pacta";
+  name: "pactha";
   default: true;
   prefersdark: false;
   color-scheme: light;
@@ -72,7 +72,7 @@
 
 /* Tema ESCURO — "Base" */
 @plugin "daisyui/theme" {
-  name: "pacta-dark";
+  name: "pactha-dark";
   default: false;
   prefersdark: true;
   color-scheme: dark;
@@ -110,7 +110,7 @@
   --noise: 0;
 }
 
-@custom-variant dark (&:is([data-theme="pacta-dark"] *));
+@custom-variant dark (&:is([data-theme="pactha-dark"] *));
 
 /* Tokens shadcn que o daisyUI não fornece (card, popover, muted, *-foreground,
    border, input, ring, sidebar, chart) + fonte.
@@ -199,7 +199,7 @@
 }
 
 /* ---- ESCURO — "Base" ---- */
-[data-theme="pacta-dark"] {
+[data-theme="pactha-dark"] {
   --brand-navy: #6d6ef2;
   --brand-navy-700: #5658e0;
   --brand-green: #2bcf8f;

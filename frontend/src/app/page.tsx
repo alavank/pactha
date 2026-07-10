@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 export default function Home() {
   const router = useRouter();
   useEffect(() => {
-    const token = localStorage.getItem("pacta_token");
+    const token = localStorage.getItem("pactha_token");
     if (token) {
       router.replace("/dashboard");
     } else {

@@ -229,7 +229,7 @@ def seed_data():
     Usuarios devem trocar no primeiro login (campo must_change_password).
     """
     import os
-    admin_email = os.getenv("ADMIN_EMAIL", "admin@pacta.com.br")
+    admin_email = os.getenv("ADMIN_EMAIL", "admin@pactha.com.br")
     # Permite override por env (CI/CD), ou gera aleatoria
     admin_pwd = os.getenv("ADMIN_PASSWORD") or _gen_password()
     admin_hash = hash_password(admin_pwd)

@@ -70,7 +70,7 @@ export default function RmListPage() {
 
   const exportarPdf = (id: number) => {
     const url = `${api.defaults.baseURL}/rm/${id}/pdf`;
-    const token = localStorage.getItem("pacta_token");
+    const token = localStorage.getItem("pactha_token");
     fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
       .then((r) => r.blob())
       .then((blob) => window.open(URL.createObjectURL(blob), "_blank"));

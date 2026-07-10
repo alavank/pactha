@@ -2,7 +2,7 @@
 Classe-base para scrapers que usam Service Token + Cofre.
 
 Padrao seguro:
-1. Worker recebe APENAS PACTA_API_URL + PACTA_SERVICE_TOKEN
+1. Worker recebe APENAS PACTHA_API_URL + PACTHA_SERVICE_TOKEN
 2. Le credenciais via /api/internal/secrets/{automation_key}
 3. Faz scraping (ou chama API do portal se tiver)
 4. Faz upsert via /api/internal/upsert/{automation_key}
@@ -28,11 +28,11 @@ class ScraperBase(ABC):
     name: str = ""
 
     def __init__(self):
-        self.api_url = os.getenv("PACTA_API_URL", "https://pacta-api-production-9c11.up.railway.app/api")
-        self.token = os.getenv("PACTA_SERVICE_TOKEN")
+        self.api_url = os.getenv("PACTHA_API_URL", "http://localhost:8000/api")
+        self.token = os.getenv("PACTHA_SERVICE_TOKEN")
         if not self.token:
             raise RuntimeError(
-                f"PACTA_SERVICE_TOKEN ausente. Crie via /api/admin/service-tokens "
+                f"PACTHA_SERVICE_TOKEN ausente. Crie via /api/admin/service-tokens "
                 f"com scope 'secret:read:{self.automation_key}'."
             )
 

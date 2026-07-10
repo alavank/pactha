@@ -58,6 +58,8 @@ MIGRATION_FILES = [
     "add_cauc.sql",
     # Acordo FES - divida da saude estadual (SES-MG) com os municipios
     "add_acordofes.sql",
+    # Fila de jobs on-demand (ex.: refresh SIGCON disparado pela UI) - Coolify
+    "add_scraper_jobs.sql",
 ]
 
 

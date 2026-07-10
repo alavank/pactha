@@ -17,7 +17,7 @@ def _token() -> str:
     if not tok:
         raise RuntimeError(
             "TELEGRAM_BOT_TOKEN nao configurado. Crie um bot em @BotFather "
-            "e configure a env var no Railway."
+            "e configure a env var no servidor (Coolify)."
         )
     return tok
 

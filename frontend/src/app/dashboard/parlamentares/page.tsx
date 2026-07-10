@@ -158,7 +158,7 @@ function ParlamentaresInner() {
       if (municipioId) qs.set("municipio_id", municipioId);
       if (search.trim()) qs.set("q", search.trim());
       if (ano) qs.set("ano", ano);
-      const token = localStorage.getItem("pacta_token");
+      const token = localStorage.getItem("pactha_token");
       const res = await fetch(`${api.defaults.baseURL}/export-pdf/parlamentares?${qs.toString()}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         credentials: "include",

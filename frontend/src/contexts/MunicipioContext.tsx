@@ -26,7 +26,7 @@ export function MunicipioProvider({ children }: { children: ReactNode }) {
     const fromUrl = searchParams.get("municipio_id");
     if (fromUrl) return fromUrl;
     if (typeof window !== "undefined") {
-      return localStorage.getItem("pacta_last_municipio_id") || "";
+      return localStorage.getItem("pactha_last_municipio_id") || "";
     }
     return "";
   });
@@ -34,7 +34,7 @@ export function MunicipioProvider({ children }: { children: ReactNode }) {
   const setMunicipioId = useCallback((id: string) => {
     setId(id);
     if (typeof window === "undefined") return;
-    if (id) localStorage.setItem("pacta_last_municipio_id", id);
+    if (id) localStorage.setItem("pactha_last_municipio_id", id);
     // Sincroniza a URL (shareable / sobrevive a refresh) SEM navegar.
     const params = new URLSearchParams(window.location.search);
     if (id) params.set("municipio_id", id);

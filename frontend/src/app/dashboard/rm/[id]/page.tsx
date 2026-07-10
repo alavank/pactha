@@ -141,7 +141,7 @@ export default function RmEditorPage() {
   };
 
   const exportarPdf = () => {
-    const token = localStorage.getItem("pacta_token");
+    const token = localStorage.getItem("pactha_token");
     fetch(`${api.defaults.baseURL}/rm/${rid}/pdf`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
       .then((r) => r.blob())
       .then((blob) => window.open(URL.createObjectURL(blob), "_blank"));

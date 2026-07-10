@@ -118,7 +118,7 @@ function SessoesInner() {
   useEffect(() => { fetchAll(); }, [municipioId]);
 
   const copyToken = () => {
-    const t = localStorage.getItem("pacta_token");
+    const t = localStorage.getItem("pactha_token");
     if (!t) {
       toast.error("Faca login primeiro");
       return;

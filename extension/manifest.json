@@ -14,8 +14,7 @@
   "host_permissions": [
     "https://*.gov.br/*",
     "https://gov.br/*",
-    "https://pacta-api-production-9c11.up.railway.app/*",
-    "https://*.up.railway.app/*"
+    "https://pactha.alavank.com.br/*"
   ],
   "action": {
     "default_popup": "popup.html",

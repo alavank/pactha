@@ -1,9 +1,0 @@
-[phases.install]
-# Force npm install (NOT npm ci) - lock pode ficar dessincronizado entre OS
-cmds = ["npm install --legacy-peer-deps --no-audit --no-fund"]
-
-[phases.build]
-cmds = ["npm run build"]
-
-[start]
-cmd = "npm run start -- --port $PORT"

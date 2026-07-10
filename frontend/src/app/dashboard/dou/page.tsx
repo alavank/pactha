@@ -58,7 +58,7 @@ export default function DouMGPage() {
     setAbrindo(id);
     setError(null);
     try {
-      const token = localStorage.getItem("pacta_token");
+      const token = localStorage.getItem("pactha_token");
       const res = await fetch(`${api.defaults.baseURL}/dou-mg/publicacao/${id}?download=${download}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         credentials: "include",
@@ -221,7 +221,7 @@ export default function DouMGPage() {
                   qs.append("municipio_id", "0");
                   titulos.forEach((t) => qs.append("titulos", t));
                   edicoes.forEach((e) => qs.append("edicoes", e));
-                  const token = localStorage.getItem("pacta_token");
+                  const token = localStorage.getItem("pactha_token");
                   fetch(`${api.defaults.baseURL}/export-pdf/dou?${qs.toString()}`, {
                     headers: { Authorization: `Bearer ${token}` },
                   }).then((r) => r.blob()).then((blob) => {

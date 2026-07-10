@@ -1,18 +1,18 @@
 // PACTHA Captura Automática — popup logic
-const DEFAULT_API = "https://pacta-api-production-9c11.up.railway.app/api";
+const DEFAULT_API = "https://pactha.alavank.com.br/api";
 
 const $ = (id) => document.getElementById(id);
 
 async function getConfig() {
   return new Promise((res) => {
     chrome.storage.local.get(
-      ["pacta_api", "pacta_token", "pacta_municipio_id", "pacta_auto_enabled", "pacta_last_capture"],
+      ["pactha_api", "pactha_token", "pactha_municipio_id", "pactha_auto_enabled", "pactha_last_capture"],
       (data) => res({
-        api: data.pacta_api || DEFAULT_API,
-        token: data.pacta_token || "",
-        municipio_id: data.pacta_municipio_id || "6",
-        auto_enabled: data.pacta_auto_enabled !== false,
-        last_capture: data.pacta_last_capture || null,
+        api: data.pactha_api || DEFAULT_API,
+        token: data.pactha_token || "",
+        municipio_id: data.pactha_municipio_id || "6",
+        auto_enabled: data.pactha_auto_enabled !== false,
+        last_capture: data.pactha_last_capture || null,
       })
     );
   });
@@ -20,7 +20,7 @@ async function getConfig() {
 
 async function saveConfig(api, token) {
   return new Promise((res) => {
-    chrome.storage.local.set({ pacta_api: api, pacta_token: token }, res);
+    chrome.storage.local.set({ pactha_api: api, pactha_token: token }, res);
   });
 }
 
@@ -112,7 +112,7 @@ async function captureManual() {
     domain_capturado: host,
   };
   try {
-    const isServiceToken = cfg.token.startsWith("pacta_");
+    const isServiceToken = cfg.token.startsWith("pactha_");
     const authHeaders = isServiceToken
       ? { "X-Service-Token": cfg.token }
       : { Authorization: `Bearer ${cfg.token}` };
@@ -188,7 +188,7 @@ async function init() {
 
   // Eventos
   $("toggle-auto").addEventListener("change", async (e) => {
-    await new Promise((r) => chrome.storage.local.set({ pacta_auto_enabled: e.target.checked }, r));
+    await new Promise((r) => chrome.storage.local.set({ pactha_auto_enabled: e.target.checked }, r));
     if (e.target.checked) {
       $("auto-card").classList.remove("off");
       $("auto-title").textContent = "Modo automático ativo";
@@ -199,7 +199,7 @@ async function init() {
   });
 
   $("municipio-id").addEventListener("change", async (e) => {
-    await new Promise((r) => chrome.storage.local.set({ pacta_municipio_id: e.target.value }, r));
+    await new Promise((r) => chrome.storage.local.set({ pactha_municipio_id: e.target.value }, r));
   });
 
   $("btn-capture").addEventListener("click", captureManual);
@@ -224,7 +224,7 @@ async function init() {
     $("main").classList.remove("hidden");
   });
   $("open-pacta").addEventListener("click", () => {
-    chrome.tabs.create({ url: "https://pacta-production.up.railway.app/dashboard" });
+    chrome.tabs.create({ url: "https://pactha.alavank.com.br/dashboard" });
   });
 
   if (!cfg.token) {

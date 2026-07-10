@@ -356,7 +356,7 @@ async def webhook(
 async def status(_=Depends(get_current_user)):
     """Status do bot + webhook config."""
     if not tg.telegram_configured():
-        return {"configured": False, "message": "TELEGRAM_BOT_TOKEN não configurado no Railway."}
+        return {"configured": False, "message": "TELEGRAM_BOT_TOKEN não configurado no servidor."}
     try:
         me = await tg.get_me()
         wh = await tg.get_webhook_info()
@@ -370,7 +370,7 @@ async def status(_=Depends(get_current_user)):
 
 
 class WebhookSetup(BaseModel):
-    base_url: str  # ex: https://pacta-api.up.railway.app
+    base_url: str  # ex: https://pactha-api.up.railway.app
 
 
 @router.post("/setup-webhook")

@@ -23,7 +23,7 @@ from services.audit import log_event
 router = APIRouter(prefix="/api/admin/service-tokens", tags=["admin"])
 
 
-SUPER_ADMIN_EMAIL = "admin@pacta.com.br"
+SUPER_ADMIN_EMAIL = "admin@pactha.com.br"
 
 
 def _require_admin(user: User):
@@ -84,7 +84,7 @@ async def create_token(
         raise HTTPException(status_code=400, detail="Nome ja em uso")
 
     # Gera token raw com prefixo identificavel
-    raw = "pacta_st_" + pysecrets.token_urlsafe(40)
+    raw = "pactha_st_" + pysecrets.token_urlsafe(40)
     th = hash_token(raw)
     prefix = raw[:12]
 
@@ -153,7 +153,7 @@ async def rotate_token(
     if not token:
         raise HTTPException(status_code=404, detail="Token nao encontrado")
 
-    raw = "pacta_st_" + pysecrets.token_urlsafe(40)
+    raw = "pactha_st_" + pysecrets.token_urlsafe(40)
     token.token_hash = hash_token(raw)
     token.token_prefix = raw[:12]
     token.active = True

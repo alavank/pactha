@@ -236,7 +236,7 @@ export default function ConveniosPage() {
   const totalPages = data?.pages ?? 1;
 
   const exportPdf = () => {
-    const token = localStorage.getItem("pacta_token");
+    const token = localStorage.getItem("pactha_token");
     const url = `${api.defaults.baseURL}/export-pdf/convenios?municipio_id=${municipioId}`;
     fetch(url, { headers: { Authorization: `Bearer ${token}` } })
       .then((r) => r.blob())

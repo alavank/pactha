@@ -21,16 +21,16 @@ morria entre logins.
 
 1. **Clone ou baixe** este repositório:
    ```
-   git clone https://github.com/MattMatiins/PACTA.git
+   git clone https://github.com/alavank/pactha.git
    ```
-   A pasta da extensão fica em `PACTA/extension/`.
+   A pasta da extensão fica em `pactha/extension/`.
 
 2. Abra o Chrome em `chrome://extensions/`
 
 3. Ative **"Modo do desenvolvedor"** (canto superior direito)
 
 4. Clique em **"Carregar sem compactação"** e selecione a pasta
-   `PACTA/extension/`
+   `pactha/extension/`
 
 5. O ícone PACTHA aparece na barra. Fixe-o (📌) pra ficar sempre visível.
 
@@ -39,14 +39,14 @@ morria entre logins.
 **IMPORTANTE — use o TOKEN LONGEVO (service token), não o JWT da web.**
 O JWT da web app expira em 60 minutos; se você usar ele, a auto-captura
 para de funcionar silenciosamente após 1h (era a causa da "sessão que
-morria sozinha"). O **service token** (prefixo `pacta_`) nunca expira.
+morria sozinha"). O **service token** (prefixo `pactha_`) nunca expira.
 
 1. Peça/gere o **service token de captura** (scope `session:write`,
-   prefixo `pacta_ext_...`) — fornecido pelo admin do PACTHA.
+   prefixo `pactha_st_...`) — fornecido pelo admin do PACTHA.
 2. Clica no ícone da extensão → **"Configurar token PACTHA"**.
 3. Cola o service token → **Salvar configuração**.
 
-A extensão detecta automaticamente: token que começa com `pacta_` é
+A extensão detecta automaticamente: token que começa com `pactha_` é
 enviado como `X-Service-Token` (longevo); qualquer outro vai como
 `Authorization: Bearer` (JWT, compat legado de 60min).
 
@@ -108,7 +108,7 @@ Abrindo o ícone PACTHA você vê:
 
 - Token PACTHA fica em `chrome.storage.local` (criptografado pelo Chrome em
   disco do seu PC, isolado da WebApp)
-- Cookies trafegam HTTPS direto entre seu Chrome e o backend Railway
+- Cookies trafegam HTTPS direto entre seu Chrome e o backend PACTHA
 - Backend cifra com AES-256-GCM antes de gravar no Cofre (chave separada)
 - Nenhum servidor intermediário vê seus cookies
 - Para parar: desinstale a extensão OU desligue o toggle automático no popup

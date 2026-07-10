@@ -1,63 +1,47 @@
-# PACTHA - Configuração de Cron no Railway
+# PACTHA - Configuração de Crons (Coolify)
 
-Os pipelines de ingestão rodam em 3 tiers de frequência. Cada tier deve ser
-criado como um **service separado** no Railway:
+As rotinas de ingestão rodam como **Scheduled Tasks** anexadas ao resource
+**Worker** no Coolify. O Worker é buildado a partir de `backend/Dockerfile.scraper`
+(já traz Chromium + Playwright) e fica ocioso (`CMD sleep infinity`); cada
+Scheduled Task executa um comando dentro dele via `docker exec`.
 
-## Tier DAILY (00:00 BRT)
+## Scheduled Tasks
 
-**Cobre:** editais PNCP, oportunidades, DOU INLABS (se credencial cadastrada)
+| Nome | Cron | Comando | Env necessárias |
+|------|------|---------|-----------------|
+| sigcon | `0 */6 * * *` | `python -u ingestion/run_sigcon_cron.py` | `DATABASE_URL_SYNC`, `COFRE_KEY` |
+| transferegov | `0 5 * * *` | `python -u ingestion/transferegov_voluntarias.py` | `DATABASE_URL_SYNC`, `COFRE_KEY` |
+| fns | `30 5 * * *` | `python -u ingestion/run_fns_local.py` | `DATABASE_URL_SYNC`, `COFRE_KEY` |
+| govbr-renew | `*/15 * * * *` | `python -u ingestion/govbr_renew.py` | `DATABASE_URL_SYNC`, `COFRE_KEY` |
+| fila on-demand | `*/2 * * * *` | `python -u ingestion/run_queue_sigcon.py` | `DATABASE_URL_SYNC` |
 
-- **Service config:** `backend/railway-cron-daily.json`
-- **Cron:** `0 4 * * *` (04:00 UTC = 01:00 BRT)
-- **Env vars necessárias:**
-  - `DATABASE_URL`, `DATABASE_URL_SYNC`, `JWT_SECRET`
-  - `PORTAL_TRANSPARENCIA_KEY`
-  - `INLABS_USER`, `INLABS_PASS` (opcionais, ativam DOU)
-  - `CRON_TIER=daily`
+- `run_sigcon_cron.py` já roda também as fontes de **dados abertos** (CAUC +
+  Acordo FES via `run_dadosabertos_cron.run_all()`) e o backfill CKAN.
+- `run_queue_sigcon.py` consome a tabela `scraper_jobs` — jobs enfileirados pelo
+  botão "atualizar SIGCON" da UI (`POST /api/convenios/refresh-sigcon`).
 
-## Tier WEEKLY (segunda 02:00 BRT)
+## Como criar no Coolify
 
-**Cobre:** Câmara Deputados + Senado + ALMG + CNES + CEIS
-
-- **Service config:** `backend/railway-cron-weekly.json`
-- **Cron:** `0 5 * * 1` (05:00 UTC seg = 02:00 BRT seg)
-- **Env vars:**
-  - DBs + `PORTAL_TRANSPARENCIA_KEY`
-  - `CRON_TIER=weekly`
-
-## Tier MONTHLY (dia 1 do mês 03:00 BRT)
-
-**Cobre:** TransfereGov bulk + SIGCON + emendas fed/est + PortalTransp + CODEVASF + TSE
-
-- **Service config:** `backend/railway-cron-monthly.json`
-- **Cron:** `0 6 1 * *` (06:00 UTC dia 1 = 03:00 BRT dia 1)
-- **Env vars:**
-  - DBs + `PORTAL_TRANSPARENCIA_KEY` + `TRANSFEREGOV_BASE_URL`
-  - `CRON_TIER=monthly`
-
-## Como criar no Railway
-
-Para cada tier:
-1. **Settings → New Service → Empty Service**
-2. **Settings → Source → Repo:** `PACTHA` branch `main`
-3. **Settings → Root Directory:** `backend`
-4. **Settings → Config file:** apontar para o `railway-cron-{tier}.json` correspondente
-5. **Variables:** copiar do backend principal + adicionar `CRON_TIER`
-
-## Tier FULL (uso manual)
-
-Para forçar uma execução completa sem esperar o cron:
-```bash
-railway run --service=pacta-cron-weekly CRON_TIER=full python ingestion/run_all.py
-```
+1. Abra o resource **Worker** → aba **Scheduled Tasks**.
+2. **+ Add** → informe *Name*, *Frequency* (cron) e *Command* (coluna acima).
+3. As env vars vêm do próprio resource Worker (defina `DATABASE_URL_SYNC`,
+   `COFRE_KEY`, `PACTHA_API_URL`, `PACTHA_SERVICE_TOKEN` uma vez no Worker).
+4. Para rodar sob demanda: botão **Run now** na Scheduled Task.
 
 ## Monitoramento
 
-Logs ficam em `ingestion_log` (tabela). Query útil:
+Logs de ingestão ficam na tabela `ingestion_log`. Query útil:
 
 ```sql
 SELECT source, status, records_inserted, finished_at, error_message
 FROM ingestion_log
 WHERE finished_at > NOW() - INTERVAL '7 days'
 ORDER BY finished_at DESC;
+```
+
+Status da fila on-demand:
+
+```sql
+SELECT id, tipo, status, requested_at, started_at, finished_at, error
+FROM scraper_jobs ORDER BY id DESC LIMIT 20;
 ```

@@ -3,29 +3,29 @@
 import { useEffect, useState } from "react";
 import { Moon, Sun } from "lucide-react";
 
-type Theme = "pacta" | "pacta-dark";
+type Theme = "pactha" | "pactha-dark";
 
 export function ThemeToggle({ className = "" }: { className?: string }) {
-  const [theme, setTheme] = useState<Theme>("pacta");
+  const [theme, setTheme] = useState<Theme>("pactha");
 
   useEffect(() => {
-    let saved: Theme = "pacta";
+    let saved: Theme = "pactha";
     try {
-      const s = localStorage.getItem("pacta_theme");
-      if (s === "pacta" || s === "pacta-dark") saved = s;
+      const s = localStorage.getItem("pactha_theme");
+      if (s === "pactha" || s === "pactha-dark") saved = s;
     } catch { /* ignore */ }
     setTheme(saved);
     document.documentElement.setAttribute("data-theme", saved);
   }, []);
 
   const toggle = () => {
-    const next: Theme = theme === "pacta" ? "pacta-dark" : "pacta";
+    const next: Theme = theme === "pactha" ? "pactha-dark" : "pactha";
     setTheme(next);
     document.documentElement.setAttribute("data-theme", next);
-    try { localStorage.setItem("pacta_theme", next); } catch { /* ignore */ }
+    try { localStorage.setItem("pactha_theme", next); } catch { /* ignore */ }
   };
 
-  const isDark = theme === "pacta-dark";
+  const isDark = theme === "pactha-dark";
   return (
     <button
       type="button"

@@ -7,17 +7,17 @@ const api = axios.create({
   paramsSerializer: { indexes: null },
 });
 
-// Helper: le CSRF token do cookie pacta_csrf (nao httpOnly)
+// Helper: le CSRF token do cookie pactha_csrf (nao httpOnly)
 function getCsrfToken(): string | null {
   if (typeof document === "undefined") return null;
-  const m = document.cookie.match(/(?:^|;\s*)pacta_csrf=([^;]+)/);
+  const m = document.cookie.match(/(?:^|;\s*)pactha_csrf=([^;]+)/);
   return m ? decodeURIComponent(m[1]) : null;
 }
 
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   // Fallback Bearer (compat com clientes que ainda guardam token em localStorage)
   if (typeof window !== "undefined") {
-    const token = localStorage.getItem("pacta_token");
+    const token = localStorage.getItem("pactha_token");
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -77,8 +77,8 @@ api.interceptors.response.use(
         return api(original);
       }
       // refresh falhou - limpa estado e redireciona
-      localStorage.removeItem("pacta_token");
-      localStorage.removeItem("pacta_user");
+      localStorage.removeItem("pactha_token");
+      localStorage.removeItem("pactha_user");
       if (window.location.pathname !== "/login") {
         window.location.href = "/login";
       }

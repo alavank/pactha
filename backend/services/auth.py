@@ -27,9 +27,9 @@ settings = get_settings()
 security = HTTPBearer(auto_error=False)
 
 REFRESH_TTL_DAYS = int(os.getenv("REFRESH_TTL_DAYS", "30"))
-COOKIE_NAME_ACCESS = "pacta_access"
-COOKIE_NAME_REFRESH = "pacta_refresh"
-COOKIE_NAME_CSRF = "pacta_csrf"
+COOKIE_NAME_ACCESS = "pactha_access"
+COOKIE_NAME_REFRESH = "pactha_refresh"
+COOKIE_NAME_CSRF = "pactha_csrf"
 
 # Blacklist em memoria (suficiente para single-instance; em multi-replica usar Redis)
 _REVOKED_JTI: set[str] = set()
@@ -53,7 +53,7 @@ def _encode(payload: dict, ttl_minutes: int) -> str:
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(minutes=ttl_minutes)).timestamp()),
         "jti": uuid.uuid4().hex,
-        "iss": "pacta-api",
+        "iss": "pactha-api",
     })
     return pyjwt.encode(to_encode, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
 
@@ -88,7 +88,7 @@ def _decode(token: str, expected_typ: str = "access") -> dict:
             token,
             settings.JWT_SECRET,
             algorithms=[settings.JWT_ALGORITHM],
-            issuer="pacta-api",
+            issuer="pactha-api",
             options={"require": ["exp", "iat", "jti", "iss"]},
         )
     except pyjwt.ExpiredSignatureError:

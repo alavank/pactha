@@ -130,11 +130,8 @@ const ADMIN_NAV_ITEMS = [
   { href: "/dashboard/service-tokens", label: "Service Tokens", icon: KeyRound },
 ];
 
-// Co-branding por tenant (PACTA2). NEXT_PUBLIC_TENANT=trust -> /trust-logo.png.
-const TENANT_LOGO = process.env.NEXT_PUBLIC_TENANT ? `/${process.env.NEXT_PUBLIC_TENANT}-logo.png` : "";
-
 // Itens visiveis SO para o super-admin (nao para os demais admins).
-const SUPER_ADMIN_EMAIL = "admin@pacta.com.br";
+const SUPER_ADMIN_EMAIL = "admin@pactha.com.br";
 const SUPER_ADMIN_ONLY = new Set<string>(["/dashboard/sessoes", "/dashboard/service-tokens"]);
 
 function SidebarContent({
@@ -156,7 +153,7 @@ function SidebarContent({
   const [collapsed, setCollapsed] = useState<Set<string>>(() => {
     if (typeof window === "undefined") return new Set();
     try {
-      const raw = localStorage.getItem("pacta_nav_collapsed");
+      const raw = localStorage.getItem("pactha_nav_collapsed");
       return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
     } catch { return new Set(); }
   });
@@ -164,7 +161,7 @@ function SidebarContent({
     setCollapsed((prev) => {
       const next = new Set(prev);
       if (next.has(label)) next.delete(label); else next.add(label);
-      try { localStorage.setItem("pacta_nav_collapsed", JSON.stringify([...next])); } catch { /* ignore */ }
+      try { localStorage.setItem("pactha_nav_collapsed", JSON.stringify([...next])); } catch { /* ignore */ }
       return next;
     });
   };
@@ -180,19 +177,12 @@ function SidebarContent({
       {/* Faixa institucional - cores do governo */}
       <div className="gov-stripe" />
 
-      {/* Header com logo PACTHA — chip branco arredondado (legível no claro e no escuro).
-          No ambiente CIESP (PACTA2) exibe o co-branding CIESP ao lado. */}
+      {/* Header com logo PACTHA — chip branco arredondado (legível no claro e no escuro). */}
       <div className="border-b border-base-300 px-4 py-4 flex justify-center items-center gap-2">
         <div className="rounded-2xl bg-white p-2.5 shadow-sm ring-1 ring-black/5">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/pacta-logo.png" alt="PACTHA — Plataforma de Acompanhamento" className="h-16 w-auto" />
+          <img src="/pactha-logo.png" alt="PACTHA — Plataforma de Acompanhamento" className="h-16 w-auto" />
         </div>
-        {TENANT_LOGO && (
-          <div className="rounded-2xl bg-white p-2.5 shadow-sm ring-1 ring-black/5">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={TENANT_LOGO} alt="Logo do parceiro" className="h-12 w-auto" />
-          </div>
-        )}
       </div>
 
       {/* Seletor de municipio */}
@@ -391,7 +381,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
       .get<User & { must_change_password?: boolean }>("/auth/me")
       .then((res) => {
         setUser(res.data);
-        localStorage.setItem("pacta_user", JSON.stringify(res.data));
+        localStorage.setItem("pactha_user", JSON.stringify(res.data));
         if (res.data.must_change_password) {
           router.replace("/change-password?first=1");
         }
@@ -410,7 +400,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
         if (!selectedMunicipioId && data.length > 0) {
           // Prefere ultimo municipio usado (localStorage); senao primeiro da lista
           const lastId = typeof window !== "undefined"
-            ? localStorage.getItem("pacta_last_municipio_id")
+            ? localStorage.getItem("pactha_last_municipio_id")
             : null;
           const chosen = (lastId && data.some(m => String(m.id) === lastId))
             ? lastId
@@ -426,7 +416,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
   // Persiste municipio selecionado pra proxima visita lembrar
   useEffect(() => {
     if (selectedMunicipioId && typeof window !== "undefined") {
-      localStorage.setItem("pacta_last_municipio_id", selectedMunicipioId);
+      localStorage.setItem("pactha_last_municipio_id", selectedMunicipioId);
     }
   }, [selectedMunicipioId]);
 
@@ -440,7 +430,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
     if (firstAllowed && firstAllowed !== pathname) router.replace(firstAllowed);
   }, [user, pathname, router]);
 
-  // Guard super-admin: Sessoes / Service Tokens so p/ admin@pacta.com.br
+  // Guard super-admin: Sessoes / Service Tokens so p/ admin@pactha.com.br
   useEffect(() => {
     if (!user) return;
     if (user.email !== SUPER_ADMIN_EMAIL && SUPER_ADMIN_ONLY.has(pathname)) {
@@ -458,8 +448,8 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
     } catch {
       /* ignore */
     }
-    localStorage.removeItem("pacta_token");
-    localStorage.removeItem("pacta_user");
+    localStorage.removeItem("pactha_token");
+    localStorage.removeItem("pactha_user");
     router.push("/login");
   }, [router]);
 
