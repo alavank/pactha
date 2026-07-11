@@ -187,7 +187,7 @@ function SidebarContent({
           value={selectedMunicipioId}
           onChange={(e) => onMunicipioChange(e.target.value)}
         >
-          <option value="">Todos os municipios</option>
+          <option value="">—</option>
           {municipios.map((m) => (
             <option key={m.id} value={String(m.id)}>
               {m.nome} - {m.uf}
