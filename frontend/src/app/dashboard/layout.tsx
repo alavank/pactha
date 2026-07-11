@@ -7,7 +7,6 @@ import {
   LayoutDashboard,
   FileText,
   LogOut,
-  Building2,
   ChevronDown,
   Menu,
   KeyRound,
@@ -26,13 +25,6 @@ import {
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Sheet,
   SheetContent,
@@ -190,28 +182,18 @@ function SidebarContent({
         <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-base-content/50">
           Municipio Atendido
         </label>
-        <Select
+        <select
+          className="select select-bordered select-sm w-full"
           value={selectedMunicipioId}
-          onValueChange={(v) => v && onMunicipioChange(v)}
+          onChange={(e) => onMunicipioChange(e.target.value)}
         >
-          <SelectTrigger className="w-full">
-            <Building2 className="mr-1.5 size-4 text-primary" />
-            <SelectValue placeholder="Selecionar municipio">
-              {() => {
-                const m = municipios.find((x) => String(x.id) === selectedMunicipioId);
-                return m ? `${m.nome} - ${m.uf}` : "Selecionar municipio";
-              }}
-            </SelectValue>
-            <ChevronDown className="ml-auto size-4 text-base-content/40" />
-          </SelectTrigger>
-          <SelectContent>
-            {municipios.map((m) => (
-              <SelectItem key={m.id} value={String(m.id)}>
-                {m.nome} - {m.uf}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          <option value="">Todos os municipios</option>
+          {municipios.map((m) => (
+            <option key={m.id} value={String(m.id)}>
+              {m.nome} - {m.uf}
+            </option>
+          ))}
+        </select>
       </div>
 
       {/* Navegacao */}
