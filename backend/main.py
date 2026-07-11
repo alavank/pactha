@@ -1,8 +1,11 @@
 import os
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text as _sql_text
+from sqlalchemy.ext.asyncio import AsyncSession
+from database import get_db
 from routers import (
     auth, municipios, convenios, cofre, service_tokens,
     session_capture, emendas_estaduais, dou_mg, fns, transferegov, export_pdf,
@@ -110,3 +113,42 @@ app.include_router(acordofes.router)
 @app.get("/api/health")
 async def health():
     return {"status": "ok", "service": "PACTHA API"}
+
+
+@app.get("/api/status/ingestao")
+async def status_ingestao(db: AsyncSession = Depends(get_db)):
+    """Snapshot de populacao do banco: contagens + ingestion_log + fila scraper_jobs.
+    Aberto (so agregados, sem dados sensiveis) p/ monitorar a carga inicial dos dados."""
+    async def _count(tbl: str):
+        try:
+            r = await db.execute(_sql_text(f"SELECT count(*) FROM {tbl}"))
+            return int(r.scalar() or 0)
+        except Exception as e:
+            return f"n/a ({str(e)[:40]})"
+
+    out: dict = {"counts": {}}
+    for tbl in ("municipios", "users", "cofre_senhas", "convenios_estadual",
+                "transferegov_propostas", "emendas_estaduais",
+                "cauc_situacao", "acordofes_credor", "siconv_federal"):
+        out["counts"][tbl] = await _count(tbl)
+    try:
+        rows = (await db.execute(_sql_text(
+            "SELECT source, status, records_inserted, finished_at "
+            "FROM ingestion_log ORDER BY id DESC LIMIT 25"))).fetchall()
+        out["ingestion_log"] = [
+            {"source": r[0], "status": r[1], "records": r[2],
+             "finished_at": r[3].isoformat() if r[3] else None} for r in rows]
+    except Exception as e:
+        out["ingestion_log"] = f"n/a ({str(e)[:40]})"
+    try:
+        rows = (await db.execute(_sql_text(
+            "SELECT id, tipo, status, started_at, finished_at, error "
+            "FROM scraper_jobs ORDER BY id DESC LIMIT 10"))).fetchall()
+        out["scraper_jobs"] = [
+            {"id": r[0], "tipo": r[1], "status": r[2],
+             "started_at": r[3].isoformat() if r[3] else None,
+             "finished_at": r[4].isoformat() if r[4] else None,
+             "error": r[5]} for r in rows]
+    except Exception as e:
+        out["scraper_jobs"] = f"n/a ({str(e)[:40]})"
+    return out
