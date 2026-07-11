@@ -123,8 +123,9 @@ async def status_ingestao(db: AsyncSession = Depends(get_db)):
         try:
             r = await db.execute(_sql_text(f"SELECT count(*) FROM {tbl}"))
             return int(r.scalar() or 0)
-        except Exception as e:
-            return f"n/a ({str(e)[:40]})"
+        except Exception:
+            await db.rollback()  # evita cascata: query falha aborta a transacao
+            return "n/a (tabela ausente)"
 
     out: dict = {"counts": {}}
     for tbl in ("municipios", "users", "cofre_senhas", "convenios_estadual",
@@ -139,6 +140,7 @@ async def status_ingestao(db: AsyncSession = Depends(get_db)):
             {"source": r[0], "status": r[1], "records": r[2],
              "finished_at": r[3].isoformat() if r[3] else None} for r in rows]
     except Exception as e:
+        await db.rollback()
         out["ingestion_log"] = f"n/a ({str(e)[:40]})"
     try:
         rows = (await db.execute(_sql_text(

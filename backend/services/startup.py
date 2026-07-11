@@ -127,6 +127,19 @@ def run_migrations():
     try:
         import setup_db
         setup_db.create_tables()
+        # Tabelas modeladas ausentes do setup_db e sem migration CREATE (ex.:
+        # cofre_senhas, audit_log): cria a partir dos models SQLAlchemy.
+        # checkfirst=True nao toca tabelas ja existentes.
+        try:
+            import models  # noqa: F401 - registra todos os models em Base.metadata
+            from database import Base
+            from sqlalchemy import create_engine as _ce
+            _eng = _ce(sync_url)
+            Base.metadata.create_all(_eng, checkfirst=True)
+            _eng.dispose()
+            _log("create_all (tabelas modeladas) OK")
+        except Exception as e:
+            _log(f"create_all falhou: {str(e)[:150]}")
         with psycopg2.connect(sync_url) as conn:
             with conn.cursor() as cur:
                 cur.execute("SELECT COUNT(*) FROM users")
