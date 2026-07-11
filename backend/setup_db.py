@@ -102,6 +102,34 @@ def create_tables():
             updated_at TIMESTAMPTZ DEFAULT NOW()
         );
 
+        CREATE TABLE IF NOT EXISTS transferegov_propostas (
+            id SERIAL PRIMARY KEY,
+            municipio_id INTEGER REFERENCES municipios(id),
+            numero_proposta VARCHAR(20) NOT NULL,
+            situacao VARCHAR(300),
+            orgao VARCHAR(300),
+            proponente VARCHAR(300),
+            possui_parecer VARCHAR(10),
+            identificacao VARCHAR(30),
+            codigo_instrumento VARCHAR(30),
+            modalidade VARCHAR(100),
+            situacao_siafi VARCHAR(200),
+            numero_processo VARCHAR(50),
+            objeto TEXT,
+            programa VARCHAR(300),
+            dt_inicio_vigencia DATE,
+            dt_fim_vigencia DATE,
+            dt_proposta DATE,
+            dt_assinatura DATE,
+            detalhe JSONB,
+            raw_data JSONB,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW(),
+            UNIQUE(municipio_id, numero_proposta)
+        );
+        -- Colunas valor_*/situacao_contratacao*/clausula_*/parlamentar/id_proposta_siconv
+        -- sao adicionadas pelas migrations add_voluntarias_* (ADD COLUMN IF NOT EXISTS).
+
         CREATE TABLE IF NOT EXISTS emendas (
             id SERIAL PRIMARY KEY,
             nr_emenda VARCHAR(100),
