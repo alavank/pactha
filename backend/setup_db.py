@@ -268,10 +268,10 @@ def seed_data():
         # Municipios piloto
         conn.execute(text("""
         INSERT INTO municipios (nome, ibge_code, uf) VALUES
-            ('Araujos', '3104502', 'MG'),
+            ('Araújos', '3104502', 'MG'),
             ('Nova Serrana', '3145208', 'MG'),
             ('Bom Despacho', '3107406', 'MG'),
-            ('Sao Tiago', '3164704', 'MG'),
+            ('São Tiago', '3164704', 'MG'),
             ('Toledo', '3169406', 'MG'),
             ('Piracema', '3151206', 'MG')
         ON CONFLICT (ibge_code) DO NOTHING;

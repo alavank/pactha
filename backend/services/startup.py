@@ -60,6 +60,8 @@ MIGRATION_FILES = [
     "add_acordofes.sql",
     # Fila de jobs on-demand (ex.: refresh SIGCON disparado pela UI) - Coolify
     "add_scraper_jobs.sql",
+    # Acentuacao correta dos rotulos de cidade (convencao "Nome - UF")
+    "fix_municipio_acentos.sql",
 ]
 
 
