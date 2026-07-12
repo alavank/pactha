@@ -7,8 +7,9 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import toast from "react-hot-toast";
 
-// Logo do cliente por instância (config build-time). Ex.: /trust-logo.svg
+// Config de marca por instância (build-time).
 const CLIENT_LOGO = process.env.NEXT_PUBLIC_CLIENT_LOGO || "";
+const CLIENT_SUBTITLE = process.env.NEXT_PUBLIC_CLIENT_SUBTITLE || "";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -73,21 +74,22 @@ export default function LoginPage() {
       <div className="pointer-events-none absolute -top-40 left-1/2 h-[28rem] w-[40rem] -translate-x-1/2 rounded-full bg-primary/15 blur-3xl" />
       <div className="pointer-events-none absolute -bottom-24 right-[-6rem] h-80 w-80 rounded-full bg-accent-purple/15 blur-3xl" />
       <Card className="relative w-full max-w-md border border-base-300/60 shadow-theme-lg">
-        <CardHeader className="text-center pb-2">
-          <div className="mx-auto mb-2 flex items-center justify-center gap-3">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/pactha-logo.png" alt="PACTHA" className="h-11 w-auto max-w-[190px] object-contain" />
-            {CLIENT_LOGO && (
-              <>
-                <div className="h-9 w-px bg-base-300" />
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={CLIENT_LOGO} alt="Cliente" className="h-12 w-auto max-w-[110px] object-contain" />
-              </>
-            )}
+        <CardHeader className="flex flex-col items-center gap-2 pb-2 text-center">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/pactha-logo.png" alt="PACTHA" className="h-11 w-auto max-w-[210px] object-contain" />
+          <div className="leading-tight">
+            <p className="text-sm font-semibold text-base-content/75">Monitoramento</p>
+            <p className="text-xs text-base-content/50">Convênios | Emendas | Transferências</p>
           </div>
-          <p className="text-sm text-base-content/60">
-            Monitoramento de Convênios
-          </p>
+          {CLIENT_LOGO && (
+            <div className="mt-1 flex flex-col items-center gap-1">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={CLIENT_LOGO} alt="Cliente" className="h-14 w-auto max-w-[160px] object-contain" />
+              {CLIENT_SUBTITLE && (
+                <p className="text-xs font-semibold text-base-content/60">{CLIENT_SUBTITLE}</p>
+              )}
+            </div>
+          )}
         </CardHeader>
         <CardContent>
           <form onSubmit={handleLogin} className="space-y-4">
