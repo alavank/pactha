@@ -6,6 +6,11 @@ Enderecamento por CHAVE ESTAVEL (ibge_code), nunca pelo id autoincrement interno
 Municipio NAO tem delecao (decisao do usuario) — no maximo desativar via PATCH.
 """
 import os
+import base64
+import json as _json
+import secrets as pysecrets
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,8 +20,10 @@ from database import get_db
 from models import Municipio
 from models.user import User
 from models.cofre import CofreSenha
+from models.service_token import ServiceToken
 from services.control_auth import require_control_scope, ControlPrincipal
 from services.auth import hash_password
+from services.service_auth import hash_token
 from services import users_admin, crypto
 from services.telas_catalog import TELAS_CATALOG
 from services.audit import log_event
@@ -374,6 +381,83 @@ async def delete_cofre(
                     target_type="cofre_senha", target_id=item_id,
                     details={"sistema": sistema, "token": p.name})
     return {"status": "deleted"}
+
+
+# --- Sessao gov.br + token da extensao de captura ---
+@router.get("/session/status")
+async def control_session_status(
+    db: AsyncSession = Depends(get_db),
+    p: ControlPrincipal = Depends(require_control_scope("control:session:read")),
+):
+    """Status REAL da sessao gov.br capturada (do Cofre): valida/expirada + minutos
+    restantes (decodifica o exp do JWT user-id). Insumo p/ FNS/TransfereGov. A captura
+    em si e manual (extensao) — o Console so monitora."""
+    row = (await db.execute(text("""
+        SELECT id, municipio_id, updated_at, observacao, senha_hash
+        FROM cofre_senhas
+        WHERE automation_key='govbr' AND length(senha_hash) > 1000
+        ORDER BY updated_at DESC LIMIT 1
+    """))).first()
+    if not row:
+        return {"has_session": False, "message": "Nenhuma sessao gov.br capturada"}
+    age_h = (datetime.now(timezone.utc) - row[2]).total_seconds() / 3600 if row[2] else None
+    base: dict = {"has_session": True, "municipio_id": row[1],
+                  "updated_at": row[2].isoformat() if row[2] else None,
+                  "age_hours": round(age_h, 2) if age_h is not None else None,
+                  "observacao": row[3]}
+    try:
+        data = _json.loads(crypto.decrypt(row[4]) or "")
+        uid = next((c for c in data.get("cookies", []) if c.get("name") == "user-id"), None)
+        if uid:
+            parts = (uid.get("value") or "").split(".")
+            if len(parts) >= 2:
+                pb = parts[1] + "=" * (-len(parts[1]) % 4)
+                payload = _json.loads(base64.urlsafe_b64decode(pb))
+                exp_ts = payload.get("exp")
+                if exp_ts:
+                    mins = (exp_ts - datetime.now(timezone.utc).timestamp()) / 60
+                    base["exp_minutes"] = round(mins, 1)
+                    base["expired"] = mins <= 0
+                    base["expira_em"] = datetime.fromtimestamp(exp_ts, tz=timezone.utc).isoformat()
+                    return base
+    except Exception as e:
+        base["decode_error"] = str(e)[:80]
+    base["expired"] = (age_h or 1) > 0.33   # fallback pela idade da captura (~20min)
+    return base
+
+
+@router.post("/session/token")
+async def control_session_token(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    p: ControlPrincipal = Depends(require_control_scope("control:session:write")),
+):
+    """Emite (ou rotaciona) o service token da EXTENSAO de captura (scope session:write,
+    kind scraper). Mostrado UMA vez; o operador configura na extensao do navegador."""
+    name = "extensao-captura"
+    raw = "pactha_st_" + pysecrets.token_urlsafe(40)
+    existing = (await db.execute(
+        select(ServiceToken).where(ServiceToken.name == name))).scalar_one_or_none()
+    if existing:
+        existing.token_hash = hash_token(raw)
+        existing.token_prefix = raw[:12]
+        existing.scopes = ["session:write"]
+        existing.kind = "scraper"
+        existing.active = True
+        existing.last_used_at = None
+        existing.last_used_ip = None
+        tok, action = existing, "control.session_token.rotate"
+    else:
+        tok = ServiceToken(name=name, token_hash=hash_token(raw), token_prefix=raw[:12],
+                           scopes=["session:write"], kind="scraper", active=True)
+        db.add(tok)
+        action = "control.session_token.create"
+    await db.commit()
+    await db.refresh(tok)
+    await log_event(db, action=action, request=request, target_type="service_token",
+                    target_id=tok.id, details={"name": name, "token": p.name})
+    return {"token": raw, "name": name, "scopes": ["session:write"], "prefix": tok.token_prefix,
+            "warning": "Anote agora — nao sera mostrado de novo. Configure na extensao de captura."}
 
 
 # --- Usuarios do cliente (users do tenant), geridos pela Central via canal ---
