@@ -19,6 +19,8 @@ class ServiceToken(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), unique=True, nullable=False)  # "fns_scraper", "simec_scraper"
+    # Discrimina o tipo: 'scraper' (default) | 'control' (token do Console Alavank)
+    kind = Column(String(20), server_default="scraper", default="scraper")
     token_hash = Column(String(255), nullable=False, index=True)  # SHA-256 do token raw
     token_prefix = Column(String(12))  # primeiros 12 chars (para identificacao em logs)
     scopes = Column(JSONB, default=list)  # ["secret:read:fns", "secret:read:simec"]

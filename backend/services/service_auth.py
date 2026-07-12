@@ -38,6 +38,11 @@ async def get_service_token(
     if not token or not token.active:
         raise HTTPException(status_code=401, detail="Token invalido ou revogado")
 
+    # Simetria com control_auth: um control token apresentado como X-Service-Token
+    # e rejeitado (defense-in-depth — "vazamento de um nao escala ao outro").
+    if (getattr(token, "kind", "scraper") or "scraper") != "scraper":
+        raise HTTPException(status_code=401, detail="Token invalido")
+
     if token.expires_at and token.expires_at < datetime.now(timezone.utc):
         raise HTTPException(status_code=401, detail="Token expirado")
 

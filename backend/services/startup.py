@@ -62,6 +62,8 @@ MIGRATION_FILES = [
     "add_scraper_jobs.sql",
     # Acentuacao correta dos rotulos de cidade (convencao "Nome - UF")
     "fix_municipio_acentos.sql",
+    # Control-plane (Console Alavank): coluna kind em service_tokens
+    "add_control_token_kind.sql",
 ]
 
 
@@ -181,3 +183,40 @@ def run_migrations():
                 _log(f"  Migration {fname} falhou: {msg}")
 
     _log(f"Startup migrations: {rodadas}/{len(MIGRATION_FILES)} executadas")
+
+    # Bootstrap do control token (Console Alavank), apos as migrations (kind ja existe).
+    _bootstrap_control_token(sync_url)
+
+
+def _bootstrap_control_token(sync_url: str):
+    """Se CONTROL_TOKEN_BOOTSTRAP estiver no env e ainda nao houver control token,
+    cria um ServiceToken(kind='control', scopes=['control:*']) com o hash do raw.
+    Idempotente: nao recria se ja existe um control token. O raw fica so no Console."""
+    raw = os.getenv("CONTROL_TOKEN_BOOTSTRAP", "").strip()
+    if not raw or len(raw) < 32:
+        return
+    import json
+    import hashlib
+    try:
+        import psycopg2
+    except ImportError:
+        return
+    th = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    prefix = raw[:12]
+    try:
+        with psycopg2.connect(sync_url) as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) FROM service_tokens WHERE kind = 'control'")
+                if cur.fetchone()[0] == 0:
+                    cur.execute(
+                        "INSERT INTO service_tokens "
+                        "(name, kind, token_hash, token_prefix, scopes, description, active) "
+                        "VALUES ('console-alavank', 'control', %s, %s, %s::jsonb, "
+                        "'Control-plane token (Console Alavank)', true) "
+                        "ON CONFLICT (name) DO NOTHING",
+                        (th, prefix, json.dumps(["control:*"])),
+                    )
+            conn.commit()
+        _log("Control token bootstrap: OK (criado ou ja existia)")
+    except Exception as e:
+        _log(f"Control token bootstrap falhou: {str(e)[:150]}")

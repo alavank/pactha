@@ -10,7 +10,7 @@ from routers import (
     auth, municipios, convenios, cofre, service_tokens,
     session_capture, emendas_estaduais, dou_mg, fns, transferegov, export_pdf,
     users, simec, rm, ai, gestao, parlamentares, telegram, status_changes,
-    documentos, cauc, acordofes,
+    documentos, cauc, acordofes, control,
 )
 from services.security_headers import SecurityHeadersMiddleware
 from services.startup import run_migrations
@@ -108,6 +108,7 @@ app.include_router(status_changes.router)
 app.include_router(documentos.router)
 app.include_router(cauc.router)
 app.include_router(acordofes.router)
+app.include_router(control.router)  # /api/control/* (Console Alavank)
 
 
 @app.get("/api/health")

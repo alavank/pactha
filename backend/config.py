@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = ""
     COFRE_KEY: str = ""  # AES-256 key para cofre de senhas
 
+    # Control-plane (Console Alavank) — canal /api/control/*
+    INSTANCE_SLUG: str = ""              # identidade do tenant (ex.: "montesiao-mg")
+    CONTROL_TOKEN_BOOTSTRAP: str = ""    # raw injetado 1x no boot p/ semear o control token
+    CONTROL_PLANE_ALLOWED_IPS: str = ""  # CSV opcional de IPs do Console (egress fixo)
+
     class Config:
         env_file = "../.env"
         env_file_encoding = "utf-8"
