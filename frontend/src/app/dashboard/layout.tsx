@@ -179,21 +179,26 @@ function SidebarContent({
 
       {/* Seletor de municipio */}
       <div className="px-3 py-3 border-b border-base-300 bg-base-200/50">
-        <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-base-content/50">
-          Municipio Atendido
-        </label>
-        <select
-          className="select select-bordered select-sm w-full"
-          value={selectedMunicipioId}
-          onChange={(e) => onMunicipioChange(e.target.value)}
-        >
-          <option value="">—</option>
-          {municipios.map((m) => (
-            <option key={m.id} value={String(m.id)}>
-              {m.nome} - {m.uf}
-            </option>
-          ))}
-        </select>
+        {municipios.length === 1 ? (
+          // Entidade unica (municipio/consorcio): so o nome, sem dropdown
+          <div className="rounded-[var(--radius-field)] border border-base-300 bg-base-100 px-3 py-1.5 text-center text-sm font-semibold">
+            {municipios[0].nome} - {municipios[0].uf}
+          </div>
+        ) : (
+          // Multi-entidade (assessoria/parceiro): dropdown
+          <select
+            className="select select-bordered select-sm w-full"
+            value={selectedMunicipioId}
+            onChange={(e) => onMunicipioChange(e.target.value)}
+          >
+            <option value="">Município selecionado</option>
+            {municipios.map((m) => (
+              <option key={m.id} value={String(m.id)}>
+                {m.nome} - {m.uf}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
 
       {/* Navegacao */}
