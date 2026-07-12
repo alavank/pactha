@@ -14,9 +14,10 @@ from sqlalchemy import select, text
 from database import get_db
 from models import Municipio
 from models.user import User
+from models.cofre import CofreSenha
 from services.control_auth import require_control_scope, ControlPrincipal
 from services.auth import hash_password
-from services import users_admin
+from services import users_admin, crypto
 from services.telas_catalog import TELAS_CATALOG
 from services.audit import log_event
 
@@ -128,11 +129,37 @@ async def control_status(
             "municipios": await _count("SELECT COUNT(*) FROM municipios"),
             "municipios_ativos": await _count("SELECT COUNT(*) FROM municipios WHERE active = true"),
             "users": await _count("SELECT COUNT(*) FROM users"),
+            "cofre_senhas": await _count("SELECT COUNT(*) FROM cofre_senhas"),
+            # fontes de dados
             "convenios_estadual": await _count("SELECT COUNT(*) FROM convenios_estadual"),
             "transferegov_propostas": await _count("SELECT COUNT(*) FROM transferegov_propostas"),
+            "emendas_estaduais": await _count("SELECT COUNT(*) FROM emendas_estaduais"),
+            "cauc_situacao": await _count("SELECT COUNT(*) FROM cauc_situacao"),
+            "acordofes_credor": await _count("SELECT COUNT(*) FROM acordofes_credor"),
+            "siconv_federal": await _count("SELECT COUNT(*) FROM siconv_federal"),
         },
         "control_token": p.name,
     }
+
+
+# --- Ingestao por fonte (ingestion_log) — a Central monitora a carga de cada fonte ---
+@router.get("/ingestion")
+async def control_ingestion(
+    db: AsyncSession = Depends(get_db),
+    p: ControlPrincipal = Depends(require_control_scope("control:data:read")),
+):
+    """Ultimas execucoes por fonte (source, status, registros, quando). Isto e o
+    historico real de ingestao — cada script grava aqui."""
+    try:
+        rows = (await db.execute(text(
+            "SELECT source, status, records_inserted, "
+            "to_char(finished_at, 'YYYY-MM-DD\"T\"HH24:MI:SS') AS finished_at "
+            "FROM ingestion_log ORDER BY id DESC LIMIT 40"
+        ))).mappings().all()
+        return {"log": [dict(r) for r in rows]}
+    except Exception:
+        await db.rollback()
+        return {"log": [], "error": "tabela ingestion_log indisponivel"}
 
 
 # --- Ingestao de dados (povoar/testar pela Central) ---
@@ -190,6 +217,163 @@ async def control_jobs(
     except Exception:
         await db.rollback()
         return {"jobs": [], "error": "tabela scraper_jobs indisponivel"}
+
+
+# --- Cofre de credenciais (gerido pela Central; o scraper le localmente) ---
+class CofreIn(BaseModel):
+    municipio_ibge: str | None = None       # escopo (opcional; None = instancia)
+    sistema: str
+    url: str | None = None
+    usuario: str | None = None
+    senha: str | None = None                # texto claro -> cifrado no tenant
+    automation_key: str | None = None       # ex: fns, govbr, simec...
+    categoria: str | None = None
+    observacao: str | None = None
+
+
+class CofrePatch(BaseModel):
+    municipio_ibge: str | None = None
+    sistema: str | None = None
+    url: str | None = None
+    usuario: str | None = None
+    senha: str | None = None
+    automation_key: str | None = None
+    categoria: str | None = None
+    observacao: str | None = None
+
+
+async def _mun_id_by_ibge(db, ibge: str | None):
+    if not ibge:
+        return None
+    return (await db.execute(select(Municipio.id).where(Municipio.ibge_code == ibge))).scalar_one_or_none()
+
+
+async def _ibge_by_mun_id(db, mid):
+    if not mid:
+        return None
+    return (await db.execute(select(Municipio.ibge_code).where(Municipio.id == mid))).scalar_one_or_none()
+
+
+def _cofre_mask(clear: str) -> str:
+    if not clear:
+        return ""
+    s = clear.strip()
+    if s.startswith("{") and '"cookies"' in s:   # blob de sessao capturada (extensao)
+        return "[sessao capturada]"
+    n = len(clear)
+    return "*" * n if n <= 4 else clear[0] + "*" * (n - 2) + clear[-1]
+
+
+async def _cofre_out(db, it: CofreSenha) -> dict:
+    clear = crypto.decrypt(it.senha_encrypted) if it.senha_encrypted else ""
+    return {
+        "id": it.id,
+        "municipio_ibge": await _ibge_by_mun_id(db, it.municipio_id),
+        "sistema": it.sistema, "url": it.url, "usuario": it.usuario,
+        "senha_mascarada": _cofre_mask(clear), "tem_senha": bool(it.senha_encrypted),
+        "automation_key": it.automation_key, "categoria": it.categoria,
+        "observacao": it.observacao,
+        "updated_at": it.updated_at.isoformat() if it.updated_at else None,
+    }
+
+
+@router.get("/cofre")
+async def list_cofre(
+    db: AsyncSession = Depends(get_db),
+    p: ControlPrincipal = Depends(require_control_scope("control:cofre:read")),
+):
+    rows = (await db.execute(
+        select(CofreSenha).order_by(CofreSenha.categoria, CofreSenha.sistema))).scalars().all()
+    return [await _cofre_out(db, i) for i in rows]
+
+
+@router.post("/cofre")
+async def create_cofre(
+    body: CofreIn, request: Request,
+    db: AsyncSession = Depends(get_db),
+    p: ControlPrincipal = Depends(require_control_scope("control:cofre:write")),
+):
+    sistema = (body.sistema or "").strip()
+    if not sistema:
+        raise HTTPException(status_code=400, detail="sistema obrigatorio")
+    mun_id = await _mun_id_by_ibge(db, body.municipio_ibge)
+    if body.municipio_ibge and mun_id is None:
+        raise HTTPException(status_code=400, detail="municipio (ibge) nao encontrado")
+    it = CofreSenha(
+        municipio_id=mun_id, sistema=sistema, url=body.url, usuario=body.usuario,
+        senha_encrypted=crypto.encrypt(body.senha) if body.senha else None,
+        automation_key=(body.automation_key or None), categoria=body.categoria,
+        observacao=body.observacao,
+    )
+    db.add(it)
+    await db.commit()
+    await db.refresh(it)
+    await log_event(db, action="control.cofre.create", request=request,
+                    target_type="cofre_senha", target_id=it.id,
+                    details={"sistema": sistema, "token": p.name})
+    return await _cofre_out(db, it)
+
+
+@router.patch("/cofre/{item_id}")
+async def patch_cofre(
+    item_id: int, body: CofrePatch, request: Request,
+    db: AsyncSession = Depends(get_db),
+    p: ControlPrincipal = Depends(require_control_scope("control:cofre:write")),
+):
+    it = await db.get(CofreSenha, item_id)
+    if not it:
+        raise HTTPException(status_code=404, detail="entrada nao encontrada")
+    fields = body.model_dump(exclude_unset=True)
+    if "municipio_ibge" in fields:
+        ibge = fields.pop("municipio_ibge")
+        mid = await _mun_id_by_ibge(db, ibge) if ibge else None
+        if ibge and mid is None:   # nao rebaixa p/ escopo geral por typo de IBGE
+            raise HTTPException(status_code=400, detail="municipio (ibge) nao encontrado")
+        it.municipio_id = mid
+    if "senha" in fields:                       # so re-cifra se veio senha
+        senha = fields.pop("senha")
+        it.senha_encrypted = crypto.encrypt(senha) if senha else None
+    for k, v in fields.items():
+        setattr(it, k, v)
+    await db.commit()
+    await db.refresh(it)
+    await log_event(db, action="control.cofre.patch", request=request,
+                    target_type="cofre_senha", target_id=it.id,
+                    details={"sistema": it.sistema, "token": p.name})
+    return await _cofre_out(db, it)
+
+
+@router.get("/cofre/{item_id}/reveal")
+async def reveal_cofre(
+    item_id: int, request: Request,
+    db: AsyncSession = Depends(get_db),
+    p: ControlPrincipal = Depends(require_control_scope("control:cofre:read")),
+):
+    it = await db.get(CofreSenha, item_id)
+    if not it:
+        raise HTTPException(status_code=404, detail="entrada nao encontrada")
+    await log_event(db, action="control.cofre.reveal", request=request,
+                    target_type="cofre_senha", target_id=it.id,
+                    details={"sistema": it.sistema, "token": p.name})
+    return {"senha": crypto.decrypt(it.senha_encrypted) if it.senha_encrypted else ""}
+
+
+@router.delete("/cofre/{item_id}")
+async def delete_cofre(
+    item_id: int, request: Request,
+    db: AsyncSession = Depends(get_db),
+    p: ControlPrincipal = Depends(require_control_scope("control:cofre:write")),
+):
+    it = await db.get(CofreSenha, item_id)
+    if not it:
+        raise HTTPException(status_code=404, detail="entrada nao encontrada")
+    sistema = it.sistema
+    await db.delete(it)
+    await db.commit()
+    await log_event(db, action="control.cofre.delete", request=request,
+                    target_type="cofre_senha", target_id=item_id,
+                    details={"sistema": sistema, "token": p.name})
+    return {"status": "deleted"}
 
 
 # --- Usuarios do cliente (users do tenant), geridos pela Central via canal ---
