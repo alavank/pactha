@@ -7,6 +7,9 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import toast from "react-hot-toast";
 
+// Logo do cliente por instância (config build-time). Ex.: /trust-logo.svg
+const CLIENT_LOGO = process.env.NEXT_PUBLIC_CLIENT_LOGO || "";
+
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -71,8 +74,17 @@ export default function LoginPage() {
       <div className="pointer-events-none absolute -bottom-24 right-[-6rem] h-80 w-80 rounded-full bg-accent-purple/15 blur-3xl" />
       <Card className="relative w-full max-w-md border border-base-300/60 shadow-theme-lg">
         <CardHeader className="text-center pb-2">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/pactha-logo.png" alt="PACTHA" className="mx-auto mb-1 h-28 w-auto" />
+          <div className="mx-auto mb-1 flex items-center justify-center gap-4">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/pactha-logo.png" alt="PACTHA" className="h-20 w-auto" />
+            {CLIENT_LOGO && (
+              <>
+                <div className="h-14 w-px bg-base-300" />
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={CLIENT_LOGO} alt="Cliente" className="h-16 w-auto" />
+              </>
+            )}
+          </div>
           <p className="text-sm text-base-content/60">
             Monitoramento de Convênios
           </p>

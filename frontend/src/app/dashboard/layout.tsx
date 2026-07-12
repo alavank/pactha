@@ -122,6 +122,9 @@ const ADMIN_NAV_ITEMS = [
   { href: "/dashboard/service-tokens", label: "Service Tokens", icon: KeyRound },
 ];
 
+// Logo do cliente por instância (config build-time). Ex.: /trust-logo.svg
+const CLIENT_LOGO = process.env.NEXT_PUBLIC_CLIENT_LOGO || "";
+
 // Itens visiveis SO para o super-admin (nao para os demais admins).
 const SUPER_ADMIN_EMAIL = "admin@pactha.com.br";
 const SUPER_ADMIN_ONLY = new Set<string>(["/dashboard/sessoes", "/dashboard/service-tokens"]);
@@ -169,12 +172,18 @@ function SidebarContent({
       {/* Faixa institucional - cores do governo */}
       <div className="gov-stripe" />
 
-      {/* Header com logo PACTHA — chip branco arredondado (legível no claro e no escuro). */}
+      {/* Header: logo PACTHA + logo do cliente da instância (config) — chips brancos. */}
       <div className="border-b border-base-300 px-4 py-4 flex justify-center items-center gap-2">
         <div className="rounded-2xl bg-white p-2.5 shadow-sm ring-1 ring-black/5">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/pactha-logo.png" alt="PACTHA — Plataforma de Acompanhamento" className="h-16 w-auto" />
+          <img src="/pactha-logo.png" alt="PACTHA" className="h-14 w-auto" />
         </div>
+        {CLIENT_LOGO && (
+          <div className="rounded-2xl bg-white p-2.5 shadow-sm ring-1 ring-black/5">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={CLIENT_LOGO} alt="Cliente" className="h-14 w-auto" />
+          </div>
+        )}
       </div>
 
       {/* Seletor de municipio */}
