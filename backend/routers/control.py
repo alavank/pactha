@@ -135,6 +135,63 @@ async def control_status(
     }
 
 
+# --- Ingestao de dados (povoar/testar pela Central) ---
+class RefreshIn(BaseModel):
+    source: str = "sigcon"
+
+
+@router.post("/refresh")
+async def control_refresh(
+    body: RefreshIn, request: Request,
+    db: AsyncSession = Depends(get_db),
+    p: ControlPrincipal = Depends(require_control_scope("control:data:write")),
+):
+    """Enfileira um job de scraping (mesma fila do refresh on-demand da UI). Dedup:
+    nao enfileira se ja houver pending/running do mesmo tipo. Consumido pelo Worker
+    (Scheduled Task -> ingestion/run_queue_sigcon.py). Hoje: 'sigcon' (dados abertos,
+    sem credencial)."""
+    source = (body.source or "sigcon").strip().lower()
+    if source != "sigcon":
+        raise HTTPException(status_code=400, detail="fonte nao suportada (use: sigcon)")
+    row = (await db.execute(text(
+        "INSERT INTO scraper_jobs (tipo, status) "
+        "SELECT :t, 'pending' "
+        "WHERE NOT EXISTS (SELECT 1 FROM scraper_jobs WHERE tipo = :t AND status IN ('pending','running')) "
+        "RETURNING id"
+    ), {"t": source})).first()
+    await db.commit()
+    await log_event(db, action="control.refresh", request=request,
+                    target_type="scraper", target_id=source,
+                    details={"queued": row is not None, "token": p.name})
+    if row is None:
+        return {"status": "already_queued", "source": source,
+                "message": "Ja existe uma atualizacao na fila ou em execucao."}
+    return {"status": "triggered", "source": source, "job_id": row[0],
+            "message": "Job enfileirado. O Worker processa em ~1-2min."}
+
+
+@router.get("/jobs")
+async def control_jobs(
+    db: AsyncSession = Depends(get_db),
+    p: ControlPrincipal = Depends(require_control_scope("control:data:read")),
+):
+    """Ultimos jobs de scraping (status pending|running|done|error) p/ a Central
+    acompanhar a ingestao."""
+    try:
+        rows = (await db.execute(text(
+            "SELECT id, tipo, status, "
+            "to_char(requested_at, 'YYYY-MM-DD\"T\"HH24:MI:SS') AS requested_at, "
+            "to_char(started_at,   'YYYY-MM-DD\"T\"HH24:MI:SS') AS started_at, "
+            "to_char(finished_at,  'YYYY-MM-DD\"T\"HH24:MI:SS') AS finished_at, "
+            "error "
+            "FROM scraper_jobs ORDER BY id DESC LIMIT 15"
+        ))).mappings().all()
+        return {"jobs": [dict(r) for r in rows]}
+    except Exception:
+        await db.rollback()
+        return {"jobs": [], "error": "tabela scraper_jobs indisponivel"}
+
+
 # --- Usuarios do cliente (users do tenant), geridos pela Central via canal ---
 class ControlUserIn(BaseModel):
     email: str
