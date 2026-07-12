@@ -20,6 +20,9 @@ MIGRATION_FILES = [
     # Tabelas core
     "add_audit_and_user_cols.sql",
     "add_service_tokens.sql",
+    # RBAC por tela/municipio (estavam fora da lista -> ausentes em clones novos)
+    "add_user_telas.sql",
+    "add_user_municipios.sql",
     # Fix +30 anos SIGCON-MG (idempotente)
     "fix_sigcon_year_offset.sql",
     # Fix mojibake UTF-8 (PrestaÃ§Ã£o -> Prestação)
