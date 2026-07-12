@@ -172,18 +172,19 @@ function SidebarContent({
       {/* Faixa institucional - cores do governo */}
       <div className="gov-stripe" />
 
-      {/* Header: logo PACTHA + logo do cliente da instância (config) — chips brancos. */}
-      <div className="border-b border-base-300 px-4 py-4 flex justify-center items-center gap-2">
-        <div className="rounded-2xl bg-white p-2.5 shadow-sm ring-1 ring-black/5">
+      {/* Header: logos PACTHA + cliente num chip branco (legível no claro/escuro). */}
+      <div className="border-b border-base-300 px-3 py-4 flex justify-center">
+        <div className="flex max-w-full items-center gap-2.5 rounded-2xl bg-white px-3 py-2 shadow-sm ring-1 ring-black/5">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/pactha-logo.png" alt="PACTHA" className="h-14 w-auto" />
+          <img src="/pactha-logo.png" alt="PACTHA" className="h-6 w-auto max-w-[110px] object-contain" />
+          {CLIENT_LOGO && (
+            <>
+              <div className="h-6 w-px bg-base-300/70" />
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={CLIENT_LOGO} alt="Cliente" className="h-7 w-auto max-w-[64px] object-contain" />
+            </>
+          )}
         </div>
-        {CLIENT_LOGO && (
-          <div className="rounded-2xl bg-white p-2.5 shadow-sm ring-1 ring-black/5">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={CLIENT_LOGO} alt="Cliente" className="h-14 w-auto" />
-          </div>
-        )}
       </div>
 
       {/* Seletor de municipio */}
