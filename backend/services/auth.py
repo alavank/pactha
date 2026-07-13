@@ -74,6 +74,23 @@ def generate_csrf_token() -> str:
     return secrets.token_urlsafe(32)
 
 
+def _sso_audience() -> str:
+    """Identidade DESTA instancia, usada como 'aud' do token SSO. Amarra o token ao
+    tenant que o emitiu: um token de A e rejeitado por B mesmo que (por erro de ops)
+    dois tenants compartilhem o JWT_SECRET. Sempre nao-vazio p/ evitar aud ambiguo."""
+    return settings.INSTANCE_SLUG or settings.FRONTEND_URL or "pactha-instance"
+
+
+def create_sso_token(user_id: int) -> str:
+    """Token de uso único e CURTO (2 min) p/ o SSO da Central: o aceitador o troca
+    por uma sessao. typ='sso' impede reuso como access/refresh; aud amarra a instancia."""
+    return _encode({"sub": str(user_id), "typ": "sso", "aud": _sso_audience()}, 2)
+
+
+def decode_sso(token: str) -> dict:
+    return _decode(token, "sso", audience=_sso_audience())
+
+
 def revoke_jti(jti: str):
     _REVOKED_JTI.add(jti)
 
@@ -82,15 +99,19 @@ def is_revoked(jti: str) -> bool:
     return jti in _REVOKED_JTI
 
 
-def _decode(token: str, expected_typ: str = "access") -> dict:
+def _decode(token: str, expected_typ: str = "access", audience: Optional[str] = None) -> dict:
+    # aud so e exigido/validado p/ tokens SSO (audience != None). Access/refresh nao
+    # carregam aud e sao decodificados sem audience -> pyjwt nao verifica esse claim.
+    require = ["exp", "iat", "jti", "iss"] + (["aud"] if audience is not None else [])
+    kwargs = dict(
+        algorithms=[settings.JWT_ALGORITHM],
+        issuer="pactha-api",
+        options={"require": require},
+    )
+    if audience is not None:
+        kwargs["audience"] = audience
     try:
-        payload = pyjwt.decode(
-            token,
-            settings.JWT_SECRET,
-            algorithms=[settings.JWT_ALGORITHM],
-            issuer="pactha-api",
-            options={"require": ["exp", "iat", "jti", "iss"]},
-        )
+        payload = pyjwt.decode(token, settings.JWT_SECRET, **kwargs)
     except pyjwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expirado")
     except pyjwt.InvalidTokenError:

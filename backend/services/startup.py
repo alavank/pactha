@@ -69,6 +69,8 @@ MIGRATION_FILES = [
     "add_fns_code.sql",
     # Control-plane (Console Alavank): coluna kind em service_tokens
     "add_control_token_kind.sql",
+    # SSO tecnico: uso unico REAL do token (compartilhado entre workers)
+    "add_sso_used_jti.sql",
 ]
 
 

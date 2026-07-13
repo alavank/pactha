@@ -3,8 +3,10 @@ from collections import defaultdict
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, text
+from sqlalchemy.exc import IntegrityError
 
 from database import get_db
 from models.user import User
@@ -15,7 +17,7 @@ from schemas.auth import (
 from services.auth import (
     hash_password, verify_password,
     create_access_token, create_refresh_token, generate_csrf_token,
-    decode_refresh, revoke_jti,
+    decode_refresh, revoke_jti, decode_sso,
     set_auth_cookies, clear_auth_cookies, decode_access,
     get_current_user, COOKIE_NAME_REFRESH, COOKIE_NAME_ACCESS,
     load_user_scopes,
@@ -47,6 +49,39 @@ def _rate_limit_check(key: str):
         raise HTTPException(status_code=429, detail="Muitas tentativas. Aguarde 1 minuto.")
     arr.append(now)
     _LOGIN_ATTEMPTS[key] = arr
+
+
+@router.get("/sso-login")
+async def sso_login(t: str, request: Request, db: AsyncSession = Depends(get_db)):
+    """Aceitador do SSO da Central: valida o token de uso único (2 min) mintado pelo
+    canal de controle e abre uma sessão de SUPORTE (marcada nos logs). Nunca expõe senha."""
+    try:
+        payload = decode_sso(t)
+    except HTTPException:
+        return RedirectResponse(url="/login?sso=invalido", status_code=302)
+    # Uso único REAL: grava o jti; a UNIQUE do Postgres impede replay mesmo entre
+    # workers (o revoke_jti in-memory nao era compartilhado -> permitia replay).
+    jti = payload.get("jti", "")
+    try:
+        await db.execute(text("INSERT INTO sso_used_jti (jti) VALUES (:j)"), {"j": jti})
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        return RedirectResponse(url="/login?sso=usado", status_code=302)
+    revoke_jti(jti)   # camada extra (best-effort, mesmo worker)
+    u = await db.get(User, int(payload.get("sub", 0) or 0))
+    if not u or not u.active:
+        return RedirectResponse(url="/login?sso=invalido", status_code=302)
+    access = create_access_token({"sub": u.id, "role": u.role})
+    refresh = create_refresh_token(u.id)
+    csrf = generate_csrf_token()
+    resp = RedirectResponse(url="/dashboard", status_code=302)
+    set_auth_cookies(resp, access, refresh, csrf)
+    u.last_login_at = datetime.now(timezone.utc)
+    await db.commit()
+    await log_event(db, action="sso.login", user=u, request=request,
+                    target_type="user", target_id=u.email, details={"via": "console-sso"})
+    return resp
 
 
 @router.post("/login", response_model=LoginResponse)

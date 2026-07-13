@@ -22,7 +22,7 @@ from models.user import User
 from models.cofre import CofreSenha
 from models.service_token import ServiceToken
 from services.control_auth import require_control_scope, ControlPrincipal
-from services.auth import hash_password
+from services.auth import hash_password, create_sso_token
 from services.service_auth import hash_token
 from services import users_admin, crypto
 from services.telas_catalog import TELAS_CATALOG
@@ -469,6 +469,48 @@ async def control_session_token(
                     target_id=tok.id, details={"name": name, "token": p.name})
     return {"token": raw, "name": name, "scopes": ["session:write"], "prefix": tok.token_prefix,
             "warning": "Anote agora — nao sera mostrado de novo. Configure na extensao de captura."}
+
+
+# --- SSO tecnico: a Central pede uma sessao de suporte p/ um tecnico Alavank ---
+class SsoIn(BaseModel):
+    tech_email: str
+    tech_name: str | None = None
+
+
+@router.post("/sso")
+async def control_sso(
+    body: SsoIn, request: Request,
+    db: AsyncSession = Depends(get_db),
+    p: ControlPrincipal = Depends(require_control_scope("control:sso:write")),
+):
+    """Cria/atualiza um usuario de SUPORTE (Alavank) e devolve um token de uso unico
+    (2 min) que o aceitador /api/auth/sso-login troca por uma sessao. A senha do
+    tecnico nunca sai da Central — o usuario local so serve p/ carregar a sessao."""
+    email = (body.tech_email or "").strip().lower()
+    if "@" not in email:
+        raise HTTPException(status_code=400, detail="email invalido")
+    # Email NAMESPACED: nunca colide com um usuario real do tenant. Antes, casar pelo
+    # email cru permitia sequestrar (e reativar) a conta de um usuario legitimo que
+    # tivesse o mesmo email. O prefixo "alavank-sso." garante identidade de suporte
+    # separada e estavel (o mesmo tecnico reusa sempre o mesmo usuario de suporte).
+    local, _, domain = email.partition("@")
+    support_email = f"alavank-sso.{local}@{domain}"
+    u = (await db.execute(select(User).where(User.email == support_email))).scalar_one_or_none()
+    if u is None:
+        u = User(email=support_email, name=("[Suporte Alavank] " + (body.tech_name or email))[:200],
+                 password_hash=hash_password(pysecrets.token_urlsafe(24)),
+                 role="admin", active=True, must_change_password=False)
+        db.add(u)
+        await db.commit()
+        await db.refresh(u)
+    elif not u.active:
+        u.active = True
+        await db.commit()
+    token = create_sso_token(u.id)
+    await log_event(db, action="control.sso.mint", request=request,
+                    target_type="user", target_id=email,
+                    details={"tech": email, "token": p.name})
+    return {"sso_token": token, "path": "/api/auth/sso-login"}
 
 
 # --- Usuarios do cliente (users do tenant), geridos pela Central via canal ---
