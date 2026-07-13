@@ -65,6 +65,8 @@ MIGRATION_FILES = [
     "add_scraper_jobs.sql",
     # Acentuacao correta dos rotulos de cidade (convencao "Nome - UF")
     "fix_municipio_acentos.sql",
+    # Codigo FNS por municipio (des-hardcoda run_fns_local) - gerido pela Central
+    "add_fns_code.sql",
     # Control-plane (Console Alavank): coluna kind em service_tokens
     "add_control_token_kind.sql",
 ]

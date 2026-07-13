@@ -25,6 +25,7 @@ log = logging.getLogger("fns_local")
 
 BASE = "https://consultafns.saude.gov.br"
 
+# Fallback: usado só se NENHUM municipio tiver fns_code configurado no banco.
 FNS_CODE = {
     1: ("ARAUJOS", "310390"),
     2: ("NOVA SERRANA", "314520"),
@@ -33,6 +34,21 @@ FNS_CODE = {
     5: ("TOLEDO", "316910"),
     6: ("PIRACEMA", "315060"),
 }
+
+
+def _load_fns_targets():
+    """Municipios com codigo FNS configurado no banco (gerido pela Central).
+    Fallback p/ o mapa hardcoded enquanto ninguem tiver configurado ainda."""
+    try:
+        conn = _db(); cur = conn.cursor()
+        cur.execute("SELECT id, nome, fns_code FROM municipios "
+                    "WHERE fns_code IS NOT NULL AND fns_code <> '' AND active = true ORDER BY nome")
+        rows = cur.fetchall(); cur.close(); conn.close()
+        if rows:
+            return {r[0]: (r[1], r[2]) for r in rows}
+    except Exception as e:
+        log.warning(f"fns: nao li fns_code do banco ({e}); usando fallback hardcoded")
+    return FNS_CODE
 
 ANOS = list(range(2010, datetime.now().year + 1))
 
@@ -240,7 +256,7 @@ async def main():
         "Referer": "https://consultafns.saude.gov.br/",
     }
     async with httpx.AsyncClient(cookies=cookies, headers=headers, verify=False) as client:
-        for mun_id, (nome, cod_fns) in FNS_CODE.items():
+        for mun_id, (nome, cod_fns) in _load_fns_targets().items():
             log.info(f"=== {nome} (mun={mun_id} fns={cod_fns}) ===")
             items = await collect_for_municipio(client, mun_id, cod_fns, nome)
             log.info(f"  coletadas {len(items)} propostas")

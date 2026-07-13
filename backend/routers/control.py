@@ -32,19 +32,22 @@ router = APIRouter(prefix="/api/control", tags=["control"])
 
 
 def _mun(m: Municipio) -> dict:
-    return {"ibge_code": m.ibge_code, "nome": m.nome, "uf": m.uf, "active": bool(m.active)}
+    return {"ibge_code": m.ibge_code, "nome": m.nome, "uf": m.uf,
+            "active": bool(m.active), "fns_code": m.fns_code}
 
 
 class MunicipioIn(BaseModel):
     ibge_code: str
     nome: str
     uf: str | None = "MG"
+    fns_code: str | None = None
 
 
 class MunicipioPatch(BaseModel):
     nome: str | None = None
     uf: str | None = None
     active: bool | None = None
+    fns_code: str | None = None
 
 
 # --- Municipios ---
@@ -73,15 +76,20 @@ async def upsert_municipio(
     if not nome:
         raise HTTPException(status_code=400, detail="nome obrigatorio")
 
+    fns = None
+    if body.fns_code is not None:
+        fns = "".join(ch for ch in body.fns_code if ch.isdigit())[:6] or None
     m = (await db.execute(select(Municipio).where(Municipio.ibge_code == ibge))).scalar_one_or_none()
     created = m is None
     if m is None:
-        m = Municipio(nome=nome, ibge_code=ibge, uf=uf, active=True)
+        m = Municipio(nome=nome, ibge_code=ibge, uf=uf, active=True, fns_code=fns)
         db.add(m)
     else:
         m.nome = nome
         m.uf = uf
         m.active = True
+        if body.fns_code is not None:
+            m.fns_code = fns
     await db.commit()
     await db.refresh(m)
     await log_event(db, action="control.municipio.upsert", request=request,
@@ -107,6 +115,9 @@ async def patch_municipio(
         m.uf = body.uf.strip().upper()[:2]; changed.append("uf")
     if body.active is not None:
         m.active = bool(body.active); changed.append("active")
+    if body.fns_code is not None:
+        m.fns_code = "".join(ch for ch in body.fns_code if ch.isdigit())[:6] or None
+        changed.append("fns_code")
     await db.commit()
     await db.refresh(m)
     await log_event(db, action="control.municipio.patch", request=request,

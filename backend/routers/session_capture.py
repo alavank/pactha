@@ -100,7 +100,7 @@ class CookieFull(BaseModel):
 
 class CapturedSession(BaseModel):
     automation_key: str   # ex: "fns", "govbr", "simec"
-    municipio_id: int
+    municipio_id: Optional[int] = None   # None/0 = sessao da instancia (nao por municipio)
     cookie: str  # formato Cookie header: "name=val; name2=val2"
     cookies_full: Optional[list[CookieFull]] = None  # estrutura completa (extension)
     url_atual: Optional[str] = None
@@ -137,11 +137,11 @@ async def capture_session(
     else:
         storage_payload = cookie_clean
 
+    # municipio_id opcional: None/0 => sessao da instancia (nao amarrada a municipio).
+    mid = payload.municipio_id or None
     # Encontra credencial existente para esse automation_key + municipio
-    q = select(CofreSenha).where(
-        CofreSenha.automation_key == payload.automation_key,
-        CofreSenha.municipio_id == payload.municipio_id,
-    )
+    q = select(CofreSenha).where(CofreSenha.automation_key == payload.automation_key)
+    q = q.where(CofreSenha.municipio_id.is_(None) if mid is None else CofreSenha.municipio_id == mid)
     res = await db.execute(q)
     item = res.scalar_one_or_none()
 
@@ -165,7 +165,7 @@ async def capture_session(
     else:
         # Cria nova
         item = CofreSenha(
-            municipio_id=payload.municipio_id,
+            municipio_id=mid,
             sistema=f"Sessao {payload.automation_key.upper()}",
             url=payload.url_atual,
             usuario="(cookie)",
