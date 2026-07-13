@@ -20,6 +20,7 @@ from database import get_db
 from models import Municipio
 from models.user import User
 from models.cofre import CofreSenha
+from models.audit import AuditLog
 from models.service_token import ServiceToken
 from services.control_auth import require_control_scope, ControlPrincipal
 from services.auth import hash_password, create_sso_token
@@ -235,6 +236,54 @@ async def control_jobs(
     except Exception:
         await db.rollback()
         return {"jobs": [], "error": "tabela scraper_jobs indisponivel"}
+
+
+# --- Auditoria (audit_log) — a Central LE o que foi feito nesta instancia ---
+def _audit_out(a: AuditLog) -> dict:
+    return {
+        "id": a.id,
+        "user_email": a.user_email,
+        "action": a.action,
+        "target_type": a.target_type,
+        "target_id": a.target_id,
+        "ip": a.ip,
+        "user_agent": a.user_agent,
+        "details": a.details,
+        "created_at": a.created_at.isoformat() if a.created_at else None,
+    }
+
+
+@router.get("/audit")
+async def control_audit(
+    action: str | None = None,
+    user_email: str | None = None,
+    target_type: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+    db: AsyncSession = Depends(get_db),
+    p: ControlPrincipal = Depends(require_control_scope("control:audit:read")),
+):
+    """Eventos do audit_log desta instancia p/ a aba Auditoria da Central. SOMENTE
+    LEITURA — o audit_log ja e gravado por varias acoes (login, cofre, user, etc.),
+    aqui so lemos. Filtros opcionais: action (prefixo), user_email (substring),
+    target_type (exato). Ordena por id DESC (mais recentes primeiro). Sem escopo novo:
+    o control token e control:* — control:audit:read ja passa."""
+    limit = max(1, min(limit, 200))
+    offset = max(0, offset)
+    stmt = select(AuditLog)
+    if action and action.strip():
+        stmt = stmt.where(AuditLog.action.ilike(action.strip() + "%"))
+    if user_email and user_email.strip():
+        stmt = stmt.where(AuditLog.user_email.ilike("%" + user_email.strip() + "%"))
+    if target_type and target_type.strip():
+        stmt = stmt.where(AuditLog.target_type == target_type.strip())
+    stmt = stmt.order_by(AuditLog.id.desc()).limit(limit).offset(offset)
+    try:
+        rows = (await db.execute(stmt)).scalars().all()
+    except Exception:
+        await db.rollback()
+        return []
+    return [_audit_out(a) for a in rows]
 
 
 # --- Cofre de credenciais (gerido pela Central; o scraper le localmente) ---
