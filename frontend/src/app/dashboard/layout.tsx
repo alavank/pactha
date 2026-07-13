@@ -394,17 +394,24 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
       .then((res) => {
         const data = Array.isArray(res.data) ? res.data : [];
         setMunicipios(data);
-        if (!selectedMunicipioId && data.length > 0) {
-          // Prefere ultimo municipio usado (localStorage); senao primeiro da lista
-          const lastId = typeof window !== "undefined"
-            ? localStorage.getItem("pactha_last_municipio_id")
-            : null;
-          const chosen = (lastId && data.some(m => String(m.id) === lastId))
-            ? lastId
-            : String(data[0].id);
-          // Estado no context -> telas re-renderizam e carregam os KPIs na hora
-          // (sem router.refresh / sem recarregar a pagina).
-          setMunicipioId(chosen);
+        if (data.length > 0) {
+          // Valida a selecao ATUAL contra a lista de municipios ATIVOS. Se a atual nao
+          // esta na lista (ex.: id obsoleto no localStorage apontando p/ municipio
+          // inativo ou de outro tenant clonado), RE-SELECIONA. Antes so auto-selecionava
+          // quando estava VAZIO -> um id stale passava batido e a tela filtrava por um
+          // municipio inexistente, mostrando vazio mesmo com dados no banco.
+          const isValid = selectedMunicipioId && data.some(m => String(m.id) === selectedMunicipioId);
+          if (!isValid) {
+            const lastId = typeof window !== "undefined"
+              ? localStorage.getItem("pactha_last_municipio_id")
+              : null;
+            const chosen = (lastId && data.some(m => String(m.id) === lastId))
+              ? lastId
+              : String(data[0].id);
+            // Estado no context -> telas re-renderizam e carregam os KPIs na hora
+            // (sem router.refresh / sem recarregar a pagina).
+            setMunicipioId(chosen);
+          }
         }
       })
       .catch(() => {});
@@ -447,6 +454,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
     }
     localStorage.removeItem("pactha_token");
     localStorage.removeItem("pactha_user");
+    localStorage.removeItem("pactha_last_municipio_id"); // nao vazar municipio entre usuarios
     router.push("/login");
   }, [router]);
 
