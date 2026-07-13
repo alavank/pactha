@@ -589,8 +589,12 @@ async def _user_out(db, u: User) -> dict:
 
 
 async def _active_admin_count(db) -> int:
+    # Exclui usuarios de SUPORTE da Alavank (alavank-sso.*): a senha deles nunca sai da
+    # Central (o cliente nao autentica como eles), entao NAO contam como "o cliente ainda
+    # tem admin". Sem isso, a trava de "unico admin" (do PATCH e do DELETE) era burlavel.
     return (await db.execute(text(
-        "SELECT COUNT(*) FROM users WHERE role = 'admin' AND active = true"))).scalar() or 0
+        "SELECT COUNT(*) FROM users WHERE role = 'admin' AND active = true "
+        "AND email NOT LIKE 'alavank-sso.%'"))).scalar() or 0
 
 
 @router.get("/telas-catalog")
@@ -690,3 +694,60 @@ async def reset_control_user_password(
     await log_event(db, action="control.user.reset_password", request=request,
                     target_type="user", target_id=email, details={"token": p.name})
     return {"email": u.email, "senha_temporaria": senha}
+
+
+@router.delete("/users/{email}")
+async def delete_control_user(
+    email: str, request: Request,
+    db: AsyncSession = Depends(get_db),
+    p: ControlPrincipal = Depends(require_control_scope("control:users:write")),
+):
+    """Remove DEFINITIVAMENTE um usuario do tenant (limpeza de entulho de seed).
+    Trava: nao remove o UNICO admin ativo. Preserva a trilha: audit_log fica (user_id
+    -> NULL, user_email permanece). Zera as FKs sem ON DELETE (audit_log, cofre_senhas,
+    edital_acompanhamento, prestacao_contas/documentos); user_telas/user_municipios/
+    telegram_* somem por ON DELETE CASCADE. Falha de forma atomica (rollback)."""
+    u = (await db.execute(select(User).where(User.email == email.lower()))).scalar_one_or_none()
+    if not u:
+        raise HTTPException(status_code=404, detail="Usuario nao encontrado")
+    # Usuario de SUPORTE da Alavank (alavank-sso.*) nao e removivel por aqui: e sintetico,
+    # o SSO o recria, e deletar no meio de uma sessao derruba o tecnico (401). Some so via SSO.
+    if (u.email or "").startswith("alavank-sso."):
+        raise HTTPException(status_code=409, detail="Usuario de suporte Alavank nao e removivel por este canal")
+    if u.role == "admin" and u.active and await _active_admin_count(db) <= 1:
+        raise HTTPException(status_code=409, detail="Nao e possivel remover o unico administrador ativo")
+    uid, uname, urole = u.id, u.name, u.role
+
+    async def _null_fk(table: str, col: str):
+        # Checa existencia de TABELA E COLUNA (migrations parciais entre tenants) — se
+        # faltar, so pula, sem abortar a transacao (nao usa to_regclass sozinho porque
+        # ele nao valida a coluna).
+        has = (await db.execute(text(
+            "SELECT 1 FROM information_schema.columns WHERE table_schema='public' "
+            "AND table_name=:t AND column_name=:c"), {"t": table, "c": col})).first()
+        if has:
+            await db.execute(text(f"UPDATE {table} SET {col} = NULL WHERE {col} = :u"), {"u": uid})
+
+    # FKs sem ON DELETE (bloqueariam o delete) — zera preservando as linhas:
+    await _null_fk("audit_log", "user_id")            # trilha permanece (user_email fica)
+    await _null_fk("cofre_senhas", "atualizado_por_id")
+    await _null_fk("edital_acompanhamento", "user_id")
+    await _null_fk("prestacao_contas", "responsavel_id")
+    await _null_fk("prestacao_documentos", "responsavel_id")
+    # Colunas de autoria SEM FK (nao bloqueiam, mas evita id orfao):
+    await _null_fk("rm_relatorios", "criado_por")
+    await _null_fk("documentos_gerados", "criado_por")
+    await _null_fk("gestao_anotacoes", "criado_por")
+    await _null_fk("service_tokens", "created_by_user_id")
+    # user_telas/user_municipios/telegram_* têm ON DELETE CASCADE
+    try:
+        await db.delete(u)
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=409,
+                            detail=f"Nao foi possivel remover (referencias pendentes: {type(e).__name__})")
+    await log_event(db, action="control.user.delete", request=request,
+                    target_type="user", target_id=email,
+                    details={"name": uname, "role": urole, "token": p.name})
+    return {"status": "deleted", "email": email}
