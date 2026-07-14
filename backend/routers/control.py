@@ -181,6 +181,67 @@ async def control_ingestion(
         return {"log": [], "error": "tabela ingestion_log indisponivel"}
 
 
+# Catalogo de fontes p/ o Monitor da Central: tabela contada (escopada por municipio
+# ativo = o que o cliente REALMENTE ve) + nomes que cada scraper grava no ingestion_log.
+_FONTES_MONITOR = [
+    {"key": "convenios_estadual", "sources": ["sigcon_scraper", "sigcon_ckan_backfill"]},
+    {"key": "transferegov_propostas", "sources": ["transferegov_voluntarias"]},
+    {"key": "emendas_estaduais", "sources": ["emendas_estaduais"]},
+    {"key": "cauc_situacao", "sources": ["cauc"]},
+    {"key": "acordofes_credor", "sources": ["acordofes"]},
+    {"key": "siconv_federal", "sources": ["siconv_federal", "siconv_convenio_backfill", "siconv_emenda_backfill"]},
+]
+
+
+@router.get("/fontes")
+async def control_fontes(
+    db: AsyncSession = Depends(get_db),
+    p: ControlPrincipal = Depends(require_control_scope("control:data:read")),
+):
+    """Saude por fonte p/ o Monitor: contagem ESCOPADA pelos municipios ATIVOS (o que o
+    cliente realmente ve, ao contrario do /status que conta a tabela crua) + a ultima
+    execucao (ingestion_log). So leitura. Fail-safe: cada consulta cai em None."""
+    async def _scoped_count(table: str):
+        # 1) so o que pertence a municipio ATIVO; 2) fallback contagem crua (tabela sem
+        # municipio_id); None se a tabela nao existir. Retorna (n, escopado?).
+        scoped_sql = (f"SELECT COUNT(*) FROM {table} t "
+                      f"JOIN municipios m ON m.id = t.municipio_id WHERE m.active = true")
+        try:
+            return (await db.execute(text(scoped_sql))).scalar(), True
+        except Exception:
+            await db.rollback()
+        try:
+            return (await db.execute(text(f"SELECT COUNT(*) FROM {table}"))).scalar(), False
+        except Exception:
+            await db.rollback()
+            return None, False
+
+    async def _last_run(sources: list):
+        if not sources:
+            return None, None
+        names = {f"s{i}": s for i, s in enumerate(sources)}
+        inclause = ", ".join(f":{k}" for k in names)
+        try:
+            row = (await db.execute(text(
+                f"SELECT status, to_char(finished_at, 'YYYY-MM-DD\"T\"HH24:MI:SS') AS finished_at "
+                f"FROM ingestion_log WHERE source IN ({inclause}) ORDER BY id DESC LIMIT 1"
+            ), names)).mappings().first()
+            return (row["status"], row["finished_at"]) if row else (None, None)
+        except Exception:
+            await db.rollback()
+            return None, None
+
+    out = []
+    for f in _FONTES_MONITOR:
+        registros, escopado = await _scoped_count(f["key"])
+        status, finished_at = await _last_run(f["sources"])
+        out.append({
+            "key": f["key"], "registros": registros, "escopo_ativo": escopado,
+            "ultimo_status": status, "ultima_coleta": finished_at,
+        })
+    return {"fontes": out, "instance_slug": os.getenv("INSTANCE_SLUG", "")}
+
+
 # --- Ingestao de dados (povoar/testar pela Central) ---
 class RefreshIn(BaseModel):
     source: str = "sigcon"
@@ -580,9 +641,13 @@ class ControlUserPatch(BaseModel):
 
 
 async def _user_out(db, u: User) -> dict:
+    _ll = getattr(u, "last_login_at", None)
+    _cr = getattr(u, "created_at", None)
     return {
         "email": u.email, "name": u.name, "role": u.role, "active": bool(u.active),
         "must_change_password": bool(u.must_change_password),
+        "last_login_at": _ll.isoformat() if _ll else None,
+        "created_at": _cr.isoformat() if _cr else None,
         "telas": await users_admin.get_user_telas(db, u.id),
         "municipios": await users_admin.get_user_ibges(db, u.id),
     }
