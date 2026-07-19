@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
+  LayoutGrid,
   FileText,
   LogOut,
   ChevronDown,
@@ -21,6 +22,7 @@ import {
   FileSignature,
   ShieldCheck,
   HeartPulse,
+  Activity,
 } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -102,6 +104,7 @@ const NAV_ITEMS: NavEntry[] = [
     children: [
       { href: "/dashboard/transferegov-geral", label: "Geral" },
       { href: "/dashboard/transferegov", label: "Especiais" },
+      { href: "/dashboard/transferegov-pac", label: "PAC (Novo PAC)" },
       { href: "/dashboard/transferegov-voluntarias", label: "Voluntarias" },
       { href: "/dashboard/transferegov-rejeitadas", label: "Rejeitadas" },
       { href: "/dashboard/transferegov-encerradas", label: "Encerradas" },
@@ -112,6 +115,7 @@ const NAV_ITEMS: NavEntry[] = [
   { href: "/dashboard/acordofes", label: "Acordo FES (Divida Saude)", icon: HeartPulse },
   { href: "/dashboard/fns", label: "Fundo Nacional de Saude", icon: Target },
   { href: "/dashboard/simec", label: "SIMEC - PAR (MEC)", icon: Target },
+  { href: "/dashboard/paineis", label: "Painéis Municipais", icon: LayoutGrid },
   { href: "/dashboard/dou", label: "Diario Oficial", icon: Newspaper },
   { href: "/dashboard/cofre", label: "Cofre de Senhas", icon: KeyRound },
   { href: "/dashboard/sessoes", label: "Sessoes (gov.br)", icon: KeyRound },
@@ -119,6 +123,7 @@ const NAV_ITEMS: NavEntry[] = [
 
 const ADMIN_NAV_ITEMS = [
   { href: "/dashboard/usuarios", label: "Usuarios", icon: Users },
+  { href: "/dashboard/frescor", label: "Frescor dos Dados", icon: Activity },
   { href: "/dashboard/service-tokens", label: "Service Tokens", icon: KeyRound },
 ];
 
