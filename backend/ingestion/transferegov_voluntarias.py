@@ -469,6 +469,17 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
                             }
                     except Exception as e:
                         logger.warning(f"    clausula {prop['numero_proposta']}: {str(e)[:90]}")
+            # Processo de Execução (Licitações) — SÓ p/ contratação "Normal".
+            # Convênio Normal em execução SEM licitação/processo registrado =
+            # município parado (flag de monitoramento, destacado igual à cláusula).
+            # Funciona em GUEST (detail_page já está no detalhe = contexto setado).
+            if _idp and "normal" in _sit.lower():
+                try:
+                    _qtd = await _conta_processo_execucao(detail_page)
+                    if _qtd is not None:
+                        prop["processo_execucao_qtd"] = _qtd
+                except Exception as e:
+                    logger.warning(f"    proc.exec {prop['numero_proposta']}: {str(e)[:80]}")
             if det.get("_parlamentar") or prop["detalhe"].get("_situacao_detalhe"):
                 _enr += 1
         except Exception as e:
@@ -572,6 +583,53 @@ async def _extrai_clausula_via_instrumento(page_auth, id_proposta: str) -> dict 
         return None
     sd = await _extrai_situacao_detalhe(page_auth)
     return sd or None
+
+
+async def _conta_processo_execucao(page) -> int | None:
+    """Conta licitações/processos de execução do instrumento (Execução Convenente
+    -> Processo de Execução). FUNCIONA EM GUEST (Acesso Livre) — confirmado ao vivo.
+
+    Pré-condição: `page` já está na tela de DETALHE da proposta (o
+    ResultadoDaConsultaDePropostaDetalharProposta.do já setou o contexto do
+    convênio). Navega para destino=ListarLicitacoes e lê a listagem.
+
+    Retorna: 0 (Nenhum registro — convênio Normal sem processo iniciado, flag),
+    N (nº de registros), ou None se não conseguiu navegar/ler."""
+    lic_url = ("https://discricionarias.transferegov.sistema.gov.br/voluntarias/"
+               "ForwardAction.do?modulo=proposta&path=/SelecionarConvenio/"
+               "SelecionarConvenio.do?destino=ListarLicitacoes")
+    if not await _goto_with_retry(page, lic_url, timeout=40000):
+        return None
+    await page.wait_for_timeout(800)
+    if not await page.locator("text=/Listagem de Licita|Processo de Execu/i").count():
+        return None  # nao chegou na tela certa
+    # A listagem SO e populada apos submeter o filtro (sem filtro = todos). Ler a
+    # tela sem consultar retorna resultado vazio enganoso -> falso "sem processo".
+    try:
+        btn = page.locator("input[value='Consultar'], button:has-text('Consultar')").first
+        if await btn.count() > 0:
+            await btn.click(timeout=8000)
+            try:
+                await page.wait_for_load_state("networkidle", timeout=12000)
+            except Exception:
+                pass
+            await page.wait_for_timeout(900)
+    except Exception:
+        pass
+    try:
+        return await page.evaluate("""() => {
+            const body = document.body.innerText || '';
+            if (/Nenhum registro foi encontrado/i.test(body)) return 0;
+            // displaytag: "Página X de Y (N item(s))"
+            const m = body.match(/\\((\\d+)\\s*ite/i);
+            if (m) return parseInt(m[1], 10);
+            // linhas da tabela de resultados (exclui cabecalho)
+            const t = document.querySelector('table.dataTable, table.listagem, table#listagem');
+            if (t) { const r = t.querySelectorAll('tbody tr'); if (r.length) return r.length; }
+            return null; // indeterminado -> NAO assume 0 (evita falso flag)
+        }""")
+    except Exception:
+        return None
 
 
 async def _extrai_parlamentar(page) -> str | None:
@@ -851,8 +909,8 @@ def _upsert(mun_id: int, propostas: list[dict]):
                  valor_global, valor_repasse, valor_contrapartida,
                  situacao_contratacao, clausula_suspensiva_dt_prevista,
                  clausula_suspensiva_motivo, parlamentar, situacao_contratacao_detalhe,
-                 id_proposta_siconv, detalhe, raw_data, updated_at)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s::jsonb,%s::jsonb,NOW())
+                 id_proposta_siconv, processo_execucao_qtd, detalhe, raw_data, updated_at)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s::jsonb,%s::jsonb,NOW())
             ON CONFLICT (municipio_id, numero_proposta) DO UPDATE SET
                 situacao=EXCLUDED.situacao, orgao=EXCLUDED.orgao,
                 proponente=EXCLUDED.proponente, possui_parecer=EXCLUDED.possui_parecer,
@@ -871,6 +929,7 @@ def _upsert(mun_id: int, propostas: list[dict]):
                 parlamentar=COALESCE(EXCLUDED.parlamentar, transferegov_propostas.parlamentar),
                 situacao_contratacao_detalhe=COALESCE(EXCLUDED.situacao_contratacao_detalhe, transferegov_propostas.situacao_contratacao_detalhe),
                 id_proposta_siconv=COALESCE(EXCLUDED.id_proposta_siconv, transferegov_propostas.id_proposta_siconv),
+                processo_execucao_qtd=COALESCE(EXCLUDED.processo_execucao_qtd, transferegov_propostas.processo_execucao_qtd),
                 detalhe=COALESCE(EXCLUDED.detalhe, transferegov_propostas.detalhe),
                 raw_data=EXCLUDED.raw_data, updated_at=NOW()
         """, (mun_id, p["numero_proposta"][:20], p["situacao"][:300], p["orgao"][:300],
@@ -885,6 +944,7 @@ def _upsert(mun_id: int, propostas: list[dict]):
               (parlamentar or "")[:200] or None,
               json.dumps(sit_det_json, ensure_ascii=False) if sit_det_json else None,
               (p.get("id_proposta_siconv") or None),
+              p.get("processo_execucao_qtd"),
               (json.dumps(det, ensure_ascii=False) if det else None), json.dumps(p, ensure_ascii=False)))
         ins += 1
     conn.commit(); cur.close(); conn.close()
@@ -993,6 +1053,14 @@ async def run():
         conn.commit(); cur.close(); conn.close()
     except Exception:
         pass
+    # Selecao PAC / Novo PAC — roda logo apos as voluntarias (usa o CNPJ da
+    # prefeitura que as voluntarias acabaram de gravar em transferegov_propostas).
+    # Best-effort (browser proprio); nao derruba o cron das voluntarias.
+    try:
+        from ingestion.transferegov_pac import run as _pac_run
+        await _pac_run()
+    except Exception as e:
+        logger.warning(f"  PAC (apos voluntarias) falhou: {str(e)[:160]}")
 
 
 async def run_one(municipio_id: int):

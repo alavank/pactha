@@ -70,7 +70,7 @@ async def listar(
         "total_lancamentos": 0,
         "valor_total": 0.0,
         "municipios": set(),
-        "por_fonte": {"sigcon": 0, "voluntaria": 0, "emenda": 0, "plano_acao": 0},
+        "por_fonte": {"sigcon": 0, "voluntaria": 0, "emenda": 0, "plano_acao": 0, "pac": 0},
     })
 
     where_extra = ""
@@ -236,6 +236,36 @@ async def listar(
                 entry["valor_total"] += _money(it.get("valorTotal"))
                 entry["municipios"].add(m.nome)
                 entry["por_fonte"]["plano_acao"] += 1
+    except Exception:
+        pass
+
+    # 5) Selecao PAC / Novo PAC — o PROPONENTE entra como "parlamentar" (ou a
+    #    emenda parlamentar quando houver). Fonte: transferegov_pac.
+    ano_pac = " AND split_part(numero_proposta, '/', 2) = :ano_txt" if ano else ""
+    sql_pac = f"""
+        SELECT COALESCE(NULLIF(TRIM(emenda_parlamentar), ''), proponente) AS nome,
+               municipio_id,
+               (SELECT nome FROM municipios WHERE id=transferegov_pac.municipio_id) AS mun_nome,
+               COALESCE(valor_total, 0) AS valor
+        FROM transferegov_pac
+        WHERE COALESCE(NULLIF(TRIM(emenda_parlamentar), ''), proponente) IS NOT NULL
+        {where_extra}{ano_pac}
+    """
+    try:
+        for row in (await db.execute(text(sql_pac), params)).fetchall():
+            nm = (row[0] or "").strip()
+            if not nm or len(nm) < 3:
+                continue
+            key = _norm(nm)
+            if not key:
+                continue
+            entry = by_norm[key]
+            entry["nome_variants"].add(nm)
+            entry["total_lancamentos"] += 1
+            entry["valor_total"] += _money(row[3])
+            if row[2]:
+                entry["municipios"].add(row[2])
+            entry["por_fonte"]["pac"] += 1
     except Exception:
         pass
 
@@ -418,7 +448,34 @@ async def detalhe(
         pass
     plano_acao.sort(key=lambda x: x["valor_total"], reverse=True)
 
-    if not (sigcon or voluntarias or emendas or plano_acao):
+    # Selecao PAC / Novo PAC — proponente (ou emenda) como parlamentar
+    pac_list: list = []
+    try:
+        pac_sql = """
+            SELECT id, municipio_id,
+                   (SELECT nome FROM municipios WHERE id=transferegov_pac.municipio_id) AS mun,
+                   numero_proposta, programa, situacao, valor_total,
+                   emenda_parlamentar, proponente, objeto
+            FROM transferegov_pac
+            WHERE COALESCE(NULLIF(TRIM(emenda_parlamentar), ''), proponente) ILIKE :n
+        """
+        pac_params: dict = {"n": f"%{nome_param}%"}
+        if municipio_id:
+            pac_sql += " AND municipio_id = :mun"; pac_params["mun"] = municipio_id
+        if ano:
+            pac_sql += " AND split_part(numero_proposta, '/', 2) = :ano_txt"; pac_params["ano_txt"] = str(ano)
+        pac_sql += " ORDER BY valor_total DESC NULLS LAST"
+        for r in (await db.execute(text(pac_sql), pac_params)).fetchall():
+            pac_list.append({
+                "id": r[0], "municipio_id": r[1], "municipio_nome": r[2],
+                "numero_proposta": r[3], "programa": r[4], "situacao": r[5],
+                "valor_total": _money(r[6]), "emenda_parlamentar": r[7],
+                "proponente": r[8], "objeto": r[9], "fonte": "pac",
+            })
+    except Exception:
+        pass
+
+    if not (sigcon or voluntarias or emendas or plano_acao or pac_list):
         raise HTTPException(404, f"Nenhum lancamento encontrado para '{nome_param}'")
 
     return {
@@ -427,15 +484,18 @@ async def detalhe(
         "voluntarias": voluntarias,
         "emendas": emendas,
         "plano_acao": plano_acao,
+        "pac": pac_list,
         "total_sigcon": len(sigcon),
         "total_voluntarias": len(voluntarias),
         "total_emendas": len(emendas),
         "total_plano_acao": len(plano_acao),
-        "total_geral": len(sigcon) + len(voluntarias) + len(emendas) + len(plano_acao),
+        "total_pac": len(pac_list),
+        "total_geral": len(sigcon) + len(voluntarias) + len(emendas) + len(plano_acao) + len(pac_list),
         "valor_total": (
             sum(x["valor_total"] for x in sigcon)
             + sum(x["valor_global"] for x in voluntarias)
             + sum(x["valor_indicacao"] for x in emendas)
             + sum(x["valor_total"] for x in plano_acao)
+            + sum(x["valor_total"] for x in pac_list)
         ),
     }

@@ -47,6 +47,8 @@ MIGRATION_FILES = [
     "add_voluntarias_clausula_parlamentar.sql",
     # Voluntarias: detalhe generico da Situacao de Contratacao (qualquer tipo)
     "add_voluntarias_situacao_detalhe.sql",
+    # Voluntarias: processo_execucao_qtd (licitacoes do instrumento - Execucao Convenente)
+    "add_voluntarias_processo_execucao.sql",
     # Modulo Gestao Interna (anotacoes + anexos por item)
     "add_gestao_anotacoes.sql",
     # Integracao Telegram (telegram_users + telegram_link_codes)
@@ -61,6 +63,8 @@ MIGRATION_FILES = [
     "add_cauc.sql",
     # Acordo FES - divida da saude estadual (SES-MG) com os municipios
     "add_acordofes.sql",
+    # Selecao PAC / Novo PAC (TransfereGov guest, por municipio)
+    "add_transferegov_pac.sql",
     # Fila de jobs on-demand (ex.: refresh SIGCON disparado pela UI) - Coolify
     "add_scraper_jobs.sql",
     # Acentuacao correta dos rotulos de cidade (convencao "Nome - UF")

@@ -22,6 +22,8 @@ export const TELAS: TelaDef[] = [
   { key: "acordofes", label: "Acordo FES (dívida saúde MG)" },
   { key: "fns", label: "Fundo Nacional de Saúde" },
   { key: "simec", label: "SIMEC - PAR (MEC)" },
+  { key: "suas", label: "Estrutura SUAS (MDS)" },
+  { key: "paineis", label: "Painéis Municipais" },
   { key: "dou", label: "Diário Oficial" },
   { key: "cofre", label: "Cofre de Senhas" },
   { key: "sessoes", label: "Sessões (gov.br)" },

@@ -561,3 +561,43 @@ async def run_scraper_manual(
     _aio.create_task(_bg())
     return {"ok": True, "scope": "single" if municipio_id else "all",
             "message": "Scraper iniciado em background. Acompanhe via logs."}
+
+
+@router.get("/pac")
+async def listar_pac(
+    municipio_id: int = Query(..., description="ID do municipio PACTHA"),
+    parlamentar: Optional[str] = Query(None, description="filtra pela emenda parlamentar (parcial)"),
+    situacao: Optional[str] = Query(None, description="filtra a situacao (parcial)"),
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """Selecao PAC / Novo PAC do municipio (coletado do TransfereGov Acesso Livre,
+    tabela transferegov_pac). Retorna a listagem por municipio."""
+    ensure_municipio_access(current, municipio_id)
+    ensure_tela(current, "transferegov")
+    where = ["municipio_id = :m"]
+    params: dict = {"m": municipio_id}
+    if parlamentar:
+        where.append("emenda_parlamentar ILIKE :p"); params["p"] = f"%{parlamentar}%"
+    if situacao:
+        where.append("situacao ILIKE :s"); params["s"] = f"%{situacao}%"
+    sql = f"""
+        SELECT numero_proposta, programa, programa_codigo, proponente, cnpj, situacao,
+               valor_repasse, valor_contrapartida, valor_total, emenda_parlamentar,
+               qualificacao, objeto, justificativa, updated_at
+        FROM transferegov_pac WHERE {' AND '.join(where)}
+        ORDER BY numero_proposta DESC
+    """
+    rows = (await db.execute(text(sql), params)).fetchall()
+    def _f(v):
+        return float(v) if v is not None else None
+    items = [{
+        "numero_proposta": r[0], "programa": r[1], "programa_codigo": r[2],
+        "proponente": r[3], "cnpj": r[4], "situacao": r[5],
+        "valor_repasse": _f(r[6]), "valor_contrapartida": _f(r[7]), "valor_total": _f(r[8]),
+        "emenda_parlamentar": r[9], "qualificacao": r[10],
+        "objeto": r[11], "justificativa": r[12],
+    } for r in rows]
+    atualizado = max((r[13] for r in rows if r[13]), default=None)
+    return {"items": items, "total": len(items),
+            "atualizado": atualizado.isoformat() if atualizado else None}
