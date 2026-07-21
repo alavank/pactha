@@ -238,8 +238,12 @@ async def detalhe_proposta(
             d = r1.json().get("resultado", {}) or {}
 
             # Etapas
+            # Sem nuProposta o portal devolve 400 e o mapa de etapas vinha vazio
+            # (o erro era engolido pelo except) -> a trilha de 12 etapas nunca
+            # aparecia no detalhe.
             r2 = cli.get(
                 f"{FNS_BASE}/recursos/proposta/obter-proposta-etapa",
+                params={"nuProposta": nu_proposta},
                 headers={"Accept": "application/json", "User-Agent": "Mozilla/5.0",
                          "Referer": f"{FNS_BASE}/"},
             )

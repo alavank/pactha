@@ -1,16 +1,33 @@
-"""Rodada local AD-HOC do FNS scraper, sem service token.
+"""Coletor do FNS (Fundo Nacional de Saude) — roda no job/cron de coleta do FNS.
 
-Le cookies direto do Cofre (cofre_senhas WHERE automation_key='fns'),
-chama API REST consultafns.saude.gov.br e UPSERT direto em
-convenios_estadual (com fonte='FNS').
+A API REST do consultafns.saude.gov.br e PUBLICA: /recursos/... responde 200
+sem nenhum cookie. Por isso este coletor NAO depende de sessao capturada.
+(Ate 07/2026 ele abortava com "Nenhuma sessao FNS no Cofre" e ficou ~20 dias
+coletando zero em silencio — a sessao do bookmarklet expirava e ninguem via.)
+Se houver uma sessao valida no Cofre ela e usada como belt-and-suspenders,
+mas a ausencia dela NAO impede a coleta.
+
+Escopo: TODOS os municipios ativos do banco DO AMBIENTE (cada tenant tem os
+seus) — nada hardcoded. O codigo FNS de 6 digitos vem de municipios.fns_code
+quando a Central o configurou; quando fns_code esta vazio ele e derivado de
+ibge_code[:6] (o FNS usa o IBGE sem o digito verificador — mesma derivacao que
+routers/fns.py usa). A UF vem do proprio municipio.
+
+Grava em convenios_estadual com fonte='FNS'.
 
 Uso:
-    COFRE_KEY=... DATABASE_URL_SYNC=... python ingestion/run_fns_local.py
+    DATABASE_URL_SYNC=... python ingestion/run_fns_local.py
+
+Env opcionais:
+    FNS_ANO_MIN       ano inicial da varredura (default 2010)
+    FNS_CONCURRENCY   municipios em paralelo (default 4)
+    FNS_MUNICIPIOS    ids separados por virgula, p/ rodar so alguns
 """
 import os
 import sys
 import json
 import asyncio
+import hashlib
 import logging
 from datetime import datetime
 import httpx
@@ -22,35 +39,14 @@ from services import crypto
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("fns_local")
+# httpx loga 1 linha por request (~6k por rodada) e afoga o log do cron.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 BASE = "https://consultafns.saude.gov.br"
 
-# Fallback: usado só se NENHUM municipio tiver fns_code configurado no banco.
-FNS_CODE = {
-    1: ("ARAUJOS", "310390"),
-    2: ("NOVA SERRANA", "314520"),
-    3: ("BOM DESPACHO", "310740"),
-    4: ("SAO TIAGO", "316500"),
-    5: ("TOLEDO", "316910"),
-    6: ("PIRACEMA", "315060"),
-}
-
-
-def _load_fns_targets():
-    """Municipios com codigo FNS configurado no banco (gerido pela Central).
-    Fallback p/ o mapa hardcoded enquanto ninguem tiver configurado ainda."""
-    try:
-        conn = _db(); cur = conn.cursor()
-        cur.execute("SELECT id, nome, fns_code FROM municipios "
-                    "WHERE fns_code IS NOT NULL AND fns_code <> '' AND active = true ORDER BY nome")
-        rows = cur.fetchall(); cur.close(); conn.close()
-        if rows:
-            return {r[0]: (r[1], r[2]) for r in rows}
-    except Exception as e:
-        log.warning(f"fns: nao li fns_code do banco ({e}); usando fallback hardcoded")
-    return FNS_CODE
-
-ANOS = list(range(2010, datetime.now().year + 1))
+ANO_MIN = int(os.getenv("FNS_ANO_MIN", "2010"))
+ANOS = list(range(ANO_MIN, datetime.now().year + 1))
+CONC = max(1, int(os.getenv("FNS_CONCURRENCY", "4")))
 
 
 def _db():
@@ -60,23 +56,92 @@ def _db():
     return psycopg2.connect(url)
 
 
-def _load_fns_cookies():
+# Prefixo do IBGE -> UF. Usado quando municipios.uf esta vazio: mandar a UF
+# errada NAO da erro, o portal responde 200 com lista VAZIA — falha silenciosa.
+_UF_POR_IBGE = {
+    "11": "RO", "12": "AC", "13": "AM", "14": "RR", "15": "PA", "16": "AP", "17": "TO",
+    "21": "MA", "22": "PI", "23": "CE", "24": "RN", "25": "PB", "26": "PE", "27": "AL",
+    "28": "SE", "29": "BA", "31": "MG", "32": "ES", "33": "RJ", "35": "SP", "41": "PR",
+    "42": "SC", "43": "RS", "50": "MS", "51": "MT", "52": "GO", "53": "DF",
+}
+
+# fns_code (gerido pela Central, add_fns_code.sql) tem prioridade; se estiver
+# vazio cai na derivacao ibge_code[:6]. Antes o coletor SO rodava os municipios
+# com fns_code preenchido (ou um mapa hardcoded de 6 ids de MG) — quem nunca
+# passou pela Central simplesmente nao era coletado.
+_SQL_MUNICIPIOS = (
+    "SELECT id, nome, COALESCE(NULLIF(fns_code, ''), left(ibge_code, 6)), "
+    "       COALESCE(NULLIF(upper(uf), ''), '') "
+    "FROM municipios "
+    "WHERE active = true "
+    "  AND (COALESCE(NULLIF(fns_code, ''), '') <> '' "
+    "       OR (ibge_code IS NOT NULL AND length(ibge_code) >= 6)) "
+    "ORDER BY id"
+)
+
+# Fallback p/ banco onde add_fns_code.sql ainda nao rodou (coluna inexistente).
+_SQL_MUNICIPIOS_SEM_FNS_CODE = (
+    "SELECT id, nome, left(ibge_code, 6), COALESCE(NULLIF(upper(uf), ''), '') "
+    "FROM municipios WHERE active = true AND ibge_code IS NOT NULL "
+    "AND length(ibge_code) >= 6 ORDER BY id"
+)
+
+
+def _municipios() -> list[tuple[int, str, str, str]]:
+    """(id, nome, codigo FNS 6 digitos, uf) de todos os municipios do ambiente.
+
+    Validado: o codigo de 6 digitos casa 1:1 com /recursos/municipios/uf/{uf}.
+    Os ambientes tem municipios de UFs diferentes (MG, ES, GO, TO), entao a UF
+    vem do proprio municipio — nunca fixa."""
+    only = {int(x) for x in os.getenv("FNS_MUNICIPIOS", "").replace(" ", "").split(",") if x.isdigit()}
     conn = _db(); cur = conn.cursor()
-    cur.execute(
-        "SELECT id, municipio_id, senha_hash FROM cofre_senhas "
-        "WHERE automation_key='fns' AND length(senha_hash) > 1000 "
-        "ORDER BY updated_at DESC LIMIT 1"
-    )
-    row = cur.fetchone()
-    cur.close(); conn.close()
-    if not row:
-        return None
-    dec = crypto.decrypt(row[2])
-    if not dec or not dec.startswith("{"):
-        return None
-    data = json.loads(dec)
-    cookies = data.get("cookies", [])
-    return {c["name"]: c["value"] for c in cookies if c.get("name")}
+    try:
+        try:
+            cur.execute(_SQL_MUNICIPIOS)
+            rows = cur.fetchall()
+        except Exception as e:
+            log.warning(f"municipios.fns_code indisponivel ({str(e)[:80]}) — derivando de ibge_code")
+            conn.rollback()
+            cur.execute(_SQL_MUNICIPIOS_SEM_FNS_CODE)
+            rows = cur.fetchall()
+    finally:
+        cur.close(); conn.close()
+    out = []
+    for mid, nome, cod, uf in rows:
+        if only and mid not in only:
+            continue
+        cod = (cod or "").strip()
+        if len(cod) < 6:
+            log.warning(f"  {nome} (id={mid}): sem fns_code/ibge_code utilizavel — pulado")
+            continue
+        uf = uf or _UF_POR_IBGE.get(cod[:2], "")
+        if not uf:
+            log.warning(f"  {nome} (id={mid}): sem UF e IBGE '{cod}' desconhecido — pulado")
+            continue
+        out.append((mid, nome, cod, uf))
+    return out
+
+
+def _cookies() -> dict:
+    """Sessao FNS do Cofre — OPCIONAL. Qualquer falha => {} (API e publica)."""
+    try:
+        conn = _db(); cur = conn.cursor()
+        cur.execute(
+            "SELECT senha_hash FROM cofre_senhas "
+            "WHERE automation_key = 'fns' OR sistema = 'Sessao FNS' "
+            "ORDER BY updated_at DESC LIMIT 1"
+        )
+        row = cur.fetchone()
+        cur.close(); conn.close()
+        if not row:
+            return {}
+        dec = crypto.decrypt(row[0]) or ""
+        if not dec.startswith("{"):
+            return {}
+        return {c["name"]: c["value"] for c in json.loads(dec).get("cookies", []) if c.get("name")}
+    except Exception as e:
+        log.info(f"sessao FNS indisponivel ({str(e)[:60]}) — seguindo em modo publico")
+        return {}
 
 
 def _upsert_items(items: list[dict]) -> int:
@@ -106,15 +171,28 @@ def _upsert_items(items: list[dict]) -> int:
             cur.execute(sql, {**it, "raw_data": json.dumps(it.get("raw_data", {}), ensure_ascii=False)})
             n += 1
         except Exception as e:
-            log.warning(f"upsert falhou {it.get('nr_proposta')}: {e}")
+            log.warning(f"upsert falhou {it.get('nr_proposta')}: {str(e)[:100]}")
             conn.rollback()
             continue
     conn.commit(); cur.close(); conn.close()
     return n
 
 
+def chave_fns(cod_fns: str, ano: int, tipo: str, recurso: str, nu_proc: str) -> str:
+    """Chave ESTAVEL do agregado FNS (grupo ano/tipo/recurso/processo).
+
+    PEGADINHA HISTORICA: o hash era do payload INTEIRO — bastava o vlPago mudar
+    (250k -> 450k) pra chave mudar e o ON CONFLICT nao casar, criando uma linha
+    duplicada a cada repasse. Agora o hash e so da IDENTIDADE do grupo, entao a
+    mesma proposta cai sempre na mesma linha. O hash continua necessario porque
+    o prefixo legivel trunca tipo/recurso ('INCREMENTO PAP' e 'INCREMENTO MAC'
+    colapsam nos mesmos 8 primeiros caracteres)."""
+    ident = f"{cod_fns}|{ano}|{tipo}|{recurso}|{nu_proc}"
+    h = hashlib.md5(ident.encode("utf-8")).hexdigest()[:8]
+    return f"FNS-{cod_fns}-{ano}-{tipo[:8]}-{recurso[:6]}-{nu_proc[:8]}-{h}".replace(" ", "_")[:60]
+
+
 def _normalize(p: dict, ano: int, mun_id: int, cod_fns: str) -> dict:
-    import hashlib
     tipo = (p.get("coTipoProposta") or "PROPOSTA").strip()
     recurso = (p.get("dsTipoRecurso") or "").strip()
     vl_prop = float(p.get("vlProposta") or 0)
@@ -125,15 +203,9 @@ def _normalize(p: dict, ano: int, mun_id: int, cod_fns: str) -> dict:
            else "Em analise" if vl_prop > 0
            else "Pendente")
     nu_proc = p.get("nuProcesso") or "NA"
-    # ID estavel + UNICO usando hash do payload pra desambiguar mesmo tipo/recurso.
-    # EXCLUI linhaPropostas (enriquecimento, nao identidade) p/ a chave nao mudar
-    # quando as propostas individuais sao anexadas -> evita duplicar linhas.
-    _hp = {k: v for k, v in p.items() if k != "linhaPropostas"}
-    h = hashlib.md5(json.dumps(_hp, sort_keys=True, default=str).encode()).hexdigest()[:8]
-    nr_proposta = f"FNS-{cod_fns}-{ano}-{tipo[:8]}-{recurso[:6]}-{nu_proc[:8]}-{h}".replace(" ", "_")[:60]
     return {
         "municipio_id": mun_id,
-        "nr_proposta": nr_proposta,
+        "nr_proposta": chave_fns(cod_fns, ano, tipo, recurso, nu_proc),
         "objeto": (f"{tipo} - {recurso}".strip(" -") + (f" — Proc {nu_proc}" if nu_proc not in ("NA", "N/A") else ""))[:500],
         "tipo_programa": tipo[:100],
         "valor": vl_pago or vl_prop or 0,
@@ -145,7 +217,15 @@ def _normalize(p: dict, ano: int, mun_id: int, cod_fns: str) -> dict:
     }
 
 
-async def _fetch_individuais(client: httpx.AsyncClient, cod_fns: str, ano: int,
+def _ano_ms(epoch_ms) -> int | None:
+    """epoch em ms (formato do FNS) -> ano."""
+    try:
+        return datetime.fromtimestamp(int(epoch_ms) / 1000).year
+    except (TypeError, ValueError, OSError, OverflowError):
+        return None
+
+
+async def _fetch_individuais(client: httpx.AsyncClient, cod_fns: str, ano: int, uf: str,
                              tipo: str, recurso: str) -> list[dict]:
     """Propostas INDIVIDUAIS (Nº SIPA) de um grupo tipo/recurso. O portal usa
     tpProposta/tpRecurso (em vez de co.../ds...) p/ destravar o agrupamento e
@@ -156,7 +236,7 @@ async def _fetch_individuais(client: httpx.AsyncClient, cod_fns: str, ano: int,
         r = await client.get(
             f"{BASE}/recursos/proposta/consultar",
             params={"ano": ano, "coEsfera": "", "coMunicipioIbge": cod_fns,
-                    "count": 200, "page": 1, "sgUf": "MG",
+                    "count": 200, "page": 1, "sgUf": uf,
                     "tpProposta": tipo, "tpRecurso": recurso},
             timeout=30,
         )
@@ -168,9 +248,11 @@ async def _fetch_individuais(client: httpx.AsyncClient, cod_fns: str, ano: int,
             nup = it.get("nuProposta")
             if not nup:
                 continue
-            # Situacao REAL do portal (ex.: "EM ANALISE PELA AREA FINALISTICA") NAO
-            # vem na listagem — so no detalhe (obter-proposta). 1 chamada por proposta.
-            sit_desc = None
+            # A situacao REAL do portal e as DATAS de pagamento nao vem na
+            # listagem — so no detalhe (obter-proposta). 1 chamada por proposta.
+            # O ano do ultimo pagamento e o que diz se uma proposta antiga ainda
+            # se moveu no ano de referencia (usado pela regra de ano do RM).
+            sit_desc = dt_sit = ano_pgto = None
             try:
                 rd = await client.get(
                     f"{BASE}/recursos/proposta/obter-proposta",
@@ -179,6 +261,10 @@ async def _fetch_individuais(client: httpx.AsyncClient, cod_fns: str, ano: int,
                 if rd.status_code == 200:
                     dd = rd.json().get("resultado", {}) or {}
                     sit_desc = (dd.get("situacao") or {}).get("descricaoSituacaoproposta")
+                    dt_sit = _ano_ms((dd.get("situacao") or {}).get("dataSituacaoProjeto"))
+                    anos_pg = [a for a in (_ano_ms(pg.get("dtCriacaoSiafi"))
+                                           for pg in (dd.get("pagamentos") or [])) if a]
+                    ano_pgto = max(anos_pg) if anos_pg else None
             except Exception:
                 pass
             out.append({
@@ -190,6 +276,8 @@ async def _fetch_individuais(client: httpx.AsyncClient, cod_fns: str, ano: int,
                 "vlPagar": float(it.get("vlPagar") or 0),
                 "parlamentares": it.get("parlamentares") or [],
                 "situacao_desc": sit_desc,
+                "ano_ultimo_pagamento": ano_pgto,
+                "ano_situacao": dt_sit,
             })
         return out
     except Exception as ex:
@@ -197,7 +285,8 @@ async def _fetch_individuais(client: httpx.AsyncClient, cod_fns: str, ano: int,
         return []
 
 
-async def collect_for_municipio(client: httpx.AsyncClient, mun_id: int, cod_fns: str, nome: str) -> list[dict]:
+async def collect_for_municipio(client: httpx.AsyncClient, mun_id: int, cod_fns: str,
+                                nome: str, uf: str) -> list[dict]:
     items: list[dict] = []
     for ano in ANOS:
         pagina = 1
@@ -207,16 +296,14 @@ async def collect_for_municipio(client: httpx.AsyncClient, mun_id: int, cod_fns:
                     f"{BASE}/recursos/proposta/consultar",
                     params={
                         "ano": ano,
+                        "coEsfera": "",
                         "coMunicipioIbge": cod_fns,
-                        "sgUf": "MG",
+                        "sgUf": uf,
                         "count": 200,
                         "page": pagina,
                     },
                     timeout=30,
                 )
-                if r.status_code == 401:
-                    log.warning(f"  {nome} ano={ano}: SESSAO EXPIRADA — re-capture")
-                    return items
                 if r.status_code != 200:
                     log.warning(f"  {nome} ano={ano} pag={pagina}: HTTP {r.status_code}")
                     break
@@ -228,7 +315,7 @@ async def collect_for_municipio(client: httpx.AsyncClient, mun_id: int, cod_fns:
                     # Enriquece o agregado com as propostas INDIVIDUAIS (Nº SIPA)
                     # p/ o RM mostrar o numero real de cada proposta.
                     p["linhaPropostas"] = await _fetch_individuais(
-                        client, cod_fns, ano,
+                        client, cod_fns, ano, uf,
                         (p.get("coTipoProposta") or "").strip(),
                         (p.get("dsTipoRecurso") or "").strip(),
                     )
@@ -237,34 +324,77 @@ async def collect_for_municipio(client: httpx.AsyncClient, mun_id: int, cod_fns:
                     break
                 pagina += 1
             except Exception as e:
-                log.error(f"  {nome} ano={ano} pag={pagina}: {e}")
+                log.error(f"  {nome} ano={ano} pag={pagina}: {str(e)[:100]}")
                 break
-        await asyncio.sleep(0.3)  # gentil
+        await asyncio.sleep(0.2)  # gentil com o portal
     return items
 
 
-async def main():
-    cookies = _load_fns_cookies()
-    if not cookies:
-        log.error("Nenhuma sessao FNS no Cofre. Capture via bookmarklet em consultafns.saude.gov.br.")
-        return
-    log.info(f"Sessao FNS: {len(cookies)} cookies")
-    total = 0
+def _log_ingestao(status: str, n: int, erro: str = "") -> None:
+    try:
+        conn = _db(); cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO ingestion_log (source, status, records_inserted, error_message, finished_at) "
+            "VALUES ('fns', %s, %s, %s, NOW())",
+            (status, n, (erro or None)),
+        )
+        conn.commit(); cur.close(); conn.close()
+    except Exception as e:
+        log.warning(f"ingestion_log falhou: {str(e)[:120]}")
+
+
+async def main() -> int:
+    muns = _municipios()
+    if not muns:
+        log.error("Nenhum municipio ativo com fns_code/ibge_code no banco deste ambiente.")
+        _log_ingestao("error", 0, "sem municipios")
+        return 1
+
+    cookies = _cookies()
+    log.info(f"{len(muns)} municipios | anos {ANOS[0]}-{ANOS[-1]} | concorrencia {CONC} "
+             f"| sessao FNS: {'sim' if cookies else 'nao (API publica)'}")
+
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0) Chrome/131",
         "Accept": "application/json, text/plain, */*",
         "Referer": "https://consultafns.saude.gov.br/",
     }
-    async with httpx.AsyncClient(cookies=cookies, headers=headers, verify=False) as client:
-        for mun_id, (nome, cod_fns) in _load_fns_targets().items():
-            log.info(f"=== {nome} (mun={mun_id} fns={cod_fns}) ===")
-            items = await collect_for_municipio(client, mun_id, cod_fns, nome)
-            log.info(f"  coletadas {len(items)} propostas")
-            n = _upsert_items(items)
-            log.info(f"  inseridas/atualizadas {n} no banco")
-            total += n
-    log.info(f"=== TOTAL: {total} propostas FNS no banco ===")
+    total = 0
+    falhas: list[str] = []
+    sem = asyncio.Semaphore(CONC)
+
+    async with httpx.AsyncClient(cookies=cookies, headers=headers, verify=False,
+                                 limits=httpx.Limits(max_connections=CONC * 2)) as client:
+        async def um(mun_id: int, nome: str, cod_fns: str, uf: str):
+            async with sem:
+                try:
+                    items = await collect_for_municipio(client, mun_id, cod_fns, nome, uf)
+                    # Persiste por municipio (nao all-or-nothing): se um falhar no
+                    # meio, o que ja foi coletado fica no banco.
+                    n = _upsert_items(items)
+                    log.info(f"  {nome} (mun={mun_id} fns={cod_fns}/{uf}): {len(items)} coletadas, {n} gravadas")
+                    return n
+                except Exception as e:
+                    log.error(f"  {nome}: FALHOU {str(e)[:120]}")
+                    falhas.append(nome)
+                    return 0
+
+        res = await asyncio.gather(*[um(i, n, c, u) for i, n, c, u in muns])
+        total = sum(res)
+
+    ok = len(muns) - len(falhas)
+    log.info(f"=== TOTAL: {total} propostas FNS gravadas em {ok}/{len(muns)} municipios ===")
+    if falhas:
+        log.warning(f"falharam: {', '.join(falhas[:20])}")
+
+    if total == 0:
+        _log_ingestao("error", 0, "coleta retornou zero propostas")
+        log.error("Coleta retornou ZERO — falha real, nao sucesso vazio.")
+        return 1
+    _log_ingestao("partial" if falhas else "success", total,
+                  f"falhas: {', '.join(falhas[:10])}" if falhas else "")
+    return 0
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    sys.exit(asyncio.run(main()))

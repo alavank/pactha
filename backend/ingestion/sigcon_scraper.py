@@ -672,7 +672,13 @@ async def _run():
         finally:
             await browser.close()
 
-    # UPSERT em convenios_estadual
+    # UPSERT em convenios_estadual.
+    # A conexao e aberta SO AQUI, na hora de gravar — NUNCA antes do scrape.
+    # O scrape (login + detalhes + emendas de todos os municipios) leva 10-20
+    # min; uma conexao aberta la no inicio ficaria ociosa esse tempo todo e o
+    # Postgres gerenciado (Neon) a derruba por idle timeout -> na hora do UPSERT
+    # estourava "connection already closed" e a rodada inteira era perdida.
+    # Abrimos fresca, gravamos rapido e fechamos no finally abaixo.
     import psycopg2
     sync_url = os.getenv("DATABASE_URL_SYNC", "")
     sync_url = sync_url.replace("&channel_binding=require", "").replace("?channel_binding=require", "")
@@ -680,183 +686,190 @@ async def _run():
     cur = conn.cursor()
     from datetime import date
 
-    inserted = updated = 0
-    for mun_id, rec in all_records:
-        # nr_sigcon: prioridade SIAFI > Plano > Proposta > sintetica.
-        # SIAFI eh o id do convenio "vigente"; Plano/Proposta sao do trackeamento pre-celebracao.
-        nr_sigcon = (
-            rec.get("nr_siafi")
-            or rec.get("nr_plano")
-            or rec.get("nr_proposta")
-            or f"SIGCON-PORTAL-{mun_id}-{abs(hash(rec.get('objeto') or '')) % 10**8}"
+    try:
+        inserted = updated = 0
+        for mun_id, rec in all_records:
+            # nr_sigcon: prioridade SIAFI > Plano > Proposta > sintetica.
+            # SIAFI eh o id do convenio "vigente"; Plano/Proposta sao do trackeamento pre-celebracao.
+            nr_sigcon = (
+                rec.get("nr_siafi")
+                or rec.get("nr_plano")
+                or rec.get("nr_proposta")
+                or f"SIGCON-PORTAL-{mun_id}-{abs(hash(rec.get('objeto') or '')) % 10**8}"
+            )
+            sit_norm = _norm(rec.get("status") or "")
+            sit_label = STATUS_MAP.get(sit_norm, rec.get("status"))
+            # dt_publicacao proxy: 1o jan do ano (extraido de "/YYYY" no Plano/Proposta).
+            # NAO eh data exata, mas permite ordenacao correta no front (recentes 1o)
+            # sem precisar fazer click-through em cada plano.
+            ano = rec.get("ano")
+            dt_pub_proxy = date(ano, 1, 1) if ano else None
+            valor = rec.get("valor_repasse")
+            # Campos do detalhe (contrapartida, assinatura, vigencia, alteracoes)
+            v_contrap = _parse_money(rec.get("valor_contrapartida_atual_str")
+                                     or rec.get("valor_contrapartida_str"))
+            dt_assin = _parse_date(rec.get("dt_assinatura_str"))
+            dt_pub_real = _parse_date(rec.get("dt_publicacao_str"))
+            vig_ini, vig_fim = _parse_vigencia_range(rec.get("vigencia_atual_str"))
+            _qa = (rec.get("qt_alteracoes_str") or "").strip()
+            qt_alt = int(_qa) if _qa.isdigit() else None
+            # valor_total = concedente (repasse) + contrapartida quando houver
+            v_total = ((valor or 0) + (v_contrap or 0)) if (valor or v_contrap) else valor
+            # dt_publicacao: usa a data real do detalhe se houver, senao o proxy (1o jan)
+            dt_pub = dt_pub_real or dt_pub_proxy
+            # Conflito de dedupe: prioriza nr_siafi (estavel entre CKAN bulk
+            # e scraper Playwright). Se SIAFI presente, usa ON CONFLICT (nr_siafi)
+            # pra atualizar o registro existente. Se nao, usa nr_sigcon como fallback.
+            nr_siafi = rec.get("nr_siafi") or None
+            # IMPORTANTE: o indice unico de nr_siafi e PARCIAL
+            # (ux_convenios_estadual_nr_siafi WHERE nr_siafi IS NOT NULL AND <> '').
+            # Um "ON CONFLICT (nr_siafi)" simples NAO casa com indice parcial —
+            # precisa repetir o predicado. Sem isso, TODO registro com SIAFI
+            # falhava silenciosamente (causa real do SIGCON travado ha ~24 dias).
+            if nr_siafi:
+                conflict_target = "(nr_siafi) WHERE nr_siafi IS NOT NULL AND nr_siafi <> ''"
+            else:
+                conflict_target = "(nr_sigcon)"
+            try:
+                # SAVEPOINT por registro: erro em 1 nao descarta os anteriores
+                # (antes, conn.rollback() perdia TODO o batch desde o ultimo commit)
+                cur.execute("SAVEPOINT sp_conv")
+                cur.execute(f"""
+                    INSERT INTO convenios_estadual (
+                        nr_sigcon, nr_siafi, municipio_id, orgao_concedente,
+                        convenente_nome, objeto, situacao,
+                        valor_concedente, valor_total, valor_repassado, valor_contrapartida,
+                        raw_data, tp_instrumento,
+                        nr_plano_trabalho, ano, dt_publicacao,
+                        dt_assinatura, dt_vigencia_inicial, dt_vigencia_atual,
+                        dt_vigencia_final, qt_alteracoes
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT {conflict_target} DO UPDATE SET
+                        nr_sigcon = COALESCE(convenios_estadual.nr_sigcon, EXCLUDED.nr_sigcon),
+                        nr_siafi = COALESCE(convenios_estadual.nr_siafi, EXCLUDED.nr_siafi),
+                        situacao = EXCLUDED.situacao,
+                        valor_concedente = COALESCE(EXCLUDED.valor_concedente, convenios_estadual.valor_concedente),
+                        valor_total = COALESCE(EXCLUDED.valor_total, convenios_estadual.valor_total),
+                        valor_repassado = COALESCE(EXCLUDED.valor_repassado, convenios_estadual.valor_repassado),
+                        valor_contrapartida = COALESCE(EXCLUDED.valor_contrapartida, convenios_estadual.valor_contrapartida),
+                        convenente_nome = COALESCE(EXCLUDED.convenente_nome, convenios_estadual.convenente_nome),
+                        nr_plano_trabalho = COALESCE(EXCLUDED.nr_plano_trabalho, convenios_estadual.nr_plano_trabalho),
+                        ano = COALESCE(EXCLUDED.ano, convenios_estadual.ano),
+                        dt_publicacao = COALESCE(EXCLUDED.dt_publicacao, convenios_estadual.dt_publicacao),
+                        dt_assinatura = COALESCE(EXCLUDED.dt_assinatura, convenios_estadual.dt_assinatura),
+                        dt_vigencia_inicial = COALESCE(EXCLUDED.dt_vigencia_inicial, convenios_estadual.dt_vigencia_inicial),
+                        dt_vigencia_atual = COALESCE(EXCLUDED.dt_vigencia_atual, convenios_estadual.dt_vigencia_atual),
+                        dt_vigencia_final = COALESCE(EXCLUDED.dt_vigencia_final, convenios_estadual.dt_vigencia_final),
+                        qt_alteracoes = COALESCE(EXCLUDED.qt_alteracoes, convenios_estadual.qt_alteracoes),
+                        raw_data = convenios_estadual.raw_data || EXCLUDED.raw_data,
+                        updated_at = NOW()
+                    RETURNING (xmax = 0) AS is_insert
+                """, (
+                    nr_sigcon[:80],
+                    nr_siafi,
+                    mun_id,
+                    rec.get("orgao"),
+                    rec.get("convenente"),
+                    rec.get("objeto"),
+                    sit_label,
+                    valor,  # valor_concedente (lido pelo front como valor_repasse)
+                    v_total,  # valor_total = concedente + contrapartida
+                    None,  # valor_repassado -> preenchido pelo backfill CKAN (ft_convenio)
+                    v_contrap,  # valor_contrapartida
+                    json.dumps({**rec, "_source": "sigcon_scraper"}, ensure_ascii=False, default=str),
+                    rec.get("tipo"),
+                    rec.get("nr_plano") or None,
+                    ano,
+                    dt_pub,
+                    dt_assin,
+                    vig_ini,
+                    vig_fim,  # dt_vigencia_atual = fim da vigencia atual
+                    vig_fim,  # dt_vigencia_final = mesma (fim atual)
+                    qt_alt,
+                ))
+                row = cur.fetchone()
+                cur.execute("RELEASE SAVEPOINT sp_conv")
+                is_insert = bool(row and row[0])
+                if is_insert:
+                    inserted += 1
+                else:
+                    updated += 1
+            except Exception as e:
+                logger.warning(f"  Erro UPSERT {nr_sigcon}: {str(e)[:200]}")
+                try:
+                    cur.execute("ROLLBACK TO SAVEPOINT sp_conv")
+                except Exception:
+                    conn.rollback()  # fallback se a conexao inteira caiu
+                continue
+
+        cur.execute(
+            "INSERT INTO ingestion_log (source, status, records_inserted, finished_at) "
+            "VALUES ('sigcon_scraper', 'success', %s, NOW())",
+            (inserted + updated,)
         )
-        sit_norm = _norm(rec.get("status") or "")
-        sit_label = STATUS_MAP.get(sit_norm, rec.get("status"))
-        # dt_publicacao proxy: 1o jan do ano (extraido de "/YYYY" no Plano/Proposta).
-        # NAO eh data exata, mas permite ordenacao correta no front (recentes 1o)
-        # sem precisar fazer click-through em cada plano.
-        ano = rec.get("ano")
-        dt_pub_proxy = date(ano, 1, 1) if ano else None
-        valor = rec.get("valor_repasse")
-        # Campos do detalhe (contrapartida, assinatura, vigencia, alteracoes)
-        v_contrap = _parse_money(rec.get("valor_contrapartida_atual_str")
-                                 or rec.get("valor_contrapartida_str"))
-        dt_assin = _parse_date(rec.get("dt_assinatura_str"))
-        dt_pub_real = _parse_date(rec.get("dt_publicacao_str"))
-        vig_ini, vig_fim = _parse_vigencia_range(rec.get("vigencia_atual_str"))
-        _qa = (rec.get("qt_alteracoes_str") or "").strip()
-        qt_alt = int(_qa) if _qa.isdigit() else None
-        # valor_total = concedente (repasse) + contrapartida quando houver
-        v_total = ((valor or 0) + (v_contrap or 0)) if (valor or v_contrap) else valor
-        # dt_publicacao: usa a data real do detalhe se houver, senao o proxy (1o jan)
-        dt_pub = dt_pub_real or dt_pub_proxy
-        # Conflito de dedupe: prioriza nr_siafi (estavel entre CKAN bulk
-        # e scraper Playwright). Se SIAFI presente, usa ON CONFLICT (nr_siafi)
-        # pra atualizar o registro existente. Se nao, usa nr_sigcon como fallback.
-        nr_siafi = rec.get("nr_siafi") or None
-        # IMPORTANTE: o indice unico de nr_siafi e PARCIAL
-        # (ux_convenios_estadual_nr_siafi WHERE nr_siafi IS NOT NULL AND <> '').
-        # Um "ON CONFLICT (nr_siafi)" simples NAO casa com indice parcial —
-        # precisa repetir o predicado. Sem isso, TODO registro com SIAFI
-        # falhava silenciosamente (causa real do SIGCON travado ha ~24 dias).
-        if nr_siafi:
-            conflict_target = "(nr_siafi) WHERE nr_siafi IS NOT NULL AND nr_siafi <> ''"
-        else:
-            conflict_target = "(nr_sigcon)"
-        try:
-            # SAVEPOINT por registro: erro em 1 nao descarta os anteriores
-            # (antes, conn.rollback() perdia TODO o batch desde o ultimo commit)
-            cur.execute("SAVEPOINT sp_conv")
-            cur.execute(f"""
-                INSERT INTO convenios_estadual (
-                    nr_sigcon, nr_siafi, municipio_id, orgao_concedente,
-                    convenente_nome, objeto, situacao,
-                    valor_concedente, valor_total, valor_repassado, valor_contrapartida,
-                    raw_data, tp_instrumento,
-                    nr_plano_trabalho, ano, dt_publicacao,
-                    dt_assinatura, dt_vigencia_inicial, dt_vigencia_atual,
-                    dt_vigencia_final, qt_alteracoes
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT {conflict_target} DO UPDATE SET
-                    nr_sigcon = COALESCE(convenios_estadual.nr_sigcon, EXCLUDED.nr_sigcon),
-                    nr_siafi = COALESCE(convenios_estadual.nr_siafi, EXCLUDED.nr_siafi),
-                    situacao = EXCLUDED.situacao,
-                    valor_concedente = COALESCE(EXCLUDED.valor_concedente, convenios_estadual.valor_concedente),
-                    valor_total = COALESCE(EXCLUDED.valor_total, convenios_estadual.valor_total),
-                    valor_repassado = COALESCE(EXCLUDED.valor_repassado, convenios_estadual.valor_repassado),
-                    valor_contrapartida = COALESCE(EXCLUDED.valor_contrapartida, convenios_estadual.valor_contrapartida),
-                    convenente_nome = COALESCE(EXCLUDED.convenente_nome, convenios_estadual.convenente_nome),
-                    nr_plano_trabalho = COALESCE(EXCLUDED.nr_plano_trabalho, convenios_estadual.nr_plano_trabalho),
-                    ano = COALESCE(EXCLUDED.ano, convenios_estadual.ano),
-                    dt_publicacao = COALESCE(EXCLUDED.dt_publicacao, convenios_estadual.dt_publicacao),
-                    dt_assinatura = COALESCE(EXCLUDED.dt_assinatura, convenios_estadual.dt_assinatura),
-                    dt_vigencia_inicial = COALESCE(EXCLUDED.dt_vigencia_inicial, convenios_estadual.dt_vigencia_inicial),
-                    dt_vigencia_atual = COALESCE(EXCLUDED.dt_vigencia_atual, convenios_estadual.dt_vigencia_atual),
-                    dt_vigencia_final = COALESCE(EXCLUDED.dt_vigencia_final, convenios_estadual.dt_vigencia_final),
-                    qt_alteracoes = COALESCE(EXCLUDED.qt_alteracoes, convenios_estadual.qt_alteracoes),
-                    raw_data = convenios_estadual.raw_data || EXCLUDED.raw_data,
-                    updated_at = NOW()
-                RETURNING (xmax = 0) AS is_insert
-            """, (
-                nr_sigcon[:80],
-                nr_siafi,
-                mun_id,
-                rec.get("orgao"),
-                rec.get("convenente"),
-                rec.get("objeto"),
-                sit_label,
-                valor,  # valor_concedente (lido pelo front como valor_repasse)
-                v_total,  # valor_total = concedente + contrapartida
-                None,  # valor_repassado -> preenchido pelo backfill CKAN (ft_convenio)
-                v_contrap,  # valor_contrapartida
-                json.dumps({**rec, "_source": "sigcon_scraper"}, ensure_ascii=False, default=str),
-                rec.get("tipo"),
-                rec.get("nr_plano") or None,
-                ano,
-                dt_pub,
-                dt_assin,
-                vig_ini,
-                vig_fim,  # dt_vigencia_atual = fim da vigencia atual
-                vig_fim,  # dt_vigencia_final = mesma (fim atual)
-                qt_alt,
-            ))
-            row = cur.fetchone()
-            cur.execute("RELEASE SAVEPOINT sp_conv")
-            is_insert = bool(row and row[0])
-            if is_insert:
-                inserted += 1
-            else:
-                updated += 1
-        except Exception as e:
-            logger.warning(f"  Erro UPSERT {nr_sigcon}: {str(e)[:200]}")
-            try:
-                cur.execute("ROLLBACK TO SAVEPOINT sp_conv")
-            except Exception:
-                conn.rollback()  # fallback se a conexao inteira caiu
-            continue
+        conn.commit()
 
-    cur.execute(
-        "INSERT INTO ingestion_log (source, status, records_inserted, finished_at) "
-        "VALUES ('sigcon_scraper', 'success', %s, NOW())",
-        (inserted + updated,)
-    )
-    conn.commit()
-
-    # === EMENDAS ESTADUAIS ===
-    em_inserted = em_updated = 0
-    for mun_id, em in all_emendas:
-        nr_ind = em.get("nr_indicacao")
-        ano_em = em.get("ano")
-        if not nr_ind or not ano_em:
-            continue
-        try:
-            cur.execute("SAVEPOINT sp_em")
-            cur.execute("""
-                INSERT INTO emendas_estaduais (
-                    municipio_id, nr_indicacao, nome_responsavel, tipo_indicacao,
-                    uo_codigo, uo_sigla, cnpj_beneficiario, beneficiario,
-                    grupo_despesa, tipo_atendimento, valor_indicacao, status_indicacao,
-                    ano, raw_data
-                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)
-                ON CONFLICT (nr_indicacao, ano) DO UPDATE SET
-                    nome_responsavel = EXCLUDED.nome_responsavel,
-                    tipo_indicacao = EXCLUDED.tipo_indicacao,
-                    uo_codigo = EXCLUDED.uo_codigo,
-                    uo_sigla = EXCLUDED.uo_sigla,
-                    cnpj_beneficiario = EXCLUDED.cnpj_beneficiario,
-                    beneficiario = EXCLUDED.beneficiario,
-                    grupo_despesa = EXCLUDED.grupo_despesa,
-                    tipo_atendimento = EXCLUDED.tipo_atendimento,
-                    valor_indicacao = EXCLUDED.valor_indicacao,
-                    status_indicacao = EXCLUDED.status_indicacao,
-                    raw_data = EXCLUDED.raw_data,
-                    updated_at = NOW()
-                RETURNING (xmax = 0) AS is_insert
-            """, (
-                mun_id, nr_ind[:50], em.get("nome_responsavel","")[:300],
-                em.get("tipo_indicacao","")[:100],
-                em.get("uo_codigo","")[:20], em.get("uo_sigla","")[:50],
-                em.get("cnpj_beneficiario","")[:20], em.get("beneficiario","")[:300],
-                em.get("grupo_despesa","")[:200], em.get("tipo_atendimento","")[:300],
-                em.get("valor_indicacao"), em.get("status_indicacao","")[:50],
-                ano_em,
-                json.dumps({**em, "_source": "sigcon_scraper"}, ensure_ascii=False, default=str),
-            ))
-            row = cur.fetchone()
-            cur.execute("RELEASE SAVEPOINT sp_em")
-            if row and row[0]:
-                em_inserted += 1
-            else:
-                em_updated += 1
-        except Exception as e:
-            logger.warning(f"  Erro UPSERT emenda {nr_ind}: {str(e)[:200]}")
+        # === EMENDAS ESTADUAIS ===
+        em_inserted = em_updated = 0
+        for mun_id, em in all_emendas:
+            nr_ind = em.get("nr_indicacao")
+            ano_em = em.get("ano")
+            if not nr_ind or not ano_em:
+                continue
             try:
-                cur.execute("ROLLBACK TO SAVEPOINT sp_em")
-            except Exception:
-                conn.rollback()
-            continue
-    conn.commit()
-    conn.close()
+                cur.execute("SAVEPOINT sp_em")
+                cur.execute("""
+                    INSERT INTO emendas_estaduais (
+                        municipio_id, nr_indicacao, nome_responsavel, tipo_indicacao,
+                        uo_codigo, uo_sigla, cnpj_beneficiario, beneficiario,
+                        grupo_despesa, tipo_atendimento, valor_indicacao, status_indicacao,
+                        ano, raw_data
+                    ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)
+                    ON CONFLICT (nr_indicacao, ano) DO UPDATE SET
+                        nome_responsavel = EXCLUDED.nome_responsavel,
+                        tipo_indicacao = EXCLUDED.tipo_indicacao,
+                        uo_codigo = EXCLUDED.uo_codigo,
+                        uo_sigla = EXCLUDED.uo_sigla,
+                        cnpj_beneficiario = EXCLUDED.cnpj_beneficiario,
+                        beneficiario = EXCLUDED.beneficiario,
+                        grupo_despesa = EXCLUDED.grupo_despesa,
+                        tipo_atendimento = EXCLUDED.tipo_atendimento,
+                        valor_indicacao = EXCLUDED.valor_indicacao,
+                        status_indicacao = EXCLUDED.status_indicacao,
+                        raw_data = EXCLUDED.raw_data,
+                        updated_at = NOW()
+                    RETURNING (xmax = 0) AS is_insert
+                """, (
+                    mun_id, nr_ind[:50], em.get("nome_responsavel","")[:300],
+                    em.get("tipo_indicacao","")[:100],
+                    em.get("uo_codigo","")[:20], em.get("uo_sigla","")[:50],
+                    em.get("cnpj_beneficiario","")[:20], em.get("beneficiario","")[:300],
+                    em.get("grupo_despesa","")[:200], em.get("tipo_atendimento","")[:300],
+                    em.get("valor_indicacao"), em.get("status_indicacao","")[:50],
+                    ano_em,
+                    json.dumps({**em, "_source": "sigcon_scraper"}, ensure_ascii=False, default=str),
+                ))
+                row = cur.fetchone()
+                cur.execute("RELEASE SAVEPOINT sp_em")
+                if row and row[0]:
+                    em_inserted += 1
+                else:
+                    em_updated += 1
+            except Exception as e:
+                logger.warning(f"  Erro UPSERT emenda {nr_ind}: {str(e)[:200]}")
+                try:
+                    cur.execute("ROLLBACK TO SAVEPOINT sp_em")
+                except Exception:
+                    conn.rollback()
+                continue
+        conn.commit()
+    finally:
+        # Fecha SEMPRE: se um UPSERT estourar no meio, a conexao nao pode
+        # ficar pendurada ate o processo morrer.
+        try:
+            conn.close()
+        except Exception:
+            pass
 
     logger.info(f"\n=== Convenios: {inserted} inseridos, {updated} atualizados (total {inserted+updated}) ===")
     logger.info(f"=== Emendas estaduais: {em_inserted} inseridas, {em_updated} atualizadas ===")

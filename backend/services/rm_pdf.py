@@ -186,6 +186,27 @@ def _clausula_destaque(item: dict) -> str | None:
     return "<br/>".join(partes)
 
 
+def _evento_destaque(item: dict) -> str | None:
+    """Caixa do EVENTO ATUAL (Histórico de Comunicações do TransfereGov): onde o
+    instrumento está de fato na análise, com a SITUAÇÃO e as CONSIDERAÇÕES do
+    concedente. None quando não há histórico capturado."""
+    ev = (item.get("evento_atual") or "").strip()
+    sit = (item.get("evento_situacao") or "").strip()
+    cons = (item.get("evento_consideracoes") or "").strip()
+    if not (ev or sit or cons):
+        return None
+    dt = (item.get("evento_data") or "").strip()
+    cab = "<b>Evento atual:</b> " + _escape(ev or "-")
+    if dt:
+        cab += f" ({_escape(dt)})"
+    partes = [cab]
+    if sit:
+        partes.append(f"<b>Situação:</b> {_escape(sit)}")
+    if cons:
+        partes.append(f"<b>Considerações:</b> {_escape(cons)}")
+    return "<br/>".join(partes)
+
+
 def _escape(s: str) -> str:
     """Escape p/ Paragraph: &, <, > viram entidades."""
     if not isinstance(s, str):
@@ -245,6 +266,10 @@ def gerar_pdf(meta: dict, conteudo: dict, municipio_nome: str) -> bytes:
                     if destaque:
                         bloco.append(Spacer(1, 2))
                         bloco.append(Paragraph(destaque, s["clausula"]))
+                    destaque_ev = _evento_destaque(item)
+                    if destaque_ev:
+                        bloco.append(Spacer(1, 2))
+                        bloco.append(Paragraph(destaque_ev, s["clausula"]))
                     bloco.append(Spacer(1, 4))
                     story.append(KeepTogether(bloco))
 

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, text
+from sqlalchemy import select, func, text, or_
 from datetime import date, datetime, timedelta
 from database import get_db
 from models import Municipio, ConvenioEstadual
@@ -54,7 +54,12 @@ async def municipio_summary(
 
     # Filtro de ano — SIGCON usa a coluna `ano`; TransfereGov deriva do sufixo do
     # numero_proposta ("xxx/AAAA"). None = todos os anos.
+    # convenios_estadual guarda SIGCON-MG *e* FNS (saude, federal). O KPI
+    # "Convenios Estaduais" e as vigencias sao so do SIGCON — sem este filtro
+    # Piracema/Sao Tiago apareciam com convenios estaduais tendo zero SIGCON.
     def _ano_est(q):
+        q = q.where(or_(ConvenioEstadual.fonte.is_(None),
+                        ~ConvenioEstadual.fonte.ilike("%FNS%")))
         return q.where(ConvenioEstadual.ano == ano) if ano else q
     ano_txt = str(ano) if ano else None
     vol_ano_sql = " AND split_part(numero_proposta, '/', 2) = :ano_txt" if ano else ""

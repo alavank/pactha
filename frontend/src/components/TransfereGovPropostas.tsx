@@ -40,6 +40,9 @@ interface Proposta {
   valor_repasse?: number | null;
   valor_contrapartida?: number | null;
   situacao_contratacao_detalhe?: Record<string, string | null> | null;
+  historico_comunicacoes?: Record<string, string>[];
+  documentos_quadro_resumo?: Record<string, string>[];
+  historico_atualizado_em?: string | null;
 }
 
 interface Resp { items: Proposta[]; total: number; atualizado_em?: string; }
@@ -105,6 +108,8 @@ export default function TransfereGovPropostas({
   const [baixandoPdf, setBaixandoPdf] = useState(false);
 
   const [detalhe, setDetalhe] = useState<Detalhe | null>(null);
+  // Aba ativa do modal de detalhe (evita rolagem gigante com 50+ eventos)
+  const [aba, setAba] = useState<"dados" | "historico" | "docs">("dados");
   const [loadingDet, setLoadingDet] = useState(false);
 
   const buildParams = useCallback((): Record<string, string> => {
@@ -160,7 +165,7 @@ export default function TransfereGovPropostas({
   );
 
   const abrirDetalhe = async (numero: string) => {
-    setDetalhe(null); setLoadingDet(true);
+    setDetalhe(null); setLoadingDet(true); setAba("dados");
     try {
       const r = await api.get<Detalhe>(`/transferegov/voluntarias/${encodeURIComponent(numero)}`,
         { params: { municipio_id: municipioId } });
@@ -378,8 +383,32 @@ export default function TransfereGovPropostas({
             </div>
             {loadingDet ? (
               <div className="text-center py-16"><Loader2 className="size-8 animate-spin mx-auto text-primary" /></div>
-            ) : detalhe && (
-              <div className="p-5 space-y-5 max-h-[75vh] overflow-y-auto">
+            ) : detalhe && (() => {
+              const nHist = (detalhe.historico_comunicacoes || []).length;
+              const nDocs = (detalhe.documentos_quadro_resumo || []).length;
+              const abas: [typeof aba, string, boolean][] = [
+                ["dados", "Dados", true],
+                ["historico", `Histórico${nHist ? ` (${nHist})` : ""}`, nHist > 0],
+                ["docs", `Documentos${nDocs ? ` (${nDocs})` : ""}`, nDocs > 0],
+              ];
+              const ativa = abas.find((a) => a[0] === aba)?.[2] ? aba : "dados";
+              return (
+              <div className="max-h-[75vh] overflow-y-auto">
+                <div className="flex gap-1 px-5 border-b border-base-300 sticky top-0 bg-base-100 z-10">
+                  {abas.map(([k, label, on]) => (
+                    <button key={k} onClick={() => on && setAba(k)} disabled={!on}
+                      className={`px-3 py-2 text-sm font-medium -mb-px border-b-2 transition-colors ${
+                        ativa === k
+                          ? "border-primary text-primary"
+                          : on
+                            ? "border-transparent text-base-content/60 hover:text-base-content"
+                            : "border-transparent text-base-content/25 cursor-not-allowed"}`}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <div className="p-5 space-y-5">
+                {ativa === "dados" && (<>
                 <Section title="Dados da Proposta">
                   <Grid>
                     <Field label="Modalidade" value={detalhe.modalidade} />
@@ -429,7 +458,70 @@ export default function TransfereGovPropostas({
                     )}
                   </Section>
                 )}
+                </>)}
 
+                {/* Histórico de Comunicações (TransfereGov mandatárias) — SITUAÇÃO e
+                    CONSIDERAÇÕES em destaque: é o andamento real da análise. */}
+                {ativa === "historico" && detalhe.historico_comunicacoes && detalhe.historico_comunicacoes.length > 0 && (
+                  <Section title={`Histórico de Comunicações (${detalhe.historico_comunicacoes.length})`}>
+                    <div className="space-y-2 p-2">
+                      {detalhe.historico_comunicacoes.map((h, i) => {
+                        const pick = (re: RegExp) => {
+                          const k = Object.keys(h).find((kk) => re.test(kk));
+                          return k ? (h[k] || "") : "";
+                        };
+                        const data = pick(/data|hora/i);
+                        const evento = pick(/evento/i);
+                        const resp = pick(/respons/i);
+                        const sit = pick(/situa/i);
+                        const cons = pick(/considera/i);
+                        return (
+                          <div key={i} className="rounded border border-base-300 bg-base-100 p-3">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-mono text-[11px] text-base-content/50">{data}</span>
+                              <span className="font-medium text-base-content">{evento}</span>
+                              {sit && (
+                                <span className="ml-auto rounded-full bg-info/15 px-2 py-0.5 text-[11px] font-semibold text-info">
+                                  {sit}
+                                </span>
+                              )}
+                            </div>
+                            {resp && <div className="mt-0.5 text-[11px] text-base-content/50">{resp}</div>}
+                            {cons && (
+                              <div className="mt-2 rounded border-l-4 border-warning bg-warning/10 p-2 text-xs text-base-content/80">
+                                <span className="font-semibold text-warning">Considerações: </span>
+                                {cons}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </Section>
+                )}
+
+                {/* Documentos do Quadro Resumo (Termos de Notificação etc.) */}
+                {ativa === "docs" && detalhe.documentos_quadro_resumo && detalhe.documentos_quadro_resumo.length > 0 && (
+                  <Section title={`Documentos / Termos de Notificação (${detalhe.documentos_quadro_resumo.length})`}>
+                    <div className="space-y-1 p-2">
+                      {detalhe.documentos_quadro_resumo.map((d, i) => {
+                        const vals = Object.entries(d).filter(([, v]) => v && !/^\s*$/.test(v));
+                        return (
+                          <div key={i} className="rounded border border-base-300 bg-base-100 px-3 py-2 text-xs">
+                            {vals.map(([k, v]) => (
+                              <span key={k} className="mr-3 inline-block">
+                                <span className="text-base-content/50">{k}: </span>
+                                <span className="text-base-content/80">{v}</span>
+                              </span>
+                            ))}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </Section>
+                )}
+
+                {ativa === "dados" && (<>
                 <Section title="Vigência e Datas">
                   <Grid>
                     <Field label="Data da Proposta" value={detalhe.dt_proposta} />
@@ -488,8 +580,11 @@ export default function TransfereGovPropostas({
                     </p>
                   </Section>
                 )}
+                </>)}
+                </div>
               </div>
-            )}
+              );
+            })()}
           </div>
         </div>
       )}

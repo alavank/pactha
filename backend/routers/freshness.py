@@ -22,7 +22,7 @@ _SOURCES = [
      "sigcon_scraper"),
     ("FNS — Saúde (federal)",
      "SELECT max(updated_at), count(*) FROM convenios_estadual WHERE fonte ILIKE '%FNS%'",
-     None),
+     "fns"),
     ("TransfereGov — Voluntárias",
      "SELECT max(updated_at), count(*) FROM transferegov_propostas",
      "transferegov_voluntarias"),
