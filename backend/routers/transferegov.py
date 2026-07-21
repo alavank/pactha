@@ -319,7 +319,7 @@ async def voluntarias(
                dt_fim_vigencia, dt_proposta, dt_assinatura, updated_at,
                situacao_contratacao, clausula_suspensiva_dt_prevista,
                clausula_suspensiva_motivo, parlamentar,
-               situacao_contratacao_detalhe
+               situacao_contratacao_detalhe, processo_execucao_qtd
         FROM transferegov_propostas
         WHERE {' AND '.join(where)}
         ORDER BY numero_proposta DESC
@@ -339,6 +339,7 @@ async def voluntarias(
         "clausula_suspensiva_motivo": row[19],
         "parlamentar": row[20],
         "situacao_contratacao_detalhe": row[21],
+        "processo_execucao_qtd": row[22],
     } for row in r.fetchall()]
 
     # Filtro de vigencia (presets: dias para vencer) — vindo dos KPIs ou do filtro
@@ -414,7 +415,8 @@ async def voluntarias_detalhe(
                situacao_contratacao, clausula_suspensiva_dt_prevista,
                clausula_suspensiva_motivo, parlamentar,
                valor_global, valor_repasse, valor_contrapartida,
-               situacao_contratacao_detalhe
+               situacao_contratacao_detalhe, processo_execucao_qtd,
+               historico_comunicacoes, documentos_quadro_resumo, historico_atualizado_em
         FROM transferegov_propostas
         WHERE municipio_id = :mun AND numero_proposta = :num
     """), {"mun": municipio_id, "num": numero_proposta})
@@ -436,6 +438,10 @@ async def voluntarias_detalhe(
         "valor_repasse": float(row[21]) if row[21] is not None else None,
         "valor_contrapartida": float(row[22]) if row[22] is not None else None,
         "situacao_contratacao_detalhe": row[23],
+        "processo_execucao_qtd": row[24],
+        "historico_comunicacoes": row[25] or [],
+        "documentos_quadro_resumo": row[26] or [],
+        "historico_atualizado_em": row[27].isoformat() if row[27] else None,
     }
 
 

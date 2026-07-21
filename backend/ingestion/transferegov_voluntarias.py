@@ -480,6 +480,16 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
                         prop["processo_execucao_qtd"] = _qtd
                 except Exception as e:
                     logger.warning(f"    proc.exec {prop['numero_proposta']}: {str(e)[:80]}")
+            # Historico de Comunicacoes + Termos de Notificacao (Projeto Basico /
+            # mandatarias). SO com sessao gov.br viva (area /private/).
+            if page_auth is not None and _idp:
+                try:
+                    _hc = await _captura_historico_comunicacoes(page_auth, _idp)
+                    if _hc:
+                        prop["historico_comunicacoes"] = _hc.get("historico") or []
+                        prop["documentos_quadro_resumo"] = _hc.get("documentos") or []
+                except Exception as e:
+                    logger.warning(f"    historico {prop['numero_proposta']}: {str(e)[:80]}")
             if det.get("_parlamentar") or prop["detalhe"].get("_situacao_detalhe"):
                 _enr += 1
         except Exception as e:
@@ -583,6 +593,93 @@ async def _extrai_clausula_via_instrumento(page_auth, id_proposta: str) -> dict 
         return None
     sd = await _extrai_situacao_detalhe(page_auth)
     return sd or None
+
+
+def _dt_now():
+    """Timestamp UTC (marca quando o historico foi capturado)."""
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc)
+
+
+async def _captura_historico_comunicacoes(page_auth, id_proposta: str) -> dict | None:
+    """Histórico de Comunicações + Documentos do Quadro Resumo (tela "Documentos
+    Orçamentários" / Projeto Básico do TransfereGov **mandatárias**).
+
+    Traz o andamento REAL da análise — eventos com SITUAÇÃO e CONSIDERAÇÕES do
+    concedente (ex.: "Emitido Laudo de Análise", "Aceite realizado", parecer) —
+    e os Termos de Notificação enviados.
+
+    EXIGE sessão gov.br: a área e /private/ (guest cai no login). Retorna
+    {'historico': [...], 'documentos': [...]} ou None se sem sessão/sem dados."""
+    url = ("https://mandatarias.transferegov.sistema.gov.br/projeto-basico/private/"
+           f"index.jsf?idProposta={id_proposta}")
+    if not await _goto_with_retry(page_auth, url, timeout=45000):
+        return None
+    await page_auth.wait_for_timeout(4000)
+    cur_url = (page_auth.url or "")
+    if "idp.transferegov" in cur_url or "sso.acesso.gov.br" in cur_url:
+        return None  # sessao gov.br ausente/expirada -> caiu no login
+    # PEGADINHA: a tela abre noutra aba e o Historico NAO esta no DOM inicial —
+    # ele vive sob a aba "Quadro Resumo" (JSF/AJAX). Confirmado ao vivo: sem o
+    # clique temHistorico=false/1 tabela; com o clique, true/4 tabelas.
+    for _sel in ("a:has-text('Quadro Resumo')", "span:has-text('Quadro Resumo')",
+                 "td:has-text('Quadro Resumo')", "li:has-text('Quadro Resumo')"):
+        try:
+            _tab = page_auth.locator(_sel).first
+            if await _tab.count() > 0:
+                await _tab.click(timeout=8000)
+                await page_auth.wait_for_timeout(3500)
+                break
+        except Exception:
+            continue
+    try:
+        data = await page_auth.evaluate("""() => {
+            const norm = s => (s || '').replace(/\\s+/g, ' ').trim();
+            // Identifica a tabela pela ASSINATURA DO CABECALHO (robusto): buscar
+            // pelo titulo nao funciona — "Historico de Comunicacoes" nao e um
+            // elemento de texto puro no DOM (confirmado ao vivo).
+            const tabelas = [...document.querySelectorAll('table')].map(t => {
+                const rows = [...t.querySelectorAll('tr')];
+                const heads = rows[0]
+                    ? [...rows[0].querySelectorAll('th,td')].map(c => norm(c.textContent))
+                    : [];
+                return { t, rows, heads, chave: heads.join('|').toLowerCase() };
+            });
+            const acha = (...res) => {
+                for (const x of tabelas) {
+                    if (x.rows.length < 2) continue;
+                    if (res.every(re => re.test(x.chave))) return x;
+                }
+                return null;
+            };
+            const ler = (x) => {
+                if (!x) return [];
+                const out = [];
+                for (const r of x.rows.slice(1)) {
+                    const cells = [...r.querySelectorAll('td')].map(c => norm(c.textContent));
+                    if (!cells.length || cells.every(c => !c)) continue;
+                    const o = {};
+                    cells.forEach((c, i) => { o[x.heads[i] || ('col' + i)] = c; });
+                    out.push(o);
+                }
+                return out;
+            };
+            // Historico: Data/Hora + Evento + Situacao + Consideracoes.
+            // (exigir situacao+consideracoes exclui a tabela de "Sistema Externo",
+            //  que tambem tem Data/Hora+Evento mas traz Resultado/Mensagem)
+            const hist = acha(/data.?\\/?\\s?hora/, /evento/, /situa/, /considera/)
+                      || acha(/data.?\\/?\\s?hora/, /evento/, /situa/);
+            // Documentos do Quadro Resumo: Descricao + Tipo + Data de Envio
+            const docs = acha(/descri/, /tipo/, /data de envio/);
+            return { historico: ler(hist), documentos: ler(docs) };
+        }""")
+    except Exception:
+        return None
+    if not data:
+        return None
+    if not (data.get("historico") or data.get("documentos")):
+        return None
+    return data
 
 
 async def _conta_processo_execucao(page) -> int | None:
@@ -909,8 +1006,10 @@ def _upsert(mun_id: int, propostas: list[dict]):
                  valor_global, valor_repasse, valor_contrapartida,
                  situacao_contratacao, clausula_suspensiva_dt_prevista,
                  clausula_suspensiva_motivo, parlamentar, situacao_contratacao_detalhe,
-                 id_proposta_siconv, processo_execucao_qtd, detalhe, raw_data, updated_at)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s::jsonb,%s::jsonb,NOW())
+                 id_proposta_siconv, processo_execucao_qtd,
+                 historico_comunicacoes, documentos_quadro_resumo, historico_atualizado_em,
+                 detalhe, raw_data, updated_at)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s::jsonb,%s::jsonb,%s,%s::jsonb,%s::jsonb,NOW())
             ON CONFLICT (municipio_id, numero_proposta) DO UPDATE SET
                 situacao=EXCLUDED.situacao, orgao=EXCLUDED.orgao,
                 proponente=EXCLUDED.proponente, possui_parecer=EXCLUDED.possui_parecer,
@@ -930,6 +1029,9 @@ def _upsert(mun_id: int, propostas: list[dict]):
                 situacao_contratacao_detalhe=COALESCE(EXCLUDED.situacao_contratacao_detalhe, transferegov_propostas.situacao_contratacao_detalhe),
                 id_proposta_siconv=COALESCE(EXCLUDED.id_proposta_siconv, transferegov_propostas.id_proposta_siconv),
                 processo_execucao_qtd=COALESCE(EXCLUDED.processo_execucao_qtd, transferegov_propostas.processo_execucao_qtd),
+                historico_comunicacoes=COALESCE(EXCLUDED.historico_comunicacoes, transferegov_propostas.historico_comunicacoes),
+                documentos_quadro_resumo=COALESCE(EXCLUDED.documentos_quadro_resumo, transferegov_propostas.documentos_quadro_resumo),
+                historico_atualizado_em=COALESCE(EXCLUDED.historico_atualizado_em, transferegov_propostas.historico_atualizado_em),
                 detalhe=COALESCE(EXCLUDED.detalhe, transferegov_propostas.detalhe),
                 raw_data=EXCLUDED.raw_data, updated_at=NOW()
         """, (mun_id, p["numero_proposta"][:20], p["situacao"][:300], p["orgao"][:300],
@@ -945,6 +1047,11 @@ def _upsert(mun_id: int, propostas: list[dict]):
               json.dumps(sit_det_json, ensure_ascii=False) if sit_det_json else None,
               (p.get("id_proposta_siconv") or None),
               p.get("processo_execucao_qtd"),
+              (json.dumps(p["historico_comunicacoes"], ensure_ascii=False)
+               if p.get("historico_comunicacoes") else None),
+              (json.dumps(p["documentos_quadro_resumo"], ensure_ascii=False)
+               if p.get("documentos_quadro_resumo") else None),
+              (_dt_now() if (p.get("historico_comunicacoes") or p.get("documentos_quadro_resumo")) else None),
               (json.dumps(det, ensure_ascii=False) if det else None), json.dumps(p, ensure_ascii=False)))
         ins += 1
     conn.commit(); cur.close(); conn.close()

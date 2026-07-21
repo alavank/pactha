@@ -105,7 +105,11 @@ async def list_anos(
 ):
     ensure_municipio_access(current, municipio_id)
     ensure_tela(current, "convenios")
-    q = select(ConvenioEstadual.ano).distinct().where(ConvenioEstadual.ano.is_not(None))
+    # Mesma exclusao do listing: FNS mora na mesma tabela e tem tela propria.
+    # Sem isso o dropdown oferecia 2010-2013 (so FNS) e a lista voltava vazia.
+    q = (select(ConvenioEstadual.ano).distinct()
+         .where(ConvenioEstadual.ano.is_not(None))
+         .where(or_(ConvenioEstadual.fonte.is_(None), ~ConvenioEstadual.fonte.ilike("%FNS%"))))
     if municipio_id:
         q = q.where(ConvenioEstadual.municipio_id == municipio_id)
     r = await db.execute(q)
@@ -242,11 +246,13 @@ async def convenio_stats(
     ensure_municipio_access(current, municipio_id)
     ensure_tela(current, "convenios")
     stats = ConvenioStats()
+    # FNS (saude) mora na mesma tabela mas nao e convenio estadual — fora dos KPIs.
+    _sem_fns = or_(ConvenioEstadual.fonte.is_(None), ~ConvenioEstadual.fonte.ilike("%FNS%"))
 
     q = select(
         func.count().label("cnt"),
         func.coalesce(func.sum(ConvenioEstadual.valor_total), 0).label("total"),
-    )
+    ).where(_sem_fns)
     if municipio_id:
         q = q.where(ConvenioEstadual.municipio_id == municipio_id)
     if ano:
@@ -256,7 +262,8 @@ async def convenio_stats(
     stats.valor_total = float(row.total)
     stats.por_esfera["estadual"] = row.cnt
 
-    q = select(ConvenioEstadual.situacao, func.count()).group_by(ConvenioEstadual.situacao)
+    q = (select(ConvenioEstadual.situacao, func.count())
+         .where(_sem_fns).group_by(ConvenioEstadual.situacao))
     if municipio_id:
         q = q.where(ConvenioEstadual.municipio_id == municipio_id)
     if ano:

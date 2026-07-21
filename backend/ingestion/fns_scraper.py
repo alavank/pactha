@@ -1,4 +1,9 @@
 """
+DEPRECADO — NAO USE. O coletor de verdade e ingestion/run_fns_local.py, que e o
+que o job de coleta do FNS executa. Este arquivo depende do fluxo /api/internal/*
+(nao registrado em main.py) e cita convenios_federal, tabela que nao existe mais.
+Mantido so para nao quebrar import antigo; corrigir aqui nao tem efeito nenhum.
+
 Scraper FNS - Fundo Nacional de Saude.
 
 Usa API REST interna do portal consultafns.saude.gov.br descoberta via

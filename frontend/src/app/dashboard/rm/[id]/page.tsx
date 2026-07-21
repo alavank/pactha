@@ -29,6 +29,11 @@ interface Item {
   situacao_atual?: string;
   situacao_contratacao?: string;
   situacao_contratacao_detalhe?: Record<string, unknown> | null;
+  // Evento ATUAL do Histórico de Comunicações (TransfereGov mandatárias)
+  evento_atual?: string;
+  evento_data?: string;
+  evento_situacao?: string;
+  evento_consideracoes?: string;
   fonte?: string;
   fonte_ref?: string;
 }
@@ -59,6 +64,11 @@ const ITEM_FIELDS: Array<[keyof Item, string, "text" | "number" | "date" | "text
   ["dt_fim_vigencia", "Final da Vigencia", "date"],
   ["situacao_contratacao", "Situação de Contratação", "text"],
   ["situacao_atual", "Situacao Atual", "textarea"],
+  // Evento ATUAL do Histórico de Comunicações (TransfereGov)
+  ["evento_atual", "Evento Atual", "text"],
+  ["evento_data", "Data do Evento", "text"],
+  ["evento_situacao", "Situação do Evento", "text"],
+  ["evento_consideracoes", "Considerações", "textarea"],
 ];
 
 function formatSitDet(det: Record<string, unknown> | null | undefined): string {

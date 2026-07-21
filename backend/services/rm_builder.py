@@ -106,6 +106,54 @@ def _fed_retem(ano_prop: int | None, ano_emissao: int, situacao: str | None) -> 
     return ano_prop is not None and ano_prop >= ano_emissao
 
 
+def _fns_classifica(situacao_desc: str | None, sit_calc: str) -> str:
+    """Rotulo de CLASSIFICACAO da proposta FNS, no vocabulario que _fed_status
+    entende. Prefere a situacao REAL do portal (situacao_desc) e cai no rotulo
+    derivado do dinheiro (Pago/Empenhado/Em analise) quando ela nao veio.
+
+    DIVISAO DE TRABALHO: o TEXTO decide o que o dinheiro nao consegue dizer
+    (rejeitada / bloqueada / cancelada — uma proposta morta tem os mesmos
+    valores de uma em analise). Ja PAGO x PARCIAL quem decide e o DINHEIRO:
+    o portal escreve 'Proposta Paga - 1ª parcela' em proposta que ainda tem
+    parcela a receber, e 'Proposta em Analise de Pagamento' em proposta que
+    NAO foi paga — casar por 'pag' no texto mandava as duas para a PARTE 3
+    (prestacao de contas) indevidamente."""
+    d = (situacao_desc or "").strip().lower()
+    if not d:
+        return sit_calc
+    if any(x in d for x in ("rejeit", "bloquead", "cancelad", "indeferid", "arquivad", "anulad")):
+        return "Rejeitada"
+    if "empenhad" in d:
+        return "Empenhado"
+    return sit_calc
+
+
+def _fns_retem(ano_prop: int | None, ano_emissao: int, ind: dict,
+               vl_pago: float, vl_pagar: float, sit_cls: str) -> bool:
+    """Regra de ano PROPRIA do FNS (nao usa _fed_retem, que e compartilhada com
+    TransfereGov/SIGCON e mantem 'paga' para sempre).
+
+    O FNS acumula proposta desde 2010 e quase toda antiga fica marcada como
+    'Paga' — pela regra federal elas entravam em TODOS os relatorios seguintes,
+    poluindo o RM do ano de referencia com centenas de itens mortos.
+
+    Permanece no relatorio do ano de referencia quem:
+      - e do proprio ano (ou posterior);
+      - teve PAGAMENTO no ano de referencia (ainda que a proposta seja antiga);
+      - foi empenhada e ainda tem SALDO A RECEBER (pago > 0 e a pagar > 0).
+    Rejeitada/bloqueada so aparece no seu proprio ano."""
+    if sit_cls == "Rejeitada" or _fed_status(sit_cls) == "dead":
+        return ano_prop is not None and ano_prop == ano_emissao
+    if ano_prop is not None and ano_prop >= ano_emissao:
+        return True
+    try:
+        if int(ind.get("ano_ultimo_pagamento") or 0) == ano_emissao:
+            return True
+    except (TypeError, ValueError):
+        pass
+    return vl_pago > 0 and vl_pagar > 0
+
+
 def _federal_destino(situacao: str | None) -> tuple[int, str]:
     """(parte, secao) para um instrumento federal a partir do status."""
     st = _fed_status(situacao)
@@ -130,6 +178,51 @@ def _ano_de(*vals) -> int | None:
         if m:
             return int(m.group(1))
     return None
+
+
+def _evento_atual(historico) -> dict:
+    """EVENTO ATUAL do Histórico de Comunicações (TransfereGov mandatárias):
+    onde o instrumento está de fato na análise, com SITUAÇÃO e CONSIDERAÇÕES.
+    As chaves vêm do próprio portal (Data/Hora, Evento, Responsável,
+    Considerações, Situação) — por isso casamos por regex, não por chave fixa.
+    O portal lista do mais novo p/ o mais antigo; ainda assim escolhemos pelo
+    maior Data/Hora quando parseável."""
+    if not isinstance(historico, list) or not historico:
+        return {}
+    import re as _re
+    from datetime import datetime as _dtp
+
+    def _pick(d, pat):
+        if not isinstance(d, dict):
+            return ""
+        for k, v in d.items():
+            if _re.search(pat, str(k), _re.I):
+                return v.strip() if isinstance(v, str) else (v or "")
+        return ""
+
+    def _ts(d):
+        s = str(_pick(d, r"data|hora")).strip()
+        for f in ("%d/%m/%Y %H:%M:%S", "%d/%m/%Y %H:%M", "%d/%m/%Y"):
+            try:
+                return _dtp.strptime(s, f)
+            except (ValueError, TypeError):
+                continue
+        return None
+
+    validos = [h for h in historico if isinstance(h, dict)]
+    if not validos:
+        return {}
+    datados = [(h, _ts(h)) for h in validos]
+    datados = [(h, t) for h, t in datados if t]
+    atual = max(datados, key=lambda x: x[1])[0] if datados else validos[0]
+    return {
+        "evento_data": _pick(atual, r"data|hora"),
+        "evento_atual": _pick(atual, r"evento"),
+        "evento_situacao": _pick(atual, r"situa"),
+        "evento_consideracoes": _pick(atual, r"considera"),
+        "evento_responsavel": _pick(atual, r"respons"),
+        "historico_qtd": len(validos),
+    }
 
 
 async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int | None = None) -> dict:
@@ -207,12 +300,13 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
                              for _p in parls if isinstance(_p, dict)]
                     nomes = [n for n in nomes if n]
                     resp = ", ".join(nomes) if nomes else recurso_label
-                    # Regra do ano de emissão: empenhada/paga sempre; "em análise"
-                    # só do ano de emissão. Empenho validado pelo valor (vlPagar/
-                    # vlPago), não por flag.
-                    if not _fed_retem(c.ano, ano_emissao, sit):
+                    # Regra de ano PROPRIA do FNS: do ano de referência, ou que
+                    # se moveu nele (pagamento no ano / saldo a receber). Sem
+                    # isso o RM de 2026 vinha com proposta "Paga" de 2010.
+                    sit_cls = _fns_classifica(ind.get("situacao_desc"), sit)
+                    if not _fns_retem(c.ano, ano_emissao, ind, vlpago or 0, vlpagar or 0, sit_cls):
                         continue
-                    parte, secao = _federal_destino(sit)
+                    parte, secao = _federal_destino(sit_cls)
                     add_item(parte, secao, orgao, {
                         "tipo": "Proposta",
                         "numero": f"{nuprop} - {c.ano}" if c.ano else nuprop,
@@ -229,12 +323,14 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
                         # p/ o rotulo computado (Pago/Empenhado/Em analise) quando
                         # ainda nao re-coletado.
                         "situacao_atual": (ind.get("situacao_desc") or sit),
-                        "empenhado": "Sim" if _fed_empenhada(sit) else "Não",
+                        "empenhado": "Sim" if _fed_empenhada(sit_cls) else "Não",
                         "fonte": "fns",
                         "fonte_ref": str(c.id),
                     })
-            elif _fed_retem(c.ano, ano_emissao, c.situacao):
-                # Fallback: bucket sem individuais (dados ainda nao re-coletados).
+            elif c.ano is not None and c.ano >= ano_emissao:
+                # Fallback: bucket sem individuais (coleta antiga/incompleta). Sem
+                # as propostas individuais nao da pra saber se houve pagamento no
+                # ano — entao so entra se for do proprio ano de referência.
                 parte, secao = _federal_destino(c.situacao)
                 add_item(parte, secao, orgao, {
                     "tipo": "Proposta",
@@ -294,7 +390,7 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
                dt_fim_vigencia, valor_global, valor_repasse, valor_contrapartida,
                situacao_contratacao, clausula_suspensiva_dt_prevista,
                clausula_suspensiva_motivo, parlamentar, situacao_contratacao_detalhe,
-               detalhe->>'Empenhado'
+               detalhe->>'Empenhado', historico_comunicacoes
         FROM transferegov_propostas WHERE municipio_id = :m
     """), {"m": municipio_id})
     for row in vol.fetchall():
@@ -337,6 +433,9 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             "situacao_contratacao": situacao_contr or "",
             "clausula_motivo": clausula_motivo or "",
             "clausula_dt": _iso(clausula_dt) if clausula_dt else "",
+            # EVENTO ATUAL do Histórico de Comunicações (mandatárias): onde o
+            # instrumento está de fato na análise, + situação e considerações.
+            **_evento_atual(row[16]),
             "fonte": "voluntaria",
             "fonte_ref": row[1],
         })
