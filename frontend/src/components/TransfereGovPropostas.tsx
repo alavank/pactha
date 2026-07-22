@@ -40,6 +40,7 @@ interface Proposta {
   valor_repasse?: number | null;
   valor_contrapartida?: number | null;
   situacao_contratacao_detalhe?: Record<string, string | null> | null;
+  processo_execucao_qtd?: number | null;
   historico_comunicacoes?: Record<string, string>[];
   documentos_quadro_resumo?: Record<string, string>[];
   historico_atualizado_em?: string | null;
@@ -339,6 +340,15 @@ export default function TransfereGovPropostas({
                           Detalhar
                         </button>
                       )}
+                      {p.processo_execucao_qtd === 0 && (p.situacao_contratacao || "").toLowerCase().includes("normal") && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); abrirDetalhe(p.numero_proposta); }}
+                          className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded bg-error/15 text-error text-[9px] font-semibold"
+                          title="Contratação Normal sem processo de execução/licitação registrado (Execução Convenente)"
+                        >
+                          ⚠ sem processo
+                        </button>
+                      )}
                     </div>
                   </TableCell>
                   <TableCell>{p.dt_inicio_vigencia || "-"}</TableCell>
@@ -455,6 +465,25 @@ export default function TransfereGovPropostas({
                           <Field label="Data Prevista" value={detalhe.clausula_suspensiva_dt_prevista || "-"} />
                         </div>
                       </div>
+                    )}
+                    {/* Processo de Execução (Licitações) — só p/ contratação Normal.
+                        0 = convênio Normal sem processo iniciado (flag, igual à cláusula). */}
+                    {detalhe.processo_execucao_qtd != null && (detalhe.situacao_contratacao || "").toLowerCase().includes("normal") && (
+                      detalhe.processo_execucao_qtd === 0 ? (
+                        <div className="mt-3 rounded border-l-4 border-error bg-error/15 p-3">
+                          <div className="text-xs font-semibold text-error">⚠ Processo de Execução: NENHUM registro</div>
+                          <div className="text-xs text-base-content/70 mt-1">
+                            Contratação Normal, mas sem licitação/processo de execução registrado no TransfereGov
+                            (Execução Convenente → Processo de Execução).
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="mt-3 rounded border-l-4 border-success bg-success/15 p-3">
+                          <div className="text-xs font-semibold text-success">
+                            Processo de Execução: {detalhe.processo_execucao_qtd} registro(s)
+                          </div>
+                        </div>
+                      )
                     )}
                   </Section>
                 )}
