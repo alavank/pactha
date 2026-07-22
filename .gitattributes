@@ -1,0 +1,3 @@
+# Scripts e Dockerfile do scraper rodam em Linux (Coolify): LF obrigatorio
+backend/reaper.sh text eol=lf
+backend/Dockerfile.scraper text eol=lf
