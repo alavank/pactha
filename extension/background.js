@@ -10,7 +10,14 @@
 //   3) KEEP-ALIVE (chrome.alarms): a cada 12 minutos, faz HEAD em uma URL leve
 //      do servidor alvo pra evitar session timeout no JEE (~20-30min inatividade).
 
-const DEFAULT_API = "https://pactha.alavank.com.br/api";
+// Ambiente novo (Coolify). O dominio antigo (pactha.alavank.com.br) nao resolve
+// mais. Cada tenant tem sua propria API — configure a URL no popup:
+//   freitas -> https://pactha-api-54-232-208-118.sslip.io/api
+//   trust   -> https://pactha-trust-54-232-208-118.sslip.io/api
+// IMPORTANTE: qualquer dominio usado aqui precisa estar em host_permissions no
+// manifest.json, senao o Chrome bloqueia o fetch antes de sair (MV3) e a captura
+// falha sem nunca chegar no servidor.
+const DEFAULT_API = "https://pactha-api-54-232-208-118.sslip.io/api";
 
 // Mapeamento host → automation_key + URL de keep-alive
 const TARGETS = [
@@ -80,10 +87,27 @@ function getRegistrableDomain(host) {
   return parts.slice(-2).join(".");
 }
 
+// Dominios que sairam do ar. Uma config salva neles vence o DEFAULT_API (que so
+// vale quando nao ha nada gravado), entao trocar a constante nao basta: quem ja
+// usava a extensao continuaria apontando para o endereco morto. Reescrevemos.
+const LEGACY_API_HOSTS = ["pactha.alavank.com.br"];
+
+function migrarApiLegado(api) {
+  if (api && LEGACY_API_HOSTS.some((h) => api.includes(h))) {
+    console.log(`[PACTHA] API URL antiga (${api}) migrada para ${DEFAULT_API}`);
+    return DEFAULT_API;
+  }
+  return api;
+}
+
 async function getConfig() {
   const data = await chrome.storage.local.get(["pactha_api", "pactha_token", "pactha_municipio_id", "pactha_auto_enabled"]);
+  const apiMigrada = migrarApiLegado(data.pactha_api || DEFAULT_API);
+  if (data.pactha_api && apiMigrada !== data.pactha_api) {
+    await chrome.storage.local.set({ pactha_api: apiMigrada });
+  }
   return {
-    api: data.pactha_api || DEFAULT_API,
+    api: apiMigrada,
     token: data.pactha_token || "",
     municipio_id: parseInt(data.pactha_municipio_id || "0", 10),
     auto_enabled: data.pactha_auto_enabled !== false, // default ON
@@ -172,7 +196,9 @@ async function capture(host, reason) {
   try {
     // Token longevo (service token, prefixo 'pactha_') vai como X-Service-Token
     // — NAO expira em 60min como o JWT. JWT antigo ainda funciona via Bearer.
-    const isServiceToken = cfg.token.startsWith("pactha_");
+    // Aceita os dois prefixos: tokens antigos usavam 'pacta_' (sem H) e cairiam
+    // no caminho do Bearer/JWT, resultando em 401 "token invalido".
+    const isServiceToken = cfg.token.startsWith("pactha_") || cfg.token.startsWith("pacta_");
     const authHeaders = isServiceToken
       ? { "X-Service-Token": cfg.token }
       : { Authorization: `Bearer ${cfg.token}` };
