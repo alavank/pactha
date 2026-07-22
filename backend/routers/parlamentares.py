@@ -26,6 +26,11 @@ from models.user import User
 router = APIRouter(prefix="/api/parlamentares", tags=["parlamentares"])
 
 
+class _SkipPlanoAcao(Exception):
+    """Sentinela p/ pular o fetch AO VIVO do RP9 quando incluir_plano_acao=False.
+    Capturado pelo `except Exception` que ja envolve o bloco (degradacao silenciosa)."""
+
+
 def _norm(s: str) -> str:
     """Normaliza p/ chave de agrupamento: uppercase + sem acentos + 1 espaco."""
     if not s:
@@ -70,6 +75,21 @@ async def listar(
     """
     ensure_municipio_access(current, municipio_id)
     ensure_tela(current, "parlamentares")
+    return await aggregate_parlamentares(db, municipio_id=municipio_id, q=q, ano=ano)
+
+
+async def aggregate_parlamentares(
+    db: AsyncSession,
+    municipio_id: Optional[int] = None,
+    q: Optional[str] = None,
+    ano: Optional[int] = None,
+    incluir_plano_acao: bool = True,
+) -> dict:
+    """Nucleo da agregacao cross-fonte de parlamentares, SEM gate de auth.
+
+    Reusado pelo endpoint /api/parlamentares (apos ensure_tela) e pelo Painel
+    Executivo do prefeito (gated so por municipio). incluir_plano_acao=False pula
+    o fetch AO VIVO do RP9 federal (mais rapido, p/ telas snappy)."""
     by_norm: dict[str, dict] = defaultdict(lambda: {
         "nome_normalizado": "",
         "nome_display": "",
@@ -207,6 +227,8 @@ async def listar(
     # O autor vem embutido em codigoEmendaFormatado ('<codigo>-<Nome>').
     # Degrada em silencio se a API cair — nao pode derrubar a tela.
     try:
+        if not incluir_plano_acao:
+            raise _SkipPlanoAcao()
         from routers.transferegov import _fetch_listagem
         muns_sql = "SELECT id, nome, uf FROM municipios WHERE active = true"
         mparams: dict = {}

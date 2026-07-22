@@ -20,3 +20,4 @@ beautifulsoup4>=4.12.0
 reportlab>=4.2.0
 python-docx>=1.1.0  # Geracao de Documentos (export DOCX)
 openpyxl>=3.1.0  # leitura de .xlsx no acordofes_ingest (estava faltando)
+pywebpush>=1.14.0  # Push web (VAPID) do Painel Executivo do prefeito

@@ -76,6 +76,12 @@ async def situacao(
     """Situacao do municipio no CAUC (regularidade fiscal federal)."""
     ensure_municipio_access(current, municipio_id)
     ensure_tela(current, "cauc")
+    return await fetch_cauc_situacao(db, municipio_id)
+
+
+async def fetch_cauc_situacao(db: AsyncSession, municipio_id: int) -> dict:
+    """Nucleo da consulta CAUC, SEM gate de auth. Reusado pelo endpoint /api/cauc
+    (apos ensure_tela) e pelo Painel Executivo do prefeito (gated so por municipio)."""
     row = (await db.execute(text("""
         SELECT nome, uf, ibge, cod_siafi, populacao, data_pesquisa,
                itens, pendencias, pendencias_codigos, regular, atualizado_em

@@ -77,6 +77,8 @@ MIGRATION_FILES = [
     "add_control_token_kind.sql",
     # SSO tecnico: uso unico REAL do token (compartilhado entre workers)
     "add_sso_used_jti.sql",
+    # Painel Executivo do prefeito: push subscriptions + preferencias + dedupe + cache IA
+    "add_painel_push.sql",
 ]
 
 
