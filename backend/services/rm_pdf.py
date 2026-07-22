@@ -207,6 +207,20 @@ def _evento_destaque(item: dict) -> str | None:
     return "<br/>".join(partes)
 
 
+def _processo_execucao_destaque(item: dict) -> str | None:
+    """Destaque p/ convênio com contratação Normal e o Processo de Execução
+    (Licitações): 0 = sem processo/licitação iniciado (flag de monitoramento);
+    N = registros. None quando não se aplica (não-Normal ou não capturado)."""
+    qtd = item.get("processo_execucao_qtd")
+    sc = (item.get("situacao_contratacao") or "").lower()
+    if qtd is None or "normal" not in sc:
+        return None
+    if qtd == 0:
+        return ("⚠ <b>Processo de Execução:</b> nenhum registro "
+                "(contratação Normal, sem licitação/processo de execução iniciado)")
+    return f"<b>Processo de Execução:</b> {qtd} registro(s) de licitação/processo"
+
+
 def _escape(s: str) -> str:
     """Escape p/ Paragraph: &, <, > viram entidades."""
     if not isinstance(s, str):
@@ -266,6 +280,10 @@ def gerar_pdf(meta: dict, conteudo: dict, municipio_nome: str) -> bytes:
                     if destaque:
                         bloco.append(Spacer(1, 2))
                         bloco.append(Paragraph(destaque, s["clausula"]))
+                    destaque_pe = _processo_execucao_destaque(item)
+                    if destaque_pe:
+                        bloco.append(Spacer(1, 2))
+                        bloco.append(Paragraph(destaque_pe, s["clausula"]))
                     destaque_ev = _evento_destaque(item)
                     if destaque_ev:
                         bloco.append(Spacer(1, 2))

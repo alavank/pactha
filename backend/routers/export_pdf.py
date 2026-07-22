@@ -391,7 +391,7 @@ async def export_parlamentares_pdf(
             det = await _detalhe(nome_normalizado=p["nome_display"],
                                  municipio_id=municipio_id, ano=ano, db=db, current=current)
         except HTTPException:
-            det = {"sigcon": [], "voluntarias": [], "emendas": [], "plano_acao": []}
+            det = {"sigcon": [], "voluntarias": [], "emendas": [], "plano_acao": [], "pac": [], "fns": []}
 
         pf = p.get("por_fonte", {})
         muns = ", ".join(p.get("municipios", []))
@@ -400,7 +400,8 @@ async def export_parlamentares_pdf(
             Paragraph(
                 f"{p['total_lancamentos']} lancamento(s) · Total {_br(p['valor_total'])} · "
                 f"SIGCON: {pf.get('sigcon', 0)} · TransfereGov: {pf.get('voluntaria', 0)} · "
-                f"Emendas: {pf.get('emenda', 0)} · Transf. Especial: {pf.get('plano_acao', 0)}"
+                f"Emendas: {pf.get('emenda', 0)} · Transf. Especial: {pf.get('plano_acao', 0)} · "
+                f"PAC: {pf.get('pac', 0)} · FNS: {pf.get('fns', 0)}"
                 + (f" · Municipios: {muns}" if muns else ""),
                 meta_style),
         ]
@@ -461,7 +462,32 @@ async def export_parlamentares_pdf(
                 ["Municipio", "Plano", "Emenda", "Situacao", "Custeio", "Investim.", "Valor Total", "Objeto/Politica"],
                 rows, [24, 26, 26, 22, 26, 26, 26, 101]))
 
-        if not (sig or vol or em or pa):
+        pac = det.get("pac", [])
+        if pac:
+            rows = [[
+                _pc(x.get("municipio_nome"), 30), _pc(x.get("numero_proposta"), 20),
+                _pc(x.get("programa"), 120), _pc(x.get("situacao"), 40),
+                _pc(_br(x.get("valor_total"))), _pc(x.get("emenda_parlamentar"), 40),
+            ] for x in pac]
+            story.append(Paragraph(f"Selecao PAC / Novo PAC — {len(pac)} proposta(s)", sub_style))
+            story.append(_sec_table(
+                ["Municipio", "Nº Proposta", "Programa", "Situacao", "Valor Total", "Emenda"],
+                rows, [26, 24, 90, 40, 28, 45]))
+
+        fns = det.get("fns", [])
+        if fns:
+            rows = [[
+                _pc(x.get("municipio_nome"), 30), _pc(x.get("numero"), 20),
+                _pc(x.get("orgao"), 40), _pc(x.get("situacao"), 40),
+                _pc(_br(x.get("valor_total"))), _pc(x.get("ano")),
+                _pc(x.get("objeto"), 500),
+            ] for x in fns]
+            story.append(Paragraph(f"FNS — Fundo Nacional de Saude (Federal) — {len(fns)} proposta(s)", sub_style))
+            story.append(_sec_table(
+                ["Municipio", "Nº Proposta", "Orgao", "Situacao", "Valor Total", "Ano", "Objeto"],
+                rows, [24, 24, 34, 34, 26, 14, 97]))
+
+        if not (sig or vol or em or pa or pac or fns):
             story.append(Paragraph("Sem lancamentos detalhados.", meta_style))
         story.append(Spacer(1, 6))
 

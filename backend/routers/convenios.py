@@ -19,12 +19,26 @@ import re
 router = APIRouter(prefix="/api/convenios", tags=["convenios"])
 
 
+def _dias_restantes_sigcon(c: ConvenioEstadual, computed):
+    """'Dias Restantes de Vigencia' — usa o valor OFICIAL do SIGCON quando existe
+    (raw_data.dias_restantes_str), que conta contra a vigencia EFETIVA (dias de
+    vigencia a partir do inicio), e NAO contra o fim formal exibido — por isso o
+    calculo (dt_vigencia_atual - hoje) diverge (ex.: SIGCON=50 vs calculo=58).
+    Fallback: valor computado (CKAN/sem detalhe SIGCON)."""
+    raw = c.raw_data if isinstance(c.raw_data, dict) else {}
+    s = raw.get("dias_restantes_str")
+    if s is not None and str(s).strip().lstrip("-").isdigit():
+        return int(str(s).strip())
+    return computed
+
+
 def estadual_to_response(c: ConvenioEstadual) -> ConvenioResponse:
     dias = None
     if c.dt_vigencia_atual:
         dias = (c.dt_vigencia_atual - date.today()).days
     elif c.dt_vigencia_final:
         dias = (c.dt_vigencia_final - date.today()).days
+    dias = _dias_restantes_sigcon(c, dias)
     raw = c.raw_data if isinstance(c.raw_data, dict) else {}
     nr_proposta = raw.get("nr_proposta")
     nr_instrumento = raw.get("nr_instrumento")
@@ -510,6 +524,8 @@ async def get_convenio_estadual_detail(
     if c.dt_vigencia_atual or c.dt_vigencia_final:
         dt_fim = c.dt_vigencia_atual or c.dt_vigencia_final
         dias_rest = (dt_fim - date.today()).days
+    dias_rest = _dias_restantes_sigcon(c, dias_rest)  # valor oficial do SIGCON quando houver
+    if dias_rest is not None:
         if dias_rest < -90:
             dias_rest_label = "VENCIDO +90 DIAS - PRESTACAO DE CONTAS"
         elif dias_rest < 0:

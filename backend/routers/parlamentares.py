@@ -46,6 +46,13 @@ def _money(v) -> float:
     except (TypeError, ValueError): return 0.0
 
 
+def _fns_label(mun_nome: str) -> str:
+    """Rotulo do 'parlamentar' para lancamentos FNS: o Fundo Municipal de Saude
+    do municipio. O autor da emenda de saude nao vem na base coletada, entao o
+    FMS/municipio entra como proponente (mesma logica do PAC)."""
+    return f"FUNDO MUNICIPAL DE SAÚDE — {mun_nome}"
+
+
 @router.get("")
 async def listar(
     municipio_id: Optional[int] = Query(None, description="Filtra um municipio (None=todos)"),
@@ -90,7 +97,7 @@ async def aggregate_parlamentares(
         "total_lancamentos": 0,
         "valor_total": 0.0,
         "municipios": set(),
-        "por_fonte": {"sigcon": 0, "voluntaria": 0, "emenda": 0, "plano_acao": 0, "pac": 0},
+        "por_fonte": {"sigcon": 0, "voluntaria": 0, "emenda": 0, "plano_acao": 0, "pac": 0, "fns": 0},
     })
 
     where_extra = ""
@@ -288,6 +295,36 @@ async def aggregate_parlamentares(
             if row[2]:
                 entry["municipios"].add(row[2])
             entry["por_fonte"]["pac"] += 1
+    except Exception:
+        pass
+
+    # 6) FNS (Fundo Municipal de Saude) — o autor da emenda de saude NAO vem na
+    #    base coletada (0 parlamentar em todas as propostas), entao o FMS do
+    #    municipio entra como "parlamentar" (mesma logica do PAC). Fonte:
+    #    convenios_estadual com fonte ILIKE 'FNS' (nao capturado pela fonte #1,
+    #    que exige parlamentar top-level no raw_data — sempre nulo no FNS).
+    sql_fns = f"""
+        SELECT (SELECT nome FROM municipios WHERE id=convenios_estadual.municipio_id) AS mun_nome,
+               COALESCE(valor_total, valor_concedente, 0) AS valor
+        FROM convenios_estadual
+        WHERE fonte ILIKE '%FNS%'
+        {where_extra}{ano_sig}
+    """
+    try:
+        for row in (await db.execute(text(sql_fns), params)).fetchall():
+            mun_nome = row[0]
+            if not mun_nome:
+                continue
+            nm = _fns_label(mun_nome)
+            key = _norm(nm)
+            if not key:
+                continue
+            entry = by_norm[key]
+            entry["nome_variants"].add(nm)
+            entry["total_lancamentos"] += 1
+            entry["valor_total"] += _money(row[1])
+            entry["municipios"].add(mun_nome)
+            entry["por_fonte"]["fns"] += 1
     except Exception:
         pass
 
@@ -497,7 +534,45 @@ async def detalhe(
     except Exception:
         pass
 
-    if not (sigcon or voluntarias or emendas or plano_acao or pac_list):
+    # FNS — Fundo Municipal de Saude do municipio como "parlamentar" (mesma
+    # logica do PAC; o autor da emenda de saude nao vem na base). Casa por
+    # comparacao normalizada do rotulo FMS (evita problema de acento no ILIKE).
+    fns_list: list = []
+    try:
+        alvo = _norm(nome_param)
+        fns_sql = """
+            SELECT c.id, c.municipio_id,
+                   (SELECT nome FROM municipios WHERE id=c.municipio_id) AS mun,
+                   c.nr_sigcon, c.nr_proposta, c.objeto, c.situacao,
+                   COALESCE(c.valor_total, c.valor_concedente, 0) AS valor,
+                   c.orgao_concedente, c.ano,
+                   c.dt_vigencia_inicial, c.dt_vigencia_final
+            FROM convenios_estadual c
+            WHERE c.fonte ILIKE '%FNS%'
+        """
+        fns_params: dict = {}
+        if municipio_id:
+            fns_sql += " AND c.municipio_id = :mun"; fns_params["mun"] = municipio_id
+        if ano:
+            fns_sql += " AND c.ano = :ano"; fns_params["ano"] = ano
+        fns_sql += " ORDER BY valor DESC NULLS LAST"
+        for r in (await db.execute(text(fns_sql), fns_params)).fetchall():
+            mun_nome = r[2] or ""
+            label_key = _norm(_fns_label(mun_nome))
+            if alvo and alvo not in label_key and label_key not in alvo:
+                continue
+            fns_list.append({
+                "id": r[0], "municipio_id": r[1], "municipio_nome": r[2],
+                "numero": r[3] or r[4], "objeto": r[5], "situacao": r[6],
+                "valor_total": _money(r[7]), "orgao": r[8], "ano": r[9],
+                "dt_vigencia_inicial": str(r[10]) if r[10] else None,
+                "dt_vigencia_final": str(r[11]) if r[11] else None,
+                "proponente": _fns_label(mun_nome), "fonte": "fns",
+            })
+    except Exception:
+        pass
+
+    if not (sigcon or voluntarias or emendas or plano_acao or pac_list or fns_list):
         raise HTTPException(404, f"Nenhum lancamento encontrado para '{nome_param}'")
 
     return {
@@ -507,17 +582,20 @@ async def detalhe(
         "emendas": emendas,
         "plano_acao": plano_acao,
         "pac": pac_list,
+        "fns": fns_list,
         "total_sigcon": len(sigcon),
         "total_voluntarias": len(voluntarias),
         "total_emendas": len(emendas),
         "total_plano_acao": len(plano_acao),
         "total_pac": len(pac_list),
-        "total_geral": len(sigcon) + len(voluntarias) + len(emendas) + len(plano_acao) + len(pac_list),
+        "total_fns": len(fns_list),
+        "total_geral": len(sigcon) + len(voluntarias) + len(emendas) + len(plano_acao) + len(pac_list) + len(fns_list),
         "valor_total": (
             sum(x["valor_total"] for x in sigcon)
             + sum(x["valor_global"] for x in voluntarias)
             + sum(x["valor_indicacao"] for x in emendas)
             + sum(x["valor_total"] for x in plano_acao)
             + sum(x["valor_total"] for x in pac_list)
+            + sum(x["valor_total"] for x in fns_list)
         ),
     }
