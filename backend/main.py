@@ -82,7 +82,12 @@ app.add_middleware(
     allow_origin_regex=allow_regex,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "X-CSRF-Token"],
+    # X-Service-Token: header proprio da API (services/service_auth.py), usado pela
+    # extensao de captura de sessao. Sem ele na lista, o preflight do navegador
+    # falha e o POST nunca sai — o erro aparece como "Failed to fetch" no cliente
+    # e NADA e registrado no servidor, o que torna o diagnostico bem dificil.
+    allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "X-CSRF-Token",
+                   "X-Service-Token"],
 )
 app.add_middleware(SecurityHeadersMiddleware)
 
