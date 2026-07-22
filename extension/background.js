@@ -87,10 +87,27 @@ function getRegistrableDomain(host) {
   return parts.slice(-2).join(".");
 }
 
+// Dominios que sairam do ar. Uma config salva neles vence o DEFAULT_API (que so
+// vale quando nao ha nada gravado), entao trocar a constante nao basta: quem ja
+// usava a extensao continuaria apontando para o endereco morto. Reescrevemos.
+const LEGACY_API_HOSTS = ["pactha.alavank.com.br"];
+
+function migrarApiLegado(api) {
+  if (api && LEGACY_API_HOSTS.some((h) => api.includes(h))) {
+    console.log(`[PACTHA] API URL antiga (${api}) migrada para ${DEFAULT_API}`);
+    return DEFAULT_API;
+  }
+  return api;
+}
+
 async function getConfig() {
   const data = await chrome.storage.local.get(["pactha_api", "pactha_token", "pactha_municipio_id", "pactha_auto_enabled"]);
+  const apiMigrada = migrarApiLegado(data.pactha_api || DEFAULT_API);
+  if (data.pactha_api && apiMigrada !== data.pactha_api) {
+    await chrome.storage.local.set({ pactha_api: apiMigrada });
+  }
   return {
-    api: data.pactha_api || DEFAULT_API,
+    api: apiMigrada,
     token: data.pactha_token || "",
     municipio_id: parseInt(data.pactha_municipio_id || "0", 10),
     auto_enabled: data.pactha_auto_enabled !== false, // default ON

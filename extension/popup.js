@@ -5,12 +5,24 @@ const DEFAULT_API = "https://pactha-api-54-232-208-118.sslip.io/api";
 
 const $ = (id) => document.getElementById(id);
 
+// Ver nota em background.js: config salva no dominio morto vence o DEFAULT_API,
+// entao reescrevemos aqui tambem (o popup pode abrir antes do service worker).
+const LEGACY_API_HOSTS = ["pactha.alavank.com.br"];
+
+function migrarApiLegado(api) {
+  if (api && LEGACY_API_HOSTS.some((h) => api.includes(h))) {
+    chrome.storage.local.set({ pactha_api: DEFAULT_API });
+    return DEFAULT_API;
+  }
+  return api;
+}
+
 async function getConfig() {
   return new Promise((res) => {
     chrome.storage.local.get(
       ["pactha_api", "pactha_token", "pactha_municipio_id", "pactha_auto_enabled", "pactha_last_capture"],
       (data) => res({
-        api: data.pactha_api || DEFAULT_API,
+        api: migrarApiLegado(data.pactha_api || DEFAULT_API),
         token: data.pactha_token || "",
         municipio_id: data.pactha_municipio_id || "6",
         auto_enabled: data.pactha_auto_enabled !== false,
@@ -175,6 +187,11 @@ async function init() {
   $("domain-info").innerHTML = host
     ? `<strong>Domínio atual:</strong> ${host}`
     : "Nenhum domínio detectado";
+
+  // Mostra para onde a captura vai de fato. Sem isso, uma config antiga salva
+  // apontando para um host fora do host_permissions falha silenciosamente (o
+  // Chrome bloqueia o fetch) e nao ha como diagnosticar pela interface.
+  $("api-info").textContent = `API: ${cfg.api}${cfg.token ? "" : "  (sem token configurado)"}`;
 
   // Auto-detect select baseado no domínio
   if (host) {
