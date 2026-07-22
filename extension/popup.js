@@ -126,7 +126,8 @@ async function captureManual() {
     domain_capturado: host,
   };
   try {
-    const isServiceToken = cfg.token.startsWith("pactha_");
+    // Ver nota em background.js: aceita 'pactha_' e o antigo 'pacta_'.
+    const isServiceToken = cfg.token.startsWith("pactha_") || cfg.token.startsWith("pacta_");
     const authHeaders = isServiceToken
       ? { "X-Service-Token": cfg.token }
       : { Authorization: `Bearer ${cfg.token}` };

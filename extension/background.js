@@ -196,7 +196,9 @@ async function capture(host, reason) {
   try {
     // Token longevo (service token, prefixo 'pactha_') vai como X-Service-Token
     // — NAO expira em 60min como o JWT. JWT antigo ainda funciona via Bearer.
-    const isServiceToken = cfg.token.startsWith("pactha_");
+    // Aceita os dois prefixos: tokens antigos usavam 'pacta_' (sem H) e cairiam
+    // no caminho do Bearer/JWT, resultando em 401 "token invalido".
+    const isServiceToken = cfg.token.startsWith("pactha_") || cfg.token.startsWith("pacta_");
     const authHeaders = isServiceToken
       ? { "X-Service-Token": cfg.token }
       : { Authorization: `Bearer ${cfg.token}` };
