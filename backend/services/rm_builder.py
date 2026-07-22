@@ -80,12 +80,16 @@ def _fed_status(situacao: str | None) -> str:
       - 'ativa'     -> pré-empenho (análise/aprovada/complementação/ciente/pendente)
     """
     s = (situacao or "").strip().lower()
-    if any(x in s for x in ("rejeitad", "indeferid", "anulad", "rescind", "legado")):
+    if any(x in s for x in ("rejeitad", "indeferid", "anulad", "rescind", "cancelad", "legado")):
         return "dead"
-    if ("presta" in s and "conta" in s) or "conclu" in s or s == "pago" or "pagamento" in s or "finaliz" in s:
+    if ("presta" in s and "conta" in s) or "conclu" in s or "encerr" in s or s == "pago" or "pagamento" in s or "finaliz" in s:
         return "paga"
     if "execu" in s or "empenhad" in s:
         return "empenhada"
+    # Instrumento ATIVO (assinado / em vigor) — avançou -> permanece em qualquer
+    # ano (convênio em curso), mesmo sem empenho ainda.
+    if "vigor" in s or "assinad" in s:
+        return "vigente"
     return "ativa"
 
 
@@ -95,14 +99,18 @@ def _fed_empenhada(situacao: str | None) -> bool:
 
 
 def _fed_retem(ano_prop: int | None, ano_emissao: int, situacao: str | None) -> bool:
-    """Regra de permanência no RM, por ANO DE EMISSÃO:
-      - empenhada/paga -> sempre permanece (qualquer ano)
-      - dead           -> permanece (vai p/ seção Rejeitados à parte)
-      - ativa (pré-empenho) -> só permanece se for do ano de emissão (ou posterior)
+    """Regra de permanência no RM, por ANO DE REFERÊNCIA (ano_emissao):
+      - empenhada/paga -> sempre permanece (avançou; convênio em curso em qualquer ano)
+      - dead (rejeitada/indeferida/anulada) -> só permanece no SEU próprio ano de
+        referência; NÃO carrega p/ os relatórios dos demais anos (as que não foram
+        para frente naquele ano não entram nos outros)
+      - ativa (pré-empenho) -> só permanece se for do ano de referência (ou posterior)
     """
     st = _fed_status(situacao)
-    if st in ("empenhada", "paga", "dead"):
+    if st in ("empenhada", "paga", "vigente"):
         return True
+    if st == "dead":
+        return ano_prop is not None and ano_prop == ano_emissao
     return ano_prop is not None and ano_prop >= ano_emissao
 
 
@@ -165,8 +173,16 @@ def _federal_destino(situacao: str | None) -> tuple[int, str]:
 
 
 def _ano_de(*vals) -> int | None:
-    """Extrai um ano (YYYY) de 'NNNNNN/2025', '202541760003-...', int, etc."""
+    """Extrai o ANO (YYYY) de 'NNNNNN/2025', '202541760003-...', int, etc.
+
+    PEGADINHA: a regex ingênua (20\\d{2}) pegava '2097' de '042097/2015' (o
+    miolo do número, antes do ano real após a barra) -> ano futuro absurdo que
+    driblava o filtro do RM. Agora: 1) prioriza o ano APÓS a barra (formato
+    proposta 'NNNNNN/AAAA'); 2) senão, o 1º AAAA PLAUSÍVEL (<= ano atual+2),
+    descartando anos impossíveis vindos do meio do número."""
     import re as _re
+    from datetime import date as _date
+    lim = _date.today().year + 2
     for v in vals:
         if v is None:
             continue
@@ -174,9 +190,14 @@ def _ano_de(*vals) -> int | None:
             if 2000 <= v <= 2100:
                 return v
             continue
-        m = _re.search(r"(20\d{2})", str(v))
+        s = str(v)
+        m = _re.search(r"/\s*((?:19|20)\d{2})\b", s)  # ano após a barra tem prioridade
         if m:
             return int(m.group(1))
+        for mm in _re.finditer(r"(?:19|20)\d{2}", s):  # senão, 1º ano plausível
+            y = int(mm.group(0))
+            if 2000 <= y <= lim:
+                return y
     return None
 
 
@@ -351,6 +372,13 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             continue
 
         # === SIGCON-MG (estadual) -> PARTE 2 ===
+        # Mesma regra de ANO do federal: as que NAO foram para frente
+        # (cadastramento / analise celebracao / cancelada) de anos anteriores NAO
+        # entram no relatorio do ano de referencia; avancadas (em execucao / em
+        # vigor / empenhada) e concluidas (encerrada / prestacao) permanecem.
+        ano_est = c.ano or _ano_de(nr_instr, nr_proposta, c.nr_sigcon)
+        if not _fed_retem(ano_est, ano_emissao, c.situacao):
+            continue
         secao = _SEC_EST
         orgao = (c.orgao_concedente or "Outros - SIGCON").strip() + " - SIGCON"
         parte = _classifica_parte("estadual", c.situacao, dt_fim)
@@ -390,7 +418,7 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
                dt_fim_vigencia, valor_global, valor_repasse, valor_contrapartida,
                situacao_contratacao, clausula_suspensiva_dt_prevista,
                clausula_suspensiva_motivo, parlamentar, situacao_contratacao_detalhe,
-               detalhe->>'Empenhado', historico_comunicacoes
+               detalhe->>'Empenhado', processo_execucao_qtd, historico_comunicacoes
         FROM transferegov_propostas WHERE municipio_id = :m
     """), {"m": municipio_id})
     for row in vol.fetchall():
@@ -433,9 +461,12 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             "situacao_contratacao": situacao_contr or "",
             "clausula_motivo": clausula_motivo or "",
             "clausula_dt": _iso(clausula_dt) if clausula_dt else "",
+            # Processo de Execução (Licitações): só relevante p/ contratação Normal.
+            # 0 = Normal SEM processo/licitação registrado (flag); N>0 = tem; None = n/c.
+            "processo_execucao_qtd": row[16],
             # EVENTO ATUAL do Histórico de Comunicações (mandatárias): onde o
             # instrumento está de fato na análise, + situação e considerações.
-            **_evento_atual(row[16]),
+            **_evento_atual(row[17]),
             "fonte": "voluntaria",
             "fonte_ref": row[1],
         })

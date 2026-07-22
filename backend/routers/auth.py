@@ -225,12 +225,21 @@ async def register(
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Apenas admins podem registrar usuarios")
 
-    existing = await db.execute(select(User).where(User.email == req.email))
+    # Normaliza o email (case/espacos): sem isso "Admin@Pactha.com.br" nao colide
+    # com a conta principal e cria uma segunda conta que se passa por ela.
+    # Mesmo tratamento que create_user (routers/users.py) ja faz.
+    email = (req.email or "").strip().lower()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="Email invalido")
+    if req.role not in ("admin", "analyst", "user"):
+        raise HTTPException(status_code=400, detail="Role invalida")
+
+    existing = await db.execute(select(User).where(User.email == email))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Email ja cadastrado")
 
     user = User(
-        email=req.email,
+        email=email,
         name=req.name,
         password_hash=hash_password(req.password),
         role=req.role,
@@ -242,6 +251,6 @@ async def register(
     await log_event(
         db, action="user.create", user=current_user, request=request,
         target_type="user", target_id=user.id,
-        details={"new_email": req.email, "role": req.role},
+        details={"new_email": email, "role": req.role},
     )
     return UserResponse.model_validate(user)

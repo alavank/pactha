@@ -4,7 +4,7 @@ import React, { useEffect, useState, useCallback, Suspense } from "react";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 import {
   UserCircle2, Loader2, Search, ChevronDown, ChevronRight,
-  Landmark, Building2, FileText, Eraser, Coins,
+  Landmark, Building2, FileText, Eraser, Coins, HeartPulse,
 } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,7 @@ interface ParlamentarItem {
   total_lancamentos: number;
   valor_total: number;
   municipios: string[];
-  por_fonte: { sigcon: number; voluntaria: number; emenda: number; plano_acao: number };
+  por_fonte: { sigcon: number; voluntaria: number; emenda: number; plano_acao: number; pac: number; fns: number };
 }
 
 interface DetalheSigcon {
@@ -73,16 +73,45 @@ interface DetalhePlanoAcao {
   valor_investimento: number;
 }
 
+interface DetalhePac {
+  id: number;
+  municipio_nome: string;
+  numero_proposta: string;
+  programa: string | null;
+  situacao: string | null;
+  valor_total: number;
+  emenda_parlamentar: string | null;
+  proponente: string | null;
+  objeto: string | null;
+}
+
+interface DetalheFns {
+  id: number;
+  municipio_nome: string;
+  numero: string | null;
+  objeto: string | null;
+  situacao: string | null;
+  valor_total: number;
+  orgao: string | null;
+  ano: number | null;
+  dt_vigencia_final: string | null;
+  proponente: string | null;
+}
+
 interface ParlamentarDetalhe {
   nome_consulta: string;
   sigcon: DetalheSigcon[];
   voluntarias: DetalheVoluntaria[];
   emendas: DetalheEmenda[];
   plano_acao: DetalhePlanoAcao[];
+  pac: DetalhePac[];
+  fns: DetalheFns[];
   total_sigcon: number;
   total_voluntarias: number;
   total_emendas: number;
   total_plano_acao: number;
+  total_pac: number;
+  total_fns: number;
   total_geral: number;
   valor_total: number;
 }
@@ -186,7 +215,8 @@ function ParlamentaresInner() {
         <p className="text-sm text-base-content/60 mt-1">
           Lista agregada dos parlamentares (deputados estaduais/federais e senadores)
           com lançamentos vinculados — convênios SIGCON-MG, propostas TransfereGov/SICONV,
-          emendas estaduais e Transferência Especial / Plano de Ação (RP9). Clique para ver os lançamentos.
+          emendas estaduais, Transferência Especial / Plano de Ação (RP9), Seleção PAC e
+          FNS (Fundo Municipal de Saúde, agrupado pelo proponente). Clique para ver os lançamentos.
         </p>
       </div>
 
@@ -287,6 +317,12 @@ function ParlamentaresInner() {
                     )}
                     {p.por_fonte.plano_acao > 0 && (
                       <span className="text-info">Transf. Especial: {p.por_fonte.plano_acao}</span>
+                    )}
+                    {p.por_fonte.pac > 0 && (
+                      <span className="text-primary">PAC: {p.por_fonte.pac}</span>
+                    )}
+                    {p.por_fonte.fns > 0 && (
+                      <span className="text-error">FNS (Saúde): {p.por_fonte.fns}</span>
                     )}
                     {p.municipios.length > 0 && (
                       <>
@@ -409,6 +445,53 @@ function ParlamentaresInner() {
                                 <Td>{fmtMoney(pa.valor_total)}</Td>
                                 <Td className="max-w-[320px] whitespace-normal break-words leading-snug align-top" title={pa.objeto || ""}>
                                   {pa.objeto || "-"}
+                                </Td>
+                              </tr>
+                            ))}
+                          </Table>
+                        </Section>
+                      )}
+
+                      {/* Selecao PAC / Novo PAC */}
+                      {detail.pac && detail.pac.length > 0 && (
+                        <Section
+                          icon={<Landmark className="size-4 text-primary" />}
+                          title={`Seleção PAC / Novo PAC — ${detail.pac.length} proposta(s)`}
+                        >
+                          <Table headers={["Município", "Nº Proposta", "Programa", "Situação", "Valor Total", "Emenda"]}>
+                            {detail.pac.map((pc) => (
+                              <tr key={pc.id} className="even:bg-base-100">
+                                <Td>{pc.municipio_nome}</Td>
+                                <Td mono>{pc.numero_proposta}</Td>
+                                <Td className="max-w-[320px] whitespace-normal break-words leading-snug align-top" title={pc.programa || ""}>
+                                  {pc.programa || "-"}
+                                </Td>
+                                <Td className="text-xs">{pc.situacao || "-"}</Td>
+                                <Td>{fmtMoney(pc.valor_total)}</Td>
+                                <Td className="text-xs">{pc.emenda_parlamentar || "-"}</Td>
+                              </tr>
+                            ))}
+                          </Table>
+                        </Section>
+                      )}
+
+                      {/* FNS — Fundo Municipal de Saúde */}
+                      {detail.fns && detail.fns.length > 0 && (
+                        <Section
+                          icon={<HeartPulse className="size-4 text-error" />}
+                          title={`FNS — Fundo Nacional de Saúde (Federal) — ${detail.fns.length} proposta(s)`}
+                        >
+                          <Table headers={["Município", "Nº Proposta", "Órgão", "Situação", "Valor Total", "Ano", "Objeto"]}>
+                            {detail.fns.map((f) => (
+                              <tr key={f.id} className="even:bg-base-100">
+                                <Td>{f.municipio_nome}</Td>
+                                <Td mono>{f.numero || "-"}</Td>
+                                <Td className="text-xs">{f.orgao || "-"}</Td>
+                                <Td className="text-xs">{f.situacao || "-"}</Td>
+                                <Td>{fmtMoney(f.valor_total)}</Td>
+                                <Td>{f.ano || "-"}</Td>
+                                <Td className="max-w-[320px] whitespace-normal break-words leading-snug align-top" title={f.objeto || ""}>
+                                  {f.objeto || "-"}
                                 </Td>
                               </tr>
                             ))}

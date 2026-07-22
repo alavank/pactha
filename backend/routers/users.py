@@ -32,6 +32,23 @@ def _require_admin(user: User):
         raise HTTPException(403, "Apenas administradores podem gerenciar usuarios")
 
 
+# Conta principal do tenant. Sem a guarda abaixo, qualquer admin reseta a senha
+# dela para a padrao "1234" e entra no lugar do administrador principal.
+SUPER_ADMIN_EMAIL = "admin@pactha.com.br"
+
+
+def _is_super(user: User) -> bool:
+    return (getattr(user, "email", "") or "").strip().lower() == SUPER_ADMIN_EMAIL
+
+
+def _guard_target(current: User, target: User):
+    """Protege contas sensiveis contra quem nao pode altera-las."""
+    if _is_super(target) and not _is_super(current):
+        raise HTTPException(403, "Somente o administrador principal pode alterar essa conta")
+    if target.role == "admin" and current.role != "admin":
+        raise HTTPException(403, "Apenas administradores podem alterar contas admin")
+
+
 class CreateUserRequest(BaseModel):
     email: str
     name: str
@@ -158,6 +175,7 @@ async def reset_password(
     u = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
     if not u:
         raise HTTPException(404, "Usuario nao encontrado")
+    _guard_target(current, u)
     # Senha padrao "1234" - o usuario sera obrigado a troca-la no primeiro login
     senha = "1234"
     u.password_hash = hash_password(senha)
@@ -182,6 +200,7 @@ async def update_user(
     u = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
     if not u:
         raise HTTPException(404, "Usuario nao encontrado")
+    _guard_target(current, u)
     # Protecao: nao deixar o admin se auto-desativar nem se auto-rebaixar
     if req.active is False and u.id == current.id:
         raise HTTPException(400, "Voce nao pode desativar a si mesmo")

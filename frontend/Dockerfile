@@ -2,6 +2,8 @@
 # NEXT_PUBLIC_API_URL e inlined no bundle => precisa vir como build ARG (build-time).
 #   Coolify: Dockerfile Location = frontend/Dockerfile ; Base Directory = frontend
 #   Build arg: NEXT_PUBLIC_API_URL = https://pactha.alavank.com.br/api
+#   Build arg (opcional, co-branding): NEXT_PUBLIC_CLIENT_LOGO = /brasao-monte-siao.png
+#   Build arg (opcional, co-branding): NEXT_PUBLIC_CLIENT_SUBTITLE = Prefeitura de Monte Siao
 FROM node:20-slim AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
@@ -13,8 +15,13 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ARG NEXT_PUBLIC_API_URL
 ARG API_PROXY_TARGET
+# Co-branding por cliente (build-time): logo em public/ e subtitulo do login.
+ARG NEXT_PUBLIC_CLIENT_LOGO
+ARG NEXT_PUBLIC_CLIENT_SUBTITLE
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL \
     API_PROXY_TARGET=$API_PROXY_TARGET \
+    NEXT_PUBLIC_CLIENT_LOGO=$NEXT_PUBLIC_CLIENT_LOGO \
+    NEXT_PUBLIC_CLIENT_SUBTITLE=$NEXT_PUBLIC_CLIENT_SUBTITLE \
     NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
