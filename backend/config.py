@@ -20,6 +20,13 @@ class Settings(BaseSettings):
     CONTROL_TOKEN_BOOTSTRAP: str = ""    # raw injetado 1x no boot p/ semear o control token
     CONTROL_PLANE_ALLOWED_IPS: str = ""  # CSV opcional de IPs do Console (egress fixo)
 
+    # Painel Executivo do prefeito — push web (VAPID). Gerar 1x por instancia com
+    # web-push generate-vapid-keys (ou py_vapid). A publica tambem vai como build
+    # ARG NEXT_PUBLIC_VAPID_PUBLIC_KEY no app painel/.
+    VAPID_PUBLIC_KEY: str = ""
+    VAPID_PRIVATE_KEY: str = ""
+    VAPID_SUBJECT: str = "mailto:contato@pactha.com.br"
+
     class Config:
         env_file = "../.env"
         env_file_encoding = "utf-8"

@@ -31,6 +31,11 @@ COOKIE_NAME_ACCESS = "pactha_access"
 COOKIE_NAME_REFRESH = "pactha_refresh"
 COOKIE_NAME_CSRF = "pactha_csrf"
 
+# Perfis somente-leitura (ex.: prefeito no Painel Executivo). Nao editam NADA do
+# sistema operacional; so podem escrever nos endpoints proprios do Painel abaixo.
+READONLY_ROLES = {"prefeito", "viewer"}
+READONLY_WRITE_ALLOW = ("/api/painel/push", "/api/painel/preferencias")
+
 # Blacklist em memoria (suficiente para single-instance; em multi-replica usar Redis)
 _REVOKED_JTI: set[str] = set()
 
@@ -68,6 +73,13 @@ def create_access_token(data: dict) -> str:
 
 def create_refresh_token(user_id: int) -> str:
     return _encode({"sub": str(user_id), "typ": "refresh"}, REFRESH_TTL_DAYS * 24 * 60)
+
+
+def create_kiosk_token(user_id: int, dias: int = 365) -> str:
+    """Access token de LONGA duracao para a TV (quiosque do Painel). typ='access'
+    p/ o get_current_user aceitar sem mudanca; o usuario e um 'viewer' escopado ao
+    municipio (read-only pelo guard). Revogacao = desativar o usuario viewer."""
+    return _encode({"sub": str(user_id), "typ": "access", "role": "viewer", "kiosk": True}, dias * 24 * 60)
 
 
 def generate_csrf_token() -> str:
@@ -192,6 +204,15 @@ async def get_current_user(
     if user is None or not user.active:
         raise HTTPException(status_code=401, detail="Usuario nao encontrado")
     await load_user_scopes(db, user)
+
+    # Perfil somente-leitura (ex.: prefeito no Painel Executivo): barra qualquer
+    # metodo mutavel fora dos endpoints proprios do Painel. Defense-in-depth
+    # centralizado — TODO endpoint autenticado passa por aqui, entao vale mesmo
+    # que o prefeito descubra a URL de um endpoint de escrita do sistema.
+    if user.role in READONLY_ROLES and request.method in ("POST", "PUT", "PATCH", "DELETE"):
+        if not request.url.path.startswith(READONLY_WRITE_ALLOW):
+            raise HTTPException(status_code=403, detail="Perfil somente-leitura")
+
     return user
 
 

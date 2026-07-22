@@ -285,6 +285,17 @@ async def alertas_vigencia(
 ):
     ensure_municipio_access(current, municipio_id)
     ensure_tela(current, "convenios")
+    return await query_alertas_vigencia(db, municipio_id, dias, ano)
+
+
+async def query_alertas_vigencia(
+    db: AsyncSession,
+    municipio_id: Optional[int] = None,
+    dias: int = 120,
+    ano: Optional[int] = None,
+) -> list:
+    """Nucleo dos alertas de vigencia (<= `dias`), SEM gate de auth. Reusado pelo
+    endpoint /api/convenios/alertas e pelo Painel Executivo."""
     limite = date.today() + timedelta(days=dias)
     alertas = []
 
@@ -349,6 +360,17 @@ async def alertas_prestacao_contas(
     """Convenios vencidos ha mais de `dias` (default 90) -> prestacao de contas obrigatoria."""
     ensure_municipio_access(current, municipio_id)
     ensure_tela(current, "convenios")
+    return await query_prestacao_contas(db, municipio_id, dias, ano)
+
+
+async def query_prestacao_contas(
+    db: AsyncSession,
+    municipio_id: Optional[int] = None,
+    dias: int = 90,
+    ano: Optional[int] = None,
+) -> list:
+    """Nucleo da prestacao de contas vencida (+`dias`), SEM gate de auth. Reusado
+    pelo endpoint /api/convenios/prestacao-contas e pelo Painel Executivo."""
     corte = date.today() - timedelta(days=dias)
     alertas = []
 

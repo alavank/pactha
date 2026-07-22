@@ -9,7 +9,9 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 ALPHABET = string.ascii_letters + string.digits + "!@#$%&*"
-ROLES = ("admin", "analyst", "user")
+# prefeito/viewer = perfis SOMENTE-LEITURA (Painel Executivo). O guard read-only
+# em services/auth.py barra qualquer escrita fora dos endpoints do proprio Painel.
+ROLES = ("admin", "analyst", "user", "prefeito", "viewer")
 
 
 def gen_senha(n: int = 14) -> str:
