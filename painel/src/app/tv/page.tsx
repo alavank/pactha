@@ -6,7 +6,7 @@ import { DEMO_VISAO, DEMO_ALERTAS, DOCUMENTACOES, ehParlamentarValido } from "@/
 import { formatCurrencyShort, formatInt, diasLabel } from "@/lib/format";
 import { initials } from "@/components/ui";
 import { usePeriod, ANOS, labelAno } from "@/lib/period";
-import { resumoExecutivo, destaqueSaude } from "@/lib/narrative";
+import { resumoExecutivo, destaqueSaude, limparNarrativa } from "@/lib/narrative";
 
 // Wallboard 4K (kiosk) — denso e interativo (o PC ligado na TV opera os filtros).
 export default function Tv() {
@@ -163,7 +163,7 @@ export default function Tv() {
           <div className="inline-flex items-center font-bold uppercase rounded-full" style={{ fontSize: "0.85vw", letterSpacing: "0.05em", gap: "0.5vw", padding: "0.4vw 0.9vw", background: "var(--accent-soft)", color: "var(--accent-ink)", alignSelf: "flex-start" }}>
             <Sparkles style={{ width: "0.9vw", height: "0.9vw" }} /> Resumo do prefeito
           </div>
-          <p style={{ fontSize: "1.25vw", lineHeight: 1.5, marginTop: "0.8vw" }}>{narrativa || resumoExecutivo(v, ano)}</p>
+          <p style={{ fontSize: "1.25vw", lineHeight: 1.5, marginTop: "0.8vw" }}>{narrativa ? limparNarrativa(narrativa) : resumoExecutivo(v, ano)}</p>
           {destaqueSaude(v) && <p className="text-ink-2" style={{ fontSize: "1.05vw", lineHeight: 1.45, marginTop: "0.6vw" }}>{destaqueSaude(v)}</p>}
         </TvCard>
 

@@ -33,6 +33,16 @@ export function destaqueParlamentar(
   return `${top.nome_display} foi quem mais destinou recurso ao município, somando ${money(top.valor_total)} em ${int(top.total_lancamentos)} lançamentos.`;
 }
 
+/** Remove markdown residual (títulos #, negrito **) que a IA às vezes inclui. */
+export function limparNarrativa(s: string): string {
+  return s
+    .replace(/^\s*#+\s*/gm, "")
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/[*_]{1,2}/g, "")
+    .replace(/\n{2,}/g, " ")
+    .trim();
+}
+
 export function destaqueSaude(v: Visao): string | null {
   if (!v.saude) return null;
   const s = v.saude;

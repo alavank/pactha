@@ -12,7 +12,7 @@ import { formatCurrencyShort, formatInt } from "@/lib/format";
 import { getMunicipios, getVisao, getNarrativa, type Visao } from "@/lib/painel";
 import { DEMO_VISAO, ehParlamentarValido } from "@/lib/demo";
 import { usePeriod, labelAno } from "@/lib/period";
-import { resumoExecutivo } from "@/lib/narrative";
+import { resumoExecutivo, limparNarrativa } from "@/lib/narrative";
 
 export default function Home() {
   const { ano, ready } = usePeriod();
@@ -93,7 +93,7 @@ export default function Home() {
       )}
 
       <div className={cn("flex flex-col gap-3.5 transition-opacity", loading && "opacity-50")}>
-        <AiCard>{narrativa || resumoExecutivo(v, ano)}</AiCard>
+        <AiCard>{narrativa ? limparNarrativa(narrativa) : resumoExecutivo(v, ano)}</AiCard>
 
         <Card>
           <div className="text-[12.5px] text-ink-2">Total captado · {labelAno(ano)}</div>

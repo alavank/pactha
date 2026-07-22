@@ -166,5 +166,17 @@ export async function putPrefs(prefs: Prefs) {
 // ---- auth ----
 export async function login(email: string, password: string) {
   const { data } = await api.post("/auth/login", { email, password });
+  // Guarda o access token como Bearer (funciona cross-origin no dev local e
+  // convive com o cookie httpOnly same-origin no deploy).
+  if (data?.access_token && typeof window !== "undefined") {
+    localStorage.setItem("pactha_token", data.access_token);
+  }
   return data;
+}
+
+export function logout() {
+  if (typeof window !== "undefined") {
+    localStorage.removeItem("pactha_token");
+    localStorage.removeItem("pactha_user");
+  }
 }
