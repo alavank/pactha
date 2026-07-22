@@ -10,7 +10,14 @@
 //   3) KEEP-ALIVE (chrome.alarms): a cada 12 minutos, faz HEAD em uma URL leve
 //      do servidor alvo pra evitar session timeout no JEE (~20-30min inatividade).
 
-const DEFAULT_API = "https://pactha.alavank.com.br/api";
+// Ambiente novo (Coolify). O dominio antigo (pactha.alavank.com.br) nao resolve
+// mais. Cada tenant tem sua propria API — configure a URL no popup:
+//   freitas -> https://pactha-api-54-232-208-118.sslip.io/api
+//   trust   -> https://pactha-trust-54-232-208-118.sslip.io/api
+// IMPORTANTE: qualquer dominio usado aqui precisa estar em host_permissions no
+// manifest.json, senao o Chrome bloqueia o fetch antes de sair (MV3) e a captura
+// falha sem nunca chegar no servidor.
+const DEFAULT_API = "https://pactha-api-54-232-208-118.sslip.io/api";
 
 // Mapeamento host → automation_key + URL de keep-alive
 const TARGETS = [

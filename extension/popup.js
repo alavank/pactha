@@ -1,5 +1,7 @@
 // PACTHA Captura Automática — popup logic
-const DEFAULT_API = "https://pactha.alavank.com.br/api";
+// Ver nota em background.js: dominio novo (Coolify) e obrigatoriedade de
+// host_permissions no manifest.json.
+const DEFAULT_API = "https://pactha-api-54-232-208-118.sslip.io/api";
 
 const $ = (id) => document.getElementById(id);
 
@@ -224,7 +226,14 @@ async function init() {
     $("main").classList.remove("hidden");
   });
   $("open-pacta").addEventListener("click", () => {
-    chrome.tabs.create({ url: "https://pactha.alavank.com.br/dashboard" });
+    // Deriva do API URL configurado em vez de fixar um dominio: cada tenant tem
+    // o seu, e o antigo (pactha.alavank.com.br) nao resolve mais.
+    let url = "https://pactha-54-232-208-118.sslip.io/dashboard";
+    try {
+      const u = new URL(cfg.api);
+      url = `${u.origin.replace("-api-", "-")}/dashboard`;
+    } catch (_) { /* usa o padrao acima */ }
+    chrome.tabs.create({ url });
   });
 
   if (!cfg.token) {
