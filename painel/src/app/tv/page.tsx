@@ -65,17 +65,17 @@ export default function Tv() {
 
   return (
     <div className="min-h-dvh bg-page text-ink flex flex-col" style={{ padding: "1.8vw" }}>
-      <div className="flex items-center justify-between" style={{ marginBottom: "1.4vw" }}>
-        <div className="flex items-center" style={{ gap: "1vw" }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: "1.4vw", gap: "2.5vw" }}>
+        <div className="flex items-center min-w-0" style={{ gap: "1vw" }}>
           <span className="grid place-items-center text-white font-display font-extrabold shrink-0" style={{ width: "3.4vw", height: "3.4vw", borderRadius: "0.9vw", fontSize: "1.4vw", background: "linear-gradient(150deg,#2f6b3a,#4f9e57)" }}>
             {mun.nome.slice(0, 2).toUpperCase()}
           </span>
-          <div>
-            <h1 className="font-display font-extrabold tracking-tight" style={{ fontSize: "2.4vw", lineHeight: 1 }}>{mun.nome} · Panorama de Recursos</h1>
-            <div className="text-ink-2" style={{ fontSize: "1.05vw", marginTop: "0.3vw" }}>Prefeitura Municipal · {labelAno(ano)}</div>
+          <div className="min-w-0">
+            <h1 className="font-display font-extrabold tracking-tight truncate" style={{ fontSize: "2.4vw", lineHeight: 1 }}>{mun.nome}</h1>
+            <div className="text-ink-2 truncate" style={{ fontSize: "1.05vw", marginTop: "0.35vw" }}>Panorama de Recursos · Prefeitura Municipal · {labelAno(ano)}</div>
           </div>
         </div>
-        <div className="flex items-center" style={{ gap: "0.8vw" }}>
+        <div className="flex items-center shrink-0" style={{ gap: "0.8vw" }}>
           <FonteToggle label="Federal" on={fF} onClick={() => setFF((x) => !x)} color="var(--c-blue)" />
           <FonteToggle label="Estadual" on={fE} onClick={() => setFE((x) => !x)} color="var(--c-green)" />
           <div className="flex bg-surface border border-line rounded-full" style={{ padding: "0.3vw", gap: "0.2vw" }}>
@@ -93,39 +93,60 @@ export default function Tv() {
 
       <div className="flex-1" style={{ display: "grid", gridTemplateColumns: "repeat(12,1fr)", gridTemplateRows: "1.05fr 0.95fr", gap: "1.2vw", minHeight: 0 }}>
         {/* HERO */}
-        <TvCard style={{ gridColumn: "1 / span 5", gridRow: "1" }}>
-          <CardLabel>Total captado · {labelAno(ano)}</CardLabel>
-          <div className="font-display font-extrabold tracking-tight tnum" style={{ fontSize: "4.6vw", lineHeight: 1, marginTop: "0.4vw" }}>{formatCurrencyShort(total)}</div>
-          <div className="text-ink-3" style={{ fontSize: "1.1vw", marginTop: "0.6vw" }}>{formatInt(k.total_voluntarias)} propostas federais · {formatInt(k.total_convenios_estadual)} convênios estaduais</div>
-          <div className="flex overflow-hidden" style={{ height: "1.1vw", borderRadius: "0.5vw", gap: "0.15vw", marginTop: "auto" }}>
-            {stackSeg.map((s, i) => <span key={i} style={{ flexGrow: s.value / stackTotal, flexBasis: 0, background: s.color, borderRadius: "0.3vw" }} />)}
+        <TvCard style={{ gridColumn: "1 / span 5", gridRow: "1", justifyContent: "space-between" }}>
+          <div>
+            <CardLabel>Total captado · {labelAno(ano)}</CardLabel>
+            <div className="font-display font-extrabold tracking-tight tnum" style={{ fontSize: "4.6vw", lineHeight: 1, marginTop: "0.4vw" }}>{formatCurrencyShort(total)}</div>
+            <div className="text-ink-3" style={{ fontSize: "1.1vw", marginTop: "0.6vw" }}>{formatInt(k.total_voluntarias)} propostas federais · {formatInt(k.total_convenios_estadual)} convênios estaduais</div>
           </div>
-          <div className="flex" style={{ gap: "1.4vw", marginTop: "0.8vw" }}>
-            {stackSeg.map((s, i) => (
-              <span key={i} className="flex items-center text-ink-2" style={{ gap: "0.5vw", fontSize: "1vw" }}>
-                <span style={{ width: "0.8vw", height: "0.8vw", borderRadius: "0.2vw", background: s.color }} /> {s.label} <b className="text-ink tnum">{formatCurrencyShort(s.value)}</b>
-              </span>
-            ))}
+          <div className="grid" style={{ gridTemplateColumns: "repeat(3,1fr)", gap: "0.9vw" }}>
+            <MiniStat value={formatInt(k.total_voluntarias)} label="Propostas federais" />
+            <MiniStat value={formatInt(k.alertas_vigencia_60d)} label="Vencem ≤ 60 dias" tone={k.alertas_vigencia_60d > 0 ? "warn" : undefined} />
+            <MiniStat value={formatInt(k.alertas_prestacao_contas)} label="Prestação vencida" tone={k.alertas_prestacao_contas > 0 ? "crit" : undefined} />
+          </div>
+          <div>
+            <div className="flex overflow-hidden" style={{ height: "1.1vw", borderRadius: "0.5vw", gap: "0.15vw" }}>
+              {stackSeg.map((s, i) => <span key={i} style={{ flexGrow: s.value / stackTotal, flexBasis: 0, background: s.color, borderRadius: "0.3vw" }} />)}
+            </div>
+            <div className="flex" style={{ gap: "1.4vw", marginTop: "0.8vw" }}>
+              {stackSeg.map((s, i) => (
+                <span key={i} className="flex items-center text-ink-2" style={{ gap: "0.5vw", fontSize: "1vw" }}>
+                  <span style={{ width: "0.8vw", height: "0.8vw", borderRadius: "0.2vw", background: s.color }} /> {s.label} <b className="text-ink tnum">{formatCurrencyShort(s.value)}</b>
+                </span>
+              ))}
+            </div>
           </div>
         </TvCard>
 
         {/* CAUC + DOCS + SAUDE */}
-        <TvCard style={{ gridColumn: "6 / span 4", gridRow: "1" }}>
-          <div className="flex items-center justify-between">
-            <CardLabel><ShieldCheck style={{ width: "1.2vw", height: "1.2vw", display: "inline", verticalAlign: "-0.2vw" }} /> Documentação</CardLabel>
-            <span className="inline-flex items-center font-bold rounded-full" style={{ fontSize: "0.95vw", gap: "0.4vw", padding: "0.4vw 0.9vw", background: regular ? "var(--ok-soft)" : "var(--crit-soft)", color: regular ? "var(--ok)" : "var(--crit)" }}>
-              {regular ? "CAUC em dia" : `${v.semaforo.pendencias} pend.`}
+        <TvCard style={{ gridColumn: "6 / span 4", gridRow: "1", justifyContent: "space-between" }}>
+          <div>
+            <div className="flex items-center justify-between">
+              <CardLabel><ShieldCheck style={{ width: "1.2vw", height: "1.2vw", display: "inline", verticalAlign: "-0.2vw" }} /> Documentação</CardLabel>
+              <span className="inline-flex items-center font-bold rounded-full" style={{ fontSize: "0.95vw", gap: "0.4vw", padding: "0.4vw 0.9vw", background: regular ? "var(--ok-soft)" : "var(--crit-soft)", color: regular ? "var(--ok)" : "var(--crit)" }}>
+                {regular ? "CAUC em dia" : `${v.semaforo.pendencias} pend.`}
+              </span>
+            </div>
+            <div className="flex flex-wrap" style={{ gap: "0.5vw", marginTop: "0.8vw" }}>
+              {DOCUMENTACOES.map((d) => (
+                <span key={d.key} className="inline-flex items-center font-semibold rounded-full border" style={{ fontSize: "0.85vw", gap: "0.4vw", padding: "0.35vw 0.8vw", borderColor: "var(--line)", background: d.ativo ? "var(--ok-soft)" : "var(--surface-2)", color: d.ativo ? "var(--ok)" : "var(--ink-3)" }}>
+                  {d.ativo ? <CheckCircle2 style={{ width: "0.9vw", height: "0.9vw" }} /> : <Clock style={{ width: "0.9vw", height: "0.9vw" }} />} {d.nome}
+                </span>
+              ))}
+            </div>
+          </div>
+          <div className="flex items-start" style={{ gap: "0.6vw", background: regular ? "var(--ok-soft)" : "var(--crit-soft)", borderRadius: "0.7vw", padding: "0.9vw 1.1vw" }}>
+            {regular
+              ? <CheckCircle2 style={{ width: "1.4vw", height: "1.4vw", color: "var(--ok)", flexShrink: 0, marginTop: "0.1vw" }} />
+              : <AlertTriangle style={{ width: "1.4vw", height: "1.4vw", color: "var(--crit)", flexShrink: 0, marginTop: "0.1vw" }} />}
+            <span style={{ fontSize: "0.98vw", lineHeight: 1.4, color: regular ? "var(--ok)" : "var(--crit)" }}>
+              {regular
+                ? "Município apto a receber transferências voluntárias da União. CAGEC, SISMOB, Investe SUS e FNS entram em breve."
+                : "Pendências no CAUC podem travar novos repasses — regularizar é prioridade."}
             </span>
           </div>
-          <div className="flex flex-wrap" style={{ gap: "0.5vw", marginTop: "0.8vw" }}>
-            {DOCUMENTACOES.map((d) => (
-              <span key={d.key} className="inline-flex items-center font-semibold rounded-full border" style={{ fontSize: "0.85vw", gap: "0.4vw", padding: "0.35vw 0.8vw", borderColor: "var(--line)", background: d.ativo ? "var(--ok-soft)" : "var(--surface-2)", color: d.ativo ? "var(--ok)" : "var(--ink-3)" }}>
-                {d.ativo ? <CheckCircle2 style={{ width: "0.9vw", height: "0.9vw" }} /> : <Clock style={{ width: "0.9vw", height: "0.9vw" }} />} {d.nome}
-              </span>
-            ))}
-          </div>
           {v.saude && v.saude.divida_atual > 0 && (
-            <div style={{ marginTop: "auto" }}>
+            <div>
               <div className="flex items-center" style={{ gap: "0.5vw", fontSize: "1vw" }}><HeartPulse style={{ width: "1.1vw", height: "1.1vw", color: "var(--c-coral)" }} /> <span className="text-ink-2">Saúde · Acordo FES — Estado deve</span></div>
               <div className="font-display font-extrabold tracking-tight tnum text-crit" style={{ fontSize: "2.2vw", marginTop: "0.2vw" }}>{formatCurrencyShort(v.saude.divida_atual)}</div>
               <div className="overflow-hidden bg-surface-3" style={{ height: "0.7vw", borderRadius: "0.4vw", marginTop: "0.4vw" }}>
@@ -139,7 +160,7 @@ export default function Tv() {
         {/* RANKING (tall) */}
         <TvCard style={{ gridColumn: "10 / span 3", gridRow: "1 / span 2" }}>
           <CardLabel><Users style={{ width: "1.2vw", height: "1.2vw", display: "inline", verticalAlign: "-0.2vw" }} /> Quem mandou verba</CardLabel>
-          <div className="flex-1 flex flex-col justify-center" style={{ gap: "1.1vw", marginTop: "0.6vw" }}>
+          <div className="flex-1 flex flex-col justify-between" style={{ marginTop: "0.9vw" }}>
             {top.map((t, i) => (
               <div key={i}>
                 <div className="flex items-center" style={{ gap: "0.7vw" }}>
@@ -176,7 +197,7 @@ export default function Tv() {
             </span>
           </div>
           <div className="text-ink-3" style={{ fontSize: "0.95vw", marginTop: "0.4vw" }}>Convênios federais que precisam de prestação de contas para liberar novos recursos:</div>
-          <div className="flex-1 flex flex-col justify-center" style={{ gap: "0.5vw", marginTop: "0.4vw" }}>
+          <div className="flex-1 flex flex-col justify-between" style={{ gap: "0.6vw", marginTop: "0.6vw" }}>
             {prestacoes.map((it, i) => (
               <div key={i} className="flex items-center bg-surface-2" style={{ gap: "0.8vw", borderRadius: "0.6vw", padding: "0.7vw 1vw" }}>
                 <span className="grid place-items-center shrink-0" style={{ width: "2vw", height: "2vw", borderRadius: "0.5vw", background: "var(--crit-soft)", color: "var(--crit)" }}><AlertTriangle style={{ width: "1vw", height: "1vw" }} /></span>
@@ -206,6 +227,14 @@ function TvCard({ children, style, accent }: { children: React.ReactNode; style?
 }
 function CardLabel({ children }: { children: React.ReactNode }) {
   return <div className="text-ink-2 font-semibold" style={{ fontSize: "1.2vw" }}>{children}</div>;
+}
+function MiniStat({ value, label, tone }: { value: string; label: string; tone?: "warn" | "crit" }) {
+  return (
+    <div className="bg-surface-2 border border-line" style={{ borderRadius: "0.7vw", padding: "0.9vw 1vw" }}>
+      <div className="font-display font-extrabold tnum" style={{ fontSize: "2vw", lineHeight: 1, color: tone === "crit" ? "var(--crit)" : tone === "warn" ? "var(--warn)" : "var(--ink)" }}>{value}</div>
+      <div className="text-ink-3" style={{ fontSize: "0.85vw", marginTop: "0.35vw" }}>{label}</div>
+    </div>
+  );
 }
 function FonteToggle({ label, on, onClick, color }: { label: string; on: boolean; onClick: () => void; color: string }) {
   return (
