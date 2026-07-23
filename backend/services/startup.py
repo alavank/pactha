@@ -79,6 +79,10 @@ MIGRATION_FILES = [
     "add_sso_used_jti.sql",
     # Painel Executivo do prefeito: push subscriptions + preferencias + dedupe + cache IA
     "add_painel_push.sql",
+    # Rodizio de coleta por municipio ("mais desatualizado primeiro"). Mata a
+    # starvation alfabetica: antes, a rodada era cortada por volta do 10o de 41
+    # municipios e os do fim da lista NUNCA eram atualizados, em silencio.
+    "add_scraper_municipio_coleta.sql",
 ]
 
 

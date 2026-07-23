@@ -1,36 +1,45 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# PACTHA — Frontend
 
-## Getting Started
+App web do PACTHA: **Next.js 16 (App Router)** + Tailwind v4 + daisyUI + shadcn.
 
-First, run the development server:
+> ⚠️ Este app **não é deployado na Vercel**. Ele é buildado como imagem Docker
+> (`frontend/Dockerfile`, `output: "standalone"`) e roda no **Coolify, na AWS Lightsail
+> `54.232.208.118`** — um deploy por tenant (freitas / trust / montesiao-mg).
+> Ver [`../INFRA.md`](../INFRA.md).
+
+## Desenvolvimento local
 
 ```bash
+npm install --legacy-peer-deps
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Abra [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Suba o backend em paralelo (`cd ../backend && python -m uvicorn main:app --reload --port 8000`):
+o Next faz **proxy same-origin** de `/api` para `API_PROXY_TARGET` (default
+`http://localhost:8000`), via `rewrites()` em `next.config.ts`.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Variáveis de ambiente (BUILD-TIME)
 
-## Learn More
+`API_PROXY_TARGET` e todas as `NEXT_PUBLIC_*` são **inlined no build**. Mudar o valor no
+Coolify sem rebuildar o app **não tem efeito nenhum** — marque `is_build_time: true` e
+faça redeploy.
 
-To learn more about Next.js, take a look at the following resources:
+| Var | Para que serve |
+|-----|----------------|
+| `API_PROXY_TARGET` | host interno da API do tenant (destino do rewrite `/api/:path*`) |
+| `NEXT_PUBLIC_API_URL` | base da API usada pelo cliente (deve terminar em `/api`) |
+| `NEXT_PUBLIC_CLIENT_LOGO` | logo do cliente daquele tenant |
+| `NEXT_PUBLIC_CLIENT_SUBTITLE` | subtítulo/identificação do cliente |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Notas para agentes de IA
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Leia também `AGENTS.md` nesta pasta: **esta versão do Next.js tem breaking changes** em
+relação ao que a maioria dos modelos conhece — confira `node_modules/next/dist/docs/`
+antes de escrever código.
 
-## Deploy on Vercel
+## Referências
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- [Next.js Documentation](https://nextjs.org/docs)
+- [Learn Next.js](https://nextjs.org/learn)

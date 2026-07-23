@@ -27,6 +27,7 @@ import json
 import logging
 import os
 import sys
+import time
 import unicodedata
 from datetime import datetime
 from typing import Optional
@@ -560,20 +561,83 @@ def _municipio_id_lookup() -> dict:
     return out
 
 
+FONTE_COLETA = "sigcon"
+
+
+def _marca_coleta(municipio_id: int, ok: bool, erro: str | None = None) -> None:
+    """Registra que este municipio foi coletado (ou falhou) agora.
+
+    E o que alimenta o rodizio: a proxima rodada ordena por `ultima_coleta_em`
+    NULLS FIRST, entao quem acabou de ser coletado vai para o fim da fila e quem
+    esta parado ha mais tempo vem primeiro. Best-effort: se a tabela ainda nao
+    existir (worker subiu antes da migration da API), apenas ignora -- o scraper
+    nao pode quebrar por causa da contabilidade do rodizio.
+    """
+    import psycopg2
+    try:
+        conn = psycopg2.connect(_sync_dsn())
+        try:
+            with conn.cursor() as cur:
+                if ok:
+                    cur.execute(
+                        "INSERT INTO scraper_municipio_coleta "
+                        "(fonte, municipio_id, ultima_coleta_em, tentativas) "
+                        "VALUES (%s, %s, now(), 1) "
+                        "ON CONFLICT (fonte, municipio_id) DO UPDATE SET "
+                        "ultima_coleta_em = now(), tentativas = 0, ultimo_erro = NULL",
+                        (FONTE_COLETA, municipio_id),
+                    )
+                else:
+                    cur.execute(
+                        "INSERT INTO scraper_municipio_coleta "
+                        "(fonte, municipio_id, ultimo_erro_em, ultimo_erro, tentativas) "
+                        "VALUES (%s, %s, now(), %s, 1) "
+                        "ON CONFLICT (fonte, municipio_id) DO UPDATE SET "
+                        "ultimo_erro_em = now(), ultimo_erro = EXCLUDED.ultimo_erro, "
+                        "tentativas = scraper_municipio_coleta.tentativas + 1",
+                        (FONTE_COLETA, municipio_id, (erro or "")[:500]),
+                    )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.debug(f"  (rodizio nao registrado p/ municipio {municipio_id}: {e})")
+
+
 def _list_credentials() -> list[dict]:
-    """Le credenciais SIGCON-MG do cofre, descriptografando."""
+    """Le credenciais SIGCON-MG do cofre, descriptografando.
+
+    ORDEM = MAIS DESATUALIZADO PRIMEIRO (rodizio). Antes a ordem era a que o
+    banco devolvia (na pratica alfabetica) e, como a rodada do Freitas nao cabe
+    na janela do cron, os municipios do fim da lista NUNCA eram coletados. Com o
+    rodizio, uma rodada parcial deixa de ser perda permanente: os que ficaram de
+    fora entram na frente na proxima.
+    """
     import psycopg2
     from services.crypto import decrypt
     sync_url = os.getenv("DATABASE_URL_SYNC", "")
     sync_url = sync_url.replace("&channel_binding=require", "").replace("?channel_binding=require", "")
     conn = psycopg2.connect(sync_url)
     cur = conn.cursor()
-    cur.execute("""
+    _SQL_BASE = """
         SELECT cs.id, cs.municipio_id, cs.usuario, cs.senha_hash, m.nome
         FROM cofre_senhas cs
         JOIN municipios m ON m.id = cs.municipio_id
+        {join}
         WHERE cs.sistema ILIKE 'SIGCON%' OR cs.automation_key = 'sigcon'
-    """)
+        {order}
+    """
+    try:
+        cur.execute(_SQL_BASE.format(
+            join=("LEFT JOIN scraper_municipio_coleta sc "
+                  "ON sc.municipio_id = cs.municipio_id AND sc.fonte = 'sigcon'"),
+            order="ORDER BY sc.ultima_coleta_em ASC NULLS FIRST, m.nome",
+        ))
+    except Exception:
+        # Tabela do rodizio ainda nao migrada: cai no comportamento antigo.
+        conn.rollback()
+        cur.execute(_SQL_BASE.format(join="", order="ORDER BY m.nome"))
+        logger.warning("  rodizio indisponivel (scraper_municipio_coleta ausente) - ordem alfabetica")
     creds = []
     for r in cur.fetchall():
         senha = decrypt(r[3])
@@ -787,17 +851,25 @@ def _sync_dsn() -> str:
     return dsn.replace("&channel_binding=require", "").replace("?channel_binding=require", "")
 
 
-async def _scrape_one(browser, cred, anos_emendas, sem):
+async def _scrape_one(browser, cred, anos_emendas, sem, deadline=None):
     """Raspa 1 municipio (login proprio) + PERSISTE com conexao propria.
 
     Permite rodar municipios EM PARALELO: psycopg2 nao e seguro p/ cursores
     concorrentes na mesma conexao, por isso 1 conexao por tarefa. Isolado:
     falha de 1 municipio nao derruba os outros, e o que ja foi gravado fica
     gravado. Retorna (nome, ins, upd, em_ins, em_upd, ok).
+
+    `deadline` (time.monotonic) e o orcamento da rodada: se ja passou, este
+    municipio NAO comeca. Parar por conta propria antes do teto e melhor que ser
+    morto pelo `timeout` do cron no meio de um login -- o que ja foi coletado
+    fica gravado, o rodizio registra quem faltou e a proxima rodada os prioriza.
     """
     import psycopg2
     nome = cred["municipio_nome"]
     async with sem:
+        if deadline is not None and time.monotonic() >= deadline:
+            logger.info(f"  [orcamento esgotado] {nome} adiado para a proxima rodada")
+            return (nome, 0, 0, 0, 0, None)  # None = nem tentou (nao conta como falha)
         logger.info(f"=== Login: {nome} (CPF={cred['cpf'][:4]}***) ===")
         ctx = await browser.new_context(
             ignore_https_errors=True, accept_downloads=True,
@@ -809,7 +881,14 @@ async def _scrape_one(browser, cred, anos_emendas, sem):
             rows = await _scrape_municipio(page, _norm(nome))
             detalhes: dict = {}
             try:
-                detalhes = await _scrape_detalhes(page, max_planos=100)
+                # Tunavel por env: em maquina apertada da para baixar o teto e
+                # cobrir mais municipios por rodada (o rodizio garante que todos
+                # sao visitados ao longo das rodadas seguintes).
+                try:
+                    _max_planos = max(1, int(os.getenv("SIGCON_MAX_PLANOS", "100") or "100"))
+                except ValueError:
+                    _max_planos = 100
+                detalhes = await _scrape_detalhes(page, max_planos=_max_planos)
             except Exception as e:
                 logger.warning(f"  Detalhes failed ({nome}): {e}")
             by_key: dict = {}
@@ -862,9 +941,11 @@ async def _scrape_one(browser, cred, anos_emendas, sem):
                     pass
             logger.info(f"  {nome}: {len(mun_records)} convenios (+{i}/~{u}) | "
                         f"emendas +{ei}/~{eu}")
+            _marca_coleta(cred["municipio_id"], ok=True)
             return (nome, i, u, ei, eu, True)
         except Exception as e:
             logger.error(f"  Falha {nome}: {e}")
+            _marca_coleta(cred["municipio_id"], ok=False, erro=str(e))
             return (nome, 0, 0, 0, 0, False)
         finally:
             try:
@@ -907,7 +988,25 @@ async def _run():
     except ValueError:
         conc = 2
     conc = min(conc, len(creds))
-    logger.info(f"SIGCON: {len(creds)} municipios | concorrencia={conc}")
+
+    # ORCAMENTO DA RODADA. As Scheduled Tasks rodam sob `timeout -k 30 3000`
+    # (50 min). Deixar o `timeout` matar significa morrer no meio de um login,
+    # possivelmente deixando Chromium para tras. Melhor parar por conta propria
+    # ANTES: o que ja foi coletado esta gravado (persistencia e por municipio),
+    # o rodizio anota quem faltou, e a proxima rodada comeca por eles.
+    # Default 2700s = 45 min, 5 min abaixo do teto externo.
+    try:
+        budget = max(0, int(os.getenv("SIGCON_BUDGET_SECONDS", "2700") or "2700"))
+    except ValueError:
+        budget = 2700
+    deadline = (time.monotonic() + budget) if budget else None
+
+    logger.info(
+        f"SIGCON: {len(creds)} municipios | concorrencia={conc} | "
+        f"orcamento={budget}s | ordem=mais desatualizado primeiro"
+    )
+    if creds:
+        logger.info(f"  primeiros da fila: {[c['municipio_nome'] for c in creds[:5]]}")
     # CONFIRMADO empiricamente: a Pesquisa Unificada do SIGCON-MG eh ESCOPADA
     # ao convenente logado. Mesmo setando o filtro de municipio corretamente
     # (option value = codigo IBGE), o login de Araujos retorna 0 convenios de
@@ -920,7 +1019,7 @@ async def _run():
         try:
             sem = asyncio.Semaphore(conc)
             raw = await asyncio.gather(
-                *[_scrape_one(browser, c, anos_emendas, sem) for c in creds],
+                *[_scrape_one(browser, c, anos_emendas, sem, deadline) for c in creds],
                 return_exceptions=True,  # 1 tarefa explodindo nao invalida as demais
             )
         finally:
@@ -938,8 +1037,18 @@ async def _run():
     tot_upd = sum(r[2] for r in results)
     tot_em_ins = sum(r[3] for r in results)
     tot_em_upd = sum(r[4] for r in results)
-    muns_ok = sum(1 for r in results if r[5])
-    falhas = [r[0] for r in results if not r[5]]
+    # Tres estados distintos, nao dois: ok / falhou / nem tentou (orcamento).
+    # Misturar "adiado" com "falhou" mentiria no relatorio -- adiado e o
+    # comportamento CORRETO do rodizio, nao um erro.
+    muns_ok = sum(1 for r in results if r[5] is True)
+    falhas = [r[0] for r in results if r[5] is False]
+    adiados = [r[0] for r in results if r[5] is None]
+    if adiados:
+        logger.info(
+            f"  ORCAMENTO: {len(adiados)} municipio(s) adiado(s) para a proxima "
+            f"rodada (entram primeiro no rodizio): {adiados[:10]}"
+            + (" ..." if len(adiados) > 10 else "")
+        )
 
     # Log de ingestao final: conexao PROPRIA e curta (abre, grava, fecha).
     # Nunca reaproveita conexao do scrape — essa ja foi fechada ha muito tempo.
