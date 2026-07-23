@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     JWT_SECRET: str
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = 60  # reduzido de 480 para 60 minutos
-    TRANSFEREGOV_BASE_URL: str = "http://repositorio.dados.gov.br/seges/detru/"
+    TRANSFEREGOV_BASE_URL: str = "https://api-publica.transferegov.gestao.gov.br/downloads/dadosgov/"
     SIGCON_DATASET_URL: str = "https://dados.mg.gov.br/dataset/convenios-saida"
 
     FRONTEND_URL: str = ""

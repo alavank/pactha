@@ -4,7 +4,7 @@ FEDERAIS a partir do OPEN DATA do SICONV (sem login gov.br).
 Resolve a dependência da sessão autenticada gov.br: o detalhe da cláusula
 suspensiva (situação de contratação, motivo e data prevista) — que antes só vinha
 da tela logada (reCAPTCHA periódico) — está no arquivo público
-`siconv_convenio.csv` (repositorio.dados.gov.br/seges/detru), campos:
+`siconv_convenio.csv` (api-publica.transferegov.gestao.gov.br/downloads/dadosgov), campos:
   - SITUACAO_CONTRATACAO  (Normal | Cláusula Suspensiva | Liminar Judicial)
   - MOTIVO_SUSPENSAO      (ex.: "Termo de Referência")
   - DATA_SUSPENSIVA       (data prevista p/ resolução, dd/mm/aaaa)
@@ -30,7 +30,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("siconv_convenio_backfill")
 
-URL = "https://repositorio.dados.gov.br/seges/detru/siconv_convenio.csv.zip"
+URL = "https://api-publica.transferegov.gestao.gov.br/downloads/dadosgov/siconv_convenio.zip"
 _CACHE_DIR = os.getenv("SICONV_CACHE_DIR") or os.path.join(
     os.getenv("TEMP") or os.getenv("TMPDIR") or "/tmp", "siconv_opendata"
 )
@@ -45,7 +45,7 @@ def _db():
 
 def _download(use_cache: bool = True) -> bytes:
     import httpx
-    path = os.path.join(_CACHE_DIR, "siconv_convenio.csv.zip")
+    path = os.path.join(_CACHE_DIR, "siconv_convenio.zip")
     if use_cache and os.path.exists(path) and os.path.getsize(path) > 1000:
         return open(path, "rb").read()
     logger.info(f"  baixando {URL} ...")
