@@ -1,0 +1,105 @@
+name: build-frontend
+
+# Builda as imagens dos FRONTENDS no GitHub Actions em vez de na VPS.
+#
+# Diferente do backend (uma imagem para os 3 tenants), cada frontend e
+# GENUINAMENTE diferente: os build-args NEXT_PUBLIC_* e API_PROXY_TARGET sao
+# INLINED no bundle Next em build-time (o proprio Dockerfile documenta isso).
+# Entao cada tenant precisa da sua propria imagem, com os args embutidos --
+# por isso a matriz abaixo.
+#
+# Os valores nao sao segredos: sao caminhos de logo, textos de subtitulo e URLs
+# publicas de API. Ficam aqui, versionados, de proposito (auto-documentado).
+#
+# TRADE-OFF consciente: com a config do tenant embutida na imagem, trocar um
+# logo/subtitulo/URL de um cliente passa a exigir editar este arquivo + rebuild
+# do CI (antes era so mudar a env no Coolify e redeployar). Em troca, a VPS
+# deixa de buildar Next.js. Para onboarding de cliente novo, adicionar uma
+# entrada na matriz.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - 'painel/**'
+      - '.github/workflows/build-frontend.yml'
+  workflow_dispatch: {}
+
+concurrency:
+  group: build-frontend-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE_BASE: ghcr.io/${{ github.repository_owner }}/pactha
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # --- frontends dos tenants (contexto frontend/) ---
+          - image: pactha-frontend-freitas
+            context: frontend
+            args: |
+              NEXT_PUBLIC_API_URL=/api
+              API_PROXY_TARGET=https://pactha-api-54-232-208-118.sslip.io
+              NEXT_PUBLIC_CLIENT_LOGO=/freitas-logo.jpeg
+              NEXT_PUBLIC_CLIENT_SUBTITLE=Assessoria
+          - image: pactha-frontend-trust
+            context: frontend
+            args: |
+              NEXT_PUBLIC_API_URL=/api
+              API_PROXY_TARGET=https://pactha-trust-api-54-232-208-118.sslip.io
+              NEXT_PUBLIC_CLIENT_LOGO=/trust-logo.png
+              NEXT_PUBLIC_CLIENT_SUBTITLE=Infraestrutura de TI e Cloud Computing
+          - image: pactha-frontend-montesiao-mg
+            context: frontend
+            args: |
+              NEXT_PUBLIC_API_URL=/api
+              API_PROXY_TARGET=https://pactha-montesiao-mg-api-54-232-208-118.sslip.io
+              NEXT_PUBLIC_CLIENT_LOGO=/brasao-monte-siao.png
+              NEXT_PUBLIC_CLIENT_SUBTITLE=Monte Siao - MG
+          # --- painel executivo do prefeito (contexto painel/) ---
+          - image: pactha-painel-montesiao-mg
+            context: painel
+            args: |
+              NEXT_PUBLIC_API_URL=/api
+              API_PROXY_TARGET=https://pactha-montesiao-mg-api-54-232-208-118.sslip.io
+              NEXT_PUBLIC_VAPID_PUBLIC_KEY=BLt6NuwIO5cNm1XEyK3pRKPEwTKN2S_rqsd18XjmkiotiioYj7XqfKviJ8iNeWWQqQCzn60jAHHXV8PksNTnn_c
+              NEXT_PUBLIC_CLIENT_NAME=Monte Siao
+              NEXT_PUBLIC_CLIENT_UF=MG
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login no ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build e push
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.context }}/Dockerfile
+          push: true
+          build-args: ${{ matrix.args }}
+          tags: |
+            ${{ env.IMAGE_BASE }}-${{ matrix.image }}:latest
+            ${{ env.IMAGE_BASE }}-${{ matrix.image }}:sha-${{ github.sha }}
+          cache-from: type=registry,ref=${{ env.IMAGE_BASE }}-${{ matrix.image }}:buildcache
+          cache-to: type=registry,ref=${{ env.IMAGE_BASE }}-${{ matrix.image }}:buildcache,mode=max
+
+      - name: Resumo
+        run: echo "Publicado ${{ env.IMAGE_BASE }}-${{ matrix.image }}:latest" >> "$GITHUB_STEP_SUMMARY"
