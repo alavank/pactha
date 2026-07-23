@@ -67,6 +67,26 @@ def _jwt_minutos_restantes(cookies: list[dict]) -> float:
     return float("-inf")
 
 
+def _propostas_sem_historico(municipio_id: int) -> set:
+    """Retorna numero_proposta das que AINDA NAO tem Historico de Comunicacoes.
+    Usado para priorizar: cada rodada gasta o orcamento nas pendentes primeiro,
+    entao o conjunto converge em alguns dias em vez de recapturar sempre as mesmas."""
+    try:
+        import psycopg2
+        url = os.getenv("DATABASE_URL_SYNC", "").replace("&channel_binding=require", "").replace("?channel_binding=require", "")
+        conn = psycopg2.connect(url); cur = conn.cursor()
+        cur.execute(
+            "SELECT numero_proposta FROM transferegov_propostas "
+            "WHERE municipio_id=%s AND historico_atualizado_em IS NULL",
+            (municipio_id,)
+        )
+        out = {r[0] for r in cur.fetchall()}
+        cur.close(); conn.close()
+        return out
+    except Exception:
+        return set()
+
+
 def _propostas_ja_enriquecidas(municipio_id: int) -> set:
     """Retorna numero_proposta das que JA tem parlamentar OU sit_det.
     Permite priorizar as pendentes quando rodando com janela curta de auth."""
@@ -409,12 +429,28 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
     # Suspensiva + campos gated (parlamentar).
     # OTIMIZACAO: quando auth, prioriza propostas SEM enrich (janela curta).
     detail_page = page
+    # Orçamento de capturas de Histórico por execução. Cada captura navega a área
+    # /private/ das mandatárias (~12s); sem teto, as 3152 propostas do Freitas
+    # dariam ~10h por rodada — inviável no host de 2 vCPU compartilhado. Com teto
+    # + priorização das que ainda não têm histórico, cada rodada avança um naco e
+    # o conjunto converge em poucos dias. 0 desliga a captura.
+    try:
+        _hist_budget = max(0, int(os.getenv("TRANSFEREGOV_HISTORICO_MAX", "15") or "15"))
+    except ValueError:
+        _hist_budget = 15
     if page_auth is not None:
         try:
             _ja_enriquecidos = _propostas_ja_enriquecidas(mun["id"])
-            propostas.sort(key=lambda p: 0 if p["numero_proposta"] not in _ja_enriquecidos else 1)
+            _sem_hist = _propostas_sem_historico(mun["id"])
+            # Ordena por (sem enrich, sem histórico): as duas pendências vêm primeiro.
+            propostas.sort(key=lambda p: (
+                0 if p["numero_proposta"] not in _ja_enriquecidos else 1,
+                0 if p["numero_proposta"] in _sem_hist else 1,
+            ))
             n_pend = sum(1 for p in propostas if p["numero_proposta"] not in _ja_enriquecidos)
-            logger.info(f"  {mun['nome']}: {n_pend} propostas SEM enrich serao priorizadas")
+            n_hist = sum(1 for p in propostas if p["numero_proposta"] in _sem_hist)
+            logger.info(f"  {mun['nome']}: {n_pend} propostas SEM enrich serao priorizadas | "
+                        f"{n_hist} sem historico (orcamento desta rodada: {_hist_budget})")
         except Exception:
             pass
     _tot = len(propostas)
@@ -482,8 +518,11 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
                     logger.warning(f"    proc.exec {prop['numero_proposta']}: {str(e)[:80]}")
             # Historico de Comunicacoes + Termos de Notificacao (Projeto Basico /
             # mandatarias). SO com sessao gov.br viva (area /private/).
-            if page_auth is not None and _idp:
+            if page_auth is not None and _idp and _hist_budget > 0:
                 try:
+                    # Debita o orçamento na TENTATIVA, não no sucesso: o custo de
+                    # tempo já foi pago mesmo quando a página não devolve dados.
+                    _hist_budget -= 1
                     _hc = await _captura_historico_comunicacoes(page_auth, _idp)
                     if _hc:
                         prop["historico_comunicacoes"] = _hc.get("historico") or []
@@ -1068,13 +1107,18 @@ async def run():
         # Contexto GUEST (sem cookies): listagem via Acesso Livre
         ctx_guest = await browser.new_context(ignore_https_errors=True, user_agent="Mozilla/5.0 Chrome/131")
         page_guest = await ctx_guest.new_page()
-        # GUEST-ONLY: a Cláusula Suspensiva (situação + motivo + data) agora vem do
-        # OPEN DATA (siconv_convenio_backfill), então NÃO usamos mais a sessão
-        # autenticada gov.br aqui. Isso elimina a dependência de re-captura
-        # (reCAPTCHA) e acelera o scrape (sem navegar o instrumento por proposta).
-        govbr_cks = None
+        # A Cláusula Suspensiva vem do OPEN DATA (siconv_convenio_backfill), então
+        # por um tempo este run() rodou GUEST-ONLY, com a sessão desligada. Só que
+        # o Histórico de Comunicações (add. em 20/07) EXIGE a área /private/: sem
+        # sessão ele nunca era capturado pelo cron — apenas por run_one() manual.
+        # Com a extensão de captura + govbr_renew (re-deriva via SAML a cada 15min,
+        # sem reCAPTCHA), a sessão se mantém sozinha e a coleta pode ser automática.
+        # Degrada com segurança: sem sessão válida, cai em guest exatamente como antes.
+        # TRANSFEREGOV_AUTH=0 volta ao comportamento guest-only.
+        _auth_on = (os.getenv("TRANSFEREGOV_AUTH", "1") or "1").strip() not in ("0", "false", "no")
+        govbr_cks = _load_govbr_cookies() if _auth_on else None
         page_auth = None
-        if govbr_cks:  # desativado de propósito (guest-only) — bloco abaixo nunca roda
+        if govbr_cks:
             # Carrega cookies originais (com expiration) para checar validade.
             # Auth do scraper usa principalmente JSESSIONID de discricionarias
             # (capturado quando user faz bookmarklet em /voluntarias/...).
