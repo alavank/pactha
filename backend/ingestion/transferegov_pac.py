@@ -1,31 +1,77 @@
-"""Scraper Selecao PAC / Novo PAC (TransfereGov, Acesso Livre guest).
+"""Ingestao Selecao PAC / Novo PAC via DADOS ABERTOS (HTTP puro, sem navegador).
 
-Fonte: discricionarias.transferegov.../voluntarias/propostapac/listarPropostaPac.jsf
-Fluxo: sessao guest (mesmo ENTRY das voluntarias) -> pagina PAC -> filtra por
-CNPJ do Proponente (prefeitura) -> Consultar -> pagina a grid -> detalhe ->
-UPSERT em transferegov_pac.
+===========================================================================
+POR QUE ESTA VERSAO SUBSTITUIU O SCRAPER DE NAVEGADOR (2026-07-23)
+===========================================================================
+A versao anterior abria o Chromium, entrava em
+`discricionarias.transferegov.../voluntarias/propostapac/listarPropostaPac.jsf`
+como convidado, filtrava por CNPJ, paginava a grid JSF e abria o detalhe de
+cada proposta -- POR MUNICIPIO. Numa VPS de 2 vCPU compartilhada isso custava
+horas e era o segundo maior consumidor de CPU do sistema.
 
-O CNPJ da prefeitura vem das voluntarias ja coletadas (transferegov_propostas.
-identificacao); se o municipio ainda nao tem CNPJ conhecido, pula (loga).
+Os mesmos dados estao publicados como CSV no portal oficial, com carga DIARIA:
+  api-publica.transferegov.gestao.gov.br/downloads/dadosgov/
+
+Nao e so mais barato -- e mais FIEL. O precedente interno esta no
+`fns_scraper.py`, que saiu do Playwright para httpx e registrou no proprio
+codigo "cobertura Piracema 49% -> 99%": o navegador estava PERDENDO metade dos
+registros por falha de paginacao e timeout. Aqui vale o mesmo raciocinio: um
+CSV completo nao tem paginacao para falhar, e um campo ausente falha alto (o
+KeyError aparece) em vez de virar `None` silencioso, como acontecia com o
+parser por regex sobre innerText.
+
+ATENCAO AO PRAZO: o ambiente antigo de dados abertos do TransfereGov sera
+DESLIGADO em 31/08/2026. Esta implementacao ja usa o endereco novo.
+
+===========================================================================
+DE ONDE VEM CADA CAMPO
+===========================================================================
+  siconv_proposta_selecao_pac  -> numero_proposta, objeto, situacao,
+                                  valor_total, justificativa
+  siconv_proponentes           -> proponente, cnpj  (e o casamento com o
+                                  municipio, por CNPJ ou por nome+UF)
+  siconv_programa              -> programa, programa_codigo
+  siconv_pergunta/resposta_*   -> valor_contrapartida e valor_repasse
+                                  (sao perguntas do formulario do programa)
+  siconv_proposta_formalizacao_pac + siconv_emenda -> emenda_parlamentar
+                                  (a proposta PAC formalizada vira proposta
+                                  SICONV, e dela sai o parlamentar)
+
+`qualificacao` e `detalhe_url` nao existem no dado aberto -- o UPSERT usa
+COALESCE nesses campos, entao o que ja foi coletado antes e preservado.
 
 Uso: python -m ingestion.transferegov_pac [municipio_id]   (sem id = todos ativos)
-Roda no Dockerfile.scraper (Chromium). DATABASE_URL_SYNC obrigatorio.
+Requer DATABASE_URL_SYNC. NAO requer Chromium.
 """
-import asyncio
+import csv
+import io
 import json
 import logging
 import os
-import re
 import sys
+import time
+import unicodedata
+import zipfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("tg_pac")
 
-from ingestion.transferegov_voluntarias import ENTRY, _clean, _money, _norm  # noqa: E402
+BASE = os.getenv(
+    "TRANSFEREGOV_DADOS_URL",
+    "https://api-publica.transferegov.gestao.gov.br/downloads/dadosgov",
+).rstrip("/")
 
-PAC_URL = "https://discricionarias.transferegov.sistema.gov.br/voluntarias/propostapac/listarPropostaPac.jsf"
+_CACHE_DIR = os.getenv("SICONV_CACHE_DIR") or os.path.join(
+    os.getenv("TEMP") or os.getenv("TMPDIR") or "/tmp", "siconv_opendata"
+)
+# Os arquivos sao regerados 1x/dia; reaproveitar dentro da janela evita baixar
+# ~85 MB a cada execucao quando o cron roda mais de uma vez.
+_CACHE_HORAS = int(os.getenv("TRANSFEREGOV_CACHE_HORAS", "20") or "20")
+
+# csv de 350 MB numa linha so estoura o limite padrao do modulo csv
+csv.field_size_limit(min(sys.maxsize, 2**31 - 1))
 
 
 def _db_url() -> str:
@@ -33,180 +79,341 @@ def _db_url() -> str:
             .replace("&channel_binding=require", "").replace("?channel_binding=require", ""))
 
 
+def _norm(s: str) -> str:
+    """Minusculo, sem acento e sem pontuacao -- para casar nome de municipio."""
+    s = unicodedata.normalize("NFD", (s or "").strip())
+    s = "".join(c for c in s if unicodedata.category(c) != "Mn")
+    return " ".join(s.lower().replace("-", " ").replace("'", " ").split())
+
+
+def _so_digitos(s: str) -> str:
+    return "".join(c for c in (s or "") if c.isdigit())
+
+
+# O dado aberto traz a situacao como ENUM em caixa alta (ENVIADA,
+# NAO_HABILITADA...), enquanto a tela .jsf -- e portanto tudo o que o scraper
+# antigo gravou, e o que os filtros do painel esperam -- usa o rotulo humano.
+# Este mapa foi DERIVADO das 570 propostas ja coletadas, comparando o enum do
+# CSV com o rotulo no banco: bateu 1:1, sem ambiguidade. Traduzir aqui evita
+# quebrar filtros e relatorios existentes.
+_SITUACAO = {
+    "HABILITADA": "Habilitada",
+    "SELECIONADA": "Selecionada",
+    "ENVIADA": "Enviada para Análise",
+    "NAO_HABILITADA": "Não Habilitada",
+    "CADASTRADA": "Cadastrada",
+    "COMPLEMENTADA_ENVIADA": "Complementada Enviada para Análise",
+}
+_situacoes_desconhecidas: set[str] = set()
+
+
+def _situacao(bruta: str | None) -> str | None:
+    """Traduz o enum para o rotulo da tela. Enum novo NAO passa em silencio."""
+    s = (bruta or "").strip()
+    if not s:
+        return None
+    if s in _SITUACAO:
+        return _SITUACAO[s]
+    if s not in _situacoes_desconhecidas:
+        _situacoes_desconhecidas.add(s)
+        logger.warning(f"  situacao PAC desconhecida no dado aberto: '{s}' "
+                       f"-- gravando com formatacao generica; adicione ao mapa _SITUACAO")
+    return s.replace("_", " ").capitalize()
+
+
+def _money(v) -> float | None:
+    """'1.234.567,89' -> 1234567.89. Devolve None para vazio/invalido."""
+    s = (str(v) if v is not None else "").strip()
+    if not s:
+        return None
+    s = s.replace("R$", "").replace(" ", "")
+    if "," in s:                      # formato brasileiro
+        s = s.replace(".", "").replace(",", ".")
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+# ---------------------------------------------------------------- download --
+
+def _baixa(nome: str) -> str:
+    """Baixa <nome>.zip para o cache e devolve o caminho local.
+
+    Grava em disco (e nao em memoria) de proposito: o siconv_programa.csv tem
+    350 MB descomprimido e o zipfile precisa de um arquivo posicionavel para
+    conseguir descomprimir em STREAM, sem carregar tudo na RAM -- o que
+    importa numa maquina de 7,6 GB compartilhada por 43 containers.
+    """
+    import httpx
+    os.makedirs(_CACHE_DIR, exist_ok=True)
+    destino = os.path.join(_CACHE_DIR, nome)
+    if os.path.exists(destino) and os.path.getsize(destino) > 1000:
+        idade_h = (time.time() - os.path.getmtime(destino)) / 3600
+        if idade_h < _CACHE_HORAS:
+            logger.info(f"  {nome}: cache de {idade_h:.1f}h")
+            return destino
+
+    url = f"{BASE}/{nome}"
+    logger.info(f"  baixando {url} ...")
+    parcial = destino + ".part"
+    with httpx.stream("GET", url, timeout=900, follow_redirects=True) as r:
+        r.raise_for_status()
+        with open(parcial, "wb") as fh:
+            for bloco in r.iter_bytes(1024 * 256):
+                fh.write(bloco)
+    os.replace(parcial, destino)
+    logger.info(f"  {nome}: {os.path.getsize(destino):,} bytes")
+    return destino
+
+
+def _linhas(nome: str):
+    """Itera o CSV de dentro do zip como dicts, em stream.
+
+    ENCODING: os arquivos sao UTF-8 COM BOM (comecam com EF BB BF). Ler como
+    latin-1 -- erro cometido na primeira versao deste modulo -- causa DOIS
+    estragos: os acentos viram mojibake ("SÃO PAULO") e, pior, o nome da
+    primeira coluna vira `ï»¿ID_PROPONENTE`, entao todo `linha.get("ID_...")`
+    devolve None e o resultado e zero silencioso. `utf-8-sig` resolve os dois.
+    `errors="replace"` evita que um byte solto derrube uma carga inteira.
+    """
+    caminho = _baixa(nome)
+    with zipfile.ZipFile(caminho) as z:
+        interno = z.namelist()[0]
+        with z.open(interno) as bruto:
+            texto = io.TextIOWrapper(bruto, encoding="utf-8-sig", errors="replace", newline="")
+            leitor = csv.DictReader(texto, delimiter=";")
+            if leitor.fieldnames:
+                leitor.fieldnames = [c.strip().lstrip("﻿") for c in leitor.fieldnames]
+            for linha in leitor:
+                yield linha
+
+
+# ------------------------------------------------------------- municipios ---
+
 def _municipios(municipio_id=None) -> list[dict]:
+    """Municipios ativos + o CNPJ da prefeitura, quando ja conhecido."""
     import psycopg2
-    conn = psycopg2.connect(_db_url()); cur = conn.cursor()
+    conn = psycopg2.connect(_db_url())
+    cur = conn.cursor()
     if municipio_id:
         cur.execute("SELECT id, nome, uf FROM municipios WHERE id=%s", (int(municipio_id),))
     else:
         cur.execute("SELECT id, nome, uf FROM municipios WHERE active=true ORDER BY nome")
     muns = [{"id": r[0], "nome": r[1], "uf": r[2]} for r in cur.fetchall()]
-    # CNPJ da prefeitura (proponente) — mais frequente nas voluntarias
     for m in muns:
         cur.execute("""SELECT identificacao FROM transferegov_propostas
                        WHERE municipio_id=%s AND identificacao ~ '^[0-9]'
                        GROUP BY identificacao ORDER BY count(*) DESC LIMIT 1""", (m["id"],))
         row = cur.fetchone()
-        m["cnpj"] = (row[0].strip() if row and row[0] else None)
-    cur.close(); conn.close()
+        m["cnpj"] = _so_digitos(row[0]) if row and row[0] else None
+    cur.close()
+    conn.close()
     return muns
 
 
-# grid_js: extrai rows (cols + href de detalhe), links numericos e "proxima"
-GRID_JS = r"""() => {
-    const tables=[...document.querySelectorAll('table')];
-    let best=null,max=0;
-    for(const t of tables){const r=t.querySelectorAll('tr').length;if(r>max){max=r;best=t;}}
-    let rows=[];
-    if(best){
-        rows=[...best.querySelectorAll('tr')].slice(1).map(tr=>{
-            const tds=[...tr.querySelectorAll('td')].map(c=>c.innerText.trim());
-            const a=tr.querySelector('td a[href]');
-            return {cols:tds, href:(a && /Proposta/i.test(a.href))?a.href:null};
-        }).filter(r=>r.cols.length>=5 && /\d{6,}\/\d{4}/.test(r.cols[0]||''));
-    }
-    const denude=s=>(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
-    const links=[]; let prox=null;
-    document.querySelectorAll('a').forEach(a=>{
-        const raw=(a.innerText||'').trim(); const href=a.href||'';
-        if(/^\d+$/.test(raw) && /-p=\d+/.test(href)) links.push({num:parseInt(raw,10), href});
-        const t=denude(raw);
-        if((t.indexOf('prox')===0||t==='>'||t==='>>') && /-g=\d+/.test(href)) prox=href;
-    });
-    let info=null;
-    document.querySelectorAll('.pagelinks').forEach(b=>{
-        const mm=denude(b.innerText).match(/pagina\s+(\d+)\s+de\s+(\d+)/);
-        if(mm) info={cur:+mm[1], total:+mm[2]};
-    });
-    return {rows, links, prox, info};
-}"""
+def _mapa_proponentes(muns: list[dict]) -> tuple[dict, dict]:
+    """ID_PROPONENTE -> municipio_id, e ID_PROPONENTE -> dados do proponente.
 
+    REGRA DE CASAMENTO (a precisao aqui importa mais que a cobertura):
 
-async def _extrai_detalhe(page) -> dict:
-    """Objeto/justificativa/valores/qualificacao da pagina de detalhe (label->valor)."""
-    return await page.evaluate(r"""() => {
-        const out={};
-        const nodes=[...document.querySelectorAll('td,label,span,th')];
-        const want={'objeto':'objeto','justificativa':'justificativa','qualifica':'qualificacao',
-                    'valor repasse':'valor_repasse','valor contrapartida':'valor_contrapartida',
-                    'valor total':'valor_total','programa':'programa'};
-        const denude=s=>(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().trim();
-        for(const n of nodes){
-            const t=denude(n.innerText);
-            for(const k in want){
-                if(t===k || t===k+':'){
-                    let val='';
-                    const ta=n.parentElement && n.parentElement.querySelector('textarea');
-                    if(ta) val=ta.value||ta.innerText;
-                    else if(n.nextElementSibling) val=n.nextElementSibling.innerText;
-                    if(val && !out[want[k]]) out[want[k]]=val.trim().slice(0,4000);
-                }
-            }
-        }
-        return out;
-    }""")
+    1. Por CNPJ, quando o municipio ja tem um conhecido das voluntarias. E o
+       criterio exato, o mesmo que o scraper de navegador usava.
+    2. Por municipio+UF, MAS somente quando o proponente e a propria
+       prefeitura. Esse filtro nao e preciosismo: o cadastro de proponentes
+       inclui entidades privadas com sede na cidade (ha uma confederacao de
+       hapkido cadastrada em Sao Paulo). Casar so por municipio+UF atribuiria
+       propostas de terceiros ao municipio -- dado errado no painel do
+       prefeito, que e pior do que dado faltando.
 
+    O passo 2 e um ganho real sobre a versao anterior, que simplesmente PULAVA
+    municipios sem CNPJ conhecido.
+    """
+    por_cnpj = {m["cnpj"]: m["id"] for m in muns if m.get("cnpj")}
+    por_nome = {(_norm(m["nome"]), (m["uf"] or "").upper()): m["id"] for m in muns}
 
-async def _scrape_municipio(page, mun: dict) -> list[dict]:
-    if not mun.get("cnpj"):
-        logger.warning(f"  {mun['nome']}: sem CNPJ conhecido (rode voluntarias antes) — pulando PAC")
-        return []
-    await page.goto(PAC_URL, timeout=45000, wait_until="domcontentloaded")
-    await page.wait_for_timeout(2500)
-    # Preenche CNPJ do Proponente (acha pelo texto da linha; fallback posicional)
-    ok = await page.evaluate(r"""(cnpj) => {
-        for(const i of document.querySelectorAll('input[type=text]')){
-            const tr=i.closest('tr'); const txt=((tr?tr.innerText:'')||'').toUpperCase();
-            if(txt.includes('CNPJ') && txt.includes('PROPONENTE')){ i.value=cnpj; return true; }
-        }
-        const f=document.getElementById('formListarPropostaPac:_idJsp35');
-        if(f){ f.value=cnpj; return true; } return false;
-    }""", mun["cnpj"])
-    if not ok:
-        logger.warning(f"  {mun['nome']}: campo CNPJ nao encontrado no form PAC"); return []
-    await page.evaluate("""() => {
-        const b=document.getElementById('formListarPropostaPac:_idJsp55')
-          || [...document.querySelectorAll('input[type=submit],button')].find(x=>/consultar/i.test(x.value||x.innerText||''));
-        if(b) b.click();
-    }""")
-    await page.wait_for_timeout(7000)
-    try:
-        await page.wait_for_selector(".pagelinks, table", timeout=12000)
-    except Exception:
-        pass
+    # Prefixos que identificam o ente municipal (e nao uma entidade qualquer
+    # sediada na cidade). Ajustavel por env sem precisar de deploy.
+    prefixos = tuple(
+        _norm(p) for p in (os.getenv(
+            "TRANSFEREGOV_PREFIXOS_ENTE",
+            "MUNICIPIO DE|MUNICIPIO DO|PREFEITURA MUNICIPAL DE|PREFEITURA DE|PREFEITURA MUNICIPAL DO",
+        ) or "").split("|") if p.strip()
+    )
 
-    # Paginacao POSTBACK JSF: os numeros/"Prox" nao sao links GET (-p=), sao
-    # postbacks. Clicamos o "Prox" (postback) ate sumir / nao trazer nada novo.
-    def _key(r):
-        return _clean(r["cols"][0]) if r.get("cols") else ""
-    all_rows = []
-    seen = set()
-    res = await page.evaluate(GRID_JS)
-    for r in res["rows"]:
-        k = _key(r)
-        if k and k not in seen:
-            seen.add(k); all_rows.append(r)
-    # Paginacao = RichFaces dataScroller (A4J.AJAX.Submit). O "Prox" e um <span>
-    # (nao clicavel); os NUMEROS ("2","3"...) sao <a> com onclick A4J. Clicamos o
-    # numero da proxima pagina (cur+1) — clique confiavel do Playwright dispara o
-    # AJAX que re-renderiza a grid. Para quando nao ha o proximo numero.
-    cur = 1
-    paginas = 1
-    while paginas < 60:
-        nxt = page.locator(".pagelinks a", has_text=re.compile(rf"^\s*{cur + 1}\s*,?\s*$"))
-        try:
-            if await nxt.count() == 0:
-                break
-            await nxt.first.click(timeout=6000)
-        except Exception:
-            break
-        await page.wait_for_timeout(3000)
-        res = await page.evaluate(GRID_JS)
-        novos = 0
-        for r in res["rows"]:
-            k = _key(r)
-            if k and k not in seen:
-                seen.add(k); all_rows.append(r); novos += 1
-        cur += 1
-        paginas += 1
-        if novos == 0:
-            break
+    prop_para_mun: dict[str, int] = {}
+    dados: dict[str, dict] = {}
+    casados_cnpj = casados_nome = 0
 
-    # dedup por numero_proposta
-    props = {}
-    for row in all_rows:
-        c = row["cols"]
-        num = _clean(c[0])
-        if not num or num in props:
+    for linha in _linhas("siconv_proponentes.zip"):
+        pid = (linha.get("ID_PROPONENTE") or "").strip()
+        if not pid:
             continue
-        prog = _clean(c[1]) if len(c) > 1 else ""
-        prog_cod = prog.split(" - ", 1)[0].strip() if " - " in prog else ""
-        propo = _clean(c[2]) if len(c) > 2 else ""
-        cnpj = ""
-        mprop = re.match(r"\s*([\d./-]{14,20})\s*-\s*(.*)", propo)
-        if mprop:
-            cnpj = mprop.group(1); propo = mprop.group(2).strip()
-        props[num] = {
-            "numero_proposta": num, "programa": prog, "programa_codigo": prog_cod,
-            "proponente": propo, "cnpj": cnpj or mun["cnpj"],
-            "situacao": _clean(c[3]) if len(c) > 3 else "",
-            "valor_total": _money(c[4]) if len(c) > 4 else None,
-            "emenda_parlamentar": (_clean(c[5]) if len(c) > 5 and _clean(c[5]) not in ("-", "") else None),
-            "_detalhe_url": row.get("href"),
+        cnpj = _so_digitos(linha.get("IDENTIF_PROPONENTE"))
+        mun_id = por_cnpj.get(cnpj) if cnpj else None
+        if mun_id:
+            casados_cnpj += 1
+        else:
+            nome_prop = _norm(linha.get("NM_PROPONENTE"))
+            if not nome_prop.startswith(prefixos):
+                continue
+            chave = (_norm(linha.get("MUNICIPIO_PROPONENTE")),
+                     (linha.get("UF_PROPONENTE") or "").strip().upper())
+            mun_id = por_nome.get(chave)
+            if mun_id:
+                casados_nome += 1
+        if mun_id:
+            prop_para_mun[pid] = mun_id
+            dados[pid] = {
+                "cnpj": linha.get("IDENTIF_PROPONENTE"),
+                "nome": linha.get("NM_PROPONENTE"),
+            }
+
+    logger.info(f"  proponentes casados: {len(prop_para_mun)} "
+                f"({casados_cnpj} por CNPJ, {casados_nome} por nome+UF)")
+    return prop_para_mun, dados
+
+
+# ------------------------------------------------------------- montagem -----
+
+def _coleta(muns: list[dict]) -> dict[int, list[dict]]:
+    """Devolve {municipio_id: [proposta, ...]} lendo os CSVs oficiais."""
+    prop_para_mun, prop_dados = _mapa_proponentes(muns)
+    if not prop_para_mun:
+        logger.warning("  nenhum proponente casou com os municipios - nada a fazer")
+        return {}
+
+    # 1) Propostas PAC dos nossos proponentes
+    propostas: dict[str, dict] = {}          # id_selecao -> registro
+    ids_programa: set[str] = set()
+    for linha in _linhas("siconv_proposta_selecao_pac.zip"):
+        pid = (linha.get("ID_PROPONENTE") or "").strip()
+        mun_id = prop_para_mun.get(pid)
+        if not mun_id:
+            continue
+        id_sel = (linha.get("ID_PROPOSTA_SELECAO_PAC") or "").strip()
+        numero = (linha.get("NR_PROPOSTA_SELECAO_PAC") or "").strip()
+        if not id_sel or not numero:
+            continue
+        id_prog = (linha.get("ID_PROGRAMA") or "").strip()
+        ids_programa.add(id_prog)
+        propostas[id_sel] = {
+            "municipio_id": mun_id,
+            "numero_proposta": numero,
+            "programa": None,
+            "programa_codigo": None,
+            "proponente": (prop_dados.get(pid) or {}).get("nome"),
+            "cnpj": (prop_dados.get(pid) or {}).get("cnpj"),
+            "situacao": _situacao(linha.get("SITUACAO_PROPOSTA_SELECAO_PAC")),
+            "valor_repasse": None,
+            "valor_contrapartida": None,
+            "valor_total": _money(linha.get("VALOR_TOTAL_PROPOSTA_SELECAO_PAC")),
+            "emenda_parlamentar": None,
+            "qualificacao": None,
+            "objeto": (linha.get("OBJETO_PROPOSTA_SELECAO_PAC") or "").strip() or None,
+            "justificativa": (linha.get("JUSTIFICATIVA_PROPOSTA_SELECAO_PAC") or "").strip() or None,
+            "detalhe_url": None,
+            "_id_programa": id_prog,
+            "_data_envio": (linha.get("DATA_ENVIO_PROPOSTA_SELECAO_PAC") or "").strip() or None,
         }
-    logger.info(f"  {mun['nome']}: {paginas} pagina(s) -> {len(props)} propostas PAC")
-    # OBS: o detalhe (objeto/justificativa) e postback JSF (href='#'), nao navegavel
-    # por GET. Enriquecimento futuro: clicar a linha + "Voltar" por proposta.
-    for p in props.values():
-        p.pop("_detalhe_url", None)
-    return list(props.values())
+    logger.info(f"  propostas PAC encontradas: {len(propostas)}")
+    if not propostas:
+        return {}
+
+    # 2) Nome e codigo do programa (arquivo grande: le em stream e so guarda o que interessa)
+    programas: dict[str, dict] = {}
+    for linha in _linhas("siconv_programa.zip"):
+        pid = (linha.get("ID_PROGRAMA") or "").strip()
+        if pid in ids_programa and pid not in programas:
+            programas[pid] = {
+                "nome": (linha.get("NOME_PROGRAMA") or "").strip() or None,
+                "codigo": (linha.get("COD_PROGRAMA") or "").strip() or None,
+            }
+            if len(programas) == len(ids_programa):
+                break
+    for p in propostas.values():
+        prog = programas.get(p.pop("_id_programa"), {})
+        p["programa"] = prog.get("nome")
+        p["programa_codigo"] = prog.get("codigo")
+    logger.info(f"  programas resolvidos: {len(programas)}/{len(ids_programa)}")
+
+    # 3) Valores de repasse/contrapartida -- sao RESPOSTAS do formulario do programa
+    perguntas_valor: dict[str, str] = {}     # id_pergunta -> 'repasse' | 'contrapartida'
+    for linha in _linhas("siconv_pergunta_selecao_pac.zip"):
+        texto = _norm(linha.get("PERGUNTA_SELECAO_PAC"))
+        qid = (linha.get("ID_PERGUNTA_SELECAO_PAC") or "").strip()
+        if not qid or "valor" not in texto:
+            continue
+        if "contrapartida" in texto:
+            perguntas_valor[qid] = "contrapartida"
+        elif "repasse" in texto:
+            perguntas_valor[qid] = "repasse"
+    if perguntas_valor:
+        achados = 0
+        for linha in _linhas("siconv_resposta_selecao_pac.zip"):
+            qid = (linha.get("ID_PERGUNTA_SELECAO_PAC") or "").strip()
+            tipo = perguntas_valor.get(qid)
+            if not tipo:
+                continue
+            alvo = propostas.get((linha.get("ID_PROPOSTA_SELECAO_PAC") or "").strip())
+            if alvo is None:
+                continue
+            valor = _money(linha.get("RESPOSTA_SELECAO_PAC"))
+            if valor is not None:
+                alvo["valor_contrapartida" if tipo == "contrapartida" else "valor_repasse"] = valor
+                achados += 1
+        logger.info(f"  valores por resposta: {achados} "
+                    f"(de {len(perguntas_valor)} perguntas financeiras)")
+
+    # Repasse implicito quando so veio a contrapartida
+    for p in propostas.values():
+        if p["valor_repasse"] is None and p["valor_total"] and p["valor_contrapartida"] is not None:
+            p["valor_repasse"] = round(p["valor_total"] - p["valor_contrapartida"], 2)
+
+    # 4) Emenda parlamentar: proposta PAC formalizada -> proposta SICONV -> emenda
+    sel_para_proposta: dict[str, str] = {}
+    for linha in _linhas("siconv_proposta_formalizacao_pac.zip"):
+        id_sel = (linha.get("ID_PROPOSTA_SELECAO_PAC") or "").strip()
+        if id_sel in propostas:
+            id_prop = (linha.get("ID_PROPOSTA") or "").strip()
+            if id_prop:
+                sel_para_proposta[id_sel] = id_prop
+    if sel_para_proposta:
+        alvo_props = set(sel_para_proposta.values())
+        parlamentar: dict[str, str] = {}
+        for linha in _linhas("siconv_emenda.zip"):
+            id_prop = (linha.get("ID_PROPOSTA") or "").strip()
+            if id_prop in alvo_props:
+                nome = (linha.get("NOME_PARLAMENTAR") or "").strip()
+                if nome and id_prop not in parlamentar:
+                    parlamentar[id_prop] = nome
+        for id_sel, id_prop in sel_para_proposta.items():
+            nome = parlamentar.get(id_prop)
+            if nome:
+                propostas[id_sel]["emenda_parlamentar"] = nome
+        logger.info(f"  formalizadas: {len(sel_para_proposta)} | "
+                    f"com parlamentar: {len(parlamentar)}")
+
+    por_municipio: dict[int, list[dict]] = {}
+    for p in propostas.values():
+        por_municipio.setdefault(p.pop("municipio_id"), []).append(p)
+    return por_municipio
 
 
-def _upsert(mun_id: int, props: list[dict]) -> int:
+# ----------------------------------------------------------------- upsert ---
+
+def _upsert(mun_id: int, propostas: list[dict]) -> int:
+    """UPSERT idempotente por (municipio_id, numero_proposta).
+
+    COALESCE nos campos que o dado aberto NAO tem (qualificacao, detalhe_url) e
+    tambem em emenda_parlamentar: nunca apagar o que uma coleta anterior ja
+    tinha so porque esta fonte nao traz aquele campo.
+    """
     import psycopg2
-    conn = psycopg2.connect(_db_url()); cur = conn.cursor()
+    conn = psycopg2.connect(_db_url())
+    cur = conn.cursor()
     n = 0
-    for p in props:
+    for p in propostas:
         try:
             cur.execute("""
                 INSERT INTO transferegov_pac
@@ -217,52 +424,99 @@ def _upsert(mun_id: int, props: list[dict]) -> int:
                    %(situacao)s,%(valor_repasse)s,%(valor_contrapartida)s,%(valor_total)s,%(emenda_parlamentar)s,
                    %(qualificacao)s,%(objeto)s,%(justificativa)s,%(detalhe_url)s,%(raw)s::jsonb, NOW())
                 ON CONFLICT (municipio_id, numero_proposta) DO UPDATE SET
-                   programa=EXCLUDED.programa, programa_codigo=EXCLUDED.programa_codigo,
-                   proponente=EXCLUDED.proponente, cnpj=EXCLUDED.cnpj, situacao=EXCLUDED.situacao,
+                   programa=COALESCE(EXCLUDED.programa, transferegov_pac.programa),
+                   programa_codigo=COALESCE(EXCLUDED.programa_codigo, transferegov_pac.programa_codigo),
+                   proponente=COALESCE(EXCLUDED.proponente, transferegov_pac.proponente),
+                   cnpj=COALESCE(EXCLUDED.cnpj, transferegov_pac.cnpj),
+                   situacao=COALESCE(EXCLUDED.situacao, transferegov_pac.situacao),
                    valor_repasse=COALESCE(EXCLUDED.valor_repasse, transferegov_pac.valor_repasse),
                    valor_contrapartida=COALESCE(EXCLUDED.valor_contrapartida, transferegov_pac.valor_contrapartida),
                    valor_total=COALESCE(EXCLUDED.valor_total, transferegov_pac.valor_total),
-                   emenda_parlamentar=EXCLUDED.emenda_parlamentar,
+                   emenda_parlamentar=COALESCE(EXCLUDED.emenda_parlamentar, transferegov_pac.emenda_parlamentar),
                    qualificacao=COALESCE(EXCLUDED.qualificacao, transferegov_pac.qualificacao),
                    objeto=COALESCE(EXCLUDED.objeto, transferegov_pac.objeto),
                    justificativa=COALESCE(EXCLUDED.justificativa, transferegov_pac.justificativa),
-                   detalhe_url=EXCLUDED.detalhe_url, raw_data=EXCLUDED.raw_data, updated_at=NOW()
+                   detalhe_url=COALESCE(EXCLUDED.detalhe_url, transferegov_pac.detalhe_url),
+                   raw_data=EXCLUDED.raw_data, updated_at=NOW()
             """, {**{k: p.get(k) for k in ("numero_proposta", "programa", "programa_codigo", "proponente",
                      "cnpj", "situacao", "valor_repasse", "valor_contrapartida", "valor_total",
                      "emenda_parlamentar", "qualificacao", "objeto", "justificativa", "detalhe_url")},
                   "m": mun_id, "raw": json.dumps(p, ensure_ascii=False)})
             n += 1
         except Exception as e:
-            logger.warning(f"upsert {p.get('numero_proposta')}: {str(e)[:80]}"); conn.rollback(); continue
-    conn.commit(); cur.close(); conn.close()
+            logger.warning(f"upsert {p.get('numero_proposta')}: {str(e)[:80]}")
+            conn.rollback()
+            continue
+    conn.commit()
+    cur.close()
+    conn.close()
     return n
 
 
-async def run(municipio_id=None):
-    from playwright.async_api import async_playwright
+def _registra_ingestao(total: int, ok: bool, erro: str | None = None) -> None:
+    import psycopg2
+    try:
+        conn = psycopg2.connect(_db_url())
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO ingestion_log (source, status, records_inserted, error_message, "
+                "started_at, finished_at) VALUES ('transferegov_pac', %s, %s, %s, NOW(), NOW())",
+                ("success" if ok else "failed", total, (erro or "")[:500] or None),
+            )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logger.debug(f"  (ingestion_log nao registrado: {e})")
+
+
+async def run(municipio_id=None) -> int:
+    """Mantem a assinatura async da versao com navegador (chamada de
+    transferegov_voluntarias), embora agora o trabalho seja HTTP sincrono."""
+    t0 = time.monotonic()
     muns = _municipios(municipio_id)
-    logger.info(f"=== Selecao PAC: {len(muns)} municipio(s) ===")
+    if not muns:
+        logger.warning("Nenhum municipio ativo")
+        return 0
+    logger.info(f"=== PAC (dados abertos): {len(muns)} municipios ===")
+
+    # TG_PAC_DRY_RUN=1 coleta e relata SEM gravar. Serve para validar a
+    # extracao contra producao antes de deixar o cron escrever.
+    dry = (os.getenv("TG_PAC_DRY_RUN", "") or "").strip() in ("1", "true", "yes")
+    if dry:
+        logger.warning("  MODO SIMULACAO (TG_PAC_DRY_RUN=1): nada sera gravado")
+
     total = 0
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True, args=["--ignore-certificate-errors", "--no-sandbox"])
-        ctx = await browser.new_context(ignore_https_errors=True, user_agent="Mozilla/5.0 Chrome/131")
-        page = await ctx.new_page()
-        await page.goto(ENTRY, timeout=60000, wait_until="domcontentloaded")
-        await page.wait_for_timeout(6000)
-        for mun in muns:
-            try:
-                props = await _scrape_municipio(page, mun)
-                if props:
-                    ins = _upsert(mun["id"], props)
-                    logger.info(f"  {mun['nome']}: {ins} PAC upsert")
-                    total += ins
-            except Exception as e:
-                logger.warning(f"  {mun['nome']}: falhou — {str(e)[:100]}")
-        await browser.close()
-    logger.info(f"=== PAC concluido: {total} propostas ===")
+    try:
+        por_municipio = _coleta(muns)
+        nomes = {m["id"]: m["nome"] for m in muns}
+        for mun_id, props in sorted(por_municipio.items(), key=lambda kv: nomes.get(kv[0], "")):
+            if dry:
+                com_valor = sum(1 for p in props if p.get("valor_total"))
+                com_parl = sum(1 for p in props if p.get("emenda_parlamentar"))
+                logger.info(f"  [simulacao] {nomes.get(mun_id, mun_id)}: {len(props)} propostas "
+                            f"({com_valor} com valor, {com_parl} com parlamentar)")
+                for p in props[:2]:
+                    logger.info(f"      {p['numero_proposta']} | {(p.get('situacao') or '-')[:22]} | "
+                                f"R$ {p.get('valor_total')} | {(p.get('programa') or '-')[:48]}")
+                total += len(props)
+                continue
+            ins = _upsert(mun_id, props)
+            logger.info(f"  {nomes.get(mun_id, mun_id)}: {ins} PAC upsert")
+            total += ins
+        sem_dados = [nomes[m] for m in nomes if m not in por_municipio]
+        if sem_dados:
+            logger.info(f"  sem proposta PAC: {len(sem_dados)} municipio(s)")
+        if not dry:
+            _registra_ingestao(total, ok=True)
+    except Exception as e:
+        logger.error(f"PAC falhou: {e}")
+        _registra_ingestao(total, ok=False, erro=str(e))
+        raise
+    logger.info(f"=== PAC concluido: {total} propostas em {time.monotonic()-t0:.0f}s ===")
     return total
 
 
 if __name__ == "__main__":
+    import asyncio
     mid = int(sys.argv[1]) if len(sys.argv) > 1 else None
     asyncio.run(run(mid))
