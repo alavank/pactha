@@ -1,0 +1,93 @@
+name: build-backend
+
+# Builda UMA vez as imagens do backend compartilhadas pelos 3 tenants
+# (freitas/trust/montesiao) e publica no GitHub Container Registry (ghcr.io).
+#
+# POR QUE: a API e o worker sao IDENTICOS entre os 3 tenants -- a diferenca deles
+# e so env de runtime. Hoje cada push na main faz a VPS (AWS Lightsail t3.large,
+# 2 vCPU burstable) buildar as 6 imagens (3 api + 3 worker), sendo o worker de
+# 2,4 GB com Chromium. Isso queimou os creditos de burst da instancia duas vezes
+# em 23/07. Buildando aqui UMA vez, a VPS deixa de fazer esse trabalho.
+#
+# ESTADO ATUAL (Fase A): este workflow so PUBLICA a imagem. Nenhum app do Coolify
+# consome ela ainda -- a VPS segue buildando como antes. Quando os apps forem
+# migrados para puxar a imagem (Fase C/D), o build sai de vez da VPS.
+#
+# Os FRONTENDS nao entram aqui: cada tenant embute build-args proprios
+# (NEXT_PUBLIC_API_URL, logo, subtitulo) no bundle Next em build time, entao sao
+# genuinamente diferentes -- continuam buildando no Coolify (sao leves).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/build-backend.yml'
+  workflow_dispatch: {}   # permite rodar manualmente pelo painel do GitHub
+
+concurrency:
+  group: build-backend-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_BASE: ghcr.io/${{ github.repository_owner }}/pactha
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write        # publicar no ghcr da org
+    strategy:
+      fail-fast: false       # se a api falhar, ainda tenta o worker (e vice-versa)
+      matrix:
+        include:
+          - name: api
+            dockerfile: backend/Dockerfile.api
+          - name: worker
+            dockerfile: backend/Dockerfile.scraper
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login no ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}   # token efemero do proprio run
+
+      # Tags: sha curto (imutavel, para pin exato) + latest (o que os apps seguem).
+      - name: Metadados / tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_BASE }}-${{ matrix.name }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=short
+
+      - name: Build e push
+        uses: docker/build-push-action@v6
+        with:
+          context: .                       # contexto = RAIZ (os Dockerfiles fazem COPY backend/)
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Cache de layers no proprio ghcr: builds seguintes reaproveitam o
+          # Chromium/pip e ficam MUITO mais rapidos (o custo do worker esta nessas
+          # camadas, nao no codigo).
+          cache-from: type=registry,ref=${{ env.IMAGE_BASE }}-${{ matrix.name }}:buildcache
+          cache-to: type=registry,ref=${{ env.IMAGE_BASE }}-${{ matrix.name }}:buildcache,mode=max
+
+      - name: Resumo
+        run: |
+          echo "### Imagem publicada: ${{ matrix.name }}" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "${{ steps.meta.outputs.tags }}" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
