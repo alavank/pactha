@@ -44,21 +44,21 @@ jobs:
       matrix:
         include:
           # --- frontends dos tenants (contexto frontend/) ---
-          - image: pactha-frontend-freitas
+          - image: frontend-freitas
             context: frontend
             args: |
               NEXT_PUBLIC_API_URL=/api
               API_PROXY_TARGET=https://pactha-api-54-232-208-118.sslip.io
               NEXT_PUBLIC_CLIENT_LOGO=/freitas-logo.jpeg
               NEXT_PUBLIC_CLIENT_SUBTITLE=Assessoria
-          - image: pactha-frontend-trust
+          - image: frontend-trust
             context: frontend
             args: |
               NEXT_PUBLIC_API_URL=/api
               API_PROXY_TARGET=https://pactha-trust-api-54-232-208-118.sslip.io
               NEXT_PUBLIC_CLIENT_LOGO=/trust-logo.png
               NEXT_PUBLIC_CLIENT_SUBTITLE=Infraestrutura de TI e Cloud Computing
-          - image: pactha-frontend-montesiao-mg
+          - image: frontend-montesiao-mg
             context: frontend
             args: |
               NEXT_PUBLIC_API_URL=/api
@@ -66,7 +66,7 @@ jobs:
               NEXT_PUBLIC_CLIENT_LOGO=/brasao-monte-siao.png
               NEXT_PUBLIC_CLIENT_SUBTITLE=Monte Siao - MG
           # --- painel executivo do prefeito (contexto painel/) ---
-          - image: pactha-painel-montesiao-mg
+          - image: painel-montesiao-mg
             context: painel
             args: |
               NEXT_PUBLIC_API_URL=/api
