@@ -30,15 +30,25 @@ def _sync_url() -> str:
 def _claim_job(conn) -> Optional[int]:
     """Reclama 1 job 'pending' do tipo sigcon. Retorna o id ou None.
 
-    Antes de reclamar, cura jobs 'running' orfaos (> 30min) para a fila nao
-    travar caso um Worker tenha morrido no meio da execucao.
+    Antes de reclamar, cura jobs 'running' orfaos para a fila nao travar caso um
+    Worker tenha morrido no meio da execucao.
+
+    ATENCAO ao limiar: ele PRECISA ser maior que a duracao real de uma rodada.
+    Ate 2026-07-23 era de 30 minutos enquanto o pipeline levava 4 a 5 HORAS --
+    entao um job legitimo era declarado orfao aos 30min, re-enfileirado, e o poll
+    seguinte subia um SEGUNDO scraper por cima do primeiro, que continuava vivo.
+    Isso empilhava copias, cada uma com seus proprios Chromium, ate saturar a VPS.
+    As Scheduled Tasks agora usam `timeout -k 30 3000` (50 min), entao nenhuma
+    rodada legitima passa disso; 6h deixa margem folgada mesmo assim.
     """
+    stale_min = int(os.getenv("SIGCON_STALE_MINUTES", "360") or "360")
     with conn.cursor() as cur:
         cur.execute(
             "UPDATE scraper_jobs SET status = 'error', finished_at = now(), "
-            "error = 'timeout (stale running > 30min)' "
+            "error = %s "
             "WHERE tipo = 'sigcon' AND status = 'running' "
-            "AND started_at < now() - interval '30 minutes'"
+            "AND started_at < now() - make_interval(mins => %s)",
+            (f"timeout (stale running > {stale_min}min)", stale_min),
         )
         cur.execute(
             "SELECT id FROM scraper_jobs "

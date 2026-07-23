@@ -1,8 +1,8 @@
 """Backfill do PARLAMENTAR (autor da emenda) dos instrumentos FEDERAIS.
 
-Fonte: open data SICONV/TransfereGov (repositorio.dados.gov.br/seges/detru):
-  - siconv_emenda.csv.zip   (~7.6 MB)  ID_PROPOSTA -> NOME_PARLAMENTAR
-  - siconv_proposta.csv.zip (~199 MB)  NR_PROPOSTA  -> ID_PROPOSTA
+Fonte: open data SICONV/TransfereGov (api-publica.transferegov.gestao.gov.br/downloads/dadosgov):
+  - siconv_emenda.zip   (~7.6 MB)  ID_PROPOSTA -> NOME_PARLAMENTAR
+  - siconv_proposta.zip (~199 MB)  NR_PROPOSTA  -> ID_PROPOSTA
 
 A tela de detalhe (guest) do SICONV NAO expõe o autor da emenda, então o
 scraper nunca conseguia preencher transferegov_propostas.parlamentar. Este
@@ -32,8 +32,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("siconv_emenda_backfill")
 
-URL_EMENDA = "https://repositorio.dados.gov.br/seges/detru/siconv_emenda.csv.zip"
-URL_PROPOSTA = "https://repositorio.dados.gov.br/seges/detru/siconv_proposta.csv.zip"
+URL_EMENDA = "https://api-publica.transferegov.gestao.gov.br/downloads/dadosgov/siconv_emenda.zip"
+URL_PROPOSTA = "https://api-publica.transferegov.gestao.gov.br/downloads/dadosgov/siconv_proposta.zip"
 
 # Cache local (evita rebaixar em execuções repetidas no mesmo host/dia).
 _CACHE_DIR = os.getenv("SICONV_CACHE_DIR") or os.path.join(
