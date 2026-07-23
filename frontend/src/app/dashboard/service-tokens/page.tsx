@@ -31,6 +31,12 @@ interface ServiceToken {
 }
 
 const SCOPE_PRESETS = [
+  // Escopo da extensao de captura de sessao (gov.br/TransfereGov/FNS). Sem ele na
+  // lista era impossivel criar por aqui um token que a extensao aceitasse: o
+  // formulario exige ao menos um escopo, e o POST /api/session-capture responde
+  // 403 sem session:write. A alternativa era o endpoint de control-plane
+  // (/api/control/session/token), que exige um token de control ja provisionado.
+  { label: "Extensao - captura de sessao", value: "session:write" },
   { label: "FNS - leitura senhas", value: "secret:read:fns" },
   { label: "FNS - upsert dados", value: "write:fns" },
   { label: "SIMEC - leitura senhas", value: "secret:read:simec" },
