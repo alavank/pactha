@@ -1,8 +1,8 @@
 """Ingestao da base federal SICONV/TransfereGov (Brasil inteiro) p/ consulta por CNPJ.
 
-Fonte (dados abertos, PUBLICO): repositorio.dados.gov.br/seges/detru
-  - siconv_proposta.csv.zip  (~200MB) : nivel proposta, tem IDENTIF_PROPONENTE (CNPJ)
-  - siconv_convenio.csv.zip  (~16MB)  : convenio celebrado, ligado por ID_PROPOSTA
+Fonte (dados abertos, PUBLICO): api-publica.transferegov.gestao.gov.br/downloads/dadosgov
+  - siconv_proposta.zip  (~200MB) : nivel proposta, tem IDENTIF_PROPONENTE (CNPJ)
+  - siconv_convenio.zip  (~16MB)  : convenio celebrado, ligado por ID_PROPOSTA
 
 Carrega tudo em `siconv_federal` (proposta + convenio via join), indexado por CNPJ.
 Uso: DATABASE_URL_SYNC=... python ingestion/siconv_federal_ingest.py
@@ -22,9 +22,9 @@ from psycopg2.extras import execute_values
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("siconv_federal_ingest")
 
-BASE = "https://repositorio.dados.gov.br/seges/detru"
-PROPOSTA_URL = f"{BASE}/siconv_proposta.csv.zip"
-CONVENIO_URL = f"{BASE}/siconv_convenio.csv.zip"
+BASE = "https://api-publica.transferegov.gestao.gov.br/downloads/dadosgov"
+PROPOSTA_URL = f"{BASE}/siconv_proposta.zip"
+CONVENIO_URL = f"{BASE}/siconv_convenio.zip"
 UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0) Chrome/131"}
 
 

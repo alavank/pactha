@@ -1104,73 +1104,88 @@ async def run():
     total = 0
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True, args=["--ignore-certificate-errors", "--no-sandbox"])
-        # Contexto GUEST (sem cookies): listagem via Acesso Livre
-        ctx_guest = await browser.new_context(ignore_https_errors=True, user_agent="Mozilla/5.0 Chrome/131")
-        page_guest = await ctx_guest.new_page()
-        # A Cláusula Suspensiva vem do OPEN DATA (siconv_convenio_backfill), então
-        # por um tempo este run() rodou GUEST-ONLY, com a sessão desligada. Só que
-        # o Histórico de Comunicações (add. em 20/07) EXIGE a área /private/: sem
-        # sessão ele nunca era capturado pelo cron — apenas por run_one() manual.
-        # Com a extensão de captura + govbr_renew (re-deriva via SAML a cada 15min,
-        # sem reCAPTCHA), a sessão se mantém sozinha e a coleta pode ser automática.
-        # Degrada com segurança: sem sessão válida, cai em guest exatamente como antes.
-        # TRANSFEREGOV_AUTH=0 volta ao comportamento guest-only.
-        _auth_on = (os.getenv("TRANSFEREGOV_AUTH", "1") or "1").strip() not in ("0", "false", "no")
-        govbr_cks = _load_govbr_cookies() if _auth_on else None
-        page_auth = None
-        if govbr_cks:
-            # Carrega cookies originais (com expiration) para checar validade.
-            # Auth do scraper usa principalmente JSESSIONID de discricionarias
-            # (capturado quando user faz bookmarklet em /voluntarias/...).
-            # user-id JWT do parcerias eh OPCIONAL (so usado pra extracoes
-            # adicionais no parcerias). Pula auth APENAS se NAO tiver
-            # JSESSIONID de discricionarias E o user-id estiver expirado.
+        ctx_guest = None
+        ctx_auth = None
+        try:
+            # Contexto GUEST (sem cookies): listagem via Acesso Livre
+            ctx_guest = await browser.new_context(ignore_https_errors=True, user_agent="Mozilla/5.0 Chrome/131")
+            page_guest = await ctx_guest.new_page()
+            # A Cláusula Suspensiva vem do OPEN DATA (siconv_convenio_backfill), então
+            # por um tempo este run() rodou GUEST-ONLY, com a sessão desligada. Só que
+            # o Histórico de Comunicações (add. em 20/07) EXIGE a área /private/: sem
+            # sessão ele nunca era capturado pelo cron — apenas por run_one() manual.
+            # Com a extensão de captura + govbr_renew (re-deriva via SAML a cada 15min,
+            # sem reCAPTCHA), a sessão se mantém sozinha e a coleta pode ser automática.
+            # Degrada com segurança: sem sessão válida, cai em guest exatamente como antes.
+            # TRANSFEREGOV_AUTH=0 volta ao comportamento guest-only.
+            _auth_on = (os.getenv("TRANSFEREGOV_AUTH", "1") or "1").strip() not in ("0", "false", "no")
+            govbr_cks = _load_govbr_cookies() if _auth_on else None
+            page_auth = None
+            if govbr_cks:
+                # Carrega cookies originais (com expiration) para checar validade.
+                # Auth do scraper usa principalmente JSESSIONID de discricionarias
+                # (capturado quando user faz bookmarklet em /voluntarias/...).
+                # user-id JWT do parcerias eh OPCIONAL (so usado pra extracoes
+                # adicionais no parcerias). Pula auth APENAS se NAO tiver
+                # JSESSIONID de discricionarias E o user-id estiver expirado.
+                try:
+                    import psycopg2 as _pg
+                    _u = os.getenv("DATABASE_URL_SYNC","").replace("&channel_binding=require","").replace("?channel_binding=require","")
+                    _c = _pg.connect(_u); _cur = _c.cursor()
+                    _cur.execute("SELECT senha_hash FROM cofre_senhas WHERE automation_key IN ('govbr','siconv_legado') "
+                                 "AND length(senha_hash) > 1000 ORDER BY updated_at DESC")
+                    _all = _cur.fetchall(); _cur.close(); _c.close()
+                    from services import crypto as _crypto
+                    has_discric_session = False
+                    best_jwt_mins = float("-inf")
+                    for _row in _all:
+                        _data = json.loads(_crypto.decrypt(_row[0]))
+                        cks = _data.get("cookies", [])
+                        if any('discricionarias' in (c.get('domain','') or '') and c.get('name')=='JSESSIONID' for c in cks):
+                            has_discric_session = True
+                        jm = _jwt_minutos_restantes(cks)
+                        if jm > best_jwt_mins: best_jwt_mins = jm
+                    logger.info(f"  auth status: JSESSIONID-discric={has_discric_session} | user-id JWT={best_jwt_mins:+.1f}min")
+                    if not has_discric_session and best_jwt_mins <= 1:
+                        logger.warning("  sem JSESSIONID e JWT expirado — pulando auth, indo direto guest")
+                        govbr_cks = None
+                except Exception as e:
+                    logger.warning(f"  nao validou sessao: {e}")
+            if govbr_cks:
+                try:
+                    ctx_auth = await browser.new_context(ignore_https_errors=True, user_agent="Mozilla/5.0 Chrome/131")
+                    await ctx_auth.add_cookies(govbr_cks)
+                    page_auth = await ctx_auth.new_page()
+                    logger.info(f"  contexto AUTH criado com {len(govbr_cks)} cookies SSO")
+                except Exception as e:
+                    logger.warning(f"  falha ao criar contexto AUTH: {e}")
+                    page_auth = None
+            else:
+                logger.info("  sem sessao gov.br valida, detalhes em guest")
+            for mun in municipios:
+                try:
+                    # Listagem SEMPRE guest (Acesso Livre). Com sessao viva, o
+                    # detalhe da Clausula Suspensiva (motivo+data) e capturado via
+                    # page_auth navegando o instrumento. Sem sessao: so o status.
+                    props = await _scrape_municipio(page_guest, mun, page_auth=page_auth)
+                    n = _upsert(mun["id"], props)
+                    logger.info(f"  {mun['nome']}: {len(props)} propostas -> {n} upsert")
+                    total += n
+                except Exception as e:
+                    logger.error(f"  {mun['nome']}: ERRO {str(e)[:200]}")
+        finally:
+            # Fecha SEMPRE, inclusive em excecao/cancelamento: e este caminho que,
+            # sem o finally, deixava Chromium orfao vivo consumindo CPU para sempre.
+            for _ctx in (ctx_auth, ctx_guest):
+                if _ctx is not None:
+                    try:
+                        await _ctx.close()
+                    except Exception:
+                        pass
             try:
-                import psycopg2 as _pg
-                _u = os.getenv("DATABASE_URL_SYNC","").replace("&channel_binding=require","").replace("?channel_binding=require","")
-                _c = _pg.connect(_u); _cur = _c.cursor()
-                _cur.execute("SELECT senha_hash FROM cofre_senhas WHERE automation_key IN ('govbr','siconv_legado') "
-                             "AND length(senha_hash) > 1000 ORDER BY updated_at DESC")
-                _all = _cur.fetchall(); _cur.close(); _c.close()
-                from services import crypto as _crypto
-                has_discric_session = False
-                best_jwt_mins = float("-inf")
-                for _row in _all:
-                    _data = json.loads(_crypto.decrypt(_row[0]))
-                    cks = _data.get("cookies", [])
-                    if any('discricionarias' in (c.get('domain','') or '') and c.get('name')=='JSESSIONID' for c in cks):
-                        has_discric_session = True
-                    jm = _jwt_minutos_restantes(cks)
-                    if jm > best_jwt_mins: best_jwt_mins = jm
-                logger.info(f"  auth status: JSESSIONID-discric={has_discric_session} | user-id JWT={best_jwt_mins:+.1f}min")
-                if not has_discric_session and best_jwt_mins <= 1:
-                    logger.warning("  sem JSESSIONID e JWT expirado — pulando auth, indo direto guest")
-                    govbr_cks = None
-            except Exception as e:
-                logger.warning(f"  nao validou sessao: {e}")
-        if govbr_cks:
-            try:
-                ctx_auth = await browser.new_context(ignore_https_errors=True, user_agent="Mozilla/5.0 Chrome/131")
-                await ctx_auth.add_cookies(govbr_cks)
-                page_auth = await ctx_auth.new_page()
-                logger.info(f"  contexto AUTH criado com {len(govbr_cks)} cookies SSO")
-            except Exception as e:
-                logger.warning(f"  falha ao criar contexto AUTH: {e}")
-                page_auth = None
-        else:
-            logger.info("  sem sessao gov.br valida, detalhes em guest")
-        for mun in municipios:
-            try:
-                # Listagem SEMPRE guest (Acesso Livre). Com sessao viva, o
-                # detalhe da Clausula Suspensiva (motivo+data) e capturado via
-                # page_auth navegando o instrumento. Sem sessao: so o status.
-                props = await _scrape_municipio(page_guest, mun, page_auth=page_auth)
-                n = _upsert(mun["id"], props)
-                logger.info(f"  {mun['nome']}: {len(props)} propostas -> {n} upsert")
-                total += n
-            except Exception as e:
-                logger.error(f"  {mun['nome']}: ERRO {str(e)[:200]}")
-        await browser.close()
+                await browser.close()
+            except Exception:
+                pass
     logger.info(f"=== Finalizado: {total} propostas ===")
     # Backfill do parlamentar (autor da emenda) via open data SICONV. O scraper
     # ja gravou id_proposta_siconv acima, entao aqui so baixa o arquivo barato
