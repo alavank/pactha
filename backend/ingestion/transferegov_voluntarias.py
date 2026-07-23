@@ -1101,6 +1101,22 @@ async def run():
     from playwright.async_api import async_playwright
     municipios = _municipios_pacta()
     logger.info(f"=== TransfereGov Voluntarias: {len(municipios)} municipios ===")
+
+    # CAMADA BASE por DADOS ABERTOS primeiro (HTTP, sem navegador). Preenche a
+    # tabela inteira -- valores, situacao, datas, parlamentar, programa -- a
+    # partir dos CSVs oficiais. So DEPOIS o navegador entra para a fatia que so
+    # existe atras do login (historico de comunicacoes, quadro resumo, processo
+    # de execucao). Assim, se o Chromium travar/falhar, a base ja esta completa e
+    # atualizada -- em vez do cenario antigo, em que uma falha do navegador
+    # deixava TUDO desatualizado. Isolado: um erro aqui nao impede o resto.
+    # TG_OPENDATA=0 desliga (volta ao comportamento so-navegador).
+    if (os.getenv("TG_OPENDATA", "1") or "1").strip() not in ("0", "false", "no"):
+        try:
+            from ingestion.transferegov_opendata import run as _open_run
+            _open_run()
+        except Exception as e:
+            logger.warning(f"  camada de dados abertos falhou (segue p/ navegador): {e}")
+
     total = 0
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True, args=["--ignore-certificate-errors", "--no-sandbox"])

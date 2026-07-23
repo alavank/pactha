@@ -156,13 +156,27 @@ def _baixa(nome: str) -> str:
 
     url = f"{BASE}/{nome}"
     logger.info(f"  baixando {url} ...")
-    parcial = destino + ".part"
-    with httpx.stream("GET", url, timeout=900, follow_redirects=True) as r:
-        r.raise_for_status()
-        with open(parcial, "wb") as fh:
-            for bloco in r.iter_bytes(1024 * 256):
-                fh.write(bloco)
-    os.replace(parcial, destino)
+    # O .part leva o PID porque o cache passou a ser um diretorio COMPARTILHADO
+    # entre os workers dos 3 tenants (bind mount, para nao baixar 330 MB tres
+    # vezes). Sem isso, dois downloads simultaneos escreveriam no mesmo arquivo
+    # temporario e o resultado seria um zip corrompido -- quebrando os tres de
+    # uma vez. O os.replace no fim e atomico, entao sempre sobra um zip integro.
+    parcial = f"{destino}.{os.getpid()}.part"
+    try:
+        with httpx.stream("GET", url, timeout=900, follow_redirects=True) as r:
+            r.raise_for_status()
+            with open(parcial, "wb") as fh:
+                for bloco in r.iter_bytes(1024 * 256):
+                    fh.write(bloco)
+        if os.path.getsize(parcial) < 1000:
+            raise OSError(f"download de {nome} veio vazio/truncado")
+        os.replace(parcial, destino)
+    finally:
+        if os.path.exists(parcial):
+            try:
+                os.remove(parcial)
+            except OSError:
+                pass
     logger.info(f"  {nome}: {os.path.getsize(destino):,} bytes")
     return destino
 
