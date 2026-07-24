@@ -1,12 +1,40 @@
-Endereço de uma página onde fala e mostra mais desse design. Use como inspiração. Perceba q no meio do dashboard tem uma visualização tipo de um mapa, pensei em um mapa geográfico aparecer ali mostrando os clientes do pactha, mas não sei, aceito sugestões. Gostei da ideia de cores desse dashboard, da uma ideia de seriedade, robustez, futurístico, moderno, bonito, e queria tb ter a opção de colocar light mode, esse aí é dark mode por padrão e nós vamos usar assim tb, o dark mode será esse aí e será o padrão do sistema mas se o usuário quiser mudar pra light mode ele terá opção tb.
+**Objetivo:**
 
-
-
-Veja se dá pra construir algo semelhante, e fiel ao que tá aí. Cores, paleta de cores, tipografia, etc...
-
-Se não der, vc me avisa ou me diga o que ta sendo usado de tecnologia pra contruir isso, como é feito, etc e nos avaliamos junto a possibilidade de fazer assim ou não fazer e deixar como está.
-
-
+Desenvolver a interface/dashboard do nosso sistema tomando como referência técnica e estético-visual o seguinte projeto do Dribbble:
 
 https://dribbble.com/shots/27450488-Cybersecurity-Dashboard-Design-for-Config-Drift-Detection
 
+---
+
+### **1. Diretrizes de Design & UI**
+
+* **Estética e Sentimento:** O design deve transmitir **seriedade, robustez, tom futurista, modernidade e sofisticação**.
+* **Fidelidade Visual:** Utilize o link como inspiração direta para:
+* Paleta de cores (tons, contrastes e destaques no dark mode).
+* Tipografia (hierarquia visual, fontes sans-serif modernas/técnicas).
+* Espaçamento, bordas, cartões e disposição geral dos componentes.
+
+
+* **Tema / Modos de Exibição:**
+* **Dark Mode:** Deve ser o **tema padrão** do sistema, idêntico/fiel ao estilo visual do exemplo.
+* **Light Mode:** O sistema deve oferecer a **opção de alternância para o modo claro** (Light Mode) no perfil do usuário ou na barra de navegação, mantendo a coerência das cores da marca adaptadas para fundos claros.
+
+
+
+---
+
+### **2. Componente Central (Visualização de Dados)**
+
+* **Espaço Central:** Na referência visual, há um componente em destaque no centro do dashboard.
+* **Proposta Inicial:** Exibir um **mapa geográfico interativo** mostrando a distribuição/localização dos clientes do Pactha.
+* **Abertura para Sugestões:** Avalie se um mapa geográfico é a melhor opção para esse espaço central ou se existem alternativas visuais mais impactantes ou funcionais (ex.: grafos de conexões, fluxos de rede, gráficos analíticos interativos ou cartogramas). Aceito sugestões técnicas e de UX.
+
+---
+
+### **3. Avaliação Técnica e Viabilidade**
+
+Por favor, analise a referência e responda antes/durante a implementação:
+
+1. **Viabilidade:** É viável construir uma interface fiel a essa referência técnica e esteticamente?
+2. **Stack & Tecnologias Sugeridas:** Quais bibliotecas de UI, frameworks ou bibliotecas de visualização de dados/mapas (ex.: Tailwind CSS, Lucide Icons, Recharts, Mapbox, D3.js, Leaflet) seriam necessárias para alcançar este resultado?
+3. **Pontos de Atenção:** Caso existam limitações ou elementos muito complexos na referência, indique-os para avaliarmos juntos se adaptamos ou mantemos o escopo original.
