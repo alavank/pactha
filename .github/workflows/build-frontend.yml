@@ -65,6 +65,7 @@ jobs:
               API_PROXY_TARGET=https://pactha-montesiao-mg-api-54-232-208-118.sslip.io
               NEXT_PUBLIC_CLIENT_LOGO=/brasao-monte-siao.png
               NEXT_PUBLIC_CLIENT_SUBTITLE=Monte Siao - MG
+              NEXT_PUBLIC_BI_MODULE=1
           # --- painel executivo do prefeito (contexto painel/) ---
           - image: painel-montesiao-mg
             context: painel
