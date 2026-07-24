@@ -10,8 +10,9 @@ from routers import (
     auth, municipios, convenios, cofre, service_tokens,
     session_capture, emendas_estaduais, dou_mg, fns, transferegov, export_pdf,
     users, simec, rm, ai, gestao, parlamentares, telegram, status_changes,
-    documentos, cauc, acordofes, control, freshness, painel,
+    documentos, cauc, acordofes, control, freshness, painel, bi,
 )
+from config import get_settings
 from services.security_headers import SecurityHeadersMiddleware
 from services.startup import run_migrations
 
@@ -116,6 +117,8 @@ app.include_router(acordofes.router)
 app.include_router(control.router)  # /api/control/* (Console Alavank)
 app.include_router(freshness.router)  # /api/admin/freshness (monitor de frescor)
 app.include_router(painel.router)   # /api/painel/* (Painel Executivo do prefeito)
+if get_settings().BI_MODULE:
+    app.include_router(bi.router)   # /api/bi/* (Painel de Indicadores - BI, flag-gated)
 
 
 @app.get("/api/health")

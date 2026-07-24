@@ -135,7 +135,7 @@ async def create_user(
     existing = await db.execute(select(User).where(User.email == email))
     if existing.scalar_one_or_none():
         raise HTTPException(400, "Email ja cadastrado")
-    if req.role not in ("admin", "analyst", "user"):
+    if req.role not in ("admin", "analyst", "user", "prefeito"):
         raise HTTPException(400, "Role invalida")
 
     senha = _gen_senha()
@@ -206,7 +206,7 @@ async def update_user(
         raise HTTPException(400, "Voce nao pode desativar a si mesmo")
     if req.role and req.role != "admin" and u.id == current.id and current.role == "admin":
         raise HTTPException(400, "Voce nao pode rebaixar o proprio perfil de administrador (evita se trancar pra fora)")
-    if req.role and req.role not in ("admin", "analyst", "user"):
+    if req.role and req.role not in ("admin", "analyst", "user", "prefeito"):
         raise HTTPException(400, "Role invalida")
     if req.name is not None:
         u.name = req.name.strip()

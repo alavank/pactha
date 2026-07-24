@@ -34,7 +34,10 @@ COOKIE_NAME_CSRF = "pactha_csrf"
 # Perfis somente-leitura (ex.: prefeito no Painel Executivo). Nao editam NADA do
 # sistema operacional; so podem escrever nos endpoints proprios do Painel abaixo.
 READONLY_ROLES = {"prefeito", "viewer"}
-READONLY_WRITE_ALLOW = ("/api/painel/push", "/api/painel/preferencias")
+READONLY_WRITE_ALLOW = (
+    "/api/painel/push", "/api/painel/preferencias",
+    "/api/bi/push", "/api/bi/preferencias",
+)
 
 # Blacklist em memoria (suficiente para single-instance; em multi-replica usar Redis)
 _REVOKED_JTI: set[str] = set()

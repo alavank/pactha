@@ -21,5 +21,6 @@ TELAS_CATALOG = [
     {"key": "fns", "label": "Fundo Nacional de Saúde"},
     {"key": "simec", "label": "SIMEC - PAR (MEC)"},
     {"key": "dou", "label": "Diário Oficial"},
+    {"key": "bi", "label": "Painel de Indicadores (BI)"},
 ]
 CATALOG_KEYS = {t["key"] for t in TELAS_CATALOG}

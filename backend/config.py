@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = ""
     COFRE_KEY: str = ""  # AES-256 key para cofre de senhas
 
+    # Painel de Indicadores - BI (modulo nativo). Default OFF: com a flag desligada
+    # o router /api/bi/* nem e montado (404) e o app segue byte-identico. Liga por
+    # instancia via env BI_MODULE=true. O frontend usa NEXT_PUBLIC_BI_MODULE (build).
+    BI_MODULE: bool = False
+
     # Control-plane (Console Alavank) — canal /api/control/*
     INSTANCE_SLUG: str = ""              # identidade do tenant (ex.: "montesiao-mg")
     CONTROL_TOKEN_BOOTSTRAP: str = ""    # raw injetado 1x no boot p/ semear o control token

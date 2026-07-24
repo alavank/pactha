@@ -79,6 +79,9 @@ api.interceptors.response.use(
       // refresh falhou - limpa estado e redireciona
       localStorage.removeItem("pactha_token");
       localStorage.removeItem("pactha_user");
+      localStorage.removeItem("pactha_last_municipio_id");
+      localStorage.removeItem("pactha_bi_scope"); // nao vazar escopo/periodo do BI entre usuarios
+      localStorage.removeItem("pactha_bi_ano");
       if (window.location.pathname !== "/login") {
         window.location.href = "/login";
       }
