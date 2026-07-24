@@ -21,27 +21,28 @@ def _clean(s):
     return s.replace("�", "").replace("  ", " ").strip()
 
 
-@router.get("")
-async def listar(
-    municipio_id: int = Query(...),
-    days: int = Query(30, description="janela em dias"),
-    limit: int = Query(100),
-    db: AsyncSession = Depends(get_db),
-    current: User = Depends(get_current_user),
-):
-    """Lista as mudancas de status recentes de um municipio (mais novas primeiro)."""
-    ensure_municipio_access(current, municipio_id)
+async def listar_core(
+    db: AsyncSession,
+    municipio_ids: list[int],
+    days: int = 30,
+    limit: int = 100,
+) -> dict:
+    """Nucleo SET-AWARE das mudancas de status, SEM gate de auth. Varre um
+    CONJUNTO de municipios (`= ANY(:mids)`); para [X] === por-municipio. Reusado
+    pelo endpoint /api/status-changes e pelo Painel de Indicadores (BI)."""
+    if not municipio_ids:
+        return {"items": [], "total": 0}
     rows = (await db.execute(text("""
         SELECT id, fonte, tabela, ref, orgao, objeto,
                status_anterior, status_novo, changed_at
         FROM status_changes
-        WHERE municipio_id = :m
+        WHERE municipio_id = ANY(:mids)
           AND changed_at >= NOW() - make_interval(days => :days)
           AND length(trim(coalesce(objeto, ''))) > 3
           AND coalesce(ref, '') !~* 'n[aã]o h'
         ORDER BY changed_at DESC
         LIMIT :lim
-    """), {"m": municipio_id, "days": days, "lim": limit})).fetchall()
+    """), {"mids": list(municipio_ids), "days": days, "lim": limit})).fetchall()
     items = [{
         "id": r[0],
         "fonte": r[1],
@@ -53,3 +54,16 @@ async def listar(
         "changed_at": r[8].isoformat() if r[8] else None,
     } for r in rows]
     return {"items": items, "total": len(items)}
+
+
+@router.get("")
+async def listar(
+    municipio_id: int = Query(...),
+    days: int = Query(30, description="janela em dias"),
+    limit: int = Query(100),
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """Lista as mudancas de status recentes de um municipio (mais novas primeiro)."""
+    ensure_municipio_access(current, municipio_id)
+    return await listar_core(db, [municipio_id], days, limit)

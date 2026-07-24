@@ -84,12 +84,17 @@ async def aggregate_parlamentares(
     q: Optional[str] = None,
     ano: Optional[int] = None,
     incluir_plano_acao: bool = True,
+    municipio_ids: Optional[list[int]] = None,
 ) -> dict:
     """Nucleo da agregacao cross-fonte de parlamentares, SEM gate de auth.
 
     Reusado pelo endpoint /api/parlamentares (apos ensure_tela) e pelo Painel
     Executivo do prefeito (gated so por municipio). incluir_plano_acao=False pula
-    o fetch AO VIVO do RP9 federal (mais rapido, p/ telas snappy)."""
+    o fetch AO VIVO do RP9 federal (mais rapido, p/ telas snappy).
+
+    `municipio_ids` (lista) = escopo CONSOLIDADO da assessoria: agrega sobre esse
+    CONJUNTO (`= ANY(:muns)`). Ignorado quando `municipio_id` (unico) e informado;
+    ausentes ambos = todos (comportamento original preservado)."""
     by_norm: dict[str, dict] = defaultdict(lambda: {
         "nome_normalizado": "",
         "nome_display": "",
@@ -105,6 +110,9 @@ async def aggregate_parlamentares(
     if municipio_id:
         where_extra = " AND municipio_id = :mun"
         params["mun"] = municipio_id
+    elif municipio_ids:
+        where_extra = " AND municipio_id = ANY(:muns)"
+        params["muns"] = list(municipio_ids)
 
     # Filtro de ano — a fonte do ano difere por tabela:
     #   convenios_estadual/emendas_estaduais -> coluna `ano`
@@ -234,6 +242,8 @@ async def aggregate_parlamentares(
         mparams: dict = {}
         if municipio_id:
             muns_sql += " AND id = :mid"; mparams["mid"] = municipio_id
+        elif municipio_ids:
+            muns_sql += " AND id = ANY(:mids)"; mparams["mids"] = list(municipio_ids)
         muns = (await db.execute(text(muns_sql), mparams)).fetchall()
         listagens: dict[str, list] = {}
         for m in muns:

@@ -23,6 +23,7 @@ import {
   ShieldCheck,
   HeartPulse,
   Activity,
+  BarChart3,
 } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -130,6 +131,10 @@ const ADMIN_NAV_ITEMS = [
 // Logo do cliente por instância (config build-time). Ex.: /trust-logo.svg
 const CLIENT_LOGO = process.env.NEXT_PUBLIC_CLIENT_LOGO || "";
 
+// Painel de Indicadores (BI) — modulo nativo, gated por flag build-time. O link
+// NAO passa pelo NAV_ITEMS/filterNav porque hrefToTela("/bi") colapsa p/ "dashboard".
+const BI_ON = process.env.NEXT_PUBLIC_BI_MODULE === "1";
+
 // Itens visiveis SO para o super-admin (nao para os demais admins).
 const SUPER_ADMIN_EMAIL = "admin@pactha.com.br";
 const SUPER_ADMIN_ONLY = new Set<string>(["/dashboard/sessoes", "/dashboard/service-tokens"]);
@@ -215,6 +220,20 @@ function SidebarContent({
           </select>
         )}
       </div>
+
+      {/* Painel de Indicadores (BI) — link destacado, hand-gated (fora do filterNav) */}
+      {BI_ON && (user?.role === "admin" || user?.telas == null || user?.telas?.includes("bi")) && (
+        <div className="px-3 pt-3">
+          <Link
+            href="/bi"
+            className="flex items-center gap-2.5 rounded-xl border border-primary/25 bg-primary/[0.07] px-3 py-2.5 text-sm font-semibold text-primary transition-colors hover:bg-primary/10"
+          >
+            <BarChart3 className="size-4" />
+            Painel de Indicadores
+            <span className="ml-auto rounded-full bg-primary/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide">BI</span>
+          </Link>
+        </div>
+      )}
 
       {/* Navegacao */}
       <nav className="flex-1 space-y-0.5 px-2 py-3 overflow-y-auto">
@@ -386,6 +405,11 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
         localStorage.setItem("pactha_user", JSON.stringify(res.data));
         if (res.data.must_change_password) {
           router.replace("/change-password?first=1");
+          return;
+        }
+        // Perfil executivo (prefeito/viewer) so opera no BI -> nao entra no sistema operacional
+        if (BI_ON && (res.data.role === "prefeito" || res.data.role === "viewer")) {
+          router.replace("/bi");
         }
       })
       .catch(() => {
@@ -460,6 +484,8 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
     localStorage.removeItem("pactha_token");
     localStorage.removeItem("pactha_user");
     localStorage.removeItem("pactha_last_municipio_id"); // nao vazar municipio entre usuarios
+    localStorage.removeItem("pactha_bi_scope"); // idem p/ escopo/periodo do BI
+    localStorage.removeItem("pactha_bi_ano");
     router.push("/login");
   }, [router]);
 

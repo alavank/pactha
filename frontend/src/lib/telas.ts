@@ -24,6 +24,7 @@ export const TELAS: TelaDef[] = [
   { key: "simec", label: "SIMEC - PAR (MEC)" },
   { key: "suas", label: "Estrutura SUAS (MDS)" },
   { key: "paineis", label: "Painéis Municipais" },
+  { key: "bi", label: "Painel de Indicadores (BI)" },
   { key: "dou", label: "Diário Oficial" },
   { key: "cofre", label: "Cofre de Senhas" },
   { key: "sessoes", label: "Sessões (gov.br)" },
