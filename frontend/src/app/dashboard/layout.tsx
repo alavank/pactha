@@ -39,6 +39,7 @@ import {
 import type { Municipio, User } from "@/types";
 import { hrefToTela, allowedTelasOf } from "@/lib/telas";
 import { MunicipioProvider, useMunicipio } from "@/contexts/MunicipioContext";
+import { EnteAtendido, SUBTITULO_PACTHA } from "@/components/bi/Marca";
 
 type NavLeaf = { href: string; label: string; icon?: React.ComponentType<{ className?: string }> };
 type NavSection = { sectionLabel: string; children: NavLeaf[] };
@@ -139,9 +140,6 @@ const ADMIN_NAV_ITEMS = [
   { href: "/dashboard/service-tokens", label: "Service Tokens", icon: KeyRound },
 ];
 
-// Logo do cliente por instância (config build-time). Ex.: /trust-logo.svg
-const CLIENT_LOGO = process.env.NEXT_PUBLIC_CLIENT_LOGO || "";
-
 // Itens visiveis SO para o super-admin (nao para os demais admins).
 const SUPER_ADMIN_EMAIL = "admin@pactha.com.br";
 const SUPER_ADMIN_ONLY = new Set<string>(["/dashboard/sessoes", "/dashboard/service-tokens"]);
@@ -194,25 +192,26 @@ function SidebarContent({
       {/* Faixa institucional - cores do governo */}
       <div className="gov-stripe" />
 
-      {/* Header: logos PACTHA + cliente num chip branco (legível no claro/escuro). */}
+      {/* Header: a marca do PRODUTO, sozinha. O brasão saiu daqui — ele agora
+          acompanha o nome da cidade logo abaixo, como título do ente atendido.
+          Os dois grudados num chip só embaralhavam quem é fornecedor e quem é
+          cliente. No modo ícone fica só a logo: a assinatura não caberia. */}
       <div className={`border-b border-base-300 py-4 flex justify-center ${recolhida ? "px-1.5" : "px-3"}`}>
         <div
-          className={`flex max-w-full items-center gap-2.5 rounded-2xl bg-white shadow-sm ring-1 ring-black/5 ${
+          className={`flex max-w-full flex-col items-center gap-1 rounded-2xl bg-white shadow-sm ring-1 ring-black/5 ${
             recolhida ? "px-2 py-2" : "px-3 py-2"
           }`}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={recolhida && CLIENT_LOGO ? CLIENT_LOGO : "/pactha-logo.png"}
+            src="/pactha-logo.png"
             alt="PACTHA"
-            className={recolhida ? "h-7 w-auto max-w-[36px] object-contain" : "h-6 w-auto max-w-[110px] object-contain"}
+            className={recolhida ? "h-7 w-auto max-w-[36px] object-contain" : "h-6 w-auto max-w-[130px] object-contain"}
           />
-          {!recolhida && CLIENT_LOGO && (
-            <>
-              <div className="h-6 w-px bg-base-300/70" />
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={CLIENT_LOGO} alt="Cliente" className="h-7 w-auto max-w-[64px] object-contain" />
-            </>
+          {!recolhida && (
+            <span className="text-center text-[9px] leading-tight text-black/55">
+              {SUBTITULO_PACTHA}
+            </span>
           )}
         </div>
       </div>
@@ -233,14 +232,18 @@ function SidebarContent({
         </div>
       )}
 
-      {/* Seletor de municipio (some no modo icone — nao cabe e nao e clicavel util) */}
+      {/* Ente atendido (some no modo icone — nao cabe e nao e clicavel util) */}
       {!recolhida && (
         <div className="px-3 py-3 border-b border-base-300 bg-base-200/50">
           {municipios.length === 1 ? (
-            // Entidade unica (municipio/consorcio): so o nome, sem dropdown
-            <div className="rounded-[var(--radius-field)] border border-base-300 bg-base-100 px-3 py-1.5 text-center text-sm font-semibold">
-              {municipios[0].nome} - {municipios[0].uf}
-            </div>
+            // Entidade unica (municipio/consorcio): brasao + nome como TITULO.
+            // Nao ha dropdown porque nao ha o que escolher — e o campo com cara
+            // de seletor sugeria que existe dado de outra cidade ali dentro.
+            <EnteAtendido
+              nome={`${municipios[0].nome} - ${municipios[0].uf}`}
+              tamanho="medio"
+              className="justify-center"
+            />
           ) : (
             // Multi-entidade (assessoria/parceiro): dropdown
             <select

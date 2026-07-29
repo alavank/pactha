@@ -18,11 +18,12 @@ import { ABAS, AbaId, FiltrosTela, abrirJanelaDaTela } from "@/lib/tela";
 import { useTelaControle } from "@/lib/useTela";
 import { prefetchAba, useDadosAba } from "@/lib/useAbaBi";
 import { EscopoSelect, PeriodoMultiSelect, rotuloPeriodo } from "./Filtros";
+import { CabecalhoBi } from "./Marca";
 import { BotaoAjustes } from "./Ajustes";
 import { TemaBi } from "./TemaBi";
 import { InsightTicker } from "./InsightTicker";
 import { SlideshowControls } from "./SlideshowControls";
-import { PageHead, Painel, Skeleton, Vazio } from "./kit";
+import { Painel, Skeleton, Vazio } from "./kit";
 import {
   AbaDocumentosView, AbaEstaduaisView, AbaFnsView, AbaGeral,
   AbaParlamentaresView, AbaTransfereGovView,
@@ -58,10 +59,20 @@ export function PainelIndicadores() {
     getMunicipios().then(setMunicipios).catch(() => {});
   }, []);
 
-  const podeConsolidado = useMemo(
-    () => municipios.length > 1 || user?.role === "admin",
-    [municipios.length, user?.role]
-  );
+  // Consolidado só faz sentido para quem tem CARTEIRA (assessoria/parceiro com
+  // vários municípios). Antes bastava ser admin, e por isso o ambiente de um
+  // município único — que nunca terá outra cidade para comparar — exibia o
+  // seletor com uma opção "Consolidado (todos)" que consolidava um só.
+  const podeConsolidado = useMemo(() => municipios.length > 1, [municipios.length]);
+
+  const nomeMunicipio = useMemo(() => {
+    const m = municipioId
+      ? municipios.find((x) => x.id === municipioId)
+      : municipios.length === 1
+        ? municipios[0]
+        : null;
+    return m ? `${m.nome} — ${m.uf}` : null; // null = consolidado da assessoria
+  }, [municipios, municipioId]);
 
   // Valida o escopo assim que a lista chega (id obsoleto no localStorage etc.)
   useEffect(() => {
@@ -124,12 +135,18 @@ export function PainelIndicadores() {
 
   return (
     <div className="bi-skin min-h-full px-4 py-5 sm:px-6 lg:px-8">
-      <PageHead
-        eyebrow={`Gestão à vista · ${rotuloPeriodo(anos)}`}
-        titulo="Painel de Indicadores"
+      <CabecalhoBi
+        nomeMunicipio={nomeMunicipio}
+        legenda={`Gestão à vista · ${rotuloPeriodo(anos)}`}
         right={
           <>
-            <EscopoSelect municipios={municipios} podeConsolidado={podeConsolidado} />
+            {/* O seletor só existe para quem TEM carteira: assessoria com vários
+                municípios. Num ambiente de município único não há o que
+                escolher, e o dropdown só sugeria que existe dado de outra
+                cidade ali dentro. */}
+            {podeConsolidado && (
+              <EscopoSelect municipios={municipios} podeConsolidado={podeConsolidado} />
+            )}
             <PeriodoMultiSelect />
             <TemaBi />
             <button

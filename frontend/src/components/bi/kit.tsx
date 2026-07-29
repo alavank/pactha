@@ -81,30 +81,9 @@ export function PainelHead({
   );
 }
 
-/** Cabecalho de pagina: sobrenome pequeno + titulo grande (ver referencia). */
-export function PageHead({
-  eyebrow,
-  titulo,
-  right,
-}: {
-  eyebrow?: string;
-  titulo: string;
-  right?: React.ReactNode;
-}) {
-  return (
-    <div className="mb-4 flex flex-wrap items-end gap-x-4 gap-y-3">
-      <div className="min-w-0">
-        {eyebrow && (
-          <div className="text-[12px]" style={{ color: "var(--bi-muted)" }}>
-            {eyebrow}
-          </div>
-        )}
-        <h1 className="bi-title text-[26px] leading-tight sm:text-[30px]">{titulo}</h1>
-      </div>
-      {right && <div className="ml-auto flex flex-wrap items-center gap-2">{right}</div>}
-    </div>
-  );
-}
+// PageHead saiu daqui: o unico consumidor era o Painel de Indicadores, que
+// passou a usar o <CabecalhoBi> (components/bi/Marca.tsx) — ente atendido a
+// esquerda, marca do produto ao centro. Nao vale manter dois cabecalhos.
 
 // --------------------------------------------------------------------------
 // Atomos
