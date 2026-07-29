@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from database import get_db
 from models.user import User
 from schemas.auth import UserResponse
-from services.auth import hash_password, get_current_user
+from services.auth import hash_password, get_current_user, is_super_admin
 from services.audit import log_event
 
 router = APIRouter(prefix="/api/users", tags=["users"])
@@ -32,13 +32,10 @@ def _require_admin(user: User):
         raise HTTPException(403, "Apenas administradores podem gerenciar usuarios")
 
 
-# Conta principal do tenant. Sem a guarda abaixo, qualquer admin reseta a senha
-# dela para a padrao "1234" e entra no lugar do administrador principal.
-SUPER_ADMIN_EMAIL = "admin@pactha.com.br"
-
-
-def _is_super(user: User) -> bool:
-    return (getattr(user, "email", "") or "").strip().lower() == SUPER_ADMIN_EMAIL
+# Contas donas do sistema: a lista vive em services/auth.py (uma so, para as
+# copias nao divergirem). Sem a guarda abaixo, qualquer admin reseta a senha do
+# dono para a padrao "1234" e entra no lugar dele.
+_is_super = is_super_admin
 
 
 def _guard_target(current: User, target: User):
