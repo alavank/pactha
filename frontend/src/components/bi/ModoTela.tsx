@@ -28,7 +28,9 @@ import { ABAS, AbaId, CONSOLIDADO_URL, FiltrosTela } from "@/lib/tela";
 import { useTelaMotor } from "@/lib/useTela";
 import { useFiltroTelaServidor } from "@/lib/useFiltroTela";
 import { prefetchAba, useDadosAba } from "@/lib/useAbaBi";
+import { Municipio, getMunicipios } from "@/lib/bi";
 import { ConteudoAba, EsqueletoAba } from "@/components/bi/PainelIndicadores";
+import { EnteAtendido, MarcaPactha } from "@/components/bi/Marca";
 import { InsightTicker } from "@/components/bi/InsightTicker";
 import { SlideshowControls } from "@/components/bi/SlideshowControls";
 import { TemaBi } from "@/components/bi/TemaBi";
@@ -153,6 +155,25 @@ export function ModoTela({ slugPublico }: { slugPublico?: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [motor.playPause, motor.next, motor.prev]);
 
+  // Nome do ente atendido. Vem da API (é o nome real, e na assessoria muda
+  // conforme o escopo); só depois de `pronto`, porque no link público o token
+  // ainda não existe antes disso. Sem resposta, o <EnteAtendido> cai no nome
+  // embutido no build.
+  const [municipios, setMunicipios] = useState<Municipio[]>([]);
+  useEffect(() => {
+    if (!pronto) return;
+    getMunicipios().then(setMunicipios).catch(() => {});
+  }, [pronto]);
+  const nomeMunicipio = useMemo(() => {
+    if (!municipios.length) return null;
+    const m = municipioId
+      ? municipios.find((x) => x.id === municipioId)
+      : municipios.length === 1
+        ? municipios[0]
+        : null;
+    return m ? `${m.nome} — ${m.uf}` : null; // null no consolidado da assessoria
+  }, [municipios, municipioId]);
+
   const abaAtual = ABAS.find((a) => a.id === motor.aba)!;
 
   if (semPermissao) {
@@ -188,24 +209,20 @@ export function ModoTela({ slugPublico }: { slugPublico?: string }) {
 
   return (
     <div className="bi-skin flex h-screen flex-col overflow-hidden p-4">
-      {/* Cabeçalho: identidade, insight da IA e o controle do slideshow */}
-      <div className="mb-3 flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-2.5">
-          <span
-            className="grid size-9 place-items-center rounded-2xl text-[15px] font-black"
-            style={{ background: "var(--bi-cta)", color: "var(--bi-cta-ink)" }}
-          >
-            P
+      {/* Cabeçalho em três colunas: quem é o ente (esquerda), de quem é o
+          produto (centro) e os controles (direita). A do meio fica centrada na
+          TELA, não no espaço que sobra — por isso as laterais são flex-1. */}
+      <div className="mb-3 flex items-center gap-3">
+        <div className="flex min-w-0 flex-1 flex-col">
+          <EnteAtendido nome={nomeMunicipio} />
+          <span className="mt-0.5 truncate text-[11px]" style={{ color: "var(--bi-faint)" }}>
+            {abaAtual.descricao} · {rotuloPeriodo(anos)}
           </span>
-          <div className="leading-tight">
-            <div className="bi-title text-[17px]">Painel de Indicadores</div>
-            <div className="text-[11px]" style={{ color: "var(--bi-faint)" }}>
-              {abaAtual.descricao} · {rotuloPeriodo(anos)}
-            </div>
-          </div>
         </div>
 
-        <div className="ml-auto flex items-center gap-2">
+        <MarcaPactha className="shrink-0" />
+
+        <div className="flex flex-1 items-center justify-end gap-2">
           <SlideshowControls
             restante={motor.restante}
             duracao={motor.duracao}
