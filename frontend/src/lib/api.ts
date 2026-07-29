@@ -14,10 +14,25 @@ function getCsrfToken(): string | null {
   return m ? decodeURIComponent(m[1]) : null;
 }
 
+/** Telas que rodam com credencial de QUIOSQUE (TV / link publico). */
+function ehSuperficieDeQuiosque(): boolean {
+  if (typeof window === "undefined") return false;
+  const p = window.location.pathname;
+  return p === "/tela" || p.startsWith("/tela/") || p.startsWith("/t/");
+}
+
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   // Fallback Bearer (compat com clientes que ainda guardam token em localStorage)
   if (typeof window !== "undefined") {
-    const token = localStorage.getItem("pactha_token");
+    // A CREDENCIAL DO QUIOSQUE TEM CHAVE PROPRIA e so vale nas telas de
+    // quiosque. Antes ia em `pactha_token`, a MESMA chave do login: quem
+    // abrisse o link publico da TV no proprio computador passava a mandar o
+    // token do quiosque em TODAS as telas, e o cookie de sessao valido era
+    // ignorado. Revogado o link, o token morria e o sistema inteiro respondia
+    // 401 naquela maquina — e so naquela, o que faz parecer defeito de rede.
+    const token = ehSuperficieDeQuiosque()
+      ? localStorage.getItem("pactha_kiosk_token") || localStorage.getItem("pactha_token")
+      : localStorage.getItem("pactha_token");
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -74,6 +89,17 @@ api.interceptors.response.use(
       original._retry = true;
       const ok = await tryRefresh();
       if (ok) {
+        // AUTO-CURA de token velho em localStorage.
+        // Se o refresh deu certo, a SESSAO (cookie) esta boa — entao um 401
+        // vinha do Bearer. Repetir com o mesmo Bearer daria 401 de novo, e como
+        // `_retry` ja esta marcado, ninguem limparia nada: a maquina ficava
+        // presa em 401 para sempre, so ela. Descartamos o token e repetimos so
+        // com o cookie. Sem isto, uma maquina ja contaminada nao se recupera
+        // nem depois de corrigido o que gravou o token errado.
+        try {
+          localStorage.removeItem("pactha_token");
+        } catch { /* storage bloqueado */ }
+        if (original.headers) delete original.headers.Authorization;
         return api(original);
       }
       // refresh falhou - limpa estado e redireciona
