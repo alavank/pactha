@@ -304,6 +304,10 @@ export interface AbaDocumentos {
       pendencias_codigos: string[];
       itens_pendentes: CaucItemDetalhe[];
       itens_regulares: CaucItemDetalhe[];
+      /** TODAS as exigências, com grupo e tipo — inclusive as "não exigidas".
+       *  Opcional porque uma API mais antiga não manda (ver AbaDocumentosView,
+       *  que cai de volta em pendentes+regulares). */
+      itens?: CaucItemDetalhe[];
       total_itens: number;
       data_pesquisa: string | null;
       atualizado_em: string | null;
