@@ -19,6 +19,7 @@ import hashlib
 import secrets
 import asyncio
 import time
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query, HTTPException
@@ -28,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
 from database import get_db
-from services.auth import get_current_user, hash_password, create_kiosk_token
+from services.auth import get_current_user, hash_password, create_kiosk_token, ensure_tela
 from services.bi import (
     resolve_scope, scope_signature, bi_kpis, bi_cauc_rollup, bi_saude_rollup,
     anos_list, anos_signature,
@@ -43,6 +44,11 @@ from routers.convenios import query_alertas_vigencia, query_prestacao_contas
 from routers.status_changes import listar_core
 
 router = APIRouter(prefix="/api/bi", tags=["bi"])
+
+# Sentinela de "carteira toda" usada pelo frontend (BiScopeContext). O backend
+# guarda o escopo do Modo Tela como texto porque quem o interpreta e a tela;
+# aqui ele so precisa ir e voltar sem ser reinterpretado.
+CONSOLIDADO = "__all__"
 
 
 def _periodo(ano: Optional[int], anos: Optional[list[int]]) -> Optional[list[int]]:
@@ -721,16 +727,47 @@ async def insights(
 
 
 # --------------------------------------------------------------------------
-# Token de quiosque (TV liga sem senha) — ADMIN. Aceita municipio unico OU
-# consolidado (escopa um usuario viewer a todos os municipios ativos).
+# MODO TELA — filtro POR USUARIO e link publico curto.
+#
+# Regra do produto: cada gestor e um ambiente. O que o secretario de Saude
+# filtra vale para a TV DELE e para o link publico DELE; ninguem altera o que o
+# outro ve. Por isso o filtro e chaveado por `user_id` e o link guarda o dono.
+#
+# O link publico nao leva mais o JWT na URL. Antes iam ~300 chars impossiveis de
+# ditar, e revogar exigia desativar o usuario de quiosque — que era
+# COMPARTILHADO entre todo mundo, entao derrubava a TV dos outros junto. Agora a
+# URL leva um slug de 12 chars, o token mora no banco e cada link morre sozinho.
 # --------------------------------------------------------------------------
 
-class KioskIn(BaseModel):
-    municipio_id: Optional[int] = None  # None = TV consolidada (carteira toda)
+class FiltroTelaIn(BaseModel):
+    scope: str = CONSOLIDADO
+    anos: list[int] = []
+    aba: Optional[str] = None
+
+
+class TelaLinkIn(BaseModel):
+    nome: Optional[str] = None
     dias: int = 365
 
 
-async def _ensure_viewer(db: AsyncSession, email: str, nome: str) -> int:
+def _anos_csv(anos: list[int]) -> str:
+    """Normaliza pelo MESMO filtro do anos_list (1990<n<2100) para nao gravar
+    lixo que depois volta como periodo valido."""
+    return ",".join(str(a) for a in (anos_list(anos) or []))
+
+
+def _csv_anos(csv: Optional[str]) -> list[int]:
+    return anos_list(csv or "") or []
+
+
+async def _ensure_kiosk_user(db: AsyncSession, owner: User, slug: str) -> int:
+    """Usuario 'viewer' sintetico por LINK (antes era um por municipio,
+    compartilhado entre todos os gestores). Um por link e o que torna a
+    revogacao real: desativar este usuario mata o token daquele link e so dele
+    — os outros links do mesmo dono seguem no ar.
+
+    Espelha os municipios do dono: a TV nunca enxerga mais que quem a publicou."""
+    email = f"kiosk-u{owner.id}-{slug}@painel.local"
     urow = (await db.execute(text("SELECT id FROM users WHERE email = :e"), {"e": email})).first()
     if urow:
         uid = urow[0]
@@ -740,59 +777,167 @@ async def _ensure_viewer(db: AsyncSession, email: str, nome: str) -> int:
         r = (await db.execute(text(
             "INSERT INTO users (email, name, password_hash, role, active, must_change_password) "
             "VALUES (:e, :n, :p, 'viewer', true, false) RETURNING id"
-        ), {"e": email, "n": nome, "p": ph})).first()
+        ), {"e": email, "n": f"Quiosque de {owner.name or owner.email}", "p": ph})).first()
         uid = r[0]
     # concede a tela BI (consistencia; os endpoints /api/bi/* gateiam por municipio)
     await db.execute(text(
         "INSERT INTO user_telas (user_id, tela) VALUES (:u, 'bi') ON CONFLICT DO NOTHING"
     ), {"u": uid})
+    # Espelha o escopo do dono a cada emissao (admin = carteira ativa inteira).
+    await db.execute(text("DELETE FROM user_municipios WHERE user_id = :u"), {"u": uid})
+    if owner.role == "admin":
+        await db.execute(text(
+            "INSERT INTO user_municipios (user_id, municipio_id) "
+            "SELECT :u, id FROM municipios WHERE active = true ON CONFLICT DO NOTHING"
+        ), {"u": uid})
+    else:
+        await db.execute(text(
+            "INSERT INTO user_municipios (user_id, municipio_id) "
+            "SELECT :u, municipio_id FROM user_municipios WHERE user_id = :o ON CONFLICT DO NOTHING"
+        ), {"u": uid, "o": owner.id})
     return uid
 
 
-@router.post("/kiosk-tokens")
-async def criar_kiosk_token(
-    body: KioskIn,
+@router.get("/tela-filtros")
+async def get_tela_filtros(
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
-    """Emite token de longa duracao p/ a TV ligar sem login. Cria/reusa um usuario
-    'viewer' escopado (1 municipio OU todos os ativos = consolidado). Somente admin."""
-    if current.role != "admin":
-        raise HTTPException(status_code=403, detail="Apenas admin emite token de quiosque")
+    """Filtro corrente do PROPRIO usuario. A janela do Modo Tela le daqui quando
+    esta noutro navegador/aparelho, onde o BroadcastChannel nao alcanca."""
+    row = (await db.execute(text(
+        "SELECT scope, anos, aba FROM bi_tela_filtros WHERE user_id = :u"
+    ), {"u": current.id})).first()
+    if not row:
+        # `existe: false` importa: sem ele a tela aberta por um link antigo
+        # (?kiosk=<jwt>&scope=...) leria este default e jogaria fora o filtro que
+        # veio na URL, regredindo o link que ja estava colado numa TV.
+        return {"existe": False, "scope": CONSOLIDADO, "anos": [], "aba": None}
+    return {"existe": True, "scope": row[0], "anos": _csv_anos(row[1]), "aba": row[2]}
 
-    if body.municipio_id is not None:
-        mrow = (await db.execute(text(
-            "SELECT nome FROM municipios WHERE id = :m AND active = true"
-        ), {"m": body.municipio_id})).first()
-        if not mrow:
-            raise HTTPException(status_code=404, detail="Municipio nao encontrado")
-        email = f"kiosk-{body.municipio_id}@painel.local"
-        uid = await _ensure_viewer(db, email, f"Quiosque {mrow[0]}")
-        await db.execute(text(
-            "INSERT INTO user_municipios (user_id, municipio_id) VALUES (:u, :m) ON CONFLICT DO NOTHING"
-        ), {"u": uid, "m": body.municipio_id})
-        escopo = mrow[0]
-    else:
-        slug = get_settings().INSTANCE_SLUG or "default"
-        email = f"kiosk-bi-{slug}@painel.local"
-        uid = await _ensure_viewer(db, email, "Quiosque BI (consolidado)")
-        # escopa a TV a TODOS os municipios ativos (a carteira do tenant)
-        await db.execute(text(
-            "INSERT INTO user_municipios (user_id, municipio_id) "
-            "SELECT :u, id FROM municipios WHERE active = true "
-            "ON CONFLICT DO NOTHING"
-        ), {"u": uid})
-        escopo = "consolidado (todos os municipios ativos)"
 
+@router.put("/tela-filtros")
+async def put_tela_filtros(
+    body: FiltroTelaIn,
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """Publica o filtro do usuario. O painel chama isto a cada mudanca de periodo
+    ou de municipio — e o que faz a TV e o link publico virarem junto."""
+    await db.execute(text(
+        "INSERT INTO bi_tela_filtros (user_id, scope, anos, aba, updated_at) "
+        "VALUES (:u, :s, :a, :b, NOW()) "
+        "ON CONFLICT (user_id) DO UPDATE SET scope = :s, anos = :a, aba = :b, updated_at = NOW()"
+    ), {"u": current.id, "s": (body.scope or CONSOLIDADO)[:40],
+        "a": _anos_csv(body.anos), "b": (body.aba or None)})
     await db.commit()
-    token = create_kiosk_token(uid, body.dias)
+    return {"ok": True}
+
+
+@router.post("/tela-links")
+async def criar_tela_link(
+    body: TelaLinkIn,
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """Gera um link publico CURTO para a TV. Permissao propria (`bi_link`): quem
+    pode ver o Modo Tela nao necessariamente pode publicar dado para fora."""
+    ensure_tela(current, "bi_link")
+    dias = max(1, min(int(body.dias or 365), 3650))
+    slug = secrets.token_urlsafe(9)[:12]  # 12 chars, ~72 bits: curto e nao chutavel
+    uid = await _ensure_kiosk_user(db, current, slug)
+    token = create_kiosk_token(uid, dias)
+    # Expiracao calculada em Python de proposito: `make_interval(days => :d)`
+    # mistura a notacao de argumento nomeado do Postgres com o bind do
+    # SQLAlchemy, e nao ha ganho nenhum em arriscar isso no driver.
+    expira = datetime.now(timezone.utc) + timedelta(days=dias)
+    await db.execute(text(
+        "INSERT INTO bi_tela_links (slug, owner_id, kiosk_user_id, municipio_id, token, nome, expira_em) "
+        "VALUES (:s, :o, :k, NULL, :t, :n, :e)"
+    ), {"s": slug, "o": current.id, "k": uid, "t": token,
+        "n": (body.nome or None), "e": expira})
+    await db.commit()
+    return {"slug": slug, "caminho": f"/t/{slug}", "dias": dias}
+
+
+@router.get("/tela-links")
+async def listar_tela_links(
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """Links do PROPRIO usuario — ninguem lista nem revoga link alheio."""
+    rows = (await db.execute(text(
+        "SELECT slug, nome, criado_em, expira_em, revogado, ultimo_acesso "
+        "FROM bi_tela_links WHERE owner_id = :u ORDER BY criado_em DESC LIMIT 50"
+    ), {"u": current.id})).fetchall()
+    return [{
+        "slug": r[0], "caminho": f"/t/{r[0]}", "nome": r[1],
+        "criado_em": r[2].isoformat() if r[2] else None,
+        "expira_em": r[3].isoformat() if r[3] else None,
+        "revogado": r[4],
+        "ultimo_acesso": r[5].isoformat() if r[5] else None,
+    } for r in rows]
+
+
+@router.delete("/tela-links/{slug}")
+async def revogar_tela_link(
+    slug: str,
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """Revoga o link. So o dono revoga o proprio.
+
+    Marcar `revogado` sozinho nao bastaria: quem ja tivesse extraido o token do
+    localStorage da TV continuaria batendo na API por mais 365 dias. Como o
+    usuario de quiosque e por LINK, desativa-lo mata o token daquele link — e
+    so dele."""
+    row = (await db.execute(text(
+        "UPDATE bi_tela_links SET revogado = TRUE WHERE slug = :s AND owner_id = :u "
+        "RETURNING kiosk_user_id"
+    ), {"s": slug, "u": current.id})).first()
+    if not row:
+        await db.rollback()
+        raise HTTPException(status_code=404, detail="Link nao encontrado")
+    await db.execute(text("UPDATE users SET active = false WHERE id = :k"), {"k": row[0]})
+    await db.commit()
+    return {"ok": True}
+
+
+@router.get("/tela-pub/{slug}")
+async def resolver_tela_link(slug: str, db: AsyncSession = Depends(get_db)):
+    """PUBLICO — o slug e o segredo. A TV chama isto ao abrir e a cada poll:
+    devolve o token de quiosque e o FILTRO VIGENTE DO DONO. E por aqui que
+    "mudou o periodo no sistema" vira "mudou na TV" mesmo noutro aparelho, onde
+    o BroadcastChannel nunca chegaria."""
+    row = (await db.execute(text(
+        "SELECT l.token, l.owner_id, l.municipio_id, l.revogado, l.expira_em, "
+        "       f.scope, f.anos, f.aba "
+        "FROM bi_tela_links l "
+        "LEFT JOIN bi_tela_filtros f ON f.user_id = l.owner_id "
+        "WHERE l.slug = :s"
+    ), {"s": slug})).first()
+    if not row or row[3]:
+        raise HTTPException(status_code=404, detail="Link invalido ou revogado")
+    if row[4] is not None and row[4] < datetime.now(timezone.utc):
+        raise HTTPException(status_code=404, detail="Link expirado")
+    # Throttle proposital: a TV chama isto a cada 10s, o dia inteiro. Gravar a
+    # cada chamada seriam ~8.600 escritas/dia por televisao, so para mexer num
+    # carimbo que ninguem le com essa precisao. De 5 em 5 minutos basta.
+    await db.execute(text(
+        "UPDATE bi_tela_links SET ultimo_acesso = NOW() WHERE slug = :s "
+        "AND (ultimo_acesso IS NULL OR ultimo_acesso < NOW() - INTERVAL '5 minutes')"
+    ), {"s": slug})
+    await db.commit()
+    # municipio_id preenchido = link fixado num municipio; NULL = segue o dono.
+    # O NULL e o caso da assessoria: trocou de municipio no sistema, a TV vai
+    # junto. Quem barra excesso e o resolve_scope dos endpoints de dado, que so
+    # aceita municipio dentro do escopo do usuario de quiosque.
+    scope = str(row[2]) if row[2] is not None else (row[5] or CONSOLIDADO)
     return {
-        "token": token,
-        "municipio_id": body.municipio_id,
-        "escopo": escopo,
-        "dias": body.dias,
-        "user_email": email,
-        "instrucoes": "Na TV, acesse /bi/tv?kiosk=<token> (ou cole o token em localStorage.pactha_token).",
+        "token": row[0],
+        "scope": scope,
+        "anos": _csv_anos(row[6]),
+        "aba": row[7],
     }
 
 

@@ -103,7 +103,14 @@ async def list_users(
     current: User = Depends(get_current_user),
 ):
     _require_admin(current)
-    r = await db.execute(select(User).order_by(User.id))
+    # Fora da lista os usuarios sinteticos de quiosque (@painel.local): eles nao
+    # sao PESSOAS, sao credencial de um link de TV. Cada link publicado cria um,
+    # entao deixa-los aqui encheria a tela de "Quiosque de Fulano" e daria a
+    # impressao de que a prefeitura tem 40 usuarios. Quem os administra e o
+    # proprio painel (Ajustes -> Link publico da TV, com copiar e revogar).
+    r = await db.execute(
+        select(User).where(User.email.notlike("%@painel.local")).order_by(User.id)
+    )
     users = r.scalars().all()
     mr = await db.execute(text("SELECT user_id, municipio_id FROM user_municipios"))
     by_user: dict[int, list[int]] = {}

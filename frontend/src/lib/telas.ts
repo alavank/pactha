@@ -25,6 +25,11 @@ export const TELAS: TelaDef[] = [
   { key: "suas", label: "Estrutura SUAS (MDS)" },
   { key: "paineis", label: "Painéis Municipais" },
   { key: "bi", label: "Painel de Indicadores (BI)" },
+  // Separadas de proposito: ver o painel, jogar na TV e PUBLICAR para fora sao
+  // decisoes diferentes. Um secretario pode precisar da TV da sala dele sem ter
+  // permissao de gerar um link que roda o municipio inteiro pelo WhatsApp.
+  { key: "bi_tela", label: "Modo Tela (TV) do BI" },
+  { key: "bi_link", label: "Gerar link público da TV" },
   { key: "dou", label: "Diário Oficial" },
   { key: "cofre", label: "Cofre de Senhas" },
   { key: "sessoes", label: "Sessões (gov.br)" },

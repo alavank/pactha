@@ -3,13 +3,16 @@
 // as abas são assunto de dado e rodam no slideshow da TV — configuração não
 // deve aparecer numa TV de gabinete. Aqui vive o que existia em /bi/config:
 // preferências de aviso e o link de quiosque (liga a TV sem login).
-import { useEffect, useState } from "react";
-import { Bell, Check, Copy, KeyRound, Settings2, Tv, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Bell, Check, Copy, KeyRound, Settings2, Trash2, Tv, X } from "lucide-react";
 import api from "@/lib/api";
 import type { User } from "@/types";
-import { Prefs, criarKioskToken, getPrefs, putPrefs } from "@/lib/bi";
+import {
+  Prefs, TelaLink, criarTelaLink, getPrefs, listarTelaLinks, putPrefs,
+  putTelaFiltros, revogarTelaLink,
+} from "@/lib/bi";
+import { allowedTelasOf } from "@/lib/telas";
 import { CONSOLIDADO, useBiScope } from "@/contexts/BiScopeContext";
-import { TELA_PATH } from "@/lib/tela";
 
 const PREF_LABELS: { key: keyof Prefs; label: string }[] = [
   { key: "vigencia_60d", label: "Vigências vencendo em 60 dias" },
@@ -39,17 +42,23 @@ export function BotaoAjustes() {
 }
 
 function ModalAjustes({ onFechar }: { onFechar: () => void }) {
-  const { scope, municipioId } = useBiScope();
+  const { scope, anos } = useBiScope();
   const [user, setUser] = useState<User | null>(null);
   const [prefs, setPrefs] = useState<Prefs | null>(null);
   const [salvando, setSalvando] = useState(false);
-  const [kioskUrl, setKioskUrl] = useState<string | null>(null);
+  const [links, setLinks] = useState<TelaLink[]>([]);
   const [emitindo, setEmitindo] = useState(false);
-  const [copiado, setCopiado] = useState(false);
+  const [copiado, setCopiado] = useState<string | null>(null);
+
+  const podeGerarLink = useMemo(() => {
+    const t = allowedTelasOf(user);
+    return !t || t.has("bi_link"); // null = admin
+  }, [user]);
 
   useEffect(() => {
     api.get<User>("/auth/me").then((r) => setUser(r.data)).catch(() => {});
     getPrefs().then(setPrefs).catch(() => setPrefs(null));
+    listarTelaLinks().then(setLinks).catch(() => setLinks([]));
   }, []);
 
   useEffect(() => {
@@ -72,19 +81,32 @@ function ModalAjustes({ onFechar }: { onFechar: () => void }) {
     }
   };
 
-  const gerarKiosk = async () => {
+  const gerarLink = async () => {
     setEmitindo(true);
     try {
-      const res = await criarKioskToken(scope === CONSOLIDADO ? null : municipioId);
-      const base = typeof window !== "undefined" ? window.location.origin : "";
-      const sc = res.municipio_id != null ? String(res.municipio_id) : CONSOLIDADO;
-      setKioskUrl(`${base}${TELA_PATH}?kiosk=${res.token}&scope=${encodeURIComponent(sc)}`);
+      // Publica o filtro ANTES de emitir. Sem isto o link nasce mostrando
+      // "consolidado / todos os anos" e só passaria a refletir o período depois
+      // que alguém mexesse no filtro de novo — que é exatamente o defeito que
+      // esta tela existe para não ter.
+      await putTelaFiltros({ scope: scope || CONSOLIDADO, anos, aba: null }).catch(() => {});
+      const novo = await criarTelaLink();
+      setLinks((L) => [novo, ...L]);
     } catch {
-      setKioskUrl(null);
+      /* silencio aqui = o botao volta ao normal; o link simplesmente nao entra */
     } finally {
       setEmitindo(false);
     }
   };
+
+  const revogar = async (slug: string) => {
+    try {
+      await revogarTelaLink(slug);
+      setLinks((L) => L.filter((l) => l.slug !== slug));
+    } catch { /* mantem na lista se o backend recusou */ }
+  };
+
+  const urlDe = (l: TelaLink) =>
+    `${typeof window !== "undefined" ? window.location.origin : ""}${l.caminho}`;
 
   return (
     <div
@@ -141,19 +163,20 @@ function ModalAjustes({ onFechar }: { onFechar: () => void }) {
           )}
         </section>
 
-        {user?.role === "admin" && (
+        {podeGerarLink && (
           <section>
             <div className="mb-2 flex items-center gap-2 text-[13px] font-semibold">
               <Tv className="size-4" style={{ color: "var(--bi-muted)" }} />
-              Link de quiosque (TV liga sem senha)
+              Link público da TV
             </div>
             <p className="mb-2 text-[11px]" style={{ color: "var(--bi-faint)" }}>
-              Gera um endereço de longa duração para o Modo Tela no escopo
-              selecionado. Trate como senha: quem tiver o link vê os indicadores.
+              Abre o Modo Tela sem login e acompanha <strong>o seu</strong> filtro:
+              mudou o período aqui, muda lá em até 10 segundos. Trate como senha —
+              quem tiver o link vê os indicadores.
             </p>
             <button
               type="button"
-              onClick={gerarKiosk}
+              onClick={gerarLink}
               disabled={emitindo}
               className="inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-[12px] font-semibold disabled:opacity-60"
               style={{ background: "var(--bi-cta)", color: "var(--bi-cta-ink)" }}
@@ -161,26 +184,42 @@ function ModalAjustes({ onFechar }: { onFechar: () => void }) {
               <KeyRound className="size-3.5" />
               {emitindo ? "Gerando…" : "Gerar link"}
             </button>
-            {kioskUrl && (
-              <div
-                className="mt-2 flex items-center gap-2 rounded-xl px-2.5 py-2"
-                style={{ background: "var(--bi-surface-2)", border: "1px solid var(--bi-line)" }}
-              >
-                <code className="min-w-0 flex-1 truncate text-[11px]">{kioskUrl}</code>
-                <button
-                  type="button"
-                  onClick={() => {
-                    void navigator.clipboard.writeText(kioskUrl);
-                    setCopiado(true);
-                    setTimeout(() => setCopiado(false), 1800);
-                  }}
-                  className="grid size-7 shrink-0 place-items-center rounded-lg"
-                  style={{ background: "var(--bi-surface)", color: "var(--bi-muted)" }}
-                  aria-label="Copiar link"
-                >
-                  {copiado ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-                </button>
-              </div>
+
+            {links.length > 0 && (
+              <ul className="mt-2 space-y-1.5">
+                {links.map((l) => (
+                  <li
+                    key={l.slug}
+                    className="flex items-center gap-2 rounded-xl px-2.5 py-2"
+                    style={{ background: "var(--bi-surface-2)", border: "1px solid var(--bi-line)" }}
+                  >
+                    <code className="min-w-0 flex-1 truncate text-[11px]">{urlDe(l)}</code>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void navigator.clipboard.writeText(urlDe(l));
+                        setCopiado(l.slug);
+                        setTimeout(() => setCopiado(null), 1800);
+                      }}
+                      className="grid size-7 shrink-0 place-items-center rounded-lg"
+                      style={{ background: "var(--bi-surface)", color: "var(--bi-muted)" }}
+                      aria-label="Copiar link"
+                    >
+                      {copiado === l.slug ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void revogar(l.slug)}
+                      className="grid size-7 shrink-0 place-items-center rounded-lg"
+                      style={{ background: "var(--bi-surface)", color: "var(--bi-muted)" }}
+                      aria-label="Revogar link"
+                      title="Revogar link"
+                    >
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
             )}
           </section>
         )}

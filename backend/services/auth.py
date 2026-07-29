@@ -37,6 +37,10 @@ READONLY_ROLES = {"prefeito", "viewer"}
 READONLY_WRITE_ALLOW = (
     "/api/painel/push", "/api/painel/preferencias",
     "/api/bi/push", "/api/bi/preferencias",
+    # Modo Tela: o prefeito tambem filtra e publica a propria TV. Escreve so na
+    # PROPRIA linha (chaveada por user_id) e nos PROPRIOS links — nao alcanca
+    # dado operacional nem o ambiente de outro gestor.
+    "/api/bi/tela-filtros", "/api/bi/tela-links",
 )
 
 # Blacklist em memoria (suficiente para single-instance; em multi-replica usar Redis)
