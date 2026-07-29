@@ -48,8 +48,12 @@ export function useFiltroTelaServidor(slug?: string): FiltroServidor {
           const r = await resolverTelaPub(slug);
           // O token do quiosque vem daqui (e não da URL) — é isso que permite
           // encurtar o link e revogá-lo depois sem derrubar os outros.
+          //
+          // Vai numa CHAVE PRÓPRIA: gravado em `pactha_token` (a do login), ele
+          // sequestrava a sessão de quem abrisse o link público no próprio
+          // computador — todo o sistema passava a autenticar como o quiosque.
           if (r.token && typeof window !== "undefined") {
-            localStorage.setItem("pactha_token", r.token);
+            localStorage.setItem("pactha_kiosk_token", r.token);
           }
           scope = r.scope || CONSOLIDADO_URL;
           anos = r.anos || [];

@@ -69,7 +69,9 @@ export function ModoTela({ slugPublico }: { slugPublico?: string }) {
   // links desse formato já colados em TV, e trocar o formato não pode apagá-los.
   useEffect(() => {
     const kiosk = params.get("kiosk");
-    if (kiosk && typeof window !== "undefined") localStorage.setItem("pactha_token", kiosk);
+    // Chave própria (ver lib/api.ts): a credencial da TV não pode ocupar a
+    // mesma chave do login, senão contamina o sistema inteiro na máquina.
+    if (kiosk && typeof window !== "undefined") localStorage.setItem("pactha_kiosk_token", kiosk);
   }, [params]);
 
   const abaUrl = params.get("aba") as AbaId | null;

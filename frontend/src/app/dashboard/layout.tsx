@@ -608,6 +608,9 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
       /* ignore */
     }
     localStorage.removeItem("pactha_token");
+    // Sair do sistema leva TODA credencial da maquina, inclusive a de quiosque
+    // que um link publico aberto aqui possa ter deixado.
+    localStorage.removeItem("pactha_kiosk_token");
     localStorage.removeItem("pactha_user");
     localStorage.removeItem("pactha_last_municipio_id"); // nao vazar municipio entre usuarios
     localStorage.removeItem("pactha_bi_scope"); // idem p/ escopo/periodo do BI
