@@ -77,27 +77,31 @@
   prefersdark: true;
   color-scheme: dark;
 
-  --color-base-100: #262840;
-  --color-base-200: #1b1c2e;
-  --color-base-300: #33354e;
-  --color-base-content: #e7e8f4;
+  /* Escuro = preto quase puro + acento menta. E a MESMA paleta do Painel de
+     Indicadores (.bi-skin, mais abaixo). Antes o sistema era azul-marinho e so
+     o painel era preto/verde: trocar de menu parecia trocar de produto. Agora e
+     uma paleta so no escuro. O tema claro segue como estava. */
+  --color-base-100: #141716;  /* superficies: cartoes, menu lateral, modais */
+  --color-base-200: #0a0c0b;  /* fundo da pagina e hover discreto */
+  --color-base-300: #252a28;  /* bordas e divisorias */
+  --color-base-content: #f1f4f2;
 
-  --color-primary: #6d6ef2;
-  --color-primary-content: #ffffff;
-  --color-secondary: #2c2e48;
-  --color-secondary-content: #cfd0f6;
-  --color-accent: #2f3152;
-  --color-accent-content: #c3c4fb;
-  --color-neutral: #e7e8f4;
-  --color-neutral-content: #1b1c2e;
+  --color-primary: #4fdcae;
+  --color-primary-content: #05231a;
+  --color-secondary: #1c201e;
+  --color-secondary-content: #d9efe6;
+  --color-accent: #1c201e;
+  --color-accent-content: #4fdcae;
+  --color-neutral: #f1f4f2;
+  --color-neutral-content: #0a0c0b;
 
-  --color-info: #57a5ef;
-  --color-info-content: #06212e;
-  --color-success: #2bcf8f;
-  --color-success-content: #06210f;
-  --color-warning: #f0b040;
+  --color-info: #6ee7a8;
+  --color-info-content: #05231a;
+  --color-success: #4fdcae;
+  --color-success-content: #05231a;
+  --color-warning: #f3bb52;
   --color-warning-content: #241600;
-  --color-error: #f26d86;
+  --color-error: #f8788f;
   --color-error-content: #2b0a0a;
 
   --radius-selector: 0.75rem;
@@ -200,42 +204,48 @@
 
 /* ---- ESCURO — "Base" ---- */
 [data-theme="pactha-dark"] {
-  --brand-navy: #6d6ef2;
-  --brand-navy-700: #5658e0;
-  --brand-green: #2bcf8f;
-  --brand-green-600: #22b87d;
+  /* Mesma paleta preto+menta do Painel de Indicadores. Os nomes "navy" ficam
+     por compatibilidade com quem ja os usa; no escuro eles apontam para o
+     acento menta. Trocar os NOMES exigiria varrer o app inteiro e nao muda
+     nada na tela. */
+  --brand-navy: #4fdcae;
+  --brand-navy-700: #35c294;
+  --brand-green: #4fdcae;
+  --brand-green-600: #35c294;
 
-  --background: #1b1c2e;
-  --foreground: #e7e8f4;
-  --card: #262840;
-  --card-foreground: #e7e8f4;
-  --popover: #262840;
-  --popover-foreground: #e7e8f4;
-  --primary: #6d6ef2;
-  --primary-foreground: #ffffff;
-  --secondary: #2c2e48;
-  --secondary-foreground: #cfd0f6;
-  --muted: #2c2e48;
-  --muted-foreground: #9a9dc0;
-  --accent: #2f3152;
-  --accent-foreground: #c3c4fb;
-  --destructive: #f26d86;
-  --border: #33354e;
-  --input: #33354e;
-  --ring: #6d6ef2;
-  --chart-1: #6d6ef2;
-  --chart-2: #5b93ff;
-  --chart-3: #ff8f6b;
-  --chart-4: #f0b040;
-  --chart-5: #22cce2;
-  --sidebar: #212236;
-  --sidebar-foreground: #e7e8f4;
-  --sidebar-primary: #6d6ef2;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #2f3152;
-  --sidebar-accent-foreground: #c3c4fb;
-  --sidebar-border: #33354e;
-  --sidebar-ring: #6d6ef2;
+  --background: #0a0c0b;
+  --foreground: #f1f4f2;
+  --card: #141716;
+  --card-foreground: #f1f4f2;
+  --popover: #141716;
+  --popover-foreground: #f1f4f2;
+  --primary: #4fdcae;
+  --primary-foreground: #05231a;
+  --secondary: #1c201e;
+  --secondary-foreground: #d9efe6;
+  --muted: #1c201e;
+  --muted-foreground: rgba(241, 244, 242, 0.58);
+  --accent: #1c201e;
+  --accent-foreground: #4fdcae;
+  --destructive: #f8788f;
+  --border: #252a28;
+  --input: #252a28;
+  --ring: #4fdcae;
+  /* Serie de graficos identica a do painel (--bi-c1..c5) para um grafico nao
+     mudar de cor conforme o menu em que aparece. */
+  --chart-1: #6ee7a8;
+  --chart-2: #4fdcae;
+  --chart-3: #ff8a6b;
+  --chart-4: #ffc85c;
+  --chart-5: #8fd0ff;
+  --sidebar: #141716;
+  --sidebar-foreground: #f1f4f2;
+  --sidebar-primary: #4fdcae;
+  --sidebar-primary-foreground: #05231a;
+  --sidebar-accent: #1c201e;
+  --sidebar-accent-foreground: #4fdcae;
+  --sidebar-border: #252a28;
+  --sidebar-ring: #4fdcae;
 }
 
 @layer base {
@@ -420,12 +430,24 @@
 }
 .bi-insight-enter { animation: bi-insight-in 0.45s ease-out both; }
 
-/* Troca de aba no slideshow. */
+/* Troca de aba. Deslocamento MENOR e duracao um pouco maior: o movimento
+   vertical grande competia com o proprio conteudo aparecendo e lia-se como
+   solavanco. Agora e mais um "aparecer" do que um "subir". */
 @keyframes bi-pane-in {
-  from { opacity: 0; transform: translateY(0.6rem) scale(0.995); }
+  from { opacity: 0; transform: translateY(0.25rem); }
   to { opacity: 1; transform: none; }
 }
-.bi-pane-enter { animation: bi-pane-in 0.4s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.bi-pane-enter { animation: bi-pane-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* A BARRA DE ROLAGEM NAO PODE DESLOCAR A TELA.
+   Cada aba tem uma altura, entao umas rolavam e outras nao; ao trocar, a
+   barra sumia, a area util ficava ~15px mais larga e TODO o conteudo pulava
+   para o lado. Parecia defeito. Reservando a canaleta, a largura util e
+   sempre a mesma — com ou sem barra. */
+html,
+.pactha-scroll {
+  scrollbar-gutter: stable;
+}
 
 @media (prefers-reduced-motion: reduce) {
   .bi-insight-enter, .bi-pane-enter { animation: none; }

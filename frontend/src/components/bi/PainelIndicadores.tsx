@@ -17,10 +17,9 @@ import { useBiScope, CONSOLIDADO } from "@/contexts/BiScopeContext";
 import { ABAS, AbaId, FiltrosTela, abrirJanelaDaTela } from "@/lib/tela";
 import { useTelaControle } from "@/lib/useTela";
 import { prefetchAba, useDadosAba } from "@/lib/useAbaBi";
-import { EscopoSelect, PeriodoMultiSelect, rotuloPeriodo } from "./Filtros";
+import { EscopoSelect, PeriodoMultiSelect } from "./Filtros";
 import { CabecalhoBi } from "./Marca";
 import { BotaoAjustes } from "./Ajustes";
-import { TemaBi } from "./TemaBi";
 import { InsightTicker } from "./InsightTicker";
 import { SlideshowControls } from "./SlideshowControls";
 import { Painel, Skeleton, Vazio } from "./kit";
@@ -137,7 +136,6 @@ export function PainelIndicadores() {
     <div className="bi-skin min-h-full px-4 py-5 sm:px-6 lg:px-8">
       <CabecalhoBi
         nomeMunicipio={nomeMunicipio}
-        legenda={`Gestão à vista · ${rotuloPeriodo(anos)}`}
         right={
           <>
             {/* O seletor só existe para quem TEM carteira: assessoria com vários
@@ -148,7 +146,11 @@ export function PainelIndicadores() {
               <EscopoSelect municipios={municipios} podeConsolidado={podeConsolidado} />
             )}
             <PeriodoMultiSelect />
-            <TemaBi />
+            {/* Sem alternador de tema aqui: o do menu lateral e este mantinham
+                estados React SEPARADOS da mesma preferencia, entao clicar num
+                deixava o outro desatualizado e o clique seguinte invertia
+                errado. Um so, e no menu lateral, que existe em toda tela do
+                sistema. (O Modo Tela mantem o dele: la nao ha menu lateral.) */}
             <button
               type="button"
               onClick={recarregar}

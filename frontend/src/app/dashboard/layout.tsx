@@ -141,7 +141,15 @@ const ADMIN_NAV_ITEMS = [
 ];
 
 // Itens visiveis SO para o super-admin (nao para os demais admins).
-const SUPER_ADMIN_EMAIL = "admin@pactha.com.br";
+//
+// Sao os DONOS do sistema, nao "mais um admin do cliente": quem administra a
+// plataforma pela Alavank. Fica como lista porque uma conta so era um ponto
+// unico de falha — perdido o acesso a ela, ninguem alcanca Sessoes e Tokens de
+// Servico. Um e-mail por conta, minusculo (a comparacao normaliza).
+const SUPER_ADMIN_EMAILS = new Set<string>([
+  "admin@pactha.com.br",
+  "alavank.tecnologia@gmail.com",
+]);
 const SUPER_ADMIN_ONLY = new Set<string>(["/dashboard/sessoes", "/dashboard/service-tokens"]);
 
 function SidebarContent({
@@ -181,7 +189,7 @@ function SidebarContent({
     });
   };
   // Sidebar so mostra as telas permitidas ao usuario (admin/carregando = todas)
-  const isSuper = user?.email === SUPER_ADMIN_EMAIL;
+  const isSuper = SUPER_ADMIN_EMAILS.has((user?.email || "").trim().toLowerCase());
   let visibleNav = filterNav(NAV_ITEMS, allowedTelasOf(user));
   if (!isSuper) {
     // Sessoes (captura gov.br) so p/ super-admin
@@ -579,10 +587,12 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
     if (firstAllowed && firstAllowed !== pathname) router.replace(firstAllowed);
   }, [user, pathname, router]);
 
-  // Guard super-admin: Sessoes / Service Tokens so p/ admin@pactha.com.br
+  // Guard super-admin: Sessoes / Service Tokens so para os donos do sistema.
+  // Esconder o item de menu nao basta — a rota e digitavel.
   useEffect(() => {
     if (!user) return;
-    if (user.email !== SUPER_ADMIN_EMAIL && SUPER_ADMIN_ONLY.has(pathname)) {
+    const ehSuper = SUPER_ADMIN_EMAILS.has((user.email || "").trim().toLowerCase());
+    if (!ehSuper && SUPER_ADMIN_ONLY.has(pathname)) {
       router.replace("/dashboard");
     }
   }, [user, pathname, router]);
@@ -657,7 +667,9 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
       </Sheet>
 
       {/* Main content */}
-      <main className="flex-1 overflow-y-auto">
+      {/* pactha-scroll reserva a canaleta da barra: sem isso, trocar de uma aba
+          que rola para outra que nao rola desloca o conteudo lateralmente. */}
+      <main className="pactha-scroll flex-1 overflow-y-auto">
         <div className={telaCheia ? "" : "mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8"}>
           {children}
         </div>

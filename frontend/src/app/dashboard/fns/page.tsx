@@ -6,13 +6,6 @@ import { useMunicipio } from "@/contexts/MunicipioContext";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   Table,
   TableBody,
   TableCell,
@@ -20,6 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { MultiSelect, resumoAnos } from "@/components/ui/multi-select";
 import { formatCurrency } from "@/lib/utils";
 import { Search, Loader2, Eraser, Printer, Eye, X } from "lucide-react";
 
@@ -107,8 +101,9 @@ interface PropostaDetalhe {
 }
 
 // Valores exatos aceitos pelo FNS no parametro tpEmenda (valorEmenda do portal)
+// Vazio = TODOS (mesma convencao do <MultiSelect> e do backend, que so recebe
+// o parametro quando ha filtro).
 const TIPOS_EMENDA = [
-  "TODOS",
   "INDIVIDUAL",
   "BANCADA",
   "BANCADA OBRIGATÓRIA",
@@ -138,7 +133,7 @@ export default function PropostasFNSPage() {
   // (ver o efeito de auto-consulta abaixo): ninguem deveria precisar clicar em
   // "Consultar" para ver o ano em que esta.
   const [anosSel, setAnosSel] = useState<string[]>([String(currentYear)]);
-  const [tipoEmenda, setTipoEmenda] = useState("TODOS");
+  const [tiposSel, setTiposSel] = useState<string[]>([]);
   // FNS SEGUE o filtro geral (Município Atendido): travado no município selecionado
   // na sidebar. Assim o usuário não filtra o FNS de município fora da sua permissão.
   const selMun = municipios.find((m) => String(m.id) === municipioId) || null;
@@ -218,7 +213,10 @@ export default function PropostasFNSPage() {
         [...anosSel].sort().map(async (a) => {
           const params: Record<string, string | number> = { municipio, ano: a, uf: estado };
           if (nrProposta) params.nr_proposta = nrProposta;
-          if (tipoEmenda !== "TODOS") params.tipo_emenda = tipoEmenda;
+          // Um tipo -> o proprio FNS filtra (comportamento de antes, intacto).
+          // Varios -> pede tudo e filtra aqui: o portal aceita UM tipo por
+          // consulta, e multiplicar anos x tipos viraria dezenas de requests.
+          if (tiposSel.length === 1) params.tipo_emenda = tiposSel[0];
           try {
             const res = await api.get<Resp>("/fns/buscar", { params });
             return { ano: a, resp: res.data, erro: null as string | null };
@@ -237,7 +235,16 @@ export default function PropostasFNSPage() {
         setData(null);
         return;
       }
-      const items = ok.flatMap((r) => (r.resp!.items || []).map((it) => ({ ...it, ano: r.ano })));
+      const brutos = ok.flatMap((r) => (r.resp!.items || []).map((it) => ({ ...it, ano: r.ano })));
+      // Com 2+ tipos marcados o corte e local. `tipo_recurso` vem descritivo
+      // ("EMENDA INDIVIDUAL") e o filtro do portal usa o termo curto
+      // ("INDIVIDUAL"), entao a comparacao e por conteudo.
+      const items = tiposSel.length > 1
+        ? brutos.filter((it) => {
+            const t = (it.tipo_recurso || "").toUpperCase();
+            return tiposSel.some((sel) => t.includes(sel.toUpperCase()));
+          })
+        : brutos;
       setData({
         items,
         total: items.length,
@@ -255,7 +262,7 @@ export default function PropostasFNSPage() {
     } finally {
       setLoading(false);
     }
-  }, [municipio, anosSel, estado, nrProposta, tipoEmenda]);
+  }, [municipio, anosSel, estado, nrProposta, tiposSel]);
 
   // AUTO-CONSULTA: assim que o município estiver resolvido, a tela ja abre com
   // o resultado do ano corrente. Refaz quando o município ou os anos mudarem;
@@ -270,14 +277,9 @@ export default function PropostasFNSPage() {
     void consultar();
   }, [assinaturaAuto, municipio, anosSel.length, consultar]);
 
-  const alternarAno = (a: string) =>
-    setAnosSel((atual) =>
-      atual.includes(a) ? atual.filter((x) => x !== a) : [...atual, a].sort()
-    );
-
   const limpar = () => {
     setNrProposta("");
-    setTipoEmenda("TODOS");
+    setTiposSel([]);
     setAnosSel([String(currentYear)]);
     setError(null);
   };
@@ -301,45 +303,37 @@ export default function PropostasFNSPage() {
               onKeyDown={(e) => { if (e.key === "Enter") consultar(); }}
             />
           </div>
-          <div className="md:col-span-2">
+          <div>
             <label className="text-xs font-medium text-base-content/70">
-              Anos <span className="text-base-content/40">(pode marcar vários — ex.: o mandato)</span>
+              Anos <span className="text-base-content/40">(um, alguns ou o mandato)</span>
             </label>
-            <div className="mt-1 flex flex-wrap gap-1.5">
-              {anos.map((a) => {
-                const on = anosSel.includes(a);
-                return (
-                  <button
-                    key={a}
-                    type="button"
-                    onClick={() => alternarAno(a)}
-                    aria-pressed={on}
-                    className={`rounded-lg border px-2.5 py-1 text-xs font-semibold transition-colors ${
-                      on
-                        ? "border-primary bg-primary/10 text-primary"
-                        : "border-base-300 bg-base-100 text-base-content/60 hover:bg-base-200"
-                    }`}
-                  >
-                    {a}
-                  </button>
-                );
-              })}
-            </div>
+            <MultiSelect
+              opcoes={anos}
+              valor={anosSel}
+              onChange={setAnosSel}
+              formatarResumo={resumoAnos}
+              placeholder="Selecione o ano"
+              rotuloTodos="Limpar"
+              ariaLabel="Anos da consulta"
+            />
           </div>
           <div>
             <label className="text-xs font-medium text-base-content/70">Município (filtro geral)</label>
-            <div className="h-9 flex items-center rounded-lg bg-base-200 px-3 text-sm text-base-content">
+            <div className="mt-1 h-9 flex items-center rounded-lg bg-base-200 px-3 text-sm text-base-content">
               {selMun ? `${selMun.nome}${selMun.uf ? ` / ${selMun.uf}` : ""}` : "Selecione o município no menu lateral"}
             </div>
           </div>
           <div>
-            <label className="text-xs font-medium text-base-content/70">Tipo de Emenda</label>
-            <Select value={tipoEmenda} onValueChange={(v) => setTipoEmenda(v ?? "TODOS")}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {TIPOS_EMENDA.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <label className="text-xs font-medium text-base-content/70">
+              Tipo de Emenda <span className="text-base-content/40">(um, alguns ou todos)</span>
+            </label>
+            <MultiSelect
+              opcoes={TIPOS_EMENDA}
+              valor={tiposSel}
+              onChange={setTiposSel}
+              rotuloTodos="TODOS"
+              ariaLabel="Tipo de emenda"
+            />
           </div>
         </div>
 

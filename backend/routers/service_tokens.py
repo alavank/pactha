@@ -16,19 +16,18 @@ from pydantic import BaseModel, Field
 from database import get_db
 from models.user import User
 from models.service_token import ServiceToken
-from services.auth import get_current_user
+from services.auth import get_current_user, is_super_admin
 from services.service_auth import hash_token
 from services.audit import log_event
 
 router = APIRouter(prefix="/api/admin/service-tokens", tags=["admin"])
 
 
-SUPER_ADMIN_EMAIL = "admin@pactha.com.br"
-
-
 def _require_admin(user: User):
-    # Service Tokens sao credenciais longevas poderosas -> so o admin principal.
-    if (user.email or "").lower() != SUPER_ADMIN_EMAIL:
+    # Service Tokens sao credenciais longevas poderosas -> so os donos do
+    # sistema. A lista mora em services/auth.py (antes havia uma copia aqui, que
+    # e como uma regra de permissao passa a divergir sem ninguem perceber).
+    if not is_super_admin(user):
         raise HTTPException(status_code=403, detail="Acesso restrito ao administrador principal")
 
 

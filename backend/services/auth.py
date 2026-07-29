@@ -34,6 +34,25 @@ COOKIE_NAME_CSRF = "pactha_csrf"
 # Perfis somente-leitura (ex.: prefeito no Painel Executivo). Nao editam NADA do
 # sistema operacional; so podem escrever nos endpoints proprios do Painel abaixo.
 READONLY_ROLES = {"prefeito", "viewer"}
+# Contas DONAS do sistema (Alavank), nao "mais um admin do cliente". Mandam em
+# Sessoes, Tokens de Servico, e sao as unicas que podem alterar umas as outras.
+#
+# Fica AQUI, num lugar so, porque a lista ja existia copiada em routers/users.py
+# e routers/service_tokens.py — duas copias de uma regra de permissao divergem
+# em silencio, e o que se perde e o acesso do dono.
+#
+# E lista, e nao um e-mail unico, para nao haver ponto unico de falha: perdida a
+# conta, ninguem consegue reseta-la nem alcancar aquelas telas.
+SUPER_ADMIN_EMAILS = {
+    "admin@pactha.com.br",
+    "alavank.tecnologia@gmail.com",
+}
+
+
+def is_super_admin(user) -> bool:
+    return (getattr(user, "email", "") or "").strip().lower() in SUPER_ADMIN_EMAILS
+
+
 READONLY_WRITE_ALLOW = (
     "/api/painel/push", "/api/painel/preferencias",
     "/api/bi/push", "/api/bi/preferencias",
