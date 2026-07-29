@@ -492,15 +492,56 @@ export async function getNarrativa(
   return data;
 }
 
-// ---- kiosk (admin) ----
-export async function criarKioskToken(
-  municipioId: number | null,
-  dias = 365
-): Promise<{ token: string; escopo: string; user_email: string; municipio_id: number | null }> {
-  const { data } = await api.post("/bi/kiosk-tokens", {
-    municipio_id: municipioId,
-    dias,
-  });
+// ---- Modo Tela: filtro do usuario + links publicos ----
+//
+// O filtro vive no SERVIDOR (e nao so no BroadcastChannel) porque a TV costuma
+// ser OUTRO APARELHO — e entre aparelhos o canal do navegador nao existe.
+
+export interface FiltroTela {
+  scope: string;
+  anos: number[];
+  aba: string | null;
+}
+
+export async function getTelaFiltros(): Promise<FiltroTela> {
+  const { data } = await api.get<FiltroTela>("/bi/tela-filtros");
+  return data;
+}
+
+export async function putTelaFiltros(f: FiltroTela): Promise<void> {
+  await api.put("/bi/tela-filtros", { scope: f.scope, anos: f.anos, aba: f.aba });
+}
+
+export interface TelaLink {
+  slug: string;
+  caminho: string;
+  nome: string | null;
+  criado_em?: string | null;
+  expira_em?: string | null;
+  revogado?: boolean;
+  ultimo_acesso?: string | null;
+}
+
+export async function criarTelaLink(nome?: string, dias = 365): Promise<TelaLink> {
+  const { data } = await api.post<TelaLink>("/bi/tela-links", { nome: nome || null, dias });
+  return data;
+}
+
+export async function listarTelaLinks(): Promise<TelaLink[]> {
+  const { data } = await api.get<TelaLink[]>("/bi/tela-links");
+  return data;
+}
+
+export async function revogarTelaLink(slug: string): Promise<void> {
+  await api.delete(`/bi/tela-links/${encodeURIComponent(slug)}`);
+}
+
+/** Resolve o link publico: token do quiosque + filtro VIGENTE do dono.
+ *  Sem autenticacao de proposito — o segredo e o proprio slug. */
+export async function resolverTelaPub(
+  slug: string
+): Promise<{ token: string; scope: string; anos: number[]; aba: string | null }> {
+  const { data } = await api.get(`/bi/tela-pub/${encodeURIComponent(slug)}`);
   return data;
 }
 

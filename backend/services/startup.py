@@ -83,6 +83,8 @@ MIGRATION_FILES = [
     # starvation alfabetica: antes, a rodada era cortada por volta do 10o de 41
     # municipios e os do fim da lista NUNCA eram atualizados, em silencio.
     "add_scraper_municipio_coleta.sql",
+    # Modo Tela do BI: filtro POR USUARIO + links publicos curtos e revogaveis
+    "add_bi_tela.sql",
 ]
 
 

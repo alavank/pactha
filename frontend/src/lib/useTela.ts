@@ -125,6 +125,10 @@ export function useTelaMotor(opts: {
     restante,
     duracao,
     filtros,
+    // Segunda porta de entrada do filtro, além do BroadcastChannel: é por aqui
+    // que entra o filtro vindo do SERVIDOR (useFiltroTela) — o único caminho
+    // que funciona quando a TV está noutro aparelho.
+    setFiltros,
     playPause: () => setTocando((t) => !t),
     next: () => avancar(1),
     prev: () => avancar(-1),

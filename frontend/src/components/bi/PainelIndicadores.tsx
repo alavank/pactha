@@ -10,8 +10,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { MonitorPlay, RefreshCw } from "lucide-react";
 import api from "@/lib/api";
-import { Municipio, getMunicipios } from "@/lib/bi";
+import { Municipio, getMunicipios, putTelaFiltros } from "@/lib/bi";
 import type { User } from "@/types";
+import { allowedTelasOf } from "@/lib/telas";
 import { useBiScope, CONSOLIDADO } from "@/contexts/BiScopeContext";
 import { ABAS, AbaId, FiltrosTela, abrirJanelaDaTela } from "@/lib/tela";
 import { useTelaControle } from "@/lib/useTela";
@@ -46,6 +47,7 @@ export function PainelIndicadores() {
   const tela = useTelaControle(filtros);
 
   // Mudou o filtro -> a TV muda junto (o prefeito filtra aqui e olha pra la).
+  // Caminho INSTANTANEO, mas so alcanca a janela do MESMO navegador.
   useEffect(() => {
     if (tela.ativa) tela.enviarFiltros(filtros);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -102,6 +104,22 @@ export function PainelIndicadores() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aba, municipioId, anos.join(","), pronto]);
 
+  // ...e o caminho que atravessa APARELHOS: publica o filtro no servidor, de
+  // onde a TV e o link publico leem. Sem isto, "mudei o periodo no sistema" nao
+  // chega na TV do gabinete, que e outra maquina. Debounce porque o
+  // multi-select de anos dispara varias mudancas seguidas enquanto se clica.
+  useEffect(() => {
+    if (!pronto) return;
+    const id = setTimeout(() => {
+      void putTelaFiltros({ scope: filtros.scope, anos: filtros.anos, aba }).catch(() => {});
+    }, 600);
+    return () => clearTimeout(id);
+  }, [filtros, aba, pronto]);
+
+  const telasPermitidas = useMemo(() => allowedTelasOf(user), [user]);
+  // null = admin (ou ainda carregando): nao esconde nada.
+  const podeModoTela = !telasPermitidas || telasPermitidas.has("bi_tela");
+
   const abrirTela = () => abrirJanelaDaTela(filtros);
 
   return (
@@ -125,15 +143,17 @@ export function PainelIndicadores() {
               <RefreshCw className={carregando ? "size-4 animate-spin" : "size-4"} />
             </button>
             <BotaoAjustes />
-            <button
-              type="button"
-              onClick={abrirTela}
-              className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold"
-              style={{ background: "var(--bi-cta)", color: "var(--bi-cta-ink)" }}
-            >
-              <MonitorPlay className="size-4" />
-              Modo Tela
-            </button>
+            {podeModoTela && (
+              <button
+                type="button"
+                onClick={abrirTela}
+                className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold"
+                style={{ background: "var(--bi-cta)", color: "var(--bi-cta-ink)" }}
+              >
+                <MonitorPlay className="size-4" />
+                Modo Tela
+              </button>
+            )}
             {tela.ativa && (
               <SlideshowControls
                 compacto
