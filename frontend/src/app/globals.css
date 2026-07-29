@@ -279,3 +279,154 @@
   height: 3px;
   width: 100%;
 }
+
+/* ==========================================================================
+   SKIN DO PAINEL DE INDICADORES (BI) — `.bi-skin`
+   --------------------------------------------------------------------------
+   Um BI de gestao a vista nao e "mais uma tela do sistema": ele destoa de
+   proposito (ver design-tela/). Preto quase puro no escuro, cinza-claro no
+   claro, cartoes muito arredondados, acento menta, numeros grandes e paleta
+   de grafico pastel. Fica ESCOPADO em `.bi-skin` para nao vazar para as telas
+   operacionais, que seguem com o tema "Base" violeta.
+   ========================================================================== */
+.bi-skin {
+  --bi-bg: #eceeed;
+  --bi-surface: #ffffff;
+  --bi-surface-2: #f5f7f6;
+  --bi-line: #e2e6e4;
+  --bi-line-strong: #cfd5d2;
+  --bi-text: #0d100f;
+  --bi-muted: #5f6764;
+  --bi-faint: #939b98;
+  --bi-accent: #12b886;
+  --bi-accent-soft: #d8f5ea;
+  --bi-cta: #111413;
+  --bi-cta-ink: #ffffff;
+  --bi-ok: #12a06f;
+  --bi-warn: #c1770a;
+  --bi-crit: #d63b5c;
+  --bi-c1: #f9846a;
+  --bi-c2: #f5b93f;
+  --bi-c3: #45c98c;
+  --bi-c4: #4fa3ee;
+  --bi-c5: #a58cf0;
+  --bi-radius: 1.5rem;
+  --bi-radius-sm: 1rem;
+  --bi-shadow: 0 1px 2px rgba(13, 16, 15, 0.04), 0 8px 24px -16px rgba(13, 16, 15, 0.18);
+
+  background: var(--bi-bg);
+  color: var(--bi-text);
+}
+
+[data-theme="pactha-dark"] .bi-skin,
+.bi-skin[data-bi-theme="dark"] {
+  --bi-bg: #0a0c0b;
+  --bi-surface: #141716;
+  --bi-surface-2: #1c201e;
+  --bi-line: rgba(255, 255, 255, 0.07);
+  --bi-line-strong: rgba(255, 255, 255, 0.14);
+  --bi-text: #f1f4f2;
+  --bi-muted: rgba(241, 244, 242, 0.58);
+  --bi-faint: rgba(241, 244, 242, 0.34);
+  --bi-accent: #4fdcae;
+  --bi-accent-soft: rgba(79, 220, 174, 0.14);
+  --bi-cta: #4fdcae;
+  --bi-cta-ink: #05231a;
+  --bi-ok: #4fdcae;
+  --bi-warn: #f3bb52;
+  --bi-crit: #f8788f;
+  --bi-c1: #ff8a6b;
+  --bi-c2: #ffc85c;
+  --bi-c3: #6ee7a8;
+  --bi-c4: #63b3f5;
+  --bi-c5: #b39cf7;
+  --bi-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 16px 40px -24px rgba(0, 0, 0, 0.8);
+}
+
+@layer utilities {
+  /* Cartao do BI: raio generoso, borda de 1px quase invisivel, sem peso. */
+  .bi-card {
+    background: var(--bi-surface);
+    border: 1px solid var(--bi-line);
+    border-radius: var(--bi-radius);
+    box-shadow: var(--bi-shadow);
+  }
+  .bi-card-flat {
+    background: var(--bi-surface-2);
+    border: 1px solid var(--bi-line);
+    border-radius: var(--bi-radius-sm);
+  }
+  /* Numeros: tabulares e apertados, como na referencia. */
+  .bi-num {
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+    font-weight: 700;
+  }
+  .bi-title {
+    letter-spacing: -0.025em;
+    font-weight: 700;
+  }
+  .bi-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--bi-line-strong) transparent;
+  }
+  .bi-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+  .bi-scroll::-webkit-scrollbar-thumb {
+    background: var(--bi-line-strong);
+    border-radius: 999px;
+  }
+  .bi-scroll::-webkit-scrollbar-track { background: transparent; }
+}
+
+/* Aba em formato de FICHARIO (Modo Tela): a marca da pasta ATIVA tem a mesma
+   cor do painel e cobre a borda de cima dele (margin-bottom -1px), de modo que
+   pasta e conteudo viram uma peca so — igual a uma pasta suspensa de arquivo.
+   As inativas ficam recuadas, mais escuras e sem a borda de baixo. */
+.bi-folder-tabs { --bi-folder-h: 1px; }
+.bi-folder-tab {
+  position: relative;
+  margin-bottom: -1px;
+  padding: 0.55rem 1.1rem 0.7rem;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-top-left-radius: 0.85rem;
+  border-top-right-radius: 0.85rem;
+  background: transparent;
+  color: var(--bi-muted);
+  transition: color 0.18s ease, background-color 0.18s ease, transform 0.18s ease;
+}
+.bi-folder-tab:hover { color: var(--bi-text); background: var(--bi-surface-2); }
+.bi-folder-tab[data-active="true"] {
+  background: var(--bi-surface);
+  border-color: var(--bi-line);
+  color: var(--bi-text);
+  font-weight: 700;
+}
+/* Marcador colorido no topo da pasta ativa (o "rotulo" da aba). */
+.bi-folder-tab[data-active="true"]::before {
+  content: "";
+  position: absolute;
+  inset: 0 0.85rem auto;
+  top: 0;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--bi-accent);
+}
+
+/* Faixa de insights da IA — a mensagem entra deslizando de baixo. */
+@keyframes bi-insight-in {
+  from { opacity: 0; transform: translateY(0.4rem); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.bi-insight-enter { animation: bi-insight-in 0.45s ease-out both; }
+
+/* Troca de aba no slideshow. */
+@keyframes bi-pane-in {
+  from { opacity: 0; transform: translateY(0.6rem) scale(0.995); }
+  to { opacity: 1; transform: none; }
+}
+.bi-pane-enter { animation: bi-pane-in 0.4s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .bi-insight-enter, .bi-pane-enter { animation: none; }
+}

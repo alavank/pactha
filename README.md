@@ -17,8 +17,11 @@ containers e seu **proprio banco**, todos buildados do **mesmo codigo**:
 | Trust | `trust` | https://pactha-trust-54-232-208-118.sslip.io | https://pactha-trust-api-54-232-208-118.sslip.io |
 | Monte Siao/MG | `montesiao-mg` | https://pactha-montesiao-mg-54-232-208-118.sslip.io | https://pactha-montesiao-mg-api-54-232-208-118.sslip.io |
 
-O Monte Siao tem ainda o **Painel Executivo** (pasta `painel/`) em
-https://pactha-montesiao-mg-painel-54-232-208-118.sslip.io
+O Monte Siao tem o **Painel de Indicadores** (BI) ligado — flag build-time
+`NEXT_PUBLIC_BI_MODULE=1`. Com ela, `/dashboard` **e** o painel executivo (abas
+por assunto, filtro multi-ano, insights de IA) e `/tela` e o **Modo Tela**, a
+janela de exibicao com as abas em fichario passando em slideshow. O app separado
+`painel/` foi descontinuado — ver `painel/DEPRECADO.md`.
 
 Nao ha multi-tenancy no codigo: **o isolamento e por deploy**. O que muda entre um tenant e
 outro sao as env vars no Coolify (`INSTANCE_SLUG`, `DATABASE_URL`, `JWT_SECRET`, `COFRE_KEY`,

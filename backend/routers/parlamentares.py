@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from database import get_db
 from services.auth import get_current_user, ensure_municipio_access, ensure_tela
+from services.bi import anos_list
 from models.user import User
 
 router = APIRouter(prefix="/api/parlamentares", tags=["parlamentares"])
@@ -58,6 +59,7 @@ async def listar(
     municipio_id: Optional[int] = Query(None, description="Filtra um municipio (None=todos)"),
     q: Optional[str] = Query(None, description="Busca parcial no nome"),
     ano: Optional[int] = Query(None, description="Filtra por ano (None=todos)"),
+    anos: Optional[list[int]] = Query(None, description="Varios anos (mandato); soma-se a `ano`"),
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
@@ -75,14 +77,17 @@ async def listar(
     """
     ensure_municipio_access(current, municipio_id)
     ensure_tela(current, "parlamentares")
-    return await aggregate_parlamentares(db, municipio_id=municipio_id, q=q, ano=ano)
+    return await aggregate_parlamentares(
+        db, municipio_id=municipio_id, q=q,
+        ano=anos_list((anos or []) + ([ano] if ano else [])),
+    )
 
 
 async def aggregate_parlamentares(
     db: AsyncSession,
     municipio_id: Optional[int] = None,
     q: Optional[str] = None,
-    ano: Optional[int] = None,
+    ano=None,
     incluir_plano_acao: bool = True,
     municipio_ids: Optional[list[int]] = None,
 ) -> dict:
@@ -117,13 +122,14 @@ async def aggregate_parlamentares(
     # Filtro de ano — a fonte do ano difere por tabela:
     #   convenios_estadual/emendas_estaduais -> coluna `ano`
     #   transferegov_propostas -> derivado do sufixo do numero_proposta ("xxx/AAAA")
+    anos = anos_list(ano)
     ano_sig = ano_vol = ano_em = ""
-    if ano:
-        ano_sig = " AND ano = :ano"
-        ano_em = " AND ano = :ano"
-        ano_vol = " AND split_part(numero_proposta, '/', 2) = :ano_txt"
-        params["ano"] = ano
-        params["ano_txt"] = str(ano)
+    if anos:
+        ano_sig = " AND ano = ANY(:anos)"
+        ano_em = " AND ano = ANY(:anos)"
+        ano_vol = " AND split_part(numero_proposta, '/', 2) = ANY(:anos_txt)"
+        params["anos"] = anos
+        params["anos_txt"] = [str(a) for a in anos]
 
     # 1) convenios_estadual: SIGCON (responsaveis) E FNS (noAutor/noParlamentar)
     # Federal FNS pode ter campos noAutor, noParlamentar, dsAutor — variações
@@ -258,9 +264,9 @@ async def aggregate_parlamentares(
                 ben = _norm(it.get("beneficiarioNome") or "")
                 if not (mn in ben or ben.endswith(mn)):
                     continue
-                if ano:
+                if anos:
                     pc = str(it.get("programaCodigo") or "")
-                    if (pc[4:8] if len(pc) >= 8 else "") != str(ano):
+                    if (pc[4:8] if len(pc) >= 8 else "") not in {str(a) for a in anos}:
                         continue
                 _, _, autor = (it.get("codigoEmendaFormatado") or "").partition("-")
                 autor = autor.strip()
@@ -280,7 +286,7 @@ async def aggregate_parlamentares(
 
     # 5) Selecao PAC / Novo PAC — o PROPONENTE entra como "parlamentar" (ou a
     #    emenda parlamentar quando houver). Fonte: transferegov_pac.
-    ano_pac = " AND split_part(numero_proposta, '/', 2) = :ano_txt" if ano else ""
+    ano_pac = " AND split_part(numero_proposta, '/', 2) = ANY(:anos_txt)" if anos else ""
     sql_pac = f"""
         SELECT COALESCE(NULLIF(TRIM(emenda_parlamentar), ''), proponente) AS nome,
                municipio_id,
@@ -370,6 +376,7 @@ async def detalhe(
     nome_normalizado: str,
     municipio_id: Optional[int] = Query(None),
     ano: Optional[int] = Query(None, description="Filtra por ano (None=todos)"),
+    anos: Optional[list[int]] = Query(None, description="Varios anos (mandato); soma-se a `ano`"),
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
@@ -389,12 +396,13 @@ async def detalhe(
     else:
         where_extra_sigcon = where_extra_vol = where_extra_em = ""
     # Filtro de ano (fonte do ano difere por tabela — ver endpoint listar)
-    if ano:
-        where_extra_sigcon += " AND c.ano = :ano"
-        where_extra_vol += " AND split_part(v.numero_proposta, '/', 2) = :ano_txt"
-        where_extra_em += " AND e.ano = :ano"
-        params["ano"] = ano
-        params["ano_txt"] = str(ano)
+    _anos = anos_list((anos or []) + ([ano] if ano else []))
+    if _anos:
+        where_extra_sigcon += " AND c.ano = ANY(:anos)"
+        where_extra_vol += " AND split_part(v.numero_proposta, '/', 2) = ANY(:anos_txt)"
+        where_extra_em += " AND e.ano = ANY(:anos)"
+        params["anos"] = _anos
+        params["anos_txt"] = [str(a) for a in _anos]
 
     # SIGCON
     sql1 = f"""
@@ -496,9 +504,9 @@ async def detalhe(
                 code, _, autor = (it.get("codigoEmendaFormatado") or "").partition("-")
                 if not autor or alvo not in _norm(autor):
                     continue
-                if ano:
+                if _anos:
                     pc = str(it.get("programaCodigo") or "")
-                    if (pc[4:8] if len(pc) >= 8 else "") != str(ano):
+                    if (pc[4:8] if len(pc) >= 8 else "") not in {str(a) for a in _anos}:
                         continue
                 plano_acao.append({
                     "id": it.get("planoAcaoId"),
@@ -531,8 +539,9 @@ async def detalhe(
         pac_params: dict = {"n": f"%{nome_param}%"}
         if municipio_id:
             pac_sql += " AND municipio_id = :mun"; pac_params["mun"] = municipio_id
-        if ano:
-            pac_sql += " AND split_part(numero_proposta, '/', 2) = :ano_txt"; pac_params["ano_txt"] = str(ano)
+        if _anos:
+            pac_sql += " AND split_part(numero_proposta, '/', 2) = ANY(:anos_txt)"
+            pac_params["anos_txt"] = [str(a) for a in _anos]
         pac_sql += " ORDER BY valor_total DESC NULLS LAST"
         for r in (await db.execute(text(pac_sql), pac_params)).fetchall():
             pac_list.append({
@@ -563,8 +572,8 @@ async def detalhe(
         fns_params: dict = {}
         if municipio_id:
             fns_sql += " AND c.municipio_id = :mun"; fns_params["mun"] = municipio_id
-        if ano:
-            fns_sql += " AND c.ano = :ano"; fns_params["ano"] = ano
+        if _anos:
+            fns_sql += " AND c.ano = ANY(:anos)"; fns_params["anos"] = _anos
         fns_sql += " ORDER BY valor DESC NULLS LAST"
         for r in (await db.execute(text(fns_sql), fns_params)).fetchall():
             mun_nome = r[2] or ""

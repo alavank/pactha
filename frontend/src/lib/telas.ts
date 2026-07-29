@@ -51,6 +51,13 @@ export function allowedTelasOf(
 ): Set<string> | null {
   if (!user) return null; // carregando -> nao esconde nada ainda
   if (user.role === "admin") return null; // admin ve tudo
-  if (Array.isArray(user.telas)) return new Set(user.telas);
+  if (Array.isArray(user.telas)) {
+    const set = new Set(user.telas);
+    // O Painel de Indicadores foi FUNDIDO ao /dashboard (antes vivia em /bi).
+    // Quem tinha so a tela "bi" continuaria batendo no guard de rota e seria
+    // expulso da propria home — entao "bi" passa a valer "dashboard" tambem.
+    if (set.has("bi")) set.add("dashboard");
+    return set;
+  }
   return null; // fallback seguro (sem info -> nao trava)
 }
