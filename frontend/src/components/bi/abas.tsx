@@ -441,6 +441,23 @@ export function AbaDocumentosView({ d, tv }: AbaProps & { d: AbaDocumentos }) {
   const c = d.cauc;
   const pct = c.com_dados ? c.regulares / c.com_dados : 0;
   const primeiro = c.por_municipio[0];
+
+  // Agrupa por bloco, na ordem em que o CAUC numera (1.x, 2.x, 3.x) — a mesma
+  // do módulo. `itens` traz TODAS as exigências; se a API for antiga e não
+  // mandar, remonta com o que existe (sem as "não exigidas", que só vêm ali).
+  const blocos = React.useMemo(() => {
+    const todos =
+      primeiro?.itens ??
+      [...(primeiro?.itens_pendentes ?? []), ...(primeiro?.itens_regulares ?? [])];
+    const porGrupo = new Map<string, typeof todos>();
+    for (const i of todos) {
+      const g = i.grupo || "Outras";
+      if (!porGrupo.has(g)) porGrupo.set(g, []);
+      porGrupo.get(g)!.push(i);
+    }
+    return [...porGrupo.entries()];
+  }, [primeiro]);
+
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -455,55 +472,63 @@ export function AbaDocumentosView({ d, tv }: AbaProps & { d: AbaDocumentos }) {
           valor={primeiro?.data_pesquisa ? formatDate(primeiro.data_pesquisa) : "—"} grande={tv} />
       </div>
 
-      <div className={grid(tv, "grid min-h-0 gap-3 lg:grid-cols-3", "grid min-h-0 flex-1 grid-cols-3 gap-3")}>
-        <Painel className="min-h-0">
-          <PainelHead icon={ShieldAlert} titulo="Pendências (impeditivas)"
-            sub="travam novas transferências voluntárias" />
-          {c.por_municipio.some((m) => m.itens_pendentes.length) ? (
-            <ul className="bi-scroll flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto pr-1">
-              {c.por_municipio.flatMap((m) =>
-                m.itens_pendentes.map((i) => (
-                  <li key={`${m.municipio_id}-${i.codigo}`} className="bi-card-flat px-2.5 py-2">
-                    <div className="flex items-baseline gap-2">
-                      <span className="truncate text-[12px] font-medium">{i.label}</span>
-                      <Chip tom="crit" className="ml-auto shrink-0">{i.codigo}</Chip>
-                    </div>
-                    {c.com_dados > 1 && (
-                      <div className="text-[10px]" style={{ color: "var(--bi-faint)" }}>{m.nome}</div>
-                    )}
-                  </li>
-                ))
-              )}
-            </ul>
-          ) : (
-            <Vazio>Nenhuma pendência impeditiva. Município apto a receber transferências voluntárias da União.</Vazio>
-          )}
-        </Painel>
+      {/* TODAS as exigências, agrupadas por bloco como no módulo. Antes a TV
+          cortava em 9 de ~15 e omitia as "não exigidas" — quem olhava não tinha
+          como saber que faltava o resto. Em colunas, tudo cabe sem virar uma
+          rolagem longa numa tela de parede. */}
+      <div className="bi-scroll min-h-0 flex-1 overflow-y-auto">
+        {blocos.length ? (
+          <div className={tv ? "bi-colunas-3" : "bi-colunas-2"}>
+            {blocos.map(([grupo, itens]) => (
+              <Painel key={grupo} className="mb-3 break-inside-avoid">
+                <PainelHead icon={ShieldCheck} titulo={grupo} sub={`${itens.length} exigência(s)`} />
+                <ul className="flex flex-col">
+                  {itens.map((i) => (
+                    <li key={i.codigo} className="flex items-baseline gap-2 py-[3px]">
+                      <span className="bi-num shrink-0 text-[10px]" style={{ color: "var(--bi-faint)" }}>
+                        {i.codigo}
+                      </span>
+                      <span
+                        className={tv ? "truncate text-[13px]" : "truncate text-[12px]"}
+                        style={i.tipo === "na" ? { color: "var(--bi-faint)" } : undefined}
+                      >
+                        {i.label}
+                      </span>
+                      <span
+                        className="bi-num ml-auto shrink-0 text-[10px]"
+                        style={{
+                          color:
+                            i.tipo === "pendente"
+                              ? "var(--bi-crit)"
+                              : i.tipo === "regular"
+                                ? "var(--bi-ok)"
+                                : "var(--bi-faint)",
+                        }}
+                      >
+                        {i.tipo === "pendente" ? "PENDENTE" : i.tipo === "na" ? "não exigido" : i.valor}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </Painel>
+            ))}
 
-        <Painel className="min-h-0">
-          <PainelHead icon={ShieldCheck} titulo="Certidões em dia" sub="com a data de validade" />
-          {primeiro?.itens_regulares.length ? (
-            <ul className="bi-scroll flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pr-1">
-              {primeiro.itens_regulares.slice(0, tv ? 9 : 24).map((i) => (
-                <li key={i.codigo} className="flex items-baseline gap-2 px-1 py-1">
-                  <span className="truncate text-[12px]">{i.label}</span>
-                  <span className="bi-num ml-auto shrink-0 text-[11px]" style={{ color: "var(--bi-ok)" }}>
-                    {i.valor}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : (
+            {/* CAGEC como bloco irmão: é documentação de regularização do mesmo
+                assunto. Fica explícito que NÃO está verde por estar em dia — é
+                que ninguém coleta esse dado ainda. Um verde aqui seria lido como
+                "está tudo certo no estado", que é pior que a ausência. */}
+            <Painel className="mb-3 break-inside-avoid">
+              <PainelHead icon={Info} titulo="CAGEC (Minas Gerais)" sub="cadastro estadual de convenentes" />
+              <p className="text-[11px] leading-snug" style={{ color: "var(--bi-faint)" }}>
+                {d.cagec.motivo}
+              </p>
+            </Painel>
+          </div>
+        ) : (
+          <Painel>
             <Vazio>Sem dados de CAUC coletados.</Vazio>
-          )}
-        </Painel>
-
-        <Painel className="min-h-0">
-          <PainelHead icon={Info} titulo="CAGEC (Minas Gerais)" sub="cadastro estadual de convenentes" />
-          <Vazio>
-            {d.cagec.motivo}
-          </Vazio>
-        </Painel>
+          </Painel>
+        )}
       </div>
     </div>
   );

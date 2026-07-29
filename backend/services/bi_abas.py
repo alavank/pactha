@@ -409,6 +409,12 @@ async def bi_documentos(db: AsyncSession, ids: list[int]) -> dict:
             "pendencias_codigos": s.get("pendencias_codigos") or [],
             "itens_pendentes": [i for i in itens if i["tipo"] == "pendente"],
             "itens_regulares": [i for i in itens if i["tipo"] == "regular"],
+            # TODAS as exigencias, com `grupo` e `tipo` (regular/pendente/na).
+            # A TV mostrava so um recorte dos regulares e nada dos "nao
+            # exigidos": o gestor via 9 linhas de 15 sem nenhum sinal de que
+            # faltava o resto. Cada item ja vem rotulado e agrupado por
+            # fetch_cauc_situacao — aqui era so nao jogar fora.
+            "itens": itens,
             "total_itens": len([i for i in itens if i["tipo"] != "na"]),
             "data_pesquisa": s.get("data_pesquisa"),
             "atualizado_em": s.get("atualizado_em"),

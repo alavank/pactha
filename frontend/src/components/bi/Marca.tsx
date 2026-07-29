@@ -33,14 +33,17 @@ export function MarcaPactha({
   className?: string;
   compacta?: boolean;
 }) {
+  const alt = compacta ? "h-5 w-auto object-contain" : "h-7 w-auto object-contain";
   return (
     <div className={`flex flex-col items-center leading-tight ${className}`}>
+      {/* Duas artes, uma escondida por CSS (ver globals.css). A do escuro tem a
+          PALAVRA em branco e o SÍMBOLO na cor original — a logo original é
+          tinta preta e desaparecia no fundo escuro. Trocar por CSS em vez de
+          por estado React evita piscar a arte errada na primeira pintura. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src="/pactha-logo.png"
-        alt="PACTHA"
-        className={compacta ? "h-5 w-auto object-contain" : "h-7 w-auto object-contain"}
-      />
+      <img src="/pactha-logo.png" alt="PACTHA" className={`marca-clara ${alt}`} />
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/pactha-logo-dark.png" alt="PACTHA" className={`marca-escura ${alt}`} />
       <span
         className={`mt-1 text-center ${compacta ? "text-[9px]" : "text-[10px]"}`}
         style={{ color: "var(--bi-faint, currentColor)", opacity: 0.75 }}

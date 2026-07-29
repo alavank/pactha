@@ -439,6 +439,26 @@
 }
 .bi-pane-enter { animation: bi-pane-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) both; }
 
+/* Colunas para listas longas (ex.: as exigencias do CAUC). CSS columns, e nao
+   grid: os blocos tem alturas diferentes e aqui eles se acomodam sozinhos, sem
+   buraco no fim da coluna. `break-inside-avoid` nos filhos impede um bloco de
+   ser cortado no meio e continuar na coluna seguinte. */
+.bi-colunas-2 { column-count: 1; column-gap: 0.75rem; }
+.bi-colunas-3 { column-count: 2; column-gap: 0.75rem; }
+@media (min-width: 1024px) {
+  .bi-colunas-2 { column-count: 2; }
+  .bi-colunas-3 { column-count: 3; }
+}
+
+/* Logo do PACTHA: arte clara x arte escura. A original e tinta PRETA e some no
+   fundo escuro; a variante tem a palavra em branco e o simbolo na cor. Troca por
+   CSS (e nao por estado React) para nao piscar a arte errada na primeira
+   pintura, que e o que acontece quando o tema so e conhecido depois da
+   hidratacao. */
+.marca-escura { display: none; }
+[data-theme="pactha-dark"] .marca-clara { display: none; }
+[data-theme="pactha-dark"] .marca-escura { display: block; }
+
 /* A BARRA DE ROLAGEM NAO PODE DESLOCAR A TELA.
    Cada aba tem uma altura, entao umas rolavam e outras nao; ao trocar, a
    barra sumia, a area util ficava ~15px mais larga e TODO o conteudo pulava
