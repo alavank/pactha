@@ -31,6 +31,8 @@ import {
   diasRestantesBadge,
 } from "@/lib/utils";
 import type { MunicipioSummary, AlertaVigencia, ConvenioStats } from "@/types";
+import { BiScopeProvider } from "@/contexts/BiScopeContext";
+import { PainelIndicadores } from "@/components/bi/PainelIndicadores";
 
 interface StatusChange {
   id: number;
@@ -141,7 +143,23 @@ function MetricSkeleton() {
   );
 }
 
+// Com o modulo BI ligado, /dashboard E o Painel de Indicadores — nao existem
+// mais dois menus (Dashboard + Painel de Indicadores) para o mesmo publico.
+// Sem a flag, segue o dashboard operacional de sempre (freitas/trust).
+const BI_ON = process.env.NEXT_PUBLIC_BI_MODULE === "1";
+
 export default function DashboardPage() {
+  if (BI_ON) {
+    return (
+      <BiScopeProvider>
+        <PainelIndicadores />
+      </BiScopeProvider>
+    );
+  }
+  return <DashboardOperacional />;
+}
+
+function DashboardOperacional() {
   const router = useRouter();
   const { municipioId } = useMunicipio();
   const [ano, setAno] = useState("");

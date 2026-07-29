@@ -9,6 +9,7 @@ API descoberta via inspect:
 Autenticacao via cookies de sessao captura via bookmarklet (cofre_senhas
 sistema='Sessao FNS').
 """
+import asyncio
 import json
 import logging
 import os
@@ -117,6 +118,22 @@ async def buscar(
 ):
     """Busca propostas FAF no FNS em tempo real."""
     await _ensure_fns_municipio(current, municipio, db)
+    return await consultar_fns(db, municipio, ano, uf, nr_proposta, tipo_emenda, pagina, tamanho)
+
+
+async def consultar_fns(
+    db: AsyncSession,
+    municipio: str,
+    ano: int,
+    uf: str = "MG",
+    nr_proposta: Optional[str] = None,
+    tipo_emenda: Optional[str] = None,
+    pagina: int = 1,
+    tamanho: int = 50,
+) -> dict:
+    """Nucleo da consulta FNS, SEM gate de auth. Reusado pelo endpoint /api/fns/buscar
+    (apos _ensure_fns_municipio) e pelo Painel de Indicadores (gated por escopo em
+    /api/bi/fns), que consulta VARIOS anos de uma vez."""
     # Resolve codigo IBGE FNS (tabela municipios do ambiente + fallbacks)
     cod = await _resolve_cod(municipio, uf, db)
     if not cod:
@@ -139,7 +156,9 @@ async def buscar(
     if tipo_emenda and tipo_emenda.upper() != "TODOS":
         params["tpEmenda"] = tipo_emenda
 
-    try:
+    # httpx.Client e SINCRONO: roda numa thread p/ nao travar o event loop
+    # (o Painel de Indicadores dispara varios anos de uma vez).
+    def _fetch() -> dict:
         with httpx.Client(cookies=cookies, timeout=30, verify=False) as cli:
             r = cli.get(
                 f"{FNS_BASE}/recursos/proposta/consultar",
@@ -153,7 +172,14 @@ async def buscar(
             if r.status_code == 401 or "login" in r.text[:200].lower():
                 raise HTTPException(401, "Sessao FNS expirada. Re-capture via bookmarklet.")
             r.raise_for_status()
-            data = r.json()
+            return r.json()
+
+    try:
+        data = await asyncio.to_thread(_fetch)
+    except HTTPException as e:
+        # NAO propagar 401 daqui: o interceptor do frontend trata 401 como sessao
+        # do PACTHA expirada e desloga o usuario. Sessao do FNS != sessao do app.
+        raise HTTPException(502, f"Falha FNS: {e.status_code}: {e.detail}")
     except httpx.HTTPStatusError as e:
         raise HTTPException(e.response.status_code, f"FNS: {e.response.text[:200]}")
     except Exception as e:

@@ -31,6 +31,10 @@ from database import get_db
 from services.auth import get_current_user, hash_password, create_kiosk_token
 from services.bi import (
     resolve_scope, scope_signature, bi_kpis, bi_cauc_rollup, bi_saude_rollup,
+    anos_list, anos_signature,
+)
+from services.bi_abas import (
+    bi_estaduais, bi_transferegov, bi_parlamentares_detalhe, bi_documentos, bi_execucao,
 )
 from models.user import User
 from routers.cauc import fetch_cauc_situacao
@@ -39,6 +43,12 @@ from routers.convenios import query_alertas_vigencia, query_prestacao_contas
 from routers.status_changes import listar_core
 
 router = APIRouter(prefix="/api/bi", tags=["bi"])
+
+
+def _periodo(ano: Optional[int], anos: Optional[list[int]]) -> Optional[list[int]]:
+    """Periodo efetivo da requisicao. `ano` (legado, 1 valor) e `anos` (mandato
+    inteiro) se somam — o frontend novo manda so `anos`."""
+    return anos_list((anos or []) + ([ano] if ano else []))
 
 
 # --------------------------------------------------------------------------
@@ -72,7 +82,7 @@ _INFLIGHT: dict[str, "asyncio.Future"] = {}
 
 
 async def _compute_overview(db: AsyncSession, ids: list[int], cons: bool, single: bool,
-                            ano: Optional[int], live: bool) -> dict:
+                            ano: Optional[list[int]], live: bool) -> dict:
     """Monta o payload do overview SEQUENCIALMENTE na sessao do request. NAO usar
     asyncio.gather com sessoes proprias aqui: abrir N AsyncSession por request
     esgota o pool compartilhado (pool_size+overflow=15) e derruba TODO o app,
@@ -86,12 +96,15 @@ async def _compute_overview(db: AsyncSession, ids: list[int], cons: bool, single
     else:
         ranking = await aggregate_parlamentares(db, municipio_ids=ids, ano=ano, incluir_plano_acao=live)
     mudancas = await listar_core(db, ids, 30, 8)
+    execucao = await bi_execucao(db, ids, ano)
     return {
         "consolidado": cons,
         "municipios_count": len(ids),
         "municipio_ids": ids,
-        "ano": ano,
+        "ano": ano[0] if (ano and len(ano) == 1) else None,
+        "anos": ano or [],
         "kpis": kpis,
+        "execucao": execucao,
         "semaforo": semaforo,
         "saude": saude,
         "top_parlamentares": ranking["items"][:8],
@@ -108,14 +121,16 @@ async def _compute_overview(db: AsyncSession, ids: list[int], cons: bool, single
 async def overview(
     municipio_id: Optional[int] = Query(None, description="1 municipio; ausente = consolidado do escopo"),
     ano: Optional[int] = Query(None, description="Filtra KPIs por ano (None=todos)"),
+    anos: Optional[list[int]] = Query(None, description="Varios anos (mandato); soma-se a `ano`"),
     live: bool = Query(False, description="Inclui o RP9 federal AO VIVO (lento; nao usar no polling da TV)"),
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
     ids, cons = await resolve_scope(db, current, municipio_id)
     single = (not cons) and len(ids) == 1
+    ano = _periodo(ano, anos)
 
-    cache_key = f"{scope_signature(ids, cons)}|a={ano or 0}|l={int(live)}"
+    cache_key = f"{scope_signature(ids, cons)}|a={anos_signature(ano)}|l={int(live)}"
     cached = _cache_get(cache_key)
     if cached is not None:
         return cached
@@ -160,34 +175,213 @@ async def semaforo(
 async def parlamentares(
     municipio_id: Optional[int] = Query(None),
     ano: Optional[int] = Query(None),
+    anos: Optional[list[int]] = Query(None),
     live: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
     ids, cons = await resolve_scope(db, current, municipio_id)
+    periodo = _periodo(ano, anos)
     if (not cons) and len(ids) == 1:
-        return await aggregate_parlamentares(db, municipio_id=ids[0], ano=ano, incluir_plano_acao=live)
-    return await aggregate_parlamentares(db, municipio_ids=ids, ano=ano, incluir_plano_acao=live)
+        return await aggregate_parlamentares(db, municipio_id=ids[0], ano=periodo, incluir_plano_acao=live)
+    return await aggregate_parlamentares(db, municipio_ids=ids, ano=periodo, incluir_plano_acao=live)
 
 
 @router.get("/alertas")
 async def alertas(
     municipio_id: Optional[int] = Query(None),
     ano: Optional[int] = Query(None),
+    anos: Optional[list[int]] = Query(None),
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
     ids, cons = await resolve_scope(db, current, municipio_id)
+    periodo = _periodo(ano, anos)
     if (not cons) and len(ids) == 1:
-        vig = await query_alertas_vigencia(db, ids[0], 120, ano)
-        prest = await query_prestacao_contas(db, ids[0], 90, ano)
+        vig = await query_alertas_vigencia(db, ids[0], 120, periodo)
+        prest = await query_prestacao_contas(db, ids[0], 90, periodo)
     else:
-        vig = await query_alertas_vigencia(db, None, 120, ano, municipio_ids=ids)
-        prest = await query_prestacao_contas(db, None, 90, ano, municipio_ids=ids)
+        vig = await query_alertas_vigencia(db, None, 120, periodo, municipio_ids=ids)
+        prest = await query_prestacao_contas(db, None, 90, periodo, municipio_ids=ids)
+    execucao = await bi_execucao(db, ids, periodo)
     return {
         "vigencia": [a.model_dump() for a in vig],
         "prestacao": [a.model_dump() for a in prest],
+        "execucao": execucao,
     }
+
+
+# --------------------------------------------------------------------------
+# Abas do painel — 1 request = 1 aba inteira (a TV troca de aba a cada ~15s e
+# nao pode disparar uma cascata). Cada uma tem o mesmo cache TTL do overview.
+# --------------------------------------------------------------------------
+
+async def _aba_cacheada(key: str, fn):
+    """Cache TTL + single-flight compartilhados por todas as abas."""
+    cached = _cache_get(key)
+    if cached is not None:
+        return cached
+    inflight = _INFLIGHT.get(key)
+    if inflight is not None:
+        return await inflight
+    fut = asyncio.get_event_loop().create_future()
+    _INFLIGHT[key] = fut
+    try:
+        payload = await fn()
+        _cache_put(key, payload)
+        if not fut.done():
+            fut.set_result(payload)
+        return payload
+    except Exception as e:
+        if not fut.done():
+            fut.set_exception(e)
+        raise
+    finally:
+        _INFLIGHT.pop(key, None)
+
+
+@router.get("/estaduais")
+async def aba_estaduais(
+    municipio_id: Optional[int] = Query(None),
+    ano: Optional[int] = Query(None),
+    anos: Optional[list[int]] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """Aba 'Verbas Estaduais': convenios SIGCON-MG + emendas estaduais."""
+    ids, cons = await resolve_scope(db, current, municipio_id)
+    periodo = _periodo(ano, anos)
+    key = f"est|{scope_signature(ids, cons)}|a={anos_signature(periodo)}"
+    return await _aba_cacheada(key, lambda: bi_estaduais(db, ids, periodo))
+
+
+@router.get("/transferegov")
+async def aba_transferegov(
+    municipio_id: Optional[int] = Query(None),
+    ano: Optional[int] = Query(None),
+    anos: Optional[list[int]] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """Aba 'TransfereGov': voluntarias + Novo PAC + o que esta em execucao."""
+    ids, cons = await resolve_scope(db, current, municipio_id)
+    periodo = _periodo(ano, anos)
+    key = f"tg|{scope_signature(ids, cons)}|a={anos_signature(periodo)}"
+    return await _aba_cacheada(key, lambda: bi_transferegov(db, ids, periodo))
+
+
+@router.get("/parlamentares/detalhe")
+async def aba_parlamentares_detalhe(
+    municipio_id: Optional[int] = Query(None),
+    ano: Optional[int] = Query(None),
+    anos: Optional[list[int]] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """Aba 'Parlamentares': cada parlamentar com as emendas que mandou —
+    destinacao (pra quem) e finalidade (pra que), que e o detalhe que o
+    prefeito cobra na tela."""
+    ids, cons = await resolve_scope(db, current, municipio_id)
+    periodo = _periodo(ano, anos)
+    key = f"parld|{scope_signature(ids, cons)}|a={anos_signature(periodo)}"
+    return await _aba_cacheada(key, lambda: bi_parlamentares_detalhe(db, ids, periodo))
+
+
+@router.get("/documentos")
+async def aba_documentos(
+    municipio_id: Optional[int] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """Aba 'Documentacao': CAUC (federal, coletado) e CAGEC (estadual, ainda
+    nao integrado — devolve disponivel=false em vez de fingir que esta em dia)."""
+    ids, cons = await resolve_scope(db, current, municipio_id)
+    key = f"doc|{scope_signature(ids, cons)}"
+    return await _aba_cacheada(key, lambda: bi_documentos(db, ids))
+
+
+# --------------------------------------------------------------------------
+# Aba FNS — consulta AO VIVO no portal do Fundo Nacional de Saude, ja resolvida
+# no backend p/ VARIOS anos. Cache proprio (TTL maior): o portal e lento e a
+# TV volta nesta aba a cada rodada do slideshow.
+# --------------------------------------------------------------------------
+
+_FNS_TTL = 900  # 15 min
+_FNS_CACHE: dict[str, tuple[float, dict]] = {}
+
+
+def _ano_corrente() -> int:
+    from datetime import date as _date
+    return _date.today().year
+
+
+@router.get("/fns")
+async def aba_fns(
+    municipio_id: Optional[int] = Query(None),
+    ano: Optional[int] = Query(None),
+    anos: Optional[list[int]] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """Aba 'Fundo Nacional de Saude'. SEM filtro de ano, abre no ano corrente
+    ja consultado (o gestor nao deveria ter que clicar em 'consultar' para ver
+    o ano em que esta). Aceita varios anos."""
+    ids, cons = await resolve_scope(db, current, municipio_id)
+    periodo = _periodo(ano, anos) or [_ano_corrente()]
+
+    key = f"fns|{scope_signature(ids, cons)}|a={anos_signature(periodo)}"
+    hit = _FNS_CACHE.get(key)
+    if hit and (time.monotonic() - hit[0]) < _FNS_TTL:
+        return hit[1]
+
+    from routers.fns import consultar_fns
+
+    muns = (await db.execute(text(
+        "SELECT id, nome, uf FROM municipios WHERE id = ANY(:ids) ORDER BY nome"
+    ), {"ids": ids})).fetchall()
+
+    por_ano: dict[int, dict] = {a: {"ano": a, "total": 0, "valor_proposta": 0.0,
+                                    "valor_pago": 0.0, "valor_pagar": 0.0} for a in periodo}
+    itens: list[dict] = []
+    erros: list[str] = []
+    for m in muns:
+        for a in periodo:
+            try:
+                res = await consultar_fns(db, m.nome, a, m.uf or "MG", tamanho=200)
+            except Exception as e:
+                erros.append(f"{m.nome}/{a}: {str(getattr(e, 'detail', e))[:120]}")
+                continue
+            agg = por_ano[a]
+            t = res.get("totais") or {}
+            agg["total"] += res.get("total") or 0
+            agg["valor_proposta"] += float(t.get("valor_proposta") or 0)
+            agg["valor_pago"] += float(t.get("valor_pago") or 0)
+            agg["valor_pagar"] += float(t.get("valor_pagar") or 0)
+            for it in res.get("items") or []:
+                itens.append({**it, "ano": a, "municipio": m.nome})
+
+    itens.sort(key=lambda i: -(i.get("valor_proposta") or 0))
+    payload = {
+        "anos": periodo,
+        "por_ano": [por_ano[a] for a in periodo],
+        "itens": itens[:80],
+        "total": len(itens),
+        "totais": {
+            "valor_proposta": sum(v["valor_proposta"] for v in por_ano.values()),
+            "valor_pago": sum(v["valor_pago"] for v in por_ano.values()),
+            "valor_pagar": sum(v["valor_pagar"] for v in por_ano.values()),
+        },
+        "disponivel": bool(itens) or not erros,
+        "erros": erros[:5],
+        "ttl": _FNS_TTL,
+    }
+    _FNS_CACHE[key] = (time.monotonic(), payload)
+    if len(_FNS_CACHE) > 64:
+        now = time.monotonic()
+        for k, (ts, _) in list(_FNS_CACHE.items()):
+            if now - ts >= _FNS_TTL:
+                _FNS_CACHE.pop(k, None)
+    return payload
 
 
 @router.get("/timeline")
@@ -257,6 +451,7 @@ async def _gerar_narrativa(dados: dict, kind: str, api_key: str) -> str:
 async def narrativa(
     municipio_id: Optional[int] = Query(None),
     ano: Optional[int] = Query(None),
+    anos: Optional[list[int]] = Query(None),
     kind: str = Query("resumo"),
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
@@ -265,17 +460,19 @@ async def narrativa(
     Sem ANTHROPIC_API_KEY -> disponivel=false e o frontend usa texto por template."""
     ids, cons = await resolve_scope(db, current, municipio_id)
     single = (not cons) and len(ids) == 1
+    periodo = _periodo(ano, anos)
+    ano = periodo[0] if (periodo and len(periodo) == 1) else None
 
-    kpis = await bi_kpis(db, ids, ano)
+    kpis = await bi_kpis(db, ids, periodo)
     cauc = await bi_cauc_rollup(db, ids)
     if single:
-        ranking = await aggregate_parlamentares(db, municipio_id=ids[0], ano=ano, incluir_plano_acao=False)
+        ranking = await aggregate_parlamentares(db, municipio_id=ids[0], ano=periodo, incluir_plano_acao=False)
         mrow = (await db.execute(text("SELECT nome FROM municipios WHERE id = :m"), {"m": ids[0]})).first()
         nome = mrow[0] if mrow else f"Municipio {ids[0]}"
         cauc_regular = cauc["por_municipio"][0]["regular"] if cauc["por_municipio"] else None
         mid_key = ids[0]
     else:
-        ranking = await aggregate_parlamentares(db, municipio_ids=ids, ano=ano, incluir_plano_acao=False)
+        ranking = await aggregate_parlamentares(db, municipio_ids=ids, ano=periodo, incluir_plano_acao=False)
         nome = f"{len(ids)} municipios da carteira"
         cauc_regular = (cauc["com_dados"] > 0 and cauc["com_pendencia"] == 0)
         mid_key = 0
@@ -289,6 +486,7 @@ async def narrativa(
     dados = {
         "municipio": nome,
         "ano": ano,
+        "anos": periodo or [],
         "estadual": kpis["valor_total_estadual"],
         "federal": kpis["valor_total_federal"],
         "voluntarias": kpis["total_voluntarias"],
@@ -305,11 +503,16 @@ async def narrativa(
     # single: compartilha o cache com o painel (mesmos numeros -> mesmo input_hash).
     # consolidado: mid_key=0 seria UMA linha p/ TODAS as carteiras (admin + cada
     # assessoria) -> thrash. Isola por assinatura do escopo na chave `kind`.
+    #
+    # MULTI-ANO: a coluna `ano` da tabela so guarda 1 valor, entao um periodo de
+    # varios anos vai com ano_key=0 e o periodo entra no `kind` — senao 2021-2024
+    # e 2022-2025 dividiriam a MESMA linha e ficariam se sobrescrevendo.
+    periodo_key = "" if (not periodo or len(periodo) == 1) else f":p{anos_signature(periodo)}"
     if single:
-        kind_key = kind
+        kind_key = f"{kind}{periodo_key}"
     else:
         sig = hashlib.sha256(scope_signature(ids, cons).encode("utf-8")).hexdigest()[:16]
-        kind_key = f"bi:{sig}:{kind}"
+        kind_key = f"bi:{sig}:{kind}{periodo_key}"
 
     row = (await db.execute(text(
         "SELECT texto, input_hash, gerado_em FROM painel_narrativa_cache "
@@ -334,6 +537,187 @@ async def narrativa(
     ), {"m": mid_key, "a": ano_key, "k": kind_key, "t": texto, "h": input_hash})
     await db.commit()
     return {"texto": texto, "kind": kind, "cache": False, "disponivel": True}
+
+
+# --------------------------------------------------------------------------
+# Insights por ABA (IA) — LISTA de mensagens curtas p/ o cabecalho do Modo Tela
+# rodar em slideshow. Uma aba costuma ter mais de uma coisa importante pra dizer.
+# Sem ANTHROPIC_API_KEY cai num texto por template (a faixa nunca fica vazia).
+# --------------------------------------------------------------------------
+
+ABAS_INSIGHT = ("geral", "parlamentares", "transferegov", "estaduais", "documentos", "fns")
+
+
+async def _fatos_da_aba(db: AsyncSession, ids: list[int], cons: bool, aba: str,
+                        periodo: Optional[list[int]]) -> tuple[dict, list[str]]:
+    """(fatos p/ a IA, mensagens de fallback por template). Os fatos sao poucos
+    e ja resumidos — a IA nao recebe a base inteira."""
+    periodo_txt = ", ".join(str(a) for a in periodo) if periodo else "todos os anos"
+    if aba == "parlamentares":
+        d = await bi_parlamentares_detalhe(db, ids, periodo)
+        top = d["itens"][:3]
+        fatos = {
+            "aba": "parlamentares", "periodo": periodo_txt,
+            "total_parlamentares": d["total"], "valor_total": d["valor_total"],
+            "top": [{"nome": t["nome"], "valor": t["valor_total"],
+                     "emendas": t["total_lancamentos"]} for t in top],
+        }
+        tpl = [f"{d['total']} parlamentares destinaram {_money_br(d['valor_total'])} ao município em {periodo_txt}."]
+        if top:
+            tpl.append(f"Maior destinação: {top[0]['nome']} — {_money_br(top[0]['valor_total'])} "
+                       f"em {top[0]['total_lancamentos']} lançamento(s).")
+        return fatos, tpl
+
+    if aba == "transferegov":
+        d = await bi_transferegov(db, ids, periodo)
+        v = d["voluntarias"]
+        fatos = {"aba": "transferegov", "periodo": periodo_txt,
+                 "propostas": v["total"], "valor": v["valor_total"],
+                 "em_execucao": v.get("em_execucao", 0),
+                 "situacoes": v["por_situacao"][:4], "pac": d["pac"]["total"]}
+        tpl = [f"{v['total']} propostas federais somando {_money_br(v['valor_total'])} ({periodo_txt})."]
+        if v.get("em_execucao"):
+            tpl.append(f"{v['em_execucao']} instrumento(s) em execução neste momento.")
+        return fatos, tpl
+
+    if aba == "estaduais":
+        d = await bi_estaduais(db, ids, periodo)
+        c, e = d["convenios"], d["emendas"]
+        fatos = {"aba": "estaduais", "periodo": periodo_txt,
+                 "convenios": c["total"], "valor_convenios": c["valor_total"],
+                 "repassado": c.get("valor_repassado", 0),
+                 "emendas": e["total"], "valor_emendas": e["valor_total"],
+                 "orgaos": c["por_orgao"][:3]}
+        tpl = [f"{c['total']} convênios estaduais somando {_money_br(c['valor_total'])} ({periodo_txt})."]
+        if e["total"]:
+            tpl.append(f"{e['total']} indicações de emenda estadual, {_money_br(e['valor_total'])}.")
+        return fatos, tpl
+
+    if aba == "documentos":
+        d = await bi_documentos(db, ids)
+        c = d["cauc"]
+        fatos = {"aba": "documentos", "regulares": c["regulares"],
+                 "municipios": c["total_municipios"], "pendencias": c["pendencias_total"],
+                 "pendentes": [{"nome": m["nome"], "itens": [i["label"] for i in m["itens_pendentes"][:3]]}
+                               for m in c["por_municipio"] if m["pendencias"]][:3]}
+        if c["pendencias_total"]:
+            tpl = [f"{c['pendencias_total']} pendência(s) no CAUC bloqueiam novas transferências voluntárias."]
+        else:
+            tpl = ["Documentação federal (CAUC) em dia — município apto a receber transferências voluntárias."]
+        tpl.append("CAGEC (cadastro estadual) ainda não é coletado automaticamente pelo PACTHA.")
+        return fatos, tpl
+
+    if aba == "fns":
+        fatos = {"aba": "fns", "periodo": periodo_txt}
+        return fatos, [f"Fundo Nacional de Saúde — propostas de {periodo_txt}."]
+
+    # geral
+    kpis = await bi_kpis(db, ids, periodo)
+    cauc = await bi_cauc_rollup(db, ids)
+    exe = await bi_execucao(db, ids, periodo)
+    fatos = {
+        "aba": "geral", "periodo": periodo_txt,
+        "estadual": kpis["valor_total_estadual"], "federal": kpis["valor_total_federal"],
+        "vigencia_120d": kpis["alertas_vigencia"], "vigencia_60d": kpis["alertas_vigencia_60d"],
+        "prestacao_vencida": kpis["alertas_prestacao_contas"],
+        "cauc_pendencias": cauc["pendencias_total"],
+        "em_execucao": exe["total"], "valor_em_execucao": exe["valor_total"],
+    }
+    total = (kpis["valor_total_estadual"] or 0) + (kpis["valor_total_federal"] or 0)
+    tpl = [f"Total captado no período ({periodo_txt}): {_money_br(total)}."]
+    if kpis["alertas_vigencia_60d"]:
+        tpl.append(f"{kpis['alertas_vigencia_60d']} convênio(s) vencem nos próximos 60 dias.")
+    if kpis["alertas_prestacao_contas"]:
+        tpl.append(f"{kpis['alertas_prestacao_contas']} prestação(ões) de contas em atraso.")
+    return fatos, tpl
+
+
+async def _gerar_insights(fatos: dict, api_key: str) -> list[str]:
+    """2 a 4 frases INDEPENDENTES (uma por item) — o cabecalho da TV mostra uma
+    de cada vez. Cada frase precisa fazer sentido sozinha."""
+    import anthropic
+    client = anthropic.AsyncAnthropic(api_key=api_key)
+    system = (
+        "Voce escreve avisos curtos para um PAINEL DE TV lido por um prefeito. "
+        "Portugues do Brasil, linguagem simples, tom institucional e direto. "
+        "Cada aviso e uma frase UNICA de no maximo 140 caracteres, faz sentido "
+        "sozinho (a TV mostra um de cada vez) e traz um numero ou um nome concreto. "
+        "Priorize o que exige acao (prazo, pendencia) antes do que e so resultado. "
+        "Nao invente numeros. Responda APENAS um array JSON de 2 a 4 strings."
+    )
+    resp = await client.messages.create(
+        model="claude-haiku-4-5",
+        max_tokens=500,
+        system=system,
+        messages=[{"role": "user", "content": json.dumps(fatos, ensure_ascii=False)}],
+    )
+    if getattr(resp, "stop_reason", None) == "refusal":
+        raise RuntimeError("refusal")
+    txt = "".join(b.text for b in resp.content if getattr(b, "type", None) == "text").strip()
+    ini, fim = txt.find("["), txt.rfind("]")
+    if ini >= 0 and fim > ini:
+        msgs = json.loads(txt[ini:fim + 1])
+    else:  # modelo respondeu em linhas soltas
+        msgs = [ln.strip(" -•\t") for ln in txt.splitlines() if len(ln.strip()) > 15]
+    return [str(m).strip() for m in msgs if str(m).strip()][:4]
+
+
+@router.get("/insights")
+async def insights(
+    aba: str = Query("geral"),
+    municipio_id: Optional[int] = Query(None),
+    ano: Optional[int] = Query(None),
+    anos: Optional[list[int]] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """Mensagens curtas da IA sobre a aba aberta (slideshow do cabecalho)."""
+    if aba not in ABAS_INSIGHT:
+        raise HTTPException(status_code=400, detail=f"aba invalida: {aba}")
+    ids, cons = await resolve_scope(db, current, municipio_id)
+    periodo = _periodo(ano, anos)
+
+    fatos, template = await _fatos_da_aba(db, ids, cons, aba, periodo)
+    input_hash = hashlib.sha256(
+        json.dumps(fatos, sort_keys=True, ensure_ascii=False, default=str).encode("utf-8")).hexdigest()
+
+    # A PK da tabela guarda 1 `ano`; um periodo com varios anos entra no `kind`
+    # (senao 2021-2024 e 2022-2025 brigariam pela mesma linha).
+    sig = hashlib.sha256(scope_signature(ids, cons).encode("utf-8")).hexdigest()[:16]
+    periodo_key = "" if (not periodo or len(periodo) == 1) else f":p{anos_signature(periodo)}"
+    kind_key = f"bi:ins:{sig}:{aba}{periodo_key}"
+    mid_key = ids[0] if ((not cons) and len(ids) == 1) else 0
+    ano_key = (periodo[0] if periodo and len(periodo) == 1 else 0)
+
+    row = (await db.execute(text(
+        "SELECT texto, input_hash FROM painel_narrativa_cache "
+        "WHERE municipio_id = :m AND ano = :a AND kind = :k"
+    ), {"m": mid_key, "a": ano_key, "k": kind_key})).first()
+    if row and row[1] == input_hash and row[0]:
+        try:
+            return {"aba": aba, "mensagens": json.loads(row[0]), "cache": True, "disponivel": True}
+        except (ValueError, TypeError):
+            pass
+
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        return {"aba": aba, "mensagens": template, "cache": False, "disponivel": False, "fonte": "template"}
+    try:
+        msgs = await _gerar_insights(fatos, api_key)
+    except Exception as e:
+        return {"aba": aba, "mensagens": template, "cache": False, "disponivel": False,
+                "fonte": "template", "erro": str(e)[:80]}
+    if not msgs:
+        return {"aba": aba, "mensagens": template, "cache": False, "disponivel": False, "fonte": "template"}
+
+    await db.execute(text(
+        "INSERT INTO painel_narrativa_cache (municipio_id, ano, kind, texto, input_hash, gerado_em) "
+        "VALUES (:m, :a, :k, :t, :h, NOW()) "
+        "ON CONFLICT (municipio_id, ano, kind) DO UPDATE SET texto = :t, input_hash = :h, gerado_em = NOW()"
+    ), {"m": mid_key, "a": ano_key, "k": kind_key,
+        "t": json.dumps(msgs, ensure_ascii=False), "h": input_hash})
+    await db.commit()
+    return {"aba": aba, "mensagens": msgs, "cache": False, "disponivel": True, "fonte": "ia"}
 
 
 # --------------------------------------------------------------------------

@@ -33,6 +33,8 @@ interface Item {
   constituido_processo?: boolean;
   parlamentares?: Array<{ nome?: string; partido?: string }>;
   pagamentos_count?: number;
+  /** De qual ano veio a linha (a consulta agora pode cobrir varios). */
+  ano?: string;
 }
 
 interface Resp {
@@ -132,7 +134,10 @@ export default function PropostasFNSPage() {
   const [municipios, setMunicipios] = useState<Mun[]>([]);
   const [anos, setAnos] = useState<string[]>([]);
   const [nrProposta, setNrProposta] = useState("");
-  const [ano, setAno] = useState(String(currentYear));
+  // PERIODO MULTI-ANO. Abre com o ano corrente marcado — e ja consulta sozinho
+  // (ver o efeito de auto-consulta abaixo): ninguem deveria precisar clicar em
+  // "Consultar" para ver o ano em que esta.
+  const [anosSel, setAnosSel] = useState<string[]>([String(currentYear)]);
   const [tipoEmenda, setTipoEmenda] = useState("TODOS");
   // FNS SEGUE o filtro geral (Município Atendido): travado no município selecionado
   // na sidebar. Assim o usuário não filtra o FNS de município fora da sua permissão.
@@ -159,7 +164,8 @@ export default function PropostasFNSPage() {
     api.get<{items: Individual[]}>("/fns/listar-individuais", {
       params: {
         municipio: data.params?.municipio,
-        ano: data.params?.ano,
+        // com varios anos no filtro, o detalhe segue o ano DA LINHA clicada
+        ano: detalheItem.ano ?? data.params?.ano,
         uf: data.params?.uf,
         tipo_proposta: detalheItem.tipo_proposta,
         tipo_recurso: detalheItem.tipo_recurso,
@@ -194,37 +200,85 @@ export default function PropostasFNSPage() {
     });
   }, [currentYear]);
 
-  const consultar = async () => {
+  const consultar = React.useCallback(async () => {
     if (!municipio) {
       setError("Selecione um município no menu lateral (Município Atendido).");
+      return;
+    }
+    if (!anosSel.length) {
+      setError("Selecione pelo menos um ano.");
       return;
     }
     setError(null);
     setLoading(true);
     try {
-      const params: Record<string, string | number> = {
-        municipio,
-        ano,
-        uf: estado,
-      };
-      if (nrProposta) params.nr_proposta = nrProposta;
-      if (tipoEmenda !== "TODOS") params.tipo_emenda = tipoEmenda;
-      const res = await api.get<Resp>("/fns/buscar", { params });
-      setData(res.data);
-    } catch (e) {
-      const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-        || (e as Error).message;
-      setError(`Falha na consulta: ${msg}`);
-      setData(null);
+      // Um request por ano (o FNS so aceita um `ano` por consulta) e junta tudo.
+      // Um ano que falhar nao derruba os outros — o portal cai com frequencia.
+      const resultados = await Promise.all(
+        [...anosSel].sort().map(async (a) => {
+          const params: Record<string, string | number> = { municipio, ano: a, uf: estado };
+          if (nrProposta) params.nr_proposta = nrProposta;
+          if (tipoEmenda !== "TODOS") params.tipo_emenda = tipoEmenda;
+          try {
+            const res = await api.get<Resp>("/fns/buscar", { params });
+            return { ano: a, resp: res.data, erro: null as string | null };
+          } catch (e) {
+            const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+              || (e as Error).message;
+            return { ano: a, resp: null, erro: msg };
+          }
+        })
+      );
+
+      const ok = resultados.filter((r) => r.resp);
+      const falhas = resultados.filter((r) => r.erro);
+      if (!ok.length) {
+        setError(`Falha na consulta: ${falhas[0]?.erro ?? "sem resposta do FNS"}`);
+        setData(null);
+        return;
+      }
+      const items = ok.flatMap((r) => (r.resp!.items || []).map((it) => ({ ...it, ano: r.ano })));
+      setData({
+        items,
+        total: items.length,
+        totais: {
+          valor_proposta: items.reduce((s, i) => s + (i.valor_proposta || 0), 0),
+          valor_pago: items.reduce((s, i) => s + (i.valor_pago || 0), 0),
+          valor_pagar: items.reduce((s, i) => s + (i.valor_pagar || 0), 0),
+        },
+        params: {
+          ...(ok[0].resp!.params || {}),
+          ano: ok.map((r) => r.ano).join(", "),
+        },
+      });
+      setError(falhas.length ? `Sem resposta do FNS para ${falhas.map((f) => f.ano).join(", ")}.` : null);
     } finally {
       setLoading(false);
     }
-  };
+  }, [municipio, anosSel, estado, nrProposta, tipoEmenda]);
+
+  // AUTO-CONSULTA: assim que o município estiver resolvido, a tela ja abre com
+  // o resultado do ano corrente. Refaz quando o município ou os anos mudarem;
+  // os demais filtros (nº da proposta, tipo de emenda) seguem no botao, porque
+  // sao refinamentos que o usuario digita.
+  const assinaturaAuto = `${municipio}|${estado}|${[...anosSel].sort().join(",")}`;
+  const ultimaAutoRef = React.useRef<string>("");
+  useEffect(() => {
+    if (!municipio || !anosSel.length) return;
+    if (ultimaAutoRef.current === assinaturaAuto) return;
+    ultimaAutoRef.current = assinaturaAuto;
+    void consultar();
+  }, [assinaturaAuto, municipio, anosSel.length, consultar]);
+
+  const alternarAno = (a: string) =>
+    setAnosSel((atual) =>
+      atual.includes(a) ? atual.filter((x) => x !== a) : [...atual, a].sort()
+    );
 
   const limpar = () => {
     setNrProposta("");
     setTipoEmenda("TODOS");
-    setData(null);
+    setAnosSel([String(currentYear)]);
     setError(null);
   };
 
@@ -247,14 +301,30 @@ export default function PropostasFNSPage() {
               onKeyDown={(e) => { if (e.key === "Enter") consultar(); }}
             />
           </div>
-          <div>
-            <label className="text-xs font-medium text-base-content/70">Ano</label>
-            <Select value={ano} onValueChange={(v) => setAno(v ?? String(currentYear))}>
-              <SelectTrigger><SelectValue placeholder="Ano" /></SelectTrigger>
-              <SelectContent>
-                {anos.map((a) => <SelectItem key={a} value={a}>{a}</SelectItem>)}
-              </SelectContent>
-            </Select>
+          <div className="md:col-span-2">
+            <label className="text-xs font-medium text-base-content/70">
+              Anos <span className="text-base-content/40">(pode marcar vários — ex.: o mandato)</span>
+            </label>
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              {anos.map((a) => {
+                const on = anosSel.includes(a);
+                return (
+                  <button
+                    key={a}
+                    type="button"
+                    onClick={() => alternarAno(a)}
+                    aria-pressed={on}
+                    className={`rounded-lg border px-2.5 py-1 text-xs font-semibold transition-colors ${
+                      on
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-base-300 bg-base-100 text-base-content/60 hover:bg-base-200"
+                    }`}
+                  >
+                    {a}
+                  </button>
+                );
+              })}
+            </div>
           </div>
           <div>
             <label className="text-xs font-medium text-base-content/70">Município (filtro geral)</label>
@@ -324,6 +394,7 @@ export default function PropostasFNSPage() {
               <Table className="text-xs">
                 <TableHeader>
                   <TableRow className="[&>th]:py-2 [&>th]:px-2 [&>th]:text-[11px] [&>th]:font-semibold bg-primary/10">
+                    {anosSel.length > 1 && <TableHead className="w-[56px]">Ano</TableHead>}
                     <TableHead>Tipo de Proposta</TableHead>
                     <TableHead>Tipo de Recurso</TableHead>
                     <TableHead>Nº Processo</TableHead>
@@ -337,6 +408,7 @@ export default function PropostasFNSPage() {
                 <TableBody>
                   {data.items.map((it, idx) => (
                     <TableRow key={idx} className="[&>td]:py-2 [&>td]:px-3 [&>td]:text-[13px] hover:bg-base-200">
+                      {anosSel.length > 1 && <TableCell className="font-mono">{it.ano || "-"}</TableCell>}
                       <TableCell className="font-medium">{it.tipo_proposta || "-"}</TableCell>
                       <TableCell>
                         <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium border ${recursoColor(it.tipo_recurso)}`}>

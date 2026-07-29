@@ -24,6 +24,8 @@ import {
   HeartPulse,
   Activity,
   BarChart3,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -83,8 +85,17 @@ function allLeafHrefs(items: NavEntry[]): string[] {
   return out;
 }
 
+// Com o BI ligado, o item "Dashboard" JA E o Painel de Indicadores (mesma rota).
+// Antes havia um link separado logo acima da navegacao — dois menus para a
+// mesma coisa. Ficou um so.
+const BI_ON = process.env.NEXT_PUBLIC_BI_MODULE === "1";
+
 const NAV_ITEMS: NavEntry[] = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  {
+    href: "/dashboard",
+    label: BI_ON ? "Painel de Indicadores" : "Dashboard",
+    icon: BI_ON ? BarChart3 : LayoutDashboard,
+  },
   { href: "/dashboard/ai", label: "IA PACTHA", icon: Sparkles },
   { href: "/dashboard/telegram", label: "Telegram", icon: Send },
   { href: "/dashboard/parlamentares", label: "Parlamentares", icon: UserCircle2 },
@@ -131,10 +142,6 @@ const ADMIN_NAV_ITEMS = [
 // Logo do cliente por instância (config build-time). Ex.: /trust-logo.svg
 const CLIENT_LOGO = process.env.NEXT_PUBLIC_CLIENT_LOGO || "";
 
-// Painel de Indicadores (BI) — modulo nativo, gated por flag build-time. O link
-// NAO passa pelo NAV_ITEMS/filterNav porque hrefToTela("/bi") colapsa p/ "dashboard".
-const BI_ON = process.env.NEXT_PUBLIC_BI_MODULE === "1";
-
 // Itens visiveis SO para o super-admin (nao para os demais admins).
 const SUPER_ADMIN_EMAIL = "admin@pactha.com.br";
 const SUPER_ADMIN_ONLY = new Set<string>(["/dashboard/sessoes", "/dashboard/service-tokens"]);
@@ -146,6 +153,8 @@ function SidebarContent({
   onMunicipioChange,
   user,
   onLogout,
+  recolhida = false,
+  onToggleRecolhida,
 }: {
   pathname: string;
   municipios: Municipio[];
@@ -153,6 +162,9 @@ function SidebarContent({
   onMunicipioChange: (value: string) => void;
   user: User | null;
   onLogout: () => void;
+  /** Modo icone: so os simbolos, com o rotulo no title. */
+  recolhida?: boolean;
+  onToggleRecolhida?: () => void;
 }) {
   // Estado de collapse dos grupos (persiste em localStorage)
   const [collapsed, setCollapsed] = useState<Set<string>>(() => {
@@ -183,11 +195,19 @@ function SidebarContent({
       <div className="gov-stripe" />
 
       {/* Header: logos PACTHA + cliente num chip branco (legível no claro/escuro). */}
-      <div className="border-b border-base-300 px-3 py-4 flex justify-center">
-        <div className="flex max-w-full items-center gap-2.5 rounded-2xl bg-white px-3 py-2 shadow-sm ring-1 ring-black/5">
+      <div className={`border-b border-base-300 py-4 flex justify-center ${recolhida ? "px-1.5" : "px-3"}`}>
+        <div
+          className={`flex max-w-full items-center gap-2.5 rounded-2xl bg-white shadow-sm ring-1 ring-black/5 ${
+            recolhida ? "px-2 py-2" : "px-3 py-2"
+          }`}
+        >
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/pactha-logo.png" alt="PACTHA" className="h-6 w-auto max-w-[110px] object-contain" />
-          {CLIENT_LOGO && (
+          <img
+            src={recolhida && CLIENT_LOGO ? CLIENT_LOGO : "/pactha-logo.png"}
+            alt="PACTHA"
+            className={recolhida ? "h-7 w-auto max-w-[36px] object-contain" : "h-6 w-auto max-w-[110px] object-contain"}
+          />
+          {!recolhida && CLIENT_LOGO && (
             <>
               <div className="h-6 w-px bg-base-300/70" />
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -197,49 +217,55 @@ function SidebarContent({
         </div>
       </div>
 
-      {/* Seletor de municipio */}
-      <div className="px-3 py-3 border-b border-base-300 bg-base-200/50">
-        {municipios.length === 1 ? (
-          // Entidade unica (municipio/consorcio): so o nome, sem dropdown
-          <div className="rounded-[var(--radius-field)] border border-base-300 bg-base-100 px-3 py-1.5 text-center text-sm font-semibold">
-            {municipios[0].nome} - {municipios[0].uf}
-          </div>
-        ) : (
-          // Multi-entidade (assessoria/parceiro): dropdown
-          <select
-            className="select select-bordered select-sm w-full"
-            value={selectedMunicipioId}
-            onChange={(e) => onMunicipioChange(e.target.value)}
+      {/* Botao de recolher/expandir (so no desktop; o mobile ja abre em gaveta) */}
+      {onToggleRecolhida && (
+        <div className={`hidden lg:flex ${recolhida ? "justify-center px-1.5" : "justify-end px-3"} pt-2`}>
+          <button
+            type="button"
+            onClick={onToggleRecolhida}
+            className="grid size-7 place-items-center rounded-lg text-base-content/50 transition-colors hover:bg-base-200 hover:text-base-content"
+            title={recolhida ? "Expandir menu" : "Recolher menu"}
+            aria-label={recolhida ? "Expandir menu" : "Recolher menu"}
+            aria-expanded={!recolhida}
           >
-            <option value="">Município selecionado</option>
-            {municipios.map((m) => (
-              <option key={m.id} value={String(m.id)}>
-                {m.nome} - {m.uf}
-              </option>
-            ))}
-          </select>
-        )}
-      </div>
+            {recolhida ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
+          </button>
+        </div>
+      )}
 
-      {/* Painel de Indicadores (BI) — link destacado, hand-gated (fora do filterNav) */}
-      {BI_ON && (user?.role === "admin" || user?.telas == null || user?.telas?.includes("bi")) && (
-        <div className="px-3 pt-3">
-          <Link
-            href="/bi"
-            className="flex items-center gap-2.5 rounded-xl border border-primary/25 bg-primary/[0.07] px-3 py-2.5 text-sm font-semibold text-primary transition-colors hover:bg-primary/10"
-          >
-            <BarChart3 className="size-4" />
-            Painel de Indicadores
-            <span className="ml-auto rounded-full bg-primary/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide">BI</span>
-          </Link>
+      {/* Seletor de municipio (some no modo icone — nao cabe e nao e clicavel util) */}
+      {!recolhida && (
+        <div className="px-3 py-3 border-b border-base-300 bg-base-200/50">
+          {municipios.length === 1 ? (
+            // Entidade unica (municipio/consorcio): so o nome, sem dropdown
+            <div className="rounded-[var(--radius-field)] border border-base-300 bg-base-100 px-3 py-1.5 text-center text-sm font-semibold">
+              {municipios[0].nome} - {municipios[0].uf}
+            </div>
+          ) : (
+            // Multi-entidade (assessoria/parceiro): dropdown
+            <select
+              className="select select-bordered select-sm w-full"
+              value={selectedMunicipioId}
+              onChange={(e) => onMunicipioChange(e.target.value)}
+            >
+              <option value="">Município selecionado</option>
+              {municipios.map((m) => (
+                <option key={m.id} value={String(m.id)}>
+                  {m.nome} - {m.uf}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
       )}
 
       {/* Navegacao */}
-      <nav className="flex-1 space-y-0.5 px-2 py-3 overflow-y-auto">
-        <div className="px-3 mb-2 text-[10px] font-semibold uppercase tracking-wider text-base-content/40">
-          Modulos
-        </div>
+      <nav className={`flex-1 space-y-0.5 py-3 overflow-y-auto ${recolhida ? "px-1.5" : "px-2"}`}>
+        {!recolhida && (
+          <div className="px-3 mb-2 text-[10px] font-semibold uppercase tracking-wider text-base-content/40">
+            Modulos
+          </div>
+        )}
         {visibleNav.map((item) => {
           const qs = selectedMunicipioId ? `?municipio_id=${selectedMunicipioId}` : "";
           const renderLeaf = (leaf: NavLeaf) => {
@@ -269,6 +295,23 @@ function SidebarContent({
               (c) => pathname === c.href || pathname.startsWith(c.href + "/")
             );
             const isCollapsed = collapsed.has(item.label) && !groupActive;
+            // Menu recolhido: o grupo vira UM icone que leva ao primeiro filho.
+            // Empilhar submenu num trilho de 4rem so cria ruido.
+            if (recolhida) {
+              return (
+                <Link
+                  key={item.label}
+                  href={`${flat[0]?.href ?? "/dashboard"}${qs}`}
+                  title={`${item.label}: ${flat.map((c) => c.label).join(", ")}`}
+                  aria-label={item.label}
+                  className={`flex items-center justify-center rounded-lg py-2 transition-all ${
+                    groupActive ? "bg-accent text-primary" : "text-base-content/60 hover:bg-base-200"
+                  }`}
+                >
+                  <Icon className="size-[18px]" />
+                </Link>
+              );
+            }
             // Auto-expande quando o grupo tem submenu ativo, mesmo se usuario colapsou
             return (
               <div key={item.label} className="pt-1">
@@ -315,6 +358,21 @@ function SidebarContent({
             pathname === item.href ||
             (item.href !== "/dashboard" && pathname.startsWith(item.href + "/"));
           const Icon = item.icon;
+          if (recolhida) {
+            return (
+              <Link
+                key={item.href}
+                href={`${item.href}${qs}`}
+                title={item.label}
+                aria-label={item.label}
+                className={`flex items-center justify-center rounded-lg py-2 transition-all ${
+                  isActive ? "bg-accent text-primary" : "text-base-content/60 hover:bg-base-200"
+                }`}
+              >
+                {Icon && <Icon className="size-[18px]" />}
+              </Link>
+            );
+          }
           return (
             <Link
               key={item.href}
@@ -333,12 +391,31 @@ function SidebarContent({
 
         {user?.role === "admin" && (
           <>
-            <div className="px-3 mt-4 mb-2 text-[10px] font-semibold uppercase tracking-wider text-base-content/40">
-              Administracao
-            </div>
+            {recolhida ? (
+              <div className="my-2 border-t border-base-300" />
+            ) : (
+              <div className="px-3 mt-4 mb-2 text-[10px] font-semibold uppercase tracking-wider text-base-content/40">
+                Administracao
+              </div>
+            )}
             {ADMIN_NAV_ITEMS.filter((item) => isSuper || !SUPER_ADMIN_ONLY.has(item.href)).map((item) => {
               const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
               const Icon = item.icon;
+              if (recolhida) {
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    title={item.label}
+                    aria-label={item.label}
+                    className={`flex items-center justify-center rounded-lg py-2 transition-all ${
+                      isActive ? "bg-warning/15 text-warning" : "text-base-content/60 hover:bg-base-200"
+                    }`}
+                  >
+                    <Icon className="size-[18px]" />
+                  </Link>
+                );
+              }
               return (
                 <Link
                   key={item.href}
@@ -359,8 +436,8 @@ function SidebarContent({
       </nav>
 
       {/* Footer institucional */}
-      <div className="border-t border-base-300 px-3 py-3 bg-base-200/50">
-        {user && (
+      <div className={`border-t border-base-300 py-3 bg-base-200/50 ${recolhida ? "px-1.5" : "px-3"}`}>
+        {user && !recolhida && (
           <div className="mb-2 px-2 py-2 rounded-md bg-base-100 border border-base-300">
             <div className="text-[10px] uppercase tracking-wider text-base-content/40">
               Usuario
@@ -373,16 +450,33 @@ function SidebarContent({
             </div>
           </div>
         )}
-        <ThemeToggle className="w-full mb-1" />
-        <Button
-          variant="ghost"
-          size="sm"
-          className="w-full justify-start gap-2 text-error hover:bg-error/10 text-xs"
-          onClick={onLogout}
-        >
-          <LogOut className="size-4" />
-          Sair do sistema
-        </Button>
+        {recolhida ? (
+          <div className="flex flex-col items-center gap-1">
+            <ThemeToggle className="w-full justify-center px-0" />
+            <button
+              type="button"
+              onClick={onLogout}
+              title="Sair do sistema"
+              aria-label="Sair do sistema"
+              className="grid w-full place-items-center rounded-lg py-2 text-error transition-colors hover:bg-error/10"
+            >
+              <LogOut className="size-4" />
+            </button>
+          </div>
+        ) : (
+          <>
+            <ThemeToggle className="w-full mb-1" />
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full justify-start gap-2 text-error hover:bg-error/10 text-xs"
+              onClick={onLogout}
+            >
+              <LogOut className="size-4" />
+              Sair do sistema
+            </Button>
+          </>
+        )}
       </div>
     </div>
   );
@@ -395,6 +489,27 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
   const [municipios, setMunicipios] = useState<Municipio[]>([]);
   const [user, setUser] = useState<User | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
+  // Barra lateral recolhivel (modo icone). Persiste entre sessoes — quem
+  // trabalha o dia todo numa tela pequena nao quer reclicar toda vez.
+  const [sidebarRecolhida, setSidebarRecolhida] = useState(false);
+
+  // Le a preferencia DEPOIS da hidratacao: ler no initializer do useState faria
+  // o servidor renderizar expandido e o cliente recolhido (mismatch).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSidebarRecolhida(localStorage.getItem("pactha_sidebar_recolhida") === "1");
+  }, []);
+
+  const toggleSidebar = useCallback(() => {
+    setSidebarRecolhida((v) => {
+      const proximo = !v;
+      try {
+        localStorage.setItem("pactha_sidebar_recolhida", proximo ? "1" : "0");
+      } catch { /* storage cheio/bloqueado: nao vale quebrar a navegacao */ }
+      return proximo;
+    });
+  }, []);
 
   useEffect(() => {
     // Verifica sessao via /auth/me (cookie httpOnly ou Bearer)
@@ -407,10 +522,8 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
           router.replace("/change-password?first=1");
           return;
         }
-        // Perfil executivo (prefeito/viewer) so opera no BI -> nao entra no sistema operacional
-        if (BI_ON && (res.data.role === "prefeito" || res.data.role === "viewer")) {
-          router.replace("/bi");
-        }
+        // Perfil executivo (prefeito/viewer): o Painel de Indicadores JA e a
+        // home (/dashboard), entao nao ha mais para onde redirecionar.
       })
       .catch(() => {
         // 401 e tratado pelo interceptor (tenta refresh + redireciona)
@@ -489,10 +602,18 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
     router.push("/login");
   }, [router]);
 
+  // O Painel de Indicadores ocupa a largura toda (e um BI, nao uma tela de
+  // formulario): sem max-w-7xl e sem padding do container.
+  const telaCheia = BI_ON && pathname === "/dashboard";
+
   return (
     <div className="flex h-screen overflow-hidden bg-base-200">
       {/* Desktop sidebar */}
-      <aside className="hidden w-64 flex-shrink-0 border-r border-base-300 bg-base-100 lg:block">
+      <aside
+        className={`hidden flex-shrink-0 border-r border-base-300 bg-base-100 transition-[width] duration-200 lg:block ${
+          sidebarRecolhida ? "w-16" : "w-64"
+        }`}
+      >
         <SidebarContent
           pathname={pathname}
           municipios={municipios}
@@ -500,6 +621,8 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
           onMunicipioChange={handleMunicipioChange}
           user={user}
           onLogout={handleLogout}
+          recolhida={sidebarRecolhida}
+          onToggleRecolhida={toggleSidebar}
         />
       </aside>
 
@@ -532,7 +655,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
 
       {/* Main content */}
       <main className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+        <div className={telaCheia ? "" : "mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8"}>
           {children}
         </div>
       </main>

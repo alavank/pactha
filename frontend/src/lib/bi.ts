@@ -95,12 +95,35 @@ export interface Saude {
   inicial: number;
 }
 
+export interface ExecucaoItem {
+  id: number;
+  municipio: string | null;
+  numero: string | null;
+  objeto: string | null;
+  situacao: string | null;
+  valor: number;
+  repassado: number;
+  pct_repassado: number;
+  vigencia_ate: string | null;
+  orgao: string | null;
+  dias_restantes: number | null;
+}
+
+export interface Execucao {
+  itens: ExecucaoItem[];
+  total: number;
+  valor_total: number;
+  valor_repassado?: number;
+}
+
 export interface Overview {
   consolidado: boolean;
   municipios_count: number;
   municipio_ids: number[];
   ano: number | null;
+  anos: number[];
   kpis: BiKpis;
+  execucao: Execucao;
   semaforo: Semaforo;
   saude: Saude | null;
   top_parlamentares: RankingItem[];
@@ -124,6 +147,206 @@ export interface AlertaVigencia {
 export interface Alertas {
   vigencia: AlertaVigencia[];
   prestacao: AlertaVigencia[];
+  execucao: Execucao;
+}
+
+// ---- abas (1 request = 1 aba inteira) ----
+
+export interface Rollup {
+  label: string;
+  qtd: number;
+  valor: number;
+}
+
+export interface ConvenioEstadualItem {
+  id: number;
+  municipio: string | null;
+  numero: string | null;
+  objeto: string | null;
+  situacao: string | null;
+  valor: number;
+  repassado: number;
+  orgao: string | null;
+  ano: number | null;
+  vigencia_ate: string | null;
+  etapa: string | null;
+}
+
+export interface EmendaEstadualItem {
+  id: number;
+  municipio: string | null;
+  numero: string | null;
+  parlamentar: string | null;
+  destinacao: string | null;
+  finalidade: string | null;
+  valor: number;
+  situacao: string | null;
+  orgao: string | null;
+  ano: number | null;
+  grupo_despesa: string | null;
+}
+
+export interface AbaEstaduais {
+  convenios: {
+    total: number;
+    valor_total: number;
+    valor_repassado: number;
+    em_execucao: number;
+    por_situacao: Rollup[];
+    por_orgao: Rollup[];
+    itens: ConvenioEstadualItem[];
+  };
+  emendas: {
+    total: number;
+    valor_total: number;
+    por_situacao: Rollup[];
+    por_orgao: Rollup[];
+    itens: EmendaEstadualItem[];
+  };
+  por_ano: Array<{ ano: number; qtd: number; valor: number }>;
+}
+
+export interface VoluntariaItem {
+  id: number;
+  municipio: string | null;
+  numero: string;
+  instrumento: string | null;
+  objeto: string | null;
+  situacao: string | null;
+  valor: number;
+  repasse: number;
+  orgao: string | null;
+  parlamentar: string | null;
+  vigencia_de: string | null;
+  vigencia_ate: string | null;
+  programa: string | null;
+  ano: number | null;
+}
+
+export interface AbaTransfereGov {
+  voluntarias: {
+    total: number;
+    valor_total: number;
+    valor_repasse: number;
+    em_execucao: number;
+    por_situacao: Rollup[];
+    por_orgao: Rollup[];
+    itens: VoluntariaItem[];
+  };
+  pac: {
+    total: number;
+    valor_total: number;
+    por_situacao: Rollup[];
+    por_orgao: Rollup[];
+    itens: Array<{
+      id: number;
+      municipio: string | null;
+      numero: string;
+      programa: string | null;
+      situacao: string | null;
+      valor: number;
+      parlamentar: string | null;
+      objeto: string | null;
+      ano: number | null;
+    }>;
+  };
+  em_execucao: VoluntariaItem[];
+  por_ano: Array<{ ano: number; qtd: number; valor: number }>;
+}
+
+export interface Lancamento {
+  fonte: "emenda_estadual" | "sigcon" | "voluntaria";
+  numero: string | null;
+  destinacao: string | null;
+  finalidade: string | null;
+  valor: number;
+  situacao: string | null;
+  orgao: string | null;
+  ano: number | null;
+  municipio: string | null;
+  vigencia_ate?: string | null;
+}
+
+export interface ParlamentarDetalhe {
+  nome: string;
+  nome_normalizado: string;
+  valor_total: number;
+  total_lancamentos: number;
+  municipios: string[];
+  por_fonte: Record<string, number>;
+  lancamentos: Lancamento[];
+  lancamentos_ocultos: number;
+}
+
+export interface AbaParlamentares {
+  itens: ParlamentarDetalhe[];
+  total: number;
+  valor_total: number;
+  anos: number[];
+}
+
+export interface CaucItemDetalhe {
+  codigo: string;
+  grupo: string;
+  label: string;
+  valor: string;
+  tipo: "regular" | "pendente" | "na";
+  status: string;
+}
+
+export interface AbaDocumentos {
+  cauc: {
+    por_municipio: Array<{
+      municipio_id: number;
+      nome: string | null;
+      regular: boolean | null;
+      pendencias: number;
+      pendencias_codigos: string[];
+      itens_pendentes: CaucItemDetalhe[];
+      itens_regulares: CaucItemDetalhe[];
+      total_itens: number;
+      data_pesquisa: string | null;
+      atualizado_em: string | null;
+    }>;
+    total_municipios: number;
+    com_dados: number;
+    regulares: number;
+    pendencias_total: number;
+  };
+  cagec: { disponivel: boolean; motivo: string; por_municipio: unknown[] };
+}
+
+export interface AbaFns {
+  anos: number[];
+  por_ano: Array<{
+    ano: number;
+    total: number;
+    valor_proposta: number;
+    valor_pago: number;
+    valor_pagar: number;
+  }>;
+  itens: Array<{
+    tipo_proposta: string | null;
+    tipo_recurso: string | null;
+    nu_processo: string | null;
+    valor_proposta: number;
+    valor_pago: number;
+    valor_pagar: number;
+    parlamentares: unknown[];
+    ano: number;
+    municipio: string;
+  }>;
+  total: number;
+  totais: { valor_proposta: number; valor_pago: number; valor_pagar: number };
+  disponivel: boolean;
+  erros: string[];
+}
+
+export interface Insights {
+  aba: string;
+  mensagens: string[];
+  disponivel: boolean;
+  fonte?: "ia" | "template";
 }
 
 export interface Narrativa {
@@ -137,6 +360,13 @@ function scopeParams(municipioId: number | null, extra: Record<string, unknown> 
   return municipioId != null ? { municipio_id: municipioId, ...extra } : { ...extra };
 }
 
+/** Periodo -> query. Vazio = todos os anos (nao manda o param).
+ *  O axios serializa array como `anos=2021&anos=2022`, que e o formato que o
+ *  FastAPI espera para `Optional[list[int]] = Query(None)`. */
+function periodoParams(anos?: number[]) {
+  return anos && anos.length ? { anos } : {};
+}
+
 // ---- fetchers ----
 
 export async function getMunicipios(): Promise<Municipio[]> {
@@ -146,29 +376,89 @@ export async function getMunicipios(): Promise<Municipio[]> {
 
 export async function getOverview(
   municipioId: number | null,
-  ano?: number,
+  anos?: number[],
   live = false
 ): Promise<Overview> {
   const { data } = await api.get<Overview>("/bi/overview", {
-    params: scopeParams(municipioId, { ano, live }),
+    params: scopeParams(municipioId, { ...periodoParams(anos), live }),
   });
   return data;
 }
 
-export async function getAlertas(municipioId: number | null, ano?: number): Promise<Alertas> {
+export async function getAlertas(municipioId: number | null, anos?: number[]): Promise<Alertas> {
   const { data } = await api.get<Alertas>("/bi/alertas", {
-    params: scopeParams(municipioId, { ano }),
+    params: scopeParams(municipioId, periodoParams(anos)),
   });
   return data;
 }
 
 export async function getParlamentares(
   municipioId: number | null,
-  ano?: number,
+  anos?: number[],
   live = false
 ): Promise<{ items: RankingItem[]; total?: number }> {
   const { data } = await api.get("/bi/parlamentares", {
-    params: scopeParams(municipioId, { ano, live }),
+    params: scopeParams(municipioId, { ...periodoParams(anos), live }),
+  });
+  return data;
+}
+
+// ---- abas ----
+
+export async function getAbaParlamentares(
+  municipioId: number | null,
+  anos?: number[]
+): Promise<AbaParlamentares> {
+  const { data } = await api.get<AbaParlamentares>("/bi/parlamentares/detalhe", {
+    params: scopeParams(municipioId, periodoParams(anos)),
+  });
+  return data;
+}
+
+export async function getAbaEstaduais(
+  municipioId: number | null,
+  anos?: number[]
+): Promise<AbaEstaduais> {
+  const { data } = await api.get<AbaEstaduais>("/bi/estaduais", {
+    params: scopeParams(municipioId, periodoParams(anos)),
+  });
+  return data;
+}
+
+export async function getAbaTransfereGov(
+  municipioId: number | null,
+  anos?: number[]
+): Promise<AbaTransfereGov> {
+  const { data } = await api.get<AbaTransfereGov>("/bi/transferegov", {
+    params: scopeParams(municipioId, periodoParams(anos)),
+  });
+  return data;
+}
+
+export async function getAbaDocumentos(municipioId: number | null): Promise<AbaDocumentos> {
+  const { data } = await api.get<AbaDocumentos>("/bi/documentos", {
+    params: scopeParams(municipioId),
+  });
+  return data;
+}
+
+export async function getAbaFns(
+  municipioId: number | null,
+  anos?: number[]
+): Promise<AbaFns> {
+  const { data } = await api.get<AbaFns>("/bi/fns", {
+    params: scopeParams(municipioId, periodoParams(anos)),
+  });
+  return data;
+}
+
+export async function getInsights(
+  aba: string,
+  municipioId: number | null,
+  anos?: number[]
+): Promise<Insights> {
+  const { data } = await api.get<Insights>("/bi/insights", {
+    params: scopeParams(municipioId, { aba, ...periodoParams(anos) }),
   });
   return data;
 }
@@ -193,11 +483,11 @@ export async function getSemaforo(municipioId: number | null): Promise<Semaforo>
 
 export async function getNarrativa(
   municipioId: number | null,
-  ano?: number,
+  anos?: number[],
   kind = "resumo"
 ): Promise<Narrativa> {
   const { data } = await api.get<Narrativa>("/bi/narrativa", {
-    params: scopeParams(municipioId, { ano, kind }),
+    params: scopeParams(municipioId, { ...periodoParams(anos), kind }),
   });
   return data;
 }

@@ -22,7 +22,6 @@ on:
     branches: [main]
     paths:
       - 'frontend/**'
-      - 'painel/**'
       - '.github/workflows/build-frontend.yml'
   workflow_dispatch: {}
 
@@ -66,15 +65,11 @@ jobs:
               NEXT_PUBLIC_CLIENT_LOGO=/brasao-monte-siao.png
               NEXT_PUBLIC_CLIENT_SUBTITLE=Monte Siao - MG
               NEXT_PUBLIC_BI_MODULE=1
-          # --- painel executivo do prefeito (contexto painel/) ---
-          - image: painel-montesiao-mg
-            context: painel
-            args: |
-              NEXT_PUBLIC_API_URL=/api
-              API_PROXY_TARGET=https://pactha-montesiao-mg-api-54-232-208-118.sslip.io
-              NEXT_PUBLIC_VAPID_PUBLIC_KEY=BLt6NuwIO5cNm1XEyK3pRKPEwTKN2S_rqsd18XjmkiotiioYj7XqfKviJ8iNeWWQqQCzn60jAHHXV8PksNTnn_c
-              NEXT_PUBLIC_CLIENT_NAME=Monte Siao
-              NEXT_PUBLIC_CLIENT_UF=MG
+          # O antigo "painel executivo" (pasta painel/, imagem painel-montesiao-mg)
+          # SAIU da matriz: o Painel de Indicadores e o Modo Tela agora moram no
+          # proprio frontend (rotas /dashboard e /tela), no mesmo deploy e no
+          # mesmo login. Manter um segundo app so para a TV era um build a mais
+          # por push numa VPS burstable, sem nada em troca.
     steps:
       - name: Checkout
         uses: actions/checkout@v4

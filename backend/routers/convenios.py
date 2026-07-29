@@ -11,6 +11,7 @@ from database import get_db
 from models import ConvenioEstadual
 from schemas.convenio import ConvenioResponse, ConvenioListResponse, ConvenioStats, AlertaVigencia
 from services.auth import get_current_user, ensure_municipio_access, ensure_tela
+from services.bi import anos_list
 from models.user import User
 import math
 import os
@@ -313,7 +314,10 @@ async def query_alertas_vigencia(
     endpoint /api/convenios/alertas e pelo Painel Executivo.
 
     `municipio_ids` (lista) = escopo CONSOLIDADO (`= ANY(:mids)`), usado quando
-    `municipio_id` (unico) e None. Ambos None = todos (comportamento original)."""
+    `municipio_id` (unico) e None. Ambos None = todos (comportamento original).
+
+    `ano` aceita int (legado) ou lista de anos — ver services.bi.anos_list."""
+    _anos = anos_list(ano)
     limite = date.today() + timedelta(days=dias)
     alertas = []
 
@@ -325,8 +329,8 @@ async def query_alertas_vigencia(
         q = q.where(ConvenioEstadual.municipio_id == municipio_id)
     elif municipio_ids:
         q = q.where(ConvenioEstadual.municipio_id.in_(list(municipio_ids)))
-    if ano:
-        q = q.where(ConvenioEstadual.ano == ano)
+    if _anos:
+        q = q.where(ConvenioEstadual.ano.in_(_anos))
     q = q.order_by(ConvenioEstadual.dt_vigencia_atual.asc())
     for c in (await db.execute(q)).scalars().all():
         dias_rest = (c.dt_vigencia_atual - date.today()).days
@@ -345,9 +349,9 @@ async def query_alertas_vigencia(
             _mun_sql = "municipio_id = :m"; _vp = {"m": municipio_id}
         else:
             _mun_sql = "municipio_id = ANY(:mids)"; _vp = {"mids": list(municipio_ids)}
-        _vsql = "AND split_part(numero_proposta, '/', 2) = :ano_txt" if ano else ""
-        if ano:
-            _vp["ano_txt"] = str(ano)
+        _vsql = "AND split_part(numero_proposta, '/', 2) = ANY(:anos_txt)" if _anos else ""
+        if _anos:
+            _vp["anos_txt"] = [str(a) for a in _anos]
         vol = await db.execute(text(f"""
             SELECT numero_proposta, codigo_instrumento, objeto, orgao, situacao, dt_fim_vigencia
             FROM transferegov_propostas WHERE {_mun_sql} {_vsql}
@@ -397,7 +401,10 @@ async def query_prestacao_contas(
     pelo endpoint /api/convenios/prestacao-contas e pelo Painel Executivo.
 
     `municipio_ids` (lista) = escopo CONSOLIDADO (`= ANY(:mids)`), usado quando
-    `municipio_id` (unico) e None. Ambos None = todos (comportamento original)."""
+    `municipio_id` (unico) e None. Ambos None = todos (comportamento original).
+
+    `ano` aceita int (legado) ou lista de anos — ver services.bi.anos_list."""
+    _anos = anos_list(ano)
     corte = date.today() - timedelta(days=dias)
     alertas = []
 
@@ -406,8 +413,8 @@ async def query_prestacao_contas(
         q = q.where(ConvenioEstadual.municipio_id == municipio_id)
     elif municipio_ids:
         q = q.where(ConvenioEstadual.municipio_id.in_(list(municipio_ids)))
-    if ano:
-        q = q.where(ConvenioEstadual.ano == ano)
+    if _anos:
+        q = q.where(ConvenioEstadual.ano.in_(_anos))
     q = q.order_by(ConvenioEstadual.dt_vigencia_atual.desc())
     for c in (await db.execute(q)).scalars().all():
         dias_rest = (c.dt_vigencia_atual - date.today()).days
@@ -426,9 +433,9 @@ async def query_prestacao_contas(
             _mun_sql = "municipio_id = :m"; _vp = {"m": municipio_id}
         else:
             _mun_sql = "municipio_id = ANY(:mids)"; _vp = {"mids": list(municipio_ids)}
-        _vsql = "AND split_part(numero_proposta, '/', 2) = :ano_txt" if ano else ""
-        if ano:
-            _vp["ano_txt"] = str(ano)
+        _vsql = "AND split_part(numero_proposta, '/', 2) = ANY(:anos_txt)" if _anos else ""
+        if _anos:
+            _vp["anos_txt"] = [str(a) for a in _anos]
         vol = await db.execute(text(f"""
             SELECT numero_proposta, codigo_instrumento, objeto, orgao, situacao, dt_fim_vigencia
             FROM transferegov_propostas WHERE {_mun_sql} {_vsql}

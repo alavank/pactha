@@ -79,6 +79,38 @@ def scope_signature(ids: list[int], is_consolidado: bool) -> str:
 
 
 # --------------------------------------------------------------------------
+# Periodo (MULTI-ANO)
+# --------------------------------------------------------------------------
+
+def anos_list(v) -> Optional[list[int]]:
+    """Normaliza o filtro de periodo para uma LISTA de anos (ou None = todos).
+
+    Aceita o formato legado (`ano=2025`, int) e o novo (`anos=[2023,2024,2025]`)
+    no MESMO parametro — o prefeito costuma querer o mandato inteiro, nao um ano.
+    Vazio/None/lixo -> None (sem filtro), preservando o comportamento anterior."""
+    if v is None:
+        return None
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        return [int(v)] if int(v) else None
+    if isinstance(v, str):
+        v = [p for p in v.replace(";", ",").split(",")]
+    out: set[int] = set()
+    for x in v or []:
+        try:
+            n = int(str(x).strip())
+        except (TypeError, ValueError):
+            continue
+        if 1990 < n < 2100:
+            out.add(n)
+    return sorted(out) or None
+
+
+def anos_signature(anos: Optional[list[int]]) -> str:
+    """Parte do periodo na chave de cache. None -> '0' (todos)."""
+    return ",".join(str(a) for a in anos) if anos else "0"
+
+
+# --------------------------------------------------------------------------
 # Agregacoes SET-AWARE (espelham routers/municipios.municipio_summary etc.)
 # --------------------------------------------------------------------------
 
@@ -93,10 +125,12 @@ def _parse_dt(s) -> Optional[date]:
     return None
 
 
-async def bi_kpis(db: AsyncSession, ids: list[int], ano: Optional[int] = None) -> dict:
+async def bi_kpis(db: AsyncSession, ids: list[int], ano=None) -> dict:
     """Versao SET dos KPIs de municipio_summary (routers/municipios.py:60-137).
     Soma sobre `ids`. Para ids=[X] devolve os MESMOS numeros do por-municipio.
-    Nao inclui o objeto `municipio` (nao ha um so); adiciona `municipios_count`."""
+    Nao inclui o objeto `municipio` (nao ha um so); adiciona `municipios_count`.
+
+    `ano` aceita int (legado) OU lista de anos (mandato inteiro) — ver anos_list."""
     if not ids:
         return {
             "total_convenios_estadual": 0, "total_voluntarias": 0,
@@ -106,14 +140,16 @@ async def bi_kpis(db: AsyncSession, ids: list[int], ano: Optional[int] = None) -
             "alertas_prestacao_contas_federal": 0, "municipios_count": 0,
         }
 
+    anos = anos_list(ano)
+
     # convenios_estadual guarda SIGCON-MG *e* FNS (federal). KPI "estaduais" e as
     # vigencias sao so do SIGCON -> exclui FNS. None=todos os anos.
     def _ano_est(q):
         q = q.where(or_(ConvenioEstadual.fonte.is_(None),
                         ~ConvenioEstadual.fonte.ilike("%FNS%")))
-        return q.where(ConvenioEstadual.ano == ano) if ano else q
+        return q.where(ConvenioEstadual.ano.in_(anos)) if anos else q
 
-    vol_ano_sql = " AND split_part(numero_proposta, '/', 2) = :ano_txt" if ano else ""
+    vol_ano_sql = " AND split_part(numero_proposta, '/', 2) = ANY(:anos_txt)" if anos else ""
 
     est_count = await db.execute(_ano_est(
         select(func.count()).select_from(ConvenioEstadual)
@@ -144,8 +180,8 @@ async def bi_kpis(db: AsyncSession, ids: list[int], ano: Optional[int] = None) -
 
     # TransfereGov Voluntarias (dt_fim_vigencia eh string dd/mm/yyyy -> parse em Python)
     vol_params: dict = {"ids": ids}
-    if ano:
-        vol_params["ano_txt"] = str(ano)
+    if anos:
+        vol_params["anos_txt"] = [str(a) for a in anos]
     vol = await db.execute(text(
         "SELECT dt_fim_vigencia, COALESCE(valor_global, valor_repasse, 0) "
         "FROM transferegov_propostas WHERE municipio_id = ANY(:ids)" + vol_ano_sql

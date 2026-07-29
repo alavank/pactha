@@ -89,9 +89,21 @@ Todas as URLs abaixo foram conferidas respondendo em 2026-07-23.
 |---|---|---|
 | `montesiao-mg-frontend` | `frontend/Dockerfile` | https://pactha-montesiao-mg-54-232-208-118.sslip.io |
 | `montesiao-mg-api` | `backend/Dockerfile.api` | https://pactha-montesiao-mg-api-54-232-208-118.sslip.io |
-| `montesiao-mg-painel` | `painel/Dockerfile` (base `/painel`) | https://pactha-montesiao-mg-painel-54-232-208-118.sslip.io |
 | `montesiao-mg-worker` | `backend/Dockerfile.scraper` | interno |
 | `montesiao-mg-db` | `postgres:16-alpine` | interno — db/user `pactha`, uuid `iogvjlnkpqlugja9j76rktl1` |
+
+> **`montesiao-mg-painel` (uuid `uymt911sgynkbvifyzf6nf1h`) está para ser removido.**
+> O Painel Executivo virou parte do frontend principal: `/dashboard` é o **Painel
+> de Indicadores** e `/tela` é o **Modo Tela** (janela de exibição), no mesmo
+> deploy e no mesmo login. A pasta `painel/` saiu do CI (ver `painel/DEPRECADO.md`).
+> Enquanto a aplicação não for deletada no Coolify ela só ocupa container e RAM —
+> ninguém mais acessa aquela URL.
+>
+> ```bash
+> B=http://54.232.208.118:8000/api/v1
+> curl -X DELETE "$B/applications/uymt911sgynkbvifyzf6nf1h" \
+>      -H "Authorization: Bearer <TOKEN>"
+> ```
 
 ### Fora deste repo, mas do mesmo produto
 | O quê | URL | Repo |
@@ -207,5 +219,5 @@ UUIDs das aplicações medidos em 2026-07-23:
 | `trust-worker` | `xg714h8l7va4ejq70a5pmv5t` |
 | `montesiao-mg-api` | `chr0n883hp19tjh7829k85a7` |
 | `montesiao-mg-frontend` | `bryvqhhcu97lc3ku7a2hss0q` |
-| `montesiao-mg-painel` | `uymt911sgynkbvifyzf6nf1h` |
+| `montesiao-mg-painel` | `uymt911sgynkbvifyzf6nf1h` (a remover — ver §3) |
 | `montesiao-mg-worker` | `jhf0kjhps5keujiyhhsnvjt6` |
