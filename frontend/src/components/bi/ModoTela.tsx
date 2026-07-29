@@ -230,7 +230,12 @@ export function ModoTela({ slugPublico }: { slugPublico?: string }) {
       </div>
 
       <div className="mb-3">
-        <InsightTicker aba={motor.aba} municipioId={municipioId} anos={anos} tv />
+        {/* Também preso ao `pronto`: o ticker busca no mount, e no link público
+            o mount acontece ANTES do slug virar token. Sem esta guarda ele
+            dispara /bi/insights sem credencial, toma 401, e o interceptor de
+            api.ts manda a TV para /login — a tela pública nunca chegaria a
+            aparecer. */}
+        {pronto && <InsightTicker aba={motor.aba} municipioId={municipioId} anos={anos} tv />}
       </div>
 
       {/* Fichário: as orelhas das pastas */}
