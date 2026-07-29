@@ -68,6 +68,38 @@ e 3 acompanham `feat/painel-executivo`. Um push em `main`, com auto-deploy ligad
 Projeto Coolify: **`pactha`** (uuid `ksmwr13y4iyprom8i1znede8`), environment `production`.
 Todas as URLs abaixo foram conferidas respondendo em 2026-07-23.
 
+### ⚠️ Nem todo app builda do Dockerfile — alguns consomem imagem do ghcr **pinada por SHA**
+
+Confirmado em 2026-07-29 no **`montesiao-mg-frontend`**: ele **não builda na VPS**.
+É um resource do tipo *Docker Image*:
+
+| Campo | Valor |
+|---|---|
+| Docker Image | `ghcr.io/alavank/pactha-frontend-montesiao-mg` |
+| Docker Image Tag or Hash | `sha-0f33c976ef3db5b889f61fa4a5269a6be7be39f8` |
+
+**Consequência que já custou tempo:** a tag é o **SHA completo de um commit**, não
+`latest`. Um `Redeploy` re-puxa exatamente aquela imagem — mergear na `main` e
+esperar o CI **não muda nada** enquanto o campo da tag não for atualizado à mão.
+
+Para subir código novo neste app:
+
+1. merge na `main` → esperar `build-frontend` publicar no ghcr;
+2. editar **Docker Image Tag or Hash** para `sha-<sha completo do commit>` → **Save**;
+3. **Redeploy**.
+
+(Usar `latest` no lugar do pin funciona e dispensa o passo 2, ao custo de perder o
+controle explícito de qual commit está no ar.)
+
+Outra consequência: os `NEXT_PUBLIC_*` **não vêm das env vars do Coolify** neste
+app — vêm dos build-args da matriz em `.github/workflows/build-frontend.yml`, que
+já estão embutidos na imagem. Procurar `NEXT_PUBLIC_BI_MODULE` nas Environment
+Variables do Coolify não acha nada, e está certo.
+
+> **Não verificado app a app.** Os demais (`freitas-*`, `trust-*`, `montesiao-mg-api`)
+> podem estar em Dockerfile ou em Docker Image — confira em *Configuration → General*
+> antes de assumir. Onde aparecer o bloco **Docker Registry**, é imagem pronta.
+
 ### Freitas
 | Resource | Build | URL |
 |---|---|---|
@@ -87,7 +119,7 @@ Todas as URLs abaixo foram conferidas respondendo em 2026-07-23.
 ### Monte Sião / MG
 | Resource | Build | URL |
 |---|---|---|
-| `montesiao-mg-frontend` | `frontend/Dockerfile` | https://pactha-montesiao-mg-54-232-208-118.sslip.io |
+| `montesiao-mg-frontend` | **imagem ghcr pinada por SHA** (ver aviso acima) | https://pactha-montesiao-mg-54-232-208-118.sslip.io |
 | `montesiao-mg-api` | `backend/Dockerfile.api` | https://pactha-montesiao-mg-api-54-232-208-118.sslip.io |
 | `montesiao-mg-worker` | `backend/Dockerfile.scraper` | interno |
 | `montesiao-mg-db` | `postgres:16-alpine` | interno — db/user `pactha`, uuid `iogvjlnkpqlugja9j76rktl1` |
@@ -168,7 +200,8 @@ Nada abaixo está no ar. Se um documento, script ou env var apontar para isso, e
   Qualquer host `*-5-78-42-251.sslip.io` está morto.
 - **Railway** — não hospeda mais API, worker nem crons. A `COFRE_KEY` **não** mora lá.
 - **Neon** — não é mais o banco. A migração Neon → Postgres do Coolify **já foi feita**.
-- **Vercel**, **Netlify** — o frontend Next.js é buildado como imagem Docker no Coolify.
+- **Vercel**, **Netlify** — o frontend Next.js roda como imagem Docker no Coolify
+  (buildada no GitHub Actions no caso do `montesiao-mg-frontend` — ver §3).
 - **Supabase** (cloud ou self-hosted) — nunca esteve nesta infra.
 - Especificações de máquina tipo **CCX33 / CPX31 / "8 vCPU dedicado" / "32 GB RAM" /
   região "us-west"** são de servidores que não existem mais.

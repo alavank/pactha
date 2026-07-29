@@ -5,6 +5,19 @@ Ligada por instância pela flag build-time `NEXT_PUBLIC_BI_MODULE=1` (hoje só
 Monte Sião/MG). Sem a flag, `/dashboard` continua sendo o dashboard operacional
 de sempre e nada abaixo se aplica.
 
+## Como as duas flags se ligam
+
+| Flag | Onde | Tipo | Sem ela |
+|---|---|---|---|
+| `NEXT_PUBLIC_BI_MODULE=1` | build-arg da matriz em `.github/workflows/build-frontend.yml` | **build-time** (embutido no bundle) | `/dashboard` volta a ser o dashboard operacional |
+| `BI_MODULE=true` | env var do resource `*-api` no Coolify | **runtime** | `main.py` não monta o router → **todo `/api/bi/*` responde 404** |
+
+⚠️ A flag do frontend **não** é uma env var do Coolify no Monte Sião: aquele app
+consome uma imagem pronta do ghcr, com o valor já embutido pelo CI. Procurar por
+ela nas Environment Variables não acha nada — e está certo. Ver `INFRA.md` §3,
+inclusive o detalhe de que a imagem é **pinada por SHA** (subir código novo exige
+atualizar a tag à mão).
+
 ## Onde fica
 
 | Rota | O que é |
