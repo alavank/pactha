@@ -4,15 +4,20 @@ O par ESTADUAL do CAUC: sem CAGEC valido o municipio nao assina convenio com o
 Estado. Fica ao lado do CAUC na tela de regularidade (mesma tela `cauc`), porque
 para o gestor o assunto e um: "minha documentacao esta em dia?".
 
-ESTADO ATUAL — ANDAIME. Nenhum scraper alimenta `cagec_situacao` ainda; falta a
-credencial do SIGCON-MG (uma por municipio, no Cofre com sistema='SIGCON-MG',
-que o ingestion/sigcon_scraper.py ja usa para os convenios). Enquanto nao houver
-linha, `tem_dados` volta false com um motivo legivel.
+COLETA (ligada em 2026-07-30): `ingestion/cagec_scraper.py` preenche
+`cagec_situacao` a partir da consulta **publica** do portal proprio do CAGEC
+(www.cagec.mg.gov.br/convenente-web) — o CAGEC nao fica dentro do SIGCON-MG e
+nao exige credencial, so o CNPJ do municipio. Quem ainda nao foi coletado (ou
+cujo CNPJ nao conseguimos inferir) volta `tem_dados: false` com motivo legivel.
 
-Por que o andaime existe agora: o payload ja sai no MESMO formato do CAUC
-(`itens` com codigo/grupo/label/valor/tipo/status), entao ligar a coleta depois e
-so preencher a tabela — a tela nao muda. E a alternativa (a tela nao ter a coluna)
-esconderia do gestor que existe uma regularidade estadual a acompanhar.
+O payload sai no MESMO formato do CAUC (`itens` com
+codigo/grupo/label/valor/tipo/status), entao a tela desenha as duas colunas sem
+saber de onde veio cada uma.
+
+LIMITE HONESTO: a consulta publica informa "Situacao para Parceria" e "Possui
+Impedimento", e nao a validade nem a lista de exigencias uma a uma (isso exigiria
+o CRC, emitido so para quem esta regular, ou a area logada). Por isso `validade`
+fica nula em vez de estimada.
 """
 from __future__ import annotations
 
@@ -27,8 +32,9 @@ from services.auth import get_current_user, ensure_municipio_access, ensure_tela
 router = APIRouter(prefix="/api/cagec", tags=["cagec"])
 
 MOTIVO_SEM_COLETA = (
-    "O CAGEC (cadastro de convenentes de MG) ainda nao e coletado automaticamente: "
-    "depende da credencial do SIGCON-MG do municipio. Consulte pelo portal SIGCON-MG."
+    "O CAGEC deste município ainda não foi coletado. A coleta é automática e usa o "
+    "CNPJ do município; se ele ainda não foi identificado nas bases, consulte em "
+    "www.cagec.mg.gov.br/convenente-web/consultaParceiros."
 )
 
 

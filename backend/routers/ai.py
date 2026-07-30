@@ -129,6 +129,10 @@ FONTES DE DADOS:
   nao fica no banco. **CRITICO: a maioria das emendas de DEPUTADO/SENADOR FEDERAL
   chega por AQUI, e NAO nas Voluntarias SICONV.** Em qualquer pergunta sobre
   emendas de parlamentar federal, SEMPRE consulte esta fonte.
+- **Regularidade (CAUC federal + CAGEC estadual/MG)**: se o municipio esta apto a
+  RECEBER recurso e ASSINAR convenio. Use `query_regularidade`. **Sao duas esferas
+  INDEPENDENTES: estar regular no CAUC nao significa estar regular no CAGEC, e
+  vice-versa.** Nunca responda "esta regular" sem dizer em QUAL esfera.
 
 BUSCA POR PARLAMENTAR:
 - "Qual parlamentar trouxe mais?", ranking, "quem mais destinou", comparacao entre
@@ -320,6 +324,15 @@ TOOLS = [
             "required": ["municipio_id"],
         },
     },
+    {
+        "name": "query_regularidade",
+        "description": "Regularidade do municipio para RECEBER recursos e ASSINAR convenios, nas DUAS esferas: CAUC (federal) e CAGEC (estadual, MG). Use SEMPRE que a pergunta falar em estar 'regular', 'em dia', 'apto a assinar convenio', 'bloqueado', 'impedido', 'pendencia de documentacao' ou 'certidao'. Retorna a situacao de cada esfera e a lista de exigencias, marcando o que esta pendente. NAO confunda com a situacao de um convenio especifico.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"municipio_id": {"type": "integer"}},
+            "required": ["municipio_id"],
+        },
+    },
 ]
 
 
@@ -353,6 +366,7 @@ _TOOLS_REQ_MUN = {
     "municipio_summary", "query_convenios_sigcon", "query_situacoes_sigcon",
     "query_simec_liberacoes", "query_simec_dimensoes", "query_emendas_estaduais",
     "query_fns", "query_plano_acao", "ranking_parlamentares",
+    "query_regularidade",
 }
 
 
@@ -1110,6 +1124,56 @@ async def _tool_query_plano_acao(db: AsyncSession, inp: dict) -> str:
     return "\n".join(out)
 
 
+async def _tool_query_regularidade(db: AsyncSession, inp: dict) -> str:
+    """CAUC (federal) + CAGEC (estadual/MG) na mesma resposta.
+
+    Reusa as funcoes dos routers em vez de reescrever a SQL: se a regra de
+    classificacao de uma exigencia mudar la, muda aqui junto — a IA nao pode
+    dizer 'regular' quando a tela diz 'pendente'."""
+    mun_id = int(inp["municipio_id"])
+    mun = (await db.execute(select(Municipio).where(Municipio.id == mun_id))).scalar_one_or_none()
+    if not mun:
+        return f"Erro: municipio_id={mun_id} nao encontrado."
+
+    from routers.cauc import fetch_cauc_situacao
+    from routers.cagec import fetch_cagec_situacao
+    cauc = await fetch_cauc_situacao(db, mun_id)
+    cagec = await fetch_cagec_situacao(db, mun_id)
+
+    out = [f"Regularidade de {mun.nome}/{mun.uf} — duas esferas independentes:"]
+
+    out.append("\n[FEDERAL — CAUC/Servico Auxiliar de Informacoes para Transferencias Voluntarias]")
+    if not cauc.get("tem_dados"):
+        out.append("  Sem coleta registrada para este municipio.")
+    else:
+        pend = [i for i in cauc.get("itens", []) if i.get("tipo") == "pendente"]
+        out.append(f"  Situacao: {'REGULAR' if cauc.get('regular') else 'COM PENDENCIA'}"
+                   f" | pendencias: {cauc.get('pendencias') or 0}"
+                   f" | consulta de {cauc.get('data_pesquisa') or '-'}")
+        for i in pend[:20]:
+            out.append(f"  - PENDENTE {i['codigo']} {i['label']}: {i['valor']}")
+        if len(pend) > 20:
+            out.append(f"  ... e mais {len(pend) - 20} pendencia(s).")
+
+    out.append("\n[ESTADUAL — CAGEC/Cadastro Geral de Convenentes de MG]")
+    if not cagec.get("tem_dados"):
+        out.append(f"  Sem coleta registrada. {cagec.get('motivo', '')}".rstrip())
+    else:
+        out.append(f"  Situacao para Parceria: {cagec.get('situacao') or '-'}"
+                   f" ({'REGULAR' if cagec.get('regular') else 'NAO REGULAR'})"
+                   f" | consulta de {cagec.get('data_pesquisa') or '-'}")
+        for i in cagec.get("itens", []):
+            marca = "PENDENTE" if i.get("tipo") == "pendente" else "ok"
+            out.append(f"  - [{marca}] {i['label']}: {i['valor']}")
+        out.append("  Obs.: a consulta publica do CAGEC informa a situacao e o impedimento; "
+                   "ela NAO lista as exigencias uma a uma nem a validade. Se o municipio "
+                   "estiver irregular, o detalhe do motivo so aparece no portal do CAGEC.")
+
+    out.append("\nATENCAO ao responder: CAUC vale para convenio FEDERAL e CAGEC para convenio "
+               "ESTADUAL (MG). Estar regular em um NAO implica estar no outro.")
+    return "\n".join(out)
+
+
 # Dispatcher
 # Rotulos exibidos ao usuario enquanto a ferramenta roda. Escritos por nos a
 # partir do nome da tool que REALMENTE vai executar — nunca progresso inventado.
@@ -1126,6 +1190,7 @@ _ROTULO_TOOL = {
     "query_fns": "Consultando propostas do FNS (saude)",
     "query_plano_acao": "Consultando Transferencias Especiais (RP9)",
     "ranking_parlamentares": "Montando o ranking de parlamentares",
+    "query_regularidade": "Conferindo a regularidade (CAUC federal e CAGEC estadual)",
 }
 
 TOOL_FUNCS = {
@@ -1141,6 +1206,7 @@ TOOL_FUNCS = {
     "query_plano_acao": _tool_query_plano_acao,
     "search_by_parlamentar": _tool_search_by_parlamentar,
     "ranking_parlamentares": _tool_ranking_parlamentares,
+    "query_regularidade": _tool_query_regularidade,
 }
 
 
