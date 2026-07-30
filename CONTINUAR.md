@@ -2,7 +2,7 @@
 
 > Documento de contexto para a **próxima sessão de IA** (Claude Code) que for continuar este projeto.
 > É **auto-contido**: assuma que você (IA) não tem memória das sessões anteriores. Tudo que precisa está aqui.
-> Última atualização: 2026-07-23.
+> Última atualização: 2026-07-30.
 >
 > 📍 Para servidor, URLs, uuids, bancos e operações no Coolify, a fonte de verdade é o
 > **[`INFRA.md`](INFRA.md)** na raiz. Este arquivo cobre o *projeto*; o `INFRA.md` cobre a *infra*.
@@ -96,6 +96,7 @@ Builds: API = `backend/Dockerfile.api` (base `/`) · Frontend = `frontend/Docker
 - **must_change_password=True** no admin seed → o 1º login redireciona pra `/change-password`. Normal.
 - Worker aparece como `running:unknown` no Coolify (é `sleep infinity`, sem healthcheck). Normal. Frontends sem healthcheck também.
 - **Chromium órfão.** O worker já roda com `tini` + reaper (`backend/reaper.sh`) e os crons com `flock`+`timeout`, justamente porque Chromium pendurado comia a RAM do host. Não remova esses wrappers.
+- **O CAGEC NÃO fica dentro do SIGCON-MG.** Perder tempo procurando no portal logado é fácil: a palavra "CAGEC" não aparece uma vez sequer no HTML do sigconv2 nem no menu de 29 itens. Ele tem portal próprio (`cagec.mg.gov.br/convenente-web`) e a consulta é **pública** — basta o CNPJ, não precisa de credencial. Duas armadilhas do portal (ambas fazem a busca *parecer* vazia): a página contém a frase "clique no botão [PESQUISAR]", então seletor por texto casa com a **instrução** e o clique não faz nada; e o cabeçalho do grid usa `th`/`.z-listheader` — fora do seletor de células ele some, e sem cabeçalho não dá para casar coluna por rótulo. Está tudo anotado em `backend/ingestion/cagec_scraper.py`.
 
 ---
 
@@ -106,6 +107,10 @@ As três instâncias ainda respondem por `*.sslip.io`. A landing (`pactha.com.br
 
 ### 6.2 Secrets opcionais por tenant (features ficam OFF até setar)
 `ANTHROPIC_API_KEY` (módulo IA — hoje só `montesiao-mg-api` tem), `TELEGRAM_BOT_TOKEN` + `TELEGRAM_WEBHOOK_SECRET` (Telegram). Setar via `PATCH /applications/<api_uuid>/envs/bulk` + redeploy.
+
+Credencial do **SIGCON-MG** (uma por município, no Cofre com `sistema='SIGCON-MG'` /
+`automation_key='sigcon'`): sem ela o `sigcon` roda e não traz nada. Monte Sião está
+cadastrada desde 2026-07-30. **O CAGEC não precisa de credencial** — consulta pública.
 
 ### 6.3 Auto-deploy
 Está **desligado** nas 10 aplicações. Antes de religar, lembre que um push na `main` rebuilda 7 apps de uma vez numa máquina de ~0,6 vCPU sustentado.

@@ -155,8 +155,15 @@ para não competir por CPU no host burstable. Todos os comandos usam
 | `govbr-renew` | `5 * * * *` | `25 * * * *` | `45 * * * *` |
 | `queue-sigcon` | `0,30 * * * *` | `10,40 * * * *` | `20,50 * * * *` |
 | `painel-alertas` | — | — | `15 */2 * * *` |
+| `cagec` | — | — | `40 5 * * *` |
 
 Detalhes de cada rotina e dos comandos completos: `docs/CRON_SETUP.md`.
+
+**`cagec`** (desde 2026-07-30, só Monte Sião por enquanto): regularidade **estadual**
+de MG. Roda às 5h40, depois da rodada do `sigcon` das 4h — de propósito, porque o
+CNPJ do município é inferido das emendas estaduais que o SIGCON acabou de coletar.
+Não usa credencial: a consulta do CAGEC é **pública** e basta o CNPJ. Detalhe de
+onde o portal fica e das armadilhas dele: `backend/ingestion/cagec_scraper.py`.
 
 ---
 
