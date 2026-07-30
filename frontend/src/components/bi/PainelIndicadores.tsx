@@ -236,9 +236,13 @@ export function PainelIndicadores() {
 export function ConteudoAba({
   dados,
   tv,
+  esfera,
 }: {
   dados: NonNullable<ReturnType<typeof useDadosAba>["dados"]>;
   tv?: boolean;
+  /** So o app de celular usa: na aba de documentos, mostra UMA esfera por vez
+   *  (CAUC e CAGEC sao abas separadas la, porque nao cabem lado a lado). */
+  esfera?: "cauc" | "cagec";
 }) {
   switch (dados.aba) {
     case "geral":
@@ -250,7 +254,7 @@ export function ConteudoAba({
     case "estaduais":
       return <AbaEstaduaisView d={dados.d} tv={tv} />;
     case "documentos":
-      return <AbaDocumentosView d={dados.d} tv={tv} />;
+      return <AbaDocumentosView d={dados.d} tv={tv} esfera={esfera} />;
     case "fns":
       return <AbaFnsView d={dados.d} tv={tv} />;
   }

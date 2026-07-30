@@ -68,7 +68,7 @@ export function AbaGeral({ ov, alertas, tv }: AbaProps & { ov: Overview; alertas
           sub="há mais de 90 dias" grande={tv} />
       </div>
 
-      <div className={grid(tv, "grid min-h-0 gap-3 lg:grid-cols-3", "grid min-h-0 flex-1 grid-cols-3 gap-3")}>
+      <div className={grid(tv, "grid grid-cols-1 min-h-0 gap-3 lg:grid-cols-3", "grid min-h-0 flex-1 grid-cols-3 gap-3")}>
         <Painel>
           <PainelHead icon={TrendingUp} titulo="Composição da captação" sub="de onde veio o recurso" />
           <div className="bi-num mb-3 text-[28px] leading-none">{formatCurrencyShort(total)}</div>
@@ -131,7 +131,7 @@ export function AbaGeral({ ov, alertas, tv }: AbaProps & { ov: Overview; alertas
         </Painel>
       </div>
 
-      <div className={grid(tv, "grid min-h-0 gap-3 lg:grid-cols-2", "grid min-h-0 flex-1 grid-cols-2 gap-3")}>
+      <div className={grid(tv, "grid grid-cols-1 min-h-0 gap-3 lg:grid-cols-2", "grid min-h-0 flex-1 grid-cols-2 gap-3")}>
         <Painel className="min-h-0">
           <PainelHead icon={CalendarClock} titulo="Vencendo" sub="vigências nos próximos 120 dias"
             right={<Chip tom="warn">{vig.length}</Chip>} />
@@ -232,7 +232,7 @@ export function AbaParlamentaresView({ d, tv }: AbaProps & { d: AbaParlamentares
           sub={d.itens[0]?.nome} grande={tv} />
       </div>
 
-      <div className={grid(tv, "grid min-h-0 gap-3 lg:grid-cols-3", "grid min-h-0 flex-1 grid-cols-3 gap-3")}>
+      <div className={grid(tv, "grid grid-cols-1 min-h-0 gap-3 lg:grid-cols-3", "grid min-h-0 flex-1 grid-cols-3 gap-3")}>
         <Painel className="min-h-0">
           <PainelHead icon={Users} titulo="Quem mais destinou" sub="no período selecionado" />
           <div className="bi-scroll min-h-0 flex-1 overflow-y-auto pr-1">
@@ -247,7 +247,10 @@ export function AbaParlamentaresView({ d, tv }: AbaProps & { d: AbaParlamentares
           </div>
         </Painel>
 
-        <div className="col-span-2 grid min-h-0 gap-3 sm:grid-cols-2">
+        {/* lg: no celular a grade-mae tem UMA coluna, e um col-span-2 sem
+            breakpoint criava a segunda trilha — a grade ficava mais larga que
+            a tela e o app ganhava rolagem lateral. */}
+        <div className="grid grid-cols-1 min-h-0 gap-3 sm:grid-cols-2 lg:col-span-2">
           {top.map((p) => (
             <Painel key={p.nome_normalizado} className="min-h-0">
               <PainelHead
@@ -290,7 +293,7 @@ export function AbaTransfereGovView({ d, tv }: AbaProps & { d: AbaTransfereGov }
           sub={d.pac.total ? `${formatInt(d.pac.total)} no Novo PAC` : undefined} grande={tv} />
       </div>
 
-      <div className={grid(tv, "grid min-h-0 gap-3 lg:grid-cols-3", "grid min-h-0 flex-1 grid-cols-3 gap-3")}>
+      <div className={grid(tv, "grid grid-cols-1 min-h-0 gap-3 lg:grid-cols-3", "grid min-h-0 flex-1 grid-cols-3 gap-3")}>
         <Painel className="min-h-0">
           <PainelHead icon={Activity} titulo="Por situação" />
           <div className="bi-scroll min-h-0 flex-1 overflow-y-auto pr-1">
@@ -361,7 +364,7 @@ export function AbaEstaduaisView({ d, tv }: AbaProps & { d: AbaEstaduais }) {
           sub={formatCurrencyShort(e.valor_total)} grande={tv} />
       </div>
 
-      <div className={grid(tv, "grid min-h-0 gap-3 lg:grid-cols-3", "grid min-h-0 flex-1 grid-cols-3 gap-3")}>
+      <div className={grid(tv, "grid grid-cols-1 min-h-0 gap-3 lg:grid-cols-3", "grid min-h-0 flex-1 grid-cols-3 gap-3")}>
         <Painel className="min-h-0">
           <PainelHead icon={Activity} titulo="Convênios por situação" />
           <div className="bi-scroll min-h-0 flex-1 overflow-y-auto pr-1">
@@ -382,7 +385,7 @@ export function AbaEstaduaisView({ d, tv }: AbaProps & { d: AbaEstaduais }) {
         </Painel>
       </div>
 
-      <div className={grid(tv, "grid min-h-0 gap-3 lg:grid-cols-2", "grid min-h-0 flex-1 grid-cols-2 gap-3")}>
+      <div className={grid(tv, "grid grid-cols-1 min-h-0 gap-3 lg:grid-cols-2", "grid min-h-0 flex-1 grid-cols-2 gap-3")}>
         <Painel className="min-h-0">
           <PainelHead icon={Landmark} titulo="Maiores convênios" />
           {c.itens.length ? (
@@ -493,7 +496,9 @@ function ListaExigencias({ itens, tv }: { itens: CaucItemDetalhe[]; tv?: boolean
   );
 }
 
-export function AbaDocumentosView({ d, tv }: AbaProps & { d: AbaDocumentos }) {
+export function AbaDocumentosView({
+  d, tv, esfera,
+}: AbaProps & { d: AbaDocumentos; esfera?: "cauc" | "cagec" }) {
   const c = d.cauc;
   const pct = c.com_dados ? c.regulares / c.com_dados : 0;
   const primeiro = c.por_municipio[0];
@@ -543,7 +548,8 @@ export function AbaDocumentosView({ d, tv }: AbaProps & { d: AbaDocumentos }) {
             linhas) e o CAGEC 1. Com 3/1 e três subcolunas dentro do CAUC, tudo
             cabe na altura da tela; com 2/1 o bloco do SICONFI ficava cortado
             embaixo — e numa TV de parede ninguém rola. */}
-        <div className="grid gap-x-4 gap-y-3 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-x-4 gap-y-3 lg:grid-cols-4">
+          {esfera !== "cagec" && (
           <section className="lg:col-span-3">
             <EsferaHead
               titulo="CAUC — União"
@@ -563,7 +569,9 @@ export function AbaDocumentosView({ d, tv }: AbaProps & { d: AbaDocumentos }) {
               <Painel><Vazio>Sem dados de CAUC coletados.</Vazio></Painel>
             )}
           </section>
+          )}
 
+          {esfera !== "cauc" && (
           <section>
             <EsferaHead
               titulo="CAGEC — Minas Gerais"
@@ -586,6 +594,7 @@ export function AbaDocumentosView({ d, tv }: AbaProps & { d: AbaDocumentos }) {
               )}
             </Painel>
           </section>
+          )}
         </div>
       </div>
     </div>
@@ -610,7 +619,7 @@ export function AbaFnsView({ d, tv }: AbaProps & { d: AbaFns }) {
         <Metric icon={CalendarClock} tom="warn" label="A pagar" valor={formatCurrencyShort(t.valor_pagar)} grande={tv} />
       </div>
 
-      <div className={grid(tv, "grid min-h-0 gap-3 lg:grid-cols-3", "grid min-h-0 flex-1 grid-cols-3 gap-3")}>
+      <div className={grid(tv, "grid grid-cols-1 min-h-0 gap-3 lg:grid-cols-3", "grid min-h-0 flex-1 grid-cols-3 gap-3")}>
         <Painel>
           <PainelHead icon={CalendarClock} titulo="Por ano" />
           {d.por_ano.length ? (
@@ -630,7 +639,8 @@ export function AbaFnsView({ d, tv }: AbaProps & { d: AbaFns }) {
           )}
         </Painel>
 
-        <Painel className="col-span-2 min-h-0">
+        {/* lg: ver comentario acima — col-span sem breakpoint estoura no celular */}
+        <Painel className="min-h-0 lg:col-span-2">
           <PainelHead icon={Stethoscope} titulo="Propostas" sub="maior valor primeiro" />
           {d.itens.length ? (
             <ul className="bi-scroll flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto pr-1">
