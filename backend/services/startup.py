@@ -85,6 +85,9 @@ MIGRATION_FILES = [
     "add_scraper_municipio_coleta.sql",
     # Modo Tela do BI: filtro POR USUARIO + links publicos curtos e revogaveis
     "add_bi_tela.sql",
+    # CAGEC (regularidade estadual MG): tabela pronta, coleta pendente de
+    # credencial do SIGCON-MG. Ver routers/cagec.py.
+    "add_cagec.sql",
 ]
 
 

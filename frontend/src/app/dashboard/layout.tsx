@@ -124,7 +124,7 @@ const NAV_ITEMS: NavEntry[] = [
       { href: "/dashboard/transferegov-cnpj", label: "CNPJ" },
     ],
   },
-  { href: "/dashboard/cauc", label: "CAUC (Regularidade)", icon: ShieldCheck },
+  { href: "/dashboard/cauc", label: "CAUC / CAGEC", icon: ShieldCheck },
   { href: "/dashboard/acordofes", label: "Acordo FES (Divida Saude)", icon: HeartPulse },
   { href: "/dashboard/fns", label: "Fundo Nacional de Saude", icon: Target },
   { href: "/dashboard/simec", label: "SIMEC - PAR (MEC)", icon: Target },
