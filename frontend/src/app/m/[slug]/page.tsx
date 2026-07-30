@@ -14,18 +14,42 @@
 // O atalho na tela inicial abre já credenciado — sem pedir login em pé na rua.
 import { useEffect, useMemo, useState } from "react";
 import { use } from "react";
-import { Filter, RefreshCw, X, Check, WifiOff } from "lucide-react";
-import { ABAS, AbaId, CONSOLIDADO_URL } from "@/lib/tela";
+import { Filter, RefreshCw, X, Check, WifiOff, Sun, Moon } from "lucide-react";
+import { AbaId, CONSOLIDADO_URL } from "@/lib/tela";
 import { useFiltroMobile } from "@/lib/useFiltroMobile";
 import { useDadosAba } from "@/lib/useAbaBi";
 import { Municipio, getMunicipios } from "@/lib/bi";
 import { ConteudoAba, EsqueletoAba } from "@/components/bi/PainelIndicadores";
-import { EnteAtendido } from "@/components/bi/Marca";
+import { EnteAtendido, MarcaPactha } from "@/components/bi/Marca";
 import { InsightTicker } from "@/components/bi/InsightTicker";
 import { Painel, Vazio } from "@/components/bi/kit";
 import { rotuloPeriodo } from "@/components/bi/Filtros";
 
 const RECARGA_MS = 5 * 60_000;
+const CHAVE_TEMA = "pactha_m_tema";
+
+/** Abas do APP, diferentes das da TV de propósito:
+ *  - nome inteiro ("Parlamentares", não "Parlam."): abreviação num aparelho de
+ *    mão obriga a adivinhar o que é.
+ *  - CAUC e CAGEC viram DUAS abas. Na TV elas cabem lado a lado; num celular
+ *    não, e juntá-las sob "Documentos" escondia de que assunto se trata.
+ *  `dados` é a aba de DADOS que alimenta a tela (as duas de regularidade usam a
+ *  mesma consulta e mudam só a esfera exibida). */
+const ABAS_APP: Array<{
+  id: string;
+  label: string;
+  descricao: string;
+  dados: AbaId;
+  esfera?: "cauc" | "cagec";
+}> = [
+  { id: "geral", label: "Visão Geral", descricao: "O essencial do período", dados: "geral" },
+  { id: "parlamentares", label: "Parlamentares", descricao: "Emendas por autor e finalidade", dados: "parlamentares" },
+  { id: "transferegov", label: "TransfereGov", descricao: "Propostas e convênios federais", dados: "transferegov" },
+  { id: "estaduais", label: "Verbas Estaduais", descricao: "SIGCON-MG e emendas estaduais", dados: "estaduais" },
+  { id: "cauc", label: "CAUC", descricao: "Regularidade federal (Tesouro)", dados: "documentos", esfera: "cauc" },
+  { id: "cagec", label: "CAGEC", descricao: "Regularidade estadual (SIGCON-MG)", dados: "documentos", esfera: "cagec" },
+  { id: "fns", label: "Fundo Nacional de Saúde", descricao: "Propostas do FNS no período", dados: "fns" },
+];
 
 /** Anos oferecidos + atalhos. Mesma regra de mandato do painel e de Parlamentares. */
 function periodoOpcoes() {
@@ -50,7 +74,26 @@ export default function AppMobilePage({
 }) {
   const { slug } = use(params);
   const { filtros, setAnos, setScope, pronto, erro } = useFiltroMobile(slug);
-  const [aba, setAba] = useState<AbaId>("geral");
+  const [abaApp, setAbaApp] = useState("geral");
+  const atual = ABAS_APP.find((a) => a.id === abaApp) ?? ABAS_APP[0];
+  const aba = atual.dados;
+
+  // Tema do app. O painel e a TV tambem alternam; nao havia motivo para o
+  // celular ser o unico presoo no escuro — quem usa no sol quer o claro.
+  const [escuro, setEscuro] = useState(true);
+  useEffect(() => {
+    try {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setEscuro(localStorage.getItem(CHAVE_TEMA) !== "claro");
+    } catch { /* storage bloqueado: fica no escuro */ }
+  }, []);
+  const alternarTema = () => {
+    setEscuro((v) => {
+      const proximo = !v;
+      try { localStorage.setItem(CHAVE_TEMA, proximo ? "escuro" : "claro"); } catch {}
+      return proximo;
+    });
+  };
   const [filtroAberto, setFiltroAberto] = useState(false);
   const [municipios, setMunicipios] = useState<Municipio[]>([]);
   const { anos: ANOS, atalhos } = useMemo(() => periodoOpcoes(), []);
@@ -110,12 +153,10 @@ export default function AppMobilePage({
     );
   }
 
-  const abaAtual = ABAS.find((a) => a.id === aba)!;
-
   return (
     <div
       className="bi-skin flex min-h-screen flex-col"
-      data-bi-theme="dark"
+      data-bi-theme={escuro ? "dark" : "light"}
       style={{ background: "var(--bi-bg)" }}
     >
       {/* Cabeçalho fixo: quem é o ente + o período VIGENTE sempre à vista.
@@ -128,8 +169,22 @@ export default function AppMobilePage({
           paddingTop: "max(0.75rem, env(safe-area-inset-top))",
         }}
       >
+        {/* Marca do PACTHA ao CENTRO, como no painel e na TV: o app tambem e
+            o produto, e sem ela a tela nao se identifica. */}
+        <div className="flex items-center justify-center pb-1.5">
+          <MarcaPactha compacta />
+        </div>
         <div className="flex items-center gap-2">
           <EnteAtendido nome={nomeMunicipio} tamanho="medio" className="min-w-0 flex-1" />
+          <button
+            type="button"
+            onClick={alternarTema}
+            aria-label={escuro ? "Tema claro" : "Tema escuro"}
+            className="grid size-10 shrink-0 place-items-center rounded-full"
+            style={{ background: "var(--bi-surface)", border: "1px solid var(--bi-line)", color: "var(--bi-muted)" }}
+          >
+            {escuro ? <Sun className="size-4" /> : <Moon className="size-4" />}
+          </button>
           <button
             type="button"
             onClick={recarregar}
@@ -170,14 +225,14 @@ export default function AppMobilePage({
       {/* Conteúdo: uma coluna. Espaço extra embaixo p/ a barra de abas não cobrir. */}
       <main className="flex-1 px-4 pb-32 pt-3">
         <div className="mb-2">
-          <h1 className="bi-title text-[17px]">{abaAtual.label}</h1>
-          <p className="text-[11px]" style={{ color: "var(--bi-faint)" }}>{abaAtual.descricao}</p>
+          <h1 className="bi-title text-[17px]">{atual.label}</h1>
+          <p className="text-[11px]" style={{ color: "var(--bi-faint)" }}>{atual.descricao}</p>
         </div>
         {!dados ? (
           carregando ? <EsqueletoAba /> : <Painel><Vazio>Sem dados para este período.</Vazio></Painel>
         ) : (
-          <div key={aba} className="bi-pane-enter">
-            <ConteudoAba dados={dados} />
+          <div key={abaApp} className="bi-pane-enter">
+            <ConteudoAba dados={dados} esfera={atual.esfera} />
           </div>
         )}
       </main>
@@ -193,13 +248,13 @@ export default function AppMobilePage({
         }}
       >
         <div className="bi-scroll flex gap-1 overflow-x-auto px-2 py-2">
-          {ABAS.map((a) => {
-            const ativo = a.id === aba;
+          {ABAS_APP.map((a) => {
+            const ativo = a.id === abaApp;
             return (
               <button
                 key={a.id}
                 type="button"
-                onClick={() => setAba(a.id)}
+                onClick={() => setAbaApp(a.id)}
                 aria-current={ativo ? "page" : undefined}
                 className="shrink-0 rounded-xl px-3.5 py-2 text-[12px] font-semibold transition-colors"
                 style={{
@@ -208,7 +263,7 @@ export default function AppMobilePage({
                   minHeight: 44, // alvo de toque confortável
                 }}
               >
-                {a.curto}
+                {a.label}
               </button>
             );
           })}

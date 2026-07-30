@@ -443,8 +443,14 @@
    grid: os blocos tem alturas diferentes e aqui eles se acomodam sozinhos, sem
    buraco no fim da coluna. `break-inside-avoid` nos filhos impede um bloco de
    ser cortado no meio e continuar na coluna seguinte. */
+/* Colunas CSS. No CELULAR e sempre UMA: duas colunas de conteudo minimo, com
+   rotulos longos como "RREO - Relatorio Resumido de Execucao Orcamentaria",
+   somam mais que a largura do aparelho e criam rolagem lateral. */
 .bi-colunas-2 { column-count: 1; column-gap: 0.75rem; }
-.bi-colunas-3 { column-count: 2; column-gap: 0.75rem; }
+.bi-colunas-3 { column-count: 1; column-gap: 0.75rem; }
+@media (min-width: 640px) {
+  .bi-colunas-3 { column-count: 2; }
+}
 @media (min-width: 1024px) {
   .bi-colunas-2 { column-count: 2; }
   .bi-colunas-3 { column-count: 3; }
