@@ -25,6 +25,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import text
+from services.ia_texto import modelo_texto, params_raciocinio
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
@@ -444,14 +445,17 @@ async def _gerar_narrativa(dados: dict, kind: str, api_key: str) -> str:
         "ACENTUACAO CORRETA — o texto vai direto para a tela do gestor."
     )
     resp = await client.messages.create(
-        model=os.getenv("PACTHA_AI_MODEL_TEXTO", "claude-sonnet-5"),
+        model=modelo_texto(),
         max_tokens=600,
         # Sonnet 5 liga raciocinio adaptativo quando `thinking` e OMITIDO (o
         # Haiku nao ligava). Numa frase curta de painel isso so somaria latencia
         # e tokens, entao desligamos de proposito e usamos effort baixo: aqui o
         # modelo apenas REDIGE — os numeros ja vem calculados do backend.
-        thinking={"type": "disabled"},
-        output_config={"effort": "low"},
+        # Haiku 4.5 NAO aceita `effort` nem `thinking` (400 "does not support the
+        # effort parameter"). Como o modelo e trocavel por env, os parametros so
+        # vao quando o modelo os suporta — senao trocar para Haiku (mais barato)
+        # derrubaria a faixa do dashboard.
+        **params_raciocinio(),
         system=system,
         messages=[{"role": "user", "content": prompt}],
     )
@@ -666,14 +670,17 @@ async def _gerar_insights(fatos: dict, api_key: str) -> list[str]:
         "Responda APENAS um array JSON de 2 a 4 strings."
     )
     resp = await client.messages.create(
-        model=os.getenv("PACTHA_AI_MODEL_TEXTO", "claude-sonnet-5"),
+        model=modelo_texto(),
         max_tokens=500,
         # Sonnet 5 liga raciocinio adaptativo quando `thinking` e OMITIDO (o
         # Haiku nao ligava). Numa frase curta de painel isso so somaria latencia
         # e tokens, entao desligamos de proposito e usamos effort baixo: aqui o
         # modelo apenas REDIGE — os numeros ja vem calculados do backend.
-        thinking={"type": "disabled"},
-        output_config={"effort": "low"},
+        # Haiku 4.5 NAO aceita `effort` nem `thinking` (400 "does not support the
+        # effort parameter"). Como o modelo e trocavel por env, os parametros so
+        # vao quando o modelo os suporta — senao trocar para Haiku (mais barato)
+        # derrubaria a faixa do dashboard.
+        **params_raciocinio(),
         system=system,
         messages=[{"role": "user", "content": json.dumps(fatos, ensure_ascii=False)}],
     )
