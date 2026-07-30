@@ -649,7 +649,12 @@ async def _gerar_insights(fatos: dict, api_key: str) -> list[str]:
         "Cada aviso e uma frase UNICA de no maximo 140 caracteres, faz sentido "
         "sozinho (a TV mostra um de cada vez) e traz um numero ou um nome concreto. "
         "Priorize o que exige acao (prazo, pendencia) antes do que e so resultado. "
-        "Nao invente numeros. Responda APENAS um array JSON de 2 a 4 strings."
+        "Nao invente numeros. Nao invente ROTULOS: use apenas as descricoes que "
+        "aparecem nos dados e nunca atribua um valor a uma area, tema, programa, "
+        "orgao ou pessoa que nao esteja explicito ali (ex.: nao escreva 'para "
+        "educacao' ou 'para saude' se o dado nao disser a que se refere; nesse "
+        "caso diga apenas 'em repasses federais'). "
+        "Responda APENAS um array JSON de 2 a 4 strings."
     )
     resp = await client.messages.create(
         model="claude-haiku-4-5",
