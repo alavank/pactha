@@ -90,6 +90,8 @@ MIGRATION_FILES = [
     "add_cagec.sql",
     # Tipo do link publicado: TV de parede ('tela') ou app de celular ('mobile')
     "add_bi_tela_link_kind.sql",
+    # Historico da IA por usuario, retencao de 30 dias (expurgo automatico)
+    "add_ai_historico.sql",
 ]
 
 

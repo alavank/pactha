@@ -49,6 +49,16 @@ async def lifespan(app: FastAPI):
         print("[STARTUP] DB pool warmup OK", flush=True)
     except Exception as e:
         print(f"[STARTUP] DB pool warmup falhou: {e}", flush=True)
+    # Retencao do historico da IA: a tela promete "apagadas apos 30 dias", entao
+    # o expurgo roda no boot alem de rodar quando alguem abre o painel.
+    try:
+        from database import async_session
+        from routers.ai import _expurgar_antigas
+        async with async_session() as _s:
+            n = await _expurgar_antigas(_s, forcar=True)
+        print(f"[STARTUP] expurgo do historico da IA: {n} conversa(s)", flush=True)
+    except Exception as e:
+        print(f"[STARTUP] expurgo do historico da IA falhou: {e}", flush=True)
     yield
 
 

@@ -1044,6 +1044,9 @@ class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=4000)
     municipio_id: Optional[int] = None
     history: list[ChatMessage] = Field(default_factory=list)
+    # Conversa a continuar. E so uma sugestao do cliente: o servidor confere a
+    # posse e, se o id nao for do usuario, abre uma conversa nova.
+    conversa_id: Optional[int] = None
 
 
 class ChatResponse(BaseModel):
@@ -1401,6 +1404,130 @@ async def chat(
     )
 
 
+# --------------------------------------------------------------------------
+# Historico de conversas — por usuario, retencao de 30 dias
+# --------------------------------------------------------------------------
+RETENCAO_DIAS = 30
+_ultimo_expurgo: dict[str, Any] = {"em": None}
+
+
+async def _expurgar_antigas(db: AsyncSession, forcar: bool = False) -> int:
+    """Apaga DEFINITIVAMENTE conversas com mais de RETENCAO_DIAS.
+
+    Roda no boot e tambem de forma preguicosa quando alguem abre o painel — a
+    tela promete "apagadas apos 30 dias", entao a promessa nao pode depender de
+    a API ter reiniciado. Throttle de 1h por processo p/ nao repetir o DELETE a
+    cada clique."""
+    from datetime import datetime, timedelta, timezone
+    agora = datetime.now(timezone.utc)
+    if not forcar:
+        ant = _ultimo_expurgo.get("em")
+        if ant and (agora - ant) < timedelta(hours=1):
+            return 0
+    _ultimo_expurgo["em"] = agora
+    r = await db.execute(text(
+        "DELETE FROM ai_conversas "
+        "WHERE criado_em < NOW() - make_interval(days => :d) RETURNING id"
+    ), {"d": RETENCAO_DIAS})
+    n = len(r.fetchall())
+    await db.commit()
+    if n:
+        logger.info("Expurgo do historico da IA: %d conversa(s) com mais de %d dias",
+                    n, RETENCAO_DIAS)
+    return n
+
+
+async def _salvar_mensagem(db: AsyncSession, conversa_id: int, role: str,
+                           conteudo: str, tool_calls=None) -> None:
+    await db.execute(text(
+        "INSERT INTO ai_mensagens (conversa_id, role, conteudo, tool_calls) "
+        "VALUES (:c, :r, :t, CAST(:tc AS JSONB))"
+    ), {"c": conversa_id, "r": role, "t": conteudo,
+        "tc": json.dumps(tool_calls, ensure_ascii=False) if tool_calls else None})
+    await db.execute(text(
+        "UPDATE ai_conversas SET atualizado_em = NOW() WHERE id = :c"), {"c": conversa_id})
+    await db.commit()
+
+
+async def _abrir_conversa(db: AsyncSession, user_id: int, conversa_id: Optional[int],
+                          municipio_id: Optional[int], primeira_pergunta: str) -> int:
+    """Id da conversa a usar. Se veio um id, CONFIRMA que e do usuario — id de
+    outra pessoa e tratado como inexistente (abre uma nova), nunca como acesso
+    concedido."""
+    if conversa_id:
+        dono = (await db.execute(text(
+            "SELECT id FROM ai_conversas WHERE id = :i AND user_id = :u"),
+            {"i": conversa_id, "u": user_id})).first()
+        if dono:
+            return int(dono[0])
+    titulo = (primeira_pergunta or "Nova conversa").strip().replace("\n", " ")[:90]
+    novo = (await db.execute(text(
+        "INSERT INTO ai_conversas (user_id, municipio_id, titulo) "
+        "VALUES (:u, :m, :t) RETURNING id"),
+        {"u": user_id, "m": municipio_id, "t": titulo})).first()
+    await db.commit()
+    return int(novo[0])
+
+
+@router.get("/conversas")
+async def listar_conversas(
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """Conversas DO USUARIO LOGADO. Nao existe rota que devolva a de outro."""
+    ensure_tela(current, "ai")
+    await _expurgar_antigas(db)
+    rows = (await db.execute(text(
+        "SELECT id, titulo, atualizado_em, criado_em FROM ai_conversas "
+        "WHERE user_id = :u ORDER BY atualizado_em DESC LIMIT 100"
+    ), {"u": current.id})).fetchall()
+    return {
+        "retencao_dias": RETENCAO_DIAS,
+        "conversas": [
+            {"id": r[0], "titulo": r[1],
+             "atualizado_em": r[2].isoformat() if r[2] else None,
+             "criado_em": r[3].isoformat() if r[3] else None}
+            for r in rows
+        ],
+    }
+
+
+@router.get("/conversas/{conversa_id}")
+async def abrir_conversa(
+    conversa_id: int,
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    ensure_tela(current, "ai")
+    dono = (await db.execute(text(
+        "SELECT id FROM ai_conversas WHERE id = :i AND user_id = :u"),
+        {"i": conversa_id, "u": current.id})).first()
+    if not dono:
+        # 404 e nao 403 de proposito: quem nao e dono nem descobre que existe.
+        raise HTTPException(404, "Conversa nao encontrada.")
+    rows = (await db.execute(text(
+        "SELECT role, conteudo, tool_calls FROM ai_mensagens "
+        "WHERE conversa_id = :c ORDER BY id"), {"c": conversa_id})).fetchall()
+    return {"id": conversa_id, "mensagens": [
+        {"role": r[0], "content": r[1], "tool_calls": r[2]} for r in rows]}
+
+
+@router.delete("/conversas/{conversa_id}")
+async def apagar_conversa(
+    conversa_id: int,
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    ensure_tela(current, "ai")
+    r = await db.execute(text(
+        "DELETE FROM ai_conversas WHERE id = :i AND user_id = :u RETURNING id"),
+        {"i": conversa_id, "u": current.id})
+    if not r.first():
+        raise HTTPException(404, "Conversa nao encontrada.")
+    await db.commit()
+    return {"ok": True}
+
+
 @router.post("/chat/stream")
 async def chat_stream(
     body: ChatRequest,
@@ -1436,6 +1563,12 @@ async def chat_stream(
     messages.append({"role": "user", "content": body.message})
     escopo_txt = await _rotulos_escopo(db, escopo)
 
+    # Historico: a conversa e sempre do usuario do token. `conversa_id` vindo do
+    # cliente e apenas uma sugestao — _abrir_conversa confere a posse.
+    conversa_id = await _abrir_conversa(
+        db, current.id, body.conversa_id, body.municipio_id, body.message)
+    await _salvar_mensagem(db, conversa_id, "user", body.message)
+
     def _sse(evento: str, dado: dict) -> str:
         # json.dumps e obrigatorio: `data:` do SSE nao aceita quebra de linha
         # crua, e a resposta e markdown cheio de \n.
@@ -1445,6 +1578,15 @@ async def chat_stream(
         try:
             async for tipo, dado in _loop_eventos(client, db, messages, escopo,
                                                   escopo_txt, streaming=True):
+                if tipo == "fim":
+                    dado = {**dado, "conversa_id": conversa_id}
+                    try:
+                        await _salvar_mensagem(db, conversa_id, "assistant",
+                                               dado.get("reply", ""),
+                                               dado.get("tool_calls"))
+                    except Exception:
+                        # Nao derruba a resposta ja gerada por causa do historico.
+                        logger.exception("Falha salvando mensagem no historico")
                 yield _sse(tipo, dado)
         except HTTPException as e:
             yield _sse("erro", {"detail": str(e.detail)})

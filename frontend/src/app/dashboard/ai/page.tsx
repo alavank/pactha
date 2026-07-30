@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Send, Loader2, Sparkles, Wrench, User, Bot, Eraser, FileText, Square } from "lucide-react";
+import { Send, Loader2, Sparkles, Wrench, User, Bot, Eraser, Square, Printer,
+         History, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import api from "@/lib/api";
@@ -19,6 +20,13 @@ interface Message {
   content: string;
   tool_calls?: ToolCallLog[];
   usage?: Record<string, unknown>;
+}
+
+interface ConversaResumo {
+  id: number;
+  titulo: string;
+  atualizado_em: string | null;
+  criado_em: string | null;
 }
 
 // Sugestões propositalmente genéricas: não citam nome de parlamentar nem
@@ -42,12 +50,52 @@ export default function AiChatPage() {
   const [pdfIdx, setPdfIdx] = useState<number | null>(null);
   // Rotulo da consulta em andamento ("Consultando propostas do FNS...").
   const [etapa, setEtapa] = useState<string | null>(null);
+  // Histórico do usuário logado
+  const [conversas, setConversas] = useState<ConversaResumo[]>([]);
+  const [conversaId, setConversaId] = useState<number | null>(null);
+  const [historicoAberto, setHistoricoAberto] = useState(true);
+  const [retencaoDias, setRetencaoDias] = useState(30);
   const bottomRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
+
+  // ---- Histórico (somente do usuário logado, retido por 30 dias) ----
+  const carregarHistorico = useCallback(async () => {
+    try {
+      const r = await api.get<{ retencao_dias: number; conversas: ConversaResumo[] }>(
+        "/ai/conversas");
+      setConversas(r.data.conversas || []);
+      setRetencaoDias(r.data.retencao_dias ?? 30);
+    } catch {
+      /* histórico é acessório: falhar aqui não pode quebrar o chat */
+    }
+  }, []);
+
+  useEffect(() => { carregarHistorico(); }, [carregarHistorico]);
+
+  const abrirConversa = async (id: number) => {
+    try {
+      const r = await api.get<{ mensagens: Message[] }>(`/ai/conversas/${id}`);
+      setMessages(r.data.mensagens || []);
+      setConversaId(id);
+      setError(null);
+    } catch {
+      setError("Não foi possível abrir esta conversa.");
+    }
+  };
+
+  const apagarConversa = async (id: number) => {
+    try {
+      await api.delete(`/ai/conversas/${id}`);
+      setConversas((c) => c.filter((x) => x.id !== id));
+      if (conversaId === id) { setMessages([]); setConversaId(null); }
+    } catch {
+      setError("Não foi possível apagar esta conversa.");
+    }
+  };
 
   const enviar = useCallback(
     async (msg: string) => {
@@ -79,6 +127,7 @@ export default function AiChatPage() {
             message: msg.trim(),
             municipio_id: municipioId ? Number(municipioId) : null,
             history: messages.map((m) => ({ role: m.role, content: m.content })),
+            conversa_id: conversaId,
           }),
         });
         if (!res.ok || !res.body) {
@@ -130,6 +179,7 @@ export default function AiChatPage() {
             } else if (evento === "fim") {
               const tc = dado.tool_calls as ToolCallLog[] | undefined;
               const us = dado.usage as Record<string, unknown> | undefined;
+              if (typeof dado.conversa_id === "number") setConversaId(dado.conversa_id);
               // `reply` do servidor e a verdade final; o acumulado pode conter
               // texto de passos intermediarios.
               const textoFinal = String(dado.reply ?? "") || acumulado;
@@ -174,9 +224,10 @@ export default function AiChatPage() {
         abortRef.current = null;
         setEtapa(null);
         setLoading(false);
+        carregarHistorico();  // titulo/ordem do painel acompanham a conversa
       }
     },
-    [messages, loading, municipioId]
+    [messages, loading, municipioId, conversaId, carregarHistorico]
   );
 
   // Para a geracao (e para de gastar token) quando o usuario desiste.
@@ -193,20 +244,27 @@ export default function AiChatPage() {
   };
 
   // Exporta uma resposta da IA (markdown) em PDF. Usa a pergunta anterior como contexto.
-  const baixarPdf = async (msg: Message, idx: number) => {
+  // Gera um RELATÓRIO daquele resultado (não a transcrição da conversa): o
+  // assunto vem da pergunta, e as fontes vêm das consultas que a IA realmente
+  // fez, que viram a seção de procedência do documento.
+  const gerarRelatorio = async (msg: Message, idx: number) => {
     setPdfIdx(idx);
     try {
       const pergunta = idx > 0 && messages[idx - 1]?.role === "user" ? messages[idx - 1].content : "";
-      const titulo = pergunta ? pergunta.slice(0, 90) : "Relatório - IA PACTHA";
       const token = localStorage.getItem("pactha_token");
-      const res = await fetch(`${api.defaults.baseURL}/export-pdf/ai`, {
+      const res = await fetch(`${api.defaults.baseURL}/export-pdf/ai-relatorio`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         credentials: "include",
-        body: JSON.stringify({ titulo, pergunta, conteudo: msg.content }),
+        body: JSON.stringify({
+          assunto: pergunta || "Relatório da plataforma PACTHA",
+          conteudo: msg.content,
+          municipio_id: municipioId ? Number(municipioId) : null,
+          tools: (msg.tool_calls || []).map((t) => t.tool),
+        }),
       });
       if (!res.ok) throw new Error(String(res.status));
       const blob = await res.blob();
@@ -214,7 +272,7 @@ export default function AiChatPage() {
       window.open(url, "_blank");
       setTimeout(() => URL.revokeObjectURL(url), 60000);
     } catch {
-      setError("Não foi possível gerar o PDF. Tente novamente.");
+      setError("Não foi possível gerar o relatório. Tente novamente.");
     } finally {
       setPdfIdx(null);
     }
@@ -270,7 +328,8 @@ export default function AiChatPage() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-7rem)] max-w-5xl mx-auto">
+    <div className="flex gap-4 h-[calc(100vh-7rem)] max-w-7xl mx-auto">
+    <div className="flex flex-col flex-1 min-w-0">
       {/* Header */}
       <div className="flex items-center justify-between gap-2 pb-3 border-b">
         <div>
@@ -281,11 +340,20 @@ export default function AiChatPage() {
             Assistente que consulta o banco em tempo real e gera relatórios. Pergunte em português.
           </p>
         </div>
-        {messages.length > 0 && (
-          <Button variant="outline" size="sm" onClick={limpar}>
-            <Eraser className="size-4 mr-1" /> Limpar conversa
+        <div className="flex items-center gap-2">
+          {messages.length > 0 && (
+            <Button variant="outline" size="sm" onClick={limpar}>
+              <Eraser className="size-4 mr-1" /> Nova conversa
+            </Button>
+          )}
+          {/* Botao de mostrar/esconder o historico (fica a DIREITA porque a
+              esquerda ja e o menu do sistema). */}
+          <Button variant="outline" size="sm" onClick={() => setHistoricoAberto((v) => !v)}
+                  title={historicoAberto ? "Esconder histórico" : "Mostrar histórico"}>
+            <History className="size-4 mr-1" />
+            {historicoAberto ? <ChevronRight className="size-4" /> : <ChevronLeft className="size-4" />}
           </Button>
-        )}
+        </div>
       </div>
 
       {/* Mensagens */}
@@ -301,7 +369,7 @@ export default function AiChatPage() {
                   onClick={() => enviar(s)}
                   className="text-left text-sm bg-base-100 border rounded-lg px-3 py-2 hover:border-primary hover:bg-primary/10 transition"
                 >
-                  <FileText className="inline size-3.5 mr-1 text-primary" />
+                  <Sparkles className="inline size-3.5 mr-1 text-primary" />
                   {s}
                 </button>
               ))}
@@ -359,16 +427,26 @@ export default function AiChatPage() {
                   {Number(m.usage.cache_read) > 0 && ` · cache hit ${m.usage.cache_read}`}
                 </div>
               )}
-              {m.role === "assistant" && m.content && (
-                <button
-                  onClick={() => baixarPdf(m, i)}
-                  disabled={pdfIdx === i}
-                  title="Exportar esta resposta em PDF"
-                  className="mt-1.5 inline-flex items-center gap-1 text-xs text-primary hover:underline disabled:opacity-60"
-                >
-                  {pdfIdx === i ? <Loader2 className="size-3 animate-spin" /> : <FileText className="size-3" />}
-                  Baixar PDF
-                </button>
+              {/* Oferta de RELATORIO: aparece so quando a resposta terminou
+                  (nao durante o streaming) e gera um documento daquele
+                  resultado — nao a transcricao da conversa. */}
+              {m.role === "assistant" && m.content && !(loading && i === messages.length - 1) && (
+                <div className="mt-2 flex items-center gap-2 rounded-lg border border-base-300 bg-base-200/50 px-3 py-2">
+                  <span className="text-xs text-base-content/70">
+                    Quer um relatório em PDF deste resultado?
+                  </span>
+                  <button
+                    onClick={() => gerarRelatorio(m, i)}
+                    disabled={pdfIdx === i}
+                    title="Gerar relatório em PDF deste resultado"
+                    className="inline-flex items-center gap-1 rounded-md border border-primary/40 px-2 py-1 text-xs font-medium text-primary hover:bg-primary/10 disabled:opacity-60"
+                  >
+                    {pdfIdx === i
+                      ? <Loader2 className="size-3.5 animate-spin" />
+                      : <Printer className="size-3.5" />}
+                    {pdfIdx === i ? "Gerando..." : "Gerar relatório"}
+                  </button>
+                </div>
               )}
             </div>
             {m.role === "user" && (
@@ -420,6 +498,59 @@ export default function AiChatPage() {
           </Button>
         )}
       </form>
+    </div>
+
+    {/* Histórico — à DIREITA de propósito: a esquerda já é o menu do sistema,
+        e dois painéis do mesmo lado confundiriam a navegação. */}
+    {historicoAberto && (
+      <aside className="hidden lg:flex w-72 shrink-0 flex-col border-l border-base-300 pl-4">
+        <div className="pb-2 border-b">
+          <h2 className="text-sm font-semibold text-base-content flex items-center gap-1.5">
+            <History className="size-4 text-info" /> Minhas conversas
+          </h2>
+          {/* O aviso fica ACIMA da lista, como pedido. */}
+          <p className="mt-1.5 text-[11px] leading-snug text-base-content/60 bg-warning/10 border border-warning/30 rounded px-2 py-1.5">
+            As conversas ficam guardadas por no máximo <strong>{retencaoDias} dias</strong> e
+            depois são <strong>excluídas definitivamente</strong>. Só você vê o seu histórico.
+          </p>
+        </div>
+
+        <div className="flex-1 overflow-y-auto py-2 space-y-1">
+          {conversas.length === 0 && (
+            <p className="text-xs text-base-content/40 px-1 py-4 text-center">
+              Nenhuma conversa ainda.
+            </p>
+          )}
+          {conversas.map((c) => (
+            <div
+              key={c.id}
+              className={`group flex items-start gap-1 rounded-md px-2 py-1.5 text-xs cursor-pointer hover:bg-base-200 ${
+                conversaId === c.id ? "bg-base-200 border-l-2 border-info" : ""
+              }`}
+              onClick={() => abrirConversa(c.id)}
+            >
+              <div className="flex-1 min-w-0">
+                <div className="truncate text-base-content">{c.titulo}</div>
+                <div className="text-[10px] text-base-content/40">
+                  {c.atualizado_em
+                    ? new Date(c.atualizado_em).toLocaleDateString("pt-BR", {
+                        day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
+                      })
+                    : ""}
+                </div>
+              </div>
+              <button
+                onClick={(e) => { e.stopPropagation(); apagarConversa(c.id); }}
+                title="Apagar esta conversa"
+                className="opacity-0 group-hover:opacity-100 text-base-content/40 hover:text-error shrink-0"
+              >
+                <Trash2 className="size-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      </aside>
+    )}
     </div>
   );
 }
