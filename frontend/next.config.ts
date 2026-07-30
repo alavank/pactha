@@ -13,6 +13,15 @@ const nextConfig: NextConfig = {
       { source: "/api/:path*", destination: `${target}/api/:path*` },
     ];
   },
+  experimental: {
+    // O proxy de rewrite do Next corta em 30s por DEFAULT e responde
+    // `500 Internal Server Error` em TEXTO PURO (sem JSON, sem `detail`) --
+    // era isso que aparecia na tela como "HTTP 500" seco quando a IA passava
+    // de 30s. A API respondia 200; quem desistia era o proxy. Perguntas da IA
+    // que varrem varias fontes levam 25-50s legitimamente, entao o teto aqui
+    // tem que acompanhar o timeout do axios (180s em src/lib/api.ts).
+    proxyTimeout: 240_000,
+  },
 };
 
 export default nextConfig;

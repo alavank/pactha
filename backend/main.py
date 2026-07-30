@@ -92,6 +92,26 @@ app.add_middleware(
 )
 app.add_middleware(SecurityHeadersMiddleware)
 
+
+@app.exception_handler(Exception)
+async def _erro_nao_tratado(request, exc):
+    """Sem isto, uma excecao nao tratada vira `Internal Server Error` em TEXTO
+    PURO (default do Starlette). O frontend le `data.detail`, acha `undefined` e
+    mostra so "HTTP 500" — indistinguivel do 500 do proxy do Next, e sem pista
+    nenhuma pra quem for depurar. Aqui devolvemos JSON com detail + uma
+    referencia curta que tambem vai pro log da API."""
+    import logging as _logging
+    import uuid as _uuid
+    from fastapi.responses import JSONResponse
+    ref = _uuid.uuid4().hex[:8]
+    _logging.getLogger("pactha").exception(
+        "Erro nao tratado [%s] em %s %s", ref, request.method, request.url.path)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Erro interno ({type(exc).__name__}). Referencia: {ref}"},
+    )
+
+
 app.include_router(auth.router)
 app.include_router(municipios.router)
 app.include_router(convenios.router)
