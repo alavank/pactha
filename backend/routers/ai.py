@@ -369,6 +369,32 @@ def _aplicar_escopo(nome_tool: str, inp: dict, escopo: list[int]) -> dict:
     return limpo
 
 
+async def _resumo_por_situacao(db: AsyncSession, tabela: str, where: list[str],
+                               params: dict, col_valor: str, col_situacao: str) -> str:
+    """Agregado calculado NO BANCO, sobre TODAS as linhas que casam com o filtro
+    (nao so as que couberam no LIMIT).
+
+    Existe porque o modelo erra contagem: pedindo a lista completa de 48
+    propostas FNS ele respondeu "Pago 27 / Empenhado 19" quando o banco diz
+    "Pago 33 / Empenhado 13". Somar e contar e trabalho de SQL — o modelo so
+    deve citar. Entregamos pronto para ele nao ter o que calcular."""
+    filtro = " AND ".join(where)
+    sql = (f"SELECT {col_situacao}, count(*), COALESCE(SUM({col_valor}), 0) "
+           f"FROM {tabela} WHERE {filtro} GROUP BY {col_situacao} ORDER BY 2 DESC")
+    linhas = (await db.execute(text(sql), params)).fetchall()
+    if not linhas:
+        return "Nenhum registro."
+    n = sum(int(r[1]) for r in linhas)
+    v = sum(float(r[2] or 0) for r in linhas)
+    partes = [f"{(r[0] or 'sem situacao')}: {int(r[1])} ({_fmt_money(float(r[2] or 0))})"
+              for r in linhas]
+    return (
+        "RESUMO CALCULADO NO BANCO — use EXATAMENTE estes numeros e NUNCA conte a lista a mao:\n"
+        f"  Total: {n} registro(s) | {_fmt_money(v)}\n"
+        f"  Por situacao: {' | '.join(partes)}"
+    )
+
+
 def _ids_do_escopo(inp: dict) -> list[int]:
     """Escopo efetivo de uma ferramenta em lote. Nunca devolve lista vazia sem querer:
     lista vazia significa 'nenhum municipio permitido' e a query nao retorna nada."""
@@ -603,7 +629,11 @@ async def _tool_query_voluntarias(db: AsyncSession, inp: dict) -> str:
     escopo = f"municipio_id={mun_id}" if mun_id else f"escopo municipio_id in {_ids_do_escopo(inp)}"
     if not rows:
         return f"Nenhuma proposta SICONV encontrada ({escopo}, categoria={categoria or 'todas'})."
-    out = [f"{len(rows)} proposta(s) SICONV ({escopo}, categoria={categoria or 'todas'}):"]
+    resumo = await _resumo_por_situacao(
+        db, "transferegov_propostas v", where, params,
+        "COALESCE(v.valor_global, v.valor_repasse, 0)", "v.situacao")
+    out = [f"SICONV ({escopo}, categoria={categoria or 'todas'})", resumo,
+           f"Listando {len(rows)} registro(s):"]
     for row in rows:
         empenhado = (row[13] or "").strip()
         empenhado = {"sim": "Sim", "não": "Não", "nao": "Não"}.get(empenhado.lower(), empenhado)
@@ -870,8 +900,9 @@ async def _tool_query_fns(db: AsyncSession, inp: dict) -> str:
     rows = (await db.execute(text(sql), params)).fetchall()
     if not rows:
         return "Nenhuma proposta FNS encontrada para este municipio."
-    total = sum(float(r[3] or 0) for r in rows)
-    out = [f"{len(rows)} PROPOSTA(s) FNS (saude/Min. Saude), total {_fmt_money(total)}:"]
+    resumo = await _resumo_por_situacao(
+        db, "convenios_estadual", where, params, "valor_concedente", "situacao")
+    out = [resumo, f"Listando {len(rows)} registro(s):"]
     for r in rows:
         parl = r[7] or r[8] or r[9] or ""
         nprop = r[6] or r[0]
