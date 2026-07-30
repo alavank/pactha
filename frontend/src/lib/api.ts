@@ -14,11 +14,24 @@ function getCsrfToken(): string | null {
   return m ? decodeURIComponent(m[1]) : null;
 }
 
-/** Telas que rodam com credencial de QUIOSQUE (TV / link publico). */
+/** Telas que rodam com credencial de QUIOSQUE (sem login de usuario):
+ *  /tela  = janela do Modo Tela aberta pelo painel
+ *  /t/*   = link publico da TV
+ *  /m/*   = app de celular (PWA)
+ *
+ *  MANTER SINCRONIZADO com as rotas de quiosque. Esquecer uma nao da erro de
+ *  compilacao: a tela simplesmente nao manda o Bearer, toma 401 e o interceptor
+ *  abaixo a joga no /login — foi o que aconteceu com /m/ quando o app mobile
+ *  nasceu. */
 function ehSuperficieDeQuiosque(): boolean {
   if (typeof window === "undefined") return false;
   const p = window.location.pathname;
-  return p === "/tela" || p.startsWith("/tela/") || p.startsWith("/t/");
+  return (
+    p === "/tela" ||
+    p.startsWith("/tela/") ||
+    p.startsWith("/t/") ||
+    p.startsWith("/m/")
+  );
 }
 
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {

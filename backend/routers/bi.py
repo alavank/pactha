@@ -748,6 +748,14 @@ class FiltroTelaIn(BaseModel):
 class TelaLinkIn(BaseModel):
     nome: Optional[str] = None
     dias: int = 365
+    # 'tela' = TV de parede (segue o filtro do dono em tempo real)
+    # 'mobile' = app de celular (filtro PROPRIO no aparelho)
+    kind: str = "tela"
+
+
+def _caminho_link(slug: str, kind: str) -> str:
+    """Rota da superficie. Curta nas duas porque o link e ditado/colado a mao."""
+    return f"/m/{slug}" if kind == "mobile" else f"/t/{slug}"
 
 
 def _anos_csv(anos: list[int]) -> str:
@@ -843,6 +851,7 @@ async def criar_tela_link(
     """Gera um link publico CURTO para a TV. Permissao propria (`bi_link`): quem
     pode ver o Modo Tela nao necessariamente pode publicar dado para fora."""
     ensure_tela(current, "bi_link")
+    kind = "mobile" if (body.kind or "tela").lower() == "mobile" else "tela"
     dias = max(1, min(int(body.dias or 365), 3650))
     slug = secrets.token_urlsafe(9)[:12]  # 12 chars, ~72 bits: curto e nao chutavel
     uid = await _ensure_kiosk_user(db, current, slug)
@@ -852,12 +861,12 @@ async def criar_tela_link(
     # SQLAlchemy, e nao ha ganho nenhum em arriscar isso no driver.
     expira = datetime.now(timezone.utc) + timedelta(days=dias)
     await db.execute(text(
-        "INSERT INTO bi_tela_links (slug, owner_id, kiosk_user_id, municipio_id, token, nome, expira_em) "
-        "VALUES (:s, :o, :k, NULL, :t, :n, :e)"
+        "INSERT INTO bi_tela_links (slug, owner_id, kiosk_user_id, municipio_id, token, nome, expira_em, kind) "
+        "VALUES (:s, :o, :k, NULL, :t, :n, :e, :kind)"
     ), {"s": slug, "o": current.id, "k": uid, "t": token,
-        "n": (body.nome or None), "e": expira})
+        "n": (body.nome or None), "e": expira, "kind": kind})
     await db.commit()
-    return {"slug": slug, "caminho": f"/t/{slug}", "dias": dias}
+    return {"slug": slug, "caminho": _caminho_link(slug, kind), "kind": kind, "dias": dias}
 
 
 @router.get("/tela-links")
@@ -867,11 +876,12 @@ async def listar_tela_links(
 ):
     """Links do PROPRIO usuario — ninguem lista nem revoga link alheio."""
     rows = (await db.execute(text(
-        "SELECT slug, nome, criado_em, expira_em, revogado, ultimo_acesso "
+        "SELECT slug, nome, criado_em, expira_em, revogado, ultimo_acesso, kind "
         "FROM bi_tela_links WHERE owner_id = :u ORDER BY criado_em DESC LIMIT 50"
     ), {"u": current.id})).fetchall()
     return [{
-        "slug": r[0], "caminho": f"/t/{r[0]}", "nome": r[1],
+        "slug": r[0], "caminho": _caminho_link(r[0], r[6] or "tela"),
+        "kind": r[6] or "tela", "nome": r[1],
         "criado_em": r[2].isoformat() if r[2] else None,
         "expira_em": r[3].isoformat() if r[3] else None,
         "revogado": r[4],
@@ -911,7 +921,7 @@ async def resolver_tela_link(slug: str, db: AsyncSession = Depends(get_db)):
     o BroadcastChannel nunca chegaria."""
     row = (await db.execute(text(
         "SELECT l.token, l.owner_id, l.municipio_id, l.revogado, l.expira_em, "
-        "       f.scope, f.anos, f.aba "
+        "       f.scope, f.anos, f.aba, l.kind "
         "FROM bi_tela_links l "
         "LEFT JOIN bi_tela_filtros f ON f.user_id = l.owner_id "
         "WHERE l.slug = :s"
@@ -938,6 +948,9 @@ async def resolver_tela_link(slug: str, db: AsyncSession = Depends(get_db)):
         "scope": scope,
         "anos": _csv_anos(row[6]),
         "aba": row[7],
+        # 'mobile' usa isto como SEMENTE e depois manda em si; 'tela' segue o
+        # dono a cada poll. Quem decide e a superficie, nao o servidor.
+        "kind": row[8] or "tela",
     }
 
 
