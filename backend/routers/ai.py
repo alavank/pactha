@@ -4,13 +4,21 @@ Endpoint:
   POST /api/ai/chat - recebe pergunta + municipio_id + historico, devolve resposta
 
 Implementacao:
-  - Claude Opus 4.8 com adaptive thinking
-  - Prompt caching no system + tools
+  - Claude Sonnet 5 com adaptive thinking (modelo/effort configuraveis por env)
+  - Prompt caching no bloco estatico (tools + system base)
   - Tool use loop manual (Claude pede ferramenta -> backend executa SQL -> repete)
-  - Ferramentas cobrem todas as fontes: SIGCON, Voluntarias/Geral/Rejeitadas,
-    SIMEC PAR, Emendas Estaduais, summary do municipio
+  - RAG estruturado: a "recuperacao" e feita por ferramentas que rodam SQL real
+    no banco do PACTHA. Todo numero da resposta vem de uma linha do banco, nunca
+    de conhecimento do modelo.
 
-A chave da API fica em env var ANTHROPIC_API_KEY (Railway secret, nao no git).
+ISOLAMENTO POR CLIENTE/MUNICIPIO (critico):
+  O escopo NAO e escolhido pelo modelo. Ele e resolvido no servidor a partir do
+  usuario autenticado (`allowed_municipio_ids`) + o municipio selecionado na UI,
+  e aplicado em `_aplicar_escopo()` no despacho de TODA ferramenta. Se o modelo
+  pedir um municipio fora do escopo, o valor e substituido/descartado antes do
+  SQL. Prompt nao e barreira de seguranca; este choke point e.
+
+A chave da API fica em env var ANTHROPIC_API_KEY (secret do Coolify, nao no git).
 """
 from __future__ import annotations
 import json
@@ -21,7 +29,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, text, func
+from sqlalchemy import select, text, func, or_ as _or
 from database import get_db
 from models import ConvenioEstadual, Municipio
 from services.auth import get_current_user, ensure_municipio_access, ensure_tela
@@ -35,20 +43,43 @@ router = APIRouter(prefix="/api/ai", tags=["ai"])
 _VOL_LIKE = "%enviado para an%lise%"
 _REJ_LIKE = "%rejeitad%"
 
-MODEL = "claude-opus-4-8"
+MODEL = os.getenv("PACTHA_AI_MODEL", "claude-sonnet-5")
+# low | medium | high | xhigh | max  — controla profundidade de raciocinio/latencia.
+AI_EFFORT = os.getenv("PACTHA_AI_EFFORT", "high")
 
-SYSTEM_PROMPT = """Voce eh o assistente IA da PACTHA, plataforma da Freitas Consultoria que monitora
-convenios federais e estaduais de 6 municipios de Minas Gerais. Voce ajuda os
-consultores e gestores municipais a responderem perguntas e gerarem relatorios
-sobre os lancamentos, valores, vigencias, parlamentares e situacoes.
+SYSTEM_PROMPT = """Voce eh o assistente IA da plataforma PACTHA, que monitora convenios,
+emendas e transferencias federais e estaduais de municipios brasileiros. Voce ajuda
+gestores e consultores a responderem perguntas e gerarem relatorios sobre lancamentos,
+valores, vigencias, parlamentares e situacoes.
 
-REGRAS DE OURO:
-1. SEMPRE use as ferramentas disponiveis para obter dados. NUNCA invente numeros, datas, nomes ou valores.
-2. Se a pergunta for ampla, faca multiplas consultas com ferramentas diferentes.
-3. Apresente resultados em portugues, formatados em markdown quando ajudar (tabelas, listas).
-4. Valores em R$ no formato brasileiro: R$ 1.234.567,89.
-5. Datas em dd/mm/yyyy.
-6. Se nao tiver dado suficiente, diga claramente o que falta em vez de inventar.
+REGRA ZERO - ESCOPO (inviolavel):
+- Voce so enxerga os dados do escopo declarado no bloco ESCOPO ATUAL desta conversa.
+- NUNCA afirme, sugira ou especule nada sobre municipios fora desse escopo, nem sobre
+  quantos municipios existem na plataforma. Voce nao tem essa informacao.
+- Se perguntarem sobre municipio fora do escopo, responda que voce nao tem acesso aos
+  dados dele nesta conta - sem inventar nomes, numeros ou hipoteses.
+
+REGRAS DE OURO (anti-alucinacao):
+1. SEMPRE use as ferramentas para obter dados. NUNCA invente numeros, datas, nomes,
+   parlamentares, orgaos ou valores. Voce nao tem conhecimento proprio sobre este
+   municipio: tudo o que voce sabe veio das ferramentas nesta conversa.
+2. Nunca extrapole alem das linhas retornadas. Nao some, projete, estime ou complete
+   dados que a ferramenta nao devolveu. Se precisar de um total que nao veio pronto,
+   some apenas o que foi listado e diga que o total se refere aos registros listados.
+3. Se a ferramenta nao retornar nada, a resposta correta e "nao ha registro de X na
+   base do PACTHA para este municipio" - nunca preencha com suposicao, nem atribua o
+   vazio a "problema de configuracao/carga" (voce nao tem como saber isso).
+4. Diga de qual fonte veio cada bloco de numeros (SIGCON-MG, TransfereGov/SICONV,
+   SIMEC PAR, Emendas Estaduais, FNS, Plano de Acao/RP9).
+5. Se o resultado vier truncado por limite, avise que a lista foi limitada.
+6. Se a pergunta for ampla, faca multiplas consultas com ferramentas diferentes antes
+   de responder.
+7. Nao responda com conhecimento geral do mundo (noticias, politica, legislacao) como
+   se fosse dado do PACTHA. Se a pergunta nao puder ser respondida com os dados da
+   plataforma, diga isso claramente.
+8. Apresente resultados em portugues, em markdown (tabelas, listas).
+9. Valores em R$ no formato brasileiro: R$ 1.234.567,89. Datas em dd/mm/yyyy.
+10. Se nao tiver dado suficiente, diga exatamente o que falta em vez de inventar.
 
 FONTES DE DADOS:
 - **SIGCON-MG (Estadual)**: convenios celebrados com Estado de MG via SEINFRA, SEGOV,
@@ -62,10 +93,9 @@ FONTES DE DADOS:
   Use `query_voluntarias`.
   * **Situacao de Contratacao** (Normal / Clausula Suspensiva / Liminar Judicial) e um
     campo FEDERAL das Voluntarias. Para "quais estao em clausula suspensiva/liminar",
-    chame `query_voluntarias` com `situacao_contratacao` e SEM `municipio_id` (busca
-    os 6 de uma vez, 1 chamada so). A resposta ja traz Empenhado (Sim/Nao) e, na
-    clausula, o Motivo + Data prevista para resolucao. NUNCA use query_situacoes_sigcon
-    para isso (aquilo e estadual e nao tem clausula suspensiva).
+    chame `query_voluntarias` com `situacao_contratacao`. A resposta ja traz Empenhado
+    (Sim/Nao) e, na clausula, o Motivo + Data prevista para resolucao. NUNCA use
+    query_situacoes_sigcon para isso (aquilo e estadual e nao tem clausula suspensiva).
 - **SIMEC PAR (MEC)**: liberacoes federais de PNAE, PNATE, QUOTA Salario-Educacao,
   PDDE. Tambem tem sintese do diagnostico do PAR por dimensao.
   Use `query_simec_liberacoes` ou `query_simec_dimensoes`.
@@ -114,7 +144,7 @@ FORMATO DA RESPOSTA (importante para a UI renderizar bem):
 TOOLS = [
     {
         "name": "list_municipios",
-        "description": "Lista os 6 municipios atendidos pela PACTHA com ID e nome (use o ID nas outras ferramentas).",
+        "description": "Lista os municipios do SEU ESCOPO com ID e nome (use o ID nas outras ferramentas). Esta e a unica lista de municipios que existe para voce - nao ha outros.",
         "input_schema": {"type": "object", "properties": {}, "required": []},
     },
     {
@@ -122,7 +152,7 @@ TOOLS = [
         "description": "Resumo consolidado do municipio: contagem de convenios SIGCON, total de Voluntarias, valor total estadual e federal, alertas de vigencia (60d, 120d) e prestacao de contas (vencidos +90d) ja separados estadual/federal.",
         "input_schema": {
             "type": "object",
-            "properties": {"municipio_id": {"type": "integer", "description": "ID do municipio (use list_municipios para descobrir)"}},
+            "properties": {"municipio_id": {"type": "integer", "description": "ID do municipio do seu escopo (use list_municipios para descobrir)"}},
             "required": ["municipio_id"],
         },
     },
@@ -154,11 +184,11 @@ TOOLS = [
     },
     {
         "name": "query_voluntarias",
-        "description": "Busca propostas/convenios SICONV (FEDERAL) das Voluntarias. municipio_id e OPCIONAL — sem ele busca nos 6 municipios de uma vez (ideal p/ 'quais em clausula suspensiva'). Categorias: geral (em execucao/aprovados/prestacao), voluntarias (enviado p/ analise), rejeitadas. Retorna orgao, situacao, valores, vigencia, parlamentar, Empenhado (Sim/Nao) e, quando aplicavel, Situacao de Contratacao + Motivo/Data da Clausula Suspensiva. Use situacao_contratacao p/ filtrar 'Clausula Suspensiva' ou 'Liminar Judicial' (isso e FEDERAL — NAO use query_situacoes_sigcon).",
+        "description": "Busca propostas/convenios SICONV (FEDERAL) das Voluntarias. municipio_id e OPCIONAL — sem ele busca em TODO O SEU ESCOPO de uma vez (ideal p/ 'quais em clausula suspensiva'). Categorias: geral (em execucao/aprovados/prestacao), voluntarias (enviado p/ analise), rejeitadas. Retorna orgao, situacao, valores, vigencia, parlamentar, Empenhado (Sim/Nao) e, quando aplicavel, Situacao de Contratacao + Motivo/Data da Clausula Suspensiva. Use situacao_contratacao p/ filtrar 'Clausula Suspensiva' ou 'Liminar Judicial' (isso e FEDERAL — NAO use query_situacoes_sigcon).",
         "input_schema": {
             "type": "object",
             "properties": {
-                "municipio_id": {"type": "integer", "description": "Opcional. Sem ele, busca nos 6 municipios."},
+                "municipio_id": {"type": "integer", "description": "Opcional. Sem ele, busca em todo o seu escopo."},
                 "categoria": {"type": "string", "enum": ["geral", "voluntarias", "rejeitadas"], "description": "Categoria (omite para todas)"},
                 "situacao_contratacao": {"type": "string", "description": "Filtra a situacao de contratacao (ex: 'Clausula Suspensiva', 'Liminar Judicial', 'Normal'). Busca parcial."},
                 "search": {"type": "string", "description": "Busca em n° proposta ou proponente"},
@@ -170,12 +200,12 @@ TOOLS = [
     },
     {
         "name": "search_by_parlamentar",
-        "description": "Busca UNIFICADA por nome de parlamentar em TODAS as fontes: convenios SIGCON-MG (estaduais, campo responsaveis), propostas SICONV (federais, campo parlamentar), emendas estaduais (nome_responsavel). Use quando o usuario pede 'tudo do deputado X' ou 'convenios indicados por Y'. Retorna agrupado por fonte.",
+        "description": "Busca UNIFICADA por nome de parlamentar em TODAS as fontes: convenios SIGCON-MG (estaduais, campo responsaveis), propostas SICONV (federais, campo parlamentar), emendas estaduais (nome_responsavel). Use quando o usuario pede 'tudo do deputado X' ou 'convenios indicados por Y'. Retorna agrupado por fonte, sempre limitado ao seu escopo.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "nome": {"type": "string", "description": "Nome ou parte do nome do parlamentar (ex: 'AVELAR', 'EDUARDO AZEVEDO'). Match case-insensitive parcial."},
-                "municipio_id": {"type": "integer", "description": "Opcional: filtra um municipio. Sem isso, busca nos 6 municipios."},
+                "municipio_id": {"type": "integer", "description": "Opcional: filtra um municipio. Sem isso, busca em todo o seu escopo."},
                 "limit": {"type": "integer", "description": "Max resultados por fonte (default 50)"},
             },
             "required": ["nome"],
@@ -270,12 +300,85 @@ def _fmt_dt(d) -> str:
 
 
 # --------------------------------------------------------------------------
+# Escopo (isolamento por cliente/municipio) — imposto pelo SERVIDOR
+# --------------------------------------------------------------------------
+# Ferramentas que exigem um municipio especifico (nao sabem operar em lote).
+_TOOLS_REQ_MUN = {
+    "municipio_summary", "query_convenios_sigcon", "query_situacoes_sigcon",
+    "query_simec_liberacoes", "query_simec_dimensoes", "query_emendas_estaduais",
+    "query_fns", "query_plano_acao",
+}
+
+
+async def resolver_escopo(db: AsyncSession, user, municipio_id=None) -> list[int]:
+    """IDs de municipio que ESTA conversa pode enxergar.
+
+    Regra: parte do que o usuario tem direito (`allowed_municipio_ids`; None = admin,
+    todos os ativos) e, se a UI mandou um municipio, estreita para ele. O modelo nunca
+    participa dessa decisao."""
+    permitidos = getattr(user, "allowed_municipio_ids", None)
+    if permitidos is None:
+        rows = await db.execute(text("SELECT id FROM municipios WHERE active = true ORDER BY id"))
+        escopo = [int(r[0]) for r in rows.fetchall()]
+    else:
+        escopo = sorted(int(x) for x in permitidos)
+    if municipio_id is not None:
+        try:
+            mid = int(municipio_id)
+        except (TypeError, ValueError):
+            mid = None
+        if mid is not None and mid in escopo:
+            return [mid]
+    return escopo
+
+
+def _aplicar_escopo(nome_tool: str, inp: dict, escopo: list[int]) -> dict:
+    """Reescreve o input da ferramenta para caber no escopo, ANTES de virar SQL.
+
+    - municipio_id pedido pelo modelo so passa se estiver no escopo;
+    - se o modelo omitir e o escopo tiver 1 municipio, injetamos ele;
+    - `_escopo_ids` vai sempre junto, para as ferramentas que rodam em lote."""
+    limpo = dict(inp or {})
+    pedido = limpo.get("municipio_id")
+    if pedido is not None:
+        try:
+            pedido = int(pedido)
+        except (TypeError, ValueError):
+            pedido = None
+    if pedido is not None and pedido in escopo:
+        limpo["municipio_id"] = pedido
+    elif len(escopo) == 1:
+        limpo["municipio_id"] = escopo[0]
+    else:
+        limpo.pop("municipio_id", None)
+    limpo["_escopo_ids"] = list(escopo)
+    return limpo
+
+
+def _ids_do_escopo(inp: dict) -> list[int]:
+    """Escopo efetivo de uma ferramenta em lote. Nunca devolve lista vazia sem querer:
+    lista vazia significa 'nenhum municipio permitido' e a query nao retorna nada."""
+    return [int(x) for x in (inp.get("_escopo_ids") or [])]
+
+
+# --------------------------------------------------------------------------
 # Tool implementations
 # --------------------------------------------------------------------------
-async def _tool_list_municipios(db: AsyncSession, _input: dict) -> str:
-    r = await db.execute(text("SELECT id, nome, uf FROM municipios WHERE active = true ORDER BY nome"))
+async def _tool_list_municipios(db: AsyncSession, inp: dict) -> str:
+    ids = _ids_do_escopo(inp)
+    if not ids:
+        return "Nenhum municipio disponivel no seu escopo."
+    r = await db.execute(
+        text("SELECT id, nome, uf FROM municipios WHERE active = true AND id = ANY(:ids) ORDER BY nome"),
+        {"ids": ids},
+    )
     rows = r.fetchall()
-    return "Municipios atendidos:\n" + "\n".join(f"- id={row[0]}  {row[1]}/{row[2]}" for row in rows)
+    if not rows:
+        return "Nenhum municipio disponivel no seu escopo."
+    return (
+        f"Municipios do seu escopo ({len(rows)}) — esta e a lista completa, nao existem outros:\n"
+        + "\n".join(f"- id={row[0]}  {row[1]}/{row[2]}" for row in rows)
+    )
 
 
 async def _tool_municipio_summary(db: AsyncSession, inp: dict) -> str:
@@ -285,22 +388,34 @@ async def _tool_municipio_summary(db: AsyncSession, inp: dict) -> str:
     mun = (await db.execute(select(Municipio).where(Municipio.id == mun_id))).scalar_one_or_none()
     if not mun:
         return f"Erro: municipio_id={mun_id} nao encontrado."
+    # SIGCON estadual NAO inclui registros do FNS (saude) — eles moram na mesma
+    # tabela mas sao PROPOSTAS FNS, contadas em bloco proprio mais abaixo.
+    # Sem este filtro o resumo rotulava proposta FNS como "convenio estadual".
+    _nao_fns = _or(ConvenioEstadual.fonte.is_(None), ~ConvenioEstadual.fonte.ilike("%FNS%"))
     est_count = (await db.execute(select(func.count()).select_from(ConvenioEstadual)
-                                  .where(ConvenioEstadual.municipio_id == mun_id))).scalar()
+                                  .where(ConvenioEstadual.municipio_id == mun_id)
+                                  .where(_nao_fns))).scalar()
     est_valor = (await db.execute(select(func.coalesce(func.sum(ConvenioEstadual.valor_total), 0))
-                                  .where(ConvenioEstadual.municipio_id == mun_id))).scalar()
+                                  .where(ConvenioEstadual.municipio_id == mun_id)
+                                  .where(_nao_fns))).scalar()
+    fns_count = (await db.execute(select(func.count()).select_from(ConvenioEstadual)
+                                  .where(ConvenioEstadual.municipio_id == mun_id)
+                                  .where(ConvenioEstadual.fonte.ilike("%FNS%")))).scalar()
+    fns_valor = (await db.execute(select(func.coalesce(func.sum(ConvenioEstadual.valor_total), 0))
+                                  .where(ConvenioEstadual.municipio_id == mun_id)
+                                  .where(ConvenioEstadual.fonte.ilike("%FNS%")))).scalar()
     hoje = date.today()
     l120 = hoje + timedelta(days=120); l60 = hoje + timedelta(days=60); v90 = hoje - timedelta(days=90)
     a120 = (await db.execute(select(func.count()).select_from(ConvenioEstadual)
-        .where(ConvenioEstadual.municipio_id == mun_id)
+        .where(ConvenioEstadual.municipio_id == mun_id).where(_nao_fns)
         .where(ConvenioEstadual.dt_vigencia_atual <= l120)
         .where(ConvenioEstadual.dt_vigencia_atual >= hoje))).scalar()
     a60 = (await db.execute(select(func.count()).select_from(ConvenioEstadual)
-        .where(ConvenioEstadual.municipio_id == mun_id)
+        .where(ConvenioEstadual.municipio_id == mun_id).where(_nao_fns)
         .where(ConvenioEstadual.dt_vigencia_atual <= l60)
         .where(ConvenioEstadual.dt_vigencia_atual >= hoje))).scalar()
     prest = (await db.execute(select(func.count()).select_from(ConvenioEstadual)
-        .where(ConvenioEstadual.municipio_id == mun_id)
+        .where(ConvenioEstadual.municipio_id == mun_id).where(_nao_fns)
         .where(ConvenioEstadual.dt_vigencia_atual < v90))).scalar()
     # Voluntarias
     vol = await db.execute(text("""
@@ -347,6 +462,9 @@ async def _tool_municipio_summary(db: AsyncSession, inp: dict) -> str:
         f"  Vencendo em 60d: {vol_60}\n"
         f"  Vencendo em 120d: {vol_120}\n"
         f"  Vencidos +90d (prestacao de contas): {vol_prest}\n"
+        f"FNS (Fundo Nacional de Saude) — PROPOSTAS, nunca chamar de convenio:\n"
+        f"  Total propostas FNS: {fns_count}\n"
+        f"  Valor total: {_fmt_money(float(fns_valor or 0))}\n"
     )
 
 
@@ -355,6 +473,8 @@ async def _tool_query_situacoes_sigcon(db: AsyncSession, inp: dict) -> str:
     r = await db.execute(
         select(ConvenioEstadual.situacao, func.count())
         .where(ConvenioEstadual.municipio_id == mun_id)
+        # Mesmo filtro do query_convenios_sigcon: FNS nao e SIGCON estadual.
+        .where(_or(ConvenioEstadual.fonte.is_(None), ~ConvenioEstadual.fonte.ilike("%FNS%")))
         .where(ConvenioEstadual.situacao.is_not(None))
         .group_by(ConvenioEstadual.situacao)
         .order_by(func.count().desc())
@@ -370,7 +490,6 @@ async def _tool_query_situacoes_sigcon(db: AsyncSession, inp: dict) -> str:
 async def _tool_query_convenios_sigcon(db: AsyncSession, inp: dict) -> str:
     from datetime import timedelta
     mun_id = int(inp["municipio_id"])
-    from sqlalchemy import or_ as _or
     q = select(ConvenioEstadual).where(ConvenioEstadual.municipio_id == mun_id)
     # convenios_estadual tambem guarda PROPOSTAS do FNS (fonte=FNS). Aqui e a
     # ferramenta de CONVENIOS SIGCON estaduais -> exclui FNS (sao propostas federais).
@@ -437,6 +556,9 @@ async def _tool_query_voluntarias(db: AsyncSession, inp: dict) -> str:
     mun_id = inp.get("municipio_id")
     if mun_id:
         where.append("v.municipio_id = :m"); params["m"] = int(mun_id)
+    else:
+        # Sem municipio especifico: varre o escopo permitido — nunca a base inteira.
+        where.append("v.municipio_id = ANY(:esc)"); params["esc"] = _ids_do_escopo(inp)
     categoria = inp.get("categoria")
     if categoria == "voluntarias":
         where.append("v.situacao ILIKE :vp"); params["vp"] = _VOL_LIKE
@@ -464,7 +586,7 @@ async def _tool_query_voluntarias(db: AsyncSession, inp: dict) -> str:
     """
     r = await db.execute(text(sql), params)
     rows = r.fetchall()
-    escopo = f"municipio_id={mun_id}" if mun_id else "TODOS os 6 municipios"
+    escopo = f"municipio_id={mun_id}" if mun_id else f"escopo municipio_id in {_ids_do_escopo(inp)}"
     if not rows:
         return f"Nenhuma proposta SICONV encontrada ({escopo}, categoria={categoria or 'todas'})."
     out = [f"{len(rows)} proposta(s) SICONV ({escopo}, categoria={categoria or 'todas'}):"]
@@ -526,6 +648,9 @@ async def _tool_search_by_parlamentar(db: AsyncSession, inp: dict) -> str:
     if mun_filter:
         sql += " AND c.municipio_id = :mun"
         params["mun"] = int(mun_filter)
+    else:
+        sql += " AND c.municipio_id = ANY(:esc)"
+        params["esc"] = _ids_do_escopo(inp)
     sql += f" ORDER BY c.ano DESC NULLS LAST, c.dt_publicacao DESC NULLS LAST LIMIT {limit_per_source}"
     rows = (await db.execute(text(sql), params)).fetchall()
     out.append(f"\n### SIGCON-MG (estaduais): {len(rows)} resultado(s)")
@@ -549,6 +674,9 @@ async def _tool_search_by_parlamentar(db: AsyncSession, inp: dict) -> str:
     if mun_filter:
         sql2 += " AND municipio_id = :mun"
         params2["mun"] = int(mun_filter)
+    else:
+        sql2 += " AND municipio_id = ANY(:esc)"
+        params2["esc"] = _ids_do_escopo(inp)
     sql2 += f" ORDER BY numero_proposta DESC LIMIT {limit_per_source}"
     rows = (await db.execute(text(sql2), params2)).fetchall()
     out.append(f"\n### TransfereGov / SICONV (federais): {len(rows)} resultado(s)")
@@ -572,6 +700,9 @@ async def _tool_search_by_parlamentar(db: AsyncSession, inp: dict) -> str:
     if mun_filter:
         sql3 += " AND e.municipio_id = :mun"
         params3["mun"] = int(mun_filter)
+    else:
+        sql3 += " AND e.municipio_id = ANY(:esc)"
+        params3["esc"] = _ids_do_escopo(inp)
     sql3 += f" ORDER BY e.ano DESC NULLS LAST LIMIT {limit_per_source}"
     rows = (await db.execute(text(sql3), params3)).fetchall()
     out.append(f"\n### Emendas Estaduais (indicacoes): {len(rows)} resultado(s)")
@@ -591,6 +722,9 @@ async def _tool_search_by_parlamentar(db: AsyncSession, inp: dict) -> str:
     if mun_filter:
         muns_sql += " AND id = :mid"
         params_m["mid"] = int(mun_filter)
+    else:
+        muns_sql += " AND id = ANY(:esc)"
+        params_m["esc"] = _ids_do_escopo(inp)
     muns = (await db.execute(text(muns_sql), params_m)).fetchall()
     pa_rows: list = []
     pa_erro = None
@@ -878,15 +1012,46 @@ async def ping(_=Depends(get_current_user)):
         raise HTTPException(500, f"{type(e).__name__}: {str(e)[:300]}")
 
 
+async def _escopo_por_user_id(db: AsyncSession, user_id) -> list[int]:
+    """Escopo de um usuario a partir do id (usado pelo bot do Telegram, que nao
+    passa pelo Depends de autenticacao HTTP). Mesma regra do load_user_scopes."""
+    row = (await db.execute(text("SELECT role FROM users WHERE id = :u"), {"u": user_id})).first()
+    if row and row[0] == "admin":
+        rows = await db.execute(text("SELECT id FROM municipios WHERE active = true ORDER BY id"))
+        return [int(r[0]) for r in rows.fetchall()]
+    rows = await db.execute(
+        text("SELECT municipio_id FROM user_municipios WHERE user_id = :u ORDER BY municipio_id"),
+        {"u": user_id})
+    return [int(r[0]) for r in rows.fetchall()]
+
+
+async def _rotulos_escopo(db: AsyncSession, escopo: list[int]) -> str:
+    """Texto 'Monte Siao/MG (id=1)' para o bloco ESCOPO ATUAL do system prompt."""
+    if not escopo:
+        return "(nenhum municipio — voce nao pode responder nada com dados)"
+    rows = (await db.execute(
+        text("SELECT id, nome, uf FROM municipios WHERE id = ANY(:ids) ORDER BY nome"),
+        {"ids": escopo})).fetchall()
+    if not rows:
+        return "(nenhum municipio — voce nao pode responder nada com dados)"
+    return "; ".join(f"{r[1]}/{r[2]} (id={r[0]})" for r in rows)
+
+
 async def _run_ai_chat(
     db: AsyncSession,
     message: str,
     history: list,
     municipio_id: int | None = None,
     user_name: str | None = None,
+    escopo: list[int] | None = None,
+    user_id: int | None = None,
 ) -> dict:
     """Roda chat com a IA. Reusavel — usado por /chat e pelo bot Telegram.
-    Retorna {reply, tool_calls, usage}."""
+    Retorna {reply, tool_calls, usage}.
+
+    `escopo` e a lista de municipio_id que ESTA conversa pode ver. Quem chama
+    DEVE fornece-la (ou `user_id`, para derivarmos). Sem nenhum dos dois nao ha
+    como garantir isolamento, entao a chamada e recusada."""
     try:
         import anthropic
     except ImportError:
@@ -902,6 +1067,16 @@ async def _run_ai_chat(
         logger.exception("Falha criando cliente Anthropic")
         raise HTTPException(503, f"Falha criando cliente IA: {type(e).__name__}: {str(e)[:200]}")
 
+    # Escopo: nunca deduzido do que o modelo pede.
+    if escopo is None:
+        if user_id is not None:
+            escopo = await _escopo_por_user_id(db, user_id)
+            if municipio_id is not None and int(municipio_id) in escopo:
+                escopo = [int(municipio_id)]
+        else:
+            raise HTTPException(500, "Escopo da IA nao resolvido (chamada sem escopo/user_id).")
+    escopo = [int(x) for x in escopo]
+
     # Constroi mensagens
     messages: list[dict[str, Any]] = []
     for h in history or []:
@@ -911,31 +1086,41 @@ async def _run_ai_chat(
         if role in ("user", "assistant") and content:
             messages.append({"role": role, "content": content})
     user_msg = message
-    contexto_parts = []
-    if municipio_id:
-        contexto_parts.append(f"municipio_id={municipio_id}")
     if user_name:
-        contexto_parts.append(f"usuario={user_name}")
-    if contexto_parts:
-        user_msg = f"[contexto: {', '.join(contexto_parts)}]\n\n{user_msg}"
+        user_msg = f"[usuario={user_name}]\n\n{user_msg}"
     messages.append({"role": "user", "content": user_msg})
 
-    return await _execute_loop(client, db, messages)
+    escopo_txt = await _rotulos_escopo(db, escopo)
+    return await _execute_loop(client, db, messages, escopo, escopo_txt)
 
 
-async def _execute_loop(client, db, messages) -> dict:
-    """Loop de chamadas IA + tool_use ate end_turn."""
+async def _execute_loop(client, db, messages, escopo: list[int], escopo_txt: str) -> dict:
+    """Loop de chamadas IA + tool_use ate end_turn, preso ao `escopo`."""
     try:
         import anthropic
     except ImportError:
         raise HTTPException(503, "anthropic nao instalada")
 
-    # Cacheia o system prompt + tools (sao estaveis entre requests)
-    system = [{
-        "type": "text",
-        "text": SYSTEM_PROMPT,
-        "cache_control": {"type": "ephemeral"},
-    }]
+    # Bloco 1 = estatico (tools + regras): e o que fica em cache entre requests.
+    # Bloco 2 = escopo desta conversa; fica DEPOIS do breakpoint para nao
+    # invalidar o cache quando o municipio muda.
+    system = [
+        {
+            "type": "text",
+            "text": SYSTEM_PROMPT,
+            "cache_control": {"type": "ephemeral"},
+        },
+        {
+            "type": "text",
+            "text": (
+                f"ESCOPO ATUAL desta conversa: {escopo_txt}.\n"
+                "Voce so tem dados destes municipios. As ferramentas ja estao presas a esse "
+                "escopo pelo servidor: pedir outro municipio nao funciona e nao deve ser tentado. "
+                "Nao mencione, compare nem especule sobre nenhum municipio fora desta lista, "
+                "e nunca diga quantos municipios a plataforma atende."
+            ),
+        },
+    ]
 
     tool_calls_log: list[dict[str, Any]] = []
     total_in = total_out = cache_read = cache_create = 0
@@ -955,6 +1140,7 @@ async def _execute_loop(client, db, messages) -> dict:
                     model=MODEL,
                     max_tokens=16000,
                     thinking={"type": "adaptive"},
+                    output_config={"effort": AI_EFFORT},
                     system=system,
                     tools=TOOLS,
                     messages=messages,
@@ -1013,15 +1199,25 @@ async def _execute_loop(client, db, messages) -> dict:
                 tname = block.name
                 tinput = block.input or {}
                 fn = TOOL_FUNCS.get(tname)
+                # CHOKE POINT DE ISOLAMENTO: o input do modelo so vira SQL depois
+                # de ser reescrito para caber no escopo do usuario autenticado.
+                tinput_seguro = _aplicar_escopo(tname, tinput, escopo)
                 if fn is None:
                     result = f"Erro: ferramenta '{tname}' desconhecida."
+                elif tname in _TOOLS_REQ_MUN and tinput_seguro.get("municipio_id") is None:
+                    result = (
+                        "Erro: informe um municipio_id do seu escopo. "
+                        f"Permitidos: {escopo}."
+                    )
                 else:
                     try:
-                        result = await fn(db, tinput)
+                        result = await fn(db, tinput_seguro)
                     except Exception as e:
                         logger.exception(f"Erro executando tool {tname}")
                         result = f"Erro executando ferramenta: {str(e)[:200]}"
-                tool_calls_log.append({"tool": tname, "input": tinput, "output_preview": result[:200]})
+                # Log mostra o input JA sanitizado (e o que de fato rodou).
+                log_input = {k: v for k, v in tinput_seguro.items() if k != "_escopo_ids"}
+                tool_calls_log.append({"tool": tname, "input": log_input, "output_preview": result[:200]})
                 tool_results.append({
                     "type": "tool_result",
                     "tool_use_id": block.id,
@@ -1041,11 +1237,15 @@ async def chat(
     """Chat com a IA. Pode usar ferramentas para consultar o DB."""
     ensure_municipio_access(current, body.municipio_id)
     ensure_tela(current, "ai")
+    escopo = await resolver_escopo(db, current, body.municipio_id)
+    if not escopo:
+        raise HTTPException(403, "Sua conta nao tem municipio atribuido.")
     result = await _run_ai_chat(
         db=db,
         message=body.message,
         history=body.history,
         municipio_id=body.municipio_id,
+        escopo=escopo,
     )
     return ChatResponse(
         reply=result["reply"],

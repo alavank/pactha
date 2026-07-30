@@ -311,7 +311,8 @@ async def _handle_message(db: AsyncSession, message: dict):
     await tg.send_typing(chat_id)
     try:
         from routers.ai import _run_ai_chat
-        result = await _run_ai_chat(db, text_msg, historico, mun_id, user_name)
+        # user_id: a IA deriva dele o escopo de municipios permitido (isolamento).
+        result = await _run_ai_chat(db, text_msg, historico, mun_id, user_name, user_id=user_id)
         reply = result["reply"]
         # Salva no historico (user + assistant)
         await _ensure_history(db, chat_id, "user", text_msg)

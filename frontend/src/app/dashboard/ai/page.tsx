@@ -21,13 +21,15 @@ interface Message {
   usage?: Record<string, unknown>;
 }
 
+// Sugestões propositalmente genéricas: não citam nome de parlamentar nem
+// programa específico, que variam por município e levariam a resposta vazia.
 const SUGESTOES_PROMPT = [
-  "Quais convênios vencem nos próximos 60 dias?",
-  "Liste TUDO do deputado Eduardo Azevedo (estadual e federal)",
   "Resumo de tudo do município hoje.",
-  "Convênios estaduais em prestação de contas vencidos.",
-  "Quais propostas voluntárias estão aguardando análise?",
-  "Quanto recebi em PNATE em 2026?",
+  "Quais convênios vencem nos próximos 60 dias?",
+  "Quais parlamentares indicaram recursos para o município?",
+  "Quais propostas estão aguardando análise?",
+  "Quais propostas federais estão em cláusula suspensiva?",
+  "Quais propostas do FNS existem e em que situação estão?",
 ];
 
 export default function AiChatPage() {
