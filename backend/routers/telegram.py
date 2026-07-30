@@ -168,7 +168,7 @@ async def _cmd_start(db: AsyncSession, chat_id: int, args: str, telegram_user: s
         "Agora você pode mandar perguntas em português sobre os convênios, propostas e "
         "parlamentares. Exemplos:\n\n"
         "• _Quais convênios vencem nos próximos 60 dias?_\n"
-        "• _Liste tudo do deputado Eduardo Azevedo_\n"
+        "• _Quais parlamentares indicaram recursos para o município?_\n"
         "• _Resumo do município hoje_\n\n"
         "Use /municipio para definir um município padrão."
     )
@@ -179,7 +179,7 @@ async def _cmd_help(chat_id: int):
         chat_id,
         "🤖 *Bot PACTHA — Ajuda*\n\n"
         "Mande qualquer pergunta em português sobre convênios, propostas, parlamentares ou "
-        "liberações dos 6 municípios atendidos.\n\n"
+        "liberações do seu município.\n\n"
         "*Comandos:*\n"
         "/start — vincular conta\n"
         "/municipio — escolher município padrão\n"
@@ -188,7 +188,7 @@ async def _cmd_help(chat_id: int):
         "/help — esta mensagem\n\n"
         "*Exemplos de perguntas:*\n"
         "• Convênios vencendo em 60 dias\n"
-        "• Liste tudo do deputado Eduardo Azevedo\n"
+        "• Quais parlamentares indicaram recursos para o município?\n"
         "• Quanto recebi em PNATE em 2026?\n"
         "• Resumo de Piracema hoje\n"
     )
@@ -311,7 +311,8 @@ async def _handle_message(db: AsyncSession, message: dict):
     await tg.send_typing(chat_id)
     try:
         from routers.ai import _run_ai_chat
-        result = await _run_ai_chat(db, text_msg, historico, mun_id, user_name)
+        # user_id: a IA deriva dele o escopo de municipios permitido (isolamento).
+        result = await _run_ai_chat(db, text_msg, historico, mun_id, user_name, user_id=user_id)
         reply = result["reply"]
         # Salva no historico (user + assistant)
         await _ensure_history(db, chat_id, "user", text_msg)
