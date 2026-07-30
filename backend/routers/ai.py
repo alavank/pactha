@@ -138,7 +138,10 @@ FORMATO DA RESPOSTA (importante para a UI renderizar bem):
   | valor | valor |
   (Sempre com o separador `---` na segunda linha.)
 - Quando o resultado tiver MULTIPLAS fontes, divida em SECOES com `##` ou `###`.
-- Quando o resultado eh longo, comece com um resumo TL;DR de 2-3 linhas, depois detalhe.
+- Quando o resultado eh longo, comece com um resumo de 2-3 linhas e depois detalhe.
+- NUNCA escreva "TL;DR" nem "TLDR" — e jargao de chatbot e nao cabe aqui. Se for rotular o
+  resumo, use "**Resumo:**" ou um heading "## Resumo". Evite tambem "Vamos la", "Claro!",
+  "Espero ter ajudado" e afins: escreva como um relatorio tecnico para um gestor publico.
 - Valores monetarios SEMPRE como `**R$ 1.234.567,89**` em negrito quando forem totais.
 
 TAMANHO DA RESPOSTA (o usuario espera na tela — resposta gigante demora demais):
