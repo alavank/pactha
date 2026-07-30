@@ -45,7 +45,11 @@ _REJ_LIKE = "%rejeitad%"
 
 MODEL = os.getenv("PACTHA_AI_MODEL", "claude-sonnet-5")
 # low | medium | high | xhigh | max  — controla profundidade de raciocinio/latencia.
-AI_EFFORT = os.getenv("PACTHA_AI_EFFORT", "high")
+# Medido nesta base (pergunta do FNS, numeros conferidos contra o Postgres):
+#   high   26,3s / 3358 tok — tudo certo
+#   medium 20,8s / 2556 tok — tudo certo  <- default
+#   low    10,4s / 1057 tok — perdeu a quebra por situacao que a pergunta pedia
+AI_EFFORT = os.getenv("PACTHA_AI_EFFORT", "medium")
 
 SYSTEM_PROMPT = """Voce eh o assistente IA da plataforma PACTHA, que monitora convenios,
 emendas e transferencias federais e estaduais de municipios brasileiros. Voce ajuda
@@ -135,7 +139,17 @@ FORMATO DA RESPOSTA (importante para a UI renderizar bem):
   (Sempre com o separador `---` na segunda linha.)
 - Quando o resultado tiver MULTIPLAS fontes, divida em SECOES com `##` ou `###`.
 - Quando o resultado eh longo, comece com um resumo TL;DR de 2-3 linhas, depois detalhe.
-- Valores monetarios SEMPRE como `**R$ 1.234.567,89**` em negrito quando forem totais."""
+- Valores monetarios SEMPRE como `**R$ 1.234.567,89**` em negrito quando forem totais.
+
+TAMANHO DA RESPOSTA (o usuario espera na tela — resposta gigante demora demais):
+- SEMPRE de os agregados primeiro: quantidade total e valor total, calculados sobre TODAS as
+  linhas que a ferramenta devolveu. O agregado nunca e cortado.
+- Se a ferramenta devolveu MAIS DE 15 registros, NAO liste todos. Liste no maximo 10 — os mais
+  relevantes para a pergunta (maior valor, ou vencimento mais proximo) — e feche com a linha:
+  "Mostrando 10 de N. Peca 'lista completa' se quiser todos." Nunca omita em silencio.
+- Prefira quebrar por situacao/categoria com contagem e subtotal, em vez de repetir linha a linha.
+- Se o usuario pedir explicitamente a lista completa, ai sim liste tudo.
+- Nao repita na prosa o que ja esta na tabela."""
 
 
 # --------------------------------------------------------------------------
@@ -1214,14 +1228,37 @@ async def _execute_loop(client, db, messages, escopo: list[int], escopo_txt: str
                         result = await fn(db, tinput_seguro)
                     except Exception as e:
                         logger.exception(f"Erro executando tool {tname}")
+                        # Sem este rollback a transacao fica ABORTADA e TODA
+                        # ferramenta seguinte falha em cascata — e o modelo,
+                        # vendo consulta vazia, responde "nao ha registro" com
+                        # 200 OK. Ou seja: vira dado errado silencioso, que e
+                        # pior que um erro visivel. (main.py:139 ja fazia isso.)
+                        try:
+                            await db.rollback()
+                        except Exception:
+                            logger.exception("Falha no rollback apos erro de tool")
                         result = f"Erro executando ferramenta: {str(e)[:200]}"
                 # Log mostra o input JA sanitizado (e o que de fato rodou).
                 log_input = {k: v for k, v in tinput_seguro.items() if k != "_escopo_ids"}
                 tool_calls_log.append({"tool": tname, "input": log_input, "output_preview": result[:200]})
+                # Cap de seguranca. Cortar em silencio e perigoso: o cabecalho do
+                # resultado ja anunciou "N registros" e o corte some com parte
+                # deles, entao o modelo somaria em cima de uma lista incompleta
+                # achando que esta completa. Avisamos explicitamente.
+                if len(result) > 30000:
+                    conteudo = (
+                        result[:30000]
+                        + "\n\n[ATENCAO: resultado truncado pelo servidor. A lista acima esta"
+                          " INCOMPLETA — nao some nem conte em cima dela. Use os totais que a"
+                          " propria ferramenta informou no cabecalho, e diga ao usuario que a"
+                          " listagem foi cortada e que ele pode refinar o filtro.]"
+                    )
+                else:
+                    conteudo = result
                 tool_results.append({
                     "type": "tool_result",
                     "tool_use_id": block.id,
-                    "content": result[:30000],  # cap por seguranca
+                    "content": conteudo,
                 })
         messages.append({"role": "user", "content": tool_results})
 
