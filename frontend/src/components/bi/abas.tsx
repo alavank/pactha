@@ -539,15 +539,19 @@ export function AbaDocumentosView({ d, tv }: AbaProps & { d: AbaDocumentos }) {
           fonte e o seu próprio fluxo — a fronteira é visível mesmo de longe.
           CAUC ocupa 2/3 porque tem ~25 exigências em 5 blocos; o CAGEC, 1/3. */}
       <div className="bi-scroll min-h-0 flex-1 overflow-y-auto">
-        <div className="grid gap-x-4 gap-y-3 lg:grid-cols-3">
-          <section className="lg:col-span-2">
+        {/* 4 colunas: CAUC ocupa 3 (25 exigências em 5 blocos, um deles com 12
+            linhas) e o CAGEC 1. Com 3/1 e três subcolunas dentro do CAUC, tudo
+            cabe na altura da tela; com 2/1 o bloco do SICONFI ficava cortado
+            embaixo — e numa TV de parede ninguém rola. */}
+        <div className="grid gap-x-4 gap-y-3 lg:grid-cols-4">
+          <section className="lg:col-span-3">
             <EsferaHead
               titulo="CAUC — União"
               sub="Tesouro Nacional · exigências federais"
               contagem={blocos.length ? `${primeiro?.total_itens ?? 0} exigências` : undefined}
             />
             {blocos.length ? (
-              <div className="bi-colunas-2">
+              <div className={tv ? "bi-colunas-3" : "bi-colunas-2"}>
                 {blocos.map(([grupo, itens]) => (
                   <Painel key={grupo} className="mb-3 break-inside-avoid">
                     <PainelHead icon={ShieldCheck} titulo={grupo} sub={`${itens.length} exigência(s)`} />
