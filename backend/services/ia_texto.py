@@ -27,8 +27,14 @@ def modelo_texto() -> str:
 
 def params_raciocinio(modelo: str | None = None) -> dict:
     """kwargs extras de `messages.create` para o modelo em uso ({} se ele nao
-    suportar). Use com `**params_raciocinio()`."""
+    suportar). Use com `**params_raciocinio()`.
+
+    Medido nas 6 abas do dashboard com os dados reais de Monte Siao:
+      thinking off + effort low   15,8s / US$ 0,0151  (arredonda: "mais de R$ 161 milhoes")
+      adaptive    + effort high   19,6s / US$ 0,0224  (valor exato: "R$ 161.683.320,64")
+    Escolhido o segundo: o custo a mais e de centavos por mes (a faixa so
+    regenera quando os numeros mudam) e o texto sai com o valor cheio."""
     m = modelo or modelo_texto()
     if any(m.startswith(x) for x in _SUPORTAM_RACIOCINIO):
-        return {"thinking": {"type": "disabled"}, "output_config": {"effort": "low"}}
+        return {"thinking": {"type": "adaptive"}, "output_config": {"effort": "high"}}
     return {}
