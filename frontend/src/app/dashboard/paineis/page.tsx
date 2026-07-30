@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 import {
-  HeartHandshake, Landmark, ExternalLink, ArrowLeft, MapPin, Copy, Check,
+  HeartHandshake, Landmark, ExternalLink, ArrowLeft, MousePointerClick, Copy, Check,
   LayoutGrid, Loader2,
 } from "lucide-react";
 import api from "@/lib/api";
@@ -42,7 +42,13 @@ export default function PaineisMunicipaisPage() {
   const municipioId = useMunicipio().municipioId || "";
   const [muns, setMuns] = useState<Municipio[]>([]);
   const [active, setActive] = useState<string | null>(null);
+  // `opened` = iframe MONTADO (inclui o pre-aquecimento automatico).
+  // `visitados` = o usuario realmente ABRIU o painel aqui dentro.
+  // Sao coisas diferentes: o pre-aquecimento enche `opened` 400ms depois de a
+  // tela carregar, entao usa-lo para revelar "Nova aba" faria o botao aparecer
+  // sozinho — que e exatamente o que nao se quer no primeiro contato.
   const [opened, setOpened] = useState<Set<string>>(new Set());
+  const [visitados, setVisitados] = useState<Set<string>>(new Set());
   const [loaded, setLoaded] = useState<Record<string, boolean>>({});
   const [copiado, setCopiado] = useState(false);
 
@@ -64,6 +70,7 @@ export default function PaineisMunicipaisPage() {
 
   const abrir = useCallback((key: string) => {
     setOpened((s) => new Set(s).add(key));
+    setVisitados((s) => new Set(s).add(key));
     setActive(key);
   }, []);
 
@@ -74,27 +81,35 @@ export default function PaineisMunicipaisPage() {
     setTimeout(() => setCopiado(false), 2000);
   }, [mun]);
 
+  // A AÇÃO vem primeiro e em destaque; o "são painéis do Governo" é contexto.
+  // Antes era o inverso: a instrução na linha de cima e a explicação miúda
+  // embaixo, o que fazia o aviso parecer só um rodapé.
+  //
+  // Ícone de clique e não de localização: o que se pede é uma AÇÃO dentro do
+  // painel, não um lugar no mapa.
   const MunBanner = () => (
     <div className="rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm">
-      <div className="flex flex-wrap items-center gap-2">
-        <MapPin className="size-4 text-warning shrink-0" />
-        {munLabel ? (
-          <>
-            <span className="text-base-content/80">No filtro do painel (UF / Município), selecione:</span>
-            <span className="inline-flex items-center gap-1.5 rounded-md border border-base-300 bg-base-100 px-2 py-0.5 font-semibold text-base-content">
-              {munLabel}
-              <button onClick={copiar} title="Copiar nome do município" className="text-base-content/50 hover:text-primary">
-                {copiado ? <Check className="size-3.5 text-success" /> : <Copy className="size-3.5" />}
-              </button>
-            </span>
-          </>
-        ) : (
-          <span className="text-base-content/80">Selecione um município no seletor da barra lateral.</span>
-        )}
+      <div className="flex gap-2">
+        <MousePointerClick className="mt-0.5 size-4 shrink-0 text-warning" />
+        <div className="min-w-0">
+          <div className="font-semibold text-base-content">Painéis oficiais do governo.</div>
+          {munLabel ? (
+            <div className="mt-0.5 flex flex-wrap items-center gap-2">
+              <span className="text-base-content/80">No filtro do painel (UF / Município), selecione:</span>
+              <span className="inline-flex items-center gap-1.5 rounded-md border border-base-300 bg-base-100 px-2 py-0.5 font-semibold text-base-content">
+                {munLabel}
+                <button onClick={copiar} title="Copiar nome do município" className="text-base-content/50 hover:text-primary">
+                  {copiado ? <Check className="size-3.5 text-success" /> : <Copy className="size-3.5" />}
+                </button>
+              </span>
+            </div>
+          ) : (
+            <div className="mt-0.5 text-base-content/80">
+              Selecione um município no seletor da barra lateral.
+            </div>
+          )}
+        </div>
       </div>
-      <p className="mt-1 text-[11px] text-base-content/50">
-        Painéis oficiais do Governo (Qlik) — a seleção do município é feita no filtro do próprio painel.
-      </p>
     </div>
   );
 
@@ -109,8 +124,13 @@ export default function PaineisMunicipaisPage() {
       {activePanel ? (
         <div className="flex items-start justify-between gap-3">
           <div>
-            <button onClick={() => setActive(null)} className="mb-1 inline-flex items-center gap-1 text-xs text-base-content/60 hover:text-primary">
-              <ArrowLeft className="size-3.5" /> Painéis Municipais
+            {/* Voltar para a selecao — precisa ser achavel para trocar de
+                painel, entao e um botao com borda e nao um link miudo. */}
+            <button
+              onClick={() => setActive(null)}
+              className="mb-1.5 inline-flex items-center gap-1.5 rounded-md border border-base-300 bg-base-100 px-2.5 py-1 text-xs font-medium text-base-content/80 hover:bg-base-200 hover:text-primary"
+            >
+              <ArrowLeft className="size-3.5" /> Escolher outro painel
             </button>
             <h1 className="flex items-center gap-2 text-xl font-bold text-base-content">
               <activePanel.icon className={`size-5 ${activePanel.accent}`} /> {activePanel.nome}
@@ -158,10 +178,15 @@ export default function PaineisMunicipaisPage() {
                   <p className="mt-3 flex-1 text-sm text-base-content/70">{p.desc}</p>
                   <div className="mt-4 flex items-center gap-2">
                     <Button onClick={() => abrir(p.key)} className="bg-primary hover:bg-primary/90">Abrir painel</Button>
-                    <a href={p.url} target="_blank" rel="noopener noreferrer"
-                       className="inline-flex items-center gap-1.5 rounded-md border border-base-300 px-3 py-2 text-sm text-base-content/70 hover:bg-base-200">
-                      <ExternalLink className="size-4" /> Nova aba
-                    </a>
+                    {/* "Nova aba" aparece so DEPOIS de o painel ter sido aberto
+                        aqui. No primeiro contato ela competia com a acao
+                        principal e tirava o usuario do sistema sem contexto. */}
+                    {visitados.has(p.key) && (
+                      <a href={p.url} target="_blank" rel="noopener noreferrer"
+                         className="inline-flex items-center gap-1.5 rounded-md border border-base-300 px-3 py-2 text-sm text-base-content/70 hover:bg-base-200">
+                        <ExternalLink className="size-4" /> Nova aba
+                      </a>
+                    )}
                   </div>
                 </div>
               ))}
