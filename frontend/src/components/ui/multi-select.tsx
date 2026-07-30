@@ -5,10 +5,23 @@
 // formulario e empurravam o resto da tela para baixo. Um dropdown ocupa uma
 // linha e continua permitindo marcar um, alguns ou todos.
 //
+// E O UNICO multi-select do app. Havia um segundo (components/MultiSelect.tsx,
+// usado em Convenios/SIMEC/TransfereGov) com o mesmo proposito e visual
+// diferente — dois componentes para a mesma coisa divergem, e o usuario percebe
+// que "o filtro de uma tela nao e igual ao da outra". Aquele foi removido e as
+// telas migraram para ca.
+//
 // Convencao: lista VAZIA = "todos". E o mesmo que o backend ja entende (sem
 // filtro), e evita o estado sem saida de "nenhum marcado, nenhum resultado".
 import * as React from "react";
 import { Check, ChevronDown } from "lucide-react";
+
+/** Atalho de seleção (ex.: "Mandato atual", "Todos"). */
+export interface AtalhoMulti {
+  label: string;
+  /** Valores que o atalho aplica. Lista vazia = limpar (= todos). */
+  valores: string[];
+}
 
 export function MultiSelect({
   opcoes,
@@ -19,6 +32,8 @@ export function MultiSelect({
   placeholder,
   className = "",
   ariaLabel,
+  atalhos,
+  rotulos,
 }: {
   opcoes: string[];
   valor: string[];
@@ -30,6 +45,10 @@ export function MultiSelect({
   placeholder?: string;
   className?: string;
   ariaLabel?: string;
+  /** Atalhos no topo do painel (ex.: "Mandato atual", "Este ano"). */
+  atalhos?: AtalhoMulti[];
+  /** Rótulo legível por valor, quando o valor é um código ("vence30" -> "Vence em 30 dias"). */
+  rotulos?: Record<string, string>;
 }) {
   const [aberto, setAberto] = React.useState(false);
   const boxRef = React.useRef<HTMLDivElement | null>(null);
@@ -56,12 +75,13 @@ export function MultiSelect({
     onChange(valor.includes(o) ? valor.filter((x) => x !== o) : [...valor, o]);
   };
 
+  const nome = (v: string) => rotulos?.[v] ?? v;
   const resumo = !valor.length
     ? (placeholder ?? rotuloTodos)
     : formatarResumo
       ? formatarResumo(valor)
       : valor.length === 1
-        ? valor[0]
+        ? nome(valor[0])
         : `${valor.length} selecionados`;
 
   return (
@@ -100,6 +120,23 @@ export function MultiSelect({
               Marcar tudo
             </button>
           </div>
+
+          {/* Atalhos: um clique para o recorte que o gestor pede sempre
+              ("o mandato", "este ano"). Sem eles, marcar 4 anos é 4 cliques. */}
+          {!!atalhos?.length && (
+            <div className="flex flex-wrap gap-1 border-b border-base-300 px-1 py-1.5">
+              {atalhos.map((a) => (
+                <button
+                  key={a.label}
+                  type="button"
+                  onClick={() => onChange([...a.valores])}
+                  className="rounded-full border border-base-300 px-2 py-0.5 text-[11px] font-medium text-base-content/70 hover:bg-base-200"
+                >
+                  {a.label}
+                </button>
+              ))}
+            </div>
+          )}
           {opcoes.map((o) => {
             const on = valor.includes(o);
             return (
@@ -118,7 +155,7 @@ export function MultiSelect({
                 >
                   {on && <Check className="size-3" />}
                 </span>
-                <span className="truncate">{o}</span>
+                <span className="truncate">{nome(o)}</span>
               </button>
             );
           })}

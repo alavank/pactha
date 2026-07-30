@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useCallback, Suspense } from "react";
 import { useMunicipio } from "@/contexts/MunicipioContext";
+import { MultiSelect, resumoAnos, AtalhoMulti } from "@/components/ui/multi-select";
 import {
   UserCircle2, Loader2, Search, ChevronDown, ChevronRight,
   Landmark, Building2, FileText, Eraser, Coins, HeartPulse,
@@ -127,7 +128,9 @@ function ParlamentaresInner() {
   const [items, setItems] = useState<ParlamentarItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [ano, setAno] = useState("");
+  // PERIODO MULTI-ANO (o backend de /parlamentares ja aceitava `anos`; era so o
+  // frontend que mandava um ano so). Vazio = todos.
+  const [anosSel, setAnosSel] = useState<string[]>([]);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
   const [detailCache, setDetailCache] = useState<Record<string, ParlamentarDetalhe | "loading" | "error">>({});
@@ -135,10 +138,10 @@ function ParlamentaresInner() {
   const carregar = useCallback(async () => {
     setLoading(true);
     try {
-      const params: Record<string, string> = {};
+      const params: Record<string, string | string[]> = {};
       if (municipioId) params.municipio_id = municipioId;
       if (search.trim()) params.q = search.trim();
-      if (ano) params.ano = ano;
+      if (anosSel.length) params.anos = anosSel;
       const r = await api.get<{ items: ParlamentarItem[] }>("/parlamentares", { params });
       setItems(r.data.items);
     } catch (e) {
@@ -147,7 +150,7 @@ function ParlamentaresInner() {
     } finally {
       setLoading(false);
     }
-  }, [municipioId, search, ano]);
+  }, [municipioId, search, anosSel]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -167,9 +170,9 @@ function ParlamentaresInner() {
     if (detailCache[k]) return;
     setDetailCache((c) => ({ ...c, [k]: "loading" }));
     try {
-      const params: Record<string, string> = {};
+      const params: Record<string, string | string[]> = {};
       if (municipioId) params.municipio_id = municipioId;
-      if (ano) params.ano = ano;
+      if (anosSel.length) params.anos = anosSel;
       // Backend faz ILIKE — usa o nome display original do registro
       const nome = encodeURIComponent(item.nome_display);
       const r = await api.get<ParlamentarDetalhe>(`/parlamentares/${nome}`, { params });
@@ -186,7 +189,8 @@ function ParlamentaresInner() {
       const qs = new URLSearchParams();
       if (municipioId) qs.set("municipio_id", municipioId);
       if (search.trim()) qs.set("q", search.trim());
-      if (ano) qs.set("ano", ano);
+      // URLSearchParams: `append` por ano (o backend le list[int])
+      anosSel.forEach((a) => qs.append("anos", a));
       const token = localStorage.getItem("pactha_token");
       const res = await fetch(`${api.defaults.baseURL}/export-pdf/parlamentares?${qs.toString()}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -232,17 +236,20 @@ function ParlamentaresInner() {
           />
         </div>
         <div>
-          <label className="text-xs text-base-content/70 mb-1 block">Ano</label>
-          <select
-            value={ano}
-            onChange={(e) => { setAno(e.target.value); setDetailCache({}); setExpandedKeys(new Set()); }}
-            className="h-9 rounded-md border border-base-300 bg-base-100 px-3 text-sm text-base-content min-w-[110px]"
-          >
-            <option value="">Todos</option>
-            {Array.from({ length: new Date().getFullYear() - 2009 }, (_, i) => new Date().getFullYear() - i).map((y) => (
-              <option key={y} value={y}>{y}</option>
-            ))}
-          </select>
+          <label className="text-xs text-base-content/70 mb-1 block">
+            Anos <span className="text-base-content/40">(um, alguns ou o mandato)</span>
+          </label>
+          <MultiSelect
+            className="min-w-[190px]"
+            opcoes={ANOS_OPCOES}
+            valor={anosSel}
+            onChange={(v) => { setAnosSel(v); setDetailCache({}); setExpandedKeys(new Set()); }}
+            formatarResumo={resumoAnos}
+            placeholder="Todos os anos"
+            rotuloTodos="Todos"
+            ariaLabel="Anos"
+            atalhos={ATALHOS_ANOS}
+          />
         </div>
         <Button onClick={carregar} className="bg-info hover:bg-info/90">
           <Search className="size-4 mr-1" /> Buscar
@@ -256,8 +263,8 @@ function ParlamentaresInner() {
           {pdfLoading ? <Loader2 className="size-4 mr-1 animate-spin" /> : <FileText className="size-4 mr-1" />}
           Gerar PDF
         </Button>
-        {(search || ano || municipioId) && (
-          <Button variant="outline" onClick={() => { setSearch(""); setAno(""); setDetailCache({}); setExpandedKeys(new Set()); }}>
+        {(search || anosSel.length > 0 || municipioId) && (
+          <Button variant="outline" onClick={() => { setSearch(""); setAnosSel([]); setDetailCache({}); setExpandedKeys(new Set()); }}>
             <Eraser className="size-4 mr-1" /> Limpar
           </Button>
         )}
@@ -553,6 +560,27 @@ function Td({ children, mono, className, title }: { children: React.ReactNode; m
     </td>
   );
 }
+
+/** Anos oferecidos no filtro: do corrente para tras, cobrindo dois mandatos. */
+const ANOS_OPCOES = Array.from(
+  { length: new Date().getFullYear() - 2015 },
+  (_, i) => String(new Date().getFullYear() - i)
+);
+
+/** Mesma regra do Painel de Indicadores (components/bi/Filtros.tsx): o mandato
+ *  vigente comeca em 2025 e anda de 4 em 4, sem passar do ano corrente. */
+const ATALHOS_ANOS: AtalhoMulti[] = (() => {
+  const y = new Date().getFullYear();
+  const inicio = y - ((((y - 2025) % 4) + 4) % 4);
+  const mandato = [inicio, inicio + 1, inicio + 2, inicio + 3].filter((a) => a <= y);
+  // Sem atalho "Todos": a linha de acoes do dropdown ja tem esse botao, e o
+  // mesmo rotulo duas vezes na mesma caixa so faz o usuario hesitar.
+  return [
+    { label: "Mandato atual", valores: mandato.map(String) },
+    { label: "Este ano", valores: [String(y)] },
+    { label: "Mandato anterior", valores: [inicio - 4, inicio - 3, inicio - 2, inicio - 1].map(String) },
+  ];
+})();
 
 export default function ParlamentaresPage() {
   return (

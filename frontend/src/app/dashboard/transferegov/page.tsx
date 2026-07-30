@@ -3,12 +3,10 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { Search, Eye, X, Loader2, Eraser, RefreshCw } from "lucide-react";
 import { useMunicipio } from "@/contexts/MunicipioContext";
+import { MultiSelect } from "@/components/ui/multi-select";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -82,7 +80,12 @@ interface DetalhePlano {
   };
 }
 
-const SITUACOES_PA = ["TODAS", "CIENTE", "EM_ANALISE", "IMPEDIDO", "EM_ELABORACAO", "CONCLUIDA"];
+// Vazio = TODAS (convencao do <MultiSelect>), entao "TODAS" saiu da lista de
+// opcoes — antes era um valor especial que precisava ser filtrado no envio.
+const SITUACOES_PA = ["CIENTE", "EM_ANALISE", "IMPEDIDO", "EM_ELABORACAO", "CONCLUIDA"];
+const SITUACOES_PA_LABEL: Record<string, string> = Object.fromEntries(
+  SITUACOES_PA.map((s) => [s, s.replace(/_/g, " ")])
+);
 
 export default function TransfereGovPage() {
   const { municipioId } = useMunicipio();
@@ -92,7 +95,7 @@ export default function TransfereGovPage() {
   const [cacheAge, setCacheAge] = useState(0);
   const [total, setTotal] = useState(0);
 
-  const [situacao, setSituacao] = useState("TODAS");
+  const [situacoesSel, setSituacoesSel] = useState<string[]>([]);
   const [programa, setPrograma] = useState("");
   const [parlamentar, setParlamentar] = useState("");
   const [emenda, setEmenda] = useState("");
@@ -103,21 +106,22 @@ export default function TransfereGovPage() {
   const [tab, setTab] = useState<"basicos" | "orcamento" | "execucao">("basicos");
   const [baixandoPdf, setBaixandoPdf] = useState(false);
 
-  const filtrosParams = useCallback((): Record<string, string> => {
-    const params: Record<string, string> = { municipio_id: municipioId || "" };
-    if (situacao !== "TODAS") params.situacao = situacao;
+  const filtrosParams = useCallback((): Record<string, string | string[]> => {
+    // string[] no filtro multi: o axios manda chave repetida e o FastAPI le list[str].
+    const params: Record<string, string | string[]> = { municipio_id: municipioId || "" };
+    if (situacoesSel.length) params.situacao = situacoesSel;
     if (programa.trim()) params.programa = programa.trim();
     if (parlamentar.trim()) params.parlamentar = parlamentar.trim();
     if (emenda.trim()) params.emenda = emenda.trim();
     if (objeto.trim()) params.objeto = objeto.trim();
     return params;
-  }, [municipioId, situacao, programa, parlamentar, emenda, objeto]);
+  }, [municipioId, situacoesSel, programa, parlamentar, emenda, objeto]);
 
   const buscar = useCallback(async (refresh = false) => {
     if (!municipioId) return;
     setLoading(true);
     try {
-      const params: Record<string, string | boolean> = { ...filtrosParams() };
+      const params: Record<string, string | string[] | boolean> = { ...filtrosParams() };
       if (refresh) params.refresh = true;
       const r = await api.get<BuscarResp>("/transferegov/buscar", { params });
       setItems(r.data.items);
@@ -148,7 +152,7 @@ export default function TransfereGovPage() {
   }, [municipioId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const limpar = () => {
-    setSituacao("TODAS"); setPrograma(""); setParlamentar(""); setEmenda(""); setObjeto("");
+    setSituacoesSel([]); setPrograma(""); setParlamentar(""); setEmenda(""); setObjeto("");
     setItems([]); setTotal(0);
   };
 
@@ -189,13 +193,18 @@ export default function TransfereGovPage() {
         <h2 className="text-sm font-semibold text-base-content/70 mb-3">Pesquisa - Escolha um ou Mais Criterios</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-3">
           <div>
-            <label className="text-xs text-base-content/70 mb-1 block">Situacao do Plano de Acao</label>
-            <Select value={situacao} onValueChange={(v) => setSituacao(v ?? "TODAS")}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {SITUACOES_PA.map(s => <SelectItem key={s} value={s}>{s.replace("_", " ")}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <label className="text-xs text-base-content/70 mb-1 block">
+              Situação do Plano de Ação <span className="text-base-content/40">(uma, algumas ou todas)</span>
+            </label>
+            <MultiSelect
+              opcoes={SITUACOES_PA}
+              valor={situacoesSel}
+              onChange={setSituacoesSel}
+              rotulos={SITUACOES_PA_LABEL}
+              placeholder="TODAS"
+              rotuloTodos="TODAS"
+              ariaLabel="Situação do plano de ação"
+            />
           </div>
           <div>
             <label className="text-xs text-base-content/70 mb-1 block">Programa (codigo)</label>

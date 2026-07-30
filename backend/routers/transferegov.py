@@ -80,7 +80,8 @@ async def _fetch_listagem(uf: Optional[str] = "MG") -> list[dict]:
 @router.get("/buscar")
 async def buscar(
     municipio_id: int = Query(..., description="ID do municipio PACTHA"),
-    situacao: Optional[str] = Query(None, description="CIENTE, EM_ANALISE, IMPEDIDO, etc"),
+    # Aceita VARIAS situacoes (?situacao=CIENTE&situacao=IMPEDIDO).
+    situacao: Optional[list[str]] = Query(None, description="CIENTE, EM_ANALISE, IMPEDIDO, etc (aceita varias)"),
     programa: Optional[str] = Query(None, description="codigo do programa (ex: 09032022)"),
     parlamentar: Optional[str] = Query(None, description="texto livre - busca em codigoEmendaFormatado"),
     emenda: Optional[str] = Query(None, description="codigo da emenda formatado"),
@@ -118,7 +119,7 @@ async def buscar(
         # match exato no fim: "MUNICIPIO DE ARAUJOS" ou nome simples
         if not (mun_norm in ben or ben.endswith(mun_norm)):
             continue
-        if situacao and _norm(situacao) != _norm(it.get("planoAcaoSituacao") or ""):
+        if situacao and _norm(it.get("planoAcaoSituacao") or "") not in {_norm(x) for x in situacao}:
             continue
         if programa and programa not in (it.get("programaCodigo") or ""):
             continue
@@ -261,8 +262,11 @@ async def voluntarias(
     orgao: Optional[str] = Query(None),
     search: Optional[str] = Query(None, description="busca em numero/proponente"),
     parlamentar: Optional[str] = Query(None, description="filtra pelo parlamentar (ILIKE)"),
-    situacao_contratacao: Optional[str] = Query(None, description="Normal | Clausula Suspensiva | Liminar Judicial"),
-    vigencia: Optional[str] = Query(None, description="vence30 | vence60 | vence90 | vence120 | prestacao"),
+    # Aceitam VARIOS valores (?vigencia=vence30&vigencia=prestacao). Um valor
+    # unico chega como lista de um, entao os links antigos dos KPIs do dashboard
+    # continuam valendo sem mudanca.
+    situacao_contratacao: Optional[list[str]] = Query(None, description="Normal | Clausula Suspensiva | Liminar Judicial (aceita varios)"),
+    vigencia: Optional[list[str]] = Query(None, description="vence30 | vence60 | vence90 | vence120 | prestacao (aceita varios)"),
     vig_fim_de: Optional[str] = Query(None, description="fim de vigencia >= AAAA-MM-DD"),
     vig_fim_ate: Optional[str] = Query(None, description="fim de vigencia <= AAAA-MM-DD"),
     categoria: Optional[str] = Query(None, description="geral | voluntarias | rejeitadas | encerradas"),
@@ -301,7 +305,12 @@ async def voluntarias(
     if parlamentar:
         where.append("parlamentar ILIKE :parl"); params["parl"] = f"%{parlamentar}%"
     if situacao_contratacao:
-        where.append("situacao_contratacao ILIKE :sc"); params["sc"] = f"%{situacao_contratacao}%"
+        # OR entre as escolhidas: "Normal" OU "Liminar Judicial" etc.
+        _conds = []
+        for _i, _sc in enumerate(situacao_contratacao):
+            _conds.append(f"situacao_contratacao ILIKE :sc{_i}")
+            params[f"sc{_i}"] = f"%{_sc}%"
+        where.append("(" + " OR ".join(_conds) + ")")
     if search:
         # Busca por numero / proponente (nome) / CNPJ (identificacao). Aceita CNPJ
         # com ou sem mascara: compara tambem so os digitos.
@@ -345,15 +354,22 @@ async def voluntarias(
     # Filtro de vigencia (presets: dias para vencer) — vindo dos KPIs ou do filtro
     if vigencia:
         _LIMITES = {"vence30": 30, "vence60": 60, "vence90": 90, "vence120": 120}
-        def _match_vig(d):
-            if d is None:
+        # So os presets CONHECIDOS entram. Se nada reconhecido sobrar, nao
+        # filtramos — mesma leniencia de antes, que deixava passar valor estranho
+        # em vez de devolver lista vazia sem explicacao.
+        _sel = [v for v in vigencia if v in _LIMITES or v == "prestacao"]
+        if _sel:
+            def _match_vig(d):
+                if d is None:
+                    return False
+                for _v in _sel:
+                    if _v == "prestacao":
+                        if d < -90:
+                            return True
+                    elif 0 <= d <= _LIMITES[_v]:
+                        return True
                 return False
-            if vigencia in _LIMITES:
-                return 0 <= d <= _LIMITES[vigencia]
-            if vigencia == "prestacao":
-                return d < -90
-            return True
-        items = [i for i in items if _match_vig(i["dias_restantes"])]
+            items = [i for i in items if _match_vig(i["dias_restantes"])]
 
     # Filtro por intervalo de DATA de fim de vigencia (de / ate, ISO AAAA-MM-DD)
     if vig_fim_de or vig_fim_ate:

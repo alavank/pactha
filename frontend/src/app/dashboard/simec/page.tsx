@@ -4,7 +4,7 @@ import React, { useEffect, useState, useMemo, useCallback } from "react";
 import { Loader2, ExternalLink, BarChart3, Wallet } from "lucide-react";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 import api from "@/lib/api";
-import MultiSelect from "@/components/MultiSelect";
+import { MultiSelect, resumoAnos } from "@/components/ui/multi-select";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -217,8 +217,8 @@ export default function SimecPage() {
         <div className="space-y-3">
           {/* Filtros liberacoes */}
           <div className="bg-base-100 border rounded p-3 grid gap-3 md:grid-cols-4">
-            <MultiSelect options={anoOptions} selected={anosSel} onChange={setAnosSel} placeholder="Todos os anos" width="w-full" />
-            <MultiSelect options={progOptions} selected={progsSel} onChange={setProgsSel} placeholder="Todos os programas" width="w-full" />
+            <MultiSelect opcoes={anoOptions} valor={anosSel} onChange={setAnosSel} placeholder="Todos os anos" rotuloTodos="Todos" formatarResumo={resumoAnos} ariaLabel="Anos" />
+            <MultiSelect opcoes={progOptions} valor={progsSel} onChange={setProgsSel} placeholder="Todos os programas" rotuloTodos="Todos" ariaLabel="Programas" />
             <Input placeholder="Buscar descricao/OB" value={search} onChange={(e) => setSearch(e.target.value)} />
             <Button variant="outline" onClick={() => { setAnosSel([]); setProgsSel([]); setSearch(""); }}>Limpar</Button>
           </div>
