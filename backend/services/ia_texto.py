@@ -22,19 +22,35 @@ _SUPORTAM_RACIOCINIO = ("claude-sonnet-5", "claude-opus-5", "claude-opus-4-8",
 
 
 def modelo_texto() -> str:
-    return os.getenv("PACTHA_AI_MODEL_TEXTO", "claude-sonnet-5")
+    return os.getenv("PACTHA_AI_MODEL_TEXTO", "claude-opus-5")
+
+
+def esforco_texto() -> str:
+    return os.getenv("PACTHA_AI_EFFORT_TEXTO", "max")
+
+
+def max_tokens_texto() -> int:
+    """Teto de tokens da faixa.
+
+    CRITICO em effort `max`: o orcamento cobre RACIOCINIO + texto. Medido com
+    Opus 5 @ max nesta base:
+        max_tokens=500  -> stop_reason=max_tokens, JSON cortado no meio (quebra)
+        max_tokens=1000 -> ok
+        max_tokens=4000 -> ok, com folga   <- default
+    O teto so e cobrado se for usado, entao folga aqui e de graca; frase cortada
+    nao e."""
+    return int(os.getenv("PACTHA_AI_MAX_TOKENS_TEXTO", "4000"))
 
 
 def params_raciocinio(modelo: str | None = None) -> dict:
     """kwargs extras de `messages.create` para o modelo em uso ({} se ele nao
     suportar). Use com `**params_raciocinio()`.
 
-    Medido nas 6 abas do dashboard com os dados reais de Monte Siao:
-      thinking off + effort low   15,8s / US$ 0,0151  (arredonda: "mais de R$ 161 milhoes")
-      adaptive    + effort high   19,6s / US$ 0,0224  (valor exato: "R$ 161.683.320,64")
-    Escolhido o segundo: o custo a mais e de centavos por mes (a faixa so
-    regenera quando os numeros mudam) e o texto sai com o valor cheio."""
+    `thinking: disabled` NAO pode ser combinado com effort xhigh/max no Opus 5
+    (400). Por isso aqui e sempre `adaptive` — quem controla a profundidade e o
+    effort."""
     m = modelo or modelo_texto()
     if any(m.startswith(x) for x in _SUPORTAM_RACIOCINIO):
-        return {"thinking": {"type": "adaptive"}, "output_config": {"effort": "high"}}
+        return {"thinking": {"type": "adaptive"},
+                "output_config": {"effort": esforco_texto()}}
     return {}

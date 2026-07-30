@@ -25,7 +25,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import text
-from services.ia_texto import modelo_texto, params_raciocinio
+from services.ia_texto import modelo_texto, params_raciocinio, max_tokens_texto
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
@@ -446,7 +446,7 @@ async def _gerar_narrativa(dados: dict, kind: str, api_key: str) -> str:
     )
     resp = await client.messages.create(
         model=modelo_texto(),
-        max_tokens=600,
+        max_tokens=max_tokens_texto(),
         # Sonnet 5 liga raciocinio adaptativo quando `thinking` e OMITIDO (o
         # Haiku nao ligava). Numa frase curta de painel isso so somaria latencia
         # e tokens, entao desligamos de proposito e usamos effort baixo: aqui o
@@ -671,7 +671,7 @@ async def _gerar_insights(fatos: dict, api_key: str) -> list[str]:
     )
     resp = await client.messages.create(
         model=modelo_texto(),
-        max_tokens=500,
+        max_tokens=max_tokens_texto(),
         # Sonnet 5 liga raciocinio adaptativo quando `thinking` e OMITIDO (o
         # Haiku nao ligava). Numa frase curta de painel isso so somaria latencia
         # e tokens, entao desligamos de proposito e usamos effort baixo: aqui o
