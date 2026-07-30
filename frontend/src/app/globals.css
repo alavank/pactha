@@ -465,6 +465,14 @@
 [data-theme="pactha-dark"] .marca-clara { display: none; }
 [data-theme="pactha-dark"] .marca-escura { display: block; }
 
+/* MESMO seletor duplo dos tokens da skin (ver .bi-skin[data-bi-theme="dark"]).
+   O app de celular escolhe o tema no PROPRIO container (`data-bi-theme`), e nao
+   no <html> — ele nao tem o alternador global do sistema. Sem esta segunda
+   regra, so a arte CLARA aparecia la: palavra em tinta preta sobre fundo quase
+   preto, ou seja, a marca sumia justamente na tela que o prefeito abre na rua. */
+.bi-skin[data-bi-theme="dark"] .marca-clara { display: none; }
+.bi-skin[data-bi-theme="dark"] .marca-escura { display: block; }
+
 /* A BARRA DE ROLAGEM NAO PODE DESLOCAR A TELA.
    Cada aba tem uma altura, entao umas rolavam e outras nao; ao trocar, a
    barra sumia, a area util ficava ~15px mais larga e TODO o conteudo pulava
