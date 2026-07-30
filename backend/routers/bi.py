@@ -443,8 +443,14 @@ async def _gerar_narrativa(dados: dict, kind: str, api_key: str) -> str:
         "pontos de atencao (documentacao, prazos)."
     )
     resp = await client.messages.create(
-        model="claude-haiku-4-5",
+        model=os.getenv("PACTHA_AI_MODEL_TEXTO", "claude-sonnet-5"),
         max_tokens=600,
+        # Sonnet 5 liga raciocinio adaptativo quando `thinking` e OMITIDO (o
+        # Haiku nao ligava). Numa frase curta de painel isso so somaria latencia
+        # e tokens, entao desligamos de proposito e usamos effort baixo: aqui o
+        # modelo apenas REDIGE — os numeros ja vem calculados do backend.
+        thinking={"type": "disabled"},
+        output_config={"effort": "low"},
         system=system,
         messages=[{"role": "user", "content": prompt}],
     )
@@ -657,8 +663,14 @@ async def _gerar_insights(fatos: dict, api_key: str) -> list[str]:
         "Responda APENAS um array JSON de 2 a 4 strings."
     )
     resp = await client.messages.create(
-        model="claude-haiku-4-5",
+        model=os.getenv("PACTHA_AI_MODEL_TEXTO", "claude-sonnet-5"),
         max_tokens=500,
+        # Sonnet 5 liga raciocinio adaptativo quando `thinking` e OMITIDO (o
+        # Haiku nao ligava). Numa frase curta de painel isso so somaria latencia
+        # e tokens, entao desligamos de proposito e usamos effort baixo: aqui o
+        # modelo apenas REDIGE — os numeros ja vem calculados do backend.
+        thinking={"type": "disabled"},
+        output_config={"effort": "low"},
         system=system,
         messages=[{"role": "user", "content": json.dumps(fatos, ensure_ascii=False)}],
     )
