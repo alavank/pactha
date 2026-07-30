@@ -21,12 +21,14 @@ ISOLAMENTO POR CLIENTE/MUNICIPIO (critico):
 A chave da API fica em env var ANTHROPIC_API_KEY (secret do Coolify, nao no git).
 """
 from __future__ import annotations
+import asyncio
 import json
 import logging
 import os
 from typing import Any, Optional
 from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text, func, or_ as _or
@@ -999,6 +1001,22 @@ async def _tool_query_plano_acao(db: AsyncSession, inp: dict) -> str:
 
 
 # Dispatcher
+# Rotulos exibidos ao usuario enquanto a ferramenta roda. Escritos por nos a
+# partir do nome da tool que REALMENTE vai executar — nunca progresso inventado.
+_ROTULO_TOOL = {
+    "list_municipios": "Conferindo os municipios do escopo",
+    "municipio_summary": "Levantando o resumo do municipio",
+    "query_convenios_sigcon": "Consultando convenios estaduais (SIGCON-MG)",
+    "query_situacoes_sigcon": "Verificando as situacoes dos convenios estaduais",
+    "query_voluntarias": "Consultando propostas federais (TransfereGov/SICONV)",
+    "search_by_parlamentar": "Buscando o parlamentar em todas as fontes",
+    "query_simec_liberacoes": "Consultando liberacoes do MEC (SIMEC PAR)",
+    "query_simec_dimensoes": "Consultando o diagnostico do PAR",
+    "query_emendas_estaduais": "Consultando emendas estaduais",
+    "query_fns": "Consultando propostas do FNS (saude)",
+    "query_plano_acao": "Consultando Transferencias Especiais (RP9)",
+}
+
 TOOL_FUNCS = {
     "list_municipios": _tool_list_municipios,
     "municipio_summary": _tool_municipio_summary,
@@ -1142,8 +1160,18 @@ async def _run_ai_chat(
     return await _execute_loop(client, db, messages, escopo, escopo_txt)
 
 
-async def _execute_loop(client, db, messages, escopo: list[int], escopo_txt: str) -> dict:
-    """Loop de chamadas IA + tool_use ate end_turn, preso ao `escopo`."""
+async def _loop_eventos(client, db, messages, escopo: list[int], escopo_txt: str,
+                        streaming: bool = False):
+    """Loop de chamadas IA + tool_use ate end_turn, preso ao `escopo`.
+
+    Gerador de eventos — UMA implementacao para os dois endpoints:
+      ("etapa", {...})  ferramenta que vai rodar (so no modo streaming)
+      ("texto", {...})  pedaco de texto recem-gerado (so no modo streaming)
+      ("fim",   {...})  reply + tool_calls + usage
+
+    O /chat normal consome isto e devolve o dict de sempre; o /chat/stream
+    repassa como SSE. Ter uma implementacao so importa porque e aqui que mora
+    o choke point de escopo: duplicar o loop seria duplicar a barreira."""
     try:
         import anthropic
     except ImportError:
@@ -1182,21 +1210,36 @@ async def _execute_loop(client, db, messages, escopo: list[int], escopo_txt: str
         # antes isso virava 502 na cara do usuario. Agora tentamos ate 3x.
         response = None
         last_err = None
+        kwargs = dict(
+            model=MODEL,
+            max_tokens=16000,
+            thinking={"type": "adaptive"},
+            output_config={"effort": AI_EFFORT},
+            system=system,
+            tools=TOOLS,
+            messages=messages,
+        )
         for attempt in range(4):
+            emitiu_texto = False
             try:
-                response = await client.messages.create(
-                    model=MODEL,
-                    max_tokens=16000,
-                    thinking={"type": "adaptive"},
-                    output_config={"effort": AI_EFFORT},
-                    system=system,
-                    tools=TOOLS,
-                    messages=messages,
-                )
+                if streaming:
+                    # Mesma requisicao, mesmos tokens — muda so a entrega.
+                    async with client.messages.stream(**kwargs) as fluxo:
+                        async for ev in fluxo:
+                            if (ev.type == "content_block_delta"
+                                    and getattr(ev.delta, "type", "") == "text_delta"):
+                                emitiu_texto = True
+                                yield ("texto", {"t": ev.delta.text})
+                        response = await fluxo.get_final_message()
+                else:
+                    response = await client.messages.create(**kwargs)
                 break
             except anthropic.APIStatusError as e:
                 last_err = e
-                if e.status_code in (429, 500, 503, 529) and attempt < 3:
+                # Nao repete se ja mostramos texto na tela: o retry reescreveria
+                # a resposta do zero e o usuario veria o texto duplicado.
+                if (e.status_code in (429, 500, 503, 529) and attempt < 3
+                        and not emitiu_texto):
                     logger.warning(f"Anthropic {e.status_code} (sobrecarga) — retry {attempt+1}/3")
                     await _asyncio.sleep(1.5 * (2 ** attempt))  # 1.5s, 3s, 6s
                     continue
@@ -1218,7 +1261,7 @@ async def _execute_loop(client, db, messages, escopo: list[int], escopo_txt: str
         if response.stop_reason == "end_turn":
             # Resposta final
             reply = "".join(b.text for b in response.content if b.type == "text")
-            return {
+            yield ("fim", {
                 "reply": reply,
                 "tool_calls": tool_calls_log,
                 "usage": {
@@ -1226,18 +1269,20 @@ async def _execute_loop(client, db, messages, escopo: list[int], escopo_txt: str
                     "cache_read": cache_read, "cache_create": cache_create,
                     "iterations": iteration + 1,
                 },
-            }
+            })
+            return
 
         if response.stop_reason != "tool_use":
             # max_tokens, refusal, etc.
             text_out = "".join(b.text for b in response.content if b.type == "text")
-            return {
+            yield ("fim", {
                 "reply": text_out or f"(IA parou: {response.stop_reason})",
                 "tool_calls": tool_calls_log,
                 "usage": {"input_tokens": total_in, "output_tokens": total_out,
                           "cache_read": cache_read, "cache_create": cache_create,
                           "stop_reason": response.stop_reason},
-            }
+            })
+            return
 
         # Tool use: executa cada ferramenta e devolve resultado
         messages.append({"role": "assistant", "content": response.content})
@@ -1250,6 +1295,12 @@ async def _execute_loop(client, db, messages, escopo: list[int], escopo_txt: str
                 # CHOKE POINT DE ISOLAMENTO: o input do modelo so vira SQL depois
                 # de ser reescrito para caber no escopo do usuario autenticado.
                 tinput_seguro = _aplicar_escopo(tname, tinput, escopo)
+                if streaming:
+                    # Rotulo escrito por NOS a partir do nome da ferramenta que
+                    # de fato vai rodar — nao passa pelo modelo, nao custa token,
+                    # e nunca anuncia uma consulta que nao aconteceu.
+                    yield ("etapa", {"tool": tname,
+                                     "rotulo": _ROTULO_TOOL.get(tname, "Consultando a base")})
                 if fn is None:
                     result = f"Erro: ferramenta '{tname}' desconhecida."
                 elif tname in _TOOLS_REQ_MUN and tinput_seguro.get("municipio_id") is None:
@@ -1296,7 +1347,32 @@ async def _execute_loop(client, db, messages, escopo: list[int], escopo_txt: str
                 })
         messages.append({"role": "user", "content": tool_results})
 
-    raise HTTPException(500, "Loop de IA atingiu limite de iteracoes sem resposta final.")
+    # Estourou o limite de iteracoes. Antes isto virava 500 e jogava fora TODO o
+    # trabalho ja feito (varias consultas pagas). Melhor devolver o que temos e
+    # dizer a verdade ao usuario.
+    logger.warning("Loop de IA atingiu %d iteracoes sem resposta final", max_iter)
+    yield ("fim", {
+        "reply": ("Consultei varias fontes, mas nao consegui fechar a resposta dentro do "
+                  "limite de passos. Tente uma pergunta mais especifica (por exemplo, "
+                  "restringindo a uma fonte ou a um ano). As consultas que fiz estao "
+                  "listadas abaixo."),
+        "tool_calls": tool_calls_log,
+        "usage": {"input_tokens": total_in, "output_tokens": total_out,
+                  "cache_read": cache_read, "cache_create": cache_create,
+                  "iterations": max_iter, "stop_reason": "max_iteracoes"},
+    })
+
+
+async def _execute_loop(client, db, messages, escopo: list[int], escopo_txt: str) -> dict:
+    """Modo nao-streaming: consome o gerador e devolve o dict de sempre."""
+    final: dict = {}
+    async for tipo, dado in _loop_eventos(client, db, messages, escopo, escopo_txt,
+                                          streaming=False):
+        if tipo == "fim":
+            final = dado
+    if not final:
+        raise HTTPException(500, "IA nao produziu resposta.")
+    return final
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -1322,4 +1398,70 @@ async def chat(
         reply=result["reply"],
         tool_calls=result.get("tool_calls", []),
         usage=result.get("usage", {}),
+    )
+
+
+@router.post("/chat/stream")
+async def chat_stream(
+    body: ChatRequest,
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """Mesma coisa do /chat, entregue como SSE enquanto e gerada.
+
+    Custo identico ao /chat: mesma requisicao, mesmos tokens. Muda so a entrega.
+    Efeito colateral util: como os bytes fluem sem parar, o timeout de
+    inatividade do proxy do Next deixa de ser um risco."""
+    ensure_municipio_access(current, body.municipio_id)
+    ensure_tela(current, "ai")
+    escopo = await resolver_escopo(db, current, body.municipio_id)
+    if not escopo:
+        raise HTTPException(403, "Sua conta nao tem municipio atribuido.")
+
+    try:
+        import anthropic
+    except ImportError:
+        raise HTTPException(503, "Biblioteca anthropic nao instalada no servidor.")
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise HTTPException(503, "ANTHROPIC_API_KEY nao configurada no servidor.")
+    client = anthropic.AsyncAnthropic(api_key=api_key)
+
+    messages: list[dict[str, Any]] = []
+    for h in body.history or []:
+        role = getattr(h, "role", None)
+        content = getattr(h, "content", None)
+        if role in ("user", "assistant") and content:
+            messages.append({"role": role, "content": content})
+    messages.append({"role": "user", "content": body.message})
+    escopo_txt = await _rotulos_escopo(db, escopo)
+
+    def _sse(evento: str, dado: dict) -> str:
+        # json.dumps e obrigatorio: `data:` do SSE nao aceita quebra de linha
+        # crua, e a resposta e markdown cheio de \n.
+        return f"event: {evento}\ndata: {json.dumps(dado, ensure_ascii=False)}\n\n"
+
+    async def gerar():
+        try:
+            async for tipo, dado in _loop_eventos(client, db, messages, escopo,
+                                                  escopo_txt, streaming=True):
+                yield _sse(tipo, dado)
+        except HTTPException as e:
+            yield _sse("erro", {"detail": str(e.detail)})
+        except asyncio.CancelledError:
+            # Usuario fechou a aba: paramos de gerar (e de pagar) na hora.
+            logger.info("Streaming da IA cancelado pelo cliente")
+            raise
+        except Exception as e:
+            logger.exception("Erro no streaming da IA")
+            yield _sse("erro", {"detail": f"Erro interno ({type(e).__name__})."})
+
+    return StreamingResponse(
+        gerar(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",  # impede bufferizacao em proxies estilo nginx
+            "Connection": "keep-alive",
+        },
     )

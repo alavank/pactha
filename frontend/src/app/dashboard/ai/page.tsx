@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Send, Loader2, Sparkles, Wrench, User, Bot, Eraser, FileText } from "lucide-react";
+import { Send, Loader2, Sparkles, Wrench, User, Bot, Eraser, FileText, Square } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import api from "@/lib/api";
@@ -40,7 +40,10 @@ export default function AiChatPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pdfIdx, setPdfIdx] = useState<number | null>(null);
+  // Rotulo da consulta em andamento ("Consultando propostas do FNS...").
+  const [etapa, setEtapa] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -55,55 +58,129 @@ export default function AiChatPage() {
       setMessages(next);
       setInput("");
       setLoading(true);
+      setEtapa(null);
+      // Mensagem vazia do assistente: ela vai sendo preenchida ao vivo.
+      setMessages([...next, { role: "assistant", content: "" }]);
+
+      const ctrl = new AbortController();
+      abortRef.current = ctrl;
+      let acumulado = "";
       try {
-        const r = await api.post<{
-          reply: string;
-          tool_calls: ToolCallLog[];
-          usage: Record<string, unknown>;
-        }>("/ai/chat", {
-          message: msg.trim(),
-          municipio_id: municipioId ? Number(municipioId) : null,
-          history: messages.map((m) => ({ role: m.role, content: m.content })),
-        }, {
-          // a IA pode consultar varias fontes; da folga (a resposta tipica < 40s)
-          timeout: 180000,
-        });
-        setMessages([
-          ...next,
-          {
-            role: "assistant",
-            content: r.data.reply,
-            tool_calls: r.data.tool_calls,
-            usage: r.data.usage,
+        const token = localStorage.getItem("pactha_token");
+        const res = await fetch(`${api.defaults.baseURL}/ai/chat/stream`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
-        ]);
-      } catch (e: unknown) {
-        const err = e as {
-          response?: { status?: number; statusText?: string; data?: { detail?: string | object } };
-          message?: string;
-          code?: string;
-        };
-        console.error("AI chat error", err);
-        let msg = "Erro ao chamar a IA.";
-        if (err.response) {
-          const status = err.response.status;
-          const detail = err.response.data?.detail;
-          const detailStr = typeof detail === "string" ? detail : detail ? JSON.stringify(detail).slice(0, 300) : "";
-          msg = `HTTP ${status} ${err.response.statusText || ""}${detailStr ? ` - ${detailStr}` : ""}`;
-        } else if (err.code === "ECONNABORTED") {
-          msg = "A IA demorou demais para responder. Tente uma pergunta mais específica (ex.: filtre por município) e tente de novo.";
-        } else if (err.code === "ERR_NETWORK") {
-          msg = "Falha de conexão com a IA — a resposta pode ter demorado ou o servidor estava reiniciando. Aguarde alguns segundos e tente novamente.";
-        } else if (err.message) {
-          msg = `${err.code || "Network"}: ${err.message}`;
+          credentials: "include",
+          signal: ctrl.signal,
+          body: JSON.stringify({
+            message: msg.trim(),
+            municipio_id: municipioId ? Number(municipioId) : null,
+            history: messages.map((m) => ({ role: m.role, content: m.content })),
+          }),
+        });
+        if (!res.ok || !res.body) {
+          let detalhe = "";
+          try {
+            const j = await res.json();
+            detalhe = typeof j?.detail === "string" ? j.detail : "";
+          } catch { /* corpo nao-JSON (ex.: erro de proxy) */ }
+          throw new Error(detalhe || `HTTP ${res.status}`);
         }
-        setError(msg);
+
+        // Le o SSE manualmente: EventSource nao faz POST nem manda Authorization.
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let erroSse: string | null = null;
+
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          // Eventos SSE sao separados por linha em branco.
+          const blocos = buffer.split("\n\n");
+          buffer = blocos.pop() ?? "";
+          for (const bloco of blocos) {
+            const linhaEvento = bloco.split("\n").find((l) => l.startsWith("event: "));
+            const linhaDado = bloco.split("\n").find((l) => l.startsWith("data: "));
+            if (!linhaEvento || !linhaDado) continue;
+            const evento = linhaEvento.slice(7).trim();
+            let dado: Record<string, unknown>;
+            try {
+              dado = JSON.parse(linhaDado.slice(6));
+            } catch {
+              continue;
+            }
+            if (evento === "etapa") {
+              setEtapa(String(dado.rotulo ?? ""));
+            } else if (evento === "texto") {
+              setEtapa(null);
+              acumulado += String(dado.t ?? "");
+              setMessages((atual) => {
+                const copia = [...atual];
+                const ultimo = copia[copia.length - 1];
+                if (ultimo?.role === "assistant") {
+                  copia[copia.length - 1] = { ...ultimo, content: acumulado };
+                }
+                return copia;
+              });
+            } else if (evento === "fim") {
+              const tc = dado.tool_calls as ToolCallLog[] | undefined;
+              const us = dado.usage as Record<string, unknown> | undefined;
+              // `reply` do servidor e a verdade final; o acumulado pode conter
+              // texto de passos intermediarios.
+              const textoFinal = String(dado.reply ?? "") || acumulado;
+              setMessages((atual) => {
+                const copia = [...atual];
+                const ultimo = copia[copia.length - 1];
+                if (ultimo?.role === "assistant") {
+                  copia[copia.length - 1] = {
+                    ...ultimo, content: textoFinal, tool_calls: tc, usage: us,
+                  };
+                }
+                return copia;
+              });
+            } else if (evento === "erro") {
+              erroSse = String(dado.detail ?? "Erro na IA.");
+            }
+          }
+        }
+        if (erroSse) throw new Error(erroSse);
+      } catch (e: unknown) {
+        const err = e as { name?: string; message?: string };
+        if (err.name === "AbortError") {
+          // Cancelado de proposito: mantem o que ja apareceu na tela.
+          setMessages((atual) => {
+            const copia = [...atual];
+            const ultimo = copia[copia.length - 1];
+            if (ultimo?.role === "assistant" && !ultimo.content) copia.pop();
+            return copia;
+          });
+        } else {
+          console.error("AI chat error", err);
+          setError(err.message || "Erro ao chamar a IA.");
+          // Remove a bolha vazia para o erro nao ficar orfao.
+          setMessages((atual) => {
+            const copia = [...atual];
+            const ultimo = copia[copia.length - 1];
+            if (ultimo?.role === "assistant" && !ultimo.content) copia.pop();
+            return copia;
+          });
+        }
       } finally {
+        abortRef.current = null;
+        setEtapa(null);
         setLoading(false);
       }
     },
     [messages, loading, municipioId]
   );
+
+  // Para a geracao (e para de gastar token) quando o usuario desiste.
+  const parar = useCallback(() => abortRef.current?.abort(), []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -267,7 +344,13 @@ export default function AiChatPage() {
                 {m.role === "user" ? (
                   <div className="whitespace-pre-wrap">{m.content}</div>
                 ) : (
-                  <div className="text-[13px] leading-relaxed">{renderContent(m.content)}</div>
+                  <div className="text-[13px] leading-relaxed">
+                    {renderContent(m.content)}
+                    {/* Cursor piscando enquanto o texto ainda esta chegando. */}
+                    {loading && i === messages.length - 1 && (
+                      <span className="inline-block w-[2px] h-[1em] align-[-0.15em] bg-info animate-pulse ml-0.5" />
+                    )}
+                  </div>
                 )}
               </div>
               {m.usage && m.role === "assistant" && (
@@ -295,13 +378,16 @@ export default function AiChatPage() {
             )}
           </div>
         ))}
-        {loading && (
+        {/* Enquanto nao chegou nenhum texto, mostramos a etapa REAL em curso
+            (o nome vem da ferramenta que o servidor esta executando agora). */}
+        {loading && !messages[messages.length - 1]?.content && (
           <div className="flex gap-3">
             <div className="shrink-0 size-8 rounded-full bg-info/15 flex items-center justify-center">
               <Bot className="size-5 text-info" />
             </div>
             <div className="bg-base-100 border border-base-300 rounded-lg px-3.5 py-2.5 text-sm flex items-center gap-2 text-base-content/60">
-              <Loader2 className="size-4 animate-spin" /> Consultando o banco e pensando...
+              <Loader2 className="size-4 animate-spin" />
+              {etapa || "Analisando a pergunta..."}
             </div>
           </div>
         )}
@@ -323,9 +409,16 @@ export default function AiChatPage() {
           className="flex-1 rounded-lg border border-base-300 px-3 py-2.5 text-sm focus:outline-none focus:border-primary"
           disabled={loading}
         />
-        <Button type="submit" disabled={loading || !input.trim()} className="bg-info hover:bg-info/90">
-          {loading ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-        </Button>
+        {loading ? (
+          <Button type="button" onClick={parar} variant="outline"
+                  title="Parar a geração (interrompe também o consumo de tokens)">
+            <Square className="size-4" /> Parar
+          </Button>
+        ) : (
+          <Button type="submit" disabled={!input.trim()} className="bg-info hover:bg-info/90">
+            <Send className="size-4" />
+          </Button>
+        )}
       </form>
     </div>
   );
