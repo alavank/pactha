@@ -429,16 +429,49 @@ async def bi_documentos(db: AsyncSession, ids: list[int]) -> dict:
             "regulares": sum(1 for m in por_municipio if m["regular"]),
             "pendencias_total": sum(m["pendencias"] for m in por_municipio),
         },
-        "cagec": _cagec_indisponivel(),
+        "cagec": await _cagec_bloco(db, ids),
     }
 
 
 def _cagec_indisponivel() -> dict:
+    from routers.cagec import MOTIVO_SEM_COLETA
+    return {"disponivel": False, "motivo": MOTIVO_SEM_COLETA, "por_municipio": []}
+
+
+async def _cagec_bloco(db: AsyncSession, ids: list[int]) -> dict:
+    """CAGEC no mesmo formato do CAUC. Hoje NENHUM scraper alimenta a tabela
+    (falta a credencial do SIGCON-MG), entao na pratica isto devolve
+    `disponivel: false` — mas a consulta ja e real: no dia em que a coleta
+    entrar, a tela preenche sozinha, sem mexer em frontend.
+
+    Nunca inventar verde aqui: numa TV de gabinete, "sem dado" pintado de verde
+    e lido como "a regularidade estadual esta em dia"."""
+    from routers.cagec import fetch_cagec_situacao
+
+    por_municipio = []
+    for mid in ids[:20]:
+        s = await fetch_cagec_situacao(db, mid)
+        if not s.get("tem_dados"):
+            continue
+        por_municipio.append({
+            "municipio_id": mid,
+            "nome": s.get("nome"),
+            "regular": s.get("regular"),
+            "situacao": s.get("situacao"),
+            "validade": s.get("validade"),
+            "itens": s.get("itens") or [],
+            "pendencias": s.get("pendencias") or 0,
+            "data_pesquisa": s.get("data_pesquisa"),
+        })
+
+    if not por_municipio:
+        return _cagec_indisponivel()
     return {
-        "disponivel": False,
-        "motivo": "O CAGEC (cadastro de convenentes de MG) ainda nao e coletado "
-                  "automaticamente pelo PACTHA. Consulte pelo portal SIGCON-MG.",
-        "por_municipio": [],
+        "disponivel": True,
+        "motivo": "",
+        "por_municipio": por_municipio,
+        "regulares": sum(1 for m in por_municipio if m["regular"]),
+        "pendencias_total": sum(m["pendencias"] for m in por_municipio),
     }
 
 

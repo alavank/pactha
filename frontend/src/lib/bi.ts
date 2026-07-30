@@ -317,7 +317,23 @@ export interface AbaDocumentos {
     regulares: number;
     pendencias_total: number;
   };
-  cagec: { disponivel: boolean; motivo: string; por_municipio: unknown[] };
+  /** CAGEC = regularidade ESTADUAL (MG). Hoje `disponivel: false` — nenhum
+   *  scraper alimenta a tabela ainda (falta credencial do SIGCON-MG). O formato
+   *  já é o mesmo do CAUC para a tela preencher sozinha quando a coleta entrar. */
+  cagec: {
+    disponivel: boolean;
+    motivo: string;
+    por_municipio: Array<{
+      municipio_id: number;
+      nome: string | null;
+      regular: boolean | null;
+      situacao: string | null;
+      validade: string | null;
+      itens: CaucItemDetalhe[];
+      pendencias: number;
+      data_pesquisa: string | null;
+    }>;
+  };
 }
 
 export interface AbaFns {

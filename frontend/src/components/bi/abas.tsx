@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import {
   AbaDocumentos, AbaEstaduais, AbaFns, AbaParlamentares, AbaTransfereGov,
-  Alertas, Lancamento, Overview, isRollup,
+  Alertas, CaucItemDetalhe, Lancamento, Overview, isRollup,
 } from "@/lib/bi";
 import { formatCurrencyShort, formatInt, formatDate, diasLabel } from "@/lib/bi-format";
 import {
@@ -437,6 +437,62 @@ export function AbaEstaduaisView({ d, tv }: AbaProps & { d: AbaEstaduais }) {
 // Documentação — CAUC e CAGEC
 // ==========================================================================
 
+/** Cabeçalho de ESFERA (União / Minas). É o que impede o CAUC e o CAGEC de
+ *  virarem uma sopa de blocos quando os dois tiverem dado. */
+function EsferaHead({
+  titulo, sub, contagem,
+}: { titulo: string; sub: string; contagem?: string }) {
+  return (
+    <div
+      className="mb-2 flex flex-wrap items-baseline gap-x-2 border-b pb-1.5"
+      style={{ borderColor: "var(--bi-line-strong)" }}
+    >
+      <span className="bi-title text-[15px]">{titulo}</span>
+      <span className="text-[11px]" style={{ color: "var(--bi-faint)" }}>{sub}</span>
+      {contagem && (
+        <span className="bi-num ml-auto text-[11px]" style={{ color: "var(--bi-muted)" }}>
+          {contagem}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** Uma exigência por linha: código, rótulo e status. Serve CAUC e CAGEC — o
+ *  payload das duas esferas tem o mesmo formato de propósito. */
+function ListaExigencias({ itens, tv }: { itens: CaucItemDetalhe[]; tv?: boolean }) {
+  return (
+    <ul className="flex flex-col">
+      {itens.map((i) => (
+        <li key={i.codigo} className="flex items-baseline gap-2 py-[3px]">
+          <span className="bi-num shrink-0 text-[10px]" style={{ color: "var(--bi-faint)" }}>
+            {i.codigo}
+          </span>
+          <span
+            className={tv ? "truncate text-[13px]" : "truncate text-[12px]"}
+            style={i.tipo === "na" ? { color: "var(--bi-faint)" } : undefined}
+          >
+            {i.label}
+          </span>
+          <span
+            className="bi-num ml-auto shrink-0 text-[10px]"
+            style={{
+              color:
+                i.tipo === "pendente"
+                  ? "var(--bi-crit)"
+                  : i.tipo === "regular"
+                    ? "var(--bi-ok)"
+                    : "var(--bi-faint)",
+            }}
+          >
+            {i.tipo === "pendente" ? "PENDENTE" : i.tipo === "na" ? "não exigido" : i.valor}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function AbaDocumentosView({ d, tv }: AbaProps & { d: AbaDocumentos }) {
   const c = d.cauc;
   const pct = c.com_dados ? c.regulares / c.com_dados : 0;
@@ -458,6 +514,10 @@ export function AbaDocumentosView({ d, tv }: AbaProps & { d: AbaDocumentos }) {
     return [...porGrupo.entries()];
   }, [primeiro]);
 
+  // CAGEC do mesmo município. Hoje vem vazio (sem coleta) e o bloco cai no
+  // texto explicativo; quando a coleta entrar, desenha igual ao CAUC.
+  const cagec = d.cagec.por_municipio[0];
+
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -472,63 +532,57 @@ export function AbaDocumentosView({ d, tv }: AbaProps & { d: AbaDocumentos }) {
           valor={primeiro?.data_pesquisa ? formatDate(primeiro.data_pesquisa) : "—"} grande={tv} />
       </div>
 
-      {/* TODAS as exigências, agrupadas por bloco como no módulo. Antes a TV
-          cortava em 9 de ~15 e omitia as "não exigidas" — quem olhava não tinha
-          como saber que faltava o resto. Em colunas, tudo cabe sem virar uma
-          rolagem longa numa tela de parede. */}
+      {/* DUAS ESFERAS, CADA UMA NA SUA SEÇÃO ROTULADA.
+          Antes os blocos do CAUC e o do CAGEC corriam no MESMO fluxo de colunas:
+          nada dizia onde acabava a União e começava o Estado, e no dia em que o
+          CAGEC trouxer dados os blocos se embaralhariam. Cada esfera tem título,
+          fonte e o seu próprio fluxo — a fronteira é visível mesmo de longe.
+          CAUC ocupa 2/3 porque tem ~25 exigências em 5 blocos; o CAGEC, 1/3. */}
       <div className="bi-scroll min-h-0 flex-1 overflow-y-auto">
-        {blocos.length ? (
-          <div className={tv ? "bi-colunas-3" : "bi-colunas-2"}>
-            {blocos.map(([grupo, itens]) => (
-              <Painel key={grupo} className="mb-3 break-inside-avoid">
-                <PainelHead icon={ShieldCheck} titulo={grupo} sub={`${itens.length} exigência(s)`} />
-                <ul className="flex flex-col">
-                  {itens.map((i) => (
-                    <li key={i.codigo} className="flex items-baseline gap-2 py-[3px]">
-                      <span className="bi-num shrink-0 text-[10px]" style={{ color: "var(--bi-faint)" }}>
-                        {i.codigo}
-                      </span>
-                      <span
-                        className={tv ? "truncate text-[13px]" : "truncate text-[12px]"}
-                        style={i.tipo === "na" ? { color: "var(--bi-faint)" } : undefined}
-                      >
-                        {i.label}
-                      </span>
-                      <span
-                        className="bi-num ml-auto shrink-0 text-[10px]"
-                        style={{
-                          color:
-                            i.tipo === "pendente"
-                              ? "var(--bi-crit)"
-                              : i.tipo === "regular"
-                                ? "var(--bi-ok)"
-                                : "var(--bi-faint)",
-                        }}
-                      >
-                        {i.tipo === "pendente" ? "PENDENTE" : i.tipo === "na" ? "não exigido" : i.valor}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </Painel>
-            ))}
+        <div className="grid gap-x-4 gap-y-3 lg:grid-cols-3">
+          <section className="lg:col-span-2">
+            <EsferaHead
+              titulo="CAUC — União"
+              sub="Tesouro Nacional · exigências federais"
+              contagem={blocos.length ? `${primeiro?.total_itens ?? 0} exigências` : undefined}
+            />
+            {blocos.length ? (
+              <div className="bi-colunas-2">
+                {blocos.map(([grupo, itens]) => (
+                  <Painel key={grupo} className="mb-3 break-inside-avoid">
+                    <PainelHead icon={ShieldCheck} titulo={grupo} sub={`${itens.length} exigência(s)`} />
+                    <ListaExigencias itens={itens} tv={tv} />
+                  </Painel>
+                ))}
+              </div>
+            ) : (
+              <Painel><Vazio>Sem dados de CAUC coletados.</Vazio></Painel>
+            )}
+          </section>
 
-            {/* CAGEC como bloco irmão: é documentação de regularização do mesmo
-                assunto. Fica explícito que NÃO está verde por estar em dia — é
-                que ninguém coleta esse dado ainda. Um verde aqui seria lido como
-                "está tudo certo no estado", que é pior que a ausência. */}
-            <Painel className="mb-3 break-inside-avoid">
-              <PainelHead icon={Info} titulo="CAGEC (Minas Gerais)" sub="cadastro estadual de convenentes" />
-              <p className="text-[11px] leading-snug" style={{ color: "var(--bi-faint)" }}>
-                {d.cagec.motivo}
-              </p>
+          <section>
+            <EsferaHead
+              titulo="CAGEC — Minas Gerais"
+              sub="SIGCON-MG · exigências estaduais"
+              contagem={cagec?.itens?.length ? `${cagec.itens.length} exigências` : "aguardando coleta"}
+            />
+            <Painel className="mb-3">
+              {cagec?.itens?.length ? (
+                <ListaExigencias itens={cagec.itens} tv={tv} />
+              ) : (
+                /* Fica explícito que NÃO está verde por estar em dia — é que
+                   ninguém coleta esse dado ainda. Verde aqui seria lido como
+                   "o Estado está em dia", que é pior que a ausência. */
+                <div className="flex items-start gap-2">
+                  <Info className="mt-0.5 size-4 shrink-0" style={{ color: "var(--bi-warn)" }} />
+                  <p className="text-[11px] leading-snug" style={{ color: "var(--bi-faint)" }}>
+                    {d.cagec.motivo}
+                  </p>
+                </div>
+              )}
             </Painel>
-          </div>
-        ) : (
-          <Painel>
-            <Vazio>Sem dados de CAUC coletados.</Vazio>
-          </Painel>
-        )}
+          </section>
+        </div>
       </div>
     </div>
   );
