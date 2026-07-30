@@ -587,6 +587,114 @@ def _md_to_flowables(md: str, styles) -> list:
     return out
 
 
+# Nome legivel da fonte a partir do nome tecnico da ferramenta, para a secao de
+# procedencia. O que nao estiver aqui nao aparece — melhor omitir do que
+# imprimir "query_xyz" num documento institucional.
+_FONTE_DA_TOOL = {
+    "municipio_summary": "Resumo consolidado do município (base PACTHA)",
+    "query_convenios_sigcon": "SIGCON-MG — convênios estaduais",
+    "query_situacoes_sigcon": "SIGCON-MG — situações dos convênios",
+    "query_voluntarias": "TransfereGov / SICONV — propostas federais",
+    "search_by_parlamentar": "Busca por parlamentar (todas as fontes)",
+    "query_simec_liberacoes": "SIMEC PAR — liberações do MEC",
+    "query_simec_dimensoes": "SIMEC PAR — diagnóstico por dimensão",
+    "query_emendas_estaduais": "SIGCON-MG — emendas estaduais",
+    "query_fns": "FNS — Fundo Nacional de Saúde",
+    "query_plano_acao": "Transferências Especiais (RP9) — Ministério da Fazenda",
+    "list_municipios": None,  # ruido: nao entra no relatorio
+}
+
+
+@router.post("/ai-relatorio")
+async def export_ai_relatorio(
+    payload: dict = Body(...),
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """Relatorio em PDF de UM resultado da IA.
+
+    Diferente do /ai antigo (que imprimia "Solicitacao: <pergunta>" seguida da
+    resposta e parecia transcricao de conversa): aqui sai um documento —
+    cabecalho institucional com municipio e data de emissao, o conteudo como
+    corpo, e uma secao de PROCEDENCIA com as fontes que a IA realmente
+    consultou. Body: {assunto, conteudo, municipio_id?, tools?: [nomes]}."""
+    conteudo = (payload.get("conteudo") or "").strip()
+    if not conteudo:
+        raise HTTPException(400, "conteudo vazio")
+    assunto = (payload.get("assunto") or "Relatório").strip().replace("\n", " ")[:160]
+
+    municipio_txt = ""
+    mid = payload.get("municipio_id")
+    if mid:
+        ensure_municipio_access(current, mid)
+        row = (await db.execute(
+            text("SELECT nome, uf FROM municipios WHERE id = :i"), {"i": int(mid)})).first()
+        if row:
+            municipio_txt = f"{row[0]}/{row[1]}"
+
+    fontes: list[str] = []
+    for t in (payload.get("tools") or []):
+        nome = _FONTE_DA_TOOL.get(str(t))
+        if nome and nome not in fontes:
+            fontes.append(nome)
+
+    styles = getSampleStyleSheet()
+    st_rotulo = ParagraphStyle("Rotulo", parent=styles["Normal"], fontSize=7.5,
+                               textColor=colors.HexColor("#64748b"), spaceAfter=1,
+                               alignment=1)
+    st_titulo = ParagraphStyle("TituloRel", parent=styles["Heading1"], fontSize=16,
+                               textColor=colors.HexColor("#0f172a"), spaceAfter=2,
+                               alignment=1, leading=19)
+    st_sub = ParagraphStyle("SubRel", parent=styles["Normal"], fontSize=9,
+                            textColor=colors.HexColor("#475569"), alignment=1,
+                            spaceAfter=10)
+    st_sec = ParagraphStyle("SecRel", parent=styles["Heading3"], fontSize=10,
+                            textColor=colors.HexColor("#1e40af"), spaceBefore=10,
+                            spaceAfter=3)
+    st_fonte = ParagraphStyle("FonteRel", parent=styles["Normal"], fontSize=8.5,
+                              textColor=colors.HexColor("#334155"), leftIndent=8,
+                              spaceAfter=1)
+    st_rodape = ParagraphStyle("RodapeRel", parent=styles["Normal"], fontSize=7,
+                               textColor=colors.HexColor("#94a3b8"), alignment=1)
+
+    emitido = datetime.now().strftime("%d/%m/%Y as %H:%M")
+    linha_sub = " · ".join(x for x in [
+        municipio_txt, f"Emitido em {emitido}",
+        html.escape(getattr(current, "name", "") or ""),
+    ] if x)
+    story = [
+        Paragraph("RELATÓRIO GERADO PELA PLATAFORMA PACTHA", st_rotulo),
+        Paragraph(html.escape(assunto), st_titulo),
+        Paragraph(linha_sub, st_sub),
+        Table([[""]], colWidths=[180 * mm], rowHeights=[0.6],
+              style=TableStyle([("BACKGROUND", (0, 0), (-1, -1),
+                                 colors.HexColor("#1e40af"))])),
+        Spacer(1, 8),
+    ]
+    story.extend(_md_to_flowables(conteudo, styles))
+
+    if fontes:
+        story.append(Spacer(1, 6))
+        story.append(Paragraph("Procedência dos dados", st_sec))
+        for f in fontes:
+            story.append(Paragraph("• " + html.escape(f), st_fonte))
+
+    story.append(Spacer(1, 12))
+    story.append(Paragraph(
+        "Documento gerado automaticamente a partir dos dados da plataforma PACTHA na data de "
+        "emissão. Os valores refletem a última coleta de cada fonte oficial.", st_rodape))
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=15 * mm, rightMargin=15 * mm,
+                            topMargin=14 * mm, bottomMargin=12 * mm,
+                            title=assunto, author="PACTHA")
+    doc.build(story)
+    buf.seek(0)
+    nome_arq = re.sub(r"[^A-Za-z0-9]+", "-", assunto).strip("-").lower()[:60] or "relatorio"
+    return StreamingResponse(buf, media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=relatorio-{nome_arq}.pdf"})
+
+
 @router.post("/ai")
 async def export_ai_pdf(
     payload: dict = Body(...),
