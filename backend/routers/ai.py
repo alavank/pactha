@@ -45,13 +45,20 @@ router = APIRouter(prefix="/api/ai", tags=["ai"])
 _VOL_LIKE = "%enviado para an%lise%"
 _REJ_LIKE = "%rejeitad%"
 
-MODEL = os.getenv("PACTHA_AI_MODEL", "claude-sonnet-5")
-# low | medium | high | xhigh | max  — controla profundidade de raciocinio/latencia.
-# Medido nesta base (pergunta do FNS, numeros conferidos contra o Postgres):
-#   high   26,3s / 3358 tok — tudo certo
-#   medium 20,8s / 2556 tok — tudo certo  <- default
-#   low    10,4s / 1057 tok — perdeu a quebra por situacao que a pergunta pedia
-AI_EFFORT = os.getenv("PACTHA_AI_EFFORT", "medium")
+MODEL = os.getenv("PACTHA_AI_MODEL", "claude-opus-5")
+# low | medium | high | xhigh | max  — profundidade de raciocinio x latencia x custo.
+#
+# Medido no caminho real de producao, 3 perguntas com os valores conferidos no
+# Postgres (48 propostas FNS / R$ 26.312.116,08 / Pago 33 / Empenhado 13;
+# Julio Delgado R$ 3.062.627,72 em 6 propostas; 0 convenios SIGCON):
+#   sonnet-5 @ medium   28,5s   US$ 0,058   7/7 valores certos
+#   opus-5   @ high     51,6s   US$ 0,179   7/7   <- em uso
+#   opus-5   @ max      77,0s   US$ 0,239   7/7
+# Os tres acertaram tudo: nesta base o acerto vem do SQL, nao do modelo. Opus 5
+# @ high foi escolha do dono do sistema (mais margem em pergunta ambigua e
+# cruzamento de fontes), ciente de que custa ~3x o Sonnet 5 @ medium. `max` nao
+# melhorou acerto nenhum aqui e dobrou o tempo.
+AI_EFFORT = os.getenv("PACTHA_AI_EFFORT", "high")
 
 SYSTEM_PROMPT = """Voce eh o assistente IA da plataforma PACTHA, que monitora convenios,
 emendas e transferencias federais e estaduais de municipios brasileiros. Voce ajuda
