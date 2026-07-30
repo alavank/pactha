@@ -88,6 +88,8 @@ MIGRATION_FILES = [
     # CAGEC (regularidade estadual MG): tabela pronta, coleta pendente de
     # credencial do SIGCON-MG. Ver routers/cagec.py.
     "add_cagec.sql",
+    # Tipo do link publicado: TV de parede ('tela') ou app de celular ('mobile')
+    "add_bi_tela_link_kind.sql",
 ]
 
 

@@ -532,9 +532,13 @@ export async function putTelaFiltros(f: FiltroTela): Promise<void> {
   await api.put("/bi/tela-filtros", { scope: f.scope, anos: f.anos, aba: f.aba });
 }
 
+export type TipoLink = "tela" | "mobile";
+
 export interface TelaLink {
   slug: string;
   caminho: string;
+  /** 'tela' = TV (segue o filtro do dono) · 'mobile' = app (filtro próprio). */
+  kind?: TipoLink;
   nome: string | null;
   criado_em?: string | null;
   expira_em?: string | null;
@@ -542,8 +546,12 @@ export interface TelaLink {
   ultimo_acesso?: string | null;
 }
 
-export async function criarTelaLink(nome?: string, dias = 365): Promise<TelaLink> {
-  const { data } = await api.post<TelaLink>("/bi/tela-links", { nome: nome || null, dias });
+export async function criarTelaLink(
+  kind: TipoLink = "tela",
+  nome?: string,
+  dias = 365
+): Promise<TelaLink> {
+  const { data } = await api.post<TelaLink>("/bi/tela-links", { nome: nome || null, dias, kind });
   return data;
 }
 
@@ -560,7 +568,7 @@ export async function revogarTelaLink(slug: string): Promise<void> {
  *  Sem autenticacao de proposito — o segredo e o proprio slug. */
 export async function resolverTelaPub(
   slug: string
-): Promise<{ token: string; scope: string; anos: number[]; aba: string | null }> {
+): Promise<{ token: string; scope: string; anos: number[]; aba: string | null; kind?: TipoLink }> {
   const { data } = await api.get(`/bi/tela-pub/${encodeURIComponent(slug)}`);
   return data;
 }

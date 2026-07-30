@@ -4,11 +4,11 @@
 // deve aparecer numa TV de gabinete. Aqui vive o que existia em /bi/config:
 // preferências de aviso e o link de quiosque (liga a TV sem login).
 import { useEffect, useMemo, useState } from "react";
-import { Bell, Check, Copy, KeyRound, Settings2, Trash2, Tv, X } from "lucide-react";
+import { Bell, Check, Copy, KeyRound, Settings2, Share2, Smartphone, Trash2, Tv, X } from "lucide-react";
 import api from "@/lib/api";
 import type { User } from "@/types";
 import {
-  Prefs, TelaLink, criarTelaLink, getPrefs, listarTelaLinks, putPrefs,
+  Prefs, TelaLink, TipoLink, criarTelaLink, getPrefs, listarTelaLinks, putPrefs,
   putTelaFiltros, revogarTelaLink,
 } from "@/lib/bi";
 import { allowedTelasOf } from "@/lib/telas";
@@ -47,7 +47,7 @@ function ModalAjustes({ onFechar }: { onFechar: () => void }) {
   const [prefs, setPrefs] = useState<Prefs | null>(null);
   const [salvando, setSalvando] = useState(false);
   const [links, setLinks] = useState<TelaLink[]>([]);
-  const [emitindo, setEmitindo] = useState(false);
+  const [emitindo, setEmitindo] = useState<TipoLink | null>(null);
   const [copiado, setCopiado] = useState<string | null>(null);
 
   const podeGerarLink = useMemo(() => {
@@ -81,20 +81,20 @@ function ModalAjustes({ onFechar }: { onFechar: () => void }) {
     }
   };
 
-  const gerarLink = async () => {
-    setEmitindo(true);
+  const gerarLink = async (kind: TipoLink) => {
+    setEmitindo(kind);
     try {
       // Publica o filtro ANTES de emitir. Sem isto o link nasce mostrando
       // "consolidado / todos os anos" e só passaria a refletir o período depois
       // que alguém mexesse no filtro de novo — que é exatamente o defeito que
       // esta tela existe para não ter.
       await putTelaFiltros({ scope: scope || CONSOLIDADO, anos, aba: null }).catch(() => {});
-      const novo = await criarTelaLink();
+      const novo = await criarTelaLink(kind);
       setLinks((L) => [novo, ...L]);
     } catch {
       /* silencio aqui = o botao volta ao normal; o link simplesmente nao entra */
     } finally {
-      setEmitindo(false);
+      setEmitindo(null);
     }
   };
 
@@ -166,24 +166,58 @@ function ModalAjustes({ onFechar }: { onFechar: () => void }) {
         {podeGerarLink && (
           <section>
             <div className="mb-2 flex items-center gap-2 text-[13px] font-semibold">
-              <Tv className="size-4" style={{ color: "var(--bi-muted)" }} />
-              Link público da TV
+              <Share2 className="size-4" style={{ color: "var(--bi-muted)" }} />
+              Links externos
             </div>
-            <p className="mb-2 text-[11px]" style={{ color: "var(--bi-faint)" }}>
-              Abre o Modo Tela sem login e acompanha <strong>o seu</strong> filtro:
-              mudou o período aqui, muda lá em até 10 segundos. Trate como senha —
-              quem tiver o link vê os indicadores.
+            <p className="mb-3 text-[11px]" style={{ color: "var(--bi-faint)" }}>
+              Abrem sem login. Trate como senha — quem tiver o link vê os indicadores.
+              Os dois <strong>se comportam de forma diferente</strong>:
             </p>
-            <button
-              type="button"
-              onClick={gerarLink}
-              disabled={emitindo}
-              className="inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-[12px] font-semibold disabled:opacity-60"
-              style={{ background: "var(--bi-cta)", color: "var(--bi-cta-ink)" }}
-            >
-              <KeyRound className="size-3.5" />
-              {emitindo ? "Gerando…" : "Gerar link"}
-            </button>
+
+            <div className="flex flex-col gap-2">
+              {/* MODO TELA: extensão da tela do gabinete, então SEGUE o filtro do dono. */}
+              <div className="rounded-2xl p-2.5" style={{ background: "var(--bi-surface-2)" }}>
+                <div className="mb-1.5 flex items-center gap-1.5 text-[12px] font-semibold">
+                  <Tv className="size-3.5" style={{ color: "var(--bi-muted)" }} /> Modo Tela (TV)
+                </div>
+                <p className="mb-2 text-[11px] leading-snug" style={{ color: "var(--bi-faint)" }}>
+                  Acompanha <strong>o seu</strong> filtro: mudou o período aqui, muda lá em
+                  até 10 segundos. Para a TV do gabinete.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => gerarLink("tela")}
+                  disabled={!!emitindo}
+                  className="inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-[12px] font-semibold disabled:opacity-60"
+                  style={{ background: "var(--bi-cta)", color: "var(--bi-cta-ink)" }}
+                >
+                  <KeyRound className="size-3.5" />
+                  {emitindo === "tela" ? "Gerando…" : "Gerar link externo — Modo Tela"}
+                </button>
+              </div>
+
+              {/* APP MOBILE: usado na rua, então filtra POR CONTA e não mexe na TV. */}
+              <div className="rounded-2xl p-2.5" style={{ background: "var(--bi-surface-2)" }}>
+                <div className="mb-1.5 flex items-center gap-1.5 text-[12px] font-semibold">
+                  <Smartphone className="size-3.5" style={{ color: "var(--bi-muted)" }} /> App Mobile (PWA)
+                </div>
+                <p className="mb-2 text-[11px] leading-snug" style={{ color: "var(--bi-faint)" }}>
+                  Instala como atalho no celular e tem <strong>filtro próprio</strong>: quem
+                  abrir muda o período no aparelho, sem afetar a TV nem o seu painel.
+                  Para reunião fora do gabinete.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => gerarLink("mobile")}
+                  disabled={!!emitindo}
+                  className="inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-[12px] font-semibold disabled:opacity-60"
+                  style={{ background: "var(--bi-cta)", color: "var(--bi-cta-ink)" }}
+                >
+                  <Smartphone className="size-3.5" />
+                  {emitindo === "mobile" ? "Gerando…" : "Gerar link externo — App Mobile"}
+                </button>
+              </div>
+            </div>
 
             {links.length > 0 && (
               <ul className="mt-2 space-y-1.5">
@@ -193,6 +227,18 @@ function ModalAjustes({ onFechar }: { onFechar: () => void }) {
                     className="flex items-center gap-2 rounded-xl px-2.5 py-2"
                     style={{ background: "var(--bi-surface-2)", border: "1px solid var(--bi-line)" }}
                   >
+                    <span
+                      className="shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase"
+                      style={{
+                        background: "var(--bi-accent-soft)",
+                        color: "var(--bi-accent)",
+                      }}
+                      title={l.kind === "mobile"
+                        ? "App Mobile — filtro próprio no aparelho"
+                        : "Modo Tela — segue o seu filtro"}
+                    >
+                      {l.kind === "mobile" ? "app" : "tv"}
+                    </span>
                     <code className="min-w-0 flex-1 truncate text-[11px]">{urlDe(l)}</code>
                     <button
                       type="button"
