@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
-from services.ia_texto import modelo_texto, params_raciocinio
+from services.ia_texto import modelo_texto, params_raciocinio, max_tokens_texto
 from database import get_db
 from services.auth import get_current_user, ensure_municipio_access, hash_password, create_kiosk_token
 from models.user import User
@@ -229,7 +229,7 @@ async def _gerar_narrativa(dados: dict, kind: str, api_key: str) -> str:
     )
     resp = await client.messages.create(
         model=modelo_texto(),
-        max_tokens=600,
+        max_tokens=max_tokens_texto(),
         # Sonnet 5 liga raciocinio adaptativo quando `thinking` e OMITIDO (o
         # Haiku nao ligava). Numa frase curta de painel isso so somaria latencia
         # e tokens, entao desligamos de proposito e usamos effort baixo: aqui o

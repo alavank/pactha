@@ -46,19 +46,17 @@ _VOL_LIKE = "%enviado para an%lise%"
 _REJ_LIKE = "%rejeitad%"
 
 MODEL = os.getenv("PACTHA_AI_MODEL", "claude-opus-5")
-# low | medium | high | xhigh | max  — profundidade de raciocinio x latencia x custo.
-#
-# Medido no caminho real de producao, 3 perguntas com os valores conferidos no
-# Postgres (48 propostas FNS / R$ 26.312.116,08 / Pago 33 / Empenhado 13;
-# Julio Delgado R$ 3.062.627,72 em 6 propostas; 0 convenios SIGCON):
-#   sonnet-5 @ medium   28,5s   US$ 0,058   7/7 valores certos
-#   opus-5   @ high     51,6s   US$ 0,179   7/7   <- em uso
-#   opus-5   @ max      77,0s   US$ 0,239   7/7
-# Os tres acertaram tudo: nesta base o acerto vem do SQL, nao do modelo. Opus 5
-# @ high foi escolha do dono do sistema (mais margem em pergunta ambigua e
-# cruzamento de fontes), ciente de que custa ~3x o Sonnet 5 @ medium. `max` nao
-# melhorou acerto nenhum aqui e dobrou o tempo.
-AI_EFFORT = os.getenv("PACTHA_AI_EFFORT", "high")
+# low | medium | high | xhigh | max — profundidade de raciocinio x latencia x custo.
+# Decisao do dono do sistema: `max` em tudo, priorizando resultado sobre custo
+# (o custo e repassado ao cliente). Medicoes que embasaram a conversa estao em
+# docs/ia-benchmarks.md.
+AI_EFFORT = os.getenv("PACTHA_AI_EFFORT", "max")
+# ATENCAO: em effort `max` o orcamento de max_tokens cobre RACIOCINIO + texto.
+# Medido na faixa do dashboard: com 500 o modelo estourou no meio da frase
+# (stop_reason=max_tokens, JSON cortado). Teto alto nao custa nada enquanto nao
+# e usado; resposta cortada custa a pergunta inteira de novo.
+MAX_TOKENS = int(os.getenv("PACTHA_AI_MAX_TOKENS", "32000"))
+_CLIENTE = None  # cliente Anthropic reaproveitado (ver _cliente_ia)
 
 SYSTEM_PROMPT = """Voce eh o assistente IA da plataforma PACTHA, que monitora convenios,
 emendas e transferencias federais e estaduais de municipios brasileiros. Voce ajuda
@@ -127,6 +125,10 @@ FONTES DE DADOS:
   emendas de parlamentar federal, SEMPRE consulte esta fonte.
 
 BUSCA POR PARLAMENTAR:
+- "Qual parlamentar trouxe mais?", ranking, "quem mais destinou", comparacao entre
+  parlamentares -> use `ranking_parlamentares`. Ele ja devolve os totais SOMADOS
+  pelo banco. NUNCA monte ranking somando listas voce mesmo: e assim que sai
+  numero errado.
 - Se o usuario perguntar por um parlamentar especifico (deputado/senador), use
   `search_by_parlamentar` — retorna TUDO daquele nome em uma chamada:
   convenios SIGCON, propostas SICONV, emendas estaduais E Planos de Acao /
@@ -288,6 +290,18 @@ TOOLS = [
         },
     },
     {
+        "name": "ranking_parlamentares",
+        "description": "Ranking dos parlamentares por valor trazido ao municipio, JA SOMADO pelo banco, cruzando SICONV (federal), Emendas Estaduais e RP9/Transferencia Especial. USE SEMPRE que a pergunta for 'qual parlamentar trouxe mais', 'quem mais destinou', ranking ou comparacao entre parlamentares — NUNCA some as listas na mao para responder isso. Para detalhar UM parlamentar especifico, use search_by_parlamentar.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "municipio_id": {"type": "integer"},
+                "limit": {"type": "integer", "description": "Quantos mostrar (default 15, max 50)"},
+            },
+            "required": ["municipio_id"],
+        },
+    },
+    {
         "name": "query_plano_acao",
         "description": "Planos de Acao / Transferencia Especial (RP9, 'emenda Pix', FEDERAL) do municipio — transferencias indicadas por emenda parlamentar individual, pagas direto ao municipio. Consulta AO VIVO a API nacional (nao esta no banco). Retorna, por plano: codigo, AUTOR da emenda (parlamentar), politica publica, situacao e valores (custeio/investimento/total). MUITAS emendas de deputado federal vem por aqui — use sempre que a pergunta envolver emenda de parlamentar federal. Filtro opcional por parlamentar/situacao.",
         "input_schema": {
@@ -332,7 +346,7 @@ def _fmt_dt(d) -> str:
 _TOOLS_REQ_MUN = {
     "municipio_summary", "query_convenios_sigcon", "query_situacoes_sigcon",
     "query_simec_liberacoes", "query_simec_dimensoes", "query_emendas_estaduais",
-    "query_fns", "query_plano_acao",
+    "query_fns", "query_plano_acao", "ranking_parlamentares",
 }
 
 
@@ -938,6 +952,89 @@ def _parse_emenda_autor(codigo_emenda_formatado: str) -> tuple[str, str]:
     return code.strip(), autor.strip()
 
 
+async def _tool_ranking_parlamentares(db: AsyncSession, inp: dict) -> str:
+    """Ranking de parlamentares por valor, JA SOMADO, cruzando as fontes.
+
+    Existe porque o modelo erra somando lista longa a mao: perguntado "qual
+    parlamentar trouxe mais recurso", leu as linhas cruas e respondeu que o
+    maior era Lincoln Portela — quando o banco diz Julio Delgado com
+    R$ 2.270.550,72 so no SICONV contra R$ 592.600,00 de Lincoln Portela.
+    Errou nas 3 repeticoes. Somar e trabalho de SQL."""
+    mun_id = int(inp["municipio_id"])
+    limite = min(int(inp.get("limit", 15)), 50)
+    totais: dict[str, dict] = {}
+
+    import unicodedata
+
+    def _chave(nome: str) -> str:
+        """Nome sem acento e em caixa alta, so para AGRUPAR.
+
+        O SICONV grava "JULIO DELGADO" e a API do RP9 devolve "Julio Delgado"
+        com acento: sem normalizar, o MESMO deputado vira duas linhas e o
+        ranking sai errado (aconteceu no primeiro teste desta ferramenta)."""
+        n = unicodedata.normalize("NFKD", nome or "")
+        return "".join(c for c in n if not unicodedata.combining(c)).upper().strip()
+
+    def _acc(nome: str, fonte: str, valor: float, qtd: int = 1):
+        nome = (nome or "").strip()
+        if not nome:
+            return
+        alvo = totais.setdefault(_chave(nome), {"siconv": 0.0, "estaduais": 0.0,
+                                                "rp9": 0.0, "qtd": 0, "rotulo": nome})
+        alvo[fonte] += float(valor or 0)
+        alvo["qtd"] += qtd
+
+    rows = (await db.execute(text(
+        "SELECT parlamentar, count(*), COALESCE(SUM(COALESCE(valor_global, valor_repasse, 0)), 0) "
+        "FROM transferegov_propostas "
+        "WHERE municipio_id = :m AND parlamentar IS NOT NULL AND parlamentar <> '' "
+        "GROUP BY parlamentar"), {"m": mun_id})).fetchall()
+    for r in rows:
+        _acc(r[0], "siconv", r[2], int(r[1]))
+
+    rows = (await db.execute(text(
+        "SELECT nome_responsavel, count(*), COALESCE(SUM(valor_indicacao), 0) "
+        "FROM emendas_estaduais "
+        "WHERE municipio_id = :m AND nome_responsavel IS NOT NULL AND nome_responsavel <> '' "
+        "GROUP BY nome_responsavel"), {"m": mun_id})).fetchall()
+    for r in rows:
+        _acc(r[0], "estaduais", r[2], int(r[1]))
+
+    mun = (await db.execute(select(Municipio).where(Municipio.id == mun_id))).scalar_one_or_none()
+    rp9_aviso = ""
+    if mun:
+        try:
+            for p in await _planos_acao_municipio(mun):
+                _acc(p.get("autor") or "", "rp9", p.get("vtot") or 0)
+        except Exception as e:  # fonte AO VIVO: nao pode derrubar o ranking
+            rp9_aviso = (f"\nATENCAO: a fonte RP9 falhou agora ({str(e)[:70]}); "
+                         "o ranking abaixo NAO inclui Transferencia Especial — avise o usuario.")
+
+    if not totais:
+        return "Nenhum parlamentar identificado nas fontes deste municipio."
+
+    ordenado = sorted(totais.items(),
+                      key=lambda kv: kv[1]["siconv"] + kv[1]["estaduais"] + kv[1]["rp9"],
+                      reverse=True)
+    out = ["RANKING DE PARLAMENTARES — TOTAIS JA SOMADOS PELO BANCO.",
+           "Use exatamente estes valores e NAO refaca a soma." + rp9_aviso,
+           f"{len(ordenado)} parlamentar(es) identificado(s); mostrando ate {limite}.",
+           "Fontes somadas: SICONV (federal), Emendas Estaduais (SIGCON), RP9/Transf. Especial.",
+           "Obs.: proposta com varios autores no mesmo campo vira um nome composto — o dado",
+           "nao diz como ratear entre eles, entao nao rateie."]
+    for nome, v in ordenado[:limite]:
+        tot = v["siconv"] + v["estaduais"] + v["rp9"]
+        partes = []
+        if v["siconv"]:
+            partes.append(f"SICONV {_fmt_money(v['siconv'])}")
+        if v["estaduais"]:
+            partes.append(f"Emendas estaduais {_fmt_money(v['estaduais'])}")
+        if v["rp9"]:
+            partes.append(f"RP9 {_fmt_money(v['rp9'])}")
+        out.append(f"- {v.get('rotulo') or nome}: TOTAL {_fmt_money(tot)}  ({' | '.join(partes)})")
+    return "\n".join(out)
+
+
 async def _planos_acao_municipio(mun) -> list[dict]:
     """Busca AO VIVO os Planos de Acao (Transferencia Especial/RP9) do municipio
     na API nacional (reusa o fetch com cache do router transferegov). Filtra por
@@ -1022,6 +1119,7 @@ _ROTULO_TOOL = {
     "query_emendas_estaduais": "Consultando emendas estaduais",
     "query_fns": "Consultando propostas do FNS (saude)",
     "query_plano_acao": "Consultando Transferencias Especiais (RP9)",
+    "ranking_parlamentares": "Montando o ranking de parlamentares",
 }
 
 TOOL_FUNCS = {
@@ -1036,6 +1134,7 @@ TOOL_FUNCS = {
     "query_fns": _tool_query_fns,
     "query_plano_acao": _tool_query_plano_acao,
     "search_by_parlamentar": _tool_search_by_parlamentar,
+    "ranking_parlamentares": _tool_ranking_parlamentares,
 }
 
 
@@ -1128,20 +1227,7 @@ async def _run_ai_chat(
     `escopo` e a lista de municipio_id que ESTA conversa pode ver. Quem chama
     DEVE fornece-la (ou `user_id`, para derivarmos). Sem nenhum dos dois nao ha
     como garantir isolamento, entao a chamada e recusada."""
-    try:
-        import anthropic
-    except ImportError:
-        raise HTTPException(503, "Biblioteca anthropic nao instalada no servidor.")
-
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    if not api_key:
-        raise HTTPException(503, "ANTHROPIC_API_KEY nao configurada no servidor.")
-
-    try:
-        client = anthropic.AsyncAnthropic(api_key=api_key)
-    except Exception as e:
-        logger.exception("Falha criando cliente Anthropic")
-        raise HTTPException(503, f"Falha criando cliente IA: {type(e).__name__}: {str(e)[:200]}")
+    client = _cliente_ia()
 
     # Escopo: nunca deduzido do que o modelo pede.
     if escopo is None:
@@ -1168,6 +1254,55 @@ async def _run_ai_chat(
 
     escopo_txt = await _rotulos_escopo(db, escopo)
     return await _execute_loop(client, db, messages, escopo, escopo_txt)
+
+
+def _cliente_ia():
+    """Cliente Anthropic reaproveitado entre requisicoes.
+
+    Antes era criado a cada pergunta, e cada criacao refaz handshake TLS com a
+    API — latencia pura, sem nada em troca. O SDK e async-safe e mantem pool de
+    conexoes, entao um por processo e o certo."""
+    global _CLIENTE
+    try:
+        import anthropic
+    except ImportError:
+        raise HTTPException(503, "Biblioteca anthropic nao instalada no servidor.")
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise HTTPException(503, "ANTHROPIC_API_KEY nao configurada no servidor.")
+    if _CLIENTE is None or getattr(_CLIENTE, "_pactha_key", None) != api_key:
+        _CLIENTE = anthropic.AsyncAnthropic(api_key=api_key)
+        _CLIENTE._pactha_key = api_key  # rotacionar a env recria o cliente
+    return _CLIENTE
+
+
+def _marcar_cache_no_fim(messages: list) -> None:
+    """Move o breakpoint de cache para o fim do historico (janela deslizante).
+
+    O cache da Anthropic e casamento de PREFIXO: o breakpoint diz ate onde
+    guardar. Marcando sempre o ultimo bloco, cada passo do loop reaproveita tudo
+    o que ja foi processado antes (prompt fixo + ferramentas ja executadas) e so
+    paga preco cheio pelo pedaco novo.
+
+    Tiramos a marca anterior porque a API aceita no maximo 4 breakpoints por
+    requisicao e o loop pode dar ate 8 voltas. Remover nao invalida nada: os
+    BYTES do prefixo continuam iguais, muda so onde o corte e declarado."""
+    for m in messages:
+        c = m.get("content")
+        if isinstance(c, list):
+            for bloco in c:
+                if isinstance(bloco, dict):
+                    bloco.pop("cache_control", None)
+    if not messages:
+        return
+    ultimo = messages[-1]
+    c = ultimo.get("content")
+    if isinstance(c, str):
+        # Normaliza para lista para poder carimbar o bloco.
+        ultimo["content"] = [{"type": "text", "text": c,
+                              "cache_control": {"type": "ephemeral"}}]
+    elif isinstance(c, list) and c and isinstance(c[-1], dict):
+        c[-1]["cache_control"] = {"type": "ephemeral"}
 
 
 async def _loop_eventos(client, db, messages, escopo: list[int], escopo_txt: str,
@@ -1215,6 +1350,11 @@ async def _loop_eventos(client, db, messages, escopo: list[int], escopo_txt: str
     import asyncio as _asyncio
 
     for iteration in range(max_iter):
+        # Cache tambem do HISTORICO, nao so do prompt fixo. Sem isto, cada passo
+        # do loop reenvia os resultados de ferramenta ja processados pagando
+        # preco cheio de novo — e sao eles que pesam numa pergunta que cruza
+        # varias fontes (medi uma que custou US$ 0,40, quase tudo entrada).
+        _marcar_cache_no_fim(messages)
         # Retry com backoff p/ erros transitorios de sobrecarga (529 Overloaded,
         # 503, 500, 429). A API da Anthropic devolve 529 quando esta saturada —
         # antes isso virava 502 na cara do usuario. Agora tentamos ate 3x.
@@ -1222,7 +1362,7 @@ async def _loop_eventos(client, db, messages, escopo: list[int], escopo_txt: str
         last_err = None
         kwargs = dict(
             model=MODEL,
-            max_tokens=16000,
+            max_tokens=MAX_TOKENS,
             thinking={"type": "adaptive"},
             output_config={"effort": AI_EFFORT},
             system=system,
@@ -1374,10 +1514,17 @@ async def _loop_eventos(client, db, messages, escopo: list[int], escopo_txt: str
 
 
 async def _execute_loop(client, db, messages, escopo: list[int], escopo_txt: str) -> dict:
-    """Modo nao-streaming: consome o gerador e devolve o dict de sempre."""
+    """Modo nao-streaming (/chat e bot do Telegram): consome o gerador e
+    devolve o dict de sempre.
+
+    Por baixo usa streaming=True DE PROPOSITO. Com max_tokens alto — necessario
+    em effort `max`, onde o orcamento cobre raciocinio + texto — o SDK RECUSA a
+    chamada nao-streaming ("Streaming is required for operations that may take
+    longer than 10 minutes"). Streamar por dentro e descartar os pedacos mantem
+    a assinatura e a saida identicas as de antes."""
     final: dict = {}
     async for tipo, dado in _loop_eventos(client, db, messages, escopo, escopo_txt,
-                                          streaming=False):
+                                          streaming=True):
         if tipo == "fim":
             final = dado
     if not final:
@@ -1552,14 +1699,7 @@ async def chat_stream(
     if not escopo:
         raise HTTPException(403, "Sua conta nao tem municipio atribuido.")
 
-    try:
-        import anthropic
-    except ImportError:
-        raise HTTPException(503, "Biblioteca anthropic nao instalada no servidor.")
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    if not api_key:
-        raise HTTPException(503, "ANTHROPIC_API_KEY nao configurada no servidor.")
-    client = anthropic.AsyncAnthropic(api_key=api_key)
+    client = _cliente_ia()
 
     messages: list[dict[str, Any]] = []
     for h in body.history or []:
