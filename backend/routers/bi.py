@@ -440,7 +440,8 @@ async def _gerar_narrativa(dados: dict, kind: str, api_key: str) -> str:
         f"Prestacoes de contas vencidas: {dados['prestacao']}. Convenios vencendo: {dados['vigencia']}.\n"
         f"Parlamentares que mais destinaram recurso: {top_txt}.\n\n"
         "Escreva um resumo executivo destacando o impacto (quanto entrou, quem ajudou) e os "
-        "pontos de atencao (documentacao, prazos)."
+        "pontos de atencao (documentacao, prazos). Escreva em portugues do Brasil com "
+        "ACENTUACAO CORRETA — o texto vai direto para a tela do gestor."
     )
     resp = await client.messages.create(
         model=os.getenv("PACTHA_AI_MODEL_TEXTO", "claude-sonnet-5"),
@@ -655,6 +656,8 @@ async def _gerar_insights(fatos: dict, api_key: str) -> list[str]:
         "Cada aviso e uma frase UNICA de no maximo 140 caracteres, faz sentido "
         "sozinho (a TV mostra um de cada vez) e traz um numero ou um nome concreto. "
         "Priorize o que exige acao (prazo, pendencia) antes do que e so resultado. "
+        "Escreva em portugues do Brasil com ACENTUACAO CORRETA (atencao->atenção, "
+        "convenio->convênio, prestacoes->prestações). O texto vai direto para a tela. "
         "Nao invente numeros. Nao invente ROTULOS: use apenas as descricoes que "
         "aparecem nos dados e nunca atribua um valor a uma area, tema, programa, "
         "orgao ou pessoa que nao esteja explicito ali (ex.: nao escreva 'para "

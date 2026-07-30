@@ -223,7 +223,8 @@ async def _gerar_narrativa(dados: dict, kind: str, api_key: str) -> str:
         f"Prestacoes de contas vencidas: {dados['prestacao']}. Convenios vencendo: {dados['vigencia']}.\n"
         f"Parlamentares que mais destinaram recurso: {top_txt}.\n\n"
         "Escreva um resumo executivo destacando o impacto (quanto entrou, quem ajudou) e os "
-        "pontos de atencao (documentacao, prazos)."
+        "pontos de atencao (documentacao, prazos). Escreva em portugues do Brasil com "
+        "ACENTUACAO CORRETA — o texto vai direto para a tela do gestor."
     )
     resp = await client.messages.create(
         model=os.getenv("PACTHA_AI_MODEL_TEXTO", "claude-sonnet-5"),
