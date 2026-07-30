@@ -625,8 +625,31 @@ async def _fatos_da_aba(db: AsyncSession, ids: list[int], cons: bool, aba: str,
         return fatos, tpl
 
     if aba == "fns":
-        fatos = {"aba": "fns", "periodo": periodo_txt}
-        return fatos, [f"Fundo Nacional de Saúde — propostas de {periodo_txt}."]
+        # Antes isto devolvia SO {aba, periodo} — sem nenhum numero. Sem fato, a
+        # IA escrevia "nenhum repasse registrado" na tela do gestor, o que e
+        # FALSO: Monte Siao tem 48 propostas FNS somando R$ 26,3 mi. Os fatos
+        # agora vem do BANCO (mesma fonte que a IA do chat usa) e nao da API ao
+        # vivo do painel — faixa de dashboard nao pode depender de servico externo.
+        _w = ["municipio_id = ANY(:ids)", "fonte ILIKE '%FNS%'"]
+        _p: dict = {"ids": ids}
+        if periodo:
+            _w.append("ano = ANY(:anos)")
+            _p["anos"] = periodo
+        _linhas = (await db.execute(text(
+            "SELECT situacao, count(*), COALESCE(SUM(valor_total), 0) "
+            "FROM convenios_estadual WHERE " + " AND ".join(_w) +
+            " GROUP BY situacao ORDER BY 2 DESC"), _p)).fetchall()
+        _total = sum(int(r[1]) for r in _linhas)
+        _valor = float(sum(float(r[2] or 0) for r in _linhas))
+        fatos = {
+            "aba": "fns", "periodo": periodo_txt,
+            "propostas": _total, "valor_total": _valor,
+            "situacoes": [{"label": r[0] or "sem situacao", "qtd": int(r[1]),
+                           "valor": float(r[2] or 0)} for r in _linhas],
+        }
+        tpl = [f"FNS: {_total} proposta(s) de saúde somando {_money_br(_valor)}."
+               if _total else f"FNS: nenhuma proposta registrada em {periodo_txt}."]
+        return fatos, tpl
 
     # geral
     kpis = await bi_kpis(db, ids, periodo)

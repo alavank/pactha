@@ -26,7 +26,7 @@ def modelo_texto() -> str:
 
 
 def esforco_texto() -> str:
-    return os.getenv("PACTHA_AI_EFFORT_TEXTO", "max")
+    return os.getenv("PACTHA_AI_EFFORT_TEXTO", "high")
 
 
 def max_tokens_texto() -> int:

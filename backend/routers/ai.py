@@ -47,10 +47,16 @@ _REJ_LIKE = "%rejeitad%"
 
 MODEL = os.getenv("PACTHA_AI_MODEL", "claude-opus-5")
 # low | medium | high | xhigh | max — profundidade de raciocinio x latencia x custo.
-# Decisao do dono do sistema: `max` em tudo, priorizando resultado sobre custo
-# (o custo e repassado ao cliente). Medicoes que embasaram a conversa estao em
-# docs/ia-benchmarks.md.
-AI_EFFORT = os.getenv("PACTHA_AI_EFFORT", "max")
+# MEDIDO nesta base, com o ranking em SQL e o cache do historico ja no lugar
+# (perguntas simples + dificeis, valores conferidos no Postgres):
+#   high   ranking 30,4s US$ 0,067 | armadilha 11,7s US$ 0,026 | tudo certo
+#   xhigh  ranking 36,9s US$ 0,070 | armadilha 16,7s US$ 0,033 | tudo certo
+#   max    ranking 34,7s US$ 0,072 | armadilha 17,4s US$ 0,033 | tudo certo
+# Nenhuma diferenca de ACERTO entre os tres — porque o acerto passou a vir do
+# SQL (agregados e ranking prontos), nao da profundidade de raciocinio. Como o
+# usuario espera na tela, `high` vence por ser 15-40% mais rapido pelo mesmo
+# resultado. Subir e trocar esta env, sem deploy.
+AI_EFFORT = os.getenv("PACTHA_AI_EFFORT", "high")
 # ATENCAO: em effort `max` o orcamento de max_tokens cobre RACIOCINIO + texto.
 # Medido na faixa do dashboard: com 500 o modelo estourou no meio da frase
 # (stop_reason=max_tokens, JSON cortado). Teto alto nao custa nada enquanto nao
