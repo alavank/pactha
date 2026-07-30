@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 import { Search as SearchIcon, ChevronLeft, ChevronRight } from "lucide-react";
 import api from "@/lib/api";
-import MultiSelect from "@/components/MultiSelect";
+import { MultiSelect } from "@/components/ui/multi-select";
 import AnotacaoButton from "@/components/AnotacaoButton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -284,11 +284,13 @@ export default function ConveniosPage() {
         </Select>
 
         <MultiSelect
-          options={situacoes}
-          selected={situacoesSel}
+          opcoes={situacoes}
+          valor={situacoesSel}
           onChange={setSituacoesSel}
-          placeholder="Todas Situacoes"
-          width="w-56"
+          placeholder="Todas as situações"
+          rotuloTodos="Todas"
+          ariaLabel="Situações"
+          className="w-56"
         />
 
         <Select value={ano} onValueChange={(v) => setAno(v ?? "todos")}>

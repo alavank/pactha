@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 import { Search, Eraser, Loader2, ExternalLink, Eye, X } from "lucide-react";
 import api from "@/lib/api";
-import MultiSelect from "@/components/MultiSelect";
+import { MultiSelect } from "@/components/ui/multi-select";
 import AnotacaoButton from "@/components/AnotacaoButton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -62,11 +62,21 @@ interface Detalhe extends Proposta {
 
 const PORTAL_BASE = "https://discricionarias.transferegov.sistema.gov.br/voluntarias/ForwardAction.do?modulo=Principal&path=/MostraPrincipalConsultarProposta.do&Usr=guest&Pwd=guest";
 
+// Estava incompleto (faltavam vence30 e vence90), e o chip do filtro vindo dos
+// KPIs mostrava o codigo cru ("vence30") em vez do rotulo.
 const VIGENCIA_LABELS: Record<string, string> = {
+  vence30: "Vence em 30 dias",
   vence60: "Vence em 60 dias",
+  vence90: "Vence em 90 dias",
   vence120: "Vence em 120 dias",
-  prestacao: "Prestacao de Contas (+90d vencido)",
+  prestacao: "Prestação de contas (vencido +90d)",
 };
+
+/** Ordem que o gestor espera ver no dropdown (do mais curto ao mais longo). */
+const VIGENCIA_OPCOES = ["vence30", "vence60", "vence90", "vence120", "prestacao"];
+
+/** Valores da coluna `situacao_contratacao` no TransfereGov. */
+const SIT_CONTRATACAO_OPCOES = ["Normal", "Cláusula Suspensiva", "Liminar Judicial"];
 
 function fmtData(iso?: string): string {
   if (!iso) return "-";
@@ -100,10 +110,10 @@ export default function TransfereGovPropostas({
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [situacoesSel, setSituacoesSel] = useState<string[]>([]);
-  const [vigencia, setVigencia] = useState(vigenciaParam ?? "");
+  const [vigenciaSel, setVigenciaSel] = useState<string[]>(vigenciaParam ? [vigenciaParam] : []);
   const [parlamentar, setParlamentar] = useState("");
   const [orgao, setOrgao] = useState("");
-  const [sitContratacao, setSitContratacao] = useState("");
+  const [sitContratacaoSel, setSitContratacaoSel] = useState<string[]>([]);
   const [vigFimDe, setVigFimDe] = useState("");
   const [vigFimAte, setVigFimAte] = useState("");
   const [baixandoPdf, setBaixandoPdf] = useState(false);
@@ -113,17 +123,19 @@ export default function TransfereGovPropostas({
   const [aba, setAba] = useState<"dados" | "historico" | "docs">("dados");
   const [loadingDet, setLoadingDet] = useState(false);
 
-  const buildParams = useCallback((): Record<string, string> => {
-    const params: Record<string, string> = { municipio_id: municipioId || "", categoria };
+  const buildParams = useCallback((): Record<string, string | string[]> => {
+    // string[] p/ os filtros multi: o axios serializa como chave repetida
+    // (?vigencia=a&vigencia=b), que e o formato que o FastAPI le em list[str].
+    const params: Record<string, string | string[]> = { municipio_id: municipioId || "", categoria };
     if (search.trim()) params.search = search.trim();
-    if (vigencia) params.vigencia = vigencia;
+    if (vigenciaSel.length) params.vigencia = vigenciaSel;
     if (parlamentar.trim()) params.parlamentar = parlamentar.trim();
     if (orgao.trim()) params.orgao = orgao.trim();
-    if (sitContratacao) params.situacao_contratacao = sitContratacao;
+    if (sitContratacaoSel.length) params.situacao_contratacao = sitContratacaoSel;
     if (vigFimDe) params.vig_fim_de = vigFimDe;
     if (vigFimAte) params.vig_fim_ate = vigFimAte;
     return params;
-  }, [municipioId, categoria, search, vigencia, parlamentar, orgao, sitContratacao, vigFimDe, vigFimAte]);
+  }, [municipioId, categoria, search, vigenciaSel, parlamentar, orgao, sitContratacaoSel, vigFimDe, vigFimAte]);
 
   const buscar = useCallback(async () => {
     if (!municipioId) return;
@@ -148,10 +160,11 @@ export default function TransfereGovPropostas({
   }, [municipioId, categoria, buildParams]);
 
   // Sincroniza filtro de vigencia com o parametro da URL (vindo dos KPIs)
-  useEffect(() => { setVigencia(vigenciaParam ?? ""); }, [vigenciaParam]);
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { setVigenciaSel(vigenciaParam ? [vigenciaParam] : []); }, [vigenciaParam]);
 
   // Busca ao montar e sempre que municipio/categoria/vigencia mudarem
-  useEffect(() => { if (municipioId) buscar(); }, [municipioId, vigencia, categoria]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (municipioId) buscar(); }, [municipioId, vigenciaSel, categoria]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Opcoes do multi-select = situacoes distintas presentes nos dados carregados
   const situacaoOptions = useMemo(
@@ -212,35 +225,41 @@ export default function TransfereGovPropostas({
                    placeholder="Ex: Ministério do Esporte" onKeyDown={(e) => { if (e.key === "Enter") buscar(); }} />
           </div>
           <div>
-            <label className="text-xs text-base-content/70 mb-1 block">Situação de Contratação</label>
-            <select className="w-full border border-base-300 rounded-md p-2 text-sm h-9 bg-base-100 text-base-content"
-                    value={sitContratacao} onChange={(e) => setSitContratacao(e.target.value)}>
-              <option value="">Todas</option>
-              <option value="Normal">Normal</option>
-              <option value="Cláusula Suspensiva">Cláusula Suspensiva</option>
-              <option value="Liminar Judicial">Liminar Judicial</option>
-            </select>
+            <label className="text-xs text-base-content/70 mb-1 block">
+              Situação de Contratação <span className="text-base-content/40">(uma, algumas ou todas)</span>
+            </label>
+            <MultiSelect
+              opcoes={SIT_CONTRATACAO_OPCOES}
+              valor={sitContratacaoSel}
+              onChange={setSitContratacaoSel}
+              placeholder="Todas"
+              rotuloTodos="Todas"
+              ariaLabel="Situação de contratação"
+            />
           </div>
           <div>
-            <label className="text-xs text-base-content/70 mb-1 block">Vencimento (fim de vigência)</label>
-            <select className="w-full border border-base-300 rounded-md p-2 text-sm h-9 bg-base-100 text-base-content"
-                    value={vigencia} onChange={(e) => setVigencia(e.target.value)}>
-              <option value="">Todos</option>
-              <option value="vence30">Vence em 30 dias</option>
-              <option value="vence60">Vence em 60 dias</option>
-              <option value="vence90">Vence em 90 dias</option>
-              <option value="vence120">Vence em 120 dias</option>
-              <option value="prestacao">Prestação de Contas (vencido +90d)</option>
-            </select>
+            <label className="text-xs text-base-content/70 mb-1 block">
+              Vencimento (fim de vigência) <span className="text-base-content/40">(um ou vários)</span>
+            </label>
+            <MultiSelect
+              opcoes={VIGENCIA_OPCOES}
+              valor={vigenciaSel}
+              onChange={setVigenciaSel}
+              rotulos={VIGENCIA_LABELS}
+              placeholder="Todos"
+              rotuloTodos="Todos"
+              ariaLabel="Vencimento"
+            />
           </div>
           <div>
             <label className="text-xs text-base-content/70 mb-1 block">Situação (multi)</label>
             <MultiSelect
-              options={situacaoOptions}
-              selected={situacoesSel}
+              opcoes={situacaoOptions}
+              valor={situacoesSel}
               onChange={setSituacoesSel}
               placeholder="Todas as situações"
-              width="w-full"
+              rotuloTodos="Todas"
+              ariaLabel="Situação da proposta"
             />
           </div>
           <div>
@@ -256,8 +275,8 @@ export default function TransfereGovPropostas({
               {loading ? <Loader2 className="size-4 animate-spin mr-1" /> : <Search className="size-4 mr-1" />} Filtrar
             </Button>
             <Button variant="outline" onClick={() => {
-              setSearch(""); setSituacoesSel([]); setVigencia("");
-              setParlamentar(""); setOrgao(""); setSitContratacao(""); setVigFimDe(""); setVigFimAte("");
+              setSearch(""); setSituacoesSel([]); setVigenciaSel([]);
+              setParlamentar(""); setOrgao(""); setSitContratacaoSel([]); setVigFimDe(""); setVigFimAte("");
               setTimeout(buscar, 100);
             }}>
               <Eraser className="size-4 mr-1" /> Limpar
@@ -270,20 +289,23 @@ export default function TransfereGovPropostas({
         </div>
       </div>
 
-      {/* Chip do filtro ativo de vigencia (vindo dos KPIs do dashboard) */}
-      {vigencia && (
-        <div className="flex items-center gap-2">
+      {/* Chips dos filtros de vencimento ativos (podem vir dos KPIs do
+          dashboard ou do proprio dropdown, e agora podem ser varios). */}
+      {vigenciaSel.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs text-base-content/60">Filtro ativo:</span>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-info/15 border border-info px-2.5 py-0.5 text-xs font-medium text-info">
-            {VIGENCIA_LABELS[vigencia] ?? vigencia}
-            <button
-              onClick={() => setVigencia("")}
-              className="text-info hover:text-info/80"
-              aria-label="Limpar filtro"
-            >
-              ×
-            </button>
-          </span>
+          {vigenciaSel.map((v) => (
+            <span key={v} className="inline-flex items-center gap-1.5 rounded-full bg-info/15 border border-info px-2.5 py-0.5 text-xs font-medium text-info">
+              {VIGENCIA_LABELS[v] ?? v}
+              <button
+                onClick={() => setVigenciaSel((atual) => atual.filter((x) => x !== v))}
+                className="text-info hover:text-info/80"
+                aria-label={`Remover filtro ${VIGENCIA_LABELS[v] ?? v}`}
+              >
+                ×
+              </button>
+            </span>
+          ))}
         </div>
       )}
 
