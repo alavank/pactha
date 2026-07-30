@@ -875,9 +875,14 @@ async def listar_tela_links(
     current: User = Depends(get_current_user),
 ):
     """Links do PROPRIO usuario — ninguem lista nem revoga link alheio."""
+    # Revogado NAO aparece: o link esta morto (404 e token desativado) e nao ha
+    # nada a fazer com ele. Antes ficava na lista para sempre, sem marca alguma —
+    # ao recarregar o modal, um link que o gestor acabou de apagar reaparecia, e o
+    # botao de copiar entregava uma URL que nao abre.
     rows = (await db.execute(text(
         "SELECT slug, nome, criado_em, expira_em, revogado, ultimo_acesso, kind "
-        "FROM bi_tela_links WHERE owner_id = :u ORDER BY criado_em DESC LIMIT 50"
+        "FROM bi_tela_links WHERE owner_id = :u AND NOT revogado "
+        "ORDER BY criado_em DESC LIMIT 50"
     ), {"u": current.id})).fetchall()
     return [{
         "slug": r[0], "caminho": _caminho_link(r[0], r[6] or "tela"),
