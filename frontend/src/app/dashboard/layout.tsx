@@ -26,6 +26,7 @@ import {
   BarChart3,
   PanelLeftClose,
   PanelLeftOpen,
+  HardHat,
 } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -125,6 +126,7 @@ const NAV_ITEMS: NavEntry[] = [
     ],
   },
   { href: "/dashboard/cauc", label: "CAUC / CAGEC", icon: ShieldCheck },
+  { href: "/dashboard/sismob", label: "Obras da Saúde (SISMOB)", icon: HardHat },
   { href: "/dashboard/acordofes", label: "Acordo FES (Divida Saude)", icon: HeartPulse },
   { href: "/dashboard/fns", label: "Fundo Nacional de Saude", icon: Target },
   { href: "/dashboard/simec", label: "SIMEC - PAR (MEC)", icon: Target },
