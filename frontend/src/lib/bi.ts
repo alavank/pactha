@@ -116,7 +116,21 @@ export interface Execucao {
   valor_repassado?: number;
 }
 
+export interface SemaforoCagec {
+  tem_dados: boolean;
+  entidades?: number;
+  regulares?: number;
+  irregulares?: number;
+  municipios_com_irregularidade?: number;
+  /** Rótulo cru do portal quando há uma única entidade (ex.: "Irregular"). */
+  situacao?: string | null;
+  quem?: Array<{ nome: string | null; tipo: string | null; principal: boolean; situacao: string | null }>;
+}
+
 export interface Overview {
+  /** Regularidade ESTADUAL (MG). Independente do CAUC: regular na União não
+   *  é regular em Minas, e a estadual trava até parcela de convênio assinado. */
+  semaforo_cagec?: SemaforoCagec;
   consolidado: boolean;
   municipios_count: number;
   municipio_ids: number[];

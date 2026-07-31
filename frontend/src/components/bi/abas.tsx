@@ -53,6 +53,8 @@ export function AbaGeral({ ov, alertas, tv }: AbaProps & { ov: Overview; alertas
   const vig = alertas?.vigencia ?? [];
   const prest = alertas?.prestacao ?? [];
   const docs = alertas?.documentos ?? [];
+  const cg = ov.semaforo_cagec;
+  const cagecCrit = !!cg?.tem_dados && (cg.irregulares || 0) > 0;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
@@ -90,20 +92,58 @@ export function AbaGeral({ ov, alertas, tv }: AbaProps & { ov: Overview; alertas
           ) : null}
         </Painel>
 
+        {/* AS DUAS ESFERAS NO MESMO CARD.
+            Este medidor era só do CAUC e escrevia "Em dia · sem pendências"
+            para um município IRREGULAR no CAGEC — é o sinal mais visível do
+            painel, e dizer "em dia" com convênio estadual travado é o pior erro
+            que ele pode cometer. Regular na União não é regular em Minas: são
+            esferas independentes, e a estadual ainda trava o PAGAMENTO de
+            convênio já assinado. O medidor continua sendo o do CAUC (é o que
+            tem percentual); o CAGEC entra como faixa de status logo abaixo,
+            com o mesmo peso de cor. */}
         <Painel>
           <PainelHead
-            icon={caucPct >= 0.99 ? ShieldCheck : ShieldAlert}
-            titulo="Regularidade (CAUC)"
+            icon={caucPct >= 0.99 && !cagecCrit ? ShieldCheck : ShieldAlert}
+            titulo="Regularidade"
             sub="aptidão para receber transferências"
           />
-          <div className="flex flex-1 flex-col items-center justify-center">
+          <div className="flex flex-1 flex-col items-center justify-center gap-3">
             <Gauge
               pct={caucPct}
               tom={caucTom}
-              size={tv ? 200 : 168}
+              size={tv ? 176 : 148}
               centro={isRollup(s) ? `${s.regulares}/${s.total_municipios}` : s.regular ? "Em dia" : `${s.pendencias || 0}`}
-              legenda={isRollup(s) ? "municípios em dia" : s.regular ? "sem pendências" : "pendência(s) impeditiva(s)"}
+              legenda={isRollup(s) ? "municípios em dia (CAUC)" : s.regular ? "CAUC · sem pendências" : "CAUC · pendência(s) impeditiva(s)"}
             />
+            <div
+              className="w-full rounded-lg px-3 py-2"
+              style={{
+                background: cg?.tem_dados
+                  ? `color-mix(in oklab, var(--bi-${cagecCrit ? "crit" : "ok"}) 13%, transparent)`
+                  : "color-mix(in oklab, var(--bi-warn) 11%, transparent)",
+              }}
+            >
+              <div className="flex items-baseline gap-2">
+                <span className="text-[11px] font-semibold"
+                  style={{ color: `var(--bi-${!cg?.tem_dados ? "warn" : cagecCrit ? "crit" : "ok"})` }}>
+                  CAGEC — Minas Gerais
+                </span>
+                <span className="bi-num ml-auto text-[12px] font-bold"
+                  style={{ color: `var(--bi-${!cg?.tem_dados ? "warn" : cagecCrit ? "crit" : "ok"})` }}>
+                  {!cg?.tem_dados ? "sem coleta"
+                    : cagecCrit ? (cg.situacao || `${cg.irregulares} irregular(es)`)
+                    : "Em dia"}
+                </span>
+              </div>
+              <div className="text-[10px] leading-snug" style={{ color: "var(--bi-faint)" }}>
+                {!cg?.tem_dados
+                  ? "regularidade estadual ainda não coletada"
+                  : cagecCrit
+                    ? `${cg.quem?.[0]?.nome ? `${cg.quem[0].nome.slice(0, 34)} — ` : ""}`
+                      + "impede convênio estadual e liberação de parcela"
+                    : `${cg.entidades} cadastro(s) do município em situação regular`}
+              </div>
+            </div>
           </div>
         </Painel>
 
