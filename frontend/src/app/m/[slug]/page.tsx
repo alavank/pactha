@@ -48,6 +48,7 @@ const ABAS_APP: Array<{
   { id: "estaduais", label: "Verbas Estaduais", descricao: "SIGCON-MG e emendas estaduais", dados: "estaduais" },
   { id: "cauc", label: "CAUC", descricao: "Regularidade federal (Tesouro)", dados: "documentos", esfera: "cauc" },
   { id: "cagec", label: "CAGEC", descricao: "Regularidade estadual (SIGCON-MG)", dados: "documentos", esfera: "cagec" },
+  { id: "sismob", label: "Obras da Saúde", descricao: "Obras do SISMOB — prazos e execução", dados: "sismob" },
   { id: "fns", label: "Fundo Nacional de Saúde", descricao: "Propostas do FNS no período", dados: "fns" },
 ];
 

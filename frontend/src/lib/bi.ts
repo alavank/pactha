@@ -364,6 +364,34 @@ export interface AbaDocumentos {
   };
 }
 
+export interface SismobObraResumo {
+  proposta_id: number;
+  municipio: string | null;
+  estabelecimento: string | null;
+  programa: string | null;
+  situacao?: string | null;
+  percentual: number | null;
+  severidade?: string;
+  /** UMA frase por obra: o painel precisa ser lido de longe. O detalhe
+   *  completo fica na tela do módulo. */
+  problema?: string;
+  problemas?: number;
+  valor: number;
+}
+
+export interface AbaSismob {
+  total: number;
+  totais: {
+    obras: number; vivas: number; concluidas: number; canceladas: number;
+    valor_proposta: number; repasse_total: number; repasse_parado: number;
+    com_prazo_vencido: number;
+  };
+  acao: SismobObraResumo[];
+  execucao: SismobObraResumo[];
+  por_situacao: Array<{ label: string; qtd: number; valor: number }>;
+  por_programa: Array<{ label: string; qtd: number; valor: number }>;
+}
+
 export interface AbaFns {
   anos: number[];
   por_ano: Array<{
@@ -486,6 +514,13 @@ export async function getAbaTransfereGov(
 export async function getAbaDocumentos(municipioId: number | null): Promise<AbaDocumentos> {
   const { data } = await api.get<AbaDocumentos>("/bi/documentos", {
     params: scopeParams(municipioId),
+  });
+  return data;
+}
+
+export async function getAbaSismob(municipioId: number | null, anos?: number[]): Promise<AbaSismob> {
+  const { data } = await api.get<AbaSismob>("/bi/sismob", {
+    params: scopeParams(municipioId, periodoParams(anos)),
   });
   return data;
 }

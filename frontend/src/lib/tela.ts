@@ -29,7 +29,8 @@ export type AbaId =
   | "transferegov"
   | "estaduais"
   | "documentos"
-  | "fns";
+  | "fns"
+  | "sismob";
 
 export interface AbaDef {
   id: AbaId;
@@ -45,6 +46,8 @@ export const ABAS: AbaDef[] = [
   { id: "transferegov", label: "TransfereGov", curto: "Federal", descricao: "Propostas e convênios federais" },
   { id: "estaduais", label: "Verbas Estaduais", curto: "Estadual", descricao: "SIGCON-MG e emendas estaduais" },
   { id: "documentos", label: "CAUC e CAGEC", curto: "Documentos", descricao: "Documentação em dia ou pendente" },
+  { id: "sismob", label: "Obras da Saúde", curto: "Obras",
+    descricao: "Obras do Ministério da Saúde (SISMOB) — prazos e execução" },
   { id: "fns", label: "Fundo Nacional de Saúde", curto: "FNS", descricao: "Propostas do FNS no período" },
 ];
 

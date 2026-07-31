@@ -7,9 +7,9 @@
 // deixa a proxima aba pronta ANTES de virar, para a troca nao mostrar esqueleto.
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  AbaDocumentos, AbaEstaduais, AbaFns, AbaParlamentares, AbaTransfereGov,
+  AbaDocumentos, AbaEstaduais, AbaFns, AbaParlamentares, AbaSismob, AbaTransfereGov,
   Alertas, Overview, getAbaDocumentos, getAbaEstaduais, getAbaFns,
-  getAbaParlamentares, getAbaTransfereGov, getAlertas, getOverview,
+  getAbaParlamentares, getAbaSismob, getAbaTransfereGov, getAlertas, getOverview,
 } from "./bi";
 import { AbaId } from "./tela";
 
@@ -24,7 +24,8 @@ export type DadosAba =
   | { aba: "transferegov"; d: AbaTransfereGov }
   | { aba: "estaduais"; d: AbaEstaduais }
   | { aba: "documentos"; d: AbaDocumentos }
-  | { aba: "fns"; d: AbaFns };
+  | { aba: "fns"; d: AbaFns }
+  | { aba: "sismob"; d: AbaSismob };
 
 const TTL_MS = 40_000;
 const cache = new Map<string, { em: number; dados: DadosAba }>();
@@ -45,6 +46,8 @@ async function carregar(aba: AbaId, municipioId: number | null, anos: number[]):
       return { aba, d: await getAbaDocumentos(municipioId) };
     case "fns":
       return { aba, d: await getAbaFns(municipioId, anos) };
+    case "sismob":
+      return { aba, d: await getAbaSismob(municipioId, anos) };
     default: {
       // A visao geral precisa dos alertas junto (vencimento / prestacao de
       // contas), mas um erro nos alertas nao pode derrubar a aba inteira.

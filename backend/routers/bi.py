@@ -37,6 +37,7 @@ from services.bi import (
 )
 from services.bi_abas import (
     bi_estaduais, bi_transferegov, bi_parlamentares_detalhe, bi_documentos, bi_execucao,
+    bi_sismob,
     documentos_vencendo,
 )
 from models.user import User
@@ -337,6 +338,21 @@ async def aba_parlamentares_detalhe(
     return await _aba_cacheada(key, lambda: bi_parlamentares_detalhe(db, ids, periodo))
 
 
+@router.get("/sismob")
+async def aba_sismob(
+    municipio_id: Optional[int] = Query(None),
+    ano: Optional[int] = Query(None),
+    anos: Optional[list[int]] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """Obras da saude (SISMOB) da aba do Painel."""
+    ids, cons = await resolve_scope(db, current, municipio_id)
+    periodo = _periodo(ano, anos)
+    key = f"sismob|{scope_signature(ids, cons)}|a={anos_signature(periodo)}"
+    return await _aba_cacheada(key, lambda: bi_sismob(db, ids, periodo))
+
+
 @router.get("/documentos")
 async def aba_documentos(
     municipio_id: Optional[int] = Query(None),
@@ -605,7 +621,8 @@ async def narrativa(
 # Sem ANTHROPIC_API_KEY cai num texto por template (a faixa nunca fica vazia).
 # --------------------------------------------------------------------------
 
-ABAS_INSIGHT = ("geral", "parlamentares", "transferegov", "estaduais", "documentos", "fns")
+ABAS_INSIGHT = ("geral", "parlamentares", "transferegov", "estaduais",
+                "documentos", "fns", "sismob")
 
 
 async def _fatos_da_aba(db: AsyncSession, ids: list[int], cons: bool, aba: str,
@@ -699,6 +716,35 @@ async def _fatos_da_aba(db: AsyncSession, ids: list[int], cons: bool, aba: str,
                        f"e a liberação de parcela de convênio em execução.")
         else:
             tpl.append("CAGEC (regularidade estadual de MG) em dia.")
+        return fatos, tpl
+
+    if aba == "sismob":
+        # Fatos das obras. Sem este ramo, /bi/insights?aba=sismob devolveria 400
+        # e a aba ficaria sendo a unica sem faixa de IA — em silencio, porque o
+        # ticker engole o erro no .catch().
+        d = await bi_sismob(db, ids, periodo)
+        t = d["totais"]
+        fatos = {
+            "aba": "sismob", "obras": t.get("obras", 0), "vivas": t.get("vivas", 0),
+            "concluidas": t.get("concluidas", 0), "canceladas": t.get("canceladas", 0),
+            "valor_proposta": t.get("valor_proposta", 0),
+            "repassado": t.get("repasse_total", 0),
+            "repasse_parado": t.get("repasse_parado", 0),
+            "com_prazo_vencido": t.get("com_prazo_vencido", 0),
+            "precisam_acao": [{"obra": i.get("estabelecimento"), "municipio": i.get("municipio"),
+                               "problema": i.get("problema"), "percentual": i.get("percentual")}
+                              for i in d.get("acao", [])[:3]],
+        }
+        if t.get("repasse_parado"):
+            tpl = [f"{_money_br(t['repasse_parado'])} repassados em obras da saúde sem "
+                   f"atualização há mais de 60 dias — a norma exige atualização a cada 60 dias."]
+        elif t.get("obras"):
+            tpl = [f"{t.get('vivas', 0)} obra(s) da saúde em andamento, sem paralisação registrada."]
+        else:
+            tpl = ["Nenhuma obra do SISMOB registrada para este escopo."]
+        if t.get("com_prazo_vencido"):
+            tpl.append(f"{t['com_prazo_vencido']} obra(s) com a etapa de início de execução "
+                       f"vencida (prazo de 90 dias após o repasse).")
         return fatos, tpl
 
     if aba == "fns":
