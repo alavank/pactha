@@ -96,6 +96,19 @@ Builds: API = `backend/Dockerfile.api` (base `/`) · Frontend = `frontend/Docker
 - **must_change_password=True** no admin seed → o 1º login redireciona pra `/change-password`. Normal.
 - Worker aparece como `running:unknown` no Coolify (é `sleep infinity`, sem healthcheck). Normal. Frontends sem healthcheck também.
 - **Chromium órfão.** O worker já roda com `tini` + reaper (`backend/reaper.sh`) e os crons com `flock`+`timeout`, justamente porque Chromium pendurado comia a RAM do host. Não remova esses wrappers.
+- **O SISMOB é API pública, não scraping.** `sismobcidadao.saude.gov.br/api/public/obras`
+  responde JSON sem token e sem login. Três armadilhas, todas silenciosas: (1) a
+  **listagem e o detalhe usam nomes diferentes para o mesmo campo**
+  (`propostaId`/`coSeqProposta`, `situacaoObra`/`dsSituacaoObra`…), então um
+  `{**listagem, **detalhe}` grava `NULL` calado; (2) **IBGE de 7 dígitos devolve 200 com
+  zero resultado**, indistinguível de município sem obra; (3) o campo da 1ª parcela tem
+  **typo do próprio MS** (`vlPrimeraParcela`, sem o "i"). E o sinal de obra parada **não é
+  `dtAtualizacao`** — é o timestamp das fotos. Tudo anotado em
+  `backend/ingestion/sismob_obras.py`.
+- **Não existem "1ª, 2ª e 3ª parcelas" no fundo a fundo.** A norma vigente (Portaria de
+  Consolidação 6/2017, Título IX) é **parcela única**; obras antigas vieram 20%+80%. O
+  marco de 90% **não existe** (o de 30% sim). E a prestação de contas é o **Relatório
+  Anual de Gestão** (LC 141/2012), não um "relatório final".
 - **O CAGEC NÃO fica dentro do SIGCON-MG.** Perder tempo procurando no portal logado é fácil: a palavra "CAGEC" não aparece uma vez sequer no HTML do sigconv2 nem no menu de 29 itens. Ele tem portal próprio (`cagec.mg.gov.br/convenente-web`) e a consulta é **pública** — basta o CNPJ, não precisa de credencial. Duas armadilhas do portal (ambas fazem a busca *parecer* vazia): a página contém a frase "clique no botão [PESQUISAR]", então seletor por texto casa com a **instrução** e o clique não faz nada; e o cabeçalho do grid usa `th`/`.z-listheader` — fora do seletor de células ele some, e sem cabeçalho não dá para casar coluna por rótulo. Está tudo anotado em `backend/ingestion/cagec_scraper.py`.
 - **O detalhe da irregularidade vem do CRC, e o CRC SAI para município irregular.** Errei isso na primeira versão (assumi que só município regular emitiria) e a diferença é grande: a linha da busca só diz "Irregular", enquanto o botão **"Emitir CRC"** da mesma linha baixa um PDF com as ~24 obrigações uma a uma, **cada uma com situação e data de validade**, mais CADIN-MG, SIAFI e o vencimento do mandato. É o que permite dizer "seu FGTS venceu em 29/07" em vez de "você está irregular". Duas armadilhas do PDF: o cabeçalho tem `SITUAÇÃO: Irregular`, que casa como se fosse item (só ler depois de `DOCUMENTAÇÃO`), e a quebra de página parte um item ao meio (há remendo dedicado).
 - **Espera fixa no portal do CAGEC falha 1 em 4.** O `wait_for_timeout` fixo depois do PESQUISAR lia o grid ainda vazio e reportava **"CNPJ não encontrado no CAGEC"** — sintoma enganoso, parece que o município não existe no cadastro. Use espera adaptativa (poll até a linha aparecer). Vale para qualquer postback do ZK.
