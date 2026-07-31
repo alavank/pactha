@@ -1166,12 +1166,29 @@ async def _tool_query_regularidade(db: AsyncSession, inp: dict) -> str:
         out.append(f"  Situacao para Parceria: {cagec.get('situacao') or '-'}"
                    f" ({'REGULAR' if cagec.get('regular') else 'NAO REGULAR'})"
                    f" | consulta de {cagec.get('data_pesquisa') or '-'}")
-        for i in cagec.get("itens", []):
-            marca = "PENDENTE" if i.get("tipo") == "pendente" else "ok"
-            out.append(f"  - [{marca}] {i['label']}: {i['valor']}")
-        out.append("  Obs.: a consulta publica do CAGEC informa a situacao e o impedimento; "
-                   "ela NAO lista as exigencias uma a uma nem a validade. Se o municipio "
-                   "estiver irregular, o detalhe do motivo so aparece no portal do CAGEC.")
+        if cagec.get("validade"):
+            out.append(f"  Proximo prazo a vencer entre as obrigacoes vigentes: "
+                       f"{cagec['validade']}")
+        itens_cagec = cagec.get("itens", [])
+        pend_cagec = [i for i in itens_cagec if i.get("tipo") == "pendente"]
+        # As pendencias primeiro e com destaque: e a unica coisa que o gestor
+        # precisa AGIR. O resto e contexto.
+        if pend_cagec:
+            out.append(f"  >>> O QUE ESTA TRAVANDO ({len(pend_cagec)}):")
+            for i in pend_cagec:
+                venc = f" (venceu em {i['validade']})" if i.get("validade") else ""
+                out.append(f"      - {i['label']}{venc} [{i.get('status')}]")
+        else:
+            out.append("  Nenhuma obrigacao pendente.")
+        out.append(f"  Obrigacoes lidas do CRC ({len(itens_cagec)}), com validade:")
+        for i in itens_cagec:
+            if i.get("tipo") == "pendente":
+                continue
+            marca = "info" if i.get("tipo") == "na" else "ok"
+            out.append(f"      [{marca}] {i['label']}: {i['valor']}")
+        out.append("  Fonte: CRC (Certificado de Registro Cadastral) do proprio CAGEC. "
+                   "Cite as datas de validade quando forem uteis — o gestor precisa "
+                   "renovar ANTES do vencimento.")
 
     out.append("\nATENCAO ao responder: CAUC vale para convenio FEDERAL e CAGEC para convenio "
                "ESTADUAL (MG). Estar regular em um NAO implica estar no outro.")
