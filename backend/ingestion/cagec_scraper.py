@@ -347,6 +347,33 @@ def _e_publico(tipo: str) -> bool:
     return any(k in t for k in _TIPOS_PUBLICOS)
 
 
+def _cnpjs_conhecidos(cur, municipio_id: int) -> list[dict]:
+    """CNPJs de entidades publicas do municipio que OUTRAS fontes ja conhecem.
+
+    Hoje so o SISMOB entrega isso: as obras de saude trazem o CNPJ do FUNDO
+    MUNICIPAL DE SAUDE com nome padronizado ("FMS MONTE SIAO/MG"). E a entidade
+    que assina convenio de saude, e ela tem cadastro PROPRIO no CAGEC.
+
+    Por que importa: a descoberta por NOME e heuristica — depende de o portal
+    grafar o nome de um jeito reconhecivel, e nao encontra quem simplesmente NAO
+    esta la. Ter o CNPJ torna a consulta deterministica, e a AUSENCIA vira
+    informacao: "o fundo existe, movimenta recurso federal e nao esta no CAGEC".
+    """
+    try:
+        cur.execute(
+            r"SELECT DISTINCT regexp_replace(nu_cnpj, '\D', '', 'g'), entidade "
+            "FROM sismob_obras "
+            "WHERE municipio_id = %s AND nu_cnpj IS NOT NULL AND ausente_desde IS NULL",
+            (municipio_id,))
+        return [{"cnpj": r[0], "nome": r[1]} for r in cur.fetchall() if r[0]]
+    except Exception as e:
+        # Tabela pode nao existir em tenant que ainda nao rodou a migration do
+        # SISMOB. Nao e motivo para derrubar a coleta do CAGEC.
+        cur.connection.rollback()
+        logger.info("    (sem CNPJs do SISMOB: %s)", str(e)[:80])
+        return []
+
+
 async def _consultar(page, cnpj: str) -> dict | None:
     """Busca por CNPJ. Devolve {rotulo_da_coluna: valor} da linha, ou None.
 
@@ -622,6 +649,34 @@ async def _rodar() -> tuple[int, int]:
                     continue
 
                 cnpj_prefeitura = _so_digitos(mun["cnpj"] or "")
+
+                # A busca por nome nao acha quem nao esta cadastrado, e tambem
+                # pode nao achar quem esta com nome diferente. Os CNPJs que
+                # outras fontes conhecem sao consultados DIRETO — e o que nao
+                # aparecer fica registrado como ausente do CAGEC, que e
+                # justamente o achado (fundo ativo fora do cadastro estadual).
+                achados = {_so_digitos(re.search(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}",
+                                                 " ".join(e.values())).group(0))
+                           for e in entidades
+                           if re.search(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}", " ".join(e.values()))}
+                for conhecido in _cnpjs_conhecidos(cur, mun["id"]):
+                    if conhecido["cnpj"] in achados:
+                        continue
+                    linha_extra = None
+                    try:
+                        linha_extra = await _consultar(page, conhecido["cnpj"])
+                    except Exception:
+                        pass
+                    if linha_extra:
+                        logger.info("    %s: achado por CNPJ (a busca por nome nao pegou)",
+                                    conhecido["nome"] or conhecido["cnpj"])
+                        entidades.append(linha_extra)
+                    else:
+                        logger.warning("    %s (%s): NAO esta cadastrado no CAGEC — "
+                                       "e uma entidade que recebe recurso federal",
+                                       conhecido["nome"] or "entidade",
+                                       conhecido["cnpj"])
+
                 vistos, coletadas = [], 0
                 for ent in entidades:
                     cnpj_ent = re.search(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}",

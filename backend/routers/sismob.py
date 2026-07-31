@@ -180,12 +180,39 @@ async def fetch_sismob_obras(db: AsyncSession, municipio_id: int) -> dict:
     acao.sort(key=lambda i: (ordem.get(i["severidade"], 9),
                              -max((g.get("dias") or 0) for g in i["regras"])))
 
+    # O CONVENENTE DAS OBRAS E O FUNDO MUNICIPAL DE SAUDE, nao a prefeitura —
+    # e ele tem cadastro PROPRIO no CAGEC. Cruzar aqui e o que transforma duas
+    # meias-verdades numa frase acionavel: sozinho, o CAGEC "nao acha o fundo"
+    # (o que soa como falha de coleta) e o SISMOB mostra "so mais uma obra".
+    # Juntos provam que o fundo EXISTE, esta ATIVO, movimenta recurso federal —
+    # e esta FORA do cadastro estadual, o que pela LDO o impede de receber do
+    # FES/Feas.
     ent = next((dict(r) for r in linhas if r["nu_cnpj"]), None)
+    entidade = None
+    if ent:
+        cad = (await db.execute(text("""
+            SELECT situacao, regular FROM cagec_situacao
+            WHERE municipio_id = :m
+              AND regexp_replace(cnpj, '\\D', '', 'g') = :c
+        """), {"m": municipio_id, "c": ent["nu_cnpj"]})).first()
+        entidade = {
+            "nome": ent["entidade"], "cnpj": ent["nu_cnpj"],
+            "cagec": {
+                "cadastrado": bool(cad),
+                "situacao": cad[0] if cad else None,
+                "regular": cad[1] if cad else None,
+                "motivo": (None if cad else
+                           "Esta entidade executa recurso federal mas não tem cadastro "
+                           "no CAGEC-MG. Sem ele não assina convênio estadual de saúde "
+                           "nem recebe parcela — e a prefeitura estar regular não resolve, "
+                           "porque no CAGEC cada entidade tem cadastro próprio."),
+            },
+        }
     return {
         "tem_dados": True,
         "municipio_id": municipio_id,
         "municipio": mun[0] if mun else None, "uf": mun[1] if mun else None,
-        "entidade": ({"nome": ent["entidade"], "cnpj": ent["nu_cnpj"]} if ent else None),
+        "entidade": entidade,
         "totais": {k: (round(v, 2) if isinstance(v, float) else v) for k, v in tot.items()},
         "acao": acao, "em_dia": em_dia, "encerradas": encerradas,
         "por_situacao": sorted(por_situacao.values(), key=lambda e: -e["valor"]),
