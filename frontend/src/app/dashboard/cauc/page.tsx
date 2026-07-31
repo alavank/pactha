@@ -42,6 +42,24 @@ interface CaucResp {
   atualizado_em?: string | null;
 }
 
+/** Um cadastro do CAGEC. O município NÃO é uma linha só: prefeitura, Fundo
+ *  Municipal de Saúde, FMAS e consórcios têm CRC próprio, e cada um trava
+ *  APENAS o seu convênio — prefeitura regular não destrava o convênio da saúde
+ *  se o fundo estiver irregular. */
+interface Entidade {
+  nome: string;
+  cnpj?: string | null;
+  tipo?: string | null;
+  situacao?: string | null;
+  regular?: boolean | null;
+  validade?: string | null;
+  itens?: Item[];
+  pendencias?: number;
+  numero_cadastro?: string | null;
+  principal: boolean;
+  data_pesquisa?: string | null;
+}
+
 interface CagecResp {
   tem_dados: boolean;
   motivo?: string;
@@ -56,6 +74,10 @@ interface CagecResp {
   pendencias_codigos?: string[];
   data_pesquisa?: string | null;
   atualizado_em?: string | null;
+  /** Todas as entidades, a principal inclusive. Os campos de cima continuam
+   *  sendo os da principal — contrato antigo intacto. */
+  entidades?: Entidade[];
+  pendencias_outras_entidades?: number;
 }
 
 function fmtDate(iso?: string | null): string {
@@ -91,6 +113,78 @@ function Situacao({
           <div className="text-sm text-base-content/70">{detalhe}</div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Os DEMAIS cadastros do município no CAGEC (fundos, autarquias, consórcios).
+ *
+ *  Eles já eram coletados e já vinham na resposta da API — a tela é que lia só
+ *  os campos do topo, que são os da prefeitura. Resultado: o Fundo Municipal de
+ *  Saúde de Monte Sião (CNPJ 11.875.540/0001-35, cadastro 11896, REGULAR) era
+ *  invisível, e o secretário de saúde não tinha como saber o estado do cadastro
+ *  que trava justamente o convênio dele.
+ *
+ *  A situação de cada um fica VISÍVEL sem abrir — é a informação que decide
+ *  ação. O detalhe item a item fica dentro do `details` para não empurrar a
+ *  coluna da prefeitura para fora da tela. */
+function OutrasEntidades({ entidades }: { entidades: Entidade[] }) {
+  const outras = entidades.filter((e) => !e.principal);
+  if (!outras.length) return null;
+  return (
+    <div className="space-y-2">
+      <div>
+        <h3 className="text-sm font-bold text-base-content/80">
+          Outros cadastros deste município ({outras.length})
+        </h3>
+        <p className="text-xs text-base-content/50">
+          Cada entidade tem CRC próprio e trava <strong>apenas o seu</strong> convênio:
+          a prefeitura estar regular não libera o convênio da saúde se o fundo estiver irregular.
+        </p>
+      </div>
+      {outras.map((e) => {
+        const ok = e.regular === true;
+        const pend = e.pendencias || 0;
+        return (
+          <details
+            key={e.cnpj || e.nome}
+            className={`rounded-2xl border overflow-hidden ${ok
+              ? "border-success/30 bg-success/5"
+              : "border-error/30 bg-error/5"}`}
+          >
+            <summary className="flex cursor-pointer items-center gap-3 px-4 py-3">
+              {ok
+                ? <CheckCircle2 className="size-5 shrink-0 text-success" />
+                : <ShieldAlert className="size-5 shrink-0 text-error" />}
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-semibold">{e.nome}</div>
+                <div className="text-xs text-base-content/60">
+                  {e.tipo || "entidade"}
+                  {e.cnpj ? ` · CNPJ ${e.cnpj}` : ""}
+                  {e.numero_cadastro ? ` · cadastro nº ${e.numero_cadastro}` : ""}
+                </div>
+              </div>
+              <span className={`shrink-0 text-right text-xs font-medium ${ok ? "text-success" : "text-error"}`}>
+                {e.situacao || (ok ? "Regular" : "Irregular")}
+                <span className="block font-normal text-base-content/50">
+                  {pend ? `${pend} pendência(s)` : "sem pendência"}
+                </span>
+              </span>
+            </summary>
+            <div className="space-y-2 border-t border-base-300/60 bg-base-100 p-3">
+              {/* Mesma ressalva do banner da prefeitura: `validade` é a próxima
+                  obrigação a vencer, não a validade do certificado — o CRC não
+                  tem uma. */}
+              {e.validade && (
+                <p className="text-xs text-base-content/60">
+                  Próxima obrigação a vencer: <strong>{fmtDate(e.validade)}</strong>.
+                </p>
+              )}
+              <Exigencias itens={e.itens || []} />
+            </div>
+          </details>
+        );
+      })}
     </div>
   );
 }
@@ -270,11 +364,20 @@ export default function RegularidadePage() {
                      É a data mais próxima entre as obrigações ainda vigentes, ou
                      seja, o próximo prazo a segurar. Chamar de "certificado válido
                      até" faria o gestor achar que tem até lá para tudo. */
+                  /* O banner fala do cadastro da PREFEITURA. Se um fundo estiver
+                     irregular, "Regular no CAGEC" seria lido como "o município
+                     está liberado" — e não está: o convênio daquele fundo
+                     continua travado. Por isso a pendência das outras entidades
+                     entra aqui, no lugar mais visível da coluna. */
                   detalhe={`${cagec.nome}/${cagec.uf}` + (cagec.validade
                     ? ` — próxima obrigação a vencer: ${fmtDate(cagec.validade)}.`
-                    : " — cadastro de convenentes do Estado de Minas Gerais.")}
+                    : " — cadastro de convenentes do Estado de Minas Gerais.")
+                    + (cagec.pendencias_outras_entidades
+                      ? ` Atenção: outra(s) entidade(s) do município somam ${cagec.pendencias_outras_entidades} pendência(s) — veja abaixo.`
+                      : "")}
                 />
                 <Exigencias itens={cagec.itens || []} />
+                <OutrasEntidades entidades={cagec.entidades || []} />
                 <p className="text-xs text-base-content/40">
                   Atualizado em {fmtDate(cagec.atualizado_em)}.
                 </p>
