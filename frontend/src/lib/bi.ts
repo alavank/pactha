@@ -163,6 +163,10 @@ export interface DocumentoVencendo {
   municipio: string | null;
   /** "CAUC" (federal) ou "CAGEC" (estadual/MG). */
   esfera: string;
+  /** Só no CAGEC e só quando NÃO é a prefeitura: o CAGEC tem um cadastro por
+   *  entidade (Fundo Municipal de Saúde, FMAS…) e cada um trava apenas o SEU
+   *  convênio. Sem isto, o prazo do fundo era lido como se fosse do município. */
+  entidade?: string | null;
   codigo: string;
   label: string;
   validade: string;

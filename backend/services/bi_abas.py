@@ -609,7 +609,21 @@ def prazos_dos_itens(itens, data_pesquisa: Optional[date], esfera: str,
         if not d:
             # "!" no CAUC nao tem data: e pendencia ja existente, nao prazo.
             continue
-        if data_pesquisa and (d - data_pesquisa).days < JANELA_MINIMA_DIAS:
+        # A janela vale SO PARA O CAUC, e a diferenca nao e detalhe.
+        #
+        # Em `cauc_situacao`, `data_pesquisa` e a "Data da Pesquisa" DO PROPRIO
+        # EXTRATO, e os itens verificados continuamente trazem exatamente essa
+        # data no lugar da validade (10 dos 28 em 31/07/2026). Sem a janela, eles
+        # apareceriam como "vencendo hoje" TODO DIA.
+        #
+        # Em `cagec_situacao`, `data_pesquisa` e a data da NOSSA raspagem: nao tem
+        # relacao com o documento. E no CRC validade vencida VIRA pendencia — as 3
+        # de Monte Siao sao exatamente as 3 com validade anterior a pesquisa.
+        # Aplicar a janela ali escondia toda obrigacao do CRC nos seus 3 ultimos
+        # dias: com o item 3.4 (Matriz de Saldos) vencendo em 31/07/2026, o painel
+        # afirmava "Nenhuma certidao vencendo nos proximos 30 dias".
+        if (esfera or "").upper() == "CAUC" and data_pesquisa \
+                and (d - data_pesquisa).days < JANELA_MINIMA_DIAS:
             continue                   # cadencia de atualizacao, nao vencimento
         restantes = (d - hoje).days
         if restantes < 0 or restantes > dias:
@@ -633,15 +647,33 @@ async def documentos_vencendo(db: AsyncSession, ids: list[int],
     out: list[dict] = []
 
     for tabela, esfera in (("cagec_situacao", "CAGEC"), ("cauc_situacao", "CAUC")):
+        # `entidade` so existe no CAGEC, que tem UMA LINHA POR ENTIDADE
+        # (prefeitura, Fundo Municipal de Saude, FMAS — cada uma com cadastro
+        # proprio, e cada uma travando so o SEU convenio). Esta funcao ja lia
+        # todas as linhas, entao os prazos dos fundos ja entravam na lista — mas
+        # saiam sem dono, dentro de um painel cujo resto fala so do municipio.
+        # O gestor lia um prazo do Fundo como se fosse da Prefeitura.
+        #
+        # NAO filtrar por `principal` para "resolver": isso apagaria prazo real
+        # do fundo, e trocar rotulo incompleto por omissao e regressao.
+        # `cauc_situacao` nao tem essas colunas (uma linha por municipio), entao
+        # o ramo do CAUC manda NULL e a tela nao rotula nada.
+        extra = ("c.nome, COALESCE(c.principal, false)" if esfera == "CAGEC"
+                 else "NULL::text, true")
         rows = (await db.execute(text(f"""
-            SELECT c.municipio_id, COALESCE(m.nome, c.nome), c.itens, c.data_pesquisa
+            SELECT c.municipio_id, COALESCE(m.nome, c.nome), c.itens, c.data_pesquisa,
+                   {extra}
             FROM {tabela} c
             LEFT JOIN municipios m ON m.id = c.municipio_id
             WHERE c.municipio_id = ANY(:ids)
         """), {"ids": ids})).fetchall()
-        for mid, nome, itens, pesquisa in rows:
+        for mid, nome, itens, pesquisa, ent_nome, principal in rows:
             for p in prazos_dos_itens(itens, pesquisa, esfera, dias, hoje):
-                out.append({"municipio_id": mid, "municipio": nome, **p})
+                out.append({"municipio_id": mid, "municipio": nome,
+                            # So quando NAO e a principal: repetir "Prefeitura"
+                            # em toda linha e ruido que ninguem le.
+                            "entidade": (None if principal else (ent_nome or None)),
+                            **p})
 
     out.sort(key=lambda x: (x["dias_restantes"], x["esfera"], x["codigo"] or ""))
     return out

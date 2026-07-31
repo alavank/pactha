@@ -58,10 +58,28 @@ export function diasLabel(dias: number | null | undefined): string {
 
 function parseDate(v: string): Date | null {
   const s = String(v).trim();
-  if (/^\d{4}-\d{2}-\d{2}/.exec(s)) {
+
+  // Data PURA (YYYY-MM-DD) e uma data de CALENDARIO, nao um instante: monte no
+  // fuso LOCAL. `new Date("2026-07-31")` e meia-noite UTC e, formatada em UTC-3,
+  // volta um dia — o Painel, a TV, o link publico e o celular exibiam
+  // "30 de jul. de 2026" para o extrato do CAUC pesquisado em 31/07, e TODA
+  // validade saia um dia antes (24/09/2026 virava 23/09). A tela do modulo usa
+  // outro caminho (`toLocaleDateString` com timeZone "UTC") e acertava: as duas
+  // superficies do mesmo sistema mostravam datas diferentes para o mesmo campo.
+  //
+  // Nao resolva isso pondo `timeZone: "UTC"` no formatDate: conserta este ramo e
+  // quebra o de baixo, porque `new Date(2026, 6, 31)` e meia-noite LOCAL e, num
+  // fuso positivo, ja e o dia anterior em UTC.
+  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (iso) return new Date(+iso[1], +iso[2] - 1, +iso[3]);
+
+  // Timestamp completo (com hora/offset) e um INSTANTE: parse normal, exibido no
+  // fuso de quem le — que aqui e o comportamento desejado.
+  if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
     const d = new Date(s);
     return isNaN(+d) ? null : d;
   }
+
   const br = /^(\d{2})\/(\d{2})\/(\d{4})/.exec(s);
   if (br) return new Date(+br[3], +br[2] - 1, +br[1]);
   return null;

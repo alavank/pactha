@@ -244,7 +244,12 @@ export function AbaGeral({ ov, alertas, tv }: AbaProps & { ov: Overview; alertas
                     </Chip>
                   </div>
                   <div className="text-[10px]" style={{ color: "var(--bi-faint)" }}>
-                    {a.esfera} · vence em {formatDate(a.validade)}
+                    {/* `entidade` so vem preenchida quando o prazo NAO e da
+                        prefeitura. O CAGEC tem um cadastro por entidade e cada
+                        um trava so o SEU convenio — sem este rotulo, o prazo do
+                        Fundo Municipal de Saude era lido como se fosse da
+                        Prefeitura, num painel cujo resto fala so do municipio. */}
+                    {a.esfera}{a.entidade ? ` · ${a.entidade}` : ""} · vence em {formatDate(a.validade)}
                   </div>
                 </li>
               ))}
@@ -569,7 +574,15 @@ function ListaExigencias({ itens, tv }: { itens: CaucItemDetalhe[]; tv?: boolean
                 className="bi-num shrink-0 rounded px-1.5 py-[1px] text-[9px] font-bold tracking-wide"
                 style={{ background: "var(--bi-crit)", color: "#fff" }}
               >
-                {i.valor && i.valor !== i.status ? `PENDENTE · ${i.valor}` : "PENDENTE"}
+                {/* So anexa o valor quando ele for DATA. Nas 6 pendencias do
+                    CAUC o `valor` e o marcador bruto do CSV do Tesouro, entao o
+                    chip saia literalmente "PENDENTE · !" na TV e no celular. No
+                    CAGEC o valor E a data em que venceu, e ela e util — mas
+                    precisa do verbo, senao "PENDENTE · 29/07/2026" e lido como
+                    prazo FUTURO quando e a data do vencimento. */}
+                {/^\d{2}\/\d{2}\/\d{2,4}$/.test(i.valor || "")
+                  ? `PENDENTE · venceu ${i.valor}`
+                  : "PENDENTE"}
               </span>
             ) : (
               <span
@@ -674,7 +687,14 @@ export function AbaDocumentosView({
             <EsferaHead
               titulo="CAUC — União"
               sub="Tesouro Nacional · exigências federais"
-              contagem={blocos.length ? `${primeiro?.total_itens ?? 0} exigências` : undefined}
+              /* Conta o que esta NA TELA. `total_itens` exclui os `na`, entao
+                 o cabecalho dizia "25 exigencias" sobre blocos que somam 28 —
+                 e nenhum dos dois numeros batia com o extrato. */
+              contagem={blocos.length
+                ? `${blocos.reduce((n, [, it]) => n + it.length, 0)} exigências · ${
+                    (primeiro?.itens ?? []).filter((x) => x.tipo === "na").length
+                  } desativadas na origem`
+                : undefined}
             />
             {blocos.length ? (
               <div className={soUmaEsfera && tv ? "bi-colunas-2" : ""}>
@@ -696,7 +716,14 @@ export function AbaDocumentosView({
             <EsferaHead
               titulo="CAGEC — Minas Gerais"
               sub="Cadastro Geral de Convenentes · exigências estaduais"
-              contagem={cagec?.itens?.length ? `${cagec.itens.length} exigências` : "aguardando coleta"}
+              /* "27 exigencias" nao existe em documento nenhum: o CRC tem 24
+                 documentos, e as outras 3 linhas (CADIN-MG, SIAFI-MG, mandato)
+                 vem do CABECALHO do certificado. Separar por procedencia. */
+              contagem={cagec?.itens?.length
+                ? `${cagec.itens.length} linhas · ${
+                    cagec.itens.filter((x) => !["CADIN-MG", "SIAFI-MG", "MANDATO"].includes(x.codigo || "")).length
+                  } documentos do CRC`
+                : "aguardando coleta"}
             />
             {/* Situação em destaque ANTES da lista: irregular no CAGEC trava
                 convênio estadual e pagamento de parcela, e isso não pode ficar
