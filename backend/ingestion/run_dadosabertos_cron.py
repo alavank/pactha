@@ -16,7 +16,13 @@ log = logging.getLogger("run_dadosabertos_cron")
 
 def run_all() -> None:
     for nome, mod in (("CAUC", "ingestion.cauc_ingest"),
-                      ("Acordo FES", "ingestion.acordofes_ingest")):
+                      ("Acordo FES", "ingestion.acordofes_ingest"),
+                      # SISMOB: API publica do MS, sem login. Entra aqui em vez
+                      # de virar Scheduled Task nova porque seriam 3 tarefas
+                      # manuais no Coolify (um worker por tenant) para uma fonte
+                      # que muda a cada ~60 dias. O proprio ingest() se
+                      # auto-limita a 1x/dia (SISMOB_MIN_INTERVAL_H).
+                      ("SISMOB", "ingestion.sismob_obras")):
         try:
             m = __import__(mod, fromlist=["ingest"])
             n = m.ingest()

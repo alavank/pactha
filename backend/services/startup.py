@@ -94,6 +94,9 @@ MIGRATION_FILES = [
     "add_bi_tela_link_kind.sql",
     # Historico da IA por usuario, retencao de 30 dias (expurgo automatico)
     "add_ai_historico.sql",
+    # SISMOB: obras de saude do MS (API publica, sem login). Tabela propria —
+    # obra tem etapa/percentual/empreiteira, que nao cabem em 'convenio'.
+    "add_sismob.sql",
 ]
 
 

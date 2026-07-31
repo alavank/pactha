@@ -47,6 +47,7 @@ FRESCOR_HORAS = {
     "acordofes": 12,
     "simec_par": 12,
     "siconv_convenio_backfill": 30,
+    "sismob": 30,                    # 1x/dia (auto-throttle no proprio ingest)
 }
 
 # Acima desta idade (segundos) um processo de ingestao/Chromium e considerado
