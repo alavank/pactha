@@ -139,6 +139,59 @@ def _candidatos(cur, mid):
         _log(f"ERRO ao montar alertas de vencimento: {type(e).__name__}: {e}")
         cur.connection.rollback()
 
+    # OBRAS DA SAUDE (SISMOB) — prazo de norma, obra parada e recurso a devolver.
+    # As regras vem de services/sismob_regras.py, a MESMA que a tela usa, para a
+    # notificacao e o painel nunca discordarem sobre a mesma obra.
+    #
+    # Duas decisoes de ruido, ambas deliberadas:
+    #  - "sem_atualizacao" vai AGREGADO por municipio. Individual, uma carteira
+    #    de 18 municipios viraria enxurrada e o gestor desligaria a preferencia
+    #    inteira — perdendo junto os alertas caros de prazo e de recurso parado.
+    #  - `push_permitido` corta pendencia cadastral antiga (>12 meses). Acordar
+    #    o prefeito as 7h por causa de 2015 ensina que notificacao do PACTHA e
+    #    ruido, e ai a de prazo vencido tambem passa a ser ignorada.
+    try:
+        from services.sismob_regras import classificar, push_permitido
+        cur.execute("""
+            SELECT proposta_id, estabelecimento, programa, co_situacao_obra,
+                   dt_primeira_parcela, dt_conclusao_final, dt_inicio_funcionamento,
+                   nu_cnes, co_cnes, possui_etapa_funcionamento, repasse_total,
+                   ultima_atividade_em, dt_mudanca_situacao, vl_percentual_executado
+            FROM sismob_obras
+            WHERE municipio_id = %s AND ausente_desde IS NULL
+        """, (mid,))
+        cols = [d[0] for d in cur.description]
+        paradas = []
+        for linha in cur.fetchall():
+            o = dict(zip(cols, linha))
+            nome = (o.get("estabelecimento") or o.get("programa") or "Obra da saúde")[:70]
+            for g in classificar(o)["regras"]:
+                if not push_permitido(g, o):
+                    continue
+                if g["regra"] == "sem_atualizacao":
+                    paradas.append((o, g))       # agregado depois
+                    continue
+                out.append(("obra_prazo",
+                            f"sismob:{g['regra']}:{o['proposta_id']}",
+                            "Obra da saúde (SISMOB)",
+                            f"{nome}: {g['titulo']}. {g['acao']}"))
+        if paradas:
+            pior = max(paradas, key=lambda x: x[1].get("dias") or 0)
+            nome = (pior[0].get("estabelecimento") or "obra")[:50]
+            # O `ref` carrega a CONTAGEM e a pior obra: reenvia quando o numero
+            # muda ou quando outra obra passa a ser a mais parada, e fica quieto
+            # quando nada mudou.
+            out.append(("obra_prazo",
+                        f"sismob:sematualizar:{len(paradas)}:{pior[0]['proposta_id']}",
+                        "Obras da saúde paradas",
+                        f"{len(paradas)} obra(s) sem atualização no SISMOB há mais de 60 dias. "
+                        f"A pior é {nome} ({pior[1]['titulo'].lower()}). "
+                        f"A norma exige atualização a cada 60 dias."))
+    except Exception as e:
+        # Log alto: se a regra parar de carregar, o alerta some sem ninguem ver.
+        _log(f"ERRO ao montar alertas do SISMOB: {type(e).__name__}: {e}")
+        cur.connection.rollback()
+
     # Mudanças de status recentes (48h) — 1 push por mudança
     try:
         cur.execute(
@@ -171,11 +224,12 @@ def _candidatos(cur, mid):
 
 def _prefs(cur):
     """Mapa user_id -> dict de preferências (default tudo ligado)."""
-    cur.execute("SELECT user_id, cauc_vencendo, nova_emenda, prazo_prestacao, mudanca_status, vigencia_60d FROM painel_preferencias")
+    cur.execute("SELECT user_id, cauc_vencendo, nova_emenda, prazo_prestacao, mudanca_status, "
+                "       vigencia_60d, COALESCE(obra_prazo, true) FROM painel_preferencias")
     m = {}
     for r in cur.fetchall():
         m[r[0]] = {"cauc_vencendo": r[1], "nova_emenda": r[2], "prazo_prestacao": r[3],
-                   "mudanca_status": r[4], "vigencia_60d": r[5]}
+                   "mudanca_status": r[4], "vigencia_60d": r[5], "obra_prazo": r[6]}
     return m
 
 

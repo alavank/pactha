@@ -18,6 +18,7 @@ const PREF_LABELS: { key: keyof Prefs; label: string }[] = [
   { key: "vigencia_60d", label: "Vigências vencendo em 60 dias" },
   { key: "prazo_prestacao", label: "Prestação de contas vencida" },
   { key: "cauc_vencendo", label: "Pendências de regularidade (CAUC)" },
+  { key: "obra_prazo", label: "Prazos e paralisações de obras da saúde" },
   { key: "nova_emenda", label: "Nova emenda destinada" },
   { key: "mudanca_status", label: "Mudança de status de convênio" },
 ];
