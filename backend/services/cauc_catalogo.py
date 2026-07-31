@@ -1,10 +1,18 @@
 """Catalogo do CAUC: o que cada codigo do extrato significa.
 
-Vive FORA do router de proposito. A regra de vencimento (services/bi_abas.py)
-e o cron de push (ingestion/run_painel_alertas_cron.py) precisam destes rotulos,
-e importar `routers.cauc` so por causa deles arrastaria FastAPI, os modelos e o
-engine do banco para dentro de um script de linha de comando — cadeia pesada que
-falharia por motivo nenhum a ver com o alerta.
+Vive FORA do router de proposito, e NAO e arrumacao — nao mova de volta:
+
+  **A imagem do worker nao tem `/app/routers`.** O `Dockerfile.scraper` copia
+  ingestion, models, services e schemas, e so isso. O cron de push
+  (`ingestion/run_painel_alertas_cron.py`) precisa destes rotulos; se ele
+  importasse `routers.cauc`, quebraria em producao — e, como a excecao la e
+  capturada junto com erro de SQL, quebraria EM SILENCIO: o alerta nunca
+  chegaria e ninguem saberia por que.
+
+De quebra, evita arrastar FastAPI, os modelos e o engine do banco para dentro de
+um script de linha de comando. Tambem usa: a regra de vencimento em
+`services/bi_abas.py`. `routers/cauc.py` reexporta, por ser o endereco ja
+conhecido destes nomes.
 """
 from __future__ import annotations
 
