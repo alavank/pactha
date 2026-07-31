@@ -1101,6 +1101,7 @@ class PushSubIn(BaseModel):
 
 class PrefsIn(BaseModel):
     cauc_vencendo: bool = True
+    obra_prazo: bool = True
     nova_emenda: bool = True
     prazo_prestacao: bool = True
     mudanca_status: bool = True
@@ -1150,13 +1151,14 @@ async def get_preferencias(
     current: User = Depends(get_current_user),
 ):
     row = (await db.execute(text(
-        "SELECT cauc_vencendo, nova_emenda, prazo_prestacao, mudanca_status, vigencia_60d "
+        "SELECT cauc_vencendo, nova_emenda, prazo_prestacao, mudanca_status, vigencia_60d, "
+        "       COALESCE(obra_prazo, true) "
         "FROM painel_preferencias WHERE user_id = :u"
     ), {"u": current.id})).first()
     if not row:
-        return {"cauc_vencendo": True, "nova_emenda": True, "prazo_prestacao": True,
+        return {"cauc_vencendo": True, "obra_prazo": True, "nova_emenda": True, "prazo_prestacao": True,
                 "mudanca_status": True, "vigencia_60d": True}
-    return {"cauc_vencendo": row[0], "nova_emenda": row[1], "prazo_prestacao": row[2],
+    return {"cauc_vencendo": row[0], "obra_prazo": row[5], "nova_emenda": row[1], "prazo_prestacao": row[2],
             "mudanca_status": row[3], "vigencia_60d": row[4]}
 
 
@@ -1167,11 +1169,11 @@ async def put_preferencias(
     current: User = Depends(get_current_user),
 ):
     await db.execute(text(
-        "INSERT INTO painel_preferencias (user_id, cauc_vencendo, nova_emenda, prazo_prestacao, "
-        "mudanca_status, vigencia_60d, updated_at) VALUES (:u, :a, :b, :c, :d, :e, NOW()) "
-        "ON CONFLICT (user_id) DO UPDATE SET cauc_vencendo = :a, nova_emenda = :b, "
+        "INSERT INTO painel_preferencias (user_id, cauc_vencendo, obra_prazo, nova_emenda, prazo_prestacao, "
+        "mudanca_status, vigencia_60d, updated_at) VALUES (:u, :a, :f, :b, :c, :d, :e, NOW()) "
+        "ON CONFLICT (user_id) DO UPDATE SET cauc_vencendo = :a, obra_prazo = :f, nova_emenda = :b, "
         "prazo_prestacao = :c, mudanca_status = :d, vigencia_60d = :e, updated_at = NOW()"
-    ), {"u": current.id, "a": body.cauc_vencendo, "b": body.nova_emenda,
+    ), {"u": current.id, "a": body.cauc_vencendo, "f": body.obra_prazo, "b": body.nova_emenda,
         "c": body.prazo_prestacao, "d": body.mudanca_status, "e": body.vigencia_60d})
     await db.commit()
     return {"ok": True}

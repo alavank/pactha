@@ -604,6 +604,8 @@ export async function resolverTelaPub(
 // ---- push + preferencias ----
 export interface Prefs {
   cauc_vencendo: boolean;
+  /** Prazos e paralisações de obras da saúde (SISMOB). */
+  obra_prazo: boolean;
   nova_emenda: boolean;
   prazo_prestacao: boolean;
   mudanca_status: boolean;
