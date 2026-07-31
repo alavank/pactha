@@ -288,7 +288,15 @@ export default function RegularidadePage() {
         <p className="text-xs text-base-content/40">
           Legenda: <span className="text-success">✔ regular até a data</span> ·
           <span className="text-error"> ⚠ pendência (impeditivo)</span> ·
-          <span className="text-base-content/40"> ⊘ não exigido</span>.
+          {/* NUNCA escrever "nao exigido" aqui. O simbolo marca os itens que o
+              CAUC lista como "Desativado", e o texto oficial diz que a
+              desativacao e da FERRAMENTA, "para todos os entes federativos" —
+              nao e dispensa do municipio. O caso que prova: o FGTS e o item 1.3,
+              desativado no CAUC, enquanto na coluna ao lado DESTA MESMA TELA o
+              CRF do FGTS esta VENCIDO no CAGEC desde 29/07/2026 e e uma das 3
+              causas da irregularidade estadual. "Nao exigido" mandava o gestor
+              riscar da lista justamente o que trava o convenio. */}
+          <span className="text-base-content/40"> ⊘ não avaliado nesta fonte — leia o status da linha; não é dispensa</span>.
         </p>
       )}
     </div>

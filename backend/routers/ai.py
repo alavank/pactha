@@ -1163,6 +1163,16 @@ async def _tool_query_regularidade(db: AsyncSession, inp: dict) -> str:
     if not cagec.get("tem_dados"):
         out.append(f"  Sem coleta registrada. {cagec.get('motivo', '')}".rstrip())
     else:
+        # NOMEAR o cadastro. Antes, o bloco abria direto em "Situacao para
+        # Parceria: Irregular", e o modelo lia isso como uma afirmacao sobre o
+        # MUNICIPIO. So que o CAGEC tem um cadastro por ENTIDADE: em Monte Siao,
+        # a Prefeitura esta Irregular e o Fundo Municipal de Saude esta Regular.
+        # Perguntado sobre o fundo, o modelo respondia "Irregular" com os dados
+        # da prefeitura — resposta falsa sobre a regularidade de quem executa
+        # R$ 4,97 mi de obra federal.
+        out.append(f"  Cadastro PRINCIPAL: {cagec.get('nome') or '-'}"
+                   f" (CNPJ {cagec.get('cnpj') or '-'},"
+                   f" cadastro n {cagec.get('numero_cadastro') or '-'})")
         out.append(f"  Situacao para Parceria: {cagec.get('situacao') or '-'}"
                    f" ({'REGULAR' if cagec.get('regular') else 'NAO REGULAR'})"
                    f" | consulta de {cagec.get('data_pesquisa') or '-'}")
@@ -1186,6 +1196,28 @@ async def _tool_query_regularidade(db: AsyncSession, inp: dict) -> str:
                 continue
             marca = "info" if i.get("tipo") == "na" else "ok"
             out.append(f"      [{marca}] {i['label']}: {i['valor']}")
+        # AS OUTRAS ENTIDADES. Resumidas de proposito: o texto desta tool ja
+        # passa de 3,9 mil caracteres, e despejar os itens de cada fundo estoura
+        # o payload sem ajudar — o gestor so precisa AGIR sobre o que trava.
+        outras = [e for e in cagec.get("entidades", []) if not e.get("principal")]
+        if outras:
+            out.append(f"  OUTROS CADASTROS DESTE MUNICIPIO ({len(outras)}):")
+            for e in outras:
+                trava = (f"{e.get('pendencias')} pendencia(s)" if e.get("pendencias")
+                         else "sem pendencia")
+                out.append(f"      - {e.get('nome')} ({e.get('tipo') or 'entidade'},"
+                           f" CNPJ {e.get('cnpj') or '-'}, cadastro n"
+                           f" {e.get('numero_cadastro') or '-'}): {e.get('situacao') or '-'}"
+                           f" | {trava}")
+                for i in (e.get("itens") or []):
+                    if i.get("tipo") == "pendente":
+                        venc = f" (venceu em {i['validade']})" if i.get("validade") else ""
+                        out.append(f"          PENDENTE: {i.get('label')}{venc}")
+            out.append("  REGRA: cada entidade tem cadastro PROPRIO no CAGEC e trava"
+                       " apenas o SEU convenio. Prefeitura regular NAO destrava o"
+                       " convenio da saude se o Fundo Municipal de Saude estiver"
+                       " irregular, e vice-versa. Ao responder sobre um fundo,"
+                       " use a linha DELE — nunca a do cadastro principal.")
         out.append("  Fonte: CRC (Certificado de Registro Cadastral) do proprio CAGEC. "
                    "Cite as datas de validade quando forem uteis — o gestor precisa "
                    "renovar ANTES do vencimento.")
