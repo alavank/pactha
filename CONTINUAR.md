@@ -43,7 +43,7 @@ Monte Sião tem também o **Painel Executivo**: https://pactha-montesiao-mg-pain
 
 Os três bancos já estão **populados com dados reais** (a migração vinda do Neon foi concluída — não é mais schema+seed). Login seed só vale em banco novo: `admin@pactha.com.br` / `pactha2026` (pede troca de senha no 1º acesso).
 
-**Um push na `main` mexe com os três clientes ao mesmo tempo.** Hoje 7 das 10 aplicações acompanham `main` e 3 acompanham `feat/painel-executivo`. O **auto-deploy está DESLIGADO** nas 10 — deploy é manual pelo painel do Coolify.
+**Um push na `main` NÃO mexe com cliente nenhum.** As 9 aplicações rodam com `build_pack = dockerimage`: elas executam a tag gravada em `docker_registry_image_tag`, e quem constrói é o GitHub Actions publicando no GHCR. Enquanto ninguém repontar a tag de um app específico, o cliente fica na versão dele. **Cuidado com a leitura antiga:** `is_auto_deploy_enabled` está `true` nas 9 — não é ele que segura o deploy, é o `build_pack`. Detalhe e prova empírica em [`INFRA.md`](INFRA.md) §2.
 
 ---
 
@@ -57,7 +57,7 @@ Resumo; o detalhe completo (uuids de todas as aplicações, bancos, crons por te
 - **Token da API do Coolify:** NÃO está neste arquivo (é segredo). O usuário fornece (formato `36|xxxx`). Use `Authorization: Bearer <TOKEN>`. **Rotacione periodicamente.**
 - **GitHub App (source):** `alavank-coolify` — já dá acesso ao repo privado `alavank/pactha`. Use o `github_app_uuid` dele ao criar apps.
 
-**Projeto Coolify `pactha`** — uuid `ksmwr13y4iyprom8i1znede8`, environment `production`, **10 aplicações + 3 bancos**:
+**Projeto Coolify `pactha`** — uuid `ksmwr13y4iyprom8i1znede8`, environment `production`, **9 aplicações + 3 bancos** (o `montesiao-mg-painel` foi removido):
 
 | Tenant | API | Frontend | Worker | Painel | Banco |
 |---|---|---|---|---|---|
@@ -128,7 +128,7 @@ Credencial do **SIGCON-MG** (uma por município, no Cofre com `sistema='SIGCON-M
 cadastrada desde 2026-07-30. **O CAGEC não precisa de credencial** — consulta pública.
 
 ### 6.3 Auto-deploy
-Está **desligado** nas 10 aplicações. Antes de religar, lembre que um push na `main` rebuilda 7 apps de uma vez numa máquina de ~0,6 vCPU sustentado.
+`is_auto_deploy_enabled = true` nas 9 aplicações — mas **isso não importa**, porque todas usam `build_pack = dockerimage` e não constroem a partir do git. O deploy é sempre um ato explícito: repontar `docker_registry_image_tag` e chamar `/deploy`. Ver [`INFRA.md`](INFRA.md) §2.
 
 ---
 
