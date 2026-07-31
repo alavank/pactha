@@ -78,20 +78,31 @@ def _candidatos(cur, mid):
     # CAGEC irregular — 1 push AGREGADO, nomeando o que trava.
     # Faltava por completo: o município podia estar impedido de assinar convênio
     # estadual e o prefeito não recebia nada.
+    # UMA LINHA POR ENTIDADE: Prefeitura, Fundo Municipal de Saúde e FMAS têm
+    # cadastros separados no CAGEC. `fetchone()` aqui pegaria uma qualquer e o
+    # prefeito receberia (ou deixaria de receber) o alerta errado.
     try:
         cur.execute(
-            "SELECT COALESCE(pendencias, 0), regular, situacao, itens "
-            "FROM cagec_situacao WHERE municipio_id = %s", (mid,))
-        row = cur.fetchone()
-        if row and row[1] is False:
-            nomes = [i.get("label") for i in (row[3] or [])
+            "SELECT COALESCE(pendencias, 0), regular, situacao, itens, nome, tipo, "
+            "COALESCE(principal, false), cnpj "
+            "FROM cagec_situacao WHERE municipio_id = %s "
+            "ORDER BY principal DESC, tipo NULLS LAST", (mid,))
+        for pend, regular, situacao, itens, nome, tipo, principal, cnpj in cur.fetchall():
+            if regular is not False:
+                continue
+            nomes = [i.get("label") for i in (itens or [])
                      if isinstance(i, dict) and i.get("tipo") == "pendente"]
-            detalhe = "; ".join(n for n in nomes[:2] if n) or f"{row[0]} pendência(s)"
-            out.append(("cauc_vencendo", f"cagec:{row[2]}:{row[0]}",
+            detalhe = "; ".join(n for n in nomes[:2] if n) or f"{pend} pendência(s)"
+            quem = "Município" if principal else (tipo or nome or "Entidade")
+            trava = ("Impede assinar convênio estadual e liberar parcela."
+                     if principal else
+                     f"Trava os convênios estaduais desta entidade — a prefeitura "
+                     f"estar regular não resolve.")
+            out.append(("cauc_vencendo", f"cagec:{cnpj}:{situacao}:{pend}",
                         "Regularidade estadual (CAGEC)",
-                        f"Município {row[2] or 'irregular'} no CAGEC — {detalhe[:110]}. "
-                        f"Impede assinar convênio estadual e liberar parcela."))
-    except Exception:
+                        f"{quem} {situacao or 'irregular'} no CAGEC — {detalhe[:100]}. {trava}"))
+    except Exception as e:
+        _log(f"ERRO ao montar alerta do CAGEC: {type(e).__name__}: {e}")
         cur.connection.rollback()
 
     # DOCUMENTAÇÃO VENCENDO — avisa ANTES de travar, que é o ponto.
@@ -104,11 +115,13 @@ def _candidatos(cur, mid):
     try:
         from services.bi_abas import prazos_dos_itens
         for tabela, esfera in (("cagec_situacao", "CAGEC"), ("cauc_situacao", "CAUC")):
+            # fetchall: o CAGEC tem uma linha por ENTIDADE (prefeitura, fundo
+            # de saude, FMAS). fetchone() perderia os prazos dos fundos.
             cur.execute(f"SELECT itens, data_pesquisa FROM {tabela} WHERE municipio_id = %s", (mid,))
-            r = cur.fetchone()
-            if not r:
-                continue
-            for p in prazos_dos_itens(r[0], r[1], esfera, dias=30):
+            prazos = []
+            for r in cur.fetchall():
+                prazos += prazos_dos_itens(r[0], r[1], esfera, dias=30)
+            for p in prazos:
                 faixa = next((f for f in (7, 15, 30) if p["dias_restantes"] <= f), None)
                 if faixa is None:
                     continue

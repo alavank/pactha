@@ -49,16 +49,38 @@ async def fetch_cagec_situacao(db: AsyncSession, municipio_id: int) -> dict:
     """Nucleo da consulta CAGEC, SEM gate de auth — reusado pelo endpoint (apos
     ensure_tela) e pelo Painel de Indicadores (gated so por municipio), igual ao
     fetch_cauc_situacao."""
-    row = (await db.execute(text("""
+    # ORDER BY principal DESC nao e enfeite: desde que Prefeitura, Fundo
+    # Municipal de Saude e FMAS viraram linhas separadas, um `.first()` sem
+    # ordem pegaria UMA QUALQUER — a tela poderia mostrar a situacao do fundo
+    # como se fosse a do municipio.
+    linhas = (await db.execute(text("""
         SELECT nome, uf, cnpj, situacao, regular, validade, itens,
-               pendencias, pendencias_codigos, data_pesquisa, atualizado_em
+               pendencias, pendencias_codigos, data_pesquisa, atualizado_em,
+               tipo, principal, numero_cadastro
         FROM cagec_situacao WHERE municipio_id = :m
-    """), {"m": municipio_id})).first()
+        ORDER BY principal DESC, tipo NULLS LAST, nome
+    """), {"m": municipio_id})).fetchall()
 
-    if not row:
+    if not linhas:
         return {"tem_dados": False, "motivo": MOTIVO_SEM_COLETA}
 
+    row = linhas[0]
     itens = row[6] if isinstance(row[6], list) else []
+
+    # As DEMAIS entidades do municipio (fundos, consorcios, autarquias). Cada
+    # uma tem cadastro proprio no CAGEC e trava o SEU convenio sozinha:
+    # prefeitura regular nao destrava o convenio da saude se o Fundo Municipal
+    # de Saude estiver irregular.
+    entidades = [{
+        "nome": l[0], "cnpj": l[2], "tipo": l[11],
+        "situacao": l[3], "regular": l[4],
+        "validade": l[5].isoformat() if l[5] else None,
+        "itens": l[6] if isinstance(l[6], list) else [],
+        "pendencias": l[7] or 0,
+        "numero_cadastro": l[13],
+        "principal": bool(l[12]),
+        "data_pesquisa": l[9].isoformat() if l[9] else None,
+    } for l in linhas]
     return {
         "tem_dados": True,
         "nome": row[0],
@@ -72,6 +94,14 @@ async def fetch_cagec_situacao(db: AsyncSession, municipio_id: int) -> dict:
         "pendencias_codigos": list(row[8] or []),
         "data_pesquisa": row[9].isoformat() if row[9] else None,
         "atualizado_em": row[10].isoformat() if row[10] else None,
+        "tipo": row[11],
+        "numero_cadastro": row[13],
+        # Todas as entidades do municipio, a principal inclusive (para a tela
+        # poder listar sem remontar). Quem so quer "a" situacao continua lendo
+        # os campos de cima, que sao os da principal — contrato antigo intacto.
+        "entidades": entidades,
+        "pendencias_outras_entidades": sum(
+            e["pendencias"] for e in entidades if not e["principal"]),
     }
 
 
