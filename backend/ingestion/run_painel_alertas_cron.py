@@ -12,6 +12,10 @@ import os
 import json
 import sys
 
+# `python ingestion/x.py` poe a PASTA DO SCRIPT no sys.path, nao o cwd —
+# sem isto o `import services` abaixo falha em silencio.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+
 MAX_ENVIOS = 30  # teto por execução (evita flood)
 
 
@@ -69,6 +73,57 @@ def _candidatos(cur, mid):
             out.append(("cauc_vencendo", f"cauc:{row[0]}", "Documentação (CAUC)",
                         f"{row[0]} pendência(s) no CAUC podem travar novos repasses."))
     except Exception:
+        cur.connection.rollback()
+
+    # CAGEC irregular — 1 push AGREGADO, nomeando o que trava.
+    # Faltava por completo: o município podia estar impedido de assinar convênio
+    # estadual e o prefeito não recebia nada.
+    try:
+        cur.execute(
+            "SELECT COALESCE(pendencias, 0), regular, situacao, itens "
+            "FROM cagec_situacao WHERE municipio_id = %s", (mid,))
+        row = cur.fetchone()
+        if row and row[1] is False:
+            nomes = [i.get("label") for i in (row[3] or [])
+                     if isinstance(i, dict) and i.get("tipo") == "pendente"]
+            detalhe = "; ".join(n for n in nomes[:2] if n) or f"{row[0]} pendência(s)"
+            out.append(("cauc_vencendo", f"cagec:{row[2]}:{row[0]}",
+                        "Regularidade estadual (CAGEC)",
+                        f"Município {row[2] or 'irregular'} no CAGEC — {detalhe[:110]}. "
+                        f"Impede assinar convênio estadual e liberar parcela."))
+    except Exception:
+        cur.connection.rollback()
+
+    # DOCUMENTAÇÃO VENCENDO — avisa ANTES de travar, que é o ponto.
+    # A regra vem de services.bi_abas para a notificação e a tela nunca
+    # discordarem sobre o mesmo prazo — e porque a parte difícil dela (separar
+    # PRAZO de cadência de atualização do extrato) não pode existir em dois
+    # lugares. Um push por obrigação e por FAIXA: o `ref` carrega a faixa, então
+    # o gestor é cutucado em 30, de novo em 15 e de novo em 7 dias, e nunca duas
+    # vezes na mesma faixa (a idempotência é por `ref`).
+    try:
+        from services.bi_abas import prazos_dos_itens
+        for tabela, esfera in (("cagec_situacao", "CAGEC"), ("cauc_situacao", "CAUC")):
+            cur.execute(f"SELECT itens, data_pesquisa FROM {tabela} WHERE municipio_id = %s", (mid,))
+            r = cur.fetchone()
+            if not r:
+                continue
+            for p in prazos_dos_itens(r[0], r[1], esfera, dias=30):
+                faixa = next((f for f in (7, 15, 30) if p["dias_restantes"] <= f), None)
+                if faixa is None:
+                    continue
+                quando = ("vence hoje" if p["dias_restantes"] == 0
+                          else f"vence em {p['dias_restantes']} dia(s)")
+                out.append((
+                    "cauc_vencendo",                        # mesma preferência de regularidade
+                    f"doc:{esfera}:{p['codigo']}:{faixa}",  # 1 push por faixa
+                    f"Documento vencendo ({esfera})",
+                    f"{(p['label'] or p['codigo'])[:90]} {quando}. "
+                    f"Renove antes para não travar convênio."))
+    except Exception as e:
+        # Log alto: se a regra de prazo parar de carregar, o alerta some sem
+        # ninguem notar — que e o pior modo de falha possivel aqui.
+        _log(f"ERRO ao montar alertas de vencimento: {type(e).__name__}: {e}")
         cur.connection.rollback()
 
     # Mudanças de status recentes (48h) — 1 push por mudança

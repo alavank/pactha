@@ -144,7 +144,21 @@ export interface AlertaVigencia {
   situacao: string | null;
 }
 
+export interface DocumentoVencendo {
+  municipio_id: number;
+  municipio: string | null;
+  /** "CAUC" (federal) ou "CAGEC" (estadual/MG). */
+  esfera: string;
+  codigo: string;
+  label: string;
+  validade: string;
+  dias_restantes: number;
+}
+
 export interface Alertas {
+  /** Certidões vencendo em até 30 dias — só prazos reais (o backend descarta
+   *  as datas que são apenas cadência de atualização do extrato do CAUC). */
+  documentos?: DocumentoVencendo[];
   vigencia: AlertaVigencia[];
   prestacao: AlertaVigencia[];
   execucao: Execucao;
