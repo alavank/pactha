@@ -33,19 +33,31 @@ Mexeu numa aba, mexeu nos dois lugares.
 | Verbas Estaduais | `/api/bi/estaduais` | convênios SIGCON-MG + emendas estaduais |
 | CAUC e CAGEC | `/api/bi/documentos` | exigências regulares e pendências impeditivas |
 | Fundo Nacional de Saúde | `/api/bi/fns` | propostas do FNS, já consultadas |
+| Obras da Saúde | `/api/bi/sismob` | obras do SISMOB: prazo de norma vencido, repasse parado, execução por programa |
 
 Cada aba é **um request só**: a TV troca de aba a cada 60 s e não pode disparar
 uma cascata a cada virada. Todas passam pelo mesmo cache TTL (45 s) com
 single-flight do overview; o FNS tem cache próprio de 15 min porque consulta um
 portal externo lento.
 
-### CAGEC não é coletado
+### CAGEC é coletado desde 30/07/2026
 
-A aba de documentação mostra o CAUC completo (do banco) e, para o **CAGEC**,
-devolve `disponivel: false` com o motivo. Nenhum scraper coleta CAGEC hoje —
-o `sigcon_scraper` só fecha o modal dele no login. Mostrar um verde ali seria
-o gestor ler "está tudo em dia" sobre um dado que ninguém verificou. Quando
-houver coleta, basta preencher `cagec` em `services/bi_abas.py:bi_documentos`.
+> Este trecho dizia "nenhum scraper coleta CAGEC hoje". **Deixou de ser
+> verdade** e ficou perigoso: quem lesse concluiria que CAGEC vazio é o
+> esperado, quando na prática significa que a coleta falhou.
+
+Existe scraper dedicado (`backend/ingestion/cagec_scraper.py`), cron próprio
+(`40 5 * * *`, hoje só em Monte Sião — ver `INFRA.md` §5) e uma linha por
+**entidade**, não por município: prefeitura, Fundo Municipal de Saúde, Fundo
+de Assistência Social. `bi_documentos` devolve `cagec.disponivel: true` com os
+itens; para os tenants sem o cron, continua `false` com o motivo — o princípio
+original vale: verde sobre dado não verificado é pior que ausência.
+
+Isto sustenta o cruzamento **R7** do módulo de obras: `sismob_obras.nu_cnpj`
+× `cagec_situacao.cnpj` responde se o fundo que executa a obra federal está
+cadastrado no CAGEC-MG. Foi por CNPJ, e não por nome, que se descobriu que o
+Fundo Municipal de Saúde de Monte Sião **está** cadastrado e regular — a busca
+por nome não o achava porque o registro não traz o nome da cidade.
 
 ## Período multi-ano
 
@@ -56,6 +68,16 @@ cadeia; `ano` (int) segue aceito por compatibilidade e é somado à lista
 - `convenios_estadual`, `emendas_estaduais` → coluna `ano`
 - `transferegov_propostas`, `transferegov_pac` → sufixo de `numero_proposta` (`xxx/AAAA`)
 - Plano de Ação (RP9, ao vivo) → dígitos 5-8 de `programaCodigo`
+
+⚠️ **Duas abas ignoram o período de propósito:** `CAUC e CAGEC` (que nem recebe
+`anos`) e `Obras da Saúde`. Nas duas, o dado é **estado atual**, não fato
+datado. Em obras isso já custou caro: a aba filtrava por `ano_referencia` (o
+ano da *proposta*), e com "Mandato atual" selecionado ela dizia
+"0 com prazo vencido / R$ 0 parado" enquanto a tela do módulo, no mesmo
+minuto, mostrava 3 obras e R$ 249.648 parados — porque as obras problemáticas
+são propostas de 2012 e 2020 ainda em aberto. **Antes de filtrar uma aba por
+ano, pergunte se o ano da coluna é o ano do problema.** A aba avisa na tela
+que não filtra, senão "troquei o período e nada mudou" vira "a aba travou".
 
 ⚠️ O cache de narrativa/insights (`painel_narrativa_cache`) tem `ano` **inteiro**
 na chave primária. Um período com vários anos vai com `ano = 0` e o período

@@ -1,7 +1,7 @@
 "use client";
 // Carregamento dos dados de uma aba do BI, com cache curto em memoria.
 //
-// Por que cache: o Modo Tela roda em loop pelas seis abas. Sem cache, cada volta
+// Por que cache: o Modo Tela roda em loop pelas sete abas. Sem cache, cada volta
 // refaria os seis requests; com ele, o payload da aba fica valido por ~40 s (na
 // mesma ordem do TTL do backend) e a volta seguinte reaproveita. `prefetchAba`
 // deixa a proxima aba pronta ANTES de virar, para a troca nao mostrar esqueleto.
