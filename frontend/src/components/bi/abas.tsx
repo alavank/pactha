@@ -13,7 +13,7 @@ import React from "react";
 import {
   Wallet, Landmark, Coins, CalendarClock, FileWarning, ShieldCheck, ShieldAlert,
   Users, HeartPulse, Activity, FileCheck2, Stethoscope, Building2, TrendingUp, Info,
-  HardHat,
+  HardHat, AlertCircle, AlertTriangle, Ban, CheckCircle2,
 } from "lucide-react";
 import {
   AbaDocumentos, AbaEstaduais, AbaFns, AbaParlamentares, AbaSismob, AbaTransfereGov,
@@ -538,13 +538,35 @@ function EsferaHead({
   );
 }
 
-/** Uma exigência por linha: código, rótulo e status. Serve CAUC e CAGEC — o
- *  payload das duas esferas tem o mesmo formato de propósito. */
-function ListaExigencias({ itens, tv }: { itens: CaucItemDetalhe[]; tv?: boolean }) {
+/** Uma exigência por linha, no MESMO desenho do extrato oficial:
+ *  ícone · código · Item Legal · **Situação** · **Validade**.
+ *
+ *  Antes a linha misturava as duas ultimas numa so celula ("Regular ate
+ *  31/07/26", "PENDENTE · !"), com palavras nossas. Quem confere a tela contra
+ *  o PDF — que e o uso real da equipe de convenios — nao casava linha a linha.
+ *  Agora a palavra e a do documento e a data tem coluna propria.
+ *
+ *  O SIMBOLO muda por esfera, como nos dois documentos: o CAUC marca
+ *  Comprovado / A Comprovar / Desativado; o CAGEC marca Vigente / Vencido.
+ *  O que NAO muda e o vermelho na linha inteira do que esta pendente — e o que
+ *  faz o olho achar o problema de longe, na TV. */
+function ListaExigencias({
+  itens, tv, esfera = "cauc",
+}: { itens: CaucItemDetalhe[]; tv?: boolean; esfera?: "cauc" | "cagec" }) {
   return (
     <ul className="flex flex-col">
+      {/* Cabecalho de coluna: o extrato tem, e sem ele "31/07/2026" solto na
+          direita nao diz se e validade ou data de consulta. */}
+      <li className="flex items-center gap-2 border-b pb-[2px] text-[9px] uppercase tracking-wide"
+        style={{ borderColor: "var(--bi-line)", color: "var(--bi-faint)" }}>
+        <span className="flex-1">Item legal</span>
+        <span className={`shrink-0 text-right ${tv ? "w-[104px]" : "w-[92px]"}`}>Situação</span>
+        <span className={`shrink-0 text-right ${tv ? "w-[86px]" : "w-[76px]"}`}>Validade</span>
+      </li>
       {itens.map((i) => {
         const pendente = i.tipo === "pendente";
+        const na = i.tipo === "na";
+        const cor = pendente ? "var(--bi-crit)" : na ? "var(--bi-faint)" : "var(--bi-ok)";
         return (
           // O texto QUEBRA em vez de ser cortado. Truncar deixava linhas como
           // "Certidão de Débitos Relativos a Créditos …", que não dizem QUAL
@@ -561,37 +583,40 @@ function ListaExigencias({ itens, tv }: { itens: CaucItemDetalhe[]; tv?: boolean
             </span>
             <span
               className={`flex-1 leading-snug ${tv ? "text-[13px]" : "text-[12px]"} ${pendente ? "font-semibold" : ""}`}
-              style={i.tipo === "na" ? { color: "var(--bi-faint)" }
-                : pendente ? { color: "var(--bi-crit)" } : undefined}
+              style={na ? { color: "var(--bi-faint)" } : pendente ? { color: "var(--bi-crit)" } : undefined}
             >
               {i.label}
             </span>
-            {/* Pendência vira CHIP: o status é o que o olho precisa achar de
-                longe. Chip só no status, não em volta do título — envolver o
-                texto todo comeria a largura que o título precisa para ser lido. */}
-            {pendente ? (
-              <span
-                className="bi-num shrink-0 rounded px-1.5 py-[1px] text-[9px] font-bold tracking-wide"
-                style={{ background: "var(--bi-crit)", color: "#fff" }}
-              >
-                {/* So anexa o valor quando ele for DATA. Nas 6 pendencias do
-                    CAUC o `valor` e o marcador bruto do CSV do Tesouro, entao o
-                    chip saia literalmente "PENDENTE · !" na TV e no celular. No
-                    CAGEC o valor E a data em que venceu, e ela e util — mas
-                    precisa do verbo, senao "PENDENTE · 29/07/2026" e lido como
-                    prazo FUTURO quando e a data do vencimento. */}
-                {/^\d{2}\/\d{2}\/\d{2,4}$/.test(i.valor || "")
-                  ? `PENDENTE · venceu ${i.valor}`
-                  : "PENDENTE"}
-              </span>
-            ) : (
-              <span
-                className="bi-num mt-[2px] shrink-0 text-[10px]"
-                style={{ color: i.tipo === "regular" ? "var(--bi-ok)" : "var(--bi-faint)" }}
-              >
-                {i.tipo === "na" ? (i.status || "indisponível") : i.valor}
-              </span>
-            )}
+
+            {/* SITUAÇÃO — a palavra do documento, com o símbolo da esfera. */}
+            <span
+              className={`mt-[1px] flex shrink-0 items-center justify-end gap-1 text-right leading-tight ${
+                tv ? "w-[104px] text-[11px]" : "w-[92px] text-[10px]"
+              } ${pendente ? "font-bold" : ""}`}
+              style={{ color: cor }}
+              title={i.nota || undefined}
+            >
+              {pendente
+                ? (esfera === "cagec"
+                    ? <AlertTriangle className="size-3 shrink-0" />
+                    : <AlertCircle className="size-3 shrink-0" />)
+                : na
+                  ? <Ban className="size-3 shrink-0" />
+                  : <CheckCircle2 className="size-3 shrink-0" />}
+              <span>{i.status || (pendente ? "Pendente" : "—")}</span>
+            </span>
+
+            {/* VALIDADE — coluna própria e SEMPRE presente, como no extrato.
+                "—" quando a fonte não dá data (todo "A Comprovar" e todo
+                "Desativado"): a ausência de data é informação, não buraco. */}
+            <span
+              className={`bi-num mt-[1px] shrink-0 text-right leading-tight ${
+                tv ? "w-[86px] text-[11px]" : "w-[76px] text-[10px]"
+              }`}
+              style={{ color: pendente ? "var(--bi-crit)" : "var(--bi-faint)" }}
+            >
+              {i.validade || (/^\d{2}\/\d{2}\/\d{2,4}$/.test(i.valor || "") ? i.valor : "—")}
+            </span>
           </li>
         );
       })}
@@ -700,8 +725,13 @@ export function AbaDocumentosView({
               <div className={soUmaEsfera && tv ? "bi-colunas-2" : ""}>
                 {blocos.map(([grupo, itens]) => (
                   <Painel key={grupo} className="mb-3 break-inside-avoid">
-                    <PainelHead icon={ShieldCheck} titulo={grupo} sub={`${itens.length} exigência(s)`} />
-                    <ListaExigencias itens={itens} tv={tv} />
+                    {/* Titulo = o LITERAL do extrato ("III - Obrigacoes de
+                        Transparencia"), para casar na conferencia. A glosa vem
+                        no subtitulo, para quem nao vive o documento. */}
+                    <PainelHead icon={ShieldCheck} titulo={grupo}
+                      sub={`${itens.length} exigência(s)${
+                        itens[0]?.grupo_glossa ? ` · ${itens[0].grupo_glossa}` : ""}`} />
+                    <ListaExigencias itens={itens} tv={tv} esfera="cauc" />
                   </Painel>
                 ))}
               </div>
@@ -746,7 +776,7 @@ export function AbaDocumentosView({
                 {blocosCagec.map(([grupo, itens]) => (
                   <Painel key={grupo} className="mb-3 break-inside-avoid">
                     <PainelHead icon={ShieldCheck} titulo={grupo} sub={`${itens.length} exigência(s)`} />
-                    <ListaExigencias itens={itens} tv={tv} />
+                    <ListaExigencias itens={itens} tv={tv} esfera="cagec" />
                   </Painel>
                 ))}
               </div>

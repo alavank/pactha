@@ -320,10 +320,20 @@ export interface AbaParlamentares {
 export interface CaucItemDetalhe {
   codigo: string;
   grupo: string;
+  /** Tradução do título oficial do grupo, para quem não vive o extrato. Só CAUC. */
+  grupo_glossa?: string;
   label: string;
   valor: string;
   tipo: "regular" | "pendente" | "na";
+  /** A PALAVRA do documento: CAUC usa "Comprovado" / "A Comprovar" /
+   *  "Desativado"; CAGEC usa "Vigente" / "Vencido". Nunca frase nossa — a tela
+   *  existe para ser conferida linha a linha contra o extrato. */
   status: string;
+  /** Coluna própria, como no documento (dd/mm/aaaa). Null quando a fonte não dá
+   *  data — que é o caso de todo item "A Comprovar" e "Desativado". */
+  validade?: string | null;
+  /** Significado oficial de um status traiçoeiro. "Desativado" NÃO é dispensa. */
+  nota?: string;
 }
 
 export interface AbaDocumentos {

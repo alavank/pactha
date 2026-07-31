@@ -18,7 +18,7 @@ router = APIRouter(prefix="/api/cauc", tags=["cauc"])
 # O catalogo (GRUPOS, LABELS, _classifica) mora em services/cauc_catalogo.py
 # para que o cron de alertas possa usa-lo sem importar FastAPI e o engine.
 # Reexportado aqui porque este modulo ja era o endereco conhecido deles.
-from services.cauc_catalogo import GRUPOS, LABELS, _classifica  # noqa: F401
+from services.cauc_catalogo import GRUPOS, GRUPOS_GLOSSA, LABELS, _classifica  # noqa: F401
 
 
 
@@ -48,14 +48,23 @@ async def fetch_cauc_situacao(db: AsyncSession, municipio_id: int) -> dict:
     itens_raw = row[6] if isinstance(row[6], dict) else {}
     itens = []
     for codigo, valor in itens_raw.items():
-        tipo, status = _classifica(valor)
+        tipo, status, validade, nota = _classifica(valor)
+        raiz = codigo.split(".")[0]
         itens.append({
             "codigo": codigo,
-            "grupo": GRUPOS.get(codigo.split(".")[0], "Outras"),
+            "grupo": GRUPOS.get(raiz, "Outras"),
+            # Glosa do grupo: o titulo e o LITERAL do extrato (para casar na
+            # conferencia), a glosa e a traducao (para quem nao vive o extrato).
+            "grupo_glossa": GRUPOS_GLOSSA.get(raiz, ""),
             "label": LABELS.get(codigo, f"Exigencia {codigo}"),
             "valor": valor,
             "tipo": tipo,
+            # `status` e `validade` sao DUAS COLUNAS no extrato, e aqui tambem:
+            # antes vinham grudados numa frase ("Regular ate 31/07/26"), que nao
+            # casava com o documento na hora de conferir linha a linha.
             "status": status,
+            "validade": validade,
+            "nota": nota,
         })
     # ordena por codigo (numerico por segmento)
     def _key(it):
