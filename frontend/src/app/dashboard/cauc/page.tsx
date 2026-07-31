@@ -5,14 +5,14 @@
 // documentação está em dia para assinar convênio?"). O que muda é a esfera —
 // União (CAUC/Tesouro) e Minas (CAGEC/SIGCON) —, então cada uma é uma coluna.
 //
-// A coluna do CAGEC existe ANTES da coleta de propósito. Ela mostra "aguardando
-// credencial do SIGCON-MG" em vez de nada: assim o gestor sabe que existe uma
-// regularidade estadual a acompanhar, e ligar o scraper depois não mexe nesta
-// tela — o payload do CAGEC já sai no mesmo formato do CAUC.
+// O CAGEC vem do CRC (Certificado de Registro Cadastral) do portal do CAGEC,
+// que sai por CNPJ, sem credencial, e traz cada obrigação com SITUAÇÃO e DATA DE
+// VALIDADE. Por isso as linhas do CAGEC mostram a data e as do CAUC não: são
+// fontes diferentes no mesmo formato, e a data só existe onde a fonte dá.
 import React, { useEffect, useState } from "react";
 import {
   ShieldCheck, ShieldAlert, CheckCircle2, AlertTriangle, Loader2, MinusCircle,
-  KeyRound, Clock,
+  Clock,
 } from "lucide-react";
 import api from "@/lib/api";
 import { useMunicipio } from "@/contexts/MunicipioContext";
@@ -24,6 +24,8 @@ interface Item {
   valor: string;
   tipo: "regular" | "pendente" | "na";
   status: string;
+  /** Só o CAGEC tem: cada obrigação do CRC vence numa data própria (dd/mm/aaaa). */
+  validade?: string | null;
 }
 
 interface CaucResp {
@@ -123,11 +125,19 @@ function Exigencias({ itens }: { itens: Item[] }) {
                     {it.label}
                   </div>
                 </div>
-                <span className={`shrink-0 text-xs font-medium whitespace-nowrap ${
+                <span className={`shrink-0 text-xs font-medium whitespace-nowrap text-right ${
                   it.tipo === "pendente" ? "text-error"
                   : it.tipo === "regular" ? "text-success"
                   : "text-base-content/40"}`}>
                   {it.status}
+                  {/* A data é o que torna a linha acionável: "Vencido" sozinho não
+                      diz se foi ontem ou ano passado, e "Vigente" não diz quanto
+                      tempo resta para renovar. */}
+                  {it.validade && (
+                    <span className="block font-normal text-base-content/50">
+                      {it.tipo === "pendente" ? "venceu em " : "até "}{it.validade}
+                    </span>
+                  )}
                 </span>
               </div>
             ))}
@@ -236,19 +246,18 @@ export default function RegularidadePage() {
                     <div className="font-semibold text-base-content">Aguardando coleta</div>
                     <p className="text-sm text-base-content/70">
                       {cagec?.motivo
-                        || "O CAGEC ainda não é coletado automaticamente: depende da credencial do SIGCON-MG do município."}
+                        || "O CAGEC deste município ainda não foi coletado."}
                     </p>
+                    {/* A coleta do CAGEC NÃO usa credencial — a consulta do portal
+                        é pública e basta o CNPJ. Mandar o gestor cadastrar senha
+                        aqui seria trabalho inútil. O que falta, quando falta, é o
+                        CNPJ do município nas bases. */}
                     <p className="text-xs text-base-content/50">
-                      A tela já está pronta: assim que a credencial estiver no Cofre de
-                      Senhas (sistema <span className="font-mono">SIGCON-MG</span>) e a
-                      coleta rodar, as exigências aparecem aqui no mesmo formato do CAUC.
+                      A consulta do CAGEC é pública e usa o CNPJ do município — não
+                      depende de senha. Se o CNPJ ainda não foi identificado nas bases,
+                      a coleta o encontra assim que houver emenda estadual ou registro
+                      no PAC.
                     </p>
-                    <a
-                      href="/dashboard/cofre"
-                      className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
-                    >
-                      <KeyRound className="size-3.5" /> Cadastrar credencial do SIGCON-MG
-                    </a>
                   </div>
                 </div>
               </div>
@@ -257,8 +266,12 @@ export default function RegularidadePage() {
                 <Situacao
                   regular={!!cagec.regular}
                   titulo={cagec.regular ? "Regular no CAGEC" : (cagec.situacao || `${cagec.pendencias} pendência(s)`)}
+                  /* `validade` NÃO é a validade do certificado — o CRC não tem uma.
+                     É a data mais próxima entre as obrigações ainda vigentes, ou
+                     seja, o próximo prazo a segurar. Chamar de "certificado válido
+                     até" faria o gestor achar que tem até lá para tudo. */
                   detalhe={`${cagec.nome}/${cagec.uf}` + (cagec.validade
-                    ? ` — certificado válido até ${fmtDate(cagec.validade)}.`
+                    ? ` — próxima obrigação a vencer: ${fmtDate(cagec.validade)}.`
                     : " — cadastro de convenentes do Estado de Minas Gerais.")}
                 />
                 <Exigencias itens={cagec.itens || []} />
