@@ -13,9 +13,10 @@ import React from "react";
 import {
   Wallet, Landmark, Coins, CalendarClock, FileWarning, ShieldCheck, ShieldAlert,
   Users, HeartPulse, Activity, FileCheck2, Stethoscope, Building2, TrendingUp, Info,
+  HardHat,
 } from "lucide-react";
 import {
-  AbaDocumentos, AbaEstaduais, AbaFns, AbaParlamentares, AbaTransfereGov,
+  AbaDocumentos, AbaEstaduais, AbaFns, AbaParlamentares, AbaSismob, AbaTransfereGov,
   Alertas, CaucItemDetalhe, Lancamento, Overview, isRollup,
 } from "@/lib/bi";
 import { formatCurrencyShort, formatInt, formatDate, diasLabel } from "@/lib/bi-format";
@@ -814,6 +815,88 @@ export function AbaFnsView({ d, tv }: AbaProps & { d: AbaFns }) {
           )}
         </Painel>
       </div>
+    </div>
+  );
+}
+
+// ==========================================================================
+// Obras da Saúde (SISMOB)
+// ==========================================================================
+
+export function AbaSismobView({ d, tv }: AbaProps & { d: AbaSismob }) {
+  const t = d.totais;
+  const acao = d.acao ?? [];
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Metric icon={HardHat} tom="accent" label="Obras em andamento"
+          valor={formatInt(t.vivas)} sub={`${formatInt(t.obras)} no total`} grande={tv} />
+        <Metric icon={Wallet} label="Já repassado"
+          valor={formatCurrencyShort(t.repasse_total)}
+          sub={`de ${formatCurrencyShort(t.valor_proposta)} aprovados`} grande={tv} />
+        <Metric icon={FileWarning} tom={t.repasse_parado ? "crit" : "ok"} label="Parado"
+          valor={formatCurrencyShort(t.repasse_parado)}
+          sub={t.repasse_parado ? "sem atualização há +60 dias" : "nada parado"} grande={tv} />
+        <Metric icon={CalendarClock} tom={t.com_prazo_vencido ? "warn" : "ok"}
+          label="Prazo de etapa vencido" valor={formatInt(t.com_prazo_vencido)}
+          sub="90 dias após o repasse" grande={tv} />
+      </div>
+
+      <div className={grid(tv, "grid grid-cols-1 min-h-0 gap-3 lg:grid-cols-3",
+                              "grid min-h-0 flex-1 grid-cols-3 gap-3")}>
+        <Painel className="min-h-0 lg:col-span-2">
+          <PainelHead icon={FileWarning} titulo="Precisa de ação"
+            sub="prazo de norma, obra parada ou recurso a devolver"
+            right={<Chip tom={acao.length ? "crit" : "ok"}>{acao.length}</Chip>} />
+          {acao.length ? (
+            <ul className="bi-scroll flex min-h-0 flex-1 flex-col divide-y overflow-y-auto pr-1"
+              style={{ borderColor: "var(--bi-line)" }}>
+              {/* Na TV, no máximo 4 e UMA frase por obra: painel de parede é
+                  lido de longe e ninguém rola. O detalhe fica no módulo. */}
+              {acao.slice(0, tv ? 4 : 12).map((o) => (
+                <li key={o.proposta_id} className="py-1.5">
+                  <div className="flex items-start gap-2">
+                    <span className={`flex-1 leading-snug ${tv ? "text-[13px]" : "text-[12px]"}`}>
+                      {o.estabelecimento || o.programa || `Obra ${o.proposta_id}`}
+                    </span>
+                    <Chip tom={o.severidade === "critico" ? "crit" : "warn"} className="shrink-0">
+                      {o.percentual != null ? `${o.percentual}%` : "—"}
+                    </Chip>
+                  </div>
+                  <div className="text-[10px]" style={{ color: "var(--bi-faint)" }}>
+                    {o.problema}
+                    {(o.problemas || 0) > 1 ? ` · +${(o.problemas || 1) - 1}` : ""}
+                    {o.municipio ? ` · ${o.municipio}` : ""}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <Vazio>Nenhuma obra com prazo vencido ou parada.</Vazio>
+          )}
+        </Painel>
+
+        <Painel className="min-h-0">
+          <PainelHead icon={Activity} titulo="Execução" sub="obras em andamento" />
+          {d.execucao?.length ? (
+            <div className="bi-scroll flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1">
+              {d.execucao.slice(0, tv ? 5 : 10).map((o) => (
+                <DotMeter key={o.proposta_id}
+                  label={(o.estabelecimento || o.programa || "Obra") as string}
+                  pct={(o.percentual ?? 0) / 100}
+                  direita={`${o.percentual ?? 0}%`} />
+              ))}
+            </div>
+          ) : (
+            <Vazio>Nenhuma obra em execução.</Vazio>
+          )}
+        </Painel>
+      </div>
+
+      <Painel>
+        <PainelHead icon={Stethoscope} titulo="Por programa" sub="valor aprovado" />
+        <ListaRollup items={d.por_programa ?? []} formatar={formatCurrencyShort} />
+      </Painel>
     </div>
   );
 }

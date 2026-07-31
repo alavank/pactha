@@ -24,7 +24,7 @@ import { InsightTicker } from "./InsightTicker";
 import { SlideshowControls } from "./SlideshowControls";
 import { Painel, Skeleton, Vazio } from "./kit";
 import {
-  AbaDocumentosView, AbaEstaduaisView, AbaFnsView, AbaGeral,
+  AbaDocumentosView, AbaEstaduaisView, AbaFnsView, AbaGeral, AbaSismobView,
   AbaParlamentaresView, AbaTransfereGovView,
 } from "./abas";
 
@@ -257,6 +257,8 @@ export function ConteudoAba({
       return <AbaDocumentosView d={dados.d} tv={tv} esfera={esfera} />;
     case "fns":
       return <AbaFnsView d={dados.d} tv={tv} />;
+    case "sismob":
+      return <AbaSismobView d={dados.d} tv={tv} />;
   }
 }
 

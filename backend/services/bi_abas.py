@@ -625,3 +625,118 @@ async def documentos_vencendo(db: AsyncSession, ids: list[int],
 
     out.sort(key=lambda x: (x["dias_restantes"], x["esfera"], x["codigo"] or ""))
     return out
+
+
+# --------------------------------------------------------------------------
+# Aba: Obras da Saúde (SISMOB)
+# --------------------------------------------------------------------------
+async def bi_sismob(db: AsyncSession, ids: list[int], anos: Optional[list[int]] = None) -> dict:
+    """Obras do SISMOB agregadas para o Painel.
+
+    SET-AWARE e SEQUENCIAL: nada de `asyncio.gather` com sessoes proprias — o
+    pool e pool_size=5/max_overflow=10 e abrir N sessoes por request derruba o
+    app inteiro, inclusive /auth/login (ver o aviso em _compute_overview).
+
+    A classificacao vem de `sismob_regras.classificar`, a MESMA que a tela e o
+    push usam. Se a aba reclassificasse por conta, um dia a TV do gabinete e o
+    celular do prefeito discordariam sobre a mesma obra.
+
+    Filtro de ano usa `ano_referencia` (coluna). NAO derivar de
+    `numero_proposta`: o formato tem 3 variantes incompativeis na mesma base.
+    """
+    if not ids:
+        return {"total": 0, "totais": {}, "acao": [], "por_situacao": [],
+                "por_programa": [], "execucao": []}
+    from services.sismob_regras import classificar
+
+    p: dict = {"ids": ids}
+    filtro_ano = ""
+    if anos:
+        p["anos"] = anos
+        filtro_ano = " AND o.ano_referencia = ANY(:anos)"
+
+    rows = (await db.execute(text(f"""
+        SELECT o.proposta_id, o.municipio_id, m.nome AS municipio,
+               o.estabelecimento, o.programa, o.tipo_obra, o.tipo_recurso,
+               o.co_situacao_obra, o.situacao, o.vl_percentual_executado,
+               o.vl_proposta, o.repasse_total, o.dt_primeira_parcela,
+               o.dt_conclusao_final, o.dt_inicio_funcionamento, o.nu_cnes, o.co_cnes,
+               o.possui_etapa_funcionamento, o.ultima_atividade_em, o.dt_mudanca_situacao,
+               -- A regra "repasse sem contrato" olha se ha empresa. Sem esta
+               -- contagem, `classificar` recebia a obra SEM empresas e acusava as
+               -- duas obras novas: a aba mostrava 5 obras em acao e a tela do
+               -- modulo, 3, para o mesmo municipio. As regras ja eram as mesmas;
+               -- o que divergia era a ENTRADA.
+               (SELECT count(*) FROM sismob_obra_empresas e
+                 WHERE e.proposta_id = o.proposta_id) AS n_empresas
+        FROM sismob_obras o LEFT JOIN municipios m ON m.id = o.municipio_id
+        WHERE o.municipio_id = ANY(:ids) AND o.ausente_desde IS NULL{filtro_ano}
+        ORDER BY o.ultima_atividade_em NULLS FIRST
+    """), p)).mappings().all()
+
+    hoje = date.today()
+    tot = {"obras": 0, "vivas": 0, "concluidas": 0, "canceladas": 0,
+           "valor_proposta": 0.0, "repasse_total": 0.0, "repasse_parado": 0.0,
+           "com_prazo_vencido": 0}
+    acao, execucao = [], []
+    por_situacao: dict[str, dict] = {}
+    por_programa: dict[str, dict] = {}
+
+    for r in rows:
+        o = dict(r)
+        # `classificar` so testa a verdade da lista; a contagem basta.
+        o["empresas"] = [1] * int(o.pop("n_empresas", 0) or 0)
+        diag = classificar(o, hoje)
+        co = o["co_situacao_obra"]
+        proposta = _money(o["vl_proposta"])
+        repasse = _money(o["repasse_total"])
+
+        tot["obras"] += 1
+        tot["valor_proposta"] += proposta
+        tot["repasse_total"] += repasse
+        if co in (7, 8):
+            tot["canceladas"] += 1
+        elif co in (3, 4):
+            tot["concluidas"] += 1
+        else:
+            tot["vivas"] += 1
+        if any(g["regra"] == "sem_atualizacao" for g in diag["regras"]):
+            tot["repasse_parado"] += repasse
+        if any(g["regra"] == "etapa90" and (g.get("dias") or 0) > 0 for g in diag["regras"]):
+            tot["com_prazo_vencido"] += 1
+
+        for acc, chave in ((por_situacao, o["situacao"]), (por_programa, o["programa"])):
+            k = (chave or "").strip() or "Não informado"
+            e = acc.setdefault(k, {"label": k, "qtd": 0, "valor": 0.0})
+            e["qtd"] += 1
+            e["valor"] += proposta
+
+        if diag["regras"]:
+            acao.append({
+                "proposta_id": o["proposta_id"], "municipio": o["municipio"],
+                "estabelecimento": o["estabelecimento"], "programa": o["programa"],
+                "situacao": o["situacao"], "percentual": _money(o["vl_percentual_executado"]),
+                "severidade": diag["severidade"],
+                # UMA frase por obra na TV: o painel precisa ser lido de longe.
+                # O detalhe completo fica na tela do modulo.
+                "problema": diag["regras"][0]["titulo"],
+                "problemas": len(diag["regras"]),
+                "valor": proposta,
+            })
+        elif co in (0, 1, 2, 5, 6):
+            execucao.append({
+                "proposta_id": o["proposta_id"], "municipio": o["municipio"],
+                "estabelecimento": o["estabelecimento"], "programa": o["programa"],
+                "percentual": _money(o["vl_percentual_executado"]), "valor": proposta,
+            })
+
+    ordem = {"critico": 0, "atencao": 1}
+    acao.sort(key=lambda i: (ordem.get(i["severidade"], 9), -i["valor"]))
+    return {
+        "total": tot["obras"],
+        "totais": {k: (round(v, 2) if isinstance(v, float) else v) for k, v in tot.items()},
+        "acao": acao[:LIMITE_ITENS],
+        "execucao": execucao[:LIMITE_ITENS],
+        "por_situacao": sorted(por_situacao.values(), key=lambda e: -e["valor"]),
+        "por_programa": sorted(por_programa.values(), key=lambda e: -e["valor"]),
+    }
