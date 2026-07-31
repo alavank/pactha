@@ -117,10 +117,19 @@ def situacao_terminal(codigo) -> bool:
 def url_portal(proposta_id) -> str:
     """Link para a obra no SISMOB Cidadao.
 
-    ⚠️ O formato do deep link NAO foi confirmado: a SPA nao expoe rotas no HTML
-    e nao deu para verificar sem abrir o portal no navegador. Enquanto nao for
-    conferido, apontamos para a BUSCA, e a UI rotula o botao como "Consultar no
-    SISMOB" — um botao que promete a obra e cai na home e pior que um botao
-    honesto. Quando alguem confirmar o formato, e AQUI que se muda, num lugar so.
+    Formato CONFERIDO em 31/07/2026 (antes apontava para a home porque a SPA
+    nao expoe rotas no HTML). O bundle do portal declara a rota "/obra/:propostaId"
+    e o componente dela chama `loadObra(match.params.propostaId)` contra
+    `/api/public/obras/{id}` — a mesma API que este modulo coleta. E o nosso
+    `proposta_id` E o `coSeqProposta` do MS: conferido nas tres obras em acao de
+    Monte Siao (112462, 193527, 4378), todas devolvendo 200 com o municipio e o
+    estabelecimento certos.
+
+    Id nao-numerico cai de volta na home DE PROPOSITO: `/obra/NaN` faz a SPA
+    pedir `/api/public/obras/NaN`, que responde 500, e o portal mostra uma tela
+    de erro sem busca e sem volta — pior que a home.
     """
-    return "https://sismobcidadao.saude.gov.br/"
+    try:
+        return f"https://sismobcidadao.saude.gov.br/obra/{int(proposta_id)}"
+    except (TypeError, ValueError):
+        return "https://sismobcidadao.saude.gov.br/"

@@ -166,6 +166,25 @@ a cada ~60 dias por obra, o próprio `ingest()` se auto-limita a 1×/dia
 (`SISMOB_MIN_INTERVAL_H=20`; `SISMOB_FORCE=1` força, `SISMOB_ENABLED=0` desliga por
 tenant). A fonte é **API JSON pública** — sem token, sem login, sem Playwright.
 
+> ⚠️ **`SISMOB_ENABLED=0` deixa o watchdog reclamando para sempre.** O `ingest()`
+> retorna antes de rodar, então nunca grava linha em `ingestion_log`, e o
+> `watchdog_coleta` — cujo catálogo `FRESCOR_HORAS` é **global aos 3 tenants**,
+> constante no código — passa a registrar "sismob: nenhum sucesso registrado" a
+> cada ciclo. Hoje isso é só uma linha WARN no log da Scheduled Task (nenhum app
+> do PACTHA tem `TELEGRAM_BOT_TOKEN` configurado), mas se você ligar o Telegram
+> antes de resolver isso, vira alarme recorrente sobre uma fonte desligada de
+> propósito. Não é defeito do SISMOB: é a lacuna entre expectativa global e
+> desligamento por tenant. Prefira **não deployar** o módulo no tenant do que
+> deployar e desligar pela env.
+
+**`SISMOB_ALLOW_SHRINK=1`** destrava a GUARDA 4 do coletor. Por padrão, se a
+listagem devolver itens sem `proposta_id`, ou se mais de 1/5 da carteira do
+município fosse marcada como ausente de uma vez, a rodada **falha e faz rollback**
+em vez de marcar — porque obra marcada como ausente some da tela, do BI, da TV e
+dos alertas ao mesmo tempo, e a rodada era gravada como `success`. Use a válvula
+só quando o encolhimento for real (obra de fato retirada do programa); sem ela, um
+município que legitimamente perca obras fica repetindo a falha.
+
 **`cagec`** (desde 2026-07-30, só Monte Sião por enquanto): regularidade **estadual**
 de MG. Roda às 5h40, depois da rodada do `sigcon` das 4h — de propósito, porque o
 CNPJ do município é inferido das emendas estaduais que o SIGCON acabou de coletar.

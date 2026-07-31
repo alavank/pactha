@@ -34,6 +34,26 @@ def _money(v) -> float:
         return 0.0
 
 
+def _pct(v) -> Optional[float]:
+    """Percentual PRESERVANDO None. Nao use `_money` aqui.
+
+    `_money` e para DINHEIRO, onde ausente = zero e a leitura certa. Percentual
+    ausente NAO e zero medido: a API do MS manda `vlPercentualExecutado` nulo
+    quando a obra nunca informou medicao — 3 das 7 obras de Monte Siao em
+    31/07/2026, incluindo as duas maiores da carteira (CAPS de R$ 2,5 mi e ESF
+    de R$ 2,0 mi, ambas com repasse integral em junho). Zerar isso fazia a TV e
+    o link publico exibirem "0%" com a barra apagada, e a faixa de IA escrever
+    em prosa "0% de execucao" sobre obra que ninguem mediu — enquanto a tela do
+    modulo, com o mesmo dado, mostrava "—". Ausencia de medicao virando medicao
+    zero e o tipo de erro que so aparece na superficie lida de longe."""
+    if v is None:
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
 def _norm(s: str) -> str:
     """Uppercase sem acento — chave de agrupamento de nome de parlamentar."""
     if not s:
@@ -724,7 +744,7 @@ async def bi_sismob(db: AsyncSession, ids: list[int], anos: Optional[list[int]] 
             acao.append({
                 "proposta_id": o["proposta_id"], "municipio": o["municipio"],
                 "estabelecimento": o["estabelecimento"], "programa": o["programa"],
-                "situacao": o["situacao"], "percentual": _money(o["vl_percentual_executado"]),
+                "situacao": o["situacao"], "percentual": _pct(o["vl_percentual_executado"]),
                 "severidade": diag["severidade"],
                 # UMA frase por obra na TV: o painel precisa ser lido de longe.
                 # O detalhe completo fica na tela do modulo.
@@ -736,7 +756,7 @@ async def bi_sismob(db: AsyncSession, ids: list[int], anos: Optional[list[int]] 
             execucao.append({
                 "proposta_id": o["proposta_id"], "municipio": o["municipio"],
                 "estabelecimento": o["estabelecimento"], "programa": o["programa"],
-                "percentual": _money(o["vl_percentual_executado"]), "valor": proposta,
+                "percentual": _pct(o["vl_percentual_executado"]), "valor": proposta,
             })
 
     ordem = {"critico": 0, "atencao": 1}

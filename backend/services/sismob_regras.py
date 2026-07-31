@@ -82,6 +82,14 @@ def classificar(o: dict, hoje: date | None = None) -> dict:
         if atraso > 0:
             regras.append({
                 "regra": "etapa90",
+                # `fase` separa o pre-aviso do vencimento na chave de
+                # idempotencia do alerta. Sem ela, os dois ramos gravavam
+                # ref = "sismob:etapa90:<id>", e como painel_alertas_enviados
+                # tem UNIQUE(municipio_id, regra, ref), o pre-aviso ("vence em
+                # 12 dias") queimava a chave e o alerta CRITICO de prazo
+                # vencido nunca era enviado. Quem sabe em que ramo caiu e a
+                # regra — nao o cron.
+                "fase": "vencida",
                 "titulo": "Etapa de início de execução vencida",
                 "detalhe": (f"Repasse em {_fmt(o['dt_primeira_parcela'])}. A etapa deveria "
                             f"ter sido encerrada em até {PRAZO_INICIO_EXECUCAO_DIAS} dias, "
@@ -95,6 +103,7 @@ def classificar(o: dict, hoje: date | None = None) -> dict:
             falta = -atraso
             regras.append({
                 "regra": "etapa90",
+                "fase": "preaviso",
                 "titulo": f"Etapa de início de execução vence em {falta} dia(s)",
                 "detalhe": (f"Repasse em {_fmt(o['dt_primeira_parcela'])}. Prazo de "
                             f"{PRAZO_INICIO_EXECUCAO_DIAS} dias para informar "

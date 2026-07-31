@@ -548,6 +548,52 @@ async def _coletar_municipio(client, cur, mun: dict, hoje: date) -> tuple[int, s
     # forma imprevisivel com parametro errado, e uma rodada com bug apagaria o
     # historico. Marcada, sai das telas e alertas (todos filtram ausente_desde
     # IS NULL) mas o dado fica — e virar ausente e, em si, um sinal.
+    #
+    # GUARDA 4 — antes de marcar, checar se `vistos` merece credito.
+    #
+    # A GUARDA 3 la em cima so cobre `total == 0`, que e o caso extremo. Duas
+    # rotas passavam por ela e chegavam aqui marcando obra VIVA como ausente,
+    # com a rodada gravada como 'success':
+    #
+    #   (a) `_uma()` devolve None em silencio quando `proposta_id` vem falsy, e
+    #       `_DA_LISTAGEM` le `propostaId` de UMA chave so, sem fallback (o
+    #       detalhe tem o par coSeqProposta/propostaId; a listagem nao). Se o MS
+    #       renomear esse campo — e o docstring deste arquivo existe justamente
+    #       porque essa fonte usa nomes diferentes para o mesmo campo —, TODA
+    #       obra sai de `vistos` com total > 0, e o UPDATE marca a carteira
+    #       inteira. Vale lembrar que psycopg2 adapta lista vazia para '{}' e
+    #       `NOT (proposta_id = ANY('{}'))` e TRUE para todas as linhas.
+    #   (b) a listagem so encolher (7 -> 3) ja bastava para as outras 4 sumirem.
+    #
+    # Obra ausente sai da tela, do BI, da TV e dos alertas de uma vez (todos
+    # filtram ausente_desde IS NULL). O dano se auto-cura na coleta seguinte
+    # (o ON CONFLICT devolve ausente_desde = NULL), mas a janela e de ate 20h
+    # por causa do auto-throttle — um dia inteiro de painel mentindo.
+    #
+    # Duas condicoes, nenhuma heuristica:
+    #   1. item descartado => `vistos` e sabidamente incompleto e nao serve de
+    #      referencia. Mata a rota (a) por construcao, sem adivinhar nada.
+    #   2. piso proporcional: sumir mais de 1/5 da carteira nao e reconciliacao,
+    #      e sintoma. Vira erro da rodada, e o erro ja impede o commit.
+    # `SISMOB_ALLOW_SHRINK=1` destrava quando o encolhimento for legitimo —
+    # sem a valvula, trocariamos uma falha silenciosa por uma travada.
+    # Conta com o MESMO WHERE do UPDATE — nao dá para deduzir de `antes`, que
+    # nao filtra ausente_desde e inclui obra ja marcada em rodada anterior.
+    descartados = len(itens) - len(obras)
+    cur.execute("SELECT count(*) FROM sismob_obras "
+                "WHERE municipio_id = %s AND NOT (proposta_id = ANY(%s)) "
+                "  AND ausente_desde IS NULL", (mun["id"], vistos))
+    sumiriam = cur.fetchone()[0] or 0
+    if not os.getenv("SISMOB_ALLOW_SHRINK") and sumiriam > 0:
+        if descartados:
+            return 0, (f"a fonte devolveu {len(itens)} itens mas {descartados} nao tinham "
+                       f"proposta_id — nao vou marcar {sumiriam} obra(s) como ausente(s) "
+                       f"com uma listagem incompleta")
+        if sumiriam > max(1, ja_tinha // 5):
+            return 0, (f"a fonte devolveu {len(vistos)} obra(s) de {ja_tinha} — "
+                       f"{sumiriam} sumiriam de uma vez; nao vou marcar como ausentes "
+                       f"(use SISMOB_ALLOW_SHRINK=1 se o encolhimento for real)")
+
     cur.execute("UPDATE sismob_obras SET ausente_desde = COALESCE(ausente_desde, NOW()) "
                 "WHERE municipio_id = %s AND NOT (proposta_id = ANY(%s)) "
                 "  AND ausente_desde IS NULL", (mun["id"], vistos))

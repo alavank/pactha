@@ -171,8 +171,13 @@ def _candidatos(cur, mid):
                 if g["regra"] == "sem_atualizacao":
                     paradas.append((o, g))       # agregado depois
                     continue
+                # `fase` entra no ref: no etapa90 o pre-aviso e o vencimento
+                # sao a MESMA regra, e sem separar os dois o UNIQUE da tabela
+                # fazia o pre-aviso silenciar o alerta de prazo vencido. As
+                # outras regras nao tem fase e caem no "x", que preserva o ref
+                # que ja usavam.
                 out.append(("obra_prazo",
-                            f"sismob:{g['regra']}:{o['proposta_id']}",
+                            f"sismob:{g['regra']}:{g.get('fase', 'x')}:{o['proposta_id']}",
                             "Obra da saúde (SISMOB)",
                             f"{nome}: {g['titulo']}. {g['acao']}"))
         if paradas:
