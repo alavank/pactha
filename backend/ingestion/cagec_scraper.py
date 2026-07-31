@@ -298,6 +298,34 @@ def _municipios_alvo() -> list[dict]:
     return alvos
 
 
+_JS_GRADE = (
+    "els => els.map(tr => Array.from(tr.querySelectorAll("
+    "  'td, th, .z-listcell, .z-row-cell, .z-listheader, .z-column'))"
+    "  .map(c => (c.innerText||'').trim().replace(/\\s+/g,' ')))")
+
+
+async def _esperar_grid(page, cnpj: str, limite_ms: int = 40000) -> list[list[str]]:
+    """Espera a LINHA do resultado aparecer, em vez de dormir um tanto fixo.
+
+    Sleep fixo de 9s falhou 1 em 4 execucoes (o postback do ZK as vezes demora
+    mais) e o sintoma era enganoso: "CNPJ nao encontrado no CAGEC", como se o
+    municipio nao existisse no cadastro. Aqui a espera termina quando a linha
+    aparece de fato — rapido quando o portal esta bom, paciente quando nao esta.
+    """
+    alvo = _so_digitos(cnpj)[:8]
+    passo, grade = 1000, []
+    for _ in range(max(1, limite_ms // passo)):
+        await page.wait_for_timeout(passo)
+        try:
+            grade = [l for l in await page.eval_on_selector_all(
+                ".z-listitem, .z-row, tbody tr", _JS_GRADE) if l]
+        except Exception:
+            continue
+        if any(_so_digitos(" ".join(l)).startswith(alvo) for l in grade):
+            return grade
+    return grade
+
+
 async def _consultar(page, cnpj: str) -> dict | None:
     """Busca por CNPJ. Devolve {rotulo_da_coluna: valor} da linha, ou None.
 
@@ -329,16 +357,7 @@ async def _consultar(page, cnpj: str) -> dict | None:
     if alvo is None:
         raise RuntimeError("botao PESQUISAR nao encontrado")
     await alvo.click()
-    await page.wait_for_timeout(9000)  # postback do ZK
-
-    grade = await page.eval_on_selector_all(
-        ".z-listitem, .z-row, tbody tr",
-        # th/.z-listheader tambem: sem eles a linha do CABECALHO sai vazia, e
-        # sem cabecalho nao ha como casar coluna por rotulo (armadilha 3).
-        "els => els.map(tr => Array.from(tr.querySelectorAll("
-        "  'td, th, .z-listcell, .z-row-cell, .z-listheader, .z-column'))"
-        "  .map(c => (c.innerText||'').trim().replace(/\\s+/g,' ')))")
-    grade = [l for l in grade if l]
+    grade = await _esperar_grid(page, cnpj)
 
     cabecalho = None
     alvo_digitos = _so_digitos(cnpj)
@@ -428,16 +447,23 @@ async def _rodar() -> tuple[int, int]:
                                    "(colete emendas estaduais ou PAC antes)", mun["nome"])
                     falha += 1
                     continue
-                try:
-                    linha = await _consultar(page, mun["cnpj"])
-                except Exception as e:
-                    logger.error("  %s: erro na consulta — %s: %s", mun["nome"],
-                                 type(e).__name__, str(e)[:110])
-                    falha += 1
-                    continue
+                # Duas tentativas: o portal e instavel e uma falha isolada
+                # deixaria o municipio com dado velho por 24h ate o proximo cron.
+                linha, erro = None, None
+                for tentativa in (1, 2):
+                    try:
+                        linha = await _consultar(page, mun["cnpj"])
+                    except Exception as e:
+                        erro = f"{type(e).__name__}: {str(e)[:110]}"
+                    if linha:
+                        break
+                    if tentativa == 1:
+                        logger.info("  %s: 1a tentativa sem resultado%s — repetindo",
+                                    mun["nome"], f" ({erro})" if erro else "")
+                        await page.wait_for_timeout(5000)
                 if not linha:
-                    logger.warning("  %s: CNPJ %s nao encontrado no CAGEC",
-                                   mun["nome"], mun["cnpj"])
+                    logger.warning("  %s: CNPJ %s sem resultado no CAGEC apos 2 tentativas%s",
+                                   mun["nome"], mun["cnpj"], f" — {erro}" if erro else "")
                     falha += 1
                     continue
 
