@@ -539,88 +539,94 @@ function EsferaHead({
 }
 
 /** Uma exigência por linha, no MESMO desenho do extrato oficial:
- *  ícone · código · Item Legal · **Situação** · **Validade**.
+ *  código · Item Legal · **Situação** · **Validade**.
  *
- *  Antes a linha misturava as duas ultimas numa so celula ("Regular ate
- *  31/07/26", "PENDENTE · !"), com palavras nossas. Quem confere a tela contra
- *  o PDF — que e o uso real da equipe de convenios — nao casava linha a linha.
- *  Agora a palavra e a do documento e a data tem coluna propria.
+ *  GRADE de largura fixa, não flex. Com flex, o rótulo que quebrava em duas
+ *  linhas empurrava as colunas da direita, e no CAGEC o código (que varia de
+ *  "CNPJ" a "AUTORIZ-ELETRONICA") deslocava o início de cada rótulo — a lista
+ *  saía desalinhada e difícil de varrer com o olho. Na grade o texto quebra
+ *  DENTRO da célula e as vizinhas não se mexem.
  *
- *  O SIMBOLO muda por esfera, como nos dois documentos: o CAUC marca
- *  Comprovado / A Comprovar / Desativado; o CAGEC marca Vigente / Vencido.
- *  O que NAO muda e o vermelho na linha inteira do que esta pendente — e o que
- *  faz o olho achar o problema de longe, na TV. */
+ *  O CAGEC não tem coluna de código: aqueles identificadores são NOSSOS (o CRC
+ *  não os imprime) e os únicos informativos — os oito "Item 3.1.2 -…" — já vêm
+ *  escritos no próprio rótulo. Mostrá-los era duplicar e desalinhar. */
 function ListaExigencias({
   itens, tv, esfera = "cauc",
 }: { itens: CaucItemDetalhe[]; tv?: boolean; esfera?: "cauc" | "cagec" }) {
+  const cols = esfera === "cauc"
+    ? (tv ? "grid-cols-[3rem_minmax(0,1fr)_7.5rem_5.5rem]" : "grid-cols-[2.6rem_minmax(0,1fr)_6.5rem_5rem]")
+    : (tv ? "grid-cols-[minmax(0,1fr)_7.5rem_5.5rem]" : "grid-cols-[minmax(0,1fr)_6.5rem_5rem]");
   return (
-    <ul className="flex flex-col">
-      {/* Cabecalho de coluna: o extrato tem, e sem ele "31/07/2026" solto na
-          direita nao diz se e validade ou data de consulta. */}
-      <li className="flex items-center gap-2 border-b pb-[2px] text-[9px] uppercase tracking-wide"
-        style={{ borderColor: "var(--bi-line)", color: "var(--bi-faint)" }}>
-        <span className="flex-1">Item legal</span>
-        <span className={`shrink-0 text-right ${tv ? "w-[104px]" : "w-[92px]"}`}>Situação</span>
-        <span className={`shrink-0 text-right ${tv ? "w-[86px]" : "w-[76px]"}`}>Validade</span>
-      </li>
-      {itens.map((i) => {
-        const pendente = i.tipo === "pendente";
-        const na = i.tipo === "na";
-        const cor = pendente ? "var(--bi-crit)" : na ? "var(--bi-faint)" : "var(--bi-ok)";
-        return (
-          // O texto QUEBRA em vez de ser cortado. Truncar deixava linhas como
-          // "Certidão de Débitos Relativos a Créditos …", que não dizem QUAL
-          // certidão é — exatamente o dado necessário para agir.
-          <li
-            key={i.codigo}
-            className={`flex items-start gap-2 rounded py-[3px] ${pendente ? "-mx-1.5 px-1.5" : ""}`}
-            style={pendente
-              ? { background: "color-mix(in oklab, var(--bi-crit) 12%, transparent)" }
-              : undefined}
-          >
-            <span className="bi-num mt-[2px] shrink-0 text-[10px]" style={{ color: "var(--bi-faint)" }}>
-              {i.codigo}
-            </span>
-            <span
-              className={`flex-1 leading-snug ${tv ? "text-[13px]" : "text-[12px]"} ${pendente ? "font-semibold" : ""}`}
-              style={na ? { color: "var(--bi-faint)" } : pendente ? { color: "var(--bi-crit)" } : undefined}
+    <div className="flex flex-col">
+      {/* Cabeçalho de coluna: o extrato tem, e sem ele "31/07/2026" solto na
+          direita não diz se é validade ou data de consulta. */}
+      <div className={`grid ${cols} items-end gap-x-2 border-b pb-1 text-[9px] uppercase tracking-wide`}
+        style={{ borderColor: "var(--bi-line-strong)", color: "var(--bi-faint)" }}>
+        {esfera === "cauc" && <span>Item</span>}
+        <span>Item legal</span>
+        <span>Situação</span>
+        <span className="text-right">Validade</span>
+      </div>
+      <div className="divide-y" style={{ borderColor: "var(--bi-line)" }}>
+        {itens.map((i) => {
+          const pendente = i.tipo === "pendente";
+          const na = i.tipo === "na";
+          const cor = pendente ? "var(--bi-crit)" : na ? "var(--bi-faint)" : "var(--bi-ok)";
+          return (
+            <div
+              key={i.codigo}
+              className={`grid ${cols} items-start gap-x-2 py-[5px]`}
+              style={pendente
+                ? { background: "color-mix(in oklab, var(--bi-crit) 12%, transparent)" }
+                : undefined}
             >
-              {i.label}
-            </span>
+              {esfera === "cauc" && (
+                <span className="bi-num text-[10px] leading-[1.45]" style={{ color: "var(--bi-faint)" }}>
+                  {i.codigo}
+                </span>
+              )}
+              {/* O texto QUEBRA em vez de ser cortado. Truncar deixava linhas
+                  como "Certidão de Débitos Relativos a Créditos …", que não
+                  dizem QUAL certidão é — o dado necessário para agir. */}
+              <span
+                className={`min-w-0 leading-[1.45] ${tv ? "text-[13px]" : "text-[12px]"} ${pendente ? "font-semibold" : ""}`}
+                style={na ? { color: "var(--bi-faint)" } : pendente ? { color: "var(--bi-crit)" } : undefined}
+              >
+                {i.label}
+              </span>
 
-            {/* SITUAÇÃO — a palavra do documento, com o símbolo da esfera. */}
-            <span
-              className={`mt-[1px] flex shrink-0 items-center justify-end gap-1 text-right leading-tight ${
-                tv ? "w-[104px] text-[11px]" : "w-[92px] text-[10px]"
-              } ${pendente ? "font-bold" : ""}`}
-              style={{ color: cor }}
-              title={i.nota || undefined}
-            >
-              {pendente
-                ? (esfera === "cagec"
-                    ? <AlertTriangle className="size-3 shrink-0" />
-                    : <AlertCircle className="size-3 shrink-0" />)
-                : na
-                  ? <Ban className="size-3 shrink-0" />
-                  : <CheckCircle2 className="size-3 shrink-0" />}
-              <span>{i.status || (pendente ? "Pendente" : "—")}</span>
-            </span>
+              {/* SITUAÇÃO — a palavra do documento, com o símbolo da esfera.
+                  Alinhada à esquerda da célula de propósito: os ícones formam
+                  uma coluna vertical, e é ela que o olho percorre na TV. */}
+              <span
+                className={`flex items-center gap-1 leading-[1.45] ${tv ? "text-[11px]" : "text-[10px]"} ${pendente ? "font-bold" : ""}`}
+                style={{ color: cor }}
+                title={i.nota || undefined}
+              >
+                {pendente
+                  ? (esfera === "cagec"
+                      ? <AlertTriangle className="size-3 shrink-0" />
+                      : <AlertCircle className="size-3 shrink-0" />)
+                  : na
+                    ? <Ban className="size-3 shrink-0" />
+                    : <CheckCircle2 className="size-3 shrink-0" />}
+                <span className="truncate">{i.status || (pendente ? "Pendente" : "—")}</span>
+              </span>
 
-            {/* VALIDADE — coluna própria e SEMPRE presente, como no extrato.
-                "—" quando a fonte não dá data (todo "A Comprovar" e todo
-                "Desativado"): a ausência de data é informação, não buraco. */}
-            <span
-              className={`bi-num mt-[1px] shrink-0 text-right leading-tight ${
-                tv ? "w-[86px] text-[11px]" : "w-[76px] text-[10px]"
-              }`}
-              style={{ color: pendente ? "var(--bi-crit)" : "var(--bi-faint)" }}
-            >
-              {i.validade || (/^\d{2}\/\d{2}\/\d{2,4}$/.test(i.valor || "") ? i.valor : "—")}
-            </span>
-          </li>
-        );
-      })}
-    </ul>
+              {/* VALIDADE — coluna própria e SEMPRE presente, como no extrato.
+                  "—" quando a fonte não dá data (todo "A Comprovar" e todo
+                  "Desativado"): ausência de data é informação, não buraco. */}
+              <span
+                className={`bi-num text-right leading-[1.45] ${tv ? "text-[11px]" : "text-[10px]"}`}
+                style={{ color: pendente ? "var(--bi-crit)" : "var(--bi-faint)" }}
+              >
+                {i.validade || (/^\d{2}\/\d{2}\/\d{2,4}$/.test(i.valor || "") ? i.valor : "—")}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
