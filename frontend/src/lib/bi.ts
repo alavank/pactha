@@ -317,9 +317,9 @@ export interface AbaDocumentos {
     regulares: number;
     pendencias_total: number;
   };
-  /** CAGEC = regularidade ESTADUAL (MG). Hoje `disponivel: false` — nenhum
-   *  scraper alimenta a tabela ainda (falta credencial do SIGCON-MG). O formato
-   *  já é o mesmo do CAUC para a tela preencher sozinha quando a coleta entrar. */
+  /** CAGEC = regularidade ESTADUAL (MG), coletada do CRC público do portal do
+   *  CAGEC (por CNPJ, sem credencial). Mesmo formato do CAUC; `disponivel:
+   *  false` só quando o município ainda não foi coletado. */
   cagec: {
     disponivel: boolean;
     motivo: string;

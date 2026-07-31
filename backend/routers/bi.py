@@ -611,17 +611,51 @@ async def _fatos_da_aba(db: AsyncSession, ids: list[int], cons: bool, aba: str,
         return fatos, tpl
 
     if aba == "documentos":
+        # AS DUAS ESFERAS NOS FATOS. Com só o CAUC aqui, a faixa da aba dizia
+        # "Nenhuma pendência de documentos registrada" para um município
+        # IRREGULAR no CAGEC — ou seja, tranquilizava o gestor sobre um convênio
+        # estadual travado. Fato faltando não gera silêncio, gera afirmação falsa.
         d = await bi_documentos(db, ids)
-        c = d["cauc"]
-        fatos = {"aba": "documentos", "regulares": c["regulares"],
-                 "municipios": c["total_municipios"], "pendencias": c["pendencias_total"],
-                 "pendentes": [{"nome": m["nome"], "itens": [i["label"] for i in m["itens_pendentes"][:3]]}
-                               for m in c["por_municipio"] if m["pendencias"]][:3]}
+        c, g = d["cauc"], d.get("cagec") or {}
+        g_muns = g.get("por_municipio") or []
+        g_irregulares = [m for m in g_muns if m.get("regular") is False]
+        g_pend_total = sum(m.get("pendencias") or 0 for m in g_muns)
+        fatos = {
+            "aba": "documentos",
+            "cauc": {
+                "regulares": c["regulares"], "municipios": c["total_municipios"],
+                "pendencias": c["pendencias_total"],
+                "pendentes": [{"nome": m["nome"],
+                               "itens": [i["label"] for i in m["itens_pendentes"][:3]]}
+                              for m in c["por_municipio"] if m["pendencias"]][:3],
+            },
+            "cagec": {
+                "coletado": bool(g_muns),
+                "irregulares": len(g_irregulares),
+                "pendencias": g_pend_total,
+                "pendentes": [{"nome": m.get("nome"),
+                               "situacao": m.get("situacao"),
+                               "itens": [f"{i['label']} (venceu em {i['valor']})"
+                                         if i.get("valor") else i["label"]
+                                         for i in (m.get("itens") or [])
+                                         if i.get("tipo") == "pendente"][:3]}
+                              for m in g_irregulares][:3],
+            },
+        }
         if c["pendencias_total"]:
             tpl = [f"{c['pendencias_total']} pendência(s) no CAUC bloqueiam novas transferências voluntárias."]
         else:
             tpl = ["Documentação federal (CAUC) em dia — município apto a receber transferências voluntárias."]
-        tpl.append("CAGEC (cadastro estadual) ainda não é coletado automaticamente pelo PACTHA.")
+        if not g_muns:
+            tpl.append("CAGEC (regularidade estadual de MG) ainda não coletado para este escopo.")
+        elif g_irregulares:
+            # A consequência é diferente da do CAUC e precisa ser dita: no CAGEC
+            # a irregularidade trava também o PAGAMENTO de convênio já assinado.
+            tpl.append(f"{len(g_irregulares)} município(s) IRREGULAR(es) no CAGEC "
+                       f"({g_pend_total} pendência(s)) — impede assinar convênio estadual "
+                       f"e a liberação de parcela de convênio em execução.")
+        else:
+            tpl.append("CAGEC (regularidade estadual de MG) em dia.")
         return fatos, tpl
 
     if aba == "fns":
