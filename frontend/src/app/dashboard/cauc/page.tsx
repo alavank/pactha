@@ -195,13 +195,15 @@ function OutrasEntidades({ entidades }: { entidades: Entidade[] }) {
 }
 
 /** Lista de exigências por bloco, no MESMO desenho do extrato oficial:
- *  ícone · código · Item Legal · **Situação** · **Validade**.
+ *  código · Item Legal · **Situação** · **Validade**.
  *
- *  As duas últimas eram uma célula só, com palavras nossas ("Regular até
- *  31/07/26"). Quem confere a tela contra o PDF — o uso real da equipe de
- *  convênios — não casava linha a linha. Agora a palavra é a do documento
- *  (CAUC: Comprovado / A Comprovar / Desativado; CAGEC: Vigente / Vencido) e a
- *  data tem coluna própria, presente em todos os cenários. */
+ *  GRADE de largura fixa, não flex — pelo mesmo motivo do Painel: rótulo que
+ *  quebra em duas linhas não pode empurrar as colunas da direita, e no CAGEC o
+ *  código (de "CNPJ" a "AUTORIZ-ELETRONICA") deslocava o início de cada rótulo.
+ *
+ *  O CAGEC não tem coluna de código: aqueles identificadores são NOSSOS (o CRC
+ *  não os imprime) e os informativos — os oito "Item 3.1.2 -…" — já vêm no
+ *  próprio rótulo. */
 function Exigencias({ itens, esfera = "cauc" }: { itens: Item[]; esfera?: "cauc" | "cagec" }) {
   if (!itens.length) {
     return (
@@ -210,6 +212,9 @@ function Exigencias({ itens, esfera = "cauc" }: { itens: Item[]; esfera?: "cauc"
       </div>
     );
   }
+  const cols = esfera === "cauc"
+    ? "grid-cols-[1.25rem_3rem_minmax(0,1fr)_7.5rem_6rem]"
+    : "grid-cols-[1.25rem_minmax(0,1fr)_7.5rem_6rem]";
   return (
     <div className="space-y-3">
       {agrupar(itens).map(([grupo, lista]) => (
@@ -223,22 +228,23 @@ function Exigencias({ itens, esfera = "cauc" }: { itens: Item[]; esfera?: "cauc"
               <div className="text-xs text-base-content/45">{lista[0].grupo_glossa}</div>
             )}
           </div>
-          <div className="flex items-center gap-3 border-b border-base-300/60 px-4 py-1 text-[10px] uppercase tracking-wide text-base-content/40">
-            <span className="size-4 shrink-0" />
-            <span className="min-w-0 flex-1">Item legal</span>
-            <span className="w-28 shrink-0 text-right">Situação</span>
-            <span className="w-24 shrink-0 text-right">Validade</span>
+          <div className={`grid ${cols} items-end gap-x-3 border-b border-base-300/60 bg-base-200/20 px-4 py-1.5 text-[10px] uppercase tracking-wide text-base-content/40`}>
+            <span />
+            {esfera === "cauc" && <span>Item</span>}
+            <span>Item legal</span>
+            <span>Situação</span>
+            <span className="text-right">Validade</span>
           </div>
           <div className="divide-y divide-base-300/60">
             {lista.map((it) => (
               <div key={it.codigo}
-                className={`flex items-start gap-3 px-4 py-2.5 ${
+                className={`grid ${cols} items-start gap-x-3 px-4 py-2 ${
                   it.tipo === "pendente" ? "bg-error/10" : ""}`}>
                 {/* Símbolo por esfera, como nos dois documentos: o CAUC marca
                     Comprovado / A Comprovar / Desativado; o CAGEC, Vigente /
                     Vencido. O vermelho na linha inteira é o que faz o olho achar
                     o problema sem precisar ler. */}
-                <span className="mt-0.5">
+                <span className="mt-[3px]">
                   {it.tipo === "pendente"
                     ? (esfera === "cagec"
                         ? <AlertTriangle className="size-4 text-error" />
@@ -246,20 +252,22 @@ function Exigencias({ itens, esfera = "cauc" }: { itens: Item[]; esfera?: "cauc"
                     : it.tipo === "regular" ? <CheckCircle2 className="size-4 text-success" />
                     : <Ban className="size-4 text-base-content/30" />}
                 </span>
-                <div className="flex-1 min-w-0">
-                  <div className={`text-sm ${it.tipo === "pendente"
+                {esfera === "cauc" && (
+                  <span className="font-mono text-xs leading-6 text-base-content/50">{it.codigo}</span>
+                )}
+                <div className="min-w-0">
+                  <div className={`text-sm leading-6 ${it.tipo === "pendente"
                     ? "font-semibold text-error" : "text-base-content"}`}>
-                    <span className="font-mono text-xs text-base-content/50 mr-2">{it.codigo}</span>
                     {it.label}
                   </div>
                   {/* A nota existe porque duas palavras do extrato enganam:
                       "Desativado" não é dispensa (é falha da ferramenta, para
                       TODOS os entes) e "A Comprovar" não acusa o município. */}
                   {it.nota && (
-                    <div className="mt-0.5 text-xs text-base-content/45">{it.nota}</div>
+                    <div className="text-xs leading-snug text-base-content/45">{it.nota}</div>
                   )}
                 </div>
-                <span className={`w-28 shrink-0 text-right text-xs font-medium ${
+                <span className={`text-xs font-medium leading-6 ${
                   it.tipo === "pendente" ? "text-error"
                   : it.tipo === "regular" ? "text-success"
                   : "text-base-content/40"}`}>
@@ -267,7 +275,7 @@ function Exigencias({ itens, esfera = "cauc" }: { itens: Item[]; esfera?: "cauc"
                 </span>
                 {/* Validade SEMPRE presente, como no extrato. "—" quando a fonte
                     não dá data: ausência de data é informação, não buraco. */}
-                <span className={`w-24 shrink-0 whitespace-nowrap text-right text-xs ${
+                <span className={`whitespace-nowrap text-right font-mono text-xs leading-6 ${
                   it.tipo === "pendente" ? "text-error" : "text-base-content/50"}`}>
                   {it.validade || "—"}
                 </span>
