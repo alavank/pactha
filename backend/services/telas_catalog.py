@@ -17,6 +17,7 @@ TELAS_CATALOG = [
     {"key": "emendas", "label": "Emendas Estaduais"},
     {"key": "transferegov", "label": "Transfere Gov"},
     {"key": "cauc", "label": "CAUC (regularidade federal)"},
+    {"key": "sismob", "label": "Obras da Saúde (SISMOB)"},
     {"key": "acordofes", "label": "Acordo FES (dívida saúde MG)"},
     {"key": "fns", "label": "Fundo Nacional de Saúde"},
     {"key": "simec", "label": "SIMEC - PAR (MEC)"},

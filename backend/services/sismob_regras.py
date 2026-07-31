@@ -127,8 +127,18 @@ def classificar(o: dict, hoje: date | None = None) -> dict:
 
     # ---- R3: concluida que nunca entrou em funcionamento --------------------
     # A 4a etapa vem DEPOIS da conclusao — por isso "Concluída" nao e terminal.
+    #
+    # MAS nem toda obra TEM essa etapa, e a fonte diz qual: reforma de UBS que ja
+    # existe nao cria estabelecimento novo, entao nao ha o que registrar no CNES.
+    # Medido em Monte Siao: as duas obras concluidas sao Reforma, tem `co_cnes`
+    # (o estabelecimento existente) e vem com `possui_etapa_funcionamento=False`
+    # — cobrar CNES delas eram DOIS falsos positivos em cinco alertas.
+    # `co_cnes` tambem conta como CNES: exigir so `nu_cnes` (o do estabelecimento
+    # NOVO) acusaria toda reforma.
     if (co == _CONCLUIDA and o.get("dt_conclusao_final")
-            and not o.get("dt_inicio_funcionamento") and not o.get("nu_cnes")):
+            and o.get("possui_etapa_funcionamento")
+            and not o.get("dt_inicio_funcionamento")
+            and not o.get("nu_cnes") and not o.get("co_cnes")):
         atraso = _dias(o["dt_conclusao_final"], hoje) - PRAZO_FUNCIONAMENTO_DIAS
         if atraso > 0:
             regras.append({

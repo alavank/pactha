@@ -11,6 +11,7 @@ from routers import (
     session_capture, emendas_estaduais, dou_mg, fns, transferegov, export_pdf,
     users, simec, rm, ai, gestao, parlamentares, telegram, status_changes,
     documentos, cauc, cagec, acordofes, control, freshness, painel, bi,
+    sismob,
 )
 from config import get_settings
 from services.security_headers import SecurityHeadersMiddleware
@@ -144,6 +145,7 @@ app.include_router(status_changes.router)
 app.include_router(documentos.router)
 app.include_router(cauc.router)
 app.include_router(cagec.router)
+app.include_router(sismob.router)   # /api/sismob/* (obras de saude do MS)
 app.include_router(acordofes.router)
 app.include_router(control.router)  # /api/control/* (Console Alavank)
 app.include_router(freshness.router)  # /api/admin/freshness (monitor de frescor)
