@@ -466,32 +466,50 @@ function EsferaHead({
 function ListaExigencias({ itens, tv }: { itens: CaucItemDetalhe[]; tv?: boolean }) {
   return (
     <ul className="flex flex-col">
-      {itens.map((i) => (
-        <li key={i.codigo} className="flex items-baseline gap-2 py-[3px]">
-          <span className="bi-num shrink-0 text-[10px]" style={{ color: "var(--bi-faint)" }}>
-            {i.codigo}
-          </span>
-          <span
-            className={tv ? "truncate text-[13px]" : "truncate text-[12px]"}
-            style={i.tipo === "na" ? { color: "var(--bi-faint)" } : undefined}
+      {itens.map((i) => {
+        const pendente = i.tipo === "pendente";
+        return (
+          // O texto QUEBRA em vez de ser cortado. Truncar deixava linhas como
+          // "Certidão de Débitos Relativos a Créditos …", que não dizem QUAL
+          // certidão é — exatamente o dado necessário para agir.
+          <li
+            key={i.codigo}
+            className={`flex items-start gap-2 rounded py-[3px] ${pendente ? "-mx-1.5 px-1.5" : ""}`}
+            style={pendente
+              ? { background: "color-mix(in oklab, var(--bi-crit) 12%, transparent)" }
+              : undefined}
           >
-            {i.label}
-          </span>
-          <span
-            className="bi-num ml-auto shrink-0 text-[10px]"
-            style={{
-              color:
-                i.tipo === "pendente"
-                  ? "var(--bi-crit)"
-                  : i.tipo === "regular"
-                    ? "var(--bi-ok)"
-                    : "var(--bi-faint)",
-            }}
-          >
-            {i.tipo === "pendente" ? "PENDENTE" : i.tipo === "na" ? "não exigido" : i.valor}
-          </span>
-        </li>
-      ))}
+            <span className="bi-num mt-[2px] shrink-0 text-[10px]" style={{ color: "var(--bi-faint)" }}>
+              {i.codigo}
+            </span>
+            <span
+              className={`flex-1 leading-snug ${tv ? "text-[13px]" : "text-[12px]"} ${pendente ? "font-semibold" : ""}`}
+              style={i.tipo === "na" ? { color: "var(--bi-faint)" }
+                : pendente ? { color: "var(--bi-crit)" } : undefined}
+            >
+              {i.label}
+            </span>
+            {/* Pendência vira CHIP: o status é o que o olho precisa achar de
+                longe. Chip só no status, não em volta do título — envolver o
+                texto todo comeria a largura que o título precisa para ser lido. */}
+            {pendente ? (
+              <span
+                className="bi-num shrink-0 rounded px-1.5 py-[1px] text-[9px] font-bold tracking-wide"
+                style={{ background: "var(--bi-crit)", color: "#fff" }}
+              >
+                {i.valor && i.valor !== i.status ? `PENDENTE · ${i.valor}` : "PENDENTE"}
+              </span>
+            ) : (
+              <span
+                className="bi-num mt-[2px] shrink-0 text-[10px]"
+                style={{ color: i.tipo === "regular" ? "var(--bi-ok)" : "var(--bi-faint)" }}
+              >
+                {i.tipo === "na" ? (i.status || "indisponível") : i.valor}
+              </span>
+            )}
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -519,20 +537,45 @@ export function AbaDocumentosView({
     return [...porGrupo.entries()];
   }, [primeiro]);
 
-  // CAGEC do mesmo município. Hoje vem vazio (sem coleta) e o bloco cai no
-  // texto explicativo; quando a coleta entrar, desenha igual ao CAUC.
+  // CAGEC do mesmo município — agora coletado, e agrupado igual ao CAUC:
+  // Credenciamento do Representante Legal, Habilitação Jurídica, Regularidade
+  // Fiscal e Trabalhista, Responsabilidade e Transparência Fiscal, Adimplência
+  // com o Estado. O scraper já preenche `grupo`; era a tela que jogava as 27
+  // linhas num bloco só.
   const cagec = d.cagec.por_municipio[0];
+  const blocosCagec = React.useMemo(() => {
+    const porGrupo = new Map<string, CaucItemDetalhe[]>();
+    for (const i of cagec?.itens ?? []) {
+      const g = i.grupo || "Outras";
+      if (!porGrupo.has(g)) porGrupo.set(g, []);
+      porGrupo.get(g)!.push(i);
+    }
+    return [...porGrupo.entries()];
+  }, [cagec]);
+
+  const pendCagec = (cagec?.itens ?? []).filter((i) => i.tipo === "pendente").length;
+  const cagecIrregular = !!cagec && cagec.regular === false;
+  const soUmaEsfera = esfera === "cauc" || esfera === "cagec";
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Metric icon={ShieldCheck} tom={pct >= 0.99 ? "ok" : "crit"} label="Situação no CAUC"
-          valor={pct >= 0.99 ? "Em dia" : `${formatInt(c.pendencias_total)} pendência(s)`} grande={tv} />
-        <Metric icon={FileCheck2} label="Exigências regulares"
-          valor={formatInt(primeiro?.itens_regulares.length || 0)}
-          sub={primeiro ? `de ${primeiro.total_itens} exigidas` : undefined} grande={tv} />
-        <Metric icon={ShieldAlert} tom="crit" label="Impeditivos"
-          valor={formatInt(primeiro?.itens_pendentes.length || 0)} grande={tv} />
+        {/* AS DUAS ESFERAS NOS CARTÕES. Antes os quatro cartões falavam só do
+            CAUC: com o município IRREGULAR no CAGEC, o topo da tela dizia
+            "Em dia" e "0 impeditivos" — tranquilizando o gestor sobre um
+            convênio estadual que está travado. Regular na União não é regular
+            em Minas, e o resumo tem que mostrar as duas. */}
+        <Metric icon={ShieldCheck} tom={pct >= 0.99 ? "ok" : "crit"} label="CAUC — União"
+          valor={pct >= 0.99 ? "Em dia" : `${formatInt(c.pendencias_total)} pendência(s)`}
+          sub="transferências federais" grande={tv} />
+        <Metric icon={ShieldAlert} tom={cagec ? (cagecIrregular ? "crit" : "ok") : "warn"}
+          label="CAGEC — Minas Gerais"
+          valor={!cagec ? "Sem coleta" : cagecIrregular ? (cagec.situacao || "Irregular") : "Em dia"}
+          sub="convênios estaduais" grande={tv} />
+        <Metric icon={FileCheck2} tom={(primeiro?.itens_pendentes.length || 0) + pendCagec ? "crit" : "ok"}
+          label="Pendências (as duas)"
+          valor={formatInt((primeiro?.itens_pendentes.length || 0) + pendCagec)}
+          sub={`de ${(primeiro?.total_itens ?? 0) + (cagec?.itens?.length ?? 0)} exigências`} grande={tv} />
         <Metric icon={CalendarClock} label="Última consulta"
           valor={primeiro?.data_pesquisa ? formatDate(primeiro.data_pesquisa) : "—"} grande={tv} />
       </div>
@@ -544,20 +587,25 @@ export function AbaDocumentosView({
           fonte e o seu próprio fluxo — a fronteira é visível mesmo de longe.
           CAUC ocupa 2/3 porque tem ~25 exigências em 5 blocos; o CAGEC, 1/3. */}
       <div className="bi-scroll min-h-0 flex-1 overflow-y-auto">
-        {/* 4 colunas: CAUC ocupa 3 (25 exigências em 5 blocos, um deles com 12
-            linhas) e o CAGEC 1. Com 3/1 e três subcolunas dentro do CAUC, tudo
-            cabe na altura da tela; com 2/1 o bloco do SICONFI ficava cortado
-            embaixo — e numa TV de parede ninguém rola. */}
-        <div className="grid grid-cols-1 gap-x-4 gap-y-3 lg:grid-cols-4">
+        {/* DUAS COLUNAS IGUAIS: União à esquerda, Minas à direita, cada uma com
+            sua lista descendo. A divisão anterior era 3/1 e espremia o CAGEC em
+            um quarto da largura — os nomes das exigências vinham cortados no
+            meio ("Certidão de Débitos Relativos a Créditos …"), o contador
+            escorregava para a linha de baixo e saía do alinhamento com o CAUC,
+            e as 27 linhas ficavam num bloco só, sem as subdivisões que o CAUC
+            tem. Metade da tela para cada esfera dá largura para o texto e deixa
+            as duas colunas alinhadas. Custa rolagem — aceitável, inclusive na
+            TV, porque ler pela metade não serve para nada. */}
+        <div className={`grid grid-cols-1 gap-x-4 gap-y-3 ${soUmaEsfera ? "" : "lg:grid-cols-2"}`}>
           {esfera !== "cagec" && (
-          <section className="lg:col-span-3">
+          <section className="min-w-0">
             <EsferaHead
               titulo="CAUC — União"
               sub="Tesouro Nacional · exigências federais"
               contagem={blocos.length ? `${primeiro?.total_itens ?? 0} exigências` : undefined}
             />
             {blocos.length ? (
-              <div className={tv ? "bi-colunas-3" : "bi-colunas-2"}>
+              <div className={soUmaEsfera && tv ? "bi-colunas-2" : ""}>
                 {blocos.map(([grupo, itens]) => (
                   <Painel key={grupo} className="mb-3 break-inside-avoid">
                     <PainelHead icon={ShieldCheck} titulo={grupo} sub={`${itens.length} exigência(s)`} />
@@ -572,27 +620,50 @@ export function AbaDocumentosView({
           )}
 
           {esfera !== "cauc" && (
-          <section>
+          <section className="min-w-0">
             <EsferaHead
               titulo="CAGEC — Minas Gerais"
-              sub="SIGCON-MG · exigências estaduais"
+              sub="Cadastro Geral de Convenentes · exigências estaduais"
               contagem={cagec?.itens?.length ? `${cagec.itens.length} exigências` : "aguardando coleta"}
             />
-            <Painel className="mb-3">
-              {cagec?.itens?.length ? (
-                <ListaExigencias itens={cagec.itens} tv={tv} />
-              ) : (
-                /* Fica explícito que NÃO está verde por estar em dia — é que
-                   ninguém coleta esse dado ainda. Verde aqui seria lido como
-                   "o Estado está em dia", que é pior que a ausência. */
+            {/* Situação em destaque ANTES da lista: irregular no CAGEC trava
+                convênio estadual e pagamento de parcela, e isso não pode ficar
+                escondido no meio de 27 linhas. */}
+            {cagecIrregular && (
+              <div
+                className="mb-3 flex items-start gap-2 rounded-lg px-3 py-2"
+                style={{ background: "color-mix(in oklab, var(--bi-crit) 15%, transparent)" }}
+              >
+                <ShieldAlert className="mt-[1px] size-4 shrink-0" style={{ color: "var(--bi-crit)" }} />
+                <p className="text-[11px] font-semibold leading-snug" style={{ color: "var(--bi-crit)" }}>
+                  Situação {cagec?.situacao || "Irregular"} no CAGEC
+                  {pendCagec ? ` · ${pendCagec} pendência(s)` : ""} — impede assinar convênio
+                  estadual e liberação de parcela.
+                </p>
+              </div>
+            )}
+            {blocosCagec.length ? (
+              <div className={soUmaEsfera && tv ? "bi-colunas-2" : ""}>
+                {blocosCagec.map(([grupo, itens]) => (
+                  <Painel key={grupo} className="mb-3 break-inside-avoid">
+                    <PainelHead icon={ShieldCheck} titulo={grupo} sub={`${itens.length} exigência(s)`} />
+                    <ListaExigencias itens={itens} tv={tv} />
+                  </Painel>
+                ))}
+              </div>
+            ) : (
+              /* Fica explícito que NÃO está verde por estar em dia — é que
+                 falta o dado. Verde aqui seria lido como "o Estado está em
+                 dia", que é pior que a ausência. */
+              <Painel className="mb-3">
                 <div className="flex items-start gap-2">
                   <Info className="mt-0.5 size-4 shrink-0" style={{ color: "var(--bi-warn)" }} />
                   <p className="text-[11px] leading-snug" style={{ color: "var(--bi-faint)" }}>
                     {d.cagec.motivo}
                   </p>
                 </div>
-              )}
-            </Painel>
+              </Painel>
+            )}
           </section>
           )}
         </div>
