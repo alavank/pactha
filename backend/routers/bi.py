@@ -89,6 +89,36 @@ def _cache_put(key: str, payload: dict) -> None:
 _INFLIGHT: dict[str, "asyncio.Future"] = {}
 
 
+async def _semaforo_cagec(db: AsyncSession, ids: list[int]) -> dict:
+    """Resumo da regularidade ESTADUAL para o medidor da Visao Geral.
+
+    Conta ENTIDADES, nao municipios: prefeitura, Fundo Municipal de Saude e FMAS
+    tem cadastro proprio no CAGEC e cada um trava o seu convenio. Um municipio
+    com a prefeitura regular e o fundo de saude irregular NAO esta "em dia"."""
+    if not ids:
+        return {"tem_dados": False}
+    linhas = (await db.execute(text("""
+        SELECT municipio_id, COALESCE(principal, false), regular, situacao, nome, tipo
+        FROM cagec_situacao WHERE municipio_id = ANY(:ids)
+        ORDER BY principal DESC, tipo NULLS LAST
+    """), {"ids": ids})).fetchall()
+    if not linhas:
+        return {"tem_dados": False}
+    irregulares = [l for l in linhas if l[2] is False]
+    return {
+        "tem_dados": True,
+        "entidades": len(linhas),
+        "regulares": sum(1 for l in linhas if l[2] is True),
+        "irregulares": len(irregulares),
+        "municipios_com_irregularidade": len({l[0] for l in irregulares}),
+        # Com uma entidade so, mostra a situacao que o PROPRIO portal escreveu
+        # ("Irregular") em vez de um numero sem contexto.
+        "situacao": (linhas[0][3] if len(linhas) == 1 else None),
+        "quem": [{"nome": l[4], "tipo": l[5], "principal": bool(l[1]),
+                  "situacao": l[3]} for l in irregulares][:5],
+    }
+
+
 async def _compute_overview(db: AsyncSession, ids: list[int], cons: bool, single: bool,
                             ano: Optional[list[int]], live: bool) -> dict:
     """Monta o payload do overview SEQUENCIALMENTE na sessao do request. NAO usar
@@ -98,6 +128,11 @@ async def _compute_overview(db: AsyncSession, ids: list[int], cons: bool, single
     o miss raro — sequencial e barato e seguro."""
     kpis = await bi_kpis(db, ids, ano)
     semaforo = await fetch_cauc_situacao(db, ids[0]) if single else await bi_cauc_rollup(db, ids)
+    # SEMAFORO ESTADUAL. O medidor da Visao Geral so olhava o CAUC e escrevia
+    # "Em dia - sem pendencias" para um municipio IRREGULAR no CAGEC. E o sinal
+    # mais visivel do painel; dizer "em dia" com convenio estadual travado e o
+    # pior erro que ele pode cometer. Regular na Uniao nao e regular em Minas.
+    semaforo_cagec = await _semaforo_cagec(db, ids)
     saude = await bi_saude_rollup(db, ids)
     if single:
         ranking = await aggregate_parlamentares(db, municipio_id=ids[0], ano=ano, incluir_plano_acao=live)
@@ -114,6 +149,7 @@ async def _compute_overview(db: AsyncSession, ids: list[int], cons: bool, single
         "kpis": kpis,
         "execucao": execucao,
         "semaforo": semaforo,
+        "semaforo_cagec": semaforo_cagec,
         "saude": saude,
         "top_parlamentares": ranking["items"][:8],
         "ultimas_mudancas": mudancas.get("items", []),
