@@ -893,10 +893,16 @@ export function AbaSismobView({ d, tv }: AbaProps & { d: AbaSismob }) {
           {d.execucao?.length ? (
             <div className="bi-scroll flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1">
               {d.execucao.slice(0, tv ? 5 : 10).map((o) => (
+                // `percentual` null = a obra nunca informou medicao ao MS, e nao
+                // "0% executado". A barra fica vazia nos dois casos (distinguir
+                // exigiria um estado novo no DotMeter, que e compartilhado com
+                // outras abas), mas o RÓTULO tem que dizer a verdade: as duas
+                // maiores obras da carteira estao sem medicao, e "0%" numa TV de
+                // gabinete e lido como obra parada.
                 <DotMeter key={o.proposta_id}
                   label={(o.estabelecimento || o.programa || "Obra") as string}
                   pct={(o.percentual ?? 0) / 100}
-                  direita={`${o.percentual ?? 0}%`} />
+                  direita={o.percentual != null ? `${o.percentual}%` : "sem medição"} />
               ))}
             </div>
           ) : (
