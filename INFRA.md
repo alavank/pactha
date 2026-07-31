@@ -51,15 +51,40 @@ Não existe multi-tenancy dentro do código: **o isolamento é por deploy**. O q
 um tenant do outro são as **env vars no Coolify** (`INSTANCE_SLUG`, `DATABASE_URL`,
 `JWT_SECRET`, `COFRE_KEY`, `NEXT_PUBLIC_CLIENT_LOGO`, `NEXT_PUBLIC_CLIENT_SUBTITLE`).
 
-### 🚨 Um push na branch padrão pode disparar até 9 builds
+### 🔒 Um push na `main` NÃO mexe em cliente nenhum — quem manda é a tag da imagem
 
-São **10 aplicações** no projeto Coolify `pactha`. Hoje **7 delas acompanham a branch `main`**
-e 3 acompanham `feat/painel-executivo`. Um push em `main`, com auto-deploy ligado, rebuilda
-7 aplicações de uma vez — numa máquina de 0,6 vCPU sustentado. **Nunca é um deploy só.**
+> Corrigido em **2026-07-31**. A versão anterior deste trecho dizia que o auto-deploy
+> estava **desligado** nas aplicações. **É falso**: `is_auto_deploy_enabled = true` nas
+> **9**. Quem protege os clientes é outra coisa, e confundir as duas leva a "desligar o
+> auto-deploy" achando que isso é o que segura o deploy — quando não é.
 
-> **Auto-deploy está DESLIGADO em todas as 10 aplicações neste momento** (medido em
-> 2026-07-23). Push não dispara build; o deploy é manual pelo painel do Coolify.
-> Se você religar o auto-deploy, releia o parágrafo acima.
+As 9 aplicações têm **`build_pack = dockerimage`**: elas não constroem nada a partir do
+git, apenas **rodam a tag de imagem que estiver gravada** em `docker_registry_image_tag`.
+Quem constrói é o GitHub Actions, que publica no `ghcr.io` a cada push na `main`.
+
+Consequência — e é isto que sustenta o modelo de "cada cliente decide o seu":
+
+| Ação | O que acontece em produção |
+|---|---|
+| push/merge na `main` | Publica imagem nova no GHCR. **Nada muda em nenhum cliente.** |
+| repontar a tag de UM app + deploy | Só aquele app sobe. |
+| não repontar | O cliente continua na versão dele, indefinidamente. |
+
+**Prova empírica (2026-07-31):** três merges na `main` no mesmo dia (`#63`, `#64`, `#65`).
+`montesiao-mg` foi para `sha-90d2be9`; `freitas` e `trust` continuam em `sha-6163be4`, de
+23/07. Ninguém tocou neles, e nada os tocou.
+
+O campo `git_branch` das aplicações é **decorativo** neste modo (`montesiao-mg-api` e
+`-worker` ainda dizem `feat/painel-executivo`) — não influencia o que roda.
+
+⚠️ As imagens de **frontend são uma por tenant** (`pactha-frontend-freitas`,
+`-trust`, `-montesiao-mg`), porque a marca do cliente entra no build. **API e worker
+compartilham** a mesma imagem (`pactha-api`, `pactha-worker`). E as **tags divergem de
+formato**: backend usa sha **curto**, frontend usa sha **completo**.
+
+⚠️ Hoje `freitas` e `trust` estão internamente **descasados**: api/worker em `sha-6163be4`
+e frontend em `sha-5aed21e6…`. Não é erro de deploy, é histórico — mas ao atualizá-los,
+suba os três.
 
 ---
 
@@ -92,18 +117,20 @@ Todas as URLs abaixo foram conferidas respondendo em 2026-07-23.
 | `montesiao-mg-worker` | `backend/Dockerfile.scraper` | interno |
 | `montesiao-mg-db` | `postgres:16-alpine` | interno — db/user `pactha`, uuid `iogvjlnkpqlugja9j76rktl1` |
 
-> **`montesiao-mg-painel` (uuid `uymt911sgynkbvifyzf6nf1h`) está para ser removido.**
-> O Painel Executivo virou parte do frontend principal: `/dashboard` é o **Painel
-> de Indicadores** e `/tela` é o **Modo Tela** (janela de exibição), no mesmo
-> deploy e no mesmo login. A pasta `painel/` saiu do CI (ver `painel/DEPRECADO.md`).
-> Enquanto a aplicação não for deletada no Coolify ela só ocupa container e RAM —
-> ninguém mais acessa aquela URL.
+> **`montesiao-mg-painel` JÁ FOI REMOVIDO** — conferido em 2026-07-31: zero linhas
+> em `applications` com o uuid `uymt911sgynkbvifyzf6nf1h`. São **9** aplicações no
+> projeto, não 10. O Painel Executivo virou parte do frontend principal:
+> `/dashboard` é o **Painel de Indicadores** e `/tela` é o **Modo Tela** (janela de
+> exibição), no mesmo deploy e no mesmo login. A pasta `painel/` saiu do CI (ver
+> `painel/DEPRECADO.md`).
 >
-> ```bash
-> B=http://54.232.208.118:8000/api/v1
-> curl -X DELETE "$B/applications/uymt911sgynkbvifyzf6nf1h" \
->      -H "Authorization: Bearer <TOKEN>"
-> ```
+> **Resíduo vivo:** o cron `painel-alertas` monta o payload de push apontando para
+> `/app/alertas`, que era rota **daquele** app — hoje 404 no frontend novo. Sem
+> efeito prático, porque o canal de push está morto nas três pontas: nenhum
+> `pushManager.subscribe` no frontend, nenhum handler de `push` em
+> `public/sw.js`, e `painel_push_subscriptions` vazia. Ou se reconstrói o cliente,
+> ou se remove cron e tabelas — manter código morto vivo já custou tempo de
+> auditoria discutindo notificação que ninguém pode receber.
 
 ### Fora deste repo, mas do mesmo produto
 | O quê | URL | Repo |
@@ -257,5 +284,4 @@ UUIDs das aplicações medidos em 2026-07-23:
 | `trust-worker` | `xg714h8l7va4ejq70a5pmv5t` |
 | `montesiao-mg-api` | `chr0n883hp19tjh7829k85a7` |
 | `montesiao-mg-frontend` | `bryvqhhcu97lc3ku7a2hss0q` |
-| `montesiao-mg-painel` | `uymt911sgynkbvifyzf6nf1h` (a remover — ver §3) |
 | `montesiao-mg-worker` | `jhf0kjhps5keujiyhhsnvjt6` |
