@@ -11,7 +11,7 @@
 // fontes diferentes no mesmo formato, e a data só existe onde a fonte dá.
 import React, { useEffect, useState } from "react";
 import {
-  ShieldCheck, ShieldAlert, CheckCircle2, AlertTriangle, Loader2, MinusCircle,
+  ShieldCheck, ShieldAlert, CheckCircle2, AlertTriangle, AlertCircle, Ban, Loader2,
   Clock,
 } from "lucide-react";
 import api from "@/lib/api";
@@ -24,8 +24,13 @@ interface Item {
   valor: string;
   tipo: "regular" | "pendente" | "na";
   status: string;
-  /** Só o CAGEC tem: cada obrigação do CRC vence numa data própria (dd/mm/aaaa). */
+  /** Coluna própria, como no documento (dd/mm/aaaa). Null quando a fonte não dá
+   *  data — todo "A Comprovar" e todo "Desativado" do CAUC. */
   validade?: string | null;
+  /** Tradução do título oficial do grupo, para quem não vive o extrato. Só CAUC. */
+  grupo_glossa?: string;
+  /** Significado oficial de um status traiçoeiro. "Desativado" NÃO é dispensa. */
+  nota?: string;
 }
 
 interface CaucResp {
@@ -180,7 +185,7 @@ function OutrasEntidades({ entidades }: { entidades: Entidade[] }) {
                   Próxima obrigação a vencer: <strong>{fmtDate(e.validade)}</strong>.
                 </p>
               )}
-              <Exigencias itens={e.itens || []} />
+              <Exigencias itens={e.itens || []} esfera="cagec" />
             </div>
           </details>
         );
@@ -189,8 +194,15 @@ function OutrasEntidades({ entidades }: { entidades: Entidade[] }) {
   );
 }
 
-/** Lista de exigências por bloco. Serve CAUC e CAGEC: o payload é o mesmo. */
-function Exigencias({ itens }: { itens: Item[] }) {
+/** Lista de exigências por bloco, no MESMO desenho do extrato oficial:
+ *  ícone · código · Item Legal · **Situação** · **Validade**.
+ *
+ *  As duas últimas eram uma célula só, com palavras nossas ("Regular até
+ *  31/07/26"). Quem confere a tela contra o PDF — o uso real da equipe de
+ *  convênios — não casava linha a linha. Agora a palavra é a do documento
+ *  (CAUC: Comprovado / A Comprovar / Desativado; CAGEC: Vigente / Vencido) e a
+ *  data tem coluna própria, presente em todos os cenários. */
+function Exigencias({ itens, esfera = "cauc" }: { itens: Item[]; esfera?: "cauc" | "cagec" }) {
   if (!itens.length) {
     return (
       <div className="rounded-2xl border border-base-300 bg-base-100 p-6 text-center text-sm text-base-content/60">
@@ -202,36 +214,62 @@ function Exigencias({ itens }: { itens: Item[] }) {
     <div className="space-y-3">
       {agrupar(itens).map(([grupo, lista]) => (
         <div key={grupo} className="rounded-2xl border border-base-300/60 bg-base-100 overflow-hidden shadow-theme-sm">
-          <div className="px-4 py-2.5 bg-base-200/50 border-b border-base-300 text-sm font-semibold text-base-content/70">
-            {grupo}
+          <div className="px-4 py-2.5 bg-base-200/50 border-b border-base-300">
+            {/* Título = o LITERAL do extrato ("III - Obrigações de
+                Transparência"), para casar na conferência. A glosa embaixo,
+                para quem não vive o documento. */}
+            <div className="text-sm font-semibold text-base-content/70">{grupo}</div>
+            {lista[0]?.grupo_glossa && (
+              <div className="text-xs text-base-content/45">{lista[0].grupo_glossa}</div>
+            )}
+          </div>
+          <div className="flex items-center gap-3 border-b border-base-300/60 px-4 py-1 text-[10px] uppercase tracking-wide text-base-content/40">
+            <span className="size-4 shrink-0" />
+            <span className="min-w-0 flex-1">Item legal</span>
+            <span className="w-28 shrink-0 text-right">Situação</span>
+            <span className="w-24 shrink-0 text-right">Validade</span>
           </div>
           <div className="divide-y divide-base-300/60">
             {lista.map((it) => (
-              <div key={it.codigo} className="flex items-start gap-3 px-4 py-2.5">
+              <div key={it.codigo}
+                className={`flex items-start gap-3 px-4 py-2.5 ${
+                  it.tipo === "pendente" ? "bg-error/10" : ""}`}>
+                {/* Símbolo por esfera, como nos dois documentos: o CAUC marca
+                    Comprovado / A Comprovar / Desativado; o CAGEC, Vigente /
+                    Vencido. O vermelho na linha inteira é o que faz o olho achar
+                    o problema sem precisar ler. */}
                 <span className="mt-0.5">
-                  {it.tipo === "pendente" ? <AlertTriangle className="size-4 text-error" />
+                  {it.tipo === "pendente"
+                    ? (esfera === "cagec"
+                        ? <AlertTriangle className="size-4 text-error" />
+                        : <AlertCircle className="size-4 text-error" />)
                     : it.tipo === "regular" ? <CheckCircle2 className="size-4 text-success" />
-                    : <MinusCircle className="size-4 text-base-content/30" />}
+                    : <Ban className="size-4 text-base-content/30" />}
                 </span>
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm text-base-content">
+                  <div className={`text-sm ${it.tipo === "pendente"
+                    ? "font-semibold text-error" : "text-base-content"}`}>
                     <span className="font-mono text-xs text-base-content/50 mr-2">{it.codigo}</span>
                     {it.label}
                   </div>
+                  {/* A nota existe porque duas palavras do extrato enganam:
+                      "Desativado" não é dispensa (é falha da ferramenta, para
+                      TODOS os entes) e "A Comprovar" não acusa o município. */}
+                  {it.nota && (
+                    <div className="mt-0.5 text-xs text-base-content/45">{it.nota}</div>
+                  )}
                 </div>
-                <span className={`shrink-0 text-xs font-medium whitespace-nowrap text-right ${
+                <span className={`w-28 shrink-0 text-right text-xs font-medium ${
                   it.tipo === "pendente" ? "text-error"
                   : it.tipo === "regular" ? "text-success"
                   : "text-base-content/40"}`}>
                   {it.status}
-                  {/* A data é o que torna a linha acionável: "Vencido" sozinho não
-                      diz se foi ontem ou ano passado, e "Vigente" não diz quanto
-                      tempo resta para renovar. */}
-                  {it.validade && (
-                    <span className="block font-normal text-base-content/50">
-                      {it.tipo === "pendente" ? "venceu em " : "até "}{it.validade}
-                    </span>
-                  )}
+                </span>
+                {/* Validade SEMPRE presente, como no extrato. "—" quando a fonte
+                    não dá data: ausência de data é informação, não buraco. */}
+                <span className={`w-24 shrink-0 whitespace-nowrap text-right text-xs ${
+                  it.tipo === "pendente" ? "text-error" : "text-base-content/50"}`}>
+                  {it.validade || "—"}
                 </span>
               </div>
             ))}
@@ -312,7 +350,7 @@ export default function RegularidadePage() {
                     ? " — apto a receber transferências voluntárias da União."
                     : ` — itens ${(cauc.pendencias_codigos || []).join(", ")} podem travar transferências.`)}
                 />
-                <Exigencias itens={cauc.itens || []} />
+                <Exigencias itens={cauc.itens || []} esfera="cauc" />
                 <p className="text-xs text-base-content/40">
                   Atualizado em {fmtDate(cauc.atualizado_em)}.
                 </p>
@@ -376,7 +414,7 @@ export default function RegularidadePage() {
                       ? ` Atenção: outra(s) entidade(s) do município somam ${cagec.pendencias_outras_entidades} pendência(s) — veja abaixo.`
                       : "")}
                 />
-                <Exigencias itens={cagec.itens || []} />
+                <Exigencias itens={cagec.itens || []} esfera="cagec" />
                 <OutrasEntidades entidades={cagec.entidades || []} />
                 <p className="text-xs text-base-content/40">
                   Atualizado em {fmtDate(cagec.atualizado_em)}.
@@ -389,17 +427,21 @@ export default function RegularidadePage() {
 
       {municipioId && !loading && (
         <p className="text-xs text-base-content/40">
-          Legenda: <span className="text-success">✔ regular até a data</span> ·
-          <span className="text-error"> ⚠ pendência (impeditivo)</span> ·
-          {/* NUNCA escrever "nao exigido" aqui. O simbolo marca os itens que o
-              CAUC lista como "Desativado", e o texto oficial diz que a
-              desativacao e da FERRAMENTA, "para todos os entes federativos" —
-              nao e dispensa do municipio. O caso que prova: o FGTS e o item 1.3,
-              desativado no CAUC, enquanto na coluna ao lado DESTA MESMA TELA o
-              CRF do FGTS esta VENCIDO no CAGEC desde 29/07/2026 e e uma das 3
-              causas da irregularidade estadual. "Nao exigido" mandava o gestor
-              riscar da lista justamente o que trava o convenio. */}
-          <span className="text-base-content/40"> ⊘ não avaliado nesta fonte — leia o status da linha; não é dispensa</span>.
+          {/* A legenda espelha as PALAVRAS dos dois documentos, porque cada
+              esfera usa o seu vocabulario e a tela existe para ser conferida
+              contra o extrato. NUNCA escrever "nao exigido" para o Desativado:
+              o texto oficial diz que a desativacao e da FERRAMENTA, "para todos
+              os entes federativos". O caso que prova e o FGTS — item 1.3,
+              desativado no CAUC, e ao mesmo tempo VENCIDO no CAGEC na coluna ao
+              lado, travando convenio estadual. */}
+          <span className="font-semibold">CAUC:</span>{" "}
+          <span className="text-success">✔ Comprovado</span> ·
+          <span className="text-error"> ⚠ A Comprovar (impeditivo)</span> ·
+          <span className="text-base-content/40"> ⊘ Desativado (indisponível na fonte — não é dispensa)</span>
+          {"  ·  "}
+          <span className="font-semibold">CAGEC:</span>{" "}
+          <span className="text-success">✔ Vigente</span> ·
+          <span className="text-error"> ⚠ Vencido (impeditivo)</span>.
         </p>
       )}
     </div>

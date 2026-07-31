@@ -17,12 +17,30 @@ conhecido destes nomes.
 from __future__ import annotations
 
 # Grupos das exigencias CAUC (pelo digito inicial do codigo).
+#
+# ⚠️ SAO OS TITULOS LITERAIS DO EXTRATO, algarismo romano incluido. Nao reescreva
+# com palavras "mais claras": a equipe de convenios abre o PDF do CAUC ao lado da
+# tela e procura a secao pelo titulo. A versao anterior usava descricoes nossas
+# ("Regularidade fiscal e adimplencia com a Uniao") — verdadeiras, mas que nao
+# existem em documento nenhum, entao nao casavam com o extrato na hora de
+# conferir. Transcrito do extrato de 31/07/2026.
 GRUPOS = {
-    "1": "Regularidade fiscal e adimplência com a União",
-    "2": "Prestação de contas de recursos federais recebidos",
-    "3": "Informações fiscais e contábeis, transparência e Siafic",
-    "4": "Competência tributária e regularidade previdenciária",
-    "5": "Aplicações mínimas e limites (educação, saúde, Fundeb, PPP, crédito)",
+    "1": "I - Obrigações de Adimplência Financeira",
+    "2": "II - Adimplemento na Prestação de Contas de Convênios",
+    "3": "III - Obrigações de Transparência",
+    "4": "IV - Adimplemento de Obrigações Constitucionais ou Legais",
+    "5": "V - Cumprimento de Limites Constitucionais e Legais",
+}
+
+# A traducao para quem nao vive o extrato. Vai como SUBTITULO do bloco, nunca no
+# lugar do titulo oficial: o prefeito entende a glosa, a equipe de convenios
+# precisa do titulo que esta no PDF. Os dois cabem.
+GRUPOS_GLOSSA = {
+    "1": "regularidade fiscal e adimplência com a União",
+    "2": "prestação de contas de recursos federais já recebidos",
+    "3": "informações fiscais e contábeis, transparência e Siafic",
+    "4": "competência tributária e regularidade previdenciária",
+    "5": "aplicações mínimas e limites (educação, saúde, Fundeb, PPP, crédito)",
 }
 
 # Rotulos das exigencias do extrato do CAUC.
@@ -73,23 +91,46 @@ LABELS = {
 }
 
 
-def _classifica(valor: str) -> tuple[str, str]:
-    """(tipo, status legivel) a partir do valor bruto do CSV do CAUC.
+def _ano4(d: str) -> str:
+    """dd/mm/aa -> dd/mm/aaaa. O CSV do Tesouro manda o ano com 2 digitos
+    ("31/07/26") e o extrato oficial imprime 4. Como a tela existe para ser
+    conferida CONTRA o extrato, ela usa o formato do extrato."""
+    p = d.split("/")
+    if len(p) == 3 and len(p[2]) == 2 and p[2].isdigit():
+        yy = int(p[2])
+        p[2] = f"{2000 + yy if yy < 70 else 1900 + yy}"
+    return "/".join(p)
 
-    Os significados sao os do proprio PDF de metadados, e um deles e traicoeiro:
-    **"Desabilitado" NAO quer dizer "nao exigido"**. O texto oficial e "a
+
+def _classifica(valor: str) -> tuple[str, str, str | None, str]:
+    """(tipo, situacao, validade, nota) a partir do valor bruto do CSV do CAUC.
+
+    `situacao` usa as PALAVRAS DO EXTRATO — "Comprovado", "A Comprovar",
+    "Desativado" —, e a data sai separada, em `validade`, porque no extrato sao
+    duas colunas e a tela existe para ser conferida contra ele. Antes isto
+    devolvia frases nossas ("Regular ate 31/07/26"), que misturavam as duas
+    colunas numa so e nao casavam com o documento.
+
+    A `nota` carrega o significado oficial, que e traicoeiro em dois pontos:
+
+    **"Desativado" NAO quer dizer "nao exigido".** O texto oficial e "a
     informacao do item nao esta disponivel na data da consulta. Essa situacao e
-    valida para TODOS os entes" — ou seja, e indisponibilidade da FONTE, nao
-    dispensa do municipio. Dizer "nao exigido" na tela fazia o gestor riscar da
-    lista uma exigencia que continua valendo."""
+    valida para TODOS os entes" — indisponibilidade da FONTE, nao dispensa do
+    municipio. O caso que prova: o FGTS e o item 1.3, desativado no CAUC, e ao
+    mesmo tempo esta VENCIDO no CAGEC, travando convenio estadual.
+
+    **"A Comprovar" nao acusa o municipio**: e "nao foi possivel ao CAUC obter a
+    informacao de comprovacao de cumprimento do requisito fiscal".
+    """
     v = (valor or "").strip()
     if v == "!":
-        # Oficial: "nao foi possivel ao CAUC obter a informacao de comprovacao
-        # de cumprimento do requisito fiscal". Sem comprovacao, trava — mas o
-        # rotulo diz o que de fato aconteceu em vez de acusar o municipio.
-        return ("pendente", "Sem comprovação no CAUC")
+        return ("pendente", "A Comprovar", None,
+                "O CAUC não obteve a comprovação deste requisito. "
+                "Comprove documentalmente junto ao órgão concedente.")
     if v.lower() == "desabilitado":
-        return ("na", "Indisponível na consulta (para todos os entes)")
+        return ("na", "Desativado", None,
+                "Indisponível na consulta, para TODOS os entes — "
+                "é falha/adaptação da própria ferramenta, não dispensa a exigência.")
     if v == "":
-        return ("na", "Sem informação")
-    return ("regular", f"Regular até {v}")
+        return ("na", "Sem informação", None, "")
+    return ("regular", "Comprovado", _ano4(v), "")
