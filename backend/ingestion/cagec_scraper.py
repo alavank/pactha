@@ -326,6 +326,27 @@ async def _esperar_grid(page, cnpj: str, limite_ms: int = 40000) -> list[list[st
     return grade
 
 
+# Tipos de convenente que SAO o proprio poder publico municipal. Prefeitura,
+# Fundo Municipal de Saude, FMAS e afins tem CADASTRO SEPARADO no CAGEC, cada um
+# com CNPJ, exigencias e situacao proprios — prefeitura regular NAO destrava o
+# convenio da saude se o fundo estiver irregular.
+# A busca por nome traz junto as associacoes privadas que tem o nome da cidade
+# ("ASSOCIACAO COMUNITARIA MONTE SIAO"); essas sao terceiros, nao o municipio,
+# e ficam de fora. Lista por INCLUSAO de proposito: tipo novo que aparecer no
+# portal e ignorado ate alguem conferir que e mesmo do municipio.
+_TIPOS_PUBLICOS = (
+    "municipio", "fundo municipal", "fundo estadual", "consorcio",
+    "autarquia", "camara municipal", "conselho municipal", "fundacao publica",
+)
+
+
+def _e_publico(tipo: str) -> bool:
+    t = _sem_acento(tipo or "")
+    if "privada" in t or "sociedade civil" in t:
+        return False
+    return any(k in t for k in _TIPOS_PUBLICOS)
+
+
 async def _consultar(page, cnpj: str) -> dict | None:
     """Busca por CNPJ. Devolve {rotulo_da_coluna: valor} da linha, ou None.
 
@@ -374,6 +395,127 @@ async def _consultar(page, cnpj: str) -> dict | None:
     return None
 
 
+async def _clicar_pesquisar(page) -> None:
+    botoes = page.locator("button, .z-button, .z-toolbarbutton, a.z-button, "
+                          "input[type=button], input[type=submit]")
+    for i in range(await botoes.count()):
+        try:
+            if _limpo(await botoes.nth(i).inner_text()).upper().startswith("PESQUISAR"):
+                await botoes.nth(i).click()
+                return
+        except Exception:
+            continue
+    raise RuntimeError("botao PESQUISAR nao encontrado")
+
+
+async def descobrir_entidades(page, nome_municipio: str, uf: str | None = None) -> list[dict]:
+    """Entidades PUBLICAS do municipio cadastradas no CAGEC.
+
+    Busca pelo NOME do municipio, nao pelo filtro de Municipio: o combobox de
+    municipio do ZK e `readonly` e so aceita valor escolhido no popup, enquanto
+    a busca por nome e um campo de texto comum. E funciona porque os cadastros
+    seguem o padrao "<TIPO> DE <MUNICIPIO>" — "FUNDO MUNICIPAL DE SAUDE DE
+    MONTE FORMOSO", "MUNICIPIO DE MONTE SIAO".
+
+    DUAS TRAVAS, e a segunda e a que importa:
+
+    1. `_e_publico` corta as associacoes privadas que so tem o nome da cidade
+       ("ASSOCIACAO COMUNITARIA MONTE SIAO") — sao terceiros, nao o municipio.
+
+    2. **A coluna Municipio da propria grade tem que bater com o alvo.** Nome de
+       municipio NAO e unico em MG: buscar "Bom Jesus" traz MUNICIPIO DE BOM
+       JESUS DO GALHO, BOM JESUS DA PENHA e outros — municipios DIFERENTES. Sem
+       esta trava, o sistema de um cliente gravaria dado de cidade que nao e
+       dele. Cada instancia do PACTHA e de UM cliente; misturar seria grave.
+    """
+    await page.goto(URL_CONSULTA, timeout=60000, wait_until="domcontentloaded")
+    await page.wait_for_timeout(3500)
+
+    # 3o campo de texto = "Nome do Parceiro/Convenente" (o 1o e CNPJ, o 2o CPF)
+    campo = page.locator("input.z-textbox").nth(2)
+    await campo.click()
+    await campo.type(_sem_acento(nome_municipio).upper(), delay=25)
+    await _clicar_pesquisar(page)
+    await page.wait_for_timeout(9000)
+
+    # "[ 1 - 10 / 10 ]" no rodape diz quantos existem no total. Sem ler isso,
+    # 10 resultados poderiam ser a primeira pagina de 200 e o coletor
+    # silenciosamente ignoraria o resto.
+    total = None
+    try:
+        info = _limpo(await page.locator(".z-paging-info").first.inner_text())
+        m = re.search(r"/\s*(\d+)\s*\]", info)
+        if m:
+            total = int(m.group(1))
+    except Exception:
+        pass
+
+    entidades, cabecalho, vistos = [], None, set()
+    paginas = 0
+    while paginas < 12:
+        paginas += 1
+        grade = [l for l in await page.eval_on_selector_all(
+            ".z-listitem, .z-row, tbody tr", _JS_GRADE) if l]
+        for linha in grade:
+            junto = " ".join(linha)
+            if "CNPJ" in junto and ("Razão Social" in junto or "Razao Social" in junto):
+                cabecalho = linha
+                continue
+            m = re.search(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}", junto)
+            if not m or not cabecalho or m.group(0) in vistos:
+                continue
+            vistos.add(m.group(0))
+            d = {_limpo(cabecalho[i]): _limpo(v)
+                 for i, v in enumerate(linha) if i < len(cabecalho)}
+            entidades.append(d)
+        if total is not None and len(vistos) >= total:
+            break
+        prox = page.locator(".z-paging-next").first
+        if not await prox.count():
+            break
+        cls = (await prox.get_attribute("class")) or ""
+        if "disd" in cls or "disabled" in cls:
+            break
+        try:
+            await prox.click(timeout=8000)
+        except Exception:
+            break
+        await page.wait_for_timeout(8000)
+
+    if total is not None and len(vistos) < total:
+        logger.warning("    %s: li %d de %d cadastros — pode ter ficado entidade "
+                       "de fora", nome_municipio, len(vistos), total)
+
+    alvo_mun = _sem_acento(nome_municipio).strip()
+    alvo_uf = (uf or "").strip().upper()
+
+    def _do_municipio(e: dict) -> bool:
+        col = _sem_acento(_pegar(e, "municipio") or "").strip()
+        if not col:
+            return False                      # sem a coluna, nao arrisca
+        if col != alvo_mun:
+            return False
+        if alvo_uf:
+            col_uf = (_pegar(e, "uf") or "").strip().upper()
+            if col_uf and col_uf != alvo_uf:
+                return False
+        return True
+
+    publicas, de_fora = [], 0
+    for e in entidades:
+        if not _e_publico(_pegar(e, "tipo") or ""):
+            continue
+        if not _do_municipio(e):
+            de_fora += 1
+            continue
+        publicas.append(e)
+
+    logger.info("    %s: %d cadastro(s) com esse nome, %d publico(s) do municipio"
+                "%s", nome_municipio, len(entidades), len(publicas),
+                f" ({de_fora} de OUTRO municipio, descartado(s))" if de_fora else "")
+    return publicas
+
+
 def _pegar(linha: dict, *pedacos: str) -> str | None:
     """Valor da coluna cujo rotulo contem todos os pedacos (sem acento/caixa)."""
     for rotulo, valor in (linha or {}).items():
@@ -402,32 +544,49 @@ def _proxima_validade(itens: list[dict]) -> date | None:
     return min(datas) if datas else None
 
 
-def _salvar(mun: dict, cnpj_fmt: str, situacao: str | None, nome: str | None,
+def _salvar(cur, mun: dict, cnpj_fmt: str, situacao: str | None, nome: str | None,
+            tipo: str | None, principal: bool, numero_cadastro: str | None,
             itens: list[dict]) -> None:
-    import psycopg2
-    url = os.getenv("DATABASE_URL_SYNC", "")
-    url = url.replace("&channel_binding=require", "").replace("?channel_binding=require", "")
-    conn = psycopg2.connect(url)
-    cur = conn.cursor()
+    """Uma linha por ENTIDADE — a chave e (municipio_id, cnpj)."""
     regular = bool(situacao) and _sem_acento(situacao) in _REGULARES
     pendentes = [i["codigo"] for i in itens if i.get("tipo") == "pendente"]
+    if principal:
+        # So pode existir UMA principal por municipio (indice unico parcial no
+        # banco). Limpa a anterior antes, senao o UPSERT bate no indice e a
+        # coleta inteira falha por causa de uma troca de CNPJ da prefeitura.
+        cur.execute("UPDATE cagec_situacao SET principal = FALSE "
+                    "WHERE municipio_id = %s AND cnpj <> %s AND principal",
+                    (mun["id"], cnpj_fmt))
     cur.execute("""
-        INSERT INTO cagec_situacao (municipio_id, nome, uf, cnpj, situacao, regular,
+        INSERT INTO cagec_situacao (municipio_id, nome, uf, cnpj, tipo, principal,
+                                    numero_cadastro, situacao, regular,
                                     validade, itens, pendencias, pendencias_codigos,
                                     data_pesquisa, atualizado_em)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, NOW())
-        ON CONFLICT (municipio_id) DO UPDATE SET
-            nome = EXCLUDED.nome, uf = EXCLUDED.uf, cnpj = EXCLUDED.cnpj,
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, NOW())
+        ON CONFLICT (municipio_id, cnpj) DO UPDATE SET
+            nome = EXCLUDED.nome, uf = EXCLUDED.uf, tipo = EXCLUDED.tipo,
+            principal = EXCLUDED.principal, numero_cadastro = EXCLUDED.numero_cadastro,
             situacao = EXCLUDED.situacao, regular = EXCLUDED.regular,
             validade = EXCLUDED.validade, itens = EXCLUDED.itens,
             pendencias = EXCLUDED.pendencias,
             pendencias_codigos = EXCLUDED.pendencias_codigos,
             data_pesquisa = EXCLUDED.data_pesquisa, atualizado_em = NOW()
-    """, (mun["id"], nome or mun["nome"], mun["uf"], cnpj_fmt, situacao, regular,
+    """, (mun["id"], nome or mun["nome"], mun["uf"], cnpj_fmt, tipo, principal,
+          numero_cadastro, situacao, regular,
           _proxima_validade(itens), json.dumps(itens, ensure_ascii=False),
           len(pendentes), pendentes, date.today()))
-    conn.commit()
-    conn.close()
+
+
+def _limpar_sumidos(cur, municipio_id: int, cnpjs_vistos: list[str]) -> int:
+    """Apaga entidade que saiu do CAGEC (cadastro cancelado, por exemplo).
+
+    Sem isto, um fundo descadastrado ficaria na tela para sempre com o ultimo
+    status conhecido — pior que nao mostrar, porque parece atual."""
+    if not cnpjs_vistos:
+        return 0
+    cur.execute("DELETE FROM cagec_situacao WHERE municipio_id = %s "
+                "AND NOT (cnpj = ANY(%s))", (municipio_id, cnpjs_vistos))
+    return cur.rowcount or 0
 
 
 # --------------------------------------------------------------------------
@@ -440,78 +599,117 @@ async def _rodar() -> tuple[int, int]:
         br = await p.chromium.launch(headless=True, args=["--no-sandbox"])
         ctx = await br.new_context(locale="pt-BR", accept_downloads=True)
         page = await ctx.new_page()
+        import psycopg2
+        url = os.getenv("DATABASE_URL_SYNC", "")
+        url = url.replace("&channel_binding=require", "").replace("?channel_binding=require", "")
+        conn = psycopg2.connect(url)
+        cur = conn.cursor()
         try:
             for mun in alvos:
-                if not mun["cnpj"]:
-                    logger.warning("  %s: sem CNPJ conhecido — pulando "
-                                   "(colete emendas estaduais ou PAC antes)", mun["nome"])
+                # Descoberta pelo NOME: acha a prefeitura E os fundos, que sao
+                # cadastros separados. O CNPJ inferido das emendas serve so para
+                # saber QUAL das entidades e a prefeitura.
+                try:
+                    entidades = await descobrir_entidades(page, mun["nome"], mun["uf"])
+                except Exception as e:
+                    logger.error("  %s: falha ao listar entidades — %s: %s",
+                                 mun["nome"], type(e).__name__, str(e)[:110])
                     falha += 1
                     continue
-                # Duas tentativas: o portal e instavel e uma falha isolada
-                # deixaria o municipio com dado velho por 24h ate o proximo cron.
-                linha, erro = None, None
-                for tentativa in (1, 2):
-                    try:
-                        linha = await _consultar(page, mun["cnpj"])
-                    except Exception as e:
-                        erro = f"{type(e).__name__}: {str(e)[:110]}"
-                    if linha:
-                        break
-                    if tentativa == 1:
-                        logger.info("  %s: 1a tentativa sem resultado%s — repetindo",
-                                    mun["nome"], f" ({erro})" if erro else "")
-                        await page.wait_for_timeout(5000)
-                if not linha:
-                    logger.warning("  %s: CNPJ %s sem resultado no CAGEC apos 2 tentativas%s",
-                                   mun["nome"], mun["cnpj"], f" — {erro}" if erro else "")
+                if not entidades:
+                    logger.warning("  %s: nenhuma entidade publica no CAGEC", mun["nome"])
                     falha += 1
                     continue
 
-                m = re.search(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}", " ".join(linha.values()))
-                cnpj_fmt = m.group(0) if m else mun["cnpj"]
-                situacao = _pegar(linha, "situacao", "parceria")
-                nome = _pegar(linha, "nome", "razao social") or _pegar(linha, "razao social")
+                cnpj_prefeitura = _so_digitos(mun["cnpj"] or "")
+                vistos, coletadas = [], 0
+                for ent in entidades:
+                    cnpj_ent = re.search(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}",
+                                         " ".join(ent.values()))
+                    if not cnpj_ent:
+                        continue
+                    cnpj_fmt = cnpj_ent.group(0)
+                    tipo = _pegar(ent, "tipo")
+                    principal = (_so_digitos(cnpj_fmt) == cnpj_prefeitura
+                                 or _sem_acento(tipo or "") == "municipio")
 
-                # Caminho principal: o CRC, que traz as obrigacoes uma a uma.
-                itens: list[dict] = []
-                pdf = await _baixar_crc(page)
-                if pdf:
-                    try:
-                        cab, itens = parse_crc(_texto_do_pdf(pdf))
-                        situacao = cab.get("situacao") or situacao
-                        nome = cab.get("razao_social") or nome
-                    except Exception as e:
-                        logger.warning("  %s: CRC baixou mas nao foi lido — %s: %s",
-                                       mun["nome"], type(e).__name__, str(e)[:110])
-                        itens = []
+                    # Duas tentativas: o portal e instavel e uma falha isolada
+                    # deixaria a entidade com dado velho ate o proximo cron.
+                    linha, erro = None, None
+                    for tentativa in (1, 2):
+                        try:
+                            linha = await _consultar(page, _so_digitos(cnpj_fmt))
+                        except Exception as e:
+                            erro = f"{type(e).__name__}: {str(e)[:110]}"
+                        if linha:
+                            break
+                        if tentativa == 1:
+                            await page.wait_for_timeout(5000)
+                    if not linha:
+                        logger.warning("    %s (%s): sem resultado apos 2 tentativas%s",
+                                       (_pegar(ent, "nome", "razao social") or cnpj_fmt)[:40],
+                                       cnpj_fmt, f" — {erro}" if erro else "")
+                        continue
 
-                if not itens:
-                    # Fallback: so o que a linha da. Menos util, mas nao mente —
-                    # e da para ver na tela que veio sem detalhamento.
-                    logger.warning("  %s: sem CRC, gravando so a situacao da linha",
-                                   mun["nome"])
-                    imped = _pegar(linha, "impedimento")
-                    itens = [{
-                        "codigo": "SIT", "grupo": "CAGEC",
-                        "label": "Situação para Parceria", "valor": situacao or "-",
-                        "status": situacao or "-", "validade": None,
-                        "tipo": "regular" if (situacao and _sem_acento(situacao) in _REGULARES)
-                                else "pendente",
-                    }]
-                    if imped:
-                        itens.append({
-                            "codigo": "IMP", "grupo": "CAGEC",
-                            "label": "Possui Impedimento", "valor": imped, "status": imped,
-                            "tipo": "pendente" if _sem_acento(imped) == "sim" else "regular",
-                            "validade": None,
-                        })
+                    situacao = _pegar(linha, "situacao", "parceria")
+                    nome = (_pegar(linha, "nome", "razao social")
+                            or _pegar(linha, "razao social"))
+                    numero = None
 
-                _salvar(mun, cnpj_fmt, situacao, nome, itens)
-                pend = [i["codigo"] for i in itens if i.get("tipo") == "pendente"]
-                logger.info("  %s: %s | %d obrigacao(oes) lida(s) | pendente(s): %s",
-                            mun["nome"], situacao, len(itens), ", ".join(pend) or "nenhuma")
-                ok += 1
+                    # Caminho principal: o CRC, com as obrigacoes uma a uma.
+                    itens: list[dict] = []
+                    pdf = await _baixar_crc(page)
+                    if pdf:
+                        try:
+                            cab, itens = parse_crc(_texto_do_pdf(pdf))
+                            situacao = cab.get("situacao") or situacao
+                            nome = cab.get("razao_social") or nome
+                            numero = cab.get("numero_cadastro")
+                        except Exception as e:
+                            logger.warning("    %s: CRC baixou mas nao foi lido — %s: %s",
+                                           cnpj_fmt, type(e).__name__, str(e)[:110])
+                            itens = []
+
+                    if not itens:
+                        # Fallback: so o que a linha da. Menos util, mas nao
+                        # mente — da para ver que veio sem detalhamento.
+                        imped = _pegar(linha, "impedimento")
+                        itens = [{
+                            "codigo": "SIT", "grupo": "CAGEC",
+                            "label": "Situação para Parceria", "valor": situacao or "-",
+                            "status": situacao or "-", "validade": None,
+                            "tipo": "regular" if (situacao and _sem_acento(situacao) in _REGULARES)
+                                    else "pendente",
+                        }]
+                        if imped:
+                            itens.append({
+                                "codigo": "IMP", "grupo": "CAGEC",
+                                "label": "Possui Impedimento", "valor": imped,
+                                "status": imped, "validade": None,
+                                "tipo": "pendente" if _sem_acento(imped) == "sim" else "regular",
+                            })
+
+                    _salvar(cur, mun, cnpj_fmt, situacao, nome, tipo, principal,
+                            numero, itens)
+                    vistos.append(cnpj_fmt)
+                    coletadas += 1
+                    pend = [i["codigo"] for i in itens if i.get("tipo") == "pendente"]
+                    logger.info("    [%s] %s: %s | %d obrigacao(oes) | pendente(s): %s",
+                                "principal" if principal else (tipo or "entidade"),
+                                (nome or cnpj_fmt)[:38], situacao, len(itens),
+                                ", ".join(pend) or "nenhuma")
+
+                removidas = _limpar_sumidos(cur, mun["id"], vistos)
+                conn.commit()
+                if removidas:
+                    logger.info("    %s: %d entidade(s) sumiram do CAGEC e foram "
+                                "removidas", mun["nome"], removidas)
+                if coletadas:
+                    ok += 1
+                else:
+                    falha += 1
         finally:
+            conn.close()
             await br.close()
     return ok, falha
 

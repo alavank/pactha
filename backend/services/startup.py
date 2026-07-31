@@ -85,9 +85,11 @@ MIGRATION_FILES = [
     "add_scraper_municipio_coleta.sql",
     # Modo Tela do BI: filtro POR USUARIO + links publicos curtos e revogaveis
     "add_bi_tela.sql",
-    # CAGEC (regularidade estadual MG): tabela pronta, coleta pendente de
-    # credencial do SIGCON-MG. Ver routers/cagec.py.
+    # CAGEC (regularidade estadual MG). A coleta e publica, por CNPJ, sem
+    # credencial — ver routers/cagec.py e ingestion/cagec_scraper.py.
     "add_cagec.sql",
+    # separa Prefeitura, Fundo Municipal de Saude e FMAS — cadastros proprios
+    "add_cagec_entidades.sql",
     # Tipo do link publicado: TV de parede ('tela') ou app de celular ('mobile')
     "add_bi_tela_link_kind.sql",
     # Historico da IA por usuario, retencao de 30 dias (expurgo automatico)
