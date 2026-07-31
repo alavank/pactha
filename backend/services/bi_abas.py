@@ -641,19 +641,28 @@ async def bi_sismob(db: AsyncSession, ids: list[int], anos: Optional[list[int]] 
     push usam. Se a aba reclassificasse por conta, um dia a TV do gabinete e o
     celular do prefeito discordariam sobre a mesma obra.
 
-    Filtro de ano usa `ano_referencia` (coluna). NAO derivar de
-    `numero_proposta`: o formato tem 3 variantes incompativeis na mesma base.
+    ESTA ABA NAO E FILTRADA POR PERIODO, e isso e deliberado (`anos` chega e e
+    ignorado). `ano_referencia` e o ano em que a PROPOSTA foi feita, nao o ano
+    em que a obra esta acontecendo. Filtrar por ele apagava exatamente o que a
+    aba existe para mostrar: as duas obras paradas de Monte Siao sao propostas
+    de 2020 que continuam "Em inicio de execucao" hoje, e a cancelada com
+    repasse a devolver e de 2012. Com o periodo "Mandato atual" (2025-2026) —
+    que era o que estava salvo em `bi_tela_filtros` — a aba dizia "0 com prazo
+    vencido / R$ 0 parado / nenhuma obra precisa de acao" no mesmo minuto em
+    que a tela do modulo mostrava 3 obras e R$ 249.648 parados. A TV do
+    gabinete e o link publico exibiam a versao que mente.
+
+    Obra em aberto e obrigacao do PRESENTE, independente do ano da proposta.
+    Esta e uma aba de estado atual, como a de CAUC/CAGEC (que nem recebe
+    `anos`). A tela avisa ao gestor que o filtro de periodo nao se aplica aqui,
+    para que "nao filtra" nunca seja confundido com "filtro ignorado por bug".
     """
     if not ids:
         return {"total": 0, "totais": {}, "acao": [], "por_situacao": [],
-                "por_programa": [], "execucao": []}
+                "por_programa": [], "execucao": [], "sem_filtro_periodo": True}
     from services.sismob_regras import classificar
 
     p: dict = {"ids": ids}
-    filtro_ano = ""
-    if anos:
-        p["anos"] = anos
-        filtro_ano = " AND o.ano_referencia = ANY(:anos)"
 
     rows = (await db.execute(text(f"""
         SELECT o.proposta_id, o.municipio_id, m.nome AS municipio,
@@ -670,7 +679,7 @@ async def bi_sismob(db: AsyncSession, ids: list[int], anos: Optional[list[int]] 
                (SELECT count(*) FROM sismob_obra_empresas e
                  WHERE e.proposta_id = o.proposta_id) AS n_empresas
         FROM sismob_obras o LEFT JOIN municipios m ON m.id = o.municipio_id
-        WHERE o.municipio_id = ANY(:ids) AND o.ausente_desde IS NULL{filtro_ano}
+        WHERE o.municipio_id = ANY(:ids) AND o.ausente_desde IS NULL
         ORDER BY o.ultima_atividade_em NULLS FIRST
     """), p)).mappings().all()
 
@@ -739,4 +748,8 @@ async def bi_sismob(db: AsyncSession, ids: list[int], anos: Optional[list[int]] 
         "execucao": execucao[:LIMITE_ITENS],
         "por_situacao": sorted(por_situacao.values(), key=lambda e: -e["valor"]),
         "por_programa": sorted(por_programa.values(), key=lambda e: -e["valor"]),
+        # A tela usa isto para dizer, em uma linha, que o seletor de periodo do
+        # Painel nao vale aqui. Sem o aviso, o gestor troca o periodo, nada
+        # muda, e ele conclui que a aba travou.
+        "sem_filtro_periodo": True,
     }

@@ -346,11 +346,17 @@ async def aba_sismob(
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
-    """Obras da saude (SISMOB) da aba do Painel."""
+    """Obras da saude (SISMOB) da aba do Painel.
+
+    `ano`/`anos` continuam aceitos porque o Painel os envia em toda aba, mas a
+    resposta NAO depende deles: obra em aberto e obrigacao do presente, e o ano
+    da proposta nao diz em que ano o problema existe (ver bi_sismob). Por isso a
+    chave de cache tambem nao leva `a=` — se levasse, cada periodo clicado
+    criaria uma entrada nova com resultado identico.
+    """
     ids, cons = await resolve_scope(db, current, municipio_id)
-    periodo = _periodo(ano, anos)
-    key = f"sismob|{scope_signature(ids, cons)}|a={anos_signature(periodo)}"
-    return await _aba_cacheada(key, lambda: bi_sismob(db, ids, periodo))
+    key = f"sismob|{scope_signature(ids, cons)}"
+    return await _aba_cacheada(key, lambda: bi_sismob(db, ids, None))
 
 
 @router.get("/documentos")
@@ -722,7 +728,12 @@ async def _fatos_da_aba(db: AsyncSession, ids: list[int], cons: bool, aba: str,
         # Fatos das obras. Sem este ramo, /bi/insights?aba=sismob devolveria 400
         # e a aba ficaria sendo a unica sem faixa de IA — em silencio, porque o
         # ticker engole o erro no .catch().
-        d = await bi_sismob(db, ids, periodo)
+        # `periodo` NAO entra: a aba e de estado atual (ver bi_sismob). Quando
+        # entrava, com "Mandato atual" selecionado a faixa afirmava "2 obras da
+        # saude em andamento, sem paralisacao registrada" enquanto 3 obras
+        # precisavam de acao — a IA repetindo, com a autoridade dela, o erro do
+        # filtro.
+        d = await bi_sismob(db, ids, None)
         t = d["totais"]
         fatos = {
             "aba": "sismob", "obras": t.get("obras", 0), "vivas": t.get("vivas", 0),

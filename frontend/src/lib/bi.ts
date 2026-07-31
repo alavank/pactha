@@ -390,6 +390,10 @@ export interface AbaSismob {
   execucao: SismobObraResumo[];
   por_situacao: Array<{ label: string; qtd: number; valor: number }>;
   por_programa: Array<{ label: string; qtd: number; valor: number }>;
+  /** Sempre true: obra em aberto e obrigacao do presente, entao esta aba
+   *  ignora o seletor de periodo do Painel. A tela avisa isso ao gestor —
+   *  senao "troquei o periodo e nada mudou" e lido como aba travada. */
+  sem_filtro_periodo?: boolean;
 }
 
 export interface AbaFns {

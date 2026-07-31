@@ -3,7 +3,7 @@
 //
 // Antes eram DOIS menus (Dashboard operacional + Painel de Indicadores) para o
 // mesmo publico. Agora e um so: este componente e o conteudo de /dashboard.
-// As seis abas sao AS MESMAS do Modo Tela (lib/tela.ts) e usam OS MESMOS
+// As sete abas sao AS MESMAS do Modo Tela (lib/tela.ts) e usam OS MESMOS
 // componentes de aba (components/bi/abas.tsx) — o que o gestor ve aqui e o que
 // vai aparecer na TV, sem duas verdades para manter.
 import { useCallback, useEffect, useMemo, useState } from "react";

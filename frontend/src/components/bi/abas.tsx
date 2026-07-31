@@ -842,6 +842,18 @@ export function AbaSismobView({ d, tv }: AbaProps & { d: AbaSismob }) {
           sub="90 dias após o repasse" grande={tv} />
       </div>
 
+      {/* O seletor de periodo do Painel continua na tela (ele vale para as
+          outras abas), mas nao muda nada aqui. Dizer isso em uma linha evita
+          as duas leituras erradas: "a aba travou" e, pior, "no periodo atual
+          nao ha obra com problema" — uma obra proposta em 2012 que segue
+          cancelada com dinheiro a devolver e problema de HOJE. */}
+      {d.sem_filtro_periodo && !tv ? (
+        <p className="text-xs opacity-60">
+          Obras não são filtradas por período: uma obra proposta em anos
+          anteriores e ainda em aberto continua sendo obrigação do presente.
+        </p>
+      ) : null}
+
       <div className={grid(tv, "grid grid-cols-1 min-h-0 gap-3 lg:grid-cols-3",
                               "grid min-h-0 flex-1 grid-cols-3 gap-3")}>
         <Painel className="min-h-0 lg:col-span-2">
