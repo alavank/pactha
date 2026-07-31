@@ -14,10 +14,17 @@ O payload sai no MESMO formato do CAUC (`itens` com
 codigo/grupo/label/valor/tipo/status), entao a tela desenha as duas colunas sem
 saber de onde veio cada uma.
 
-LIMITE HONESTO: a consulta publica informa "Situacao para Parceria" e "Possui
-Impedimento", e nao a validade nem a lista de exigencias uma a uma (isso exigiria
-o CRC, emitido so para quem esta regular, ou a area logada). Por isso `validade`
-fica nula em vez de estimada.
+DE ONDE VEM O DETALHE: da propria consulta publica sai o **CRC** (Certificado de
+Registro Cadastral) em PDF, e ele **e emitido mesmo para municipio IRREGULAR** —
+com as ~24 obrigacoes uma a uma, situacao e **data de validade de cada uma**,
+mais CADIN-MG, SIAFI e o vencimento do mandato do representante legal. Ou seja,
+da para dizer ao gestor O QUE destravar, e nao so que ele esta travado.
+(Se o CRC falhar, o coletor grava so a situacao da linha — menos util, mas nunca
+inventa detalhe que nao leu.)
+
+`validade` NAO e a validade do certificado (o CRC nao tem uma): e a **data mais
+proxima entre as obrigacoes ainda vigentes** — o proximo prazo que o municipio
+precisa segurar para nao cair na irregularidade.
 """
 from __future__ import annotations
 
