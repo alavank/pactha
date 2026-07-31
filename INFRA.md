@@ -159,6 +159,13 @@ para não competir por CPU no host burstable. Todos os comandos usam
 
 Detalhes de cada rotina e dos comandos completos: `docs/CRON_SETUP.md`.
 
+**SISMOB** (obras de saúde do MS) **não tem linha nesta tabela de propósito**: em vez
+de uma Scheduled Task nova em cada um dos 3 workers, ele foi pendurado em
+`run_dadosabertos_cron.run_all()`, que o `sigcon` já chama 4×/dia. Como a fonte muda
+a cada ~60 dias por obra, o próprio `ingest()` se auto-limita a 1×/dia
+(`SISMOB_MIN_INTERVAL_H=20`; `SISMOB_FORCE=1` força, `SISMOB_ENABLED=0` desliga por
+tenant). A fonte é **API JSON pública** — sem token, sem login, sem Playwright.
+
 **`cagec`** (desde 2026-07-30, só Monte Sião por enquanto): regularidade **estadual**
 de MG. Roda às 5h40, depois da rodada do `sigcon` das 4h — de propósito, porque o
 CNPJ do município é inferido das emendas estaduais que o SIGCON acabou de coletar.

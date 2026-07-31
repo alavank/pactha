@@ -18,7 +18,7 @@ Antes existiam dois menus (Dashboard + Painel de Indicadores) para o mesmo
 público. Agora é um só: o item "Painel de Indicadores" da barra lateral aponta
 para `/dashboard`.
 
-## As seis abas
+## As sete abas
 
 Definidas em **um lugar só** (`frontend/src/lib/tela.ts`, `ABAS`) e renderizadas
 pelos **mesmos componentes** (`frontend/src/components/bi/abas.tsx`) no módulo e
