@@ -515,3 +515,113 @@ async def bi_execucao(db: AsyncSession, ids: list[int], anos: Optional[list[int]
         "valor_total": sum(i["valor"] for i in itens),
         "valor_repassado": sum(i["repassado"] for i in itens),
     }
+
+
+# --------------------------------------------------------------------------
+# Documentacao vencendo — fonte UNICA para a tela e para o push
+# --------------------------------------------------------------------------
+# Antes nao existia alerta nenhum de VALIDADE de documento: o cron so olhava
+# `cauc_situacao.pendencias > 0`, ou seja, so avisava DEPOIS de o municipio ja
+# estar travado. E a preferencia de push ja se chamava `cauc_vencendo` — o nome
+# prometia uma coisa que o codigo nao fazia.
+#
+# O dado para avisar ANTES sempre esteve la e nao era usado: cada obrigacao do
+# CAGEC tem validade propria (vem do CRC) e cada item do CAUC traz a data no
+# proprio valor. Aqui as duas esferas viram uma lista so, ordenada por urgencia,
+# que alimenta a tela E o push — para os dois canais nunca discordarem.
+
+# O CAUC escreve o ano com DOIS digitos ("30/09/26"); o CRC do CAGEC escreve com
+# quatro ("30/09/2026"). Aceitar so um formato perderia metade dos alertas em
+# silencio, que e o pior tipo de falha aqui.
+_FORMATOS_DATA = ("%d/%m/%Y", "%d/%m/%y")
+
+
+def _data_br(v) -> Optional[date]:
+    if not v or not isinstance(v, str):
+        return None
+    v = v.strip()
+    for f in _FORMATOS_DATA:
+        try:
+            return datetime.strptime(v, f).date()
+        except ValueError:
+            continue
+    return None
+
+
+# Janela minima para uma data ser tratada como PRAZO.
+#
+# Medido em producao (Monte Siao, extrato de 30/07/2026): 16 dos 25 itens do
+# CAUC tem `validade == data_pesquisa`, e mais um tem +1 dia. Nao sao prazos —
+# e como o CAUC reporta requisito verificado CONTINUAMENTE: a informacao vale
+# "na data da consulta" e o proximo extrato traz a data do dia seguinte. Tratar
+# isso como vencimento dispararia 17 alertas por dia, por municipio, para
+# sempre — e alerta que grita todo dia e pior do que alerta nenhum, porque o
+# gestor aprende a ignorar TODOS, inclusive o do FGTS que importa.
+#
+# Prazo de verdade tem janela: os outros 8 itens ficam entre +170 e +274 dias, e
+# as certidoes do CAGEC entre 55 e 880 dias.
+JANELA_MINIMA_DIAS = 3
+
+
+def prazos_dos_itens(itens, data_pesquisa: Optional[date], esfera: str,
+                     dias: int = 30, hoje: Optional[date] = None) -> list[dict]:
+    """A REGRA, isolada e sem I/O — usada pela tela (async) e pelo cron de push
+    (psycopg2 sincrono). Se as duas implementassem a regra por conta propria, um
+    dia a tela e a notificacao passariam a discordar sobre o mesmo prazo.
+
+    Aceita os dois formatos: CAGEC manda LISTA de dicts (cada um com `validade`),
+    CAUC manda DICT {codigo: valor} em que o valor JA E a data."""
+    hoje = hoje or date.today()
+    from services.cauc_catalogo import LABELS, _classifica
+
+    if isinstance(itens, dict):        # CAUC
+        pares = [(cod, val, LABELS.get(cod, f"Exigência {cod}"),
+                  _classifica(val)[0]) for cod, val in itens.items()]
+    else:                              # CAGEC
+        pares = [(i.get("codigo"), i.get("validade"), i.get("label"), i.get("tipo"))
+                 for i in (itens or []) if isinstance(i, dict)]
+
+    out = []
+    for codigo, valor, label, tipo in pares:
+        if tipo == "na":
+            continue
+        d = _data_br(valor)
+        if not d:
+            # "!" no CAUC nao tem data: e pendencia ja existente, nao prazo.
+            continue
+        if data_pesquisa and (d - data_pesquisa).days < JANELA_MINIMA_DIAS:
+            continue                   # cadencia de atualizacao, nao vencimento
+        restantes = (d - hoje).days
+        if restantes < 0 or restantes > dias:
+            continue                   # ja venceu (= pendencia) ou ainda longe
+        out.append({"esfera": esfera, "codigo": codigo, "label": label,
+                    "validade": d.isoformat(), "dias_restantes": restantes})
+    return out
+
+
+async def documentos_vencendo(db: AsyncSession, ids: list[int],
+                              dias: int = 30) -> list[dict]:
+    """Obrigacoes de regularidade que VAO vencer nos proximos `dias`.
+
+    So o futuro, de proposito. O que ja venceu nao e "vencendo": e pendencia, e
+    ja aparece como tal (chip vermelho na lista, contador nos cartoes, faixa da
+    IA). Repetir aqui duplicaria o mesmo aviso em dois lugares com nomes
+    diferentes."""
+    if not ids:
+        return []
+    hoje = date.today()
+    out: list[dict] = []
+
+    for tabela, esfera in (("cagec_situacao", "CAGEC"), ("cauc_situacao", "CAUC")):
+        rows = (await db.execute(text(f"""
+            SELECT c.municipio_id, COALESCE(m.nome, c.nome), c.itens, c.data_pesquisa
+            FROM {tabela} c
+            LEFT JOIN municipios m ON m.id = c.municipio_id
+            WHERE c.municipio_id = ANY(:ids)
+        """), {"ids": ids})).fetchall()
+        for mid, nome, itens, pesquisa in rows:
+            for p in prazos_dos_itens(itens, pesquisa, esfera, dias, hoje):
+                out.append({"municipio_id": mid, "municipio": nome, **p})
+
+    out.sort(key=lambda x: (x["dias_restantes"], x["esfera"], x["codigo"] or ""))
+    return out

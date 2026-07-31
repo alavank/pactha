@@ -37,6 +37,7 @@ from services.bi import (
 )
 from services.bi_abas import (
     bi_estaduais, bi_transferegov, bi_parlamentares_detalhe, bi_documentos, bi_execucao,
+    documentos_vencendo,
 )
 from models.user import User
 from routers.cauc import fetch_cauc_situacao
@@ -211,10 +212,16 @@ async def alertas(
         vig = await query_alertas_vigencia(db, None, 120, periodo, municipio_ids=ids)
         prest = await query_prestacao_contas(db, None, 90, periodo, municipio_ids=ids)
     execucao = await bi_execucao(db, ids, periodo)
+    # Documentacao vencendo NAO respeita o filtro de periodo: validade de
+    # certidao nao tem nada a ver com o ano do convenio que o gestor esta
+    # olhando. Filtrar por periodo aqui esconderia um FGTS vencido so porque a
+    # tela esta em 2025.
+    docs = await documentos_vencendo(db, ids, 30)
     return {
         "vigencia": [a.model_dump() for a in vig],
         "prestacao": [a.model_dump() for a in prest],
         "execucao": execucao,
+        "documentos": docs,
     }
 
 

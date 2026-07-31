@@ -52,6 +52,7 @@ export function AbaGeral({ ov, alertas, tv }: AbaProps & { ov: Overview; alertas
   const caucTom = caucPct >= 0.99 ? "ok" : caucPct >= 0.5 ? "warn" : "crit";
   const vig = alertas?.vigencia ?? [];
   const prest = alertas?.prestacao ?? [];
+  const docs = alertas?.documentos ?? [];
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
@@ -131,7 +132,7 @@ export function AbaGeral({ ov, alertas, tv }: AbaProps & { ov: Overview; alertas
         </Painel>
       </div>
 
-      <div className={grid(tv, "grid grid-cols-1 min-h-0 gap-3 lg:grid-cols-2", "grid min-h-0 flex-1 grid-cols-2 gap-3")}>
+      <div className={grid(tv, "grid grid-cols-1 min-h-0 gap-3 lg:grid-cols-3", "grid min-h-0 flex-1 grid-cols-3 gap-3")}>
         <Painel className="min-h-0">
           <PainelHead icon={CalendarClock} titulo="Vencendo" sub="vigências nos próximos 120 dias"
             right={<Chip tom="warn">{vig.length}</Chip>} />
@@ -179,6 +180,36 @@ export function AbaGeral({ ov, alertas, tv }: AbaProps & { ov: Overview; alertas
             </ul>
           ) : (
             <Vazio>Nenhuma prestação de contas em atraso.</Vazio>
+          )}
+        </Painel>
+
+        {/* DOCUMENTAÇÃO VENCENDO — o alerta que faltava. Os dois painéis ao lado
+            avisam sobre convênio; nenhum avisava que uma CERTIDÃO está para
+            vencer, que é o que trava o convênio seguinte. Só prazos de verdade
+            entram aqui: o backend descarta as datas que são apenas a cadência de
+            atualização do extrato do CAUC (seriam 17 avisos por dia). */}
+        <Painel className="min-h-0">
+          <PainelHead icon={ShieldAlert} titulo="Documentação vencendo" sub="certidões nos próximos 30 dias"
+            right={<Chip tom={docs.length ? "warn" : "ok"}>{docs.length}</Chip>} />
+          {docs.length ? (
+            <ul className="bi-scroll flex min-h-0 flex-1 flex-col divide-y overflow-y-auto pr-1"
+              style={{ borderColor: "var(--bi-line)" }}>
+              {docs.slice(0, tv ? 6 : 12).map((a, i) => (
+                <li key={`${a.esfera}-${a.codigo}-${i}`} className="py-1.5">
+                  <div className="flex items-start gap-2">
+                    <span className="flex-1 text-[12px] leading-snug">{a.label || a.codigo}</span>
+                    <Chip tom={a.dias_restantes <= 7 ? "crit" : "warn"} className="shrink-0">
+                      {a.dias_restantes === 0 ? "hoje" : diasLabel(a.dias_restantes)}
+                    </Chip>
+                  </div>
+                  <div className="text-[10px]" style={{ color: "var(--bi-faint)" }}>
+                    {a.esfera} · vence em {formatDate(a.validade)}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <Vazio>Nenhuma certidão vencendo nos próximos 30 dias.</Vazio>
           )}
         </Painel>
       </div>
