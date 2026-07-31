@@ -162,8 +162,13 @@ Detalhes de cada rotina e dos comandos completos: `docs/CRON_SETUP.md`.
 **`cagec`** (desde 2026-07-30, só Monte Sião por enquanto): regularidade **estadual**
 de MG. Roda às 5h40, depois da rodada do `sigcon` das 4h — de propósito, porque o
 CNPJ do município é inferido das emendas estaduais que o SIGCON acabou de coletar.
-Não usa credencial: a consulta do CAGEC é **pública** e basta o CNPJ. Detalhe de
-onde o portal fica e das armadilhas dele: `backend/ingestion/cagec_scraper.py`.
+Não usa credencial: a consulta do CAGEC é **pública** e basta o CNPJ. O detalhe
+(cada obrigação com situação e validade) vem do **CRC em PDF**, que a própria
+consulta emite mesmo para município irregular — por isso o worker precisa de
+`pypdf`. Custa ~20s por município, então um tenant com 18 municípios gasta ~6min
+de uma vez ao dia; não há download em massa (os botões de exportar só existem
+depois de uma busca). Onde o portal fica e as armadilhas dele:
+`backend/ingestion/cagec_scraper.py`.
 
 ---
 
