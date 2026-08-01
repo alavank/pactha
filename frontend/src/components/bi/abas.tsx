@@ -309,6 +309,48 @@ export function AbaParlamentaresView({ d, tv }: AbaProps & { d: AbaParlamentares
           sub={d.itens[0]?.nome} grande={tv} />
       </div>
 
+      {/* FAIXA COMPARATIVA — mandato de prefeito atual contra o anterior.
+          Uma linha, o número e a variação: é o que se lê de longe. O detalhe
+          por parlamentar fica na tela do sistema. */}
+      {d.comparativo && (
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-1 rounded-lg px-3 py-2"
+          style={{ background: "color-mix(in oklab, var(--bi-accent) 10%, transparent)" }}>
+          <span className={tv ? "text-[13px]" : "text-[11px]"} style={{ color: "var(--bi-faint)" }}>
+            {d.comparativo.rotulo_anterior}
+          </span>
+          <span className={`bi-num font-semibold ${tv ? "text-[15px]" : "text-[13px]"}`}>
+            {formatCurrencyShort(d.comparativo.valor_anterior)}
+          </span>
+          <span style={{ color: "var(--bi-faint)" }}>→</span>
+          <span className={tv ? "text-[13px]" : "text-[11px]"} style={{ color: "var(--bi-faint)" }}>
+            {d.comparativo.rotulo_atual}
+          </span>
+          <span className={`bi-num font-bold ${tv ? "text-[15px]" : "text-[13px]"}`}>
+            {formatCurrencyShort(d.comparativo.valor_atual)}
+          </span>
+          {(() => {
+            const c = d.comparativo!;
+            const sobe = c.delta > 0;
+            const zero = Math.abs(c.delta) < 0.005;
+            const cor = zero ? "var(--bi-faint)" : sobe ? "var(--bi-ok)" : "var(--bi-crit)";
+            return (
+              <span className={`font-bold ${tv ? "text-[14px]" : "text-[12px]"}`} style={{ color: cor }}>
+                {zero ? "— sem variação"
+                  : c.delta_pct == null ? (sobe ? "▲ novo" : "▼ sem verba")
+                  : `${sobe ? "▲ +" : "▼ −"}${Math.abs(c.delta_pct).toFixed(0)}%`}
+              </span>
+            );
+          })()}
+          {/* O mandato em curso tem menos anos que o encerrado. Sem dizer isso,
+              a queda aparente e so aritmetica de calendario. */}
+          {d.comparativo.anos_atual !== d.comparativo.anos_anterior && (
+            <span className={tv ? "text-[11px]" : "text-[10px]"} style={{ color: "var(--bi-warn)" }}>
+              {d.comparativo.anos_atual} ano(s) corridos contra {d.comparativo.anos_anterior}
+            </span>
+          )}
+        </div>
+      )}
+
       <div className={grid(tv, "grid grid-cols-1 min-h-0 gap-3 lg:grid-cols-3", "grid min-h-0 flex-1 grid-cols-3 gap-3")}>
         <Painel className="min-h-0">
           <PainelHead icon={Users} titulo="Quem mais destinou" sub="no período selecionado" />

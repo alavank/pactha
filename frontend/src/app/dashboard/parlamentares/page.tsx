@@ -3,10 +3,10 @@
 import React, { useEffect, useState, useCallback, Suspense } from "react";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 import { MultiSelect } from "@/components/ui/multi-select";
-import { anosOpcoes, atalhosAnos, resumoAnos } from "@/lib/periodo";
+import { anosOpcoes, atalhosAnos, inicioDoMandato, resumoAnos } from "@/lib/periodo";
 import {
   UserCircle2, Loader2, Search, ChevronDown, ChevronRight,
-  Landmark, Building2, FileText, Eraser, Coins, HeartPulse,
+  Landmark, Building2, FileText, Eraser, Coins, HeartPulse, ArrowLeftRight,
 } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,31 @@ interface ParlamentarItem {
   valor_total: number;
   municipios: string[];
   por_fonte: { sigcon: number; voluntaria: number; emenda: number; plano_acao: number; pac: number; fns: number };
+}
+
+/** Uma linha da comparacao entre dois periodos. */
+interface ComparaItem {
+  nome_normalizado: string;
+  nome_display: string;
+  valor_a: number;
+  valor_b: number;
+  lancamentos_a: number;
+  lancamentos_b: number;
+  delta: number;
+  /** null quando nao havia base no periodo A — de zero para R$ 300 mil nao e
+   *  "+infinito%", e ENTRADA, e a tela escreve a palavra em vez de um numero. */
+  delta_pct: number | null;
+  situacao: "novo" | "saiu" | "igual" | "subiu" | "caiu";
+}
+
+interface ComparaResp {
+  periodo_a: { anos: number[]; rotulo: string; total: number; parlamentares: number };
+  periodo_b: { anos: number[]; rotulo: string; total: number; parlamentares: number };
+  mesma_duracao: boolean;
+  delta: number;
+  delta_pct: number | null;
+  items: ComparaItem[];
+  total: number;
 }
 
 interface DetalheSigcon {
@@ -123,6 +148,34 @@ function fmtMoney(v: number | null | undefined): string {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
+/** Variação entre os dois períodos.
+ *
+ *  Mostra a PALAVRA quando não há percentual honesto a mostrar: de zero para
+ *  R$ 300 mil não é "+∞%", é uma entrada nova; e de R$ 200 mil para zero é o
+ *  parlamentar ter parado de destinar, que é a informação que importa. */
+function VariacaoBadge({ delta, pct, grande = false }: {
+  delta: number; pct: number | null; grande?: boolean;
+}) {
+  const zero = Math.abs(delta) < 0.005;
+  const sobe = delta > 0;
+  const cor = zero ? "text-base-content/50" : sobe ? "text-success" : "text-error";
+  const texto = zero ? "sem variação"
+    : pct == null ? (sobe ? "novo no período" : "sem verba no período")
+    : `${sobe ? "+" : "−"}${Math.abs(pct).toFixed(0)}%`;
+  const seta = zero ? "—" : sobe ? "▲" : "▼";
+  return (
+    <span className={`inline-flex items-center gap-1 font-semibold ${cor} ${grande ? "text-sm" : "text-xs"}`}>
+      <span aria-hidden>{seta}</span>
+      <span>{texto}</span>
+      {!zero && pct != null && (
+        <span className="font-normal text-base-content/50">
+          ({sobe ? "+" : "−"}{fmtMoney(Math.abs(delta)).replace("R$", "R$")})
+        </span>
+      )}
+    </span>
+  );
+}
+
 function ParlamentaresInner() {
   const municipioId = useMunicipio().municipioId || null;
 
@@ -132,6 +185,14 @@ function ParlamentaresInner() {
   // PERIODO MULTI-ANO (o backend de /parlamentares ja aceitava `anos`; era so o
   // frontend que mandava um ano so). Vazio = todos.
   const [anosSel, setAnosSel] = useState<string[]>([]);
+  // COMPARACAO entre dois conjuntos LIVRES de anos. Os chips sao atalho, nao
+  // regra: da para comparar 2024 com 2025, ou dois anos com um, ou mandato
+  // inteiro com mandato inteiro.
+  const [compararOn, setCompararOn] = useState(false);
+  const [anosA, setAnosA] = useState<string[]>([]);
+  const [anosB, setAnosB] = useState<string[]>([]);
+  const [comp, setComp] = useState<ComparaResp | null>(null);
+  const [compErro, setCompErro] = useState<string | null>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
   const [detailCache, setDetailCache] = useState<Record<string, ParlamentarDetalhe | "loading" | "error">>({});
@@ -157,6 +218,72 @@ function ParlamentaresInner() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     carregar();
   }, [carregar]);
+
+  const compararPeriodos = useCallback(async () => {
+    if (!compararOn || !anosA.length || !anosB.length) { setComp(null); setCompErro(null); return; }
+    try {
+      const params: Record<string, string | string[]> = { a: anosA, b: anosB };
+      if (municipioId) params.municipio_id = municipioId;
+      if (search.trim()) params.q = search.trim();
+      const r = await api.get<ComparaResp>("/parlamentares/comparar", { params });
+      setComp(r.data);
+      setCompErro(null);
+    } catch (e: unknown) {
+      // O backend recusa ano repetido nos dois lados e periodo vazio. Mostrar a
+      // razao dele, e nao "erro": o usuario tem como corrigir.
+      const det = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setComp(null);
+      setCompErro(det || "Não foi possível comparar os períodos.");
+    }
+  }, [compararOn, anosA, anosB, municipioId, search]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    compararPeriodos();
+  }, [compararPeriodos]);
+
+  /** Chips de atalho. Preenchem OS DOIS lados de uma vez — o caso comum tem
+   *  que ser um clique, e a escolha livre continua ali para o resto. */
+  const atalhosComparar = (() => {
+    const y = new Date().getFullYear();
+    const i = inicioDoMandato(y);
+    const cheio = (ini: number) => [ini, ini + 1, ini + 2, ini + 3].map(String);
+    const ateHoje = (ini: number) => [ini, ini + 1, ini + 2, ini + 3]
+      .filter((a) => a <= y).map(String);
+    return [
+      { label: "Mandato atual × anterior", a: cheio(i - 4), b: ateHoje(i) },
+      // Mesmo numero de anos dos dois lados: e a unica comparacao que responde
+      // "este mandato vai melhor?" sem o vies de um lado ter o dobro do tempo.
+      { label: "Mesmo trecho dos mandatos",
+        a: Array.from({ length: ateHoje(i).length }, (_, k) => String(i - 4 + k)),
+        b: ateHoje(i) },
+      { label: "Este ano × ano passado", a: [String(y - 1)], b: [String(y)] },
+    ];
+  })();
+
+  /** Com a comparacao ligada, quem manda na ORDEM e na COMPOSICAO da lista e o
+   *  resultado da comparacao — inclusive quem so aparece em um dos periodos, que
+   *  a lista normal (filtrada por outro recorte de anos) nao traria. Os cartoes
+   *  seguem os mesmos; muda a fonte da lista. */
+  const mapaComparacao = comp
+    ? new Map(comp.items.map((i) => [i.nome_normalizado, i]))
+    : null;
+
+  const listaExibida: ParlamentarItem[] = comp
+    ? comp.items.map((c) => {
+        const orig = items.find((i) => i.nome_normalizado === c.nome_normalizado);
+        return orig ?? {
+          // Parlamentar que existe num dos periodos mas nao no recorte atual da
+          // lista: mostra o que a comparacao sabe, sem inventar o resto.
+          nome_normalizado: c.nome_normalizado,
+          nome_display: c.nome_display,
+          total_lancamentos: c.lancamentos_a + c.lancamentos_b,
+          valor_total: c.valor_b || c.valor_a,
+          municipios: [],
+          por_fonte: { sigcon: 0, voluntaria: 0, emenda: 0, plano_acao: 0, pac: 0, fns: 0 },
+        };
+      })
+    : items;
 
   const toggle = async (item: ParlamentarItem) => {
     const k = item.nome_normalizado;
@@ -264,18 +391,108 @@ function ParlamentaresInner() {
           {pdfLoading ? <Loader2 className="size-4 mr-1 animate-spin" /> : <FileText className="size-4 mr-1" />}
           Gerar PDF
         </Button>
-        {(search || anosSel.length > 0 || municipioId) && (
-          <Button variant="outline" onClick={() => { setSearch(""); setAnosSel([]); setDetailCache({}); setExpandedKeys(new Set()); }}>
+        <Button
+          variant={compararOn ? "default" : "outline"}
+          onClick={() => {
+            const ligar = !compararOn;
+            setCompararOn(ligar);
+            // Liga ja com o atalho mais pedido preenchido: caixa vazia depois de
+            // clicar em "Comparar" faz o usuario achar que nao funcionou.
+            if (ligar && !anosA.length && !anosB.length) {
+              setAnosA(atalhosComparar[0].a);
+              setAnosB(atalhosComparar[0].b);
+            }
+          }}
+          title="Compara quanto cada parlamentar destinou em dois períodos"
+        >
+          <ArrowLeftRight className="size-4 mr-1" /> Comparar períodos
+        </Button>
+        {(search || anosSel.length > 0 || municipioId || compararOn) && (
+          <Button variant="outline" onClick={() => {
+            setSearch(""); setAnosSel([]); setDetailCache({}); setExpandedKeys(new Set());
+            setCompararOn(false); setAnosA([]); setAnosB([]); setComp(null); setCompErro(null);
+          }}>
             <Eraser className="size-4 mr-1" /> Limpar
           </Button>
         )}
       </div>
 
+      {/* ---------------- Painel de comparacao ---------------- */}
+      {compararOn && (
+        <div className="rounded-xl border border-primary/40 bg-primary/5 p-3 space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-medium text-base-content/70">Atalhos:</span>
+            {atalhosComparar.map((at) => {
+              const ativo = JSON.stringify(anosA) === JSON.stringify(at.a)
+                && JSON.stringify(anosB) === JSON.stringify(at.b);
+              return (
+                <button
+                  key={at.label}
+                  type="button"
+                  onClick={() => { setAnosA(at.a); setAnosB(at.b); }}
+                  className={`rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
+                    ativo ? "border-primary bg-primary text-primary-content"
+                          : "border-base-300 text-base-content/70 hover:bg-base-200"}`}
+                >
+                  {at.label}
+                </button>
+              );
+            })}
+          </div>
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="w-52">
+              <label className="text-xs font-medium text-base-content/70">Período A (referência)</label>
+              <MultiSelect
+                opcoes={ANOS_OPCOES} valor={anosA} onChange={setAnosA}
+                atalhos={ATALHOS_ANOS} formatarResumo={resumoAnos}
+                placeholder="Escolha os anos" rotuloTodos="Limpar"
+                ariaLabel="Anos do período A"
+              />
+            </div>
+            <ArrowLeftRight className="mb-2 size-4 shrink-0 text-base-content/40" />
+            <div className="w-52">
+              <label className="text-xs font-medium text-base-content/70">Período B (comparado)</label>
+              <MultiSelect
+                opcoes={ANOS_OPCOES} valor={anosB} onChange={setAnosB}
+                atalhos={ATALHOS_ANOS} formatarResumo={resumoAnos}
+                placeholder="Escolha os anos" rotuloTodos="Limpar"
+                ariaLabel="Anos do período B"
+              />
+            </div>
+          </div>
+
+          {compErro && (
+            <p className="text-xs font-medium text-error">{compErro}</p>
+          )}
+
+          {comp && (
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-1 border-t border-primary/20 pt-2 text-sm">
+              <span className="text-base-content/60">
+                {comp.periodo_a.rotulo}: <strong className="text-base-content">{fmtMoney(comp.periodo_a.total)}</strong>
+              </span>
+              <span className="text-base-content/40">→</span>
+              <span className="text-base-content/60">
+                {comp.periodo_b.rotulo}: <strong className="text-base-content">{fmtMoney(comp.periodo_b.total)}</strong>
+              </span>
+              <VariacaoBadge delta={comp.delta} pct={comp.delta_pct} grande />
+              {/* Sem este aviso, "mandato atual x anterior" parece uma queda de
+                  50% quando na verdade um lado tem 2 anos e o outro tem 4. */}
+              {!comp.mesma_duracao && (
+                <span className="text-xs text-warning">
+                  Períodos de tamanhos diferentes ({comp.periodo_a.anos.length} anos contra{" "}
+                  {comp.periodo_b.anos.length}) — a variação reflete isso.
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Resumo */}
       <div className="text-xs text-base-content/60">
         {loading ? "Carregando..." : (
           <>
-            <strong>{items.length}</strong> parlamentares
+            <strong>{listaExibida.length}</strong> parlamentares
             {municipioId && " no município selecionado"}
             {!municipioId && " (todos os municípios)"}
           </>
@@ -297,9 +514,10 @@ function ParlamentaresInner() {
             Se a lista estiver vazia, é porque essas fontes ainda não foram populadas.
           </div>
         )}
-        {!loading && items.map((p) => {
+        {!loading && listaExibida.map((p) => {
           const expanded = expandedKeys.has(p.nome_normalizado);
           const detail = detailCache[p.nome_normalizado];
+          const cmp = mapaComparacao?.get(p.nome_normalizado);
           return (
             <div key={p.nome_normalizado} className="bg-base-100 border rounded">
               <button
@@ -340,6 +558,34 @@ function ParlamentaresInner() {
                     )}
                   </div>
                 </div>
+
+                {/* AS COLUNAS DA COMPARACAO.
+                    Ficam a direita e alinhadas entre si para o olho descer a
+                    coluna: e assim que se compara uma lista, nao lendo cartao
+                    por cartao. So aparecem com a comparacao ligada. */}
+                {cmp && (
+                  <div className="hidden shrink-0 items-center gap-4 sm:flex">
+                    <div className="w-28 text-right">
+                      <div className="text-[10px] uppercase tracking-wide text-base-content/40">
+                        {comp?.periodo_a.rotulo}
+                      </div>
+                      <div className="text-sm tabular-nums text-base-content/70">
+                        {cmp.valor_a > 0 ? fmtMoney(cmp.valor_a) : "—"}
+                      </div>
+                    </div>
+                    <div className="w-28 text-right">
+                      <div className="text-[10px] uppercase tracking-wide text-base-content/40">
+                        {comp?.periodo_b.rotulo}
+                      </div>
+                      <div className="text-sm font-semibold tabular-nums text-base-content">
+                        {cmp.valor_b > 0 ? fmtMoney(cmp.valor_b) : "—"}
+                      </div>
+                    </div>
+                    <div className="w-36 text-right">
+                      <VariacaoBadge delta={cmp.delta} pct={cmp.delta_pct} />
+                    </div>
+                  </div>
+                )}
               </button>
 
               {expanded && (

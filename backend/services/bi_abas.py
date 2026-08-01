@@ -391,11 +391,57 @@ async def bi_parlamentares_detalhe(
         })
     itens.sort(key=lambda x: (-x["valor_total"], -x["total_lancamentos"]))
 
+    valor_total = sum(i["valor_total"] for i in itens)
+
+    # FAIXA COMPARATIVA para a TV: mandato atual contra o anterior, so o total.
+    # Na parede do gabinete cabe UM numero e a variacao — a tabela comparativa
+    # inteira mora na tela do sistema. Falha em silencio de proposito: se a
+    # consulta do periodo anterior der errado, a aba continua funcionando sem a
+    # faixa, em vez de derrubar o Painel por causa de um enfeite.
+    comparativo = None
+    try:
+        hoje = date.today().year
+        ini = hoje - ((((hoje - 2025) % 4) + 4) % 4)      # mandato de PREFEITO
+        atual = [a for a in range(ini, ini + 4) if a <= hoje]
+        anterior = list(range(ini - 4, ini))
+        # So compara quando a aba esta mostrando o mandato atual (ou tudo): com
+        # um recorte qualquer na tela, "mandato x mandato" seria outro numero
+        # que nao o da tabela ao lado, e duas verdades na mesma tela e pior que
+        # nenhuma.
+        if not anos or set(anos) == set(atual):
+            ant = await bi_parlamentares_detalhe(
+                db, ids, anos=anterior, max_parlamentares=1, max_lancamentos=0)
+            base = float(ant.get("valor_total") or 0.0)
+            # `valor_total` so vale como "mandato atual" quando a aba ESTA
+            # filtrada por ele. Com a aba em "todos os anos", reaproveita-lo
+            # rotularia o total historico como se fosse o mandato — foi o que
+            # este codigo fez na primeira versao, e o teste pegou: R$ 30,6 mi
+            # de todos os anos aparecendo como "2025-2026".
+            if anos:
+                topo = valor_total
+            else:
+                atu = await bi_parlamentares_detalhe(
+                    db, ids, anos=atual, max_parlamentares=1, max_lancamentos=0)
+                topo = float(atu.get("valor_total") or 0.0)
+            comparativo = {
+                "rotulo_atual": f"{atual[0]}–{atual[-1]}" if len(atual) > 1 else str(atual[0]),
+                "rotulo_anterior": f"{anterior[0]}–{anterior[-1]}",
+                "valor_atual": topo,
+                "valor_anterior": base,
+                "delta": topo - base,
+                "delta_pct": ((topo - base) / base * 100.0) if base > 0 else None,
+                "anos_atual": len(atual),
+                "anos_anterior": len(anterior),
+            }
+    except Exception:
+        comparativo = None
+
     return {
         "itens": itens[:max_parlamentares],
         "total": len(itens),
-        "valor_total": sum(i["valor_total"] for i in itens),
+        "valor_total": valor_total,
         "anos": anos or [],
+        "comparativo": comparativo,
     }
 
 
