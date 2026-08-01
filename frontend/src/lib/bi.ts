@@ -374,6 +374,13 @@ export interface AbaDocumentos {
       itens: CaucItemDetalhe[];
       pendencias: number;
       data_pesquisa: string | null;
+      /** De quando é o detalhamento na tela. A lista de documentos não vem da
+       *  consulta pública — vem do CRC em PDF. `crc_erro` é a frase do próprio
+       *  portal quando ele recusa emitir; com ela setada, `itens` é o que
+       *  sobrou (as 2 linhas da listagem) ou uma leitura anterior. */
+      crc_em?: string | null;
+      crc_erro?: string | null;
+      detalhe_do_crc?: boolean;
     }>;
   };
 }

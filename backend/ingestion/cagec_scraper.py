@@ -64,6 +64,13 @@ URL_CONSULTA = "http://www.cagec.mg.gov.br/convenente-web/consultaParceiros"
 # esta impedido de assinar convenio.
 _REGULARES = ("regular", "regularizado", "vigente")
 
+# Por quantos dias o detalhamento de um CRC antigo continua sendo mostrado
+# quando o portal recusa emitir um novo. 30 dias e o compromisso entre nao
+# apagar a tela por um soluco do Estado e nao exibir certidao que ja venceu:
+# a obrigacao mais curta do CRC (comprovante de endereco, 90 dias) nao vira
+# nesse prazo, e o rotulo na tela sempre diz de quando e o dado.
+CRC_CONFIAVEL_DIAS = int(os.getenv("CAGEC_CRC_CONFIAVEL_DIAS", "30"))
+
 _STATUS = r"(Vigente|Vencido|Pendente|Regular|Irregular|N[ãa]o se aplica|Em an[áa]lise)"
 _RE_ITEM = re.compile(_STATUS + r"\s*(\d{2}/\d{2}/\d{4})?(?=\s|$)")
 _GRUPOS_CRC = ("Credenciamento do Representante Legal", "Habilitação Jurídica",
@@ -236,12 +243,17 @@ def _remendar_quebra_de_pagina(itens: list[dict]) -> None:
         seguinte["label"] = _rotulo(resto)[:220]
 
 
-async def _baixar_crc(page) -> bytes | None:
-    """Clica 'Emitir CRC' na linha do resultado e devolve o PDF."""
+async def _baixar_crc(page) -> tuple[bytes | None, str | None]:
+    """Clica 'Emitir CRC' na linha do resultado e devolve (pdf, motivo_da_falha).
+
+    O motivo importa tanto quanto o PDF. Quando o portal recusa, ele abre uma
+    janela dizendo POR QUE — e essa frase e o que a tela mostra ao gestor e o
+    que prova de quem e a falha. Sem ela, o unico registro era um TimeoutError
+    do Playwright, que parece defeito nosso e nao do Estado."""
     loc = page.locator("*:has-text('Emitir CRC')")
     n = await loc.count()
     if not n:
-        return None
+        return None, "O botão 'Emitir CRC' não aparece na consulta pública."
     # A ULTIMA ocorrencia: as primeiras sao ancestrais (body, tabela, linha)
     # que apenas CONTEM o texto; o elemento clicavel e o mais profundo.
     try:
@@ -249,10 +261,26 @@ async def _baixar_crc(page) -> bytes | None:
             await loc.nth(n - 1).click()
         caminho = await (await dl.value).path()
         with open(caminho, "rb") as f:
-            return f.read()
+            return f.read(), None
     except Exception as e:
-        logger.warning("    CRC nao baixou: %s: %s", type(e).__name__, str(e)[:90])
+        motivo = await _erro_do_portal(page)
+        logger.warning("    CRC nao baixou: %s", motivo or f"{type(e).__name__}: {str(e)[:90]}")
+        return None, motivo or "O portal do CAGEC não respondeu à emissão do certificado."
+
+
+async def _erro_do_portal(page) -> str | None:
+    """A frase da janela 'ERRO!!!' do CAGEC, se ela estiver aberta."""
+    try:
+        corpo = re.sub(r"\s+", " ", await page.inner_text("body"))
+    except Exception:
         return None
+    m = re.search(r"ERRO!!!\s*(.+?)(?:\s*OK\s*$|$)", corpo, re.I)
+    if not m:
+        return None
+    frase = m.group(1).strip()
+    # A janela repete o rodape da pagina depois da mensagem em alguns temas.
+    frase = re.split(r"©\s*\d{4}", frase)[0].strip()
+    return frase[:400] or None
 
 
 def _texto_do_pdf(dados: bytes) -> str:
@@ -573,8 +601,21 @@ def _proxima_validade(itens: list[dict]) -> date | None:
 
 def _salvar(cur, mun: dict, cnpj_fmt: str, situacao: str | None, nome: str | None,
             tipo: str | None, principal: bool, numero_cadastro: str | None,
-            itens: list[dict]) -> None:
-    """Uma linha por ENTIDADE — a chave e (municipio_id, cnpj)."""
+            itens: list[dict], crc_ok: bool, crc_erro: str | None = None) -> None:
+    """Uma linha por ENTIDADE — a chave e (municipio_id, cnpj).
+
+    `crc_ok` diz se o detalhamento desta rodada veio do CRC ou se e o fallback
+    de 2 linhas da listagem. **Fallback nao sobrescreve detalhe.** Ate
+    2026-08-01 sobrescrevia: o portal do Estado passou a recusar a emissao do
+    certificado, o coletor caiu para o fallback e gravou 2 linhas por cima das
+    ~28 obrigacoes de Monte Siao. A tela ficou dizendo que o cadastro tem duas
+    exigencias — nao e "menos informacao", e informacao ERRADA na frente do
+    prefeito, que e exatamente o que este modulo existe para evitar.
+
+    O cabecalho (situacao, nome, tipo) SEMPRE atualiza: ele vem da listagem, que
+    continua respondendo, e "Irregular" hoje vale mais que "Regular" de ontem.
+    O que se preserva e so o detalhamento — e por tempo limitado, porque detalhe
+    velho demais engana tanto quanto detalhe ausente."""
     regular = bool(situacao) and _sem_acento(situacao) in _REGULARES
     pendentes = [i["codigo"] for i in itens if i.get("tipo") == "pendente"]
     if principal:
@@ -584,24 +625,70 @@ def _salvar(cur, mun: dict, cnpj_fmt: str, situacao: str | None, nome: str | Non
         cur.execute("UPDATE cagec_situacao SET principal = FALSE "
                     "WHERE municipio_id = %s AND cnpj <> %s AND principal",
                     (mun["id"], cnpj_fmt))
+    hoje = date.today()
+
+    # Preservar ou nao o detalhamento antigo e decidido AQUI, em Python, e nao
+    # dentro do UPSERT: a regra tem tres condicoes e escreve-la cinco vezes em
+    # SQL (uma por coluna) e como se garante que uma delas fique diferente das
+    # outras. Custo: um SELECT por entidade — sao 2 em Monte Siao.
+    preservar = False
+    if not crc_ok:
+        cur.execute("SELECT crc_em FROM cagec_situacao "
+                    "WHERE municipio_id = %s AND cnpj = %s", (mun["id"], cnpj_fmt))
+        anterior = cur.fetchone()
+        crc_anterior = anterior[0] if anterior else None
+        # Detalhe velho demais engana tanto quanto detalhe ausente: uma certidao
+        # vence dentro da janela e a tela continuaria verde. Passado o prazo, o
+        # fallback assume e a tela passa a dizer que nao sabe.
+        preservar = bool(crc_anterior
+                         and (hoje - crc_anterior).days <= CRC_CONFIAVEL_DIAS)
     cur.execute("""
         INSERT INTO cagec_situacao (municipio_id, nome, uf, cnpj, tipo, principal,
                                     numero_cadastro, situacao, regular,
                                     validade, itens, pendencias, pendencias_codigos,
-                                    data_pesquisa, atualizado_em)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, NOW())
+                                    data_pesquisa, crc_em, crc_erro, atualizado_em)
+        VALUES (%(mid)s, %(nome)s, %(uf)s, %(cnpj)s, %(tipo)s, %(principal)s,
+                %(numero)s, %(situacao)s, %(regular)s,
+                %(validade)s, %(itens)s::jsonb, %(pend)s, %(pend_cods)s,
+                %(hoje)s, %(crc_em)s, %(crc_erro)s, NOW())
         ON CONFLICT (municipio_id, cnpj) DO UPDATE SET
             nome = EXCLUDED.nome, uf = EXCLUDED.uf, tipo = EXCLUDED.tipo,
-            principal = EXCLUDED.principal, numero_cadastro = EXCLUDED.numero_cadastro,
+            principal = EXCLUDED.principal,
+            -- o numero do cadastro so sai no CRC; sem ele, EXCLUDED e NULL e
+            -- um UPDATE cru apagaria o numero que ja tinhamos.
+            numero_cadastro = COALESCE(EXCLUDED.numero_cadastro,
+                                       cagec_situacao.numero_cadastro),
             situacao = EXCLUDED.situacao, regular = EXCLUDED.regular,
-            validade = EXCLUDED.validade, itens = EXCLUDED.itens,
-            pendencias = EXCLUDED.pendencias,
-            pendencias_codigos = EXCLUDED.pendencias_codigos,
-            data_pesquisa = EXCLUDED.data_pesquisa, atualizado_em = NOW()
-    """, (mun["id"], nome or mun["nome"], mun["uf"], cnpj_fmt, tipo, principal,
-          numero_cadastro, situacao, regular,
-          _proxima_validade(itens), json.dumps(itens, ensure_ascii=False),
-          len(pendentes), pendentes, date.today()))
+            data_pesquisa = EXCLUDED.data_pesquisa,
+            crc_erro = EXCLUDED.crc_erro,
+            -- Detalhamento: so o CRC escreve. O fallback preserva o que houver,
+            -- desde que ainda esteja dentro da janela de confianca.
+            itens = CASE WHEN %(preservar)s THEN cagec_situacao.itens
+                         ELSE EXCLUDED.itens END,
+            validade = CASE WHEN %(preservar)s THEN cagec_situacao.validade
+                            ELSE EXCLUDED.validade END,
+            pendencias = CASE WHEN %(preservar)s THEN cagec_situacao.pendencias
+                              ELSE EXCLUDED.pendencias END,
+            pendencias_codigos = CASE WHEN %(preservar)s
+                                      THEN cagec_situacao.pendencias_codigos
+                                      ELSE EXCLUDED.pendencias_codigos END,
+            crc_em = CASE WHEN %(crc_ok)s THEN EXCLUDED.crc_em
+                          WHEN %(preservar)s THEN cagec_situacao.crc_em
+                          ELSE NULL END,
+            atualizado_em = NOW()
+    """, {
+        "mid": mun["id"], "nome": nome or mun["nome"], "uf": mun["uf"],
+        "cnpj": cnpj_fmt, "tipo": tipo, "principal": principal,
+        "numero": numero_cadastro, "situacao": situacao, "regular": regular,
+        "validade": _proxima_validade(itens),
+        "itens": json.dumps(itens, ensure_ascii=False),
+        "pend": len(pendentes), "pend_cods": pendentes,
+        "hoje": hoje,
+        "crc_em": hoje if crc_ok else None,
+        "crc_erro": crc_erro,
+        "crc_ok": crc_ok,
+        "preservar": preservar,
+    })
 
 
 def _limpar_sumidos(cur, municipio_id: int, cnpjs_vistos: list[str]) -> int:
@@ -617,11 +704,15 @@ def _limpar_sumidos(cur, municipio_id: int, cnpjs_vistos: list[str]) -> int:
 
 
 # --------------------------------------------------------------------------
-async def _rodar() -> tuple[int, int]:
+async def _rodar() -> tuple[int, int, list[str]]:
     from playwright.async_api import async_playwright
     alvos = _municipios_alvo()
     logger.info("CAGEC: %d municipio(s) ativos", len(alvos))
     ok = falha = 0
+    # Entidades que vieram SEM o detalhamento do CRC. Nao sao falha de coleta
+    # (a situacao veio), mas tambem nao sao sucesso: e o estado em que a tela
+    # sabe menos do que promete, e precisa aparecer no ingestion_log.
+    degradadas: list[str] = []
     async with async_playwright() as p:
         br = await p.chromium.launch(headless=True, args=["--no-sandbox"])
         ctx = await br.new_context(locale="pt-BR", accept_downloads=True)
@@ -713,7 +804,7 @@ async def _rodar() -> tuple[int, int]:
 
                     # Caminho principal: o CRC, com as obrigacoes uma a uma.
                     itens: list[dict] = []
-                    pdf = await _baixar_crc(page)
+                    pdf, crc_erro = await _baixar_crc(page)
                     if pdf:
                         try:
                             cab, itens = parse_crc(_texto_do_pdf(pdf))
@@ -724,10 +815,13 @@ async def _rodar() -> tuple[int, int]:
                             logger.warning("    %s: CRC baixou mas nao foi lido — %s: %s",
                                            cnpj_fmt, type(e).__name__, str(e)[:110])
                             itens = []
+                            crc_erro = ("O certificado foi emitido mas não pôde ser lido "
+                                        f"({type(e).__name__}).")
 
+                    crc_ok = bool(itens)
                     if not itens:
-                        # Fallback: so o que a linha da. Menos util, mas nao
-                        # mente — da para ver que veio sem detalhamento.
+                        # Fallback: so o que a linha da. Nao substitui detalhe ja
+                        # conhecido — quem decide isso e o _salvar.
                         imped = _pegar(linha, "impedimento")
                         itens = [{
                             "codigo": "SIT", "grupo": "CAGEC",
@@ -745,14 +839,24 @@ async def _rodar() -> tuple[int, int]:
                             })
 
                     _salvar(cur, mun, cnpj_fmt, situacao, nome, tipo, principal,
-                            numero, itens)
+                            numero, itens, crc_ok, None if crc_ok else crc_erro)
+                    if not crc_ok:
+                        degradadas.append(f"{(nome or cnpj_fmt)[:34]}: {crc_erro}")
                     vistos.append(cnpj_fmt)
                     coletadas += 1
-                    pend = [i["codigo"] for i in itens if i.get("tipo") == "pendente"]
-                    logger.info("    [%s] %s: %s | %d obrigacao(oes) | pendente(s): %s",
-                                "principal" if principal else (tipo or "entidade"),
-                                (nome or cnpj_fmt)[:38], situacao, len(itens),
-                                ", ".join(pend) or "nenhuma")
+                    if crc_ok:
+                        pend = [i["codigo"] for i in itens if i.get("tipo") == "pendente"]
+                        logger.info("    [%s] %s: %s | %d obrigacao(oes) | pendente(s): %s",
+                                    "principal" if principal else (tipo or "entidade"),
+                                    (nome or cnpj_fmt)[:38], situacao, len(itens),
+                                    ", ".join(pend) or "nenhuma")
+                    else:
+                        # Nao logar len(itens) aqui: o detalhamento pode ter sido
+                        # PRESERVADO no banco, e "2 obrigacoes" seria mentira no
+                        # log — a mesma mentira que a tela contava.
+                        logger.warning("    [%s] %s: %s | SEM detalhamento do CRC — %s",
+                                       "principal" if principal else (tipo or "entidade"),
+                                       (nome or cnpj_fmt)[:38], situacao, crc_erro)
 
                 removidas = _limpar_sumidos(cur, mun["id"], vistos)
                 conn.commit()
@@ -766,12 +870,23 @@ async def _rodar() -> tuple[int, int]:
         finally:
             conn.close()
             await br.close()
-    return ok, falha
+    return ok, falha, degradadas
 
 
 def main():
-    ok, falha = asyncio.run(_rodar())
-    logger.info("=== CAGEC: %d coletado(s), %d falha(s) ===", ok, falha)
+    ok, falha, degradadas = asyncio.run(_rodar())
+    logger.info("=== CAGEC: %d coletado(s), %d falha(s), %d sem detalhamento ===",
+                ok, falha, len(degradadas))
+    # "ok" com o detalhamento faltando foi o que escondeu o problema de
+    # 2026-08-01 por um dia inteiro: o painel de frescor ficou verde enquanto a
+    # tela do gestor perdia 28 obrigacoes. Coleta sem CRC e PARCIAL.
+    if falha and not ok:
+        status = "erro"
+    elif falha or degradadas:
+        status = "parcial"
+    else:
+        status = "ok"
+    detalhe = "; ".join(degradadas)[:900] or None
     try:
         import psycopg2
         url = os.getenv("DATABASE_URL_SYNC", "")
@@ -779,9 +894,9 @@ def main():
         conn = psycopg2.connect(url)
         cur = conn.cursor()
         cur.execute(
-            "INSERT INTO ingestion_log (source, status, records_inserted, finished_at) "
-            "VALUES ('cagec', %s, %s, NOW())",
-            ("ok" if ok and not falha else ("parcial" if ok else "erro"), ok))
+            "INSERT INTO ingestion_log (source, status, records_inserted, "
+            "error_message, finished_at) VALUES ('cagec', %s, %s, %s, NOW())",
+            (status, ok, detalhe))
         conn.commit()
         conn.close()
     except Exception as e:

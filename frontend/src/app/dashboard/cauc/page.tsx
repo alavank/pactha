@@ -63,6 +63,9 @@ interface Entidade {
   numero_cadastro?: string | null;
   principal: boolean;
   data_pesquisa?: string | null;
+  crc_em?: string | null;
+  crc_erro?: string | null;
+  detalhe_do_crc?: boolean;
 }
 
 interface CagecResp {
@@ -83,6 +86,12 @@ interface CagecResp {
    *  sendo os da principal — contrato antigo intacto. */
   entidades?: Entidade[];
   pendencias_outras_entidades?: number;
+  /** Procedência do detalhamento. A lista de obrigações não vem da consulta
+   *  pública — vem do CRC em PDF. `crc_em` é a data da última emissão que
+   *  conseguimos ler; `crc_erro`, a frase do próprio portal quando ele recusa. */
+  crc_em?: string | null;
+  crc_erro?: string | null;
+  detalhe_do_crc?: boolean;
 }
 
 function fmtDate(iso?: string | null): string {
@@ -116,6 +125,45 @@ function Situacao({
         <div className="min-w-0">
           <div className={`font-bold ${regular ? "text-success" : "text-error"}`}>{titulo}</div>
           <div className="text-sm text-base-content/70">{detalhe}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Aviso de que a lista de obrigações do CAGEC NÃO está completa.
+ *
+ *  Por que existe: a lista detalhada não vem da consulta pública, vem do CRC em
+ *  PDF. Em 01/08/2026 o portal do Estado passou a recusar a emissão para todo
+ *  mundo ("Não foi possível recuperar dados do Convenente/Parceiro para geração
+ *  do relatório" — reproduzido 9 vezes em 9, inclusive para Belo Horizonte), e
+ *  a tela passou a exibir as duas linhas de fallback COMO SE FOSSEM o cadastro
+ *  inteiro. Quem olhou viu um CAGEC com duas exigências e nenhuma pista de que
+ *  faltavam 28 — inclusive o FGTS vencido, que é justamente o que trava o
+ *  convênio. Uma tela que não sabe precisa dizer que não sabe. */
+function AvisoCrc({ crcErro, crcEm }: { crcErro?: string | null; crcEm?: string | null }) {
+  if (!crcErro) return null;
+  return (
+    <div className="rounded-xl border border-warning/40 bg-warning/10 p-3">
+      <div className="flex items-start gap-2">
+        <AlertTriangle className="mt-[2px] size-4 shrink-0 text-warning" />
+        <div className="min-w-0 text-xs leading-relaxed">
+          <div className="font-semibold text-base-content/80">
+            Detalhamento indisponível — falha no portal do CAGEC
+          </div>
+          <div className="text-base-content/60">
+            O certificado (CRC), que é de onde sai a lista de documentos com suas
+            validades, não pôde ser emitido. O portal respondeu:{" "}
+            <em>“{crcErro}”</em>
+          </div>
+          <div className="mt-1 text-base-content/60">
+            {crcEm
+              ? <>A lista abaixo é da última emissão que conseguimos ler,
+                  de <strong>{fmtDate(crcEm)}</strong> — pode estar desatualizada.</>
+              : <>Sem uma leitura anterior, abaixo aparece apenas o que a consulta
+                  pública mostra: a situação do cadastro, sem os documentos.</>}
+            {" "}A situação e o impedimento acima continuam atualizados.
+          </div>
         </div>
       </div>
     </div>
@@ -172,11 +220,18 @@ function OutrasEntidades({ entidades }: { entidades: Entidade[] }) {
               <span className={`shrink-0 text-right text-xs font-medium ${ok ? "text-success" : "text-error"}`}>
                 {e.situacao || (ok ? "Regular" : "Irregular")}
                 <span className="block font-normal text-base-content/50">
-                  {pend ? `${pend} pendência(s)` : "sem pendência"}
+                  {/* "sem pendência" só pode ser dito quando os documentos foram
+                      lidos. Sem o CRC nós não sabemos se há pendência — e foi
+                      exatamente assim que o Fundo Municipal de Saúde apareceu
+                      como "Regular · sem pendência" com o detalhamento perdido. */}
+                  {!e.detalhe_do_crc && e.crc_erro
+                    ? "documentos não conferidos"
+                    : pend ? `${pend} pendência(s)` : "sem pendência"}
                 </span>
               </span>
             </summary>
             <div className="space-y-2 border-t border-base-300/60 bg-base-100 p-3">
+              <AvisoCrc crcErro={e.crc_erro} crcEm={e.crc_em} />
               {/* Mesma ressalva do banner da prefeitura: `validade` é a próxima
                   obrigação a vencer, não a validade do certificado — o CRC não
                   tem uma. */}
@@ -422,10 +477,14 @@ export default function RegularidadePage() {
                       ? ` Atenção: outra(s) entidade(s) do município somam ${cagec.pendencias_outras_entidades} pendência(s) — veja abaixo.`
                       : "")}
                 />
+                <AvisoCrc crcErro={cagec.crc_erro} crcEm={cagec.crc_em} />
                 <Exigencias itens={cagec.itens || []} esfera="cagec" />
                 <OutrasEntidades entidades={cagec.entidades || []} />
                 <p className="text-xs text-base-content/40">
                   Atualizado em {fmtDate(cagec.atualizado_em)}.
+                  {cagec.crc_em && (
+                    <> Documentos conferidos no CRC de {fmtDate(cagec.crc_em)}.</>
+                  )}
                 </p>
               </>
             )}

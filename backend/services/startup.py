@@ -92,6 +92,8 @@ MIGRATION_FILES = [
     "add_cagec.sql",
     # separa Prefeitura, Fundo Municipal de Saude e FMAS — cadastros proprios
     "add_cagec_entidades.sql",
+    # de quando e o detalhamento do CRC, e o erro do portal quando ele nao sai
+    "add_cagec_crc_estado.sql",
     # Tipo do link publicado: TV de parede ('tela') ou app de celular ('mobile')
     "add_bi_tela_link_kind.sql",
     # Historico da IA por usuario, retencao de 30 dias (expurgo automatico)

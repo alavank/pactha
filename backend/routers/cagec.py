@@ -56,7 +56,7 @@ async def fetch_cagec_situacao(db: AsyncSession, municipio_id: int) -> dict:
     linhas = (await db.execute(text("""
         SELECT nome, uf, cnpj, situacao, regular, validade, itens,
                pendencias, pendencias_codigos, data_pesquisa, atualizado_em,
-               tipo, principal, numero_cadastro
+               tipo, principal, numero_cadastro, crc_em, crc_erro
         FROM cagec_situacao WHERE municipio_id = :m
         ORDER BY principal DESC, tipo NULLS LAST, nome
     """), {"m": municipio_id})).fetchall()
@@ -80,6 +80,10 @@ async def fetch_cagec_situacao(db: AsyncSession, municipio_id: int) -> dict:
         "numero_cadastro": l[13],
         "principal": bool(l[12]),
         "data_pesquisa": l[9].isoformat() if l[9] else None,
+        # Procedencia do detalhamento — ver o bloco abaixo.
+        "crc_em": l[14].isoformat() if l[14] else None,
+        "crc_erro": l[15],
+        "detalhe_do_crc": bool(l[14]),
     } for l in linhas]
     return {
         "tem_dados": True,
@@ -96,6 +100,14 @@ async def fetch_cagec_situacao(db: AsyncSession, municipio_id: int) -> dict:
         "atualizado_em": row[10].isoformat() if row[10] else None,
         "tipo": row[11],
         "numero_cadastro": row[13],
+        # PROCEDENCIA DO DETALHAMENTO. A lista de obrigacoes nao vem da consulta
+        # publica: vem do CRC, o certificado em PDF. Quando o Estado recusa
+        # emiti-lo, sobram duas linhas — e sem estes campos a tela apresentava
+        # essas duas como se fossem o cadastro inteiro. `crc_em` diz de quando e
+        # o que esta na tela; `crc_erro` traz a frase do proprio portal.
+        "crc_em": row[14].isoformat() if row[14] else None,
+        "crc_erro": row[15],
+        "detalhe_do_crc": bool(row[14]),
         # Todas as entidades do municipio, a principal inclusive (para a tela
         # poder listar sem remontar). Quem so quer "a" situacao continua lendo
         # os campos de cima, que sao os da principal — contrato antigo intacto.

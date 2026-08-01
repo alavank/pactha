@@ -688,10 +688,17 @@ export function AbaDocumentosView({
           label="CAGEC — Minas Gerais"
           valor={!cagec ? "Sem coleta" : cagecIrregular ? (cagec.situacao || "Irregular") : "Em dia"}
           sub="convênios estaduais" grande={tv} />
+        {/* Com o CRC indisponivel nao existe denominador: as pendencias do
+            CAGEC sao desconhecidas, e somar as 2 linhas do fallback anunciaria
+            "de 27 exigencias" quando o cadastro estadual tem ~28 sozinho. */}
         <Metric icon={FileCheck2} tom={(primeiro?.itens_pendentes.length || 0) + pendCagec ? "crit" : "ok"}
-          label="Pendências (as duas)"
-          valor={formatInt((primeiro?.itens_pendentes.length || 0) + pendCagec)}
-          sub={`de ${(primeiro?.total_itens ?? 0) + (cagec?.itens?.length ?? 0)} exigências`} grande={tv} />
+          label={cagec?.crc_erro ? "Pendências no CAUC" : "Pendências (as duas)"}
+          valor={formatInt((primeiro?.itens_pendentes.length || 0)
+                           + (cagec?.crc_erro ? 0 : pendCagec))}
+          sub={cagec?.crc_erro
+            ? `de ${primeiro?.total_itens ?? 0} · CAGEC não conferido`
+            : `de ${(primeiro?.total_itens ?? 0) + (cagec?.itens?.length ?? 0)} exigências`}
+          grande={tv} />
         <Metric icon={CalendarClock} label="Última consulta"
           valor={primeiro?.data_pesquisa ? formatDate(primeiro.data_pesquisa) : "—"} grande={tv} />
       </div>
@@ -755,12 +762,36 @@ export function AbaDocumentosView({
               /* "27 exigencias" nao existe em documento nenhum: o CRC tem 24
                  documentos, e as outras 3 linhas (CADIN-MG, SIAFI-MG, mandato)
                  vem do CABECALHO do certificado. Separar por procedencia. */
-              contagem={cagec?.itens?.length
+              contagem={cagec?.crc_erro
+                /* Sem o CRC, "2 linhas · 2 documentos do CRC" e uma contagem
+                   FALSA numa parede de gabinete: o cadastro tem ~28 obrigacoes
+                   e nos lemos duas. Contagem que nao sabe nao conta. */
+                ? "detalhamento indisponível"
+                : cagec?.itens?.length
                 ? `${cagec.itens.length} linhas · ${
                     cagec.itens.filter((x) => !["CADIN-MG", "SIAFI-MG", "MANDATO"].includes(x.codigo || "")).length
                   } documentos do CRC`
                 : "aguardando coleta"}
             />
+            {/* Falha do PORTAL do Estado — nao nossa e nao do municipio. Mas
+                quem le a tela precisa saber que a lista abaixo esta incompleta,
+                senao um CAGEC de duas linhas passa por cadastro em dia. */}
+            {cagec?.crc_erro && (
+              <div
+                className="mb-3 flex items-start gap-2 rounded-lg px-3 py-2"
+                style={{ background: "color-mix(in oklab, var(--bi-warn) 15%, transparent)" }}
+              >
+                <Info className="mt-[1px] size-4 shrink-0" style={{ color: "var(--bi-warn)" }} />
+                <p className="text-[11px] leading-snug" style={{ color: "var(--bi-warn)" }}>
+                  <strong>Lista incompleta.</strong> O portal do CAGEC não emitiu o
+                  certificado (CRC), que é de onde saem os documentos e suas validades.
+                  {cagec.crc_em
+                    ? ` Abaixo, a última leitura, de ${formatDate(cagec.crc_em)}.`
+                    : " Abaixo, apenas o que a consulta pública mostra."}
+                  {" "}A situação do cadastro continua atualizada.
+                </p>
+              </div>
+            )}
             {/* Situação em destaque ANTES da lista: irregular no CAGEC trava
                 convênio estadual e pagamento de parcela, e isso não pode ficar
                 escondido no meio de 27 linhas. */}
