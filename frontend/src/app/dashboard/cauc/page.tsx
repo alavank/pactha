@@ -138,7 +138,10 @@ function Situacao({
         }
         sub={detalhe}
         right={
-          <Selo tom={regular ? "neutro" : "critico"}>
+          /* Verde no "Regular" pelo mesmo motivo do ✔ da lista: nesta tela o
+             cinza ja tem dono (o "Desativado"), e a mesma palavra nao pode
+             ter duas cores em dois cantos da mesma tela. */
+          <Selo tom={regular ? "ok" : "critico"}>
             {regular ? "Regular" : "Impedimento"}
           </Selo>
         }
@@ -264,7 +267,13 @@ function OutrasEntidades({ entidades }: { entidades: Entidade[] }) {
           // quem classifica é a regra única do sistema. O booleano `regular` só
           // entra quando ela é falsa: aí é impedimento, escreva a fonte o que
           // escrever.
-          const tomSit = e.regular === false ? "critico" : situacaoTom(e.situacao);
+          // `regular === true` -> verde, como o "Regular" do banner e o ✔ da
+          // lista. `situacaoTom` devolveria NEUTRO para a palavra "Regular"
+          // (ela nao esta na lista de termos de alerta), e a entidade ficaria
+          // cinza ao lado de um banner verde dizendo a mesma coisa.
+          const tomSit = e.regular === false ? "critico"
+            : e.regular === true ? "ok"
+            : situacaoTom(e.situacao);
           return (
             <li key={e.cnpj || e.nome} className="bi-card-flat overflow-hidden">
               <details>
@@ -387,8 +396,17 @@ function Exigencias({ itens, esfera = "cauc" }: { itens: Item[]; esfera?: "cauc"
                 // única do sistema. `tipo === "pendente"` tem precedência porque
                 // "A Comprovar" não parece alerta em texto nenhum — e é o que
                 // trava a transferência.
+                // VERDE de propósito em "Comprovado"/"Vigente", contra a regra
+                // geral de "cor só em alerta". Decisão do dono, e o argumento
+                // dele é melhor que o meu: nesta tela o CINZA já tem dono — é o
+                // "Desativado", e inativo em cinza é convenção que o usuário
+                // traz de todo sistema. Pintar o comprovado de cinza junto
+                // apagava essa distinção, que é a mais útil da tela.
+                // Aqui a cor não é enfeite: é o estado do documento.
                 const tomStatus = nivel === "critico" ? "critico"
                   : vencido ? "atencao"
+                  : it.tipo === "regular" ? "ok"
+                  : it.tipo === "na" ? "neutro"
                   : situacaoTom(it.status);
                 return (
                   <div
@@ -408,7 +426,7 @@ function Exigencias({ itens, esfera = "cauc" }: { itens: Item[]; esfera?: "cauc"
                             ? <AlertTriangle className="size-3.5" style={{ color: "var(--bi-crit-ink)" }} />
                             : <AlertCircle className="size-3.5" style={{ color: "var(--bi-crit-ink)" }} />)
                         : vencido ? <Clock className="size-3.5" style={{ color: "var(--bi-warn-ink)" }} />
-                        : it.tipo === "regular" ? <Check className="size-3.5" style={{ color: "var(--bi-muted)" }} />
+                        : it.tipo === "regular" ? <Check className="size-3.5" style={{ color: "var(--bi-ok-ink)" }} />
                         : <Ban className="size-3.5" style={{ color: "var(--bi-faint)" }} />}
                     </span>
                     {esfera === "cauc" && (
@@ -632,7 +650,7 @@ export default function RegularidadePage() {
               lado, travando convenio estadual. */}
           <span className="font-semibold" style={{ color: "var(--bi-muted)" }}>CAUC:</span>
           <span className="inline-flex items-center gap-1">
-            <Check className="size-3" style={{ color: "var(--bi-muted)" }} /> Comprovado
+            <Check className="size-3" style={{ color: "var(--bi-ok-ink)" }} /> Comprovado
           </span>
           <span className="inline-flex items-center gap-1" style={{ color: "var(--bi-crit-ink)" }}>
             <AlertCircle className="size-3" /> A Comprovar (impeditivo)
@@ -642,7 +660,7 @@ export default function RegularidadePage() {
           </span>
           <span className="font-semibold" style={{ color: "var(--bi-muted)" }}>CAGEC:</span>
           <span className="inline-flex items-center gap-1">
-            <Check className="size-3" style={{ color: "var(--bi-muted)" }} /> Vigente
+            <Check className="size-3" style={{ color: "var(--bi-ok-ink)" }} /> Vigente
           </span>
           <span className="inline-flex items-center gap-1" style={{ color: "var(--bi-crit-ink)" }}>
             <AlertTriangle className="size-3" /> Vencido (impeditivo)
