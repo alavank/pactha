@@ -23,6 +23,9 @@ from services.auth import get_current_user, ensure_municipio_access, ensure_tela
 from models.user import User
 from services.rm_builder import montar_conteudo
 from services.rm_pdf import gerar_pdf
+from services.rm_export import (
+    gerar_totalizado_xlsx, gerar_totalizado_pdf, gerar_resumido_pdf,
+)
 
 router = APIRouter(prefix="/api/rm", tags=["rm"])
 
@@ -224,6 +227,8 @@ async def remover(
 @router.get("/{rid}/pdf")
 async def pdf(
     rid: int,
+    tipo: str = Query("completo", description="completo | resumido | totalizado"),
+    formato: str = Query("pdf", description="pdf | xlsx (xlsx só p/ totalizado)"),
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
@@ -241,9 +246,32 @@ async def pdf(
         "rodape": row[3],
     }
     conteudo = row[4] or {"partes": []}
-    pdf_bytes = gerar_pdf(meta, conteudo, f"{row[5]}/{row[6]}")
+    municipio = f"{row[5]}/{row[6]}"
     dt_str = row[0].strftime("%d-%m-%Y") if row[0] else "sem-data"
-    nome = f"RM-{row[5]}-{dt_str}.pdf".replace(" ", "_")
+    tipo = (tipo or "completo").lower()
+    formato = (formato or "pdf").lower()
+
+    # Totalizado em Excel
+    if tipo == "totalizado" and formato == "xlsx":
+        conteudo_bytes = gerar_totalizado_xlsx(meta, conteudo, municipio)
+        nome = f"RM-Totalizado-{row[5]}-{dt_str}.xlsx".replace(" ", "_")
+        return Response(
+            content=conteudo_bytes,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{nome}"'},
+        )
+
+    if tipo == "totalizado":
+        pdf_bytes = gerar_totalizado_pdf(meta, conteudo, municipio)
+        rotulo = "Totalizado"
+    elif tipo == "resumido":
+        pdf_bytes = gerar_resumido_pdf(meta, conteudo, municipio)
+        rotulo = "Resumido"
+    else:
+        pdf_bytes = gerar_pdf(meta, conteudo, municipio)
+        rotulo = "Completo"
+
+    nome = f"RM-{rotulo}-{row[5]}-{dt_str}.pdf".replace(" ", "_")
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",

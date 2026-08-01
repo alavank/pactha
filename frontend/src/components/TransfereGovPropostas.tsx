@@ -56,8 +56,52 @@ function diasBadge(d?: number | null): { txt: string; cls: string } {
   return { txt: `${d}d`, cls: "bg-success/15 text-success" };
 }
 
+interface OpsObs {
+  valor_total_repasse?: number | null;
+  valor_desembolsado?: number | null;
+  valor_a_desembolsar?: number | null;
+  data_ultimo_desembolso?: string | null;
+  obs?: Array<{
+    numero_interno?: string; numero_ns?: string; numero_op?: string; numero_ob?: string;
+    ug_emitente?: string; gestao_emitente?: string; valor?: number | null;
+    valor_acerto?: number | null; situacao?: string; data_emissao_ob?: string;
+  }>;
+}
+interface ObraSubmeta {
+  numero?: string; descricao?: string; situacao?: string;
+  regime_execucao?: string; valor?: number | null; valor_realizado?: number | null;
+}
+interface ObraArt {
+  tipo?: string; numero?: string; dt_emissao?: string; responsavel_tecnico?: string;
+}
+interface ObraLote {
+  tipo?: string; numero?: string; id_contrato?: number | null;
+  apto_iniciar?: boolean; atrasado?: boolean | null; paralisado?: boolean | null;
+  dias_sem_medicao?: number | null;
+  submetas?: ObraSubmeta[];
+  contrato?: {
+    numero?: string; cnpj?: string; empresa?: string; objeto?: string;
+    valor?: number | null; dt_assinatura?: string; dt_inicio_vigencia?: string; dt_fim_vigencia?: string;
+  } | null;
+  arts?: ObraArt[];
+}
+interface Obras {
+  situacao_paralisacao?: string | null;
+  valor_total_submetas?: number | null;
+  valor_total_realizado?: number | null;
+  objeto?: string | null;
+  lotes?: ObraLote[];
+}
+
+function moeda(v?: number | null): string {
+  if (v === null || v === undefined) return "-";
+  return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
 interface Detalhe extends Proposta {
   detalhe?: Record<string, string | string[]>;
+  ops_obs?: OpsObs | null;
+  obras?: Obras | null;
 }
 
 const PORTAL_BASE = "https://discricionarias.transferegov.sistema.gov.br/voluntarias/ForwardAction.do?modulo=Principal&path=/MostraPrincipalConsultarProposta.do&Usr=guest&Pwd=guest";
@@ -120,7 +164,7 @@ export default function TransfereGovPropostas({
 
   const [detalhe, setDetalhe] = useState<Detalhe | null>(null);
   // Aba ativa do modal de detalhe (evita rolagem gigante com 50+ eventos)
-  const [aba, setAba] = useState<"dados" | "historico" | "docs">("dados");
+  const [aba, setAba] = useState<"dados" | "opsobs" | "obras" | "historico" | "docs">("dados");
   const [loadingDet, setLoadingDet] = useState(false);
 
   const buildParams = useCallback((): Record<string, string | string[]> => {
@@ -418,8 +462,12 @@ export default function TransfereGovPropostas({
             ) : detalhe && (() => {
               const nHist = (detalhe.historico_comunicacoes || []).length;
               const nDocs = (detalhe.documentos_quadro_resumo || []).length;
+              const nLotes = (detalhe.obras?.lotes || []).length;
+              const temOpsObs = !!(detalhe.ops_obs && (detalhe.ops_obs.valor_total_repasse != null || (detalhe.ops_obs.obs || []).length));
               const abas: [typeof aba, string, boolean][] = [
                 ["dados", "Dados", true],
+                ["opsobs", "OPs/OBs", temOpsObs],
+                ["obras", `Obras${nLotes ? ` (${nLotes})` : ""}`, nLotes > 0],
                 ["historico", `Histórico${nHist ? ` (${nHist})` : ""}`, nHist > 0],
                 ["docs", `Documentos${nDocs ? ` (${nDocs})` : ""}`, nDocs > 0],
               ];
@@ -510,6 +558,149 @@ export default function TransfereGovPropostas({
                   </Section>
                 )}
                 </>)}
+
+                {/* OPs/OBs — Execução Concedente → Listagem de Repasses */}
+                {ativa === "opsobs" && detalhe.ops_obs && (
+                  <Section title="OPs/OBs — Repasses e Desembolsos">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                      <div className="rounded border border-base-300 bg-base-100 p-3">
+                        <div className="text-[11px] text-base-content/50">Valor Total de Repasse</div>
+                        <div className="font-semibold text-base-content">{moeda(detalhe.ops_obs.valor_total_repasse)}</div>
+                      </div>
+                      <div className="rounded border border-base-300 bg-success/5 p-3">
+                        <div className="text-[11px] text-base-content/50">Valor Desembolsado</div>
+                        <div className="font-semibold text-success">{moeda(detalhe.ops_obs.valor_desembolsado)}</div>
+                      </div>
+                      <div className="rounded border border-base-300 bg-warning/5 p-3">
+                        <div className="text-[11px] text-base-content/50">Valor a Desembolsar</div>
+                        <div className="font-semibold text-warning">{moeda(detalhe.ops_obs.valor_a_desembolsar)}</div>
+                      </div>
+                      <div className="rounded border border-base-300 bg-base-100 p-3">
+                        <div className="text-[11px] text-base-content/50">Último Desembolso</div>
+                        <div className="font-semibold text-base-content">{detalhe.ops_obs.data_ultimo_desembolso || "-"}</div>
+                      </div>
+                    </div>
+                    {(detalhe.ops_obs.obs || []).length > 0 && (
+                      <div className="overflow-x-auto">
+                        <div className="text-xs font-semibold text-base-content/60 mb-1">Ordens Bancárias (GERCOMP)</div>
+                        <table className="w-full text-[11px] border-collapse">
+                          <thead>
+                            <tr className="text-left text-base-content/60">
+                              <th className="py-1 pr-3 font-medium">Nº NS</th>
+                              <th className="py-1 pr-3 font-medium">Nº OP</th>
+                              <th className="py-1 pr-3 font-medium">Nº OB</th>
+                              <th className="py-1 pr-3 font-medium">Valor</th>
+                              <th className="py-1 pr-3 font-medium">Situação</th>
+                              <th className="py-1 pr-3 font-medium">Emissão OB</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(detalhe.ops_obs.obs || []).map((o, i) => (
+                              <tr key={i} className="border-t border-base-200">
+                                <td className="py-1 pr-3 font-mono">{o.numero_ns || "-"}</td>
+                                <td className="py-1 pr-3 font-mono">{o.numero_op || "-"}</td>
+                                <td className="py-1 pr-3 font-mono">{o.numero_ob || "-"}</td>
+                                <td className="py-1 pr-3">{moeda(o.valor)}</td>
+                                <td className="py-1 pr-3">{o.situacao || "-"}</td>
+                                <td className="py-1 pr-3 whitespace-nowrap">{o.data_emissao_ob || "-"}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </Section>
+                )}
+
+                {/* OBRAS — Acompanhamento de Obras (medição) */}
+                {ativa === "obras" && detalhe.obras && (detalhe.obras.lotes || []).length > 0 && (
+                  <Section title="Acompanhamento de Obras">
+                    <div className="flex flex-wrap gap-4 mb-3 text-xs">
+                      <span><span className="text-base-content/50">Valor total das submetas: </span>
+                        <span className="font-semibold">{moeda(detalhe.obras.valor_total_submetas)}</span></span>
+                      {detalhe.obras.situacao_paralisacao && (
+                        <span><span className="text-base-content/50">Paralisação: </span>
+                          <span className="font-medium">{detalhe.obras.situacao_paralisacao}</span></span>
+                      )}
+                    </div>
+                    <div className="space-y-4">
+                      {(detalhe.obras.lotes || []).map((lote, li) => (
+                        <div key={li} className="rounded border border-base-300 bg-base-100 p-3">
+                          <div className="flex flex-wrap items-center gap-2 mb-2">
+                            <span className="rounded bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
+                              {lote.tipo === "C" ? "CTEF" : "Lote"} {lote.numero}
+                            </span>
+                            {lote.dias_sem_medicao != null && (
+                              <span className="text-[11px] text-base-content/50">{lote.dias_sem_medicao} dias sem medição</span>
+                            )}
+                            {lote.paralisado && <span className="rounded-full bg-error/15 px-2 py-0.5 text-[11px] text-error">Paralisado</span>}
+                          </div>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-[11px] border-collapse">
+                              <thead>
+                                <tr className="text-left text-base-content/60">
+                                  <th className="py-1 pr-3 font-medium">Submeta</th>
+                                  <th className="py-1 pr-3 font-medium">Descrição</th>
+                                  <th className="py-1 pr-3 font-medium">Valor</th>
+                                  <th className="py-1 pr-3 font-medium">Situação</th>
+                                  <th className="py-1 pr-3 font-medium">Regime</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {(lote.submetas || []).map((s, si) => (
+                                  <tr key={si} className="border-t border-base-200 align-top">
+                                    <td className="py-1 pr-3 font-mono">{s.numero || "-"}</td>
+                                    <td className="py-1 pr-3">{s.descricao || "-"}</td>
+                                    <td className="py-1 pr-3 whitespace-nowrap">{moeda(s.valor)}</td>
+                                    <td className="py-1 pr-3">{s.situacao || "-"}</td>
+                                    <td className="py-1 pr-3">{s.regime_execucao || "-"}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                          {lote.contrato && (
+                            <div className="mt-2 rounded bg-base-200/50 p-2 text-[11px]">
+                              <div className="font-semibold text-base-content/70 mb-1">Contrato {lote.contrato.numero} — Detalhar</div>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-0.5">
+                                <span><span className="text-base-content/50">Empresa: </span>{lote.contrato.empresa || "-"}</span>
+                                <span><span className="text-base-content/50">CNPJ: </span>{lote.contrato.cnpj || "-"}</span>
+                                <span><span className="text-base-content/50">Valor: </span>{moeda(lote.contrato.valor)}</span>
+                                <span><span className="text-base-content/50">Vigência: </span>{lote.contrato.dt_inicio_vigencia || "?"} a {lote.contrato.dt_fim_vigencia || "?"}</span>
+                              </div>
+                              {lote.contrato.objeto && (
+                                <div className="mt-1"><span className="text-base-content/50">Objeto: </span>{lote.contrato.objeto}</div>
+                              )}
+                              <div className="mt-2 font-semibold text-base-content/70">ART/RRT</div>
+                              {(lote.arts || []).length > 0 ? (
+                                <table className="w-full text-[11px] border-collapse mt-1">
+                                  <thead><tr className="text-left text-base-content/50">
+                                    <th className="py-0.5 pr-3 font-medium">Tipo</th>
+                                    <th className="py-0.5 pr-3 font-medium">ART/RRT</th>
+                                    <th className="py-0.5 pr-3 font-medium">Emissão</th>
+                                    <th className="py-0.5 pr-3 font-medium">Responsável Técnico</th>
+                                  </tr></thead>
+                                  <tbody>
+                                    {(lote.arts || []).map((a, ai) => (
+                                      <tr key={ai} className="border-t border-base-200">
+                                        <td className="py-0.5 pr-3">{a.tipo || "-"}</td>
+                                        <td className="py-0.5 pr-3 font-mono">{a.numero || "-"}</td>
+                                        <td className="py-0.5 pr-3">{a.dt_emissao || "-"}</td>
+                                        <td className="py-0.5 pr-3">{a.responsavel_tecnico || "-"}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              ) : (
+                                <div className="text-base-content/50 italic">Nenhum item incluído</div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </Section>
+                )}
 
                 {/* Histórico de Comunicações (TransfereGov mandatárias) — SITUAÇÃO e
                     CONSIDERAÇÕES em destaque: é o andamento real da análise. */}
