@@ -6,12 +6,10 @@ import { useMunicipio } from "@/contexts/MunicipioContext";
 import { Search, Eraser, Loader2, ExternalLink, Eye, X } from "lucide-react";
 import api from "@/lib/api";
 import { MultiSelect } from "@/components/ui/multi-select";
+import { Campos, ItemLinha, Lista, Selo } from "@/components/ui/superficies";
 import AnotacaoButton from "@/components/AnotacaoButton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "@/components/ui/table";
 
 interface Proposta {
   numero_proposta: string;
@@ -47,14 +45,6 @@ interface Proposta {
 }
 
 interface Resp { items: Proposta[]; total: number; atualizado_em?: string; }
-
-function diasBadge(d?: number | null): { txt: string; cls: string } {
-  if (d === null || d === undefined) return { txt: "-", cls: "bg-base-200 text-base-content/60" };
-  if (d < 0) return { txt: `${Math.abs(d)}d`, cls: "bg-error/15 text-error" };
-  if (d <= 60) return { txt: `${d}d`, cls: "bg-warning/15 text-warning" };
-  if (d <= 180) return { txt: `${d}d`, cls: "bg-warning/15 text-warning" };
-  return { txt: `${d}d`, cls: "bg-success/15 text-success" };
-}
 
 interface OpsObs {
   valor_total_repasse?: number | null;
@@ -127,49 +117,18 @@ function fmtData(iso?: string): string {
   try { return new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }); }
   catch { return "-"; }
 }
-function badgeColor(sit: string): string {
+/** Cor no selo de situacao SO quando e alerta.
+ *
+ *  Substitui o `badgeColor`, que pintava TODA situacao — inclusive "Em
+ *  execucao", que e o estado normal de quase toda proposta. Numa lista onde
+ *  todo mundo esta colorido, a cor deixa de significar. */
+function situacaoTom(sit?: string | null): "neutro" | "ok" | "atencao" | "critico" {
   const s = (sit || "").toLowerCase();
-  if (s.includes("execu")) return "bg-primary/10 text-primary";
-  if (s.includes("aprovad") || s.includes("assinado")) return "bg-success/15 text-success";
-  if (s.includes("rejeitad") || s.includes("impedimento")) return "bg-error/15 text-error";
-  if (s.includes("nlise") || s.includes("análise")) return "bg-warning/15 text-warning";
-  return "bg-base-200 text-base-content/70";
+  if (s.includes("rejeitad") || s.includes("impedimento") || s.includes("cancelad")) return "critico";
+  if (s.includes("nlise") || s.includes("análise") || s.includes("pendente")) return "atencao";
+  if (s.includes("conclu") || s.includes("prestação de contas")) return "ok";
+  return "neutro";
 }
-
-/** Objeto da proposta: 3 linhas por padrao, com "ver tudo" por linha.
- *
- *  Antes era `truncate`, que cabia ~20 caracteres — o suficiente para saber que
- *  existe um objeto e nao o suficiente para saber qual. Mas o texto do
- *  TransfereGov tem 200 a 400 caracteres: soltar tudo faria UMA proposta ocupar
- *  a tela inteira, e a lista existe para ser percorrida.
- *
- *  Tres linhas sao ~120 caracteres — dao o assunto ("RECAPEAMENTO ASFALTICO EM
- *  DIVERSAS VIAS PUBLICAS DO MUNICIPIO...") — e quem precisa do inteiro abre no
- *  proprio lugar, sem sair da lista. O `stopPropagation` e necessario porque a
- *  linha toda e clicavel e abriria o modal de detalhe. */
-function CelulaObjeto({ texto }: { texto?: string | null }) {
-  const [aberto, setAberto] = useState(false);
-  const t = (texto || "").trim();
-  if (!t) return <span className="text-base-content/40">-</span>;
-  // ~40 caracteres por linha nesta largura; abaixo de 3 linhas nao ha o que
-  // expandir, e o botao so poluiria.
-  const cabeInteiro = t.length <= 118;
-  return (
-    <div className="whitespace-normal break-words">
-      <span className={aberto || cabeInteiro ? "" : "line-clamp-3"}>{t}</span>
-      {!cabeInteiro && (
-        <button
-          type="button"
-          onClick={(e) => { e.stopPropagation(); setAberto((v) => !v); }}
-          className="mt-0.5 block text-[10px] font-medium text-primary hover:underline"
-        >
-          {aberto ? "▴ ver menos" : "▸ ver tudo"}
-        </button>
-      )}
-    </div>
-  );
-}
-
 export default function TransfereGovPropostas({
   categoria,
   titulo,
@@ -396,100 +355,91 @@ export default function TransfereGovPropostas({
         ) : displayItems.length === 0 ? (
           <div className="p-12 text-center text-base-content/60">Nenhuma proposta encontrada.</div>
         ) : (
-          /* NOMES POR EXTENSO. "Codigo Instr." / "Inicio Vig." / "Fim Vig."
-              economizavam pixel as custas de quem le: numa lista percorrida de
-              relance, adivinhar o cabecalho custa mais do que a segunda linha
-              de texto custa de espaco.
-              `whitespace-normal` no th e OBRIGATORIO junto: com o nowrap
-              herdado do TableHead, o titulo por extenso nao quebra — transborda
-              por cima da coluna vizinha. `align-bottom` mantem a base dos
-              titulos alinhada com uns em 1 linha e outros em 2. */
-          <Table className="text-xs table-fixed w-full">
-            <TableHeader>
-              <TableRow className="[&>th]:py-1.5 [&>th]:px-2 [&>th]:text-[11px] [&>th]:font-semibold [&>th]:whitespace-normal [&>th]:align-bottom [&>th]:leading-tight bg-primary/10">
-                <TableHead className="w-[86px]">Código do Instrumento</TableHead>
-                <TableHead className="w-[92px]">Número da Proposta</TableHead>
-                <TableHead className="w-[190px]">Órgão</TableHead>
-                <TableHead className="w-[140px]">Parlamentar</TableHead>
-                <TableHead className="w-[160px]">Situação</TableHead>
-                <TableHead className="w-[165px]">Situação da Contratação</TableHead>
-                <TableHead className="w-[88px]">Início da Vigência</TableHead>
-                <TableHead className="w-[88px]">Fim da Vigência</TableHead>
-                <TableHead className="w-[62px]">Dias Restantes</TableHead>
-                <TableHead>Objeto</TableHead>
-                <TableHead className="w-[46px] text-center">Ver</TableHead>
-                <TableHead className="w-[42px] text-center" title="Gestão Interna">📝</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {displayItems.map((p, i) => (
-                /* `align-top` porque as celulas agora tem alturas diferentes:
-                   sem isso a data flutua no meio de um objeto de 3 linhas. */
-                <TableRow key={i} className="[&>td]:py-2 [&>td]:px-2 [&>td]:text-[11px] [&>td]:align-top [&>td]:leading-snug hover:bg-primary/10 cursor-pointer"
-                          onClick={() => abrirDetalhe(p.numero_proposta)}>
-                  <TableCell className="font-mono">{p.codigo_instrumento || "-"}</TableCell>
-                  <TableCell className="font-mono">{p.numero_proposta}</TableCell>
-                  {/* O nome do orgao QUEBRA em vez de ser cortado: "56000 -
-                      MINISTERI..." nao diz qual ministerio e — que e justamente
-                      o dado que faz o gestor saber de quem cobrar. */}
-                  <TableCell className="whitespace-normal break-words">{p.orgao || "-"}</TableCell>
-                  <TableCell className="whitespace-normal break-words">{p.parlamentar || "-"}</TableCell>
-                  <TableCell>
-                    <span className={`inline-block whitespace-normal break-words px-1.5 py-0.5 rounded text-[10px] ${badgeColor(p.situacao)}`}>
-                      {p.situacao}
+          /* A LISTA DEIXOU DE SER TABELA — as mesmas 12 colunas, agora na
+             linguagem do Painel. Este componente serve QUATRO telas (geral,
+             voluntarias, rejeitadas e encerradas), entao uma edicao aqui muda
+             as quatro de uma vez.
+             Os numeros ficam em <Campos>, de largura igual em todos os
+             cartoes: e o que permite continuar descendo o olho por uma coluna
+             sem existir tabela. */
+          <Lista>
+            {displayItems.map((p, i) => {
+              const dias = p.dias_restantes;
+              const semProcesso =
+                p.processo_execucao_qtd === 0 &&
+                (p.situacao_contratacao || "").toLowerCase().includes("normal");
+              const temDetalhe =
+                (p.situacao_contratacao_detalhe &&
+                  Object.keys(p.situacao_contratacao_detalhe).filter((k) => !k.startsWith("_")).length > 0) ||
+                p.clausula_suspensiva_motivo ||
+                p.clausula_suspensiva_dt_prevista;
+              return (
+                <ItemLinha
+                  key={i}
+                  onClick={() => abrirDetalhe(p.numero_proposta)}
+                  titulo={p.objeto || "Sem objeto informado"}
+                  acao={
+                    <span onClick={(e) => e.stopPropagation()} className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => abrirDetalhe(p.numero_proposta)}
+                        className="grid size-7 place-items-center rounded-lg"
+                        style={{ background: "var(--bi-line)", color: "var(--bi-muted)" }}
+                        title="Ver detalhe"
+                      >
+                        <Eye className="size-3.5" />
+                      </button>
+                      <AnotacaoButton
+                        fonte="voluntaria"
+                        fonteRef={p.numero_proposta}
+                        municipioId={Number(municipioId)}
+                        numero={p.codigo_instrumento || p.numero_proposta}
+                      />
                     </span>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex flex-wrap items-start gap-1">
-                      <span className="whitespace-normal break-words">
-                        {p.situacao_contratacao || "-"}
+                  }
+                  meta={
+                    <>
+                      {p.situacao && (
+                        <Selo tom={situacaoTom(p.situacao)} title={p.situacao}>{p.situacao}</Selo>
+                      )}
+                      {p.situacao_contratacao && (
+                        <Selo title={`Situação da contratação: ${p.situacao_contratacao}`}>
+                          {p.situacao_contratacao}
+                        </Selo>
+                      )}
+                      {/* Este aviso e o unico que ganha cor por padrao: contratacao
+                          "Normal" sem processo de execucao registrado e o achado
+                          que faz a equipe ir atras. */}
+                      {semProcesso && (
+                        <Selo tom="critico" title="Contratação Normal sem processo de execução/licitação registrado">
+                          sem processo
+                        </Selo>
+                      )}
+                      {temDetalhe && <Selo tom="atencao">tem detalhamento</Selo>}
+                      {p.orgao && <span className="truncate">{p.orgao}</span>}
+                      {p.parlamentar && <span className="truncate">· {p.parlamentar}</span>}
+                      <span className="font-mono">
+                        {p.codigo_instrumento ? `· instr ${p.codigo_instrumento}` : ""}
+                        {p.numero_proposta ? ` · prop ${p.numero_proposta}` : ""}
                       </span>
-                      {((p.situacao_contratacao_detalhe && Object.keys(p.situacao_contratacao_detalhe).filter(k => !k.startsWith("_")).length > 0) || p.clausula_suspensiva_motivo || p.clausula_suspensiva_dt_prevista) && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); abrirDetalhe(p.numero_proposta); }}
-                          className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-primary hover:bg-primary/90 text-white text-[9px] font-medium"
-                          title="Ver detalhamento da situação de contratação"
-                        >
-                          Detalhar
-                        </button>
-                      )}
-                      {p.processo_execucao_qtd === 0 && (p.situacao_contratacao || "").toLowerCase().includes("normal") && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); abrirDetalhe(p.numero_proposta); }}
-                          className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded bg-error/15 text-error text-[9px] font-semibold"
-                          title="Contratação Normal sem processo de execução/licitação registrado (Execução Convenente)"
-                        >
-                          ⚠ sem processo
-                        </button>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell>{p.dt_inicio_vigencia || "-"}</TableCell>
-                  <TableCell>{p.dt_fim_vigencia || "-"}</TableCell>
-                  <TableCell>
-                    {(() => { const b = diasBadge(p.dias_restantes); return (
-                      <span className={`inline-block px-1.5 py-0.5 rounded-full text-[10px] font-medium ${b.cls}`}>{b.txt}</span>
-                    ); })()}
-                  </TableCell>
-                  <TableCell><CelulaObjeto texto={p.objeto} /></TableCell>
-                  <TableCell className="text-center">
-                    <button onClick={(e) => { e.stopPropagation(); abrirDetalhe(p.numero_proposta); }}
-                            className="inline-flex w-6 h-6 items-center justify-center rounded bg-primary hover:bg-primary/90 text-white">
-                      <Eye className="size-3" />
-                    </button>
-                  </TableCell>
-                  <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
-                    <AnotacaoButton
-                      fonte="voluntaria"
-                      fonteRef={p.numero_proposta}
-                      municipioId={Number(municipioId)}
-                      numero={p.codigo_instrumento || p.numero_proposta}
-                    />
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+                    </>
+                  }
+                >
+                  <Campos
+                    campos={[
+                      { rotulo: "Início da vigência", valor: p.dt_inicio_vigencia || "—" },
+                      { rotulo: "Fim da vigência", valor: p.dt_fim_vigencia || "—" },
+                      {
+                        rotulo: dias != null && dias < 0 ? "Vencido há" : "Dias restantes",
+                        valor: dias != null ? `${Math.abs(dias)}d` : "—",
+                        tom: dias == null ? "normal" : dias < 0 ? "critico" : dias <= 60 ? "atencao" : "ok",
+                      },
+                    ]}
+                  />
+                </ItemLinha>
+              );
+            })}
+          </Lista>
         )}
       </div>
 
