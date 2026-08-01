@@ -184,91 +184,121 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/* ---- CLARO (default) — "Base" ---- */
-:root {
-  --brand-navy: #5d5fef;
-  --brand-navy-700: #4a4cdb;
-  --brand-green: #159068;
-  --brand-green-600: #1aa578;
+/* ---- CLARO (default) ----
+   A SEGUNDA CAMADA DE TOKENS. Existem duas no projeto: a do daisyUI (acima,
+   `--color-*`) e esta, do shadcn, que o `@theme inline` acima expõe como
+   `text-muted-foreground`, `border-border`, `ring-ring`, `bg-popover` e afins.
 
-  --background: #f4f5fa;
-  --foreground: #1b1c31;
-  --card: #ffffff;
-  --card-foreground: #1b1c31;
-  --popover: #ffffff;
-  --popover-foreground: #1b1c31;
-  --primary: #5d5fef;
+   Quando a identidade do Painel foi adotada, só a camada do daisyUI foi
+   repontada. Esta ficou como estava — a paleta violeta do design "Base" — e
+   isso não aparece a olho nu porque quase toda ela é cinza: você vê "um cinza",
+   não vê que é um cinza AZULADO no meio de um sistema verde-e-preto.
+
+   Medido antes de mexer: 76 usos herdavam daqui, concentrados justamente nas
+   peças COMPARTILHADAS (menu suspenso, select, abas, avatar), que aparecem em
+   toda tela. Dois casos não eram sutis: `--accent-foreground` e `--ring` eram
+   #5d5fef, o violeta da marca antiga — ou seja, o texto de item destacado de
+   todo menu suspenso e todo anel de foco do sistema ainda eram violeta.
+   E `--muted-foreground` #8b8fa6 dava 3,19 de contraste sobre branco (reprova
+   em AA); o cinza do Painel dá 5,82.
+
+   Agora a origem é a mesma dos outros: os tokens `--bi-*`. */
+:root {
+  /* Provado morto por varredura (0 usos em .tsx/.ts/.css, e a única construção
+     dinâmica de `var()` no projeto é sobre `--bi-*`). Ficam apontando para os
+     tokens em vez de sumir: se algo escapou da varredura, herda a cor certa
+     em vez de reintroduzir violeta. */
+  --brand-navy: var(--bi-accent-ink);
+  --brand-navy-700: var(--bi-accent-ink);
+  --brand-green: var(--bi-ok-ink);
+  --brand-green-600: var(--bi-ok);
+
+  --background: var(--bi-bg);
+  --foreground: var(--bi-text);
+  --card: var(--bi-surface);
+  --card-foreground: var(--bi-text);
+  --popover: var(--bi-surface);
+  --popover-foreground: var(--bi-text);
+  --primary: var(--bi-accent-ink);
   --primary-foreground: #ffffff;
-  --secondary: #eef0fb;
-  --secondary-foreground: #5d5fef;
-  --muted: #f1f2f8;
-  --muted-foreground: #8b8fa6;
-  --accent: #ecebfe;
-  --accent-foreground: #5d5fef;
-  --destructive: #d1335a;
-  --border: #eaecf3;
-  --input: #eef0f6;
-  --ring: #5d5fef;
-  --chart-1: #5d5fef;
-  --chart-2: #5b93ff;
-  --chart-3: #ff8f6b;
-  --chart-4: #ffc327;
-  --chart-5: #22cce2;
+  --secondary: var(--bi-surface-2);
+  --secondary-foreground: var(--bi-muted);
+  --muted: var(--bi-surface-2);
+  --muted-foreground: var(--bi-muted);
+  --accent: var(--bi-accent-soft);
+  --accent-foreground: var(--bi-accent-ink);
+  --destructive: var(--bi-crit-ink);
+  --border: var(--bi-line);
+  --input: var(--bi-line);
+  --ring: var(--bi-accent-ink);
+  /* Mesma série do Painel, na mesma ordem, nos DOIS temas — um gráfico não pode
+     trocar de identidade ao trocar de tema. Hoje ninguém usa `*-chart-N`, mas
+     deixar violeta aqui é armadilha para quem usar amanhã. */
+  --chart-1: var(--bi-c1);
+  --chart-2: var(--bi-c2);
+  --chart-3: var(--bi-c3);
+  --chart-4: var(--bi-c4);
+  --chart-5: var(--bi-c5);
+  /* NÃO mexido de propósito: `--radius` alimenta rounded-sm..4xl, ou seja o
+     sistema inteiro. Trocar aqui redimensiona toda caixa do produto de uma vez,
+     o que é uma decisão separada desta. */
   --radius: 0.7rem;
-  --sidebar: #ffffff;
-  --sidebar-foreground: #1b1c31;
-  --sidebar-primary: #5d5fef;
+  --sidebar: var(--bi-surface);
+  --sidebar-foreground: var(--bi-text);
+  --sidebar-primary: var(--bi-accent-ink);
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #ecebfe;
-  --sidebar-accent-foreground: #5d5fef;
-  --sidebar-border: #eaecf3;
-  --sidebar-ring: #5d5fef;
+  --sidebar-accent: var(--bi-accent-soft);
+  --sidebar-accent-foreground: var(--bi-accent-ink);
+  --sidebar-border: var(--bi-line);
+  --sidebar-ring: var(--bi-accent-ink);
 }
 
-/* ---- ESCURO — "Base" ---- */
+/* ---- ESCURO ----
+   Este bloco já vinha com os VALORES certos (a unificação do escuro foi feita
+   antes), mas escritos à mão. Copiar valor em vez de apontar para o token é o
+   que produz divergência silenciosa: bastava alguém ajustar `--bi-surface` para
+   o escuro passar a discordar do Painel sem ninguém notar. Agora aponta. */
 [data-theme="pactha-dark"] {
-  /* Mesma paleta preto+menta do Painel de Indicadores. Os nomes "navy" ficam
-     por compatibilidade com quem ja os usa; no escuro eles apontam para o
-     acento menta. Trocar os NOMES exigiria varrer o app inteiro e nao muda
-     nada na tela. */
-  --brand-navy: #4fdcae;
-  --brand-navy-700: #35c294;
-  --brand-green: #4fdcae;
-  --brand-green-600: #35c294;
+  /* Mortos, como no claro. Mantidos apontando para os tokens. */
+  --brand-navy: var(--bi-accent);
+  --brand-navy-700: var(--bi-accent);
+  --brand-green: var(--bi-ok);
+  --brand-green-600: var(--bi-ok);
 
-  --background: #0a0c0b;
-  --foreground: #f1f4f2;
-  --card: #141716;
-  --card-foreground: #f1f4f2;
-  --popover: #141716;
-  --popover-foreground: #f1f4f2;
-  --primary: #4fdcae;
-  --primary-foreground: #05231a;
-  --secondary: #1c201e;
-  --secondary-foreground: #d9efe6;
-  --muted: #1c201e;
-  --muted-foreground: rgba(241, 244, 242, 0.58);
-  --accent: #1c201e;
-  --accent-foreground: #4fdcae;
-  --destructive: #f8788f;
-  --border: #252a28;
-  --input: #252a28;
-  --ring: #4fdcae;
-  /* Serie de graficos identica a do painel (--bi-c1..c5) para um grafico nao
-     mudar de cor conforme o menu em que aparece. */
-  --chart-1: #6ee7a8;
-  --chart-2: #4fdcae;
-  --chart-3: #ff8a6b;
-  --chart-4: #ffc85c;
-  --chart-5: #8fd0ff;
-  --sidebar: #141716;
-  --sidebar-foreground: #f1f4f2;
-  --sidebar-primary: #4fdcae;
-  --sidebar-primary-foreground: #05231a;
-  --sidebar-accent: #1c201e;
-  --sidebar-accent-foreground: #4fdcae;
-  --sidebar-border: #252a28;
-  --sidebar-ring: #4fdcae;
+  --background: var(--bi-bg);
+  --foreground: var(--bi-text);
+  --card: var(--bi-surface);
+  --card-foreground: var(--bi-text);
+  --popover: var(--bi-surface);
+  --popover-foreground: var(--bi-text);
+  --primary: var(--bi-accent-ink);
+  --primary-foreground: var(--bi-cta-ink);
+  --secondary: var(--bi-surface-2);
+  --secondary-foreground: var(--bi-muted);
+  --muted: var(--bi-surface-2);
+  --muted-foreground: var(--bi-muted);
+  --accent: var(--bi-accent-soft);
+  --accent-foreground: var(--bi-accent-ink);
+  --destructive: var(--bi-crit-ink);
+  --border: var(--bi-line);
+  --input: var(--bi-line);
+  --ring: var(--bi-accent-ink);
+  /* O comentário que estava aqui dizia "série idêntica à do painel
+     (--bi-c1..c5)" e não era verdade: a ordem era outra (c3, acento, c1, c2, e
+     um azul que não é nenhum deles). Agora é literalmente a série. */
+  --chart-1: var(--bi-c1);
+  --chart-2: var(--bi-c2);
+  --chart-3: var(--bi-c3);
+  --chart-4: var(--bi-c4);
+  --chart-5: var(--bi-c5);
+  --sidebar: var(--bi-surface);
+  --sidebar-foreground: var(--bi-text);
+  --sidebar-primary: var(--bi-accent-ink);
+  --sidebar-primary-foreground: var(--bi-cta-ink);
+  --sidebar-accent: var(--bi-accent-soft);
+  --sidebar-accent-foreground: var(--bi-accent-ink);
+  --sidebar-border: var(--bi-line);
+  --sidebar-ring: var(--bi-accent-ink);
 }
 
 @layer base {
@@ -286,29 +316,39 @@
   }
 }
 
-/* Sombras suaves do tema "Base" — o namespace --shadow-* do @theme NÃO vira
-   utilitário neste pipeline (daisyUI+shadcn), então são declaradas aqui. */
+/* Sombras suaves — o namespace --shadow-* do @theme NÃO vira utilitário neste
+   pipeline (daisyUI+shadcn), então são declaradas aqui.
+   A cor era rgba(27,28,49) — o preto-navy do design "Base". Em 5% de alfa
+   ninguém enxerga a diferença, mas era mais um lugar onde a paleta velha
+   sobrevivia; agora é o mesmo preto do Painel. */
 @layer utilities {
-  .shadow-theme-xs { box-shadow: 0 1px 2px 0 rgba(27, 28, 49, 0.05); }
+  .shadow-theme-xs { box-shadow: 0 1px 2px 0 rgba(13, 16, 15, 0.05); }
   .shadow-theme-sm {
-    box-shadow: 0 1px 3px 0 rgba(27, 28, 49, 0.06), 0 1px 2px -1px rgba(27, 28, 49, 0.04);
+    box-shadow: 0 1px 3px 0 rgba(13, 16, 15, 0.06), 0 1px 2px -1px rgba(13, 16, 15, 0.04);
   }
   .shadow-theme-md {
-    box-shadow: 0 4px 8px -2px rgba(27, 28, 49, 0.08), 0 2px 4px -2px rgba(27, 28, 49, 0.04);
+    box-shadow: 0 4px 8px -2px rgba(13, 16, 15, 0.08), 0 2px 4px -2px rgba(13, 16, 15, 0.04);
   }
   .shadow-theme-lg {
-    box-shadow: 0 12px 20px -4px rgba(27, 28, 49, 0.10), 0 4px 8px -4px rgba(27, 28, 49, 0.05);
+    box-shadow: 0 12px 20px -4px rgba(13, 16, 15, 0.10), 0 4px 8px -4px rgba(13, 16, 15, 0.05);
   }
   .shadow-theme-xl {
-    box-shadow: 0 20px 32px -8px rgba(27, 28, 49, 0.12);
+    box-shadow: 0 20px 32px -8px rgba(13, 16, 15, 0.12);
   }
   /* Nunito renderiza os números melhor com tabular-nums onde havia font-mono */
   .font-mono { font-variant-numeric: tabular-nums; }
 }
 
-/* Faixa de identidade — agora violeta (marca "Base") */
+/* Faixa de identidade, 3px no topo do menu — aparece em TODA tela do sistema.
+   Era `linear-gradient(90deg, #5d5fef, #8486f4, #ae8ff7)`: o resquício mais
+   literal da marca antiga, e o mais visível, num sistema que passou a ser
+   verde-e-preto. O comentário ainda dizia "cores do governo", o que nunca foi
+   verdade — era a escala violeta do design "Base".
+   Agora é o acento, sólido. Sem gradiente: esta identidade não tem nenhum, e é
+   o único lugar do produto onde o menta aparece em força total — que é
+   exatamente como o Painel usa o acento, com parcimônia, como assinatura. */
 .gov-stripe {
-  background: linear-gradient(90deg, #5d5fef 0%, #8486f4 55%, #ae8ff7 100%);
+  background: var(--bi-accent);
   height: 3px;
   width: 100%;
 }

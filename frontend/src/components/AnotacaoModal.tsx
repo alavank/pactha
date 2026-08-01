@@ -1,9 +1,11 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { X, Plus, Trash2, Loader2, Paperclip, Download, FileText, Edit2 } from "lucide-react";
+import { Plus, Trash2, Loader2, Paperclip, Download, FileText, Edit2, CalendarDays, X } from "lucide-react";
 import api from "@/lib/api";
-import { Button } from "@/components/ui/button";
+import {
+  Aviso, Bloco, BlocoHead, Modal, ModalCorpo, ModalHead, Selo, Vazio, situacaoTom,
+} from "@/components/ui/superficies";
 import { Input } from "@/components/ui/input";
 
 interface Anexo {
@@ -39,9 +41,26 @@ interface Props {
   onChanged?: () => void;
 }
 
+/** `data_protocolo` chega do backend como DATA PURA ("2026-08-01": é um
+ *  `date.isoformat()`), e `new Date("2026-08-01")` é lido pelo JS como
+ *  meia-noite em UTC. Em Brasília isso é 21h do dia ANTERIOR, então o
+ *  `toLocaleDateString` devolvia 31/07/2026 para uma data protocolada em 01/08.
+ *  Toda data de protocolo do sistema aparecia um dia atrasada.
+ *
+ *  `created_at`/`updated_at` são timestamp completo e nunca tiveram o problema,
+ *  por isso o formatador precisa distinguir os dois casos. */
 function fmtData(d?: string | null) {
   if (!d) return "-";
-  try { return new Date(d).toLocaleDateString("pt-BR"); } catch { return d; }
+  const puro = /^\d{4}-\d{2}-\d{2}$/.exec(d);
+  try {
+    if (puro) {
+      const [y, m, dia] = d.split("-").map(Number);
+      return new Date(y, m - 1, dia).toLocaleDateString("pt-BR");
+    }
+    return new Date(d).toLocaleDateString("pt-BR");
+  } catch {
+    return d;
+  }
 }
 function fmtBytes(n?: number) {
   if (!n) return "";
@@ -49,6 +68,10 @@ function fmtBytes(n?: number) {
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
   return `${(n / 1024 / 1024).toFixed(2)} MB`;
 }
+
+const rotulo = "mb-1 block text-[11px]";
+const controle =
+  "w-full rounded-lg px-2 py-1.5 text-[12px] outline-none focus:ring-2";
 
 export default function AnotacaoModal({
   open, onClose, fonte, fonteRef, municipioId, numeroReferencia, onChanged,
@@ -98,8 +121,14 @@ export default function AnotacaoModal({
     setStatusInt(a.status_interno || "");
     setStatusCustom(a.status_custom || "");
     setProtocolo(a.protocolo || "");
+    // Alimenta um input[type=date], que só aceita YYYY-MM-DD — nunca passar
+    // por formatador pt-BR aqui.
     setDataProt(a.data_protocolo || "");
     setObs(a.observacoes || "");
+    // Os anexos vêm COM `dados_b64` porque `/gestao/anotacoes/item` usa
+    // `with_anexos=True`. Não "enxugar" este payload: o PUT reescreve a coluna
+    // inteira, então salvar uma edição com os anexos sem dados apagaria os
+    // arquivos.
     setAnexos(a.anexos || []);
     setFormOpen(true);
   };
@@ -182,162 +211,191 @@ export default function AnotacaoModal({
       });
   };
 
-  if (!open) return null;
-
   return (
-    <div className="fixed inset-0 z-50 bg-neutral/50 flex items-start justify-center p-4 overflow-y-auto" onClick={onClose}>
-      <div className="bg-base-100 rounded-lg shadow-2xl w-full max-w-3xl mt-8 mb-8" onClick={(e) => e.stopPropagation()}>
-        <div className="px-5 py-3 rounded-t-lg flex items-center justify-between border-b">
-          <h3 className="text-lg font-semibold text-base-content flex items-center gap-2">
-            <Edit2 className="size-5 text-info" /> Gestão Interna
-            {numeroReferencia && <span className="text-sm font-normal text-base-content/60">({numeroReferencia})</span>}
-          </h3>
-          <button onClick={onClose}><X className="size-5 text-base-content/60 hover:text-base-content/70" /></button>
-        </div>
-
-        <div className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
-          {/* Lista de anotacoes existentes */}
-          {loading ? (
-            <div className="text-center py-6"><Loader2 className="size-6 animate-spin mx-auto text-info" /></div>
-          ) : items.length === 0 ? (
-            <div className="p-4 text-center text-sm text-base-content/60 bg-base-200 rounded">Nenhuma anotação ainda.</div>
-          ) : (
-            <div className="space-y-2">
-              {items.map((a) => (
-                <div key={a.id} className="border rounded-lg p-3 bg-base-200/40">
+    <Modal aberto={open} onFechar={onClose} maxW="max-w-3xl">
+      <ModalHead
+        titulo="Gestão Interna"
+        sub={numeroReferencia ? `Sobre ${numeroReferencia}` : "Anotações da equipe, à parte do dado oficial"}
+        onFechar={onClose}
+      />
+      <ModalCorpo className="flex flex-col gap-3">
+        {loading ? (
+          <div className="py-8 text-center">
+            <Loader2 className="mx-auto size-6 animate-spin" style={{ color: "var(--bi-faint)" }} />
+          </div>
+        ) : items.length === 0 ? (
+          <Vazio>Nenhuma anotação ainda.</Vazio>
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            {items.map((a) => {
+              // Antes o selo só aparecia com `status_interno` preenchido, então
+              // registro antigo que só tem texto livre ficava sem status nenhum.
+              const status = a.status_interno === "Outro"
+                ? a.status_custom
+                : (a.status_interno || a.status_custom);
+              return (
+                <Bloco key={a.id} plano className="p-3">
                   <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex flex-wrap items-center gap-2 mb-1">
-                        {a.status_interno && (
-                          <span className="inline-block bg-info/15 text-info px-2 py-0.5 rounded text-[11px] font-semibold">
-                            {a.status_interno === "Outro" ? a.status_custom : a.status_interno}
-                          </span>
-                        )}
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-1 flex flex-wrap items-center gap-2">
+                        {status && <Selo tom={situacaoTom(status)}>{status}</Selo>}
                         {a.protocolo && (
-                          <span className="text-[11px] text-base-content/70">
-                            Protocolo: <code className="bg-base-200 px-1 rounded font-mono">{a.protocolo}</code>
+                          <span className="text-[10px]" style={{ color: "var(--bi-faint)" }}>
+                            Protocolo{" "}
+                            <span className="bi-num" style={{ color: "var(--bi-muted)" }}>{a.protocolo}</span>
                           </span>
                         )}
                         {a.data_protocolo && (
-                          <span className="text-[11px] text-base-content/70">📅 {fmtData(a.data_protocolo)}</span>
+                          <span className="inline-flex items-center gap-1 text-[10px]" style={{ color: "var(--bi-faint)" }}>
+                            <CalendarDays className="size-3" />
+                            <span className="bi-num">{fmtData(a.data_protocolo)}</span>
+                          </span>
                         )}
                       </div>
                       {a.observacoes && (
-                        <p className="text-sm text-base-content/70 whitespace-pre-wrap mt-1">{a.observacoes}</p>
+                        <p className="mt-1 text-[12px] leading-snug whitespace-pre-wrap break-words" style={{ color: "var(--bi-text)" }}>
+                          {a.observacoes}
+                        </p>
                       )}
                       {a.anexos && a.anexos.length > 0 && (
                         <div className="mt-2 flex flex-wrap gap-1.5">
                           {a.anexos.map((ax, i) => (
                             <button
                               key={i}
+                              type="button"
                               onClick={() => baixarAnexo(a.id, i, ax.nome)}
-                              className="inline-flex items-center gap-1 text-[11px] bg-base-100 border rounded px-2 py-0.5 hover:bg-primary/10 hover:border-primary"
+                              className="inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-[10px] transition-colors hover:brightness-95"
+                              style={{ background: "var(--bi-surface)", border: "1px solid var(--bi-line)", color: "var(--bi-muted)" }}
                               title={`${ax.nome} · ${fmtBytes(ax.tamanho)}`}
                             >
                               <Paperclip className="size-3" /> {ax.nome}
-                              <Download className="size-3 text-primary" />
+                              <Download className="size-3" style={{ color: "var(--bi-accent-ink)" }} />
                             </button>
                           ))}
                         </div>
                       )}
-                      <div className="text-[10px] text-base-content/40 mt-1.5">
+                      <div className="mt-1.5 text-[9px]" style={{ color: "var(--bi-faint)" }}>
                         Atualizado {fmtData(a.updated_at)}
                       </div>
                     </div>
-                    <div className="flex flex-col gap-1">
-                      <button onClick={() => startEdit(a)} className="text-primary hover:bg-primary/10 rounded p-1" title="Editar">
+                    <div className="flex shrink-0 flex-col gap-1">
+                      <button type="button" onClick={() => startEdit(a)} title="Editar"
+                              className="rounded p-1 hover:brightness-90" style={{ color: "var(--bi-muted)" }}>
                         <Edit2 className="size-4" />
                       </button>
-                      <button onClick={() => remover(a.id)} className="text-error hover:bg-error/10 rounded p-1" title="Remover">
+                      <button type="button" onClick={() => remover(a.id)} title="Remover"
+                              className="rounded p-1 hover:brightness-90" style={{ color: "var(--bi-crit-ink)" }}>
                         <Trash2 className="size-4" />
                       </button>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
+                </Bloco>
+              );
+            })}
+          </div>
+        )}
 
-          {/* Form */}
-          {!formOpen ? (
-            <Button onClick={() => { resetForm(); setFormOpen(true); }} variant="outline" className="w-full">
-              <Plus className="size-4 mr-1" /> Nova anotação
-            </Button>
-          ) : (
-            <div className="border-2 border-dashed border-info rounded-lg p-3 space-y-3 bg-info/15">
-              <h4 className="text-sm font-semibold text-info">
-                {editing ? "Editar anotação" : "Nova anotação"}
-              </h4>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {!formOpen ? (
+          <button
+            type="button"
+            onClick={() => { resetForm(); setFormOpen(true); }}
+            className="flex h-9 w-full items-center justify-center gap-1.5 rounded-xl text-[12px] font-semibold transition-colors hover:brightness-95"
+            style={{ background: "var(--bi-surface)", border: "1px solid var(--bi-line)", color: "var(--bi-text)" }}
+          >
+            <Plus className="size-4" /> Nova anotação
+          </button>
+        ) : (
+          /* O formulário era uma caixa tracejada azul: borda de 2px pontilhada
+             mais fundo `bg-info/15`. Isso é a gramática de "alerta", e um
+             formulário não é um alerta — é só o próximo bloco da pilha. */
+          <Bloco className="p-3">
+            <BlocoHead icon={Edit2} titulo={editing ? "Editar anotação" : "Nova anotação"} />
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div className="md:col-span-2">
+                <label className={rotulo} style={{ color: "var(--bi-muted)" }}>Status</label>
+                <select
+                  value={statusInt}
+                  onChange={(e) => setStatusInt(e.target.value)}
+                  className={controle}
+                  style={{ background: "var(--bi-surface)", border: "1px solid var(--bi-line)", color: "var(--bi-text)" }}
+                >
+                  <option value="">(selecione)</option>
+                  {statusOpcoes.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              {statusInt === "Outro" && (
                 <div className="md:col-span-2">
-                  <label className="text-xs text-base-content/70 mb-1 block">Status</label>
-                  <select
-                    value={statusInt}
-                    onChange={(e) => setStatusInt(e.target.value)}
-                    className="w-full rounded border border-base-300 px-2 py-1.5 text-sm bg-base-100 text-base-content"
-                  >
-                    <option value="">(selecione)</option>
-                    {statusOpcoes.map((s) => <option key={s} value={s}>{s}</option>)}
-                  </select>
+                  <label className={rotulo} style={{ color: "var(--bi-muted)" }}>Descreva o status</label>
+                  <Input value={statusCustom} onChange={(e) => setStatusCustom(e.target.value)} placeholder="Texto livre do status" />
                 </div>
-                {statusInt === "Outro" && (
-                  <div className="md:col-span-2">
-                    <label className="text-xs text-base-content/70 mb-1 block">Descreva o status</label>
-                    <Input value={statusCustom} onChange={(e) => setStatusCustom(e.target.value)} placeholder="Texto livre do status" />
+              )}
+              <div>
+                <label className={rotulo} style={{ color: "var(--bi-muted)" }}>Protocolo</label>
+                <Input value={protocolo} onChange={(e) => setProtocolo(e.target.value)} placeholder="Nº protocolo / SEI" />
+              </div>
+              <div>
+                <label className={rotulo} style={{ color: "var(--bi-muted)" }}>Data</label>
+                <Input type="date" value={dataProt} onChange={(e) => setDataProt(e.target.value)} />
+              </div>
+              <div className="md:col-span-2">
+                <label className={rotulo} style={{ color: "var(--bi-muted)" }}>Observações</label>
+                <textarea
+                  value={obs} onChange={(e) => setObs(e.target.value)}
+                  className={`${controle} min-h-[80px]`}
+                  style={{ background: "var(--bi-surface)", border: "1px solid var(--bi-line)", color: "var(--bi-text)" }}
+                  placeholder="Detalhes, contexto, próximos passos..."
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className={rotulo} style={{ color: "var(--bi-muted)" }}>
+                  Anexos (PDF/imagem, máx 1.5MB cada)
+                </label>
+                <input type="file" accept=".pdf,.png,.jpg,.jpeg,.gif,.webp"
+                       multiple onChange={handleFile}
+                       className="text-[11px]" style={{ color: "var(--bi-muted)" }} />
+                {anexos.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {anexos.map((a, i) => (
+                      <div key={i} className="inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-[10px]"
+                           style={{ background: "var(--bi-surface-2)", border: "1px solid var(--bi-line)", color: "var(--bi-muted)" }}>
+                        <FileText className="size-3" /> {a.nome} {a.tamanho ? `(${fmtBytes(a.tamanho)})` : ""}
+                        <button type="button" onClick={() => setAnexos(anexos.filter((_, j) => j !== i))}
+                                className="ml-1 hover:brightness-90" style={{ color: "var(--bi-crit-ink)" }} aria-label="Remover anexo">
+                          <X className="size-3" />
+                        </button>
+                      </div>
+                    ))}
                   </div>
                 )}
-                <div>
-                  <label className="text-xs text-base-content/70 mb-1 block">Protocolo</label>
-                  <Input value={protocolo} onChange={(e) => setProtocolo(e.target.value)} placeholder="Nº protocolo / SEI" />
-                </div>
-                <div>
-                  <label className="text-xs text-base-content/70 mb-1 block">Data</label>
-                  <Input type="date" value={dataProt} onChange={(e) => setDataProt(e.target.value)} />
-                </div>
-                <div className="md:col-span-2">
-                  <label className="text-xs text-base-content/70 mb-1 block">Observações</label>
-                  <textarea
-                    value={obs} onChange={(e) => setObs(e.target.value)}
-                    className="w-full rounded border border-base-300 px-2 py-1.5 text-sm min-h-[80px] bg-base-100 text-base-content"
-                    placeholder="Detalhes, contexto, próximos passos..."
-                  />
-                </div>
-                <div className="md:col-span-2">
-                  <label className="text-xs text-base-content/70 mb-1 block">Anexos (PDF/imagem, máx 1.5MB cada)</label>
-                  <input type="file" accept=".pdf,.png,.jpg,.jpeg,.gif,.webp"
-                         multiple onChange={handleFile}
-                         className="text-xs" />
-                  {anexos.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {anexos.map((a, i) => (
-                        <div key={i} className="inline-flex items-center gap-1 text-[11px] bg-base-100 border rounded px-2 py-0.5">
-                          <FileText className="size-3" /> {a.nome} {a.tamanho && `(${fmtBytes(a.tamanho)})`}
-                          <button onClick={() => setAnexos(anexos.filter((_, j) => j !== i))} className="text-error hover:bg-error/10 ml-1">
-                            <X className="size-3" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {err && <div className="text-xs text-error bg-error/15 border border-error rounded px-2 py-1.5">{err}</div>}
-
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => { resetForm(); setFormOpen(false); }} disabled={saving}>
-                  Cancelar
-                </Button>
-                <Button onClick={salvar} disabled={saving} className="bg-info hover:bg-info/90">
-                  {saving ? <Loader2 className="size-4 animate-spin mr-1" /> : null}
-                  {editing ? "Salvar alterações" : "Criar anotação"}
-                </Button>
               </div>
             </div>
-          )}
-        </div>
-      </div>
-    </div>
+
+            {err && <Aviso tom="critico" titulo={err} />}
+
+            <div className="mt-3 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => { resetForm(); setFormOpen(false); }}
+                disabled={saving}
+                className="h-9 rounded-xl px-3 text-[12px] font-semibold transition-colors hover:brightness-95 disabled:opacity-60"
+                style={{ background: "var(--bi-surface)", border: "1px solid var(--bi-line)", color: "var(--bi-text)" }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={salvar}
+                disabled={saving}
+                className="inline-flex h-9 items-center gap-1.5 rounded-xl px-3 text-[12px] font-semibold transition-opacity disabled:opacity-60"
+                style={{ background: "var(--bi-cta)", color: "var(--bi-cta-ink)" }}
+              >
+                {saving && <Loader2 className="size-4 animate-spin" />}
+                {editing ? "Salvar alterações" : "Criar anotação"}
+              </button>
+            </div>
+          </Bloco>
+        )}
+      </ModalCorpo>
+    </Modal>
   );
 }

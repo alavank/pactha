@@ -3,10 +3,38 @@
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { useMunicipio } from "@/contexts/MunicipioContext";
-import { Search, Eraser, Loader2, ExternalLink, Eye, X } from "lucide-react";
+import {
+  Search, Eraser, Loader2, ExternalLink, Eye, X,
+  FileText, Handshake, CalendarDays, Building2, Info, Paperclip,
+  Banknote, HardHat, MessagesSquare,
+} from "lucide-react";
 import api from "@/lib/api";
 import { MultiSelect } from "@/components/ui/multi-select";
-import { Campos, ItemLinha, Lista, Selo, Vazio, situacaoTom } from "@/components/ui/superficies";
+import {
+  Abas, Aviso, Campo, Campos, Grade, GradeCel, GradeLinha, ItemLinha, Lista,
+  Modal, ModalCorpo, ModalHead, Secao, Selo, Vazio, situacaoTom,
+} from "@/components/ui/superficies";
+
+/** Trilhas das grades densas. Escritas LITERAIS e no topo do módulo porque o
+ *  Tailwind só gera a classe se ela aparecer no código-fonte — montar
+ *  `grid-cols-[${x}]` produz uma grade sem colunas. */
+const COLS_OB = "grid-cols-[6.5rem_6.5rem_6.5rem_7.5rem_minmax(7rem,1fr)_6.5rem]";
+const COLS_SUBMETA = "grid-cols-[5rem_minmax(10rem,1fr)_7.5rem_9rem_7rem]";
+const COLS_ART = "grid-cols-[5rem_8rem_6.5rem_minmax(9rem,1fr)]";
+
+/** O `-` de campo vazio precisa continuar exatamente onde estava.
+ *
+ *  O helper `Field` que existia aqui trocava null/undefined/"" por "-", e a
+ *  peça `Campos` da identidade NÃO faz isso: ela renderiza o que receber. Sem
+ *  este intermediário, os campos sem dado sairiam em branco em vez de "-", e
+ *  um rótulo com nada embaixo parece defeito de carregamento.
+ *
+ *  Repare no que NÃO é vazio: `0`. Escrever `valor || "-"` transformaria zero
+ *  em traço, e "0 dias sem medição" viraria "sem informação". */
+function campo(rotulo: string, valor: unknown): Campo {
+  const v = valor === null || valor === undefined || valor === "" ? "-" : String(valor);
+  return { rotulo, valor: v, title: v === "-" ? undefined : `${rotulo}: ${v}` };
+}
 import AnotacaoButton from "@/components/AnotacaoButton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -436,411 +464,385 @@ export default function TransfereGovPropostas({
       </div>
 
       {/* Modal detalhe */}
-      {(detalhe !== null || loadingDet) && (
-        <div className="fixed inset-0 z-50 bg-neutral/50 flex items-start justify-center p-4 overflow-y-auto"
-             onClick={() => setDetalhe(null)}>
-          <div className="bg-base-100 rounded-lg shadow-2xl w-full max-w-5xl mt-4 mb-8" onClick={(e) => e.stopPropagation()}>
-            <div className="bg-base-100 px-5 py-3 rounded-t-lg flex items-center justify-between border-b">
-              <h3 className="text-xl font-light text-base-content">
-                Consultar Pré-Instrumento/Instrumento {detalhe?.codigo_instrumento || detalhe?.numero_proposta || ""}
-              </h3>
-              <button onClick={() => setDetalhe(null)}><X className="size-5 text-base-content/60 hover:text-base-content/70" /></button>
+      {(detalhe !== null || loadingDet) && (() => {
+        const nHist = (detalhe?.historico_comunicacoes || []).length;
+        const nDocs = (detalhe?.documentos_quadro_resumo || []).length;
+        const nLotes = (detalhe?.obras?.lotes || []).length;
+        const temOpsObs = !!(detalhe?.ops_obs && (detalhe.ops_obs.valor_total_repasse != null || (detalhe.ops_obs.obs || []).length));
+        const abas: Array<{ valor: typeof aba; label: string; on: boolean }> = [
+          { valor: "dados", label: "Dados", on: true },
+          { valor: "opsobs", label: "OPs/OBs", on: temOpsObs },
+          { valor: "obras", label: `Obras${nLotes ? ` (${nLotes})` : ""}`, on: nLotes > 0 },
+          { valor: "historico", label: `Histórico${nHist ? ` (${nHist})` : ""}`, on: nHist > 0 },
+          { valor: "docs", label: `Documentos${nDocs ? ` (${nDocs})` : ""}`, on: nDocs > 0 },
+        ];
+        const ativa = abas.find((a) => a.valor === aba)?.on ? aba : "dados";
+        return (
+        <Modal aberto onFechar={() => setDetalhe(null)} maxW="max-w-5xl">
+          <ModalHead
+            titulo={`Pré-Instrumento/Instrumento ${detalhe?.codigo_instrumento || detalhe?.numero_proposta || ""}`}
+            sub={detalhe?.orgao || undefined}
+            onFechar={() => setDetalhe(null)}
+            abaixo={detalhe ? <Abas valor={ativa} onChange={setAba} opcoes={abas} /> : undefined}
+          />
+          {loadingDet ? (
+            <div className="py-16 text-center">
+              <Loader2 className="mx-auto size-8 animate-spin" style={{ color: "var(--bi-faint)" }} />
             </div>
-            {loadingDet ? (
-              <div className="text-center py-16"><Loader2 className="size-8 animate-spin mx-auto text-primary" /></div>
-            ) : detalhe && (() => {
-              const nHist = (detalhe.historico_comunicacoes || []).length;
-              const nDocs = (detalhe.documentos_quadro_resumo || []).length;
-              const nLotes = (detalhe.obras?.lotes || []).length;
-              const temOpsObs = !!(detalhe.ops_obs && (detalhe.ops_obs.valor_total_repasse != null || (detalhe.ops_obs.obs || []).length));
-              const abas: [typeof aba, string, boolean][] = [
-                ["dados", "Dados", true],
-                ["opsobs", "OPs/OBs", temOpsObs],
-                ["obras", `Obras${nLotes ? ` (${nLotes})` : ""}`, nLotes > 0],
-                ["historico", `Histórico${nHist ? ` (${nHist})` : ""}`, nHist > 0],
-                ["docs", `Documentos${nDocs ? ` (${nDocs})` : ""}`, nDocs > 0],
-              ];
-              const ativa = abas.find((a) => a[0] === aba)?.[2] ? aba : "dados";
-              return (
-              <div className="max-h-[75vh] overflow-y-auto">
-                <div className="flex gap-1 px-5 border-b border-base-300 sticky top-0 bg-base-100 z-10">
-                  {abas.map(([k, label, on]) => (
-                    <button key={k} onClick={() => on && setAba(k)} disabled={!on}
-                      className={`px-3 py-2 text-sm font-medium -mb-px border-b-2 transition-colors ${
-                        ativa === k
-                          ? "border-primary text-primary"
-                          : on
-                            ? "border-transparent text-base-content/60 hover:text-base-content"
-                            : "border-transparent text-base-content/25 cursor-not-allowed"}`}>
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                <div className="p-5 space-y-5">
-                {ativa === "dados" && (<>
-                <Section title="Dados da Proposta">
-                  <Grid>
-                    <Field label="Modalidade" value={detalhe.modalidade} />
-                    <Field label="Situação no SIAFI" value={detalhe.situacao_siafi} />
-                    <Field label="Situação" value={detalhe.situacao} />
-                    <Field label="Código do Instrumento" value={detalhe.codigo_instrumento} />
-                    <Field label="Número da Proposta" value={detalhe.numero_proposta} />
-                    <Field label="Número do Processo" value={detalhe.numero_processo} />
-                    <Field label="Órgão" value={detalhe.orgao} />
-                    <Field label="Programa" value={detalhe.programa} />
-                  </Grid>
-                </Section>
+          ) : detalhe ? (
+            <ModalCorpo>
+              <div key={ativa} className="bi-pane-enter flex flex-col gap-3">
+
+              {ativa === "dados" && (<>
+                <Secao
+                  icon={FileText}
+                  titulo="Dados da Proposta"
+                  campos={[
+                    campo("Modalidade", detalhe.modalidade),
+                    campo("Situação no SIAFI", detalhe.situacao_siafi),
+                    campo("Situação", detalhe.situacao),
+                    campo("Código do Instrumento", detalhe.codigo_instrumento),
+                    campo("Número da Proposta", detalhe.numero_proposta),
+                    campo("Número do Processo", detalhe.numero_processo),
+                    campo("Órgão", detalhe.orgao),
+                    campo("Programa", detalhe.programa),
+                  ]}
+                />
 
                 {(detalhe.situacao_contratacao || detalhe.parlamentar || detalhe.situacao_contratacao_detalhe || detalhe.clausula_suspensiva_motivo || detalhe.clausula_suspensiva_dt_prevista) && (
-                  <Section title="Contratação e Indicação">
-                    <Grid>
-                      <Field label="Situação de Contratação Atual" value={detalhe.situacao_contratacao} />
-                      <Field label="Parlamentar Responsável" value={detalhe.parlamentar} />
-                    </Grid>
+                  <Secao
+                    icon={Handshake}
+                    titulo="Contratação e Indicação"
+                    cols={2}
+                    campos={[
+                      campo("Situação de Contratação Atual", detalhe.situacao_contratacao),
+                      campo("Parlamentar Responsável", detalhe.parlamentar),
+                    ]}
+                  >
                     {detalhe.situacao_contratacao_detalhe && Object.keys(detalhe.situacao_contratacao_detalhe).filter(k => !k.startsWith("_")).length > 0 && (
-                      <div className="mt-3 rounded border-l-4 border-warning bg-warning/15 p-3">
-                        <div className="text-xs font-semibold text-warning mb-2">
-                          Detalhe da Situação de Contratação
-                          {detalhe.situacao_contratacao_detalhe._label_botao && (
-                            <span className="ml-1 text-warning font-normal">
-                              ({String(detalhe.situacao_contratacao_detalhe._label_botao)})
-                            </span>
-                          )}
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                          {Object.entries(detalhe.situacao_contratacao_detalhe)
+                      <Aviso
+                        tom="atencao"
+                        titulo={`Detalhe da Situação de Contratação${detalhe.situacao_contratacao_detalhe._label_botao ? ` (${String(detalhe.situacao_contratacao_detalhe._label_botao)})` : ""}`}
+                      >
+                        <Campos
+                          cols={2}
+                          campos={Object.entries(detalhe.situacao_contratacao_detalhe)
                             .filter(([k]) => !k.startsWith("_"))
-                            .map(([k, v]) => (
-                              <Field key={k} label={k} value={v == null ? "-" : String(v)} />
-                            ))}
-                        </div>
-                      </div>
+                            .map(([k, v]) => campo(k, v))}
+                        />
+                      </Aviso>
                     )}
                     {(!detalhe.situacao_contratacao_detalhe || Object.keys(detalhe.situacao_contratacao_detalhe).filter(k => !k.startsWith("_")).length === 0) && (detalhe.clausula_suspensiva_motivo || detalhe.clausula_suspensiva_dt_prevista) && (
-                      <div className="mt-3 rounded border-l-4 border-warning bg-warning/15 p-3">
-                        <div className="text-xs font-semibold text-warning mb-2">Detalhe da Cláusula Suspensiva</div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                          <Field label="Motivo" value={detalhe.clausula_suspensiva_motivo || "-"} />
-                          <Field label="Data Prevista" value={detalhe.clausula_suspensiva_dt_prevista || "-"} />
-                        </div>
-                      </div>
+                      <Aviso tom="atencao" titulo="Detalhe da Cláusula Suspensiva">
+                        <Campos
+                          cols={2}
+                          campos={[
+                            campo("Motivo", detalhe.clausula_suspensiva_motivo),
+                            campo("Data Prevista", detalhe.clausula_suspensiva_dt_prevista),
+                          ]}
+                        />
+                      </Aviso>
                     )}
                     {/* Processo de Execução (Licitações) — só p/ contratação Normal.
                         0 = convênio Normal sem processo iniciado (flag, igual à cláusula). */}
                     {detalhe.processo_execucao_qtd != null && (detalhe.situacao_contratacao || "").toLowerCase().includes("normal") && (
                       detalhe.processo_execucao_qtd === 0 ? (
-                        <div className="mt-3 rounded border-l-4 border-error bg-error/15 p-3">
-                          <div className="text-xs font-semibold text-error">⚠ Processo de Execução: NENHUM registro</div>
-                          <div className="text-xs text-base-content/70 mt-1">
+                        <Aviso tom="critico" titulo="Processo de Execução: NENHUM registro">
+                          <p className="text-[11px] leading-snug" style={{ color: "var(--bi-muted)" }}>
                             Contratação Normal, mas sem licitação/processo de execução registrado no TransfereGov
                             (Execução Convenente → Processo de Execução).
-                          </div>
-                        </div>
+                          </p>
+                        </Aviso>
                       ) : (
-                        <div className="mt-3 rounded border-l-4 border-success bg-success/15 p-3">
-                          <div className="text-xs font-semibold text-success">
-                            Processo de Execução: {detalhe.processo_execucao_qtd} registro(s)
-                          </div>
-                        </div>
+                        <Aviso tom="ok" titulo={`Processo de Execução: ${detalhe.processo_execucao_qtd} registro(s)`} />
                       )
                     )}
-                  </Section>
-                )}
-                </>)}
-
-                {/* OPs/OBs — Execução Concedente → Listagem de Repasses */}
-                {ativa === "opsobs" && detalhe.ops_obs && (
-                  <Section title="OPs/OBs — Repasses e Desembolsos">
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-                      <div className="rounded border border-base-300 bg-base-100 p-3">
-                        <div className="text-[11px] text-base-content/50">Valor Total de Repasse</div>
-                        <div className="font-semibold text-base-content">{moeda(detalhe.ops_obs.valor_total_repasse)}</div>
-                      </div>
-                      <div className="rounded border border-base-300 bg-success/5 p-3">
-                        <div className="text-[11px] text-base-content/50">Valor Desembolsado</div>
-                        <div className="font-semibold text-success">{moeda(detalhe.ops_obs.valor_desembolsado)}</div>
-                      </div>
-                      <div className="rounded border border-base-300 bg-warning/5 p-3">
-                        <div className="text-[11px] text-base-content/50">Valor a Desembolsar</div>
-                        <div className="font-semibold text-warning">{moeda(detalhe.ops_obs.valor_a_desembolsar)}</div>
-                      </div>
-                      <div className="rounded border border-base-300 bg-base-100 p-3">
-                        <div className="text-[11px] text-base-content/50">Último Desembolso</div>
-                        <div className="font-semibold text-base-content">{detalhe.ops_obs.data_ultimo_desembolso || "-"}</div>
-                      </div>
-                    </div>
-                    {(detalhe.ops_obs.obs || []).length > 0 && (
-                      <div className="overflow-x-auto">
-                        <div className="text-xs font-semibold text-base-content/60 mb-1">Ordens Bancárias (GERCOMP)</div>
-                        <table className="w-full text-[11px] border-collapse">
-                          <thead>
-                            <tr className="text-left text-base-content/60">
-                              <th className="py-1 pr-3 font-medium">Nº NS</th>
-                              <th className="py-1 pr-3 font-medium">Nº OP</th>
-                              <th className="py-1 pr-3 font-medium">Nº OB</th>
-                              <th className="py-1 pr-3 font-medium">Valor</th>
-                              <th className="py-1 pr-3 font-medium">Situação</th>
-                              <th className="py-1 pr-3 font-medium">Emissão OB</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {(detalhe.ops_obs.obs || []).map((o, i) => (
-                              <tr key={i} className="border-t border-base-200">
-                                <td className="py-1 pr-3 font-mono">{o.numero_ns || "-"}</td>
-                                <td className="py-1 pr-3 font-mono">{o.numero_op || "-"}</td>
-                                <td className="py-1 pr-3 font-mono">{o.numero_ob || "-"}</td>
-                                <td className="py-1 pr-3">{moeda(o.valor)}</td>
-                                <td className="py-1 pr-3">{o.situacao || "-"}</td>
-                                <td className="py-1 pr-3 whitespace-nowrap">{o.data_emissao_ob || "-"}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </Section>
+                  </Secao>
                 )}
 
-                {/* OBRAS — Acompanhamento de Obras (medição) */}
-                {ativa === "obras" && detalhe.obras && (detalhe.obras.lotes || []).length > 0 && (
-                  <Section title="Acompanhamento de Obras">
-                    <div className="flex flex-wrap gap-4 mb-3 text-xs">
-                      <span><span className="text-base-content/50">Valor total das submetas: </span>
-                        <span className="font-semibold">{moeda(detalhe.obras.valor_total_submetas)}</span></span>
-                      {detalhe.obras.situacao_paralisacao && (
-                        <span><span className="text-base-content/50">Paralisação: </span>
-                          <span className="font-medium">{detalhe.obras.situacao_paralisacao}</span></span>
-                      )}
-                    </div>
-                    <div className="space-y-4">
-                      {(detalhe.obras.lotes || []).map((lote, li) => (
-                        <div key={li} className="rounded border border-base-300 bg-base-100 p-3">
-                          <div className="flex flex-wrap items-center gap-2 mb-2">
-                            <span className="rounded bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
-                              {lote.tipo === "C" ? "CTEF" : "Lote"} {lote.numero}
-                            </span>
-                            {lote.dias_sem_medicao != null && (
-                              <span className="text-[11px] text-base-content/50">{lote.dias_sem_medicao} dias sem medição</span>
-                            )}
-                            {lote.paralisado && <span className="rounded-full bg-error/15 px-2 py-0.5 text-[11px] text-error">Paralisado</span>}
-                          </div>
-                          <div className="overflow-x-auto">
-                            <table className="w-full text-[11px] border-collapse">
-                              <thead>
-                                <tr className="text-left text-base-content/60">
-                                  <th className="py-1 pr-3 font-medium">Submeta</th>
-                                  <th className="py-1 pr-3 font-medium">Descrição</th>
-                                  <th className="py-1 pr-3 font-medium">Valor</th>
-                                  <th className="py-1 pr-3 font-medium">Situação</th>
-                                  <th className="py-1 pr-3 font-medium">Regime</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {(lote.submetas || []).map((s, si) => (
-                                  <tr key={si} className="border-t border-base-200 align-top">
-                                    <td className="py-1 pr-3 font-mono">{s.numero || "-"}</td>
-                                    <td className="py-1 pr-3">{s.descricao || "-"}</td>
-                                    <td className="py-1 pr-3 whitespace-nowrap">{moeda(s.valor)}</td>
-                                    <td className="py-1 pr-3">{s.situacao || "-"}</td>
-                                    <td className="py-1 pr-3">{s.regime_execucao || "-"}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                          {lote.contrato && (
-                            <div className="mt-2 rounded bg-base-200/50 p-2 text-[11px]">
-                              <div className="font-semibold text-base-content/70 mb-1">Contrato {lote.contrato.numero} — Detalhar</div>
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-0.5">
-                                <span><span className="text-base-content/50">Empresa: </span>{lote.contrato.empresa || "-"}</span>
-                                <span><span className="text-base-content/50">CNPJ: </span>{lote.contrato.cnpj || "-"}</span>
-                                <span><span className="text-base-content/50">Valor: </span>{moeda(lote.contrato.valor)}</span>
-                                <span><span className="text-base-content/50">Vigência: </span>{lote.contrato.dt_inicio_vigencia || "?"} a {lote.contrato.dt_fim_vigencia || "?"}</span>
-                              </div>
-                              {lote.contrato.objeto && (
-                                <div className="mt-1"><span className="text-base-content/50">Objeto: </span>{lote.contrato.objeto}</div>
-                              )}
-                              <div className="mt-2 font-semibold text-base-content/70">ART/RRT</div>
-                              {(lote.arts || []).length > 0 ? (
-                                <table className="w-full text-[11px] border-collapse mt-1">
-                                  <thead><tr className="text-left text-base-content/50">
-                                    <th className="py-0.5 pr-3 font-medium">Tipo</th>
-                                    <th className="py-0.5 pr-3 font-medium">ART/RRT</th>
-                                    <th className="py-0.5 pr-3 font-medium">Emissão</th>
-                                    <th className="py-0.5 pr-3 font-medium">Responsável Técnico</th>
-                                  </tr></thead>
-                                  <tbody>
-                                    {(lote.arts || []).map((a, ai) => (
-                                      <tr key={ai} className="border-t border-base-200">
-                                        <td className="py-0.5 pr-3">{a.tipo || "-"}</td>
-                                        <td className="py-0.5 pr-3 font-mono">{a.numero || "-"}</td>
-                                        <td className="py-0.5 pr-3">{a.dt_emissao || "-"}</td>
-                                        <td className="py-0.5 pr-3">{a.responsavel_tecnico || "-"}</td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              ) : (
-                                <div className="text-base-content/50 italic">Nenhum item incluído</div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </Section>
-                )}
+                <Secao
+                  icon={CalendarDays}
+                  titulo="Vigência e Datas"
+                  campos={[
+                    campo("Data da Proposta", detalhe.dt_proposta),
+                    campo("Data de Assinatura", detalhe.dt_assinatura),
+                    campo("Início de Vigência", detalhe.dt_inicio_vigencia),
+                    campo("Término de Vigência", detalhe.dt_fim_vigencia),
+                  ]}
+                />
 
-                {/* Histórico de Comunicações (TransfereGov mandatárias) — SITUAÇÃO e
-                    CONSIDERAÇÕES em destaque: é o andamento real da análise. */}
-                {ativa === "historico" && detalhe.historico_comunicacoes && detalhe.historico_comunicacoes.length > 0 && (
-                  <Section title={`Histórico de Comunicações (${detalhe.historico_comunicacoes.length})`}>
-                    <div className="space-y-2 p-2">
-                      {detalhe.historico_comunicacoes.map((h, i) => {
-                        const pick = (re: RegExp) => {
-                          const k = Object.keys(h).find((kk) => re.test(kk));
-                          return k ? (h[k] || "") : "";
-                        };
-                        const data = pick(/data|hora/i);
-                        const evento = pick(/evento/i);
-                        const resp = pick(/respons/i);
-                        const sit = pick(/situa/i);
-                        const cons = pick(/considera/i);
-                        return (
-                          <div key={i} className="rounded border border-base-300 bg-base-100 p-3">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="font-mono text-[11px] text-base-content/50">{data}</span>
-                              <span className="font-medium text-base-content">{evento}</span>
-                              {sit && (
-                                <span className="ml-auto rounded-full bg-info/15 px-2 py-0.5 text-[11px] font-semibold text-info">
-                                  {sit}
-                                </span>
-                              )}
-                            </div>
-                            {resp && <div className="mt-0.5 text-[11px] text-base-content/50">{resp}</div>}
-                            {cons && (
-                              <div className="mt-2 rounded border-l-4 border-warning bg-warning/10 p-2 text-xs text-base-content/80">
-                                <span className="font-semibold text-warning">Considerações: </span>
-                                {cons}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </Section>
-                )}
+                <Secao
+                  icon={Building2}
+                  titulo="Proponente"
+                  cols={2}
+                  campos={[
+                    campo("Proponente", detalhe.proponente),
+                    campo("CNPJ", detalhe.identificacao),
+                  ]}
+                />
 
-                {/* Documentos do Quadro Resumo (Termos de Notificação etc.) */}
-                {ativa === "docs" && detalhe.documentos_quadro_resumo && detalhe.documentos_quadro_resumo.length > 0 && (
-                  <Section title={`Documentos / Termos de Notificação (${detalhe.documentos_quadro_resumo.length})`}>
-                    <div className="space-y-1 p-2">
-                      {detalhe.documentos_quadro_resumo.map((d, i) => {
-                        const vals = Object.entries(d).filter(([, v]) => v && !/^\s*$/.test(v));
-                        return (
-                          <div key={i} className="rounded border border-base-300 bg-base-100 px-3 py-2 text-xs">
-                            {vals.map(([k, v]) => (
-                              <span key={k} className="mr-3 inline-block">
-                                <span className="text-base-content/50">{k}: </span>
-                                <span className="text-base-content/80">{v}</span>
-                              </span>
-                            ))}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </Section>
-                )}
-
-                {ativa === "dados" && (<>
-                <Section title="Vigência e Datas">
-                  <Grid>
-                    <Field label="Data da Proposta" value={detalhe.dt_proposta} />
-                    <Field label="Data de Assinatura" value={detalhe.dt_assinatura} />
-                    <Field label="Início de Vigência" value={detalhe.dt_inicio_vigencia} />
-                    <Field label="Término de Vigência" value={detalhe.dt_fim_vigencia} />
-                  </Grid>
-                </Section>
-
-                <Section title="Proponente">
-                  <Grid cols={2}>
-                    <Field label="Proponente" value={detalhe.proponente} />
-                    <Field label="CNPJ" value={detalhe.identificacao} />
-                  </Grid>
-                </Section>
-
-                <Section title="Objeto">
-                  <p className="text-sm text-base-content bg-base-200 border rounded p-3">{detalhe.objeto || "-"}</p>
-                </Section>
+                {/* Objeto fica FORA de <Campos>: é texto livre, às vezes de vários
+                    parágrafos, e a célula da grade trunca por desenho. */}
+                <Secao icon={FileText} titulo="Objeto">
+                  <p className="text-[12px] leading-relaxed break-words" style={{ color: "var(--bi-text)" }}>
+                    {detalhe.objeto || "-"}
+                  </p>
+                </Secao>
 
                 {detalhe.detalhe && Object.keys(detalhe.detalhe).length > 0 && (
-                  <Section title="Justificativa e demais informações">
-                    <div className="space-y-2">
+                  <Secao icon={Info} titulo="Justificativa e demais informações">
+                    <dl className="flex flex-col gap-1.5">
                       {Object.entries(detalhe.detalhe)
                         .filter(([k]) => !k.startsWith("_") && !["Modalidade","Situação no SIAFI","Código do Instrumento","Número da Proposta","Número do Processo","Órgão","Objeto do Instrumento"].includes(k))
                         .map(([k, v]) => (
-                          <div key={k} className="text-sm border-b border-base-300 pb-1">
-                            <span className="text-[11px] font-semibold text-base-content/70">{k}: </span>
-                            <span className="text-base-content">{Array.isArray(v) ? v.join(" | ") : v}</span>
+                          <div key={k} className="border-b pb-1.5 last:border-0 last:pb-0" style={{ borderColor: "var(--bi-line)" }}>
+                            <dt className="text-[9px] uppercase tracking-wide" style={{ color: "var(--bi-faint)" }}>{k}</dt>
+                            <dd className="mt-0.5 text-[12px] leading-snug break-words" style={{ color: "var(--bi-text)" }}>
+                              {Array.isArray(v) ? v.join(" | ") : v}
+                            </dd>
                           </div>
                         ))}
-                    </div>
-                  </Section>
+                    </dl>
+                  </Secao>
                 )}
 
                 {Array.isArray(detalhe.detalhe?._documentos) && (detalhe.detalhe!._documentos as string[]).length > 0 && (
-                  <Section title="Documentos Digitalizados">
-                    <ul className="text-sm space-y-1.5">
+                  <Secao icon={Paperclip} titulo="Documentos Digitalizados" sub={`${(detalhe.detalhe!._documentos as string[]).length} documento(s)`}>
+                    <ul className="flex flex-col gap-1">
                       {(detalhe.detalhe!._documentos as string[]).map((d, i) => {
                         const nome = d.replace(/\s*Baixar( Contrapartida)?\s*$/i, "").trim();
                         return (
-                          <li key={i} className="flex items-start gap-2 text-base-content/70">
-                            <span className="text-info mt-0.5">📄</span>
-                            <span className="break-words">{nome}</span>
+                          <li key={i} className="flex items-start gap-2 text-[12px] leading-snug break-words" style={{ color: "var(--bi-text)" }}>
+                            <Paperclip className="mt-0.5 size-3 shrink-0" style={{ color: "var(--bi-faint)" }} />
+                            <span>{nome}</span>
                           </li>
                         );
                       })}
                     </ul>
                     <a href={PORTAL_BASE} target="_blank" rel="noreferrer noopener"
-                       className="inline-flex items-center gap-1 mt-3 text-xs text-primary-content bg-primary hover:bg-primary/90 rounded px-3 py-1.5">
+                       className="mt-3 inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-semibold"
+                       style={{ background: "var(--bi-cta)", color: "var(--bi-cta-ink)" }}>
                       <ExternalLink className="size-3" /> Baixar no portal (Acesso Livre)
                     </a>
-                    <p className="text-[11px] text-base-content/60 mt-1.5">
+                    <p className="mt-1.5 text-[10px] leading-snug" style={{ color: "var(--bi-faint)" }}>
                       Os anexos do TransfereGov exigem sessão do portal. Clique acima, pesquise o município/proposta
                       e baixe os PDFs diretamente no Acesso Livre.
                     </p>
-                  </Section>
+                  </Secao>
                 )}
-                </>)}
-                </div>
+              </>)}
+
+              {/* OPs/OBs — Execução Concedente → Listagem de Repasses */}
+              {ativa === "opsobs" && detalhe.ops_obs && (
+                <Secao
+                  icon={Banknote}
+                  titulo="OPs/OBs — Repasses e Desembolsos"
+                  campos={[
+                    { rotulo: "Valor Total de Repasse", valor: moeda(detalhe.ops_obs.valor_total_repasse) },
+                    { rotulo: "Valor Desembolsado", valor: moeda(detalhe.ops_obs.valor_desembolsado), tom: "ok" },
+                    { rotulo: "Valor a Desembolsar", valor: moeda(detalhe.ops_obs.valor_a_desembolsar), tom: "atencao" },
+                    campo("Último Desembolso", detalhe.ops_obs.data_ultimo_desembolso),
+                  ]}
+                >
+                  {(detalhe.ops_obs.obs || []).length > 0 && (
+                    <div className="mt-3">
+                      <div className="mb-1.5 text-[11px] font-semibold" style={{ color: "var(--bi-muted)" }}>
+                        Ordens Bancárias (GERCOMP) · {(detalhe.ops_obs.obs || []).length}
+                      </div>
+                      <Grade
+                        rolagem
+                        cols={COLS_OB}
+                        cabecalho={[
+                          { label: "Nº NS" }, { label: "Nº OP" }, { label: "Nº OB" },
+                          { label: "Valor", direita: true }, { label: "Situação" },
+                          { label: "Emissão OB", direita: true },
+                        ]}
+                      >
+                        {(detalhe.ops_obs.obs || []).map((o, i) => (
+                          <GradeLinha key={i} cols={COLS_OB}>
+                            <GradeCel tom="id" title={o.numero_ns || undefined}>{o.numero_ns || "-"}</GradeCel>
+                            <GradeCel tom="id" title={o.numero_op || undefined}>{o.numero_op || "-"}</GradeCel>
+                            <GradeCel tom="id" title={o.numero_ob || undefined}>{o.numero_ob || "-"}</GradeCel>
+                            <GradeCel tom="num">{moeda(o.valor)}</GradeCel>
+                            <GradeCel>
+                              {o.situacao ? <Selo tom={situacaoTom(o.situacao)}>{o.situacao}</Selo> : "-"}
+                            </GradeCel>
+                            <GradeCel tom="data">{o.data_emissao_ob || "-"}</GradeCel>
+                          </GradeLinha>
+                        ))}
+                      </Grade>
+                    </div>
+                  )}
+                </Secao>
+              )}
+
+              {/* OBRAS — Acompanhamento de Obras (medição) */}
+              {ativa === "obras" && detalhe.obras && (detalhe.obras.lotes || []).length > 0 && (
+                <Secao
+                  icon={HardHat}
+                  titulo="Acompanhamento de Obras"
+                  sub={`${(detalhe.obras.lotes || []).length} lote(s)`}
+                  cols={2}
+                  campos={[
+                    { rotulo: "Valor total das submetas", valor: moeda(detalhe.obras.valor_total_submetas) },
+                    ...(detalhe.obras.situacao_paralisacao
+                      ? [{ rotulo: "Paralisação", valor: detalhe.obras.situacao_paralisacao, tom: "atencao" as const }]
+                      : []),
+                  ]}
+                >
+                  <div className="mt-3 flex flex-col gap-2">
+                    {(detalhe.obras.lotes || []).map((lote, li) => (
+                      <div key={li} className="bi-card-flat p-3">
+                        <div className="mb-2 flex flex-wrap items-center gap-2">
+                          <Selo tom="acento">{lote.tipo === "C" ? "CTEF" : "Lote"} {lote.numero}</Selo>
+                          {lote.dias_sem_medicao != null && (
+                            <span className="text-[10px]" style={{ color: "var(--bi-faint)" }}>
+                              {lote.dias_sem_medicao} dias sem medição
+                            </span>
+                          )}
+                          {lote.paralisado && <Selo tom="critico">Paralisado</Selo>}
+                        </div>
+                        <Grade
+                          rolagem
+                          cols={COLS_SUBMETA}
+                          cabecalho={[
+                            { label: "Submeta" }, { label: "Descrição" },
+                            { label: "Valor", direita: true }, { label: "Situação" }, { label: "Regime" },
+                          ]}
+                        >
+                          {(lote.submetas || []).map((s, si) => (
+                            <GradeLinha key={si} cols={COLS_SUBMETA}>
+                              <GradeCel tom="id">{s.numero || "-"}</GradeCel>
+                              <GradeCel title={s.descricao || undefined}>{s.descricao || "-"}</GradeCel>
+                              <GradeCel tom="num">{moeda(s.valor)}</GradeCel>
+                              <GradeCel>
+                                {s.situacao ? <Selo tom={situacaoTom(s.situacao)}>{s.situacao}</Selo> : "-"}
+                              </GradeCel>
+                              <GradeCel>{s.regime_execucao || "-"}</GradeCel>
+                            </GradeLinha>
+                          ))}
+                        </Grade>
+                        {lote.contrato && (
+                          <div className="mt-3 rounded-lg p-2.5" style={{ background: "var(--bi-surface-2)" }}>
+                            <div className="mb-1.5 text-[11px] font-semibold" style={{ color: "var(--bi-muted)" }}>
+                              Contrato {lote.contrato.numero}
+                            </div>
+                            <Campos
+                              cols={2}
+                              campos={[
+                                campo("Empresa", lote.contrato.empresa),
+                                campo("CNPJ", lote.contrato.cnpj),
+                                { rotulo: "Valor", valor: moeda(lote.contrato.valor) },
+                                { rotulo: "Vigência", valor: `${lote.contrato.dt_inicio_vigencia || "?"} a ${lote.contrato.dt_fim_vigencia || "?"}` },
+                              ]}
+                            />
+                            {lote.contrato.objeto && (
+                              <div className="mt-2">
+                                <div className="text-[9px] uppercase tracking-wide" style={{ color: "var(--bi-faint)" }}>Objeto</div>
+                                <p className="mt-0.5 text-[11px] leading-snug break-words" style={{ color: "var(--bi-text)" }}>
+                                  {lote.contrato.objeto}
+                                </p>
+                              </div>
+                            )}
+                            <div className="mt-2.5 mb-1 text-[11px] font-semibold" style={{ color: "var(--bi-muted)" }}>ART/RRT</div>
+                            {(lote.arts || []).length > 0 ? (
+                              <Grade
+                                rolagem
+                                cols={COLS_ART}
+                                cabecalho={[
+                                  { label: "Tipo" }, { label: "ART/RRT" },
+                                  { label: "Emissão", direita: true }, { label: "Responsável Técnico" },
+                                ]}
+                              >
+                                {(lote.arts || []).map((a, ai) => (
+                                  <GradeLinha key={ai} cols={COLS_ART}>
+                                    <GradeCel>{a.tipo || "-"}</GradeCel>
+                                    <GradeCel tom="id">{a.numero || "-"}</GradeCel>
+                                    <GradeCel tom="data">{a.dt_emissao || "-"}</GradeCel>
+                                    <GradeCel title={a.responsavel_tecnico || undefined}>{a.responsavel_tecnico || "-"}</GradeCel>
+                                  </GradeLinha>
+                                ))}
+                              </Grade>
+                            ) : (
+                              <div className="text-[11px] italic" style={{ color: "var(--bi-faint)" }}>Nenhum item incluído</div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </Secao>
+              )}
+
+              {/* Histórico de Comunicações (TransfereGov mandatárias) — SITUAÇÃO e
+                  CONSIDERAÇÕES em destaque: é o andamento real da análise. */}
+              {ativa === "historico" && detalhe.historico_comunicacoes && detalhe.historico_comunicacoes.length > 0 && (
+                <Secao
+                  icon={MessagesSquare}
+                  titulo="Histórico de Comunicações"
+                  sub={`${detalhe.historico_comunicacoes.length} registro(s)`}
+                >
+                  <div className="mt-1 flex flex-col gap-1.5">
+                    {detalhe.historico_comunicacoes.map((h, i) => {
+                      const pick = (re: RegExp) => {
+                        const k = Object.keys(h).find((kk) => re.test(kk));
+                        return k ? (h[k] || "") : "";
+                      };
+                      const data = pick(/data|hora/i);
+                      const evento = pick(/evento/i);
+                      const resp = pick(/respons/i);
+                      const sit = pick(/situa/i);
+                      const cons = pick(/considera/i);
+                      return (
+                        <div key={i} className="bi-card-flat p-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="bi-num text-[10px]" style={{ color: "var(--bi-faint)" }}>{data}</span>
+                            <span className="text-[12px] font-medium" style={{ color: "var(--bi-text)" }}>{evento}</span>
+                            {sit && <span className="ml-auto"><Selo tom={situacaoTom(sit)}>{sit}</Selo></span>}
+                          </div>
+                          {resp && <div className="mt-0.5 text-[10px]" style={{ color: "var(--bi-faint)" }}>{resp}</div>}
+                          {cons && (
+                            <div className="mt-2 rounded-lg p-2" style={{ background: "color-mix(in oklab, var(--bi-warn) 10%, transparent)" }}>
+                              <div className="text-[9px] font-semibold uppercase tracking-wide" style={{ color: "var(--bi-warn-ink)" }}>
+                                Considerações
+                              </div>
+                              <p className="mt-0.5 text-[11px] leading-snug break-words" style={{ color: "var(--bi-text)" }}>{cons}</p>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </Secao>
+              )}
+
+              {/* Documentos do Quadro Resumo (Termos de Notificação etc.) */}
+              {ativa === "docs" && detalhe.documentos_quadro_resumo && detalhe.documentos_quadro_resumo.length > 0 && (
+                <Secao
+                  icon={Paperclip}
+                  titulo="Documentos / Termos de Notificação"
+                  sub={`${detalhe.documentos_quadro_resumo.length} registro(s)`}
+                >
+                  <div className="mt-1 flex flex-col gap-1.5">
+                    {detalhe.documentos_quadro_resumo.map((d, i) => {
+                      const vals = Object.entries(d).filter(([, v]) => v && !/^\s*$/.test(v));
+                      return (
+                        <div key={i} className="bi-card-flat p-3">
+                          <Campos cols={Math.min(vals.length, 3) || 1} campos={vals.map(([k, v]) => campo(k, v))} />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </Secao>
+              )}
+
               </div>
-              );
-            })()}
-          </div>
-        </div>
-      )}
+            </ModalCorpo>
+          ) : null}
+        </Modal>
+        );
+      })()}
     </div>
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <h4 className="text-sm font-semibold text-base-content border-b border-primary pb-1 mb-3">{title}</h4>
-      {children}
-    </div>
-  );
-}
-function Grid({ children, cols = 4 }: { children: React.ReactNode; cols?: 2 | 3 | 4 }) {
-  const cls = cols === 2 ? "md:grid-cols-2" : cols === 3 ? "md:grid-cols-3" : "md:grid-cols-4";
-  return <div className={`grid grid-cols-1 ${cls} gap-3`}>{children}</div>;
-}
-function Field({ label, value }: { label: string; value?: string | null }) {
-  const v = value === null || value === undefined || value === "" ? "-" : String(value);
-  return (
-    <div>
-      <div className="text-[11px] text-base-content/70 mb-0.5">{label}</div>
-      <div className="border border-base-300 rounded px-2 py-1.5 bg-base-200 text-sm text-base-content break-words">{v}</div>
-    </div>
-  );
-}

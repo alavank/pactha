@@ -199,7 +199,7 @@ function SidebarContent({
   }
   return (
     <div className="flex h-full flex-col bg-base-100">
-      {/* Faixa institucional - cores do governo */}
+      {/* Faixa de identidade (ver .gov-stripe em globals.css) */}
       <div className="gov-stripe" />
 
       {/* Header: a marca do PRODUTO, sozinha. O brasão saiu daqui — ele agora

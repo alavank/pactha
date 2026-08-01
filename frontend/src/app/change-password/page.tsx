@@ -2,9 +2,7 @@
 import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import api from "@/lib/api";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import toast from "react-hot-toast";
 import { KeyRound, ShieldCheck } from "lucide-react";
 
@@ -55,84 +53,104 @@ function ChangePasswordInner() {
     }
   }
 
+  const rotulo = "mb-1 block text-[12px] font-medium";
+
   return (
     <div className="relative min-h-screen flex items-center justify-center overflow-hidden bg-base-200 p-4">
-      {/* brilho de marca (design "Base") */}
-      <div className="pointer-events-none absolute -top-40 left-1/2 h-[28rem] w-[40rem] -translate-x-1/2 rounded-full bg-primary/15 blur-3xl" />
-      <div className="pointer-events-none absolute -bottom-24 right-[-6rem] h-80 w-80 rounded-full bg-accent-purple/15 blur-3xl" />
-      <Card className="relative w-full max-w-md border border-base-300/60 shadow-theme-lg">
-        <CardHeader className="text-center pb-2">
-          <div className="mx-auto mb-3 w-14 h-14 bg-primary/10 rounded-[var(--radius-box)] flex items-center justify-center">
-            <KeyRound className="size-7 text-primary" />
-          </div>
-          <CardTitle className="text-xl font-bold">
+      {/* O MESMO brilho único do Login, e pela mesma razão: eram duas manchas
+          — uma violeta e outra da marca antiga — e esta tela abre logo depois
+          do Login, então a diferença entre as duas era visível na sequência. */}
+      <div
+        className="pointer-events-none absolute -top-56 left-1/2 h-[32rem] w-[44rem] -translate-x-1/2 rounded-full blur-3xl"
+        style={{ background: "color-mix(in oklab, var(--bi-accent) 10%, transparent)" }}
+      />
+      <div className="bi-card relative w-full max-w-md p-6">
+        <div className="flex flex-col items-center gap-2 pb-4 text-center">
+          <span
+            className="grid size-12 place-items-center rounded-full"
+            style={{ background: "var(--bi-surface-2)", color: "var(--bi-muted)" }}
+          >
+            <KeyRound className="size-5" />
+          </span>
+          <div className="bi-title text-[15px] leading-tight">
             {isFirstLogin ? "Trocar senha (primeiro acesso)" : "Trocar senha"}
-          </CardTitle>
+          </div>
           {isFirstLogin && (
-            <div role="alert" className="alert alert-warning alert-soft mt-2 text-xs">
-              <span>Voce esta usando uma senha temporaria. Defina uma nova senha para continuar.</span>
+            <div
+              role="alert"
+              className="mt-1 w-full rounded-lg px-3 py-2 text-left text-[11px] leading-snug"
+              style={{
+                background: "color-mix(in oklab, var(--bi-warn) 12%, transparent)",
+                color: "var(--bi-warn-ink)",
+              }}
+            >
+              Você está usando uma senha temporária. Defina uma nova senha para continuar.
             </div>
           )}
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={submit} className="space-y-4">
-            <div>
-              <label className="text-sm font-medium mb-1 block">Senha atual</label>
-              <Input
-                type="password"
-                value={current}
-                onChange={(e) => setCurrent(e.target.value)}
-                required
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium mb-1 block">Nova senha</label>
-              <Input
-                type="password"
-                value={next1}
-                onChange={(e) => setNext1(e.target.value)}
-                minLength={10}
-                required
-              />
-              {next1 && (
-                <div className="mt-1 flex items-center gap-2 text-xs">
-                  <div className="flex gap-1 flex-1">
-                    {[1, 2, 3, 4].map((i) => (
-                      <div
-                        key={i}
-                        className={`h-1 flex-1 rounded ${
-                          i <= strength.score
-                            ? strength.score >= 3
-                              ? "bg-success"
-                              : "bg-warning"
-                            : "bg-base-300"
-                        }`}
-                      />
-                    ))}
-                  </div>
-                  <span className="text-base-content/60 w-16">{strength.label}</span>
+        </div>
+        <form onSubmit={submit} className="space-y-4">
+          <div>
+            <label className={rotulo} style={{ color: "var(--bi-muted)" }}>Senha atual</label>
+            <Input
+              type="password"
+              value={current}
+              onChange={(e) => setCurrent(e.target.value)}
+              required
+            />
+          </div>
+          <div>
+            <label className={rotulo} style={{ color: "var(--bi-muted)" }}>Nova senha</label>
+            <Input
+              type="password"
+              value={next1}
+              onChange={(e) => setNext1(e.target.value)}
+              minLength={10}
+              required
+            />
+            {next1 && (
+              <div className="mt-1.5 flex items-center gap-2 text-[10px]">
+                <div className="flex flex-1 gap-1">
+                  {[1, 2, 3, 4].map((i) => (
+                    <div
+                      key={i}
+                      className="h-1 flex-1 rounded"
+                      style={{
+                        background:
+                          i > strength.score ? "var(--bi-line)"
+                          : strength.score >= 3 ? "var(--bi-ok)"
+                          : "var(--bi-warn)",
+                      }}
+                    />
+                  ))}
                 </div>
-              )}
-              <p className="text-xs text-base-content/50 mt-1">
-                Min 10 caracteres. Use letras, numeros e simbolos.
-              </p>
-            </div>
-            <div>
-              <label className="text-sm font-medium mb-1 block">Confirmar nova senha</label>
-              <Input
-                type="password"
-                value={next2}
-                onChange={(e) => setNext2(e.target.value)}
-                required
-              />
-            </div>
-            <Button type="submit" className="w-full" disabled={loading}>
-              <ShieldCheck className="mr-2 size-4" />
-              {loading ? "Alterando..." : "Alterar senha"}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+                <span className="w-14" style={{ color: "var(--bi-muted)" }}>{strength.label}</span>
+              </div>
+            )}
+            <p className="mt-1 text-[10px]" style={{ color: "var(--bi-faint)" }}>
+              Mín. 10 caracteres. Use letras, números e símbolos.
+            </p>
+          </div>
+          <div>
+            <label className={rotulo} style={{ color: "var(--bi-muted)" }}>Confirmar nova senha</label>
+            <Input
+              type="password"
+              value={next2}
+              onChange={(e) => setNext2(e.target.value)}
+              required
+            />
+          </div>
+          {/* Mesma CTA do Login: quase preta, não colorida. */}
+          <button
+            type="submit"
+            disabled={loading}
+            className="flex h-10 w-full items-center justify-center gap-2 rounded-xl text-[13px] font-semibold transition-opacity disabled:opacity-60"
+            style={{ background: "var(--bi-cta)", color: "var(--bi-cta-ink)" }}
+          >
+            <ShieldCheck className="size-4" />
+            {loading ? "Alterando..." : "Alterar senha"}
+          </button>
+        </form>
+      </div>
     </div>
   );
 }
