@@ -40,7 +40,7 @@ function rmTom(s?: string | null): "neutro" | "ok" | "atencao" | "critico" {
    linha so (violeta em "Abrir", verde em "Relatorio", vermelho em remover), e
    com tudo pintado nada mais chamava atencao. */
 const CLS_ACAO =
-  "inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors hover:brightness-95";
+  "inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors bi-hover";
 const ESTILO_ACAO: React.CSSProperties = {
   background: "var(--bi-surface)",
   border: "1px solid var(--bi-line)",

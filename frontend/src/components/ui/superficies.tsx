@@ -365,7 +365,7 @@ export function Numero({
   return (
     <Tag
       {...(onClick ? { type: "button" as const, onClick } : {})}
-      className={`bi-card px-4 py-3.5 text-left ${onClick ? "transition-colors hover:brightness-[0.98]" : ""}`}
+      className={`bi-card px-4 py-3.5 text-left ${onClick ? "transition-colors bi-hover" : ""}`}
     >
       <div className="flex items-center gap-2">
         {Icon && <Icon className="size-4 shrink-0" style={{ color: cor }} />}
@@ -418,10 +418,10 @@ export const ESTILO_CTA: React.CSSProperties = {
 
 /** Secundário: superfície com a linha de divisória por borda. */
 export const BOTAO_SEC =
-  "inline-flex h-9 items-center gap-1.5 rounded-xl px-3 text-[12px] font-semibold transition-colors hover:brightness-95 disabled:opacity-60";
+  "inline-flex h-9 items-center gap-1.5 rounded-xl px-3 text-[12px] font-semibold transition-colors bi-hover disabled:opacity-60";
 /** Miúdo, para a coluna de ações de um item de lista. */
 export const BOTAO_ACAO =
-  "inline-flex h-7 items-center gap-1 rounded-lg px-2 text-[11px] font-medium transition-colors hover:brightness-95 disabled:opacity-60";
+  "inline-flex h-7 items-center gap-1 rounded-lg px-2 text-[11px] font-medium transition-colors bi-hover disabled:opacity-60";
 export const ESTILO_SEC: React.CSSProperties = {
   background: "var(--bi-surface)",
   border: "1px solid var(--bi-line)",
@@ -493,42 +493,77 @@ export function Modal({
   const idTitulo = React.useId();
   const caixa = React.useRef<HTMLDivElement>(null);
 
+  /* O callback vive num REF, e as dependências dos efeitos abaixo NÃO o
+     incluem. Isso não é preciosismo — a versão anterior tinha `onFechar` nas
+     deps, e como todo chamador passa uma arrow inline (`() => setAberto(false)`),
+     a identidade mudava a cada render. Efeito colateral: o efeito rodava o
+     cleanup e reexecutava a cada TECLA digitada dentro do modal, e como ele
+     chamava `caixa.current.focus()` no corpo, o foco saía do campo. O
+     formulário de criar Service Token aceitava UM CARACTERE POR CLIQUE. */
+  const fecharRef = React.useRef(onFechar);
+  fecharRef.current = onFechar;
+  const fechar = React.useCallback(() => fecharRef.current(), []);
+
+  /* Foco e trava de rolagem: dependem SÓ de estar aberto. */
   React.useEffect(() => {
     if (!aberto) return;
-    /* Devolver o foco ao fechar. Sem isto, quem usa teclado volta para o
-       <body> e perde o lugar na lista de onde abriu o modal. */
     const veioDe = document.activeElement as HTMLElement | null;
-    const foco = () =>
-      Array.from(
-        caixa.current?.querySelectorAll<HTMLElement>(
-          'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
-        ) ?? [],
-      ).filter((e) => e.offsetParent !== null);
+    caixa.current?.focus({ preventScroll: true });
 
-    caixa.current?.focus();
+    /* A primitiva substituída travava a rolagem do corpo; a peça não travava, e
+       a roda do mouse sobre o véu rolava a lista por baixo. Compensa a largura
+       da barra para o layout não saltar ao abrir. */
+    const corpo = document.body;
+    const overflowAntes = corpo.style.overflow;
+    const padAntes = corpo.style.paddingRight;
+    const barra = window.innerWidth - document.documentElement.clientWidth;
+    corpo.style.overflow = "hidden";
+    if (barra > 0) corpo.style.paddingRight = `${barra}px`;
 
+    return () => {
+      corpo.style.overflow = overflowAntes;
+      corpo.style.paddingRight = padAntes;
+      /* `preventScroll` porque o elemento de origem pode estar fora da vista:
+         sem ele o navegador rola a página de fundo para trazê-lo de volta. */
+      veioDe?.focus?.({ preventScroll: true });
+    };
+  }, [aberto]);
+
+  /* Teclado. Separado do de cima para que ligar/desligar o Esc não mexa no
+     foco nem na trava de rolagem. */
+  React.useEffect(() => {
+    if (!aberto) return;
     const tecla = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && esc) { onFechar(); return; }
-      if (e.key !== "Tab") return;
+      if (e.key === "Escape" && esc) { fechar(); return; }
+      if (e.key !== "Tab" || !caixa.current) return;
       /* Prender o foco. `aria-modal="true"` faz o leitor de tela ignorar o
          resto da página; sem prender, o Tab leva para trás do véu e a pessoa
          digita numa tela que não vê nem ouve. */
-      const f = foco();
+      const f = Array.from(
+        caixa.current.querySelectorAll<HTMLElement>(
+          'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((el) => el.offsetParent !== null);
       if (!f.length) { e.preventDefault(); return; }
       const primeiro = f[0], ultimo = f[f.length - 1];
       const atual = document.activeElement;
-      if (e.shiftKey && (atual === primeiro || atual === caixa.current)) {
+      /* Por CONTENÇÃO, não por identidade. Comparar com o primeiro/último falha
+         aberta: se o foco estiver em qualquer outro lugar — e vai estar no
+         `<body>` sempre que o elemento focado sair da árvore — nada é impedido
+         e o Tab cai na página atrás do véu, que vem antes na ordem do documento
+         porque o portal é anexado ao fim do body. */
+      if (!caixa.current.contains(atual)) {
+        e.preventDefault();
+        (e.shiftKey ? ultimo : primeiro).focus();
+      } else if (e.shiftKey && atual === primeiro) {
         e.preventDefault(); ultimo.focus();
       } else if (!e.shiftKey && atual === ultimo) {
         e.preventDefault(); primeiro.focus();
       }
     };
     window.addEventListener("keydown", tecla);
-    return () => {
-      window.removeEventListener("keydown", tecla);
-      veioDe?.focus?.();
-    };
-  }, [aberto, onFechar, esc]);
+    return () => window.removeEventListener("keydown", tecla);
+  }, [aberto, esc, fechar]);
 
   if (!aberto) return null;
   const conteudo = (
@@ -537,7 +572,7 @@ export function Modal({
       /* Compara alvo com currentTarget em vez de `onClick={onFechar}` + um
          `stopPropagation` na caixa: assim nenhum clique legítimo que borbulha
          de dentro (um <select> nativo, por exemplo) fecha o modal por engano. */
-      onClick={(e) => e.target === e.currentTarget && onFechar()}
+      onClick={(e) => e.target === e.currentTarget && fechar()}
     >
       <div
         ref={caixa}
@@ -720,9 +755,33 @@ export function Abas<T extends string>({
   opcoes: Array<{ valor: T; label: string; on?: boolean }>;
   tamanho?: "sm" | "md";
 }) {
+  /* Setas ←/→ e um só Tab para o grupo (roving tabindex).
+   *
+   *  Declarar `role="tablist"` cria obrigação: o leitor de tela anuncia "guia 1
+   *  de 5" e INSTRUI a pessoa a usar as setas. A versão anterior tinha os
+   *  papéis e não tinha as setas — o que é pior que não ter papel nenhum,
+   *  porque promete uma navegação que não existe. */
+  const grupo = React.useRef<HTMLDivElement>(null);
+  const seta = (e: React.KeyboardEvent) => {
+    const passo = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+    if (!passo) return;
+    e.preventDefault();
+    const vivas = opcoes.filter((o) => o.on !== false);
+    if (vivas.length < 2) return;
+    const i = vivas.findIndex((o) => o.valor === valor);
+    const alvo = vivas[(i + passo + vivas.length) % vivas.length];
+    onChange(alvo.valor);
+    // O foco acompanha a seleção, como manda o padrão para aba automática.
+    requestAnimationFrame(() =>
+      grupo.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.focus(),
+    );
+  };
+
   return (
     <div
+      ref={grupo}
       role="tablist"
+      onKeyDown={seta}
       className="inline-flex flex-wrap items-center gap-1 rounded-full p-1"
       style={{ background: "var(--bi-surface-2)", border: "1px solid var(--bi-line)" }}
     >
@@ -735,6 +794,7 @@ export function Abas<T extends string>({
             type="button"
             role="tab"
             aria-selected={ativo}
+            tabIndex={ativo ? 0 : -1}
             disabled={!on}
             onClick={() => on && onChange(o.valor)}
             className={`rounded-full font-medium transition-colors ${

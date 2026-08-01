@@ -79,8 +79,13 @@ export default function LoginPage() {
       />
       <div className="bi-card relative w-full max-w-md p-6">
         <div className="flex flex-col items-center gap-2 pb-4 text-center">
+          {/* Duas artes, uma por tema — a padrão tem a palavra em tinta preta e
+              some sobre o cartão escuro (1,04 de contraste). Ver o comentário
+              longo em dashboard/layout.tsx. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/pactha-logo.png" alt="PACTHA" className="h-11 w-auto max-w-[210px] object-contain" />
+          <img src="/pactha-logo.png" alt="PACTHA" className="marca-clara h-11 w-auto max-w-[210px] object-contain" />
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/pactha-logo-dark.png" alt="" aria-hidden="true" className="marca-escura h-11 w-auto max-w-[210px] object-contain" />
           <div className="leading-tight">
             <p className="text-[13px] font-semibold" style={{ color: "var(--bi-muted)" }}>Monitoramento</p>
             <p className="text-[11px]" style={{ color: "var(--bi-faint)" }}>Convênios · Emendas · Transferências</p>

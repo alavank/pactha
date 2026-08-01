@@ -477,7 +477,7 @@ export default function RmEditorPage() {
                     );
                   })}
                   <button onClick={() => addSecao(pi)}
-                    className="flex w-full items-center justify-center gap-1 rounded-lg py-1.5 text-[12px] transition-colors hover:brightness-95"
+                    className="flex w-full items-center justify-center gap-1 rounded-lg py-1.5 text-[12px] transition-colors bi-hover"
                     style={{ background: "var(--bi-surface-2)", border: "1px dashed var(--bi-line-strong)", color: "var(--bi-muted)" }}>
                     <Plus className="size-4" /> Adicionar seção
                   </button>
@@ -487,7 +487,7 @@ export default function RmEditorPage() {
           );
         })}
         <button onClick={addParte}
-          className="flex w-full items-center justify-center gap-2 rounded-xl py-2 text-[12px] font-semibold transition-colors hover:brightness-95" style={{ background: "var(--bi-surface)", border: "1px dashed var(--bi-line-strong)", color: "var(--bi-muted)" }}>
+          className="flex w-full items-center justify-center gap-2 rounded-xl py-2 text-[12px] font-semibold transition-colors bi-hover" style={{ background: "var(--bi-surface)", border: "1px dashed var(--bi-line-strong)", color: "var(--bi-muted)" }}>
           <Plus className="size-4" /> Adicionar PARTE
         </button>
       </div>
