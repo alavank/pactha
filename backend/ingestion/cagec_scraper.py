@@ -261,7 +261,12 @@ async def _baixar_crc(page) -> tuple[bytes | None, str | None]:
             await loc.nth(n - 1).click()
         caminho = await (await dl.value).path()
         with open(caminho, "rb") as f:
-            return f.read(), None
+            dados = f.read()
+        # PDF de 0 bytes e falsy: sem este ramo ele seguiria como "sem CRC" e
+        # sem motivo nenhum, e a tela ficaria muda sobre a propria ausencia.
+        if not dados:
+            return None, "O portal do CAGEC devolveu um certificado vazio."
+        return dados, None
     except Exception as e:
         motivo = await _erro_do_portal(page)
         logger.warning("    CRC nao baixou: %s", motivo or f"{type(e).__name__}: {str(e)[:90]}")
@@ -463,7 +468,8 @@ async def _clicar_pesquisar(page) -> None:
     raise RuntimeError("botao PESQUISAR nao encontrado")
 
 
-async def descobrir_entidades(page, nome_municipio: str, uf: str | None = None) -> list[dict]:
+async def descobrir_entidades(page, nome_municipio: str,
+                              uf: str | None = None) -> tuple[list[dict], bool]:
     """Entidades PUBLICAS do municipio cadastradas no CAGEC.
 
     Busca pelo NOME do municipio, nao pelo filtro de Municipio: o combobox de
@@ -537,7 +543,10 @@ async def descobrir_entidades(page, nome_municipio: str, uf: str | None = None) 
             break
         await page.wait_for_timeout(8000)
 
-    if total is not None and len(vistos) < total:
+    # O chamador PRECISA deste sinal: listagem incompleta nao pode autorizar o
+    # DELETE de _limpar_sumidos — apagaria cadastro que existe e so nao foi lido.
+    completa = not (total is not None and len(vistos) < total)
+    if not completa:
         logger.warning("    %s: li %d de %d cadastros — pode ter ficado entidade "
                        "de fora", nome_municipio, len(vistos), total)
 
@@ -568,7 +577,7 @@ async def descobrir_entidades(page, nome_municipio: str, uf: str | None = None) 
     logger.info("    %s: %d cadastro(s) com esse nome, %d publico(s) do municipio"
                 "%s", nome_municipio, len(entidades), len(publicas),
                 f" ({de_fora} de OUTRO municipio, descartado(s))" if de_fora else "")
-    return publicas
+    return publicas, completa
 
 
 def _pegar(linha: dict, *pedacos: str) -> str | None:
@@ -618,6 +627,11 @@ def _salvar(cur, mun: dict, cnpj_fmt: str, situacao: str | None, nome: str | Non
     velho demais engana tanto quanto detalhe ausente."""
     regular = bool(situacao) and _sem_acento(situacao) in _REGULARES
     pendentes = [i["codigo"] for i in itens if i.get("tipo") == "pendente"]
+    # Rede no DESTINO, alem da rede na origem: `crc_erro` NULL com `crc_ok`
+    # falso e o estado que faz a tela calar sobre a propria ignorancia. Um
+    # chamador novo nao deve conseguir criar esse estado por esquecimento.
+    if not crc_ok and not crc_erro:
+        crc_erro = "Não foi possível ler o certificado (CRC) nesta coleta."
     if principal:
         # So pode existir UMA principal por municipio (indice unico parcial no
         # banco). Limpa a anterior antes, senao o UPSERT bate no indice e a
@@ -728,7 +742,8 @@ async def _rodar() -> tuple[int, int, list[str]]:
                 # cadastros separados. O CNPJ inferido das emendas serve so para
                 # saber QUAL das entidades e a prefeitura.
                 try:
-                    entidades = await descobrir_entidades(page, mun["nome"], mun["uf"])
+                    entidades, listagem_completa = await descobrir_entidades(
+                        page, mun["nome"], mun["uf"])
                 except Exception as e:
                     logger.error("  %s: falha ao listar entidades — %s: %s",
                                  mun["nome"], type(e).__name__, str(e)[:110])
@@ -768,11 +783,18 @@ async def _rodar() -> tuple[int, int, list[str]]:
                                        conhecido["nome"] or "entidade",
                                        conhecido["cnpj"])
 
+                # Uma rodada PARCIAL nao pode autorizar DELETE: se a listagem
+                # veio truncada ou uma entidade nao respondeu, o CNPJ dela nao
+                # entra em `vistos` e _limpar_sumidos a apagaria como se tivesse
+                # saido do CAGEC — levando junto o detalhamento preservado, que
+                # hoje e a UNICA copia (o portal nao emite CRC novo).
+                rodada_completa = listagem_completa
                 vistos, coletadas = [], 0
                 for ent in entidades:
                     cnpj_ent = re.search(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}",
                                          " ".join(ent.values()))
                     if not cnpj_ent:
+                        rodada_completa = False
                         continue
                     cnpj_fmt = cnpj_ent.group(0)
                     tipo = _pegar(ent, "tipo")
@@ -795,6 +817,7 @@ async def _rodar() -> tuple[int, int, list[str]]:
                         logger.warning("    %s (%s): sem resultado apos 2 tentativas%s",
                                        (_pegar(ent, "nome", "razao social") or cnpj_fmt)[:40],
                                        cnpj_fmt, f" — {erro}" if erro else "")
+                        rodada_completa = False
                         continue
 
                     situacao = _pegar(linha, "situacao", "parceria")
@@ -819,6 +842,15 @@ async def _rodar() -> tuple[int, int, list[str]]:
                                         f"({type(e).__name__}).")
 
                     crc_ok = bool(itens)
+                    if not crc_ok and not crc_erro:
+                        # `parse_crc` devolve lista VAZIA sem levantar excecao
+                        # quando o texto do PDF nao rende item nenhum (PDF so
+                        # imagem, fonte sem ToUnicode, pagina de erro emitida
+                        # como certificado). Sem motivo aqui, o unico caminho
+                        # que preenchia `crc_erro` era o `except` — e a falha
+                        # voltaria a ser silenciosa, que e o bug desta PR.
+                        crc_erro = ("O certificado foi emitido mas veio sem a lista "
+                                    "de documentos (texto ilegível).")
                     if not itens:
                         # Fallback: so o que a linha da. Nao substitui detalhe ja
                         # conhecido — quem decide isso e o _salvar.
@@ -858,7 +890,11 @@ async def _rodar() -> tuple[int, int, list[str]]:
                                        "principal" if principal else (tipo or "entidade"),
                                        (nome or cnpj_fmt)[:38], situacao, crc_erro)
 
-                removidas = _limpar_sumidos(cur, mun["id"], vistos)
+                removidas = (_limpar_sumidos(cur, mun["id"], vistos)
+                             if rodada_completa else 0)
+                if not rodada_completa:
+                    logger.warning("    %s: rodada incompleta — nao removo entidade "
+                                   "nenhuma nesta passada", mun["nome"])
                 conn.commit()
                 if removidas:
                     logger.info("    %s: %d entidade(s) sumiram do CAGEC e foram "
