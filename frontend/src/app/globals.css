@@ -615,6 +615,24 @@ html,
   .bi-insight-enter, .bi-pane-enter { animation: none; }
 }
 
+/* A bolha de quem PERGUNTA, na tela da IA.
+   Era `bg-primary`: preenchida com a cor da marca. Passa a ser a CTA quase
+   preta — continua sendo o elemento mais forte da conversa, que é o que
+   distingue quem falou, sem gastar o acento. E nesta tela o acento precisa
+   sobrar: ele é o cursor que pisca enquanto o modelo escreve, o único ponto
+   da tela que informa "ainda está vindo". */
+.bi-bolha-eu {
+  background: var(--bi-cta);
+  color: var(--bi-cta-ink);
+}
+
+/* A conversa aberta, na lista lateral. Era uma régua azul de 2px à esquerda;
+   vira superfície — mesmo gesto que o menu lateral usa para o item ativo. */
+.bi-conversa-ativa {
+  background: var(--bi-surface-2);
+  box-shadow: inset 2px 0 0 var(--bi-accent);
+}
+
 /* A aparência de CAMPO — input, select e textarea, um desenho só.
    Existia em três formas ao mesmo tempo: o `<Input>` do daisyUI com
    `bg-base-200` (que aponta para o fundo da PÁGINA, e por isso sumia dentro de

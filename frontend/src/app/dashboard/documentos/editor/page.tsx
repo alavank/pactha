@@ -5,8 +5,10 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { ArrowLeft, Save, Plus, Trash2, FileText, FileType, Loader2 } from "lucide-react";
 import api from "@/lib/api";
 import { useMunicipio } from "@/contexts/MunicipioContext";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  BOTAO_ACAO, BOTAO_CTA, BOTAO_SEC, Bloco, BlocoHead, ESTILO_CTA, ESTILO_SEC,
+} from "@/components/ui/superficies";
 
 type Campo = {
   key: string; label: string; tipo: string;
@@ -17,7 +19,9 @@ type Schema = { tipo: string; titulo: string; descricao?: string; secoes: Secao[
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Dados = Record<string, any>;
 
-const inputCls = "w-full border border-base-300 rounded-md p-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20";
+// A mesma aparencia de campo do resto do sistema (`.bi-field` em globals.css):
+// tres desenhos de campo conviviam no produto, um deles sumindo dentro do modal.
+const inputCls = "bi-field w-full p-2 text-sm";
 
 function CampoInput({ campo, value, onChange }: { campo: Campo; value: unknown; onChange: (v: string) => void }) {
   const v = (value as string) ?? "";
@@ -43,8 +47,8 @@ function CampoInput({ campo, value, onChange }: { campo: Campo; value: unknown; 
 function CampoBlock({ campo, value, onChange }: { campo: Campo; value: unknown; onChange: (v: string) => void }) {
   return (
     <div className="mb-4">
-      <label className="block text-sm font-semibold text-base-content">{campo.label}</label>
-      {campo.ajuda && <p className="text-xs text-base-content/60 mt-0.5 mb-1.5 leading-snug">{campo.ajuda}</p>}
+      <label className="block text-[12px] font-semibold" style={{ color: "var(--bi-text)" }}>{campo.label}</label>
+      {campo.ajuda && <p className="mt-0.5 mb-1.5 text-[11px] leading-snug" style={{ color: "var(--bi-faint)" }}>{campo.ajuda}</p>}
       <CampoInput campo={campo} value={value} onChange={onChange} />
     </div>
   );
@@ -151,37 +155,37 @@ function EditorInner() {
     router.push(`/dashboard/documentos${qs}`);
   };
 
-  if (loading) return <div className="flex h-64 items-center justify-center"><Loader2 className="size-7 animate-spin text-primary" /></div>;
-  if (!schema) return <div className="p-8 text-center text-base-content/60">Tipo de documento não encontrado.</div>;
+  if (loading) return <div className="flex h-64 items-center justify-center"><Loader2 className="size-7 animate-spin" style={{ color: "var(--bi-faint)" }} /></div>;
+  if (!schema) return <div className="p-8 text-center text-[12px]" style={{ color: "var(--bi-faint)" }}>Tipo de documento não encontrado.</div>;
 
   return (
-    <div className="space-y-5 max-w-4xl mx-auto pb-24">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3">
+    <div className="mx-auto max-w-4xl space-y-4 pb-24">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-4" style={{ borderColor: "var(--bi-line)" }}>
         <div>
-          <button onClick={voltar} className="text-xs text-primary hover:underline inline-flex items-center gap-1 mb-1">
+          <button type="button" onClick={voltar}
+                  className="mb-1.5 inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium transition-colors hover:brightness-95"
+                  style={ESTILO_SEC}>
             <ArrowLeft className="size-3" /> Voltar
           </button>
-          <h1 className="text-xl font-bold text-base-content">{schema.titulo}</h1>
-          {schema.descricao && <p className="text-sm text-base-content/60">{schema.descricao}</p>}
+          <h1 className="text-2xl font-bold text-base-content">{schema.titulo}</h1>
+          {schema.descricao && <p className="mt-1 text-sm" style={{ color: "var(--bi-muted)" }}>{schema.descricao}</p>}
         </div>
         <div className="flex items-center gap-2">
-          <Button onClick={() => salvar()} disabled={salvando} className="bg-primary hover:bg-primary/90">
-            {salvando ? <Loader2 className="size-4 animate-spin mr-1" /> : <Save className="size-4 mr-1" />} Salvar
-          </Button>
-          <Button variant="outline" onClick={() => exportar("pdf")} disabled={!!baixando}>
-            {baixando === "pdf" ? <Loader2 className="size-4 animate-spin mr-1" /> : <FileText className="size-4 mr-1" />} PDF
-          </Button>
-          <Button variant="outline" onClick={() => exportar("docx")} disabled={!!baixando}>
-            {baixando === "docx" ? <Loader2 className="size-4 animate-spin mr-1" /> : <FileType className="size-4 mr-1" />} DOCX
-          </Button>
+          <button type="button" onClick={() => salvar()} disabled={salvando} className={BOTAO_CTA} style={ESTILO_CTA}>
+            {salvando ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />} Salvar
+          </button>
+          <button type="button" onClick={() => exportar("pdf")} disabled={!!baixando} className={BOTAO_SEC} style={ESTILO_SEC}>
+            {baixando === "pdf" ? <Loader2 className="size-4 animate-spin" /> : <FileText className="size-4" />} PDF
+          </button>
+          <button type="button" onClick={() => exportar("docx")} disabled={!!baixando} className={BOTAO_SEC} style={ESTILO_SEC}>
+            {baixando === "docx" ? <Loader2 className="size-4 animate-spin" /> : <FileType className="size-4" />} DOCX
+          </button>
         </div>
       </div>
 
       {schema.secoes.map((secao) => (
-        <div key={secao.titulo} className="bg-base-100 border rounded-lg p-4">
-          <h2 className="text-sm font-bold uppercase tracking-wide text-primary border-b border-primary/10 pb-1.5 mb-3">
-            {secao.titulo}
-          </h2>
+        <Bloco key={secao.titulo} className="p-4">
+          <BlocoHead titulo={secao.titulo} sub={secao.tipo === "lista" ? undefined : `${secao.campos.length} campo(s)`} />
           {secao.tipo === "lista" ? (
             <ListaSecao secao={secao} itens={(dados[secao.key!] as Dados[]) || []}
                         onItemChange={(idx, k, v) => setItemCampo(secao.key!, idx, k, v)}
@@ -191,10 +195,10 @@ function EditorInner() {
               <CampoBlock key={c.key} campo={c} value={dados[c.key]} onChange={(v) => setCampo(c.key, v)} />
             ))
           )}
-        </div>
+        </Bloco>
       ))}
 
-      <p className="text-xs text-base-content/40">As alterações são salvas ao clicar em <strong>Salvar</strong>. Exportar salva automaticamente antes de gerar o arquivo.</p>
+      <p className="text-[11px]" style={{ color: "var(--bi-faint)" }}>As alterações são salvas ao clicar em <strong>Salvar</strong>. Exportar salva automaticamente antes de gerar o arquivo.</p>
     </div>
   );
 }
@@ -206,32 +210,32 @@ function ListaSecao({ secao, itens, onItemChange, onAdd, onRemove }: {
 }) {
   return (
     <div className="space-y-4">
-      {secao.ajuda && <p className="text-xs text-base-content/60 -mt-1">{secao.ajuda}</p>}
-      {itens.length === 0 && <p className="text-sm text-base-content/40 italic">Nenhum {(secao.item_label || "item").toLowerCase()} cadastrado.</p>}
+      {secao.ajuda && <p className="-mt-1 text-[11px]" style={{ color: "var(--bi-muted)" }}>{secao.ajuda}</p>}
+      {itens.length === 0 && <p className="text-[12px] italic" style={{ color: "var(--bi-faint)" }}>Nenhum {(secao.item_label || "item").toLowerCase()} cadastrado.</p>}
       {itens.map((item, idx) => (
-        <div key={idx} className="border border-base-300 rounded-md p-3 bg-base-200/50">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-semibold text-base-content/70">{secao.item_label || "Item"} {idx + 1}</span>
-            <Button variant="ghost" size="sm" className="text-error hover:bg-error/10 hover:text-error"
-                    onClick={() => onRemove(idx)}>
-              <Trash2 className="size-3.5 mr-1" /> Remover
-            </Button>
+        <Bloco key={idx} plano className="p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-[12px] font-semibold" style={{ color: "var(--bi-muted)" }}>{secao.item_label || "Item"} {idx + 1}</span>
+            <button type="button" onClick={() => onRemove(idx)} className={BOTAO_ACAO}
+                    style={{ ...ESTILO_SEC, color: "var(--bi-crit-ink)" }}>
+              <Trash2 className="size-3.5" /> Remover
+            </button>
           </div>
           {secao.campos.map((c) => (
             <CampoBlock key={c.key} campo={c} value={item[c.key]} onChange={(v) => onItemChange(idx, c.key, v)} />
           ))}
-        </div>
+        </Bloco>
       ))}
-      <Button variant="outline" onClick={onAdd}>
-        <Plus className="size-4 mr-1" /> Adicionar {secao.item_label || "item"}
-      </Button>
+      <button type="button" onClick={onAdd} className={BOTAO_SEC} style={ESTILO_SEC}>
+        <Plus className="size-4" /> Adicionar {secao.item_label || "item"}
+      </button>
     </div>
   );
 }
 
 export default function EditorPage() {
   return (
-    <Suspense fallback={<div className="flex h-64 items-center justify-center"><Loader2 className="size-7 animate-spin text-primary" /></div>}>
+    <Suspense fallback={<div className="flex h-64 items-center justify-center"><Loader2 className="size-7 animate-spin" style={{ color: "var(--bi-faint)" }} /></div>}>
       <EditorInner />
     </Suspense>
   );

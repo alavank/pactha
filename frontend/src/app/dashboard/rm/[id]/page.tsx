@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { BOTAO_CTA, BOTAO_SEC, Bloco, ESTILO_CTA, ESTILO_SEC, Selo } from "@/components/ui/superficies";
 import { Input } from "@/components/ui/input";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 
@@ -231,27 +232,27 @@ export default function RmEditorPage() {
   };
 
   if (loading || !rm) {
-    return <div className="flex h-64 items-center justify-center"><Loader2 className="size-6 animate-spin text-primary" /></div>;
+    return <div className="flex h-64 items-center justify-center"><Loader2 className="size-6 animate-spin" style={{ color: "var(--bi-faint)" }} /></div>;
   }
 
   return (
     <div className="space-y-4">
       {/* Topbar */}
-      <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-4" style={{ borderColor: "var(--bi-line)" }}>
         <div className="flex items-center gap-3">
           <Button variant="outline" size="sm"
             onClick={() => router.push(`/dashboard/rm?municipio_id=${municipioId || rm.municipio_id}`)}>
             <ArrowLeft className="size-4" />
           </Button>
           <div>
-            <h1 className="text-xl font-bold text-primary">
+            <h1 className="text-2xl font-bold text-base-content">
               RM {(rm.data_referencia || "").slice(0, 4)} - {rm.municipio_nome}/{rm.uf}
             </h1>
-            <div className="text-xs text-base-content/60">
-              <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold ${rm.status === "finalizado" ? "bg-success/15 text-success" : "bg-warning/15 text-warning"}`}>
-                {rm.status}
-              </span>
-              {" "}-{" "}{rm.cidade_emissao}
+            <div className="mt-1 flex items-center gap-2 text-[11px]" style={{ color: "var(--bi-muted)" }}>
+              {/* Rascunho e o estado que pede acao; finalizado e o normal, e
+                  por isso fica cinza. */}
+              <Selo tom={rm.status === "finalizado" ? "neutro" : "atencao"}>{rm.status}</Selo>
+              <span>{rm.cidade_emissao}</span>
             </div>
           </div>
         </div>
@@ -263,18 +264,22 @@ export default function RmEditorPage() {
           <Button variant="outline" onClick={() => setRm({ ...rm, status: rm.status === "finalizado" ? "rascunho" : "finalizado" })}>
             <FileCheck className="size-4 mr-1" /> {rm.status === "finalizado" ? "Reabrir" : "Finalizar"}
           </Button>
-          <Button onClick={salvar} disabled={saving} className="bg-primary hover:bg-primary/90">
-            {saving ? <Loader2 className="size-4 animate-spin mr-1" /> : <Save className="size-4 mr-1" />}
+          <button type="button" onClick={salvar} disabled={saving} className={BOTAO_CTA} style={ESTILO_CTA}>
+            {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
             Salvar
-          </Button>
+          </button>
           <div className="relative">
-            <Button onClick={() => setMenuRel((v) => !v)} className="bg-success hover:bg-success/90">
-              <Download className="size-4 mr-1" /> Relatório <ChevronDown className="size-4 ml-1" />
-            </Button>
+            {/* Era verde solido ao lado de um botao violeta solido: dois botoes
+                de cores diferentes disputando a mesma linha. So um comanda. */}
+            <button type="button" onClick={() => setMenuRel((v) => !v)} className={BOTAO_SEC} style={ESTILO_SEC}>
+              <Download className="size-4" /> Relatório <ChevronDown className="size-4" />
+            </button>
             {menuRel && (
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setMenuRel(false)} />
-                <div className="absolute right-0 mt-1 z-20 w-60 rounded-md border border-base-300 bg-base-100 shadow-lg py-1 text-sm">
+                <div className="absolute right-0 z-20 mt-1 w-60 overflow-hidden py-1 text-[12px]"
+                     style={{ background: "var(--bi-surface)", border: "1px solid var(--bi-line)",
+                              borderRadius: "var(--bi-radius-sm)", boxShadow: "var(--bi-shadow)" }}>
                   <button className="w-full text-left px-3 py-2 hover:bg-base-200" onClick={() => exportar("completo")}>
                     <span className="font-medium">Completo</span>
                     <span className="block text-xs text-base-content/60">Detalhado (PDF)</span>
@@ -301,14 +306,14 @@ export default function RmEditorPage() {
       </div>
 
       {/* Metadata edit */}
-      <div className="bg-base-100 border rounded p-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+      <Bloco className="grid grid-cols-1 gap-3 p-3 md:grid-cols-3">
         <div>
           <label className="text-xs text-base-content/70 mb-1 block">Titulo</label>
           <Input value={rm.titulo || ""} onChange={(e) => setRm({ ...rm, titulo: e.target.value })} />
         </div>
         <div>
           <label className="text-xs text-base-content/70 mb-1 block">Ano de referência</label>
-          <select className="w-full border border-base-300 rounded-md p-2 text-sm h-9"
+          <select className="bi-field h-9 w-full p-2 text-sm"
                   value={(rm.data_referencia || "").slice(0, 4)}
                   onChange={(e) => setRm({ ...rm, data_referencia: `${e.target.value}-01-01` })}>
             {(() => { const a = new Date().getFullYear(); return [a + 1, a, a - 1, a - 2, a - 3]; })().map((y) => (
@@ -320,15 +325,16 @@ export default function RmEditorPage() {
           <label className="text-xs text-base-content/70 mb-1 block">Cidade de emissao</label>
           <Input value={rm.cidade_emissao} onChange={(e) => setRm({ ...rm, cidade_emissao: e.target.value })} />
         </div>
-      </div>
+      </Bloco>
 
       {/* Conteudo hierarquico */}
       <div className="space-y-3">
         {rm.conteudo.partes.map((parte, pi) => {
           const popen = openPartes.has(pi);
           return (
-            <div key={pi} className="border rounded bg-base-100">
-              <div className="flex items-center gap-2 p-2 bg-primary/10 border-b">
+            <Bloco key={pi} className="overflow-hidden">
+              <div className="flex items-center gap-2 border-b p-2"
+                   style={{ background: "var(--bi-surface-2)", borderColor: "var(--bi-line)" }}>
                 <button onClick={() => toggle(openPartes as Set<string | number>, pi, (s) => setOpenPartes(s as Set<number>))}>
                   {popen ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
                 </button>
@@ -336,7 +342,7 @@ export default function RmEditorPage() {
                   onChange={(e) => update((c) => { c.partes[pi].titulo = e.target.value; return c; })} />
                 <button onClick={() => movParte(pi, -1)} className="text-base-content/60 hover:text-base-content/70"><ArrowUp className="size-4" /></button>
                 <button onClick={() => movParte(pi, 1)} className="text-base-content/60 hover:text-base-content/70"><ArrowDown className="size-4" /></button>
-                <button onClick={() => delParte(pi)} className="text-error hover:text-error"><Trash2 className="size-4" /></button>
+                <button onClick={() => delParte(pi)} className="rounded p-1 transition-colors hover:bg-[var(--bi-line)]" style={{ color: "var(--bi-crit-ink)" }}><Trash2 className="size-4" /></button>
               </div>
               {popen && (
                 <div className="p-3 space-y-2">
@@ -345,7 +351,8 @@ export default function RmEditorPage() {
                     const sopen = openSecoes.has(skey);
                     return (
                       <div key={si} className="border rounded">
-                        <div className="flex items-center gap-2 p-2 bg-base-200 border-b">
+                        <div className="flex items-center gap-2 border-b p-2"
+                             style={{ background: "var(--bi-bg)", borderColor: "var(--bi-line)" }}>
                           <button onClick={() => toggle(openSecoes, skey, (s) => setOpenSecoes(s as Set<string>))}>
                             {sopen ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
                           </button>
@@ -353,7 +360,7 @@ export default function RmEditorPage() {
                             onChange={(e) => update((c) => { c.partes[pi].secoes[si].titulo = e.target.value; return c; })} />
                           <button onClick={() => movSecao(pi, si, -1)} className="text-base-content/60"><ArrowUp className="size-4" /></button>
                           <button onClick={() => movSecao(pi, si, 1)} className="text-base-content/60"><ArrowDown className="size-4" /></button>
-                          <button onClick={() => delSecao(pi, si)} className="text-error"><Trash2 className="size-4" /></button>
+                          <button onClick={() => delSecao(pi, si)} className="rounded p-1 transition-colors hover:bg-[var(--bi-line)]" style={{ color: "var(--bi-crit-ink)" }}><Trash2 className="size-4" /></button>
                         </div>
                         {sopen && (
                           <div className="p-2 space-y-2">
@@ -362,17 +369,18 @@ export default function RmEditorPage() {
                               const gopen = openGrupos.has(gkey);
                               return (
                                 <div key={gi} className="border rounded">
-                                  <div className="flex items-center gap-2 p-2 bg-warning/15 border-b">
+                                  <div className="flex items-center gap-2 border-b p-2"
+                                       style={{ background: "var(--bi-surface-2)", borderColor: "var(--bi-line)" }}>
                                     <button onClick={() => toggle(openGrupos, gkey, (s) => setOpenGrupos(s as Set<string>))}>
                                       {gopen ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
                                     </button>
-                                    <span className="text-warning">●</span>
+                                    <span style={{ color: "var(--bi-faint)" }}>●</span>
                                     <Input className="flex-1 font-medium text-sm" value={grupo.orgao}
                                       onChange={(e) => update((c) => { c.partes[pi].secoes[si].grupos[gi].orgao = e.target.value; return c; })} />
                                     <span className="text-xs text-base-content/60">{grupo.itens.length} itens</span>
                                     <button onClick={() => movGrupo(pi, si, gi, -1)} className="text-base-content/60"><ArrowUp className="size-4" /></button>
                                     <button onClick={() => movGrupo(pi, si, gi, 1)} className="text-base-content/60"><ArrowDown className="size-4" /></button>
-                                    <button onClick={() => delGrupo(pi, si, gi)} className="text-error"><Trash2 className="size-4" /></button>
+                                    <button onClick={() => delGrupo(pi, si, gi)} className="rounded p-1 transition-colors hover:bg-[var(--bi-line)]" style={{ color: "var(--bi-crit-ink)" }}><Trash2 className="size-4" /></button>
                                   </div>
                                   {gopen && (
                                     <div className="p-2 space-y-1.5">
@@ -393,7 +401,7 @@ export default function RmEditorPage() {
                                               </span>
                                               <button onClick={() => movItem(pi, si, gi, ii, -1)} className="text-base-content/60"><ArrowUp className="size-3.5" /></button>
                                               <button onClick={() => movItem(pi, si, gi, ii, 1)} className="text-base-content/60"><ArrowDown className="size-3.5" /></button>
-                                              <button onClick={() => delItem(pi, si, gi, ii)} className="text-error"><Trash2 className="size-3.5" /></button>
+                                              <button onClick={() => delItem(pi, si, gi, ii)} className="rounded p-1 transition-colors hover:bg-[var(--bi-line)]" style={{ color: "var(--bi-crit-ink)" }}><Trash2 className="size-3.5" /></button>
                                             </div>
                                             {iopen && (
                                               <div className="grid grid-cols-1 md:grid-cols-2 gap-2 p-3 pt-1">
@@ -403,7 +411,7 @@ export default function RmEditorPage() {
                                                     Detalhamento da Situação <span className="text-base-content/40">(uma linha por campo: <code>Chave: Valor</code>)</span>
                                                   </label>
                                                   <textarea
-                                                    className="w-full rounded border border-base-300 px-2 py-1 text-sm min-h-[60px] font-mono"
+                                                    className="bi-field min-h-[60px] w-full px-2 py-1 font-mono text-[12px]"
                                                     value={formatSitDet(item.situacao_contratacao_detalhe)}
                                                     onChange={(e) => update((c) => {
                                                       const it = c.partes[pi].secoes[si].grupos[gi].itens[ii] as Item;
@@ -418,7 +426,7 @@ export default function RmEditorPage() {
                                                     <label className="text-[11px] text-base-content/70 mb-0.5 block">{label}</label>
                                                     {type === "textarea" ? (
                                                       <textarea
-                                                        className="w-full rounded border border-base-300 px-2 py-1 text-sm min-h-[60px]"
+                                                        className="bi-field min-h-[60px] w-full px-2 py-1 text-[12px]"
                                                         value={(item[k] as string) || ""}
                                                         onChange={(e) => update((c) => {
                                                           (c.partes[pi].secoes[si].grupos[gi].itens[ii] as Record<string, unknown>)[k] = e.target.value;
@@ -451,7 +459,7 @@ export default function RmEditorPage() {
                                         );
                                       })}
                                       <button onClick={() => addItem(pi, si, gi)}
-                                        className="w-full text-xs text-primary hover:bg-primary/10 rounded py-1.5 flex items-center justify-center gap-1">
+                                        className="flex w-full items-center justify-center gap-1 rounded-lg py-1.5 text-[11px] transition-colors hover:bg-[var(--bi-line)]" style={{ color: "var(--bi-muted)" }}>
                                         <Plus className="size-3.5" /> Adicionar item
                                       </button>
                                     </div>
@@ -460,7 +468,7 @@ export default function RmEditorPage() {
                               );
                             })}
                             <button onClick={() => addGrupo(pi, si)}
-                              className="w-full text-xs text-warning hover:bg-warning/15 rounded py-1.5 flex items-center justify-center gap-1">
+                              className="flex w-full items-center justify-center gap-1 rounded-lg py-1.5 text-[11px] transition-colors hover:bg-[var(--bi-line)]" style={{ color: "var(--bi-muted)" }}>
                               <Plus className="size-3.5" /> Adicionar grupo (Órgão)
                             </button>
                           </div>
@@ -469,16 +477,17 @@ export default function RmEditorPage() {
                     );
                   })}
                   <button onClick={() => addSecao(pi)}
-                    className="w-full text-sm text-base-content/70 hover:bg-base-200 rounded py-1.5 flex items-center justify-center gap-1 border border-dashed">
+                    className="flex w-full items-center justify-center gap-1 rounded-lg py-1.5 text-[12px] transition-colors hover:brightness-95"
+                    style={{ background: "var(--bi-surface-2)", border: "1px dashed var(--bi-line-strong)", color: "var(--bi-muted)" }}>
                     <Plus className="size-4" /> Adicionar seção
                   </button>
                 </div>
               )}
-            </div>
+            </Bloco>
           );
         })}
         <button onClick={addParte}
-          className="w-full text-sm font-semibold text-primary hover:bg-primary/10 rounded py-2 flex items-center justify-center gap-2 border-2 border-dashed border-primary">
+          className="flex w-full items-center justify-center gap-2 rounded-xl py-2 text-[12px] font-semibold transition-colors hover:brightness-95" style={{ background: "var(--bi-surface)", border: "1px dashed var(--bi-line-strong)", color: "var(--bi-muted)" }}>
           <Plus className="size-4" /> Adicionar PARTE
         </button>
       </div>

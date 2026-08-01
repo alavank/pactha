@@ -284,7 +284,7 @@ export default function AiChatPage() {
       remarkPlugins={[remarkGfm]}
       components={{
         h1: (props) => <h1 className="text-xl font-bold mt-4 mb-2 text-base-content" {...props} />,
-        h2: (props) => <h2 className="text-lg font-bold mt-4 mb-2 text-primary border-b border-base-300 pb-1" {...props} />,
+        h2: (props) => <h2 className="mt-4 mb-2 border-b pb-1 text-[15px] font-bold" style={{ borderColor: "var(--bi-line)", color: "var(--bi-text)" }} {...props} />,
         h3: (props) => <h3 className="text-base font-bold mt-3 mb-1 text-base-content" {...props} />,
         h4: (props) => <h4 className="text-sm font-bold mt-2 mb-1 text-base-content/70" {...props} />,
         p: (props) => <p className="leading-relaxed my-2" {...props} />,
@@ -294,7 +294,7 @@ export default function AiChatPage() {
         strong: (props) => <strong className="font-semibold text-base-content" {...props} />,
         em: (props) => <em className="italic text-base-content/70" {...props} />,
         code: (props) => (
-          <code className="bg-base-200 px-1.5 py-0.5 rounded text-[12px] font-mono text-error" {...props} />
+          <code className="rounded px-1.5 py-0.5 font-mono text-[12px]" style={{ background: "var(--bi-surface-2)", color: "var(--bi-text)" }} {...props} />
         ),
         pre: (props) => (
           <pre className="bg-base-300 text-base-content rounded p-3 my-2 text-xs overflow-x-auto" {...props} />
@@ -307,14 +307,14 @@ export default function AiChatPage() {
             <table className="min-w-full text-xs" {...props} />
           </div>
         ),
-        thead: (props) => <thead className="bg-primary/10 text-primary" {...props} />,
+        thead: (props) => <thead className="text-[10px] uppercase tracking-wide" style={{ background: "var(--bi-surface-2)", color: "var(--bi-faint)" }} {...props} />,
         th: (props) => (
           <th className="text-left font-semibold px-3 py-1.5 border-b border-base-300" {...props} />
         ),
         td: (props) => <td className="px-3 py-1.5 border-b border-base-300 align-top" {...props} />,
         tr: (props) => <tr className="even:bg-base-200/50" {...props} />,
         a: (props) => (
-          <a className="text-primary underline hover:text-primary/90" target="_blank" rel="noopener" {...props} />
+          <a className="underline" style={{ color: "var(--bi-accent-ink)" }} target="_blank" rel="noopener" {...props} />
         ),
         hr: () => <hr className="my-3 border-base-300" />,
       }}
@@ -333,8 +333,8 @@ export default function AiChatPage() {
       {/* Header */}
       <div className="flex items-center justify-between gap-2 pb-3 border-b">
         <div>
-          <h1 className="text-2xl font-bold text-primary flex items-center gap-2">
-            <Sparkles className="size-6 text-info" /> IA PACTHA
+          <h1 className="flex items-center gap-2 text-2xl font-bold text-base-content">
+            <Sparkles className="size-6" style={{ color: "var(--bi-muted)" }} /> IA PACTHA
           </h1>
           <p className="text-sm text-base-content/60">
             Assistente que consulta o banco em tempo real e gera relatórios. Pergunte em português.
@@ -360,16 +360,17 @@ export default function AiChatPage() {
       <div className="flex-1 overflow-y-auto py-4 space-y-4">
         {messages.length === 0 && (
           <div className="text-center py-8">
-            <Sparkles className="size-12 mx-auto text-info/40 mb-3" />
+            <Sparkles className="mx-auto mb-3 size-12" style={{ color: "var(--bi-faint)" }} />
             <p className="text-base-content/70 mb-4">Sugestões para começar:</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-w-2xl mx-auto">
               {SUGESTOES_PROMPT.map((s, i) => (
                 <button
                   key={i}
                   onClick={() => enviar(s)}
-                  className="text-left text-sm bg-base-100 border rounded-lg px-3 py-2 hover:border-primary hover:bg-primary/10 transition"
+                  className="rounded-xl px-3 py-2 text-left text-[12px] transition-colors hover:brightness-95"
+                  style={{ background: "var(--bi-surface)", border: "1px solid var(--bi-line)", color: "var(--bi-text)" }}
                 >
-                  <Sparkles className="inline size-3.5 mr-1 text-primary" />
+                  <Sparkles className="mr-1 inline size-3.5" style={{ color: "var(--bi-faint)" }} />
                   {s}
                 </button>
               ))}
@@ -379,8 +380,8 @@ export default function AiChatPage() {
         {messages.map((m, i) => (
           <div key={i} className={`flex gap-3 ${m.role === "user" ? "justify-end" : ""}`}>
             {m.role === "assistant" && (
-              <div className="shrink-0 size-8 rounded-full bg-info/15 flex items-center justify-center">
-                <Bot className="size-5 text-info" />
+              <div className="grid size-8 shrink-0 place-items-center rounded-full" style={{ background: "var(--bi-surface-2)", color: "var(--bi-muted)" }}>
+                <Bot className="size-5" />
               </div>
             )}
             <div className={`${m.role === "user" ? "max-w-[80%] order-1" : "max-w-[92%] flex-1"}`}>
@@ -405,7 +406,7 @@ export default function AiChatPage() {
               <div
                 className={`rounded-lg px-3.5 py-2.5 text-sm ${
                   m.role === "user"
-                    ? "bg-primary text-primary-content"
+                    ? "bi-bolha-eu"
                     : "bg-base-100 border border-base-300 text-base-content"
                 }`}
               >
@@ -416,7 +417,7 @@ export default function AiChatPage() {
                     {renderContent(m.content)}
                     {/* Cursor piscando enquanto o texto ainda esta chegando. */}
                     {loading && i === messages.length - 1 && (
-                      <span className="inline-block w-[2px] h-[1em] align-[-0.15em] bg-info animate-pulse ml-0.5" />
+                      <span className="ml-0.5 inline-block h-[1em] w-[2px] animate-pulse align-[-0.15em]" style={{ background: "var(--bi-accent)" }} />
                     )}
                   </div>
                 )}
@@ -439,7 +440,8 @@ export default function AiChatPage() {
                     onClick={() => gerarRelatorio(m, i)}
                     disabled={pdfIdx === i}
                     title="Gerar relatório em PDF deste resultado"
-                    className="inline-flex items-center gap-1 rounded-md border border-primary/40 px-2 py-1 text-xs font-medium text-primary hover:bg-primary/10 disabled:opacity-60"
+                    className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium transition-colors hover:brightness-95 disabled:opacity-60"
+                    style={{ background: "var(--bi-surface)", border: "1px solid var(--bi-line)", color: "var(--bi-text)" }}
                   >
                     {pdfIdx === i
                       ? <Loader2 className="size-3.5 animate-spin" />
@@ -450,8 +452,8 @@ export default function AiChatPage() {
               )}
             </div>
             {m.role === "user" && (
-              <div className="shrink-0 size-8 rounded-full bg-primary/10 flex items-center justify-center">
-                <User className="size-5 text-primary" />
+              <div className="grid size-8 shrink-0 place-items-center rounded-full" style={{ background: "var(--bi-cta)", color: "var(--bi-cta-ink)" }}>
+                <User className="size-5" />
               </div>
             )}
           </div>
@@ -460,8 +462,8 @@ export default function AiChatPage() {
             (o nome vem da ferramenta que o servidor esta executando agora). */}
         {loading && !messages[messages.length - 1]?.content && (
           <div className="flex gap-3">
-            <div className="shrink-0 size-8 rounded-full bg-info/15 flex items-center justify-center">
-              <Bot className="size-5 text-info" />
+            <div className="grid size-8 shrink-0 place-items-center rounded-full" style={{ background: "var(--bi-surface-2)", color: "var(--bi-muted)" }}>
+              <Bot className="size-5" />
             </div>
             <div className="bg-base-100 border border-base-300 rounded-lg px-3.5 py-2.5 text-sm flex items-center gap-2 text-base-content/60">
               <Loader2 className="size-4 animate-spin" />
@@ -470,7 +472,7 @@ export default function AiChatPage() {
           </div>
         )}
         {error && (
-          <div className="bg-error/15 border border-error text-error rounded-lg px-3 py-2 text-sm">
+          <div className="rounded-lg px-3 py-2 text-[12px]" style={{ background: "color-mix(in oklab, var(--bi-crit) 12%, transparent)", color: "var(--bi-crit-ink)" }}>
             {error}
           </div>
         )}
@@ -484,7 +486,7 @@ export default function AiChatPage() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Pergunte algo sobre os convênios do município..."
-          className="flex-1 rounded-lg border border-base-300 px-3 py-2.5 text-sm focus:outline-none focus:border-primary"
+          className="bi-field flex-1 px-3 py-2.5 text-sm"
           disabled={loading}
         />
         {loading ? (
@@ -493,7 +495,7 @@ export default function AiChatPage() {
             <Square className="size-4" /> Parar
           </Button>
         ) : (
-          <Button type="submit" disabled={!input.trim()} className="bg-info hover:bg-info/90">
+          <Button type="submit" disabled={!input.trim()} className="border-0" style={{ background: "var(--bi-cta)", color: "var(--bi-cta-ink)" }}>
             <Send className="size-4" />
           </Button>
         )}
@@ -506,10 +508,11 @@ export default function AiChatPage() {
       <aside className="hidden lg:flex w-72 shrink-0 flex-col border-l border-base-300 pl-4">
         <div className="pb-2 border-b">
           <h2 className="text-sm font-semibold text-base-content flex items-center gap-1.5">
-            <History className="size-4 text-info" /> Minhas conversas
+            <History className="size-4" style={{ color: "var(--bi-muted)" }} /> Minhas conversas
           </h2>
           {/* O aviso fica ACIMA da lista, como pedido. */}
-          <p className="mt-1.5 text-[11px] leading-snug text-base-content/60 bg-warning/10 border border-warning/30 rounded px-2 py-1.5">
+          <p className="mt-1.5 rounded-lg px-2 py-1.5 text-[11px] leading-snug"
+             style={{ background: "color-mix(in oklab, var(--bi-warn) 12%, transparent)", color: "var(--bi-warn-ink)" }}>
             As conversas ficam guardadas por no máximo <strong>{retencaoDias} dias</strong> e
             depois são <strong>excluídas definitivamente</strong>. Só você vê o seu histórico.
           </p>
@@ -525,7 +528,7 @@ export default function AiChatPage() {
             <div
               key={c.id}
               className={`group flex items-start gap-1 rounded-md px-2 py-1.5 text-xs cursor-pointer hover:bg-base-200 ${
-                conversaId === c.id ? "bg-base-200 border-l-2 border-info" : ""
+                conversaId === c.id ? "bi-conversa-ativa" : ""
               }`}
               onClick={() => abrirConversa(c.id)}
             >
@@ -542,7 +545,7 @@ export default function AiChatPage() {
               <button
                 onClick={(e) => { e.stopPropagation(); apagarConversa(c.id); }}
                 title="Apagar esta conversa"
-                className="opacity-0 group-hover:opacity-100 text-base-content/40 hover:text-error shrink-0"
+                className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100" style={{ color: "var(--bi-crit-ink)" }}
               >
                 <Trash2 className="size-3.5" />
               </button>

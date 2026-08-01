@@ -3,18 +3,11 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { KeyRound, Plus, RotateCw, Trash2, Copy, ShieldAlert, Activity } from "lucide-react";
 import api from "@/lib/api";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+  BOTAO_CTA, BOTAO_SEC, Bloco, BlocoHead, ESTILO_CTA, ESTILO_SEC,
+  Modal, ModalCorpo, ModalHead, Selo, Vazio,
+} from "@/components/ui/superficies";
+import { Input } from "@/components/ui/input";
 import toast from "react-hot-toast";
 
 interface ServiceToken {
@@ -137,27 +130,32 @@ export default function ServiceTokensPage() {
 
   return (
     <div className="space-y-6">
-      <div className="border-b border-base-300 pb-4">
-        <div className="flex items-center justify-between">
+      <div className="border-b pb-4" style={{ borderColor: "var(--bi-line)" }}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold text-base-content flex items-center gap-2">
-              <KeyRound className="size-6 text-primary" />
+            <h1 className="flex items-center gap-2 text-2xl font-bold text-base-content">
+              <KeyRound className="size-6" style={{ color: "var(--bi-muted)" }} />
               Service Tokens
             </h1>
-            <p className="text-sm text-base-content/60 mt-1">
+            <p className="mt-1 text-sm" style={{ color: "var(--bi-muted)" }}>
               Tokens de automacao para scrapers (FNS, SIMEC, etc).
               Cada chamada e auditada.
             </p>
           </div>
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger render={<Button><Plus className="mr-2 size-4" />Novo Token</Button>} />
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Criar Service Token</DialogTitle>
-              </DialogHeader>
+          <button type="button" onClick={() => setDialogOpen(true)} className={BOTAO_CTA} style={ESTILO_CTA}>
+            <Plus className="size-4" />Novo Token
+          </button>
+        </div>
+      </div>
+
+      {/* Formulario de criacao. `superficie` porque o corpo e formulario, nao
+          uma pilha de blocos: caixa branca, e nao o fundo da pagina. */}
+      <Modal aberto={dialogOpen} onFechar={() => setDialogOpen(false)} maxW="max-w-lg" superficie esc={false}>
+        <ModalHead titulo="Criar Service Token" sub="O token so aparece uma vez, na criacao." onFechar={() => setDialogOpen(false)} />
+        <ModalCorpo className="p-4">
               <div className="space-y-3">
                 <div>
-                  <label className="text-sm font-medium">Nome (ex: fns_scraper)</label>
+                  <label className="mb-1 block text-[12px] font-medium" style={{ color: "var(--bi-muted)" }}>Nome (ex: fns_scraper)</label>
                   <Input
                     value={form.name}
                     onChange={(e) => setForm({ ...form, name: e.target.value })}
@@ -165,7 +163,7 @@ export default function ServiceTokensPage() {
                   />
                 </div>
                 <div>
-                  <label className="text-sm font-medium">Descrição</label>
+                  <label className="mb-1 block text-[12px] font-medium" style={{ color: "var(--bi-muted)" }}>Descrição</label>
                   <Input
                     value={form.description}
                     onChange={(e) => setForm({ ...form, description: e.target.value })}
@@ -173,8 +171,8 @@ export default function ServiceTokensPage() {
                   />
                 </div>
                 <div>
-                  <label className="text-sm font-medium block mb-2">Scopes (escolha o minimo necessario)</label>
-                  <div className="grid grid-cols-2 gap-2 text-xs">
+                  <label className="mb-2 block text-[12px] font-medium" style={{ color: "var(--bi-muted)" }}>Scopes (escolha o minimo necessario)</label>
+                  <div className="grid grid-cols-2 gap-2 text-[11px]">
                     {SCOPE_PRESETS.map((s) => (
                       <label key={s.value} className="flex items-center gap-2 cursor-pointer">
                         <input
@@ -188,89 +186,82 @@ export default function ServiceTokensPage() {
                   </div>
                 </div>
               </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
-                <Button onClick={handleCreate}>Criar Token</Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </div>
-      </div>
+              <div className="mt-4 flex justify-end gap-2">
+                <button type="button" onClick={() => setDialogOpen(false)} className={BOTAO_SEC} style={ESTILO_SEC}>Cancelar</button>
+                <button type="button" onClick={handleCreate} className={BOTAO_CTA} style={ESTILO_CTA}>Criar Token</button>
+              </div>
+        </ModalCorpo>
+      </Modal>
 
       {/* Modal de exibicao do token recem-criado */}
       {showSecret && (
-        <Card className="border-l-4 border-l-warning bg-warning/15">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-warning">
-              <ShieldAlert className="size-5" />
-              Token criado: {showSecret.name}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <p className="text-sm text-warning font-medium">
-              ANOTE AGORA. Este token NAO sera mostrado novamente.
-            </p>
-            <div className="flex items-center gap-2 bg-base-100 border rounded p-2 font-mono text-sm break-all">
-              <span className="flex-1">{showSecret.token}</span>
-              <button
-                onClick={() => copyToClipboard(showSecret.token)}
-                className="p-2 hover:bg-base-200 rounded"
-              >
-                <Copy className="size-4" />
-              </button>
-            </div>
-            <p className="text-xs text-warning">
-              Configure no Worker: <code>PACTHA_SERVICE_TOKEN={showSecret.token.slice(0, 20)}...</code>
-            </p>
-            <Button variant="outline" size="sm" onClick={() => setShowSecret(null)}>
+        <Bloco
+          className="p-4"
+          style={{
+            background: "color-mix(in oklab, var(--bi-warn) 12%, transparent)",
+            borderColor: "color-mix(in oklab, var(--bi-warn) 28%, transparent)",
+          }}
+        >
+          <BlocoHead
+            icon={ShieldAlert}
+            titulo={`Token criado: ${showSecret.name}`}
+            sub="ANOTE AGORA. Este token NAO sera mostrado novamente."
+          />
+          <div className="flex items-center gap-2 rounded-lg p-2 font-mono text-[12px] break-all"
+               style={{ background: "var(--bi-surface)", border: "1px solid var(--bi-line)", color: "var(--bi-text)" }}>
+            <span className="flex-1">{showSecret.token}</span>
+            <button
+              onClick={() => copyToClipboard(showSecret.token)}
+              className="rounded-lg p-2 transition-colors hover:bg-[var(--bi-line)]"
+              title="Copiar token"
+            >
+              <Copy className="size-4" />
+            </button>
+          </div>
+          <p className="mt-2 text-[11px]" style={{ color: "var(--bi-warn-ink)" }}>
+            Configure no Worker: <code>PACTHA_SERVICE_TOKEN={showSecret.token.slice(0, 20)}...</code>
+          </p>
+          <div className="mt-3">
+            <button type="button" onClick={() => setShowSecret(null)} className={BOTAO_SEC} style={ESTILO_SEC}>
               Fechar (ja anotei)
-            </Button>
-          </CardContent>
-        </Card>
+            </button>
+          </div>
+        </Bloco>
       )}
 
       {/* Lista de tokens */}
       {loading ? (
         <div className="space-y-2">
           {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="h-20 animate-pulse rounded bg-base-200" />
+            <div key={i} className="h-20 animate-pulse rounded-2xl" style={{ background: "var(--bi-surface-2)" }} />
           ))}
         </div>
       ) : tokens.length === 0 ? (
-        <Card><CardContent className="py-12 text-center text-muted-foreground">
-          Nenhum Service Token cadastrado. Clique em "Novo Token".
-        </CardContent></Card>
+        <Vazio>Nenhum Service Token cadastrado. Clique em &quot;Novo Token&quot;.</Vazio>
       ) : (
         <div className="space-y-2">
           {tokens.map((t) => (
-            <Card key={t.id} className={!t.active ? "opacity-60" : ""}>
-              <CardContent className="p-4">
+            <Bloco key={t.id} className={`p-4 ${!t.active ? "opacity-60" : ""}`}>
                 <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <h3 className="font-semibold text-base-content">{t.name}</h3>
-                      {t.active ? (
-                        <Badge className="bg-success/15 text-success hover:bg-success/15">
-                          Ativo
-                        </Badge>
-                      ) : (
-                        <Badge variant="secondary">Revogado</Badge>
-                      )}
-                      <span className="text-xs text-muted-foreground font-mono">
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-1 flex flex-wrap items-center gap-2">
+                      <h3 className="bi-title text-[14px] leading-tight">{t.name}</h3>
+                      {/* Ativo fica CINZA de proposito: e o estado normal, e o
+                          que precisa saltar e o revogado. */}
+                      <Selo tom={t.active ? "neutro" : "critico"}>{t.active ? "Ativo" : "Revogado"}</Selo>
+                      <span className="font-mono text-[10px]" style={{ color: "var(--bi-faint)" }}>
                         {t.token_prefix}***
                       </span>
                     </div>
                     {t.description && (
-                      <p className="text-sm text-muted-foreground">{t.description}</p>
+                      <p className="text-[12px] leading-snug" style={{ color: "var(--bi-muted)" }}>{t.description}</p>
                     )}
-                    <div className="flex flex-wrap gap-1 mt-2">
+                    <div className="mt-2 flex flex-wrap gap-1">
                       {t.scopes.map((s) => (
-                        <Badge key={s} variant="outline" className="text-xs">
-                          {s}
-                        </Badge>
+                        <Selo key={s}>{s}</Selo>
                       ))}
                     </div>
-                    <div className="flex flex-wrap gap-3 mt-2 text-xs text-muted-foreground">
+                    <div className="mt-2 flex flex-wrap gap-3 text-[10px]" style={{ color: "var(--bi-faint)" }}>
                       <span className="flex items-center gap-1">
                         <Activity className="size-3" />
                         Ultimo uso: {formatDate(t.last_used_at)}
@@ -280,11 +271,12 @@ export default function ServiceTokensPage() {
                       {t.expires_at && <span>Expira: {formatDate(t.expires_at)}</span>}
                     </div>
                   </div>
-                  <div className="flex gap-1">
+                  <div className="flex shrink-0 gap-1">
                     {t.active && (
                       <button
                         onClick={() => handleRotate(t.id, t.name)}
-                        className="p-2 hover:bg-primary/10 rounded text-primary"
+                        className="rounded-lg p-2 transition-colors hover:bg-[var(--bi-line)]"
+                        style={{ color: "var(--bi-muted)" }}
                         title="Rotacionar token"
                       >
                         <RotateCw className="size-4" />
@@ -293,7 +285,8 @@ export default function ServiceTokensPage() {
                     {t.active && (
                       <button
                         onClick={() => handleRevoke(t.id, t.name)}
-                        className="p-2 hover:bg-error/10 rounded text-error"
+                        className="rounded-lg p-2 transition-colors hover:bg-[var(--bi-line)]"
+                        style={{ color: "var(--bi-crit-ink)" }}
                         title="Revogar token"
                       >
                         <Trash2 className="size-4" />
@@ -301,8 +294,7 @@ export default function ServiceTokensPage() {
                     )}
                   </div>
                 </div>
-              </CardContent>
-            </Card>
+            </Bloco>
           ))}
         </div>
       )}
