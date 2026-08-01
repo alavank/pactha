@@ -165,7 +165,7 @@ export default function ServiceTokensPage() {
                   />
                 </div>
                 <div>
-                  <label className="text-sm font-medium">Descricao</label>
+                  <label className="text-sm font-medium">Descrição</label>
                   <Input
                     value={form.description}
                     onChange={(e) => setForm({ ...form, description: e.target.value })}

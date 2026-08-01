@@ -414,7 +414,7 @@ export default function CofrePage() {
                         />
                       </div>
                       <div>
-                        <label className="text-sm font-medium">Observacao</label>
+                        <label className="text-sm font-medium">Observação</label>
                         <Input
                           value={form.observacao}
                           onChange={(e) => setForm({ ...form, observacao: e.target.value })}
@@ -444,7 +444,7 @@ export default function CofrePage() {
                     />
                   </div>
                   <div>
-                    <label className="text-sm font-medium">Usuario</label>
+                    <label className="text-sm font-medium">Usuário</label>
                     <Input
                       value={form.usuario}
                       onChange={(e) => setForm({ ...form, usuario: e.target.value })}
@@ -471,7 +471,7 @@ export default function CofrePage() {
                     </select>
                   </div>
                   <div>
-                    <label className="text-sm font-medium">Observacao</label>
+                    <label className="text-sm font-medium">Observação</label>
                     <Input
                       value={form.observacao}
                       onChange={(e) => setForm({ ...form, observacao: e.target.value })}
@@ -538,7 +538,7 @@ export default function CofrePage() {
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
                         <div>
-                          <span className="text-muted-foreground">Usuario:</span>{" "}
+                          <span className="text-muted-foreground">Usuário:</span>{" "}
                           <span className="font-mono">{s.usuario || "-"}</span>
                         </div>
                         <div className="flex items-center gap-2">
@@ -611,7 +611,7 @@ export default function CofrePage() {
           </DialogHeader>
           <div className="space-y-3">
             <div>
-              <label className="text-sm font-medium">Usuario</label>
+              <label className="text-sm font-medium">Usuário</label>
               <Input
                 value={editForm.usuario}
                 onChange={(e) => setEditForm({ ...editForm, usuario: e.target.value })}
@@ -631,7 +631,7 @@ export default function CofrePage() {
               </p>
             </div>
             <div>
-              <label className="text-sm font-medium">Observacao</label>
+              <label className="text-sm font-medium">Observação</label>
               <Input
                 value={editForm.observacao}
                 onChange={(e) => setEditForm({ ...editForm, observacao: e.target.value })}

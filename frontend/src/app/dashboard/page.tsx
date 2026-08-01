@@ -135,6 +135,45 @@ function Section({
   );
 }
 
+/** Rótulo do eixo do gráfico, quebrando em até duas linhas.
+ *
+ *  O recharts não quebra texto de tick sozinho: ou cabe, ou vaza por cima do
+ *  gráfico. Por isso existia um abreviador que cortava em 22 caracteres e
+ *  transformava "Prestação de contas enviada para análise" em
+ *  "Prestação... análise" — numa TV de gabinete, ilegível.
+ *
+ *  Duas linhas de ~26 caracteres cobrem todas as situações do SIGCON. O que
+ *  ainda não couber ganha reticências, mas isso passou a ser exceção em vez
+ *  de regra, e o nome inteiro continua no tooltip. */
+function TickQuebrado({ x, y, payload }: {
+  x?: number; y?: number; payload?: { value?: string };
+}) {
+  const texto = String(payload?.value ?? "");
+  const MAX = 26;
+  const linhas: string[] = [];
+  let atual = "";
+  for (const palavra of texto.split(/\s+/)) {
+    if (!atual) atual = palavra;
+    else if ((atual + " " + palavra).length <= MAX) atual += " " + palavra;
+    else { linhas.push(atual); atual = palavra; }
+    if (linhas.length === 2) break;
+  }
+  if (atual && linhas.length < 2) linhas.push(atual);
+  // Sobrou texto? Marca na última linha, em vez de sumir em silêncio.
+  const usado = linhas.join(" ").length;
+  if (usado < texto.replace(/\s+/g, " ").length) {
+    linhas[linhas.length - 1] = linhas[linhas.length - 1].slice(0, MAX - 1) + "…";
+  }
+  const dy = linhas.length > 1 ? -4 : 4;
+  return (
+    <text x={x} y={y} textAnchor="end" fill="#8b8fa6" fontSize={11}>
+      {linhas.map((l, i) => (
+        <tspan key={i} x={x} dy={i === 0 ? dy : 13}>{l}</tspan>
+      ))}
+    </text>
+  );
+}
+
 function MetricSkeleton() {
   return (
     <div className="rounded-2xl border border-base-300 bg-base-100 p-5">
@@ -237,23 +276,14 @@ function DashboardOperacional() {
     );
   }
 
-  const abbreviateLabel = (full: string): string => {
-    if (full.length <= 22) return full;
-    const words = full.split(/\s+/);
-    if (words.length <= 2) return full.slice(0, 20) + "...";
-    const skipWords = new Set(["de", "do", "da", "dos", "das", "e"]);
-    const significantWords = words.filter((w) => !skipWords.has(w.toLowerCase()));
-    if (significantWords.length >= 2) {
-      const last = significantWords[significantWords.length - 1];
-      return `${significantWords[0]}... ${last}`;
-    }
-    return full.slice(0, 20) + "...";
-  };
-
+  // O rotulo do grafico NAO e mais abreviado. `abbreviateLabel` cortava em 22
+  // caracteres e produzia coisas como "Prestacao... analise" — o gestor lia o
+  // grafico na TV e nao sabia qual situacao era qual. O nome inteiro cabe
+  // quebrando em duas linhas num eixo mais largo (ver TickQuebrado).
   const chartData = stats?.por_situacao
     ? Object.entries(stats.por_situacao)
         .sort((a, b) => b[1] - a[1])
-        .map(([name, value]) => ({ name: abbreviateLabel(name), fullName: name, quantidade: value }))
+        .map(([name, value]) => ({ name, fullName: name, quantidade: value }))
     : [];
 
   const getBarColor = (sit: string) => {
@@ -421,7 +451,7 @@ function DashboardOperacional() {
                         {fb.label}
                       </span>
                     </div>
-                    <p className="truncate text-sm text-base-content/60">{m.objeto || m.orgao || "-"}</p>
+                    <p className="line-clamp-2 text-sm leading-snug text-base-content/60">{m.objeto || m.orgao || "-"}</p>
                     <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
                       <span className={`${statusCor(m.status_anterior)} line-through opacity-70`}>{m.status_anterior || "—"}</span>
                       <ArrowRight className="size-3 shrink-0 text-base-content/40" />
@@ -453,7 +483,7 @@ function DashboardOperacional() {
                     <span className="text-sm font-semibold text-base-content">{alerta.nr_convenio || alerta.nr_sigcon || "-"}</span>
                     <Badge className="text-xs uppercase" variant="secondary">{alerta.esfera}</Badge>
                   </div>
-                  <p className="truncate text-sm text-base-content/60">{alerta.objeto || alerta.orgao_concedente || "-"}</p>
+                  <p className="line-clamp-2 text-sm leading-snug text-base-content/60">{alerta.objeto || alerta.orgao_concedente || "-"}</p>
                 </div>
                 <div className="ml-4 flex items-center gap-3">
                   <span className="text-sm text-base-content/60">{formatDate(alerta.dt_fim_vigencia)}</span>
@@ -482,7 +512,7 @@ function DashboardOperacional() {
                     <span className="text-sm font-semibold text-base-content">{alerta.nr_convenio || alerta.nr_sigcon || "-"}</span>
                     <Badge className="text-xs uppercase" variant="secondary">{alerta.esfera}</Badge>
                   </div>
-                  <p className="truncate text-sm text-base-content/60">{alerta.objeto || alerta.orgao_concedente || "-"}</p>
+                  <p className="line-clamp-2 text-sm leading-snug text-base-content/60">{alerta.objeto || alerta.orgao_concedente || "-"}</p>
                 </div>
                 <div className="ml-4 flex items-center gap-3">
                   <span className="text-sm text-base-content/60">{formatDate(alerta.dt_fim_vigencia)}</span>
@@ -503,16 +533,18 @@ function DashboardOperacional() {
         ) : chartData.length === 0 ? (
           <p className="py-8 text-center text-sm text-base-content/50">Nenhum dado encontrado.</p>
         ) : (
-          <ResponsiveContainer width="100%" height={Math.max(260, chartData.length * 38)}>
+          /* 46px por barra em vez de 38: a linha do eixo agora pode ter duas
+             linhas de texto. O cartao cresce um pouco e passa a ser legivel. */
+          <ResponsiveContainer width="100%" height={Math.max(260, chartData.length * 46)}>
             <BarChart data={chartData} layout="vertical" margin={{ top: 4, right: 44, bottom: 4, left: 8 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#eaecf3" horizontal={false} />
               <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11, fill: "#8b8fa6" }} />
               <YAxis
                 type="category"
                 dataKey="name"
-                width={150}
+                width={230}
                 interval={0}
-                tick={{ fontSize: 11, fill: "#8b8fa6" }}
+                tick={<TickQuebrado />}
               />
               <Tooltip
                 formatter={(value, _name, props) => [`${value} convênios`, props.payload.fullName]}
