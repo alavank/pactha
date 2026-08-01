@@ -36,28 +36,43 @@
   prefersdark: false;
   color-scheme: light;
 
-  --color-base-100: #ffffff;
-  --color-base-200: #f4f5fa;
-  --color-base-300: #eaecf3;
-  --color-base-content: #1b1c31;
+  /* O TEMA APONTA PARA OS TOKENS DA IDENTIDADE (`--bi-*`, definidos em :root).
+     E aqui que a unificacao acontece de verdade: existem 1.791 usos de cor
+     no sistema, todos por estes nomes semanticos. Mudando a origem deles, as
+     1.791 telas herdam a paleta do Painel numa edicao so — nao ha 1.791
+     lugares para tocar.
+     Onde a cor e usada como TEXTO, o token apontado e a variante `-ink`
+     (mesma familia, escura o bastante para AA). Ver o bloco de tokens. */
+  --color-base-100: var(--bi-surface);
+  --color-base-200: var(--bi-bg);
+  --color-base-300: var(--bi-line);
+  --color-base-content: var(--bi-text);
 
-  --color-primary: #5d5fef;
+  /* `primary` e usado como texto E como preenchimento. O menta de exibicao
+     (#12b886) da 2.55 sobre branco — ilegivel em texto miudo. Aponta para a
+     variante de texto, que serve nos dois papeis (4.51 nos dois sentidos). */
+  --color-primary: var(--bi-accent-ink);
   --color-primary-content: #ffffff;
-  --color-secondary: #eef0fb;
-  --color-secondary-content: #5d5fef;
-  --color-accent: #ecebfe;
-  --color-accent-content: #5d5fef;
-  --color-neutral: #1b1c31;
-  --color-neutral-content: #ffffff;
+  --color-secondary: var(--bi-surface-2);
+  --color-secondary-content: var(--bi-muted);
+  /* `accent` no daisyUI e "fundo suave + texto do acento" — exatamente o chip
+     de destaque do Painel (menta palido com texto menta). */
+  --color-accent: var(--bi-accent-soft);
+  --color-accent-content: var(--bi-accent-ink);
+  /* O botao preenchido do Painel e QUASE PRETO, nao menta (18.53 de contraste).
+     Fica em `neutral`, que e o slot certo para CTA solida. */
+  --color-neutral: var(--bi-cta);
+  --color-neutral-content: var(--bi-cta-ink);
 
-  /* status calibrados p/ WCAG AA como texto sobre branco */
-  --color-info: #2a75c9;
+  /* Status: as variantes de texto. As de exibicao (usadas no Painel) reprovam
+     em AA — success 3.34 e warning 3.55 sobre branco. */
+  --color-info: var(--bi-info-ink);
   --color-info-content: #ffffff;
-  --color-success: #159068;
+  --color-success: var(--bi-ok-ink);
   --color-success-content: #ffffff;
-  --color-warning: #b9770e;
+  --color-warning: var(--bi-warn-ink);
   --color-warning-content: #ffffff;
-  --color-error: #d1335a;
+  --color-error: var(--bi-crit-ink);
   --color-error-content: #ffffff;
 
   --radius-selector: 0.75rem;
@@ -81,27 +96,35 @@
      Indicadores (.bi-skin, mais abaixo). Antes o sistema era azul-marinho e so
      o painel era preto/verde: trocar de menu parecia trocar de produto. Agora e
      uma paleta so no escuro. O tema claro segue como estava. */
-  --color-base-100: #141716;  /* superficies: cartoes, menu lateral, modais */
-  --color-base-200: #0a0c0b;  /* fundo da pagina e hover discreto */
-  --color-base-300: #252a28;  /* bordas e divisorias */
-  --color-base-content: #f1f4f2;
+  /* Mesma ligacao do claro: a origem passa a ser os tokens da identidade.
+     Aqui os valores ja eram os do Painel (a unificacao do escuro foi feita
+     antes, so nos tons) — a diferenca e deixar de repetir hexadecimal e
+     passar a apontar, para nunca mais divergirem. */
+  --color-base-100: var(--bi-surface);   /* cartoes, menu lateral, modais */
+  --color-base-200: var(--bi-bg);        /* fundo da pagina e hover discreto */
+  --color-base-300: var(--bi-line-strong); /* bordas: a linha fraca some no escuro */
+  --color-base-content: var(--bi-text);
 
-  --color-primary: #4fdcae;
+  --color-primary: var(--bi-accent-ink);
   --color-primary-content: #05231a;
-  --color-secondary: #1c201e;
-  --color-secondary-content: #d9efe6;
-  --color-accent: #1c201e;
-  --color-accent-content: #4fdcae;
+  --color-secondary: var(--bi-surface-2);
+  --color-secondary-content: var(--bi-muted);
+  --color-accent: var(--bi-accent-soft);
+  --color-accent-content: var(--bi-accent);
   --color-neutral: #f1f4f2;
   --color-neutral-content: #0a0c0b;
 
-  --color-info: #6ee7a8;
+  /* No escuro as cores de exibicao ja servem como texto (10.47 sobre a
+     superficie), entao `-ink` aponta para elas mesmas.
+     `info` deixa de ser verde: no escuro ele era #6ee7a8, praticamente igual
+     ao success — duas mensagens diferentes com a mesma cor. */
+  --color-info: var(--bi-info-ink);
   --color-info-content: #05231a;
-  --color-success: #4fdcae;
+  --color-success: var(--bi-ok-ink);
   --color-success-content: #05231a;
-  --color-warning: #f3bb52;
+  --color-warning: var(--bi-warn-ink);
   --color-warning-content: #241600;
-  --color-error: #f8788f;
+  --color-error: var(--bi-crit-ink);
   --color-error-content: #2b0a0a;
 
   --radius-selector: 0.75rem;
@@ -291,15 +314,24 @@
 }
 
 /* ==========================================================================
-   SKIN DO PAINEL DE INDICADORES (BI) — `.bi-skin`
+   IDENTIDADE VISUAL DO PACTHA — tokens `--bi-*`
    --------------------------------------------------------------------------
-   Um BI de gestao a vista nao e "mais uma tela do sistema": ele destoa de
-   proposito (ver design-tela/). Preto quase puro no escuro, cinza-claro no
-   claro, cartoes muito arredondados, acento menta, numeros grandes e paleta
-   de grafico pastel. Fica ESCOPADO em `.bi-skin` para nao vazar para as telas
-   operacionais, que seguem com o tema "Base" violeta.
+   Nasceram como a pele do Painel de Indicadores, ESCOPADOS em `.bi-skin` para
+   nao vazarem para as telas operacionais — que na epoca seguiam um tema
+   violeta separado. O resultado, dito pelo dono: "trocar de menu parecia
+   trocar de produto".
+
+   A decisao agora e a inversa: o PAINEL VIRA A REFERENCIA e o sistema inteiro
+   adota a linguagem dele. Por isso os tokens sobem para `:root` — passam a
+   existir em toda tela, do login ao modulo mais interno.
+
+   ⚠️ O PAINEL NAO PODE MUDAR NEM UM PIXEL. Ele e a inspiracao, nao o alvo.
+   Por isso aqui so muda ONDE os tokens sao declarados; os VALORES sao os
+   mesmos, e `.bi-skin` continua existindo com a unica funcao que lhe resta:
+   aplicar fundo e cor de texto no contêiner do Painel. Qualquer diferenca
+   visual no Painel depois desta mudanca e bug, nao efeito colateral aceitavel.
    ========================================================================== */
-.bi-skin {
+:root {
   --bi-bg: #eceeed;
   --bi-surface: #ffffff;
   --bi-surface-2: #f5f7f6;
@@ -324,11 +356,39 @@
   --bi-radius-sm: 1rem;
   --bi-shadow: 0 1px 2px rgba(13, 16, 15, 0.04), 0 8px 24px -16px rgba(13, 16, 15, 0.18);
 
+  /* --- VARIANTES DE TEXTO -------------------------------------------------
+     As cores acima sao de EXIBICAO: no Painel elas pintam icone, selo e numero
+     grande, nunca texto pequeno. Medido sobre branco: o menta da 2.55 e o
+     verde de sucesso da 3.34 — abaixo dos 4.5 que texto normal exige.
+     Isso nunca importou enquanto a paleta vivia so no Painel. Passa a importar
+     agora que ela vale para o sistema inteiro, onde ha 206 usos de cor em
+     texto miudo.
+     Entao cada matiz ganha uma companheira escura, com o MESMO matiz e a mesma
+     saturacao, so com luminosidade suficiente para AA. O Painel continua
+     usando as de cima e nao muda nada.
+     (De quebra: os status do sistema hoje NAO cumprem AA, apesar do comentario
+     que diz o contrario — success 4.02 e warning 3.68. Estas corrigem.) */
+  --bi-accent-ink: #0d8762;   /* 4.51 sobre branco */
+  --bi-ok-ink:     #0f875e;   /* 4.52 */
+  --bi-warn-ink:   #a66709;   /* 4.60 */
+  --bi-crit-ink:   #d63b5c;   /* 4.53 — o de exibicao ja passa */
+  --bi-info:       #4fa3ee;   /* exibicao (mesma familia do grafico c4) */
+  --bi-info-ink:   #1477d0;   /* 4.59 */
+}
+
+/* O contêiner do Painel: so aplica o que ja aplicava. Continua existindo
+   porque o Modo Tela usa `data-bi-theme` para forcar o escuro numa TV
+   independente do tema do usuario. */
+.bi-skin {
   background: var(--bi-bg);
   color: var(--bi-text);
 }
 
-[data-theme="pactha-dark"] .bi-skin,
+/* ESCURO. Duas origens de propósito:
+   - `[data-theme="pactha-dark"]` e o tema do usuario, agora valendo para o
+     sistema inteiro (antes so descia para dentro de `.bi-skin`);
+   - `.bi-skin[data-bi-theme="dark"]` e a TV forcando escuro sozinha. */
+[data-theme="pactha-dark"],
 .bi-skin[data-bi-theme="dark"] {
   --bi-bg: #0a0c0b;
   --bi-surface: #141716;
@@ -351,6 +411,15 @@
   --bi-c4: #63b3f5;
   --bi-c5: #b39cf7;
   --bi-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 16px 40px -24px rgba(0, 0, 0, 0.8);
+
+  /* No escuro nao existe o problema do claro: o menta claro do Painel da 10.47
+     sobre a superficie. A variante de texto e a PROPRIA cor de exibicao. */
+  --bi-accent-ink: var(--bi-accent);
+  --bi-ok-ink:     var(--bi-ok);
+  --bi-warn-ink:   var(--bi-warn);
+  --bi-crit-ink:   var(--bi-crit);
+  --bi-info:       #63b3f5;
+  --bi-info-ink:   #63b3f5;
 }
 
 @layer utilities {
