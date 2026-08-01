@@ -6,7 +6,7 @@ import { useMunicipio } from "@/contexts/MunicipioContext";
 import { Search, Eraser, Loader2, ExternalLink, Eye, X } from "lucide-react";
 import api from "@/lib/api";
 import { MultiSelect } from "@/components/ui/multi-select";
-import { Campos, ItemLinha, Lista, Selo } from "@/components/ui/superficies";
+import { Campos, ItemLinha, Lista, Selo, Vazio, situacaoTom } from "@/components/ui/superficies";
 import AnotacaoButton from "@/components/AnotacaoButton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -116,18 +116,6 @@ function fmtData(iso?: string): string {
   if (!iso) return "-";
   try { return new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }); }
   catch { return "-"; }
-}
-/** Cor no selo de situacao SO quando e alerta.
- *
- *  Substitui o `badgeColor`, que pintava TODA situacao — inclusive "Em
- *  execucao", que e o estado normal de quase toda proposta. Numa lista onde
- *  todo mundo esta colorido, a cor deixa de significar. */
-function situacaoTom(sit?: string | null): "neutro" | "ok" | "atencao" | "critico" {
-  const s = (sit || "").toLowerCase();
-  if (s.includes("rejeitad") || s.includes("impedimento") || s.includes("cancelad")) return "critico";
-  if (s.includes("nlise") || s.includes("análise") || s.includes("pendente")) return "atencao";
-  if (s.includes("conclu") || s.includes("prestação de contas")) return "ok";
-  return "neutro";
 }
 export default function TransfereGovPropostas({
   categoria,
@@ -346,14 +334,18 @@ export default function TransfereGovPropostas({
         </div>
       )}
 
-      <div className="bg-base-100 border rounded overflow-hidden">
-        <div className="px-3 py-2 border-b bg-base-200 text-sm"><strong>{displayItems.length}</strong> propostas</div>
+      <div>
+        <div className="mb-2 text-[11px]" style={{ color: "var(--bi-muted)" }}>
+          <strong className="bi-num">{displayItems.length}</strong> propostas
+        </div>
         {loading ? (
-          <div className="p-3 space-y-2">
-            {Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-10 animate-pulse bg-base-200 rounded" />)}
+          <div className="space-y-1.5">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="h-16 animate-pulse rounded-2xl" style={{ background: "var(--bi-surface-2)" }} />
+            ))}
           </div>
         ) : displayItems.length === 0 ? (
-          <div className="p-12 text-center text-base-content/60">Nenhuma proposta encontrada.</div>
+          <Vazio>Nenhuma proposta encontrada.</Vazio>
         ) : (
           /* A LISTA DEIXOU DE SER TABELA — as mesmas 12 colunas, agora na
              linguagem do Painel. Este componente serve QUATRO telas (geral,

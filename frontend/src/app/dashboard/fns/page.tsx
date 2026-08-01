@@ -5,18 +5,25 @@ import api from "@/lib/api";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { MultiSelect } from "@/components/ui/multi-select";
+import {
+  Bloco,
+  BlocoHead,
+  Campos,
+  ItemLinha,
+  Lista,
+  Numero,
+  Selo,
+  Vazio,
+  situacaoTom,
+  type Campo,
+} from "@/components/ui/superficies";
 import { atalhosAnos, resumoAnos } from "@/lib/periodo";
 import { formatCurrency } from "@/lib/utils";
-import { Search, Loader2, Eraser, Printer, Eye, X } from "lucide-react";
+import {
+  Search, Loader2, Eraser, Printer, Eye, X,
+  HeartPulse, Users, Receipt, FileText, Route, Wallet, Hourglass, Building2,
+} from "lucide-react";
 
 interface Item {
   tipo_proposta?: string;
@@ -112,15 +119,16 @@ const TIPOS_EMENDA = [
   "RELATOR",
 ];
 
-function recursoColor(s?: string): string {
-  if (!s) return "bg-base-200";
-  const u = s.toUpperCase();
-  if (u.includes("INDIVIDUAL")) return "bg-primary/10 text-primary border-primary";
-  if (u.includes("BANCADA OBRIGAT")) return "bg-info/15 text-info border-info";
-  if (u.includes("BANCADA")) return "bg-info/15 text-info border-info";
-  if (u.includes("COMISSAO") || u.includes("COMISSÃO")) return "bg-warning/15 text-warning border-warning";
-  if (u.includes("PROGRAMA")) return "bg-success/15 text-success border-success";
-  return "bg-base-200 text-base-content/70 border-base-300";
+/** Quanto do proposto ja foi pago. `null` quando nao ha base para dividir —
+ *  proposta de valor zero nao e "0% paga", e sem percentual nenhum. */
+function pctPago(proposta?: number, pago?: number): number | null {
+  if (!proposta) return null;
+  return Math.round(((pago || 0) / proposta) * 100);
+}
+
+/** Data em ms epoch, como o FNS entrega. */
+function dataBR(ms?: number): string {
+  return ms ? new Date(ms).toLocaleDateString("pt-BR") : "—";
 }
 
 export default function PropostasFNSPage() {
@@ -285,18 +293,26 @@ export default function PropostasFNSPage() {
     setError(null);
   };
 
+  const pctGeral = data?.totais
+    ? pctPago(data.totais.valor_proposta, data.totais.valor_pago)
+    : null;
+
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold text-primary">Fundo Nacional de Saúde</h1>
-        <p className="text-sm text-muted-foreground">Consulta em tempo real de propostas/emendas no FNS (consultafns.saude.gov.br)</p>
+      <div className="border-b pb-4" style={{ borderColor: "var(--bi-line)" }}>
+        <h1 className="text-2xl font-bold text-base-content">Fundo Nacional de Saúde</h1>
+        <p className="mt-1 text-sm" style={{ color: "var(--bi-muted)" }}>
+          Consulta em tempo real de propostas/emendas no FNS (consultafns.saude.gov.br)
+        </p>
       </div>
 
       {/* Formulario */}
-      <div className="bg-base-100 border rounded-lg p-4 space-y-3 shadow-sm">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div className="bi-card space-y-3 p-4">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <div>
-            <label className="text-xs font-medium text-base-content/70">Nº da Proposta</label>
+            <label className="mb-1 block text-[11px]" style={{ color: "var(--bi-muted)" }}>
+              Nº da Proposta
+            </label>
             <Input
               value={nrProposta}
               onChange={(e) => setNrProposta(e.target.value)}
@@ -305,8 +321,8 @@ export default function PropostasFNSPage() {
             />
           </div>
           <div>
-            <label className="text-xs font-medium text-base-content/70">
-              Anos <span className="text-base-content/40">(um, alguns ou o mandato)</span>
+            <label className="mb-1 block text-[11px]" style={{ color: "var(--bi-muted)" }}>
+              Anos <span style={{ color: "var(--bi-faint)" }}>(um, alguns ou o mandato)</span>
             </label>
             <MultiSelect
               opcoes={anos}
@@ -330,8 +346,8 @@ export default function PropostasFNSPage() {
               O aviso de "selecione o municipio" continua existindo onde
               importa: no erro da consulta e no cabecalho do resultado. */}
           <div>
-            <label className="text-xs font-medium text-base-content/70">
-              Tipo de Emenda <span className="text-base-content/40">(um, alguns ou todos)</span>
+            <label className="mb-1 block text-[11px]" style={{ color: "var(--bi-muted)" }}>
+              Tipo de Emenda <span style={{ color: "var(--bi-faint)" }}>(um, alguns ou todos)</span>
             </label>
             <MultiSelect
               opcoes={TIPOS_EMENDA}
@@ -343,364 +359,586 @@ export default function PropostasFNSPage() {
           </div>
         </div>
 
-        <div className="flex justify-end gap-2 pt-2 border-t">
+        <div className="flex justify-end gap-2 border-t pt-3" style={{ borderColor: "var(--bi-line)" }}>
           <Button variant="outline" onClick={limpar}>
             <Eraser className="size-4 mr-1" /> Limpar
           </Button>
-          <Button onClick={consultar} disabled={loading || !selMun} className="bg-primary hover:bg-primary/90">
+          <Button
+            onClick={consultar}
+            disabled={loading || !selMun}
+            className="hover:opacity-90"
+            style={{ background: "var(--bi-cta)", color: "var(--bi-cta-ink)" }}
+          >
             {loading ? <Loader2 className="size-4 animate-spin mr-2" /> : <Search className="size-4 mr-2" />}
             Consultar
           </Button>
         </div>
       </div>
 
+      {/* O MESMO `error` carrega dois casos bem diferentes: a consulta que nao
+          voltou nada (nao ha o que ler na tela) e a que voltou parcial (alguns
+          anos falharam, o resto esta ai embaixo). O selo separa os dois — cor
+          critica so quando nao ha resultado. */}
       {error && (
-        <div className="rounded border border-error bg-error/15 p-3 text-sm text-error">{error}</div>
+        <div className="bi-card flex flex-wrap items-center gap-2 p-3 text-[12px]" style={{ color: "var(--bi-muted)" }}>
+          <Selo tom={data ? "atencao" : "critico"}>{data ? "Consulta parcial" : "Consulta"}</Selo>
+          {error}
+        </div>
       )}
 
       {/* Resultado */}
       {data && (
         <div className="space-y-3">
-          <div className="bg-base-200 border rounded-lg p-3">
-            <div className="flex items-center justify-between mb-2">
-              <h2 className="font-semibold">Resultado da Consulta</h2>
-              <Button variant="outline" size="sm" onClick={() => window.print()}>
-                <Printer className="size-3 mr-1" /> Imprimir
-              </Button>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-sm">
-              <div><span className="font-medium text-base-content/70">Estado:</span> {data.params?.uf}</div>
-              <div><span className="font-medium text-base-content/70">Município:</span> {data.params?.municipio}</div>
-              <div><span className="font-medium text-base-content/70">Ano:</span> {data.params?.ano}</div>
-              <div><span className="font-medium text-base-content/70">Registros:</span> {data.total}</div>
-            </div>
-          </div>
+          <Bloco className="p-3">
+            <BlocoHead
+              icon={HeartPulse}
+              titulo="Resultado da consulta"
+              sub="Propostas agrupadas por tipo de proposta e tipo de recurso"
+              right={
+                <Button variant="outline" size="sm" onClick={() => window.print()}>
+                  <Printer className="size-3 mr-1" /> Imprimir
+                </Button>
+              }
+            />
+            <Campos
+              cols={4}
+              campos={[
+                { rotulo: "Estado", valor: data.params?.uf ?? "—" },
+                { rotulo: "Município", valor: data.params?.municipio ?? "—", title: String(data.params?.municipio ?? "") },
+                { rotulo: "Ano(s)", valor: data.params?.ano ?? "—", title: String(data.params?.ano ?? "") },
+                { rotulo: "Registros", valor: data.total },
+              ]}
+            />
+          </Bloco>
 
-          {/* Stats cards */}
           {data.totais && (
-            <div className="grid grid-cols-3 gap-3">
-              <StatCard label="Valor Proposta" value={formatCurrency(data.totais.valor_proposta)} />
-              <StatCard label="Valor Pago" value={formatCurrency(data.totais.valor_pago)} className="text-success" />
-              <StatCard label="A Pagar" value={formatCurrency(data.totais.valor_pagar)} className="text-warning" />
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <Numero
+                icon={Wallet}
+                rotulo="Valor Proposta"
+                valor={formatCurrency(data.totais.valor_proposta)}
+                sub={`${data.total} proposta(s) no recorte`}
+              />
+              {/* Pago e "A pagar" sao o mesmo dinheiro visto de dois lados: o
+                  verde so aparece quando esta tudo quitado, e o ambar so quando
+                  sobrou saldo — nunca os dois acesos ao mesmo tempo. */}
+              <Numero
+                icon={Receipt}
+                rotulo="Valor Pago"
+                valor={formatCurrency(data.totais.valor_pago)}
+                tom={pctGeral != null && pctGeral >= 100 ? "ok" : "neutro"}
+                sub={pctGeral != null ? `${pctGeral}% do proposto` : undefined}
+              />
+              <Numero
+                icon={Hourglass}
+                rotulo="A Pagar"
+                valor={formatCurrency(data.totais.valor_pagar)}
+                tom={data.totais.valor_pagar > 0 ? "atencao" : "neutro"}
+                sub={data.totais.valor_pagar > 0 ? "saldo ainda nao repassado" : "sem saldo em aberto"}
+              />
             </div>
           )}
 
           {data.items.length === 0 ? (
-            <div className="text-center text-muted-foreground py-8 border rounded-lg bg-base-100">
-              Nenhuma proposta encontrada para os filtros aplicados.
-            </div>
+            <Vazio>Nenhuma proposta encontrada para os filtros aplicados.</Vazio>
           ) : (
-            <div className="rounded-lg border bg-base-100 overflow-hidden">
-              <Table className="text-xs">
-                <TableHeader>
-                  <TableRow className="[&>th]:py-2 [&>th]:px-2 [&>th]:text-[11px] [&>th]:font-semibold bg-primary/10">
-                    {anosSel.length > 1 && <TableHead className="w-[56px]">Ano</TableHead>}
-                    <TableHead>Tipo de Proposta</TableHead>
-                    <TableHead>Tipo de Recurso</TableHead>
-                    <TableHead>Nº Processo</TableHead>
-                    <TableHead className="text-right">Valor Proposta</TableHead>
-                    <TableHead className="text-right">Valor Pago</TableHead>
-                    <TableHead className="text-right">A Pagar</TableHead>
-                    <TableHead>Parlamentares</TableHead>
-                    <TableHead className="w-[60px] text-center">Ações</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {data.items.map((it, idx) => (
-                    <TableRow key={idx} className="[&>td]:py-2 [&>td]:px-3 [&>td]:text-[13px] hover:bg-base-200">
-                      {anosSel.length > 1 && <TableCell className="font-mono">{it.ano || "-"}</TableCell>}
-                      <TableCell className="font-medium">{it.tipo_proposta || "-"}</TableCell>
-                      <TableCell>
-                        <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium border ${recursoColor(it.tipo_recurso)}`}>
-                          {it.tipo_recurso || "-"}
-                        </span>
-                      </TableCell>
-                      <TableCell className="font-mono">{it.nu_processo || "-"}</TableCell>
-                      <TableCell className="text-right font-mono">{formatCurrency(it.valor_proposta)}</TableCell>
-                      <TableCell className="text-right font-mono text-success">{formatCurrency(it.valor_pago)}</TableCell>
-                      <TableCell className="text-right font-mono text-warning">{formatCurrency(it.valor_pagar)}</TableCell>
-                      <TableCell title={(it.parlamentares || []).map((p) => p.nome).join(", ")}>
-                        {(it.parlamentares || []).length > 0
-                          ? <span className="whitespace-normal leading-tight">{(it.parlamentares || []).slice(0, 2).map((p) => p.nome).join(", ")}{(it.parlamentares || []).length > 2 ? ` +${(it.parlamentares || []).length - 2}` : ""}</span>
-                          : <span className="text-base-content/40">-</span>}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <button
-                          onClick={() => setDetalheItem(it)}
-                          className="inline-flex items-center justify-center w-7 h-7 rounded bg-primary hover:bg-primary/90 text-white"
-                          title="Ver detalhamento"
-                        >
-                          <Eye className="size-3.5" />
-                        </button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+            /* A TABELA DE 9 COLUNAS VIROU LISTA DE CARTOES.
+               O que substituiu a grade e o <Campos>: ano, processo e os tres
+               numeros ficam em POSICOES FIXAS, iguais em todos os cartoes, entao
+               o olho continua descendo por uma coluna. Nada saiu — o tipo de
+               recurso virou selo cinza (era pintado de violeta/azul/ambar por
+               uma tabela de cores propria, que nao classificava alerta nenhum) e
+               os parlamentares seguem na meta com a lista completa no title. */
+            <Lista>
+              {data.items.map((it, idx) => {
+                const parls = it.parlamentares || [];
+                const nomes = parls.map((p) => p.nome).filter(Boolean).join(", ");
+                const pct = pctPago(it.valor_proposta, it.valor_pago);
+                return (
+                  <ItemLinha
+                    key={idx}
+                    onClick={() => setDetalheItem(it)}
+                    titulo={it.tipo_proposta || "Sem tipo de proposta"}
+                    valor={formatCurrency(it.valor_proposta)}
+                    meta={
+                      <>
+                        {it.tipo_recurso && <Selo title={it.tipo_recurso}>{it.tipo_recurso}</Selo>}
+                        {parls.length > 0 ? (
+                          <span className="truncate" title={nomes}>
+                            {parls.slice(0, 2).map((p) => p.nome).join(", ")}
+                            {parls.length > 2 ? ` +${parls.length - 2}` : ""}
+                          </span>
+                        ) : (
+                          <span>sem parlamentar vinculado</span>
+                        )}
+                      </>
+                    }
+                    acao={
+                      <button
+                        type="button"
+                        onClick={() => setDetalheItem(it)}
+                        className="inline-flex size-7 items-center justify-center rounded hover:opacity-90"
+                        style={{ background: "var(--bi-cta)", color: "var(--bi-cta-ink)" }}
+                        title="Ver detalhamento"
+                        aria-label="Ver detalhamento"
+                      >
+                        <Eye className="size-3.5" />
+                      </button>
+                    }
+                  >
+                    <Campos
+                      campos={[
+                        { rotulo: "Ano", valor: it.ano || "—" },
+                        {
+                          rotulo: "Nº processo",
+                          valor: it.nu_processo || "—",
+                          title: it.nu_processo || "Sem processo informado",
+                        },
+                        { rotulo: "Valor pago", valor: formatCurrency(it.valor_pago) },
+                        {
+                          rotulo: "A pagar",
+                          valor: formatCurrency(it.valor_pagar),
+                          tom: (it.valor_pagar || 0) > 0 ? "atencao" : "normal",
+                        },
+                        {
+                          rotulo: "% pago",
+                          valor: pct != null ? `${pct}%` : "—",
+                          tom: pct != null && pct >= 100 ? "ok" : "normal",
+                          title: `${formatCurrency(it.valor_pago)} de ${formatCurrency(it.valor_proposta)}`,
+                        },
+                      ]}
+                    />
+                  </ItemLinha>
+                );
+              })}
+            </Lista>
           )}
         </div>
       )}
 
-      {/* Modal Detalhamento */}
+      {/* Modal Detalhamento — NIVEL 1 */}
       {detalheItem && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center p-4 overflow-y-auto" onClick={() => setDetalheItem(null)}>
-          <div className="bg-base-100 rounded-lg shadow-xl w-full max-w-4xl mt-8" onClick={(e) => e.stopPropagation()}>
-            <div className="bg-primary/10 px-4 py-3 rounded-t-lg flex items-center justify-between border-b">
-              <h3 className="font-bold text-primary">Detalhamento por Tipo de Proposta e Tipo de Recurso</h3>
-              <button onClick={() => setDetalheItem(null)} className="text-base-content/60 hover:text-base-content"><X className="size-5" /></button>
-            </div>
-            <div className="p-4 space-y-4">
-              {/* Dados Entidade + Proposta */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3 border-b pb-3 text-sm">
-                <div><span className="font-medium text-base-content/70">Estado:</span> {data?.params?.uf}</div>
-                <div><span className="font-medium text-base-content/70">Município:</span> {data?.params?.municipio}</div>
-                <div><span className="font-medium text-base-content/70">Ano:</span> {data?.params?.ano}</div>
-                <div><span className="font-medium text-base-content/70">Tipo Recurso:</span> <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium border ${recursoColor(detalheItem.tipo_recurso)}`}>{detalheItem.tipo_recurso}</span></div>
-              </div>
-
-              <div className="bg-base-200 rounded p-3">
-                <h4 className="font-semibold text-sm mb-2">Dados da Proposta Agrupada</h4>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-                  <Field label="Tipo de Proposta" value={detalheItem.tipo_proposta || "-"} />
-                  <Field label="Tipo de Recurso" value={detalheItem.tipo_recurso || "-"} />
-                  <Field label="Nº Processo" value={detalheItem.nu_processo || "-"} mono />
-                  <Field label="Processo Constituído" value={detalheItem.constituido_processo ? "Sim" : "Não"} />
-                  <Field label="Valor Proposta" value={formatCurrency(detalheItem.valor_proposta)} mono className="text-primary" />
-                  <Field label="Valor Pago" value={formatCurrency(detalheItem.valor_pago)} mono className="text-success" />
-                  <Field label="A Pagar" value={formatCurrency(detalheItem.valor_pagar)} mono className="text-warning" />
-                  <Field label="Qtd. Pagamentos" value={String(detalheItem.pagamentos_count ?? 0)} mono />
-                </div>
-              </div>
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4"
+          onClick={() => setDetalheItem(null)}
+        >
+          {/* O painel do modal usa o FUNDO da pagina, nao a superficie do cartao:
+              assim os blocos brancos de dentro continuam se destacando do que
+              esta atras deles, como fazem na tela normal. */}
+          <PainelModal maxW="max-w-4xl">
+            <CabecalhoModal
+              titulo="Detalhamento por tipo de proposta e tipo de recurso"
+              sub={`${data?.params?.municipio ?? "—"}/${data?.params?.uf ?? "—"} · ${data?.params?.ano ?? "—"}`}
+              onClose={() => setDetalheItem(null)}
+            />
+            <div className="space-y-2.5 p-3">
+              <Secao
+                icon={FileText}
+                titulo="Dados da proposta agrupada"
+                sub={detalheItem.tipo_recurso}
+                campos={[
+                  { rotulo: "Estado", valor: data?.params?.uf ?? "—" },
+                  { rotulo: "Município", valor: data?.params?.municipio ?? "—", title: String(data?.params?.municipio ?? "") },
+                  { rotulo: "Ano", valor: detalheItem.ano ?? data?.params?.ano ?? "—" },
+                  { rotulo: "Tipo de recurso", valor: detalheItem.tipo_recurso || "—", title: detalheItem.tipo_recurso },
+                  { rotulo: "Tipo de proposta", valor: detalheItem.tipo_proposta || "—", title: detalheItem.tipo_proposta },
+                  { rotulo: "Nº processo", valor: detalheItem.nu_processo || "—", title: detalheItem.nu_processo },
+                  {
+                    rotulo: "Processo constituído",
+                    valor: detalheItem.constituido_processo ? "Sim" : "Não",
+                    // Sem processo constituido o dinheiro nao anda — e o unico
+                    // campo deste bloco que pede providencia.
+                    tom: detalheItem.constituido_processo ? "normal" : "atencao",
+                  },
+                  { rotulo: "Qtd. pagamentos", valor: String(detalheItem.pagamentos_count ?? 0) },
+                  { rotulo: "Valor proposta", valor: formatCurrency(detalheItem.valor_proposta) },
+                  { rotulo: "Valor pago", valor: formatCurrency(detalheItem.valor_pago) },
+                  {
+                    rotulo: "A pagar",
+                    valor: formatCurrency(detalheItem.valor_pagar),
+                    tom: (detalheItem.valor_pagar || 0) > 0 ? "atencao" : "normal",
+                  },
+                  {
+                    rotulo: "% pago",
+                    valor: (() => {
+                      const p = pctPago(detalheItem.valor_proposta, detalheItem.valor_pago);
+                      return p != null ? `${p}%` : "—";
+                    })(),
+                  },
+                ]}
+              />
 
               {/* Parlamentares */}
               {(detalheItem.parlamentares || []).length > 0 && (
-                <div className="bg-base-200 rounded p-3">
-                  <h4 className="font-semibold text-sm mb-2">Parlamentares ({detalheItem.parlamentares?.length})</h4>
-                  <div className="flex flex-wrap gap-2">
+                <Bloco className="p-3">
+                  <BlocoHead
+                    icon={Users}
+                    titulo="Parlamentares"
+                    sub={`${detalheItem.parlamentares?.length} vinculado(s) à proposta`}
+                  />
+                  <div className="flex flex-wrap gap-1.5">
                     {(detalheItem.parlamentares || []).map((p, i) => (
-                      <span key={i} className="inline-flex items-center rounded bg-info/15 border border-info px-2 py-0.5 text-[11px] text-info">
+                      <Selo key={i} title={p.partido ? `${p.nome} · ${p.partido}` : p.nome}>
                         {p.nome}{p.partido ? ` (${p.partido})` : ""}
-                      </span>
+                      </Selo>
                     ))}
                   </div>
-                </div>
+                </Bloco>
               )}
 
               {/* Propostas individuais (nivel 1 listagem) */}
-              <div className="bg-base-100 border rounded p-3">
-                <h4 className="font-semibold text-sm mb-2">Propostas Individuais (Nº SIPA)</h4>
+              <Bloco className="p-3">
+                <BlocoHead
+                  icon={Building2}
+                  titulo="Propostas individuais (Nº SIPA)"
+                  sub={individuais ? `${individuais.length} proposta(s)` : "buscando no portal..."}
+                />
                 {loadingIndiv ? (
-                  <div className="text-center text-sm text-base-content/60 py-3">Carregando...</div>
+                  <div className="flex justify-center py-5">
+                    <Loader2 className="size-5 animate-spin" style={{ color: "var(--bi-muted)" }} />
+                  </div>
                 ) : (individuais && individuais.length > 0) ? (
-                  <Table className="text-xs">
-                    <TableHeader>
-                      <TableRow className="[&>th]:py-1 [&>th]:px-2 [&>th]:text-[10px] [&>th]:font-semibold bg-primary/10">
-                        <TableHead>Nº da Proposta</TableHead>
-                        <TableHead>Entidade</TableHead>
-                        <TableHead className="text-right">Valor Proposta</TableHead>
-                        <TableHead className="text-right">Valor Pago</TableHead>
-                        <TableHead className="w-[60px] text-center">Ação</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {individuais.map((i, idx) => (
-                        <TableRow key={idx} className="[&>td]:py-1 [&>td]:px-2 [&>td]:text-[11px] hover:bg-base-200">
-                          <TableCell className="font-mono">{i.nu_proposta}</TableCell>
-                          <TableCell>{i.entidade}</TableCell>
-                          <TableCell className="text-right font-mono">{formatCurrency(i.valor_proposta)}</TableCell>
-                          <TableCell className="text-right font-mono text-success">{formatCurrency(i.valor_pago)}</TableCell>
-                          <TableCell className="text-center">
+                  <Lista>
+                    {individuais.map((i, idx) => {
+                      const pct = pctPago(i.valor_proposta, i.valor_pago);
+                      return (
+                        <ItemLinha
+                          key={idx}
+                          titulo={i.entidade || "Entidade não informada"}
+                          valor={formatCurrency(i.valor_proposta)}
+                          meta={
+                            <>
+                              {i.tipo_recurso && <Selo title={i.tipo_recurso}>{i.tipo_recurso}</Selo>}
+                              {i.tipo_proposta && <span className="truncate">{i.tipo_proposta}</span>}
+                              <span className="font-mono">· nº {i.nu_proposta}</span>
+                            </>
+                          }
+                          acao={
                             <button
+                              type="button"
                               onClick={() => abrirDetalheProposta(i.nu_proposta)}
-                              className="inline-flex items-center justify-center w-6 h-6 rounded bg-primary hover:bg-primary/90 text-white"
+                              className="inline-flex size-6 items-center justify-center rounded hover:opacity-90"
+                              style={{ background: "var(--bi-cta)", color: "var(--bi-cta-ink)" }}
                               title="Ver detalhes"
+                              aria-label={`Ver detalhes da proposta ${i.nu_proposta}`}
                             >
                               <Eye className="size-3" />
                             </button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                          }
+                        >
+                          <Campos
+                            campos={[
+                              { rotulo: "Valor pago", valor: formatCurrency(i.valor_pago) },
+                              {
+                                rotulo: "% pago",
+                                valor: pct != null ? `${pct}%` : "—",
+                                tom: pct != null && pct >= 100 ? "ok" : "normal",
+                              },
+                            ]}
+                          />
+                        </ItemLinha>
+                      );
+                    })}
+                  </Lista>
                 ) : (
-                  <p className="text-xs text-base-content/60 italic text-center py-3">
-                    Nenhuma proposta individual encontrada para esse grupo no FNS.
-                  </p>
+                  <Vazio>Nenhuma proposta individual encontrada para esse grupo no FNS.</Vazio>
                 )}
-              </div>
+              </Bloco>
             </div>
-          </div>
+          </PainelModal>
         </div>
       )}
 
       {/* Modal NÍVEL 2: Detalhe Completo da Proposta Individual */}
       {(propostaDetalhe || loadingDetalhe) && (
-        <div className="fixed inset-0 z-[60] bg-black/50 flex items-start justify-center p-4 overflow-y-auto" onClick={() => setPropostaDetalhe(null)}>
-          <div className="bg-base-100 rounded-lg shadow-2xl w-full max-w-5xl mt-4" onClick={(e) => e.stopPropagation()}>
-            <div className="bg-primary/10 px-4 py-3 rounded-t-lg flex items-center justify-between border-b">
-              <h3 className="font-bold text-primary">Detalhe da Proposta {propostaDetalhe?.nu_proposta || ""}</h3>
-              <button onClick={() => setPropostaDetalhe(null)} className="text-base-content/60 hover:text-base-content"><X className="size-5" /></button>
-            </div>
-            <div className="p-4 space-y-3">
-              {loadingDetalhe && <div className="text-center py-12 text-base-content/60">Carregando detalhes...</div>}
+        <div
+          className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/50 p-4"
+          onClick={() => setPropostaDetalhe(null)}
+        >
+          <PainelModal maxW="max-w-5xl">
+            <CabecalhoModal
+              titulo={`Detalhe da proposta ${propostaDetalhe?.nu_proposta || ""}`}
+              sub={propostaDetalhe ? `${propostaDetalhe.municipio}/${propostaDetalhe.uf} · ${propostaDetalhe.ano}` : undefined}
+              onClose={() => setPropostaDetalhe(null)}
+            />
+            <div className="space-y-2.5 p-3">
+              {loadingDetalhe && (
+                <div className="flex justify-center py-12">
+                  <Loader2 className="size-6 animate-spin" style={{ color: "var(--bi-muted)" }} />
+                </div>
+              )}
 
               {propostaDetalhe && (
                 <>
-                  {/* Dados da Entidade */}
-                  <Section title="Dados da Entidade">
-                    <Field label="Estado" value={propostaDetalhe.uf} />
-                    <Field label="Município" value={propostaDetalhe.municipio} />
-                    <Field label="Entidade" value={propostaDetalhe.entidade} />
-                    <Field label="CNPJ" value={propostaDetalhe.cnpj} mono />
-                  </Section>
+                  <Secao
+                    icon={Building2}
+                    titulo="Dados da entidade"
+                    campos={[
+                      { rotulo: "Estado", valor: propostaDetalhe.uf },
+                      { rotulo: "Município", valor: propostaDetalhe.municipio, title: propostaDetalhe.municipio },
+                      { rotulo: "Entidade", valor: propostaDetalhe.entidade, title: propostaDetalhe.entidade },
+                      { rotulo: "CNPJ", valor: propostaDetalhe.cnpj },
+                    ]}
+                  />
 
-                  {/* Dados da Proposta */}
-                  <Section title="Dados da Proposta">
-                    <Field label="Nº da Proposta" value={propostaDetalhe.nu_proposta} mono />
-                    <Field label="Tipo de Proposta" value={propostaDetalhe.tipo_proposta} />
-                    <Field label="Ano" value={propostaDetalhe.ano} />
-                    <Field label="Valor da Proposta" value={formatCurrency(propostaDetalhe.valor_proposta)} mono className="text-primary" />
-                    <Field label="Nº Portaria" value={propostaDetalhe.nu_portaria || "-"} mono />
-                    <Field label="Data Portaria" value={propostaDetalhe.data_portaria ? new Date(propostaDetalhe.data_portaria).toLocaleDateString("pt-BR") : "-"} />
-                    <Field label="Valor Total de Empenho" value={formatCurrency(propostaDetalhe.vl_empenhado)} mono />
-                    <Field label="Valor a Pagar" value={formatCurrency(propostaDetalhe.vl_pagar)} mono className="text-warning" />
-                  </Section>
+                  <Secao
+                    icon={FileText}
+                    titulo="Dados da proposta"
+                    sub={propostaDetalhe.tipo_recurso}
+                    campos={[
+                      { rotulo: "Nº da proposta", valor: propostaDetalhe.nu_proposta },
+                      { rotulo: "Tipo de proposta", valor: propostaDetalhe.tipo_proposta, title: propostaDetalhe.tipo_proposta },
+                      { rotulo: "Tipo de recurso", valor: propostaDetalhe.tipo_recurso, title: propostaDetalhe.tipo_recurso },
+                      { rotulo: "Esfera", valor: propostaDetalhe.esfera || "—" },
+                      { rotulo: "Ano", valor: propostaDetalhe.ano },
+                      { rotulo: "Nº processo", valor: propostaDetalhe.nu_processo || "—", title: propostaDetalhe.nu_processo },
+                      { rotulo: "Nº portaria", valor: propostaDetalhe.nu_portaria || "—" },
+                      { rotulo: "Data portaria", valor: dataBR(propostaDetalhe.data_portaria) },
+                      { rotulo: "Valor da proposta", valor: formatCurrency(propostaDetalhe.valor_proposta) },
+                      { rotulo: "Total empenhado", valor: formatCurrency(propostaDetalhe.vl_empenhado) },
+                      { rotulo: "Valor pago", valor: formatCurrency(propostaDetalhe.vl_pago) },
+                      {
+                        rotulo: "Valor a pagar",
+                        valor: formatCurrency(propostaDetalhe.vl_pagar),
+                        tom: (propostaDetalhe.vl_pagar || 0) > 0 ? "atencao" : "normal",
+                      },
+                    ]}
+                  />
 
-                  {/* Dados da Situação */}
-                  <Section title="Dados da Situação da Proposta">
-                    <Field label="Situação Atual" value={propostaDetalhe.situacao_descricao} className="text-success font-semibold" />
-                    <Field label="Data da Última Atualização" value={propostaDetalhe.situacao_data ? new Date(propostaDetalhe.situacao_data).toLocaleDateString("pt-BR") : "-"} />
-                  </Section>
+                  {/* A situacao passa pelo `situacaoTom` importado — a MESMA regra
+                      do resto do sistema. Antes era verde fixo, o que pintava de
+                      "tudo certo" ate proposta cancelada. */}
+                  <Secao
+                    icon={Route}
+                    titulo="Dados da situação da proposta"
+                    campos={[
+                      {
+                        rotulo: "Situação atual",
+                        valor: (
+                          <Selo tom={situacaoTom(propostaDetalhe.situacao_descricao)} title={propostaDetalhe.situacao_descricao}>
+                            {propostaDetalhe.situacao_descricao || "—"}
+                          </Selo>
+                        ),
+                      },
+                      { rotulo: "Última atualização", valor: dataBR(propostaDetalhe.situacao_data) },
+                      { rotulo: "Processo constituído", valor: propostaDetalhe.constituido_processo ? "Sim" : "Não",
+                        tom: propostaDetalhe.constituido_processo ? "normal" : "atencao" },
+                      { rotulo: "Etapa atual", valor: propostaDetalhe.etapa_atual ?? "—" },
+                    ]}
+                  />
 
                   {/* Principais etapas - workflow 12 dots */}
                   {propostaDetalhe.etapas && propostaDetalhe.etapas.length > 0 && (
-                    <div className="bg-base-200 rounded p-3">
-                      <h4 className="font-semibold text-sm mb-3">Principais etapas da proposta</h4>
-                      <div className="flex items-center justify-between overflow-x-auto">
+                    <Bloco className="p-3">
+                      <BlocoHead
+                        icon={Route}
+                        titulo="Principais etapas da proposta"
+                        sub={`${propostaDetalhe.etapas.filter((e) => e.completada).length} de ${propostaDetalhe.etapas.length} concluída(s)`}
+                      />
+                      <div className="bi-scroll flex items-start justify-between overflow-x-auto pt-1">
                         {propostaDetalhe.etapas.map((et, i) => (
                           <React.Fragment key={i}>
-                            <div className="flex flex-col items-center text-center min-w-[60px]" title={et.descricao}>
-                              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold text-white ${
-                                et.completada ? "bg-primary" : "bg-base-300"
-                              } ${et.atual ? "ring-2 ring-primary/40" : ""}`}>
+                            <div className="flex min-w-[60px] flex-col items-center text-center" title={et.descricao}>
+                              {/* A etapa cumprida usa a CTA (quase preta) e a
+                                  pendente usa a mesma linha cinza das divisorias:
+                                  o progresso se le pelo contraste, sem precisar
+                                  de violeta. A etapa atual ganha um contorno de
+                                  acento em vez de um preenchimento diferente. */}
+                              <div
+                                className="grid size-7 shrink-0 place-items-center rounded-full text-[11px] font-bold"
+                                style={{
+                                  background: et.completada ? "var(--bi-cta)" : "var(--bi-line)",
+                                  color: et.completada ? "var(--bi-cta-ink)" : "var(--bi-faint)",
+                                  ...(et.atual
+                                    ? { outline: "2px solid var(--bi-accent-ink)", outlineOffset: "2px" }
+                                    : {}),
+                                }}
+                              >
                                 {et.numero}
                               </div>
-                              <div className="text-[9px] text-base-content/70 mt-1 max-w-[60px] leading-tight">{et.descricao}</div>
+                              <div className="mt-1 max-w-[60px] text-[9px] leading-tight" style={{ color: "var(--bi-faint)" }}>
+                                {et.descricao}
+                              </div>
                             </div>
                             {i < propostaDetalhe.etapas.length - 1 && (
-                              <div className={`h-1 flex-1 mx-0.5 ${et.completada && propostaDetalhe.etapas[i+1].completada ? "bg-primary" : "bg-base-300"}`} />
+                              <div
+                                className="mx-0.5 mt-3 h-1 flex-1"
+                                style={{
+                                  background: et.completada && propostaDetalhe.etapas[i + 1].completada
+                                    ? "var(--bi-cta)"
+                                    : "var(--bi-line)",
+                                }}
+                              />
                             )}
                           </React.Fragment>
                         ))}
                       </div>
                       {!propostaDetalhe.constituido_processo && (
-                        <p className="text-xs text-warning italic mt-3">Não foi constituído processo para essa proposta.</p>
+                        <p className="mt-3 flex flex-wrap items-center gap-1.5 text-[11px]" style={{ color: "var(--bi-muted)" }}>
+                          <Selo tom="atencao">Sem processo</Selo>
+                          Não foi constituído processo para essa proposta.
+                        </p>
                       )}
-                    </div>
+                    </Bloco>
                   )}
 
                   {/* Dados do Parlamentar */}
                   {propostaDetalhe.parlamentares && propostaDetalhe.parlamentares.length > 0 && (
-                    <div className="border rounded p-3 bg-base-100">
-                      <h4 className="font-semibold text-sm text-primary border-b pb-1 mb-2">Dados do Parlamentar</h4>
-                      <Table className="text-xs">
-                        <TableHeader>
-                          <TableRow className="[&>th]:py-1 [&>th]:px-2 [&>th]:text-[10px] [&>th]:font-semibold bg-primary/10">
-                            <TableHead>Partido</TableHead>
-                            <TableHead>Nome Parlamentar</TableHead>
-                            <TableHead>Nº da Emenda</TableHead>
-                            <TableHead>Ano</TableHead>
-                            <TableHead className="text-right">Valor da Emenda</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {propostaDetalhe.parlamentares.map((p, i) => (
-                            <TableRow key={i} className="[&>td]:py-1 [&>td]:px-2 [&>td]:text-[11px]">
-                              <TableCell className="font-mono">{p.partido || "-"}</TableCell>
-                              <TableCell className="font-medium">{p.nome || "-"}</TableCell>
-                              <TableCell className="font-mono">{p.nu_emenda || "-"}</TableCell>
-                              <TableCell>{p.ano || "-"}</TableCell>
-                              <TableCell className="text-right font-mono text-primary">{formatCurrency(p.valor)}</TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
+                    <Bloco className="p-3">
+                      <BlocoHead
+                        icon={Users}
+                        titulo="Dados do parlamentar"
+                        sub={`${propostaDetalhe.parlamentares.length} emenda(s)`}
+                        right={
+                          <span className="bi-num text-[13px]">
+                            {formatCurrency(propostaDetalhe.parlamentares.reduce((s, p) => s + (p.valor || 0), 0))}
+                          </span>
+                        }
+                      />
+                      <Lista>
+                        {propostaDetalhe.parlamentares.map((p, i) => (
+                          <ItemLinha
+                            key={i}
+                            titulo={p.nome || "Parlamentar não informado"}
+                            valor={formatCurrency(p.valor)}
+                          >
+                            <Campos
+                              campos={[
+                                { rotulo: "Partido", valor: p.partido || "—" },
+                                { rotulo: "Nº da emenda", valor: p.nu_emenda || "—", title: p.nu_emenda },
+                                { rotulo: "Ano", valor: p.ano || "—" },
+                              ]}
+                            />
+                          </ItemLinha>
+                        ))}
+                      </Lista>
+                    </Bloco>
                   )}
 
                   {/* Dados do Pagamento */}
                   {propostaDetalhe.pagamentos && propostaDetalhe.pagamentos.length > 0 && (
-                    <div className="border rounded p-3 bg-base-100">
-                      <h4 className="font-semibold text-sm text-primary border-b pb-1 mb-2">Dados do Pagamento</h4>
-                      <Table className="text-xs">
-                        <TableHeader>
-                          <TableRow className="[&>th]:py-1 [&>th]:px-2 [&>th]:text-[10px] [&>th]:font-semibold bg-primary/10">
-                            <TableHead>Parcela</TableHead>
-                            <TableHead>Data Pagamento</TableHead>
-                            <TableHead className="text-right">Valor</TableHead>
-                            <TableHead className="text-right">Acumulado</TableHead>
-                            <TableHead>Ordem Bancária</TableHead>
-                            <TableHead>Nº Processo Pgto</TableHead>
-                            <TableHead>Localização</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {propostaDetalhe.pagamentos.map((pg, i) => (
-                            <TableRow key={i} className="[&>td]:py-1 [&>td]:px-2 [&>td]:text-[11px]">
-                              <TableCell>{pg.parcela || "-"}</TableCell>
-                              <TableCell>{pg.data ? new Date(pg.data).toLocaleDateString("pt-BR") : "-"}</TableCell>
-                              <TableCell className="text-right font-mono text-success">{formatCurrency(pg.valor)}</TableCell>
-                              <TableCell className="text-right font-mono">{formatCurrency(pg.valor_acumulado)}</TableCell>
-                              <TableCell className="font-mono">{pg.ordem_bancaria || "-"}</TableCell>
-                              <TableCell className="font-mono">{pg.nu_processo || "-"}</TableCell>
-                              <TableCell className="text-[10px]">{pg.localizacao || "-"}</TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
+                    <Bloco className="p-3">
+                      <BlocoHead
+                        icon={Receipt}
+                        titulo="Dados do pagamento"
+                        sub={`${propostaDetalhe.pagamentos.length} parcela(s)`}
+                        right={
+                          <span className="bi-num text-[13px]">{formatCurrency(propostaDetalhe.vl_pago)}</span>
+                        }
+                      />
+                      <Lista>
+                        {propostaDetalhe.pagamentos.map((pg, i) => (
+                          <ItemLinha
+                            key={i}
+                            titulo={`Parcela ${pg.parcela || "—"}`}
+                            valor={formatCurrency(pg.valor)}
+                            meta={
+                              pg.localizacao
+                                ? <span className="truncate" title={pg.localizacao}>{pg.localizacao}</span>
+                                : undefined
+                            }
+                          >
+                            <Campos
+                              campos={[
+                                { rotulo: "Data pagamento", valor: dataBR(pg.data) },
+                                { rotulo: "Acumulado", valor: formatCurrency(pg.valor_acumulado) },
+                                { rotulo: "Ordem bancária", valor: pg.ordem_bancaria || "—", title: pg.ordem_bancaria },
+                                { rotulo: "Nº processo pgto", valor: pg.nu_processo || "—", title: pg.nu_processo },
+                              ]}
+                            />
+                          </ItemLinha>
+                        ))}
+                      </Lista>
+                    </Bloco>
                   )}
 
-                  <div className="flex justify-end items-center gap-2 pt-2 border-t">
+                  <div className="flex items-center justify-end gap-2 border-t pt-3" style={{ borderColor: "var(--bi-line)" }}>
                     <Button variant="outline" onClick={() => setPropostaDetalhe(null)}>Voltar</Button>
-                    <Button onClick={() => window.print()} className="bg-primary hover:bg-primary/90">
+                    <Button
+                      onClick={() => window.print()}
+                      className="hover:opacity-90"
+                      style={{ background: "var(--bi-cta)", color: "var(--bi-cta-ink)" }}
+                    >
                       <Printer className="size-4 mr-1" /> Imprimir
                     </Button>
                   </div>
                 </>
               )}
             </div>
-          </div>
+          </PainelModal>
         </div>
       )}
     </div>
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+/** A caixa do modal. Fundo = o fundo DA PAGINA (`--bi-bg`), nao a superficie do
+ *  cartao: é o que mantém a mesma hierarquia de dentro para fora (fundo → bloco
+ *  branco → item) que a tela usa, em vez de branco sobre branco. */
+function PainelModal({
+  children,
+  maxW,
+}: {
+  children: React.ReactNode;
+  /** `max-w-*` literal: o Tailwind so gera a classe se ela aparecer escrita no
+   *  arquivo, entao ela vem do chamador e nao e montada aqui. */
+  maxW: string;
+}) {
   return (
-    <div className="border rounded p-3 bg-base-100">
-      <h4 className="font-semibold text-sm text-primary border-b pb-1 mb-2">{title}</h4>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">{children}</div>
+    <div
+      className={`mt-6 w-full ${maxW} overflow-hidden border shadow-xl`}
+      style={{
+        background: "var(--bi-bg)",
+        borderColor: "var(--bi-line)",
+        borderRadius: "var(--bi-radius)",
+      }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {children}
     </div>
   );
 }
 
-function Field({ label, value, mono, className = "" }: { label: string; value: string; mono?: boolean; className?: string }) {
+function CabecalhoModal({ titulo, sub, onClose }: {
+  titulo: string; sub?: React.ReactNode; onClose: () => void;
+}) {
   return (
-    <div>
-      <div className="text-[10px] uppercase font-semibold text-base-content/60">{label}</div>
-      <div className={`text-sm mt-0.5 ${mono ? "font-mono" : ""} ${className}`}>{value}</div>
+    <div
+      className="flex items-start justify-between gap-3 border-b px-4 py-3"
+      style={{ background: "var(--bi-surface)", borderColor: "var(--bi-line)" }}
+    >
+      <div className="min-w-0">
+        <h3 className="bi-title text-[14px] leading-tight">{titulo}</h3>
+        {sub && (
+          <p className="mt-0.5 text-[11px] leading-snug" style={{ color: "var(--bi-faint)" }}>{sub}</p>
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={onClose}
+        className="shrink-0 hover:opacity-70"
+        style={{ color: "var(--bi-muted)" }}
+        aria-label="Fechar"
+      >
+        <X className="size-5" />
+      </button>
     </div>
   );
 }
 
-function StatCard({ label, value, className = "" }: { label: string; value: string; className?: string }) {
+/** Um grupo de campos do detalhe. O <Campos> ja e a grade alinhada do sistema,
+ *  entao a secao e so o cartao e o titulo em volta dela — quatro colunas fixas
+ *  em todas, para os blocos empilhados lerem como uma coisa so. */
+function Secao({ icon, titulo, sub, campos }: {
+  icon?: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
+  titulo: string;
+  sub?: React.ReactNode;
+  campos: Campo[];
+}) {
   return (
-    <div className="rounded-lg border bg-base-100 p-3">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className={`text-lg font-bold mt-1 ${className}`}>{value}</div>
-    </div>
+    <Bloco className="p-3">
+      <BlocoHead icon={icon} titulo={titulo} sub={sub} />
+      <Campos campos={campos} cols={4} />
+    </Bloco>
   );
 }

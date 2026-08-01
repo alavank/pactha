@@ -10,8 +10,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "@/components/ui/table";
+  Bloco, BlocoHead, Campos, ItemLinha, Lista, Selo, Vazio, situacaoTom,
+} from "@/components/ui/superficies";
 
 interface Usuario {
   id: number;
@@ -33,11 +33,63 @@ interface SenhaResp {
   senha_temporaria: string;
 }
 
+// ⚠️ `value` e CHAVE do backend (users.role). So o `label` e texto de tela.
 const ROLES = [
   { value: "admin", label: "Administrador" },
   { value: "analyst", label: "Analista" },
   { value: "user", label: "Usuario" },
 ];
+
+/** Rotulo de controle: 11px em `--bi-muted`, a mesma escala dos filtros das
+ *  demais telas do lote. Existe para os quatro rotulos desta tela nao voltarem
+ *  a divergir em tamanho/cor um do outro. */
+function Rotulo({
+  icon: Icon, children,
+}: {
+  icon?: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="mb-1 flex items-center gap-1 text-[11px]" style={{ color: "var(--bi-muted)" }}>
+      {Icon && <Icon className="size-3.5" />}
+      {children}
+    </label>
+  );
+}
+
+/** O chip de marcacao dos dois seletores (municipio e tela).
+ *
+ *  Estava escrito duas vezes, identico, com o violeta do tema no estado
+ *  marcado. Agora e uma peca so e o marcado se distingue como em Parlamentares:
+ *  fundo do proprio cinza da identidade e tinta de acento — o suficiente para
+ *  ler "ligado" sem transformar a lista de 23 telas num painel colorido. */
+function Chip({
+  on, onClick, children,
+}: {
+  on: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      onClick={onClick}
+      className="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] transition-colors hover:bg-[var(--bi-surface-2)]"
+      style={on
+        ? {
+            borderColor: "var(--bi-accent-ink)",
+            background: "var(--bi-surface-2)",
+            color: "var(--bi-accent-ink)",
+            fontWeight: 500,
+          }
+        : { borderColor: "var(--bi-line)", color: "var(--bi-muted)" }}
+    >
+      {on && <Check className="size-3" />}
+      {children}
+    </button>
+  );
+}
 
 // Seletor de municipios (chips com checkbox)
 function MunicipioPicker({
@@ -48,28 +100,15 @@ function MunicipioPicker({
   onToggle: (id: number) => void;
 }) {
   if (municipios.length === 0) {
-    return <p className="text-xs text-base-content/50">Nenhum município disponível.</p>;
+    return <p className="text-[11px]" style={{ color: "var(--bi-faint)" }}>Nenhum município disponível.</p>;
   }
   return (
     <div className="flex flex-wrap gap-1.5">
-      {municipios.map((m) => {
-        const on = selected.has(m.id);
-        return (
-          <button
-            key={m.id}
-            type="button"
-            onClick={() => onToggle(m.id)}
-            className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors ${
-              on
-                ? "border-primary bg-primary/10 text-primary font-medium"
-                : "border-base-300 text-base-content/70 hover:bg-base-200"
-            }`}
-          >
-            {on && <Check className="size-3" />}
-            {m.nome} - {m.uf}
-          </button>
-        );
-      })}
+      {municipios.map((m) => (
+        <Chip key={m.id} on={selected.has(m.id)} onClick={() => onToggle(m.id)}>
+          {m.nome} - {m.uf}
+        </Chip>
+      ))}
     </div>
   );
 }
@@ -83,24 +122,11 @@ function TelaPicker({
 }) {
   return (
     <div className="flex flex-wrap gap-1.5">
-      {TELAS.map((t) => {
-        const on = selected.has(t.key);
-        return (
-          <button
-            key={t.key}
-            type="button"
-            onClick={() => onToggle(t.key)}
-            className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors ${
-              on
-                ? "border-primary bg-primary/10 text-primary font-medium"
-                : "border-base-300 text-base-content/70 hover:bg-base-200"
-            }`}
-          >
-            {on && <Check className="size-3" />}
-            {t.label}
-          </button>
-        );
-      })}
+      {TELAS.map((t) => (
+        <Chip key={t.key} on={selected.has(t.key)} onClick={() => onToggle(t.key)}>
+          {t.label}
+        </Chip>
+      ))}
     </div>
   );
 }
@@ -157,7 +183,12 @@ export default function UsuariosPage() {
     }
   }, []);
 
-  useEffect(() => { carregar(); }, [carregar]);
+  useEffect(() => {
+    // Mesma dispensa que as demais telas do lote usam: a carga inicial e uma
+    // busca na API, nao um setState derivado de render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    carregar();
+  }, [carregar]);
 
   const toggleNovo = (id: number) =>
     setNovoMunis((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -245,33 +276,48 @@ export default function UsuariosPage() {
     setTimeout(() => setCopiado(false), 2000);
   };
 
+  const ativos = users.filter((u) => u.active).length;
+  const pendentes = users.filter((u) => u.must_change_password).length;
+
   return (
-    <div className="space-y-5">
-      <div>
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="border-b pb-4" style={{ borderColor: "var(--bi-line)" }}>
         <h1 className="text-2xl font-bold text-base-content">Usuários</h1>
-        <p className="text-sm text-base-content/60">Gerenciamento de acessos a plataforma PACTHA</p>
+        <p className="mt-1 text-sm" style={{ color: "var(--bi-muted)" }}>
+          Gerenciamento de acessos à plataforma PACTHA: perfil, municípios e telas
+          que cada pessoa enxerga.
+        </p>
       </div>
 
       {erro && (
-        <div className="rounded-lg border border-error bg-error/15 p-3 text-sm text-error">{erro}</div>
+        /* O aviso deixa de ser um retangulo vermelho inteiro: cor so no selo, e
+           o texto no cinza de leitura. Um bloco pintado no topo compete com a
+           lista sem dizer nada a mais do que a palavra "Acesso" ja diz. */
+        <div className="bi-card flex flex-wrap items-center gap-2 p-3 text-[12px]" style={{ color: "var(--bi-muted)" }}>
+          <Selo tom="critico">Acesso</Selo>
+          {erro}
+        </div>
       )}
 
       {/* Criar novo */}
-      <div className="bg-base-100 border rounded-lg p-4">
-        <h2 className="text-sm font-semibold text-base-content/70 mb-3 flex items-center gap-2">
-          <UserPlus className="size-4" /> Novo usuario
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+      <Bloco className="p-4">
+        <BlocoHead
+          icon={UserPlus}
+          titulo="Novo usuário"
+          sub="Uma senha temporária é gerada automaticamente e a troca é obrigatória no primeiro login."
+        />
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
           <div>
-            <label className="text-xs text-base-content/70 mb-1 block">Nome</label>
+            <Rotulo>Nome</Rotulo>
             <Input value={novoNome} onChange={(e) => setNovoNome(e.target.value)} placeholder="Nome completo" />
           </div>
           <div>
-            <label className="text-xs text-base-content/70 mb-1 block">E-mail</label>
+            <Rotulo>E-mail</Rotulo>
             <Input value={novoEmail} onChange={(e) => setNovoEmail(e.target.value)} placeholder="email@exemplo.com" type="email" />
           </div>
           <div>
-            <label className="text-xs text-base-content/70 mb-1 block">Perfil</label>
+            <Rotulo>Perfil</Rotulo>
             <Select value={novoRole} onValueChange={(v) => setNovoRole(v ?? "admin")}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -280,8 +326,12 @@ export default function UsuariosPage() {
             </Select>
           </div>
           <div className="flex items-end">
-            <Button onClick={criar} disabled={criando || !novoEmail.trim() || !novoNome.trim()}
-                    className="w-full bg-primary hover:bg-primary/90">
+            <Button
+              onClick={criar}
+              disabled={criando || !novoEmail.trim() || !novoNome.trim()}
+              className="w-full hover:opacity-90"
+              style={{ background: "var(--bi-cta)", color: "var(--bi-cta-ink)" }}
+            >
               {criando ? <Loader2 className="size-4 animate-spin mr-1" /> : <UserPlus className="size-4 mr-1" />}
               Criar
             </Button>
@@ -290,11 +340,9 @@ export default function UsuariosPage() {
 
         {/* Municipios com acesso (so p/ nao-admin) */}
         <div className="mt-3">
-          <label className="text-xs text-base-content/70 mb-1.5 flex items-center gap-1">
-            <Building2 className="size-3.5" /> Municipios com acesso
-          </label>
+          <Rotulo icon={Building2}>Municípios com acesso</Rotulo>
           {novoRole === "admin" ? (
-            <p className="text-xs text-base-content/50 italic">Administrador enxerga todos os municípios.</p>
+            <p className="text-[11px]" style={{ color: "var(--bi-faint)" }}>Administrador enxerga todos os municípios.</p>
           ) : (
             <MunicipioPicker municipios={municipios} selected={novoMunis} onToggle={toggleNovo} />
           )}
@@ -302,149 +350,213 @@ export default function UsuariosPage() {
 
         {/* Telas com acesso (so p/ nao-admin) */}
         <div className="mt-3">
-          <label className="text-xs text-base-content/70 mb-1.5 flex items-center gap-1">
-            <ListChecks className="size-3.5" /> Telas com acesso
-          </label>
+          <Rotulo icon={ListChecks}>Telas com acesso</Rotulo>
           {novoRole === "admin" ? (
-            <p className="text-xs text-base-content/50 italic">Administrador enxerga todas as telas.</p>
+            <p className="text-[11px]" style={{ color: "var(--bi-faint)" }}>Administrador enxerga todas as telas.</p>
           ) : (
             <TelaPicker selected={novoTelas} onToggle={toggleNovoTela} />
           )}
         </div>
 
-        <p className="text-[11px] text-base-content/60 mt-2">
-          Uma senha temporaria sera gerada automaticamente. O usuario sera obrigado a troca-la no primeiro login.
-          O usuario so vera os municipios e as telas selecionados.
+        <p className="mt-3 text-[11px]" style={{ color: "var(--bi-faint)" }}>
+          O usuário só verá os municípios e as telas selecionados.
         </p>
-      </div>
+      </Bloco>
 
-      {/* Lista */}
-      <div className="bg-base-100 border rounded-lg overflow-hidden">
-        {loading ? (
-          <div className="p-4 space-y-2">
-            {Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-10 animate-pulse bg-base-200 rounded" />)}
-          </div>
-        ) : (
-          <Table className="text-sm">
-            <TableHeader>
-              <TableRow className="[&>th]:py-2 [&>th]:px-3 [&>th]:text-xs [&>th]:font-semibold bg-base-200">
-                <TableHead className="w-[50px]">ID</TableHead>
-                <TableHead>Nome</TableHead>
-                <TableHead>E-mail</TableHead>
-                <TableHead className="w-[150px]">Perfil</TableHead>
-                <TableHead>Municípios</TableHead>
-                <TableHead>Telas</TableHead>
-                <TableHead className="w-[90px] text-center">Status</TableHead>
-                <TableHead className="w-[210px] text-center">Ações</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {users.map((u) => (
-                <TableRow key={u.id} className="[&>td]:py-2 [&>td]:px-3 hover:bg-base-200">
-                  <TableCell className="text-base-content/60">{u.id}</TableCell>
-                  <TableCell className="font-medium">
-                    {u.name}
-                    {u.must_change_password && (
-                      <span className="ml-2 text-[10px] bg-warning/15 text-warning px-1.5 py-0.5 rounded">
-                        troca pendente
-                      </span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-base-content/70">{u.email}</TableCell>
-                  <TableCell>
-                    <Select value={u.role} onValueChange={(v) => v && mudarRole(u, v)}>
-                      <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {ROLES.map((r) => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </TableCell>
-                  <TableCell className="text-xs">
-                    {u.role === "admin" ? (
-                      <span className="text-base-content/50 italic">Todos</span>
-                    ) : (u.municipio_ids && u.municipio_ids.length > 0) ? (
-                      <span className="text-base-content/70" title={u.municipio_ids.map(munNome).join(", ")}>
-                        {u.municipio_ids.length === 1
-                          ? munNome(u.municipio_ids[0])
-                          : `${u.municipio_ids.length} municipios`}
-                      </span>
-                    ) : (
-                      <span className="text-error/80">Nenhum</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-xs">
-                    {u.role === "admin" ? (
-                      <span className="text-base-content/50 italic">Todas</span>
-                    ) : (u.telas && u.telas.length > 0) ? (
-                      <span className="text-base-content/70" title={u.telas.map((t) => TELA_LABELS[t] || t).join(", ")}>
-                        {u.telas.length >= TELAS.length ? "Todas" : `${u.telas.length} telas`}
-                      </span>
-                    ) : (
-                      <span className="text-error/80">Nenhuma</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-center">
-                    <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] ${
-                      u.active ? "bg-success/15 text-success" : "bg-base-300 text-base-content/70"
-                    }`}>
-                      {u.active ? "Ativo" : "Inativo"}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center justify-center gap-1">
-                      <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => abrirAcesso(u)}
-                              title="Editar municípios com acesso" disabled={u.role === "admin"}>
-                        <Building2 className="size-3 mr-1" /> Acesso
-                      </Button>
-                      <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => resetarSenha(u)} title="Resetar senha">
-                        <KeyRound className="size-3" />
-                      </Button>
-                      <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => toggleAtivo(u)}
-                              title={u.active ? "Desativar" : "Ativar"}>
-                        <Power className="size-3" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+      {/* Resumo */}
+      <div className="text-[11px]" style={{ color: "var(--bi-muted)" }}>
+        {loading ? "Carregando..." : (
+          <>
+            <strong>{users.length}</strong> usuário(s) · {ativos} ativo(s)
+            {pendentes > 0 && <> · {pendentes} com troca de senha pendente</>}
+          </>
         )}
       </div>
 
-      {/* Modal editar acesso de municipios */}
+      {/* LISTA — deixou de ser tabela.
+          Eram oito colunas numa grade de linhas, com selo verde para o estado
+          normal ("Ativo") e violeta no perfil. Agora cada usuario e um cartao:
+          nome e e-mail em cima, e Municipios / Telas / Situacao em POSICOES
+          FIXAS no <Campos>, de modo que o olho continua descendo a coluna como
+          descia na tabela. Nada saiu — o ID virou o numero a direita e o perfil
+          continua sendo o proprio seletor, que e como se troca o perfil aqui. */}
+      {loading ? (
+        <Lista>
+          {Array.from({ length: 5 }).map((_, i) => (
+            <li key={i} className="bi-card-flat h-[86px] animate-pulse" />
+          ))}
+        </Lista>
+      ) : users.length === 0 ? (
+        <Vazio>Nenhum usuário para exibir.</Vazio>
+      ) : (
+        <Lista>
+          {users.map((u) => {
+            const admin = u.role === "admin";
+            const muns = u.municipio_ids ?? [];
+            const telas = u.telas ?? [];
+            return (
+              <ItemLinha
+                key={u.id}
+                titulo={
+                  <span className="flex flex-wrap items-center gap-1.5">
+                    <span className="truncate">{u.name}</span>
+                    {u.must_change_password && (
+                      /* "pendente" e a palavra: quem decide o tom e a regra
+                         unica do sistema, nao um tom escrito a mao aqui. */
+                      <Selo
+                        tom={situacaoTom("troca de senha pendente")}
+                        title="O usuário ainda não trocou a senha temporária."
+                      >
+                        troca pendente
+                      </Selo>
+                    )}
+                  </span>
+                }
+                valor={<span style={{ color: "var(--bi-faint)" }}>#{u.id}</span>}
+                meta={<span className="truncate" title={u.email}>{u.email}</span>}
+                acao={
+                  <div className="flex flex-col items-end gap-1.5">
+                    {/* O perfil e controle, nao texto: continua sendo o proprio
+                        seletor. Largura fixa e rotulo de 9px para ele alinhar
+                        com a grade de campos e com os demais cartoes. */}
+                    <div className="w-[148px]">
+                      <div className="text-right text-[9px] uppercase tracking-wide" style={{ color: "var(--bi-faint)" }}>
+                        Perfil
+                      </div>
+                      <Select value={u.role} onValueChange={(v) => v && mudarRole(u, v)}>
+                        <SelectTrigger className="h-7 text-[11px]"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {ROLES.map((r) => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        size="sm" variant="outline" className="h-7 text-[11px]"
+                        onClick={() => abrirAcesso(u)}
+                        title="Editar municípios e telas com acesso"
+                        disabled={admin}
+                      >
+                        <Building2 className="size-3 mr-1" /> Acesso
+                      </Button>
+                      <Button
+                        size="sm" variant="outline" className="h-7 px-2 text-[11px]"
+                        onClick={() => resetarSenha(u)}
+                        title="Resetar senha" aria-label={`Resetar senha de ${u.name}`}
+                      >
+                        <KeyRound className="size-3" />
+                      </Button>
+                      <Button
+                        size="sm" variant="outline" className="h-7 px-2 text-[11px]"
+                        onClick={() => toggleAtivo(u)}
+                        title={u.active ? "Desativar" : "Ativar"}
+                        aria-label={`${u.active ? "Desativar" : "Ativar"} ${u.name}`}
+                      >
+                        <Power className="size-3" />
+                      </Button>
+                    </div>
+                  </div>
+                }
+              >
+                <Campos
+                  cols={3}
+                  campos={[
+                    {
+                      rotulo: "Municípios",
+                      valor: admin
+                        ? "Todos"
+                        : muns.length === 0
+                          ? "Nenhum"
+                          : muns.length === 1
+                            ? munNome(muns[0])
+                            : `${muns.length} municípios`,
+                      // Nao-admin sem municipio nenhum nao ve dado algum: e
+                      // configuracao quebrada, e por isso um dos poucos lugares
+                      // desta tela onde entra cor.
+                      tom: !admin && muns.length === 0 ? "critico" : "normal",
+                      title: admin
+                        ? "Administrador enxerga todos os municípios"
+                        : muns.length > 0
+                          ? muns.map(munNome).join(", ")
+                          : "Sem município: o usuário não enxerga dado nenhum",
+                    },
+                    {
+                      rotulo: "Telas",
+                      valor: admin
+                        ? "Todas"
+                        : telas.length === 0
+                          ? "Nenhuma"
+                          : telas.length >= TELAS.length
+                            ? "Todas"
+                            : `${telas.length} telas`,
+                      tom: !admin && telas.length === 0 ? "critico" : "normal",
+                      title: admin
+                        ? "Administrador enxerga todas as telas"
+                        : telas.length > 0
+                          ? telas.map((t) => TELA_LABELS[t] || t).join(", ")
+                          : "Sem tela: o menu do usuário fica vazio",
+                    },
+                    {
+                      rotulo: "Situação",
+                      // Cinza nos dois estados de proposito: "Ativo" e o normal
+                      // e nao pode gritar verde, e "Inativo" e uma decisao do
+                      // administrador, nao um alerta.
+                      valor: u.active ? "Ativo" : "Inativo",
+                      title: u.active ? "Pode entrar no sistema" : "Login bloqueado",
+                    },
+                  ]}
+                />
+              </ItemLinha>
+            );
+          })}
+        </Lista>
+      )}
+
+      {/* Modal editar acesso de municipios e telas */}
       {editUser && (
-        <div className="fixed inset-0 z-50 bg-neutral/50 flex items-center justify-center p-4"
-             onClick={() => setEditUser(null)}>
-          <div className="bg-base-100 rounded-lg shadow-2xl w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
-            <div className="px-4 py-3 rounded-t-lg flex items-center justify-between border-b">
-              <h3 className="font-bold text-base-content flex items-center gap-2">
-                <Building2 className="size-4 text-primary" /> Acesso de {editUser.name}
-              </h3>
-              <button onClick={() => setEditUser(null)}><X className="size-5 text-base-content/60" /></button>
-            </div>
-            <div className="p-4 space-y-4">
-              <div className="space-y-2">
-                <p className="text-xs font-semibold text-base-content/70 flex items-center gap-1">
-                  <Building2 className="size-3.5" /> Municipios
-                </p>
-                <p className="text-[11px] text-base-content/60">
-                  O usuario so vera dados dos municipios marcados.
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: "rgba(13, 16, 15, 0.45)" }}
+          onClick={() => setEditUser(null)}
+        >
+          <div
+            className="bi-card bi-scroll max-h-[85vh] w-full max-w-lg overflow-y-auto p-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <BlocoHead
+              icon={Building2}
+              titulo={`Acesso de ${editUser.name}`}
+              sub={editUser.email}
+              right={
+                <button type="button" onClick={() => setEditUser(null)} aria-label="Fechar">
+                  <X className="size-4" style={{ color: "var(--bi-faint)" }} />
+                </button>
+              }
+            />
+            <div className="flex flex-col gap-3">
+              <div>
+                <Rotulo icon={Building2}>Municípios</Rotulo>
+                <p className="mb-1.5 text-[11px]" style={{ color: "var(--bi-faint)" }}>
+                  O usuário só verá dados dos municípios marcados.
                 </p>
                 <MunicipioPicker municipios={municipios} selected={editSel} onToggle={toggleEdit} />
               </div>
-              <div className="space-y-2 border-t pt-3">
-                <p className="text-xs font-semibold text-base-content/70 flex items-center gap-1">
-                  <ListChecks className="size-3.5" /> Telas
-                </p>
-                <p className="text-[11px] text-base-content/60">
-                  Somente as telas marcadas aparecem no menu do usuario.
+              <div className="border-t pt-3" style={{ borderColor: "var(--bi-line)" }}>
+                <Rotulo icon={ListChecks}>Telas</Rotulo>
+                <p className="mb-1.5 text-[11px]" style={{ color: "var(--bi-faint)" }}>
+                  Somente as telas marcadas aparecem no menu do usuário.
                 </p>
                 <TelaPicker selected={editTelas} onToggle={toggleEditTela} />
               </div>
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex justify-end gap-2 pt-1">
                 <Button variant="outline" size="sm" onClick={() => setEditUser(null)}>Cancelar</Button>
-                <Button size="sm" className="bg-primary hover:bg-primary/90" onClick={salvarAcesso} disabled={salvandoAcesso}>
+                <Button
+                  size="sm"
+                  onClick={salvarAcesso}
+                  disabled={salvandoAcesso}
+                  className="hover:opacity-90"
+                  style={{ background: "var(--bi-cta)", color: "var(--bi-cta-ink)" }}
+                >
                   {salvandoAcesso ? <Loader2 className="size-4 animate-spin mr-1" /> : <Check className="size-4 mr-1" />}
                   Salvar
                 </Button>
@@ -456,34 +568,59 @@ export default function UsuariosPage() {
 
       {/* Modal senha gerada */}
       {senhaGerada && (
-        <div className="fixed inset-0 z-50 bg-neutral/50 flex items-center justify-center p-4"
-             onClick={() => setSenhaGerada(null)}>
-          <div className="bg-base-100 rounded-lg shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-            <div className="bg-success/15 px-4 py-3 rounded-t-lg flex items-center justify-between border-b">
-              <h3 className="font-bold text-success">Senha temporaria gerada</h3>
-              <button onClick={() => setSenhaGerada(null)}><X className="size-5 text-base-content/60" /></button>
-            </div>
-            <div className="p-4 space-y-3">
-              <div className="text-sm">
-                <div className="text-base-content/70">Usuário:</div>
-                <div className="font-medium">{senhaGerada.name} - {senhaGerada.email}</div>
-              </div>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: "rgba(13, 16, 15, 0.45)" }}
+          onClick={() => setSenhaGerada(null)}
+        >
+          <div className="bi-card w-full max-w-md p-4" onClick={(e) => e.stopPropagation()}>
+            <BlocoHead
+              icon={KeyRound}
+              titulo="Senha temporária gerada"
+              sub={`${senhaGerada.name} — ${senhaGerada.email}`}
+              right={
+                <button type="button" onClick={() => setSenhaGerada(null)} aria-label="Fechar">
+                  <X className="size-4" style={{ color: "var(--bi-faint)" }} />
+                </button>
+              }
+            />
+            <div className="flex flex-col gap-3">
               <div>
-                <div className="text-xs text-base-content/70 mb-1">Senha temporaria (copie e envie por canal seguro):</div>
+                <div className="mb-1 text-[11px]" style={{ color: "var(--bi-muted)" }}>
+                  Senha temporária (copie e envie por canal seguro)
+                </div>
                 <div className="flex gap-2">
-                  <code className="flex-1 bg-base-200 border rounded px-3 py-2 font-mono text-sm select-all">
+                  <code
+                    className="bi-card-flat flex-1 select-all px-3 py-2 font-mono text-[13px]"
+                    style={{ color: "var(--bi-text)" }}
+                  >
                     {senhaGerada.senha_temporaria}
                   </code>
-                  <Button size="sm" variant="outline" onClick={() => copiar(senhaGerada.senha_temporaria)}>
-                    {copiado ? <Check className="size-4 text-success" /> : <Copy className="size-4" />}
+                  <Button
+                    size="sm" variant="outline"
+                    onClick={() => copiar(senhaGerada.senha_temporaria)}
+                    title="Copiar senha" aria-label="Copiar senha"
+                  >
+                    {copiado
+                      ? <Check className="size-4" style={{ color: "var(--bi-ok-ink)" }} />
+                      : <Copy className="size-4" />}
                   </Button>
                 </div>
               </div>
-              <p className="text-[11px] text-warning bg-warning/15 border border-warning rounded p-2">
-                Esta senha NAO sera exibida novamente. O usuario sera obrigado a troca-la no primeiro login.
-                Nao envie por e-mail em texto puro.
+              {/* Aviso real (a senha some ao fechar): cor no selo, texto em
+                  cinza — o mesmo tratamento dos avisos de Parlamentares. */}
+              <p className="flex flex-wrap items-center gap-1.5 text-[11px]" style={{ color: "var(--bi-muted)" }}>
+                <Selo tom="atencao">Atenção</Selo>
+                Esta senha NÃO será exibida novamente. O usuário será obrigado a trocá-la
+                no primeiro login. Não envie por e-mail em texto puro.
               </p>
-              <Button className="w-full" onClick={() => setSenhaGerada(null)}>Fechar</Button>
+              <Button
+                className="w-full hover:opacity-90"
+                style={{ background: "var(--bi-cta)", color: "var(--bi-cta-ink)" }}
+                onClick={() => setSenhaGerada(null)}
+              >
+                Fechar
+              </Button>
             </div>
           </div>
         </div>

@@ -13,13 +13,30 @@
 // devolve 500, e a fonte tem coordenada errada (uma obra de Monte Sião vem com
 // lat/long em Mato Grosso). Mostramos a CONTAGEM e a DATA da última foto — que
 // é justamente a prova da estagnação.
+//
+// SOBRE O DESENHO: a tela já era feita de cartões, mas de cartões PRÓPRIOS —
+// moldura vermelha/âmbar em volta da obra inteira, selo colorido, barra na cor
+// da marca. Agora usa as peças de `ui/superficies`, as mesmas do resto do
+// sistema. Duas consequências que valem registrar:
+//
+//  1. As três seções passaram a usar O MESMO cartão. Antes "Precisa de ação"
+//     mostrava dez campos e "Em dia"/"Encerradas" mostravam quatro, o que
+//     obrigava o gestor a abrir o SISMOB para conferir uma obra saudável.
+//     Com `<Campos>` em posição fixa, as mesmas colunas aparecem em todos os
+//     cartões e o olho desce a coluna como descia na planilha.
+//  2. A moldura colorida saiu. O alerta continua — nos selos, no ícone da
+//     regra e nos KPIs — mas deixou de pintar o cartão inteiro: com metade das
+//     obras emolduradas de vermelho, o vermelho para de significar urgência.
 import React, { useEffect, useState } from "react";
 import {
   HardHat, AlertTriangle, CheckCircle2, Clock, Loader2, Wallet,
-  Building2, ExternalLink, ChevronDown, ChevronRight, Camera,
+  Building2, ExternalLink, ChevronDown, ChevronRight, Camera, Layers, ListChecks,
 } from "lucide-react";
 import api from "@/lib/api";
 import { useMunicipio } from "@/contexts/MunicipioContext";
+import {
+  Bloco, BlocoHead, Campos, ItemLinha, Lista, Numero, Selo, Vazio, situacaoTom,
+} from "@/components/ui/superficies";
 
 interface Regra {
   regra: string; titulo: string; detalhe: string; norma: string;
@@ -58,6 +75,8 @@ interface Resp {
   coletado_em?: string | null;
 }
 
+type Tom = "neutro" | "ok" | "atencao" | "critico";
+
 function moeda(v?: number | null): string {
   if (v == null) return "—";
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL",
@@ -77,132 +96,216 @@ function cnpjFmt(c?: string | null): string {
   return `${c.slice(0, 2)}.${c.slice(2, 5)}.${c.slice(5, 8)}/${c.slice(8, 12)}-${c.slice(12)}`;
 }
 
-function Numero({ label, valor, sub, tom }: {
-  label: string; valor: string; sub?: string; tom?: "crit" | "warn" | "ok";
-}) {
-  const cor = tom === "crit" ? "text-error" : tom === "warn" ? "text-warning"
-    : tom === "ok" ? "text-success" : "text-base-content";
+/** Tom da SEVERIDADE que o servidor já calculou em `sismob_regras.py`.
+ *
+ *  Não é uma segunda `situacaoTom` — aquela existe para classificar o TEXTO
+ *  LIVRE de situação das fontes ("CANCELADA", "Em análise") e continua sendo
+ *  importada, logo abaixo, para o selo de situação da obra. Aqui não há nada a
+ *  classificar: `severidade` é um enum fechado do nosso backend
+ *  ("critico" | "atencao" | "ok" | "encerrada") e o nome do tom já vem pronto.
+ *
+ *  "ok" e "encerrada" viram CINZA de propósito: obra saudável é o estado normal
+ *  e estado normal não ganha cor — se ganhasse, o vermelho da obra parada teria
+ *  que competir com o verde de outras trinta. */
+function tomDaSeveridade(sev: string): Tom {
+  return sev === "critico" ? "critico" : sev === "atencao" ? "atencao" : "neutro";
+}
+
+/** Barra de execução física.
+ *
+ *  Mantida porque é a leitura mais rápida de "quanto essa obra andou", mas sem
+ *  cor de marca: trilho no cinza das divisórias e preenchimento no cinza do
+ *  texto secundário. Só ganha cor quando a obra está de fato em alerta. */
+function Barra({ pct, tom }: { pct: number; tom: Tom }) {
+  const cor = tom === "critico" ? "var(--bi-crit-ink)"
+    : tom === "atencao" ? "var(--bi-warn-ink)"
+    : "var(--bi-muted)";
   return (
-    <div className="rounded-2xl border border-base-300 bg-base-100 p-4 shadow-theme-sm">
-      <div className="text-xs text-base-content/60">{label}</div>
-      <div className={`mt-1 text-2xl font-bold ${cor}`}>{valor}</div>
-      {sub && <div className="text-xs text-base-content/50">{sub}</div>}
+    <div className="mt-2 h-1 w-full overflow-hidden rounded-full"
+         style={{ background: "var(--bi-line)" }}>
+      <div className="h-full rounded-full"
+           style={{ width: `${Math.min(100, Math.max(0, pct))}%`, background: cor }} />
     </div>
   );
 }
 
+/** O cartão da obra — UM só, usado nas três seções.
+ *
+ *  Todo campo que a fonte devolve aparece aqui: o que não cabe no título vai
+ *  para a meta (programa, tipo, bairro, ano, tipo de recurso, nº da proposta) e
+ *  o que é número vai para `<Campos>`, em posições fixas. */
 function CartaoObra({ o }: { o: Obra }) {
-  const crit = o.severidade === "critico";
-  const pct = o.percentual ?? 0;
+  const tom = tomDaSeveridade(o.severidade);
+  // `Campos` chama de "normal" o que o `Selo` chama de "neutro", e trata
+  // ausência como normal — então o cinza aqui é `undefined`, não uma string.
+  const tomCampo = tom === "neutro" ? undefined : tom;
+  const temFoto = (o.fotos.grupos || 0) > 0;
   return (
-    <div className={`rounded-2xl border p-4 ${crit
-      ? "border-error/40 bg-error/5" : "border-warning/40 bg-warning/5"}`}>
-      <div className="flex flex-wrap items-start gap-2">
-        <div className="min-w-0 flex-1">
-          <div className="font-semibold text-base-content">
-            {o.estabelecimento || `Proposta ${o.numero_proposta || o.proposta_id}`}
-          </div>
-          <div className="text-xs text-base-content/60">
-            {[o.programa, o.tipo_obra, o.bairro, o.ano_referencia].filter(Boolean).join(" · ")}
-          </div>
-        </div>
-        <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-          crit ? "bg-error text-error-content" : "bg-warning text-warning-content"}`}>
-          {o.situacao}
-        </span>
-      </div>
+    <ItemLinha
+      titulo={o.estabelecimento || `Proposta ${o.numero_proposta || o.proposta_id}`}
+      valor={moeda(o.dinheiro.proposta)}
+      meta={
+        <>
+          {o.situacao && (
+            <Selo tom={situacaoTom(o.situacao)} title={o.situacao}>{o.situacao}</Selo>
+          )}
+          {/* O selo de severidade é informação DIFERENTE da situação: a fonte
+              pode dizer "Em execução" numa obra parada há oito meses, e é essa
+              contradição que o gestor precisa enxergar sem abrir o cartão. */}
+          {tom !== "neutro" && (
+            <Selo tom={tom} title="Classificação de risco calculada pelo PACTHA a partir dos prazos do SISMOB">
+              {tom === "critico" ? "crítico" : "atenção"}
+            </Selo>
+          )}
+          {o.programa && <span className="truncate" title={o.programa}>{o.programa}</span>}
+          {o.tipo_obra && <span>· {o.tipo_obra}</span>}
+          {o.bairro && <span>· {o.bairro}</span>}
+          {o.ano_referencia != null && <span>· {o.ano_referencia}</span>}
+          {o.tipo_recurso && <span>· {o.tipo_recurso}</span>}
+          <span className="font-mono">· prop {o.numero_proposta || o.proposta_id}</span>
+        </>
+      }
+      acao={
+        <a
+          href={o.url_portal}
+          target="_blank"
+          rel="noreferrer"
+          title="Abre esta obra no portal SISMOB Cidadão"
+          className="inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium transition-opacity hover:opacity-80"
+          style={{ background: "var(--bi-surface-2)", color: "var(--bi-muted)" }}
+        >
+          SISMOB <ExternalLink className="size-3" />
+        </a>
+      }
+    >
+      {o.percentual != null && <Barra pct={o.percentual} tom={tom} />}
 
-      {o.percentual != null && (
-        <div className="mt-3">
-          <div className="flex items-baseline justify-between text-xs">
-            <span className="text-base-content/60">Execução física</span>
-            <span className="font-mono font-semibold">{pct}%</span>
-          </div>
-          <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-base-300">
-            <div className={`h-full ${crit ? "bg-error" : "bg-warning"}`}
-                 style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />
-          </div>
-        </div>
-      )}
+      {/* AS COLUNAS DA OBRA, iguais em todos os cartões e nas três seções.
+          É o que permite descer o olho por "Repassado" ou por "Últ. atividade"
+          sem existir tabela — e o que fez a obra "em dia" parar de ser um
+          resumo de quatro campos. */}
+      <Campos
+        cols={5}
+        campos={[
+          { rotulo: "Execução", tom: tomCampo,
+            valor: o.percentual != null ? `${o.percentual}%` : "—" },
+          { rotulo: "Etapa", valor: o.etapa || "—", title: o.etapa || undefined },
+          { rotulo: "Aprovado", valor: moedaExata(o.dinheiro.proposta) },
+          { rotulo: "Repassado", valor: moedaExata(o.dinheiro.repassado) },
+          { rotulo: "Parcelas pagas", valor: o.dinheiro.parcelas_pagas ?? "—" },
+          { rotulo: "Contratado", valor: moedaExata(o.dinheiro.contrato) },
+          // Glosa da coluna, não afirmação sobre esta obra: o título tem que
+          // continuar verdadeiro quando o valor é "—".
+          { rotulo: "Saldo licitação", valor: moedaExata(o.dinheiro.saldo),
+            title: "Sobra da licitação: repasse recebido acima do valor contratado" },
+          { rotulo: "Regime", valor: o.dinheiro.regime || "—",
+            title: o.dinheiro.regime || undefined },
+          // A data da última atividade É o argumento da estagnação, e por isso
+          // acompanha o tom: é a célula que prova o que o selo afirma.
+          { rotulo: "Últ. atividade", tom: tomCampo, valor: data(o.ultima_atividade_em) },
+          { rotulo: "Fotos",
+            title: temFoto ? `${o.fotos.grupos} grupo(s) de foto no SISMOB` : undefined,
+            valor: temFoto ? (
+              <span className="inline-flex items-center gap-1">
+                <Camera className="size-3 shrink-0" />
+                {o.fotos.total} · {data(o.fotos.ultima_em)}
+              </span>
+            ) : "—" },
+        ]}
+      />
 
       {/* Uma linha por regra violada. `norma` e `acao` vêm do servidor: um
           alerta que diz "vencido" sem dizer o dispositivo nem o que fazer não
           sobrevive à primeira conversa com a Secretaria de Saúde. */}
-      <div className="mt-3 space-y-2">
-        {o.regras.map((r) => (
-          <div key={r.regra} className="rounded-lg bg-base-100/70 p-2.5">
-            <div className="flex items-start gap-2">
-              <AlertTriangle className={`mt-0.5 size-4 shrink-0 ${
-                r.severidade === "critico" ? "text-error" : "text-warning"}`} />
-              <div className="min-w-0">
-                <div className="text-sm font-semibold">{r.titulo}</div>
-                <p className="text-xs leading-snug text-base-content/70">{r.detalhe}</p>
-                <p className="mt-1 text-xs font-medium text-base-content">{r.acao}</p>
-                <p className="text-[10px] text-base-content/40">{r.norma}</p>
+      {o.regras.length > 0 && (
+        <div className="mt-2 flex flex-col gap-1.5">
+          {o.regras.map((r, i) => (
+            <div key={`${r.regra}-${i}`} className="rounded-lg p-2"
+                 style={{ background: "var(--bi-surface-2)" }}>
+              <div className="flex items-start gap-2">
+                <AlertTriangle
+                  className="mt-0.5 size-3.5 shrink-0"
+                  style={{ color: r.severidade === "critico"
+                    ? "var(--bi-crit-ink)" : "var(--bi-warn-ink)" }}
+                />
+                <div className="min-w-0">
+                  <div className="text-[12px] font-medium leading-snug"
+                       style={{ color: "var(--bi-text)" }}>
+                    {r.titulo}
+                  </div>
+                  <p className="text-[11px] leading-snug" style={{ color: "var(--bi-muted)" }}>
+                    {r.detalhe}
+                  </p>
+                  <p className="mt-0.5 text-[11px] font-medium leading-snug"
+                     style={{ color: "var(--bi-text)" }}>
+                    {r.acao}
+                  </p>
+                  <p className="text-[10px] leading-snug" style={{ color: "var(--bi-faint)" }}>
+                    {r.norma}
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
-      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-base-content/60">
-        <span><Wallet className="mr-1 inline size-3.5" />
-          {moedaExata(o.dinheiro.repassado)} repassado de {moedaExata(o.dinheiro.proposta)}
-        </span>
-        {o.empresas[0] && (
-          <span><Building2 className="mr-1 inline size-3.5" />
-            {o.empresas[0].razao_social}
-            {o.empresas[0].numero_contrato ? ` · contrato ${o.empresas[0].numero_contrato}` : ""}
-          </span>
-        )}
-        {/* A data da última foto É o argumento da estagnação — mostrá-la ao lado
-            da contagem transforma um número inerte em prova. */}
-        {(o.fotos.grupos || 0) > 0 && (
-          <span><Camera className="mr-1 inline size-3.5" />
-            {o.fotos.total} foto(s), última em {data(o.fotos.ultima_em)}
-          </span>
-        )}
-        <a href={o.url_portal} target="_blank" rel="noreferrer"
-           className="ml-auto inline-flex items-center gap-1 font-medium text-primary hover:underline">
-          Consultar no SISMOB <ExternalLink className="size-3.5" />
-        </a>
-      </div>
-    </div>
+      {/* TODAS as contratadas, não só a primeira: obra com duas empresas era
+          exatamente o caso em que o cartão antigo escondia a segunda. */}
+      {o.empresas.length > 0 && (
+        <div className="mt-2 flex flex-col gap-0.5">
+          {o.empresas.map((e, i) => (
+            <div key={`${e.cnpj}-${i}`}
+                 className="flex flex-wrap items-baseline gap-x-2 text-[10px] leading-snug"
+                 style={{ color: "var(--bi-faint)" }}>
+              <Building2 className="size-3 shrink-0 self-center" />
+              <span style={{ color: "var(--bi-muted)" }}>
+                {e.razao_social || "Contratada sem razão social informada"}
+              </span>
+              <span className="font-mono">{cnpjFmt(e.cnpj)}</span>
+              {e.numero_contrato && <span>· contrato {e.numero_contrato}</span>}
+              {e.valor_final_licitado != null && (
+                <span className="bi-num">· {moedaExata(e.valor_final_licitado)}</span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </ItemLinha>
   );
 }
 
-function LinhaSimples({ o }: { o: Obra }) {
-  return (
-    <div className="flex items-start gap-2 border-b border-base-300/60 px-3 py-2 last:border-0">
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-sm">{o.estabelecimento || o.numero_proposta}</div>
-        <div className="text-xs text-base-content/50">
-          {[o.programa, o.tipo_obra].filter(Boolean).join(" · ")}
-        </div>
-      </div>
-      <div className="shrink-0 text-right">
-        <div className="text-xs font-medium">{o.situacao}</div>
-        <div className="font-mono text-xs text-base-content/50">
-          {o.percentual != null ? `${o.percentual}%` : "—"} · {moeda(o.dinheiro.proposta)}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Secao({ titulo, obras, aberta }: { titulo: string; obras: Obra[]; aberta?: boolean }) {
+/** Seção colapsável de obras. Mesma estrutura que Emendas usa para agrupar por
+ *  ano: bloco com cabeçalho (chevron, título, contagem, total à direita) e a
+ *  lista de cartões dentro. */
+function Secao({ titulo, obras, aberta, vazio }: {
+  titulo: string; obras: Obra[]; aberta?: boolean;
+  /** Mensagem quando não há obras. Sem ela a seção some — que é o certo para
+   *  "Em dia" e "Encerradas", mas não para "Precisa de ação": ali o vazio é a
+   *  boa notícia e precisa ser dito. */
+  vazio?: string;
+}) {
   const [open, setOpen] = useState(!!aberta);
-  if (!obras.length) return null;
+  if (!obras.length && !vazio) return null;
+  const total = obras.reduce((s, o) => s + (o.dinheiro.proposta || 0), 0);
   return (
-    <div className="rounded-2xl border border-base-300 bg-base-100 shadow-theme-sm">
-      <button onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 px-4 py-3 text-left">
-        {open ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
-        <span className="text-sm font-semibold">{titulo}</span>
-        <span className="ml-auto text-xs text-base-content/50">{obras.length}</span>
+    <Bloco className="p-3">
+      <button type="button" onClick={() => setOpen((v) => !v)}
+              aria-expanded={open} className="w-full text-left">
+        <BlocoHead
+          icon={open ? ChevronDown : ChevronRight}
+          titulo={titulo}
+          sub={`${obras.length} obra(s)`}
+          right={<span className="bi-num text-[13px]">{moeda(total)}</span>}
+          className={open ? undefined : "mb-0"}
+        />
       </button>
-      {open && <div>{obras.map((o) => <LinhaSimples key={o.proposta_id} o={o} />)}</div>}
-    </div>
+      {open && (obras.length ? (
+        <Lista>{obras.map((o) => <CartaoObra key={o.proposta_id} o={o} />)}</Lista>
+      ) : (
+        <Vazio>{vazio}</Vazio>
+      ))}
+    </Bloco>
   );
 }
 
@@ -225,98 +328,96 @@ export default function SismobPage() {
   const acao = d?.acao ?? [];
 
   return (
-    <div className="space-y-5">
-      <div>
+    <div className="space-y-4">
+      <div className="border-b pb-4" style={{ borderColor: "var(--bi-line)" }}>
         <h1 className="flex items-center gap-2 text-2xl font-bold text-base-content">
-          <HardHat className="size-6 text-primary" /> Obras da Saúde (SISMOB)
+          <HardHat className="size-6" style={{ color: "var(--bi-muted)" }} />
+          Obras da Saúde (SISMOB)
         </h1>
-        <p className="mt-1 text-sm text-base-content/60">
+        <p className="mt-1 text-sm" style={{ color: "var(--bi-muted)" }}>
           Obras financiadas fundo a fundo pelo Ministério da Saúde
           {d?.entidade?.nome ? <> — convenente <strong>{d.entidade.nome}</strong>
             <span className="font-mono text-xs"> ({cnpjFmt(d.entidade.cnpj)})</span></> : null}
         </p>
       </div>
 
-      {!municipioId && (
-        <div className="rounded-2xl border border-base-300 bg-base-100 p-8 text-center text-base-content/60">
-          Selecione um município para ver as obras.
-        </div>
-      )}
+      {!municipioId && <Vazio>Selecione um município para ver as obras.</Vazio>}
 
       {municipioId && loading && (
-        <div className="flex justify-center py-16"><Loader2 className="size-8 animate-spin text-primary" /></div>
+        <div className="flex justify-center py-16">
+          <Loader2 className="size-6 animate-spin" style={{ color: "var(--bi-muted)" }} />
+        </div>
       )}
 
       {municipioId && !loading && !d?.tem_dados && (
-        /* Aguardando coleta — e dizendo POR QUÊ. Nunca verde: verde aqui seria
-           lido como "não há obra com problema", que é diferente de "não sei". */
-        <div className="rounded-2xl border border-warning/30 bg-warning/5 p-6">
-          <div className="flex items-start gap-3">
-            <Clock className="size-6 shrink-0 text-warning" />
-            <div>
-              <div className="font-semibold">Aguardando coleta</div>
-              <p className="text-sm text-base-content/70">{d?.motivo}</p>
-            </div>
-          </div>
-        </div>
+        /* Aguardando coleta — e dizendo POR QUÊ. Nunca "ok": um selo verde aqui
+           seria lido como "não há obra com problema", que é diferente de "não
+           sei". Âmbar porque falta de dado é, ela mesma, uma pendência.
+
+           O `pb` menor (aqui e na faixa de situação) é porque o BlocoHead já
+           traz margem inferior própria: num bloco que só tem cabeçalho, `p-3`
+           dos dois lados deixa o dobro de folga embaixo. */
+        <Bloco className="px-3 pt-3 pb-0.5">
+          <BlocoHead
+            icon={Clock}
+            titulo="Aguardando coleta"
+            sub={d?.motivo}
+            right={<Selo tom="atencao">sem dados</Selo>}
+          />
+        </Bloco>
       )}
 
       {municipioId && !loading && d?.tem_dados && t && (
         <>
-          {/* Faixa de situação: uma frase. Verde só quando não há nada a fazer. */}
-          <div className={`rounded-2xl border p-4 ${acao.length
-            ? "border-error/30 bg-error/10" : "border-success/30 bg-success/10"}`}>
-            <div className="flex items-center gap-3">
-              {acao.length
-                ? <AlertTriangle className="size-8 shrink-0 text-error" />
-                : <CheckCircle2 className="size-8 shrink-0 text-success" />}
-              <div>
-                <div className={`font-bold ${acao.length ? "text-error" : "text-success"}`}>
-                  {acao.length
-                    ? `${acao.length} obra(s) precisam de ação`
-                    : "Nenhuma obra com pendência de prazo"}
-                </div>
-                <div className="text-sm text-base-content/70">
-                  {t.repasse_parado > 0
-                    ? `${moedaExata(t.repasse_parado)} repassados em obras que não se movem há mais de 60 dias.`
-                    : `${t.vivas} obra(s) em andamento, todas dentro do prazo de atualização.`}
-                </div>
-              </div>
-            </div>
-          </div>
+          {/* Faixa de situação: uma frase, no lugar do retângulo vermelho que
+              ocupava a largura da tela. Quem carrega o alerta é o selo — a
+              moldura colorida gritava igual quando havia uma obra e quando
+              havia vinte. */}
+          <Bloco className="px-3 pt-3 pb-0.5">
+            <BlocoHead
+              icon={acao.length ? AlertTriangle : CheckCircle2}
+              titulo={acao.length
+                ? `${acao.length} obra(s) precisam de ação`
+                : "Nenhuma obra com pendência de prazo"}
+              sub={t.repasse_parado > 0
+                ? `${moedaExata(t.repasse_parado)} repassados em obras que não se movem há mais de 60 dias.`
+                : `${t.vivas} obra(s) em andamento, todas dentro do prazo de atualização.`}
+              right={acao.length
+                ? <Selo tom="critico">exige ação</Selo>
+                : <Selo>em dia</Selo>}
+            />
+          </Bloco>
 
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-            <Numero label="Obras em andamento" valor={String(t.vivas)}
+            <Numero icon={HardHat} rotulo="Obras em andamento" valor={String(t.vivas)}
               sub={`${t.obras} no total`} />
-            <Numero label="Já repassado" valor={moeda(t.repasse_total)}
+            <Numero icon={Wallet} rotulo="Já repassado" valor={moeda(t.repasse_total)}
               sub={`de ${moeda(t.valor_proposta)} aprovados`} />
-            <Numero label="Parado sem atualização" valor={moeda(t.repasse_parado)}
-              tom={t.repasse_parado > 0 ? "crit" : "ok"}
+            {/* Zero parado não vira verde: "nada parado" é o estado normal, e o
+                vermelho ao lado só funciona porque o resto da linha é cinza. */}
+            <Numero icon={AlertTriangle} rotulo="Parado sem atualização"
+              valor={moeda(t.repasse_parado)}
+              tom={t.repasse_parado > 0 ? "critico" : "neutro"}
               sub={t.repasse_parado > 0 ? "dinheiro em obra que não anda" : "nada parado"} />
-            <Numero label="Precisam de ação" valor={String(acao.length)}
-              tom={acao.length ? "crit" : "ok"} sub="prazo ou pendência" />
-            <Numero label="Concluídas" valor={String(t.concluidas)}
+            <Numero icon={AlertTriangle} rotulo="Precisam de ação" valor={String(acao.length)}
+              tom={acao.length ? "critico" : "neutro"} sub="prazo ou pendência" />
+            <Numero icon={CheckCircle2} rotulo="Concluídas" valor={String(t.concluidas)}
               sub={t.canceladas ? `${t.canceladas} cancelada(s)` : undefined} />
           </div>
 
-          <div className="grid gap-5 xl:grid-cols-3">
-            <section className="space-y-3 xl:col-span-2">
-              <h2 className="text-lg font-bold">Precisa de ação</h2>
-              {acao.length
-                ? acao.map((o) => <CartaoObra key={o.proposta_id} o={o} />)
-                : (
-                  <div className="rounded-2xl border border-base-300 bg-base-100 p-6 text-center text-sm text-base-content/60">
-                    Nenhuma obra com prazo vencido ou parada.
-                  </div>
-                )}
+          <div className="grid gap-4 xl:grid-cols-3">
+            <section className="flex flex-col gap-3 xl:col-span-2">
+              <Secao titulo="Precisa de ação" obras={acao} aberta
+                vazio="Nenhuma obra com prazo vencido ou parada." />
               <Secao titulo="Em dia" obras={d.em_dia ?? []} />
               <Secao titulo="Concluídas e encerradas" obras={d.encerradas ?? []} />
             </section>
 
-            <aside className="space-y-3">
-              <div className="rounded-2xl border border-base-300 bg-base-100 p-4 shadow-theme-sm">
-                <div className="mb-2 text-sm font-semibold">Dinheiro</div>
-                <dl className="space-y-1.5 text-sm">
+            <aside className="flex flex-col gap-3">
+              <Bloco className="p-3">
+                <BlocoHead icon={Wallet} titulo="Dinheiro"
+                  sub="totais do município nas obras do SISMOB" />
+                <dl className="flex flex-col gap-1.5">
                   {([
                     ["Aprovado", t.valor_proposta, null],
                     ["Repassado pelo FNS", t.repasse_total, null],
@@ -330,57 +431,97 @@ export default function SismobPage() {
                     .map(([k, v, nota]) => (
                       <div key={k}>
                         <div className="flex items-baseline justify-between gap-2">
-                          <dt className="text-base-content/70">{k}</dt>
-                          <dd className="font-mono font-medium">{moedaExata(v)}</dd>
+                          <dt className="text-[11px]" style={{ color: "var(--bi-muted)" }}>{k}</dt>
+                          <dd className="bi-num text-[12px]" style={{ color: "var(--bi-text)" }}>
+                            {moedaExata(v)}
+                          </dd>
                         </div>
-                        {nota && <div className="text-[10px] text-base-content/40">{nota}</div>}
+                        {nota && (
+                          <div className="text-[10px] leading-snug" style={{ color: "var(--bi-faint)" }}>
+                            {nota}
+                          </div>
+                        )}
                       </div>
                     ))}
                 </dl>
-              </div>
+              </Bloco>
 
               {!!d.empresas_concentracao?.length && (
-                <div className="rounded-2xl border border-base-300 bg-base-100 p-4 shadow-theme-sm">
-                  <div className="mb-2 text-sm font-semibold">Empresas contratadas</div>
-                  <div className="space-y-2">
+                <Bloco className="p-3">
+                  <BlocoHead
+                    icon={Building2}
+                    titulo="Empresas contratadas"
+                    sub={`${d.empresas_concentracao.length} empresa(s)`}
+                    right={<span className="bi-num text-[13px]">{moeda(t.contratado)}</span>}
+                  />
+                  <Lista>
                     {d.empresas_concentracao.map((e) => {
                       const pct = t.contratado ? (e.valor / t.contratado) * 100 : 0;
                       return (
-                        <div key={e.cnpj} className="text-sm">
-                          <div className="flex items-baseline justify-between gap-2">
-                            <span className="min-w-0 flex-1 truncate">{e.razao_social}</span>
-                            <span className="font-mono text-xs">{moeda(e.valor)}</span>
-                          </div>
-                          <div className="flex items-center gap-2 text-[10px] text-base-content/50">
-                            <span className="font-mono">{cnpjFmt(e.cnpj)}</span>
-                            <span>{e.obras} obra(s)</span>
-                            {pct >= 50 && (
-                              <span className="rounded bg-warning/20 px-1.5 font-semibold text-warning">
-                                {Math.round(pct)}% do contratado
-                              </span>
-                            )}
-                          </div>
-                        </div>
+                        <ItemLinha
+                          key={e.cnpj}
+                          titulo={e.razao_social || "Sem razão social informada"}
+                          valor={moeda(e.valor)}
+                          meta={
+                            <>
+                              <span className="font-mono">{cnpjFmt(e.cnpj)}</span>
+                              <span>· {e.obras} obra(s)</span>
+                              {/* Concentração é o único dado desta lista que
+                                  pede ação (uma empresa com metade do
+                                  contratado do município), então é o único que
+                                  ganha cor. */}
+                              {pct >= 50 && (
+                                <Selo tom="atencao"
+                                  title="Uma única empresa concentra metade ou mais do valor contratado">
+                                  {Math.round(pct)}% do contratado
+                                </Selo>
+                              )}
+                            </>
+                          }
+                        />
                       );
                     })}
-                  </div>
-                </div>
+                  </Lista>
+                </Bloco>
+              )}
+
+              {!!d.por_situacao?.length && (
+                <Bloco className="p-3">
+                  <BlocoHead icon={ListChecks} titulo="Por situação"
+                    sub={`${d.por_situacao.length} situação(ões)`} />
+                  <Lista>
+                    {d.por_situacao.map((s) => (
+                      <ItemLinha
+                        key={s.label}
+                        titulo={
+                          <Selo tom={situacaoTom(s.label)} title={s.label}>{s.label}</Selo>
+                        }
+                        valor={moeda(s.valor)}
+                        meta={<span>{s.qtd} obra(s)</span>}
+                      />
+                    ))}
+                  </Lista>
+                </Bloco>
               )}
 
               {!!d.por_programa?.length && (
-                <div className="rounded-2xl border border-base-300 bg-base-100 p-4 shadow-theme-sm">
-                  <div className="mb-2 text-sm font-semibold">Por programa</div>
-                  {d.por_programa.map((p) => (
-                    <div key={p.label} className="flex items-baseline justify-between gap-2 text-sm">
-                      <span className="min-w-0 flex-1 truncate text-base-content/70">{p.label}</span>
-                      <span className="text-xs text-base-content/50">{p.qtd}</span>
-                      <span className="font-mono text-xs">{moeda(p.valor)}</span>
-                    </div>
-                  ))}
-                </div>
+                <Bloco className="p-3">
+                  <BlocoHead icon={Layers} titulo="Por programa"
+                    sub={`${d.por_programa.length} programa(s)`} />
+                  <Lista>
+                    {d.por_programa.map((p) => (
+                      <ItemLinha
+                        key={p.label}
+                        titulo={p.label}
+                        valor={moeda(p.valor)}
+                        meta={<span>{p.qtd} obra(s)</span>}
+                      />
+                    ))}
+                  </Lista>
+                </Bloco>
               )}
 
-              <p className="text-xs text-base-content/40">
+              <p className="text-[11px]" style={{ color: "var(--bi-faint)" }}>
                 Fonte: SISMOB Cidadão (Ministério da Saúde). Coleta de {data(d.coletado_em)}.
               </p>
             </aside>

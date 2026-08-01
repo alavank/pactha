@@ -208,9 +208,13 @@ function SidebarContent({
           cliente. No modo ícone fica só a logo: a assinatura não caberia. */}
       <div className={`border-b border-base-300 py-4 flex justify-center ${recolhida ? "px-1.5" : "px-3"}`}>
         <div
-          className={`flex max-w-full flex-col items-center gap-1 rounded-2xl bg-white shadow-sm ring-1 ring-black/5 ${
+          /* `bg-white` e `ring-black/5` eram cor CRAVADA: no modo escuro
+             viravam um retangulo branco no meio do menu preto, e nenhum dos
+             dois seguia a troca de tema. Passam a token. */
+          className={`flex max-w-full flex-col items-center gap-1 rounded-2xl ${
             recolhida ? "px-2 py-2" : "px-3 py-2"
           }`}
+          style={{ background: "var(--bi-surface-2)", border: "1px solid var(--bi-line)" }}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
@@ -331,7 +335,7 @@ function SidebarContent({
                 <button
                   type="button"
                   onClick={() => toggleGroup(item.label)}
-                  className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-semibold w-full text-left hover:bg-base-200 transition-colors ${
+                  className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold w-full text-left hover:bg-base-200 transition-colors ${
                     groupActive ? "text-primary" : "text-base-content/70"
                   }`}
                   aria-expanded={!isCollapsed}
@@ -433,7 +437,7 @@ function SidebarContent({
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-all ${
+                  className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
                     isActive
                       ? "bg-warning/15 text-warning font-semibold"
                       : "text-base-content/70 hover:bg-base-200 hover:text-base-content"
@@ -451,7 +455,7 @@ function SidebarContent({
       {/* Footer institucional */}
       <div className={`border-t border-base-300 py-3 bg-base-200/50 ${recolhida ? "px-1.5" : "px-3"}`}>
         {user && !recolhida && (
-          <div className="mb-2 px-2 py-2 rounded-md bg-base-100 border border-base-300">
+          <div className="mb-2 px-2 py-2 rounded-lg bg-base-100 border border-base-300">
             <div className="text-[10px] uppercase tracking-wider text-base-content/40">
               Usuario
             </div>

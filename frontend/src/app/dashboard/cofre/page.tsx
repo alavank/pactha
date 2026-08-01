@@ -2,12 +2,10 @@
 
 import React, { useEffect, useState } from "react";
 import { useMunicipio } from "@/contexts/MunicipioContext";
-import { Eye, EyeOff, KeyRound, Plus, Trash2, ExternalLink, Pencil } from "lucide-react";
+import { Eye, EyeOff, KeyRound, Lock, Plus, Trash2, ExternalLink, Pencil, Zap } from "lucide-react";
 import api from "@/lib/api";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -16,6 +14,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  Bloco,
+  BlocoHead,
+  Campos,
+  ItemLinha,
+  Lista,
+  Numero,
+  Selo,
+  Vazio,
+} from "@/components/ui/superficies";
 import toast from "react-hot-toast";
 
 interface Senha {
@@ -121,6 +129,54 @@ const INTEGRACOES = [
     senha_hint: "Senha do portal",
   },
 ];
+
+/* NAO existe helper de tom nesta tela, e nao e esquecimento: credencial guardada
+   nao tem situacao. Nada aqui esta "cancelado", "pendente" ou "aprovado" — os
+   dois selos (integracao e avulsa) sao classificacao, e classificacao e cinza.
+   A regra de cor do sistema e a `situacaoTom` de superficies.tsx e so vale onde
+   ha situacao de verdade; escrever uma variante local aqui foi exatamente o
+   defeito que o lote anterior teve que consertar. */
+
+/* Rotulo de campo de FORMULARIO: 11px em --bi-muted. O 9px MAIUSCULO e o
+   desenho reservado ao rotulo de DADO (<Campos>) — usar os dois iguais faz o
+   formulario se passar por resultado. */
+const ROTULO = "mb-1 block text-[11px]";
+const ROTULO_COR: React.CSSProperties = { color: "var(--bi-muted)" };
+
+/* A dica entre parenteses ao lado do rotulo (o "usuario_hint" da integracao):
+   um degrau abaixo do rotulo, porque e apoio e nao o nome do campo. */
+const HINT = "ml-1 text-[10px]";
+const HINT_COR: React.CSSProperties = { color: "var(--bi-faint)" };
+
+/* Escolha nativa com os tokens da identidade (mesmo desenho do <select> da tela
+   de RM). O `border` pelado herdava a cor de borda do tema antigo. */
+const SELECT_CLS = "h-9 w-full rounded-md border px-2 text-[13px]";
+const SELECT_ESTILO: React.CSSProperties = {
+  borderColor: "var(--bi-line)",
+  background: "var(--bi-surface)",
+  color: "var(--bi-text)",
+};
+
+/* Botao de acao do cartao: cinza no repouso. Editar era violeta e remover era
+   vermelho — duas cores de enfeite em toda linha. Numa tela de credenciais isso
+   pesa dobrado: o vermelho precisa continuar disponivel para alerta de verdade,
+   e nao gasto num botao que esta sempre ali. A confirmacao do remover continua
+   sendo o `confirm()`, nao a cor. */
+const CLS_ACAO =
+  "inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors hover:brightness-95";
+const ESTILO_ACAO: React.CSSProperties = {
+  background: "var(--bi-surface)",
+  border: "1px solid var(--bi-line)",
+  color: "var(--bi-muted)",
+};
+
+/* Botao solido da identidade: quase preto no claro, menta no escuro. */
+const ESTILO_CTA: React.CSSProperties = { background: "var(--bi-cta)", color: "var(--bi-cta-ink)" };
+
+/* Link discreto: sublinhado na cor do texto. A tela nao gasta cor em navegacao —
+   o sublinhado ja diz que e clicavel. */
+const CLS_LINK = "underline underline-offset-2 hover:opacity-70";
+const ESTILO_LINK: React.CSSProperties = { color: "var(--bi-text)" };
 
 export default function CofrePage() {
   const { municipioId } = useMunicipio();
@@ -280,11 +336,9 @@ export default function CofrePage() {
   };
 
   if (!municipioId) {
-    return (
-      <div className="flex h-64 items-center justify-center text-muted-foreground">
-        Selecione um municipio para visualizar o cofre.
-      </div>
-    );
+    // Mesmo estado vazio de CAUC, SISMOB, Sessoes e Gestao: a peca `<Vazio>`,
+    // nao uma caixa de 16rem escrita a mao.
+    return <Vazio>Selecione um municipio para visualizar o cofre.</Vazio>;
   }
 
   const grouped = senhas.reduce((acc, s) => {
@@ -294,22 +348,29 @@ export default function CofrePage() {
     return acc;
   }, {} as Record<string, Senha[]>);
 
+  // A pergunta que o gestor faz ao abrir o cofre nao e "quantas senhas tenho",
+  // e "quantas delas as automacoes usam" — uma credencial integrada que vence
+  // derruba um scraper inteiro.
+  const comIntegracao = senhas.filter((s) => !!s.automation_key).length;
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-4">
+      {/* `border-b pb-4` e `mt-1`: o mesmo cabecalho de pagina de Parlamentares
+          e das outras sete telas do lote. A acao a direita continua no lugar. */}
+      <div
+        className="flex flex-wrap items-start justify-between gap-2 border-b pb-4"
+        style={{ borderColor: "var(--bi-line)" }}
+      >
         <div>
-          <h1 className="text-2xl font-bold text-base-content flex items-center gap-2">
-            <KeyRound className="size-6 text-primary" />
-            Cofre de Senhas
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
+          <h1 className="text-2xl font-bold text-base-content">Cofre de Senhas</h1>
+          <p className="mt-1 text-sm" style={{ color: "var(--bi-muted)" }}>
             Senhas centralizadas dos sistemas governamentais para este municipio
           </p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger
             render={
-              <Button>
+              <Button style={ESTILO_CTA} className="hover:opacity-90">
                 <Plus className="mr-2 size-4" />
                 Nova Senha
               </Button>
@@ -320,20 +381,27 @@ export default function CofrePage() {
               <DialogTitle>Cadastrar nova senha</DialogTitle>
             </DialogHeader>
             <div className="space-y-3">
-              {/* FLAG INTEGRACAO - controla todo o resto */}
-              <div className="bg-primary/10 border border-primary rounded-md p-3">
-                <label className="flex items-start gap-3 cursor-pointer">
+              {/* FLAG INTEGRACAO - controla todo o resto.
+                  Era um painel violeta com texto violeta dentro: a cor mais
+                  forte da tela gasta num controle de formulario. Virou o mesmo
+                  cinza dos demais blocos — o que decide continua sendo a caixa
+                  marcada, nao a moldura. */}
+              <div className="bi-card-flat p-3">
+                <label className="flex cursor-pointer items-start gap-3">
                   <input
                     type="checkbox"
                     checked={isIntegracao}
                     onChange={(e) => handleToggleIntegracao(e.target.checked)}
-                    className="mt-1 size-4"
+                    className="mt-0.5 size-4"
+                    /* accentColor acompanha claro/escuro pelo token, em vez de
+                       deixar o navegador pintar de azul do sistema. */
+                    style={{ accentColor: "var(--bi-cta)" }}
                   />
                   <div className="flex-1">
-                    <div className="text-sm font-medium text-primary">
+                    <div className="text-[13px] font-medium" style={{ color: "var(--bi-text)" }}>
                       Integracao com sistema PACTHA
                     </div>
-                    <div className="text-xs text-primary mt-0.5">
+                    <div className="mt-0.5 text-[11px] leading-snug" style={{ color: "var(--bi-muted)" }}>
                       {isIntegracao
                         ? "Selecione o sistema abaixo. So precisa preencher usuario e senha - o resto ja vem configurado."
                         : "Cadastro livre - voce preenche tudo manualmente, sem automacao."}
@@ -346,9 +414,10 @@ export default function CofrePage() {
                 <>
                   {/* MODO INTEGRACAO: dropdown de sistemas pre-configurados */}
                   <div>
-                    <label className="text-sm font-medium">Sistema integrado *</label>
+                    <label className={ROTULO} style={ROTULO_COR}>Sistema integrado *</label>
                     <select
-                      className="w-full border rounded-md p-2 text-sm"
+                      className={SELECT_CLS}
+                      style={SELECT_ESTILO}
                       value={integracaoSelecionada}
                       onChange={(e) => handleSelecionarIntegracao(e.target.value)}
                     >
@@ -360,24 +429,31 @@ export default function CofrePage() {
                       ))}
                     </select>
                     {integracaoSelecionada && (
-                      <div className="mt-2 text-xs text-base-content/70 bg-base-200 rounded p-2 space-y-0.5">
+                      <div
+                        className="bi-card-flat mt-2 space-y-0.5 p-2 text-[11px] leading-snug"
+                        style={{ color: "var(--bi-text)" }}
+                      >
                         <div>
-                          <strong>URL:</strong>{" "}
+                          <span style={{ color: "var(--bi-faint)" }}>URL:</span>{" "}
                           <a
                             href={form.url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-primary hover:underline"
+                            className={CLS_LINK}
+                            style={ESTILO_LINK}
                           >
                             {form.url}
                           </a>
                         </div>
                         <div>
-                          <strong>Categoria:</strong> {form.categoria}
+                          <span style={{ color: "var(--bi-faint)" }}>Categoria:</span> {form.categoria}
                         </div>
                         <div>
-                          <strong>Automacao:</strong> ativa via scraper{" "}
-                          <code className="bg-warning/15 px-1 rounded">
+                          <span style={{ color: "var(--bi-faint)" }}>Automacao:</span> ativa via scraper{" "}
+                          <code
+                            className="rounded px-1 font-mono"
+                            style={{ background: "var(--bi-line)", color: "var(--bi-muted)" }}
+                          >
                             {form.automation_key}
                           </code>
                         </div>
@@ -388,9 +464,9 @@ export default function CofrePage() {
                   {integracaoSelecionada && (
                     <>
                       <div>
-                        <label className="text-sm font-medium">
+                        <label className={ROTULO} style={ROTULO_COR}>
                           Usuario *
-                          <span className="text-xs text-base-content/60 ml-2">
+                          <span className={HINT} style={HINT_COR}>
                             ({INTEGRACOES.find((i) => i.automation_key === integracaoSelecionada)?.usuario_hint})
                           </span>
                         </label>
@@ -401,9 +477,9 @@ export default function CofrePage() {
                         />
                       </div>
                       <div>
-                        <label className="text-sm font-medium">
+                        <label className={ROTULO} style={ROTULO_COR}>
                           Senha *
-                          <span className="text-xs text-base-content/60 ml-2">
+                          <span className={HINT} style={HINT_COR}>
                             ({INTEGRACOES.find((i) => i.automation_key === integracaoSelecionada)?.senha_hint})
                           </span>
                         </label>
@@ -414,7 +490,7 @@ export default function CofrePage() {
                         />
                       </div>
                       <div>
-                        <label className="text-sm font-medium">Observação</label>
+                        <label className={ROTULO} style={ROTULO_COR}>Observação</label>
                         <Input
                           value={form.observacao}
                           onChange={(e) => setForm({ ...form, observacao: e.target.value })}
@@ -428,7 +504,7 @@ export default function CofrePage() {
                 <>
                   {/* MODO LIVRE: tudo manual, sem automacao */}
                   <div>
-                    <label className="text-sm font-medium">Sistema *</label>
+                    <label className={ROTULO} style={ROTULO_COR}>Sistema *</label>
                     <Input
                       value={form.sistema}
                       onChange={(e) => setForm({ ...form, sistema: e.target.value })}
@@ -436,7 +512,7 @@ export default function CofrePage() {
                     />
                   </div>
                   <div>
-                    <label className="text-sm font-medium">URL</label>
+                    <label className={ROTULO} style={ROTULO_COR}>URL</label>
                     <Input
                       value={form.url}
                       onChange={(e) => setForm({ ...form, url: e.target.value })}
@@ -444,14 +520,14 @@ export default function CofrePage() {
                     />
                   </div>
                   <div>
-                    <label className="text-sm font-medium">Usuário</label>
+                    <label className={ROTULO} style={ROTULO_COR}>Usuário</label>
                     <Input
                       value={form.usuario}
                       onChange={(e) => setForm({ ...form, usuario: e.target.value })}
                     />
                   </div>
                   <div>
-                    <label className="text-sm font-medium">Senha</label>
+                    <label className={ROTULO} style={ROTULO_COR}>Senha</label>
                     <Input
                       type="password"
                       value={form.senha}
@@ -459,9 +535,10 @@ export default function CofrePage() {
                     />
                   </div>
                   <div>
-                    <label className="text-sm font-medium">Categoria</label>
+                    <label className={ROTULO} style={ROTULO_COR}>Categoria</label>
                     <select
-                      className="w-full border rounded-md p-2 text-sm"
+                      className={SELECT_CLS}
+                      style={SELECT_ESTILO}
                       value={form.categoria}
                       onChange={(e) => setForm({ ...form, categoria: e.target.value })}
                     >
@@ -471,13 +548,13 @@ export default function CofrePage() {
                     </select>
                   </div>
                   <div>
-                    <label className="text-sm font-medium">Observação</label>
+                    <label className={ROTULO} style={ROTULO_COR}>Observação</label>
                     <Input
                       value={form.observacao}
                       onChange={(e) => setForm({ ...form, observacao: e.target.value })}
                     />
                   </div>
-                  <p className="text-xs text-base-content/60 italic">
+                  <p className="text-[11px] italic" style={{ color: "var(--bi-faint)" }}>
                     Sem flag de integracao = senha apenas armazenada (sem automacao).
                   </p>
                 </>
@@ -487,120 +564,213 @@ export default function CofrePage() {
               <Button variant="outline" onClick={() => setDialogOpen(false)}>
                 Cancelar
               </Button>
-              <Button onClick={handleCreate}>Salvar</Button>
+              <Button onClick={handleCreate} style={ESTILO_CTA} className="hover:opacity-90">
+                Salvar
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
 
+      {/* Os tres numeros do topo respondem, antes de qualquer rolagem, quanto do
+          cofre sustenta automacao. Ficam fora do carregamento e do vazio porque
+          "0 de 0" nao e informacao. */}
+      {!loading && senhas.length > 0 && (
+        <div className="grid grid-cols-3 gap-3">
+          <Numero icon={KeyRound} rotulo="Credenciais guardadas" valor={senhas.length} />
+          <Numero
+            icon={Zap}
+            rotulo="Com integracao"
+            valor={comIntegracao}
+            sub="usadas pelos scrapers do PACTHA"
+          />
+          <Numero
+            icon={Lock}
+            rotulo="Avulsas"
+            valor={senhas.length - comIntegracao}
+            sub="apenas armazenadas"
+          />
+        </div>
+      )}
+
       {loading ? (
-        <div className="space-y-2">
+        /* Esqueleto sobre --bi-surface-2: em `bg-base-200` ele apontava para a
+           cor do FUNDO da pagina e sumia. */
+        <div className="space-y-1.5">
           {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="h-20 animate-pulse rounded bg-base-200" />
+            <div key={i} className="h-16 animate-pulse rounded-lg" style={{ background: "var(--bi-surface-2)" }} />
           ))}
         </div>
       ) : senhas.length === 0 ? (
-        <div className="flex h-48 items-center justify-center rounded-lg border text-muted-foreground">
-          Nenhuma senha cadastrada. Use o botao acima para adicionar.
-        </div>
+        <Vazio>Nenhuma senha cadastrada. Use o botao acima para adicionar.</Vazio>
       ) : (
-        Object.entries(grouped).map(([cat, items]) => (
-          <Card key={cat}>
-            <CardHeader>
-              <CardTitle className="text-base">{cat}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {items.map((s) => (
-                <div key={s.id} className="border rounded-lg p-4 hover:bg-base-200">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-2 flex-wrap">
-                        <h3 className="font-semibold text-base-content">{s.sistema}</h3>
-                        {s.url && (
-                          <a
-                            href={s.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-primary hover:underline"
-                          >
-                            <ExternalLink className="size-4" />
-                          </a>
-                        )}
-                        {s.automation_key ? (
-                          <Badge className="bg-warning/15 text-warning hover:bg-warning/15 text-xs">
-                            ⚡ Integracao: {s.automation_key}
-                          </Badge>
+        /* A CATEGORIA VIROU BLOCO E A SENHA VIROU CARTAO.
+           Era um Card por categoria com molduras dentro (borda em volta de cada
+           senha, hover cinza) — grade dentro de grade. Agora e o bloco-envelope
+           da identidade com a pilha macia de itens, sem borda entre eles. Toda
+           coluna continua na tela: sistema e titulo, integracao/avulsa viraram
+           selo, e usuario/senha/endereco foram para <Campos>, em posicoes FIXAS
+           iguais em todos os cartoes — e o que deixa o olho descer a coluna
+           "Usuario" de uma linha para a outra como descia na tabela. */
+        <div className="space-y-3">
+          {Object.entries(grouped).map(([cat, items]) => (
+            <Bloco key={cat} className="p-3">
+              <BlocoHead icon={KeyRound} titulo={cat} sub={`${items.length} credencial(is)`} />
+              <Lista>
+                {items.map((s) => {
+                  const revelada = revealedIds.has(s.id);
+                  // O payload de sessao so pode ser lido depois de revelar: antes
+                  // disso o que esta no estado e a mascara, que nunca casa.
+                  const sess = revelada ? parseSessionPayload(s.senha) : { isSession: false };
+                  return (
+                    <ItemLinha
+                      key={s.id}
+                      /* Sem `onClick`: nao ha detalhe para abrir, e o titulo
+                         precisa hospedar o link do portal — botao dentro de
+                         botao nao e clicavel. */
+                      titulo={
+                        <span className="flex items-center gap-1.5">
+                          <span className="min-w-0 truncate">{s.sistema}</span>
+                          {s.url && (
+                            <a
+                              href={s.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title={`Abrir ${s.url} em nova aba`}
+                              className="shrink-0 transition-opacity hover:opacity-70"
+                              style={{ color: "var(--bi-faint)" }}
+                            >
+                              <ExternalLink className="size-3.5" />
+                            </a>
+                          )}
+                        </span>
+                      }
+                      meta={
+                        s.automation_key ? (
+                          <Selo title={`Automacao ativa: o scraper "${s.automation_key}" usa esta credencial`}>
+                            <span className="inline-flex items-center gap-1">
+                              <Zap className="size-3" />
+                              Integracao · {s.automation_key}
+                            </span>
+                          </Selo>
                         ) : (
-                          <Badge variant="outline" className="text-xs text-base-content/60">
-                            Avulsa
-                          </Badge>
-                        )}
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
-                        <div>
-                          <span className="text-muted-foreground">Usuário:</span>{" "}
-                          <span className="font-mono">{s.usuario || "-"}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-muted-foreground">Senha:</span>
-                          {(() => {
-                            const sess = revealedIds.has(s.id) ? parseSessionPayload(s.senha) : { isSession: false };
-                            if (sess.isSession) {
-                              return (
-                                <span className="inline-flex items-center gap-1.5 text-xs bg-info/15 border border-info px-2 py-0.5 rounded">
-                                  <span className="size-2 rounded-full bg-info"></span>
-                                  Sessão capturada · <strong>{sess.cookieCount}</strong> cookies
-                                  {sess.httpOnlyCount! > 0 && ` (${sess.httpOnlyCount} httpOnly)`}
-                                </span>
-                              );
-                            }
-                            return (
-                              <span
-                                className="font-mono cursor-pointer"
-                                onClick={() => copySenha(s)}
-                              >
-                                {revealedIds.has(s.id) ? s.senha || "-" : (s.senha_mascarada || "••••••••")}
-                              </span>
-                            );
-                          })()}
+                          <Selo title="Sem automacao — a senha fica apenas guardada">Avulsa</Selo>
+                        )
+                      }
+                      acao={
+                        <>
                           <button
-                            onClick={() => toggleReveal(s.id)}
-                            className="text-base-content/60 hover:text-base-content/70"
+                            onClick={() => openEdit(s)}
+                            className={CLS_ACAO}
+                            style={ESTILO_ACAO}
+                            title="Editar / trocar senha"
+                            aria-label="Editar / trocar senha"
                           >
-                            {revealedIds.has(s.id) ? (
-                              <EyeOff className="size-4" />
-                            ) : (
-                              <Eye className="size-4" />
-                            )}
+                            <Pencil className="size-3.5" />
                           </button>
-                        </div>
-                      </div>
+                          <button
+                            onClick={() => handleDelete(s.id)}
+                            className={CLS_ACAO}
+                            style={ESTILO_ACAO}
+                            title="Remover"
+                            aria-label="Remover"
+                          >
+                            <Trash2 className="size-3.5" />
+                          </button>
+                        </>
+                      }
+                    >
+                      <Campos
+                        cols={3}
+                        campos={[
+                          {
+                            rotulo: "Usuário",
+                            valor: <span className="font-mono font-medium">{s.usuario || "—"}</span>,
+                            title: s.usuario || undefined,
+                          },
+                          {
+                            rotulo: "Senha",
+                            valor: (
+                              <span className="flex items-start gap-1.5">
+                                {sess.isSession ? (
+                                  /* Sessao capturada pelo bookmarklet: o valor e
+                                     um JSON de cookies, nao uma senha — imprimir
+                                     o JSON cru nao ajuda ninguem. O selo era
+                                     azul com bolinha; azul aqui era enfeite, e
+                                     "tem uma sessao guardada" nao e alerta. */
+                                  <Selo
+                                    /* O `title` repete a contagem porque a
+                                       coluna e estreita: se o selo for cortado,
+                                       o numero continua alcancavel. O dominio
+                                       (que so o payload sabe) entra aqui. */
+                                    title={[
+                                      "Sessão capturada",
+                                      `${sess.cookieCount} cookies`,
+                                      sess.httpOnlyCount ? `${sess.httpOnlyCount} httpOnly` : null,
+                                      sess.domain || sess.url,
+                                    ]
+                                      .filter(Boolean)
+                                      .join(" · ")}
+                                  >
+                                    Sessão · {sess.cookieCount} cookies
+                                    {sess.httpOnlyCount ? ` (${sess.httpOnlyCount} httpOnly)` : ""}
+                                  </Selo>
+                                ) : (
+                                  /* Revelada quebra em varias linhas em vez de
+                                     cortar com reticencias: quem revela quer LER
+                                     o valor inteiro. Mascarada cabe sempre. */
+                                  <span
+                                    className={`min-w-0 flex-1 cursor-pointer font-mono font-medium ${
+                                      revelada ? "whitespace-normal break-all" : "truncate"
+                                    }`}
+                                    onClick={() => copySenha(s)}
+                                    title="Clique para copiar a senha"
+                                  >
+                                    {revelada ? s.senha || "-" : (s.senha_mascarada || "••••••••")}
+                                  </span>
+                                )}
+                                {/* O olho fica fora do texto (shrink-0) para nao
+                                    ser empurrado para fora da celula por uma
+                                    senha longa — sem ele nao da para ocultar. */}
+                                <button
+                                  onClick={() => toggleReveal(s.id)}
+                                  className="shrink-0 transition-opacity hover:opacity-70"
+                                  style={{ color: "var(--bi-faint)" }}
+                                  title={revelada ? "Ocultar senha" : "Revelar senha"}
+                                  aria-label={revelada ? "Ocultar senha" : "Revelar senha"}
+                                >
+                                  {revelada ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+                                </button>
+                              </span>
+                            ),
+                          },
+                          {
+                            rotulo: "Endereço",
+                            valor: s.url ? (
+                              <a href={s.url} target="_blank" rel="noopener noreferrer" className={CLS_LINK} style={ESTILO_LINK}>
+                                {s.url}
+                              </a>
+                            ) : (
+                              "—"
+                            ),
+                            title: s.url || undefined,
+                          },
+                        ]}
+                      />
+                      {/* A observacao e frase livre: fica fora da grade, em linha
+                          inteira, porque cortada com reticencias ela some. */}
                       {s.observacao && (
-                        <p className="text-xs text-muted-foreground mt-2">{s.observacao}</p>
+                        <p className="mt-1.5 text-[11px] leading-snug" style={{ color: "var(--bi-muted)" }}>
+                          {s.observacao}
+                        </p>
                       )}
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => openEdit(s)}
-                        className="text-base-content/60 hover:text-primary p-1"
-                        title="Editar / trocar senha"
-                      >
-                        <Pencil className="size-4" />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(s.id)}
-                        className="text-error hover:text-error p-1"
-                        title="Remover"
-                      >
-                        <Trash2 className="size-4" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        ))
+                    </ItemLinha>
+                  );
+                })}
+              </Lista>
+            </Bloco>
+          ))}
+        </div>
       )}
 
       {/* Dialog de edicao (troca usuario/senha sem perder a integracao) */}
@@ -611,7 +781,7 @@ export default function CofrePage() {
           </DialogHeader>
           <div className="space-y-3">
             <div>
-              <label className="text-sm font-medium">Usuário</label>
+              <label className={ROTULO} style={ROTULO_COR}>Usuário</label>
               <Input
                 value={editForm.usuario}
                 onChange={(e) => setEditForm({ ...editForm, usuario: e.target.value })}
@@ -619,19 +789,19 @@ export default function CofrePage() {
               />
             </div>
             <div>
-              <label className="text-sm font-medium">Nova senha</label>
+              <label className={ROTULO} style={ROTULO_COR}>Nova senha</label>
               <Input
                 type="password"
                 value={editForm.senha}
                 onChange={(e) => setEditForm({ ...editForm, senha: e.target.value })}
                 placeholder="Deixe em branco para manter a senha atual"
               />
-              <p className="text-xs text-base-content/60 mt-1">
+              <p className="mt-1 text-[10px]" style={{ color: "var(--bi-faint)" }}>
                 Preencha para gravar uma nova senha; em branco mantem a atual.
               </p>
             </div>
             <div>
-              <label className="text-sm font-medium">Observação</label>
+              <label className={ROTULO} style={ROTULO_COR}>Observação</label>
               <Input
                 value={editForm.observacao}
                 onChange={(e) => setEditForm({ ...editForm, observacao: e.target.value })}
@@ -643,7 +813,9 @@ export default function CofrePage() {
             <Button variant="outline" onClick={() => setEditItem(null)}>
               Cancelar
             </Button>
-            <Button onClick={handleUpdate}>Salvar</Button>
+            <Button onClick={handleUpdate} style={ESTILO_CTA} className="hover:opacity-90">
+              Salvar
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

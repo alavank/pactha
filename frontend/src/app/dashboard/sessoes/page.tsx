@@ -1,10 +1,17 @@
 "use client";
-import { useEffect, useState, Suspense } from "react";
-import { CheckCircle2, XCircle, Bookmark, ExternalLink, RefreshCw } from "lucide-react";
+import { useEffect, useState, Suspense, type ReactNode } from "react";
+import { Bookmark, ExternalLink, RefreshCw, Info, ShieldCheck, Play } from "lucide-react";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 import api from "@/lib/api";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import {
+  Bloco,
+  BlocoHead,
+  Campos,
+  ItemLinha,
+  Lista,
+  Selo,
+  Vazio,
+} from "@/components/ui/superficies";
 import toast from "react-hot-toast";
 
 interface SessionStatus {
@@ -38,6 +45,60 @@ const PORTAIS = [
   { key: "sismob", nome: "SISMOB - Obras Saude", url: "https://sismobcidadao.saude.gov.br" },
   { key: "suas", nome: "Estrutura SUAS", url: "https://estruturasuas.mds.gov.br" },
 ];
+
+/** Caixa de alerta — o ÚNICO lugar colorido desta tela.
+ *
+ *  Antes a tela pintava tudo: cada portal tinha selo verde/amarelo, o aviso de
+ *  segurança era um cartão inteiro laranja e a sessão válida ganhava caixa
+ *  verde. Com nove coisas coloridas, a sessão expirada (a única que faz o
+ *  scraper falhar) não se destacava de nada.
+ *
+ *  Agora só existem duas caixas, e as duas exigem ação AGORA: a sessão do
+ *  parcerias.transferegov morre ~20 min após a captura. */
+function Aviso({ tom, children }: { tom: "atencao" | "critico"; children: ReactNode }) {
+  const base = tom === "critico" ? "crit" : "warn";
+  return (
+    <div
+      className="rounded-md px-3 py-2.5 text-[11px] leading-relaxed"
+      style={{
+        background: `color-mix(in oklab, var(--bi-${base}) 9%, transparent)`,
+        color: `var(--bi-${base}-ink)`,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+/** Trecho de URL/endereço dentro de um texto. Cinza, nunca colorido. */
+function Codigo({ children }: { children: ReactNode }) {
+  return (
+    <code
+      className="rounded px-1 py-px text-[10px]"
+      style={{ background: "var(--bi-surface-2)", color: "var(--bi-text)" }}
+    >
+      {children}
+    </code>
+  );
+}
+
+/** O passo numerado do "como funciona". O círculo é cinza sobre cinza: ele
+ *  ordena a leitura, não classifica nada — não é lugar de cor. */
+function Passo({ n, children }: { n: number; children: ReactNode }) {
+  return (
+    <div className="flex gap-2.5">
+      <span
+        className="mt-px grid size-5 shrink-0 place-items-center rounded-full text-[10px] font-semibold"
+        style={{ background: "var(--bi-surface-2)", color: "var(--bi-muted)" }}
+      >
+        {n}
+      </span>
+      <div className="min-w-0 flex-1 text-[12px] leading-relaxed" style={{ color: "var(--bi-text)" }}>
+        {children}
+      </div>
+    </div>
+  );
+}
 
 function SessoesInner() {
   const { municipioId } = useMunicipio();
@@ -131,240 +192,280 @@ function SessoesInner() {
     s ? new Date(s).toLocaleString("pt-BR") : "-";
 
   if (!municipioId) {
-    return (
-      <div className="flex h-64 items-center justify-center text-muted-foreground">
-        Selecione um municipio para gerenciar sessoes.
-      </div>
-    );
+    return <Vazio>Selecione um municipio para gerenciar sessoes.</Vazio>;
   }
 
+  // Estado da sessao TransfereGov, resolvido UMA vez para o selo, a grade e as
+  // caixas de alerta nao poderem divergir entre si.
+  //
+  // Nao uso `situacaoTom` aqui de proposito: ela classifica TEXTO de situacao
+  // vindo das fontes (SIGCON, PNCP...), e este endpoint nao devolve texto —
+  // devolve booleano e minutos. Passar "expirada" por ela cairia em `neutro`
+  // (o vocabulario dela e "vencid", nao "expirad") e apagaria justamente o
+  // unico alerta real da tela.
+  const expMin = tgStatus?.user_id_exp_minutes ?? null;
+  const tgExpirada = !!tgStatus?.expired;
+  const tgExpirandoJa = !tgExpirada && expMin != null && expMin < 10;
+  const tgTom: "neutro" | "atencao" | "critico" = !tgStatus?.has_session
+    ? "neutro"
+    : tgExpirada
+      ? "critico"
+      : tgExpirandoJa
+        ? "atencao"
+        : "neutro";
+  const tgRotulo = !tgStatus?.has_session
+    ? "Sem sessão"
+    : tgExpirada
+      ? `Expirou${expMin != null ? ` há ${Math.abs(expMin).toFixed(0)} min` : ""}`
+      : expMin != null && expMin < 5
+        ? `Expira em ${expMin.toFixed(1)} min — rode agora`
+        : `Válida — expira em ${expMin?.toFixed(0) ?? "?"} min`;
+
   return (
-    <div className="space-y-6">
-      <div className="border-b border-base-300 pb-4">
-        <h1 className="text-2xl font-bold text-base-content flex items-center gap-2">
-          <Bookmark className="size-6 text-info" />
+    <div className="space-y-4">
+      <div className="border-b pb-4" style={{ borderColor: "var(--bi-line)" }}>
+        <h1 className="flex items-center gap-2 text-2xl font-bold text-base-content">
+          <Bookmark className="size-6" style={{ color: "var(--bi-muted)" }} />
           Captura de Sessao
         </h1>
-        <p className="text-sm text-base-content/60 mt-1">
+        <p className="mt-1 text-sm" style={{ color: "var(--bi-muted)" }}>
           Solucao gratuita para portais com anti-bot (gov.br, FNS, etc).
           Voce loga manualmente e captura a sessao com 1 clique.
         </p>
       </div>
 
       {/* Como funciona */}
-      <Card className="border-l-4 border-l-primary bg-primary/10">
-        <CardHeader>
-          <CardTitle className="text-base">Como funciona (3 passos)</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3 text-sm">
-          <div className="flex gap-3">
-            <span className="bg-primary text-white rounded-full size-6 flex items-center justify-center font-bold text-xs flex-shrink-0">1</span>
-            <div>
-              <strong>Copie seu token PACTHA:</strong>
-              <button
-                onClick={copyToken}
-                className="ml-2 inline-block bg-primary hover:bg-primary/90 text-white px-3 py-1 rounded text-xs"
-              >
-                Copiar token
-              </button>
+      <Bloco className="p-3">
+        <BlocoHead icon={Info} titulo="Como funciona (3 passos)" sub="Configuração única por portal" />
+        <div className="space-y-2.5">
+          <Passo n={1}>
+            <strong className="font-semibold">Copie seu token PACTHA.</strong>
+            <button
+              onClick={copyToken}
+              className="ml-2 inline-flex items-center rounded-md px-2.5 py-1 text-[11px] font-medium"
+              style={{ background: "var(--bi-cta)", color: "var(--bi-cta-ink)" }}
+            >
+              Copiar token
+            </button>
+          </Passo>
+          <Passo n={2}>
+            <strong className="font-semibold">
+              Arraste o link &quot;Capturar sessao&quot; (abaixo) para a barra de favoritos do Chrome.
+            </strong>
+            <div style={{ color: "var(--bi-faint)" }}>
+              Cada portal tem o seu. Faca isso uma unica vez.
             </div>
-          </div>
-          <div className="flex gap-3">
-            <span className="bg-primary text-white rounded-full size-6 flex items-center justify-center font-bold text-xs flex-shrink-0">2</span>
-            <div>
-              <strong>Arraste o link &quot;Capturar sessao&quot; (abaixo) para a barra de favoritos do Chrome.</strong>
-              <br />
-              <span className="text-xs text-base-content/70">
-                Cada portal tem o seu. Faca isso uma unica vez.
-              </span>
+          </Passo>
+          <Passo n={3}>
+            <strong className="font-semibold">
+              Quando logar no portal (FNS, SIMEC...), clique no favorito &quot;PACTHA Capturar [portal]&quot;.
+            </strong>
+            <div style={{ color: "var(--bi-faint)" }}>
+              Vai pedir para colar o token. Cole e pronto - sessao capturada.
+              Repita 1x/mes ou quando expirar.
             </div>
-          </div>
-          <div className="flex gap-3">
-            <span className="bg-primary text-white rounded-full size-6 flex items-center justify-center font-bold text-xs flex-shrink-0">3</span>
-            <div>
-              <strong>Quando logar no portal (FNS, SIMEC...), clique no favorito &quot;PACTHA Capturar [portal]&quot;.</strong>
-              <br />
-              <span className="text-xs text-base-content/70">
-                Vai pedir para colar o token. Cole e pronto - sessao capturada.
-                Repita 1x/mes ou quando expirar.
-              </span>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+          </Passo>
+        </div>
+      </Bloco>
 
-      {/* Card destacado: status especifico TransfereGov + rodar scraper */}
+      {/* Status especifico TransfereGov + rodar scraper */}
       {tgStatus && (
-        <Card className={`border-l-4 ${tgStatus.expired ? "border-l-warning bg-warning/15" : "border-l-success bg-success/15"}`}>
-          <CardHeader>
-            <CardTitle className="text-base flex items-center justify-between">
-              <span>Sessão TransfereGov (gov.br SSO)</span>
-              {tgStatus.has_session ? (
-                tgStatus.expired ? (
-                  <Badge className="bg-error/15 text-error hover:bg-error/15">
-                    EXPIROU{tgStatus.user_id_exp_minutes != null ? ` (${Math.abs(tgStatus.user_id_exp_minutes).toFixed(0)} min atrás)` : ""}
-                  </Badge>
-                ) : tgStatus.user_id_exp_minutes != null && tgStatus.user_id_exp_minutes < 5 ? (
-                  <Badge className="bg-warning/15 text-warning hover:bg-warning/15">
-                    Expira em {tgStatus.user_id_exp_minutes.toFixed(1)} min — RODE AGORA
-                  </Badge>
-                ) : (
-                  <Badge className="bg-success/15 text-success hover:bg-success/15">
-                    Válida — expira em {tgStatus.user_id_exp_minutes?.toFixed(0) ?? "?"} min
-                  </Badge>
-                )
-              ) : (
-                <Badge variant="outline" className="text-base-content/60">Sem sessão</Badge>
-              )}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            {tgStatus.has_session && (
-              <div className="text-xs text-base-content/70">
-                Última captura: {new Date(tgStatus.updated_at || "").toLocaleString("pt-BR")}
-              </div>
-            )}
-            {tgStatus.expired && (
-              <div className="rounded bg-error/15 border border-error p-3 text-error text-xs space-y-1">
-                <strong>⚠️ Sessão expirou.</strong> A sessão do parcerias.transferegov dura
+        <Bloco className="p-3">
+          <BlocoHead
+            icon={ShieldCheck}
+            titulo="Sessão TransfereGov (gov.br SSO)"
+            sub={tgStatus.has_session ? `Última captura: ${formatDate(tgStatus.updated_at)}` : undefined}
+            right={<Selo tom={tgTom}>{tgRotulo}</Selo>}
+          />
+
+          {/* Vinculo, nivel e minutos restantes vinham escritos dentro da caixa
+              verde de "sessao valida". Aqui viram colunas: continuam visiveis
+              SEM precisar de uma caixa colorida para o estado normal. */}
+          <Campos
+            campos={[
+              {
+                rotulo: "Situação",
+                valor: !tgStatus.has_session ? "Sem sessão" : tgExpirada ? "Expirada" : "Válida",
+                tom: tgExpirada ? "critico" : "normal",
+              },
+              {
+                rotulo: tgExpirada ? "Expirou há" : "Expira em",
+                valor: expMin != null ? `${Math.abs(expMin).toFixed(0)} min` : "—",
+                tom: tgExpirada ? "critico" : tgExpirandoJa ? "atencao" : "normal",
+              },
+              { rotulo: "Vínculo", valor: tgStatus.vinculo ?? "—" },
+              { rotulo: "Nível", valor: tgStatus.nivel ?? "—" },
+              {
+                rotulo: "Última captura",
+                valor: tgStatus.updated_at ? formatDate(tgStatus.updated_at) : "—",
+                title: tgStatus.updated_at,
+              },
+            ]}
+          />
+
+          <div className="mt-2.5 space-y-2">
+            {tgExpirada && (
+              <Aviso tom="critico">
+                <strong>Sessão expirou.</strong> A sessão do parcerias.transferegov dura
                 apenas <strong>~20 minutos</strong> após inatividade. Para capturar parlamentar,
                 situação de contratação detalhada e cláusula suspensiva, refaça os 4 passos:
-                <ol className="list-decimal ml-5 space-y-0.5 mt-1">
-                  <li>Abra <code className="bg-base-100 px-1 rounded">parcerias.transferegov.sistema.gov.br/ep-atos-prep-web/home</code></li>
+                <ol className="ml-4 mt-1 list-decimal space-y-0.5">
+                  <li>Abra <Codigo>parcerias.transferegov.sistema.gov.br/ep-atos-prep-web/home</Codigo></li>
                   <li>Clique <strong>Entrar com gov.br</strong> e complete o login</li>
                   <li>Clique no bookmarklet <strong>📎 PACTHA Capturar gov.br (parcerias.transferegov)</strong></li>
-                  <li><strong>IMEDIATAMENTE</strong> volte aqui e clique <strong>▶ Rodar scraper</strong> abaixo (você tem 20 min)</li>
+                  <li><strong>IMEDIATAMENTE</strong> volte aqui e clique <strong>Rodar scraper TransfereGov agora</strong> abaixo (você tem 20 min)</li>
                 </ol>
-                <div className="mt-2 pt-2 border-t border-error">
+                <div
+                  className="mt-2 border-t pt-2"
+                  style={{ borderColor: "color-mix(in oklab, var(--bi-crit) 30%, transparent)" }}
+                >
                   <strong>Para CLÁUSULA SUSPENSIVA / SICONV legado:</strong>
-                  <ol className="list-decimal ml-5 space-y-0.5 mt-1">
-                    <li>Já logado no gov.br, abra <code className="bg-base-100 px-1 rounded">discricionarias.transferegov.sistema.gov.br/voluntarias/</code></li>
+                  <ol className="ml-4 mt-1 list-decimal space-y-0.5">
+                    <li>Já logado no gov.br, abra <Codigo>discricionarias.transferegov.sistema.gov.br/voluntarias/</Codigo></li>
                     <li>Acesse qualquer convênio (precisa entrar na área autenticada)</li>
                     <li>Clique o bookmarklet <strong>📎 PACTHA Capturar SICONV Legado</strong> ENQUANTO ESTIVER nessa página</li>
                   </ol>
                 </div>
-              </div>
+              </Aviso>
             )}
-            {!tgStatus.expired && tgStatus.user_id_exp_minutes != null && tgStatus.user_id_exp_minutes < 10 && (
-              <div className="rounded bg-warning/15 border border-warning p-3 text-warning text-xs">
-                <strong>⏰ Atenção:</strong> a sessão expira em <strong>{tgStatus.user_id_exp_minutes.toFixed(1)} minutos</strong>.
-                Rode o scraper AGORA antes que expire.
-              </div>
+            {tgExpirandoJa && (
+              <Aviso tom="atencao">
+                <strong>Atenção:</strong> a sessão expira em{" "}
+                <strong>{expMin?.toFixed(1) ?? "?"} minutos</strong>. Rode o scraper AGORA antes que expire.
+              </Aviso>
             )}
-            {!tgStatus.expired && tgStatus.vinculo && (
-              <div className="rounded bg-success/15 border border-success p-3 text-success text-xs">
-                Sessão válida (vínculo {tgStatus.vinculo}, nível {tgStatus.nivel}). Expira em{" "}
-                {tgStatus.user_id_exp_minutes?.toFixed(0) ?? "?"} minutos.
-              </div>
-            )}
-            <div className="flex gap-2 pt-2">
-              <button
-                onClick={rodarScraperTransferegov}
-                disabled={scraperRunning}
-                className="bg-primary hover:bg-primary/90 text-white px-4 py-2 rounded text-sm font-medium disabled:opacity-50"
-              >
-                {scraperRunning ? "Iniciando..." : "▶ Rodar scraper TransfereGov agora"}
-              </button>
-              <button
-                onClick={fetchAll}
-                className="border border-base-300 hover:bg-base-200 px-4 py-2 rounded text-sm"
-              >
-                <RefreshCw className="inline size-3 mr-1" /> Atualizar status
-              </button>
-            </div>
-          </CardContent>
-        </Card>
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button
+              onClick={rodarScraperTransferegov}
+              disabled={scraperRunning}
+              className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] font-medium disabled:opacity-50"
+              style={{ background: "var(--bi-cta)", color: "var(--bi-cta-ink)" }}
+            >
+              <Play className="size-3" />
+              {scraperRunning ? "Iniciando..." : "Rodar scraper TransfereGov agora"}
+            </button>
+            <button
+              onClick={fetchAll}
+              className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px]"
+              style={{ border: "1px solid var(--bi-line)", color: "var(--bi-muted)" }}
+            >
+              <RefreshCw className="size-3" /> Atualizar status
+            </button>
+          </div>
+        </Bloco>
       )}
 
-      {/* Lista de portais */}
-      <div className="grid gap-3">
+      {/* PORTAIS — era uma pilha de cartoes com borda verde/azul e selo pintado
+          por estado. Agora e a lista da identidade: selo cinza, e o estado de
+          cada portal vira COLUNA (cookies / credencial / atualizado em), que e
+          o que permite descer o olho pelos seis portais e ver de uma vez quais
+          faltam capturar — sem que nada precise ser colorido para isso. */}
+      <Lista>
         {PORTAIS.map((p) => {
           const st = status[p.key] || { has_session: false };
           const isSiconvLegado = p.key === "siconv_legado";
           return (
-            <Card key={p.key} className={
-              st.has_cookies ? "border-success" :
-              isSiconvLegado ? "border-l-4 border-l-info bg-info/15" : ""
-            }>
-              <CardContent className="p-4">
-                {isSiconvLegado && !st.has_cookies && (
-                  <div className="mb-3 text-xs bg-info/15 border border-info rounded p-2 text-info">
-                    <strong>📌 Necessário para Cláusula Suspensiva:</strong> faça login em{" "}
-                    <code className="bg-base-100 px-1 rounded">discricionarias.transferegov</code>{" "}
-                    (via SSO gov.br) e clique este bookmarklet enquanto estiver em uma página dessa URL.
-                  </div>
-                )}
-                <div className="flex items-center justify-between flex-wrap gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <h3 className="font-semibold text-base-content">{p.nome}</h3>
-                      {st.has_cookies ? (
-                        <Badge className="bg-success/15 text-success hover:bg-success/15">
-                          <CheckCircle2 className="size-3 mr-1" />
-                          Cookies capturados
-                        </Badge>
-                      ) : st.has_session ? (
-                        <Badge className="bg-warning/15 text-warning hover:bg-warning/15">
-                          Apenas senha (sem cookies)
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline" className="text-base-content/60">
-                          <XCircle className="size-3 mr-1" />
-                          Sem sessao
-                        </Badge>
-                      )}
-                    </div>
-                    <div className="text-xs text-base-content/60">
-                      {st.has_cookies ? (
-                        <>Cookies capturados em: {formatDate(st.atualizado_em)}</>
-                      ) : st.has_session ? (
-                        <>Credencial cadastrada em: {formatDate(st.atualizado_em)} (faltam cookies — use o bookmarklet)</>
-                      ) : (
-                        <>Faca login no portal e clique no bookmarklet</>
-                      )}
-                    </div>
-                    <div className="text-xs text-base-content/40 mt-1">
-                      <a href={p.url} target="_blank" rel="noopener" className="hover:underline">
-                        {p.url} <ExternalLink className="inline size-3" />
-                      </a>
-                    </div>
-                  </div>
+            <ItemLinha
+              key={p.key}
+              titulo={p.nome}
+              meta={
+                <>
+                  <Selo>
+                    {st.has_cookies
+                      ? "Cookies capturados"
+                      : st.has_session
+                        ? "Apenas senha (sem cookies)"
+                        : "Sem sessao"}
+                  </Selo>
+                  <span>
+                    {st.has_cookies
+                      ? "Pronto para scraping"
+                      : st.has_session
+                        ? "Faltam cookies — use o bookmarklet"
+                        : "Faca login no portal e clique no bookmarklet"}
+                  </span>
                   <a
-                    href={buildBookmarklet(p.key)}
-                    onClick={(e) => {
-                      // Impede que o navegador execute o JS quando clicar (so quando arrastado)
-                      if (!confirm(`Arraste este link para a barra de favoritos como "PACTHA Capturar ${p.nome}".\n\nClique OK so se quiser executar AGORA (precisa estar logado em ${p.url}).`)) {
-                        e.preventDefault();
-                      }
-                    }}
-                    className="bg-info hover:bg-info/90 text-white px-4 py-2 rounded text-sm font-medium"
-                    draggable
+                    href={p.url}
+                    target="_blank"
+                    rel="noopener"
+                    className="inline-flex items-center gap-1 hover:underline"
                   >
-                    📎 PACTHA Capturar {p.nome}
+                    {p.url} <ExternalLink className="size-3" />
                   </a>
+                </>
+              }
+            >
+              <Campos
+                campos={[
+                  { rotulo: "Cookies", valor: st.has_cookies ? "Capturados" : "Faltando" },
+                  { rotulo: "Credencial", valor: st.has_session ? "Cadastrada" : "Não cadastrada" },
+                  {
+                    rotulo: "Atualizado em",
+                    valor: formatDate(st.atualizado_em),
+                    title: st.has_cookies
+                      ? "Data da captura dos cookies"
+                      : "Data de cadastro da credencial",
+                  },
+                ]}
+              />
+
+              {isSiconvLegado && !st.has_cookies && (
+                <div
+                  className="mt-2 rounded-md px-2.5 py-2 text-[11px] leading-relaxed"
+                  style={{ background: "var(--bi-surface-2)", color: "var(--bi-muted)" }}
+                >
+                  <strong>Necessário para Cláusula Suspensiva:</strong> faça login em{" "}
+                  <Codigo>discricionarias.transferegov</Codigo> (via SSO gov.br) e clique este
+                  bookmarklet enquanto estiver em uma página dessa URL.
                 </div>
-              </CardContent>
-            </Card>
+              )}
+
+              {/* O bookmarklet fica ABAIXO, e nao no canto direito do cartao,
+                  porque o texto do link vira o NOME do favorito quando o
+                  usuario arrasta — encurta-lo quebraria os passos que mandam
+                  clicar em "PACTHA Capturar [portal]". Como e um <a> dentro do
+                  item, este ItemLinha nao pode receber `onClick` (o corpo
+                  viraria <button> e teria ancora aninhada). */}
+              <div className="mt-2">
+                <a
+                  href={buildBookmarklet(p.key)}
+                  onClick={(e) => {
+                    // Impede que o navegador execute o JS quando clicar (so quando arrastado)
+                    if (!confirm(`Arraste este link para a barra de favoritos como "PACTHA Capturar ${p.nome}".\n\nClique OK so se quiser executar AGORA (precisa estar logado em ${p.url}).`)) {
+                      e.preventDefault();
+                    }
+                  }}
+                  className="inline-flex items-center rounded-md px-3 py-1.5 text-[12px] font-medium"
+                  style={{ background: "var(--bi-cta)", color: "var(--bi-cta-ink)" }}
+                  draggable
+                >
+                  📎 PACTHA Capturar {p.nome}
+                </a>
+              </div>
+            </ItemLinha>
           );
         })}
-      </div>
+      </Lista>
 
-      <Card className="bg-warning/15 border-warning">
-        <CardContent className="p-4 text-sm">
-          <strong className="text-warning">Sobre seguranca:</strong>
-          <p className="text-warning mt-1">
-            O cookie capturado e cifrado com AES-256-GCM antes de salvar. Apenas
-            os scrapers PACTHA conseguem decifrar. O token JWT que voce cola e do
-            seu proprio login no PACTHA - nunca compartilhe. Para invalidar uma sessao,
-            faca logout no portal de origem.
-          </p>
-        </CardContent>
-      </Card>
+      {/* Seguranca: era um cartao inteiro laranja. E informacao permanente, nao
+          alerta — quem sempre grita nunca e ouvido quando a sessao expira. */}
+      <Bloco className="p-3">
+        <BlocoHead icon={ShieldCheck} titulo="Sobre segurança" />
+        <p className="text-[12px] leading-relaxed" style={{ color: "var(--bi-muted)" }}>
+          O cookie capturado e cifrado com AES-256-GCM antes de salvar. Apenas
+          os scrapers PACTHA conseguem decifrar. O token JWT que voce cola e do
+          seu proprio login no PACTHA - nunca compartilhe. Para invalidar uma sessao,
+          faca logout no portal de origem.
+        </p>
+      </Bloco>
 
       <div className="flex justify-center">
         <button
           onClick={fetchAll}
-          className="text-sm text-base-content/70 hover:text-base-content flex items-center gap-1"
+          className="inline-flex items-center gap-1.5 text-[12px]"
+          style={{ color: "var(--bi-muted)" }}
         >
           <RefreshCw className="size-3" /> Atualizar status
         </button>
