@@ -1,14 +1,28 @@
 "use client";
 
 import React, { useEffect, useState, useCallback } from "react";
-import { Search, Eye, X, Loader2, Eraser, RefreshCw } from "lucide-react";
+import {
+  Search, Eye, X, Loader2, Eraser, RefreshCw,
+  ClipboardList, Building2, Landmark, FileText, Banknote, TrendingUp,
+} from "lucide-react";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 import { MultiSelect } from "@/components/ui/multi-select";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Bloco, BlocoHead, Campos, ItemLinha, Lista, Selo, Vazio, situacaoTom } from "@/components/ui/superficies";
+import {
+  Abas, Bloco, BlocoHead, Campo, Campos, ItemLinha, Lista, Modal, ModalCorpo,
+  ModalHead, Secao, Selo, Vazio, situacaoTom,
+} from "@/components/ui/superficies";
 import { formatCurrency } from "@/lib/utils";
+
+/** Preserva o `-` do helper `Field` que existia aqui: a peça `Campos` renderiza
+ *  o que receber, e rótulo com nada embaixo parece falha de carregamento.
+ *  `0` não é vazio — "0 meses em execução" é um dado. */
+function campoP(rotulo: string, valor: unknown, extra?: Partial<Campo>): Campo {
+  const v = valor === null || valor === undefined || valor === "" ? "-" : String(valor);
+  return { rotulo, valor: v, title: v === "-" ? undefined : `${rotulo}: ${v}`, ...extra };
+}
 
 interface Plano {
   id: number;
@@ -359,161 +373,165 @@ export default function TransfereGovPage() {
         )}
       </div>
 
-      {/* Modal Detalhe - replica layout TransfereGov oficial */}
+      {/* Modal Detalhe */}
       {(detalhe !== null || loadingDetalhe) && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-start justify-center p-4 overflow-y-auto"
-             onClick={() => setDetalhe(null)}>
-          <div className="bg-base-100 rounded-lg shadow-2xl w-full max-w-6xl mt-4 mb-8" onClick={(e) => e.stopPropagation()}>
-            <div className="bg-base-100 px-5 py-3 rounded-t-lg flex items-center justify-between border-b">
-              <h3 className="text-xl font-light text-base-content">Dados do Plano de Ação</h3>
-              <button onClick={() => setDetalhe(null)}><X className="size-5 text-base-content/60 hover:text-base-content/70" /></button>
+        <Modal aberto onFechar={() => setDetalhe(null)} maxW="max-w-5xl">
+          <ModalHead
+            titulo="Dados do Plano de Ação"
+            sub={
+              detalhe?.plano
+                ? `${detalhe.plano.programaF}-${String(detalhe.plano.codigoSufixo || "").padStart(6, "0")} / ${detalhe.plano.ano}`
+                : undefined
+            }
+            onFechar={() => setDetalhe(null)}
+            abaixo={
+              detalhe?.plano ? (
+                <Abas
+                  valor={tab}
+                  onChange={(v) => setTab(v)}
+                  opcoes={[
+                    { valor: "basicos" as const, label: "Dados Básicos" },
+                    { valor: "orcamento" as const, label: "Dados Orçamentários" },
+                    { valor: "execucao" as const, label: "Execução / Relatório" },
+                  ]}
+                />
+              ) : undefined
+            }
+          />
+          {loadingDetalhe ? (
+            <div className="py-16 text-center">
+              <Loader2 className="mx-auto size-8 animate-spin" style={{ color: "var(--bi-faint)" }} />
             </div>
-            {loadingDetalhe ? (
-              <div className="text-center py-16"><Loader2 className="size-8 animate-spin mx-auto text-primary" /></div>
-            ) : detalhe?.plano && (
-              <>
-                {/* Header cinza */}
-                <div className="bg-base-200 px-5 py-3 grid grid-cols-3 gap-4 text-sm border-b">
-                  <div>
-                    <span className="font-semibold">Plano de Ação:</span>{" "}
-                    {detalhe.plano.programaF}-{String(detalhe.plano.codigoSufixo || "").padStart(6,"0")} / {detalhe.plano.ano}
-                  </div>
-                  <div><span className="font-semibold">Programa:</span> {detalhe.plano.programaF}</div>
-                  <div><span className="font-semibold">Situação:</span> {detalhe.plano.situacao}</div>
-                  <div className="col-span-2">
-                    <span className="font-semibold">Beneficiário:</span> {detalhe.plano.beneficiario?.cnpj} - {detalhe.plano.beneficiario?.nome} ({detalhe.plano.beneficiario?.uf})
-                  </div>
-                  <div><span className="font-semibold">Emenda Parlamentar:</span> {detalhe.plano.emendaParlamentar?.codigoEmendaFormatado}</div>
-                </div>
+          ) : detalhe?.plano ? (
+            <ModalCorpo className="flex flex-col gap-3">
+              {/* A faixa de identificação: era um bloco cinza de rótulos em
+                  negrito grudados no valor. Vira a grade de campos do sistema —
+                  mesmos seis dados, alinhados. */}
+              <Secao
+                icon={ClipboardList}
+                titulo="Identificação"
+                cols={3}
+                campos={[
+                  campoP("Plano de Ação", `${detalhe.plano.programaF}-${String(detalhe.plano.codigoSufixo || "").padStart(6, "0")} / ${detalhe.plano.ano}`),
+                  campoP("Programa", detalhe.plano.programaF),
+                  campoP("Situação", detalhe.plano.situacao),
+                  campoP(
+                    "Beneficiário",
+                    `${detalhe.plano.beneficiario?.cnpj} - ${detalhe.plano.beneficiario?.nome} (${detalhe.plano.beneficiario?.uf})`,
+                    { span: 2 },
+                  ),
+                  campoP("Emenda Parlamentar", detalhe.plano.emendaParlamentar?.codigoEmendaFormatado),
+                ]}
+              />
 
-                {/* Tabs */}
-                <div className="border-b flex gap-1 px-5">
-                  {[
-                    {k:"basicos", l:"Dados Básicos"},
-                    {k:"orcamento", l:"Dados Orçamentários"},
-                    {k:"execucao", l:"Execução / Relatório"},
-                  ].map((t) => (
-                    <button
-                      key={t.k}
-                      onClick={() => setTab(t.k as "basicos"|"orcamento"|"execucao")}
-                      className={`px-4 py-2.5 text-sm border-b-2 ${tab === t.k ? "border-primary text-primary font-semibold" : "border-transparent text-base-content/70 hover:text-base-content"}`}
-                    >
-                      {t.l}
-                    </button>
-                  ))}
-                </div>
+              <div key={tab} className="bi-pane-enter flex flex-col gap-3">
+              {tab === "basicos" && (
+                <>
+                  <Secao
+                    icon={Building2}
+                    titulo="Dados do Beneficiário"
+                    campos={[
+                      campoP("Beneficiário (Obrigatório)", `${detalhe.plano.beneficiario?.cnpj} - ${detalhe.plano.beneficiario?.nome}`, { span: 2 }),
+                      campoP("UF (Obrigatório)", detalhe.plano.beneficiario?.uf),
+                      campoP("Código IBGE", detalhe.plano.beneficiario?.ibge),
+                      campoP("IDH", detalhe.plano.beneficiario?.idh),
+                      campoP("E-mail Câmara", detalhe.plano.emailCamara, { span: 3 }),
+                    ]}
+                  />
+                  <Secao
+                    icon={Landmark}
+                    titulo="Dados da Emenda Parlamentar"
+                    campos={[
+                      campoP("Emenda Parlamentar (Obrigatório)", detalhe.plano.emendaParlamentar?.codigoEmendaFormatado),
+                      campoP("Parlamentar", detalhe.plano.emendaParlamentar?.nomeParlamentar, { span: 2 }),
+                      campoP("Código Parlamentar", detalhe.plano.emendaParlamentar?.codigoParlamentar),
+                      campoP("Ano", detalhe.plano.emendaParlamentar?.ano),
+                      { rotulo: "Valor de Custeio (Obrigatório)", valor: formatCurrency(detalhe.plano.valorCusteio) },
+                      { rotulo: "Valor de Investimento (Obrigatório)", valor: formatCurrency(detalhe.plano.valorInvestimento) },
+                    ]}
+                  />
+                  <Secao icon={FileText} titulo="Dados Complementares do Plano">
+                    <Campos
+                      cols={2}
+                      campos={[
+                        campoP("Modalidade", detalhe.plano.modalidade),
+                        campoP("Anexos", detalhe.plano.listaAPP?.length ?? 0),
+                      ]}
+                    />
+                    {/* Objeto e Motivo de Impedimento saem da grade: são texto
+                        livre, às vezes de vários parágrafos, e a célula trunca
+                        por desenho. */}
+                    <div className="mt-2.5">
+                      <div className="text-[9px] uppercase tracking-wide" style={{ color: "var(--bi-faint)" }}>Objeto</div>
+                      <p className="mt-0.5 text-[12px] leading-relaxed break-words" style={{ color: "var(--bi-text)" }}>
+                        {detalhe.plano.objeto || detalhe.plano.objetoDetalhe || "-"}
+                      </p>
+                    </div>
+                    <div className="mt-2.5">
+                      <div className="text-[9px] uppercase tracking-wide" style={{ color: "var(--bi-faint)" }}>Motivo Impedimento</div>
+                      <p className="mt-0.5 text-[12px] leading-relaxed break-words" style={{ color: "var(--bi-text)" }}>
+                        {detalhe.plano.motivoImpedimento || "-"}
+                      </p>
+                    </div>
+                  </Secao>
+                </>
+              )}
 
-                <div className="p-5 space-y-6 max-h-[70vh] overflow-y-auto">
-                  {tab === "basicos" && (
-                    <>
-                      <Section title="Dados do Beneficiário">
-                        <Grid>
-                          <Field label="Beneficiário (Obrigatório)" value={`${detalhe.plano.beneficiario?.cnpj} - ${detalhe.plano.beneficiario?.nome}`} />
-                          <Field label="UF (Obrigatório)" value={detalhe.plano.beneficiario?.uf} />
-                          <Field label="Código IBGE" value={detalhe.plano.beneficiario?.ibge} />
-                          <Field label="IDH" value={detalhe.plano.beneficiario?.idh} />
-                          <Field label="E-mail Câmara" value={detalhe.plano.emailCamara || "-"} />
-                        </Grid>
-                      </Section>
-                      <Section title="Dados da Emenda Parlamentar">
-                        <Grid>
-                          <Field label="Emenda Parlamentar (Obrigatório)" value={detalhe.plano.emendaParlamentar?.codigoEmendaFormatado} />
-                          <Field label="Parlamentar" value={detalhe.plano.emendaParlamentar?.nomeParlamentar} />
-                          <Field label="Código Parlamentar" value={detalhe.plano.emendaParlamentar?.codigoParlamentar} />
-                          <Field label="Ano" value={detalhe.plano.emendaParlamentar?.ano} />
-                          <Field label="Valor de Custeio (Obrigatório)" value={formatCurrency(detalhe.plano.valorCusteio)} />
-                          <Field label="Valor de Investimento (Obrigatório)" value={formatCurrency(detalhe.plano.valorInvestimento)} />
-                        </Grid>
-                      </Section>
-                      <Section title="Dados Complementares do Plano">
-                        <Grid cols={2}>
-                          <Field label="Modalidade" value={detalhe.plano.modalidade} />
-                          <Field label="Objeto" value={detalhe.plano.objeto || detalhe.plano.objetoDetalhe || "-"} />
-                          <Field label="Motivo Impedimento" value={detalhe.plano.motivoImpedimento || "-"} />
-                          <Field label="Anexos" value={(detalhe.plano.listaAPP?.length || 0).toString()} />
-                        </Grid>
-                      </Section>
-                    </>
+              {tab === "orcamento" && (
+                <>
+                  <Secao
+                    icon={Banknote}
+                    titulo="Orçamento do Plano"
+                    cols={3}
+                    campos={[
+                      { rotulo: "Valor de Custeio", valor: formatCurrency(detalhe.plano.valorCusteio) },
+                      { rotulo: "Valor de Investimento", valor: formatCurrency(detalhe.plano.valorInvestimento) },
+                      { rotulo: "Valor Total", valor: formatCurrency(detalhe.plano.valorTotal) },
+                    ]}
+                  />
+                  {detalhe.plano.emendaParlamentar && (
+                    /* Sub-bloco próprio, e não campos soltos: Custeio e
+                       Investimento aparecem DUAS vezes no modal, com origens
+                       diferentes — o valor do PLANO e o valor da EMENDA. Juntar
+                       os quatro numa grade só apagaria a diferença. */
+                    <Secao
+                      icon={Landmark}
+                      titulo="Da Emenda Parlamentar"
+                      cols={2}
+                      campos={[
+                        { rotulo: "Custeio na Emenda", valor: formatCurrency(detalhe.plano.emendaParlamentar.valorCusteio) },
+                        { rotulo: "Investimento na Emenda", valor: formatCurrency(detalhe.plano.emendaParlamentar.valorInvestimento) },
+                      ]}
+                    />
                   )}
-                  {tab === "orcamento" && (
-                    <Section title="Orçamento do Plano">
-                      <Grid>
-                        <Field label="Valor de Custeio" value={formatCurrency(detalhe.plano.valorCusteio)} />
-                        <Field label="Valor de Investimento" value={formatCurrency(detalhe.plano.valorInvestimento)} />
-                        <Field label="Valor Total" value={formatCurrency(detalhe.plano.valorTotal)} />
-                      </Grid>
-                      {detalhe.plano.emendaParlamentar && (
-                        <div className="mt-4">
-                          <h5 className="text-xs font-semibold text-base-content/70 mb-2">Da Emenda Parlamentar</h5>
-                          <Grid>
-                            <Field label="Custeio na Emenda" value={formatCurrency(detalhe.plano.emendaParlamentar.valorCusteio)} />
-                            <Field label="Investimento na Emenda" value={formatCurrency(detalhe.plano.emendaParlamentar.valorInvestimento)} />
-                          </Grid>
-                        </div>
-                      )}
-                    </Section>
-                  )}
-                  {tab === "execucao" && (
-                    detalhe.resumo ? (
-                      <Section title="Relatório de Gestão">
-                        <Grid>
-                          <Field label="Meses em Execução" value={detalhe.resumo.nrMesesExecucao} />
-                          <Field label="Custeio Previsto" value={formatCurrency(detalhe.resumo.valorTotalCusteio)} />
-                          <Field label="Investimento Previsto" value={formatCurrency(detalhe.resumo.valorTotalInvestimento)} />
-                          <Field label="Custeio Executado" value={formatCurrency(detalhe.resumo.valorTotalCusteioExecutado)} />
-                          <Field label="Investimento Executado" value={formatCurrency(detalhe.resumo.valorTotalInvestimentoExecutado)} />
-                          <Field label="Total Executado" value={formatCurrency(detalhe.resumo.valorTotalExecutado)} highlight="green" />
-                          <Field label="Total Pendente" value={formatCurrency(detalhe.resumo.valorTotalPendente)} highlight="amber" />
-                        </Grid>
-                      </Section>
-                    ) : (
-                      <p className="text-sm text-base-content/60 italic">Sem relatório de gestão registrado para este plano.</p>
-                    )
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-        </div>
+                </>
+              )}
+
+              {tab === "execucao" && (
+                detalhe.resumo ? (
+                  <Secao
+                    icon={TrendingUp}
+                    titulo="Relatório de Gestão"
+                    campos={[
+                      campoP("Meses em Execução", detalhe.resumo.nrMesesExecucao),
+                      { rotulo: "Custeio Previsto", valor: formatCurrency(detalhe.resumo.valorTotalCusteio) },
+                      { rotulo: "Investimento Previsto", valor: formatCurrency(detalhe.resumo.valorTotalInvestimento) },
+                      { rotulo: "Custeio Executado", valor: formatCurrency(detalhe.resumo.valorTotalCusteioExecutado) },
+                      { rotulo: "Investimento Executado", valor: formatCurrency(detalhe.resumo.valorTotalInvestimentoExecutado) },
+                      { rotulo: "Total Executado", valor: formatCurrency(detalhe.resumo.valorTotalExecutado), tom: "ok" },
+                      { rotulo: "Total Pendente", valor: formatCurrency(detalhe.resumo.valorTotalPendente), tom: "atencao" },
+                    ]}
+                  />
+                ) : (
+                  <Vazio>Sem relatório de gestão registrado para este plano.</Vazio>
+                )
+              )}
+              </div>
+            </ModalCorpo>
+          ) : null}
+        </Modal>
       )}
     </div>
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <h4 className="text-sm font-semibold text-base-content border-b border-primary pb-1 mb-3">
-        {title}
-      </h4>
-      <div>{children}</div>
-    </div>
-  );
-}
-
-function Grid({ children, cols = 4 }: { children: React.ReactNode; cols?: 2 | 3 | 4 }) {
-  const cls = cols === 2 ? "md:grid-cols-2" : cols === 3 ? "md:grid-cols-3" : "md:grid-cols-4";
-  return <div className={`grid grid-cols-1 ${cls} gap-3`}>{children}</div>;
-}
-
-function Field({
-  label, value, highlight,
-}: {
-  label: string;
-  value?: string | number | null;
-  highlight?: "green" | "amber" | "red";
-}) {
-  const valStr = value === null || value === undefined || value === "" ? "-" : String(value);
-  const color =
-    highlight === "green" ? "text-success" :
-    highlight === "amber" ? "text-warning" :
-    highlight === "red" ? "text-error" : "text-base-content";
-  return (
-    <div>
-      <div className="text-[11px] text-base-content/70 mb-0.5">{label}</div>
-      <div className={`border border-base-300 rounded px-2 py-1.5 bg-base-200 text-sm ${color}`}>
-        {valStr}
-      </div>
-    </div>
-  );
-}
