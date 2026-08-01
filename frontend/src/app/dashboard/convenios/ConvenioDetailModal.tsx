@@ -283,7 +283,12 @@ function Field({
   return (
     <div className={`min-w-0 ${spanClass}`} title={`${label}: ${value}`}>
       <div className="text-[10px] font-semibold uppercase tracking-wide text-base-content/45">{label}</div>
-      <div className={`mt-0.5 text-sm text-base-content ${mono ? "font-mono" : ""} ${full ? "break-words" : "truncate"} ${valueClass}`}>
+      {/* O default era `truncate`, entao TODO campo saia cortado a menos que
+          alguem lembrasse de passar `full`. Num MODAL DE DETALHE isso e o
+          avesso do proposito: quem abriu ali quer justamente o texto inteiro —
+          o nome do responsavel, o orgao concedente, o objeto. O default agora
+          e quebrar a linha; quem precisa de uma linha so passa `full={false}`. */}
+      <div className={`mt-0.5 text-sm text-base-content ${mono ? "font-mono" : ""} ${full === false ? "truncate" : "break-words"} ${valueClass}`}>
         {value}
       </div>
     </div>

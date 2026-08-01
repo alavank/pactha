@@ -214,37 +214,39 @@ export default function EmendasEstaduaisPage() {
                 {!isCollapsed && (
                   <Table className="text-xs table-fixed w-full">
                     <TableHeader>
-                      <TableRow className="[&>th]:py-1.5 [&>th]:px-2 [&>th]:text-[10px] [&>th]:font-semibold [&>th]:whitespace-nowrap">
-                        <TableHead className="w-[60px]">Indic.</TableHead>
-                        <TableHead className="w-[160px]">Responsável</TableHead>
-                        <TableHead className="w-[40px]">Tipo</TableHead>
-                        <TableHead className="w-[55px]">UO</TableHead>
-                        <TableHead className="w-[70px]">Sigla</TableHead>
-                        <TableHead className="w-[120px]">CNPJ Benef.</TableHead>
+                      <TableRow className="[&>th]:py-1.5 [&>th]:px-2 [&>th]:text-[10px] [&>th]:font-semibold [&>th]:whitespace-normal [&>th]:align-bottom [&>th]:leading-tight">
+                        <TableHead className="w-[74px]">Nº da Indicação</TableHead>
+                        <TableHead className="w-[168px]">Responsável</TableHead>
+                        <TableHead className="w-[48px]">Tipo</TableHead>
+                        <TableHead className="w-[58px]">Unidade Orçamentária</TableHead>
+                        <TableHead className="w-[76px]">Sigla</TableHead>
+                        <TableHead className="w-[124px]">CNPJ do Beneficiário</TableHead>
                         <TableHead className="min-w-0">Beneficiário</TableHead>
-                        <TableHead className="w-[110px]">Grupo Desp.</TableHead>
-                        <TableHead className="min-w-0">Atendimento</TableHead>
-                        <TableHead className="w-[95px] text-right">Valor</TableHead>
-                        <TableHead className="w-[85px]">Status</TableHead>
+                        <TableHead className="w-[118px]">Grupo de Despesa</TableHead>
+                        <TableHead className="min-w-0">Tipo de Atendimento</TableHead>
+                        <TableHead className="w-[100px] text-right">Valor</TableHead>
+                        <TableHead className="w-[96px]">Status</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {list.map((em) => (
-                        <TableRow key={em.id} className="[&>td]:py-1 [&>td]:px-2 [&>td]:text-[11px] hover:bg-base-200">
+                        <TableRow key={em.id} className="[&>td]:py-1.5 [&>td]:px-2 [&>td]:text-[11px] [&>td]:align-top [&>td]:leading-snug hover:bg-base-200">
                           <TableCell className="font-mono text-[10px]" title={`Nº Indicação: ${em.nr_indicacao || "-"}`}>{em.nr_indicacao || "-"}</TableCell>
-                          <TableCell className="truncate font-medium" title={em.nome_responsavel || ""}>{em.nome_responsavel || "-"}</TableCell>
+                          {/* O nome do parlamentar e a coisa que identifica a
+                              emenda — cortar aqui e cortar justamente o dado. */}
+                          <TableCell className="whitespace-normal break-words font-medium">{em.nome_responsavel || "-"}</TableCell>
                           <TableCell title={em.tipo_indicacao || ""}>
                             <span className="inline-flex items-center rounded bg-info/15 border border-info px-1 py-0.5 text-[9px] font-mono text-info">{siglaTipo(em.tipo_indicacao)}</span>
                           </TableCell>
                           <TableCell className="font-mono text-[10px]" title={`UO ${em.uo_codigo || "-"}`}>{em.uo_codigo || "-"}</TableCell>
-                          <TableCell className="font-mono text-[10px] truncate" title={em.uo_sigla || ""}>{em.uo_sigla || "-"}</TableCell>
-                          <TableCell className="font-mono text-[10px] truncate" title={em.cnpj_beneficiario || ""}>{em.cnpj_beneficiario || "-"}</TableCell>
-                          <TableCell className="truncate" title={em.beneficiario || ""}>{em.beneficiario || "-"}</TableCell>
-                          <TableCell className="truncate text-[10px]" title={em.grupo_despesa || ""}>{em.grupo_despesa || "-"}</TableCell>
-                          <TableCell className="truncate text-[10px]" title={em.tipo_atendimento || ""}>{em.tipo_atendimento || "-"}</TableCell>
+                          <TableCell className="font-mono text-[10px] whitespace-normal break-all">{em.uo_sigla || "-"}</TableCell>
+                          <TableCell className="font-mono text-[10px] whitespace-normal break-all">{em.cnpj_beneficiario || "-"}</TableCell>
+                          <TableCell className="whitespace-normal break-words">{em.beneficiario || "-"}</TableCell>
+                          <TableCell className="whitespace-normal break-words text-[10px]">{em.grupo_despesa || "-"}</TableCell>
+                          <TableCell className="whitespace-normal break-words text-[10px]">{em.tipo_atendimento || "-"}</TableCell>
                           <TableCell className="text-right font-mono whitespace-nowrap" title={`Valor: ${formatCurrency(em.valor_indicacao)}`}>{formatCurrency(em.valor_indicacao)}</TableCell>
                           <TableCell title={em.status_indicacao || ""}>
-                            <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-medium border truncate max-w-full ${statusColor(em.status_indicacao)}`}>{em.status_indicacao || "-"}</span>
+                            <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-medium border whitespace-normal break-words text-left ${statusColor(em.status_indicacao)}`}>{em.status_indicacao || "-"}</span>
                           </TableCell>
                         </TableRow>
                       ))}

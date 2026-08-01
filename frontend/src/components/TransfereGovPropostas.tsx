@@ -136,6 +136,40 @@ function badgeColor(sit: string): string {
   return "bg-base-200 text-base-content/70";
 }
 
+/** Objeto da proposta: 3 linhas por padrao, com "ver tudo" por linha.
+ *
+ *  Antes era `truncate`, que cabia ~20 caracteres — o suficiente para saber que
+ *  existe um objeto e nao o suficiente para saber qual. Mas o texto do
+ *  TransfereGov tem 200 a 400 caracteres: soltar tudo faria UMA proposta ocupar
+ *  a tela inteira, e a lista existe para ser percorrida.
+ *
+ *  Tres linhas sao ~120 caracteres — dao o assunto ("RECAPEAMENTO ASFALTICO EM
+ *  DIVERSAS VIAS PUBLICAS DO MUNICIPIO...") — e quem precisa do inteiro abre no
+ *  proprio lugar, sem sair da lista. O `stopPropagation` e necessario porque a
+ *  linha toda e clicavel e abriria o modal de detalhe. */
+function CelulaObjeto({ texto }: { texto?: string | null }) {
+  const [aberto, setAberto] = useState(false);
+  const t = (texto || "").trim();
+  if (!t) return <span className="text-base-content/40">-</span>;
+  // ~40 caracteres por linha nesta largura; abaixo de 3 linhas nao ha o que
+  // expandir, e o botao so poluiria.
+  const cabeInteiro = t.length <= 118;
+  return (
+    <div className="whitespace-normal break-words">
+      <span className={aberto || cabeInteiro ? "" : "line-clamp-3"}>{t}</span>
+      {!cabeInteiro && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); setAberto((v) => !v); }}
+          className="mt-0.5 block text-[10px] font-medium text-primary hover:underline"
+        >
+          {aberto ? "▴ ver menos" : "▸ ver tudo"}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function TransfereGovPropostas({
   categoria,
   titulo,
@@ -362,39 +396,52 @@ export default function TransfereGovPropostas({
         ) : displayItems.length === 0 ? (
           <div className="p-12 text-center text-base-content/60">Nenhuma proposta encontrada.</div>
         ) : (
+          /* NOMES POR EXTENSO. "Codigo Instr." / "Inicio Vig." / "Fim Vig."
+              economizavam pixel as custas de quem le: numa lista percorrida de
+              relance, adivinhar o cabecalho custa mais do que a segunda linha
+              de texto custa de espaco.
+              `whitespace-normal` no th e OBRIGATORIO junto: com o nowrap
+              herdado do TableHead, o titulo por extenso nao quebra — transborda
+              por cima da coluna vizinha. `align-bottom` mantem a base dos
+              titulos alinhada com uns em 1 linha e outros em 2. */
           <Table className="text-xs table-fixed w-full">
             <TableHeader>
-              <TableRow className="[&>th]:py-1.5 [&>th]:px-2 [&>th]:text-[11px] [&>th]:font-semibold bg-primary/10">
-                <TableHead className="w-[95px]">Código Instr.</TableHead>
-                <TableHead className="w-[90px]">Nº Proposta</TableHead>
-                <TableHead>Órgão</TableHead>
-                <TableHead className="w-[130px]">Parlamentar</TableHead>
-                <TableHead className="w-[200px]">Situação</TableHead>
-                <TableHead className="w-[150px]">Sit. Contratação</TableHead>
-                <TableHead className="w-[80px]">Início Vig.</TableHead>
-                <TableHead className="w-[80px]">Fim Vig.</TableHead>
-                <TableHead className="w-[55px]">Dias</TableHead>
+              <TableRow className="[&>th]:py-1.5 [&>th]:px-2 [&>th]:text-[11px] [&>th]:font-semibold [&>th]:whitespace-normal [&>th]:align-bottom [&>th]:leading-tight bg-primary/10">
+                <TableHead className="w-[86px]">Código do Instrumento</TableHead>
+                <TableHead className="w-[92px]">Número da Proposta</TableHead>
+                <TableHead className="w-[190px]">Órgão</TableHead>
+                <TableHead className="w-[140px]">Parlamentar</TableHead>
+                <TableHead className="w-[160px]">Situação</TableHead>
+                <TableHead className="w-[165px]">Situação da Contratação</TableHead>
+                <TableHead className="w-[88px]">Início da Vigência</TableHead>
+                <TableHead className="w-[88px]">Fim da Vigência</TableHead>
+                <TableHead className="w-[62px]">Dias Restantes</TableHead>
                 <TableHead>Objeto</TableHead>
-                <TableHead className="w-[50px] text-center">Ver</TableHead>
-                <TableHead className="w-[40px] text-center" title="Gestão Interna">📝</TableHead>
+                <TableHead className="w-[46px] text-center">Ver</TableHead>
+                <TableHead className="w-[42px] text-center" title="Gestão Interna">📝</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {displayItems.map((p, i) => (
-                <TableRow key={i} className="[&>td]:py-1.5 [&>td]:px-2 [&>td]:text-[11px] hover:bg-primary/10 cursor-pointer"
+                /* `align-top` porque as celulas agora tem alturas diferentes:
+                   sem isso a data flutua no meio de um objeto de 3 linhas. */
+                <TableRow key={i} className="[&>td]:py-2 [&>td]:px-2 [&>td]:text-[11px] [&>td]:align-top [&>td]:leading-snug hover:bg-primary/10 cursor-pointer"
                           onClick={() => abrirDetalhe(p.numero_proposta)}>
                   <TableCell className="font-mono">{p.codigo_instrumento || "-"}</TableCell>
                   <TableCell className="font-mono">{p.numero_proposta}</TableCell>
-                  <TableCell className="truncate" title={p.orgao}>{p.orgao}</TableCell>
-                  <TableCell className="truncate" title={p.parlamentar || ""}>{p.parlamentar || "-"}</TableCell>
-                  <TableCell className="max-w-[200px]" title={p.situacao}>
-                    <span className={`block truncate px-1.5 py-0.5 rounded text-[10px] ${badgeColor(p.situacao)}`}>
+                  {/* O nome do orgao QUEBRA em vez de ser cortado: "56000 -
+                      MINISTERI..." nao diz qual ministerio e — que e justamente
+                      o dado que faz o gestor saber de quem cobrar. */}
+                  <TableCell className="whitespace-normal break-words">{p.orgao || "-"}</TableCell>
+                  <TableCell className="whitespace-normal break-words">{p.parlamentar || "-"}</TableCell>
+                  <TableCell>
+                    <span className={`inline-block whitespace-normal break-words px-1.5 py-0.5 rounded text-[10px] ${badgeColor(p.situacao)}`}>
                       {p.situacao}
                     </span>
                   </TableCell>
-                  <TableCell className="max-w-[150px]">
-                    <div className="flex items-center gap-1">
-                      <span className="truncate" title={p.situacao_contratacao || ""}>
+                  <TableCell>
+                    <div className="flex flex-wrap items-start gap-1">
+                      <span className="whitespace-normal break-words">
                         {p.situacao_contratacao || "-"}
                       </span>
                       {((p.situacao_contratacao_detalhe && Object.keys(p.situacao_contratacao_detalhe).filter(k => !k.startsWith("_")).length > 0) || p.clausula_suspensiva_motivo || p.clausula_suspensiva_dt_prevista) && (
@@ -424,7 +471,7 @@ export default function TransfereGovPropostas({
                       <span className={`inline-block px-1.5 py-0.5 rounded-full text-[10px] font-medium ${b.cls}`}>{b.txt}</span>
                     ); })()}
                   </TableCell>
-                  <TableCell className="truncate" title={p.objeto || ""}>{p.objeto || "-"}</TableCell>
+                  <TableCell><CelulaObjeto texto={p.objeto} /></TableCell>
                   <TableCell className="text-center">
                     <button onClick={(e) => { e.stopPropagation(); abrirDetalhe(p.numero_proposta); }}
                             className="inline-flex w-6 h-6 items-center justify-center rounded bg-primary hover:bg-primary/90 text-white">
