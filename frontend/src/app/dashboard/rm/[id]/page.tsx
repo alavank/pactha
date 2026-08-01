@@ -150,11 +150,25 @@ export default function RmEditorPage() {
     } catch (e) { console.error(e); } finally { setRepopulating(false); }
   };
 
-  const exportarPdf = () => {
+  const [menuRel, setMenuRel] = useState(false);
+
+  const exportar = (tipo: "completo" | "resumido" | "totalizado", formato: "pdf" | "xlsx" = "pdf") => {
+    setMenuRel(false);
     const token = localStorage.getItem("pactha_token");
-    fetch(`${api.defaults.baseURL}/rm/${rid}/pdf`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+    const url = `${api.defaults.baseURL}/rm/${rid}/pdf?tipo=${tipo}&formato=${formato}`;
+    fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
       .then((r) => r.blob())
-      .then((blob) => window.open(URL.createObjectURL(blob), "_blank"));
+      .then((blob) => {
+        const href = URL.createObjectURL(blob);
+        if (formato === "xlsx") {
+          const a = document.createElement("a");
+          a.href = href;
+          a.download = `RM-Totalizado.xlsx`;
+          a.click();
+        } else {
+          window.open(href, "_blank");
+        }
+      });
   };
 
   // Mutadores do conteudo (imutaveis)
@@ -253,9 +267,36 @@ export default function RmEditorPage() {
             {saving ? <Loader2 className="size-4 animate-spin mr-1" /> : <Save className="size-4 mr-1" />}
             Salvar
           </Button>
-          <Button onClick={exportarPdf} className="bg-success hover:bg-success/90">
-            <Download className="size-4 mr-1" /> PDF
-          </Button>
+          <div className="relative">
+            <Button onClick={() => setMenuRel((v) => !v)} className="bg-success hover:bg-success/90">
+              <Download className="size-4 mr-1" /> Relatório <ChevronDown className="size-4 ml-1" />
+            </Button>
+            {menuRel && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setMenuRel(false)} />
+                <div className="absolute right-0 mt-1 z-20 w-60 rounded-md border border-base-300 bg-base-100 shadow-lg py-1 text-sm">
+                  <button className="w-full text-left px-3 py-2 hover:bg-base-200" onClick={() => exportar("completo")}>
+                    <span className="font-medium">Completo</span>
+                    <span className="block text-xs text-base-content/60">Detalhado (PDF)</span>
+                  </button>
+                  <button className="w-full text-left px-3 py-2 hover:bg-base-200" onClick={() => exportar("resumido")}>
+                    <span className="font-medium">Resumido</span>
+                    <span className="block text-xs text-base-content/60">Só pendências, layout limpo (PDF)</span>
+                  </button>
+                  <div className="border-t border-base-200 my-1" />
+                  <div className="px-3 py-1 text-xs font-semibold text-base-content/50">Totalizado (grade)</div>
+                  <button className="w-full text-left px-3 py-2 hover:bg-base-200" onClick={() => exportar("totalizado", "xlsx")}>
+                    <span className="font-medium">Totalizado — Excel</span>
+                    <span className="block text-xs text-base-content/60">Planilha .xlsx</span>
+                  </button>
+                  <button className="w-full text-left px-3 py-2 hover:bg-base-200" onClick={() => exportar("totalizado", "pdf")}>
+                    <span className="font-medium">Totalizado — PDF</span>
+                    <span className="block text-xs text-base-content/60">Grade em PDF</span>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
