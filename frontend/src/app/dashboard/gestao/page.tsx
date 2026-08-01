@@ -1,10 +1,19 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
-import { Edit2, Loader2, Eraser, Paperclip } from "lucide-react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
+import { Edit2, Eraser, FileText, Paperclip } from "lucide-react";
 import api from "@/lib/api";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 import { Button } from "@/components/ui/button";
+import {
+  Campos,
+  ItemLinha,
+  Lista,
+  Numero,
+  Selo,
+  Vazio,
+  situacaoTom,
+} from "@/components/ui/superficies";
 import AnotacaoModal from "@/components/AnotacaoModal";
 
 interface Anotacao {
@@ -31,14 +40,34 @@ const FONTE_LABEL: Record<string, string> = {
   emenda: "Emenda Estadual",
   rm: "Item de RM",
 };
-const FONTE_COLOR: Record<string, string> = {
-  sigcon: "bg-primary/10 text-primary",
-  voluntaria: "bg-info/15 text-info",
-  plano_acao: "bg-warning/15 text-warning",
-  fns: "bg-success/15 text-success",
-  simec: "bg-info/15 text-info",
-  emenda: "bg-info/15 text-info",
-  rm: "bg-base-200 text-base-content",
+
+/** Versão curta para o selo do cartão. O rótulo completo continua acessível no
+ *  `title` e é o que aparece no filtro — "Plano de Ação (TG Especial)" dentro de
+ *  um selo de 10px empurraria o resto da meta para a linha de baixo. */
+const FONTE_CURTA: Record<string, string> = {
+  sigcon: "SIGCON",
+  voluntaria: "SICONV",
+  plano_acao: "Plano de Ação",
+  fns: "FNS",
+  simec: "SIMEC",
+  emenda: "Emenda",
+  rm: "RM",
+};
+
+// O mapa FONTE_COLOR (violeta/azul/verde/amarelo por fonte) foi removido: sete
+// fontes, sete cores, e a cor deixava de significar "olhe aqui" para significar
+// apenas "esta linha existe". A fonte é uma CLASSIFICAÇÃO, não um alerta — vai
+// em selo cinza. A única cor que sobra na tela é a do status, e ela vem de
+// `situacaoTom`, a regra única do sistema.
+
+/* Escolha nativa com os tokens da identidade — o MESMO desenho que as telas de
+   RM e do Cofre já usam. Repetido aqui como constante (e não copiado inline nos
+   dois <select>) para os dois filtros não poderem divergir um do outro. */
+const SELECT_CLS = "h-9 rounded-md border px-3 text-[13px]";
+const SELECT_ESTILO: React.CSSProperties = {
+  borderColor: "var(--bi-line)",
+  background: "var(--bi-surface)",
+  color: "var(--bi-text)",
 };
 
 function fmtData(d?: string | null) {
@@ -75,39 +104,78 @@ export default function GestaoPage() {
       .then((r) => setStatusOpcoes(r.data.opcoes)).catch(() => {});
   }, []);
 
+  // A barra "N anotação(ões)" virou KPI. Protocolo e anexo são o que distingue
+  // uma anotação de rascunho de uma com lastro (foi protocolada / tem o PDF
+  // junto), e essa contagem era a pergunta que o gestor fazia contando na tela.
+  const resumo = useMemo(() => ({
+    total: items.length,
+    comProtocolo: items.filter((a) => !!a.protocolo).length,
+    comAnexo: items.filter((a) => (a.anexos?.length ?? 0) > 0).length,
+  }), [items]);
+
+  const filtrando = !!(filtroFonte || filtroStatus);
+
   if (!municipioId) {
-    return <div className="flex h-64 items-center justify-center text-muted-foreground">Selecione um município.</div>;
+    // `<Vazio>` e não um `text-muted-foreground` solto: é o mesmo estado vazio
+    // de CAUC, SISMOB e Sessões. `text-muted-foreground` é do tema antigo e não
+    // acompanha os tokens `--bi-*`.
+    return <Vazio>Selecione um município para ver as anotações.</Vazio>;
   }
 
   return (
-    <div className="space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold text-info flex items-center gap-2">
-          <Edit2 className="size-6" /> Gestão Interna
+    <div className="space-y-4">
+      <div className="border-b pb-4" style={{ borderColor: "var(--bi-line)" }}>
+        <h1 className="flex items-center gap-2 text-2xl font-bold text-base-content">
+          <Edit2 className="size-6" style={{ color: "var(--bi-muted)" }} /> Gestão Interna
         </h1>
-        <p className="text-sm text-base-content/60">
+        <p className="mt-1 max-w-3xl text-sm leading-snug" style={{ color: "var(--bi-muted)" }}>
           Anotações paralelas aos dados oficiais. Marque status próprio (ex: &quot;prestação enviada
           fisicamente&quot;), protocolos, datas, observações e anexe PDFs/imagens sem alterar
           os dados brutos do scraper.
         </p>
       </div>
 
-      <div className="bg-base-100 border rounded p-3 flex flex-wrap items-end gap-3">
+      <div className="grid gap-2 sm:grid-cols-3">
+        <Numero
+          icon={Edit2}
+          rotulo="Anotações"
+          valor={resumo.total}
+          sub={filtrando ? "no recorte filtrado" : "todas as fontes"}
+        />
+        <Numero icon={FileText} rotulo="Com protocolo" valor={resumo.comProtocolo} />
+        <Numero icon={Paperclip} rotulo="Com anexo" valor={resumo.comAnexo} />
+      </div>
+
+      {/* Filtros soltos, sem a moldura cinza de antes.
+          O <select> usa o desenho que RM e Cofre já fixaram para escolha nativa
+          (h-9 / rounded-md / 13px sobre os tokens `--bi-*`), e não as classes do
+          MultiSelect: o MultiSelect nem aparece nesta tela, e `base-300` aponta
+          para `--bi-line` no claro mas para `--bi-line-strong` no escuro — o
+          mesmo controle ficava com borda diferente da do Cofre no tema escuro. */}
+      <div className="flex flex-wrap items-end gap-3">
         <div>
-          <label className="text-xs text-base-content/70 mb-1 block">Fonte</label>
+          <label htmlFor="filtro-fonte" className="mb-1 block text-[11px]" style={{ color: "var(--bi-muted)" }}>
+            Fonte
+          </label>
           <select
+            id="filtro-fonte"
             value={filtroFonte} onChange={(e) => setFiltroFonte(e.target.value)}
-            className="rounded border border-base-300 px-2 py-1.5 text-sm bg-base-100"
+            className={SELECT_CLS}
+            style={SELECT_ESTILO}
           >
             <option value="">Todas</option>
             {Object.entries(FONTE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
         </div>
         <div>
-          <label className="text-xs text-base-content/70 mb-1 block">Status</label>
+          <label htmlFor="filtro-status" className="mb-1 block text-[11px]" style={{ color: "var(--bi-muted)" }}>
+            Status
+          </label>
           <select
+            id="filtro-status"
             value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)}
-            className="rounded border border-base-300 px-2 py-1.5 text-sm bg-base-100"
+            className={SELECT_CLS}
+            style={SELECT_ESTILO}
           >
             <option value="">Todos</option>
             {statusOpcoes.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -118,64 +186,106 @@ export default function GestaoPage() {
         </Button>
       </div>
 
-      <div className="bg-base-100 border rounded">
-        <div className="px-3 py-2 border-b bg-base-200 text-sm">
-          <strong>{items.length}</strong> anotação(ões)
+      {loading ? (
+        <div className="space-y-2">
+          {Array.from({ length: 6 }).map((_, i) => (
+            /* `--bi-surface-2`, não `bg-base-200`: base-200 aponta para
+               `--bi-bg`, que é a cor do FUNDO da página — o esqueleto ficava
+               invisível. Mesmo conserto que o Cofre já tinha feito. */
+            <div
+              key={i}
+              className="h-16 animate-pulse rounded-lg"
+              style={{ background: "var(--bi-surface-2)" }}
+            />
+          ))}
         </div>
-        {loading ? (
-          <div className="p-8 text-center"><Loader2 className="size-6 animate-spin mx-auto text-info" /></div>
-        ) : items.length === 0 ? (
-          <div className="p-12 text-center text-base-content/60">
-            Nenhuma anotação ainda. Use o ícone <Edit2 className="inline size-4 text-info" /> nas telas
-            de Convênios, Voluntárias ou outras para criar anotações.
-          </div>
-        ) : (
-          <ul className="divide-y">
-            {items.map((a) => (
-              <li key={a.id}
-                  onClick={() => setOpenItem(a)}
-                  className="px-3 py-3 hover:bg-base-200 cursor-pointer">
-                <div className="flex items-start gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex flex-wrap items-center gap-2 mb-1">
-                      <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide ${FONTE_COLOR[a.fonte] || "bg-base-200"}`}>
-                        {FONTE_LABEL[a.fonte] || a.fonte}
-                      </span>
-                      <span className="text-sm font-mono text-base-content/70">
-                        {a.numero_referencia || a.fonte_ref}
-                      </span>
-                      {a.status_interno && (
-                        <span className="inline-block bg-info/15 text-info px-2 py-0.5 rounded text-[11px] font-semibold">
-                          {a.status_interno === "Outro" ? a.status_custom : a.status_interno}
-                        </span>
-                      )}
-                      {a.protocolo && (
-                        <span className="text-[11px] text-base-content/70">
-                          Protocolo <code className="bg-base-200 px-1 rounded font-mono">{a.protocolo}</code>
-                        </span>
-                      )}
-                      {a.data_protocolo && (
-                        <span className="text-[11px] text-base-content/70">📅 {fmtData(a.data_protocolo)}</span>
-                      )}
-                      {a.anexos && a.anexos.length > 0 && (
-                        <span className="text-[11px] text-base-content/60 inline-flex items-center gap-0.5">
-                          <Paperclip className="size-3" /> {a.anexos.length}
-                        </span>
-                      )}
-                    </div>
-                    {a.observacoes && (
-                      <p className="text-sm text-base-content/70 line-clamp-2">{a.observacoes}</p>
+      ) : items.length === 0 ? (
+        <Vazio>
+          {filtrando
+            ? "Nenhuma anotação com esses filtros."
+            : (
+              <>
+                Nenhuma anotação ainda. Use o ícone <Edit2 className="inline size-3.5" /> nas telas
+                de Convênios, Voluntárias ou outras para criar anotações.
+              </>
+            )}
+        </Vazio>
+      ) : (
+        /* A lista deixou de ser <ul className="divide-y"> dentro de uma caixa com
+           cabeçalho. Cada anotação é um cartão: o número de referência como
+           título, fonte e status em selo, e os quatro campos que o gestor
+           compara entre itens em POSIÇÕES FIXAS — protocolo, data, anexos e
+           atualização caem sempre na mesma coluna, então o olho desce a lista
+           como descia na tabela, sem existir tabela. */
+        <Lista>
+          {items.map((a) => {
+            // "Outro" é o valor sentinela do select; o texto que vale está no
+            // status_custom. Sem isto o cartão anunciaria "Outro" para todos.
+            const status = a.status_interno === "Outro"
+              ? (a.status_custom || "Outro")
+              : a.status_interno;
+            const nAnexos = a.anexos?.length ?? 0;
+            const numero = a.numero_referencia || a.fonte_ref;
+            return (
+              <ItemLinha
+                key={a.id}
+                onClick={() => setOpenItem(a)}
+                titulo={
+                  <span
+                    className="font-mono"
+                    title={a.numero_referencia && a.numero_referencia !== a.fonte_ref
+                      ? `Referência interna: ${a.fonte_ref}`
+                      : undefined}
+                  >
+                    {numero}
+                  </span>
+                }
+                meta={
+                  <>
+                    <Selo title={FONTE_LABEL[a.fonte] || a.fonte}>
+                      {FONTE_CURTA[a.fonte] || FONTE_LABEL[a.fonte] || a.fonte}
+                    </Selo>
+                    {status && (
+                      <Selo tom={situacaoTom(status)} title={status}>{status}</Selo>
                     )}
-                    <div className="text-[10px] text-base-content/40 mt-1">
-                      Atualizado {fmtData(a.updated_at)}
-                    </div>
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+                  </>
+                }
+              >
+                {a.observacoes && (
+                  /* Duas linhas no cartão e o texto inteiro no title: a
+                     observação é longa por natureza, e quem quer ler tudo abre
+                     a anotação. Era o mesmo line-clamp-2 de antes. */
+                  <p
+                    className="mt-1 line-clamp-2 text-[12px] leading-snug"
+                    style={{ color: "var(--bi-muted)" }}
+                    title={a.observacoes}
+                  >
+                    {a.observacoes}
+                  </p>
+                )}
+                <Campos
+                  campos={[
+                    { rotulo: "Protocolo", valor: a.protocolo || "—", title: a.protocolo || undefined },
+                    { rotulo: "Data do protocolo", valor: a.data_protocolo ? fmtData(a.data_protocolo) : "—" },
+                    {
+                      rotulo: "Anexos",
+                      valor: nAnexos > 0 ? (
+                        <span className="inline-flex items-center gap-1">
+                          <Paperclip className="size-3" /> {nAnexos}
+                        </span>
+                      ) : "—",
+                      title: nAnexos > 0
+                        ? a.anexos.map((x) => x.nome).join(" · ")
+                        : "Sem anexos",
+                    },
+                    { rotulo: "Atualizado", valor: fmtData(a.updated_at) },
+                  ]}
+                />
+              </ItemLinha>
+            );
+          })}
+        </Lista>
+      )}
 
       {openItem && (
         <AnotacaoModal

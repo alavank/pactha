@@ -2,12 +2,14 @@
 
 import React, { useEffect, useState, useCallback } from "react";
 import {
-  Send, Loader2, Copy, ExternalLink, CheckCircle2, XCircle, RefreshCw, Trash2,
+  Send, Loader2, Copy, ExternalLink, RefreshCw, Trash2,
+  Link2, Terminal,
 } from "lucide-react";
 import api from "@/lib/api";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Bloco, BlocoHead, Campos, ItemLinha, Lista, Selo, Vazio,
+} from "@/components/ui/superficies";
 import toast from "react-hot-toast";
 
 interface TelegramStatus {
@@ -32,6 +34,53 @@ interface LinkCode {
   instrucoes: string;
   bot_username?: string;
   bot_link?: string;
+}
+
+/** Os comandos do bot em dado, não em markup: a lista repetia cinco vezes a
+ *  mesma estrutura de `<div><code>…</code> — texto</div>`, e a cada comando novo
+ *  no backend alguém tinha que copiar a linha inteira certinha. */
+const COMANDOS: { cmd: string; desc: string }[] = [
+  { cmd: "/start CODIGO", desc: "Vincular esta conta ao seu usuário do PACTHA" },
+  { cmd: "/help", desc: "Lista de comandos disponíveis" },
+  { cmd: "/municipio NOME", desc: "Definir o município padrão das respostas" },
+  { cmd: "/limpar", desc: "Apagar o histórico de contexto da conversa" },
+  { cmd: "/desvincular", desc: "Desconectar a conta deste chat" },
+];
+
+/** `code` inline com o cinza da identidade. Usa `--bi-line` (o mesmo fundo do
+ *  selo neutro) e não `--bi-surface-2`, porque metade destes trechos vive dentro
+ *  de um `bi-card-flat` — que JÁ é surface-2, e ali o chip sumiria. */
+function Cod({ children }: { children: React.ReactNode }) {
+  return (
+    <code
+      className="rounded px-1 py-px font-mono text-[11px]"
+      style={{ background: "var(--bi-line)", color: "var(--bi-text)" }}
+    >
+      {children}
+    </code>
+  );
+}
+
+function Externo({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener"
+      className="underline underline-offset-2"
+      style={{ color: "var(--bi-accent-ink)" }}
+    >
+      {children}
+    </a>
+  );
+}
+
+function fmtDataHora(iso?: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  // Data que o backend mandou fora do ISO não vira "Invalid Date" na tela: o
+  // texto cru diz mais ao suporte do que o erro do parser.
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString("pt-BR");
 }
 
 export default function TelegramPage() {
@@ -108,196 +157,311 @@ export default function TelegramPage() {
   };
 
   if (loading) {
-    return <div className="flex h-64 items-center justify-center"><Loader2 className="size-6 animate-spin text-primary" /></div>;
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <Loader2 className="size-6 animate-spin" style={{ color: "var(--bi-muted)" }} />
+      </div>
+    );
   }
 
+  const pendentes = status?.webhook?.pending_update_count ?? 0;
+  const erroWebhook = status?.webhook?.last_error_message;
+
   return (
-    <div className="space-y-6 max-w-4xl">
+    <div className="max-w-4xl space-y-4">
       {/* Header */}
-      <div className="border-b border-base-300 pb-4">
-        <h1 className="text-2xl font-bold text-base-content flex items-center gap-2">
-          <Send className="size-6 text-info" />
-          Integração Telegram
-        </h1>
-        <p className="text-sm text-base-content/60 mt-1">
+      <div className="border-b pb-4" style={{ borderColor: "var(--bi-line)" }}>
+        <h1 className="text-2xl font-bold text-base-content">Integração Telegram</h1>
+        <p className="mt-1 text-sm" style={{ color: "var(--bi-muted)" }}>
           Converse com a IA PACTHA direto no Telegram. Pergunte sobre convênios, propostas,
           parlamentares, vigências — em português, com as mesmas ferramentas da IA PACTHA web.
         </p>
       </div>
 
-      {/* Status do bot */}
-      <Card className={status?.configured ? "border-l-4 border-l-success" : "border-l-4 border-l-warning bg-warning/15"}>
-        <CardHeader>
-          <CardTitle className="text-base flex items-center justify-between">
-            <span>Status do bot</span>
-            {status?.configured ? (
-              <Badge className="bg-success/15 text-success hover:bg-success/15">
-                <CheckCircle2 className="size-3 mr-1" /> Configurado
-              </Badge>
+      {/* ---------------- Status do bot ---------------- */}
+      <Bloco className="p-3">
+        <BlocoHead
+          icon={Send}
+          titulo="Status do bot"
+          sub={
+            status?.configured && status.bot ? (
+              <span className="flex flex-wrap items-center gap-1.5">
+                <strong style={{ color: "var(--bi-text)" }}>{status.bot.first_name}</strong>
+                {status.bot.username && (
+                  <Externo href={`https://t.me/${status.bot.username}`}>
+                    <span className="inline-flex items-center gap-1">
+                      @{status.bot.username} <ExternalLink className="size-3" />
+                    </span>
+                  </Externo>
+                )}
+              </span>
             ) : (
-              <Badge className="bg-warning/15 text-warning hover:bg-warning/15">
-                <XCircle className="size-3 mr-1" /> Não configurado
-              </Badge>
-            )}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="text-sm space-y-2">
-          {!status?.configured && (
-            <div className="bg-warning/15 border border-warning rounded p-3 text-xs space-y-2 text-warning">
-              <strong>⚙️ O bot ainda não foi configurado pelo administrador.</strong>
-              <p>Para ativar:</p>
-              <ol className="list-decimal ml-5 space-y-1">
-                <li>Crie um bot no Telegram com <a href="https://t.me/BotFather" target="_blank" rel="noopener" className="underline">@BotFather</a> — comando <code className="bg-base-100 px-1">/newbot</code></li>
-                <li>Copie o token retornado</li>
-                <li>No Coolify (resource API), adicione a env var <code className="bg-base-100 px-1">TELEGRAM_BOT_TOKEN</code> com o token</li>
-                <li>Reinicie o backend (redeploy no Coolify)</li>
-                <li>Como admin, abra o <a href="/api/docs" target="_blank" rel="noopener" className="underline">Swagger</a> e chame <code className="bg-base-100 px-1">POST /api/telegram/setup-webhook</code> com a URL do backend</li>
-              </ol>
-            </div>
-          )}
-          {status?.configured && status.bot && (
-            <div className="space-y-1">
-              <div>
-                Bot: <strong>{status.bot.first_name}</strong> ·{" "}
-                <a
-                  href={`https://t.me/${status.bot.username}`}
-                  target="_blank"
-                  rel="noopener"
-                  className="text-info hover:underline inline-flex items-center gap-1"
-                >
-                  @{status.bot.username} <ExternalLink className="size-3" />
-                </a>
-              </div>
-              {status.webhook?.url && (
-                <div className="text-xs text-base-content/60">
-                  Webhook: <code className="bg-base-200 px-1 rounded">{status.webhook.url}</code>
-                  {status.webhook.last_error_message && (
-                    <span className="ml-2 text-error">⚠️ {status.webhook.last_error_message}</span>
-                  )}
-                </div>
-              )}
-              {(status.webhook?.pending_update_count ?? 0) > 0 && (
-                <div className="text-xs text-warning">
-                  ⚠️ {status.webhook?.pending_update_count} updates pendentes
-                </div>
-              )}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+              "O bot precisa ser ligado pelo administrador antes de qualquer vinculação."
+            )
+          }
+          right={
+            /* Configurado é o estado NORMAL do sistema, então fica cinza — cor
+               aqui só quando há algo a resolver. Não passa por `situacaoTom`
+               porque isto não é rótulo de situação vindo dos dados: é um
+               booleano do backend, e forçá-lo pela regra de texto daria neutro
+               nos dois casos, apagando justamente o aviso. */
+            /* Sem ícone dentro do selo: o ✔/✘ só repetia a palavra ao lado e é
+               a mesma decoração que Sessões e CAUC tiraram dos seus selos. Selo
+               com ícone em uma tela e sem ícone na vizinha é o tipo de diferença
+               que reaparece multiplicada em seis meses. */
+            status?.configured ? (
+              <Selo title="Token cadastrado e bot respondendo">Configurado</Selo>
+            ) : (
+              <Selo tom="atencao" title="Falta cadastrar o TELEGRAM_BOT_TOKEN no backend">
+                Não configurado
+              </Selo>
+            )
+          }
+        />
 
-      {/* Gerar código de vinculação */}
+        {/* A resposta do /status trazia `message` e `error` que a tela antiga
+            nunca mostrava: quando o bot não sobe, é exatamente aqui que está o
+            motivo. */}
+        {status?.error && (
+          <p className="flex flex-wrap items-center gap-1.5 text-[11px]" style={{ color: "var(--bi-muted)" }}>
+            <Selo tom="critico">Erro</Selo>
+            {status.error}
+          </p>
+        )}
+        {status?.message && !status.configured && (
+          <p className="text-[11px]" style={{ color: "var(--bi-muted)" }}>{status.message}</p>
+        )}
+
+        {status?.configured && (
+          /* Os dados do bot em posição FIXA: webhook, pendências e último erro
+             eram linhas que só apareciam quando havia problema, então quem
+             abria a tela no dia bom não aprendia onde olhar no dia ruim. */
+          <Campos
+            cols={3}
+            campos={[
+              { rotulo: "Bot", valor: status.bot?.first_name || "—", title: status.bot?.first_name },
+              { rotulo: "Usuário", valor: status.bot?.username ? `@${status.bot.username}` : "—" },
+              { rotulo: "ID do bot", valor: status.bot?.id ?? "—" },
+              {
+                rotulo: "Webhook",
+                valor: status.webhook?.url || "não registrado",
+                tom: status.webhook?.url ? "normal" : "atencao",
+                title: status.webhook?.url || "Sem webhook: o bot não recebe mensagens.",
+              },
+              {
+                rotulo: "Updates pendentes",
+                valor: pendentes,
+                tom: pendentes > 0 ? "atencao" : "normal",
+                title: pendentes > 0
+                  ? "Mensagens que o Telegram tentou entregar e ainda não foram processadas."
+                  : undefined,
+              },
+              {
+                rotulo: "Último erro do webhook",
+                valor: erroWebhook || "—",
+                tom: erroWebhook ? "critico" : "normal",
+                title: erroWebhook,
+              },
+            ]}
+          />
+        )}
+
+        {!status?.configured && (
+          <div className="mt-2 border-t pt-2 text-[12px] leading-relaxed" style={{ borderColor: "var(--bi-line)", color: "var(--bi-muted)" }}>
+            <div className="font-medium" style={{ color: "var(--bi-text)" }}>Para ativar (administrador):</div>
+            <ol className="mt-1.5 list-decimal space-y-1 pl-5">
+              <li>
+                Crie um bot no Telegram com <Externo href="https://t.me/BotFather">@BotFather</Externo>
+                {" "}— comando <Cod>/newbot</Cod>
+              </li>
+              <li>Copie o token retornado</li>
+              <li>No Coolify (resource API), adicione a env var <Cod>TELEGRAM_BOT_TOKEN</Cod> com o token</li>
+              <li>Reinicie o backend (redeploy no Coolify)</li>
+              <li>
+                Como admin, abra o <Externo href="/api/docs">Swagger</Externo> e chame{" "}
+                <Cod>POST /api/telegram/setup-webhook</Cod> com a URL do backend
+              </li>
+            </ol>
+          </div>
+        )}
+      </Bloco>
+
+      {/* ---------------- Vincular ---------------- */}
       {status?.configured && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Vincular seu Telegram à sua conta</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <p className="text-base-content/70">
-              Gere um código de uso único (válido por 10 min), abra o bot no Telegram e envie:{" "}
-              <code className="bg-base-200 px-1.5 py-0.5 rounded">/start CODIGO</code>
-            </p>
+        <Bloco className="p-3">
+          <BlocoHead
+            icon={Link2}
+            titulo="Vincular seu Telegram à sua conta"
+            sub={
+              <>
+                Gere um código de uso único (válido por 10 min), abra o bot no Telegram e envie{" "}
+                <Cod>/start CODIGO</Cod>
+              </>
+            }
+          />
 
-            {!linkCode && (
-              <Button onClick={gerarCodigo} disabled={generating} className="bg-info hover:bg-info/90">
-                {generating ? <Loader2 className="size-4 animate-spin mr-1" /> : <RefreshCw className="size-4 mr-1" />}
+          {!linkCode && (
+            <div>
+              <Button
+                onClick={gerarCodigo}
+                disabled={generating}
+                size="sm"
+                style={{ background: "var(--bi-cta)", color: "var(--bi-cta-ink)" }}
+                className="hover:opacity-90"
+              >
+                {generating ? <Loader2 className="mr-1 size-4 animate-spin" /> : <RefreshCw className="mr-1 size-4" />}
                 Gerar código de vinculação
               </Button>
-            )}
-
-            {linkCode && (
-              <div className="space-y-3">
-                <div className="bg-info/15 border-2 border-dashed border-info rounded p-4 text-center">
-                  <div className="text-xs text-info mb-1">Seu código (válido por {Math.floor(secsLeft / 60)}m {secsLeft % 60}s):</div>
-                  <div className="text-4xl font-mono font-bold text-info tracking-widest">{linkCode.codigo}</div>
-                  <button
-                    onClick={() => copiar(linkCode.codigo)}
-                    className="mt-2 text-xs text-info hover:underline inline-flex items-center gap-1"
-                  >
-                    <Copy className="size-3" /> Copiar
-                  </button>
-                </div>
-
-                {linkCode.bot_link && (
-                  <div className="flex flex-col items-center gap-2 pt-2">
-                    <a
-                      href={linkCode.bot_link}
-                      target="_blank"
-                      rel="noopener"
-                      className="bg-info hover:bg-info/90 text-white px-5 py-2.5 rounded-lg text-sm font-semibold inline-flex items-center gap-2"
-                    >
-                      <Send className="size-4" /> Abrir bot e vincular automaticamente
-                    </a>
-                    <div className="text-[11px] text-base-content/60">
-                      Ou abra manualmente: <strong>@{linkCode.bot_username}</strong> e envie <code className="bg-base-200 px-1">/start {linkCode.codigo}</code>
-                    </div>
-                  </div>
-                )}
-
-                <Button variant="outline" size="sm" onClick={() => setLinkCode(null)} className="w-full">
-                  Cancelar / Gerar outro
-                </Button>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Vinculações ativas */}
-      {links.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Suas vinculações ativas ({links.length})</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {links.map((l) => (
-              <div key={l.chat_id} className="flex items-center justify-between gap-3 bg-base-200 border rounded p-3 text-sm">
-                <div className="flex-1 min-w-0">
-                  <div className="font-medium text-base-content">
-                    {l.telegram_user || "(sem nome)"}
-                  </div>
-                  <div className="text-xs text-base-content/60 mt-0.5">
-                    chat_id: <code className="bg-base-100 px-1 rounded">{l.chat_id}</code>
-                    {l.municipio_nome && <> · Município padrão: <strong>{l.municipio_nome}</strong></>}
-                    {l.ultima_atividade && <> · Última atividade: {new Date(l.ultima_atividade).toLocaleString("pt-BR")}</>}
-                  </div>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => desvincular(l.chat_id)}
-                  className="text-error hover:text-error hover:bg-error/10"
-                >
-                  <Trash2 className="size-4" />
-                </Button>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Como usar */}
-      {status?.configured && (
-        <Card className="bg-base-200/50">
-          <CardHeader>
-            <CardTitle className="text-base">Comandos disponíveis no bot</CardTitle>
-          </CardHeader>
-          <CardContent className="text-sm space-y-1 text-base-content/70">
-            <div><code className="bg-base-100 px-1 rounded">/start CODIGO</code> — vincular conta</div>
-            <div><code className="bg-base-100 px-1 rounded">/help</code> — lista de comandos</div>
-            <div><code className="bg-base-100 px-1 rounded">/municipio NOME</code> — definir município padrão</div>
-            <div><code className="bg-base-100 px-1 rounded">/limpar</code> — apagar histórico de contexto</div>
-            <div><code className="bg-base-100 px-1 rounded">/desvincular</code> — desconectar conta</div>
-            <div className="pt-2 text-xs text-base-content/60">
-              Fora dos comandos, qualquer mensagem é enviada à IA PACTHA. Exemplos:
-              <ul className="list-disc ml-5 mt-1 space-y-0.5">
-                <li>&ldquo;Convênios vencendo em 60 dias&rdquo;</li>
-                <li>&ldquo;Liste tudo do deputado Eduardo Azevedo&rdquo;</li>
-                <li>&ldquo;Resumo do município hoje&rdquo;</li>
-              </ul>
             </div>
-          </CardContent>
-        </Card>
+          )}
+
+          {linkCode && (
+            <div className="flex flex-col gap-3">
+              {/* O código é o único número desta tela, então ele — e não uma
+                  moldura pontilhada colorida — é o que salta. Quem avisa que
+                  está acabando é o selo, que só ganha cor no último minuto. */}
+              <div className="bi-card-flat flex flex-col items-center gap-2 px-4 py-5">
+                <div className="flex items-center gap-2">
+                  <span className="text-[9px] uppercase tracking-wide" style={{ color: "var(--bi-faint)" }}>
+                    Seu código
+                  </span>
+                  <Selo
+                    tom={secsLeft <= 60 ? "atencao" : "neutro"}
+                    title="Depois disso o código deixa de valer e é preciso gerar outro"
+                  >
+                    expira em {Math.floor(secsLeft / 60)}m {secsLeft % 60}s
+                  </Selo>
+                </div>
+                {/* 22px é o tamanho do <Numero>, o maior número do sistema.
+                    Um 32px só aqui abriria um sétimo degrau de escala numa
+                    identidade que tem seis. Com tracking-widest e font-mono o
+                    código continua sendo a coisa mais legível do cartão. */}
+                <div
+                  className="bi-num font-mono text-[22px] leading-none tracking-widest"
+                  style={{ color: "var(--bi-text)" }}
+                >
+                  {linkCode.codigo}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => copiar(linkCode.codigo)}
+                  className="inline-flex items-center gap-1 text-[11px] hover:underline"
+                  style={{ color: "var(--bi-muted)" }}
+                >
+                  <Copy className="size-3" /> Copiar
+                </button>
+              </div>
+
+              {/* O `instrucoes` do backend diz a MESMA coisa que o rodapé do
+                  botão abaixo, então só entra quando não há `bot_link` — que é
+                  justamente quando o backend não descobriu o @ do bot e o
+                  rodapé não aparece, deixando o usuário sem instrução nenhuma. */}
+              {!linkCode.bot_link && linkCode.instrucoes && (
+                <p className="whitespace-pre-line text-center text-[11px] leading-snug" style={{ color: "var(--bi-muted)" }}>
+                  {linkCode.instrucoes}
+                </p>
+              )}
+
+              {linkCode.bot_link && (
+                <div className="flex flex-col items-center gap-2">
+                  <a
+                    href={linkCode.bot_link}
+                    target="_blank"
+                    rel="noopener"
+                    className="inline-flex items-center gap-2 rounded-md px-5 py-2.5 text-[13px] font-semibold transition-opacity hover:opacity-90"
+                    style={{ background: "var(--bi-cta)", color: "var(--bi-cta-ink)" }}
+                  >
+                    <Send className="size-4" /> Abrir bot e vincular automaticamente
+                  </a>
+                  <div className="text-[11px]" style={{ color: "var(--bi-faint)" }}>
+                    Ou abra manualmente: <strong>@{linkCode.bot_username}</strong> e envie{" "}
+                    <Cod>/start {linkCode.codigo}</Cod>
+                  </div>
+                </div>
+              )}
+
+              <Button variant="outline" size="sm" onClick={() => setLinkCode(null)} className="w-full">
+                Cancelar / Gerar outro
+              </Button>
+            </div>
+          )}
+        </Bloco>
+      )}
+
+      {/* ---------------- Vinculações ativas ---------------- */}
+      {(status?.configured || links.length > 0) && (
+        <Bloco className="p-3">
+          <BlocoHead
+            icon={Link2}
+            titulo="Suas vinculações ativas"
+            sub="Cada chat do Telegram que já pode conversar com a IA usando o seu acesso"
+            right={<span className="bi-num text-[13px]">{links.length}</span>}
+          />
+          {links.length === 0 ? (
+            <Vazio>Nenhum chat vinculado. Gere um código acima e envie /start no bot.</Vazio>
+          ) : (
+            <Lista>
+              {links.map((l) => (
+                <ItemLinha
+                  key={l.chat_id}
+                  titulo={l.telegram_user || "(sem nome)"}
+                  meta={<span className="font-mono">chat_id {l.chat_id}</span>}
+                  acao={
+                    <button
+                      type="button"
+                      onClick={() => desvincular(l.chat_id)}
+                      title="Desvincular este chat"
+                      aria-label={`Desvincular ${l.telegram_user || l.chat_id}`}
+                      /* Cinza parado, vermelho só sob o cursor: um lixo pintado
+                         de vermelho em cada linha faz a tela parecer cheia de
+                         alertas quando não há nenhum. */
+                      className="rounded p-1.5 text-[var(--bi-faint)] transition-colors hover:bg-[var(--bi-line)] hover:text-[var(--bi-crit-ink)]"
+                    >
+                      <Trash2 className="size-4" />
+                    </button>
+                  }
+                >
+                  <Campos
+                    cols={3}
+                    campos={[
+                      {
+                        rotulo: "Município padrão",
+                        valor: l.municipio_nome || "—",
+                        title: l.municipio_nome,
+                      },
+                      { rotulo: "Vinculado em", valor: fmtDataHora(l.vinculado_em) },
+                      { rotulo: "Última atividade", valor: fmtDataHora(l.ultima_atividade) },
+                    ]}
+                  />
+                </ItemLinha>
+              ))}
+            </Lista>
+          )}
+        </Bloco>
+      )}
+
+      {/* ---------------- Comandos ---------------- */}
+      {status?.configured && (
+        <Bloco className="p-3">
+          <BlocoHead
+            icon={Terminal}
+            titulo="Comandos disponíveis no bot"
+            sub="Fora destes comandos, qualquer mensagem vai direto para a IA PACTHA"
+          />
+          <Lista>
+            {COMANDOS.map((c) => (
+              <ItemLinha key={c.cmd} titulo={<span className="font-mono">{c.cmd}</span>} meta={c.desc} />
+            ))}
+          </Lista>
+          <div className="mt-2 border-t pt-2 text-[11px] leading-snug" style={{ borderColor: "var(--bi-line)", color: "var(--bi-muted)" }}>
+            Exemplos de pergunta:
+            <ul className="mt-1 list-disc space-y-0.5 pl-5" style={{ color: "var(--bi-faint)" }}>
+              <li>&ldquo;Convênios vencendo em 60 dias&rdquo;</li>
+              <li>&ldquo;Liste tudo do deputado Eduardo Azevedo&rdquo;</li>
+              <li>&ldquo;Resumo do município hoje&rdquo;</li>
+            </ul>
+          </div>
+        </Bloco>
       )}
     </div>
   );

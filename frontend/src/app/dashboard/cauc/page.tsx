@@ -9,13 +9,21 @@
 // que sai por CNPJ, sem credencial, e traz cada obrigação com SITUAÇÃO e DATA DE
 // VALIDADE. Por isso as linhas do CAGEC mostram a data e as do CAUC não: são
 // fontes diferentes no mesmo formato, e a data só existe onde a fonte dá.
+//
+// PELE (identidade do Painel): a GRADE das exigências ficou — código · item ·
+// situação · validade em colunas de largura fixa —, porque conferir o extrato
+// linha a linha é o gesto da tela e o alinhamento é o que o torna possível. O
+// que mudou foi só a pele: fim do verde em toda linha comprovada (trinta ✔
+// verdes não informam nada — quando tudo é sinal, nada é sinal), selo cinza por
+// padrão e COR só onde há alerta: pendência impeditiva e prazo vencido.
 import React, { useEffect, useState } from "react";
 import {
-  ShieldCheck, ShieldAlert, CheckCircle2, AlertTriangle, AlertCircle, Ban, Loader2,
+  ShieldCheck, ShieldAlert, Check, AlertTriangle, AlertCircle, Ban, Loader2,
   Clock,
 } from "lucide-react";
 import api from "@/lib/api";
 import { useMunicipio } from "@/contexts/MunicipioContext";
+import { Bloco, BlocoHead, Lista, Selo, Vazio, situacaoTom } from "@/components/ui/superficies";
 
 interface Item {
   codigo: string;
@@ -110,24 +118,32 @@ function agrupar(itens: Item[]): Array<[string, Item[]]> {
   return [...m.entries()];
 }
 
-/** Banner de situação da esfera — mesmo formato nas duas colunas. */
+/** Banner de situação da esfera — mesmo formato nas duas colunas.
+ *
+ *  Regular é CINZA de propósito: estar em dia é o estado normal e não pede
+ *  ação. O vermelho fica reservado ao impedimento, que é a única informação
+ *  desta tela capaz de fazer o gestor levantar da cadeira. */
 function Situacao({
   regular, titulo, detalhe,
 }: { regular: boolean; titulo: string; detalhe: string }) {
   return (
-    <div className={`rounded-2xl border p-4 ${regular
-      ? "border-success/30 bg-success/10"
-      : "border-error/30 bg-error/10"}`}>
-      <div className="flex items-center gap-3">
-        {regular
-          ? <CheckCircle2 className="size-8 text-success shrink-0" />
-          : <ShieldAlert className="size-8 text-error shrink-0" />}
-        <div className="min-w-0">
-          <div className={`font-bold ${regular ? "text-success" : "text-error"}`}>{titulo}</div>
-          <div className="text-sm text-base-content/70">{detalhe}</div>
-        </div>
-      </div>
-    </div>
+    /* `pt-3` sem `pb`: a margem que o BlocoHead já traz embaixo fecha o cartão.
+       Anular com `mb-0` seria disputar a mesma propriedade com a peça, e quem
+       ganha aí depende da ordem em que o Tailwind emite as classes. */
+    <Bloco className="px-3 pt-3">
+      <BlocoHead
+        icon={regular ? ShieldCheck : ShieldAlert}
+        titulo={
+          <span style={regular ? undefined : { color: "var(--bi-crit-ink)" }}>{titulo}</span>
+        }
+        sub={detalhe}
+        right={
+          <Selo tom={regular ? "neutro" : "critico"}>
+            {regular ? "Regular" : "Impedimento"}
+          </Selo>
+        }
+      />
+    </Bloco>
   );
 }
 
@@ -152,23 +168,34 @@ function AvisoCrc({ crcErro, crcEm, doCrc }: {
   const semCrc = doCrc === false;
   if (!semCrc && !crcErro) return null;
   return (
-    <div className="rounded-xl border border-warning/40 bg-warning/10 p-3">
+    /* Um dos poucos lugares com cor: "a tela não sabe o que está mostrando" é
+       alerta, e o aviso perde a função se ficar cinza no meio do cinza.
+       O raio vem do token dos cartões rasos — este bloco convive com eles, e
+       raio próprio era exatamente o que espalhava seis cantos diferentes. */
+    <div
+      className="border p-2.5"
+      style={{
+        borderRadius: "var(--bi-radius-sm)",
+        borderColor: "color-mix(in oklab, var(--bi-warn) 35%, transparent)",
+        background: "color-mix(in oklab, var(--bi-warn) 8%, transparent)",
+      }}
+    >
       <div className="flex items-start gap-2">
-        <AlertTriangle className="mt-[2px] size-4 shrink-0 text-warning" />
-        <div className="min-w-0 text-xs leading-relaxed">
-          <div className="font-semibold text-base-content/80">
+        <AlertTriangle className="mt-[2px] size-3.5 shrink-0" style={{ color: "var(--bi-warn-ink)" }} />
+        <div className="min-w-0 text-[10px] leading-relaxed" style={{ color: "var(--bi-muted)" }}>
+          <div className="text-[11px] font-semibold" style={{ color: "var(--bi-text)" }}>
             {semCrc
               ? "Documentos não conferidos — certificado indisponível"
               : `Documentos conferidos em ${fmtDate(crcEm)} — leitura nova indisponível`}
           </div>
-          <div className="text-base-content/60">
+          <div className="mt-0.5">
             A lista de documentos e suas validades vem do certificado (CRC), emitido
             pelo portal do CAGEC.{" "}
             {crcErro
               ? <>Nesta consulta ele não saiu. O portal respondeu: <em>“{crcErro}”</em></>
               : <>Nesta consulta ele não pôde ser lido.</>}
           </div>
-          <div className="mt-1 text-base-content/60">
+          <div className="mt-1">
             {semCrc
               ? <>Abaixo aparece <strong>apenas</strong> o que a consulta pública mostra —
                   a situação do cadastro, sem os documentos. Não é a lista de exigências.</>
@@ -195,6 +222,15 @@ function venceu(validade?: string | null): boolean {
   return new Date(+m[3], +m[2] - 1, +m[1]) < new Date(h.getFullYear(), h.getMonth(), h.getDate());
 }
 
+/** Uma linha é alerta quando trava convênio: pendência impeditiva, ou "Vigente"
+ *  com prazo já vencido (só CAGEC — ver `venceu`). Sai daqui, e não de cada
+ *  ponto da tela, para o contador do grupo e o realce da linha não divergirem. */
+function alerta(it: Item, esfera: "cauc" | "cagec"): "critico" | "atencao" | null {
+  if (it.tipo === "pendente") return "critico";
+  if (esfera === "cagec" && it.tipo === "regular" && venceu(it.validade)) return "atencao";
+  return null;
+}
+
 /** Os DEMAIS cadastros do município no CAGEC (fundos, autarquias, consórcios).
  *
  *  Eles já eram coletados e já vinham na resposta da API — a tela é que lia só
@@ -212,67 +248,80 @@ function OutrasEntidades({ entidades }: { entidades: Entidade[] }) {
   return (
     <div className="space-y-2">
       <div>
-        <h3 className="text-sm font-bold text-base-content/80">
+        <h3 className="bi-title text-[13px] leading-tight">
           Outros cadastros deste município ({outras.length})
         </h3>
-        <p className="text-xs text-base-content/50">
+        <p className="mt-0.5 text-[10px] leading-snug" style={{ color: "var(--bi-faint)" }}>
           Cada entidade tem CRC próprio e trava <strong>apenas o seu</strong> convênio:
           a prefeitura estar regular não libera o convênio da saúde se o fundo estiver irregular.
         </p>
       </div>
-      {outras.map((e) => {
-        const ok = e.regular === true;
-        const pend = e.pendencias || 0;
-        return (
-          <details
-            key={e.cnpj || e.nome}
-            className={`rounded-2xl border overflow-hidden ${ok
-              ? "border-success/30 bg-success/5"
-              : "border-error/30 bg-error/5"}`}
-          >
-            <summary className="flex cursor-pointer items-center gap-3 px-4 py-3">
-              {ok
-                ? <CheckCircle2 className="size-5 shrink-0 text-success" />
-                : <ShieldAlert className="size-5 shrink-0 text-error" />}
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-semibold">{e.nome}</div>
-                <div className="text-xs text-base-content/60">
-                  {e.tipo || "entidade"}
-                  {e.cnpj ? ` · CNPJ ${e.cnpj}` : ""}
-                  {e.numero_cadastro ? ` · cadastro nº ${e.numero_cadastro}` : ""}
+      <Lista>
+        {outras.map((e) => {
+          const ok = e.regular === true;
+          const pend = e.pendencias || 0;
+          // A situação vem escrita pela fonte ("REGULAR", "NÃO HABILITADA"), então
+          // quem classifica é a regra única do sistema. O booleano `regular` só
+          // entra quando ela é falsa: aí é impedimento, escreva a fonte o que
+          // escrever.
+          const tomSit = e.regular === false ? "critico" : situacaoTom(e.situacao);
+          return (
+            <li key={e.cnpj || e.nome} className="bi-card-flat overflow-hidden">
+              <details>
+                {/* `flex` no summary é o que esconde o triângulo nativo no
+                    Chrome — trocar por bloco faria o marcador reaparecer em cima
+                    do nome da entidade. */}
+                <summary className="flex cursor-pointer items-start gap-2 px-3 py-2.5">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[13px] font-medium leading-snug">{e.nome}</div>
+                    <div
+                      className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] leading-snug"
+                      style={{ color: "var(--bi-faint)" }}
+                    >
+                      <Selo tom={tomSit} title={`Situação no CAGEC: ${e.situacao || (ok ? "Regular" : "Irregular")}`}>
+                        {e.situacao || (ok ? "Regular" : "Irregular")}
+                      </Selo>
+                      <span>{e.tipo || "entidade"}</span>
+                      {e.cnpj && <span className="font-mono">CNPJ {e.cnpj}</span>}
+                      {e.numero_cadastro && <span className="font-mono">cadastro nº {e.numero_cadastro}</span>}
+                      {/* Este resumo é a ÚNICA coisa visível com o bloco fechado, e
+                          é onde o Fundo Municipal de Saúde apareceu como "Regular ·
+                          sem pendência" sem que nada tivesse sido conferido.
+                          "sem pendência" exige documentos lidos; contador de leitura
+                          antiga exige a data junto, senão passa por atual. */}
+                      <span
+                        style={pend && e.detalhe_do_crc !== false
+                          ? { color: "var(--bi-crit-ink)" } : undefined}
+                      >
+                        {e.detalhe_do_crc === false
+                          ? "documentos não conferidos"
+                          : e.crc_erro
+                            ? `documentos de ${fmtDate(e.crc_em)}`
+                            : pend ? `${pend} pendência(s)` : "sem pendência"}
+                      </span>
+                    </div>
+                  </div>
+                </summary>
+                <div
+                  className="space-y-2 border-t px-3 py-3"
+                  style={{ borderColor: "var(--bi-line)" }}
+                >
+                  <AvisoCrc crcErro={e.crc_erro} crcEm={e.crc_em} doCrc={e.detalhe_do_crc} />
+                  {/* Mesma ressalva do banner da prefeitura: `validade` é a próxima
+                      obrigação a vencer, não a validade do certificado — o CRC não
+                      tem uma. */}
+                  {e.validade && (
+                    <p className="text-[10px]" style={{ color: "var(--bi-muted)" }}>
+                      Próxima obrigação a vencer: <strong>{fmtDate(e.validade)}</strong>.
+                    </p>
+                  )}
+                  <Exigencias itens={e.itens || []} esfera="cagec" />
                 </div>
-              </div>
-              <span className={`shrink-0 text-right text-xs font-medium ${ok ? "text-success" : "text-error"}`}>
-                {e.situacao || (ok ? "Regular" : "Irregular")}
-                <span className="block font-normal text-base-content/50">
-                  {/* Este resumo é a ÚNICA coisa visível com o bloco fechado, e
-                      é onde o Fundo Municipal de Saúde apareceu como "Regular ·
-                      sem pendência" sem que nada tivesse sido conferido.
-                      "sem pendência" exige documentos lidos; contador de leitura
-                      antiga exige a data junto, senão passa por atual. */}
-                  {e.detalhe_do_crc === false
-                    ? "documentos não conferidos"
-                    : e.crc_erro
-                      ? `documentos de ${fmtDate(e.crc_em)}`
-                      : pend ? `${pend} pendência(s)` : "sem pendência"}
-                </span>
-              </span>
-            </summary>
-            <div className="space-y-2 border-t border-base-300/60 bg-base-100 p-3">
-              <AvisoCrc crcErro={e.crc_erro} crcEm={e.crc_em} doCrc={e.detalhe_do_crc} />
-              {/* Mesma ressalva do banner da prefeitura: `validade` é a próxima
-                  obrigação a vencer, não a validade do certificado — o CRC não
-                  tem uma. */}
-              {e.validade && (
-                <p className="text-xs text-base-content/60">
-                  Próxima obrigação a vencer: <strong>{fmtDate(e.validade)}</strong>.
-                </p>
-              )}
-              <Exigencias itens={e.itens || []} esfera="cagec" />
-            </div>
-          </details>
-        );
-      })}
+              </details>
+            </li>
+          );
+        })}
+      </Lista>
     </div>
   );
 }
@@ -283,103 +332,136 @@ function OutrasEntidades({ entidades }: { entidades: Entidade[] }) {
  *  GRADE de largura fixa, não flex — pelo mesmo motivo do Painel: rótulo que
  *  quebra em duas linhas não pode empurrar as colunas da direita, e no CAGEC o
  *  código (de "CNPJ" a "AUTORIZ-ELETRONICA") deslocava o início de cada rótulo.
+ *  É a mesma promessa do `<Campos>` das outras telas — coluna na mesma posição
+ *  em todo lugar —, só que aqui o conteúdo é literalmente um extrato, e por isso
+ *  continua grade e não vira cartão por exigência.
  *
  *  O CAGEC não tem coluna de código: aqueles identificadores são NOSSOS (o CRC
  *  não os imprime) e os informativos — os oito "Item 3.1.2 -…" — já vêm no
  *  próprio rótulo. */
 function Exigencias({ itens, esfera = "cauc" }: { itens: Item[]; esfera?: "cauc" | "cagec" }) {
   if (!itens.length) {
-    return (
-      <div className="rounded-2xl border border-base-300 bg-base-100 p-6 text-center text-sm text-base-content/60">
-        Nenhuma exigência detalhada nesta esfera.
-      </div>
-    );
+    return <Vazio>Nenhuma exigência detalhada nesta esfera.</Vazio>;
   }
   const cols = esfera === "cauc"
     ? "grid-cols-[1.25rem_3rem_minmax(0,1fr)_7.5rem_6rem]"
     : "grid-cols-[1.25rem_minmax(0,1fr)_7.5rem_6rem]";
   return (
-    <div className="space-y-3">
-      {agrupar(itens).map(([grupo, lista]) => (
-        <div key={grupo} className="rounded-2xl border border-base-300/60 bg-base-100 overflow-hidden shadow-theme-sm">
-          <div className="px-4 py-2.5 bg-base-200/50 border-b border-base-300">
+    <div className="space-y-2">
+      {agrupar(itens).map(([grupo, lista]) => {
+        const emAlerta = lista.filter((it) => alerta(it, esfera)).length;
+        return (
+          <Bloco key={grupo} className="p-3">
             {/* Título = o LITERAL do extrato ("III - Obrigações de
                 Transparência"), para casar na conferência. A glosa embaixo,
                 para quem não vive o documento. */}
-            <div className="text-sm font-semibold text-base-content/70">{grupo}</div>
-            {lista[0]?.grupo_glossa && (
-              <div className="text-xs text-base-content/45">{lista[0].grupo_glossa}</div>
-            )}
-          </div>
-          <div className={`grid ${cols} items-end gap-x-3 border-b border-base-300/60 bg-base-200/20 px-4 py-1.5 text-[10px] uppercase tracking-wide text-base-content/40`}>
-            <span />
-            {esfera === "cauc" && <span>Item</span>}
-            <span>Item legal</span>
-            <span>Situação</span>
-            <span className="text-right">Validade</span>
-          </div>
-          <div className="divide-y divide-base-300/60">
-            {lista.map((it) => {
-              // "Vigente" com prazo no passado. Só aparece em lista preservada,
-              // e é o caso em que um ✔ verde faria o gestor confiar numa
-              // certidão vencida. Vale só para o CAGEC: no CAUC a validade é
-              // reemitida todo dia e a de ontem é rotina, não pendência.
-              const vencido = esfera === "cagec" && it.tipo === "regular" && venceu(it.validade);
-              return (
-              <div key={it.codigo}
-                className={`grid ${cols} items-start gap-x-3 px-4 py-2 ${
-                  it.tipo === "pendente" ? "bg-error/10" : vencido ? "bg-warning/10" : ""}`}>
-                {/* Símbolo por esfera, como nos dois documentos: o CAUC marca
-                    Comprovado / A Comprovar / Desativado; o CAGEC, Vigente /
-                    Vencido. O vermelho na linha inteira é o que faz o olho achar
-                    o problema sem precisar ler. */}
-                <span className="mt-[3px]">
-                  {it.tipo === "pendente"
-                    ? (esfera === "cagec"
-                        ? <AlertTriangle className="size-4 text-error" />
-                        : <AlertCircle className="size-4 text-error" />)
-                    : vencido ? <Clock className="size-4 text-warning" />
-                    : it.tipo === "regular" ? <CheckCircle2 className="size-4 text-success" />
-                    : <Ban className="size-4 text-base-content/30" />}
-                </span>
-                {esfera === "cauc" && (
-                  <span className="font-mono text-xs leading-6 text-base-content/50">{it.codigo}</span>
-                )}
-                <div className="min-w-0">
-                  <div className={`text-sm leading-6 ${it.tipo === "pendente"
-                    ? "font-semibold text-error" : "text-base-content"}`}>
-                    {it.label}
+            <BlocoHead
+              titulo={grupo}
+              sub={lista[0]?.grupo_glossa}
+              right={
+                emAlerta
+                  ? <Selo tom="critico">{emAlerta} em alerta</Selo>
+                  : <span className="text-[10px]" style={{ color: "var(--bi-faint)" }}>
+                      {lista.length} {lista.length === 1 ? "item" : "itens"}
+                    </span>
+              }
+            />
+            <div
+              className={`grid ${cols} items-end gap-x-3 border-b px-2 pb-1 text-[9px] uppercase tracking-wide`}
+              style={{ borderColor: "var(--bi-line)", color: "var(--bi-faint)" }}
+            >
+              <span />
+              {esfera === "cauc" && <span>Item</span>}
+              <span>Item legal</span>
+              <span>Situação</span>
+              <span className="text-right">Validade</span>
+            </div>
+            {/* Sem divisória entre as linhas: o que separa é o espaço, e o que
+                salta é o fundo das que estão em alerta. Régua em toda linha faz
+                a grade inteira gritar no mesmo tom do problema. */}
+            <div className="mt-1 flex flex-col gap-0.5">
+              {lista.map((it) => {
+                const nivel = alerta(it, esfera);
+                const vencido = nivel === "atencao";
+                // A situação vem escrita pela fonte; a classificação é a regra
+                // única do sistema. `tipo === "pendente"` tem precedência porque
+                // "A Comprovar" não parece alerta em texto nenhum — e é o que
+                // trava a transferência.
+                const tomStatus = nivel === "critico" ? "critico"
+                  : vencido ? "atencao"
+                  : situacaoTom(it.status);
+                return (
+                  <div
+                    key={it.codigo}
+                    className={`grid ${cols} items-start gap-x-3 rounded-lg px-2 py-1.5`}
+                    style={nivel
+                      ? { background: `color-mix(in oklab, var(--bi-${nivel === "critico" ? "crit" : "warn"}) 9%, transparent)` }
+                      : undefined}
+                  >
+                    {/* Símbolo por esfera, como nos dois documentos: o CAUC marca
+                        Comprovado / A Comprovar / Desativado; o CAGEC, Vigente /
+                        Vencido. Só os dois primeiros têm cor — o ✔ é cinza porque
+                        trinta ✔ verdes escondem o único ⚠ que importa. */}
+                    <span className="mt-[3px]">
+                      {nivel === "critico"
+                        ? (esfera === "cagec"
+                            ? <AlertTriangle className="size-3.5" style={{ color: "var(--bi-crit-ink)" }} />
+                            : <AlertCircle className="size-3.5" style={{ color: "var(--bi-crit-ink)" }} />)
+                        : vencido ? <Clock className="size-3.5" style={{ color: "var(--bi-warn-ink)" }} />
+                        : it.tipo === "regular" ? <Check className="size-3.5" style={{ color: "var(--bi-muted)" }} />
+                        : <Ban className="size-3.5" style={{ color: "var(--bi-faint)" }} />}
+                    </span>
+                    {esfera === "cauc" && (
+                      /* `font-mono` e não `bi-num`: "1.3" aqui é identificador do
+                         extrato, não número — negrito tabular o promoveria acima
+                         do próprio item legal. */
+                      <span className="font-mono text-[11px] leading-5" style={{ color: "var(--bi-faint)" }}>
+                        {it.codigo}
+                      </span>
+                    )}
+                    <div className="min-w-0">
+                      <div
+                        className={`text-[13px] leading-snug ${nivel === "critico" ? "font-medium" : ""}`}
+                        style={{ color: nivel === "critico" ? "var(--bi-crit-ink)" : "var(--bi-text)" }}
+                      >
+                        {it.label}
+                      </div>
+                      {/* A nota existe porque duas palavras do extrato enganam:
+                          "Desativado" não é dispensa (é falha da ferramenta, para
+                          TODOS os entes) e "A Comprovar" não acusa o município. */}
+                      {it.nota && (
+                        <div className="mt-0.5 text-[10px] leading-snug" style={{ color: "var(--bi-faint)" }}>
+                          {it.nota}
+                        </div>
+                      )}
+                    </div>
+                    <span className="min-w-0">
+                      {/* O documento dizia "Vigente" quando foi lido; hoje o prazo
+                          passou. Repetir "Vigente" seria transcrever fielmente uma
+                          informação que deixou de ser verdade. */}
+                      <Selo tom={tomStatus} title={vencido ? `A fonte registrou “${it.status}”, mas a validade já passou.` : it.status}>
+                        {vencido ? "Prazo vencido" : it.status}
+                      </Selo>
+                    </span>
+                    {/* Validade SEMPRE presente, como no extrato. "—" quando a fonte
+                        não dá data: ausência de data é informação, não buraco. */}
+                    <span
+                      className="bi-num whitespace-nowrap text-right text-[11px] leading-5"
+                      style={{
+                        color: nivel === "critico" ? "var(--bi-crit-ink)"
+                          : vencido ? "var(--bi-warn-ink)"
+                          : "var(--bi-muted)",
+                      }}
+                    >
+                      {it.validade || "—"}
+                    </span>
                   </div>
-                  {/* A nota existe porque duas palavras do extrato enganam:
-                      "Desativado" não é dispensa (é falha da ferramenta, para
-                      TODOS os entes) e "A Comprovar" não acusa o município. */}
-                  {it.nota && (
-                    <div className="text-xs leading-snug text-base-content/45">{it.nota}</div>
-                  )}
-                </div>
-                <span className={`text-xs font-medium leading-6 ${
-                  it.tipo === "pendente" ? "text-error"
-                  : vencido ? "text-warning"
-                  : it.tipo === "regular" ? "text-success"
-                  : "text-base-content/40"}`}>
-                  {/* O documento dizia "Vigente" quando foi lido; hoje o prazo
-                      passou. Repetir "Vigente" seria transcrever fielmente uma
-                      informação que deixou de ser verdade. */}
-                  {vencido ? "Prazo vencido" : it.status}
-                </span>
-                {/* Validade SEMPRE presente, como no extrato. "—" quando a fonte
-                    não dá data: ausência de data é informação, não buraco. */}
-                <span className={`whitespace-nowrap text-right font-mono text-xs leading-6 ${
-                  it.tipo === "pendente" ? "text-error"
-                  : vencido ? "text-warning" : "text-base-content/50"}`}>
-                  {it.validade || "—"}
-                </span>
-              </div>
-              );
-            })}
-          </div>
-        </div>
-      ))}
+                );
+              })}
+            </div>
+          </Bloco>
+        );
+      })}
     </div>
   );
 }
@@ -409,42 +491,44 @@ export default function RegularidadePage() {
   }, [municipioId]);
 
   return (
-    <div className="space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold text-base-content flex items-center gap-2">
-          <ShieldCheck className="size-6 text-primary" /> Regularidade de Documentação
+    <div className="space-y-4">
+      <div className="border-b pb-4" style={{ borderColor: "var(--bi-line)" }}>
+        <h1 className="flex items-center gap-2 text-2xl font-bold text-base-content">
+          <ShieldCheck className="size-6" style={{ color: "var(--bi-muted)" }} />
+          Regularidade de Documentação
         </h1>
-        <p className="text-sm text-base-content/60 mt-1">
+        <p className="mt-1 text-sm" style={{ color: "var(--bi-muted)" }}>
           Exigências para assinar convênio nas duas esferas: <strong>CAUC</strong> (União,
           Tesouro Nacional) e <strong>CAGEC</strong> (Minas Gerais, SIGCON).
         </p>
       </div>
 
-      {!municipioId && (
-        <div className="rounded-2xl border border-base-300 bg-base-100 p-8 text-center text-base-content/60">
-          Selecione um município para ver a situação.
+      {!municipioId && <Vazio>Selecione um município para ver a situação.</Vazio>}
+
+      {municipioId && loading && (
+        <div className="flex justify-center py-16">
+          <Loader2 className="size-6 animate-spin" style={{ color: "var(--bi-muted)" }} />
         </div>
       )}
 
-      {municipioId && loading && (
-        <div className="flex justify-center py-16"><Loader2 className="size-8 animate-spin text-primary" /></div>
-      )}
-
       {municipioId && !loading && (
-        <div className="grid gap-5 xl:grid-cols-2">
+        <div className="grid gap-4 xl:grid-cols-2">
           {/* ---------------- CAUC (federal) ---------------- */}
-          <section className="space-y-3">
+          <section className="space-y-2.5">
             <div className="flex flex-wrap items-baseline gap-x-2">
-              <h2 className="text-lg font-bold">CAUC — União</h2>
-              <span className="text-xs text-base-content/50">
+              {/* 14px é o tamanho de título do <BlocoHead>: este h2 encabeça a
+                  coluna inteira e tem que ler como cabeçalho do sistema, não
+                  como um degrau próprio. 15px não existia em nenhuma outra tela. */}
+              <h2 className="bi-title text-[14px]">CAUC — União</h2>
+              <span className="text-[10px]" style={{ color: "var(--bi-faint)" }}>
                 Tesouro Nacional{cauc?.data_pesquisa ? ` · pesquisa de ${fmtDate(cauc.data_pesquisa)}` : ""}
               </span>
             </div>
 
             {!cauc?.tem_dados ? (
-              <div className="rounded-2xl border border-base-300 bg-base-100 p-6 text-center text-sm text-base-content/60">
+              <Vazio>
                 Sem dados do CAUC para este município ainda. (A base é atualizada automaticamente.)
-              </div>
+              </Vazio>
             ) : (
               <>
                 <Situacao
@@ -455,7 +539,7 @@ export default function RegularidadePage() {
                     : ` — itens ${(cauc.pendencias_codigos || []).join(", ")} podem travar transferências.`)}
                 />
                 <Exigencias itens={cauc.itens || []} esfera="cauc" />
-                <p className="text-xs text-base-content/40">
+                <p className="text-[10px]" style={{ color: "var(--bi-faint)" }}>
                   Atualizado em {fmtDate(cauc.atualizado_em)}.
                 </p>
               </>
@@ -463,10 +547,10 @@ export default function RegularidadePage() {
           </section>
 
           {/* ---------------- CAGEC (estadual / MG) ---------------- */}
-          <section className="space-y-3">
+          <section className="space-y-2.5">
             <div className="flex flex-wrap items-baseline gap-x-2">
-              <h2 className="text-lg font-bold">CAGEC — Minas Gerais</h2>
-              <span className="text-xs text-base-content/50">
+              <h2 className="bi-title text-[14px]">CAGEC — Minas Gerais</h2>
+              <span className="text-[10px]" style={{ color: "var(--bi-faint)" }}>
                 SIGCON-MG{cagec?.data_pesquisa ? ` · pesquisa de ${fmtDate(cagec.data_pesquisa)}` : ""}
               </span>
             </div>
@@ -475,12 +559,12 @@ export default function RegularidadePage() {
               /* Aguardando coleta — e dizendo POR QUÊ. Deixar em branco faria
                  parecer que não existe regularidade estadual a acompanhar;
                  pintar de verde seria pior, porque seria lido como "em dia". */
-              <div className="rounded-2xl border border-warning/30 bg-warning/5 p-6">
-                <div className="flex items-start gap-3">
-                  <Clock className="size-6 shrink-0 text-warning" />
-                  <div className="space-y-2">
-                    <div className="font-semibold text-base-content">Aguardando coleta</div>
-                    <p className="text-sm text-base-content/70">
+              <Bloco className="p-4">
+                <div className="flex items-start gap-2.5">
+                  <Clock className="mt-0.5 size-4 shrink-0" style={{ color: "var(--bi-warn-ink)" }} />
+                  <div className="space-y-1.5">
+                    <div className="bi-title text-[13px] leading-tight">Aguardando coleta</div>
+                    <p className="text-[11px] leading-snug" style={{ color: "var(--bi-muted)" }}>
                       {cagec?.motivo
                         || "O CAGEC deste município ainda não foi coletado."}
                     </p>
@@ -488,7 +572,7 @@ export default function RegularidadePage() {
                         é pública e basta o CNPJ. Mandar o gestor cadastrar senha
                         aqui seria trabalho inútil. O que falta, quando falta, é o
                         CNPJ do município nas bases. */}
-                    <p className="text-xs text-base-content/50">
+                    <p className="text-[10px] leading-snug" style={{ color: "var(--bi-faint)" }}>
                       A consulta do CAGEC é pública e usa o CNPJ do município — não
                       depende de senha. Se o CNPJ ainda não foi identificado nas bases,
                       a coleta o encontra assim que houver emenda estadual ou registro
@@ -496,7 +580,7 @@ export default function RegularidadePage() {
                     </p>
                   </div>
                 </div>
-              </div>
+              </Bloco>
             ) : (
               <>
                 <Situacao
@@ -522,7 +606,7 @@ export default function RegularidadePage() {
                   doCrc={cagec.detalhe_do_crc} />
                 <Exigencias itens={cagec.itens || []} esfera="cagec" />
                 <OutrasEntidades entidades={cagec.entidades || []} />
-                <p className="text-xs text-base-content/40">
+                <p className="text-[10px]" style={{ color: "var(--bi-faint)" }}>
                   Atualizado em {fmtDate(cagec.atualizado_em)}.
                   {cagec.crc_em && (
                     <> Documentos conferidos no CRC de {fmtDate(cagec.crc_em)}.</>
@@ -535,7 +619,10 @@ export default function RegularidadePage() {
       )}
 
       {municipioId && !loading && (
-        <p className="text-xs text-base-content/40">
+        <div
+          className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px]"
+          style={{ color: "var(--bi-faint)" }}
+        >
           {/* A legenda espelha as PALAVRAS dos dois documentos, porque cada
               esfera usa o seu vocabulario e a tela existe para ser conferida
               contra o extrato. NUNCA escrever "nao exigido" para o Desativado:
@@ -543,15 +630,29 @@ export default function RegularidadePage() {
               os entes federativos". O caso que prova e o FGTS — item 1.3,
               desativado no CAUC, e ao mesmo tempo VENCIDO no CAGEC na coluna ao
               lado, travando convenio estadual. */}
-          <span className="font-semibold">CAUC:</span>{" "}
-          <span className="text-success">✔ Comprovado</span> ·
-          <span className="text-error"> ⚠ A Comprovar (impeditivo)</span> ·
-          <span className="text-base-content/40"> ⊘ Desativado (indisponível na fonte — não é dispensa)</span>
-          {"  ·  "}
-          <span className="font-semibold">CAGEC:</span>{" "}
-          <span className="text-success">✔ Vigente</span> ·
-          <span className="text-error"> ⚠ Vencido (impeditivo)</span>.
-        </p>
+          <span className="font-semibold" style={{ color: "var(--bi-muted)" }}>CAUC:</span>
+          <span className="inline-flex items-center gap-1">
+            <Check className="size-3" style={{ color: "var(--bi-muted)" }} /> Comprovado
+          </span>
+          <span className="inline-flex items-center gap-1" style={{ color: "var(--bi-crit-ink)" }}>
+            <AlertCircle className="size-3" /> A Comprovar (impeditivo)
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <Ban className="size-3" /> Desativado (indisponível na fonte — não é dispensa)
+          </span>
+          <span className="font-semibold" style={{ color: "var(--bi-muted)" }}>CAGEC:</span>
+          <span className="inline-flex items-center gap-1">
+            <Check className="size-3" style={{ color: "var(--bi-muted)" }} /> Vigente
+          </span>
+          <span className="inline-flex items-center gap-1" style={{ color: "var(--bi-crit-ink)" }}>
+            <AlertTriangle className="size-3" /> Vencido (impeditivo)
+          </span>
+          {/* Entrada nova, e não decoração: a linha em amarelo aparece na tela
+              desde o `venceu()` e não tinha legenda nenhuma. */}
+          <span className="inline-flex items-center gap-1" style={{ color: "var(--bi-warn-ink)" }}>
+            <Clock className="size-3" /> Prazo vencido (validade passou depois da leitura)
+          </span>
+        </div>
       )}
     </div>
   );

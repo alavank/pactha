@@ -232,8 +232,13 @@ export function Lista({ children, className = "" }: {
 export interface Campo {
   rotulo: string;
   valor: React.ReactNode;
-  /** Destaque quando o campo é o que exige ação (prazo estourado, não pago). */
-  tom?: "normal" | "ok" | "atencao" | "critico";
+  /** Destaque quando o campo é o que exige ação (prazo estourado, não pago).
+   *
+   *  Aceita "neutro" e "normal" como sinônimos de propósito: `Selo` fala
+   *  "neutro" e este componente nasceu falando "normal", e uma tela já teve de
+   *  escrever um adaptador só para traduzir entre os dois. Vocabulário diferente
+   *  para o mesmo conceito é defeito da peça, não da tela que a usa. */
+  tom?: "normal" | "neutro" | "ok" | "atencao" | "critico";
   title?: string;
 }
 
@@ -275,7 +280,7 @@ export function Campos({ campos, cols }: { campos: Campo[]; cols?: number }) {
                 c.tom === "critico" ? "var(--bi-crit-ink)"
                 : c.tom === "atencao" ? "var(--bi-warn-ink)"
                 : c.tom === "ok" ? "var(--bi-ok-ink)"
-                : "var(--bi-text)",
+                : "var(--bi-text)",   // "normal" e "neutro" caem aqui
             }}
           >
             {c.valor}

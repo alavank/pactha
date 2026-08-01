@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { Activity, RefreshCw, Loader2 } from "lucide-react";
 import api from "@/lib/api";
+import { Campos, ItemLinha, Lista, Selo } from "@/components/ui/superficies";
 import { Button } from "@/components/ui/button";
 
 interface Fonte {
@@ -15,11 +16,14 @@ interface Fonte {
   status: "fresco" | "atrasado" | "critico" | "desconhecido";
 }
 
-const STATUS_STYLE: Record<string, { cls: string; label: string }> = {
-  fresco: { cls: "bg-success/15 text-success", label: "Fresco" },
-  atrasado: { cls: "bg-warning/15 text-warning", label: "Atrasado" },
-  critico: { cls: "bg-error/15 text-error", label: "Crítico" },
-  desconhecido: { cls: "bg-base-300 text-base-content/60", label: "?" },
+const STATUS_TOM: Record<string, { tom: "neutro" | "ok" | "atencao" | "critico"; label: string }> = {
+  // "Fresco" e o estado NORMAL de quase toda fonte — vira cinza. Numa tela em
+  // que 15 de 17 linhas estavam verdes, o verde nao dizia nada e as duas que
+  // importavam disputavam atencao com ele.
+  fresco: { tom: "neutro", label: "Fresco" },
+  atrasado: { tom: "atencao", label: "Atrasado" },
+  critico: { tom: "critico", label: "Crítico" },
+  desconhecido: { tom: "neutro", label: "Sem informação" },
 };
 
 function fmtDt(iso: string | null): string {
@@ -70,7 +74,7 @@ export default function FrescorPage() {
       <div className="flex items-start justify-between gap-3 border-b border-base-300 pb-4">
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-bold text-base-content">
-            <Activity className="size-6 text-primary" />
+            <Activity className="size-6" style={{ color: "var(--bi-accent-ink)" }} />
             Frescor dos Dados
           </h1>
           <p className="mt-1 text-sm text-base-content/60">
@@ -84,7 +88,12 @@ export default function FrescorPage() {
         </Button>
       </div>
 
-      {erro && <div className="rounded-lg border border-error bg-error/15 p-3 text-sm text-error">{erro}</div>}
+      {erro && (
+        <div className="rounded-2xl p-3 text-sm"
+          style={{ background: "color-mix(in oklab, var(--bi-crit) 12%, transparent)", color: "var(--bi-crit-ink)" }}>
+          {erro}
+        </div>
+      )}
 
       {!erro && (
         <>
@@ -93,48 +102,38 @@ export default function FrescorPage() {
               {geradoEm && <>Gerado em {fmtDt(geradoEm)} · </>}
               <strong>{fontes.length}</strong> fontes
             </span>
-            {criticos > 0 && <span className="text-error font-medium">{criticos} crítico(s)</span>}
-            {atrasados > 0 && <span className="text-warning font-medium">{atrasados} atrasado(s)</span>}
+            {criticos > 0 && <span className="font-medium" style={{ color: "var(--bi-crit-ink)" }}>{criticos} crítico(s)</span>}
+            {atrasados > 0 && <span className="font-medium" style={{ color: "var(--bi-warn-ink)" }}>{atrasados} atrasado(s)</span>}
           </div>
 
-          <div className="overflow-x-auto rounded-lg border border-base-300 bg-base-100">
-            <table className="min-w-full text-sm">
-              <thead className="bg-base-200 text-base-content/70">
-                <tr className="[&>th]:px-3 [&>th]:py-2 [&>th]:text-left [&>th]:font-semibold">
-                  <th>Fonte</th>
-                  <th>Status</th>
-                  <th>Idade</th>
-                  <th>Último dado</th>
-                  <th>Última coleta</th>
-                  <th className="text-right">Registros</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading && fontes.length === 0 && (
-                  <tr><td colSpan={6} className="p-6 text-center"><Loader2 className="inline size-5 animate-spin text-primary" /></td></tr>
-                )}
-                {fontes.map((f) => {
-                  const st = STATUS_STYLE[f.status] || STATUS_STYLE.desconhecido;
-                  return (
-                    <tr key={f.fonte} className="border-t border-base-300 even:bg-base-200/40">
-                      <td className="px-3 py-2 font-medium text-base-content">{f.fonte}</td>
-                      <td className="px-3 py-2">
-                        <span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ${st.cls}`}>
-                          {st.label}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2 text-base-content/70">{fmtIdade(f.idade_dias)}</td>
-                      <td className="px-3 py-2 text-base-content/60">{fmtDt(f.ultimo_dado)}</td>
-                      <td className="px-3 py-2 text-base-content/60">{fmtDt(f.ultima_coleta)}</td>
-                      <td className="px-3 py-2 text-right text-base-content/70">
-                        {f.registros != null ? f.registros.toLocaleString("pt-BR") : "—"}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          {loading && fontes.length === 0 ? (
+            <div className="space-y-1.5">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="h-14 animate-pulse rounded-2xl" style={{ background: "var(--bi-surface-2)" }} />
+              ))}
+            </div>
+          ) : (
+            <Lista>
+              {fontes.map((f) => {
+                const st = STATUS_TOM[f.status] || STATUS_TOM.desconhecido;
+                return (
+                  <ItemLinha
+                    key={f.fonte}
+                    titulo={f.fonte}
+                    valor={f.registros != null ? f.registros.toLocaleString("pt-BR") : "—"}
+                    meta={<><Selo tom={st.tom}>{st.label}</Selo><span>{fmtIdade(f.idade_dias)}</span></>}
+                  >
+                    <Campos
+                      campos={[
+                        { rotulo: "Último dado", valor: fmtDt(f.ultimo_dado) },
+                        { rotulo: "Última coleta", valor: fmtDt(f.ultima_coleta) },
+                      ]}
+                    />
+                  </ItemLinha>
+                );
+              })}
+            </Lista>
+          )}
         </>
       )}
     </div>

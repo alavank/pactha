@@ -86,12 +86,6 @@ const SITUACOES_PA_LABEL: Record<string, string> = Object.fromEntries(
 );
 
 
-/** O mesmo julgamento traduzido para <Campos>, que chama de "normal" o que o
- *  <Selo> chama de "neutro". Sao pecas diferentes com vocabulario proprio. */
-function situacaoTomCampo(s?: string | null): "normal" | "ok" | "atencao" | "critico" {
-  const t = situacaoTom(s);
-  return t === "neutro" ? "normal" : t;
-}
 
 export default function TransfereGovPage() {
   const { municipioId } = useMunicipio();
@@ -344,7 +338,7 @@ export default function TransfereGovPage() {
                     {
                       rotulo: "Situação do plano de trabalho",
                       valor: p.situacao_plano_trabalho || "—",
-                      tom: situacaoTomCampo(p.situacao_plano_trabalho),
+                      tom: situacaoTom(p.situacao_plano_trabalho),
                       title: p.situacao_plano_trabalho,
                     },
                     { rotulo: "Custeio", valor: formatCurrency(p.valor_custeio) },
