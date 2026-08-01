@@ -516,6 +516,25 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
                         prop["processo_execucao_qtd"] = _qtd
                 except Exception as e:
                     logger.warning(f"    proc.exec {prop['numero_proposta']}: {str(e)[:80]}")
+            # OPs/OBs (repasses/desembolsos) e OBRAS (acompanhamento/medicao).
+            # Ambas GUEST (nao exigem sessao gov.br), mas cada uma navega o portal
+            # por instrumento (~alguns s) — pesado no host burstable. Por isso a
+            # coleta e ligada por env TG_OPS_OBS=1, hoje so no siao-worker
+            # (ativado so p/ SIAO; os demais tenants nao gastam CPU com isto).
+            _ops_obs_on = (os.getenv("TG_OPS_OBS", "0") or "0").strip() == "1"
+            if _idp and _ops_obs_on:
+                try:
+                    _oo = await _extrai_ops_obs(detail_page)
+                    if _oo is not None:
+                        prop["ops_obs"] = _oo
+                except Exception as e:
+                    logger.warning(f"    ops_obs {prop['numero_proposta']}: {str(e)[:80]}")
+                try:
+                    _ob = await _extrai_obras(detail_page, _idp)
+                    if _ob is not None:
+                        prop["obras"] = _ob
+                except Exception as e:
+                    logger.warning(f"    obras {prop['numero_proposta']}: {str(e)[:80]}")
             # Historico de Comunicacoes + Termos de Notificacao (Projeto Basico /
             # mandatarias). SO com sessao gov.br viva (area /private/).
             if page_auth is not None and _idp and _hist_budget > 0:
@@ -766,6 +785,230 @@ async def _conta_processo_execucao(page) -> int | None:
         }""")
     except Exception:
         return None
+
+
+def _num_br(s):
+    """'R$ 2.800.000,00' -> 2800000.0 ; None se não numérico."""
+    if s is None:
+        return None
+    t = re.sub(r"[^\d,.-]", "", str(s)).replace(".", "").replace(",", ".")
+    try:
+        return float(t) if t not in ("", "-", ".") else None
+    except ValueError:
+        return None
+
+
+async def _extrai_ops_obs(page) -> dict | None:
+    """OPs/OBs (Execução Concedente -> OPs/OBs -> Listagem de Repasses). GUEST.
+
+    Pré-condição: `page` está no DETALHE da proposta (contexto do convênio setado).
+    Lê o resumo (Valor Total de Repasse / Desembolsado / A Desembolsar / Data do
+    último desembolso) e, clicando em 'OPs / OBs GERCOMP Efetuadas', as ordens
+    bancárias (NS/OP/OB, valor, situação, data). Retorna dict ou None (sem
+    contexto / sessão caiu). {} quando o convênio não tem repasses."""
+    rep_url = ("https://discricionarias.transferegov.sistema.gov.br/voluntarias/"
+               "ForwardAction.do?modulo=proposta&path=/SelecionarConvenio/"
+               "SelecionarConvenio.do?destino=ListarRepasses")
+    if not await _goto_with_retry(page, rep_url, timeout=40000):
+        return None
+    await page.wait_for_timeout(800)
+    if "idp.transferegov" in (page.url or ""):
+        return None
+    if not await page.locator("text=/Listagem de Repasses/i").count():
+        return None
+    resumo = await page.evaluate("""() => {
+        for (const t of document.querySelectorAll('table')) {
+            if (/Valor Total de Repasse/i.test(t.innerText || '')) {
+                const trs = [...t.querySelectorAll('tr')];
+                for (const tr of trs) {
+                    const c = [...tr.querySelectorAll('td')].map(x => x.innerText.trim());
+                    if (c.length >= 4 && /R\\$/.test(c[0])) return c.slice(0, 4);
+                }
+            }
+        }
+        return null;
+    }""")
+    # _num_br roda em Python (page.evaluate devolve só as strings da tabela)
+    out = {}
+    if resumo:
+        out = {
+            "valor_total_repasse": _num_br(resumo[0]),
+            "valor_desembolsado": _num_br(resumo[1]),
+            "valor_a_desembolsar": _num_br(resumo[2]),
+            "data_ultimo_desembolso": (resumo[3] or "").strip() or None,
+            "obs": [],
+        }
+    # GERCOMP -> ordens bancárias detalhadas
+    try:
+        g = page.locator("input[value*='GERCOMP' i], a:has-text('GERCOMP')").first
+        if await g.count():
+            await g.click(timeout=8000)
+            await page.wait_for_timeout(1200)
+            det = await page.evaluate("""() => {
+                const res = {resumo: {}, obs: []};
+                for (const t of document.querySelectorAll('table')) {
+                    const txt = t.innerText || '';
+                    if (/Valor Previsto/i.test(txt) && /Valor Desembolsado/i.test(txt) && t.querySelectorAll('tr').length <= 4) {
+                        for (const tr of t.querySelectorAll('tr')) {
+                            const c = [...tr.querySelectorAll('td')].map(x => x.innerText.trim());
+                            if (c.length === 2) res.resumo[c[0]] = c[1];
+                        }
+                    }
+                    if (/N[úu]mero da OB/i.test(txt)) {
+                        const rows = [...t.querySelectorAll('tr')];
+                        for (const tr of rows) {
+                            const c = [...tr.querySelectorAll('td')].map(x => x.innerText.trim());
+                            if (c.length >= 10 && /\\dOB\\d|OB\\d/i.test(c[3] || '')) {
+                                res.obs.push(c);
+                            }
+                        }
+                    }
+                }
+                return res;
+            }""")
+            r = det.get("resumo") or {}
+            if not out:
+                out = {"obs": []}
+            out.setdefault("valor_total_repasse", _num_br(r.get("Valor Previsto")))
+            if out.get("valor_desembolsado") is None:
+                out["valor_desembolsado"] = _num_br(r.get("Valor Desembolsado"))
+            if out.get("valor_a_desembolsar") is None:
+                out["valor_a_desembolsar"] = _num_br(r.get("Valor a Desembolsar"))
+            for c in det.get("obs") or []:
+                out["obs"].append({
+                    "numero_interno": c[0], "numero_ns": c[1], "numero_op": c[2],
+                    "numero_ob": c[3], "ug_emitente": c[4], "gestao_emitente": c[5],
+                    "valor": _num_br(c[6]), "valor_acerto": _num_br(c[7]),
+                    "situacao": c[8], "data_emissao_ob": c[9],
+                })
+    except Exception:
+        pass
+    return out or {}
+
+
+async def _extrai_obras(page, id_proposta: str) -> dict | None:
+    """OBRAS (Acompanhamento de Obras / medicao). Guest — a sessão Acesso Livre
+    da discricionarias vale no medicao. Usa a API JSON /medicao-backend/...:
+      - propostas/{id}/contratoslotes  -> lotes/CTEF + submetas
+      - proposta/{id}/situacaoParalisacao
+      - contratos/{idc}                -> dados do contrato + empresa
+      - contratos/{idc}/arts/          -> ART/RRT
+    Retorna dict com lotes (ou {} sem obras) ou None se não autenticou."""
+    med = "https://medicao.transferegov.sistema.gov.br"
+    base = f"{med}/medicao/acompanhamento/proposta/{id_proposta}"
+    # A API do medicao exige o TOKEN que o SPA injeta (fetch cru dá 403 "sem
+    # perfil"). Então NÃO chamamos a API direto: deixamos o próprio SPA chamar e
+    # capturamos as respostas JSON via listener. A sessão Acesso Livre da
+    # discricionarias autentica o SPA.
+    capt: dict = {}
+
+    async def _on_resp(resp):
+        u = resp.url
+        if "/medicao-backend/" not in u or "integrations" in u:
+            return
+        try:
+            if "json" in (resp.headers.get("content-type") or ""):
+                capt[u.split("/medicao-backend")[-1]] = await resp.json()
+        except Exception:
+            pass
+
+    page.on("response", _on_resp)
+    try:
+        try:
+            await page.goto(base, timeout=55000, wait_until="networkidle")
+        except Exception:
+            await page.goto(base, timeout=55000, wait_until="domcontentloaded")
+        await page.wait_for_timeout(4000)
+        if "idp.transferegov" in (page.url or ""):
+            return None  # sessão Acesso Livre não autenticou o medicao
+
+        def _find(sufixo):
+            for k, v in capt.items():
+                if k.endswith(sufixo) or sufixo in k:
+                    return v
+            return None
+
+        cl = _find(f"/propostas/{id_proposta}/contratoslotes")
+        if not isinstance(cl, dict):
+            return None
+        data = cl.get("data") or {}
+
+        # ART/RRT: navega a tela artrrt de cada contrato p/ o SPA disparar /arts/
+        for cont in (data.get("contratosLotes") or []):
+            if cont.get("tipo") == "C" and cont.get("id"):
+                art_url = f"{base}/contrato/{cont['id']}/config/artrrt/listar"
+                try:
+                    await page.goto(art_url, timeout=45000, wait_until="networkidle")
+                    await page.wait_for_timeout(2500)
+                except Exception:
+                    pass
+    finally:
+        page.remove_listener("response", _on_resp)
+
+    par = capt.get(f"/proposta/{id_proposta}/situacaoParalisacao")
+    par_desc = ((par or {}).get("data") or {}).get("descricao") if isinstance(par, dict) else None
+
+    lotes = []
+    for cont in (data.get("contratosLotes") or []):
+        idc = cont.get("id")
+        lote = {
+            "tipo": cont.get("tipo"), "numero": cont.get("numero"),
+            "id_contrato": idc, "apto_iniciar": cont.get("aptoIniciar"),
+            "atrasado": cont.get("atrasado"), "paralisado": cont.get("paralisado"),
+            "dias_sem_medicao": cont.get("qtdeDiasSemMedicao"),
+            "submetas": [{
+                "numero": s.get("numero"), "descricao": s.get("descricao"),
+                "situacao": s.get("situacao"), "regime_execucao": s.get("regimeExecucao"),
+                "valor": s.get("valorSubmeta"), "valor_realizado": s.get("valorRealizadoAcumulado"),
+            } for s in (cont.get("submetas") or [])],
+            "contrato": None, "arts": [],
+        }
+        if cont.get("tipo") == "C" and idc:
+            cd = capt.get(f"/contratos/{idc}")
+            cdd = (cd or {}).get("data") if isinstance(cd, dict) else None
+            if cdd:
+                emp = None
+                fid = cdd.get("fornecedorId")
+                if fid:
+                    ed = capt.get(f"/empresas/{fid}")
+                    emp = ((ed or {}).get("data") or {}).get("razaoSocial") if isinstance(ed, dict) else None
+                # O medicao devolve valorContrato como decimal US ("2562000.00"),
+                # NÃO no formato BR — float() direto (nada de _num_br aqui).
+                vc = cdd.get("valorContrato")
+                try:
+                    vc = float(vc) if vc not in (None, "") else None
+                except (TypeError, ValueError):
+                    vc = None
+                lote["contrato"] = {
+                    "numero": cdd.get("numeroContrato"), "cnpj": cdd.get("cnpj"),
+                    "empresa": emp or cdd.get("nomeConvenente"),
+                    "objeto": cdd.get("nomeObjetoContratoFornecimento"),
+                    "valor": vc,
+                    "dt_assinatura": cdd.get("dtAssinatura"),
+                    "dt_inicio_vigencia": cdd.get("dtInicioVigencia"),
+                    "dt_fim_vigencia": cdd.get("dtFimVigencia"),
+                }
+            ar = capt.get(f"/contratos/{idc}/arts/") or capt.get(f"/contratos/{idc}/arts")
+            ard = (ar or {}).get("data") if isinstance(ar, dict) else None
+            for a in (ard or []):
+                lote["arts"].append({
+                    "tipo": a.get("tipo"), "numero": a.get("numeroArt") or a.get("numero"),
+                    "dt_emissao": a.get("dtEmissao"),
+                    "responsavel_tecnico": a.get("nomeResponsavelTecnico") or a.get("responsavelTecnico"),
+                    "submetas": a.get("submetas"),
+                })
+        lotes.append(lote)
+
+    if not lotes:
+        return {}
+    ti = data.get("tipoInstrumento") or {}
+    return {
+        "situacao_paralisacao": par_desc,
+        "valor_total_submetas": data.get("valorTotalSubmetas"),
+        "valor_total_realizado": data.get("valorTotalRealizado"),
+        "objeto": ti.get("nomeObjetoContratoRepasse"),
+        "lotes": lotes,
+    }
 
 
 async def _extrai_parlamentar(page) -> str | None:
@@ -1047,8 +1290,9 @@ def _upsert(mun_id: int, propostas: list[dict]):
                  clausula_suspensiva_motivo, parlamentar, situacao_contratacao_detalhe,
                  id_proposta_siconv, processo_execucao_qtd,
                  historico_comunicacoes, documentos_quadro_resumo, historico_atualizado_em,
+                 ops_obs, obras,
                  detalhe, raw_data, updated_at)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s::jsonb,%s::jsonb,%s,%s::jsonb,%s::jsonb,NOW())
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s::jsonb,%s::jsonb,%s,%s::jsonb,%s::jsonb,%s::jsonb,%s::jsonb,NOW())
             ON CONFLICT (municipio_id, numero_proposta) DO UPDATE SET
                 situacao=EXCLUDED.situacao, orgao=EXCLUDED.orgao,
                 proponente=EXCLUDED.proponente, possui_parecer=EXCLUDED.possui_parecer,
@@ -1071,6 +1315,8 @@ def _upsert(mun_id: int, propostas: list[dict]):
                 historico_comunicacoes=COALESCE(EXCLUDED.historico_comunicacoes, transferegov_propostas.historico_comunicacoes),
                 documentos_quadro_resumo=COALESCE(EXCLUDED.documentos_quadro_resumo, transferegov_propostas.documentos_quadro_resumo),
                 historico_atualizado_em=COALESCE(EXCLUDED.historico_atualizado_em, transferegov_propostas.historico_atualizado_em),
+                ops_obs=COALESCE(EXCLUDED.ops_obs, transferegov_propostas.ops_obs),
+                obras=COALESCE(EXCLUDED.obras, transferegov_propostas.obras),
                 detalhe=COALESCE(EXCLUDED.detalhe, transferegov_propostas.detalhe),
                 raw_data=EXCLUDED.raw_data, updated_at=NOW()
         """, (mun_id, p["numero_proposta"][:20], p["situacao"][:300], p["orgao"][:300],
@@ -1091,6 +1337,8 @@ def _upsert(mun_id: int, propostas: list[dict]):
               (json.dumps(p["documentos_quadro_resumo"], ensure_ascii=False)
                if p.get("documentos_quadro_resumo") else None),
               (_dt_now() if (p.get("historico_comunicacoes") or p.get("documentos_quadro_resumo")) else None),
+              (json.dumps(p["ops_obs"], ensure_ascii=False) if p.get("ops_obs") else None),
+              (json.dumps(p["obras"], ensure_ascii=False) if p.get("obras") else None),
               (json.dumps(det, ensure_ascii=False) if det else None), json.dumps(p, ensure_ascii=False)))
         ins += 1
     conn.commit(); cur.close(); conn.close()
