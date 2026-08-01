@@ -181,7 +181,7 @@ export default function TransfereGovPage() {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="text-2xl font-bold text-base-content">Plano de Ação - TransfereGov</h1>
-          <p className="text-sm text-base-content/60">Transferencia Especial Federal (Pix Parlamentar)</p>
+          <p className="text-sm text-base-content/60">Transferência Especial Federal (Pix Parlamentar)</p>
         </div>
         <div className="text-xs text-base-content/60">
           {cacheAge > 0 && `Cache: ${Math.floor(cacheAge / 60)}min`}
@@ -207,7 +207,7 @@ export default function TransfereGovPage() {
             />
           </div>
           <div>
-            <label className="text-xs text-base-content/70 mb-1 block">Programa (codigo)</label>
+            <label className="text-xs text-base-content/70 mb-1 block">Programa (código)</label>
             <Input value={programa} onChange={(e) => setPrograma(e.target.value)} placeholder="Ex: 09032022" />
           </div>
           <div>
@@ -215,12 +215,12 @@ export default function TransfereGovPage() {
             <Input value={parlamentar} onChange={(e) => setParlamentar(e.target.value)} placeholder="Ex: LUIS TIBE" />
           </div>
           <div>
-            <label className="text-xs text-base-content/70 mb-1 block">Emenda Parlamentar (codigo)</label>
+            <label className="text-xs text-base-content/70 mb-1 block">Emenda Parlamentar (código)</label>
             <Input value={emenda} onChange={(e) => setEmenda(e.target.value)} placeholder="Ex: 202241760007" />
           </div>
           <div>
-            <label className="text-xs text-base-content/70 mb-1 block">Objeto/Politica Publica</label>
-            <Input value={objeto} onChange={(e) => setObjeto(e.target.value)} placeholder="Ex: Urbanismo, Saude" />
+            <label className="text-xs text-base-content/70 mb-1 block">Objeto/Política Pública</label>
+            <Input value={objeto} onChange={(e) => setObjeto(e.target.value)} placeholder="Ex: Urbanismo, Saúde" />
           </div>
         </div>
         <div className="flex justify-end gap-2 mt-3">

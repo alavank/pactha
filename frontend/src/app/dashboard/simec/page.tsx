@@ -111,7 +111,7 @@ export default function SimecPage() {
   );
 
   if (!municipioId) {
-    return <div className="flex h-64 items-center justify-center text-muted-foreground">Selecione um municipio.</div>;
+    return <div className="flex h-64 items-center justify-center text-muted-foreground">Selecione um município.</div>;
   }
 
   return (
@@ -220,7 +220,7 @@ export default function SimecPage() {
           <div className="bg-base-100 border rounded p-3 grid gap-3 md:grid-cols-4">
             <MultiSelect opcoes={anoOptions} valor={anosSel} onChange={setAnosSel} atalhos={atalhosAnos()} placeholder="Todos os anos" rotuloTodos="Todos" formatarResumo={resumoAnos} ariaLabel="Anos" />
             <MultiSelect opcoes={progOptions} valor={progsSel} onChange={setProgsSel} placeholder="Todos os programas" rotuloTodos="Todos" ariaLabel="Programas" />
-            <Input placeholder="Buscar descricao/OB" value={search} onChange={(e) => setSearch(e.target.value)} />
+            <Input placeholder="Buscar descrição/OB" value={search} onChange={(e) => setSearch(e.target.value)} />
             <Button variant="outline" onClick={() => { setAnosSel([]); setProgsSel([]); setSearch(""); }}>Limpar</Button>
           </div>
 
@@ -237,7 +237,7 @@ export default function SimecPage() {
                   <TableRow className="[&>th]:py-1.5 [&>th]:px-2 [&>th]:font-semibold [&>th]:text-[11px] bg-primary/10">
                     <TableHead className="w-[90px]">Data Pgto</TableHead>
                     <TableHead className="w-[70px]">Programa</TableHead>
-                    <TableHead>Descricao</TableHead>
+                    <TableHead>Descrição</TableHead>
                     <TableHead className="w-[80px]">OB</TableHead>
                     <TableHead className="w-[110px] text-right">Valor</TableHead>
                     <TableHead className="w-[110px]">Banco / Ag.</TableHead>

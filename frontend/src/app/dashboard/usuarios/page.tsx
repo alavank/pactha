@@ -48,7 +48,7 @@ function MunicipioPicker({
   onToggle: (id: number) => void;
 }) {
   if (municipios.length === 0) {
-    return <p className="text-xs text-base-content/50">Nenhum municipio disponivel.</p>;
+    return <p className="text-xs text-base-content/50">Nenhum município disponível.</p>;
   }
   return (
     <div className="flex flex-wrap gap-1.5">
@@ -248,7 +248,7 @@ export default function UsuariosPage() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-2xl font-bold text-base-content">Usuarios</h1>
+        <h1 className="text-2xl font-bold text-base-content">Usuários</h1>
         <p className="text-sm text-base-content/60">Gerenciamento de acessos a plataforma PACTHA</p>
       </div>
 
@@ -294,7 +294,7 @@ export default function UsuariosPage() {
             <Building2 className="size-3.5" /> Municipios com acesso
           </label>
           {novoRole === "admin" ? (
-            <p className="text-xs text-base-content/50 italic">Administrador enxerga todos os municipios.</p>
+            <p className="text-xs text-base-content/50 italic">Administrador enxerga todos os municípios.</p>
           ) : (
             <MunicipioPicker municipios={municipios} selected={novoMunis} onToggle={toggleNovo} />
           )}
@@ -332,10 +332,10 @@ export default function UsuariosPage() {
                 <TableHead>Nome</TableHead>
                 <TableHead>E-mail</TableHead>
                 <TableHead className="w-[150px]">Perfil</TableHead>
-                <TableHead>Municipios</TableHead>
+                <TableHead>Municípios</TableHead>
                 <TableHead>Telas</TableHead>
                 <TableHead className="w-[90px] text-center">Status</TableHead>
-                <TableHead className="w-[210px] text-center">Acoes</TableHead>
+                <TableHead className="w-[210px] text-center">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -393,7 +393,7 @@ export default function UsuariosPage() {
                   <TableCell>
                     <div className="flex items-center justify-center gap-1">
                       <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => abrirAcesso(u)}
-                              title="Editar municipios com acesso" disabled={u.role === "admin"}>
+                              title="Editar municípios com acesso" disabled={u.role === "admin"}>
                         <Building2 className="size-3 mr-1" /> Acesso
                       </Button>
                       <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => resetarSenha(u)} title="Resetar senha">
@@ -465,7 +465,7 @@ export default function UsuariosPage() {
             </div>
             <div className="p-4 space-y-3">
               <div className="text-sm">
-                <div className="text-base-content/70">Usuario:</div>
+                <div className="text-base-content/70">Usuário:</div>
                 <div className="font-medium">{senhaGerada.name} - {senhaGerada.email}</div>
               </div>
               <div>

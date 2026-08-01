@@ -299,7 +299,7 @@ export default function ConveniosPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-2xl font-bold text-base-content">Convenios (SIGCON-MG)</h1>
+        <h1 className="text-2xl font-bold text-base-content">Convênios (SIGCON-MG)</h1>
         <div className="flex items-center gap-2">
           {refreshMsg && (
             <span className="text-xs text-base-content/70 italic">{refreshMsg}</span>

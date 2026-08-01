@@ -76,7 +76,7 @@ export default function GestaoPage() {
   }, []);
 
   if (!municipioId) {
-    return <div className="flex h-64 items-center justify-center text-muted-foreground">Selecione um municipio.</div>;
+    return <div className="flex h-64 items-center justify-center text-muted-foreground">Selecione um município.</div>;
   }
 
   return (
