@@ -482,6 +482,13 @@ async def _cagec_bloco(db: AsyncSession, ids: list[int]) -> dict:
             "itens": s.get("itens") or [],
             "pendencias": s.get("pendencias") or 0,
             "data_pesquisa": s.get("data_pesquisa"),
+            # Procedencia do detalhamento. Sem isto, o Painel e a TV repetem o
+            # erro que a tela do modulo cometeu em 01/08/2026: exibir as duas
+            # linhas de fallback como se fossem o cadastro inteiro, com o
+            # contador afirmando "2 exigencias" na parede do gabinete.
+            "crc_em": s.get("crc_em"),
+            "crc_erro": s.get("crc_erro"),
+            "detalhe_do_crc": bool(s.get("detalhe_do_crc")),
         })
 
     if not por_municipio:

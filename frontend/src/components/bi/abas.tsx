@@ -550,6 +550,14 @@ function EsferaHead({
  *  O CAGEC não tem coluna de código: aqueles identificadores são NOSSOS (o CRC
  *  não os imprime) e os únicos informativos — os oito "Item 3.1.2 -…" — já vêm
  *  escritos no próprio rótulo. Mostrá-los era duplicar e desalinhar. */
+/** Obrigacao "Vigente" cujo prazo ja passou. Ver o uso em ListaExigencias. */
+function venceuEm(validade?: string | null): boolean {
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec((validade || "").trim());
+  if (!m) return false;
+  const h = new Date();
+  return new Date(+m[3], +m[2] - 1, +m[1]) < new Date(h.getFullYear(), h.getMonth(), h.getDate());
+}
+
 function ListaExigencias({
   itens, tv, esfera = "cauc",
 }: { itens: CaucItemDetalhe[]; tv?: boolean; esfera?: "cauc" | "cagec" }) {
@@ -571,13 +579,23 @@ function ListaExigencias({
         {itens.map((i) => {
           const pendente = i.tipo === "pendente";
           const na = i.tipo === "na";
-          const cor = pendente ? "var(--bi-crit)" : na ? "var(--bi-faint)" : "var(--bi-ok)";
+          // "Vigente" com prazo no passado: so aparece em lista PRESERVADA (o
+          // CRC e de semanas atras e o portal nao emite outro). Verde aqui e o
+          // pior erro possivel numa TV de gabinete — o gestor confia numa
+          // certidao vencida. So no CAGEC: no CAUC a validade e reemitida todo
+          // dia e a de ontem e rotina, nao pendencia.
+          const vencido = esfera === "cagec" && i.tipo === "regular" && venceuEm(i.validade);
+          const cor = pendente ? "var(--bi-crit)"
+            : vencido ? "var(--bi-warn)"
+            : na ? "var(--bi-faint)" : "var(--bi-ok)";
           return (
             <div
               key={i.codigo}
               className={`grid ${cols} items-start gap-x-2 py-[5px]`}
               style={pendente
                 ? { background: "color-mix(in oklab, var(--bi-crit) 12%, transparent)" }
+                : vencido
+                ? { background: "color-mix(in oklab, var(--bi-warn) 12%, transparent)" }
                 : undefined}
             >
               {esfera === "cauc" && (
@@ -607,10 +625,17 @@ function ListaExigencias({
                   ? (esfera === "cagec"
                       ? <AlertTriangle className="size-3 shrink-0" />
                       : <AlertCircle className="size-3 shrink-0" />)
-                  : na
-                    ? <Ban className="size-3 shrink-0" />
-                    : <CheckCircle2 className="size-3 shrink-0" />}
-                <span className="truncate">{i.status || (pendente ? "Pendente" : "—")}</span>
+                  : vencido
+                    ? <CalendarClock className="size-3 shrink-0" />
+                    : na
+                      ? <Ban className="size-3 shrink-0" />
+                      : <CheckCircle2 className="size-3 shrink-0" />}
+                {/* O documento dizia "Vigente" quando foi lido; hoje o prazo
+                    passou. Repetir a palavra do extrato seria transcrever com
+                    fidelidade uma informacao que deixou de ser verdadeira. */}
+                <span className="truncate">
+                  {vencido ? "Prazo vencido" : (i.status || (pendente ? "Pendente" : "—"))}
+                </span>
               </span>
 
               {/* VALIDADE — coluna própria e SEMPRE presente, como no extrato.
@@ -618,7 +643,8 @@ function ListaExigencias({
                   "Desativado"): ausência de data é informação, não buraco. */}
               <span
                 className={`bi-num text-right leading-[1.45] ${tv ? "text-[11px]" : "text-[10px]"}`}
-                style={{ color: pendente ? "var(--bi-crit)" : "var(--bi-faint)" }}
+                style={{ color: pendente ? "var(--bi-crit)"
+                  : vencido ? "var(--bi-warn)" : "var(--bi-faint)" }}
               >
                 {i.validade || (/^\d{2}\/\d{2}\/\d{2,4}$/.test(i.valor || "") ? i.valor : "—")}
               </span>
@@ -672,6 +698,15 @@ export function AbaDocumentosView({
   const pendCagec = (cagec?.itens ?? []).filter((i) => i.tipo === "pendente").length;
   const cagecIrregular = !!cagec && cagec.regular === false;
   const soUmaEsfera = esfera === "cauc" || esfera === "cagec";
+  // DOIS estados diferentes, e a tela precisa distinguir os dois:
+  //  crcAusente — a lista NÃO é o certificado, são as 2 linhas da consulta
+  //               pública. Nada abaixo pode ser contado nem chamado de "em dia".
+  //  crcVelho   — a lista é um certificado de verdade, só que antigo, porque o
+  //               portal parou de emitir. Vale mostrar, com a data na cara.
+  // Gatear pelo erro apenas (como estava) deixaria a tela MUDA nas linhas
+  // gravadas antes da coluna existir, que é o estado de Monte Sião agora.
+  const crcAusente = !!cagec && cagec.detalhe_do_crc === false;
+  const crcVelho = !!cagec && cagec.detalhe_do_crc !== false && !!cagec.crc_erro;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
@@ -688,10 +723,17 @@ export function AbaDocumentosView({
           label="CAGEC — Minas Gerais"
           valor={!cagec ? "Sem coleta" : cagecIrregular ? (cagec.situacao || "Irregular") : "Em dia"}
           sub="convênios estaduais" grande={tv} />
+        {/* Com o CRC indisponivel nao existe denominador: as pendencias do
+            CAGEC sao desconhecidas, e somar as 2 linhas do fallback anunciaria
+            "de 27 exigencias" quando o cadastro estadual tem ~28 sozinho. */}
         <Metric icon={FileCheck2} tom={(primeiro?.itens_pendentes.length || 0) + pendCagec ? "crit" : "ok"}
-          label="Pendências (as duas)"
-          valor={formatInt((primeiro?.itens_pendentes.length || 0) + pendCagec)}
-          sub={`de ${(primeiro?.total_itens ?? 0) + (cagec?.itens?.length ?? 0)} exigências`} grande={tv} />
+          label={crcAusente ? "Pendências no CAUC" : "Pendências (as duas)"}
+          valor={formatInt((primeiro?.itens_pendentes.length || 0)
+                           + (crcAusente ? 0 : pendCagec))}
+          sub={crcAusente
+            ? `de ${primeiro?.total_itens ?? 0} · CAGEC não conferido`
+            : `de ${(primeiro?.total_itens ?? 0) + (cagec?.itens?.length ?? 0)} exigências`}
+          grande={tv} />
         <Metric icon={CalendarClock} label="Última consulta"
           valor={primeiro?.data_pesquisa ? formatDate(primeiro.data_pesquisa) : "—"} grande={tv} />
       </div>
@@ -755,12 +797,47 @@ export function AbaDocumentosView({
               /* "27 exigencias" nao existe em documento nenhum: o CRC tem 24
                  documentos, e as outras 3 linhas (CADIN-MG, SIAFI-MG, mandato)
                  vem do CABECALHO do certificado. Separar por procedencia. */
-              contagem={cagec?.itens?.length
+              contagem={crcAusente
+                /* Sem o CRC, "2 linhas · 2 documentos do CRC" e uma contagem
+                   FALSA numa parede de gabinete: o cadastro tem ~28 obrigacoes
+                   e nos lemos duas. Contagem que nao sabe nao conta. */
+                ? "detalhamento indisponível"
+                : crcVelho
+                ? `documentos de ${formatDate(cagec.crc_em)}`
+                : cagec?.itens?.length
                 ? `${cagec.itens.length} linhas · ${
                     cagec.itens.filter((x) => !["CADIN-MG", "SIAFI-MG", "MANDATO"].includes(x.codigo || "")).length
                   } documentos do CRC`
                 : "aguardando coleta"}
             />
+            {/* Falha do PORTAL do Estado — nao nossa e nao do municipio. Mas
+                quem le a tela precisa saber que a lista abaixo esta incompleta,
+                senao um CAGEC de duas linhas passa por cadastro em dia. */}
+            {(crcAusente || crcVelho) && (
+              <div
+                className="mb-3 flex items-start gap-2 rounded-lg px-3 py-2"
+                style={{ background: "color-mix(in oklab, var(--bi-warn) 15%, transparent)" }}
+              >
+                <Info className="mt-[1px] size-4 shrink-0" style={{ color: "var(--bi-warn)" }} />
+                <p className="text-[11px] leading-snug" style={{ color: "var(--bi-warn)" }}>
+                  {crcAusente ? (
+                    <>
+                      <strong>Documentos não conferidos.</strong> O certificado (CRC),
+                      de onde saem os documentos e suas validades, não pôde ser lido.
+                      Abaixo, apenas o que a consulta pública mostra — não é a lista
+                      de exigências.
+                    </>
+                  ) : (
+                    <>
+                      <strong>Leitura de {formatDate(cagec.crc_em)}.</strong> O portal do
+                      CAGEC não emitiu certificado novo, então a lista abaixo pode estar
+                      desatualizada.
+                    </>
+                  )}
+                  {" "}A situação do cadastro continua atualizada.
+                </p>
+              </div>
+            )}
             {/* Situação em destaque ANTES da lista: irregular no CAGEC trava
                 convênio estadual e pagamento de parcela, e isso não pode ficar
                 escondido no meio de 27 linhas. */}

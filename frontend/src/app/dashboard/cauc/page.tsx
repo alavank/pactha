@@ -63,6 +63,9 @@ interface Entidade {
   numero_cadastro?: string | null;
   principal: boolean;
   data_pesquisa?: string | null;
+  crc_em?: string | null;
+  crc_erro?: string | null;
+  detalhe_do_crc?: boolean;
 }
 
 interface CagecResp {
@@ -83,6 +86,12 @@ interface CagecResp {
    *  sendo os da principal — contrato antigo intacto. */
   entidades?: Entidade[];
   pendencias_outras_entidades?: number;
+  /** Procedência do detalhamento. A lista de obrigações não vem da consulta
+   *  pública — vem do CRC em PDF. `crc_em` é a data da última emissão que
+   *  conseguimos ler; `crc_erro`, a frase do próprio portal quando ele recusa. */
+  crc_em?: string | null;
+  crc_erro?: string | null;
+  detalhe_do_crc?: boolean;
 }
 
 function fmtDate(iso?: string | null): string {
@@ -120,6 +129,70 @@ function Situacao({
       </div>
     </div>
   );
+}
+
+/** Aviso de que a lista de obrigações do CAGEC NÃO está completa.
+ *
+ *  Por que existe: a lista detalhada não vem da consulta pública, vem do CRC em
+ *  PDF. Em 01/08/2026 o portal do Estado passou a recusar a emissão para todo
+ *  mundo ("Não foi possível recuperar dados do Convenente/Parceiro para geração
+ *  do relatório" — reproduzido 9 vezes em 9, inclusive para Belo Horizonte), e
+ *  a tela passou a exibir as duas linhas de fallback COMO SE FOSSEM o cadastro
+ *  inteiro. Quem olhou viu um CAGEC com duas exigências e nenhuma pista de que
+ *  faltavam 28 — inclusive o FGTS vencido, que é justamente o que trava o
+ *  convênio. Uma tela que não sabe precisa dizer que não sabe. */
+function AvisoCrc({ crcErro, crcEm, doCrc }: {
+  crcErro?: string | null; crcEm?: string | null; doCrc?: boolean;
+}) {
+  // O gate é `doCrc`, NÃO `crcErro`. Condicionar tudo ao erro deixaria a tela
+  // MUDA justamente nas linhas que já estavam no banco quando a coluna nasceu
+  // (crc_erro NULL) — que é o estado de Monte Sião neste momento: sem
+  // detalhamento, sem aviso, contando 2 documentos como se fosse o cadastro.
+  // `doCrc === false` é a afirmação honesta: isto aqui não é o certificado.
+  const semCrc = doCrc === false;
+  if (!semCrc && !crcErro) return null;
+  return (
+    <div className="rounded-xl border border-warning/40 bg-warning/10 p-3">
+      <div className="flex items-start gap-2">
+        <AlertTriangle className="mt-[2px] size-4 shrink-0 text-warning" />
+        <div className="min-w-0 text-xs leading-relaxed">
+          <div className="font-semibold text-base-content/80">
+            {semCrc
+              ? "Documentos não conferidos — certificado indisponível"
+              : `Documentos conferidos em ${fmtDate(crcEm)} — leitura nova indisponível`}
+          </div>
+          <div className="text-base-content/60">
+            A lista de documentos e suas validades vem do certificado (CRC), emitido
+            pelo portal do CAGEC.{" "}
+            {crcErro
+              ? <>Nesta consulta ele não saiu. O portal respondeu: <em>“{crcErro}”</em></>
+              : <>Nesta consulta ele não pôde ser lido.</>}
+          </div>
+          <div className="mt-1 text-base-content/60">
+            {semCrc
+              ? <>Abaixo aparece <strong>apenas</strong> o que a consulta pública mostra —
+                  a situação do cadastro, sem os documentos. Não é a lista de exigências.</>
+              : <>A lista abaixo é da leitura de <strong>{fmtDate(crcEm)}</strong> e pode
+                  estar desatualizada: um documento pode ter vencido depois disso.</>}
+            {" "}A situação e o impedimento acima continuam atualizados.
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Obrigação marcada "Vigente" cujo prazo já passou.
+ *
+ *  Acontece com lista PRESERVADA: o CRC de 01/08 diz que a certidão vale até
+ *  10/08, e em 20/08 continuamos exibindo a mesma linha em verde. Pintar de
+ *  verde certidão vencida é a pior saída possível — o gestor confia e perde a
+ *  parcela. Só um CRC novo poderia reclassificar; até lá, a linha vira alerta. */
+function venceu(validade?: string | null): boolean {
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec((validade || "").trim());
+  if (!m) return false;
+  const h = new Date();
+  return new Date(+m[3], +m[2] - 1, +m[1]) < new Date(h.getFullYear(), h.getMonth(), h.getDate());
 }
 
 /** Os DEMAIS cadastros do município no CAGEC (fundos, autarquias, consórcios).
@@ -172,11 +245,21 @@ function OutrasEntidades({ entidades }: { entidades: Entidade[] }) {
               <span className={`shrink-0 text-right text-xs font-medium ${ok ? "text-success" : "text-error"}`}>
                 {e.situacao || (ok ? "Regular" : "Irregular")}
                 <span className="block font-normal text-base-content/50">
-                  {pend ? `${pend} pendência(s)` : "sem pendência"}
+                  {/* Este resumo é a ÚNICA coisa visível com o bloco fechado, e
+                      é onde o Fundo Municipal de Saúde apareceu como "Regular ·
+                      sem pendência" sem que nada tivesse sido conferido.
+                      "sem pendência" exige documentos lidos; contador de leitura
+                      antiga exige a data junto, senão passa por atual. */}
+                  {e.detalhe_do_crc === false
+                    ? "documentos não conferidos"
+                    : e.crc_erro
+                      ? `documentos de ${fmtDate(e.crc_em)}`
+                      : pend ? `${pend} pendência(s)` : "sem pendência"}
                 </span>
               </span>
             </summary>
             <div className="space-y-2 border-t border-base-300/60 bg-base-100 p-3">
+              <AvisoCrc crcErro={e.crc_erro} crcEm={e.crc_em} doCrc={e.detalhe_do_crc} />
               {/* Mesma ressalva do banner da prefeitura: `validade` é a próxima
                   obrigação a vencer, não a validade do certificado — o CRC não
                   tem uma. */}
@@ -236,10 +319,16 @@ function Exigencias({ itens, esfera = "cauc" }: { itens: Item[]; esfera?: "cauc"
             <span className="text-right">Validade</span>
           </div>
           <div className="divide-y divide-base-300/60">
-            {lista.map((it) => (
+            {lista.map((it) => {
+              // "Vigente" com prazo no passado. Só aparece em lista preservada,
+              // e é o caso em que um ✔ verde faria o gestor confiar numa
+              // certidão vencida. Vale só para o CAGEC: no CAUC a validade é
+              // reemitida todo dia e a de ontem é rotina, não pendência.
+              const vencido = esfera === "cagec" && it.tipo === "regular" && venceu(it.validade);
+              return (
               <div key={it.codigo}
                 className={`grid ${cols} items-start gap-x-3 px-4 py-2 ${
-                  it.tipo === "pendente" ? "bg-error/10" : ""}`}>
+                  it.tipo === "pendente" ? "bg-error/10" : vencido ? "bg-warning/10" : ""}`}>
                 {/* Símbolo por esfera, como nos dois documentos: o CAUC marca
                     Comprovado / A Comprovar / Desativado; o CAGEC, Vigente /
                     Vencido. O vermelho na linha inteira é o que faz o olho achar
@@ -249,6 +338,7 @@ function Exigencias({ itens, esfera = "cauc" }: { itens: Item[]; esfera?: "cauc"
                     ? (esfera === "cagec"
                         ? <AlertTriangle className="size-4 text-error" />
                         : <AlertCircle className="size-4 text-error" />)
+                    : vencido ? <Clock className="size-4 text-warning" />
                     : it.tipo === "regular" ? <CheckCircle2 className="size-4 text-success" />
                     : <Ban className="size-4 text-base-content/30" />}
                 </span>
@@ -269,18 +359,24 @@ function Exigencias({ itens, esfera = "cauc" }: { itens: Item[]; esfera?: "cauc"
                 </div>
                 <span className={`text-xs font-medium leading-6 ${
                   it.tipo === "pendente" ? "text-error"
+                  : vencido ? "text-warning"
                   : it.tipo === "regular" ? "text-success"
                   : "text-base-content/40"}`}>
-                  {it.status}
+                  {/* O documento dizia "Vigente" quando foi lido; hoje o prazo
+                      passou. Repetir "Vigente" seria transcrever fielmente uma
+                      informação que deixou de ser verdade. */}
+                  {vencido ? "Prazo vencido" : it.status}
                 </span>
                 {/* Validade SEMPRE presente, como no extrato. "—" quando a fonte
                     não dá data: ausência de data é informação, não buraco. */}
                 <span className={`whitespace-nowrap text-right font-mono text-xs leading-6 ${
-                  it.tipo === "pendente" ? "text-error" : "text-base-content/50"}`}>
+                  it.tipo === "pendente" ? "text-error"
+                  : vencido ? "text-warning" : "text-base-content/50"}`}>
                   {it.validade || "—"}
                 </span>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       ))}
@@ -422,10 +518,15 @@ export default function RegularidadePage() {
                       ? ` Atenção: outra(s) entidade(s) do município somam ${cagec.pendencias_outras_entidades} pendência(s) — veja abaixo.`
                       : "")}
                 />
+                <AvisoCrc crcErro={cagec.crc_erro} crcEm={cagec.crc_em}
+                  doCrc={cagec.detalhe_do_crc} />
                 <Exigencias itens={cagec.itens || []} esfera="cagec" />
                 <OutrasEntidades entidades={cagec.entidades || []} />
                 <p className="text-xs text-base-content/40">
                   Atualizado em {fmtDate(cagec.atualizado_em)}.
+                  {cagec.crc_em && (
+                    <> Documentos conferidos no CRC de {fmtDate(cagec.crc_em)}.</>
+                  )}
                 </p>
               </>
             )}

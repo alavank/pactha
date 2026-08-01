@@ -1176,6 +1176,26 @@ async def _tool_query_regularidade(db: AsyncSession, inp: dict) -> str:
         out.append(f"  Situacao para Parceria: {cagec.get('situacao') or '-'}"
                    f" ({'REGULAR' if cagec.get('regular') else 'NAO REGULAR'})"
                    f" | consulta de {cagec.get('data_pesquisa') or '-'}")
+        # PROCEDENCIA. Sem isto o modelo lia as 2 linhas do fallback como se
+        # fossem o certificado e respondia "nenhuma obrigacao pendente" ao
+        # prefeito, sobre um cadastro que ninguem conseguiu conferir. `itens`
+        # tambem pode ser uma leitura PRESERVADA de ate 30 dias atras, enquanto
+        # `data_pesquisa` e reescrita com a data de hoje a cada rodada.
+        crc_ausente = cagec.get("detalhe_do_crc") is False
+        crc_velho = (not crc_ausente) and bool(cagec.get("crc_erro"))
+        if crc_ausente:
+            out.append("  >>> DETALHAMENTO INDISPONIVEL: o certificado (CRC), que e"
+                       " de onde saem os documentos e suas validades, NAO pode ser"
+                       f" lido. O portal respondeu: \"{cagec.get('crc_erro') or '-'}\"."
+                       " As linhas abaixo sao apenas a situacao da consulta publica."
+                       " NAO afirme que nao ha pendencia e NAO liste isto como as"
+                       " exigencias do cadastro — nos nao sabemos quais sao.")
+        elif crc_velho:
+            out.append(f"  >>> ATENCAO: o detalhamento abaixo e do certificado lido em"
+                       f" {cagec.get('crc_em') or '-'}, nao de hoje — o portal do CAGEC"
+                       f" nao emite certificado novo (\"{cagec.get('crc_erro') or '-'}\")."
+                       " Diga essa data ao responder; algum documento pode ter vencido"
+                       " depois dela.")
         if cagec.get("validade"):
             out.append(f"  Proximo prazo a vencer entre as obrigacoes vigentes: "
                        f"{cagec['validade']}")
@@ -1188,9 +1208,13 @@ async def _tool_query_regularidade(db: AsyncSession, inp: dict) -> str:
             for i in pend_cagec:
                 venc = f" (venceu em {i['validade']})" if i.get("validade") else ""
                 out.append(f"      - {i['label']}{venc} [{i.get('status')}]")
-        else:
+        elif not crc_ausente:
             out.append("  Nenhuma obrigacao pendente.")
-        out.append(f"  Obrigacoes lidas do CRC ({len(itens_cagec)}), com validade:")
+        out.append(
+            f"  Linhas da consulta publica ({len(itens_cagec)}) — NAO sao as exigencias:"
+            if crc_ausente else
+            f"  Obrigacoes lidas do CRC de {cagec.get('crc_em') or 'hoje'}"
+            f" ({len(itens_cagec)}), com validade:")
         for i in itens_cagec:
             if i.get("tipo") == "pendente":
                 continue
@@ -1203,8 +1227,15 @@ async def _tool_query_regularidade(db: AsyncSession, inp: dict) -> str:
         if outras:
             out.append(f"  OUTROS CADASTROS DESTE MUNICIPIO ({len(outras)}):")
             for e in outras:
-                trava = (f"{e.get('pendencias')} pendencia(s)" if e.get("pendencias")
-                         else "sem pendencia")
+                # "sem pendencia" exige documentos lidos. Sem o CRC daquela
+                # entidade, nos so sabemos a situacao — dizer "sem pendencia"
+                # e afirmar o que ninguem conferiu.
+                if e.get("detalhe_do_crc") is False:
+                    trava = "documentos NAO conferidos (certificado indisponivel)"
+                elif e.get("pendencias"):
+                    trava = f"{e.get('pendencias')} pendencia(s)"
+                else:
+                    trava = "sem pendencia"
                 out.append(f"      - {e.get('nome')} ({e.get('tipo') or 'entidade'},"
                            f" CNPJ {e.get('cnpj') or '-'}, cadastro n"
                            f" {e.get('numero_cadastro') or '-'}): {e.get('situacao') or '-'}"
@@ -1218,9 +1249,13 @@ async def _tool_query_regularidade(db: AsyncSession, inp: dict) -> str:
                        " convenio da saude se o Fundo Municipal de Saude estiver"
                        " irregular, e vice-versa. Ao responder sobre um fundo,"
                        " use a linha DELE — nunca a do cadastro principal.")
-        out.append("  Fonte: CRC (Certificado de Registro Cadastral) do proprio CAGEC. "
-                   "Cite as datas de validade quando forem uteis — o gestor precisa "
-                   "renovar ANTES do vencimento.")
+        out.append(
+            "  Fonte: consulta publica do CAGEC. O certificado (CRC), que traz os"
+            " documentos, nao pode ser emitido nesta consulta."
+            if crc_ausente else
+            "  Fonte: CRC (Certificado de Registro Cadastral) do proprio CAGEC. "
+            "Cite as datas de validade quando forem uteis — o gestor precisa "
+            "renovar ANTES do vencimento.")
 
     out.append("\nATENCAO ao responder: CAUC vale para convenio FEDERAL e CAGEC para convenio "
                "ESTADUAL (MG). Estar regular em um NAO implica estar no outro.")
