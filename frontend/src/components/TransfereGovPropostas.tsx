@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 import {
-  Search, Eraser, Loader2, ExternalLink, Eye, X,
+  Search, Eraser, Loader2, ExternalLink, Eye, AlertTriangle,
   FileText, Handshake, CalendarDays, Building2, Info, Paperclip,
   Banknote, HardHat, MessagesSquare,
 } from "lucide-react";
@@ -31,9 +31,9 @@ const COLS_ART = "grid-cols-[5rem_8rem_6.5rem_minmax(9rem,1fr)]";
  *
  *  Repare no que NÃO é vazio: `0`. Escrever `valor || "-"` transformaria zero
  *  em traço, e "0 dias sem medição" viraria "sem informação". */
-function campo(rotulo: string, valor: unknown): Campo {
+function campo(rotulo: string, valor: unknown, extra?: Partial<Campo>): Campo {
   const v = valor === null || valor === undefined || valor === "" ? "-" : String(valor);
-  return { rotulo, valor: v, title: v === "-" ? undefined : `${rotulo}: ${v}` };
+  return { rotulo, valor: v, title: v === "-" ? undefined : `${rotulo}: ${v}`, ...extra };
 }
 import AnotacaoButton from "@/components/AnotacaoButton";
 import { Button } from "@/components/ui/button";
@@ -480,7 +480,7 @@ export default function TransfereGovPropostas({
         return (
         <Modal aberto onFechar={() => setDetalhe(null)} maxW="max-w-5xl">
           <ModalHead
-            titulo={`Pré-Instrumento/Instrumento ${detalhe?.codigo_instrumento || detalhe?.numero_proposta || ""}`}
+            titulo={`Consultar Pré-Instrumento/Instrumento ${detalhe?.codigo_instrumento || detalhe?.numero_proposta || ""}`}
             sub={detalhe?.orgao || undefined}
             onFechar={() => setDetalhe(null)}
             abaixo={detalhe ? <Abas valor={ativa} onChange={setAba} opcoes={abas} /> : undefined}
@@ -547,7 +547,7 @@ export default function TransfereGovPropostas({
                         0 = convênio Normal sem processo iniciado (flag, igual à cláusula). */}
                     {detalhe.processo_execucao_qtd != null && (detalhe.situacao_contratacao || "").toLowerCase().includes("normal") && (
                       detalhe.processo_execucao_qtd === 0 ? (
-                        <Aviso tom="critico" titulo="Processo de Execução: NENHUM registro">
+                        <Aviso tom="critico" icon={AlertTriangle} titulo="Processo de Execução: NENHUM registro">
                           <p className="text-[11px] leading-snug" style={{ color: "var(--bi-muted)" }}>
                             Contratação Normal, mas sem licitação/processo de execução registrado no TransfereGov
                             (Execução Convenente → Processo de Execução).
@@ -686,7 +686,7 @@ export default function TransfereGovPropostas({
                   campos={[
                     { rotulo: "Valor total das submetas", valor: moeda(detalhe.obras.valor_total_submetas) },
                     ...(detalhe.obras.situacao_paralisacao
-                      ? [{ rotulo: "Paralisação", valor: detalhe.obras.situacao_paralisacao, tom: "atencao" as const }]
+                      ? [campo("Paralisação", detalhe.obras.situacao_paralisacao, { tom: "atencao", quebra: true })]
                       : []),
                   ]}
                 >
@@ -725,7 +725,7 @@ export default function TransfereGovPropostas({
                         {lote.contrato && (
                           <div className="mt-3 rounded-lg p-2.5" style={{ background: "var(--bi-surface-2)" }}>
                             <div className="mb-1.5 text-[11px] font-semibold" style={{ color: "var(--bi-muted)" }}>
-                              Contrato {lote.contrato.numero}
+                              Contrato {lote.contrato.numero} — Detalhar
                             </div>
                             <Campos
                               cols={2}
@@ -828,7 +828,7 @@ export default function TransfereGovPropostas({
                       const vals = Object.entries(d).filter(([, v]) => v && !/^\s*$/.test(v));
                       return (
                         <div key={i} className="bi-card-flat p-3">
-                          <Campos cols={Math.min(vals.length, 3) || 1} campos={vals.map(([k, v]) => campo(k, v))} />
+                          <Campos cols={1} campos={vals.map(([k, v]) => campo(k, v, { quebra: true }))} />
                         </div>
                       );
                     })}

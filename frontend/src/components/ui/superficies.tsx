@@ -19,6 +19,7 @@
 // Os tokens `--bi-*` agora vivem em `:root` (ver globals.css), então valem aqui
 // sem precisar do `.bi-skin`.
 import * as React from "react";
+import { createPortal } from "react-dom";
 
 // ---------------------------------------------------------------------------
 // Bloco — o cartão. Equivale ao `Painel` do BI.
@@ -250,6 +251,13 @@ export interface Campo {
    *  não estilo. Fora do detalhe, o normal é não usar: colunas de largura igual
    *  em todos os cartões é o que mantém a varredura vertical viva. */
   span?: number;
+  /** Quebra a linha em vez de truncar, sem precisar ocupar mais colunas.
+   *  Para texto que é frase e não rótulo. */
+  quebra?: boolean;
+  /** Monoespaçada. Para IDENTIFICADOR (nº SIAFI, nº processo, CNPJ), onde o
+   *  alinhamento caractere a caractere é o que permite comparar dois números
+   *  parecidos. `bi-num` é tabular, o que serve a valor; não serve a código. */
+  mono?: boolean;
 }
 
 /** A linha de números do cartão, em POSIÇÕES FIXAS.
@@ -269,18 +277,37 @@ export function Campos({ campos, cols }: { campos: Campo[]; cols?: number }) {
   const n = cols ?? campos.length;
   return (
     <div
-      className="mt-2 grid gap-x-3 gap-y-1.5 border-t pt-2"
+      /* `bi-campos` e nao `gridTemplateColumns` inline: estilo inline nao aceita
+         media query, e sem breakpoint quatro colunas valiam em QUALQUER largura.
+         No celular isso dava colunas de ~65px em que ate o RÓTULO era truncado —
+         "VALOR DE CUSTEIO" e "VALOR DE INVESTIMENTO" saíam cortados no mesmo
+         prefixo e ficavam indistinguíveis. A grade que estas peças
+         substituíram colapsava para uma coluna abaixo de 768px; esta agora
+         colapsa para duas, que é o mesmo gesto. */
+      className="bi-campos mt-2 gap-x-3 gap-y-1.5 border-t pt-2"
       style={{
-        gridTemplateColumns: `repeat(${n}, minmax(0, 1fr))`,
+        ["--campos-sm" as string]: Math.min(n, 2),
+        ["--campos-md" as string]: Math.min(n, 3),
+        ["--campos-lg" as string]: n,
         borderColor: "var(--bi-line)",
-      }}
+      } as React.CSSProperties}
     >
-      {campos.map((c, i) => (
+      {campos.map((c, i) => {
+        const largo = !!(c.span && c.span > 1);
+        /* O `title` deixa de ser opcional na prática: a célula trunca por
+           desenho, e valor cortado sem tooltip é dado APAGADO. Quem não passa
+           `title` ganha um derivado do próprio valor. */
+        const dica =
+          c.title ??
+          (typeof c.valor === "string" || typeof c.valor === "number"
+            ? `${c.rotulo}: ${c.valor}`
+            : undefined);
+        return (
         <div
           key={i}
           className="min-w-0"
-          title={c.title}
-          style={c.span && c.span > 1 ? { gridColumn: `span ${Math.min(c.span, n)}` } : undefined}
+          title={dica}
+          style={largo ? { gridColumn: `span ${Math.min(c.span!, n)}` } : undefined}
         >
           <div
             className="truncate text-[9px] uppercase tracking-wide"
@@ -289,7 +316,9 @@ export function Campos({ campos, cols }: { campos: Campo[]; cols?: number }) {
             {c.rotulo}
           </div>
           <div
-            className={`bi-num text-[11px] leading-tight ${c.span && c.span > 1 ? "break-words" : "truncate"}`}
+            className={`text-[11px] leading-tight ${c.mono ? "font-mono tabular-nums" : "bi-num"} ${
+              largo || c.quebra ? "break-words" : "truncate"
+            }`}
             style={{
               color:
                 c.tom === "critico" ? "var(--bi-crit-ink)"
@@ -301,7 +330,8 @@ export function Campos({ campos, cols }: { campos: Campo[]; cols?: number }) {
             {c.valor}
           </div>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -343,7 +373,7 @@ export function Numero({
           {rotulo}
         </span>
       </div>
-      <div className="bi-num mt-1.5 text-[22px] leading-none" style={{ color: cor }}>
+      <div className="bi-num mt-1.5 text-[22px] leading-none break-words" style={{ color: cor }}>
         {valor}
       </div>
       {sub && (
@@ -367,6 +397,36 @@ export function Vazio({ children }: { children: React.ReactNode }) {
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Botões
+// ---------------------------------------------------------------------------
+
+/** Os dois botões da identidade, como CLASSE e não componente, porque metade
+ *  dos usos é `<a>` e não `<button>`.
+ *
+ *  O sólido é QUASE PRETO, não colorido — é assim que o Painel faz (18,53 de
+ *  contraste). Um botão menta de exibição sobre branco daria 2,55 e o rótulo
+ *  ficaria ilegível; e mais: se o botão principal for da cor do acento, o
+ *  acento deixa de significar "olhe aqui". */
+export const BOTAO_CTA =
+  "inline-flex h-9 items-center gap-1.5 rounded-xl px-3 text-[12px] font-semibold transition-opacity hover:opacity-90 disabled:opacity-60";
+export const ESTILO_CTA: React.CSSProperties = {
+  background: "var(--bi-cta)",
+  color: "var(--bi-cta-ink)",
+};
+
+/** Secundário: superfície com a linha de divisória por borda. */
+export const BOTAO_SEC =
+  "inline-flex h-9 items-center gap-1.5 rounded-xl px-3 text-[12px] font-semibold transition-colors hover:brightness-95 disabled:opacity-60";
+/** Miúdo, para a coluna de ações de um item de lista. */
+export const BOTAO_ACAO =
+  "inline-flex h-7 items-center gap-1 rounded-lg px-2 text-[11px] font-medium transition-colors hover:brightness-95 disabled:opacity-60";
+export const ESTILO_SEC: React.CSSProperties = {
+  background: "var(--bi-surface)",
+  border: "1px solid var(--bi-line)",
+  color: "var(--bi-text)",
+};
 
 // ===========================================================================
 // SOBREPOSIÇÃO — modal, abas, grade densa e etapas.
@@ -399,6 +459,8 @@ export function Modal({
   maxW,
   nivel = 1,
   superficie = false,
+  rotulo,
+  esc = true,
   children,
 }: {
   aberto: boolean;
@@ -417,39 +479,94 @@ export function Modal({
    *  o fundo tem que ser `--bi-bg`, o mesmo da página, senão a hierarquia
    *  fundo → bloco → item vira branco sobre branco e tudo achata. */
   superficie?: boolean;
+  /** Nome do diálogo para leitor de tela. A primitiva que estas peças
+   *  substituíram exigia um `DialogTitle`, e ao trocá-la o nome sumiu: o leitor
+   *  passou a anunciar só "diálogo". Como o título visível quase sempre serve,
+   *  o padrão é herdá-lo do `ModalHead`; `rotulo` é para quando não serve. */
+  rotulo?: string;
+  /** Esc fecha. Desligue quando houver formulário sujo: fechar com Esc
+   *  descartando o que a pessoa digitou, sem perguntar, é perda de trabalho —
+   *  e é um comportamento que não existia antes desta peça. */
+  esc?: boolean;
   children: React.ReactNode;
 }) {
+  const idTitulo = React.useId();
+  const caixa = React.useRef<HTMLDivElement>(null);
+
   React.useEffect(() => {
     if (!aberto) return;
-    const fecha = (e: KeyboardEvent) => e.key === "Escape" && onFechar();
-    window.addEventListener("keydown", fecha);
-    return () => window.removeEventListener("keydown", fecha);
-  }, [aberto, onFechar]);
+    /* Devolver o foco ao fechar. Sem isto, quem usa teclado volta para o
+       <body> e perde o lugar na lista de onde abriu o modal. */
+    const veioDe = document.activeElement as HTMLElement | null;
+    const foco = () =>
+      Array.from(
+        caixa.current?.querySelectorAll<HTMLElement>(
+          'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      ).filter((e) => e.offsetParent !== null);
+
+    caixa.current?.focus();
+
+    const tecla = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && esc) { onFechar(); return; }
+      if (e.key !== "Tab") return;
+      /* Prender o foco. `aria-modal="true"` faz o leitor de tela ignorar o
+         resto da página; sem prender, o Tab leva para trás do véu e a pessoa
+         digita numa tela que não vê nem ouve. */
+      const f = foco();
+      if (!f.length) { e.preventDefault(); return; }
+      const primeiro = f[0], ultimo = f[f.length - 1];
+      const atual = document.activeElement;
+      if (e.shiftKey && (atual === primeiro || atual === caixa.current)) {
+        e.preventDefault(); ultimo.focus();
+      } else if (!e.shiftKey && atual === ultimo) {
+        e.preventDefault(); primeiro.focus();
+      }
+    };
+    window.addEventListener("keydown", tecla);
+    return () => {
+      window.removeEventListener("keydown", tecla);
+      veioDe?.focus?.();
+    };
+  }, [aberto, onFechar, esc]);
 
   if (!aberto) return null;
-  return (
+  const conteudo = (
     <div
       className={`fixed inset-0 grid place-items-center bg-black/50 p-4 ${nivel === 2 ? "z-[60]" : "z-50"}`}
       /* Compara alvo com currentTarget em vez de `onClick={onFechar}` + um
          `stopPropagation` na caixa: assim nenhum clique legítimo que borbulha
          de dentro (um <select> nativo, por exemplo) fecha o modal por engano. */
       onClick={(e) => e.target === e.currentTarget && onFechar()}
-      role="dialog"
-      aria-modal="true"
     >
       <div
-        className={`flex max-h-[85vh] w-full flex-col overflow-hidden border ${maxW}`}
+        ref={caixa}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        {...(rotulo ? { "aria-label": rotulo } : { "aria-labelledby": idTitulo })}
+        className={`flex max-h-[85vh] w-full flex-col overflow-hidden border outline-none ${maxW}`}
         style={{
           background: superficie ? "var(--bi-surface)" : "var(--bi-bg)",
           borderColor: "var(--bi-line)",
           borderRadius: "var(--bi-radius)",
         }}
       >
-        {children}
+        <CtxModal.Provider value={idTitulo}>{children}</CtxModal.Provider>
       </div>
     </div>
   );
+  /* Portal: a primitiva antiga renderizava fora da árvore da página. Sem isso,
+     o modal herda `overflow`/`transform` de qualquer ancestral e a roda do
+     mouse sobre o véu rola a lista por baixo. */
+  return typeof document === "undefined"
+    ? conteudo
+    : createPortal(conteudo, document.body);
 }
+
+/** O id do título, para o `ModalHead` etiquetar o diálogo sem o chamador
+ *  precisar passar nada. */
+const CtxModal = React.createContext<string | undefined>(undefined);
 
 /** Cabeçalho fixo da caixa. Fica em `--bi-surface` mesmo quando o corpo é
  *  `--bi-bg`: é o que separa "o que este modal é" do que se rola. */
@@ -473,7 +590,7 @@ export function ModalHead({
     <div className="shrink-0 border-b" style={{ background: "var(--bi-surface)", borderColor: "var(--bi-line)" }}>
       <div className="flex items-start justify-between gap-3 px-4 py-3">
         <div className="min-w-0">
-          <h3 className="bi-title text-[14px] leading-tight">{titulo}</h3>
+          <h3 id={React.useContext(CtxModal)} className="bi-title text-[14px] leading-tight">{titulo}</h3>
           {sub && (
             <p className="mt-0.5 text-[11px] leading-snug" style={{ color: "var(--bi-faint)" }}>
               {sub}
@@ -549,19 +666,27 @@ export function Secao({
  *  a borda para dizer o que o fundo lavado já diz, e some no escuro, onde a
  *  borda esquerda encosta num fundo quase preto. Aqui o sinal é o fundo, e o
  *  título leva a variante `-ink` da mesma família — que é a que passa em AA. */
-export function Aviso({ tom, titulo, children }: {
+export function Aviso({ tom, titulo, children, icon: Icon, className = "mt-3" }: {
   tom: "ok" | "atencao" | "critico";
   titulo: React.ReactNode;
   children?: React.ReactNode;
+  /** Marcador não-textual. Um aviso crítico sem nenhum sinal além da cor
+   *  desaparece para quem não distingue vermelho. */
+  icon?: React.ComponentType<{ className?: string }>;
+  /** O padrão `mt-3` serve ao caso comum (aviso no fim de uma `Secao`). Quem
+   *  põe o aviso dentro de um contêiner que já espaça passa `className=""`. */
+  className?: string;
 }) {
   const c = tom === "critico" ? "crit" : tom === "ok" ? "ok" : "warn";
   return (
     <div
-      className="mt-3 rounded-lg p-2.5"
+      className={`rounded-lg p-2.5 ${className}`}
       style={{ background: `color-mix(in oklab, var(--bi-${c}) 12%, transparent)` }}
     >
-      <div className="text-[11px] font-semibold leading-snug" style={{ color: `var(--bi-${c}-ink)` }}>
-        {titulo}
+      <div className="flex items-start gap-1.5 text-[11px] font-semibold leading-snug"
+           style={{ color: `var(--bi-${c}-ink)` }}>
+        {Icon && <Icon className="mt-px size-3.5 shrink-0" />}
+        <span className="min-w-0">{titulo}</span>
       </div>
       {children && <div className="mt-1.5">{children}</div>}
     </div>
@@ -652,12 +777,20 @@ export function Abas<T extends string>({
  *     virar cartão seria pior para quem confere.
  *
  *  `cols` é uma classe `grid-cols-[...]` LITERAL, pela mesma razão do `maxW`. */
-export function Grade({ cols, cabecalho, children, rolagem = false }: {
+export function Grade({ cols, cabecalho, children, rolagem = false, minLargura = "38rem" }: {
   cols: string;
   cabecalho: Array<{ label: string; direita?: boolean }>;
   children: React.ReactNode;
   /** Rolagem horizontal LOCAL, dentro do bloco — nunca no modal. */
   rolagem?: boolean;
+  /** Largura mínima antes de a rolagem entrar.
+   *
+   *  Era `min-w-max`, e isso anulava a coluna elástica: com `max-content` a
+   *  trilha `minmax(10rem,1fr)` resolve para o texto INTEIRO numa linha só, a
+   *  grade estoura a largura do modal e a descrição da submeta — que antes
+   *  quebrava linha numa célula de tabela — vira uma faixa horizontal longa.
+   *  Um piso em `rem` deixa a coluna elástica voltar a quebrar acima dele. */
+  minLargura?: string;
 }) {
   const corpo = (
     <>
@@ -675,7 +808,7 @@ export function Grade({ cols, cabecalho, children, rolagem = false }: {
   if (!rolagem) return corpo;
   return (
     <div className="bi-scroll overflow-x-auto">
-      <div className="min-w-max">{corpo}</div>
+      <div style={{ minWidth: minLargura }}>{corpo}</div>
     </div>
   );
 }
@@ -710,7 +843,7 @@ export function GradeCel({ children, tom = "texto", title, className = "" }: {
     return <div className={`${base} bi-num truncate text-right whitespace-nowrap ${className}`} style={{ color: "var(--bi-text)" }} title={title}>{children}</div>;
   if (tom === "data")
     return <div className={`${base} bi-num truncate text-right whitespace-nowrap ${className}`} style={{ color: "var(--bi-muted)" }} title={title}>{children}</div>;
-  return <div className={`${base} ${className}`} style={{ color: "var(--bi-text)" }} title={title}>{children}</div>;
+  return <div className={`${base} break-words ${className}`} style={{ color: "var(--bi-text)" }} title={title}>{children}</div>;
 }
 
 // ---------------------------------------------------------------------------
@@ -728,7 +861,11 @@ export function GradeCel({ children, tom = "texto", title, className = "" }: {
  *  Veio do stepper de 12 etapas do modal do FNS, que já está em produção. Dois
  *  steppers com desenhos diferentes no mesmo produto é o defeito que esta
  *  unificação existe para eliminar. */
-export function Etapas({ etapas }: {
+export function Etapas({ etapas, largura = 60 }: {
+  /** Largura da coluna de cada etapa. 60px serve a rótulo curto; um stepper de
+   *  rótulos longos (as 15 etapas do SIGCON) precisa de mais, senão a palavra
+   *  transborda a caixa. */
+  largura?: number;
   etapas: Array<{
     rotulo: string;
     /** O que vai dentro do círculo quando a etapa não está concluída. */
@@ -742,7 +879,7 @@ export function Etapas({ etapas }: {
     <div className="bi-scroll flex items-start justify-between overflow-x-auto pt-1">
       {etapas.map((e, i) => (
         <React.Fragment key={i}>
-          <div className="flex min-w-[60px] flex-col items-center text-center" title={e.title || e.rotulo}>
+          <div className="flex flex-col items-center text-center" style={{ minWidth: largura }} title={e.title || e.rotulo}>
             <div
               className="grid size-7 shrink-0 place-items-center rounded-full text-[11px] font-bold"
               style={{
@@ -755,7 +892,8 @@ export function Etapas({ etapas }: {
             >
               {e.concluida ? <CheckIcon /> : (e.numero ?? i + 1)}
             </div>
-            <div className="mt-1 max-w-[60px] text-[9px] leading-tight" style={{ color: "var(--bi-faint)" }}>
+            <div className="mt-1 text-[9px] leading-tight break-words hyphens-auto"
+                 style={{ maxWidth: largura, color: "var(--bi-faint)" }} lang="pt-BR">
               {e.rotulo}
             </div>
           </div>

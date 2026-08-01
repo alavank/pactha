@@ -339,6 +339,25 @@
   .font-mono { font-variant-numeric: tabular-nums; }
 }
 
+/* A grade de campos do `Campos` (ui/superficies).
+   Existe como CLASSE e não como `gridTemplateColumns` inline porque estilo
+   inline não aceita media query — e sem breakpoint quatro colunas valiam em
+   qualquer largura. No celular isso dava colunas de ~65px, estreitas o
+   bastante para truncar o próprio RÓTULO: "VALOR DE CUSTEIO" e "VALOR DE
+   INVESTIMENTO" saíam cortados no mesmo prefixo, indistinguíveis.
+   As grades que estas peças substituíram colapsavam para uma coluna abaixo de
+   768px; esta colapsa para duas, que é o mesmo gesto com mais densidade. */
+.bi-campos {
+  display: grid;
+  grid-template-columns: repeat(var(--campos-sm, 2), minmax(0, 1fr));
+}
+@media (min-width: 640px) {
+  .bi-campos { grid-template-columns: repeat(var(--campos-md, 3), minmax(0, 1fr)); }
+}
+@media (min-width: 768px) {
+  .bi-campos { grid-template-columns: repeat(var(--campos-lg, 4), minmax(0, 1fr)); }
+}
+
 /* Faixa de identidade, 3px no topo do menu — aparece em TODA tela do sistema.
    Era `linear-gradient(90deg, #5d5fef, #8486f4, #ae8ff7)`: o resquício mais
    literal da marca antiga, e o mais visível, num sistema que passou a ser
@@ -595,3 +614,45 @@ html,
 @media (prefers-reduced-motion: reduce) {
   .bi-insight-enter, .bi-pane-enter { animation: none; }
 }
+
+/* A bolha de quem PERGUNTA, na tela da IA.
+   Era `bg-primary`: preenchida com a cor da marca. Passa a ser a CTA quase
+   preta — continua sendo o elemento mais forte da conversa, que é o que
+   distingue quem falou, sem gastar o acento. E nesta tela o acento precisa
+   sobrar: ele é o cursor que pisca enquanto o modelo escreve, o único ponto
+   da tela que informa "ainda está vindo". */
+.bi-bolha-eu {
+  background: var(--bi-cta);
+  color: var(--bi-cta-ink);
+}
+
+/* A conversa aberta, na lista lateral. Era uma régua azul de 2px à esquerda;
+   vira superfície — mesmo gesto que o menu lateral usa para o item ativo. */
+.bi-conversa-ativa {
+  background: var(--bi-surface-2);
+  box-shadow: inset 2px 0 0 var(--bi-accent);
+}
+
+/* A aparência de CAMPO — input, select e textarea, um desenho só.
+   Existia em três formas ao mesmo tempo: o `<Input>` do daisyUI com
+   `bg-base-200` (que aponta para o fundo da PÁGINA, e por isso sumia dentro de
+   um modal, cujo corpo é a mesma cor), e dois controles montados à mão num
+   formulário migrado, brancos com borda. Os três apareciam lado a lado no mesmo
+   formulário.
+   Preenchimento levemente distinto da superfície + fio de divisória: lê como
+   campo sobre cartão branco E sobre o fundo cinza do modal. */
+.bi-field {
+  background: var(--bi-surface-2);
+  border: 1px solid var(--bi-line);
+  color: var(--bi-text);
+  border-radius: 0.7rem;
+  transition: border-color .12s, box-shadow .12s;
+}
+.bi-field::placeholder { color: var(--bi-faint); }
+.bi-field:focus,
+.bi-field:focus-visible {
+  outline: none;
+  border-color: var(--bi-accent-ink);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--bi-accent) 22%, transparent);
+}
+.bi-field:disabled { opacity: .5; cursor: not-allowed; }
