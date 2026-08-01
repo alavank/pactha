@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FileText, Plus, Trash2, Eye, Download, Loader2 } from "lucide-react";
+import { FileText, Plus, Trash2, Eye, Download, Loader2, ChevronDown } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { useMunicipio } from "@/contexts/MunicipioContext";
@@ -28,6 +28,7 @@ export default function RmListPage() {
   const [criando, setCriando] = useState(false);
   const anoAtual = new Date().getFullYear();
   const [novoAno, setNovoAno] = useState<number>(anoAtual);
+  const [menuId, setMenuId] = useState<number | null>(null);
   const anosOpcoes = [anoAtual + 1, anoAtual, anoAtual - 1, anoAtual - 2];
 
   const buscar = useCallback(async () => {
@@ -68,12 +69,21 @@ export default function RmListPage() {
     } catch (e) { console.error(e); }
   };
 
-  const exportarPdf = (id: number) => {
-    const url = `${api.defaults.baseURL}/rm/${id}/pdf`;
+  const exportar = (id: number, tipo: "completo" | "resumido" | "totalizado", formato: "pdf" | "xlsx" = "pdf") => {
+    setMenuId(null);
+    const url = `${api.defaults.baseURL}/rm/${id}/pdf?tipo=${tipo}&formato=${formato}`;
     const token = localStorage.getItem("pactha_token");
     fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
       .then((r) => r.blob())
-      .then((blob) => window.open(URL.createObjectURL(blob), "_blank"));
+      .then((blob) => {
+        const href = URL.createObjectURL(blob);
+        if (formato === "xlsx") {
+          const a = document.createElement("a");
+          a.href = href; a.download = "RM-Totalizado.xlsx"; a.click();
+        } else {
+          window.open(href, "_blank");
+        }
+      });
   };
 
   if (!municipioId) {
@@ -143,10 +153,36 @@ export default function RmListPage() {
                   >
                     <Eye className="size-3.5" /> Abrir
                   </Link>
-                  <button onClick={() => exportarPdf(rm.id)}
-                    className="inline-flex items-center gap-1 rounded bg-success/15 hover:bg-success/15 px-2.5 py-1 text-xs text-success">
-                    <Download className="size-3.5" /> PDF
-                  </button>
+                  <div className="relative">
+                    <button onClick={() => setMenuId(menuId === rm.id ? null : rm.id)}
+                      className="inline-flex items-center gap-1 rounded bg-success/15 hover:bg-success/15 px-2.5 py-1 text-xs text-success">
+                      <Download className="size-3.5" /> Relatório <ChevronDown className="size-3" />
+                    </button>
+                    {menuId === rm.id && (
+                      <>
+                        <div className="fixed inset-0 z-10" onClick={() => setMenuId(null)} />
+                        <div className="absolute right-0 mt-1 z-20 w-56 rounded-md border border-base-300 bg-base-100 shadow-lg py-1 text-left text-xs">
+                          <button className="w-full text-left px-3 py-1.5 hover:bg-base-200" onClick={() => exportar(rm.id, "completo")}>
+                            <span className="font-medium text-base-content">Completo</span>
+                            <span className="block text-[11px] text-base-content/50">Detalhado (PDF)</span>
+                          </button>
+                          <button className="w-full text-left px-3 py-1.5 hover:bg-base-200" onClick={() => exportar(rm.id, "resumido")}>
+                            <span className="font-medium text-base-content">Resumido</span>
+                            <span className="block text-[11px] text-base-content/50">Só pendências (PDF)</span>
+                          </button>
+                          <div className="border-t border-base-200 my-1" />
+                          <button className="w-full text-left px-3 py-1.5 hover:bg-base-200" onClick={() => exportar(rm.id, "totalizado", "xlsx")}>
+                            <span className="font-medium text-base-content">Totalizado — Excel</span>
+                            <span className="block text-[11px] text-base-content/50">Planilha .xlsx</span>
+                          </button>
+                          <button className="w-full text-left px-3 py-1.5 hover:bg-base-200" onClick={() => exportar(rm.id, "totalizado", "pdf")}>
+                            <span className="font-medium text-base-content">Totalizado — PDF</span>
+                            <span className="block text-[11px] text-base-content/50">Grade em PDF</span>
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
                   <button onClick={() => remover(rm.id)}
                     className="inline-flex items-center gap-1 rounded bg-error/15 hover:bg-error/10 px-2.5 py-1 text-xs text-error">
                     <Trash2 className="size-3.5" />
