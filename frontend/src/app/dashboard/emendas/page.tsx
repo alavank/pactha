@@ -6,13 +6,8 @@ import api from "@/lib/api";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { MultiSelect } from "@/components/ui/multi-select";
+import { atalhosAnos, resumoAnos } from "@/lib/periodo";
 import {
   Table,
   TableBody,
@@ -22,6 +17,15 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatCurrency } from "@/lib/utils";
+
+/** Os tres tipos que o SIGCON usa na indicacao. Ficam aqui como lista fixa
+ *  porque o backend compara com ILIKE por item — acento e caixa nao importam,
+ *  e a lista nao muda sem mudanca normativa. */
+const TIPOS_INDICACAO = [
+  "Transferência Especial",
+  "Aplicação Direta",
+  "Convênio",
+];
 
 interface Emenda {
   id: number;
@@ -65,9 +69,9 @@ export default function EmendasEstaduaisPage() {
 
   const [items, setItems] = useState<Emenda[]>([]);
   const [loading, setLoading] = useState(true);
-  const [ano, setAno] = useState("todos");
+  const [anosSel, setAnosSel] = useState<string[]>([]);
   const [responsavel, setResponsavel] = useState("");
-  const [tipo, setTipo] = useState("todos");
+  const [tiposSel, setTiposSel] = useState<string[]>([]);
   const [stats, setStats] = useState<{ total: number; valor_total: number; responsaveis: number; aprovadas: number } | null>(null);
   const [anos, setAnos] = useState<number[]>([]);
   const [collapsedYears, setCollapsedYears] = useState<Set<number>>(new Set());
@@ -82,23 +86,25 @@ export default function EmendasEstaduaisPage() {
   const fetchData = useCallback(() => {
     if (!municipioId) return;
     setLoading(true);
-    const params: Record<string, string | number> = {
+    // `string[]` no tipo porque anos e tipos agora vao como lista repetida na
+    // querystring (?anos=2025&anos=2024), que e o formato que o FastAPI espera.
+    const params: Record<string, string | number | string[]> = {
       municipio_id: municipioId,
       page: 1,
       per_page: 500, // todos pra agrupar por ano
     };
-    if (ano !== "todos") params.ano = ano;
+    if (anosSel.length) params.anos = anosSel;
     if (responsavel) params.responsavel = responsavel;
-    if (tipo !== "todos") params.tipo = tipo;
+    if (tiposSel.length) params.tipos = tiposSel;
     api.get<{ items: Emenda[]; total: number }>("/emendas-estaduais", { params })
       .then((r) => setItems(r.data.items || []))
       .catch(() => {})
       .finally(() => setLoading(false));
 
-    api.get("/emendas-estaduais/stats", { params: { municipio_id: municipioId, ...(ano !== "todos" ? { ano } : {}) } })
+    api.get("/emendas-estaduais/stats", { params: { municipio_id: municipioId, ...(anosSel.length === 1 ? { ano: anosSel[0] } : {}) } })
       .then((r) => setStats(r.data as never))
       .catch(() => {});
-  }, [municipioId, ano, responsavel, tipo]);
+  }, [municipioId, anosSel, responsavel, tiposSel]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -156,23 +162,27 @@ export default function EmendasEstaduaisPage() {
       )}
 
       <div className="flex flex-wrap items-center gap-3">
-        <Select value={ano} onValueChange={(v) => setAno(v ?? "todos")}>
-          <SelectTrigger className="w-32"><SelectValue placeholder="Ano" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="todos">Todos Anos</SelectItem>
-            {anos.map((a) => <SelectItem key={a} value={String(a)}>{a}</SelectItem>)}
-          </SelectContent>
-        </Select>
+        <MultiSelect
+          opcoes={anos.map(String)}
+          valor={anosSel}
+          onChange={setAnosSel}
+          atalhos={atalhosAnos()}
+          formatarResumo={resumoAnos}
+          placeholder="Todos os anos"
+          rotuloTodos="Todos os anos"
+          ariaLabel="Anos"
+          className="w-44"
+        />
 
-        <Select value={tipo} onValueChange={(v) => setTipo(v ?? "todos")}>
-          <SelectTrigger className="w-56"><SelectValue placeholder="Tipo" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="todos">Todos Tipos</SelectItem>
-            <SelectItem value="Transferência Especial">Transferência Especial</SelectItem>
-            <SelectItem value="Aplicação Direta">Aplicação Direta</SelectItem>
-            <SelectItem value="Convênio">Convênio</SelectItem>
-          </SelectContent>
-        </Select>
+        <MultiSelect
+          opcoes={TIPOS_INDICACAO}
+          valor={tiposSel}
+          onChange={setTiposSel}
+          placeholder="Todos os tipos"
+          rotuloTodos="Todos os tipos"
+          ariaLabel="Tipo de indicação"
+          className="w-60"
+        />
 
         <div className="relative flex-1 min-w-[200px]">
           <SearchIcon className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />

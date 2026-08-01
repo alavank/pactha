@@ -13,7 +13,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { MultiSelect, resumoAnos } from "@/components/ui/multi-select";
+import { MultiSelect } from "@/components/ui/multi-select";
+import { atalhosAnos, resumoAnos } from "@/lib/periodo";
 import { formatCurrency } from "@/lib/utils";
 import { Search, Loader2, Eraser, Printer, Eye, X } from "lucide-react";
 
@@ -311,8 +312,12 @@ export default function PropostasFNSPage() {
               opcoes={anos}
               valor={anosSel}
               onChange={setAnosSel}
+              atalhos={atalhosAnos()}
               formatarResumo={resumoAnos}
               placeholder="Selecione o ano"
+              /* Aqui "Limpar" NAO e "todos": o portal do FNS exige um ano por
+                 requisicao, entao lista vazia bloqueia a consulta (ver linha do
+                 `if (!anosSel.length)`). Nao trocar por "Todos". */
               rotuloTodos="Limpar"
               ariaLabel="Anos da consulta"
             />
