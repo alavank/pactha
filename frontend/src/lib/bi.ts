@@ -315,6 +315,20 @@ export interface AbaParlamentares {
   total: number;
   valor_total: number;
   anos: number[];
+  /** Mandato de PREFEITO atual contra o anterior. Só o total — a tabela
+   *  comparativa inteira mora na tela do sistema; numa parede de gabinete cabe
+   *  um número e a variação. `null` quando a aba está com outro recorte de
+   *  anos: duas verdades diferentes na mesma tela é pior que uma só. */
+  comparativo?: {
+    rotulo_atual: string;
+    rotulo_anterior: string;
+    valor_atual: number;
+    valor_anterior: number;
+    delta: number;
+    delta_pct: number | null;
+    anos_atual: number;
+    anos_anterior: number;
+  } | null;
 }
 
 export interface CaucItemDetalhe {

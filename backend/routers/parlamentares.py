@@ -371,6 +371,111 @@ async def aggregate_parlamentares(
     return {"items": out, "total": len(out)}
 
 
+# ---------------------------------------------------------------------------
+# Comparacao entre dois periodos
+# ---------------------------------------------------------------------------
+
+@router.get("/comparar")
+async def comparar(
+    municipio_id: Optional[int] = Query(None),
+    a: list[int] = Query(..., description="Anos do periodo A (o mais antigo, referencia)"),
+    b: list[int] = Query(..., description="Anos do periodo B (o mais recente, comparado)"),
+    q: Optional[str] = Query(None, description="Busca parcial no nome"),
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """Quanto cada parlamentar destinou no periodo A contra o periodo B.
+
+    Os dois periodos sao CONJUNTOS LIVRES de anos — comparar 2024 com 2025, ou
+    o mandato inteiro com o anterior, ou dois anos com um. A tela oferece
+    atalhos ("Mandato atual x anterior"), mas a regra aqui nao os conhece.
+
+    Reusa `aggregate_parlamentares` DUAS vezes em vez de escrever uma consulta
+    propria. E mais lento (duas agregacoes) e vale a pena: a comparacao nunca
+    pode discordar da lista que esta na mesma tela, e uma segunda consulta
+    "equivalente" e exatamente como as duas divergem com o tempo. Por isso
+    tambem `incluir_plano_acao=False` nos dois lados — o fetch AO VIVO do RP9
+    federal nao e reproduzivel para um ano passado, entao inclui-lo de um lado
+    so criaria uma diferenca que nao existe na realidade.
+    """
+    ensure_municipio_access(current, municipio_id)
+    ensure_tela(current, "parlamentares")
+
+    anos_a = sorted(set(a))
+    anos_b = sorted(set(b))
+    if not anos_a or not anos_b:
+        raise HTTPException(400, "Informe pelo menos um ano em cada periodo.")
+    if set(anos_a) & set(anos_b):
+        # Ano nos dois lados infla os dois totais com o mesmo dinheiro e a
+        # variacao vira ficcao. Melhor recusar do que devolver numero bonito.
+        raise HTTPException(400, "Os dois periodos nao podem compartilhar o mesmo ano.")
+
+    ra = await aggregate_parlamentares(db, municipio_id=municipio_id, q=q,
+                                       ano=anos_a, incluir_plano_acao=False)
+    rb = await aggregate_parlamentares(db, municipio_id=municipio_id, q=q,
+                                       ano=anos_b, incluir_plano_acao=False)
+
+    por_a = {i["nome_normalizado"]: i for i in ra["items"]}
+    por_b = {i["nome_normalizado"]: i for i in rb["items"]}
+
+    itens = []
+    for chave in set(por_a) | set(por_b):
+        ia, ib = por_a.get(chave), por_b.get(chave)
+        va = float(ia["valor_total"]) if ia else 0.0
+        vb = float(ib["valor_total"]) if ib else 0.0
+        delta = vb - va
+        # Percentual so existe quando havia base. De 0 para 300 mil nao e
+        # "+infinito%": e ENTRADA, e a tela mostra a palavra, nao um numero.
+        pct = (delta / va * 100.0) if va > 0 else None
+        if va == 0 and vb > 0:
+            situacao = "novo"
+        elif vb == 0 and va > 0:
+            situacao = "saiu"
+        elif abs(delta) < 0.005:
+            situacao = "igual"
+        else:
+            situacao = "subiu" if delta > 0 else "caiu"
+        itens.append({
+            "nome_normalizado": chave,
+            "nome_display": (ib or ia)["nome_display"],
+            "valor_a": va,
+            "valor_b": vb,
+            "lancamentos_a": int(ia["total_lancamentos"]) if ia else 0,
+            "lancamentos_b": int(ib["total_lancamentos"]) if ib else 0,
+            "delta": delta,
+            "delta_pct": pct,
+            "situacao": situacao,
+        })
+
+    # Quem mais mexeu no dinheiro primeiro — em valor absoluto, nao em
+    # percentual: +900% de R$ 2 mil nao interessa a ninguem.
+    itens.sort(key=lambda i: (-abs(i["delta"]), -max(i["valor_a"], i["valor_b"])))
+
+    ta = sum(i["valor_a"] for i in itens)
+    tb = sum(i["valor_b"] for i in itens)
+    return {
+        "periodo_a": {"anos": anos_a, "rotulo": _rotulo_periodo(anos_a),
+                      "total": ta, "parlamentares": len(por_a)},
+        "periodo_b": {"anos": anos_b, "rotulo": _rotulo_periodo(anos_b),
+                      "total": tb, "parlamentares": len(por_b)},
+        # A tela mostra isto junto do total: comparar 2 anos com 4 nao e errado,
+        # mas quem le precisa saber que os periodos tem tamanhos diferentes.
+        "mesma_duracao": len(anos_a) == len(anos_b),
+        "delta": tb - ta,
+        "delta_pct": ((tb - ta) / ta * 100.0) if ta > 0 else None,
+        "items": itens,
+        "total": len(itens),
+    }
+
+
+def _rotulo_periodo(anos: list[int]) -> str:
+    """"2021–2024" para anos contiguos, "2021, 2023" para soltos."""
+    if len(anos) == 1:
+        return str(anos[0])
+    contiguo = all(x == anos[i - 1] + 1 for i, x in enumerate(anos) if i)
+    return f"{anos[0]}–{anos[-1]}" if contiguo else ", ".join(map(str, anos))
+
+
 @router.get("/{nome_normalizado:path}")
 async def detalhe(
     nome_normalizado: str,
