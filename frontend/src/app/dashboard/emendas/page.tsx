@@ -7,6 +7,7 @@ import { useMunicipio } from "@/contexts/MunicipioContext";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { MultiSelect } from "@/components/ui/multi-select";
+import { Bloco, BlocoHead, Campos, ItemLinha, Lista, Selo } from "@/components/ui/superficies";
 import { atalhosAnos, resumoAnos } from "@/lib/periodo";
 import {
   Table,
@@ -21,6 +22,15 @@ import { formatCurrency } from "@/lib/utils";
 /** Os tres tipos que o SIGCON usa na indicacao. Ficam aqui como lista fixa
  *  porque o backend compara com ILIKE por item — acento e caixa nao importam,
  *  e a lista nao muda sem mudanca normativa. */
+/** Cor no selo de status SO quando e alerta. Mesma regra de Convenios. */
+function statusTom(s?: string | null): "neutro" | "ok" | "atencao" | "critico" {
+  const t = (s || "").toLowerCase();
+  if (/(cancelad|rejeitad|impedid|indeferid)/.test(t)) return "critico";
+  if (/(pendente|an[áa]lise|aguardando|tramit)/.test(t)) return "atencao";
+  if (/(aprovad|empenhad|pago|liquidad)/.test(t)) return "ok";
+  return "neutro";
+}
+
 const TIPOS_INDICACAO = [
   "Transferência Especial",
   "Aplicação Direta",
@@ -212,61 +222,63 @@ export default function EmendasEstaduaisPage() {
             const isCollapsed = collapsedYears.has(y);
             const totalAno = list.reduce((s, e) => s + (e.valor_indicacao ?? 0), 0);
             return (
-              <div key={y} className="rounded-lg border bg-base-100 overflow-hidden">
-                <button
-                  onClick={() => toggleYear(y)}
-                  className="w-full flex items-center justify-between px-3 py-2 bg-base-200 hover:bg-base-300 border-b"
-                >
-                  <div className="flex items-center gap-2">
-                    {isCollapsed ? <ChevronRight className="size-4" /> : <ChevronDown className="size-4" />}
-                    <span className="font-bold text-sm">{y || "Sem ano"}</span>
-                    <span className="text-xs text-muted-foreground">({list.length} indicações)</span>
-                  </div>
-                  <span className="text-xs font-mono font-semibold">{formatCurrency(totalAno)}</span>
+              /* Grupo por ano, na gramatica do Painel: um bloco com cabecalho
+                 (titulo, contagem, total a direita) e a lista de itens dentro.
+                 E a mesma estrutura que o Painel usa para agrupar lancamentos
+                 por parlamentar. */
+              <Bloco key={y} className="p-3">
+                <button onClick={() => toggleYear(y)} className="text-left">
+                  <BlocoHead
+                    icon={isCollapsed ? ChevronRight : ChevronDown}
+                    titulo={y || "Sem ano"}
+                    sub={`${list.length} indicação(ões)`}
+                    right={<span className="bi-num text-[13px]">{formatCurrency(totalAno)}</span>}
+                    className={isCollapsed ? "mb-0" : undefined}
+                  />
                 </button>
                 {!isCollapsed && (
-                  <Table className="text-xs table-fixed w-full">
-                    <TableHeader>
-                      <TableRow className="[&>th]:py-1.5 [&>th]:px-2 [&>th]:text-[10px] [&>th]:font-semibold [&>th]:whitespace-normal [&>th]:align-bottom [&>th]:leading-tight">
-                        <TableHead className="w-[74px]">Nº da Indicação</TableHead>
-                        <TableHead className="w-[168px]">Responsável</TableHead>
-                        <TableHead className="w-[48px]">Tipo</TableHead>
-                        <TableHead className="w-[58px]">Unidade Orçamentária</TableHead>
-                        <TableHead className="w-[76px]">Sigla</TableHead>
-                        <TableHead className="w-[124px]">CNPJ do Beneficiário</TableHead>
-                        <TableHead className="min-w-0">Beneficiário</TableHead>
-                        <TableHead className="w-[118px]">Grupo de Despesa</TableHead>
-                        <TableHead className="min-w-0">Tipo de Atendimento</TableHead>
-                        <TableHead className="w-[100px] text-right">Valor</TableHead>
-                        <TableHead className="w-[96px]">Status</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {list.map((em) => (
-                        <TableRow key={em.id} className="[&>td]:py-1.5 [&>td]:px-2 [&>td]:text-[11px] [&>td]:align-top [&>td]:leading-snug hover:bg-base-200">
-                          <TableCell className="font-mono text-[10px]" title={`Nº Indicação: ${em.nr_indicacao || "-"}`}>{em.nr_indicacao || "-"}</TableCell>
-                          {/* O nome do parlamentar e a coisa que identifica a
-                              emenda — cortar aqui e cortar justamente o dado. */}
-                          <TableCell className="whitespace-normal break-words font-medium">{em.nome_responsavel || "-"}</TableCell>
-                          <TableCell title={em.tipo_indicacao || ""}>
-                            <span className="inline-flex items-center rounded bg-info/15 border border-info px-1 py-0.5 text-[9px] font-mono text-info">{siglaTipo(em.tipo_indicacao)}</span>
-                          </TableCell>
-                          <TableCell className="font-mono text-[10px]" title={`UO ${em.uo_codigo || "-"}`}>{em.uo_codigo || "-"}</TableCell>
-                          <TableCell className="font-mono text-[10px] whitespace-normal break-all">{em.uo_sigla || "-"}</TableCell>
-                          <TableCell className="font-mono text-[10px] whitespace-normal break-all">{em.cnpj_beneficiario || "-"}</TableCell>
-                          <TableCell className="whitespace-normal break-words">{em.beneficiario || "-"}</TableCell>
-                          <TableCell className="whitespace-normal break-words text-[10px]">{em.grupo_despesa || "-"}</TableCell>
-                          <TableCell className="whitespace-normal break-words text-[10px]">{em.tipo_atendimento || "-"}</TableCell>
-                          <TableCell className="text-right font-mono whitespace-nowrap" title={`Valor: ${formatCurrency(em.valor_indicacao)}`}>{formatCurrency(em.valor_indicacao)}</TableCell>
-                          <TableCell title={em.status_indicacao || ""}>
-                            <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-medium border whitespace-normal break-words text-left ${statusColor(em.status_indicacao)}`}>{em.status_indicacao || "-"}</span>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                  <Lista>
+                    {list.map((em) => (
+                      <ItemLinha
+                        key={em.id}
+                        titulo={em.tipo_atendimento || em.beneficiario || "Indicação"}
+                        valor={formatCurrency(em.valor_indicacao)}
+                        meta={
+                          <>
+                            {em.tipo_indicacao && (
+                              <Selo title={em.tipo_indicacao}>{siglaTipo(em.tipo_indicacao)}</Selo>
+                            )}
+                            {em.status_indicacao && (
+                              <Selo tom={statusTom(em.status_indicacao)} title={em.status_indicacao}>
+                                {em.status_indicacao}
+                              </Selo>
+                            )}
+                            {em.nome_responsavel && (
+                              <span className="font-medium" style={{ color: "var(--bi-muted)" }}>
+                                {em.nome_responsavel}
+                              </span>
+                            )}
+                            {em.beneficiario && <span className="truncate">→ {em.beneficiario}</span>}
+                            <span className="font-mono">
+                              {em.nr_indicacao ? `· ind ${em.nr_indicacao}` : ""}
+                              {em.cnpj_beneficiario ? ` · CNPJ ${em.cnpj_beneficiario}` : ""}
+                            </span>
+                          </>
+                        }
+                      >
+                        <Campos
+                          campos={[
+                            { rotulo: "Unidade orçamentária", valor: em.uo_sigla || em.uo_codigo || "—",
+                              title: [em.uo_codigo, em.uo_sigla].filter(Boolean).join(" · ") },
+                            { rotulo: "Grupo de despesa", valor: em.grupo_despesa || "—" },
+                            { rotulo: "Ano", valor: em.ano ?? "—" },
+                          ]}
+                        />
+                      </ItemLinha>
+                    ))}
+                  </Lista>
                 )}
-              </div>
+              </Bloco>
             );
           })}
         </div>

@@ -2,9 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import api from "@/lib/api";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import toast from "react-hot-toast";
 
 // Config de marca por instância (build-time).
@@ -70,31 +68,37 @@ export default function LoginPage() {
 
   return (
     <div className="relative min-h-screen flex items-center justify-center overflow-hidden bg-base-200 p-4">
-      {/* brilho de marca (design "Base") */}
-      <div className="pointer-events-none absolute -top-40 left-1/2 h-[28rem] w-[40rem] -translate-x-1/2 rounded-full bg-primary/15 blur-3xl" />
-      <div className="pointer-events-none absolute -bottom-24 right-[-6rem] h-80 w-80 rounded-full bg-accent-purple/15 blur-3xl" />
-      <Card className="relative w-full max-w-md border border-base-300/60 shadow-theme-lg">
-        <CardHeader className="flex flex-col items-center gap-2 pb-2 text-center">
+      {/* Um brilho so, e discreto. Eram dois — violeta em cima e roxo embaixo —
+          herdados do design "Base". A identidade do Painel nao tem gradiente
+          nem cor de fundo: ela e cinza calmo com um acento que aparece pouco.
+          Duas manchas coloridas na primeira tela do produto contradiziam tudo
+          que vem depois do login. */}
+      <div
+        className="pointer-events-none absolute -top-56 left-1/2 h-[32rem] w-[44rem] -translate-x-1/2 rounded-full blur-3xl"
+        style={{ background: "color-mix(in oklab, var(--bi-accent) 10%, transparent)" }}
+      />
+      <div className="bi-card relative w-full max-w-md p-6">
+        <div className="flex flex-col items-center gap-2 pb-4 text-center">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/pactha-logo.png" alt="PACTHA" className="h-11 w-auto max-w-[210px] object-contain" />
           <div className="leading-tight">
-            <p className="text-sm font-semibold text-base-content/75">Monitoramento</p>
-            <p className="text-xs text-base-content/50">Convênios | Emendas | Transferências</p>
+            <p className="text-[13px] font-semibold" style={{ color: "var(--bi-muted)" }}>Monitoramento</p>
+            <p className="text-[11px]" style={{ color: "var(--bi-faint)" }}>Convênios · Emendas · Transferências</p>
           </div>
           {CLIENT_LOGO && (
             <div className="mt-1 flex flex-col items-center gap-1">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={CLIENT_LOGO} alt="Cliente" className="h-14 w-auto max-w-[160px] object-contain" />
               {CLIENT_SUBTITLE && (
-                <p className="text-xs font-semibold text-base-content/60">{CLIENT_SUBTITLE}</p>
+                <p className="text-[11px] font-semibold" style={{ color: "var(--bi-muted)" }}>{CLIENT_SUBTITLE}</p>
               )}
             </div>
           )}
-        </CardHeader>
-        <CardContent>
+        </div>
+        <div>
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <label className="text-sm font-medium mb-1 block">Email</label>
+              <label className="mb-1 block text-[12px] font-medium" style={{ color: "var(--bi-muted)" }}>Email</label>
               <Input
                 type="email"
                 placeholder="seu@email.com"
@@ -104,7 +108,7 @@ export default function LoginPage() {
               />
             </div>
             <div>
-              <label className="text-sm font-medium mb-1 block">Senha</label>
+              <label className="mb-1 block text-[12px] font-medium" style={{ color: "var(--bi-muted)" }}>Senha</label>
               <Input
                 type="password"
                 placeholder="Sua senha"
@@ -113,12 +117,19 @@ export default function LoginPage() {
                 required
               />
             </div>
-            <Button type="submit" className="w-full" disabled={loading}>
+            {/* O botao preenchido da identidade e QUASE PRETO, nao colorido —
+                e assim que o Painel faz (18.53 de contraste). */}
+            <button
+              type="submit"
+              disabled={loading}
+              className="h-10 w-full rounded-xl text-[13px] font-semibold transition-opacity disabled:opacity-60"
+              style={{ background: "var(--bi-cta)", color: "var(--bi-cta-ink)" }}
+            >
               {loading ? "Entrando..." : "Entrar"}
-            </Button>
+            </button>
           </form>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
 }
