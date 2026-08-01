@@ -27,16 +27,20 @@ import * as React from "react";
 export function Bloco({
   children,
   className = "",
+  style,
   plano = false,
 }: {
   children: React.ReactNode;
   className?: string;
+  /** Fundo/borda próprios — para o cartão INTEIRO virar alerta, e não só o
+   *  texto dentro dele. Usa token, nunca cor crua. */
+  style?: React.CSSProperties;
   /** `plano` = a variante interna, sem sombra e com raio menor (itens de lista
    *  dentro de um bloco). É o `bi-card-flat` do Painel. */
   plano?: boolean;
 }) {
   return (
-    <div className={`${plano ? "bi-card-flat" : "bi-card"} flex flex-col ${className}`}>
+    <div className={`${plano ? "bi-card-flat" : "bi-card"} flex flex-col ${className}`} style={style}>
       {children}
     </div>
   );

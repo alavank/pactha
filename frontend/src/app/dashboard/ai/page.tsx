@@ -405,7 +405,7 @@ export default function AiChatPage() {
               <div
                 className={`rounded-lg px-3.5 py-2.5 text-sm ${
                   m.role === "user"
-                    ? "bg-primary text-white"
+                    ? "bg-primary text-primary-content"
                     : "bg-base-100 border border-base-300 text-base-content"
                 }`}
               >
