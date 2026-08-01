@@ -3,9 +3,10 @@
 import React, { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FileText, Plus, Trash2, Eye, Download, Loader2, ChevronDown } from "lucide-react";
+import { Plus, Trash2, Eye, Download, Loader2, ChevronDown } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { Bloco, BlocoHead, Campos, ItemLinha, Lista, Selo, Vazio } from "@/components/ui/superficies";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 
 interface RmListItem {
@@ -18,6 +19,33 @@ interface RmListItem {
   status: string;
   updated_at?: string;
 }
+
+/** Cor no selo de status SO quando ela e um alerta. Mesma regra de Convenios e
+ *  Emendas.
+ *
+ *  O que havia aqui era o inverso: "finalizado" saia verde e TODO o resto saia
+ *  amarelo — ou seja, um RM em rascunho (o estado normal de trabalho, a maioria
+ *  da lista) aparecia pintado de aviso o tempo todo. Rascunho nao exige acao
+ *  nenhuma, entao e cinza. */
+function rmTom(s?: string | null): "neutro" | "ok" | "atencao" | "critico" {
+  const t = (s || "").toLowerCase();
+  if (/(cancelad|rejeitad)/.test(t)) return "critico";
+  if (/(pendente|an[áa]lise|revis|aguardando)/.test(t)) return "atencao";
+  if (/(finalizad|conclu[íi]d|aprovad)/.test(t)) return "ok";
+  return "neutro";
+}
+
+/* As pecas da identidade nao trazem botao — entao o botao de acao e montado
+   aqui com os tokens, cinza no repouso. Antes eram tres cores de enfeite numa
+   linha so (violeta em "Abrir", verde em "Relatorio", vermelho em remover), e
+   com tudo pintado nada mais chamava atencao. */
+const CLS_ACAO =
+  "inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors hover:brightness-95";
+const ESTILO_ACAO: React.CSSProperties = {
+  background: "var(--bi-surface)",
+  border: "1px solid var(--bi-line)",
+  color: "var(--bi-muted)",
+};
 
 export default function RmListPage() {
   const router = useRouter();
@@ -91,108 +119,158 @@ export default function RmListPage() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold text-primary flex items-center gap-2">
-          <FileText className="size-6" /> Relatorio de Monitoramento (RM)
-        </h1>
-        <p className="text-sm text-base-content/60">
-          Gestao dos RMs do municipio - padrao Freitas (criar, editar, exportar PDF).
+        <h1 className="text-2xl font-bold text-base-content">Relatório de Monitoramento (RM)</h1>
+        <p className="mt-0.5 text-sm" style={{ color: "var(--bi-muted)" }}>
+          Gestão dos RMs do município — padrão Freitas (criar, editar, exportar PDF).
         </p>
       </div>
 
-      {/* Form de novo RM */}
-      <div className="bg-base-100 border rounded p-4">
-        <h2 className="text-sm font-semibold mb-1">Novo RM</h2>
-        <p className="text-xs text-base-content/60 mb-3">
-          O RM é <strong>anual</strong> (por ano de emissão). O conteúdo é preenchido automaticamente com os dados
-          atuais do banco: propostas do ano em análise/aprovação + todas as empenhadas. Você edita livremente depois.
-        </p>
-        <div className="flex flex-wrap gap-3 items-end">
+      {/* Novo RM: bloco-envelope na gramatica do Painel — cabecalho com icone e
+          subtitulo cinza, e o formulario dentro. */}
+      <Bloco className="p-3">
+        <BlocoHead
+          icon={Plus}
+          titulo="Novo RM"
+          sub={
+            <>
+              O RM é <strong>anual</strong> (por ano de emissão). O conteúdo é preenchido automaticamente com os
+              dados atuais do banco: propostas do ano em análise/aprovação + todas as empenhadas. Você edita
+              livremente depois.
+            </>
+          }
+        />
+        <div className="flex flex-wrap items-end gap-3">
           <div>
-            <label className="text-xs text-base-content/70 mb-1 block">Ano de referência</label>
-            <select className="border border-base-300 rounded-md p-2 text-sm h-9"
-                    value={novoAno} onChange={(e) => setNovoAno(Number(e.target.value))}>
+            {/* 11px em --bi-muted, como o rotulo de controle das demais telas.
+                Estava em 9px MAIUSCULO, que e o desenho exclusivo do rotulo de
+                <Campos> — um controle vestido de celula de dado. */}
+            <label
+              htmlFor="rm-novo-ano"
+              className="mb-1 block text-[11px]"
+              style={{ color: "var(--bi-muted)" }}
+            >
+              Ano de referência
+            </label>
+            <select
+              id="rm-novo-ano"
+              className="bi-num h-9 rounded-md border px-2 text-[13px]"
+              style={{ borderColor: "var(--bi-line)", background: "var(--bi-surface)", color: "var(--bi-text)" }}
+              value={novoAno}
+              onChange={(e) => setNovoAno(Number(e.target.value))}
+            >
               {anosOpcoes.map((a) => <option key={a} value={a}>{a}</option>)}
             </select>
           </div>
-          <Button onClick={criar} disabled={criando} className="bg-primary hover:bg-primary/90">
+          <Button onClick={criar} disabled={criando}>
             {criando ? <Loader2 className="size-4 animate-spin mr-1" /> : <Plus className="size-4 mr-1" />}
             Criar RM {novoAno}
           </Button>
         </div>
-      </div>
+      </Bloco>
 
-      {/* Lista */}
-      <div className="bg-base-100 border rounded overflow-hidden">
-        <div className="px-3 py-2 border-b bg-base-200 text-sm"><strong>{items.length}</strong> RM(s) cadastrado(s)</div>
-        {loading ? (
-          <div className="p-8 text-center"><Loader2 className="size-6 animate-spin mx-auto text-primary" /></div>
-        ) : items.length === 0 ? (
-          <div className="p-12 text-center text-base-content/60">Nenhum RM ainda. Crie o primeiro acima.</div>
-        ) : (
-          <ul className="divide-y">
-            {items.map((rm) => (
-              <li key={rm.id} className="flex items-center justify-between gap-3 px-3 py-2.5 hover:bg-base-200">
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-semibold text-base-content">
-                    {rm.titulo || `RM ${(rm.data_referencia || "").slice(0, 4)} - ${rm.municipio_nome || ""}`}
-                  </div>
-                  <div className="text-xs text-base-content/60">
-                    Exercício: {(rm.data_referencia || "").slice(0, 4)} ·
-                    <span className={`ml-1.5 inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold ${rm.status === "finalizado" ? "bg-success/15 text-success" : "bg-warning/15 text-warning"}`}>
-                      {rm.status}
-                    </span>
-                    {rm.updated_at && <span className="ml-2">atualizado {new Date(rm.updated_at).toLocaleString("pt-BR")}</span>}
-                  </div>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <Link
-                    href={`/dashboard/rm/${rm.id}?municipio_id=${municipioId}`}
-                    className="inline-flex items-center gap-1 rounded bg-primary/10 hover:bg-primary/10 px-2.5 py-1 text-xs text-primary"
-                  >
-                    <Eye className="size-3.5" /> Abrir
-                  </Link>
-                  <div className="relative">
-                    <button onClick={() => setMenuId(menuId === rm.id ? null : rm.id)}
-                      className="inline-flex items-center gap-1 rounded bg-success/15 hover:bg-success/15 px-2.5 py-1 text-xs text-success">
-                      <Download className="size-3.5" /> Relatório <ChevronDown className="size-3" />
+      {/* A LISTA DEIXOU DE SER TABELA-EM-CAIXA.
+          Era um <ul divide-y> dentro de uma moldura com cabecalho cinza; agora
+          e a pilha de cartoes macios da identidade, sem borda entre itens. Toda
+          coluna que existia continua na tela: titulo e titulo, status virou
+          selo, exercicio/cidade/atualizacao foram para <Campos> (posicoes
+          fixas, para o olho descer a coluna como descia na tabela). */}
+      <p className="text-[11px]" style={{ color: "var(--bi-muted)" }}>
+        <span className="bi-num">{items.length}</span> RM(s) cadastrado(s)
+      </p>
+
+      {loading ? (
+        /* Mesmo esqueleto da tela de Plano de Ação, a outra do lote que tem um.
+           Estava em `bg-base-200`, que aponta para --bi-bg — a cor do FUNDO da
+           pagina: o bloco de carregamento ficava invisivel. --bi-surface-2 e o
+           cinza que existe justamente para aparecer sobre o fundo. */
+        <div className="space-y-1.5">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-16 animate-pulse rounded-lg" style={{ background: "var(--bi-surface-2)" }} />
+          ))}
+        </div>
+      ) : items.length === 0 ? (
+        <Vazio>Nenhum RM ainda. Crie o primeiro acima.</Vazio>
+      ) : (
+        <Lista>
+          {items.map((rm) => {
+            const exercicio = (rm.data_referencia || "").slice(0, 4);
+            const href = `/dashboard/rm/${rm.id}?municipio_id=${municipioId}`;
+            return (
+              <ItemLinha
+                key={rm.id}
+                /* O corpo abre o RM, como nos cartoes do Painel. O botao "Abrir"
+                   continua ali de proposito: e o unico affordance visivel. */
+                onClick={() => router.push(href)}
+                titulo={rm.titulo || (exercicio ? `RM ${exercicio}` : "RM sem exercício informado")}
+                meta={
+                  <>
+                    <Selo tom={rmTom(rm.status)} title={`Status: ${rm.status}`}>{rm.status}</Selo>
+                    {rm.municipio_nome && <span>{rm.municipio_nome}</span>}
+                    <span className="font-mono">· #{rm.id}</span>
+                  </>
+                }
+                acao={
+                  <>
+                    <Link href={href} className={CLS_ACAO} style={ESTILO_ACAO} title="Abrir o RM para edição">
+                      <Eye className="size-3.5" /> Abrir
+                    </Link>
+                    <div className="relative">
+                      <button
+                        onClick={() => setMenuId(menuId === rm.id ? null : rm.id)}
+                        className={CLS_ACAO}
+                        style={ESTILO_ACAO}
+                      >
+                        <Download className="size-3.5" /> Relatório <ChevronDown className="size-3" />
+                      </button>
+                      {menuId === rm.id && (
+                        <>
+                          <div className="fixed inset-0 z-10" onClick={() => setMenuId(null)} />
+                          <div className="bi-card absolute right-0 z-20 mt-1 w-56 py-1 text-left text-xs">
+                            <button className="w-full px-3 py-1.5 text-left hover:bg-base-200" onClick={() => exportar(rm.id, "completo")}>
+                              <span className="font-medium" style={{ color: "var(--bi-text)" }}>Completo</span>
+                              <span className="block text-[10px]" style={{ color: "var(--bi-faint)" }}>Detalhado (PDF)</span>
+                            </button>
+                            <button className="w-full px-3 py-1.5 text-left hover:bg-base-200" onClick={() => exportar(rm.id, "resumido")}>
+                              <span className="font-medium" style={{ color: "var(--bi-text)" }}>Resumido</span>
+                              <span className="block text-[10px]" style={{ color: "var(--bi-faint)" }}>Só pendências (PDF)</span>
+                            </button>
+                            <div className="my-1 border-t" style={{ borderColor: "var(--bi-line)" }} />
+                            <button className="w-full px-3 py-1.5 text-left hover:bg-base-200" onClick={() => exportar(rm.id, "totalizado", "xlsx")}>
+                              <span className="font-medium" style={{ color: "var(--bi-text)" }}>Totalizado — Excel</span>
+                              <span className="block text-[10px]" style={{ color: "var(--bi-faint)" }}>Planilha .xlsx</span>
+                            </button>
+                            <button className="w-full px-3 py-1.5 text-left hover:bg-base-200" onClick={() => exportar(rm.id, "totalizado", "pdf")}>
+                              <span className="font-medium" style={{ color: "var(--bi-text)" }}>Totalizado — PDF</span>
+                              <span className="block text-[10px]" style={{ color: "var(--bi-faint)" }}>Grade em PDF</span>
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                    <button onClick={() => remover(rm.id)} className={CLS_ACAO} style={ESTILO_ACAO} title="Remover este RM">
+                      <Trash2 className="size-3.5" />
                     </button>
-                    {menuId === rm.id && (
-                      <>
-                        <div className="fixed inset-0 z-10" onClick={() => setMenuId(null)} />
-                        <div className="absolute right-0 mt-1 z-20 w-56 rounded-md border border-base-300 bg-base-100 shadow-lg py-1 text-left text-xs">
-                          <button className="w-full text-left px-3 py-1.5 hover:bg-base-200" onClick={() => exportar(rm.id, "completo")}>
-                            <span className="font-medium text-base-content">Completo</span>
-                            <span className="block text-[11px] text-base-content/50">Detalhado (PDF)</span>
-                          </button>
-                          <button className="w-full text-left px-3 py-1.5 hover:bg-base-200" onClick={() => exportar(rm.id, "resumido")}>
-                            <span className="font-medium text-base-content">Resumido</span>
-                            <span className="block text-[11px] text-base-content/50">Só pendências (PDF)</span>
-                          </button>
-                          <div className="border-t border-base-200 my-1" />
-                          <button className="w-full text-left px-3 py-1.5 hover:bg-base-200" onClick={() => exportar(rm.id, "totalizado", "xlsx")}>
-                            <span className="font-medium text-base-content">Totalizado — Excel</span>
-                            <span className="block text-[11px] text-base-content/50">Planilha .xlsx</span>
-                          </button>
-                          <button className="w-full text-left px-3 py-1.5 hover:bg-base-200" onClick={() => exportar(rm.id, "totalizado", "pdf")}>
-                            <span className="font-medium text-base-content">Totalizado — PDF</span>
-                            <span className="block text-[11px] text-base-content/50">Grade em PDF</span>
-                          </button>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                  <button onClick={() => remover(rm.id)}
-                    className="inline-flex items-center gap-1 rounded bg-error/15 hover:bg-error/10 px-2.5 py-1 text-xs text-error">
-                    <Trash2 className="size-3.5" />
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+                  </>
+                }
+              >
+                <Campos
+                  campos={[
+                    { rotulo: "Exercício", valor: exercicio || "—" },
+                    { rotulo: "Cidade de emissão", valor: rm.cidade_emissao || "—" },
+                    {
+                      rotulo: "Atualizado em",
+                      valor: rm.updated_at ? new Date(rm.updated_at).toLocaleString("pt-BR") : "—",
+                      title: rm.updated_at || undefined,
+                    },
+                  ]}
+                />
+              </ItemLinha>
+            );
+          })}
+        </Lista>
+      )}
     </div>
   );
 }

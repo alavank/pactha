@@ -5,12 +5,13 @@ import { useMunicipio } from "@/contexts/MunicipioContext";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { anosOpcoes, atalhosAnos, inicioDoMandato, resumoAnos } from "@/lib/periodo";
 import {
-  UserCircle2, Loader2, Search, ChevronDown, ChevronRight,
+  Loader2, Search, ChevronDown, ChevronRight,
   Landmark, Building2, FileText, Eraser, Coins, HeartPulse, ArrowLeftRight,
 } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Bloco, BlocoHead, Campos, ItemLinha, Lista, Numero, Selo, Vazio, situacaoTom } from "@/components/ui/superficies";
 
 interface ParlamentarItem {
   nome_normalizado: string;
@@ -20,6 +21,11 @@ interface ParlamentarItem {
   municipios: string[];
   por_fonte: { sigcon: number; voluntaria: number; emenda: number; plano_acao: number; pac: number; fns: number };
 }
+
+/** Parlamentar que a COMPARACAO trouxe mas que nao esta no recorte de anos da
+ *  lista: nao ha contagem por fonte nem municipios para ele, e o cartao precisa
+ *  dizer isso em vez de mostrar seis tracinhos sem explicacao. */
+type ItemExibido = ParlamentarItem & { foraDoRecorte?: boolean };
 
 /** Uma linha da comparacao entre dois periodos. */
 interface ComparaItem {
@@ -143,36 +149,65 @@ interface ParlamentarDetalhe {
   valor_total: number;
 }
 
+type Tom = "neutro" | "ok" | "atencao" | "critico";
+
 function fmtMoney(v: number | null | undefined): string {
   if (v == null) return "-";
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
-/** Variação entre os dois períodos.
+function soma<T>(xs: T[], f: (x: T) => number): number {
+  return xs.reduce((s, x) => s + (f(x) || 0), 0);
+}
+
+
+/** Leitura da variação entre os dois períodos.
  *
- *  Mostra a PALAVRA quando não há percentual honesto a mostrar: de zero para
+ *  Devolve a PALAVRA quando não há percentual honesto a mostrar: de zero para
  *  R$ 300 mil não é "+∞%", é uma entrada nova; e de R$ 200 mil para zero é o
- *  parlamentar ter parado de destinar, que é a informação que importa. */
-function VariacaoBadge({ delta, pct, grande = false }: {
-  delta: number; pct: number | null; grande?: boolean;
-}) {
+ *  parlamentar ter parado de destinar, que é a informação que importa.
+ *
+ *  Sobre o tom: aqui a cor não é enfeite, é o próprio dado — a tela existe para
+ *  responder "subiu ou caiu?". Ainda assim, o critério segue o do resto do
+ *  sistema: verde para o bom resultado, âmbar para a queda e vermelho só para o
+ *  caso que exige ação de verdade (o parlamentar zerou o município). */
+function variacao(delta: number, pct: number | null): {
+  tom: Tom; seta: string; texto: string; dinheiro: string | null;
+} {
   const zero = Math.abs(delta) < 0.005;
   const sobe = delta > 0;
-  const cor = zero ? "text-base-content/50" : sobe ? "text-success" : "text-error";
-  const texto = zero ? "sem variação"
-    : pct == null ? (sobe ? "novo no período" : "sem verba no período")
-    : `${sobe ? "+" : "−"}${Math.abs(pct).toFixed(0)}%`;
-  const seta = zero ? "—" : sobe ? "▲" : "▼";
+  return {
+    tom: zero ? "neutro" : sobe ? "ok" : pct == null ? "critico" : "atencao",
+    seta: zero ? "—" : sobe ? "▲" : "▼",
+    texto: zero
+      ? "sem variação"
+      : pct == null
+        ? (sobe ? "novo no período" : "sem verba no período")
+        : `${sobe ? "+" : "−"}${Math.abs(pct).toFixed(0)}%`,
+    dinheiro: zero ? null : `${sobe ? "+" : "−"}${fmtMoney(Math.abs(delta))}`,
+  };
+}
+
+/** Grupo de lançamentos de UMA fonte dentro do parlamentar expandido.
+ *  Substitui a tabela interna: cabeçalho com contagem e total à direita, itens
+ *  soltos dentro — a mesma estrutura que Emendas usa para agrupar por ano. */
+function GrupoFonte({ icon, titulo, sub, total, children }: {
+  icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
+  titulo: string;
+  sub: string;
+  total: number;
+  children: React.ReactNode;
+}) {
   return (
-    <span className={`inline-flex items-center gap-1 font-semibold ${cor} ${grande ? "text-sm" : "text-xs"}`}>
-      <span aria-hidden>{seta}</span>
-      <span>{texto}</span>
-      {!zero && pct != null && (
-        <span className="font-normal text-base-content/50">
-          ({sobe ? "+" : "−"}{fmtMoney(Math.abs(delta)).replace("R$", "R$")})
-        </span>
-      )}
-    </span>
+    <Bloco className="p-3">
+      <BlocoHead
+        icon={icon}
+        titulo={titulo}
+        sub={sub}
+        right={<span className="bi-num text-[13px]">{fmtMoney(total)}</span>}
+      />
+      <Lista>{children}</Lista>
+    </Bloco>
   );
 }
 
@@ -269,7 +304,7 @@ function ParlamentaresInner() {
     ? new Map(comp.items.map((i) => [i.nome_normalizado, i]))
     : null;
 
-  const listaExibida: ParlamentarItem[] = comp
+  const listaExibida: ItemExibido[] = comp
     ? comp.items.map((c) => {
         const orig = items.find((i) => i.nome_normalizado === c.nome_normalizado);
         return orig ?? {
@@ -281,6 +316,7 @@ function ParlamentaresInner() {
           valor_total: c.valor_b || c.valor_a,
           municipios: [],
           por_fonte: { sigcon: 0, voluntaria: 0, emenda: 0, plano_acao: 0, pac: 0, fns: 0 },
+          foraDoRecorte: true,
         };
       })
     : items;
@@ -295,7 +331,10 @@ function ParlamentaresInner() {
     }
     ns.add(k);
     setExpandedKeys(ns);
-    if (detailCache[k]) return;
+    // Cache com uma excecao: "error" NAO conta como carregado. Antes qualquer
+    // valor no cache barrava a nova busca, entao o "tente novamente" da mensagem
+    // era mentira — reabrir o cartao devolvia o mesmo erro sem chamar a API.
+    if (detailCache[k] && detailCache[k] !== "error") return;
     setDetailCache((c) => ({ ...c, [k]: "loading" }));
     try {
       const params: Record<string, string | string[]> = {};
@@ -336,15 +375,14 @@ function ParlamentaresInner() {
     }
   };
 
+  const varGeral = comp ? variacao(comp.delta, comp.delta_pct) : null;
+
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="border-b border-base-300 pb-4">
-        <h1 className="text-2xl font-bold text-base-content flex items-center gap-2">
-          <UserCircle2 className="size-6 text-info" />
-          Parlamentares
-        </h1>
-        <p className="text-sm text-base-content/60 mt-1">
+      <div className="border-b pb-4" style={{ borderColor: "var(--bi-line)" }}>
+        <h1 className="text-2xl font-bold text-base-content">Parlamentares</h1>
+        <p className="mt-1 text-sm" style={{ color: "var(--bi-muted)" }}>
           Lista agregada dos parlamentares (deputados estaduais/federais e senadores)
           com lançamentos vinculados — convênios SIGCON-MG, propostas TransfereGov/SICONV,
           emendas estaduais, Transferência Especial / Plano de Ação (RP9), Seleção PAC e
@@ -353,9 +391,13 @@ function ParlamentaresInner() {
       </div>
 
       {/* Filtro */}
-      <div className="bg-base-100 border rounded p-4 flex flex-wrap gap-3 items-end">
-        <div className="flex-1 min-w-[200px]">
-          <label className="text-xs text-base-content/70 mb-1 block">Buscar parlamentar</label>
+      <div className="bi-card flex flex-wrap items-end gap-3 p-4">
+        <div className="min-w-[200px] flex-1">
+          {/* 11px em --bi-muted: a escala de rotulo de controle usada nas demais
+              telas do lote (esta era a unica em 12px). */}
+          <label className="mb-1 block text-[11px]" style={{ color: "var(--bi-muted)" }}>
+            Buscar parlamentar
+          </label>
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -364,8 +406,8 @@ function ParlamentaresInner() {
           />
         </div>
         <div>
-          <label className="text-xs text-base-content/70 mb-1 block">
-            Anos <span className="text-base-content/40">(um, alguns ou o mandato)</span>
+          <label className="mb-1 block text-[11px]" style={{ color: "var(--bi-muted)" }}>
+            Anos <span style={{ color: "var(--bi-faint)" }}>(um, alguns ou o mandato)</span>
           </label>
           <MultiSelect
             className="min-w-[190px]"
@@ -379,7 +421,7 @@ function ParlamentaresInner() {
             atalhos={ATALHOS_ANOS}
           />
         </div>
-        <Button onClick={carregar} className="bg-info hover:bg-info/90">
+        <Button onClick={carregar}>
           <Search className="size-4 mr-1" /> Buscar
         </Button>
         <Button
@@ -419,9 +461,12 @@ function ParlamentaresInner() {
 
       {/* ---------------- Painel de comparacao ---------------- */}
       {compararOn && (
-        <div className="rounded-xl border border-primary/40 bg-primary/5 p-3 space-y-3">
+        /* Bloco em vez do retangulo violeta: o painel deixa de gritar e passa a
+           ser mais um cartao da tela — quem destaca a comparacao sao os numeros
+           dentro dele, nao a moldura. */
+        <Bloco className="gap-3 p-3">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-medium text-base-content/70">Atalhos:</span>
+            <span className="text-[11px]" style={{ color: "var(--bi-muted)" }}>Atalhos:</span>
             {atalhosComparar.map((at) => {
               const ativo = JSON.stringify(anosA) === JSON.stringify(at.a)
                 && JSON.stringify(anosB) === JSON.stringify(at.b);
@@ -429,10 +474,14 @@ function ParlamentaresInner() {
                 <button
                   key={at.label}
                   type="button"
+                  aria-pressed={ativo}
                   onClick={() => { setAnosA(at.a); setAnosB(at.b); }}
-                  className={`rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
-                    ativo ? "border-primary bg-primary text-primary-content"
-                          : "border-base-300 text-base-content/70 hover:bg-base-200"}`}
+                  className="rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors"
+                  // O chip marcado precisa se distinguir sem virar bloco de cor:
+                  // fundo do proprio cinza da identidade e tinta do acento.
+                  style={ativo
+                    ? { borderColor: "var(--bi-accent-ink)", background: "var(--bi-surface-2)", color: "var(--bi-accent-ink)" }
+                    : { borderColor: "var(--bi-line)", color: "var(--bi-muted)" }}
                 >
                   {at.label}
                 </button>
@@ -441,7 +490,9 @@ function ParlamentaresInner() {
           </div>
           <div className="flex flex-wrap items-end gap-3">
             <div className="w-52">
-              <label className="text-xs font-medium text-base-content/70">Período A (referência)</label>
+              <label className="mb-1 block text-[11px]" style={{ color: "var(--bi-muted)" }}>
+                Período A (referência)
+              </label>
               <MultiSelect
                 opcoes={ANOS_OPCOES} valor={anosA} onChange={setAnosA}
                 atalhos={ATALHOS_ANOS} formatarResumo={resumoAnos}
@@ -449,9 +500,11 @@ function ParlamentaresInner() {
                 ariaLabel="Anos do período A"
               />
             </div>
-            <ArrowLeftRight className="mb-2 size-4 shrink-0 text-base-content/40" />
+            <ArrowLeftRight className="mb-2 size-4 shrink-0" style={{ color: "var(--bi-faint)" }} />
             <div className="w-52">
-              <label className="text-xs font-medium text-base-content/70">Período B (comparado)</label>
+              <label className="mb-1 block text-[11px]" style={{ color: "var(--bi-muted)" }}>
+                Período B (comparado)
+              </label>
               <MultiSelect
                 opcoes={ANOS_OPCOES} valor={anosB} onChange={setAnosB}
                 atalhos={ATALHOS_ANOS} formatarResumo={resumoAnos}
@@ -462,34 +515,51 @@ function ParlamentaresInner() {
           </div>
 
           {compErro && (
-            <p className="text-xs font-medium text-error">{compErro}</p>
+            <p className="flex flex-wrap items-center gap-1.5 text-[11px]" style={{ color: "var(--bi-muted)" }}>
+              <Selo tom="critico">Comparação</Selo>
+              {compErro}
+            </p>
           )}
 
-          {comp && (
-            <div className="flex flex-wrap items-center gap-x-6 gap-y-1 border-t border-primary/20 pt-2 text-sm">
-              <span className="text-base-content/60">
-                {comp.periodo_a.rotulo}: <strong className="text-base-content">{fmtMoney(comp.periodo_a.total)}</strong>
-              </span>
-              <span className="text-base-content/40">→</span>
-              <span className="text-base-content/60">
-                {comp.periodo_b.rotulo}: <strong className="text-base-content">{fmtMoney(comp.periodo_b.total)}</strong>
-              </span>
-              <VariacaoBadge delta={comp.delta} pct={comp.delta_pct} grande />
+          {comp && varGeral && (
+            <>
+              {/* Os tres numeros do periodo viram KPI: e a leitura de cima da
+                  tela, e o <Numero> ja e o formato dessa leitura no sistema.
+                  O `sub` aproveita para mostrar quantos parlamentares e quantos
+                  anos cada lado tem — que a linha corrida antiga escondia. */}
+              <div className="grid gap-2 sm:grid-cols-3">
+                <Numero
+                  rotulo={comp.periodo_a.rotulo}
+                  valor={fmtMoney(comp.periodo_a.total)}
+                  sub={`${comp.periodo_a.parlamentares} parlamentares · ${comp.periodo_a.anos.length} ano(s)`}
+                />
+                <Numero
+                  rotulo={comp.periodo_b.rotulo}
+                  valor={fmtMoney(comp.periodo_b.total)}
+                  sub={`${comp.periodo_b.parlamentares} parlamentares · ${comp.periodo_b.anos.length} ano(s)`}
+                />
+                <Numero
+                  rotulo="Variação no período"
+                  tom={varGeral.tom}
+                  valor={`${varGeral.seta} ${varGeral.texto}`}
+                  sub={varGeral.dinheiro}
+                />
+              </div>
               {/* Sem este aviso, "mandato atual x anterior" parece uma queda de
                   50% quando na verdade um lado tem 2 anos e o outro tem 4. */}
               {!comp.mesma_duracao && (
-                <span className="text-xs text-warning">
-                  Períodos de tamanhos diferentes ({comp.periodo_a.anos.length} anos contra{" "}
-                  {comp.periodo_b.anos.length}) — a variação reflete isso.
-                </span>
+                <p className="flex flex-wrap items-center gap-1.5 text-[10px]" style={{ color: "var(--bi-faint)" }}>
+                  <Selo tom="atencao">Períodos de tamanhos diferentes</Selo>
+                  {comp.periodo_a.anos.length} anos contra {comp.periodo_b.anos.length} — a variação reflete isso.
+                </p>
               )}
-            </div>
+            </>
           )}
-        </div>
+        </Bloco>
       )}
 
       {/* Resumo */}
-      <div className="text-xs text-base-content/60">
+      <div className="text-[11px]" style={{ color: "var(--bi-muted)" }}>
         {loading ? "Carregando..." : (
           <>
             <strong>{listaExibida.length}</strong> parlamentares
@@ -500,311 +570,398 @@ function ParlamentaresInner() {
       </div>
 
       {/* Lista */}
-      <div className="space-y-2">
-        {loading && (
-          <div className="flex justify-center py-12">
-            <Loader2 className="size-8 animate-spin text-info" />
-          </div>
-        )}
-        {!loading && items.length === 0 && (
-          <div className="bg-base-200 border border-base-300 rounded p-12 text-center text-base-content/60">
-            Nenhum parlamentar encontrado. Os parlamentares são extraídos automaticamente
-            dos campos: SIGCON (responsáveis), TransfereGov (parlamentar), emendas estaduais
-            (nome_responsavel) e Transferência Especial / Plano de Ação (RP9, autor da emenda).
-            Se a lista estiver vazia, é porque essas fontes ainda não foram populadas.
-          </div>
-        )}
-        {!loading && listaExibida.map((p) => {
-          const expanded = expandedKeys.has(p.nome_normalizado);
-          const detail = detailCache[p.nome_normalizado];
-          const cmp = mapaComparacao?.get(p.nome_normalizado);
-          return (
-            <div key={p.nome_normalizado} className="bg-base-100 border rounded">
-              <button
-                onClick={() => toggle(p)}
-                className="w-full flex items-center gap-3 p-3 hover:bg-info/10 transition text-left"
-              >
-                {expanded ? <ChevronDown className="size-4 text-info shrink-0" /> : <ChevronRight className="size-4 text-base-content/40 shrink-0" />}
-                <UserCircle2 className="size-8 text-info shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <div className="font-semibold text-base-content">{p.nome_display}</div>
-                  <div className="text-xs text-base-content/60 flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
-                    <span>{p.total_lancamentos} lançamentos</span>
-                    <span className="font-medium text-success">{fmtMoney(p.valor_total)}</span>
-                    <span className="text-base-content/40">·</span>
-                    {p.por_fonte.sigcon > 0 && (
-                      <span className="text-primary">SIGCON: {p.por_fonte.sigcon}</span>
-                    )}
-                    {p.por_fonte.voluntaria > 0 && (
-                      <span className="text-success">TransfereGov: {p.por_fonte.voluntaria}</span>
-                    )}
-                    {p.por_fonte.emenda > 0 && (
-                      <span className="text-warning">Emendas: {p.por_fonte.emenda}</span>
-                    )}
-                    {p.por_fonte.plano_acao > 0 && (
-                      <span className="text-info">Transf. Especial: {p.por_fonte.plano_acao}</span>
-                    )}
-                    {p.por_fonte.pac > 0 && (
-                      <span className="text-primary">PAC: {p.por_fonte.pac}</span>
-                    )}
-                    {p.por_fonte.fns > 0 && (
-                      <span className="text-error">FNS (Saúde): {p.por_fonte.fns}</span>
-                    )}
-                    {p.municipios.length > 0 && (
-                      <>
-                        <span className="text-base-content/40">·</span>
-                        <span>{p.municipios.join(", ")}</span>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                {/* AS COLUNAS DA COMPARACAO.
-                    Ficam a direita e alinhadas entre si para o olho descer a
-                    coluna: e assim que se compara uma lista, nao lendo cartao
-                    por cartao. So aparecem com a comparacao ligada. */}
-                {cmp && (
-                  <div className="hidden shrink-0 items-center gap-4 sm:flex">
-                    <div className="w-28 text-right">
-                      <div className="text-[10px] uppercase tracking-wide text-base-content/40">
-                        {comp?.periodo_a.rotulo}
-                      </div>
-                      <div className="text-sm tabular-nums text-base-content/70">
-                        {cmp.valor_a > 0 ? fmtMoney(cmp.valor_a) : "—"}
-                      </div>
-                    </div>
-                    <div className="w-28 text-right">
-                      <div className="text-[10px] uppercase tracking-wide text-base-content/40">
-                        {comp?.periodo_b.rotulo}
-                      </div>
-                      <div className="text-sm font-semibold tabular-nums text-base-content">
-                        {cmp.valor_b > 0 ? fmtMoney(cmp.valor_b) : "—"}
-                      </div>
-                    </div>
-                    <div className="w-36 text-right">
-                      <VariacaoBadge delta={cmp.delta} pct={cmp.delta_pct} />
-                    </div>
-                  </div>
-                )}
-              </button>
-
-              {expanded && (
-                <div className="border-t bg-base-200/50 p-4 space-y-4">
-                  {detail === "loading" && (
-                    <div className="flex justify-center py-6">
-                      <Loader2 className="size-5 animate-spin text-info" />
-                    </div>
-                  )}
-                  {detail === "error" && (
-                    <div className="text-sm text-error bg-error/15 border border-error rounded p-3">
-                      Erro ao carregar lançamentos. Tente novamente.
-                    </div>
-                  )}
-                  {detail && typeof detail === "object" && (
+      {loading ? (
+        <div className="flex justify-center py-12">
+          <Loader2 className="size-6 animate-spin" style={{ color: "var(--bi-muted)" }} />
+        </div>
+      ) : listaExibida.length === 0 ? (
+        /* Conta a lista EXIBIDA, nao `items`: com a comparacao ligada a lista sai
+           da comparacao, e o teste antigo mostrava "nenhum parlamentar" junto com
+           os cartoes na tela. */
+        <Vazio>
+          Nenhum parlamentar encontrado. Os parlamentares são extraídos automaticamente
+          dos campos: SIGCON (responsáveis), TransfereGov (parlamentar), emendas estaduais
+          (nome_responsavel) e Transferência Especial / Plano de Ação (RP9, autor da emenda).
+          Se a lista estiver vazia, é porque essas fontes ainda não foram populadas.
+        </Vazio>
+      ) : (
+        <Lista>
+          {listaExibida.map((p) => {
+            const expanded = expandedKeys.has(p.nome_normalizado);
+            const detail = detailCache[p.nome_normalizado];
+            const cmp = mapaComparacao?.get(p.nome_normalizado);
+            const varItem = cmp ? variacao(cmp.delta, cmp.delta_pct) : null;
+            return (
+              <React.Fragment key={p.nome_normalizado}>
+                <ItemLinha
+                  onClick={() => toggle(p)}
+                  titulo={
+                    <span className="flex items-center gap-1.5">
+                      {expanded
+                        ? <ChevronDown className="size-3.5 shrink-0" style={{ color: "var(--bi-faint)" }} />
+                        : <ChevronRight className="size-3.5 shrink-0" style={{ color: "var(--bi-faint)" }} />}
+                      <span className="truncate">{p.nome_display}</span>
+                    </span>
+                  }
+                  valor={fmtMoney(p.valor_total)}
+                  meta={
                     <>
-                      {/* Resumo dentro do expand */}
-                      <div className="text-xs text-base-content/70 flex flex-wrap gap-4 pb-2 border-b border-base-300">
-                        <span><strong>{detail.total_geral}</strong> lançamentos totais</span>
-                        <span className="text-success font-semibold">{fmtMoney(detail.valor_total)}</span>
-                      </div>
-
-                      {/* SIGCON */}
-                      {detail.sigcon.length > 0 && (
-                        <Section
-                          icon={<Building2 className="size-4 text-primary" />}
-                          title={`SIGCON-MG (Estadual) — ${detail.sigcon.length} convênio(s)`}
-                        >
-                          <Table headers={["Município", "Nº SIGCON", "Órgão", "Situação", "Valor Total", "Vigência", "Objeto"]}>
-                            {detail.sigcon.map((s) => (
-                              <tr key={s.id} className="even:bg-base-100">
-                                <Td>{s.municipio_nome}</Td>
-                                <Td mono>{s.numero || "-"}</Td>
-                                <Td className="text-xs">{s.orgao || "-"}</Td>
-                                <Td className="text-xs">{s.situacao || "-"}</Td>
-                                <Td>{fmtMoney(s.valor_total)}</Td>
-                                <Td>{s.dt_vigencia_atual || "-"}</Td>
-                                <Td className="max-w-[320px] whitespace-normal break-words leading-snug align-top" title={s.objeto || ""}>
-                                  {s.objeto || "-"}
-                                </Td>
-                              </tr>
-                            ))}
-                          </Table>
-                        </Section>
+                      <span>{p.total_lancamentos} lançamento(s)</span>
+                      {p.foraDoRecorte && (
+                        <Selo title="Aparece por causa da comparação: este parlamentar não está no recorte de anos da lista, então não há detalhe por fonte.">
+                          fora do recorte da lista
+                        </Selo>
                       )}
-
-                      {/* Voluntarias */}
-                      {detail.voluntarias.length > 0 && (
-                        <Section
-                          icon={<Landmark className="size-4 text-success" />}
-                          title={`TransfereGov / SICONV (Federal) — ${detail.voluntarias.length} proposta(s)`}
-                        >
-                          <Table headers={["Município", "Nº Proposta", "Instrumento", "Órgão", "Situação", "Sit. Contrat.", "Valor Global", "Fim Vig.", "Objeto"]}>
-                            {detail.voluntarias.map((v) => (
-                              <tr key={v.id} className="even:bg-base-100">
-                                <Td>{v.municipio_nome}</Td>
-                                <Td mono>{v.numero_proposta}</Td>
-                                <Td mono>{v.codigo_instrumento || "-"}</Td>
-                                <Td className="text-xs">{v.orgao || "-"}</Td>
-                                <Td className="text-xs">{v.situacao || "-"}</Td>
-                                <Td className="text-xs">{v.situacao_contratacao || "-"}</Td>
-                                <Td>{fmtMoney(v.valor_global)}</Td>
-                                <Td>{v.dt_fim_vigencia || "-"}</Td>
-                                <Td className="max-w-[320px] whitespace-normal break-words leading-snug align-top" title={v.objeto || ""}>
-                                  {v.objeto || "-"}
-                                </Td>
-                              </tr>
-                            ))}
-                          </Table>
-                        </Section>
-                      )}
-
-                      {/* Emendas */}
-                      {detail.emendas.length > 0 && (
-                        <Section
-                          icon={<FileText className="size-4 text-warning" />}
-                          title={`Emendas Estaduais — ${detail.emendas.length} indicação(ões)`}
-                        >
-                          <Table headers={["Município", "Indicação", "Ano", "UO", "Beneficiário", "Tipo", "Valor", "Status"]}>
-                            {detail.emendas.map((e) => (
-                              <tr key={e.id} className="even:bg-base-100">
-                                <Td>{e.municipio_nome}</Td>
-                                <Td mono>{e.nr_indicacao}</Td>
-                                <Td>{e.ano || "-"}</Td>
-                                <Td>{e.uo_sigla || "-"}</Td>
-                                <Td className="text-xs">{e.beneficiario || "-"}</Td>
-                                <Td className="text-xs">{e.tipo_atendimento || "-"}</Td>
-                                <Td>{fmtMoney(e.valor_indicacao)}</Td>
-                                <Td className="text-xs">{e.status_indicacao || "-"}</Td>
-                              </tr>
-                            ))}
-                          </Table>
-                        </Section>
-                      )}
-
-                      {/* Transferencia Especial / Plano de Acao (RP9) */}
-                      {detail.plano_acao && detail.plano_acao.length > 0 && (
-                        <Section
-                          icon={<Coins className="size-4 text-info" />}
-                          title={`Transferência Especial / Plano de Ação (RP9) — ${detail.plano_acao.length} plano(s)`}
-                        >
-                          <Table headers={["Município", "Plano", "Emenda", "Situação", "Custeio", "Investimento", "Valor Total", "Objeto/Política"]}>
-                            {detail.plano_acao.map((pa) => (
-                              <tr key={pa.id} className="even:bg-base-100">
-                                <Td>{pa.municipio_nome}</Td>
-                                <Td mono>{pa.codigo || "-"}</Td>
-                                <Td mono className="text-xs">{pa.emenda || "-"}</Td>
-                                <Td className="text-xs">{pa.situacao || "-"}</Td>
-                                <Td>{fmtMoney(pa.valor_custeio)}</Td>
-                                <Td>{fmtMoney(pa.valor_investimento)}</Td>
-                                <Td>{fmtMoney(pa.valor_total)}</Td>
-                                <Td className="max-w-[320px] whitespace-normal break-words leading-snug align-top" title={pa.objeto || ""}>
-                                  {pa.objeto || "-"}
-                                </Td>
-                              </tr>
-                            ))}
-                          </Table>
-                        </Section>
-                      )}
-
-                      {/* Selecao PAC / Novo PAC */}
-                      {detail.pac && detail.pac.length > 0 && (
-                        <Section
-                          icon={<Landmark className="size-4 text-primary" />}
-                          title={`Seleção PAC / Novo PAC — ${detail.pac.length} proposta(s)`}
-                        >
-                          <Table headers={["Município", "Nº Proposta", "Programa", "Situação", "Valor Total", "Emenda"]}>
-                            {detail.pac.map((pc) => (
-                              <tr key={pc.id} className="even:bg-base-100">
-                                <Td>{pc.municipio_nome}</Td>
-                                <Td mono>{pc.numero_proposta}</Td>
-                                <Td className="max-w-[320px] whitespace-normal break-words leading-snug align-top" title={pc.programa || ""}>
-                                  {pc.programa || "-"}
-                                </Td>
-                                <Td className="text-xs">{pc.situacao || "-"}</Td>
-                                <Td>{fmtMoney(pc.valor_total)}</Td>
-                                <Td className="text-xs">{pc.emenda_parlamentar || "-"}</Td>
-                              </tr>
-                            ))}
-                          </Table>
-                        </Section>
-                      )}
-
-                      {/* FNS — Fundo Municipal de Saúde */}
-                      {detail.fns && detail.fns.length > 0 && (
-                        <Section
-                          icon={<HeartPulse className="size-4 text-error" />}
-                          title={`FNS — Fundo Nacional de Saúde (Federal) — ${detail.fns.length} proposta(s)`}
-                        >
-                          <Table headers={["Município", "Nº Proposta", "Órgão", "Situação", "Valor Total", "Ano", "Objeto"]}>
-                            {detail.fns.map((f) => (
-                              <tr key={f.id} className="even:bg-base-100">
-                                <Td>{f.municipio_nome}</Td>
-                                <Td mono>{f.numero || "-"}</Td>
-                                <Td className="text-xs">{f.orgao || "-"}</Td>
-                                <Td className="text-xs">{f.situacao || "-"}</Td>
-                                <Td>{fmtMoney(f.valor_total)}</Td>
-                                <Td>{f.ano || "-"}</Td>
-                                <Td className="max-w-[320px] whitespace-normal break-words leading-snug align-top" title={f.objeto || ""}>
-                                  {f.objeto || "-"}
-                                </Td>
-                              </tr>
-                            ))}
-                          </Table>
-                        </Section>
-                      )}
-
-                      {detail.total_geral === 0 && (
-                        <div className="text-sm text-base-content/60 italic text-center py-4">
-                          Nenhum lançamento encontrado para este parlamentar.
-                        </div>
+                      {p.municipios.length > 0 && (
+                        <span className="truncate" title={p.municipios.join(", ")}>
+                          · {p.municipios.join(", ")}
+                        </span>
                       )}
                     </>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+                  }
+                  acao={cmp && varItem ? (
+                    /* AS COLUNAS DA COMPARACAO.
+                       Continuam a direita e alinhadas entre si para o olho descer
+                       a coluna: e assim que se compara uma lista, nao lendo cartao
+                       por cartao. A tipografia agora e a mesma do <Campos> (rotulo
+                       de 9px, numero de 11px) para as duas grades do cartao — a de
+                       baixo e esta — lerem como uma coisa so. */
+                    <div className="hidden shrink-0 items-start gap-3 sm:flex">
+                      <div className="w-28 text-right">
+                        <div className="truncate text-[9px] uppercase tracking-wide" style={{ color: "var(--bi-faint)" }}>
+                          {comp?.periodo_a.rotulo}
+                        </div>
+                        <div className="bi-num truncate text-[11px] leading-tight" style={{ color: "var(--bi-muted)" }}>
+                          {cmp.valor_a > 0 ? fmtMoney(cmp.valor_a) : "—"}
+                        </div>
+                      </div>
+                      <div className="w-28 text-right">
+                        <div className="truncate text-[9px] uppercase tracking-wide" style={{ color: "var(--bi-faint)" }}>
+                          {comp?.periodo_b.rotulo}
+                        </div>
+                        <div className="bi-num truncate text-[11px] leading-tight" style={{ color: "var(--bi-text)" }}>
+                          {cmp.valor_b > 0 ? fmtMoney(cmp.valor_b) : "—"}
+                        </div>
+                      </div>
+                      <div className="flex w-28 flex-col items-end gap-0.5">
+                        <div className="text-[9px] uppercase tracking-wide" style={{ color: "var(--bi-faint)" }}>
+                          Variação
+                        </div>
+                        <Selo tom={varItem.tom} title={`Situação: ${cmp.situacao}`}>
+                          <span aria-hidden className="mr-1">{varItem.seta}</span>
+                          {varItem.texto}
+                        </Selo>
+                        {varItem.dinheiro && (
+                          <span className="bi-num text-[10px]" style={{ color: "var(--bi-faint)" }}>
+                            {varItem.dinheiro}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ) : undefined}
+                >
+                  {/* As seis fontes em POSICAO FIXA. Eram chips coloridos soltos
+                      na linha, cada cartao com os seus numa posicao diferente;
+                      na grade da em quem tem FNS ou PAC so descendo o olho. */}
+                  <Campos
+                    cols={3}
+                    campos={[
+                      { rotulo: "SIGCON-MG", valor: p.por_fonte.sigcon || "—", title: "Convênios estaduais (SIGCON-MG)" },
+                      { rotulo: "TransfereGov", valor: p.por_fonte.voluntaria || "—", title: "Propostas TransfereGov / SICONV" },
+                      { rotulo: "Emendas est.", valor: p.por_fonte.emenda || "—", title: "Indicações de emenda estadual" },
+                      { rotulo: "Transf. especial", valor: p.por_fonte.plano_acao || "—", title: "Transferência Especial / Plano de Ação (RP9)" },
+                      { rotulo: "Seleção PAC", valor: p.por_fonte.pac || "—", title: "Propostas do Novo PAC" },
+                      { rotulo: "FNS (saúde)", valor: p.por_fonte.fns || "—", title: "Propostas do Fundo Nacional de Saúde" },
+                    ]}
+                  />
+                </ItemLinha>
+
+                {expanded && (
+                  /* O detalhe e um <li> IRMAO, nao filho do cartao: o corpo do
+                     ItemLinha e um <button> quando clicavel, e lista dentro de
+                     botao nao e HTML valido. */
+                  <li className="pb-1">
+                    {detail === "loading" && (
+                      <div className="flex justify-center py-6">
+                        <Loader2 className="size-5 animate-spin" style={{ color: "var(--bi-muted)" }} />
+                      </div>
+                    )}
+                    {detail === "error" && (
+                      <div className="flex flex-wrap items-center justify-center gap-1.5 py-4 text-[12px]" style={{ color: "var(--bi-muted)" }}>
+                        <Selo tom="critico">Erro</Selo>
+                        Não foi possível carregar os lançamentos. Feche e abra o cartão para tentar de novo.
+                      </div>
+                    )}
+                    {detail && typeof detail === "object" && (
+                      <div className="flex flex-col gap-2">
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1 text-[11px]" style={{ color: "var(--bi-muted)" }}>
+                          <span><span className="bi-num">{detail.total_geral}</span> lançamentos totais</span>
+                          <span className="bi-num" style={{ color: "var(--bi-text)" }}>{fmtMoney(detail.valor_total)}</span>
+                        </div>
+
+                        {/* SIGCON */}
+                        {detail.sigcon.length > 0 && (
+                          <GrupoFonte
+                            icon={Building2}
+                            titulo="SIGCON-MG (estadual)"
+                            sub={`${detail.sigcon.length} convênio(s)`}
+                            total={soma(detail.sigcon, (s) => s.valor_total)}
+                          >
+                            {detail.sigcon.map((s) => (
+                              <ItemLinha
+                                key={s.id}
+                                titulo={s.objeto || "Sem objeto informado"}
+                                valor={fmtMoney(s.valor_total)}
+                                meta={
+                                  <>
+                                    {s.situacao && (
+                                      <Selo tom={situacaoTom(s.situacao)} title={s.situacao}>{s.situacao}</Selo>
+                                    )}
+                                    <span>{s.municipio_nome}</span>
+                                    {s.orgao && <span className="truncate" title={s.orgao}>· {s.orgao}</span>}
+                                    {s.responsaveis && (
+                                      <span className="truncate" title={s.responsaveis}>· {s.responsaveis}</span>
+                                    )}
+                                    {s.numero && <span className="font-mono">· nº {s.numero}</span>}
+                                  </>
+                                }
+                              >
+                                <Campos
+                                  campos={[
+                                    { rotulo: "Repasse", valor: s.valor_repasse ? fmtMoney(s.valor_repasse) : "—" },
+                                    { rotulo: "Vigência atual", valor: s.dt_vigencia_atual || "—" },
+                                    { rotulo: "Ano", valor: s.ano ?? "—" },
+                                  ]}
+                                />
+                              </ItemLinha>
+                            ))}
+                          </GrupoFonte>
+                        )}
+
+                        {/* Voluntarias */}
+                        {detail.voluntarias.length > 0 && (
+                          <GrupoFonte
+                            icon={Landmark}
+                            titulo="TransfereGov / SICONV (federal)"
+                            sub={`${detail.voluntarias.length} proposta(s)`}
+                            total={soma(detail.voluntarias, (v) => v.valor_global)}
+                          >
+                            {detail.voluntarias.map((v) => (
+                              <ItemLinha
+                                key={v.id}
+                                titulo={v.objeto || "Sem objeto informado"}
+                                valor={fmtMoney(v.valor_global)}
+                                meta={
+                                  <>
+                                    {v.situacao && (
+                                      <Selo tom={situacaoTom(v.situacao)} title={v.situacao}>{v.situacao}</Selo>
+                                    )}
+                                    {v.situacao_contratacao && (
+                                      <Selo
+                                        tom={situacaoTom(v.situacao_contratacao)}
+                                        title={`Situação de contratação: ${v.situacao_contratacao}`}
+                                      >
+                                        {v.situacao_contratacao}
+                                      </Selo>
+                                    )}
+                                    <span>{v.municipio_nome}</span>
+                                    {v.orgao && <span className="truncate" title={v.orgao}>· {v.orgao}</span>}
+                                    {v.parlamentar && (
+                                      <span className="truncate" title={v.parlamentar}>· {v.parlamentar}</span>
+                                    )}
+                                    <span className="font-mono">
+                                      · prop {v.numero_proposta}
+                                      {v.codigo_instrumento ? ` · instr ${v.codigo_instrumento}` : ""}
+                                    </span>
+                                  </>
+                                }
+                              >
+                                <Campos
+                                  campos={[
+                                    { rotulo: "Repasse", valor: v.valor_repasse ? fmtMoney(v.valor_repasse) : "—" },
+                                    { rotulo: "Fim da vigência", valor: v.dt_fim_vigencia || "—" },
+                                  ]}
+                                />
+                              </ItemLinha>
+                            ))}
+                          </GrupoFonte>
+                        )}
+
+                        {/* Emendas */}
+                        {detail.emendas.length > 0 && (
+                          <GrupoFonte
+                            icon={FileText}
+                            titulo="Emendas estaduais"
+                            sub={`${detail.emendas.length} indicação(ões)`}
+                            total={soma(detail.emendas, (e) => e.valor_indicacao)}
+                          >
+                            {detail.emendas.map((e) => (
+                              <ItemLinha
+                                key={e.id}
+                                titulo={e.tipo_atendimento || e.beneficiario || "Indicação"}
+                                valor={fmtMoney(e.valor_indicacao)}
+                                meta={
+                                  <>
+                                    {e.status_indicacao && (
+                                      <Selo tom={situacaoTom(e.status_indicacao)} title={e.status_indicacao}>
+                                        {e.status_indicacao}
+                                      </Selo>
+                                    )}
+                                    <span>{e.municipio_nome}</span>
+                                    {e.beneficiario && (
+                                      <span className="truncate" title={e.beneficiario}>→ {e.beneficiario}</span>
+                                    )}
+                                    <span className="font-mono">· ind {e.nr_indicacao}</span>
+                                  </>
+                                }
+                              >
+                                <Campos
+                                  campos={[
+                                    { rotulo: "Unidade orçamentária", valor: e.uo_sigla || "—" },
+                                    { rotulo: "Ano", valor: e.ano ?? "—" },
+                                  ]}
+                                />
+                              </ItemLinha>
+                            ))}
+                          </GrupoFonte>
+                        )}
+
+                        {/* Transferencia Especial / Plano de Acao (RP9) */}
+                        {detail.plano_acao && detail.plano_acao.length > 0 && (
+                          <GrupoFonte
+                            icon={Coins}
+                            titulo="Transferência Especial / Plano de Ação (RP9)"
+                            sub={`${detail.plano_acao.length} plano(s)`}
+                            total={soma(detail.plano_acao, (pa) => pa.valor_total)}
+                          >
+                            {detail.plano_acao.map((pa) => (
+                              <ItemLinha
+                                key={pa.id}
+                                titulo={pa.objeto || "Plano de ação"}
+                                valor={fmtMoney(pa.valor_total)}
+                                meta={
+                                  <>
+                                    {pa.situacao && (
+                                      <Selo tom={situacaoTom(pa.situacao)} title={pa.situacao}>{pa.situacao}</Selo>
+                                    )}
+                                    <span>{pa.municipio_nome}</span>
+                                    {pa.parlamentar && (
+                                      <span className="truncate" title={pa.parlamentar}>· {pa.parlamentar}</span>
+                                    )}
+                                    <span className="font-mono">
+                                      {pa.codigo ? `· plano ${pa.codigo}` : ""}
+                                      {pa.emenda ? ` · emenda ${pa.emenda}` : ""}
+                                    </span>
+                                  </>
+                                }
+                              >
+                                <Campos
+                                  campos={[
+                                    { rotulo: "Custeio", valor: fmtMoney(pa.valor_custeio) },
+                                    { rotulo: "Investimento", valor: fmtMoney(pa.valor_investimento) },
+                                  ]}
+                                />
+                              </ItemLinha>
+                            ))}
+                          </GrupoFonte>
+                        )}
+
+                        {/* Selecao PAC / Novo PAC */}
+                        {detail.pac && detail.pac.length > 0 && (
+                          <GrupoFonte
+                            icon={Landmark}
+                            titulo="Seleção PAC / Novo PAC"
+                            sub={`${detail.pac.length} proposta(s)`}
+                            total={soma(detail.pac, (pc) => pc.valor_total)}
+                          >
+                            {detail.pac.map((pc) => {
+                              // O programa e o titulo quando existe; o objeto so
+                              // entra na meta se disser outra coisa, para o cartao
+                              // nao repetir a mesma frase duas vezes.
+                              const tituloPac = pc.programa || pc.objeto || "Proposta PAC";
+                              return (
+                                <ItemLinha
+                                  key={pc.id}
+                                  titulo={tituloPac}
+                                  valor={fmtMoney(pc.valor_total)}
+                                  meta={
+                                    <>
+                                      {pc.situacao && (
+                                        <Selo tom={situacaoTom(pc.situacao)} title={pc.situacao}>{pc.situacao}</Selo>
+                                      )}
+                                      <span>{pc.municipio_nome}</span>
+                                      {pc.objeto && pc.objeto !== tituloPac && (
+                                        <span className="truncate" title={pc.objeto}>· {pc.objeto}</span>
+                                      )}
+                                      <span className="font-mono">· prop {pc.numero_proposta}</span>
+                                    </>
+                                  }
+                                >
+                                  <Campos
+                                    campos={[
+                                      { rotulo: "Emenda parlamentar", valor: pc.emenda_parlamentar || "—",
+                                        title: pc.emenda_parlamentar || undefined },
+                                      { rotulo: "Proponente", valor: pc.proponente || "—",
+                                        title: pc.proponente || undefined },
+                                    ]}
+                                  />
+                                </ItemLinha>
+                              );
+                            })}
+                          </GrupoFonte>
+                        )}
+
+                        {/* FNS — Fundo Nacional de Saude */}
+                        {detail.fns && detail.fns.length > 0 && (
+                          <GrupoFonte
+                            icon={HeartPulse}
+                            titulo="FNS — Fundo Nacional de Saúde (federal)"
+                            sub={`${detail.fns.length} proposta(s)`}
+                            total={soma(detail.fns, (f) => f.valor_total)}
+                          >
+                            {detail.fns.map((f) => (
+                              <ItemLinha
+                                key={f.id}
+                                titulo={f.objeto || "Sem objeto informado"}
+                                valor={fmtMoney(f.valor_total)}
+                                meta={
+                                  <>
+                                    {f.situacao && (
+                                      <Selo tom={situacaoTom(f.situacao)} title={f.situacao}>{f.situacao}</Selo>
+                                    )}
+                                    <span>{f.municipio_nome}</span>
+                                    {f.orgao && <span className="truncate" title={f.orgao}>· {f.orgao}</span>}
+                                    {f.proponente && (
+                                      <span className="truncate" title={f.proponente}>· {f.proponente}</span>
+                                    )}
+                                    {f.numero && <span className="font-mono">· nº {f.numero}</span>}
+                                  </>
+                                }
+                              >
+                                <Campos
+                                  campos={[
+                                    { rotulo: "Ano", valor: f.ano ?? "—" },
+                                    { rotulo: "Fim da vigência", valor: f.dt_vigencia_final || "—" },
+                                  ]}
+                                />
+                              </ItemLinha>
+                            ))}
+                          </GrupoFonte>
+                        )}
+
+                        {detail.total_geral === 0 && (
+                          <Vazio>Nenhum lançamento encontrado para este parlamentar.</Vazio>
+                        )}
+                      </div>
+                    )}
+                  </li>
+                )}
+              </React.Fragment>
+            );
+          })}
+        </Lista>
+      )}
     </div>
-  );
-}
-
-function Section({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <h3 className="text-sm font-semibold text-base-content flex items-center gap-2 mb-2">
-        {icon} {title}
-      </h3>
-      <div className="overflow-x-auto rounded border border-base-300 bg-base-100">
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function Table({ headers, children }: { headers: string[]; children: React.ReactNode }) {
-  return (
-    <table className="min-w-full text-[13px]">
-      <thead className="bg-base-200 text-base-content/70">
-        <tr>
-          {headers.map((h, i) => (
-            <th key={i} className="text-left font-semibold px-3 py-1.5 border-b">
-              {h}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>{children}</tbody>
-    </table>
-  );
-}
-
-function Td({ children, mono, className, title }: { children: React.ReactNode; mono?: boolean; className?: string; title?: string }) {
-  return (
-    <td className={`px-3 py-1.5 border-b border-base-300 ${mono ? "font-mono" : ""} ${className || ""}`} title={title}>
-      {children}
-    </td>
   );
 }
 
@@ -816,7 +973,11 @@ const ATALHOS_ANOS = atalhosAnos();
 
 export default function ParlamentaresPage() {
   return (
-    <Suspense fallback={<div className="flex h-64 items-center justify-center"><Loader2 className="size-6 animate-spin text-info" /></div>}>
+    <Suspense fallback={
+      <div className="flex h-64 items-center justify-center">
+        <Loader2 className="size-6 animate-spin" style={{ color: "var(--bi-muted)" }} />
+      </div>
+    }>
       <ParlamentaresInner />
     </Suspense>
   );

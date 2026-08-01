@@ -121,6 +121,40 @@ export function Selo({
   );
 }
 
+/** O tom de um rótulo de situação/status — UMA regra para o sistema inteiro.
+ *
+ *  Nasceu copiada em cinco telas, e no dia em que foi medida já divergia:
+ *  "aprovado" era `ok` em quatro e neutro na quinta, "tramitando" era atenção
+ *  em uma e neutro nas outras. Duas telas classificando a mesma palavra de
+ *  formas diferentes é pior do que nenhuma classificação — o gestor aprende a
+ *  não confiar na cor.
+ *
+ *  A regra é deliberadamente ESTREITA. Cor aqui não é enfeite: é o que sobra
+ *  depois que o resto virou cinza, e por isso só ganha cor o que pede ação.
+ *  Estado normal de um convênio vivo ("em execução", "vigente", "ciente") é
+ *  cinza de propósito — se o normal for colorido, a cor não informa nada.
+ *
+ *  Os termos são fragmentos sem acento e sem terminação, porque as fontes
+ *  escrevem diferente: "Cancelado", "CANCELADA", "cancelamento". */
+export function situacaoTom(
+  s?: string | null,
+): "neutro" | "ok" | "atencao" | "critico" {
+  const t = (s || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "");
+  // Exige ação corretiva, ou o dinheiro parou.
+  if (/(cancelad|cancelament|rescindid|rejeitad|indeferid|impedid|inadimpl|anulad|nao habilitada|vencid)/.test(t))
+    return "critico";
+  // Depende de alguém: está esperando análise, documento ou decisão.
+  if (/(pendente|analise|aguardando|suspens|complementa|diligencia|tramit|elaborac)/.test(t))
+    return "atencao";
+  // Chegou ao fim bem.
+  if (/(conclu|aprovad|homologad|selecionad|empenhad|liquidad|adimplent|encerrad|prestac)/.test(t))
+    return "ok";
+  return "neutro";
+}
+
 // ---------------------------------------------------------------------------
 // ItemLinha — o tijolo da lista.
 // ---------------------------------------------------------------------------

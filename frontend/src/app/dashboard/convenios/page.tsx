@@ -8,7 +8,7 @@ import api from "@/lib/api";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { PeriodoVigencia } from "@/components/ui/periodo-vigencia";
 import { atalhosAnos, intervaloVazio, resumoAnos, rotuloIntervalo, type Intervalo } from "@/lib/periodo";
-import { Campos, ItemLinha, Lista, Selo } from "@/components/ui/superficies";
+import { Campos, ItemLinha, Lista, Selo, situacaoTom } from "@/components/ui/superficies";
 import AnotacaoButton from "@/components/AnotacaoButton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -102,18 +102,6 @@ function nomeOrgaoFull(o?: string | null): string {
   return trimmed;
 }
 
-/** Cor no selo de situacao SO quando ela e um alerta.
- *
- *  No sistema antigo toda situacao vinha pintada — dez selos coloridos numa
- *  tela, e nenhum deles significando nada. A identidade do Painel e o inverso:
- *  cinza por padrao, cor quando exige acao. */
-function situacaoTom(s?: string | null): "neutro" | "ok" | "atencao" | "critico" {
-  const t = (s || "").toLowerCase();
-  if (/(cancelad|rescindid|impedid|rejeitad|inadimpl)/.test(t)) return "critico";
-  if (/(pendente|an[áa]lise|suspens|aguardando)/.test(t)) return "atencao";
-  if (/(conclu[íi]d|prestac|encerrad)/.test(t)) return "ok";
-  return "neutro";
-}
 
 function isTE(objeto?: string | null): boolean {
   return !!objeto && /TRANSFER[ÊE]NCIA\s+ESPECIAL/i.test(objeto);
@@ -311,7 +299,7 @@ export default function ConveniosPage() {
             onClick={handleRefreshSigcon}
             disabled={refreshing}
             size="sm"
-            className="bg-primary hover:bg-primary/90"
+            style={{ background: "var(--bi-cta)", color: "var(--bi-cta-ink)" }} className="hover:opacity-90"
             title="Forca atualizacao via portal SIGCON-MG (Pesquisa Unificada)"
           >
             <SearchIcon className="size-4 mr-1" />
@@ -402,11 +390,11 @@ export default function ConveniosPage() {
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs text-base-content/60">Filtros ativos:</span>
           {vigenciasSel.map((v) => (
-            <span key={v} className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 border border-primary px-2.5 py-0.5 text-xs font-medium text-primary">
+            <span key={v} className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-medium" style={{ background: "var(--bi-accent-soft)", color: "var(--bi-accent-ink)" }}>
               {VIGENCIA_LABELS[v] ?? v}
               <button
                 onClick={() => setVigenciasSel(vigenciasSel.filter((x) => x !== v))}
-                className="text-primary hover:text-primary/90"
+                className="opacity-60 hover:opacity-100"
                 aria-label={`Remover filtro ${VIGENCIA_LABELS[v] ?? v}`}
               >
                 ×
@@ -414,11 +402,11 @@ export default function ConveniosPage() {
             </span>
           ))}
           {!intervaloVazio(intervalo) && (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 border border-primary px-2.5 py-0.5 text-xs font-medium text-primary">
+            <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-medium" style={{ background: "var(--bi-accent-soft)", color: "var(--bi-accent-ink)" }}>
               Fim da vigência {rotuloIntervalo(intervalo)}
               <button
                 onClick={() => setIntervalo({})}
-                className="text-primary hover:text-primary/90"
+                className="opacity-60 hover:opacity-100"
                 aria-label="Limpar período"
               >
                 ×
