@@ -90,6 +90,12 @@ export default function ConvenioDetailModal({ conv, onClose }: Props) {
   // crítico, menos de 60 dias pede atenção. Mesma escala do resto do sistema.
   const tomDias: Campo["tom"] = !d
     ? "normal"
+    // PRIMEIRO, e nao por acaso: o rótulo do SIGCON para a fase de prestação de
+    // contas é "VENCIDO +90 DIAS - PRESTACAO DE CONTAS". Testar VENCIDO antes
+    // pinta de vermelho um convênio que só encerrou a vigência e está em
+    // prestação — que é o curso normal, não inadimplência.
+    : d.dias_restantes_label?.includes("PRESTACAO")
+    ? "normal"
     : d.dias_restantes_label?.startsWith("VENCIDO")
     ? "critico"
     : d.dias_restantes != null && d.dias_restantes < 60
@@ -131,6 +137,7 @@ export default function ConvenioDetailModal({ conv, onClose }: Props) {
               sub={`${d.workflow.steps.filter((s) => s.completed).length} de ${d.workflow.steps.length} etapa(s) concluída(s)`}
             >
               <Etapas
+                largura={78}
                 etapas={d.workflow.steps.map((s) => ({
                   rotulo: s.label,
                   concluida: s.completed,
@@ -166,11 +173,11 @@ export default function ConvenioDetailModal({ conv, onClose }: Props) {
             icon={Fingerprint}
             titulo="Identificação"
             campos={[
-              campo("Nº Convênio Publ.", d.nr_convenio_publicado),
-              campo("Nº SIAFI", d.nr_siafi),
-              campo("Nº Proposta", d.nr_proposta),
-              campo("Nº Plano Trabalho", d.nr_plano_trabalho),
-              campo("Nº Instrumento", d.nr_instrumento),
+              campo("Nº Convênio Publ.", d.nr_convenio_publicado, { mono: true }),
+              campo("Nº SIAFI", d.nr_siafi, { mono: true }),
+              campo("Nº Proposta", d.nr_proposta, { mono: true }),
+              campo("Nº Plano Trabalho", d.nr_plano_trabalho, { mono: true }),
+              campo("Nº Instrumento", d.nr_instrumento, { mono: true }),
               campo("Tipo Instrumento", d.tp_instrumento),
               campo("Fonte", d.fonte),
               campo("Ano", d.ano),
@@ -195,7 +202,7 @@ export default function ConvenioDetailModal({ conv, onClose }: Props) {
               campo(
                 "Dias Restantes",
                 d.dias_restantes_label || (d.dias_restantes != null ? `${d.dias_restantes}d` : null),
-                { tom: tomDias },
+                { tom: tomDias, span: 2 },
               ),
               campo("Qt. Alterações", d.qt_alteracoes ?? 0),
               campo("Prestação de Contas", d.prestacao_contas, { span: 2 }),

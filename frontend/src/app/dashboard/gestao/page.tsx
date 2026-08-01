@@ -3,6 +3,9 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { Edit2, Eraser, FileText, Paperclip } from "lucide-react";
 import api from "@/lib/api";
+// A cópia local desta função lia data pura como UTC e mostrava o dia anterior —
+// o mesmo campo que o modal de anotação exibe, na mesma tela.
+import { formatDataCurta as fmtData } from "@/lib/bi-format";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 import { Button } from "@/components/ui/button";
 import {
@@ -70,10 +73,7 @@ const SELECT_ESTILO: React.CSSProperties = {
   color: "var(--bi-text)",
 };
 
-function fmtData(d?: string | null) {
-  if (!d) return "-";
-  try { return new Date(d).toLocaleDateString("pt-BR"); } catch { return d; }
-}
+
 
 export default function GestaoPage() {
   const { municipioId } = useMunicipio();

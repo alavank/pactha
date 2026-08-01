@@ -7,7 +7,9 @@ import {
   LayoutGrid, Loader2,
 } from "lucide-react";
 import api from "@/lib/api";
-import { Button } from "@/components/ui/button";
+import {
+  BOTAO_CTA, BOTAO_SEC, Aviso, Bloco, ESTILO_CTA, ESTILO_SEC,
+} from "@/components/ui/superficies";
 
 interface Municipio { id: number; nome: string; uf: string; }
 
@@ -22,7 +24,6 @@ const PANELS = [
     desc: "Acompanhamento das programações do cofinanciamento federal do Estrutura SUAS.",
     url: "https://paineis.mds.gov.br/public/extensions/Acompanhamento_de_Programacoes_do_Estrutura_SUAS/Acompanhamento_de_Programacoes_do_Estrutura_SUAS.html",
     icon: HeartHandshake,
-    accent: "text-primary",
   },
   {
     key: "municipalista",
@@ -31,7 +32,6 @@ const PANELS = [
     desc: "Transferências da União ao município: convênios, especiais, emendas, saldo em conta e prestação de contas.",
     url: "https://dd-publico.serpro.gov.br/extensions/municipalista/municipalista.html",
     icon: Landmark,
-    accent: "text-success",
   },
 ];
 
@@ -87,36 +87,37 @@ export default function PaineisMunicipaisPage() {
   //
   // Ícone de clique e não de localização: o que se pede é uma AÇÃO dentro do
   // painel, não um lugar no mapa.
-  const MunBanner = () => (
-    <div className="rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm">
-      <div className="flex gap-2">
-        <MousePointerClick className="mt-0.5 size-4 shrink-0 text-warning" />
-        <div className="min-w-0">
-          <div className="font-semibold text-base-content">Painéis oficiais do governo.</div>
-          {munLabel ? (
-            <div className="mt-0.5 flex flex-wrap items-center gap-2">
-              <span className="text-base-content/80">No filtro do painel (UF / Município), selecione:</span>
-              <span className="inline-flex items-center gap-1.5 rounded-md border border-base-300 bg-base-100 px-2 py-0.5 font-semibold text-base-content">
-                {munLabel}
-                <button onClick={copiar} title="Copiar nome do município" className="text-base-content/50 hover:text-primary">
-                  {copiado ? <Check className="size-3.5 text-success" /> : <Copy className="size-3.5" />}
-                </button>
-              </span>
-            </div>
-          ) : (
-            <div className="mt-0.5 text-base-content/80">
-              Selecione um município no seletor da barra lateral.
-            </div>
-          )}
+  const munBanner = (
+    <Aviso tom="atencao" className="" titulo={
+      <span className="flex items-center gap-1.5">
+        <MousePointerClick className="size-3.5 shrink-0" />
+        Painéis oficiais do governo.
+      </span>
+    }>
+      {munLabel ? (
+        <div className="flex flex-wrap items-center gap-2 text-[11px]" style={{ color: "var(--bi-text)" }}>
+          <span>No filtro do painel (UF / Município), selecione:</span>
+          <span className="inline-flex items-center gap-1.5 rounded-lg px-2 py-0.5 font-semibold"
+                style={{ background: "var(--bi-surface)", border: "1px solid var(--bi-line)" }}>
+            {munLabel}
+            <button type="button" onClick={copiar} title="Copiar nome do município"
+                    className="hover:brightness-90" style={{ color: "var(--bi-muted)" }}>
+              {copiado ? <Check className="size-3.5" style={{ color: "var(--bi-ok-ink)" }} /> : <Copy className="size-3.5" />}
+            </button>
+          </span>
         </div>
-      </div>
-    </div>
+      ) : (
+        <div className="text-[11px]" style={{ color: "var(--bi-text)" }}>
+          Selecione um município no seletor da barra lateral.
+        </div>
+      )}
+    </Aviso>
   );
 
   const activePanel = PANELS.find((p) => p.key === active);
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] flex-col gap-3 p-4">
+    <div className="flex h-[calc(100vh-4rem)] flex-col gap-4">
       {/* preconnect (React hoista p/ o <head>) — acelera a 1a carga dos painéis */}
       {ORIGINS.map((o) => <link key={o} rel="preconnect" href={o} crossOrigin="anonymous" />)}
 
@@ -128,67 +129,72 @@ export default function PaineisMunicipaisPage() {
                 painel, entao e um botao com borda e nao um link miudo. */}
             <button
               onClick={() => setActive(null)}
-              className="mb-1.5 inline-flex items-center gap-1.5 rounded-md border border-base-300 bg-base-100 px-2.5 py-1 text-xs font-medium text-base-content/80 hover:bg-base-200 hover:text-primary"
+              className="mb-1.5 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-medium transition-colors hover:brightness-95"
+              style={ESTILO_SEC}
             >
               <ArrowLeft className="size-3.5" /> Escolher outro painel
             </button>
             <h1 className="flex items-center gap-2 text-xl font-bold text-base-content">
-              <activePanel.icon className={`size-5 ${activePanel.accent}`} /> {activePanel.nome}
+              <activePanel.icon className="size-5" style={{ color: "var(--bi-muted)" }} /> {activePanel.nome}
             </h1>
-            <p className="text-xs text-base-content/50">{activePanel.orgao}</p>
+            <p className="text-[11px]" style={{ color: "var(--bi-faint)" }}>{activePanel.orgao}</p>
           </div>
           <a href={activePanel.url} target="_blank" rel="noopener noreferrer"
-             className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-base-300 bg-base-100 px-3 py-2 text-sm font-medium text-base-content/80 hover:bg-base-200">
+             className={`shrink-0 ${BOTAO_SEC}`} style={ESTILO_SEC}>
             <ExternalLink className="size-4" /> Abrir em nova aba
           </a>
         </div>
       ) : (
-        <div className="border-b border-base-300 pb-3">
+        <div className="border-b pb-4" style={{ borderColor: "var(--bi-line)" }}>
           <h1 className="flex items-center gap-2 text-2xl font-bold text-base-content">
-            <LayoutGrid className="size-6 text-primary" /> Painéis Municipais
+            <LayoutGrid className="size-6" style={{ color: "var(--bi-muted)" }} /> Painéis Municipais
           </h1>
-          <p className="mt-1 text-sm text-base-content/60">
+          <p className="mt-1 text-sm" style={{ color: "var(--bi-muted)" }}>
             Acesso centralizado aos painéis oficiais do Governo. Clique para abrir (já pré-carregados).
           </p>
         </div>
       )}
 
-      <MunBanner />
+      {munBanner}
 
       {/* Área de conteúdo: cards (hub) + iframes SEMPRE montados (só o ativo visível) */}
-      <div className="relative flex-1 overflow-hidden rounded-lg border border-base-300 bg-base-100">
+      <div className="relative flex-1 overflow-hidden"
+           style={{ background: "var(--bi-surface)", border: "1px solid var(--bi-line)", borderRadius: "var(--bi-radius)" }}>
         {/* Hub cards — visíveis quando nenhum painel está ativo */}
         {!active && (
           <div className="h-full overflow-auto p-4">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               {PANELS.map((p) => (
-                <div key={p.key} className="flex flex-col rounded-lg border border-base-300 bg-base-200/40 p-5">
+                <Bloco key={p.key} plano className="p-4">
                   <div className="flex items-center gap-3">
-                    <div className="rounded-lg bg-base-100 p-2.5"><p.icon className={`size-6 ${p.accent}`} /></div>
+                    <span className="grid size-10 shrink-0 place-items-center rounded-full"
+                          style={{ background: "var(--bi-surface-2)", color: "var(--bi-muted)" }}>
+                      <p.icon className="size-5" />
+                    </span>
                     <div>
-                      <h2 className="font-semibold text-base-content">{p.nome}</h2>
-                      <p className="text-[11px] text-base-content/50">{p.orgao}</p>
+                      <h2 className="bi-title text-[14px] leading-tight">{p.nome}</h2>
+                      <p className="text-[11px]" style={{ color: "var(--bi-faint)" }}>{p.orgao}</p>
                     </div>
                     {opened.has(p.key) && (
-                      <span className="ml-auto inline-flex items-center gap-1 text-[10px] text-base-content/40">
-                        {loaded[p.key] ? <><Check className="size-3 text-success" /> pronto</> : <><Loader2 className="size-3 animate-spin" /> carregando</>}
+                      <span className="ml-auto inline-flex items-center gap-1 text-[10px]" style={{ color: "var(--bi-faint)" }}>
+                        {loaded[p.key] ? <><Check className="size-3" style={{ color: "var(--bi-ok-ink)" }} /> pronto</> : <><Loader2 className="size-3 animate-spin" /> carregando</>}
                       </span>
                     )}
                   </div>
-                  <p className="mt-3 flex-1 text-sm text-base-content/70">{p.desc}</p>
+                  <p className="mt-3 flex-1 text-[12px] leading-snug" style={{ color: "var(--bi-muted)" }}>{p.desc}</p>
                   <div className="mt-4 flex items-center gap-2">
-                    <Button onClick={() => abrir(p.key)} className="bg-primary hover:bg-primary/90">Abrir painel</Button>
+                    <button type="button" onClick={() => abrir(p.key)} className={BOTAO_CTA} style={ESTILO_CTA}>Abrir painel</button>
                     {/* "Nova aba" aparece so DEPOIS de o painel ter sido aberto
                         aqui. No primeiro contato ela competia com a acao
                         principal e tirava o usuario do sistema sem contexto. */}
                     {visitados.has(p.key) && (
                       <a href={p.url} target="_blank" rel="noopener noreferrer"
-                         className="inline-flex items-center gap-1.5 rounded-md border border-base-300 px-3 py-2 text-sm text-base-content/70 hover:bg-base-200">
+                         className={BOTAO_SEC} style={ESTILO_SEC}>
                         <ExternalLink className="size-4" /> Nova aba
                       </a>
                     )}
                   </div>
-                </div>
+                </Bloco>
               ))}
             </div>
           </div>
@@ -202,9 +208,9 @@ export default function PaineisMunicipaisPage() {
             aria-hidden={active !== p.key}
           >
             {!loaded[p.key] && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-base-100">
-                <Loader2 className="size-7 animate-spin text-primary" />
-                <span className="text-xs text-base-content/50">Carregando painel oficial…</span>
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2" style={{ background: "var(--bi-surface)" }}>
+                <Loader2 className="size-7 animate-spin" style={{ color: "var(--bi-faint)" }} />
+                <span className="text-[11px]" style={{ color: "var(--bi-faint)" }}>Carregando painel oficial…</span>
               </div>
             )}
             <iframe

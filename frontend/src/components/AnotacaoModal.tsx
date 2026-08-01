@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Plus, Trash2, Loader2, Paperclip, Download, FileText, Edit2, CalendarDays, X } from "lucide-react";
 import api from "@/lib/api";
+import { formatDataCurta as fmtData } from "@/lib/bi-format";
 import {
   Aviso, Bloco, BlocoHead, Modal, ModalCorpo, ModalHead, Selo, Vazio, situacaoTom,
 } from "@/components/ui/superficies";
@@ -41,27 +42,6 @@ interface Props {
   onChanged?: () => void;
 }
 
-/** `data_protocolo` chega do backend como DATA PURA ("2026-08-01": é um
- *  `date.isoformat()`), e `new Date("2026-08-01")` é lido pelo JS como
- *  meia-noite em UTC. Em Brasília isso é 21h do dia ANTERIOR, então o
- *  `toLocaleDateString` devolvia 31/07/2026 para uma data protocolada em 01/08.
- *  Toda data de protocolo do sistema aparecia um dia atrasada.
- *
- *  `created_at`/`updated_at` são timestamp completo e nunca tiveram o problema,
- *  por isso o formatador precisa distinguir os dois casos. */
-function fmtData(d?: string | null) {
-  if (!d) return "-";
-  const puro = /^\d{4}-\d{2}-\d{2}$/.exec(d);
-  try {
-    if (puro) {
-      const [y, m, dia] = d.split("-").map(Number);
-      return new Date(y, m - 1, dia).toLocaleDateString("pt-BR");
-    }
-    return new Date(d).toLocaleDateString("pt-BR");
-  } catch {
-    return d;
-  }
-}
 function fmtBytes(n?: number) {
   if (!n) return "";
   if (n < 1024) return `${n} B`;
@@ -70,8 +50,7 @@ function fmtBytes(n?: number) {
 }
 
 const rotulo = "mb-1 block text-[11px]";
-const controle =
-  "w-full rounded-lg px-2 py-1.5 text-[12px] outline-none focus:ring-2";
+const controle = "bi-field w-full px-2 py-1.5 text-[12px]";
 
 export default function AnotacaoModal({
   open, onClose, fonte, fonteRef, municipioId, numeroReferencia, onChanged,
@@ -212,7 +191,7 @@ export default function AnotacaoModal({
   };
 
   return (
-    <Modal aberto={open} onFechar={onClose} maxW="max-w-3xl">
+    <Modal aberto={open} onFechar={onClose} maxW="max-w-3xl" esc={!formOpen}>
       <ModalHead
         titulo="Gestão Interna"
         sub={numeroReferencia ? `Sobre ${numeroReferencia}` : "Anotações da equipe, à parte do dado oficial"}
@@ -231,7 +210,7 @@ export default function AnotacaoModal({
               // Antes o selo só aparecia com `status_interno` preenchido, então
               // registro antigo que só tem texto livre ficava sem status nenhum.
               const status = a.status_interno === "Outro"
-                ? a.status_custom
+                ? (a.status_custom || "Outro")
                 : (a.status_interno || a.status_custom);
               return (
                 <Bloco key={a.id} plano className="p-3">
@@ -280,11 +259,11 @@ export default function AnotacaoModal({
                     </div>
                     <div className="flex shrink-0 flex-col gap-1">
                       <button type="button" onClick={() => startEdit(a)} title="Editar"
-                              className="rounded p-1 hover:brightness-90" style={{ color: "var(--bi-muted)" }}>
+                              className="rounded-lg p-1 transition-colors hover:bg-[var(--bi-line)]" style={{ color: "var(--bi-muted)" }}>
                         <Edit2 className="size-4" />
                       </button>
                       <button type="button" onClick={() => remover(a.id)} title="Remover"
-                              className="rounded p-1 hover:brightness-90" style={{ color: "var(--bi-crit-ink)" }}>
+                              className="rounded-lg p-1 transition-colors hover:bg-[var(--bi-line)]" style={{ color: "var(--bi-muted)" }}>
                         <Trash2 className="size-4" />
                       </button>
                     </div>
@@ -317,7 +296,6 @@ export default function AnotacaoModal({
                   value={statusInt}
                   onChange={(e) => setStatusInt(e.target.value)}
                   className={controle}
-                  style={{ background: "var(--bi-surface)", border: "1px solid var(--bi-line)", color: "var(--bi-text)" }}
                 >
                   <option value="">(selecione)</option>
                   {statusOpcoes.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -342,7 +320,6 @@ export default function AnotacaoModal({
                 <textarea
                   value={obs} onChange={(e) => setObs(e.target.value)}
                   className={`${controle} min-h-[80px]`}
-                  style={{ background: "var(--bi-surface)", border: "1px solid var(--bi-line)", color: "var(--bi-text)" }}
                   placeholder="Detalhes, contexto, próximos passos..."
                 />
               </div>

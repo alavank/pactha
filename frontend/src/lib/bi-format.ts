@@ -56,7 +56,7 @@ export function diasLabel(dias: number | null | undefined): string {
   return `vence em ${d} dias`;
 }
 
-function parseDate(v: string): Date | null {
+export function parseDate(v: string): Date | null {
   const s = String(v).trim();
 
   // Data PURA (YYYY-MM-DD) e uma data de CALENDARIO, nao um instante: monte no
@@ -83,4 +83,19 @@ function parseDate(v: string): Date | null {
   const br = /^(\d{2})\/(\d{2})\/(\d{4})/.exec(s);
   if (br) return new Date(+br[3], +br[2] - 1, +br[1]);
   return null;
+}
+
+/** dd/mm/aaaa. A forma que as telas operacionais usam — `formatDate` acima é a
+ *  do Painel ("01 de ago. de 2026"), boa para leitura, ruim para conferir
+ *  extrato linha a linha.
+ *
+ *  Existe porque a versão ingênua (`new Date(d).toLocaleDateString`) estava
+ *  copiada em duas telas e mostrava o dia ERRADO: data pura ("2026-08-01") é
+ *  meia-noite UTC, e em Brasília isso é 21h do dia anterior. O modal de
+ *  anotação e a tela de Gestão exibiam o MESMO `data_protocolo` do MESMO
+ *  registro — e discordavam entre si depois que só um dos dois foi corrigido. */
+export function formatDataCurta(v: string | null | undefined): string {
+  if (!v) return "-";
+  const d = parseDate(v);
+  return d ? d.toLocaleDateString("pt-BR") : String(v);
 }

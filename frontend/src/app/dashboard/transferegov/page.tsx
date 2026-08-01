@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useCallback } from "react";
 import {
-  Search, Eye, X, Loader2, Eraser, RefreshCw,
+  Search, Eye, Loader2, Eraser, RefreshCw,
   ClipboardList, Building2, Landmark, FileText, Banknote, TrendingUp,
 } from "lucide-react";
 import { useMunicipio } from "@/contexts/MunicipioContext";
@@ -455,7 +455,6 @@ export default function TransfereGovPage() {
                       cols={2}
                       campos={[
                         campoP("Modalidade", detalhe.plano.modalidade),
-                        campoP("Anexos", detalhe.plano.listaAPP?.length ?? 0),
                       ]}
                     />
                     {/* Objeto e Motivo de Impedimento saem da grade: são texto
@@ -473,6 +472,7 @@ export default function TransfereGovPage() {
                         {detalhe.plano.motivoImpedimento || "-"}
                       </p>
                     </div>
+                    <Campos cols={2} campos={[campoP("Anexos", detalhe.plano.listaAPP?.length ?? 0)]} />
                   </Secao>
                 </>
               )}

@@ -5,8 +5,10 @@ import { useRouter } from "next/navigation";
 import { FileSignature, Plus, Pencil, Trash2, FileText, FileType, Loader2 } from "lucide-react";
 import api from "@/lib/api";
 import { useMunicipio } from "@/contexts/MunicipioContext";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import {
+  BOTAO_ACAO, BOTAO_CTA, Bloco, BlocoHead, ESTILO_CTA, ESTILO_SEC,
+  ItemLinha, Lista, Selo, Vazio, situacaoTom,
+} from "@/components/ui/superficies";
 
 interface Doc {
   id: number;
@@ -80,78 +82,80 @@ export default function DocumentosPage() {
   };
 
   return (
-    <div className="space-y-5">
-      <div className="border-b border-base-300 pb-4 flex flex-wrap items-end justify-between gap-3">
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-end justify-between gap-3 border-b pb-4" style={{ borderColor: "var(--bi-line)" }}>
         <div>
-          <div className="flex items-center gap-2 text-xs text-base-content/60 mb-1">
-            <span>Início</span><span>›</span><span className="text-base-content/70">Geração de Documentos</span>
-          </div>
-          <h1 className="text-2xl font-bold text-base-content tracking-tight flex items-center gap-2">
-            <FileSignature className="size-6 text-primary" /> Geração de Documentos
+          <h1 className="flex items-center gap-2 text-2xl font-bold text-base-content">
+            <FileSignature className="size-6" style={{ color: "var(--bi-muted)" }} />
+            Geração de Documentos
           </h1>
-          <p className="text-sm text-base-content/60 mt-1">
+          <p className="mt-1 text-sm" style={{ color: "var(--bi-muted)" }}>
             Preencha, salve e exporte documentos (DOCX/PDF) com edição e exclusão.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           {tipos.map((t) => (
-            <Button key={t.tipo} onClick={() => novo(t.tipo)} className="bg-primary hover:bg-primary/90">
-              <Plus className="size-4 mr-1" /> Novo {t.titulo}
-            </Button>
+            <button key={t.tipo} type="button" onClick={() => novo(t.tipo)} className={BOTAO_CTA}
+                    style={ESTILO_CTA}>
+              <Plus className="size-4" /> Novo {t.titulo}
+            </button>
           ))}
         </div>
       </div>
 
-      <div className="bg-base-100 border rounded overflow-hidden">
-        <div className="px-3 py-2 border-b bg-base-200 text-sm">
-          <strong>{docs.length}</strong> documento(s){municipioId ? " neste município" : ""}
-        </div>
+      <Bloco className="p-3">
+        <BlocoHead
+          icon={FileSignature}
+          titulo="Documentos"
+          sub={`${docs.length} documento(s)${municipioId ? " neste município" : ""}`}
+        />
         {loading ? (
-          <div className="p-3 space-y-2">
-            {Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-16 animate-pulse bg-base-200 rounded" />)}
-          </div>
-        ) : docs.length === 0 ? (
-          <div className="p-12 text-center text-base-content/60">
-            Nenhum documento criado ainda. Clique em <strong>Novo</strong> acima para começar.
-          </div>
-        ) : (
-          <div className="divide-y">
-            {docs.map((d) => (
-              <div key={d.id} className="flex flex-wrap items-center justify-between gap-3 p-3 hover:bg-base-200">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-base-content truncate">{d.titulo || "(sem título)"}</span>
-                    <span className="inline-flex items-center rounded border border-primary bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-primary">
-                      {tipos.find((t) => t.tipo === d.tipo)?.titulo || d.tipo}
-                    </span>
-                    {d.status && d.status !== "rascunho" && (
-                      <span className="text-[10px] uppercase text-success">{d.status}</span>
-                    )}
-                  </div>
-                  <div className="text-xs text-base-content/60">Atualizado: {fmt(d.updated_at)}</div>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <Button variant="outline" size="sm" onClick={() => editar(d.id)}>
-                    <Pencil className="size-3.5 mr-1" /> Editar
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => exportar(d.id, "pdf", d.titulo)}
-                          disabled={baixando === `${d.id}-pdf`} title="Exportar PDF">
-                    {baixando === `${d.id}-pdf` ? <Loader2 className="size-3.5 animate-spin mr-1" /> : <FileText className="size-3.5 mr-1" />} PDF
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => exportar(d.id, "docx", d.titulo)}
-                          disabled={baixando === `${d.id}-docx`} title="Exportar DOCX">
-                    {baixando === `${d.id}-docx` ? <Loader2 className="size-3.5 animate-spin mr-1" /> : <FileType className="size-3.5 mr-1" />} DOCX
-                  </Button>
-                  <Button variant="ghost" size="sm" className="text-error hover:bg-error/10 hover:text-error"
-                          onClick={() => excluir(d.id)} title="Excluir">
-                    <Trash2 className="size-3.5" />
-                  </Button>
-                </div>
-              </div>
+          <div className="flex flex-col gap-1.5">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="h-14 animate-pulse rounded-2xl" style={{ background: "var(--bi-surface-2)" }} />
             ))}
           </div>
+        ) : docs.length === 0 ? (
+          <Vazio>Nenhum documento criado ainda. Use um dos botões acima para começar.</Vazio>
+        ) : (
+          <Lista>
+            {docs.map((d) => (
+              <ItemLinha
+                key={d.id}
+                titulo={d.titulo || "(sem título)"}
+                meta={
+                  <>
+                    <Selo>{tipos.find((t) => t.tipo === d.tipo)?.titulo || d.tipo}</Selo>
+                    {d.status && d.status !== "rascunho" && (
+                      <Selo tom={situacaoTom(d.status)}>{d.status}</Selo>
+                    )}
+                    <span>Atualizado {fmt(d.updated_at)}</span>
+                  </>
+                }
+                acao={
+                  <>
+                    <button type="button" onClick={() => editar(d.id)} className={BOTAO_ACAO} style={ESTILO_SEC} title="Editar">
+                      <Pencil className="size-3.5" /> Editar
+                    </button>
+                    <button type="button" onClick={() => exportar(d.id, "pdf", d.titulo)}
+                            disabled={baixando === `${d.id}-pdf`} className={BOTAO_ACAO} style={ESTILO_SEC} title="Exportar PDF">
+                      {baixando === `${d.id}-pdf` ? <Loader2 className="size-3.5 animate-spin" /> : <FileText className="size-3.5" />} PDF
+                    </button>
+                    <button type="button" onClick={() => exportar(d.id, "docx", d.titulo)}
+                            disabled={baixando === `${d.id}-docx`} className={BOTAO_ACAO} style={ESTILO_SEC} title="Exportar DOCX">
+                      {baixando === `${d.id}-docx` ? <Loader2 className="size-3.5 animate-spin" /> : <FileType className="size-3.5" />} DOCX
+                    </button>
+                    <button type="button" onClick={() => excluir(d.id)} title="Excluir"
+                            className="rounded-lg p-1.5 hover:brightness-90" style={{ color: "var(--bi-crit-ink)" }}>
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  </>
+                }
+              />
+            ))}
+          </Lista>
         )}
-      </div>
+      </Bloco>
     </div>
   );
 }
