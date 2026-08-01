@@ -101,7 +101,10 @@ export default function EmendasEstaduaisPage() {
       .catch(() => {})
       .finally(() => setLoading(false));
 
-    api.get("/emendas-estaduais/stats", { params: { municipio_id: municipioId, ...(anosSel.length === 1 ? { ano: anosSel[0] } : {}) } })
+    // MESMO recorte da tabela. Mandar so quando ha um ano ("=== 1") fazia os
+    // cards do topo somarem a base inteira enquanto a lista abaixo mostrava o
+    // mandato — a tela se contradizendo sozinha.
+    api.get("/emendas-estaduais/stats", { params: { municipio_id: municipioId, ...(anosSel.length ? { anos: anosSel } : {}) } })
       .then((r) => setStats(r.data as never))
       .catch(() => {});
   }, [municipioId, anosSel, responsavel, tiposSel]);

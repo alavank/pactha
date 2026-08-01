@@ -80,10 +80,18 @@ export function resumoAnos(v: string[]): string {
   if (n.length === 1) return String(n[0]);
   const contiguo = n.every((a, i) => i === 0 || a === n[i - 1] + 1);
   if (contiguo) {
-    const mand = anosDoMandato(n[0], false);
-    // "Mandato atual" diz mais que "2025–2026" para quem pensa em gestão.
-    if (n.length === mand.length && n[0] === mand[0]) {
-      return inicioDoMandato() === n[0] ? "Mandato atual" : rotuloMandato(n[0]);
+    // Comparar com os 4 anos cheios NÃO serve para o mandato em curso: o atalho
+    // "Mandato atual" só oferece os anos que já aconteceram (em 2026 são dois),
+    // então quem clicava no botão via "2025–2026" na caixa em vez do nome que
+    // acabou de clicar. Compara-se com as DUAS formas — a cheia, para mandato
+    // encerrado, e a cortada em hoje, para o que está correndo.
+    const cheio = anosDoMandato(n[0], false);
+    const ateHoje = anosDoMandato(n[0], true);
+    const casa = (m: number[]) => n.length === m.length && n[0] === m[0];
+    if (casa(cheio) || casa(ateHoje)) {
+      if (inicioDoMandato() === n[0]) return "Mandato atual";
+      if (inicioDoMandato() - 4 === n[0]) return "Mandato anterior";
+      return rotuloMandato(n[0]);
     }
     return `${n[0]}–${n[n.length - 1]}`;
   }
