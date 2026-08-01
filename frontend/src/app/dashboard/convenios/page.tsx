@@ -8,24 +8,11 @@ import api from "@/lib/api";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { PeriodoVigencia } from "@/components/ui/periodo-vigencia";
 import { atalhosAnos, intervaloVazio, resumoAnos, rotuloIntervalo, type Intervalo } from "@/lib/periodo";
+import { Campos, ItemLinha, Lista, Selo } from "@/components/ui/superficies";
 import AnotacaoButton from "@/components/AnotacaoButton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  formatCurrency,
-  formatDate,
-  diasRestantesBadge,
-  situacaoBadgeColor,
-} from "@/lib/utils";
+import { formatCurrency, formatDate } from "@/lib/utils";
 import type { Convenio, ConvenioList } from "@/types";
 import ConvenioDetailModal from "./ConvenioDetailModal";
 
@@ -113,6 +100,19 @@ function nomeOrgaoFull(o?: string | null): string {
     return `${trimmed} - ${m.nome}`;
   }
   return trimmed;
+}
+
+/** Cor no selo de situacao SO quando ela e um alerta.
+ *
+ *  No sistema antigo toda situacao vinha pintada — dez selos coloridos numa
+ *  tela, e nenhum deles significando nada. A identidade do Painel e o inverso:
+ *  cinza por padrao, cor quando exige acao. */
+function situacaoTom(s?: string | null): "neutro" | "ok" | "atencao" | "critico" {
+  const t = (s || "").toLowerCase();
+  if (/(cancelad|rescindid|impedid|rejeitad|inadimpl)/.test(t)) return "critico";
+  if (/(pendente|an[áa]lise|suspens|aguardando)/.test(t)) return "atencao";
+  if (/(conclu[íi]d|prestac|encerrad)/.test(t)) return "ok";
+  return "neutro";
 }
 
 function isTE(objeto?: string | null): boolean {
@@ -441,135 +441,96 @@ export default function ConveniosPage() {
         </div>
       ) : (
         <>
-          <div className="rounded-lg border bg-base-100 overflow-hidden">
-            <Table className="text-xs table-fixed w-full">
-              <TableHeader>
-                <TableRow className="[&>th]:py-1.5 [&>th]:px-2 [&>th]:text-[11px] [&>th]:font-semibold [&>th]:whitespace-normal [&>th]:align-bottom [&>th]:leading-tight">
-                  <TableHead className="w-[62px]">Fonte</TableHead>
-                  <TableHead className="w-[88px]">Nº da Proposta</TableHead>
-                  <TableHead className="w-[80px]">Plano de Trabalho</TableHead>
-                  <TableHead className="w-[108px]">Nº do Instrumento</TableHead>
-                  <TableHead className="w-[135px]">Órgão Concedente</TableHead>
-                  <TableHead className="min-w-0">Objeto</TableHead>
-                  <TableHead className="w-[118px]">Situação</TableHead>
-                  <TableHead className="w-[92px] text-right">Repasse</TableHead>
-                  <TableHead className="w-[58px] text-center" title="% efetivamente repassado (pago) pelo Estado — fonte: dados abertos MG">Pago</TableHead>
-                  <TableHead className="w-[78px] text-right">Contrapartida</TableHead>
-                  <TableHead className="w-[76px]">Assinatura</TableHead>
-                  <TableHead className="w-[76px]">Fim da Vigência</TableHead>
-                  <TableHead className="w-[54px]">Dias Restantes</TableHead>
-                  <TableHead className="w-[40px] text-center" title="Gestão Interna (anotações, protocolos, anexos)">📝</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {items.map((conv: Convenio) => {
-                  const objeto = conv.objeto || "";
-                  const programa = conv.tipo_programa || conv.programa || "";
-                  const orgao = conv.orgao_concedente || "";
-                  const tipTitle = `${isTE(conv.objeto) ? "[TE] " : ""}${objeto}${programa ? "\n\nPrograma: " + programa : ""}`;
-                  return (
-                  <TableRow
-                    key={conv.id}
-                    className="[&>td]:py-2 [&>td]:px-2 [&>td]:text-[11px] [&>td]:align-top [&>td]:leading-snug hover:bg-primary/10 cursor-pointer"
-                    onClick={() => setSelectedConv({ id: conv.id, esfera: conv.esfera })}
-                  >
-                    <TableCell title={conv.fonte || ""}>
-                      {conv.fonte && (
-                        <span className="inline-flex items-center rounded bg-primary/10 border border-primary px-1 py-0.5 text-[9px] font-mono text-primary">
-                          {conv.fonte
-                            .replace("TransfereGov-Proposta","TG-P")
-                            .replace("TransfereGov","TG")
-                            .replace("PortalTransparencia","PT")
-                            .replace("SIGCON-MG","SIGCON")
-                            .replace("CODEVASF","CODE")}
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell className="font-mono text-[10px] whitespace-normal break-all text-muted-foreground" title={conv.nr_proposta ? `Nº Proposta: ${conv.nr_proposta}` : "Sem nº de proposta"}>
-                      {conv.nr_proposta || "-"}
-                    </TableCell>
-                    <TableCell className="font-mono text-[10px] whitespace-normal break-all text-muted-foreground" title={conv.nr_plano_trabalho ? `Nº Plano de Trabalho: ${conv.nr_plano_trabalho}` : "Sem nº de plano"}>
-                      {conv.nr_plano_trabalho || "-"}
-                    </TableCell>
-                    <TableCell className="font-mono text-[10px] whitespace-normal break-all text-muted-foreground" title={conv.nr_instrumento ? `Nº Instrumento: ${conv.nr_instrumento}` : "Sem nº de instrumento"}>
-                      {conv.nr_instrumento || "-"}
-                    </TableCell>
-                    {/* Sem `truncate`: a sigla conhecida cabe numa linha e o
-                        nome por extenso (quando nao ha sigla) quebra em duas,
-                        em vez de virar "MINISTERIO DO DESE...". */}
-                    <TableCell className="font-mono whitespace-normal break-words" title={nomeOrgaoFull(conv.orgao_concedente) || orgao}>
-                      {siglaOrgao(conv.orgao_concedente)}
-                    </TableCell>
-                    <TableCell title={tipTitle}>
-                      <div className="flex items-center gap-1 min-w-0">
-                        {isTE(conv.objeto) && (
-                          <span className="shrink-0 inline-flex items-center rounded bg-info/15 border border-info px-1 text-[9px] font-mono text-info">TE</span>
-                        )}
-                        {/* 3 linhas: o objeto do convenio tem 150-400
-                            caracteres e uma linha so mostrava o comeco de
-                            todos, que costuma ser identico. */}
-                        <span className="line-clamp-3 whitespace-normal break-words">{objeto || "-"}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell title={conv.situacao || ""}>
-                      <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium whitespace-normal break-words text-left ${situacaoBadgeColor(conv.situacao)}`}>
-                        {conv.situacao || "-"}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-right whitespace-nowrap" title={`Repasse: ${formatCurrency(conv.valor_repasse ?? conv.valor_total)}\nGlobal: ${formatCurrency(conv.valor_total)}`}>
-                      {formatCurrency(conv.valor_repasse ?? conv.valor_total)}
-                    </TableCell>
-                    <TableCell className="text-center whitespace-nowrap">
-                      {(() => {
-                        const rep = conv.valor_desembolsado;
-                        if (rep == null) return <span className="text-muted-foreground text-[10px]">-</span>;
-                        const base = conv.valor_repasse ?? conv.valor_total ?? 0;
-                        const pct = base ? Math.round((rep / base) * 100) : 0;
-                        const cls = pct >= 100 ? "bg-success/15 text-success"
-                          : pct > 0 ? "bg-warning/15 text-warning"
-                          : "bg-base-300 text-base-content/60";
-                        return (
-                          <span
-                            className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ${cls}`}
-                            title={`Repassado (pago): ${formatCurrency(rep)} de ${formatCurrency(base)}`}
-                          >
-                            {pct}%
-                          </span>
-                        );
-                      })()}
-                    </TableCell>
-                    <TableCell className="text-right text-muted-foreground whitespace-nowrap" title={conv.valor_contrapartida ? `Contrapartida: ${formatCurrency(conv.valor_contrapartida)}` : "Sem contrapartida"}>
-                      {conv.valor_contrapartida ? formatCurrency(conv.valor_contrapartida) : "-"}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap" title={`Assinatura: ${formatDate(conv.dt_inicio)}`}>
-                      {formatDate(conv.dt_inicio)}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap" title={`Vigencia: ${formatDate(conv.dt_fim_vigencia)}`}>
-                      {formatDate(conv.dt_fim_vigencia)}
-                    </TableCell>
-                    <TableCell title={conv.dias_restantes != null ? `${conv.dias_restantes} dias restantes` : ""}>
-                      <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ${diasRestantesBadge(conv.dias_restantes)}`}>
-                        {conv.dias_restantes != null
-                          ? conv.dias_restantes < 0
-                            ? `${Math.abs(conv.dias_restantes)}d`
-                            : `${conv.dias_restantes}d`
-                          : "-"}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
+          {/* A LISTA DEIXOU DE SER TABELA.
+              Eram 14 colunas numa grade de linhas finas, com o objeto cortado e
+              o violeta em toda parte. Agora cada convenio e um cartao na
+              linguagem do Painel: sem borda entre itens, um cinza so para a
+              meta, selo cinza em vez de pintado — e a informacao COMPLETA, que
+              foi a condicao do dono ("tem q aparecer todas as informaçoes").
+
+              O que torna isso possivel sem virar bagunca e o <Campos>: os
+              numeros ficam em POSICOES FIXAS, iguais em todos os cartoes, entao
+              o olho continua descendo por uma coluna como descia na tabela. */}
+          <Lista>
+            {items.map((conv: Convenio) => {
+              const objeto = conv.objeto || "";
+              const programa = conv.tipo_programa || conv.programa || "";
+              const orgao = conv.orgao_concedente || "";
+              const dias = conv.dias_restantes;
+              const base = conv.valor_repasse ?? conv.valor_total ?? 0;
+              const rep = conv.valor_desembolsado;
+              const pct = rep != null && base ? Math.round((rep / base) * 100) : null;
+              return (
+                <ItemLinha
+                  key={conv.id}
+                  onClick={() => setSelectedConv({ id: conv.id, esfera: conv.esfera })}
+                  titulo={
+                    <span className="flex items-start gap-1.5">
+                      {isTE(conv.objeto) && <Selo tom="acento">TE</Selo>}
+                      <span>{objeto || "Sem objeto informado"}</span>
+                    </span>
+                  }
+                  valor={formatCurrency(conv.valor_repasse ?? conv.valor_total)}
+                  acao={
+                    <span onClick={(e) => e.stopPropagation()}>
                       <AnotacaoButton
                         fonte="sigcon"
                         fonteRef={String(conv.id)}
                         municipioId={Number(municipioId)}
                         numero={conv.nr_instrumento || conv.nr_sigcon || conv.nr_proposta || String(conv.id)}
                       />
-                    </TableCell>
-                  </TableRow>
-                );
-                })}
-              </TableBody>
-            </Table>
-          </div>
+                    </span>
+                  }
+                  meta={
+                    <>
+                      {conv.fonte && <Selo title={conv.fonte}>{conv.fonte.replace("SIGCON-MG", "SIGCON")}</Selo>}
+                      {conv.situacao && (
+                        <Selo tom={situacaoTom(conv.situacao)} title={conv.situacao}>
+                          {conv.situacao}
+                        </Selo>
+                      )}
+                      {orgao && (
+                        <span title={nomeOrgaoFull(conv.orgao_concedente) || orgao}>
+                          {siglaOrgao(conv.orgao_concedente)}
+                        </span>
+                      )}
+                      {programa && <span className="truncate">· {programa}</span>}
+                      {/* Os tres identificadores juntos: servem para ACHAR, nao
+                          para comparar, entao nao ocupam coluna na grade. */}
+                      <span className="font-mono">
+                        {conv.nr_proposta ? `· prop ${conv.nr_proposta}` : ""}
+                        {conv.nr_plano_trabalho ? ` · plano ${conv.nr_plano_trabalho}` : ""}
+                        {conv.nr_instrumento ? ` · instr ${conv.nr_instrumento}` : ""}
+                        {conv.nr_sigcon ? ` · sigcon ${conv.nr_sigcon}` : ""}
+                      </span>
+                    </>
+                  }
+                >
+                  <Campos
+                    campos={[
+                      {
+                        rotulo: "Repassado",
+                        valor: pct != null ? `${pct}%` : "—",
+                        tom: pct == null ? "normal" : pct >= 100 ? "ok" : pct > 0 ? "atencao" : "normal",
+                        title: rep != null ? `${formatCurrency(rep)} de ${formatCurrency(base)}` : "Sem informação de repasse",
+                      },
+                      {
+                        rotulo: "Contrapartida",
+                        valor: conv.valor_contrapartida ? formatCurrency(conv.valor_contrapartida) : "—",
+                      },
+                      { rotulo: "Assinatura", valor: formatDate(conv.dt_inicio) || "—" },
+                      { rotulo: "Fim da vigência", valor: formatDate(conv.dt_fim_vigencia) || "—" },
+                      {
+                        rotulo: dias != null && dias < 0 ? "Vencido há" : "Dias restantes",
+                        valor: dias != null ? `${Math.abs(dias)}d` : "—",
+                        tom: dias == null ? "normal" : dias < 0 ? "critico" : dias <= 60 ? "atencao" : "ok",
+                      },
+                    ]}
+                  />
+                </ItemLinha>
+              );
+            })}
+          </Lista>
 
           {/* Pagination */}
           <div className="flex items-center justify-between">
