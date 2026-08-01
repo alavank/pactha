@@ -39,7 +39,11 @@ async def visao(
     """Payload consolidado da home do Painel: KPIs + semaforo CAUC + top
     parlamentares + ultimas mudancas. Um round-trip so p/ mobile/TV."""
     ensure_municipio_access(current, municipio_id)
-    summary = await municipio_summary(municipio_id, ano, db, current)
+    # POR NOME, nao por posicao: `municipio_summary` ganhou o parametro
+    # `anos` entre `ano` e `db`, e a chamada posicional passaria a
+    # sessao no lugar dele — o Painel quebraria so quando alguem abrisse.
+    summary = await municipio_summary(
+        municipio_id, ano=ano, anos=None, db=db, current=current)
     cauc = await fetch_cauc_situacao(db, municipio_id)
     ranking = await aggregate_parlamentares(
         db, municipio_id=municipio_id, ano=ano, incluir_plano_acao=False
@@ -142,7 +146,11 @@ async def narrativa(
     graciosamente: sem ANTHROPIC_API_KEY, devolve disponivel=false e o frontend
     usa o texto por template. GET grava o cache (nao e escrita do sistema)."""
     ensure_municipio_access(current, municipio_id)
-    summary = await municipio_summary(municipio_id, ano, db, current)
+    # POR NOME, nao por posicao: `municipio_summary` ganhou o parametro
+    # `anos` entre `ano` e `db`, e a chamada posicional passaria a
+    # sessao no lugar dele — o Painel quebraria so quando alguem abrisse.
+    summary = await municipio_summary(
+        municipio_id, ano=ano, anos=None, db=db, current=current)
     cauc = await fetch_cauc_situacao(db, municipio_id)
     ranking = await aggregate_parlamentares(db, municipio_id=municipio_id, ano=ano, incluir_plano_acao=False)
     top = [

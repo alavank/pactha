@@ -6,17 +6,12 @@ import { useMunicipio } from "@/contexts/MunicipioContext";
 import { Search as SearchIcon, ChevronLeft, ChevronRight } from "lucide-react";
 import api from "@/lib/api";
 import { MultiSelect } from "@/components/ui/multi-select";
+import { PeriodoVigencia } from "@/components/ui/periodo-vigencia";
+import { atalhosAnos, intervaloVazio, resumoAnos, rotuloIntervalo, type Intervalo } from "@/lib/periodo";
 import AnotacaoButton from "@/components/AnotacaoButton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -124,10 +119,23 @@ function isTE(objeto?: string | null): boolean {
   return !!objeto && /TRANSFER[ÊE]NCIA\s+ESPECIAL/i.test(objeto);
 }
 
+/** Faixas de vencimento. Multi-escolha: marcar duas traz a UNIAO das duas.
+ *  "Vence em 30" e subconjunto de "vence em 60" — marcar os dois e o mesmo que
+ *  marcar so o maior, e isso e o comportamento esperado. */
+const VIGENCIA_OPCOES = ["vence30", "vence60", "vence90", "vence120", "prestacao"];
 const VIGENCIA_LABELS: Record<string, string> = {
+  vence30: "Vence em 30 dias",
   vence60: "Vence em 60 dias",
+  vence90: "Vence em 90 dias",
   vence120: "Vence em 120 dias",
   prestacao: "Prestação de Contas (vencida há +90 dias)",
+};
+
+const PAGAMENTO_OPCOES = ["pago", "parcial", "nao_pago"];
+const PAGAMENTO_LABELS: Record<string, string> = {
+  pago: "Pago (integral)",
+  parcial: "Pago parcialmente",
+  nao_pago: "Pendente (não pago)",
 };
 
 /** As fontes que convivem em `convenios_estadual`.
@@ -164,9 +172,17 @@ export default function ConveniosPage() {
   // (SIGCON-MG e FNS convivem nela) e que o backend ja aceita como lista.
   const [fontesSel, setFontesSel] = useState<string[]>([]);
   const [situacoesSel, setSituacoesSel] = useState<string[]>([]);
-  const [pagamento, setPagamento] = useState("todos");
-  const [ano, setAno] = useState("todos");
-  const [vigencia, setVigencia] = useState(vigenciaParam ?? "todos");
+  // Tudo em lista: o dono pediu poder marcar "um, dois, tres ou todos" em
+  // qualquer filtro do sistema. Vazio = todos, mesma convencao do MultiSelect
+  // e do backend (que simplesmente nao aplica o filtro).
+  const [pagamentosSel, setPagamentosSel] = useState<string[]>([]);
+  const [anosSel, setAnosSel] = useState<string[]>([]);
+  // O KPI do dashboard entra aqui por querystring com UM valor — continua
+  // funcionando, so que agora como lista de um item.
+  const [vigenciasSel, setVigenciasSel] = useState<string[]>(
+    vigenciaParam ? [vigenciaParam] : [],
+  );
+  const [intervalo, setIntervalo] = useState<Intervalo>({});
   const [searchTerm, setSearchTerm] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [situacoes, setSituacoes] = useState<string[]>([]);
@@ -191,15 +207,16 @@ export default function ConveniosPage() {
     return () => clearTimeout(timer);
   }, [searchTerm]);
 
-  // Sincroniza filtro de vigencia com o parametro da URL (vindo dos KPIs do dashboard)
+  // Sincroniza filtro de vigencia com o parametro da URL (vindo dos KPIs do
+  // dashboard, que continuam mandando UM valor — vira lista de um item).
   useEffect(() => {
-    setVigencia(vigenciaParam ?? "todos");
+    setVigenciasSel(vigenciaParam ? [vigenciaParam] : []);
   }, [vigenciaParam]);
 
   // Reset page on filter change
   useEffect(() => {
     setPage(1);
-  }, [fontesSel, situacoesSel, pagamento, ano, vigencia, debouncedSearch]);
+  }, [fontesSel, situacoesSel, pagamentosSel, anosSel, vigenciasSel, intervalo, debouncedSearch]);
 
   const fetchData = useCallback(() => {
     if (!municipioId) return;
@@ -212,9 +229,11 @@ export default function ConveniosPage() {
     };
     if (fontesSel.length) params.fontes = fontesSel;
     if (situacoesSel.length) params.situacoes = situacoesSel;
-    if (pagamento !== "todos") params.pagamento = pagamento;
-    if (ano !== "todos") params.ano = ano;
-    if (vigencia !== "todos") params.vigencia = vigencia;
+    if (pagamentosSel.length) params.pagamentos = pagamentosSel;
+    if (anosSel.length) params.anos = anosSel;
+    if (vigenciasSel.length) params.vigencias = vigenciasSel;
+    if (intervalo.de) params.vig_fim_de = intervalo.de;
+    if (intervalo.ate) params.vig_fim_ate = intervalo.ate;
     if (debouncedSearch) params.search = debouncedSearch;
 
     api
@@ -222,7 +241,7 @@ export default function ConveniosPage() {
       .then((res) => setData(res.data))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [municipioId, page, fontesSel, situacoesSel, pagamento, ano, vigencia, debouncedSearch]);
+  }, [municipioId, page, fontesSel, situacoesSel, pagamentosSel, anosSel, vigenciasSel, intervalo, debouncedSearch]);
 
   useEffect(() => {
     fetchData();
@@ -326,43 +345,44 @@ export default function ConveniosPage() {
           className="w-56"
         />
 
-        <Select value={ano} onValueChange={(v) => setAno(v ?? "todos")}>
-          <SelectTrigger className="w-32">
-            <SelectValue placeholder="Ano" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="todos">Todos Anos</SelectItem>
-            {anos.map((a) => (
-              <SelectItem key={a} value={String(a)}>
-                {a}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <MultiSelect
+          opcoes={anos.map(String)}
+          valor={anosSel}
+          onChange={setAnosSel}
+          atalhos={atalhosAnos()}
+          formatarResumo={resumoAnos}
+          placeholder="Todos os anos"
+          rotuloTodos="Todos os anos"
+          ariaLabel="Anos"
+          className="w-44"
+        />
 
-        <Select value={vigencia} onValueChange={(v) => setVigencia(v ?? "todos")}>
-          <SelectTrigger className="w-52">
-            <SelectValue placeholder="Vigencia" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="todos">Toda Vigencia</SelectItem>
-            <SelectItem value="vence60">Vence em 60 dias</SelectItem>
-            <SelectItem value="vence120">Vence em 120 dias</SelectItem>
-            <SelectItem value="prestacao">Prestacao de Contas (+90d)</SelectItem>
-          </SelectContent>
-        </Select>
+        <MultiSelect
+          opcoes={VIGENCIA_OPCOES}
+          rotulos={VIGENCIA_LABELS}
+          valor={vigenciasSel}
+          onChange={setVigenciasSel}
+          placeholder="Toda a vigência"
+          rotuloTodos="Toda a vigência"
+          ariaLabel="Vigência"
+          className="w-56"
+        />
 
-        <Select value={pagamento} onValueChange={(v) => setPagamento(v ?? "todos")}>
-          <SelectTrigger className="w-40">
-            <SelectValue placeholder="Pagamento" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="todos">Todo Pagamento</SelectItem>
-            <SelectItem value="pago">Pago (integral)</SelectItem>
-            <SelectItem value="parcial">Parcial</SelectItem>
-            <SelectItem value="nao_pago">Pendente (nao pago)</SelectItem>
-          </SelectContent>
-        </Select>
+        <MultiSelect
+          opcoes={PAGAMENTO_OPCOES}
+          rotulos={PAGAMENTO_LABELS}
+          valor={pagamentosSel}
+          onChange={setPagamentosSel}
+          placeholder="Todo pagamento"
+          rotuloTodos="Todo pagamento"
+          ariaLabel="Situação de pagamento"
+          className="w-48"
+        />
+
+        {/* PERIODO LIVRE, por FIM DE VIGENCIA. Convivem com os anos de
+            proposito: ano recorta o exercicio do convenio, o intervalo recorta
+            o vencimento. Sao perguntas diferentes e somam bem. */}
+        <PeriodoVigencia valor={intervalo} onChange={setIntervalo} />
 
         <div className="relative flex-1 min-w-[200px]">
           <SearchIcon className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -375,20 +395,36 @@ export default function ConveniosPage() {
         </div>
       </div>
 
-      {/* Chip do filtro ativo de vigencia (vindo dos KPIs do dashboard) */}
-      {vigencia !== "todos" && (
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-base-content/60">Filtro ativo:</span>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 border border-primary px-2.5 py-0.5 text-xs font-medium text-primary">
-            {VIGENCIA_LABELS[vigencia] ?? vigencia}
-            <button
-              onClick={() => setVigencia("todos")}
-              className="text-primary hover:text-primary/90"
-              aria-label="Limpar filtro"
-            >
-              ×
-            </button>
-          </span>
+      {/* Chips dos filtros ativos. Com multi-escolha isso deixa de ser enfeite:
+          o gatilho do dropdown resume como "3 selecionados", e sem os chips o
+          gestor nao sabe QUAIS tres — nem que ha um periodo aplicado. */}
+      {(vigenciasSel.length > 0 || !intervaloVazio(intervalo)) && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-base-content/60">Filtros ativos:</span>
+          {vigenciasSel.map((v) => (
+            <span key={v} className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 border border-primary px-2.5 py-0.5 text-xs font-medium text-primary">
+              {VIGENCIA_LABELS[v] ?? v}
+              <button
+                onClick={() => setVigenciasSel(vigenciasSel.filter((x) => x !== v))}
+                className="text-primary hover:text-primary/90"
+                aria-label={`Remover filtro ${VIGENCIA_LABELS[v] ?? v}`}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+          {!intervaloVazio(intervalo) && (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 border border-primary px-2.5 py-0.5 text-xs font-medium text-primary">
+              Fim da vigência {rotuloIntervalo(intervalo)}
+              <button
+                onClick={() => setIntervalo({})}
+                className="text-primary hover:text-primary/90"
+                aria-label="Limpar período"
+              >
+                ×
+              </button>
+            </span>
+          )}
         </div>
       )}
 

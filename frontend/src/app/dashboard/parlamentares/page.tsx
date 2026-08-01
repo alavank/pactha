@@ -2,7 +2,8 @@
 
 import React, { useEffect, useState, useCallback, Suspense } from "react";
 import { useMunicipio } from "@/contexts/MunicipioContext";
-import { MultiSelect, resumoAnos, AtalhoMulti } from "@/components/ui/multi-select";
+import { MultiSelect } from "@/components/ui/multi-select";
+import { anosOpcoes, atalhosAnos, resumoAnos } from "@/lib/periodo";
 import {
   UserCircle2, Loader2, Search, ChevronDown, ChevronRight,
   Landmark, Building2, FileText, Eraser, Coins, HeartPulse,
@@ -562,25 +563,10 @@ function Td({ children, mono, className, title }: { children: React.ReactNode; m
 }
 
 /** Anos oferecidos no filtro: do corrente para tras, cobrindo dois mandatos. */
-const ANOS_OPCOES = Array.from(
-  { length: new Date().getFullYear() - 2015 },
-  (_, i) => String(new Date().getFullYear() - i)
-);
-
-/** Mesma regra do Painel de Indicadores (components/bi/Filtros.tsx): o mandato
- *  vigente comeca em 2025 e anda de 4 em 4, sem passar do ano corrente. */
-const ATALHOS_ANOS: AtalhoMulti[] = (() => {
-  const y = new Date().getFullYear();
-  const inicio = y - ((((y - 2025) % 4) + 4) % 4);
-  const mandato = [inicio, inicio + 1, inicio + 2, inicio + 3].filter((a) => a <= y);
-  // Sem atalho "Todos": a linha de acoes do dropdown ja tem esse botao, e o
-  // mesmo rotulo duas vezes na mesma caixa so faz o usuario hesitar.
-  return [
-    { label: "Mandato atual", valores: mandato.map(String) },
-    { label: "Este ano", valores: [String(y)] },
-    { label: "Mandato anterior", valores: [inicio - 4, inicio - 3, inicio - 2, inicio - 1].map(String) },
-  ];
-})();
+// A lista de anos e os atalhos de mandato saem de `@/lib/periodo`: a formula
+// do mandato estava copiada literalmente aqui, no Painel e no app de celular.
+const ANOS_OPCOES = anosOpcoes();
+const ATALHOS_ANOS = atalhosAnos();
 
 export default function ParlamentaresPage() {
   return (

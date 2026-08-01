@@ -165,12 +165,8 @@ export function MultiSelect({
   );
 }
 
-/** "2021, 2022, 2023, 2024" vira "2021–2024"; sequencias quebradas viram lista. */
-export function resumoAnos(v: string[]): string {
-  const ns = [...v].map(Number).filter(Boolean).sort((a, b) => a - b);
-  if (!ns.length) return "";
-  if (ns.length === 1) return String(ns[0]);
-  const contiguo = ns.every((n, i) => i === 0 || n === ns[i - 1] + 1);
-  if (contiguo) return `${ns[0]}–${ns[ns.length - 1]}`;
-  return ns.length <= 3 ? ns.join(", ") : `${ns.length} anos`;
-}
+/** Resumo de anos e regra de mandato agora moram em `@/lib/periodo`.
+ *  Reexportado aqui so para nao quebrar import antigo — prefira o modulo.
+ *  Havia DUAS implementacoes de `resumoAnos` no app, com comportamento
+ *  diferente para o mesmo nome; a de la e a canonica. */
+export { resumoAnos } from "@/lib/periodo";

@@ -42,6 +42,7 @@ async def list_municipios(
 async def municipio_summary(
     municipio_id: int,
     ano: int | None = Query(None, description="Filtra os KPIs por ano (None=todos)"),
+    anos: list[int] | None = Query(None, description="Multi-select de ano"),
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
@@ -57,12 +58,14 @@ async def municipio_summary(
     # convenios_estadual guarda SIGCON-MG *e* FNS (saude, federal). O KPI
     # "Convenios Estaduais" e as vigencias sao so do SIGCON — sem este filtro
     # Piracema/Sao Tiago apareciam com convenios estaduais tendo zero SIGCON.
+    _anos = anos or ([ano] if ano else [])
+
     def _ano_est(q):
         q = q.where(or_(ConvenioEstadual.fonte.is_(None),
                         ~ConvenioEstadual.fonte.ilike("%FNS%")))
-        return q.where(ConvenioEstadual.ano == ano) if ano else q
-    ano_txt = str(ano) if ano else None
-    vol_ano_sql = " AND split_part(numero_proposta, '/', 2) = :ano_txt" if ano else ""
+        return q.where(ConvenioEstadual.ano.in_(_anos)) if _anos else q
+    anos_txt = [str(a) for a in _anos]
+    vol_ano_sql = " AND split_part(numero_proposta, '/', 2) = ANY(:anos_txt)" if _anos else ""
 
     est_count = await db.execute(_ano_est(
         select(func.count()).select_from(ConvenioEstadual).where(ConvenioEstadual.municipio_id == municipio_id)
@@ -96,9 +99,9 @@ async def municipio_summary(
     ))
 
     # TransfereGov Voluntarias (dt_fim_vigencia eh string dd/mm/yyyy -> parse em Python)
-    vol_params = {"m": municipio_id}
-    if ano:
-        vol_params["ano_txt"] = ano_txt
+    vol_params: dict = {"m": municipio_id}
+    if _anos:
+        vol_params["anos_txt"] = anos_txt
     vol = await db.execute(text(
         "SELECT dt_fim_vigencia, COALESCE(valor_global, valor_repasse, 0) "
         "FROM transferegov_propostas WHERE municipio_id = :m" + vol_ano_sql

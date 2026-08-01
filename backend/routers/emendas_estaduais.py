@@ -13,9 +13,13 @@ router = APIRouter(prefix="/api/emendas-estaduais", tags=["emendas-estaduais"])
 @router.get("")
 async def list_emendas_estaduais(
     municipio_id: Optional[int] = None,
+    # Plurais ao lado dos singulares (aditivo): quem ja manda `ano=` ou `tipo=`
+    # continua funcionando. Mesmo padrao de routers/convenios.py.
     ano: Optional[int] = None,
+    anos: Optional[list[int]] = Query(None, description="Multi-select de ano"),
     responsavel: Optional[str] = None,
     tipo: Optional[str] = None,
+    tipos: Optional[list[str]] = Query(None, description="Multi-select de tipo de indicacao"),
     status: Optional[str] = None,
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=2000),
@@ -29,15 +33,21 @@ async def list_emendas_estaduais(
     if municipio_id:
         where_parts.append("municipio_id = :mun")
         params["mun"] = municipio_id
-    if ano:
-        where_parts.append("ano = :ano")
-        params["ano"] = ano
+    _anos = anos or ([ano] if ano else [])
+    if _anos:
+        where_parts.append("ano = ANY(:anos)")
+        params["anos"] = _anos
     if responsavel:
         where_parts.append("nome_responsavel ILIKE :resp")
         params["resp"] = f"%{responsavel}%"
-    if tipo:
-        where_parts.append("tipo_indicacao ILIKE :tipo")
-        params["tipo"] = f"%{tipo}%"
+    _tipos = tipos or ([tipo] if tipo else [])
+    if _tipos:
+        # UNIAO: marcar "Convenio" e "Aplicacao Direta" traz os dois. Continua
+        # ILIKE por item porque o rotulo gravado varia em acento e caixa.
+        cond = " OR ".join(f"tipo_indicacao ILIKE :tipo{i}" for i in range(len(_tipos)))
+        where_parts.append(f"({cond})")
+        for i, t in enumerate(_tipos):
+            params[f"tipo{i}"] = f"%{t}%"
     if status:
         where_parts.append("status_indicacao ILIKE :status")
         params["status"] = f"%{status}%"

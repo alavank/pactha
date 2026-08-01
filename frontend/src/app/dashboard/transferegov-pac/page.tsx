@@ -7,7 +7,8 @@ import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatCurrency } from "@/lib/utils";
-import { MultiSelect, resumoAnos } from "@/components/ui/multi-select";
+import { MultiSelect } from "@/components/ui/multi-select";
+import { atalhosAnos, resumoAnos } from "@/lib/periodo";
 
 interface PacItem {
   numero_proposta: string;
@@ -159,12 +160,13 @@ export default function TransfereGovPacPage() {
           </div>
           <div>
             <label className="mb-1 block text-xs text-base-content/70">
-              Ano <span className="text-base-content/40">(um ou vários)</span>
+              Anos <span className="text-base-content/40">(um, alguns ou o mandato)</span>
             </label>
             <MultiSelect
               opcoes={anoOpcoes}
               valor={anosSel}
               onChange={setAnosSel}
+              atalhos={atalhosAnos()}
               formatarResumo={resumoAnos}
               placeholder="Todos os anos"
               rotuloTodos="Todos"

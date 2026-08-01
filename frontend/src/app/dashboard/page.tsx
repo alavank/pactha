@@ -24,6 +24,8 @@ import {
   LabelList,
 } from "recharts";
 import api from "@/lib/api";
+import { MultiSelect } from "@/components/ui/multi-select";
+import { anosOpcoes, atalhosAnos, resumoAnos } from "@/lib/periodo";
 import { Badge } from "@/components/ui/badge";
 import {
   formatCurrency,
@@ -162,7 +164,9 @@ export default function DashboardPage() {
 function DashboardOperacional() {
   const router = useRouter();
   const { municipioId } = useMunicipio();
-  const [ano, setAno] = useState("");
+  // Era um <select> NATIVO de um ano so — o unico do app fora do padrao, e o
+  // que fica na tela que o prefeito abre primeiro.
+  const [anosSel, setAnosSel] = useState<string[]>([]);
 
   const goConvenios = (vigencia?: string) => {
     if (!municipioId) return;
@@ -187,7 +191,7 @@ function DashboardOperacional() {
   useEffect(() => {
     if (!municipioId) return;
     setLoading(true);
-    const anoP = ano ? { ano } : {};
+    const anoP = anosSel.length ? { anos: anosSel } : {};
 
     Promise.all([
       api.get<MunicipioSummary>(`/municipios/${municipioId}/summary`, { params: { ...anoP } }),
@@ -205,7 +209,7 @@ function DashboardOperacional() {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [municipioId, ano]);
+  }, [municipioId, anosSel]);
 
   const fonteBadge = (f: string): { label: string; cls: string } => {
     if (f === "fns") return { label: "FNS", cls: "bg-error/15 text-error border-error/30" };
@@ -285,20 +289,22 @@ function DashboardOperacional() {
             Visão consolidada de convênios, emendas e indicadores do município
           </p>
         </div>
-        {/* Filtro de ano — os KPIs, o gráfico e os alertas respeitam a seleção */}
+        {/* Filtro de ano — os KPIs, o gráfico e os alertas respeitam a seleção.
+            Mesmo componente e mesmos atalhos do resto do sistema: "Mandato
+            atual" aqui é o mandato do PREFEITO (ver @/lib/periodo). */}
         <div className="flex items-center gap-2">
-          <label htmlFor="dash-ano" className="text-xs font-medium text-base-content/60">Ano</label>
-          <select
-            id="dash-ano"
-            value={ano}
-            onChange={(e) => setAno(e.target.value)}
-            className="h-9 rounded-lg border border-base-300 bg-base-100 px-3 text-sm text-base-content"
-          >
-            <option value="">Todos</option>
-            {Array.from({ length: new Date().getFullYear() - 2009 }, (_, i) => new Date().getFullYear() - i).map((y) => (
-              <option key={y} value={y}>{y}</option>
-            ))}
-          </select>
+          <label className="text-xs font-medium text-base-content/60">Anos</label>
+          <MultiSelect
+            opcoes={anosOpcoes(2010)}
+            valor={anosSel}
+            onChange={setAnosSel}
+            atalhos={atalhosAnos()}
+            formatarResumo={resumoAnos}
+            placeholder="Todos"
+            rotuloTodos="Todos"
+            ariaLabel="Anos do painel"
+            className="w-44"
+          />
         </div>
       </div>
 

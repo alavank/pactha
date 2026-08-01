@@ -134,13 +134,25 @@ async def list_anos(
 @router.get("", response_model=ConvenioListResponse)
 async def list_convenios(
     municipio_id: Optional[int] = None,
+    # Os plurais convivem com os singulares de proposito: e o mesmo padrao de
+    # `situacoes`/`situacao` e de routers/parlamentares.py. Link antigo, KPI do
+    # dashboard e integracao que ainda mandam o singular continuam funcionando.
     ano: Optional[int] = None,
+    anos: Optional[list[int]] = Query(None, description="Multi-select de ano"),
     situacao: Optional[str] = None,
     situacoes: Optional[list[str]] = Query(None, description="Multi-select de situacao (match exato)"),
     fonte: Optional[str] = None,
     fontes: Optional[list[str]] = Query(None, description="Multi-select fonte"),
     vigencia: Optional[str] = Query(None, description="vence60 | vence120 | prestacao"),
+    vigencias: Optional[list[str]] = Query(None, description="Multi-select de vigencia (uniao)"),
     pagamento: Optional[str] = Query(None, description="pago | parcial | nao_pago (via valor_repassado)"),
+    pagamentos: Optional[list[str]] = Query(None, description="Multi-select de pagamento (uniao)"),
+    # PERIODO LIVRE. Filtra pelo FIM DA VIGENCIA — decisao do dono, e a mesma
+    # semantica ja usada em routers/transferegov.py (`vig_fim_de`/`vig_fim_ate`),
+    # porque e a pergunta que a equipe faz de verdade: "o que vence entre marco
+    # e outubro". Um lado so e valido ("a partir de marco").
+    vig_fim_de: Optional[date] = Query(None, description="Fim de vigencia >= esta data"),
+    vig_fim_ate: Optional[date] = Query(None, description="Fim de vigencia <= esta data"),
     search: Optional[str] = None,
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
@@ -155,26 +167,31 @@ async def list_convenios(
     if municipio_id:
         q = q.where(ConvenioEstadual.municipio_id == municipio_id)
         q_count = q_count.where(ConvenioEstadual.municipio_id == municipio_id)
-    if ano:
-        q = q.where(ConvenioEstadual.ano == ano)
-        q_count = q_count.where(ConvenioEstadual.ano == ano)
+    _anos = anos or ([ano] if ano else [])
+    if _anos:
+        q = q.where(ConvenioEstadual.ano.in_(_anos))
+        q_count = q_count.where(ConvenioEstadual.ano.in_(_anos))
     if situacoes:
         q = q.where(ConvenioEstadual.situacao.in_(situacoes))
         q_count = q_count.where(ConvenioEstadual.situacao.in_(situacoes))
     elif situacao:
         q = q.where(ConvenioEstadual.situacao.ilike(f"%{situacao}%"))
         q_count = q_count.where(ConvenioEstadual.situacao.ilike(f"%{situacao}%"))
-    if pagamento:
+    _pagamentos = pagamentos or ([pagamento] if pagamento else [])
+    if _pagamentos:
         vr = ConvenioEstadual.valor_repassado
         vc = ConvenioEstadual.valor_concedente
-        pcond = None
-        if pagamento == "pago":       # repasse integral (>= concedente)
-            pcond = and_(vr.is_not(None), vr > 0, vc.is_not(None), vr >= vc)
-        elif pagamento == "parcial":  # repassou algo, mas < concedente
-            pcond = and_(vr.is_not(None), vr > 0, or_(vc.is_(None), vr < vc))
-        elif pagamento == "nao_pago":  # nada repassado
-            pcond = or_(vr.is_(None), vr == 0)
-        if pcond is not None:
+        # UNIAO, nao intersecao: marcar "pago" e "parcial" tem que trazer os
+        # dois grupos. Com AND o resultado seria sempre vazio, porque as
+        # condicoes se excluem — filtro que devolve zero parece base sem dado.
+        _regras = {
+            "pago":     and_(vr.is_not(None), vr > 0, vc.is_not(None), vr >= vc),
+            "parcial":  and_(vr.is_not(None), vr > 0, or_(vc.is_(None), vr < vc)),
+            "nao_pago": or_(vr.is_(None), vr == 0),
+        }
+        conds = [_regras[p] for p in _pagamentos if p in _regras]
+        if conds:
+            pcond = conds[0] if len(conds) == 1 else or_(*conds)
             q = q.where(pcond)
             q_count = q_count.where(pcond)
     if fontes:
@@ -201,20 +218,38 @@ async def list_convenios(
         _fns_excl = or_(ConvenioEstadual.fonte.is_(None), ~ConvenioEstadual.fonte.ilike("%FNS%"))
         q = q.where(_fns_excl)
         q_count = q_count.where(_fns_excl)
-    if vigencia:
+    _vigencias = vigencias or ([vigencia] if vigencia else [])
+    if _vigencias:
         hoje = date.today()
-        vcond = None
-        if vigencia == "vence60":
-            vcond = and_(ConvenioEstadual.dt_vigencia_atual >= hoje,
-                         ConvenioEstadual.dt_vigencia_atual <= hoje + timedelta(days=60))
-        elif vigencia == "vence120":
-            vcond = and_(ConvenioEstadual.dt_vigencia_atual >= hoje,
-                         ConvenioEstadual.dt_vigencia_atual <= hoje + timedelta(days=120))
-        elif vigencia == "prestacao":
-            vcond = ConvenioEstadual.dt_vigencia_atual < hoje - timedelta(days=90)
-        if vcond is not None:
+        dv = ConvenioEstadual.dt_vigencia_atual
+        # UNIAO pelo mesmo motivo do pagamento. Note que "vence60" e um
+        # SUBCONJUNTO de "vence120": marcar os dois e igual a marcar so o 120,
+        # e isso e o esperado — nao ha o que "somar" alem do maior.
+        _regras = {
+            "vence30":   and_(dv >= hoje, dv <= hoje + timedelta(days=30)),
+            "vence60":   and_(dv >= hoje, dv <= hoje + timedelta(days=60)),
+            "vence90":   and_(dv >= hoje, dv <= hoje + timedelta(days=90)),
+            "vence120":  and_(dv >= hoje, dv <= hoje + timedelta(days=120)),
+            "prestacao": dv < hoje - timedelta(days=90),
+        }
+        conds = [_regras[v] for v in _vigencias if v in _regras]
+        if conds:
+            vcond = conds[0] if len(conds) == 1 else or_(*conds)
             q = q.where(vcond)
             q_count = q_count.where(vcond)
+    if vig_fim_de or vig_fim_ate:
+        # `dt_vigencia_atual` e a data que a tela mostra e a que o alerta usa;
+        # `dt_vigencia_final` e o fim FORMAL, que diverge quando houve aditivo.
+        # Filtrar pela primeira mantem o filtro coerente com a coluna "Fim da
+        # Vigencia" — filtro que discorda da tela destroi a confianca no numero.
+        dv = func.coalesce(ConvenioEstadual.dt_vigencia_atual,
+                           ConvenioEstadual.dt_vigencia_final)
+        if vig_fim_de:
+            q = q.where(dv >= vig_fim_de)
+            q_count = q_count.where(dv >= vig_fim_de)
+        if vig_fim_ate:
+            q = q.where(dv <= vig_fim_ate)
+            q_count = q_count.where(dv <= vig_fim_ate)
     if search:
         term = f"%{search}%"
         search_filter = or_(
@@ -255,11 +290,13 @@ async def list_convenios(
 async def convenio_stats(
     municipio_id: Optional[int] = None,
     ano: Optional[int] = Query(None, description="Filtra por ano (None=todos)"),
+    anos: Optional[list[int]] = Query(None, description="Multi-select de ano"),
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
     ensure_municipio_access(current, municipio_id)
     ensure_tela(current, "convenios")
+    _anos = anos or ([ano] if ano else [])
     stats = ConvenioStats()
     # FNS (saude) mora na mesma tabela mas nao e convenio estadual — fora dos KPIs.
     _sem_fns = or_(ConvenioEstadual.fonte.is_(None), ~ConvenioEstadual.fonte.ilike("%FNS%"))
@@ -270,8 +307,8 @@ async def convenio_stats(
     ).where(_sem_fns)
     if municipio_id:
         q = q.where(ConvenioEstadual.municipio_id == municipio_id)
-    if ano:
-        q = q.where(ConvenioEstadual.ano == ano)
+    if _anos:
+        q = q.where(ConvenioEstadual.ano.in_(_anos))
     row = (await db.execute(q)).one()
     stats.total_convenios = row.cnt
     stats.valor_total = float(row.total)
@@ -281,8 +318,8 @@ async def convenio_stats(
          .where(_sem_fns).group_by(ConvenioEstadual.situacao))
     if municipio_id:
         q = q.where(ConvenioEstadual.municipio_id == municipio_id)
-    if ano:
-        q = q.where(ConvenioEstadual.ano == ano)
+    if _anos:
+        q = q.where(ConvenioEstadual.ano.in_(_anos))
     for sit, cnt in (await db.execute(q)).all():
         if sit:
             stats.por_situacao[sit] = cnt
@@ -295,12 +332,15 @@ async def alertas_vigencia(
     municipio_id: Optional[int] = None,
     dias: int = Query(120, ge=1),
     ano: Optional[int] = Query(None, description="Filtra por ano (None=todos)"),
+    anos: Optional[list[int]] = Query(None, description="Multi-select de ano"),
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
     ensure_municipio_access(current, municipio_id)
     ensure_tela(current, "convenios")
-    return await query_alertas_vigencia(db, municipio_id, dias, ano)
+    # O nucleo ja normaliza com `anos_list()`, que aceita int OU lista — aqui
+    # so falta a assinatura do FastAPI deixar a lista chegar.
+    return await query_alertas_vigencia(db, municipio_id, dias, anos or ano)
 
 
 async def query_alertas_vigencia(
@@ -381,13 +421,14 @@ async def alertas_prestacao_contas(
     municipio_id: Optional[int] = None,
     dias: int = Query(90, ge=1, description="Dias minimos apos o vencimento"),
     ano: Optional[int] = Query(None, description="Filtra por ano (None=todos)"),
+    anos: Optional[list[int]] = Query(None, description="Multi-select de ano"),
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
     """Convenios vencidos ha mais de `dias` (default 90) -> prestacao de contas obrigatoria."""
     ensure_municipio_access(current, municipio_id)
     ensure_tela(current, "convenios")
-    return await query_prestacao_contas(db, municipio_id, dias, ano)
+    return await query_prestacao_contas(db, municipio_id, dias, anos or ano)
 
 
 async def query_prestacao_contas(
