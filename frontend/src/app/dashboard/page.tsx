@@ -166,7 +166,7 @@ function TickQuebrado({ x, y, payload }: {
   }
   const dy = linhas.length > 1 ? -4 : 4;
   return (
-    <text x={x} y={y} textAnchor="end" fill="#8b8fa6" fontSize={11}>
+    <text x={x} y={y} textAnchor="end" fill="var(--bi-faint)" fontSize={11}>
       {linhas.map((l, i) => (
         <tspan key={i} x={x} dy={i === 0 ? dy : 13}>{l}</tspan>
       ))}
@@ -286,19 +286,29 @@ function DashboardOperacional() {
         .map(([name, value]) => ({ name, fullName: name, quantidade: value }))
     : [];
 
+  /** Cor da barra por situacao.
+   *
+   *  Eram sete hexadecimais CRAVADOS da paleta antiga ("Base", violeta) — nao
+   *  seguiam o tema, entao no escuro continuavam os mesmos sete tons pensados
+   *  para fundo branco. Agora saem dos tokens da identidade, que trocam de
+   *  valor junto com o tema.
+   *
+   *  Grafico e o unico lugar do sistema onde varias cores convivem de
+   *  proposito: aqui a cor E o dado, nao enfeite. Por isso usa a serie
+   *  `--bi-c1..c5` do Painel, que foi calibrada para isso. */
   const getBarColor = (sit: string) => {
     const s = sit.toLowerCase();
-    if (s.includes("pago")) return "#159068";               // verde — pago (Base success)
-    if (s.includes("aprovad") || s.includes("conclu")) return "#2bcf8f"; // mint
-    if (s.includes("vigor") || s.includes("execu")) return "#5b93ff"; // azul — ativo (Base)
-    if (s.includes("empenhad")) return "#22cce2";           // teal — empenhado (Base)
+    if (s.includes("pago")) return "var(--bi-ok)";
+    if (s.includes("aprovad") || s.includes("conclu")) return "var(--bi-c3)";
+    if (s.includes("vigor") || s.includes("execu")) return "var(--bi-c4)";
+    if (s.includes("empenhad")) return "var(--bi-accent)";
     if (s.includes("anulad") || s.includes("cancelad") || s.includes("rescind") || s.includes("rejeitad") || s.includes("impedi"))
-      return "#d1335a";                                     // vermelho-rosa — negativo (Base)
+      return "var(--bi-crit)";
     if (s.includes("analise") || s.includes("análise") || s.includes("pendente") || s.includes("cadastr") ||
         s.includes("checklist") || s.includes("processo") || s.includes("adequa") || s.includes("jur") || s.includes("autorizad"))
-      return "#ffc327";                                     // âmbar — em andamento (Base)
-    if (s.includes("encerrad")) return "#a3a7bd";           // cinza — encerrado
-    return "#8b8fa6";
+      return "var(--bi-c2)";
+    if (s.includes("encerrad")) return "var(--bi-faint)";
+    return "var(--bi-line-strong)";
   };
 
   const secLabel = "text-xs font-semibold uppercase tracking-wider text-base-content/50 mb-3";
@@ -537,8 +547,8 @@ function DashboardOperacional() {
              linhas de texto. O cartao cresce um pouco e passa a ser legivel. */
           <ResponsiveContainer width="100%" height={Math.max(260, chartData.length * 46)}>
             <BarChart data={chartData} layout="vertical" margin={{ top: 4, right: 44, bottom: 4, left: 8 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#eaecf3" horizontal={false} />
-              <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11, fill: "#8b8fa6" }} />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--bi-line)" horizontal={false} />
+              <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11, fill: "var(--bi-faint)" }} />
               <YAxis
                 type="category"
                 dataKey="name"
@@ -548,14 +558,14 @@ function DashboardOperacional() {
               />
               <Tooltip
                 formatter={(value, _name, props) => [`${value} convênios`, props.payload.fullName]}
-                contentStyle={{ borderRadius: 12, border: "1px solid #eaecf3" }}
-                cursor={{ fill: "rgba(93,95,239,0.06)" }}
+                contentStyle={{ borderRadius: 12, border: "1px solid var(--bi-line)" }}
+                cursor={{ fill: "color-mix(in oklab, var(--bi-accent) 8%, transparent)" }}
               />
               <Bar dataKey="quantidade" radius={[0, 6, 6, 0]} barSize={18}>
                 {chartData.map((entry, idx) => (
                   <Cell key={idx} fill={getBarColor(entry.fullName)} />
                 ))}
-                <LabelList dataKey="quantidade" position="right" style={{ fontSize: 11, fill: "#8b8fa6", fontWeight: 600 }} />
+                <LabelList dataKey="quantidade" position="right" style={{ fontSize: 11, fill: "var(--bi-faint)", fontWeight: 600 }} />
               </Bar>
             </BarChart>
           </ResponsiveContainer>

@@ -223,7 +223,11 @@ function SidebarContent({
             className={recolhida ? "h-7 w-auto max-w-[36px] object-contain" : "h-6 w-auto max-w-[130px] object-contain"}
           />
           {!recolhida && (
-            <span className="text-center text-[9px] leading-tight text-black/55">
+            /* `text-black/55` era preto CRAVADO: funcionava porque a caixa da
+               marca tinha fundo branco cravado tambem. Trocado o fundo por
+               token, a assinatura ficaria preta sobre superficie escura — ou
+               seja, invisivel no tema escuro. Vai junto para token. */
+            <span className="text-center text-[9px] leading-tight" style={{ color: "var(--bi-muted)" }}>
               {SUBTITULO_PACTHA}
             </span>
           )}

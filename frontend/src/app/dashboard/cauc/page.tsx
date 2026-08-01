@@ -130,7 +130,21 @@ function Situacao({
     /* `pt-3` sem `pb`: a margem que o BlocoHead já traz embaixo fecha o cartão.
        Anular com `mb-0` seria disputar a mesma propriedade com a peça, e quem
        ganha aí depende da ordem em que o Tailwind emite as classes. */
-    <Bloco className="px-3 pt-3">
+    /* CARTÃO INTEIRO EM VERMELHO quando há impedimento, não só o texto.
+       Este é o primeiro bloco da tela: quem abre o módulo tem que ver que há
+       algo errado ANTES de ler qualquer palavra. Com o cartão branco e só a
+       frase em vermelho, o alerta competia em peso com o cabeçalho ao lado.
+       O valor é o MESMO da faixa de irregularidade do Painel
+       (components/bi/abas.tsx) — um vermelho lavado, que chama sem gritar.
+       Não vale o inverso: cartão verde quando está regular pintaria a tela de
+       cor no estado normal, que é o que esta identidade evita. */
+    <Bloco
+      className="px-3 pt-3"
+      style={regular ? undefined : {
+        background: "color-mix(in oklab, var(--bi-crit) 12%, transparent)",
+        borderColor: "color-mix(in oklab, var(--bi-crit) 28%, transparent)",
+      }}
+    >
       <BlocoHead
         icon={regular ? ShieldCheck : ShieldAlert}
         titulo={

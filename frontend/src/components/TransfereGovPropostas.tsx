@@ -802,7 +802,7 @@ export default function TransfereGovPropostas({
                       })}
                     </ul>
                     <a href={PORTAL_BASE} target="_blank" rel="noreferrer noopener"
-                       className="inline-flex items-center gap-1 mt-3 text-xs text-white bg-primary hover:bg-primary/90 rounded px-3 py-1.5">
+                       className="inline-flex items-center gap-1 mt-3 text-xs text-primary-content bg-primary hover:bg-primary/90 rounded px-3 py-1.5">
                       <ExternalLink className="size-3" /> Baixar no portal (Acesso Livre)
                     </a>
                     <p className="text-[11px] text-base-content/60 mt-1.5">

@@ -49,7 +49,7 @@ export default function AnotacaoButton({ fonte, fonteRef, municipioId, numero, s
       >
         <Edit2 className="size-3.5" />
         {count > 0 && (
-          <span className="absolute -top-1 -right-1 bg-info text-white rounded-full size-3.5 text-[8px] font-bold flex items-center justify-center">
+          <span className="absolute -top-1 -right-1 bg-info text-info-content rounded-full size-3.5 text-[8px] font-bold flex items-center justify-center">
             {count > 9 ? "9+" : count}
           </span>
         )}
