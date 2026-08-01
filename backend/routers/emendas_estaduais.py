@@ -120,7 +120,13 @@ async def list_responsaveis(
 @router.get("/stats")
 async def stats(
     municipio_id: Optional[int] = None,
+    # O plural TEM que existir aqui tambem. Sem ele, a tela cai no contorno de
+    # "so manda o ano se for exatamente um" — e com o mandato marcado a tabela
+    # filtra enquanto os 4 cards do topo somam a base inteira, se contradizendo
+    # na mesma tela. Card que discorda da lista embaixo dele destroi a confianca
+    # no numero mais rapido do que numero nenhum.
     ano: Optional[int] = None,
+    anos: Optional[list[int]] = Query(None, description="Multi-select de ano"),
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
@@ -131,9 +137,10 @@ async def stats(
     if municipio_id:
         where += " AND municipio_id = :mun"
         params["mun"] = municipio_id
-    if ano:
-        where += " AND ano = :ano"
-        params["ano"] = ano
+    _anos = anos or ([ano] if ano else [])
+    if _anos:
+        where += " AND ano = ANY(:anos)"
+        params["anos"] = _anos
     r = await db.execute(text(f"""
         SELECT
             count(*) AS total,
