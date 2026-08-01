@@ -317,12 +317,13 @@ export default function PropostasFNSPage() {
               ariaLabel="Anos da consulta"
             />
           </div>
-          <div>
-            <label className="text-xs font-medium text-base-content/70">Município (filtro geral)</label>
-            <div className="mt-1 h-9 flex items-center rounded-lg bg-base-200 px-3 text-sm text-base-content">
-              {selMun ? `${selMun.nome}${selMun.uf ? ` / ${selMun.uf}` : ""}` : "Selecione o município no menu lateral"}
-            </div>
-          </div>
+          {/* O campo "Município (filtro geral)" saiu daqui.
+              Era uma caixa cinza travada, sem escolha nenhuma, repetindo o
+              municipio que ja esta no menu lateral e no cabecalho do resultado.
+              Ocupava um terco da barra de filtros para nao filtrar nada — o
+              ambiente inteiro e de um municipio so.
+              O aviso de "selecione o municipio" continua existindo onde
+              importa: no erro da consulta e no cabecalho do resultado. */}
           <div>
             <label className="text-xs font-medium text-base-content/70">
               Tipo de Emenda <span className="text-base-content/40">(um, alguns ou todos)</span>

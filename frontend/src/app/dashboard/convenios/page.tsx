@@ -91,15 +91,23 @@ const ORGAO_FED_CODIGOS: Record<string, { sigla: string; nome: string }> = {
 function siglaOrgao(o?: string | null): string {
   if (!o) return "-";
   const trimmed = o.trim();
-  // Codigo numerico federal (ex: "22000")
-  if (/^\d{4,6}$/.test(trimmed) && ORGAO_FED_CODIGOS[trimmed]) {
-    return ORGAO_FED_CODIGOS[trimmed].sigla;
+  // Codigo federal, sozinho ("22000") OU prefixando o nome, que e a forma que
+  // o TransfereGov entrega de verdade: "54000 - MINISTERIO DO TURISMO".
+  // O teste antigo exigia a string INTEIRA numerica, entao nunca casava com a
+  // segunda forma — e TODO orgao federal caia no corte cego do final.
+  const comCodigo = /^(\d{4,6})\b/.exec(trimmed);
+  if (comCodigo && ORGAO_FED_CODIGOS[comCodigo[1]]) {
+    return ORGAO_FED_CODIGOS[comCodigo[1]].sigla;
   }
   const up = trimmed.toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
   for (const [k, sig] of Object.entries(SIGLAS)) {
     if (up.startsWith(k)) return sig;
   }
-  return trimmed.length > 18 ? trimmed.slice(0, 18) + "..." : trimmed;
+  // Sem sigla conhecida, devolve o nome INTEIRO. Cortar em 18 caracteres com
+  // `slice` transformava "MINISTERIO DO DESENVOLVIMENTO REGIONAL" e
+  // "MINISTERIO DO DESENVOLVIMENTO SOCIAL" no mesmo "MINISTERIO DO DESE...".
+  // Quem controla o espaco agora e a celula (que quebra a linha), nao a string.
+  return trimmed;
 }
 
 function nomeOrgaoFull(o?: string | null): string {
@@ -119,7 +127,24 @@ function isTE(objeto?: string | null): boolean {
 const VIGENCIA_LABELS: Record<string, string> = {
   vence60: "Vence em 60 dias",
   vence120: "Vence em 120 dias",
-  prestacao: "Prestacao de Contas (+90d vencido)",
+  prestacao: "Prestação de Contas (vencida há +90 dias)",
+};
+
+/** As fontes que convivem em `convenios_estadual`.
+ *
+ *  Elas nao sao esferas diferentes — sao ORIGENS diferentes de dado dentro da
+ *  mesma tabela. Em Monte Siao: 81 registros do SIGCON-MG (convenio estadual de
+ *  verdade) e 48 do Fundo Nacional de Saude (propostas federais que caem aqui
+ *  por herança do modelo). Separar as duas e a pergunta real do gestor; o
+ *  antigo "Federal / Estadual" nao separava nada.
+ *
+ *  O valor "SIGCON" e traduzido no backend para casar tambem com fonte NULL e
+ *  "SIGCON-MG" (backend/routers/convenios.py:180-191) — nao trocar por
+ *  "SIGCON-MG" aqui sem olhar la. */
+const FONTES_OPCOES = ["SIGCON", "FNS"];
+const FONTES_ROTULOS: Record<string, string> = {
+  SIGCON: "SIGCON-MG (convênio estadual)",
+  FNS: "Fundo Nacional de Saúde",
 };
 
 export default function ConveniosPage() {
@@ -131,7 +156,13 @@ export default function ConveniosPage() {
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [selectedConv, setSelectedConv] = useState<{ id: number; esfera: string } | null>(null);
-  const [esfera, setEsfera] = useState("todos");
+  // ANTES era `esfera` ("todos"/"federal"/"estadual"), e era um filtro MORTO:
+  // o endpoint GET /convenios nao tem parametro `esfera`, o FastAPI descartava
+  // em silencio e escolher "Federal" devolvia a mesma lista. O proprio backend
+  // diz no cabecalho: "Apos refactor lean, mantemos apenas a esfera estadual."
+  // No lugar entra FONTE, que e a distincao que existe de verdade nesta tabela
+  // (SIGCON-MG e FNS convivem nela) e que o backend ja aceita como lista.
+  const [fontesSel, setFontesSel] = useState<string[]>([]);
   const [situacoesSel, setSituacoesSel] = useState<string[]>([]);
   const [pagamento, setPagamento] = useState("todos");
   const [ano, setAno] = useState("todos");
@@ -168,7 +199,7 @@ export default function ConveniosPage() {
   // Reset page on filter change
   useEffect(() => {
     setPage(1);
-  }, [esfera, situacoesSel, pagamento, ano, vigencia, debouncedSearch]);
+  }, [fontesSel, situacoesSel, pagamento, ano, vigencia, debouncedSearch]);
 
   const fetchData = useCallback(() => {
     if (!municipioId) return;
@@ -179,7 +210,7 @@ export default function ConveniosPage() {
       page,
       per_page: PER_PAGE,
     };
-    if (esfera !== "todos") params.esfera = esfera;
+    if (fontesSel.length) params.fontes = fontesSel;
     if (situacoesSel.length) params.situacoes = situacoesSel;
     if (pagamento !== "todos") params.pagamento = pagamento;
     if (ano !== "todos") params.ano = ano;
@@ -191,7 +222,7 @@ export default function ConveniosPage() {
       .then((res) => setData(res.data))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [municipioId, page, esfera, situacoesSel, pagamento, ano, vigencia, debouncedSearch]);
+  }, [municipioId, page, fontesSel, situacoesSel, pagamento, ano, vigencia, debouncedSearch]);
 
   useEffect(() => {
     fetchData();
@@ -272,16 +303,18 @@ export default function ConveniosPage() {
 
       {/* Filter bar */}
       <div className="flex flex-wrap items-center gap-3">
-        <Select value={esfera} onValueChange={(v) => setEsfera(v ?? "todos")}>
-          <SelectTrigger className="w-40">
-            <SelectValue placeholder="Esfera" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="todos">Todos</SelectItem>
-            <SelectItem value="federal">Federal</SelectItem>
-            <SelectItem value="estadual">Estadual</SelectItem>
-          </SelectContent>
-        </Select>
+        {/* Fonte, nao "esfera": a coluna Fonte da tabela ja mostra esses
+            mesmos valores, e agora da para filtrar por eles — um ou varios. */}
+        <MultiSelect
+          opcoes={FONTES_OPCOES}
+          rotulos={FONTES_ROTULOS}
+          valor={fontesSel}
+          onChange={setFontesSel}
+          placeholder="Todas as fontes"
+          rotuloTodos="Todas as fontes"
+          ariaLabel="Fonte do convênio"
+          className="w-56"
+        />
 
         <MultiSelect
           opcoes={situacoes}
@@ -375,20 +408,20 @@ export default function ConveniosPage() {
           <div className="rounded-lg border bg-base-100 overflow-hidden">
             <Table className="text-xs table-fixed w-full">
               <TableHeader>
-                <TableRow className="[&>th]:py-1.5 [&>th]:px-2 [&>th]:text-[11px] [&>th]:font-semibold [&>th]:whitespace-nowrap">
-                  <TableHead className="w-[55px]">Fonte</TableHead>
-                  <TableHead className="w-[85px]">Proposta</TableHead>
-                  <TableHead className="w-[75px]">Plano</TableHead>
-                  <TableHead className="w-[110px]">Instrumento</TableHead>
-                  <TableHead className="w-[75px]">Orgao</TableHead>
+                <TableRow className="[&>th]:py-1.5 [&>th]:px-2 [&>th]:text-[11px] [&>th]:font-semibold [&>th]:whitespace-normal [&>th]:align-bottom [&>th]:leading-tight">
+                  <TableHead className="w-[62px]">Fonte</TableHead>
+                  <TableHead className="w-[88px]">Nº da Proposta</TableHead>
+                  <TableHead className="w-[80px]">Plano de Trabalho</TableHead>
+                  <TableHead className="w-[108px]">Nº do Instrumento</TableHead>
+                  <TableHead className="w-[135px]">Órgão Concedente</TableHead>
                   <TableHead className="min-w-0">Objeto</TableHead>
-                  <TableHead className="w-[105px]">Situacao</TableHead>
-                  <TableHead className="w-[90px] text-right">Repasse</TableHead>
+                  <TableHead className="w-[118px]">Situação</TableHead>
+                  <TableHead className="w-[92px] text-right">Repasse</TableHead>
                   <TableHead className="w-[58px] text-center" title="% efetivamente repassado (pago) pelo Estado — fonte: dados abertos MG">Pago</TableHead>
-                  <TableHead className="w-[70px] text-right">Contrap.</TableHead>
-                  <TableHead className="w-[70px]">Assinat.</TableHead>
-                  <TableHead className="w-[70px]">Vigencia</TableHead>
-                  <TableHead className="w-[50px]">Dias</TableHead>
+                  <TableHead className="w-[78px] text-right">Contrapartida</TableHead>
+                  <TableHead className="w-[76px]">Assinatura</TableHead>
+                  <TableHead className="w-[76px]">Fim da Vigência</TableHead>
+                  <TableHead className="w-[54px]">Dias Restantes</TableHead>
                   <TableHead className="w-[40px] text-center" title="Gestão Interna (anotações, protocolos, anexos)">📝</TableHead>
                 </TableRow>
               </TableHeader>
@@ -401,7 +434,7 @@ export default function ConveniosPage() {
                   return (
                   <TableRow
                     key={conv.id}
-                    className="[&>td]:py-1.5 [&>td]:px-2 [&>td]:text-[11px] hover:bg-primary/10 cursor-pointer"
+                    className="[&>td]:py-2 [&>td]:px-2 [&>td]:text-[11px] [&>td]:align-top [&>td]:leading-snug hover:bg-primary/10 cursor-pointer"
                     onClick={() => setSelectedConv({ id: conv.id, esfera: conv.esfera })}
                   >
                     <TableCell title={conv.fonte || ""}>
@@ -416,16 +449,19 @@ export default function ConveniosPage() {
                         </span>
                       )}
                     </TableCell>
-                    <TableCell className="font-mono text-[10px] whitespace-nowrap truncate text-muted-foreground" title={conv.nr_proposta ? `Nº Proposta: ${conv.nr_proposta}` : "Sem nº de proposta"}>
+                    <TableCell className="font-mono text-[10px] whitespace-normal break-all text-muted-foreground" title={conv.nr_proposta ? `Nº Proposta: ${conv.nr_proposta}` : "Sem nº de proposta"}>
                       {conv.nr_proposta || "-"}
                     </TableCell>
-                    <TableCell className="font-mono text-[10px] whitespace-nowrap truncate text-muted-foreground" title={conv.nr_plano_trabalho ? `Nº Plano de Trabalho: ${conv.nr_plano_trabalho}` : "Sem nº de plano"}>
+                    <TableCell className="font-mono text-[10px] whitespace-normal break-all text-muted-foreground" title={conv.nr_plano_trabalho ? `Nº Plano de Trabalho: ${conv.nr_plano_trabalho}` : "Sem nº de plano"}>
                       {conv.nr_plano_trabalho || "-"}
                     </TableCell>
-                    <TableCell className="font-mono text-[10px] whitespace-nowrap truncate text-muted-foreground" title={conv.nr_instrumento ? `Nº Instrumento: ${conv.nr_instrumento}` : "Sem nº de instrumento"}>
+                    <TableCell className="font-mono text-[10px] whitespace-normal break-all text-muted-foreground" title={conv.nr_instrumento ? `Nº Instrumento: ${conv.nr_instrumento}` : "Sem nº de instrumento"}>
                       {conv.nr_instrumento || "-"}
                     </TableCell>
-                    <TableCell className="font-mono whitespace-nowrap truncate" title={nomeOrgaoFull(conv.orgao_concedente) || orgao}>
+                    {/* Sem `truncate`: a sigla conhecida cabe numa linha e o
+                        nome por extenso (quando nao ha sigla) quebra em duas,
+                        em vez de virar "MINISTERIO DO DESE...". */}
+                    <TableCell className="font-mono whitespace-normal break-words" title={nomeOrgaoFull(conv.orgao_concedente) || orgao}>
                       {siglaOrgao(conv.orgao_concedente)}
                     </TableCell>
                     <TableCell title={tipTitle}>
@@ -433,11 +469,14 @@ export default function ConveniosPage() {
                         {isTE(conv.objeto) && (
                           <span className="shrink-0 inline-flex items-center rounded bg-info/15 border border-info px-1 text-[9px] font-mono text-info">TE</span>
                         )}
-                        <span className="truncate">{objeto || "-"}</span>
+                        {/* 3 linhas: o objeto do convenio tem 150-400
+                            caracteres e uma linha so mostrava o comeco de
+                            todos, que costuma ser identico. */}
+                        <span className="line-clamp-3 whitespace-normal break-words">{objeto || "-"}</span>
                       </div>
                     </TableCell>
                     <TableCell title={conv.situacao || ""}>
-                      <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium truncate max-w-full ${situacaoBadgeColor(conv.situacao)}`}>
+                      <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium whitespace-normal break-words text-left ${situacaoBadgeColor(conv.situacao)}`}>
                         {conv.situacao || "-"}
                       </span>
                     </TableCell>

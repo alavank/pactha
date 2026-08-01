@@ -143,7 +143,7 @@ export default function TransfereGovCnpjPage() {
                       <TableCell title={e.beneficiario_nome}>{e.beneficiario_nome || "-"}</TableCell>
                       <TableCell>{e.situacao || "-"}</TableCell>
                       <TableCell className="font-mono">{e.emenda_codigo || "-"}</TableCell>
-                      <TableCell title={e.politicas_publicas} className="max-w-[220px] truncate">{e.politicas_publicas || "-"}</TableCell>
+                      <TableCell className="max-w-[260px] whitespace-normal break-words align-top">{e.politicas_publicas || "-"}</TableCell>
                       <TableCell className="text-right whitespace-nowrap">{formatCurrency(e.valor_total)}</TableCell>
                     </TableRow>
                   ))}
@@ -182,8 +182,8 @@ export default function TransfereGovCnpjPage() {
                     <TableRow key={(v.numero_proposta ?? "") + i} onClick={() => setSelVol(v)} className="cursor-pointer [&>td]:py-1.5 [&>td]:px-2 hover:bg-base-200">
                       <TableCell className="font-mono">{v.numero_proposta || "-"}</TableCell>
                       <TableCell>{v.ano || "-"}</TableCell>
-                      <TableCell title={v.situacao} className="max-w-[180px] truncate">{v.situacao || "-"}</TableCell>
-                      <TableCell title={v.objeto} className="max-w-[240px] truncate">{v.objeto || "-"}</TableCell>
+                      <TableCell className="max-w-[200px] whitespace-normal break-words align-top">{v.situacao || "-"}</TableCell>
+                      <TableCell className="max-w-[300px] whitespace-normal break-words align-top">{v.objeto || "-"}</TableCell>
                       <TableCell className="whitespace-nowrap">{v.municipio ? `${v.municipio}/${v.uf || ""}` : "-"}</TableCell>
                       <TableCell className="font-mono" title={v.situacao_convenio || ""}>{v.nr_convenio || "-"}</TableCell>
                       <TableCell className="text-right whitespace-nowrap">{formatCurrency(v.valor_repasse ?? v.valor_global)}</TableCell>

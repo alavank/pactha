@@ -624,6 +624,20 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
   // formulario): sem max-w-7xl e sem padding do container.
   const telaCheia = BI_ON && pathname === "/dashboard";
 
+  // TELAS LARGAS. `max-w-7xl` da 1216px uteis, e a lista de propostas do
+  // TransfereGov tem 12 colunas que pedem ~1440px. Faltando largura, nao existe
+  // CSS de celula que resolva: ou o texto e cortado, ou a coluna vizinha e
+  // esmagada. Estas telas sao GRADES DE DADOS, nao formularios — o limite de
+  // leitura confortavel (~75 caracteres por linha) vale para paragrafo, nao
+  // para tabela. As demais continuam em max-w-7xl de proposito.
+  const TELAS_LARGAS = [
+    "/dashboard/transferegov",   // cobre geral, cnpj, encerradas, rejeitadas,
+                                 // voluntarias, pac e o modulo de especiais
+    "/dashboard/convenios",      // 14 colunas
+    "/dashboard/emendas",        // 11 colunas
+  ];
+  const telaLarga = TELAS_LARGAS.some((p) => pathname.startsWith(p));
+
   return (
     <div className="flex h-screen overflow-hidden bg-base-200">
       {/* Desktop sidebar */}
@@ -675,7 +689,11 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
       {/* pactha-scroll reserva a canaleta da barra: sem isso, trocar de uma aba
           que rola para outra que nao rola desloca o conteudo lateralmente. */}
       <main className="pactha-scroll flex-1 overflow-y-auto">
-        <div className={telaCheia ? "" : "mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8"}>
+        <div className={
+          telaCheia ? ""
+          : telaLarga ? "mx-auto max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8"
+          : "mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8"
+        }>
           {children}
         </div>
       </main>

@@ -180,7 +180,7 @@ export default function TransfereGovPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-2xl font-bold text-base-content">Plano de Acao - TransfereGov</h1>
+          <h1 className="text-2xl font-bold text-base-content">Plano de Ação - TransfereGov</h1>
           <p className="text-sm text-base-content/60">Transferencia Especial Federal (Pix Parlamentar)</p>
         </div>
         <div className="text-xs text-base-content/60">
@@ -242,7 +242,7 @@ export default function TransfereGovPage() {
       {/* Grid */}
       <div className="bg-base-100 border rounded overflow-hidden">
         <div className="px-3 py-2 border-b bg-base-200 text-sm">
-          Lista de Planos de Acao - <strong>{total}</strong> registros
+          Lista de Planos de Ação - <strong>{total}</strong> registros
         </div>
         {loading ? (
           <div className="space-y-2 p-3">
@@ -255,24 +255,30 @@ export default function TransfereGovPage() {
         ) : (
           <Table className="text-xs table-fixed w-full">
             <TableHeader>
-              <TableRow className="[&>th]:py-1.5 [&>th]:px-2 [&>th]:text-[11px] [&>th]:font-semibold bg-primary/10">
-                <TableHead className="w-[120px]">Codigo</TableHead>
-                <TableHead className="w-[180px]">Emenda Parlamentar</TableHead>
-                <TableHead className="w-[40px]">UF</TableHead>
-                <TableHead>Beneficiario</TableHead>
-                <TableHead className="w-[110px] text-right">Valor</TableHead>
-                <TableHead className="w-[100px]">Sit. P. Acao</TableHead>
-                <TableHead className="w-[160px]">Sit. P. Trabalho</TableHead>
-                <TableHead className="w-[60px] text-center">Acoes</TableHead>
+              {/* "Sit. P. Acao" nao e nome de nada: e uma abreviacao de duas
+                  abreviacoes. Por extenso e acentuado — e `whitespace-normal`
+                  junto, senao o titulo transborda por cima da coluna vizinha. */}
+              <TableRow className="[&>th]:py-1.5 [&>th]:px-2 [&>th]:text-[11px] [&>th]:font-semibold [&>th]:whitespace-normal [&>th]:align-bottom [&>th]:leading-tight bg-primary/10">
+                <TableHead className="w-[118px]">Código</TableHead>
+                <TableHead className="w-[190px]">Emenda Parlamentar</TableHead>
+                <TableHead className="w-[42px]">UF</TableHead>
+                <TableHead>Beneficiário</TableHead>
+                <TableHead className="w-[118px] text-right">Valor</TableHead>
+                <TableHead className="w-[112px]">Situação do Plano de Ação</TableHead>
+                <TableHead className="w-[168px]">Situação do Plano de Trabalho</TableHead>
+                <TableHead className="w-[58px] text-center">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {items.map((p) => (
-                <TableRow key={p.id} className="[&>td]:py-1.5 [&>td]:px-2 [&>td]:text-[11px] hover:bg-primary/10">
+                <TableRow key={p.id} className="[&>td]:py-2 [&>td]:px-2 [&>td]:text-[11px] [&>td]:align-top [&>td]:leading-snug hover:bg-primary/10">
                   <TableCell className="font-mono">{p.codigo}</TableCell>
-                  <TableCell className="truncate" title={p.emenda_codigo}>{p.emenda_codigo}</TableCell>
+                  {/* O codigo da emenda carrega o NOME do parlamentar
+                      ("202135950005-Lincoln Portela") — cortar tira justamente
+                      a parte que identifica de quem veio o recurso. */}
+                  <TableCell className="whitespace-normal break-words">{p.emenda_codigo}</TableCell>
                   <TableCell className="text-center">{p.uf}</TableCell>
-                  <TableCell className="truncate" title={`${p.beneficiario_cnpj} - ${p.beneficiario_nome}`}>
+                  <TableCell className="whitespace-normal break-words">
                     {p.beneficiario_cnpj} - {p.beneficiario_nome}
                   </TableCell>
                   <TableCell className="text-right font-mono text-primary">{formatCurrency(p.valor_total)}</TableCell>
@@ -283,7 +289,7 @@ export default function TransfereGovPage() {
                       "bg-base-200 text-base-content"
                     }`}>{p.situacao_plano_acao}</span>
                   </TableCell>
-                  <TableCell className="text-[10px] truncate" title={p.situacao_plano_trabalho}>
+                  <TableCell className="text-[10px] whitespace-normal break-words">
                     {p.situacao_plano_trabalho}
                   </TableCell>
                   <TableCell className="text-center">
