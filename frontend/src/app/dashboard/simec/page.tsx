@@ -1,16 +1,14 @@
 "use client";
 
 import React, { useEffect, useState, useMemo, useCallback } from "react";
-import { Loader2, ExternalLink, BarChart3, Wallet } from "lucide-react";
+import { Loader2, ExternalLink, BarChart3, Wallet, CalendarDays } from "lucide-react";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 import api from "@/lib/api";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { atalhosAnos, resumoAnos } from "@/lib/periodo";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "@/components/ui/table";
+import { Campos, ItemLinha, Lista, Numero, Selo, Vazio } from "@/components/ui/superficies";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
 interface Dimensao {
@@ -41,13 +39,37 @@ interface Resumo {
 
 const PORTAL = "https://simec.mec.gov.br/cte/relatoriopublico/principal.php";
 
-function programColor(p: string): string {
-  const s = p.toUpperCase();
-  if (s.includes("PNATE")) return "bg-primary/10 text-primary";
-  if (s.includes("QUOTA")) return "bg-success/15 text-success";
-  if (s.includes("PNAE") || s.includes("ALIMENT")) return "bg-warning/15 text-warning";
-  if (s.includes("PDDE")) return "bg-info/15 text-info";
-  return "bg-base-200 text-base-content/70";
+/** Cor no score SO quando ele e um alerta.
+ *
+ *  A tabela antiga pintava a coluna inteira: score 4 e 3 em verde, 2 em amarelo,
+ *  1 em vermelho. Com quatro colunas coloridas em todas as linhas, nenhuma cor
+ *  informava nada — o verde do "esta bom" gritava tanto quanto o vermelho do
+ *  "esta critico". Aqui so recebe cor o que exige acao: indicador com nota 1
+ *  (situacao critica) e nota 2 (a melhorar). Nota boa e ausencia de alerta, e
+ *  ausencia de alerta se mostra em preto, nao em verde.
+ *
+ *  Zero tambem nao pinta: "nenhum indicador critico" nao e um alerta. */
+function scoreTom(nota: 1 | 2 | 3 | 4, qtde: number): "normal" | "atencao" | "critico" {
+  if (!qtde) return "normal";
+  if (nota === 1) return "critico";
+  if (nota === 2) return "atencao";
+  return "normal";
+}
+
+/** `atualizado_em` chega como TIMESTAMPTZ ISO ("2026-07-30T03:12:00+00:00").
+ *  `formatDate` concatena "T00:00:00" na string que recebe, entao devolveria
+ *  Invalid Date nesse formato — dai o corte nos 10 primeiros caracteres. */
+function dataDoCarimbo(iso?: string | null): string {
+  return iso ? formatDate(iso.slice(0, 10)) : "";
+}
+
+/** Aba ativa em tinta forte, inativa em cinza claro. Antes era violeta em cima
+ *  de violeta; agora a hierarquia vem do contraste do texto, nao da cor. */
+function estiloAba(ativa: boolean): React.CSSProperties {
+  return {
+    color: ativa ? "var(--bi-text)" : "var(--bi-faint)",
+    borderColor: ativa ? "var(--bi-text)" : "transparent",
+  };
 }
 
 export default function SimecPage() {
@@ -118,13 +140,14 @@ export default function SimecPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-2xl font-bold text-primary">SIMEC - PAR (MEC)</h1>
-          <p className="text-sm text-base-content/60">
-            Plano de Acoes Articuladas + Liberacoes de recursos federais (PNAE, PNATE, QUOTA, PDDE, etc.)
+          <h1 className="text-2xl font-bold text-base-content">SIMEC - PAR (MEC)</h1>
+          <p className="text-sm" style={{ color: "var(--bi-muted)" }}>
+            Plano de Ações Articuladas + liberações de recursos federais (PNAE, PNATE, QUOTA, PDDE, etc.)
           </p>
         </div>
         <a href={PORTAL} target="_blank" rel="noreferrer noopener"
-           className="text-xs text-primary hover:underline inline-flex items-center gap-1">
+           className="inline-flex items-center gap-1 text-xs hover:underline"
+           style={{ color: "var(--bi-muted)" }}>
           <ExternalLink className="size-3" /> Portal oficial SIMEC
         </a>
       </div>
@@ -132,142 +155,174 @@ export default function SimecPage() {
       {/* Resumo no topo */}
       {resumo && !loading && (
         <div className="grid gap-3 sm:grid-cols-3">
-          <div className="rounded-lg border bg-base-100 p-3">
-            <div className="text-[11px] uppercase tracking-wider text-base-content/60">Total liberado</div>
-            <div className="text-xl font-bold text-success mt-1">{formatCurrency(resumo.total_geral)}</div>
-            <div className="text-[11px] text-base-content/60 mt-1">{liberacoes.length} pagamentos</div>
-          </div>
-          <div className="rounded-lg border bg-base-100 p-3">
-            <div className="text-[11px] uppercase tracking-wider text-base-content/60">Programas</div>
-            <div className="text-xl font-bold text-primary mt-1">{resumo.por_programa.length}</div>
-            <div className="text-[11px] text-base-content/60 mt-1 truncate">
-              {resumo.por_programa.slice(0, 4).map((p) => p.programa).join(", ")}
-            </div>
-          </div>
-          <div className="rounded-lg border bg-base-100 p-3">
-            <div className="text-[11px] uppercase tracking-wider text-base-content/60">Anos cobertos</div>
-            <div className="text-xl font-bold text-info mt-1">{resumo.por_ano.length}</div>
-            <div className="text-[11px] text-base-content/60 mt-1">
-              {resumo.por_ano.length ? `${Math.min(...resumo.por_ano.map((a) => a.ano))} - ${Math.max(...resumo.por_ano.map((a) => a.ano))}` : "-"}
-            </div>
-          </div>
+          <Numero
+            icon={Wallet}
+            rotulo="Total liberado"
+            valor={formatCurrency(resumo.total_geral)}
+            sub={`${liberacoes.length} pagamentos`}
+          />
+          <Numero
+            icon={BarChart3}
+            rotulo="Programas"
+            valor={resumo.por_programa.length}
+            sub={resumo.por_programa.slice(0, 4).map((p) => p.programa).join(", ")}
+          />
+          <Numero
+            icon={CalendarDays}
+            rotulo="Anos cobertos"
+            valor={resumo.por_ano.length}
+            sub={resumo.por_ano.length
+              ? `${Math.min(...resumo.por_ano.map((a) => a.ano))} - ${Math.max(...resumo.por_ano.map((a) => a.ano))}`
+              : "-"}
+          />
         </div>
       )}
 
-      {/* Tabs */}
-      <div className="flex gap-2 border-b">
+      {/* Abas */}
+      <div className="flex gap-1 border-b" style={{ borderColor: "var(--bi-line)" }}>
         <button
           onClick={() => setTab("dim")}
-          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
-            tab === "dim" ? "border-primary text-primary" : "border-transparent text-base-content/60 hover:text-base-content/70"
-          }`}
+          className="-mb-px border-b-2 px-3 py-2 text-[13px] font-medium"
+          style={estiloAba(tab === "dim")}
         >
-          <BarChart3 className="inline size-4 mr-1" />
-          Sintese do PAR ({dimensoes.length} dimensoes)
+          <BarChart3 className="mr-1 inline size-4" />
+          Síntese do PAR ({dimensoes.length} dimensões)
         </button>
         <button
           onClick={() => setTab("lib")}
-          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
-            tab === "lib" ? "border-primary text-primary" : "border-transparent text-base-content/60 hover:text-base-content/70"
-          }`}
+          className="-mb-px border-b-2 px-3 py-2 text-[13px] font-medium"
+          style={estiloAba(tab === "lib")}
         >
-          <Wallet className="inline size-4 mr-1" />
-          Liberacoes de Recursos ({liberacoes.length})
+          <Wallet className="mr-1 inline size-4" />
+          Liberações de recursos ({liberacoes.length})
         </button>
       </div>
 
       {loading ? (
-        <div className="p-8 text-center"><Loader2 className="size-6 animate-spin mx-auto text-primary" /></div>
+        <div className="p-8 text-center">
+          <Loader2 className="mx-auto size-6 animate-spin" style={{ color: "var(--bi-muted)" }} />
+        </div>
       ) : tab === "dim" ? (
-        <div className="bg-base-100 border rounded overflow-hidden">
+        /* SÍNTESE DO PAR — era uma tabela de 7 colunas com quatro delas pintadas
+           de fundo. Virou cartao por dimensao: o nome e o titulo, o total de
+           indicadores ocupa o canto do valor e as cinco contagens de score vao
+           para <Campos>, em posicoes FIXAS — e o que mantem a varredura vertical
+           que a tabela dava (descer o olho pela coluna "score 1" de cima a
+           baixo) sem existir tabela. Nenhuma contagem se perdeu. */
+        <div className="space-y-2">
           {dimensoes.length === 0 ? (
-            <div className="p-12 text-center text-base-content/60">Nenhuma dimensao encontrada.</div>
+            <Vazio>Nenhuma dimensão encontrada.</Vazio>
           ) : (
-            <Table className="text-sm">
-              <TableHeader>
-                <TableRow className="[&>th]:py-2 [&>th]:px-3 [&>th]:font-semibold bg-primary/10 [&>th]:text-xs">
-                  <TableHead>Dimensao do PAR</TableHead>
-                  <TableHead className="text-center w-[80px]">Total</TableHead>
-                  <TableHead className="text-center w-[70px] bg-success/15">Score 4</TableHead>
-                  <TableHead className="text-center w-[70px] bg-success/15">Score 3</TableHead>
-                  <TableHead className="text-center w-[70px] bg-warning/15">Score 2</TableHead>
-                  <TableHead className="text-center w-[70px] bg-error/15">Score 1</TableHead>
-                  <TableHead className="text-center w-[60px]">N/A</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {dimensoes.map((d, i) => (
-                  <TableRow key={i} className="[&>td]:py-2 [&>td]:px-3 [&>td]:text-sm">
-                    <TableCell className="font-medium">{d.dimensao}</TableCell>
-                    <TableCell className="text-center font-mono">{d.total}</TableCell>
-                    <TableCell className="text-center font-mono bg-success/15 font-semibold">{d.score_4}</TableCell>
-                    <TableCell className="text-center font-mono bg-success/15">{d.score_3}</TableCell>
-                    <TableCell className="text-center font-mono bg-warning/15">{d.score_2}</TableCell>
-                    <TableCell className="text-center font-mono bg-error/15">{d.score_1}</TableCell>
-                    <TableCell className="text-center font-mono text-base-content/40">{d.score_na}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <Lista>
+              {dimensoes.map((d, i) => (
+                <ItemLinha
+                  key={i}
+                  titulo={d.dimensao}
+                  /* O total nao e dinheiro: sem o rotulo junto, um "18" solto no
+                     canto nao diz o que conta. */
+                  valor={`${d.total} indicadores`}
+                  meta={
+                    d.atualizado_em
+                      ? <span>coletado em {dataDoCarimbo(d.atualizado_em)}</span>
+                      : undefined
+                  }
+                >
+                  <Campos
+                    campos={[
+                      { rotulo: "Score 4 · boa", valor: d.score_4, tom: scoreTom(4, d.score_4),
+                        title: "Indicadores com pontuação 4 (situação boa)" },
+                      { rotulo: "Score 3 · adequada", valor: d.score_3, tom: scoreTom(3, d.score_3),
+                        title: "Indicadores com pontuação 3 (situação adequada)" },
+                      { rotulo: "Score 2 · a melhorar", valor: d.score_2, tom: scoreTom(2, d.score_2),
+                        title: "Indicadores com pontuação 2 (situação a melhorar)" },
+                      { rotulo: "Score 1 · crítica", valor: d.score_1, tom: scoreTom(1, d.score_1),
+                        title: "Indicadores com pontuação 1 (situação crítica)" },
+                      { rotulo: "N/A", valor: d.score_na,
+                        title: "Indicadores sem pontuação atribuída" },
+                    ]}
+                  />
+                </ItemLinha>
+              ))}
+            </Lista>
           )}
-          <div className="px-3 py-2 bg-base-200 border-t text-[11px] text-base-content/60">
-            Escala: 4 = situacao boa / 3 = adequada / 2 = a melhorar / 1 = critica. Fonte: SIMEC publico (PAR diagnostico).
-          </div>
+          <p className="px-1 text-[10px]" style={{ color: "var(--bi-faint)" }}>
+            Escala: 4 = situação boa / 3 = adequada / 2 = a melhorar / 1 = crítica.
+            Fonte: SIMEC público (PAR diagnóstico).
+          </p>
         </div>
       ) : (
         <div className="space-y-3">
-          {/* Filtros liberacoes */}
-          <div className="bg-base-100 border rounded p-3 grid gap-3 md:grid-cols-4">
-            <MultiSelect opcoes={anoOptions} valor={anosSel} onChange={setAnosSel} atalhos={atalhosAnos()} placeholder="Todos os anos" rotuloTodos="Todos" formatarResumo={resumoAnos} ariaLabel="Anos" />
-            <MultiSelect opcoes={progOptions} valor={progsSel} onChange={setProgsSel} placeholder="Todos os programas" rotuloTodos="Todos" ariaLabel="Programas" />
-            <Input placeholder="Buscar descrição/OB" value={search} onChange={(e) => setSearch(e.target.value)} />
+          {/* Filtros das liberacoes: mesmo comportamento, sem a moldura de
+              cartao — na identidade nova o cartao e do dado, nao do controle. */}
+          <div className="flex flex-wrap items-center gap-3">
+            <MultiSelect opcoes={anoOptions} valor={anosSel} onChange={setAnosSel} atalhos={atalhosAnos()} placeholder="Todos os anos" rotuloTodos="Todos" formatarResumo={resumoAnos} ariaLabel="Anos" className="w-44" />
+            <MultiSelect opcoes={progOptions} valor={progsSel} onChange={setProgsSel} placeholder="Todos os programas" rotuloTodos="Todos" ariaLabel="Programas" className="w-56" />
+            <div className="min-w-[200px] flex-1">
+              <Input placeholder="Buscar descrição/OB" value={search} onChange={(e) => setSearch(e.target.value)} />
+            </div>
             <Button variant="outline" onClick={() => { setAnosSel([]); setProgsSel([]); setSearch(""); }}>Limpar</Button>
           </div>
 
-          <div className="bg-base-100 border rounded overflow-hidden">
-            <div className="px-3 py-2 bg-base-200 border-b text-sm flex items-center justify-between">
-              <span><strong>{displayLib.length}</strong> liberacoes</span>
-              <span className="font-mono font-semibold text-success">{formatCurrency(displayTotal)}</span>
-            </div>
-            {displayLib.length === 0 ? (
-              <div className="p-12 text-center text-base-content/60">Nenhuma liberacao encontrada.</div>
-            ) : (
-              <Table className="text-xs">
-                <TableHeader>
-                  <TableRow className="[&>th]:py-1.5 [&>th]:px-2 [&>th]:font-semibold [&>th]:text-[11px] bg-primary/10">
-                    <TableHead className="w-[90px]">Data Pgto</TableHead>
-                    <TableHead className="w-[70px]">Programa</TableHead>
-                    <TableHead>Descrição</TableHead>
-                    <TableHead className="w-[80px]">OB</TableHead>
-                    <TableHead className="w-[110px] text-right">Valor</TableHead>
-                    <TableHead className="w-[110px]">Banco / Ag.</TableHead>
-                    <TableHead className="w-[100px]">Conta</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {displayLib.map((l, i) => (
-                    <TableRow key={i} className="[&>td]:py-2 [&>td]:px-3 [&>td]:text-[13px]">
-                      <TableCell className="whitespace-nowrap">{formatDate(l.dt_pgto)}</TableCell>
-                      <TableCell>
-                        <span className={`inline-block px-1.5 py-0.5 rounded text-[11px] font-medium ${programColor(l.programa)}`}>
-                          {l.programa}
-                        </span>
-                      </TableCell>
-                      <TableCell className="whitespace-normal break-words leading-snug align-top min-w-[200px] max-w-[320px]" title={l.descricao || l.programa_full}>
-                        {l.descricao || l.programa_full || "-"}
-                      </TableCell>
-                      <TableCell className="font-mono">{l.ob || "-"}</TableCell>
-                      <TableCell className="text-right font-mono font-semibold text-success">{formatCurrency(l.valor || 0)}</TableCell>
-                      <TableCell className="whitespace-normal break-words min-w-[130px]" title={l.banco || ""}>
-                        {l.banco || "-"} {l.agencia ? `/ ${l.agencia}` : ""}
-                      </TableCell>
-                      <TableCell className="font-mono">{l.conta || "-"}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
+          <div className="flex items-center justify-between px-1 text-[11px]" style={{ color: "var(--bi-muted)" }}>
+            <span>
+              <strong style={{ color: "var(--bi-text)" }}>{displayLib.length}</strong> liberações
+            </span>
+            <span className="bi-num" style={{ color: "var(--bi-text)" }}>{formatCurrency(displayTotal)}</span>
           </div>
+
+          {displayLib.length === 0 ? (
+            <Vazio>Nenhuma liberação encontrada.</Vazio>
+          ) : (
+            /* LIBERAÇÕES — eram 7 colunas de 11px com a descricao espremida em
+               320px e a sigla do programa pintada de uma cor por programa (cor
+               como enfeite: PNATE violeta, PNAE amarelo, sem nada disso
+               significar alerta). Agora a descricao e o titulo e tem a linha
+               inteira; o programa e um selo cinza que guarda o nome completo no
+               title; e data, OB, banco/agencia e conta descem para a grade
+               alinhada. Continuam todas as colunas, mais ano e parcela, que a
+               tabela nem mostrava. */
+            <Lista>
+              {displayLib.map((l, i) => (
+                <ItemLinha
+                  key={i}
+                  titulo={l.descricao || l.programa_full || l.programa || "Liberação sem descrição"}
+                  valor={formatCurrency(l.valor || 0)}
+                  meta={
+                    <>
+                      <Selo title={l.programa_full || l.programa}>{l.programa}</Selo>
+                      {/* Parcela so aparece quando existe: no SIMEC ela vem vazia
+                          na maioria das liberacoes, e uma coluna de travessoes
+                          seria ruido em toda a lista. */}
+                      {l.parcela && <Selo title="Parcela da liberação">parcela {l.parcela}</Selo>}
+                      {l.ano != null && <span>{l.ano}</span>}
+                      {/* O nome completo do programa so entra quando acrescenta
+                          algo — quando a descricao ja e ele, repetir polui. */}
+                      {l.programa_full && l.programa_full !== l.descricao && l.descricao && (
+                        <span className="truncate">· {l.programa_full}</span>
+                      )}
+                    </>
+                  }
+                >
+                  <Campos
+                    campos={[
+                      {
+                        rotulo: "Data do pagamento",
+                        valor: l.dt_pgto ? formatDate(l.dt_pgto) : "—",
+                        title: l.atualizado_em ? `Coletado do SIMEC em ${dataDoCarimbo(l.atualizado_em)}` : undefined,
+                      },
+                      { rotulo: "OB", valor: l.ob || "—", title: l.ob ? `Ordem bancária ${l.ob}` : undefined },
+                      {
+                        rotulo: "Banco / agência",
+                        valor: [l.banco, l.agencia].filter(Boolean).join(" / ") || "—",
+                        title: [l.banco, l.agencia].filter(Boolean).join(" / ") || undefined,
+                      },
+                      { rotulo: "Conta", valor: l.conta || "—" },
+                    ]}
+                  />
+                </ItemLinha>
+              ))}
+            </Lista>
+          )}
         </div>
       )}
     </div>

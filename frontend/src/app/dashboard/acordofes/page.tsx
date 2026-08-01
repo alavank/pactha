@@ -7,6 +7,16 @@ import { formatCurrency } from "@/lib/utils";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import {
+  Bloco,
+  BlocoHead,
+  Campos,
+  ItemLinha,
+  Lista,
+  Numero,
+  Selo,
+  Vazio,
+} from "@/components/ui/superficies";
 
 interface Credor {
   cnpj: string;
@@ -29,12 +39,61 @@ function maskCnpj(v: string): string {
   return d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5");
 }
 
-function Metric({ label, value, cls }: { label: string; value: string; cls?: string }) {
+/** Cor no selo SO quando ela e um alerta — mesma regra de Convenios e Emendas.
+ *
+ *  Esta tela nao tem coluna de situacao: o Acordo FES entrega so valores. O
+ *  unico estado que existe e derivado do saldo, e por isso o helper recebe o
+ *  numero, nao um texto. Saldo zerado = divida quitada, o caso raro e a unica
+ *  coisa aqui que merece cor. Saldo em aberto e o normal desta base (quase
+ *  todos os credores), entao pintar seria pintar a tela inteira — que e
+ *  exatamente o que a identidade veio desfazer. */
+function saldoTom(dividaAtual: number): "neutro" | "ok" {
+  return dividaAtual <= 0 ? "ok" : "neutro";
+}
+
+/** O credor como cartao. As duas listas da tela (o fundo municipal e a busca
+ *  livre) usam ESTE mesmo item de proposito: eram um cartao improvisado e uma
+ *  tabela de 5 colunas mostrando o mesmo registro de dois jeitos diferentes.
+ *
+ *  A antiga tabela da busca tinha Credor / CNPJ / Divida inicial / Pago /
+ *  Divida atual; o antigo cartao do municipio tinha razao social, CNPJ e nº de
+ *  empenhos. Nada disso se perdeu — trocou de posicao. */
+function CredorItem({ c }: { c: Credor }) {
+  const quitado = c.divida_atual <= 0;
+  // % quitado nao existe no backend: e leitura direta de pago/inicial e e o
+  // que o gestor de fato pergunta ("quanto ja veio?"). Sem divida inicial nao
+  // ha percentual possivel — melhor um traco do que um numero inventado.
+  const pct = c.divida_inicial > 0 ? Math.round((c.total_pago / c.divida_inicial) * 100) : null;
   return (
-    <div className="rounded-2xl border border-base-300/60 bg-base-100 p-5 shadow-theme-sm">
-      <p className="text-xs font-medium text-base-content/50">{label}</p>
-      <p className={`mt-1.5 text-2xl font-bold ${cls || "text-base-content"}`}>{value}</p>
-    </div>
+    <ItemLinha
+      titulo={c.razao_social || "Credor sem razão social informada"}
+      valor={formatCurrency(c.divida_atual)}
+      meta={
+        <>
+          {/* Só aparece quando é verdade. Um selo "Em aberto" cinza em todas as
+              linhas não classificaria nada — o próprio valor já diz. */}
+          {quitado && <Selo tom={saldoTom(c.divida_atual)}>Quitado</Selo>}
+          <span className="font-mono">{maskCnpj(c.cnpj)}</span>
+        </>
+      }
+    >
+      <Campos
+        campos={[
+          { rotulo: "Dívida inicial", valor: formatCurrency(c.divida_inicial) },
+          { rotulo: "Total pago", valor: formatCurrency(c.total_pago) },
+          {
+            rotulo: "% quitado",
+            valor: pct != null ? `${pct}%` : "—",
+            tom: pct != null && pct >= 100 ? "ok" : "normal",
+            title:
+              pct != null
+                ? `${formatCurrency(c.total_pago)} de ${formatCurrency(c.divida_inicial)}`
+                : "Sem dívida inicial registrada",
+          },
+          { rotulo: "Empenhos", valor: Number(c.n_empenhos || 0).toLocaleString("pt-BR") },
+        ]}
+      />
+    </ItemLinha>
   );
 }
 
@@ -66,11 +125,20 @@ export default function AcordoFesPage() {
     finally { setBuscando(false); }
   };
 
+  // Lista achatada para o JSX não precisar repetir a checagem de nulo a cada
+  // uso. `formatCurrency` já devolve "R$ 0,00" para nulo, então os totais podem
+  // ser lidos com `?.` sem ganhar asserção `!`.
+  const credores = mun?.credores ?? [];
+  const dividaAtualTotal = mun?.total_divida_atual ?? 0;
+
   return (
     <div className="space-y-5">
       <div>
         <h1 className="text-2xl font-bold text-base-content flex items-center gap-2">
-          <HeartPulse className="size-6 text-error" /> Acordo FES — Dívida da Saúde (SES-MG)
+          {/* O ícone era vermelho por ser "saúde/dívida" — decoração pintada.
+              Cor nesta tela agora só sai de <Selo tom> e <Campos tom>. */}
+          <HeartPulse className="size-6" style={{ color: "var(--bi-muted)" }} />
+          Acordo FES — Dívida da Saúde (SES-MG)
         </h1>
         <p className="text-sm text-base-content/60 mt-1">
           Dívida do Fundo Estadual de Saúde de MG com os credores da saúde (fundos
@@ -80,43 +148,65 @@ export default function AcordoFesPage() {
 
       {/* Município selecionado */}
       {municipioId && loading && (
-        <div className="flex justify-center py-12"><Loader2 className="size-7 animate-spin text-primary" /></div>
+        <div className="flex justify-center py-12">
+          <Loader2 className="size-7 animate-spin" style={{ color: "var(--bi-muted)" }} />
+        </div>
       )}
       {municipioId && !loading && (
-        <div className="space-y-3">
-          <div className="text-xs font-semibold uppercase tracking-wider text-base-content/50">
-            Fundo Municipal de Saúde deste município
-          </div>
-          {mun && mun.credores.length > 0 ? (
-            <>
-              <div className="grid gap-4 sm:grid-cols-3">
-                <Metric label="Dívida inicial (2009-2020)" value={formatCurrency(mun.total_divida_inicial)} />
-                <Metric label="Total pago no acordo" value={formatCurrency(mun.total_pago)} cls="text-success" />
-                <Metric label="Dívida atual" value={formatCurrency(mun.total_divida_atual)} cls="text-error" />
-              </div>
-              {mun.credores.map((c) => (
-                <div key={c.cnpj} className="rounded-2xl border border-base-300/60 bg-base-100 p-4 shadow-theme-sm flex flex-wrap items-center gap-x-6 gap-y-1">
-                  <div className="flex-1 min-w-[200px]">
-                    <div className="font-medium text-base-content">{c.razao_social}</div>
-                    <div className="text-xs text-base-content/50 font-mono">{maskCnpj(c.cnpj)} · {c.n_empenhos} empenhos</div>
-                  </div>
-                  <div className="text-sm"><span className="text-base-content/50">Atual:</span> <span className="font-semibold text-error">{formatCurrency(c.divida_atual)}</span></div>
-                </div>
-              ))}
-            </>
-          ) : (
-            <div className="rounded-2xl border border-base-300 bg-base-100 p-6 text-center text-base-content/60">
-              Nenhum débito do Acordo FES vinculado ao fundo municipal de saúde deste município.
+        <>
+          {credores.length > 0 && (
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Numero
+                rotulo="Dívida inicial (2009-2020)"
+                valor={formatCurrency(mun?.total_divida_inicial)}
+              />
+              {/* "Total pago" era verde. Dinheiro que já entrou não é alerta:
+                  fica neutro. O saldo é o único KPI que pode ganhar cor — e pela
+                  MESMA regra do selo do cartão (`saldoTom`), senão o topo da tela
+                  e a lista abaixo julgariam o mesmo saldo de formas diferentes:
+                  âmbar permanente aqui, cinza lá. Dívida em aberto é o estado
+                  normal desta base, então só o saldo zerado se destaca. */}
+              <Numero rotulo="Total pago no acordo" valor={formatCurrency(mun?.total_pago)} />
+              <Numero
+                rotulo="Dívida atual"
+                valor={formatCurrency(dividaAtualTotal)}
+                tom={saldoTom(dividaAtualTotal)}
+              />
             </div>
           )}
-        </div>
+
+          <Bloco className="p-3">
+            <BlocoHead
+              icon={Building2}
+              titulo="Fundo Municipal de Saúde deste município"
+              sub={
+                credores.length > 0
+                  ? `${credores.length} credor(es) vinculado(s) ao município selecionado`
+                  : undefined
+              }
+            />
+            {credores.length > 0 ? (
+              <Lista>
+                {credores.map((c) => (
+                  <CredorItem key={c.cnpj} c={c} />
+                ))}
+              </Lista>
+            ) : (
+              <Vazio>
+                Nenhum débito do Acordo FES vinculado ao fundo municipal de saúde deste município.
+              </Vazio>
+            )}
+          </Bloco>
+        </>
       )}
 
-      {/* Busca livre por credor */}
-      <div className="rounded-2xl border border-base-300/60 bg-base-100 p-4 shadow-theme-sm space-y-3">
-        <div className="text-xs font-semibold uppercase tracking-wider text-base-content/50 flex items-center gap-2">
-          <Building2 className="size-4" /> Buscar qualquer credor (hospital, consórcio, Santa Casa…)
-        </div>
+      {/* Busca livre por credor — não é limitada ao município selecionado */}
+      <Bloco className="p-3">
+        <BlocoHead
+          icon={SearchIcon}
+          titulo="Buscar qualquer credor (hospital, consórcio, Santa Casa…)"
+          sub="A busca varre todos os credores do Acordo FES, fora do recorte do município."
+        />
         <div className="flex gap-2">
           <Input
             value={q}
@@ -125,40 +215,33 @@ export default function AcordoFesPage() {
             placeholder="Nome ou CNPJ do credor"
             className="max-w-md"
           />
-          <Button onClick={buscar} disabled={buscando || q.trim().length < 2} className="bg-primary hover:bg-primary/90">
+          {/* Sem `bg-primary` na mão: a variante padrão do Button já é primária,
+              e a classe só duplicava a decoração. */}
+          <Button
+            onClick={buscar}
+            disabled={buscando || q.trim().length < 2}
+            title="Buscar credor"
+            aria-label="Buscar credor"
+          >
             {buscando ? <Loader2 className="size-4 animate-spin" /> : <SearchIcon className="size-4" />}
           </Button>
         </div>
         {busca !== null && (
           busca.length === 0 ? (
-            <p className="text-sm text-base-content/60 py-2">Nenhum credor encontrado.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-[13px]">
-                <thead className="text-xs text-base-content/50">
-                  <tr className="[&>th]:text-left [&>th]:font-semibold [&>th]:px-3 [&>th]:py-2">
-                    <th>Credor</th><th>CNPJ</th>
-                    <th className="text-right">Dívida inicial</th>
-                    <th className="text-right">Pago</th>
-                    <th className="text-right">Dívida atual</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {busca.map((c, i) => (
-                    <tr key={c.cnpj + i} className="border-t border-base-300/60 [&>td]:px-3 [&>td]:py-2">
-                      <td className="max-w-[320px]">{c.razao_social}</td>
-                      <td className="font-mono text-xs whitespace-nowrap">{maskCnpj(c.cnpj)}</td>
-                      <td className="text-right whitespace-nowrap">{formatCurrency(c.divida_inicial)}</td>
-                      <td className="text-right whitespace-nowrap text-success">{formatCurrency(c.total_pago)}</td>
-                      <td className="text-right whitespace-nowrap font-semibold text-error">{formatCurrency(c.divida_atual)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="mt-3">
+              <Vazio>Nenhum credor encontrado.</Vazio>
             </div>
+          ) : (
+            /* Mesma <Lista> do bloco de cima: a busca deixou de ser tabela e o
+               resultado passa a ser lido exatamente como o do município. */
+            <Lista className="mt-3">
+              {busca.map((c, i) => (
+                <CredorItem key={c.cnpj + i} c={c} />
+              ))}
+            </Lista>
           )
         )}
-      </div>
+      </Bloco>
     </div>
   );
 }

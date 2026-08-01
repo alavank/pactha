@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatCurrency } from "@/lib/utils";
 import { MultiSelect } from "@/components/ui/multi-select";
+import { Bloco, Campos, ItemLinha, Lista, Selo, Vazio, situacaoTom } from "@/components/ui/superficies";
 import { atalhosAnos, resumoAnos } from "@/lib/periodo";
 
 interface PacItem {
@@ -26,22 +27,14 @@ interface PacItem {
   justificativa: string | null;
 }
 
-/** Cor por situacao da proposta PAC. A tela era cinza inteira e o gestor tinha
- *  de LER cada linha para saber se a proposta andou ou morreu — a cor faz esse
- *  trabalho de longe. Comparacao por conteudo (sem acento) porque o portal varia
- *  a grafia ("Nao Habilitada" / "Não habilitada"). */
-function corSituacao(s?: string | null): string {
-  const u = (s || "")
-    .normalize("NFD").replace(/[̀-ͯ]/g, "")
-    .toUpperCase();
-  if (!u) return "bg-base-200 text-base-content/60 border-base-300";
-  if (u.includes("NAO HABILITADA")) return "bg-error/15 text-error border-error/40";
-  if (u.includes("HABILITADA")) return "bg-info/15 text-info border-info/40";
-  if (u.includes("SELECIONADA")) return "bg-success/15 text-success border-success/40";
-  if (u.includes("ANALISE")) return "bg-warning/15 text-warning border-warning/40";
-  if (u.includes("CADASTRADA")) return "bg-base-200 text-base-content/70 border-base-300";
-  return "bg-base-200 text-base-content/70 border-base-300";
-}
+
+/* Rotulo de controle (filtro/formulario). 11px em --bi-muted, com a dica em
+   --bi-faint. Fica em 11px de proposito: 9px e 10px sao as escalas que <Campos>
+   e a meta do <ItemLinha> usam para DADO, e emprestar essas escalas ao filtro
+   faz o controle competir com o resultado. Mesmas constantes em `dou`. */
+const ROTULO = "mb-1 block text-[11px]";
+const ROTULO_COR = { color: "var(--bi-muted)" } as const;
+const DICA_COR = { color: "var(--bi-faint)" } as const;
 
 /** Ano vem do sufixo do numero da proposta ("56000006303/2023"). */
 function anoDaProposta(numero?: string | null): string {
@@ -119,10 +112,14 @@ export default function TransfereGovPacPage() {
   const limpar = () => { setQ(""); setSituacoesSel([]); setProgramasSel([]); setAnosSel([]); };
 
   return (
-    <div className="p-4 space-y-4">
+    /* Sem o `p-4` de antes: era a unica pagina do dashboard com padding proprio,
+       entao o conteudo comecava 16px adentro em relacao a todas as vizinhas. */
+    <div className="space-y-4">
       <div>
-        <h1 className="flex items-center gap-2 text-xl font-bold text-base-content">
-          <Landmark className="size-5 text-primary" />
+        {/* text-2xl como em Convenios, Emendas e as demais telas migradas — o
+            titulo desta era o unico em text-xl. */}
+        <h1 className="flex items-center gap-2 text-2xl font-bold text-base-content">
+          <Landmark className="size-6" style={{ color: "var(--bi-muted)" }} />
           Transfere Gov — Seleção PAC (Novo PAC)
         </h1>
         <p className="text-sm text-base-content/60 mt-1">
@@ -135,19 +132,23 @@ export default function TransfereGovPacPage() {
           habilitadas de 2025" exigia ler tudo. Multi-selecao nos tres eixos que
           o gestor usa (situacao, programa, ano) — no cliente, porque o endpoint
           devolve as propostas do municipio de uma vez. */}
-      <div className="rounded-lg border border-base-300 bg-base-100 p-3">
+      <Bloco className="p-3">
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
           <div>
-            <label className="mb-1 block text-xs text-base-content/70">Buscar</label>
+            {/* Rotulo de controle na escala e nos tokens que as outras telas
+                migradas usam (11px em --bi-muted, a dica em --bi-faint), em vez
+                das opacidades do tema. Esta era a unica tela do lote que ainda
+                escrevia `text-base-content/70` aqui. */}
+            <label className={ROTULO} style={ROTULO_COR}>Buscar</label>
             <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-base-content/40" />
+              <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2" style={{ color: "var(--bi-faint)" }} />
               <Input className="pl-8" placeholder="Nº, programa, emenda, objeto..."
                 value={q} onChange={(e) => setQ(e.target.value)} />
             </div>
           </div>
           <div>
-            <label className="mb-1 block text-xs text-base-content/70">
-              Situação <span className="text-base-content/40">(uma, algumas ou todas)</span>
+            <label className={ROTULO} style={ROTULO_COR}>
+              Situação <span style={DICA_COR}>(uma, algumas ou todas)</span>
             </label>
             <MultiSelect
               opcoes={situacaoOpcoes}
@@ -159,8 +160,8 @@ export default function TransfereGovPacPage() {
             />
           </div>
           <div>
-            <label className="mb-1 block text-xs text-base-content/70">
-              Anos <span className="text-base-content/40">(um, alguns ou o mandato)</span>
+            <label className={ROTULO} style={ROTULO_COR}>
+              Anos <span style={DICA_COR}>(um, alguns ou o mandato)</span>
             </label>
             <MultiSelect
               opcoes={anoOpcoes}
@@ -174,8 +175,8 @@ export default function TransfereGovPacPage() {
             />
           </div>
           <div>
-            <label className="mb-1 block text-xs text-base-content/70">
-              Programa <span className="text-base-content/40">(um ou vários)</span>
+            <label className={ROTULO} style={ROTULO_COR}>
+              Programa <span style={DICA_COR}>(um ou vários)</span>
             </label>
             <MultiSelect
               opcoes={programaOpcoes}
@@ -188,72 +189,113 @@ export default function TransfereGovPacPage() {
           </div>
         </div>
 
-        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-base-300 pt-3">
-          <span className="text-sm text-base-content/60">
-            {filtrados.length} proposta(s) · <span className="font-medium text-success">{formatCurrency(total)}</span>
+        <div
+          className="mt-3 flex flex-wrap items-center gap-2 border-t pt-3"
+          style={{ borderColor: "var(--bi-line)" }}
+        >
+          <span className="text-[11px]" style={{ color: "var(--bi-muted)" }}>
+            {filtrados.length} proposta(s) ·{" "}
+            <span className="bi-num" style={{ color: "var(--bi-text)" }}>{formatCurrency(total)}</span>
           </span>
-          {/* Resumo por situacao: mesma cor da etiqueta da tabela, e clicavel
-              para virar filtro — o numero que chamou a atencao ja leva ao recorte. */}
-          {porSituacao.map(([sit, n]) => (
-            <button
-              key={sit}
-              type="button"
-              onClick={() => setSituacoesSel(situacoesSel.length === 1 && situacoesSel[0] === sit ? [] : [sit])}
-              title={`Filtrar por "${sit}"`}
-              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium transition-opacity hover:opacity-80 ${corSituacao(sit)}`}
-            >
-              {sit} <span className="font-bold">{n}</span>
-            </button>
-          ))}
+          {/* Resumo por situacao, clicavel para virar filtro — o numero que
+              chamou a atencao ja leva ao recorte. Agora usa o MESMO selo da
+              lista (cinza, cor so em alerta): o resumo e a lista tem de contar
+              a mesma historia, senao o chip verde de cima nao acha nada verde
+              embaixo. */}
+          {porSituacao.map(([sit, n]) => {
+            const ativo = situacoesSel.length === 1 && situacoesSel[0] === sit;
+            return (
+              <button
+                key={sit}
+                type="button"
+                aria-pressed={ativo}
+                onClick={() => setSituacoesSel(ativo ? [] : [sit])}
+                title={`Filtrar por "${sit}"`}
+                className="transition-opacity hover:opacity-70"
+              >
+                <Selo tom={situacaoTom(sit)}>
+                  {sit} <span className="ml-1 font-semibold">{n}</span>
+                </Selo>
+              </button>
+            );
+          })}
           {temFiltro && (
             <Button variant="outline" size="sm" className="ml-auto" onClick={limpar}>
               <Eraser className="size-4" /> Limpar
             </Button>
           )}
         </div>
-      </div>
+      </Bloco>
 
       {loading ? (
-        <div className="flex justify-center py-10"><Loader2 className="size-6 animate-spin text-info" /></div>
+        <div className="flex justify-center py-10">
+          <Loader2 className="size-6 animate-spin" style={{ color: "var(--bi-muted)" }} />
+        </div>
       ) : erro ? (
-        <div className="text-sm text-error bg-error/15 border border-error rounded p-3">{erro}</div>
+        /* Falha de carga e alerta de verdade, entao aqui a cor e legitima — mas
+           vem do token de critico, nao das classes decorativas do tema. */
+        <div className="bi-card-flat px-4 py-3 text-[12px]" style={{ color: "var(--bi-crit-ink)" }}>
+          {erro}
+        </div>
       ) : filtrados.length === 0 ? (
-        <div className="text-sm text-base-content/60 italic py-8 text-center">
+        <Vazio>
           Nenhuma proposta PAC para este município. (A coleta roda no cron; se acabou de subir, aguarde.)
-        </div>
+        </Vazio>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-base-300 bg-base-100">
-          <table className="w-full text-sm">
-            <thead className="bg-base-200 text-left text-xs uppercase text-base-content/60">
-              <tr>
-                <th className="px-3 py-2">Nº Proposta</th>
-                <th className="px-3 py-2">Programa</th>
-                <th className="px-3 py-2">Situação</th>
-                <th className="px-3 py-2 text-right">Valor Total</th>
-                <th className="px-3 py-2">Emenda Parlamentar</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtrados.map((i) => (
-                <tr key={i.numero_proposta} className="border-t border-base-200 even:bg-base-200/40 align-top">
-                  <td className="px-3 py-2 font-mono whitespace-nowrap">{i.numero_proposta}</td>
-                  <td className="px-3 py-2 max-w-[360px] whitespace-normal break-words leading-snug" title={i.programa || ""}>
-                    {i.programa || "-"}
-                  </td>
-                  <td className="px-3 py-2 whitespace-nowrap">
-                    {i.situacao ? (
-                      <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium ${corSituacao(i.situacao)}`}>
-                        {i.situacao}
-                      </span>
-                    ) : "-"}
-                  </td>
-                  <td className="px-3 py-2 text-right whitespace-nowrap">{i.valor_total != null ? formatCurrency(i.valor_total) : "-"}</td>
-                  <td className="px-3 py-2 text-xs">{i.emenda_parlamentar || "-"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        /* A LISTA DEIXOU DE SER TABELA.
+           As cinco colunas continuam todas visiveis: programa virou o titulo,
+           valor total o numero da direita, situacao um selo, e proposta/emenda
+           foram para a meta — onde QUEBRAM A LINHA em vez de serem cortadas,
+           que e a regra desta tela desde sempre (zero truncate).
+
+           Os numeros ficam em <Campos>, em posicoes fixas iguais em todos os
+           cartoes: e o que preserva a varredura vertical que a tabela dava. */
+        <Lista>
+          {filtrados.map((i) => (
+            <ItemLinha
+              key={i.numero_proposta}
+              titulo={i.programa || i.objeto || `Proposta ${i.numero_proposta}`}
+              valor={i.valor_total != null ? formatCurrency(i.valor_total) : "—"}
+              meta={
+                <>
+                  {i.situacao && (
+                    <Selo tom={situacaoTom(i.situacao)} title={i.situacao}>{i.situacao}</Selo>
+                  )}
+                  {i.qualificacao && <Selo title={i.qualificacao}>{i.qualificacao}</Selo>}
+                  {i.proponente && <span>{i.proponente}</span>}
+                  {i.emenda_parlamentar && (
+                    <span style={{ color: "var(--bi-muted)" }}>
+                      Emenda: {i.emenda_parlamentar}
+                    </span>
+                  )}
+                  {/* Identificadores juntos e em mono: servem para ACHAR a
+                      proposta no portal, nao para comparar entre linhas. */}
+                  {/* Sem "·" na frente: o numero da proposta e o unico campo
+                      SEMPRE presente, entao pode abrir a linha sozinho. */}
+                  <span className="font-mono">
+                    proposta {i.numero_proposta}
+                    {i.programa_codigo ? ` · programa ${i.programa_codigo}` : ""}
+                    {i.cnpj ? ` · CNPJ ${i.cnpj}` : ""}
+                  </span>
+                </>
+              }
+            >
+              <Campos
+                campos={[
+                  {
+                    rotulo: "Valor de repasse",
+                    valor: i.valor_repasse != null ? formatCurrency(i.valor_repasse) : "—",
+                  },
+                  {
+                    rotulo: "Contrapartida",
+                    valor: i.valor_contrapartida != null ? formatCurrency(i.valor_contrapartida) : "—",
+                  },
+                  { rotulo: "Ano da proposta", valor: anoDaProposta(i.numero_proposta) || "—" },
+                ]}
+              />
+            </ItemLinha>
+          ))}
+        </Lista>
       )}
     </div>
   );

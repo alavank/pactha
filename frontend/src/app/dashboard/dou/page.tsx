@@ -4,7 +4,8 @@ import React, { useState } from "react";
 import api from "@/lib/api";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, Loader2, Eye, Download } from "lucide-react";
+import { Bloco, BlocoHead, Campos, ItemLinha, Lista, Selo, Vazio } from "@/components/ui/superficies";
+import { Search, Loader2, Eye, Download, Newspaper } from "lucide-react";
 
 interface JmgItem {
   id_jornal: number;
@@ -36,13 +37,39 @@ function ddmmaaaa(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-export default function DouMGPage() {
-  const today = new Date();
-  const ago30 = new Date(Date.now() - 30 * 86400_000);
+/** O caderno vem por extenso ("Diário dos Municípios Mineiros") e nao cabe num
+ *  selo de 10px. O selo leva a forma curta, que e o que o olho usa para varrer;
+ *  o nome INTEIRO continua visivel no campo "Caderno" e no `title`. */
+function siglaCaderno(c?: string): string {
+  const u = (c || "").toUpperCase();
+  if (u.includes("EXECUTIV")) return "Executivo";
+  if (u.includes("MUNIC")) return "Municípios";
+  if (u.includes("TERCEIR")) return "Terceiros";
+  if (u.includes("LEGISLATIV")) return "Legislativo";
+  if (u.includes("JUDIC")) return "Judiciário";
+  return c || "Caderno";
+}
 
+/* Rotulo dos campos do formulario. 11px em --bi-muted, a mesma escala de rotulo
+   de controle das outras telas do lote (e do rotulo do <Numero>).
+   Era 10px MAIUSCULO em --bi-faint, que e o desenho reservado a rotulo de DADO
+   (<Campos> em 9px, meta em 10px): o filtro passava a imitar o resultado. */
+const ROTULO = "mb-1 block text-[11px]";
+const ROTULO_COR = { color: "var(--bi-muted)" } as const;
+
+/* NAO existe helper `xTom` nesta tela de proposito: uma publicacao do Diario
+   nao tem situacao. Nada aqui e "cancelado" ou "pendente", entao nao ha o que
+   pintar — o unico selo (caderno) e sempre neutro, que ja e o padrao. A unica
+   cor da tela e a do erro de busca, que e alerta de verdade. */
+
+export default function DouMGPage() {
   const [texto, setTexto] = useState("");
-  const [dataIni, setDataIni] = useState(ddmmaaaa(ago30));
-  const [dataFim, setDataFim] = useState(ddmmaaaa(today));
+  // Periodo padrao = ultimos 30 dias, IGUAL ao de antes. So mudou onde a conta
+  // acontece: no inicializador preguicoso do estado em vez do corpo do
+  // componente, que e impuro (o valor era recalculado a cada re-render e o
+  // lint do React barrava).
+  const [dataIni, setDataIni] = useState(() => ddmmaaaa(new Date(Date.now() - 30 * 86400_000)));
+  const [dataFim, setDataFim] = useState(() => ddmmaaaa(new Date()));
   const [diarioExec, setDiarioExec] = useState(true);
   const [diarioMun, setDiarioMun] = useState(false);
   const [diarioTer, setDiarioTer] = useState(false);
@@ -127,6 +154,24 @@ export default function DouMGPage() {
     setError(null);
   };
 
+  const exportPdf = () => {
+    if (!data) return;
+    const titulos = data.items.map((it) => (it.texto_resultado || "").slice(0, 200));
+    const edicoes = data.items.map((it) => `${it.data_publicacao}/${it.tipo_caderno}/p.${it.pagina}`);
+    const qs = new URLSearchParams();
+    // municipio_id é só pro nome do arquivo - usa 0 como placeholder
+    qs.append("municipio_id", "0");
+    titulos.forEach((t) => qs.append("titulos", t));
+    edicoes.forEach((e) => qs.append("edicoes", e));
+    const token = localStorage.getItem("pactha_token");
+    fetch(`${api.defaults.baseURL}/export-pdf/dou?${qs.toString()}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    }).then((r) => r.blob()).then((blob) => {
+      const u = URL.createObjectURL(blob);
+      window.open(u, "_blank");
+    });
+  };
+
   return (
     <div className="space-y-4">
       <div>
@@ -136,48 +181,49 @@ export default function DouMGPage() {
         </p>
       </div>
 
-      {/* Formulario */}
-      <div className="bg-primary text-white rounded-lg p-4 space-y-3">
-        <div className="flex items-center gap-2 font-bold text-lg">
-          <Search className="size-5" />
-          Busca de conteúdo
-        </div>
+      {/* O FORMULARIO DEIXOU DE SER UM PAINEL VIOLETA.
+          Era um bloco `bg-primary text-white` — a cor mais forte da tela gasta
+          no filtro, e nao no resultado. Agora e um <Bloco> igual aos demais: o
+          que chama atencao passa a ser o que o gestor foi buscar. */}
+      <Bloco className="p-3">
+        <BlocoHead
+          icon={Search}
+          titulo="Busca de conteúdo"
+          sub="Palavra ou frase, período de publicação e cadernos do Jornal Minas Gerais"
+        />
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <div className="md:col-span-2">
-            <label className="text-xs font-medium">Palavra ou frase:*</label>
+            <label className={ROTULO} style={ROTULO_COR}>Palavra ou frase *</label>
             <Input
               value={texto}
               onChange={(e) => setTexto(e.target.value)}
               placeholder="Ex: 1261002768/2025 ou MUNICIPIO DE ARAUJOS"
-              className="bg-base-100 text-base-content"
               onKeyDown={(e) => { if (e.key === "Enter") buscar(1); }}
             />
           </div>
 
           <div>
-            <label className="text-xs font-medium">Data Inicial:*</label>
+            <label className={ROTULO} style={ROTULO_COR}>Data inicial *</label>
             <Input
               type="date"
               value={dataIni}
               onChange={(e) => setDataIni(e.target.value)}
-              className="bg-base-100 text-base-content"
             />
           </div>
           <div>
-            <label className="text-xs font-medium">Data Final:*</label>
+            <label className={ROTULO} style={ROTULO_COR}>Data final *</label>
             <Input
               type="date"
               value={dataFim}
               onChange={(e) => setDataFim(e.target.value)}
-              className="bg-base-100 text-base-content"
             />
           </div>
         </div>
 
-        <div>
-          <label className="text-xs font-medium block mb-1">Caderno:*</label>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+        <div className="mt-3">
+          <span className={ROTULO} style={ROTULO_COR}>Cadernos *</span>
+          <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
             <Toggle label="Diário do Executivo" checked={diarioExec} onChange={setDiarioExec} />
             <Toggle label="Diário dos Municípios Mineiros" checked={diarioMun} onChange={setDiarioMun} />
             <Toggle label="Diário de Terceiros" checked={diarioTer} onChange={setDiarioTer} />
@@ -185,96 +231,124 @@ export default function DouMGPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-3 justify-end pt-2 border-t border-primary-content/20">
-          <Button variant="ghost" onClick={limpar} className="text-white hover:bg-primary/80">
+        <div
+          className="mt-3 flex items-center justify-end gap-2 border-t pt-3"
+          style={{ borderColor: "var(--bi-line)" }}
+        >
+          <Button variant="ghost" size="sm" onClick={limpar}>
             Limpar filtros
           </Button>
-          <Button onClick={() => buscar(1)} disabled={loading} className="bg-base-100 text-base-content hover:bg-base-200">
+          <Button size="sm" onClick={() => buscar(1)} disabled={loading}>
             {loading ? <Loader2 className="size-4 animate-spin mr-2" /> : <Search className="size-4 mr-2" />}
             Pesquisar
           </Button>
         </div>
-      </div>
+      </Bloco>
 
+      {/* Falha de busca continua colorida: e alerta de verdade, o unico da tela.
+          A cor vem do token, nao de `bg-error/15`. */}
       {error && (
-        <div className="rounded-lg border border-error bg-error/15 p-3 text-sm text-error">
+        <div
+          role="alert"
+          className="bi-card-flat px-3 py-2.5 text-[12px]"
+          style={{ color: "var(--bi-crit-ink)" }}
+        >
           {error}
         </div>
       )}
 
-      {/* Resultados */}
       {data && (
-        <div className="rounded-lg border bg-base-100 p-4 space-y-3">
-          <div className="flex items-center justify-between border-b pb-2">
-            <div className="text-sm text-muted-foreground">
-              <span className="font-semibold text-foreground">{data.total_registros} resultados</span> encontrados
-              {texto ? ` para "${texto}"` : ""}, no período de {fmtDate(dataIni)} até {fmtDate(dataFim)}
-            </div>
-            {data.items.length > 0 && (
-              <Button
-                size="sm" variant="outline"
-                onClick={() => {
-                  const titulos = data.items.map((it) => (it.texto_resultado || "").slice(0, 200));
-                  const edicoes = data.items.map((it) => `${it.data_publicacao}/${it.tipo_caderno}/p.${it.pagina}`);
-                  const qs = new URLSearchParams();
-                  // municipio_id é só pro nome do arquivo - usa 0 como placeholder
-                  qs.append("municipio_id", "0");
-                  titulos.forEach((t) => qs.append("titulos", t));
-                  edicoes.forEach((e) => qs.append("edicoes", e));
-                  const token = localStorage.getItem("pactha_token");
-                  fetch(`${api.defaults.baseURL}/export-pdf/dou?${qs.toString()}`, {
-                    headers: { Authorization: `Bearer ${token}` },
-                  }).then((r) => r.blob()).then((blob) => {
-                    const u = URL.createObjectURL(blob);
-                    window.open(u, "_blank");
-                  });
-                }}
-              >
-                📄 PDF
-              </Button>
-            )}
-          </div>
+        <Bloco className="p-3">
+          <BlocoHead
+            icon={Newspaper}
+            titulo={`${data.total_registros.toLocaleString("pt-BR")} resultado(s)`}
+            sub={
+              <>
+                {texto ? `para “${texto}” · ` : ""}
+                {fmtDate(dataIni)} até {fmtDate(dataFim)}
+              </>
+            }
+            right={
+              data.items.length > 0 && (
+                <Button onClick={exportPdf} size="sm" variant="outline" title="Exportar para PDF">
+                  📄 PDF
+                </Button>
+              )
+            }
+          />
 
           {data.items.length === 0 ? (
-            <div className="text-center text-muted-foreground py-8">Nenhum resultado encontrado.</div>
+            <Vazio>Nenhum resultado encontrado.</Vazio>
           ) : (
-            <div className="space-y-3">
-              {data.items.map((it) => (
-                <div key={it.id_jornal} className="border-b pb-3">
-                  <div className="text-xs text-muted-foreground mb-1">
-                    <span className="font-medium">Data:</span> {fmtDate(it.data_publicacao)} |
-                    <span className="font-medium"> Caderno:</span> {it.tipo_caderno} |
-                    <span className="font-medium"> Página:</span> {it.pagina}
-                  </div>
-                  <div className="text-sm text-base-content whitespace-pre-wrap mb-2">{it.texto_resultado}</div>
-                  <div className="flex items-center gap-4 text-xs">
-                    <button
-                      onClick={() => abrirPublicacao(it.id_jornal, false)}
-                      disabled={abrindo === it.id_jornal}
-                      className="inline-flex items-center gap-1 text-primary hover:underline disabled:opacity-60"
-                    >
-                      {abrindo === it.id_jornal ? <Loader2 className="size-3 animate-spin" /> : <Eye className="size-3" />}
-                      Visualizar publicação
-                    </button>
-                    <button
-                      onClick={() => abrirPublicacao(it.id_jornal, true)}
-                      disabled={abrindo === it.id_jornal}
-                      className="inline-flex items-center gap-1 text-primary hover:underline disabled:opacity-60"
-                    >
-                      {abrindo === it.id_jornal ? <Loader2 className="size-3 animate-spin" /> : <Download className="size-3" />}
-                      Baixar publicação
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
+            /* CADA PUBLICACAO VIROU CARTAO.
+               Antes eram linhas separadas por borda, com a data/caderno/pagina
+               numa frase corrida em cima e dois links violeta embaixo. As tres
+               colunas agora vivem em <Campos>, em posicao FIXA: o olho desce a
+               coluna "Publicação" de um resultado para o outro, coisa que a
+               frase corrida impedia porque o trecho acima tem tamanho variavel. */
+            <Lista>
+              {data.items.map((it) => {
+                const carregando = abrindo === it.id_jornal;
+                return (
+                  <ItemLinha
+                    key={it.id_jornal}
+                    /* O trecho casado e o conteudo do item — vem do JMG com
+                       quebras de linha proprias, que `pre-wrap` preserva. */
+                    titulo={<span className="whitespace-pre-wrap">{it.texto_resultado}</span>}
+                    meta={
+                      <>
+                        <Selo title={it.tipo_caderno}>{siglaCaderno(it.tipo_caderno)}</Selo>
+                        {/* Id do jornal: serve para ACHAR a edicao no portal,
+                            nao para comparar — por isso fica na meta, nao na grade. */}
+                        <span className="font-mono">jornal {it.id_jornal}</span>
+                      </>
+                    }
+                    acao={
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={() => abrirPublicacao(it.id_jornal, false)}
+                          disabled={carregando}
+                          title="Visualizar publicação"
+                          aria-label="Visualizar publicação"
+                        >
+                          {carregando ? <Loader2 className="size-4 animate-spin" /> : <Eye className="size-4" />}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={() => abrirPublicacao(it.id_jornal, true)}
+                          disabled={carregando}
+                          title="Baixar publicação"
+                          aria-label="Baixar publicação"
+                        >
+                          {carregando ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
+                        </Button>
+                      </>
+                    }
+                  >
+                    <Campos
+                      campos={[
+                        { rotulo: "Publicação", valor: fmtDate(it.data_publicacao) },
+                        { rotulo: "Caderno", valor: it.tipo_caderno || "—", title: it.tipo_caderno },
+                        { rotulo: "Página", valor: it.pagina ?? "—" },
+                      ]}
+                    />
+                  </ItemLinha>
+                );
+              })}
+            </Lista>
           )}
 
           {data.total_paginas > 1 && (
-            <div className="flex items-center justify-between pt-3">
-              <div className="text-xs text-muted-foreground">
+            <div
+              className="mt-3 flex items-center justify-between border-t pt-3"
+              style={{ borderColor: "var(--bi-line)" }}
+            >
+              <p className="text-[11px]" style={{ color: "var(--bi-faint)" }}>
                 Página {data.pagina_atual} de {data.total_paginas}
-              </div>
+              </p>
               <div className="flex gap-2">
                 <Button
                   variant="outline"
@@ -295,27 +369,34 @@ export default function DouMGPage() {
               </div>
             </div>
           )}
-        </div>
+        </Bloco>
       )}
     </div>
   );
 }
 
+/** Chave liga/desliga do caderno.
+ *
+ *  Era verde quando ligada e VERMELHA quando desligada — vermelho de erro para
+ *  dizer "esse caderno nao entra na busca", que nao e erro nenhum. Agora usa o
+ *  par neutro da identidade (`--bi-cta`, que acompanha claro/escuro) para o
+ *  ligado e a linha cinza para o desligado: o estado continua obvio sem gastar
+ *  a cor de alerta. */
 function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
   return (
-    <label className="flex items-center gap-2 cursor-pointer select-none">
+    <label className="flex cursor-pointer select-none items-center gap-2 text-[11px]" style={{ color: "var(--bi-muted)" }}>
       <button
         type="button"
         onClick={() => onChange(!checked)}
-        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-          checked ? "bg-success" : "bg-error"
-        }`}
+        className="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors"
+        style={{ background: checked ? "var(--bi-cta)" : "var(--bi-line-strong)" }}
         aria-pressed={checked}
       >
         <span
-          className={`inline-block h-4 w-4 transform rounded-full bg-base-100 transition ${
+          className={`inline-block h-4 w-4 transform rounded-full transition ${
             checked ? "translate-x-4" : "translate-x-0.5"
           }`}
+          style={{ background: checked ? "var(--bi-cta-ink)" : "var(--bi-surface)" }}
         />
       </button>
       <span>{label}</span>

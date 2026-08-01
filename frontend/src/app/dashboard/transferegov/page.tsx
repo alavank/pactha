@@ -7,9 +7,7 @@ import { MultiSelect } from "@/components/ui/multi-select";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "@/components/ui/table";
+import { Bloco, BlocoHead, Campos, ItemLinha, Lista, Selo, Vazio, situacaoTom } from "@/components/ui/superficies";
 import { formatCurrency } from "@/lib/utils";
 
 interface Plano {
@@ -86,6 +84,14 @@ const SITUACOES_PA = ["CIENTE", "EM_ANALISE", "IMPEDIDO", "EM_ELABORACAO", "CONC
 const SITUACOES_PA_LABEL: Record<string, string> = Object.fromEntries(
   SITUACOES_PA.map((s) => [s, s.replace(/_/g, " ")])
 );
+
+
+/** O mesmo julgamento traduzido para <Campos>, que chama de "normal" o que o
+ *  <Selo> chama de "neutro". Sao pecas diferentes com vocabulario proprio. */
+function situacaoTomCampo(s?: string | null): "normal" | "ok" | "atencao" | "critico" {
+  const t = situacaoTom(s);
+  return t === "neutro" ? "normal" : t;
+}
 
 export default function TransfereGovPage() {
   const { municipioId } = useMunicipio();
@@ -183,18 +189,20 @@ export default function TransfereGovPage() {
           <h1 className="text-2xl font-bold text-base-content">Plano de Ação - TransfereGov</h1>
           <p className="text-sm text-base-content/60">Transferência Especial Federal (Pix Parlamentar)</p>
         </div>
-        <div className="text-xs text-base-content/60">
+        <div className="text-[11px]" style={{ color: "var(--bi-faint)" }}>
           {cacheAge > 0 && `Cache: ${Math.floor(cacheAge / 60)}min`}
         </div>
       </div>
 
-      {/* Filtros */}
-      <div className="bg-base-100 border rounded p-4">
-        <h2 className="text-sm font-semibold text-base-content/70 mb-3">Pesquisa - Escolha um ou Mais Criterios</h2>
+      {/* Filtros — mesmo comportamento de antes, so trocando a caixa de borda
+          dura pelo <Bloco> da identidade. */}
+      <Bloco className="p-3">
+        <BlocoHead icon={Search} titulo="Pesquisa" sub="Escolha um ou mais critérios" />
         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-3">
           <div>
-            <label className="text-xs text-base-content/70 mb-1 block">
-              Situação do Plano de Ação <span className="text-base-content/40">(uma, algumas ou todas)</span>
+            <label className="text-[11px] mb-1 block" style={{ color: "var(--bi-muted)" }}>
+              Situação do Plano de Ação{" "}
+              <span style={{ color: "var(--bi-faint)" }}>(uma, algumas ou todas)</span>
             </label>
             <MultiSelect
               opcoes={SITUACOES_PA}
@@ -207,19 +215,19 @@ export default function TransfereGovPage() {
             />
           </div>
           <div>
-            <label className="text-xs text-base-content/70 mb-1 block">Programa (código)</label>
+            <label className="text-[11px] mb-1 block" style={{ color: "var(--bi-muted)" }}>Programa (código)</label>
             <Input value={programa} onChange={(e) => setPrograma(e.target.value)} placeholder="Ex: 09032022" />
           </div>
           <div>
-            <label className="text-xs text-base-content/70 mb-1 block">Parlamentar (nome)</label>
+            <label className="text-[11px] mb-1 block" style={{ color: "var(--bi-muted)" }}>Parlamentar (nome)</label>
             <Input value={parlamentar} onChange={(e) => setParlamentar(e.target.value)} placeholder="Ex: LUIS TIBE" />
           </div>
           <div>
-            <label className="text-xs text-base-content/70 mb-1 block">Emenda Parlamentar (código)</label>
+            <label className="text-[11px] mb-1 block" style={{ color: "var(--bi-muted)" }}>Emenda Parlamentar (código)</label>
             <Input value={emenda} onChange={(e) => setEmenda(e.target.value)} placeholder="Ex: 202241760007" />
           </div>
           <div>
-            <label className="text-xs text-base-content/70 mb-1 block">Objeto/Política Pública</label>
+            <label className="text-[11px] mb-1 block" style={{ color: "var(--bi-muted)" }}>Objeto/Política Pública</label>
             <Input value={objeto} onChange={(e) => setObjeto(e.target.value)} placeholder="Ex: Urbanismo, Saúde" />
           </div>
         </div>
@@ -228,7 +236,9 @@ export default function TransfereGovPage() {
           <Button variant="outline" onClick={() => buscar(true)} disabled={loading} title="Refresh cache do TransfereGov">
             <RefreshCw className="size-4 mr-1" /> Atualizar
           </Button>
-          <Button onClick={() => buscar(false)} disabled={loading} className="bg-primary hover:bg-primary/90">
+          {/* Sem `bg-primary` na mão: a variante padrão do Button já é
+              `btn-primary`, e a classe só repintava por cima. */}
+          <Button onClick={() => buscar(false)} disabled={loading}>
             {loading ? <Loader2 className="size-4 mr-1 animate-spin" /> : <Search className="size-4 mr-1" />}
             Filtrar
           </Button>
@@ -237,71 +247,121 @@ export default function TransfereGovPage() {
             {baixandoPdf ? <Loader2 className="size-4 animate-spin mr-1" /> : null} 📄 Gerar PDF (filtrado)
           </Button>
         </div>
-      </div>
+      </Bloco>
 
-      {/* Grid */}
-      <div className="bg-base-100 border rounded overflow-hidden">
-        <div className="px-3 py-2 border-b bg-base-200 text-sm">
-          Lista de Planos de Ação - <strong>{total}</strong> registros
+      {/* A LISTA DEIXOU DE SER TABELA.
+          Eram 8 colunas fixas com selo pintado e cabecalho violeta. Agora cada
+          plano e um cartao na linguagem do Painel — sem borda entre itens, um
+          cinza so para a meta, cor apenas no que e alerta — e com a informacao
+          COMPLETA das 8 colunas: objeto no titulo, valor a direita, situacao do
+          plano de acao como selo, emenda/beneficiario/UF/codigo na meta,
+          situacao do plano de trabalho e os valores na grade de <Campos>.
+
+          O <Campos> e o que permite trocar tabela por cartao sem perder a
+          varredura vertical: as posicoes sao as MESMAS em todos os cartoes,
+          entao o olho continua descendo por uma coluna. */}
+      <div className="space-y-2">
+        <div className="text-[11px]" style={{ color: "var(--bi-muted)" }}>
+          <span className="bi-num">{total}</span> plano(s) de ação
         </div>
         {loading ? (
-          <div className="space-y-2 p-3">
-            {Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-10 animate-pulse bg-base-200 rounded" />)}
+          <div className="space-y-1.5">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="h-16 animate-pulse rounded-lg" style={{ background: "var(--bi-surface-2)" }} />
+            ))}
           </div>
         ) : items.length === 0 ? (
-          <div className="p-12 text-center text-base-content/60">
+          <Vazio>
             Nenhum plano encontrado. Use os filtros acima e clique em <strong>Filtrar</strong>.
-          </div>
+          </Vazio>
         ) : (
-          <Table className="text-xs table-fixed w-full">
-            <TableHeader>
-              {/* "Sit. P. Acao" nao e nome de nada: e uma abreviacao de duas
-                  abreviacoes. Por extenso e acentuado — e `whitespace-normal`
-                  junto, senao o titulo transborda por cima da coluna vizinha. */}
-              <TableRow className="[&>th]:py-1.5 [&>th]:px-2 [&>th]:text-[11px] [&>th]:font-semibold [&>th]:whitespace-normal [&>th]:align-bottom [&>th]:leading-tight bg-primary/10">
-                <TableHead className="w-[118px]">Código</TableHead>
-                <TableHead className="w-[190px]">Emenda Parlamentar</TableHead>
-                <TableHead className="w-[42px]">UF</TableHead>
-                <TableHead>Beneficiário</TableHead>
-                <TableHead className="w-[118px] text-right">Valor</TableHead>
-                <TableHead className="w-[112px]">Situação do Plano de Ação</TableHead>
-                <TableHead className="w-[168px]">Situação do Plano de Trabalho</TableHead>
-                <TableHead className="w-[58px] text-center">Ações</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {items.map((p) => (
-                <TableRow key={p.id} className="[&>td]:py-2 [&>td]:px-2 [&>td]:text-[11px] [&>td]:align-top [&>td]:leading-snug hover:bg-primary/10">
-                  <TableCell className="font-mono">{p.codigo}</TableCell>
-                  {/* O codigo da emenda carrega o NOME do parlamentar
-                      ("202135950005-Lincoln Portela") — cortar tira justamente
-                      a parte que identifica de quem veio o recurso. */}
-                  <TableCell className="whitespace-normal break-words">{p.emenda_codigo}</TableCell>
-                  <TableCell className="text-center">{p.uf}</TableCell>
-                  <TableCell className="whitespace-normal break-words">
-                    {p.beneficiario_cnpj} - {p.beneficiario_nome}
-                  </TableCell>
-                  <TableCell className="text-right font-mono text-primary">{formatCurrency(p.valor_total)}</TableCell>
-                  <TableCell>
-                    <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] ${
-                      p.situacao_plano_acao === "CIENTE" ? "bg-success/15 text-success" :
-                      p.situacao_plano_acao === "IMPEDIDO" ? "bg-error/15 text-error" :
-                      "bg-base-200 text-base-content"
-                    }`}>{p.situacao_plano_acao}</span>
-                  </TableCell>
-                  <TableCell className="text-[10px] whitespace-normal break-words">
-                    {p.situacao_plano_trabalho}
-                  </TableCell>
-                  <TableCell className="text-center">
-                    <button onClick={() => abrirDetalhe(p.id)}
-                            className="inline-flex w-6 h-6 items-center justify-center rounded bg-primary hover:bg-primary/90 text-white" title="Detalhar">
-                      <Eye className="size-3" />
-                    </button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <Lista>
+            {items.map((p) => (
+              <ItemLinha
+                key={p.id}
+                /* O corpo inteiro abre o mesmo detalhe do botao ao lado: clicar
+                   no cartao e o gesto da identidade, e o botao continua ali
+                   porque a coluna "Acoes" precisa seguir visivel e obvia. */
+                onClick={() => abrirDetalhe(p.id)}
+                titulo={
+                  p.objeto_descricao?.trim() ||
+                  p.politicas_publicas?.trim() ||
+                  p.beneficiario_nome ||
+                  "Plano de ação"
+                }
+                valor={formatCurrency(p.valor_total)}
+                acao={
+                  <button
+                    type="button"
+                    onClick={() => abrirDetalhe(p.id)}
+                    title="Detalhar"
+                    className="grid size-7 place-items-center rounded"
+                    style={{ background: "var(--bi-surface-2)", color: "var(--bi-muted)" }}
+                  >
+                    <Eye className="size-3.5" />
+                  </button>
+                }
+                meta={
+                  <>
+                    {p.situacao_plano_acao && (
+                      <Selo
+                        tom={situacaoTom(p.situacao_plano_acao)}
+                        title={`Situação do plano de ação: ${p.situacao_plano_acao}`}
+                      >
+                        {p.situacao_plano_acao.replace(/_/g, " ")}
+                      </Selo>
+                    )}
+                    {/* O codigo da emenda carrega o NOME do parlamentar
+                        ("202135950005-Lincoln Portela"). Cortar tira justamente
+                        a parte que diz de QUEM veio o recurso — vai inteiro, e
+                        com o cinza mais forte da meta por ser o que o gestor
+                        procura primeiro. */}
+                    {p.emenda_codigo && (
+                      <span
+                        className="font-medium"
+                        style={{ color: "var(--bi-muted)" }}
+                        title="Emenda parlamentar"
+                      >
+                        {p.emenda_codigo}
+                      </span>
+                    )}
+                    {/* UF colada no beneficiario: sozinha, numa coluna de 42px,
+                        ela nao respondia a pergunta de ninguem. */}
+                    <span>
+                      {p.beneficiario_cnpj} - {p.beneficiario_nome} ({p.uf})
+                    </span>
+                    {/* Identificadores servem para ACHAR, nao para comparar —
+                        por isso ficam na meta e nao ocupam coluna na grade. */}
+                    <span className="font-mono">
+                      · cód {p.codigo}
+                      {p.programa_codigo ? ` · prog ${p.programa_codigo}` : ""}
+                    </span>
+                  </>
+                }
+              >
+                <Campos
+                  campos={[
+                    {
+                      rotulo: "Situação do plano de trabalho",
+                      valor: p.situacao_plano_trabalho || "—",
+                      tom: situacaoTomCampo(p.situacao_plano_trabalho),
+                      title: p.situacao_plano_trabalho,
+                    },
+                    { rotulo: "Custeio", valor: formatCurrency(p.valor_custeio) },
+                    { rotulo: "Investimento", valor: formatCurrency(p.valor_investimento) },
+                    {
+                      rotulo: "Motivo de impedimento",
+                      valor: p.motivo_impedimento || "—",
+                      // Critico so quando ha motivo: sem impedimento o campo e
+                      // um traco cinza e nao disputa atencao com nada.
+                      tom: p.motivo_impedimento ? "critico" : "normal",
+                      title: p.motivo_impedimento,
+                    },
+                  ]}
+                />
+              </ItemLinha>
+            ))}
+          </Lista>
         )}
       </div>
 

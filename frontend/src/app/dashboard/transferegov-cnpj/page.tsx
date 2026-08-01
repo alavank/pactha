@@ -1,14 +1,15 @@
 "use client";
 
-import React, { useState } from "react";
-import { Search as SearchIcon, Loader2, Landmark, Building2, X } from "lucide-react";
+import React, { useMemo, useState } from "react";
+import {
+  Search as SearchIcon, Loader2, Landmark, Building2, X, Coins, FileText, Wallet,
+} from "lucide-react";
 import api from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
+import { formatCurrencyShort } from "@/lib/bi-format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "@/components/ui/table";
+import { Bloco, BlocoHead, Campos, ItemLinha, Lista, Numero, Selo, Vazio, situacaoTom } from "@/components/ui/superficies";
 
 interface Especial {
   id?: number; codigo?: string; programa_codigo?: string; situacao?: string;
@@ -48,6 +49,18 @@ function fmtDate(iso?: string | null): string {
   }
 }
 
+/** Fim de vigencia so vira alerta quando ainda da para AGIR: vencendo nos
+ *  proximos 60 dias. Data ja vencida nao e pintada de proposito — esta consulta
+ *  devolve o historico inteiro do CNPJ (ate 800 propostas, muitas dos anos
+ *  2000), e pintar todas de vermelho e o mesmo que nao pintar nenhuma. */
+function vigenciaTom(iso?: string | null): "normal" | "atencao" {
+  if (!iso) return "normal";
+  const fim = new Date(iso).getTime();
+  if (Number.isNaN(fim)) return "normal";
+  const dias = Math.ceil((fim - Date.now()) / 86_400_000);
+  return dias >= 0 && dias <= 60 ? "atencao" : "normal";
+}
+
 function Field({ label, value, mono, wide }: { label: string; value?: React.ReactNode; mono?: boolean; wide?: boolean }) {
   return (
     <div className={wide ? "sm:col-span-2" : ""}>
@@ -64,6 +77,17 @@ export default function TransfereGovCnpjPage() {
   const [data, setData] = useState<Resp | null>(null);
   const [selVol, setSelVol] = useState<Voluntaria | null>(null);
   const [selEsp, setSelEsp] = useState<Especial | null>(null);
+
+  // Os totais em dinheiro que os KPIs mostram. O endpoint devolve as duas
+  // listas inteiras (total_* = length), entao somar aqui nao mente.
+  const resumo = useMemo(() => {
+    if (!data) return null;
+    return {
+      valEsp: data.especiais.reduce((s, e) => s + (e.valor_total ?? 0), 0),
+      valVol: data.voluntarias.reduce((s, v) => s + (v.valor_repasse ?? v.valor_global ?? 0), 0),
+      pagoVol: data.voluntarias.reduce((s, v) => s + (v.valor_desembolsado ?? 0), 0),
+    };
+  }, [data]);
 
   const consultar = async () => {
     const digits = cnpj.replace(/\D/g, "");
@@ -84,116 +108,219 @@ export default function TransfereGovCnpjPage() {
     <div className="space-y-5">
       <div>
         <h1 className="text-2xl font-bold text-base-content flex items-center gap-2">
-          <Building2 className="size-6 text-primary" /> Consulta TransfereGov por CNPJ
+          <Building2 className="size-6" style={{ color: "var(--bi-muted)" }} /> Consulta TransfereGov por CNPJ
         </h1>
-        <p className="text-sm text-base-content/60">
+        <p className="text-sm" style={{ color: "var(--bi-muted)" }}>
           Busca por CNPJ do proponente — Transferência Especial (Plano de Ação, ao vivo) + Voluntárias (dados já coletados). Não entra em relatório.
         </p>
       </div>
 
       {/* Barra de consulta */}
-      <div className="flex flex-wrap items-end gap-3 bg-base-100 border rounded-lg p-4">
-        <div>
-          <label className="text-xs text-base-content/70 mb-1 block">CNPJ do proponente</label>
-          <Input
-            value={cnpj}
-            onChange={(e) => setCnpj(maskCnpj(e.target.value))}
-            onKeyDown={(e) => e.key === "Enter" && consultar()}
-            placeholder="00.000.000/0000-00"
-            className="w-56 font-mono"
-          />
+      <Bloco className="p-3">
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <label className="mb-1 block text-[11px]" style={{ color: "var(--bi-muted)" }}>
+              CNPJ do proponente
+            </label>
+            <Input
+              value={cnpj}
+              onChange={(e) => setCnpj(maskCnpj(e.target.value))}
+              onKeyDown={(e) => e.key === "Enter" && consultar()}
+              placeholder="00.000.000/0000-00"
+              className="w-56 font-mono"
+            />
+          </div>
+          {/* Sem `bg-primary` na mão: a variante padrão do Button já é
+              `btn-primary`, e a classe só repintava por cima. */}
+          <Button onClick={consultar} disabled={loading}>
+            {loading ? <Loader2 className="size-4 animate-spin mr-1" /> : <SearchIcon className="size-4 mr-1" />}
+            Consultar
+          </Button>
         </div>
-        <Button onClick={consultar} disabled={loading} className="bg-primary hover:bg-primary/90">
-          {loading ? <Loader2 className="size-4 animate-spin mr-1" /> : <SearchIcon className="size-4 mr-1" />}
-          Consultar
-        </Button>
-      </div>
+      </Bloco>
 
-      {erro && <div className="rounded-lg border border-error bg-error/15 p-3 text-sm text-error">{erro}</div>}
+      {/* Erro e alerta de verdade: aqui a cor tem significado, e vem do token
+          critico — nao das classes decorativas de antes. */}
+      {erro && (
+        <div className="bi-card-flat px-3 py-2.5 text-[12px]" style={{ color: "var(--bi-crit-ink)" }}>
+          {erro}
+        </div>
+      )}
 
-      {data && (
-        <div className="space-y-6">
-          {/* Especiais / Plano de Acao */}
-          <div className="bg-base-100 border rounded-lg overflow-hidden">
-            <div className="px-4 py-2.5 bg-base-200 border-b flex items-center gap-2">
-              <Landmark className="size-4 text-primary" />
-              <span className="font-semibold text-sm">Transferência Especial (Plano de Ação)</span>
-              <span className="ml-auto text-xs text-base-content/60">{data.total_especiais} resultado(s)</span>
-            </div>
+      {data && resumo && (
+        <div className="space-y-4">
+          {/* Os cabecalhos das duas tabelas so contavam resultado. Viram KPI:
+              quantidade E dinheiro, que e a pergunta que o gestor faz primeiro. */}
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <Numero
+              icon={Landmark}
+              rotulo="Planos de ação"
+              valor={data.total_especiais}
+              sub="Transferência Especial (ao vivo)"
+            />
+            <Numero
+              icon={Coins}
+              rotulo="Valor em planos de ação"
+              valor={formatCurrencyShort(resumo.valEsp)}
+              sub={formatCurrency(resumo.valEsp)}
+            />
+            <Numero
+              icon={FileText}
+              rotulo="Propostas voluntárias"
+              valor={data.total_voluntarias}
+              sub="SICONV — base federal"
+            />
+            <Numero
+              icon={Wallet}
+              rotulo="Repasse (voluntárias)"
+              valor={formatCurrencyShort(resumo.valVol)}
+              sub={`pago ${formatCurrency(resumo.pagoVol)}`}
+            />
+          </div>
+
+          {/* AS DUAS TABELAS VIRARAM LISTA.
+              Cada bloco e um grupo na gramatica do Painel (cabecalho com
+              contagem e total a direita) e cada registro e um cartao sem borda.
+              As colunas nao sumiram: as que se comparam entre linhas foram para
+              <Campos>, em posicao FIXA, para o olho continuar descendo em
+              coluna como descia na tabela; as que servem para identificar
+              foram para a meta. */}
+          <Bloco className="p-3">
+            <BlocoHead
+              icon={Landmark}
+              titulo="Transferência Especial (Plano de Ação)"
+              sub={`${data.total_especiais} resultado(s) · consulta ao vivo no TransfereGov`}
+              right={<span className="bi-num text-[13px]">{formatCurrency(resumo.valEsp)}</span>}
+            />
             {data.especiais.length === 0 ? (
-              <div className="p-4 text-sm text-base-content/60">Nenhum plano de ação para este CNPJ.</div>
+              <Vazio>Nenhum plano de ação para este CNPJ.</Vazio>
             ) : (
-              <Table className="text-xs">
-                <TableHeader>
-                  <TableRow className="[&>th]:py-1.5 [&>th]:px-2 [&>th]:text-[11px] bg-base-200/50">
-                    <TableHead>Código</TableHead>
-                    <TableHead>UF</TableHead>
-                    <TableHead>Beneficiário</TableHead>
-                    <TableHead>Situação</TableHead>
-                    <TableHead>Emenda</TableHead>
-                    <TableHead>Políticas</TableHead>
-                    <TableHead className="text-right">Valor</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {data.especiais.map((e, i) => (
-                    <TableRow key={e.id ?? i} onClick={() => setSelEsp(e)} className="cursor-pointer [&>td]:py-1.5 [&>td]:px-2 hover:bg-base-200">
-                      <TableCell className="font-mono">{e.codigo || "-"}</TableCell>
-                      <TableCell>{e.uf || "-"}</TableCell>
-                      <TableCell title={e.beneficiario_nome}>{e.beneficiario_nome || "-"}</TableCell>
-                      <TableCell>{e.situacao || "-"}</TableCell>
-                      <TableCell className="font-mono">{e.emenda_codigo || "-"}</TableCell>
-                      <TableCell className="max-w-[260px] whitespace-normal break-words align-top">{e.politicas_publicas || "-"}</TableCell>
-                      <TableCell className="text-right whitespace-nowrap">{formatCurrency(e.valor_total)}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+              <Lista>
+                {data.especiais.map((e, i) => {
+                  // O objeto e quem descreve o plano. Quando o TransfereGov nao
+                  // manda objeto, a politica publica assume o titulo — e nesse
+                  // caso nao se repete na meta logo abaixo.
+                  const titulo = e.objeto_descricao
+                    || e.politicas_publicas
+                    || `Plano de ação ${e.codigo || ""}`.trim();
+                  return (
+                    <ItemLinha
+                      key={e.id ?? i}
+                      onClick={() => setSelEsp(e)}
+                      titulo={titulo}
+                      valor={formatCurrency(e.valor_total)}
+                      meta={
+                        <>
+                          {e.situacao && (
+                            <Selo tom={situacaoTom(e.situacao)} title={e.situacao}>{e.situacao}</Selo>
+                          )}
+                          {e.beneficiario_nome && (
+                            <span className="truncate" title={e.beneficiario_nome}>{e.beneficiario_nome}</span>
+                          )}
+                          {e.politicas_publicas && e.politicas_publicas !== titulo && (
+                            <span className="truncate" title={e.politicas_publicas}>
+                              · {e.politicas_publicas}
+                            </span>
+                          )}
+                        </>
+                      }
+                    >
+                      {/* Estes quatro sao TEXTO numa celula que trunca, entao
+                          cada um leva `title`: o codigo da emenda vem com o nome
+                          do parlamentar colado ("202135950005-Lincoln Portela") e
+                          era justamente essa parte que o corte comia, sem nenhum
+                          jeito de recuperar. Todas as outras telas do lote ja
+                          dao `title` em campo de texto. */}
+                      <Campos
+                        campos={[
+                          { rotulo: "Código", valor: e.codigo || "—", title: e.codigo || undefined },
+                          { rotulo: "Programa", valor: e.programa_codigo || "—",
+                            title: e.programa_codigo || undefined },
+                          { rotulo: "Emenda", valor: e.emenda_codigo || "—",
+                            title: e.emenda_codigo || undefined },
+                          { rotulo: "UF", valor: e.uf || "—" },
+                        ]}
+                      />
+                    </ItemLinha>
+                  );
+                })}
+              </Lista>
             )}
-          </div>
+          </Bloco>
 
-          {/* Voluntarias */}
-          <div className="bg-base-100 border rounded-lg overflow-hidden">
-            <div className="px-4 py-2.5 bg-base-200 border-b flex items-center gap-2">
-              <Landmark className="size-4 text-primary" />
-              <span className="font-semibold text-sm">Voluntárias / Convênios (SICONV — base federal)</span>
-              <span className="ml-auto text-xs text-base-content/60">{data.total_voluntarias} resultado(s)</span>
-            </div>
+          <Bloco className="p-3">
+            <BlocoHead
+              icon={Landmark}
+              titulo="Voluntárias / Convênios (SICONV — base federal)"
+              sub={`${data.total_voluntarias} resultado(s) · dados já coletados`}
+              right={<span className="bi-num text-[13px]">{formatCurrency(resumo.valVol)}</span>}
+            />
             {data.voluntarias.length === 0 ? (
-              <div className="p-4 text-sm text-base-content/60">
-                Nenhuma proposta voluntária deste CNPJ nos dados já coletados.
-              </div>
+              <Vazio>Nenhuma proposta voluntária deste CNPJ nos dados já coletados.</Vazio>
             ) : (
-              <Table className="text-xs">
-                <TableHeader>
-                  <TableRow className="[&>th]:py-1.5 [&>th]:px-2 [&>th]:text-[11px] bg-base-200/50">
-                    <TableHead>Proposta</TableHead>
-                    <TableHead>Ano</TableHead>
-                    <TableHead>Situação</TableHead>
-                    <TableHead>Objeto</TableHead>
-                    <TableHead>Município/UF</TableHead>
-                    <TableHead>Convênio</TableHead>
-                    <TableHead className="text-right">Repasse</TableHead>
-                    <TableHead className="text-right">Pago</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {data.voluntarias.map((v, i) => (
-                    <TableRow key={(v.numero_proposta ?? "") + i} onClick={() => setSelVol(v)} className="cursor-pointer [&>td]:py-1.5 [&>td]:px-2 hover:bg-base-200">
-                      <TableCell className="font-mono">{v.numero_proposta || "-"}</TableCell>
-                      <TableCell>{v.ano || "-"}</TableCell>
-                      <TableCell className="max-w-[200px] whitespace-normal break-words align-top">{v.situacao || "-"}</TableCell>
-                      <TableCell className="max-w-[300px] whitespace-normal break-words align-top">{v.objeto || "-"}</TableCell>
-                      <TableCell className="whitespace-nowrap">{v.municipio ? `${v.municipio}/${v.uf || ""}` : "-"}</TableCell>
-                      <TableCell className="font-mono" title={v.situacao_convenio || ""}>{v.nr_convenio || "-"}</TableCell>
-                      <TableCell className="text-right whitespace-nowrap">{formatCurrency(v.valor_repasse ?? v.valor_global)}</TableCell>
-                      <TableCell className="text-right whitespace-nowrap">{v.valor_desembolsado != null ? formatCurrency(v.valor_desembolsado) : "-"}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+              <Lista>
+                {data.voluntarias.map((v, i) => {
+                  // Mesma conta da coluna "Repasse": quando nao ha repasse
+                  // informado, o global e a base — inclusive para o % pago.
+                  const base = v.valor_repasse ?? v.valor_global ?? 0;
+                  const pago = v.valor_desembolsado;
+                  const pct = pago != null && base ? Math.round((pago / base) * 100) : null;
+                  return (
+                    <ItemLinha
+                      key={(v.numero_proposta ?? "") + i}
+                      onClick={() => setSelVol(v)}
+                      titulo={v.objeto || "Sem objeto informado"}
+                      valor={formatCurrency(v.valor_repasse ?? v.valor_global)}
+                      meta={
+                        <>
+                          {v.situacao && (
+                            <Selo tom={situacaoTom(v.situacao)} title={`Proposta: ${v.situacao}`}>
+                              {v.situacao}
+                            </Selo>
+                          )}
+                          {v.situacao_convenio && (
+                            <Selo tom={situacaoTom(v.situacao_convenio)} title={`Convênio: ${v.situacao_convenio}`}>
+                              {v.situacao_convenio}
+                            </Selo>
+                          )}
+                          {v.municipio && <span>{`${v.municipio}/${v.uf || ""}`}</span>}
+                          {/* Proposta e convenio servem para ACHAR o registro,
+                              nao para comparar — por isso ficam na meta e nao
+                              ocupam coluna na grade. */}
+                          <span className="font-mono">
+                            {v.numero_proposta ? `· prop ${v.numero_proposta}` : ""}
+                            {v.nr_convenio ? ` · conv ${v.nr_convenio}` : ""}
+                          </span>
+                        </>
+                      }
+                    >
+                      <Campos
+                        campos={[
+                          { rotulo: "Ano", valor: v.ano ?? "—" },
+                          {
+                            rotulo: "Valor global",
+                            valor: v.valor_global != null ? formatCurrency(v.valor_global) : "—",
+                          },
+                          {
+                            rotulo: "Pago",
+                            valor: pago != null ? formatCurrency(pago) : "—",
+                            tom: pct == null ? "normal" : pct >= 100 ? "ok" : pct > 0 ? "atencao" : "normal",
+                            title: pct != null ? `${pct}% de ${formatCurrency(base)}` : "Sem informação de desembolso",
+                          },
+                          { rotulo: "Assinatura", valor: fmtDate(v.dt_assinatura) },
+                          {
+                            rotulo: "Fim da vigência",
+                            valor: fmtDate(v.dt_fim_vigencia),
+                            tom: vigenciaTom(v.dt_fim_vigencia),
+                          },
+                        ]}
+                      />
+                    </ItemLinha>
+                  );
+                })}
+              </Lista>
             )}
-          </div>
+          </Bloco>
         </div>
       )}
 

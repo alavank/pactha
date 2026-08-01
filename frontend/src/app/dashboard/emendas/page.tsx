@@ -7,7 +7,7 @@ import { useMunicipio } from "@/contexts/MunicipioContext";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { MultiSelect } from "@/components/ui/multi-select";
-import { Bloco, BlocoHead, Campos, ItemLinha, Lista, Selo } from "@/components/ui/superficies";
+import { Bloco, BlocoHead, Campos, ItemLinha, Lista, Selo, situacaoTom } from "@/components/ui/superficies";
 import { atalhosAnos, resumoAnos } from "@/lib/periodo";
 import {
   Table,
@@ -22,15 +22,6 @@ import { formatCurrency } from "@/lib/utils";
 /** Os tres tipos que o SIGCON usa na indicacao. Ficam aqui como lista fixa
  *  porque o backend compara com ILIKE por item — acento e caixa nao importam,
  *  e a lista nao muda sem mudanca normativa. */
-/** Cor no selo de status SO quando e alerta. Mesma regra de Convenios. */
-function statusTom(s?: string | null): "neutro" | "ok" | "atencao" | "critico" {
-  const t = (s || "").toLowerCase();
-  if (/(cancelad|rejeitad|impedid|indeferid)/.test(t)) return "critico";
-  if (/(pendente|an[áa]lise|aguardando|tramit)/.test(t)) return "atencao";
-  if (/(aprovad|empenhad|pago|liquidad)/.test(t)) return "ok";
-  return "neutro";
-}
-
 const TIPOS_INDICACAO = [
   "Transferência Especial",
   "Aplicação Direta",
@@ -55,15 +46,6 @@ interface Emenda {
 }
 
 const PER_PAGE = 100; // todos por ano
-
-function statusColor(s?: string): string {
-  if (!s) return "bg-base-200 text-base-content/70";
-  const u = s.toUpperCase();
-  if (u.includes("APROVAD")) return "bg-success/15 text-success border-success";
-  if (u.includes("REJEIT") || u.includes("CANCEL")) return "bg-error/15 text-error border-error";
-  if (u.includes("ANALIS") || u.includes("AGUARD")) return "bg-warning/15 text-warning border-warning";
-  return "bg-primary/10 text-primary border-primary";
-}
 
 function siglaTipo(t?: string): string {
   if (!t) return "-";
@@ -249,7 +231,7 @@ export default function EmendasEstaduaisPage() {
                               <Selo title={em.tipo_indicacao}>{siglaTipo(em.tipo_indicacao)}</Selo>
                             )}
                             {em.status_indicacao && (
-                              <Selo tom={statusTom(em.status_indicacao)} title={em.status_indicacao}>
+                              <Selo tom={situacaoTom(em.status_indicacao)} title={em.status_indicacao}>
                                 {em.status_indicacao}
                               </Selo>
                             )}
