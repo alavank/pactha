@@ -2,13 +2,13 @@
 
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { useMunicipio } from "@/contexts/MunicipioContext";
-import { Landmark, Loader2, Search, Eraser } from "lucide-react";
+import { Landmark, Loader2, Search, Eraser, ChevronDown, ChevronRight } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatCurrency } from "@/lib/utils";
 import { MultiSelect } from "@/components/ui/multi-select";
-import { Bloco, Campos, ItemLinha, Lista, Selo, Vazio, situacaoTom } from "@/components/ui/superficies";
+import { Bloco, BlocoHead, Campos, ItemLinha, Lista, Selo, Vazio, situacaoTom } from "@/components/ui/superficies";
 import { atalhosAnos, resumoAnos } from "@/lib/periodo";
 
 interface PacItem {
@@ -51,6 +51,9 @@ export default function TransfereGovPacPage() {
   const [situacoesSel, setSituacoesSel] = useState<string[]>([]);
   const [programasSel, setProgramasSel] = useState<string[]>([]);
   const [anosSel, setAnosSel] = useState<string[]>([]);
+  /* Recolhido por ANO. Guarda o que esta FECHADO e nao o que esta aberto:
+     assim um ano novo que chegue na proxima coleta nasce aberto. */
+  const [anosFechados, setAnosFechados] = useState<Set<string>>(new Set());
   const [atualizado, setAtualizado] = useState<string | null>(null);
 
   const carregar = useCallback(async () => {
@@ -107,6 +110,35 @@ export default function TransfereGovPacPage() {
     }
     return [...m.entries()].sort((a, b) => b[1] - a[1]);
   }, [filtrados]);
+
+  /** Agrupado por ano, do mais recente para o mais antigo.
+   *
+   *  Mesmo desenho das Emendas Estaduais, que o dono escolheu como padrao do
+   *  produto: cada ano e um cartao BRANCO com cabecalho (ano, contagem, total
+   *  a direita) e a lista de itens cinza dentro, sobre o fundo cinza da pagina.
+   *
+   *  O ano vem de `anoDaProposta` — o MESMO campo que alimenta o filtro de
+   *  anos, senao o gestor filtraria 2025 e veria um grupo 2024.
+   *
+   *  Proposta sem ano legivel nao some: cai num grupo "Sem ano" no fim. O
+   *  numero do PAC as vezes chega sem o sufixo "/AAAA", e esconder a proposta
+   *  por causa disso e pior que mostra-la separada. */
+  const porAno = useMemo(() => {
+    const m = new Map<string, PacItem[]>();
+    for (const i of filtrados) {
+      const a = anoDaProposta(i.numero_proposta) || "Sem ano";
+      (m.get(a) ?? m.set(a, []).get(a)!).push(i);
+    }
+    return Array.from(m.entries()).sort((x, y) =>
+      x[0] === "Sem ano" ? 1 : y[0] === "Sem ano" ? -1 : y[0].localeCompare(x[0]));
+  }, [filtrados]);
+
+  const alternarAno = (a: string) =>
+    setAnosFechados((prev) => {
+      const n = new Set(prev);
+      if (n.has(a)) n.delete(a); else n.add(a);
+      return n;
+    });
 
   const temFiltro = !!termo || situacoesSel.length > 0 || programasSel.length > 0 || anosSel.length > 0;
   const limpar = () => { setQ(""); setSituacoesSel([]); setProgramasSel([]); setAnosSel([]); };
@@ -249,9 +281,30 @@ export default function TransfereGovPacPage() {
            que e a regra desta tela desde sempre (zero truncate).
 
            Os numeros ficam em <Campos>, em posicoes fixas iguais em todos os
-           cartoes: e o que preserva a varredura vertical que a tabela dava. */
-        <Lista>
-          {filtrados.map((i) => (
+           cartoes: e o que preserva a varredura vertical que a tabela dava.
+
+           AS TRES CAMADAS: fundo cinza da pagina -> cartao BRANCO do ano ->
+           itens cinza dentro. Os <ItemLinha> nao mudaram: continuam com todos
+           os campos que a tabela tinha. */
+        <div className="space-y-3">
+        {porAno.map(([ano, doAno]) => {
+          const fechado = anosFechados.has(ano);
+          const totalAno = doAno.reduce((s, i) => s + (i.valor_total || 0), 0);
+          return (
+          <Bloco key={ano} className="p-3">
+            <button type="button" onClick={() => alternarAno(ano)}
+                    className="text-left" aria-expanded={!fechado}>
+              <BlocoHead
+                icon={fechado ? ChevronRight : ChevronDown}
+                titulo={ano}
+                sub={`${doAno.length} proposta(s)`}
+                right={<span className="bi-num text-[13px]">{formatCurrency(totalAno)}</span>}
+                className={fechado ? "mb-0" : undefined}
+              />
+            </button>
+            {!fechado && (
+            <Lista>
+          {doAno.map((i) => (
             <ItemLinha
               key={i.numero_proposta}
               titulo={i.programa || i.objeto || `Proposta ${i.numero_proposta}`}
@@ -295,7 +348,12 @@ export default function TransfereGovPacPage() {
               />
             </ItemLinha>
           ))}
-        </Lista>
+            </Lista>
+            )}
+          </Bloco>
+          );
+        })}
+        </div>
       )}
     </div>
   );

@@ -313,8 +313,17 @@ export function Gauge({
           style={{ transition: "stroke-dasharray .6s ease" }}
         />
       </svg>
-      <div className="-mt-6 text-center">
-        <div className="bi-num text-[26px] leading-none" style={{ color: TOM_COR[tom] }}>
+      {/* O numero e o recuo acompanham o TAMANHO do arco.
+          Eram fixos (26px e -mt-6), o que so funcionava no tamanho padrao: ao
+          reduzir o arco para caber mais de um medidor, o numero continuava
+          gigante e transbordava o desenho. As proporcoes abaixo reproduzem
+          EXATAMENTE os valores antigos no tamanho padrao (168 x 0,155 = 26 e
+          168 x 0,143 = 24), entao nada muda onde ja estava certo. */}
+      <div className="text-center" style={{ marginTop: -size * 0.143 }}>
+        <div
+          className="bi-num leading-none"
+          style={{ color: TOM_COR[tom], fontSize: Math.round(size * 0.155) }}
+        >
           {centro}
         </div>
         {legenda && (

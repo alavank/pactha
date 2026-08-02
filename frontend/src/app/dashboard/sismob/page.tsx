@@ -27,13 +27,15 @@
 //  2. A moldura colorida saiu. O alerta continua — nos selos, no ícone da
 //     regra e nos KPIs — mas deixou de pintar o cartão inteiro: com metade das
 //     obras emolduradas de vermelho, o vermelho para de significar urgência.
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   HardHat, AlertTriangle, CheckCircle2, Clock, Loader2, Wallet,
   Building2, ExternalLink, ChevronDown, ChevronRight, Camera, Layers, ListChecks,
 } from "lucide-react";
 import api from "@/lib/api";
 import { useMunicipio } from "@/contexts/MunicipioContext";
+import { MultiSelect } from "@/components/ui/multi-select";
+import { atalhosAnos, resumoAnos } from "@/lib/periodo";
 import {
   Bloco, BlocoHead, Campos, ItemLinha, Lista, Numero, Selo, Vazio, situacaoTom,
 } from "@/components/ui/superficies";
@@ -94,6 +96,26 @@ function data(iso?: string | null): string {
 function cnpjFmt(c?: string | null): string {
   if (!c || c.length !== 14) return c || "—";
   return `${c.slice(0, 2)}.${c.slice(2, 5)}.${c.slice(5, 8)}/${c.slice(8, 12)}-${c.slice(12)}`;
+}
+
+/** Grupo das obras cuja fonte não informou ano. Fica no FIM da lista: obra sem
+ *  `ano_referencia` continua na tela — esconder registro porque um campo veio
+ *  vazio na origem é pior que mostrá-lo separado. */
+const SEM_ANO = "Sem ano";
+
+/** O ANO de uma obra — `ano_referencia`, e só ele.
+ *
+ *  É o `nuAnoReferencia` do SISMOB: o exercício em que a proposta foi
+ *  habilitada, que é o que o gestor chama de "o ano dessa obra". O candidato
+ *  óbvio seria extrair do `numero_proposta`, como se faz nas propostas do
+ *  TransfereGov — mas aqui NÃO dá: nesta base o número aparece em três
+ *  formatos incompatíveis entre si, e a regexp acertaria uns e erraria outros.
+ *
+ *  O mesmo campo serve ao FILTRO e ao AGRUPAMENTO de propósito. Se o filtro
+ *  olhasse uma data e o agrupamento outra, o gestor filtraria 2025 e veria um
+ *  grupo 2024 na tela. */
+function anoDa(o: Obra): string {
+  return o.ano_referencia != null ? String(o.ano_referencia) : SEM_ANO;
 }
 
 /** Tom da SEVERIDADE que o servidor já calculou em `sismob_regras.py`.
@@ -275,9 +297,16 @@ function CartaoObra({ o }: { o: Obra }) {
   );
 }
 
-/** Seção colapsável de obras. Mesma estrutura que Emendas usa para agrupar por
- *  ano: bloco com cabeçalho (chevron, título, contagem, total à direita) e a
- *  lista de cartões dentro. */
+/** Seção colapsável de obras, agrupadas por ANO dentro dela.
+ *
+ *  O agrupamento por ano é o mesmo das Emendas Estaduais e das Propostas do
+ *  TransfereGov — cabeçalho com chevron, ano, contagem e total à direita, e os
+ *  cartões cinza embaixo. O que muda aqui é ONDE fica o cartão branco: naquelas
+ *  telas a lista é plana e o branco é o ano; nesta o branco já é a SEÇÃO, e é
+ *  ela que o gestor lê primeiro ("precisa de ação"), não o ano — o ano é a
+ *  organização secundária. Cartão branco dentro de cartão branco quebraria a
+ *  hierarquia fundo → bloco → item, então o ano entra como faixa separada por
+ *  linha, com o mesmo cabeçalho e o mesmo gesto de abrir e fechar. */
 function Secao({ titulo, obras, aberta, vazio }: {
   titulo: string; obras: Obra[]; aberta?: boolean;
   /** Mensagem quando não há obras. Sem ela a seção some — que é o certo para
@@ -286,6 +315,28 @@ function Secao({ titulo, obras, aberta, vazio }: {
   vazio?: string;
 }) {
   const [open, setOpen] = useState(!!aberta);
+  /* Guarda o que está FECHADO, e não o que está aberto: assim um ano novo que
+     chegue na próxima coleta nasce ABERTO em vez de invisível. */
+  const [anosFechados, setAnosFechados] = useState<Set<string>>(new Set());
+
+  /** Do ano mais recente para o mais antigo, com "Sem ano" sempre por último. */
+  const porAno = useMemo(() => {
+    const m = new Map<string, Obra[]>();
+    for (const o of obras) {
+      const a = anoDa(o);
+      (m.get(a) ?? m.set(a, []).get(a)!).push(o);
+    }
+    return Array.from(m.entries()).sort((x, y) =>
+      x[0] === SEM_ANO ? 1 : y[0] === SEM_ANO ? -1 : y[0].localeCompare(x[0]));
+  }, [obras]);
+
+  const alternarAno = (a: string) =>
+    setAnosFechados((prev) => {
+      const n = new Set(prev);
+      if (n.has(a)) n.delete(a); else n.add(a);
+      return n;
+    });
+
   if (!obras.length && !vazio) return null;
   const total = obras.reduce((s, o) => s + (o.dinheiro.proposta || 0), 0);
   return (
@@ -301,7 +352,30 @@ function Secao({ titulo, obras, aberta, vazio }: {
         />
       </button>
       {open && (obras.length ? (
-        <Lista>{obras.map((o) => <CartaoObra key={o.proposta_id} o={o} />)}</Lista>
+        <div className="flex flex-col gap-2">
+          {porAno.map(([ano, doAno]) => {
+            const fechado = anosFechados.has(ano);
+            const totalAno = doAno.reduce((s, o) => s + (o.dinheiro.proposta || 0), 0);
+            return (
+              <div key={ano} className="border-t pt-2.5"
+                   style={{ borderColor: "var(--bi-line)" }}>
+                <button type="button" onClick={() => alternarAno(ano)}
+                        aria-expanded={!fechado} className="w-full text-left">
+                  <BlocoHead
+                    icon={fechado ? ChevronRight : ChevronDown}
+                    titulo={ano}
+                    sub={`${doAno.length} obra(s)`}
+                    right={<span className="bi-num text-[13px]">{moeda(totalAno)}</span>}
+                    className={fechado ? "mb-0" : undefined}
+                  />
+                </button>
+                {!fechado && (
+                  <Lista>{doAno.map((o) => <CartaoObra key={o.proposta_id} o={o} />)}</Lista>
+                )}
+              </div>
+            );
+          })}
+        </div>
       ) : (
         <Vazio>{vazio}</Vazio>
       ))}
@@ -313,6 +387,7 @@ export default function SismobPage() {
   const { municipioId } = useMunicipio();
   const [d, setD] = useState<Resp | null>(null);
   const [loading, setLoading] = useState(true);
+  const [anosSel, setAnosSel] = useState<string[]>([]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -326,6 +401,19 @@ export default function SismobPage() {
 
   const t = d?.totais;
   const acao = d?.acao ?? [];
+
+  /** Os anos que EXISTEM nas obras, para o dropdown não oferecer ano vazio.
+   *  Sai das três listas juntas porque o filtro vale para as três. */
+  const anosDisponiveis = useMemo(() => {
+    const todas = [...(d?.acao ?? []), ...(d?.em_dia ?? []), ...(d?.encerradas ?? [])];
+    return Array.from(new Set(
+      todas.map((o) => o.ano_referencia).filter((a): a is number => a != null),
+    )).sort((a, b) => b - a).map(String);
+  }, [d]);
+
+  /* Nada selecionado = todos, que é a convenção do MultiSelect e do backend. */
+  const filtrarAnos = (l: Obra[]) =>
+    anosSel.length ? l.filter((o) => anosSel.includes(anoDa(o))) : l;
 
   return (
     <div className="space-y-4">
@@ -407,10 +495,40 @@ export default function SismobPage() {
 
           <div className="grid gap-4 xl:grid-cols-3">
             <section className="flex flex-col gap-3 xl:col-span-2">
-              <Secao titulo="Precisa de ação" obras={acao} aberta
-                vazio="Nenhuma obra com prazo vencido ou parada." />
-              <Secao titulo="Em dia" obras={d.em_dia ?? []} />
-              <Secao titulo="Concluídas e encerradas" obras={d.encerradas ?? []} />
+              {anosDisponiveis.length > 0 && (
+                <div className="flex flex-wrap items-center gap-3">
+                  <MultiSelect
+                    opcoes={anosDisponiveis}
+                    valor={anosSel}
+                    onChange={setAnosSel}
+                    atalhos={atalhosAnos()}
+                    formatarResumo={resumoAnos}
+                    placeholder="Todos os anos"
+                    rotuloTodos="Todos os anos"
+                    ariaLabel="Anos"
+                    className="w-44"
+                  />
+                  {/* O recorte vale para as LISTAS, não para os números do topo
+                      nem para os resumos da direita: aqueles são agregados pelo
+                      servidor sobre todas as obras, e recalculá-los na tela
+                      duplicaria a classificação que vive em `sismob_regras.py`
+                      — o mesmo motivo pelo qual esta tela não reclassifica
+                      obra. Dizer isso é melhor que deixar o gestor supor que o
+                      KPI seguiu o filtro. */}
+                  {anosSel.length > 0 && (
+                    <span className="text-[11px]" style={{ color: "var(--bi-faint)" }}>
+                      Filtrando as listas de obras. Os números do topo e os resumos ao
+                      lado continuam somando todos os anos.
+                    </span>
+                  )}
+                </div>
+              )}
+              <Secao titulo="Precisa de ação" obras={filtrarAnos(acao)} aberta
+                vazio={anosSel.length
+                  ? "Nenhuma obra com prazo vencido ou parada nos anos selecionados."
+                  : "Nenhuma obra com prazo vencido ou parada."} />
+              <Secao titulo="Em dia" obras={filtrarAnos(d.em_dia ?? [])} />
+              <Secao titulo="Concluídas e encerradas" obras={filtrarAnos(d.encerradas ?? [])} />
             </section>
 
             <aside className="flex flex-col gap-3">

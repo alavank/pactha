@@ -1,14 +1,14 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { useMunicipio } from "@/contexts/MunicipioContext";
-import { Search as SearchIcon, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search as SearchIcon, ChevronLeft, ChevronRight, ChevronDown } from "lucide-react";
 import api from "@/lib/api";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { PeriodoVigencia } from "@/components/ui/periodo-vigencia";
 import { atalhosAnos, intervaloVazio, resumoAnos, rotuloIntervalo, type Intervalo } from "@/lib/periodo";
-import { Campos, ItemLinha, Lista, Selo, situacaoTom } from "@/components/ui/superficies";
+import { Bloco, BlocoHead, Campos, ItemLinha, Lista, Selo, situacaoTom } from "@/components/ui/superficies";
 import AnotacaoButton from "@/components/AnotacaoButton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -107,6 +107,25 @@ function isTE(objeto?: string | null): boolean {
   return !!objeto && /TRANSFER[ÊE]NCIA\s+ESPECIAL/i.test(objeto);
 }
 
+/** Rótulo do grupo dos registros sem ano legível. Sempre o ÚLTIMO da lista.
+ *  Convênio sem `ano` preenchido não some: some-lo por causa de um campo vazio
+ *  na origem é pior do que mostrá-lo separado. */
+const SEM_ANO = "Sem ano";
+
+/** O ANO de um convênio = o campo `ano`, que no SIGCON é o EXERCÍCIO.
+ *
+ *  Não é derivado de `dt_inicio` (assinatura) nem de `dt_fim_vigencia`: é o
+ *  MESMO campo que o filtro de anos desta tela já usa — o dropdown vem de
+ *  `/convenios/anos` (distinct de `ConvenioEstadual.ano`) e o backend filtra com
+ *  `ConvenioEstadual.ano.in_(...)`. Agrupar por uma data faria o gestor
+ *  selecionar 2025 no filtro e ver um cartão "2024" na tela.
+ *
+ *  `ano` é o único campo de exercício que existe aqui: não há `exercicio` nem
+ *  no `Convenio` do front nem no modelo do backend. */
+function anoDo(c: Convenio): string {
+  return c.ano ? String(c.ano) : SEM_ANO;
+}
+
 /** Faixas de vencimento. Multi-escolha: marcar duas traz a UNIAO das duas.
  *  "Vence em 30" e subconjunto de "vence em 60" — marcar os dois e o mesmo que
  *  marcar so o maior, e isso e o comportamento esperado. */
@@ -165,6 +184,10 @@ export default function ConveniosPage() {
   // e do backend (que simplesmente nao aplica o filtro).
   const [pagamentosSel, setPagamentosSel] = useState<string[]>([]);
   const [anosSel, setAnosSel] = useState<string[]>([]);
+  /* Recolhido por ANO. Guarda o que está FECHADO e não o que está aberto:
+     assim um ano novo que chegue na próxima coleta do SIGCON nasce ABERTO em
+     vez de invisível. */
+  const [anosFechados, setAnosFechados] = useState<Set<string>>(new Set());
   // O KPI do dashboard entra aqui por querystring com UM valor — continua
   // funcionando, so que agora como lista de um item.
   const [vigenciasSel, setVigenciasSel] = useState<string[]>(
@@ -262,6 +285,36 @@ export default function ConveniosPage() {
     }
   }, [fetchData]);
 
+  const items = useMemo(() => data?.items ?? [], [data]);
+
+  /** Agrupado por ano, do mais recente para o mais antigo.
+   *
+   *  Mesmo desenho das Emendas Estaduais e das Propostas do TransfereGov: cada
+   *  ano é um cartão BRANCO com cabeçalho (ano, contagem, total à direita) e a
+   *  lista de itens cinza dentro, sobre o fundo cinza da página.
+   *
+   *  Diferença desta tela: a paginação é do SERVIDOR (20 por página, ordenados
+   *  por publicação), então o cartão agrupa o que veio NESTA página — por isso
+   *  o subtítulo diz "nesta página" quando há mais de uma. Carregar tudo para
+   *  agrupar, como as Emendas fazem, não serve aqui: cada item monta um
+   *  `AnotacaoButton`, que busca a contagem de anotações um a um. */
+  const porAno = useMemo(() => {
+    const m = new Map<string, Convenio[]>();
+    for (const c of items) {
+      const a = anoDo(c);
+      (m.get(a) ?? m.set(a, []).get(a)!).push(c);
+    }
+    return Array.from(m.entries()).sort((x, y) =>
+      x[0] === SEM_ANO ? 1 : y[0] === SEM_ANO ? -1 : y[0].localeCompare(x[0]));
+  }, [items]);
+
+  const alternarAno = (a: string) =>
+    setAnosFechados((prev) => {
+      const n = new Set(prev);
+      if (n.has(a)) n.delete(a); else n.add(a);
+      return n;
+    });
+
   if (!municipioId) {
     return (
       <div className="flex h-64 items-center justify-center text-muted-foreground">
@@ -270,7 +323,6 @@ export default function ConveniosPage() {
     );
   }
 
-  const items = data?.items ?? [];
   const totalPages = data?.pages ?? 1;
 
   const exportPdf = () => {
@@ -438,9 +490,38 @@ export default function ConveniosPage() {
 
               O que torna isso possivel sem virar bagunca e o <Campos>: os
               numeros ficam em POSICOES FIXAS, iguais em todos os cartoes, entao
-              o olho continua descendo por uma coluna como descia na tabela. */}
-          <Lista>
-            {items.map((conv: Convenio) => {
+              o olho continua descendo por uma coluna como descia na tabela.
+
+              AS TRES CAMADAS: fundo cinza da pagina -> cartao BRANCO do ano ->
+              itens cinza dentro. E o mesmo desenho que o dono aprovou nas
+              Emendas Estaduais e nas Propostas do TransfereGov; o respiro do
+              branco vem do `p-3` do `Bloco`, para os itens nao encostarem na
+              margem. Os `ItemLinha` de dentro nao mudaram em NADA — a lista
+              so ganhou o cartao do ano em volta. */}
+          <div className="space-y-3">
+          {porAno.map(([ano, doAno]) => {
+            const fechado = anosFechados.has(ano);
+            // Soma a MESMA base que cada item exibe como valor, senao o total
+            // do cabecalho discorda das linhas logo abaixo dele.
+            const totalAno = doAno.reduce((s, c) => s + (c.valor_repasse ?? c.valor_total ?? 0), 0);
+            return (
+            <Bloco key={ano} className="p-3">
+              <button type="button" onClick={() => alternarAno(ano)}
+                      className="text-left" aria-expanded={!fechado}>
+                <BlocoHead
+                  icon={fechado ? ChevronRight : ChevronDown}
+                  titulo={ano}
+                  /* "nesta pagina" so quando ha mais de uma: a paginacao e do
+                     servidor, entao a contagem e o total sao do recorte que
+                     chegou, nao do ano inteiro. Numero sem escopo mente. */
+                  sub={`${doAno.length} convênio(s)${totalPages > 1 ? " nesta página" : ""}`}
+                  right={<span className="bi-num text-[13px]">{formatCurrency(totalAno)}</span>}
+                  className={fechado ? "mb-0" : undefined}
+                />
+              </button>
+              {!fechado && (
+              <Lista>
+            {doAno.map((conv: Convenio) => {
               const objeto = conv.objeto || "";
               const programa = conv.tipo_programa || conv.programa || "";
               const orgao = conv.orgao_concedente || "";
@@ -518,7 +599,12 @@ export default function ConveniosPage() {
                 </ItemLinha>
               );
             })}
-          </Lista>
+              </Lista>
+              )}
+            </Bloco>
+            );
+          })}
+          </div>
 
           {/* Pagination */}
           <div className="flex items-center justify-between">

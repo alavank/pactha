@@ -1,11 +1,13 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2, Eye, Download, Loader2, ChevronDown } from "lucide-react";
+import { Plus, Trash2, Eye, Download, Loader2, ChevronDown, FileText } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { MultiSelect } from "@/components/ui/multi-select";
+import { atalhosAnos, resumoAnos } from "@/lib/periodo";
 import { Bloco, BlocoHead, Campos, ItemLinha, Lista, Selo, Vazio } from "@/components/ui/superficies";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 
@@ -35,6 +37,21 @@ function rmTom(s?: string | null): "neutro" | "ok" | "atencao" | "critico" {
   return "neutro";
 }
 
+/** O ANO do RM — o EXERCÍCIO.
+ *
+ *  Sai de `data_referencia` e de mais nada: a listagem não devolve campo
+ *  `exercicio`, o que o cartão sempre mostrou nesse rótulo já era esta data
+ *  recortada, e a criação grava `01/01` do ano escolhido no formulário acima.
+ *  Um campo só é o que garante que o filtro e o rótulo nunca discordem.
+ *
+ *  Casa 4 dígitos seguidos em vez de cortar os 4 primeiros caracteres: a data
+ *  chega ISO da API, mas se um dia vier "01/01/2025" o corte devolveria "01/0"
+ *  e o RM viraria um exercício que não existe. */
+function anoDo(rm: RmListItem): string {
+  const m = /(\d{4})/.exec(rm.data_referencia || "");
+  return m ? m[1] : "";
+}
+
 /* As pecas da identidade nao trazem botao — entao o botao de acao e montado
    aqui com os tokens, cinza no repouso. Antes eram tres cores de enfeite numa
    linha so (violeta em "Abrir", verde em "Relatorio", vermelho em remover), e
@@ -58,6 +75,20 @@ export default function RmListPage() {
   const [novoAno, setNovoAno] = useState<number>(anoAtual);
   const [menuId, setMenuId] = useState<number | null>(null);
   const anosOpcoes = [anoAtual + 1, anoAtual, anoAtual - 1, anoAtual - 2];
+  const [anosSel, setAnosSel] = useState<string[]>([]);
+
+  /** Os anos que EXISTEM na lista, para o dropdown não oferecer ano vazio. */
+  const anosDisponiveis = useMemo(
+    () => Array.from(new Set(items.map(anoDo).filter(Boolean))).sort((a, b) => b.localeCompare(a)),
+    [items],
+  );
+
+  /* Filtro client-side: a listagem do RM vem inteira (é um punhado de
+     registros por município), então não há o que pedir de novo ao servidor. */
+  const visiveis = useMemo(
+    () => (anosSel.length ? items.filter((r) => anosSel.includes(anoDo(r))) : items),
+    [items, anosSel],
+  );
 
   const buscar = useCallback(async () => {
     if (!municipioId) return;
@@ -170,16 +201,34 @@ export default function RmListPage() {
         </div>
       </Bloco>
 
+      {/* Filtro de EXERCÍCIO. Mesmo dropdown de anos das demais telas (com os
+          atalhos de mandato), e olhando o MESMO campo que rotula o cartão.
+
+          NÃO há agrupamento por ano aqui, e é decisão e não esquecimento: o
+          banco tem UNIQUE (municipio_id, data_referencia) e a criação sempre
+          grava 01/01 do ano, então existe NO MÁXIMO UM RM por exercício neste
+          município. Um cartão por ano seria um cartão por item — moldura sem
+          agrupar nada. */}
+      <div className="flex flex-wrap items-center gap-3">
+        <MultiSelect
+          opcoes={anosDisponiveis}
+          valor={anosSel}
+          onChange={setAnosSel}
+          atalhos={atalhosAnos()}
+          formatarResumo={resumoAnos}
+          placeholder="Todos os anos"
+          rotuloTodos="Todos os anos"
+          ariaLabel="Anos"
+          className="w-44"
+        />
+      </div>
+
       {/* A LISTA DEIXOU DE SER TABELA-EM-CAIXA.
           Era um <ul divide-y> dentro de uma moldura com cabecalho cinza; agora
           e a pilha de cartoes macios da identidade, sem borda entre itens. Toda
           coluna que existia continua na tela: titulo e titulo, status virou
           selo, exercicio/cidade/atualizacao foram para <Campos> (posicoes
           fixas, para o olho descer a coluna como descia na tabela). */}
-      <p className="text-[11px]" style={{ color: "var(--bi-muted)" }}>
-        <span className="bi-num">{items.length}</span> RM(s) cadastrado(s)
-      </p>
-
       {loading ? (
         /* Mesmo esqueleto da tela de Plano de Ação, a outra do lote que tem um.
            Estava em `bg-base-200`, que aponta para --bi-bg — a cor do FUNDO da
@@ -193,9 +242,26 @@ export default function RmListPage() {
       ) : items.length === 0 ? (
         <Vazio>Nenhum RM ainda. Crie o primeiro acima.</Vazio>
       ) : (
-        <Lista>
-          {items.map((rm) => {
-            const exercicio = (rm.data_referencia || "").slice(0, 4);
+        /* AS TRÊS CAMADAS: fundo cinza da página -> cartão BRANCO -> itens
+           cinza dentro. A lista estava solta sobre o fundo, sem a camada do
+           meio, e a contagem era um parágrafo perdido acima dela — agora é o
+           subtítulo do próprio cartão. */
+        <Bloco className="p-3">
+          <BlocoHead
+            icon={FileText}
+            titulo="RMs cadastrados"
+            sub={
+              anosSel.length
+                ? `${visiveis.length} de ${items.length} RM(s) — filtrado por exercício`
+                : `${items.length} RM(s)`
+            }
+          />
+          {visiveis.length === 0 ? (
+            <Vazio>Nenhum RM no(s) exercício(s) selecionado(s).</Vazio>
+          ) : (
+          <Lista>
+          {visiveis.map((rm) => {
+            const exercicio = anoDo(rm);
             const href = `/dashboard/rm/${rm.id}?municipio_id=${municipioId}`;
             return (
               <ItemLinha
@@ -269,7 +335,9 @@ export default function RmListPage() {
               </ItemLinha>
             );
           })}
-        </Lista>
+          </Lista>
+          )}
+        </Bloco>
       )}
     </div>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import api from "@/lib/api";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 import { Input } from "@/components/ui/input";
@@ -12,7 +12,7 @@ import {
 import { atalhosAnos, resumoAnos } from "@/lib/periodo";
 import { formatCurrency } from "@/lib/utils";
 import {
-  Search, Loader2, Eraser, Printer, Eye, X,
+  Search, Loader2, Eraser, Printer, Eye, ChevronDown, ChevronRight,
   HeartPulse, Users, Receipt, FileText, Route, Wallet, Hourglass, Building2,
 } from "lucide-react";
 
@@ -148,6 +148,9 @@ export default function PropostasFNSPage() {
   const [loadingIndiv, setLoadingIndiv] = useState(false);
   const [propostaDetalhe, setPropostaDetalhe] = useState<PropostaDetalhe | null>(null);
   const [loadingDetalhe, setLoadingDetalhe] = useState(false);
+  // Guarda o que esta FECHADO, e nao o que esta aberto: assim um ano que entre
+  // na proxima consulta nasce ABERTO em vez de invisivel.
+  const [anosFechados, setAnosFechados] = useState<Set<string>>(new Set());
 
   // Quando abre modal nivel 1, busca lista de propostas individuais
   useEffect(() => {
@@ -287,6 +290,33 @@ export default function PropostasFNSPage() {
   const pctGeral = data?.totais
     ? pctPago(data.totais.valor_proposta, data.totais.valor_pago)
     : null;
+
+  /** Agrupado por ano, do mais recente para o mais antigo.
+   *
+   *  O ano de uma linha e o `ano` que `consultar` carimba nela — o ano DA
+   *  CONSULTA que a trouxe, que e exatamente o que o filtro de anos manda ao
+   *  portal. Filtro e agrupamento olham o MESMO campo, entao marcar 2025 nunca
+   *  faz aparecer um grupo 2024.
+   *
+   *  Linha sem ano legivel nao some: cai num grupo "Sem ano" no fim. So
+   *  aconteceria se o carimbo falhasse, e nesse caso esconder o registro seria
+   *  pior que mostra-lo separado. */
+  const porAno = useMemo(() => {
+    const m = new Map<string, Item[]>();
+    for (const it of data?.items ?? []) {
+      const a = it.ano || "Sem ano";
+      (m.get(a) ?? m.set(a, []).get(a)!).push(it);
+    }
+    return Array.from(m.entries()).sort((x, y) =>
+      x[0] === "Sem ano" ? 1 : y[0] === "Sem ano" ? -1 : y[0].localeCompare(x[0]));
+  }, [data]);
+
+  const alternarAno = (a: string) =>
+    setAnosFechados((prev) => {
+      const n = new Set(prev);
+      if (n.has(a)) n.delete(a); else n.add(a);
+      return n;
+    });
 
   return (
     <div className="space-y-4">
@@ -439,70 +469,98 @@ export default function PropostasFNSPage() {
                o olho continua descendo por uma coluna. Nada saiu — o tipo de
                recurso virou selo cinza (era pintado de violeta/azul/ambar por
                uma tabela de cores propria, que nao classificava alerta nenhum) e
-               os parlamentares seguem na meta com a lista completa no title. */
-            <Lista>
-              {data.items.map((it, idx) => {
-                const parls = it.parlamentares || [];
-                const nomes = parls.map((p) => p.nome).filter(Boolean).join(", ");
-                const pct = pctPago(it.valor_proposta, it.valor_pago);
+               os parlamentares seguem na meta com a lista completa no title.
+
+               E AS TRES CAMADAS: fundo cinza da pagina -> cartao BRANCO por ano
+               -> itens cinza dentro. Mesmo desenho das Emendas Estaduais e das
+               Propostas do TransfereGov. Como o filtro aqui aceita o mandato
+               inteiro, a lista corrida misturava sete exercicios sem separacao
+               nenhuma — o ano so aparecia num campo do cartao. */
+            <div className="space-y-3">
+              {porAno.map(([ano, doAno]) => {
+                const fechado = anosFechados.has(ano);
+                const totalAno = doAno.reduce((s, i) => s + (i.valor_proposta || 0), 0);
                 return (
-                  <ItemLinha
-                    key={idx}
-                    onClick={() => setDetalheItem(it)}
-                    titulo={it.tipo_proposta || "Sem tipo de proposta"}
-                    valor={formatCurrency(it.valor_proposta)}
-                    meta={
-                      <>
-                        {it.tipo_recurso && <Selo title={it.tipo_recurso}>{it.tipo_recurso}</Selo>}
-                        {parls.length > 0 ? (
-                          <span className="truncate" title={nomes}>
-                            {parls.slice(0, 2).map((p) => p.nome).join(", ")}
-                            {parls.length > 2 ? ` +${parls.length - 2}` : ""}
-                          </span>
-                        ) : (
-                          <span>sem parlamentar vinculado</span>
-                        )}
-                      </>
-                    }
-                    acao={
-                      <button
-                        type="button"
-                        onClick={() => setDetalheItem(it)}
-                        className="inline-flex size-7 items-center justify-center rounded hover:opacity-90"
-                        style={{ background: "var(--bi-cta)", color: "var(--bi-cta-ink)" }}
-                        title="Ver detalhamento"
-                        aria-label="Ver detalhamento"
-                      >
-                        <Eye className="size-3.5" />
-                      </button>
-                    }
-                  >
-                    <Campos
-                      campos={[
-                        { rotulo: "Ano", valor: it.ano || "—" },
-                        {
-                          rotulo: "Nº processo",
-                          valor: it.nu_processo || "—",
-                          title: it.nu_processo || "Sem processo informado",
-                        },
-                        { rotulo: "Valor pago", valor: formatCurrency(it.valor_pago) },
-                        {
-                          rotulo: "A pagar",
-                          valor: formatCurrency(it.valor_pagar),
-                          tom: (it.valor_pagar || 0) > 0 ? "atencao" : "normal",
-                        },
-                        {
-                          rotulo: "% pago",
-                          valor: pct != null ? `${pct}%` : "—",
-                          tom: pct != null && pct >= 100 ? "ok" : "normal",
-                          title: `${formatCurrency(it.valor_pago)} de ${formatCurrency(it.valor_proposta)}`,
-                        },
-                      ]}
-                    />
-                  </ItemLinha>
+                  <Bloco key={ano} className="p-3">
+                    <button type="button" onClick={() => alternarAno(ano)}
+                            className="text-left" aria-expanded={!fechado}>
+                      <BlocoHead
+                        icon={fechado ? ChevronRight : ChevronDown}
+                        titulo={ano}
+                        sub={`${doAno.length} proposta(s)`}
+                        right={<span className="bi-num text-[13px]">{formatCurrency(totalAno)}</span>}
+                        className={fechado ? "mb-0" : undefined}
+                      />
+                    </button>
+                    {!fechado && (
+                      <Lista>
+                        {doAno.map((it, idx) => {
+                          const parls = it.parlamentares || [];
+                          const nomes = parls.map((p) => p.nome).filter(Boolean).join(", ");
+                          const pct = pctPago(it.valor_proposta, it.valor_pago);
+                          return (
+                            <ItemLinha
+                              key={idx}
+                              onClick={() => setDetalheItem(it)}
+                              titulo={it.tipo_proposta || "Sem tipo de proposta"}
+                              valor={formatCurrency(it.valor_proposta)}
+                              meta={
+                                <>
+                                  {it.tipo_recurso && <Selo title={it.tipo_recurso}>{it.tipo_recurso}</Selo>}
+                                  {parls.length > 0 ? (
+                                    <span className="truncate" title={nomes}>
+                                      {parls.slice(0, 2).map((p) => p.nome).join(", ")}
+                                      {parls.length > 2 ? ` +${parls.length - 2}` : ""}
+                                    </span>
+                                  ) : (
+                                    <span>sem parlamentar vinculado</span>
+                                  )}
+                                </>
+                              }
+                              acao={
+                                <button
+                                  type="button"
+                                  onClick={() => setDetalheItem(it)}
+                                  className="inline-flex size-7 items-center justify-center rounded hover:opacity-90"
+                                  style={{ background: "var(--bi-cta)", color: "var(--bi-cta-ink)" }}
+                                  title="Ver detalhamento"
+                                  aria-label="Ver detalhamento"
+                                >
+                                  <Eye className="size-3.5" />
+                                </button>
+                              }
+                            >
+                              <Campos
+                                campos={[
+                                  { rotulo: "Ano", valor: it.ano || "—" },
+                                  {
+                                    rotulo: "Nº processo",
+                                    valor: it.nu_processo || "—",
+                                    title: it.nu_processo || "Sem processo informado",
+                                  },
+                                  { rotulo: "Valor pago", valor: formatCurrency(it.valor_pago) },
+                                  {
+                                    rotulo: "A pagar",
+                                    valor: formatCurrency(it.valor_pagar),
+                                    tom: (it.valor_pagar || 0) > 0 ? "atencao" : "normal",
+                                  },
+                                  {
+                                    rotulo: "% pago",
+                                    valor: pct != null ? `${pct}%` : "—",
+                                    tom: pct != null && pct >= 100 ? "ok" : "normal",
+                                    title: `${formatCurrency(it.valor_pago)} de ${formatCurrency(it.valor_proposta)}`,
+                                  },
+                                ]}
+                              />
+                            </ItemLinha>
+                          );
+                        })}
+                      </Lista>
+                    )}
+                  </Bloco>
                 );
               })}
-            </Lista>
+            </div>
           )}
         </div>
       )}
