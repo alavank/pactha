@@ -233,7 +233,10 @@ def gerar_resumido_pdf(meta: dict, conteudo: dict, municipio_nome: str) -> bytes
 
     dref = meta.get("data_referencia")
     ref_txt = _fmt_data_extenso(dref)
-    cidade = meta.get("cidade_emissao") or "Brasília/DF"
+    # Vazio e melhor que a cidade errada: o RM ja grava a cidade certa na
+    # criacao, e um fallback com literal de outro cliente reintroduz o defeito
+    # justamente nos registros antigos, que sao os que ninguem vai reconferir.
+    cidade = meta.get("cidade_emissao") or ""
     story = [
         Paragraph(f"RELATÓRIO DE MONITORAMENTO – {_esc(municipio_nome)}", tit),
         Paragraph(f"{_esc(cidade)}, {ref_txt}", sub),

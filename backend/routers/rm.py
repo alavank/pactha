@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 import json
+from config import get_settings
 from database import get_db
 from models import Municipio
 from services.auth import get_current_user, ensure_municipio_access, ensure_tela
@@ -33,7 +34,10 @@ router = APIRouter(prefix="/api/rm", tags=["rm"])
 class RmCreate(BaseModel):
     municipio_id: int
     data_referencia: date
-    cidade_emissao: Optional[str] = "Brasília/DF"
+    # Sem default fixo: quem nao mandar cidade recebe a do PROPRIO municipio
+    # do RM (ver `criar`). Estava "Brasília/DF" — a cidade da consultoria que
+    # originou o modulo — e carimbava relatorio de municipio de Minas.
+    cidade_emissao: Optional[str] = None
     titulo: Optional[str] = None
     auto_popular: bool = True
 
@@ -114,19 +118,24 @@ async def criar(
     # ON CONFLICT: se ja existe RM nessa data, atualiza conteudo
     sql = text("""
         INSERT INTO rm_relatorios
-            (municipio_id, data_referencia, cidade_emissao, titulo, conteudo, criado_por)
-        VALUES (:mun, :dt, :cidade, :titulo, CAST(:cont AS JSONB), :usr)
+            (municipio_id, data_referencia, cidade_emissao, titulo, conteudo, criado_por, rodape)
+        VALUES (:mun, :dt, :cidade, :titulo, CAST(:cont AS JSONB), :usr, :rodape)
         ON CONFLICT (municipio_id, data_referencia) DO UPDATE SET
             titulo = EXCLUDED.titulo,
             cidade_emissao = EXCLUDED.cidade_emissao,
+            rodape = EXCLUDED.rodape,
             conteudo = CASE WHEN :overwrite THEN EXCLUDED.conteudo
                             ELSE rm_relatorios.conteudo END,
             updated_at = NOW()
         RETURNING id
     """)
+    # A cidade de emissao e a do PROPRIO municipio do relatorio. `mun` ja esta
+    # carregado aqui, entao nao custa consulta nenhuma — e e a unica fonte que
+    # nao pode estar errada. So um valor explicito do usuario sobrepoe.
+    cidade = (body.cidade_emissao or "").strip() or f"{mun.nome}/{mun.uf}"
     rid = (await db.execute(sql, {
         "mun": body.municipio_id, "dt": body.data_referencia,
-        "cidade": body.cidade_emissao, "titulo": titulo,
+        "cidade": cidade, "titulo": titulo, "rodape": get_settings().RM_RODAPE,
         "cont": json.dumps(conteudo), "usr": getattr(user, "id", None),
         "overwrite": body.auto_popular,
     })).scalar()
