@@ -367,7 +367,7 @@ export default function AiChatPage() {
                 <button
                   key={i}
                   onClick={() => enviar(s)}
-                  className="rounded-xl px-3 py-2 text-left text-[12px] transition-colors hover:brightness-95"
+                  className="rounded-xl px-3 py-2 text-left text-[12px] transition-colors bi-hover"
                   style={{ background: "var(--bi-surface)", border: "1px solid var(--bi-line)", color: "var(--bi-text)" }}
                 >
                   <Sparkles className="mr-1 inline size-3.5" style={{ color: "var(--bi-faint)" }} />
@@ -440,7 +440,7 @@ export default function AiChatPage() {
                     onClick={() => gerarRelatorio(m, i)}
                     disabled={pdfIdx === i}
                     title="Gerar relatório em PDF deste resultado"
-                    className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium transition-colors hover:brightness-95 disabled:opacity-60"
+                    className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium transition-colors bi-hover disabled:opacity-60"
                     style={{ background: "var(--bi-surface)", border: "1px solid var(--bi-line)", color: "var(--bi-text)" }}
                   >
                     {pdfIdx === i

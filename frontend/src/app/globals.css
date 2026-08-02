@@ -656,3 +656,27 @@ html,
   box-shadow: 0 0 0 3px color-mix(in oklab, var(--bi-accent) 22%, transparent);
 }
 .bi-field:disabled { opacity: .5; cursor: not-allowed; }
+
+/* O HOVER, uma vez só.
+   Era `hover:brightness-95` em 15 lugares. `brightness()` é MULTIPLICATIVO:
+   escurecer 5% de branco dá 4,4 de ΔL* (bem visível) e escurecer 5% de
+   quase-preto dá 0,5 — abaixo do limiar de percepção. No tema escuro o hover
+   simplesmente não existia. E `transition-colors`, que estava junto, nem anima
+   `filter`: mesmo no claro era um salto seco.
+
+   Duas armadilhas que este trecho evita de propósito:
+   · NÃO é `hover:bi-hover`. `hover:` é variante do Tailwind e não se aplica a
+     classe própria — a classe não seria gerada e o hover sumiria em silêncio.
+   · NÃO mexe em `background`. As peças passam o fundo em `style` inline
+     (`ESTILO_SEC`), e estilo inline vence regra de folha. Uma camada por dentro
+     compõe sobre o fundo, seja ele qual for.
+
+   Usa `--bi-text`, que INVERTE com o tema: quase preto no claro (escurece) e
+   quase branco no escuro (clareia). Um valor, os dois temas. */
+.bi-hover { transition: box-shadow .12s ease; }
+.bi-hover:hover {
+  box-shadow: inset 0 0 0 999px color-mix(in oklab, var(--bi-text) 7%, transparent);
+}
+.bi-hover:active {
+  box-shadow: inset 0 0 0 999px color-mix(in oklab, var(--bi-text) 12%, transparent);
+}

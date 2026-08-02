@@ -129,7 +129,7 @@ export default function PaineisMunicipaisPage() {
                 painel, entao e um botao com borda e nao um link miudo. */}
             <button
               onClick={() => setActive(null)}
-              className="mb-1.5 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-medium transition-colors hover:brightness-95"
+              className="mb-1.5 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-medium transition-colors bi-hover"
               style={ESTILO_SEC}
             >
               <ArrowLeft className="size-3.5" /> Escolher outro painel

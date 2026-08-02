@@ -243,7 +243,7 @@ export default function AnotacaoModal({
                               key={i}
                               type="button"
                               onClick={() => baixarAnexo(a.id, i, ax.nome)}
-                              className="inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-[10px] transition-colors hover:brightness-95"
+                              className="inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-[10px] transition-colors bi-hover"
                               style={{ background: "var(--bi-surface)", border: "1px solid var(--bi-line)", color: "var(--bi-muted)" }}
                               title={`${ax.nome} · ${fmtBytes(ax.tamanho)}`}
                             >
@@ -278,7 +278,7 @@ export default function AnotacaoModal({
           <button
             type="button"
             onClick={() => { resetForm(); setFormOpen(true); }}
-            className="flex h-9 w-full items-center justify-center gap-1.5 rounded-xl text-[12px] font-semibold transition-colors hover:brightness-95"
+            className="flex h-9 w-full items-center justify-center gap-1.5 rounded-xl text-[12px] font-semibold transition-colors bi-hover"
             style={{ background: "var(--bi-surface)", border: "1px solid var(--bi-line)", color: "var(--bi-text)" }}
           >
             <Plus className="size-4" /> Nova anotação
@@ -354,7 +354,7 @@ export default function AnotacaoModal({
                 type="button"
                 onClick={() => { resetForm(); setFormOpen(false); }}
                 disabled={saving}
-                className="h-9 rounded-xl px-3 text-[12px] font-semibold transition-colors hover:brightness-95 disabled:opacity-60"
+                className="h-9 rounded-xl px-3 text-[12px] font-semibold transition-colors bi-hover disabled:opacity-60"
                 style={{ background: "var(--bi-surface)", border: "1px solid var(--bi-line)", color: "var(--bi-text)" }}
               >
                 Cancelar

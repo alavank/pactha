@@ -216,12 +216,30 @@ function SidebarContent({
           }`}
           style={{ background: "var(--bi-surface-2)", border: "1px solid var(--bi-line)" }}
         >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/pactha-logo.png"
-            alt="PACTHA"
-            className={recolhida ? "h-7 w-auto max-w-[36px] object-contain" : "h-6 w-auto max-w-[130px] object-contain"}
-          />
+          {/* DUAS artes, uma por tema. A arte padrão tem a palavra em tinta
+              PRETA e fundo transparente: ela só era legível porque a caixa aqui
+              atrás tinha `bg-white` cravado. Ao trocar esse fundo por token
+              (logo acima), a palavra "PACTHA" passou a dar 1,14 de contraste no
+              tema escuro — ou seja, sumiu do topo do menu em TODA tela, e sobrou
+              o símbolo flutuando. Consertei o fundo e a assinatura embaixo, e
+              não olhei para a imagem no meio.
+              O par já existia no repositório (`/pactha-logo-dark.png` + as
+              regras `.marca-clara`/`.marca-escura` em globals.css); só o Painel
+              o usava. Troca por CSS e não por estado do React, senão a arte
+              errada pisca antes da hidratação. */}
+          {(() => {
+            const cls = recolhida
+              ? "h-7 w-auto max-w-[36px] object-contain"
+              : "h-6 w-auto max-w-[130px] object-contain";
+            return (
+              <>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/pactha-logo.png" alt="PACTHA" className={`marca-clara ${cls}`} />
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/pactha-logo-dark.png" alt="" aria-hidden="true" className={`marca-escura ${cls}`} />
+              </>
+            );
+          })()}
           {!recolhida && (
             /* `text-black/55` era preto CRAVADO: funcionava porque a caixa da
                marca tinha fundo branco cravado tambem. Trocado o fundo por

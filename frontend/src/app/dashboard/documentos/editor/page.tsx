@@ -163,7 +163,7 @@ function EditorInner() {
       <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-4" style={{ borderColor: "var(--bi-line)" }}>
         <div>
           <button type="button" onClick={voltar}
-                  className="mb-1.5 inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium transition-colors hover:brightness-95"
+                  className="mb-1.5 inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium transition-colors bi-hover"
                   style={ESTILO_SEC}>
             <ArrowLeft className="size-3" /> Voltar
           </button>

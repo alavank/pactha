@@ -27,7 +27,7 @@ export default function EstruturaSuasPage() {
           href={PAINEL_URL}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 text-[12px] font-semibold transition-colors hover:brightness-95"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 text-[12px] font-semibold transition-colors bi-hover"
           style={{ background: "var(--bi-surface)", border: "1px solid var(--bi-line)", color: "var(--bi-text)" }}
         >
           <ExternalLink className="size-4" />
