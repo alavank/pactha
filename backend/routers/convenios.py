@@ -155,7 +155,11 @@ async def list_convenios(
     vig_fim_ate: Optional[date] = Query(None, description="Fim de vigencia <= esta data"),
     search: Optional[str] = None,
     page: int = Query(1, ge=1),
-    per_page: int = Query(20, ge=1, le=100),
+    # Teto igual ao das Emendas Estaduais (le=2000). A tela do SIGCON agrupa
+    # por ano num cartao por exercicio, e com teto de 100 o cartao contava so
+    # o que cabia na pagina — "12 convenio(s) nesta pagina" ao lado de uma
+    # tela vizinha que mostra o ano inteiro. Sao dois menus colados.
+    per_page: int = Query(20, ge=1, le=2000),
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):

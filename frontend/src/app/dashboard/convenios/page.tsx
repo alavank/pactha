@@ -9,14 +9,29 @@ import { MultiSelect } from "@/components/ui/multi-select";
 import { PeriodoVigencia } from "@/components/ui/periodo-vigencia";
 import { atalhosAnos, intervaloVazio, resumoAnos, rotuloIntervalo, type Intervalo } from "@/lib/periodo";
 import { Bloco, BlocoHead, Campos, ItemLinha, Lista, Selo, situacaoTom } from "@/components/ui/superficies";
-import AnotacaoButton from "@/components/AnotacaoButton";
+import AnotacaoButton, { precarregarContagens } from "@/components/AnotacaoButton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import type { Convenio, ConvenioList } from "@/types";
 import ConvenioDetailModal from "./ConvenioDetailModal";
 
-const PER_PAGE = 20;
+/* CARREGA TUDO, e nao 20 por vez.
+ *
+ *  Esta tela e o SIGCON, vizinha de Emendas Estaduais no mesmo submenu — e
+ *  as duas passaram a ter o mesmo desenho de cartao por ano. Com paginacao de
+ *  servidor o cartao contava so o que cabia na pagina ("12 convenio(s) nesta
+ *  pagina") enquanto a vizinha mostrava o exercicio inteiro. Dois menus
+ *  colados com o mesmo desenho e contagens de significados diferentes.
+ *
+ *  O que impedia carregar tudo nao era a consulta — era o botao de anotacao de
+ *  cada linha, que buscava a contagem UMA A UMA num endpoint que devolve as
+ *  anotacoes COM OS ANEXOS em base64. Isso morreu:
+ *  `precarregarContagens` traz a lista inteira num GROUP BY so.
+ *
+ *  2000 e o mesmo teto das Emendas Estaduais. Nenhum municipio chega perto —
+ *  e se chegar, a paginacao continua no backend e volta com uma linha. */
+const PER_PAGE = 2000;
 
 // Mapeia secretarias estaduais MG e ministerios federais para sigla curta
 const SIGLAS: Record<string, string> = {
@@ -287,17 +302,20 @@ export default function ConveniosPage() {
 
   const items = useMemo(() => data?.items ?? [], [data]);
 
+  /* UMA requisição para a contagem de anotações da lista inteira. Sem isto,
+     cada linha dispara a sua — e no endpoint que carrega os anexos junto. */
+  useEffect(() => {
+    if (items.length) precarregarContagens("sigcon", items.map((c) => String(c.id)));
+  }, [items]);
+
   /** Agrupado por ano, do mais recente para o mais antigo.
    *
    *  Mesmo desenho das Emendas Estaduais e das Propostas do TransfereGov: cada
    *  ano é um cartão BRANCO com cabeçalho (ano, contagem, total à direita) e a
    *  lista de itens cinza dentro, sobre o fundo cinza da página.
    *
-   *  Diferença desta tela: a paginação é do SERVIDOR (20 por página, ordenados
-   *  por publicação), então o cartão agrupa o que veio NESTA página — por isso
-   *  o subtítulo diz "nesta página" quando há mais de uma. Carregar tudo para
-   *  agrupar, como as Emendas fazem, não serve aqui: cada item monta um
-   *  `AnotacaoButton`, que busca a contagem de anotações um a um. */
+   *  A tela carrega TUDO (ver `PER_PAGE`), então cada cartão é o exercício
+   *  inteiro — a contagem do cabeçalho é o total do ano, não o da página. */
   const porAno = useMemo(() => {
     const m = new Map<string, Convenio[]>();
     for (const c of items) {
@@ -514,7 +532,7 @@ export default function ConveniosPage() {
                   /* "nesta pagina" so quando ha mais de uma: a paginacao e do
                      servidor, entao a contagem e o total sao do recorte que
                      chegou, nao do ano inteiro. Numero sem escopo mente. */
-                  sub={`${doAno.length} convênio(s)${totalPages > 1 ? " nesta página" : ""}`}
+                  sub={`${doAno.length} convênio(s)`}
                   right={<span className="bi-num text-[13px]">{formatCurrency(totalAno)}</span>}
                   className={fechado ? "mb-0" : undefined}
                 />

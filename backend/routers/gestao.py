@@ -171,6 +171,37 @@ async def listar_item(
     return {"items": [_row_to_dict(r, with_anexos=True) for r in rows], "total": len(rows)}
 
 
+class ContagensIn(BaseModel):
+    fonte: str
+    refs: list[str]
+
+
+@router.post("/anotacoes/contagens")
+async def contagens(
+    body: ContagensIn,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Quantas anotacoes cada item tem — UMA consulta para a lista inteira.
+
+    Existe porque contar custava caro: o botaozinho de anotacao de cada linha
+    chamava `GET /anotacoes/item`, que devolve as anotacoes COM OS ANEXOS EM
+    BASE64. Numa tela de 20 linhas eram 20 requisicoes, cada uma podendo
+    carregar megabytes de arquivo — para exibir um numero.
+
+    Aqui e um GROUP BY, sem tocar na coluna `anexos`. Itens sem anotacao nao
+    voltam na resposta; quem chama trata ausencia como zero.
+    """
+    if not body.refs:
+        return {}
+    rows = (await db.execute(text("""
+        SELECT fonte_ref, COUNT(*) FROM gestao_anotacoes
+        WHERE fonte = :f AND fonte_ref = ANY(:refs)
+        GROUP BY fonte_ref
+    """), {"f": body.fonte, "refs": list(dict.fromkeys(body.refs))})).fetchall()
+    return {r[0]: r[1] for r in rows}
+
+
 @router.get("/anotacoes/{anot_id}")
 async def detalhe(
     anot_id: int,
