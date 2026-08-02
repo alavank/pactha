@@ -9,6 +9,10 @@ import {
   Banknote, HardHat, MessagesSquare,
 } from "lucide-react";
 import api from "@/lib/api";
+// Uma funcao de dinheiro no sistema inteiro. Havia CINCO copias, e a
+// desta tela ja tinha derivado: arredondava, e o mesmo valor aparecia
+// com e sem centavos no mesmo print.
+import { formatCurrency as moeda } from "@/lib/utils";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { atalhosAnos, resumoAnos } from "@/lib/periodo";
 import {
@@ -127,10 +131,6 @@ interface Obras {
   lotes?: ObraLote[];
 }
 
-function moeda(v?: number | null): string {
-  if (v === null || v === undefined) return "-";
-  return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-}
 
 interface Detalhe extends Proposta {
   detalhe?: Record<string, string | string[]>;

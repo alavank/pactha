@@ -151,10 +151,10 @@ interface ParlamentarDetalhe {
 
 type Tom = "neutro" | "ok" | "atencao" | "critico";
 
-function fmtMoney(v: number | null | undefined): string {
-  if (v == null) return "-";
-  return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-}
+/* Uma função de dinheiro no sistema inteiro. Havia CINCO cópias — e a do
+   SISMOB já tinha derivado: arredondava, e o mesmo valor aparecia com e sem
+   centavos no mesmo print. É assim que cinco cópias viram cinco regras. */
+import { formatCurrency as fmtMoney } from "@/lib/utils";
 
 function soma<T>(xs: T[], f: (x: T) => number): number {
   return xs.reduce((s, x) => s + (f(x) || 0), 0);

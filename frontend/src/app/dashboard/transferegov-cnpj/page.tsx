@@ -7,7 +7,6 @@ import {
 } from "lucide-react";
 import api from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
-import { formatCurrencyShort } from "@/lib/bi-format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MultiSelect } from "@/components/ui/multi-select";
@@ -297,7 +296,7 @@ export default function TransfereGovCnpjPage() {
             <Numero
               icon={Coins}
               rotulo="Valor em planos de ação"
-              valor={formatCurrencyShort(resumo.valEsp)}
+              valor={formatCurrency(resumo.valEsp)}
               sub={formatCurrency(resumo.valEsp)}
             />
             <Numero
@@ -309,7 +308,7 @@ export default function TransfereGovCnpjPage() {
             <Numero
               icon={Wallet}
               rotulo="Repasse (voluntárias)"
-              valor={formatCurrencyShort(resumo.valVol)}
+              valor={formatCurrency(resumo.valVol)}
               sub={`pago ${formatCurrency(resumo.pagoVol)}`}
             />
           </div>

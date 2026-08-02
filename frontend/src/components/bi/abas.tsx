@@ -694,14 +694,23 @@ function ListaExigencias({
           da linha em alerta virar um CARTAO, em vez de uma tarja que vai de
           margem a margem e termina em corte seco. Sem ele o realce encosta na
           borda do painel e parece vazamento. */}
-      <div className={`grid ${cols} items-end gap-x-2 border-b px-2 pb-1 text-[9px] uppercase tracking-wide`}
-        style={{ borderColor: "var(--bi-line-strong)", color: "var(--bi-faint)" }}>
+      {/* `border-x border-transparent` só para o cabeçalho alinhar com a
+          borda de 1px que cada linha ganhou. */}
+      <div className={`grid ${cols} items-end gap-x-2 border-x border-b border-x-transparent px-2 pb-1 text-[9px] uppercase tracking-wide`}
+        style={{ borderBottomColor: "var(--bi-line-strong)", color: "var(--bi-faint)" }}>
         {esfera === "cauc" && <span>Item</span>}
         <span>Item legal</span>
         <span>Situação</span>
         <span className="text-right">Validade</span>
       </div>
-      <div className="divide-y" style={{ borderColor: "var(--bi-line)" }}>
+      {/* VÃO PEQUENO em vez de divisória compartilhada.
+          Com `divide-y` a linha fica ENTRE as células e o fundo colorido da
+          linha em alerta passa por cima dela: quatro "A Comprovar" seguidos
+          viravam UM BLOCO vermelho só, e o arredondamento que eu tinha
+          acabado de pôr era invisível porque não havia espaço para ele
+          aparecer. Dois pixels bastam — a lista continua densa (são 28
+          exigências) e cada linha volta a ter contorno próprio. */}
+      <div className="flex flex-col gap-0.5">
         {itens.map((i) => {
           const pendente = i.tipo === "pendente";
           const na = i.tipo === "na";
@@ -717,12 +726,17 @@ function ListaExigencias({
           return (
             <div
               key={i.codigo}
-              className={`grid ${cols} items-start gap-x-2 rounded-lg px-2 py-[5px]`}
+              className={`grid ${cols} items-start gap-x-2 rounded-lg border px-2 py-[5px]`}
+              /* A MESMA bordinha do item de lista do sistema (`bi-card-flat`).
+                 A linha em alerta leva a borda no tom dela, senão o vermelho
+                 encostaria no vermelho de novo. */
               style={pendente
-                ? { background: "color-mix(in oklab, var(--bi-crit) 12%, transparent)" }
+                ? { background: "color-mix(in oklab, var(--bi-crit) 12%, transparent)",
+                    borderColor: "color-mix(in oklab, var(--bi-crit) 26%, transparent)" }
                 : vencido
-                ? { background: "color-mix(in oklab, var(--bi-warn) 12%, transparent)" }
-                : undefined}
+                ? { background: "color-mix(in oklab, var(--bi-warn) 12%, transparent)",
+                    borderColor: "color-mix(in oklab, var(--bi-warn) 26%, transparent)" }
+                : { borderColor: "var(--bi-line)" }}
             >
               {esfera === "cauc" && (
                 <span className="bi-num text-[10px] leading-[1.45]" style={{ color: "var(--bi-faint)" }}>
