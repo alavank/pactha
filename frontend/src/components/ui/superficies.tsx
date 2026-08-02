@@ -189,6 +189,7 @@ export function ItemLinha({
   meta,
   children,
   onClick,
+  expandido,
   acao,
   className = "",
 }: {
@@ -198,6 +199,9 @@ export function ItemLinha({
   /** Conteúdo extra abaixo da meta — tipicamente `<Campos>`. */
   children?: React.ReactNode;
   onClick?: () => void;
+  /** Quando o item ABRE algo: o leitor de tela anuncia "recolhido/expandido"
+   *  e a seta deixa de ser só um desenho. */
+  expandido?: boolean;
   /** Botão(ões) à direita, fora da área clicável. */
   acao?: React.ReactNode;
   className?: string;
@@ -225,7 +229,8 @@ export function ItemLinha({
     <li className={`bi-card-flat px-3 py-2.5 ${className}`}>
       <div className="flex items-start gap-2">
         {onClick ? (
-          <button type="button" onClick={onClick} className="min-w-0 flex-1 text-left">
+          <button type="button" onClick={onClick} className="min-w-0 flex-1 text-left"
+                  {...(expandido !== undefined ? { "aria-expanded": expandido } : {})}>
             {corpo}
           </button>
         ) : (
