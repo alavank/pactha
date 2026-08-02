@@ -138,7 +138,7 @@ const NAV_ITEMS: NavEntry[] = [
 
 const ADMIN_NAV_ITEMS = [
   { href: "/dashboard/usuarios", label: "Usuarios", icon: Users },
-  { href: "/dashboard/frescor", label: "Frescor dos Dados", icon: Activity },
+  { href: "/dashboard/frescor", label: "Status dos Dados", icon: Activity },
   { href: "/dashboard/service-tokens", label: "Service Tokens", icon: KeyRound },
 ];
 
