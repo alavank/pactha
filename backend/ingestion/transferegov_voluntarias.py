@@ -667,6 +667,28 @@ def _dt_now():
 
 
 async def _captura_historico_comunicacoes(page_auth, id_proposta: str) -> dict | None:
+    """Captura o Historico numa PAGINA FRESCA do mesmo contexto autenticado.
+
+    A page_auth compartilhada/longeva (reusada em navegacoes guest + Clausula do
+    discricionarias) NAO estabelecia a sessao mandatarias /private/ no batch e
+    todo _captura devolvia None em silencio (historico travava em 64/3160). Uma
+    pagina NOVA no mesmo contexto (mesmos cookies, identica a sonda validada ao
+    vivo: retorna eventos de forma confiavel) resolve. Fecha a pagina ao fim;
+    fallback = usa a propria page_auth. Ver [[freitas-paridade-piloto]]."""
+    try:
+        pg = await page_auth.context.new_page()
+    except Exception:
+        return await _captura_historico_impl(page_auth, id_proposta)
+    try:
+        return await _captura_historico_impl(pg, id_proposta)
+    finally:
+        try:
+            await pg.close()
+        except Exception:
+            pass
+
+
+async def _captura_historico_impl(page_auth, id_proposta: str) -> dict | None:
     """Histórico de Comunicações + Documentos do Quadro Resumo (tela "Documentos
     Orçamentários" / Projeto Básico do TransfereGov **mandatárias**).
 
