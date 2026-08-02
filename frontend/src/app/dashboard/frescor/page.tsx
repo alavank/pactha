@@ -58,7 +58,7 @@ export default function FrescorPage() {
     } catch (e: unknown) {
       setErro((e as { response?: { status?: number } })?.response?.status === 403
         ? "Apenas administradores acessam esta tela."
-        : "Erro ao carregar o frescor.");
+        : "Erro ao carregar o status dos dados.");
     } finally {
       setLoading(false);
     }
@@ -75,11 +75,19 @@ export default function FrescorPage() {
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-bold text-base-content">
             <Activity className="size-6" style={{ color: "var(--bi-accent-ink)" }} />
-            Frescor dos Dados
+            Status dos Dados
           </h1>
-          <p className="mt-1 text-sm text-base-content/60">
-            Última atualização de cada fonte (dado gravado + execução do coletor).
-            Fresco ≤ 2 dias · Atrasado ≤ 7 dias · Crítico &gt; 7 dias.
+          {/* A legenda explica as DUAS colunas em vez de listar os limiares de
+              dias. Os limiares já estão ditos onde importam — no selo colorido
+              de cada fonte. O que ninguém adivinha olhando é a diferença entre
+              as duas datas, e ela é justamente o ponto: o coletor pode ter
+              rodado hoje com sucesso e trazido dado do mês passado. */}
+          <p className="mt-1 text-sm" style={{ color: "var(--bi-muted)" }}>
+            <strong style={{ color: "var(--bi-text)" }}>Último dado</strong>: a data do
+            registro mais recente que temos dessa fonte.{" "}
+            <strong style={{ color: "var(--bi-text)" }}>Última coleta</strong>: quando o robô
+            rodou pela última vez. As duas podem divergir — uma coleta bem-sucedida hoje pode
+            trazer dado antigo, e é isso que o status considera.
           </p>
         </div>
         <Button variant="outline" onClick={carregar} disabled={loading}>
