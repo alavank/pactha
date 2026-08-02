@@ -37,11 +37,23 @@ log = logging.getLogger("govbr_renew")
 ENTRY = ("https://discricionarias.transferegov.sistema.gov.br/voluntarias/ForwardAction.do"
          "?modulo=Principal&path=/MostraPrincipalConsultarProposta.do")
 
+# Entrada do /private/ das mandatarias (projeto-basico). E um SP gov.br SEPARADO:
+# o SSO re-derivado nao o cobre, entao ele expira por INATIVIDADE se ninguem o
+# consulta. A captura da extensao estabelece a sessao dele; para NAO precisar de
+# re-captura, o keepalive abaixo navega esta pagina com frequencia (< timeout de
+# idle do JEE, ~20-30min) e re-salva os cookies -> mantem o /private/ vivo
+# "sempre consultando". Os cookies mandatarias entram no jar (filtro pega
+# 'transferegov'). Se ja tiver caido no login, navegar aqui NAO revive (login tem
+# reCAPTCHA) -> vira 'private_dead' e o monitor de frescor acusa.
+PRIVATE_ENTRY = ("https://mandatarias.transferegov.sistema.gov.br/"
+                 "projeto-basico/private/index.jsf")
+
 # Subdominios p/ repovoar JSESSIONIDs frescos + manter o SSO quente.
 SUBDOMINIOS = [
     ENTRY,
     "https://parcerias.transferegov.sistema.gov.br/ep-atos-prep-web/home",
     "https://cadastro.transferegov.sistema.gov.br/ep-cadastro-web/home",
+    PRIVATE_ENTRY,
 ]
 
 
@@ -188,5 +200,64 @@ async def renew() -> str:
         return "reconnected"
 
 
+async def keepalive() -> str:
+    """Keep-alive LEVE do /private/ (mandatarias), pensado p/ rodar a cada ~10min.
+
+    So navega o guest (mantem SSO quente) e o /private/ (reseta o idle do JEE),
+    re-salvando os cookies. NAO faz o round-trip pesado do renew(). Enquanto rodar
+    mais rapido que o timeout de inatividade do /private/, ele NUNCA cai -> sem
+    re-captura. Retorna 'alive' | 'private_dead' | 'no_session'.
+    """
+    cofre_id, cookies = _load_govbr()
+    if not cookies:
+        log.info("keepalive: sem sessao no Cofre")
+        return "no_session"
+    from playwright.async_api import async_playwright
+    async with async_playwright() as p:
+        br = await p.chromium.launch(headless=True,
+                                     args=["--ignore-certificate-errors", "--no-sandbox"])
+        ctx = await br.new_context(ignore_https_errors=True,
+                                   user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                                              "AppleWebKit/537.36 (KHTML, like Gecko) "
+                                              "Chrome/131.0.0.0 Safari/537.36")
+        try:
+            await ctx.add_cookies(_to_pw_cookies(cookies))
+        except Exception as e:
+            log.warning(f"keepalive add_cookies: {str(e)[:80]}")
+        page = await ctx.new_page()
+        # 1) guest: mantem o SSO/discricionarias quente (barato)
+        try:
+            await page.goto(ENTRY, timeout=45000, wait_until="domcontentloaded")
+            await page.wait_for_timeout(4000)
+        except Exception as e:
+            log.warning(f"keepalive guest: {str(e)[:80]}")
+        # 2) /private/: reseta o idle do JEE das mandatarias
+        private_ok = False
+        try:
+            await page.goto(PRIVATE_ENTRY, timeout=45000, wait_until="domcontentloaded")
+            await page.wait_for_timeout(4000)
+            u = (page.url or "").lower()
+            private_ok = "idp/" not in u and "sso.acesso" not in u
+        except Exception as e:
+            log.warning(f"keepalive private: {str(e)[:80]}")
+        fresh = await ctx.cookies()
+        relevant = [c for c in fresh if any(d in (c.get("domain") or "")
+                    for d in ("transferegov", "sso.acesso.gov.br", "gov.br"))]
+        await br.close()
+    if not relevant:
+        return "private_dead"
+    try:
+        _save_cookies(cofre_id, relevant)
+    except Exception as e:
+        log.error(f"keepalive save: {str(e)[:100]}")
+    if private_ok:
+        log.info(f"keepalive OK — /private/ vivo, {len(relevant)} cookies re-salvos")
+        return "alive"
+    log.warning("keepalive — /private/ CAIU (idp/login). Precisa re-captura pela extensao.")
+    return "private_dead"
+
+
 if __name__ == "__main__":
-    print(asyncio.run(renew()))
+    import sys
+    modo = sys.argv[1] if len(sys.argv) > 1 else "renew"
+    print(asyncio.run(keepalive() if modo == "keepalive" else renew()))
