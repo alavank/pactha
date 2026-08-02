@@ -1323,14 +1323,14 @@ def _upsert(mun_id: int, propostas: list[dict]):
                  historico_comunicacoes, documentos_quadro_resumo, historico_atualizado_em,
                  ops_obs, obras,
                  detalhe, raw_data, updated_at)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s::jsonb,%s::jsonb,%s,%s::jsonb,%s::jsonb,%s::jsonb,%s::jsonb,NOW())
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s::jsonb,%s::jsonb,%s,%s::jsonb,%s::jsonb,%s::jsonb,%s::jsonb,NOW())
             ON CONFLICT (municipio_id, numero_proposta) DO UPDATE SET
                 situacao=EXCLUDED.situacao, orgao=EXCLUDED.orgao,
                 proponente=EXCLUDED.proponente, possui_parecer=EXCLUDED.possui_parecer,
                 identificacao=EXCLUDED.identificacao,
                 codigo_instrumento=EXCLUDED.codigo_instrumento, modalidade=EXCLUDED.modalidade,
                 situacao_siafi=EXCLUDED.situacao_siafi, numero_processo=EXCLUDED.numero_processo,
-                objeto=CASE WHEN EXCLUDED.objeto LIKE '%'||chr(65533)||'%'
+                objeto=CASE WHEN position(chr(65533) in coalesce(EXCLUDED.objeto,'')) > 0
                             THEN transferegov_propostas.objeto ELSE EXCLUDED.objeto END,
                 programa=EXCLUDED.programa,
                 dt_inicio_vigencia=EXCLUDED.dt_inicio_vigencia, dt_fim_vigencia=EXCLUDED.dt_fim_vigencia,
