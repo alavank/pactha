@@ -546,6 +546,13 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
                     if _hc:
                         prop["historico_comunicacoes"] = _hc.get("historico") or []
                         prop["documentos_quadro_resumo"] = _hc.get("documentos") or []
+                    if _hc is not None:
+                        # Sessao viva e pagina /private/ consultada, MESMO sem eventos:
+                        # marca como checada p/ sair do backlog e nao re-consumir o
+                        # orcamento toda rodada (senao as propostas vazias represam os
+                        # slots e o historico nunca converge). _hc None = sessao
+                        # morta/erro de navegacao -> continua pendente p/ nova tentativa.
+                        prop["_historico_checado"] = True
                 except Exception as e:
                     logger.warning(f"    historico {prop['numero_proposta']}: {str(e)[:80]}")
             if det.get("_parlamentar") or prop["detalhe"].get("_situacao_detalhe"):
@@ -668,7 +675,9 @@ async def _captura_historico_comunicacoes(page_auth, id_proposta: str) -> dict |
     e os Termos de Notificação enviados.
 
     EXIGE sessão gov.br: a área e /private/ (guest cai no login). Retorna
-    {'historico': [...], 'documentos': [...]} ou None se sem sessão/sem dados."""
+    {'historico': [...], 'documentos': [...]} com eventos, {} se a página abriu
+    autenticada porém SEM eventos (checada), ou None se a sessão caiu no login /
+    a navegação falhou (não checada -> continua pendente p/ nova tentativa)."""
     url = ("https://mandatarias.transferegov.sistema.gov.br/projeto-basico/private/"
            f"index.jsf?idProposta={id_proposta}")
     if not await _goto_with_retry(page_auth, url, timeout=45000):
@@ -736,7 +745,7 @@ async def _captura_historico_comunicacoes(page_auth, id_proposta: str) -> dict |
     if not data:
         return None
     if not (data.get("historico") or data.get("documentos")):
-        return None
+        return {}  # pagina viva e consultada, porem SEM eventos -> checada (nao None)
     return data
 
 
@@ -1338,7 +1347,8 @@ def _upsert(mun_id: int, propostas: list[dict]):
                if p.get("historico_comunicacoes") else None),
               (json.dumps(p["documentos_quadro_resumo"], ensure_ascii=False)
                if p.get("documentos_quadro_resumo") else None),
-              (_dt_now() if (p.get("historico_comunicacoes") or p.get("documentos_quadro_resumo")) else None),
+              (_dt_now() if (p.get("historico_comunicacoes") or p.get("documentos_quadro_resumo")
+                             or p.get("_historico_checado")) else None),
               (json.dumps(p["ops_obs"], ensure_ascii=False) if p.get("ops_obs") else None),
               (json.dumps(p["obras"], ensure_ascii=False) if p.get("obras") else None),
               (json.dumps(det, ensure_ascii=False) if det else None), json.dumps(p, ensure_ascii=False)))
