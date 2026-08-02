@@ -793,6 +793,25 @@ async def delete_control_user(
         if has:
             await db.execute(text(f"UPDATE {table} SET {col} = NULL WHERE {col} = :u"), {"u": uid})
 
+    async def _del_rows(table: str, col: str):
+        # Para FK sem ON DELETE em coluna que NAO aceita NULL (ou cujo conteudo e
+        # descartavel): a linha inteira sai. Mesma checagem de existencia do
+        # `_null_fk`, pelo mesmo motivo — tenants com migration parcial.
+        has = (await db.execute(text(
+            "SELECT 1 FROM information_schema.columns WHERE table_schema='public' "
+            "AND table_name=:t AND column_name=:c"), {"t": table, "c": col})).first()
+        if has:
+            await db.execute(text(f"DELETE FROM {table} WHERE {col} = :u"), {"u": uid})
+
+    # FKs sem ON DELETE cuja linha nao sobrevive sem o usuario.
+    #
+    # As duas chegaram em `add_painel_push.sql`, DEPOIS desta rotina, e ninguem
+    # veio somar aqui — entao excluir usuario que ja abriu o Painel devolvia 409
+    # "referencias pendentes" e nao havia como remover a conta pelo produto.
+    # `painel_preferencias.user_id` e PRIMARY KEY: nao da para zerar, so apagar.
+    await _del_rows("painel_preferencias", "user_id")        # preferencia de alerta
+    await _del_rows("painel_push_subscriptions", "user_id")  # inscricao de web-push
+
     # FKs sem ON DELETE (bloqueariam o delete) — zera preservando as linhas:
     await _null_fk("audit_log", "user_id")            # trilha permanece (user_email fica)
     await _null_fk("cofre_senhas", "atualizado_por_id")

@@ -65,9 +65,14 @@ npm install --legacy-peer-deps
 npm run dev
 ```
 
-### Login padrao
-- Admin: `admin@pactha.com.br` / `pactha2026`
-- Equipe: `lara@freitas.com.br` / `freitas2026`
+### Primeiro acesso (banco NOVO)
+- `super-admin@pactha.com.br` — a conta de bootstrap, semeada por `setup_db.py`
+  em tenant novo (so quando `users` esta vazia).
+- **A senha nao esta escrita em lugar nenhum**: e gerada aleatoria por tenant e
+  IMPRESSA NO CONSOLE do primeiro boot (`_gen_password`), ou definida via
+  `ADMIN_PASSWORD`. `must_change_password` e TRUE, entao o primeiro login troca.
+- Senha padrao publicada em README e senha padrao em producao — as duas versoes
+  anteriores desta secao traziam uma.
 
 (validos no seed de um banco novo; em producao as senhas ja foram trocadas)
 

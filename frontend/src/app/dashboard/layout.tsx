@@ -148,9 +148,13 @@ const ADMIN_NAV_ITEMS = [
 // plataforma pela Alavank. Fica como lista porque uma conta so era um ponto
 // unico de falha — perdido o acesso a ela, ninguem alcanca Sessoes e Tokens de
 // Servico. Um e-mail por conta, minusculo (a comparacao normaliza).
+// ⚠️ Tem de bater EXATAMENTE com `backend/services/auth.py::SUPER_ADMIN_EMAILS`.
+// Esta lista so esconde item de menu; quem barra de verdade e a do backend.
+// Divergir esconde a tela de quem tem acesso, ou mostra um link que da 403.
 const SUPER_ADMIN_EMAILS = new Set<string>([
-  "admin@pactha.com.br",
+  "super-admin@pactha.com.br",
   "alavank.tecnologia@gmail.com",
+  "matheus@alavank.com.br",
 ]);
 const SUPER_ADMIN_ONLY = new Set<string>(["/dashboard/sessoes", "/dashboard/service-tokens"]);
 

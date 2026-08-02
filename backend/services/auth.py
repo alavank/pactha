@@ -43,9 +43,24 @@ READONLY_ROLES = {"prefeito", "viewer"}
 #
 # E lista, e nao um e-mail unico, para nao haver ponto unico de falha: perdida a
 # conta, ninguem consegue reseta-la nem alcancar aquelas telas.
+# Duas contas NOMINAIS + a de BOOTSTRAP.
+#
+# `admin@pactha.com.br` saiu em 02/08/2026. O nome dizia "mais um admin" quando
+# era a chave da plataforma, e por estar aqui qualquer admin do cliente que
+# recriasse aquele e-mail na tela de Usuarios ganhava super poder — o e-mail era
+# adivinhavel justamente por ser generico.
+#
+# `super-admin@pactha.com.br` e semeado por `setup_db.py` em TODO tenant novo e
+# existe para um cliente recem-criado nao nascer sem acesso a Sessoes e Service
+# Tokens, antes de as contas nominais existirem la. Senha aleatoria por tenant e
+# troca obrigatoria no primeiro acesso.
+#
+# ⚠️ `setup_db.py::seed_data` REPETE estas tres para semear o tenant novo (roda
+# fora do app, nao da para importar daqui). Mexeu aqui, mexa la.
 SUPER_ADMIN_EMAILS = {
-    "admin@pactha.com.br",
+    "super-admin@pactha.com.br",
     "alavank.tecnologia@gmail.com",
+    "matheus@alavank.com.br",
 }
 
 

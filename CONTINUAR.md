@@ -41,7 +41,7 @@
 
 Monte Sião tem também o **Painel Executivo**: https://pactha-montesiao-mg-painel-54-232-208-118.sslip.io
 
-Os três bancos já estão **populados com dados reais** (a migração vinda do Neon foi concluída — não é mais schema+seed). Login seed só vale em banco novo: `admin@pactha.com.br` / `pactha2026` (pede troca de senha no 1º acesso).
+Os três bancos já estão **populados com dados reais** (a migração vinda do Neon foi concluída — não é mais schema+seed). Login seed só vale em banco novo: `super-admin@pactha.com.br`, com senha ALEATÓRIA por tenant impressa no console do primeiro boot (ou via `ADMIN_PASSWORD`) — pede troca no 1º acesso.
 
 **Um push na `main` NÃO mexe com cliente nenhum.** As 9 aplicações rodam com `build_pack = dockerimage`: elas executam a tag gravada em `docker_registry_image_tag`, e quem constrói é o GitHub Actions publicando no GHCR. Enquanto ninguém repontar a tag de um app específico, o cliente fica na versão dele. **Cuidado com a leitura antiga:** `is_auto_deploy_enabled` está `true` nas 9 — não é ele que segura o deploy, é o `build_pack`. Detalhe e prova empírica em [`INFRA.md`](INFRA.md) §2.
 
@@ -131,6 +131,17 @@ cadastrada desde 2026-07-30. **O CAGEC não precisa de credencial** — consulta
 `is_auto_deploy_enabled = true` nas 9 aplicações — mas **isso não importa**, porque todas usam `build_pack = dockerimage` e não constroem a partir do git. O deploy é sempre um ato explícito: repontar `docker_registry_image_tag` e chamar `/deploy`. Ver [`INFRA.md`](INFRA.md) §2.
 
 ---
+
+## 6.5. ABRIR CLIENTE NOVO
+
+**Se o pedido for "cria um cliente novo" / "replica a instância para X": leia
+`PROVISIONAR_CLIENTE.md` e FAÇA AS PERGUNTAS DE LÁ ANTES de tocar em qualquer
+coisa.** Tipo de cliente (cidade / assessoria / consórcio), nome, UF, IBGE de 7
+dígitos e quais credenciais já existem.
+
+Monte Sião é base de **desenho**, não de dados: nenhum dado dele vai para o tenant
+novo. O cliente novo nasce com as três contas de super admin e o município que
+vier em `MUNICIPIO_NOME` / `MUNICIPIO_IBGE` / `MUNICIPIO_UF` — mais nada.
 
 ## 7. OPERAÇÕES COMUNS (Coolify API v1)
 
