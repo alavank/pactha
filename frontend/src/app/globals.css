@@ -339,39 +339,55 @@
   .font-mono { font-variant-numeric: tabular-nums; }
 }
 
-/* A grade de campos do `Campos` (ui/superficies).
-   Existe como CLASSE e não como `gridTemplateColumns` inline porque estilo
-   inline não aceita media query — e sem breakpoint quatro colunas valiam em
-   qualquer largura. No celular isso dava colunas de ~65px, estreitas o
-   bastante para truncar o próprio RÓTULO: "VALOR DE CUSTEIO" e "VALOR DE
-   INVESTIMENTO" saíam cortados no mesmo prefixo, indistinguíveis.
-   As grades que estas peças substituíram colapsavam para uma coluna abaixo de
-   768px; esta colapsa para duas, que é o mesmo gesto com mais densidade. */
-.bi-campos {
-  display: grid;
-  grid-template-columns: repeat(var(--campos-sm, 2), minmax(0, 1fr));
+@layer components {
+  /* A grade de campos do `Campos` (ui/superficies).
+     Existe como CLASSE e não como `gridTemplateColumns` inline porque estilo
+     inline não aceita media query — e sem breakpoint quatro colunas valiam em
+     qualquer largura. No celular isso dava colunas de ~65px, estreitas o
+     bastante para truncar o próprio RÓTULO: "VALOR DE CUSTEIO" e "VALOR DE
+     INVESTIMENTO" saíam cortados no mesmo prefixo, indistinguíveis.
+     As grades que estas peças substituíram colapsavam para uma coluna abaixo de
+     768px; esta colapsa para duas, que é o mesmo gesto com mais densidade. */
+  .bi-campos {
+    display: grid;
+    grid-template-columns: repeat(var(--campos-sm, 2), minmax(0, 1fr));
+  }
+  @media (min-width: 640px) {
+    .bi-campos { grid-template-columns: repeat(var(--campos-md, 3), minmax(0, 1fr)); }
+  }
+  @media (min-width: 768px) {
+    .bi-campos { grid-template-columns: repeat(var(--campos-lg, 4), minmax(0, 1fr)); }
+  }
 }
+/* O `span` de um campo largo tem que ser clampado contra a contagem DAQUELA
+   faixa, não contra a de desktop. Escrito em JS contra o número fixo, um
+   `span: 3` numa grade que a 390px tem 2 colunas fazia o CSS Grid criar uma
+   coluna IMPLÍCITA — medido, a grade passava a computar três colunas
+   DESIGUAIS, que é exatamente a falha que estas peças existem para evitar.
+   O `min()` do CSS resolve por faixa sozinho. */
+.bi-campos > [data-span] { grid-column: span min(var(--span, 1), var(--campos-sm, 2)); }
 @media (min-width: 640px) {
-  .bi-campos { grid-template-columns: repeat(var(--campos-md, 3), minmax(0, 1fr)); }
+  .bi-campos > [data-span] { grid-column: span min(var(--span, 1), var(--campos-md, 3)); }
 }
 @media (min-width: 768px) {
-  .bi-campos { grid-template-columns: repeat(var(--campos-lg, 4), minmax(0, 1fr)); }
+  .bi-campos > [data-span] { grid-column: span min(var(--span, 1), var(--campos-lg, 4)); }
 }
 
-/* Faixa de identidade, 3px no topo do menu — aparece em TODA tela do sistema.
-   Era `linear-gradient(90deg, #5d5fef, #8486f4, #ae8ff7)`: o resquício mais
-   literal da marca antiga, e o mais visível, num sistema que passou a ser
-   verde-e-preto. O comentário ainda dizia "cores do governo", o que nunca foi
-   verdade — era a escala violeta do design "Base".
-   Agora é o acento, sólido. Sem gradiente: esta identidade não tem nenhum, e é
-   o único lugar do produto onde o menta aparece em força total — que é
-   exatamente como o Painel usa o acento, com parcimônia, como assinatura. */
-.gov-stripe {
-  background: var(--bi-accent);
-  height: 3px;
-  width: 100%;
+@layer components {
+  /* Faixa de identidade, 3px no topo do menu — aparece em TODA tela do sistema.
+     Era `linear-gradient(90deg, #5d5fef, #8486f4, #ae8ff7)`: o resquício mais
+     literal da marca antiga, e o mais visível, num sistema que passou a ser
+     verde-e-preto. O comentário ainda dizia "cores do governo", o que nunca foi
+     verdade — era a escala violeta do design "Base".
+     Agora é o acento, sólido. Sem gradiente: esta identidade não tem nenhum, e é
+     o único lugar do produto onde o menta aparece em força total — que é
+     exatamente como o Painel usa o acento, com parcimônia, como assinatura. */
+  .gov-stripe {
+    background: var(--bi-accent);
+    height: 3px;
+    width: 100%;
+  }
 }
-
 /* ==========================================================================
    IDENTIDADE VISUAL DO PACTHA — tokens `--bi-*`
    --------------------------------------------------------------------------
@@ -615,81 +631,90 @@ html,
   .bi-insight-enter, .bi-pane-enter { animation: none; }
 }
 
-/* A bolha de quem PERGUNTA, na tela da IA.
-   Era `bg-primary`: preenchida com a cor da marca. Passa a ser a CTA quase
-   preta — continua sendo o elemento mais forte da conversa, que é o que
-   distingue quem falou, sem gastar o acento. E nesta tela o acento precisa
-   sobrar: ele é o cursor que pisca enquanto o modelo escreve, o único ponto
-   da tela que informa "ainda está vindo". */
-.bi-bolha-eu {
-  background: var(--bi-cta);
-  color: var(--bi-cta-ink);
+@layer components {
+  /* A bolha de quem PERGUNTA, na tela da IA.
+     Era `bg-primary`: preenchida com a cor da marca. Passa a ser a CTA quase
+     preta — continua sendo o elemento mais forte da conversa, que é o que
+     distingue quem falou, sem gastar o acento. E nesta tela o acento precisa
+     sobrar: ele é o cursor que pisca enquanto o modelo escreve, o único ponto
+     da tela que informa "ainda está vindo". */
+  .bi-bolha-eu {
+    background: var(--bi-cta);
+    color: var(--bi-cta-ink);
+  }
 }
-
-/* A conversa aberta, na lista lateral. Era uma régua azul de 2px à esquerda;
-   vira superfície — mesmo gesto que o menu lateral usa para o item ativo. */
-.bi-conversa-ativa {
-  background: var(--bi-surface-2);
-  box-shadow: inset 2px 0 0 var(--bi-accent);
+@layer components {
+  /* A conversa aberta, na lista lateral. Era uma régua azul de 2px à esquerda;
+     vira superfície — mesmo gesto que o menu lateral usa para o item ativo. */
+  .bi-conversa-ativa {
+    background: var(--bi-surface-2);
+    box-shadow: inset 2px 0 0 var(--bi-accent);
+  }
 }
+@layer components {
+  /* A aparência de CAMPO — input, select e textarea, um desenho só.
+     Existia em três formas ao mesmo tempo: o `<Input>` do daisyUI com
+     `bg-base-200` (que aponta para o fundo da PÁGINA, e por isso sumia dentro de
+     um modal, cujo corpo é a mesma cor), e dois controles montados à mão num
+     formulário migrado, brancos com borda. Os três apareciam lado a lado no mesmo
+     formulário.
+     Preenchimento levemente distinto da superfície + fio de divisória: lê como
+     campo sobre cartão branco E sobre o fundo cinza do modal. */
+  .bi-field {
+    background: var(--bi-surface-2);
+    /* `--bi-line` dava 1,20:1 de limite contra o cartão, e a SC 1.4.11 pede 3
+       para o contorno de um componente. A linha forte resolve os dois temas. */
+    border: 1px solid var(--bi-line-strong);
+    color: var(--bi-text);
+    border-radius: 0.7rem;
+    transition: border-color .12s, box-shadow .12s;
+  }
+  .bi-field::placeholder { color: var(--bi-faint); }
+  .bi-field:focus,
+  .bi-field:focus-visible {
+    outline: none;
+    border-color: var(--bi-accent-ink);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--bi-accent) 22%, transparent);
+  }
+  .bi-field:disabled { opacity: .5; cursor: not-allowed; }
 
-/* A aparência de CAMPO — input, select e textarea, um desenho só.
-   Existia em três formas ao mesmo tempo: o `<Input>` do daisyUI com
-   `bg-base-200` (que aponta para o fundo da PÁGINA, e por isso sumia dentro de
-   um modal, cujo corpo é a mesma cor), e dois controles montados à mão num
-   formulário migrado, brancos com borda. Os três apareciam lado a lado no mesmo
-   formulário.
-   Preenchimento levemente distinto da superfície + fio de divisória: lê como
-   campo sobre cartão branco E sobre o fundo cinza do modal. */
-.bi-field {
-  background: var(--bi-surface-2);
-  border: 1px solid var(--bi-line);
-  color: var(--bi-text);
-  border-radius: 0.7rem;
-  transition: border-color .12s, box-shadow .12s;
+  @layer components {
+  /* O HOVER, uma vez só.
+       Era `hover:brightness-95` em 15 lugares. `brightness()` é MULTIPLICATIVO:
+       escurecer 5% de branco dá 4,4 de ΔL* (bem visível) e escurecer 5% de
+       quase-preto dá 0,5 — abaixo do limiar de percepção. No tema escuro o hover
+       simplesmente não existia. E `transition-colors`, que estava junto, nem anima
+       `filter`: mesmo no claro era um salto seco.
+
+       Duas armadilhas que este trecho evita de propósito:
+       · NÃO é `hover:bi-hover`. `hover:` é variante do Tailwind e não se aplica a
+         classe própria — a classe não seria gerada e o hover sumiria em silêncio.
+       · NÃO mexe em `background`. As peças passam o fundo em `style` inline
+         (`ESTILO_SEC`), e estilo inline vence regra de folha. Uma camada por dentro
+         compõe sobre o fundo, seja ele qual for.
+
+       Usa `--bi-text`, que INVERTE com o tema: quase preto no claro (escurece) e
+       quase branco no escuro (clareia). Um valor, os dois temas. */
+    .bi-hover { transition: box-shadow .12s ease; }
+    .bi-hover:hover {
+      box-shadow: inset 0 0 0 999px color-mix(in oklab, var(--bi-text) 7%, transparent);
+    }
+  }
+  .bi-hover:active {
+    box-shadow: inset 0 0 0 999px color-mix(in oklab, var(--bi-text) 12%, transparent);
+  }
 }
-.bi-field::placeholder { color: var(--bi-faint); }
-.bi-field:focus,
-.bi-field:focus-visible {
-  outline: none;
-  border-color: var(--bi-accent-ink);
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--bi-accent) 22%, transparent);
-}
-.bi-field:disabled { opacity: .5; cursor: not-allowed; }
-
-/* O HOVER, uma vez só.
-   Era `hover:brightness-95` em 15 lugares. `brightness()` é MULTIPLICATIVO:
-   escurecer 5% de branco dá 4,4 de ΔL* (bem visível) e escurecer 5% de
-   quase-preto dá 0,5 — abaixo do limiar de percepção. No tema escuro o hover
-   simplesmente não existia. E `transition-colors`, que estava junto, nem anima
-   `filter`: mesmo no claro era um salto seco.
-
-   Duas armadilhas que este trecho evita de propósito:
-   · NÃO é `hover:bi-hover`. `hover:` é variante do Tailwind e não se aplica a
-     classe própria — a classe não seria gerada e o hover sumiria em silêncio.
-   · NÃO mexe em `background`. As peças passam o fundo em `style` inline
-     (`ESTILO_SEC`), e estilo inline vence regra de folha. Uma camada por dentro
-     compõe sobre o fundo, seja ele qual for.
-
-   Usa `--bi-text`, que INVERTE com o tema: quase preto no claro (escurece) e
-   quase branco no escuro (clareia). Um valor, os dois temas. */
-.bi-hover { transition: box-shadow .12s ease; }
-.bi-hover:hover {
-  box-shadow: inset 0 0 0 999px color-mix(in oklab, var(--bi-text) 7%, transparent);
-}
-.bi-hover:active {
-  box-shadow: inset 0 0 0 999px color-mix(in oklab, var(--bi-text) 12%, transparent);
-}
-
-/* IDENTIFICADOR — nº SIAFI, nº processo, CNPJ, nº de ordem bancária.
-   `font-mono` NÃO serve aqui: neste projeto `--font-mono` aponta para Nunito
-   (escolha deliberada, porque Nunito com `tabular-nums` lê melhor VALOR do que
-   uma monoespaçada). Só que identificador não é valor: o que permite comparar
-   "48291-7" com "48219-7" é toda letra ter a mesma largura, não só o dígito.
-   A prop `mono` do `Campo` e o `tom="id"` do `GradeCel` prometiam isto e
-   entregavam Nunito. */
-.bi-id {
-  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.01em;
+@layer components {
+  /* IDENTIFICADOR — nº SIAFI, nº processo, CNPJ, nº de ordem bancária.
+     `font-mono` NÃO serve aqui: neste projeto `--font-mono` aponta para Nunito
+     (escolha deliberada, porque Nunito com `tabular-nums` lê melhor VALOR do que
+     uma monoespaçada). Só que identificador não é valor: o que permite comparar
+     "48291-7" com "48219-7" é toda letra ter a mesma largura, não só o dígito.
+     A prop `mono` do `Campo` e o `tom="id"` do `GradeCel` prometiam isto e
+     entregavam Nunito. */
+  .bi-id {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
 }

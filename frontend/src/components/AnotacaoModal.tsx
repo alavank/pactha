@@ -90,6 +90,12 @@ export default function AnotacaoModal({
       .then((r) => setStatusOpcoes(r.data.opcoes)).catch(() => {});
   }, [open, statusOpcoes.length]);
 
+  /* Há algo digitado que se perderia ao fechar. Anexo conta: subir um arquivo
+     e fechar sem salvar é o descarte mais caro deste formulário. */
+  const sujo =
+    formOpen &&
+    !!(statusInt || statusCustom.trim() || protocolo.trim() || dataProt || obs.trim() || anexos.length);
+
   const resetForm = () => {
     setStatusInt(""); setStatusCustom(""); setProtocolo("");
     setDataProt(""); setObs(""); setAnexos([]); setEditing(null); setErr(null);
@@ -191,7 +197,17 @@ export default function AnotacaoModal({
   };
 
   return (
-    <Modal aberto={open} onFechar={onClose} maxW="max-w-3xl" esc={!formOpen}>
+    <Modal
+      aberto={open}
+      onFechar={onClose}
+      maxW="max-w-3xl"
+      /* Vale nas TRÊS saídas (Esc, clique fora e o X). O gatilho é ter algo a
+         PERDER, não ter o formulário aberto: abrir o formulário por engano e
+         não conseguir mais sair com Esc era o efeito da primeira tentativa. */
+      podeFechar={() =>
+        !sujo || confirm("Descartar esta anotação? O que você digitou será perdido.")
+      }
+    >
       <ModalHead
         titulo="Gestão Interna"
         sub={numeroReferencia ? `Sobre ${numeroReferencia}` : "Anotações da equipe, à parte do dado oficial"}

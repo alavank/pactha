@@ -315,9 +315,13 @@ export function Campos({ campos, cols }: { campos: Campo[]; cols?: number }) {
         /* O `title` deixa de ser opcional na prática: a célula trunca por
            desenho, e valor cortado sem tooltip é dado APAGADO. Quem não passa
            `title` ganha um derivado do próprio valor. */
+        /* So onde a celula PODE truncar. Derivar em toda celula fazia o
+           navegador abrir tooltip repetindo o que ja esta na tela — barulho
+           que nao existia antes desta peca. Onde o valor quebra linha
+           (`quebra` ou `span`), nada e cortado e nao ha o que recuperar. */
         const dica =
           c.title ??
-          (typeof c.valor === "string" || typeof c.valor === "number"
+          (!largo && !c.quebra && (typeof c.valor === "string" || typeof c.valor === "number")
             ? `${c.rotulo}: ${c.valor}`
             : undefined);
         return (
@@ -325,7 +329,14 @@ export function Campos({ campos, cols }: { campos: Campo[]; cols?: number }) {
           key={i}
           className="min-w-0"
           title={dica}
-          style={largo ? { gridColumn: `span ${Math.min(c.span!, n)}` } : undefined}
+          /* O clamp precisa ser RESPONSIVO. Escrito em style inline contra
+             `n` (a contagem de desktop), um `span: 3` numa grade que a 390px
+             tem 2 colunas fazia o CSS Grid criar uma coluna IMPLICITA: medido,
+             a grade computava tres colunas DESIGUAIS. Passa a variavel e deixa
+             o `min()` do CSS resolver por faixa (ver `.bi-campos > [data-span]`
+             em globals.css). */
+          {...(largo ? { "data-span": "" } : {})}
+          style={largo ? ({ ["--span" as string]: c.span } as React.CSSProperties) : undefined}
         >
           <div
             className="truncate text-[9px] uppercase tracking-wide"
@@ -491,6 +502,7 @@ export function Modal({
   superficie = false,
   rotulo,
   esc = true,
+  podeFechar,
   children,
 }: {
   aberto: boolean;
@@ -514,10 +526,16 @@ export function Modal({
    *  passou a anunciar só "diálogo". Como o título visível quase sempre serve,
    *  o padrão é herdá-lo do `ModalHead`; `rotulo` é para quando não serve. */
   rotulo?: string;
-  /** Esc fecha. Desligue quando houver formulário sujo: fechar com Esc
-   *  descartando o que a pessoa digitou, sem perguntar, é perda de trabalho —
-   *  e é um comportamento que não existia antes desta peça. */
+  /** Esc fecha. */
   esc?: boolean;
+  /** Consultado nas TRÊS saídas — Esc, clique no véu e o X do `ModalHead`.
+   *
+   *  A primeira tentativa disto foi `esc={false}` quando havia formulário
+   *  aberto, e resolvia um terço do problema: o clique fora e o X continuavam
+   *  descartando o que a pessoa digitou, sem perguntar. E o gatilho era o
+   *  errado — bastava ABRIR o formulário para o Esc parar de funcionar, mesmo
+   *  vazio. Aqui quem decide é o chamador, que sabe se há algo a perder. */
+  podeFechar?: () => boolean;
   children: React.ReactNode;
 }) {
   const idTitulo = React.useId();
@@ -531,8 +549,19 @@ export function Modal({
      chamava `caixa.current.focus()` no corpo, o foco saía do campo. O
      formulário de criar Service Token aceitava UM CARACTERE POR CLIQUE. */
   const fecharRef = React.useRef(onFechar);
-  fecharRef.current = onFechar;
-  const fechar = React.useCallback(() => fecharRef.current(), []);
+  const podeRef = React.useRef(podeFechar);
+  /* Atualizados em EFEITO e não no corpo: escrever em ref durante o render
+     quebra com renderização concorrente (o React pode descartar um render pela
+     metade) — e o lint acusa. Sem deps: roda depois de todo render, que é
+     exatamente o que a ideia de "sempre o mais recente" pede. */
+  React.useEffect(() => {
+    fecharRef.current = onFechar;
+    podeRef.current = podeFechar;
+  });
+  const fechar = React.useCallback(() => {
+    if (podeRef.current && !podeRef.current()) return;
+    fecharRef.current();
+  }, []);
 
   /* Foco e trava de rolagem: dependem SÓ de estar aberto. */
   React.useEffect(() => {
@@ -596,6 +625,7 @@ export function Modal({
   }, [aberto, esc, fechar]);
 
   if (!aberto) return null;
+  const ctx = { id: idTitulo, fechar };
   const conteudo = (
     <div
       className={`fixed inset-0 grid place-items-center bg-black/50 p-4 ${nivel === 2 ? "z-[60]" : "z-50"}`}
@@ -617,7 +647,7 @@ export function Modal({
           borderRadius: "var(--bi-radius)",
         }}
       >
-        <CtxModal.Provider value={idTitulo}>{children}</CtxModal.Provider>
+        <CtxModal.Provider value={ctx}>{children}</CtxModal.Provider>
       </div>
     </div>
   );
@@ -631,7 +661,7 @@ export function Modal({
 
 /** O id do título, para o `ModalHead` etiquetar o diálogo sem o chamador
  *  precisar passar nada. */
-const CtxModal = React.createContext<string | undefined>(undefined);
+const CtxModal = React.createContext<{ id: string; fechar: () => void } | undefined>(undefined);
 
 /** Cabeçalho fixo da caixa. Fica em `--bi-surface` mesmo quando o corpo é
  *  `--bi-bg`: é o que separa "o que este modal é" do que se rola. */
@@ -651,11 +681,15 @@ export function ModalHead({
    *  é onde a barra de abas mora. */
   abaixo?: React.ReactNode;
 }) {
+  /* O X usa o fechador GUARDADO do `Modal` quando existe: senão ele seria a
+     única das três saídas a escapar da confirmação de descarte. */
+  const ctx = React.useContext(CtxModal);
+  const fechar = ctx?.fechar ?? onFechar;
   return (
     <div className="shrink-0 border-b" style={{ background: "var(--bi-surface)", borderColor: "var(--bi-line)" }}>
       <div className="flex items-start justify-between gap-3 px-4 py-3">
         <div className="min-w-0">
-          <h3 id={React.useContext(CtxModal)} className="bi-title text-[14px] leading-tight">{titulo}</h3>
+          <h3 id={ctx?.id} className="bi-title text-[14px] leading-tight">{titulo}</h3>
           {sub && (
             <p className="mt-0.5 text-[11px] leading-snug" style={{ color: "var(--bi-faint)" }}>
               {sub}
@@ -666,7 +700,7 @@ export function ModalHead({
           {right}
           <button
             type="button"
-            onClick={onFechar}
+            onClick={fechar}
             className="hover:opacity-70"
             style={{ color: "var(--bi-muted)" }}
             aria-label="Fechar"
@@ -958,7 +992,10 @@ export function Etapas({ etapas, largura = 60 }: {
   largura?: number;
   etapas: Array<{
     rotulo: string;
-    /** O que vai dentro do círculo quando a etapa não está concluída. */
+    /** O número OFICIAL da etapa, quando a fonte tem um (o FNS tem; o SIGCON
+     *  não). Quando existe, aparece SEMPRE — inclusive na etapa cumprida, cujo
+     *  estado já se lê pelo preenchimento. Sem ele, a etapa cumprida mostra ✓ e
+     *  a pendente mostra a posição. */
     numero?: React.ReactNode;
     concluida: boolean;
     atual?: boolean;
@@ -973,14 +1010,18 @@ export function Etapas({ etapas, largura = 60 }: {
             <div
               className="grid size-7 shrink-0 place-items-center rounded-full text-[11px] font-bold"
               style={{
-                background: e.concluida ? "var(--bi-cta)" : "var(--bi-line)",
-                color: e.concluida ? "var(--bi-cta-ink)" : "var(--bi-faint)",
+                background: e.concluida ? "var(--bi-cta)" : "var(--bi-surface-2)",
+                /* `--bi-faint` sobre `--bi-line` dava 2,26 no claro e 2,87 no
+                   escuro. Sao 11px em NEGRITO: nao contam como texto grande,
+                   entao o piso e 4,5 e nao 3. Com `--bi-muted` sobre
+                   `--bi-surface-2` passa nos dois. */
+                color: e.concluida ? "var(--bi-cta-ink)" : "var(--bi-muted)",
                 ...(e.atual
                   ? { outline: "2px solid var(--bi-accent-ink)", outlineOffset: "2px" }
                   : {}),
               }}
             >
-              {e.concluida ? <CheckIcon /> : (e.numero ?? i + 1)}
+              {e.numero ?? (e.concluida ? <CheckIcon /> : i + 1)}
             </div>
             <div className="mt-1 text-[9px] leading-tight break-words hyphens-auto"
                  style={{ maxWidth: largura, color: "var(--bi-faint)" }} lang="pt-BR">

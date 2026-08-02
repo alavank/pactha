@@ -334,11 +334,17 @@ export default function TelegramPage() {
                 </div>
                 {/* 22px é o tamanho do <Numero>, o maior número do sistema.
                     Um 32px só aqui abriria um sétimo degrau de escala numa
-                    identidade que tem seis. Com tracking-widest e font-mono o
-                    código continua sendo a coisa mais legível do cartão. */}
+                    identidade que tem seis.
+                    O que estava escrito aqui — "com tracking-widest e font-mono"
+                    — não acontecia: `.bi-num` declara `letter-spacing:-.02em` e
+                    vence o `.tracking-widest` por ordem na mesma camada, então o
+                    código saía CONDENSADO (medido: -0,44px em vez de +2,2px). E
+                    `font-mono` aponta para Nunito neste projeto. Agora é `.bi-id`
+                    (monoespaçada de verdade) e o espaçamento vai inline, que
+                    ganha da camada. */}
                 <div
-                  className="bi-num font-mono text-[22px] leading-none tracking-widest"
-                  style={{ color: "var(--bi-text)" }}
+                  className="bi-id text-[22px] font-bold leading-none"
+                  style={{ color: "var(--bi-text)", letterSpacing: "0.12em" }}
                 >
                   {linkCode.codigo}
                 </div>

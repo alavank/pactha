@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { MultiSelect } from "@/components/ui/multi-select";
 import {
-  Bloco, BlocoHead, Campos, ItemLinha, Lista, Modal, ModalCorpo, ModalHead, Numero, Secao, Selo, Vazio, situacaoTom, type Campo,
+  Bloco, BlocoHead, Campos, Etapas, ItemLinha, Lista, Modal, ModalCorpo, ModalHead, Numero, Secao, Selo, Vazio, situacaoTom, type Campo,
 } from "@/components/ui/superficies";
 import { atalhosAnos, resumoAnos } from "@/lib/periodo";
 import { formatCurrency } from "@/lib/utils";
@@ -714,44 +714,15 @@ export default function PropostasFNSPage() {
                         titulo="Principais etapas da proposta"
                         sub={`${propostaDetalhe.etapas.filter((e) => e.completada).length} de ${propostaDetalhe.etapas.length} concluída(s)`}
                       />
-                      <div className="bi-scroll flex items-start justify-between overflow-x-auto pt-1">
-                        {propostaDetalhe.etapas.map((et, i) => (
-                          <React.Fragment key={i}>
-                            <div className="flex min-w-[60px] flex-col items-center text-center" title={et.descricao}>
-                              {/* A etapa cumprida usa a CTA (quase preta) e a
-                                  pendente usa a mesma linha cinza das divisorias:
-                                  o progresso se le pelo contraste, sem precisar
-                                  de violeta. A etapa atual ganha um contorno de
-                                  acento em vez de um preenchimento diferente. */}
-                              <div
-                                className="grid size-7 shrink-0 place-items-center rounded-full text-[11px] font-bold"
-                                style={{
-                                  background: et.completada ? "var(--bi-cta)" : "var(--bi-line)",
-                                  color: et.completada ? "var(--bi-cta-ink)" : "var(--bi-faint)",
-                                  ...(et.atual
-                                    ? { outline: "2px solid var(--bi-accent-ink)", outlineOffset: "2px" }
-                                    : {}),
-                                }}
-                              >
-                                {et.numero}
-                              </div>
-                              <div className="mt-1 max-w-[60px] text-[9px] leading-tight" style={{ color: "var(--bi-faint)" }}>
-                                {et.descricao}
-                              </div>
-                            </div>
-                            {i < propostaDetalhe.etapas.length - 1 && (
-                              <div
-                                className="mx-0.5 mt-3 h-1 flex-1"
-                                style={{
-                                  background: et.completada && propostaDetalhe.etapas[i + 1].completada
-                                    ? "var(--bi-cta)"
-                                    : "var(--bi-line)",
-                                }}
-                              />
-                            )}
-                          </React.Fragment>
-                        ))}
-                      </div>
+                      <Etapas
+                        etapas={propostaDetalhe.etapas.map((et) => ({
+                          rotulo: et.descricao,
+                          numero: et.numero,
+                          concluida: et.completada,
+                          atual: et.atual,
+                          title: et.descricao,
+                        }))}
+                      />
                       {!propostaDetalhe.constituido_processo && (
                         <p className="mt-3 flex flex-wrap items-center gap-1.5 text-[11px]" style={{ color: "var(--bi-muted)" }}>
                           <Selo tom="atencao">Sem processo</Selo>
