@@ -140,12 +140,17 @@ export function AbaGeral({ ov, alertas, tv }: AbaProps & { ov: Overview; alertas
             titulo="Regularidade"
             sub="aptidão para receber transferências"
           />
-          <div className="flex flex-1 flex-col items-center justify-center gap-2">
-            <div className="flex w-full items-start justify-center gap-1">
+          <div className="flex flex-1 flex-col items-center justify-between gap-2">
+            {/* EMPILHADOS e GRANDES, nao lado a lado e pequenos.
+                Lado a lado cada arco cabia em 112px e sobrava metade do cartao
+                vazia em cima — o medidor virava um enfeite miudo com um numero
+                grande demais por dentro. O cartao e alto e estreito: a leitura
+                natural dele e de cima para baixo. */}
+            <div className="flex w-full flex-col items-center gap-1">
               <Gauge
                 pct={caucPct}
                 tom={caucTom}
-                size={tv ? 132 : 112}
+                size={tv ? 210 : 178}
                 centro={isRollup(s)
                   ? `${s.regulares}/${s.total_municipios}`
                   : caucExig.length ? `${caucOk}/${caucExig.length}` : (s.regular ? "Em dia" : "—")}
@@ -154,7 +159,7 @@ export function AbaGeral({ ov, alertas, tv }: AbaProps & { ov: Overview; alertas
               <Gauge
                 pct={cgPct}
                 tom={cgTom}
-                size={tv ? 132 : 112}
+                size={tv ? 210 : 178}
                 centro={!cg?.tem_dados ? "—"
                   : cgTotal ? `${cgOk}/${cgTotal}`
                   : (cg.situacao || `${cg.regulares}/${cg.entidades}`)}

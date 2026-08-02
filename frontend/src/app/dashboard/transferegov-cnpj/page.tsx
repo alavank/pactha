@@ -3,12 +3,15 @@
 import React, { useMemo, useState } from "react";
 import {
   Search as SearchIcon, Loader2, Landmark, Building2, Coins, FileText, Wallet,
+  ChevronDown, ChevronRight,
 } from "lucide-react";
 import api from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
 import { formatCurrencyShort } from "@/lib/bi-format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { MultiSelect } from "@/components/ui/multi-select";
+import { atalhosAnos, resumoAnos } from "@/lib/periodo";
 import {
   Bloco, BlocoHead, Campo, Campos, ItemLinha, Lista, Modal, ModalCorpo, ModalHead,
   Numero, Secao, Selo, Vazio, situacaoTom,
@@ -78,6 +81,61 @@ function vigenciaTom(iso?: string | null): "normal" | "atencao" {
   return dias >= 0 && dias <= 60 ? "atencao" : "normal";
 }
 
+/** O ANO escondido dentro de um CÓDIGO.
+ *
+ *  Mesma leitura que o backend faz (`_ano_de`, em `services/rm_builder.py`),
+ *  com a mesma pegadinha: a busca ingênua por `20\d{2}` acha "2097" no MIOLO
+ *  de "042097/2015" e data a proposta num ano futuro absurdo. Por isso o ano
+ *  DEPOIS DA BARRA tem prioridade e, na falta dele, só vale um ano plausível
+ *  (não passa de dois anos à frente de hoje). */
+function anoDeCodigo(...vals: Array<string | null | undefined>): string {
+  const lim = new Date().getFullYear() + 2;
+  for (const v of vals) {
+    if (!v) continue;
+    const barra = /\/\s*((?:19|20)\d{2})\b/.exec(v);
+    if (barra) return barra[1];
+    for (const cand of v.match(/(?:19|20)\d{2}/g) ?? []) {
+      const y = Number(cand);
+      if (y >= 2000 && y <= lim) return cand;
+    }
+  }
+  return "";
+}
+
+/** O ano de um PLANO DE AÇÃO (Transferência Especial).
+ *
+ *  Esta lista não tem campo de data nenhum: a API pública do TransfereGov
+ *  devolve só códigos e situação. O ano do registro é o da EMENDA que o
+ *  originou — `emenda_codigo` chega como "202135950005-Lincoln Portela", e os
+ *  quatro primeiros dígitos são o exercício. O código do plano entra como
+ *  segunda opção. É a MESMA regra que o backend usa para datar Transferência
+ *  Especial no relatório mensal, então as duas telas concordam. */
+function anoEsp(e: Especial): string {
+  return anoDeCodigo(e.emenda_codigo, e.codigo);
+}
+
+/** O ano de uma proposta VOLUNTÁRIA: o `ano` do SICONV — o exercício da
+ *  proposta, que é por onde o próprio backend ordena a consulta. Não se usa
+ *  aqui a data de assinatura: uma proposta de 2024 assinada em 2025 é de 2024
+ *  para quem presta contas. */
+function anoVol(v: Voluntaria): string {
+  return v.ano ? String(v.ano) : "";
+}
+
+/** Agrupa por ano, do mais recente para o mais antigo, com "Sem ano" no FIM.
+ *
+ *  Registro sem ano legível NÃO some: esconder um plano de ação porque o
+ *  código da emenda veio fora do padrão é pior que mostrá-lo separado. */
+function agruparPorAno<T>(itens: T[], ano: (x: T) => string): Array<[string, T[]]> {
+  const m = new Map<string, T[]>();
+  for (const it of itens) {
+    const a = ano(it) || "Sem ano";
+    (m.get(a) ?? m.set(a, []).get(a)!).push(it);
+  }
+  return Array.from(m.entries()).sort((x, y) =>
+    x[0] === "Sem ano" ? 1 : y[0] === "Sem ano" ? -1 : y[0].localeCompare(x[0]));
+}
+
 export default function TransfereGovCnpjPage() {
   const [cnpj, setCnpj] = useState("");
   const [loading, setLoading] = useState(false);
@@ -85,22 +143,71 @@ export default function TransfereGovCnpjPage() {
   const [data, setData] = useState<Resp | null>(null);
   const [selVol, setSelVol] = useState<Voluntaria | null>(null);
   const [selEsp, setSelEsp] = useState<Especial | null>(null);
+  const [anosSel, setAnosSel] = useState<string[]>([]);
+  /* Recolhido por ANO, um conjunto POR LISTA. Guarda o que está FECHADO e não
+     o que está aberto: assim um ano novo que apareça na próxima consulta nasce
+     aberto. Conjuntos separados porque fechar 2024 nos planos de ação não tem
+     por que fechar 2024 nas voluntárias. */
+  const [espFechados, setEspFechados] = useState<Set<string>>(new Set());
+  const [volFechados, setVolFechados] = useState<Set<string>>(new Set());
 
-  // Os totais em dinheiro que os KPIs mostram. O endpoint devolve as duas
-  // listas inteiras (total_* = length), entao somar aqui nao mente.
+  /** Os anos que EXISTEM no resultado — união das duas listas, para o dropdown
+   *  não oferecer ano sem registro nenhum. */
+  const anosDisponiveis = useMemo(() => {
+    if (!data) return [];
+    const s = new Set<string>();
+    for (const e of data.especiais) { const a = anoEsp(e); if (a) s.add(a); }
+    for (const v of data.voluntarias) { const a = anoVol(v); if (a) s.add(a); }
+    return Array.from(s).sort((a, b) => b.localeCompare(a));
+  }, [data]);
+
+  /* O filtro de ano vale para AS DUAS listas, cada uma pelo SEU campo de ano
+     (a emenda no plano de ação, o exercício da proposta na voluntária) — que é
+     o mesmo campo pelo qual ela se agrupa logo abaixo. Marcar 2025 nunca faz
+     aparecer um grupo 2024. */
+  const especiais = useMemo(() => {
+    const todas = data?.especiais ?? [];
+    return anosSel.length ? todas.filter((e) => anosSel.includes(anoEsp(e))) : todas;
+  }, [data, anosSel]);
+  const voluntarias = useMemo(() => {
+    const todas = data?.voluntarias ?? [];
+    return anosSel.length ? todas.filter((v) => anosSel.includes(anoVol(v))) : todas;
+  }, [data, anosSel]);
+
+  const porAnoEsp = useMemo(() => agruparPorAno(especiais, anoEsp), [especiais]);
+  const porAnoVol = useMemo(() => agruparPorAno(voluntarias, anoVol), [voluntarias]);
+
+  /** Recolher/expandir um ano. */
+  const alternarAno = (
+    set: React.Dispatch<React.SetStateAction<Set<string>>>,
+    ano: string,
+  ) =>
+    set((prev) => {
+      const n = new Set(prev);
+      if (n.has(ano)) n.delete(ano); else n.add(ano);
+      return n;
+    });
+
+  // Os totais em dinheiro que os KPIs mostram, no MESMO recorte das listas: se
+  // o filtro de ano estivesse ligado e os cards continuassem somando a base
+  // inteira, a tela se contradiria sozinha. Sem filtro a conta e a de antes —
+  // o endpoint devolve as duas listas inteiras, entao somar aqui nao mente.
   const resumo = useMemo(() => {
     if (!data) return null;
     return {
-      valEsp: data.especiais.reduce((s, e) => s + (e.valor_total ?? 0), 0),
-      valVol: data.voluntarias.reduce((s, v) => s + (v.valor_repasse ?? v.valor_global ?? 0), 0),
-      pagoVol: data.voluntarias.reduce((s, v) => s + (v.valor_desembolsado ?? 0), 0),
+      valEsp: especiais.reduce((s, e) => s + (e.valor_total ?? 0), 0),
+      valVol: voluntarias.reduce((s, v) => s + (v.valor_repasse ?? v.valor_global ?? 0), 0),
+      pagoVol: voluntarias.reduce((s, v) => s + (v.valor_desembolsado ?? 0), 0),
     };
-  }, [data]);
+  }, [data, especiais, voluntarias]);
 
   const consultar = async () => {
     const digits = cnpj.replace(/\D/g, "");
     if (digits.length !== 14) { setErro("Informe um CNPJ com 14 dígitos."); return; }
     setLoading(true); setErro(null);
+    // Anos do CNPJ ANTERIOR nao valem para o proximo: um 2019 marcado que o
+    // novo CNPJ nao tem esvaziaria as duas listas e pareceria "sem resultado".
+    setAnosSel([]);
     try {
       const r = await api.get<Resp>("/transferegov/por-cnpj", { params: { cnpj: digits } });
       setData(r.data);
@@ -144,6 +251,27 @@ export default function TransfereGovCnpjPage() {
             {loading ? <Loader2 className="size-4 animate-spin mr-1" /> : <SearchIcon className="size-4 mr-1" />}
             Consultar
           </Button>
+          {/* O filtro de ano só existe DEPOIS da consulta: os anos são os que o
+              CNPJ tem, não uma lista fixa. Um dropdown vazio antes de buscar
+              seria um controle que não faz nada. */}
+          {anosDisponiveis.length > 0 && (
+            <div>
+              <label className="mb-1 block text-[11px]" style={{ color: "var(--bi-muted)" }}>
+                Anos
+              </label>
+              <MultiSelect
+                opcoes={anosDisponiveis}
+                valor={anosSel}
+                onChange={setAnosSel}
+                atalhos={atalhosAnos()}
+                formatarResumo={resumoAnos}
+                placeholder="Todos os anos"
+                rotuloTodos="Todos os anos"
+                ariaLabel="Anos"
+                className="w-52"
+              />
+            </div>
+          )}
         </div>
       </Bloco>
 
@@ -163,7 +291,7 @@ export default function TransfereGovCnpjPage() {
             <Numero
               icon={Landmark}
               rotulo="Planos de ação"
-              valor={data.total_especiais}
+              valor={especiais.length}
               sub="Transferência Especial (ao vivo)"
             />
             <Numero
@@ -175,7 +303,7 @@ export default function TransfereGovCnpjPage() {
             <Numero
               icon={FileText}
               rotulo="Propostas voluntárias"
-              valor={data.total_voluntarias}
+              valor={voluntarias.length}
               sub="SICONV — base federal"
             />
             <Numero
@@ -192,143 +320,203 @@ export default function TransfereGovCnpjPage() {
               As colunas nao sumiram: as que se comparam entre linhas foram para
               <Campos>, em posicao FIXA, para o olho continuar descendo em
               coluna como descia na tabela; as que servem para identificar
-              foram para a meta. */}
-          <Bloco className="p-3">
+              foram para a meta.
+
+              E AS TRES CAMADAS: fundo cinza da pagina -> cartao BRANCO por ANO
+              -> itens cinza dentro. O branco DEIXOU de ser da secao e passou a
+              ser do ano — manter os dois seria branco sobre branco e achataria
+              a hierarquia. O cabecalho da secao nao perdeu nada (titulo,
+              contagem e total continuam), so passou a ficar direto sobre o
+              fundo da pagina. */}
+          <section className="space-y-3">
             <BlocoHead
               icon={Landmark}
               titulo="Transferência Especial (Plano de Ação)"
-              sub={`${data.total_especiais} resultado(s) · consulta ao vivo no TransfereGov`}
+              sub={`${especiais.length}${anosSel.length ? ` de ${data.total_especiais}` : ""} resultado(s) · consulta ao vivo no TransfereGov`}
               right={<span className="bi-num text-[13px]">{formatCurrency(resumo.valEsp)}</span>}
+              className="mb-0"
             />
-            {data.especiais.length === 0 ? (
-              <Vazio>Nenhum plano de ação para este CNPJ.</Vazio>
+            {especiais.length === 0 ? (
+              <Vazio>
+                {data.especiais.length === 0
+                  ? "Nenhum plano de ação para este CNPJ."
+                  : "Nenhum plano de ação nos anos selecionados."}
+              </Vazio>
             ) : (
-              <Lista>
-                {data.especiais.map((e, i) => {
-                  // O objeto e quem descreve o plano. Quando o TransfereGov nao
-                  // manda objeto, a politica publica assume o titulo — e nesse
-                  // caso nao se repete na meta logo abaixo.
-                  const titulo = e.objeto_descricao
-                    || e.politicas_publicas
-                    || `Plano de ação ${e.codigo || ""}`.trim();
-                  return (
-                    <ItemLinha
-                      key={e.id ?? i}
-                      onClick={() => setSelEsp(e)}
-                      titulo={titulo}
-                      valor={formatCurrency(e.valor_total)}
-                      meta={
-                        <>
-                          {e.situacao && (
-                            <Selo tom={situacaoTom(e.situacao)} title={e.situacao}>{e.situacao}</Selo>
-                          )}
-                          {e.beneficiario_nome && (
-                            <span className="truncate" title={e.beneficiario_nome}>{e.beneficiario_nome}</span>
-                          )}
-                          {e.politicas_publicas && e.politicas_publicas !== titulo && (
-                            <span className="truncate" title={e.politicas_publicas}>
-                              · {e.politicas_publicas}
-                            </span>
-                          )}
-                        </>
-                      }
-                    >
-                      {/* Estes quatro sao TEXTO numa celula que trunca, entao
-                          cada um leva `title`: o codigo da emenda vem com o nome
-                          do parlamentar colado ("202135950005-Lincoln Portela") e
-                          era justamente essa parte que o corte comia, sem nenhum
-                          jeito de recuperar. Todas as outras telas do lote ja
-                          dao `title` em campo de texto. */}
-                      <Campos
-                        campos={[
-                          { rotulo: "Código", valor: e.codigo || "—", title: e.codigo || undefined },
-                          { rotulo: "Programa", valor: e.programa_codigo || "—",
-                            title: e.programa_codigo || undefined },
-                          { rotulo: "Emenda", valor: e.emenda_codigo || "—",
-                            title: e.emenda_codigo || undefined },
-                          { rotulo: "UF", valor: e.uf || "—" },
-                        ]}
+              porAnoEsp.map(([ano, doAno]) => {
+                const fechado = espFechados.has(ano);
+                const totalAno = doAno.reduce((s, e) => s + (e.valor_total ?? 0), 0);
+                return (
+                  <Bloco key={ano} className="p-3">
+                    <button type="button" onClick={() => alternarAno(setEspFechados, ano)}
+                            className="text-left" aria-expanded={!fechado}>
+                      <BlocoHead
+                        icon={fechado ? ChevronRight : ChevronDown}
+                        titulo={ano}
+                        sub={`${doAno.length} plano(s) de ação`}
+                        right={<span className="bi-num text-[13px]">{formatCurrency(totalAno)}</span>}
+                        className={fechado ? "mb-0" : undefined}
                       />
-                    </ItemLinha>
-                  );
-                })}
-              </Lista>
+                    </button>
+                    {!fechado && (
+                      <Lista>
+                        {doAno.map((e, i) => {
+                          // O objeto e quem descreve o plano. Quando o TransfereGov nao
+                          // manda objeto, a politica publica assume o titulo — e nesse
+                          // caso nao se repete na meta logo abaixo.
+                          const titulo = e.objeto_descricao
+                            || e.politicas_publicas
+                            || `Plano de ação ${e.codigo || ""}`.trim();
+                          return (
+                            <ItemLinha
+                              key={e.id ?? i}
+                              onClick={() => setSelEsp(e)}
+                              titulo={titulo}
+                              valor={formatCurrency(e.valor_total)}
+                              meta={
+                                <>
+                                  {e.situacao && (
+                                    <Selo tom={situacaoTom(e.situacao)} title={e.situacao}>{e.situacao}</Selo>
+                                  )}
+                                  {e.beneficiario_nome && (
+                                    <span className="truncate" title={e.beneficiario_nome}>{e.beneficiario_nome}</span>
+                                  )}
+                                  {e.politicas_publicas && e.politicas_publicas !== titulo && (
+                                    <span className="truncate" title={e.politicas_publicas}>
+                                      · {e.politicas_publicas}
+                                    </span>
+                                  )}
+                                </>
+                              }
+                            >
+                              {/* Estes quatro sao TEXTO numa celula que trunca, entao
+                                  cada um leva `title`: o codigo da emenda vem com o nome
+                                  do parlamentar colado ("202135950005-Lincoln Portela") e
+                                  era justamente essa parte que o corte comia, sem nenhum
+                                  jeito de recuperar. Todas as outras telas do lote ja
+                                  dao `title` em campo de texto. */}
+                              <Campos
+                                campos={[
+                                  { rotulo: "Código", valor: e.codigo || "—", title: e.codigo || undefined },
+                                  { rotulo: "Programa", valor: e.programa_codigo || "—",
+                                    title: e.programa_codigo || undefined },
+                                  { rotulo: "Emenda", valor: e.emenda_codigo || "—",
+                                    title: e.emenda_codigo || undefined },
+                                  { rotulo: "UF", valor: e.uf || "—" },
+                                ]}
+                              />
+                            </ItemLinha>
+                          );
+                        })}
+                      </Lista>
+                    )}
+                  </Bloco>
+                );
+              })
             )}
-          </Bloco>
+          </section>
 
-          <Bloco className="p-3">
+          {/* Mesmo desenho da secao de cima, com o ANO DESTA lista: aqui ele vem
+              do exercicio da proposta no SICONV, nao do codigo da emenda. */}
+          <section className="space-y-3">
             <BlocoHead
               icon={Landmark}
               titulo="Voluntárias / Convênios (SICONV — base federal)"
-              sub={`${data.total_voluntarias} resultado(s) · dados já coletados`}
+              sub={`${voluntarias.length}${anosSel.length ? ` de ${data.total_voluntarias}` : ""} resultado(s) · dados já coletados`}
               right={<span className="bi-num text-[13px]">{formatCurrency(resumo.valVol)}</span>}
+              className="mb-0"
             />
-            {data.voluntarias.length === 0 ? (
-              <Vazio>Nenhuma proposta voluntária deste CNPJ nos dados já coletados.</Vazio>
+            {voluntarias.length === 0 ? (
+              <Vazio>
+                {data.voluntarias.length === 0
+                  ? "Nenhuma proposta voluntária deste CNPJ nos dados já coletados."
+                  : "Nenhuma proposta voluntária nos anos selecionados."}
+              </Vazio>
             ) : (
-              <Lista>
-                {data.voluntarias.map((v, i) => {
-                  // Mesma conta da coluna "Repasse": quando nao ha repasse
-                  // informado, o global e a base — inclusive para o % pago.
-                  const base = v.valor_repasse ?? v.valor_global ?? 0;
-                  const pago = v.valor_desembolsado;
-                  const pct = pago != null && base ? Math.round((pago / base) * 100) : null;
-                  return (
-                    <ItemLinha
-                      key={(v.numero_proposta ?? "") + i}
-                      onClick={() => setSelVol(v)}
-                      titulo={v.objeto || "Sem objeto informado"}
-                      valor={formatCurrency(v.valor_repasse ?? v.valor_global)}
-                      meta={
-                        <>
-                          {v.situacao && (
-                            <Selo tom={situacaoTom(v.situacao)} title={`Proposta: ${v.situacao}`}>
-                              {v.situacao}
-                            </Selo>
-                          )}
-                          {v.situacao_convenio && (
-                            <Selo tom={situacaoTom(v.situacao_convenio)} title={`Convênio: ${v.situacao_convenio}`}>
-                              {v.situacao_convenio}
-                            </Selo>
-                          )}
-                          {v.municipio && <span>{`${v.municipio}/${v.uf || ""}`}</span>}
-                          {/* Proposta e convenio servem para ACHAR o registro,
-                              nao para comparar — por isso ficam na meta e nao
-                              ocupam coluna na grade. */}
-                          <span className="font-mono">
-                            {v.numero_proposta ? `· prop ${v.numero_proposta}` : ""}
-                            {v.nr_convenio ? ` · conv ${v.nr_convenio}` : ""}
-                          </span>
-                        </>
-                      }
-                    >
-                      <Campos
-                        campos={[
-                          { rotulo: "Ano", valor: v.ano ?? "—" },
-                          {
-                            rotulo: "Valor global",
-                            valor: v.valor_global != null ? formatCurrency(v.valor_global) : "—",
-                          },
-                          {
-                            rotulo: "Pago",
-                            valor: pago != null ? formatCurrency(pago) : "—",
-                            tom: pct == null ? "normal" : pct >= 100 ? "ok" : pct > 0 ? "atencao" : "normal",
-                            title: pct != null ? `${pct}% de ${formatCurrency(base)}` : "Sem informação de desembolso",
-                          },
-                          { rotulo: "Assinatura", valor: fmtDate(v.dt_assinatura) },
-                          {
-                            rotulo: "Fim da vigência",
-                            valor: fmtDate(v.dt_fim_vigencia),
-                            tom: vigenciaTom(v.dt_fim_vigencia),
-                          },
-                        ]}
+              porAnoVol.map(([ano, doAno]) => {
+                const fechado = volFechados.has(ano);
+                // Mesma base do valor mostrado em cada item e do KPI de repasse.
+                const totalAno = doAno.reduce((s, v) => s + (v.valor_repasse ?? v.valor_global ?? 0), 0);
+                return (
+                  <Bloco key={ano} className="p-3">
+                    <button type="button" onClick={() => alternarAno(setVolFechados, ano)}
+                            className="text-left" aria-expanded={!fechado}>
+                      <BlocoHead
+                        icon={fechado ? ChevronRight : ChevronDown}
+                        titulo={ano}
+                        sub={`${doAno.length} proposta(s)`}
+                        right={<span className="bi-num text-[13px]">{formatCurrency(totalAno)}</span>}
+                        className={fechado ? "mb-0" : undefined}
                       />
-                    </ItemLinha>
-                  );
-                })}
-              </Lista>
+                    </button>
+                    {!fechado && (
+                      <Lista>
+                        {doAno.map((v, i) => {
+                          // Mesma conta da coluna "Repasse": quando nao ha repasse
+                          // informado, o global e a base — inclusive para o % pago.
+                          const base = v.valor_repasse ?? v.valor_global ?? 0;
+                          const pago = v.valor_desembolsado;
+                          const pct = pago != null && base ? Math.round((pago / base) * 100) : null;
+                          return (
+                            <ItemLinha
+                              key={(v.numero_proposta ?? "") + i}
+                              onClick={() => setSelVol(v)}
+                              titulo={v.objeto || "Sem objeto informado"}
+                              valor={formatCurrency(v.valor_repasse ?? v.valor_global)}
+                              meta={
+                                <>
+                                  {v.situacao && (
+                                    <Selo tom={situacaoTom(v.situacao)} title={`Proposta: ${v.situacao}`}>
+                                      {v.situacao}
+                                    </Selo>
+                                  )}
+                                  {v.situacao_convenio && (
+                                    <Selo tom={situacaoTom(v.situacao_convenio)} title={`Convênio: ${v.situacao_convenio}`}>
+                                      {v.situacao_convenio}
+                                    </Selo>
+                                  )}
+                                  {v.municipio && <span>{`${v.municipio}/${v.uf || ""}`}</span>}
+                                  {/* Proposta e convenio servem para ACHAR o registro,
+                                      nao para comparar — por isso ficam na meta e nao
+                                      ocupam coluna na grade. */}
+                                  <span className="font-mono">
+                                    {v.numero_proposta ? `· prop ${v.numero_proposta}` : ""}
+                                    {v.nr_convenio ? ` · conv ${v.nr_convenio}` : ""}
+                                  </span>
+                                </>
+                              }
+                            >
+                              <Campos
+                                campos={[
+                                  { rotulo: "Ano", valor: v.ano ?? "—" },
+                                  {
+                                    rotulo: "Valor global",
+                                    valor: v.valor_global != null ? formatCurrency(v.valor_global) : "—",
+                                  },
+                                  {
+                                    rotulo: "Pago",
+                                    valor: pago != null ? formatCurrency(pago) : "—",
+                                    tom: pct == null ? "normal" : pct >= 100 ? "ok" : pct > 0 ? "atencao" : "normal",
+                                    title: pct != null ? `${pct}% de ${formatCurrency(base)}` : "Sem informação de desembolso",
+                                  },
+                                  { rotulo: "Assinatura", valor: fmtDate(v.dt_assinatura) },
+                                  {
+                                    rotulo: "Fim da vigência",
+                                    valor: fmtDate(v.dt_fim_vigencia),
+                                    tom: vigenciaTom(v.dt_fim_vigencia),
+                                  },
+                                ]}
+                              />
+                            </ItemLinha>
+                          );
+                        })}
+                      </Lista>
+                    )}
+                  </Bloco>
+                );
+              })
             )}
-          </Bloco>
+          </section>
         </div>
       )}
 

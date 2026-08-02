@@ -1,14 +1,16 @@
 "use client";
 
 import React, { useEffect, useState, useMemo, useCallback } from "react";
-import { Loader2, ExternalLink, BarChart3, Wallet, CalendarDays } from "lucide-react";
+import {
+  Loader2, ExternalLink, BarChart3, Wallet, CalendarDays, ChevronDown, ChevronRight,
+} from "lucide-react";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 import api from "@/lib/api";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { atalhosAnos, resumoAnos } from "@/lib/periodo";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Campos, ItemLinha, Lista, Numero, Selo, Vazio } from "@/components/ui/superficies";
+import { Bloco, BlocoHead, Campos, ItemLinha, Lista, Numero, Selo, Vazio } from "@/components/ui/superficies";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
 interface Dimensao {
@@ -63,6 +65,20 @@ function dataDoCarimbo(iso?: string | null): string {
   return iso ? formatDate(iso.slice(0, 10)) : "";
 }
 
+/** O ANO de uma liberacao.
+ *
+ *  E o campo `ano` do proprio SIMEC — o exercicio do programa, que e o que o
+ *  gestor chama de "o ano deste repasse". NAO e `dt_pgto`: parcela de exercicio
+ *  anterior costuma ser paga no ano seguinte, e agrupar pela data do pagamento
+ *  jogaria a liberacao de 2024 dentro de um grupo 2025.
+ *
+ *  E o MESMO campo que o filtro de anos ja usava. Filtro e agrupamento olhando
+ *  campos diferentes e o defeito classico: o usuario filtra 2025 e ve um grupo
+ *  2024 na tela. */
+function anoDa(l: Liberacao): string {
+  return l.ano != null ? String(l.ano) : "";
+}
+
 /** Aba ativa em tinta forte, inativa em cinza claro. Antes era violeta em cima
  *  de violeta; agora a hierarquia vem do contraste do texto, nao da cor. */
 function estiloAba(ativa: boolean): React.CSSProperties {
@@ -85,6 +101,10 @@ export default function SimecPage() {
   const [anosSel, setAnosSel] = useState<string[]>([]);
   const [progsSel, setProgsSel] = useState<string[]>([]);
   const [search, setSearch] = useState("");
+  /* Recolhido por ANO. Guarda o que esta FECHADO e nao o que esta aberto: assim
+     um ano novo que chegue na proxima coleta do SIMEC nasce ABERTO, em vez de
+     nascer invisivel. */
+  const [anosFechados, setAnosFechados] = useState<Set<string>>(new Set());
 
   const buscar = useCallback(async () => {
     if (!municipioId) return;
@@ -103,8 +123,10 @@ export default function SimecPage() {
 
   useEffect(() => { if (municipioId) buscar(); }, [municipioId, buscar]);
 
-  const anoOptions = useMemo(
-    () => Array.from(new Set(liberacoes.map((l) => l.ano).filter(Boolean))).sort((a, b) => (b! - a!)).map(String),
+  /** Os anos que EXISTEM no resultado, para o dropdown nao oferecer ano vazio.
+   *  Sai de `anoDa`, o mesmo do agrupamento. */
+  const anosDisponiveis = useMemo(
+    () => Array.from(new Set(liberacoes.map(anoDa).filter(Boolean))).sort((a, b) => b.localeCompare(a)),
     [liberacoes]
   );
   const progOptions = useMemo(
@@ -114,7 +136,7 @@ export default function SimecPage() {
 
   const displayLib = useMemo(() => {
     let arr = liberacoes;
-    if (anosSel.length) arr = arr.filter((l) => l.ano && anosSel.includes(String(l.ano)));
+    if (anosSel.length) arr = arr.filter((l) => anosSel.includes(anoDa(l)));
     if (progsSel.length) arr = arr.filter((l) => progsSel.includes(l.programa));
     if (search.trim()) {
       const q = search.trim().toLowerCase();
@@ -131,6 +153,32 @@ export default function SimecPage() {
     () => displayLib.reduce((s, l) => s + (l.valor || 0), 0),
     [displayLib]
   );
+
+  /** Agrupado por ano, do mais recente para o mais antigo.
+   *
+   *  As tres camadas do Painel: fundo cinza da pagina -> cartao BRANCO do ano
+   *  -> itens cinza dentro. E o desenho que o dono aprovou nas Emendas
+   *  Estaduais e nas Propostas do TransfereGov.
+   *
+   *  Liberacao sem ano legivel nao e escondida: cai num grupo "Sem ano" no fim.
+   *  Sumir com um pagamento porque o SIMEC nao trouxe o exercicio seria pior
+   *  que mostra-lo separado. */
+  const porAno = useMemo(() => {
+    const m = new Map<string, Liberacao[]>();
+    for (const l of displayLib) {
+      const a = anoDa(l) || "Sem ano";
+      (m.get(a) ?? m.set(a, []).get(a)!).push(l);
+    }
+    return Array.from(m.entries()).sort((x, y) =>
+      x[0] === "Sem ano" ? 1 : y[0] === "Sem ano" ? -1 : y[0].localeCompare(x[0]));
+  }, [displayLib]);
+
+  const alternarAno = (a: string) =>
+    setAnosFechados((prev) => {
+      const n = new Set(prev);
+      if (n.has(a)) n.delete(a); else n.add(a);
+      return n;
+    });
 
   if (!municipioId) {
     return <div className="flex h-64 items-center justify-center text-muted-foreground">Selecione um município.</div>;
@@ -208,12 +256,30 @@ export default function SimecPage() {
            indicadores ocupa o canto do valor e as cinco contagens de score vao
            para <Campos>, em posicoes FIXAS — e o que mantem a varredura vertical
            que a tabela dava (descer o olho pela coluna "score 1" de cima a
-           baixo) sem existir tabela. Nenhuma contagem se perdeu. */
+           baixo) sem existir tabela. Nenhuma contagem se perdeu.
+
+           SEM AGRUPAMENTO POR ANO, de proposito: a sintese do PAR nao tem ano.
+           Cada dimensao aparece UMA vez, com o diagnostico vigente; o unico
+           campo de data e `atualizado_em`, que e quando o robo coletou — todas
+           as linhas trariam o mesmo ano e o "grupo" seria a lista inteira.
+           Aqui entra so o cartao BRANCO em volta, que e o que faltava para as
+           tres camadas (fundo cinza -> cartao branco -> itens cinza). */
         <div className="space-y-2">
           {dimensoes.length === 0 ? (
             <Vazio>Nenhuma dimensão encontrada.</Vazio>
           ) : (
-            <Lista>
+            <Bloco className="p-3">
+              <BlocoHead
+                icon={BarChart3}
+                titulo="Diagnóstico por dimensão"
+                sub={`${dimensoes.length} dimensão(ões) avaliadas`}
+                right={
+                  <span className="bi-num text-[13px]">
+                    {dimensoes.reduce((s, d) => s + d.total, 0)} indicadores
+                  </span>
+                }
+              />
+              <Lista>
               {dimensoes.map((d, i) => (
                 <ItemLinha
                   key={i}
@@ -243,7 +309,8 @@ export default function SimecPage() {
                   />
                 </ItemLinha>
               ))}
-            </Lista>
+              </Lista>
+            </Bloco>
           )}
           <p className="px-1 text-[10px]" style={{ color: "var(--bi-faint)" }}>
             Escala: 4 = situação boa / 3 = adequada / 2 = a melhorar / 1 = crítica.
@@ -255,7 +322,7 @@ export default function SimecPage() {
           {/* Filtros das liberacoes: mesmo comportamento, sem a moldura de
               cartao — na identidade nova o cartao e do dado, nao do controle. */}
           <div className="flex flex-wrap items-center gap-3">
-            <MultiSelect opcoes={anoOptions} valor={anosSel} onChange={setAnosSel} atalhos={atalhosAnos()} placeholder="Todos os anos" rotuloTodos="Todos" formatarResumo={resumoAnos} ariaLabel="Anos" className="w-44" />
+            <MultiSelect opcoes={anosDisponiveis} valor={anosSel} onChange={setAnosSel} atalhos={atalhosAnos()} placeholder="Todos os anos" rotuloTodos="Todos" formatarResumo={resumoAnos} ariaLabel="Anos" className="w-44" />
             <MultiSelect opcoes={progOptions} valor={progsSel} onChange={setProgsSel} placeholder="Todos os programas" rotuloTodos="Todos" ariaLabel="Programas" className="w-56" />
             <div className="min-w-[200px] flex-1">
               <Input placeholder="Buscar descrição/OB" value={search} onChange={(e) => setSearch(e.target.value)} />
@@ -280,9 +347,30 @@ export default function SimecPage() {
                inteira; o programa e um selo cinza que guarda o nome completo no
                title; e data, OB, banco/agencia e conta descem para a grade
                alinhada. Continuam todas as colunas, mais ano e parcela, que a
-               tabela nem mostrava. */
-            <Lista>
-              {displayLib.map((l, i) => (
+               tabela nem mostrava.
+
+               AS TRES CAMADAS: fundo cinza da pagina -> cartao BRANCO por ano
+               -> itens cinza dentro. Os itens abaixo nao mudaram nada com o
+               agrupamento; so ganharam o cartao do exercicio em volta. */
+            <div className="space-y-3">
+              {porAno.map(([ano, doAno]) => {
+                const fechado = anosFechados.has(ano);
+                const totalAno = doAno.reduce((s, l) => s + (l.valor || 0), 0);
+                return (
+                <Bloco key={ano} className="p-3">
+                  <button type="button" onClick={() => alternarAno(ano)}
+                          className="text-left" aria-expanded={!fechado}>
+                    <BlocoHead
+                      icon={fechado ? ChevronRight : ChevronDown}
+                      titulo={ano}
+                      sub={`${doAno.length} liberação(ões)`}
+                      right={<span className="bi-num text-[13px]">{formatCurrency(totalAno)}</span>}
+                      className={fechado ? "mb-0" : undefined}
+                    />
+                  </button>
+                  {!fechado && (
+                  <Lista>
+              {doAno.map((l, i) => (
                 <ItemLinha
                   key={i}
                   titulo={l.descricao || l.programa_full || l.programa || "Liberação sem descrição"}
@@ -321,7 +409,12 @@ export default function SimecPage() {
                   />
                 </ItemLinha>
               ))}
-            </Lista>
+                  </Lista>
+                  )}
+                </Bloco>
+                );
+              })}
+            </div>
           )}
         </div>
       )}
