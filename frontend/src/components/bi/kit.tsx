@@ -268,27 +268,51 @@ export function Metric({
 // Graficos (SVG na mao — leves, sem lib, e batem com a referencia)
 // --------------------------------------------------------------------------
 
-/** Medidor em arco com gradiente (o "850 Excellent" da referencia). */
+/** Medidor em arco com gradiente (o "850 Excellent" da referencia).
+ *
+ *  ELE SE ADAPTA AO ESPACO, e isso nao e detalhe — e o defeito que ele teve
+ *  duas vezes seguidas:
+ *
+ *  1. O numero do centro era `text-[26px]` CRAVADO. Ao reduzir o arco para
+ *     caber dois, o numero nao acompanhou e transbordou o desenho.
+ *  2. Corrigido o numero, o ARCO continuava em pixels fixos. Empilhados, dois
+ *     deles nao cabiam na celula do Modo Tela (grade `h-screen`, linhas de
+ *     altura limitada) e o segundo era CORTADO ao meio. E no modulo, onde o
+ *     cartao cresce, sobrava um vao enorme embaixo.
+ *
+ *  Agora o numero e a legenda vivem DENTRO do SVG, no mesmo viewBox do arco:
+ *  tudo escala junto, sempre. E o SVG ocupa 100% da caixa com
+ *  `preserveAspectRatio` — em caixa alta ele cresce, em caixa baixa ele encolhe
+ *  inteiro, e nunca vaza. Quem decide o tamanho e o espaco disponivel, nao um
+ *  numero escrito aqui. */
 export function Gauge({
   pct,
   centro,
   legenda,
   tom = "ok",
-  size = 168,
+  max = 260,
 }: {
   pct: number;
   centro: React.ReactNode;
   legenda?: string;
   tom?: Tom;
-  size?: number;
+  /** Teto de largura. Sem isto, num cartao muito largo o arco viraria um
+   *  painel de outdoor. O piso quem da e a caixa. */
+  max?: number;
 }) {
   const p = Math.max(0, Math.min(1, pct || 0));
   const r = 54;
   const circ = Math.PI * r; // meia volta
   const id = React.useId();
   return (
-    <div className="flex flex-col items-center">
-      <svg viewBox="0 0 140 82" width={size} height={size * 0.586} role="img" aria-label={legenda}>
+    <div className="flex min-h-0 min-w-0 flex-1 items-center justify-center">
+      <svg
+        viewBox="0 0 140 96"
+        className="h-full w-full"
+        style={{ maxWidth: max, maxHeight: max * 0.686 }}
+        role="img"
+        aria-label={legenda ? `${legenda}: ${centro}` : String(centro)}
+      >
         <defs>
           <linearGradient id={`g-${id}`} x1="0" y1="0" x2="1" y2="0">
             <stop offset="0%" stopColor="var(--bi-c1)" />
@@ -312,26 +336,20 @@ export function Gauge({
           strokeDasharray={`${circ * p} ${circ}`}
           style={{ transition: "stroke-dasharray .6s ease" }}
         />
-      </svg>
-      {/* O numero e o recuo acompanham o TAMANHO do arco.
-          Eram fixos (26px e -mt-6), o que so funcionava no tamanho padrao: ao
-          reduzir o arco para caber mais de um medidor, o numero continuava
-          gigante e transbordava o desenho. As proporcoes abaixo reproduzem
-          EXATAMENTE os valores antigos no tamanho padrao (168 x 0,155 = 26 e
-          168 x 0,143 = 24), entao nada muda onde ja estava certo. */}
-      <div className="text-center" style={{ marginTop: -size * 0.143 }}>
-        <div
-          className="bi-num leading-none"
-          style={{ color: TOM_COR[tom], fontSize: Math.round(size * 0.155) }}
+        <text
+          x="70" y="67" textAnchor="middle"
+          style={{ fill: TOM_COR[tom], fontSize: 26, fontWeight: 700,
+                   fontVariantNumeric: "tabular-nums", letterSpacing: "-0.02em" }}
         >
           {centro}
-        </div>
+        </text>
         {legenda && (
-          <div className="mt-1 text-[11px]" style={{ color: "var(--bi-muted)" }}>
+          <text x="70" y="88" textAnchor="middle"
+                style={{ fill: "var(--bi-muted)", fontSize: 11 }}>
             {legenda}
-          </div>
+          </text>
         )}
-      </div>
+      </svg>
     </div>
   );
 }
