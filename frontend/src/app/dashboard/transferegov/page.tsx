@@ -1,12 +1,13 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import {
-  Search, Eye, Loader2, Eraser, RefreshCw,
+  Search, Eye, Loader2, Eraser, RefreshCw, ChevronDown, ChevronRight,
   ClipboardList, Building2, Landmark, FileText, Banknote, TrendingUp,
 } from "lucide-react";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 import { MultiSelect } from "@/components/ui/multi-select";
+import { atalhosAnos, resumoAnos } from "@/lib/periodo";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,6 +23,48 @@ import { formatCurrency } from "@/lib/utils";
 function campoP(rotulo: string, valor: unknown, extra?: Partial<Campo>): Campo {
   const v = valor === null || valor === undefined || valor === "" ? "-" : String(valor);
   return { rotulo, valor: v, title: v === "-" ? undefined : `${rotulo}: ${v}`, ...extra };
+}
+
+/** Só vale ano até o corrente + 2: o que passar disso veio do miolo de um
+ *  número, não de uma data. */
+const ANO_LIMITE = new Date().getFullYear() + 2;
+
+/** O primeiro ano PLAUSÍVEL dentro de um identificador.
+ *
+ *  PEGADINHA já paga no backend (`_ano_de`, em services/rm_builder.py): a regex
+ *  ingênua `20\d{2}` lê `2097` em `042097/2015` — o miolo do número, antes do
+ *  ano de verdade — e o registro vai parar num grupo de ano futuro absurdo. Por
+ *  isso o ano DEPOIS DA BARRA tem prioridade e, no resto do texto, só entra ano
+ *  possível. */
+function anoEm(s: string): string {
+  const aposBarra = /\/\s*((?:19|20)\d{2})\b/.exec(s);
+  if (aposBarra) return aposBarra[1];
+  const re = /(?:19|20)\d{2}/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(s)) !== null) {
+    const ano = Number(m[0]);
+    if (ano >= 2000 && ano <= ANO_LIMITE) return m[0];
+  }
+  return "";
+}
+
+/** O ANO de um plano de ação.
+ *
+ *  Vem do CÓDIGO DA EMENDA (`202241760007-Lincoln Portela`), cujos quatro
+ *  primeiros dígitos são o exercício da emenda — e é o ano pelo qual o gestor
+ *  fala do recurso ("a emenda de 2024"). O código do plano fica de segunda
+ *  opção porque seu formato varia entre fontes, e por isso passa pela mesma
+ *  peneira de ano plausível.
+ *
+ *  Esta é a MESMA fonte, na MESMA ordem, que o backend já usa para datar uma
+ *  Transferência Especial no Relatório de Monitoramento
+ *  (`_ano_de(codigoEmendaFormatado, planoAcaoCodigo)`). Duas partes do produto
+ *  datando o mesmo plano em anos diferentes é pior que não agrupar.
+ *
+ *  O campo `ano` que o TransfereGov tem para o plano existe só no DETALHE — uma
+ *  chamada HTTP por plano. Agrupar por ele exigiria abrir os N planos da tela. */
+function anoDa(p: Plano): string {
+  return anoEm(p.emenda_codigo || "") || anoEm(p.codigo || "");
 }
 
 interface Plano {
@@ -114,6 +157,10 @@ export default function TransfereGovPage() {
   const [parlamentar, setParlamentar] = useState("");
   const [emenda, setEmenda] = useState("");
   const [objeto, setObjeto] = useState("");
+  const [anosSel, setAnosSel] = useState<string[]>([]);
+  /* Recolhido por ANO. Guarda o que está FECHADO e não o que está aberto: assim
+     um ano novo que chegue na próxima coleta nasce ABERTO, e não invisível. */
+  const [anosFechados, setAnosFechados] = useState<Set<string>>(new Set());
 
   const [detalhe, setDetalhe] = useState<DetalhePlano | null>(null);
   const [loadingDetalhe, setLoadingDetalhe] = useState(false);
@@ -167,8 +214,46 @@ export default function TransfereGovPage() {
 
   const limpar = () => {
     setSituacoesSel([]); setPrograma(""); setParlamentar(""); setEmenda(""); setObjeto("");
+    setAnosSel([]);
     setItems([]); setTotal(0);
   };
+
+  /** Os anos que EXISTEM no resultado, para o dropdown não oferecer ano vazio. */
+  const anosDisponiveis = useMemo(
+    () => Array.from(new Set(items.map(anoDa).filter(Boolean))).sort((a, b) => b.localeCompare(a)),
+    [items]
+  );
+
+  /* Filtro de ano é CLIENT-SIDE: o ano não é parâmetro da API pública do
+     TransfereGov, e a listagem já vem inteira para o município. Repare que
+     filtro e agrupamento chamam a MESMA `anoDa` — se divergissem, o gestor
+     filtraria 2024 e veria um grupo 2023. */
+  const displayItems = useMemo(
+    () => (anosSel.length ? items.filter((p) => anosSel.includes(anoDa(p))) : items),
+    [items, anosSel]
+  );
+
+  /** Agrupado por ano, do mais recente para o mais antigo.
+   *
+   *  Plano sem ano legível NÃO é escondido: cai num grupo "Sem ano" no fim.
+   *  Sumir com um plano porque o código veio fora do padrão é pior que
+   *  mostrá-lo separado. */
+  const porAno = useMemo(() => {
+    const m = new Map<string, Plano[]>();
+    for (const p of displayItems) {
+      const a = anoDa(p) || "Sem ano";
+      (m.get(a) ?? m.set(a, []).get(a)!).push(p);
+    }
+    return Array.from(m.entries()).sort((x, y) =>
+      x[0] === "Sem ano" ? 1 : y[0] === "Sem ano" ? -1 : y[0].localeCompare(x[0]));
+  }, [displayItems]);
+
+  const alternarAno = (a: string) =>
+    setAnosFechados((prev) => {
+      const n = new Set(prev);
+      if (n.has(a)) n.delete(a); else n.add(a);
+      return n;
+    });
 
   const abrirDetalhe = async (id: number) => {
     setDetalhe(null);
@@ -238,6 +323,24 @@ export default function TransfereGovPage() {
             <label className="text-[11px] mb-1 block" style={{ color: "var(--bi-muted)" }}>Objeto/Política Pública</label>
             <Input value={objeto} onChange={(e) => setObjeto(e.target.value)} placeholder="Ex: Urbanismo, Saúde" />
           </div>
+          {/* Anos: o único filtro desta tela que NÃO vai à API — o ano sai do
+              código da emenda, que já veio na listagem. Por isso ele aplica
+              sozinho, sem depender do botão Filtrar. */}
+          <div>
+            <label className="text-[11px] mb-1 block" style={{ color: "var(--bi-muted)" }}>
+              Anos <span style={{ color: "var(--bi-faint)" }}>(um, alguns ou todos)</span>
+            </label>
+            <MultiSelect
+              opcoes={anosDisponiveis}
+              valor={anosSel}
+              onChange={setAnosSel}
+              atalhos={atalhosAnos()}
+              formatarResumo={resumoAnos}
+              placeholder="Todos os anos"
+              rotuloTodos="Todos os anos"
+              ariaLabel="Anos"
+            />
+          </div>
         </div>
         <div className="flex justify-end gap-2 mt-3">
           <Button variant="outline" onClick={limpar}><Eraser className="size-4 mr-1" /> Limpar</Button>
@@ -270,7 +373,9 @@ export default function TransfereGovPage() {
           entao o olho continua descendo por uma coluna. */}
       <div className="space-y-2">
         <div className="text-[11px]" style={{ color: "var(--bi-muted)" }}>
-          <span className="bi-num">{total}</span> plano(s) de ação
+          <span className="bi-num">{displayItems.length}</span> plano(s) de ação
+          {/* O filtro de anos esconde sem avisar; quando esconde, diz de quantos. */}
+          {displayItems.length !== total && <> de <span className="bi-num">{total}</span></>}
         </div>
         {loading ? (
           <div className="space-y-1.5">
@@ -278,13 +383,34 @@ export default function TransfereGovPage() {
               <div key={i} className="h-16 animate-pulse rounded-lg" style={{ background: "var(--bi-surface-2)" }} />
             ))}
           </div>
-        ) : items.length === 0 ? (
+        ) : displayItems.length === 0 ? (
           <Vazio>
             Nenhum plano encontrado. Use os filtros acima e clique em <strong>Filtrar</strong>.
           </Vazio>
         ) : (
-          <Lista>
-            {items.map((p) => (
+          /* AS TRES CAMADAS: fundo cinza da pagina -> cartao BRANCO do ano ->
+             itens cinza dentro dele. O `p-3` do <Bloco> nao e detalhe de
+             estilo: sem ele os cartoes de item encostam na margem do branco, e
+             foi por isso que o branco chegou a ser retirado uma vez. */
+          <div className="space-y-3">
+          {porAno.map(([ano, doAno]) => {
+            const fechado = anosFechados.has(ano);
+            const totalAno = doAno.reduce((s, p) => s + (p.valor_total || 0), 0);
+            return (
+            <Bloco key={ano} className="p-3">
+              <button type="button" onClick={() => alternarAno(ano)}
+                      className="text-left" aria-expanded={!fechado}>
+                <BlocoHead
+                  icon={fechado ? ChevronRight : ChevronDown}
+                  titulo={ano}
+                  sub={`${doAno.length} plano(s) de ação`}
+                  right={<span className="bi-num text-[13px]">{formatCurrency(totalAno)}</span>}
+                  className={fechado ? "mb-0" : undefined}
+                />
+              </button>
+              {!fechado && (
+              <Lista>
+            {doAno.map((p) => (
               <ItemLinha
                 key={p.id}
                 /* O corpo inteiro abre o mesmo detalhe do botao ao lado: clicar
@@ -369,7 +495,12 @@ export default function TransfereGovPage() {
                 />
               </ItemLinha>
             ))}
-          </Lista>
+              </Lista>
+              )}
+            </Bloco>
+            );
+          })}
+          </div>
         )}
       </div>
 

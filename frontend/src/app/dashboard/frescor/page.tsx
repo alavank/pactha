@@ -1,9 +1,9 @@
 "use client";
 
 import React, { useEffect, useState, useCallback } from "react";
-import { Activity, RefreshCw, Loader2 } from "lucide-react";
+import { Activity, Database, RefreshCw, Loader2 } from "lucide-react";
 import api from "@/lib/api";
-import { Campos, ItemLinha, Lista, Selo } from "@/components/ui/superficies";
+import { Bloco, BlocoHead, Campos, ItemLinha, Lista, Selo, Vazio } from "@/components/ui/superficies";
 import { Button } from "@/components/ui/button";
 
 interface Fonte {
@@ -105,15 +105,6 @@ export default function FrescorPage() {
 
       {!erro && (
         <>
-          <div className="flex flex-wrap gap-3 text-sm">
-            <span className="text-base-content/60">
-              {geradoEm && <>Gerado em {fmtDt(geradoEm)} · </>}
-              <strong>{fontes.length}</strong> fontes
-            </span>
-            {criticos > 0 && <span className="font-medium" style={{ color: "var(--bi-crit-ink)" }}>{criticos} crítico(s)</span>}
-            {atrasados > 0 && <span className="font-medium" style={{ color: "var(--bi-warn-ink)" }}>{atrasados} atrasado(s)</span>}
-          </div>
-
           {loading && fontes.length === 0 ? (
             <div className="space-y-1.5">
               {Array.from({ length: 6 }).map((_, i) => (
@@ -121,26 +112,56 @@ export default function FrescorPage() {
               ))}
             </div>
           ) : (
-            <Lista>
-              {fontes.map((f) => {
-                const st = STATUS_TOM[f.status] || STATUS_TOM.desconhecido;
-                return (
-                  <ItemLinha
-                    key={f.fonte}
-                    titulo={f.fonte}
-                    valor={f.registros != null ? f.registros.toLocaleString("pt-BR") : "—"}
-                    meta={<><Selo tom={st.tom}>{st.label}</Selo><span>{fmtIdade(f.idade_dias)}</span></>}
-                  >
-                    <Campos
-                      campos={[
-                        { rotulo: "Último dado", valor: fmtDt(f.ultimo_dado) },
-                        { rotulo: "Última coleta", valor: fmtDt(f.ultima_coleta) },
-                      ]}
-                    />
-                  </ItemLinha>
-                );
-              })}
-            </Lista>
+            /* AS TRES CAMADAS: fundo cinza da pagina -> cartao BRANCO -> itens
+               cinza dentro. A linha de resumo que ficava solta acima da lista
+               ("Gerado em ... · N fontes" e os contadores) virou o cabecalho
+               deste cartao: e a mesma informacao, agora ancorada no que ela
+               resume. Os contadores continuam sendo os UNICOS coloridos da
+               tela — critico e atrasado pedem acao; o resto e cinza. */
+            <Bloco className="p-3">
+              <BlocoHead
+                icon={Database}
+                titulo="Fontes de dados"
+                sub={
+                  <>
+                    {geradoEm && <>Gerado em {fmtDt(geradoEm)} · </>}
+                    {fontes.length} fonte(s)
+                  </>
+                }
+                right={
+                  criticos > 0 || atrasados > 0 ? (
+                    <div className="flex flex-wrap justify-end gap-1">
+                      {criticos > 0 && <Selo tom="critico">{criticos} crítico(s)</Selo>}
+                      {atrasados > 0 && <Selo tom="atencao">{atrasados} atrasado(s)</Selo>}
+                    </div>
+                  ) : undefined
+                }
+              />
+              {fontes.length === 0 ? (
+                <Vazio>Nenhuma fonte de dados encontrada.</Vazio>
+              ) : (
+                <Lista>
+                  {fontes.map((f) => {
+                    const st = STATUS_TOM[f.status] || STATUS_TOM.desconhecido;
+                    return (
+                      <ItemLinha
+                        key={f.fonte}
+                        titulo={f.fonte}
+                        valor={f.registros != null ? f.registros.toLocaleString("pt-BR") : "—"}
+                        meta={<><Selo tom={st.tom}>{st.label}</Selo><span>{fmtIdade(f.idade_dias)}</span></>}
+                      >
+                        <Campos
+                          campos={[
+                            { rotulo: "Último dado", valor: fmtDt(f.ultimo_dado) },
+                            { rotulo: "Última coleta", valor: fmtDt(f.ultima_coleta) },
+                          ]}
+                        />
+                      </ItemLinha>
+                    );
+                  })}
+                </Lista>
+              )}
+            </Bloco>
           )}
         </>
       )}

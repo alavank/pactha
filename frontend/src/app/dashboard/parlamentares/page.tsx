@@ -6,7 +6,7 @@ import { MultiSelect } from "@/components/ui/multi-select";
 import { anosOpcoes, atalhosAnos, inicioDoMandato, resumoAnos } from "@/lib/periodo";
 import {
   Loader2, Search, ChevronDown, ChevronRight,
-  Landmark, Building2, FileText, Eraser, Coins, HeartPulse, ArrowLeftRight,
+  Landmark, Building2, FileText, Eraser, Coins, HeartPulse, ArrowLeftRight, Users,
 } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -558,17 +558,6 @@ function ParlamentaresInner() {
         </Bloco>
       )}
 
-      {/* Resumo */}
-      <div className="text-[11px]" style={{ color: "var(--bi-muted)" }}>
-        {loading ? "Carregando..." : (
-          <>
-            <strong>{listaExibida.length}</strong> parlamentares
-            {municipioId && " no município selecionado"}
-            {!municipioId && " (todos os municípios)"}
-          </>
-        )}
-      </div>
-
       {/* Lista */}
       {loading ? (
         <div className="flex justify-center py-12">
@@ -585,7 +574,33 @@ function ParlamentaresInner() {
           Se a lista estiver vazia, é porque essas fontes ainda não foram populadas.
         </Vazio>
       ) : (
-        <Lista>
+        /* AS TRES CAMADAS: fundo cinza da pagina -> cartao BRANCO do grupo ->
+           itens cinza dentro. Faltava a do meio: o ranking ficava solto sobre o
+           fundo. O `p-3` nao e enfeite — sem ele os itens encostam na margem do
+           branco, que foi o motivo de o cartao ter sido retirado da primeira vez.
+
+           O contador de parlamentares e o recorte de municipio vivem AQUI, no
+           `sub`, e nao mais numa linha solta acima da lista: era a mesma
+           informacao, e repeti-la nos dois lugares so acrescentaria ruido. */
+        <Bloco className="p-3">
+          <BlocoHead
+            icon={Users}
+            titulo="Parlamentares"
+            sub={`${listaExibida.length} parlamentar(es)${
+              municipioId ? " no município selecionado" : " (todos os municípios)"
+            }`}
+            /* Sem total com a comparacao ligada: ali a lista mistura os dois
+               periodos (quem esta fora do recorte entra com o valor do periodo
+               que tiver), entao somar `valor_total` daria um numero que nao e de
+               periodo nenhum. Os totais honestos dos dois lados ja estao nos
+               <Numero> do painel de comparacao. */
+            right={!comp ? (
+              <span className="bi-num text-[13px]">
+                {fmtMoney(soma(listaExibida, (p) => p.valor_total))}
+              </span>
+            ) : undefined}
+          />
+          <Lista>
           {listaExibida.map((p) => {
             const expanded = expandedKeys.has(p.nome_normalizado);
             const detail = detailCache[p.nome_normalizado];
@@ -691,7 +706,16 @@ function ParlamentaresInner() {
                   /* O detalhe e um <li> IRMAO, nao filho do cartao: o corpo do
                      ItemLinha e um <button> quando clicavel, e lista dentro de
                      botao nao e HTML valido. */
-                  <li className="pb-1">
+                  /* O fundo CINZA aqui e consequencia do cartao branco que
+                     passou a envolver a lista: o detalhe e feito de `GrupoFonte`,
+                     que sao brancos, e branco sobre branco achata a hierarquia
+                     (o mesmo motivo pelo qual o corpo do modal de detalhe usa
+                     `--bi-bg`). Com o recuo cinza, a leitura volta a ser
+                     branco -> item cinza -> detalhe cinza -> grupo branco. */
+                  <li
+                    className="p-2"
+                    style={{ background: "var(--bi-bg)", borderRadius: "var(--bi-radius)" }}
+                  >
                     {detail === "loading" && (
                       <div className="flex justify-center py-6">
                         <Loader2 className="size-5 animate-spin" style={{ color: "var(--bi-muted)" }} />
@@ -970,7 +994,8 @@ function ParlamentaresInner() {
               </React.Fragment>
             );
           })}
-        </Lista>
+          </Lista>
+        </Bloco>
       )}
     </div>
   );

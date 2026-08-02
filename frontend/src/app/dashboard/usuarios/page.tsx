@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useCallback } from "react";
-import { UserPlus, KeyRound, Power, Loader2, Copy, Check, X, Building2, ListChecks } from "lucide-react";
+import { UserPlus, Users, KeyRound, Power, Loader2, Copy, Check, X, Building2, ListChecks } from "lucide-react";
 import api from "@/lib/api";
 import { TELAS, TELA_LABELS } from "@/lib/telas";
 import { Button } from "@/components/ui/button";
@@ -363,154 +363,164 @@ export default function UsuariosPage() {
         </p>
       </Bloco>
 
-      {/* Resumo */}
-      <div className="text-[11px]" style={{ color: "var(--bi-muted)" }}>
-        {loading ? "Carregando..." : (
-          <>
-            <strong>{users.length}</strong> usuário(s) · {ativos} ativo(s)
-            {pendentes > 0 && <> · {pendentes} com troca de senha pendente</>}
-          </>
-        )}
-      </div>
-
       {/* LISTA — deixou de ser tabela.
           Eram oito colunas numa grade de linhas, com selo verde para o estado
           normal ("Ativo") e violeta no perfil. Agora cada usuario e um cartao:
           nome e e-mail em cima, e Municipios / Telas / Situacao em POSICOES
           FIXAS no <Campos>, de modo que o olho continua descendo a coluna como
           descia na tabela. Nada saiu — o ID virou o numero a direita e o perfil
-          continua sendo o proprio seletor, que e como se troca o perfil aqui. */}
-      {loading ? (
-        <Lista>
-          {Array.from({ length: 5 }).map((_, i) => (
-            <li key={i} className="bi-card-flat h-[86px] animate-pulse" />
-          ))}
-        </Lista>
-      ) : users.length === 0 ? (
-        <Vazio>Nenhum usuário para exibir.</Vazio>
-      ) : (
-        <Lista>
-          {users.map((u) => {
-            const admin = u.role === "admin";
-            const muns = u.municipio_ids ?? [];
-            const telas = u.telas ?? [];
-            return (
-              <ItemLinha
-                key={u.id}
-                titulo={
-                  <span className="flex flex-wrap items-center gap-1.5">
-                    <span className="truncate">{u.name}</span>
-                    {u.must_change_password && (
-                      /* "pendente" e a palavra: quem decide o tom e a regra
-                         unica do sistema, nao um tom escrito a mao aqui. */
-                      <Selo
-                        tom={situacaoTom("troca de senha pendente")}
-                        title="O usuário ainda não trocou a senha temporária."
-                      >
-                        troca pendente
-                      </Selo>
-                    )}
-                  </span>
-                }
-                valor={<span style={{ color: "var(--bi-faint)" }}>#{u.id}</span>}
-                meta={<span className="truncate" title={u.email}>{u.email}</span>}
-                acao={
-                  <div className="flex flex-col items-end gap-1.5">
-                    {/* O perfil e controle, nao texto: continua sendo o proprio
-                        seletor. Largura fixa e rotulo de 9px para ele alinhar
-                        com a grade de campos e com os demais cartoes. */}
-                    <div className="w-[148px]">
-                      <div className="text-right text-[9px] uppercase tracking-wide" style={{ color: "var(--bi-faint)" }}>
-                        Perfil
+          continua sendo o proprio seletor, que e como se troca o perfil aqui.
+
+          O cartao branco em volta e a camada do meio da identidade (fundo cinza
+          -> bloco branco -> item cinza). O resumo "13 usuario(s) · 10 ativo(s)"
+          era uma linha solta acima da lista e virou o cabecalho deste bloco: e a
+          mesma contagem, agora presa ao que ela conta. */}
+      <Bloco className="p-3">
+        <BlocoHead
+          icon={Users}
+          titulo="Usuários cadastrados"
+          sub={loading ? "Carregando..." : (
+            <>
+              {ativos} ativo(s)
+              {pendentes > 0 && <> · {pendentes} com troca de senha pendente</>}
+            </>
+          )}
+          right={loading ? undefined : (
+            <span className="bi-num text-[13px]">{users.length}</span>
+          )}
+        />
+        {loading ? (
+          <Lista>
+            {Array.from({ length: 5 }).map((_, i) => (
+              <li key={i} className="bi-card-flat h-[86px] animate-pulse" />
+            ))}
+          </Lista>
+        ) : users.length === 0 ? (
+          <Vazio>Nenhum usuário para exibir.</Vazio>
+        ) : (
+          <Lista>
+            {users.map((u) => {
+              const admin = u.role === "admin";
+              const muns = u.municipio_ids ?? [];
+              const telas = u.telas ?? [];
+              return (
+                <ItemLinha
+                  key={u.id}
+                  titulo={
+                    <span className="flex flex-wrap items-center gap-1.5">
+                      <span className="truncate">{u.name}</span>
+                      {u.must_change_password && (
+                        /* "pendente" e a palavra: quem decide o tom e a regra
+                           unica do sistema, nao um tom escrito a mao aqui. */
+                        <Selo
+                          tom={situacaoTom("troca de senha pendente")}
+                          title="O usuário ainda não trocou a senha temporária."
+                        >
+                          troca pendente
+                        </Selo>
+                      )}
+                    </span>
+                  }
+                  valor={<span style={{ color: "var(--bi-faint)" }}>#{u.id}</span>}
+                  meta={<span className="truncate" title={u.email}>{u.email}</span>}
+                  acao={
+                    <div className="flex flex-col items-end gap-1.5">
+                      {/* O perfil e controle, nao texto: continua sendo o proprio
+                          seletor. Largura fixa e rotulo de 9px para ele alinhar
+                          com a grade de campos e com os demais cartoes. */}
+                      <div className="w-[148px]">
+                        <div className="text-right text-[9px] uppercase tracking-wide" style={{ color: "var(--bi-faint)" }}>
+                          Perfil
+                        </div>
+                        <Select value={u.role} onValueChange={(v) => v && mudarRole(u, v)}>
+                          <SelectTrigger className="h-7 text-[11px]"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {ROLES.map((r) => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
                       </div>
-                      <Select value={u.role} onValueChange={(v) => v && mudarRole(u, v)}>
-                        <SelectTrigger className="h-7 text-[11px]"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          {ROLES.map((r) => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          size="sm" variant="outline" className="h-7 text-[11px]"
+                          onClick={() => abrirAcesso(u)}
+                          title="Editar municípios e telas com acesso"
+                          disabled={admin}
+                        >
+                          <Building2 className="size-3 mr-1" /> Acesso
+                        </Button>
+                        <Button
+                          size="sm" variant="outline" className="h-7 px-2 text-[11px]"
+                          onClick={() => resetarSenha(u)}
+                          title="Resetar senha" aria-label={`Resetar senha de ${u.name}`}
+                        >
+                          <KeyRound className="size-3" />
+                        </Button>
+                        <Button
+                          size="sm" variant="outline" className="h-7 px-2 text-[11px]"
+                          onClick={() => toggleAtivo(u)}
+                          title={u.active ? "Desativar" : "Ativar"}
+                          aria-label={`${u.active ? "Desativar" : "Ativar"} ${u.name}`}
+                        >
+                          <Power className="size-3" />
+                        </Button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <Button
-                        size="sm" variant="outline" className="h-7 text-[11px]"
-                        onClick={() => abrirAcesso(u)}
-                        title="Editar municípios e telas com acesso"
-                        disabled={admin}
-                      >
-                        <Building2 className="size-3 mr-1" /> Acesso
-                      </Button>
-                      <Button
-                        size="sm" variant="outline" className="h-7 px-2 text-[11px]"
-                        onClick={() => resetarSenha(u)}
-                        title="Resetar senha" aria-label={`Resetar senha de ${u.name}`}
-                      >
-                        <KeyRound className="size-3" />
-                      </Button>
-                      <Button
-                        size="sm" variant="outline" className="h-7 px-2 text-[11px]"
-                        onClick={() => toggleAtivo(u)}
-                        title={u.active ? "Desativar" : "Ativar"}
-                        aria-label={`${u.active ? "Desativar" : "Ativar"} ${u.name}`}
-                      >
-                        <Power className="size-3" />
-                      </Button>
-                    </div>
-                  </div>
-                }
-              >
-                <Campos
-                  cols={3}
-                  campos={[
-                    {
-                      rotulo: "Municípios",
-                      valor: admin
-                        ? "Todos"
-                        : muns.length === 0
-                          ? "Nenhum"
-                          : muns.length === 1
-                            ? munNome(muns[0])
-                            : `${muns.length} municípios`,
-                      // Nao-admin sem municipio nenhum nao ve dado algum: e
-                      // configuracao quebrada, e por isso um dos poucos lugares
-                      // desta tela onde entra cor.
-                      tom: !admin && muns.length === 0 ? "critico" : "normal",
-                      title: admin
-                        ? "Administrador enxerga todos os municípios"
-                        : muns.length > 0
-                          ? muns.map(munNome).join(", ")
-                          : "Sem município: o usuário não enxerga dado nenhum",
-                    },
-                    {
-                      rotulo: "Telas",
-                      valor: admin
-                        ? "Todas"
-                        : telas.length === 0
-                          ? "Nenhuma"
-                          : telas.length >= TELAS.length
-                            ? "Todas"
-                            : `${telas.length} telas`,
-                      tom: !admin && telas.length === 0 ? "critico" : "normal",
-                      title: admin
-                        ? "Administrador enxerga todas as telas"
-                        : telas.length > 0
-                          ? telas.map((t) => TELA_LABELS[t] || t).join(", ")
-                          : "Sem tela: o menu do usuário fica vazio",
-                    },
-                    {
-                      rotulo: "Situação",
-                      // Cinza nos dois estados de proposito: "Ativo" e o normal
-                      // e nao pode gritar verde, e "Inativo" e uma decisao do
-                      // administrador, nao um alerta.
-                      valor: u.active ? "Ativo" : "Inativo",
-                      title: u.active ? "Pode entrar no sistema" : "Login bloqueado",
-                    },
-                  ]}
-                />
-              </ItemLinha>
-            );
-          })}
-        </Lista>
-      )}
+                  }
+                >
+                  <Campos
+                    cols={3}
+                    campos={[
+                      {
+                        rotulo: "Municípios",
+                        valor: admin
+                          ? "Todos"
+                          : muns.length === 0
+                            ? "Nenhum"
+                            : muns.length === 1
+                              ? munNome(muns[0])
+                              : `${muns.length} municípios`,
+                        // Nao-admin sem municipio nenhum nao ve dado algum: e
+                        // configuracao quebrada, e por isso um dos poucos lugares
+                        // desta tela onde entra cor.
+                        tom: !admin && muns.length === 0 ? "critico" : "normal",
+                        title: admin
+                          ? "Administrador enxerga todos os municípios"
+                          : muns.length > 0
+                            ? muns.map(munNome).join(", ")
+                            : "Sem município: o usuário não enxerga dado nenhum",
+                      },
+                      {
+                        rotulo: "Telas",
+                        valor: admin
+                          ? "Todas"
+                          : telas.length === 0
+                            ? "Nenhuma"
+                            : telas.length >= TELAS.length
+                              ? "Todas"
+                              : `${telas.length} telas`,
+                        tom: !admin && telas.length === 0 ? "critico" : "normal",
+                        title: admin
+                          ? "Administrador enxerga todas as telas"
+                          : telas.length > 0
+                            ? telas.map((t) => TELA_LABELS[t] || t).join(", ")
+                            : "Sem tela: o menu do usuário fica vazio",
+                      },
+                      {
+                        rotulo: "Situação",
+                        // Cinza nos dois estados de proposito: "Ativo" e o normal
+                        // e nao pode gritar verde, e "Inativo" e uma decisao do
+                        // administrador, nao um alerta.
+                        valor: u.active ? "Ativo" : "Inativo",
+                        title: u.active ? "Pode entrar no sistema" : "Login bloqueado",
+                      },
+                    ]}
+                  />
+                </ItemLinha>
+              );
+            })}
+          </Lista>
+        )}
+      </Bloco>
 
       {/* Modal editar acesso de municipios e telas */}
       {editUser && (

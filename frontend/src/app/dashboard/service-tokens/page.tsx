@@ -1,11 +1,11 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { KeyRound, Plus, RotateCw, Trash2, Copy, ShieldAlert, Activity } from "lucide-react";
+import { KeyRound, Plus, RotateCw, Trash2, Copy, ShieldAlert } from "lucide-react";
 import api from "@/lib/api";
 import {
-  BOTAO_CTA, BOTAO_SEC, Bloco, BlocoHead, ESTILO_CTA, ESTILO_SEC,
-  Modal, ModalCorpo, ModalHead, Selo, Vazio,
+  BOTAO_CTA, BOTAO_SEC, Bloco, BlocoHead, Campos, ESTILO_CTA, ESTILO_SEC,
+  ItemLinha, Lista, Modal, ModalCorpo, ModalHead, Selo, Vazio,
 } from "@/components/ui/superficies";
 import { Input } from "@/components/ui/input";
 import toast from "react-hot-toast";
@@ -236,67 +236,93 @@ export default function ServiceTokensPage() {
             <div key={i} className="h-20 animate-pulse rounded-2xl" style={{ background: "var(--bi-surface-2)" }} />
           ))}
         </div>
-      ) : tokens.length === 0 ? (
-        <Vazio>Nenhum Service Token cadastrado. Clique em &quot;Novo Token&quot;.</Vazio>
       ) : (
-        <div className="space-y-2">
-          {tokens.map((t) => (
-            <Bloco key={t.id} className={`p-4 ${!t.active ? "opacity-60" : ""}`}>
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0 flex-1">
-                    <div className="mb-1 flex flex-wrap items-center gap-2">
-                      <h3 className="bi-title text-[14px] leading-tight">{t.name}</h3>
-                      {/* Ativo fica CINZA de proposito: e o estado normal, e o
-                          que precisa saltar e o revogado. */}
-                      <Selo tom={t.active ? "neutro" : "critico"}>{t.active ? "Ativo" : "Revogado"}</Selo>
-                      <span className="font-mono text-[10px]" style={{ color: "var(--bi-faint)" }}>
-                        {t.token_prefix}***
-                      </span>
-                    </div>
-                    {t.description && (
-                      <p className="text-[12px] leading-snug" style={{ color: "var(--bi-muted)" }}>{t.description}</p>
-                    )}
-                    <div className="mt-2 flex flex-wrap gap-1">
-                      {t.scopes.map((s) => (
-                        <Selo key={s}>{s}</Selo>
-                      ))}
-                    </div>
-                    <div className="mt-2 flex flex-wrap gap-3 text-[10px]" style={{ color: "var(--bi-faint)" }}>
-                      <span className="flex items-center gap-1">
-                        <Activity className="size-3" />
-                        Ultimo uso: {formatDate(t.last_used_at)}
-                      </span>
-                      {t.last_used_ip && <span>IP: {t.last_used_ip}</span>}
-                      <span>Criado: {formatDate(t.created_at)}</span>
-                      {t.expires_at && <span>Expira: {formatDate(t.expires_at)}</span>}
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 gap-1">
-                    {t.active && (
+        /* A camada do meio: UM cartao branco em volta da lista inteira. Antes
+           cada token era um `Bloco` branco solto no fundo cinza — a hierarquia
+           estava invertida, com o item na cor do cartao. O estado vazio fica
+           DENTRO do cartao: a tela nao pode alternar entre ter e nao ter a
+           camada conforme o numero de tokens. */
+        <Bloco className="p-3">
+          <BlocoHead
+            icon={KeyRound}
+            titulo="Tokens cadastrados"
+            sub={`${tokens.length} token(s)`}
+            right={
+              <span className="bi-num text-[13px]" title="Tokens ativos">
+                {tokens.filter((t) => t.active).length} ativo(s)
+              </span>
+            }
+          />
+          {tokens.length === 0 ? (
+            <Vazio>Nenhum Service Token cadastrado. Clique em &quot;Novo Token&quot;.</Vazio>
+          ) : (
+          <Lista>
+            {tokens.map((t) => (
+              <ItemLinha
+                key={t.id}
+                className={!t.active ? "opacity-60" : ""}
+                titulo={
+                  <span className="flex flex-wrap items-baseline gap-2">
+                    <span className="min-w-0 truncate">{t.name}</span>
+                    {/* Ativo fica CINZA de proposito: e o estado normal, e o
+                        que precisa saltar e o revogado. */}
+                    <Selo tom={t.active ? "neutro" : "critico"}>{t.active ? "Ativo" : "Revogado"}</Selo>
+                    <span className="bi-id text-[10px]" style={{ color: "var(--bi-faint)" }}>
+                      {t.token_prefix}***
+                    </span>
+                  </span>
+                }
+                meta={t.scopes.map((s) => (
+                  <Selo key={s}>{s}</Selo>
+                ))}
+                acao={
+                  t.active ? (
+                    <>
                       <button
+                        type="button"
                         onClick={() => handleRotate(t.id, t.name)}
-                        className="rounded-lg p-2 transition-colors hover:bg-[var(--bi-line)]"
-                        style={{ color: "var(--bi-muted)" }}
+                        className="grid size-7 place-items-center rounded-lg"
+                        style={{ background: "var(--bi-line)", color: "var(--bi-muted)" }}
                         title="Rotacionar token"
                       >
-                        <RotateCw className="size-4" />
+                        <RotateCw className="size-3.5" />
                       </button>
-                    )}
-                    {t.active && (
                       <button
+                        type="button"
                         onClick={() => handleRevoke(t.id, t.name)}
-                        className="rounded-lg p-2 transition-colors hover:bg-[var(--bi-line)]"
-                        style={{ color: "var(--bi-crit-ink)" }}
+                        className="grid size-7 place-items-center rounded-lg"
+                        style={{ background: "var(--bi-line)", color: "var(--bi-crit-ink)" }}
                         title="Revogar token"
                       >
-                        <Trash2 className="size-4" />
+                        <Trash2 className="size-3.5" />
                       </button>
-                    )}
-                  </div>
-                </div>
-            </Bloco>
-          ))}
-        </div>
+                    </>
+                  ) : undefined
+                }
+              >
+                {t.description && (
+                  <p className="mt-1 text-[12px] leading-snug" style={{ color: "var(--bi-muted)" }}>
+                    {t.description}
+                  </p>
+                )}
+                {/* Eram quatro datas em frase corrida, e duas so apareciam
+                    quando preenchidas — o que movia as outras de lugar a cada
+                    linha. Em colunas fixas o olho desce a coluna, e o campo
+                    ausente vira "-" em vez de sumir. */}
+                <Campos
+                  campos={[
+                    { rotulo: "Último uso", valor: formatDate(t.last_used_at) },
+                    { rotulo: "IP do último uso", valor: t.last_used_ip || "-", mono: true },
+                    { rotulo: "Criado em", valor: formatDate(t.created_at) },
+                    { rotulo: "Expira em", valor: formatDate(t.expires_at) },
+                  ]}
+                  cols={4}
+                />
+              </ItemLinha>
+            ))}
+          </Lista>
+          )}
+        </Bloco>
       )}
     </div>
   );
