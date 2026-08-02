@@ -37,8 +37,20 @@ interface SenhaResp {
 const ROLES = [
   { value: "admin", label: "Administrador" },
   { value: "analyst", label: "Analista" },
-  { value: "user", label: "Usuario" },
+  { value: "user", label: "Usuário" },
 ];
+
+/** O rotulo humano de um perfil, para o GATILHO FECHADO do seletor.
+ *
+ *  `<Select.Value>` do Base UI renderiza o valor CRU quando nao recebe funcao
+ *  de formatacao — entao o gatilho fechado mostrava `analyst`, a chave do
+ *  backend, enquanto a lista aberta mostrava "Analista" certinho. Medido no
+ *  DOM: os cinco gatilhos liam "admin/admin/analyst/user/user".
+ *
+ *  A traducao e SO DE EXIBICAO. A chave continua sendo o que vai e volta da
+ *  API — renomear `value` quebraria permissao em silencio. */
+const rotuloRole = (v: unknown) =>
+  ROLES.find((r) => r.value === v)?.label ?? String(v ?? "");
 
 /** Rotulo de controle: 11px em `--bi-muted`, a mesma escala dos filtros das
  *  demais telas do lote. Existe para os quatro rotulos desta tela nao voltarem
@@ -319,7 +331,7 @@ export default function UsuariosPage() {
           <div>
             <Rotulo>Perfil</Rotulo>
             <Select value={novoRole} onValueChange={(v) => setNovoRole(v ?? "admin")}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger><SelectValue>{rotuloRole}</SelectValue></SelectTrigger>
               <SelectContent>
                 {ROLES.map((r) => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}
               </SelectContent>
@@ -433,7 +445,7 @@ export default function UsuariosPage() {
                           Perfil
                         </div>
                         <Select value={u.role} onValueChange={(v) => v && mudarRole(u, v)}>
-                          <SelectTrigger className="h-7 text-[11px]"><SelectValue /></SelectTrigger>
+                          <SelectTrigger className="h-7 text-[11px]"><SelectValue>{rotuloRole}</SelectValue></SelectTrigger>
                           <SelectContent>
                             {ROLES.map((r) => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}
                           </SelectContent>

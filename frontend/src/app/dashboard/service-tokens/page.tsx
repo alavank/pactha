@@ -275,29 +275,47 @@ export default function ServiceTokensPage() {
                 meta={t.scopes.map((s) => (
                   <Selo key={s}>{s}</Selo>
                 ))}
+                /* Os botoes CONTINUAM ocupando o lugar quando o token esta
+                   revogado — `invisible`, e nao removidos.
+
+                   Medido: sem eles a area de conteudo ficava 68px mais larga
+                   (2x28 + gap 4 + gap 8), e as quatro colunas da linha revogada
+                   saiam 17/34/51px a direita das linhas ativas. Em 390px de
+                   largura o desvio chega a 34px numa celula de 98px. A grade de
+                   posicoes fixas existe justamente para o olho descer a coluna;
+                   uma linha fora do prumo anula isso.
+
+                   `visibility: hidden` guarda o espaco e ja tira o clique;
+                   `aria-hidden` + `tabIndex -1` tiram do leitor de tela e do
+                   Tab, para nao restar botao fantasma. Reservar por largura fixa
+                   escrita a mao seria um numero magico que envelhece no primeiro
+                   ajuste de icone. */
                 acao={
-                  t.active ? (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => handleRotate(t.id, t.name)}
-                        className="grid size-7 place-items-center rounded-lg"
-                        style={{ background: "var(--bi-line)", color: "var(--bi-muted)" }}
-                        title="Rotacionar token"
-                      >
-                        <RotateCw className="size-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleRevoke(t.id, t.name)}
-                        className="grid size-7 place-items-center rounded-lg"
-                        style={{ background: "var(--bi-line)", color: "var(--bi-crit-ink)" }}
-                        title="Revogar token"
-                      >
-                        <Trash2 className="size-3.5" />
-                      </button>
-                    </>
-                  ) : undefined
+                  <div
+                    className={`flex items-center gap-1 ${t.active ? "" : "invisible"}`}
+                    {...(t.active ? {} : { "aria-hidden": true })}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => handleRotate(t.id, t.name)}
+                      className="grid size-7 place-items-center rounded-lg"
+                      style={{ background: "var(--bi-line)", color: "var(--bi-muted)" }}
+                      title="Rotacionar token"
+                      tabIndex={t.active ? undefined : -1}
+                    >
+                      <RotateCw className="size-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleRevoke(t.id, t.name)}
+                      className="grid size-7 place-items-center rounded-lg"
+                      style={{ background: "var(--bi-line)", color: "var(--bi-crit-ink)" }}
+                      title="Revogar token"
+                      tabIndex={t.active ? undefined : -1}
+                    >
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  </div>
                 }
               >
                 {t.description && (

@@ -384,8 +384,19 @@ export default function TransfereGovPage() {
             ))}
           </div>
         ) : displayItems.length === 0 ? (
+          /* DUAS causas de lista vazia, e o conselho certo e diferente em cada
+             uma. O filtro de Anos e client-side: quando e ELE que zerou a tela,
+             mandar "clique em Filtrar" manda fazer justamente a unica coisa que
+             nao resolve — a busca volta do servidor igual e o ano continua
+             escondendo tudo. Quem tem de mudar e o ano.
+
+             Mesma ramificacao que a tela irma de CNPJ ja faz. */
           <Vazio>
-            Nenhum plano encontrado. Use os filtros acima e clique em <strong>Filtrar</strong>.
+            {items.length > 0 && anosSel.length > 0 ? (
+              <>Nenhum plano de ação nos anos selecionados. Ajuste o filtro <strong>Anos</strong>.</>
+            ) : (
+              <>Nenhum plano encontrado. Use os filtros acima e clique em <strong>Filtrar</strong>.</>
+            )}
           </Vazio>
         ) : (
           /* AS TRES CAMADAS: fundo cinza da pagina -> cartao BRANCO do ano ->
