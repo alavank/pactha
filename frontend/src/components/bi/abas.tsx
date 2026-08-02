@@ -140,17 +140,30 @@ export function AbaGeral({ ov, alertas, tv }: AbaProps & { ov: Overview; alertas
             titulo="Regularidade"
             sub="aptidão para receber transferências"
           />
-          <div className="flex flex-1 flex-col items-center justify-between gap-2">
-            {/* EMPILHADOS e GRANDES, nao lado a lado e pequenos.
-                Lado a lado cada arco cabia em 112px e sobrava metade do cartao
-                vazia em cima — o medidor virava um enfeite miudo com um numero
-                grande demais por dentro. O cartao e alto e estreito: a leitura
-                natural dele e de cima para baixo. */}
-            <div className="flex w-full flex-col items-center gap-1">
+          <div className="flex min-h-0 flex-1 flex-col items-center gap-2">
+            {/* A DIRECAO SEGUE O FORMATO DO CARTAO, e isso foi MEDIDO.
+                No modulo e no celular o cartao e ALTO e estreito: empilhado,
+                cada arco fica com 300x206 e 230x158. No Modo Tela e no link
+                publico o cartao e BAIXO e largo (grade `h-screen`, linhas de
+                altura limitada): ali empilhar espremia cada arco para 121x83 e
+                99x68 — ilegivel numa parede de gabinete —, e com altura fixa em
+                pixels o segundo era CORTADO ao meio. Lado a lado nos mesmos
+                cartoes: 260x174 e 259x144, ou seja 2,1x e 2,6x maior.
+
+                `items-stretch` na linha nao e detalhe: com `items-center` o
+                filho nao estica, o `h-full` do SVG fica sem altura de
+                referencia, ele cai no proprio teto e VAZA por cima da faixa.
+                Foi o que a medicao pegou.
+
+                `min-h-0` e o que permite encolher: sem ele o flex respeita o
+                tamanho do conteudo e volta a transbordar. */}
+            <div className={`flex min-h-0 w-full flex-1 justify-center gap-2 ${
+              tv ? "flex-row items-stretch" : "flex-col items-center"
+            }`}>
               <Gauge
                 pct={caucPct}
                 tom={caucTom}
-                size={tv ? 210 : 178}
+                max={tv ? 260 : 300}
                 centro={isRollup(s)
                   ? `${s.regulares}/${s.total_municipios}`
                   : caucExig.length ? `${caucOk}/${caucExig.length}` : (s.regular ? "Em dia" : "—")}
@@ -159,7 +172,7 @@ export function AbaGeral({ ov, alertas, tv }: AbaProps & { ov: Overview; alertas
               <Gauge
                 pct={cgPct}
                 tom={cgTom}
-                size={tv ? 210 : 178}
+                max={tv ? 260 : 300}
                 centro={!cg?.tem_dados ? "—"
                   : cgTotal ? `${cgOk}/${cgTotal}`
                   : (cg.situacao || `${cg.regulares}/${cg.entidades}`)}
@@ -171,7 +184,7 @@ export function AbaGeral({ ov, alertas, tv }: AbaProps & { ov: Overview; alertas
                 só quando há impedimento — se o normal também for colorido, a
                 cor deixa de avisar. */}
             <div
-              className="w-full rounded-lg px-3 py-2"
+              className="w-full shrink-0 rounded-lg px-3 py-2"
               style={{
                 background: `color-mix(in oklab, var(--bi-${
                   !cg?.tem_dados && caucPct >= 0.99 ? "warn"
