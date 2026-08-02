@@ -10,7 +10,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Bloco, BlocoHead, Campos, ItemLinha, Lista, Selo, Vazio, situacaoTom,
+  Bloco, BlocoHead, Campos, ItemLinha, Lista, Modal, Selo, Vazio, situacaoTom,
 } from "@/components/ui/superficies";
 
 interface Usuario {
@@ -514,15 +514,14 @@ export default function UsuariosPage() {
 
       {/* Modal editar acesso de municipios e telas */}
       {editUser && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ background: "rgba(13, 16, 15, 0.45)" }}
-          onClick={() => setEditUser(null)}
+        <Modal
+          aberto
+          superficie
+          maxW="max-w-lg"
+          rotulo={`Acesso de ${editUser.name}`}
+          onFechar={() => setEditUser(null)}
         >
-          <div
-            className="bi-card bi-scroll max-h-[85vh] w-full max-w-lg overflow-y-auto p-4"
-            onClick={(e) => e.stopPropagation()}
-          >
+          <div className="bi-scroll min-h-0 flex-1 overflow-y-auto p-4">
             <BlocoHead
               icon={Building2}
               titulo={`Acesso de ${editUser.name}`}
@@ -563,17 +562,19 @@ export default function UsuariosPage() {
               </div>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
 
       {/* Modal senha gerada */}
       {senhaGerada && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ background: "rgba(13, 16, 15, 0.45)" }}
-          onClick={() => setSenhaGerada(null)}
+        <Modal
+          aberto
+          superficie
+          maxW="max-w-md"
+          rotulo="Senha temporária gerada"
+          onFechar={() => setSenhaGerada(null)}
         >
-          <div className="bi-card w-full max-w-md p-4" onClick={(e) => e.stopPropagation()}>
+          <div className="p-4">
             <BlocoHead
               icon={KeyRound}
               titulo="Senha temporária gerada"
@@ -623,7 +624,7 @@ export default function UsuariosPage() {
               </Button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

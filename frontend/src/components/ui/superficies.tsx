@@ -149,14 +149,30 @@ export function situacaoTom(
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "");
   // Exige ação corretiva, ou o dinheiro parou.
+  /* `nao habilitada` fica AQUI, e não cai na regra genérica de negação abaixo:
+     ela rebaixaria para atenção, e não estar habilitada a receber recurso é
+     impedimento, não pendência. Foi escalado de propósito. */
   if (/(cancelad|cancelament|rescindid|rejeitad|indeferid|impedid|inadimpl|anulad|nao habilitada|vencid)/.test(t))
     return "critico";
   // Depende de alguém: está esperando análise, documento ou decisão.
   if (/(pendente|analise|aguardando|suspens|complementa|diligencia|tramit|elaborac)/.test(t))
     return "atencao";
-  // Chegou ao fim bem.
-  if (/(conclu|aprovad|homologad|selecionad|empenhad|liquidad|adimplent|encerrad|prestac)/.test(t))
-    return "ok";
+  // Chegou ao fim bem — SE não estiver negado.
+  //
+  // A regra era cega a negação: "NÃO CONCLUÍDO" casa com `conclu` e saía
+  // VERDE. A prova de que a forma negada existe nesta base estava dentro da
+  // própria regra — `nao habilitada` tinha sido acrescentado à mão na lista
+  // crítica, um remendo para UM caso. Os status vêm de portais externos
+  // (SIGCON, TransfereGov, FNS), então não dá para enumerá-los aqui.
+  //
+  // Negado vira ATENÇÃO e não crítico de propósito: "não concluído" é obra em
+  // andamento, não inadimplência. O que é recusa de verdade já tem palavra
+  // própria na lista de cima (`rejeitad`, `indeferid`).
+  const bom = /(conclu|aprovad|homologad|selecionad|empenhad|liquidad|adimplent|encerrad|prestac)/.exec(t);
+  if (bom) {
+    const antes = t.slice(Math.max(0, bom.index - 14), bom.index);
+    return /\b(nao|sem|nunca|falta|deixou de)\s+\S{0,8}\s*$/.test(antes) ? "atencao" : "ok";
+  }
   return "neutro";
 }
 
@@ -256,7 +272,9 @@ export interface Campo {
   quebra?: boolean;
   /** Monoespaçada. Para IDENTIFICADOR (nº SIAFI, nº processo, CNPJ), onde o
    *  alinhamento caractere a caractere é o que permite comparar dois números
-   *  parecidos. `bi-num` é tabular, o que serve a valor; não serve a código. */
+   *  parecidos. `bi-num` é tabular, o que serve a valor; não serve a código.
+   *  Usa `.bi-id` e NÃO `font-mono`: neste projeto `--font-mono` aponta para
+   *  Nunito, então `font-mono` não entrega monoespaçada nenhuma. */
   mono?: boolean;
 }
 
@@ -316,7 +334,7 @@ export function Campos({ campos, cols }: { campos: Campo[]; cols?: number }) {
             {c.rotulo}
           </div>
           <div
-            className={`text-[11px] leading-tight ${c.mono ? "font-mono tabular-nums" : "bi-num"} ${
+            className={`text-[11px] leading-tight ${c.mono ? "bi-id" : "bi-num"} ${
               largo || c.quebra ? "break-words" : "truncate"
             }`}
             style={{
@@ -437,6 +455,18 @@ export const ESTILO_SEC: React.CSSProperties = {
 // FNS, `bi-card` cru em Usuários, um `Modal` local em TransfereGov-CNPJ e divs
 // soltas em mais dois lugares. É exatamente o problema que o cabeçalho deste
 // arquivo descreve, repetido uma camada acima.
+//
+// ONDE ISSO ESTÁ HOJE — e este parágrafo existe porque a versão anterior dele
+// falava dos cinco no passado, como se todos tivessem sido eliminados, quando
+// três ainda estavam vivos. Comentário que descreve a intenção em vez do
+// estado é pior que nenhum: ele impede a próxima pessoa de procurar.
+//   ✔ eliminados: `PainelModal`/`CabecalhoModal` do FNS, `bi-card` cru em
+//     Usuários, o `Modal` local de TransfereGov-CNPJ, e as divs soltas.
+//   ✖ SOBRA UM: `ui/dialog` (Base UI), usado só pelo Cofre. Não foi convertido
+//     de propósito — é a tela de senhas, e trocar a primitiva mexe em foco e
+//     em fechamento numa superfície onde o dono pediu mudança só visual. O véu
+//     dele já foi corrigido (`bg-neutral` invertia no escuro).
+//   · `ui/sheet` continua, e é outra coisa: gaveta lateral do menu no celular.
 //
 // Nada aqui é invenção: `Modal`/`ModalHead`/`Secao` são o `PainelModal`/
 // `CabecalhoModal`/`Secao` que já estavam em produção no modal do FNS,
@@ -898,7 +928,7 @@ export function GradeCel({ children, tom = "texto", title, className = "" }: {
 }) {
   const base = "min-w-0 text-[11px] leading-snug";
   if (tom === "id")
-    return <div className={`${base} truncate font-mono ${className}`} style={{ color: "var(--bi-faint)" }} title={title}>{children}</div>;
+    return <div className={`${base} bi-id truncate ${className}`} style={{ color: "var(--bi-faint)" }} title={title}>{children}</div>;
   if (tom === "num")
     return <div className={`${base} bi-num truncate text-right whitespace-nowrap ${className}`} style={{ color: "var(--bi-text)" }} title={title}>{children}</div>;
   if (tom === "data")
