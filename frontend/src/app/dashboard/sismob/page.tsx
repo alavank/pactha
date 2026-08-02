@@ -33,11 +33,15 @@ import {
   Building2, ExternalLink, ChevronDown, ChevronRight, Camera, Layers, ListChecks,
 } from "lucide-react";
 import api from "@/lib/api";
+// Uma funcao de dinheiro no sistema inteiro. Havia CINCO copias, e a
+// desta tela ja tinha derivado: arredondava, e o mesmo valor aparecia
+// com e sem centavos no mesmo print.
+import { formatCurrency as moeda } from "@/lib/utils";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { atalhosAnos, resumoAnos } from "@/lib/periodo";
 import {
-  Bloco, BlocoHead, Campos, ItemLinha, Lista, Numero, Selo, Vazio, situacaoTom,
+  Abas, Bloco, BlocoHead, Campos, ItemLinha, Lista, Numero, Selo, Vazio, situacaoTom,
 } from "@/components/ui/superficies";
 
 interface Regra {
@@ -79,15 +83,6 @@ interface Resp {
 
 type Tom = "neutro" | "ok" | "atencao" | "critico";
 
-function moeda(v?: number | null): string {
-  if (v == null) return "—";
-  return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL",
-                                     maximumFractionDigits: 0 });
-}
-function moedaExata(v?: number | null): string {
-  if (v == null) return "—";
-  return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-}
 function data(iso?: string | null): string {
   if (!iso) return "—";
   try { return new Date(iso).toLocaleDateString("pt-BR", { timeZone: "UTC" }); }
@@ -212,13 +207,13 @@ function CartaoObra({ o }: { o: Obra }) {
           { rotulo: "Execução", tom: tomCampo,
             valor: o.percentual != null ? `${o.percentual}%` : "—" },
           { rotulo: "Etapa", valor: o.etapa || "—", title: o.etapa || undefined },
-          { rotulo: "Aprovado", valor: moedaExata(o.dinheiro.proposta) },
-          { rotulo: "Repassado", valor: moedaExata(o.dinheiro.repassado) },
+          { rotulo: "Aprovado", valor: moeda(o.dinheiro.proposta) },
+          { rotulo: "Repassado", valor: moeda(o.dinheiro.repassado) },
           { rotulo: "Parcelas pagas", valor: o.dinheiro.parcelas_pagas ?? "—" },
-          { rotulo: "Contratado", valor: moedaExata(o.dinheiro.contrato) },
+          { rotulo: "Contratado", valor: moeda(o.dinheiro.contrato) },
           // Glosa da coluna, não afirmação sobre esta obra: o título tem que
           // continuar verdadeiro quando o valor é "—".
-          { rotulo: "Saldo licitação", valor: moedaExata(o.dinheiro.saldo),
+          { rotulo: "Saldo licitação", valor: moeda(o.dinheiro.saldo),
             title: "Sobra da licitação: repasse recebido acima do valor contratado" },
           { rotulo: "Regime", valor: o.dinheiro.regime || "—",
             title: o.dinheiro.regime || undefined },
@@ -287,7 +282,7 @@ function CartaoObra({ o }: { o: Obra }) {
               <span className="font-mono">{cnpjFmt(e.cnpj)}</span>
               {e.numero_contrato && <span>· contrato {e.numero_contrato}</span>}
               {e.valor_final_licitado != null && (
-                <span className="bi-num">· {moedaExata(e.valor_final_licitado)}</span>
+                <span className="bi-num">· {moeda(e.valor_final_licitado)}</span>
               )}
             </div>
           ))}
@@ -307,14 +302,13 @@ function CartaoObra({ o }: { o: Obra }) {
  *  organização secundária. Cartão branco dentro de cartão branco quebraria a
  *  hierarquia fundo → bloco → item, então o ano entra como faixa separada por
  *  linha, com o mesmo cabeçalho e o mesmo gesto de abrir e fechar. */
-function Secao({ titulo, obras, aberta, vazio }: {
-  titulo: string; obras: Obra[]; aberta?: boolean;
-  /** Mensagem quando não há obras. Sem ela a seção some — que é o certo para
-   *  "Em dia" e "Encerradas", mas não para "Precisa de ação": ali o vazio é a
-   *  boa notícia e precisa ser dito. */
+function Secao({ obras, vazio }: {
+  obras: Obra[];
+  /** Mensagem quando não há obras. Sem ela a aba fica em branco — que é o certo
+   *  para "Em dia" e "Encerradas", mas não para "Precisa de ação": ali o vazio
+   *  é a boa notícia e precisa ser dito. */
   vazio?: string;
 }) {
-  const [open, setOpen] = useState(!!aberta);
   /* Guarda o que está FECHADO, e não o que está aberto: assim um ano novo que
      chegue na próxima coleta nasce ABERTO em vez de invisível. */
   const [anosFechados, setAnosFechados] = useState<Set<string>>(new Set());
@@ -337,27 +331,16 @@ function Secao({ titulo, obras, aberta, vazio }: {
       return n;
     });
 
-  if (!obras.length && !vazio) return null;
-  const total = obras.reduce((s, o) => s + (o.dinheiro.proposta || 0), 0);
+  if (!obras.length) return <Vazio>{vazio || "Nenhuma obra."}</Vazio>;
   return (
-    <Bloco className="p-3">
-      <button type="button" onClick={() => setOpen((v) => !v)}
-              aria-expanded={open} className="w-full text-left">
-        <BlocoHead
-          icon={open ? ChevronDown : ChevronRight}
-          titulo={titulo}
-          sub={`${obras.length} obra(s)`}
-          right={<span className="bi-num text-[13px]">{moeda(total)}</span>}
-          className={open ? undefined : "mb-0"}
-        />
-      </button>
-      {open && (obras.length ? (
+    <>
+      {(
         <div className="flex flex-col gap-2">
           {porAno.map(([ano, doAno]) => {
             const fechado = anosFechados.has(ano);
             const totalAno = doAno.reduce((s, o) => s + (o.dinheiro.proposta || 0), 0);
             return (
-              <div key={ano} className="border-t pt-2.5"
+              <div key={ano} className="border-t pt-2.5 first:border-t-0 first:pt-0"
                    style={{ borderColor: "var(--bi-line)" }}>
                 <button type="button" onClick={() => alternarAno(ano)}
                         aria-expanded={!fechado} className="w-full text-left">
@@ -376,10 +359,8 @@ function Secao({ titulo, obras, aberta, vazio }: {
             );
           })}
         </div>
-      ) : (
-        <Vazio>{vazio}</Vazio>
-      ))}
-    </Bloco>
+      )}
+    </>
   );
 }
 
@@ -388,6 +369,7 @@ export default function SismobPage() {
   const [d, setD] = useState<Resp | null>(null);
   const [loading, setLoading] = useState(true);
   const [anosSel, setAnosSel] = useState<string[]>([]);
+  const [triagem, setTriagem] = useState<"acao" | "em_dia" | "encerradas">("acao");
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -468,7 +450,7 @@ export default function SismobPage() {
                 ? `${acao.length} obra(s) precisam de ação`
                 : "Nenhuma obra com pendência de prazo"}
               sub={t.repasse_parado > 0
-                ? `${moedaExata(t.repasse_parado)} repassados em obras que não se movem há mais de 60 dias.`
+                ? `${moeda(t.repasse_parado)} repassados em obras que não se movem há mais de 60 dias.`
                 : `${t.vivas} obra(s) em andamento, todas dentro do prazo de atualização.`}
               right={acao.length
                 ? <Selo tom="critico">exige ação</Selo>
@@ -523,12 +505,69 @@ export default function SismobPage() {
                   )}
                 </div>
               )}
-              <Secao titulo="Precisa de ação" obras={filtrarAnos(acao)} aberta
-                vazio={anosSel.length
-                  ? "Nenhuma obra com prazo vencido ou parada nos anos selecionados."
-                  : "Nenhuma obra com prazo vencido ou parada."} />
-              <Secao titulo="Em dia" obras={filtrarAnos(d.em_dia ?? [])} />
-              <Secao titulo="Concluídas e encerradas" obras={filtrarAnos(d.encerradas ?? [])} />
+              {/* AS TRÊS TRIAGENS VIRARAM ABAS DE UM CARTÃO SÓ.
+                  Eram três cartões brancos empilhados, cada um com o seu
+                  chevron. Com os três recolhidos sobrava metade da tela vazia,
+                  e com os três abertos a página ficava quilométrica — o gestor
+                  rolava para achar a próxima triagem em vez de trocar de vista.
+                  Aba é o gesto certo aqui porque as três são MUTUAMENTE
+                  EXCLUSIVAS: uma obra está numa e só numa.
+
+                  O que se PERDE: não dá mais para ver "Precisa de ação" e "Em
+                  dia" abertas ao mesmo tempo. A contagem e o valor de cada
+                  triagem continuam visíveis no rótulo da aba e no cabeçalho,
+                  então a comparação não exige trocar de aba.
+
+                  A aba com zero obras fica DESLIGADA em vez de sumir: "Em dia:
+                  0" é informação, e uma aba que aparece e desaparece conforme o
+                  filtro de anos move as outras de lugar. */}
+              {(() => {
+                const grupos = [
+                  { valor: "acao" as const, rotulo: "Precisa de ação", obras: filtrarAnos(acao),
+                    vazio: anosSel.length
+                      ? "Nenhuma obra com prazo vencido ou parada nos anos selecionados."
+                      : "Nenhuma obra com prazo vencido ou parada." },
+                  { valor: "em_dia" as const, rotulo: "Em dia", obras: filtrarAnos(d.em_dia ?? []),
+                    vazio: "Nenhuma obra em dia nos anos selecionados." },
+                  { valor: "encerradas" as const, rotulo: "Concluídas e encerradas",
+                    obras: filtrarAnos(d.encerradas ?? []),
+                    vazio: "Nenhuma obra concluída ou encerrada nos anos selecionados." },
+                ];
+                /* Cai na primeira aba com obra quando a ativa esvazia por causa
+                   do filtro de anos — sem isso o cartão ficaria vazio com abas
+                   cheias ao lado. "Precisa de ação" tem prioridade: é a razão
+                   da tela existir. */
+                const atual = grupos.find((g) => g.valor === triagem && g.obras.length)
+                  ? triagem
+                  : (grupos.find((g) => g.obras.length)?.valor ?? "acao");
+                const g = grupos.find((x) => x.valor === atual)!;
+                const total = g.obras.reduce((s, o) => s + (o.dinheiro.proposta || 0), 0);
+                return (
+                  <Bloco className="p-3">
+                    <BlocoHead
+                      titulo={g.rotulo}
+                      sub={`${g.obras.length} obra(s)`}
+                      right={g.obras.length
+                        ? <span className="bi-num text-[13px]">{moeda(total)}</span>
+                        : undefined}
+                    />
+                    <div className="mb-3">
+                      <Abas
+                        valor={atual}
+                        onChange={setTriagem}
+                        opcoes={grupos.map((x) => ({
+                          valor: x.valor,
+                          label: `${x.rotulo} (${x.obras.length})`,
+                          on: x.obras.length > 0,
+                        }))}
+                      />
+                    </div>
+                    <div key={atual} className="bi-pane-enter">
+                      <Secao obras={g.obras} vazio={g.vazio} />
+                    </div>
+                  </Bloco>
+                );
+              })()}
             </section>
 
             <aside className="flex flex-col gap-3">
@@ -551,7 +590,7 @@ export default function SismobPage() {
                         <div className="flex items-baseline justify-between gap-2">
                           <dt className="text-[11px]" style={{ color: "var(--bi-muted)" }}>{k}</dt>
                           <dd className="bi-num text-[12px]" style={{ color: "var(--bi-text)" }}>
-                            {moedaExata(v)}
+                            {moeda(v)}
                           </dd>
                         </div>
                         {nota && (
