@@ -7,16 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { MultiSelect } from "@/components/ui/multi-select";
 import {
-  Bloco,
-  BlocoHead,
-  Campos,
-  ItemLinha,
-  Lista,
-  Numero,
-  Selo,
-  Vazio,
-  situacaoTom,
-  type Campo,
+  Bloco, BlocoHead, Campos, ItemLinha, Lista, Modal, ModalCorpo, ModalHead, Numero, Secao, Selo, Vazio, situacaoTom, type Campo,
 } from "@/components/ui/superficies";
 import { atalhosAnos, resumoAnos } from "@/lib/periodo";
 import { formatCurrency } from "@/lib/utils";
@@ -518,20 +509,13 @@ export default function PropostasFNSPage() {
 
       {/* Modal Detalhamento — NIVEL 1 */}
       {detalheItem && (
-        <div
-          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4"
-          onClick={() => setDetalheItem(null)}
-        >
-          {/* O painel do modal usa o FUNDO da pagina, nao a superficie do cartao:
-              assim os blocos brancos de dentro continuam se destacando do que
-              esta atras deles, como fazem na tela normal. */}
-          <PainelModal maxW="max-w-4xl">
-            <CabecalhoModal
-              titulo="Detalhamento por tipo de proposta e tipo de recurso"
-              sub={`${data?.params?.municipio ?? "—"}/${data?.params?.uf ?? "—"} · ${data?.params?.ano ?? "—"}`}
-              onClose={() => setDetalheItem(null)}
-            />
-            <div className="space-y-2.5 p-3">
+        <Modal aberto maxW="max-w-4xl" onFechar={() => setDetalheItem(null)}>
+          <ModalHead
+            titulo="Detalhamento por tipo de proposta e tipo de recurso"
+            sub={`${data?.params?.municipio ?? "—"}/${data?.params?.uf ?? "—"} · ${data?.params?.ano ?? "—"}`}
+            onFechar={() => setDetalheItem(null)}
+          />
+          <ModalCorpo className="space-y-2.5">
               <Secao
                 icon={FileText}
                 titulo="Dados da proposta agrupada"
@@ -644,24 +628,19 @@ export default function PropostasFNSPage() {
                   <Vazio>Nenhuma proposta individual encontrada para esse grupo no FNS.</Vazio>
                 )}
               </Bloco>
-            </div>
-          </PainelModal>
-        </div>
+          </ModalCorpo>
+        </Modal>
       )}
 
       {/* Modal NÍVEL 2: Detalhe Completo da Proposta Individual */}
       {(propostaDetalhe || loadingDetalhe) && (
-        <div
-          className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/50 p-4"
-          onClick={() => setPropostaDetalhe(null)}
-        >
-          <PainelModal maxW="max-w-5xl">
-            <CabecalhoModal
-              titulo={`Detalhe da proposta ${propostaDetalhe?.nu_proposta || ""}`}
-              sub={propostaDetalhe ? `${propostaDetalhe.municipio}/${propostaDetalhe.uf} · ${propostaDetalhe.ano}` : undefined}
-              onClose={() => setPropostaDetalhe(null)}
-            />
-            <div className="space-y-2.5 p-3">
+        <Modal aberto nivel={2} maxW="max-w-5xl" onFechar={() => setPropostaDetalhe(null)}>
+          <ModalHead
+            titulo={`Detalhe da proposta ${propostaDetalhe?.nu_proposta || ""}`}
+            sub={propostaDetalhe ? `${propostaDetalhe.municipio}/${propostaDetalhe.uf} · ${propostaDetalhe.ano}` : undefined}
+            onFechar={() => setPropostaDetalhe(null)}
+          />
+          <ModalCorpo className="space-y-2.5">
               {loadingDetalhe && (
                 <div className="flex justify-center py-12">
                   <Loader2 className="size-6 animate-spin" style={{ color: "var(--bi-muted)" }} />
@@ -864,81 +843,9 @@ export default function PropostasFNSPage() {
                   </div>
                 </>
               )}
-            </div>
-          </PainelModal>
-        </div>
+          </ModalCorpo>
+        </Modal>
       )}
     </div>
-  );
-}
-
-/** A caixa do modal. Fundo = o fundo DA PAGINA (`--bi-bg`), nao a superficie do
- *  cartao: é o que mantém a mesma hierarquia de dentro para fora (fundo → bloco
- *  branco → item) que a tela usa, em vez de branco sobre branco. */
-function PainelModal({
-  children,
-  maxW,
-}: {
-  children: React.ReactNode;
-  /** `max-w-*` literal: o Tailwind so gera a classe se ela aparecer escrita no
-   *  arquivo, entao ela vem do chamador e nao e montada aqui. */
-  maxW: string;
-}) {
-  return (
-    <div
-      className={`mt-6 w-full ${maxW} overflow-hidden border shadow-xl`}
-      style={{
-        background: "var(--bi-bg)",
-        borderColor: "var(--bi-line)",
-        borderRadius: "var(--bi-radius)",
-      }}
-      onClick={(e) => e.stopPropagation()}
-    >
-      {children}
-    </div>
-  );
-}
-
-function CabecalhoModal({ titulo, sub, onClose }: {
-  titulo: string; sub?: React.ReactNode; onClose: () => void;
-}) {
-  return (
-    <div
-      className="flex items-start justify-between gap-3 border-b px-4 py-3"
-      style={{ background: "var(--bi-surface)", borderColor: "var(--bi-line)" }}
-    >
-      <div className="min-w-0">
-        <h3 className="bi-title text-[14px] leading-tight">{titulo}</h3>
-        {sub && (
-          <p className="mt-0.5 text-[11px] leading-snug" style={{ color: "var(--bi-faint)" }}>{sub}</p>
-        )}
-      </div>
-      <button
-        type="button"
-        onClick={onClose}
-        className="shrink-0 hover:opacity-70"
-        style={{ color: "var(--bi-muted)" }}
-        aria-label="Fechar"
-      >
-        <X className="size-5" />
-      </button>
-    </div>
-  );
-}
-
-/** Um grupo de campos do detalhe. O <Campos> ja e a grade alinhada do sistema,
- *  entao a secao e so o cartao e o titulo em volta dela — quatro colunas fixas
- *  em todas, para os blocos empilhados lerem como uma coisa so. */
-function Secao({ icon, titulo, sub, campos }: {
-  icon?: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
-  titulo: string;
-  sub?: React.ReactNode;
-  campos: Campo[];
-}) {
-  return (
-    <Bloco className="p-3">
-      <BlocoHead icon={icon} titulo={titulo} sub={sub} />
-      <Campos campos={campos} cols={4} />
-    </Bloco>
   );
 }

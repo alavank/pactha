@@ -680,3 +680,16 @@ html,
 .bi-hover:active {
   box-shadow: inset 0 0 0 999px color-mix(in oklab, var(--bi-text) 12%, transparent);
 }
+
+/* IDENTIFICADOR — nº SIAFI, nº processo, CNPJ, nº de ordem bancária.
+   `font-mono` NÃO serve aqui: neste projeto `--font-mono` aponta para Nunito
+   (escolha deliberada, porque Nunito com `tabular-nums` lê melhor VALOR do que
+   uma monoespaçada). Só que identificador não é valor: o que permite comparar
+   "48291-7" com "48219-7" é toda letra ter a mesma largura, não só o dígito.
+   A prop `mono` do `Campo` e o `tom="id"` do `GradeCel` prometiam isto e
+   entregavam Nunito. */
+.bi-id {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}

@@ -2,14 +2,31 @@
 
 import React, { useMemo, useState } from "react";
 import {
-  Search as SearchIcon, Loader2, Landmark, Building2, X, Coins, FileText, Wallet,
+  Search as SearchIcon, Loader2, Landmark, Building2, Coins, FileText, Wallet,
 } from "lucide-react";
 import api from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
 import { formatCurrencyShort } from "@/lib/bi-format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Bloco, BlocoHead, Campos, ItemLinha, Lista, Numero, Selo, Vazio, situacaoTom } from "@/components/ui/superficies";
+import {
+  Bloco, BlocoHead, Campo, Campos, ItemLinha, Lista, Modal, ModalCorpo, ModalHead,
+  Numero, Secao, Selo, Vazio, situacaoTom,
+} from "@/components/ui/superficies";
+
+/** O `-` de campo vazio, e o `title` para o valor truncado ser recuperavel.
+ *  Substitui o `Field` local, que era a setima forma do mesmo padrao no
+ *  produto: `wide` virou `span`, `mono` virou `mono`. */
+function campoC(rotulo: string, valor: unknown, extra?: Partial<Campo>): Campo {
+  const vazio = valor === null || valor === undefined || valor === "";
+  const texto = typeof valor === "string" || typeof valor === "number" ? String(valor) : undefined;
+  return {
+    rotulo,
+    valor: vazio ? "-" : (valor as React.ReactNode),
+    title: texto ? `${rotulo}: ${texto}` : undefined,
+    ...extra,
+  };
+}
 
 interface Especial {
   id?: number; codigo?: string; programa_codigo?: string; situacao?: string;
@@ -59,15 +76,6 @@ function vigenciaTom(iso?: string | null): "normal" | "atencao" {
   if (Number.isNaN(fim)) return "normal";
   const dias = Math.ceil((fim - Date.now()) / 86_400_000);
   return dias >= 0 && dias <= 60 ? "atencao" : "normal";
-}
-
-function Field({ label, value, mono, wide }: { label: string; value?: React.ReactNode; mono?: boolean; wide?: boolean }) {
-  return (
-    <div className={wide ? "sm:col-span-2" : ""}>
-      <div className="text-[11px] uppercase tracking-wide text-base-content/50">{label}</div>
-      <div className={`text-sm text-base-content ${mono ? "font-mono" : ""}`}>{value ?? "-"}</div>
-    </div>
-  );
 }
 
 export default function TransfereGovCnpjPage() {
@@ -326,61 +334,78 @@ export default function TransfereGovCnpjPage() {
 
       {/* Modal Voluntaria / Convenio */}
       {selVol && (
-        <Modal onClose={() => setSelVol(null)} title={`Proposta ${selVol.numero_proposta || ""}`} subtitle={selVol.situacao}>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
-            <Field label="Nº Proposta" value={selVol.numero_proposta} mono />
-            <Field label="Ano" value={selVol.ano} />
-            <Field label="Situação da proposta" value={selVol.situacao} wide />
-            <Field label="Proponente" value={selVol.proponente} wide />
-            <Field label="Município / UF" value={selVol.municipio ? `${selVol.municipio}/${selVol.uf || ""}` : "-"} />
-            <Field label="Nº Convênio" value={selVol.nr_convenio} mono />
-            <Field label="Situação do convênio" value={selVol.situacao_convenio} wide />
-            <Field label="Valor global" value={formatCurrency(selVol.valor_global)} />
-            <Field label="Valor repasse" value={formatCurrency(selVol.valor_repasse)} />
-            <Field label="Valor desembolsado (pago)" value={selVol.valor_desembolsado != null ? formatCurrency(selVol.valor_desembolsado) : "-"} />
-            <Field label="Assinatura" value={fmtDate(selVol.dt_assinatura)} />
-            <Field label="Fim da vigência" value={fmtDate(selVol.dt_fim_vigencia)} />
-            <Field label="Objeto" value={<span className="whitespace-pre-wrap">{selVol.objeto || "-"}</span>} wide />
-          </div>
+        <Modal aberto onFechar={() => setSelVol(null)} maxW="max-w-2xl">
+          <ModalHead
+            titulo={`Proposta ${selVol.numero_proposta || ""}`}
+            sub={selVol.situacao}
+            onFechar={() => setSelVol(null)}
+          />
+          <ModalCorpo>
+            <Secao
+              icon={FileText}
+              titulo="Proposta e convênio"
+              campos={[
+                campoC("Nº Proposta", selVol.numero_proposta, { mono: true }),
+                campoC("Ano", selVol.ano),
+                campoC("Situação da proposta", selVol.situacao, { span: 2 }),
+                campoC("Proponente", selVol.proponente, { span: 2 }),
+                campoC("Município / UF", selVol.municipio ? `${selVol.municipio}/${selVol.uf || ""}` : null),
+                campoC("Nº Convênio", selVol.nr_convenio, { mono: true }),
+                campoC("Situação do convênio", selVol.situacao_convenio, { span: 2 }),
+                { rotulo: "Valor global", valor: formatCurrency(selVol.valor_global) },
+                { rotulo: "Valor repasse", valor: formatCurrency(selVol.valor_repasse) },
+                campoC("Valor desembolsado (pago)", selVol.valor_desembolsado != null ? formatCurrency(selVol.valor_desembolsado) : null),
+                campoC("Assinatura", fmtDate(selVol.dt_assinatura)),
+                campoC("Fim da vigência", fmtDate(selVol.dt_fim_vigencia)),
+              ]}
+            >
+              {/* Objeto fora da grade: e texto livre e a celula trunca por desenho. */}
+              <div className="mt-2.5">
+                <div className="text-[9px] uppercase tracking-wide" style={{ color: "var(--bi-faint)" }}>Objeto</div>
+                <p className="mt-0.5 text-[12px] leading-relaxed break-words whitespace-pre-wrap" style={{ color: "var(--bi-text)" }}>
+                  {selVol.objeto || "-"}
+                </p>
+              </div>
+            </Secao>
+          </ModalCorpo>
         </Modal>
       )}
 
       {/* Modal Especial / Plano de Acao */}
       {selEsp && (
-        <Modal onClose={() => setSelEsp(null)} title={`Plano de Ação ${selEsp.codigo || ""}`} subtitle={selEsp.situacao}>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
-            <Field label="Código" value={selEsp.codigo} mono />
-            <Field label="Programa" value={selEsp.programa_codigo} mono />
-            <Field label="Situação" value={selEsp.situacao} wide />
-            <Field label="Beneficiário" value={selEsp.beneficiario_nome} />
-            <Field label="CNPJ" value={selEsp.beneficiario_cnpj ? maskCnpj(selEsp.beneficiario_cnpj) : "-"} mono />
-            <Field label="UF" value={selEsp.uf} />
-            <Field label="Emenda" value={selEsp.emenda_codigo} mono />
-            <Field label="Valor total" value={formatCurrency(selEsp.valor_total)} />
-            <Field label="Políticas públicas" value={selEsp.politicas_publicas} wide />
-            <Field label="Objeto" value={<span className="whitespace-pre-wrap">{selEsp.objeto_descricao || "-"}</span>} wide />
-          </div>
+        <Modal aberto onFechar={() => setSelEsp(null)} maxW="max-w-2xl">
+          <ModalHead
+            titulo={`Plano de Ação ${selEsp.codigo || ""}`}
+            sub={selEsp.situacao}
+            onFechar={() => setSelEsp(null)}
+          />
+          <ModalCorpo>
+            <Secao
+              icon={Landmark}
+              titulo="Plano de ação"
+              campos={[
+                campoC("Código", selEsp.codigo, { mono: true }),
+                campoC("Programa", selEsp.programa_codigo, { mono: true }),
+                campoC("Situação", selEsp.situacao, { span: 2 }),
+                campoC("Beneficiário", selEsp.beneficiario_nome),
+                campoC("CNPJ", selEsp.beneficiario_cnpj ? maskCnpj(selEsp.beneficiario_cnpj) : null, { mono: true }),
+                campoC("UF", selEsp.uf),
+                campoC("Emenda", selEsp.emenda_codigo, { mono: true }),
+                { rotulo: "Valor total", valor: formatCurrency(selEsp.valor_total) },
+                campoC("Políticas públicas", selEsp.politicas_publicas, { span: 2, quebra: true }),
+              ]}
+            >
+              <div className="mt-2.5">
+                <div className="text-[9px] uppercase tracking-wide" style={{ color: "var(--bi-faint)" }}>Objeto</div>
+                <p className="mt-0.5 text-[12px] leading-relaxed break-words whitespace-pre-wrap" style={{ color: "var(--bi-text)" }}>
+                  {selEsp.objeto_descricao || "-"}
+                </p>
+              </div>
+            </Secao>
+          </ModalCorpo>
         </Modal>
       )}
     </div>
   );
 }
 
-function Modal({ title, subtitle, onClose, children }: { title: string; subtitle?: string; onClose: () => void; children: React.ReactNode }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
-      <div className="bg-base-100 rounded-2xl shadow-xl w-full max-w-2xl max-h-[85vh] overflow-y-auto" onClick={(ev) => ev.stopPropagation()}>
-        <div className="sticky top-0 bg-base-100 border-b px-5 py-3 flex items-start gap-3">
-          <div className="min-w-0">
-            <div className="font-semibold text-base-content truncate">{title}</div>
-            {subtitle && <div className="text-xs text-base-content/60 truncate">{subtitle}</div>}
-          </div>
-          <button onClick={onClose} className="ml-auto text-base-content/50 hover:text-base-content shrink-0">
-            <X className="size-5" />
-          </button>
-        </div>
-        <div className="p-5">{children}</div>
-      </div>
-    </div>
-  );
-}
