@@ -150,7 +150,7 @@ export function MultiSelect({
               >
                 <span
                   className={`grid size-4 shrink-0 place-items-center rounded border ${
-                    on ? "border-primary bg-primary text-primary-content" : "border-base-300"
+                    on ? "border-transparent bg-[var(--bi-cta)] text-[var(--bi-cta-ink)]" : "border-base-300"
                   }`}
                 >
                   {on && <Check className="size-3" />}

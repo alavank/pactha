@@ -112,7 +112,7 @@ export function PeriodoVigencia({
             <button
               type="button"
               onClick={() => setAberto(false)}
-              className="flex-1 rounded bg-primary px-2 py-1 text-xs font-medium text-primary-content hover:bg-primary/90"
+              className="bi-hover flex-1 rounded-lg bg-[var(--bi-cta)] px-2 py-1 text-xs font-medium text-[var(--bi-cta-ink)]"
             >
               Aplicar
             </button>

@@ -4,16 +4,32 @@ import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 import {
-  Search, Eraser, Loader2, ExternalLink, Eye, AlertTriangle,
+  Search, Eraser, Loader2, ExternalLink, Eye, AlertTriangle, ChevronDown, ChevronRight,
   FileText, Handshake, CalendarDays, Building2, Info, Paperclip,
   Banknote, HardHat, MessagesSquare,
 } from "lucide-react";
 import api from "@/lib/api";
 import { MultiSelect } from "@/components/ui/multi-select";
+import { atalhosAnos, resumoAnos } from "@/lib/periodo";
 import {
-  Abas, Aviso, Campo, Campos, Grade, GradeCel, GradeLinha, ItemLinha, Lista,
-  Modal, ModalCorpo, ModalHead, Secao, Selo, Vazio, situacaoTom,
+  Abas, Aviso, Bloco, BlocoHead, Campo, Campos, Grade, GradeCel,
+  GradeLinha, ItemLinha, Lista, Modal, ModalCorpo, ModalHead, Secao, Selo,
+  Vazio, situacaoTom,
 } from "@/components/ui/superficies";
+
+/** O ANO de uma proposta.
+ *
+ *  Vem do próprio número (`057216/2025`), que é a fonte mais confiável: a
+ *  data da proposta chega como texto já formatado pelo portal e nem sempre
+ *  existe. O início de vigência serve de segunda opção porque uma proposta
+ *  pode ter sido protocolada num ano e assinada no seguinte — e para agrupar
+ *  o que importa é o exercício da proposta. */
+function anoDa(p: { numero_proposta?: string; dt_proposta?: string; dt_inicio_vigencia?: string }): string {
+  const doNumero = /\/(\d{4})\s*$/.exec(p.numero_proposta || "");
+  if (doNumero) return doNumero[1];
+  const daData = /(\d{4})/.exec(p.dt_proposta || p.dt_inicio_vigencia || "");
+  return daData ? daData[1] : "";
+}
 
 /** Trilhas das grades densas. Escritas LITERAIS e no topo do módulo porque o
  *  Tailwind só gera a classe se ela aparecer no código-fonte — montar
@@ -169,6 +185,10 @@ export default function TransfereGovPropostas({
   const [sitContratacaoSel, setSitContratacaoSel] = useState<string[]>([]);
   const [vigFimDe, setVigFimDe] = useState("");
   const [vigFimAte, setVigFimAte] = useState("");
+  const [anosSel, setAnosSel] = useState<string[]>([]);
+  /* Recolhido por ANO. Guarda o que está FECHADO e não o que está aberto:
+     assim um ano novo que chegue na próxima coleta nasce aberto. */
+  const [anosFechados, setAnosFechados] = useState<Set<string>>(new Set());
   const [baixandoPdf, setBaixandoPdf] = useState(false);
 
   const [detalhe, setDetalhe] = useState<Detalhe | null>(null);
@@ -225,11 +245,46 @@ export default function TransfereGovPropostas({
     [items]
   );
 
-  // Filtro de situacao client-side (multi-select)
-  const displayItems = useMemo(
-    () => (situacoesSel.length ? items.filter((i) => situacoesSel.includes(i.situacao)) : items),
-    [items, situacoesSel]
+  /** Os anos que EXISTEM no resultado, para o dropdown não oferecer ano vazio. */
+  const anosDisponiveis = useMemo(
+    () => Array.from(new Set(items.map(anoDa).filter(Boolean))).sort((a, b) => b.localeCompare(a)),
+    [items]
   );
+
+  // Filtro de situacao e de ANO, client-side (os dois sao multi-select)
+  const displayItems = useMemo(() => {
+    let r = items;
+    if (situacoesSel.length) r = r.filter((i) => situacoesSel.includes(i.situacao));
+    if (anosSel.length) r = r.filter((i) => anosSel.includes(anoDa(i)));
+    return r;
+  }, [items, situacoesSel, anosSel]);
+
+  /** Agrupado por ano, do mais recente para o mais antigo.
+   *
+   *  É o mesmo desenho das Emendas Estaduais, que o dono escolheu como padrão
+   *  do produto: cada ano é um cartão BRANCO com cabeçalho (ano, contagem,
+   *  total à direita) e a lista de itens cinza dentro dele, sobre o fundo
+   *  cinza da página. As três camadas do Painel.
+   *
+   *  Proposta sem ano legível não é escondida: cai num grupo "Sem ano" no fim.
+   *  Sumir com registro porque o número veio fora do padrão seria pior que
+   *  mostrá-lo separado. */
+  const porAno = useMemo(() => {
+    const m = new Map<string, Proposta[]>();
+    for (const p of displayItems) {
+      const a = anoDa(p) || "Sem ano";
+      (m.get(a) ?? m.set(a, []).get(a)!).push(p);
+    }
+    return Array.from(m.entries()).sort((x, y) =>
+      x[0] === "Sem ano" ? 1 : y[0] === "Sem ano" ? -1 : y[0].localeCompare(x[0]));
+  }, [displayItems]);
+
+  const alternarAno = (a: string) =>
+    setAnosFechados((prev) => {
+      const n = new Set(prev);
+      if (n.has(a)) n.delete(a); else n.add(a);
+      return n;
+    });
 
   const abrirDetalhe = async (numero: string) => {
     setDetalhe(null); setLoadingDet(true); setAba("dados");
@@ -305,6 +360,19 @@ export default function TransfereGovPropostas({
             />
           </div>
           <div>
+            <label className="text-xs text-base-content/70 mb-1 block">Anos</label>
+            <MultiSelect
+              opcoes={anosDisponiveis}
+              valor={anosSel}
+              onChange={setAnosSel}
+              atalhos={atalhosAnos()}
+              formatarResumo={resumoAnos}
+              placeholder="Todos os anos"
+              rotuloTodos="Todos os anos"
+              ariaLabel="Anos"
+            />
+          </div>
+          <div>
             <label className="text-xs text-base-content/70 mb-1 block">Situação (multi)</label>
             <MultiSelect
               opcoes={situacaoOptions}
@@ -324,7 +392,10 @@ export default function TransfereGovPropostas({
             <Input type="date" value={vigFimAte} onChange={(e) => setVigFimAte(e.target.value)} />
           </div>
           <div className="flex items-end gap-2 flex-wrap">
-            <Button onClick={buscar} disabled={loading} className="bg-primary hover:bg-primary/90">
+            {/* Sem `bg-primary` na mão: a variante padrão do Button já é a CTA
+                quase-preta da identidade, e a classe só repintava de verde por
+                cima. Foi o último dos oito. */}
+            <Button onClick={buscar} disabled={loading}>
               {loading ? <Loader2 className="size-4 animate-spin mr-1" /> : <Search className="size-4 mr-1" />} Filtrar
             </Button>
             <Button variant="outline" onClick={() => {
@@ -381,9 +452,31 @@ export default function TransfereGovPropostas({
              as quatro de uma vez.
              Os numeros ficam em <Campos>, de largura igual em todos os
              cartoes: e o que permite continuar descendo o olho por uma coluna
-             sem existir tabela. */
-          <Lista>
-            {displayItems.map((p, i) => {
+             sem existir tabela.
+
+             AS TRES CAMADAS: fundo cinza da pagina -> cartao BRANCO do ano ->
+             itens cinza dentro. O cartao branco ja existiu aqui e foi retirado
+             a pedido do dono, porque os itens encostavam na margem e ficava
+             feio. O problema era o espacamento, nao o branco: agora o branco
+             volta com o `p-3` do `Bloco`, que e o mesmo respiro das Emendas
+             Estaduais — a tela que o dono apontou como certa. */
+          <div className="space-y-3">
+          {porAno.map(([ano, doAno]) => {
+            const fechado = anosFechados.has(ano);
+            return (
+            <Bloco key={ano} className="p-3">
+              <button type="button" onClick={() => alternarAno(ano)}
+                      className="text-left" aria-expanded={!fechado}>
+                <BlocoHead
+                  icon={fechado ? ChevronRight : ChevronDown}
+                  titulo={ano}
+                  sub={`${doAno.length} proposta(s)`}
+                  className={fechado ? "mb-0" : undefined}
+                />
+              </button>
+              {!fechado && (
+              <Lista>
+            {doAno.map((p, i) => {
               const dias = p.dias_restantes;
               const semProcesso =
                 p.processo_execucao_qtd === 0 &&
@@ -459,7 +552,12 @@ export default function TransfereGovPropostas({
                 </ItemLinha>
               );
             })}
-          </Lista>
+              </Lista>
+              )}
+            </Bloco>
+            );
+          })}
+          </div>
         )}
       </div>
 
