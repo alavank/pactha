@@ -9,7 +9,14 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "btn-primary",
+        /* QUASE PRETO, nao menta. A regra esta escrita em globals.css desde
+           o inicio desta identidade ("o botao preenchido do Painel e quase
+           preto, 18,53 de contraste; fica em `neutral`") — mas o `<Button>`
+           padrao continuou em `btn-primary`, entao o botao principal de oito
+           telas era VERDE. Eu vinha corrigindo um a um nas telas que migrava
+           e nunca corrigi a origem: mesmo erro dos modais.
+           `neutral` aponta para `--bi-cta` nos dois temas. */
+        default: "btn-neutral",
         outline: "btn-outline border-base-300 text-base-content hover:border-primary hover:bg-base-200",
         secondary: "btn-secondary",
         ghost: "btn-ghost",

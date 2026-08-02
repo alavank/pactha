@@ -111,8 +111,12 @@
   --color-secondary-content: var(--bi-muted);
   --color-accent: var(--bi-accent-soft);
   --color-accent-content: var(--bi-accent);
-  --color-neutral: #f1f4f2;
-  --color-neutral-content: #0a0c0b;
+  /* Estava cravado em #f1f4f2 (quase branco) enquanto o claro ja apontava
+     para `--bi-cta`. Com o botao solido do sistema passando a ser
+     `btn-neutral`, isso daria DOIS CTAs diferentes: menta nas telas migradas
+     a mao e quase-branco nas outras. Aponta, como o claro. */
+  --color-neutral: var(--bi-cta);
+  --color-neutral-content: var(--bi-cta-ink);
 
   /* No escuro as cores de exibicao ja servem como texto (10.47 sobre a
      superficie), entao `-ink` aponta para elas mesmas.
@@ -406,7 +410,15 @@
    aplicar fundo e cor de texto no contêiner do Painel. Qualquer diferenca
    visual no Painel depois desta mudanca e bug, nao efeito colateral aceitavel.
    ========================================================================== */
-:root {
+/* O SEGUNDO SELETOR nao e enfeite. O app de celular (`/m/<slug>`) escolhe o
+   tema no PROPRIO contêiner, escrevendo `data-bi-theme="light"` ou `"dark"`.
+   A regra de "dark" existia; a de "light" nao — os valores claros moravam so
+   aqui no `:root`. Consequencia: com o `<html>` em tema escuro, o `:root` ja
+   estava escuro e o contêiner nao tinha como voltar. O prefeito apertava o Sol,
+   o icone mudava e a tela continuava preta. Agora o mesmo bloco atende os dois,
+   sem duplicar um unico valor. */
+:root,
+.bi-skin[data-bi-theme="light"] {
   --bi-bg: #eceeed;
   --bi-surface: #ffffff;
   --bi-surface-2: #f5f7f6;
@@ -616,6 +628,10 @@
    preto, ou seja, a marca sumia justamente na tela que o prefeito abre na rua. */
 .bi-skin[data-bi-theme="dark"] .marca-clara { display: none; }
 .bi-skin[data-bi-theme="dark"] .marca-escura { display: block; }
+/* A espelho: sem ela, o celular em tema claro dentro de um sistema escuro
+   mostraria a arte BRANCA sobre fundo claro. */
+.bi-skin[data-bi-theme="light"] .marca-clara { display: block; }
+.bi-skin[data-bi-theme="light"] .marca-escura { display: none; }
 
 /* A BARRA DE ROLAGEM NAO PODE DESLOCAR A TELA.
    Cada aba tem uma altura, entao umas rolavam e outras nao; ao trocar, a
