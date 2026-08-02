@@ -16,6 +16,34 @@ interface Props {
 // Cache global simples de contagem (key = fonte:ref) — preenchido pelo modal
 const cache = new Map<string, number>();
 
+/** Carrega a contagem de uma LISTA inteira numa requisição só.
+ *
+ *  O caminho individual (`GET /anotacoes/item`) devolve as anotações COM OS
+ *  ANEXOS EM BASE64 — para exibir um número. Numa tela de 20 linhas eram 20
+ *  requisições, cada uma podendo trazer megabytes de arquivo; e o cache de
+ *  módulo só ajudava a partir da SEGUNDA visita.
+ *
+ *  Quem renderiza uma lista chama isto uma vez, logo depois de receber os
+ *  dados. Aí todo botão já nasce com o número no cache e nenhum vai à rede.
+ *  Item sem anotação não volta na resposta — vira 0, e fica no cache como 0
+ *  para não ser buscado de novo. */
+export async function precarregarContagens(fonte: string, refs: string[]) {
+  const faltando = refs.filter((r) => r && !cache.has(`${fonte}:${r}`));
+  if (!faltando.length) return;
+  try {
+    const r = await api.post<Record<string, number>>("/gestao/anotacoes/contagens", {
+      fonte, refs: faltando,
+    });
+    for (const ref of faltando) cache.set(`${fonte}:${ref}`, r.data[ref] ?? 0);
+    // Avisa os botões já montados: eles leem o cache no próximo render.
+    ouvintes.forEach((f) => f());
+  } catch { /* silent: o botão cai no caminho individual */ }
+}
+
+/** Os botões já montados quando o lote chega. Sem isto, quem renderizou antes
+ *  da resposta ficaria com 0 até um novo render. */
+const ouvintes = new Set<() => void>();
+
 export default function AnotacaoButton({ fonte, fonteRef, municipioId, numero, size = "sm" }: Props) {
   const [open, setOpen] = useState(false);
   const [count, setCount] = useState<number>(() => cache.get(`${fonte}:${fonteRef}`) ?? 0);
@@ -31,12 +59,21 @@ export default function AnotacaoButton({ fonte, fonteRef, municipioId, numero, s
   }, [fonte, fonteRef]);
 
   useEffect(() => {
-    // só busca count se não houver no cache (evita N+1 ao renderizar muitas linhas)
-    if (!cache.has(`${fonte}:${fonteRef}`)) {
-      // delay leve para evitar storm — mas não é critico
-      const t = setTimeout(refreshCount, 50);
-      return () => clearTimeout(t);
-    }
+    // Reage ao lote (`precarregarContagens`) chegando depois deste render.
+    const aviso = () => setCount(cache.get(`${fonte}:${fonteRef}`) ?? 0);
+    ouvintes.add(aviso);
+    return () => { ouvintes.delete(aviso); };
+  }, [fonte, fonteRef]);
+
+  useEffect(() => {
+    // Caminho individual: só quando o lote não cobriu este item. A espera dá
+    // tempo de o `precarregarContagens` da tela responder antes — sem ela,
+    // toda linha dispararia a requisição cara antes de o lote voltar.
+    if (cache.has(`${fonte}:${fonteRef}`)) return;
+    const t = setTimeout(() => {
+      if (!cache.has(`${fonte}:${fonteRef}`)) refreshCount();
+    }, 600);
+    return () => clearTimeout(t);
   }, [fonte, fonteRef, refreshCount]);
 
   const cls = size === "sm" ? "size-6 text-[10px]" : "size-7 text-xs";

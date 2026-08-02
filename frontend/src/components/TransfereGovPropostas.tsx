@@ -51,7 +51,7 @@ function campo(rotulo: string, valor: unknown, extra?: Partial<Campo>): Campo {
   const v = valor === null || valor === undefined || valor === "" ? "-" : String(valor);
   return { rotulo, valor: v, title: v === "-" ? undefined : `${rotulo}: ${v}`, ...extra };
 }
-import AnotacaoButton from "@/components/AnotacaoButton";
+import AnotacaoButton, { precarregarContagens } from "@/components/AnotacaoButton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -244,6 +244,12 @@ export default function TransfereGovPropostas({
     () => Array.from(new Set(items.map((i) => i.situacao).filter(Boolean))).sort(),
     [items]
   );
+
+  /* UMA requisição para a contagem de anotações da lista inteira, em vez de
+     uma por linha no endpoint que traz os anexos junto. */
+  useEffect(() => {
+    if (items.length) precarregarContagens("voluntaria", items.map((p) => p.numero_proposta));
+  }, [items]);
 
   /** Os anos que EXISTEM no resultado, para o dropdown não oferecer ano vazio. */
   const anosDisponiveis = useMemo(
