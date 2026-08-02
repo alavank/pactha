@@ -47,15 +47,45 @@ export function AbaGeral({ ov, alertas, tv }: AbaProps & { ov: Overview; alertas
   const k = ov.kpis;
   const total = (k.valor_total_estadual || 0) + (k.valor_total_federal || 0);
   const s = ov.semaforo;
+  /* O MEDIDOR MEDE EXIGENCIAS, NAO UM SIM/NAO.
+   *
+   *  Antes: `s.regular ? 1 : 0`. Para um municipio unico — que e o caso de
+   *  todo cliente deste produto — o arco so podia estar CHEIO ou VAZIO, nunca
+   *  no meio. E vazio, num arco com ponta arredondada, vira uma bolinha solta
+   *  que parece defeito de renderizacao. O medidor foi desenhado para
+   *  proporcao (e o "850 Excellent" da referencia) e estava recebendo booleano.
+   *
+   *  Agora a proporcao e real: quantas exigencias estao comprovadas de quantas
+   *  sao exigiveis. O gestor passa a ler "faltam 4 de 12", que e a pergunta
+   *  que ele faz, em vez de "irregular", que ele ja sabia.
+   *
+   *  DESATIVADAS FICAM DE FORA do denominador, por decisao do dono: o CAUC nao
+   *  consegue consultar aquelas exigencias para ENTE NENHUM — nao e falha do
+   *  municipio e nao e meta que ele possa atingir. Continuam visiveis na lista
+   *  do modulo, so nao contam. Se entrassem, nenhum municipio chegaria a 100%
+   *  e o medidor mediria uma limitacao da ferramenta federal. */
+  const caucItens = isRollup(s) ? [] : (s.itens ?? []);
+  const caucExig = caucItens.filter((i) => i.tipo !== "na");
+  const caucOk = caucExig.filter((i) => i.tipo === "regular").length;
   const caucPct = isRollup(s)
     ? (s.total_municipios ? s.regulares / s.total_municipios : 0)
-    : s.regular ? 1 : 0;
+    : caucExig.length ? caucOk / caucExig.length
+    : s.regular ? 1 : 0;   // sem detalhe de itens, cai no que se sabe
   const caucTom = caucPct >= 0.99 ? "ok" : caucPct >= 0.5 ? "warn" : "crit";
+
   const vig = alertas?.vigencia ?? [];
   const prest = alertas?.prestacao ?? [];
   const docs = alertas?.documentos ?? [];
   const cg = ov.semaforo_cagec;
   const cagecCrit = !!cg?.tem_dados && (cg.irregulares || 0) > 0;
+  /* CAGEC pela mesma regra. `obrigacoes_total` vem do CRC (o PDF); quando o
+   *  Estado recusa emiti-lo nao ha denominador, e ai o medidor mostra a
+   *  situacao em palavra em vez de inventar uma fracao. */
+  const cgTotal = cg?.obrigacoes_total ?? 0;
+  const cgOk = cg?.obrigacoes_ok ?? 0;
+  const cgPct = cgTotal ? cgOk / cgTotal : (cg?.entidades ? (cg.regulares || 0) / cg.entidades : 0);
+  const cgTom = !cg?.tem_dados ? "warn" : cgPct >= 0.99 ? "ok" : cgPct >= 0.5 ? "warn" : "crit";
+
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
@@ -93,56 +123,88 @@ export function AbaGeral({ ov, alertas, tv }: AbaProps & { ov: Overview; alertas
           ) : null}
         </Painel>
 
-        {/* AS DUAS ESFERAS NO MESMO CARD.
+        {/* AS DUAS ESFERAS NO MESMO CARD, COM O MESMO PESO.
             Este medidor era só do CAUC e escrevia "Em dia · sem pendências"
             para um município IRREGULAR no CAGEC — é o sinal mais visível do
             painel, e dizer "em dia" com convênio estadual travado é o pior erro
             que ele pode cometer. Regular na União não é regular em Minas: são
             esferas independentes, e a estadual ainda trava o PAGAMENTO de
-            convênio já assinado. O medidor continua sendo o do CAUC (é o que
-            tem percentual); o CAGEC entra como faixa de status logo abaixo,
-            com o mesmo peso de cor. */}
+            convênio já assinado.
+
+            O CAGEC entrava como uma tarja fina embaixo de um medidor gigante —
+            duas coisas que travam igual, com pesos visuais opostos. Agora são
+            dois medidores do mesmo tamanho, cada um com a sua fração real. */}
         <Painel>
           <PainelHead
             icon={caucPct >= 0.99 && !cagecCrit ? ShieldCheck : ShieldAlert}
             titulo="Regularidade"
             sub="aptidão para receber transferências"
           />
-          <div className="flex flex-1 flex-col items-center justify-center gap-3">
-            <Gauge
-              pct={caucPct}
-              tom={caucTom}
-              size={tv ? 176 : 148}
-              centro={isRollup(s) ? `${s.regulares}/${s.total_municipios}` : s.regular ? "Em dia" : `${s.pendencias || 0}`}
-              legenda={isRollup(s) ? "municípios em dia (CAUC)" : s.regular ? "CAUC · sem pendências" : "CAUC · pendência(s) impeditiva(s)"}
-            />
+          <div className="flex flex-1 flex-col items-center justify-center gap-2">
+            <div className="flex w-full items-start justify-center gap-1">
+              <Gauge
+                pct={caucPct}
+                tom={caucTom}
+                size={tv ? 132 : 112}
+                centro={isRollup(s)
+                  ? `${s.regulares}/${s.total_municipios}`
+                  : caucExig.length ? `${caucOk}/${caucExig.length}` : (s.regular ? "Em dia" : "—")}
+                legenda={isRollup(s) ? "municípios em dia" : "CAUC · União"}
+              />
+              <Gauge
+                pct={cgPct}
+                tom={cgTom}
+                size={tv ? 132 : 112}
+                centro={!cg?.tem_dados ? "—"
+                  : cgTotal ? `${cgOk}/${cgTotal}`
+                  : (cg.situacao || `${cg.regulares}/${cg.entidades}`)}
+                legenda="CAGEC · Minas"
+              />
+            </div>
+
+            {/* O RESUMO EM PALAVRA, que é o que o gestor lê primeiro. Vermelho
+                só quando há impedimento — se o normal também for colorido, a
+                cor deixa de avisar. */}
             <div
               className="w-full rounded-lg px-3 py-2"
               style={{
-                background: cg?.tem_dados
-                  ? `color-mix(in oklab, var(--bi-${cagecCrit ? "crit" : "ok"}) 13%, transparent)`
-                  : "color-mix(in oklab, var(--bi-warn) 11%, transparent)",
+                background: `color-mix(in oklab, var(--bi-${
+                  !cg?.tem_dados && caucPct >= 0.99 ? "warn"
+                  : caucPct < 0.99 || cagecCrit ? "crit" : "ok"
+                }) 12%, transparent)`,
               }}
             >
-              <div className="flex items-baseline gap-2">
-                <span className="text-[11px] font-semibold"
-                  style={{ color: `var(--bi-${!cg?.tem_dados ? "warn" : cagecCrit ? "crit" : "ok"})` }}>
-                  CAGEC — Minas Gerais
-                </span>
-                <span className="bi-num ml-auto text-[12px] font-bold"
-                  style={{ color: `var(--bi-${!cg?.tem_dados ? "warn" : cagecCrit ? "crit" : "ok"})` }}>
-                  {!cg?.tem_dados ? "sem coleta"
-                    : cagecCrit ? (cg.situacao || `${cg.irregulares} irregular(es)`)
-                    : "Em dia"}
+              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                <span
+                  className="text-[11px] font-semibold"
+                  style={{
+                    color: `var(--bi-${
+                      !cg?.tem_dados && caucPct >= 0.99 ? "warn-ink"
+                      : caucPct < 0.99 || cagecCrit ? "crit-ink" : "ok-ink"
+                    })`,
+                  }}
+                >
+                  {isRollup(s)
+                    ? (caucPct >= 0.99 && !cagecCrit
+                        ? "Todos os municípios aptos"
+                        : "Há município impedido de receber transferência")
+                    : caucPct >= 0.99 && !cagecCrit && cg?.tem_dados
+                      ? "Apto a receber transferências"
+                      : "Impedido de receber transferências"}
                 </span>
               </div>
-              <div className="text-[10px] leading-snug" style={{ color: "var(--bi-faint)" }}>
+              <div className="mt-0.5 text-[10px] leading-snug" style={{ color: "var(--bi-muted)" }}>
+                {!isRollup(s) && caucExig.length > 0 && caucExig.length - caucOk > 0 && (
+                  <>União: {caucExig.length - caucOk} exigência(s) a comprovar. </>
+                )}
                 {!cg?.tem_dados
-                  ? "regularidade estadual ainda não coletada"
+                  ? "Minas: regularidade estadual ainda não coletada."
                   : cagecCrit
-                    ? `${cg.quem?.[0]?.nome ? `${cg.quem[0].nome.slice(0, 34)} — ` : ""}`
-                      + "impede convênio estadual e liberação de parcela"
-                    : `${cg.entidades} cadastro(s) do município em situação regular`}
+                    ? `Minas: ${cg.quem?.[0]?.nome ? `${cg.quem[0].nome.slice(0, 34)} — ` : ""}`
+                      + "impede convênio estadual e liberação de parcela."
+                    : cgTotal && cgTotal - cgOk > 0
+                      ? `Minas: ${cgTotal - cgOk} obrigação(ões) pendente(s).`
+                      : `Minas: ${cg.entidades} cadastro(s) em situação regular.`}
               </div>
             </div>
           </div>
@@ -610,7 +672,11 @@ function ListaExigencias({
     <div className="flex flex-col">
       {/* Cabeçalho de coluna: o extrato tem, e sem ele "31/07/2026" solto na
           direita não diz se é validade ou data de consulta. */}
-      <div className={`grid ${cols} items-end gap-x-2 border-b pb-1 text-[9px] uppercase tracking-wide`}
+      {/* `px-2` no cabecalho E nas linhas: e o respiro que faz a faixa colorida
+          da linha em alerta virar um CARTAO, em vez de uma tarja que vai de
+          margem a margem e termina em corte seco. Sem ele o realce encosta na
+          borda do painel e parece vazamento. */}
+      <div className={`grid ${cols} items-end gap-x-2 border-b px-2 pb-1 text-[9px] uppercase tracking-wide`}
         style={{ borderColor: "var(--bi-line-strong)", color: "var(--bi-faint)" }}>
         {esfera === "cauc" && <span>Item</span>}
         <span>Item legal</span>
@@ -633,7 +699,7 @@ function ListaExigencias({
           return (
             <div
               key={i.codigo}
-              className={`grid ${cols} items-start gap-x-2 py-[5px]`}
+              className={`grid ${cols} items-start gap-x-2 rounded-lg px-2 py-[5px]`}
               style={pendente
                 ? { background: "color-mix(in oklab, var(--bi-crit) 12%, transparent)" }
                 : vencido

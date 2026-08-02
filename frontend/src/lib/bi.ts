@@ -121,6 +121,11 @@ export interface SemaforoCagec {
   entidades?: number;
   regulares?: number;
   irregulares?: number;
+  /** As ~24 obrigações do CRC, somadas entre as entidades do município.
+   *  `null` quando o Estado recusou emitir o CRC — aí não há denominador e o
+   *  medidor cai no modo sem percentual, em vez de inventar um. */
+  obrigacoes_total?: number | null;
+  obrigacoes_ok?: number | null;
   municipios_com_irregularidade?: number;
   /** Rótulo cru do portal quando há uma única entidade (ex.: "Irregular"). */
   situacao?: string | null;

@@ -99,18 +99,44 @@ async def _semaforo_cagec(db: AsyncSession, ids: list[int]) -> dict:
     if not ids:
         return {"tem_dados": False}
     linhas = (await db.execute(text("""
-        SELECT municipio_id, COALESCE(principal, false), regular, situacao, nome, tipo
+        SELECT municipio_id, COALESCE(principal, false), regular, situacao, nome, tipo,
+               itens
         FROM cagec_situacao WHERE municipio_id = ANY(:ids)
         ORDER BY principal DESC, tipo NULLS LAST
     """), {"ids": ids})).fetchall()
     if not linhas:
         return {"tem_dados": False}
     irregulares = [l for l in linhas if l[2] is False]
+
+    # AS OBRIGACOES, e nao so as entidades. O medidor da Visao Geral precisa de
+    # uma PROPORCAO; contando entidade, um municipio com um cadastro so tem
+    # apenas 0% ou 100% — o arco nunca fica no meio e o painel parece quebrado.
+    # As ~24 obrigacoes do CRC dao a medida real de "quanto falta destravar".
+    #
+    # `itens` vem do CRC (o PDF), nao da consulta publica: quando o Estado
+    # recusa emitir, a lista chega vazia. Nesse caso NAO inventamos denominador
+    # — devolvemos None e o painel cai no modo sem percentual, que e honesto.
+    obrig_total = 0
+    obrig_ok = 0
+    for l in linhas:
+        for it in (l[6] if isinstance(l[6], list) else []):
+            if not isinstance(it, dict):
+                continue
+            # "na" nao existe no CAGEC hoje, mas se passar a existir ele sai da
+            # conta pela mesma razao do CAUC: obrigacao desativada nao e meta.
+            if it.get("tipo") == "na":
+                continue
+            obrig_total += 1
+            if it.get("tipo") == "regular":
+                obrig_ok += 1
+
     return {
         "tem_dados": True,
         "entidades": len(linhas),
         "regulares": sum(1 for l in linhas if l[2] is True),
         "irregulares": len(irregulares),
+        "obrigacoes_total": obrig_total or None,
+        "obrigacoes_ok": obrig_ok if obrig_total else None,
         "municipios_com_irregularidade": len({l[0] for l in irregulares}),
         # Com uma entidade so, mostra a situacao que o PROPRIO portal escreveu
         # ("Irregular") em vez de um numero sem contexto.

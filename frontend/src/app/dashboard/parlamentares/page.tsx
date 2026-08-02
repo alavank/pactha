@@ -595,11 +595,22 @@ function ParlamentaresInner() {
               <React.Fragment key={p.nome_normalizado}>
                 <ItemLinha
                   onClick={() => toggle(p)}
+                  expandido={expanded}
                   titulo={
+                    /* A seta tinha 14px na cor MAIS FRACA da paleta, colada no
+                       texto, sem alvo próprio e sem `aria-expanded`. Nada ali
+                       dizia "isto abre" — quem olhava não entendia que havia
+                       detalhe para ver. Agora é um alvo de 24px com fundo, na
+                       cor de texto secundário, e o leitor de tela anuncia
+                       recolhido/expandido. */
                     <span className="flex items-center gap-1.5">
-                      {expanded
-                        ? <ChevronDown className="size-3.5 shrink-0" style={{ color: "var(--bi-faint)" }} />
-                        : <ChevronRight className="size-3.5 shrink-0" style={{ color: "var(--bi-faint)" }} />}
+                      <span
+                        aria-hidden="true"
+                        className="bi-hover grid size-6 shrink-0 place-items-center rounded-lg"
+                        style={{ background: "var(--bi-surface-2)", color: "var(--bi-muted)" }}
+                      >
+                        {expanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+                      </span>
                       <span className="truncate">{p.nome_display}</span>
                     </span>
                   }
