@@ -1299,7 +1299,9 @@ def _upsert(mun_id: int, propostas: list[dict]):
                 identificacao=EXCLUDED.identificacao,
                 codigo_instrumento=EXCLUDED.codigo_instrumento, modalidade=EXCLUDED.modalidade,
                 situacao_siafi=EXCLUDED.situacao_siafi, numero_processo=EXCLUDED.numero_processo,
-                objeto=EXCLUDED.objeto, programa=EXCLUDED.programa,
+                objeto=CASE WHEN EXCLUDED.objeto LIKE '%'||chr(65533)||'%'
+                            THEN transferegov_propostas.objeto ELSE EXCLUDED.objeto END,
+                programa=EXCLUDED.programa,
                 dt_inicio_vigencia=EXCLUDED.dt_inicio_vigencia, dt_fim_vigencia=EXCLUDED.dt_fim_vigencia,
                 dt_proposta=EXCLUDED.dt_proposta, dt_assinatura=EXCLUDED.dt_assinatura,
                 valor_global=COALESCE(EXCLUDED.valor_global, transferegov_propostas.valor_global),

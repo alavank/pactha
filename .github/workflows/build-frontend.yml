@@ -50,6 +50,7 @@ jobs:
               API_PROXY_TARGET=https://pactha-api-54-232-208-118.sslip.io
               NEXT_PUBLIC_CLIENT_LOGO=/freitas-logo.jpeg
               NEXT_PUBLIC_CLIENT_SUBTITLE=Assessoria
+              NEXT_PUBLIC_BI_MODULE=1
           - image: frontend-trust
             context: frontend
             args: |
@@ -57,6 +58,7 @@ jobs:
               API_PROXY_TARGET=https://pactha-trust-api-54-232-208-118.sslip.io
               NEXT_PUBLIC_CLIENT_LOGO=/trust-logo.png
               NEXT_PUBLIC_CLIENT_SUBTITLE=Infraestrutura de TI e Cloud Computing
+              NEXT_PUBLIC_BI_MODULE=1
           - image: frontend-montesiao-mg
             context: frontend
             args: |
