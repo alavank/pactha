@@ -396,7 +396,14 @@ function Toggle({ label, checked, onChange }: { label: string; checked: boolean;
           className={`inline-block h-4 w-4 transform rounded-full transition ${
             checked ? "translate-x-4" : "translate-x-0.5"
           }`}
-          style={{ background: checked ? "var(--bi-cta-ink)" : "var(--bi-surface)" }}
+          /* Desligada a bolinha era `--bi-surface` sobre trilho
+             `--bi-line-strong`: 1,49:1 no claro e 1,51:1 no escuro — ela some,
+             e o controle deixa de parecer um interruptor (vira uma pilula
+             lisa). O estado em si sempre foi legivel, porque o TRILHO muda
+             de cor; o que faltava era a bolinha. Invertida: clara sobre
+             trilho escuro quando ligada, escura sobre trilho claro quando
+             desligada. */
+          style={{ background: checked ? "var(--bi-cta-ink)" : "var(--bi-muted)" }}
         />
       </button>
       <span>{label}</span>
