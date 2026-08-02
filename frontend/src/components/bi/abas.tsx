@@ -710,7 +710,11 @@ function ListaExigencias({
           acabado de pôr era invisível porque não havia espaço para ele
           aparecer. Dois pixels bastam — a lista continua densa (são 28
           exigências) e cada linha volta a ter contorno próprio. */}
-      <div className="flex flex-col gap-0.5">
+      {/* `mt-1` porque `gap` só vale ENTRE irmãos: sem ele a primeira linha
+          encostava na régua do cabeçalho enquanto todas as outras tinham
+          respiro. 4px e não 2px de propósito — a quebra cabeçalho/lista é
+          maior que a de item para item. */}
+      <div className="mt-1 flex flex-col gap-0.5">
         {itens.map((i) => {
           const pendente = i.tipo === "pendente";
           const na = i.tipo === "na";
