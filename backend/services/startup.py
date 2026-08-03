@@ -119,6 +119,14 @@ MIGRATION_FILES = [
     # coluna existente muda, nenhuma linha antiga e reescrita (o unico UPDATE e
     # o backfill do nome do autor, com guarda `usuario_nome IS NULL`).
     "add_auditoria_detalhada.sql",
+    # Incremento 4 — o papel vira ROTULO: `super_admin` e `somente_leitura` no
+    # usuario, e o BACKFILL que evita o apagao (todo admin de cliente ganha,
+    # explicitamente, as telas e municipios que hoje ele so tem pelo bypass de
+    # `role == 'admin'`). DEPENDE de add_user_telas / add_user_municipios (as
+    # tabelas que ela preenche) e de add_users_kiosk (le `users.kiosk`), todas
+    # acima nesta lista. O backfill so pode rodar UMA VEZ — a propria migration
+    # cria `migration_backfills` para isso; ver o cabecalho dela.
+    "add_role_vira_rotulo.sql",
     # ⚠️ SEMPRE A ULTIMA DA LISTA. Instala o append-only da trilha: gatilho que
     # RECUSA UPDATE/DELETE/TRUNCATE em audit_log e cadeia de hash calculada
     # dentro do banco. Toda migration que ainda faz BACKFILL (hoje so

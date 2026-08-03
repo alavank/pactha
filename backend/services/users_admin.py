@@ -11,7 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 ALPHABET = string.ascii_letters + string.digits + "!@#$%&*"
 # prefeito/viewer = perfis SOMENTE-LEITURA (Painel Executivo). O guard read-only
 # em services/auth.py barra qualquer escrita fora dos endpoints do proprio Painel.
-ROLES = ("admin", "analyst", "user", "prefeito", "viewer")
+# `usuario` e a chave NOVA (a migration `add_role_vira_rotulo.sql` funde
+# `analyst` e `user` nela). As duas antigas continuam aceitas porque o
+# canal da Central e integracoes podem manda-las, e porque papel virou
+# ROTULO: recusar um sinonimo do mesmo rotulo so quebraria chamada boa.
+ROLES = ("admin", "usuario", "analyst", "user", "prefeito", "viewer")
 
 
 def gen_senha(n: int = 14) -> str:

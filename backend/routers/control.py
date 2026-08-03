@@ -26,7 +26,7 @@ from services.control_auth import require_control_scope, ControlPrincipal
 from services.auth import hash_password, create_sso_token
 from services.service_auth import hash_token
 from services import users_admin, crypto
-from services.telas_catalog import TELAS_CATALOG
+from services.telas_catalog import TELAS_CATALOG, TELAS_TODAS
 from services.audit import registrar, registrar_critico
 
 router = APIRouter(prefix="/api/control", tags=["control"])
@@ -133,6 +133,47 @@ async def upsert_municipio(
             m.fns_code = fns
     await db.commit()
     await db.refresh(m)
+    if created:
+        # MUNICIPIO NOVO PRECISA CHEGAR A ALGUEM — senao ele nasce invisivel.
+        #
+        # Ate este incremento nao havia o que fazer aqui: `role == "admin"`
+        # zerava `allowed_municipio_ids`, entao a cidade recem-cadastrada ja
+        # aparecia para os administradores do cliente no primeiro F5. Com o papel
+        # virado rotulo, quem nao tem LINHA em `user_municipios` leva
+        # "Voce nao tem acesso a este municipio" — e o municipio novo nao tem
+        # linha para ninguem. A assessoria assinaria a cidade nova pelo Console e
+        # o cliente nao a veria, sem erro nenhum que explicasse.
+        #
+        # O criterio NAO e o papel (ele nao concede mais nada): e COBERTURA. Quem
+        # ja tinha TODOS os outros municipios continua com todos — o admin de uma
+        # prefeitura, o gestor da assessoria que cuida da carteira inteira. Quem
+        # estava limitado a 2 de 5 segue limitado a 2 de 6, que e o ponto do
+        # incremento: ninguem ganha alcance por efeito colateral de cadastro.
+        #
+        # Fora do alcance, explicitamente:
+        #  · quem nao tem municipio NENHUM — sem isto, "tem todos os outros"
+        #    seria verdade VAZIA para uma conta sem acesso, e ela ganharia a
+        #    cidade nova sem nunca ter tido nada;
+        #  · as contas de QUIOSQUE (links publicos de TV). Elas espelham o dono
+        #    na emissao e nao podem crescer sozinhas depois — um link colado numa
+        #    TV passaria a mostrar uma cidade que nao existia quando foi gerado.
+        await db.execute(text("""
+            INSERT INTO user_municipios (user_id, municipio_id)
+            SELECT u.id, :novo
+              FROM users u
+             WHERE u.active
+               AND NOT u.kiosk
+               AND u.email NOT LIKE '%@painel.local'
+               AND EXISTS (SELECT 1 FROM user_municipios um WHERE um.user_id = u.id)
+               AND NOT EXISTS (
+                     SELECT 1 FROM municipios m2
+                      WHERE m2.id <> :novo
+                        AND NOT EXISTS (
+                              SELECT 1 FROM user_municipios um2
+                               WHERE um2.user_id = u.id AND um2.municipio_id = m2.id))
+            ON CONFLICT DO NOTHING
+        """), {"novo": m.id})
+        await db.commit()
     await registrar(db, action="control.municipio.upsert", request=request,
                     user_email=_ator(request, p), municipio_id=m.id,
                     target_type="municipio", target_id=ibge, alvo_nome=f"{nome}/{uf}",
@@ -696,6 +737,34 @@ async def control_sso(
     elif not u.active:
         u.active = True
         await db.commit()
+    # ⚠️ O ESCOPO DO SUPORTE, ESCRITO — e não herdado do papel.
+    #
+    # Esta conta nascia só com `role="admin"`, e isso bastava: `load_user_scopes`
+    # zerava os dois limites de todo admin. Não zera mais (o papel virou rótulo),
+    # e a conta de suporte NÃO é super-admin — o e-mail é `alavank-sso.<local>@…`,
+    # que não está em `SUPER_ADMIN_EMAILS` nem foi semeado na coluna. Sem estas
+    # duas concessões, o técnico da Alavank entraria pelo SSO num tenant e veria
+    # menu vazio e 403 em tudo: o backfill da migration só alcançou as contas de
+    # suporte que JÁ EXISTIAM no dia do deploy, e cada técnico novo (ou cada
+    # tenant novo) cria a sua depois.
+    #
+    # A CADA emissão, e não só na criação: é o mesmo motivo de `_ensure_kiosk_user`
+    # reescrever o escopo do quiosque — conta sintética não tem dono humano para
+    # ajustar permissão, então nada aqui desfaz decisão de ninguém. E é o que
+    # cura sozinho o município cadastrado DEPOIS da última sessão de suporte.
+    #
+    # Não vira `super_admin = TRUE` de propósito: isso daria ao suporte mais do
+    # que ele tinha ontem (Sessões, Service Tokens, poder sobre as contas donas).
+    # Aqui só se repõe, como dado, o que o papel concedia por desvio.
+    for _tela in TELAS_TODAS:
+        await db.execute(text(
+            "INSERT INTO user_telas (user_id, tela) VALUES (:u, :t) ON CONFLICT DO NOTHING"
+        ), {"u": u.id, "t": _tela})
+    await db.execute(text(
+        "INSERT INTO user_municipios (user_id, municipio_id) "
+        "SELECT :u, id FROM municipios ON CONFLICT DO NOTHING"
+    ), {"u": u.id})
+    await db.commit()
     token = create_sso_token(u.id)
     # Aqui o proprio corpo diz quem e o tecnico que vai entrar no sistema do
     # cliente — melhor identificacao que qualquer cabecalho. Se o Console mandar

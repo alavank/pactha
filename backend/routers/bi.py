@@ -33,6 +33,7 @@ from database import get_db
 from services.audit import registrar
 from services.auth import (
     get_current_user, hash_password, create_kiosk_token, ensure_tela, ehQuiosque,
+    is_super_admin,
 )
 from services.bi import (
     resolve_scope, scope_signature, bi_kpis, bi_cauc_rollup, bi_saude_rollup,
@@ -1123,23 +1124,57 @@ async def _ensure_kiosk_user(db: AsyncSession, owner: User, slug: str) -> int:
     Espelha os municipios do dono: a TV nunca enxerga mais que quem a publicou."""
     email = f"kiosk-u{owner.id}-{slug}@painel.local"
     urow = (await db.execute(text("SELECT id FROM users WHERE email = :e"), {"e": email})).first()
+    # `kiosk` e `somente_leitura` gravados AQUI, e não deixados para o backfill do
+    # próximo boot.
+    #
+    # `users.kiosk` é o que `get_current_user` lê para aplicar `KIOSK_GET_PERMITIDOS`
+    # — a allowlist por igualdade de caminho que fecha o link público no Painel
+    # (PR #112). Ela era preenchida SÓ por `add_users_kiosk.sql`, que roda no
+    # boot: um link publicado às 10h ficava com `kiosk = FALSE` até o próximo
+    # restart e, nesse meio-tempo, alcançava todos os GET do sistema com o token
+    # de 365 dias que circula em WhatsApp. `somente_leitura` tem a mesma história
+    # a partir deste incremento (a semente da flag também é de boot).
+    #
+    # Nenhum dos dois pode depender de reinício: a conta é criada em RUNTIME, e o
+    # que a barra tem de nascer com ela. As migrations continuam existindo como
+    # rede para as contas antigas.
     if urow:
         uid = urow[0]
-        await db.execute(text("UPDATE users SET active = true, role = 'viewer' WHERE id = :u"), {"u": uid})
+        await db.execute(text(
+            "UPDATE users SET active = true, role = 'viewer', kiosk = true, "
+            "somente_leitura = true WHERE id = :u"
+        ), {"u": uid})
     else:
         ph = hash_password(secrets.token_urlsafe(24))
         r = (await db.execute(text(
-            "INSERT INTO users (email, name, password_hash, role, active, must_change_password) "
-            "VALUES (:e, :n, :p, 'viewer', true, false) RETURNING id"
+            "INSERT INTO users (email, name, password_hash, role, active, "
+            "must_change_password, kiosk, somente_leitura) "
+            "VALUES (:e, :n, :p, 'viewer', true, false, true, true) RETURNING id"
         ), {"e": email, "n": f"Quiosque de {owner.name or owner.email}", "p": ph})).first()
         uid = r[0]
     # concede a tela BI (consistencia; os endpoints /api/bi/* gateiam por municipio)
     await db.execute(text(
         "INSERT INTO user_telas (user_id, tela) VALUES (:u, 'bi') ON CONFLICT DO NOTHING"
     ), {"u": uid})
-    # Espelha o escopo do dono a cada emissao (admin = carteira ativa inteira).
+    # Espelha o escopo do dono a cada emissao.
+    #
+    # ⚠️ Aqui estava `owner.role == "admin"`, com o comentario "admin = carteira
+    # ativa inteira". Isso valia enquanto `role == "admin"` zerava os limites em
+    # `load_user_scopes` — o admin de fato enxergava todos os municipios ativos.
+    # Depois que o papel virou ROTULO, deixou de valer: um admin cujo escopo foi
+    # reduzido a dois municipios continuaria emitindo um link PUBLICO de TV com
+    # a carteira inteira do cliente, e esse link circula em WhatsApp. Era a
+    # propria promessa do docstring acima ("a TV nunca enxerga mais que quem a
+    # publicou") sendo quebrada pela porta de tras, num caminho sem 403 nenhum
+    # para avisar.
+    #
+    # `is_super_admin` e nao `role`: para a Alavank o ramo de baixo devolveria
+    # ZERO municipio (o dono da plataforma nao tem linha em `user_municipios`,
+    # por definicao — `load_user_scopes` sai antes de consultar), e a TV nasceria
+    # vazia. Para todo o resto, incluindo o admin do cliente, o espelho e a lista
+    # real da pessoa.
     await db.execute(text("DELETE FROM user_municipios WHERE user_id = :u"), {"u": uid})
-    if owner.role == "admin":
+    if is_super_admin(owner):
         await db.execute(text(
             "INSERT INTO user_municipios (user_id, municipio_id) "
             "SELECT :u, id FROM municipios WHERE active = true ON CONFLICT DO NOTHING"

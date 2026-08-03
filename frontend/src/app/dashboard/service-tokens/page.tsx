@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { KeyRound, Plus, RotateCw, Trash2, Copy, ShieldAlert } from "lucide-react";
 import api from "@/lib/api";
+import { ehSuperAdmin, type ContaLike } from "@/lib/conta";
 import {
   BOTAO_CTA, BOTAO_SEC, Bloco, BlocoHead, Campos, ESTILO_CTA, ESTILO_SEC,
   ItemLinha, Lista, Modal, ModalCorpo, ModalHead, Selo, Vazio,
@@ -48,13 +49,21 @@ export default function ServiceTokensPage() {
   const [showSecret, setShowSecret] = useState<{ name: string; token: string } | null>(null);
   const [form, setForm] = useState({ name: "", description: "", scopes: [] as string[] });
 
-  // Verifica se usuario eh admin
+  // Quem abre esta tela e o SUPER-ADMIN, nao "quem tem o rotulo admin".
+  //
+  // ⚠️ Aqui se lia `res.data.role !== "admin"`, e isso nunca bateu com o backend:
+  // `routers/service_tokens.py` gateia com `is_super_admin`. A divergencia ficou
+  // grave quando o papel virou rotulo — promover um dono passou a ser um UPDATE
+  // na coluna `users.super_admin`, e um dono assim promovido, sem o rotulo
+  // "admin", era EXPULSO por esta linha de uma pagina a que o servidor lhe da
+  // acesso. `ehSuperAdmin` responde pela coluna (e cai na allowlist de e-mails
+  // quando o campo nao vem), que e exatamente a conta do backend.
   useEffect(() => {
     api
-      .get<{ role: string }>("/auth/me")
+      .get<ContaLike>("/auth/me")
       .then((res) => {
-        if (res.data.role !== "admin") {
-          toast.error("Apenas administradores acessam esta pagina");
+        if (!ehSuperAdmin(res.data)) {
+          toast.error("Apenas o administrador da plataforma acessa esta página");
           router.push("/dashboard");
         }
       })

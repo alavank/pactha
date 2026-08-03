@@ -5,9 +5,19 @@ export interface User {
   role: string;
   active: boolean;
   must_change_password?: boolean;
-  // null = admin (todas). Lista = escopo do nao-admin.
+  // null = acesso TOTAL (super-admin). Lista = o escopo daquela pessoa.
+  //
+  // Ate este incremento, `null` tambem chegava para todo `role === "admin"`, e
+  // era assim que um administrador do cliente via tudo. O papel deixou de
+  // conceder: agora o admin recebe a lista dele como qualquer outro, e so a
+  // Alavank (dona da plataforma) continua sem limite.
   telas?: string[] | null;
   municipio_ids?: number[] | null;
+  // As duas colunas que substituiram o papel onde ele de fato decidia poder.
+  // Opcionais porque a tela precisa continuar de pe contra uma API anterior a
+  // elas — ver `lib/conta.ts`, que faz a leitura com reserva.
+  super_admin?: boolean | null;
+  somente_leitura?: boolean | null;
 }
 
 export interface Municipio {
