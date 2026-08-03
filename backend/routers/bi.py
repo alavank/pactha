@@ -22,7 +22,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import text
 from services.ia_texto import modelo_texto, params_raciocinio, max_tokens_texto
@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
 from database import get_db
+from services.audit import registrar
 from services.auth import get_current_user, hash_password, create_kiosk_token, ensure_tela
 from services.bi import (
     resolve_scope, scope_signature, bi_kpis, bi_cauc_rollup, bi_saude_rollup,
@@ -968,6 +969,24 @@ def _caminho_link(slug: str, kind: str) -> str:
     return f"/m/{slug}" if kind == "mobile" else f"/t/{slug}"
 
 
+def _ref_link(slug: str) -> str:
+    """Identificador do link para a TRILHA DE AUDITORIA — nunca o slug.
+
+    O slug E A CREDENCIAL: `/api/bi/tela-pub/{slug}` e publico, nao pede login e
+    devolve o token de quiosque para quem souber os 12 caracteres (ver
+    `resolver_tela_link`, que diz isso com todas as letras). A trilha e lida por
+    qualquer um com a tela de Auditoria e sai do sistema em PDF/Excel — gravar o
+    slug ali entregaria o painel do municipio a quem so deveria poder AUDITAR
+    quem o publicou, e ainda por cima num arquivo que circula por e-mail.
+    `services/audit.py` ja se recusa a guardar o caminho preenchido desta rota
+    (`_rota` guarda so o molde) exatamente por isto; entrar pelo `target_id`
+    reabriria a mesma porta pelos fundos.
+
+    O hash resolve o unico uso legitimo do valor: amarrar a criacao a revogacao
+    do MESMO link. Nao volta a ser slug (SHA-256) e nao serve de credencial."""
+    return hashlib.sha256(slug.encode("utf-8")).hexdigest()[:16]
+
+
 def _anos_csv(anos: list[int]) -> str:
     """Normaliza pelo MESMO filtro do anos_list (1990<n<2100) para nao gravar
     lixo que depois volta como periodo valido."""
@@ -1055,6 +1074,7 @@ async def put_tela_filtros(
 @router.post("/tela-links")
 async def criar_tela_link(
     body: TelaLinkIn,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
@@ -1076,6 +1096,22 @@ async def criar_tela_link(
     ), {"s": slug, "o": current.id, "k": uid, "t": token,
         "n": (body.nome or None), "e": expira, "kind": kind})
     await db.commit()
+    # Publicar link de TV cria acesso ANONIMO e duradouro ao painel: quem tiver a
+    # URL ve o dado sem login, por ate `dias`. E o evento de permissao mais forte
+    # que um gestor consegue disparar sozinho — e ate agora nao deixava rastro
+    # nenhum. NEM O SLUG NEM O CAMINHO entram: os dois SAO a credencial (ver
+    # `_ref_link`). O que amarra criacao e revogacao do mesmo link e a
+    # `referencia` (hash); quem o link libera esta no `kiosk_user_id`, e o nome
+    # que o gestor deu identifica o link para uma pessoa.
+    await registrar(
+        db, action="bi.tela_link.create", user=current, request=request,
+        target_type="bi_tela_link", target_id=_ref_link(slug),
+        alvo_nome=(body.nome or f"link de {kind}"),
+        details={"referencia": _ref_link(slug), "kind": kind, "nome": body.nome,
+                 "dias": dias, "expira_em": expira.isoformat(),
+                 "kiosk_user_id": uid,
+                 "efeito": "acesso publico sem login ao painel enquanto o link viver"},
+    )
     return {"slug": slug, "caminho": _caminho_link(slug, kind), "kind": kind, "dias": dias}
 
 
@@ -1107,6 +1143,7 @@ async def listar_tela_links(
 @router.delete("/tela-links/{slug}")
 async def revogar_tela_link(
     slug: str,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
@@ -1125,6 +1162,18 @@ async def revogar_tela_link(
         raise HTTPException(status_code=404, detail="Link nao encontrado")
     await db.execute(text("UPDATE users SET active = false WHERE id = :k"), {"k": row[0]})
     await db.commit()
+    # Mesma `referencia` da criacao (hash do slug): e por ela que o auditor liga
+    # "publicou" a "revogou" sem que a trilha guarde o endereco que ainda estava
+    # colado numa TV. O slug segue fora daqui — revogado hoje nao apaga o que a
+    # trilha guardaria por 5 anos, e ha registros de links AINDA VIVOS na mesma
+    # tabela.
+    await registrar(
+        db, action="bi.tela_link.revoke", user=current, request=request,
+        target_type="bi_tela_link", target_id=_ref_link(slug),
+        alvo_nome=f"link de painel ({_ref_link(slug)[:8]})",
+        details={"referencia": _ref_link(slug), "kiosk_user_id": row[0],
+                 "efeito": "link e token de quiosque desativados"},
+    )
     return {"ok": True}
 
 

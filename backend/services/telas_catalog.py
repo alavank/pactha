@@ -23,5 +23,10 @@ TELAS_CATALOG = [
     {"key": "simec", "label": "SIMEC - PAR (MEC)"},
     {"key": "dou", "label": "Diário Oficial"},
     {"key": "bi", "label": "Painel de Indicadores (BI)"},
+    # Trilha de auditoria. ENTRA no catálogo do cliente (ao contrário de
+    # cofre/sessoes): quem responde por LGPD/ISO na prefeitura é o controle
+    # interno dela, e a trilha existe justamente para ele conferir o que a
+    # equipe — e a própria Alavank — fez no sistema. Somente leitura.
+    {"key": "auditoria", "label": "Auditoria (trilha de atividades)"},
 ]
 CATALOG_KEYS = {t["key"] for t in TELAS_CATALOG}

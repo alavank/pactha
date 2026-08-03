@@ -4,7 +4,7 @@ import html
 from io import BytesIO
 from datetime import date, datetime
 from typing import Optional
-from fastapi import APIRouter, Depends, Query, HTTPException, Body
+from fastapi import APIRouter, Depends, Query, HTTPException, Body, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
@@ -12,6 +12,7 @@ from database import get_db
 from models import ConvenioEstadual, Municipio
 from models.user import User
 from services.auth import get_current_user, ensure_municipio_access, ensure_tela
+from services.audit import registrar
 
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib import colors
@@ -20,6 +21,54 @@ from reportlab.lib.units import mm
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, KeepTogether
 
 router = APIRouter(prefix="/api/export-pdf", tags=["export-pdf"])
+
+
+# ---------------------------------------------------------------------------
+# Trilha de EXPORTACAO
+#
+# Este router inteiro produz arquivo que sai da plataforma — e, para a LGPD, o
+# evento mais importante de rastrear, porque e o unico momento em que o dado
+# deixa de estar sob controle do sistema. Todos os eventos ficam sob o prefixo
+# `export.`: um filtro so ("action comeca com export.") lista tudo que ja saiu,
+# venha do RM, dos Documentos, de um anexo ou daqui.
+#
+# ⚠️ `export.*` NAO e acao critica: `services/audit.py::ACOES_CRITICAS` promove
+# apenas `control.sso.mint` e os `*.reveal`. Aqui a porta e `registrar` (melhor
+# esforco) DE PROPOSITO — o PDF e leitura do que o usuario ja tem na tela, e
+# bloquear o download porque o INSERT da trilha falhou nao impede exfiltracao
+# nenhuma (ele fotografa a tela): so quebra o trabalho de quem nao fez nada de
+# errado. Falha de gravacao aparece no log da aplicacao (`logger.exception`),
+# nao em silencio.
+#
+# Ainda assim a chamada fica sempre ANTES do `return`, e isso importa por dois
+# motivos que nao dependem de ser critica: depois do `return` ela simplesmente
+# nao roda, e e daqui que sai a decisao se um dia o dono quiser fail-closed —
+# bastaria trocar por `registrar_critico`, sem mexer na ordem. Quem precisa de
+# fail-closed hoje chama a porta critica pelo nome, como faz a exportacao da
+# PROPRIA trilha (routers/auditoria.py).
+# ---------------------------------------------------------------------------
+async def _registrar_export(
+    db: AsyncSession, *, request: Request, current: User, tipo: str,
+    municipio_id=None, filtros: dict | None = None, registros: int | None = None,
+    arquivo: str | None = None,
+):
+    """Um registro por arquivo gerado.
+
+    `filtros` guarda o RECORTE (parlamentar, vigencia, busca...): sem ele o
+    registro diria apenas "exportou convenios", quando o que importa e "exportou
+    os convenios do deputado X com vigencia vencendo". Valores vazios sao
+    descartados para o modal nao virar uma lista de nulos."""
+    await registrar(
+        db, action=f"export.{tipo}", user=current, request=request,
+        target_type="export", target_id=tipo, alvo_nome=arquivo,
+        municipio_id=municipio_id,
+        details={
+            "formato": "pdf",
+            "registros": registros,
+            "arquivo": arquivo,
+            "filtros": {k: v for k, v in (filtros or {}).items() if v not in (None, "", [])} or None,
+        },
+    )
 
 
 def _br(v) -> str:
@@ -77,6 +126,7 @@ def _build_pdf(title: str, subtitle: str, headers: list, rows: list, landscape_m
 
 @router.get("/convenios")
 async def export_convenios_pdf(
+    request: Request,
     municipio_id: int = Query(...),
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
@@ -114,12 +164,18 @@ async def export_convenios_pdf(
         ["Fonte", "Proposta", "Plano", "Instrumento", "Orgao", "Objeto", "Situacao", "Repasse", "Assinatura", "Vigencia"],
         rows,
     )
+    nome_arq = f"convenios_{mun.nome.replace(' ','_')}.pdf"
+    await _registrar_export(db, request=request, current=current, tipo="convenios",
+                            municipio_id=municipio_id, registros=len(convs),
+                            arquivo=nome_arq,
+                            filtros={"municipio": f"{mun.nome}/{mun.uf}"})
     return StreamingResponse(pdf, media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename=convenios_{mun.nome.replace(' ','_')}.pdf"})
+        headers={"Content-Disposition": f"attachment; filename={nome_arq}"})
 
 
 @router.get("/voluntarias")
 async def export_voluntarias_pdf(
+    request: Request,
     municipio_id: int = Query(...),
     categoria: Optional[str] = Query(None),
     situacao: Optional[str] = Query(None),
@@ -179,8 +235,17 @@ async def export_voluntarias_pdf(
         ["Instrumento", "Orgao", "Objeto", "Parlamentar", "Situacao", "Sit.Contr.", "Inicio Vig.", "Fim Vig.", "Dias"],
         rows,
     )
+    nome_arq = f"federais_{mun.nome.replace(' ','_')}.pdf"
+    await _registrar_export(
+        db, request=request, current=current, tipo="voluntarias",
+        municipio_id=municipio_id, registros=len(rows), arquivo=nome_arq,
+        filtros={"municipio": f"{mun.nome}/{mun.uf}", "categoria": categoria,
+                 "situacao": situacao, "orgao": orgao, "busca": search,
+                 "parlamentar": parlamentar, "situacao_contratacao": situacao_contratacao,
+                 "vigencia": vigencia, "vig_fim_de": vig_fim_de, "vig_fim_ate": vig_fim_ate},
+    )
     return StreamingResponse(pdf, media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename=federais_{mun.nome.replace(' ','_')}.pdf"})
+        headers={"Content-Disposition": f"attachment; filename={nome_arq}"})
 
 
 def _parse_emenda(cod: str):
@@ -195,6 +260,7 @@ def _parse_emenda(cod: str):
 
 @router.get("/plano-acao")
 async def export_plano_acao_pdf(
+    request: Request,
     municipio_id: int = Query(...),
     situacao: Optional[str] = Query(None),
     programa: Optional[str] = Query(None),
@@ -244,12 +310,21 @@ async def export_plano_acao_pdf(
         ["Codigo", "Emenda", "Parlamentar", "Beneficiario", "Valor", "Sit. P. Acao", "Sit. P. Trabalho"],
         rows,
     )
+    nome_arq = f"plano_acao_{mun.nome.replace(' ','_')}.pdf"
+    await _registrar_export(
+        db, request=request, current=current, tipo="plano_acao",
+        municipio_id=municipio_id, registros=len(rows), arquivo=nome_arq,
+        filtros={"municipio": f"{mun.nome}/{mun.uf}", "situacao": situacao,
+                 "programa": programa, "parlamentar": parlamentar,
+                 "emenda": emenda, "objeto": objeto},
+    )
     return StreamingResponse(pdf, media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename=plano_acao_{mun.nome.replace(' ','_')}.pdf"})
+        headers={"Content-Disposition": f"attachment; filename={nome_arq}"})
 
 
 @router.get("/emendas")
 async def export_emendas_pdf(
+    request: Request,
     municipio_id: int = Query(...),
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
@@ -280,15 +355,25 @@ async def export_emendas_pdf(
         ["Nº Indicacao", "Responsavel", "Tipo", "UO", "Valor", "Status", "Ano"],
         rows,
     )
+    nome_arq = f"emendas_{mun.nome.replace(' ','_')}.pdf"
+    await _registrar_export(db, request=request, current=current, tipo="emendas",
+                            municipio_id=municipio_id, registros=len(items),
+                            arquivo=nome_arq,
+                            filtros={"municipio": f"{mun.nome}/{mun.uf}"})
     return StreamingResponse(pdf, media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename=emendas_{mun.nome.replace(' ','_')}.pdf"})
+        headers={"Content-Disposition": f"attachment; filename={nome_arq}"})
 
 
 @router.get("/dou")
 async def export_dou_pdf(
+    request: Request,
     municipio_id: int = Query(...),
     edicoes: list[str] = Query(...),
     titulos: list[str] = Query(default=[]),
+    # `db` entrou so por causa da trilha: este endpoint nao consulta o banco
+    # (o DOU e real-time e vem pronto do frontend), mas exportacao sem registro
+    # e o unico caso que o dono nao aceita.
+    db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
     """DOU eh real-time. Frontend envia os titulos/edicoes ja filtrados via query."""
@@ -307,8 +392,16 @@ async def export_dou_pdf(
         rows,
         landscape_mode=False,
     )
+    nome_arq = f"dou_{municipio_id}.pdf"
+    await _registrar_export(
+        db, request=request, current=current, tipo="dou",
+        municipio_id=municipio_id, registros=len(rows), arquivo=nome_arq,
+        # As edicoes definem o periodo coberto; os titulos, nao — sao o conteudo
+        # e podem ser centenas de linhas de texto dentro do JSONB.
+        filtros={"edicoes": sorted(set(edicoes))[:50]},
+    )
     return StreamingResponse(pdf, media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename=dou_{municipio_id}.pdf"})
+        headers={"Content-Disposition": f"attachment; filename={nome_arq}"})
 
 
 # ---------------------------------------------------------------------------
@@ -345,6 +438,7 @@ def _sec_table(headers: list, rows: list, col_widths_mm: list) -> Table:
 
 @router.get("/parlamentares")
 async def export_parlamentares_pdf(
+    request: Request,
     municipio_id: Optional[int] = Query(None),
     q: Optional[str] = Query(None),
     ano: Optional[int] = Query(None),
@@ -510,6 +604,14 @@ async def export_parlamentares_pdf(
         fn += "_" + "".join(ch for ch in q if ch.isalnum())[:20]
     if ano:
         fn += f"_{ano}"
+    await _registrar_export(
+        db, request=request, current=current, tipo="parlamentares",
+        municipio_id=municipio_id, registros=len(items), arquivo=f"{fn}.pdf",
+        # Sem municipio a exportacao e da carteira INTEIRA — a marca fica
+        # explicita para nao passar por relatorio de uma prefeitura so.
+        filtros={"busca": q, "ano": ano,
+                 "escopo": "municipio" if municipio_id else "todos os municipios"},
+    )
     return StreamingResponse(buf, media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename={fn}.pdf"})
 
@@ -607,6 +709,7 @@ _FONTE_DA_TOOL = {
 
 @router.post("/ai-relatorio")
 async def export_ai_relatorio(
+    request: Request,
     payload: dict = Body(...),
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
@@ -691,13 +794,26 @@ async def export_ai_relatorio(
     doc.build(story)
     buf.seek(0)
     nome_arq = re.sub(r"[^A-Za-z0-9]+", "-", assunto).strip("-").lower()[:60] or "relatorio"
+    await _registrar_export(
+        db, request=request, current=current, tipo="ia_relatorio",
+        municipio_id=int(mid) if mid else None,
+        arquivo=f"relatorio-{nome_arq}.pdf",
+        # O texto da IA NAO vai para a trilha: e o corpo do relatorio inteiro, e
+        # copia-lo aqui duplicaria o documento numa tabela que nao se apaga. Ficam
+        # o assunto (rotulo) e as FONTES que a IA consultou — que e o que responde
+        # "de onde veio o numero que este PDF afirma".
+        filtros={"assunto": assunto, "municipio": municipio_txt, "fontes": fontes,
+                 "tamanho_caracteres": len(conteudo)},
+    )
     return StreamingResponse(buf, media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename=relatorio-{nome_arq}.pdf"})
 
 
 @router.post("/ai")
 async def export_ai_pdf(
+    request: Request,
     payload: dict = Body(...),
+    db: AsyncSession = Depends(get_db),   # so para a trilha (ver /dou)
     current: User = Depends(get_current_user),
 ):
     """Exporta uma resposta da IA PACTHA (markdown) em PDF. Body: {titulo?, pergunta?, conteudo}."""
@@ -730,5 +846,14 @@ async def export_ai_pdf(
                             topMargin=15*mm, bottomMargin=12*mm)
     doc.build(story)
     buf.seek(0)
+    await _registrar_export(
+        db, request=request, current=current, tipo="ia",
+        arquivo="ia-pactha.pdf",
+        # A PERGUNTA entra (e curta e identifica o recorte pedido); a resposta,
+        # nao (documento inteiro). Sem municipio_id: este endpoint legado nao
+        # sabe de qual municipio a conversa tratava.
+        filtros={"titulo": titulo, "pergunta": pergunta[:500] or None,
+                 "tamanho_caracteres": len(conteudo)},
+    )
     return StreamingResponse(buf, media_type="application/pdf",
         headers={"Content-Disposition": "attachment; filename=ia-pactha.pdf"})

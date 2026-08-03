@@ -113,6 +113,11 @@ MIGRATION_FILES = [
     # DEPENDE de add_bi_tela.sql — o backfill le bi_tela_links — por isso vem
     # depois dela nesta lista.
     "add_users_kiosk.sql",
+    # Auditoria detalhada: municipio, sessao, resultado, rota, snapshots legiveis
+    # e valor-antes/valor-depois. Puramente ADITIVA sobre audit_log — nenhuma
+    # coluna existente muda, nenhuma linha antiga e reescrita (o unico UPDATE e
+    # o backfill do nome do autor, com guarda `usuario_nome IS NULL`).
+    "add_auditoria_detalhada.sql",
 ]
 
 

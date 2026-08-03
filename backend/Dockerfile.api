@@ -23,4 +23,20 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
     CMD curl -fsS http://localhost:8000/api/health || exit 1
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+# --proxy-headers: sem isto o uvicorn ignora o X-Forwarded-For e request.client.host
+# fica sendo o IP de container do Traefik — o defeito que fazia TODA linha da
+# auditoria nascer com o IP do proxy.
+#
+# Por que a lista de redes e NAO "*": com "*" o uvicorn confia em tudo e, nesse
+# modo, ele pega o PRIMEIRO item do X-Forwarded-For (uvicorn
+# middleware/proxy_headers.py: `if self.always_trust: return hosts[0]`) — que e
+# justamente o pedaco que o CLIENTE escreve, ou seja, forjavel. Trocaria "IP
+# errado" por "IP escolhido pelo atacante", que numa trilha de auditoria e pior.
+# Com a lista abaixo o uvicorn percorre a cadeia DA DIREITA PARA A ESQUERDA e
+# devolve o primeiro hop que nao e nosso — o mesmo criterio de services/net.py.
+# Sao as faixas privadas onde vive a rede docker do Coolify (o peer e sempre o
+# container do Traefik). Se um dia nenhuma casar, o uvicorn simplesmente ignora
+# os cabecalhos e volta ao comportamento antigo — falha fechada, nunca aberta.
+# A fonte de verdade para codigo sensivel (auditoria, allowlist) continua sendo
+# services/net.py::client_ip, que conta hops e nao depende desta classificacao.
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2", "--proxy-headers", "--forwarded-allow-ips=127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7,fe80::/10"]

@@ -34,6 +34,16 @@ export const TELAS: TelaDef[] = [
   { key: "dou", label: "Diário Oficial" },
   { key: "cofre", label: "Cofre de Senhas" },
   { key: "sessoes", label: "Sessões (gov.br)" },
+  // A trilha de auditoria tem chave PROPRIA em vez de viver so no papel de
+  // admin: quem confere o que foi feito (controle interno, controladoria,
+  // juridico) nao e — e nao deve ser — quem administra o sistema. Segregacao de
+  // funcao e requisito das ISOs, nao preferencia de menu.
+  // A tela e SOMENTE LEITURA; conceder esta chave nao da poder de mudar nada.
+  // ⚠️ O rotulo tem de bater com `backend/services/telas_catalog.py`: a Central
+  // monta o formulario de permissoes do cliente pelo catalogo do BACKEND, e o
+  // formulario daqui pelo deste arquivo. Dois nomes para a mesma chave fazem o
+  // administrador achar que sao duas permissoes diferentes.
+  { key: "auditoria", label: "Auditoria (trilha de atividades)" },
 ];
 
 export const TELA_LABELS: Record<string, string> = Object.fromEntries(

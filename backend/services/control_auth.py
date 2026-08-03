@@ -22,6 +22,7 @@ from sqlalchemy import select
 from models.service_token import ServiceToken
 from database import get_db
 from services.service_auth import hash_token, require_scope
+from services.net import client_ip, normalizar_ip
 
 
 class ControlPrincipal:
@@ -30,15 +31,6 @@ class ControlPrincipal:
         self.token_id = token_id
         self.name = name
         self.scopes = scopes
-
-
-def _client_ip(request: Request) -> str:
-    """IP real do cliente atras do Traefik/Coolify (X-Forwarded-For, 1o hop).
-    request.client.host seria o IP interno do proxy — inutil p/ allowlist."""
-    xff = request.headers.get("x-forwarded-for", "")
-    if xff:
-        return xff.split(",")[0].strip()
-    return request.client.host if request.client else ""
 
 
 async def get_control_principal(
@@ -61,12 +53,21 @@ async def get_control_principal(
     if (getattr(tok, "kind", "scraper") or "scraper") != "control":
         raise HTTPException(status_code=401, detail="Nao e um control token")
 
-    client_ip = _client_ip(request)
+    # services/net.py conta o X-Forwarded-For de TRAS para FRENTE. A versao antiga
+    # daqui pegava o primeiro item da lista — o pedaco que o proprio cliente
+    # escreve — o que deixava a allowlist abaixo ser preenchida pelo atacante.
+    ip_cliente = client_ip(request)
 
-    # IP allowlist opcional (Console tem egress fixo). Usa o IP real (X-Forwarded-For).
+    # IP allowlist opcional (Console tem egress fixo).
     allowed = os.getenv("CONTROL_PLANE_ALLOWED_IPS", "").strip()
     if allowed:
-        if client_ip not in {i.strip() for i in allowed.split(",") if i.strip()}:
+        # Normaliza os dois lados: sem isto um IPv6 escrito na env em forma longa
+        # (2001:0db8::1) nunca casaria com o mesmo IPv6 vindo do proxy. Entrada da
+        # env que nao for IP fica como texto — nao casa com nada e so nega.
+        permitidos = {normalizar_ip(i) or i.strip()
+                      for i in allowed.split(",") if i.strip()}
+        # ip_cliente None = origem indeterminada: nega (fail-closed).
+        if not ip_cliente or ip_cliente not in permitidos:
             raise HTTPException(status_code=403, detail="IP nao autorizado para control-plane")
 
     # Anti-misrouting: nao aceitar mutacao destinada a OUTRO tenant
@@ -82,8 +83,8 @@ async def get_control_principal(
             raise HTTPException(status_code=400, detail="Control-plane exige HTTPS")
 
     tok.last_used_at = datetime.now(timezone.utc)
-    if client_ip:
-        tok.last_used_ip = client_ip
+    if ip_cliente:
+        tok.last_used_ip = ip_cliente
     await db.commit()
     return ControlPrincipal(tok.id, tok.name, tok.scopes or [])
 

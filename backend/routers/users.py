@@ -16,7 +16,7 @@ from database import get_db
 from models.user import User
 from schemas.auth import UserResponse
 from services.auth import hash_password, get_current_user, is_super_admin
-from services.audit import log_event
+from services.audit import registrar, registrar_critico
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -87,6 +87,59 @@ async def _set_user_telas(db: AsyncSession, user_id: int, telas) -> None:
         )
 
 
+# ---------------------------------------------------------------------------
+# Trilha de PERMISSAO — o que a auditoria precisa saber sobre quem pode o que
+#
+# "Quem deu essa permissao a essa pessoa, e quando" nao tinha resposta: o
+# registro de edicao de usuario guardava so {name, role, active}. Telas e
+# municipios — que sao a permissao de verdade — mudavam sem deixar rastro, e sem
+# valor-antes/valor-depois nem daria para dizer se a edicao concedeu ou retirou.
+# ---------------------------------------------------------------------------
+async def _snapshot_acessos(db: AsyncSession, user_id: int) -> dict:
+    """Telas e municipios que o usuario tem NESTE instante.
+
+    Le pelo mesmo AsyncSession das escritas de proposito: chamado depois de
+    `_set_user_telas`/`_set_user_municipios` e ANTES do commit, enxerga o estado
+    novo dentro da propria transacao — e assim o "depois" e o que de fato ficou
+    gravado, nao o que o payload pediu."""
+    t = (await db.execute(
+        text("SELECT tela FROM user_telas WHERE user_id = :u"), {"u": user_id})).fetchall()
+    m = (await db.execute(
+        text("SELECT municipio_id FROM user_municipios WHERE user_id = :u"), {"u": user_id})).fetchall()
+    return {"telas": sorted(r[0] for r in t), "municipios": sorted(r[0] for r in m)}
+
+
+async def _nomes_municipios(db: AsyncSession, ids) -> dict:
+    """id -> "Nome/UF" para a trilha nao virar uma lista de numeros.
+
+    Guarda o nome VIGENTE no momento do ato: se o municipio for renomeado depois,
+    o registro continua descrevendo o que o administrador tinha na tela. Trilha
+    de 5 anos precisa ser legivel sozinha, sem depender de join com uma tabela
+    que mudou nesse meio-tempo."""
+    ids = sorted({int(i) for i in (ids or [])})
+    if not ids:
+        return {}
+    rows = (await db.execute(
+        text("SELECT id, nome, uf FROM municipios WHERE id = ANY(:ids)"), {"ids": ids})).fetchall()
+    return {str(r[0]): f"{r[1]}/{r[2]}" for r in rows}
+
+
+def _concessoes(antes: dict, depois: dict) -> dict:
+    """A mudanca de permissao em linguagem de CONCESSAO e RETIRADA.
+
+    As colunas `valor_antes`/`valor_depois` do audit_log ja guardam o par
+    completo, e `services/audit.py` reduz sozinho aos campos que mudaram — mas
+    so como "de esta lista, para aquela lista". Para o campo do RBAC a pergunta
+    e outra, e e a do dono: o que essa pessoa GANHOU e o que PERDEU. Comparar
+    duas listas de cabeca e justamente o que a tela didatica nao pode exigir."""
+    out: dict = {}
+    for campo in ("telas", "municipios"):
+        a, d = set(antes.get(campo) or []), set(depois.get(campo) or [])
+        if a != d:
+            out[campo] = {"concedidos": sorted(d - a), "retirados": sorted(a - d)}
+    return out
+
+
 class SenhaResetResponse(BaseModel):
     id: int
     email: str
@@ -152,19 +205,37 @@ async def create_user(
         must_change_password=True,
     )
     db.add(user)
-    await db.commit()
-    await db.refresh(user)
+    # `flush` e NAO `commit`: manda o INSERT (e recebe o `user.id`, necessario
+    # para as tabelas de escopo) sem fechar a transacao. Commitar aqui quebrava a
+    # promessa escrita logo abaixo — o registro critico da concessao roda depois,
+    # e se ele falhasse a conta ja estaria gravada: sobraria um usuario orfao, com
+    # uma senha temporaria que ninguem chegou a ver (a resposta virou 500) e sem
+    # permissao nenhuma, e a repeticao da operacao esbarraria em "Email ja
+    # cadastrado". Com o flush, ou nasce tudo — conta, escopo e trilha — ou nada.
+    await db.flush()
     if req.municipio_ids is not None:
         await _set_user_municipios(db, user.id, req.municipio_ids)
-        await db.commit()
     if req.telas is not None:
         await _set_user_telas(db, user.id, req.telas)
-        await db.commit()
-    await log_event(
+    depois = await _snapshot_acessos(db, user.id)
+    # `registrar_critico` com `commit=False`: a trilha entra na MESMA transacao da
+    # concessao de acesso. Ou as duas coisas gravam, ou nenhuma — e "permissao
+    # concedida sem ninguem saber por quem" e justamente o buraco que este
+    # incremento fecha. Os dois commits que existiam aqui viraram este unico
+    # commit final; o estado final e identico (e agora telas e municipios entram
+    # juntos, em vez de meio a meio se o processo morresse no meio).
+    await registrar_critico(
         db, action="user.create", user=current, request=request,
-        target_type="user", target_id=user.id,
-        details={"new_email": email, "role": req.role},
+        target_type="user", target_id=user.id, alvo_nome=user.name,
+        details={
+            "alvo_email": email, "role": req.role,
+            "telas": depois["telas"],
+            "municipios": depois["municipios"],
+            "municipios_nomes": await _nomes_municipios(db, depois["municipios"]),
+        },
+        commit=False,
     )
+    await db.commit()
     return SenhaResetResponse(id=user.id, email=user.email, name=user.name, senha_temporaria=senha)
 
 
@@ -185,9 +256,14 @@ async def reset_password(
     u.password_hash = hash_password(senha)
     u.must_change_password = True
     await db.commit()
-    await log_event(
+    # `registrar` (nao critico): a senha ja foi trocada e devolvida ao admin. Se
+    # a trilha falhasse aqui, derrubar a resposta faria o admin acreditar que o
+    # reset nao aconteceu — quando aconteceu. Melhor devolver a senha e gritar no
+    # log da aplicacao do que mentir sobre o estado do sistema.
+    await registrar(
         db, action="user.reset_password", user=current, request=request,
-        target_type="user", target_id=u.id, details={"email": u.email},
+        target_type="user", target_id=u.id, alvo_nome=u.name,
+        details={"alvo_email": u.email},
     )
     return SenhaResetResponse(id=u.id, email=u.email, name=u.name, senha_temporaria=senha)
 
@@ -212,6 +288,11 @@ async def update_user(
         raise HTTPException(400, "Voce nao pode rebaixar o proprio perfil de administrador (evita se trancar pra fora)")
     if req.role and req.role not in ("admin", "analyst", "user", "prefeito"):
         raise HTTPException(400, "Role invalida")
+    # Foto do ANTES tirada antes de qualquer atribuicao: `u` e o objeto vivo da
+    # sessao, entao ler `u.name` depois do `u.name = ...` ja devolveria o valor
+    # novo e o "de -> para" sairia dizendo que nada mudou.
+    antes = {"name": u.name, "role": u.role, "active": bool(u.active)}
+    antes.update(await _snapshot_acessos(db, u.id))
     if req.name is not None:
         u.name = req.name.strip()
     if req.role is not None:
@@ -222,11 +303,30 @@ async def update_user(
         await _set_user_municipios(db, u.id, req.municipio_ids)
     if req.telas is not None:
         await _set_user_telas(db, u.id, req.telas)
+    depois = {"name": u.name, "role": u.role, "active": bool(u.active)}
+    depois.update(await _snapshot_acessos(db, u.id))
+    # Critico e ANTES do commit, pelo mesmo motivo do create: conceder acesso e
+    # registrar quem concedeu tem de ser um ato so. Aqui a regra e mais forte
+    # ainda — este e o endpoint que da e tira poder dentro do sistema, e e sobre
+    # ele que o RBAC granular vai se apoiar.
+    await registrar_critico(
+        db, action="user.update", user=current, request=request,
+        target_type="user", target_id=u.id, alvo_nome=depois["name"],
+        # Snapshots COMPLETOS dos dois lados: `services/audit.py` reduz sozinho
+        # aos campos que mudaram (`campos_alterados`). Mandar aqui o corpo do
+        # PATCH em vez do estado inteiro faria os campos nao enviados aparecerem
+        # como apagados.
+        valor_antes=antes, valor_depois=depois,
+        details={
+            "alvo_email": u.email,
+            "permissao": _concessoes(antes, depois) or None,
+            # Nomes de TODOS os municipios envolvidos (antes ou depois), para o
+            # modal explicar a mudanca sem consultar outra tabela.
+            "municipios_nomes": await _nomes_municipios(
+                db, set(antes["municipios"]) | set(depois["municipios"])),
+        },
+        commit=False,
+    )
     await db.commit()
     await db.refresh(u)
-    await log_event(
-        db, action="user.update", user=current, request=request,
-        target_type="user", target_id=u.id,
-        details={"name": req.name, "role": req.role, "active": req.active},
-    )
     return UserResponse.model_validate(u)

@@ -19,12 +19,13 @@ from __future__ import annotations
 import json
 from datetime import date
 from typing import Optional, Any
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from database import get_db
 from services.auth import get_current_user, ensure_municipio_access, ensure_tela
+from services.audit import registrar
 from models.user import User
 
 router = APIRouter(prefix="/api/gestao", tags=["gestao"])
@@ -127,6 +128,30 @@ FROM gestao_anotacoes
 """
 
 
+def _rotulo_anexos(anexos) -> list:
+    """Metadado dos anexos para a trilha — NUNCA o `dados_b64`.
+
+    O conteudo do arquivo mora em base64 no JSONB da anotacao; copia-lo para o
+    audit_log duplicaria megabytes numa tabela que, por decisao do dono, nao se
+    apaga. Nome, tipo e tamanho bastam para provar o que foi anexado."""
+    return [{"nome": a.get("nome"), "mime": a.get("mime"), "tamanho": a.get("tamanho")}
+            for a in (anexos or [])]
+
+
+async def _anotacao_contexto(db: AsyncSession, anot_id: int) -> dict:
+    """Municipio e a que item a anotacao se refere. Sem isto o registro nao teria
+    `municipio_id` (a auditoria nao recorta por prefeitura) nem diria sobre QUAL
+    convenio a anotacao fala. Nao levanta 404: quem decide isso e o endpoint."""
+    r = (await db.execute(text(
+        "SELECT municipio_id, fonte, fonte_ref, numero_referencia, status_interno "
+        "FROM gestao_anotacoes WHERE id = :id"), {"id": anot_id})).first()
+    if not r:
+        return {"municipio_id": None, "fonte": None, "fonte_ref": None,
+                "numero_referencia": None, "status_interno": None}
+    return {"municipio_id": r[0], "fonte": r[1], "fonte_ref": r[2],
+            "numero_referencia": r[3], "status_interno": r[4]}
+
+
 @router.get("/status-opcoes")
 async def status_opcoes(_=Depends(get_current_user)):
     return {"opcoes": STATUS_OPCOES, "fontes_validas": sorted(FONTES_VALIDAS)}
@@ -217,6 +242,7 @@ async def detalhe(
 @router.post("/anotacoes")
 async def criar(
     body: AnotacaoCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user=Depends(get_current_user),
 ):
@@ -237,6 +263,17 @@ async def criar(
         "a": anex_json, "u": getattr(user, "id", None),
     })).scalar()
     await db.commit()
+    await registrar(
+        db, action="gestao.anotacao.create", user=user, request=request,
+        target_type="gestao_anotacao", target_id=rid, municipio_id=body.municipio_id,
+        alvo_nome=(body.numero_referencia or body.fonte_ref),
+        details={"fonte": body.fonte, "fonte_ref": body.fonte_ref,
+                 "numero_referencia": body.numero_referencia,
+                 "status_interno": body.status_custom or body.status_interno,
+                 "protocolo": body.protocolo,
+                 "data_protocolo": str(body.data_protocolo) if body.data_protocolo else None,
+                 "anexos": _rotulo_anexos([a.model_dump() for a in body.anexos])},
+    )
     return {"id": rid, "created": True}
 
 
@@ -244,8 +281,9 @@ async def criar(
 async def atualizar(
     anot_id: int,
     body: AnotacaoUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
     _validate_payload(body)
     sets = []
@@ -267,22 +305,50 @@ async def atualizar(
         sets.append("numero_referencia = :nr"); params["nr"] = body.numero_referencia
     if not sets:
         return {"updated": False, "reason": "nada para atualizar"}
+    ctx = await _anotacao_contexto(db, anot_id)
     sets.append("updated_at = NOW()")
     await db.execute(text(f"UPDATE gestao_anotacoes SET {', '.join(sets)} WHERE id = :id"), params)
     await db.commit()
+    await registrar(
+        db, action="gestao.anotacao.update", user=current, request=request,
+        target_type="gestao_anotacao", target_id=anot_id, municipio_id=ctx["municipio_id"],
+        alvo_nome=(body.numero_referencia or ctx["numero_referencia"] or ctx["fonte_ref"]),
+        details={"fonte": ctx["fonte"], "fonte_ref": ctx["fonte_ref"],
+                 "numero_referencia": ctx["numero_referencia"],
+                 "campos": sorted(body.model_dump(exclude_unset=True).keys()),
+                 "anexos": (_rotulo_anexos([a.model_dump() for a in body.anexos])
+                            if body.anexos is not None else None)},
+        # O status interno e a razao de existir do modulo ("prestacao enviada
+        # fisicamente", "aguardando assinatura"): o valor ANTES e DEPOIS e o que
+        # o gestor vai querer conferir. Snapshot completo dos dois lados — o
+        # audit reduz sozinho se nao mudou.
+        valor_antes={"status_interno": ctx["status_interno"]},
+        valor_depois={"status_interno": (body.status_custom or body.status_interno
+                                         or ctx["status_interno"])},
+    )
     return {"updated": True}
 
 
 @router.delete("/anotacoes/{anot_id}")
 async def remover(
     anot_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
+    ctx = await _anotacao_contexto(db, anot_id)   # depois do DELETE nao ha contexto
     r = await db.execute(text("DELETE FROM gestao_anotacoes WHERE id = :id"), {"id": anot_id})
     await db.commit()
     if r.rowcount == 0:
         raise HTTPException(404, "Anotacao nao encontrada")
+    await registrar(
+        db, action="gestao.anotacao.delete", user=current, request=request,
+        target_type="gestao_anotacao", target_id=anot_id, municipio_id=ctx["municipio_id"],
+        alvo_nome=(ctx["numero_referencia"] or ctx["fonte_ref"]),
+        details={"fonte": ctx["fonte"], "fonte_ref": ctx["fonte_ref"],
+                 "numero_referencia": ctx["numero_referencia"],
+                 "status_interno": ctx["status_interno"]},
+    )
     return {"deleted": True}
 
 
@@ -290,13 +356,16 @@ async def remover(
 async def download_anexo(
     anot_id: int,
     idx: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
     """Download de um anexo especifico (decodifica base64)."""
     from fastapi.responses import Response
     import base64
-    row = (await db.execute(text("SELECT anexos FROM gestao_anotacoes WHERE id = :id"), {"id": anot_id})).first()
+    row = (await db.execute(text(
+        "SELECT anexos, municipio_id, fonte, fonte_ref FROM gestao_anotacoes WHERE id = :id"
+    ), {"id": anot_id})).first()
     if not row:
         raise HTTPException(404, "Anotacao nao encontrada")
     anexos = row[0] or []
@@ -307,6 +376,17 @@ async def download_anexo(
         data = base64.b64decode(a["dados_b64"])
     except Exception:
         raise HTTPException(500, "Anexo corrompido")
+    # Baixar anexo E exportacao: o arquivo (oficio, comprovante, foto) sai da
+    # plataforma. Entra sob `export.` pelo mesmo motivo dos PDFs — o dono pediu
+    # "toda exportacao", e o que sai daqui e justamente documento digitalizado.
+    await registrar(
+        db, action="export.gestao_anexo", user=current, request=request,
+        target_type="gestao_anotacao", target_id=anot_id, municipio_id=row[1],
+        alvo_nome=a.get("nome"),
+        details={"fonte": row[2], "fonte_ref": row[3], "indice": idx,
+                 "arquivo": a.get("nome"), "mime": a.get("mime"),
+                 "tamanho_bytes": len(data)},
+    )
     return Response(
         content=data, media_type=a.get("mime") or "application/octet-stream",
         headers={"Content-Disposition": f'inline; filename="{a.get("nome", "anexo")}"'},
