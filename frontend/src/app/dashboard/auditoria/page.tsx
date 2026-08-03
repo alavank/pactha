@@ -25,6 +25,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ScrollText, Filter, Download, AlertTriangle, RotateCw, Globe, ListTree, FileClock,
+  Eye, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
 } from "lucide-react";
 import api from "@/lib/api";
 import { Input } from "@/components/ui/input";
@@ -514,15 +515,13 @@ export default function AuditoriaPage() {
           const novos = crus
             .map(normalizar)
             .filter((x): x is EventoAuditoria => x !== null);
-          /* Ao paginar, um evento gravado ENTRE duas páginas empurra a janela e
-             repete registros na virada. Sem a deduplicação por id a lista
-             mostraria a mesma linha duas vezes — e numa trilha de auditoria
-             "aconteceu duas vezes" é afirmação, não detalhe de interface. */
-          setEventos((prev) => {
-            if (pagina === 1) return novos;
-            const vistos = new Set(prev.map((x) => x.id));
-            return [...prev, ...novos.filter((x) => !vistos.has(x.id))];
-          });
+          /* PAGINAÇÃO, e não acúmulo: cada página SUBSTITUI a anterior. Antes a
+             lista crescia sem fim, e numa trilha com dezenas de milhares de
+             eventos isso vira uma rolagem que nunca acaba — sem como voltar a
+             um ponto, sem como dizer "estava na página 4".
+             Efeito colateral que sumiu junto: acumulando, um evento gravado
+             ENTRE duas buscas empurrava a janela e repetia linhas na virada. */
+          setEventos(novos);
           setTotal(typeof res.data?.total === "number" ? res.data.total : null);
           setPaginas(typeof res.data?.pages === "number" ? res.data.pages : 1);
           setErro(null);
@@ -641,7 +640,6 @@ export default function AuditoriaPage() {
 
   const filtrando =
     !!filtros.usuario || !!filtros.acao || !!filtros.modulo || !!filtros.resultado || !!filtros.busca;
-  const podeMais = pagina < paginas;
 
   return (
     <div className="space-y-4">
@@ -930,11 +928,22 @@ export default function AuditoriaPage() {
                       </span>
                     }
                     valor={
-                      /* Sucesso fica CINZA: é o estado normal, e o que precisa
-                         saltar da lista é a falha. */
-                      <Selo tom={e.resultado === "falha" ? "critico" : "neutro"}>
-                        {e.resultado === "falha" ? "Falhou" : "OK"}
-                      </Selo>
+                      /* O olho convida ao clique — a linha inteira abre o
+                         detalhe, e sem esta pista ninguém descobre.
+                         Aqui havia um selo "OK" em toda linha: dizia o óbvio
+                         (quase tudo dá certo), ocupava a coluna que o olho
+                         procura para agir, e não sugeria que houvesse mais o
+                         que ver. A FALHA continua aparecendo, agora em selo
+                         vermelho ao lado do olho — porque falha é exceção, e é
+                         disso que a cor tem de dar conta. */
+                      <span className="flex items-center gap-1.5">
+                        {e.resultado === "falha" && <Selo tom="critico">Falhou</Selo>}
+                        <Eye
+                          className="size-4 shrink-0"
+                          style={{ color: "var(--bi-faint)" }}
+                          aria-hidden="true"
+                        />
+                      </span>
                     }
                     meta={
                       <>
@@ -950,18 +959,58 @@ export default function AuditoriaPage() {
             </Bloco>
           ))}
 
-          {podeMais && (
-            <div className="flex justify-center">
-              <button
-                type="button"
-                onClick={() => setPagina((p) => p + 1)}
-                disabled={carregando}
-                className={BOTAO_SEC}
-                style={ESTILO_SEC}
-              >
-                {carregando ? "Carregando..." : `Carregar mais ${POR_PAGINA}`}
-              </button>
-            </div>
+          {paginas > 1 && (
+            <Bloco className="p-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <span className="text-[11px]" style={{ color: "var(--bi-muted)" }}>
+                  Página <span className="bi-num">{pagina}</span> de{" "}
+                  <span className="bi-num">{paginas}</span>
+                  {total != null && (
+                    <> · <span className="bi-num">{total.toLocaleString("pt-BR")}</span> evento(s)</>
+                  )}
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setPagina(1)}
+                    disabled={pagina <= 1 || carregando}
+                    className={BOTAO_SEC}
+                    style={ESTILO_SEC}
+                    title="Primeira página"
+                  >
+                    <ChevronsLeft className="size-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPagina((p) => Math.max(1, p - 1))}
+                    disabled={pagina <= 1 || carregando}
+                    className={BOTAO_SEC}
+                    style={ESTILO_SEC}
+                  >
+                    <ChevronLeft className="size-4" /> Anterior
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPagina((p) => Math.min(paginas, p + 1))}
+                    disabled={pagina >= paginas || carregando}
+                    className={BOTAO_SEC}
+                    style={ESTILO_SEC}
+                  >
+                    Próxima <ChevronRight className="size-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPagina(paginas)}
+                    disabled={pagina >= paginas || carregando}
+                    className={BOTAO_SEC}
+                    style={ESTILO_SEC}
+                    title="Última página"
+                  >
+                    <ChevronsRight className="size-4" />
+                  </button>
+                </div>
+              </div>
+            </Bloco>
           )}
         </div>
       )}

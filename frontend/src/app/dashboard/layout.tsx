@@ -749,8 +749,22 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
 
       {/* Main content */}
       {/* pactha-scroll reserva a canaleta da barra: sem isso, trocar de uma aba
-          que rola para outra que nao rola desloca o conteudo lateralmente. */}
-      <main className="pactha-scroll flex-1 overflow-y-auto">
+          que rola para outra que nao rola desloca o conteudo lateralmente.
+
+          `relative` NAO e decorativo — e o que faz esta area rolavel ser o BLOCO
+          DE CONTENCAO do que estiver posicionado dentro dela. Sem ele, `main`, a
+          casca e o `<body>` sao todos `static`, e qualquer descendente
+          `position:absolute` se ancora no DOCUMENTO: deixa de ser cortado por
+          este scroller e passa a esticar a pagina inteira.
+          Foi o que aconteceu com a tela de Auditoria: cada linha de acao
+          sensivel traz um `<span class="sr-only">` para o leitor de tela, e
+          `sr-only` do Tailwind e `position:absolute`. Com 100 linhas, o ultimo
+          span ficava a ~7000px e o documento ganhava uma SEGUNDA barra de
+          rolagem — que rolava para uma area em branco, porque o conteudo de
+          verdade mora aqui dentro, preso em `h-screen`. Medido no navegador:
+          `window.scrollTo(0, 3000)` andava 3000px e o topo da viewport virava
+          `<html>` puro. */}
+      <main className="pactha-scroll relative flex-1 overflow-y-auto">
         <div className={
           telaCheia ? ""
           : telaLarga ? "mx-auto max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8"
