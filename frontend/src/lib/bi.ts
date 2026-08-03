@@ -653,12 +653,27 @@ export interface TelaLink {
   ultimo_acesso?: string | null;
 }
 
+export interface NovoTelaLink {
+  /** PARA QUEM o link foi gerado — é o que torna a revogação possível depois. */
+  nome?: string | null;
+  /** "dias" = a partir de hoje · "data" = dia marcado · "nunca" = sem prazo. */
+  expira?: "dias" | "data" | "nunca";
+  dias?: number;
+  /** `AAAA-MM-DD`, usado só quando `expira === "data"`. */
+  data_expiracao?: string | null;
+}
+
 export async function criarTelaLink(
   kind: TipoLink = "tela",
-  nome?: string,
-  dias = 365
+  opcoes: NovoTelaLink = {}
 ): Promise<TelaLink> {
-  const { data } = await api.post<TelaLink>("/bi/tela-links", { nome: nome || null, dias, kind });
+  const { data } = await api.post<TelaLink>("/bi/tela-links", {
+    kind,
+    nome: opcoes.nome || null,
+    expira: opcoes.expira || "dias",
+    dias: opcoes.dias ?? 365,
+    data_expiracao: opcoes.data_expiracao || null,
+  });
   return data;
 }
 

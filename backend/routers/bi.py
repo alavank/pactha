@@ -19,7 +19,7 @@ import hashlib
 import secrets
 import asyncio
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time as dt_time, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query, HTTPException, Request
@@ -957,11 +957,55 @@ class FiltroTelaIn(BaseModel):
 
 
 class TelaLinkIn(BaseModel):
+    # PARA QUEM o link foi gerado. E o que torna a revogacao possivel: sem nome,
+    # a lista vira um punhado de slugs de 12 caracteres e ninguem lembra qual
+    # entregar de volta quando a pessoa sai, ou qual matar quando o prazo passa.
     nome: Optional[str] = None
-    dias: int = 365
     # 'tela' = TV de parede (segue o filtro do dono em tempo real)
     # 'mobile' = app de celular (filtro PROPRIO no aparelho)
     kind: str = "tela"
+    # COMO expira: "dias" (a partir de hoje), "data" (dia marcado) ou "nunca".
+    expira: str = "dias"
+    dias: int = 365
+    # Dia em que o acesso morre, quando `expira == "data"`. Vale ate o FIM
+    # daquele dia — quem escolhe "10 de agosto" quer o dia 10 inteiro.
+    data_expiracao: Optional[date] = None
+
+
+# Teto do proprio JWT de quiosque. "Nao expira" e uma decisao de OPERACAO (o
+# dono nao quer prazo), nao uma promessa de eternidade: o token embutido no link
+# e assinado com validade, e assinar por tempo infinito seria pior. Dez anos e
+# mais que o mandato que este produto atende.
+_DIAS_MAX_LINK = 3650
+
+
+def _prazo_do_link(body: TelaLinkIn) -> tuple[Optional[datetime], int]:
+    """(quando o link morre, quantos dias o token vale).
+
+    `expira_em = None` e o que o resolvedor publico ja entende como "sem prazo"
+    (`tela-pub` so compara a data quando ela existe). O TTL do token continua
+    limitado ao teto — se um dia alguem precisar de mais, renova o link, que e
+    justamente a hora de reconferir se aquela pessoa ainda deve ter acesso."""
+    modo = (body.expira or "dias").lower()
+    if modo == "nunca":
+        return None, _DIAS_MAX_LINK
+    if modo == "data":
+        if not body.data_expiracao:
+            raise HTTPException(status_code=400, detail="Informe a data de expiracao")
+        # Fim do dia escolhido, em UTC. Sem isto, "expira em 10/08" mataria o
+        # link a meia-noite do dia 9 para quem esta em Brasilia.
+        fim = datetime.combine(body.data_expiracao, dt_time.max, tzinfo=timezone.utc)
+        if fim <= datetime.now(timezone.utc):
+            raise HTTPException(status_code=400, detail="A data de expiracao ja passou")
+        dias = max(1, min((fim - datetime.now(timezone.utc)).days + 1, _DIAS_MAX_LINK))
+        return fim, dias
+    # `int(body.dias or 365)` seria o idioma natural aqui — e estava errado:
+    # com `dias = 0` (campo zerado na tela), `0 or 365` vira 365, e um campo
+    # limpo por engano viraria UM ANO de acesso anonimo. Num prazo de permissao
+    # o erro tem de cair para o lado curto, nunca para o longo.
+    dias = 365 if body.dias is None else int(body.dias)
+    dias = max(1, min(dias, _DIAS_MAX_LINK))
+    return datetime.now(timezone.utc) + timedelta(days=dias), dias
 
 
 def _caminho_link(slug: str, kind: str) -> str:
@@ -1082,14 +1126,13 @@ async def criar_tela_link(
     pode ver o Modo Tela nao necessariamente pode publicar dado para fora."""
     ensure_tela(current, "bi_link")
     kind = "mobile" if (body.kind or "tela").lower() == "mobile" else "tela"
-    dias = max(1, min(int(body.dias or 365), 3650))
-    slug = secrets.token_urlsafe(9)[:12]  # 12 chars, ~72 bits: curto e nao chutavel
-    uid = await _ensure_kiosk_user(db, current, slug)
-    token = create_kiosk_token(uid, dias)
     # Expiracao calculada em Python de proposito: `make_interval(days => :d)`
     # mistura a notacao de argumento nomeado do Postgres com o bind do
     # SQLAlchemy, e nao ha ganho nenhum em arriscar isso no driver.
-    expira = datetime.now(timezone.utc) + timedelta(days=dias)
+    expira, dias = _prazo_do_link(body)
+    slug = secrets.token_urlsafe(9)[:12]  # 12 chars, ~72 bits: curto e nao chutavel
+    uid = await _ensure_kiosk_user(db, current, slug)
+    token = create_kiosk_token(uid, dias)
     await db.execute(text(
         "INSERT INTO bi_tela_links (slug, owner_id, kiosk_user_id, municipio_id, token, nome, expira_em, kind) "
         "VALUES (:s, :o, :k, NULL, :t, :n, :e, :kind)"
@@ -1108,7 +1151,8 @@ async def criar_tela_link(
         target_type="bi_tela_link", target_id=_ref_link(slug),
         alvo_nome=(body.nome or f"link de {kind}"),
         details={"referencia": _ref_link(slug), "kind": kind, "nome": body.nome,
-                 "dias": dias, "expira_em": expira.isoformat(),
+                 "dias": dias, "expira_em": expira.isoformat() if expira else None,
+                 "sem_prazo": expira is None,
                  "kiosk_user_id": uid,
                  "efeito": "acesso publico sem login ao painel enquanto o link viver"},
     )
