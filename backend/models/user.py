@@ -13,5 +13,9 @@ class User(Base):
     role = Column(String(50), default="analyst")
     active = Column(Boolean, default=True)
     must_change_password = Column(Boolean, default=True)
+    # Conta de QUIOSQUE (TV/celular publicados por link). Marca no USUARIO e nao
+    # no token: o refresh nao repassa claim, entao claim nao sobrevive a um 401.
+    # Ver migrations/add_users_kiosk.sql.
+    kiosk = Column(Boolean, default=False, nullable=False)
     last_login_at = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), server_default=func.now())

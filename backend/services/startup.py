@@ -108,6 +108,11 @@ MIGRATION_FILES = [
     # `routers/transferegov.py` (que consulta sem guarda) devolvia 500. E
     # CREATE TABLE/INDEX IF NOT EXISTS, sem INSERT: inerte onde ja existe.
     "add_siconv_federal.sql",
+    # Marca de quiosque no USUARIO (nao no claim do JWT, que o refresh nao
+    # repassa). Fecha o link publico de TV no Painel de Indicadores.
+    # DEPENDE de add_bi_tela.sql — o backfill le bi_tela_links — por isso vem
+    # depois dela nesta lista.
+    "add_users_kiosk.sql",
 ]
 
 
