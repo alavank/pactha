@@ -58,8 +58,8 @@ depois, sem travar a abertura:
 Só isto — e é de propósito:
 
 - **Três contas**, as de `services/auth.py::SUPER_ADMIN_EMAILS`:
-  `super-admin@pactha.com.br`, `alavank.tecnologia@gmail.com`,
-  `matheus@alavank.com.br`. Senhas **aleatórias, impressas no log do primeiro
+  `super-admin@alavank.com.br`, `alavank.tecnologia@gmail.com`,
+  `tiagomiller@alavank.com.br`, `matheus@alavank.com.br`. Senhas **aleatórias, impressas no log do primeiro
   boot**, com troca obrigatória no primeiro acesso.
 - **O município informado nas variáveis de ambiente** — um registro, o dele.
 
@@ -99,7 +99,7 @@ ADMIN_PASSWORD=          # opcional: fixa a senha do super-admin em vez de
 ```
 
 > **`ADMIN_PASSWORD` resolve um problema real.** Sem ela, a senha do
-> `super-admin@pactha.com.br` só aparece no console do primeiro boot; se ninguém
+> `super-admin@alavank.com.br` só aparece no console do primeiro boot; se ninguém
 > copiar naquele momento, a conta fica inacessível e a saída é resetar pelo banco.
 
 ---
@@ -140,7 +140,7 @@ Então, antes de criar qualquer aplicação:
    log** para copiar as senhas.
 5. Subir **worker** e **frontend**. **Um app por vez, esperando cada um
    terminar** — a VPS é burstable (~0,6 vCPU sustentado).
-6. Entrar como `super-admin@pactha.com.br`, trocar a senha, conferir que o
+6. Entrar como `super-admin@alavank.com.br`, trocar a senha, conferir que o
    município que aparece é o certo.
 
 > ⚠️ **Mergear não publica.** As aplicações usam `build_pack = dockerimage`: rodam

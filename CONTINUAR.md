@@ -41,7 +41,7 @@
 
 Monte Sião tem também o **Painel Executivo**: https://pactha-montesiao-mg-painel-54-232-208-118.sslip.io
 
-Os três bancos já estão **populados com dados reais** (a migração vinda do Neon foi concluída — não é mais schema+seed). Login seed só vale em banco novo: `super-admin@pactha.com.br`, com senha ALEATÓRIA por tenant impressa no console do primeiro boot (ou via `ADMIN_PASSWORD`) — pede troca no 1º acesso.
+Os três bancos já estão **populados com dados reais** (a migração vinda do Neon foi concluída — não é mais schema+seed). Login seed só vale em banco novo: `super-admin@alavank.com.br`, com senha ALEATÓRIA por tenant impressa no console do primeiro boot (ou via `ADMIN_PASSWORD`) — pede troca no 1º acesso.
 
 **Um push na `main` NÃO mexe com cliente nenhum.** As 9 aplicações rodam com `build_pack = dockerimage`: elas executam a tag gravada em `docker_registry_image_tag`, e quem constrói é o GitHub Actions publicando no GHCR. Enquanto ninguém repontar a tag de um app específico, o cliente fica na versão dele. **Cuidado com a leitura antiga:** `is_auto_deploy_enabled` está `true` nas 9 — não é ele que segura o deploy, é o `build_pack`. Detalhe e prova empírica em [`INFRA.md`](INFRA.md) §2.
 
