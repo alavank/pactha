@@ -113,6 +113,10 @@ MODO_BLOQUEIO = "bloqueio"
 ACAO_NEGARIA = "authz.negaria"      # modo aviso: passou, mas teria sido barrado
 ACAO_NEGOU = "authz.negou"          # modo bloqueio: barrado de verdade
 ACAO_SEM_DONO = "authz.sem_dono"    # linha sem municipio: nao da para decidir
+# Rota que subiu sem declarar permissao e sem estar na allowlist de rotas
+# livres. Ver services/registro_rotas.py — e defeito de programacao, nao de
+# cadastro, e por isso a linha sai com o CAMINHO no lugar da permissao.
+ACAO_ROTA_SEM_REGISTRO = "authz.rota_sem_registro"
 
 _MODOS_DESCONHECIDOS: set = set()
 
@@ -459,6 +463,101 @@ def exigir_tela(usuario, tela: str) -> None:
     if tela not in permitidas:
         negar(usuario, tipo="tela", exigido=tela, possui=permitidas,
               mensagem="Voce nao tem acesso a esta tela")
+
+
+# ---------------------------------------------------------------------------
+# PERMISSAO POR ACAO (Incremento 5)
+# ---------------------------------------------------------------------------
+def permissoes_de(usuario) -> frozenset:
+    """O conjunto EFETIVO de permissoes deste usuario.
+
+    Adaptador fino: le os fatos do objeto e entrega a decisao a funcao PURA
+    `services/permissoes.py::permissoes_efetivas`. Nenhuma regra mora aqui de
+    proposito — regra espalhada em adaptador e exatamente o que faz um
+    `if role == 'admin'` reaparecer daqui a seis meses.
+
+    `user.allowed_permissoes` e anexado por `services/auth.py::load_user_scopes`
+    (None para super-admin, que a funcao pura ignora porque ja decide por
+    `super_admin=True`).
+
+    ⚠️ IMPORT LOCAL, e nao no topo: `services/auth.py` importa ESTE modulo no
+    topo dele. Subir o import de la para ca fecharia o ciclo e quebraria o boot.
+    """
+    from services.auth import ehQuiosque, eh_somente_leitura, is_super_admin
+    from services import permissoes as catalogo
+
+    return catalogo.permissoes_efetivas(
+        super_admin=is_super_admin(usuario),
+        concedidas=getattr(usuario, "allowed_permissoes", None),
+        somente_leitura=eh_somente_leitura(usuario),
+        quiosque=ehQuiosque(usuario),
+        # `active` e NOT NULL com default true; `getattr` porque este modulo
+        # tambem e chamado com objetos que nao sao o modelo completo (teste,
+        # snapshot). Ausente = ativo, que e o que o objeto parcial representa.
+        ativo=bool(getattr(usuario, "active", True)),
+    )
+
+
+def pode(usuario, permissao: str) -> bool:
+    """"Este usuario pode X?" — SEM efeito nenhum: nao levanta, nao registra.
+
+    E o que a LISTAGEM usa. O gate de uma listagem e o filtro, nao o 403: negar
+    a tela inteira de quem tem escopo legitimo e o oposto do que este incremento
+    quer (ver `routers/fns.py::municipios_pacta`). Serve tambem para a resposta
+    dizer ao frontend quais botoes desenhar."""
+    from services import permissoes as catalogo
+
+    chave = catalogo.normalizar(permissao)
+    return chave in permissoes_de(usuario)
+
+
+def exigir(usuario, permissao: str) -> None:
+    """A CHECAGEM de permissao por acao. Respeita `AUTHZ_MODO` como o resto:
+    em `aviso` deixa passar e registra, em `bloqueio` levanta 403.
+
+    Combina com o que ja existe em vez de substituir: a PERMISSAO diz O QUE a
+    pessoa faz, o MUNICIPIO diz ONDE, e as duas valem juntas. Um endpoint de
+    escrita escopado por municipio continua precisando das duas linhas:
+
+        authz.exigir(current, "rm.excluir")
+        await authz.ensure_dono(db, "rm_relatorios", "id", rid, current)
+
+    Super-admin passa sempre — a funcao pura ja devolve o catalogo inteiro para
+    ele, entao nao ha um `if super_admin` aqui para alguem copiar.
+
+    ⚠️ Chave fora do catalogo levanta ValueError, e nao 403. E erro de
+    PROGRAMACAO num literal do router (`authz.exigir(u, "rm.excluri")`), aparece
+    na primeira chamada em desenvolvimento e nunca chega a producao. Tratada
+    como "sem permissao" ela viraria um 403 permanente e silencioso: o endpoint
+    negaria TODO MUNDO, inclusive o super-admin, e ninguem saberia por que."""
+    from services import permissoes as catalogo
+
+    chave = catalogo.normalizar(permissao)
+    if chave not in catalogo.CATALOGO:
+        raise ValueError(
+            f"permissao desconhecida: {permissao!r} — nao esta em "
+            "services/permissoes.py::CATALOGO")
+
+    efetivas = permissoes_de(usuario)
+    if chave in efetivas:
+        return
+
+    negar(usuario, tipo="permissao", exigido=chave, possui=efetivas,
+          # Mensagem PROPRIA, e nao a de tela: quem le "Voce nao tem acesso a
+          # esta tela" depois de clicar em Excluir procura o erro no lugar
+          # errado — e o administrador vai conceder a tela inteira quando
+          # faltava uma caixinha.
+          mensagem="Voce nao tem permissao para esta acao")
+
+
+def registrar_rota_sem_registro(usuario, caminho: str) -> None:
+    """Uma requisicao esbarrou numa rota que subiu sem permissao declarada.
+
+    NAO decide nada — quem barra e `services/registro_rotas.py`. Aqui so vira
+    linha na trilha, para o defeito aparecer na Auditoria e nao so no log do
+    container, que ninguem le."""
+    _observar_seguro(ACAO_ROTA_SEM_REGISTRO, usuario, tipo="rota",
+                     exigido=caminho)
 
 
 def exigir_municipio(usuario, municipio_id: Any) -> None:

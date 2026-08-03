@@ -6,6 +6,7 @@ Cookies httpOnly:
 - access_token (TTL curto, ex: 60min)
 - refresh_token (TTL maior, ex: 30 dias)
 """
+import logging
 import os
 import uuid
 import secrets
@@ -28,6 +29,8 @@ from services import authz
 
 settings = get_settings()
 security = HTTPBearer(auto_error=False)
+
+_logger_auth = logging.getLogger("auth")
 
 REFRESH_TTL_DAYS = int(os.getenv("REFRESH_TTL_DAYS", "30"))
 COOKIE_NAME_ACCESS = "pactha_access"
@@ -384,9 +387,9 @@ async def get_current_user(
 
 
 async def load_user_scopes(db: AsyncSession, user: User) -> None:
-    """Anexa ao user os escopos de acesso: municipios + telas.
+    """Anexa ao user os escopos de acesso: municipios + telas + PERMISSOES.
 
-    Super-admin (Alavank) -> None nos dois, que os `ensure_*` leem como "sem
+    Super-admin (Alavank) -> None nos tres, que os `ensure_*` leem como "sem
     limite". TODO o resto — INCLUSIVE quem esta marcado `admin` — passa a valer
     exatamente o que houver em `user_telas`/`user_municipios`; conjunto vazio e
     "nao pode nada", nao "pode tudo".
@@ -413,6 +416,12 @@ async def load_user_scopes(db: AsyncSession, user: User) -> None:
     if is_super_admin(user):
         user.allowed_municipio_ids = None
         user.allowed_telas = None
+        # None aqui NAO e o que concede: quem decide e `super_admin=True` na
+        # funcao pura (services/permissoes.py::permissoes_efetivas), que nem
+        # olha para este campo. Fica None so para o objeto ficar coerente com os
+        # outros dois — e porque a convencao inversa ("None = tudo") foi
+        # exatamente a que criou o deus por default no Incremento 4.
+        user.allowed_permissoes = None
         return
     mrows = await db.execute(
         text("SELECT municipio_id FROM user_municipios WHERE user_id = :u"), {"u": user.id})
@@ -420,6 +429,42 @@ async def load_user_scopes(db: AsyncSession, user: User) -> None:
     trows = await db.execute(
         text("SELECT tela FROM user_telas WHERE user_id = :u"), {"u": user.id})
     user.allowed_telas = {r[0] for r in trows.fetchall()}
+    user.allowed_permissoes = await _carregar_permissoes(db, user.id)
+
+
+async def _carregar_permissoes(db: AsyncSession, user_id: int) -> set:
+    """As linhas de `user_permissoes` deste usuario (Incremento 5).
+
+    ⚠️ AS DUAS DECISOES DESTA FUNCAO, e as duas sao sobre o dia em que ela
+    falhar:
+
+    1. SAVEPOINT (`begin_nested`). Sem ele, um erro aqui — tabela ausente porque
+       a migration nao rodou — ABORTA a transacao inteira no Postgres, e a
+       proxima consulta do endpoint quebra com um erro sem relacao aparente.
+       Mesma razao de `services/authz.py::ensure_dono`.
+
+    2. FALHA VIRA CONJUNTO VAZIO, e nao excecao. Levantar aqui derrubaria TODA
+       requisicao autenticada do sistema (esta funcao roda em `get_current_user`)
+       — a API inteira de uma prefeitura fora do ar porque uma tabela nova nao
+       existe. Vazio e fail-closed e, com `AUTHZ_MODO=aviso` (o default), nao
+       tira nada de ninguem: a trava so fala. O CRITICO no log e o que faz o
+       problema aparecer.
+
+       ⚠️ O que NAO pode acontecer aqui e devolver `None`: None e "sem limite"
+       no vocabulario deste arquivo, e um erro de banco viraria acesso total.
+    """
+    try:
+        async with db.begin_nested():
+            linhas = await db.execute(
+                text("SELECT permissao FROM user_permissoes WHERE user_id = :u"),
+                {"u": user_id})
+        return {r[0] for r in linhas.fetchall()}
+    except Exception:
+        _logger_auth.critical(
+            "Nao consegui ler user_permissoes do usuario %s — seguindo com ZERO "
+            "permissao (fail-closed). Se a migration add_permissoes_por_acao.sql "
+            "nao rodou, e isso.", user_id, exc_info=True)
+        return set()
 
 
 def ensure_municipio_access(user: User, municipio_id) -> None:

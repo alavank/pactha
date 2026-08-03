@@ -11,7 +11,7 @@ from routers import (
     session_capture, emendas_estaduais, dou_mg, fns, transferegov, export_pdf,
     users, simec, rm, ai, gestao, parlamentares, telegram, status_changes,
     documentos, cauc, cagec, acordofes, control, freshness, painel, bi,
-    sismob, auditoria,
+    sismob, auditoria, permissoes,
 )
 from config import get_settings
 from services.security_headers import SecurityHeadersMiddleware
@@ -60,6 +60,24 @@ async def lifespan(app: FastAPI):
         print(f"[STARTUP] expurgo do historico da IA: {n} conversa(s)", flush=True)
     except Exception as e:
         print(f"[STARTUP] expurgo do historico da IA falhou: {e}", flush=True)
+
+    # ⭐ O REGISTRO QUE FALHA FECHADO (Incremento 5). Varre `app.routes` e
+    # compara com (1) as rotas que declararam permissao via `exige(...)` e (2) a
+    # allowlist explicita de rotas publicas/auto-escopadas. O que nao esta em
+    # nenhuma das duas e PENDENTE.
+    #
+    # ⚠️ SEM try/except, e e a linha mais deliberada deste arquivo. Em modo
+    # ESTRITO (desenvolvimento) a excecao TEM de subir e derrubar o boot — e o
+    # unico momento em que "esqueci de declarar permissao" custa uma linha em vez
+    # de custar um endpoint aberto por seis meses. Envolver isto no try/except
+    # generoso das linhas acima transformaria o registro inteiro em decoracao.
+    #
+    # Em producao o modo e `bloqueio`: sobe, registra CRITICO e devolve 403 so
+    # NAQUELA rota — derrubar a API de uma prefeitura por uma rota nova esquecida
+    # e trocar um risco por um dano garantido. Ver services/registro_rotas.py.
+    from services.registro_rotas import aplicar as aplicar_registro
+    aplicar_registro(app)
+
     yield
 
 
@@ -157,6 +175,7 @@ app.include_router(sismob.router)   # /api/sismob/* (obras de saude do MS)
 app.include_router(acordofes.router)
 app.include_router(control.router)  # /api/control/* (Console Alavank)
 app.include_router(auditoria.router)  # /api/auditoria/* (trilha, so leitura)
+app.include_router(permissoes.router)  # /api/permissoes/* (catalogo de permissoes)
 app.include_router(freshness.router)  # /api/admin/freshness (monitor de frescor)
 app.include_router(painel.router)   # /api/painel/* (Painel Executivo do prefeito)
 if get_settings().BI_MODULE:
