@@ -4,16 +4,27 @@ Audit log - trilha de auditoria (LGPD / ISO 27001).
 Uma linha = um ato. Grava-se tudo que MUDA dado, a navegacao (deduplicada) e
 toda exportacao; consulta individual nao entra, por decisao do dono.
 
-⚠️ Espelha `migrations/add_auditoria_detalhada.sql`. Os dois criam o mesmo
-schema por caminhos diferentes: em banco NOVO quem cria a tabela e o
+⚠️ Espelha `migrations/add_auditoria_detalhada.sql` e
+`migrations/add_auditoria_imutavel.sql`. Os dois criam o mesmo schema por
+caminhos diferentes: em banco NOVO quem cria a tabela e o
 `Base.metadata.create_all` do boot (a partir DESTE arquivo), em banco EXISTENTE
 quem acrescenta as colunas e a migration. Mexeu aqui, mexa la — senao o tenant
 novo nasce com um schema e o antigo fica com outro, em silencio.
 
-As colunas de imutabilidade (hash encadeado) sao o Incremento 3 e ainda nao
-existem; nada aqui atrapalha a entrada delas depois.
+IMUTABILIDADE (Incremento 3): o banco agora RECUSA UPDATE, DELETE e TRUNCATE
+nesta tabela, e cada linha carrega `hash_anterior`/`hash` — sha256 encadeado,
+calculado por gatilho DENTRO do banco. As duas colunas NAO estao declaradas
+aqui de proposito: quem as escreve e o gatilho, e declara-las no model faria o
+SQLAlchemy manda-las no INSERT (com NULL), dando a impressao de que a aplicacao
+tem voz no valor. Ela nao tem — e nao pode ter, senao um cliente mentiroso
+gravaria um hash que "fecha" com um conteudo forjado. Em banco novo elas nascem
+pela migration, que roda logo depois do `create_all`.
+
+⚠️ NAO ACRESCENTE relacionamento, `onupdate` ou qualquer coisa que faca o
+SQLAlchemy emitir UPDATE nesta tabela: o gatilho levanta excecao e a acao inteira
+cai junto.
 """
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, DateTime
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import func
 from database import Base
@@ -25,10 +36,15 @@ class AuditLog(Base):
     id = Column(Integer, primary_key=True, index=True)
 
     # --- Quem ---
-    # user_id e ZERADO quando a conta e excluida (routers/control.py::delete_user
-    # faz _null_fk em audit_log). Por isso o e-mail e o nome ficam congelados em
-    # coluna propria: a trilha continua dizendo quem foi depois da conta sumir.
-    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=True)
+    # SEM ForeignKey para users, e isso e o coracao da imutabilidade: os tres
+    # campos abaixo sao SNAPSHOT do instante do ato, nao referencia viva. Com a
+    # FK, excluir um usuario obrigava a REESCREVER a trilha (`UPDATE audit_log
+    # SET user_id = NULL`) so para nao esbarrar nela — exatamente o que uma
+    # trilha append-only nao pode sofrer. Sem a FK, `user_id` pode apontar para
+    # uma conta que nao existe mais, e isso e CORRETO: quem le usa o e-mail e o
+    # nome congelados. Mesmo motivo de `municipio_id` nunca ter tido FK.
+    # A FK antiga e derrubada por `migrations/add_auditoria_imutavel.sql`.
+    user_id = Column(Integer, index=True, nullable=True)
     user_email = Column(String(255), index=True)
     usuario_nome = Column(String(200))
 

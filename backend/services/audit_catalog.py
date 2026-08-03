@@ -391,6 +391,29 @@ _TABELA: dict[str, dict] = {
              "apaga. A própria poda fica registrada aqui, com quantos "
              "registros e de que período saíram.",
     ),
+    # ⚠️ `auditoria.poda` (sem o R) e a grafia que a funcao `audit_log_podar` do
+    # BANCO grava — ela roda dentro do Postgres, na mesma transacao do DELETE, e
+    # nao passa por services/audit.py. Sem esta entrada, o unico evento capaz de
+    # apagar linhas da trilha apareceria na tela com rotulo derivado e risco
+    # "medio": o expurgo, que e o ato mais grave que existe aqui, ficaria com
+    # cara de rotina.
+    "auditoria.poda": _a(
+        "executou o expurgo de retenção da trilha de auditoria (direto no banco)",
+        MOD_AUDITORIA, _ALTO, sem_alvo=True,
+        nota="Apagar histórico é ato consciente: de fábrica o sistema NÃO "
+             "apaga. Esta linha é a própria poda se registrando — o detalhe "
+             "guarda quantos registros saíram, até que data, com que filtro, "
+             "por quem e por quê, e o selo da última linha removida (é ele que "
+             "deixa o vão explicável na conferência de integridade).",
+    ),
+    "auditoria.verificar_integridade": _a(
+        "conferiu a integridade da trilha de auditoria", MOD_AUDITORIA, _MEDIO,
+        sem_alvo=True,
+        nota="Refez a corrente de selos da trilha para checar se algum registro "
+             "foi alterado, apagado ou trocado de lugar. O detalhe guarda o "
+             "resultado, quantos registros foram conferidos e o estado das "
+             "travas do banco no momento da conferência.",
+    ),
     # sem_alvo nas duas: o alvo É a trilha, e ela já está dita no fragmento.
     "audit.export": _a(
         "exportou a trilha de auditoria", MOD_AUDITORIA, _ALTO, sem_alvo=True,

@@ -12,6 +12,7 @@ boot (logs warning).
 """
 import os
 import logging
+import time
 from pathlib import Path
 
 logger = logging.getLogger("startup")
@@ -118,6 +119,14 @@ MIGRATION_FILES = [
     # coluna existente muda, nenhuma linha antiga e reescrita (o unico UPDATE e
     # o backfill do nome do autor, com guarda `usuario_nome IS NULL`).
     "add_auditoria_detalhada.sql",
+    # ⚠️ SEMPRE A ULTIMA DA LISTA. Instala o append-only da trilha: gatilho que
+    # RECUSA UPDATE/DELETE/TRUNCATE em audit_log e cadeia de hash calculada
+    # dentro do banco. Toda migration que ainda faz BACKFILL (hoje so
+    # add_auditoria_detalhada.sql, que reescreve `usuario_nome`) tem de rodar
+    # ANTES — com o gatilho no ar, um UPDATE de backfill quebraria o BOOT.
+    # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
+    # nunca abaixo.
+    "add_auditoria_imutavel.sql",
 ]
 
 
@@ -149,11 +158,94 @@ def _log(msg: str):
     logger.warning(msg)
 
 
+# Teto de espera pelo outro worker. Generoso porque a espera real e o tempo das
+# migrations do OUTRO worker (segundos), e curto o bastante para nunca pendurar o
+# boot: estourou, este worker roda sem o lock — que e exatamente o que ja
+# acontecia antes, entao o pior caso e o comportamento antigo.
+LOCK_ESPERA_S = 120.0
+LOCK_INTERVALO_S = 0.5
+
+
+def _tomar_lock_migrations(sync_url: str):
+    """Pega o advisory lock do boot e DEVOLVE A CONEXAO que o segura.
+
+    Devolve a conexao (quem chamou fecha no fim) ou None — e `None` significa
+    "siga sem lock", nunca "pule as migrations". Ver o porque no fim.
+
+    ⚠️ 1. POR QUE DEVOLVER A CONEXAO, E NAO SO UM BOOLEANO. Advisory lock pego com
+    `pg_try_advisory_lock` e de SESSAO: vive enquanto a CONEXAO viver e morre com
+    ela. A versao anterior tomava o lock dentro de um
+    `with psycopg2.connect(...) as conn:` e seguia em frente — mas em psycopg2 o
+    `with` de conexao fecha a TRANSACAO, nao a conexao; quem fechava era o coletor
+    de lixo, no instante em que a variavel `conn` era reatribuida pelo proximo
+    `with psycopg2.connect(...)`, poucas linhas abaixo e ANTES da primeira
+    migration. A garantia de "so 1 worker" era ficcao: os dois processos do
+    `--workers 2` (Dockerfile.api/Procfile) rodavam a lista inteira em paralelo.
+    Ninguem notou porque quase tudo e `IF NOT EXISTS` e o runner engole erro.
+
+    Deixou de ser inofensivo quando entrou comando sem forma idempotente barata
+    (`ALTER TABLE ... DROP CONSTRAINT`, em add_auditoria_imutavel.sql): dois
+    workers no mesmo arquivo fazem o perdedor da corrida abortar a TRANSACAO
+    INTEIRA da migration e registrar "Migration ... falhou" num boot que deu
+    certo. O banco fica correto (o vencedor commitou), mas o log passa a acusar
+    falha em boot saudavel — e log de migration que grita erro no dia a dia e log
+    que ninguem le mais.
+
+    ⚠️ 2. POR QUE ESPERAR EM VEZ DE PULAR. O codigo antigo dizia "outro worker
+    rodando - pulando", e pular parece mais rapido. Mas quem pula VOLTA A SERVIR
+    ANTES DE O SCHEMA ESTAR PRONTO: no primeiro boot de um tenant novo, o worker 2
+    comecaria a responder requisicao contra um banco em que a coluna que ele vai
+    consultar ainda nao existe. Esperar o outro terminar e depois rodar a lista de
+    novo custa alguns segundos (tudo idempotente, o segundo passe nao faz
+    trabalho) e paga por: nenhum worker serve com schema pela metade, e as
+    migrations nunca correm em paralelo — some a classe inteira de corrida.
+
+    Espera por SONDAGEM (`pg_try_advisory_lock` em intervalos) e nao com
+    `pg_advisory_lock` bloqueante de proposito: sondando, o teto de espera e
+    codigo nosso, visivel e testavel, em vez de depender de `lock_timeout` valer
+    para lock de advisory nesta versao do servidor.
+
+    `autocommit` porque so precisamos da sessao viva: sem isto a conexao ficaria
+    `idle in transaction` durante toda a migration, segurando snapshot a toa."""
+    import psycopg2
+    conn = None
+    try:
+        conn = psycopg2.connect(sync_url)
+        conn.autocommit = True
+        limite = time.monotonic() + LOCK_ESPERA_S
+        avisou = False
+        while True:
+            with conn.cursor() as cur:
+                cur.execute("SELECT pg_try_advisory_lock(987654321)")
+                if cur.fetchone()[0]:
+                    return conn
+            if time.monotonic() >= limite:
+                _log(f"Outro worker segura o lock ha mais de {LOCK_ESPERA_S:.0f}s "
+                     "- rodando as migrations sem ele")
+                conn.close()
+                return None
+            if not avisou:
+                _log("Outro worker esta rodando as migrations - esperando ele terminar")
+                avisou = True
+            time.sleep(LOCK_INTERVALO_S)
+    except Exception as e:
+        # Falhar em PEGAR o lock nao pode virar "nao rodar as migrations": o boot
+        # sem schema e pior que o boot com dois workers concorrendo.
+        _log(f"Falha ao adquirir lock - tentando sem: {e}")
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+        return None
+
+
 def run_migrations():
     """Roda todas as migrations SQL na ordem. Idempotente.
 
-    Usa advisory lock pra garantir que so 1 worker rode (uvicorn --workers 2
-    inicializaria 2 boots paralelos, criando deadlocks em DDL)."""
+    Serializa os workers por advisory lock (uvicorn --workers 2 inicializaria 2
+    boots paralelos, criando corrida em DDL). O lock e SEGURADO ate a ultima
+    migration — ver `_tomar_lock_migrations` para o porque de isso ser explicito."""
     sync_url = os.getenv("DATABASE_URL_SYNC") or os.getenv("DATABASE_URL", "").replace("+asyncpg", "")
     if not sync_url:
         _log("DATABASE_URL_SYNC nao configurada - pulando migrations")
@@ -165,18 +257,21 @@ def run_migrations():
         _log("psycopg2 nao instalado - pulando migrations")
         return
 
-    # Tenta pegar advisory lock - se outro worker ja tem, pula
+    lock_conn = _tomar_lock_migrations(sync_url)
     try:
-        with psycopg2.connect(sync_url) as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT pg_try_advisory_lock(987654321)")
-                got_lock = cur.fetchone()[0]
-            conn.commit()
-        if not got_lock:
-            _log("Outro worker rodando migrations - pulando")
-            return
-    except Exception as e:
-        _log(f"Falha ao adquirir lock - tentando sem: {e}")
+        _rodar_migrations(sync_url)
+    finally:
+        # Solta o lock so DEPOIS da ultima migration (e do bootstrap do token).
+        if lock_conn is not None:
+            try:
+                lock_conn.close()
+            except Exception:
+                pass
+
+
+def _rodar_migrations(sync_url: str):
+    """O trabalho em si, ja com o lock do boot na mao."""
+    import psycopg2
 
     # Schema base (tabelas + seed) antes das migrations incrementais. No Coolify
     # nao existe o passo manual "rodar setup_db.py uma vez"; e idempotente

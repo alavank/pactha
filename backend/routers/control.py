@@ -883,10 +883,12 @@ async def delete_control_user(
     p: ControlPrincipal = Depends(require_control_scope("control:users:write")),
 ):
     """Remove DEFINITIVAMENTE um usuario do tenant (limpeza de entulho de seed).
-    Trava: nao remove o UNICO admin ativo. Preserva a trilha: audit_log fica (user_id
-    -> NULL, user_email permanece). Zera as FKs sem ON DELETE (audit_log, cofre_senhas,
-    edital_acompanhamento, prestacao_contas/documentos); user_telas/user_municipios/
-    telegram_* somem por ON DELETE CASCADE. Falha de forma atomica (rollback)."""
+    Trava: nao remove o UNICO admin ativo. A trilha fica INTACTA: audit_log nao e
+    tocada (nao tem mais FK para users e e append-only desde o Incremento 3) — as
+    linhas continuam com user_id, user_email e usuario_nome do instante do ato.
+    Zera as FKs sem ON DELETE (cofre_senhas, edital_acompanhamento,
+    prestacao_contas/documentos); user_telas/user_municipios/telegram_* somem por
+    ON DELETE CASCADE. Falha de forma atomica (rollback)."""
     u = (await db.execute(select(User).where(User.email == email.lower()))).scalar_one_or_none()
     if not u:
         raise HTTPException(status_code=404, detail="Usuario nao encontrado")
@@ -932,8 +934,22 @@ async def delete_control_user(
     await _del_rows("painel_preferencias", "user_id")        # preferencia de alerta
     await _del_rows("painel_push_subscriptions", "user_id")  # inscricao de web-push
 
+    # ⚠️ audit_log NAO entra nesta lista, e a ausencia e deliberada.
+    #
+    # Ate o Incremento 3 havia aqui um `_null_fk("audit_log", "user_id")`, so
+    # para nao esbarrar na FK `audit_log.user_id -> users(id)`. Essa FK foi
+    # DERRUBADA (migrations/add_auditoria_imutavel.sql) e a tabela ganhou gatilho
+    # append-only: qualquer UPDATE nela levanta excecao. Se a chamada tivesse
+    # ficado, ela quebraria a exclusao de usuario — a operacao inteira cairia no
+    # `except` abaixo e voltaria como 409 "referencias pendentes", que e o defeito
+    # que foi consertado dias atras.
+    #
+    # A trilha nao precisa de nada disso: `user_id`, `user_email` e
+    # `usuario_nome` sao SNAPSHOT do instante do ato. `user_id` fica apontando
+    # para uma conta que nao existe mais, e e assim que tem de ser — a auditoria
+    # nao segue o ciclo de vida de quem registrou.
+
     # FKs sem ON DELETE (bloqueariam o delete) — zera preservando as linhas:
-    await _null_fk("audit_log", "user_id")            # trilha permanece (user_email fica)
     await _null_fk("cofre_senhas", "atualizado_por_id")
     await _null_fk("edital_acompanhamento", "user_id")
     await _null_fk("prestacao_contas", "responsavel_id")

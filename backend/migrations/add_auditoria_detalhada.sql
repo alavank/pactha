@@ -17,9 +17,11 @@
 -- ⚠️ O arquivo inteiro roda em UMA transacao (psycopg2). Um statement que falhe
 -- derruba os outros junto. Nao acrescente aqui nada que nao seja idempotente.
 --
--- IMUTABILIDADE FICA PARA O INCREMENTO 3: nao ha coluna de hash encadeado nem
--- trigger append-only. Nada abaixo atrapalha: as colunas de hash e a trigger
--- entram depois como novo ALTER, sem tocar nestas.
+-- IMUTABILIDADE CHEGOU NO INCREMENTO 3, em `add_auditoria_imutavel.sql`, que e
+-- a ULTIMA de MIGRATION_FILES: hash encadeado calculado no banco + gatilho
+-- append-only que recusa UPDATE/DELETE/TRUNCATE. Este arquivo continua rodando
+-- ANTES dela, e e por isso que os ALTERs aqui seguem funcionando — mas o UPDATE
+-- de backfill do fim ganhou uma guarda explicita por causa disso (leia la).
 
 -- --------------------------------------------------------------------------
 -- Colunas novas
@@ -55,9 +57,10 @@ ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS http_path VARCHAR(300);
 -- Souza (id 47)" e. E se a linha 47 for apagada depois, o id vira um numero
 -- morto — o nome congelado e o que sobra.
 --
--- `usuario_nome` pelo mesmo motivo, do lado do AUTOR: `control.user.delete`
--- zera `audit_log.user_id` ao remover a conta (e o que permite excluir alguem
--- sem quebrar a FK). Sem o nome congelado, sobraria so o e-mail.
+-- `usuario_nome` pelo mesmo motivo, do lado do AUTOR: a conta que praticou o ato
+-- pode ser excluida depois, e `user_id` vira um numero apontando para ninguem
+-- (desde o Incremento 3 a FK para users nao existe mais — a trilha e snapshot,
+-- nao referencia viva). Sem o nome congelado, sobraria so o e-mail.
 ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS alvo_nome VARCHAR(300);
 ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS usuario_nome VARCHAR(200);
 
@@ -115,11 +118,38 @@ CREATE INDEX IF NOT EXISTS idx_audit_sessao
 -- So preenche onde ainda esta vazio E onde existe um usuario para casar. Linha
 -- de conta ja excluida (user_id NULL) nao casa no JOIN e permanece intocada:
 -- para ela o e-mail ja registrado continua sendo a identificacao.
+--
+-- ⚠️ A TERCEIRA GUARDA (`NOT EXISTS ... pg_trigger`) NAO E ZELO EXCESSIVO, e o
+-- que impede este arquivo de derrubar o BOOT depois do Incremento 3.
+--
+-- `add_auditoria_imutavel.sql` instala em audit_log um gatilho append-only que
+-- levanta excecao em QUALQUER UPDATE. Enquanto a trilha convergia sozinha (as
+-- duas guardas de cima zeram o conjunto depois da primeira vez, e UPDATE de zero
+-- linhas nem chega a disparar gatilho FOR EACH ROW), isto aqui era so fragil:
+-- bastaria UMA linha nova cair na condicao — um INSERT feito por fora com
+-- `usuario_nome` vazio — para o proximo boot bater no gatilho, e o runner ENGOLE
+-- o erro, entao a migration inteira seria abortada em silencio, sem ninguem
+-- notar que as colunas pararam de ser criadas em tenant novo.
+--
+-- Com esta guarda a regra fica DITA em vez de deduzida: o backfill so existe
+-- enquanto a imutabilidade nao esta no ar. Na ordem de MIGRATION_FILES este
+-- arquivo roda ANTES do append-only, entao ele ainda tem sua ultima chance
+-- legitima no mesmo boot em que a imutabilidade chega — e, dali em diante,
+-- deixa de tentar. Depois disso, quem preenche `usuario_nome` e o INSERT
+-- (services/audit.py ja grava o nome do autor), como tem de ser numa trilha que
+-- nao se reescreve.
 UPDATE audit_log a
    SET usuario_nome = u.name
   FROM users u
  WHERE u.id = a.user_id
-   AND a.usuario_nome IS NULL;
+   AND a.usuario_nome IS NULL
+   AND NOT EXISTS (
+        SELECT 1
+          FROM pg_trigger t
+          JOIN pg_class c ON c.oid = t.tgrelid
+         WHERE c.relname = 'audit_log'
+           AND t.tgname  = 'trg_audit_log_imutavel'
+   );
 
 -- --------------------------------------------------------------------------
 -- Documentacao no proprio schema (quem abrir o banco direto tambem entende)
@@ -129,6 +159,10 @@ COMMENT ON COLUMN audit_log.sessao_id     IS 'Hash curto do identificador da ses
 COMMENT ON COLUMN audit_log.resultado     IS 'sucesso | negado | erro. NULL = linha anterior ao incremento de auditoria detalhada.';
 COMMENT ON COLUMN audit_log.http_path     IS 'Caminho da rota, SEM query string (minimizacao LGPD).';
 COMMENT ON COLUMN audit_log.alvo_nome     IS 'Nome legivel do alvo, congelado no evento. Sobrevive a exclusao do alvo.';
-COMMENT ON COLUMN audit_log.usuario_nome  IS 'Nome do autor, congelado no evento. Sobrevive a exclusao da conta (que zera user_id).';
+-- ⚠️ O texto deste COMMENT mudou junto com o Incremento 3: excluir a conta NAO
+-- zera mais `user_id` (a FK caiu e a trilha e append-only), entao dizer que zera
+-- viraria uma instrucao errada para quem abrisse o banco direto. O campo
+-- continua servindo para o mesmo: identificar o autor depois que a conta some.
+COMMENT ON COLUMN audit_log.usuario_nome  IS 'Nome do autor, congelado no evento. Sobrevive a exclusao da conta - o user_id fica apontando para uma conta que nao existe mais, e isso e correto.';
 COMMENT ON COLUMN audit_log.valor_antes   IS 'Somente os campos que mudaram, sanitizados. Nunca segredo.';
 COMMENT ON COLUMN audit_log.valor_depois  IS 'Somente os campos que mudaram, sanitizados. Nunca segredo.';

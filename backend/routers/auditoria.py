@@ -58,7 +58,13 @@ from services.user_agent import parse_user_agent
 # falha de gravacao. Se a linha da exportacao nao entrar, a exportacao nao
 # acontece — baixar a trilha inteira nao pode ser o unico ato do sistema sem
 # rastro.
-from services.audit import registrar_critico
+#
+# `registrar` (melhor esforco) entra junto so para a CONFERENCIA de integridade:
+# ali a resposta e o produto de seguranca, e nao pode ser o INSERT do registro
+# da conferencia que decide se o auditor fica sabendo que a trilha foi
+# adulterada. Ver `verificar_integridade`.
+from services.audit import registrar, registrar_critico
+from services import audit_integridade
 
 logger = logging.getLogger("auditoria")
 
@@ -220,6 +226,18 @@ ACOES: dict[str, tuple[str, str, str]] = {
                            "{quem} exportou {alvo}{onde}."),
     "auditoria.podar": ("Podou a trilha (expurgo de retenção)", "critico",
                         "{quem} executou o expurgo de retenção da trilha de auditoria."),
+    # Grafia gravada pela funcao `audit_log_podar` DO BANCO (ela roda dentro do
+    # Postgres e nao passa por services/audit.py). Mesmo rótulo da de cima: o
+    # auditor não pode ver dois eventos diferentes onde aconteceu a mesma coisa.
+    "auditoria.poda": ("Podou a trilha (expurgo de retenção)", "critico",
+                       "{quem} executou o expurgo de retenção da trilha de "
+                       "auditoria, direto no banco de dados."),
+    # O veredito nao entra na frase: ele vai em `alvo_nome` ("12.480 registros —
+    # íntegra"), que a lista, o modal e a coluna "Nome do alvo" do CSV ja
+    # mostram. Frase e veredito no mesmo lugar obrigaria um molde por desfecho.
+    "auditoria.verificar_integridade": ("Conferiu a integridade da trilha", "alerta",
+                                        "{quem} conferiu a integridade da trilha de "
+                                        "auditoria."),
 }
 
 # Regra por PREFIXO, usada quando a acao nao esta no catalogo acima. Cobre as
@@ -819,9 +837,26 @@ async def catalogo(current: User = Depends(get_current_user)):
                      "própria trilha. Referência de retenção: 5 anos para acesso, "
                      "segurança e permissões; 12 meses para navegação.",
         },
-        "aviso_imutabilidade": "Os registros desta trilha são somente leitura: o "
-                               "sistema não oferece nenhuma forma de alterar ou "
-                               "excluir um evento já gravado.",
+        # ⚠️ TEXTO DE CONFORMIDADE — mudou porque o sistema passou a cumprir
+        # mais, e a frase antiga ("o sistema não oferece nenhuma forma de
+        # alterar") descrevia apenas a APLICACAO. Hoje a recusa esta no BANCO
+        # (gatilho append-only) e ha uma corrente de selos conferivel na tela.
+        #
+        # A ultima frase e deliberada e nao deve ser suavizada: quem tem a senha
+        # de administrador do banco pode derrubar a protecao. Um texto de
+        # conformidade que promete "impossivel alterar" vira, numa pericia, uma
+        # afirmacao falsa — e derruba junto a credibilidade do que e verdade.
+        "aviso_imutabilidade": (
+            "Os registros desta trilha são somente leitura. O sistema não oferece "
+            "nenhuma tela, botão ou endereço que altere ou exclua um evento já "
+            "gravado, e o próprio banco de dados recusa alteração, exclusão e "
+            "limpeza da tabela. Cada registro leva um selo calculado dentro do "
+            "banco a partir do registro anterior, formando uma corrente: mexer "
+            "num registro antigo quebra o selo de todos os seguintes, e o botão "
+            "«Verificar integridade» mostra exatamente onde. A corrente não é uma "
+            "barreira absoluta — quem tiver a senha de administrador do banco de "
+            "dados pode desligar a proteção e refazer os selos; o que ela "
+            "garante é que nenhuma alteração passa despercebida."),
     }
 
 
@@ -970,6 +1005,435 @@ async def exportar(
                  "X-Auditoria-Linhas": str(len(rows)),
                  "X-Auditoria-Truncado": "1" if truncado else "0"},
     )
+
+
+# ---------------------------------------------------------------------------
+# Conferencia da corrente de selos (imutabilidade)
+# ---------------------------------------------------------------------------
+# Todo o texto que a tela mostra e montado AQUI, junto com as outras frases da
+# auditoria. E a mesma regra da lista, do modal e do CSV: uma fonte so de
+# palavras. Se o frontend escrevesse "trilha íntegra" por conta propria, um dia
+# o servidor mudaria o criterio e a tela continuaria dizendo a frase antiga.
+
+# Ressalva de HONESTIDADE, obrigatoria na resposta. O dono pediu trilha
+# "imutavel"; o que o sistema entrega e append-only imposto pelo banco MAIS uma
+# corrente de selos. Quem tem a senha de dono do banco derruba o gatilho e
+# refaz a corrente inteira — a corrente nao IMPEDE isso, ela obriga o atalho a
+# aparecer. Prometer "impossivel alterar" seria o tipo de frase de conformidade
+# que, no dia de uma pericia, transforma um controle bom numa alegacao falsa.
+RESSALVA_INTEGRIDADE = (
+    "O que esta conferência prova: nenhum registro foi alterado, removido ou "
+    "trocado de lugar depois de gravado. O sistema não tem nenhuma tela, botão "
+    "ou rota que altere a trilha, e o próprio banco de dados recusa alteração, "
+    "exclusão e limpeza da tabela. O que ela NÃO prova: quem tiver a senha de "
+    "administrador do banco de dados pode desligar essa proteção e refazer os "
+    "selos. A corrente de selos não impede esse cenário — ela obriga quem tentar "
+    "a refazer TODOS os registros seguintes, e qualquer atalho aparece aqui."
+)
+
+# Rotulos das travas, para a tela mostrar o estado real do banco em vez de uma
+# promessa fixa em texto.
+_ROTULO_PROTECAO = [
+    ("sela_insercao", "Selo automático em cada registro novo",
+     "O banco calcula o selo sozinho, no momento da gravação. Nem a aplicação "
+     "consegue escolher o valor."),
+    ("bloqueia_alteracao", "Alteração recusada pelo banco",
+     "Um UPDATE em qualquer registro da trilha é recusado com erro."),
+    ("bloqueia_exclusao", "Exclusão recusada pelo banco",
+     "Um DELETE é recusado com erro, exceto pelo caminho controlado de poda, "
+     "que fica registrado na própria trilha."),
+    ("bloqueia_limpeza", "Limpeza da tabela recusada",
+     "Um TRUNCATE (apagar tudo de uma vez) é recusado com erro."),
+]
+
+
+def _numero(n: Optional[int]) -> str:
+    """Milhar com ponto, como se escreve em portugues."""
+    return f"{int(n or 0):,}".replace(",", ".")
+
+
+def _registros(n: Optional[int]) -> str:
+    """"1 registro" / "12.480 registros". Concordancia importa: a tela de
+    auditoria e lida por controle interno e por vereador, e "conferimos os 1
+    registros" e o tipo de detalhe que faz o leitor duvidar do resto."""
+    return "1 registro" if int(n or 0) == 1 else f"{_numero(n)} registros"
+
+
+def _protecoes_para_tela(prot: dict) -> dict:
+    """Traduz o catalogo do Postgres em algo que um leigo lê.
+
+    A lista de travas vem do banco e nao de constante: trava que alguem
+    desligou tem de APARECER desligada. Uma tela que jura "exclusão bloqueada"
+    lendo um texto fixo nao vale nada — ela diria a mesma coisa depois de o
+    gatilho ser derrubado, que e exatamente o momento em que ela precisava
+    avisar."""
+    itens, alertas = [], []
+    for chave, rotulo, explicacao in _ROTULO_PROTECAO:
+        ativo = bool(prot.get(chave))
+        itens.append({"chave": chave, "rotulo": rotulo, "ativo": ativo,
+                      "explicacao": explicacao})
+        if not ativo:
+            alertas.append(f"A proteção «{rotulo}» NÃO está ativa neste banco de dados.")
+
+    # Campo fora do selo é o ponto cego mais traiçoeiro deste painel: a
+    # conferência diria "íntegra" e estaria certa — sobre os campos que ela
+    # confere. Sem esta frase, o gestor leria "íntegra" como "o registro inteiro
+    # está intacto", que é o que ele tem todo o direito de entender. O serviço
+    # PROVA a lista contra o banco (apaga o campo e vê se o selo muda), então
+    # aqui é só traduzir.
+    fora = [str(c) for c in (prot.get("campos_fora_do_selo") or [])]
+    if fora:
+        alertas.append(
+            "Há campo do registro que NÃO entra no selo: "
+            + ", ".join(f"«{c}»" for c in fora)
+            + ". Alteração nesses campos não é detectada pela conferência. "
+              "Avise o suporte técnico — é defeito a corrigir, não sinal de "
+              "que algo foi alterado.")
+
+    papel = prot.get("papel") or {}
+    separado = bool(papel.get("papel_separado"))
+    # NAO e alerta: hoje ha um usuario so no banco, por decisao de infra que o
+    # dono ainda nao tomou (item D do pedido — trocar o DATABASE_URL de um
+    # cliente vivo pode trancar a aplicacao fora do banco). Vira NOTA: o estado
+    # e dito, sem pintar de vermelho uma escolha consciente.
+    nota_papel = (
+        "A aplicação entra no banco com um usuário que não tem permissão de "
+        "alterar nem de excluir esta tabela — a proteção existe em duas camadas."
+        if separado else
+        "A aplicação entra no banco com o usuário dono da tabela: a recusa de "
+        "alteração e exclusão vem do gatilho, e não da permissão. Separar o "
+        "papel do banco é uma melhoria já documentada, e depende de uma decisão "
+        "de infraestrutura do dono."
+    )
+    return {
+        "itens": itens,
+        "alertas": alertas,
+        "papel_separado": separado,
+        "nota_papel": nota_papel,
+        "gatilhos": prot.get("gatilhos") or [],
+    }
+
+
+def _texto_observacao(obs: dict) -> str:
+    """Frase de uma observacao da conferencia (vãos explicados e afins).
+
+    Vão explicado NAO e alarme: e a poda de retenção funcionando como o dono
+    pediu — apagar com rastro. Mas também não pode sumir da tela: "faltam 249
+    registros aqui, e foi fulano quem podou, no dia tal" é justamente o que o
+    controle interno vai querer ver."""
+    tipo = obs.get("tipo")
+    evento = obs.get("evento_id")
+    quando, _ = _quando(obs.get("quando")) if obs.get("quando") else ("—", None)
+    quantos = (f"{_registros(obs['linhas'])}" if obs.get("linhas")
+               else "Alguns registros")
+    # A poda por prefixo (retenção de 12 meses da navegação) tira linhas
+    # salpicadas: o mesmo ato deixa muitos vãos. A conferência já os soma; a
+    # frase tem de dizer que foram vários, senão o gestor lê "um vão" e vai
+    # procurar um buraco só.
+    vaos = int(obs.get("vaos") or 1)
+    trechos = "" if vaos <= 1 else f", em {_numero(vaos)} trechos"
+    # Reconciliação por FAIXA é mais fraca que por SELO e não pode chegar à tela
+    # com a mesma cara: ali a poda declarou ter deixado buracos naquele intervalo
+    # de registros, e é o intervalo — não o selo de cada vão — que fecha a conta.
+    por_faixa = obs.get("reconciliacao") == "faixa"
+
+    # A ressalva é a mesma nos dois tipos de vão, e por isso mora numa variável:
+    # duas redações do mesmo aviso divergem no dia em que alguém melhorar uma só.
+    ressalva_faixa = (
+        " Essa poda apagou registros salteados (por tipo de ação), então o que "
+        "confere é a faixa de registros que ela declarou ter removido, e não o "
+        "selo de cada vão." if por_faixa else "")
+
+    if tipo == "vao_explicado":
+        return (
+            f"Entre o registro nº {obs.get('depois_de_id')} e o nº "
+            f"{obs.get('antes_de_id')} há um vão{trechos}: {quantos.lower()} foram "
+            f"apagados pela poda de retenção registrada no evento nº {evento}, "
+            f"de {quando}. O vão está explicado — a própria poda ficou na trilha."
+            + ressalva_faixa)
+    if tipo == "inicio_apos_poda":
+        return (
+            f"A trilha começa no registro nº {obs.get('antes_de_id')} porque "
+            f"{quantos.lower()} mais antigos foram apagados pela poda de retenção "
+            f"registrada no evento nº {evento}, de {quando}. O vão está explicado."
+            + ressalva_faixa)
+    if tipo == "inicio_apos_vao":
+        return (
+            f"O registro mais antigo desta trilha (nº {obs.get('antes_de_id')}) "
+            "aponta para um registro anterior que não está mais na tabela, e não "
+            "há poda de retenção registrada que explique isso. Merece explicação: "
+            "pode ser uma restauração de backup ou uma migração de banco — mas "
+            "também pode ser remoção do início da trilha.")
+    return str(obs)  # pragma: no cover - tipo novo nunca fica invisível
+
+
+def _observacoes_para_tela(res: dict) -> list[str]:
+    """As observações em português, e a conta do que não coube.
+
+    A conferência tem teto de observações (uma poda por prefixo pode deixar
+    milhares de vãos). Omitir em silêncio seria a tela mostrar menos do que foi
+    encontrado sem dizer — exatamente o tipo de meia-verdade que este painel não
+    pode dar."""
+    frases = [_texto_observacao(o) for o in (res.get("observacoes") or [])]
+    omitidas = int(res.get("observacoes_omitidas") or 0)
+    if omitidas:
+        frases.append(
+            f"Há mais {_numero(omitidas)} observação(ões) do mesmo tipo que não "
+            "estão listadas aqui, para a resposta não ficar impraticável. Elas "
+            "não indicam divergência: a conferência parou apenas de descrevê-las "
+            "uma a uma.")
+    return frases
+
+
+def _texto_divergencia(tipo: str, id_linha: int, quando: str,
+                       id_anterior: Optional[int]) -> tuple[str, str]:
+    """(o que significa, o que fazer) — em portugues de gente."""
+    if tipo == audit_integridade.TIPO_CONTEUDO:
+        significa = (
+            f"O conteúdo do registro nº {id_linha}, de {quando}, não confere com "
+            "o selo que o banco gravou no instante em que ele foi criado. Ou seja: "
+            "esse registro foi ALTERADO depois de gravado."
+        )
+    elif tipo == audit_integridade.TIPO_ELO:
+        anterior = f"nº {id_anterior}" if id_anterior else "o registro anterior"
+        # A frase diz que a poda foi DESCARTADA como explicação, e não apenas
+        # que há um vão: a conferência já procurou o evento de poda que fecharia
+        # esse buraco e não achou. Sem essa linha, o gestor que acabou de rodar
+        # uma poda legítima leria a tela como acusação.
+        significa = (
+            f"O registro nº {id_linha}, de {quando}, não se encaixa em {anterior}: "
+            "ele aponta para um registro anterior diferente. Isso acontece quando "
+            "um registro do meio da trilha é APAGADO ou quando a ordem é alterada. "
+            "Não há poda de retenção registrada na trilha que explique esse vão."
+        )
+    elif tipo == audit_integridade.TIPO_SEM_SELO:
+        significa = (
+            f"O registro nº {id_linha}, de {quando}, foi gravado SEM selo. Ou ele "
+            "é anterior à proteção e não foi alcançado pela conversão, ou foi "
+            "gravado com a proteção desligada."
+        )
+    else:  # pragma: no cover - tipo novo sem tradução nunca fica em branco
+        significa = f"O registro nº {id_linha}, de {quando}, não confere."
+
+    fazer = (
+        "Trate como incidente de segurança: NÃO apague nem edite nada, guarde "
+        "esta tela, e verifique quem tem acesso de administrador ao banco de "
+        "dados. Abra o registro nº {id} na lista para ver o que ele diz hoje."
+    ).format(id=id_linha)
+    return significa, fazer
+
+
+def _texto_integridade(res: dict) -> dict:
+    """Titulo, mensagem e tom a partir do veredito cru do serviço."""
+    situacao = res["situacao"]
+    quantos = _registros(res.get("conferidos"))
+    de_txt, _ = _quando(res.get("primeiro_em"))
+    ate_txt, _ = _quando(res.get("ultimo_em"))
+    if res.get("primeiro_em") and res.get("ultimo_em"):
+        faixa = f" (em {de_txt})" if de_txt == ate_txt else f" (de {de_txt} até {ate_txt})"
+    else:
+        faixa = ""
+    parcial = res.get("modo") == audit_integridade.MODO_SOMENTE_ELO
+    # Ressalva do modo degradado: sem a função de selo do banco dá para provar
+    # que nada foi REMOVIDO, mas não que nada foi EDITADO. Dizer "íntegra" seco
+    # nesse caso seria afirmar mais do que foi conferido.
+    #
+    # Duas causas, dois textos. "Não encontrei a função" e "a função existe e
+    # não reproduz nem os selos mais antigos" pedem providências diferentes, e a
+    # segunda NÃO pode sair com cara de trilha adulterada: o que ela indica é
+    # divergência de fórmula entre o gatilho e a conferência.
+    if not parcial:
+        complemento = ""
+    elif res.get("formula_nao_confere"):
+        complemento = (
+            " Atenção: nesta conferência foi possível checar apenas o "
+            "encadeamento (nenhum registro removido ou fora de ordem). A função "
+            "de selo do banco não reproduziu nem os selos mais antigos da "
+            "trilha, o que indica um problema técnico na fórmula do selo — e "
+            "não alteração de registro. Avise o suporte técnico.")
+    else:
+        complemento = (
+            " Atenção: nesta conferência foi possível checar apenas o "
+            "encadeamento (nenhum registro removido ou fora de ordem). A "
+            "checagem do conteúdo de cada registro depende da função de selo do "
+            "banco, que não foi encontrada — avise o suporte técnico.")
+
+    if situacao == "indisponivel":
+        return {
+            "tom": "neutro",
+            "titulo": "Conferência ainda não disponível",
+            "mensagem": (
+                "Este banco de dados ainda não tem as colunas de selo da trilha. "
+                "Elas são criadas automaticamente na próxima subida da aplicação. "
+                "Enquanto isso, a trilha continua sendo somente leitura pelo "
+                "sistema — o que falta é a conferência, não a proteção."),
+            "o_que_fazer": "Se a mensagem persistir depois de uma reinicialização, "
+                           "avise o suporte técnico.",
+        }
+    if situacao == "vazia":
+        return {"tom": "neutro", "titulo": "Nada a conferir",
+                "mensagem": "A trilha de auditoria ainda não tem registros.",
+                "o_que_fazer": None}
+    if situacao == "nada_novo":
+        return {"tom": "ok", "titulo": "Conferência concluída",
+                "mensagem": "Não há registros novos depois do ponto já conferido: "
+                            "a trilha foi percorrida até o fim." + complemento,
+                "o_que_fazer": None}
+    if situacao == "divergente":
+        div = res["divergencia"]
+        quando_txt, _ = _quando(div.get("quando"))
+        significa, fazer = _texto_divergencia(
+            div["tipo"], div["id"], quando_txt, div.get("id_anterior"))
+        conferidos = int(res.get("conferidos") or 0)
+        anteriores = ("" if conferidos == 0 else
+                      "O registro anterior a ele confere. " if conferidos == 1 else
+                      f"Os {quantos} anteriores a ele conferem. ")
+        return {
+            "tom": "critico",
+            "titulo": f"Divergência encontrada no registro nº {div['id']}",
+            "mensagem": anteriores + significa,
+            "o_que_fazer": fazer,
+        }
+    if situacao == "parcial":
+        return {
+            "tom": "neutro",
+            "titulo": f"Íntegra até o registro nº {res.get('ultimo_id')}",
+            "mensagem": (
+                f"Conferimos {quantos}{faixa} e todos conferem. A "
+                "conferência parou antes do fim para não prender o sistema: ainda "
+                "há registros mais novos. Clique novamente para continuar de onde "
+                "parou." + complemento),
+            "o_que_fazer": None,
+        }
+    return {
+        "tom": "ok",
+        "titulo": "Trilha íntegra" if not parcial else "Encadeamento íntegro",
+        "mensagem": (
+            f"Conferimos {quantos} da trilha{faixa}. Nenhum foi alterado, "
+            "removido ou trocado de lugar depois de gravado." + complemento),
+        "o_que_fazer": None,
+    }
+
+
+@router.get("/integridade")
+async def verificar_integridade(
+    request: Request,
+    desde_id: Optional[int] = Query(
+        None, ge=0, description="Continua a conferência a partir deste registro "
+                                "(use o `continuar_de` da resposta anterior)"),
+    max_linhas: Optional[int] = Query(
+        None, ge=1, le=5_000_000, description="Teto de registros nesta chamada"),
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """Refaz a corrente de selos e diz até onde a trilha está íntegra.
+
+    COMO FUNCIONA. Cada linha da `audit_log` carrega o selo da linha anterior
+    (`hash_anterior`) e o seu proprio (`hash`), calculado DENTRO do banco por um
+    gatilho no momento da gravacao — nem a aplicacao escolhe o valor. Refazer a
+    conta linha a linha responde tres perguntas de uma vez: alguem editou um
+    registro? alguem apagou um do meio? algum registro entrou sem selo?
+
+    ONDE A CONTA E FEITA. No BANCO, chamando a mesma funcao que o gatilho usa —
+    ver `services/audit_integridade.py`. Reimplementar a formula em Python daria
+    duas versoes da mesma verdade, e o sintoma da divergencia seria a tela
+    gritando "adulterada" para uma trilha intacta.
+
+    MEMORIA. Leitura em lotes com cursor por `id`: a memoria nao cresce com a
+    tabela. Ha orcamento de tempo; estourando, a resposta e honesta ("íntegra
+    até o registro N") e traz `continuar_de` para a proxima chamada.
+
+    CUSTO DA CORRENTE, para constar: o selo de uma linha depende da anterior,
+    entao as insercoes na `audit_log` passam a SERIALIZAR. No volume desta casa
+    (centenas de eventos por dia) e irrelevante. O limite pratico e a ordem de
+    algumas centenas de insercoes por segundo; se um dia o sistema chegar la, o
+    caminho e quebrar a corrente por dia (uma corrente independente por data,
+    ancorada no ultimo selo do dia anterior) — a prova continua valendo e as
+    insercoes deixam de disputar a mesma ponta.
+
+    GATE: mesma tela `auditoria` da listagem. Sem recorte por municipio, porque
+    a corrente e uma so — e por isso a resposta identifica a linha divergente
+    pelo NUMERO e nao pelo conteudo: para ler o que ela diz, o usuario abre o
+    registro na lista, que ja aplica o recorte dele."""
+    ensure_tela(current, "auditoria")
+
+    res = await audit_integridade.conferir(
+        db, desde_id=desde_id, max_linhas=max_linhas)
+    texto = _texto_integridade(res)
+    # O bloco `divergencia` leva so os FATOS. A explicacao e o "o que fazer" ja
+    # sairam em `mensagem`/`o_que_fazer`, montados pela mesma funcao: repetir a
+    # frase aqui faria a tela mostrar o mesmo paragrafo duas vezes conforme o
+    # frontend escolhesse um campo ou outro.
+    div = res.get("divergencia")
+    if div:
+        quando_txt, quando_iso = _quando(div.get("quando"))
+        div = {
+            "tipo": div["tipo"], "id": div["id"], "id_anterior": div.get("id_anterior"),
+            "quando": quando_txt, "quando_iso": quando_iso,
+            "acao": div.get("acao"),
+            "acao_rotulo": _regra_de(div["acao"])[0] if div.get("acao") else None,
+        }
+
+    de_txt, de_iso = _quando(res.get("primeiro_em"))
+    ate_txt, ate_iso = _quando(res.get("ultimo_em"))
+    corpo = {
+        "situacao": res["situacao"],
+        **texto,
+        "ressalva": RESSALVA_INTEGRIDADE,
+        "conferidos": res["conferidos"],
+        "faixa": {
+            "do_id": res.get("primeiro_id"), "ate_id": res.get("ultimo_id"),
+            "de": de_txt if res.get("primeiro_em") else None, "de_iso": de_iso,
+            "ate": ate_txt if res.get("ultimo_em") else None, "ate_iso": ate_iso,
+        },
+        "completo": res["completo"],
+        "continuar_de": res.get("continuar_de"),
+        "modo": res.get("modo"),
+        "formula_nao_confere": bool(res.get("formula_nao_confere")),
+        "duracao_ms": res.get("duracao_ms"),
+        "divergencia": div,
+        "observacoes": _observacoes_para_tela(res),
+        "protecoes": _protecoes_para_tela(res.get("protecoes") or {}),
+        "conferido_em": datetime.now(TZ_BR).strftime("%d/%m/%Y %H:%M:%S"),
+    }
+
+    # A conferencia entra na propria trilha: "quem conferiu, quando, e o que
+    # viu" e evidencia de monitoramento (ISO/IEC 27001, A.8.15/A.5.28) — e, se
+    # alguem adulterar a trilha, o registro de que a divergencia FOI VISTA
+    # naquele dia e o que amarra a linha do tempo do incidente.
+    #
+    # Porta de MELHOR ESFORCO, e nao a critica: aqui o produto e a RESPOSTA. Se
+    # o INSERT do registro falhar, esconder do auditor que a trilha esta
+    # adulterada seria trocar um problema grande por um catastrofico. A falha
+    # fica no log da aplicacao (services/audit.py loga com `exception`).
+    resumo = (f"{_numero(res['conferidos'])} registro(s) conferido(s) — "
+              + {"integra": "íntegra", "parcial": "íntegra até aqui",
+                 "vazia": "trilha vazia", "nada_novo": "nada novo desde a última",
+                 "divergente": "DIVERGÊNCIA ENCONTRADA",
+                 "indisponivel": "conferência indisponível"}.get(res["situacao"],
+                                                                 res["situacao"]))
+    await registrar(
+        db, action="auditoria.verificar_integridade", user=current, request=request,
+        target_type="audit_log", target_id=None, alvo_nome=resumo,
+        # `erro` marca o desfecho que o auditor procura no filtro por resultado:
+        # a conferencia que NAO deu certo. Nao e erro de execucao — e o alarme.
+        resultado=("erro" if res["situacao"] in ("divergente", "indisponivel")
+                   else "sucesso"),
+        details={
+            "situacao": res["situacao"], "modo": res.get("modo"),
+            "conferidos": res["conferidos"], "completo": res["completo"],
+            "do_id": res.get("primeiro_id"), "ate_id": res.get("ultimo_id"),
+            "duracao_ms": res.get("duracao_ms"),
+            # Quantos vaos de poda a conferencia teve de reconciliar. Numero que
+            # cresce sozinho e sinal de que alguem anda podando com frequencia.
+            "vaos_explicados": sum(1 for o in (res.get("observacoes") or [])
+                                   if o.get("tipo", "").startswith(("vao_", "inicio_apos_poda"))),
+            "divergencia": ({"tipo": div["tipo"], "id": div["id"]} if div else None),
+            "protecoes": {c: bool((res.get("protecoes") or {}).get(c))
+                          for c, _r, _e in _ROTULO_PROTECAO},
+        },
+    )
+    return corpo
 
 
 @router.get("")

@@ -42,9 +42,12 @@ TRES GARANTIAS QUE ESTE MODULO DA:
    `http_path` guarda o MOLDE da rota (`/api/users/{email}`), nao o caminho
    preenchido — ver `_rota`.
 
-O que NAO esta aqui: imutabilidade (trigger append-only, hash encadeado, papel
-de banco somente-INSERT) e o Incremento 3. Nada neste arquivo atrapalha —
-gravamos por INSERT puro, nunca UPDATE nem DELETE.
+A imutabilidade NAO mora aqui, e nao poderia: ela e do BANCO
+(`migrations/add_auditoria_imutavel.sql`) — gatilho append-only que recusa
+UPDATE/DELETE/TRUNCATE em audit_log e cadeia de hash calculada dentro do
+Postgres, justamente para que nem este modulo possa escolher o valor do hash.
+O que este arquivo faz e nao atrapalhar: grava por INSERT puro, nunca UPDATE nem
+DELETE, e nao manda `hash`/`hash_anterior` (o gatilho os calcula).
 """
 import hashlib
 import logging
