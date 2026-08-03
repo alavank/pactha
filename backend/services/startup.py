@@ -101,6 +101,13 @@ MIGRATION_FILES = [
     # SISMOB: obras de saude do MS (API publica, sem login). Tabela propria —
     # obra tem etapa/percentual/empreiteira, que nao cabem em 'convenio'.
     "add_sismob.sql",
+    # Base publica nacional do SICONV (dados abertos), usada na consulta por CNPJ.
+    # Nasceu ORFA em a53afcc: o commit criou a migration e nao a registrou aqui,
+    # entao o runner nunca a executava. Nas instancias antigas a tabela existe
+    # porque foi criada a mao; num tenant novo ela simplesmente nao nascia e
+    # `routers/transferegov.py` (que consulta sem guarda) devolvia 500. E
+    # CREATE TABLE/INDEX IF NOT EXISTS, sem INSERT: inerte onde ja existe.
+    "add_siconv_federal.sql",
 ]
 
 

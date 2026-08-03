@@ -111,7 +111,9 @@ export default function RmListPage() {
         municipio_id: Number(municipioId),
         // RM é ANUAL: a janela usa o ANO. Guardamos 01/01 do ano como referência.
         data_referencia: `${novoAno}-01-01`,
-        cidade_emissao: "Brasília/DF",
+        // Nao manda cidade: o servidor usa a do proprio municipio do RM.
+        // Mandar daqui era o que sobrescrevia a cidade certa pela da
+        // consultoria que originou o modulo.
         auto_popular: true,
       });
       router.push(`/dashboard/rm/${r.data.id}?municipio_id=${municipioId}`);

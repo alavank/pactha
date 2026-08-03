@@ -25,6 +25,13 @@ class Settings(BaseSettings):
     CONTROL_TOKEN_BOOTSTRAP: str = ""    # raw injetado 1x no boot p/ semear o control token
     CONTROL_PLANE_ALLOWED_IPS: str = ""  # CSV opcional de IPs do Console (egress fixo)
 
+    # Rodape do Relatorio de Monitoramento (RM), por TENANT. Sai impresso no pe
+    # de toda pagina do relatorio oficial, entao e endereco de quem assina.
+    # Vazio por default de proposito: melhor pagina sem rodape do que pagina com
+    # o endereco de OUTRO cliente — que foi o que aconteceu enquanto o endereco
+    # de uma consultoria estava no DEFAULT da coluna.
+    RM_RODAPE: str = ""
+
     # Painel Executivo do prefeito — push web (VAPID). Gerar 1x por instancia com
     # web-push generate-vapid-keys (ou py_vapid). A publica tambem vai como build
     # ARG NEXT_PUBLIC_VAPID_PUBLIC_KEY no app painel/.

@@ -98,9 +98,35 @@ ADMIN_PASSWORD=          # opcional: fixa a senha do super-admin em vez de
 
 ## 4. Ordem de execução
 
+### ⛔ Passo 0 — a imagem do frontend, ANTES de tudo
+
+**Não existe imagem de frontend genérica, e clonar o app de outro cliente entrega
+os dados daquele cliente.**
+
+O `API_PROXY_TARGET` é **assado na imagem durante o build** (é um build ARG, não
+uma variável de runtime). Um app apontado para `pactha-frontend-freitas` faz proxy
+de `/api` para a **API da Freitas**: o deploy sobe, o login funciona, e o cliente
+novo enxerga os usuários, municípios e dados da Freitas — com o banco dele vazio
+ao lado, sem um único erro na tela.
+
+Então, antes de criar qualquer aplicação:
+
+1. Abra `.github/workflows/build-frontend.yml` e **acrescente uma entrada na
+   matriz** para o tenant, com o `API_PROXY_TARGET` apontando para a **API dele**,
+   mais logo e subtítulo próprios.
+2. Rode o workflow (`workflow_dispatch`) e confirme que a imagem
+   `ghcr.io/alavank/pactha-frontend-<tenant>` foi publicada.
+3. Só então crie o app apontando para **essa** imagem.
+
+> **Nunca aponte o frontend de um cliente para a imagem de outro**, nem "só para
+> testar". Não dá erro — dá vazamento.
+
+### Depois disso
+
 1. Criar o banco do cliente.
-2. Criar as três aplicações no Coolify — api, worker e frontend. Existe engine
-   reaproveitável em `C:\projetos\coolify-migrate`.
+2. Criar as três aplicações no Coolify — api, worker e frontend. O engine em
+   `C:\projetos\coolify-migrate` ajuda a criar a estrutura, mas **o frontend tem
+   de apontar para a imagem do passo 0**, nunca para a herdada do app clonado.
 3. Definir as variáveis da seção 3.
 4. Subir a **api** primeiro (ela roda as migrations e o seed no boot) e **ler o
    log** para copiar as senhas.
