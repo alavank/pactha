@@ -11,7 +11,7 @@ Endpoints:
 """
 from datetime import date
 from typing import Optional
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,6 +22,7 @@ from database import get_db
 from models import Municipio
 from services.auth import get_current_user, ensure_municipio_access, ensure_tela
 from models.user import User
+from services.audit import registrar
 from services.rm_builder import montar_conteudo
 from services.rm_pdf import gerar_pdf
 from services.rm_export import (
@@ -29,6 +30,24 @@ from services.rm_export import (
 )
 
 router = APIRouter(prefix="/api/rm", tags=["rm"])
+
+
+async def _rm_contexto(db: AsyncSession, rid: int) -> dict:
+    """Municipio e titulo do RM, para a trilha.
+
+    Os endpoints de alteracao trabalham so com o id; sem esta leitura o registro
+    sairia sem `municipio_id` (impossivel recortar a auditoria por prefeitura) e
+    sem um rotulo que um leigo reconheca. Nao levanta 404 de proposito: quem
+    decide o que fazer com RM inexistente e o endpoint, nao a auditoria — a
+    trilha nao pode mudar o comportamento de nenhuma rota."""
+    row = (await db.execute(text(
+        "SELECT municipio_id, titulo, data_referencia, status FROM rm_relatorios WHERE id = :id"
+    ), {"id": rid})).first()
+    if not row:
+        return {"municipio_id": None, "titulo": None, "data_referencia": None, "status": None}
+    return {"municipio_id": row[0], "titulo": row[1],
+            "data_referencia": row[2].isoformat() if row[2] else None,
+            "status": row[3]}
 
 
 class RmCreate(BaseModel):
@@ -102,6 +121,7 @@ async def listar(
 @router.post("")
 async def criar(
     body: RmCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user=Depends(get_current_user),
 ):
@@ -115,6 +135,13 @@ async def criar(
         _ano = None
     conteudo = await montar_conteudo(db, body.municipio_id, _ano) if body.auto_popular else {"partes": []}
     titulo = body.titulo or f"RELATÓRIO DE MONITORAMENTO – {mun.nome.upper()}/{mun.uf}"
+    # O INSERT abaixo e um UPSERT (ON CONFLICT em municipio+data): a mesma chamada
+    # cria OU sobrescreve. Registrar tudo como "criou" faria a trilha mentir
+    # justamente no caso que interessa — o relatorio que ja existia e foi
+    # substituido. Uma leitura barata antes resolve, sem mexer na escrita.
+    ja_existia = (await db.execute(text(
+        "SELECT 1 FROM rm_relatorios WHERE municipio_id = :m AND data_referencia = :d"
+    ), {"m": body.municipio_id, "d": body.data_referencia})).first() is not None
     # ON CONFLICT: se ja existe RM nessa data, atualiza conteudo
     sql = text("""
         INSERT INTO rm_relatorios
@@ -140,6 +167,16 @@ async def criar(
         "overwrite": body.auto_popular,
     })).scalar()
     await db.commit()
+    await registrar(
+        db, action=("rm.update" if ja_existia else "rm.create"),
+        user=user, request=request,
+        target_type="rm", target_id=rid, municipio_id=body.municipio_id,
+        alvo_nome=titulo,
+        details={"titulo": titulo, "municipio": f"{mun.nome}/{mun.uf}",
+                 "data_referencia": str(body.data_referencia),
+                 "cidade_emissao": cidade, "auto_popular": body.auto_popular,
+                 "via": "upsert", "conteudo_substituido": ja_existia and body.auto_popular},
+    )
     return {"id": rid, "created": True}
 
 
@@ -168,8 +205,9 @@ async def detalhe(
 async def atualizar(
     rid: int,
     body: RmUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
     sets = []
     params: dict = {"id": rid}
@@ -187,22 +225,40 @@ async def atualizar(
         sets.append("conteudo = CAST(:cont AS JSONB)"); params["cont"] = json.dumps(body.conteudo)
     if not sets:
         return {"updated": False, "reason": "nada para atualizar"}
+    ctx = await _rm_contexto(db, rid)
     sets.append("updated_at = NOW()")
     sql = text(f"UPDATE rm_relatorios SET {', '.join(sets)} WHERE id = :id")
     await db.execute(sql, params)
     await db.commit()
+    # `campos` e a lista do que o usuario tocou. O conteudo do relatorio NAO vai
+    # para a trilha: sao dezenas de KB de JSON por edicao, e a auditoria e sobre o
+    # ATO ("editou o RM de julho de Monte Siao"), nao sobre versionar documento.
+    await registrar(
+        db, action="rm.update", user=current, request=request,
+        target_type="rm", target_id=rid, municipio_id=ctx["municipio_id"],
+        alvo_nome=body.titulo or ctx["titulo"],
+        details={"titulo": body.titulo or ctx["titulo"],
+                 "data_referencia": ctx["data_referencia"],
+                 "campos": sorted(body.model_dump(exclude_unset=True).keys())},
+        # Status e o unico campo cujo VALOR interessa a auditoria (rascunho ->
+        # emitido muda o peso do documento). Snapshot completo dos dois lados,
+        # como o audit pede — nao o corpo do PATCH.
+        valor_antes={"status": ctx["status"]},
+        valor_depois={"status": body.status if body.status is not None else ctx["status"]},
+    )
     return {"updated": True}
 
 
 @router.post("/{rid}/auto-popular")
 async def repopular(
     rid: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
     """Substitui conteudo pelo gerado automaticamente a partir do DB atual."""
     row = (await db.execute(text(
-        "SELECT municipio_id, data_referencia FROM rm_relatorios WHERE id = :id"
+        "SELECT municipio_id, data_referencia, titulo FROM rm_relatorios WHERE id = :id"
     ), {"id": rid})).first()
     if not row:
         raise HTTPException(404, "RM não encontrado")
@@ -217,32 +273,54 @@ async def repopular(
                   for p in conteudo.get("partes", [])
                   for s in p.get("secoes", [])
                   for it in s.get("grupos", []))
+    # Repopular DESCARTA a redacao manual do relatorio. Fica como evento proprio
+    # (nao como "rm.update") porque a pergunta que aparece depois e sempre a
+    # mesma: "quem apagou o que eu tinha escrito, e quando".
+    await registrar(
+        db, action="rm.auto_popular", user=current, request=request,
+        target_type="rm", target_id=rid, municipio_id=row[0], alvo_nome=row[2],
+        details={"partes": n_partes, "itens": n_itens,
+                 "data_referencia": row[1].isoformat() if row[1] else None,
+                 "efeito": "conteudo anterior substituido pelos dados atuais"},
+    )
     return {"ok": True, "partes": n_partes, "itens": n_itens}
 
 
 @router.delete("/{rid}")
 async def remover(
     rid: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
+    # Contexto lido ANTES do DELETE: depois a linha nao existe mais e o registro
+    # sairia como "apagou o RM 47" — um numero que nao diz nada a ninguem.
+    ctx = await _rm_contexto(db, rid)
     r = await db.execute(text("DELETE FROM rm_relatorios WHERE id = :id"), {"id": rid})
     await db.commit()
     if r.rowcount == 0:
         raise HTTPException(404, "RM não encontrado")
+    await registrar(
+        db, action="rm.delete", user=current, request=request,
+        target_type="rm", target_id=rid, municipio_id=ctx["municipio_id"],
+        alvo_nome=ctx["titulo"],
+        details={"titulo": ctx["titulo"], "data_referencia": ctx["data_referencia"]},
+    )
     return {"deleted": True}
 
 
 @router.get("/{rid}/pdf")
 async def pdf(
     rid: int,
+    request: Request,
     tipo: str = Query("completo", description="completo | resumido | totalizado"),
     formato: str = Query("pdf", description="pdf | xlsx (xlsx só p/ totalizado)"),
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
     row = (await db.execute(text("""
-        SELECT r.data_referencia, r.cidade_emissao, r.titulo, r.rodape, r.conteudo, m.nome, m.uf
+        SELECT r.data_referencia, r.cidade_emissao, r.titulo, r.rodape, r.conteudo, m.nome, m.uf,
+               r.municipio_id
         FROM rm_relatorios r JOIN municipios m ON m.id = r.municipio_id
         WHERE r.id = :id
     """), {"id": rid})).first()
@@ -260,10 +338,32 @@ async def pdf(
     tipo = (tipo or "completo").lower()
     formato = (formato or "pdf").lower()
 
+    async def _registrar_export(nome_arquivo: str, fmt: str, variante: str):
+        """Toda saida deste endpoint passa por aqui.
+
+        Exportacao e o momento em que o dado deixa a tela e vira arquivo que anda
+        sozinho — e, para a LGPD, o evento mais importante de rastrear. Fica sob o
+        prefixo `export.` de proposito: um filtro so ("action comeca com export.")
+        lista tudo o que ja saiu do sistema, venha de onde vier.
+
+        `registrar` e nao `registrar_critico`: o PDF e leitura de dado que o
+        usuario ja tem na tela — derrubar o download por falha de trilha nao
+        impede exfiltracao nenhuma (ele fotografa a tela), so quebra o trabalho de
+        quem nao fez nada de errado. O que nao pode acontecer em silencio e
+        CONCEDER PODER; ver o que ja se ve, nao."""
+        await registrar(
+            db, action="export.rm", user=current, request=request,
+            target_type="rm", target_id=rid, municipio_id=row[7],
+            details={"formato": fmt, "variante": variante, "arquivo": nome_arquivo,
+                     "titulo": row[2], "municipio": municipio,
+                     "data_referencia": row[0].isoformat() if row[0] else None},
+        )
+
     # Totalizado em Excel
     if tipo == "totalizado" and formato == "xlsx":
         conteudo_bytes = gerar_totalizado_xlsx(meta, conteudo, municipio)
         nome = f"RM-Totalizado-{row[5]}-{dt_str}.xlsx".replace(" ", "_")
+        await _registrar_export(nome, "xlsx", "totalizado")
         return Response(
             content=conteudo_bytes,
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -281,6 +381,7 @@ async def pdf(
         rotulo = "Completo"
 
     nome = f"RM-{rotulo}-{row[5]}-{dt_str}.pdf".replace(" ", "_")
+    await _registrar_export(nome, "pdf", rotulo.lower())
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",

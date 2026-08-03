@@ -27,6 +27,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   HardHat,
+  ScrollText,
 } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -136,8 +137,19 @@ const NAV_ITEMS: NavEntry[] = [
   { href: "/dashboard/sessoes", label: "Sessoes (gov.br)", icon: KeyRound },
 ];
 
-const ADMIN_NAV_ITEMS = [
+// A secao Administracao. O padrao aqui e "so admin ve", e por isso o bloco
+// inteiro nasceu dentro de um `user?.role === "admin"`.
+//
+// `tela` e a excecao: o item que a declara passa a ser governado pela permissao
+// POR TELA (`user_telas`), e nao pelo papel. Existe por causa da Auditoria —
+// quem confere o que foi feito (controle interno, controladoria, juridico) nao
+// deve precisar virar administrador do sistema para ler a trilha. Os demais
+// itens continuam sem `tela` e presos ao papel, de proposito.
+type AdminNavItem = NavLeaf & { icon: React.ComponentType<{ className?: string }>; tela?: string };
+
+const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { href: "/dashboard/usuarios", label: "Usuarios", icon: Users },
+  { href: "/dashboard/auditoria", label: "Auditoria", icon: ScrollText, tela: "auditoria" },
   { href: "/dashboard/frescor", label: "Status dos Dados", icon: Activity },
   { href: "/dashboard/service-tokens", label: "Service Tokens", icon: KeyRound },
 ];
@@ -197,11 +209,22 @@ function SidebarContent({
   };
   // Sidebar so mostra as telas permitidas ao usuario (admin/carregando = todas)
   const isSuper = SUPER_ADMIN_EMAILS.has((user?.email || "").trim().toLowerCase());
-  let visibleNav = filterNav(NAV_ITEMS, allowedTelasOf(user));
+  const allowed = allowedTelasOf(user);
+  let visibleNav = filterNav(NAV_ITEMS, allowed);
   if (!isSuper) {
     // Sessoes (captura gov.br) so p/ super-admin
     visibleNav = visibleNav.filter((it) => !("href" in it && SUPER_ADMIN_ONLY.has(it.href)));
   }
+  // A secao Administracao. Nao e mais "admin ve tudo, os outros nao veem nada":
+  // o item que declara `tela` obedece a permissao por tela, entao um usuario de
+  // controle interno pode ter a Auditoria sem ter poder de administrador.
+  // `allowed` e null para admin E enquanto carrega — dai o `ehAdmin` separado.
+  const ehAdmin = user?.role === "admin";
+  const adminNavVisivel = ADMIN_NAV_ITEMS.filter((item) => {
+    if (!isSuper && SUPER_ADMIN_ONLY.has(item.href)) return false;
+    if (item.tela) return ehAdmin || !!allowed?.has(item.tela);
+    return ehAdmin;
+  });
   return (
     <div className="flex h-full flex-col bg-base-100">
       {/* Faixa de identidade (ver .gov-stripe em globals.css) */}
@@ -433,7 +456,7 @@ function SidebarContent({
           );
         })}
 
-        {user?.role === "admin" && (
+        {adminNavVisivel.length > 0 && (
           <>
             {recolhida ? (
               <div className="my-2 border-t border-base-300" />
@@ -442,7 +465,7 @@ function SidebarContent({
                 Administracao
               </div>
             )}
-            {ADMIN_NAV_ITEMS.filter((item) => isSuper || !SUPER_ADMIN_ONLY.has(item.href)).map((item) => {
+            {adminNavVisivel.map((item) => {
               const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
               const Icon = item.icon;
               if (recolhida) {
@@ -616,7 +639,15 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
     const allowed = allowedTelasOf(user);
     if (!allowed) return; // admin ou ainda carregando
     if (allowed.has(hrefToTela(pathname))) return;
-    const firstAllowed = allLeafHrefs(NAV_ITEMS).find((h) => allowed.has(hrefToTela(h)));
+    // Os destinos incluem os itens de Administracao governados por TELA (hoje,
+    // a Auditoria). Sem isso, um usuario cujo unico acesso e a trilha nao teria
+    // para onde ser mandado: `find` devolveria undefined, nenhum redirect
+    // aconteceria e ele ficaria parado numa tela que nao pode ver.
+    const destinos = [
+      ...allLeafHrefs(NAV_ITEMS),
+      ...ADMIN_NAV_ITEMS.filter((i) => i.tela).map((i) => i.href),
+    ];
+    const firstAllowed = destinos.find((h) => allowed.has(hrefToTela(h)));
     if (firstAllowed && firstAllowed !== pathname) router.replace(firstAllowed);
   }, [user, pathname, router]);
 

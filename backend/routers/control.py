@@ -27,9 +27,49 @@ from services.auth import hash_password, create_sso_token
 from services.service_auth import hash_token
 from services import users_admin, crypto
 from services.telas_catalog import TELAS_CATALOG
-from services.audit import log_event
+from services.audit import registrar, registrar_critico
 
 router = APIRouter(prefix="/api/control", tags=["control"])
+
+
+# Cabecalhos com que o Console identifica a PESSOA por tras da chamada. Ficam em
+# ordem de preferencia; o primeiro que parecer e-mail vale.
+_HEADERS_ATOR = ("x-control-actor", "x-operator-email", "x-actor-email")
+
+# NOTA sobre a chave `integracao` nos `details` daqui: ela guarda `p.name`, o
+# nome do control token (ex.: "console-alavank"), e ANTES se chamava "token".
+# O sanitizador de `services/audit.py` redige por SUBSTRING qualquer chave que
+# contenha "token" — corretamente, porque em 99% dos casos ali dentro estaria um
+# segredo. Com o nome antigo, a unica identificacao da origem virava "[oculto]".
+
+
+def _ator(request: Request, p: ControlPrincipal) -> str:
+    """Quem, do lado da Alavank, esta agindo — para o campo indexado `user_email`.
+
+    Todo evento `control.*` gravava `user_email` NULO: sobrava o nome do token em
+    `details`, que identifica a INTEGRACAO, nao a pessoa. "Quem da Alavank revelou
+    a senha do gov.br desta prefeitura" simplesmente nao existia como pergunta
+    respondivel, e e exatamente o tipo de acesso que a LGPD manda rastrear.
+
+    O Console envia o tecnico logado num destes cabecalhos. Quando nao envia (ou
+    e uma automacao sem gente na frente), o responsavel possivel e o TOKEN — e ai
+    grava-se `control-token:<nome>`.
+
+    ⚠️ OS DOIS VALORES SAO SEMPRE PREFIXADOS, e o prefixo nao e enfeite. O
+    cabecalho e uma AFIRMACAO de quem detem o control token: nada aqui prova que
+    o tecnico e aquele. Gravado como e-mail cru, um Console comprometido (ou com
+    bug) escreveria `admin@montesiao.mg.gov.br` no campo indexado e a trilha
+    apontaria o servidor da prefeitura como autor de um ato que so o canal da
+    Alavank consegue praticar — envenenar a prova justamente no incidente em que
+    ela serve. Com `control:` na frente, um evento do canal externo nunca se
+    confunde com o login de uma pessoa do tenant, e continua achavel na busca por
+    e-mail (que e `ilike '%termo%'`, nao igualdade). O ator VERIFICADO — o token
+    autenticado — vai em `details.integracao` nas 13 chamadas, sempre."""
+    for h in _HEADERS_ATOR:
+        v = (request.headers.get(h) or "").strip().lower()
+        if v and "@" in v and len(v) <= 200:
+            return f"control:{v}"
+    return f"control-token:{p.name}"[:255]
 
 
 def _mun(m: Municipio) -> dict:
@@ -93,9 +133,10 @@ async def upsert_municipio(
             m.fns_code = fns
     await db.commit()
     await db.refresh(m)
-    await log_event(db, action="control.municipio.upsert", request=request,
-                    target_type="municipio", target_id=ibge,
-                    details={"nome": nome, "uf": uf, "created": created, "token": p.name})
+    await registrar(db, action="control.municipio.upsert", request=request,
+                    user_email=_ator(request, p), municipio_id=m.id,
+                    target_type="municipio", target_id=ibge, alvo_nome=f"{nome}/{uf}",
+                    details={"nome": nome, "uf": uf, "created": created, "integracao": p.name})
     return _mun(m)
 
 
@@ -121,9 +162,10 @@ async def patch_municipio(
         changed.append("fns_code")
     await db.commit()
     await db.refresh(m)
-    await log_event(db, action="control.municipio.patch", request=request,
-                    target_type="municipio", target_id=ibge_code,
-                    details={"changed": changed, "active": m.active, "token": p.name})
+    await registrar(db, action="control.municipio.patch", request=request,
+                    user_email=_ator(request, p), municipio_id=m.id,
+                    target_type="municipio", target_id=ibge_code, alvo_nome=f"{m.nome}/{m.uf}",
+                    details={"changed": changed, "active": m.active, "integracao": p.name})
     return _mun(m)
 
 
@@ -267,9 +309,11 @@ async def control_refresh(
         "RETURNING id"
     ), {"t": source})).first()
     await db.commit()
-    await log_event(db, action="control.refresh", request=request,
-                    target_type="scraper", target_id=source,
-                    details={"queued": row is not None, "token": p.name})
+    await registrar(db, action="control.refresh", request=request,
+                    user_email=_ator(request, p),
+                    target_type="scraper", target_id=source, alvo_nome="SIGCON-MG",
+                    details={"queued": row is not None, "integracao": p.name,
+                             "job_id": row[0] if row else None})
     if row is None:
         return {"status": "already_queued", "source": source,
                 "message": "Ja existe uma atualizacao na fila ou em execucao."}
@@ -436,9 +480,11 @@ async def create_cofre(
     db.add(it)
     await db.commit()
     await db.refresh(it)
-    await log_event(db, action="control.cofre.create", request=request,
-                    target_type="cofre_senha", target_id=it.id,
-                    details={"sistema": sistema, "token": p.name})
+    await registrar(db, action="control.cofre.create", request=request,
+                    user_email=_ator(request, p), municipio_id=it.municipio_id,
+                    target_type="cofre_senha", target_id=it.id, alvo_nome=sistema,
+                    details={"sistema": sistema, "integracao": p.name,
+                             "automation_key": it.automation_key})
     return await _cofre_out(db, it)
 
 
@@ -465,9 +511,19 @@ async def patch_cofre(
         setattr(it, k, v)
     await db.commit()
     await db.refresh(it)
-    await log_event(db, action="control.cofre.patch", request=request,
+    await registrar(db, action="control.cofre.patch", request=request,
+                    user_email=_ator(request, p), municipio_id=it.municipio_id,
                     target_type="cofre_senha", target_id=it.id,
-                    details={"sistema": it.sistema, "token": p.name})
+                    alvo_nome=it.sistema,
+                    # Quais campos foram tocados (NUNCA o valor: da senha fica so
+                    # a marca de que houve troca). `exclude_unset` ja separa
+                    # "mandou vazio" de "nem mandou". `senha_changed` e o nome
+                    # exato que o sanitizador do audit reconhece como METRICA e
+                    # deixa passar — qualquer outro nome com "senha" viraria
+                    # "[oculto]" e a marca se perderia.
+                    details={"sistema": it.sistema, "integracao": p.name,
+                             "campos": sorted(body.model_dump(exclude_unset=True).keys()),
+                             "senha_changed": "senha" in body.model_fields_set})
     return await _cofre_out(db, it)
 
 
@@ -480,9 +536,30 @@ async def reveal_cofre(
     it = await db.get(CofreSenha, item_id)
     if not it:
         raise HTTPException(status_code=404, detail="entrada nao encontrada")
-    await log_event(db, action="control.cofre.reveal", request=request,
-                    target_type="cofre_senha", target_id=it.id,
-                    details={"sistema": it.sistema, "token": p.name})
+    # Registro ANTES da revelacao: se a trilha nao gravar, a senha nao sai. Nos
+    # outros endpoints deste arquivo falhar o registro depois do commit so
+    # mentiria sobre um ato ja consumado; neste, falhar de proposito EVITA a
+    # divulgacao — a unica ordem em que "critico" e honesto. Revelar credencial
+    # de prefeitura sem deixar quem e quando e o pior evento desta superficie.
+    # (`services/audit.py` ja promoveria `*.reveal` a critico mesmo por
+    # `registrar`; a chamada explicita aqui e para nao depender disso.)
+    await registrar_critico(db, action="control.cofre.reveal", request=request,
+                            user_email=_ator(request, p), municipio_id=it.municipio_id,
+                            target_type="cofre_senha", target_id=it.id,
+                            alvo_nome=it.sistema,
+                            # `it.usuario` (o LOGIN do portal) fica de fora: no
+                            # gov.br ele E o CPF de um servidor. A trilha nao se
+                            # apaga por 5 anos e sai do sistema em PDF/Excel —
+                            # copiar o CPF para ca multiplicaria dado pessoal
+                            # sem responder nada que `sistema` + `target_id` +
+                            # `automation_key` ja nao respondam (qual entrada do
+                            # cofre foi exposta). E o mesmo recorte que o reveal
+                            # do lado do cliente ja usa (routers/cofre.py):
+                            # dois eventos do MESMO ato guardando conjuntos
+                            # diferentes de dado pessoal seria incoerencia
+                            # dificil de defender numa auditoria de LGPD.
+                            details={"sistema": it.sistema,
+                                     "automation_key": it.automation_key, "integracao": p.name})
     return {"senha": crypto.decrypt(it.senha_encrypted) if it.senha_encrypted else ""}
 
 
@@ -496,11 +573,13 @@ async def delete_cofre(
     if not it:
         raise HTTPException(status_code=404, detail="entrada nao encontrada")
     sistema = it.sistema
+    mun_id = it.municipio_id       # some junto com a linha; copiado antes do delete
     await db.delete(it)
     await db.commit()
-    await log_event(db, action="control.cofre.delete", request=request,
-                    target_type="cofre_senha", target_id=item_id,
-                    details={"sistema": sistema, "token": p.name})
+    await registrar(db, action="control.cofre.delete", request=request,
+                    user_email=_ator(request, p), municipio_id=mun_id,
+                    target_type="cofre_senha", target_id=item_id, alvo_nome=sistema,
+                    details={"sistema": sistema, "integracao": p.name})
     return {"status": "deleted"}
 
 
@@ -575,8 +654,9 @@ async def control_session_token(
         action = "control.session_token.create"
     await db.commit()
     await db.refresh(tok)
-    await log_event(db, action=action, request=request, target_type="service_token",
-                    target_id=tok.id, details={"name": name, "token": p.name})
+    await registrar(db, action=action, request=request, user_email=_ator(request, p),
+                    target_type="service_token", target_id=tok.id, alvo_nome=name,
+                    details={"name": name, "integracao": p.name, "prefix": tok.token_prefix})
     return {"token": raw, "name": name, "scopes": ["session:write"], "prefix": tok.token_prefix,
             "warning": "Anote agora — nao sera mostrado de novo. Configure na extensao de captura."}
 
@@ -617,9 +697,20 @@ async def control_sso(
         u.active = True
         await db.commit()
     token = create_sso_token(u.id)
-    await log_event(db, action="control.sso.mint", request=request,
+    # Aqui o proprio corpo diz quem e o tecnico que vai entrar no sistema do
+    # cliente — melhor identificacao que qualquer cabecalho. Se o Console mandar
+    # o ator, ele vence (pode ser um coordenador abrindo sessao para outro); o
+    # e-mail do tecnico fica sempre em `details` para os dois casos casarem.
+    ator = _ator(request, p)
+    await registrar(db, action="control.sso.mint", request=request,
+                    # Mesmo prefixo de `_ator` no fallback: o e-mail do corpo
+                    # tambem e afirmacao de quem tem o token, e um ato do canal
+                    # externo nao pode aparecer no filtro como login local.
+                    user_email=(ator if "@" in ator else f"control:{email}"[:255]),
                     target_type="user", target_id=email,
-                    details={"tech": email, "token": p.name})
+                    alvo_nome=(body.tech_name or email),
+                    details={"tech": email, "tech_nome": body.tech_name,
+                             "usuario_suporte": support_email, "integracao": p.name})
     return {"sso_token": token, "path": "/api/auth/sso-login"}
 
 
@@ -701,9 +792,12 @@ async def create_control_user(
     if body.municipios is not None:
         await users_admin.set_user_municipios_by_ibge(db, u.id, body.municipios)
     await db.commit()
-    await log_event(db, action="control.user.create", request=request,
-                    target_type="user", target_id=email,
-                    details={"role": body.role, "token": p.name})
+    await registrar(db, action="control.user.create", request=request,
+                    user_email=_ator(request, p),
+                    target_type="user", target_id=email, alvo_nome=u.name,
+                    details={"role": body.role, "integracao": p.name,
+                             "telas": sorted(body.telas or []),
+                             "municipios": sorted(body.municipios or [])})
     out = await _user_out(db, u)
     out["senha_temporaria"] = senha
     return out
@@ -726,6 +820,13 @@ async def patch_control_user(
     if (demoting or deactivating) and await _active_admin_count(db) <= 1:
         raise HTTPException(status_code=409, detail="Nao e possivel deixar o cliente sem administrador")
 
+    # Mesmo "antes/depois" do PATCH da tela de usuarios: este canal tambem concede
+    # e retira acesso, e ate agora gravava apenas o nome do token — ou seja, que
+    # ALGO foi editado, sem dizer o que. Escopo aqui vem por ibge_code (chave
+    # estavel do canal), nao por id interno.
+    antes = {"name": u.name, "role": u.role, "active": bool(u.active),
+             "telas": await users_admin.get_user_telas(db, u.id),
+             "municipios": await users_admin.get_user_ibges(db, u.id)}
     if body.name is not None:
         u.name = body.name.strip()
     if body.role is not None:
@@ -738,8 +839,20 @@ async def patch_control_user(
         await users_admin.set_user_municipios_by_ibge(db, u.id, body.municipios)
     await db.commit()
     await db.refresh(u)
-    await log_event(db, action="control.user.patch", request=request,
-                    target_type="user", target_id=email, details={"token": p.name})
+    depois = {"name": u.name, "role": u.role, "active": bool(u.active),
+              "telas": await users_admin.get_user_telas(db, u.id),
+              "municipios": await users_admin.get_user_ibges(db, u.id)}
+    permissao = {}
+    for campo in ("telas", "municipios"):
+        a, d = set(antes[campo]), set(depois[campo])
+        if a != d:
+            permissao[campo] = {"concedidos": sorted(d - a), "retirados": sorted(a - d)}
+    await registrar(db, action="control.user.patch", request=request,
+                    user_email=_ator(request, p),
+                    target_type="user", target_id=email, alvo_nome=u.name,
+                    # Snapshots completos: o audit reduz sozinho ao que mudou.
+                    valor_antes=antes, valor_depois=depois,
+                    details={"permissao": permissao or None, "integracao": p.name})
     return await _user_out(db, u)
 
 
@@ -756,8 +869,10 @@ async def reset_control_user_password(
     u.password_hash = hash_password(senha)
     u.must_change_password = True
     await db.commit()
-    await log_event(db, action="control.user.reset_password", request=request,
-                    target_type="user", target_id=email, details={"token": p.name})
+    await registrar(db, action="control.user.reset_password", request=request,
+                    user_email=_ator(request, p),
+                    target_type="user", target_id=email, alvo_nome=u.name,
+                    details={"integracao": p.name})
     return {"email": u.email, "senha_temporaria": senha}
 
 
@@ -782,6 +897,11 @@ async def delete_control_user(
     if u.role == "admin" and u.active and await _active_admin_count(db) <= 1:
         raise HTTPException(status_code=409, detail="Nao e possivel remover o unico administrador ativo")
     uid, uname, urole = u.id, u.name, u.role
+    # user_telas/user_municipios somem por ON DELETE CASCADE: se nao forem
+    # copiados AGORA, "que acessos essa conta tinha quando foi removida" fica sem
+    # resposta para sempre. E a pergunta que uma auditoria faz primeiro.
+    utelas = await users_admin.get_user_telas(db, uid)
+    umuns = await users_admin.get_user_ibges(db, uid)
 
     async def _null_fk(table: str, col: str):
         # Checa existencia de TABELA E COLUNA (migrations parciais entre tenants) — se
@@ -831,7 +951,9 @@ async def delete_control_user(
         await db.rollback()
         raise HTTPException(status_code=409,
                             detail=f"Nao foi possivel remover (referencias pendentes: {type(e).__name__})")
-    await log_event(db, action="control.user.delete", request=request,
-                    target_type="user", target_id=email,
-                    details={"name": uname, "role": urole, "token": p.name})
+    await registrar(db, action="control.user.delete", request=request,
+                    user_email=_ator(request, p),
+                    target_type="user", target_id=email, alvo_nome=uname,
+                    details={"name": uname, "role": urole, "integracao": p.name,
+                             "telas": utelas, "municipios": umuns})
     return {"status": "deleted", "email": email}

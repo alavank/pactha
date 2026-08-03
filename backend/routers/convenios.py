@@ -2,7 +2,7 @@
 
 Apos refactor lean, mantemos apenas a esfera estadual. Federal foi removida.
 """
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_, and_, text
 from datetime import date, timedelta
@@ -11,6 +11,7 @@ from database import get_db
 from models import ConvenioEstadual
 from schemas.convenio import ConvenioResponse, ConvenioListResponse, ConvenioStats, AlertaVigencia
 from services.auth import get_current_user, ensure_municipio_access, ensure_tela
+from services.audit import registrar
 from services.bi import anos_list
 from models.user import User
 import math
@@ -644,8 +645,9 @@ async def get_convenio_estadual_detail(
 
 @router.post("/refresh-sigcon")
 async def refresh_sigcon(
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
     """Enfileira execucao on-demand do scraper SIGCON-MG (sem depender de plataforma).
 
@@ -665,6 +667,18 @@ async def refresh_sigcon(
         ") RETURNING id"
     ))).first()
     await db.commit()
+    # Disparar coletor muda o dado que a prefeitura ve: uma coleta pode alterar
+    # situacao e valores de dezenas de convenios de uma vez. O pedido fica
+    # registrado inclusive quando ele NAO enfileira (dedup) — a pergunta que
+    # aparece depois e "quem mandou atualizar antes do numero mudar", e um pedido
+    # recusado por ja haver fila tambem responde isso.
+    await registrar(
+        db, action="coletor.disparo", user=current, request=request,
+        target_type="scraper", target_id="sigcon", alvo_nome="SIGCON-MG",
+        details={"fonte": "sigcon", "origem": "tela do usuario",
+                 "enfileirado": row is not None,
+                 "job_id": row[0] if row else None},
+    )
     if row is None:
         return {
             "status": "already_queued",

@@ -22,7 +22,7 @@ from services.auth import (
     get_current_user, COOKIE_NAME_REFRESH, COOKIE_NAME_ACCESS,
     load_user_scopes,
 )
-from services.audit import log_event
+from services.audit import registrar
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -79,7 +79,7 @@ async def sso_login(t: str, request: Request, db: AsyncSession = Depends(get_db)
     set_auth_cookies(resp, access, refresh, csrf)
     u.last_login_at = datetime.now(timezone.utc)
     await db.commit()
-    await log_event(db, action="sso.login", user=u, request=request,
+    await registrar(db, action="sso.login", user=u, request=request,
                     target_type="user", target_id=u.email, details={"via": "console-sso"})
     return resp
 
@@ -97,13 +97,28 @@ async def login(
     result = await db.execute(select(User).where(User.email == req.email))
     user = result.scalar_one_or_none()
     if not user or not verify_password(req.password, user.password_hash):
-        await log_event(
+        await registrar(
             db, action="login.fail", request=request,
-            details={"email": req.email}, commit=True,
+            # O e-mail TENTADO vai no campo indexado `user_email`, nao so em
+            # `details`. Tentativa de invasao chega como "tentaram entrar na conta
+            # do fulano" e a busca natural e por e-mail; enquanto isso ficou so
+            # dentro do JSONB, o filtro nao achava nada e a trilha jurava que
+            # ninguem tinha tentado. Nao ha `user=` aqui de proposito: em ataque
+            # o e-mail costuma nem existir, entao user_id continua nulo.
+            user_email=(req.email or "").strip().lower()[:255],
+            details={
+                "email_tentado": req.email,
+                # Distinguir os dois casos e o que separa "usuario errou a senha"
+                # de "alguem esta varrendo e-mails". Fica so na trilha interna —
+                # a resposta ao cliente continua generica ("Email ou senha
+                # incorretos"), para nao virar oraculo de contas existentes.
+                "motivo": "senha incorreta" if user else "usuario inexistente",
+            },
+            commit=True,
         )
         raise HTTPException(status_code=401, detail="Email ou senha incorretos")
     if not user.active:
-        await log_event(db, action="login.disabled_user", user=user, request=request)
+        await registrar(db, action="login.disabled_user", user=user, request=request)
         raise HTTPException(status_code=403, detail="Usuario desativado")
 
     # Atualiza last_login
@@ -115,7 +130,7 @@ async def login(
     csrf = generate_csrf_token()
     set_auth_cookies(response, access, refresh, csrf)
 
-    await log_event(db, action="login.success", user=user, request=request)
+    await registrar(db, action="login.success", user=user, request=request)
 
     await load_user_scopes(db, user)
     return LoginResponse(
@@ -181,7 +196,7 @@ async def logout(
             pass
 
     clear_auth_cookies(response)
-    await log_event(db, action="logout", user=user, request=request)
+    await registrar(db, action="logout", user=user, request=request)
     return {"status": "ok"}
 
 
@@ -199,7 +214,7 @@ async def change_password(
 ):
     """Permite o usuario trocar a propria senha. Usado tambem no 1o login forcado."""
     if not verify_password(req.current_password, user.password_hash):
-        await log_event(db, action="user.password_change.fail", user=user, request=request)
+        await registrar(db, action="user.password_change.fail", user=user, request=request)
         raise HTTPException(status_code=401, detail="Senha atual incorreta")
 
     # Politicas minimas
@@ -211,7 +226,7 @@ async def change_password(
     user.password_hash = hash_password(req.new_password)
     user.must_change_password = False
     await db.commit()
-    await log_event(db, action="user.password_change.success", user=user, request=request)
+    await registrar(db, action="user.password_change.success", user=user, request=request)
     return {"status": "ok"}
 
 
@@ -248,7 +263,7 @@ async def register(
     db.add(user)
     await db.commit()
     await db.refresh(user)
-    await log_event(
+    await registrar(
         db, action="user.create", user=current_user, request=request,
         target_type="user", target_id=user.id,
         details={"new_email": email, "role": req.role},

@@ -11,7 +11,7 @@ from routers import (
     session_capture, emendas_estaduais, dou_mg, fns, transferegov, export_pdf,
     users, simec, rm, ai, gestao, parlamentares, telegram, status_changes,
     documentos, cauc, cagec, acordofes, control, freshness, painel, bi,
-    sismob,
+    sismob, auditoria,
 )
 from config import get_settings
 from services.security_headers import SecurityHeadersMiddleware
@@ -100,6 +100,14 @@ app.add_middleware(
     # e NADA e registrado no servidor, o que torna o diagnostico bem dificil.
     allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "X-CSRF-Token",
                    "X-Service-Token"],
+    # Cabecalhos que o JAVASCRIPT precisa LER na resposta. Por padrao o navegador
+    # entrega ao script so um punhado de cabecalhos simples e esconde o resto —
+    # mesmo estando todos na resposta. Sem esta lista, num deploy em que o front
+    # fale com a API em outra origem, a exportacao da auditoria baixa com nome
+    # generico (Content-Disposition invisivel) e, pior, o aviso de recorte
+    # TRUNCADO (X-Auditoria-Truncado) nunca aparece: o usuario recebe um CSV
+    # cortado achando que e a trilha inteira.
+    expose_headers=["Content-Disposition", "X-Auditoria-Linhas", "X-Auditoria-Truncado"],
 )
 app.add_middleware(SecurityHeadersMiddleware)
 
@@ -148,6 +156,7 @@ app.include_router(cagec.router)
 app.include_router(sismob.router)   # /api/sismob/* (obras de saude do MS)
 app.include_router(acordofes.router)
 app.include_router(control.router)  # /api/control/* (Console Alavank)
+app.include_router(auditoria.router)  # /api/auditoria/* (trilha, so leitura)
 app.include_router(freshness.router)  # /api/admin/freshness (monitor de frescor)
 app.include_router(painel.router)   # /api/painel/* (Painel Executivo do prefeito)
 if get_settings().BI_MODULE:
