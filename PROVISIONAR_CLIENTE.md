@@ -26,9 +26,17 @@ o que popula esse banco é a coleta pública daquele município, feita do zero.
 
 > ⚠️ O IBGE é a chave de tudo — CAUC, FNS, SISMOB, TransfereGov. Errado, o sistema
 > não dá erro: devolve "nenhum resultado" e parece que o município não tem nada.
-> **Confirme o código com o dono, dígito a dígito, antes de gravar.** Uma fonte
-> conhecida cobra 6 dígitos em vez de 7 (o SISMOB) — quem trata disso é o
-> coletor, não esta configuração.
+> Uma fonte conhecida cobra 6 dígitos em vez de 7 (o SISMOB) — quem trata disso é
+> o coletor, não esta configuração.
+>
+> **NUNCA escreva um código IBGE de cabeça. Busque na API oficial:**
+> `https://servicodados.ibge.gov.br/api/v1/localidades/municipios/<codigo>`
+> — e confira que o `nome` e a UF que voltam são os do cliente.
+>
+> Isto já custou caro duas vezes. Um seed antigo gravou Araújos com `3104502`,
+> que é **Arinos** — outro município. E Monte Sião foi cadastrado uma vez como
+> `3143302` quando o correto é `3143401`. Nos dois casos o sistema subiu, coletou
+> e não reclamou de nada: só devolvia vazio.
 
 **c) Se for assessoria ou consórcio:** a lista completa de municípios, cada um com
 nome, UF e IBGE. E qual é o município "sede", se houver.
