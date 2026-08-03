@@ -7,7 +7,26 @@ Endpoints:
   PUT    /api/rm/{id}                  atualiza meta + conteudo
   POST   /api/rm/{id}/auto-popular     repreenche conteudo com dados atuais do DB
   DELETE /api/rm/{id}                  remove
-  GET    /api/rm/{id}/pdf              gera o PDF (download)
+  GET    /api/rm/{id}/pdf              gera o PDF/Excel (4 variantes: completo,
+                                       resumido, totalizado pdf, totalizado xlsx)
+
+PERMISSAO (ver services/authz.py)
+---------------------------------
+Ate aqui so o LISTAR checava alguma coisa. Criar, detalhe, PUT, auto-popular,
+DELETE e o PDF aceitavam QUALQUER sessao valida: um usuario criado com zero
+telas e zero municipios apagava o Relatorio de Monitoramento de qualquer
+prefeitura chamando a API direto, ou baixava o PDF dela.
+
+Agora todo endpoint daqui exige a tela `rm`, e cada um que recebe `{rid}`
+confere ainda o municipio DA LINHA (`authz.ensure_dono`) — permissao de tela diz
+que a pessoa mexe em RM, nao diz nada sobre o RM de OUTRO municipio, e `{rid}` e
+so um numero que qualquer um chuta. Sem essa segunda conferencia, quem tem a
+tela tem a tela do tenant inteiro.
+
+⚠️ Com AUTHZ_MODO=aviso (o DEFAULT) nada disto NEGA: registra na trilha "eu teria
+negado isto, para este usuario, por este motivo" e DEIXA PASSAR. O comportamento
+em producao segue identico ao de hoje ate o dono corrigir as permissoes de quem
+precisa e so entao ligar AUTHZ_MODO=bloqueio. Ver o docstring de services/authz.py.
 """
 from datetime import date
 from typing import Optional
@@ -21,6 +40,7 @@ from config import get_settings
 from database import get_db
 from models import Municipio
 from services.auth import get_current_user, ensure_municipio_access, ensure_tela
+from services import authz
 from models.user import User
 from services.audit import registrar
 from services.rm_builder import montar_conteudo
@@ -125,6 +145,15 @@ async def criar(
     db: AsyncSession = Depends(get_db),
     user=Depends(get_current_user),
 ):
+    # Gate ANTES de `_get_municipio`: nao ha por que confirmar que o municipio
+    # existe para quem nao pode escrever nele — e, em modo bloqueio, checar
+    # depois transformaria "nao e seu" em 404 ou 403 conforme o municipio
+    # existisse, o que e um oraculo de existencia de graca.
+    authz.exigir_tela(user, "rm")
+    # Aqui o municipio vem do CORPO (o RM ainda nao existe, entao nao ha linha
+    # de onde tirar dono). `municipio_id` e obrigatorio no schema, entao isto
+    # nunca cai no ramo de "pedido malformado" de ensure_municipio_access.
+    authz.exigir_municipio(user, body.municipio_id)
     mun = await _get_municipio(db, body.municipio_id)
     # ano de emissão = ano da data de referência (janela do relatório por ANO)
     _ano = None
@@ -184,8 +213,16 @@ async def criar(
 async def detalhe(
     rid: int,
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    # Era `_=Depends(...)`: a sessao ja era exigida, mas o usuario era descartado
+    # e por isso nenhuma permissao podia ser conferida. A dependencia e a mesma —
+    # so o nome mudou, para haver quem julgar.
+    current: User = Depends(get_current_user),
 ):
+    authz.exigir_tela(current, "rm")
+    # O detalhe traz o RM inteiro (conteudo completo do relatorio). `ensure_dono`
+    # confere o municipio DA LINHA; RM inexistente devolve None sem levantar, e
+    # cai no 404 do proprio endpoint logo abaixo — quem decide o 404 e ele.
+    await authz.ensure_dono(db, "rm_relatorios", "id", rid, current)
     row = (await db.execute(text("""
         SELECT r.id, r.municipio_id, r.data_referencia, r.cidade_emissao,
                r.titulo, r.rodape, r.status, r.conteudo, r.criado_por,
@@ -209,6 +246,10 @@ async def atualizar(
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
+    # Gate no TOPO, antes de montar o UPDATE: o que nao pode acontecer e a
+    # escrita, entao a conferencia vem antes de qualquer preparo dela.
+    authz.exigir_tela(current, "rm")
+    await authz.ensure_dono(db, "rm_relatorios", "id", rid, current)
     sets = []
     params: dict = {"id": rid}
     if body.data_referencia is not None:
@@ -257,6 +298,10 @@ async def repopular(
     current: User = Depends(get_current_user),
 ):
     """Substitui conteudo pelo gerado automaticamente a partir do DB atual."""
+    # Este endpoint DESCARTA a redacao manual do relatorio — e destrutivo como o
+    # DELETE, so que sem apagar a linha. Mesmo gate.
+    authz.exigir_tela(current, "rm")
+    await authz.ensure_dono(db, "rm_relatorios", "id", rid, current)
     row = (await db.execute(text(
         "SELECT municipio_id, data_referencia, titulo FROM rm_relatorios WHERE id = :id"
     ), {"id": rid})).first()
@@ -293,6 +338,10 @@ async def remover(
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
+    # Gate ANTES do DELETE, obviamente: em modo bloqueio a linha nao pode ter
+    # sido apagada antes de a negativa sair.
+    authz.exigir_tela(current, "rm")
+    await authz.ensure_dono(db, "rm_relatorios", "id", rid, current)
     # Contexto lido ANTES do DELETE: depois a linha nao existe mais e o registro
     # sairia como "apagou o RM 47" — um numero que nao diz nada a ninguem.
     ctx = await _rm_contexto(db, rid)
@@ -318,6 +367,13 @@ async def pdf(
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
+    # As 4 variantes (completo, resumido, totalizado em PDF e totalizado em
+    # Excel) saem todas por aqui, entao o gate no topo cobre as quatro. E o
+    # endpoint que mais precisa dele: o arquivo sai da plataforma e anda
+    # sozinho — e ate agora bastava a URL e uma sessao qualquer para baixar o
+    # relatorio de qualquer prefeitura.
+    authz.exigir_tela(current, "rm")
+    await authz.ensure_dono(db, "rm_relatorios", "id", rid, current)
     row = (await db.execute(text("""
         SELECT r.data_referencia, r.cidade_emissao, r.titulo, r.rodape, r.conteudo, m.nome, m.uf,
                r.municipio_id

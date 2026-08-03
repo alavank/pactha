@@ -21,6 +21,7 @@ from models.user import User
 from services.auth import get_current_user, ensure_municipio_access, ensure_tela
 import httpx
 import unicodedata
+from services import authz
 
 router = APIRouter(prefix="/api/transferegov", tags=["transferegov"])
 
@@ -465,8 +466,17 @@ async def voluntarias_detalhe(
 
 
 @router.get("/plano-acao/{plano_acao_id}")
-async def detalhe(plano_acao_id: int, _=Depends(get_current_user)):
+async def detalhe(plano_acao_id: int, current: User = Depends(get_current_user)):
     """Detalhe completo de um Plano de Acao + relatorio de gestao + extrato."""
+    # Antes bastava estar LOGADO. Cada chamada dispara TRES requisicoes de saida
+    # ao TransfereGov com timeout de 30s cada: sem gate, uma conta sem nenhuma
+    # tela usava a API como proxy de rede e prendia workers do servidor.
+    #
+    # So a TELA: `plano_acao_id` e identificador FEDERAL (nao ha coluna de
+    # municipio nossa para casar com ele), e o dado vem da API PUBLICA do
+    # TransfereGov — exigir municipio aqui pediria um parametro que o endpoint
+    # nao tem e que a fonte nao devolve de forma confiavel.
+    authz.exigir_tela(current, "transferegov")
     async with httpx.AsyncClient(timeout=30, verify=False) as cli:
         # Detalhe basico
         try:
@@ -509,6 +519,24 @@ async def sessao_status(
     Decodifica o JWT 'user-id' das cookies (sessao parcerias.transferegov tem
     expiracao curta ~20min, refrescada com atividade). Retorna minutos
     restantes REAIS, nao so idade da captura."""
+    # Antes bastava estar LOGADO — e isto le uma linha do COFRE: devolve a
+    # `observacao` da credencial, o municipio dela e os claims do gov.br
+    # (vinculo, nivel, expiracao). E o mesmo tipo de vazamento que fez
+    # `/api/session-capture/*` ficar de fora da lista do quiosque em
+    # services/auth.py.
+    #
+    # A tela e `sessoes`, e NAO `transferegov` (a do irmao /admin/run-scraper),
+    # de proposito: quem le isto e a tela /dashboard/sessoes, que e operacional
+    # da Alavank (gestao de credencial gov.br, §12) e por isso nem entra no
+    # catalogo oferecido ao cliente (services/telas_catalog.py). Quem chega
+    # nessa pagina ja tem `sessoes` — o guard de rota do front usa a mesma
+    # chave —, entao a exigencia e invisivel para o uso legitimo e barra
+    # exatamente quem chamaria a URL direto.
+    #
+    # Sem exigencia de municipio: a sessao SSO do gov.br serve varios
+    # municipios (a propria busca aqui e "a mais recente, de qualquer um") e
+    # amarra-la a um recorte mudaria a logica de negocio, nao acrescentaria gate.
+    authz.exigir_tela(user, "sessoes")
     from datetime import datetime, timezone
     from services import crypto
     import base64

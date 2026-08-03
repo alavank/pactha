@@ -14,6 +14,34 @@ Endpoints:
   POST   /api/gestao/anotacoes          -> cria
   PUT    /api/gestao/anotacoes/{id}     -> atualiza
   DELETE /api/gestao/anotacoes/{id}     -> remove
+
+PERMISSAO (o que este modulo exige, e por que sao DUAS coisas)
+--------------------------------------------------------------
+So `GET /anotacoes` (a lista) checava alguma coisa. Todo o resto — inclusive
+`GET /anotacoes/{id}/anexo/{idx}`, que devolve o ARQUIVO anexado (oficio,
+comprovante, foto) direto do banco — bastava estar logado. Quem tivesse
+qualquer conta baixava o anexo de qualquer anotacao de qualquer prefeitura.
+
+Cada endpoint passa a exigir os dois recortes, que respondem a perguntas
+diferentes:
+
+  `authz.exigir_tela(user, "gestao")`  -> a pessoa trabalha com este MODULO?
+  `authz.ensure_dono(...)`       -> ESTA anotacao e de um municipio que ela
+                                    alcanca? Ter a tela nao diz nada sobre a
+                                    linha.
+
+⚠️ NADA DISSO BARRA HOJE. `AUTHZ_MODO=aviso` (o default) apenas REGISTRA "eu
+teria negado isto" e deixa passar — comportamento identico ao de antes. So
+`AUTHZ_MODO=bloqueio` levanta 403. Ver services/authz.py.
+
+⚠️ O QUE VAI APARECER NA SEMANA DE OBSERVACAO, e nao e defeito: tres endpoints
+daqui (`/status-opcoes`, `/anotacoes/item` e `/anotacoes/contagens`) sao usados
+pelo BOTAO DE ANOTACAO que aparece DENTRO de outras telas — Convenios e
+TransfereGov (frontend/src/components/AnotacaoButton.tsx e AnotacaoModal.tsx).
+Entao quem tem "convenios" mas nao tem "gestao" vai gerar linha `authz.negaria`
+sem nunca ter aberto a Gestao Interna. E a decisao certa (anotar E o modulo de
+Gestao Interna), mas quem for ligar o bloqueio precisa saber que essas contas
+perdem o botao — conceder a tela `gestao` a elas e a correcao.
 """
 from __future__ import annotations
 import json
@@ -25,6 +53,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from database import get_db
 from services.auth import get_current_user, ensure_municipio_access, ensure_tela
+from services import authz
 from services.audit import registrar
 from models.user import User
 
@@ -138,6 +167,20 @@ def _rotulo_anexos(anexos) -> list:
             for a in (anexos or [])]
 
 
+async def _exigir_acesso(db: AsyncSession, anot_id: int, user) -> None:
+    """Os dois recortes de todo endpoint que fala de UMA anotacao.
+
+    Num lugar so porque sao quatro (ler, editar, apagar, baixar o anexo) e
+    porque o nome da tabela vira literal de SQL la dentro: uma copia divergente
+    e uma porta que continua aberta sem ninguem notar.
+
+    Em `AUTHZ_MODO=aviso` nenhuma das duas levanta — registram e voltam."""
+    authz.exigir_tela(user, "gestao")
+    # Devolve o municipio da linha; nao usamos o retorno — quem decide o 404
+    # continua sendo o endpoint, com a consulta dele.
+    await authz.ensure_dono(db, "gestao_anotacoes", "id", anot_id, user)
+
+
 async def _anotacao_contexto(db: AsyncSession, anot_id: int) -> dict:
     """Municipio e a que item a anotacao se refere. Sem isto o registro nao teria
     `municipio_id` (a auditoria nao recorta por prefeitura) nem diria sobre QUAL
@@ -153,7 +196,11 @@ async def _anotacao_contexto(db: AsyncSession, anot_id: int) -> dict:
 
 
 @router.get("/status-opcoes")
-async def status_opcoes(_=Depends(get_current_user)):
+async def status_opcoes(current: User = Depends(get_current_user)):
+    # Constantes deste arquivo, sem dado de prefeitura nenhuma — mas e o
+    # vocabulario do modulo, e o formulario de anotacao nao existe sem ele. So a
+    # tela: nao ha municipio a julgar aqui.
+    authz.exigir_tela(current, "gestao")
     return {"opcoes": STATUS_OPCOES, "fontes_validas": sorted(FONTES_VALIDAS)}
 
 
@@ -186,13 +233,29 @@ async def listar_item(
     fonte: str = Query(...),
     fonte_ref: str = Query(...),
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
     """Anotacoes de um item especifico (com anexos completos)."""
+    authz.exigir_tela(current, "gestao")
     rows = (await db.execute(
         text(_SELECT + " WHERE fonte = :f AND fonte_ref = :r ORDER BY updated_at DESC"),
         {"f": fonte, "r": fonte_ref},
     )).fetchall()
+    # O pedido nao traz `municipio_id` (a busca e por fonte+fonte_ref), entao o
+    # recorte so pode sair das LINHAS que a consulta devolveu.
+    #
+    # ⚠️ Por que julgar depois em vez de filtrar a consulta: filtrar mudaria a
+    # RESPOSTA, e em modo aviso a resposta tem de ser byte a byte a de hoje —
+    # uma anotacao a menos aparecendo na tela e exatamente o apagao silencioso
+    # que este incremento existe para evitar. Julgando, em aviso vira linha na
+    # trilha e em bloqueio vira o 403 de sempre.
+    #
+    # `municipio_id` e a 2a coluna de `_SELECT`. O `is not None` protege de um
+    # dia a coluna deixar de ser NOT NULL: `authz.exigir_municipio(user, None)`
+    # levanta 403 nos DOIS modos (pedido malformado, ver services/authz.py) e
+    # isso seria um 403 NOVO em modo aviso.
+    for mid in sorted({r[1] for r in rows if r[1] is not None}):
+        authz.exigir_municipio(current, mid)
     return {"items": [_row_to_dict(r, with_anexos=True) for r in rows], "total": len(rows)}
 
 
@@ -205,7 +268,7 @@ class ContagensIn(BaseModel):
 async def contagens(
     body: ContagensIn,
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
     """Quantas anotacoes cada item tem — UMA consulta para a lista inteira.
 
@@ -216,7 +279,17 @@ async def contagens(
 
     Aqui e um GROUP BY, sem tocar na coluna `anexos`. Itens sem anotacao nao
     voltam na resposta; quem chama trata ausencia como zero.
+
+    GATE: so a tela. LIMITE DECLARADO — a resposta nao carrega `municipio_id`
+    (e um numero por `fonte_ref`), e por-lo la exigiria mexer no GROUP BY, ou
+    seja alterar o endpoint que este incremento so deveria proteger. Fica assim
+    de proposito: o que vaza sem o recorte de municipio e a EXISTENCIA de
+    anotacoes num item cujo numero quem pergunta ja conhece — nunca conteudo,
+    nunca anexo. Todo caminho que devolve conteudo (`/anotacoes`,
+    `/anotacoes/item`, `/anotacoes/{id}`, `/anexo/{idx}`) e recortado por
+    municipio.
     """
+    authz.exigir_tela(current, "gestao")
     if not body.refs:
         return {}
     rows = (await db.execute(text("""
@@ -231,8 +304,9 @@ async def contagens(
 async def detalhe(
     anot_id: int,
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
+    await _exigir_acesso(db, anot_id, current)
     row = (await db.execute(text(_SELECT + " WHERE id = :id"), {"id": anot_id})).first()
     if not row:
         raise HTTPException(404, "Anotacao nao encontrada")
@@ -246,6 +320,11 @@ async def criar(
     db: AsyncSession = Depends(get_db),
     user=Depends(get_current_user),
 ):
+    authz.exigir_tela(user, "gestao")
+    # Aqui o municipio vem no corpo e e OBRIGATORIO no modelo (`municipio_id:
+    # int`), entao nao ha o caso "ausente" que teria de ser desviado: pedido sem
+    # municipio nem chega neste ponto (422 do pydantic, como sempre foi).
+    authz.exigir_municipio(user, body.municipio_id)
     _validate_payload(body)
     anex_json = json.dumps([a.model_dump() for a in body.anexos], ensure_ascii=False)
     rid = (await db.execute(text("""
@@ -285,6 +364,7 @@ async def atualizar(
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
+    await _exigir_acesso(db, anot_id, current)
     _validate_payload(body)
     sets = []
     params: dict = {"id": anot_id}
@@ -336,6 +416,7 @@ async def remover(
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
+    await _exigir_acesso(db, anot_id, current)
     ctx = await _anotacao_contexto(db, anot_id)   # depois do DELETE nao ha contexto
     r = await db.execute(text("DELETE FROM gestao_anotacoes WHERE id = :id"), {"id": anot_id})
     await db.commit()
@@ -363,6 +444,10 @@ async def download_anexo(
     """Download de um anexo especifico (decodifica base64)."""
     from fastapi.responses import Response
     import base64
+    # O ARQUIVO em si sai por aqui (oficio, comprovante, foto), em base64 direto
+    # do banco. Era a porta mais aberta do modulo: qualquer conta logada baixava
+    # o anexo de qualquer anotacao de qualquer prefeitura.
+    await _exigir_acesso(db, anot_id, current)
     row = (await db.execute(text(
         "SELECT anexos, municipio_id, fonte, fonte_ref FROM gestao_anotacoes WHERE id = :id"
     ), {"id": anot_id})).first()

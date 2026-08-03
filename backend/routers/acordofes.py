@@ -11,6 +11,7 @@ from sqlalchemy import text
 from database import get_db
 from services.auth import get_current_user, ensure_municipio_access, ensure_tela
 from models.user import User
+from services import authz
 
 router = APIRouter(prefix="/api/acordofes", tags=["acordofes"])
 
@@ -69,8 +70,14 @@ async def buscar(
 
 
 @router.post("/refresh")
-async def refresh(_: User = Depends(get_current_user)):
+async def refresh(current: User = Depends(get_current_user)):
     """Dispara a ingestao do Acordo FES (espelho Excel do Painel)."""
+    # Antes bastava estar LOGADO. Baixa e reprocessa o Excel inteiro do Painel
+    # do Acordo FES (~1,4k credores) e reescreve `acordofes_credor` — carga
+    # pesada numa VPS burstable (~0,6 vCPU), disparavel por conta sem tela
+    # nenhuma. Mesma exigencia da leitura desta tela, e nada alem: a ingestao
+    # varre a planilha inteira do estado, nao um municipio.
+    authz.exigir_tela(current, "acordofes")
     from ingestion.acordofes_ingest import ingest
     import anyio
     n = await anyio.to_thread.run_sync(ingest)

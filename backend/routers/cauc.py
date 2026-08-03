@@ -12,6 +12,7 @@ from sqlalchemy import text
 from database import get_db
 from services.auth import get_current_user, ensure_municipio_access, ensure_tela
 from models.user import User
+from services import authz
 
 router = APIRouter(prefix="/api/cauc", tags=["cauc"])
 
@@ -86,9 +87,19 @@ async def fetch_cauc_situacao(db: AsyncSession, municipio_id: int) -> dict:
 
 @router.post("/refresh")
 async def refresh(
-    _: User = Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
     """Dispara a ingestao do CAUC manualmente (dados abertos do Tesouro)."""
+    # Antes bastava estar LOGADO. Isto nao e uma leitura: baixa o CSV do Tesouro
+    # e reescreve `cauc_situacao` do tenant inteiro, numa VPS burstable (~0,6
+    # vCPU) — qualquer conta sem uma unica tela podia derrubar o sistema para
+    # todo mundo apertando isto em sequencia.
+    #
+    # So a TELA, e nao municipio: a ingestao e do dataset inteiro do Tesouro e
+    # nao aceita recorte por municipio (ver ingestion/cauc_ingest.py), entao nao
+    # ha municipio a exigir — exigir um seria inventar um parametro que o
+    # endpoint nao tem.
+    authz.exigir_tela(current, "cauc")
     from ingestion.cauc_ingest import ingest
     import anyio
     n = await anyio.to_thread.run_sync(ingest)

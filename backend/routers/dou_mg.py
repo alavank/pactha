@@ -18,7 +18,9 @@ from typing import Optional
 import base64
 import httpx
 import logging
-from services.auth import get_current_user
+from services.auth import get_current_user, ensure_tela
+from models.user import User
+from services import authz
 
 router = APIRouter(prefix="/api/dou-mg", tags=["dou-mg"])
 logger = logging.getLogger("dou-mg")
@@ -65,9 +67,20 @@ async def buscar(
     edicao_extra: bool = False,
     pagina: int = Query(1, ge=1),
     tamanho: int = Query(20, ge=1, le=100),
-    _=Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
     """Busca em tempo real no Jornal Minas Gerais."""
+    # A tela `dou` existe no cadastro (services/telas_catalog.py) e no menu do
+    # frontend, mas NUNCA era conferida no servidor: conceder ou negar "Diario
+    # Oficial" a alguem nao mudava nada: o menu sumia e o endpoint continuava
+    # respondendo. Permissao que so esconde o botao nao e permissao.
+    #
+    # SO A TELA, sem municipio, e nao e omissao: o Jornal Minas Gerais e o
+    # diario do ESTADO e a busca e por texto livre num acervo publico — nao ha
+    # `municipio_id` no pedido nem recorte por municipio na resposta. O que se
+    # protege aqui e a porta: a plataforma faz a chamada, mantem o token e paga
+    # a saida.
+    authz.exigir_tela(current, "dou")
     if not data_final:
         from datetime import date
         data_final = date.today().isoformat()
@@ -146,10 +159,21 @@ def _extrair_pdf(raw: bytes) -> bytes:
 
 
 @router.get("/publicacao/{id_jornal}")
-def publicacao(id_jornal: int, download: bool = False, _=Depends(get_current_user)):
+def publicacao(id_jornal: int, download: bool = False,
+               current: User = Depends(get_current_user)):
     """Serve a PUBLICACAO (PDF) do Jornal MG pela propria plataforma.
     Busca a edicao (Jornal/ObterEdicaoPorId), extrai o PDF do PKCS#7 e devolve
     inline (visualizar) ou como anexo (baixar)."""
+    # Mesmo gate do `/buscar`, e aqui pesa mais: este endpoint BAIXA a edicao
+    # inteira (PDF de dezenas de MB) usando o token da plataforma. Sem checagem,
+    # qualquer sessao autenticada virava um proxy de download do Jornal MG.
+    #
+    # Endpoint SINCRONO (`def`, porque o httpx aqui e sincrono). `ensure_tela`
+    # tambem e sincrona, entao nada muda para ela; e o registro do modo aviso
+    # sabe rodar a partir da thread do pool (services/authz.py::_enviar guarda o
+    # event loop no contexto justamente para este caso).
+    authz.exigir_tela(current, "dou")
+
     def _fetch(tok: str):
         return httpx.get(
             f"{JMG_BASE}/api/v1/Jornal/ObterEdicaoPorId/{id_jornal}",

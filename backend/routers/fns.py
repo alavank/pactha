@@ -22,9 +22,20 @@ from database import get_db
 from services.auth import get_current_user, ensure_tela
 from models.user import User
 from services.crypto import decrypt
+# Trava de permissao em MODO AVISO — usada so em `/municipios`, onde o gate de
+# uma LISTAGEM e o filtro e nao o 403. Ver o comentario la.
+from services import authz
 
 router = APIRouter(prefix="/api/fns", tags=["fns"])
 logger = logging.getLogger("fns")
+
+# Teto de linhas de aviso por chamada de `/municipios`. Cada linha da trilha e
+# uma tarefa de fundo com SESSAO PROPRIA (services/authz.py): num tenant de
+# assessoria com dezenas de municipios, uma unica abertura da tela abriria
+# dezenas de conexoes de uma vez so para dizer a mesma coisa. Cinco exemplos ja
+# respondem "esta pessoa esta vendo municipio que nao e dela" — a lista completa
+# esta no cadastro do usuario, nao na trilha.
+_TETO_AVISO_MUNICIPIOS = 5
 
 FNS_BASE = "https://consultafns.saude.gov.br"
 
@@ -213,8 +224,14 @@ async def consultar_fns(
 
 
 @router.get("/anos")
-async def anos(db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+async def anos(db: AsyncSession = Depends(get_db),
+               current: User = Depends(get_current_user)):
     """Anos disponiveis no FNS."""
+    # So a tela: a resposta e a lista de exercicios que o portal federal aceita,
+    # igual para todo mundo — nao ha municipio no pedido nem na resposta.
+    # `/buscar` e `/listar-individuais`, que tem, ja passam pelo
+    # `_ensure_fns_municipio` (tela + escopo de municipio).
+    authz.exigir_tela(current, "fns")
     cookies = await _get_cookies(db)
     try:
         with httpx.Client(cookies=cookies, timeout=15, verify=False) as cli:
@@ -229,12 +246,46 @@ async def anos(db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
 
 
 @router.get("/municipios")
-async def municipios_pacta(db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+async def municipios_pacta(db: AsyncSession = Depends(get_db),
+                           current: User = Depends(get_current_user)):
     """Lista os municipios do AMBIENTE com codigo IBGE FNS
     (6 digitos = ibge_code sem o digito verificador) + UF, ordenados por nome."""
+    authz.exigir_tela(current, "fns")
     rows = (await db.execute(text(
         "SELECT id, nome, ibge_code, uf FROM municipios WHERE active = true "
         "AND ibge_code IS NOT NULL ORDER BY nome"))).fetchall()
+
+    # ESCOPO — a copia que esqueceu de filtrar.
+    #
+    # `GET /api/municipios` (routers/municipios.py) faz esta MESMA consulta e
+    # filtra por `allowed_municipio_ids`; esta aqui nunca filtrou. Resultado: a
+    # tela do FNS entregava a lista INTEIRA do cliente para quem enxerga um
+    # municipio so — e num tenant de assessoria isso e o nome de todas as
+    # prefeituras atendidas aparecendo para quem nao atende nenhuma.
+    #
+    # O GATE DE UMA LISTAGEM E O FILTRO, NAO O 403. Devolver 403 aqui derrubaria
+    # a tela de quem tem escopo legitimo — o oposto do que este incremento quer.
+    # Por isso `authz.negar` nao decide o corte: ele so escreve a linha da
+    # trilha, e so no modo em que nao levanta.
+    allowed = getattr(current, "allowed_municipio_ids", None)
+    if allowed is not None:
+        fora = [r for r in rows if r[0] not in allowed]
+        if fora:
+            if authz.modo() == authz.MODO_BLOQUEIO:
+                rows = [r for r in rows if r[0] in allowed]
+            else:
+                # MODO AVISO: a resposta sai IDENTICA a de hoje (lista inteira) e
+                # o vazamento vira linha na trilha. Uma linha por municipio, e
+                # nao uma so, porque "quem viu o que" e a pergunta da semana de
+                # observacao; o dedupe do authz segura a repeticao dentro da
+                # janela e o teto acima segura a rajada da primeira chamada.
+                for r in fora[:_TETO_AVISO_MUNICIPIOS]:
+                    authz.negar(
+                        current, tipo="municipio", exigido=r[0], possui=allowed,
+                        # Nunca chega ao cliente: em modo aviso `negar` so
+                        # registra. Fica igual a das outras negativas para o dia
+                        # em que alguem precise dela.
+                        mensagem="Voce nao tem acesso a este municipio")
     return [{"id": i, "nome": n, "cod_ibge": str(ib)[:6], "uf": uf} for i, n, ib, uf in rows]
 
 
@@ -242,7 +293,7 @@ async def municipios_pacta(db: AsyncSession = Depends(get_db), _=Depends(get_cur
 async def detalhe_proposta(
     nu_proposta: str,
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
     """Detalhe completo de uma proposta individual.
 
@@ -250,6 +301,21 @@ async def detalhe_proposta(
       GET /recursos/proposta/obter-proposta?nuProposta=XXX
       GET /recursos/proposta/obter-proposta-etapa  (mapa de 12 etapas)
     """
+    # SO A TELA, e o que falta esta declarado de proposito.
+    #
+    # A proposta nao e dado do tenant: ela mora no portal federal (publico) e o
+    # unico sinal de municipio na resposta e `noMunicipio`, texto livre vindo de
+    # la. Casar esse texto com os municipios do escopo — que e o que
+    # `_ensure_fns_municipio` faz por NOME — significaria negar por divergencia
+    # de acentuacao ("MONTE SIAO" x "MONTE SIÃO"): um 403 novo, para usuario
+    # legitimo, no dia em que o bloqueio for ligado. E o apagao de segunda-feira
+    # que este incremento existe para evitar, so que atrasado uma semana.
+    #
+    # Fica registrado como buraco conhecido: quem tem a tela `fns` consegue ler
+    # o detalhe de qualquer numero de proposta. Fecha-lo direito pede o municipio
+    # do proprio pedido (o frontend ja sabe qual e) e uma comparacao por codigo
+    # IBGE, nao por nome — mudanca de contrato do endpoint, nao acrescimo de gate.
+    authz.exigir_tela(current, "fns")
     cookies = await _get_cookies(db)
     try:
         with httpx.Client(cookies=cookies, timeout=20, verify=False) as cli:
