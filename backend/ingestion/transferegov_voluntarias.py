@@ -559,6 +559,13 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
                 _enr += 1
         except Exception as e:
             logger.warning(f"    detalhe {prop['numero_proposta']}: {str(e)[:80]}")
+        # Persiste ESTA proposta ja — nao espera o fim do municipio. Assim o
+        # progresso parcial sobrevive a um restart do container no meio da coleta:
+        # municipios grandes fecham em pedacos, em vez de reiniciar do zero toda vez.
+        try:
+            _upsert(mun["id"], [prop])
+        except Exception as e:
+            logger.warning(f"    upsert incremental {prop['numero_proposta']}: {str(e)[:80]}")
     logger.info(f"  {mun['nome']}: enrich concluido — {_enr}/{_tot} propostas enriquecidas")
     return propostas
 
