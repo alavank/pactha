@@ -3,6 +3,27 @@
 CRUD de documentos preenchidos na plataforma + exportação DOCX/PDF.
 O formulário é dirigido pelo schema (services/documentos_schema.py), então o
 frontend renderiza dinamicamente e os renders (docx/pdf) iteram o mesmo schema.
+
+PERMISSÃO (o que este módulo exige, e por quê são DUAS coisas)
+--------------------------------------------------------------
+Até agora só `GET /api/documentos` (a lista) checava alguma coisa: criar, ler,
+editar, apagar e EXPORTAR um documento bastava estar logado. Um usuário criado
+com zero telas e zero municípios apagava o documento de qualquer prefeitura
+chamando a API direto.
+
+Cada endpoint passa a exigir os dois recortes, que respondem a perguntas
+diferentes:
+
+  `authz.exigir_tela(user, "documentos")`  -> a pessoa trabalha com este MÓDULO?
+  `authz.ensure_dono(...)`           -> ESTE documento é de um município que
+                                        ela alcança? Ter a tela não diz nada
+                                        sobre a linha: sem a segunda checagem,
+                                        quem tem "documentos" tem os documentos
+                                        do tenant inteiro.
+
+⚠️ NADA DISSO BARRA HOJE. `AUTHZ_MODO=aviso` (o default) apenas REGISTRA "eu
+teria negado isto" na trilha e deixa passar — o comportamento é idêntico ao de
+antes. Só `AUTHZ_MODO=bloqueio` levanta 403. Ver services/authz.py.
 """
 from __future__ import annotations
 import io
@@ -19,6 +40,7 @@ from database import get_db
 from models import Municipio
 from services.auth import get_current_user, ensure_municipio_access, ensure_tela
 from models.user import User
+from services import authz
 from services.audit import registrar
 from services.documentos_schema import get_schema, listar_tipos
 from services.documento_docx import gerar_docx
@@ -39,6 +61,22 @@ async def _doc_contexto(db: AsyncSession, doc_id: int) -> dict:
     if not r:
         return {"municipio_id": None, "tipo": None, "titulo": None, "status": None}
     return {"municipio_id": r[0], "tipo": r[1], "titulo": r[2], "status": r[3]}
+
+
+async def _exigir_acesso(db: AsyncSession, doc_id: int, user) -> None:
+    """Os dois recortes de todo endpoint que fala de UM documento.
+
+    Num lugar só porque são quatro (ler, editar, apagar, exportar) e porque o
+    nome da tabela vira literal de SQL lá dentro: uma cópia divergente é uma
+    porta que continua aberta sem ninguém notar.
+
+    Em `AUTHZ_MODO=aviso` nenhuma das duas levanta — registram e voltam. E a
+    ordem importa pouco na prática, mas é deliberada: a tela é a pergunta mais
+    barata (não toca o banco) e a mais provável de faltar."""
+    authz.exigir_tela(user, "documentos")
+    # Devolve o município da linha; aqui não usamos o retorno — quem decide o
+    # 404 continua sendo o endpoint, com a consulta dele.
+    await authz.ensure_dono(db, "documentos_gerados", "id", doc_id, user)
 
 
 class DocCreate(BaseModel):
@@ -66,13 +104,19 @@ def _row_to_dict(r) -> dict:
 
 
 @router.get("/schemas")
-async def schemas(_=Depends(get_current_user)):
+async def schemas(current: User = Depends(get_current_user)):
     """Tipos de documento disponíveis (p/ o menu 'Novo documento')."""
+    # Catálogo estático, sem dado de prefeitura nenhuma — mas é a porta do menu
+    # "Novo documento". Só a tela: não há município a julgar aqui.
+    authz.exigir_tela(current, "documentos")
     return {"items": listar_tipos()}
 
 
 @router.get("/schema/{tipo}")
-async def schema_de(tipo: str, _=Depends(get_current_user)):
+async def schema_de(tipo: str, current: User = Depends(get_current_user)):
+    # `tipo` é chave de um dicionário em código (services/documentos_schema.py),
+    # não id de linha: não há dono a checar, só a tela do módulo.
+    authz.exigir_tela(current, "documentos")
     s = get_schema(tipo)
     if not s:
         raise HTTPException(404, f"Tipo de documento desconhecido: {tipo}")
@@ -109,6 +153,18 @@ async def criar(
     db: AsyncSession = Depends(get_db),
     user=Depends(get_current_user),
 ):
+    authz.exigir_tela(user, "documentos")
+    # ⚠️ SÓ julga o município quando HÁ município no pedido, e a guarda não é
+    # zelo: `documentos_gerados.municipio_id` é NULL-able e o editor manda
+    # `municipio_id: null` quando nenhuma prefeitura está selecionada
+    # (frontend .../dashboard/documentos/editor/page.tsx). Município ausente é
+    # PEDIDO MALFORMADO para `ensure_municipio_access`, que o nega nos DOIS
+    # modos (ver services/authz.py) — chamar sem esta guarda criaria um 403 NOVO
+    # já em modo aviso, que é o único defeito que este incremento não pode ter.
+    # O documento órfão que nasce daí não fica invisível: qualquer endpoint que
+    # o abra depois registra `authz.sem_dono`.
+    if body.municipio_id is not None:
+        authz.exigir_municipio(user, body.municipio_id)
     if not get_schema(body.tipo):
         raise HTTPException(400, f"Tipo de documento desconhecido: {body.tipo}")
     titulo = body.titulo or (body.dados or {}).get("convenio_proposta") or get_schema(body.tipo)["titulo"]
@@ -136,7 +192,9 @@ async def criar(
 
 
 @router.get("/{doc_id}")
-async def detalhe(doc_id: int, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+async def detalhe(doc_id: int, db: AsyncSession = Depends(get_db),
+                  current: User = Depends(get_current_user)):
+    await _exigir_acesso(db, doc_id, current)
     r = (await db.execute(text(
         "SELECT id, municipio_id, tipo, titulo, dados, status, criado_por, created_at, updated_at "
         "FROM documentos_gerados WHERE id = :id"
@@ -150,6 +208,7 @@ async def detalhe(doc_id: int, db: AsyncSession = Depends(get_db), _=Depends(get
 async def atualizar(doc_id: int, body: DocUpdate, request: Request,
                     db: AsyncSession = Depends(get_db),
                     current: User = Depends(get_current_user)):
+    await _exigir_acesso(db, doc_id, current)
     sets, params = [], {"id": doc_id}
     if body.titulo is not None:
         sets.append("titulo = :tit"); params["tit"] = body.titulo
@@ -187,6 +246,7 @@ async def atualizar(doc_id: int, body: DocUpdate, request: Request,
 async def remover(doc_id: int, request: Request,
                   db: AsyncSession = Depends(get_db),
                   current: User = Depends(get_current_user)):
+    await _exigir_acesso(db, doc_id, current)
     ctx = await _doc_contexto(db, doc_id)   # depois do DELETE nao ha mais rotulo
     res = await db.execute(text("DELETE FROM documentos_gerados WHERE id = :id"), {"id": doc_id})
     await db.commit()
@@ -209,6 +269,10 @@ async def exportar(
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
+    # A exportação é a porta por onde o documento SAI da plataforma (protocolo,
+    # e-mail, órgão). Mesmo gate das outras: ler o Word de outra prefeitura não
+    # é menos grave por ser leitura.
+    await _exigir_acesso(db, doc_id, current)
     r = (await db.execute(text(
         "SELECT id, municipio_id, tipo, titulo, dados FROM documentos_gerados WHERE id = :id"
     ), {"id": doc_id})).first()

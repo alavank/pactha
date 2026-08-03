@@ -19,6 +19,7 @@ from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, KeepTogether
+from services import authz
 
 router = APIRouter(prefix="/api/export-pdf", tags=["export-pdf"])
 
@@ -69,6 +70,37 @@ async def _registrar_export(
             "filtros": {k: v for k, v in (filtros or {}).items() if v not in (None, "", [])} or None,
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# PORTA DE TELA
+#
+# Este router e uma SEGUNDA PORTA para dado que ja tem dono: cada PDF daqui e o
+# conteudo de uma tela do sistema, so que em arquivo. Ate agora eles checavam o
+# MUNICIPIO e mais nada — entao tirar a tela "SIGCON (Estaduais)" de alguem na
+# tela de Usuarios nao impedia o relatorio de convenios sair inteiro por
+# `/api/export-pdf/convenios`. Permissao que vale numa porta e nao vale na outra
+# nao e permissao: e a aparencia de uma.
+#
+# O par (endpoint -> tela) e o MESMO do router que serve a tela, nunca uma chave
+# nova. Quem ja podia VER e quem podia BAIXAR sao a mesma pessoa; inventar aqui
+# uma chave propria criaria uma permissao que nenhum administrador concedeu e
+# tiraria o PDF de quem sempre o teve. Por isso `/voluntarias` e `/plano-acao`
+# pedem "transferegov" (as duas telas moram em routers/transferegov.py) e nao
+# chaves com o nome da rota.
+#
+# ⚠️ HOJE ISTO NAO BARRA NINGUEM. Com AUTHZ_MODO=aviso (o default) `ensure_tela`
+# apenas registra na trilha "eu teria negado isto, para este usuario, neste
+# endpoint" e deixa passar — ver `services/authz.py`. O comportamento de todos
+# os endpoints abaixo continua identico ao de ontem, inclusive o arquivo gerado.
+# Quem fecha a porta e `AUTHZ_MODO=bloqueio`, depois da semana de observacao em
+# que o dono corrige a permissao de quem precisa.
+#
+# A ordem e `ensure_municipio_access` e so depois `ensure_tela`, igual ao resto
+# do repo (convenios.py, emendas_estaduais.py, transferegov.py): assim, no dia
+# do bloqueio, a mensagem que sai daqui e a mesma que a tela ja devolvia aquele
+# mesmo usuario — e nao duas explicacoes diferentes para o mesmo impedimento.
+# ---------------------------------------------------------------------------
 
 
 def _br(v) -> str:
@@ -132,6 +164,7 @@ async def export_convenios_pdf(
     current: User = Depends(get_current_user),
 ):
     ensure_municipio_access(current, municipio_id)
+    authz.exigir_tela(current, "convenios")
     mun = (await db.execute(select(Municipio).where(Municipio.id == municipio_id))).scalar_one_or_none()
     if not mun:
         raise HTTPException(404, "Municipio nao encontrado")
@@ -192,6 +225,11 @@ async def export_voluntarias_pdf(
     """PDF dos instrumentos FEDERAIS (TransfereGov) com os MESMOS filtros da tela —
     relatorio personalizado da selecao (parlamentar, vigencia, situacao, etc.)."""
     ensure_municipio_access(current, municipio_id)
+    # Mesma tela da pagina que oferece o botao (dashboard/transferegov* ->
+    # "transferegov"). O `_voluntarias` reusado abaixo tambem chama `ensure_tela`,
+    # mas com o `current` que RECEBE — e ele recebe `_=None`, nao o usuario. A
+    # unica checagem de tela que realmente corre neste caminho e esta.
+    authz.exigir_tela(current, "transferegov")
     mun = (await db.execute(select(Municipio).where(Municipio.id == municipio_id))).scalar_one_or_none()
     if not mun:
         raise HTTPException(404, "Municipio nao encontrado")
@@ -273,6 +311,10 @@ async def export_plano_acao_pdf(
     """PDF dos Planos de Acao (Transferencia Especial / Pix Parlamentar) com os
     MESMOS filtros da tela Especiais."""
     ensure_municipio_access(current, municipio_id)
+    # "Especiais" e uma aba de TransfereGov, nao um modulo proprio: a tela que o
+    # administrador concede na tela de Usuarios e "transferegov" (ver
+    # routers/transferegov.py::buscar, que serve esta mesma lista).
+    authz.exigir_tela(current, "transferegov")
     mun = (await db.execute(select(Municipio).where(Municipio.id == municipio_id))).scalar_one_or_none()
     if not mun:
         raise HTTPException(404, "Municipio nao encontrado")
@@ -330,6 +372,7 @@ async def export_emendas_pdf(
     current: User = Depends(get_current_user),
 ):
     ensure_municipio_access(current, municipio_id)
+    authz.exigir_tela(current, "emendas")
     mun = (await db.execute(select(Municipio).where(Municipio.id == municipio_id))).scalar_one_or_none()
     if not mun:
         raise HTTPException(404, "Municipio nao encontrado")
@@ -378,6 +421,11 @@ async def export_dou_pdf(
 ):
     """DOU eh real-time. Frontend envia os titulos/edicoes ja filtrados via query."""
     ensure_municipio_access(current, municipio_id)
+    # `routers/dou_mg.py` ainda nao checa tela nenhuma, entao esta e a PRIMEIRA
+    # trava da chave "dou" no sistema. Ela fica de pe sozinha: quem so tem o link
+    # da exportacao nao passa a poder baixar o Diario porque a tela vizinha esta
+    # aberta — o buraco de la vira linha na trilha quando alguem o fechar.
+    authz.exigir_tela(current, "dou")
     rows = []
     for i, (titulo, edicao) in enumerate(zip(titulos, edicoes)):
         rows.append([
@@ -448,11 +496,24 @@ async def export_parlamentares_pdf(
     """PDF da tela Parlamentares — uma secao por parlamentar (respeita a busca
     `q`, o ano e o filtro de municipio), com TODOS os lancamentos: SIGCON-MG
     (estadual), TransfereGov/SICONV (federal) e Emendas estaduais."""
+    # Unico endpoint do router que ja checava a tela — nada a acrescentar aqui.
+    # A ordem invertida (tela antes de municipio) fica como esta pelo mesmo
+    # motivo de `/ai-relatorio`: `municipio_id` e opcional, e um nao-admin que
+    # peca sem municipio ja leva hoje o 403 "Selecione um municipio permitido".
     ensure_tela(current, "parlamentares")
     ensure_municipio_access(current, municipio_id)
 
     from routers.parlamentares import listar as _listar, detalhe as _detalhe
-    lista = await _listar(municipio_id=municipio_id, q=q, ano=ano, db=db, current=current)
+    # ⚠️ `anos=None` EXPLICITO. `listar`/`detalhe` sao endpoints do FastAPI e o
+    # default do parametro e um objeto `Query(None)`, nao `None` — quem resolve
+    # esse default e o framework, e aqui a chamada e DIRETA (funcao a funcao).
+    # Omitir o argumento faz o `anos or []` de la devolver o proprio `Query`, e a
+    # soma seguinte estoura com `TypeError: unsupported operand type(s) for +:
+    # 'Query' and 'list'` — 500 em TODA exportacao de parlamentares, para quem
+    # tem a tela inclusive. Ver `routers/parlamentares.py::listar` (linha do
+    # `anos_list((anos or []) + ...)`).
+    lista = await _listar(municipio_id=municipio_id, q=q, ano=ano, anos=None,
+                          db=db, current=current)
     items = lista.get("items", [])
 
     styles = getSampleStyleSheet()
@@ -483,7 +544,8 @@ async def export_parlamentares_pdf(
     for p in items:
         try:
             det = await _detalhe(nome_normalizado=p["nome_display"],
-                                 municipio_id=municipio_id, ano=ano, db=db, current=current)
+                                 municipio_id=municipio_id, ano=ano, anos=None,
+                                 db=db, current=current)  # `anos=None`: ver acima
         except HTTPException:
             det = {"sigcon": [], "voluntarias": [], "emendas": [], "plano_acao": [], "pac": [], "fns": []}
 
@@ -721,6 +783,14 @@ async def export_ai_relatorio(
     cabecalho institucional com municipio e data de emissao, o conteudo como
     corpo, e uma secao de PROCEDENCIA com as fontes que a IA realmente
     consultou. Body: {assunto, conteudo, municipio_id?, tools?: [nomes]}."""
+    # Aqui a tela vem ANTES do municipio, ao contrario do resto do router, e nao
+    # e descuido: `municipio_id` e OPCIONAL neste corpo, e chamar
+    # `authz.exigir_municipio(current, None)` para um nao-admin levanta 403
+    # ("Selecione um municipio permitido") nos DOIS modos — o que quebraria hoje
+    # todo relatorio de IA pedido sem municipio. Entao a checagem de municipio
+    # continua exatamente onde estava (so quando ha `mid`), e a de tela, que em
+    # modo aviso nunca levanta, entra no topo.
+    authz.exigir_tela(current, "ai")
     conteudo = (payload.get("conteudo") or "").strip()
     if not conteudo:
         raise HTTPException(400, "conteudo vazio")
@@ -817,6 +887,12 @@ async def export_ai_pdf(
     current: User = Depends(get_current_user),
 ):
     """Exporta uma resposta da IA PACTHA (markdown) em PDF. Body: {titulo?, pergunta?, conteudo}."""
+    # Endpoint LEGADO (o frontend hoje chama `/ai-relatorio`) e o unico deste
+    # router que nao checava NADA alem de estar logado: sem municipio, porque nao
+    # sabe de qual municipio a conversa tratava, e sem tela. Rota esquecida que
+    # continua registrada e um caminho aberto — a mesma chave da tela de IA vale
+    # aqui.
+    authz.exigir_tela(current, "ai")
     conteudo = (payload.get("conteudo") or "").strip()
     if not conteudo:
         raise HTTPException(400, "conteudo vazio")

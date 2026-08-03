@@ -12,6 +12,9 @@ from models import ConvenioEstadual
 from schemas.convenio import ConvenioResponse, ConvenioListResponse, ConvenioStats, AlertaVigencia
 from services.auth import get_current_user, ensure_municipio_access, ensure_tela
 from services.audit import registrar
+# Trava de permissao em MODO AVISO. `ensure_dono` responde a pergunta que
+# `ensure_tela` nao responde: "este id e de um municipio que a pessoa enxerga?".
+from services import authz
 from services.bi import anos_list
 from models.user import User
 import math
@@ -567,9 +570,25 @@ def _build_workflow_state(situacao: str | None) -> dict:
 async def get_convenio_estadual_detail(
     conv_id: int,
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
     """Detalhes ricos de um convenio estadual: campos + workflow SIGCON + raw_data util."""
+    # Este endpoint nao checava NADA alem de estar logado, enquanto a LISTA que
+    # leva ate ele (`GET /api/convenios`) sempre checou as duas coisas. Quem
+    # soubesse o id — e id e um inteiro sequencial — lia o convenio inteiro de
+    # qualquer municipio do tenant: objeto, valores, dados bancarios (banco,
+    # agencia, conta) e o `raw_data` cru do SIGCON.
+    #
+    # SAO DOIS GATES e o segundo nao e repeticao do primeiro. `ensure_tela` diz
+    # que a pessoa pode mexer com SIGCON; `ensure_dono` diz que ESTE convenio
+    # pertence a um municipio que ela enxerga. Sem o segundo, quem tem a tela
+    # tem a tela do tenant INTEIRO — e "detalhe por id" e justamente onde isso
+    # aparece, porque a listagem filtra por municipio e o detalhe nao filtrava
+    # nada.
+    authz.exigir_tela(current, "convenios")
+    # Custa um SELECT de uma coluna so. Registro inexistente devolve None e NAO
+    # vira 403: quem responde por "nao achei" continua sendo o 404 abaixo.
+    await authz.ensure_dono(db, "convenios_estadual", "id", conv_id, current)
     q = select(ConvenioEstadual).where(ConvenioEstadual.id == conv_id)
     c = (await db.execute(q)).scalar_one_or_none()
     if not c:
@@ -659,6 +678,15 @@ async def refresh_sigcon(
     Leva ~1-2min ate o resultado aparecer no banco. Frontend deve fazer polling
     em /municipios/{id}/summary apos o trigger.
     """
+    # Coleta pesada disparada por quem quiser: o botao vive na tela do SIGCON,
+    # mas o endpoint aceitava qualquer sessao autenticada. Uma coleta muda
+    # situacao e valores de dezenas de convenios de uma vez e ocupa o worker.
+    #
+    # SO A TELA, sem municipio, e isso e deliberado: o job enfileirado nao tem
+    # recorte de municipio nenhum (`INSERT INTO scraper_jobs (tipo, status)`) —
+    # ele recoleta o tenant inteiro. Inventar um `municipio_id` aqui para poder
+    # checa-lo seria mudar a logica do endpoint, e nao acrescentar gate.
+    authz.exigir_tela(current, "convenios")
     row = (await db.execute(text(
         "INSERT INTO scraper_jobs (tipo, status) "
         "SELECT 'sigcon', 'pending' "

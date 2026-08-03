@@ -31,7 +31,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config import get_settings
 from database import get_db
 from services.audit import registrar
-from services.auth import get_current_user, hash_password, create_kiosk_token, ensure_tela
+from services.auth import (
+    get_current_user, hash_password, create_kiosk_token, ensure_tela, ehQuiosque,
+)
 from services.bi import (
     resolve_scope, scope_signature, bi_kpis, bi_cauc_rollup, bi_saude_rollup,
     anos_list, anos_signature,
@@ -46,6 +48,7 @@ from routers.cauc import fetch_cauc_situacao
 from routers.parlamentares import aggregate_parlamentares
 from routers.convenios import query_alertas_vigencia, query_prestacao_contas
 from routers.status_changes import listar_core
+from services import authz
 
 router = APIRouter(prefix="/api/bi", tags=["bi"])
 
@@ -53,6 +56,50 @@ router = APIRouter(prefix="/api/bi", tags=["bi"])
 # guarda o escopo do Modo Tela como texto porque quem o interpreta e a tela;
 # aqui ele so precisa ir e voltar sem ser reinterpretado.
 CONSOLIDADO = "__all__"
+
+
+# --------------------------------------------------------------------------
+# Gate de TELA do Painel — o que faltava
+# --------------------------------------------------------------------------
+def _gate_bi(current: User) -> None:
+    """Exige a tela `bi` para ler o Painel.
+
+    Ate aqui NENHUM endpoint de /api/bi/* checava tela: o unico gate era o
+    escopo de MUNICIPIO (`resolve_scope`). Quem tivesse qualquer municipio lia o
+    Painel inteiro — valores captados, ranking de parlamentares, prestacoes de
+    contas vencidas, obras da saude, regularidade CAUC/CAGEC — sem ter a
+    permissao que existe exatamente para isso. Permissao de municipio responde
+    "de QUEM e o dado"; nao responde "esta pessoa pode ver o PAINEL".
+
+    ⚠️⚠️ EM MODO BLOQUEIO ISTO ALCANCA A HOME DO SISTEMA. Com `BI_MODULE`
+    ligado, `/dashboard` E o Painel (`frontend/src/app/dashboard/page.tsx`) —
+    nao existem mais duas telas para o mesmo publico. E a equivalencia so vale
+    numa direcao: `allowedTelasOf` (frontend/src/lib/telas.ts) faz `bi` implicar
+    `dashboard`, mas quem tem so `dashboard` NAO ganha `bi`. Entao, na semana de
+    observacao, todo usuario que hoje abre a home sem a tela `bi` vira linha
+    `authz.negaria` — e isso e o censo que o dono precisa: antes de ligar
+    `AUTHZ_MODO=bloqueio` ele tem de conceder `bi` a quem realmente deve abrir o
+    Painel, senao a home morre para essa gente na segunda de manha.
+    Deliberadamente NAO ha migration concedendo `bi` em massa a quem tem
+    `dashboard`: o backfill apagaria justamente o achado que a semana existe
+    para produzir.
+
+    ⚠️ QUIOSQUE PASSA SEM TELA, E DE PROPOSITO. A TV do gabinete e o celular do
+    gestor entram por um usuario `viewer` SINTETICO (`users.kiosk = true`),
+    criado por `_ensure_kiosk_user` — nao por um administrador. Ele ja e barrado
+    por uma regra MAIS ESTREITA que a tela: `KIOSK_GET_PERMITIDOS`, em
+    `services/auth.py`, e uma allowlist por IGUALDADE de caminho aplicada dentro
+    do proprio `get_current_user`; a conta de quiosque so alcanca os poucos GET
+    que a TV realmente faz, e mais nada (nem `/narrativa`, que gasta API paga).
+    Exigir tela dele nao acrescentaria seguranca nenhuma e criaria dependencia
+    fragil: a linha em `user_telas` do quiosque e sintetica, e no dia em que ela
+    faltar — conta emitida por outro caminho, limpeza de permissoes, restore
+    parcial — o modo bloqueio apaga a TV do gabinete EM SILENCIO, porque o
+    slideshow engole o erro no `.catch()` e a tela so para de atualizar.
+    """
+    if ehQuiosque(current):
+        return
+    authz.exigir_tela(current, "bi")
 
 
 def _periodo(ano: Optional[int], anos: Optional[list[int]]) -> Optional[list[int]]:
@@ -198,6 +245,11 @@ async def overview(
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
+    # ANTES do resolve_scope: em modo aviso a ordem e indiferente (nada levanta),
+    # mas em bloqueio a primeira negativa e a que vira resposta — e "voce nao tem
+    # acesso a esta tela" diz ao gestor o que corrigir, enquanto "voce nao tem
+    # municipios no escopo" o manda procurar no lugar errado.
+    _gate_bi(current)
     ids, cons = await resolve_scope(db, current, municipio_id)
     single = (not cons) and len(ids) == 1
     ano = _periodo(ano, anos)
@@ -237,6 +289,7 @@ async def semaforo(
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
+    _gate_bi(current)
     ids, cons = await resolve_scope(db, current, municipio_id)
     if (not cons) and len(ids) == 1:
         return await fetch_cauc_situacao(db, ids[0])
@@ -252,6 +305,7 @@ async def parlamentares(
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
+    _gate_bi(current)
     ids, cons = await resolve_scope(db, current, municipio_id)
     periodo = _periodo(ano, anos)
     if (not cons) and len(ids) == 1:
@@ -267,6 +321,7 @@ async def alertas(
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
+    _gate_bi(current)
     ids, cons = await resolve_scope(db, current, municipio_id)
     periodo = _periodo(ano, anos)
     if (not cons) and len(ids) == 1:
@@ -327,6 +382,7 @@ async def aba_estaduais(
     current: User = Depends(get_current_user),
 ):
     """Aba 'Verbas Estaduais': convenios SIGCON-MG + emendas estaduais."""
+    _gate_bi(current)
     ids, cons = await resolve_scope(db, current, municipio_id)
     periodo = _periodo(ano, anos)
     key = f"est|{scope_signature(ids, cons)}|a={anos_signature(periodo)}"
@@ -342,6 +398,7 @@ async def aba_transferegov(
     current: User = Depends(get_current_user),
 ):
     """Aba 'TransfereGov': voluntarias + Novo PAC + o que esta em execucao."""
+    _gate_bi(current)
     ids, cons = await resolve_scope(db, current, municipio_id)
     periodo = _periodo(ano, anos)
     key = f"tg|{scope_signature(ids, cons)}|a={anos_signature(periodo)}"
@@ -359,6 +416,7 @@ async def aba_parlamentares_detalhe(
     """Aba 'Parlamentares': cada parlamentar com as emendas que mandou —
     destinacao (pra quem) e finalidade (pra que), que e o detalhe que o
     prefeito cobra na tela."""
+    _gate_bi(current)
     ids, cons = await resolve_scope(db, current, municipio_id)
     periodo = _periodo(ano, anos)
     key = f"parld|{scope_signature(ids, cons)}|a={anos_signature(periodo)}"
@@ -381,6 +439,7 @@ async def aba_sismob(
     chave de cache tambem nao leva `a=` — se levasse, cada periodo clicado
     criaria uma entrada nova com resultado identico.
     """
+    _gate_bi(current)
     ids, cons = await resolve_scope(db, current, municipio_id)
     key = f"sismob|{scope_signature(ids, cons)}"
     return await _aba_cacheada(key, lambda: bi_sismob(db, ids, None))
@@ -394,6 +453,7 @@ async def aba_documentos(
 ):
     """Aba 'Documentacao': CAUC (federal, coletado) e CAGEC (estadual, ainda
     nao integrado — devolve disponivel=false em vez de fingir que esta em dia)."""
+    _gate_bi(current)
     ids, cons = await resolve_scope(db, current, municipio_id)
     key = f"doc|{scope_signature(ids, cons)}"
     return await _aba_cacheada(key, lambda: bi_documentos(db, ids))
@@ -425,6 +485,10 @@ async def aba_fns(
     """Aba 'Fundo Nacional de Saude'. SEM filtro de ano, abre no ano corrente
     ja consultado (o gestor nao deveria ter que clicar em 'consultar' para ver
     o ano em que esta). Aceita varios anos."""
+    # Esta aba consulta o portal do FNS AO VIVO, um municipio-ano por vez: sem
+    # gate, quem nao tem o Painel dispara trabalho externo pesado em nome do
+    # cliente.
+    _gate_bi(current)
     ids, cons = await resolve_scope(db, current, municipio_id)
     periodo = _periodo(ano, anos) or [_ano_corrente()]
 
@@ -491,6 +555,7 @@ async def timeline(
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
+    _gate_bi(current)
     ids, _cons = await resolve_scope(db, current, municipio_id)
     return await listar_core(db, ids, days, limit)
 
@@ -567,6 +632,10 @@ async def narrativa(
 ):
     """Resumo executivo em linguagem leiga (IA/Haiku) com cache por input_hash.
     Sem ANTHROPIC_API_KEY -> disponivel=false e o frontend usa texto por template."""
+    # Chama a Anthropic quando o cache erra: sem gate, quem nao tem o Painel
+    # gasta a conta paga do cliente (e por isso `/narrativa` tambem ficou FORA
+    # da allowlist de quiosque).
+    _gate_bi(current)
     ids, cons = await resolve_scope(db, current, municipio_id)
     single = (not cons) and len(ids) == 1
     periodo = _periodo(ano, anos)
@@ -891,6 +960,10 @@ async def insights(
     """Mensagens curtas da IA sobre a aba aberta (slideshow do cabecalho)."""
     if aba not in ABAS_INSIGHT:
         raise HTTPException(status_code=400, detail=f"aba invalida: {aba}")
+    # Depois do 400 de proposito: `aba` invalida e pedido malformado, nao
+    # permissao que falta, e a lista de abas ja e publica no frontend — trocar a
+    # ordem mudaria a resposta de hoje sem esconder nada de ninguem.
+    _gate_bi(current)
     ids, cons = await resolve_scope(db, current, municipio_id)
     periodo = _periodo(ano, anos)
 
@@ -1085,7 +1158,14 @@ async def get_tela_filtros(
     current: User = Depends(get_current_user),
 ):
     """Filtro corrente do PROPRIO usuario. A janela do Modo Tela le daqui quando
-    esta noutro navegador/aparelho, onde o BroadcastChannel nao alcanca."""
+    esta noutro navegador/aparelho, onde o BroadcastChannel nao alcanca.
+
+    SEM `_gate_bi`, de proposito: auto-escopado por `user_id` — le e escreve so
+    a PROPRIA linha, e para quem nao tem o Painel o retorno e o default vazio.
+    Alem disso este caminho esta em `KIOSK_GET_PERMITIDOS` (os links legados
+    `?kiosk=` dependem dele) e o Painel chama o PUT a cada mudanca de filtro,
+    para TODO usuario — exigir `bi_tela` aqui encheria a semana de observacao de
+    linhas sobre um fato que nao e o buraco que estamos fechando."""
     row = (await db.execute(text(
         "SELECT scope, anos, aba FROM bi_tela_filtros WHERE user_id = :u"
     ), {"u": current.id})).first()
@@ -1123,7 +1203,12 @@ async def criar_tela_link(
     current: User = Depends(get_current_user),
 ):
     """Gera um link publico CURTO para a TV. Permissao propria (`bi_link`): quem
-    pode ver o Modo Tela nao necessariamente pode publicar dado para fora."""
+    pode ver o Modo Tela nao necessariamente pode publicar dado para fora.
+
+    NAO leva `_gate_bi`: `bi_link` ja e a permissao mais forte do Painel — quem
+    a tem publica o painel para fora da prefeitura, e ela nunca foi concedida em
+    massa (ver `migrations/add_bi_tela.sql`). Somar `bi` aqui seria duplicar
+    gate no mesmo endpoint."""
     ensure_tela(current, "bi_link")
     kind = "mobile" if (body.kind or "tela").lower() == "mobile" else "tela"
     # Expiracao calculada em Python de proposito: `make_interval(days => :d)`
@@ -1164,7 +1249,10 @@ async def listar_tela_links(
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
-    """Links do PROPRIO usuario — ninguem lista nem revoga link alheio."""
+    """Links do PROPRIO usuario — ninguem lista nem revoga link alheio.
+
+    SEM `_gate_bi`: auto-escopado por `owner_id` na propria consulta. Quem nao
+    tem o Painel nao tem link, e a resposta e uma lista vazia."""
     # Revogado NAO aparece: o link esta morto (404 e token desativado) e nao ha
     # nada a fazer com ele. Antes ficava na lista para sempre, sem marca alguma —
     # ao recarregar o modal, um link que o gestor acabou de apagar reaparecia, e o
@@ -1196,7 +1284,12 @@ async def revogar_tela_link(
     Marcar `revogado` sozinho nao bastaria: quem ja tivesse extraido o token do
     localStorage da TV continuaria batendo na API por mais 365 dias. Como o
     usuario de quiosque e por LINK, desativa-lo mata o token daquele link — e
-    so dele."""
+    so dele.
+
+    SEM `_gate_bi`: auto-escopado por `owner_id` no proprio UPDATE. E revogar e
+    a acao que NUNCA se deve negar — travar o corte de um acesso publico por
+    falta de permissao deixaria o link vivo, que e exatamente o contrario do que
+    qualquer gate quer."""
     row = (await db.execute(text(
         "UPDATE bi_tela_links SET revogado = TRUE WHERE slug = :s AND owner_id = :u "
         "RETURNING kiosk_user_id"
@@ -1226,7 +1319,12 @@ async def resolver_tela_link(slug: str, db: AsyncSession = Depends(get_db)):
     """PUBLICO — o slug e o segredo. A TV chama isto ao abrir e a cada poll:
     devolve o token de quiosque e o FILTRO VIGENTE DO DONO. E por aqui que
     "mudou o periodo no sistema" vira "mudou na TV" mesmo noutro aparelho, onde
-    o BroadcastChannel nunca chegaria."""
+    o BroadcastChannel nunca chegaria.
+
+    Sem `_gate_bi` porque nao ha usuario para gatear: a rota nao depende de
+    `get_current_user`. Quem limita o alcance do que ela entrega e o proprio
+    prazo do link, a marca de revogado e, do outro lado, a allowlist de
+    quiosque em `services/auth.py`."""
     row = (await db.execute(text(
         "SELECT l.token, l.owner_id, l.municipio_id, l.revogado, l.expira_em, "
         "       f.scope, f.anos, f.aba, l.kind "
@@ -1286,6 +1384,12 @@ class PrefsIn(BaseModel):
 
 @router.get("/vapid-public-key")
 async def vapid_public_key(current: User = Depends(get_current_user)):
+    # A chave VAPID publica nao e segredo (ela vai para o navegador de qualquer
+    # assinante), mas so serve para assinar o push DO PAINEL — que e gateado
+    # logo abaixo. Sem o gate aqui este seria o unico endpoint do arquivo sem
+    # checagem alguma, e a proxima pessoa a ler o arquivo teria de descobrir
+    # sozinha se foi esquecimento ou decisao.
+    _gate_bi(current)
     return {"key": os.getenv("VAPID_PUBLIC_KEY") or ""}
 
 
@@ -1295,6 +1399,9 @@ async def push_subscribe(
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
+    # Assinar push do Painel e assinar o Painel: sem a tela, nao ha o que
+    # notificar. O escopo de municipio (abaixo) ja existia e continua valendo.
+    _gate_bi(current)
     # valida que o municipio esta no escopo do usuario
     _ids, _cons = await resolve_scope(db, current, body.municipio_id)
     await db.execute(text(
@@ -1314,6 +1421,9 @@ async def push_unsubscribe(
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
+    # SEM `_gate_bi`: auto-escopado por `user_id`, e cancelar a propria
+    # inscricao e o par de "revogar" — negar isso deixaria um aparelho recebendo
+    # notificacao do Painel sem conseguir desligar.
     await db.execute(text(
         "DELETE FROM painel_push_subscriptions WHERE endpoint = :e AND user_id = :u"
     ), {"e": endpoint, "u": current.id})
@@ -1326,6 +1436,9 @@ async def get_preferencias(
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
+    # GET e PUT de /preferencias ficam SEM `_gate_bi`: auto-escopados por
+    # `user_id` (a propria linha), guardam so liga/desliga de notificacao e nao
+    # revelam nem alteram dado de municipio nenhum.
     row = (await db.execute(text(
         "SELECT cauc_vencendo, nova_emenda, prazo_prestacao, mudanca_status, vigencia_60d, "
         "       COALESCE(obra_prazo, true) "

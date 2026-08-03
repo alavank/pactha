@@ -339,6 +339,39 @@ _TABELA: dict[str, dict] = {
     ),
     "rm.delete": _a("excluiu o Relatório de Monitoramento", MOD_RELATORIOS,
                     _ALTO, prep="—"),
+    # --- Trava de permissão em modo aviso (services/authz.py) --------------
+    # Módulo "Usuários e permissões" porque é ali que está a CORREÇÃO: cada uma
+    # destas linhas é um cadastro para arrumar antes de ligar o bloqueio.
+    #
+    # Risco médio nas duas, deliberadamente. Alto encheria o filtro de "alto"
+    # com o trabalho de uma semana inteira e afogaria o que é de fato grave —
+    # e `authz.negaria` nem é um incidente: é o sistema avisando com
+    # antecedência o que vai barrar quando a trava for ligada.
+    "authz.negaria": _a(
+        "entrou onde ainda não tem permissão", MOD_USUARIOS, _MEDIO, prep="—",
+        nota="A trava de permissão está em MODO AVISO (AUTHZ_MODO=aviso): o "
+             "acesso FOI PERMITIDO e apenas registrado. Cada linha destas é um "
+             "cadastro a conferir — ou a pessoa precisa da permissão e alguém "
+             "tem de concedê-la, ou não precisa e o acesso vai parar sozinho "
+             "quando a trava for ligada. O detalhe traz o que foi exigido e o "
+             "que a pessoa tem hoje ('possui'); lista vazia é conta criada sem "
+             "nenhuma permissão que vem trabalhando porque nunca houve trava.",
+    ),
+    "authz.negou": _a(
+        "foi barrado por falta de permissão", MOD_USUARIOS, _MEDIO, prep="—",
+        nota="A trava está LIGADA (AUTHZ_MODO=bloqueio) e o acesso foi negado "
+             "de verdade: a pessoa levou 403 e não viu o dado. Se ela precisa "
+             "trabalhar nisso, falta conceder a tela ou o município no cadastro.",
+    ),
+    "authz.sem_dono": _a(
+        "mexeu num registro que não pertence a município nenhum", MOD_USUARIOS,
+        _MEDIO, prep="—",
+        nota="A linha tocada está com o município em branco, então não há como "
+             "dizer de quem ela é e a trava não conseguiu decidir — o acesso "
+             "seguiu. É defeito de cadastro (ou de importação) e some quando a "
+             "coluna de município passar a ser obrigatória naquela tabela.",
+    ),
+
     # A trilha da própria trilha. Duas grafias de propósito: `auditoria.*` é o
     # que a tela nova grava, `audit.*` fica como sinônimo porque a tabela já
     # nasceu com esse prefixo (o comentário de models/audit.py cita "export.pdf")
@@ -389,6 +422,10 @@ _PREFIXO_MODULO: dict[str, str] = {
     "user": MOD_USUARIOS,
     "users": MOD_USUARIOS,
     "permissao": MOD_USUARIOS,
+    # Trava de permissão (services/authz.py). Cai no MESMO módulo de Usuários
+    # porque é ali que o dono vai corrigir o que a trava apontou — separá-la
+    # obrigaria a olhar dois filtros para responder uma pergunta só.
+    "authz": MOD_USUARIOS,
     "cofre": MOD_COFRE,
     "session": MOD_SESSOES,
     "sessao": MOD_SESSOES,
@@ -503,6 +540,7 @@ _SUBSTANTIVO_PREFIXO: dict[str, str] = {
     "ai": "uma consulta à IA",
     "ia": "uma consulta à IA",
     "painel": "um painel de indicadores",
+    "authz": "uma permissão",
 }
 
 # Palavras que, em QUALQUER posição da chave, sobem o risco derivado para alto.
@@ -644,6 +682,9 @@ _TARGET_TYPE_ROTULOS: dict[str, str] = {
     "bi_tela_link": "link público do painel",
     "gestao_anotacao": "anotação da gestão interna",
     "export": "exportação",
+    # Alvos gravados por services/authz.py. "tela" e "municipio" já existem
+    # acima; "linha" é o registro solto cujo município está em branco.
+    "linha": "registro",
 }
 
 # Alguns `target_id` são CÓDIGO, não número nem nome ("sigcon", "plano_acao").

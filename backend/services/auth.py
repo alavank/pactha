@@ -22,6 +22,9 @@ from sqlalchemy import select, text
 from models.user import User
 from database import get_db
 from config import get_settings
+# Roteador das negativas de tela/municipio. Import no topo e seguro: authz nao
+# importa este modulo em tempo de import (so dentro de `ensure_dono`).
+from services import authz
 
 settings = get_settings()
 security = HTTPBearer(auto_error=False)
@@ -288,6 +291,12 @@ async def get_current_user(
         raise HTTPException(status_code=401, detail="Usuario nao encontrado")
     await load_user_scopes(db, user)
 
+    # Contexto para o modo aviso do authz. Vem DEPOIS de `load_user_scopes`
+    # porque a linha da trilha registra "o que ele TEM" — antes disso os
+    # escopos ainda nao estao anexados ao user e a trilha diria que todo mundo
+    # nao tem nada. `definir_contexto` nunca levanta.
+    authz.definir_contexto(request, user)
+
     # Perfil somente-leitura (ex.: prefeito no Painel Executivo): barra qualquer
     # metodo mutavel fora dos endpoints proprios do Painel. Defense-in-depth
     # centralizado — TODO endpoint autenticado passa por aqui, entao vale mesmo
@@ -329,9 +338,24 @@ async def load_user_scopes(db: AsyncSession, user: User) -> None:
 
 
 def ensure_municipio_access(user: User, municipio_id) -> None:
-    """Barra (403) acesso a municipio fora do escopo do usuario.
+    """Barra acesso a municipio fora do escopo do usuario.
     Admin (allowed_municipio_ids=None) sempre passa. Nao-admin precisa informar
-    um municipio_id que esteja no seu conjunto atribuido."""
+    um municipio_id que esteja no seu conjunto atribuido.
+
+    ⚠️ ESTA FUNCAO NEGA SEMPRE, NOS DOIS MODOS — nao passa pelo modo aviso de
+    `services/authz.py`. Ela ja era chamada em dezenas de lugares ANTES do
+    Incremento 2, e cada um deles e uma trava que ja vale hoje; roteá-la pelo
+    modo aviso faria essas negativas ANTIGAS pararem de negar durante a semana
+    de observacao, alargando o acesso justamente no incremento que existe para
+    fecha-lo. Ver o docstring do authz para o porque.
+
+    Gate NOVO usa `authz.exigir_municipio`, que respeita o modo. E la, no gate
+    novo, que pedido MALFORMADO tambem continua levantando nos dois modos:
+    municipio AUSENTE e municipio NAO-NUMERICO nao sao permissao que falta —
+    sao pedido malformado. Nenhuma correcao de cadastro faz um pedido sem
+    municipio virar valido, entao observa-los nao ensina nada; e deixa-los
+    passar trocaria um 403 honesto por um 500 (o None desce ate a consulta) ou
+    por uma consulta sem filtro devolvendo o tenant inteiro."""
     allowed = getattr(user, "allowed_municipio_ids", None)
     if allowed is None:
         return
@@ -342,11 +366,25 @@ def ensure_municipio_access(user: User, municipio_id) -> None:
     except (TypeError, ValueError):
         raise HTTPException(status_code=403, detail="Municipio invalido")
     if mid not in allowed:
+        # NEGA SEMPRE — ver a nota em `ensure_tela`. Gate NOVO usa
+        # `authz.exigir_municipio`, que respeita o modo.
         raise HTTPException(status_code=403, detail="Voce nao tem acesso a este municipio")
 
 
 def ensure_tela(user: User, tela: str) -> None:
-    """403 se o usuario nao tem acesso a tela/modulo (admin sempre passa)."""
+    """403 se o usuario nao tem acesso a tela/modulo (admin sempre passa).
+
+    ⚠️ ESTA FUNCAO NEGA SEMPRE, NOS DOIS MODOS — e nao passa pelo modo aviso
+    de `services/authz.py`. Ela ja era chamada em ~128 pontos ANTES do
+    Incremento 2, e cada um deles e uma trava que ja vale hoje. Roteá-la pelo
+    modo aviso faria essas 128 negativas ANTIGAS pararem de negar durante a
+    semana de observacao: o sistema ficaria MAIS ABERTO justamente no
+    incremento que existe para fecha-lo.
+
+    Gate NOVO usa `authz.exigir_tela`, que respeita o modo. A distincao e
+    explicita no CHAMADOR de proposito: em tempo de execucao nao ha como
+    saber se uma chamada e velha ou nova.
+    """
     allowed = getattr(user, "allowed_telas", None)
     if allowed is None:
         return
