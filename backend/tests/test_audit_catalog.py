@@ -34,7 +34,10 @@ CHAVES_DO_REPO = [
     "control.session_token.rotate", "control.sso.mint",
     "control.user.create", "control.user.patch", "control.user.reset_password",
     "control.user.delete",
-    "auditoria.exportar", "auditoria.podar",
+    # `auditoria.poda` (sem R) e gravada pela funcao audit_log_podar DO BANCO —
+    # nao aparece num grep por `action=` no Python, so no .sql da migration.
+    "auditoria.exportar", "auditoria.podar", "auditoria.poda",
+    "auditoria.verificar_integridade",
     "export.rm", "rm.update", "rm.delete", "rm.auto_popular",
     # Chegaram com as pecas de cobertura (bi/convenios/documentos/gestao/
     # export_pdf) DEPOIS da primeira varredura deste catalogo.
@@ -120,7 +123,8 @@ def test_navegacao_traduz_a_tela_nos_dois_desenhos():
 def test_riscos_altos_sao_os_que_o_dono_listou():
     for chave in ("cofre.reveal", "control.cofre.reveal", "cofre.delete",
                   "user.update", "user.create", "user.reset_password",
-                  "auditoria.exportar", "auditoria.podar", "session.create",
+                  "auditoria.exportar", "auditoria.podar", "auditoria.poda",
+                  "session.create",
                   "service_token.create", "control.sso.mint"):
         assert ac.descrever_acao(chave).risco == ac.RISCO_ALTO, chave
 

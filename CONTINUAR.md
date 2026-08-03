@@ -130,6 +130,26 @@ cadastrada desde 2026-07-30. **O CAGEC não precisa de credencial** — consulta
 ### 6.3 Auto-deploy
 `is_auto_deploy_enabled = true` nas 9 aplicações — mas **isso não importa**, porque todas usam `build_pack = dockerimage` e não constroem a partir do git. O deploy é sempre um ato explícito: repontar `docker_registry_image_tag` e chamar `/deploy`. Ver [`INFRA.md`](INFRA.md) §2.
 
+### 6.4 Separação de papel no banco para a trilha de auditoria — **decisão do dono**
+A `audit_log` já é append-only no banco (gatilho) com selo encadeado e conferência na tela
+(botão **Verificar integridade** em `/dashboard/auditoria`). Falta o passo que só o dono decide:
+a aplicação hoje roda como `pactha`, **dona de tudo** — ou seja, com poder de derrubar o próprio
+gatilho que a impede de mexer na trilha. O ideal é um papel `pactha_app` com
+`REVOKE UPDATE, DELETE, TRUNCATE ON audit_log`.
+
+O **SQL pronto** está comentado no fim de `backend/migrations/add_auditoria_imutavel.sql` (seção
+"CAMADA 3"); o **passo a passo por tenant, o teste, o rollback e o modelo de ameaça** (o que a
+corrente de selos garante e o que ela **não** garante) estão em
+[`docs/AUDITORIA_IMUTABILIDADE.md`](docs/AUDITORIA_IMUTABILIDADE.md). Duas coisas de lá que valem
+repetir aqui:
+
+- **Não precisa de mudança de código.** Todo o DDL do boot roda em `DATABASE_URL_SYNC`
+  (`services/startup.py`) e o runtime da API em `DATABASE_URL` — basta apontar cada uma para um
+  papel. ⚠️ Mas `DATABASE_URL_SYNC` **precisa estar preenchida antes**: onde ela está vazia o
+  fallback usa a própria `DATABASE_URL`, e trocar só essa faz as migrations rodarem sem
+  privilégio de DDL e a aplicação sobe quebrada.
+- **Comece por `freitas` ou `trust`, nunca por `montesiao-mg`** (prefeitura com uso real).
+
 ---
 
 ## 6.5. ABRIR CLIENTE NOVO

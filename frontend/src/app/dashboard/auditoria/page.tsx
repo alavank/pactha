@@ -18,14 +18,25 @@
 // ninguém perceberia, porque as duas continuariam parecendo certas.
 //
 // ⚠️ A TELA NÃO EDITA NADA. Não há botão de excluir, corrigir ou reclassificar,
-// e isso é de propósito: a imutabilidade de verdade (append-only no banco, hash
-// encadeado) é um incremento posterior, mas a superfície já nasce sem nenhuma
-// porta de escrita — assim nada aqui precisa ser desfeito depois.
+// e isso é de propósito: a superfície nasceu sem nenhuma porta de escrita, e a
+// imutabilidade de verdade — append-only no banco e selo encadeado, calculados
+// DENTRO do Postgres — chegou depois, sem nada aqui precisar ser desfeito.
+//
+// ⚠️ O QUE ESTA TELA PODE PROMETER, E ATÉ ONDE. O banco recusa `UPDATE`,
+// `DELETE` e `TRUNCATE` na trilha, e cada linha carrega um selo encadeado ao da
+// anterior. Isso NÃO torna a alteração impossível: quem tem a senha de dono do
+// banco derruba o gatilho. O que a corrente faz é tornar a alteração DETECTÁVEL
+// — é o que o botão "Verificar integridade" apura. Todo texto desta tela é
+// escrito com essa distinção na mão: ela DENUNCIA, não IMPEDE. Prometer o
+// contrário numa tela de auditoria é o defeito mais caro que ela pode ter,
+// porque a promessa só é conferida no dia em que já não dá para voltar atrás.
+// O modelo completo (e a separação de papel de banco, que é decisão do dono)
+// está em `docs/AUDITORIA_IMUTABILIDADE.md`.
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ScrollText, Filter, Download, AlertTriangle, RotateCw, Globe, ListTree, FileClock,
-  Eye, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
+  Eye, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ShieldCheck, ShieldAlert,
 } from "lucide-react";
 import api from "@/lib/api";
 import { Input } from "@/components/ui/input";
@@ -199,6 +210,191 @@ function normalizar(bruto: unknown): EventoAuditoria | null {
 }
 
 // ===========================================================================
+// CONFERÊNCIA DE INTEGRIDADE — `GET /auditoria/integridade`
+//
+// O servidor refaz a corrente de selos linha a linha, CHAMANDO A MESMA FUNÇÃO
+// do banco que o gatilho usa para gravar. A tela não recalcula nada: refazer a
+// conta em JavaScript daria duas versões da mesma verdade, e o sintoma da
+// divergência entre elas seria esta tela gritando "adulterada" para uma trilha
+// intacta.
+//
+// ⚠️ AS PALAVRAS SÃO DO SERVIDOR — `titulo`, `mensagem`, `o_que_fazer` e
+// `ressalva` chegam prontos, e o mesmo vale para o rótulo de cada trava do
+// banco. É a regra da lista e do modal (ver o cabeçalho do arquivo), pelo mesmo
+// motivo: se a tela escrevesse "trilha íntegra" por conta própria, no dia em
+// que o servidor apertasse o critério a tela continuaria dizendo a frase
+// antiga — e ninguém perceberia, porque as duas continuariam parecendo certas.
+// Aqui se decide LAYOUT e COR, não veredito.
+//
+// ⚠️ DOIS DESFECHOS QUE NÃO PODEM SE MISTURAR. "Não deu para conferir" (rede,
+// permissão, tempo esgotado) não é "encontrei divergência" e muito menos "está
+// tudo certo" — por isso `fase: "falhou"` é um estado à parte, com texto
+// próprio, e não um `titulo` fabricado que se pareceria com um veredito.
+// ===========================================================================
+
+/** Uma trava do banco, como ela ESTÁ agora — não como deveria estar.
+ *  A lista vem do Postgres a cada conferência justamente para uma trava
+ *  derrubada aparecer derrubada. */
+interface TravaBanco {
+  chave: string;
+  rotulo: string;
+  ativo: boolean;
+  explicacao: string;
+}
+
+interface Protecoes {
+  itens: TravaBanco[];
+  alertas: string[];
+  papel_separado: boolean;
+  nota_papel: string;
+}
+
+interface DivergenciaAudit {
+  tipo: string;
+  id: string | null;
+  id_anterior: string | null;
+  quando: string | null;
+  acao: string | null;
+  acao_rotulo: string | null;
+}
+
+interface Integridade {
+  /** integra | parcial | divergente | vazia | indisponivel — e o que vier
+   *  depois. Situação nova e desconhecida NÃO derruba a tela: o `titulo` e a
+   *  `mensagem` do servidor continuam sendo mostrados. */
+  situacao: string;
+  /** O tom que o SERVIDOR deu ao achado. Só `critico` vira cor aqui. */
+  tom: string;
+  titulo: string;
+  mensagem: string;
+  o_que_fazer: string | null;
+  ressalva: string;
+  conferidos: number;
+  /** `false` = a conferência parou antes do fim (orçamento de tempo). */
+  completo: boolean;
+  continuar_de: number | null;
+  divergencia: DivergenciaAudit | null;
+  observacoes: string[];
+  protecoes: Protecoes | null;
+  conferido_em: string;
+}
+
+type EstadoConferencia =
+  | { fase: "ok"; dados: Integridade }
+  | { fase: "falhou"; mensagem: string };
+
+function numeroOuNulo(v: unknown): number | null {
+  const n = Number(v);
+  return typeof v !== "boolean" && v !== null && v !== "" && Number.isFinite(n) ? n : null;
+}
+
+/** Aceita id numérico ou textual — só serve para exibir. */
+function idTexto(v: unknown): string | null {
+  const n = numeroOuNulo(v);
+  if (n !== null) return String(n);
+  const s = texto(v).trim();
+  return s || null;
+}
+
+function listaDeTextos(v: unknown): string[] {
+  return Array.isArray(v) ? v.map((x) => texto(x).trim()).filter(Boolean) : [];
+}
+
+function normalizarProtecoes(bruto: unknown): Protecoes | null {
+  const p = objeto(bruto);
+  if (!p) return null;
+  const itens = Array.isArray(p.itens)
+    ? p.itens
+        .map((x) => objeto(x))
+        .filter((x): x is Record<string, unknown> => x !== null)
+        .map((x) => ({
+          chave: texto(x.chave),
+          rotulo: texto(x.rotulo) || texto(x.chave) || "Proteção sem nome",
+          /* `!== false` seria generoso na direção errada: chave ausente viraria
+             "trava ligada", e a tela juraria uma proteção que ninguém conferiu.
+             Aqui o silêncio conta como DESLIGADA, que é o lado que faz olhar. */
+          ativo: x.ativo === true,
+          explicacao: texto(x.explicacao),
+        }))
+        .filter((x) => x.chave || x.rotulo)
+    : [];
+  return {
+    itens,
+    alertas: listaDeTextos(p.alertas),
+    papel_separado: p.papel_separado === true,
+    nota_papel: texto(p.nota_papel),
+  };
+}
+
+function normalizarIntegridade(bruto: unknown): EstadoConferencia {
+  const o = objeto(bruto);
+  const titulo = texto(o?.titulo).trim();
+  const mensagem = texto(o?.mensagem).trim();
+
+  /* SEM VEREDITO DO SERVIDOR, NENHUM VEREDITO. Se a resposta veio num formato
+     que esta tela não lê, o caminho seguro não é montar uma frase local com o
+     resto dos campos: é dizer que a conferência não pôde ser lida. Inventar o
+     texto aqui é como a tela chegar sozinha a uma conclusão sobre a trilha. */
+  if (!o || (!titulo && !mensagem)) {
+    return {
+      fase: "falhou",
+      mensagem:
+        "O servidor respondeu num formato que esta tela não reconhece. Nada pode ser concluído " +
+        "sobre a integridade da trilha — avise o suporte técnico.",
+    };
+  }
+
+  const d = objeto(o.divergencia);
+  return {
+    fase: "ok",
+    dados: {
+      situacao: texto(o.situacao),
+      tom: texto(o.tom),
+      titulo: titulo || "Resultado da conferência",
+      mensagem,
+      o_que_fazer: texto(o.o_que_fazer).trim() || null,
+      ressalva: texto(o.ressalva).trim(),
+      conferidos: numeroOuNulo(o.conferidos) ?? 0,
+      /* Só oferece "continuar" quando o servidor DIZ que parou no meio. Chave
+         ausente conta como conferência completa: um botão de continuar que
+         reinicia a conta faria o auditor achar que sempre falta trilha. */
+      completo: o.completo !== false,
+      continuar_de: numeroOuNulo(o.continuar_de),
+      divergencia: d
+        ? {
+            tipo: texto(d.tipo),
+            id: idTexto(d.id),
+            id_anterior: idTexto(d.id_anterior),
+            quando: texto(d.quando) || null,
+            acao: texto(d.acao) || null,
+            acao_rotulo: texto(d.acao_rotulo) || null,
+          }
+        : null,
+      observacoes: listaDeTextos(o.observacoes),
+      protecoes: normalizarProtecoes(o.protecoes),
+      conferido_em: texto(o.conferido_em),
+    },
+  };
+}
+
+function mensagemIntegridade(e: unknown): string {
+  const err = e as { response?: { status?: number; data?: unknown }; message?: string };
+  const st = err?.response?.status;
+  if (st === 403) return "Você não tem permissão para conferir a integridade da trilha.";
+  if (st === 401) return "Sua sessão expirou. Entre novamente para conferir.";
+  const dados = err?.response?.data;
+  const detalhe =
+    typeof dados === "string" ? dados : texto((dados as { detail?: unknown } | undefined)?.detail);
+  /* O tempo esgotado do proxy do Next é o caso provável numa trilha grande, e
+     ele chega como texto puro sem `detail` — daí o recado explícito. */
+  return (
+    `A conferência não foi concluída${st ? ` (HTTP ${st})` : ""}. ` +
+    (detalhe.slice(0, 200) || err?.message || "") +
+    (st === 504 || st === 502 ? " A trilha pode ser grande demais para conferir de uma vez." : "")
+  ).trim();
+}
+
+// ===========================================================================
 // Data e hora
 //
 // A tela NÃO reinterpreta fuso. O servidor entrega "03/08/2026 14:22:07" já
@@ -266,12 +462,41 @@ const SEV_PADRAO: Record<string, { label: string; descricao: string }> = {
 // ===========================================================================
 // Rótulos dos campos do `details` bruto
 //
-// Só para a leitura amigável do JSON no modal. O antes/depois já vem traduzido
-// do servidor (em `alteracoes`), então NÃO há dicionário duplicado aqui — este
-// mapa cobre apenas as chaves de topo que o servidor não precisa nomear.
+// Só para a leitura amigável do JSON no modal e do achado da conferência de
+// integridade. O antes/depois já vem traduzido do servidor (em `alteracoes`),
+// então NÃO há dicionário duplicado aqui — este mapa cobre apenas as chaves de
+// topo que o servidor não precisa nomear.
 // ===========================================================================
 
 const ROTULO_CAMPO: Record<string, string> = {
+  // Da imutabilidade — os dois eventos novos (`auditoria.verificar_integridade`
+  // e `auditoria.poda`) gravam `details` com estas chaves, e sem rótulo elas
+  // apareceriam cruas no modal, em inglês-de-banco, justamente nos dois eventos
+  // que mais interessam a quem audita.
+  //
+  // "Selo" e não "hash", e é a MESMA palavra que o servidor usa na conferência
+  // (ver `RESSALVA_INTEGRIDADE` em `backend/routers/auditoria.py`). Duas
+  // palavras para a mesma coisa na mesma tela é como o vocabulário começa a
+  // divergir: aqui "lacre", ali "selo", e o leitor achando que são dois
+  // mecanismos.
+  hash: "Selo gravado",
+  hash_anterior: "Selo do registro anterior",
+  hash_ultimo_podado: "Selo do último registro removido",
+  situacao: "Situação apurada",
+  conferidos: "Registros conferidos",
+  completo: "Conferiu a trilha inteira",
+  do_id: "Do registro nº",
+  ate_id: "Até o registro nº",
+  duracao_ms: "Duração (ms)",
+  modo: "Modo da conferência",
+  linhas_removidas: "Linhas removidas",
+  menor_id_removido: "Menor registro removido",
+  maior_id_removido: "Maior registro removido",
+  prefixos: "Famílias de ação podadas",
+  motivo: "Motivo",
+  origem: "Origem do ato",
+  ate: "Data de corte",
+  criado_em: "Data e hora do registro",
   name: "Nome",
   nome: "Nome",
   email: "E-mail",
@@ -479,6 +704,11 @@ export default function AuditoriaPage() {
   const [exportando, setExportando] = useState(false);
   const [avisoExport, setAvisoExport] = useState<{ tom: "critico" | "atencao"; texto: string } | null>(null);
   const [catalogo, setCatalogo] = useState<Catalogo | null>(null);
+  const [conferindo, setConferindo] = useState(false);
+  /* O resultado da conferência NÃO é limpo quando os filtros mudam, e isso é
+     deliberado: a conferência percorre a trilha INTEIRA, não o recorte da tela.
+     Zerá-la a cada filtro sugeriria que ela tem a ver com o que está listado. */
+  const [integridade, setIntegridade] = useState<EstadoConferencia | null>(null);
 
   /* O CATÁLOGO VEM DO SERVIDOR, não de uma cópia em JavaScript. É o mesmo
      dicionário que monta a frase, o módulo e a criticidade de cada linha e do
@@ -633,6 +863,33 @@ export default function AuditoriaPage() {
     }
   };
 
+  /* A CONFERÊNCIA É SOB DEMANDA, nunca automática ao abrir a tela.
+     Dois motivos: ela varre a trilha inteira (custo que ninguém pediu ao só
+     querer ver os eventos de ontem), e um resultado que aparece sozinho vira
+     paisagem — o gestor deixa de lê-lo depois da terceira visita. Aqui ele é
+     resposta a uma pergunta que alguém fez, com hora de ter sido feita. */
+  const conferirIntegridade = async (desdeId?: number) => {
+    setConferindo(true);
+    /* Limpa ANTES de perguntar: manter o resultado velho na tela enquanto a
+       nova conferência roda deixaria "nenhuma alteração" visível durante a
+       apuração que talvez encontre uma. */
+    setIntegridade(null);
+    try {
+      /* `desde_id` retoma de onde a conferência anterior parou — numa trilha
+         grande o servidor corta por orçamento de tempo e responde "íntegra até
+         o registro N". Sem esta continuação, a parte nova da trilha nunca seria
+         conferida pela tela, e o gestor leria "íntegra" achando que é o todo. */
+      const res = await api.get("/auditoria/integridade", {
+        params: typeof desdeId === "number" ? { desde_id: desdeId } : undefined,
+      });
+      setIntegridade(normalizarIntegridade(res.data));
+    } catch (e) {
+      setIntegridade({ fase: "falhou", mensagem: mensagemIntegridade(e) });
+    } finally {
+      setConferindo(false);
+    }
+  };
+
   const limpar = () => {
     setFiltros(FILTROS_INICIAIS);
     setPagina(1);
@@ -640,6 +897,19 @@ export default function AuditoriaPage() {
 
   const filtrando =
     !!filtros.usuario || !!filtros.acao || !!filtros.modulo || !!filtros.resultado || !!filtros.busca;
+
+  /** O resultado da conferência em texto corrido, para a região viva abaixo.
+   *  São as MESMAS palavras do painel (as do servidor) — um resumo próprio aqui
+   *  seria uma segunda redação do veredito, que é justamente o que esta tela
+   *  não faz. Quem ouve não vê o painel, então a frase termina dizendo onde
+   *  ele está. */
+  const resumoIntegridade = conferindo
+    ? "Conferindo a integridade da trilha de auditoria."
+    : integridade?.fase === "ok"
+      ? `${integridade.dados.titulo}. ${integridade.dados.mensagem} O detalhe está no painel Conferência de integridade, logo abaixo do cabeçalho.`
+      : integridade?.fase === "falhou"
+        ? `A conferência de integridade não foi concluída. ${integridade.mensagem} Isto não diz nada sobre a trilha estar íntegra ou alterada.`
+        : "";
 
   return (
     <div className="space-y-4">
@@ -658,19 +928,57 @@ export default function AuditoriaPage() {
               Horários em Brasília.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={exportar}
-            disabled={exportando}
-            className={BOTAO_CTA}
-            style={ESTILO_CTA}
-            title="Baixa em CSV exatamente os eventos que os filtros abaixo selecionam"
-          >
-            <Download className="size-4" />
-            {exportando ? "Gerando..." : "Exportar (CSV)"}
-          </button>
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            {/* Secundário, e não CTA: a ação frequente desta tela é exportar. A
+                conferência é rara por natureza — quem a usa vem procurá-la. */}
+            <button
+              type="button"
+              /* `() => conferirIntegridade()` e NÃO `onClick={conferirIntegridade}`:
+                 o handler recebe o evento do clique como primeiro argumento, que
+                 aqui cairia no `desdeId` e viraria `?desde_id=[object Object]`
+                 na consulta. O botão do cabeçalho confere sempre do COMEÇO. */
+              onClick={() => conferirIntegridade()}
+              disabled={conferindo}
+              className={BOTAO_SEC}
+              style={ESTILO_SEC}
+              title="Confere, registro por registro, se algum evento foi alterado depois de gravado. Percorre a trilha inteira — não depende dos filtros."
+            >
+              <ShieldCheck className="size-4" />
+              {conferindo ? "Conferindo..." : "Verificar integridade"}
+            </button>
+            <button
+              type="button"
+              onClick={exportar}
+              disabled={exportando}
+              className={BOTAO_CTA}
+              style={ESTILO_CTA}
+              title="Baixa em CSV exatamente os eventos que os filtros abaixo selecionam"
+            >
+              <Download className="size-4" />
+              {exportando ? "Gerando..." : "Exportar (CSV)"}
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* O resultado da conferência nasce LONGE do botão que o pediu — o botão
+          fica no cabeçalho, o painel entra logo abaixo. Quem usa leitor de tela
+          clicaria, ouviria o rótulo virar "Conferindo..." e depois nada.
+          A região viva fica AQUI, sempre montada e vazia, e não em volta do
+          painel: região que entra no DOM já com conteúdo é anunciada de forma
+          irregular entre leitores — o que os três anunciam de forma confiável é
+          a MUDANÇA de texto dentro de uma região que já existia.
+          `polite` e não `assertive`: nem a divergência precisa atropelar o que
+          a pessoa estiver ouvindo; precisa ser dita em seguida. */}
+      <span className="sr-only" role="status" aria-live="polite">
+        {resumoIntegridade}
+      </span>
+
+      <PainelIntegridade
+        resultado={integridade}
+        conferindo={conferindo}
+        onConferir={conferirIntegridade}
+      />
 
       {avisoExport && (
         <Bloco className="p-3">
@@ -1015,27 +1323,302 @@ export default function AuditoriaPage() {
         </div>
       )}
 
-      {/* Nota de conformidade. O texto de retenção vem do SERVIDOR (`/catalogo`)
-          para a política não viver escrita em dois lugares e divergir. O de
-          reserva diz o que É verdade hoje — a trilha não tem nenhuma porta de
-          escrita nesta tela — sem prometer a imutabilidade de banco, que é de
-          outro incremento. Auditoria que promete mais do que entrega é o pior
-          tipo de auditoria. */}
+      {/* ------------------------------------------------------------------ */}
+      {/* Nota de conformidade                                                */}
+      {/*                                                                     */}
+      {/* A política (imutabilidade e retenção) vem do SERVIDOR (`/catalogo`)  */}
+      {/* para não viver escrita em dois lugares e divergir. Os textos de      */}
+      {/* reserva abaixo são a MESMA redação que o servidor deve carregar —    */}
+      {/* estão aqui só para a nota não sumir quando o catálogo não responde.  */}
+      {/*                                                                     */}
+      {/* ⚠️ ESTA NOTA JÁ MENTIU PARA MAIS. A redação anterior dizia que "o    */}
+      {/* sistema não oferece nenhuma forma de alterar ou excluir um evento",  */}
+      {/* e as duas metades da frase envelheceram em direções opostas: hoje o  */}
+      {/* BANCO recusa a alteração (é mais do que ela prometia), e existe um   */}
+      {/* caminho controlado de poda por retenção (é menos do que ela          */}
+      {/* prometia). Numa prefeitura esta nota pode acabar citada num processo */}
+      {/* administrativo, então ela diz as três coisas com a mesma precisão:   */}
+      {/* o que o banco recusa, o que o selo denuncia, e o que continua        */}
+      {/* possível para quem tem a senha de dono do banco.                     */}
+      {/*                                                                     */}
+      {/* ⚠️ O TEXTO DE RESERVA PRECISA CARREGAR A RESSALVA INTEIRA. É tentador */}
+      {/* encurtá-lo ("a versão boa vem do servidor mesmo"), e é justamente no  */}
+      {/* dia em que o catálogo não responde que a tela ficaria prometendo uma  */}
+      {/* imutabilidade absoluta que o sistema não entrega. A frase sobre a     */}
+      {/* senha de administrador não é enfeite: é o limite do mecanismo.        */}
+      {/* Modelo de ameaça em `docs/AUDITORIA_IMUTABILIDADE.md`.                */}
+      {/* ------------------------------------------------------------------ */}
       <p className="px-1 text-[10px] leading-snug" style={{ color: "var(--bi-faint)" }}>
         {/* `texto()` e não interpolação direta: um campo ausente na resposta
             imprimiria a palavra "undefined" no meio de uma nota de
             conformidade. */}
         {[
           texto(catalogo?.aviso_imutabilidade) ||
-            "A trilha é somente leitura: não há, nesta tela, forma de alterar, editar ou excluir um registro.",
+            "Os registros desta trilha são somente leitura. O sistema não oferece nenhuma tela, " +
+              "botão ou endereço que altere ou exclua um evento já gravado, e o próprio banco de " +
+              "dados recusa alteração, exclusão e limpeza da tabela. Cada registro leva um selo " +
+              "calculado dentro do banco a partir do registro anterior, formando uma corrente: " +
+              "mexer num registro antigo quebra o selo de todos os seguintes, e o botão «Verificar " +
+              "integridade» mostra exatamente onde. A corrente não é uma barreira absoluta — quem " +
+              "tiver a senha de administrador do banco de dados pode desligar a proteção e refazer " +
+              "os selos; o que ela garante é que nenhuma alteração passa despercebida.",
           texto(catalogo?.retencao?.texto) ||
-            "Guarda: 5 anos para eventos de segurança, acesso e permissão; 12 meses para navegação. A remoção de registros vencidos só acontece por ato deliberado e é ela própria registrada aqui.",
+            "A trilha é preservada por padrão: nada é apagado automaticamente. A poda é um ato " +
+              "consciente, registrado na própria trilha. Referência de retenção: 5 anos para " +
+              "acesso, segurança e permissões; 12 meses para navegação.",
           "Os dados ficam no servidor da plataforma e não são enviados a terceiros.",
         ].join(" ")}
       </p>
 
       <ModalEvento evento={aberto} onFechar={() => setAberto(null)} catalogo={catalogo} />
     </div>
+  );
+}
+
+// ===========================================================================
+// O PAINEL DA CONFERÊNCIA
+//
+// ⚠️ COR SÓ ONDE HÁ ALERTA — e "está tudo certo" NÃO é alerta. O servidor
+// devolve `tom: "ok"` no caso bom, e aqui só o `critico` vira cor: o resultado
+// bom sai em cinza, com um selo neutro. Um bloco verde faria da conferência
+// bem-sucedida o elemento mais colorido de uma tela cuja regra é que a cor
+// significa "olhe aqui" — e educaria o olho a esperar cor no lugar do
+// resultado, tirando do dia da divergência justamente o contraste que deveria
+// assustar. O `tom` do servidor não é ignorado: ele é lido, e a decisão de
+// pintar ou não é de desenho, não de veredito.
+//
+// ⚠️ AS PALAVRAS SÃO DO SERVIDOR. Título, mensagem, "o que fazer", ressalva e
+// o rótulo de cada trava do banco chegam prontos de `/auditoria/integridade`.
+// Este componente decide ORDEM, HIERARQUIA e COR — nada mais. Ver o bloco de
+// contrato lá em cima.
+//
+// ⚠️ AS TRAVAS SÃO LIDAS DO BANCO A CADA CONFERÊNCIA, e é por isso que elas
+// aparecem aqui em vez de virarem uma frase fixa: uma tela que jura "exclusão
+// bloqueada" lendo um texto constante diria a mesma coisa depois de alguém
+// derrubar o gatilho — que é exatamente o momento em que ela precisava avisar.
+// ===========================================================================
+
+/** Se `ressalva` não vier do servidor, a honestidade não pode sumir junto.
+ *  Redação curta e no mesmo sentido da de lá — ver `RESSALVA_INTEGRIDADE` em
+ *  `backend/routers/auditoria.py`. */
+const RESSALVA_RESERVA =
+  "O que esta conferência prova: nenhum registro foi alterado, removido ou trocado de lugar " +
+  "depois de gravado. O que ela NÃO prova: quem tiver a senha de administrador do banco de " +
+  "dados pode desligar a proteção e refazer os selos. A corrente não impede esse cenário — " +
+  "ela obriga quem tentar a refazer todos os registros seguintes.";
+
+/** O selo do cabeçalho: uma palavra para quem só bate o olho.
+ *  Cor SÓ na divergência e na trava desligada. */
+function seloDaSituacao(d: Integridade): React.ReactNode {
+  if (d.tom === "critico" || d.situacao === "divergente")
+    return <Selo tom="critico">Divergência</Selo>;
+  if (d.situacao === "integra") return <Selo title="A conta fechou do primeiro ao último registro">Sem divergência</Selo>;
+  if (d.situacao === "parcial") return <Selo title="A conferência parou antes do fim; há registros mais novos">Parcial</Selo>;
+  if (d.situacao === "vazia") return <Selo>Nada a conferir</Selo>;
+  if (d.situacao === "indisponivel") return <Selo>Indisponível</Selo>;
+  return null;
+}
+
+function PainelIntegridade({
+  resultado,
+  conferindo,
+  onConferir,
+}: {
+  resultado: EstadoConferencia | null;
+  conferindo: boolean;
+  onConferir: (desdeId?: number) => void;
+}) {
+  /* Só aparece depois de alguém perguntar. Um painel permanente dizendo
+     "íntegra" sem hora e sem pedido é decoração — e decoração que afirma. */
+  if (!conferindo && !resultado) return null;
+  const r = conferindo ? null : resultado;
+  const d = r?.fase === "ok" ? r.dados : null;
+  const critico = d ? d.tom === "critico" || d.situacao === "divergente" : false;
+
+  /* Os fatos do achado, com a mesma gramática de campos do modal de evento. A
+     explicação e o encaminhamento já vieram em `mensagem`/`o_que_fazer`: aqui
+     ficam só o número do registro, o vizinho e a ação — o que se copia para um
+     e-mail ou para um processo. */
+  const camposAchado: Campo[] = d?.divergencia
+    ? [
+        { rotulo: "Registro divergente", valor: d.divergencia.id ? `nº ${d.divergencia.id}` : "—", mono: true },
+        { rotulo: "Registro anterior", valor: d.divergencia.id_anterior ? `nº ${d.divergencia.id_anterior}` : "—", mono: true },
+        { rotulo: "Data e hora (Brasília)", valor: d.divergencia.quando || "—", quebra: true },
+        { rotulo: "Ação registrada", valor: d.divergencia.acao_rotulo || d.divergencia.acao || "—", quebra: true },
+        { rotulo: "Tipo da divergência", valor: d.divergencia.tipo || "—", mono: true },
+        /* A chave crua só entra quando ela ACRESCENTA algo. Sem rótulo
+           traduzido, "Ação registrada" já mostra a própria chave, e repeti-la
+           numa segunda célula é ruído numa grade que alguém vai copiar para um
+           processo. */
+        ...(d.divergencia.acao && d.divergencia.acao_rotulo
+          ? [{ rotulo: "Ação (banco)", valor: d.divergencia.acao, mono: true } as Campo]
+          : []),
+      ]
+    : [];
+
+  return (
+    <Bloco className="p-3">
+      <BlocoHead
+        icon={critico ? ShieldAlert : ShieldCheck}
+        titulo="Conferência de integridade"
+        sub="Refaz a corrente de selos da trilha inteira, do primeiro registro ao último. Não depende dos filtros abaixo."
+        right={d ? seloDaSituacao(d) : undefined}
+      />
+
+      {conferindo && (
+        <p className="text-[12px] leading-snug" style={{ color: "var(--bi-muted)" }}>
+          Refazendo a conta, registro por registro. Numa trilha longa isto leva alguns segundos.
+        </p>
+      )}
+
+      {r?.fase === "falhou" && (
+        /* ATENÇÃO e não CRÍTICO: nada foi encontrado de errado na trilha — o que
+           houve foi a conferência não ter rodado. O pior desfecho aqui é alguém
+           ler isto como "deu problema na auditoria". */
+        <Aviso tom="atencao" titulo="A conferência não foi concluída" icon={AlertTriangle} className="">
+          <p className="text-[12px] leading-snug" style={{ color: "var(--bi-text)" }}>{r.mensagem}</p>
+          <p className="mt-1.5 text-[11px] leading-snug" style={{ color: "var(--bi-muted)" }}>
+            <strong>
+              Isto NÃO quer dizer que a trilha foi alterada — e também não quer dizer que ela está
+              íntegra.
+            </strong>{" "}
+            Quer dizer que a conta não foi refeita agora. Tente novamente e, se persistir, avise o
+            suporte antes de concluir qualquer coisa sobre a integridade da trilha.
+          </p>
+          <button type="button" onClick={() => onConferir()} className={`${BOTAO_SEC} mt-2`} style={ESTILO_SEC}>
+            <RotateCw className="size-4" />
+            Tentar de novo
+          </button>
+        </Aviso>
+      )}
+
+      {d && (
+        <>
+          {/* 1. O VEREDITO, nas palavras do servidor. */}
+          {critico ? (
+            <Aviso tom="critico" titulo={d.titulo} icon={ShieldAlert} className="">
+              <p className="text-[12px] leading-snug" style={{ color: "var(--bi-text)" }}>{d.mensagem}</p>
+              {d.o_que_fazer && (
+                <p className="mt-1.5 text-[11px] leading-snug" style={{ color: "var(--bi-muted)" }}>
+                  <strong>O que fazer:</strong> {d.o_que_fazer}
+                </p>
+              )}
+            </Aviso>
+          ) : (
+            <div>
+              <p className="text-[13px] font-semibold leading-snug" style={{ color: "var(--bi-text)" }}>
+                {d.titulo}
+              </p>
+              <p className="mt-0.5 text-[12px] leading-snug" style={{ color: "var(--bi-muted)" }}>
+                {d.mensagem}
+              </p>
+              {d.o_que_fazer && (
+                <p className="mt-1 text-[11px] leading-snug" style={{ color: "var(--bi-muted)" }}>
+                  {d.o_que_fazer}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* 2. OS FATOS DO ACHADO. */}
+          {camposAchado.length > 0 && <Campos cols={3} campos={camposAchado} />}
+
+          {/* 3. A CONFERÊNCIA PAROU NO MEIO — e isso precisa de um botão, não de
+                 uma explicação. Sem ele, a parte mais NOVA da trilha (a que mais
+                 interessa numa apuração) nunca seria conferida pela tela. */}
+          {!d.completo && d.continuar_de != null && (
+            <button
+              type="button"
+              onClick={() => onConferir(d.continuar_de as number)}
+              className={`${BOTAO_SEC} mt-2 self-start`}
+              style={ESTILO_SEC}
+              title="Retoma exatamente de onde esta conferência parou"
+            >
+              <ShieldCheck className="size-4" />
+              Continuar a conferência
+            </button>
+          )}
+
+          {/* 4. AS TRAVAS DO BANCO, como estão AGORA. */}
+          {d.protecoes && d.protecoes.alertas.length > 0 && (
+            <Aviso
+              tom="critico"
+              titulo="Uma proteção do banco de dados não está ativa"
+              icon={AlertTriangle}
+              className="mt-2"
+            >
+              <ul className="space-y-0.5 text-[12px] leading-snug" style={{ color: "var(--bi-text)" }}>
+                {d.protecoes.alertas.map((a, i) => (
+                  <li key={i}>{a}</li>
+                ))}
+              </ul>
+              <p className="mt-1.5 text-[11px] leading-snug" style={{ color: "var(--bi-muted)" }}>
+                Uma trava desligada não significa que algo foi alterado — significa que a próxima
+                alteração não seria recusada. Avise o suporte técnico.
+              </p>
+            </Aviso>
+          )}
+
+          {d.protecoes && d.protecoes.itens.length > 0 && (
+            <div className="mt-2">
+              <div className="text-[9px] uppercase tracking-wide" style={{ color: "var(--bi-faint)" }}>
+                O que o banco de dados recusa hoje
+              </div>
+              <ul className="mt-1 space-y-1">
+                {d.protecoes.itens.map((t) => (
+                  <li key={t.chave} className="flex items-start gap-2">
+                    {/* Selo neutro quando LIGADO: é o estado esperado. Cor só na
+                        exceção — a trava que alguém derrubou. */}
+                    <span className="mt-px shrink-0">
+                      {t.ativo ? <Selo>Ativa</Selo> : <Selo tom="critico">Desligada</Selo>}
+                    </span>
+                    <span className="min-w-0 text-[11px] leading-snug" style={{ color: "var(--bi-text)" }}>
+                      {t.rotulo}
+                      {t.explicacao && (
+                        <span className="block text-[10px]" style={{ color: "var(--bi-faint)" }}>
+                          {t.explicacao}
+                        </span>
+                      )}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {d.protecoes.nota_papel && (
+                /* A separação de papel no banco é decisão de INFRAESTRUTURA do
+                   dono, documentada em `docs/AUDITORIA_IMUTABILIDADE.md`. Fica
+                   como nota cinza e não como alerta: pintar de vermelho uma
+                   escolha consciente e registrada é gritar com quem já decidiu. */
+                <p className="mt-1.5 text-[10px] leading-snug" style={{ color: "var(--bi-faint)" }}>
+                  {d.protecoes.nota_papel}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* 5. OBSERVAÇÕES DO SERVIDOR. */}
+          {d.observacoes.length > 0 && (
+            <ul className="mt-2 space-y-0.5 text-[10px] leading-snug" style={{ color: "var(--bi-faint)" }}>
+              {d.observacoes.map((o, i) => (
+                <li key={i}>{o}</li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+
+      {/* 6. A RESSALVA — o que a conferência prova e o que ela NÃO prova.
+             Fica FORA do `{d && ...}` de propósito quando há resultado, e some
+             durante a apuração: é leitura do resultado, não do cabeçalho. */}
+      {d && (
+        <p
+          className="mt-2.5 border-t pt-2 text-[10px] leading-snug"
+          style={{ borderColor: "var(--bi-line)", color: "var(--bi-faint)" }}
+        >
+          {d.ressalva || RESSALVA_RESERVA}
+          {d.conferido_em ? ` Conferido em ${d.conferido_em}.` : ""}
+        </p>
+      )}
+    </Bloco>
   );
 }
 
