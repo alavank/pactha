@@ -50,6 +50,14 @@ function ModalAjustes({ onFechar }: { onFechar: () => void }) {
   const [links, setLinks] = useState<TelaLink[]>([]);
   const [emitindo, setEmitindo] = useState<TipoLink | null>(null);
   const [copiado, setCopiado] = useState<string | null>(null);
+  /* PARA QUEM o link vai, e por quanto tempo. Ficam FORA dos dois botões porque
+     valem para os dois: o gestor decide o destinatário e o prazo uma vez, e só
+     então escolhe se aquilo é uma TV ou um celular. */
+  const [destinatario, setDestinatario] = useState("");
+  const [expira, setExpira] = useState<"dias" | "data" | "nunca">("dias");
+  const [dias, setDias] = useState("30");
+  const [dataExpira, setDataExpira] = useState("");
+  const [erroLink, setErroLink] = useState<string | null>(null);
 
   const podeGerarLink = useMemo(() => {
     const t = allowedTelasOf(user);
@@ -84,16 +92,28 @@ function ModalAjustes({ onFechar }: { onFechar: () => void }) {
 
   const gerarLink = async (kind: TipoLink) => {
     setEmitindo(kind);
+    setErroLink(null);
     try {
       // Publica o filtro ANTES de emitir. Sem isto o link nasce mostrando
       // "consolidado / todos os anos" e só passaria a refletir o período depois
       // que alguém mexesse no filtro de novo — que é exatamente o defeito que
       // esta tela existe para não ter.
       await putTelaFiltros({ scope: scope || CONSOLIDADO, anos, aba: null }).catch(() => {});
-      const novo = await criarTelaLink(kind);
+      const novo = await criarTelaLink(kind, {
+        nome: destinatario.trim() || null,
+        expira,
+        dias: Number(dias) || 30,
+        data_expiracao: dataExpira || null,
+      });
       setLinks((L) => [novo, ...L]);
-    } catch {
-      /* silencio aqui = o botao volta ao normal; o link simplesmente nao entra */
+      setDestinatario("");
+    } catch (e) {
+      /* A falha PRECISA aparecer: data no passado e data vazia voltam 400, e um
+         botão que volta ao normal em silêncio faz o gestor achar que gerou. */
+      setErroLink(
+        (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+        || "Não foi possível gerar o link."
+      );
     } finally {
       setEmitindo(null);
     }
@@ -108,6 +128,23 @@ function ModalAjustes({ onFechar }: { onFechar: () => void }) {
 
   const urlDe = (l: TelaLink) =>
     `${typeof window !== "undefined" ? window.location.origin : ""}${l.caminho}`;
+
+  /** "Expira em 12/08/2026 (9 dias)" / "Sem prazo" / "Expirado".
+   *
+   *  Os dias que FALTAM importam mais que a data: o gestor quer saber se
+   *  precisa agir esta semana. E a lista não esconde link expirado — ele
+   *  continua ocupando lugar até alguém revogar, e sumir daria a impressão
+   *  errada de que já foi resolvido. */
+  const prazoDe = (l: TelaLink) => {
+    if (!l.expira_em) return "Sem prazo — vale até você revogar";
+    const fim = new Date(l.expira_em);
+    if (Number.isNaN(fim.getTime())) return "Prazo não informado";
+    const dias = Math.ceil((fim.getTime() - Date.now()) / 86_400_000);
+    const data = fim.toLocaleDateString("pt-BR");
+    if (dias < 0) return `Expirou em ${data}`;
+    if (dias === 0) return `Expira hoje (${data})`;
+    return `Expira em ${data} · ${dias} dia${dias > 1 ? "s" : ""}`;
+  };
 
   return (
     <div
@@ -175,6 +212,87 @@ function ModalAjustes({ onFechar }: { onFechar: () => void }) {
               Os dois <strong>se comportam de forma diferente</strong>:
             </p>
 
+            {/* PARA QUEM e ATÉ QUANDO — antes dos botões, porque valem para os
+                dois tipos de link. Sem o nome, a lista vira um punhado de
+                endereços de 12 caracteres e ninguém lembra qual revogar quando a
+                pessoa sai. */}
+            <div className="mb-2 rounded-2xl p-2.5" style={{ background: "var(--bi-surface-2)" }}>
+              <label className="mb-1 block text-[11px] font-semibold" htmlFor="link-destinatario">
+                Para quem é este link
+              </label>
+              <input
+                id="link-destinatario"
+                value={destinatario}
+                onChange={(e) => setDestinatario(e.target.value)}
+                placeholder="Ex.: Secretário de Saúde · TV do gabinete"
+                maxLength={120}
+                className="mb-2.5 w-full rounded-xl px-2.5 py-1.5 text-[12px] outline-none"
+                style={{ background: "var(--bi-surface)", border: "1px solid var(--bi-line)",
+                         color: "var(--bi-text)" }}
+              />
+
+              <span className="mb-1 block text-[11px] font-semibold">Validade</span>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[12px]">
+                {([
+                  ["dias", "Por"],
+                  ["data", "Até"],
+                  ["nunca", "Sem prazo"],
+                ] as const).map(([valor, rotulo]) => (
+                  <label key={valor} className="flex cursor-pointer items-center gap-1.5">
+                    <input
+                      type="radio"
+                      name="link-expira"
+                      checked={expira === valor}
+                      onChange={() => setExpira(valor)}
+                      className="size-3.5 accent-[var(--bi-accent)]"
+                    />
+                    {rotulo}
+                    {valor === "dias" && expira === "dias" && (
+                      <>
+                        <input
+                          type="number"
+                          min={1}
+                          max={3650}
+                          value={dias}
+                          onChange={(e) => setDias(e.target.value)}
+                          className="w-16 rounded-lg px-1.5 py-0.5 text-[12px] outline-none"
+                          style={{ background: "var(--bi-surface)",
+                                   border: "1px solid var(--bi-line)", color: "var(--bi-text)" }}
+                          aria-label="Quantidade de dias"
+                        />
+                        dias
+                      </>
+                    )}
+                    {valor === "data" && expira === "data" && (
+                      <input
+                        type="date"
+                        value={dataExpira}
+                        onChange={(e) => setDataExpira(e.target.value)}
+                        className="rounded-lg px-1.5 py-0.5 text-[12px] outline-none"
+                        style={{ background: "var(--bi-surface)",
+                                 border: "1px solid var(--bi-line)", color: "var(--bi-text)" }}
+                        aria-label="Data de expiração"
+                      />
+                    )}
+                  </label>
+                ))}
+              </div>
+              {expira === "nunca" && (
+                /* Honestidade: o token embutido no link é assinado com validade.
+                   "Sem prazo" quer dizer que o sistema não o mata sozinho — não
+                   que ele viva para sempre. */
+                <p className="mt-1.5 text-[10px] leading-snug" style={{ color: "var(--bi-faint)" }}>
+                  O sistema não vai encerrar sozinho. Continua valendo até você revogar
+                  (limite técnico de 10 anos).
+                </p>
+              )}
+              {erroLink && (
+                <p className="mt-1.5 text-[11px]" style={{ color: "var(--bi-crit-ink)" }}>
+                  {erroLink}
+                </p>
+              )}
+            </div>
+
             <div className="flex flex-col gap-2">
               {/* MODO TELA: extensão da tela do gabinete, então SEGUE o filtro do dono. */}
               <div className="rounded-2xl p-2.5" style={{ background: "var(--bi-surface-2)" }}>
@@ -240,7 +358,21 @@ function ModalAjustes({ onFechar }: { onFechar: () => void }) {
                     >
                       {l.kind === "mobile" ? "app" : "tv"}
                     </span>
-                    <code className="min-w-0 flex-1 truncate text-[11px]">{urlDe(l)}</code>
+                    {/* O NOME vem primeiro e o endereço embaixo: na hora de
+                        revogar, a pergunta é "de quem é este?", não "qual é a
+                        URL?". Link antigo (gerado antes deste campo existir)
+                        fica sem nome — dizer isso é melhor que inventar um. */}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[12px] font-semibold">
+                        {l.nome || <span style={{ color: "var(--bi-faint)" }}>Sem destinatário</span>}
+                      </span>
+                      <code className="block truncate text-[10px]" style={{ color: "var(--bi-faint)" }}>
+                        {urlDe(l)}
+                      </code>
+                      <span className="block text-[10px]" style={{ color: "var(--bi-faint)" }}>
+                        {prazoDe(l)}
+                      </span>
+                    </span>
                     <button
                       type="button"
                       onClick={() => {
