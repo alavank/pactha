@@ -78,6 +78,47 @@ READONLY_WRITE_ALLOW = (
     "/api/bi/tela-filtros", "/api/bi/tela-links",
 )
 
+# ---------------------------------------------------------------------------
+# QUIOSQUE — o que o link PUBLICO de TV pode alcancar
+# ---------------------------------------------------------------------------
+# O token vem de `GET /bi/tela-pub/{slug}`, que e PUBLICO: o slug de 12 chars e o
+# unico segredo, e o link existe para circular (WhatsApp, TV de gabinete). Ele e
+# um usuario `viewer` REAL, entao passava por `get_current_user` como qualquer
+# um — e o guard de somente-leitura acima barra ESCRITA, nao LEITURA. Com 55 dos
+# 171 endpoints sem checagem alguma, o link lia anotacao da Gestao Interna com
+# anexo, RM, documentos e o status da sessao gov.br do cliente inteiro.
+#
+# A lista abaixo foi MEDIDA: e o conjunto exato que `/tela`, `/t/<slug>` e
+# `/m/<slug>` chamam, varrendo o grafo de imports das tres paginas. Nao e
+# prefixo — e IGUALDADE. Com `startswith`, liberar `/api/bi/parlamentares/
+# detalhe` abriria `/api/bi/parlamentares` de brinde, e o prefixo `/api/bi`
+# abriria `/api/bi/narrativa`, que chama a Anthropic (link vazado = conta paga).
+#
+# FICARAM DE FORA de proposito, conferido caller a caller no frontend:
+#   /api/bi/narrativa, /timeline, /semaforo, /parlamentares (sem /detalhe),
+#   /api/bi/preferencias, /vapid-public-key, /tela-links  -> ninguem chama
+#   /api/auth/me            -> so `/tela` chama, e la ha sessao real; alem disso
+#                              devolve o NOME do gestor dono do link
+#   /api/session-capture/*  -> vaza `observacao` do Cofre, sem escopo de municipio
+KIOSK_GET_PERMITIDOS = frozenset({
+    "/api/municipios",              # exato: main.py usa redirect_slashes=False
+    "/api/bi/overview",
+    "/api/bi/alertas",
+    "/api/bi/insights",
+    "/api/bi/parlamentares/detalhe",
+    "/api/bi/transferegov",
+    "/api/bi/estaduais",
+    "/api/bi/documentos",           # atende as abas CAUC e CAGEC
+    "/api/bi/sismob",
+    "/api/bi/fns",
+    "/api/bi/tela-filtros",         # so `/tela`, para os links legados ?kiosk=
+})
+
+
+def ehQuiosque(user) -> bool:
+    """Conta de quiosque? Le do USUARIO — ver migrations/add_users_kiosk.sql."""
+    return bool(getattr(user, "kiosk", False))
+
 # Blacklist em memoria (suficiente para single-instance; em multi-replica usar Redis)
 _REVOKED_JTI: set[str] = set()
 
@@ -254,6 +295,20 @@ async def get_current_user(
     if user.role in READONLY_ROLES and request.method in ("POST", "PUT", "PATCH", "DELETE"):
         if not request.url.path.startswith(READONLY_WRITE_ALLOW):
             raise HTTPException(status_code=403, detail="Perfil somente-leitura")
+
+    # QUIOSQUE: so as leituras que a TV e o celular realmente fazem.
+    #
+    # 403 e NAO 401, de proposito. O interceptor do front (`lib/api.ts`) reage a
+    # 401 tentando refresh e, se falhar, faz `window.location.href = "/login"` —
+    # ou seja, um 401 aqui transformaria o painel do gabinete numa tela de login
+    # a cada volta do slideshow. Com 403 a aba apenas nao carrega, e todos os
+    # consumidores ja engolem o erro.
+    if ehQuiosque(user):
+        if request.method != "GET" or request.url.path not in KIOSK_GET_PERMITIDOS:
+            raise HTTPException(
+                status_code=403,
+                detail="Este link so alcanca o Painel de Indicadores",
+            )
 
     return user
 

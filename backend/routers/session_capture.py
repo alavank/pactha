@@ -84,6 +84,21 @@ async def get_capture_principal(
     user = res.scalar_one_or_none()
     if not user:
         raise HTTPException(401, "Usuario nao encontrado")
+    # Esta rota decodifica o JWT na mao e NAO passa por `get_current_user`, entao
+    # NENHUM guard central roda aqui — nem o de somente-leitura, nem o de
+    # quiosque. As duas checagens abaixo tem de existir NESTE arquivo.
+    #
+    # `active` faltava: revogar um link de TV desativa o usuario de quiosque
+    # (`bi.py::revogar_tela_link`), e sem esta linha o token revogado continuava
+    # escrevendo no Cofre pelos 365 dias do JWT. O mesmo vale para funcionario
+    # desligado cuja conta foi desativada.
+    if not user.active:
+        raise HTTPException(401, "Usuario inativo")
+    # E conta de quiosque nao captura sessao. O que esta rota faz e cifrar e
+    # gravar credencial no Cofre (e disparar o scraper): e a operacao mais
+    # sensivel do sistema, e o link publico de TV nao tem o que fazer aqui.
+    if getattr(user, "kiosk", False):
+        raise HTTPException(403, "Conta de quiosque nao captura sessao")
     return _CapturePrincipal(user_id=user.id, label=f"user:{user.email}", via="jwt")
 
 

@@ -9,15 +9,14 @@ from __future__ import annotations
 import os
 import json
 import hashlib
-import secrets
 from typing import Optional
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from services.ia_texto import modelo_texto, params_raciocinio, max_tokens_texto
 from database import get_db
-from services.auth import get_current_user, ensure_municipio_access, hash_password, create_kiosk_token
+from services.auth import get_current_user, ensure_municipio_access
 from models.user import User
 
 from routers.municipios import municipio_summary
@@ -255,57 +254,18 @@ async def _gerar_narrativa(dados: dict, kind: str, api_key: str) -> str:
     return "".join(b.text for b in resp.content if getattr(b, "type", None) == "text").strip()
 
 
-# ---- Token de quiosque (TV liga sem senha) — emissao ADMIN ----
-
-class KioskIn(BaseModel):
-    municipio_id: int
-    dias: int = 365
-
-
-@router.post("/kiosk-tokens")
-async def criar_kiosk_token(
-    body: KioskIn,
-    db: AsyncSession = Depends(get_db),
-    current: User = Depends(get_current_user),
-):
-    """Emite um token de longa duracao pra TV do municipio ligar sem login.
-    Cria/reusa um usuario 'viewer' escopado ao municipio e devolve o token (a TV
-    grava em localStorage.pactha_token). Somente admin."""
-    if current.role != "admin":
-        raise HTTPException(status_code=403, detail="Apenas admin emite token de quiosque")
-    mrow = (await db.execute(text(
-        "SELECT nome FROM municipios WHERE id = :m AND active = true"
-    ), {"m": body.municipio_id})).first()
-    if not mrow:
-        raise HTTPException(status_code=404, detail="Municipio nao encontrado")
-
-    email = f"kiosk-{body.municipio_id}@painel.local"
-    urow = (await db.execute(text("SELECT id FROM users WHERE email = :e"), {"e": email})).first()
-    if urow:
-        uid = urow[0]
-        await db.execute(text("UPDATE users SET active = true, role = 'viewer' WHERE id = :u"), {"u": uid})
-    else:
-        ph = hash_password(secrets.token_urlsafe(24))
-        r = (await db.execute(text(
-            "INSERT INTO users (email, name, password_hash, role, active, must_change_password) "
-            "VALUES (:e, :n, :p, 'viewer', true, false) RETURNING id"
-        ), {"e": email, "n": f"Quiosque {mrow[0]}", "p": ph})).first()
-        uid = r[0]
-
-    await db.execute(text(
-        "INSERT INTO user_municipios (user_id, municipio_id) VALUES (:u, :m) ON CONFLICT DO NOTHING"
-    ), {"u": uid, "m": body.municipio_id})
-    await db.commit()
-
-    token = create_kiosk_token(uid, body.dias)
-    return {
-        "token": token,
-        "municipio_id": body.municipio_id,
-        "municipio": mrow[0],
-        "dias": body.dias,
-        "user_email": email,
-        "instrucoes": "Na TV, abra /tv e cole este token em localStorage.pactha_token, ou acesse /tv?kiosk=<token>.",
-    }
+# REMOVIDO: POST /kiosk-tokens (emissor legado de token de TV).
+#
+# Emitia um token de 365 dias e mandava, na propria resposta, "cole este token
+# em localStorage.pactha_token" — que e a chave do LOGIN. Uma maquina montada
+# assim autentica o sistema INTEIRO como quiosque, e foi exatamente o incidente
+# ja documentado em `frontend/src/lib/api.ts` ("401 em TODO o sistema, so numa
+# maquina, parecendo firewall"). Alem disso criava a conta de quiosque SEM a
+# marca `users.kiosk`, entao ela escapava da guarda nova.
+#
+# O consumidor nao existe mais: a rota `/tv` saiu com o app `painel/`, e o Modo
+# Tela atual emite pelo `/api/bi/tela-links`, que grava `kiosk_user_id` e sabe
+# revogar. Sem chamador no PACTHA nem na Central de Comando (conferido).
 
 
 # ---- Push web + preferencias (prefeito) ----
