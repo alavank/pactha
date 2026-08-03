@@ -28,8 +28,13 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
 def _user_resp(user) -> UserResponse:
-    """UserResponse com escopos (telas/municipios). None = admin (acesso total)."""
-    resp = UserResponse.model_validate(user)
+    """UserResponse com escopos (telas/municipios). None = acesso total.
+
+    `de_usuario` e nao `model_validate`: as flags `super_admin`/`somente_leitura`
+    saem CALCULADAS (coluna + reforco do codigo), do mesmo jeito que em
+    `GET /users`. Ler a coluna crua aqui faria a sidebar discordar do backend.
+    """
+    resp = UserResponse.de_usuario(user)
     at = getattr(user, "allowed_telas", None)
     am = getattr(user, "allowed_municipio_ids", None)
     resp.telas = None if at is None else sorted(at)
@@ -246,7 +251,7 @@ async def register(
     email = (req.email or "").strip().lower()
     if not email or "@" not in email:
         raise HTTPException(status_code=400, detail="Email invalido")
-    if req.role not in ("admin", "analyst", "user"):
+    if req.role not in ("admin", "usuario", "analyst", "user"):
         raise HTTPException(status_code=400, detail="Role invalida")
 
     existing = await db.execute(select(User).where(User.email == email))
@@ -268,4 +273,4 @@ async def register(
         target_type="user", target_id=user.id,
         details={"new_email": email, "role": req.role},
     )
-    return UserResponse.model_validate(user)
+    return UserResponse.de_usuario(user)

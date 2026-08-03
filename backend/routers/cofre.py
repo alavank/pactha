@@ -2,9 +2,24 @@
 Cofre de Senhas — armazenamento criptografado (AES-GCM).
 
 Politicas:
-- Listing nao expoe senha em claro (mascara).
-- Endpoint dedicado /reveal exige role admin/gestor + registra auditoria.
-- CRUD restrito a role in (admin, gestor).
+- Listing nao expoe senha em claro (mascara) e exige a tela `cofre` + o municipio.
+- Endpoint dedicado /reveal exige o papel `admin` + registra auditoria.
+- CRUD (POST/PUT/DELETE) restrito ao papel `admin`.
+
+⚠️ O docstring anterior anunciava "admin/gestor" nas tres linhas, e `gestor`
+NUNCA existiu: nao esta em `services/users_admin.py::ROLES`, nao e aceito por
+`routers/users.py::create_user` e nao ha uma linha em `users.role` com esse
+valor. Era ramo morto, e ramo morto em regra de permissao e pior que ausencia —
+lido de fora, o arquivo prometia um papel intermediario ("o gestor da prefeitura
+mexe no Cofre") que o codigo nunca cumpriu; o Cofre sempre foi admin-only na
+pratica. O nome saiu para o que esta escrito aqui ser o que roda.
+
+Este e um gate por PAPEL, e ele fica de fora do incremento que fez `role` deixar
+de conceder ESCOPO: papel deixou de valer para o que voce ENXERGA, e continua
+valendo para o que voce FAZ ate o Incremento 5 (permissao por acao) trocar as
+duas coisas de lugar com uma tela que explique a mudanca. O Cofre guarda a
+credencial gov.br do cliente — se e para ele mudar de dono, que mude de proposito
+e nao de raspao.
 """
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,8 +38,11 @@ from services.audit import log_event
 router = APIRouter(prefix="/api/cofre", tags=["cofre"])
 logger = logging.getLogger("cofre.audit")
 
-ALLOWED_ROLES_WRITE = {"admin", "gestor"}
-ALLOWED_ROLES_REVEAL = {"admin", "gestor"}
+# So `admin`. `gestor` saiu daqui: era um papel que o sistema nunca soube criar
+# — ver o cabecalho do arquivo. Nenhum acesso muda com a remocao (nenhum usuario
+# jamais casou com essa string); some so a promessa falsa.
+ALLOWED_ROLES_WRITE = {"admin"}
+ALLOWED_ROLES_REVEAL = {"admin"}
 
 
 def _require_role(user: User, allowed: set[str]):
@@ -125,7 +143,7 @@ async def reveal_senha(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Retorna a senha em claro. Restrito a admin/gestor + auditoria."""
+    """Retorna a senha em claro. Restrito ao papel `admin` + auditoria."""
     _require_role(user, ALLOWED_ROLES_REVEAL)
     item = await db.get(CofreSenha, item_id)
     if not item:

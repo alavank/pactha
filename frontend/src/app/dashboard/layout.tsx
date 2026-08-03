@@ -40,6 +40,7 @@ import {
 } from "@/components/ui/sheet";
 import type { Municipio, User } from "@/types";
 import { hrefToTela, allowedTelasOf } from "@/lib/telas";
+import { ehSuperAdmin } from "@/lib/conta";
 import { MunicipioProvider, useMunicipio } from "@/contexts/MunicipioContext";
 import { EnteAtendido, SUBTITULO_PACTHA } from "@/components/bi/Marca";
 
@@ -157,19 +158,26 @@ const ADMIN_NAV_ITEMS: AdminNavItem[] = [
 // Itens visiveis SO para o super-admin (nao para os demais admins).
 //
 // Sao os DONOS do sistema, nao "mais um admin do cliente": quem administra a
-// plataforma pela Alavank. Fica como lista porque uma conta so era um ponto
-// unico de falha — perdido o acesso a ela, ninguem alcanca Sessoes e Tokens de
-// Servico. Um e-mail por conta, minusculo (a comparacao normaliza).
-// ⚠️ Tem de bater EXATAMENTE com `backend/services/auth.py::SUPER_ADMIN_EMAILS`.
-// Esta lista so esconde item de menu; quem barra de verdade e a do backend.
-// Divergir esconde a tela de quem tem acesso, ou mostra um link que da 403.
-const SUPER_ADMIN_EMAILS = new Set<string>([
-  "super-admin@alavank.com.br",
-  "alavank.tecnologia@gmail.com",
-  "matheus@alavank.com.br",
-  "tiagomiller@alavank.com.br",
-]);
+// plataforma pela Alavank. Quem responde "esta conta e dona?" e `lib/conta.ts`
+// — que le a coluna `users.super_admin` e so cai na lista de e-mails quando o
+// campo nao veio. A lista morava AQUI, e era a quarta copia dela no produto.
 const SUPER_ADMIN_ONLY = new Set<string>(["/dashboard/sessoes", "/dashboard/service-tokens"]);
+
+// As rotas de Administracao que NAO tem chave de tela.
+//
+// `user_telas` nao governa estas tres: quem barra Usuarios, Status dos Dados e
+// Service Tokens e o papel/super-admin, no backend. Enquanto `role === "admin"`
+// zerava os limites, o guard de rota nunca chegava a olhar para elas — o
+// conjunto de telas do admin era `null` e o guard saia na primeira linha. Agora
+// que o admin tem uma lista finita como todo mundo, `hrefToTela("/dashboard/
+// usuarios")` daria "usuarios", que nao existe em catalogo nenhum: o
+// administrador seria EXPULSO da propria tela de Usuarios ao abri-la.
+//
+// Derivado de `ADMIN_NAV_ITEMS` de proposito: item novo sem `tela` ja nasce
+// isento, e nao ha uma segunda lista para alguem esquecer de atualizar.
+const ROTAS_SEM_TELA = new Set(
+  ADMIN_NAV_ITEMS.filter((i) => !i.tela).map((i) => i.href),
+);
 
 function SidebarContent({
   pathname,
@@ -207,8 +215,8 @@ function SidebarContent({
       return next;
     });
   };
-  // Sidebar so mostra as telas permitidas ao usuario (admin/carregando = todas)
-  const isSuper = SUPER_ADMIN_EMAILS.has((user?.email || "").trim().toLowerCase());
+  // Sidebar so mostra as telas permitidas (acesso total/carregando = todas)
+  const isSuper = ehSuperAdmin(user);
   const allowed = allowedTelasOf(user);
   let visibleNav = filterNav(NAV_ITEMS, allowed);
   if (!isSuper) {
@@ -218,7 +226,13 @@ function SidebarContent({
   // A secao Administracao. Nao e mais "admin ve tudo, os outros nao veem nada":
   // o item que declara `tela` obedece a permissao por tela, entao um usuario de
   // controle interno pode ter a Auditoria sem ter poder de administrador.
-  // `allowed` e null para admin E enquanto carrega — dai o `ehAdmin` separado.
+  //
+  // ⚠️ Este `role === "admin"` SOBREVIVEU de proposito ao incremento que tirou do
+  // papel o poder de conceder ESCOPO. Ele nao concede tela nenhuma: espelha o
+  // `_require_admin` que os tres endpoints de administracao (usuarios, frescor,
+  // service tokens) ainda aplicam no backend. Esconder o item de quem levaria
+  // 403 e o certo — o dia em que aqueles endpoints deixarem de olhar o papel,
+  // esta linha sai junto, e nao antes.
   const ehAdmin = user?.role === "admin";
   const adminNavVisivel = ADMIN_NAV_ITEMS.filter((item) => {
     if (!isSuper && SUPER_ADMIN_ONLY.has(item.href)) return false;
@@ -633,11 +647,13 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
     }
   }, [selectedMunicipioId]);
 
-  // Guard de rota: nao-admin sem acesso a tela atual -> 1a tela permitida.
+  // Guard de rota: sem acesso a tela atual -> 1a tela permitida.
   // Seguranca real e no backend (ensure_tela / 403); isto e UX.
   useEffect(() => {
     const allowed = allowedTelasOf(user);
-    if (!allowed) return; // admin ou ainda carregando
+    if (!allowed) return; // acesso total (super-admin) ou ainda carregando
+    // Administracao nao e governada por `user_telas` (ver ROTAS_SEM_TELA).
+    if (ROTAS_SEM_TELA.has(pathname)) return;
     if (allowed.has(hrefToTela(pathname))) return;
     // Os destinos incluem os itens de Administracao governados por TELA (hoje,
     // a Auditoria). Sem isso, um usuario cujo unico acesso e a trilha nao teria
@@ -655,8 +671,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
   // Esconder o item de menu nao basta — a rota e digitavel.
   useEffect(() => {
     if (!user) return;
-    const ehSuper = SUPER_ADMIN_EMAILS.has((user.email || "").trim().toLowerCase());
-    if (!ehSuper && SUPER_ADMIN_ONLY.has(pathname)) {
+    if (!ehSuperAdmin(user) && SUPER_ADMIN_ONLY.has(pathname)) {
       router.replace("/dashboard");
     }
   }, [user, pathname, router]);

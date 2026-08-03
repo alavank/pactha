@@ -60,13 +60,23 @@ export function hrefToTela(href: string): string {
 
 /**
  * Conjunto de telas permitidas p/ um usuario.
- * null = acesso total (admin ou ainda carregando). Set = escopo do nao-admin.
+ * null = acesso total (super-admin ou ainda carregando). Set = escopo da pessoa.
  */
 export function allowedTelasOf(
   user: { role?: string; telas?: string[] | null } | null
 ): Set<string> | null {
   if (!user) return null; // carregando -> nao esconde nada ainda
-  if (user.role === "admin") return null; // admin ve tudo
+  // Havia aqui um `if (user.role === "admin") return null`. Saiu porque o papel
+  // deixou de conceder: o backend passou a mandar a lista REAL de todo mundo em
+  // `telas`, e reserva `null` para quem de fato nao tem limite (o super-admin).
+  //
+  // Sem tirar, o menu do administrador continuaria mostrando as 24 telas mesmo
+  // depois de o administrador ter 6 — e cada clique cairia num 403. E derivar do
+  // papel aqui e derivar de novo o que o servidor ja decidiu: se as duas contas
+  // divergirem, ganha a errada, porque a tela e a que a pessoa ve.
+  //
+  // Nao afrouxa nada: para o backend anterior, `role === "admin"` vinha com
+  // `telas: null` de qualquer forma, e o `null` logo abaixo faz o mesmo.
   if (Array.isArray(user.telas)) {
     const set = new Set(user.telas);
     // O Painel de Indicadores foi FUNDIDO ao /dashboard (antes vivia em /bi).

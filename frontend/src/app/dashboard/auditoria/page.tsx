@@ -503,8 +503,13 @@ const ROTULO_CAMPO: Record<string, string> = {
   new_email: "E-mail do usuário",
   alvo_email: "E-mail do usuário alterado",
   alvo_nome: "Nome do usuário alterado",
-  role: "Perfil de acesso",
+  // "Perfil" e nao "Perfil de acesso": desde que o papel virou rótulo ele não
+  // concede acesso nenhum, e a trilha não pode continuar chamando de acesso o
+  // campo que deixou de dar acesso — quem lê a auditoria daqui a três anos
+  // concluiria que a mudança de perfil foi a mudança de permissão.
+  role: "Perfil (rótulo)",
   active: "Usuário ativo",
+  somente_leitura: "Somente leitura (não altera nada)",
   telas: "Telas com acesso",
   municipios: "Municípios com acesso",
   municipios_nomes: "Municípios (nomes)",

@@ -15,7 +15,10 @@ from pydantic import BaseModel
 from database import get_db
 from models.user import User
 from schemas.auth import UserResponse
-from services.auth import hash_password, get_current_user, is_super_admin
+from services.auth import (
+    hash_password, get_current_user, is_super_admin, eh_somente_leitura,
+    READONLY_ROLES,
+)
 from services.audit import registrar, registrar_critico
 
 router = APIRouter(prefix="/api/users", tags=["users"])
@@ -28,6 +31,15 @@ def _gen_senha(n: int = 14) -> str:
 
 
 def _require_admin(user: User):
+    """Gate de ACAO desta tela — continua olhando o PAPEL, de proposito.
+
+    `role` deixou de CONCEDER escopo (ver `services/auth.py::load_user_scopes`),
+    mas quem pode dar e tirar permissao dos outros ainda e decidido aqui pelo
+    rotulo. Trocar isto por permissao individual e o Incremento 5 (permissao por
+    ACAO); fazer junto significaria mudar QUEM tem escopo e ONDE se checa no
+    mesmo deploy, e a primeira mudanca ja e a que arrisca trancar o cliente
+    fora. Ate la, `admin` deixou de ser deus mas continua sendo o zelador.
+    """
     if user.role != "admin":
         raise HTTPException(403, "Apenas administradores podem gerenciar usuarios")
 
@@ -46,12 +58,49 @@ def _guard_target(current: User, target: User):
         raise HTTPException(403, "Apenas administradores podem alterar contas admin")
 
 
+# ⚠️ `super_admin` NAO entra nestes payloads, e a ausencia e a decisao: e a chave
+# da PLATAFORMA (Alavank), nao do cliente. Aceita-lo aqui deixaria qualquer admin
+# do tenant se promover a dono num PATCH e alcancar Sessoes, Service Tokens e as
+# contas dos outros donos — escalada de privilegio pela porta da frente. Trocar
+# quem manda ja nao exige mais deploy (virou coluna), mas exige acesso ao BANCO,
+# que e outro nivel de confianca.
+#
+# `somente_leitura` ENTRA, e a diferenca e proposital. Ela nao promove ninguem —
+# so restringe —, e sem ela este incremento AFROUXAVA a unica trava de acao do
+# sistema: `READONLY_ROLES = {"prefeito","viewer"}` barrava escrita pelo PAPEL,
+# entao marcar alguem como "Prefeito" nesta tela produzia, ate ontem, uma conta
+# que nao escreve. Com o guard lendo a FLAG e a flag so alcancavel por migration,
+# todo prefeito criado DEPOIS do deploy nasceria com escrita liberada em tudo o
+# que tivesse tela — e sem caminho nenhum, fora do banco, para conte-lo. Era
+# trocar "prefeito nao escreve" por "prefeito escreve", calado.
 class CreateUserRequest(BaseModel):
     email: str
     name: str
-    role: str = "admin"  # default admin (preferencia atual do cliente)
+    # Default deixou de ser "admin". Enquanto `role == "admin"` zerava os limites
+    # em `load_user_scopes`, este default fazia um POST que ESQUECESSE o campo
+    # criar um usuario sem limite nenhum — o campo mais poderoso do sistema era o
+    # campo omitido. Hoje o papel e so rotulo, mas o default continua sendo o
+    # rotulo mais modesto: um cadastro incompleto nao pode sair com o rotulo de
+    # zelador, que ainda e o que abre esta tela de Usuarios (`_require_admin`).
+    # "user" e o mesmo default que a tela de Usuarios passou a marcar neste
+    # incremento — duas portas de criacao com defaults diferentes divergem em
+    # silencio. A tela sempre manda o campo; quem herda este default e cliente de
+    # API. (O canal do Console, em `routers/control.py`, usa "analyst"; os dois
+    # sao byte-identicos no codigo — nenhuma checagem testa nenhum dos dois.)
+    role: str = "user"
     municipio_ids: Optional[list[int]] = None  # municipios que o usuario pode acessar
     telas: Optional[list[str]] = None  # telas/modulos que o usuario pode acessar
+    # `None` = "nao opinei", e NAO `False`. Omitido, o default e semeado do
+    # rotulo — a MESMA regra que a migration usou para semear as contas que ja
+    # existiam (`role IN ('prefeito','viewer')`). E semente de nascimento, nao
+    # regra de execucao: no minuto seguinte o administrador liga e desliga a flag
+    # nesta mesma tela, individualmente, que e o que o dono pediu.
+    #
+    # A licao vem do proprio `role: str = "admin"` que este incremento matou: o
+    # campo OMITIDO nao pode ser o campo mais permissivo. Quem esquece de mandar
+    # `somente_leitura` ao cadastrar um prefeito recebe o comportamento de
+    # ontem — restritivo —, e nao escrita liberada em silencio.
+    somente_leitura: Optional[bool] = None
 
 
 class UpdateUserRequest(BaseModel):
@@ -60,6 +109,27 @@ class UpdateUserRequest(BaseModel):
     active: Optional[bool] = None
     municipio_ids: Optional[list[int]] = None
     telas: Optional[list[str]] = None
+    # `None` = nao mexe. Trocar o ROTULO nao arrasta a flag junto: um prefeito
+    # que ganhou escrita continua com escrita se for reetiquetado, e e isso que
+    # separa as duas coisas de vez.
+    somente_leitura: Optional[bool] = None
+
+
+def _trava_inicial(role: str, pedido: Optional[bool]) -> bool:
+    """A trava de escrita com que a conta NASCE.
+
+    O que o administrador marcou na tela; e, quando ele nao disse nada, o que o
+    sistema fazia com esse rotulo ate a vespera deste incremento
+    (`READONLY_ROLES`). Isso e SEMENTE de nascimento, nao regra de execucao —
+    quem autoriza em runtime e a coluna, e ela se edita usuario a usuario. Um
+    prefeito pode receber escrita no minuto seguinte sem deixar de ser prefeito.
+
+    ⚠️ O campo OMITIDO nao pode ser o mais permissivo — e a licao do
+    `role: str = "admin"` que este mesmo incremento matou. Sem esta semente, um
+    POST sem `somente_leitura` criaria prefeito com escrita liberada em tudo o
+    que tivesse tela, calado, onde ontem sairia uma conta que nao escreve.
+    """
+    return pedido if pedido is not None else role in READONLY_ROLES
 
 
 async def _set_user_municipios(db: AsyncSession, user_id: int, ids) -> None:
@@ -170,11 +240,21 @@ async def list_users(
     telas_by_user: dict[int, list[str]] = {}
     for uid, tela in tr.fetchall():
         telas_by_user.setdefault(uid, []).append(tela)
+    # `super_admin` e `somente_leitura` saem CALCULADOS pelos mesmos helpers que
+    # o guard usa (flag OU reforco), e nao lidos crus da coluna: a tela precisa
+    # mostrar o que de fato vale em tempo de execucao. Um usuario cuja coluna
+    # esta `false` mas cujo e-mail esta na semente da Alavank manda no sistema —
+    # exibir "false" ali seria a tela mentindo sobre quem tem a chave.
+    #
+    # Somente LEITURA: nenhum dos dois e aceito de volta em POST/PATCH (ver a
+    # nota em `CreateUserRequest`).
     return [{
         "id": u.id, "email": u.email, "name": u.name, "role": u.role,
         "active": u.active, "must_change_password": u.must_change_password,
         "municipio_ids": by_user.get(u.id, []),
         "telas": sorted(telas_by_user.get(u.id, [])),
+        "super_admin": is_super_admin(u),
+        "somente_leitura": eh_somente_leitura(u),
     } for u in users]
 
 
@@ -192,10 +272,11 @@ async def create_user(
     existing = await db.execute(select(User).where(User.email == email))
     if existing.scalar_one_or_none():
         raise HTTPException(400, "Email ja cadastrado")
-    if req.role not in ("admin", "analyst", "user", "prefeito"):
+    if req.role not in ("admin", "usuario", "analyst", "user", "prefeito"):
         raise HTTPException(400, "Role invalida")
 
     senha = _gen_senha()
+    somente_leitura = _trava_inicial(req.role, req.somente_leitura)
     user = User(
         email=email,
         name=req.name.strip(),
@@ -203,6 +284,7 @@ async def create_user(
         role=req.role,
         active=True,
         must_change_password=True,
+        somente_leitura=somente_leitura,
     )
     db.add(user)
     # `flush` e NAO `commit`: manda o INSERT (e recebe o `user.id`, necessario
@@ -229,6 +311,7 @@ async def create_user(
         target_type="user", target_id=user.id, alvo_nome=user.name,
         details={
             "alvo_email": email, "role": req.role,
+            "somente_leitura": somente_leitura,
             "telas": depois["telas"],
             "municipios": depois["municipios"],
             "municipios_nomes": await _nomes_municipios(db, depois["municipios"]),
@@ -286,12 +369,24 @@ async def update_user(
         raise HTTPException(400, "Voce nao pode desativar a si mesmo")
     if req.role and req.role != "admin" and u.id == current.id and current.role == "admin":
         raise HTTPException(400, "Voce nao pode rebaixar o proprio perfil de administrador (evita se trancar pra fora)")
-    if req.role and req.role not in ("admin", "analyst", "user", "prefeito"):
+    if req.role and req.role not in ("admin", "usuario", "analyst", "user", "prefeito"):
         raise HTTPException(400, "Role invalida")
+    # Auto-trancamento: pôr a SI MESMO em somente-leitura e uma porta que fecha
+    # por fora. O guard de `get_current_user` barra todo POST/PUT/PATCH/DELETE
+    # fora do Painel — e este endpoint e um PATCH. A pessoa perderia, no mesmo
+    # ato, a escrita e o unico caminho de desfaze-la: so voltaria por outro admin
+    # ou pelo banco. Mesma familia das duas protecoes acima.
+    if req.somente_leitura is True and u.id == current.id:
+        raise HTTPException(400, "Voce nao pode se colocar em somente leitura (evita se trancar pra fora)")
     # Foto do ANTES tirada antes de qualquer atribuicao: `u` e o objeto vivo da
     # sessao, entao ler `u.name` depois do `u.name = ...` ja devolveria o valor
     # novo e o "de -> para" sairia dizendo que nada mudou.
-    antes = {"name": u.name, "role": u.role, "active": bool(u.active)}
+    #
+    # `somente_leitura` entra no retrato porque conceder ou tirar ESCRITA e a
+    # mudanca de poder mais forte que esta tela faz — sem ela na trilha, "quem
+    # liberou o prefeito para editar, e quando" ficaria sem resposta.
+    antes = {"name": u.name, "role": u.role, "active": bool(u.active),
+             "somente_leitura": bool(u.somente_leitura)}
     antes.update(await _snapshot_acessos(db, u.id))
     if req.name is not None:
         u.name = req.name.strip()
@@ -299,11 +394,14 @@ async def update_user(
         u.role = req.role
     if req.active is not None:
         u.active = req.active
+    if req.somente_leitura is not None:
+        u.somente_leitura = req.somente_leitura
     if req.municipio_ids is not None:
         await _set_user_municipios(db, u.id, req.municipio_ids)
     if req.telas is not None:
         await _set_user_telas(db, u.id, req.telas)
-    depois = {"name": u.name, "role": u.role, "active": bool(u.active)}
+    depois = {"name": u.name, "role": u.role, "active": bool(u.active),
+              "somente_leitura": bool(u.somente_leitura)}
     depois.update(await _snapshot_acessos(db, u.id))
     # Critico e ANTES do commit, pelo mesmo motivo do create: conceder acesso e
     # registrar quem concedeu tem de ser um ato so. Aqui a regra e mais forte
@@ -329,4 +427,7 @@ async def update_user(
     )
     await db.commit()
     await db.refresh(u)
-    return UserResponse.model_validate(u)
+    # `de_usuario` e nao `model_validate`: a tela reaplica esta resposta na linha
+    # editada, e a coluna crua diria "somente_leitura: false" para uma conta de
+    # quiosque — que o codigo barra pelo papel. Ver `schemas/auth.py`.
+    return UserResponse.de_usuario(u)

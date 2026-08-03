@@ -188,8 +188,26 @@ descoberta depois."* A resposta, conferida no código:
 
 ### 4.5 Passo a passo (por tenant)
 
-1. **Escolha o tenant de ensaio.** `freitas` ou `trust` primeiro. **Nunca comece por
-   `montesiao-mg`** — é a prefeitura com uso real.
+1. **Ensaie num banco descartável, no mesmo servidor.** Não em outro cliente.
+
+   A versão anterior deste passo mandava ensaiar em `freitas` ou `trust`. Está errado
+   para este projeto: o dono determinou que **os outros clientes estão fora de escopo** —
+   *"primeiro é fechar Monte Sião por completo; não vamos mexer em outros clientes"*.
+   Ensaiar numa prefeitura que não pediu nada é criar risco para quem não participa da
+   decisão.
+
+   O ensaio equivalente, e que já foi usado neste repo para testar migration:
+
+   ```bash
+   ssh -i ~/.ssh/coolify_localhost root@54.232.208.118
+   docker exec <db_uuid> psql -U pactha -d postgres -c "CREATE DATABASE ensaio_papel"
+   # aplica o schema e a migration nova nele, cria o papel, roda os testes do passo 5
+   docker exec <db_uuid> psql -U pactha -d postgres -c "DROP DATABASE ensaio_papel"
+   ```
+
+   O ensaio prova o que interessa — que os `GRANT`/`REVOKE` produzem exatamente os erros
+   esperados — sem tocar em dado de cliente nenhum. O que ele **não** prova é a aplicação
+   real conectando; isso só o passo 7 mostra, e é por isso que o backup do passo 2 existe.
 2. **Backup antes de tudo:**
    ```bash
    ssh -i ~/.ssh/coolify_localhost root@54.232.208.118
@@ -231,7 +249,9 @@ descoberta depois."* A resposta, conferida no código:
    tela, que a camada entrou.
 8. **Guarde a senha do dono no cofre**, fora do alcance de quem opera o dia a dia. Sem este
    passo, a separação protege menos do que parece.
-9. **Só depois** repita nos outros dois tenants.
+9. **Pare aqui.** Os outros tenants (`freitas`, `trust`) **não entram** enquanto o dono não
+   disser. Eles não pediram esta mudança, e uma separação de papel malfeita derruba a API
+   de quem está trabalhando. Quando entrarem, é o mesmo roteiro, um de cada vez.
 
 ### 4.6 Rollback
 

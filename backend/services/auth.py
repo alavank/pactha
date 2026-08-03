@@ -34,11 +34,24 @@ COOKIE_NAME_ACCESS = "pactha_access"
 COOKIE_NAME_REFRESH = "pactha_refresh"
 COOKIE_NAME_CSRF = "pactha_csrf"
 
-# Perfis somente-leitura (ex.: prefeito no Painel Executivo). Nao editam NADA do
-# sistema operacional; so podem escrever nos endpoints proprios do Painel abaixo.
+# SEMENTE da coluna `users.somente_leitura` — o conjunto de papeis que a
+# migration deste incremento usou para marcar quem ja era somente-leitura. NAO e
+# mais a autoridade do guard: quem decide agora e a FLAG. Ver `eh_somente_leitura`.
 READONLY_ROLES = {"prefeito", "viewer"}
-# Contas DONAS do sistema (Alavank), nao "mais um admin do cliente". Mandam em
-# Sessoes, Tokens de Servico, e sao as unicas que podem alterar umas as outras.
+
+# Papel que NUNCA e rotulo de pessoa, e por isso continua barrando escrita por si
+# so, independentemente da flag. `viewer` nao e oferecido na tela de Usuarios
+# (`routers/users.py::create_user` so aceita admin/analyst/user/prefeito): e a
+# credencial SINTETICA do link publico de TV, criada em tempo de execucao por
+# `routers/bi.py::_ensure_kiosk_user` com INSERT direto em `users`, que nao passa
+# por este modulo e nao sabe da flag nova. Sem este reforco, todo quiosque
+# emitido DEPOIS do deploy nasceria com `somente_leitura = false` — e o link
+# publico, que circula em WhatsApp, perderia a trava de escrita.
+PAPEIS_SEMPRE_SOMENTE_LEITURA = {"viewer"}
+
+# SEMENTE das contas DONAS do sistema (Alavank), nao "mais um admin do cliente".
+# Mandam em Sessoes, Tokens de Servico, e sao as unicas que podem alterar umas as
+# outras.
 #
 # Fica AQUI, num lugar so, porque a lista ja existia copiada em routers/users.py
 # e routers/service_tokens.py — duas copias de uma regra de permissao divergem
@@ -58,8 +71,16 @@ READONLY_ROLES = {"prefeito", "viewer"}
 # Tokens, antes de as contas nominais existirem la. Senha aleatoria por tenant e
 # troca obrigatoria no primeiro acesso.
 #
-# ⚠️ `setup_db.py::seed_data` REPETE estas tres para semear o tenant novo (roda
-# fora do app, nao da para importar daqui). Mexeu aqui, mexa la.
+# ⚠️ `setup_db.py::seed_data` REPETE estas para semear o tenant novo (roda fora
+# do app, nao da para importar daqui). Mexeu aqui, mexa la.
+#
+# ⚠️ ESTA LISTA DEIXOU DE SER A AUTORIDADE. A autoridade e a coluna
+# `users.super_admin`, semeada destes quatro e-mails pela migration deste
+# incremento — trocar quem manda virou um UPDATE, e nao mais um deploy. A lista
+# fica como SEMENTE e como REFORCO em `is_super_admin`: se a migration nao rodou
+# (ou rodou errado), a Alavank nao pode perder a porta de entrada do proprio
+# produto — e neste sistema quem tem a chave e quem consegue devolver o acesso
+# aos outros.
 SUPER_ADMIN_EMAILS = {
     "super-admin@alavank.com.br",
     "alavank.tecnologia@gmail.com",
@@ -69,7 +90,41 @@ SUPER_ADMIN_EMAILS = {
 
 
 def is_super_admin(user) -> bool:
+    """Conta DONA da plataforma (Alavank).
+
+    Le a COLUNA primeiro — e ela que permite promover/despromover um dono sem
+    deploy. A allowlist de e-mails segue valendo como reforco: banco sem a
+    coluna (migracao pendente, tenant recem-criado, objeto de teste) nao pode
+    trancar a Alavank fora. `getattr` com default porque este modulo tambem e
+    chamado com objetos que nao sao o modelo completo.
+
+    A soma e deliberadamente OU e nao E: as duas fontes so ampliam, nunca
+    cortam. Nao ha caminho em que um erro de dado tire o acesso do dono.
+    """
+    if bool(getattr(user, "super_admin", False)):
+        return True
     return (getattr(user, "email", "") or "").strip().lower() in SUPER_ADMIN_EMAILS
+
+
+def eh_somente_leitura(user) -> bool:
+    """Este usuario esta proibido de ESCREVER no sistema?
+
+    Autoridade = a coluna `users.somente_leitura`, semeada de
+    `role IN ('prefeito','viewer')` pela migration deste incremento. Testar a
+    FLAG e nao o PAPEL e o que cumpre a regra do dono: `prefeito` passa a ser
+    ROTULO de organizacao interna, e o prefeito que precisar lancar alguma coisa
+    ganha escrita INDIVIDUALMENTE — sem deixar de aparecer como prefeito na
+    tela, e sem que isso escreva nada para os outros prefeitos do sistema.
+    O inverso tambem passa a existir: um usuario marcado `admin` pode ser posto
+    em somente-leitura, o que antes era impossivel.
+
+    `viewer` continua barrado pelo PAPEL — ver `PAPEIS_SEMPRE_SOMENTE_LEITURA`.
+    Nao e a regra velha sobrando: e a unica marca que o quiosque criado em tempo
+    de execucao carrega.
+    """
+    if bool(getattr(user, "somente_leitura", False)):
+        return True
+    return (getattr(user, "role", "") or "") in PAPEIS_SEMPRE_SOMENTE_LEITURA
 
 
 READONLY_WRITE_ALLOW = (
@@ -297,11 +352,17 @@ async def get_current_user(
     # nao tem nada. `definir_contexto` nunca levanta.
     authz.definir_contexto(request, user)
 
-    # Perfil somente-leitura (ex.: prefeito no Painel Executivo): barra qualquer
-    # metodo mutavel fora dos endpoints proprios do Painel. Defense-in-depth
-    # centralizado — TODO endpoint autenticado passa por aqui, entao vale mesmo
-    # que o prefeito descubra a URL de um endpoint de escrita do sistema.
-    if user.role in READONLY_ROLES and request.method in ("POST", "PUT", "PATCH", "DELETE"):
+    # Somente-leitura (ex.: prefeito no Painel Executivo, TV do gabinete): barra
+    # qualquer metodo mutavel fora dos endpoints proprios do Painel.
+    # Defense-in-depth centralizado — TODO endpoint autenticado passa por aqui,
+    # entao vale mesmo que o usuario descubra a URL de um endpoint de escrita.
+    #
+    # O teste passou de PAPEL para FLAG (`eh_somente_leitura`), e a cobertura NAO
+    # afrouxou: `prefeito` marcado hoje continua marcado (a migration semeou a
+    # flag do papel) e `viewer` continua barrado pelo papel, porque o quiosque
+    # nasce fora daqui. O que mudou e que agora da para conceder escrita a UM
+    # prefeito sem conceder a todos.
+    if eh_somente_leitura(user) and request.method in ("POST", "PUT", "PATCH", "DELETE"):
         if not request.url.path.startswith(READONLY_WRITE_ALLOW):
             raise HTTPException(status_code=403, detail="Perfil somente-leitura")
 
@@ -324,8 +385,32 @@ async def get_current_user(
 
 async def load_user_scopes(db: AsyncSession, user: User) -> None:
     """Anexa ao user os escopos de acesso: municipios + telas.
-    Admin -> None (tudo). Nao-admin -> conjuntos atribuidos (vazio = nenhum)."""
-    if user.role == "admin":
+
+    Super-admin (Alavank) -> None nos dois, que os `ensure_*` leem como "sem
+    limite". TODO o resto — INCLUSIVE quem esta marcado `admin` — passa a valer
+    exatamente o que houver em `user_telas`/`user_municipios`; conjunto vazio e
+    "nao pode nada", nao "pode tudo".
+
+    ⭐ FOI AQUI QUE `role` DEIXOU DE CONCEDER. Antes, `role == "admin"` zerava os
+    dois limites: nao era "coordenador do cliente", era ausencia total de limite
+    — e como o cadastro nascia com `role="admin"` por default, um POST sem o
+    campo criava um deus. Pela regra do dono, papel e ROTULO de organizacao
+    interna do cliente; o que vale e a permissao dada a cada usuario
+    INDIVIDUALMENTE, porque nao da para supor que todos os analistas de uma
+    prefeitura devam enxergar a mesma coisa.
+
+    O super-admin fica de fora da regra de proposito: a Alavank e dona da
+    plataforma e precisa de porta de entrada. Sem essa excecao, um tenant cujo
+    cadastro de telas ficasse vazio trancaria o suporte para fora do proprio
+    produto — e ninguem sobraria para devolver o acesso.
+
+    ⚠️ A migration deste incremento concede a TODO `role='admin'` ativo o
+    catalogo INTEIRO de telas e TODOS os municipios ativos, na mesma transacao e
+    ANTES desta linha passar a valer. Sem esse backfill os admins do cliente —
+    que nunca precisaram de linha em `user_telas` — perderiam o sistema inteiro
+    no deploy. Mexer nesta funcao sem conferir aquela migration derruba o cliente.
+    """
+    if is_super_admin(user):
         user.allowed_municipio_ids = None
         user.allowed_telas = None
         return
@@ -339,8 +424,9 @@ async def load_user_scopes(db: AsyncSession, user: User) -> None:
 
 def ensure_municipio_access(user: User, municipio_id) -> None:
     """Barra acesso a municipio fora do escopo do usuario.
-    Admin (allowed_municipio_ids=None) sempre passa. Nao-admin precisa informar
-    um municipio_id que esteja no seu conjunto atribuido.
+    `allowed_municipio_ids=None` (hoje so o super-admin — ver `load_user_scopes`;
+    antes deste incremento, qualquer `role='admin'`) sempre passa. Todo o resto
+    precisa informar um municipio_id que esteja no seu conjunto atribuido.
 
     ⚠️ ESTA FUNCAO NEGA SEMPRE, NOS DOIS MODOS — nao passa pelo modo aviso de
     `services/authz.py`. Ela ja era chamada em dezenas de lugares ANTES do
@@ -372,7 +458,11 @@ def ensure_municipio_access(user: User, municipio_id) -> None:
 
 
 def ensure_tela(user: User, tela: str) -> None:
-    """403 se o usuario nao tem acesso a tela/modulo (admin sempre passa).
+    """403 se o usuario nao tem acesso a tela/modulo.
+
+    `allowed_telas=None` passa — e desde este incremento isso e SO o super-admin
+    (ver `load_user_scopes`). Quem esta marcado `admin` agora vale pelas linhas
+    de `user_telas`, como todo mundo.
 
     ⚠️ ESTA FUNCAO NEGA SEMPRE, NOS DOIS MODOS — e nao passa pelo modo aviso
     de `services/authz.py`. Ela ja era chamada em ~128 pontos ANTES do
