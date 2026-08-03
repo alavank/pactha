@@ -127,6 +127,14 @@ MIGRATION_FILES = [
     # acima nesta lista. O backfill so pode rodar UMA VEZ — a propria migration
     # cria `migration_backfills` para isso; ver o cabecalho dela.
     "add_role_vira_rotulo.sql",
+    # Incremento 5 — permissao por ACAO (`recurso.acao`) por usuario: a
+    # tabela-catalogo (chave estrangeira que mata o typo silencioso), a tabela
+    # de concessao e o BACKFILL de compatibilidade (quem tem a tela X ganha
+    # X.ver/X.exportar; os verbos de escrita so para quem e admin hoje).
+    # DEPENDE de add_role_vira_rotulo.sql — le `users.super_admin` e conta com
+    # `migration_backfills`, os dois criados la — por isso vem depois dela.
+    # O backfill so pode rodar UMA VEZ; ver o cabecalho da migration.
+    "add_permissoes_por_acao.sql",
     # ⚠️ SEMPRE A ULTIMA DA LISTA. Instala o append-only da trilha: gatilho que
     # RECUSA UPDATE/DELETE/TRUNCATE em audit_log e cadeia de hash calculada
     # dentro do banco. Toda migration que ainda faz BACKFILL (hoje so
