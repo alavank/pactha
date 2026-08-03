@@ -66,7 +66,7 @@ npm run dev
 ```
 
 ### Primeiro acesso (banco NOVO)
-- `super-admin@pactha.com.br` — a conta de bootstrap, semeada por `setup_db.py`
+- `super-admin@alavank.com.br` — a conta de bootstrap, semeada por `setup_db.py`
   em tenant novo (so quando `users` esta vazia).
 - **A senha nao esta escrita em lugar nenhum**: e gerada aleatoria por tenant e
   IMPRESSA NO CONSOLE do primeiro boot (`_gen_password`), ou definida via

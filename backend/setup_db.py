@@ -268,7 +268,7 @@ def seed_data():
     # A senha e ALEATORIA por tenant (`_gen_password`, so impressa no console) e
     # `users.must_change_password` tem DEFAULT TRUE, entao o primeiro acesso e
     # obrigado a trocar. Nao existe senha igual em dois clientes.
-    admin_email = os.getenv("ADMIN_EMAIL", "super-admin@pactha.com.br")
+    admin_email = os.getenv("ADMIN_EMAIL", "super-admin@alavank.com.br")
     # Permite override por env (CI/CD), ou gera aleatoria
     admin_pwd = os.getenv("ADMIN_PASSWORD") or _gen_password()
     admin_hash = hash_password(admin_pwd)
@@ -315,6 +315,7 @@ def seed_data():
         for email, nome in [
             (admin_email, "Super Admin"),
             ("alavank.tecnologia@gmail.com", "Tiago Miller"),
+            ("tiagomiller@alavank.com.br", "Tiago Miller"),
             ("matheus@alavank.com.br", "Matheus"),
         ]:
             pwd = admin_pwd if email == admin_email else _gen_password()
