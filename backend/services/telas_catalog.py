@@ -16,7 +16,13 @@ TELAS_CATALOG = [
     {"key": "convenios", "label": "SIGCON (Estaduais)"},
     {"key": "emendas", "label": "Emendas Estaduais"},
     {"key": "transferegov", "label": "Transfere Gov"},
-    {"key": "cauc", "label": "CAUC (regularidade federal)"},
+    # ⚠️ MESMO TEXTO de `frontend/src/lib/telas.ts`: a Central monta o
+    # formulario de permissoes pelo catalogo daqui e o cliente pelo de la —
+    # dois nomes para a mesma chave fazem o administrador achar que sao duas
+    # permissoes diferentes. (Ja estavam divergentes: este dizia so "CAUC".)
+    # E o rotulo e NEUTRO porque "CAGEC" e o nome do cadastro de MINAS, e a
+    # mesma tela serve clientes de qualquer estado.
+    {"key": "cauc", "label": "CAUC / cadastro estadual (regularidade federal e estadual)"},
     {"key": "sismob", "label": "Obras da Saúde (SISMOB)"},
     {"key": "acordofes", "label": "Acordo FES (dívida saúde MG)"},
     {"key": "fns", "label": "Fundo Nacional de Saúde"},

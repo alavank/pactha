@@ -538,7 +538,8 @@ export default function RegularidadePage() {
         </h1>
         <p className="mt-1 text-sm" style={{ color: "var(--bi-muted)" }}>
           Exigências para assinar convênio nas duas esferas: <strong>CAUC</strong> (União,
-          Tesouro Nacional) e <strong>CAGEC</strong> (Minas Gerais, SIGCON).
+          Tesouro Nacional) e o <strong>cadastro estadual de convenentes</strong>
+          {" "}— em Minas Gerais, o CAGEC.
         </p>
       </div>
 
@@ -588,13 +589,19 @@ export default function RegularidadePage() {
           {/* ---------------- CAGEC (estadual / MG) ---------------- */}
           <section className="space-y-2.5">
             <div className="flex flex-wrap items-baseline gap-x-2">
-              {/* O título segue o município aberto: carimbar "Minas Gerais"
-                  sobre uma cidade de Goiás foi o que trouxe a confusão. */}
+              {/* ⚠️ O TÍTULO É DO AMBIENTE ABERTO, e "CAGEC" é nome de Minas
+                  (Decreto 44.293/2006) — não do produto. Num ambiente do ES ou
+                  de GO nada aqui pode falar de Minas: o cliente trocou de
+                  ambiente, e o ambiente é dele. */}
               <h2 className="bi-title text-[14px]">
-                {semFonteEstadual ? `Cadastro estadual — ${ufDoMunicipio}` : "CAGEC — Minas Gerais"}
+                {semFonteEstadual
+                  ? `Cadastro estadual de convenentes — ${ufDoMunicipio}`
+                  : "CAGEC — Minas Gerais"}
               </h2>
               <span className="text-[10px]" style={{ color: "var(--bi-faint)" }}>
-                SIGCON-MG{cagec?.data_pesquisa ? ` · pesquisa de ${fmtDate(cagec.data_pesquisa)}` : ""}
+                {semFonteEstadual
+                  ? "regularidade estadual"
+                  : `SIGCON-MG${cagec?.data_pesquisa ? ` · pesquisa de ${fmtDate(cagec.data_pesquisa)}` : ""}`}
               </span>
             </div>
 
@@ -613,14 +620,12 @@ export default function RegularidadePage() {
                   <Info className="mt-0.5 size-4 shrink-0" style={{ color: "var(--bi-faint)" }} />
                   <div className="space-y-1.5">
                     <div className="bi-title text-[13px] leading-tight">
-                      Fora da nossa coleta
+                      Ainda não acompanhado
                     </div>
                     <p className="text-[11px] leading-snug" style={{ color: "var(--bi-muted)" }}>
-                      Este município é de <b>{ufDoMunicipio}</b>. Hoje o sistema coleta o
-                      cadastro estadual de convenentes de <b>Minas Gerais</b> (CAGEC), no
-                      portal do Estado. O cadastro de <b>{ufDoMunicipio}</b> ainda não é
-                      coletado — <b>o que não quer dizer que não exista</b>. A
-                      regularidade federal (CAUC, ao lado) continua valendo normalmente.
+                      O cadastro estadual de convenentes de <b>{ufDoMunicipio}</b> ainda não
+                      é acompanhado por este sistema. A regularidade <b>federal</b> (CAUC,
+                      ao lado) continua valendo normalmente.
                     </p>
                   </div>
                 </div>

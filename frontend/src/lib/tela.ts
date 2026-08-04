@@ -44,8 +44,10 @@ export const ABAS: AbaDef[] = [
   { id: "geral", label: "Visão Geral", curto: "Geral", descricao: "O essencial do período" },
   { id: "parlamentares", label: "Parlamentares", curto: "Parlam.", descricao: "Emendas por autor, destinação e finalidade" },
   { id: "transferegov", label: "TransfereGov", curto: "Federal", descricao: "Propostas e convênios federais" },
-  { id: "estaduais", label: "Verbas Estaduais", curto: "Estadual", descricao: "SIGCON-MG e emendas estaduais" },
-  { id: "documentos", label: "CAUC e CAGEC", curto: "Documentos", descricao: "Documentação em dia ou pendente" },
+  { id: "estaduais", label: "Verbas Estaduais", curto: "Estadual", descricao: "Convênios e emendas estaduais" },
+  // Rótulo neutro de propósito: "CAGEC" é o nome do cadastro de MINAS, e esta
+  // aba é a mesma para clientes de qualquer estado (ver components/bi/abas.tsx).
+  { id: "documentos", label: "CAUC e cadastro estadual", curto: "Documentos", descricao: "Documentação em dia ou pendente" },
   { id: "sismob", label: "Obras da Saúde", curto: "Obras",
     descricao: "Obras do Ministério da Saúde (SISMOB) — prazos e execução" },
   { id: "fns", label: "Fundo Nacional de Saúde", curto: "FNS", descricao: "Propostas do FNS no período" },

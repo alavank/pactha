@@ -534,10 +534,14 @@ async def bi_documentos(db: AsyncSession, ids: list[int]) -> dict:
 # sabemos e que nao coletamos o cadastro daquele estado. Uma frase fecha o
 # assunto por engano; a outra descreve a nossa cobertura, que e o fato.
 UF_DA_FONTE = "MG"
+# ⚠️ A FRASE NAO CITA MINAS. Ela aparece na tela de um cliente do ES ou de GO, e
+# ali Minas nao tem nada com o assunto: o ambiente e do municipio aberto, e nossa
+# cobertura interna nao e problema do cliente. Diz o que vale para ELE — que a
+# regularidade estadual dele ainda nao e acompanhada aqui — sem afirmar que o
+# cadastro nao existe (existe: GO tem o SIGECON, o ES tem o Portal de Convenios).
 MOTIVO_ESTADO_SEM_FONTE = (
-    "Este sistema coleta hoje o cadastro estadual de convenentes de Minas "
-    "Gerais (CAGEC). O cadastro do estado deste municipio ainda nao e coletado "
-    "— o que nao significa que ele nao exista."
+    "O cadastro estadual de convenentes deste estado ainda nao e acompanhado "
+    "por este sistema."
 )
 
 
