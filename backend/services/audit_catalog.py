@@ -174,7 +174,48 @@ _TABELA: dict[str, dict] = {
         "alterou as permissões", MOD_USUARIOS, _ALTO, prep="de",
         nota="O detalhe traz o que foi CONCEDIDO e o que foi RETIRADO, caixinha "
              "por caixinha, e o resumo do que a pessoa passou a poder. Quem "
-             "concede só consegue conceder o que ele mesmo tem.",
+             "concede só consegue conceder o que ele mesmo tem. Quando o "
+             "administrador partiu de um MODELO, o detalhe diz qual — e há "
+             "uma linha «aplicou um modelo» no mesmo instante.",
+    ),
+    # --- Modelos de permissão (o "molde", routers/modelos_permissao.py) ----
+    # Alto nos quatro: um modelo é uma RECEITA de permissão. Quem escreve o
+    # molde influencia o que TODOS os outros administradores vão conceder — um
+    # molde chamado "Somente consulta" que carregue "Revelar a senha" engana
+    # quem confia no nome, e é o único jeito de conceder poder sem que o
+    # administrador que clicou tenha lido a caixinha.
+    "modelo_permissao.criar": _a(
+        "criou o modelo de permissões", MOD_USUARIOS, _ALTO, prep="chamado",
+        nota="Modelo é um MOLDE, não um grupo: ele não dá permissão a ninguém "
+             "sozinho. O detalhe traz as caixinhas que ele carrega — vale "
+             "conferir se o nome descreve honestamente o conteúdo.",
+    ),
+    "modelo_permissao.editar": _a(
+        "alterou o modelo de permissões", MOD_USUARIOS, _ALTO, prep="chamado",
+        nota="⚠️ Alterar o modelo NÃO altera ninguém que já o recebeu: aplicar "
+             "um modelo COPIA as permissões para a pessoa naquele instante. "
+             "Quem já foi configurado continua exatamente como estava — as "
+             "correções valem só para as próximas aplicações.",
+    ),
+    "modelo_permissao.excluir": _a(
+        "excluiu o modelo de permissões", MOD_USUARIOS, _ALTO, prep="chamado",
+        nota="Ninguém perde acesso por isto. O modelo era só um molde; as "
+             "permissões que ele copiou para as pessoas continuam nos "
+             "cadastros delas. O detalhe guarda o conteúdo do modelo apagado.",
+    ),
+    # O alvo aqui é a PESSOA (é por ela que o auditor filtra); o nome do modelo
+    # está no detalhe. Esta linha responde "onde este molde foi aplicado?" —
+    # pergunta de revisão de acesso que a linha `usuarios.conceder` sozinha não
+    # responde, porque lá o modelo é só uma nota do que mudou.
+    "modelo_permissao.aplicar": _a(
+        "aplicou um modelo de permissões ao cadastro", MOD_USUARIOS, _ALTO,
+        prep="de",
+        nota="Aplicar COPIA as caixinhas do modelo para a pessoa. O que ela "
+             "passou a poder está na linha «alterou as permissões» do mesmo "
+             "instante, com o valor antes e depois — esta linha diz qual "
+             "modelo serviu de ponto de partida e em que modo (substituir ou "
+             "somar). Depois de aplicado não sobra vínculo nenhum: mexer no "
+             "modelo não mexe mais nesta pessoa.",
     ),
     "user.reset_password": _a(
         "gerou uma senha temporária", MOD_USUARIOS, _ALTO, prep="para",
@@ -468,6 +509,11 @@ _PREFIXO_MODULO: dict[str, str] = {
     "usuarios": MOD_USUARIOS,
     "permissao": MOD_USUARIOS,
     "permissoes": MOD_USUARIOS,
+    # O molde (Incremento 7). Cai em Usuários porque é ali que ele é escrito e
+    # é dali que ele sai para os cadastros das pessoas.
+    "modelo_permissao": MOD_USUARIOS,
+    "modelo": MOD_USUARIOS,
+    "modelos": MOD_USUARIOS,
     # Trava de permissão (services/authz.py). Cai no MESMO módulo de Usuários
     # porque é ali que o dono vai corrigir o que a trava apontou — separá-la
     # obrigaria a olhar dois filtros para responder uma pergunta só.
@@ -587,6 +633,9 @@ _SUBSTANTIVO_PREFIXO: dict[str, str] = {
     "ia": "uma consulta à IA",
     "painel": "um painel de indicadores",
     "authz": "uma permissão",
+    "modelo_permissao": "um modelo de permissões",
+    "modelo": "um modelo de permissões",
+    "modelos": "um modelo de permissões",
 }
 
 # Palavras que, em QUALQUER posição da chave, sobem o risco derivado para alto.
@@ -736,6 +785,10 @@ _TARGET_TYPE_ROTULOS: dict[str, str] = {
     # "registro" e achar que é o mesmo caso do município em branco.
     "linha_propria": "registro de outra pessoa",
     "permissao": "permissão",
+    # O molde do Incremento 7. Sem esta linha o alvo sairia como "modelo
+    # permissao" (o `_legivel` só desmonta o snake_case), que não é nome de
+    # coisa nenhuma para quem lê a trilha.
+    "modelo_permissao": "modelo de permissões",
 }
 
 # Alguns `target_id` são CÓDIGO, não número nem nome ("sigcon", "plano_acao").

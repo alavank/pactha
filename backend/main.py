@@ -11,7 +11,7 @@ from routers import (
     session_capture, emendas_estaduais, dou_mg, fns, transferegov, export_pdf,
     users, simec, rm, ai, gestao, parlamentares, telegram, status_changes,
     documentos, cauc, cagec, acordofes, control, freshness, painel, bi,
-    sismob, auditoria, permissoes,
+    sismob, auditoria, permissoes, modelos_permissao,
 )
 from config import get_settings
 from services.security_headers import SecurityHeadersMiddleware
@@ -176,6 +176,10 @@ app.include_router(acordofes.router)
 app.include_router(control.router)  # /api/control/* (Console Alavank)
 app.include_router(auditoria.router)  # /api/auditoria/* (trilha, so leitura)
 app.include_router(permissoes.router)  # /api/permissoes/* (catalogo de permissoes)
+# /api/permissoes/modelos/* — os MOLDES (Incremento 7). Registrado DEPOIS de
+# `permissoes.router` so por leitura: os caminhos nao se sobrepoem (o outro
+# router nao tem rota com parametro na raiz), entao a ordem nao muda nada.
+app.include_router(modelos_permissao.router)
 app.include_router(freshness.router)  # /api/admin/freshness (monitor de frescor)
 app.include_router(painel.router)   # /api/painel/* (Painel Executivo do prefeito)
 if get_settings().BI_MODULE:

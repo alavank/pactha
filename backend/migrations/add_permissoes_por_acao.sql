@@ -172,6 +172,11 @@ INSERT INTO permissoes_catalogo (chave, secao, escrita) VALUES
     ('usuarios.editar', 'usuarios', TRUE),
     ('usuarios.excluir', 'usuarios', TRUE),
     ('usuarios.conceder', 'usuarios', TRUE),
+    -- Incremento 7 (modelos de permissao). Entra NESTA semente, e nao numa
+    -- migration propria, porque e aqui que mora a tabela-catalogo que serve de
+    -- chave estrangeira — e porque esta semente roda a CADA boot, que e o que
+    -- faz a chave nova virar gravavel num tenant que ja esta no ar.
+    ('usuarios.modelos', 'usuarios', TRUE),
     ('usuarios.resetar_senha', 'usuarios', TRUE),
     ('telegram.vincular', 'telegram', TRUE),
     ('telegram.administrar', 'telegram', TRUE),
@@ -304,6 +309,20 @@ WITH marca AS (
         (NULL, 'usuarios.editar', TRUE),
         (NULL, 'usuarios.excluir', TRUE),
         (NULL, 'usuarios.conceder', TRUE),
+        -- ⚠️ `usuarios.modelos` (Incremento 7) esta aqui porque TODA chave do
+        -- catalogo precisa de linha neste mapa — sem ela, o teste
+        -- tests/test_permissoes_migration.py quebra e a chave nasceria
+        -- concedida a ninguem sem ninguem ter decidido isso.
+        --
+        -- MAS ela so alcanca BANCO NOVO, e a assimetria e proposital: este
+        -- backfill roda UMA VEZ na vida do banco (a marca em
+        -- `migration_backfills`), e nos tenants que ja subiram a marca existe ha
+        -- semanas. Ou seja: em Monte Siao, ninguem ganha esta caixinha no
+        -- deploy — ela e concedida a mao, pelo dono da plataforma, a quem ele
+        -- escolher. E o resultado CERTO nas duas pontas: ninguem PERDE nada
+        -- (era funcao que nao existia), e a receita que dirige o que os outros
+        -- administradores concedem nao nasce distribuida por deploy.
+        (NULL, 'usuarios.modelos', TRUE),
         (NULL, 'usuarios.resetar_senha', TRUE),
         -- Telegram: o proprio vinculo pela tela, o webhook pelo papel
         ('telegram', 'telegram.vincular', FALSE),
