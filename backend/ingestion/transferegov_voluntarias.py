@@ -469,7 +469,7 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
         try:
             if not await _goto_with_retry(detail_page, url):
                 continue
-            await detail_page.wait_for_timeout(1800)
+            await detail_page.wait_for_timeout(700)  # perf: Struts server-rendered (HTML pronto no domcontentloaded)
             det = await _extrai_detalhe(detail_page)
             # Tenta capturar parlamentar (best-effort via texto livre na tela)
             try:
@@ -806,7 +806,7 @@ async def _conta_processo_execucao(page) -> int | None:
                 await page.wait_for_load_state("networkidle", timeout=12000)
             except Exception:
                 pass
-            await page.wait_for_timeout(900)
+            await page.wait_for_timeout(300)  # perf: cushion apos networkidle
     except Exception:
         pass
     try:
@@ -956,7 +956,12 @@ async def _extrai_obras(page, id_proposta: str) -> dict | None:
             await page.goto(base, timeout=55000, wait_until="networkidle")
         except Exception:
             await page.goto(base, timeout=55000, wait_until="domcontentloaded")
-        await page.wait_for_timeout(4000)
+        # perf: poll curto ate o /contratoslotes cair no listener, em vez de sleep
+        # cego de 4s — apos networkidle o XHR ja costuma ter chegado (sai em <1s).
+        for _ in range(20):
+            if any("contratoslotes" in k for k in capt):
+                break
+            await page.wait_for_timeout(200)
         if "idp.transferegov" in (page.url or ""):
             return None  # sessão Acesso Livre não autenticou o medicao
 
@@ -977,7 +982,7 @@ async def _extrai_obras(page, id_proposta: str) -> dict | None:
                 art_url = f"{base}/contrato/{cont['id']}/config/artrrt/listar"
                 try:
                     await page.goto(art_url, timeout=45000, wait_until="networkidle")
-                    await page.wait_for_timeout(2500)
+                    await page.wait_for_timeout(1000)  # perf: cushion apos networkidle
                 except Exception:
                     pass
     finally:
