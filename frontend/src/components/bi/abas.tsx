@@ -863,6 +863,19 @@ export function AbaDocumentosView({
   //               portal parou de emitir. Vale mostrar, com a data na cara.
   // Gatear pelo erro apenas (como estava) deixaria a tela MUDA nas linhas
   // gravadas antes da coluna existir, que é o estado de Monte Sião agora.
+  /* ⚠️ O QUE É DE MINAS É A FONTE, NÃO O CONCEITO. Cadastro estadual de
+     convenentes existe em outros estados; o que este sistema sabe consultar é o
+     portal do CAGEC-MG. A tela carimbava "CAGEC — Minas Gerais" sobre cidades de
+     Goiás e Tocantins, e dizer "não se aplica" seria trocar um erro por outro:
+     afirmaria que a cidade não tem cadastro estadual, o que não sabemos.
+     O que sabemos — e o que a tela diz — é até onde a NOSSA coleta vai.
+     `ufs_sem_fonte` vem do servidor, que conhece a UF de cada município. */
+  const ufsSemFonte = d.cagec.ufs_sem_fonte ?? [];
+  const semFonteNoEscopo = (d.cagec.municipios_no_escopo ?? 0) === 0
+    && (d.cagec.fora_de_mg ?? 0) > 0;
+  const cagecParcial = (d.cagec.fora_de_mg ?? 0) > 0
+    && (d.cagec.municipios_no_escopo ?? 0) > 0;
+
   const crcAusente = !!cagec && cagec.detalhe_do_crc === false;
   const crcVelho = !!cagec && cagec.detalhe_do_crc !== false && !!cagec.crc_erro;
 
@@ -877,10 +890,19 @@ export function AbaDocumentosView({
         <Metric icon={ShieldCheck} tom={pct >= 0.99 ? "ok" : "crit"} label="CAUC — União"
           valor={pct >= 0.99 ? "Em dia" : `${formatInt(c.pendencias_total)} pendência(s)`}
           sub="transferências federais" grande={tv} />
-        <Metric icon={ShieldAlert} tom={cagec ? (cagecIrregular ? "crit" : "ok") : "warn"}
-          label="CAGEC — Minas Gerais"
-          valor={!cagec ? "Sem coleta" : cagecIrregular ? (cagec.situacao || "Irregular") : "Em dia"}
-          sub="convênios estaduais" grande={tv} />
+        <Metric icon={ShieldAlert}
+          tom={semFonteNoEscopo ? "neutro" : cagec ? (cagecIrregular ? "crit" : "ok") : "warn"}
+          /* O rótulo segue o ESCOPO: só diz "Minas Gerais" quando é de Minas. */
+          label={semFonteNoEscopo
+            ? `Cadastro estadual — ${ufsSemFonte.join(", ")}`
+            : "CAGEC — Minas Gerais"}
+          valor={semFonteNoEscopo ? "Não coletado"
+            : !cagec ? "Sem coleta"
+            : cagecIrregular ? (cagec.situacao || "Irregular") : "Em dia"}
+          sub={semFonteNoEscopo ? "fora da nossa coleta hoje"
+            : cagecParcial ? `só os ${d.cagec.municipios_no_escopo} de MG`
+            : "convênios estaduais"}
+          grande={tv} />
         {/* Com o CRC indisponivel nao existe denominador: as pendencias do
             CAGEC sao desconhecidas, e somar as 2 linhas do fallback anunciaria
             "de 27 exigencias" quando o cadastro estadual tem ~28 sozinho. */}
@@ -1001,12 +1023,20 @@ export function AbaDocumentosView({
           {esfera !== "cauc" && (
           <section className="min-w-0">
             <EsferaHead
-              titulo="CAGEC — Minas Gerais"
-              sub="Cadastro Geral de Convenentes · exigências estaduais"
+              titulo={semFonteNoEscopo
+                ? `Cadastro estadual — ${ufsSemFonte.join(", ")}`
+                : "CAGEC — Minas Gerais"}
+              sub={semFonteNoEscopo
+                ? "este sistema coleta hoje o cadastro de MG (CAGEC) · o deste estado ainda não"
+                : cagecParcial
+                ? `Cadastro Geral de Convenentes · cobre ${d.cagec.municipios_no_escopo} de ${(d.cagec.municipios_no_escopo ?? 0) + (d.cagec.fora_de_mg ?? 0)} municípios (os de MG)`
+                : "Cadastro Geral de Convenentes · exigências estaduais"}
               /* "27 exigencias" nao existe em documento nenhum: o CRC tem 24
                  documentos, e as outras 3 linhas (CADIN-MG, SIAFI-MG, mandato)
                  vem do CABECALHO do certificado. Separar por procedencia. */
-              contagem={crcAusente
+              contagem={semFonteNoEscopo
+                ? "fonte não disponível"
+                : crcAusente
                 /* Sem o CRC, "2 linhas · 2 documentos do CRC" e uma contagem
                    FALSA numa parede de gabinete: o cadastro tem ~28 obrigacoes
                    e nos lemos duas. Contagem que nao sabe nao conta. */

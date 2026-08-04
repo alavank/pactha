@@ -389,6 +389,14 @@ export interface AbaDocumentos {
   cagec: {
     disponivel: boolean;
     motivo: string;
+    /** Quantos municípios do escopo são de MG (o CAGEC é cadastro de Minas) e
+     *  quantos ficaram de fora. Sem estes dois a tela não distingue "ainda não
+     *  coletamos" de "não existe para este ente". */
+    municipios_no_escopo?: number;
+    fora_de_mg?: number;
+    /** As UFs do escopo que a fonte atual não alcança, NOMEADAS — é o que
+     *  permite a tela dizer "GO, TO" em vez de uma frase genérica. */
+    ufs_sem_fonte?: string[];
     por_municipio: Array<{
       municipio_id: number;
       nome: string | null;

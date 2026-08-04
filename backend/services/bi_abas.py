@@ -525,9 +525,47 @@ async def bi_documentos(db: AsyncSession, ids: list[int]) -> dict:
     }
 
 
-def _cagec_indisponivel() -> dict:
+# ⚠️ CADASTRO ESTADUAL NAO E EXCLUSIVIDADE DE MINAS — outros estados tem o seu.
+# O que e de Minas e a FONTE que este sistema sabe consultar: o portal
+# `cagec.mg.gov.br`, que so responde por ente mineiro.
+#
+# A diferenca nao e semantica. Dizer "nao se aplica" a um municipio de Goias
+# afirma que ele NAO TEM cadastro estadual — e nos nao sabemos isso. O que
+# sabemos e que nao coletamos o cadastro daquele estado. Uma frase fecha o
+# assunto por engano; a outra descreve a nossa cobertura, que e o fato.
+UF_DA_FONTE = "MG"
+MOTIVO_ESTADO_SEM_FONTE = (
+    "Este sistema coleta hoje o cadastro estadual de convenentes de Minas "
+    "Gerais (CAGEC). O cadastro do estado deste municipio ainda nao e coletado "
+    "— o que nao significa que ele nao exista."
+)
+
+
+def _cagec_indisponivel(motivo: str | None = None) -> dict:
     from routers.cagec import MOTIVO_SEM_COLETA
-    return {"disponivel": False, "motivo": MOTIVO_SEM_COLETA, "por_municipio": []}
+    return {"disponivel": False, "motivo": motivo or MOTIVO_SEM_COLETA,
+            "por_municipio": [], "municipios_no_escopo": 0, "fora_de_mg": 0}
+
+
+async def _escopo_do_cadastro_estadual(
+    db: AsyncSession, ids: list[int]
+) -> tuple[list[int], list[str]]:
+    """Separa o escopo entre o que a fonte alcanca e o que ela nao alcanca.
+
+    Devolve `(ids_cobertos, ufs_sem_fonte)` — e a segunda parte importa tanto
+    quanto a primeira: e com ela que a tela nomeia os estados de fora em vez de
+    dizer um "nao se aplica" que nao tem como saber."""
+    if not ids:
+        return [], []
+    linhas = await db.execute(
+        text("SELECT id, upper(coalesce(uf, '')) FROM municipios "
+             "WHERE id = ANY(:ids)"),
+        {"ids": ids})
+    uf_por_id = {r[0]: r[1] for r in linhas.fetchall()}
+    cobertos = [i for i in ids if uf_por_id.get(i) == UF_DA_FONTE]
+    fora = sorted({uf for i, uf in uf_por_id.items()
+                   if uf and uf != UF_DA_FONTE and i in set(ids)})
+    return cobertos, fora
 
 
 async def _cagec_bloco(db: AsyncSession, ids: list[int]) -> dict:
@@ -540,8 +578,19 @@ async def _cagec_bloco(db: AsyncSession, ids: list[int]) -> dict:
     e lido como "a regularidade estadual esta em dia"."""
     from routers.cagec import fetch_cagec_situacao
 
+    # ⭐ SO O QUE A FONTE ALCANCA. Antes varria os ids todos: numa carteira
+    # multi-estado, consultava o portal mineiro para cidades de GO/TO/ES e a tela
+    # carimbava "CAGEC — Minas Gerais" sobre elas.
+    ids_mg, ufs_fora = await _escopo_do_cadastro_estadual(db, ids)
+    fora = len(ids) - len(ids_mg)
+    if not ids_mg:
+        vazio = _cagec_indisponivel(MOTIVO_ESTADO_SEM_FONTE if fora else None)
+        vazio["fora_de_mg"] = fora
+        vazio["ufs_sem_fonte"] = ufs_fora
+        return vazio
+
     por_municipio = []
-    for mid in ids[:20]:
+    for mid in ids_mg[:20]:
         s = await fetch_cagec_situacao(db, mid)
         if not s.get("tem_dados"):
             continue
@@ -569,6 +618,14 @@ async def _cagec_bloco(db: AsyncSession, ids: list[int]) -> dict:
         "disponivel": True,
         "motivo": "",
         "por_municipio": por_municipio,
+        # ⭐ SOBRE QUANTOS o CAGEC fala. Numa carteira multi-estado ele cobre
+        # so a parte mineira, e a tela precisa dizer isso — senao "3 em dia"
+        # sobre 19 municipios e lido como a carteira inteira estar em dia.
+        "municipios_no_escopo": len(ids_mg),
+        "fora_de_mg": fora,
+        # As UFs que ficaram de fora, NOMEADAS. E o que permite a tela dizer
+        # "GO, TO" em vez de uma frase generica que o gestor nao sabe conferir.
+        "ufs_sem_fonte": ufs_fora,
         "regulares": sum(1 for m in por_municipio if m["regular"]),
         "pendencias_total": sum(m["pendencias"] for m in por_municipio),
     }
