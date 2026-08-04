@@ -23,18 +23,18 @@ function ChangePasswordInner() {
     if (/[a-z]/.test(next1) && /[A-Z]/.test(next1)) s++;
     if (/\d/.test(next1)) s++;
     if (/[^a-zA-Z0-9]/.test(next1)) s++;
-    const labels = ["", "Fraca", "Razoavel", "Boa", "Forte"];
+    const labels = ["", "Fraca", "Razoável", "Boa", "Forte"];
     return { score: s, label: labels[s] };
   })();
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (next1 !== next2) {
-      toast.error("As senhas nao conferem");
+      toast.error("As senhas não conferem");
       return;
     }
     if (next1.length < 10) {
-      toast.error("Senha deve ter no minimo 10 caracteres");
+      toast.error("Senha deve ter no mínimo 10 caracteres");
       return;
     }
     setLoading(true);

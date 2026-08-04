@@ -337,7 +337,7 @@ async def webhook(
     """Endpoint chamado pelo Telegram quando o bot recebe mensagem."""
     if _WEBHOOK_SECRET and x_telegram_bot_api_secret_token != _WEBHOOK_SECRET:
         log.warning("webhook com secret invalido")
-        raise HTTPException(403, "Secret invalido")
+        raise HTTPException(403, "Secret inválido")
     payload = await request.json()
     log.info(f"telegram update: {json.dumps(payload, ensure_ascii=False)[:300]}")
     try:
@@ -387,7 +387,7 @@ async def setup_webhook(body: WebhookSetup, user: User = Depends(get_current_use
     if user.role != "admin":
         raise HTTPException(403, "Apenas admins")
     if not tg.telegram_configured():
-        raise HTTPException(400, "TELEGRAM_BOT_TOKEN nao configurado")
+        raise HTTPException(400, "TELEGRAM_BOT_TOKEN não configurado")
     base = body.base_url.rstrip("/")
     url = f"{base}/api/telegram/webhook"
     secret = _WEBHOOK_SECRET or secrets.token_urlsafe(16)

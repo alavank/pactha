@@ -155,7 +155,7 @@ def _extrair_pdf(raw: bytes) -> bytes:
     i = raw.find(b"%PDF")
     j = raw.rfind(b"%%EOF")
     if i < 0 or j <= i:
-        raise HTTPException(502, "Nao foi possivel extrair o PDF da publicacao")
+        raise HTTPException(502, "Não foi possível extrair o PDF da publicação")
     return raw[i:j + 5]
 
 
@@ -200,13 +200,13 @@ def publicacao(id_jornal: int, download: bool = False,
         else:
             raise HTTPException(e.response.status_code, f"JMG: {e.response.text[:200]}")
     except httpx.HTTPError as e:
-        raise HTTPException(502, f"Falha ao obter publicacao no Jornal MG: {e}")
+        raise HTTPException(502, f"Falha ao obter publicação no Jornal MG: {e}")
 
     dados = (r.json() or {}).get("dados") or {}
     ap = dados.get("arquivoCadernoPrincipal") or {}
     b64 = ap.get("arquivo")
     if not b64:
-        raise HTTPException(404, "Publicacao sem arquivo disponivel")
+        raise HTTPException(404, "Publicação sem arquivo disponível")
     pdf = _extrair_pdf(base64.b64decode(b64))
     dispo = "attachment" if download else "inline"
     return Response(

@@ -67,65 +67,65 @@ function parseSessionPayload(senha?: string): { isSession: boolean; cookieCount?
 const INTEGRACOES = [
   {
     automation_key: "govbr",
-    label: "gov.br SSO (acesso unico federal)",
+    label: "gov.br SSO (acesso único federal)",
     sistema: "gov.br - Conta Unica",
     url: "https://www.gov.br",
     categoria: "Federal",
-    usuario_hint: "Login (usuario, email ou CPF)",
+    usuario_hint: "Login (usuário, email ou CPF)",
     senha_hint: "Senha",
   },
   {
     automation_key: "sigcon",
-    label: "SIGCON-MG - Convenios Estaduais (login do convenente do municipio)",
+    label: "SIGCON-MG - Convênios Estaduais (login do convenente do município)",
     sistema: "SIGCON-MG",
     url: "https://www.convenios.mg.gov.br/sigconv2/public/pages/login.jsf",
     categoria: "Estadual",
-    usuario_hint: "CPF do gestor do Convenente (cadastrado no SIGCON-MG deste municipio)",
+    usuario_hint: "CPF do gestor do Convenente (cadastrado no SIGCON-MG deste município)",
     senha_hint: "Senha do SIGCON-MG",
   },
   {
     automation_key: "fns",
-    label: "FNS - Fundo Nacional de Saude (login proprio)",
+    label: "FNS - Fundo Nacional de Saúde (login próprio)",
     sistema: "FNS - Fundo Nacional de Saude",
     url: "https://consultafns.saude.gov.br",
     categoria: "Saude",
-    usuario_hint: "Login (CPF, email ou usuario)",
+    usuario_hint: "Login (CPF, email ou usuário)",
     senha_hint: "Senha do portal",
   },
   {
     automation_key: "sismob",
-    label: "SISMOB - Obras de Saude",
+    label: "SISMOB - Obras de Saúde",
     sistema: "SISMOB - Obras de Saude",
     url: "https://sismobcidadao.saude.gov.br",
     categoria: "Saude",
-    usuario_hint: "Login (CPF, email ou usuario)",
+    usuario_hint: "Login (CPF, email ou usuário)",
     senha_hint: "Senha do portal",
   },
   {
     automation_key: "simec",
-    label: "SIMEC / PAR - Educacao (FNDE)",
+    label: "SIMEC / PAR - Educação (FNDE)",
     sistema: "SIMEC/PAR - FNDE",
     url: "https://simec.mec.gov.br/par/",
     categoria: "Educacao",
-    usuario_hint: "Login (CPF, email ou usuario)",
+    usuario_hint: "Login (CPF, email ou usuário)",
     senha_hint: "Senha do portal",
   },
   {
     automation_key: "suas",
-    label: "Estrutura SUAS - Assistencia (MDS)",
+    label: "Estrutura SUAS - Assistência (MDS)",
     sistema: "Estrutura SUAS",
     url: "https://estruturasuas.mds.gov.br",
     categoria: "Assistencia Social",
-    usuario_hint: "Login (CPF, email ou usuario)",
+    usuario_hint: "Login (CPF, email ou usuário)",
     senha_hint: "Senha do portal",
   },
   {
     automation_key: "investsus",
-    label: "InvestSUS - Painel Saude",
+    label: "InvestSUS - Painel Saúde",
     sistema: "InvestSUS",
     url: "https://investsuspaineis.saude.gov.br",
     categoria: "Saude",
-    usuario_hint: "Login (CPF, email ou usuario)",
+    usuario_hint: "Login (CPF, email ou usuário)",
     senha_hint: "Senha do portal",
   },
 ];
@@ -257,7 +257,7 @@ export default function CofrePage() {
 
   const handleCreate = async () => {
     if (!municipioId || !form.sistema) {
-      toast.error("Sistema obrigatorio");
+      toast.error("Sistema obrigatório");
       return;
     }
     try {
@@ -338,7 +338,7 @@ export default function CofrePage() {
   if (!municipioId) {
     // Mesmo estado vazio de CAUC, SISMOB, Sessoes e Gestao: a peca `<Vazio>`,
     // nao uma caixa de 16rem escrita a mao.
-    return <Vazio>Selecione um municipio para visualizar o cofre.</Vazio>;
+    return <Vazio>Selecione um município para visualizar o cofre.</Vazio>;
   }
 
   const grouped = senhas.reduce((acc, s) => {
@@ -364,7 +364,7 @@ export default function CofrePage() {
         <div>
           <h1 className="text-2xl font-bold text-base-content">Cofre de Senhas</h1>
           <p className="mt-1 text-sm" style={{ color: "var(--bi-muted)" }}>
-            Senhas centralizadas dos sistemas governamentais para este municipio
+            Senhas centralizadas dos sistemas governamentais para este município
           </p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -399,12 +399,12 @@ export default function CofrePage() {
                   />
                   <div className="flex-1">
                     <div className="text-[13px] font-medium" style={{ color: "var(--bi-text)" }}>
-                      Integracao com sistema PACTHA
+                      Integração com sistema PACTHA
                     </div>
                     <div className="mt-0.5 text-[11px] leading-snug" style={{ color: "var(--bi-muted)" }}>
                       {isIntegracao
-                        ? "Selecione o sistema abaixo. So precisa preencher usuario e senha - o resto ja vem configurado."
-                        : "Cadastro livre - voce preenche tudo manualmente, sem automacao."}
+                        ? "Selecione o sistema abaixo. Só precisa preencher usuário e senha - o resto já vem configurado."
+                        : "Cadastro livre - você preenche tudo manualmente, sem automação."}
                     </div>
                   </div>
                 </label>
@@ -449,7 +449,7 @@ export default function CofrePage() {
                           <span style={{ color: "var(--bi-faint)" }}>Categoria:</span> {form.categoria}
                         </div>
                         <div>
-                          <span style={{ color: "var(--bi-faint)" }}>Automacao:</span> ativa via scraper{" "}
+                          <span style={{ color: "var(--bi-faint)" }}>Automação:</span> ativa via scraper{" "}
                           <code
                             className="rounded px-1 font-mono"
                             style={{ background: "var(--bi-line)", color: "var(--bi-muted)" }}
@@ -465,7 +465,7 @@ export default function CofrePage() {
                     <>
                       <div>
                         <label className={ROTULO} style={ROTULO_COR}>
-                          Usuario *
+                          Usuário *
                           <span className={HINT} style={HINT_COR}>
                             ({INTEGRACOES.find((i) => i.automation_key === integracaoSelecionada)?.usuario_hint})
                           </span>
@@ -555,7 +555,7 @@ export default function CofrePage() {
                     />
                   </div>
                   <p className="text-[11px] italic" style={{ color: "var(--bi-faint)" }}>
-                    Sem flag de integracao = senha apenas armazenada (sem automacao).
+                    Sem flag de integração = senha apenas armazenada (sem automação).
                   </p>
                 </>
               )}
@@ -580,7 +580,7 @@ export default function CofrePage() {
           <Numero icon={KeyRound} rotulo="Credenciais guardadas" valor={senhas.length} />
           <Numero
             icon={Zap}
-            rotulo="Com integracao"
+            rotulo="Com integração"
             valor={comIntegracao}
             sub="usadas pelos scrapers do PACTHA"
           />
@@ -602,7 +602,7 @@ export default function CofrePage() {
           ))}
         </div>
       ) : senhas.length === 0 ? (
-        <Vazio>Nenhuma senha cadastrada. Use o botao acima para adicionar.</Vazio>
+        <Vazio>Nenhuma senha cadastrada. Use o botão acima para adicionar.</Vazio>
       ) : (
         /* A CATEGORIA VIROU BLOCO E A SENHA VIROU CARTAO.
            Era um Card por categoria com molduras dentro (borda em volta de cada
@@ -647,14 +647,14 @@ export default function CofrePage() {
                       }
                       meta={
                         s.automation_key ? (
-                          <Selo title={`Automacao ativa: o scraper "${s.automation_key}" usa esta credencial`}>
+                          <Selo title={`Automação ativa: o scraper "${s.automation_key}" usa esta credencial`}>
                             <span className="inline-flex items-center gap-1">
                               <Zap className="size-3" />
-                              Integracao · {s.automation_key}
+                              Integração · {s.automation_key}
                             </span>
                           </Selo>
                         ) : (
-                          <Selo title="Sem automacao — a senha fica apenas guardada">Avulsa</Selo>
+                          <Selo title="Sem automação — a senha fica apenas guardada">Avulsa</Selo>
                         )
                       }
                       acao={
@@ -797,7 +797,7 @@ export default function CofrePage() {
                 placeholder="Deixe em branco para manter a senha atual"
               />
               <p className="mt-1 text-[10px]" style={{ color: "var(--bi-faint)" }}>
-                Preencha para gravar uma nova senha; em branco mantem a atual.
+                Preencha para gravar uma nova senha; em branco mantém a atual.
               </p>
             </div>
             <div>

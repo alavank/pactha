@@ -30,7 +30,7 @@ const SCOPE_PRESETS = [
   // formulario exige ao menos um escopo, e o POST /api/session-capture responde
   // 403 sem session:write. A alternativa era o endpoint de control-plane
   // (/api/control/session/token), que exige um token de control ja provisionado.
-  { label: "Extensao - captura de sessao", value: "session:write" },
+  { label: "Extensão - captura de sessão", value: "session:write" },
   { label: "FNS - leitura senhas", value: "secret:read:fns" },
   { label: "FNS - upsert dados", value: "write:fns" },
   { label: "SIMEC - leitura senhas", value: "secret:read:simec" },
@@ -83,7 +83,7 @@ export default function ServiceTokensPage() {
 
   const handleCreate = async () => {
     if (!form.name || form.scopes.length === 0) {
-      toast.error("Nome e ao menos um scope sao obrigatorios");
+      toast.error("Nome e ao menos um scope são obrigatórios");
       return;
     }
     try {
@@ -99,7 +99,7 @@ export default function ServiceTokensPage() {
   };
 
   const handleRotate = async (id: number, name: string) => {
-    if (!confirm(`Rotacionar token "${name}"? O token antigo deixara de funcionar.`)) return;
+    if (!confirm(`Rotacionar token "${name}"? O token antigo deixará de funcionar.`)) return;
     try {
       const res = await api.post<{ name: string; token: string }>(`/admin/service-tokens/${id}/rotate`);
       setShowSecret({ name: res.data.name, token: res.data.token });
@@ -110,7 +110,7 @@ export default function ServiceTokensPage() {
   };
 
   const handleRevoke = async (id: number, name: string) => {
-    if (!confirm(`REVOGAR token "${name}"? Esta acao desativa o token imediatamente.`)) return;
+    if (!confirm(`REVOGAR token "${name}"? Esta ação desativa o token imediatamente.`)) return;
     try {
       await api.post(`/admin/service-tokens/${id}/revoke`);
       toast.success("Token revogado");
@@ -147,8 +147,8 @@ export default function ServiceTokensPage() {
               Service Tokens
             </h1>
             <p className="mt-1 text-sm" style={{ color: "var(--bi-muted)" }}>
-              Tokens de automacao para scrapers (FNS, SIMEC, etc).
-              Cada chamada e auditada.
+              Tokens de automação para scrapers (FNS, SIMEC, etc).
+              Cada chamada é auditada.
             </p>
           </div>
           <button type="button" onClick={() => setDialogOpen(true)} className={BOTAO_CTA} style={ESTILO_CTA}>
@@ -160,7 +160,7 @@ export default function ServiceTokensPage() {
       {/* Formulario de criacao. `superficie` porque o corpo e formulario, nao
           uma pilha de blocos: caixa branca, e nao o fundo da pagina. */}
       <Modal aberto={dialogOpen} onFechar={() => setDialogOpen(false)} maxW="max-w-lg" superficie esc={false}>
-        <ModalHead titulo="Criar Service Token" sub="O token so aparece uma vez, na criacao." onFechar={() => setDialogOpen(false)} />
+        <ModalHead titulo="Criar Service Token" sub="O token só aparece uma vez, na criação." onFechar={() => setDialogOpen(false)} />
         <ModalCorpo className="p-4">
               <div className="space-y-3">
                 <div>
@@ -180,7 +180,7 @@ export default function ServiceTokensPage() {
                   />
                 </div>
                 <div>
-                  <label className="mb-2 block text-[12px] font-medium" style={{ color: "var(--bi-muted)" }}>Scopes (escolha o minimo necessario)</label>
+                  <label className="mb-2 block text-[12px] font-medium" style={{ color: "var(--bi-muted)" }}>Scopes (escolha o mínimo necessário)</label>
                   <div className="grid grid-cols-2 gap-2 text-[11px]">
                     {SCOPE_PRESETS.map((s) => (
                       <label key={s.value} className="flex items-center gap-2 cursor-pointer">
@@ -214,7 +214,7 @@ export default function ServiceTokensPage() {
           <BlocoHead
             icon={ShieldAlert}
             titulo={`Token criado: ${showSecret.name}`}
-            sub="ANOTE AGORA. Este token NAO sera mostrado novamente."
+            sub="ANOTE AGORA. Este token NÃO será mostrado novamente."
           />
           <div className="flex items-center gap-2 rounded-lg p-2 font-mono text-[12px] break-all"
                style={{ background: "var(--bi-surface)", border: "1px solid var(--bi-line)", color: "var(--bi-text)" }}>
@@ -232,7 +232,7 @@ export default function ServiceTokensPage() {
           </p>
           <div className="mt-3">
             <button type="button" onClick={() => setShowSecret(null)} className={BOTAO_SEC} style={ESTILO_SEC}>
-              Fechar (ja anotei)
+              Fechar (já anotei)
             </button>
           </div>
         </Bloco>

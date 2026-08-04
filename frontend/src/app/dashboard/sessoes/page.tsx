@@ -39,10 +39,10 @@ interface TgSessionStatus {
 // Sistemas que suportam captura de sessao via bookmarklet
 const PORTAIS = [
   { key: "govbr", nome: "gov.br (parcerias.transferegov)", url: "https://parcerias.transferegov.sistema.gov.br/ep-atos-prep-web/home" },
-  { key: "siconv_legado", nome: "SICONV Legado (discricionarias) — Cláusula Suspensiva", url: "https://discricionarias.transferegov.sistema.gov.br/voluntarias/" },
-  { key: "fns", nome: "FNS - Saude", url: "https://consultafns.saude.gov.br" },
-  { key: "simec", nome: "SIMEC/PAR - Educacao", url: "https://simec.mec.gov.br" },
-  { key: "sismob", nome: "SISMOB - Obras Saude", url: "https://sismobcidadao.saude.gov.br" },
+  { key: "siconv_legado", nome: "SICONV Legado (discricionárias) — Cláusula Suspensiva", url: "https://discricionarias.transferegov.sistema.gov.br/voluntarias/" },
+  { key: "fns", nome: "FNS - Saúde", url: "https://consultafns.saude.gov.br" },
+  { key: "simec", nome: "SIMEC/PAR - Educação", url: "https://simec.mec.gov.br" },
+  { key: "sismob", nome: "SISMOB - Obras Saúde", url: "https://sismobcidadao.saude.gov.br" },
   { key: "suas", nome: "Estrutura SUAS", url: "https://estruturasuas.mds.gov.br" },
 ];
 
@@ -126,7 +126,7 @@ function SessoesInner() {
         })
       }).then(r=>r.json()).then(d=>{
         var msg = d.status==='ok'
-          ? 'PACTHA: SESSAO CAPTURADA!' + (d.auto_scrape_started ? '\\n\\n>>> Scraper TransfereGov iniciado automaticamente em background (janela 20min).\\n\\nVoce pode FECHAR esta aba — o scrape continua no servidor.' : '')
+          ? 'PACTHA: SESSÃO CAPTURADA!' + (d.auto_scrape_started ? '\\n\\n>>> Scraper TransfereGov iniciado automaticamente em background (janela 20min).\\n\\nVocê pode FECHAR esta aba — o scrape continua no servidor.' : '')
           : 'PACTHA erro: ' + JSON.stringify(d);
         alert(msg);
       }).catch(e=>alert('PACTHA erro: '+e.message));
@@ -181,7 +181,7 @@ function SessoesInner() {
   const copyToken = () => {
     const t = localStorage.getItem("pactha_token");
     if (!t) {
-      toast.error("Faca login primeiro");
+      toast.error("Faça login primeiro");
       return;
     }
     navigator.clipboard.writeText(t);
@@ -192,7 +192,7 @@ function SessoesInner() {
     s ? new Date(s).toLocaleString("pt-BR") : "-";
 
   if (!municipioId) {
-    return <Vazio>Selecione um municipio para gerenciar sessoes.</Vazio>;
+    return <Vazio>Selecione um município para gerenciar sessões.</Vazio>;
   }
 
   // Estado da sessao TransfereGov, resolvido UMA vez para o selo, a grade e as
@@ -226,11 +226,11 @@ function SessoesInner() {
       <div className="border-b pb-4" style={{ borderColor: "var(--bi-line)" }}>
         <h1 className="flex items-center gap-2 text-2xl font-bold text-base-content">
           <Bookmark className="size-6" style={{ color: "var(--bi-muted)" }} />
-          Captura de Sessao
+          Captura de Sessão
         </h1>
         <p className="mt-1 text-sm" style={{ color: "var(--bi-muted)" }}>
-          Solucao gratuita para portais com anti-bot (gov.br, FNS, etc).
-          Voce loga manualmente e captura a sessao com 1 clique.
+          Solução gratuita para portais com anti-bot (gov.br, FNS, etc).
+          Você loga manualmente e captura a sessão com 1 clique.
         </p>
       </div>
 
@@ -250,10 +250,10 @@ function SessoesInner() {
           </Passo>
           <Passo n={2}>
             <strong className="font-semibold">
-              Arraste o link &quot;Capturar sessao&quot; (abaixo) para a barra de favoritos do Chrome.
+              Arraste o link &quot;Capturar sessão&quot; (abaixo) para a barra de favoritos do Chrome.
             </strong>
             <div style={{ color: "var(--bi-faint)" }}>
-              Cada portal tem o seu. Faca isso uma unica vez.
+              Cada portal tem o seu. Faça isso uma única vez.
             </div>
           </Passo>
           <Passo n={3}>
@@ -261,8 +261,8 @@ function SessoesInner() {
               Quando logar no portal (FNS, SIMEC...), clique no favorito &quot;PACTHA Capturar [portal]&quot;.
             </strong>
             <div style={{ color: "var(--bi-faint)" }}>
-              Vai pedir para colar o token. Cole e pronto - sessao capturada.
-              Repita 1x/mes ou quando expirar.
+              Vai pedir para colar o token. Cole e pronto - sessão capturada.
+              Repita 1x/mês ou quando expirar.
             </div>
           </Passo>
         </div>
@@ -377,14 +377,14 @@ function SessoesInner() {
                       ? "Cookies capturados"
                       : st.has_session
                         ? "Apenas senha (sem cookies)"
-                        : "Sem sessao"}
+                        : "Sem sessão"}
                   </Selo>
                   <span>
                     {st.has_cookies
                       ? "Pronto para scraping"
                       : st.has_session
                         ? "Faltam cookies — use o bookmarklet"
-                        : "Faca login no portal e clique no bookmarklet"}
+                        : "Faça login no portal e clique no bookmarklet"}
                   </span>
                   <a
                     href={p.url}
@@ -433,7 +433,7 @@ function SessoesInner() {
                   href={buildBookmarklet(p.key)}
                   onClick={(e) => {
                     // Impede que o navegador execute o JS quando clicar (so quando arrastado)
-                    if (!confirm(`Arraste este link para a barra de favoritos como "PACTHA Capturar ${p.nome}".\n\nClique OK so se quiser executar AGORA (precisa estar logado em ${p.url}).`)) {
+                    if (!confirm(`Arraste este link para a barra de favoritos como "PACTHA Capturar ${p.nome}".\n\nClique OK só se quiser executar AGORA (precisa estar logado em ${p.url}).`)) {
                       e.preventDefault();
                     }
                   }}
@@ -454,10 +454,10 @@ function SessoesInner() {
       <Bloco className="p-3">
         <BlocoHead icon={ShieldCheck} titulo="Sobre segurança" />
         <p className="text-[12px] leading-relaxed" style={{ color: "var(--bi-muted)" }}>
-          O cookie capturado e cifrado com AES-256-GCM antes de salvar. Apenas
-          os scrapers PACTHA conseguem decifrar. O token JWT que voce cola e do
-          seu proprio login no PACTHA - nunca compartilhe. Para invalidar uma sessao,
-          faca logout no portal de origem.
+          O cookie capturado é cifrado com AES-256-GCM antes de salvar. Apenas
+          os scrapers PACTHA conseguem decifrar. O token JWT que você cola é do
+          seu próprio login no PACTHA - nunca compartilhe. Para invalidar uma sessão,
+          faça logout no portal de origem.
         </p>
       </Bloco>
 

@@ -40,18 +40,18 @@ async def get_control_principal(
     db: AsyncSession = Depends(get_db),
 ) -> ControlPrincipal:
     if not x_control_token or len(x_control_token) < 32:
-        raise HTTPException(status_code=401, detail="X-Control-Token obrigatorio")
+        raise HTTPException(status_code=401, detail="X-Control-Token obrigatório")
 
     th = hash_token(x_control_token)
     tok = (await db.execute(
         select(ServiceToken).where(ServiceToken.token_hash == th))).scalar_one_or_none()
     if not tok or not tok.active:
-        raise HTTPException(status_code=401, detail="Control token invalido ou revogado")
+        raise HTTPException(status_code=401, detail="Control token inválido ou revogado")
     if tok.expires_at and tok.expires_at < datetime.now(timezone.utc):
         raise HTTPException(status_code=401, detail="Control token expirado")
     # kind: um control token apresentado como scraper (ou vice-versa) e rejeitado
     if (getattr(tok, "kind", "scraper") or "scraper") != "control":
-        raise HTTPException(status_code=401, detail="Nao e um control token")
+        raise HTTPException(status_code=401, detail="Não é um control token")
 
     # services/net.py conta o X-Forwarded-For de TRAS para FRENTE. A versao antiga
     # daqui pegava o primeiro item da lista — o pedaco que o proprio cliente
@@ -68,7 +68,7 @@ async def get_control_principal(
                       for i in allowed.split(",") if i.strip()}
         # ip_cliente None = origem indeterminada: nega (fail-closed).
         if not ip_cliente or ip_cliente not in permitidos:
-            raise HTTPException(status_code=403, detail="IP nao autorizado para control-plane")
+            raise HTTPException(status_code=403, detail="IP não autorizado para control-plane")
 
     # Anti-misrouting: nao aceitar mutacao destinada a OUTRO tenant
     slug = os.getenv("INSTANCE_SLUG", "")

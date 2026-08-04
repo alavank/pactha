@@ -212,9 +212,9 @@ def _exigir_gerir(current: User) -> None:
     if not authz.pode(current, "usuarios.modelos"):
         raise HTTPException(
             403,
-            "Criar, alterar e apagar MODELOS de permissao exige a caixinha "
-            "«Gerenciar modelos». Aplicar um modelo ja existente continua "
-            "liberado para quem concede permissoes.")
+            "Criar, alterar e apagar MODELOS de permissão exige a caixinha "
+            "«Gerenciar modelos». Aplicar um modelo já existente continua "
+            "liberado para quem concede permissões.")
 
 
 async def _nome_livre(db: AsyncSession, nome: str,
@@ -231,7 +231,7 @@ async def _nome_livre(db: AsyncSession, nome: str,
              "LIMIT 1"),
         {"n": nome})).first()
     if linha and (ignorar_id is None or int(linha[0]) != int(ignorar_id)):
-        raise HTTPException(409, f"Ja existe um modelo chamado «{nome}».")
+        raise HTTPException(409, f"Já existe um modelo chamado «{nome}».")
 
 
 # ---------------------------------------------------------------------------
@@ -396,11 +396,11 @@ async def listar(
 # ESCRITA — as guardas, na ordem de sempre
 # ---------------------------------------------------------------------------
 _FRASE_ESCALONAMENTO = (
-    "Um modelo so pode carregar permissoes que voce mesmo tem — senao ele "
-    "seria a porta dos fundos da trava que impede conceder o que nao se tem."
+    "Um modelo só pode carregar permissões que você mesmo tem — senão ele "
+    "seria a porta dos fundos da trava que impede conceder o que não se tem."
 )
 _FRASE_ESCALONAMENTO_ESCOPO = (
-    "Um modelo so pode definir o alcance de modulos em que voce mesmo alcanca "
+    "Um modelo só pode definir o alcance de módulos em que você mesmo alcança "
     "todos os registros."
 )
 
@@ -529,7 +529,7 @@ async def editar(
     _exigir_gerir(current)
     atual = await _carregar_um(db, modelo_id)
     if atual is None:
-        raise HTTPException(404, "Modelo nao encontrado")
+        raise HTTPException(404, "Modelo não encontrado")
 
     nome = _validar_nome(req.nome)
     descricao = _texto(req.descricao, LIMITE_DESCRICAO) or None
@@ -562,8 +562,8 @@ async def editar(
             "alcance_resumo": [_frase_escopo(r, escopos[r])
                                for r in sorted(escopos)] or None,
             # A frase que separa este evento de uma concessao de verdade.
-            "efeito": "Alterar o modelo NAO altera quem ja o recebeu: aplicar "
-                      "copia as permissoes no instante da aplicacao.",
+            "efeito": "Alterar o modelo NÃO altera quem já o recebeu: aplicar "
+                      "copia as permissões no instante da aplicação.",
         },
         commit=False,
     )
@@ -595,7 +595,7 @@ async def apagar(
     _exigir_gerir(current)
     atual = await _carregar_um(db, modelo_id)
     if atual is None:
-        raise HTTPException(404, "Modelo nao encontrado")
+        raise HTTPException(404, "Modelo não encontrado")
     # ⚠️ Anti-escalonamento tambem para APAGAR: apagar e retirar o molde inteiro,
     # e quem nao alcanca uma das caixinhas dele nao decide sobre ele. Sem esta
     # linha, um administrador sem acesso ao Cofre derrubaria o molde do Cofre —
@@ -614,7 +614,7 @@ async def apagar(
                                  atual["permissoes"], atual["escopos"]),
         details={
             "resumo": permissoes.resumo(sorted(atual["permissoes"])) or None,
-            "efeito": "Ninguem perde acesso: as permissoes ja copiadas "
+            "efeito": "Ninguém perde acesso: as permissões já copiadas "
                       "continuam nos cadastros das pessoas.",
         },
         commit=False,
@@ -662,11 +662,11 @@ async def aplicar(
     _require_admin(current)
     modelo = await _carregar_um(db, modelo_id)
     if modelo is None:
-        raise HTTPException(404, "Modelo nao encontrado")
+        raise HTTPException(404, "Modelo não encontrado")
     alvo: Optional[User] = (await db.execute(
         select(User).where(User.id == req.user_id))).scalar_one_or_none()
     if not alvo:
-        raise HTTPException(404, "Usuario nao encontrado")
+        raise HTTPException(404, "Usuário não encontrado")
     _guard_target(current, alvo)
 
     modo = permissoes.normalizar_modo_aplicacao(req.modo)

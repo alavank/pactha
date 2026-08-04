@@ -55,20 +55,20 @@ interface Rm {
 
 const ITEM_FIELDS: Array<[keyof Item, string, "text" | "number" | "date" | "textarea"]> = [
   ["tipo", "Tipo", "text"],
-  ["numero", "Numero", "text"],
+  ["numero", "Número", "text"],
   ["objeto", "Objeto", "textarea"],
   ["parlamentar", "Parlamentar", "text"],
   ["valor_global", "Valor Global (R$)", "number"],
   ["valor_repasse", "Valor Repasse (R$)", "number"],
   ["valor_contrapartida", "Valor Contrapartida (R$)", "number"],
   ["banco", "Banco", "text"],
-  ["agencia", "Agencia", "text"],
+  ["agencia", "Agência", "text"],
   ["conta", "Conta", "text"],
-  ["saldo_bancario", "Saldo Bancario (R$)", "number"],
+  ["saldo_bancario", "Saldo Bancário (R$)", "number"],
   ["dt_saldo", "Data do Saldo", "date"],
-  ["dt_fim_vigencia", "Final da Vigencia", "date"],
+  ["dt_fim_vigencia", "Final da Vigência", "date"],
   ["situacao_contratacao", "Situação de Contratação", "text"],
-  ["situacao_atual", "Situacao Atual", "textarea"],
+  ["situacao_atual", "Situação Atual", "textarea"],
   // Evento ATUAL do Histórico de Comunicações (TransfereGov)
   ["evento_atual", "Evento Atual", "text"],
   ["evento_data", "Data do Evento", "text"],
@@ -147,7 +147,7 @@ export default function RmEditorPage() {
   };
 
   const repopular = async () => {
-    if (!confirm("Substituir TODO o conteudo pelos dados atuais do banco?")) return;
+    if (!confirm("Substituir TODO o conteúdo pelos dados atuais do banco?")) return;
     setRepopulating(true);
     try {
       await api.post(`/rm/${rid}/auto-popular`);
@@ -346,7 +346,7 @@ export default function RmEditorPage() {
       {/* Metadata edit */}
       <Bloco className="grid grid-cols-1 gap-3 p-3 md:grid-cols-3">
         <div>
-          <label className="text-xs text-base-content/70 mb-1 block">Titulo</label>
+          <label className="text-xs text-base-content/70 mb-1 block">Título</label>
           <Input value={rm.titulo || ""} onChange={(e) => setRm({ ...rm, titulo: e.target.value })} />
         </div>
         <div>
@@ -360,7 +360,7 @@ export default function RmEditorPage() {
           </select>
         </div>
         <div>
-          <label className="text-xs text-base-content/70 mb-1 block">Cidade de emissao</label>
+          <label className="text-xs text-base-content/70 mb-1 block">Cidade de emissão</label>
           <Input value={rm.cidade_emissao} onChange={(e) => setRm({ ...rm, cidade_emissao: e.target.value })} />
         </div>
       </Bloco>

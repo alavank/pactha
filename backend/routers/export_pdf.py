@@ -177,7 +177,7 @@ async def export_convenios_pdf(
     authz.exigir_tela(current, "convenios")
     mun = (await db.execute(select(Municipio).where(Municipio.id == municipio_id))).scalar_one_or_none()
     if not mun:
-        raise HTTPException(404, "Municipio nao encontrado")
+        raise HTTPException(404, "Município não encontrado")
 
     r = await db.execute(
         select(ConvenioEstadual).where(ConvenioEstadual.municipio_id == municipio_id)
@@ -202,9 +202,9 @@ async def export_convenios_pdf(
             _br(c.dt_vigencia_atual or c.dt_vigencia_final),
         ])
     pdf = _build_pdf(
-        f"Convenios SIGCON-MG - {mun.nome}/{mun.uf}",
-        f"{len(convs)} convenios registrados",
-        ["Fonte", "Proposta", "Plano", "Instrumento", "Orgao", "Objeto", "Situacao", "Repasse", "Assinatura", "Vigencia"],
+        f"Convênios SIGCON-MG - {mun.nome}/{mun.uf}",
+        f"{len(convs)} convênios registrados",
+        ["Fonte", "Proposta", "Plano", "Instrumento", "Órgão", "Objeto", "Situação", "Repasse", "Assinatura", "Vigência"],
         rows,
     )
     nome_arq = f"convenios_{mun.nome.replace(' ','_')}.pdf"
@@ -242,7 +242,7 @@ async def export_voluntarias_pdf(
     authz.exigir_tela(current, "transferegov")
     mun = (await db.execute(select(Municipio).where(Municipio.id == municipio_id))).scalar_one_or_none()
     if not mun:
-        raise HTTPException(404, "Municipio nao encontrado")
+        raise HTTPException(404, "Município não encontrado")
     # Reusa a mesma logica de filtro do endpoint da tela
     from routers.transferegov import voluntarias as _voluntarias
     res = await _voluntarias(
@@ -268,19 +268,19 @@ async def export_voluntarias_pdf(
     # Subtitulo com os filtros ativos (deixa claro o recorte do relatorio)
     _f = []
     if parlamentar: _f.append(f"parlamentar: {parlamentar}")
-    if orgao: _f.append(f"orgao: {orgao}")
+    if orgao: _f.append(f"órgão: {orgao}")
     if situacao_contratacao: _f.append(f"sit.contratacao: {situacao_contratacao}")
     _VIG = {"vence30": "vence 30d", "vence60": "vence 60d", "vence90": "vence 90d",
-            "vence120": "vence 120d", "prestacao": "prestacao de contas"}
+            "vence120": "vence 120d", "prestacao": "prestação de contas"}
     if vigencia: _f.append(_VIG.get(vigencia, vigencia))
     if vig_fim_de: _f.append(f"fim vig. de {vig_fim_de}")
-    if vig_fim_ate: _f.append(f"fim vig. ate {vig_fim_ate}")
+    if vig_fim_ate: _f.append(f"fim vig. até {vig_fim_ate}")
     if search: _f.append(f"busca: {search}")
     filtros = " | ".join(_f) if _f else "sem filtros (todos)"
     pdf = _build_pdf(
         f"Instrumentos Federais (TransfereGov) - {mun.nome}/{mun.uf}",
         f"Categoria: {categoria or 'geral'} · Filtros: {filtros} · {len(rows)} instrumento(s)",
-        ["Instrumento", "Orgao", "Objeto", "Parlamentar", "Situacao", "Sit.Contr.", "Inicio Vig.", "Fim Vig.", "Dias"],
+        ["Instrumento", "Órgão", "Objeto", "Parlamentar", "Situação", "Sit.Contr.", "Início Vig.", "Fim Vig.", "Dias"],
         rows,
     )
     nome_arq = f"federais_{mun.nome.replace(' ','_')}.pdf"
@@ -327,7 +327,7 @@ async def export_plano_acao_pdf(
     authz.exigir_tela(current, "transferegov")
     mun = (await db.execute(select(Municipio).where(Municipio.id == municipio_id))).scalar_one_or_none()
     if not mun:
-        raise HTTPException(404, "Municipio nao encontrado")
+        raise HTTPException(404, "Município não encontrado")
     from routers.transferegov import buscar as _buscar
     res = await _buscar(
         municipio_id=municipio_id,
@@ -350,16 +350,16 @@ async def export_plano_acao_pdf(
             (it.get("situacao_plano_trabalho") or "-")[:22],
         ])
     _f = []
-    if situacao and situacao != "TODAS": _f.append(f"situacao: {situacao}")
+    if situacao and situacao != "TODAS": _f.append(f"situação: {situacao}")
     if programa: _f.append(f"programa: {programa}")
     if parlamentar: _f.append(f"parlamentar/emenda: {parlamentar}")
     if emenda: _f.append(f"emenda: {emenda}")
     if objeto: _f.append(f"objeto: {objeto}")
     filtros = " | ".join(_f) if _f else "sem filtros (todos)"
     pdf = _build_pdf(
-        f"Planos de Acao - Transferencia Especial - {mun.nome}/{mun.uf}",
+        f"Planos de Ação - Transferência Especial - {mun.nome}/{mun.uf}",
         f"Filtros: {filtros} · {len(rows)} plano(s)",
-        ["Codigo", "Emenda", "Parlamentar", "Beneficiario", "Valor", "Sit. P. Acao", "Sit. P. Trabalho"],
+        ["Código", "Emenda", "Parlamentar", "Beneficiário", "Valor", "Sit. P. Ação", "Sit. P. Trabalho"],
         rows,
     )
     nome_arq = f"plano_acao_{mun.nome.replace(' ','_')}.pdf"
@@ -385,7 +385,7 @@ async def export_emendas_pdf(
     authz.exigir_tela(current, "emendas")
     mun = (await db.execute(select(Municipio).where(Municipio.id == municipio_id))).scalar_one_or_none()
     if not mun:
-        raise HTTPException(404, "Municipio nao encontrado")
+        raise HTTPException(404, "Município não encontrado")
     r = await db.execute(text("""
         SELECT nr_indicacao, nome_responsavel, tipo_indicacao,
                uo_sigla, valor_indicacao, status_indicacao, ano
@@ -404,8 +404,8 @@ async def export_emendas_pdf(
     ] for r in items]
     pdf = _build_pdf(
         f"Emendas Estaduais (SIGCON-MG) - {mun.nome}/{mun.uf}",
-        f"{len(items)} indicacoes parlamentares estaduais",
-        ["Nº Indicacao", "Responsavel", "Tipo", "UO", "Valor", "Status", "Ano"],
+        f"{len(items)} indicações parlamentares estaduais",
+        ["Nº Indicação", "Responsável", "Tipo", "UO", "Valor", "Status", "Ano"],
         rows,
     )
     nome_arq = f"emendas_{mun.nome.replace(' ','_')}.pdf"
@@ -444,9 +444,9 @@ async def export_dou_pdf(
             edicao,
         ])
     pdf = _build_pdf(
-        f"Diario Oficial MG - Municipio {municipio_id}",
-        f"{len(rows)} publicacoes encontradas",
-        ["#", "Titulo", "Edicao/Data"],
+        f"Diário Oficial MG - Município {municipio_id}",
+        f"{len(rows)} publicações encontradas",
+        ["#", "Título", "Edição/Data"],
         rows,
         landscape_mode=False,
     )
@@ -545,9 +545,9 @@ async def export_parlamentares_pdf(
     if q:
         filtros.append(f"busca: \"{q}\"")
     filtros.append(f"ano: {ano}" if ano else "todos os anos")
-    filtros.append(f"municipio: {municipio_id}" if municipio_id else "todos os municipios")
+    filtros.append(f"município: {municipio_id}" if municipio_id else "todos os municípios")
     story = [
-        Paragraph("Relatorio de Parlamentares", title_style),
+        Paragraph("Relatório de Parlamentares", title_style),
         Paragraph(f"{len(items)} parlamentar(es) · {' · '.join(filtros)}", subt_style),
     ]
 
@@ -564,11 +564,11 @@ async def export_parlamentares_pdf(
         cab = [
             Paragraph(p["nome_display"], name_style),
             Paragraph(
-                f"{p['total_lancamentos']} lancamento(s) · Total {_br(p['valor_total'])} · "
+                f"{p['total_lancamentos']} lançamento(s) · Total {_br(p['valor_total'])} · "
                 f"SIGCON: {pf.get('sigcon', 0)} · TransfereGov: {pf.get('voluntaria', 0)} · "
                 f"Emendas: {pf.get('emenda', 0)} · Transf. Especial: {pf.get('plano_acao', 0)} · "
                 f"PAC: {pf.get('pac', 0)} · FNS: {pf.get('fns', 0)}"
-                + (f" · Municipios: {muns}" if muns else ""),
+                + (f" · Municípios: {muns}" if muns else ""),
                 meta_style),
         ]
         story.append(KeepTogether(cab))
@@ -582,9 +582,9 @@ async def export_parlamentares_pdf(
                 _pc(s.get("dt_vigencia_atual") or s.get("dt_vigencia_final")),
                 _pc(s.get("objeto"), 500),
             ] for s in sig]
-            story.append(Paragraph(f"SIGCON-MG (Estadual) — {len(sig)} convenio(s)", sub_style))
+            story.append(Paragraph(f"SIGCON-MG (Estadual) — {len(sig)} convênio(s)", sub_style))
             story.append(_sec_table(
-                ["Municipio", "Nº SIGCON", "Orgao", "Situacao", "Valor Total", "Vigencia", "Objeto"],
+                ["Município", "Nº SIGCON", "Órgão", "Situação", "Valor Total", "Vigência", "Objeto"],
                 rows, [24, 22, 34, 30, 26, 22, 119]))
 
         vol = det.get("voluntarias", [])
@@ -599,7 +599,7 @@ async def export_parlamentares_pdf(
             ] for v in vol]
             story.append(Paragraph(f"TransfereGov / SICONV (Federal) — {len(vol)} proposta(s)", sub_style))
             story.append(_sec_table(
-                ["Municipio", "Nº Proposta", "Instrumento", "Orgao", "Situacao", "Sit.Contr.", "Valor Global", "Fim Vig.", "Objeto"],
+                ["Município", "Nº Proposta", "Instrumento", "Órgão", "Situação", "Sit.Contr.", "Valor Global", "Fim Vig.", "Objeto"],
                 rows, [22, 22, 22, 26, 26, 22, 26, 20, 91]))
 
         em = det.get("emendas", [])
@@ -610,9 +610,9 @@ async def export_parlamentares_pdf(
                 _pc(e.get("beneficiario"), 120), _pc(e.get("tipo_atendimento"), 60),
                 _pc(_br(e.get("valor_indicacao"))), _pc(e.get("status_indicacao"), 40),
             ] for e in em]
-            story.append(Paragraph(f"Emendas Estaduais — {len(em)} indicacao(oes)", sub_style))
+            story.append(Paragraph(f"Emendas Estaduais — {len(em)} indicação(ões)", sub_style))
             story.append(_sec_table(
-                ["Municipio", "Indicacao", "Ano", "UO", "Beneficiario", "Tipo", "Valor", "Status"],
+                ["Município", "Indicação", "Ano", "UO", "Beneficiário", "Tipo", "Valor", "Status"],
                 rows, [24, 24, 12, 16, 70, 45, 26, 60]))
 
         pa = det.get("plano_acao", [])
@@ -623,9 +623,9 @@ async def export_parlamentares_pdf(
                 _pc(_br(x.get("valor_custeio"))), _pc(_br(x.get("valor_investimento"))),
                 _pc(_br(x.get("valor_total"))), _pc(x.get("objeto"), 500),
             ] for x in pa]
-            story.append(Paragraph(f"Transferencia Especial / Plano de Acao (RP9) — {len(pa)} plano(s)", sub_style))
+            story.append(Paragraph(f"Transferência Especial / Plano de Ação (RP9) — {len(pa)} plano(s)", sub_style))
             story.append(_sec_table(
-                ["Municipio", "Plano", "Emenda", "Situacao", "Custeio", "Investim.", "Valor Total", "Objeto/Politica"],
+                ["Município", "Plano", "Emenda", "Situação", "Custeio", "Investim.", "Valor Total", "Objeto/Política"],
                 rows, [24, 26, 26, 22, 26, 26, 26, 101]))
 
         pac = det.get("pac", [])
@@ -635,9 +635,9 @@ async def export_parlamentares_pdf(
                 _pc(x.get("programa"), 120), _pc(x.get("situacao"), 40),
                 _pc(_br(x.get("valor_total"))), _pc(x.get("emenda_parlamentar"), 40),
             ] for x in pac]
-            story.append(Paragraph(f"Selecao PAC / Novo PAC — {len(pac)} proposta(s)", sub_style))
+            story.append(Paragraph(f"Seleção PAC / Novo PAC — {len(pac)} proposta(s)", sub_style))
             story.append(_sec_table(
-                ["Municipio", "Nº Proposta", "Programa", "Situacao", "Valor Total", "Emenda"],
+                ["Município", "Nº Proposta", "Programa", "Situação", "Valor Total", "Emenda"],
                 rows, [26, 24, 90, 40, 28, 45]))
 
         fns = det.get("fns", [])
@@ -648,13 +648,13 @@ async def export_parlamentares_pdf(
                 _pc(_br(x.get("valor_total"))), _pc(x.get("ano")),
                 _pc(x.get("objeto"), 500),
             ] for x in fns]
-            story.append(Paragraph(f"FNS — Fundo Nacional de Saude (Federal) — {len(fns)} proposta(s)", sub_style))
+            story.append(Paragraph(f"FNS — Fundo Nacional de Saúde (Federal) — {len(fns)} proposta(s)", sub_style))
             story.append(_sec_table(
-                ["Municipio", "Nº Proposta", "Orgao", "Situacao", "Valor Total", "Ano", "Objeto"],
+                ["Município", "Nº Proposta", "Órgão", "Situação", "Valor Total", "Ano", "Objeto"],
                 rows, [24, 24, 34, 34, 26, 14, 97]))
 
         if not (sig or vol or em or pa or pac or fns):
-            story.append(Paragraph("Sem lancamentos detalhados.", meta_style))
+            story.append(Paragraph("Sem lançamentos detalhados.", meta_style))
         story.append(Spacer(1, 6))
 
     if not items:
@@ -906,7 +906,7 @@ async def export_ai_pdf(
     conteudo = (payload.get("conteudo") or "").strip()
     if not conteudo:
         raise HTTPException(400, "conteudo vazio")
-    titulo = (payload.get("titulo") or "Relatorio - IA PACTHA").strip()[:120]
+    titulo = (payload.get("titulo") or "Relatório - IA PACTHA").strip()[:120]
     pergunta = (payload.get("pergunta") or "").strip()
 
     styles = getSampleStyleSheet()

@@ -57,7 +57,7 @@ def _require_admin(user: User):
     fora. Ate la, `admin` deixou de ser deus mas continua sendo o zelador.
     """
     if user.role != "admin":
-        raise HTTPException(403, "Apenas administradores podem gerenciar usuarios")
+        raise HTTPException(403, "Apenas administradores podem gerenciar usuários")
 
 
 # Contas donas do sistema: a lista vive em services/auth.py (uma so, para as
@@ -285,12 +285,12 @@ async def create_user(
     _require_admin(current)
     email = req.email.strip().lower()
     if not email or "@" not in email:
-        raise HTTPException(400, "Email invalido")
+        raise HTTPException(400, "Email inválido")
     existing = await db.execute(select(User).where(User.email == email))
     if existing.scalar_one_or_none():
-        raise HTTPException(400, "Email ja cadastrado")
+        raise HTTPException(400, "Email já cadastrado")
     if req.role not in ("admin", "usuario", "analyst", "user", "prefeito"):
-        raise HTTPException(400, "Role invalida")
+        raise HTTPException(400, "Role inválida")
 
     # ⚠️ CRIAR COM ESCOPO JA E CONCEDER — e sem esta linha era um DESVIO da
     # permissao de conceder.
@@ -367,7 +367,7 @@ async def reset_password(
     _require_admin(current)
     u = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
     if not u:
-        raise HTTPException(404, "Usuario nao encontrado")
+        raise HTTPException(404, "Usuário não encontrado")
     _guard_target(current, u)
     # Senha padrao "1234" - o usuario sera obrigado a troca-la no primeiro login
     senha = "1234"
@@ -414,22 +414,22 @@ async def update_user(
         authz.exigir(current, "usuarios.conceder")
     u = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
     if not u:
-        raise HTTPException(404, "Usuario nao encontrado")
+        raise HTTPException(404, "Usuário não encontrado")
     _guard_target(current, u)
     # Protecao: nao deixar o admin se auto-desativar nem se auto-rebaixar
     if req.active is False and u.id == current.id:
-        raise HTTPException(400, "Voce nao pode desativar a si mesmo")
+        raise HTTPException(400, "Você não pode desativar a si mesmo")
     if req.role and req.role != "admin" and u.id == current.id and current.role == "admin":
-        raise HTTPException(400, "Voce nao pode rebaixar o proprio perfil de administrador (evita se trancar pra fora)")
+        raise HTTPException(400, "Você não pode rebaixar o próprio perfil de administrador (evita se trancar pra fora)")
     if req.role and req.role not in ("admin", "usuario", "analyst", "user", "prefeito"):
-        raise HTTPException(400, "Role invalida")
+        raise HTTPException(400, "Role inválida")
     # Auto-trancamento: pôr a SI MESMO em somente-leitura e uma porta que fecha
     # por fora. O guard de `get_current_user` barra todo POST/PUT/PATCH/DELETE
     # fora do Painel — e este endpoint e um PATCH. A pessoa perderia, no mesmo
     # ato, a escrita e o unico caminho de desfaze-la: so voltaria por outro admin
     # ou pelo banco. Mesma familia das duas protecoes acima.
     if req.somente_leitura is True and u.id == current.id:
-        raise HTTPException(400, "Voce nao pode se colocar em somente leitura (evita se trancar pra fora)")
+        raise HTTPException(400, "Você não pode se colocar em somente leitura (evita se trancar pra fora)")
     # Foto do ANTES tirada antes de qualquer atribuicao: `u` e o objeto vivo da
     # sessao, entao ler `u.name` depois do `u.name = ...` ja devolveria o valor
     # novo e o "de -> para" sairia dizendo que nada mudou.

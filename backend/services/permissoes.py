@@ -75,27 +75,27 @@ SEC_AUDITORIA = "auditoria"
 
 SECOES: list[dict] = [
     {"chave": SEC_TRABALHO, "rotulo": "Trabalho do dia a dia",
-     "descricao": "O que a equipe produz dentro do sistema: anotacoes, "
-                  "relatorios e documentos."},
-    {"chave": SEC_CONVENIOS, "rotulo": "Convenios e transferencias",
+     "descricao": "O que a equipe produz dentro do sistema: anotações, "
+                  "relatórios e documentos."},
+    {"chave": SEC_CONVENIOS, "rotulo": "Convênios e transferências",
      "descricao": "As bases que o sistema coleta dos portais do governo. "
                   "«Atualizar dados» dispara uma coleta nova."},
     {"chave": SEC_CONSULTAS, "rotulo": "Consultas e fontes",
-     "descricao": "Telas de consulta a bases externas. So leitura e exportacao."},
+     "descricao": "Telas de consulta a bases externas. Só leitura e exportação."},
     {"chave": SEC_BI, "rotulo": "Painel de Indicadores (BI)",
-     "descricao": "O painel do gestor, o Modo Tela da TV e o link publico."},
-    {"chave": SEC_IA, "rotulo": "Inteligencia Artificial",
-     "descricao": "A IA do PACTHA. Cada consulta e paga por chamada."},
-    {"chave": SEC_COFRE, "rotulo": "Cofre de senhas e sessoes",
-     "descricao": "Credenciais de portais do governo. E a secao mais sensivel "
+     "descricao": "O painel do gestor, o Modo Tela da TV e o link público."},
+    {"chave": SEC_IA, "rotulo": "Inteligência Artificial",
+     "descricao": "A IA do PACTHA. Cada consulta é paga por chamada."},
+    {"chave": SEC_COFRE, "rotulo": "Cofre de senhas e sessões",
+     "descricao": "Credenciais de portais do governo. É a seção mais sensível "
                   "do sistema."},
-    {"chave": SEC_USUARIOS, "rotulo": "Usuarios e permissoes",
+    {"chave": SEC_USUARIOS, "rotulo": "Usuários e permissões",
      "descricao": "Quem pode cadastrar pessoas e decidir o que elas fazem."},
     {"chave": SEC_TELEGRAM, "rotulo": "Telegram",
      "descricao": "Avisos no celular."},
     {"chave": SEC_AUDITORIA, "rotulo": "Auditoria",
      "descricao": "A trilha de atividades. O arquivo exportado entrega IP, "
-                  "e-mail e historico de todo mundo."},
+                  "e-mail e histórico de todo mundo."},
 ]
 
 _SECAO_ROTULO = {s["chave"]: s["rotulo"] for s in SECOES}
@@ -159,12 +159,12 @@ _VERBOS: dict[str, dict] = {
     },
     "editar": {
         "rotulo": "Editar",
-        "frase": "Alterar {plural} que ja existem, inclusive as de outras pessoas.",
+        "frase": "Alterar {plural} que já existem, inclusive as de outras pessoas.",
         "escrita": True,
     },
     "excluir": {
         "rotulo": "Excluir",
-        "frase": "Apagar {plural}. Nao ha desfazer.",
+        "frase": "Apagar {plural}. Não há desfazer.",
         "escrita": True,
     },
     "exportar": {
@@ -175,8 +175,8 @@ _VERBOS: dict[str, dict] = {
     "atualizar": {
         "rotulo": "Atualizar dados",
         "frase": "Mandar o sistema buscar dados novos {fonte}. Uma coleta muda "
-                 "situacao e valores de dezenas de registros de uma vez, para "
-                 "todo mundo — nao so para quem clicou.",
+                 "situação e valores de dezenas de registros de uma vez, para "
+                 "todo mundo — não só para quem clicou.",
         "escrita": True,
     },
 }
@@ -202,49 +202,49 @@ class _Recurso:
 _RECURSOS: tuple = (
     # --- Trabalho do dia a dia (CRUD completo + exportar) -------------------
     _Recurso("gestao", SEC_TRABALHO, "Gestao Interna",
-             "as anotacoes da Gestao Interna",
-             "uma anotacao nova na Gestao Interna",
+             "as anotações da Gestão Interna",
+             "uma anotação nova na Gestão Interna",
              ("ver", "criar", "editar", "excluir", "exportar")),
     _Recurso("rm", SEC_TRABALHO, "Relatorio de Monitoramento",
-             "os Relatorios de Monitoramento",
-             "um Relatorio de Monitoramento novo",
+             "os Relatórios de Monitoramento",
+             "um Relatório de Monitoramento novo",
              ("ver", "criar", "editar", "excluir", "exportar")),
-    _Recurso("documentos", SEC_TRABALHO, "Geracao de Documentos",
+    _Recurso("documentos", SEC_TRABALHO, "Geração de Documentos",
              "os documentos gerados",
              "um documento novo",
              ("ver", "criar", "editar", "excluir", "exportar")),
 
     # --- Convenios e transferencias (ver / exportar / atualizar) ------------
-    _Recurso("convenios", SEC_CONVENIOS, "SIGCON (convenios estaduais)",
-             "os convenios estaduais", "", ("ver", "exportar", "atualizar"),
+    _Recurso("convenios", SEC_CONVENIOS, "SIGCON (convênios estaduais)",
+             "os convênios estaduais", "", ("ver", "exportar", "atualizar"),
              fonte="no SIGCON-MG"),
     _Recurso("transferegov", SEC_CONVENIOS, "Transfere Gov",
-             "as transferencias voluntarias federais", "",
+             "as transferências voluntárias federais", "",
              ("ver", "exportar", "atualizar"), fonte="no Transfere Gov"),
     _Recurso("cauc", SEC_CONVENIOS, "CAUC (regularidade federal)",
-             "as pendencias de regularidade fiscal do municipio", "",
+             "as pendências de regularidade fiscal do município", "",
              ("ver", "exportar", "atualizar"), fonte="no CAUC/STN"),
-    _Recurso("sismob", SEC_CONVENIOS, "Obras da Saude (SISMOB)",
-             "as obras de saude do SISMOB", "",
+    _Recurso("sismob", SEC_CONVENIOS, "Obras da Saúde (SISMOB)",
+             "as obras de saúde do SISMOB", "",
              ("ver", "exportar", "atualizar"), fonte="no SISMOB"),
-    _Recurso("acordofes", SEC_CONVENIOS, "Acordo FES (divida da saude MG)",
-             "os creditos e parcelas do Acordo FES", "",
+    _Recurso("acordofes", SEC_CONVENIOS, "Acordo FES (dívida da saúde MG)",
+             "os créditos e parcelas do Acordo FES", "",
              ("ver", "exportar", "atualizar"), fonte="na SES-MG"),
 
     # --- Consultas e fontes (ver / exportar) -------------------------------
     _Recurso("emendas", SEC_CONSULTAS, "Emendas Estaduais",
              "as emendas parlamentares estaduais", "", ("ver", "exportar")),
-    _Recurso("fns", SEC_CONSULTAS, "Fundo Nacional de Saude",
-             "as propostas do Fundo Nacional de Saude", "", ("ver", "exportar")),
+    _Recurso("fns", SEC_CONSULTAS, "Fundo Nacional de Saúde",
+             "as propostas do Fundo Nacional de Saúde", "", ("ver", "exportar")),
     _Recurso("simec", SEC_CONSULTAS, "SIMEC - PAR (MEC)",
-             "as liberacoes e dimensoes do PAR", "", ("ver", "exportar")),
+             "as liberações e dimensões do PAR", "", ("ver", "exportar")),
     _Recurso("parlamentares", SEC_CONSULTAS, "Parlamentares",
-             "a base de parlamentares e a atuacao deles no municipio", "",
+             "a base de parlamentares e a atuação deles no município", "",
              ("ver", "exportar")),
-    _Recurso("dou", SEC_CONSULTAS, "Diario Oficial",
-             "as publicacoes do Diario Oficial", "", ("ver", "exportar")),
+    _Recurso("dou", SEC_CONSULTAS, "Diário Oficial",
+             "as publicações do Diário Oficial", "", ("ver", "exportar")),
     _Recurso("frescor", SEC_CONSULTAS, "Monitor de frescor dos dados",
-             "ha quanto tempo cada fonte foi coletada", "", ("ver", "exportar")),
+             "há quanto tempo cada fonte foi coletada", "", ("ver", "exportar")),
 
     # --- Cofre (CRUD; `revelar` e especial, mais abaixo) --------------------
     _Recurso("cofre", SEC_COFRE, "Cofre de senhas",
@@ -253,8 +253,8 @@ _RECURSOS: tuple = (
              ("ver", "criar", "editar", "excluir")),
 
     # --- Usuarios (CRUD; `conceder` e `resetar_senha` sao especiais) --------
-    _Recurso("usuarios", SEC_USUARIOS, "Usuarios",
-             "o cadastro de usuarios", "um usuario novo",
+    _Recurso("usuarios", SEC_USUARIOS, "Usuários",
+             "o cadastro de usuários", "um usuário novo",
              ("ver", "criar", "editar", "excluir")),
 )
 
@@ -287,63 +287,63 @@ _ESPECIAIS: tuple = (
     Permissao(
         chave="gestao.anexo_baixar", secao=SEC_TRABALHO, recurso="gestao",
         recurso_rotulo="Gestao Interna", verbo_rotulo="Baixar anexos",
-        descricao="Abrir e baixar os arquivos anexados as anotacoes. Separado "
-                  "de «Ver» de proposito: a lista mostra que existe um anexo, "
+        descricao="Abrir e baixar os arquivos anexados as anotações. Separado "
+                  "de «Ver» de propósito: a lista mostra que existe um anexo, "
                   "esta caixinha entrega o arquivo digitalizado — que pode ser "
-                  "oficio, contrato ou documento pessoal.",
+                  "ofício, contrato ou documento pessoal.",
         escrita=False,
     ),
     Permissao(
         chave="cofre.revelar", secao=SEC_COFRE, recurso="cofre",
         recurso_rotulo="Cofre de senhas", verbo_rotulo="Revelar a senha",
         descricao="Exibir a senha em CLARO na tela. Ver que a credencial existe "
-                  "nao e ver a credencial: «Ver» mostra o sistema, o usuario e "
+                  "não é ver a credencial: «Ver» mostra o sistema, o usuário e "
                   "a senha mascarada; esta caixinha entrega a senha do portal "
-                  "do governo. Toda revelacao vira linha na trilha de auditoria.",
+                  "do governo. Toda revelação vira linha na trilha de auditoria.",
         escrita=False,   # GET /api/cofre/{id}/reveal — o guard de leitura nao barra
     ),
     Permissao(
         chave="sessoes.ver", secao=SEC_COFRE, recurso="sessoes",
-        recurso_rotulo="Sessoes gov.br", verbo_rotulo="Ver",
-        descricao="Consultar o estado das sessoes capturadas dos portais "
-                  "(valida, expirada, quando foi renovada).",
+        recurso_rotulo="Sessões gov.br", verbo_rotulo="Ver",
+        descricao="Consultar o estado das sessões capturadas dos portais "
+                  "(válida, expirada, quando foi renovada).",
         escrita=False,
     ),
     Permissao(
         chave="sessoes.capturar", secao=SEC_COFRE, recurso="sessoes",
-        recurso_rotulo="Sessoes gov.br", verbo_rotulo="Capturar sessao",
-        descricao="Gravar uma sessao autenticada de portal do governo. O cookie "
-                  "capturado vale como credencial viva enquanto nao expira.",
+        recurso_rotulo="Sessões gov.br", verbo_rotulo="Capturar sessão",
+        descricao="Gravar uma sessão autenticada de portal do governo. O cookie "
+                  "capturado vale como credencial viva enquanto não expira.",
         escrita=True,
     ),
     Permissao(
         chave="usuarios.conceder", secao=SEC_USUARIOS, recurso="usuarios",
-        recurso_rotulo="Usuarios", verbo_rotulo="Conceder permissoes",
-        descricao="Marcar e desmarcar as permissoes de outras pessoas. Quem tem "
-                  "esta caixinha decide o que a equipe faz no sistema — e so "
+        recurso_rotulo="Usuários", verbo_rotulo="Conceder permissões",
+        descricao="Marcar e desmarcar as permissões de outras pessoas. Quem tem "
+                  "esta caixinha decide o que a equipe faz no sistema — e só "
                   "consegue conceder o que ELE MESMO tem.",
         escrita=True,
     ),
     Permissao(
         chave="usuarios.modelos", secao=SEC_USUARIOS, recurso="usuarios",
-        recurso_rotulo="Usuarios", verbo_rotulo="Gerenciar modelos",
-        descricao="Criar, alterar e apagar os MODELOS de permissao — os moldes "
+        recurso_rotulo="Usuários", verbo_rotulo="Gerenciar modelos",
+        descricao="Criar, alterar e apagar os MODELOS de permissão — os moldes "
                   "que preenchem as caixinhas de uma vez. Separada de «Conceder "
-                  "permissoes» de proposito: quem concede decide o que UMA "
+                  "permissões» de propósito: quem concede decide o que UMA "
                   "pessoa faz; quem escreve um molde escreve a RECEITA que os "
                   "outros administradores vao aplicar, e um molde chamado "
                   "«Somente consulta» que carregue «Revelar a senha» engana "
-                  "quem confia no nome. Aplicar um molde NAO precisa desta "
-                  "caixinha (basta «Conceder permissoes»), e continua limitado "
-                  "ao que quem aplica ja tem.",
+                  "quem confia no nome. Aplicar um molde NÃO precisa desta "
+                  "caixinha (basta «Conceder permissões»), e continua limitado "
+                  "ao que quem aplica já tem.",
         escrita=True,
     ),
     Permissao(
         chave="usuarios.resetar_senha", secao=SEC_USUARIOS, recurso="usuarios",
-        recurso_rotulo="Usuarios", verbo_rotulo="Redefinir senha",
-        descricao="Gerar uma senha temporaria para outra pessoa. Quem redefine "
-                  "a senha de alguem consegue entrar como essa pessoa ate a "
-                  "troca obrigatoria no primeiro acesso.",
+        recurso_rotulo="Usuários", verbo_rotulo="Redefinir senha",
+        descricao="Gerar uma senha temporária para outra pessoa. Quem redefine "
+                  "a senha de alguém consegue entrar como essa pessoa até a "
+                  "troca obrigatória no primeiro acesso.",
         escrita=True,
     ),
     Permissao(
@@ -361,8 +361,8 @@ _ESPECIAIS: tuple = (
     Permissao(
         chave="bi.tela", secao=SEC_BI, recurso="bi",
         recurso_rotulo="Painel de Indicadores", verbo_rotulo="Modo Tela (TV)",
-        descricao="Configurar o Modo Tela — o painel em rodizio para a TV do "
-                  "gabinete, com o filtro do proprio gestor.",
+        descricao="Configurar o Modo Tela — o painel em rodízio para a TV do "
+                  "gabinete, com o filtro do próprio gestor.",
         # O guard de somente-leitura libera /api/bi/tela-filtros de proposito
         # (READONLY_WRITE_ALLOW): o prefeito filtra a propria TV sem deixar de
         # ser somente-leitura no resto do sistema.
@@ -370,38 +370,38 @@ _ESPECIAIS: tuple = (
     ),
     Permissao(
         chave="bi.link", secao=SEC_BI, recurso="bi",
-        recurso_rotulo="Painel de Indicadores", verbo_rotulo="Gerar link publico",
-        descricao="Publicar um endereco que abre o painel SEM LOGIN. Enquanto o "
-                  "link viver, quem tiver o endereco ve os dados do municipio — "
+        recurso_rotulo="Painel de Indicadores", verbo_rotulo="Gerar link público",
+        descricao="Publicar um endereço que abre o painel SEM LOGIN. Enquanto o "
+                  "link viver, quem tiver o endereço vê os dados do município — "
                   "e esses links circulam por WhatsApp.",
         escrita=False,   # mesmo motivo de bi.tela: /api/bi/tela-links esta na allowlist
     ),
     Permissao(
         chave="ai.usar", secao=SEC_IA, recurso="ai",
         recurso_rotulo="IA PACTHA", verbo_rotulo="Usar",
-        descricao="Conversar com a IA do PACTHA. Cada pergunta e uma chamada "
+        descricao="Conversar com a IA do PACTHA. Cada pergunta é uma chamada "
                   "paga a API do modelo, e a resposta enxerga os dados dos "
-                  "municipios que a pessoa ja pode ver.",
+                  "municípios que a pessoa já pode ver.",
         escrita=True,
     ),
     Permissao(
         chave="ai.exportar", secao=SEC_IA, recurso="ai",
         recurso_rotulo="IA PACTHA", verbo_rotulo="Exportar",
-        descricao="Baixar em PDF uma conversa ou um relatorio gerado pela IA.",
+        descricao="Baixar em PDF uma conversa ou um relatório gerado pela IA.",
         escrita=True,    # o endpoint e POST (leva o texto no corpo)
     ),
     Permissao(
         chave="telegram.vincular", secao=SEC_TELEGRAM, recurso="telegram",
-        recurso_rotulo="Telegram", verbo_rotulo="Vincular o proprio celular",
-        descricao="Gerar o codigo que liga o PROPRIO Telegram ao sistema, para "
+        recurso_rotulo="Telegram", verbo_rotulo="Vincular o próprio celular",
+        descricao="Gerar o código que liga o PRÓPRIO Telegram ao sistema, para "
                   "receber avisos.",
         escrita=True,
     ),
     Permissao(
         chave="telegram.administrar", secao=SEC_TELEGRAM, recurso="telegram",
-        recurso_rotulo="Telegram", verbo_rotulo="Administrar a integracao",
-        descricao="Configurar o webhook e mexer na integracao inteira, nao so "
-                  "no proprio vinculo.",
+        recurso_rotulo="Telegram", verbo_rotulo="Administrar a integração",
+        descricao="Configurar o webhook e mexer na integração inteira, não só "
+                  "no próprio vínculo.",
         escrita=True,
     ),
     Permissao(
@@ -415,8 +415,8 @@ _ESPECIAIS: tuple = (
         chave="auditoria.exportar", secao=SEC_AUDITORIA, recurso="auditoria",
         recurso_rotulo="Auditoria", verbo_rotulo="Exportar",
         descricao="Baixar a trilha em arquivo. Quem exporta leva consigo IP, "
-                  "e-mail, historico e quem revelou qual senha — e dado pessoal "
-                  "sob a LGPD, por isso e uma caixinha separada de «Ver».",
+                  "e-mail, histórico e quem revelou qual senha — é dado pessoal "
+                  "sob a LGPD, por isso é uma caixinha separada de «Ver».",
         escrita=False,
     ),
 )
@@ -491,11 +491,11 @@ ESCOPOS: tuple = (ESCOPO_TODOS, ESCOPO_PROPRIOS)
 # nao copia lista nenhuma, busca por `GET /api/permissoes/catalogo`.
 ESCOPO_OPCOES: tuple = (
     {"valor": ESCOPO_TODOS, "rotulo": "Todos os registros",
-     "descricao": "Pode alterar e apagar qualquer registro do municipio, "
+     "descricao": "Pode alterar e apagar qualquer registro do município, "
                   "inclusive os que outras pessoas criaram."},
     {"valor": ESCOPO_PROPRIOS, "rotulo": "Somente os que ele criou",
-     "descricao": "So altera e apaga o que ele mesmo cadastrou. Continua VENDO "
-                  "a lista inteira do municipio — o alcance vale so para "
+     "descricao": "Só altera e apaga o que ele mesmo cadastrou. Continua VENDO "
+                  "a lista inteira do município — o alcance vale só para "
                   "escrita."},
 )
 
@@ -671,12 +671,12 @@ MODOS_APLICACAO: tuple = (MODO_SUBSTITUIR, MODO_SOMAR)
 MODO_APLICACAO_OPCOES: tuple = (
     {"valor": MODO_SUBSTITUIR, "rotulo": "Substituir o que ela tem",
      "descricao": "As caixinhas passam a ser EXATAMENTE as do modelo. O que "
-                  "estava marcado e nao esta no modelo e desmarcado — voce ve "
+                  "estava marcado e não está no modelo é desmarcado — você vê "
                   "isso acontecer antes de salvar."},
-    {"valor": MODO_SOMAR, "rotulo": "Somar ao que ela ja tem",
-     "descricao": "Acrescenta as caixinhas do modelo e nao desmarca nenhuma. O "
-                  "alcance por modulo fica como esta. Use quando a pessoa "
-                  "acumula duas funcoes."},
+    {"valor": MODO_SOMAR, "rotulo": "Somar ao que ela já tem",
+     "descricao": "Acrescenta as caixinhas do modelo e não desmarca nenhuma. O "
+                  "alcance por módulo fica como está. Use quando a pessoa "
+                  "acumula duas funções."},
 )
 
 
@@ -968,10 +968,10 @@ def modelos_para_api() -> dict:
         # exigiu que "a tela DIGA" que aplicar e copiar, porque o administrador
         # que achar que e vinculo vai editar o molde esperando que a pessoa
         # mude junto — e ela nao muda.
-        "aviso": ("Aplicar um modelo COPIA as permissoes para o cadastro desta "
-                  "pessoa, agora. As caixinhas continuam editaveis e nada e "
-                  "gravado ate voce salvar. Depois de salvo, mexer no modelo "
-                  "NAO mexe mais nesta pessoa."),
+        "aviso": ("Aplicar um modelo COPIA as permissões para o cadastro desta "
+                  "pessoa, agora. As caixinhas continuam editáveis e nada é "
+                  "gravado até você salvar. Depois de salvo, mexer no modelo "
+                  "NÃO mexe mais nesta pessoa."),
     }
 
 

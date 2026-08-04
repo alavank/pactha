@@ -47,9 +47,9 @@ const SIGLAS: Record<string, string> = {
   "SECRETARIA DE ESTADO DE TURISMO": "SETUR",
   "SECRETARIA DE ESTADO DE MEIO AMBIENTE": "SEMAD",
   "SECRETARIA DE ESTADO DE PLANEJAMENTO": "SEPLAG",
-  "MINISTERIO DA SAUDE": "Min. Saude",
+  "MINISTERIO DA SAUDE": "Min. Saúde",
   "MINISTERIO DA FAZENDA": "Min. Fazenda",
-  "MINISTERIO DA EDUCACAO": "Min. Educacao",
+  "MINISTERIO DA EDUCACAO": "Min. Educação",
   "MINISTERIO DO ESPORTE": "Min. Esporte",
   "MINISTERIO DA INTEGRACAO": "MI",
   "MINISTERIO DA INTEGRA": "MI",
@@ -336,7 +336,7 @@ export default function ConveniosPage() {
   if (!municipioId) {
     return (
       <div className="flex h-64 items-center justify-center text-muted-foreground">
-        Selecione um municipio para visualizar convenios.
+        Selecione um município para visualizar convênios.
       </div>
     );
   }
@@ -370,7 +370,7 @@ export default function ConveniosPage() {
             disabled={refreshing}
             size="sm"
             style={{ background: "var(--bi-cta)", color: "var(--bi-cta-ink)" }} className="hover:opacity-90"
-            title="Forca atualizacao via portal SIGCON-MG (Pesquisa Unificada)"
+            title="Força atualização via portal SIGCON-MG (Pesquisa Unificada)"
           >
             <SearchIcon className="size-4 mr-1" />
             {refreshing ? "Sincronizando..." : "Pesquisar SIGCON"}
@@ -627,7 +627,7 @@ export default function ConveniosPage() {
           {/* Pagination */}
           <div className="flex items-center justify-between">
             <p className="text-sm text-muted-foreground">
-              Pagina {page} de {totalPages} ({data?.total ?? 0} registros)
+              Página {page} de {totalPages} ({data?.total ?? 0} registros)
             </p>
             <div className="flex items-center gap-2">
               <Button
@@ -645,7 +645,7 @@ export default function ConveniosPage() {
                 disabled={page >= totalPages}
                 onClick={() => setPage((p) => p + 1)}
               >
-                Proximo
+                Próximo
                 <ChevronRight className="size-4" />
               </Button>
             </div>

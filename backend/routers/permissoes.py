@@ -258,7 +258,7 @@ def _validar_escopos(pedidos) -> dict:
     if not pedidos:
         return limpos
     if not isinstance(pedidos, dict):
-        raise HTTPException(400, "Alcance invalido: esperado um objeto "
+        raise HTTPException(400, "Alcance inválido: esperado um objeto "
                                  "{modulo: 'todos'|'proprios'}")
     desconhecidos, valores_ruins = [], []
     for recurso, valor in pedidos.items():
@@ -275,10 +275,10 @@ def _validar_escopos(pedidos) -> dict:
             limpos[chave] = bruto
     if desconhecidos:
         raise HTTPException(
-            400, "Modulo sem alcance por linha: " + ", ".join(sorted(desconhecidos)))
+            400, "Módulo sem alcance por linha: " + ", ".join(sorted(desconhecidos)))
     if valores_ruins:
         raise HTTPException(
-            400, "Alcance invalido (use 'todos' ou 'proprios'): "
+            400, "Alcance inválido (use 'todos' ou 'proprios'): "
                  + ", ".join(sorted(valores_ruins)))
     return limpos
 
@@ -320,8 +320,8 @@ def _barrar_escalonamento_escopo(atual: User, antes: dict, depois: dict, *,
         permissoes.escopos_para_api()["recursos"][c]["recurso_rotulo"] for c in fora)
     raise HTTPException(
         403,
-        (frase or "Voce so pode definir o alcance de modulos em que voce mesmo "
-                  "alcanca todos os registros.")
+        (frase or "Você só pode definir o alcance de módulos em que você mesmo "
+                  "alcança todos os registros.")
         + f" Fora do seu alcance: {rotulos}")
 
 
@@ -385,7 +385,7 @@ def _validar(pedidas) -> set:
     desconhecidas = sorted(c for c in limpas if not permissoes.existe(c))
     if desconhecidas:
         raise HTTPException(
-            400, f"Permissao desconhecida: {', '.join(desconhecidas)}")
+            400, f"Permissão desconhecida: {', '.join(desconhecidas)}")
     return limpas
 
 
@@ -424,7 +424,7 @@ def _barrar_escalonamento(atual: User, antes: set, depois: set, *,
         p.rotulo for p in (permissoes.descrever(c) for c in fora) if p)
     raise HTTPException(
         403,
-        (frase or "Voce so pode conceder ou retirar permissoes que voce mesmo "
+        (frase or "Você só pode conceder ou retirar permissões que você mesmo "
                   "tem.")
         + f" Fora do seu alcance: {rotulos}")
 
@@ -479,7 +479,7 @@ async def _modelo_declarado(db: AsyncSession, modelo_id, modo=None) -> Optional[
         # Quando o molde sumiu entre aplicar e salvar, a linha da trilha diz
         # isso em vez de mostrar um nome vazio sem explicacao.
         "observacao": None if linha else
-                      "o modelo nao existe mais no momento do registro",
+                      "o modelo não existe mais no momento do registro",
     }
 
 
@@ -501,7 +501,7 @@ async def conceder(
     alvo: Optional[User] = (await db.execute(
         select(User).where(User.id == user_id))).scalar_one_or_none()
     if not alvo:
-        raise HTTPException(404, "Usuario nao encontrado")
+        raise HTTPException(404, "Usuário não encontrado")
     _guard_target(current, alvo)
 
     depois = _validar(req.permissoes)
@@ -604,9 +604,9 @@ async def conceder(
                 "alvo_email": alvo.email,
                 "concedidas": concedidas or None,
                 "retiradas": retiradas or None,
-                "efeito": "Aplicar COPIA as permissoes para o cadastro da "
-                          "pessoa. Nao ha vinculo: mexer no modelo depois nao "
-                          "muda mais este usuario.",
+                "efeito": "Aplicar COPIA as permissões para o cadastro da "
+                          "pessoa. Não há vínculo: mexer no modelo depois não "
+                          "muda mais este usuário.",
             },
             commit=False,
         )

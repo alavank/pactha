@@ -60,7 +60,7 @@ ALLOWED_ROLES_REVEAL = {"admin"}
 
 def _require_role(user: User, allowed: set[str]):
     if (user.role or "").lower() not in allowed:
-        raise HTTPException(status_code=403, detail="Acao restrita a administradores")
+        raise HTTPException(status_code=403, detail="Ação restrita a administradores")
 
 
 class CofreCreate(BaseModel):
@@ -111,7 +111,7 @@ def _mask_smart(senha_clear: str) -> str:
             obj = _json.loads(s)
             if obj.get("format") == "cookies_full":
                 n = len(obj.get("cookies", []))
-                return f"[Sessao capturada · {n} cookies]"
+                return f"[Sessão capturada · {n} cookies]"
         except Exception:
             pass
     return crypto.mask(senha_clear)
@@ -161,7 +161,7 @@ async def reveal_senha(
     _require_role(user, ALLOWED_ROLES_REVEAL)
     item = await db.get(CofreSenha, item_id)
     if not item:
-        raise HTTPException(status_code=404, detail="Senha nao encontrada")
+        raise HTTPException(status_code=404, detail="Senha não encontrada")
     await log_event(
         db, action="cofre.reveal", user=user, request=request,
         target_type="cofre_senha", target_id=item.id,
@@ -213,7 +213,7 @@ async def update_senha(
     _require_role(user, ALLOWED_ROLES_WRITE)
     item = await db.get(CofreSenha, item_id)
     if not item:
-        raise HTTPException(status_code=404, detail="Senha nao encontrada")
+        raise HTTPException(status_code=404, detail="Senha não encontrada")
 
     fields = data.model_dump(exclude_unset=True)
     senha_changed = "senha" in fields
@@ -244,7 +244,7 @@ async def delete_senha(
     _require_role(user, ALLOWED_ROLES_WRITE)
     item = await db.get(CofreSenha, item_id)
     if not item:
-        raise HTTPException(status_code=404, detail="Senha nao encontrada")
+        raise HTTPException(status_code=404, detail="Senha não encontrada")
     sistema = item.sistema
     await db.delete(item)
     await db.commit()

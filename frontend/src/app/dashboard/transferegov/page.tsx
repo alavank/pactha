@@ -271,7 +271,7 @@ export default function TransfereGovPage() {
 
   if (!municipioId) {
     return <div className="flex h-64 items-center justify-center text-muted-foreground">
-      Selecione um municipio.
+      Selecione um município.
     </div>;
   }
 

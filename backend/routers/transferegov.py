@@ -102,7 +102,7 @@ async def buscar(
     ensure_tela(current, "transferegov")
     mun = (await db.execute(select(Municipio).where(Municipio.id == municipio_id))).scalar_one_or_none()
     if not mun:
-        raise HTTPException(404, "Municipio nao encontrado")
+        raise HTTPException(404, "Município não encontrado")
 
     if refresh:
         _CACHE.pop(mun.uf, None)
@@ -179,7 +179,7 @@ async def por_cnpj(
     ensure_tela(current, "transferegov")
     alvo = _digits(cnpj)
     if len(alvo) != 14:
-        raise HTTPException(400, "Informe um CNPJ valido (14 digitos)")
+        raise HTTPException(400, "Informe um CNPJ válido (14 dígitos)")
 
     # 1) Especiais / Plano de Acao (API publica NACIONAL, filtra por CNPJ)
     especiais = []
@@ -442,7 +442,7 @@ async def voluntarias_detalhe(
     """), {"mun": municipio_id, "num": numero_proposta})
     row = r.first()
     if not row:
-        raise HTTPException(404, "Proposta nao encontrada")
+        raise HTTPException(404, "Proposta não encontrada")
     return {
         "numero_proposta": row[0], "situacao": row[1], "orgao": row[2],
         "proponente": row[3], "identificacao": row[4], "codigo_instrumento": row[5],

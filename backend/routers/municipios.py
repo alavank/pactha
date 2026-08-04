@@ -89,7 +89,7 @@ async def summary_core(
     mun = result.scalar_one_or_none()
     if not mun:
         from fastapi import HTTPException
-        raise HTTPException(status_code=404, detail="Municipio nao encontrado")
+        raise HTTPException(status_code=404, detail="Município não encontrado")
 
     # Filtro de ano — SIGCON usa a coluna `ano`; TransfereGov deriva do sufixo do
     # numero_proposta ("xxx/AAAA"). None = todos os anos.

@@ -7,7 +7,7 @@ export default function TransfereGovGeralPage() {
     <TransfereGovPropostas
       categoria="geral"
       titulo="Transfere Gov - Geral"
-      subtitulo="Convenios e propostas consolidados (em execucao, aprovados, etc.) - SICONV"
+      subtitulo="Convênios e propostas consolidados (em execução, aprovados, etc.) - SICONV"
     />
   );
 }

@@ -383,7 +383,7 @@ export default function UsuariosPage() {
     } catch (e: unknown) {
       const msg = (e as { response?: { status?: number } })?.response?.status === 403
         ? "Apenas administradores acessam esta tela."
-        : "Erro ao carregar usuarios.";
+        : "Erro ao carregar usuários.";
       setErro(msg);
     } finally {
       setLoading(false);
@@ -466,7 +466,7 @@ export default function UsuariosPage() {
       setNovoMunis(new Set()); setNovoTelas(new Set());
       await carregar();
     } catch (e: unknown) {
-      alert((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || "Erro ao criar usuario");
+      alert((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || "Erro ao criar usuário");
     } finally {
       setCriando(false);
     }
@@ -520,7 +520,7 @@ export default function UsuariosPage() {
   };
 
   const resetarSenha = async (u: Usuario) => {
-    if (!confirm(`Resetar a senha de ${u.name} (${u.email})?\nEla sera obrigada a trocar no proximo login.`)) return;
+    if (!confirm(`Resetar a senha de ${u.name} (${u.email})?\nEla será obrigada a trocar no próximo login.`)) return;
     try {
       const r = await api.post<SenhaResp>(`/users/${u.id}/reset-password`);
       setSenhaGerada(r.data);
