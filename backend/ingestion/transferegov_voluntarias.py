@@ -502,6 +502,19 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
     except ValueError:
         _ops_obs_max_age = 3
     _ops_obs_frescas = _propostas_ops_obs_frescas(mun["id"], _ops_obs_max_age) if _ops_obs_on else set()
+    # ENRICH POR HTTP (TG_HTTP_ENRICH=1): mesmos dados sem Chromium — ~4s por
+    # instrumento em vez de ~22s (validado campo-a-campo contra o browser). O
+    # cliente e STATEFUL (contexto do convenio no servidor) -> um por municipio,
+    # usado sequencialmente. Falha ao criar = segue no browser (fallback).
+    _hx = None
+    if (os.getenv("TG_HTTP_ENRICH", "0") or "0").strip() == "1":
+        try:
+            from ingestion.transferegov_http import TgHttpEnrich
+            _hx = TgHttpEnrich(_load_govbr_cookies())
+            logger.info(f"  {mun['nome']}: enrich via HTTP (sem browser)")
+        except Exception as e:
+            logger.warning(f"  {mun['nome']}: HTTP enrich indisponivel ({str(e)[:60]}) — usando browser")
+            _hx = None
     _tot = len(propostas)
     _enr = 0
     for _i, prop in enumerate(propostas, 1):
@@ -560,7 +573,8 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
             # Funciona em GUEST (detail_page já está no detalhe = contexto setado).
             if _idp and "normal" in _sit.lower():
                 try:
-                    _qtd = await _conta_processo_execucao(detail_page)
+                    _qtd = (await asyncio.to_thread(_hx.processo_execucao, _idp)) if _hx \
+                        else (await _conta_processo_execucao(detail_page))
                     if _qtd is not None:
                         prop["processo_execucao_qtd"] = _qtd
                 except Exception as e:
@@ -572,13 +586,15 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
             # (ativado so p/ SIAO; os demais tenants nao gastam CPU com isto).
             if _idp and _ops_obs_on and prop["numero_proposta"] not in _ops_obs_frescas:
                 try:
-                    _oo = await _extrai_ops_obs(detail_page)
+                    _oo = (await asyncio.to_thread(_hx.ops_obs, _idp)) if _hx \
+                        else (await _extrai_ops_obs(detail_page))
                     if _oo is not None:
                         prop["ops_obs"] = _oo
                 except Exception as e:
                     logger.warning(f"    ops_obs {prop['numero_proposta']}: {str(e)[:80]}")
                 try:
-                    _ob = await _extrai_obras(detail_page, _idp)
+                    _ob = (await asyncio.to_thread(_hx.obras, _idp)) if _hx \
+                        else (await _extrai_obras(detail_page, _idp))
                     if _ob is not None:
                         prop["obras"] = _ob
                 except Exception as e:
@@ -592,7 +608,8 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
                     # Debita o orçamento na TENTATIVA, não no sucesso: o custo de
                     # tempo já foi pago mesmo quando a página não devolve dados.
                     _hist_budget -= 1
-                    _hc = await _captura_historico_comunicacoes(page_auth, _idp)
+                    _hc = (await asyncio.to_thread(_hx.historico, _idp)) if _hx \
+                        else (await _captura_historico_comunicacoes(page_auth, _idp))
                     if _hc:
                         prop["historico_comunicacoes"] = _hc.get("historico") or []
                         prop["documentos_quadro_resumo"] = _hc.get("documentos") or []
@@ -616,6 +633,8 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
             _upsert(mun["id"], [prop])
         except Exception as e:
             logger.warning(f"    upsert incremental {prop['numero_proposta']}: {str(e)[:80]}")
+    if _hx is not None:
+        _hx.close()
     logger.info(f"  {mun['nome']}: enrich concluido — {_enr}/{_tot} propostas enriquecidas")
     return propostas
 
