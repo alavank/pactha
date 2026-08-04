@@ -96,7 +96,15 @@ WITH marca AS (
     VALUES ('dashboard'), ('ai'), ('telegram'), ('parlamentares'),
            ('gestao'), ('rm'), ('documentos'), ('convenios'), ('emendas'),
            ('transferegov'), ('cauc'), ('sismob'), ('acordofes'), ('fns'),
-           ('simec'), ('suas'), ('paineis'), ('bi'), ('bi_tela'),
+           -- ⚠️ `suas` SAIU DESTA LISTA depois que a tela foi aposentada (o
+           -- painel do MDS vive dentro de `paineis`). Editar migration já
+           -- aplicada seria proibido se ela pudesse rodar de novo — esta NÃO
+           -- pode: o bloco inteiro é guardado pela marca em
+           -- `migration_backfills`, então em todo banco que já subiu ele é
+           -- pulado e nada muda. Quem lê esta lista daqui para a frente é
+           -- apenas o TENANT NOVO, e para ele conceder uma tela que não existe
+           -- mais seria dar uma linha morta em `user_telas`.
+           ('simec'), ('paineis'), ('bi'), ('bi_tela'),
            ('bi_link'), ('dou'), ('cofre'), ('sessoes'), ('auditoria')
 )
 INSERT INTO user_telas (user_id, tela)

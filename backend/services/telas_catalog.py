@@ -31,9 +31,9 @@ TELAS_CATALOG = [
 ]
 CATALOG_KEYS = {t["key"] for t in TELAS_CATALOG}
 
-# TODAS as telas que existem no produto — a UNIAO do catálogo acima com as seis
+# TODAS as telas que existem no produto — a UNIAO do catálogo acima com as cinco
 # que ele omite de propósito: `cofre`/`sessoes` (operacionais da Alavank, §12) e
-# `suas`/`paineis`/`bi_tela`/`bi_link` (nasceram depois deste arquivo).
+# `paineis`/`bi_tela`/`bi_link` (nasceram depois deste arquivo).
 #
 # Existe porque `role` DEIXOU DE CONCEDER (ver services/auth.py::load_user_scopes
 # e migrations/add_role_vira_rotulo.sql): "acesso total" parou de ser um desvio
@@ -51,6 +51,7 @@ CATALOG_KEYS = {t["key"] for t in TELAS_CATALOG}
 TELAS_TODAS = [
     "dashboard", "ai", "telegram", "parlamentares", "gestao", "rm",
     "documentos", "convenios", "emendas", "transferegov", "cauc", "sismob",
-    "acordofes", "fns", "simec", "suas", "paineis", "bi", "bi_tela",
+    # `suas` SAIU: o painel do MDS vive dentro de `paineis` (ver telas.ts).
+    "acordofes", "fns", "simec", "paineis", "bi", "bi_tela",
     "bi_link", "dou", "cofre", "sessoes", "auditoria",
 ]
