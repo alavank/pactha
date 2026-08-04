@@ -24,6 +24,7 @@ import {
   buscarCatalogo, buscarConcedidas, buscarMinhas, resumoPorRecurso,
   type Catalogo, type MinhasPermissoes,
 } from "@/lib/permissoes";
+import type { MapaEscopos } from "@/lib/escopo";
 
 interface Usuario {
   id: number;
@@ -292,6 +293,9 @@ export default function UsuariosPage() {
   const [catalogo, setCatalogo] = useState<Catalogo | null>(null);
   const [minhas, setMinhas] = useState<MinhasPermissoes | null>(null);
   const [concedidas, setConcedidas] = useState<Record<string, string[]>>({});
+  // O ALCANCE por usuario e por modulo (`todos` | `proprios`). Vem da mesma
+  // chamada das caixinhas: sao a mesma pergunta ("o que essa pessoa faz aqui").
+  const [escopos, setEscopos] = useState<Record<string, MapaEscopos>>({});
   const [permUser, setPermUser] = useState<Usuario | null>(null);
 
   // Criar
@@ -349,14 +353,15 @@ export default function UsuariosPage() {
         // administrador fora ate de desativar uma conta.
         buscarCatalogo().catch(() => null),
         buscarMinhas().catch(() => null),
-        buscarConcedidas().catch(() => ({})),
+        buscarConcedidas().catch(() => ({ concedidas: {}, escopos: {} })),
       ]);
       setUsers(ru.data);
       setMunicipios(Array.isArray(rm.data) ? rm.data : []);
       setEu(rme?.data ?? null);
       setCatalogo(rcat);
       setMinhas(rminhas);
-      setConcedidas(rconc);
+      setConcedidas(rconc.concedidas);
+      setEscopos(rconc.escopos);
       setErro(null);
     } catch (e: unknown) {
       const msg = (e as { response?: { status?: number } })?.response?.status === 403
@@ -533,6 +538,9 @@ export default function UsuariosPage() {
   /** As caixinhas MARCADAS de um usuario. Nunca `undefined`: quem nunca recebeu
    *  permissao nenhuma nao tem entrada no mapa, e "sem entrada" e zero. */
   const permsDe = (u: Usuario) => concedidas[String(u.id)] ?? [];
+  /** O alcance por modulo. Usuario sem entrada nao e usuario sem alcance: e
+   *  usuario no padrao (`todos`), que e o caso de quase todo mundo. */
+  const escoposDe = (u: Usuario): MapaEscopos => escopos[String(u.id)] ?? {};
   // Quem CONCEDE precisa ter `usuarios.conceder` — a mesma chave que o servidor
   // exige. Sem `minhas` carregado nao da para afirmar que pode, e o botao fica
   // desligado com a explicacao: e melhor que abrir a tela e levar 403 no fim.
@@ -983,8 +991,12 @@ export default function UsuariosPage() {
                             : perms.length > 0
                               // O resumo legível, e não 40 chaves cruas: quem
                               // confere lê "Cofre de senhas: Ver, Revelar a
-                              // senha", não `cofre.revelar`.
-                              ? resumoPorRecurso(catalogo, new Set(perms)).join(" · ")
+                              // senha", não `cofre.revelar`. Com o alcance
+                              // junto: "Gestão Interna: Ver, Editar (só os que
+                              // ele criou)" é uma pessoa DIFERENTE de quem
+                              // edita a prefeitura inteira, e a lista precisa
+                              // distinguir as duas sem abrir o modal.
+                              ? resumoPorRecurso(catalogo, new Set(perms), undefined, escoposDe(u)).join(" · ")
                               : "Nenhuma ação liberada: a pessoa entra e não faz nada",
                       },
                       {
@@ -1154,6 +1166,7 @@ export default function UsuariosPage() {
           catalogo={catalogo}
           minhas={minhas}
           concedidas={permsDe(permUser)}
+          escopos={escoposDe(permUser)}
           souEu={!!eu && eu.id === permUser.id}
           onFechar={() => setPermUser(null)}
           onSalvo={carregar}

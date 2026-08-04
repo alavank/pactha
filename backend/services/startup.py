@@ -135,6 +135,14 @@ MIGRATION_FILES = [
     # `migration_backfills`, os dois criados la — por isso vem depois dela.
     # O backfill so pode rodar UMA VEZ; ver o cabecalho da migration.
     "add_permissoes_por_acao.sql",
+    # Incremento 6 — ALCANCE por linha (Row-Level), por usuario e por MODULO:
+    # a tabela-catalogo dos modulos escopaveis (FK que mata o typo silencioso) e
+    # o alcance escolhido por usuario. DEPENDE de add_permissoes_por_acao.sql
+    # so por ordem conceitual (a tabela `users` ja existe muito antes).
+    # ⚠️ NAO tem backfill, de proposito: ausencia de linha e `todos`, que e o
+    # comportamento de hoje — ninguem perde a edicao no deploy. Ver o cabecalho
+    # da migration antes de acrescentar qualquer INSERT ali.
+    "add_escopo_por_modulo.sql",
     # ⚠️ SEMPRE A ULTIMA DA LISTA. Instala o append-only da trilha: gatilho que
     # RECUSA UPDATE/DELETE/TRUNCATE em audit_log e cadeia de hash calculada
     # dentro do banco. Toda migration que ainda faz BACKFILL (hoje so

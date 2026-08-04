@@ -373,6 +373,17 @@ _TABELA: dict[str, dict] = {
              "de verdade: a pessoa levou 403 e não viu o dado. Se ela precisa "
              "trabalhar nisso, falta conceder a tela ou o município no cadastro.",
     ),
+    "authz.sem_criador": _a(
+        "alterou um registro sem criador conhecido", MOD_USUARIOS, _MEDIO,
+        prep="—",
+        nota="Esta pessoa está configurada como «Somente os que ele criou» neste "
+             "módulo, mas a linha que ela tocou está com o criador em branco — "
+             "ou é anterior ao campo, ou a conta de quem criou foi excluída. O "
+             "sistema DEIXOU PASSAR de propósito: negar trancaria para sempre "
+             "todo registro antigo e todo registro de quem saiu da prefeitura. "
+             "Cada linha destas mede o tamanho desse vão; ele fecha quando o "
+             "campo de criador for preenchido nos registros antigos.",
+    ),
     "authz.sem_dono": _a(
         "mexeu num registro que não pertence a município nenhum", MOD_USUARIOS,
         _MEDIO, prep="—",
@@ -720,6 +731,11 @@ _TARGET_TYPE_ROTULOS: dict[str, str] = {
     # Alvos gravados por services/authz.py. "tela" e "municipio" já existem
     # acima; "linha" é o registro solto cujo município está em branco.
     "linha": "registro",
+    # Alcance por linha: a pessoa está restrita a «Somente os que ele criou» e
+    # tocou num registro de OUTRA pessoa. Rótulo próprio para o auditor não ler
+    # "registro" e achar que é o mesmo caso do município em branco.
+    "linha_propria": "registro de outra pessoa",
+    "permissao": "permissão",
 }
 
 # Alguns `target_id` são CÓDIGO, não número nem nome ("sigcon", "plano_acao").

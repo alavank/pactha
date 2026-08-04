@@ -422,6 +422,13 @@ async def load_user_scopes(db: AsyncSession, user: User) -> None:
         # outros dois — e porque a convencao inversa ("None = tudo") foi
         # exatamente a que criou o deus por default no Incremento 4.
         user.allowed_permissoes = None
+        # ⚠️ DICIONARIO VAZIO, e nao None: aqui a convencao "None = sem limite"
+        # nao existe, porque o alcance nao e um limite que se remove — e um
+        # MODIFICADOR cujo default (`todos`) ja e a ausencia de restricao.
+        # Super-admin passa por cima por `is_super_admin` em
+        # `authz.escopo_de`, nao por um valor sentinela que alguem possa
+        # reproduzir sem querer noutro caminho.
+        user.allowed_escopos = {}
         return
     mrows = await db.execute(
         text("SELECT municipio_id FROM user_municipios WHERE user_id = :u"), {"u": user.id})
@@ -430,6 +437,55 @@ async def load_user_scopes(db: AsyncSession, user: User) -> None:
         text("SELECT tela FROM user_telas WHERE user_id = :u"), {"u": user.id})
     user.allowed_telas = {r[0] for r in trows.fetchall()}
     user.allowed_permissoes = await _carregar_permissoes(db, user.id)
+    user.allowed_escopos = await _carregar_escopos(db, user.id)
+
+
+async def _carregar_escopos(db: AsyncSession, user_id: int) -> dict:
+    """O ALCANCE por modulo deste usuario (Incremento 6): `{recurso: escopo}`.
+
+    Recurso ausente do dicionario = `todos` — o valor que nao restringe ninguem.
+
+    ⚠️ POR QUE A FALHA AQUI VIRA VAZIO E ISSO **NAO** CONTRADIZ O FAIL-CLOSED DE
+    `_carregar_permissoes`, que fica logo acima e falha na direcao oposta:
+
+      * la, vazio = "nenhuma permissao concedida". Aqui, vazio = "nenhuma
+        RESTRICAO configurada". As duas coisas sao a mesma frase — **o estado do
+        banco antes de alguem configurar qualquer coisa** — e as duas devolvem o
+        comportamento que o tenant ja tinha. Acontece que num caso isso fecha e
+        no outro abre, porque uma tabela concede e a outra restringe.
+
+      * o contrario seria destrutivo e desproporcional: uma tabela ausente
+        (migration nao rodou, banco em manutencao) trancaria TODA a prefeitura
+        em "so os que ele criou" de uma vez, sem ninguem ter pedido, e o suporte
+        veria "sumiu o botao de editar" sem relacao aparente com a causa. O
+        alcance e opt-in, deliberado, um usuario por vez; ele nao pode nascer de
+        um erro de I/O.
+
+    ⚠️ CUSTO DECLARADO: mais UM SELECT por requisicao autenticada (o quarto desta
+    funcao). E uma busca por prefixo da chave primaria devolvendo no maximo tres
+    linhas, mas ela acontece em TODA requisicao — inclusive nas de quem nunca foi
+    restringido. Junta-la a consulta de `user_permissoes` economizaria uma ida ao
+    banco e custaria a distincao acima: as duas falham em direcoes opostas de
+    proposito, e numa consulta so nao haveria como falhar diferente.
+
+    O CRITICO no log e o que faz o problema aparecer, e o SAVEPOINT
+    (`begin_nested`) e pelo mesmo motivo da funcao acima: sem ele um erro aqui
+    aborta a transacao inteira e a proxima consulta do endpoint quebra com um
+    erro sem relacao aparente.
+    """
+    try:
+        async with db.begin_nested():
+            linhas = await db.execute(
+                text("SELECT recurso, escopo FROM user_escopos WHERE user_id = :u"),
+                {"u": user_id})
+        return {r[0]: r[1] for r in linhas.fetchall()}
+    except Exception:
+        _logger_auth.critical(
+            "Nao consegui ler user_escopos do usuario %s — seguindo com alcance "
+            "'todos' em todos os modulos (o comportamento anterior ao "
+            "Incremento 6). Se a migration add_escopo_por_modulo.sql nao rodou, "
+            "e isso.", user_id, exc_info=True)
+        return {}
 
 
 async def _carregar_permissoes(db: AsyncSession, user_id: int) -> set:

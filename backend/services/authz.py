@@ -69,6 +69,10 @@ COMO SE USA
     # no endpoint, para o buraco que permissao de VERBO nao resolve:
     await authz.ensure_dono(db, "rm_relatorios", "id", rm_id, current)
 
+    # so nos endpoints de ESCRITA de modulo escopavel (rm, gestao, documentos):
+    # "esta linha foi criada por ele?" — o alcance por linha do Incremento 6
+    await authz.exigir_dono_da_linha(db, "rm", rm_id, current)
+
 ENV
 ---
     AUTHZ_MODO=aviso      (DEFAULT) deixa passar e registra
@@ -113,6 +117,10 @@ MODO_BLOQUEIO = "bloqueio"
 ACAO_NEGARIA = "authz.negaria"      # modo aviso: passou, mas teria sido barrado
 ACAO_NEGOU = "authz.negou"          # modo bloqueio: barrado de verdade
 ACAO_SEM_DONO = "authz.sem_dono"    # linha sem municipio: nao da para decidir
+# Linha cujo CRIADOR e desconhecido (`criado_por` nulo) sendo alterada por quem
+# esta restrito a "somente os que ele criou". Passou — ver
+# `exigir_dono_da_linha` para a decisao e o porque.
+ACAO_SEM_CRIADOR = "authz.sem_criador"
 # Rota que subiu sem declarar permissao e sem estar na allowlist de rotas
 # livres. Ver services/registro_rotas.py — e defeito de programacao, nao de
 # cadastro, e por isso a linha sai com o CAMINHO no lugar da permissao.
@@ -663,3 +671,251 @@ async def ensure_dono(
     finally:
         _ORIGEM.reset(ficha)
     return municipio_id
+
+
+# ---------------------------------------------------------------------------
+# ⭐ ALCANCE POR LINHA (Incremento 6) — "so os registros que ele criou"
+# ---------------------------------------------------------------------------
+# ⚠️ ISTO NAO E `ensure_dono`, E AS DUAS VALEM JUNTAS. Sao perguntas diferentes
+# sobre a MESMA linha, e confundi-las deixaria um buraco de cada lado:
+#
+#     ensure_dono            -> esta linha e de um MUNICIPIO que ele alcanca?
+#     exigir_dono_da_linha   -> esta linha foi criada POR ELE?
+#
+# A primeira e sobre territorio (e vale para leitura tambem); a segunda e a
+# regra que o dono pediu agora, e vale SO PARA ESCRITA (editar e excluir) —
+# decisao dele, ja tomada: a pessoa continua VENDO a lista inteira do municipio,
+# porque filtrar a leitura faria dois servidores do mesmo setor deixarem de ver
+# o trabalho um do outro e sumiria com o registro de quem saiu da prefeitura.
+#
+# O endpoint de escrita de um modulo escopavel usa AS TRES coisas:
+#
+#     authz.exigir(current, "gestao.editar")                        # o QUE
+#     await authz.ensure_dono(db, "gestao_anotacoes", "id", i, u)   # o ONDE
+#     await authz.exigir_dono_da_linha(db, "gestao", i, u)          # de QUEM
+def escopo_de(usuario, recurso) -> str:
+    """O alcance vigente deste usuario NAQUELE modulo. Nunca levanta.
+
+    Devolve sempre `todos` ou `proprios`; qualquer outra coisa (recurso que nao
+    aceita alcance, valor torto no banco, usuario sem o atributo carregado) cai
+    em `todos`, que e o valor que NAO restringe ninguem — ver
+    `services/permissoes.py::normalizar_escopo` para o porque do fail-open."""
+    from services.auth import is_super_admin
+    from services import permissoes as catalogo
+
+    chave = catalogo.normalizar(recurso)
+    if not catalogo.escopavel(chave):
+        return catalogo.ESCOPO_TODOS
+    # "Esses tem tudo, fazem tudo no sistema... eles sao tipo ROOT" — a regra do
+    # dono, e a mesma razao de `permissoes_efetivas` nem olhar as caixinhas do
+    # super-admin: nao pode existir jeito de um administrador do cliente
+    # restringir o dono da plataforma.
+    if is_super_admin(usuario):
+        return catalogo.ESCOPO_TODOS
+    escopos = getattr(usuario, "allowed_escopos", None) or {}
+    return catalogo.normalizar_escopo(escopos.get(chave))
+
+
+def _mesmo_criador(usuario, criado_por) -> bool:
+    """O id de quem pediu e o id de quem criou a linha sao o mesmo?
+
+    Comparacao por INTEIRO e nao por identidade de objeto: `criado_por` vem do
+    banco (pode chegar como Decimal ou str conforme o driver) e `usuario.id` vem
+    do ORM. Comparar `==` cru faria `'7' != 7` e negaria o autor do proprio
+    registro — o defeito mais embaracoso que esta funcao poderia ter."""
+    meu = getattr(usuario, "id", None)
+    if meu is None or criado_por is None:
+        return False
+    try:
+        return int(meu) == int(criado_por)
+    except (TypeError, ValueError):
+        return False
+
+
+def pode_escrever_na_linha(usuario, recurso, criado_por) -> bool:
+    """"Este usuario pode ALTERAR esta linha?" — SEM efeito nenhum: nao levanta,
+    nao registra, nao toca no banco.
+
+    E a versao de LISTAGEM da checagem abaixo, e existe para a resposta da API
+    poder dizer `pode_editar` item a item (o pedido literal do dono: "o botao
+    some ou fica bloqueado"). Recebe o `criado_por` que a consulta da lista JA
+    trouxe, entao custa zero consulta a mais.
+
+    ⚠️ So responde pelo ALCANCE. A permissao de verbo (`gestao.editar`) e outra
+    pergunta e tem `pode()` para ela — quem monta a resposta combina as duas
+    (ver `pode_editar_item`)."""
+    from services import permissoes as catalogo
+
+    if escopo_de(usuario, recurso) == catalogo.ESCOPO_TODOS:
+        return True
+    # Linha sem criador conhecido: PASSA. Ver a decisao completa em
+    # `exigir_dono_da_linha` — o front tem de desenhar o botao que o servidor
+    # vai deixar clicar, senao a tela e o servidor discordam.
+    if criado_por is None:
+        return True
+    return _mesmo_criador(usuario, criado_por)
+
+
+def pode_editar_item(usuario, recurso, verbo, criado_por) -> bool:
+    """O que a LISTA devolve por item: `pode_editar` / `pode_excluir`.
+
+    Combina as duas perguntas — a permissao de verbo E o alcance — mas de
+    formas deliberadamente diferentes, e a assimetria e o ponto:
+
+      * O ALCANCE vale SEMPRE, nos dois modos de `AUTHZ_MODO`. Ele nunca e
+        retroativo: nasce `todos` para todo mundo e so vira `proprios` quando um
+        administrador marca aquele radio, para aquela pessoa, naquele modulo.
+        Nao ha comportamento antigo para preservar, entao esconder o botao
+        obedece a configuracao no instante em que ela e salva — que e o que o
+        dono pediu ver acontecer.
+
+      * A PERMISSAO DE VERBO so entra em modo BLOQUEIO. Em modo aviso o servidor
+        NAO barra quem nao tem `gestao.editar` (registra e deixa passar), e uma
+        conta que trabalha hoje justamente porque nunca houve gate continua
+        trabalhando. Se a lista escondesse o botao dela agora, ESTA peca teria
+        provocado o apagao que o modo aviso inteiro existe para evitar — e sem
+        nem mudar o servidor, o que e a pior forma de quebrar: ninguem
+        procuraria a causa numa resposta de listagem.
+
+    Ou seja: o botao so some por um motivo que o servidor JA estaria barrando
+    hoje, ou pelo alcance que o administrador acabou de configurar."""
+    from services import permissoes as catalogo
+
+    chave = f"{catalogo.normalizar(recurso)}.{catalogo.normalizar(verbo)}"
+    if modo() == MODO_BLOQUEIO and not pode(usuario, chave):
+        return False
+    return pode_escrever_na_linha(usuario, recurso, criado_por)
+
+
+async def exigir_dono_da_linha(
+    db: AsyncSession,
+    recurso: str,
+    id_do_registro: Any,
+    usuario,
+    *,
+    coluna_id: str = "id",
+) -> Any:
+    """⭐ A CHECAGEM: "esta linha foi criada por voce?".
+
+    Respeita `AUTHZ_MODO` como todo o resto do modulo — passa por `negar`, entao
+    em modo aviso registra `authz.negaria` e DEIXA PASSAR; em bloqueio levanta
+    403. Devolve o `criado_por` lido, ou None quando nao houve decisao.
+
+    ⚠️ A TABELA NAO E PARAMETRO, e a ausencia e deliberada. Ela sai de
+    `services/permissoes.py::ESCOPO_RECURSOS` a partir do `recurso`, que e a
+    mesma chave que a tela configura, que a API grava e que a FK do banco valida.
+    Recebe-la do router criaria um segundo lugar onde o nome da tabela e escrito:
+    o dia em que os dois divergissem, esta funcao leria a coluna errada — ou
+    leria a tabela certa de um recurso que o administrador configurou em outra —
+    e a checagem passaria a nao checar, em silencio. O `recurso` sozinho amarra
+    tela, banco e consulta na mesma chave.
+
+    ⚠️⚠️ A DECISAO DIFICIL: `criado_por` NULO **PASSA** (e vira linha na trilha).
+
+    Linha sem criador conhecido existe por dois motivos, e nenhum deles e culpa
+    de quem esta editando agora: (1) e anterior a coluna `criado_por` — as tres
+    tabelas nasceram com ela anulavel e sem backfill; (2) a conta de quem criou
+    foi EXCLUIDA, e a chave estrangeira zera a coluna (`ON DELETE SET NULL`, ver
+    routers/control.py::_null_fk). Negar essas linhas seria:
+
+      * RETROATIVO num sistema em que a restricao nao e. O alcance e uma regra
+        que passa a valer daqui para frente, para quem o administrador escolher;
+        ele nao pode confiscar anos de trabalho que ninguem sabia que precisava
+        de dono registrado. Na pratica, o servidor de Monte Siao nao
+        conseguiria corrigir um erro de digitacao numa anotacao de 2024, e nao
+        haveria nada que ele ou o administrador pudessem fazer pela tela.
+
+      * EXATAMENTE O QUE O DONO JA RECUSOU, uma camada abaixo. Ele vetou
+        filtrar a LEITURA porque "o registro de quem saiu da prefeitura
+        sumiria". Trancar a edicao do registro de quem saiu da prefeitura e o
+        mesmo dano com outro nome: a conta foi excluida, entao a linha JA esta
+        com `criado_por` nulo, e ela ficaria congelada para sempre.
+
+    O que segura o preco de deixar passar:
+
+      1. Nao e porta aberta a estranho. Para chegar aqui a pessoa ja passou pela
+         permissao de verbo, pela tela e pelo municipio da linha — o alcance e a
+         quarta trava, nao a unica.
+      2. A passagem e VISIVEL: cada uma vira `authz.sem_criador` na trilha, com
+         a tabela e o id. O buraco tem tamanho medivel, coisa que a ausencia de
+         criador nunca teve.
+      3. A correcao mora no DADO, nao aqui: preenchido o `criado_por` (ou tornada
+         a coluna obrigatoria), esta ramificacao morre sozinha — mesmo desenho
+         de `ensure_dono` com municipio nulo.
+
+    A alternativa "negar" nao e mais segura, e mais BARULHENTA: ela troca um
+    risco pequeno e observavel por um apagao certo no instante em que um
+    administrador marca um radio — e ninguem ligaria as duas coisas.
+    """
+    from services import permissoes as catalogo
+
+    ficha_recurso = catalogo.descrever_recurso_escopavel(recurso)
+    if ficha_recurso is None:
+        # ValueError e nao 403, pelo mesmo motivo de `exigir` com chave fora do
+        # catalogo: e erro de programacao num literal do router, aparece na
+        # primeira chamada em desenvolvimento e nunca chega a producao. Tratado
+        # como "sem permissao" viraria um 403 permanente e silencioso.
+        raise ValueError(
+            f"recurso sem alcance por linha: {recurso!r} — nao esta em "
+            "services/permissoes.py::ESCOPO_RECURSOS")
+
+    if escopo_de(usuario, ficha_recurso.recurso) == catalogo.ESCOPO_TODOS:
+        # O caminho de todo mundo, hoje: nenhuma consulta a mais. O custo do
+        # incremento so aparece para quem foi deliberadamente restringido.
+        return None
+
+    if id_do_registro is None:
+        return None
+
+    tab = _identificador(ficha_recurso.tabela, "tabela")
+    col_dono = _identificador(ficha_recurso.coluna_dono, "coluna_dono")
+    col_id = _identificador(coluna_id, "coluna_id")
+
+    try:
+        # SAVEPOINT pelo mesmo motivo de `ensure_dono`: erro contido, transacao
+        # do endpoint continua utilizavel.
+        async with db.begin_nested():
+            linha = (await db.execute(
+                text(f"SELECT {col_dono} FROM {tab} WHERE {col_id} = :id LIMIT 1"),
+                {"id": id_do_registro},
+            )).first()
+    except Exception:
+        # Sem leitura nao ha decisao. Nao inventamos 403 — o endpoint vai
+        # esbarrar no mesmo problema na consulta dele, em seguida.
+        logger.exception("exigir_dono_da_linha nao conseguiu ler %s.%s", tab,
+                         col_dono)
+        return None
+
+    if linha is None:
+        # Registro inexistente NAO vira 403 aqui: quem decide o 404 e o endpoint,
+        # que e o unico que sabe se "nao achei" significa "nao existe" ou "nao e
+        # seu". Mesma regra de `ensure_dono`.
+        return None
+
+    criado_por = linha[0]
+    if criado_por is None:
+        _observar_seguro(ACAO_SEM_CRIADOR, usuario, tipo="linha",
+                         exigido=f"{tab}#{id_do_registro}",
+                         possui=f"alcance={catalogo.ESCOPO_PROPRIOS}")
+        return None
+
+    if _mesmo_criador(usuario, criado_por):
+        return criado_por
+
+    ficha = _ORIGEM.set({"recurso": ficha_recurso.recurso, "tabela": tab,
+                         "coluna": col_dono, "id": str(id_do_registro)[:100],
+                         "criado_por": criado_por,
+                         "alcance": catalogo.ESCOPO_PROPRIOS})
+    try:
+        negar(usuario, tipo="linha_propria",
+              exigido=f"{tab}#{id_do_registro}",
+              possui={"usuario_id": getattr(usuario, "id", None),
+                      "criado_por": criado_por},
+              # Mensagem PROPRIA, e nao a de permissao: quem le "Voce nao tem
+              # permissao para esta acao" depois de clicar em Editar vai pedir ao
+              # administrador a caixinha «Editar» — que ele JA TEM. O que falta
+              # nao e a caixinha, e o alcance.
+              mensagem="Voce so pode alterar os registros que voce mesmo criou")
+    finally:
+        _ORIGEM.reset(ficha)
+    return criado_por

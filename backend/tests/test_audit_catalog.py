@@ -51,6 +51,9 @@ CHAVES_DO_REPO = [
     "export.emendas", "export.dou", "export.parlamentares",
     "export.ia_relatorio", "export.ia",
     "gestao.anotacao.create", "gestao.anotacao.update", "gestao.anotacao.delete",
+    # Alcance por linha (Incremento 6): a passagem de quem esta restrito a
+    # "somente os que ele criou" numa linha sem criador conhecido.
+    "authz.sem_criador",
 ]
 
 # Todo `target_type=` que o repo grava. O que faltar aqui sai na frase como
@@ -59,6 +62,8 @@ TARGET_TYPES_DO_REPO = [
     "audit_log", "bi_tela_link", "cofre_senha", "cofre_session", "documento",
     "export", "gestao_anotacao", "municipio", "rm", "scraper", "service_token",
     "user",
+    # services/authz.py: os alvos que a trava grava quando nega.
+    "linha", "linha_propria", "permissao", "tela",
 ]
 
 

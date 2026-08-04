@@ -49,6 +49,14 @@ Cada rota declara o verbo que executa. Duas escolhas nao sao obvias e estao
 comentadas onde acontecem: `POST /anotacoes/contagens` declara `gestao.ver`
 (e um GROUP BY — o POST e por causa do corpo, nao porque escreva) e o download
 de anexo declara `gestao.anexo_baixar`, a caixinha propria do catalogo.
+
+ALCANCE POR LINHA (Incremento 6 — `authz.exigir_dono_da_linha`)
+---------------------------------------------------------------
+Um usuario pode ser configurado, POR MODULO, como "somente os que ele criou":
+ai ele so ALTERA e APAGA a anotacao que ele mesmo escreveu. Continua VENDO a
+lista inteira e BAIXANDO os anexos do municipio — decisao do dono. O gate mora
+em `_exigir_escrita` (PUT e DELETE); a lista devolve `pode_editar`/`pode_excluir`
+por item, para o botao sumir.
 """
 from __future__ import annotations
 import json
@@ -134,11 +142,22 @@ def _validate_payload(body: AnotacaoCreate | AnotacaoUpdate):
                 raise HTTPException(413, f"Anexo '{a.nome}' excede o limite de {MAX_ANEXO_BYTES//1024}KB (base64).")
 
 
-def _row_to_dict(row, *, with_anexos: bool = True) -> dict:
+def _row_to_dict(row, usuario, *, with_anexos: bool = True) -> dict:
+    """⭐ `usuario` e OBRIGATORIO desde o Incremento 6: a resposta passa a dizer,
+    POR ITEM, se quem pediu pode alterar aquela linha (`pode_editar`,
+    `pode_excluir`). E o pedido literal do dono — "o botao some ou fica
+    bloqueado" — e o unico jeito honesto de o frontend saber disso e o BACKEND
+    dizer: `criado_por` sozinho obrigaria a tela a reimplementar a regra (e a
+    reimplementaria errado no dia em que a regra mudasse).
+
+    ⚠️ Botao escondido NAO e permissao. Estes dois campos existem para a tela nao
+    prometer o que o servidor vai negar; quem barra continua sendo
+    `authz.exigir_dono_da_linha` no endpoint de escrita."""
     anexos = row[10] or []
     if not with_anexos:
         # Lista sem os dados_b64 para economizar payload
         anexos = [{k: v for k, v in a.items() if k != "dados_b64"} for a in anexos]
+    criado_por = row[11]
     return {
         "id": row[0],
         "municipio_id": row[1],
@@ -151,9 +170,11 @@ def _row_to_dict(row, *, with_anexos: bool = True) -> dict:
         "data_protocolo": row[8].isoformat() if row[8] else None,
         "observacoes": row[9],
         "anexos": anexos,
-        "criado_por": row[11],
+        "criado_por": criado_por,
         "created_at": row[12].isoformat() if row[12] else None,
         "updated_at": row[13].isoformat() if row[13] else None,
+        "pode_editar": authz.pode_editar_item(usuario, "gestao", "editar", criado_por),
+        "pode_excluir": authz.pode_editar_item(usuario, "gestao", "excluir", criado_por),
     }
 
 
@@ -187,6 +208,21 @@ async def _exigir_acesso(db: AsyncSession, anot_id: int, user) -> None:
     # Devolve o municipio da linha; nao usamos o retorno — quem decide o 404
     # continua sendo o endpoint, com a consulta dele.
     await authz.ensure_dono(db, "gestao_anotacoes", "id", anot_id, user)
+
+
+async def _exigir_escrita(db: AsyncSession, anot_id: int, user) -> None:
+    """O acesso a anotacao MAIS o alcance por linha (Incremento 6).
+
+    So nos DOIS endpoints de escrita (editar e apagar), e nao em `_exigir_acesso`:
+    a decisao do dono e que o alcance vale so para escrita — quem esta em
+    "somente os que ele criou" continua VENDO e BAIXANDO a lista inteira do
+    municipio, inclusive as anotacoes dos colegas. Por isso o detalhe e o
+    download de anexo seguem com `_exigir_acesso` puro.
+
+    Custo para quem NAO foi restringido: zero consulta a mais — `escopo_de` volta
+    `todos` antes de tocar no banco."""
+    await _exigir_acesso(db, anot_id, user)
+    await authz.exigir_dono_da_linha(db, "gestao", anot_id, user)
 
 
 async def _anotacao_contexto(db: AsyncSession, anot_id: int) -> dict:
@@ -233,7 +269,7 @@ async def listar(
     sql = _SELECT + (" WHERE " + " AND ".join(where) if where else "") + " ORDER BY updated_at DESC"
     rows = (await db.execute(text(sql), params)).fetchall()
     # Lista sem dados_b64 dos anexos (apenas metadata) para economizar payload
-    return {"items": [_row_to_dict(r, with_anexos=False) for r in rows], "total": len(rows)}
+    return {"items": [_row_to_dict(r, current, with_anexos=False) for r in rows], "total": len(rows)}
 
 
 @router.get("/anotacoes/item", dependencies=[exige("gestao.ver")])
@@ -264,7 +300,7 @@ async def listar_item(
     # isso seria um 403 NOVO em modo aviso.
     for mid in sorted({r[1] for r in rows if r[1] is not None}):
         authz.exigir_municipio(current, mid)
-    return {"items": [_row_to_dict(r, with_anexos=True) for r in rows], "total": len(rows)}
+    return {"items": [_row_to_dict(r, current, with_anexos=True) for r in rows], "total": len(rows)}
 
 
 class ContagensIn(BaseModel):
@@ -321,7 +357,7 @@ async def detalhe(
     row = (await db.execute(text(_SELECT + " WHERE id = :id"), {"id": anot_id})).first()
     if not row:
         raise HTTPException(404, "Anotacao nao encontrada")
-    return _row_to_dict(row, with_anexos=True)
+    return _row_to_dict(row, current, with_anexos=True)
 
 
 @router.post("/anotacoes", dependencies=[exige("gestao.criar")])
@@ -375,7 +411,7 @@ async def atualizar(
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
-    await _exigir_acesso(db, anot_id, current)
+    await _exigir_escrita(db, anot_id, current)
     _validate_payload(body)
     sets = []
     params: dict = {"id": anot_id}
@@ -427,7 +463,7 @@ async def remover(
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
-    await _exigir_acesso(db, anot_id, current)
+    await _exigir_escrita(db, anot_id, current)
     ctx = await _anotacao_contexto(db, anot_id)   # depois do DELETE nao ha contexto
     r = await db.execute(text("DELETE FROM gestao_anotacoes WHERE id = :id"), {"id": anot_id})
     await db.commit()

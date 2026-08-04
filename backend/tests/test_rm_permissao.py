@@ -691,9 +691,24 @@ def test_o_router_tem_as_rotas_que_este_teste_acha_que_tem():
     assert len(_rotas()) == 7
 
 
+def _fonte(funcao) -> str:
+    """A fonte do endpoint MAIS a do helper de gate que ele chama.
+
+    Os tres endpoints de escrita passaram a delegar os gates a
+    `rm._exigir_escrita` no Incremento 6 (alcance por linha): o nome da tabela
+    vira literal de SQL, e uma copia divergente e uma checagem que deixa de
+    checar sem ninguem notar. Sem seguir a chamada, estes testes leriam so
+    `await _exigir_escrita(...)` e concluiriam que o gate sumiu — e, o que e
+    pior, continuariam passando no dia em que alguem esvaziasse o helper."""
+    fonte = inspect.getsource(funcao)
+    if "_exigir_escrita(" in fonte:
+        fonte += "\n" + inspect.getsource(rm._exigir_escrita)
+    return fonte
+
+
 @pytest.mark.parametrize("caminho,funcao", _rotas())
 def test_todo_endpoint_exige_a_tela_rm(caminho, funcao):
-    fonte = inspect.getsource(funcao)
+    fonte = _fonte(funcao)
     # Aceita as DUAS formas, e a diferenca entre elas nao e cosmetica:
     # `ensure_tela` e a checagem que JA EXISTIA e nega sempre, nos dois modos;
     # `authz.exigir_tela` e o gate NOVO, que respeita `AUTHZ_MODO` e por isso
@@ -708,7 +723,7 @@ def test_gate_de_tela_novo_usa_a_funcao_que_respeita_o_modo(nome):
     """Gate ACRESCENTADO agora usa `authz.exigir_tela`. Usar `ensure_tela` aqui
     negaria ja em modo aviso — o apagao de segunda-feira que o incremento
     inteiro existe para nao causar."""
-    fonte = inspect.getsource(FUNCAO[nome])
+    fonte = _fonte(FUNCAO[nome])
     assert "exigir_tela(" in fonte, f"{nome} deveria usar authz.exigir_tela"
     assert "ensure_tela(" not in fonte, \
         f"{nome} e gate novo: `ensure_tela` negaria ja em modo aviso"
@@ -727,7 +742,7 @@ def test_gate_de_tela_pre_existente_continua_negando_sempre():
                          [(c, f) for c, f in _rotas() if "{rid}" in c])
 def test_endpoint_com_id_confere_o_dono_da_linha(caminho, funcao):
     """Permissao de tela nao impede pegar o RM de outro municipio pelo id."""
-    fonte = inspect.getsource(funcao)
+    fonte = _fonte(funcao)
     assert "ensure_dono(" in fonte, f"{caminho} nao confere o municipio da linha"
 
 

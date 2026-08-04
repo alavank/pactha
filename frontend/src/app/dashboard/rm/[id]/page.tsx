@@ -4,12 +4,13 @@ import React, { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   Save, Download, RefreshCw, ChevronDown, ChevronRight, Plus, Trash2,
-  ArrowUp, ArrowDown, Loader2, ArrowLeft, FileCheck,
+  ArrowUp, ArrowDown, Loader2, ArrowLeft, FileCheck, Lock,
 } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { BOTAO_CTA, BOTAO_SEC, Bloco, ESTILO_CTA, ESTILO_SEC, Selo } from "@/components/ui/superficies";
+import { Aviso, BOTAO_CTA, BOTAO_SEC, Bloco, ESTILO_CTA, ESTILO_SEC, Selo } from "@/components/ui/superficies";
 import { Input } from "@/components/ui/input";
+import { podeEditarLinha } from "@/lib/escopo";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 
 interface Item {
@@ -47,6 +48,9 @@ interface Rm {
   data_referencia: string; cidade_emissao: string;
   titulo?: string; rodape: string; status: string;
   conteudo: Conteudo;
+  /** O veredito do servidor sobre ESTE RM (alcance "somente os que ele criou").
+   *  Ausente = a API nao respondeu isso, e a tela fica como era. */
+  pode_editar?: boolean | null;
 }
 
 const ITEM_FIELDS: Array<[keyof Item, string, "text" | "number" | "date" | "textarea"]> = [
@@ -235,6 +239,13 @@ export default function RmEditorPage() {
     return <div className="flex h-64 items-center justify-center"><Loader2 className="size-6 animate-spin" style={{ color: "var(--bi-faint)" }} /></div>;
   }
 
+  /* O RM abre para QUALQUER pessoa que tenha a tela — a decisão do dono foi
+     restringir a escrita, e não a leitura. O que muda aqui é que as três ações
+     que gravam ficam desligadas, e a razão disso fica escrita: um "Salvar" que
+     responde 403 depois de vinte minutos de digitação é pior do que um botão
+     apagado com a explicação ao lado. */
+  const podeEditar = podeEditarLinha(rm);
+
   return (
     <div className="space-y-4">
       {/* Topbar */}
@@ -257,14 +268,21 @@ export default function RmEditorPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={repopular} disabled={repopulating}>
+          <Button variant="outline" onClick={repopular} disabled={repopulating || !podeEditar}>
             {repopulating ? <Loader2 className="size-4 animate-spin mr-1" /> : <RefreshCw className="size-4 mr-1" />}
             Re-popular do DB
           </Button>
-          <Button variant="outline" onClick={() => setRm({ ...rm, status: rm.status === "finalizado" ? "rascunho" : "finalizado" })}>
+          {/* "Finalizar" fica junto: ele muda `status`, que só chega ao banco
+              pelo mesmo PUT do Salvar. Deixá-lo aceso ofereceria uma alteração
+              que não tem como ser gravada. */}
+          <Button
+            variant="outline"
+            disabled={!podeEditar}
+            onClick={() => setRm({ ...rm, status: rm.status === "finalizado" ? "rascunho" : "finalizado" })}
+          >
             <FileCheck className="size-4 mr-1" /> {rm.status === "finalizado" ? "Reabrir" : "Finalizar"}
           </Button>
-          <button type="button" onClick={salvar} disabled={saving} className={BOTAO_CTA} style={ESTILO_CTA}>
+          <button type="button" onClick={salvar} disabled={saving || !podeEditar} className={BOTAO_CTA} style={ESTILO_CTA}>
             {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
             Salvar
           </button>
@@ -304,6 +322,26 @@ export default function RmEditorPage() {
           </div>
         </div>
       </div>
+
+      {!podeEditar && (
+        /* Antes do formulário, e não depois: quem chega aqui por um link ou
+           pelo botão "Abrir" da lista precisa ler isto ANTES de começar a
+           digitar. Atenção, e não crítico — não há nada errado, é o alcance
+           configurado para esta conta. */
+        <Aviso
+          tom="atencao"
+          icon={Lock}
+          titulo="Este RM foi criado por outra pessoa — aqui você só consulta."
+          className=""
+        >
+          <p className="text-[11px]" style={{ color: "var(--bi-muted)" }}>
+            O seu acesso a Relatórios de Monitoramento alcança <b>só os que você
+            criou</b>. Salvar, Finalizar e Re-popular estão desligados; consultar
+            e exportar continuam valendo. Para alterar este RM, peça a quem o
+            criou ou a um administrador.
+          </p>
+        </Aviso>
+      )}
 
       {/* Metadata edit */}
       <Bloco className="grid grid-cols-1 gap-3 p-3 md:grid-cols-3">

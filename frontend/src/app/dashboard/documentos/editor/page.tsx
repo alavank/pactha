@@ -2,13 +2,14 @@
 
 import React, { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { ArrowLeft, Save, Plus, Trash2, FileText, FileType, Loader2 } from "lucide-react";
+import { ArrowLeft, Save, Plus, Trash2, FileText, FileType, Loader2, Lock } from "lucide-react";
 import api from "@/lib/api";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 import { Input } from "@/components/ui/input";
 import {
-  BOTAO_ACAO, BOTAO_CTA, BOTAO_SEC, Bloco, BlocoHead, ESTILO_CTA, ESTILO_SEC,
+  Aviso, BOTAO_ACAO, BOTAO_CTA, BOTAO_SEC, Bloco, BlocoHead, ESTILO_CTA, ESTILO_SEC,
 } from "@/components/ui/superficies";
+import { podeEditarLinha } from "@/lib/escopo";
 
 type Campo = {
   key: string; label: string; tipo: string;
@@ -23,33 +24,43 @@ type Dados = Record<string, any>;
 // tres desenhos de campo conviviam no produto, um deles sumindo dentro do modal.
 const inputCls = "bi-field w-full p-2 text-sm";
 
-function CampoInput({ campo, value, onChange }: { campo: Campo; value: unknown; onChange: (v: string) => void }) {
+/* `travado` = documento de outra pessoa, com alcance por autor ligado. Os
+   campos ficam desabilitados em vez de só o botão Salvar: um formulário que
+   aceita vinte minutos de digitação e não tem como gravar é a pior versão desta
+   regra. `.bi-field:disabled` já tem o desenho apagado (globals.css). */
+function CampoInput({ campo, value, onChange, travado }: {
+  campo: Campo; value: unknown; onChange: (v: string) => void; travado?: boolean;
+}) {
   const v = (value as string) ?? "";
   if (campo.tipo === "textarea") {
-    return <textarea rows={4} className={inputCls} value={v} placeholder={campo.exemplo ? `Ex.: ${campo.exemplo}` : ""}
+    return <textarea rows={4} className={inputCls} value={v} disabled={travado}
+                     placeholder={campo.exemplo ? `Ex.: ${campo.exemplo}` : ""}
                      onChange={(e) => onChange(e.target.value)} />;
   }
   if (campo.tipo === "select") {
     return (
-      <select className={inputCls + " h-9"} value={v} onChange={(e) => onChange(e.target.value)}>
+      <select className={inputCls + " h-9"} value={v} disabled={travado} onChange={(e) => onChange(e.target.value)}>
         <option value="">Selecione...</option>
         {(campo.opcoes || []).map((o) => <option key={o} value={o}>{o}</option>)}
       </select>
     );
   }
   if (campo.tipo === "date") {
-    return <Input type="date" value={v} onChange={(e) => onChange(e.target.value)} />;
+    return <Input type="date" value={v} disabled={travado} onChange={(e) => onChange(e.target.value)} />;
   }
-  return <Input value={v} placeholder={campo.exemplo ? `Ex.: ${campo.exemplo}` : (campo.tipo === "currency" ? "R$ 0,00" : "")}
+  return <Input value={v} disabled={travado}
+                placeholder={campo.exemplo ? `Ex.: ${campo.exemplo}` : (campo.tipo === "currency" ? "R$ 0,00" : "")}
                 onChange={(e) => onChange(e.target.value)} />;
 }
 
-function CampoBlock({ campo, value, onChange }: { campo: Campo; value: unknown; onChange: (v: string) => void }) {
+function CampoBlock({ campo, value, onChange, travado }: {
+  campo: Campo; value: unknown; onChange: (v: string) => void; travado?: boolean;
+}) {
   return (
     <div className="mb-4">
       <label className="block text-[12px] font-semibold" style={{ color: "var(--bi-text)" }}>{campo.label}</label>
       {campo.ajuda && <p className="mt-0.5 mb-1.5 text-[11px] leading-snug" style={{ color: "var(--bi-faint)" }}>{campo.ajuda}</p>}
-      <CampoInput campo={campo} value={value} onChange={onChange} />
+      <CampoInput campo={campo} value={value} onChange={onChange} travado={travado} />
     </div>
   );
 }
@@ -68,6 +79,10 @@ function EditorInner() {
   const [salvando, setSalvando] = useState(false);
   const [baixando, setBaixando] = useState("");
   const [dirty, setDirty] = useState(false);
+  /* Documento NOVO nasce editável: quem cria é o dono, e o alcance por autor
+     não tem o que restringir numa linha que ainda não existe. O `false` só pode
+     vir do servidor, ao abrir um documento que já é de outra pessoa. */
+  const [podeEditar, setPodeEditar] = useState(true);
 
   useEffect(() => {
     (async () => {
@@ -75,9 +90,18 @@ function EditorInner() {
       try {
         let tipo = tipoParam;
         if (idParam) {
-          const r = await api.get<{ tipo: string; dados: Dados }>(`/documentos/${idParam}`);
+          const r = await api.get<{ tipo: string; dados: Dados; pode_editar?: boolean | null }>(
+            `/documentos/${idParam}`,
+          );
           tipo = r.data.tipo;
           setDados(r.data.dados || {});
+          setPodeEditar(podeEditarLinha(r.data));
+        } else {
+          /* Voltar a `true` no caminho "documento novo" é obrigatório, e não
+             redundante: a navegação daqui para /editor?tipo=X é do lado do
+             cliente, o componente NÃO remonta, e sem esta linha um documento de
+             outra pessoa aberto antes deixaria o formulário em branco travado. */
+          setPodeEditar(true);
         }
         if (tipo) {
           const s = await api.get<Schema>(`/documentos/schema/${tipo}`);
@@ -133,7 +157,11 @@ function EditorInner() {
 
   const exportar = async (formato: "pdf" | "docx") => {
     let id = docId;
-    if (!id || dirty) { id = await salvar(); }   // garante salvo antes de exportar
+    /* Exportar continua liberado — é leitura — mas o "salva antes de gerar" NÃO
+       vale aqui: num documento de outra pessoa esse salvamento automático seria
+       uma escrita que a pessoa não pediu, e que só chegaria como "Falha ao
+       salvar" no lugar do arquivo. */
+    if (podeEditar && (!id || dirty)) { id = await salvar(); }
     if (!id) return;
     setBaixando(formato);
     try {
@@ -171,9 +199,11 @@ function EditorInner() {
           {schema.descricao && <p className="mt-1 text-sm" style={{ color: "var(--bi-muted)" }}>{schema.descricao}</p>}
         </div>
         <div className="flex items-center gap-2">
-          <button type="button" onClick={() => salvar()} disabled={salvando} className={BOTAO_CTA} style={ESTILO_CTA}>
-            {salvando ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />} Salvar
-          </button>
+          {podeEditar && (
+            <button type="button" onClick={() => salvar()} disabled={salvando} className={BOTAO_CTA} style={ESTILO_CTA}>
+              {salvando ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />} Salvar
+            </button>
+          )}
           <button type="button" onClick={() => exportar("pdf")} disabled={!!baixando} className={BOTAO_SEC} style={ESTILO_SEC}>
             {baixando === "pdf" ? <Loader2 className="size-4 animate-spin" /> : <FileText className="size-4" />} PDF
           </button>
@@ -183,30 +213,53 @@ function EditorInner() {
         </div>
       </div>
 
+      {!podeEditar && (
+        /* Antes do formulário: quem chega aqui por link precisa ler isto antes
+           de tentar digitar em campo apagado e concluir que a tela quebrou. */
+        <Aviso
+          tom="atencao"
+          icon={Lock}
+          titulo="Este documento foi criado por outra pessoa — aqui você só consulta."
+          className=""
+        >
+          <p className="text-[11px]" style={{ color: "var(--bi-muted)" }}>
+            O seu acesso à Geração de Documentos alcança <b>só os que você criou</b>.
+            Os campos ficam bloqueados e não há como salvar; exportar em PDF e DOCX
+            continua valendo. Para alterar este documento, peça a quem o criou ou a
+            um administrador.
+          </p>
+        </Aviso>
+      )}
+
       {schema.secoes.map((secao) => (
         <Bloco key={secao.titulo} className="p-4">
           <BlocoHead titulo={secao.titulo} sub={secao.tipo === "lista" ? undefined : `${secao.campos.length} campo(s)`} />
           {secao.tipo === "lista" ? (
             <ListaSecao secao={secao} itens={(dados[secao.key!] as Dados[]) || []}
                         onItemChange={(idx, k, v) => setItemCampo(secao.key!, idx, k, v)}
-                        onAdd={() => addItem(secao.key!)} onRemove={(idx) => removeItem(secao.key!, idx)} />
+                        onAdd={() => addItem(secao.key!)} onRemove={(idx) => removeItem(secao.key!, idx)}
+                        travado={!podeEditar} />
           ) : (
             secao.campos.map((c) => (
-              <CampoBlock key={c.key} campo={c} value={dados[c.key]} onChange={(v) => setCampo(c.key, v)} />
+              <CampoBlock key={c.key} campo={c} value={dados[c.key]} onChange={(v) => setCampo(c.key, v)}
+                          travado={!podeEditar} />
             ))
           )}
         </Bloco>
       ))}
 
-      <p className="text-[11px]" style={{ color: "var(--bi-faint)" }}>As alterações são salvas ao clicar em <strong>Salvar</strong>. Exportar salva automaticamente antes de gerar o arquivo.</p>
+      {podeEditar && (
+        <p className="text-[11px]" style={{ color: "var(--bi-faint)" }}>As alterações são salvas ao clicar em <strong>Salvar</strong>. Exportar salva automaticamente antes de gerar o arquivo.</p>
+      )}
     </div>
   );
 }
 
-function ListaSecao({ secao, itens, onItemChange, onAdd, onRemove }: {
+function ListaSecao({ secao, itens, onItemChange, onAdd, onRemove, travado }: {
   secao: Secao; itens: Dados[];
   onItemChange: (idx: number, key: string, val: string) => void;
   onAdd: () => void; onRemove: (idx: number) => void;
+  travado?: boolean;
 }) {
   return (
     <div className="space-y-4">
@@ -216,19 +269,24 @@ function ListaSecao({ secao, itens, onItemChange, onAdd, onRemove }: {
         <Bloco key={idx} plano className="p-3">
           <div className="mb-2 flex items-center justify-between">
             <span className="text-[12px] font-semibold" style={{ color: "var(--bi-muted)" }}>{secao.item_label || "Item"} {idx + 1}</span>
-            <button type="button" onClick={() => onRemove(idx)} className={BOTAO_ACAO}
-                    style={{ ...ESTILO_SEC, color: "var(--bi-crit-ink)" }}>
-              <Trash2 className="size-3.5" /> Remover
-            </button>
+            {!travado && (
+              <button type="button" onClick={() => onRemove(idx)} className={BOTAO_ACAO}
+                      style={{ ...ESTILO_SEC, color: "var(--bi-crit-ink)" }}>
+                <Trash2 className="size-3.5" /> Remover
+              </button>
+            )}
           </div>
           {secao.campos.map((c) => (
-            <CampoBlock key={c.key} campo={c} value={item[c.key]} onChange={(v) => onItemChange(idx, c.key, v)} />
+            <CampoBlock key={c.key} campo={c} value={item[c.key]} onChange={(v) => onItemChange(idx, c.key, v)}
+                        travado={travado} />
           ))}
         </Bloco>
       ))}
-      <button type="button" onClick={onAdd} className={BOTAO_SEC} style={ESTILO_SEC}>
-        <Plus className="size-4" /> Adicionar {secao.item_label || "item"}
-      </button>
+      {!travado && (
+        <button type="button" onClick={onAdd} className={BOTAO_SEC} style={ESTILO_SEC}>
+          <Plus className="size-4" /> Adicionar {secao.item_label || "item"}
+        </button>
+      )}
     </div>
   );
 }
