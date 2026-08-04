@@ -1255,6 +1255,34 @@ async def put_tela_filtros(
     return {"ok": True}
 
 
+def _link_para_api(slug, nome, criado_em, expira_em, revogado, ultimo_acesso,
+                   kind, *, dias=None) -> dict:
+    """⭐ A FORMA DO LINK, NUM LUGAR SO — e a razao e um defeito de verdade.
+
+    Criar e listar montavam o dicionario cada um por conta propria, e as duas
+    formas divergiram: o POST devolvia so `{slug, caminho, kind, dias}`, entao o
+    link recem-criado entrava na lista da tela sem nome e sem prazo, e so
+    aparecia inteiro depois de fechar e reabrir o modal. Com uma funcao so, um
+    campo novo nasce nas duas respostas ou em nenhuma.
+
+    `dias` sai apenas na criacao: e o prazo PEDIDO, util para a tela confirmar o
+    que acabou de acontecer. Na listagem, o que vale e `expira_em` — o pedido de
+    ontem nao diz quanto falta hoje."""
+    ficha = {
+        "slug": slug,
+        "caminho": _caminho_link(slug, kind or "tela"),
+        "kind": kind or "tela",
+        "nome": nome,
+        "criado_em": criado_em.isoformat() if criado_em else None,
+        "expira_em": expira_em.isoformat() if expira_em else None,
+        "revogado": bool(revogado),
+        "ultimo_acesso": ultimo_acesso.isoformat() if ultimo_acesso else None,
+    }
+    if dias is not None:
+        ficha["dias"] = dias
+    return ficha
+
+
 @router.post("/tela-links", dependencies=[exige("bi.link")])
 async def criar_tela_link(
     body: TelaLinkIn,
@@ -1278,11 +1306,15 @@ async def criar_tela_link(
     slug = secrets.token_urlsafe(9)[:12]  # 12 chars, ~72 bits: curto e nao chutavel
     uid = await _ensure_kiosk_user(db, current, slug)
     token = create_kiosk_token(uid, dias)
-    await db.execute(text(
+    nome_do_link = body.nome or None
+    # `RETURNING criado_em` em vez de carimbar a hora em Python: quem manda no
+    # relogio e o banco (a coluna tem DEFAULT NOW()), e uma hora vinda daqui
+    # divergiria da que a listagem mostra no proximo carregamento.
+    criado_em = (await db.execute(text(
         "INSERT INTO bi_tela_links (slug, owner_id, kiosk_user_id, municipio_id, token, nome, expira_em, kind) "
-        "VALUES (:s, :o, :k, NULL, :t, :n, :e, :kind)"
+        "VALUES (:s, :o, :k, NULL, :t, :n, :e, :kind) RETURNING criado_em"
     ), {"s": slug, "o": current.id, "k": uid, "t": token,
-        "n": (body.nome or None), "e": expira, "kind": kind})
+        "n": nome_do_link, "e": expira, "kind": kind})).scalar()
     await db.commit()
     # Publicar link de TV cria acesso ANONIMO e duradouro ao painel: quem tiver a
     # URL ve o dado sem login, por ate `dias`. E o evento de permissao mais forte
@@ -1301,7 +1333,15 @@ async def criar_tela_link(
                  "kiosk_user_id": uid,
                  "efeito": "acesso publico sem login ao painel enquanto o link viver"},
     )
-    return {"slug": slug, "caminho": _caminho_link(slug, kind), "kind": kind, "dias": dias}
+    # ⚠️ A RESPOSTA DO POST TEM DE SER O LINK INTEIRO, e nao so o slug.
+    # Devolvia `{slug, caminho, kind, dias}`, e a tela — que insere o item
+    # devolvido direto na lista, sem recarregar — mostrava o link recem-criado
+    # como "Sem destinatario" e "Sem prazo". Nao era erro de gravacao: o banco
+    # estava certo o tempo todo, e bastava fechar e reabrir o modal para o nome e
+    # a validade aparecerem. Um defeito que se conserta sozinho ao recarregar e
+    # dos piores, porque quem ve conclui que o sistema perdeu o que digitou.
+    return _link_para_api(slug, nome_do_link, criado_em, expira, False, None, kind,
+                          dias=dias)
 
 
 @router.get("/tela-links")
@@ -1322,14 +1362,7 @@ async def listar_tela_links(
         "FROM bi_tela_links WHERE owner_id = :u AND NOT revogado "
         "ORDER BY criado_em DESC LIMIT 50"
     ), {"u": current.id})).fetchall()
-    return [{
-        "slug": r[0], "caminho": _caminho_link(r[0], r[6] or "tela"),
-        "kind": r[6] or "tela", "nome": r[1],
-        "criado_em": r[2].isoformat() if r[2] else None,
-        "expira_em": r[3].isoformat() if r[3] else None,
-        "revogado": r[4],
-        "ultimo_acesso": r[5].isoformat() if r[5] else None,
-    } for r in rows]
+    return [_link_para_api(r[0], r[1], r[2], r[3], r[4], r[5], r[6]) for r in rows]
 
 
 @router.delete("/tela-links/{slug}")
