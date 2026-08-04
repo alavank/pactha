@@ -19,11 +19,10 @@
 // servidor e a fonte unica, e uma chave orfa (permissao removida do produto)
 // nao pode virar caixinha fantasma na tela.
 import api from "@/lib/api";
-import { type Escopo, lerMapaEscopos, type MapaEscopos } from "@/lib/escopo";
-import {
-  escopoDe, recursosComEscopo,
-  type Catalogo, type MinhasPermissoes, type Permissao,
-} from "@/lib/permissoes";
+import { lerMapaEscopos, type MapaEscopos } from "@/lib/escopo";
+// `recursosComEscopo`, `Catalogo`, `Permissao` e `Escopo` saíram junto com
+// `preverModelo`: eram as peças da conta que agora é do servidor.
+import { escopoDe, type MinhasPermissoes } from "@/lib/permissoes";
 
 /** Um molde, como a API o devolve. */
 export interface Modelo {
@@ -133,125 +132,70 @@ export const AVISO_COPIA_RESERVA =
   + "As caixinhas continuam editáveis e nada é gravado até você salvar. Depois "
   + "de salvo, mexer no modelo NÃO mexe mais nesta pessoa.";
 
-/** O resultado de "e se eu aplicasse este modelo agora?".
+/** ⭐ O PLANO DA APLICACAO — calculado pelo SERVIDOR, nao aqui.
  *
- *  ⚠️ `sel` e `esc` sao o estado FINAL ja pronto. A previa e a aplicacao saem da
- *  MESMA conta, e nao de duas — se fossem duas, a tela poderia prometer "22 a
- *  desmarcar" e o botao fazer outra coisa, e ninguem descobriria antes de salvar. */
-export interface PreviaModelo {
+ *  Isto era `preverModelo`, uma segunda implementacao da regra em TypeScript.
+ *  A do servidor (`services/permissoes.py::aplicar_modelo`) tem 65 testes; esta
+ *  tinha zero, porque o frontend nao tem runner de teste — ou seja, a copia que
+ *  DE FATO rodava era a que ninguem verificava. Enquanto as duas concordassem,
+ *  nada apareceria; no dia em que divergissem, a tela proporia uma caixinha que
+ *  o `PUT` recusa e o administrador levaria um 403 sem entender o que fez.
+ *
+ *  `POST /permissoes/modelos/{id}/aplicar` NAO GRAVA NADA: devolve o estado que
+ *  as caixinhas devem mostrar. Quem grava continua sendo o `PUT` de sempre,
+ *  depois de o administrador conferir. */
+export interface PlanoModelo {
+  /** O estado FINAL das caixinhas e dos radios — e o que a tela marca. */
   sel: Set<string>;
   esc: MapaEscopos;
-  /** Caixinhas que o modelo LIGA nesta pessoa. */
-  marcar: Permissao[];
-  /** Caixinhas que o modelo DESLIGA — aplicar substitui, nao soma (ver abaixo). */
-  desmarcar: Permissao[];
-  /** O modelo pede e quem esta aplicando NAO tem: nao vao. */
-  bloqueadas: Permissao[];
-  /** O modelo nao tem, a pessoa tem, e quem aplica nao pode retirar: ficam. */
-  mantidas: Permissao[];
-  alcance: Array<{ recurso: string; rotulo: string; para: Escopo }>;
-  /** Modulos em que o alcance do modelo NAO pode ser aplicado por quem aplica. */
-  alcanceBloqueado: string[];
+  /** Chaves que ENTRAM e que SAEM. */
+  vaiConceder: string[];
+  vaiRetirar: string[];
+  /** Frases prontas do alcance que muda ("Gestão Interna: Somente os que ele criou"). */
+  alcanceAlterado: string[];
+  /** ⚠️ Do MOLDE, e nao entram: quem aplica nao tem essas chaves. */
+  naoAplicadas: string[];
+  /** ⚠️ Da PESSOA, e ficam intocadas: quem aplica nao pode retira-las. */
+  preservadas: string[];
+  /** Modulos cujo alcance do molde nao pode ser aplicado por quem aplica. */
+  alcanceNaoAplicado: string[];
+  /** Nada muda? O botao fica desligado. */
   mudou: boolean;
 }
 
-function rotuloDoRecurso(catalogo: Catalogo, recurso: string): string {
-  for (const s of catalogo.secoes) {
-    for (const r of s.recursos) if (r.recurso === recurso) return r.recurso_rotulo;
-  }
-  return catalogo.escopos?.recursos?.[recurso]?.recurso_rotulo ?? recurso;
-}
-
-/** APLICAR SUBSTITUI POR PADRAO. Somar existe, mas e escolha NOMEADA.
+/** Pede ao servidor o plano de aplicar `modeloId` em `userId`.
  *
- *  Um molde e o RETRATO INTEIRO de um cargo ("quem so consulta"), e nao um saco
- *  de acrescimos. Se somar fosse o padrao, aplicar "Somente consulta" numa conta
- *  ja aberta nao tiraria nada: o administrador leria o nome, veria a conta
- *  continuar podendo tudo e concluiria que o modelo nao funciona — ou pior, nao
- *  conferiria. Esse erro falha ABERTO (a pessoa fica com mais poder do que o
- *  nome promete), que e exatamente a doenca que este RBAC existe para curar.
- *
- *  `somar` continua servindo a um caso real e diferente — a pessoa que acumula
- *  duas funcoes —, e por isso e uma opcao com rotulo e explicacao (vindos do
- *  catalogo da API), e nao o comportamento silencioso do botao.
- *
- *  O risco oposto — clicar no molde errado numa conta ja configurada — e tratado
- *  na TELA, e nao invertendo a regra: a previa mostra quantas caixinhas caem
- *  ANTES do clique, nada e gravado (o PUT continua sendo o botao Salvar) e ha
- *  «Desfazer» enquanto a aplicacao estiver intacta.
- *
- *  ⚠️ ANTI-ESCALONAMENTO, e ele vale nos DOIS sentidos: caixinha que quem aplica
- *  nao possui nao e concedida (`bloqueadas`) NEM retirada (`mantidas`) — fica
- *  exatamente como estava. Um molde nao pode ser o caminho por fora do limite
- *  que a tela impoe caixinha a caixinha. O servidor recusa o mesmo no PUT; isto
- *  aqui e para o limite ser entendido antes do clique, e nao num 403 depois. */
-export function preverModelo(
-  catalogo: Catalogo,
-  modelo: Modelo,
+ *  ⚠️ MANDA O ESTADO DA TELA (`sel`/`esc`), e nao so o id: o modal e editavel
+ *  antes de aplicar, e sem isto a conta sairia contra o cadastro GRAVADO — a
+ *  tela diria "a marcar 7" quando sao 5, na cara de quem esta decidindo. */
+export async function planoDoModelo(
+  modeloId: number,
+  userId: number,
+  modo: string,
   sel: Set<string>,
   esc: MapaEscopos,
-  posso: (chave: string) => boolean,
-  alcanceTravado: (recurso: string) => boolean,
-  modo: string = MODO_SUBSTITUIR,
-): PreviaModelo {
-  const somando = modo === MODO_SOMAR;
-  const doModelo = new Set(modelo.permissoes);
-  const novaSel = new Set<string>();
-  const marcar: Permissao[] = [];
-  const desmarcar: Permissao[] = [];
-  const bloqueadas: Permissao[] = [];
-  const mantidas: Permissao[] = [];
-
-  for (const p of catalogo.permissoes) {
-    const tem = sel.has(p.chave);
-    const quer = doModelo.has(p.chave);
-    if (!posso(p.chave)) {
-      if (tem) novaSel.add(p.chave);
-      if (quer && !tem) bloqueadas.push(p);
-      /* `mantidas` so faz sentido SUBSTITUINDO: e a caixinha que o molde tiraria
-         e a trava impediu de tirar. Somando, nada seria tirado de qualquer
-         forma, e anunciar "esta continua marcada" seria alarmar sobre uma
-         retirada que ninguem pediu. */
-      else if (!quer && tem && !somando) mantidas.push(p);
-      continue;
-    }
-    if (quer) {
-      novaSel.add(p.chave);
-      if (!tem) marcar.push(p);
-    } else if (tem) {
-      if (somando) novaSel.add(p.chave); else desmarcar.push(p);
-    }
-  }
-
-  const novoEsc: MapaEscopos = { ...esc };
-  const alcance: PreviaModelo["alcance"] = [];
-  const alcanceBloqueado: string[] = [];
-  /* ⚠️ SOMANDO, O ALCANCE NAO E TOCADO — e a mesma decisao do servidor
-     (`aplicar_modelo_escopos`): alcance e um RADIO, e nao existe soma de dois
-     radios. "O mais restritivo vence" ou "o do molde vence" seriam regras que
-     ninguem consegue prever olhando a tela. */
-  for (const recurso of somando ? [] : recursosComEscopo(catalogo)) {
-    const atual = escopoDe(esc, recurso);
-    const alvo = escopoDe(modelo.escopos, recurso);
-    if (atual === alvo) continue;
-    if (alcanceTravado(recurso)) {
-      alcanceBloqueado.push(rotuloDoRecurso(catalogo, recurso));
-      continue;
-    }
-    novoEsc[recurso] = alvo;
-    alcance.push({ recurso, rotulo: rotuloDoRecurso(catalogo, recurso), para: alvo });
-  }
-
+): Promise<PlanoModelo> {
+  const r = await api.post<Record<string, unknown>>(
+    `/permissoes/modelos/${modeloId}/aplicar`,
+    { user_id: userId, modo, estado_atual: [...sel], escopos_atual: esc },
+  );
+  const d = r.data ?? {};
+  const lista = (k: string): string[] =>
+    Array.isArray(d[k]) ? (d[k] as unknown[]).map(String) : [];
+  const vaiConceder = lista("vai_conceder");
+  const vaiRetirar = lista("vai_retirar");
+  const alcanceAlterado = lista("alcance_alterado");
   return {
-    sel: novaSel,
-    esc: novoEsc,
-    marcar,
-    desmarcar,
-    bloqueadas,
-    mantidas,
-    alcance,
-    alcanceBloqueado,
-    mudou: marcar.length > 0 || desmarcar.length > 0 || alcance.length > 0,
+    sel: new Set(lista("permissoes")),
+    esc: (d.escopos ?? {}) as MapaEscopos,
+    vaiConceder,
+    vaiRetirar,
+    alcanceAlterado,
+    naoAplicadas: lista("nao_aplicadas"),
+    preservadas: lista("preservadas"),
+    alcanceNaoAplicado: lista("alcance_nao_aplicado"),
+    mudou: vaiConceder.length > 0 || vaiRetirar.length > 0
+           || alcanceAlterado.length > 0,
   };
 }
 

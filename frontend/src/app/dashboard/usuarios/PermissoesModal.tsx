@@ -284,12 +284,11 @@ export default function PermissoesModal({
             travado e aplicar um modelo não moveria caixinha nenhuma. */}
         {minhas && (
           <AplicarModelo
+            alvoId={alvo.id}
             catalogo={catalogo}
             modelos={modelos}
             sel={sel}
             esc={esc}
-            posso={posso}
-            alcanceTravado={alcanceTravado}
             onAplicar={(novaSel, novoEsc, de) => {
               setSel(novaSel); setEsc(novoEsc); setOrigem(de);
             }}

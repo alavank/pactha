@@ -147,6 +147,28 @@ class AplicarRequest(BaseModel):
     # em silencio; substituir por engano TIRA, e isso e visivel antes de salvar.
     # O campo omitido nao pode ser o campo mais permissivo.
     modo: Optional[str] = None
+    # ⭐ O ESTADO QUE ESTA NA TELA, quando houver — e por que aceitar isto do
+    # cliente e correto:
+    #
+    #   1. O MODAL E EDITAVEL ANTES DE APLICAR. O administrador abre as
+    #      permissoes de alguem, mexe em duas caixinhas e SO ENTAO escolhe um
+    #      molde. Calculando contra o banco, a conta ignoraria essas duas
+    #      caixinhas e a tela mostraria "a marcar 7" quando sao 5 — numero
+    #      errado na cara de quem esta decidindo.
+    #
+    #   2. NAO ABRE BRECHA, e a razao e estrutural: esta rota NAO GRAVA. Quem
+    #      grava e o `PUT /api/permissoes/usuario/{id}`, e la o anti-escalonamento
+    #      compara contra o BANCO, nao contra o que o cliente disse. Um cliente
+    #      que mentisse aqui — omitindo `cofre.revelar` do proprio estado para
+    #      "conseguir" retira-la — receberia um plano que o PUT recusa com 403.
+    #      Mentir para si mesmo nao e um vetor.
+    #
+    # Ausente (None) = "use o cadastro gravado", que e o certo para cliente de
+    # API, que nao tem tela nenhuma. Lista vazia e um estado legitimo ("nao tem
+    # nada marcado") e NAO pode virar "nao opinei" — por isso `None` e `[]`
+    # significam coisas diferentes aqui, como em `ConcederRequest.escopos`.
+    estado_atual: Optional[list[str]] = None
+    escopos_atual: Optional[dict[str, str]] = None
 
 
 # ---------------------------------------------------------------------------
@@ -651,8 +673,18 @@ async def aplicar(
     minhas = authz.permissoes_de(current)
     meus_modulos = _meus_modulos(current)
 
-    atuais = {c for c in await _concedidas(db, alvo.id) if permissoes.existe(c)}
-    escopos_atuais = await _escopos_atuais(db, alvo.id)
+    # O estado da TELA vence o do banco quando ele vem — ver `AplicarRequest`.
+    # `is None` e nao falsy: lista vazia e "nao tem nada marcado", que e
+    # diferente de "nao me mandaram nada".
+    if req.estado_atual is None:
+        atuais = {c for c in await _concedidas(db, alvo.id)
+                  if permissoes.existe(c)}
+    else:
+        atuais = _validar(req.estado_atual)
+    if req.escopos_atual is None:
+        escopos_atuais = await _escopos_atuais(db, alvo.id)
+    else:
+        escopos_atuais = _validar_escopos(req.escopos_atual)
 
     conta = permissoes.aplicar_modelo(
         do_modelo=modelo["permissoes"], do_alvo=atuais, pode_conceder=minhas,
