@@ -368,9 +368,34 @@ def _rodar_migrations(sync_url: str):
                 _log(f"  Migration {fname} falhou: {msg}")
 
     _log(f"Startup migrations: {rodadas}/{len(MIGRATION_FILES)} executadas")
+    _log_estado_da_trava()
 
     # Bootstrap do control token (Console Alavank), apos as migrations (kind ja existe).
     _bootstrap_control_token(sync_url)
+
+
+def _log_estado_da_trava() -> None:
+    """⭐ O BOOT DIZ EM QUE MODO A TRAVA ESTA. Uma linha, e ela paga a si mesma.
+
+    `AUTHZ_MODO` e `AUTHZ_REGISTRO` mudam o que o sistema RECUSA, e nao deixavam
+    rastro nenhum: para saber se a trava estava ligada era preciso abrir o painel
+    do Coolify e ler a variavel — ou seja, a resposta vinha de onde alguem
+    DECLAROU o estado, e nao de onde ele vale. As duas coisas divergem no dia em
+    que a env e criada e o container nao reinicia.
+
+    E as duas sao FAIL-OPEN por escolha (`AUTHZ_MODO=bloqueiop`, com o dedo
+    escorregando no teclado, segue em `aviso`): o valor invalido nao liga a trava
+    e tambem nao quebra o boot. Sem esta linha, esse erro de digitacao e
+    invisivel — o sistema parece protegido e nao esta, que e a pior das duas
+    formas de estar errado.
+
+    Nao levanta: log de diagnostico nao pode ser o que derruba a API."""
+    try:
+        from services import authz, registro_rotas
+        _log(f"Trava de permissao: AUTHZ_MODO={authz.modo()} "
+             f"| AUTHZ_REGISTRO={registro_rotas.modo()}")
+    except Exception as e:  # pragma: no cover - diagnostico nunca derruba o boot
+        _log(f"Trava de permissao: nao foi possivel ler o modo ({str(e)[:80]})")
 
 
 def _bootstrap_control_token(sync_url: str):
