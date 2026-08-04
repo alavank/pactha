@@ -805,7 +805,20 @@ export function AbaDocumentosView({
 }: AbaProps & { d: AbaDocumentos; esfera?: "cauc" | "cagec" }) {
   const c = d.cauc;
   const pct = c.com_dados ? c.regulares / c.com_dados : 0;
-  const primeiro = c.por_municipio[0];
+
+  /* ⚠️ CARTEIRA NÃO TEM "PRIMEIRO". Este bloco lia `por_municipio[0]` para o
+     detalhe item-a-item do CAUC e para o CAGEC inteiro. Num município único
+     está certo — há um só. No CONSOLIDADO de uma assessoria, `[0]` é uma cidade
+     ARBITRÁRIA, e pior: `bi_abas.py` ordena colocando os irregulares primeiro,
+     então a tela mostrava as certidões da PIOR cidade da carteira, sem dizer
+     qual, sob o título da carteira. O gestor lia aquilo como o retrato de todos
+     os clientes dele.
+
+     Com N municípios a tela passa a mostrar o que ela de fato sabe: a lista por
+     município. O detalhe de exigência continua existindo — no escopo de um
+     município, que é onde ele significa alguma coisa. */
+  const carteira = (c.total_municipios ?? 1) > 1;
+  const primeiro = carteira ? undefined : c.por_municipio[0];
 
   // Agrupa por bloco, na ordem em que o CAUC numera (1.x, 2.x, 3.x) — a mesma
   // do módulo. `itens` traz TODAS as exigências; se a API for antiga e não
@@ -828,7 +841,8 @@ export function AbaDocumentosView({
   // Fiscal e Trabalhista, Responsabilidade e Transparência Fiscal, Adimplência
   // com o Estado. O scraper já preenche `grupo`; era a tela que jogava as 27
   // linhas num bloco só.
-  const cagec = d.cagec.por_municipio[0];
+  // Mesma regra do CAUC acima: no consolidado não existe "o" CAGEC.
+  const cagec = carteira ? undefined : d.cagec.por_municipio[0];
   const blocosCagec = React.useMemo(() => {
     const porGrupo = new Map<string, CaucItemDetalhe[]>();
     for (const i of cagec?.itens ?? []) {
@@ -870,16 +884,35 @@ export function AbaDocumentosView({
         {/* Com o CRC indisponivel nao existe denominador: as pendencias do
             CAGEC sao desconhecidas, e somar as 2 linhas do fallback anunciaria
             "de 27 exigencias" quando o cadastro estadual tem ~28 sozinho. */}
-        <Metric icon={FileCheck2} tom={(primeiro?.itens_pendentes.length || 0) + pendCagec ? "crit" : "ok"}
-          label={crcAusente ? "Pendências no CAUC" : "Pendências (as duas)"}
-          valor={formatInt((primeiro?.itens_pendentes.length || 0)
-                           + (crcAusente ? 0 : pendCagec))}
-          sub={crcAusente
-            ? `de ${primeiro?.total_itens ?? 0} · CAGEC não conferido`
-            : `de ${(primeiro?.total_itens ?? 0) + (cagec?.itens?.length ?? 0)} exigências`}
+        {/* Na carteira o que existe é a SOMA das pendências dos municípios;
+            "de N exigências" não tem sentido, porque cada município tem o seu
+            conjunto. Num município só, segue o detalhe de sempre. */}
+        <Metric icon={FileCheck2} tom={carteira
+            ? (c.pendencias_total ? "crit" : "ok")
+            : ((primeiro?.itens_pendentes.length || 0) + pendCagec ? "crit" : "ok")}
+          label={carteira ? "Pendências na carteira"
+            : crcAusente ? "Pendências no CAUC" : "Pendências (as duas)"}
+          valor={formatInt(carteira
+            ? c.pendencias_total
+            : (primeiro?.itens_pendentes.length || 0) + (crcAusente ? 0 : pendCagec))}
+          sub={carteira
+            ? `${formatInt(c.com_dados - c.regulares)} município(s) com pendência`
+            : crcAusente
+              ? `de ${primeiro?.total_itens ?? 0} · CAGEC não conferido`
+              : `de ${(primeiro?.total_itens ?? 0) + (cagec?.itens?.length ?? 0)} exigências`}
           grande={tv} />
-        <Metric icon={CalendarClock} label="Última consulta"
-          valor={primeiro?.data_pesquisa ? formatDate(primeiro.data_pesquisa) : "—"} grande={tv} />
+        <Metric icon={CalendarClock}
+          label={carteira ? "Municípios conferidos" : "Última consulta"}
+          valor={carteira
+            ? `${formatInt(c.com_dados)} de ${formatInt(c.total_municipios)}`
+            : primeiro?.data_pesquisa ? formatDate(primeiro.data_pesquisa) : "—"}
+          /* ⚠️ O corte do detalhe DECLARADO. `bi_abas.py` só examina os
+             primeiros municípios da carteira; sem esta linha, "18 de 41" seria
+             lido como "23 estão irregulares" quando 21 nunca foram olhados. */
+          sub={carteira && c.detalhe_limitado
+            ? `conferência limitada aos ${formatInt(c.examinados ?? 0)} primeiros`
+            : undefined}
+          grande={tv} />
       </div>
 
       {/* DUAS ESFERAS, CADA UMA NA SUA SEÇÃO ROTULADA.
@@ -907,13 +940,45 @@ export function AbaDocumentosView({
               /* Conta o que esta NA TELA. `total_itens` exclui os `na`, entao
                  o cabecalho dizia "25 exigencias" sobre blocos que somam 28 —
                  e nenhum dos dois numeros batia com o extrato. */
-              contagem={blocos.length
+              contagem={carteira
+                ? `${formatInt(c.regulares)} em dia de ${formatInt(c.com_dados)} conferidos`
+                : blocos.length
                 ? `${blocos.reduce((n, [, it]) => n + it.length, 0)} exigências · ${
                     (primeiro?.itens ?? []).filter((x) => x.tipo === "na").length
                   } desativadas na origem`
                 : undefined}
             />
-            {blocos.length ? (
+            {carteira ? (
+              /* ⭐ A CARTEIRA, UMA LINHA POR MUNICÍPIO. Aqui estava o detalhe
+                 item-a-item de UMA cidade, sem rótulo — e como a ordenação do
+                 servidor põe os irregulares primeiro, era a PIOR cidade posando
+                 de retrato da carteira. */
+              <Painel>
+                {c.por_municipio.length ? (
+                  <ul className="flex flex-col gap-1">
+                    {c.por_municipio.map((m) => (
+                      <li
+                        key={m.municipio_id}
+                        className="flex items-baseline gap-2 rounded-lg px-2 py-1.5"
+                        style={{ background: "var(--bi-surface-2)" }}
+                      >
+                        <span className="truncate text-[12px]">
+                          {m.nome || `Município ${m.municipio_id}`}
+                        </span>
+                        <span className="ml-auto shrink-0 text-[10px]" style={{ color: "var(--bi-faint)" }}>
+                          {m.data_pesquisa ? formatDate(m.data_pesquisa) : "sem data"}
+                        </span>
+                        <Chip tom={m.regular ? "ok" : "crit"}>
+                          {m.regular ? "Em dia" : `${formatInt(m.pendencias)} pend.`}
+                        </Chip>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <Vazio>Sem dados de CAUC coletados na carteira.</Vazio>
+                )}
+              </Painel>
+            ) : blocos.length ? (
               <div className={soUmaEsfera && tv ? "bi-colunas-2" : ""}>
                 {blocos.map(([grupo, itens]) => (
                   <Painel key={grupo} className="mb-3 break-inside-avoid">

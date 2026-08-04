@@ -449,6 +449,16 @@ async def bi_parlamentares_detalhe(
 # Aba: Documentacao (CAUC federal + CAGEC estadual)
 # --------------------------------------------------------------------------
 
+# Ate quantos municipios recebem o detalhe item-a-item das exigencias.
+#
+# 60 e nao 20: a maior carteira viva hoje (Freitas) tem 41 municipios, e o corte
+# antigo deixava 21 deles de fora — em silencio, e com as somas parecendo falar
+# do total. O teto continua existindo porque cada municipio e uma consulta ao
+# banco, e uma carteira de centenas viraria centenas de idas numa requisicao so;
+# o que ele nao pode e ser invisivel (ver `detalhe_limitado` na resposta).
+LIMITE_DETALHE_CAUC = 60
+
+
 async def bi_documentos(db: AsyncSession, ids: list[int]) -> dict:
     """Situacao das certidoes/cadastros. CAUC vem do banco (coletado); CAGEC
     ainda NAO e coletado por nenhum scraper — devolvemos `disponivel: false` em
@@ -461,8 +471,20 @@ async def bi_documentos(db: AsyncSession, ids: list[int]) -> dict:
     # legiveis), que e exatamente o que a aba precisa mostrar na TV.
     from routers.cauc import fetch_cauc_situacao
 
+    # ⚠️ O CORTE EXISTE, MAS AGORA ELE SE DECLARA.
+    #
+    # Era `ids[:20]` cru, e a resposta misturava dois conjuntos: `total_municipios`
+    # contava TODOS os ids, enquanto `com_dados`, `regulares` e `pendencias_total`
+    # olhavam so os 20 primeiros. Numa assessoria de 41 municipios a tela dizia
+    # "18 de 41 regulares" sem nunca ter olhado 21 deles — numerador e denominador
+    # falando de coisas diferentes, e o gestor lendo aquilo como cobertura.
+    #
+    # O limite continua porque cada municipio e uma consulta (`fetch_cauc_situacao`),
+    # e uma carteira grande viraria 200 idas ao banco numa requisicao so. O que
+    # muda e que ele sai na resposta: quem soma passa a saber sobre quantos somou.
+    examinados = ids[:LIMITE_DETALHE_CAUC]
     por_municipio = []
-    for mid in ids[:20]:  # detalhe item-a-item so p/ os primeiros; o resto vai no rollup
+    for mid in examinados:
         s = await fetch_cauc_situacao(db, mid)
         if not s.get("tem_dados"):
             continue
@@ -491,6 +513,10 @@ async def bi_documentos(db: AsyncSession, ids: list[int]) -> dict:
         "cauc": {
             "por_municipio": por_municipio,
             "total_municipios": len(ids),
+            # ⭐ Sobre QUANTOS os numeros abaixo falam. Sem este campo a tela nao
+            # tem como ser honesta: ela so ve o total e as somas.
+            "examinados": len(examinados),
+            "detalhe_limitado": len(ids) > len(examinados),
             "com_dados": len(por_municipio),
             "regulares": sum(1 for m in por_municipio if m["regular"]),
             "pendencias_total": sum(m["pendencias"] for m in por_municipio),

@@ -794,12 +794,21 @@ export default function UsuariosPage() {
         {/* Só depois de a conta estar pronta para ser criada.
             Antes disso o formulário está vazio por definição, e um alerta
             permanente no rodapé vira parte do desenho: ninguém mais o lê. */}
-        {novoEmail.trim() && novoNome.trim() && (novoTelas.size === 0 || novoMunis.size === 0) && (
+        {/* ⚠️ `municipioUnico` ENTRA NA CONTA, e a ausência disso era um aviso
+            que mentia. Quando há um município só, o seletor não é desenhado e
+            `novoMunis` fica vazio por construção — mas o vínculo acontece
+            sozinho na hora de criar (ver `municipio_ids` no envio). O aviso
+            "Sem município marcado: a pessoa não enxerga dado nenhum" aparecia
+            então em TODO cadastro de um tenant de uma cidade, sobre um problema
+            que não existia. Aviso que sempre aparece deixa de ser lido — e
+            leva junto o que é de verdade, na linha de cima. */}
+        {novoEmail.trim() && novoNome.trim()
+          && (novoTelas.size === 0 || (!municipioUnico && novoMunis.size === 0)) && (
           <Aviso
             tom="atencao"
             icon={AlertTriangle}
             titulo={
-              novoTelas.size === 0 && novoMunis.size === 0
+              novoTelas.size === 0 && !municipioUnico && novoMunis.size === 0
                 ? "Esta conta vai nascer sem acesso nenhum."
                 : novoTelas.size === 0
                   ? "Sem tela marcada: a pessoa entra e o menu fica vazio."

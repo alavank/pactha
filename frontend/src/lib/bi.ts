@@ -374,6 +374,11 @@ export interface AbaDocumentos {
       atualizado_em: string | null;
     }>;
     total_municipios: number;
+    /** Sobre QUANTOS municípios os números abaixo falam. O servidor examina só
+     *  os primeiros da carteira (cada um é uma consulta), e sem estes dois
+     *  campos a tela somava 18 de 41 sem nunca ter olhado 21 deles. */
+    examinados?: number;
+    detalhe_limitado?: boolean;
     com_dados: number;
     regulares: number;
     pendencias_total: number;
