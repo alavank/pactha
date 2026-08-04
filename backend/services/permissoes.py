@@ -446,6 +446,82 @@ PERMISSOES_QUIOSQUE: frozenset = frozenset({"bi.ver"})
 
 
 # ---------------------------------------------------------------------------
+# ⭐ ALCANCE (escopo de linha) — "todos os registros" x "so os que ele criou"
+# ---------------------------------------------------------------------------
+# A regra do dono, palavra por palavra:
+#
+#     "Escopo (Editar somente os dele): e uma regra de nivel de linha. O sistema
+#      valida se o ID do usuario logado e o mesmo criador do registro. Se for,
+#      ele deixa editar; se nao for, o botao some ou fica bloqueado. (...) isso
+#      aconteceria POR MODULO — algum usuario pode ter acesso de editar em um
+#      modulo mas em outro ele so pode ver."
+#
+# E a decisao dele sobre o alcance, ja tomada: **o escopo vale SO PARA
+# ESCRITA** (editar e excluir). A pessoa continua VENDO a lista inteira do
+# municipio. Filtrar tambem a LEITURA foi recusado, e o motivo e operacional:
+# dois servidores do mesmo setor deixariam de ver o trabalho um do outro, e o
+# registro de quem saiu da prefeitura sumiria da tela.
+#
+# ⚠️ POR QUE ISTO NAO E UMA PERMISSAO NOVA DO CATALOGO. `gestao.editar` responde
+# "esta pessoa edita anotacao?"; o alcance responde "QUAIS anotacoes". Sao duas
+# perguntas, e juntar as duas numa caixinha (`gestao.editar_proprios`) dobraria o
+# catalogo, faria a tela ter duas caixinhas que se contradizem quando as duas
+# forem marcadas, e obrigaria o backfill a adivinhar qual delas dar a quem hoje
+# edita. O alcance e um MODIFICADOR das caixinhas de escrita de um recurso.
+ESCOPO_TODOS = "todos"          # o default — NAO restringe ninguem
+ESCOPO_PROPRIOS = "proprios"    # so as linhas em que ele e o criador
+
+ESCOPOS: tuple = (ESCOPO_TODOS, ESCOPO_PROPRIOS)
+
+# Texto da tela. Fica aqui pelo mesmo motivo do resto do catalogo: o frontend
+# nao copia lista nenhuma, busca por `GET /api/permissoes/catalogo`.
+ESCOPO_OPCOES: tuple = (
+    {"valor": ESCOPO_TODOS, "rotulo": "Todos os registros",
+     "descricao": "Pode alterar e apagar qualquer registro do municipio, "
+                  "inclusive os que outras pessoas criaram."},
+    {"valor": ESCOPO_PROPRIOS, "rotulo": "Somente os que ele criou",
+     "descricao": "So altera e apaga o que ele mesmo cadastrou. Continua VENDO "
+                  "a lista inteira do municipio — o alcance vale so para "
+                  "escrita."},
+)
+
+# Os VERBOS que o alcance modifica. `ver` e `exportar` ficam de fora por decisao
+# do dono (ver acima); `criar` fica de fora porque nao ha linha anterior de quem
+# julgar o dono — o registro nasce dele.
+VERBOS_ESCOPAVEIS: tuple = ("editar", "excluir")
+
+
+@dataclass(frozen=True)
+class RecursoEscopavel:
+    """Um modulo que aceita alcance, e ONDE mora o criador da linha.
+
+    ⚠️ `tabela` e `coluna_dono` viram literal de SQL em
+    `services/authz.py::exigir_dono_da_linha`. Ficam aqui, e nao espalhados pelos
+    routers, porque uma copia divergente do nome da tabela e uma checagem que
+    deixa de checar sem ninguem notar — e porque este mapa e o que a migration
+    semeia e o teste confere."""
+
+    recurso: str
+    tabela: str
+    coluna_dono: str
+
+
+# ⚠️ RECURSO SO ENTRA AQUI SE A TABELA DELE TIVER A COLUNA DE CRIADOR. Sem ela,
+# TODA linha seria "sem criador conhecido" e o alcance viraria uma opcao na tela
+# que nao faz nada — falha silenciosa de permissao, que e o defeito que este
+# subsistema inteiro existe para nao ter. Os tres abaixo sao os unicos modulos
+# com CRUD de verdade E com `criado_por` gravado no INSERT (routers/rm.py,
+# routers/documentos.py, routers/gestao.py).
+ESCOPO_RECURSOS: dict = {
+    r.recurso: r for r in (
+        RecursoEscopavel("gestao", "gestao_anotacoes", "criado_por"),
+        RecursoEscopavel("rm", "rm_relatorios", "criado_por"),
+        RecursoEscopavel("documentos", "documentos_gerados", "criado_por"),
+    )
+}
+
+
+# ---------------------------------------------------------------------------
 # Normalizacao
 # ---------------------------------------------------------------------------
 def normalizar(chave) -> str:
@@ -460,6 +536,64 @@ def existe(chave) -> bool:
 
 def descrever(chave) -> Optional[Permissao]:
     return CATALOGO.get(normalizar(chave))
+
+
+def normalizar_escopo(valor) -> str:
+    """O alcance como o sistema o compara. ⚠️ VALOR DESCONHECIDO VIRA `todos`.
+
+    Fail-OPEN, e e a mesma escolha (e o mesmo motivo) de
+    `services/authz.py::modo`: "fechar por engano" aqui e tirar de alguem a
+    edicao que ele sempre teve, por causa de um valor torto no banco ou de um
+    campo que chegou vazio do JSON. Restringir e ato DELIBERADO do administrador
+    — nunca efeito colateral de dado sujo. A gravacao e outra historia: la o
+    valor invalido e RECUSADO com 400 (ver routers/permissoes.py::_validar_escopos)
+    e pela restricao CHECK da tabela, entao lixo nao entra por esta porta."""
+    bruto = str(valor or "").strip().lower()
+    return bruto if bruto in ESCOPOS else ESCOPO_TODOS
+
+
+def escopavel(recurso) -> bool:
+    """Este modulo aceita alcance por linha?"""
+    return normalizar(recurso) in ESCOPO_RECURSOS
+
+
+def descrever_recurso_escopavel(recurso) -> Optional[RecursoEscopavel]:
+    return ESCOPO_RECURSOS.get(normalizar(recurso))
+
+
+def permissoes_escopadas(recurso) -> tuple:
+    """As chaves de escrita que o alcance daquele modulo modifica.
+
+    E o que a TELA precisa para saber quando desenhar a escolha de alcance: a
+    regra do dono e que ela "so aparece se ele tiver editar OU excluir naquele
+    modulo — sem isso a escolha nao significa nada e vira ruido"."""
+    chave_recurso = normalizar(recurso)
+    if chave_recurso not in ESCOPO_RECURSOS:
+        return ()
+    return tuple(
+        f"{chave_recurso}.{verbo}" for verbo in VERBOS_ESCOPAVEIS
+        if f"{chave_recurso}.{verbo}" in CATALOGO
+    )
+
+
+def escopos_para_api() -> dict:
+    """O vocabulario do alcance, para o frontend nao reescrever nenhuma parte
+    dele. Vai dentro de `catalogo_para_api`."""
+    return {
+        "default": ESCOPO_TODOS,
+        "opcoes": [dict(o) for o in ESCOPO_OPCOES],
+        "verbos": list(VERBOS_ESCOPAVEIS),
+        "recursos": {
+            chave: {
+                "recurso": chave,
+                "recurso_rotulo": next(
+                    (p.recurso_rotulo for p in CATALOGO.values()
+                     if p.recurso == chave), chave),
+                "permissoes": list(permissoes_escopadas(chave)),
+            }
+            for chave in ESCOPO_RECURSOS
+        },
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -554,6 +688,14 @@ def por_secao(chaves: Optional[Iterable[str]] = None) -> list[dict]:
             if grupo is None:
                 grupo = {"recurso": permissao.recurso,
                          "recurso_rotulo": permissao.recurso_rotulo,
+                         # O alcance por linha e um MODIFICADOR deste recurso, e
+                         # nao uma caixinha: por isso viaja no grupo e nao na
+                         # lista de permissoes. `escopo_permissoes` diz quais
+                         # caixinhas ele modifica — a tela so desenha a escolha
+                         # se alguma delas estiver marcada.
+                         "escopavel": escopavel(permissao.recurso),
+                         "escopo_permissoes": list(
+                             permissoes_escopadas(permissao.recurso)),
                          "permissoes": []}
                 indice[permissao.recurso] = grupo
                 recursos.append(grupo)
@@ -570,6 +712,7 @@ def catalogo_para_api() -> dict:
         "secoes": por_secao(),
         "permissoes": [CATALOGO[c].as_dict() for c in sorted(CATALOGO)],
         "total": len(CATALOGO),
+        "escopos": escopos_para_api(),
     }
 
 

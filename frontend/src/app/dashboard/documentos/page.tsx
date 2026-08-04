@@ -9,6 +9,8 @@ import {
   BOTAO_ACAO, BOTAO_CTA, Bloco, BlocoHead, ESTILO_CTA, ESTILO_SEC,
   ItemLinha, Lista, Selo, Vazio, situacaoTom,
 } from "@/components/ui/superficies";
+import AvisoEscopo from "@/components/AvisoEscopo";
+import { contarSemEscrita, podeEditarLinha, podeExcluirLinha } from "@/lib/escopo";
 
 interface Doc {
   id: number;
@@ -17,6 +19,11 @@ interface Doc {
   titulo: string;
   status: string;
   updated_at: string;
+  /** O veredito do servidor sobre ESTA linha: quem tem alcance "somente os que
+   *  ele criou" recebe `false` nos documentos dos outros. Ver `lib/escopo.ts` —
+   *  ausente significa "a API não respondeu isso", e aí nada muda. */
+  pode_editar?: boolean | null;
+  pode_excluir?: boolean | null;
 }
 interface TipoDoc { tipo: string; titulo: string; descricao: string; }
 
@@ -118,6 +125,12 @@ export default function DocumentosPage() {
         ) : docs.length === 0 ? (
           <Vazio>Nenhum documento criado ainda. Use um dos botões acima para começar.</Vazio>
         ) : (
+          <>
+          <AvisoEscopo
+            bloqueadas={contarSemEscrita(docs)}
+            total={docs.length}
+            plural="os documentos"
+          />
           <Lista>
             {docs.map((d) => (
               <ItemLinha
@@ -134,9 +147,17 @@ export default function DocumentosPage() {
                 }
                 acao={
                   <>
-                    <button type="button" onClick={() => editar(d.id)} className={BOTAO_ACAO} style={ESTILO_SEC} title="Editar">
-                      <Pencil className="size-3.5" /> Editar
-                    </button>
+                    {/* Editar e Excluir SOMEM na linha que não é da pessoa —
+                        exportar não, porque exportar é leitura e a leitura
+                        continua valendo para a lista inteira do município.
+                        Os dois são consultados SEPARADAMENTE: quem edita e não
+                        exclui recebe `pode_editar: true` com
+                        `pode_excluir: false` na mesma linha. */}
+                    {podeEditarLinha(d) && (
+                      <button type="button" onClick={() => editar(d.id)} className={BOTAO_ACAO} style={ESTILO_SEC} title="Editar">
+                        <Pencil className="size-3.5" /> Editar
+                      </button>
+                    )}
                     <button type="button" onClick={() => exportar(d.id, "pdf", d.titulo)}
                             disabled={baixando === `${d.id}-pdf`} className={BOTAO_ACAO} style={ESTILO_SEC} title="Exportar PDF">
                       {baixando === `${d.id}-pdf` ? <Loader2 className="size-3.5 animate-spin" /> : <FileText className="size-3.5" />} PDF
@@ -145,15 +166,18 @@ export default function DocumentosPage() {
                             disabled={baixando === `${d.id}-docx`} className={BOTAO_ACAO} style={ESTILO_SEC} title="Exportar DOCX">
                       {baixando === `${d.id}-docx` ? <Loader2 className="size-3.5 animate-spin" /> : <FileType className="size-3.5" />} DOCX
                     </button>
-                    <button type="button" onClick={() => excluir(d.id)} title="Excluir"
-                            className="rounded-lg p-1.5 hover:brightness-90" style={{ color: "var(--bi-crit-ink)" }}>
-                      <Trash2 className="size-3.5" />
-                    </button>
+                    {podeExcluirLinha(d) && (
+                      <button type="button" onClick={() => excluir(d.id)} title="Excluir"
+                              className="rounded-lg p-1.5 hover:brightness-90" style={{ color: "var(--bi-crit-ink)" }}>
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    )}
                   </>
                 }
               />
             ))}
           </Lista>
+          </>
         )}
       </Bloco>
     </div>

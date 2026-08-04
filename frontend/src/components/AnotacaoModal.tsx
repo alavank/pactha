@@ -7,6 +7,10 @@ import { formatDataCurta as fmtData } from "@/lib/bi-format";
 import {
   Aviso, Bloco, BlocoHead, Modal, ModalCorpo, ModalHead, Selo, Vazio, situacaoTom,
 } from "@/components/ui/superficies";
+import AvisoEscopo from "@/components/AvisoEscopo";
+import {
+  contarSemEscrita, linhaSemEscrita, podeEditarLinha, podeExcluirLinha,
+} from "@/lib/escopo";
 import { Input } from "@/components/ui/input";
 
 interface Anexo {
@@ -30,6 +34,11 @@ interface Anotacao {
   anexos: Anexo[];
   created_at?: string;
   updated_at?: string;
+  /** O veredito do servidor sobre ESTA anotação: `false` quando o alcance da
+   *  pessoa é "somente os que ele criou" e a anotação é de outra. Ver
+   *  `lib/escopo.ts` — ausente é "a API não respondeu isso", e aí nada muda. */
+  pode_editar?: boolean | null;
+  pode_excluir?: boolean | null;
 }
 
 interface Props {
@@ -222,6 +231,11 @@ export default function AnotacaoModal({
           <Vazio>Nenhuma anotação ainda.</Vazio>
         ) : (
           <div className="flex flex-col gap-1.5">
+            <AvisoEscopo
+              bloqueadas={contarSemEscrita(items)}
+              total={items.length}
+              plural="as anotações"
+            />
             {items.map((a) => {
               // Antes o selo só aparecia com `status_interno` preenchido, então
               // registro antigo que só tem texto livre ficava sem status nenhum.
@@ -273,16 +287,27 @@ export default function AnotacaoModal({
                         Atualizado {fmtData(a.updated_at)}
                       </div>
                     </div>
-                    <div className="flex shrink-0 flex-col gap-1">
-                      <button type="button" onClick={() => startEdit(a)} title="Editar"
-                              className="rounded-lg p-1 transition-colors hover:bg-[var(--bi-line)]" style={{ color: "var(--bi-muted)" }}>
-                        <Edit2 className="size-4" />
-                      </button>
-                      <button type="button" onClick={() => remover(a.id)} title="Remover"
-                              className="rounded-lg p-1 transition-colors hover:bg-[var(--bi-line)]" style={{ color: "var(--bi-muted)" }}>
-                        <Trash2 className="size-4" />
-                      </button>
-                    </div>
+                    {/* A COLUNA INTEIRA some quando não sobra ação nenhuma — e
+                        não só os botões dentro dela: uma coluna vazia com `gap`
+                        continua ocupando lugar e desalinharia este cartão em
+                        relação aos de cima e de baixo. Os anexos continuam
+                        baixáveis: baixar é leitura. */}
+                    {!linhaSemEscrita(a) && (
+                      <div className="flex shrink-0 flex-col gap-1">
+                        {podeEditarLinha(a) && (
+                          <button type="button" onClick={() => startEdit(a)} title="Editar"
+                                  className="rounded-lg p-1 transition-colors hover:bg-[var(--bi-line)]" style={{ color: "var(--bi-muted)" }}>
+                            <Edit2 className="size-4" />
+                          </button>
+                        )}
+                        {podeExcluirLinha(a) && (
+                          <button type="button" onClick={() => remover(a.id)} title="Remover"
+                                  className="rounded-lg p-1 transition-colors hover:bg-[var(--bi-line)]" style={{ color: "var(--bi-muted)" }}>
+                            <Trash2 className="size-4" />
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </Bloco>
               );

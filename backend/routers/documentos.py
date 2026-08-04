@@ -33,6 +33,14 @@ E há uma TERCEIRA pergunta, declarada em cada rota com `exige(...)`:
                                         apagar o documento de quem quer que
                                         fosse; a declaração é o que passa a
                                         separar consultar de escrever.
+
+ALCANCE POR LINHA (Incremento 6 — `authz.exigir_dono_da_linha`)
+---------------------------------------------------------------
+Um usuário pode ser configurado, POR MÓDULO, como "somente os que ele criou":
+aí ele só ALTERA e APAGA o documento que ele mesmo criou. Continua VENDO e
+EXPORTANDO os do município inteiro — decisão do dono. O gate mora em
+`_exigir_escrita` (PUT e DELETE); a lista devolve `pode_editar`/`pode_excluir`
+por item, para o botão sumir.
 """
 from __future__ import annotations
 import io
@@ -89,6 +97,20 @@ async def _exigir_acesso(db: AsyncSession, doc_id: int, user) -> None:
     await authz.ensure_dono(db, "documentos_gerados", "id", doc_id, user)
 
 
+async def _exigir_escrita(db: AsyncSession, doc_id: int, user) -> None:
+    """O acesso ao documento MAIS o alcance por linha (Incremento 6).
+
+    Só nos DOIS endpoints de escrita (editar e apagar). Ler e EXPORTAR seguem
+    com `_exigir_acesso` puro: a decisão do dono é que o alcance vale só para
+    escrita — quem está em "somente os que ele criou" continua vendo e baixando
+    o Word de todo o município.
+
+    Custo para quem NÃO foi restringido: zero consulta a mais — `escopo_de`
+    volta `todos` antes de tocar no banco."""
+    await _exigir_acesso(db, doc_id, user)
+    await authz.exigir_dono_da_linha(db, "documentos", doc_id, user)
+
+
 class DocCreate(BaseModel):
     municipio_id: Optional[int] = None
     tipo: str = "plano_sustentabilidade"
@@ -103,13 +125,20 @@ class DocUpdate(BaseModel):
     status: Optional[str] = None
 
 
-def _row_to_dict(r) -> dict:
+def _row_to_dict(r, usuario) -> dict:
+    """⭐ `usuario` é OBRIGATÓRIO desde o Incremento 6 — ver o mesmo helper em
+    routers/gestao.py: a resposta passa a dizer, POR ITEM, se quem pediu pode
+    alterar aquela linha. Botão escondido NÃO é permissão; quem barra continua
+    sendo `authz.exigir_dono_da_linha` no endpoint de escrita."""
+    criado_por = r[6]
     return {
         "id": r[0], "municipio_id": r[1], "tipo": r[2], "titulo": r[3],
         "dados": r[4] if isinstance(r[4], dict) else (json.loads(r[4]) if r[4] else {}),
-        "status": r[5], "criado_por": r[6],
+        "status": r[5], "criado_por": criado_por,
         "created_at": r[7].isoformat() if r[7] else None,
         "updated_at": r[8].isoformat() if r[8] else None,
+        "pode_editar": authz.pode_editar_item(usuario, "documentos", "editar", criado_por),
+        "pode_excluir": authz.pode_editar_item(usuario, "documentos", "excluir", criado_por),
     }
 
 
@@ -153,7 +182,7 @@ async def listar(
         sql += " WHERE " + " AND ".join(where)
     sql += " ORDER BY updated_at DESC"
     rows = (await db.execute(text(sql), params)).fetchall()
-    return {"items": [_row_to_dict(r) for r in rows], "total": len(rows)}
+    return {"items": [_row_to_dict(r, current) for r in rows], "total": len(rows)}
 
 
 @router.post("", dependencies=[exige("documentos.criar")])
@@ -211,14 +240,14 @@ async def detalhe(doc_id: int, db: AsyncSession = Depends(get_db),
     ), {"id": doc_id})).first()
     if not r:
         raise HTTPException(404, "Documento não encontrado")
-    return _row_to_dict(r)
+    return _row_to_dict(r, current)
 
 
 @router.put("/{doc_id}", dependencies=[exige("documentos.editar")])
 async def atualizar(doc_id: int, body: DocUpdate, request: Request,
                     db: AsyncSession = Depends(get_db),
                     current: User = Depends(get_current_user)):
-    await _exigir_acesso(db, doc_id, current)
+    await _exigir_escrita(db, doc_id, current)
     sets, params = [], {"id": doc_id}
     if body.titulo is not None:
         sets.append("titulo = :tit"); params["tit"] = body.titulo
@@ -256,7 +285,7 @@ async def atualizar(doc_id: int, body: DocUpdate, request: Request,
 async def remover(doc_id: int, request: Request,
                   db: AsyncSession = Depends(get_db),
                   current: User = Depends(get_current_user)):
-    await _exigir_acesso(db, doc_id, current)
+    await _exigir_escrita(db, doc_id, current)
     ctx = await _doc_contexto(db, doc_id)   # depois do DELETE nao ha mais rotulo
     res = await db.execute(text("DELETE FROM documentos_gerados WHERE id = :id"), {"id": doc_id})
     await db.commit()

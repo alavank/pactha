@@ -34,6 +34,25 @@ Cada rota declara o VERBO que ela executa — e e a declaracao que separa quem s
 CONSULTA de quem ESCREVE, coisa que a tela `rm` sozinha nunca soube fazer (quem
 via, apagava). A tela continua dizendo se a pessoa trabalha com RM, o municipio
 diz onde, e a permissao diz o que ela faz la.
+
+ALCANCE POR LINHA (Incremento 6 — `authz.exigir_dono_da_linha`)
+---------------------------------------------------------------
+Um usuario pode ser configurado, POR MODULO, como "somente os que ele criou":
+ai ele so ALTERA e APAGA o RM que ele mesmo cadastrou. Continua VENDO e
+EXPORTANDO o municipio inteiro — decisao do dono, e o motivo e operacional:
+dois servidores do mesmo setor deixariam de ver o trabalho um do outro, e o
+registro de quem saiu da prefeitura sumiria da tela.
+
+Por isso o gate mora em `_exigir_escrita` (PUT, auto-popular e DELETE) e NAO no
+detalhe nem no PDF. A lista passa a devolver `pode_editar`/`pode_excluir` por
+item, para o botao sumir — mas botao escondido NAO e permissao: quem barra
+continua sendo o servidor.
+
+⚠️ E O `POST ""` TAMBEM E ESCRITA EM LINHA ALHEIA, ao contrario do POST dos
+outros dois modulos: aqui ele e um UPSERT (`ON CONFLICT DO UPDATE`), entao o
+mesmo POST sobrescreve o RM que ja existe naquela data. Ele leva o gate de
+alcance quando a linha JA EXISTE — ver o comentario dentro de `criar`. Sem isso,
+"nao pode editar o RM do colega" seria uma frase que so valia no PUT.
 """
 from datetime import date
 from typing import Optional
@@ -106,14 +125,39 @@ async def _get_municipio(db: AsyncSession, municipio_id: int) -> Municipio:
     return m
 
 
-def _row_to_dict(row) -> dict:
+async def _exigir_escrita(db: AsyncSession, rid: int, user) -> None:
+    """Os TRES recortes de todo endpoint que ALTERA um RM.
+
+    A tela (o modulo), o municipio da linha (o territorio) e — desde o
+    Incremento 6 — o ALCANCE por linha: quem esta configurado como "somente os
+    que ele criou" so mexe no proprio relatorio.
+
+    So nos endpoints de ESCRITA (PUT, auto-popular e DELETE), e nao no detalhe
+    nem no PDF: a decisao do dono e que o alcance vale so para escrita — quem
+    esta restrito continua VENDO e EXPORTANDO o RM do municipio inteiro.
+
+    Custo para quem NAO foi restringido: zero consulta a mais — `escopo_de`
+    volta `todos` antes de tocar no banco."""
+    authz.exigir_tela(user, "rm")
+    await authz.ensure_dono(db, "rm_relatorios", "id", rid, user)
+    await authz.exigir_dono_da_linha(db, "rm", rid, user)
+
+
+def _row_to_dict(row, usuario) -> dict:
+    """⭐ `usuario` e OBRIGATORIO desde o Incremento 6 — ver o mesmo helper em
+    routers/gestao.py: a resposta passa a dizer, POR ITEM, se quem pediu pode
+    alterar aquele relatorio. Botao escondido NAO e permissao; quem barra
+    continua sendo `_exigir_escrita` nos endpoints de escrita."""
+    criado_por = row[8]
     return {
         "id": row[0], "municipio_id": row[1], "data_referencia": row[2].isoformat() if row[2] else None,
         "cidade_emissao": row[3], "titulo": row[4], "rodape": row[5],
         "status": row[6], "conteudo": row[7] or {"partes": []},
-        "criado_por": row[8],
+        "criado_por": criado_por,
         "created_at": row[9].isoformat() if row[9] else None,
         "updated_at": row[10].isoformat() if row[10] else None,
+        "pode_editar": authz.pode_editar_item(usuario, "rm", "editar", criado_por),
+        "pode_excluir": authz.pode_editar_item(usuario, "rm", "excluir", criado_por),
     }
 
 
@@ -140,7 +184,7 @@ async def listar(
     rs = (await db.execute(text(sql), params)).fetchall()
     items = []
     for row in rs:
-        d = _row_to_dict(row)
+        d = _row_to_dict(row, current)
         d["municipio_nome"] = row[11]
         items.append(d)
     return {"items": items, "total": len(items)}
@@ -167,6 +211,29 @@ async def criar(
     # nunca cai no ramo de "pedido malformado" de ensure_municipio_access.
     authz.exigir_municipio(user, body.municipio_id)
     mun = await _get_municipio(db, body.municipio_id)
+    # ⚠️⚠️ ESTE ENDPOINT E UM UPSERT, E POR ISSO ELE TAMBEM E ESCRITA EM LINHA
+    # ALHEIA. Ele nao cria so: `ON CONFLICT (municipio_id, data_referencia) DO
+    # UPDATE` faz o mesmo POST sobrescrever o RM que JA existe naquela data —
+    # titulo, cidade de emissao, rodape e, com `auto_popular`, o CONTEUDO
+    # inteiro. Sem esta leitura, quem esta configurado como "somente os que ele
+    # criou" levava 403 no PUT do RM do colega e apagava o mesmo relatorio pelo
+    # POST, com o mesmo corpo e sem nenhuma trava no caminho — a porta dos
+    # fundos exata que o alcance por linha existe para fechar.
+    #
+    # A leitura ja acontecia (era o `ja_existia`, que separa "criou" de
+    # "substituiu" na trilha); so passou a trazer o `id`, que e o que a checagem
+    # precisa. Zero consulta a mais, para todo mundo.
+    #
+    # RM que ainda NAO existe nao passa por aqui: nao ha linha anterior de quem
+    # julgar o dono, e o registro nasce de quem esta postando.
+    anterior = (await db.execute(text(
+        "SELECT id FROM rm_relatorios WHERE municipio_id = :m AND data_referencia = :d"
+    ), {"m": body.municipio_id, "d": body.data_referencia})).first()
+    ja_existia = anterior is not None
+    if ja_existia:
+        # Antes de `montar_conteudo`, que e a parte cara: em modo bloqueio nao ha
+        # por que remontar o relatorio inteiro para descartar tudo no 403.
+        await authz.exigir_dono_da_linha(db, "rm", anterior[0], user)
     # ano de emissão = ano da data de referência (janela do relatório por ANO)
     _ano = None
     try:
@@ -176,13 +243,9 @@ async def criar(
         _ano = None
     conteudo = await montar_conteudo(db, body.municipio_id, _ano) if body.auto_popular else {"partes": []}
     titulo = body.titulo or f"RELATÓRIO DE MONITORAMENTO – {mun.nome.upper()}/{mun.uf}"
-    # O INSERT abaixo e um UPSERT (ON CONFLICT em municipio+data): a mesma chamada
-    # cria OU sobrescreve. Registrar tudo como "criou" faria a trilha mentir
-    # justamente no caso que interessa — o relatorio que ja existia e foi
-    # substituido. Uma leitura barata antes resolve, sem mexer na escrita.
-    ja_existia = (await db.execute(text(
-        "SELECT 1 FROM rm_relatorios WHERE municipio_id = :m AND data_referencia = :d"
-    ), {"m": body.municipio_id, "d": body.data_referencia})).first() is not None
+    # `ja_existia` (lido acima, junto do gate de alcance) separa "criou" de
+    # "substituiu" na trilha: registrar tudo como "criou" faria o registro mentir
+    # justamente no caso que interessa — o relatorio que ja existia e foi trocado.
     # ON CONFLICT: se ja existe RM nessa data, atualiza conteudo
     sql = text("""
         INSERT INTO rm_relatorios
@@ -244,7 +307,7 @@ async def detalhe(
     """), {"id": rid})).first()
     if not row:
         raise HTTPException(404, "RM não encontrado")
-    d = _row_to_dict(row)
+    d = _row_to_dict(row, current)
     d["municipio_nome"] = row[11]
     d["uf"] = row[12]
     return d
@@ -260,8 +323,7 @@ async def atualizar(
 ):
     # Gate no TOPO, antes de montar o UPDATE: o que nao pode acontecer e a
     # escrita, entao a conferencia vem antes de qualquer preparo dela.
-    authz.exigir_tela(current, "rm")
-    await authz.ensure_dono(db, "rm_relatorios", "id", rid, current)
+    await _exigir_escrita(db, rid, current)
     sets = []
     params: dict = {"id": rid}
     if body.data_referencia is not None:
@@ -315,8 +377,7 @@ async def repopular(
     """Substitui conteudo pelo gerado automaticamente a partir do DB atual."""
     # Este endpoint DESCARTA a redacao manual do relatorio — e destrutivo como o
     # DELETE, so que sem apagar a linha. Mesmo gate.
-    authz.exigir_tela(current, "rm")
-    await authz.ensure_dono(db, "rm_relatorios", "id", rid, current)
+    await _exigir_escrita(db, rid, current)
     row = (await db.execute(text(
         "SELECT municipio_id, data_referencia, titulo FROM rm_relatorios WHERE id = :id"
     ), {"id": rid})).first()
@@ -355,8 +416,7 @@ async def remover(
 ):
     # Gate ANTES do DELETE, obviamente: em modo bloqueio a linha nao pode ter
     # sido apagada antes de a negativa sair.
-    authz.exigir_tela(current, "rm")
-    await authz.ensure_dono(db, "rm_relatorios", "id", rid, current)
+    await _exigir_escrita(db, rid, current)
     # Contexto lido ANTES do DELETE: depois a linha nao existe mais e o registro
     # sairia como "apagou o RM 47" — um numero que nao diz nada a ninguem.
     ctx = await _rm_contexto(db, rid)

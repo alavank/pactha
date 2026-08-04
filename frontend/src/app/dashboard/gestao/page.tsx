@@ -18,6 +18,8 @@ import {
   situacaoTom,
 } from "@/components/ui/superficies";
 import AnotacaoModal from "@/components/AnotacaoModal";
+import AvisoEscopo from "@/components/AvisoEscopo";
+import { contarSemEscrita } from "@/lib/escopo";
 
 interface Anotacao {
   id: number;
@@ -32,6 +34,13 @@ interface Anotacao {
   observacoes?: string | null;
   anexos: Array<{ nome: string; mime: string; tamanho?: number }>;
   updated_at?: string;
+  /** O veredito do servidor sobre ESTA anotação — ver `lib/escopo.ts`.
+   *
+   *  Aqui ele não esconde botão nenhum: esta lista não tem botão de editar, ela
+   *  ABRE a anotação. Quem esconde é o modal (`AnotacaoModal`), que é onde os
+   *  botões estão. O campo serve à frase que explica isso antes do clique. */
+  pode_editar?: boolean | null;
+  pode_excluir?: boolean | null;
 }
 
 const FONTE_LABEL: Record<string, string> = {
@@ -217,6 +226,12 @@ export default function GestaoPage() {
            compara entre itens em POSIÇÕES FIXAS — protocolo, data, anexos e
            atualização caem sempre na mesma coluna, então o olho desce a lista
            como descia na tabela, sem existir tabela. */
+        <>
+        <AvisoEscopo
+          bloqueadas={contarSemEscrita(items)}
+          total={items.length}
+          plural="as anotações"
+        />
         <Lista>
           {items.map((a) => {
             // "Outro" é o valor sentinela do select; o texto que vale está no
@@ -285,6 +300,7 @@ export default function GestaoPage() {
             );
           })}
         </Lista>
+        </>
       )}
 
       {openItem && (

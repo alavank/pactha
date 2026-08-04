@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { atalhosAnos, resumoAnos } from "@/lib/periodo";
 import { Bloco, BlocoHead, Campos, ItemLinha, Lista, Selo, Vazio } from "@/components/ui/superficies";
+import AvisoEscopo from "@/components/AvisoEscopo";
+import { contarSemEscrita, podeEditarLinha, podeExcluirLinha } from "@/lib/escopo";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 
 interface RmListItem {
@@ -20,6 +22,10 @@ interface RmListItem {
   titulo?: string;
   status: string;
   updated_at?: string;
+  /** O veredito do servidor sobre ESTE RM — ver `lib/escopo.ts`. Ausente
+   *  significa "a API nao respondeu isso", e ai a tela fica como era. */
+  pode_editar?: boolean | null;
+  pode_excluir?: boolean | null;
 }
 
 /** Cor no selo de status SO quando ela e um alerta. Mesma regra de Convenios e
@@ -261,6 +267,15 @@ export default function RmListPage() {
           {visiveis.length === 0 ? (
             <Vazio>Nenhum RM no(s) exercício(s) selecionado(s).</Vazio>
           ) : (
+          <>
+          {/* Conta o que está NA TELA (`visiveis`) e não a lista inteira: com o
+              filtro de exercício ligado, "em 4 de 9" apontaria para itens que a
+              pessoa não está vendo. */}
+          <AvisoEscopo
+            bloqueadas={contarSemEscrita(visiveis)}
+            total={visiveis.length}
+            plural="os RMs"
+          />
           <Lista>
           {visiveis.map((rm) => {
             const exercicio = anoDo(rm);
@@ -281,7 +296,15 @@ export default function RmListPage() {
                 }
                 acao={
                   <>
-                    <Link href={href} className={CLS_ACAO} style={ESTILO_ACAO} title="Abrir o RM para edição">
+                    {/* "Abrir" fica para todo mundo, inclusive em RM de outra
+                        pessoa: a decisão do dono foi restringir a ESCRITA, e a
+                        lista continua sendo do município inteiro. Quem entra num
+                        RM que não é seu encontra a tela em leitura (o próprio
+                        editor desliga Salvar). */}
+                    <Link href={href} className={CLS_ACAO} style={ESTILO_ACAO}
+                          title={podeEditarLinha(rm)
+                            ? "Abrir o RM para edição"
+                            : "Abrir o RM (criado por outra pessoa: só leitura)"}>
                       <Eye className="size-3.5" /> Abrir
                     </Link>
                     <div className="relative">
@@ -317,9 +340,11 @@ export default function RmListPage() {
                         </>
                       )}
                     </div>
-                    <button onClick={() => remover(rm.id)} className={CLS_ACAO} style={ESTILO_ACAO} title="Remover este RM">
-                      <Trash2 className="size-3.5" />
-                    </button>
+                    {podeExcluirLinha(rm) && (
+                      <button onClick={() => remover(rm.id)} className={CLS_ACAO} style={ESTILO_ACAO} title="Remover este RM">
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    )}
                   </>
                 }
               >
@@ -338,6 +363,7 @@ export default function RmListPage() {
             );
           })}
           </Lista>
+          </>
           )}
         </Bloco>
       )}

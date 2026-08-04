@@ -16,6 +16,20 @@ declaram permissao como qualquer rota de recurso:
     GET /api/permissoes/usuarios          quem tem o que (a tela de Usuarios)
     PUT /api/permissoes/usuario/{id}      ⭐ o ato de CONCEDER
 
+⭐ O ALCANCE POR LINHA (Incremento 6) VIAJA NAS MESMAS QUATRO ROTAS
+------------------------------------------------------------------
+"Editar somente os dele" nao e uma caixinha nova: e um MODIFICADOR das caixinhas
+de escrita de um modulo (`{"gestao": "proprios"}`). O dono pediu que a escolha
+morasse "no painel de administracao, no modulo de usuarios" — ou seja, no mesmo
+clique das caixinhas —, e ha uma razao tecnica para isso alem da ergonomia: um
+PUT separado abriria a janela em que a permissao ja foi concedida e a restricao
+ainda nao, que e exatamente a janela em que a pessoa alcanca o registro dos
+outros. Aqui as duas entram na MESMA transacao e na MESMA linha da trilha.
+
+⚠️ `escopos` AUSENTE do corpo significa "nao mexi", e nao "sem restricao" — ver
+`ConcederRequest`. Sem essa distincao, o frontend que ainda nao conhece o campo
+apagaria a configuracao do administrador ao salvar as caixinhas.
+
 ⚠️ `minhas` NAO e a lista de caixinhas marcadas: e o conjunto EFETIVO, ja
 resolvido pela funcao pura (super-admin recebe tudo, somente-leitura perde os
 verbos de escrita). E o que a tela precisa para saber quais botoes desenhar — e
@@ -89,6 +103,13 @@ async def minhas(current: User = Depends(get_current_user)):
         # `AUTHZ_MODO`: enquanto for "aviso" a trava so registra, e a tela pode
         # explicar isso a quem estranhar ver um botao que ainda funciona.
         "modo": authz.modo(),
+        # O ALCANCE do PROPRIO usuario, todo modulo escopavel com o valor
+        # vigente. Serve a dois consumidores: a tela pode avisar "voce so edita
+        # o que voce criou" antes de a pessoa clicar, e o anti-escalonamento da
+        # tela de Usuarios sabe quais radios ele nao pode mexer — a mesma regra
+        # que `_barrar_escalonamento_escopo` impoe no servidor.
+        "escopos": {chave: authz.escopo_de(current, chave)
+                    for chave in permissoes.ESCOPO_RECURSOS},
     }
 
 
@@ -115,12 +136,39 @@ class ConcederRequest(BaseModel):
 
     permissoes: list[str]
 
+    # ⭐ O ALCANCE por modulo (Incremento 6): `{"gestao": "proprios", ...}`.
+    #
+    # ⚠️ AUSENTE (None) e DICIONARIO VAZIO significam COISAS DIFERENTES, e a
+    # assimetria e a unica coisa que impede este campo de apagar configuracao
+    # alheia em silencio:
+    #
+    #   campo AUSENTE  -> "nao mexi no alcance". E o que o frontend que ainda
+    #                     nao conhece este campo manda — e ele nao pode zerar a
+    #                     restricao que o administrador acabou de configurar so
+    #                     porque foi implantado antes da tela nova.
+    #   `{}` ou dict    -> estado COMPLETO, igual a `permissoes`. Recurso
+    #                     omitido dentro do dicionario volta para `todos`.
+    escopos: Optional[dict[str, str]] = None
+
 
 async def _concedidas(db: AsyncSession, user_id: int) -> set:
     linhas = await db.execute(
         text("SELECT permissao FROM user_permissoes WHERE user_id = :u"),
         {"u": user_id})
     return {r[0] for r in linhas.fetchall()}
+
+
+async def _escopos_atuais(db: AsyncSession, user_id: int) -> dict:
+    """O alcance GRAVADO deste usuario. So o que difere do default aparece —
+    recurso sem linha e `todos`, e materializar os `todos` criaria uma segunda
+    resposta para a pergunta "o que significa nao ter linha?"."""
+    linhas = await db.execute(
+        text("SELECT recurso, escopo FROM user_escopos WHERE user_id = :u"),
+        {"u": user_id})
+    return {r[0]: permissoes.normalizar_escopo(r[1])
+            for r in linhas.fetchall()
+            if permissoes.escopavel(r[0])
+            and permissoes.normalizar_escopo(r[1]) != permissoes.ESCOPO_TODOS}
 
 
 @router.get("/usuarios", dependencies=[exige("usuarios.ver")])
@@ -146,7 +194,151 @@ async def por_usuario(
         # Ela continua no banco — ver `_gravar_concessao`, que nao a apaga.
         if permissoes.existe(chave):
             mapa.setdefault(str(uid), []).append(permissoes.normalizar(chave))
-    return {"concedidas": {uid: sorted(chaves) for uid, chaves in mapa.items()}}
+    # O ALCANCE de cada pessoa, na mesma chamada: a tela desenha os radios junto
+    # das caixinhas, e uma requisicao por usuario so para saber isso seria uma
+    # por linha da lista.
+    escopos_linhas = await db.execute(
+        text("SELECT user_id, recurso, escopo FROM user_escopos"))
+    escopos: dict[str, dict] = {}
+    for uid, recurso, valor in escopos_linhas.fetchall():
+        if not permissoes.escopavel(recurso):
+            continue        # linha orfa de um modulo que saiu do catalogo
+        escopos.setdefault(str(uid), {})[permissoes.normalizar(recurso)] = \
+            permissoes.normalizar_escopo(valor)
+    return {
+        "concedidas": {uid: sorted(chaves) for uid, chaves in mapa.items()},
+        # ⚠️ SO os usuarios com alguma restricao aparecem aqui, e dentro de cada
+        # um so os modulos restritos. Ausencia = `todos` — a mesma convencao do
+        # banco. O catalogo (`/permissoes/catalogo` -> `escopos`) diz quais
+        # modulos existem e qual e o default, entao a tela nao precisa adivinhar.
+        "escopos": escopos,
+    }
+
+
+def _validar_escopos(pedidos) -> dict:
+    """Normaliza o alcance pedido e RECUSA o que nao existe.
+
+    400 e nao 403, pelo mesmo motivo de `_validar`: nao e permissao que falta, e
+    pedido malformado. E aqui a recusa importa mais do que la — um recurso
+    escrito errado (`gestaoo`) ou um valor escrito errado (`proprio`, sem o «s»)
+    seria uma restricao que o administrador JURA ter configurado e que nunca se
+    aplica. Silencio nessa direcao ABRE o sistema, entao ele nao pode existir:
+    aqui, na restricao CHECK da tabela e na chave estrangeira, tres travas
+    dizendo a mesma coisa.
+
+    ⚠️ Recurso omitido volta para `todos` — o dicionario e o estado COMPLETO, e
+    devolver o silencio ao default e o que faz "desmarquei a restricao" gravar.
+    """
+    limpos: dict = {}
+    if not pedidos:
+        return limpos
+    if not isinstance(pedidos, dict):
+        raise HTTPException(400, "Alcance invalido: esperado um objeto "
+                                 "{modulo: 'todos'|'proprios'}")
+    desconhecidos, valores_ruins = [], []
+    for recurso, valor in pedidos.items():
+        chave = permissoes.normalizar(recurso)
+        if not permissoes.escopavel(chave):
+            desconhecidos.append(str(recurso))
+            continue
+        bruto = str(valor or "").strip().lower()
+        if bruto not in permissoes.ESCOPOS:
+            valores_ruins.append(f"{chave}={valor!r}")
+            continue
+        if bruto != permissoes.ESCOPO_TODOS:
+            # So o que RESTRINGE vira linha. `todos` e a ausencia de linha.
+            limpos[chave] = bruto
+    if desconhecidos:
+        raise HTTPException(
+            400, "Modulo sem alcance por linha: " + ", ".join(sorted(desconhecidos)))
+    if valores_ruins:
+        raise HTTPException(
+            400, "Alcance invalido (use 'todos' ou 'proprios'): "
+                 + ", ".join(sorted(valores_ruins)))
+    return limpos
+
+
+def _barrar_escalonamento_escopo(atual: User, antes: dict, depois: dict) -> None:
+    """⭐ NINGUEM MEXE NO ALCANCE DE UM MODULO EM QUE ELE MESMO ESTA RESTRITO.
+
+    Mesma logica de `_barrar_escalonamento`, e vale sobre o que MUDOU. Um
+    administrador limitado a "somente os que ele criou" na Gestao Interna nao
+    pode dar a outra pessoa o alcance TOTAL que ele proprio nao tem — seria
+    conceder por procuracao o que a tela lhe nega.
+
+    A trava vale nos dois sentidos (soltar e apertar), pela mesma razao que a
+    outra: o poder de decidir sobre aquele modulo pertence a quem o alcanca por
+    inteiro. Um administrador restrito que pudesse APERTAR o alcance dos colegas
+    derrubaria a operacao do setor inteiro sem nunca ter tido esse poder.
+
+    ⚠️ NEGA SEMPRE, nos dois modos de `AUTHZ_MODO` — este endpoint e novo e nao
+    ha comportamento antigo a preservar. Trava de escalonamento que "so avisa" e
+    a ausencia da trava."""
+    if is_super_admin(atual):
+        return
+    mudados = sorted(
+        chave for chave in set(antes) | set(depois)
+        if antes.get(chave, permissoes.ESCOPO_TODOS)
+        != depois.get(chave, permissoes.ESCOPO_TODOS))
+    fora = [chave for chave in mudados
+            if authz.escopo_de(atual, chave) != permissoes.ESCOPO_TODOS]
+    if not fora:
+        return
+    rotulos = ", ".join(
+        permissoes.escopos_para_api()["recursos"][c]["recurso_rotulo"] for c in fora)
+    raise HTTPException(
+        403,
+        "Voce so pode definir o alcance de modulos em que voce mesmo alcanca "
+        f"todos os registros. Fora do seu alcance: {rotulos}")
+
+
+async def _gravar_escopos(db: AsyncSession, user_id: int, antes: dict,
+                          depois: dict, autor_id) -> None:
+    """Grava so a DIFERENCA — nao apaga tudo para reinserir.
+
+    Mesmo motivo de `_gravar_concessao`: `definido_em` e `definido_por` sao a
+    resposta barata para "de onde veio esta linha?", e reescreve-las a cada
+    salvamento faria a restricao imposta ha um ano por outra pessoa passar a
+    dizer que fui eu, hoje.
+
+    Voltar para `todos` APAGA a linha, em vez de gravar `escopo='todos'`: ha um
+    unico jeito de dizer "sem restricao" no banco, e e a ausencia — ver o
+    cabecalho da migration."""
+    for chave in sorted(set(antes) - set(depois)):
+        await db.execute(
+            text("DELETE FROM user_escopos WHERE user_id = :u AND recurso = :r"),
+            {"u": user_id, "r": chave})
+    for chave in sorted(depois):
+        if antes.get(chave) == depois[chave]:
+            continue
+        await db.execute(
+            text("INSERT INTO user_escopos (user_id, recurso, escopo, definido_por) "
+                 "VALUES (:u, :r, :e, :por) "
+                 "ON CONFLICT (user_id, recurso) DO UPDATE SET "
+                 "escopo = EXCLUDED.escopo, definido_em = NOW(), "
+                 "definido_por = EXCLUDED.definido_por"),
+            {"u": user_id, "r": chave, "e": depois[chave], "por": autor_id})
+
+
+def _escopos_completos(gravados: dict) -> dict:
+    """O alcance de TODO modulo escopavel, com o default explicito.
+
+    O banco guarda so o que restringe (ausencia = `todos`), e essa economia e
+    deliberada — mas ela nao pode vazar para a API: a tela teria de saber que
+    "recurso ausente" quer dizer `todos`, e a trilha mostraria um lado vazio no
+    "de -> para". Uma fonte de verdade (o banco) e uma resposta legivel (esta)."""
+    return {chave: gravados.get(chave, permissoes.ESCOPO_TODOS)
+            for chave in permissoes.ESCOPO_RECURSOS}
+
+
+def _frase_escopo(recurso: str, escopo: str) -> str:
+    """"Gestao Interna: Somente os que ele criou" — a linha que o auditor le sem
+    traduzir chave nenhuma de cabeca."""
+    ficha = permissoes.escopos_para_api()["recursos"].get(recurso)
+    rotulo = ficha["recurso_rotulo"] if ficha else recurso
+    opcao = next((o["rotulo"] for o in permissoes.ESCOPO_OPCOES
+                  if o["valor"] == escopo), escopo)
+    return f"{rotulo}: {opcao}"
 
 
 def _validar(pedidas) -> set:
@@ -246,7 +438,20 @@ async def conceder(
     antes = {c for c in await _concedidas(db, alvo.id) if permissoes.existe(c)}
     _barrar_escalonamento(current, antes, depois)
 
+    # O alcance por linha viaja no MESMO endpoint e na MESMA transacao das
+    # caixinhas de proposito: ele so faz sentido junto delas ("pode editar" +
+    # "quais"), e um PUT separado abriria a janela em que a permissao ja esta
+    # concedida e a restricao ainda nao — que e a janela em que a pessoa alcanca
+    # o registro dos outros.
+    escopos_antes = await _escopos_atuais(db, alvo.id)
+    escopos_depois = (escopos_antes if req.escopos is None
+                      else _validar_escopos(req.escopos))
+    _barrar_escalonamento_escopo(current, escopos_antes, escopos_depois)
+
     await _gravar_concessao(db, alvo.id, antes, depois, getattr(current, "id", None))
+    if req.escopos is not None:
+        await _gravar_escopos(db, alvo.id, escopos_antes, escopos_depois,
+                              getattr(current, "id", None))
 
     # `registrar_critico` com `commit=False`: a linha da trilha entra na MESMA
     # transacao da concessao. Ou as duas gravam, ou nenhuma — "permissao
@@ -254,14 +459,30 @@ async def conceder(
     # fecha. Mesmo desenho de `routers/users.py::update_user`.
     concedidas = sorted(depois - antes)
     retiradas = sorted(antes - depois)
+    # ⭐ A alteracao de ALCANCE tem de virar linha na trilha como qualquer outra
+    # concessao de poder — e vai na MESMA linha de `usuarios.conceder`, e nao
+    # numa acao propria, porque ela e a segunda metade da mesma frase: "pode
+    # editar, e so os que ele criou". Duas linhas separadas obrigariam o auditor
+    # a cruzar dois eventos para entender um unico clique em Salvar.
+    escopos_mudados = sorted(
+        chave for chave in set(escopos_antes) | set(escopos_depois)
+        if escopos_antes.get(chave, permissoes.ESCOPO_TODOS)
+        != escopos_depois.get(chave, permissoes.ESCOPO_TODOS))
     await registrar_critico(
         db, action="usuarios.conceder", user=current, request=request,
         target_type="user", target_id=alvo.id, alvo_nome=alvo.name,
         # Snapshots COMPLETOS dos dois lados: `services/audit.py` reduz sozinho
         # aos campos que mudaram. Sem o par, "de -> para" nao existe e a linha
         # so diria que ALGO mudou.
-        valor_antes={"permissoes": sorted(antes)},
-        valor_depois={"permissoes": sorted(depois)},
+        #
+        # `escopos` entra nos dois snapshots preenchido com o DEFAULT explicito
+        # de todo modulo escopavel, e nao so com o que tem linha no banco: o
+        # auditor precisa ler "Gestao Interna: Todos os registros -> Somente os
+        # que ele criou", e um lado vazio nao diz de onde a pessoa saiu.
+        valor_antes={"permissoes": sorted(antes),
+                     "escopos": _escopos_completos(escopos_antes)},
+        valor_depois={"permissoes": sorted(depois),
+                      "escopos": _escopos_completos(escopos_depois)},
         details={
             "alvo_email": alvo.email,
             # A mesma pergunta de `routers/users.py::_concessoes`: nao "de que
@@ -271,9 +492,22 @@ async def conceder(
             # Frase pronta do estado final, para o modal da Auditoria nao exigir
             # que o auditor traduza 66 chaves de cabeca.
             "resumo": permissoes.resumo(depois) or None,
+            # Idem para o alcance: so os modulos que MUDARAM, ja em portugues.
+            "alcance_alterado": [
+                _frase_escopo(c, escopos_depois.get(c, permissoes.ESCOPO_TODOS))
+                for c in escopos_mudados
+            ] or None,
+            "alcance_resumo": [
+                _frase_escopo(c, escopos_depois[c]) for c in sorted(escopos_depois)
+            ] or None,
         },
         commit=False,
     )
     await db.commit()
     return {"permissoes": sorted(depois),
-            "concedidas": concedidas, "retiradas": retiradas}
+            "concedidas": concedidas, "retiradas": retiradas,
+            # Estado COMPLETO do alcance (todo modulo escopavel, com o default
+            # explicito): a tela redesenha os radios a partir da resposta sem
+            # precisar saber que "ausente" quer dizer `todos`.
+            "escopos": _escopos_completos(escopos_depois),
+            "alcance_alterado": escopos_mudados}
