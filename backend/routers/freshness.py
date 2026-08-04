@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from database import get_db
 from services.auth import get_current_user
+from services.registro_rotas import exige
 from models.user import User
 
 router = APIRouter(prefix="/api/admin/freshness", tags=["admin"])
@@ -57,7 +58,11 @@ def _status(age_days: float | None) -> str:
     return "critico"
 
 
-@router.get("")
+# `frescor.ver` — a chave do catalogo para este monitor ("Monitor de frescor dos
+# dados"); o caminho e que ficou com o nome em ingles. A checagem de `role` logo
+# abaixo continua valendo e nega SEMPRE, nos dois modos: a permissao e um
+# segundo filtro, nao a substituicao dela.
+@router.get("", dependencies=[exige("frescor.ver")])
 async def freshness(
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),

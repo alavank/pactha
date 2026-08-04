@@ -23,6 +23,7 @@ from services.auth import (
     load_user_scopes,
 )
 from services.audit import registrar
+from services.registro_rotas import exige
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -235,7 +236,13 @@ async def change_password(
     return {"status": "ok"}
 
 
-@router.post("/register", response_model=UserResponse)
+# ⚠️ A UNICA rota de /api/auth/* que NAO e rota de sessao. Todas as outras
+# (login, refresh, logout, me, change-password) tratam da sessao de quem ja
+# chegou e estao em ROTAS_LIVRES, uma a uma; esta CRIA GENTE, entao vale a mesma
+# permissao de `POST /api/users`. Uma entrada `/api/auth/*` na allowlist teria
+# levado o cadastro de usuarios junto sem ninguem perceber.
+@router.post("/register", response_model=UserResponse,
+             dependencies=[exige("usuarios.criar")])
 async def register(
     req: RegisterRequest,
     request: Request,

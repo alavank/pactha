@@ -25,6 +25,7 @@ from services.crypto import decrypt
 # Trava de permissao em MODO AVISO — usada so em `/municipios`, onde o gate de
 # uma LISTAGEM e o filtro e nao o 403. Ver o comentario la.
 from services import authz
+from services.registro_rotas import exige
 
 router = APIRouter(prefix="/api/fns", tags=["fns"])
 logger = logging.getLogger("fns")
@@ -115,7 +116,7 @@ async def _resolve_cod(municipio: str, uf: str, db: AsyncSession) -> Optional[st
     return None
 
 
-@router.get("/buscar")
+@router.get("/buscar", dependencies=[exige("fns.ver")])
 async def buscar(
     municipio: str = Query(..., description="Nome do municipio (ex: ARAUJOS) ou codigo IBGE 6 digitos"),
     ano: int = Query(...),
@@ -223,7 +224,7 @@ async def consultar_fns(
     }
 
 
-@router.get("/anos")
+@router.get("/anos", dependencies=[exige("fns.ver")])
 async def anos(db: AsyncSession = Depends(get_db),
                current: User = Depends(get_current_user)):
     """Anos disponiveis no FNS."""
@@ -245,7 +246,7 @@ async def anos(db: AsyncSession = Depends(get_db),
         return [str(y) for y in range(datetime.now().year, 2018, -1)]
 
 
-@router.get("/municipios")
+@router.get("/municipios", dependencies=[exige("fns.ver")])
 async def municipios_pacta(db: AsyncSession = Depends(get_db),
                            current: User = Depends(get_current_user)):
     """Lista os municipios do AMBIENTE com codigo IBGE FNS
@@ -289,7 +290,7 @@ async def municipios_pacta(db: AsyncSession = Depends(get_db),
     return [{"id": i, "nome": n, "cod_ibge": str(ib)[:6], "uf": uf} for i, n, ib, uf in rows]
 
 
-@router.get("/proposta/{nu_proposta}")
+@router.get("/proposta/{nu_proposta}", dependencies=[exige("fns.ver")])
 async def detalhe_proposta(
     nu_proposta: str,
     db: AsyncSession = Depends(get_db),
@@ -415,7 +416,7 @@ async def detalhe_proposta(
     }
 
 
-@router.get("/listar-individuais")
+@router.get("/listar-individuais", dependencies=[exige("fns.ver")])
 async def listar_individuais(
     municipio: str = Query(...),
     ano: int = Query(...),

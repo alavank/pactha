@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from database import get_db
 from services.auth import get_current_user, ensure_municipio_access, ensure_tela
+from services.registro_rotas import exige
 from models.user import User
 
 router = APIRouter(prefix="/api/simec", tags=["simec"])
@@ -26,7 +27,7 @@ def _clean(s):
     return s.replace("�", "").replace("  ", " ").strip()
 
 
-@router.get("/dimensoes")
+@router.get("/dimensoes", dependencies=[exige("simec.ver")])
 async def dimensoes(
     municipio_id: int = Query(...),
     db: AsyncSession = Depends(get_db),
@@ -54,7 +55,7 @@ async def dimensoes(
     return {"items": items, "total": len(items)}
 
 
-@router.get("/liberacoes")
+@router.get("/liberacoes", dependencies=[exige("simec.ver")])
 async def liberacoes(
     municipio_id: int = Query(...),
     ano: Optional[int] = Query(None),
@@ -97,7 +98,7 @@ async def liberacoes(
     return {"items": items, "total": len(items), "atualizado_em": last}
 
 
-@router.get("/resumo")
+@router.get("/resumo", dependencies=[exige("simec.ver")])
 async def resumo(
     municipio_id: int = Query(...),
     db: AsyncSession = Depends(get_db),

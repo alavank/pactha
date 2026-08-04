@@ -10,9 +10,18 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from database import get_db
 from services.auth import get_current_user, ensure_municipio_access
+from services import authz
+from services.registro_rotas import declarado
 from models.user import User
 
 router = APIRouter(prefix="/api/status-changes", tags=["status-changes"])
+
+# ⚠️ A tabela `status_changes` e alimentada por trigger em DUAS tabelas —
+# `convenios_estadual` e `transferegov_propostas` — e o endpoint devolve as duas
+# misturadas. A exigencia honesta e "uma das duas": `exige()` cobraria as duas
+# juntas e tiraria o aviso do dashboard de quem so acompanha uma das fontes.
+# Mesmo desenho de `routers/municipios.py::municipio_summary`.
+_FONTES_PERMISSOES = ("convenios.ver", "transferegov.ver")
 
 
 def _clean(s):
@@ -56,7 +65,7 @@ async def listar_core(
     return {"items": items, "total": len(items)}
 
 
-@router.get("")
+@router.get("", dependencies=[declarado(*_FONTES_PERMISSOES)])
 async def listar(
     municipio_id: int = Query(...),
     days: int = Query(30, description="janela em dias"),
@@ -66,4 +75,9 @@ async def listar(
 ):
     """Lista as mudancas de status recentes de um municipio (mais novas primeiro)."""
     ensure_municipio_access(current, municipio_id)
+    if not any(authz.pode(current, chave) for chave in _FONTES_PERMISSOES):
+        authz.negar(current, tipo="permissao",
+                    exigido=" ou ".join(_FONTES_PERMISSOES),
+                    possui=authz.permissoes_de(current),
+                    mensagem="Voce nao tem permissao para esta acao")
     return await listar_core(db, [municipio_id], days, limit)

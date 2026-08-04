@@ -16,8 +16,14 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Aviso, Bloco, BlocoHead, Campos, ItemLinha, Lista, Modal, Selo, Vazio, situacaoTom,
+  AcaoMini, Aviso, Bloco, BlocoHead, Campos, ItemLinha, Lista, Modal, Selo,
+  Vazio, situacaoTom,
 } from "@/components/ui/superficies";
+import PermissoesModal from "./PermissoesModal";
+import {
+  buscarCatalogo, buscarConcedidas, buscarMinhas, resumoPorRecurso,
+  type Catalogo, type MinhasPermissoes,
+} from "@/lib/permissoes";
 
 interface Usuario {
   id: number;
@@ -125,28 +131,6 @@ function Rotulo({
       </label>
       {right}
     </div>
-  );
-}
-
-/** Botao miudo de acao em lote. Mesma gramatica do chip desmarcado: contorno na
- *  linha de divisoria e tinta cinza. Nao e um CTA — e um atalho. */
-function AcaoMini({
-  onClick, disabled, children,
-}: {
-  onClick: () => void;
-  disabled?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className="rounded-full border px-2 py-0.5 text-[10px] transition-colors hover:bg-[var(--bi-surface-2)] disabled:opacity-40"
-      style={{ borderColor: "var(--bi-line)", color: "var(--bi-muted)" }}
-    >
-      {children}
-    </button>
   );
 }
 
@@ -301,6 +285,15 @@ export default function UsuariosPage() {
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
 
+  // PERMISSAO POR ACAO. As tres coisas vem da API e nenhuma e copiada para ca:
+  //   catalogo    as 66 caixinhas, com rotulo e descricao (fonte: o backend)
+  //   minhas      o que EU posso — e o teto do que eu consigo conceder
+  //   concedidas  as caixinhas marcadas de CADA usuario, por id
+  const [catalogo, setCatalogo] = useState<Catalogo | null>(null);
+  const [minhas, setMinhas] = useState<MinhasPermissoes | null>(null);
+  const [concedidas, setConcedidas] = useState<Record<string, string[]>>({});
+  const [permUser, setPermUser] = useState<Usuario | null>(null);
+
   // Criar
   const [novoEmail, setNovoEmail] = useState("");
   const [novoNome, setNovoNome] = useState("");
@@ -342,17 +335,28 @@ export default function UsuariosPage() {
   const carregar = useCallback(async () => {
     setLoading(true);
     try {
-      const [ru, rm, rme] = await Promise.all([
+      const [ru, rm, rme, rcat, rminhas, rconc] = await Promise.all([
         api.get<Usuario[]>("/users"),
         api.get<Municipio[]>("/municipios"),
         // Falha isolada de proposito: saber quem sou eu e um EXTRA (serve ao
         // aviso de auto-edicao). Dentro do `Promise.all` cru, um /auth/me que
         // tropeçasse derrubaria a listagem inteira de usuarios junto.
         api.get<Usuario>("/auth/me").catch(() => null),
+        // As tres de permissao seguem a mesma regra: sao o INCREMENTO da tela,
+        // e nao a tela. Se qualquer uma falhar, a lista de usuarios continua
+        // funcionando e o que fica indisponivel e so o botao Permissoes — que
+        // avisa por que. O contrario (derrubar a tela inteira) trancaria o
+        // administrador fora ate de desativar uma conta.
+        buscarCatalogo().catch(() => null),
+        buscarMinhas().catch(() => null),
+        buscarConcedidas().catch(() => ({})),
       ]);
       setUsers(ru.data);
       setMunicipios(Array.isArray(rm.data) ? rm.data : []);
       setEu(rme?.data ?? null);
+      setCatalogo(rcat);
+      setMinhas(rminhas);
+      setConcedidas(rconc);
       setErro(null);
     } catch (e: unknown) {
       const msg = (e as { response?: { status?: number } })?.response?.status === 403
@@ -386,6 +390,14 @@ export default function UsuariosPage() {
   const todasTelas = () => TELAS.map((t) => t.key);
   const todosMunis = () => municipios.map((m) => m.id);
 
+  /** Tenant de UM municipio (prefeitura). Ver a nota no formulario.
+   *
+   *  `municipios` chega vazio enquanto carrega, e vazio NAO e "um so" — por isso
+   *  o teste e por igualdade a 1, e nao `<= 1`. Com a lista vazia o seletor
+   *  continua aparecendo (vazio, dizendo que nao ha municipio), que e honesto:
+   *  esconder ali faria a conta nascer sem municipio nenhum e sem ninguem ver. */
+  const municipioUnico = municipios.length === 1;
+
   const criar = async () => {
     if (!novoEmail.trim() || !novoNome.trim()) return;
     setCriando(true);
@@ -399,7 +411,12 @@ export default function UsuariosPage() {
       // municipio nenhum, um usuario que entra e nao ve nada.
       const r = await api.post<SenhaResp>("/users", {
         email: novoEmail.trim(), name: novoNome.trim(), role: novoRole,
-        municipio_ids: [...novoMunis],
+        // Num tenant de um municipio o seletor nao existe, entao a escolha e
+        // feita AQUI: a conta nasce vinculada ao unico municipio. Mandar a lista
+        // vazia criaria a conta cega — ela passaria por `ensure_municipio_access`
+        // sem nenhum municipio permitido e nao enxergaria nada, sem erro nenhum
+        // para explicar o porque.
+        municipio_ids: municipioUnico ? [municipios[0].id] : [...novoMunis],
         telas: [...novoTelas],
         // Sempre explícito. Omitido, o backend semeia do rótulo — e uma tela que
         // mostra o interruptor tem de mandar o que o interruptor diz, e não
@@ -511,6 +528,21 @@ export default function UsuariosPage() {
   // "Administrador" preenchia o buraco calado.
   const semAcesso = users.filter(
     (u) => u.active && !ehSuperAdmin(u) && (u.telas ?? []).length === 0,
+  ).length;
+
+  /** As caixinhas MARCADAS de um usuario. Nunca `undefined`: quem nunca recebeu
+   *  permissao nenhuma nao tem entrada no mapa, e "sem entrada" e zero. */
+  const permsDe = (u: Usuario) => concedidas[String(u.id)] ?? [];
+  // Quem CONCEDE precisa ter `usuarios.conceder` — a mesma chave que o servidor
+  // exige. Sem `minhas` carregado nao da para afirmar que pode, e o botao fica
+  // desligado com a explicacao: e melhor que abrir a tela e levar 403 no fim.
+  const podeConceder = !!minhas
+    && (minhas.super_admin || minhas.chaves.includes("usuarios.conceder"));
+  // Conta ATIVA que pode entrar e nao faz nada. Hoje isso nao trava ninguem (a
+  // trava esta em modo aviso), e por isso a contagem sai sem cor — mas e a
+  // configuracao que vira ligacao de suporte no dia em que ela for ligada.
+  const semPermissao = users.filter(
+    (u) => u.active && !ehSuperAdmin(u) && permsDe(u).length === 0,
   ).length;
 
   return (
@@ -634,7 +666,18 @@ export default function UsuariosPage() {
             Os dois blocos ficavam escondidos quando o perfil era "admin", e no
             lugar deles havia a frase "Administrador enxerga todos os
             municípios". Deixou de ser verdade — e um formulário que esconde o
-            único campo que concede acesso cria a conta cega sem avisar. */}
+            único campo que concede acesso cria a conta cega sem avisar.
+
+            ⚠️ EXCEÇÃO, e ela é sobre não oferecer escolha que não existe: num
+            tenant de UM município — que é o caso de toda prefeitura — perguntar
+            "quais municípios?" é pedir uma decisão inexistente. Quem está
+            dentro do sistema de Monte Sião está criando acesso para Monte Sião,
+            e não tem nada a ver com outra cidade. O bloco some e o município é
+            vinculado sozinho (ver `municipioUnico`). Com vários — assessoria,
+            consórcio — o seletor aparece como sempre, porque aí a escolha é
+            real. A regra é a CONTAGEM, não o tipo do cliente: assim ela acerta
+            nos dois casos sem exigir configuração nova. */}
+        {municipioUnico ? null : (
         <div className="mt-3">
           <Rotulo
             icon={Building2}
@@ -652,6 +695,7 @@ export default function UsuariosPage() {
           </Rotulo>
           <MunicipioPicker municipios={municipios} selected={novoMunis} onToggle={toggleNovo} />
         </div>
+        )}
 
         <div className="mt-3">
           <Rotulo
@@ -730,6 +774,7 @@ export default function UsuariosPage() {
               {semAcesso > 0 && (
                 <> · <span style={{ color: "var(--bi-crit-ink)" }}>{semAcesso} sem tela nenhuma</span></>
               )}
+              {semPermissao > 0 && <> · {semPermissao} sem permissão marcada</>}
             </>
           )}
           right={loading ? undefined : (
@@ -754,6 +799,7 @@ export default function UsuariosPage() {
               const leitura = ehSomenteLeitura(u);
               const muns = u.municipio_ids ?? [];
               const telas = u.telas ?? [];
+              const perms = permsDe(u);
               return (
                 <ItemLinha
                   key={u.id}
@@ -814,7 +860,7 @@ export default function UsuariosPage() {
                           </SelectContent>
                         </Select>
                       </div>
-                      <div className="flex items-center gap-1">
+                      <div className="flex flex-wrap items-center justify-end gap-1">
                         {/* Deixou de vir `disabled` para quem tem papel de
                             administrador. Era coerente enquanto o papel abria
                             tudo — não havia o que editar. Agora é o contrário:
@@ -827,6 +873,33 @@ export default function UsuariosPage() {
                           title="Editar municípios e telas com acesso"
                         >
                           <Building2 className="size-3 mr-1" /> Acesso
+                        </Button>
+                        {/* SEPARADO de "Acesso" de propósito. Aquele botão diz
+                            ONDE a pessoa entra (telas e municípios); este diz o
+                            que ela FAZ lá dentro. Juntar os dois num modal só
+                            somaria 66 caixinhas a uma tela que já tem três
+                            seletores — e o resultado seria o paredão que faz o
+                            administrador desistir e conceder tudo. */}
+                        <Button
+                          size="sm" variant="outline" className="h-7 text-[11px]"
+                          onClick={() => setPermUser(u)}
+                          disabled={!catalogo || !podeConceder}
+                          title={
+                            !catalogo
+                              ? "Não foi possível carregar o catálogo de permissões. Recarregue a tela."
+                              // As duas causas de `!podeConceder` sao diferentes e
+                              // precisam de frases diferentes: dizer "voce nao tem a
+                              // permissao" quando o que houve foi uma chamada que
+                              // falhou manda o administrador procurar o problema no
+                              // cadastro dele, que esta certo.
+                              : !minhas
+                                ? "Não foi possível conferir as suas permissões. Recarregue a tela."
+                                : !podeConceder
+                                  ? "Você não tem a permissão «Usuários — Conceder permissões»."
+                                  : "Editar o que esta pessoa pode fazer"
+                          }
+                        >
+                          <ShieldCheck className="size-3 mr-1" /> Permissões
                         </Button>
                         <Button
                           size="sm" variant="outline" className="h-7 px-2 text-[11px]"
@@ -848,7 +921,7 @@ export default function UsuariosPage() {
                   }
                 >
                   <Campos
-                    cols={3}
+                    cols={4}
                     campos={[
                       {
                         rotulo: "Municípios",
@@ -887,6 +960,32 @@ export default function UsuariosPage() {
                           : telas.length > 0
                             ? telas.map((t) => TELA_LABELS[t] || t).join(", ")
                             : "Sem tela: o menu do usuário fica vazio",
+                      },
+                      {
+                        rotulo: "Permissões",
+                        valor: superAdmin
+                          ? "Todas"
+                          : !catalogo
+                            ? "—"
+                            : perms.length === 0
+                              ? "Nenhuma"
+                              : `${perms.length} de ${catalogo.total}`,
+                        // ATENÇÃO e não crítico: enquanto a trava está em modo
+                        // aviso, zero caixinha não impede nada — anunciar como
+                        // falha seria alarme falso. Vira problema no dia em que
+                        // o bloqueio for ligado, e é aí que esta linha ajuda.
+                        tom: !superAdmin && catalogo && perms.length === 0
+                          ? "atencao" : "normal",
+                        title: superAdmin
+                          ? "Super-admin: pode tudo, sem depender destas caixinhas"
+                          : !catalogo
+                            ? "Catálogo de permissões indisponível"
+                            : perms.length > 0
+                              // O resumo legível, e não 40 chaves cruas: quem
+                              // confere lê "Cofre de senhas: Ver, Revelar a
+                              // senha", não `cofre.revelar`.
+                              ? resumoPorRecurso(catalogo, new Set(perms)).join(" · ")
+                              : "Nenhuma ação liberada: a pessoa entra e não faz nada",
                       },
                       {
                         rotulo: "Situação",
@@ -1043,6 +1142,22 @@ export default function UsuariosPage() {
             </div>
           </div>
         </Modal>
+      )}
+
+      {/* Modal de PERMISSOES — o que a pessoa faz, caixinha a caixinha.
+          `catalogo` no guarda porque o modal o recebe obrigatorio: sem o
+          catalogo nao ha o que desenhar, e o botao que abre este modal ja vem
+          desligado nesse caso. */}
+      {permUser && catalogo && (
+        <PermissoesModal
+          alvo={permUser}
+          catalogo={catalogo}
+          minhas={minhas}
+          concedidas={permsDe(permUser)}
+          souEu={!!eu && eu.id === permUser.id}
+          onFechar={() => setPermUser(null)}
+          onSalvo={carregar}
+        />
       )}
 
       {/* Modal senha gerada */}

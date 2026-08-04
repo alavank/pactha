@@ -450,6 +450,36 @@ export const ESTILO_CTA: React.CSSProperties = {
   color: "var(--bi-cta-ink)",
 };
 
+/** Botão MIÚDO de ação em lote ("Marcar todas", "Limpar", "Marcar seção").
+ *
+ *  Mesma gramática do chip desmarcado: contorno na linha de divisória e tinta
+ *  cinza. Não é um CTA — é um atalho, e atalho que compete com o botão de
+ *  salvar faz o olho parar no lugar errado.
+ *
+ *  Nasceu na tela de Usuários e subiu para cá quando a tela de permissões
+ *  passou a precisar do mesmo botão: dois botõezinhos "quase iguais" em duas
+ *  telas que abrem uma da outra é exatamente a divergência que este arquivo
+ *  existe para evitar. */
+export function AcaoMini({
+  onClick, disabled, children,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="rounded-full border px-2 py-0.5 text-[10px] transition-colors hover:bg-[var(--bi-surface-2)] disabled:opacity-40"
+      style={{ borderColor: "var(--bi-line)", color: "var(--bi-muted)" }}
+    >
+      {children}
+    </button>
+  );
+}
+
 /** Secundário: superfície com a linha de divisória por borda. */
 export const BOTAO_SEC =
   "inline-flex h-9 items-center gap-1.5 rounded-xl px-3 text-[12px] font-semibold transition-colors bi-hover disabled:opacity-60";

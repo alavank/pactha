@@ -35,6 +35,7 @@ from sqlalchemy import select, text, func, or_ as _or
 from database import get_db
 from models import ConvenioEstadual, Municipio
 from services.auth import get_current_user, ensure_municipio_access, ensure_tela
+from services.registro_rotas import exige
 from models.user import User
 
 logger = logging.getLogger("ai")
@@ -1321,7 +1322,9 @@ class ChatResponse(BaseModel):
     usage: dict[str, Any]
 
 
-@router.get("/_ping")
+# `ai.usar` apesar de ser GET e chamar-se diagnostico: este endpoint gasta uma
+# chamada PAGA a Anthropic, igual a qualquer pergunta do chat.
+@router.get("/_ping", dependencies=[exige("ai.usar")])
 async def ping(_=Depends(get_current_user)):
     """Diagnostico: chama Claude com prompt minimo (sem tools, sem DB)."""
     try:
@@ -1692,7 +1695,7 @@ async def _execute_loop(client, db, messages, escopo: list[int], escopo_txt: str
     return final
 
 
-@router.post("/chat", response_model=ChatResponse)
+@router.post("/chat", response_model=ChatResponse, dependencies=[exige("ai.usar")])
 async def chat(
     body: ChatRequest,
     db: AsyncSession = Depends(get_db),
@@ -1783,6 +1786,11 @@ async def _abrir_conversa(db: AsyncSession, user_id: int, conversa_id: Optional[
     return int(novo[0])
 
 
+# As tres rotas de /conversas nao declaram permissao: sao AUTO-ESCOPADAS por
+# `user_id` (o historico de quem pergunta) e estao em ROTAS_LIVRES, com motivo,
+# em services/registro_rotas.py. Exigir `ai.usar` aqui tiraria do usuario o
+# proprio historico — inclusive de quem so pode LER, ja que `ai.usar` e
+# permissao de escrita. O gate de tela `ai` abaixo continua valendo.
 @router.get("/conversas")
 async def listar_conversas(
     db: AsyncSession = Depends(get_db),
@@ -1842,7 +1850,7 @@ async def apagar_conversa(
     return {"ok": True}
 
 
-@router.post("/chat/stream")
+@router.post("/chat/stream", dependencies=[exige("ai.usar")])
 async def chat_stream(
     body: ChatRequest,
     db: AsyncSession = Depends(get_db),

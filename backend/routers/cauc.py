@@ -13,6 +13,7 @@ from database import get_db
 from services.auth import get_current_user, ensure_municipio_access, ensure_tela
 from models.user import User
 from services import authz
+from services.registro_rotas import exige
 
 router = APIRouter(prefix="/api/cauc", tags=["cauc"])
 
@@ -23,7 +24,7 @@ from services.cauc_catalogo import GRUPOS, GRUPOS_GLOSSA, LABELS, _classifica  #
 
 
 
-@router.get("")
+@router.get("", dependencies=[exige("cauc.ver")])
 async def situacao(
     municipio_id: int = Query(...),
     db: AsyncSession = Depends(get_db),
@@ -85,7 +86,7 @@ async def fetch_cauc_situacao(db: AsyncSession, municipio_id: int) -> dict:
     }
 
 
-@router.post("/refresh")
+@router.post("/refresh", dependencies=[exige("cauc.atualizar")])
 async def refresh(
     current: User = Depends(get_current_user),
 ):

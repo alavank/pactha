@@ -268,6 +268,86 @@ def test_as_rotas_sensiveis_nunca_sao_livres(metodo, caminho):
     assert motivo_livre(metodo, caminho) is None
 
 
+# Chaves que EXISTEM no catalogo e nenhuma rota consulta. Todas pelo mesmo
+# motivo — o endpoint correspondente nao existe (nao ha exportacao nestes
+# modulos, nao ha DELETE de usuario) —, e por isso sao inertes e nao buracos: a
+# caixinha marcada nao abre nada porque nao ha porta.
+#
+# ⚠️ `bi.tela` e o unico de outra especie: o Modo Tela e controlado pela TELA
+# `bi_tela` (`user_telas`), nao por esta chave. Ver a nota de
+# `/api/bi/tela-filtros` na allowlist — declara-la ali apagaria a TV.
+#
+# A lista e ESCRITA, e nao calculada, porque o valor dela e a diferenca: foi
+# assim que `sessoes.capturar` apareceu — orfa no catalogo enquanto a rota que
+# devia cobra-la, `POST /api/session-capture`, estava na allowlist de livres.
+PERMISSOES_SEM_ROTA = {
+    "acordofes.exportar", "bi.exportar", "bi.tela", "cauc.exportar",
+    "fns.exportar", "frescor.exportar", "gestao.exportar", "simec.exportar",
+    "sismob.exportar", "usuarios.excluir",
+}
+
+
+def test_caixinha_do_catalogo_ou_abre_uma_rota_ou_esta_na_lista_das_inertes():
+    """Uma permissao que nenhuma rota consulta e uma promessa vazia na tela de
+    Usuarios: o administrador marca, salva, e nada muda. Pior — quando a rota
+    QUE DEVIA cobra-la existe e esta livre por allowlist, a caixinha orfa e o
+    unico sintoma visivel de um endpoint sem gate."""
+    from services.permissoes import CATALOGO
+
+    usadas = set()
+    for rota in varrer(main.app).rotas:
+        usadas |= set(rota.permissoes)
+
+    orfas = set(CATALOGO) - usadas - PERMISSOES_SEM_ROTA
+    assert not orfas, (
+        f"{sorted(orfas)} nao sao exigidas por rota nenhuma. Ou a rota que "
+        "deveria exigi-las perdeu a declaracao (e ficou aberta, ou livre por "
+        "allowlist), ou a chave e inerte e entra em PERMISSOES_SEM_ROTA com o "
+        "motivo escrito.")
+
+    # O outro lado: chave que SAIU da lista das inertes porque ganhou rota tem
+    # de sair da lista tambem, senao ela deixa de significar o que diz.
+    mentirosas = PERMISSOES_SEM_ROTA & usadas
+    assert not mentirosas, (
+        f"{sorted(mentirosas)} ganharam rota e continuam listadas como inertes")
+
+
+def test_a_TV_do_gabinete_alcanca_tudo_que_a_allowlist_do_quiosque_promete():
+    """⚠️ AS DUAS TRAVAS DO QUIOSQUE TEM DE CONCORDAR, E NADA AS OBRIGAVA.
+
+    `KIOSK_GET_PERMITIDOS` (services/auth.py) diz QUAIS GETs o link publico de TV
+    alcanca; `PERMISSOES_QUIOSQUE` (services/permissoes.py) diz o que aquela
+    conta RESOLVE — hoje `bi.ver`, e so. A conta nao tem uma linha sequer em
+    `user_permissoes`: se um endpoint daquela lista declarar qualquer outra
+    chave, ele passa a negar a TV.
+
+    E nega EM SILENCIO, que e o que faz este teste valer o custo: o slideshow do
+    gabinete engole o erro num `.catch()` e a tela apenas para de trocar de aba.
+    Ninguem abre um chamado — alguem repara, semanas depois, que o painel do
+    prefeito "esta velho".
+
+    Nao ha aviso nenhum no meio do caminho: as duas listas moram em arquivos
+    diferentes, e trocar `bi.ver` por `bi.tela` num endpoint e uma linha que
+    passa em qualquer revisao."""
+    from services.auth import KIOSK_GET_PERMITIDOS
+    from services.permissoes import PERMISSOES_QUIOSQUE
+
+    rotas = {(r.metodo, r.caminho): r for r in varrer(main.app).rotas}
+    quebradas = {}
+    for caminho in sorted(KIOSK_GET_PERMITIDOS):
+        rota = rotas.get(("GET", caminho))
+        # Caminho inexistente ja e coberto por outro teste deste arquivo, mas
+        # aqui ele nao pode virar um `None` que passa calado.
+        assert rota is not None, f"{caminho} nao e uma rota do app"
+        fora = set(rota.permissoes) - set(PERMISSOES_QUIOSQUE)
+        if fora:
+            quebradas[caminho] = sorted(fora)
+    assert not quebradas, (
+        f"a TV perde estes caminhos em AUTHZ_MODO=bloqueio: {quebradas}. "
+        "Ou o endpoint volta a declarar so o que o quiosque resolve, ou "
+        "PERMISSOES_QUIOSQUE muda junto — as duas listas sao uma decisao so.")
+
+
 # ===========================================================================
 # 4. Os modos
 # ===========================================================================

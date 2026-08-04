@@ -166,6 +166,16 @@ _TABELA: dict[str, dict] = {
         nota="O detalhe traz o valor ANTES e DEPOIS de cada campo, inclusive "
              "telas e municípios liberados.",
     ),
+    # Separada de `user.update` de propósito: aquela é "alterou o cadastro" e
+    # vem junto com correção de nome e troca de rótulo. Esta é SÓ poder, e é a
+    # que o auditor filtra quando a pergunta é "quem deixou fulano revelar
+    # senha do gov.br, e quando".
+    "usuarios.conceder": _a(
+        "alterou as permissões", MOD_USUARIOS, _ALTO, prep="de",
+        nota="O detalhe traz o que foi CONCEDIDO e o que foi RETIRADO, caixinha "
+             "por caixinha, e o resumo do que a pessoa passou a poder. Quem "
+             "concede só consegue conceder o que ele mesmo tem.",
+    ),
     "user.reset_password": _a(
         "gerou uma senha temporária", MOD_USUARIOS, _ALTO, prep="para",
         nota="Quem redefine a senha de outra pessoa consegue entrar como ela "
@@ -444,7 +454,9 @@ _PREFIXO_MODULO: dict[str, str] = {
     "auth": MOD_ACESSO,
     "user": MOD_USUARIOS,
     "users": MOD_USUARIOS,
+    "usuarios": MOD_USUARIOS,
     "permissao": MOD_USUARIOS,
+    "permissoes": MOD_USUARIOS,
     # Trava de permissão (services/authz.py). Cai no MESMO módulo de Usuários
     # porque é ali que o dono vai corrigir o que a trava apontou — separá-la
     # obrigaria a olhar dois filtros para responder uma pergunta só.

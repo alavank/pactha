@@ -7,8 +7,17 @@ from models import Municipio, ConvenioEstadual
 from models.user import User
 from schemas.municipio import MunicipioResponse, MunicipioSummary
 from services.auth import get_current_user, ensure_municipio_access
+from services import authz
+from services.registro_rotas import declarado
 
 router = APIRouter(prefix="/api/municipios", tags=["municipios"])
+
+# ⚠️ O resumo soma DUAS fontes no mesmo cartao — SIGCON (`convenios_estadual`) e
+# TransfereGov (`transferegov_propostas`) —, entao a exigencia honesta e "uma das
+# duas", e nao as duas. `exige()` cobra TODAS as chaves que recebe: com ele, quem
+# so tem TransfereGov perderia a home do sistema. Por isso a rota usa
+# `declarado()` (que so registra) e a decisao mora no corpo, com `authz.pode`.
+_RESUMO_PERMISSOES = ("convenios.ver", "transferegov.ver")
 
 
 def _parse_dt(s) -> date | None:
@@ -38,7 +47,8 @@ async def list_municipios(
     return [MunicipioResponse.model_validate(m) for m in result.scalars().all()]
 
 
-@router.get("/{municipio_id}/summary", response_model=MunicipioSummary)
+@router.get("/{municipio_id}/summary", response_model=MunicipioSummary,
+            dependencies=[declarado(*_RESUMO_PERMISSOES)])
 async def municipio_summary(
     municipio_id: int,
     ano: int | None = Query(None, description="Filtra os KPIs por ano (None=todos)"),
@@ -47,6 +57,34 @@ async def municipio_summary(
     current: User = Depends(get_current_user),
 ):
     ensure_municipio_access(current, municipio_id)
+    if not any(authz.pode(current, chave) for chave in _RESUMO_PERMISSOES):
+        authz.negar(current, tipo="permissao",
+                    exigido=" ou ".join(_RESUMO_PERMISSOES),
+                    possui=authz.permissoes_de(current),
+                    mensagem="Voce nao tem permissao para esta acao")
+    return await summary_core(db, municipio_id, ano=ano, anos=anos)
+
+
+# ⚠️ SEPARADO DA ROTA DE PROPOSITO, e a separacao e uma trava, nao arrumacao.
+#
+# `routers/painel.py` monta a home do Painel chamando esta logica. Enquanto ela
+# morava DENTRO do endpoint, chamar o endpoint como funcao arrastava junto a
+# checagem acima — e as rotas de /api/painel/*, que declaram `bi.ver`, passavam a
+# exigir TAMBEM `convenios.ver` ou `transferegov.ver` sem declarar nem uma coisa
+# nem outra. MEDIDO: em `AUTHZ_MODO=bloqueio`, um prefeito com exatamente
+# `bi.ver` — a concessao honesta para "ele ve o Painel" — levava 403 em
+# /visao, /timeline e /narrativa, e o front engole o erro num `.catch()`.
+#
+# O nucleo nao recebe `current` e nao checa nada: quem checa e a PORTA. Cada
+# rota que o usa declara a propria exigencia, e ninguem herda exigencia por
+# acidente de import. Mesmo desenho de `status_changes.listar_core`, que
+# `routers/bi.py` ja consumia por esta mesma razao.
+async def summary_core(
+    db: AsyncSession,
+    municipio_id: int,
+    ano: int | None = None,
+    anos: list[int] | None = None,
+) -> MunicipioSummary:
     result = await db.execute(select(Municipio).where(Municipio.id == municipio_id))
     mun = result.scalar_one_or_none()
     if not mun:

@@ -27,6 +27,13 @@ tela tem a tela do tenant inteiro.
 negado isto, para este usuario, por este motivo" e DEIXA PASSAR. O comportamento
 em producao segue identico ao de hoje ate o dono corrigir as permissoes de quem
 precisa e so entao ligar AUTHZ_MODO=bloqueio. Ver o docstring de services/authz.py.
+
+PERMISSAO POR ACAO (`exige`, ver services/registro_rotas.py)
+------------------------------------------------------------
+Cada rota declara o VERBO que ela executa — e e a declaracao que separa quem so
+CONSULTA de quem ESCREVE, coisa que a tela `rm` sozinha nunca soube fazer (quem
+via, apagava). A tela continua dizendo se a pessoa trabalha com RM, o municipio
+diz onde, e a permissao diz o que ela faz la.
 """
 from datetime import date
 from typing import Optional
@@ -41,6 +48,7 @@ from database import get_db
 from models import Municipio
 from services.auth import get_current_user, ensure_municipio_access, ensure_tela
 from services import authz
+from services.registro_rotas import exige
 from models.user import User
 from services.audit import registrar
 from services.rm_builder import montar_conteudo
@@ -109,7 +117,7 @@ def _row_to_dict(row) -> dict:
     }
 
 
-@router.get("")
+@router.get("", dependencies=[exige("rm.ver")])
 async def listar(
     municipio_id: Optional[int] = Query(None),
     db: AsyncSession = Depends(get_db),
@@ -138,7 +146,11 @@ async def listar(
     return {"items": items, "total": len(items)}
 
 
-@router.post("")
+# LIMITE DECLARADO: o INSERT abaixo e um UPSERT, entao `rm.criar` tambem alcanca
+# o relatorio que JA existe naquela data (ver `ja_existia`). Nao exigimos
+# `rm.editar` junto porque `exige()` cobra TODAS as chaves — quem so pode criar
+# perderia a criacao. A trilha ja separa os dois casos (`rm.create`/`rm.update`).
+@router.post("", dependencies=[exige("rm.criar")])
 async def criar(
     body: RmCreate,
     request: Request,
@@ -209,7 +221,7 @@ async def criar(
     return {"id": rid, "created": True}
 
 
-@router.get("/{rid}")
+@router.get("/{rid}", dependencies=[exige("rm.ver")])
 async def detalhe(
     rid: int,
     db: AsyncSession = Depends(get_db),
@@ -238,7 +250,7 @@ async def detalhe(
     return d
 
 
-@router.put("/{rid}")
+@router.put("/{rid}", dependencies=[exige("rm.editar")])
 async def atualizar(
     rid: int,
     body: RmUpdate,
@@ -290,7 +302,10 @@ async def atualizar(
     return {"updated": True}
 
 
-@router.post("/{rid}/auto-popular")
+# `rm.editar` e nao `rm.excluir`: a linha continua existindo — o que este endpoint
+# faz e SOBRESCREVER o conteudo dela (a redacao manual vai embora). Exigir
+# `excluir` cobraria a permissao de apagar de quem so precisa reprocessar.
+@router.post("/{rid}/auto-popular", dependencies=[exige("rm.editar")])
 async def repopular(
     rid: int,
     request: Request,
@@ -331,7 +346,7 @@ async def repopular(
     return {"ok": True, "partes": n_partes, "itens": n_itens}
 
 
-@router.delete("/{rid}")
+@router.delete("/{rid}", dependencies=[exige("rm.excluir")])
 async def remover(
     rid: int,
     request: Request,
@@ -358,7 +373,9 @@ async def remover(
     return {"deleted": True}
 
 
-@router.get("/{rid}/pdf")
+# As 4 variantes (completo, resumido, totalizado PDF e XLSX) saem por aqui, e
+# todas geram ARQUIVO que anda sozinho: `exportar`, nao `ver`.
+@router.get("/{rid}/pdf", dependencies=[exige("rm.exportar")])
 async def pdf(
     rid: int,
     request: Request,

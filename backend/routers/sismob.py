@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database import get_db
 from models.user import User
 from services.auth import get_current_user, ensure_municipio_access, ensure_tela
+from services.registro_rotas import exige
 from services.sismob_catalogo import url_portal
 from services.sismob_regras import classificar
 
@@ -223,7 +224,7 @@ async def fetch_sismob_obras(db: AsyncSession, municipio_id: int) -> dict:
     }
 
 
-@router.get("")
+@router.get("", dependencies=[exige("sismob.ver")])
 async def obras(
     municipio_id: int = Query(...),
     db: AsyncSession = Depends(get_db),
@@ -235,7 +236,7 @@ async def obras(
     return await fetch_sismob_obras(db, municipio_id)
 
 
-@router.get("/obra/{proposta_id}")
+@router.get("/obra/{proposta_id}", dependencies=[exige("sismob.ver")])
 async def obra(
     proposta_id: int,
     db: AsyncSession = Depends(get_db),
@@ -260,7 +261,7 @@ async def obra(
     raise HTTPException(404, "Obra não encontrada")
 
 
-@router.post("/refresh")
+@router.post("/refresh", dependencies=[exige("sismob.atualizar")])
 async def refresh(current: User = Depends(get_current_user)):
     """Dispara a coleta na hora. Mesmo precedente de /api/cauc/refresh: o
     coletor e sincrono, entao vai para uma thread para nao travar o event loop."""

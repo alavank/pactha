@@ -22,6 +22,7 @@ from services.auth import get_current_user, ensure_municipio_access, ensure_tela
 import httpx
 import unicodedata
 from services import authz
+from services.registro_rotas import exige
 
 router = APIRouter(prefix="/api/transferegov", tags=["transferegov"])
 
@@ -78,7 +79,7 @@ async def _fetch_listagem(uf: Optional[str] = "MG") -> list[dict]:
     return items
 
 
-@router.get("/buscar")
+@router.get("/buscar", dependencies=[exige("transferegov.ver")])
 async def buscar(
     municipio_id: int = Query(..., description="ID do municipio PACTHA"),
     # Aceita VARIAS situacoes (?situacao=CIENTE&situacao=IMPEDIDO).
@@ -163,7 +164,7 @@ def _digits(s) -> str:
     return "".join(c for c in (s or "") if c.isdigit())
 
 
-@router.get("/por-cnpj")
+@router.get("/por-cnpj", dependencies=[exige("transferegov.ver")])
 async def por_cnpj(
     cnpj: str = Query(..., description="CNPJ do proponente (com ou sem mascara)"),
     db: AsyncSession = Depends(get_db),
@@ -256,7 +257,7 @@ _ENCERRADA_SQL = (
 )
 
 
-@router.get("/voluntarias")
+@router.get("/voluntarias", dependencies=[exige("transferegov.ver")])
 async def voluntarias(
     municipio_id: int = Query(...),
     situacao: Optional[str] = Query(None),
@@ -414,7 +415,8 @@ async def voluntarias(
     return {"items": items, "total": len(items), "atualizado_em": last}
 
 
-@router.get("/voluntarias/{numero_proposta:path}")
+@router.get("/voluntarias/{numero_proposta:path}",
+            dependencies=[exige("transferegov.ver")])
 async def voluntarias_detalhe(
     numero_proposta: str,
     municipio_id: int = Query(...),
@@ -465,7 +467,8 @@ async def voluntarias_detalhe(
     }
 
 
-@router.get("/plano-acao/{plano_acao_id}")
+@router.get("/plano-acao/{plano_acao_id}",
+            dependencies=[exige("transferegov.ver")])
 async def detalhe(plano_acao_id: int, current: User = Depends(get_current_user)):
     """Detalhe completo de um Plano de Acao + relatorio de gestao + extrato."""
     # Antes bastava estar LOGADO. Cada chamada dispara TRES requisicoes de saida
@@ -509,7 +512,11 @@ async def detalhe(plano_acao_id: int, current: User = Depends(get_current_user))
 # ADMIN: status da sessao gov.br + dispara scraper manualmente apos re-captura
 # ============================================================================
 
-@router.get("/admin/sessao-status")
+# `sessoes.ver`, e nao `transferegov.ver`: pelo mesmo motivo que a tela exigida
+# no corpo e `sessoes` e nao `transferegov` — o que sai daqui e o estado da
+# credencial gov.br guardada no Cofre, nao dado de transferencia. A rota mora
+# neste router so por vizinhanca de assunto.
+@router.get("/admin/sessao-status", dependencies=[exige("sessoes.ver")])
 async def sessao_status(
     db: AsyncSession = Depends(get_db),
     user=Depends(get_current_user),
@@ -589,7 +596,8 @@ async def sessao_status(
     return base
 
 
-@router.post("/admin/run-scraper")
+@router.post("/admin/run-scraper",
+             dependencies=[exige("transferegov.atualizar")])
 async def run_scraper_manual(
     municipio_id: Optional[int] = Query(None, description="se None, roda todos"),
     user=Depends(get_current_user),
@@ -616,7 +624,7 @@ async def run_scraper_manual(
             "message": "Scraper iniciado em background. Acompanhe via logs."}
 
 
-@router.get("/pac")
+@router.get("/pac", dependencies=[exige("transferegov.ver")])
 async def listar_pac(
     municipio_id: int = Query(..., description="ID do municipio PACTHA"),
     parlamentar: Optional[str] = Query(None, description="filtra pela emenda parlamentar (parcial)"),

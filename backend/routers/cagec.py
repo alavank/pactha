@@ -35,6 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database import get_db
 from models.user import User
 from services.auth import get_current_user, ensure_municipio_access, ensure_tela
+from services.registro_rotas import exige
 
 router = APIRouter(prefix="/api/cagec", tags=["cagec"])
 
@@ -117,7 +118,12 @@ async def fetch_cagec_situacao(db: AsyncSession, municipio_id: int) -> dict:
     }
 
 
-@router.get("")
+# `cauc.ver` e nao uma chave `cagec.*`: nao existe uma, e nao e esquecimento do
+# catalogo. CAUC e CAGEC sao as duas colunas da MESMA tela de regularidade (o
+# router ja exige `ensure_tela(current, "cauc")` logo abaixo), e uma caixinha
+# separada so para a coluna estadual entregaria ao administrador a escolha de
+# conceder meia tela — que nao e uma escolha que ele queira fazer.
+@router.get("", dependencies=[exige("cauc.ver")])
 async def situacao(
     municipio_id: int = Query(...),
     db: AsyncSession = Depends(get_db),

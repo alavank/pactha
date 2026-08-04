@@ -20,6 +20,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, KeepTogether
 from services import authz
+from services.registro_rotas import exige
 
 router = APIRouter(prefix="/api/export-pdf", tags=["export-pdf"])
 
@@ -100,6 +101,15 @@ async def _registrar_export(
 # do repo (convenios.py, emendas_estaduais.py, transferegov.py): assim, no dia
 # do bloqueio, a mensagem que sai daqui e a mesma que a tela ja devolvia aquele
 # mesmo usuario — e nao duas explicacoes diferentes para o mesmo impedimento.
+#
+# ⭐ E A PERMISSAO DECLARADA E `<recurso>.exportar`, NAO `.ver` — o que NAO
+# contradiz o paragrafo acima. A TELA continua sendo a mesma do router que serve
+# a pagina (nenhuma chave de tela nova); o que muda e o VERBO, e "Exportar" e uma
+# caixinha que ja existe no catalogo, separada de "Ver", justamente porque baixar
+# nao e ler: o arquivo sai da plataforma e deixa de estar sob controle dela — o
+# mesmo motivo pelo qual todo endpoint daqui grava linha na trilha. Quem hoje
+# baixa e nao tiver a caixinha "Exportar" marcada aparece na trilha durante a
+# semana de observacao, que e exatamente para isso que o modo aviso existe.
 # ---------------------------------------------------------------------------
 
 
@@ -156,7 +166,7 @@ def _build_pdf(title: str, subtitle: str, headers: list, rows: list, landscape_m
     return buf
 
 
-@router.get("/convenios")
+@router.get("/convenios", dependencies=[exige("convenios.exportar")])
 async def export_convenios_pdf(
     request: Request,
     municipio_id: int = Query(...),
@@ -206,7 +216,7 @@ async def export_convenios_pdf(
         headers={"Content-Disposition": f"attachment; filename={nome_arq}"})
 
 
-@router.get("/voluntarias")
+@router.get("/voluntarias", dependencies=[exige("transferegov.exportar")])
 async def export_voluntarias_pdf(
     request: Request,
     municipio_id: int = Query(...),
@@ -296,7 +306,7 @@ def _parse_emenda(cod: str):
     return (cod.strip(), "")
 
 
-@router.get("/plano-acao")
+@router.get("/plano-acao", dependencies=[exige("transferegov.exportar")])
 async def export_plano_acao_pdf(
     request: Request,
     municipio_id: int = Query(...),
@@ -364,7 +374,7 @@ async def export_plano_acao_pdf(
         headers={"Content-Disposition": f"attachment; filename={nome_arq}"})
 
 
-@router.get("/emendas")
+@router.get("/emendas", dependencies=[exige("emendas.exportar")])
 async def export_emendas_pdf(
     request: Request,
     municipio_id: int = Query(...),
@@ -407,7 +417,7 @@ async def export_emendas_pdf(
         headers={"Content-Disposition": f"attachment; filename={nome_arq}"})
 
 
-@router.get("/dou")
+@router.get("/dou", dependencies=[exige("dou.exportar")])
 async def export_dou_pdf(
     request: Request,
     municipio_id: int = Query(...),
@@ -484,7 +494,7 @@ def _sec_table(headers: list, rows: list, col_widths_mm: list) -> Table:
     return t
 
 
-@router.get("/parlamentares")
+@router.get("/parlamentares", dependencies=[exige("parlamentares.exportar")])
 async def export_parlamentares_pdf(
     request: Request,
     municipio_id: Optional[int] = Query(None),
@@ -769,7 +779,7 @@ _FONTE_DA_TOOL = {
 }
 
 
-@router.post("/ai-relatorio")
+@router.post("/ai-relatorio", dependencies=[exige("ai.exportar")])
 async def export_ai_relatorio(
     request: Request,
     payload: dict = Body(...),
@@ -879,7 +889,7 @@ async def export_ai_relatorio(
         headers={"Content-Disposition": f"attachment; filename=relatorio-{nome_arq}.pdf"})
 
 
-@router.post("/ai")
+@router.post("/ai", dependencies=[exige("ai.exportar")])
 async def export_ai_pdf(
     request: Request,
     payload: dict = Body(...),

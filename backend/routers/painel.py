@@ -17,9 +17,10 @@ from sqlalchemy import text
 from services.ia_texto import modelo_texto, params_raciocinio, max_tokens_texto
 from database import get_db
 from services.auth import get_current_user, ensure_municipio_access
+from services.registro_rotas import exige
 from models.user import User
 
-from routers.municipios import municipio_summary
+from routers.municipios import summary_core
 from routers.cauc import fetch_cauc_situacao
 from routers.parlamentares import aggregate_parlamentares
 from routers.convenios import query_alertas_vigencia, query_prestacao_contas
@@ -27,8 +28,23 @@ from routers import status_changes as _status_changes
 
 router = APIRouter(prefix="/api/painel", tags=["painel"])
 
+# `bi.ver` e nao uma permissao propria de /api/painel: este e o MESMO produto que
+# /api/bi/* — a superficie executiva antiga, viva ate o corte. Duas chaves para o
+# mesmo painel dariam ao administrador duas caixinhas a marcar para um acesso so,
+# e a segunda seria esquecida.
+#
+# As seis rotas abaixo somam a declaracao ao `ensure_municipio_access` que ja
+# existia no corpo: a permissao diz O QUE (ler o painel), o municipio diz ONDE.
+#
+# ⚠️ E POR ISSO QUE ESTE ARQUIVO CHAMA `summary_core`/`listar_core`, E NAO OS
+# ENDPOINTS `municipios.municipio_summary`/`status_changes.listar`. Aqueles dois
+# checam `convenios.ver ou transferegov.ver` no corpo, e chamar um endpoint como
+# funcao arrasta a checagem dele junto: a rota declararia `bi.ver` e exigiria, na
+# pratica, uma segunda permissao que nao esta escrita em lugar nenhum. Quem for
+# acrescentar dado ao Painel: importe o NUCLEO, nunca o endpoint.
 
-@router.get("/{municipio_id}/visao")
+
+@router.get("/{municipio_id}/visao", dependencies=[exige("bi.ver")])
 async def visao(
     municipio_id: int,
     ano: Optional[int] = Query(None, description="Filtra os KPIs por ano (None=todos)"),
@@ -38,18 +54,12 @@ async def visao(
     """Payload consolidado da home do Painel: KPIs + semaforo CAUC + top
     parlamentares + ultimas mudancas. Um round-trip so p/ mobile/TV."""
     ensure_municipio_access(current, municipio_id)
-    # POR NOME, nao por posicao: `municipio_summary` ganhou o parametro
-    # `anos` entre `ano` e `db`, e a chamada posicional passaria a
-    # sessao no lugar dele — o Painel quebraria so quando alguem abrisse.
-    summary = await municipio_summary(
-        municipio_id, ano=ano, anos=None, db=db, current=current)
+    summary = await summary_core(db, municipio_id, ano=ano)
     cauc = await fetch_cauc_situacao(db, municipio_id)
     ranking = await aggregate_parlamentares(
         db, municipio_id=municipio_id, ano=ano, incluir_plano_acao=False
     )
-    mudancas = await _status_changes.listar(
-        municipio_id=municipio_id, days=30, limit=8, db=db, current=current
-    )
+    mudancas = await _status_changes.listar_core(db, [municipio_id], 30, 8)
     # Saúde: dívida do Fundo Estadual de Saúde (Acordo FES/SES-MG) com o município.
     saude = None
     try:
@@ -75,7 +85,7 @@ async def visao(
     }
 
 
-@router.get("/{municipio_id}/semaforo")
+@router.get("/{municipio_id}/semaforo", dependencies=[exige("bi.ver")])
 async def semaforo(
     municipio_id: int,
     db: AsyncSession = Depends(get_db),
@@ -86,7 +96,7 @@ async def semaforo(
     return await fetch_cauc_situacao(db, municipio_id)
 
 
-@router.get("/{municipio_id}/ranking-parlamentares")
+@router.get("/{municipio_id}/ranking-parlamentares", dependencies=[exige("bi.ver")])
 async def ranking_parlamentares(
     municipio_id: int,
     ano: Optional[int] = Query(None),
@@ -101,7 +111,7 @@ async def ranking_parlamentares(
     )
 
 
-@router.get("/{municipio_id}/timeline")
+@router.get("/{municipio_id}/timeline", dependencies=[exige("bi.ver")])
 async def timeline(
     municipio_id: int,
     days: int = Query(30, ge=1, le=365),
@@ -111,12 +121,10 @@ async def timeline(
 ):
     """Mudancas de status recentes (o que mexeu no municipio)."""
     ensure_municipio_access(current, municipio_id)
-    return await _status_changes.listar(
-        municipio_id=municipio_id, days=days, limit=limit, db=db, current=current
-    )
+    return await _status_changes.listar_core(db, [municipio_id], days, limit)
 
 
-@router.get("/{municipio_id}/alertas")
+@router.get("/{municipio_id}/alertas", dependencies=[exige("bi.ver")])
 async def alertas(
     municipio_id: int,
     ano: Optional[int] = Query(None),
@@ -133,7 +141,7 @@ async def alertas(
     }
 
 
-@router.get("/{municipio_id}/narrativa")
+@router.get("/{municipio_id}/narrativa", dependencies=[exige("bi.ver")])
 async def narrativa(
     municipio_id: int,
     ano: Optional[int] = Query(None),
@@ -145,11 +153,7 @@ async def narrativa(
     graciosamente: sem ANTHROPIC_API_KEY, devolve disponivel=false e o frontend
     usa o texto por template. GET grava o cache (nao e escrita do sistema)."""
     ensure_municipio_access(current, municipio_id)
-    # POR NOME, nao por posicao: `municipio_summary` ganhou o parametro
-    # `anos` entre `ano` e `db`, e a chamada posicional passaria a
-    # sessao no lugar dele — o Painel quebraria so quando alguem abrisse.
-    summary = await municipio_summary(
-        municipio_id, ano=ano, anos=None, db=db, current=current)
+    summary = await summary_core(db, municipio_id, ano=ano)
     cauc = await fetch_cauc_situacao(db, municipio_id)
     ranking = await aggregate_parlamentares(db, municipio_id=municipio_id, ano=ano, incluir_plano_acao=False)
     top = [

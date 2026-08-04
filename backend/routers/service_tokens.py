@@ -3,6 +3,15 @@ Gerenciamento de Service Tokens (admin only).
 
 Tokens sao mostrados em claro APENAS uma vez - na criacao.
 Depois disso so o hash fica no banco.
+
+⚠️ AS QUATRO ROTAS DAQUI NAO DECLARAM PERMISSAO — estao em
+`services/registro_rotas.py::ROTAS_LIVRES`, com o motivo escrito la. Resumo: o
+gate e `is_super_admin`, e ele e MAIS FORTE que o catalogo de permissoes, nao
+mais fraco — super-admin ja tem todas as chaves, entao nao existe caixinha que
+abra estas rotas, e inventar uma (`service_tokens.criar`) criaria justamente o
+caminho que hoje nao existe: um admin do cliente recebendo o poder de emitir
+credencial de maquina. Se `_require_admin` sair daqui, aquelas linhas da
+allowlist passam a cobrir uma rota aberta — mexer numa exige rever a outra.
 """
 import secrets as pysecrets
 from datetime import datetime, timezone
