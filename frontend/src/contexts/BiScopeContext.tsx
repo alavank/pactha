@@ -1,23 +1,33 @@
 "use client";
-// Escopo + periodo do Painel de Indicadores (BI). INDEPENDENTE do
-// MunicipioContext operacional (que os tecnicos usam): adiciona a opcao
-// "Consolidado (todos)" e persiste a escolha do BI numa chave PROPRIA
-// (pactha_bi_scope) — nunca sobrescreve a selecao do sistema.
+// Periodo do Painel de Indicadores (BI) — e SÓ o período.
+//
+// ⚠️ O ESCOPO DEIXOU DE MORAR AQUI. Ele era independente do MunicipioContext e
+// persistia numa chave PRÓPRIA (`pactha_bi_scope`), com um seletor próprio no
+// cabeçalho do Painel. Numa assessoria isso produzia dois seletores de município
+// visíveis ao mesmo tempo, apontando para CIDADES DIFERENTES: a pessoa trocava o
+// município no menu, a barra lateral passava a dizer B, e o painel inteiro
+// continuava mostrando A — sem piscar, sem aviso. Como os municípios de uma
+// carteira são clientes diferentes, isso é confundir dado de cliente.
+//
+// Agora o escopo vem do `MunicipioContext`, que é o seletor único do sistema, e
+// este contexto cuida apenas do período.
 //
 // PERIODO E MULTI-ANO: um prefeito filtra o MANDATO (ex.: 2021-2024), nao um
 // ano. `anos` e a fonte da verdade; `ano` continua exposto so para as telas
 // antigas que ainda mandam um valor unico.
 import { createContext, useContext, useState, useCallback, ReactNode, useMemo } from "react";
+import { CONSOLIDADO, useMunicipio } from "./MunicipioContext";
 
-export const CONSOLIDADO = "__all__";
+/** Reexportado para as telas que já importavam daqui — a definição mora no
+ *  `MunicipioContext`, junto do seletor que manda nele. */
+export { CONSOLIDADO };
 
-const K_SCOPE = "pactha_bi_scope";
 const K_ANOS = "pactha_bi_anos";
 const K_ANO_LEGADO = "pactha_bi_ano";
 
 interface BiScope {
-  scope: string; // "__all__" (consolidado) | "<municipioId>" | ""
-  setScope: (s: string) => void;
+  /** Espelho do seletor único: `"__all__"` | `"<municipioId>"` | `""`. */
+  scope: string;
   municipioId: number | null; // null quando consolidado ou vazio
   isConsolidado: boolean;
   /** Anos selecionados (vazio = todos os anos). */
@@ -45,20 +55,12 @@ function lerAnosIniciais(): number[] {
 }
 
 export function BiScopeProvider({ children }: { children: ReactNode }) {
-  const [scope, setScopeState] = useState<string>(() => {
-    if (typeof window === "undefined") return "";
-    return (
-      localStorage.getItem(K_SCOPE) ||
-      localStorage.getItem("pactha_last_municipio_id") ||
-      ""
-    );
-  });
+  /* O escopo é LIDO do seletor único, e não guardado aqui. Não há `setScope`:
+     quem muda de município é o seletor da barra lateral, que passa pela
+     transição (aviso + remontagem + tela inicial). Um segundo caminho de troca
+     sem transição reabriria exatamente o buraco que ela fechou. */
+  const { escopo: scope } = useMunicipio();
   const [anos, setAnosState] = useState<number[]>(lerAnosIniciais);
-
-  const setScope = useCallback((s: string) => {
-    setScopeState(s);
-    if (typeof window !== "undefined") localStorage.setItem(K_SCOPE, s);
-  }, []);
 
   const setAnos = useCallback((a: number[]) => {
     const limpo = [...new Set(a.map(Number).filter(Boolean))].sort((x, y) => x - y);
@@ -97,7 +99,6 @@ export function BiScopeProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<BiScope>(() => ({
     scope,
-    setScope,
     municipioId: scope && scope !== CONSOLIDADO ? Number(scope) : null,
     isConsolidado: scope === CONSOLIDADO,
     anos,
@@ -105,7 +106,7 @@ export function BiScopeProvider({ children }: { children: ReactNode }) {
     alternarAno,
     ano: anos.length === 1 ? anos[0] : undefined,
     setAno,
-  }), [scope, setScope, anos, setAnos, alternarAno, setAno]);
+  }), [scope, anos, setAnos, alternarAno, setAno]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
