@@ -402,7 +402,7 @@ async def repopular(
         target_type="rm", target_id=rid, municipio_id=row[0], alvo_nome=row[2],
         details={"partes": n_partes, "itens": n_itens,
                  "data_referencia": row[1].isoformat() if row[1] else None,
-                 "efeito": "conteudo anterior substituido pelos dados atuais"},
+                 "efeito": "conteúdo anterior substituído pelos dados atuais"},
     )
     return {"ok": True, "partes": n_partes, "itens": n_itens}
 

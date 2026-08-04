@@ -895,7 +895,7 @@ async def _fatos_da_aba(db: AsyncSession, ids: list[int], cons: bool, aba: str,
         fatos = {
             "aba": "fns", "periodo": periodo_txt,
             "propostas": _total, "valor_total": _valor,
-            "situacoes": [{"label": r[0] or "sem situacao", "qtd": int(r[1]),
+            "situacoes": [{"label": r[0] or "sem situação", "qtd": int(r[1]),
                            "valor": float(r[2] or 0)} for r in _linhas],
         }
         tpl = [f"FNS: {_total} proposta(s) de saúde somando {_money_br(_valor)}."
@@ -980,7 +980,7 @@ async def insights(
 ):
     """Mensagens curtas da IA sobre a aba aberta (slideshow do cabecalho)."""
     if aba not in ABAS_INSIGHT:
-        raise HTTPException(status_code=400, detail=f"aba invalida: {aba}")
+        raise HTTPException(status_code=400, detail=f"aba inválida: {aba}")
     # Depois do 400 de proposito: `aba` invalida e pedido malformado, nao
     # permissao que falta, e a lista de abas ja e publica no frontend — trocar a
     # ordem mudaria a resposta de hoje sem esconder nada de ninguem.
@@ -1085,12 +1085,12 @@ def _prazo_do_link(body: TelaLinkIn) -> tuple[Optional[datetime], int]:
         return None, _DIAS_MAX_LINK
     if modo == "data":
         if not body.data_expiracao:
-            raise HTTPException(status_code=400, detail="Informe a data de expiracao")
+            raise HTTPException(status_code=400, detail="Informe a data de expiração")
         # Fim do dia escolhido, em UTC. Sem isto, "expira em 10/08" mataria o
         # link a meia-noite do dia 9 para quem esta em Brasilia.
         fim = datetime.combine(body.data_expiracao, dt_time.max, tzinfo=timezone.utc)
         if fim <= datetime.now(timezone.utc):
-            raise HTTPException(status_code=400, detail="A data de expiracao ja passou")
+            raise HTTPException(status_code=400, detail="A data de expiração já passou")
         dias = max(1, min((fim - datetime.now(timezone.utc)).days + 1, _DIAS_MAX_LINK))
         return fim, dias
     # `int(body.dias or 365)` seria o idioma natural aqui — e estava errado:
@@ -1331,7 +1331,7 @@ async def criar_tela_link(
                  "dias": dias, "expira_em": expira.isoformat() if expira else None,
                  "sem_prazo": expira is None,
                  "kiosk_user_id": uid,
-                 "efeito": "acesso publico sem login ao painel enquanto o link viver"},
+                 "efeito": "acesso público sem login ao painel enquanto o link viver"},
     )
     # ⚠️ A RESPOSTA DO POST TEM DE SER O LINK INTEIRO, e nao so o slug.
     # Devolvia `{slug, caminho, kind, dias}`, e a tela — que insere o item
@@ -1389,7 +1389,7 @@ async def revogar_tela_link(
     ), {"s": slug, "u": current.id})).first()
     if not row:
         await db.rollback()
-        raise HTTPException(status_code=404, detail="Link nao encontrado")
+        raise HTTPException(status_code=404, detail="Link não encontrado")
     await db.execute(text("UPDATE users SET active = false WHERE id = :k"), {"k": row[0]})
     await db.commit()
     # Mesma `referencia` da criacao (hash do slug): e por ela que o auditor liga
@@ -1426,7 +1426,7 @@ async def resolver_tela_link(slug: str, db: AsyncSession = Depends(get_db)):
         "WHERE l.slug = :s"
     ), {"s": slug})).first()
     if not row or row[3]:
-        raise HTTPException(status_code=404, detail="Link invalido ou revogado")
+        raise HTTPException(status_code=404, detail="Link inválido ou revogado")
     if row[4] is not None and row[4] < datetime.now(timezone.utc):
         raise HTTPException(status_code=404, detail="Link expirado")
     # Throttle proposital: a TV chama isto a cada 10s, o dia inteiro. Gravar a

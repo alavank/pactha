@@ -118,14 +118,14 @@ async def login(
                 # de "alguem esta varrendo e-mails". Fica so na trilha interna —
                 # a resposta ao cliente continua generica ("Email ou senha
                 # incorretos"), para nao virar oraculo de contas existentes.
-                "motivo": "senha incorreta" if user else "usuario inexistente",
+                "motivo": "senha incorreta" if user else "usuário inexistente",
             },
             commit=True,
         )
         raise HTTPException(status_code=401, detail="Email ou senha incorretos")
     if not user.active:
         await registrar(db, action="login.disabled_user", user=user, request=request)
-        raise HTTPException(status_code=403, detail="Usuario desativado")
+        raise HTTPException(status_code=403, detail="Usuário desativado")
 
     # Atualiza last_login
     user.last_login_at = datetime.now(timezone.utc)
@@ -162,7 +162,7 @@ async def refresh_token(
     res = await db.execute(select(User).where(User.id == user_id))
     user = res.scalar_one_or_none()
     if not user or not user.active:
-        raise HTTPException(status_code=401, detail="Usuario invalido")
+        raise HTTPException(status_code=401, detail="Usuário inválido")
 
     # rotate: revoga refresh antigo + emite novos
     revoke_jti(payload["jti"])
@@ -227,7 +227,7 @@ async def change_password(
     if req.new_password == req.current_password:
         raise HTTPException(status_code=400, detail="Nova senha deve ser diferente da atual")
     if len(req.new_password) < 10:
-        raise HTTPException(status_code=400, detail="Senha deve ter no minimo 10 caracteres")
+        raise HTTPException(status_code=400, detail="Senha deve ter no mínimo 10 caracteres")
 
     user.password_hash = hash_password(req.new_password)
     user.must_change_password = False
@@ -250,20 +250,20 @@ async def register(
     current_user: User = Depends(get_current_user),
 ):
     if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Apenas admins podem registrar usuarios")
+        raise HTTPException(status_code=403, detail="Apenas admins podem registrar usuários")
 
     # Normaliza o email (case/espacos): sem isso "Admin@Pactha.com.br" nao colide
     # com a conta principal e cria uma segunda conta que se passa por ela.
     # Mesmo tratamento que create_user (routers/users.py) ja faz.
     email = (req.email or "").strip().lower()
     if not email or "@" not in email:
-        raise HTTPException(status_code=400, detail="Email invalido")
+        raise HTTPException(status_code=400, detail="Email inválido")
     if req.role not in ("admin", "usuario", "analyst", "user"):
-        raise HTTPException(status_code=400, detail="Role invalida")
+        raise HTTPException(status_code=400, detail="Role inválida")
 
     existing = await db.execute(select(User).where(User.email == email))
     if existing.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="Email ja cadastrado")
+        raise HTTPException(status_code=400, detail="Email já cadastrado")
 
     user = User(
         email=email,

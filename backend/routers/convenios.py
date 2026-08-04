@@ -598,7 +598,7 @@ async def get_convenio_estadual_detail(
     c = (await db.execute(q)).scalar_one_or_none()
     if not c:
         from fastapi import HTTPException
-        raise HTTPException(404, "Convenio nao encontrado")
+        raise HTTPException(404, "Convênio não encontrado")
 
     raw = c.raw_data if isinstance(c.raw_data, dict) else {}
     nr_proposta = raw.get("nr_proposta")
@@ -708,17 +708,17 @@ async def refresh_sigcon(
     await registrar(
         db, action="coletor.disparo", user=current, request=request,
         target_type="scraper", target_id="sigcon", alvo_nome="SIGCON-MG",
-        details={"fonte": "sigcon", "origem": "tela do usuario",
+        details={"fonte": "sigcon", "origem": "tela do usuário",
                  "enfileirado": row is not None,
                  "job_id": row[0] if row else None},
     )
     if row is None:
         return {
             "status": "already_queued",
-            "message": "Uma atualizacao do SIGCON ja esta na fila ou em execucao.",
+            "message": "Uma atualização do SIGCON já está na fila ou em execução.",
         }
     return {
         "status": "triggered",
-        "message": "Scraper SIGCON enfileirado. Os dados serao atualizados em 1-2 minutos.",
+        "message": "Scraper SIGCON enfileirado. Os dados serão atualizados em 1-2 minutos.",
         "job_id": row[0],
     }

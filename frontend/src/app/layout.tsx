@@ -11,8 +11,8 @@ const nunito = Nunito({
 });
 
 export const metadata: Metadata = {
-  title: "PACTHA - Monitoramento de Convenios",
-  description: "Sistema de Monitoramento de Convenios e Transferencias Governamentais",
+  title: "PACTHA - Monitoramento de Convênios",
+  description: "Sistema de Monitoramento de Convênios e Transferências Governamentais",
 };
 
 export default function RootLayout({

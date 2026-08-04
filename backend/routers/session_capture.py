@@ -58,7 +58,7 @@ async def get_capture_principal(
         res = await db.execute(select(ServiceToken).where(ServiceToken.token_hash == th))
         tok = res.scalar_one_or_none()
         if not tok or not tok.active:
-            raise HTTPException(401, "Service token invalido ou revogado")
+            raise HTTPException(401, "Service token inválido ou revogado")
         if tok.expires_at and tok.expires_at < datetime.now(timezone.utc):
             raise HTTPException(401, "Service token expirado")
         require_scope(tok, "session:write")
@@ -76,16 +76,16 @@ async def get_capture_principal(
     if not token:
         token = request.cookies.get(COOKIE_NAME_ACCESS)
     if not token:
-        raise HTTPException(401, "Nao autenticado (sem service token nem JWT)")
+        raise HTTPException(401, "Não autenticado (sem service token nem JWT)")
     try:
         payload = decode_access(token)
         uid = int(payload.get("sub"))
     except Exception:
-        raise HTTPException(401, "JWT invalido ou expirado")
+        raise HTTPException(401, "JWT inválido ou expirado")
     res = await db.execute(select(User).where(User.id == uid))
     user = res.scalar_one_or_none()
     if not user:
-        raise HTTPException(401, "Usuario nao encontrado")
+        raise HTTPException(401, "Usuário não encontrado")
     # Esta rota decodifica o JWT na mao e NAO passa por `get_current_user`, entao
     # NENHUM guard central roda aqui — nem o de somente-leitura, nem o de
     # quiosque. As duas checagens abaixo tem de existir NESTE arquivo.
@@ -95,12 +95,12 @@ async def get_capture_principal(
     # escrevendo no Cofre pelos 365 dias do JWT. O mesmo vale para funcionario
     # desligado cuja conta foi desativada.
     if not user.active:
-        raise HTTPException(401, "Usuario inativo")
+        raise HTTPException(401, "Usuário inativo")
     # E conta de quiosque nao captura sessao. O que esta rota faz e cifrar e
     # gravar credencial no Cofre (e disparar o scraper): e a operacao mais
     # sensivel do sistema, e o link publico de TV nao tem o que fazer aqui.
     if getattr(user, "kiosk", False):
-        raise HTTPException(403, "Conta de quiosque nao captura sessao")
+        raise HTTPException(403, "Conta de quiosque não captura sessão")
     # ⭐ E, no caminho do USUARIO, a permissao. Ela so existe aqui: o caminho do
     # service token nao tem `User` de quem cobrar, e nao precisa — a autoridade
     # dele e o scope `session:write`, ja conferido acima por `require_scope`.
@@ -151,7 +151,7 @@ async def capture_session(
     """Salva cookie de sessao capturado pelo bookmarklet/extensao no Cofre.
     Auth: service token longevo (extensao) OU JWT de usuario (web)."""
     if not payload.cookie or len(payload.cookie) < 10:
-        raise HTTPException(status_code=400, detail="Cookie vazio ou invalido")
+        raise HTTPException(status_code=400, detail="Cookie vazio ou inválido")
 
     # Limita tamanho
     cookie_clean = payload.cookie[:8000]
@@ -254,9 +254,9 @@ async def capture_session(
         "automation_key": payload.automation_key,
         "auto_scrape_started": auto_scrape,
         "message": (
-            "Sessao capturada + scraper TransfereGov iniciado em background "
+            "Sessão capturada + scraper TransfereGov iniciado em background "
             "(janela 20min). Acompanhe via /dashboard/sessoes."
-            if auto_scrape else "Sessao capturada."
+            if auto_scrape else "Sessão capturada."
         ),
     }
 

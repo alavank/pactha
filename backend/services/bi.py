@@ -51,7 +51,7 @@ async def resolve_scope(
         try:
             subset_set = {int(x) for x in subset}
         except (TypeError, ValueError):
-            raise HTTPException(status_code=400, detail="subset invalido")
+            raise HTTPException(status_code=400, detail="subset inválido")
 
     allowed = getattr(user, "allowed_municipio_ids", None)
     if allowed is None:  # admin -> todos os ativos
@@ -68,7 +68,7 @@ async def resolve_scope(
             raise HTTPException(status_code=403, detail="Voce nao tem municipios no escopo")
 
     if not ids:
-        raise HTTPException(status_code=404, detail="Nenhum municipio no escopo")
+        raise HTTPException(status_code=404, detail="Nenhum município no escopo")
     return ids, True
 
 

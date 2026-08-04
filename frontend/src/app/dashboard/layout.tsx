@@ -121,7 +121,7 @@ const NAV_ITEMS: NavEntry[] = [
       { href: "/dashboard/transferegov-geral", label: "Geral" },
       { href: "/dashboard/transferegov", label: "Especiais" },
       { href: "/dashboard/transferegov-pac", label: "PAC (Novo PAC)" },
-      { href: "/dashboard/transferegov-voluntarias", label: "Voluntarias" },
+      { href: "/dashboard/transferegov-voluntarias", label: "Voluntárias" },
       { href: "/dashboard/transferegov-rejeitadas", label: "Rejeitadas" },
       { href: "/dashboard/transferegov-encerradas", label: "Encerradas" },
       { href: "/dashboard/transferegov-cnpj", label: "CNPJ" },
@@ -129,13 +129,13 @@ const NAV_ITEMS: NavEntry[] = [
   },
   { href: "/dashboard/cauc", label: "CAUC / CAGEC", icon: ShieldCheck },
   { href: "/dashboard/sismob", label: "Obras da Saúde (SISMOB)", icon: HardHat },
-  { href: "/dashboard/acordofes", label: "Acordo FES (Divida Saude)", icon: HeartPulse },
-  { href: "/dashboard/fns", label: "Fundo Nacional de Saude", icon: Target },
+  { href: "/dashboard/acordofes", label: "Acordo FES (Dívida Saúde)", icon: HeartPulse },
+  { href: "/dashboard/fns", label: "Fundo Nacional de Saúde", icon: Target },
   { href: "/dashboard/simec", label: "SIMEC - PAR (MEC)", icon: Target },
   { href: "/dashboard/paineis", label: "Painéis Municipais", icon: LayoutGrid },
-  { href: "/dashboard/dou", label: "Diario Oficial", icon: Newspaper },
+  { href: "/dashboard/dou", label: "Diário Oficial", icon: Newspaper },
   { href: "/dashboard/cofre", label: "Cofre de Senhas", icon: KeyRound },
-  { href: "/dashboard/sessoes", label: "Sessoes (gov.br)", icon: KeyRound },
+  { href: "/dashboard/sessoes", label: "Sessões (gov.br)", icon: KeyRound },
 ];
 
 // A secao Administracao. O padrao aqui e "so admin ve", e por isso o bloco
@@ -149,7 +149,7 @@ const NAV_ITEMS: NavEntry[] = [
 type AdminNavItem = NavLeaf & { icon: React.ComponentType<{ className?: string }>; tela?: string };
 
 const ADMIN_NAV_ITEMS: AdminNavItem[] = [
-  { href: "/dashboard/usuarios", label: "Usuarios", icon: Users },
+  { href: "/dashboard/usuarios", label: "Usuários", icon: Users },
   { href: "/dashboard/auditoria", label: "Auditoria", icon: ScrollText, tela: "auditoria" },
   { href: "/dashboard/frescor", label: "Status dos Dados", icon: Activity },
   { href: "/dashboard/service-tokens", label: "Service Tokens", icon: KeyRound },
@@ -362,7 +362,7 @@ function SidebarContent({
       <nav className={`flex-1 space-y-0.5 py-3 overflow-y-auto ${recolhida ? "px-1.5" : "px-2"}`}>
         {!recolhida && (
           <div className="px-3 mb-2 text-[10px] font-semibold uppercase tracking-wider text-base-content/40">
-            Modulos
+            Módulos
           </div>
         )}
         {visibleNav.map((item) => {
@@ -494,7 +494,7 @@ function SidebarContent({
               <div className="my-2 border-t border-base-300" />
             ) : (
               <div className="px-3 mt-4 mb-2 text-[10px] font-semibold uppercase tracking-wider text-base-content/40">
-                Administracao
+                Administração
               </div>
             )}
             {adminNavVisivel.map((item) => {
@@ -539,7 +539,7 @@ function SidebarContent({
         {user && !recolhida && (
           <div className="mb-2 px-2 py-2 rounded-lg bg-base-100 border border-base-300">
             <div className="text-[10px] uppercase tracking-wider text-base-content/40">
-              Usuario
+              Usuário
             </div>
             <div className="text-sm font-medium text-base-content truncate">
               {user.name}
@@ -783,7 +783,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
           </SheetTrigger>
         </div>
         <SheetContent side="left" className="w-64 p-0">
-          <SheetTitle className="sr-only">Menu de navegacao</SheetTitle>
+          <SheetTitle className="sr-only">Menu de navegação</SheetTitle>
           <SidebarContent
             pathname={pathname}
             municipios={municipios}

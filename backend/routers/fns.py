@@ -58,7 +58,7 @@ async def _ensure_fns_municipio(current, municipio: str, db: AsyncSession) -> No
     if allowed is None:  # admin -> todos
         return
     if not allowed:
-        raise HTTPException(403, "Voce nao tem municipios atribuidos")
+        raise HTTPException(403, "Você não tem municípios atribuídos")
     rows = await db.execute(
         text("SELECT nome, ibge_code FROM municipios WHERE id = ANY(:ids)"),
         {"ids": list(allowed)},
@@ -149,7 +149,7 @@ async def consultar_fns(
     # Resolve codigo IBGE FNS (tabela municipios do ambiente + fallbacks)
     cod = await _resolve_cod(municipio, uf, db)
     if not cod:
-        raise HTTPException(404, f"Municipio '{municipio}' nao mapeado")
+        raise HTTPException(404, f"Município '{municipio}' não mapeado")
 
     cookies = await _get_cookies(db)
     params = {
@@ -182,7 +182,7 @@ async def consultar_fns(
                 },
             )
             if r.status_code == 401 or "login" in r.text[:200].lower():
-                raise HTTPException(401, "Sessao FNS expirada. Re-capture via bookmarklet.")
+                raise HTTPException(401, "Sessão FNS expirada. Re-capture via bookmarklet.")
             r.raise_for_status()
             return r.json()
 

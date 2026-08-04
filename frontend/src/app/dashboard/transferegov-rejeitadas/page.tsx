@@ -7,7 +7,7 @@ export default function TransfereGovRejeitadasPage() {
     <TransfereGovPropostas
       categoria="rejeitadas"
       titulo="Transfere Gov - Rejeitadas"
-      subtitulo="Propostas rejeitadas (incluindo por impedimento tecnico) - SICONV"
+      subtitulo="Propostas rejeitadas (incluindo por impedimento técnico) - SICONV"
     />
   );
 }

@@ -89,7 +89,7 @@ async def create_token(
     # Verifica nome unico
     exists = await db.execute(select(ServiceToken).where(ServiceToken.name == req.name))
     if exists.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="Nome ja em uso")
+        raise HTTPException(status_code=400, detail="Nome já em uso")
 
     # Gera token raw com prefixo identificavel
     raw = "pactha_st_" + pysecrets.token_urlsafe(40)
@@ -122,7 +122,7 @@ async def create_token(
         "name": token.name,
         "token": raw,  # MOSTRA SO AGORA
         "scopes": token.scopes,
-        "warning": "Anote esse token. Ele NAO sera mostrado novamente.",
+        "warning": "Anote esse token. Ele NÃO será mostrado novamente.",
     }
 
 
@@ -136,7 +136,7 @@ async def revoke_token(
     _require_admin(user)
     token = await db.get(ServiceToken, token_id)
     if not token:
-        raise HTTPException(status_code=404, detail="Token nao encontrado")
+        raise HTTPException(status_code=404, detail="Token não encontrado")
     token.active = False
     await db.commit()
     await log_event(
@@ -159,7 +159,7 @@ async def rotate_token(
     _require_admin(user)
     token = await db.get(ServiceToken, token_id)
     if not token:
-        raise HTTPException(status_code=404, detail="Token nao encontrado")
+        raise HTTPException(status_code=404, detail="Token não encontrado")
 
     raw = "pactha_st_" + pysecrets.token_urlsafe(40)
     token.token_hash = hash_token(raw)

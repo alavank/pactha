@@ -509,7 +509,7 @@ _ja_logadas: set = set()
 _TETO_LOG = 500
 
 MENSAGEM_BLOQUEIO = (
-    "Esta funcionalidade esta indisponivel: a rota subiu sem permissao "
+    "Esta funcionalidade está indisponível: a rota subiu sem permissão "
     "declarada. Avise o suporte."
 )
 

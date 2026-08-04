@@ -540,7 +540,7 @@ UF_DA_FONTE = "MG"
 # regularidade estadual dele ainda nao e acompanhada aqui — sem afirmar que o
 # cadastro nao existe (existe: GO tem o SIGECON, o ES tem o Portal de Convenios).
 MOTIVO_ESTADO_SEM_FONTE = (
-    "O cadastro estadual de convenentes deste estado ainda nao e acompanhado "
+    "O cadastro estadual de convenentes deste estado ainda não é acompanhado "
     "por este sistema."
 )
 

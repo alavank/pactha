@@ -1330,7 +1330,7 @@ async def ping(_=Depends(get_current_user)):
     try:
         import anthropic
     except ImportError:
-        raise HTTPException(503, "anthropic nao instalada")
+        raise HTTPException(503, "anthropic não instalada")
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
         raise HTTPException(503, "ANTHROPIC_API_KEY ausente")
@@ -1399,7 +1399,7 @@ async def _run_ai_chat(
             if municipio_id is not None and int(municipio_id) in escopo:
                 escopo = [int(municipio_id)]
         else:
-            raise HTTPException(500, "Escopo da IA nao resolvido (chamada sem escopo/user_id).")
+            raise HTTPException(500, "Escopo da IA não resolvido (chamada sem escopo/user_id).")
     escopo = [int(x) for x in escopo]
 
     # Constroi mensagens
@@ -1429,10 +1429,10 @@ def _cliente_ia():
     try:
         import anthropic
     except ImportError:
-        raise HTTPException(503, "Biblioteca anthropic nao instalada no servidor.")
+        raise HTTPException(503, "Biblioteca anthropic não instalada no servidor.")
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
-        raise HTTPException(503, "ANTHROPIC_API_KEY nao configurada no servidor.")
+        raise HTTPException(503, "ANTHROPIC_API_KEY não configurada no servidor.")
     if _CLIENTE is None or getattr(_CLIENTE, "_pactha_key", None) != api_key:
         _CLIENTE = anthropic.AsyncAnthropic(api_key=api_key)
         _CLIENTE._pactha_key = api_key  # rotacionar a env recria o cliente
@@ -1483,7 +1483,7 @@ async def _loop_eventos(client, db, messages, escopo: list[int], escopo_txt: str
     try:
         import anthropic
     except ImportError:
-        raise HTTPException(503, "anthropic nao instalada")
+        raise HTTPException(503, "anthropic não instalada")
 
     # Bloco 1 = estatico (tools + regras): e o que fica em cache entre requests.
     # Bloco 2 = escopo desta conversa; fica DEPOIS do breakpoint para nao
@@ -1691,7 +1691,7 @@ async def _execute_loop(client, db, messages, escopo: list[int], escopo_txt: str
         if tipo == "fim":
             final = dado
     if not final:
-        raise HTTPException(500, "IA nao produziu resposta.")
+        raise HTTPException(500, "IA não produziu resposta.")
     return final
 
 
@@ -1706,7 +1706,7 @@ async def chat(
     ensure_tela(current, "ai")
     escopo = await resolver_escopo(db, current, body.municipio_id)
     if not escopo:
-        raise HTTPException(403, "Sua conta nao tem municipio atribuido.")
+        raise HTTPException(403, "Sua conta não tem município atribuído.")
     result = await _run_ai_chat(
         db=db,
         message=body.message,
@@ -1826,7 +1826,7 @@ async def abrir_conversa(
         {"i": conversa_id, "u": current.id})).first()
     if not dono:
         # 404 e nao 403 de proposito: quem nao e dono nem descobre que existe.
-        raise HTTPException(404, "Conversa nao encontrada.")
+        raise HTTPException(404, "Conversa não encontrada.")
     rows = (await db.execute(text(
         "SELECT role, conteudo, tool_calls FROM ai_mensagens "
         "WHERE conversa_id = :c ORDER BY id"), {"c": conversa_id})).fetchall()
@@ -1845,7 +1845,7 @@ async def apagar_conversa(
         "DELETE FROM ai_conversas WHERE id = :i AND user_id = :u RETURNING id"),
         {"i": conversa_id, "u": current.id})
     if not r.first():
-        raise HTTPException(404, "Conversa nao encontrada.")
+        raise HTTPException(404, "Conversa não encontrada.")
     await db.commit()
     return {"ok": True}
 
@@ -1865,7 +1865,7 @@ async def chat_stream(
     ensure_tela(current, "ai")
     escopo = await resolver_escopo(db, current, body.municipio_id)
     if not escopo:
-        raise HTTPException(403, "Sua conta nao tem municipio atribuido.")
+        raise HTTPException(403, "Sua conta não tem município atribuído.")
 
     client = _cliente_ia()
 

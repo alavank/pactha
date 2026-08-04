@@ -26,22 +26,22 @@ async def get_service_token(
 ) -> ServiceToken:
     """Valida X-Service-Token e retorna o ServiceToken correspondente."""
     if not x_service_token:
-        raise HTTPException(status_code=401, detail="X-Service-Token obrigatorio")
+        raise HTTPException(status_code=401, detail="X-Service-Token obrigatório")
 
     if len(x_service_token) < 32:
-        raise HTTPException(status_code=401, detail="Token invalido")
+        raise HTTPException(status_code=401, detail="Token inválido")
 
     th = hash_token(x_service_token)
     result = await db.execute(select(ServiceToken).where(ServiceToken.token_hash == th))
     token = result.scalar_one_or_none()
 
     if not token or not token.active:
-        raise HTTPException(status_code=401, detail="Token invalido ou revogado")
+        raise HTTPException(status_code=401, detail="Token inválido ou revogado")
 
     # Simetria com control_auth: um control token apresentado como X-Service-Token
     # e rejeitado (defense-in-depth — "vazamento de um nao escala ao outro").
     if (getattr(token, "kind", "scraper") or "scraper") != "scraper":
-        raise HTTPException(status_code=401, detail="Token invalido")
+        raise HTTPException(status_code=401, detail="Token inválido")
 
     if token.expires_at and token.expires_at < datetime.now(timezone.utc):
         raise HTTPException(status_code=401, detail="Token expirado")
@@ -63,4 +63,4 @@ def require_scope(token: ServiceToken, scope: str):
     for s in scopes:
         if s.endswith(":*") and scope.startswith(s[:-1]):
             return True
-    raise HTTPException(status_code=403, detail=f"Token sem scope necessario: {scope}")
+    raise HTTPException(status_code=403, detail=f"Token sem scope necessário: {scope}")

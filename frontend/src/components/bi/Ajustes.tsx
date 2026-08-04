@@ -461,8 +461,8 @@ function ModalAjustes({ onFechar }: { onFechar: () => void }) {
 
               {expira === "nunca" && (
                 <p className="mt-2 text-[10px] leading-snug" style={{ color: "var(--bi-faint)" }}>
-                  O sistema nao vai encerrar sozinho. Continua valendo ate voce revogar
-                  (limite tecnico de 10 anos).
+                  O sistema não vai encerrar sozinho. Continua valendo até você revogar
+                  (limite técnico de 10 anos).
                 </p>
               )}
               {erroLink && (

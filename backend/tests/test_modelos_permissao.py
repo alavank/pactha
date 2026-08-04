@@ -262,8 +262,8 @@ def test_o_catalogo_traz_a_frase_que_a_tela_e_OBRIGADA_a_mostrar():
     pessoa — e nao vai corrigir nada."""
     aviso = permissoes.catalogo_para_api()["modelos"]["aviso"]
     assert "COPIA" in aviso
-    assert "editaveis" in aviso.lower()
-    assert "nao mexe mais" in aviso.lower()
+    assert "editáveis" in aviso.lower()
+    assert "não mexe mais" in aviso.lower()
 
 
 def test_a_caixinha_de_gerenciar_modelos_existe_e_e_de_escrita():
@@ -449,7 +449,7 @@ def test_editar_avisa_na_trilha_que_NAO_muda_quem_ja_recebeu(trilha):
     molde nao corrige ninguem — aplicar COPIOU as caixinhas naquele instante."""
     _editar(Usuario(super_admin=True), 7,
             router.ModeloRequest(nome="X", permissoes=[]))
-    assert "NAO altera quem ja o recebeu" in trilha[0]["details"]["efeito"]
+    assert "NÃO altera quem já o recebeu" in trilha[0]["details"]["efeito"]
 
 
 def test_editar_modelo_inexistente_e_404():
@@ -487,7 +487,7 @@ def test_apagar_remove_o_molde_e_avisa_que_ninguem_perde_acesso(trilha):
     assert linha["action"] == "modelo_permissao.excluir"
     # O conteudo apagado e o unico lugar onde ele ainda existe depois do commit.
     assert linha["valor_antes"]["permissoes"] == ["cofre.ver"]
-    assert "Ninguem perde acesso" in linha["details"]["efeito"]
+    assert "Ninguém perde acesso" in linha["details"]["efeito"]
 
 
 def test_apagar_molde_com_chave_fora_do_meu_alcance_e_403():
@@ -667,7 +667,7 @@ def test_modelo_apagado_entre_aplicar_e_salvar_NAO_derruba_o_salvar(trilha_conce
     _, resp = _conceder(Usuario(super_admin=True), alvo, req, modelo=None)
     assert resp["permissoes"] == ["rm.ver"]
     assert resp["modelo_aplicado"]["nome"] is None
-    assert "nao existe mais" in resp["modelo_aplicado"]["observacao"]
+    assert "não existe mais" in resp["modelo_aplicado"]["observacao"]
 
 
 def test_o_modelo_declarado_NAO_e_tratado_como_promessa_de_igualdade():

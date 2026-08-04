@@ -113,9 +113,9 @@ async def upsert_municipio(
     nome = (body.nome or "").strip()
     uf = (body.uf or "MG").strip().upper()[:2]
     if len(ibge) != 7 or not ibge.isdigit():
-        raise HTTPException(status_code=400, detail="ibge_code deve ter 7 digitos")
+        raise HTTPException(status_code=400, detail="ibge_code deve ter 7 dígitos")
     if not nome:
-        raise HTTPException(status_code=400, detail="nome obrigatorio")
+        raise HTTPException(status_code=400, detail="nome obrigatório")
 
     fns = None
     if body.fns_code is not None:
@@ -190,7 +190,7 @@ async def patch_municipio(
     """Renomear / mudar UF / ativar-desativar. Municipio NAO deleta (sem DELETE)."""
     m = (await db.execute(select(Municipio).where(Municipio.ibge_code == ibge_code))).scalar_one_or_none()
     if not m:
-        raise HTTPException(status_code=404, detail="Municipio nao encontrado")
+        raise HTTPException(status_code=404, detail="Município não encontrado")
     changed = []
     if body.nome is not None and body.nome.strip():
         m.nome = body.nome.strip(); changed.append("nome")
@@ -261,7 +261,7 @@ async def control_ingestion(
         return {"log": [dict(r) for r in rows]}
     except Exception:
         await db.rollback()
-        return {"log": [], "error": "tabela ingestion_log indisponivel"}
+        return {"log": [], "error": "tabela ingestion_log indisponível"}
 
 
 # Catalogo de fontes p/ o Monitor da Central: tabela contada (escopada por municipio
@@ -357,7 +357,7 @@ async def control_refresh(
                              "job_id": row[0] if row else None})
     if row is None:
         return {"status": "already_queued", "source": source,
-                "message": "Ja existe uma atualizacao na fila ou em execucao."}
+                "message": "Já existe uma atualização na fila ou em execução."}
     return {"status": "triggered", "source": source, "job_id": row[0],
             "message": "Job enfileirado. O Worker processa em ~1-2min."}
 
@@ -381,7 +381,7 @@ async def control_jobs(
         return {"jobs": [dict(r) for r in rows]}
     except Exception:
         await db.rollback()
-        return {"jobs": [], "error": "tabela scraper_jobs indisponivel"}
+        return {"jobs": [], "error": "tabela scraper_jobs indisponível"}
 
 
 # --- Auditoria (audit_log) — a Central LE o que foi feito nesta instancia ---
@@ -472,7 +472,7 @@ def _cofre_mask(clear: str) -> str:
         return ""
     s = clear.strip()
     if s.startswith("{") and '"cookies"' in s:   # blob de sessao capturada (extensao)
-        return "[sessao capturada]"
+        return "[sessão capturada]"
     n = len(clear)
     return "*" * n if n <= 4 else clear[0] + "*" * (n - 2) + clear[-1]
 
@@ -508,10 +508,10 @@ async def create_cofre(
 ):
     sistema = (body.sistema or "").strip()
     if not sistema:
-        raise HTTPException(status_code=400, detail="sistema obrigatorio")
+        raise HTTPException(status_code=400, detail="sistema obrigatório")
     mun_id = await _mun_id_by_ibge(db, body.municipio_ibge)
     if body.municipio_ibge and mun_id is None:
-        raise HTTPException(status_code=400, detail="municipio (ibge) nao encontrado")
+        raise HTTPException(status_code=400, detail="município (ibge) não encontrado")
     it = CofreSenha(
         municipio_id=mun_id, sistema=sistema, url=body.url, usuario=body.usuario,
         senha_encrypted=crypto.encrypt(body.senha) if body.senha else None,
@@ -537,13 +537,13 @@ async def patch_cofre(
 ):
     it = await db.get(CofreSenha, item_id)
     if not it:
-        raise HTTPException(status_code=404, detail="entrada nao encontrada")
+        raise HTTPException(status_code=404, detail="entrada não encontrada")
     fields = body.model_dump(exclude_unset=True)
     if "municipio_ibge" in fields:
         ibge = fields.pop("municipio_ibge")
         mid = await _mun_id_by_ibge(db, ibge) if ibge else None
         if ibge and mid is None:   # nao rebaixa p/ escopo geral por typo de IBGE
-            raise HTTPException(status_code=400, detail="municipio (ibge) nao encontrado")
+            raise HTTPException(status_code=400, detail="município (ibge) não encontrado")
         it.municipio_id = mid
     if "senha" in fields:                       # so re-cifra se veio senha
         senha = fields.pop("senha")
@@ -576,7 +576,7 @@ async def reveal_cofre(
 ):
     it = await db.get(CofreSenha, item_id)
     if not it:
-        raise HTTPException(status_code=404, detail="entrada nao encontrada")
+        raise HTTPException(status_code=404, detail="entrada não encontrada")
     # Registro ANTES da revelacao: se a trilha nao gravar, a senha nao sai. Nos
     # outros endpoints deste arquivo falhar o registro depois do commit so
     # mentiria sobre um ato ja consumado; neste, falhar de proposito EVITA a
@@ -612,7 +612,7 @@ async def delete_cofre(
 ):
     it = await db.get(CofreSenha, item_id)
     if not it:
-        raise HTTPException(status_code=404, detail="entrada nao encontrada")
+        raise HTTPException(status_code=404, detail="entrada não encontrada")
     sistema = it.sistema
     mun_id = it.municipio_id       # some junto com a linha; copiado antes do delete
     await db.delete(it)
@@ -699,7 +699,7 @@ async def control_session_token(
                     target_type="service_token", target_id=tok.id, alvo_nome=name,
                     details={"name": name, "integracao": p.name, "prefix": tok.token_prefix})
     return {"token": raw, "name": name, "scopes": ["session:write"], "prefix": tok.token_prefix,
-            "warning": "Anote agora — nao sera mostrado de novo. Configure na extensao de captura."}
+            "warning": "Anote agora — não será mostrado de novo. Configure na extensão de captura."}
 
 
 # --- SSO tecnico: a Central pede uma sessao de suporte p/ um tecnico Alavank ---
@@ -719,7 +719,7 @@ async def control_sso(
     tecnico nunca sai da Central — o usuario local so serve p/ carregar a sessao."""
     email = (body.tech_email or "").strip().lower()
     if "@" not in email:
-        raise HTTPException(status_code=400, detail="email invalido")
+        raise HTTPException(status_code=400, detail="email inválido")
     # Email NAMESPACED: nunca colide com um usuario real do tenant. Antes, casar pelo
     # email cru permitia sequestrar (e reativar) a conta de um usuario legitimo que
     # tivesse o mesmo email. O prefixo "alavank-sso." garante identidade de suporte
@@ -844,12 +844,12 @@ async def create_control_user(
 ):
     email = (body.email or "").strip().lower()
     if "@" not in email:
-        raise HTTPException(status_code=400, detail="Email invalido")
+        raise HTTPException(status_code=400, detail="Email inválido")
     if body.role not in users_admin.ROLES:
-        raise HTTPException(status_code=400, detail="Role invalida (admin|analyst|user)")
+        raise HTTPException(status_code=400, detail="Role inválida (admin|analyst|user)")
     dup = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
     if dup:
-        raise HTTPException(status_code=400, detail="Email ja cadastrado")
+        raise HTTPException(status_code=400, detail="Email já cadastrado")
     senha = users_admin.gen_senha()
     u = User(email=email, name=(body.name or "").strip(), password_hash=hash_password(senha),
              role=body.role, active=True, must_change_password=True)
@@ -880,14 +880,14 @@ async def patch_control_user(
 ):
     u = (await db.execute(select(User).where(User.email == email.lower()))).scalar_one_or_none()
     if not u:
-        raise HTTPException(status_code=404, detail="Usuario nao encontrado")
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
     if body.role is not None and body.role not in users_admin.ROLES:
-        raise HTTPException(status_code=400, detail="Role invalida")
+        raise HTTPException(status_code=400, detail="Role inválida")
     # Nao deixar o cliente sem NENHUM admin
     demoting = body.role is not None and body.role != "admin" and u.role == "admin"
     deactivating = body.active is False and u.active and u.role == "admin"
     if (demoting or deactivating) and await _active_admin_count(db) <= 1:
-        raise HTTPException(status_code=409, detail="Nao e possivel deixar o cliente sem administrador")
+        raise HTTPException(status_code=409, detail="Não é possível deixar o cliente sem administrador")
 
     # Mesmo "antes/depois" do PATCH da tela de usuarios: este canal tambem concede
     # e retira acesso, e ate agora gravava apenas o nome do token — ou seja, que
@@ -933,7 +933,7 @@ async def reset_control_user_password(
 ):
     u = (await db.execute(select(User).where(User.email == email.lower()))).scalar_one_or_none()
     if not u:
-        raise HTTPException(status_code=404, detail="Usuario nao encontrado")
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
     senha = users_admin.gen_senha()
     u.password_hash = hash_password(senha)
     u.must_change_password = True
@@ -960,13 +960,13 @@ async def delete_control_user(
     ON DELETE CASCADE. Falha de forma atomica (rollback)."""
     u = (await db.execute(select(User).where(User.email == email.lower()))).scalar_one_or_none()
     if not u:
-        raise HTTPException(status_code=404, detail="Usuario nao encontrado")
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
     # Usuario de SUPORTE da Alavank (alavank-sso.*) nao e removivel por aqui: e sintetico,
     # o SSO o recria, e deletar no meio de uma sessao derruba o tecnico (401). Some so via SSO.
     if (u.email or "").startswith("alavank-sso."):
-        raise HTTPException(status_code=409, detail="Usuario de suporte Alavank nao e removivel por este canal")
+        raise HTTPException(status_code=409, detail="Usuário de suporte Alavank não é removível por este canal")
     if u.role == "admin" and u.active and await _active_admin_count(db) <= 1:
-        raise HTTPException(status_code=409, detail="Nao e possivel remover o unico administrador ativo")
+        raise HTTPException(status_code=409, detail="Não é possível remover o único administrador ativo")
     uid, uname, urole = u.id, u.name, u.role
     # user_telas/user_municipios somem por ON DELETE CASCADE: se nao forem
     # copiados AGORA, "que acessos essa conta tinha quando foi removida" fica sem
@@ -1035,7 +1035,7 @@ async def delete_control_user(
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=409,
-                            detail=f"Nao foi possivel remover (referencias pendentes: {type(e).__name__})")
+                            detail=f"Não foi possível remover (referências pendentes: {type(e).__name__})")
     await registrar(db, action="control.user.delete", request=request,
                     user_email=_ator(request, p),
                     target_type="user", target_id=email, alvo_nome=uname,

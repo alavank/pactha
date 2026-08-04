@@ -271,7 +271,7 @@ def _decode(token: str, expected_typ: str = "access", audience: Optional[str] = 
     except pyjwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expirado")
     except pyjwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Token invalido")
+        raise HTTPException(status_code=401, detail="Token inválido")
 
     if payload.get("typ") != expected_typ:
         raise HTTPException(status_code=401, detail="Tipo de token incorreto")
@@ -327,12 +327,12 @@ async def get_current_user(
     if not token:
         token = request.cookies.get(COOKIE_NAME_ACCESS)
     if not token:
-        raise HTTPException(status_code=401, detail="Nao autenticado")
+        raise HTTPException(status_code=401, detail="Não autenticado")
 
     payload = decode_access(token)
     user_id_str = payload.get("sub")
     if not user_id_str:
-        raise HTTPException(status_code=401, detail="Token invalido")
+        raise HTTPException(status_code=401, detail="Token inválido")
 
     # CSRF check para mutating methods se vier por cookie (nao por Bearer)
     if not credentials and request.method in ("POST", "PUT", "PATCH", "DELETE"):
@@ -340,13 +340,13 @@ async def get_current_user(
         csrf_header = request.headers.get("X-CSRF-Token")
         # Permitir bypass se Authorization header presente
         if not csrf_cookie or not csrf_header or csrf_cookie != csrf_header:
-            raise HTTPException(status_code=403, detail="CSRF token invalido")
+            raise HTTPException(status_code=403, detail="CSRF token inválido")
 
     user_id = int(user_id_str)
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if user is None or not user.active:
-        raise HTTPException(status_code=401, detail="Usuario nao encontrado")
+        raise HTTPException(status_code=401, detail="Usuário não encontrado")
     await load_user_scopes(db, user)
 
     # Contexto para o modo aviso do authz. Vem DEPOIS de `load_user_scopes`
@@ -380,7 +380,7 @@ async def get_current_user(
         if request.method != "GET" or request.url.path not in KIOSK_GET_PERMITIDOS:
             raise HTTPException(
                 status_code=403,
-                detail="Este link so alcanca o Painel de Indicadores",
+                detail="Este link só alcança o Painel de Indicadores",
             )
 
     return user

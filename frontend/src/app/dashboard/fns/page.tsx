@@ -455,7 +455,7 @@ export default function PropostasFNSPage() {
                 rotulo="A Pagar"
                 valor={formatCurrency(data.totais.valor_pagar)}
                 tom={data.totais.valor_pagar > 0 ? "atencao" : "neutro"}
-                sub={data.totais.valor_pagar > 0 ? "saldo ainda nao repassado" : "sem saldo em aberto"}
+                sub={data.totais.valor_pagar > 0 ? "saldo ainda não repassado" : "sem saldo em aberto"}
               />
             </div>
           )}

@@ -129,7 +129,7 @@ class AnotacaoUpdate(BaseModel):
 
 def _validate_payload(body: AnotacaoCreate | AnotacaoUpdate):
     if hasattr(body, "fonte") and body.fonte not in FONTES_VALIDAS:
-        raise HTTPException(400, f"Fonte invalida. Use uma de: {sorted(FONTES_VALIDAS)}")
+        raise HTTPException(400, f"Fonte inválida. Use uma de: {sorted(FONTES_VALIDAS)}")
     if body.status_interno and body.status_interno not in STATUS_OPCOES:
         # Permite custom no banco mas avisa
         pass
@@ -356,7 +356,7 @@ async def detalhe(
     await _exigir_acesso(db, anot_id, current)
     row = (await db.execute(text(_SELECT + " WHERE id = :id"), {"id": anot_id})).first()
     if not row:
-        raise HTTPException(404, "Anotacao nao encontrada")
+        raise HTTPException(404, "Anotação não encontrada")
     return _row_to_dict(row, current, with_anexos=True)
 
 
@@ -468,7 +468,7 @@ async def remover(
     r = await db.execute(text("DELETE FROM gestao_anotacoes WHERE id = :id"), {"id": anot_id})
     await db.commit()
     if r.rowcount == 0:
-        raise HTTPException(404, "Anotacao nao encontrada")
+        raise HTTPException(404, "Anotação não encontrada")
     await registrar(
         db, action="gestao.anotacao.delete", user=current, request=request,
         target_type="gestao_anotacao", target_id=anot_id, municipio_id=ctx["municipio_id"],
@@ -508,10 +508,10 @@ async def download_anexo(
         "SELECT anexos, municipio_id, fonte, fonte_ref FROM gestao_anotacoes WHERE id = :id"
     ), {"id": anot_id})).first()
     if not row:
-        raise HTTPException(404, "Anotacao nao encontrada")
+        raise HTTPException(404, "Anotação não encontrada")
     anexos = row[0] or []
     if idx < 0 or idx >= len(anexos):
-        raise HTTPException(404, "Anexo nao encontrado")
+        raise HTTPException(404, "Anexo não encontrado")
     a = anexos[idx]
     try:
         data = base64.b64decode(a["dados_b64"])
