@@ -19,6 +19,7 @@ import {
   AbaDocumentos, AbaEstaduais, AbaFns, AbaParlamentares, AbaSismob, AbaTransfereGov,
   Alertas, CaucItemDetalhe, Lancamento, Overview, isRollup,
 } from "@/lib/bi";
+import { tituloEstadual } from "@/lib/estadual";
 import { formatCurrencyShort, formatInt, formatDate, diasLabel } from "@/lib/bi-format";
 import {
   BI_CORES, Chip, DotMeter, Gauge, ListaRollup, Metric, Painel, PainelHead,
@@ -892,14 +893,23 @@ export function AbaDocumentosView({
           sub="transferências federais" grande={tv} />
         <Metric icon={ShieldAlert}
           tom={semFonteNoEscopo ? "neutro" : cagec ? (cagecIrregular ? "crit" : "ok") : "warn"}
-          /* O rótulo segue o ESCOPO: só diz "Minas Gerais" quando é de Minas. */
+          /* ⚠️ "CAGEC" É NOME DE MINAS, não do produto. Pesquisado: é o
+             Cadastro Geral de Convenentes do Estado de MG (Decreto
+             44.293/2006); Goiás tem o SIGECON, o Espírito Santo o Portal de
+             Convênios da SEGER. Fora de Minas o rótulo é o genérico, com a UF
+             do próprio ambiente — e nada de "Minas Gerais" na tela de um
+             cliente do ES, que não tem por que ler sobre outro estado. */
+          /* Uma UF de fora: nomeia o sistema dela ("SIGECON — Goiás").
+             Várias: só as siglas, que é o que cabe num cartão. */
           label={semFonteNoEscopo
-            ? `Cadastro estadual — ${ufsSemFonte.join(", ")}`
+            ? (ufsSemFonte.length === 1
+                ? tituloEstadual(ufsSemFonte[0])
+                : `Cadastro estadual — ${ufsSemFonte.join(", ")}`)
             : "CAGEC — Minas Gerais"}
-          valor={semFonteNoEscopo ? "Não coletado"
+          valor={semFonteNoEscopo ? "Não acompanhado"
             : !cagec ? "Sem coleta"
             : cagecIrregular ? (cagec.situacao || "Irregular") : "Em dia"}
-          sub={semFonteNoEscopo ? "fora da nossa coleta hoje"
+          sub={semFonteNoEscopo ? "ainda não acompanhado aqui"
             : cagecParcial ? `só os ${d.cagec.municipios_no_escopo} de MG`
             : "convênios estaduais"}
           grande={tv} />
@@ -1024,10 +1034,12 @@ export function AbaDocumentosView({
           <section className="min-w-0">
             <EsferaHead
               titulo={semFonteNoEscopo
-                ? `Cadastro estadual — ${ufsSemFonte.join(", ")}`
+                ? (ufsSemFonte.length === 1
+                    ? tituloEstadual(ufsSemFonte[0])
+                    : `Cadastro estadual — ${ufsSemFonte.join(", ")}`)
                 : "CAGEC — Minas Gerais"}
               sub={semFonteNoEscopo
-                ? "este sistema coleta hoje o cadastro de MG (CAGEC) · o deste estado ainda não"
+                ? "regularidade estadual · ainda não acompanhada por este sistema"
                 : cagecParcial
                 ? `Cadastro Geral de Convenentes · cobre ${d.cagec.municipios_no_escopo} de ${(d.cagec.municipios_no_escopo ?? 0) + (d.cagec.fora_de_mg ?? 0)} municípios (os de MG)`
                 : "Cadastro Geral de Convenentes · exigências estaduais"}
