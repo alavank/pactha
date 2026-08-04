@@ -87,6 +87,47 @@ def _propostas_sem_historico(municipio_id: int) -> set:
         return set()
 
 
+def _propostas_ops_obs_frescas(municipio_id: int, max_age_days: int = 3) -> set:
+    """numero_proposta cujo ops_obs/obras foi checado ha menos de max_age_days.
+    Usado p/ PULAR a re-navegacao no cron: cada instrumento e navegado no portal
+    (~caro); sem skip, TODOS os ~3161 re-navegam toda rodada. Com skip, so os
+    novos/vencidos navegam. Se a coluna ainda nao existe (migration nao rodou),
+    o except devolve set() vazio -> tudo navega (fallback seguro)."""
+    try:
+        import psycopg2
+        url = os.getenv("DATABASE_URL_SYNC", "").replace("&channel_binding=require", "").replace("?channel_binding=require", "")
+        conn = psycopg2.connect(url); cur = conn.cursor()
+        cur.execute(
+            "SELECT numero_proposta FROM transferegov_propostas "
+            "WHERE municipio_id=%s AND ops_obs_atualizado_em IS NOT NULL "
+            "AND ops_obs_atualizado_em > NOW() - make_interval(days => %s)",
+            (municipio_id, max_age_days)
+        )
+        out = {r[0] for r in cur.fetchall()}
+        cur.close(); conn.close()
+        return out
+    except Exception:
+        return set()
+
+
+def _stamp_ops_obs(municipio_id: int, numero_proposta: str) -> None:
+    """Carimba ops_obs_atualizado_em=NOW() (checagem feita, MESMO vazia) num UPDATE
+    isolado — NAO no INSERT do _upsert — p/ a proposta sair do backlog de ops_obs.
+    Marcar tb as vazias e o que evita re-navegar os ~2900 sem ops_obs toda rodada."""
+    try:
+        import psycopg2
+        url = os.getenv("DATABASE_URL_SYNC", "").replace("&channel_binding=require", "").replace("?channel_binding=require", "")
+        conn = psycopg2.connect(url); cur = conn.cursor()
+        cur.execute(
+            "UPDATE transferegov_propostas SET ops_obs_atualizado_em=NOW() "
+            "WHERE municipio_id=%s AND numero_proposta=%s",
+            (municipio_id, numero_proposta[:20])
+        )
+        conn.commit(); cur.close(); conn.close()
+    except Exception:
+        pass
+
+
 def _propostas_ja_enriquecidas(municipio_id: int) -> set:
     """Retorna numero_proposta das que JA tem parlamentar OU sit_det.
     Permite priorizar as pendentes quando rodando com janela curta de auth."""
@@ -453,6 +494,14 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
                         f"{n_hist} sem historico (orcamento desta rodada: {_hist_budget})")
         except Exception:
             pass
+    # Skip incremental de ops_obs/obras: precomputa quais propostas ja foram
+    # checadas recentemente (nao re-navegar). E GUEST, entao independe de page_auth.
+    _ops_obs_on = (os.getenv("TG_OPS_OBS", "0") or "0").strip() == "1"
+    try:
+        _ops_obs_max_age = max(0, int(os.getenv("TG_OPS_OBS_MAX_AGE_DAYS", "3") or "3"))
+    except ValueError:
+        _ops_obs_max_age = 3
+    _ops_obs_frescas = _propostas_ops_obs_frescas(mun["id"], _ops_obs_max_age) if _ops_obs_on else set()
     _tot = len(propostas)
     _enr = 0
     for _i, prop in enumerate(propostas, 1):
@@ -521,8 +570,7 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
             # por instrumento (~alguns s) — pesado no host burstable. Por isso a
             # coleta e ligada por env TG_OPS_OBS=1, hoje so no siao-worker
             # (ativado so p/ SIAO; os demais tenants nao gastam CPU com isto).
-            _ops_obs_on = (os.getenv("TG_OPS_OBS", "0") or "0").strip() == "1"
-            if _idp and _ops_obs_on:
+            if _idp and _ops_obs_on and prop["numero_proposta"] not in _ops_obs_frescas:
                 try:
                     _oo = await _extrai_ops_obs(detail_page)
                     if _oo is not None:
@@ -535,6 +583,8 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
                         prop["obras"] = _ob
                 except Exception as e:
                     logger.warning(f"    obras {prop['numero_proposta']}: {str(e)[:80]}")
+                # Carimba a checagem (mesmo vazia) -> sai do backlog, nao re-navega toda rodada.
+                _stamp_ops_obs(mun["id"], prop["numero_proposta"])
             # Historico de Comunicacoes + Termos de Notificacao (Projeto Basico /
             # mandatarias). SO com sessao gov.br viva (area /private/).
             if page_auth is not None and _idp and _hist_budget > 0:
