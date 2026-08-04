@@ -269,6 +269,37 @@ ROTAS_LIVRES: tuple = (
           "Chave PUBLICA do push. Publica esta no nome."),
     Livre("GET", "/api/bi/vapid-public-key",
           "Chave PUBLICA do push. Publica esta no nome."),
+    # O historico da IA. `ai.usar` paga a chamada ao modelo; ler e apagar a
+    # PROPRIA conversa nao gasta nada e nao alcanca a de ninguem — as tres
+    # consultas terminam em `WHERE user_id = :u`, e a tela `ai` (gate antigo)
+    # continua sendo exigida no corpo. Declarar `ai.usar`, que e permissao de
+    # ESCRITA, tiraria de quem so pode ler ate o proprio historico.
+    Livre("GET", "/api/ai/conversas",
+          "As conversas do PROPRIO usuario (WHERE user_id)."),
+    Livre("GET", "/api/ai/conversas/{conversa_id}",
+          "A propria conversa. Quem nao e dono leva 404 — nem descobre que "
+          "existe."),
+    Livre("DELETE", "/api/ai/conversas/{conversa_id}",
+          "Apaga a PROPRIA conversa (DELETE ... AND user_id = :u)."),
+    # Modo Tela: filtro e links do proprio gestor. Note que so o POST de
+    # /tela-links fica de fora desta lista — publicar e o unico ato que cria
+    # acesso para TERCEIROS, e ele declara `bi.link`.
+    Livre("GET", "/api/bi/tela-filtros",
+          "Filtro do PROPRIO usuario (uma linha por user_id; sem linha, "
+          "default vazio). ⚠️ Esta em KIOSK_GET_PERMITIDOS: a conta de TV so "
+          "resolve `bi.ver` (PERMISSOES_QUIOSQUE), entao exigir `bi.tela` aqui "
+          "apagaria os links legados `?kiosk=` em silencio."),
+    Livre("PUT", "/api/bi/tela-filtros",
+          "O Painel grava aqui a CADA mudanca de periodo ou de municipio, para "
+          "todo usuario, e a escrita e so na propria linha — exigir permissao "
+          "encheria a semana de observacao de um fato que nao e o buraco."),
+    Livre("GET", "/api/bi/tela-links",
+          "Os links do PROPRIO usuario (WHERE owner_id). Quem nao publicou "
+          "nenhum recebe lista vazia."),
+    Livre("DELETE", "/api/bi/tela-links/{slug}",
+          "Revoga o PROPRIO link (UPDATE ... AND owner_id = :u). Cortar um "
+          "acesso publico e a acao que nunca se deve negar: barrar aqui por "
+          "falta de permissao deixaria o link VIVO."),
 
     # --- Canais com PRINCIPAL PROPRIO: nao ha `User` para ter permissao -----
     Livre("*", "/api/control/*",
@@ -277,12 +308,44 @@ ROTAS_LIVRES: tuple = (
           "IP e escopos proprios — nao existe usuario logado nesta rota, entao "
           "permissao de usuario nao teria o que checar. E o unico prefixo desta "
           "lista, e e um prefixo porque o canal inteiro tem o mesmo dono."),
-    Livre("POST", "/api/session-capture",
-          "Extensao de captura: autentica por SERVICE TOKEN "
-          "(services/service_auth.py), nao por usuario."),
+    # ⚠️ `POST /api/session-capture` ESTEVE AQUI, com o motivo "autentica por
+    # service token, nao por usuario". O motivo era METADE verdade e por isso
+    # nao servia: `get_capture_principal` tem DOIS modos, e o segundo aceita o
+    # cookie de qualquer conta ativa. A rota cifra credencial de portal do
+    # governo no Cofre e dispara o scraper. Hoje ela declara
+    # `sessoes.capturar` (com `declarado`, porque so um dos dois modos tem
+    # usuario de quem cobrar) — a licao fica escrita: motivo de allowlist que
+    # descreve UM caminho de autenticacao precisa dizer o que acontece nos
+    # OUTROS.
     Livre("POST", "/api/telegram/webhook",
           "Chamada do proprio Telegram, autenticada pelo segredo do webhook. "
           "Nao ha usuario do lado de la."),
+
+    # --- Gate MAIS FORTE que permissao: so o dono da plataforma --------------
+    # `routers/service_tokens.py::_require_admin` exige `is_super_admin`, e
+    # super-admin ja recebe o catalogo INTEIRO (services/permissoes.py). Logo nao
+    # existe caixinha capaz de abrir estas rotas — e criar uma seria AFROUXAR:
+    # `service_tokens.criar` poderia ser concedida a um admin do cliente, que
+    # hoje nao passa daqui. Sao credenciais de maquina longevas (o scraper le o
+    # Cofre com elas), nao recurso de tela.
+    #
+    # ⚠️ Listadas UMA A UMA, e nao como `/api/admin/service-tokens/*`: rota nova
+    # neste prefixo tem de aparecer PENDENTE no boot em vez de nascer livre de
+    # brinde — o mesmo motivo pelo qual as rotas de `/api/auth` estao separadas.
+    # E a linha depende do gate acima: quem tirar `_require_admin` de la abre a
+    # rota, porque aqui nao ha permissao a checar.
+    Livre("GET", "/api/admin/service-tokens",
+          "Credencial de MAQUINA: `_require_admin` exige super-admin, gate acima "
+          "de qualquer permissao de usuario — nao ha caixinha que conceda isto."),
+    Livre("POST", "/api/admin/service-tokens",
+          "Emite token de servico em claro. Mesmo gate de super-admin; permissao "
+          "de usuario seria mais fraca, porque poderia ser concedida."),
+    Livre("POST", "/api/admin/service-tokens/{token_id}/revoke",
+          "Revoga token de servico. Mesmo gate de super-admin do restante do "
+          "canal — ver a nota acima."),
+    Livre("POST", "/api/admin/service-tokens/{token_id}/rotate",
+          "Rotaciona token de servico e devolve o novo em claro. Mesmo gate de "
+          "super-admin do restante do canal."),
 )
 
 

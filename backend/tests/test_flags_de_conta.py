@@ -110,6 +110,10 @@ class Conta:
         self.must_change_password = kw.get("must_change_password", False)
         self.super_admin = kw.get("super_admin", False)
         self.somente_leitura = kw.get("somente_leitura", False)
+        # Lido por `authz.permissoes_de`. Sem ele o duplo nao pode NADA, e os
+        # dois testes de PATCH abaixo passavam a medir a falta de
+        # `usuarios.conceder` em vez da regra que dizem medir.
+        self.allowed_permissoes = kw.get("permissoes", [])
 
 
 def test_a_resposta_calcula_as_flags_e_nao_copia_a_coluna():
@@ -203,7 +207,10 @@ def test_ninguem_se_poe_em_somente_leitura():
     este endpoint e um PATCH. Ela perderia, no mesmo ato, a escrita e o unico
     caminho de volta: so por outro admin, ou pelo banco. Mesma familia do
     "nao pode desativar a si mesmo" que ja existia aqui."""
-    eu = Conta(id=1, role="admin")
+    # Com a permissao NA MAO: o 400 tem de vir da regra do proprio umbigo, e nao
+    # de `usuarios.conceder` faltando — senao este teste passaria a verde pelo
+    # motivo errado no dia em que a regra do umbigo fosse removida.
+    eu = Conta(id=1, role="admin", permissoes=["usuarios.conceder"])
     db = FakeDb(eu)
     with pytest.raises(HTTPException) as e:
         asyncio.run(update_user(
@@ -229,7 +236,7 @@ def test_travar_OUTRA_pessoa_continua_permitido(monkeypatch):
 
     monkeypatch.setattr("routers.users.registrar_critico", _falsa_trilha)
 
-    eu = Conta(id=1, role="admin")
+    eu = Conta(id=1, role="admin", permissoes=["usuarios.conceder"])
     outro = Conta(id=2, role="prefeito", somente_leitura=False)
     db = FakeDb(outro)
     asyncio.run(update_user(

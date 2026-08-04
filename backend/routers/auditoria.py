@@ -53,6 +53,7 @@ from services.audit_catalog import (
     frase_didatica,
 )
 from services.auth import ensure_municipio_access, ensure_tela, get_current_user
+from services.registro_rotas import exige
 from services.user_agent import parse_user_agent
 # `registrar_critico` (e nao `registrar`) de proposito: e a porta que PROPAGA a
 # falha de gravacao. Se a linha da exportacao nao entrar, a exportacao nao
@@ -892,7 +893,7 @@ async def minha_atividade(
     }
 
 
-@router.get("/exportar")
+@router.get("/exportar", dependencies=[exige("auditoria.exportar")])
 async def exportar(
     request: Request,
     de: Optional[date] = Query(None, description="Início do período (AAAA-MM-DD)"),
@@ -1315,7 +1316,9 @@ def _texto_integridade(res: dict) -> dict:
     }
 
 
-@router.get("/integridade")
+# `auditoria.ver` e nao uma caixinha propria: conferir a corrente de selos e ler
+# a trilha inteira, e quem nao pode abri-la nao tem o que conferir.
+@router.get("/integridade", dependencies=[exige("auditoria.ver")])
 async def verificar_integridade(
     request: Request,
     desde_id: Optional[int] = Query(
@@ -1436,7 +1439,7 @@ async def verificar_integridade(
     return corpo
 
 
-@router.get("")
+@router.get("", dependencies=[exige("auditoria.ver")])
 async def listar(
     de: Optional[date] = Query(None, description="Início do período (AAAA-MM-DD)"),
     ate: Optional[date] = Query(None, description="Fim do período, inclusivo"),
@@ -1481,7 +1484,7 @@ async def listar(
     }
 
 
-@router.get("/{evento_id}")
+@router.get("/{evento_id}", dependencies=[exige("auditoria.ver")])
 async def detalhe(
     evento_id: int,
     db: AsyncSession = Depends(get_db),

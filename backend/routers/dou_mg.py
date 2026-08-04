@@ -21,6 +21,7 @@ import logging
 from services.auth import get_current_user, ensure_tela
 from models.user import User
 from services import authz
+from services.registro_rotas import exige
 
 router = APIRouter(prefix="/api/dou-mg", tags=["dou-mg"])
 logger = logging.getLogger("dou-mg")
@@ -56,7 +57,7 @@ def _get_token() -> str:
         raise HTTPException(502, f"Falha ao autenticar no Jornal MG: {e}")
 
 
-@router.get("/buscar")
+@router.get("/buscar", dependencies=[exige("dou.ver")])
 async def buscar(
     texto: str = Query(..., description="Palavra ou frase pra buscar"),
     data_inicial: str = Query(..., description="YYYY-MM-DD"),
@@ -158,7 +159,13 @@ def _extrair_pdf(raw: bytes) -> bytes:
     return raw[i:j + 5]
 
 
-@router.get("/publicacao/{id_jornal}")
+# `dou.ver` e nao `dou.exportar`, apesar do `?download=true`: esta rota nao GERA
+# arquivo com dado nosso — ela entrega a edicao do Jornal Minas Gerais, que e
+# publica, e e o proprio botao "visualizar" da tela. Quem exporta o RESULTADO da
+# busca (dado nosso, em PDF montado aqui) e `/api/export-pdf/dou`, e la a chave e
+# `dou.exportar`. Exigir `exportar` para abrir a publicacao tiraria o leitor da
+# tela de quem so tem "Ver".
+@router.get("/publicacao/{id_jornal}", dependencies=[exige("dou.ver")])
 def publicacao(id_jornal: int, download: bool = False,
                current: User = Depends(get_current_user)):
     """Serve a PUBLICACAO (PDF) do Jornal MG pela propria plataforma.

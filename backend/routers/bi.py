@@ -44,6 +44,7 @@ from services.bi_abas import (
     bi_sismob,
     documentos_vencendo,
 )
+from services.registro_rotas import exige
 from models.user import User
 from routers.cauc import fetch_cauc_situacao
 from routers.parlamentares import aggregate_parlamentares
@@ -101,6 +102,25 @@ def _gate_bi(current: User) -> None:
     if ehQuiosque(current):
         return
     authz.exigir_tela(current, "bi")
+
+
+# ⚠️ A DECLARACAO DE PERMISSAO E O QUIOSQUE — leia antes de trocar a chave abaixo.
+#
+# Todo GET de leitura deste arquivo declara `exige("bi.ver")`. Isso SOMA a
+# `_gate_bi` (tela) em vez de substitui-lo: a tela responde "esta pessoa tem o
+# Painel", a permissao responde "pode LER" — e nenhum gate existente sai daqui.
+#
+# A conta de quiosque sobrevive, e nao por acidente: ela nao tem linha nenhuma em
+# `user_permissoes`, mas `services/permissoes.py::PERMISSOES_QUIOSQUE` a resolve
+# como exatamente {"bi.ver"} — o conjunto foi escrito para este dia. Por isso a
+# chave declarada aqui tem de continuar sendo `bi.ver`: qualquer outra (`bi.tela`,
+# `bi.exportar`) apagaria a TV do gabinete no dia do `AUTHZ_MODO=bloqueio`, EM
+# SILENCIO, porque o slideshow engole o erro no `.catch()`. Trocar a chave de um
+# endpoint exige trocar aquele frozenset junto.
+#
+# O que a TV alcanca continua limitado pela regra MAIS ESTREITA, que e anterior a
+# esta: `KIOSK_GET_PERMITIDOS` (services/auth.py) so libera os poucos GET listados
+# la — `bi.ver` nao abre `/narrativa` para o link publico.
 
 
 def _periodo(ano: Optional[int], anos: Optional[list[int]]) -> Optional[list[int]]:
@@ -237,7 +257,7 @@ async def _compute_overview(db: AsyncSession, ids: list[int], cons: bool, single
 # Overview (payload unico do dashboard e da TV) — 1 round-trip
 # --------------------------------------------------------------------------
 
-@router.get("/overview")
+@router.get("/overview", dependencies=[exige("bi.ver")])
 async def overview(
     municipio_id: Optional[int] = Query(None, description="1 municipio; ausente = consolidado do escopo"),
     ano: Optional[int] = Query(None, description="Filtra KPIs por ano (None=todos)"),
@@ -284,7 +304,7 @@ async def overview(
 # Wrappers finos (drilldowns) — usam a sessao do request (sequenciais, sem gather)
 # --------------------------------------------------------------------------
 
-@router.get("/semaforo")
+@router.get("/semaforo", dependencies=[exige("bi.ver")])
 async def semaforo(
     municipio_id: Optional[int] = Query(None),
     db: AsyncSession = Depends(get_db),
@@ -297,7 +317,7 @@ async def semaforo(
     return await bi_cauc_rollup(db, ids)
 
 
-@router.get("/parlamentares")
+@router.get("/parlamentares", dependencies=[exige("bi.ver")])
 async def parlamentares(
     municipio_id: Optional[int] = Query(None),
     ano: Optional[int] = Query(None),
@@ -314,7 +334,7 @@ async def parlamentares(
     return await aggregate_parlamentares(db, municipio_ids=ids, ano=periodo, incluir_plano_acao=live)
 
 
-@router.get("/alertas")
+@router.get("/alertas", dependencies=[exige("bi.ver")])
 async def alertas(
     municipio_id: Optional[int] = Query(None),
     ano: Optional[int] = Query(None),
@@ -374,7 +394,7 @@ async def _aba_cacheada(key: str, fn):
         _INFLIGHT.pop(key, None)
 
 
-@router.get("/estaduais")
+@router.get("/estaduais", dependencies=[exige("bi.ver")])
 async def aba_estaduais(
     municipio_id: Optional[int] = Query(None),
     ano: Optional[int] = Query(None),
@@ -390,7 +410,7 @@ async def aba_estaduais(
     return await _aba_cacheada(key, lambda: bi_estaduais(db, ids, periodo))
 
 
-@router.get("/transferegov")
+@router.get("/transferegov", dependencies=[exige("bi.ver")])
 async def aba_transferegov(
     municipio_id: Optional[int] = Query(None),
     ano: Optional[int] = Query(None),
@@ -406,7 +426,7 @@ async def aba_transferegov(
     return await _aba_cacheada(key, lambda: bi_transferegov(db, ids, periodo))
 
 
-@router.get("/parlamentares/detalhe")
+@router.get("/parlamentares/detalhe", dependencies=[exige("bi.ver")])
 async def aba_parlamentares_detalhe(
     municipio_id: Optional[int] = Query(None),
     ano: Optional[int] = Query(None),
@@ -424,7 +444,7 @@ async def aba_parlamentares_detalhe(
     return await _aba_cacheada(key, lambda: bi_parlamentares_detalhe(db, ids, periodo))
 
 
-@router.get("/sismob")
+@router.get("/sismob", dependencies=[exige("bi.ver")])
 async def aba_sismob(
     municipio_id: Optional[int] = Query(None),
     ano: Optional[int] = Query(None),
@@ -446,7 +466,7 @@ async def aba_sismob(
     return await _aba_cacheada(key, lambda: bi_sismob(db, ids, None))
 
 
-@router.get("/documentos")
+@router.get("/documentos", dependencies=[exige("bi.ver")])
 async def aba_documentos(
     municipio_id: Optional[int] = Query(None),
     db: AsyncSession = Depends(get_db),
@@ -475,7 +495,7 @@ def _ano_corrente() -> int:
     return _date.today().year
 
 
-@router.get("/fns")
+@router.get("/fns", dependencies=[exige("bi.ver")])
 async def aba_fns(
     municipio_id: Optional[int] = Query(None),
     ano: Optional[int] = Query(None),
@@ -548,7 +568,7 @@ async def aba_fns(
     return payload
 
 
-@router.get("/timeline")
+@router.get("/timeline", dependencies=[exige("bi.ver")])
 async def timeline(
     municipio_id: Optional[int] = Query(None),
     days: int = Query(30, ge=1, le=365),
@@ -622,7 +642,7 @@ async def _gerar_narrativa(dados: dict, kind: str, api_key: str) -> str:
     return "".join(b.text for b in resp.content if getattr(b, "type", None) == "text").strip()
 
 
-@router.get("/narrativa")
+@router.get("/narrativa", dependencies=[exige("bi.ver")])
 async def narrativa(
     municipio_id: Optional[int] = Query(None),
     ano: Optional[int] = Query(None),
@@ -949,7 +969,7 @@ async def _gerar_insights(fatos: dict, api_key: str) -> list[str]:
     return [str(m).strip() for m in msgs if str(m).strip()][:4]
 
 
-@router.get("/insights")
+@router.get("/insights", dependencies=[exige("bi.ver")])
 async def insights(
     aba: str = Query("geral"),
     municipio_id: Optional[int] = Query(None),
@@ -1187,6 +1207,11 @@ async def _ensure_kiosk_user(db: AsyncSession, owner: User, slug: str) -> int:
     return uid
 
 
+# /tela-filtros e /tela-links (menos o POST) NAO declaram permissao: sao
+# auto-escopadas por `user_id`/`owner_id` e estao em ROTAS_LIVRES, com motivo, em
+# services/registro_rotas.py. No GET abaixo isso tambem e a armadilha do
+# quiosque: o caminho esta em `KIOSK_GET_PERMITIDOS` e a conta de TV so tem
+# `bi.ver` — declarar `bi.tela` aqui mataria os links legados `?kiosk=`.
 @router.get("/tela-filtros")
 async def get_tela_filtros(
     db: AsyncSession = Depends(get_db),
@@ -1230,7 +1255,7 @@ async def put_tela_filtros(
     return {"ok": True}
 
 
-@router.post("/tela-links")
+@router.post("/tela-links", dependencies=[exige("bi.link")])
 async def criar_tela_link(
     body: TelaLinkIn,
     request: Request,

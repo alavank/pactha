@@ -12,6 +12,7 @@ from database import get_db
 from services.auth import get_current_user, ensure_municipio_access, ensure_tela
 from models.user import User
 from services import authz
+from services.registro_rotas import exige
 
 router = APIRouter(prefix="/api/acordofes", tags=["acordofes"])
 
@@ -28,7 +29,7 @@ _SEL = ("cnpj, razao_social, divida_inicial, total_pago, divida_atual, "
         "valor_retirado, pago_fora, n_empenhos")
 
 
-@router.get("")
+@router.get("", dependencies=[exige("acordofes.ver")])
 async def por_municipio(
     municipio_id: int = Query(...),
     db: AsyncSession = Depends(get_db),
@@ -49,7 +50,7 @@ async def por_municipio(
     }
 
 
-@router.get("/buscar")
+@router.get("/buscar", dependencies=[exige("acordofes.ver")])
 async def buscar(
     q: str = Query(..., min_length=2, description="CNPJ ou parte da razao social"),
     db: AsyncSession = Depends(get_db),
@@ -69,7 +70,7 @@ async def buscar(
     return {"items": [_row(r) for r in rows], "total": len(rows)}
 
 
-@router.post("/refresh")
+@router.post("/refresh", dependencies=[exige("acordofes.atualizar")])
 async def refresh(current: User = Depends(get_current_user)):
     """Dispara a ingestao do Acordo FES (espelho Excel do Painel)."""
     # Antes bastava estar LOGADO. Baixa e reprocessa o Excel inteiro do Painel

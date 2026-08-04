@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from database import get_db
 from services.auth import get_current_user, ensure_municipio_access, ensure_tela
+from services.registro_rotas import exige
 from services.bi import anos_list
 from models.user import User
 
@@ -54,7 +55,7 @@ def _fns_label(mun_nome: str) -> str:
     return f"FUNDO MUNICIPAL DE SAÚDE — {mun_nome}"
 
 
-@router.get("")
+@router.get("", dependencies=[exige("parlamentares.ver")])
 async def listar(
     municipio_id: Optional[int] = Query(None, description="Filtra um municipio (None=todos)"),
     q: Optional[str] = Query(None, description="Busca parcial no nome"),
@@ -375,7 +376,7 @@ async def aggregate_parlamentares(
 # Comparacao entre dois periodos
 # ---------------------------------------------------------------------------
 
-@router.get("/comparar")
+@router.get("/comparar", dependencies=[exige("parlamentares.ver")])
 async def comparar(
     municipio_id: Optional[int] = Query(None),
     a: list[int] = Query(..., description="Anos do periodo A (o mais antigo, referencia)"),
@@ -476,7 +477,8 @@ def _rotulo_periodo(anos: list[int]) -> str:
     return f"{anos[0]}–{anos[-1]}" if contiguo else ", ".join(map(str, anos))
 
 
-@router.get("/{nome_normalizado:path}")
+@router.get("/{nome_normalizado:path}",
+            dependencies=[exige("parlamentares.ver")])
 async def detalhe(
     nome_normalizado: str,
     municipio_id: Optional[int] = Query(None),

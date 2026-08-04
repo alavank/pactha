@@ -31,6 +31,7 @@ from sqlalchemy import text
 
 from database import get_db
 from services.auth import get_current_user
+from services.registro_rotas import exige
 from services import telegram as tg
 from models import User
 
@@ -353,7 +354,12 @@ async def webhook(
 # ADMIN / USUARIO
 # ----------------------------------------------------------------------------
 
-@router.get("/status")
+# ⚠️ `telegram.vincular` e NAO `telegram.administrar`, apesar de a resposta ser
+# a configuracao do bot: a tela do vinculo carrega /status e /my-link no MESMO
+# `Promise.all` (frontend/src/app/dashboard/telegram/page.tsx). Exigir a
+# permissao de administracao so aqui derrubaria a tela INTEIRA de quem tem
+# apenas o direito de ligar o proprio celular — inclusive a parte que ele pode.
+@router.get("/status", dependencies=[exige("telegram.vincular")])
 async def status(_=Depends(get_current_user)):
     """Status do bot + webhook config."""
     if not tg.telegram_configured():
@@ -374,7 +380,7 @@ class WebhookSetup(BaseModel):
     base_url: str  # ex: https://pactha-api.up.railway.app
 
 
-@router.post("/setup-webhook")
+@router.post("/setup-webhook", dependencies=[exige("telegram.administrar")])
 async def setup_webhook(body: WebhookSetup, user: User = Depends(get_current_user)):
     """Configura o webhook do bot pra apontar pra este backend.
     Apenas admins. Tambem grava um secret aleatorio se nao existir."""
@@ -398,7 +404,7 @@ async def setup_webhook(body: WebhookSetup, user: User = Depends(get_current_use
         raise HTTPException(500, f"Falha ao configurar webhook: {e}")
 
 
-@router.post("/link-code")
+@router.post("/link-code", dependencies=[exige("telegram.vincular")])
 async def gerar_link_code(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -436,7 +442,10 @@ async def gerar_link_code(
     }
 
 
-@router.get("/my-link")
+# Auto-escopadas por `user_id`, mas declaram em vez de ir para ROTAS_LIVRES:
+# vivem na mesma tela do vinculo, e quem nao pode vincular nao tem vinculo para
+# ler nem desfazer. Ver o cabecalho de services/registro_rotas.py.
+@router.get("/my-link", dependencies=[exige("telegram.vincular")])
 async def my_link(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -461,7 +470,7 @@ async def my_link(
     return {"items": items, "total": len(items)}
 
 
-@router.delete("/my-link/{chat_id}")
+@router.delete("/my-link/{chat_id}", dependencies=[exige("telegram.vincular")])
 async def desvincular_chat(
     chat_id: str,
     user: User = Depends(get_current_user),

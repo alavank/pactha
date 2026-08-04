@@ -25,6 +25,8 @@ CHAVES_DO_REPO = [
     "login.success", "login.fail", "login.disabled_user", "logout", "sso.login",
     "user.password_change.success", "user.password_change.fail",
     "user.create", "user.update", "user.reset_password",
+    # A concessao de permissao por ACAO (routers/permissoes.py::conceder).
+    "usuarios.conceder",
     "cofre.reveal", "cofre.create", "cofre.update", "cofre.delete",
     "session.create", "session.update",
     "service_token.create", "service_token.rotate", "service_token.revoke",
@@ -123,6 +125,7 @@ def test_navegacao_traduz_a_tela_nos_dois_desenhos():
 def test_riscos_altos_sao_os_que_o_dono_listou():
     for chave in ("cofre.reveal", "control.cofre.reveal", "cofre.delete",
                   "user.update", "user.create", "user.reset_password",
+                  "usuarios.conceder",
                   "auditoria.exportar", "auditoria.podar", "auditoria.poda",
                   "session.create",
                   "service_token.create", "control.sso.mint"):

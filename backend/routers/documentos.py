@@ -24,6 +24,15 @@ diferentes:
 ⚠️ NADA DISSO BARRA HOJE. `AUTHZ_MODO=aviso` (o default) apenas REGISTRA "eu
 teria negado isto" na trilha e deixa passar — o comportamento é idêntico ao de
 antes. Só `AUTHZ_MODO=bloqueio` levanta 403. Ver services/authz.py.
+
+E há uma TERCEIRA pergunta, declarada em cada rota com `exige(...)`:
+
+  `documentos.ver` / `criar` / `editar` / `excluir` / `exportar`
+                                     -> o que ela FAZ neste módulo? Ter a tela
+                                        `documentos` sempre significou poder
+                                        apagar o documento de quem quer que
+                                        fosse; a declaração é o que passa a
+                                        separar consultar de escrever.
 """
 from __future__ import annotations
 import io
@@ -41,6 +50,7 @@ from models import Municipio
 from services.auth import get_current_user, ensure_municipio_access, ensure_tela
 from models.user import User
 from services import authz
+from services.registro_rotas import exige
 from services.audit import registrar
 from services.documentos_schema import get_schema, listar_tipos
 from services.documento_docx import gerar_docx
@@ -103,7 +113,7 @@ def _row_to_dict(r) -> dict:
     }
 
 
-@router.get("/schemas")
+@router.get("/schemas", dependencies=[exige("documentos.ver")])
 async def schemas(current: User = Depends(get_current_user)):
     """Tipos de documento disponíveis (p/ o menu 'Novo documento')."""
     # Catálogo estático, sem dado de prefeitura nenhuma — mas é a porta do menu
@@ -112,7 +122,7 @@ async def schemas(current: User = Depends(get_current_user)):
     return {"items": listar_tipos()}
 
 
-@router.get("/schema/{tipo}")
+@router.get("/schema/{tipo}", dependencies=[exige("documentos.ver")])
 async def schema_de(tipo: str, current: User = Depends(get_current_user)):
     # `tipo` é chave de um dicionário em código (services/documentos_schema.py),
     # não id de linha: não há dono a checar, só a tela do módulo.
@@ -123,7 +133,7 @@ async def schema_de(tipo: str, current: User = Depends(get_current_user)):
     return s
 
 
-@router.get("")
+@router.get("", dependencies=[exige("documentos.ver")])
 async def listar(
     municipio_id: Optional[int] = Query(None),
     tipo: Optional[str] = Query(None),
@@ -146,7 +156,7 @@ async def listar(
     return {"items": [_row_to_dict(r) for r in rows], "total": len(rows)}
 
 
-@router.post("")
+@router.post("", dependencies=[exige("documentos.criar")])
 async def criar(
     body: DocCreate,
     request: Request,
@@ -191,7 +201,7 @@ async def criar(
     return {"id": rid, "created": True}
 
 
-@router.get("/{doc_id}")
+@router.get("/{doc_id}", dependencies=[exige("documentos.ver")])
 async def detalhe(doc_id: int, db: AsyncSession = Depends(get_db),
                   current: User = Depends(get_current_user)):
     await _exigir_acesso(db, doc_id, current)
@@ -204,7 +214,7 @@ async def detalhe(doc_id: int, db: AsyncSession = Depends(get_db),
     return _row_to_dict(r)
 
 
-@router.put("/{doc_id}")
+@router.put("/{doc_id}", dependencies=[exige("documentos.editar")])
 async def atualizar(doc_id: int, body: DocUpdate, request: Request,
                     db: AsyncSession = Depends(get_db),
                     current: User = Depends(get_current_user)):
@@ -242,7 +252,7 @@ async def atualizar(doc_id: int, body: DocUpdate, request: Request,
     return {"updated": True}
 
 
-@router.delete("/{doc_id}")
+@router.delete("/{doc_id}", dependencies=[exige("documentos.excluir")])
 async def remover(doc_id: int, request: Request,
                   db: AsyncSession = Depends(get_db),
                   current: User = Depends(get_current_user)):
@@ -261,7 +271,7 @@ async def remover(doc_id: int, request: Request,
     return {"deleted": True}
 
 
-@router.get("/{doc_id}/export")
+@router.get("/{doc_id}/export", dependencies=[exige("documentos.exportar")])
 async def exportar(
     doc_id: int,
     request: Request,

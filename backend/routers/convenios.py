@@ -15,6 +15,7 @@ from services.audit import registrar
 # Trava de permissao em MODO AVISO. `ensure_dono` responde a pergunta que
 # `ensure_tela` nao responde: "este id e de um municipio que a pessoa enxerga?".
 from services import authz
+from services.registro_rotas import exige
 from services.bi import anos_list
 from models.user import User
 import math
@@ -97,7 +98,7 @@ def estadual_to_response(c: ConvenioEstadual) -> ConvenioResponse:
     )
 
 
-@router.get("/situacoes")
+@router.get("/situacoes", dependencies=[exige("convenios.ver")])
 async def list_situacoes(
     municipio_id: Optional[int] = None,
     db: AsyncSession = Depends(get_db),
@@ -116,7 +117,7 @@ async def list_situacoes(
     return sorted({row[0].strip() for row in r.all() if row[0]})
 
 
-@router.get("/anos")
+@router.get("/anos", dependencies=[exige("convenios.ver")])
 async def list_anos(
     municipio_id: Optional[int] = None,
     db: AsyncSession = Depends(get_db),
@@ -135,7 +136,8 @@ async def list_anos(
     return sorted({int(row[0]) for row in r.all() if row[0]}, reverse=True)
 
 
-@router.get("", response_model=ConvenioListResponse)
+@router.get("", response_model=ConvenioListResponse,
+            dependencies=[exige("convenios.ver")])
 async def list_convenios(
     municipio_id: Optional[int] = None,
     # Os plurais convivem com os singulares de proposito: e o mesmo padrao de
@@ -294,7 +296,8 @@ async def list_convenios(
     return ConvenioListResponse(items=items, total=total, page=page, per_page=per_page, pages=pages)
 
 
-@router.get("/stats", response_model=ConvenioStats)
+@router.get("/stats", response_model=ConvenioStats,
+            dependencies=[exige("convenios.ver")])
 async def convenio_stats(
     municipio_id: Optional[int] = None,
     ano: Optional[int] = Query(None, description="Filtra por ano (None=todos)"),
@@ -335,7 +338,8 @@ async def convenio_stats(
     return stats
 
 
-@router.get("/alertas", response_model=list[AlertaVigencia])
+@router.get("/alertas", response_model=list[AlertaVigencia],
+            dependencies=[exige("convenios.ver")])
 async def alertas_vigencia(
     municipio_id: Optional[int] = None,
     dias: int = Query(120, ge=1),
@@ -424,7 +428,8 @@ async def query_alertas_vigencia(
     return alertas
 
 
-@router.get("/prestacao-contas", response_model=list[AlertaVigencia])
+@router.get("/prestacao-contas", response_model=list[AlertaVigencia],
+            dependencies=[exige("convenios.ver")])
 async def alertas_prestacao_contas(
     municipio_id: Optional[int] = None,
     dias: int = Query(90, ge=1, description="Dias minimos apos o vencimento"),
@@ -566,7 +571,7 @@ def _build_workflow_state(situacao: str | None) -> dict:
     }
 
 
-@router.get("/estadual/{conv_id}")
+@router.get("/estadual/{conv_id}", dependencies=[exige("convenios.ver")])
 async def get_convenio_estadual_detail(
     conv_id: int,
     db: AsyncSession = Depends(get_db),
@@ -662,7 +667,7 @@ async def get_convenio_estadual_detail(
     }
 
 
-@router.post("/refresh-sigcon")
+@router.post("/refresh-sigcon", dependencies=[exige("convenios.atualizar")])
 async def refresh_sigcon(
     request: Request,
     db: AsyncSession = Depends(get_db),

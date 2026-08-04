@@ -18,7 +18,9 @@ from pydantic import BaseModel
 
 from database import get_db
 from models import CofreSenha, User
+from services import authz
 from services.auth import get_current_user, decode_access, COOKIE_NAME_ACCESS
+from services.registro_rotas import declarado, exige
 from services.service_auth import hash_token, require_scope
 from models.service_token import ServiceToken
 from services import crypto
@@ -99,6 +101,17 @@ async def get_capture_principal(
     # sensivel do sistema, e o link publico de TV nao tem o que fazer aqui.
     if getattr(user, "kiosk", False):
         raise HTTPException(403, "Conta de quiosque nao captura sessao")
+    # ⭐ E, no caminho do USUARIO, a permissao. Ela so existe aqui: o caminho do
+    # service token nao tem `User` de quem cobrar, e nao precisa — a autoridade
+    # dele e o scope `session:write`, ja conferido acima por `require_scope`.
+    #
+    # Por que isto faltava: a rota nasceu descrita como "a rota da extensao", e
+    # com essa leitura ela foi para a allowlist de rotas livres. Mas o Modo 2
+    # aqui aceita o cookie de QUALQUER conta ativa — e o que ela faz e cifrar
+    # credencial de portal do governo dentro do Cofre e disparar o scraper. Sem
+    # esta linha, `sessoes.capturar` era uma caixinha do catalogo que nenhuma
+    # rota consultava: o administrador a marcava e nada mudava.
+    authz.exigir(user, "sessoes.capturar")
     return _CapturePrincipal(user_id=user.id, label=f"user:{user.email}", via="jwt")
 
 
@@ -123,7 +136,12 @@ class CapturedSession(BaseModel):
     domain_capturado: Optional[str] = None
 
 
-@router.post("")
+# `declarado` e nao `exige`: a permissao vale para UM dos dois modos de
+# autenticacao (o do usuario) e quem sabe qual modo entrou e
+# `get_capture_principal`, que a cobra la dentro. `exige()` aqui exigiria
+# `get_current_user`, que esta rota deliberadamente nao usa — e mataria a
+# extensao do Chrome, que nao manda cookie de sessao nenhum.
+@router.post("", dependencies=[declarado("sessoes.capturar")])
 async def capture_session(
     payload: CapturedSession,
     request: Request,
@@ -243,7 +261,10 @@ async def capture_session(
     }
 
 
-@router.get("/status/{automation_key}")
+# So o GET declara. O POST acima autentica por SERVICE TOKEN (a extensao do
+# Chrome), onde nao ha usuario com permissao a checar — ele esta em ROTAS_LIVRES
+# com esse motivo. Aqui ha `get_current_user`, entao ha o que exigir.
+@router.get("/status/{automation_key}", dependencies=[exige("sessoes.ver")])
 async def session_status(
     automation_key: str,
     municipio_id: int,

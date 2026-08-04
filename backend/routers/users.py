@@ -3,6 +3,20 @@
 Telas: listar, criar, resetar senha, ativar/desativar, mudar role.
 Senhas nunca sao retornadas (hash bcrypt). Reset gera senha temporaria
 aleatoria que o admin repassa; usuario troca no proximo login.
+
+PERMISSAO POR ACAO (`exige`, ver services/registro_rotas.py)
+------------------------------------------------------------
+O `_require_admin` por PAPEL abaixo CONTINUA valendo, e a declaracao soma a ele.
+O que o rotulo `admin` juntava num poder so passa a ser caixinha separada:
+
+    usuarios.ver           abrir a lista de pessoas
+    usuarios.criar         cadastrar gente (⚠️ a resposta traz a senha temporaria)
+    usuarios.editar        corrigir nome, papel, ativo
+    usuarios.conceder      decidir o que a pessoa ALCANCA (telas, municipios,
+                           trava de escrita) — cobrada dentro do PATCH, porque a
+                           mesma rota faz as duas coisas
+    usuarios.resetar_senha gerar senha temporaria de OUTRA pessoa (quem faz isso
+                           entra como ela ate a troca obrigatoria)
 """
 import secrets
 import string
@@ -15,11 +29,13 @@ from pydantic import BaseModel
 from database import get_db
 from models.user import User
 from schemas.auth import UserResponse
+from services import authz
 from services.auth import (
     hash_password, get_current_user, is_super_admin, eh_somente_leitura,
     READONLY_ROLES,
 )
 from services.audit import registrar, registrar_critico
+from services.registro_rotas import exige
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -217,7 +233,7 @@ class SenhaResetResponse(BaseModel):
     senha_temporaria: str
 
 
-@router.get("")
+@router.get("", dependencies=[exige("usuarios.ver")])
 async def list_users(
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
@@ -258,7 +274,8 @@ async def list_users(
     } for u in users]
 
 
-@router.post("", response_model=SenhaResetResponse)
+@router.post("", response_model=SenhaResetResponse,
+             dependencies=[exige("usuarios.criar")])
 async def create_user(
     req: CreateUserRequest,
     request: Request,
@@ -274,6 +291,23 @@ async def create_user(
         raise HTTPException(400, "Email ja cadastrado")
     if req.role not in ("admin", "usuario", "analyst", "user", "prefeito"):
         raise HTTPException(400, "Role invalida")
+
+    # ⚠️ CRIAR COM ESCOPO JA E CONCEDER — e sem esta linha era um DESVIO da
+    # permissao de conceder.
+    #
+    # A resposta deste endpoint devolve a SENHA TEMPORARIA no corpo (e o unico
+    # jeito de entregar a conta a pessoa). Entao quem tivesse apenas
+    # `usuarios.criar` podia: criar uma conta ja com todas as telas e todos os
+    # municipios, ler a senha na propria resposta, e entrar como ela. O caminho
+    # legitimo — PATCH — cobra `usuarios.conceder`; este cobrava so `criar`.
+    # Resultado liquido: `usuarios.conceder` seria contornavel por qualquer um
+    # que pudesse criar usuario, e a caixinha da tela mentiria.
+    #
+    # Conta SEM escopo nenhum continua exigindo so `usuarios.criar`: ela nao
+    # alcanca nada ate alguem conceder, e e o fluxo comum de cadastrar a pessoa
+    # primeiro e ajustar o acesso depois.
+    if req.telas or req.municipio_ids:
+        authz.exigir(current, "usuarios.conceder")
 
     senha = _gen_senha()
     somente_leitura = _trava_inicial(req.role, req.somente_leitura)
@@ -322,7 +356,8 @@ async def create_user(
     return SenhaResetResponse(id=user.id, email=user.email, name=user.name, senha_temporaria=senha)
 
 
-@router.post("/{user_id}/reset-password", response_model=SenhaResetResponse)
+@router.post("/{user_id}/reset-password", response_model=SenhaResetResponse,
+             dependencies=[exige("usuarios.resetar_senha")])
 async def reset_password(
     user_id: int,
     request: Request,
@@ -351,7 +386,8 @@ async def reset_password(
     return SenhaResetResponse(id=u.id, email=u.email, name=u.name, senha_temporaria=senha)
 
 
-@router.patch("/{user_id}", response_model=UserResponse)
+@router.patch("/{user_id}", response_model=UserResponse,
+              dependencies=[exige("usuarios.editar")])
 async def update_user(
     user_id: int,
     req: UpdateUserRequest,
@@ -360,6 +396,22 @@ async def update_user(
     current: User = Depends(get_current_user),
 ):
     _require_admin(current)
+    # ⭐ `usuarios.conceder` e SEPARADA de `usuarios.editar`, e as duas entram
+    # pelo mesmo PATCH: corrigir o nome de alguem e uma coisa, decidir o que essa
+    # pessoa alcanca e outra. Por isso a rota declara o denominador comum
+    # (`editar`) e a segunda so e cobrada quando o pedido mexe em ACESSO.
+    #
+    # `somente_leitura` entra na conta com telas e municipios porque conceder ou
+    # tirar ESCRITA e a mudanca de poder mais forte que esta tela faz — e o que a
+    # nota de `UpdateUserRequest` ja dizia por outras palavras.
+    #
+    # `authz.exigir` e nao `exige(...)` no decorador: gate NOVO respeita
+    # `AUTHZ_MODO`, entao hoje isto so registra "eu teria negado". A tela de
+    # Usuarios chama esta rota de tres jeitos e so um deles manda estes campos
+    # (frontend .../dashboard/usuarios/page.tsx: acesso, ativar/desativar, papel).
+    if (req.telas is not None or req.municipio_ids is not None
+            or req.somente_leitura is not None):
+        authz.exigir(current, "usuarios.conceder")
     u = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
     if not u:
         raise HTTPException(404, "Usuario nao encontrado")

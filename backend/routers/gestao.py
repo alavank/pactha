@@ -42,6 +42,13 @@ Entao quem tem "convenios" mas nao tem "gestao" vai gerar linha `authz.negaria`
 sem nunca ter aberto a Gestao Interna. E a decisao certa (anotar E o modulo de
 Gestao Interna), mas quem for ligar o bloqueio precisa saber que essas contas
 perdem o botao — conceder a tela `gestao` a elas e a correcao.
+
+PERMISSAO POR ACAO (`exige`, ver services/registro_rotas.py)
+------------------------------------------------------------
+Cada rota declara o verbo que executa. Duas escolhas nao sao obvias e estao
+comentadas onde acontecem: `POST /anotacoes/contagens` declara `gestao.ver`
+(e um GROUP BY — o POST e por causa do corpo, nao porque escreva) e o download
+de anexo declara `gestao.anexo_baixar`, a caixinha propria do catalogo.
 """
 from __future__ import annotations
 import json
@@ -54,6 +61,7 @@ from sqlalchemy import text
 from database import get_db
 from services.auth import get_current_user, ensure_municipio_access, ensure_tela
 from services import authz
+from services.registro_rotas import exige
 from services.audit import registrar
 from models.user import User
 
@@ -195,7 +203,7 @@ async def _anotacao_contexto(db: AsyncSession, anot_id: int) -> dict:
             "numero_referencia": r[3], "status_interno": r[4]}
 
 
-@router.get("/status-opcoes")
+@router.get("/status-opcoes", dependencies=[exige("gestao.ver")])
 async def status_opcoes(current: User = Depends(get_current_user)):
     # Constantes deste arquivo, sem dado de prefeitura nenhuma — mas e o
     # vocabulario do modulo, e o formulario de anotacao nao existe sem ele. So a
@@ -204,7 +212,7 @@ async def status_opcoes(current: User = Depends(get_current_user)):
     return {"opcoes": STATUS_OPCOES, "fontes_validas": sorted(FONTES_VALIDAS)}
 
 
-@router.get("/anotacoes")
+@router.get("/anotacoes", dependencies=[exige("gestao.ver")])
 async def listar(
     municipio_id: Optional[int] = Query(None),
     fonte: Optional[str] = Query(None),
@@ -228,7 +236,7 @@ async def listar(
     return {"items": [_row_to_dict(r, with_anexos=False) for r in rows], "total": len(rows)}
 
 
-@router.get("/anotacoes/item")
+@router.get("/anotacoes/item", dependencies=[exige("gestao.ver")])
 async def listar_item(
     fonte: str = Query(...),
     fonte_ref: str = Query(...),
@@ -264,7 +272,10 @@ class ContagensIn(BaseModel):
     refs: list[str]
 
 
-@router.post("/anotacoes/contagens")
+# `gestao.ver` mesmo sendo POST: o verbo tem de casar com o que o endpoint FAZ, e
+# aqui ele so conta (GROUP BY). O metodo e POST porque a lista de `refs` nao cabe
+# em query string — declarar `criar` aqui cobraria escrita de quem so consulta.
+@router.post("/anotacoes/contagens", dependencies=[exige("gestao.ver")])
 async def contagens(
     body: ContagensIn,
     db: AsyncSession = Depends(get_db),
@@ -300,7 +311,7 @@ async def contagens(
     return {r[0]: r[1] for r in rows}
 
 
-@router.get("/anotacoes/{anot_id}")
+@router.get("/anotacoes/{anot_id}", dependencies=[exige("gestao.ver")])
 async def detalhe(
     anot_id: int,
     db: AsyncSession = Depends(get_db),
@@ -313,7 +324,7 @@ async def detalhe(
     return _row_to_dict(row, with_anexos=True)
 
 
-@router.post("/anotacoes")
+@router.post("/anotacoes", dependencies=[exige("gestao.criar")])
 async def criar(
     body: AnotacaoCreate,
     request: Request,
@@ -356,7 +367,7 @@ async def criar(
     return {"id": rid, "created": True}
 
 
-@router.put("/anotacoes/{anot_id}")
+@router.put("/anotacoes/{anot_id}", dependencies=[exige("gestao.editar")])
 async def atualizar(
     anot_id: int,
     body: AnotacaoUpdate,
@@ -409,7 +420,7 @@ async def atualizar(
     return {"updated": True}
 
 
-@router.delete("/anotacoes/{anot_id}")
+@router.delete("/anotacoes/{anot_id}", dependencies=[exige("gestao.excluir")])
 async def remover(
     anot_id: int,
     request: Request,
@@ -433,7 +444,16 @@ async def remover(
     return {"deleted": True}
 
 
-@router.get("/anotacoes/{anot_id}/anexo/{idx}")
+# `gestao.anexo_baixar` e nao `gestao.ver`: e a caixinha propria do catalogo — a
+# lista mostra que HA anexo, esta rota entrega o arquivo digitalizado.
+#
+# ⚠️ LIMITE DECLARADO, para ninguem ler a caixinha como uma promessa maior do que
+# ela e hoje: `GET /anotacoes/item` e `GET /anotacoes/{id}` devolvem os anexos com
+# `dados_b64` embutido (`with_anexos=True`), entao `gestao.ver` sozinho ja alcanca
+# o conteudo por aqueles dois caminhos. Fechar isso e retirar o base64 daquelas
+# duas respostas — o que MUDA a resposta de producao e nao cabe neste incremento.
+@router.get("/anotacoes/{anot_id}/anexo/{idx}",
+            dependencies=[exige("gestao.anexo_baixar")])
 async def download_anexo(
     anot_id: int,
     idx: int,

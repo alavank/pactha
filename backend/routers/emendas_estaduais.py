@@ -5,12 +5,13 @@ from sqlalchemy import text
 from typing import Optional
 from database import get_db
 from services.auth import get_current_user, ensure_municipio_access, ensure_tela
+from services.registro_rotas import exige
 from models.user import User
 
 router = APIRouter(prefix="/api/emendas-estaduais", tags=["emendas-estaduais"])
 
 
-@router.get("")
+@router.get("", dependencies=[exige("emendas.ver")])
 async def list_emendas_estaduais(
     municipio_id: Optional[int] = None,
     # Plurais ao lado dos singulares (aditivo): quem ja manda `ano=` ou `tipo=`
@@ -81,7 +82,7 @@ async def list_emendas_estaduais(
     return {"items": items, "total": total, "page": page, "per_page": per_page, "pages": pages}
 
 
-@router.get("/anos")
+@router.get("/anos", dependencies=[exige("emendas.ver")])
 async def list_anos(
     municipio_id: Optional[int] = None,
     db: AsyncSession = Depends(get_db),
@@ -99,7 +100,7 @@ async def list_anos(
     return [row[0] for row in r.all()]
 
 
-@router.get("/responsaveis")
+@router.get("/responsaveis", dependencies=[exige("emendas.ver")])
 async def list_responsaveis(
     municipio_id: Optional[int] = None,
     db: AsyncSession = Depends(get_db),
@@ -117,7 +118,7 @@ async def list_responsaveis(
     return [row[0] for row in r.all()]
 
 
-@router.get("/stats")
+@router.get("/stats", dependencies=[exige("emendas.ver")])
 async def stats(
     municipio_id: Optional[int] = None,
     # O plural TEM que existir aqui tambem. Sem ele, a tela cai no contorno de

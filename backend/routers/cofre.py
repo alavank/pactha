@@ -20,6 +20,18 @@ valendo para o que voce FAZ ate o Incremento 5 (permissao por acao) trocar as
 duas coisas de lugar com uma tela que explique a mudanca. O Cofre guarda a
 credencial gov.br do cliente — se e para ele mudar de dono, que mude de proposito
 e nao de raspao.
+
+PERMISSAO POR ACAO (`exige`, ver services/registro_rotas.py)
+------------------------------------------------------------
+Cada rota declara agora o que exige, e o gate por papel acima CONTINUA no corpo:
+sao duas travas somando, nao uma trocando a outra — enquanto `AUTHZ_MODO=aviso`
+a declaracao so registra, e retirar `_require_role` "porque agora ha permissao"
+abriria o CRUD do Cofre para todo mundo na mesma hora.
+
+`cofre.revelar` e uma caixinha SEPARADA de `cofre.ver`, e e a linha mais
+importante deste arquivo: ver que a credencial existe (sistema, usuario, senha
+mascarada) nao e ver a credencial. Quem tiver so `cofre.ver` lista; quem revela
+precisa da segunda caixinha, e a revelacao continua virando linha na trilha.
 """
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,6 +46,7 @@ from models.user import User
 from services.auth import get_current_user, ensure_municipio_access, ensure_tela
 from services import crypto
 from services.audit import log_event
+from services.registro_rotas import exige
 
 router = APIRouter(prefix="/api/cofre", tags=["cofre"])
 logger = logging.getLogger("cofre.audit")
@@ -119,7 +132,8 @@ def _to_response(item: CofreSenha) -> CofreResponse:
     )
 
 
-@router.get("", response_model=list[CofreResponse])
+@router.get("", response_model=list[CofreResponse],
+            dependencies=[exige("cofre.ver")])
 async def list_senhas(
     municipio_id: Optional[int] = None,
     db: AsyncSession = Depends(get_db),
@@ -136,7 +150,7 @@ async def list_senhas(
     return [_to_response(i) for i in items]
 
 
-@router.get("/{item_id}/reveal")
+@router.get("/{item_id}/reveal", dependencies=[exige("cofre.revelar")])
 async def reveal_senha(
     item_id: int,
     request: Request,
@@ -156,7 +170,8 @@ async def reveal_senha(
     return {"senha": crypto.decrypt(item.senha_encrypted) if item.senha_encrypted else ""}
 
 
-@router.post("", response_model=CofreResponse)
+@router.post("", response_model=CofreResponse,
+             dependencies=[exige("cofre.criar")])
 async def create_senha(
     data: CofreCreate,
     request: Request,
@@ -186,7 +201,8 @@ async def create_senha(
     return _to_response(item)
 
 
-@router.put("/{item_id}", response_model=CofreResponse)
+@router.put("/{item_id}", response_model=CofreResponse,
+            dependencies=[exige("cofre.editar")])
 async def update_senha(
     item_id: int,
     data: CofreUpdate,
@@ -218,7 +234,7 @@ async def update_senha(
     return _to_response(item)
 
 
-@router.delete("/{item_id}")
+@router.delete("/{item_id}", dependencies=[exige("cofre.excluir")])
 async def delete_senha(
     item_id: int,
     request: Request,
