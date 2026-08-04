@@ -363,6 +363,10 @@ def test_por_usuario_devolve_o_alcance_de_todo_mundo():
 
 def test_o_alcance_nao_virou_permissao_do_catalogo():
     """`gestao.editar` responde "esta pessoa edita?"; o alcance responde "QUAIS".
-    Junta-las dobraria o catalogo e criaria duas caixinhas que se contradizem."""
-    assert len(permissoes.CATALOGO) == 66
+    Junta-las dobraria o catalogo e criaria duas caixinhas que se contradizem.
+
+    O total sobe quando uma permissao NOVA entra no catalogo (Incremento 7
+    acrescentou `usuarios.modelos`); o que este teste guarda e a ausencia de
+    caixinha de ALCANCE — `gestao.editar_proprios` e a forma que foi recusada."""
+    assert len(permissoes.CATALOGO) == 67
     assert not any("propri" in c for c in permissoes.CATALOGO)

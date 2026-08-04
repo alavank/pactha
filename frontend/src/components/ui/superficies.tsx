@@ -520,6 +520,12 @@ export const ESTILO_SEC: React.CSSProperties = {
 // exigências do CAUC; `Etapas` é o stepper de 12 etapas do FNS.
 // ===========================================================================
 
+/** As caixas ABERTAS, na ordem em que abriram. Existe para o teclado saber qual
+ *  modal está por cima quando um abre de dentro do outro (`nivel={2}`) — ver a
+ *  nota no ouvinte de tecla. Módulo e não estado: é uma só para o app inteiro,
+ *  como o próprio empilhamento na tela. */
+const pilhaDeModais: HTMLElement[] = [];
+
 /** A sobreposição inteira: véu, caixa, tecla Esc e clique fora.
  *
  *  O véu é `bg-black/50` LITERAL, e isso importa: o que estava lá era
@@ -602,6 +608,8 @@ export function Modal({
   React.useEffect(() => {
     if (!aberto) return;
     const veioDe = document.activeElement as HTMLElement | null;
+    const minhaCaixa = caixa.current;
+    if (minhaCaixa) pilhaDeModais.push(minhaCaixa);
     caixa.current?.focus({ preventScroll: true });
 
     /* A primitiva substituída travava a rolagem do corpo; a peça não travava, e
@@ -615,6 +623,8 @@ export function Modal({
     if (barra > 0) corpo.style.paddingRight = `${barra}px`;
 
     return () => {
+      const i = minhaCaixa ? pilhaDeModais.indexOf(minhaCaixa) : -1;
+      if (i >= 0) pilhaDeModais.splice(i, 1);
       corpo.style.overflow = overflowAntes;
       corpo.style.paddingRight = padAntes;
       /* `preventScroll` porque o elemento de origem pode estar fora da vista:
@@ -628,6 +638,15 @@ export function Modal({
   React.useEffect(() => {
     if (!aberto) return;
     const tecla = (e: KeyboardEvent) => {
+      /* ⚠️ SÓ O MODAL DE CIMA RESPONDE.
+         Os dois ouvintes são de `window`, então com dois modais abertos os DOIS
+         rodavam: Esc fechava os dois de uma vez, e o Tab ficava preso — o de
+         baixo vê o foco fora da SUA caixa, puxa para o primeiro campo dele, e o
+         de cima puxa de volta para o primeiro campo dele. Num modal de leitura
+         (o detalhe de proposta do FNS, o único nível 2 que existia) isso passa
+         despercebido; num FORMULÁRIO aberto por cima de outro — o editor de
+         modelo de permissão — o Tab não sai do primeiro campo. */
+      if (pilhaDeModais.length && pilhaDeModais[pilhaDeModais.length - 1] !== caixa.current) return;
       if (e.key === "Escape" && esc) { fechar(); return; }
       if (e.key !== "Tab" || !caixa.current) return;
       /* Prender o foco. `aria-modal="true"` faz o leitor de tela ignorar o

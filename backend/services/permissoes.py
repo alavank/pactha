@@ -325,6 +325,20 @@ _ESPECIAIS: tuple = (
         escrita=True,
     ),
     Permissao(
+        chave="usuarios.modelos", secao=SEC_USUARIOS, recurso="usuarios",
+        recurso_rotulo="Usuarios", verbo_rotulo="Gerenciar modelos",
+        descricao="Criar, alterar e apagar os MODELOS de permissao — os moldes "
+                  "que preenchem as caixinhas de uma vez. Separada de «Conceder "
+                  "permissoes» de proposito: quem concede decide o que UMA "
+                  "pessoa faz; quem escreve um molde escreve a RECEITA que os "
+                  "outros administradores vao aplicar, e um molde chamado "
+                  "«Somente consulta» que carregue «Revelar a senha» engana "
+                  "quem confia no nome. Aplicar um molde NAO precisa desta "
+                  "caixinha (basta «Conceder permissoes»), e continua limitado "
+                  "ao que quem aplica ja tem.",
+        escrita=True,
+    ),
+    Permissao(
         chave="usuarios.resetar_senha", secao=SEC_USUARIOS, recurso="usuarios",
         recurso_rotulo="Usuarios", verbo_rotulo="Redefinir senha",
         descricao="Gerar uma senha temporaria para outra pessoa. Quem redefine "
@@ -597,6 +611,230 @@ def escopos_para_api() -> dict:
 
 
 # ---------------------------------------------------------------------------
+# ⭐⭐ MODELO DE PERMISSAO (Incremento 7) — o MOLDE, e por que ele nao e grupo
+# ---------------------------------------------------------------------------
+# O problema que o molde resolve e de OPERACAO, e nao de seguranca: o catalogo
+# tem dezenas de caixinhas, e cadastrar um servidor novo virou marcar todas elas
+# a mao. Um administrador cansado marca TUDO — e ai o RBAC por usuario, que e a
+# regra do dono, vira decoracao na pratica. Sem esta peca, a anterior se desfaz
+# sozinha.
+#
+# ⚠️⚠️ E A SOLUCAO NAO PODE TRAIR A REGRA. A regra do dono, palavra por palavra:
+#
+#     "as permissoes sao colocadas no usuario da pessoa, INDIVIDUALMENTE. Grupo
+#      e so ROTULO. Nao da pra limitar dentro de uma prefeitura que todos os
+#      analistas terao o mesmo acesso, isso e besteira."
+#
+# Entao o molde NAO E HERANCA e NAO E "grupo com permissoes". E COPIA: aplicar
+# um modelo preenche as caixinhas DAQUELE usuario NAQUELE instante, e acabou o
+# vinculo. Depois disso o modelo pode mudar, ser renomeado ou ser APAGADO que o
+# usuario nao muda em nada.
+#
+# A diferenca nao e filosofica, e a unica coisa que mantem o sistema
+# respondivel: com heranca, "o que esta pessoa pode?" deixaria de ter resposta
+# olhando a pessoa — seria preciso saber a que grupo ela pertence, o que aquele
+# grupo tem HOJE, e o que ele tinha quando alguem reclamou. Com copia, a
+# resposta continua sendo as caixinhas marcadas no cadastro dela, que e
+# exatamente o que o administrador ve na tela.
+#
+# CONSEQUENCIA PRATICA, e ela precisa estar escrita em algum lugar: editar um
+# molde NAO corrige ninguem. Se um molde saiu errado e ja foi aplicado a cinco
+# pessoas, sao cinco cadastros a corrigir. E o preco da regra do dono, e ele e
+# menor do que o preco de nao conseguir responder quem pode o que.
+MODO_SUBSTITUIR = "substituir"
+MODO_SOMAR = "somar"
+
+MODOS_APLICACAO: tuple = (MODO_SUBSTITUIR, MODO_SOMAR)
+
+# ⚠️ O DEFAULT E `substituir`, E A ESCOLHA E DELIBERADA — pense em quem clica no
+# molde por engano num usuario JA configurado:
+#
+#   SOMAR por engano CONCEDE em silencio. As caixinhas que ja estavam marcadas
+#   continuam marcadas, as do molde aparecem marcadas junto, e nada na tela
+#   distingue uma da outra. O administrador salva sem perceber que acabou de dar
+#   acesso a mais — e desfazer exige saber o que havia antes, que ninguem
+#   guardou. E a direcao que ABRE o sistema.
+#
+#   SUBSTITUIR por engano TIRA — e isso e VISIVEL. Caixinha marcada desmarca na
+#   frente do administrador, e nada foi gravado ainda: Cancelar desfaz tudo. O
+#   erro aparece no exato instante em que acontece, que e a unica hora em que
+#   ele custa barato.
+#
+# E ha a razao de significado: so em `substituir` o nome do molde diz a verdade.
+# Aplicar «Somente consulta» somando a quem operava o Cofre produz uma pessoa
+# que nao e nem uma coisa nem outra, e ninguem consegue mais dizer o que ela e
+# olhando o molde. `somar` continua existindo porque "acrescentar o Cofre ao que
+# ela ja tem" e pedido real, e proibi-lo empurraria o administrador de volta
+# para as vinte caixinhas a mao — mas ele e ESCOLHA EXPLICITA, nunca o silencio.
+# (Mesma regra do repo em `routers/users.py`: o campo omitido nao pode ser o
+# campo mais permissivo.)
+MODO_APLICACAO_OPCOES: tuple = (
+    {"valor": MODO_SUBSTITUIR, "rotulo": "Substituir o que ela tem",
+     "descricao": "As caixinhas passam a ser EXATAMENTE as do modelo. O que "
+                  "estava marcado e nao esta no modelo e desmarcado — voce ve "
+                  "isso acontecer antes de salvar."},
+    {"valor": MODO_SOMAR, "rotulo": "Somar ao que ela ja tem",
+     "descricao": "Acrescenta as caixinhas do modelo e nao desmarca nenhuma. O "
+                  "alcance por modulo fica como esta. Use quando a pessoa "
+                  "acumula duas funcoes."},
+)
+
+
+def normalizar_modo_aplicacao(valor) -> str:
+    """O modo como o sistema o compara. Desconhecido cai em `substituir` — o
+    modo que nao concede nada por acidente. Ver o comentario acima: aqui o
+    fail-safe e o RESTRITIVO, ao contrario de `normalizar_escopo`, porque
+    errar para o lado do `somar` seria conceder em silencio."""
+    bruto = str(valor or "").strip().lower()
+    return bruto if bruto in MODOS_APLICACAO else MODO_SUBSTITUIR
+
+
+def aplicar_modelo(
+    *,
+    do_modelo: Optional[Iterable[str]] = None,
+    do_alvo: Optional[Iterable[str]] = None,
+    pode_conceder: Optional[Iterable[str]] = None,
+    modo: str = MODO_SUBSTITUIR,
+) -> dict:
+    """⭐ O MOLDE aplicado a uma pessoa — PURO: sem banco, sem `Request`, sem
+    `User`. Devolve o estado que as caixinhas devem mostrar, e nada e gravado.
+
+    Os tres conjuntos de entrada:
+        do_modelo      as chaves do molde
+        do_alvo        as chaves que a pessoa TEM hoje
+        pode_conceder  as chaves de quem esta aplicando (o efetivo dele)
+
+    ⚠️ `pode_conceder` E O ANTI-ESCALONAMENTO, E ELE VALE AQUI TAMBEM. Um molde
+    com `cofre.revelar` aplicado por quem NAO tem `cofre.revelar` nao pode dar
+    essa chave — senao o molde viraria a porta dos fundos da trava que
+    `routers/permissoes.py::_barrar_escalonamento` instalou na porta da frente.
+    Duas travas dizendo a mesma coisa: esta, para a tela nunca PROPOR o que o
+    servidor vai recusar; e a de la, que continua sendo a que decide na hora de
+    gravar (uma tela adulterada nao contorna nada).
+
+    ⚠️ E A TRAVA VALE NOS DOIS SENTIDOS. Em `substituir`, o que a pessoa tem
+    FORA do alcance de quem aplica e PRESERVADO intocado — nao e "removido pelo
+    molde". Sem isso, aplicar um molde seria o jeito de um administrador sem
+    acesso ao Cofre desligar o acesso de quem tem, que e exatamente o que
+    `_barrar_escalonamento` recusa quando a mesma coisa e feita caixinha a
+    caixinha. (E, como efeito colateral util, e o que faz o PUT seguinte nunca
+    esbarrar na trava por causa do molde.)
+
+    Chave fora do catalogo e descartada em silencio, como na funcao pura de
+    resolucao: molde antigo com chave que saiu do catalogo nao pode virar erro
+    na cara do administrador.
+    """
+    modo_limpo = normalizar_modo_aplicacao(modo)
+
+    molde = frozenset(c for c in (normalizar(x) for x in (do_modelo or ()))
+                      if c in CATALOGO)
+    atuais = frozenset(c for c in (normalizar(x) for x in (do_alvo or ()))
+                       if c in CATALOGO)
+    minhas = frozenset(c for c in (normalizar(x) for x in (pode_conceder or ()))
+                       if c in CATALOGO)
+
+    do_molde_permitido = molde & minhas
+    # O que a pessoa tem e quem aplica NAO alcanca: fica como esta, nos dois
+    # modos. E a metade "nao retirar" do anti-escalonamento.
+    intocaveis = atuais - minhas
+
+    if modo_limpo == MODO_SOMAR:
+        resultado = atuais | do_molde_permitido
+    else:
+        resultado = do_molde_permitido | intocaveis
+
+    return {
+        "modo": modo_limpo,
+        # ⭐ O que a tela deve MARCAR.
+        "permissoes": sorted(resultado),
+        "atuais": sorted(atuais),
+        # O que o Salvar seguinte vai mudar, ja mastigado para a tela avisar
+        # antes do clique.
+        "vai_conceder": sorted(resultado - atuais),
+        "vai_retirar": sorted(atuais - resultado),
+        # ⚠️ Caixinha do MOLDE que nao entrou. Tem de aparecer na tela: um molde
+        # aplicado pela metade em silencio faria o administrador jurar que
+        # concedeu o que nao concedeu.
+        "nao_aplicadas": sorted(molde - resultado),
+        # Caixinha da PESSOA que ficou intocada por estar fora do alcance de
+        # quem aplica. Nao e falha — e a trava funcionando —, mas quem aplicou
+        # precisa saber que aquilo continua la.
+        "preservadas": sorted(intocaveis),
+    }
+
+
+def aplicar_modelo_escopos(
+    *,
+    do_modelo: Optional[dict] = None,
+    do_alvo: Optional[dict] = None,
+    pode_definir: Optional[Iterable[str]] = None,
+    modo: str = MODO_SUBSTITUIR,
+) -> dict:
+    """O ALCANCE por modulo que vem junto do molde. Puro, como o de cima.
+
+    `pode_definir` sao os modulos em que QUEM APLICA alcanca todos os registros
+    — os unicos em que ele pode mexer, pela mesma regra de
+    `routers/permissoes.py::_barrar_escalonamento_escopo`.
+
+    ⚠️ EM `somar` O ALCANCE NAO E TOCADO, e a decisao merece a frase: alcance e
+    um RADIO ("todos" x "somente os que ele criou"), e nao existe soma de dois
+    radios. Qualquer regra que inventassemos aqui ("o mais restritivo vence", "o
+    do molde vence") seria uma regra que ninguem consegue prever olhando a tela.
+    Somar acrescenta CAIXINHAS; o alcance fica exatamente como o administrador o
+    deixou, e a tela diz isso.
+
+    Devolve so o que RESTRINGE (`proprios`), que e a mesma convencao do banco e
+    do resto do sistema: ausencia de linha e `todos`."""
+    modo_limpo = normalizar_modo_aplicacao(modo)
+
+    def _limpar(bruto) -> dict:
+        if not isinstance(bruto, dict):
+            return {}
+        limpo = {}
+        for recurso, valor in bruto.items():
+            chave = normalizar(recurso)
+            if not escopavel(chave):
+                continue
+            escopo = normalizar_escopo(valor)
+            if escopo != ESCOPO_TODOS:
+                limpo[chave] = escopo
+        return limpo
+
+    molde = _limpar(do_modelo)
+    atuais = _limpar(do_alvo)
+    meus = {normalizar(r) for r in (pode_definir or ()) if escopavel(normalizar(r))}
+
+    if modo_limpo == MODO_SOMAR:
+        resultado = dict(atuais)
+        nao_aplicados = sorted(
+            r for r in molde if molde[r] != atuais.get(r, ESCOPO_TODOS))
+    else:
+        resultado = {}
+        nao_aplicados = []
+        for recurso in ESCOPO_RECURSOS:
+            desejado = molde.get(recurso, ESCOPO_TODOS)
+            atual = atuais.get(recurso, ESCOPO_TODOS)
+            # Modulo fora do alcance de quem aplica fica como esta — nem
+            # apertando nem soltando. Ver `_barrar_escalonamento_escopo`.
+            escolhido = desejado if recurso in meus else atual
+            if escolhido != ESCOPO_TODOS:
+                resultado[recurso] = escolhido
+            if recurso not in meus and desejado != atual:
+                nao_aplicados.append(recurso)
+
+    return {
+        "modo": modo_limpo,
+        # So o que restringe — a mesma convencao do banco.
+        "escopos": resultado,
+        "atuais": dict(atuais),
+        "nao_aplicados": sorted(nao_aplicados),
+        "alterados": sorted(
+            r for r in set(atuais) | set(resultado)
+            if atuais.get(r, ESCOPO_TODOS) != resultado.get(r, ESCOPO_TODOS)),
+    }
+
+
+# ---------------------------------------------------------------------------
 # ⭐ A FUNCAO PURA
 # ---------------------------------------------------------------------------
 def permissoes_efetivas(
@@ -713,6 +951,27 @@ def catalogo_para_api() -> dict:
         "permissoes": [CATALOGO[c].as_dict() for c in sorted(CATALOGO)],
         "total": len(CATALOGO),
         "escopos": escopos_para_api(),
+        # O vocabulario do MOLDE (modos de aplicacao e o aviso obrigatorio). Vem
+        # junto do catalogo pelo mesmo motivo do alcance: o frontend nao copia
+        # texto nenhum deste subsistema.
+        "modelos": modelos_para_api(),
+    }
+
+
+def modelos_para_api() -> dict:
+    """O vocabulario do MOLDE, para o frontend nao reescrever nenhuma parte dele
+    (regra 1 do cabecalho). Vai dentro de `catalogo_para_api`."""
+    return {
+        "default": MODO_SUBSTITUIR,
+        "modos": [dict(m) for m in MODO_APLICACAO_OPCOES],
+        # A frase que a tela e OBRIGADA a mostrar. Ela nao e enfeite: o dono
+        # exigiu que "a tela DIGA" que aplicar e copiar, porque o administrador
+        # que achar que e vinculo vai editar o molde esperando que a pessoa
+        # mude junto — e ela nao muda.
+        "aviso": ("Aplicar um modelo COPIA as permissoes para o cadastro desta "
+                  "pessoa, agora. As caixinhas continuam editaveis e nada e "
+                  "gravado ate voce salvar. Depois de salvo, mexer no modelo "
+                  "NAO mexe mais nesta pessoa."),
     }
 
 

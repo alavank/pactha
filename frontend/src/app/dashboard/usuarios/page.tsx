@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import {
   UserPlus, Users, KeyRound, Power, Loader2, Copy, Check, X, Building2,
-  ListChecks, ShieldCheck, AlertTriangle, Lock,
+  ListChecks, ShieldCheck, AlertTriangle, Lock, Layers,
 } from "lucide-react";
 import api from "@/lib/api";
 import { TELAS, TELA_LABELS } from "@/lib/telas";
@@ -16,14 +16,18 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  AcaoMini, Aviso, Bloco, BlocoHead, Campos, ItemLinha, Lista, Modal, Selo,
-  Vazio, situacaoTom,
+  AcaoMini, Aviso, Bloco, BlocoHead, BOTAO_SEC, Campos, ESTILO_SEC, ItemLinha,
+  Lista, Modal, Selo, Vazio, situacaoTom,
 } from "@/components/ui/superficies";
 import PermissoesModal from "./PermissoesModal";
+import ModelosModal from "./ModelosModal";
 import {
   buscarCatalogo, buscarConcedidas, buscarMinhas, resumoPorRecurso,
   type Catalogo, type MinhasPermissoes,
 } from "@/lib/permissoes";
+import {
+  listarModelos, podeGerirModelos, type Modelo,
+} from "@/lib/modelos";
 import type { MapaEscopos } from "@/lib/escopo";
 
 interface Usuario {
@@ -297,6 +301,14 @@ export default function UsuariosPage() {
   // chamada das caixinhas: sao a mesma pergunta ("o que essa pessoa faz aqui").
   const [escopos, setEscopos] = useState<Record<string, MapaEscopos>>({});
   const [permUser, setPermUser] = useState<Usuario | null>(null);
+  // Os MOLDES. Vivem aqui e nao dentro do modal porque dois lugares os usam: o
+  // modal de permissoes (aplicar) e o modal de modelos (manter) — e os dois
+  // precisam ver a mesma lista depois que um deles a muda.
+  const [modelos, setModelos] = useState<Modelo[]>([]);
+  // Quem pode CRIAR/EDITAR/APAGAR molde, respondido pelo servidor. `null` = a
+  // API nao disse, e ai vale a conta local sobre a mesma chave.
+  const [podeModelos, setPodeModelos] = useState<boolean | null>(null);
+  const [verModelos, setVerModelos] = useState(false);
 
   // Criar
   const [novoEmail, setNovoEmail] = useState("");
@@ -339,7 +351,7 @@ export default function UsuariosPage() {
   const carregar = useCallback(async () => {
     setLoading(true);
     try {
-      const [ru, rm, rme, rcat, rminhas, rconc] = await Promise.all([
+      const [ru, rm, rme, rcat, rminhas, rconc, rmod] = await Promise.all([
         api.get<Usuario[]>("/users"),
         api.get<Municipio[]>("/municipios"),
         // Falha isolada de proposito: saber quem sou eu e um EXTRA (serve ao
@@ -354,6 +366,9 @@ export default function UsuariosPage() {
         buscarCatalogo().catch(() => null),
         buscarMinhas().catch(() => null),
         buscarConcedidas().catch(() => ({ concedidas: {}, escopos: {} })),
+        // Idem para os moldes: sem eles a tela continua inteira, so sem o
+        // atalho. Lista vazia e o que o modal desenha como "nenhum cadastrado".
+        listarModelos().catch(() => ({ modelos: [], podeGerenciar: null })),
       ]);
       setUsers(ru.data);
       setMunicipios(Array.isArray(rm.data) ? rm.data : []);
@@ -362,6 +377,8 @@ export default function UsuariosPage() {
       setMinhas(rminhas);
       setConcedidas(rconc.concedidas);
       setEscopos(rconc.escopos);
+      setModelos(rmod.modelos);
+      setPodeModelos(rmod.podeGerenciar);
       setErro(null);
     } catch (e: unknown) {
       const msg = (e as { response?: { status?: number } })?.response?.status === 403
@@ -379,6 +396,21 @@ export default function UsuariosPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     carregar();
   }, [carregar]);
+
+  /** Rele SO os moldes. Existe porque criar um modelo de dentro do modal de
+   *  permissoes nao pode recarregar a tela inteira: `carregar()` reescreveria
+   *  `concedidas`, e o modal aberto compara o que esta marcado contra esse
+   *  valor — o administrador veria o proprio diff se mexer sozinho. */
+  const recarregarModelos = useCallback(async () => {
+    try {
+      const r = await listarModelos();
+      setModelos(r.modelos);
+      setPodeModelos(r.podeGerenciar);
+    } catch {
+      /* Fica com a lista que ja tinha: o molde foi criado no servidor de
+         qualquer jeito, e a proxima abertura da tela o traz. */
+    }
+  }, []);
 
   const toggleNovo = (id: number) =>
     setNovoMunis((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -556,11 +588,34 @@ export default function UsuariosPage() {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="border-b pb-4" style={{ borderColor: "var(--bi-line)" }}>
-        <h1 className="text-2xl font-bold text-base-content">Usuários</h1>
-        <p className="mt-1 text-sm" style={{ color: "var(--bi-muted)" }}>
-          Acesso à plataforma PACTHA, concedido usuário a usuário.
-        </p>
+      <div
+        className="flex flex-wrap items-start justify-between gap-3 border-b pb-4"
+        style={{ borderColor: "var(--bi-line)" }}
+      >
+        <div className="min-w-0">
+          <h1 className="text-2xl font-bold text-base-content">Usuários</h1>
+          <p className="mt-1 text-sm" style={{ color: "var(--bi-muted)" }}>
+            Acesso à plataforma PACTHA, concedido usuário a usuário.
+          </p>
+        </div>
+        {/* Os MOLDES ficam aqui, e não junto do botão «Permissões» de cada
+            linha: manter modelo é ato de tela, e não de pessoa. Botão
+            secundário — criar usuário continua sendo o que esta tela faz.
+            Some para quem não pode mexer neles; aplicar continua disponível
+            dentro do modal de permissões. */}
+        {catalogo && (podeModelos ?? podeGerirModelos(minhas)) && (
+          <button
+            type="button"
+            className={BOTAO_SEC}
+            style={ESTILO_SEC}
+            onClick={() => setVerModelos(true)}
+            title="Moldes de permissão para cadastrar gente nova em um clique"
+          >
+            <Layers className="size-4" />
+            Modelos de permissão
+            {modelos.length > 0 && <Selo>{modelos.length}</Selo>}
+          </button>
+        )}
       </div>
 
       {/* A REGRA DA TELA, escrita.
@@ -1168,8 +1223,24 @@ export default function UsuariosPage() {
           concedidas={permsDe(permUser)}
           escopos={escoposDe(permUser)}
           souEu={!!eu && eu.id === permUser.id}
+          modelos={modelos}
+          podeGerirModelo={podeModelos ?? podeGerirModelos(minhas)}
+          onModeloCriado={recarregarModelos}
           onFechar={() => setPermUser(null)}
           onSalvo={carregar}
+        />
+      )}
+
+      {/* Os MOLDES — criar, editar e apagar. Nenhuma conta muda por causa
+          daqui: quem já recebeu um modelo ficou com uma CÓPIA das caixinhas. */}
+      {verModelos && catalogo && (
+        <ModelosModal
+          catalogo={catalogo}
+          minhas={minhas}
+          modelos={modelos}
+          carregando={loading}
+          onFechar={() => setVerModelos(false)}
+          onMudou={recarregarModelos}
         />
       )}
 

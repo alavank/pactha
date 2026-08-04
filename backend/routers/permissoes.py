@@ -16,6 +16,14 @@ declaram permissao como qualquer rota de recurso:
     GET /api/permissoes/usuarios          quem tem o que (a tela de Usuarios)
     PUT /api/permissoes/usuario/{id}      ⭐ o ato de CONCEDER
 
+Os MODELOS de permissao (o "molde" do Incremento 7) moram em
+`routers/modelos_permissao.py`, sob `/api/permissoes/modelos`. Eles NAO gravam
+permissao de ninguem: aplicar um molde CALCULA as caixinhas, e quem grava
+continua sendo o `PUT` daqui — uma porta so para escrever permissao, com uma
+copia so de cada guarda. O que este arquivo ganhou foi o campo `modelo_id` no
+corpo do `PUT`, que existe SO para a trilha dizer de onde o administrador
+partiu.
+
 ⭐ O ALCANCE POR LINHA (Incremento 6) VIAJA NAS MESMAS QUATRO ROTAS
 ------------------------------------------------------------------
 "Editar somente os dele" nao e uma caixinha nova: e um MODIFICADOR das caixinhas
@@ -150,6 +158,23 @@ class ConcederRequest(BaseModel):
     #                     omitido dentro do dicionario volta para `todos`.
     escopos: Optional[dict[str, str]] = None
 
+    # ⭐ O MODELO que serviu de PONTO DE PARTIDA para este Salvar (Incremento 7).
+    #
+    # ⚠️ NAO CRIA VINCULO NENHUM. Nao ha coluna que ligue usuario a modelo, aqui
+    # nem no banco: aplicar e COPIAR, e o vinculo acaba no instante da copia.
+    # Este campo existe SO para a trilha, e a distincao importa — quem o ler como
+    # "o cadastro dela segue o modelo X" vai editar o modelo esperando corrigir a
+    # pessoa, e nao vai corrigir nada.
+    #
+    # ⚠️ E ELE E DECLARADO PELO CLIENTE, nao verificado. O servidor NAO confere
+    # se as caixinhas salvas batem com as do modelo — elas nao devem bater: o
+    # dono pediu que ficassem editaveis, entao o administrador ajusta antes de
+    # salvar e o normal e diferirem. A autoridade da trilha continua sendo o
+    # `valor_antes`/`valor_depois` desta mesma linha, que e medido, e nao
+    # afirmado. `modelo_id` responde outra pergunta: "de onde ele partiu".
+    modelo_id: Optional[int] = None
+    modelo_modo: Optional[str] = None
+
 
 async def _concedidas(db: AsyncSession, user_id: int) -> set:
     linhas = await db.execute(
@@ -258,7 +283,8 @@ def _validar_escopos(pedidos) -> dict:
     return limpos
 
 
-def _barrar_escalonamento_escopo(atual: User, antes: dict, depois: dict) -> None:
+def _barrar_escalonamento_escopo(atual: User, antes: dict, depois: dict, *,
+                                 frase: Optional[str] = None) -> None:
     """⭐ NINGUEM MEXE NO ALCANCE DE UM MODULO EM QUE ELE MESMO ESTA RESTRITO.
 
     Mesma logica de `_barrar_escalonamento`, e vale sobre o que MUDOU. Um
@@ -273,7 +299,13 @@ def _barrar_escalonamento_escopo(atual: User, antes: dict, depois: dict) -> None
 
     ⚠️ NEGA SEMPRE, nos dois modos de `AUTHZ_MODO` — este endpoint e novo e nao
     ha comportamento antigo a preservar. Trava de escalonamento que "so avisa" e
-    a ausencia da trava."""
+    a ausencia da trava.
+
+    `frase` troca so o TEXTO do 403, para o MOLDE (Incremento 7) reusar esta
+    mesma implementacao em vez de copia-la: quem esta escrevendo um modelo nao
+    esta "definindo o alcance de ninguem" ainda, e a mensagem tem de dizer o que
+    ele estava fazendo. A REGRA continua morando aqui, num lugar so — uma
+    segunda copia e como as copias divergem."""
     if is_super_admin(atual):
         return
     mudados = sorted(
@@ -288,8 +320,9 @@ def _barrar_escalonamento_escopo(atual: User, antes: dict, depois: dict) -> None
         permissoes.escopos_para_api()["recursos"][c]["recurso_rotulo"] for c in fora)
     raise HTTPException(
         403,
-        "Voce so pode definir o alcance de modulos em que voce mesmo alcanca "
-        f"todos os registros. Fora do seu alcance: {rotulos}")
+        (frase or "Voce so pode definir o alcance de modulos em que voce mesmo "
+                  "alcanca todos os registros.")
+        + f" Fora do seu alcance: {rotulos}")
 
 
 async def _gravar_escopos(db: AsyncSession, user_id: int, antes: dict,
@@ -356,7 +389,8 @@ def _validar(pedidas) -> set:
     return limpas
 
 
-def _barrar_escalonamento(atual: User, antes: set, depois: set) -> None:
+def _barrar_escalonamento(atual: User, antes: set, depois: set, *,
+                          frase: Optional[str] = None) -> None:
     """⭐ NINGUEM CONCEDE O QUE NAO TEM.
 
     A regra vale sobre o que MUDOU, e nao sobre o conjunto inteiro: a tela manda
@@ -374,7 +408,12 @@ def _barrar_escalonamento(atual: User, antes: set, depois: set) -> None:
     ⚠️ NEGA SEMPRE, nos dois modos de `AUTHZ_MODO`. O modo aviso existe para nao
     quebrar comportamento que ja existia; este endpoint e NOVO, e nao ha
     comportamento antigo para preservar. Uma trava de escalonamento que "so
-    avisa" e a ausencia da trava."""
+    avisa" e a ausencia da trava.
+
+    `frase` troca so o TEXTO do 403 — ver `_barrar_escalonamento_escopo`. O
+    MOLDE (Incremento 7) chama ESTA funcao ao gravar um modelo, e nao uma copia:
+    se a trava do molde fosse escrita de novo la, o dia em que esta regra mudar
+    seria o dia em que o molde vira a porta dos fundos dela."""
     if is_super_admin(atual):
         return
     minhas_chaves = authz.permissoes_de(atual)
@@ -385,8 +424,9 @@ def _barrar_escalonamento(atual: User, antes: set, depois: set) -> None:
         p.rotulo for p in (permissoes.descrever(c) for c in fora) if p)
     raise HTTPException(
         403,
-        "Voce so pode conceder ou retirar permissoes que voce mesmo tem. "
-        f"Fora do seu alcance: {rotulos}")
+        (frase or "Voce so pode conceder ou retirar permissoes que voce mesmo "
+                  "tem.")
+        + f" Fora do seu alcance: {rotulos}")
 
 
 async def _gravar_concessao(db: AsyncSession, user_id: int, antes: set,
@@ -411,6 +451,36 @@ async def _gravar_concessao(db: AsyncSession, user_id: int, antes: set,
             text("INSERT INTO user_permissoes (user_id, permissao, concedido_por) "
                  "VALUES (:u, :p, :por) ON CONFLICT DO NOTHING"),
             {"u": user_id, "p": chave, "por": autor_id})
+
+
+async def _modelo_declarado(db: AsyncSession, modelo_id, modo=None) -> Optional[dict]:
+    """O molde que o cliente diz ter usado, resolvido para NOME pelo banco.
+
+    ⚠️ Molde APAGADO (ou id inexistente) NAO derruba o Salvar. A concessao e
+    completa e autoritativa sozinha — `valor_antes`/`valor_depois` estao na
+    mesma linha —, e recusar a gravacao porque um RÓTULO sumiu entre a
+    aplicacao e o clique em Salvar seria o rabo abanando o cachorro: o
+    administrador perderia o trabalho por causa de um campo que existe so para
+    a trilha. Registramos o id com `nome: None`, que e a verdade do que
+    aconteceu."""
+    if modelo_id is None:
+        return None
+    try:
+        alvo_id = int(modelo_id)
+    except (TypeError, ValueError):
+        return None
+    linha = (await db.execute(
+        text("SELECT nome FROM modelos_permissao WHERE id = :i"),
+        {"i": alvo_id})).first()
+    return {
+        "id": alvo_id,
+        "nome": linha[0] if linha else None,
+        "modo": permissoes.normalizar_modo_aplicacao(modo),
+        # Quando o molde sumiu entre aplicar e salvar, a linha da trilha diz
+        # isso em vez de mostrar um nome vazio sem explicacao.
+        "observacao": None if linha else
+                      "o modelo nao existe mais no momento do registro",
+    }
 
 
 @router.put("/usuario/{user_id}", dependencies=[exige("usuarios.conceder")])
@@ -468,6 +538,8 @@ async def conceder(
         chave for chave in set(escopos_antes) | set(escopos_depois)
         if escopos_antes.get(chave, permissoes.ESCOPO_TODOS)
         != escopos_depois.get(chave, permissoes.ESCOPO_TODOS))
+    # ⭐ O MODELO de onde o administrador partiu (Incremento 7), se houve um.
+    modelo = await _modelo_declarado(db, req.modelo_id, req.modelo_modo)
     await registrar_critico(
         db, action="usuarios.conceder", user=current, request=request,
         target_type="user", target_id=alvo.id, alvo_nome=alvo.name,
@@ -500,9 +572,44 @@ async def conceder(
             "alcance_resumo": [
                 _frase_escopo(c, escopos_depois[c]) for c in sorted(escopos_depois)
             ] or None,
+            # De onde o administrador partiu. `nome` vem do BANCO, e nao do
+            # cliente: o que ele declara e um id.
+            "modelo_aplicado": modelo,
         },
         commit=False,
     )
+    # ⭐ A APLICACAO DO MOLDE VIRA LINHA PROPRIA — e so quando houve uma.
+    #
+    # ⚠️ Sim, sao DUAS linhas para um clique em Salvar, e o repo argumenta
+    # contra isso no alcance por linha (que viaja DENTRO de `usuarios.conceder`).
+    # A diferenca e qual pergunta cada linha responde. O alcance e a segunda
+    # metade de uma frase so ("pode editar, e so os que ele criou") — separa-lo
+    # obrigaria a cruzar dois eventos para entender uma unica decisao. O molde
+    # nao: ele responde "ONDE este molde foi aplicado?", que e pergunta de
+    # REVISAO DE ACESSO ("quem recebeu o molde do Cofre neste semestre?") e que
+    # filtrar `usuarios.conceder` nao responde — la o molde seria um campo dentro
+    # do detalhe de centenas de linhas. E exatamente o mesmo motivo pelo qual
+    # `usuarios.conceder` foi separada de `user.update`.
+    #
+    # Na MESMA transacao (`commit=False`): ou as duas linhas entram com a
+    # concessao, ou nao entra nenhuma.
+    if modelo is not None:
+        await registrar_critico(
+            db, action="modelo_permissao.aplicar", user=current, request=request,
+            # O alvo e a PESSOA — e por ela que o auditor filtra. Qual molde foi
+            # usado esta no detalhe.
+            target_type="user", target_id=alvo.id, alvo_nome=alvo.name,
+            details={
+                "modelo": modelo,
+                "alvo_email": alvo.email,
+                "concedidas": concedidas or None,
+                "retiradas": retiradas or None,
+                "efeito": "Aplicar COPIA as permissoes para o cadastro da "
+                          "pessoa. Nao ha vinculo: mexer no modelo depois nao "
+                          "muda mais este usuario.",
+            },
+            commit=False,
+        )
     await db.commit()
     return {"permissoes": sorted(depois),
             "concedidas": concedidas, "retiradas": retiradas,
@@ -510,4 +617,7 @@ async def conceder(
             # explicito): a tela redesenha os radios a partir da resposta sem
             # precisar saber que "ausente" quer dizer `todos`.
             "escopos": _escopos_completos(escopos_depois),
-            "alcance_alterado": escopos_mudados}
+            "alcance_alterado": escopos_mudados,
+            # O que foi REGISTRADO sobre o molde (nome resolvido pelo banco), ou
+            # None quando o Salvar nao partiu de nenhum.
+            "modelo_aplicado": modelo}

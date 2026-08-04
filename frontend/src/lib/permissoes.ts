@@ -75,6 +75,24 @@ export interface CatalogoEscopos {
   recursos: Record<string, { recurso: string; recurso_rotulo: string; permissoes: string[] }>;
 }
 
+/** O VOCABULARIO DO MOLDE, inteiro vindo da API (`catalogo.modelos`).
+ *
+ *  ⚠️ Mesma regra do alcance: nem os modos de aplicacao nem o aviso de que
+ *  aplicar E COPIAR sao escritos no JavaScript. O aviso em especial e exigencia
+ *  do dono — a tela TEM de dizer que nao ha vinculo —, e uma segunda redacao
+ *  dele aqui viraria duas telas explicando a mesma regra de dois jeitos. */
+export interface ModoAplicacao {
+  valor: string;
+  rotulo: string;
+  descricao: string;
+}
+
+export interface CatalogoModelos {
+  default: string;
+  modos: ModoAplicacao[];
+  aviso: string;
+}
+
 export interface SecaoCatalogo {
   chave: string;
   rotulo: string;
@@ -91,6 +109,10 @@ export interface Catalogo {
    *  oferecer "somente os que ele criou" num servidor que nao confere autor
    *  nenhum seria uma trava de mentira, que e pior do que trava nenhuma. */
   escopos?: CatalogoEscopos;
+  /** Opcional pela mesma razao de `escopos`: contra uma API anterior aos moldes
+   *  o campo nao vem, e a tela nao inventa modo nenhum — aplica substituindo,
+   *  que e o padrao do servidor, e nao oferece escolha que ele nao conhece. */
+  modelos?: CatalogoModelos;
 }
 
 /** O que o PROPRIO usuario pode — ja resolvido pela funcao pura do backend.
@@ -113,6 +135,37 @@ export interface MinhasPermissoes {
    *  modulo nao define o alcance de ninguem ali. A mesma regra que
    *  `routers/permissoes.py::_barrar_escalonamento_escopo` impoe com 403. */
   escopos?: MapaEscopos;
+}
+
+/** ⚠️ ANTI-ESCALONAMENTO, CAIXINHA A CAIXINHA: quem edita so mexe no que ele
+ *  proprio tem. Super-admin mexe em tudo; sem `minhas` carregado, ninguem mexe
+ *  em nada — sem saber o que o editor possui nao ha como dizer o que ele pode
+ *  conceder.
+ *
+ *  Vive AQUI, e nao na tela, porque a mesma pergunta e feita em tres lugares (o
+ *  modal de permissoes, o editor de modelo e a previa da aplicacao de um
+ *  modelo). Tres copias divergiriam, e a divergencia nao apareceria como
+ *  defeito: apareceria como um caminho que concede o que o outro barra.
+ *
+ *  E o mesmo que `routers/permissoes.py::_barrar_escalonamento` recusa com 403 —
+ *  a tela existe para o limite ser entendido antes do clique. */
+export function podeChave(minhas: MinhasPermissoes | null, chave: string): boolean {
+  return !!minhas && (minhas.super_admin || minhas.chaves.includes(chave));
+}
+
+/** ⚠️ ANTI-ESCALONAMENTO DO ALCANCE, e ele NAO e o mesmo das caixinhas.
+ *
+ *  Nas caixinhas a pergunta e "voce tem esta permissao?". Aqui e outra: quem ja
+ *  esta restrito a `proprios` num modulo nao define o alcance de ninguem ali —
+ *  senao a saida da propria restricao seria conceder a si mesmo por interposta
+ *  pessoa. E palavra por palavra o que o servidor recusa em
+ *  `_barrar_escalonamento_escopo`. Super-admin nao cai aqui: o backend devolve
+ *  `todos` para ele em todos os modulos. */
+export function alcanceTravadoPara(
+  minhas: MinhasPermissoes | null,
+  recurso: string,
+): boolean {
+  return !minhas || escopoDe(minhas.escopos, recurso) !== "todos";
 }
 
 /** Os modulos em que o alcance por autor vale — SO o que a API declarou.
@@ -183,10 +236,24 @@ export async function salvarPermissoes(
   userId: number,
   chaves: string[],
   escopos: MapaEscopos,
+  /** ⚠️ DE ONDE ESTE SALVAR PARTIU — so para a TRILHA, e nao cria vinculo
+   *  nenhum: nao ha coluna ligando usuario a modelo, aqui nem no banco.
+   *
+   *  Vai mesmo depois de o administrador ajustar as caixinhas na mao, e o
+   *  servidor NAO confere se elas batem com as do modelo — elas nao devem
+   *  bater. A pergunta que este campo responde e "de onde ele partiu"; o que
+   *  ficou gravado a trilha mede sozinha, no `valor_antes`/`valor_depois` da
+   *  mesma linha. Sem ele, a auditoria da aplicacao de um molde apareceria como
+   *  trinta caixinhas mudadas do nada. */
+  origem?: { modeloId: number; modo: string },
 ): Promise<string[]> {
   const r = await api.put<{ permissoes: string[] }>(
     `/permissoes/usuario/${userId}`,
-    { permissoes: chaves, escopos },
+    {
+      permissoes: chaves,
+      escopos,
+      ...(origem ? { modelo_id: origem.modeloId, modelo_modo: origem.modo } : {}),
+    },
   );
   return r.data?.permissoes ?? chaves;
 }

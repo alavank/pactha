@@ -143,6 +143,16 @@ MIGRATION_FILES = [
     # comportamento de hoje — ninguem perde a edicao no deploy. Ver o cabecalho
     # da migration antes de acrescentar qualquer INSERT ali.
     "add_escopo_por_modulo.sql",
+    # Incremento 7 — MODELOS de permissao (o "molde"): as tres tabelas
+    # (modelo, conteudo, alcance) e a semente dos QUATRO moldes de prefeitura.
+    # DEPENDE de add_permissoes_por_acao.sql (le `permissoes_catalogo`, alvo da
+    # FK) e de add_escopo_por_modulo.sql (le `escopo_recursos`) — as duas acima
+    # nesta lista.
+    # ⚠️ A semente CRUZA `migration_backfills`, ao contrario da semente do
+    # catalogo de permissoes: molde e dado que o ADMINISTRADOR edita e apaga, e
+    # sem a marca o boot seguinte ressuscitaria o molde apagado ontem. Ver o
+    # cabecalho da migration antes de mexer no INSERT.
+    "add_modelos_de_permissao.sql",
     # ⚠️ SEMPRE A ULTIMA DA LISTA. Instala o append-only da trilha: gatilho que
     # RECUSA UPDATE/DELETE/TRUNCATE em audit_log e cadeia de hash calculada
     # dentro do banco. Toda migration que ainda faz BACKFILL (hoje so

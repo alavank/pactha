@@ -18,6 +18,13 @@
 //      mais curto é o que as pessoas usam. Também não há atalho "só leitura":
 //      pareceria inofensivo e concederia `cofre.revelar` e `auditoria.exportar`,
 //      que não são escrita e são as duas caixinhas mais sensíveis do sistema.
+//   4. APLICAR MODELO, que chegou depois e parece contradizer a decisão 3 — um
+//      clique que preenche quarenta caixinhas. A diferença é o que está sendo
+//      oferecido: "marcar tudo" é o conjunto MÁXIMO, anônimo e sem autor;
+//      um modelo é um conjunto NOMEADO, escrito por alguém, e esta tela mostra
+//      por inteiro o que ele marca e o que ele desmarca ANTES do clique. O
+//      atalho que faltava é o que economiza o trabalho sem economizar a
+//      decisão; o que não existe é o que economiza a decisão.
 //
 // ⚠️ ANTI-ESCALONAMENTO. O que quem edita não possui aparece TRAVADO, com a
 // explicação escrita. Não é enfeite de tela: `routers/permissoes.py::conceder`
@@ -27,21 +34,27 @@
 //
 // ⚠️ Nenhuma lista de permissão mora aqui. Tudo vem do catálogo da API — ver o
 // cabeçalho de `lib/permissoes.ts`.
-import { useMemo, useState } from "react";
+//
+// ⚠️ E nem a ÁRVORE de caixinhas mora aqui: ela é `SeletorPermissoes`, dividida
+// com o editor de modelos. Duas árvores parecidas divergiriam, e a divergência
+// apareceria como um modelo capaz de conceder algo que esta tela nem desenha.
+import { useCallback, useMemo, useState } from "react";
+import { AlertTriangle, Check, Loader2, Lock, ShieldCheck } from "lucide-react";
 import {
-  AlertTriangle, Check, ChevronDown, ChevronRight, Loader2, Lock, ShieldCheck,
-} from "lucide-react";
-import {
-  AcaoMini, Aviso, Bloco, BlocoHead, BOTAO_CTA, BOTAO_SEC, ESTILO_CTA,
+  Aviso, Bloco, BlocoHead, BOTAO_CTA, BOTAO_SEC, ESTILO_CTA,
   ESTILO_SEC, Modal, ModalCorpo, ModalHead, Selo,
 } from "@/components/ui/superficies";
 import { ehSomenteLeitura, ehSuperAdmin } from "@/lib/conta";
-import type { Escopo, MapaEscopos } from "@/lib/escopo";
+import type { MapaEscopos } from "@/lib/escopo";
 import {
-  chavesDaSecao, escopoDe, permissoesDeEscopo, recursosComEscopo,
+  alcanceTravadoPara, escopoDe, podeChave, recursosComEscopo,
   resumoPorRecurso, salvarPermissoes,
-  type Catalogo, type EscopoOpcao, type MinhasPermissoes, type SecaoCatalogo,
+  type Catalogo, type MinhasPermissoes,
 } from "@/lib/permissoes";
+import { podeGerirModelos, type Modelo } from "@/lib/modelos";
+import SeletorPermissoes from "./SeletorPermissoes";
+import AplicarModelo from "./AplicarModelo";
+import { ModeloEditor } from "./ModelosModal";
 
 export interface AlvoPermissoes {
   id: number;
@@ -78,90 +91,9 @@ function Resumo({ linhas }: { linhas: string[] }) {
   );
 }
 
-/** A ESCOLHA DE ALCANCE de um módulo — a regra de linha, em duas opções.
- *
- *  ⚠️ SÓ APARECE COM «Editar» OU «Excluir» MARCADO, e isso é a peça do desenho,
- *  não um detalhe: numa conta que só consulta, "somente os que ele criou" não
- *  restringe nada — restringiria uma escrita que ela não tem. Mostrar assim
- *  mesmo somaria mais um controle a cada um dos 15 recursos de um modal que já
- *  tem 66 caixinhas, e cada um deles seria uma pergunta sem consequência. É a
- *  mesma economia que faz este modal abrir com as seções fechadas.
- *
- *  Rádio, e não interruptor: são dois estados NOMEADOS, e o padrão — "Todos os
- *  registros" — precisa estar escrito. Um interruptor "só os próprios" deixaria
- *  o administrador adivinhando o que significa desligá-lo. */
-function Alcance({
-  recurso, rotulo, verbos, opcoes, valor, travado, onChange,
-}: {
-  recurso: string;
-  rotulo: string;
-  /** Os verbos de escrita MARCADOS ("Editar e Excluir"): é sobre eles, e só
-   *  sobre eles, que esta escolha manda. */
-  verbos: string;
-  /** As duas opções, com rótulo e explicação — vindas do catálogo da API.
-   *  Nenhum texto de permissão é escrito nesta tela. */
-  opcoes: EscopoOpcao[];
-  valor: Escopo;
-  /** Quem edita alcança só o próprio trabalho neste módulo. O servidor recusa
-   *  (403) que essa pessoa defina o alcance de outra ali — ninguém devolve um
-   *  alcance que ele mesmo não tem. */
-  travado: boolean;
-  onChange: (v: Escopo) => void;
-}) {
-  return (
-    <div className="mt-2 border-t pt-2" style={{ borderColor: "var(--bi-line)" }}>
-      <div className="text-[9px] uppercase tracking-wide" style={{ color: "var(--bi-faint)" }}>
-        Alcance de {verbos}
-      </div>
-      <div
-        role="radiogroup"
-        aria-label={`Alcance de ${verbos} em ${rotulo}`}
-        className="mt-1 flex flex-col gap-1.5"
-      >
-        {opcoes.map((op) => (
-          <label
-            key={op.valor}
-            className={`flex items-start gap-2 ${travado ? "cursor-not-allowed" : "cursor-pointer"}`}
-          >
-            <input
-              type="radio"
-              /* O `name` é por RECURSO: sem ele os rádios de Gestão Interna e os
-                 de RM seriam um grupo só, e escolher num módulo mudaria o
-                 outro. */
-              name={`escopo-${recurso}`}
-              checked={valor === op.valor}
-              disabled={travado}
-              onChange={() => onChange(op.valor)}
-              className="mt-0.5 size-3.5 shrink-0"
-              style={{ accentColor: "var(--bi-cta)" }}
-            />
-            <span className="min-w-0 flex-1">
-              <span
-                className="text-[12px] font-medium leading-tight"
-                style={{ color: travado ? "var(--bi-faint)" : "var(--bi-text)" }}
-              >
-                {op.rotulo}
-              </span>
-              <span className="mt-0.5 block text-[11px] leading-snug" style={{ color: "var(--bi-muted)" }}>
-                {op.descricao}
-              </span>
-            </span>
-          </label>
-        ))}
-      </div>
-      {travado && (
-        <span className="mt-1 flex items-start gap-1 text-[10px] leading-snug" style={{ color: "var(--bi-faint)" }}>
-          <Lock className="mt-px size-3 shrink-0" />
-          Neste módulo você alcança só os registros que você mesmo criou, então
-          não define o alcance de outra pessoa aqui.
-        </span>
-      )}
-    </div>
-  );
-}
-
 export default function PermissoesModal({
-  alvo, catalogo, minhas, concedidas, escopos, souEu, onFechar, onSalvo,
+  alvo, catalogo, minhas, concedidas, escopos, souEu, modelos, podeGerirModelo,
+  onModeloCriado, onFechar, onSalvo,
 }: {
   alvo: AlvoPermissoes;
   catalogo: Catalogo;
@@ -173,6 +105,16 @@ export default function PermissoesModal({
   /** O alcance gravado HOJE, por módulo. Módulo ausente = padrão (`todos`). */
   escopos: MapaEscopos;
   souEu: boolean;
+  /** Os moldes disponíveis. Lista vazia = nenhum cadastrado (ou a chamada
+   *  falhou): o bloco de aplicar aparece do mesmo jeito, dizendo isso. */
+  modelos: Modelo[];
+  /** Quem pode criar molde — respondido pelo servidor (`pode_gerenciar`), e não
+   *  deduzido aqui. Decide só o botão «Salvar como modelo»: APLICAR continua
+   *  valendo para quem concede permissão. */
+  podeGerirModelo?: boolean;
+  /** A página é dona da lista — daqui só se CRIA um modelo a partir das
+   *  caixinhas já marcadas, e quem relê a lista é ela. */
+  onModeloCriado?: () => void | Promise<void>;
   onFechar: () => void;
   onSalvo: () => void | Promise<void>;
 }) {
@@ -180,61 +122,29 @@ export default function PermissoesModal({
   const [sel, setSel] = useState<Set<string>>(() => new Set(concedidas));
   const escOriginal = useMemo(() => ({ ...escopos }), [escopos]);
   const [esc, setEsc] = useState<MapaEscopos>(() => ({ ...escopos }));
-  // Todas fechadas ao abrir — ver a decisão 1 no cabeçalho.
-  const [abertas, setAbertas] = useState<Set<string>>(new Set());
   const [salvando, setSalvando] = useState(false);
+  // "Salvar como modelo": o editor abre em cima deste modal (nível 2) com as
+  // caixinhas de agora. Não fecha nada nem perde o que está marcado.
+  const [virarModelo, setVirarModelo] = useState(false);
+  /* DE ONDE ESTE SALVAR PARTIU — só para a trilha, e não é vínculo: não há
+     coluna ligando pessoa a modelo. Continua valendo depois de o administrador
+     ajustar as caixinhas na mão (o normal é elas diferirem do molde); some se
+     ele desfizer a aplicação, porque aí não partiu de molde nenhum. */
+  const [origem, setOrigem] = useState<{ modeloId: number; modo: string } | null>(null);
 
   /** Os módulos onde o alcance por autor existe de verdade — quem responde é a
    *  API, e não uma lista escrita aqui (ver `recursosComEscopo`). */
   const comEscopo = useMemo(() => recursosComEscopo(catalogo), [catalogo]);
-  const opcoesEscopo: EscopoOpcao[] = catalogo.escopos?.opcoes ?? [];
 
-  /** ⚠️ ANTI-ESCALONAMENTO DO ALCANCE, e ele NÃO é o mesmo das caixinhas.
-   *
-   *  Nas caixinhas a pergunta é "você tem esta permissão?". Aqui é outra:
-   *  quem já está restrito a `proprios` num módulo não define o alcance de
-   *  ninguém ali — senão a saída da própria restrição seria conceder a si mesmo
-   *  por interposta pessoa. É palavra por palavra o que o servidor recusa com
-   *  403 em `_barrar_escalonamento_escopo`, e a tela existe para o limite ser
-   *  entendido antes do clique. Super-admin não cai aqui: o backend devolve
-   *  `todos` para ele em todos os módulos. */
-  const alcanceTravado = (recurso: string) =>
-    !minhas || escopoDe(minhas.escopos, recurso) !== "todos";
+  const alcanceTravado = useCallback(
+    (recurso: string) => alcanceTravadoPara(minhas, recurso),
+    [minhas],
+  );
 
   const alvoSuper = ehSuperAdmin(alvo);
   const alvoLeitura = ehSomenteLeitura(alvo);
 
-  /** Quem edita pode mexer NESTA caixinha? Super-admin pode em todas; os demais,
-   *  só nas que eles próprios têm. Sem `minhas`, ninguém mexe em nada. */
-  const posso = (chave: string) =>
-    !!minhas && (minhas.super_admin || minhas.chaves.includes(chave));
-
-  const alternar = (chave: string) =>
-    setSel((prev) => {
-      const n = new Set(prev);
-      if (n.has(chave)) n.delete(chave); else n.add(chave);
-      return n;
-    });
-
-  /** Marcar/limpar seção alcança SÓ o que quem edita pode conceder — o resto
-   *  fica exatamente como estava. Um atalho que arrastasse caixinha travada
-   *  junto seria o próprio escalonamento, só que num botão. */
-  const marcarSecao = (s: SecaoCatalogo, ligar: boolean) =>
-    setSel((prev) => {
-      const n = new Set(prev);
-      for (const chave of chavesDaSecao(s)) {
-        if (!posso(chave)) continue;
-        if (ligar) n.add(chave); else n.delete(chave);
-      }
-      return n;
-    });
-
-  const alternarSecao = (chave: string) =>
-    setAbertas((prev) => {
-      const n = new Set(prev);
-      if (n.has(chave)) n.delete(chave); else n.add(chave);
-      return n;
-    });
+  const posso = useCallback((chave: string) => podeChave(minhas, chave), [minhas]);
 
   const aConceder = [...sel].filter((c) => !original.has(c));
   const aRetirar = [...original].filter((c) => !sel.has(c));
@@ -256,9 +166,6 @@ export default function PermissoesModal({
   const escritasMarcadas = catalogo.permissoes.filter(
     (p) => p.escrita && sel.has(p.chave),
   ).length;
-  const travadas = minhas?.super_admin
-    ? 0
-    : catalogo.permissoes.filter((p) => !posso(p.chave)).length;
 
   const salvar = async () => {
     setSalvando(true);
@@ -270,7 +177,7 @@ export default function PermissoesModal({
          o que não restringe, nunca conseguiria ser reposto. */
       const escopoFinal: MapaEscopos = {};
       for (const r of comEscopo) escopoFinal[r] = escopoDe(esc, r);
-      await salvarPermissoes(alvo.id, [...sel], escopoFinal);
+      await salvarPermissoes(alvo.id, [...sel], escopoFinal, origem ?? undefined);
       await onSalvo();
       onFechar();
     } catch (e: unknown) {
@@ -284,6 +191,7 @@ export default function PermissoesModal({
   };
 
   return (
+    <>
     <Modal
       aberto
       maxW="max-w-2xl"
@@ -371,6 +279,31 @@ export default function PermissoesModal({
           </Aviso>
         )}
 
+        {/* O MOLDE, no topo — o atalho que evita as 66 caixinhas à mão.
+            Só com `minhas` carregado: sem saber o que quem edita tem, tudo está
+            travado e aplicar um modelo não moveria caixinha nenhuma. */}
+        {minhas && (
+          <AplicarModelo
+            catalogo={catalogo}
+            modelos={modelos}
+            sel={sel}
+            esc={esc}
+            posso={posso}
+            alcanceTravado={alcanceTravado}
+            onAplicar={(novaSel, novoEsc, de) => {
+              setSel(novaSel); setEsc(novoEsc); setOrigem(de);
+            }}
+            onDesfazer={(velhaSel, velhoEsc) => {
+              setSel(velhaSel); setEsc(velhoEsc); setOrigem(null);
+            }}
+            onSalvarComoModelo={
+              (podeGerirModelo ?? podeGerirModelos(minhas))
+                ? () => setVirarModelo(true)
+                : undefined
+            }
+          />
+        )}
+
         {/* O RESUMO — a leitura em português, antes das caixinhas.
             É o que responde "o que essa pessoa pode?" sem obrigar ninguém a
             conferir sessenta e seis caixas uma a uma. */}
@@ -411,161 +344,27 @@ export default function PermissoesModal({
           )}
         </Bloco>
 
-        {travadas > 0 && (
-          <p className="flex items-start gap-1.5 px-1 text-[11px]" style={{ color: "var(--bi-muted)" }}>
-            <Lock className="mt-px size-3.5 shrink-0" style={{ color: "var(--bi-faint)" }} />
-            <span>
-              {travadas} caixinha(s) aparecem travadas porque <b>você não as tem</b>.
-              Ninguém concede — nem retira — o que não possui.
-            </span>
-          </p>
-        )}
-
-        {catalogo.secoes.map((s) => {
-          const chaves = chavesDaSecao(s);
-          const marcadas = chaves.filter((c) => sel.has(c)).length;
-          const alcancaveis = chaves.filter((c) => posso(c));
-          const aberta = abertas.has(s.chave);
-          const resumoSecao = resumoPorRecurso(catalogo, sel, s.chave, esc);
-          const Seta = aberta ? ChevronDown : ChevronRight;
-          return (
-            <Bloco className="p-3" key={s.chave}>
-              <div className="flex items-start gap-2">
-                <button
-                  type="button"
-                  onClick={() => alternarSecao(s.chave)}
-                  aria-expanded={aberta}
-                  className="min-w-0 flex-1 text-left"
-                >
-                  <span className="flex items-center gap-1.5">
-                    <Seta className="size-3.5 shrink-0" style={{ color: "var(--bi-faint)" }} />
-                    <span className="bi-title text-[13px] leading-tight">{s.rotulo}</span>
-                    {marcadas > 0 && <Selo>{marcadas} de {chaves.length}</Selo>}
-                  </span>
-                  <span className="mt-0.5 block text-[11px] leading-snug" style={{ color: "var(--bi-faint)" }}>
-                    {s.descricao}
-                  </span>
-                  {/* Fechada, a seção já responde o que a pessoa pode ali. É o
-                      que permite conferir sem expandir nada. */}
-                  {!aberta && (
-                    <span className="mt-1 block text-[11px] leading-snug" style={{ color: marcadas ? "var(--bi-text)" : "var(--bi-faint)" }}>
-                      {marcadas ? resumoSecao.join(" · ") : "Nada marcado nesta seção."}
-                    </span>
-                  )}
-                </button>
-                <span className="flex shrink-0 items-center gap-1">
-                  <AcaoMini
-                    onClick={() => marcarSecao(s, true)}
-                    disabled={alcancaveis.length === 0
-                      || alcancaveis.every((c) => sel.has(c))}
-                  >
-                    Marcar seção
-                  </AcaoMini>
-                  <AcaoMini
-                    onClick={() => marcarSecao(s, false)}
-                    disabled={!alcancaveis.some((c) => sel.has(c))}
-                  >
-                    Limpar
-                  </AcaoMini>
-                </span>
-              </div>
-
-              {aberta && (
-                <div className="mt-2.5 flex flex-col gap-1.5">
-                  {s.recursos.map((r) => {
-                    // As caixinhas de escrita por linha (Editar, Excluir) que
-                    // estao MARCADAS agora: são elas que dão sentido à escolha
-                    // de alcance, e são elas que decidem se ela aparece.
-                    const escritasLinha = comEscopo.has(r.recurso)
-                      ? permissoesDeEscopo(catalogo, r).filter((p) => sel.has(p.chave))
-                      : [];
-                    return (
-                    /* Item cinza dentro do bloco branco: a terceira camada da
-                       identidade (fundo cinza -> bloco branco -> item cinza). */
-                    <div key={r.recurso} className="bi-card-flat px-3 py-2.5">
-                      <div className="text-[9px] uppercase tracking-wide" style={{ color: "var(--bi-faint)" }}>
-                        {r.recurso_rotulo}
-                      </div>
-                      <div className="mt-1.5 flex flex-col gap-2">
-                        {r.permissoes.map((p) => {
-                          const travada = !posso(p.chave);
-                          const marcada = sel.has(p.chave);
-                          return (
-                            <label
-                              key={p.chave}
-                              /* O rótulo COMPLETO ("Relatório de Monitoramento
-                                 — Excluir"). Na tela aparece só o verbo, porque
-                                 o recurso já está escrito acima do grupo e
-                                 repeti-lo cinco vezes seguidas é o que faz a
-                                 lista virar parede; aqui ele fica disponível
-                                 para quem precisar do nome inteiro. */
-                              title={p.rotulo}
-                              className={`flex items-start gap-2 ${travada ? "cursor-not-allowed" : "cursor-pointer"}`}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={marcada}
-                                disabled={travada}
-                                onChange={() => alternar(p.chave)}
-                                className="mt-0.5 size-3.5 shrink-0"
-                                /* accentColor pelo token: acompanha claro e
-                                   escuro em vez de o navegador pintar de azul
-                                   do sistema. */
-                                style={{ accentColor: "var(--bi-cta)" }}
-                              />
-                              <span className="min-w-0 flex-1">
-                                <span className="flex flex-wrap items-center gap-1.5">
-                                  <span
-                                    className="text-[12px] font-medium leading-tight"
-                                    style={{ color: travada ? "var(--bi-faint)" : "var(--bi-text)" }}
-                                  >
-                                    {p.verbo_rotulo}
-                                  </span>
-                                  {/* Só onde a distinção MUDA o resultado: numa
-                                      conta em somente leitura, a caixinha de
-                                      escrita fica guardada e não vale. Marcar
-                                      todas as 30 de escrita em toda conta seria
-                                      ruído. */}
-                                  {alvoLeitura && p.escrita && (
-                                    <Selo title="A trava de somente leitura da conta barra esta ação.">
-                                      não vale nesta conta
-                                    </Selo>
-                                  )}
-                                </span>
-                                <span className="mt-0.5 block text-[11px] leading-snug" style={{ color: "var(--bi-muted)" }}>
-                                  {p.descricao}
-                                </span>
-                                {travada && (
-                                  <span className="mt-0.5 flex items-start gap-1 text-[10px] leading-snug" style={{ color: "var(--bi-faint)" }}>
-                                    <Lock className="mt-px size-3 shrink-0" />
-                                    Você não tem esta permissão, então não pode
-                                    {marcada ? " retirá-la" : " concedê-la"}.
-                                  </span>
-                                )}
-                              </span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                      {escritasLinha.length > 0 && opcoesEscopo.length > 0 && (
-                        <Alcance
-                          recurso={r.recurso}
-                          rotulo={r.recurso_rotulo}
-                          verbos={escritasLinha.map((p) => p.verbo_rotulo).join(" e ")}
-                          opcoes={opcoesEscopo}
-                          valor={escopoDe(esc, r.recurso)}
-                          travado={alcanceTravado(r.recurso)}
-                          onChange={(v) => setEsc((prev) => ({ ...prev, [r.recurso]: v }))}
-                        />
-                      )}
-                    </div>
-                    );
-                  })}
-                </div>
-              )}
-            </Bloco>
-          );
-        })}
+        {/* A ÁRVORE — a mesma peça que o editor de modelo usa. */}
+        <SeletorPermissoes
+          catalogo={catalogo}
+          sel={sel}
+          setSel={setSel}
+          esc={esc}
+          setEsc={setEsc}
+          posso={posso}
+          alcanceTravado={alcanceTravado}
+          contexto="usuario"
+          seloDe={(p) =>
+            /* Só onde a distinção MUDA o resultado: numa conta em somente
+               leitura, a caixinha de escrita fica guardada e não vale. Marcar
+               todas as 30 de escrita em toda conta seria ruído. */
+            alvoLeitura && p.escrita ? (
+              <Selo title="A trava de somente leitura da conta barra esta ação.">
+                não vale nesta conta
+              </Selo>
+            ) : null
+          }
+        />
       </ModalCorpo>
 
       {/* Rodapé fixo: com nove seções abertas a lista é longa, e um botão de
@@ -592,5 +391,23 @@ export default function PermissoesModal({
         </button>
       </div>
     </Modal>
+
+    {/* «Salvar como modelo»: o caminho de criação a partir de um cadastro que
+        já ficou bom. Nível 2 — este modal continua aberto por baixo, e o que
+        está marcado aqui não se perde.
+        ⚠️ Guardar o molde NÃO salva as permissões desta pessoa: são duas
+        gravações diferentes, e o botão «Salvar permissões» continua sendo o
+        único que mexe na conta. */}
+    {virarModelo && (
+      <ModeloEditor
+        catalogo={catalogo}
+        minhas={minhas}
+        modelo={null}
+        inicial={{ permissoes: [...sel], escopos: esc }}
+        onFechar={() => setVirarModelo(false)}
+        onSalvo={async () => { await onModeloCriado?.(); }}
+      />
+    )}
+    </>
   );
 }
