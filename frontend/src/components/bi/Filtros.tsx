@@ -8,7 +8,9 @@
 import { useMemo, useRef, useState, useEffect } from "react";
 import { Check, ChevronDown, CalendarRange } from "lucide-react";
 import { Municipio } from "@/lib/bi";
-import { useBiScope, CONSOLIDADO } from "@/contexts/BiScopeContext";
+// `CONSOLIDADO` saiu junto com o `<select>` de escopo: aqui já não se decide
+// escopo nenhum, só se mostra qual está valendo.
+import { useBiScope } from "@/contexts/BiScopeContext";
 import { cn } from "@/lib/utils";
 
 /** Anos oferecidos: do corrente para trás (cobre com folga um mandato). */
@@ -27,46 +29,32 @@ export function rotuloPeriodo(anos: number[]): string {
   return contiguo ? `${min}–${max}` : anos.join(", ");
 }
 
-export function EscopoSelect({
-  municipios,
-  podeConsolidado,
-}: {
-  municipios: Municipio[];
-  podeConsolidado: boolean;
-}) {
-  const { scope, setScope } = useBiScope();
-
-  if (municipios.length <= 1 && !podeConsolidado) {
-    const m = municipios[0];
-    return (
-      <span
-        className="inline-flex items-center rounded-full px-3 py-1.5 text-xs font-semibold"
-        style={{ background: "var(--bi-surface)", border: "1px solid var(--bi-line)" }}
-      >
-        {m ? `${m.nome} — ${m.uf}` : "—"}
-      </span>
-    );
-  }
+/** ⭐ QUEM ESTÁ NA TELA — e não mais um seletor.
+ *
+ *  ⚠️ ISTO ERA UM `<select>`, e a mudança é deliberada. Ele trocava o escopo do
+ *  Painel numa chave PRÓPRIA, sem passar pelo seletor da barra lateral: numa
+ *  assessoria, dois seletores de município ficavam visíveis ao mesmo tempo
+ *  apontando para CIDADES DIFERENTES, e o painel na frente do gestor podia ser
+ *  de outro cliente que não o do menu. Como carteira é de clientes diferentes,
+ *  isso é confundir dado.
+ *
+ *  Continua dizendo QUAL escopo está na tela — a informação nunca foi o
+ *  problema. O que saiu foi o segundo caminho de troca. */
+export function EscopoIndicador({ municipios }: { municipios: Municipio[] }) {
+  const { scope, isConsolidado } = useBiScope();
+  const m = municipios.find((x) => String(x.id) === scope);
+  const texto = isConsolidado
+    ? `Consolidado — ${municipios.length} municípios`
+    : m ? `${m.nome} — ${m.uf}` : "—";
 
   return (
-    <select
-      value={scope}
-      onChange={(e) => setScope(e.target.value)}
-      aria-label="Escopo do painel"
-      className="rounded-full px-3 py-1.5 text-xs font-medium outline-none"
-      style={{
-        background: "var(--bi-surface)",
-        border: "1px solid var(--bi-line)",
-        color: "var(--bi-text)",
-      }}
+    <span
+      className="inline-flex items-center rounded-full px-3 py-1.5 text-xs font-semibold"
+      style={{ background: "var(--bi-surface)", border: "1px solid var(--bi-line)" }}
+      title="Trocar de município no seletor da barra lateral"
     >
-      {podeConsolidado && <option value={CONSOLIDADO}>Consolidado (todos)</option>}
-      {municipios.map((m) => (
-        <option key={m.id} value={String(m.id)}>
-          {m.nome} — {m.uf}
-        </option>
-      ))}
-    </select>
+      {texto}
+    </span>
   );
 }
 

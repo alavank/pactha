@@ -41,7 +41,7 @@ import {
 import type { Municipio, User } from "@/types";
 import { hrefToTela, allowedTelasOf } from "@/lib/telas";
 import { ehSuperAdmin } from "@/lib/conta";
-import { MunicipioProvider, useMunicipio } from "@/contexts/MunicipioContext";
+import { CONSOLIDADO, MunicipioProvider, useMunicipio } from "@/contexts/MunicipioContext";
 import { EnteAtendido, SUBTITULO_PACTHA } from "@/components/bi/Marca";
 
 type NavLeaf = { href: string; label: string; icon?: React.ComponentType<{ className?: string }> };
@@ -183,6 +183,7 @@ function SidebarContent({
   pathname,
   municipios,
   selectedMunicipioId,
+  escopo,
   onMunicipioChange,
   user,
   onLogout,
@@ -192,7 +193,11 @@ function SidebarContent({
   pathname: string;
   municipios: Municipio[];
   selectedMunicipioId: string;
-  onMunicipioChange: (value: string) => void;
+  /** A escolha CRUA do seletor: `""`, `"<id>"` ou `CONSOLIDADO`. O
+   *  `selectedMunicipioId` continua sendo o município concreto (vazio no
+   *  consolidado), porque é dele que saem os links do menu. */
+  escopo: string;
+  onMunicipioChange: (value: string, rotulo: string) => void;
   user: User | null;
   onLogout: () => void;
   /** Modo icone: so os simbolos, com o rotulo no title. */
@@ -323,13 +328,26 @@ function SidebarContent({
               className="justify-center"
             />
           ) : (
-            // Multi-entidade (assessoria/parceiro): dropdown
+            /* Multi-entidade (assessoria/parceiro): dropdown.
+               ⭐ ESTE SELETOR MANDA NO SISTEMA INTEIRO, inclusive no Painel de
+               Indicadores — que antes tinha escopo PRÓPRIO, guardado noutra
+               chave. Dava para estar com um município aqui e outro no Painel ao
+               mesmo tempo, com os dois seletores visíveis discordando. Numa
+               carteira de clientes diferentes, isso é confundir dado. */
             <select
               className="select select-bordered select-sm w-full"
-              value={selectedMunicipioId}
-              onChange={(e) => onMunicipioChange(e.target.value)}
+              value={escopo}
+              onChange={(e) => {
+                const v = e.target.value;
+                const m = municipios.find((x) => String(x.id) === v);
+                onMunicipioChange(v, m ? `${m.nome} - ${m.uf}` : "Consolidado (todos)");
+              }}
             >
               <option value="">Município selecionado</option>
+              {/* A carteira inteira. Só o Painel consolida — as telas
+                  operacionais consultam um município por vez e, com este escopo,
+                  recebem município vazio e pedem para escolher um. */}
+              <option value={CONSOLIDADO}>Consolidado (todos)</option>
               {municipios.map((m) => (
                 <option key={m.id} value={String(m.id)}>
                   {m.nome} - {m.uf}
@@ -566,7 +584,8 @@ function SidebarContent({
 function DashboardShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { municipioId: selectedMunicipioId, setMunicipioId } = useMunicipio();
+  const { municipioId: selectedMunicipioId, escopo, setMunicipioId, trocarEscopo }
+    = useMunicipio();
   const [municipios, setMunicipios] = useState<Municipio[]>([]);
   const [user, setUser] = useState<User | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -623,7 +642,13 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
           // inativo ou de outro tenant clonado), RE-SELECIONA. Antes so auto-selecionava
           // quando estava VAZIO -> um id stale passava batido e a tela filtrava por um
           // municipio inexistente, mostrando vazio mesmo com dados no banco.
-          const isValid = selectedMunicipioId && data.some(m => String(m.id) === selectedMunicipioId);
+          /* O consolidado é válido — mas SÓ numa carteira. ⚠️ Com um município
+             a barra lateral mostra o nome fixo, sem `<select>`: quem chegasse
+             aqui em "Consolidado" (id herdado de outro tenant no localStorage,
+             ou de quando tinha mais de um) ficaria preso, sem controle nenhum
+             na tela para sair. Cair na validação devolve ele ao município. */
+          const isValid = (escopo === CONSOLIDADO && data.length > 1)
+            || (selectedMunicipioId && data.some(m => String(m.id) === selectedMunicipioId));
           if (!isValid) {
             const lastId = typeof window !== "undefined"
               ? localStorage.getItem("pactha_last_municipio_id")
@@ -676,9 +701,11 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
     }
   }, [user, pathname, router]);
 
-  // Troca de municipio = so estado no context (instantaneo, client-side).
-  // O context ja sincroniza a URL (history.replaceState) e reseta a paginacao.
-  const handleMunicipioChange = setMunicipioId;
+  /* ⭐ A troca deixou de ser instantânea, e a demora é o ponto: ela abre o
+     aviso, remonta a árvore e cai na tela inicial do destino. Quem faz isso é o
+     `MunicipioContext` — aqui só se pede. Ver o cabeçalho de lá para o motivo
+     (documento e senha eram gravados no município errado). */
+  const handleMunicipioChange = trocarEscopo;
 
   const handleLogout = useCallback(async () => {
     try {
@@ -694,6 +721,14 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
     localStorage.removeItem("pactha_last_municipio_id"); // nao vazar municipio entre usuarios
     localStorage.removeItem("pactha_bi_scope"); // idem p/ escopo/periodo do BI
     localStorage.removeItem("pactha_bi_ano");
+    /* ⚠️ `pactha_bi_anos` é o multi-ano que substituiu o `pactha_bi_ano`, e
+       ficou de fora quando nasceu: o PERÍODO do prefeito anterior sobrevivia à
+       troca de usuário na mesma máquina. E as `pactha_m_*` guardam o filtro de
+       cada link público aberto aqui. */
+    localStorage.removeItem("pactha_bi_anos");
+    for (const k of Object.keys(localStorage)) {
+      if (k.startsWith("pactha_m_")) localStorage.removeItem(k);
+    }
     router.push("/login");
   }, [router]);
 
@@ -727,6 +762,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
           pathname={pathname}
           municipios={municipios}
           selectedMunicipioId={selectedMunicipioId}
+          escopo={escopo}
           onMunicipioChange={handleMunicipioChange}
           user={user}
           onLogout={handleLogout}
@@ -752,8 +788,9 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
             pathname={pathname}
             municipios={municipios}
             selectedMunicipioId={selectedMunicipioId}
-            onMunicipioChange={(v) => {
-              handleMunicipioChange(v);
+            escopo={escopo}
+            onMunicipioChange={(v, rotulo) => {
+              handleMunicipioChange(v, rotulo);
               setMobileOpen(false);
             }}
             user={user}
@@ -780,11 +817,24 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
           `window.scrollTo(0, 3000)` andava 3000px e o topo da viewport virava
           `<html>` puro. */}
       <main className="pactha-scroll relative flex-1 overflow-y-auto">
-        <div className={
-          telaCheia ? ""
-          : telaLarga ? "mx-auto max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8"
-          : "mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8"
-        }>
+        {/* ⭐⭐ `key={escopo}` — A LINHA QUE FAZ "MUDA TUDO" SER VERDADE.
+            Trocar de município era um `setState` que não desmontava nada: cada
+            tela só refazia o que tivesse `municipioId` na dependência de um
+            efeito. Sobreviviam formulário meio preenchido, modal aberto, filtro
+            marcado e cache de detalhe — e em dois casos isso virava ESCRITA no
+            cliente errado (um documento preenchido no município A salvo em B,
+            uma credencial digitada para A gravada no cofre de B).
+            Com a chave, a árvore inteira desmonta e nasce de novo. Não é
+            otimização: é o que torna o isolamento verdadeiro POR CONSTRUÇÃO, em
+            vez de depender de cada tela lembrar de se limpar. */}
+        <div
+          key={escopo}
+          className={
+            telaCheia ? ""
+            : telaLarga ? "mx-auto max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8"
+            : "mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8"
+          }
+        >
           {children}
         </div>
       </main>

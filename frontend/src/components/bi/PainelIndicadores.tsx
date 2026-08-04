@@ -17,7 +17,7 @@ import { useBiScope, CONSOLIDADO } from "@/contexts/BiScopeContext";
 import { ABAS, AbaId, FiltrosTela, abrirJanelaDaTela } from "@/lib/tela";
 import { useTelaControle } from "@/lib/useTela";
 import { prefetchAba, useDadosAba } from "@/lib/useAbaBi";
-import { EscopoSelect, PeriodoMultiSelect } from "./Filtros";
+import { EscopoIndicador, PeriodoMultiSelect } from "./Filtros";
 import { CabecalhoBi } from "./Marca";
 import { BotaoAjustes } from "./Ajustes";
 import { InsightTicker } from "./InsightTicker";
@@ -31,7 +31,7 @@ import {
 export function PainelIndicadores() {
   const router = useRouter();
   const params = useSearchParams();
-  const { scope, setScope, municipioId, anos } = useBiScope();
+  const { scope, municipioId, anos } = useBiScope();
   const [municipios, setMunicipios] = useState<Municipio[]>([]);
   const [user, setUser] = useState<User | null>(null);
 
@@ -73,16 +73,11 @@ export function PainelIndicadores() {
     return m ? `${m.nome} — ${m.uf}` : null; // null = consolidado da assessoria
   }, [municipios, municipioId]);
 
-  // Valida o escopo assim que a lista chega (id obsoleto no localStorage etc.)
-  useEffect(() => {
-    if (!municipios.length) return;
-    if (scope === CONSOLIDADO) {
-      if (!podeConsolidado) setScope(String(municipios[0].id));
-      return;
-    }
-    const valido = scope && municipios.some((m) => String(m.id) === scope);
-    if (!valido) setScope(podeConsolidado ? CONSOLIDADO : String(municipios[0].id));
-  }, [municipios, scope, podeConsolidado, setScope]);
+  /* ⚠️ A VALIDAÇÃO DO ESCOPO SAIU DAQUI, e não sumiu: mora em
+     `dashboard/layout.tsx`, dono do seletor único (id obsoleto no localStorage,
+     município que saiu da lista, consolidado num tenant de uma cidade só). Duas
+     validações sobre o mesmo estado brigam entre si — e a de lá é a que enxerga
+     a lista de municípios antes de qualquer tela pintar. */
 
   const setAba = useCallback(
     (id: AbaId) => {
@@ -143,7 +138,7 @@ export function PainelIndicadores() {
                 escolher, e o dropdown só sugeria que existe dado de outra
                 cidade ali dentro. */}
             {podeConsolidado && (
-              <EscopoSelect municipios={municipios} podeConsolidado={podeConsolidado} />
+              <EscopoIndicador municipios={municipios} />
             )}
             <PeriodoMultiSelect />
             {/* Sem alternador de tema aqui: o do menu lateral e este mantinham
