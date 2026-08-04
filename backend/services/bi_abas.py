@@ -525,9 +525,34 @@ async def bi_documentos(db: AsyncSession, ids: list[int]) -> dict:
     }
 
 
-def _cagec_indisponivel() -> dict:
+# O CAGEC e o Cadastro Geral de Convenentes do ESTADO DE MINAS GERAIS. Para um
+# municipio de outro estado ele nao existe — nao e "sem coleta", e NAO SE APLICA.
+# A distincao importa: "sem coleta" convida a esperar um dado que nunca vem, e
+# numa carteira multi-estado (o Trust atende ES, GO, MG e TO) a tela dizia
+# "CAGEC — Minas Gerais" sobre cidades de Goias.
+UF_DO_CAGEC = "MG"
+MOTIVO_FORA_DE_MG = (
+    "O CAGEC e o cadastro de convenentes do Estado de Minas Gerais e nao se "
+    "aplica a municipios de outros estados."
+)
+
+
+def _cagec_indisponivel(motivo: str | None = None) -> dict:
     from routers.cagec import MOTIVO_SEM_COLETA
-    return {"disponivel": False, "motivo": MOTIVO_SEM_COLETA, "por_municipio": []}
+    return {"disponivel": False, "motivo": motivo or MOTIVO_SEM_COLETA,
+            "por_municipio": [], "municipios_no_escopo": 0, "fora_de_mg": 0}
+
+
+async def _ids_de_mg(db: AsyncSession, ids: list[int]) -> list[int]:
+    """Dos municipios pedidos, os que sao de Minas — na ordem recebida."""
+    if not ids:
+        return []
+    linhas = await db.execute(
+        text("SELECT id FROM municipios WHERE id = ANY(:ids) "
+             "AND upper(coalesce(uf, '')) = :uf"),
+        {"ids": ids, "uf": UF_DO_CAGEC})
+    de_mg = {r[0] for r in linhas.fetchall()}
+    return [i for i in ids if i in de_mg]
 
 
 async def _cagec_bloco(db: AsyncSession, ids: list[int]) -> dict:
@@ -540,8 +565,16 @@ async def _cagec_bloco(db: AsyncSession, ids: list[int]) -> dict:
     e lido como "a regularidade estadual esta em dia"."""
     from routers.cagec import fetch_cagec_situacao
 
+    # ⭐ SO OS DE MINAS. Antes varria os ids todos: numa carteira multi-estado,
+    # consultava o cadastro mineiro para cidades de GO/TO/ES e a tela mostrava a
+    # secao "CAGEC — Minas Gerais" para elas.
+    ids_mg = await _ids_de_mg(db, ids)
+    fora = len(ids) - len(ids_mg)
+    if not ids_mg:
+        return _cagec_indisponivel(MOTIVO_FORA_DE_MG if fora else None)
+
     por_municipio = []
-    for mid in ids[:20]:
+    for mid in ids_mg[:20]:
         s = await fetch_cagec_situacao(db, mid)
         if not s.get("tem_dados"):
             continue
@@ -569,6 +602,11 @@ async def _cagec_bloco(db: AsyncSession, ids: list[int]) -> dict:
         "disponivel": True,
         "motivo": "",
         "por_municipio": por_municipio,
+        # ⭐ SOBRE QUANTOS o CAGEC fala. Numa carteira multi-estado ele cobre
+        # so a parte mineira, e a tela precisa dizer isso — senao "3 em dia"
+        # sobre 19 municipios e lido como a carteira inteira estar em dia.
+        "municipios_no_escopo": len(ids_mg),
+        "fora_de_mg": fora,
         "regulares": sum(1 for m in por_municipio if m["regular"]),
         "pendencias_total": sum(m["pendencias"] for m in por_municipio),
     }

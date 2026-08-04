@@ -19,7 +19,7 @@
 import React, { useEffect, useState } from "react";
 import {
   ShieldCheck, ShieldAlert, Check, AlertTriangle, AlertCircle, Ban, Loader2,
-  Clock,
+  Clock, Info,
 } from "lucide-react";
 import api from "@/lib/api";
 import { useMunicipio } from "@/contexts/MunicipioContext";
@@ -500,7 +500,14 @@ function Exigencias({ itens, esfera = "cauc" }: { itens: Item[]; esfera?: "cauc"
 
 export default function RegularidadePage() {
   const { municipioId } = useMunicipio();
+
   const [cauc, setCauc] = useState<CaucResp | null>(null);
+  /* A UF vem do próprio extrato do CAUC (que é federal e cobre o país inteiro),
+     e não de uma lista escrita aqui: é o dado que já está na tela. Enquanto ele
+     não chegou, `foraDeMinas` é falso — não se anuncia "não se aplica" antes de
+     saber de onde é o município. */
+  const ufDoMunicipio = (cauc?.uf || "").toUpperCase();
+  const foraDeMinas = !!ufDoMunicipio && ufDoMunicipio !== "MG";
   const [cagec, setCagec] = useState<CagecResp | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -587,7 +594,28 @@ export default function RegularidadePage() {
               </span>
             </div>
 
-            {!cagec?.tem_dados ? (
+            {foraDeMinas ? (
+              /* ⚠️ NÃO SE APLICA ≠ AGUARDANDO. O CAGEC é o cadastro de
+                 convenentes do ESTADO DE MINAS GERAIS. Para um município de
+                 Goiás, Tocantins ou Espírito Santo — o Trust atende os quatro
+                 estados — ele não existe, e dizer "aguardando coleta" promete um
+                 dado que nunca vai chegar. O gestor ficaria esperando, ou pior,
+                 acharia que há uma pendência estadual não resolvida. */
+              <Bloco className="p-4">
+                <div className="flex items-start gap-2.5">
+                  <Info className="mt-0.5 size-4 shrink-0" style={{ color: "var(--bi-faint)" }} />
+                  <div className="space-y-1.5">
+                    <div className="bi-title text-[13px] leading-tight">Não se aplica</div>
+                    <p className="text-[11px] leading-snug" style={{ color: "var(--bi-muted)" }}>
+                      O CAGEC é o Cadastro Geral de Convenentes do <b>Estado de Minas
+                      Gerais</b>. Este município é de <b>{ufDoMunicipio}</b>, então não
+                      há cadastro estadual mineiro a acompanhar aqui — a regularidade
+                      federal (CAUC, ao lado) continua valendo normalmente.
+                    </p>
+                  </div>
+                </div>
+              </Bloco>
+            ) : !cagec?.tem_dados ? (
               /* Aguardando coleta — e dizendo POR QUÊ. Deixar em branco faria
                  parecer que não existe regularidade estadual a acompanhar;
                  pintar de verde seria pior, porque seria lido como "em dia". */

@@ -863,6 +863,17 @@ export function AbaDocumentosView({
   //               portal parou de emitir. Vale mostrar, com a data na cara.
   // Gatear pelo erro apenas (como estava) deixaria a tela MUDA nas linhas
   // gravadas antes da coluna existir, que é o estado de Monte Sião agora.
+  /* ⚠️ O CAGEC É DE MINAS, E SÓ. É o Cadastro Geral de Convenentes do ESTADO
+     de Minas Gerais: para uma cidade de Goiás, Tocantins ou Espírito Santo ele
+     não existe — e a tela dizia "CAGEC — Minas Gerais / aguardando coleta"
+     sobre elas, que se lê como "vai chegar" em vez de "não se aplica".
+     `fora_de_mg` e `municipios_no_escopo` vêm do servidor (`bi_abas.py`), que é
+     quem conhece a UF de cada município do escopo. */
+  const cagecForaDeMg = (d.cagec.municipios_no_escopo ?? 0) === 0
+    && (d.cagec.fora_de_mg ?? 0) > 0;
+  const cagecParcial = (d.cagec.fora_de_mg ?? 0) > 0
+    && (d.cagec.municipios_no_escopo ?? 0) > 0;
+
   const crcAusente = !!cagec && cagec.detalhe_do_crc === false;
   const crcVelho = !!cagec && cagec.detalhe_do_crc !== false && !!cagec.crc_erro;
 
@@ -877,10 +888,16 @@ export function AbaDocumentosView({
         <Metric icon={ShieldCheck} tom={pct >= 0.99 ? "ok" : "crit"} label="CAUC — União"
           valor={pct >= 0.99 ? "Em dia" : `${formatInt(c.pendencias_total)} pendência(s)`}
           sub="transferências federais" grande={tv} />
-        <Metric icon={ShieldAlert} tom={cagec ? (cagecIrregular ? "crit" : "ok") : "warn"}
+        <Metric icon={ShieldAlert}
+          tom={cagecForaDeMg ? "neutro" : cagec ? (cagecIrregular ? "crit" : "ok") : "warn"}
           label="CAGEC — Minas Gerais"
-          valor={!cagec ? "Sem coleta" : cagecIrregular ? (cagec.situacao || "Irregular") : "Em dia"}
-          sub="convênios estaduais" grande={tv} />
+          valor={cagecForaDeMg ? "Não se aplica"
+            : !cagec ? "Sem coleta"
+            : cagecIrregular ? (cagec.situacao || "Irregular") : "Em dia"}
+          sub={cagecForaDeMg ? "cadastro estadual de MG"
+            : cagecParcial ? `só os ${d.cagec.municipios_no_escopo} de MG`
+            : "convênios estaduais"}
+          grande={tv} />
         {/* Com o CRC indisponivel nao existe denominador: as pendencias do
             CAGEC sao desconhecidas, e somar as 2 linhas do fallback anunciaria
             "de 27 exigencias" quando o cadastro estadual tem ~28 sozinho. */}
@@ -1002,11 +1019,17 @@ export function AbaDocumentosView({
           <section className="min-w-0">
             <EsferaHead
               titulo="CAGEC — Minas Gerais"
-              sub="Cadastro Geral de Convenentes · exigências estaduais"
+              sub={cagecForaDeMg
+                ? "Cadastro do Estado de Minas Gerais · não se aplica a este escopo"
+                : cagecParcial
+                ? `Cadastro Geral de Convenentes · cobre ${d.cagec.municipios_no_escopo} de ${(d.cagec.municipios_no_escopo ?? 0) + (d.cagec.fora_de_mg ?? 0)} municípios (só os de MG)`
+                : "Cadastro Geral de Convenentes · exigências estaduais"}
               /* "27 exigencias" nao existe em documento nenhum: o CRC tem 24
                  documentos, e as outras 3 linhas (CADIN-MG, SIAFI-MG, mandato)
                  vem do CABECALHO do certificado. Separar por procedencia. */
-              contagem={crcAusente
+              contagem={cagecForaDeMg
+                ? "fora de Minas Gerais"
+                : crcAusente
                 /* Sem o CRC, "2 linhas · 2 documentos do CRC" e uma contagem
                    FALSA numa parede de gabinete: o cadastro tem ~28 obrigacoes
                    e nos lemos duas. Contagem que nao sabe nao conta. */

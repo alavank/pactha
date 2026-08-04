@@ -324,6 +324,14 @@ def _municipios_alvo() -> list[dict]:
                ) AS cnpj
         FROM municipios m
         WHERE m.active = true
+          -- ⚠️ SO MINAS. O CAGEC e o Cadastro Geral de Convenentes do ESTADO DE
+          -- MINAS GERAIS: para um municipio de Goias, Tocantins ou Espirito
+          -- Santo ele nao existe — nao e "sem coleta", e nao se aplica.
+          -- Sem esta linha o coletor consultava o portal do MG para a carteira
+          -- inteira de uma assessoria multi-estado (o Trust atende ES, GO, MG e
+          -- TO): trabalho jogado fora no melhor caso e, no pior, um casamento
+          -- por nome trazendo a entidade errada de outro ente.
+          AND upper(coalesce(m.uf, '')) = 'MG'
         ORDER BY m.nome
     """)
     alvos = [{"id": r[0], "nome": r[1], "uf": r[2], "cnpj": r[3]} for r in cur.fetchall()]
