@@ -23,7 +23,12 @@ export const TELAS: TelaDef[] = [
   { key: "acordofes", label: "Acordo FES (dívida saúde MG)" },
   { key: "fns", label: "Fundo Nacional de Saúde" },
   { key: "simec", label: "SIMEC - PAR (MEC)" },
-  { key: "suas", label: "Estrutura SUAS (MDS)" },
+  // ⚠️ NAO EXISTE MAIS UMA TELA "suas". O painel oficial do MDS (Estrutura
+  // SUAS) nao sumiu — ele mora DENTRO de "Painéis Municipais", ao lado do
+  // Painel Municipalista, desde que os dois foram reunidos numa tela só. A
+  // caixinha avulsa continuava aqui prometendo um controle que não controlava:
+  // quem abria "Painéis Municipais" via o SUAS de qualquer forma, porque a
+  // página não filtra painel por painel. Marcar ou desmarcar não mudava nada.
   { key: "paineis", label: "Painéis Municipais" },
   { key: "bi", label: "Painel de Indicadores (BI)" },
   // Separadas de proposito: ver o painel, jogar na TV e PUBLICAR para fora sao

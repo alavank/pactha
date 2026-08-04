@@ -832,6 +832,11 @@ _CHAVES_ALVO = ("sistema", "tela", "titulo", "new_email", "email", "nome",
 _TELAS_EXTRA = {
     "cofre": "Cofre de Senhas",
     "sessoes": "Sessões (gov.br)",
+    # ⚠️ `suas` FICA AQUI MESMO TENDO SAÍDO DO PRODUTO, e a exceção é o ponto:
+    # a trilha descreve o PASSADO. Existem linhas gravadas em que alguém
+    # concedeu ou usou esta tela, e elas continuarão existindo — apagar o rótulo
+    # faria o auditor ler `suas` cru numa linha de 2026 e não saber o que era.
+    # Catálogo de auditoria só cresce; quem encolhe é o catálogo de telas.
     "suas": "Estrutura SUAS (MDS)",
     "paineis": "Painéis Municipais",
     "bi_tela": "Modo Tela (TV) do BI",
