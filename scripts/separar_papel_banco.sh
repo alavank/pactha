@@ -24,10 +24,12 @@
 #   · Nenhum router ou service executa DDL em execução.
 #
 # COMO RODAR (no servidor, como root):
-#     bash separar_papel_banco.sh ensaiar    # só confere o estado de hoje
-#     bash separar_papel_banco.sh aplicar    # cria o papel e ajusta os grants
-#     bash separar_papel_banco.sh conferir   # prova o resultado
-#     bash separar_papel_banco.sh desfazer   # apaga o papel (volta ao de hoje)
+#     bash separar_papel_banco.sh ensaiar  trust    # só confere o estado de hoje
+#     bash separar_papel_banco.sh aplicar  trust    # cria o papel e ajusta os grants
+#     bash separar_papel_banco.sh conferir trust    # prova o resultado
+#     bash separar_papel_banco.sh desfazer trust    # apaga o papel (volta ao de hoje)
+#
+# O segundo argumento é o TENANT: montesiao | trust | freitas.
 #
 # A SENHA é gerada aqui e NÃO aparece na tela: sai só para o arquivo
 # `/root/pactha_app.url`, com permissão 600. É de lá que você copia a
@@ -38,20 +40,33 @@ set -euo pipefail
 BANCO="pactha"        # nome do banco e do papel DONO (ver DATABASE_URL)
 DONO="pactha"
 NOVO="pactha_app"
-SAIDA="/root/pactha_app.url"
 
-# O container do Postgres de Monte Sião. O hostname interno é o do
-# DATABASE_URL; aqui procuramos pelo nome do serviço no Docker.
+# ⭐ QUAL TENANT. O container do Postgres é o hostname que aparece na
+# `DATABASE_URL` daquele cliente — e é por isso que ele entra como PARÂMETRO, e
+# não como palpite: os três bancos são idênticos por dentro, e um roteiro que
+# "descobre" o container sozinho acerta o cliente errado com a mesma facilidade
+# com que acerta o certo. Aqui, errar exige digitar o nome errado.
+TENANT="${2:-}"
+case "$TENANT" in
+  montesiao) CONTAINER="iogvjlnkpqlugja9j76rktl1" ;;
+  trust)     CONTAINER="p434vbj35siee57shlsyzuc2" ;;
+  freitas)   CONTAINER="tox59kvmkrb0ywmeaty3t02a" ;;
+  *)
+    echo "uso: bash $0 {ensaiar|aplicar|conferir|desfazer} {montesiao|trust|freitas}" >&2
+    exit 2
+    ;;
+esac
+# A senha de cada tenant no seu próprio arquivo — misturar as três num só
+# tornaria impossível girar a de um sem mexer nas outras.
+SAIDA="/root/pactha_app_${TENANT}.url"
+
 achar_container() {
-  local c
-  c=$(docker ps --format '{{.Names}}' | grep -iE 'iogvjlnkpqlugja9j76rktl1|montesiao.*db|db.*montesiao' | head -1)
-  if [ -z "$c" ]; then
-    echo "ERRO: não achei o container do Postgres de Monte Sião." >&2
-    echo "Containers com 'postgres' na imagem:" >&2
+  if ! docker ps --format '{{.Names}}' | grep -qx "$CONTAINER"; then
+    echo "ERRO: container '$CONTAINER' ($TENANT) não está de pé." >&2
     docker ps --format '{{.Names}}\t{{.Image}}' | grep -i postgres >&2 || true
     exit 1
   fi
-  echo "$c"
+  echo "$CONTAINER"
 }
 
 psql_dono() {
@@ -136,8 +151,8 @@ GRANT EXECUTE ON FUNCTION audit_log_hash(text, text)    TO ${NOVO};
 SQL
 
     umask 077
-    printf 'DATABASE_URL=postgresql+asyncpg://%s:%s@iogvjlnkpqlugja9j76rktl1:5432/%s\n' \
-      "${NOVO}" "${SENHA}" "${BANCO}" > "${SAIDA}"
+    printf 'DATABASE_URL=postgresql+asyncpg://%s:%s@%s:5432/%s\n' \
+      "${NOVO}" "${SENHA}" "${CONTAINER}" "${BANCO}" > "${SAIDA}"
     chmod 600 "${SAIDA}"
     echo "== pronto. A URL nova está em ${SAIDA} (só root lê)."
     echo "== NÃO troque o DATABASE_URL_SYNC: ele continua no dono ${DONO},"
@@ -171,7 +186,7 @@ SQL
     ;;
 
   *)
-    echo "uso: bash $0 {ensaiar|aplicar|conferir|desfazer}" >&2
+    echo "uso: bash $0 {ensaiar|aplicar|conferir|desfazer} {montesiao|trust|freitas}" >&2
     exit 2
     ;;
 esac
