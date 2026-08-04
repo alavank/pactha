@@ -324,13 +324,19 @@ def _municipios_alvo() -> list[dict]:
                ) AS cnpj
         FROM municipios m
         WHERE m.active = true
-          -- ⚠️ SO MINAS. O CAGEC e o Cadastro Geral de Convenentes do ESTADO DE
-          -- MINAS GERAIS: para um municipio de Goias, Tocantins ou Espirito
-          -- Santo ele nao existe — nao e "sem coleta", e nao se aplica.
-          -- Sem esta linha o coletor consultava o portal do MG para a carteira
-          -- inteira de uma assessoria multi-estado (o Trust atende ES, GO, MG e
-          -- TO): trabalho jogado fora no melhor caso e, no pior, um casamento
-          -- por nome trazendo a entidade errada de outro ente.
+          -- ⚠️ SO MINAS, E O MOTIVO E A FONTE — nao o conceito.
+          --
+          -- Cadastro estadual de convenentes NAO e exclusividade de Minas: outros
+          -- estados tem o seu. O que este coletor sabe consultar e UM portal, o
+          -- `cagec.mg.gov.br` (ver URL_CONSULTA), que so responde por ente
+          -- mineiro. Mandar para ele o CNPJ de uma prefeitura de Goias e pedir
+          -- resposta a quem nao tem a informacao: no melhor caso volta vazio, no
+          -- pior um casamento por nome traz a entidade errada.
+          --
+          -- Entao a filtragem aqui e sobre a COBERTURA DESTA FONTE. O dia em que
+          -- entrar o portal de outro estado, este WHERE muda junto — e o que a
+          -- tela nao pode dizer, em tempo nenhum, e que o municipio "nao tem"
+          -- cadastro estadual. Ela nao sabe disso; sabe que nos nao coletamos.
           AND upper(coalesce(m.uf, '')) = 'MG'
         ORDER BY m.nome
     """)

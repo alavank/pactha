@@ -394,6 +394,9 @@ export interface AbaDocumentos {
      *  coletamos" de "não existe para este ente". */
     municipios_no_escopo?: number;
     fora_de_mg?: number;
+    /** As UFs do escopo que a fonte atual não alcança, NOMEADAS — é o que
+     *  permite a tela dizer "GO, TO" em vez de uma frase genérica. */
+    ufs_sem_fonte?: string[];
     por_municipio: Array<{
       municipio_id: number;
       nome: string | null;

@@ -504,10 +504,10 @@ export default function RegularidadePage() {
   const [cauc, setCauc] = useState<CaucResp | null>(null);
   /* A UF vem do próprio extrato do CAUC (que é federal e cobre o país inteiro),
      e não de uma lista escrita aqui: é o dado que já está na tela. Enquanto ele
-     não chegou, `foraDeMinas` é falso — não se anuncia "não se aplica" antes de
-     saber de onde é o município. */
+     não chegou, nada é anunciado — não se fala da cobertura antes de saber de
+     onde é o município. */
   const ufDoMunicipio = (cauc?.uf || "").toUpperCase();
-  const foraDeMinas = !!ufDoMunicipio && ufDoMunicipio !== "MG";
+  const semFonteEstadual = !!ufDoMunicipio && ufDoMunicipio !== "MG";
   const [cagec, setCagec] = useState<CagecResp | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -588,29 +588,39 @@ export default function RegularidadePage() {
           {/* ---------------- CAGEC (estadual / MG) ---------------- */}
           <section className="space-y-2.5">
             <div className="flex flex-wrap items-baseline gap-x-2">
-              <h2 className="bi-title text-[14px]">CAGEC — Minas Gerais</h2>
+              {/* O título segue o município aberto: carimbar "Minas Gerais"
+                  sobre uma cidade de Goiás foi o que trouxe a confusão. */}
+              <h2 className="bi-title text-[14px]">
+                {semFonteEstadual ? `Cadastro estadual — ${ufDoMunicipio}` : "CAGEC — Minas Gerais"}
+              </h2>
               <span className="text-[10px]" style={{ color: "var(--bi-faint)" }}>
                 SIGCON-MG{cagec?.data_pesquisa ? ` · pesquisa de ${fmtDate(cagec.data_pesquisa)}` : ""}
               </span>
             </div>
 
-            {foraDeMinas ? (
-              /* ⚠️ NÃO SE APLICA ≠ AGUARDANDO. O CAGEC é o cadastro de
-                 convenentes do ESTADO DE MINAS GERAIS. Para um município de
-                 Goiás, Tocantins ou Espírito Santo — o Trust atende os quatro
-                 estados — ele não existe, e dizer "aguardando coleta" promete um
-                 dado que nunca vai chegar. O gestor ficaria esperando, ou pior,
-                 acharia que há uma pendência estadual não resolvida. */
+            {semFonteEstadual ? (
+              /* ⚠️ TRÊS ESTADOS DE COISA DIFERENTE, e a tela precisa separar:
+                   "em dia / irregular"  — coletamos e sabemos;
+                   "aguardando coleta"   — a fonte cobre este ente e ainda não veio;
+                   "fora da nossa coleta" — a fonte que temos não responde por ele.
+                 O terceiro caso é este. Dizer "aguardando" promete um dado que
+                 não vai chegar; dizer "não se aplica" afirmaria que o município
+                 NÃO TEM cadastro estadual — e disso não sabemos nada. Cadastro
+                 estadual de convenentes existe em outros estados; o que é de
+                 Minas é o portal que este sistema sabe consultar. */
               <Bloco className="p-4">
                 <div className="flex items-start gap-2.5">
                   <Info className="mt-0.5 size-4 shrink-0" style={{ color: "var(--bi-faint)" }} />
                   <div className="space-y-1.5">
-                    <div className="bi-title text-[13px] leading-tight">Não se aplica</div>
+                    <div className="bi-title text-[13px] leading-tight">
+                      Fora da nossa coleta
+                    </div>
                     <p className="text-[11px] leading-snug" style={{ color: "var(--bi-muted)" }}>
-                      O CAGEC é o Cadastro Geral de Convenentes do <b>Estado de Minas
-                      Gerais</b>. Este município é de <b>{ufDoMunicipio}</b>, então não
-                      há cadastro estadual mineiro a acompanhar aqui — a regularidade
-                      federal (CAUC, ao lado) continua valendo normalmente.
+                      Este município é de <b>{ufDoMunicipio}</b>. Hoje o sistema coleta o
+                      cadastro estadual de convenentes de <b>Minas Gerais</b> (CAGEC), no
+                      portal do Estado. O cadastro de <b>{ufDoMunicipio}</b> ainda não é
+                      coletado — <b>o que não quer dizer que não exista</b>. A
+                      regularidade federal (CAUC, ao lado) continua valendo normalmente.
                     </p>
                   </div>
                 </div>
