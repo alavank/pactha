@@ -23,6 +23,19 @@ const PREF_LABELS: { key: keyof Prefs; label: string }[] = [
   { key: "mudanca_status", label: "Mudança de status de convênio" },
 ];
 
+/** Os tres caminhos do gerador. "ambos" NAO e um tipo de link: e um atalho que
+ *  gera UM DE CADA. Os dois se comportam de forma diferente — a TV segue o
+ *  filtro do dono, o app tem filtro proprio —, entao um link unico servindo aos
+ *  dois nao existe, e quem entrega precisa saber qual esta entregando a quem. */
+const TIPOS_DE_LINK = [
+  { valor: "tela" as const, Icone: Tv, titulo: "Modo Tela (TV)",
+    texto: "Acompanha o SEU filtro: mudou o período aqui, muda lá em até 10 segundos." },
+  { valor: "mobile" as const, Icone: Smartphone, titulo: "App Mobile (PWA)",
+    texto: "Instala como atalho no celular e tem filtro próprio, sem afetar a TV." },
+  { valor: "ambos" as const, Icone: Share2, titulo: "Os dois",
+    texto: "Gera um link de cada, separados — um serve a TV e o outro serve o celular." },
+];
+
 export function BotaoAjustes() {
   const [aberto, setAberto] = useState(false);
   return (
@@ -58,6 +71,13 @@ function ModalAjustes({ onFechar }: { onFechar: () => void }) {
   const [dias, setDias] = useState("30");
   const [dataExpira, setDataExpira] = useState("");
   const [erroLink, setErroLink] = useState<string | null>(null);
+  /* O SEGUNDO modal — o de criacao. O primeiro e a lista. */
+  const [formAberto, setFormAberto] = useState(false);
+  /* "ambos" NAO e um tipo de link: e um atalho que gera UM DE CADA. Os dois se
+     comportam de forma diferente (a TV segue o filtro do dono, o app tem filtro
+     proprio), entao um link unico servindo aos dois nao existe — e quem
+     entrega precisa saber qual esta entregando a quem. */
+  const [tipo, setTipo] = useState<"tela" | "mobile" | "ambos">("tela");
 
   const podeGerarLink = useMemo(() => {
     const t = allowedTelasOf(user);
@@ -70,11 +90,20 @@ function ModalAjustes({ onFechar }: { onFechar: () => void }) {
     listarTelaLinks().then(setLinks).catch(() => setLinks([]));
   }, []);
 
+  /* ⚠️ O ESC FECHA UMA CAIXA POR VEZ — a de cima.
+     O formulário mora DENTRO deste modal, então um único ouvinte de tecla via
+     `window` fechava os dois de uma vez: quem apertasse Esc para desistir de
+     gerar o link perdia também a lista, e voltava para o painel sem entender o
+     que aconteceu. Com o formulário aberto, Esc só o fecha e devolve a lista. */
   useEffect(() => {
-    const onEsc = (e: KeyboardEvent) => e.key === "Escape" && onFechar();
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (formAberto) setFormAberto(false);
+      else onFechar();
+    };
     window.addEventListener("keydown", onEsc);
     return () => window.removeEventListener("keydown", onEsc);
-  }, [onFechar]);
+  }, [onFechar, formAberto]);
 
   const alternar = async (key: keyof Prefs) => {
     if (!prefs) return;
@@ -90,8 +119,9 @@ function ModalAjustes({ onFechar }: { onFechar: () => void }) {
     }
   };
 
-  const gerarLink = async (kind: TipoLink) => {
-    setEmitindo(kind);
+  const gerarLink = async (escolha: "tela" | "mobile" | "ambos") => {
+    const kinds: TipoLink[] = escolha === "ambos" ? ["tela", "mobile"] : [escolha];
+    setEmitindo(escolha === "ambos" ? "tela" : escolha);
     setErroLink(null);
     try {
       // Publica o filtro ANTES de emitir. Sem isto o link nasce mostrando
@@ -99,14 +129,22 @@ function ModalAjustes({ onFechar }: { onFechar: () => void }) {
       // que alguém mexesse no filtro de novo — que é exatamente o defeito que
       // esta tela existe para não ter.
       await putTelaFiltros({ scope: scope || CONSOLIDADO, anos, aba: null }).catch(() => {});
-      const novo = await criarTelaLink(kind, {
+      const opcoes = {
         nome: destinatario.trim() || null,
         expira,
         dias: Number(dias) || 30,
         data_expiracao: dataExpira || null,
-      });
-      setLinks((L) => [novo, ...L]);
+      };
+      // EM SÉRIE, e não em paralelo: cada emissão cria um usuário de quiosque e
+      // grava na trilha. Disparar as duas juntas é pedir para colidirem no mesmo
+      // instante por um ganho de meio segundo.
+      const novos: TelaLink[] = [];
+      for (const kind of kinds) {
+        novos.push(await criarTelaLink(kind, opcoes));
+      }
+      setLinks((L) => [...novos.reverse(), ...L]);
       setDestinatario("");
+      setFormAberto(false);   // volta para a LISTA, com os novos já lá
     } catch (e) {
       /* A falha PRECISA aparecer: data no passado e data vazia voltam 400, e um
          botão que volta ao normal em silêncio faz o gestor achar que gerou. */
@@ -209,136 +247,30 @@ function ModalAjustes({ onFechar }: { onFechar: () => void }) {
             </div>
             <p className="mb-3 text-[11px]" style={{ color: "var(--bi-faint)" }}>
               Abrem sem login. Trate como senha — quem tiver o link vê os indicadores.
-              Os dois <strong>se comportam de forma diferente</strong>:
+              Cada link gerado aparece na lista abaixo e pode ser revogado a qualquer momento.
             </p>
 
-            {/* PARA QUEM e ATÉ QUANDO — antes dos botões, porque valem para os
-                dois tipos de link. Sem o nome, a lista vira um punhado de
-                endereços de 12 caracteres e ninguém lembra qual revogar quando a
-                pessoa sai. */}
-            <div className="mb-2 rounded-2xl p-2.5" style={{ background: "var(--bi-surface-2)" }}>
-              <label className="mb-1 block text-[11px] font-semibold" htmlFor="link-destinatario">
-                Para quem é este link
-              </label>
-              <input
-                id="link-destinatario"
-                value={destinatario}
-                onChange={(e) => setDestinatario(e.target.value)}
-                placeholder="Ex.: Secretário de Saúde · TV do gabinete"
-                maxLength={120}
-                className="mb-2.5 w-full rounded-xl px-2.5 py-1.5 text-[12px] outline-none"
-                style={{ background: "var(--bi-surface)", border: "1px solid var(--bi-line)",
-                         color: "var(--bi-text)" }}
-              />
+            {/* O BOTAO QUE ABRE O FORMULARIO.
+                Este modal e a LISTA dos links ja gerados; a criacao mora num
+                segundo modal. Antes, formulario e lista dividiam a mesma tela e
+                os dois botoes de gerar ficavam no meio — quem entrava aqui so
+                para conferir ou revogar um link tinha de passar por um
+                formulario vazio antes de chegar na lista. */}
+            <button
+              type="button"
+              onClick={() => { setErroLink(null); setFormAberto(true); }}
+              className="mb-3 inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-[12px] font-semibold"
+              style={{ background: "var(--bi-cta)", color: "var(--bi-cta-ink)" }}
+            >
+              <KeyRound className="size-3.5" /> Gerar link externo
+            </button>
 
-              <span className="mb-1 block text-[11px] font-semibold">Validade</span>
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[12px]">
-                {([
-                  ["dias", "Por"],
-                  ["data", "Até"],
-                  ["nunca", "Sem prazo"],
-                ] as const).map(([valor, rotulo]) => (
-                  <label key={valor} className="flex cursor-pointer items-center gap-1.5">
-                    <input
-                      type="radio"
-                      name="link-expira"
-                      checked={expira === valor}
-                      onChange={() => setExpira(valor)}
-                      className="size-3.5 accent-[var(--bi-accent)]"
-                    />
-                    {rotulo}
-                    {valor === "dias" && expira === "dias" && (
-                      <>
-                        <input
-                          type="number"
-                          min={1}
-                          max={3650}
-                          value={dias}
-                          onChange={(e) => setDias(e.target.value)}
-                          className="w-16 rounded-lg px-1.5 py-0.5 text-[12px] outline-none"
-                          style={{ background: "var(--bi-surface)",
-                                   border: "1px solid var(--bi-line)", color: "var(--bi-text)" }}
-                          aria-label="Quantidade de dias"
-                        />
-                        dias
-                      </>
-                    )}
-                    {valor === "data" && expira === "data" && (
-                      <input
-                        type="date"
-                        value={dataExpira}
-                        onChange={(e) => setDataExpira(e.target.value)}
-                        className="rounded-lg px-1.5 py-0.5 text-[12px] outline-none"
-                        style={{ background: "var(--bi-surface)",
-                                 border: "1px solid var(--bi-line)", color: "var(--bi-text)" }}
-                        aria-label="Data de expiração"
-                      />
-                    )}
-                  </label>
-                ))}
-              </div>
-              {expira === "nunca" && (
-                /* Honestidade: o token embutido no link é assinado com validade.
-                   "Sem prazo" quer dizer que o sistema não o mata sozinho — não
-                   que ele viva para sempre. */
-                <p className="mt-1.5 text-[10px] leading-snug" style={{ color: "var(--bi-faint)" }}>
-                  O sistema não vai encerrar sozinho. Continua valendo até você revogar
-                  (limite técnico de 10 anos).
-                </p>
-              )}
-              {erroLink && (
-                <p className="mt-1.5 text-[11px]" style={{ color: "var(--bi-crit-ink)" }}>
-                  {erroLink}
-                </p>
-              )}
-            </div>
-
-            <div className="flex flex-col gap-2">
-              {/* MODO TELA: extensão da tela do gabinete, então SEGUE o filtro do dono. */}
-              <div className="rounded-2xl p-2.5" style={{ background: "var(--bi-surface-2)" }}>
-                <div className="mb-1.5 flex items-center gap-1.5 text-[12px] font-semibold">
-                  <Tv className="size-3.5" style={{ color: "var(--bi-muted)" }} /> Modo Tela (TV)
-                </div>
-                <p className="mb-2 text-[11px] leading-snug" style={{ color: "var(--bi-faint)" }}>
-                  Acompanha <strong>o seu</strong> filtro: mudou o período aqui, muda lá em
-                  até 10 segundos. Para a TV do gabinete.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => gerarLink("tela")}
-                  disabled={!!emitindo}
-                  className="inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-[12px] font-semibold disabled:opacity-60"
-                  style={{ background: "var(--bi-cta)", color: "var(--bi-cta-ink)" }}
-                >
-                  <KeyRound className="size-3.5" />
-                  {emitindo === "tela" ? "Gerando…" : "Gerar link externo — Modo Tela"}
-                </button>
-              </div>
-
-              {/* APP MOBILE: usado na rua, então filtra POR CONTA e não mexe na TV. */}
-              <div className="rounded-2xl p-2.5" style={{ background: "var(--bi-surface-2)" }}>
-                <div className="mb-1.5 flex items-center gap-1.5 text-[12px] font-semibold">
-                  <Smartphone className="size-3.5" style={{ color: "var(--bi-muted)" }} /> App Mobile (PWA)
-                </div>
-                <p className="mb-2 text-[11px] leading-snug" style={{ color: "var(--bi-faint)" }}>
-                  Instala como atalho no celular e tem <strong>filtro próprio</strong>: quem
-                  abrir muda o período no aparelho, sem afetar a TV nem o seu painel.
-                  Para reunião fora do gabinete.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => gerarLink("mobile")}
-                  disabled={!!emitindo}
-                  className="inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-[12px] font-semibold disabled:opacity-60"
-                  style={{ background: "var(--bi-cta)", color: "var(--bi-cta-ink)" }}
-                >
-                  <Smartphone className="size-3.5" />
-                  {emitindo === "mobile" ? "Gerando…" : "Gerar link externo — App Mobile"}
-                </button>
-              </div>
-            </div>
-
-            {links.length > 0 && (
+            {links.length === 0 ? (
+              <p className="rounded-xl px-2.5 py-3 text-center text-[11px]"
+                 style={{ background: "var(--bi-surface-2)", color: "var(--bi-faint)" }}>
+                Nenhum link externo gerado.
+              </p>
+            ) : (
               <ul className="mt-2 space-y-1.5">
                 {links.map((l) => (
                   <li
@@ -403,6 +335,164 @@ function ModalAjustes({ onFechar }: { onFechar: () => void }) {
           </section>
         )}
       </div>
+
+      {/* SEGUNDO MODAL — a criacao. O primeiro e a LISTA.
+          `stopPropagation` no conteudo: sem ele, clicar dentro do formulario
+          fecharia o modal de tras, que fecha no clique do fundo. */}
+      {formAberto && (
+        <div
+          className="fixed inset-0 z-[60] grid place-items-center bg-black/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Gerar link externo"
+          onClick={(e) => e.target === e.currentTarget && setFormAberto(false)}
+        >
+          <div
+            className="bi-scroll max-h-[85vh] w-full max-w-md overflow-y-auto rounded-3xl p-5"
+            style={{ background: "var(--bi-surface)", border: "1px solid var(--bi-line)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-3 flex items-center gap-2">
+              <KeyRound className="size-4" style={{ color: "var(--bi-muted)" }} />
+              <h3 className="bi-title text-[15px]">Gerar link externo</h3>
+              <button
+                type="button"
+                onClick={() => setFormAberto(false)}
+                className="ml-auto grid size-7 place-items-center rounded-lg"
+                style={{ background: "var(--bi-surface-2)", color: "var(--bi-muted)" }}
+                aria-label="Fechar"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+
+            <div className="rounded-2xl p-2.5" style={{ background: "var(--bi-surface-2)" }}>
+              <label className="mb-1 block text-[11px] font-semibold" htmlFor="link-destinatario">
+                Para quem é este link
+              </label>
+              <input
+                id="link-destinatario"
+                value={destinatario}
+                onChange={(e) => setDestinatario(e.target.value)}
+                placeholder="Ex.: Secretário de Saúde — TV do gabinete"
+                maxLength={120}
+                className="mb-2.5 w-full rounded-xl px-2.5 py-1.5 text-[12px] outline-none"
+                style={{ background: "var(--bi-surface)", border: "1px solid var(--bi-line)", color: "var(--bi-text)" }}
+              />
+
+              <span className="mb-1 block text-[11px] font-semibold">Validade</span>
+              <div className="mb-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[12px]">
+                {([["dias", "Por"], ["data", "Até"], ["nunca", "Sem prazo"]] as const).map(
+                  ([valor, rotulo]) => (
+                    <label key={valor} className="flex cursor-pointer items-center gap-1.5">
+                      <input
+                        type="radio"
+                        name="link-expira"
+                        checked={expira === valor}
+                        onChange={() => setExpira(valor)}
+                        className="size-3.5 accent-[var(--bi-accent)]"
+                      />
+                      {rotulo}
+                      {valor === "dias" && expira === "dias" && (
+                        <>
+                          <input
+                            type="number"
+                            min={1}
+                            max={3650}
+                            value={dias}
+                            onChange={(e) => setDias(e.target.value)}
+                            className="w-16 rounded-lg px-1.5 py-0.5 text-[12px] outline-none"
+                            style={{ background: "var(--bi-surface)", border: "1px solid var(--bi-line)", color: "var(--bi-text)" }}
+                            aria-label="Quantidade de dias"
+                          />
+                          dias
+                        </>
+                      )}
+                      {valor === "data" && expira === "data" && (
+                        <input
+                          type="date"
+                          value={dataExpira}
+                          onChange={(e) => setDataExpira(e.target.value)}
+                          className="rounded-lg px-1.5 py-0.5 text-[12px] outline-none"
+                          style={{ background: "var(--bi-surface)", border: "1px solid var(--bi-line)", color: "var(--bi-text)" }}
+                          aria-label="Data de expiração"
+                        />
+                      )}
+                    </label>
+                  )
+                )}
+              </div>
+
+              {/* O TIPO. Os dois se comportam de forma diferente, e a descricao
+                  fica JUNTO da opcao — quem escolhe precisa ler ali, e nao numa
+                  legenda acima que ja rolou para fora da tela. */}
+              <span className="mb-1 block text-[11px] font-semibold">Tipo de link</span>
+              <div className="flex flex-col gap-1.5">
+                {TIPOS_DE_LINK.map(({ valor, Icone, titulo, texto }) => (
+                  <label
+                    key={valor}
+                    className="flex cursor-pointer items-start gap-2 rounded-xl p-2"
+                    style={{
+                      background: "var(--bi-surface)",
+                      border: tipo === valor
+                        ? "1px solid var(--bi-accent-ink)"
+                        : "1px solid var(--bi-line)",
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="link-tipo"
+                      checked={tipo === valor}
+                      onChange={() => setTipo(valor)}
+                      className="mt-0.5 size-3.5 accent-[var(--bi-accent)]"
+                    />
+                    <span className="min-w-0">
+                      <span className="flex items-center gap-1.5 text-[12px] font-semibold">
+                        <Icone className="size-3.5" style={{ color: "var(--bi-muted)" }} />
+                        {titulo}
+                      </span>
+                      <span className="block text-[11px] leading-snug" style={{ color: "var(--bi-faint)" }}>
+                        {texto}
+                      </span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+
+              {expira === "nunca" && (
+                <p className="mt-2 text-[10px] leading-snug" style={{ color: "var(--bi-faint)" }}>
+                  O sistema nao vai encerrar sozinho. Continua valendo ate voce revogar
+                  (limite tecnico de 10 anos).
+                </p>
+              )}
+              {erroLink && (
+                <p className="mt-2 text-[11px]" style={{ color: "var(--bi-crit-ink)" }}>{erroLink}</p>
+              )}
+            </div>
+
+            <div className="mt-3 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setFormAberto(false)}
+                className="rounded-full px-3.5 py-1.5 text-[12px] font-semibold"
+                style={{ background: "var(--bi-surface-2)", color: "var(--bi-muted)" }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => gerarLink(tipo)}
+                disabled={!!emitindo}
+                className="inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-[12px] font-semibold disabled:opacity-60"
+                style={{ background: "var(--bi-cta)", color: "var(--bi-cta-ink)" }}
+              >
+                <KeyRound className="size-3.5" />
+                {emitindo ? "Gerando…" : tipo === "ambos" ? "Gerar os dois" : "Gerar link"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
