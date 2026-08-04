@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import api from "@/lib/api";
 import { useMunicipio } from "@/contexts/MunicipioContext";
+import { acompanhamosEstadual, subtituloEstadual, tituloEstadual } from "@/lib/estadual";
 import { Bloco, BlocoHead, Lista, Selo, Vazio, situacaoTom } from "@/components/ui/superficies";
 
 interface Item {
@@ -507,7 +508,9 @@ export default function RegularidadePage() {
      não chegou, nada é anunciado — não se fala da cobertura antes de saber de
      onde é o município. */
   const ufDoMunicipio = (cauc?.uf || "").toUpperCase();
-  const semFonteEstadual = !!ufDoMunicipio && ufDoMunicipio !== "MG";
+  /* Nome e cobertura vêm do mapa por UF (`lib/estadual.ts`), onde cada linha é
+     pesquisada — e não de um `!== "MG"` escrito aqui. */
+  const semFonteEstadual = !!ufDoMunicipio && !acompanhamosEstadual(ufDoMunicipio);
   const [cagec, setCagec] = useState<CagecResp | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -593,15 +596,12 @@ export default function RegularidadePage() {
                   (Decreto 44.293/2006) — não do produto. Num ambiente do ES ou
                   de GO nada aqui pode falar de Minas: o cliente trocou de
                   ambiente, e o ambiente é dele. */}
-              <h2 className="bi-title text-[14px]">
-                {semFonteEstadual
-                  ? `Cadastro estadual de convenentes — ${ufDoMunicipio}`
-                  : "CAGEC — Minas Gerais"}
-              </h2>
+              <h2 className="bi-title text-[14px]">{tituloEstadual(ufDoMunicipio)}</h2>
               <span className="text-[10px]" style={{ color: "var(--bi-faint)" }}>
-                {semFonteEstadual
-                  ? "regularidade estadual"
-                  : `SIGCON-MG${cagec?.data_pesquisa ? ` · pesquisa de ${fmtDate(cagec.data_pesquisa)}` : ""}`}
+                {subtituloEstadual(ufDoMunicipio)}
+                {!semFonteEstadual && cagec?.data_pesquisa
+                  ? ` · pesquisa de ${fmtDate(cagec.data_pesquisa)}`
+                  : ""}
               </span>
             </div>
 
@@ -623,9 +623,10 @@ export default function RegularidadePage() {
                       Ainda não acompanhado
                     </div>
                     <p className="text-[11px] leading-snug" style={{ color: "var(--bi-muted)" }}>
-                      O cadastro estadual de convenentes de <b>{ufDoMunicipio}</b> ainda não
-                      é acompanhado por este sistema. A regularidade <b>federal</b> (CAUC,
-                      ao lado) continua valendo normalmente.
+                      A regularidade estadual de <b>{tituloEstadual(ufDoMunicipio)}</b> ainda
+                      não é acompanhada por este sistema — a consulta segue sendo no portal
+                      do próprio Estado. A regularidade <b>federal</b> (CAUC, ao lado)
+                      continua valendo normalmente.
                     </p>
                   </div>
                 </div>

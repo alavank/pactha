@@ -19,6 +19,7 @@ import {
   AbaDocumentos, AbaEstaduais, AbaFns, AbaParlamentares, AbaSismob, AbaTransfereGov,
   Alertas, CaucItemDetalhe, Lancamento, Overview, isRollup,
 } from "@/lib/bi";
+import { tituloEstadual } from "@/lib/estadual";
 import { formatCurrencyShort, formatInt, formatDate, diasLabel } from "@/lib/bi-format";
 import {
   BI_CORES, Chip, DotMeter, Gauge, ListaRollup, Metric, Painel, PainelHead,
@@ -898,8 +899,12 @@ export function AbaDocumentosView({
              Convênios da SEGER. Fora de Minas o rótulo é o genérico, com a UF
              do próprio ambiente — e nada de "Minas Gerais" na tela de um
              cliente do ES, que não tem por que ler sobre outro estado. */
+          /* Uma UF de fora: nomeia o sistema dela ("SIGECON — Goiás").
+             Várias: só as siglas, que é o que cabe num cartão. */
           label={semFonteNoEscopo
-            ? `Cadastro estadual — ${ufsSemFonte.join(", ")}`
+            ? (ufsSemFonte.length === 1
+                ? tituloEstadual(ufsSemFonte[0])
+                : `Cadastro estadual — ${ufsSemFonte.join(", ")}`)
             : "CAGEC — Minas Gerais"}
           valor={semFonteNoEscopo ? "Não acompanhado"
             : !cagec ? "Sem coleta"
@@ -1029,7 +1034,9 @@ export function AbaDocumentosView({
           <section className="min-w-0">
             <EsferaHead
               titulo={semFonteNoEscopo
-                ? `Cadastro estadual de convenentes — ${ufsSemFonte.join(", ")}`
+                ? (ufsSemFonte.length === 1
+                    ? tituloEstadual(ufsSemFonte[0])
+                    : `Cadastro estadual — ${ufsSemFonte.join(", ")}`)
                 : "CAGEC — Minas Gerais"}
               sub={semFonteNoEscopo
                 ? "regularidade estadual · ainda não acompanhada por este sistema"
