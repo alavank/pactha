@@ -13,7 +13,7 @@
 // administrador supoe heranca ("mudo o modelo e todo mundo muda junto"), deixa
 // de conferir o cadastro individual e configura errado achando que acertou.
 // Por isso a frase da copia e fixa no topo, e nao um texto de ajuda escondido.
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Check, Copy, Lock, Undo2 } from "lucide-react";
 import {
   AcaoMini, Aviso, Bloco, BlocoHead, BOTAO_CTA, Campos, ESTILO_CTA, Selo,
@@ -24,7 +24,7 @@ import {
 } from "@/lib/permissoes";
 import {
   AVISO_COPIA_RESERVA, mesmoAlcance, mesmoConjunto, MODO_SOMAR,
-  MODO_SUBSTITUIR, preverModelo, type Modelo,
+  MODO_SUBSTITUIR, planoDoModelo, type Modelo, type PlanoModelo,
 } from "@/lib/modelos";
 
 /** O que foi aplicado, para o «Desfazer» e para a frase de estado. */
@@ -37,15 +37,20 @@ interface Aplicacao {
 }
 
 export default function AplicarModelo({
-  catalogo, modelos, sel, esc, posso, alcanceTravado, onAplicar, onDesfazer,
+  alvoId, catalogo, modelos, sel, esc, onAplicar, onDesfazer,
   onSalvarComoModelo,
 }: {
+  /** De QUEM sao estas permissoes. O plano e calculado no servidor, e o
+   *  servidor precisa saber sobre quem — inclusive para recusar o pedido se
+   *  quem esta aplicando nao puder mexer nesta pessoa (`_guard_target`). */
+  alvoId: number;
   catalogo: Catalogo;
   modelos: Modelo[];
   sel: Set<string>;
   esc: MapaEscopos;
-  posso: (chave: string) => boolean;
-  alcanceTravado: (recurso: string) => boolean;
+  /* `posso` e `alcanceTravado` SAÍRAM daqui: eram as entradas do
+     anti-escalonamento calculado no navegador. Quem responde isso agora é o
+     servidor, que é onde a regra já tinha teste. */
   /** Recebe também o MODO, que a tela de cima manda no `PUT` para a trilha
    *  saber de onde a gravação partiu. */
   onAplicar: (sel: Set<string>, esc: MapaEscopos, origem: { modeloId: number; modo: string }) => void;
@@ -69,14 +74,72 @@ export default function AplicarModelo({
   const comEscopo = useMemo(() => recursosComEscopo(catalogo), [catalogo]);
   const modelo = modelos.find((m) => m.id === escolhido) ?? null;
 
-  const previa = useMemo(
-    () => (modelo ? preverModelo(catalogo, modelo, sel, esc, posso, alcanceTravado, modo) : null),
-    // `posso`/`alcanceTravado` sao funcoes novas a cada render do modal; incluir
-    // as duas nas deps recalcularia a previa em todo render — e o calculo varre
-    // as 66 permissoes. O que muda o resultado e o que esta listado aqui.
+  /* ⭐ O PLANO VEM DO SERVIDOR. Antes esta tela recalculava a regra em
+     TypeScript — uma segunda implementacao de `aplicar_modelo`, que tem 65
+     testes no backend e nenhum aqui (o frontend nao tem runner). A copia sem
+     teste era justamente a que rodava. Enquanto as duas concordassem ninguem
+     veria nada; divergindo, a tela proporia uma caixinha que o `PUT` recusa e o
+     administrador levaria um 403 sem entender o que fez. */
+  /* ⚠️ O PLANO ANDA CARIMBADO com a pergunta que o gerou (modelo + modo +
+     caixinhas + alcance). Sem o carimbo, trocar de modelo — ou marcar uma
+     caixinha — deixaria na tela os números da pergunta ANTERIOR até a resposta
+     nova chegar, e "A desmarcar 3" do modelo errado é pior que número nenhum.
+     Também é o que dispensa `setPlano(null)` dentro do efeito: o plano velho
+     simplesmente deixa de casar, sem render em cascata. */
+  const [plano, setPlano] = useState<{ carimbo: string; dados: PlanoModelo } | null>(null);
+  const [calculando, setCalculando] = useState(false);
+  const [erroPlano, setErroPlano] = useState<{ carimbo: string; texto: string } | null>(null);
+
+  /* Chaves ESTAVEIS: `sel` e `esc` sao objetos novos a cada render, e usa-los
+     crus na dependencia dispararia uma requisicao por render. */
+  const selChave = useMemo(() => [...sel].sort().join(","), [sel]);
+  const escChave = useMemo(() => JSON.stringify(esc), [esc]);
+  const carimbo = `${modelo?.id ?? 0}|${modo}|${selChave}|${escChave}`;
+
+  const planoAtual = plano?.carimbo === carimbo ? plano.dados : null;
+  const erroAtual = erroPlano?.carimbo === carimbo ? erroPlano.texto : null;
+
+  useEffect(() => {
+    if (!modelo) return;
+    /* ESPERA 350ms. O modal e editavel, e o administrador marca varias
+       caixinhas seguidas — sem isto seria uma requisicao por clique. Com a
+       pausa, e uma por respiro. */
+    let vivo = true;
+    const t = setTimeout(() => {
+      setCalculando(true);
+      planoDoModelo(modelo.id, alvoId, modo, sel, esc)
+        .then((p) => { if (vivo) setPlano({ carimbo, dados: p }); })
+        .catch((e) => {
+          if (!vivo) return;
+          setErroPlano({
+            carimbo,
+            texto:
+              (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+              || "Não foi possível calcular o que este modelo faria.",
+          });
+        })
+        .finally(() => { if (vivo) setCalculando(false); });
+    }, 350);
+    return () => { vivo = false; clearTimeout(t); };
+    // `sel`/`esc` e o modelo entram pelo `carimbo`, que é o que muda a resposta.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [catalogo, modelo, sel, esc, modo],
-  );
+  }, [carimbo, alvoId]);
+
+  /* O servidor devolve CHAVES; a tela mostra RÓTULOS. O dicionário é o do
+     catálogo — nenhuma palavra deste subsistema é reescrita aqui. */
+  const rotuloDe = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const p of catalogo.permissoes) m.set(p.chave, p.rotulo);
+    return (c: string) => m.get(c) ?? c;
+  }, [catalogo]);
+
+  const rotuloDoModulo = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const sec of catalogo.secoes) {
+      for (const r of sec.recursos) m.set(r.recurso, r.recurso_rotulo);
+    }
+    return (r: string) => m.get(r) ?? r;
+  }, [catalogo]);
 
   /** A aplicacao ainda esta INTACTA? Depois que o administrador mexe numa
    *  caixinha, «Desfazer» deixaria de cancelar aquele clique e passaria a jogar
@@ -86,15 +149,17 @@ export default function AplicarModelo({
     && mesmoAlcance(esc, aplicado.depoisEsc, comEscopo);
 
   const aplicar = () => {
-    if (!modelo || !previa) return;
+    /* `planoAtual`, e não `plano`: o guard tem de ser o MESMO que a tela usa
+       para desenhar o botão, senão o clique aplicaria um plano vencido. */
+    if (!modelo || !planoAtual) return;
     setAplicado({
       nome: modelo.nome,
       antesSel: new Set(sel),
       antesEsc: { ...esc },
-      depoisSel: previa.sel,
-      depoisEsc: previa.esc,
+      depoisSel: planoAtual.sel,
+      depoisEsc: planoAtual.esc,
     });
-    onAplicar(previa.sel, previa.esc, { modeloId: modelo.id, modo });
+    onAplicar(planoAtual.sel, planoAtual.esc, { modeloId: modelo.id, modo });
   };
 
   const desfazer = () => {
@@ -196,7 +261,27 @@ export default function AplicarModelo({
                   </span>
                 </label>
 
-                {escolhidoAqui && previa && (
+                {/* ⚠️ ENQUANTO A CONTA NÃO CHEGA, e se ela FALHAR, a tela tem de
+                    dizer. Sem estas duas linhas o bloco simplesmente não
+                    aparece — e "não apareceu" é indistinguível de "este modelo
+                    não faz nada", que é a leitura errada mais cara possível
+                    aqui: o administrador conclui que já está tudo certo e vai
+                    embora sem aplicar. */}
+                {escolhidoAqui && !planoAtual && (
+                  <p
+                    className="mt-2 border-t pt-2 text-[11px] leading-snug"
+                    style={{
+                      borderColor: "var(--bi-line)",
+                      color: erroAtual ? "var(--bi-crit-ink)" : "var(--bi-faint)",
+                    }}
+                  >
+                    {erroAtual ?? (calculando
+                      ? "Calculando o que este modelo faria nesta pessoa…"
+                      : "Conferindo o que este modelo faria nesta pessoa…")}
+                  </p>
+                )}
+
+                {escolhidoAqui && planoAtual && (
                   <div className="mt-2 border-t pt-2" style={{ borderColor: "var(--bi-line)" }}>
                     {/* COMO APLICAR — só onde há escolha de verdade. Rádio e não
                         interruptor: são dois estados NOMEADOS, e o padrão
@@ -265,22 +350,24 @@ export default function AplicarModelo({
                     <Campos
                       cols={3}
                       campos={[
-                        { rotulo: "A marcar", valor: previa.marcar.length },
+                        { rotulo: "A marcar", valor: planoAtual.vaiConceder.length },
                         {
                           rotulo: "A desmarcar",
-                          valor: previa.desmarcar.length,
+                          valor: planoAtual.vaiRetirar.length,
                           // Cor só quando há o que perder: é a única parte deste
                           // clique que tira algo de um cadastro já feito.
-                          tom: previa.desmarcar.length > 0 ? "atencao" : "normal",
-                          title: previa.desmarcar.length > 0
-                            ? previa.desmarcar.map((p) => p.rotulo).join(", ")
+                          tom: planoAtual.vaiRetirar.length > 0 ? "atencao" : "normal",
+                          title: planoAtual.vaiRetirar.length > 0
+                            ? planoAtual.vaiRetirar.map(rotuloDe).join(", ")
                             : "Nada do que está marcado hoje sai.",
                         },
                         {
                           rotulo: "Alcance alterado",
-                          valor: previa.alcance.length,
-                          title: previa.alcance.length > 0
-                            ? previa.alcance.map((a) => a.rotulo).join(", ")
+                          valor: planoAtual.alcanceAlterado.length,
+                          // Já vêm como frase pronta do servidor ("Gestão
+                          // Interna: Somente os que ele criou").
+                          title: planoAtual.alcanceAlterado.length > 0
+                            ? planoAtual.alcanceAlterado.join(", ")
                             : "Nenhum módulo muda de alcance.",
                         },
                       ]}
@@ -302,8 +389,8 @@ export default function AplicarModelo({
                       para desfazer.
                     </p>
 
-                    {(previa.bloqueadas.length > 0 || previa.mantidas.length > 0
-                      || previa.alcanceBloqueado.length > 0) && (
+                    {(planoAtual.naoAplicadas.length > 0 || planoAtual.preservadas.length > 0
+                      || planoAtual.alcanceNaoAplicado.length > 0) && (
                       /* ⚠️ ANTI-ESCALONAMENTO, dito em português. Sem esta
                          faixa, o administrador leria o nome do modelo e
                          acreditaria que a pessoa ficou exatamente como ele
@@ -316,28 +403,28 @@ export default function AplicarModelo({
                         className="mt-2"
                       >
                         <ul className="flex flex-col gap-1 text-[11px] leading-snug" style={{ color: "var(--bi-muted)" }}>
-                          {previa.bloqueadas.length > 0 && (
+                          {planoAtual.naoAplicadas.length > 0 && (
                             <li>
                               <b style={{ color: "var(--bi-text)" }}>
-                                {previa.bloqueadas.length} caixinha(s) não vão ser concedidas
+                                {planoAtual.naoAplicadas.length} caixinha(s) não vão ser concedidas
                               </b>{" "}
-                              porque você não as tem: {previa.bloqueadas.map((p) => p.rotulo).join(", ")}.
+                              porque você não as tem: {planoAtual.naoAplicadas.map(rotuloDe).join(", ")}.
                             </li>
                           )}
-                          {previa.mantidas.length > 0 && (
+                          {planoAtual.preservadas.length > 0 && (
                             <li>
                               <b style={{ color: "var(--bi-text)" }}>
-                                {previa.mantidas.length} caixinha(s) continuam marcadas
+                                {planoAtual.preservadas.length} caixinha(s) continuam marcadas
                               </b>{" "}
                               mesmo não estando no modelo, porque você não as tem para
-                              poder retirar: {previa.mantidas.map((p) => p.rotulo).join(", ")}.
+                              poder retirar: {planoAtual.preservadas.map(rotuloDe).join(", ")}.
                             </li>
                           )}
-                          {previa.alcanceBloqueado.length > 0 && (
+                          {planoAtual.alcanceNaoAplicado.length > 0 && (
                             <li>
                               O alcance de{" "}
                               <b style={{ color: "var(--bi-text)" }}>
-                                {previa.alcanceBloqueado.join(", ")}
+                                {planoAtual.alcanceNaoAplicado.map(rotuloDoModulo).join(", ")}
                               </b>{" "}
                               fica como está: nesses módulos você alcança só o próprio
                               trabalho, então não define o de outra pessoa.
@@ -348,7 +435,7 @@ export default function AplicarModelo({
                     )}
 
                     <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
-                      {!previa.mudou && (
+                      {!planoAtual.mudou && (
                         <span className="mr-auto flex items-start gap-1 text-[11px] leading-snug" style={{ color: "var(--bi-faint)" }}>
                           <AlertTriangle className="mt-px size-3.5 shrink-0" />
                           As caixinhas já estão exatamente assim.
@@ -359,7 +446,7 @@ export default function AplicarModelo({
                         className={BOTAO_CTA}
                         style={ESTILO_CTA}
                         onClick={aplicar}
-                        disabled={!previa.mudou}
+                        disabled={!planoAtual.mudou || calculando}
                         title="Preenche as caixinhas abaixo. Nada é salvo agora."
                       >
                         <Copy className="size-4" />

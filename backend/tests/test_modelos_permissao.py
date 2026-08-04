@@ -706,3 +706,67 @@ def test_as_guardas_sao_importadas_e_nao_reescritas():
     from routers.users import _guard_target, _require_admin
     assert router._guard_target is _guard_target
     assert router._require_admin is _require_admin
+
+
+# ===========================================================================
+# ⭐ O ESTADO DA TELA — por que o endpoint aceita, e por que isso e seguro
+# ===========================================================================
+# O modal e EDITAVEL antes de aplicar: o administrador abre as permissoes de
+# alguem, mexe em duas caixinhas e so entao escolhe um molde. Calculando so
+# contra o banco, a conta ignoraria essas duas caixinhas e a tela mostraria "a
+# marcar 7" quando sao 5 — numero errado na cara de quem esta decidindo.
+#
+# Aceitar isso do cliente NAO abre brecha, e a razao e estrutural: esta rota nao
+# grava. Quem grava e o `PUT`, e la o anti-escalonamento compara contra o BANCO.
+# Um cliente que mentisse aqui receberia um plano que o PUT recusa com 403.
+def test_aplicar_usa_o_estado_da_TELA_quando_ele_vem():
+    alvo = Usuario(id=5, role="usuario")
+    db, resp = _aplicar(
+        Usuario(super_admin=True), alvo,
+        router.AplicarRequest(user_id=5, estado_atual=["cofre.ver"]),
+        do_modelo=["rm.ver"],
+        do_alvo=["gestao.ver"],   # o que esta GRAVADO, e que deve ser ignorado
+    )
+    assert resp["atuais"] == ["cofre.ver"], "usou o banco em vez da tela"
+    assert "gestao.ver" not in resp["atuais"]
+
+
+def test_com_o_estado_da_tela_o_banco_nem_e_consultado():
+    """Nao e so o resultado: a consulta nao deve nem sair. Ler e descartar
+    gastaria uma ida ao banco por tecla — o modal recalcula a cada respiro."""
+    db, _ = _aplicar(
+        Usuario(super_admin=True), Usuario(id=5, role="usuario"),
+        router.AplicarRequest(user_id=5, estado_atual=[], escopos_atual={}),
+        do_modelo=["rm.ver"],
+    )
+    assert not any("user_permissoes" in s for s in db.sql)
+    assert not any("user_escopos" in s for s in db.sql)
+
+
+def test_lista_VAZIA_nao_e_o_mesmo_que_campo_ausente():
+    """⚠️ A assimetria que a `ConcederRequest` ja tinha. `[]` e um estado
+    legitimo — "esta pessoa nao tem nada marcado" — e nao pode virar "nao
+    opinei", que mandaria o servidor ler o cadastro gravado e devolver um plano
+    contra um estado que a tela nao esta mostrando."""
+    _, vazio = _aplicar(
+        Usuario(super_admin=True), Usuario(id=5, role="usuario"),
+        router.AplicarRequest(user_id=5, estado_atual=[]),
+        do_modelo=["rm.ver"], do_alvo=["gestao.ver"])
+    assert vazio["atuais"] == []
+
+    _, ausente = _aplicar(
+        Usuario(super_admin=True), Usuario(id=5, role="usuario"),
+        router.AplicarRequest(user_id=5),
+        do_modelo=["rm.ver"], do_alvo=["gestao.ver"])
+    assert ausente["atuais"] == ["gestao.ver"]
+
+
+def test_o_estado_da_tela_passa_pela_MESMA_validacao_de_chave():
+    """Chave inventada vinda da tela e 400, e nao um plano calculado sobre
+    lixo: e a mesma `_validar` que o `PUT` usa."""
+    with pytest.raises(HTTPException) as e:
+        _aplicar(Usuario(super_admin=True), Usuario(id=5, role="usuario"),
+                 router.AplicarRequest(user_id=5,
+                                       estado_atual=["cofre.revellar"]),
+                 do_modelo=["rm.ver"])
+    assert e.value.status_code == 400
