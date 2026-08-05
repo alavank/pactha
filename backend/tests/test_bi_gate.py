@@ -386,7 +386,11 @@ AUTO_ESCOPADOS = {
 GATE_PROPRIO = {("POST", "/api/bi/tela-links"): 'ensure_tela(current, "bi_link")'}
 
 # Publico por desenho: nao depende de `get_current_user`, nao ha quem gatear.
-PUBLICOS = {("GET", "/api/bi/tela-pub/{slug}")}
+# O `/meta` revela ESTRITAMENTE MENOS que a resolucao ao lado: so cidade e modo,
+# para a previa de WhatsApp — sem token, sem dado de painel e sem tocar no
+# quiosque. Quem tem o slug ja alcanca o painel inteiro.
+PUBLICOS = {("GET", "/api/bi/tela-pub/{slug}"),
+            ("GET", "/api/bi/tela-pub/{slug}/meta")}
 
 
 def _rotas():

@@ -1076,6 +1076,10 @@ class TelaLinkIn(BaseModel):
     # 'tela' = TV de parede (segue o filtro do dono em tempo real)
     # 'mobile' = app de celular (filtro PROPRIO no aparelho)
     kind: str = "tela"
+    # ESCOPO em que o link foi gerado. Município concreto -> o link FIXA nele
+    # (cada um dos 50 links da assessoria mostra a sua cidade, e a prévia do
+    # WhatsApp cita a certa). CONSOLIDADO/vazio -> segue o dono, como antes.
+    escopo: Optional[str] = None
     # COMO expira: "dias" (a partir de hoje), "data" (dia marcado) ou "nunca".
     expira: str = "dias"
     dias: int = 365
@@ -1274,7 +1278,7 @@ async def put_tela_filtros(
 
 
 def _link_para_api(slug, nome, criado_em, expira_em, revogado, ultimo_acesso,
-                   kind, *, dias=None) -> dict:
+                   kind, *, dias=None, cidade=None) -> dict:
     """⭐ A FORMA DO LINK, NUM LUGAR SO — e a razao e um defeito de verdade.
 
     Criar e listar montavam o dicionario cada um por conta propria, e as duas
@@ -1295,6 +1299,9 @@ def _link_para_api(slug, nome, criado_em, expira_em, revogado, ultimo_acesso,
         "expira_em": expira_em.isoformat() if expira_em else None,
         "revogado": bool(revogado),
         "ultimo_acesso": ultimo_acesso.isoformat() if ultimo_acesso else None,
+        # A cidade em que o link foi FIXADO (None = segue o dono/consolidado).
+        # A lista mostra "Cidade · Modo" e a prévia do WhatsApp cita a cidade.
+        "cidade": cidade,
     }
     if dias is not None:
         ficha["dias"] = dias
@@ -1325,13 +1332,30 @@ async def criar_tela_link(
     uid = await _ensure_kiosk_user(db, current, slug)
     token = create_kiosk_token(uid, dias)
     nome_do_link = body.nome or None
+    # FIXA O MUNICÍPIO se o escopo é uma cidade concreta E o dono a enxerga
+    # (não deixar fixar um município fora do próprio escopo — o link é público).
+    # Consolidado/ausente -> NULL, e o resolver segue o filtro do dono.
+    pin_mid = None
+    esc = (body.escopo or "").strip()
+    if esc and esc != CONSOLIDADO and esc.isdigit():
+        ok = (await db.execute(text(
+            "SELECT 1 FROM municipios m WHERE m.id = :mid AND m.active"
+            " AND (:sup OR EXISTS (SELECT 1 FROM user_municipios um"
+            "                      WHERE um.user_id = :o AND um.municipio_id = m.id))"
+        ), {"mid": int(esc), "o": current.id, "sup": is_super_admin(current)})).first()
+        if ok:
+            pin_mid = int(esc)
+    cidade_do_link = None
+    if pin_mid is not None:
+        cidade_do_link = (await db.execute(text(
+            "SELECT nome FROM municipios WHERE id = :m"), {"m": pin_mid})).scalar()
     # `RETURNING criado_em` em vez de carimbar a hora em Python: quem manda no
     # relogio e o banco (a coluna tem DEFAULT NOW()), e uma hora vinda daqui
     # divergiria da que a listagem mostra no proximo carregamento.
     criado_em = (await db.execute(text(
         "INSERT INTO bi_tela_links (slug, owner_id, kiosk_user_id, municipio_id, token, nome, expira_em, kind) "
-        "VALUES (:s, :o, :k, NULL, :t, :n, :e, :kind) RETURNING criado_em"
-    ), {"s": slug, "o": current.id, "k": uid, "t": token,
+        "VALUES (:s, :o, :k, :mid, :t, :n, :e, :kind) RETURNING criado_em"
+    ), {"s": slug, "o": current.id, "k": uid, "mid": pin_mid, "t": token,
         "n": nome_do_link, "e": expira, "kind": kind})).scalar()
     await db.commit()
     # Publicar link de TV cria acesso ANONIMO e duradouro ao painel: quem tiver a
@@ -1359,7 +1383,7 @@ async def criar_tela_link(
     # a validade aparecerem. Um defeito que se conserta sozinho ao recarregar e
     # dos piores, porque quem ve conclui que o sistema perdeu o que digitou.
     return _link_para_api(slug, nome_do_link, criado_em, expira, False, None, kind,
-                          dias=dias)
+                          dias=dias, cidade=cidade_do_link)
 
 
 @router.get("/tela-links")
@@ -1376,11 +1400,15 @@ async def listar_tela_links(
     # ao recarregar o modal, um link que o gestor acabou de apagar reaparecia, e o
     # botao de copiar entregava uma URL que nao abre.
     rows = (await db.execute(text(
-        "SELECT slug, nome, criado_em, expira_em, revogado, ultimo_acesso, kind "
-        "FROM bi_tela_links WHERE owner_id = :u AND NOT revogado "
-        "ORDER BY criado_em DESC LIMIT 50"
+        "SELECT l.slug, l.nome, l.criado_em, l.expira_em, l.revogado, "
+        "       l.ultimo_acesso, l.kind, m.nome AS cidade "
+        "FROM bi_tela_links l "
+        "LEFT JOIN municipios m ON m.id = l.municipio_id "
+        "WHERE l.owner_id = :u AND NOT l.revogado "
+        "ORDER BY l.criado_em DESC LIMIT 50"
     ), {"u": current.id})).fetchall()
-    return [_link_para_api(r[0], r[1], r[2], r[3], r[4], r[5], r[6]) for r in rows]
+    return [_link_para_api(r[0], r[1], r[2], r[3], r[4], r[5], r[6], cidade=r[7])
+            for r in rows]
 
 
 @router.delete("/tela-links/{slug}")
@@ -1469,6 +1497,40 @@ async def resolver_tela_link(slug: str, db: AsyncSession = Depends(get_db)):
         # dono a cada poll. Quem decide e a superficie, nao o servidor.
         "kind": row[8] or "tela",
     }
+
+
+@router.get("/tela-pub/{slug}/meta")
+async def meta_tela_link(slug: str, db: AsyncSession = Depends(get_db)):
+    """SO O TITULO para a previa de compartilhamento — o WhatsApp le a Open Graph
+    no HTML (server-side), sem rodar JS. Publico como a resolucao, mas revela
+    MENOS: cidade + modo, nunca o token e sem tocar no quiosque. Link revogado ou
+    expirado devolve titulo NEUTRO (a pagina em si 404a) — sem previa enganosa.
+
+    O slug ja e a credencial: quem o tem ve o painel inteiro, entao expor cidade
+    e modo aqui e estritamente menos do que ele ja alcanca — e e o que o dono
+    PEDE para organizar dezenas de links num grupo de WhatsApp."""
+    row = (await db.execute(text(
+        "SELECT l.kind, l.revogado, l.expira_em, m.nome AS cidade_fix, f.scope "
+        "FROM bi_tela_links l "
+        "LEFT JOIN municipios m ON m.id = l.municipio_id "
+        "LEFT JOIN bi_tela_filtros f ON f.user_id = l.owner_id "
+        "WHERE l.slug = :s"
+    ), {"s": slug})).first()
+    modo = "Mobile" if (row and row[0] == "mobile") else "Dashboard"
+    neutro = {"cidade": None, "modo": modo, "titulo": "Painel de Indicadores PACTHA"}
+    if not row or row[1] or (row[2] is not None and row[2] < datetime.now(timezone.utc)):
+        return neutro
+    cidade = row[3]  # cidade FIXADA no link
+    if not cidade:
+        # Legado NULL (ou consolidado): se o filtro do dono e um unico municipio,
+        # usa o nome dele; senao, "Consolidado".
+        sc = row[4]
+        if sc and sc != CONSOLIDADO and str(sc).isdigit():
+            cidade = (await db.execute(text("SELECT nome FROM municipios WHERE id = :m"),
+                                       {"m": int(sc)})).scalar()
+        cidade = cidade or "Consolidado"
+    return {"cidade": cidade, "modo": modo,
+            "titulo": f"Painel de Indicadores PACTHA - {cidade} - {modo}"}
 
 
 # --------------------------------------------------------------------------

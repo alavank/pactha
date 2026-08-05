@@ -669,6 +669,8 @@ export interface TelaLink {
   expira_em?: string | null;
   revogado?: boolean;
   ultimo_acesso?: string | null;
+  /** Cidade em que o link foi FIXADO (null = segue o dono/consolidado). */
+  cidade?: string | null;
 }
 
 export interface NovoTelaLink {
@@ -679,6 +681,9 @@ export interface NovoTelaLink {
   dias?: number;
   /** `AAAA-MM-DD`, usado só quando `expira === "data"`. */
   data_expiracao?: string | null;
+  /** Escopo em que o link nasce: id do município FIXA o link nele; CONSOLIDADO
+   *  (ou vazio) faz o link seguir o filtro do dono, como antes. */
+  escopo?: string | null;
 }
 
 export async function criarTelaLink(
@@ -691,6 +696,7 @@ export async function criarTelaLink(
     expira: opcoes.expira || "dias",
     dias: opcoes.dias ?? 365,
     data_expiracao: opcoes.data_expiracao || null,
+    escopo: opcoes.escopo || null,
   });
   return data;
 }

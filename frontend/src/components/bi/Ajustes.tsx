@@ -134,6 +134,10 @@ function ModalAjustes({ onFechar }: { onFechar: () => void }) {
         expira,
         dias: Number(dias) || 30,
         data_expiracao: dataExpira || null,
+        // FIXA o link na cidade em que ele nasceu. Sem isto, os 50 links de uma
+        // assessoria seguiriam todos o mesmo filtro do dono — e mostrariam a
+        // mesma cidade. Consolidado continua consolidado.
+        escopo: scope || null,
       };
       // EM SÉRIE, e não em paralelo: cada emissão cria um usuário de quiosque e
       // grava na trilha. Disparar as duas juntas é pedir para colidirem no mesmo
@@ -295,9 +299,20 @@ function ModalAjustes({ onFechar }: { onFechar: () => void }) {
                         URL?". Link antigo (gerado antes deste campo existir)
                         fica sem nome — dizer isso é melhor que inventar um. */}
                     <span className="min-w-0 flex-1">
+                      {/* CIDADE · MODO na frente: com dezenas de links, "para
+                          quem" não basta — é preciso saber de qual município e
+                          se é a TV ou o celular. O nome que o gestor digitou
+                          vira a linha de baixo. */}
                       <span className="block truncate text-[12px] font-semibold">
-                        {l.nome || <span style={{ color: "var(--bi-faint)" }}>Sem destinatário</span>}
+                        {l.cidade
+                          ? `${l.cidade} · ${l.kind === "mobile" ? "Mobile" : "Dashboard"}`
+                          : (l.nome || <span style={{ color: "var(--bi-faint)" }}>Sem destinatário</span>)}
                       </span>
+                      {l.cidade && l.nome && (
+                        <span className="block truncate text-[10px]" style={{ color: "var(--bi-muted)" }}>
+                          {l.nome}
+                        </span>
+                      )}
                       <code className="block truncate text-[10px]" style={{ color: "var(--bi-faint)" }}>
                         {urlDe(l)}
                       </code>

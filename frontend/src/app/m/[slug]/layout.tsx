@@ -5,15 +5,31 @@
 // O manifest é POR SLUG — ver a route handler ao lado. É o que faz o atalho na
 // tela inicial abrir já credenciado, sem pedir login.
 import type { Metadata, Viewport } from "next";
+import { tituloDoLink } from "@/lib/tituloLinkPublico";
 
 export async function generateMetadata(
   { params }: { params: Promise<{ slug: string }> }
 ): Promise<Metadata> {
   const { slug } = await params;
+  const { titulo, cidade } = await tituloDoLink(slug, "Mobile");
   return {
-    title: "PACTHA — Indicadores",
-    description:
-      "Captação de recursos, convênios e transferências governamentais do município.",
+    title: titulo,
+    description: cidade
+      ? `Captação de recursos, convênios e transferências governamentais de ${cidade}.`
+      : "Captação de recursos, convênios e transferências governamentais do município.",
+    // ⭐ A PRÉVIA DO WHATSAPP. Quem recebe o link vê o card com este título — e
+    // é o que permite a uma assessoria distinguir 50 links num grupo. O
+    // WhatsApp lê a Open Graph do HTML da PRIMEIRA resposta, sem rodar JS: por
+    // isso o título vem daqui (server) e não da página.
+    openGraph: {
+      title: titulo,
+      description: cidade
+        ? `Indicadores de ${cidade} — captação, convênios e transferências.`
+        : "Indicadores de captação, convênios e transferências.",
+      type: "website",
+      locale: "pt_BR",
+      siteName: "PACTHA",
+    },
     manifest: `/m/${encodeURIComponent(slug)}/manifest.webmanifest`,
     // iOS ignora o manifest para "Adicionar à Tela de Início"; quem manda são
     // estas metatags. Sem elas o atalho abre dentro do Safari, com barra.
