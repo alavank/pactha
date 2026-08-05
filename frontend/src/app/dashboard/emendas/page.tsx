@@ -196,7 +196,7 @@ export default function EmendasEstaduaisPage() {
         </div>
       ) : grouped.length === 0 ? (
         <div className="flex h-48 items-center justify-center rounded-lg border text-muted-foreground">
-          Nenhuma emenda encontrada. Rode o scraper SIGCON-MG para popular.
+          Nenhuma emenda encontrada.
         </div>
       ) : (
         <div className="space-y-3">

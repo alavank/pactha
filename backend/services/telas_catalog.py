@@ -13,7 +13,7 @@ TELAS_CATALOG = [
     {"key": "gestao", "label": "Gestão Interna"},
     {"key": "rm", "label": "Relatório de Monitoramento"},
     {"key": "documentos", "label": "Geração de Documentos"},
-    {"key": "convenios", "label": "SIGCON (Estaduais)"},
+    {"key": "convenios", "label": "Convênios Estaduais"},
     {"key": "emendas", "label": "Emendas Estaduais"},
     {"key": "transferegov", "label": "Transfere Gov"},
     # ⚠️ MESMO TEXTO de `frontend/src/lib/telas.ts`: a Central monta o
@@ -22,7 +22,7 @@ TELAS_CATALOG = [
     # permissoes diferentes. (Ja estavam divergentes: este dizia so "CAUC".)
     # E o rotulo e NEUTRO porque "CAGEC" e o nome do cadastro de MINAS, e a
     # mesma tela serve clientes de qualquer estado.
-    {"key": "cauc", "label": "CAUC / cadastro estadual (regularidade federal e estadual)"},
+    {"key": "cauc", "label": "Regularidade (federal e estadual)"},
     {"key": "sismob", "label": "Obras da Saúde (SISMOB)"},
     {"key": "acordofes", "label": "Acordo FES (dívida saúde MG)"},
     {"key": "fns", "label": "Fundo Nacional de Saúde"},
