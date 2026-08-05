@@ -304,34 +304,37 @@ def _coletar(cur, mapa: dict[str, int], anos: list[int], client: httpx.Client,
 def ingest() -> int:
     hoje = date.today()
     anos = list(range(hoje.year, hoje.year - ANOS_ATRAS - 1, -1))
+    # ⚠️ `neon_connect` e CONTEXT MANAGER (com retry exponencial), nao devolve a
+    # conexao — `conn = neon_connect(...)` entrega um _GeneratorContextManager e
+    # estoura no primeiro `.cursor()`. O `with` tambem fecha a conexao sozinho,
+    # dispensando o finally.
     from ingestion._resilience import get_sync_db_url, neon_connect
-    conn = neon_connect(get_sync_db_url())
-    cur = conn.cursor()
-    try:
-        mapa = _mapa_cnpj_municipio(cur)
-        if not mapa:
-            # Nenhum municipio do ES neste tenant: fonte nao se aplica. Nao e
-            # falha — e o mesmo criterio do CAGEC fora de MG.
-            log.info("nenhum municipio do ES com CNPJ conhecido — GConv-ES nao se aplica a este tenant")
-            _log_ingest(cur, conn, "success", 0)
-            return 0
-        log.info("GConv-ES: %d CNPJ(s) de municipio do ES no mapa | anos %s",
-                 len(mapa), anos)
-        with httpx.Client() as client:
-            urls = _ckan_urls(client)
-            achados, gravados = _coletar(cur, mapa, anos, client, urls, hoje)
-        conn.commit()
-        log.info("GConv-ES: %d convenio(s) encontrados, %d gravados", achados, gravados)
-        _log_ingest(cur, conn, "success" if gravados == achados else "partial", gravados)
-        return gravados
-    except Exception as e:
-        conn.rollback()
-        log.error("GConv-ES falhou: %s: %s", type(e).__name__, str(e)[:200])
-        _log_ingest(cur, conn, "error", 0, str(e)[:400])
-        raise
-    finally:
-        cur.close()
-        conn.close()
+    with neon_connect(get_sync_db_url()) as conn:
+        cur = conn.cursor()
+        try:
+            mapa = _mapa_cnpj_municipio(cur)
+            if not mapa:
+                # Nenhum municipio do ES neste tenant: fonte nao se aplica. Nao e
+                # falha — e o mesmo criterio do CAGEC fora de MG.
+                log.info("nenhum municipio do ES com CNPJ conhecido — GConv-ES nao se aplica a este tenant")
+                _log_ingest(cur, conn, "success", 0)
+                return 0
+            log.info("GConv-ES: %d CNPJ(s) de municipio do ES no mapa | anos %s",
+                     len(mapa), anos)
+            with httpx.Client() as client:
+                urls = _ckan_urls(client)
+                achados, gravados = _coletar(cur, mapa, anos, client, urls, hoje)
+            conn.commit()
+            log.info("GConv-ES: %d convenio(s) encontrados, %d gravados", achados, gravados)
+            _log_ingest(cur, conn, "success" if gravados == achados else "partial", gravados)
+            return gravados
+        except Exception as e:
+            conn.rollback()
+            log.error("GConv-ES falhou: %s: %s", type(e).__name__, str(e)[:200])
+            _log_ingest(cur, conn, "error", 0, str(e)[:400])
+            raise
+        finally:
+            cur.close()
 
 
 def _log_ingest(cur, conn, status: str, inseridos: int, erro: str | None = None):
