@@ -344,8 +344,11 @@ export function Gauge({
           {centro}
         </text>
         {legenda && (
+          /* fontSize no espaco do viewBox (140un): com o gauge em ~260px cada
+             unidade vira ~1.9px, entao 9 aqui = ~17px na tela. Texto maior que
+             a caixa nao quebra nem abrevia — o SVG simplesmente CORTA. */
           <text x="70" y="88" textAnchor="middle"
-                style={{ fill: "var(--bi-muted)", fontSize: 11 }}>
+                style={{ fill: "var(--bi-muted)", fontSize: 9 }}>
             {legenda}
           </text>
         )}

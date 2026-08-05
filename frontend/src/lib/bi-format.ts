@@ -10,6 +10,10 @@ function trim(n: number): string {
 export function formatCurrencyShort(v: number | null | undefined): string {
   const n = Number(v || 0);
   const abs = Math.abs(n);
+  // Sem a casa do bilhao, uma capital somava "R$ 11025,9 mi" — "onze mil
+  // milhoes" e portugues de Portugal; aqui e "R$ 11,0 bi".
+  if (abs >= 1_000_000_000_000) return `R$ ${trim(n / 1_000_000_000_000)} tri`;
+  if (abs >= 1_000_000_000) return `R$ ${trim(n / 1_000_000_000)} bi`;
   if (abs >= 1_000_000) return `R$ ${trim(n / 1_000_000)} mi`;
   if (abs >= 1_000) return `R$ ${trim(n / 1_000)} mil`;
   return `R$ ${trim(n)}`;

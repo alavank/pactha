@@ -172,7 +172,7 @@ export function AbaGeral({ ov, alertas, tv }: AbaProps & { ov: Overview; alertas
               <Gauge
                 pct={caucPct}
                 tom={caucTom}
-                max={tv ? 260 : 300}
+                max={tv ? 235 : 260}
                 centro={isRollup(s)
                   ? `${s.regulares}/${s.total_municipios}`
                   : caucExig.length ? `${caucOk}/${caucExig.length}` : (s.regular ? "Em dia" : "—")}
@@ -181,15 +181,18 @@ export function AbaGeral({ ov, alertas, tv }: AbaProps & { ov: Overview; alertas
               <Gauge
                 pct={cgPct}
                 tom={cgTom}
-                max={tv ? 260 : 300}
+                max={tv ? 235 : 260}
                 centro={!cg?.tem_dados ? "—"
                   : cgTotal ? `${cgOk}/${cgTotal}`
                   : (cg.situacao || `${cg.regulares}/${cg.entidades}`)}
-                legenda={!estadualNaoSeAplica ? "CAGEC · Minas"
+                legenda={/* SEM a UF: o ambiente E o estado do municipio — quem
+                    esta em Goias sabe que o SIGECON e de la. (E "· GO" ainda
+                    empurrava o texto para fora da caixa do SVG.) */
+                  !estadualNaoSeAplica ? "CAGEC"
                   : ufsForaDaFonte.length === 1
-                    ? `${CADASTRO_ESTADUAL[ufsForaDaFonte[0]]?.sigla
+                    ? (CADASTRO_ESTADUAL[ufsForaDaFonte[0]]?.sigla
                         || CADASTRO_ESTADUAL[ufsForaDaFonte[0]]?.curto
-                        || "Cadastro estadual"} · ${ufsForaDaFonte[0]}`
+                        || "Cadastro estadual")
                     : "Cadastro estadual"}
               />
             </div>

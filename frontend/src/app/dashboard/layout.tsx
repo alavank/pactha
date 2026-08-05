@@ -224,6 +224,17 @@ function SidebarContent({
   const isSuper = ehSuperAdmin(user);
   const allowed = allowedTelasOf(user);
   let visibleNav = filterNav(NAV_ITEMS, allowed);
+  /* TELAS DE PROGRAMA MINEIRO. O Acordo FES e a divida do FES de MG e o
+     Diario Oficial de hoje busca no Jornal Minas Gerais: em ambiente de outro
+     estado, as duas so teriam Minas para mostrar — entao somem ate existir a
+     fonte daquela UF (registro por UF, fase seguinte do fit). No consolidado
+     (uf vazia) ficam: a carteira pode conter municipio mineiro. */
+  const SO_MG = new Set(["/dashboard/acordofes", "/dashboard/dou"]);
+  const ufAmbiente = (municipios.find((m) => String(m.id) === selectedMunicipioId)?.uf || "")
+    .toUpperCase();
+  if (ufAmbiente && ufAmbiente !== "MG") {
+    visibleNav = visibleNav.filter((it) => !("href" in it && SO_MG.has(it.href)));
+  }
   if (!isSuper) {
     // Sessoes (captura gov.br) so p/ super-admin
     visibleNav = visibleNav.filter((it) => !("href" in it && SUPER_ADMIN_ONLY.has(it.href)));
