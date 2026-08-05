@@ -118,3 +118,20 @@ export const UFS_ACOMPANHADAS = new Set<string>(["MG"]);
 export function acompanhamosEstadual(uf?: string | null): boolean {
   return UFS_ACOMPANHADAS.has((uf || "").trim().toUpperCase());
 }
+
+/** A fonte de CONVÊNIOS estaduais que este sistema JÁ coleta, por UF.
+ *
+ *  ⚠️ Isto é sobre CONVÊNIOS, não REGULARIDADE — as duas coberturas andam
+ *  separadas. No ES coletamos os convênios (GConv/SEGER, dado aberto), mas a
+ *  regularidade estadual ainda não (a certidão da SEFAZ tem captcha). Por isso
+ *  este mapa existe ao lado de `UFS_ACOMPANHADAS` (regularidade), e não dentro
+ *  dele: a aba Convênios do ES mostra dado real enquanto o medidor de
+ *  regularidade continua, com razão, dizendo "ainda não acompanhada". */
+export const FONTE_CONVENIOS_ESTADUAIS: Record<string, string> = {
+  MG: "SIGCON-MG",
+  ES: "GConv · SEGER",
+};
+
+export function fonteConveniosEstaduais(uf?: string | null): string | null {
+  return FONTE_CONVENIOS_ESTADUAIS[(uf || "").trim().toUpperCase()] || null;
+}

@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 import { useUfDoMunicipio } from "@/lib/useUfDoMunicipio";
-import { NOME_UF } from "@/lib/estadual";
+import { NOME_UF, fonteConveniosEstaduais } from "@/lib/estadual";
 import { Search as SearchIcon, ChevronLeft, ChevronRight, ChevronDown } from "lucide-react";
 import api from "@/lib/api";
 import { MultiSelect } from "@/components/ui/multi-select";
@@ -364,13 +364,14 @@ export default function ConveniosPage() {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="text-2xl font-bold text-base-content">Convênios Estaduais</h1>
-          {/* A fonte é do ESTADO do ambiente: em MG é o SIGCON-MG; nos demais,
-              dizer com todas as letras que ainda não há coleta — o vazio sem
-              explicação era lido como "não temos convênio", que é outra frase. */}
+          {/* A fonte é do ESTADO do ambiente e segue a cobertura REAL: onde já
+              coletamos (MG=SIGCON, ES=GConv), nomeia a fonte; onde ainda não,
+              diz com todas as letras — o vazio sem explicação era lido como
+              "não temos convênio", que é outra frase. */}
           {ufAmbiente && (
             <p className="text-xs" style={{ color: "var(--bi-muted)" }}>
-              {ufAmbiente === "MG"
-                ? "SIGCON-MG · convênios do Estado com o município"
+              {fonteConveniosEstaduais(ufAmbiente)
+                ? `${fonteConveniosEstaduais(ufAmbiente)} · convênios do Estado com o município`
                 : `${NOME_UF[ufAmbiente] || ufAmbiente} — a fonte estadual deste estado ainda não está integrada`}
             </p>
           )}
