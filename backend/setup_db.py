@@ -24,7 +24,7 @@ def create_tables():
             id SERIAL PRIMARY KEY,
             nome VARCHAR(200) NOT NULL,
             ibge_code VARCHAR(7) UNIQUE NOT NULL,
-            uf VARCHAR(2) DEFAULT 'MG',
+            uf VARCHAR(2),  -- sem default: UF e decisao de quem provisiona, nunca herdada
             active BOOLEAN DEFAULT true,
             created_at TIMESTAMPTZ DEFAULT NOW()
         );

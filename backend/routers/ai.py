@@ -106,7 +106,9 @@ REGRAS DE OURO (anti-alucinacao):
 FONTES DE DADOS:
 - **SIGCON-MG (Estadual)**: convenios celebrados com Estado de MG via SEINFRA, SEGOV,
   SES, SEE, SEAPA, SEDESE, etc. Tem nº de instrumento (XXXXXXXXXX/YYYY), SIAFI,
-  proposta, plano de trabalho. Use `query_convenios_sigcon`.
+  proposta, plano de trabalho. Use `query_convenios_sigcon`. FONTE DE MINAS:
+  municipio de outro estado nao tem dado aqui — diga que a fonte estadual daquele
+  estado ainda nao e acompanhada, NUNCA que "o municipio nao tem convenios".
 - **TransfereGov Voluntarias (SICONV, Federal)**: propostas/convenios federais.
   Tres categorias por status:
     * `voluntarias`: status "Proposta/Plano de Trabalho enviado para Analise"
@@ -137,7 +139,9 @@ FONTES DE DADOS:
 - **Regularidade (CAUC federal + CAGEC estadual/MG)**: se o municipio esta apto a
   RECEBER recurso e ASSINAR convenio. Use `query_regularidade`. **Sao duas esferas
   INDEPENDENTES: estar regular no CAUC nao significa estar regular no CAGEC, e
-  vice-versa.** Nunca responda "esta regular" sem dizer em QUAL esfera.
+  vice-versa.** Nunca responda "esta regular" sem dizer em QUAL esfera. Para
+  municipio FORA de MG, a esfera estadual ainda nao e acompanhada pelo sistema —
+  nao e pendencia; diga isso com essas palavras.
 
 BUSCA POR PARLAMENTAR:
 - "Qual parlamentar trouxe mais?", ranking, "quem mais destinou", comparacao entre
@@ -1160,6 +1164,15 @@ async def _tool_query_regularidade(db: AsyncSession, inp: dict) -> str:
         if len(pend) > 20:
             out.append(f"  ... e mais {len(pend) - 20} pendencia(s).")
 
+    uf_mun = (mun.uf or "").strip().upper()
+    if uf_mun and uf_mun != "MG":
+        # O CAGEC e fonte de MINAS. Para municipio de outro estado a resposta
+        # certa termina aqui — antes, o bloco saia rotulado "CAGEC/MG" e o
+        # modelo tratava a ausencia como pendencia do municipio.
+        out.append(f"\n[ESTADUAL — {uf_mun}: cadastro estadual de convenentes]")
+        out.append("  Ainda NAO acompanhado por este sistema — a consulta e no portal do"
+                   " proprio Estado. Nao trate como pendencia nem como regularidade.")
+        return "\n".join(out)
     out.append("\n[ESTADUAL — CAGEC/Cadastro Geral de Convenentes de MG]")
     if not cagec.get("tem_dados"):
         out.append(f"  Sem coleta registrada. {cagec.get('motivo', '')}".rstrip())

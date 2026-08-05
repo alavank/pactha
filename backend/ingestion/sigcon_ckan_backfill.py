@@ -144,6 +144,22 @@ def _index_dataset(gz_bytes: bytes):
 def backfill() -> int:
     """Baixa o dataset, casa com os convenios SIGCON e preenche contrapartida +
     vigencia faltantes. Retorna nº de registros atualizados."""
+    # Tenant sem municipio de MG nao tem convenio SIGCON para enriquecer —
+    # baixar o dataset mineiro a cada 6 horas aqui era puro desperdicio.
+    import os as _os
+    import psycopg2 as _pg
+    try:
+        _c = _pg.connect(_os.environ["DATABASE_URL_SYNC"])
+        _k = _c.cursor()
+        _k.execute("SELECT count(*) FROM municipios "
+                   "WHERE active = true AND upper(coalesce(uf, '')) = 'MG'")
+        _n = _k.fetchone()[0]
+        _c.close()
+    except Exception:
+        _n = -1  # na duvida, segue o fluxo de sempre
+    if _n == 0:
+        log.info("nenhum municipio de MG neste tenant — dataset SIGCON-MG nao baixado")
+        return 0
     try:
         gz = _baixar_dataset()
     except Exception as e:

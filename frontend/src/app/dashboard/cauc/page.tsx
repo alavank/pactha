@@ -716,7 +716,7 @@ export default function RegularidadePage() {
           <span className="inline-flex items-center gap-1">
             <Ban className="size-3" /> Desativado (indisponível na fonte — não é dispensa)
           </span>
-          <span className="font-semibold" style={{ color: "var(--bi-muted)" }}>CAGEC:</span>
+          <span className="font-semibold" style={{ color: "var(--bi-muted)" }}>Estadual:</span>
           <span className="inline-flex items-center gap-1">
             <Check className="size-3" style={{ color: "var(--bi-ok-ink)" }} /> Vigente
           </span>

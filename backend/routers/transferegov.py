@@ -58,7 +58,7 @@ def _dias_restantes(dt_str: Optional[str]) -> Optional[int]:
     return None
 
 
-async def _fetch_listagem(uf: Optional[str] = "MG") -> list[dict]:
+async def _fetch_listagem(uf: Optional[str]) -> list[dict]:
     """Lista de planos de acao (com cache 1h). uf vazio/None => NACIONAL (todos
     os estados: ~58k itens). A API nao filtra por CNPJ no servidor -> filtramos local."""
     key = (uf or "BR").upper()
