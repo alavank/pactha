@@ -152,6 +152,18 @@ export function repassesDaUf(uf?: string | null) {
   return REPASSES_POR_UF[(uf || "").trim().toUpperCase()] || null;
 }
 
+/** UFs que publicam o COFINANCIAMENTO ESTADUAL DA SAÚDE (repasse do fundo
+ *  estadual ao municipal). Em MG o equivalente é o Acordo FES — que é DÍVIDA,
+ *  não repasse, e por isso tem tela própria. */
+export const COFINANCIAMENTO_POR_UF: Record<string, { titulo: string; fonte: string }> = {
+  GO: { titulo: "Cofinanciamento da Saúde",
+        fonte: "SES-GO · Atenção Primária e Vigilância (dados abertos)" },
+};
+
+export function cofinanciamentoDaUf(uf?: string | null) {
+  return COFINANCIAMENTO_POR_UF[(uf || "").trim().toUpperCase()] || null;
+}
+
 /** UFs cujo Diário Oficial este sistema JÁ busca. MG = Jornal Minas Gerais
  *  (dou_mg); ES = Diário dos Municípios do ES (dou_es). Um estado sem provedor
  *  não mostra a tela — o menu a esconde, em vez de abrir uma busca que iria ao

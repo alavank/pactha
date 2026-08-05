@@ -12,6 +12,7 @@ from routers import (
     users, simec, rm, ai, gestao, parlamentares, telegram, status_changes,
     documentos, cauc, cagec, acordofes, control, freshness, painel, bi,
     sismob, auditoria, permissoes, modelos_permissao, repasses, contas_irregulares,
+    cofinanciamento,
 )
 from config import get_settings
 from services.security_headers import SecurityHeadersMiddleware
@@ -159,6 +160,7 @@ app.include_router(dou_es.router)
 app.include_router(dou_go.router)
 app.include_router(repasses.router)
 app.include_router(contas_irregulares.router)
+app.include_router(cofinanciamento.router)
 app.include_router(cofre.router)
 app.include_router(session_capture.router)
 app.include_router(service_tokens.router)
