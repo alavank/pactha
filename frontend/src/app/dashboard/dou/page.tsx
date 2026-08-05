@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Bloco, BlocoHead, Campos, ItemLinha, Lista, Selo, Vazio } from "@/components/ui/superficies";
 import { Search, Loader2, Eye, Download, Newspaper } from "lucide-react";
 import { useUfDoMunicipio } from "@/lib/useUfDoMunicipio";
+import { diarioDaUf } from "@/lib/estadual";
 
 interface JmgItem {
   id_jornal: number;
@@ -64,13 +65,17 @@ const ROTULO_COR = { color: "var(--bi-muted)" } as const;
    cor da tela e a do erro de busca, que e alerta de verdade. */
 
 export default function DouMGPage() {
-  /* O DIÁRIO SEGUE O ESTADO DO AMBIENTE. MG = Jornal Minas Gerais (dou_mg, com
-     os 3 cadernos); ES = Diário dos Municípios do ES (dou_es, sem caderno).
-     "" (consolidado/carregando) cai no padrão MG — mesmo comportamento de antes
-     desta tela existir por UF. O menu só abre a tela onde há provedor. */
+  /* ⭐ O DIÁRIO SEGUE O ESTADO DO AMBIENTE, pelo registro por UF de
+     `lib/estadual.ts` — estado novo é uma linha lá, não um `if` a mais aqui.
+     Sem UF (consolidado ou ainda carregando) cai em MG, que era o comportamento
+     de antes desta tela existir por estado; o menu só abre a tela onde há
+     provedor. `temCaderno` é só de MG: os 3 cadernos (Executivo/Municípios/
+     Terceiros) são conceito do Jornal Minas Gerais — as plataformas do ES e de
+     GO servem edição única. */
   const ufAmbiente = useUfDoMunicipio();
-  const isES = ufAmbiente === "ES";
-  const base = isES ? "/dou-es" : "/dou-mg";
+  const prov = diarioDaUf(ufAmbiente) || diarioDaUf("MG")!;
+  const temCaderno = prov.api === "/dou-mg";
+  const base = prov.api;
   const [texto, setTexto] = useState("");
   // Periodo padrao = ultimos 30 dias, IGUAL ao de antes. So mudou onde a conta
   // acontece: no inicializador preguicoso do estado em vez do corpo do
@@ -104,7 +109,7 @@ export default function DouMGPage() {
       if (download) {
         const a = document.createElement("a");
         a.href = url;
-        a.download = `${isES ? "dom-es" : "dou-mg"}-${id}.pdf`;
+        a.download = `${prov.api.replace("/", "")}-${id}.pdf`;
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -128,11 +133,10 @@ export default function DouMGPage() {
     setLoading(true);
     setPagina(p);
     try {
-      // O ES não tem cadernos nem `tamanho` (a IOES fixa 10/página) — manda só o
-      // essencial; MG segue com o pedido de sempre, byte a byte.
-      const params = isES
-        ? { texto: texto.trim(), data_inicial: dataIni, data_final: dataFim, pagina: p }
-        : {
+      // Fora de MG não há caderno nem `tamanho` (a plataforma fixa 10/página):
+      // manda só o essencial. MG segue com o pedido de sempre, byte a byte.
+      const params = temCaderno
+        ? {
             texto: texto.trim(),
             data_inicial: dataIni,
             data_final: dataFim,
@@ -142,7 +146,8 @@ export default function DouMGPage() {
             edicao_extra: edicaoExtra,
             pagina: p,
             tamanho: 20,
-          };
+          }
+        : { texto: texto.trim(), data_inicial: dataIni, data_final: dataFim, pagina: p };
       const res = await api.get<JmgResponse>(`${base}/buscar`, { params });
       setData(res.data);
     } catch (e) {
@@ -186,14 +191,8 @@ export default function DouMGPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold text-base-content">
-          {isES ? "Diário Oficial ES" : "Diário Oficial MG"}
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          {isES
-            ? "Busca no Diário dos Municípios do Espírito Santo (ioes.dio.es.gov.br)"
-            : "Busca em tempo real no Jornal Minas Gerais (jornalminasgerais.mg.gov.br)"}
-        </p>
+        <h1 className="text-2xl font-bold text-base-content">{prov.titulo}</h1>
+        <p className="text-sm text-muted-foreground">Busca em tempo real no {prov.fonte}</p>
       </div>
 
       {/* O FORMULARIO DEIXOU DE SER UM PAINEL VIOLETA.
@@ -204,9 +203,9 @@ export default function DouMGPage() {
         <BlocoHead
           icon={Search}
           titulo="Busca de conteúdo"
-          sub={isES
-            ? "Palavra ou frase e período de publicação no Diário dos Municípios do ES"
-            : "Palavra ou frase, período de publicação e cadernos do Jornal Minas Gerais"}
+          sub={temCaderno
+            ? "Palavra ou frase, período de publicação e cadernos do Jornal Minas Gerais"
+            : `Palavra ou frase e período de publicação no ${prov.titulo}`}
         />
 
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -238,9 +237,9 @@ export default function DouMGPage() {
           </div>
         </div>
 
-        {/* Os cadernos são conceito do Jornal Minas Gerais. O DOM/ES é uma
-            edição consolidada única — sem cadernos —, então a seção some no ES. */}
-        {!isES && (
+        {/* Os cadernos são conceito do Jornal Minas Gerais; as plataformas do
+            ES e de GO servem edição única — a seção some fora de MG. */}
+        {temCaderno && (
           <div className="mt-3">
             <span className={ROTULO} style={ROTULO_COR}>Cadernos *</span>
             <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
