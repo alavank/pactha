@@ -173,6 +173,9 @@ MIGRATION_FILES = [
     # migration fora dela é órfã e nunca roda (foi o que quase aconteceu com a
     # uf_sem_default_mg.sql, pega pela revisão antes do merge).
     "add_repasses_estaduais.sql",
+    # Contas julgadas irregulares pelo tribunal de contas (TCM-GO e futuros).
+    # ⚠️ INDÍCIO, nunca documento — ver o cabeçalho da migration.
+    "add_contas_irregulares.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",

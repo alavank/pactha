@@ -19,7 +19,7 @@
 import React, { useEffect, useState } from "react";
 import {
   ShieldCheck, ShieldAlert, Check, AlertTriangle, AlertCircle, Ban, Loader2,
-  Clock, Info,
+  Clock, Info, Gavel, ExternalLink,
 } from "lucide-react";
 import api from "@/lib/api";
 import { useMunicipio } from "@/contexts/MunicipioContext";
@@ -499,6 +499,27 @@ function Exigencias({ itens, esfera = "cauc" }: { itens: Item[]; esfera?: "cauc"
   );
 }
 
+/** Contas julgadas irregulares no tribunal de contas do estado.
+ *  ⚠️ INDÍCIO, não documento — ver `migrations/add_contas_irregulares.sql`. */
+interface ContasResp {
+  tem_dados: boolean;
+  total: number;
+  prefeitura: number;
+  autarquias: number;
+  de_prefeito: number;
+  fonte: string | null;
+  itens: Array<{
+    entidade: string | null;
+    responsavel: string | null;
+    assunto: string | null;
+    competencia: string | null;
+    processo: string | null;
+    dt_julgamento: string | null;
+    tipo_lista: string | null;
+    url: string | null;
+  }>;
+}
+
 export default function RegularidadePage() {
   const { municipioId } = useMunicipio();
 
@@ -512,6 +533,10 @@ export default function RegularidadePage() {
      pesquisada — e não de um `!== "MG"` escrito aqui. */
   const semFonteEstadual = !!ufDoMunicipio && !acompanhamosEstadual(ufDoMunicipio);
   const [cagec, setCagec] = useState<CagecResp | null>(null);
+  /* ⚠️ FORA DO MEDIDOR, de propósito: a ausência de conta irregular NÃO é
+     regularidade — é "sem conta irregular listada". Verde por isto colocaria um
+     "apto" falso na frente de um prefeito. */
+  const [contas, setContas] = useState<ContasResp | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -519,16 +544,18 @@ export default function RegularidadePage() {
     // a limpeza ao trocar de município — sincronização com fonte externa, não
     // render em cascata (mesma convenção do resto do app).
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (!municipioId) { setCauc(null); setCagec(null); setLoading(false); return; }
+    if (!municipioId) { setCauc(null); setCagec(null); setContas(null); setLoading(false); return; }
     setLoading(true);
     // As duas esferas em paralelo, com allSettled: uma falhar não pode apagar a
     // outra da tela — são fontes independentes (Tesouro e SIGCON).
     Promise.allSettled([
       api.get<CaucResp>("/cauc", { params: { municipio_id: municipioId } }),
       api.get<CagecResp>("/cagec", { params: { municipio_id: municipioId } }),
-    ]).then(([a, b]) => {
+      api.get<ContasResp>("/contas-irregulares", { params: { municipio_id: municipioId } }),
+    ]).then(([a, b, c]) => {
       setCauc(a.status === "fulfilled" ? a.value.data : null);
       setCagec(b.status === "fulfilled" ? b.value.data : null);
+      setContas(c.status === "fulfilled" ? c.value.data : null);
     }).finally(() => setLoading(false));
   }, [municipioId]);
 
@@ -630,6 +657,63 @@ export default function RegularidadePage() {
                     </p>
                   </div>
                 </div>
+
+                {/* ⭐ O QUE TEMOS, mesmo sem o cadastro: contas julgadas
+                    irregulares no tribunal de contas do estado.
+
+                    ⚠️ A REDAÇÃO AQUI É O PRODUTO. Isto é INDÍCIO, e a tela tem
+                    de dizer as duas coisas que ele NÃO significa: (a) não é a
+                    situação do município para convênio; (b) nenhuma linha não
+                    quer dizer regular. Um bloco mal escrito aqui vira "está
+                    tudo certo" na cabeça de quem lê — que é o oposto do dado. */}
+                {contas?.tem_dados && (
+                  <div className="mt-3 border-t pt-3" style={{ borderColor: "var(--bi-line)" }}>
+                    <div className="flex items-start gap-2.5">
+                      <Gavel className="mt-0.5 size-4 shrink-0" style={{ color: "var(--bi-warn-ink)" }} />
+                      <div className="min-w-0 space-y-1.5">
+                        <div className="bi-title text-[13px] leading-tight">
+                          {contas.total} conta(s) julgada(s) irregular(es) no {contas.fonte}
+                        </div>
+                        <p className="text-[11px] leading-snug" style={{ color: "var(--bi-muted)" }}>
+                          {contas.prefeitura > 0
+                            ? <>{contas.prefeitura} da <b>prefeitura</b></>
+                            : <>nenhuma da prefeitura</>}
+                          {contas.autarquias > 0 && <> · {contas.autarquias} de autarquias e fundos</>}
+                          {contas.de_prefeito > 0 && <> · <b>{contas.de_prefeito} de prefeito ou ex-prefeito</b></>}
+                          .{" "}
+                          É <b>indício</b>, não a situação do município para convênio: a lista
+                          diz quem tem conta julgada irregular, e <b>não</b> atesta regularidade
+                          de quem não aparece nela.
+                        </p>
+                        <ul className="space-y-1 pt-0.5">
+                          {contas.itens.slice(0, 4).map((c, i) => (
+                            <li key={i} className="text-[11px] leading-snug"
+                                style={{ color: "var(--bi-muted)" }}>
+                              <span style={{ color: "var(--bi-text)" }}>
+                                {c.entidade || "Prefeitura"}
+                              </span>
+                              {c.responsavel ? ` · ${c.responsavel}` : ""}
+                              {c.assunto ? ` · ${c.assunto}` : ""}
+                              {c.processo ? ` · proc. ${c.processo}` : ""}
+                              {c.url && (
+                                <a href={c.url} target="_blank" rel="noopener noreferrer"
+                                   className="ml-1 inline-flex items-center gap-0.5"
+                                   style={{ color: "var(--bi-accent-ink)" }}>
+                                  ver <ExternalLink className="size-3" />
+                                </a>
+                              )}
+                            </li>
+                          ))}
+                          {contas.total > 4 && (
+                            <li className="text-[11px]" style={{ color: "var(--bi-faint)" }}>
+                              … e mais {contas.total - 4}.
+                            </li>
+                          )}
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </Bloco>
             ) : !cagec?.tem_dados ? (
               /* Aguardando coleta — e dizendo POR QUÊ. Deixar em branco faria
