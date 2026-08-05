@@ -389,14 +389,17 @@ function SidebarContent({
               onChange={(e) => {
                 const v = e.target.value;
                 const m = municipios.find((x) => String(x.id) === v);
-                onMunicipioChange(v, m ? `${m.nome} - ${m.uf}` : "Consolidado (todos)");
+                onMunicipioChange(v, m ? `${m.nome} - ${m.uf}` : "Município selecionado");
               }}
             >
               <option value="">Município selecionado</option>
-              {/* A carteira inteira. Só o Painel consolida — as telas
-                  operacionais consultam um município por vez e, com este escopo,
-                  recebem município vazio e pedem para escolher um. */}
-              <option value={CONSOLIDADO}>Consolidado (todos)</option>
+              {/* ⚠️ NÃO EXISTE "Consolidado (todos)" AQUI, e é decisão do dono.
+                  Numa assessoria os municípios são CLIENTES DIFERENTES: somar as
+                  carteiras numa tela só não tem uso legítimo e cria a chance de
+                  ler o número de um cliente achando que é de outro — o risco que
+                  a transição de município (modal + remontagem) existe para
+                  fechar. Quem quiser comparar cidades faz isso trocando de
+                  ambiente, com a tela inteira acompanhando. */}
               {municipios.map((m) => (
                 <option key={m.id} value={String(m.id)}>
                   {m.nome} - {m.uf}
@@ -691,13 +694,13 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
           // inativo ou de outro tenant clonado), RE-SELECIONA. Antes so auto-selecionava
           // quando estava VAZIO -> um id stale passava batido e a tela filtrava por um
           // municipio inexistente, mostrando vazio mesmo com dados no banco.
-          /* O consolidado é válido — mas SÓ numa carteira. ⚠️ Com um município
-             a barra lateral mostra o nome fixo, sem `<select>`: quem chegasse
-             aqui em "Consolidado" (id herdado de outro tenant no localStorage,
-             ou de quando tinha mais de um) ficaria preso, sem controle nenhum
-             na tela para sair. Cair na validação devolve ele ao município. */
-          const isValid = (escopo === CONSOLIDADO && data.length > 1)
-            || (selectedMunicipioId && data.some(m => String(m.id) === selectedMunicipioId));
+          /* ⚠️ O CONSOLIDADO NÃO É MAIS ESTADO VÁLIDO — o seletor deixou de
+             oferecê-lo (ver o comentário no <select>). Esta linha é o RESGATE de
+             quem já está nele: o valor sobrevive no localStorage e voltaria a
+             cada carregamento, deixando a pessoa numa tela sem opção de sair. Ao
+             falhar aqui, cai no município anterior (ou no primeiro da lista). */
+          const isValid = escopo !== CONSOLIDADO
+            && !!selectedMunicipioId && data.some(m => String(m.id) === selectedMunicipioId);
           if (!isValid) {
             const lastId = typeof window !== "undefined"
               ? localStorage.getItem("pactha_last_municipio_id")

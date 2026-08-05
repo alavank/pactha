@@ -12,7 +12,7 @@ import {
   putTelaFiltros, revogarTelaLink,
 } from "@/lib/bi";
 import { allowedTelasOf } from "@/lib/telas";
-import { CONSOLIDADO, useBiScope } from "@/contexts/BiScopeContext";
+import { useBiScope } from "@/contexts/BiScopeContext";
 
 const PREF_LABELS: { key: keyof Prefs; label: string }[] = [
   { key: "vigencia_60d", label: "Vigências vencendo em 60 dias" },
@@ -128,7 +128,11 @@ function ModalAjustes({ onFechar }: { onFechar: () => void }) {
       // "consolidado / todos os anos" e só passaria a refletir o período depois
       // que alguém mexesse no filtro de novo — que é exatamente o defeito que
       // esta tela existe para não ter.
-      await putTelaFiltros({ scope: scope || CONSOLIDADO, anos, aba: null }).catch(() => {});
+      /* ⚠️ SEM fallback para CONSOLIDADO. O escopo consolidado saiu do produto
+         (ver o <select> em dashboard/layout.tsx); publicá-lo por omissão faria a
+         TV mostrar a carteira inteira de uma assessoria — exatamente o que a
+         remoção evita. Sem escopo, publica vazio e a TV pede um município. */
+      await putTelaFiltros({ scope: scope || "", anos, aba: null }).catch(() => {});
       const opcoes = {
         nome: destinatario.trim() || null,
         expira,
