@@ -40,7 +40,7 @@ import {
 } from "@/components/ui/sheet";
 import type { Municipio, User } from "@/types";
 import { hrefToTela, allowedTelasOf } from "@/lib/telas";
-import { repassesDaUf, temDiarioEstadual } from "@/lib/estadual";
+import { cofinanciamentoDaUf, repassesDaUf, temDiarioEstadual } from "@/lib/estadual";
 import { ehSuperAdmin } from "@/lib/conta";
 import { CONSOLIDADO, MunicipioProvider, useMunicipio } from "@/contexts/MunicipioContext";
 import { EnteAtendido, SUBTITULO_PACTHA } from "@/components/bi/Marca";
@@ -113,6 +113,7 @@ const NAV_ITEMS: NavEntry[] = [
     children: [
       { href: "/dashboard/convenios", label: "Convênios" },
       { href: "/dashboard/repasses", label: "Repasses" },
+      { href: "/dashboard/cofinanciamento", label: "Cofinanciamento Saúde" },
       { href: "/dashboard/emendas", label: "Emendas Estaduais" },
     ],
   },
@@ -246,16 +247,21 @@ function SidebarContent({
      instrumento (hoje só GO). Some em MG/ES — lá o que existe é convênio, e um
      menu que abre sempre vazio ensina o usuário a ignorar o menu. No
      consolidado (uf vazia) fica, porque a carteira pode ter município goiano. */
-  if (ufAmbiente && !repassesDaUf(ufAmbiente)) {
+  /* Telas que só existem onde há a fonte daquela UF. Uma lista, e não um `if`
+     por tela: entrar com a próxima é acrescentar uma linha aqui. */
+  const semFonteNaUf = new Set<string>();
+  if (ufAmbiente && !repassesDaUf(ufAmbiente)) semFonteNaUf.add("/dashboard/repasses");
+  if (ufAmbiente && !cofinanciamentoDaUf(ufAmbiente)) semFonteNaUf.add("/dashboard/cofinanciamento");
+  if (semFonteNaUf.size) {
     const semRepasses = (c: NavLeaf | NavSection): NavLeaf | NavSection | null => {
       // ⚠️ O filho de um grupo pode ser uma SEÇÃO (que não tem `href`, e sim
       // uma lista própria). Filtrar só por `c.href` deixaria de fora o item
       // aninhado — e o TypeScript pega isso, que foi o que aconteceu aqui.
       if ("sectionLabel" in c) {
-        const kids = c.children.filter((l) => l.href !== "/dashboard/repasses");
+        const kids = c.children.filter((l) => !semFonteNaUf.has(l.href));
         return kids.length ? { ...c, children: kids } : null;
       }
-      return c.href === "/dashboard/repasses" ? null : c;
+      return semFonteNaUf.has(c.href) ? null : c;
     };
     visibleNav = visibleNav
       .map((it) => {
