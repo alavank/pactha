@@ -72,6 +72,33 @@ async def _ensure_fns_municipio(current, municipio: str, db: AsyncSession) -> No
     raise HTTPException(403, "Voce nao tem acesso a este municipio")
 
 
+async def _resolver_uf(db: AsyncSession, municipio: str, uf_pedida: str | None) -> str:
+    """A UF vem do CADASTRO do municipio, nao de um default.
+
+    O default era `Query("MG")`: consulta sem uf explicita caia em Minas e
+    devolvia vazio EM SILENCIO para municipio de outro estado. O cadastro e a
+    fonte da verdade e GANHA do parametro; o parametro so vale para municipio
+    fora do cadastro (admin consultando cidade que o tenant nao atende)."""
+    alvo = (municipio or "").strip().upper()
+    ufs = sorted({u for u in (await db.execute(text(
+        "SELECT upper(coalesce(uf, '')) FROM municipios WHERE active = true "
+        "AND (upper(nome) = :alvo OR ibge_code = :alvo OR left(ibge_code, 6) = :alvo)"
+    ), {"alvo": alvo})).scalars().all() if u})
+    pedida = (uf_pedida or "").strip().upper()[:2]
+    if len(ufs) == 1:
+        return ufs[0]
+    if ufs:
+        # HOMONIMO dentro do mesmo tenant (ex.: "Bom Jesus" existe em varios
+        # estados). Um LIMIT 1 escolheria em silencio — aqui o parametro
+        # desempata, e sem ele o erro aponta as opcoes.
+        if pedida in ufs:
+            return pedida
+        raise HTTPException(400, f"municipio ambíguo entre {', '.join(ufs)} — informe ?uf=XX")
+    if pedida:
+        return pedida
+    raise HTTPException(400, "uf obrigatoria: municipio fora do cadastro — informe ?uf=XX")
+
+
 async def _get_cookies(db: AsyncSession) -> dict:
     """Cookies da sessao FNS — OPCIONAIS. A API do ConsultaFNS
     (consultafns.saude.gov.br/recursos/...) e PUBLICA: funciona sem login.
@@ -95,9 +122,12 @@ async def _resolve_cod(municipio: str, uf: str, db: AsyncSession) -> Optional[st
     m = (municipio or "").strip()
     if m.isdigit():
         return m
+    # A UF entra no WHERE: homonimo em outro estado do MESMO tenant faria o
+    # coMunicipioIbge sair de uma cidade e o sgUf de outra.
     row = (await db.execute(
-        text("SELECT ibge_code FROM municipios WHERE upper(nome) = upper(:m) LIMIT 1"),
-        {"m": m})).first()
+        text("SELECT ibge_code FROM municipios WHERE upper(nome) = upper(:m) "
+             "AND (:uf = '' OR upper(coalesce(uf, '')) = :uf) LIMIT 1"),
+        {"m": m, "uf": (uf or "").strip().upper()[:2]})).first()
     if row and row[0]:
         return str(row[0])[:6]
     cod = FNS_CODE_OVERRIDE.get(m.upper())
@@ -120,7 +150,7 @@ async def _resolve_cod(municipio: str, uf: str, db: AsyncSession) -> Optional[st
 async def buscar(
     municipio: str = Query(..., description="Nome do municipio (ex: ARAUJOS) ou codigo IBGE 6 digitos"),
     ano: int = Query(...),
-    uf: str = Query("MG"),
+    uf: str | None = Query(None),
     nr_proposta: Optional[str] = Query(None),
     tipo_emenda: Optional[str] = Query(None, description="TODOS, INDIVIDUAL, BANCADA, COMISSAO, BANCADA OBRIGATORIA"),
     pagina: int = Query(1, ge=1),
@@ -130,6 +160,7 @@ async def buscar(
 ):
     """Busca propostas FAF no FNS em tempo real."""
     await _ensure_fns_municipio(current, municipio, db)
+    uf = await _resolver_uf(db, municipio, uf)
     return await consultar_fns(db, municipio, ano, uf, nr_proposta, tipo_emenda, pagina, tamanho)
 
 
@@ -137,7 +168,7 @@ async def consultar_fns(
     db: AsyncSession,
     municipio: str,
     ano: int,
-    uf: str = "MG",
+    uf: str,
     nr_proposta: Optional[str] = None,
     tipo_emenda: Optional[str] = None,
     pagina: int = 1,
@@ -420,7 +451,7 @@ async def detalhe_proposta(
 async def listar_individuais(
     municipio: str = Query(...),
     ano: int = Query(...),
-    uf: str = Query("MG"),
+    uf: str | None = Query(None),
     tipo_proposta: str = Query(..., description="Ex: EQUIPAMENTO, CUSTEIO MAC, INCREMENTO PAP"),
     tipo_recurso: str = Query(..., description="PROGRAMA / EMENDA INDIVIDUAL / etc"),
     db: AsyncSession = Depends(get_db),
@@ -436,6 +467,7 @@ async def listar_individuais(
     individual (cada um com nuProposta), ao inves do agregado.
     """
     await _ensure_fns_municipio(current, municipio, db)
+    uf = await _resolver_uf(db, municipio, uf)
     cod = await _resolve_cod(municipio, uf, db) or municipio
     cookies = await _get_cookies(db)
     params = {

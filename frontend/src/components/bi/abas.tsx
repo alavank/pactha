@@ -19,7 +19,7 @@ import {
   AbaDocumentos, AbaEstaduais, AbaFns, AbaParlamentares, AbaSismob, AbaTransfereGov,
   Alertas, CaucItemDetalhe, Lancamento, Overview, isRollup,
 } from "@/lib/bi";
-import { tituloEstadual } from "@/lib/estadual";
+import { CADASTRO_ESTADUAL, NOME_UF, tituloEstadual } from "@/lib/estadual";
 import { formatCurrencyShort, formatInt, formatDate, diasLabel } from "@/lib/bi-format";
 import {
   BI_CORES, Chip, DotMeter, Gauge, ListaRollup, Metric, Painel, PainelHead,
@@ -28,7 +28,7 @@ import {
 
 const FONTE_LABEL: Record<string, string> = {
   emenda_estadual: "Emenda estadual",
-  sigcon: "Convênio SIGCON",
+  sigcon: "Convênio estadual",
   voluntaria: "Proposta federal",
 };
 
@@ -85,7 +85,15 @@ export function AbaGeral({ ov, alertas, tv }: AbaProps & { ov: Overview; alertas
   const cgTotal = cg?.obrigacoes_total ?? 0;
   const cgOk = cg?.obrigacoes_ok ?? 0;
   const cgPct = cgTotal ? cgOk / cgTotal : (cg?.entidades ? (cg.regulares || 0) / cg.entidades : 0);
-  const cgTom = !cg?.tem_dados ? "warn" : cgPct >= 0.99 ? "ok" : cgPct >= 0.5 ? "warn" : "crit";
+  /* FORA DA FONTE ≠ SEM COLETA. Município de estado que a fonte não cobre
+     não está "aguardando coleta": a esfera estadual não é acompanhada, e
+     tratá-la como pendência escrevia "Impedido de receber transferências"
+     para cidade 100% regular no CAUC — veredito falso na tela do gestor. */
+  const ufsForaDaFonte = cg?.ufs_sem_fonte ?? [];
+  const estadualNaoSeAplica =
+    !cg?.tem_dados && (cg?.municipios_na_fonte ?? 1) === 0 && ufsForaDaFonte.length > 0;
+  const cgTom = !cg?.tem_dados ? (estadualNaoSeAplica ? "ok" : "warn")
+    : cgPct >= 0.99 ? "ok" : cgPct >= 0.5 ? "warn" : "crit";
 
 
   return (
@@ -93,7 +101,7 @@ export function AbaGeral({ ov, alertas, tv }: AbaProps & { ov: Overview; alertas
       <div className={grid(tv, "grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5", "grid grid-cols-5 gap-3")}>
         <Metric icon={Wallet} tom="accent" label="Total captado" valor={formatCurrencyShort(total)} grande={tv}
           sub={ov.consolidado ? `${ov.municipios_count} municípios` : undefined} />
-        <Metric icon={Landmark} label="Estadual (SIGCON)" valor={formatCurrencyShort(k.valor_total_estadual)}
+        <Metric icon={Landmark} label="Estadual" valor={formatCurrencyShort(k.valor_total_estadual)}
           sub={`${formatInt(k.total_convenios_estadual)} convênios`} grande={tv} />
         <Metric icon={Coins} label="Federal (voluntárias)" valor={formatCurrencyShort(k.valor_total_federal)}
           sub={`${formatInt(k.total_voluntarias)} propostas`} grande={tv} />
@@ -177,7 +185,12 @@ export function AbaGeral({ ov, alertas, tv }: AbaProps & { ov: Overview; alertas
                 centro={!cg?.tem_dados ? "—"
                   : cgTotal ? `${cgOk}/${cgTotal}`
                   : (cg.situacao || `${cg.regulares}/${cg.entidades}`)}
-                legenda="CAGEC · Minas"
+                legenda={!estadualNaoSeAplica ? "CAGEC · Minas"
+                  : ufsForaDaFonte.length === 1
+                    ? `${CADASTRO_ESTADUAL[ufsForaDaFonte[0]]?.sigla
+                        || CADASTRO_ESTADUAL[ufsForaDaFonte[0]]?.curto
+                        || "Cadastro estadual"} · ${ufsForaDaFonte[0]}`
+                    : "Cadastro estadual"}
               />
             </div>
 
@@ -188,7 +201,8 @@ export function AbaGeral({ ov, alertas, tv }: AbaProps & { ov: Overview; alertas
               className="w-full shrink-0 rounded-lg px-3 py-2"
               style={{
                 background: `color-mix(in oklab, var(--bi-${
-                  !cg?.tem_dados && caucPct >= 0.99 ? "warn"
+                  !cg?.tem_dados && caucPct >= 0.99
+                    ? (estadualNaoSeAplica ? "ok" : "warn")
                   : caucPct < 0.99 || cagecCrit ? "crit" : "ok"
                 }) 12%, transparent)`,
               }}
@@ -198,18 +212,25 @@ export function AbaGeral({ ov, alertas, tv }: AbaProps & { ov: Overview; alertas
                   className="text-[11px] font-semibold"
                   style={{
                     color: `var(--bi-${
-                      !cg?.tem_dados && caucPct >= 0.99 ? "warn-ink"
+                      !cg?.tem_dados && caucPct >= 0.99
+                        ? (estadualNaoSeAplica ? "ok-ink" : "warn-ink")
                       : caucPct < 0.99 || cagecCrit ? "crit-ink" : "ok-ink"
                     })`,
                   }}
                 >
                   {isRollup(s)
-                    ? (caucPct >= 0.99 && !cagecCrit
-                        ? "Todos os municípios aptos"
-                        : "Há município impedido de receber transferência")
-                    : caucPct >= 0.99 && !cagecCrit && cg?.tem_dados
-                      ? "Apto a receber transferências"
-                      : "Impedido de receber transferências"}
+                    ? (caucPct < 0.99 || cagecCrit
+                        ? "Há município impedido de receber transferência"
+                        : estadualNaoSeAplica
+                          ? "Todos os municípios aptos na União"
+                          : "Todos os municípios aptos")
+                    : caucPct < 0.99 || cagecCrit
+                      ? "Impedido de receber transferências"
+                      : cg?.tem_dados
+                        ? "Apto a receber transferências"
+                        : estadualNaoSeAplica
+                          ? "Apto a receber transferências da União"
+                          : "União em dia · estadual sem coleta"}
                 </span>
               </div>
               <div className="mt-0.5 text-[10px] leading-snug" style={{ color: "var(--bi-muted)" }}>
@@ -217,7 +238,10 @@ export function AbaGeral({ ov, alertas, tv }: AbaProps & { ov: Overview; alertas
                   <>União: {caucExig.length - caucOk} exigência(s) a comprovar. </>
                 )}
                 {!cg?.tem_dados
-                  ? "Minas: regularidade estadual ainda não coletada."
+                  ? (estadualNaoSeAplica
+                      ? `${ufsForaDaFonte.map((u) => NOME_UF[u] || u).join(", ")}: `
+                        + "regularidade estadual ainda não acompanhada por este sistema."
+                      : "Minas: regularidade estadual ainda não coletada.")
                   : cagecCrit
                     ? `Minas: ${cg.quem?.[0]?.nome ? `${cg.quem[0].nome.slice(0, 34)} — ` : ""}`
                       + "impede convênio estadual e liberação de parcela."
@@ -555,7 +579,7 @@ export function AbaEstaduaisView({ d, tv }: AbaProps & { d: AbaEstaduais }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Metric icon={Landmark} tom="accent" label="Convênios SIGCON" valor={formatInt(c.total)} grande={tv} />
+        <Metric icon={Landmark} tom="accent" label="Convênios Estaduais" valor={formatInt(c.total)} grande={tv} />
         <Metric icon={Wallet} label="Valor conveniado" valor={formatCurrencyShort(c.valor_total)} grande={tv} />
         <Metric icon={Coins} label="Já repassado" valor={formatCurrencyShort(c.valor_repassado)}
           sub={c.valor_total ? `${Math.round((c.valor_repassado / c.valor_total) * 100)}% do total` : undefined}

@@ -45,9 +45,9 @@ const ABAS_APP: Array<{
   { id: "geral", label: "Visão Geral", descricao: "O essencial do período", dados: "geral" },
   { id: "parlamentares", label: "Parlamentares", descricao: "Emendas por autor e finalidade", dados: "parlamentares" },
   { id: "transferegov", label: "TransfereGov", descricao: "Propostas e convênios federais", dados: "transferegov" },
-  { id: "estaduais", label: "Verbas Estaduais", descricao: "SIGCON-MG e emendas estaduais", dados: "estaduais" },
+  { id: "estaduais", label: "Verbas Estaduais", descricao: "Convênios e emendas estaduais", dados: "estaduais" },
   { id: "cauc", label: "CAUC", descricao: "Regularidade federal (Tesouro)", dados: "documentos", esfera: "cauc" },
-  { id: "cagec", label: "CAGEC", descricao: "Regularidade estadual (SIGCON-MG)", dados: "documentos", esfera: "cagec" },
+  { id: "cagec", label: "Regularidade Estadual", descricao: "Cadastro estadual de convenentes", dados: "documentos", esfera: "cagec" },
   { id: "sismob", label: "Obras da Saúde", descricao: "Obras do SISMOB — prazos e execução", dados: "sismob" },
   { id: "fns", label: "Fundo Nacional de Saúde", descricao: "Propostas do FNS no período", dados: "fns" },
 ];

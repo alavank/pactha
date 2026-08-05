@@ -167,6 +167,18 @@ async def _semaforo_cagec(db: AsyncSession, ids: list[int]) -> dict:
     com a prefeitura regular e o fundo de saude irregular NAO esta "em dia"."""
     if not ids:
         return {"tem_dados": False}
+    # A COBERTURA DA FONTE vem SEMPRE, mesmo sem dado coletado: e o que permite
+    # a Visao Geral (e a TV, que recebe este MESMO payload) distinguir "MG
+    # aguardando coleta" de "estado que a fonte nao cobre" — onde escrever
+    # "Impedido de receber transferencias" era veredito falso na tela do gestor.
+    from services.bi_abas import UF_DA_FONTE
+    ufs_escopo = [u or "" for u in (await db.execute(text(
+        "SELECT upper(coalesce(uf, '')) FROM municipios WHERE id = ANY(:ids)"
+    ), {"ids": ids})).scalars().all()]
+    cobertura = {
+        "municipios_na_fonte": sum(1 for u in ufs_escopo if u == UF_DA_FONTE),
+        "ufs_sem_fonte": sorted({u for u in ufs_escopo if u and u != UF_DA_FONTE}),
+    }
     linhas = (await db.execute(text("""
         SELECT municipio_id, COALESCE(principal, false), regular, situacao, nome, tipo,
                itens
@@ -174,7 +186,7 @@ async def _semaforo_cagec(db: AsyncSession, ids: list[int]) -> dict:
         ORDER BY principal DESC, tipo NULLS LAST
     """), {"ids": ids})).fetchall()
     if not linhas:
-        return {"tem_dados": False}
+        return {"tem_dados": False, **cobertura}
     irregulares = [l for l in linhas if l[2] is False]
 
     # AS OBRIGACOES, e nao so as entidades. O medidor da Visao Geral precisa de
@@ -200,6 +212,7 @@ async def _semaforo_cagec(db: AsyncSession, ids: list[int]) -> dict:
                 obrig_ok += 1
 
     return {
+        **cobertura,
         "tem_dados": True,
         "entidades": len(linhas),
         "regulares": sum(1 for l in linhas if l[2] is True),
@@ -529,9 +542,14 @@ async def aba_fns(
     itens: list[dict] = []
     erros: list[str] = []
     for m in muns:
+        if not m.uf:
+            # Era `m.uf or "MG"`: municipio sem UF era consultado como se fosse
+            # mineiro e o vazio parecia resposta. Sem UF nao ha consulta certa.
+            erros.append(f"{m.nome}: sem UF no cadastro — consulta FNS nao feita")
+            continue
         for a in periodo:
             try:
-                res = await consultar_fns(db, m.nome, a, m.uf or "MG", tamanho=200)
+                res = await consultar_fns(db, m.nome, a, m.uf, tamanho=200)
             except Exception as e:
                 erros.append(f"{m.nome}/{a}: {str(getattr(e, 'detail', e))[:120]}")
                 continue

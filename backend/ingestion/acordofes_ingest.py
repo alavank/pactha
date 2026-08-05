@@ -60,17 +60,25 @@ def _xlsx_url() -> str:
 
 
 def ingest() -> int:
+    # ⚠️ SO MUNICIPIO DE MINAS. O Acordo FES e um programa do Estado de MG, e o
+    # match e por NOME (razao social do Fundo de Saude): sem o filtro de UF, a
+    # divida de uma cidade mineira colava num HOMONIMO de outro estado. O
+    # cadastro vem ANTES do download — tenant sem MG nem baixa a planilha.
+    conn = psycopg2.connect(_sync_url())
+    cur = conn.cursor()
+    cur.execute("SELECT id, nome FROM municipios WHERE upper(coalesce(uf, '')) = 'MG'")
+    mun_by_nome = {_norm(n): i for i, n in cur.fetchall()}
+    if not mun_by_nome:
+        log.info("nenhum municipio de MG neste tenant — Acordo FES nao se aplica; nada baixado")
+        conn.close()
+        return 0
+
     url = _xlsx_url()
     log.info(f"baixando {url.split('/')[-1]} ...")
     with httpx.Client(timeout=180, verify=False, follow_redirects=True, headers=UA) as c:
         content = c.get(url).content
     wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
     ws = wb[wb.sheetnames[0]]
-
-    conn = psycopg2.connect(_sync_url())
-    cur = conn.cursor()
-    cur.execute("SELECT id, nome FROM municipios")
-    mun_by_nome = {_norm(n): i for i, n in cur.fetchall()}
 
     # agrega por CNPJ
     agg = {}  # cnpj -> [div_ini, pago, div_atual, retirado, pago_fora, n, razao]

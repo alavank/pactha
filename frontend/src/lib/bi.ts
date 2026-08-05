@@ -127,6 +127,11 @@ export interface SemaforoCagec {
   obrigacoes_total?: number | null;
   obrigacoes_ok?: number | null;
   municipios_com_irregularidade?: number;
+  /** Cobertura da fonte estadual — vem SEMPRE, mesmo com tem_dados=false.
+   *  É o que permite à Visão Geral (e à TV) distinguir "MG aguardando coleta"
+   *  de "estado que a fonte não cobre", onde "Impedido" era veredito falso. */
+  municipios_na_fonte?: number;
+  ufs_sem_fonte?: string[];
   /** Rótulo cru do portal quando há uma única entidade (ex.: "Irregular"). */
   situacao?: string | null;
   quem?: Array<{ nome: string | null; tipo: string | null; principal: boolean; situacao: string | null }>;

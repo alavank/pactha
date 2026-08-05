@@ -735,7 +735,13 @@ def _limpar_sumidos(cur, municipio_id: int, cnpjs_vistos: list[str]) -> int:
 async def _rodar() -> tuple[int, int, list[str]]:
     from playwright.async_api import async_playwright
     alvos = _municipios_alvo()
-    logger.info("CAGEC: %d municipio(s) ativos", len(alvos))
+    if not alvos:
+        # 0 alvos NAO e "coleta ok": e fonte que nao se aplica (tenant sem
+        # municipio de MG). Sem esta saida o Chromium subia, nada era feito e o
+        # log registrava sucesso — um "ok" que mentia.
+        logger.info("CAGEC: 0 municipios de MG ativos — fonte nao se aplica a este tenant")
+        return 0, 0, []
+    logger.info("CAGEC: %d municipio(s) de MG ativos", len(alvos))
     ok = falha = 0
     # Entidades que vieram SEM o detalhamento do CRC. Nao sao falha de coleta
     # (a situacao veio), mas tambem nao sao sucesso: e o estado em que a tela

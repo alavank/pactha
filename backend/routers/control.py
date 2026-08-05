@@ -80,7 +80,9 @@ def _mun(m: Municipio) -> dict:
 class MunicipioIn(BaseModel):
     ibge_code: str
     nome: str
-    uf: str | None = "MG"
+    # ⚠️ SEM default. Municipio criado sem UF nascia "MG" e todo filtro por
+    # estado passava a mentir — Minas e mais um estado, nao o padrao.
+    uf: str
     fns_code: str | None = None
 
 
@@ -111,11 +113,13 @@ async def upsert_municipio(
     """Upsert por ibge_code (reativa se estiver inativo)."""
     ibge = (body.ibge_code or "").strip()
     nome = (body.nome or "").strip()
-    uf = (body.uf or "MG").strip().upper()[:2]
+    uf = (body.uf or "").strip().upper()[:2]
     if len(ibge) != 7 or not ibge.isdigit():
         raise HTTPException(status_code=400, detail="ibge_code deve ter 7 dígitos")
     if not nome:
         raise HTTPException(status_code=400, detail="nome obrigatório")
+    if len(uf) != 2 or not uf.isalpha():
+        raise HTTPException(status_code=400, detail="uf obrigatória (sigla de 2 letras)")
 
     fns = None
     if body.fns_code is not None:
@@ -195,7 +199,12 @@ async def patch_municipio(
     if body.nome is not None and body.nome.strip():
         m.nome = body.nome.strip(); changed.append("nome")
     if body.uf is not None and body.uf.strip():
-        m.uf = body.uf.strip().upper()[:2]; changed.append("uf")
+        uf_nova = body.uf.strip().upper()[:2]
+        # Mesma regra do POST: uf agora dirige coletor (CAGEC, Acordo FES) e
+        # filtro de tela — "MI" truncado de "Minas" desligaria tudo em silencio.
+        if len(uf_nova) != 2 or not uf_nova.isalpha():
+            raise HTTPException(status_code=400, detail="uf inválida (sigla de 2 letras)")
+        m.uf = uf_nova; changed.append("uf")
     if body.active is not None:
         m.active = bool(body.active); changed.append("active")
     if body.fns_code is not None:

@@ -160,6 +160,14 @@ MIGRATION_FILES = [
     # dentro do banco. Toda migration que ainda faz BACKFILL (hoje so
     # add_auditoria_detalhada.sql, que reescreve `usuario_nome`) tem de rodar
     # ANTES — com o gatilho no ar, um UPDATE de backfill quebraria o BOOT.
+    # UF deixa de ter default 'MG' (a Fase 0 tornou a UF decisao explicita de
+    # quem provisiona) e a purga do lixo do CAGEC coletado para municipio de
+    # fora de MG — linhas que o coletor (agora filtrado por UF) nunca mais
+    # visitaria para limpar. Idempotente: DROP DEFAULT e DELETE re-executam
+    # como no-op. ⚠️ Registrada AQUI porque o runner so executa o que esta
+    # NESTA lista — migration fora dela e orfa e nunca roda (ver o caso
+    # add_siconv_federal.sql, acima).
+    "uf_sem_default_mg.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",
