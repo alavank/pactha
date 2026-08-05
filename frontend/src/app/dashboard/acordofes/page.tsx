@@ -5,6 +5,8 @@ import { HeartPulse, Search as SearchIcon, Loader2, Building2 } from "lucide-rea
 import api from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
 import { useMunicipio } from "@/contexts/MunicipioContext";
+import { useUfDoMunicipio } from "@/lib/useUfDoMunicipio";
+import { NOME_UF } from "@/lib/estadual";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -99,6 +101,7 @@ function CredorItem({ c }: { c: Credor }) {
 
 export default function AcordoFesPage() {
   const { municipioId } = useMunicipio();
+  const ufAmbiente = useUfDoMunicipio();
   const [mun, setMun] = useState<MunResp | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -108,12 +111,15 @@ export default function AcordoFesPage() {
 
   useEffect(() => {
     if (!municipioId) { setMun(null); setLoading(false); return; }
+    // Programa de MG: para municipio de outro estado nao ha o que buscar —
+    // e nada a gravar aqui: a guarda de render resolve a tela sozinha.
+    if (ufAmbiente && ufAmbiente !== "MG") return;
     setLoading(true);
     api.get<MunResp>("/acordofes", { params: { municipio_id: municipioId } })
       .then((r) => setMun(r.data))
       .catch(() => setMun(null))
       .finally(() => setLoading(false));
-  }, [municipioId]);
+  }, [municipioId, ufAmbiente]);
 
   const buscar = async () => {
     if (q.trim().length < 2) return;
@@ -130,6 +136,19 @@ export default function AcordoFesPage() {
   // ser lidos com `?.` sem ganhar asserção `!`.
   const credores = mun?.credores ?? [];
   const dividaAtualTotal = mun?.total_divida_atual ?? 0;
+
+  /* O menu ja esconde esta tela fora de MG — a guarda cobre navegacao direta
+     por URL, que nao passa pelo menu. */
+  if (ufAmbiente && ufAmbiente !== "MG") {
+    return (
+      <div className="rounded-lg border p-6 text-sm"
+           style={{ borderColor: "var(--bi-line)", color: "var(--bi-muted)" }}>
+        O Acordo FES é um programa do Estado de Minas Gerais (dívida do Fundo
+        Estadual de Saúde com credores mineiros). Não se aplica a municípios de{" "}
+        {NOME_UF[ufAmbiente] || ufAmbiente}.
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5">

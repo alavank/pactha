@@ -384,7 +384,7 @@ function ParlamentaresInner() {
         <h1 className="text-2xl font-bold text-base-content">Parlamentares</h1>
         <p className="mt-1 text-sm" style={{ color: "var(--bi-muted)" }}>
           Lista agregada dos parlamentares (deputados estaduais/federais e senadores)
-          com lançamentos vinculados — convênios SIGCON-MG, propostas TransfereGov/SICONV,
+          com lançamentos vinculados — convênios estaduais, propostas TransfereGov/SICONV,
           emendas estaduais, Transferência Especial / Plano de Ação (RP9), Seleção PAC e
           FNS (Fundo Municipal de Saúde, agrupado pelo proponente). Clique para ver os lançamentos.
         </p>
@@ -692,7 +692,7 @@ function ParlamentaresInner() {
                   <Campos
                     cols={3}
                     campos={[
-                      { rotulo: "SIGCON-MG", valor: p.por_fonte.sigcon || "—", title: "Convênios estaduais (SIGCON-MG)" },
+                      { rotulo: "Estaduais", valor: p.por_fonte.sigcon || "—", title: "Convênios estaduais" },
                       { rotulo: "TransfereGov", valor: p.por_fonte.voluntaria || "—", title: "Propostas TransfereGov / SICONV" },
                       { rotulo: "Emendas est.", valor: p.por_fonte.emenda || "—", title: "Indicações de emenda estadual" },
                       { rotulo: "Transf. especial", valor: p.por_fonte.plano_acao || "—", title: "Transferência Especial / Plano de Ação (RP9)" },
@@ -738,7 +738,7 @@ function ParlamentaresInner() {
                         {detail.sigcon.length > 0 && (
                           <GrupoFonte
                             icon={Building2}
-                            titulo="SIGCON-MG (estadual)"
+                            titulo="Convênios estaduais"
                             sub={`${detail.sigcon.length} convênio(s)`}
                             total={soma(detail.sigcon, (s) => s.valor_total)}
                           >
