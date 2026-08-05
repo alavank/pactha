@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Bloco, BlocoHead, Campos, ItemLinha, Lista, Selo, Vazio } from "@/components/ui/superficies";
 import { Search, Loader2, Eye, Download, Newspaper } from "lucide-react";
+import { useUfDoMunicipio } from "@/lib/useUfDoMunicipio";
 
 interface JmgItem {
   id_jornal: number;
@@ -63,6 +64,13 @@ const ROTULO_COR = { color: "var(--bi-muted)" } as const;
    cor da tela e a do erro de busca, que e alerta de verdade. */
 
 export default function DouMGPage() {
+  /* O DIÁRIO SEGUE O ESTADO DO AMBIENTE. MG = Jornal Minas Gerais (dou_mg, com
+     os 3 cadernos); ES = Diário dos Municípios do ES (dou_es, sem caderno).
+     "" (consolidado/carregando) cai no padrão MG — mesmo comportamento de antes
+     desta tela existir por UF. O menu só abre a tela onde há provedor. */
+  const ufAmbiente = useUfDoMunicipio();
+  const isES = ufAmbiente === "ES";
+  const base = isES ? "/dou-es" : "/dou-mg";
   const [texto, setTexto] = useState("");
   // Periodo padrao = ultimos 30 dias, IGUAL ao de antes. So mudou onde a conta
   // acontece: no inicializador preguicoso do estado em vez do corpo do
@@ -86,7 +94,7 @@ export default function DouMGPage() {
     setError(null);
     try {
       const token = localStorage.getItem("pactha_token");
-      const res = await fetch(`${api.defaults.baseURL}/dou-mg/publicacao/${id}?download=${download}`, {
+      const res = await fetch(`${api.defaults.baseURL}${base}/publicacao/${id}?download=${download}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         credentials: "include",
       });
@@ -96,7 +104,7 @@ export default function DouMGPage() {
       if (download) {
         const a = document.createElement("a");
         a.href = url;
-        a.download = `dou-mg-${id}.pdf`;
+        a.download = `${isES ? "dom-es" : "dou-mg"}-${id}.pdf`;
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -120,19 +128,22 @@ export default function DouMGPage() {
     setLoading(true);
     setPagina(p);
     try {
-      const res = await api.get<JmgResponse>("/dou-mg/buscar", {
-        params: {
-          texto: texto.trim(),
-          data_inicial: dataIni,
-          data_final: dataFim,
-          diario_executivo: diarioExec,
-          diario_municipios: diarioMun,
-          diario_terceiros: diarioTer,
-          edicao_extra: edicaoExtra,
-          pagina: p,
-          tamanho: 20,
-        },
-      });
+      // O ES não tem cadernos nem `tamanho` (a IOES fixa 10/página) — manda só o
+      // essencial; MG segue com o pedido de sempre, byte a byte.
+      const params = isES
+        ? { texto: texto.trim(), data_inicial: dataIni, data_final: dataFim, pagina: p }
+        : {
+            texto: texto.trim(),
+            data_inicial: dataIni,
+            data_final: dataFim,
+            diario_executivo: diarioExec,
+            diario_municipios: diarioMun,
+            diario_terceiros: diarioTer,
+            edicao_extra: edicaoExtra,
+            pagina: p,
+            tamanho: 20,
+          };
+      const res = await api.get<JmgResponse>(`${base}/buscar`, { params });
       setData(res.data);
     } catch (e) {
       const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
@@ -175,9 +186,13 @@ export default function DouMGPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold text-base-content">Diário Oficial MG</h1>
+        <h1 className="text-2xl font-bold text-base-content">
+          {isES ? "Diário Oficial ES" : "Diário Oficial MG"}
+        </h1>
         <p className="text-sm text-muted-foreground">
-          Busca em tempo real no Jornal Minas Gerais (jornalminasgerais.mg.gov.br)
+          {isES
+            ? "Busca no Diário dos Municípios do Espírito Santo (ioes.dio.es.gov.br)"
+            : "Busca em tempo real no Jornal Minas Gerais (jornalminasgerais.mg.gov.br)"}
         </p>
       </div>
 
@@ -189,7 +204,9 @@ export default function DouMGPage() {
         <BlocoHead
           icon={Search}
           titulo="Busca de conteúdo"
-          sub="Palavra ou frase, período de publicação e cadernos do Jornal Minas Gerais"
+          sub={isES
+            ? "Palavra ou frase e período de publicação no Diário dos Municípios do ES"
+            : "Palavra ou frase, período de publicação e cadernos do Jornal Minas Gerais"}
         />
 
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -221,15 +238,19 @@ export default function DouMGPage() {
           </div>
         </div>
 
-        <div className="mt-3">
-          <span className={ROTULO} style={ROTULO_COR}>Cadernos *</span>
-          <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-            <Toggle label="Diário do Executivo" checked={diarioExec} onChange={setDiarioExec} />
-            <Toggle label="Diário dos Municípios Mineiros" checked={diarioMun} onChange={setDiarioMun} />
-            <Toggle label="Diário de Terceiros" checked={diarioTer} onChange={setDiarioTer} />
-            <Toggle label="Edição Extra" checked={edicaoExtra} onChange={setEdicaoExtra} />
+        {/* Os cadernos são conceito do Jornal Minas Gerais. O DOM/ES é uma
+            edição consolidada única — sem cadernos —, então a seção some no ES. */}
+        {!isES && (
+          <div className="mt-3">
+            <span className={ROTULO} style={ROTULO_COR}>Cadernos *</span>
+            <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+              <Toggle label="Diário do Executivo" checked={diarioExec} onChange={setDiarioExec} />
+              <Toggle label="Diário dos Municípios Mineiros" checked={diarioMun} onChange={setDiarioMun} />
+              <Toggle label="Diário de Terceiros" checked={diarioTer} onChange={setDiarioTer} />
+              <Toggle label="Edição Extra" checked={edicaoExtra} onChange={setEdicaoExtra} />
+            </div>
           </div>
-        </div>
+        )}
 
         <div
           className="mt-3 flex items-center justify-end gap-2 border-t pt-3"
