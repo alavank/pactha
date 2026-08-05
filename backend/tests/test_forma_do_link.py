@@ -27,7 +27,11 @@ AGORA = datetime(2026, 8, 4, 2, 30, tzinfo=timezone.utc)
 # Os campos que a tela lê. Tirar um daqui é quebrar a tela; acrescentar sem
 # passar pela função é reabrir a porta do defeito.
 CAMPOS = {"slug", "caminho", "kind", "nome", "criado_em", "expira_em",
-          "revogado", "ultimo_acesso"}
+          "revogado", "ultimo_acesso",
+          # Cidade em que o link foi FIXADO (None = segue o dono). A lista mostra
+          # "Cidade · Modo" e a previa de WhatsApp cita a cidade — sem isso, uma
+          # assessoria com 50 links nao distingue um do outro.
+          "cidade"}
 
 
 def _criacao(**troca):

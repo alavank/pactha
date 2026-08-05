@@ -228,6 +228,9 @@ ROTAS_LIVRES: tuple = (
     Livre("GET", "/api/bi/tela-pub/{slug}",
           "Link publico da TV: o slug de 12 chars E a credencial. O que o "
           "token resultante alcanca esta travado em KIOSK_GET_PERMITIDOS."),
+    Livre("GET", "/api/bi/tela-pub/{slug}/meta",
+          "So o titulo para a previa de WhatsApp (cidade + modo). NAO devolve "
+          "o token nem toca no quiosque — revela menos que o proprio slug."),
 
     # --- Auto-escopadas: a resposta e sobre o PROPRIO usuario ---------------
     Livre("GET", "/api/auth/me", "O usuario lendo o proprio cadastro."),
