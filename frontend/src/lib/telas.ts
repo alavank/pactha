@@ -15,6 +15,10 @@ export const TELAS: TelaDef[] = [
   { key: "gestao", label: "Gestão Interna" },
   { key: "rm", label: "Relatório de Monitoramento" },
   { key: "documentos", label: "Geração de Documentos" },
+  // ⚠️ `convenios` governa TAMBÉM a tela de Repasses (/dashboard/repasses):
+  // é a mesma família de informação (recurso estadual), e o backend gateia as
+  // duas por `convenios.ver`. Chave nova aqui exigiria conceder duas permissões
+  // para a mesma coisa.
   { key: "convenios", label: "Convênios Estaduais" },
   { key: "emendas", label: "Emendas Estaduais" },
   { key: "transferegov", label: "Transfere Gov" },

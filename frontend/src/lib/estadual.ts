@@ -136,6 +136,22 @@ export function fonteConveniosEstaduais(uf?: string | null): string | null {
   return FONTE_CONVENIOS_ESTADUAIS[(uf || "").trim().toUpperCase()] || null;
 }
 
+/** UFs que publicam a EXECUÇÃO (pagamento) em vez do INSTRUMENTO (convênio).
+ *
+ *  ⚠️ Não é um detalhe técnico, é o que o estado divulga. MG e ES publicam o
+ *  convênio (número, vigência, situação); Goiás publica o repasse (quem
+ *  recebeu, quando, quanto). Por isso GO ganha uma tela PRÓPRIA em vez de
+ *  aparecer na de Convênios com metade das colunas vazia. Estado novo que
+ *  publique execução entra aqui. */
+export const REPASSES_POR_UF: Record<string, { titulo: string; fonte: string }> = {
+  GO: { titulo: "Repasses Estaduais",
+        fonte: "Transferências Voluntárias · CGE-GO (dados abertos)" },
+};
+
+export function repassesDaUf(uf?: string | null) {
+  return REPASSES_POR_UF[(uf || "").trim().toUpperCase()] || null;
+}
+
 /** UFs cujo Diário Oficial este sistema JÁ busca. MG = Jornal Minas Gerais
  *  (dou_mg); ES = Diário dos Municípios do ES (dou_es). Um estado sem provedor
  *  não mostra a tela — o menu a esconde, em vez de abrir uma busca que iria ao

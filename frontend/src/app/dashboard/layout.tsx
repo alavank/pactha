@@ -40,7 +40,7 @@ import {
 } from "@/components/ui/sheet";
 import type { Municipio, User } from "@/types";
 import { hrefToTela, allowedTelasOf } from "@/lib/telas";
-import { temDiarioEstadual } from "@/lib/estadual";
+import { repassesDaUf, temDiarioEstadual } from "@/lib/estadual";
 import { ehSuperAdmin } from "@/lib/conta";
 import { CONSOLIDADO, MunicipioProvider, useMunicipio } from "@/contexts/MunicipioContext";
 import { EnteAtendido, SUBTITULO_PACTHA } from "@/components/bi/Marca";
@@ -112,6 +112,7 @@ const NAV_ITEMS: NavEntry[] = [
     icon: FileText,
     children: [
       { href: "/dashboard/convenios", label: "Convênios" },
+      { href: "/dashboard/repasses", label: "Repasses" },
       { href: "/dashboard/emendas", label: "Emendas Estaduais" },
     ],
   },
@@ -240,6 +241,31 @@ function SidebarContent({
       if (it.href === "/dashboard/dou") return temDiarioEstadual(ufAmbiente);
       return true;
     });
+  }
+  /* "Repasses" é a tela dos estados que publicam EXECUÇÃO em vez de
+     instrumento (hoje só GO). Some em MG/ES — lá o que existe é convênio, e um
+     menu que abre sempre vazio ensina o usuário a ignorar o menu. No
+     consolidado (uf vazia) fica, porque a carteira pode ter município goiano. */
+  if (ufAmbiente && !repassesDaUf(ufAmbiente)) {
+    const semRepasses = (c: NavLeaf | NavSection): NavLeaf | NavSection | null => {
+      // ⚠️ O filho de um grupo pode ser uma SEÇÃO (que não tem `href`, e sim
+      // uma lista própria). Filtrar só por `c.href` deixaria de fora o item
+      // aninhado — e o TypeScript pega isso, que foi o que aconteceu aqui.
+      if ("sectionLabel" in c) {
+        const kids = c.children.filter((l) => l.href !== "/dashboard/repasses");
+        return kids.length ? { ...c, children: kids } : null;
+      }
+      return c.href === "/dashboard/repasses" ? null : c;
+    };
+    visibleNav = visibleNav
+      .map((it) => {
+        if (!("children" in it)) return it;
+        const filhos = it.children
+          .map(semRepasses)
+          .filter((c): c is NavLeaf | NavSection => c !== null);
+        return { ...it, children: filhos };
+      })
+      .filter((it) => !("children" in it) || it.children.length > 0);
   }
   if (!isSuper) {
     // Sessoes (captura gov.br) so p/ super-admin

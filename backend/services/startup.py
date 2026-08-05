@@ -168,6 +168,11 @@ MIGRATION_FILES = [
     # NESTA lista — migration fora dela e orfa e nunca roda (ver o caso
     # add_siconv_federal.sql, acima).
     "uf_sem_default_mg.sql",
+    # Repasses estaduais (execução, não instrumento) — Goiás publica pagamento.
+    # ⚠️ REGISTRADA AQUI porque o runner só executa o que está NESTA lista;
+    # migration fora dela é órfã e nunca roda (foi o que quase aconteceu com a
+    # uf_sem_default_mg.sql, pega pela revisão antes do merge).
+    "add_repasses_estaduais.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",
