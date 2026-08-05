@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database import get_db
 from routers import (
     auth, municipios, convenios, cofre, service_tokens,
-    session_capture, emendas_estaduais, dou_mg, dou_es, dou_go, fns, transferegov, export_pdf,
+    session_capture, emendas_estaduais, dou_mg, dou_es, dou_go, dou_to, fns, transferegov, export_pdf,
     users, simec, rm, ai, gestao, parlamentares, telegram, status_changes,
     documentos, cauc, cagec, acordofes, control, freshness, painel, bi,
     sismob, auditoria, permissoes, modelos_permissao, repasses, contas_irregulares,
@@ -158,6 +158,7 @@ app.include_router(fns.router)
 app.include_router(dou_mg.router)
 app.include_router(dou_es.router)
 app.include_router(dou_go.router)
+app.include_router(dou_to.router)
 app.include_router(repasses.router)
 app.include_router(contas_irregulares.router)
 app.include_router(cofinanciamento.router)

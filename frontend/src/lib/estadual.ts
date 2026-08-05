@@ -179,6 +179,11 @@ export const DIARIO_POR_UF: Record<string, { api: string; titulo: string; fonte:
         fonte: "Diário dos Municípios do Espírito Santo (ioes.dio.es.gov.br)" },
   GO: { api: "/dou-go", titulo: "Diário Oficial GO",
         fonte: "Diário Oficial do Estado de Goiás (diariooficial.abc.go.gov.br)" },
+  /* ⚠️ O TO é OUTRA PLATAFORMA: a busca devolve EDIÇÕES, não páginas com
+     trecho. A tela mostra a ficha da edição (número, páginas, tamanho) em vez
+     de um excerto — a fonte não dá excerto, e inventar um seria pior. */
+  TO: { api: "/dou-to", titulo: "Diário Oficial TO",
+        fonte: "Diário Oficial do Estado do Tocantins (diariooficial.to.gov.br)" },
 };
 
 export function diarioDaUf(uf?: string | null) {
