@@ -135,3 +135,13 @@ export const FONTE_CONVENIOS_ESTADUAIS: Record<string, string> = {
 export function fonteConveniosEstaduais(uf?: string | null): string | null {
   return FONTE_CONVENIOS_ESTADUAIS[(uf || "").trim().toUpperCase()] || null;
 }
+
+/** UFs cujo Diário Oficial este sistema JÁ busca. MG = Jornal Minas Gerais
+ *  (dou_mg); ES = Diário dos Municípios do ES (dou_es). Um estado sem provedor
+ *  não mostra a tela — o menu a esconde, em vez de abrir uma busca que iria ao
+ *  diário errado. ⚠️ Cada UF nova aqui exige um provedor no backend. */
+export const UFS_COM_DIARIO = new Set<string>(["MG", "ES"]);
+
+export function temDiarioEstadual(uf?: string | null): boolean {
+  return UFS_COM_DIARIO.has((uf || "").trim().toUpperCase());
+}

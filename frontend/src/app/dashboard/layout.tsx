@@ -40,6 +40,7 @@ import {
 } from "@/components/ui/sheet";
 import type { Municipio, User } from "@/types";
 import { hrefToTela, allowedTelasOf } from "@/lib/telas";
+import { temDiarioEstadual } from "@/lib/estadual";
 import { ehSuperAdmin } from "@/lib/conta";
 import { CONSOLIDADO, MunicipioProvider, useMunicipio } from "@/contexts/MunicipioContext";
 import { EnteAtendido, SUBTITULO_PACTHA } from "@/components/bi/Marca";
@@ -224,16 +225,21 @@ function SidebarContent({
   const isSuper = ehSuperAdmin(user);
   const allowed = allowedTelasOf(user);
   let visibleNav = filterNav(NAV_ITEMS, allowed);
-  /* TELAS DE PROGRAMA MINEIRO. O Acordo FES e a divida do FES de MG e o
-     Diario Oficial de hoje busca no Jornal Minas Gerais: em ambiente de outro
-     estado, as duas so teriam Minas para mostrar — entao somem ate existir a
-     fonte daquela UF (registro por UF, fase seguinte do fit). No consolidado
-     (uf vazia) ficam: a carteira pode conter municipio mineiro. */
-  const SO_MG = new Set(["/dashboard/acordofes", "/dashboard/dou"]);
+  /* TELAS QUE DEPENDEM DA FONTE DO ESTADO. O Acordo FES é a dívida do FES de
+     MG — só existe em Minas. O Diário Oficial agora tem provedor por UF (MG =
+     Jornal Minas Gerais, ES = DOM/ES), então segue `temDiarioEstadual`: fica no
+     ES, some em GO/TO até existir o provedor daquele estado — abrir a busca sem
+     provedor iria ao diário errado. No consolidado (uf vazia) ficam: a carteira
+     pode conter município mineiro. */
   const ufAmbiente = (municipios.find((m) => String(m.id) === selectedMunicipioId)?.uf || "")
     .toUpperCase();
   if (ufAmbiente && ufAmbiente !== "MG") {
-    visibleNav = visibleNav.filter((it) => !("href" in it && SO_MG.has(it.href)));
+    visibleNav = visibleNav.filter((it) => {
+      if (!("href" in it)) return true;
+      if (it.href === "/dashboard/acordofes") return false;
+      if (it.href === "/dashboard/dou") return temDiarioEstadual(ufAmbiente);
+      return true;
+    });
   }
   if (!isSuper) {
     // Sessoes (captura gov.br) so p/ super-admin
