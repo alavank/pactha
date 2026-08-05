@@ -110,7 +110,7 @@ const NAV_ITEMS: NavEntry[] = [
     label: "Estaduais",
     icon: FileText,
     children: [
-      { href: "/dashboard/convenios", label: "SIGCON" },
+      { href: "/dashboard/convenios", label: "Convênios" },
       { href: "/dashboard/emendas", label: "Emendas Estaduais" },
     ],
   },
@@ -127,7 +127,7 @@ const NAV_ITEMS: NavEntry[] = [
       { href: "/dashboard/transferegov-cnpj", label: "CNPJ" },
     ],
   },
-  { href: "/dashboard/cauc", label: "CAUC / CAGEC", icon: ShieldCheck },
+  { href: "/dashboard/cauc", label: "Regularidade", icon: ShieldCheck },
   { href: "/dashboard/sismob", label: "Obras da Saúde (SISMOB)", icon: HardHat },
   { href: "/dashboard/acordofes", label: "Acordo FES (Dívida Saúde)", icon: HeartPulse },
   { href: "/dashboard/fns", label: "Fundo Nacional de Saúde", icon: Target },

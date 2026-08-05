@@ -3,6 +3,8 @@
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { useMunicipio } from "@/contexts/MunicipioContext";
+import { useUfDoMunicipio } from "@/lib/useUfDoMunicipio";
+import { NOME_UF } from "@/lib/estadual";
 import { Search as SearchIcon, ChevronLeft, ChevronRight, ChevronDown } from "lucide-react";
 import api from "@/lib/api";
 import { MultiSelect } from "@/components/ui/multi-select";
@@ -180,6 +182,9 @@ const FONTES_ROTULOS: Record<string, string> = {
 export default function ConveniosPage() {
   const searchParams = useSearchParams();
   const municipioId = useMunicipio().municipioId || null;
+  /* "" = ainda carregando ou consolidado — nesses casos a tela não
+     afirma estado nenhum. */
+  const ufAmbiente = useUfDoMunicipio();
   const vigenciaParam = searchParams.get("vigencia");
 
   const [data, setData] = useState<ConvenioList | null>(null);
@@ -357,7 +362,19 @@ export default function ConveniosPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-2xl font-bold text-base-content">Convênios (SIGCON-MG)</h1>
+        <div>
+          <h1 className="text-2xl font-bold text-base-content">Convênios Estaduais</h1>
+          {/* A fonte é do ESTADO do ambiente: em MG é o SIGCON-MG; nos demais,
+              dizer com todas as letras que ainda não há coleta — o vazio sem
+              explicação era lido como "não temos convênio", que é outra frase. */}
+          {ufAmbiente && (
+            <p className="text-xs" style={{ color: "var(--bi-muted)" }}>
+              {ufAmbiente === "MG"
+                ? "SIGCON-MG · convênios do Estado com o município"
+                : `${NOME_UF[ufAmbiente] || ufAmbiente} — a fonte estadual deste estado ainda não está integrada`}
+            </p>
+          )}
+        </div>
         <div className="flex items-center gap-2">
           {refreshMsg && (
             <span className="text-xs text-base-content/70 italic">{refreshMsg}</span>
@@ -365,16 +382,21 @@ export default function ConveniosPage() {
           <Button onClick={exportPdf} size="sm" variant="outline" title="Exportar para PDF">
             📄 PDF
           </Button>
-          <Button
-            onClick={handleRefreshSigcon}
-            disabled={refreshing}
-            size="sm"
-            style={{ background: "var(--bi-cta)", color: "var(--bi-cta-ink)" }} className="hover:opacity-90"
-            title="Força atualização via portal SIGCON-MG (Pesquisa Unificada)"
-          >
-            <SearchIcon className="size-4 mr-1" />
-            {refreshing ? "Sincronizando..." : "Pesquisar SIGCON"}
-          </Button>
+          {/* O botão dispara o scraper do PORTAL MINEIRO — fora de MG ele
+              não tem o que pesquisar, então nem aparece. ("" = UF ainda
+              carregando: mantém visível para não piscar em MG.) */}
+          {(ufAmbiente === "" || ufAmbiente === "MG") && (
+            <Button
+              onClick={handleRefreshSigcon}
+              disabled={refreshing}
+              size="sm"
+              style={{ background: "var(--bi-cta)", color: "var(--bi-cta-ink)" }} className="hover:opacity-90"
+              title="Força atualização via portal SIGCON-MG (Pesquisa Unificada)"
+            >
+              <SearchIcon className="size-4 mr-1" />
+              {refreshing ? "Sincronizando..." : "Pesquisar SIGCON"}
+            </Button>
+          )}
         </div>
       </div>
 

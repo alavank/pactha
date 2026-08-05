@@ -540,9 +540,9 @@ export default function RegularidadePage() {
           Regularidade de Documentação
         </h1>
         <p className="mt-1 text-sm" style={{ color: "var(--bi-muted)" }}>
-          Exigências para assinar convênio nas duas esferas: <strong>CAUC</strong> (União,
-          Tesouro Nacional) e o <strong>cadastro estadual de convenentes</strong>
-          {" "}— em Minas Gerais, o CAGEC.
+          Exigências para assinar convênio nas duas esferas: a <strong>federal</strong>{" "}
+          (CAUC, Tesouro Nacional) e a <strong>estadual</strong> — o cadastro de
+          convenentes do estado deste município, nomeado na coluna ao lado.
         </p>
       </div>
 
