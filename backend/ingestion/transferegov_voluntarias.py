@@ -1449,13 +1449,26 @@ def _upsert(mun_id: int, propostas: list[dict]):
                 situacao=EXCLUDED.situacao, orgao=EXCLUDED.orgao,
                 proponente=EXCLUDED.proponente, possui_parecer=EXCLUDED.possui_parecer,
                 identificacao=EXCLUDED.identificacao,
-                codigo_instrumento=EXCLUDED.codigo_instrumento, modalidade=EXCLUDED.modalidade,
-                situacao_siafi=EXCLUDED.situacao_siafi, numero_processo=EXCLUDED.numero_processo,
-                objeto=CASE WHEN position(chr(65533) in coalesce(EXCLUDED.objeto,'')) > 0
+                -- Os 10 campos abaixo vem do DETALHE (g(...) no topo desta funcao),
+                -- que so existe quando o enrich roda. O cron diario roda com
+                -- TG_SKIP_ENRICH=1 e chega aqui com detalhe VAZIO — com atribuicao
+                -- direta isso GRAVAVA NULL e APAGAVA o que o enrich tinha capturado.
+                -- Observado ao vivo: o siao perdeu os 41 codigo_instrumento (e
+                -- modalidade/siafi/processo/programa) na rodada das 18:00; sobreviveram
+                -- so as colunas que ja usavam COALESCE (valores, proc_execucao).
+                -- COALESCE aqui = "nao apaga o que ja sabemos quando a fonte nao veio".
+                codigo_instrumento=COALESCE(EXCLUDED.codigo_instrumento, transferegov_propostas.codigo_instrumento),
+                modalidade=COALESCE(EXCLUDED.modalidade, transferegov_propostas.modalidade),
+                situacao_siafi=COALESCE(EXCLUDED.situacao_siafi, transferegov_propostas.situacao_siafi),
+                numero_processo=COALESCE(EXCLUDED.numero_processo, transferegov_propostas.numero_processo),
+                objeto=CASE WHEN EXCLUDED.objeto IS NULL
+                              OR position(chr(65533) in EXCLUDED.objeto) > 0
                             THEN transferegov_propostas.objeto ELSE EXCLUDED.objeto END,
-                programa=EXCLUDED.programa,
-                dt_inicio_vigencia=EXCLUDED.dt_inicio_vigencia, dt_fim_vigencia=EXCLUDED.dt_fim_vigencia,
-                dt_proposta=EXCLUDED.dt_proposta, dt_assinatura=EXCLUDED.dt_assinatura,
+                programa=COALESCE(EXCLUDED.programa, transferegov_propostas.programa),
+                dt_inicio_vigencia=COALESCE(EXCLUDED.dt_inicio_vigencia, transferegov_propostas.dt_inicio_vigencia),
+                dt_fim_vigencia=COALESCE(EXCLUDED.dt_fim_vigencia, transferegov_propostas.dt_fim_vigencia),
+                dt_proposta=COALESCE(EXCLUDED.dt_proposta, transferegov_propostas.dt_proposta),
+                dt_assinatura=COALESCE(EXCLUDED.dt_assinatura, transferegov_propostas.dt_assinatura),
                 valor_global=COALESCE(EXCLUDED.valor_global, transferegov_propostas.valor_global),
                 valor_repasse=COALESCE(EXCLUDED.valor_repasse, transferegov_propostas.valor_repasse),
                 valor_contrapartida=COALESCE(EXCLUDED.valor_contrapartida, transferegov_propostas.valor_contrapartida),
