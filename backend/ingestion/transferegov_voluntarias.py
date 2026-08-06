@@ -847,6 +847,36 @@ async def _captura_historico_impl(page_auth, id_proposta: str) -> dict | None:
     return data
 
 
+async def _le_listagem_licitacoes(page) -> int | None:
+    """N licitacoes na tela de Processo de Execucao, ou None se INDETERMINADO.
+
+    None nao e "nenhuma": e "nao consegui ler". Quem chama nao deve gravar 0
+    nesse caso — 0 vira o alerta de "contratacao Normal sem processo de
+    execucao", e um 0 errado mente para o usuario."""
+    try:
+        return await page.evaluate("""() => {
+            const body = document.body.innerText || '';
+            if (/Nenhum registro/i.test(body)) return 0;
+            const m = body.match(/\\((\\d+)\\s*ite/i);          // "Pagina X de Y (N item(s))"
+            if (m) return parseInt(m[1], 10);
+            // tabela cujo CABECALHO tem "Processo de Execucao" + Data/Situacao
+            for (const t of document.querySelectorAll('table')) {
+                const rows = [...t.querySelectorAll('tr')];
+                if (!rows.length) continue;
+                const heads = [...rows[0].querySelectorAll('th,td')]
+                    .map(c => (c.innerText || '').trim().toLowerCase()).join('|');
+                if (heads.includes('processo de execu') &&
+                    (heads.includes('data da public') || heads.includes('situa'))) {
+                    return rows.slice(1).filter(r =>
+                        [...r.querySelectorAll('td')].some(c => (c.innerText || '').trim())).length;
+                }
+            }
+            return null;   // indeterminado
+        }""")
+    except Exception:
+        return None
+
+
 async def _conta_processo_execucao(page) -> int | None:
     """Conta licitações/processos de execução do instrumento (Execução Convenente
     -> Processo de Execução). FUNCIONA EM GUEST (Acesso Livre) — confirmado ao vivo.
@@ -865,8 +895,18 @@ async def _conta_processo_execucao(page) -> int | None:
     await page.wait_for_timeout(800)
     if not await page.locator("text=/Listagem de Licita|Processo de Execu/i").count():
         return None  # nao chegou na tela certa
-    # A listagem SO e populada apos submeter o filtro (sem filtro = todos). Ler a
-    # tela sem consultar retorna resultado vazio enganoso -> falso "sem processo".
+    # A tela JA VEM POPULADA. Le daqui ANTES de qualquer submit.
+    #
+    # Antes o codigo clicava "Consultar" primeiro, na crenca de que a listagem so
+    # populava apos o filtro. E o contrario: o submit DESTROI o resultado (volta
+    # uma tela curta, sem a tabela) e a proposta virava 0 licitacoes em silencio.
+    # Reproduzido no instrumento 993503 (proposta 011147/2026): a tela traz a
+    # licitacao 102026, o submit a some, e gravavamos 0 — o alerta "sem processo
+    # de execucao" ficava mentindo para o usuario.
+    _lido = await _le_listagem_licitacoes(page)
+    if _lido is not None:
+        return _lido
+    # Indeterminado: ai sim tenta o submit do filtro (fallback).
     try:
         btn = page.locator("input[value='Consultar'], button:has-text('Consultar')").first
         if await btn.count() > 0:

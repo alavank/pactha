@@ -68,6 +68,67 @@ def _parse(resp: httpx.Response):
     return lxml_html.fromstring(txt)
 
 
+_BLOCO = {"p", "div", "tr", "br", "li", "h1", "h2", "h3", "h4", "h5", "h6",
+          "table", "td", "th", "section", "article", "header", "footer",
+          "form", "fieldset", "legend", "ul", "ol", "dl", "dt", "dd", "pre",
+          "blockquote", "hr", "option", "textarea", "caption"}
+
+
+def _inner_text(root) -> str:
+    """Aproxima o innerText do browser (o _extrai_detalhe roda regex sobre ele).
+
+    text_content() cru junta tudo sem quebra de linha e os regexes de rotulo do
+    _extrai_detalhe (que dependem de quebra apos o label) deixam de casar. Aqui
+    insere-se quebra nas fronteiras de bloco e colapsam-se espacos em branco,
+    como o innerText do browser faz."""
+    partes = []
+    dentro_celula = [0]
+
+    def walk(e):
+        tag = e.tag if isinstance(e.tag, str) else ""
+        if tag in ("script", "style", "noscript"):
+            if e.tail:
+                partes.append(e.tail)
+            return
+        # innerText de TABELA: celulas separadas por TAB, linhas por quebra. Isso
+        # importa: os regexes de rotulo exigem ":" ou quebra logo apos o label —
+        # com TAB, "Situacao no SIAFI" no meio da linha nao casa (e e assim que o
+        # browser se comporta hoje). Emular com quebra em vez de TAB mudaria o
+        # valor gravado nas colunas.
+        celula = tag in ("td", "th")
+        # DENTRO de uma celula o conteudo e tratado como inline: divs/spans
+        # aninhados NAO geram quebra (senao o rotulo e o valor caem em linhas
+        # diferentes e os regexes passam a capturar so o 1o campo, divergindo do
+        # browser). Fora de celula, bloco = quebra.
+        bloco = (not celula) and tag in _BLOCO and dentro_celula[0] == 0
+        if celula:
+            partes.append("\t")
+            dentro_celula[0] += 1
+        elif bloco:
+            partes.append("\n")
+        if e.text:
+            partes.append(e.text)
+        for c in e:
+            walk(c)
+        if celula:
+            dentro_celula[0] -= 1
+        if bloco:
+            partes.append("\n")
+        if e.tail:
+            partes.append(e.tail)
+
+    walk(root)
+    txt = "".join(partes)
+    txt = re.sub(r"[ \xa0]+", " ", txt)          # colapsa espacos, PRESERVA \t
+    txt = re.sub(r"[ ]*\n[ ]*", "\n", txt)
+    txt = re.sub(r"[ ]*\t[ ]*", "\t", txt)
+    txt = re.sub(r"\n{2,}", "\n", txt)
+    txt = re.sub(r"\t{2,}", "\t", txt)
+    txt = re.sub(r"\t*\n\t*", "\n", txt)
+    txt = re.sub(r"^\t+|\t+$", "", txt, flags=re.M)  # tab no fim/inicio de linha
+    return txt.strip()
+
+
 def _num_br(s):
     """'R$ 2.800.000,00' -> 2800000.0 ; None se nao numerico (copia do browser)."""
     if s is None:
@@ -140,6 +201,87 @@ class TgHttpEnrich:
                     pass
                 self._guest_entrou = True
         return False
+
+    # ---------- Detalhe da proposta (pares label:valor + campos do topo) ----------
+
+    def detalhe(self, id_proposta: str) -> dict | None:
+        """Mesma saida do _extrai_detalhe do browser (pares label:valor, campos
+        do topo, valores monetarios, documentos, situacao macro).
+
+        ALIMENTA COLUNAS CRITICAS no upsert (codigo_instrumento, modalidade,
+        situacao_siafi, numero_processo, objeto, valores) — por isso a saida foi
+        validada chave-a-chave contra o browser antes de ser ligada. O GET aqui
+        tb SETA o contexto Struts, entao ops_obs/processo na sequencia reusam."""
+        url = (f"{_DISCRIC}/voluntarias/ConsultarProposta/"
+               f"ResultadoDaConsultaDePropostaDetalharProposta.do?idProposta={id_proposta}&")
+        try:
+            r = self.cli.get(url)
+        except Exception:
+            return None
+        if r.status_code != 200 or _sessao_caiu(r):
+            return None
+        self._ctx_idp = id_proposta  # o GET ja setou o contexto do convenio
+        doc = _parse(r)
+        out: dict = {}
+
+        def set_kv(k, v):
+            if k and len(k) < 70 and v and k not in out:
+                out[k] = v[:600]
+
+        # pares label|valor: linhas com 2 OU 4 celulas (label|valor|label|valor)
+        for tr in doc.findall(".//tr"):
+            tds = tr.xpath("./td|./th")
+            if len(tds) == 2:
+                set_kv(_txt(tds[0]), _txt(tds[1]))
+            elif len(tds) == 4:
+                set_kv(_txt(tds[0]), _txt(tds[1]))
+                set_kv(_txt(tds[2]), _txt(tds[3]))
+
+        corpo = doc.find(".//body")
+        txt = _inner_text(corpo if corpo is not None else doc)
+
+        def grab(label):
+            m = re.search(label + r"\s*[:\n]\s*([^\n]{1,120})", txt, re.I)
+            return m.group(1).strip() if m else None
+
+        for lbl in ("Modalidade", "Situação no SIAFI", "Código do Instrumento",
+                    "Número da Proposta", "Número do Processo",
+                    "Situação de Contratação Atual"):
+            v = grab(lbl)
+            if v and lbl not in out:
+                out[lbl] = v
+
+        def grab_money(label):
+            m = re.search(label + r"[\s\S]{0,40}?(R\$\s*[\d.]+,\d{2})", txt, re.I)
+            return m.group(1).strip() if m else None
+
+        for chave, variantes in (
+            ("Valor Global", ("Valor Global do Instrumento", "Valor Global")),
+            ("Valor de Repasse", ("Valor de Repasse da União", "Valor de Repasse", "Valor do Repasse")),
+            ("Valor de Contrapartida", ("Valor da Contrapartida", "Valor de Contrapartida", "Valor Contrapartida")),
+        ):
+            for lbl in variantes:
+                v = grab_money(lbl)
+                if v:
+                    out[chave] = v
+                    break
+
+        # documentos digitalizados (linhas com 'baixar' + .pdf)
+        docs = []
+        for a in doc.findall(".//a"):
+            if "baixar" in (_txt(a) or "").lower():
+                tr = a.xpath("ancestor::tr[1]")
+                if tr:
+                    linha = _txt(tr[0])
+                    if ".pdf" in linha.lower():
+                        docs.append(linha[:160])
+        if docs:
+            out["_documentos"] = docs
+
+        m = re.search(r"Situação\s*\n\s*([^\n]+)", txt)
+        if m:
+            out["_situacao_macro"] = m.group(1).strip()[:100]
+        return out
 
     # ---------- OPs/OBs (Listagem de Repasses, guest) ----------
 
@@ -238,6 +380,29 @@ class TgHttpEnrich:
 
     # ---------- Processo de Execucao (Listagem de Licitacoes, guest) ----------
 
+    @staticmethod
+    def _le_listagem_licitacoes(resp) -> int | None:
+        """N licitacoes da tela de Processo de Execucao, ou None se indeterminado.
+
+        None e IMPORTANTE: significa "nao consegui ler", nao "nenhuma" — quem
+        chama nao deve gravar 0 nesse caso (0 vira alerta de 'municipio parado')."""
+        body = resp.text
+        if re.search(r"Nenhum registro", body, re.I):
+            return 0
+        m = re.search(r"\((\d+)\s*ite", body, re.I)
+        if m:
+            return int(m.group(1))
+        doc = _parse(resp)
+        for t in doc.findall(".//table"):
+            trs = t.findall(".//tr")
+            if not trs:
+                continue
+            heads = [_txt(x) for x in trs[0].xpath("./th|./td")]
+            chave = "|".join(heads).lower()
+            if "processo de execu" in chave and ("data da public" in chave or "situa" in chave):
+                return len([tr for tr in trs[1:] if any(_txt(c) for c in tr.findall("td"))])
+        return None
+
     def processo_execucao(self, id_proposta: str) -> int | None:
         if not self._seta_contexto(id_proposta):
             return None
@@ -251,8 +416,18 @@ class TgHttpEnrich:
         body = r.text
         if not re.search(r"Listagem de Licita|Processo de Execu", body, re.I):
             return None
-        # A listagem SO popula apos submeter o filtro (igual ao browser: sem o
-        # submit, "vazio" e enganoso). Monta o POST do form que contem Consultar.
+        # A tela JA VEM POPULADA no GET — ler daqui primeiro.
+        #
+        # O codigo antigo submetia o "Consultar" antes de ler, acreditando que a
+        # listagem so populava apos o filtro. E o oposto: o POST DESTROI o
+        # resultado (devolve uma pagina curta, sem a tabela) e a proposta virava
+        # 0 licitacoes em silencio. Reproduzido no instrumento 993503
+        # (proposta 011147/2026): o GET traz a licitacao 102026, o POST a some,
+        # e gravavamos 0 — o alerta "sem processo de execucao" ficava mentindo.
+        lido = self._le_listagem_licitacoes(r)
+        if lido is not None:
+            return lido
+        # Indeterminado no GET: ai sim tenta o submit do filtro (fallback).
         doc = _parse(r)
         posted = False
         for form in doc.findall(".//form"):
