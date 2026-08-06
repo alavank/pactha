@@ -155,7 +155,7 @@ async def renew() -> str:
     from playwright.async_api import async_playwright
     async with async_playwright() as p:
         br = await p.chromium.launch(headless=True,
-                                     args=["--ignore-certificate-errors", "--no-sandbox"])
+                                     args=["--ignore-certificate-errors", "--no-sandbox", "--disable-dev-shm-usage"])
         ctx = await br.new_context(ignore_https_errors=True,
                                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                                               "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -215,7 +215,7 @@ async def keepalive() -> str:
     from playwright.async_api import async_playwright
     async with async_playwright() as p:
         br = await p.chromium.launch(headless=True,
-                                     args=["--ignore-certificate-errors", "--no-sandbox"])
+                                     args=["--ignore-certificate-errors", "--no-sandbox", "--disable-dev-shm-usage"])
         ctx = await br.new_context(ignore_https_errors=True,
                                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                                               "AppleWebKit/537.36 (KHTML, like Gecko) "

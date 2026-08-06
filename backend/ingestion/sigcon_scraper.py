@@ -1015,7 +1015,7 @@ async def _run():
     # Cofre -> por isso so Araujos tem convenios/parlamentar estaduais.
     # Solucao p/ os demais: cadastrar 1 credencial SIGCON por municipio.
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True, args=["--ignore-certificate-errors"])
+        browser = await p.chromium.launch(headless=True, args=["--ignore-certificate-errors", "--disable-dev-shm-usage"])
         try:
             sem = asyncio.Semaphore(conc)
             raw = await asyncio.gather(
