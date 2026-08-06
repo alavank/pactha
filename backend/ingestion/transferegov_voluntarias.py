@@ -67,6 +67,23 @@ def _jwt_minutos_restantes(cookies: list[dict]) -> float:
     return float("-inf")
 
 
+# Orcamento de capturas de Historico COMPARTILHADO pela execucao inteira (ver o
+# uso em _scrape_municipio). Fica no modulo, e nao numa local, porque a funcao
+# roda uma vez por municipio: como local, o teto valia por municipio e o total
+# virava (n_municipios x teto).
+_HIST_ORC: dict = {"restante": None}
+
+
+def _hist_orcamento() -> dict:
+    """Contador de orcamento da EXECUCAO (lazy, a partir do env na 1a chamada)."""
+    if _HIST_ORC["restante"] is None:
+        try:
+            _HIST_ORC["restante"] = max(0, int(os.getenv("TRANSFEREGOV_HISTORICO_MAX", "15") or "15"))
+        except ValueError:
+            _HIST_ORC["restante"] = 15
+    return _HIST_ORC
+
+
 def _propostas_sem_historico(municipio_id: int) -> set:
     """Retorna numero_proposta das que AINDA NAO tem Historico de Comunicacoes.
     Usado para priorizar: cada rodada gasta o orcamento nas pendentes primeiro,
@@ -475,10 +492,13 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
     # dariam ~10h por rodada — inviável no host de 2 vCPU compartilhado. Com teto
     # + priorização das que ainda não têm histórico, cada rodada avança um naco e
     # o conjunto converge em poucos dias. 0 desliga a captura.
-    try:
-        _hist_budget = max(0, int(os.getenv("TRANSFEREGOV_HISTORICO_MAX", "15") or "15"))
-    except ValueError:
-        _hist_budget = 15
+    # ⚠️ O orcamento e POR EXECUCAO (é o que este comentario sempre disse), e nao
+    # por municipio. Ele vivia como variavel LOCAL desta funcao — que roda 1x por
+    # municipio —, entao o freitas fazia 41 x 15 = 615 capturas do /private/ por
+    # rodada (~12s cada = ~2h), e nao 15. Era a maior fonte isolada de estouro da
+    # janela do cron. Agora o contador e compartilhado pela execucao inteira.
+    _orc = _hist_orcamento()
+    _hist_budget = _orc["restante"]
     if page_auth is not None:
         try:
             _ja_enriquecidos = _propostas_ja_enriquecidas(mun["id"])
@@ -603,11 +623,12 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
                 _stamp_ops_obs(mun["id"], prop["numero_proposta"])
             # Historico de Comunicacoes + Termos de Notificacao (Projeto Basico /
             # mandatarias). SO com sessao gov.br viva (area /private/).
-            if page_auth is not None and _idp and _hist_budget > 0:
+            if page_auth is not None and _idp and _orc["restante"] > 0:
                 try:
                     # Debita o orçamento na TENTATIVA, não no sucesso: o custo de
                     # tempo já foi pago mesmo quando a página não devolve dados.
-                    _hist_budget -= 1
+                    # Debita no contador da EXECUCAO (compartilhado entre municipios).
+                    _orc["restante"] -= 1
                     _hc = (await asyncio.to_thread(_hx.historico, _idp)) if _hx \
                         else (await _captura_historico_comunicacoes(page_auth, _idp))
                     if _hc:
@@ -1530,6 +1551,25 @@ async def run():
         try:
             from ingestion.transferegov_opendata import run as _open_run
             _open_run()
+            # ⚠️ ORDEM IMPORTA. Estes backfills (baratos, HTTP, carteira inteira)
+            # ficavam DEPOIS do loop de browser — e o timeout do cron mata dentro
+            # do loop, entao no freitas e no trust eles NUNCA rodavam: clausula
+            # suspensiva e parlamentar paravam de atualizar em silencio. Rodando
+            # aqui, junto do open data de que dependem (id_proposta_siconv), eles
+            # entregam a carteira inteira todo dia, independente de o browser
+            # terminar. Ver tambem o PAC e o ingestion_log, movidos pelo mesmo motivo.
+            try:
+                from ingestion import siconv_emenda_backfill as _bf
+                npb = _bf.backfill_parlamentar(use_cache=False)
+                logger.info(f"  backfill parlamentar: {npb} linha(s) atualizadas")
+            except Exception as e:
+                logger.warning(f"  backfill parlamentar falhou: {str(e)[:160]}")
+            try:
+                from ingestion import siconv_convenio_backfill as _cb
+                ncl = _cb.backfill(use_cache=False)
+                logger.info(f"  backfill clausula/contratacao: {ncl} linha(s) atualizadas")
+            except Exception as e:
+                logger.warning(f"  backfill clausula falhou: {str(e)[:160]}")
         except Exception as e:
             logger.warning(f"  camada de dados abertos falhou (segue p/ navegador): {e}")
 
@@ -1619,28 +1659,9 @@ async def run():
             except Exception:
                 pass
     logger.info(f"=== Finalizado: {total} propostas ===")
-    # Backfill do parlamentar (autor da emenda) via open data SICONV. O scraper
-    # ja gravou id_proposta_siconv acima, entao aqui so baixa o arquivo barato
-    # (siconv_emenda ~7.6 MB) e casa id->NOME_PARLAMENTAR. Best-effort.
-    try:
-        from ingestion import siconv_emenda_backfill as _bf
-        # SO o passo barato (7.6 MB). O id_proposta_siconv vem do scraper acima;
-        # backfill_ids (199 MB) e' so manual/one-time (evita download recorrente
-        # por causa de propostas sem link de detalhe). no Railway = sem cache.
-        npb = _bf.backfill_parlamentar(use_cache=False)
-        logger.info(f"  backfill parlamentar: {npb} linha(s) atualizadas")
-    except Exception as e:
-        logger.warning(f"  backfill parlamentar falhou: {str(e)[:160]}")
-    # Backfill SITUACAO DE CONTRATACAO + CLAUSULA SUSPENSIVA via OPEN DATA
-    # (siconv_convenio) — substitui a dependencia da sessao gov.br autenticada.
-    # Assim o detalhe da clausula (motivo + data prevista) atualiza sozinho, sem
-    # re-captura/reCAPTCHA.
-    try:
-        from ingestion import siconv_convenio_backfill as _cb
-        ncl = _cb.backfill(use_cache=False)
-        logger.info(f"  backfill clausula/contratacao: {ncl} linha(s) atualizadas")
-    except Exception as e:
-        logger.warning(f"  backfill clausula falhou: {str(e)[:160]}")
+    # (backfills de parlamentar e clausula/contratacao rodam ANTES do loop de
+    #  browser — ver o bloco logo apos o open data. Ficavam aqui e nunca eram
+    #  alcancados quando o timeout matava dentro do loop.)
     # Log de ingestao
     try:
         import psycopg2
