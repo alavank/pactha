@@ -1575,7 +1575,7 @@ async def run():
 
     total = 0
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True, args=["--ignore-certificate-errors", "--no-sandbox"])
+        browser = await p.chromium.launch(headless=True, args=["--ignore-certificate-errors", "--no-sandbox", "--disable-dev-shm-usage"])
         ctx_guest = None
         ctx_auth = None
         try:
@@ -1691,7 +1691,7 @@ async def run_one(municipio_id: int):
         return
     mun = muns[0]
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True, args=["--ignore-certificate-errors", "--no-sandbox"])
+        browser = await p.chromium.launch(headless=True, args=["--ignore-certificate-errors", "--no-sandbox", "--disable-dev-shm-usage"])
         ctx_guest = await browser.new_context(ignore_https_errors=True, user_agent="Mozilla/5.0 Chrome/131")
         page_guest = await ctx_guest.new_page()
         govbr_cks = _load_govbr_cookies()

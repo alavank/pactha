@@ -748,7 +748,7 @@ async def _rodar() -> tuple[int, int, list[str]]:
     # sabe menos do que promete, e precisa aparecer no ingestion_log.
     degradadas: list[str] = []
     async with async_playwright() as p:
-        br = await p.chromium.launch(headless=True, args=["--no-sandbox"])
+        br = await p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])
         ctx = await br.new_context(locale="pt-BR", accept_downloads=True)
         page = await ctx.new_page()
         import psycopg2
