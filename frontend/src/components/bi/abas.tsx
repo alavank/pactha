@@ -21,8 +21,8 @@ import {
 } from "@/lib/bi";
 import { CADASTRO_ESTADUAL, NOME_UF, tituloEstadual } from "@/lib/estadual";
 import {
-  formatCurrencyShort, formatInt, formatDate, formatDataHora, horasDesde, diasLabel,
-  parseDate, diasSeveridade,
+  formatCurrencyShort, formatInt, formatDate, formatDataCurta, formatDataHora, horasDesde,
+  diasLabel, parseDate, diasSeveridade,
 } from "@/lib/bi-format";
 import {
   BI_CORES, Chip, DotMeter, Gauge, ListaRollup, Metric, Painel, PainelHead,
@@ -714,22 +714,33 @@ function SeloColeta({ em, horas = 30 }: { em?: string | null; horas?: number }) 
 function EsferaHead({
   titulo, sub, contagem, selo,
 }: { titulo: string; sub: string; contagem?: string; selo?: React.ReactNode }) {
+  /* ⚠️ DUAS LINHAS FIXAS, e não uma linha com `flex-wrap`.
+     Com tudo numa linha só, a quebra dependia do COMPRIMENTO DO TEXTO de cada
+     esfera: "27 linhas · 24 documentos do CRC" não cabia e caía para baixo,
+     enquanto "28 exigências · 1 desativadas na origem" cabia — e as duas
+     colunas, que ficam lado a lado, passavam a ter alturas diferentes. O bloco
+     inteiro do CAGEC descia alguns pixels em relação ao do CAUC.
+     Agora a altura é a mesma sempre, venha o texto que vier:
+        linha 1 — nome + carimbo de coleta (a identidade e o frescor dela)
+        linha 2 — fonte/escopo + contagem (o que o bloco contém) */
   return (
-    <div
-      className="mb-2 flex flex-wrap items-baseline gap-x-2 border-b pb-1.5"
-      style={{ borderColor: "var(--bi-line-strong)" }}
-    >
-      <span className="bi-title text-[15px]">{titulo}</span>
-      {/* O selo vem colado ao NOME, antes do subtítulo: é do nome que ele fala.
-          Posto depois da contagem (que é `ml-auto`) ele iria para a direita e
-          pareceria falar do bloco inteiro. */}
-      {selo}
-      <span className="text-[11px]" style={{ color: "var(--bi-faint)" }}>{sub}</span>
-      {contagem && (
-        <span className="bi-num ml-auto text-[11px]" style={{ color: "var(--bi-muted)" }}>
-          {contagem}
+    <div className="mb-2 border-b pb-1.5" style={{ borderColor: "var(--bi-line-strong)" }}>
+      <div className="flex flex-wrap items-baseline gap-x-2">
+        <span className="bi-title text-[15px]">{titulo}</span>
+        {/* Colado ao NOME: é dele que o carimbo fala. À direita, junto da
+            contagem, pareceria falar do bloco inteiro. */}
+        {selo}
+      </div>
+      <div className="flex items-baseline gap-x-3">
+        <span className="min-w-0 truncate text-[11px]" style={{ color: "var(--bi-faint)" }}>
+          {sub}
         </span>
-      )}
+        {contagem && (
+          <span className="bi-num ml-auto shrink-0 text-[11px]" style={{ color: "var(--bi-muted)" }}>
+            {contagem}
+          </span>
+        )}
+      </div>
     </div>
   );
 }
@@ -1132,8 +1143,12 @@ export function AbaDocumentosView({
                  ORIGEM. O Tesouro publica o arquivo do dia só entre 7h e
                  9h20; sem isto não há como distinguir "não coletamos" de
                  "coletamos, e lá ainda é o de ontem". */
+              /* `formatDataCurta` (07/08/2026) e não `formatDate`
+                 ("07 de ago. de 2026"): é a mesma grafia da tela do módulo para
+                 o mesmo campo, e a forma longa era o que fazia a linha
+                 estourar. */
               sub={primeiro?.data_pesquisa
-                ? `Tesouro Nacional · extrato de ${formatDate(primeiro.data_pesquisa)}`
+                ? `Tesouro Nacional · extrato de ${formatDataCurta(primeiro.data_pesquisa)}`
                 : "Tesouro Nacional · exigências federais"}
               /* Conta o que esta NA TELA. `total_itens` exclui os `na`, entao
                  o cabecalho dizia "25 exigencias" sobre blocos que somam 28 —
