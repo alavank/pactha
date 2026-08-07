@@ -92,9 +92,13 @@ export default function FrescorPage() {
           <p className="mt-1 text-sm" style={{ color: "var(--bi-muted)" }}>
             <strong style={{ color: "var(--bi-text)" }}>Último dado</strong>: a data do
             registro mais recente que temos dessa fonte.{" "}
-            <strong style={{ color: "var(--bi-text)" }}>Última coleta</strong>: quando o robô
-            rodou pela última vez. As duas podem divergir — uma coleta bem-sucedida hoje pode
-            trazer dado antigo, e é isso que o status considera.
+            <strong style={{ color: "var(--bi-text)" }}>Última coleta com sucesso</strong>: a
+            última rodada que terminou bem — rodada que falhou ou veio incompleta NÃO conta
+            aqui.{" "}
+            <strong style={{ color: "var(--bi-text)" }}>Última tentativa</strong>: aparece só
+            quando a última rodada não foi um sucesso limpo, com o status cru do coletor ao
+            lado. As três podem divergir: uma coleta boa hoje pode trazer dado antigo, e uma
+            fonte pode estar rodando de hora em hora e falhando há dias.
           </p>
         </div>
         <Button variant="outline" onClick={carregar} disabled={loading}>

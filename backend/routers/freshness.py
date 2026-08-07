@@ -23,17 +23,23 @@ router = APIRouter(prefix="/api/admin/freshness", tags=["admin"])
 # `max(finished_at)` SEM olhar status nenhum — uma rodada que morreu no meio
 # contava como coleta e a linha pintava "Fresco". Foi assim que a Freitas passou
 # nove dias com o CAGEC falhando todo dia sem ninguem ver.
-_SUCESSO = ("success", "ok", "partial", "parcial")
+_SUCESSO = ("success", "ok")
+# ⚠️ 'partial'/'parcial' NAO sao sucesso, e essa distincao e o coracao desta
+# tela. O 'parcial' do CAGEC foi criado em 01/08/2026 justamente porque um 'ok'
+# com o detalhamento faltando deixou este painel VERDE por um dia inteiro
+# enquanto a tela do gestor perdia 28 obrigacoes. Hoje, com o portal do Estado
+# recusando emitir CRC, TODA rodada do CAGEC e 'parcial' — trata-la como sucesso
+# faria a linha nascer "Fresco" exatamente no estado que ela existe para
+# denunciar. Os outros coletores usam 'partial' para rodada incompleta
+# (transfvol_go quando gravados != achados, sismob e gconv_es idem): tambem nao
+# e sucesso, e tambem merece aparecer.
+_DEGRADADO = ("partial", "parcial")
 
 # (rotulo, SQL que retorna (max_timestamp, count), source no ingestion_log)
 _SOURCES = [
     # ⚠️ `NOT ILIKE '%FNS%'` sozinho tambem varria as linhas do GConv-ES para
     # dentro da contagem do SIGCON: convenio capixaba aparecia creditado a
     # Minas. Cada fonte conta o que e dela.
-    ("SIGCON — Convênios estaduais (MG)",
-     "SELECT max(updated_at), count(*) FROM convenios_estadual "
-     "WHERE (fonte IS NULL OR fonte NOT ILIKE '%FNS%') AND coalesce(fonte,'') NOT ILIKE '%GCONV%'",
-     "sigcon_scraper"),
     ("FNS — Saúde (federal)",
      "SELECT max(updated_at), count(*) FROM convenios_estadual WHERE fonte ILIKE '%FNS%'",
      "fns"),
@@ -45,9 +51,6 @@ _SOURCES = [
      "transferegov_voluntarias"),
     ("TransfereGov — PAC (Novo PAC)",
      "SELECT max(updated_at), count(*) FROM transferegov_pac",
-     None),
-    ("Emendas estaduais",
-     "SELECT max(updated_at), count(*) FROM emendas_estaduais",
      None),
     ("CAUC — Regularidade federal",
      "SELECT max(data_pesquisa)::timestamptz, count(*) FROM cauc_situacao",
@@ -73,6 +76,19 @@ _SOURCES = [
 # de Minas, que e exatamente o erro que `lib/estadual.ts` existe para impedir.
 _SOURCES_POR_UF: dict[str, list[tuple[str, str, str | None]]] = {
     "MG": [
+        # ⚠️ SIGCON e Emendas vieram da lista fixa para ca. Sao tao de Minas
+        # quanto o CAGEC — o SIGCON e o sistema de convenios do Estado de MG e as
+        # emendas saem do texto do objeto DESSES convenios. Ficavam
+        # incondicionais so por inercia: num tenant de GO ou TO as duas linhas
+        # apareciam eternamente vazias, que e o mesmo defeito que este bloco
+        # existe para evitar.
+        ("SIGCON — Convênios estaduais (MG)",
+         "SELECT max(updated_at), count(*) FROM convenios_estadual "
+         "WHERE (fonte IS NULL OR fonte NOT ILIKE '%FNS%') AND coalesce(fonte,'') NOT ILIKE '%GCONV%'",
+         "sigcon_scraper"),
+        ("Emendas estaduais (MG)",
+         "SELECT max(updated_at), count(*) FROM emendas_estaduais",
+         None),
         ("CAGEC — Cadastro estadual (MG)",
          "SELECT max(atualizado_em), count(*) FROM cagec_situacao",
          "cagec"),
@@ -180,7 +196,13 @@ async def freshness(
         cands = [t for t in (last_data, last_run) if t is not None]
         last = max(cands) if cands else None
         age_days = ((now - last).total_seconds() / 86400.0) if last else None
-        falhando = bool(tent and last_run and tent[0] > last_run)
+        # ⚠️ A SAUDE VEM DO STATUS DA ULTIMA TENTATIVA, nao de comparar
+        # carimbos. Comparar `tent[0] > last_run` exigia um sucesso ANTERIOR:
+        # fonte que NUNCA deu certo — o pior caso — ficava de fora do sinal e
+        # caia no otimismo do `_status(age_days)`.
+        st = (tent[1] or "").lower() if tent else ""
+        degradada = st in _DEGRADADO
+        falhando = bool(tent and st not in _SUCESSO)
         out.append({
             "fonte": label,
             "ultimo_dado": last_data.isoformat() if last_data else None,
@@ -193,7 +215,11 @@ async def freshness(
             "ultima_tentativa": tent[0].isoformat() if tent else None,
             "ultimo_status": tent[1] if tent else None,
             "falhando": falhando,
-            "status": "critico" if falhando else _status(age_days),
+            "degradada": degradada,
+            # Rodada degradada nao e "critico" (a fonte respondeu, so veio
+            # incompleta) mas tambem nao pode ficar verde.
+            "status": ("atrasado" if degradada else "critico") if falhando
+                      else _status(age_days),
         })
     # ordena piores primeiro
     ordem = {"critico": 0, "desconhecido": 1, "atrasado": 2, "fresco": 3}

@@ -387,6 +387,11 @@ export interface AbaDocumentos {
     com_dados: number;
     regulares: number;
     pendencias_total: number;
+    /** `min(atualizado_em)` sobre TODO o escopo — inclusive os municípios que
+     *  não couberam em `por_municipio`, que o servidor corta. É o único carimbo
+     *  honesto de uma carteira: um mínimo calculado na tela diria "a mais
+     *  antiga entre as que couberam". */
+    coleta_mais_antiga?: string | null;
   };
   /** CAGEC = regularidade ESTADUAL (MG), coletada do CRC público do portal do
    *  CAGEC (por CNPJ, sem credencial). Mesmo formato do CAUC; `disponivel:
@@ -402,6 +407,9 @@ export interface AbaDocumentos {
     /** As UFs do escopo que a fonte atual não alcança, NOMEADAS — é o que
      *  permite a tela dizer "GO, TO" em vez de uma frase genérica. */
     ufs_sem_fonte?: string[];
+    /** Igual ao do CAUC, restrito aos municípios de MG (a fonte não alcança os
+     *  outros). Ver a nota em `cauc.coleta_mais_antiga`. */
+    coleta_mais_antiga?: string | null;
     por_municipio: Array<{
       municipio_id: number;
       nome: string | null;

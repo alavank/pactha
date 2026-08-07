@@ -25,14 +25,45 @@ três Chromium abertos, o host inteiro cai para o baseline. Por isso:
 
 ## Scheduled Tasks
 
-| Task | Freitas | Trust | Monte Sião | Comando | Env necessárias |
-|------|---------|-------|------------|---------|-----------------|
-| `sigcon` | `0 0,6,12,18 * * *` | `0 2,8,14,20 * * *` | `0 4,10,16,22 * * *` | `run_sigcon_cron.py` | `DATABASE_URL_SYNC`, `COFRE_KEY` |
-| `transferegov` | `0 2 * * *` | `0 10 * * *` | `0 18 * * *` | `transferegov_voluntarias.py` | `DATABASE_URL_SYNC`, `COFRE_KEY` |
-| `fns` | `30 5 * * *` | `30 6 * * *` | `30 7 * * *` | `run_fns_local.py` | `DATABASE_URL_SYNC`, `COFRE_KEY` |
-| `govbr-renew` | `5 * * * *` | `25 * * * *` | `45 * * * *` | `govbr_renew.py` | `DATABASE_URL_SYNC`, `COFRE_KEY` |
-| `queue-sigcon` | `0,30 * * * *` | `10,40 * * * *` | `20,50 * * * *` | `run_queue_sigcon.py` | `DATABASE_URL_SYNC` |
-| `painel-alertas` | — | — | `15 */2 * * *` | `run_painel_alertas_cron.py` | `DATABASE_URL_SYNC`, chaves VAPID |
+| Task | Freitas | Trust | Monte Sião |
+|------|---------|-------|------------|
+| `sigcon` | `0 0,6,12,18 * * *` | `0 2,8,14,20 * * *` | `0 4,10,16,22 * * *` |
+| `transferegov` | `0 2 * * *` | `0 10 * * *` | `0 18 * * *` |
+| `fns` | `30 5 * * *` | `30 6 * * *` | `30 7 * * *` |
+| `govbr-renew` | `5 * * * *` | `25 * * * *` | `45 * * * *` |
+| `queue-sigcon` | `0,30 * * * *` | `10,40 * * * *` | `20,50 * * * *` |
+| `painel-alertas` | `45 */2 * * *` | `15 */2 * * *` | `15 */2 * * *` |
+| `cagec` | `0 10,15,19,23 * * *` | `48 10,15,19,23 * * *` | `46 10,15,19,23 * * *` |
+| `cauc-manha` | `25 10-14 * * *` | `27 10-14 * * *` | `29 10-14 * * *` |
+| `gconv-es` | — | `40 10,15,19,23 * * *` | — |
+| `transfvol-go` | — | `42 10,15,19,23 * * *` | — |
+| `cofin-ses-go` | — | `44 10,15,19,23 * * *` | — |
+| `tcm-go` | — | `45 10 * * *` | — |
+
+> 🕐 **TODOS OS HORÁRIOS ACIMA SÃO UTC.** O host, o `instance_timezone` do
+> Coolify e o PHP do container estão em `Etc/UTC`; **Brasília é UTC−3**. Isto já
+> custou caro: um `cagec` marcado para "07:00" rodava às **04:00 da manhã** para
+> o cliente. Ao combinar horário com alguém, converta antes de escrever o cron.
+> As faixas do CAGEC (10/15/19/23 UTC) são **07h, 12h, 16h e 20h de Brasília**.
+> Dentro de cada faixa: Freitas `:00`–`:34`, Monte Sião `:46`, Trust `:48`–`:57`.
+> O 15h virou 16h porque o SIGCON da Freitas ocupa 15:00–15:50 BRT.
+
+**Duração real medida** (de `scheduled_task_executions`, 7 dias — e **não** de
+`ingestion_log`, cujo `started_at` é NULL e faz toda média sair 0):
+
+| | `sigcon` | `cagec` | `transferegov` |
+|---|---|---|---|
+| Freitas (41 municípios) | **43 min** (máx 50) | 18 min (máx 45) | 24 min |
+| Trust (19, sendo 7 de MG) | 1,8 min | 5,5 min | 28 min |
+| Monte Sião (1) | 6,3 min | 1,2 min | 7,6 min |
+
+⚠️ **O `cagec` da Freitas tem DOIS tetos e os dois precisam caber**: o do job
+runner do Coolify (coluna `scheduled_tasks.timeout`, hoje 3000s) e o
+`timeout -k 30 N` do próprio comando (2700s). Subir só um não resolve — e um job
+morto pelo runner **não deixa linha em `ingestion_log`**, porque o log só é
+escrito no fim do script. Foi assim que a Freitas passou nove dias sem coletar,
+sem erro em lugar nenhum, só com a data velha na tela. O reaper mata em 3600s,
+que é o teto de tudo isso.
 
 Comandos completos, exatamente como estão no Coolify:
 

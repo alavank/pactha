@@ -459,6 +459,30 @@ async def bi_parlamentares_detalhe(
 LIMITE_DETALHE_CAUC = 60
 
 
+async def _coleta_mais_antiga(db: AsyncSession, tabela: str, ids: list[int]):
+    """`min(atualizado_em)` sobre TODOS os ids do escopo, em uma query so.
+
+    ⚠️ NAO DA PARA CALCULAR ISSO NA TELA. O `por_municipio` que vai no payload e
+    CORTADO (`LIMITE_DETALHE_CAUC` no CAUC, os 20 primeiros de MG no CAGEC) e
+    ainda pula quem nao tem linha na tabela. Um `min()` no frontend carimbaria
+    "a coleta mais antiga entre os que couberam" — numa carteira de 41
+    municipios, uma afirmacao falsa sobre a carteira, que e exatamente o defeito
+    do cartao que esta mudanca veio corrigir, so que mais dificil de enxergar.
+
+    Municipio sem NENHUMA linha nao entra no min() (nao ha o que datar); quem
+    conta esses e `com_dados`/`municipios_no_escopo`, ja no payload."""
+    if not ids:
+        return None
+    try:
+        r = await db.execute(
+            text(f"SELECT min(atualizado_em) FROM {tabela} WHERE municipio_id = ANY(:ids)"),
+            {"ids": ids})
+        v = r.scalar()
+        return v.isoformat() if v else None
+    except Exception:
+        return None
+
+
 async def bi_documentos(db: AsyncSession, ids: list[int]) -> dict:
     """Situacao das certidoes/cadastros. CAUC vem do banco (coletado); CAGEC
     ainda NAO e coletado por nenhum scraper — devolvemos `disponivel: false` em
@@ -520,6 +544,9 @@ async def bi_documentos(db: AsyncSession, ids: list[int]) -> dict:
             "com_dados": len(por_municipio),
             "regulares": sum(1 for m in por_municipio if m["regular"]),
             "pendencias_total": sum(m["pendencias"] for m in por_municipio),
+            # Carimbo honesto da carteira: o MAIS ANTIGO de todo o escopo, nao o
+            # mais antigo entre os que couberam no corte de detalhe.
+            "coleta_mais_antiga": await _coleta_mais_antiga(db, "cauc_situacao", ids),
         },
         "cagec": await _cagec_bloco(db, ids),
     }
@@ -640,6 +667,9 @@ async def _cagec_bloco(db: AsyncSession, ids: list[int]) -> dict:
         "ufs_sem_fonte": ufs_fora,
         "regulares": sum(1 for m in por_municipio if m["regular"]),
         "pendencias_total": sum(m["pendencias"] for m in por_municipio),
+        # So os de MG: o CAGEC nao alcanca os outros, e incluir os demais faria
+        # o carimbo ficar eternamente vazio numa carteira mista.
+        "coleta_mais_antiga": await _coleta_mais_antiga(db, "cagec_situacao", ids_mg),
     }
 
 

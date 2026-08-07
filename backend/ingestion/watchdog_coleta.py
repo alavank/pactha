@@ -58,12 +58,21 @@ FRESCOR_HORAS = {
     "cagec": 30,
 }
 
-# ⚠️ CADA COLETOR ESCREVE O SUCESSO COM UMA PALAVRA. Conferido nos seis:
-# cauc/gconv_es/sismob/simec_par usam 'success' (e 'partial' quando parcial);
-# o cagec_scraper usa 'ok'/'parcial'/'erro'. Filtrar por 'success' literal
-# excluia o CAGEC inteiro. Nao vale "padronizar o coletor e pronto": o historico
-# ja gravado continuaria em 'ok', e a fonte ficaria invisivel por mais 30h.
-STATUS_SUCESSO = ("success", "ok", "partial", "parcial")
+# ⚠️ SUCESSO E SO SUCESSO. Cada coletor escreve a palavra na sua lingua:
+# cauc/gconv_es/sismob/simec_par gravam 'success', o cagec_scraper grava 'ok'.
+# Filtrar por 'success' literal — como estava — excluia o CAGEC inteiro, e por
+# isso ele nunca pode ser vigiado. Nao vale "padronizar o coletor e pronto": o
+# historico ja gravado continuaria em 'ok' e a fonte ficaria cega por mais 30h.
+#
+# ⚠️ E 'partial'/'parcial' FICAM DE FORA, de proposito. O 'parcial' do CAGEC foi
+# inventado em 01/08/2026 exatamente para este painel NAO ficar verde: naquele
+# dia o coletor gravou 'ok' sem o CRC, o frescor ficou verde e a tela do gestor
+# perdeu 28 obrigacoes sem ninguem ver. Aceita-lo aqui como sucesso desfaria a
+# correcao — e hoje, com o portal do Estado recusando emitir CRC, TODA rodada do
+# CAGEC e 'parcial': a vigilancia nasceria desligada justo no estado degradado.
+# Para as outras fontes isto tambem NAO afrouxa nada: na main o filtro ja era
+# `status = 'success'`, logo o 'partial' delas nunca contou como sucesso.
+STATUS_SUCESSO = ("success", "ok")
 
 # Acima desta idade (segundos) um processo de ingestao/Chromium e considerado
 # travado. Alinhado ao teto dos crons (timeout -k 30 3000 = 50 min) + margem.

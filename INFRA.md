@@ -181,8 +181,22 @@ para não competir por CPU no host burstable. Todos os comandos usam
 | `fns` | `30 5 * * *` | `30 6 * * *` | `30 7 * * *` |
 | `govbr-renew` | `5 * * * *` | `25 * * * *` | `45 * * * *` |
 | `queue-sigcon` | `0,30 * * * *` | `10,40 * * * *` | `20,50 * * * *` |
-| `painel-alertas` | — | — | `15 */2 * * *` |
-| `cagec` | — | — | `40 5 * * *` |
+| `painel-alertas` | `45 */2 * * *` | `15 */2 * * *` | `15 */2 * * *` |
+| `cagec` | `0 10,15,19,23 * * *` | `48 10,15,19,23 * * *` | `46 10,15,19,23 * * *` |
+| `cauc-manha` | `25 10-14 * * *` | `27 10-14 * * *` | `29 10-14 * * *` |
+| `gconv-es` / `transfvol-go` / `cofin-ses-go` | — | `40` / `42` / `44 10,15,19,23` | — |
+| `tcm-go` | — | `45 10 * * *` | — |
+
+> 🕐 **TUDO EM UTC. Brasília é UTC−3.** Host, `instance_timezone` do Coolify e
+> PHP do container em `Etc/UTC`. As faixas do CAGEC (10/15/19/23 UTC) são
+> **07h, 12h, 16h e 20h de Brasília** — um cron escrito como "07:00" rodaria às
+> 4h da manhã para o cliente, e rodou.
+
+> **`cauc-manha`** existe porque `cauc_situacao.data_pesquisa` é a data do
+> extrato **do Tesouro**, não da nossa coleta, e eles só publicam o arquivo do
+> dia entre **07h e 09h20 BRT**. A rodada do CAUC pendurada no `sigcon` pegava o
+> arquivo de ontem, e às 8h a tela ainda mostrava a data anterior. Esta task
+> insiste de hora em hora (10–14 UTC) até a data virar; é HTTP puro, ~2s.
 
 Detalhes de cada rotina e dos comandos completos: `docs/CRON_SETUP.md`.
 

@@ -127,7 +127,10 @@ function SeloColeta({ em }: { em?: string | null }) {
   return (
     <span
       className="text-[10px]"
-      style={{ color: atrasado ? "var(--bi-warn)" : "var(--bi-muted)" }}
+      /* `--bi-warn-ink`: em texto de 10px o token de exibição não tem
+         contraste, e é a regra que todos os outros seis usos de warn neste
+         arquivo já seguem. */
+      style={{ color: atrasado ? "var(--bi-warn-ink)" : "var(--bi-muted)" }}
       title={atrasado ? "Sem coleta nova há mais de um dia" : undefined}
     >
       Atualizado em {formatDataHora(em)}

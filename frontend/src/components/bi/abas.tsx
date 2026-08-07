@@ -22,7 +22,7 @@ import {
 import { CADASTRO_ESTADUAL, NOME_UF, tituloEstadual } from "@/lib/estadual";
 import {
   formatCurrencyShort, formatInt, formatDate, formatDataHora, horasDesde, diasLabel,
-  parseDate,
+  parseDate, diasSeveridade,
 } from "@/lib/bi-format";
 import {
   BI_CORES, Chip, DotMeter, Gauge, ListaRollup, Metric, Painel, PainelHead,
@@ -685,7 +685,7 @@ export function AbaEstaduaisView({ d, tv }: AbaProps & { d: AbaEstaduais }) {
  *  quer dizer alguma coisa para quem sabe de cor com que frequência o coletor
  *  roda. O CAGEC roda 4x/dia e o CAUC de hora em hora pela manhã; mais de 26h
  *  sem coleta é atraso de verdade, não variação de horário. */
-function SeloColeta({ em }: { em?: string | null }) {
+function SeloColeta({ em, horas = 30 }: { em?: string | null; horas?: number }) {
   if (!em) {
     return (
       <span className="text-[11px]" style={{ color: "var(--bi-faint)" }}>
@@ -694,11 +694,13 @@ function SeloColeta({ em }: { em?: string | null }) {
     );
   }
   const h = horasDesde(em);
-  const atrasado = h !== null && h > 26;
+  const atrasado = h !== null && h > horas;
   return (
     <span
       className="inline-flex items-center gap-1 text-[11px]"
-      style={{ color: atrasado ? "var(--bi-warn)" : "var(--bi-muted)" }}
+      /* `--bi-warn-ink`, não `--bi-warn`: o token de exibição é para ícone,
+         selo e número grande; em texto de 11px ele não tem contraste. */
+      style={{ color: atrasado ? "var(--bi-warn-ink)" : "var(--bi-muted)" }}
       title={atrasado ? "Sem coleta nova há mais de um dia" : undefined}
     >
       <RefreshCw className="size-3 shrink-0" aria-hidden />
@@ -956,12 +958,19 @@ export function AbaDocumentosView({
      ANTIGA — não a mais nova. Mostrar a mais nova diria "atualizado agora" numa
      carteira em que 40 dos 41 municípios estão parados há uma semana, que é
      exatamente o erro que o cartão antigo cometia ao ler `por_municipio[0]`. */
-  const maisAntigo = (xs: Array<{ atualizado_em?: string | null }>) => {
-    const ts = xs.map((x) => x.atualizado_em).filter(Boolean) as string[];
-    return ts.length ? ts.reduce((a, b) => (a < b ? a : b)) : null;
-  };
-  const coletaCauc = carteira ? maisAntigo(c.por_municipio) : primeiro?.atualizado_em ?? null;
-  const coletaCagec = carteira ? maisAntigo(d.cagec.por_municipio) : cagec?.atualizado_em ?? null;
+  /* ⚠️ NA CARTEIRA O CARIMBO VEM DO SERVIDOR, não de um `min()` aqui. O
+     `por_municipio` do payload é CORTADO (60 no CAUC, 20 no CAGEC) e ainda pula
+     quem não tem linha na tabela: um mínimo calculado na tela carimbaria "a
+     mais antiga entre as que couberam" e, numa carteira de 41 municípios, isso
+     é uma afirmação falsa sobre a carteira — o mesmo defeito do cartão que esta
+     tela acabou de aposentar. `coleta_mais_antiga` é um `min()` sobre TODO o
+     escopo, feito em uma query. */
+  const coletaCauc = carteira
+    ? c.coleta_mais_antiga ?? null
+    : primeiro?.atualizado_em ?? null;
+  const coletaCagec = carteira
+    ? d.cagec.coleta_mais_antiga ?? null
+    : cagec?.atualizado_em ?? null;
 
   /* O QUE OCUPA O LUGAR DO CARTÃO DE DATA (município único): a próxima
      obrigação a vencer, somando as duas esferas. Um cadastro "Em dia" hoje fica
@@ -991,8 +1000,15 @@ export function AbaDocumentosView({
       if (i.tipo !== "regular" || !i.validade) continue;
       const dt = parseDate(i.validade);
       if (!dt) continue;
+      /* ⚠️ O VENCIDO CONTINUA NA CONTA. A primeira versão descartava `dias < 0`
+         supondo que ele já apareceria como pendência no cartão ao lado — e não
+         aparece: obrigação do CAGEC com validade no passado continua com
+         `tipo: "regular"`, porque o scraper deriva o tipo do TEXTO da situação
+         ("Vigente"), nunca da data. Descartá-lo fazia o cartão exibir um verde
+         "vence em 90 dias" logo acima de uma linha âmbar dizendo que já venceu;
+         e, se todas as validades já tivessem passado, afirmar que não havia
+         validade nenhuma. */
       const dias = Math.ceil((dt.getTime() - agora) / 86_400_000);
-      if (dias < 0) continue; // vencido já conta como pendência no cartão ao lado
       if (!melhor || dias < melhor.dias) melhor = { dias, data: dt, label: i.label };
     }
     return melhor;
@@ -1075,8 +1091,11 @@ export function AbaDocumentosView({
             grande={tv} />
         ) : (
           <Metric icon={CalendarX2}
-            tom={!proxVencimento ? "neutro" : proxVencimento.dias <= 30 ? "warn" : "ok"}
-            label="Vence em breve"
+            /* `diasSeveridade` é a régua do resto do sistema (<0 crítico, <=60
+               atenção). Um limiar próprio faria a MESMA validade sair verde
+               aqui e âmbar na lista logo abaixo. */
+            tom={!proxVencimento ? "neutro" : diasSeveridade(proxVencimento.dias)}
+            label={proxVencimento && proxVencimento.dias < 0 ? "Validade vencida" : "Vence em breve"}
             valor={proxVencimento ? formatDate(proxVencimento.data.toISOString()) : "—"}
             sub={proxVencimento
               ? `${diasLabel(proxVencimento.dias)} · ${proxVencimento.label}`
@@ -1106,8 +1125,16 @@ export function AbaDocumentosView({
           <section className="min-w-0">
             <EsferaHead
               titulo="CAUC — União"
-              selo={<SeloColeta em={coletaCauc} />}
-              sub="Tesouro Nacional · exigências federais"
+              selo={<SeloColeta em={coletaCauc} horas={12} />}
+              /* ⚠️ O EXTRATO VOLTOU AO SUBTÍTULO. Ele saiu junto com o cartão
+                 "Última consulta", mas o defeito era o RÓTULO, não o fato:
+                 esta é a única informação do sistema sobre a idade do dado NA
+                 ORIGEM. O Tesouro publica o arquivo do dia só entre 7h e
+                 9h20; sem isto não há como distinguir "não coletamos" de
+                 "coletamos, e lá ainda é o de ontem". */
+              sub={primeiro?.data_pesquisa
+                ? `Tesouro Nacional · extrato de ${formatDate(primeiro.data_pesquisa)}`
+                : "Tesouro Nacional · exigências federais"}
               /* Conta o que esta NA TELA. `total_itens` exclui os `na`, entao
                  o cabecalho dizia "25 exigencias" sobre blocos que somam 28 —
                  e nenhum dos dois numeros batia com o extrato. */
@@ -1136,8 +1163,12 @@ export function AbaDocumentosView({
                         <span className="truncate text-[12px]">
                           {m.nome || `Município ${m.municipio_id}`}
                         </span>
+                        {/* ROTULADA. Sem a palavra "extrato" esta data brigava
+                            com o "Atualizado em" do cabeçalho: duas datas
+                            diferentes, uma embaixo da outra, sem nada dizendo
+                            que falam de coisas diferentes. */}
                         <span className="ml-auto shrink-0 text-[10px]" style={{ color: "var(--bi-faint)" }}>
-                          {m.data_pesquisa ? formatDate(m.data_pesquisa) : "sem data"}
+                          {m.data_pesquisa ? `extrato de ${formatDate(m.data_pesquisa)}` : "sem data"}
                         </span>
                         <Chip tom={m.regular ? "ok" : "crit"}>
                           {m.regular ? "Em dia" : `${formatInt(m.pendencias)} pend.`}
