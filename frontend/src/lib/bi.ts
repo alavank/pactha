@@ -411,6 +411,14 @@ export interface AbaDocumentos {
       itens: CaucItemDetalhe[];
       pendencias: number;
       data_pesquisa: string | null;
+      /** ⚠️ TRÊS DATAS DIFERENTES convivem aqui, e confundi-las já pôs data
+       *  errada na tela: `data_pesquisa` é o dia da raspagem (DATE, sem hora)
+       *  — e no CAUC o campo de mesmo nome significa outra coisa, a data do
+       *  extrato do Tesouro; `crc_em` é a data do certificado, procedência do
+       *  detalhamento; `atualizado_em` é a hora da NOSSA coleta (TIMESTAMPTZ),
+       *  o único que significa a mesma coisa nas duas esferas e o único que
+       *  pode carimbar "Atualizado em". */
+      atualizado_em?: string | null;
       /** De quando é o detalhamento na tela. A lista de documentos não vem da
        *  consulta pública — vem do CRC em PDF. `crc_erro` é a frase do próprio
        *  portal quando ele recusa emitir; com ela setada, `itens` é o que

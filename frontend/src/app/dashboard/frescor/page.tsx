@@ -14,6 +14,13 @@ interface Fonte {
   idade_dias: number | null;
   registros: number | null;
   status: "fresco" | "atrasado" | "critico" | "desconhecido";
+  /** Última TENTATIVA e o status cru dela — diferentes de `ultima_coleta`, que
+   *  agora só conta rodada bem-sucedida. Uma fonte que roda de hora em hora e
+   *  falha há três dias tem tentativa recente e coleta velha; antes as duas
+   *  eram o mesmo número e a linha ficava verde. */
+  ultima_tentativa?: string | null;
+  ultimo_status?: string | null;
+  falhando?: boolean;
 }
 
 const STATUS_TOM: Record<string, { tom: "neutro" | "ok" | "atencao" | "critico"; label: string }> = {
@@ -153,7 +160,17 @@ export default function FrescorPage() {
                         <Campos
                           campos={[
                             { rotulo: "Último dado", valor: fmtDt(f.ultimo_dado) },
-                            { rotulo: "Última coleta", valor: fmtDt(f.ultima_coleta) },
+                            { rotulo: "Última coleta com sucesso", valor: fmtDt(f.ultima_coleta) },
+                            /* Só aparece quando a última tentativa NÃO deu certo.
+                               Na linha saudável seria ruído: tentativa e sucesso
+                               são o mesmo instante. */
+                            ...(f.falhando
+                              ? [{
+                                  rotulo: "Última tentativa",
+                                  tom: "critico" as const,
+                                  valor: `${fmtDt(f.ultima_tentativa ?? null)} — ${f.ultimo_status ?? "?"}`,
+                                }]
+                              : []),
                           ]}
                         />
                       </ItemLinha>

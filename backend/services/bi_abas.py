@@ -607,6 +607,14 @@ async def _cagec_bloco(db: AsyncSession, ids: list[int]) -> dict:
             "itens": s.get("itens") or [],
             "pendencias": s.get("pendencias") or 0,
             "data_pesquisa": s.get("data_pesquisa"),
+            # ⚠️ QUANDO O ROBO RODOU, que NAO e `data_pesquisa`. No CAGEC o
+            # `data_pesquisa` e `date.today()` do proprio scraper (DATE, sem
+            # hora); no CAUC e a data do extrato do TESOURO, que pode ser de
+            # ontem. Chamar os dois de "atualizado em" na tela juntava duas
+            # coisas diferentes sob o mesmo rotulo. `atualizado_em` e
+            # TIMESTAMPTZ e significa a mesma coisa nas duas esferas: a hora
+            # da nossa coleta. E o unico campo que pode carimbar as duas.
+            "atualizado_em": s.get("atualizado_em"),
             # Procedencia do detalhamento. Sem isto, o Painel e a TV repetem o
             # erro que a tela do modulo cometeu em 01/08/2026: exibir as duas
             # linhas de fallback como se fossem o cadastro inteiro, com o

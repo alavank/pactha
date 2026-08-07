@@ -16,10 +16,23 @@ from models.user import User
 
 router = APIRouter(prefix="/api/admin/freshness", tags=["admin"])
 
+# ⚠️ VOCABULARIO DE STATUS DIVERGENTE, e ignorar isso deixa fonte quebrada
+# passando por saudavel. Os coletores nao falam a mesma lingua no
+# `ingestion_log`: cauc/gconv_es/sismob gravam 'success' (e 'partial'), enquanto
+# o cagec_scraper grava 'ok'/'parcial'/'erro'. Este monitor lia
+# `max(finished_at)` SEM olhar status nenhum — uma rodada que morreu no meio
+# contava como coleta e a linha pintava "Fresco". Foi assim que a Freitas passou
+# nove dias com o CAGEC falhando todo dia sem ninguem ver.
+_SUCESSO = ("success", "ok", "partial", "parcial")
+
 # (rotulo, SQL que retorna (max_timestamp, count), source no ingestion_log)
 _SOURCES = [
-    ("SIGCON — Convênios estaduais",
-     "SELECT max(updated_at), count(*) FROM convenios_estadual WHERE fonte IS NULL OR fonte NOT ILIKE '%FNS%'",
+    # ⚠️ `NOT ILIKE '%FNS%'` sozinho tambem varria as linhas do GConv-ES para
+    # dentro da contagem do SIGCON: convenio capixaba aparecia creditado a
+    # Minas. Cada fonte conta o que e dela.
+    ("SIGCON — Convênios estaduais (MG)",
+     "SELECT max(updated_at), count(*) FROM convenios_estadual "
+     "WHERE (fonte IS NULL OR fonte NOT ILIKE '%FNS%') AND coalesce(fonte,'') NOT ILIKE '%GCONV%'",
      "sigcon_scraper"),
     ("FNS — Saúde (federal)",
      "SELECT max(updated_at), count(*) FROM convenios_estadual WHERE fonte ILIKE '%FNS%'",
@@ -47,6 +60,52 @@ _SOURCES = [
      "simec_par"),
 ]
 
+# ⚠️ FONTES QUE SO EXISTEM PARA CERTAS UFs, e por isso nao podem morar na lista
+# fixa acima: numa carteira sem municipio de Goias, uma linha "TCM-GO" eternamente
+# vazia seria lida como coletor quebrado. A chave e a UF do TENANT (ha municipio
+# daquele estado?), NAO o municipio selecionado no seletor: este monitor e do
+# ambiente inteiro e nao recebe `municipio_id`.
+#
+# ⚠️ E OS ROTULOS DIZEM O QUE CADA UMA E. Só MG tem coletor de CADASTRO ESTADUAL
+# (o CAGEC). O que existe de ES e GO e outra coisa — convenio, repasse,
+# cofinanciamento e conta julgada irregular. Chamar tudo de "cadastro estadual"
+# poria na tela a promessa de uma cobertura de regularidade que nao temos fora
+# de Minas, que e exatamente o erro que `lib/estadual.ts` existe para impedir.
+_SOURCES_POR_UF: dict[str, list[tuple[str, str, str | None]]] = {
+    "MG": [
+        ("CAGEC — Cadastro estadual (MG)",
+         "SELECT max(atualizado_em), count(*) FROM cagec_situacao",
+         "cagec"),
+    ],
+    "ES": [
+        ("GConv-ES — Convênios estaduais (ES)",
+         "SELECT max(updated_at), count(*) FROM convenios_estadual WHERE fonte ILIKE '%GCONV%'",
+         "gconv_es"),
+    ],
+    "GO": [
+        ("TransfVol-GO — Repasses estaduais (GO)",
+         "SELECT max(updated_at), count(*) FROM repasses_estaduais",
+         "transfvol_go"),
+        ("SES-GO — Cofinanciamento da saúde (GO)",
+         "SELECT max(updated_at), count(*) FROM cofinanciamento_saude",
+         "cofin_ses_go"),
+        ("TCM-GO — Contas irregulares (GO)",
+         "SELECT max(updated_at), count(*) FROM contas_irregulares",
+         "tcm_go"),
+    ],
+}
+
+
+async def _ufs_do_tenant(db: AsyncSession) -> set[str]:
+    """UFs com municipio ativo. Vazio em caso de erro — melhor a lista curta de
+    sempre do que uma tela de monitor que nao abre."""
+    try:
+        r = await db.execute(text(
+            "SELECT DISTINCT upper(coalesce(uf, '')) FROM municipios WHERE active"))
+        return {x[0] for x in r.fetchall() if x[0]}
+    except Exception:
+        return set()
+
 
 def _status(age_days: float | None) -> str:
     if age_days is None:
@@ -70,18 +129,41 @@ async def freshness(
     if current.role != "admin":
         raise HTTPException(403, "Apenas administradores acessam o monitor de frescor")
     now = datetime.now(timezone.utc)
-    # ultima execucao por coletor (ingestion_log)
+    # Ultima execucao BEM-SUCEDIDA por coletor, e — separadamente — a ultima
+    # TENTATIVA com o status dela. Sao coisas diferentes e a tela precisa das
+    # duas: fonte que roda de hora em hora e falha ha tres dias tem tentativa
+    # recente e sucesso velho, e so a segunda coluna denuncia isso.
     runs: dict[str, datetime] = {}
+    tentativas: dict[str, tuple[datetime, str]] = {}
     try:
-        r = await db.execute(text("SELECT source, max(finished_at) FROM ingestion_log GROUP BY source"))
+        r = await db.execute(
+            text("SELECT source, max(finished_at) FROM ingestion_log "
+                 "WHERE lower(coalesce(status, '')) = ANY(:ok) GROUP BY source"),
+            {"ok": list(_SUCESSO)})
         for src, ts in r.fetchall():
             if ts:
                 runs[src] = ts
     except Exception:
         pass
+    try:
+        r = await db.execute(text(
+            "SELECT DISTINCT ON (source) source, finished_at, coalesce(status, '?') "
+            "FROM ingestion_log WHERE finished_at IS NOT NULL "
+            "ORDER BY source, finished_at DESC"))
+        for src, ts, st in r.fetchall():
+            if ts:
+                tentativas[src] = (ts, st)
+    except Exception:
+        pass
+
+    ufs = await _ufs_do_tenant(db)
+    fontes = list(_SOURCES)
+    for uf, extras in _SOURCES_POR_UF.items():
+        if uf in ufs:
+            fontes.extend(extras)
 
     out = []
-    for label, sql, src in _SOURCES:
+    for label, sql, src in fontes:
         last_data = None
         count = None
         try:
@@ -91,10 +173,14 @@ async def freshness(
         except Exception:
             pass
         last_run = runs.get(src) if src else None
-        # frescor = mais recente entre dado gravado e execucao do coletor
+        tent = tentativas.get(src) if src else None
+        # frescor = mais recente entre dado gravado e execucao BEM-SUCEDIDA.
+        # A tentativa que falhou de proposito NAO entra: era ela que fazia uma
+        # fonte morta aparecer verde.
         cands = [t for t in (last_data, last_run) if t is not None]
         last = max(cands) if cands else None
         age_days = ((now - last).total_seconds() / 86400.0) if last else None
+        falhando = bool(tent and last_run and tent[0] > last_run)
         out.append({
             "fonte": label,
             "ultimo_dado": last_data.isoformat() if last_data else None,
@@ -102,7 +188,12 @@ async def freshness(
             "referencia": last.isoformat() if last else None,
             "idade_dias": round(age_days, 1) if age_days is not None else None,
             "registros": count,
-            "status": _status(age_days),
+            # A ultima tentativa e o status cru dela — e o que distingue "ninguem
+            # tentou" de "tentou e quebrou", indistinguiveis ate agora.
+            "ultima_tentativa": tent[0].isoformat() if tent else None,
+            "ultimo_status": tent[1] if tent else None,
+            "falhando": falhando,
+            "status": "critico" if falhando else _status(age_days),
         })
     # ordena piores primeiro
     ordem = {"critico": 0, "desconhecido": 1, "atrasado": 2, "fresco": 3}

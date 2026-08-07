@@ -48,7 +48,22 @@ FRESCOR_HORAS = {
     "simec_par": 12,
     "siconv_convenio_backfill": 30,
     "sismob": 30,                    # 1x/dia (auto-throttle no proprio ingest)
+    # ⚠️ CAGEC ENTRA COM O VOCABULARIO CORRIGIDO (ver STATUS_SUCESSO abaixo).
+    # Ele nunca grava 'success' — grava 'ok'/'parcial'/'erro'. Enquanto o filtro
+    # era `status = 'success'`, por-lo aqui faria o watchdog acusar
+    # "nunca teve sucesso" para sempre, e por isso ele ficou de fora. Era a
+    # unica fonte em cron sem vigilancia nenhuma: a Freitas passou nove dias com
+    # o CAGEC falhando todo dia e nada apitou.
+    # 4x/dia -> 6h entre rodadas; 30h = quase cinco janelas perdidas.
+    "cagec": 30,
 }
+
+# ⚠️ CADA COLETOR ESCREVE O SUCESSO COM UMA PALAVRA. Conferido nos seis:
+# cauc/gconv_es/sismob/simec_par usam 'success' (e 'partial' quando parcial);
+# o cagec_scraper usa 'ok'/'parcial'/'erro'. Filtrar por 'success' literal
+# excluia o CAGEC inteiro. Nao vale "padronizar o coletor e pronto": o historico
+# ja gravado continuaria em 'ok', e a fonte ficaria invisivel por mais 30h.
+STATUS_SUCESSO = ("success", "ok", "partial", "parcial")
 
 # Acima desta idade (segundos) um processo de ingestao/Chromium e considerado
 # travado. Alinhado ao teto dos crons (timeout -k 30 3000 = 50 min) + margem.
@@ -71,9 +86,9 @@ def _fontes_paradas(cur) -> list[dict]:
     cur.execute("""
         SELECT source, max(finished_at) AS ultimo
         FROM ingestion_log
-        WHERE status = 'success'
+        WHERE lower(coalesce(status, '')) = ANY(%s)
         GROUP BY source
-    """)
+    """, (list(STATUS_SUCESSO),))
     achados = []
     for source, ultimo in cur.fetchall():
         limite_h = FRESCOR_HORAS.get(source)
@@ -88,7 +103,8 @@ def _fontes_paradas(cur) -> list[dict]:
                 "detalhe": f"ultimo sucesso ha {idade_h:.1f}h (limite {limite_h}h)",
             })
     # Fontes ESPERADAS que nunca tiveram sucesso nenhum tambem contam.
-    cur.execute("SELECT DISTINCT source FROM ingestion_log WHERE status = 'success'")
+    cur.execute("SELECT DISTINCT source FROM ingestion_log "
+                "WHERE lower(coalesce(status, '')) = ANY(%s)", (list(STATUS_SUCESSO),))
     com_sucesso = {r[0] for r in cur.fetchall()}
     for source in FRESCOR_HORAS:
         if source not in com_sucesso:

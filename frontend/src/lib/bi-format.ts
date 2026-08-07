@@ -60,6 +60,37 @@ export function diasLabel(dias: number | null | undefined): string {
   return `vence em ${d} dias`;
 }
 
+/** Instante da NOSSA coleta: "07/08/2026, 09:21". Use SÓ com TIMESTAMPTZ
+ *  (`atualizado_em`), nunca com data pura.
+ *
+ *  ⚠️ FUSO CRAVADO EM BRASÍLIA, de propósito. O servidor roda em UTC — três
+ *  horas à frente — e as superfícies onde isto aparece incluem TV de gabinete e
+ *  link público, aparelhos cujo fuso ninguém controla. Deixar no fuso do
+ *  aparelho faria a mesma coleta aparecer com horas diferentes em duas telas do
+ *  mesmo município, e um quiosque mal configurado carimbaria 12h21 numa coleta
+ *  das 9h21. O horário do negócio é o de Brasília, não o de quem olha.
+ *
+ *  ⚠️ E NÃO copie o `fmtDate` de `dashboard/cauc/page.tsx`, que usa
+ *  `timeZone: "UTC"`: sobre um instante ele mostraria a hora do servidor. */
+export function formatDataHora(v: string | null | undefined): string {
+  if (!v) return "—";
+  const d = parseDate(String(v));
+  if (!d) return String(v);
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit", month: "2-digit", year: "numeric",
+    hour: "2-digit", minute: "2-digit",
+    timeZone: "America/Sao_Paulo",
+  }).format(d);
+}
+
+/** Quantas horas faz desde `v` (TIMESTAMPTZ). Null quando não dá para saber. */
+export function horasDesde(v: string | null | undefined): number | null {
+  if (!v) return null;
+  const d = parseDate(String(v));
+  if (!d) return null;
+  return (Date.now() - d.getTime()) / 3_600_000;
+}
+
 export function parseDate(v: string): Date | null {
   const s = String(v).trim();
 

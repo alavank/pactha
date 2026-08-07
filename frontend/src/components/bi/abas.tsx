@@ -13,14 +13,17 @@ import React from "react";
 import {
   Wallet, Landmark, Coins, CalendarClock, FileWarning, ShieldCheck, ShieldAlert,
   Users, HeartPulse, Activity, FileCheck2, Stethoscope, Building2, TrendingUp, Info,
-  HardHat, AlertCircle, AlertTriangle, Ban, CheckCircle2,
+  HardHat, AlertCircle, AlertTriangle, Ban, CheckCircle2, RefreshCw, CalendarX2,
 } from "lucide-react";
 import {
   AbaDocumentos, AbaEstaduais, AbaFns, AbaParlamentares, AbaSismob, AbaTransfereGov,
   Alertas, CaucItemDetalhe, Lancamento, Overview, isRollup,
 } from "@/lib/bi";
 import { CADASTRO_ESTADUAL, NOME_UF, tituloEstadual } from "@/lib/estadual";
-import { formatCurrencyShort, formatInt, formatDate, diasLabel } from "@/lib/bi-format";
+import {
+  formatCurrencyShort, formatInt, formatDate, formatDataHora, horasDesde, diasLabel,
+  parseDate,
+} from "@/lib/bi-format";
 import {
   BI_CORES, Chip, DotMeter, Gauge, ListaRollup, Metric, Painel, PainelHead,
   RankBars, StackBar, Vazio,
@@ -667,17 +670,58 @@ export function AbaEstaduaisView({ d, tv }: AbaProps & { d: AbaEstaduais }) {
 // Documentação — CAUC e CAGEC
 // ==========================================================================
 
+/** Carimbo de COLETA, ao lado do nome da fonte.
+ *
+ *  ⚠️ O CAMPO É `atualizado_em`, e não `data_pesquisa`. O cartão que existia
+ *  antes aqui mostrava `data_pesquisa` sob o rótulo "Última consulta", e isso
+ *  estava errado de duas maneiras ao mesmo tempo: no CAUC aquele campo é a data
+ *  do extrato do TESOURO (que publica o arquivo do dia só entre 7h e 9h20, logo
+ *  de manhã ainda é o de ontem) e no CAGEC é o dia da raspagem sem hora. O
+ *  gestor lia "06/08" às 9h do dia 7 e concluía que o robô não tinha rodado —
+ *  quando tinha. `atualizado_em` é TIMESTAMPTZ e significa a mesma coisa nas
+ *  duas esferas: quando NÓS coletamos.
+ *
+ *  A idade vira cor porque data sem referência não informa: "07/08 às 04:46" só
+ *  quer dizer alguma coisa para quem sabe de cor com que frequência o coletor
+ *  roda. O CAGEC roda 4x/dia e o CAUC de hora em hora pela manhã; mais de 26h
+ *  sem coleta é atraso de verdade, não variação de horário. */
+function SeloColeta({ em }: { em?: string | null }) {
+  if (!em) {
+    return (
+      <span className="text-[11px]" style={{ color: "var(--bi-faint)" }}>
+        · sem registro de coleta
+      </span>
+    );
+  }
+  const h = horasDesde(em);
+  const atrasado = h !== null && h > 26;
+  return (
+    <span
+      className="inline-flex items-center gap-1 text-[11px]"
+      style={{ color: atrasado ? "var(--bi-warn)" : "var(--bi-muted)" }}
+      title={atrasado ? "Sem coleta nova há mais de um dia" : undefined}
+    >
+      <RefreshCw className="size-3 shrink-0" aria-hidden />
+      Atualizado em {formatDataHora(em)}
+    </span>
+  );
+}
+
 /** Cabeçalho de ESFERA (União / Minas). É o que impede o CAUC e o CAGEC de
  *  virarem uma sopa de blocos quando os dois tiverem dado. */
 function EsferaHead({
-  titulo, sub, contagem,
-}: { titulo: string; sub: string; contagem?: string }) {
+  titulo, sub, contagem, selo,
+}: { titulo: string; sub: string; contagem?: string; selo?: React.ReactNode }) {
   return (
     <div
       className="mb-2 flex flex-wrap items-baseline gap-x-2 border-b pb-1.5"
       style={{ borderColor: "var(--bi-line-strong)" }}
     >
       <span className="bi-title text-[15px]">{titulo}</span>
+      {/* O selo vem colado ao NOME, antes do subtítulo: é do nome que ele fala.
+          Posto depois da contagem (que é `ml-auto`) ele iria para a direita e
+          pareceria falar do bloco inteiro. */}
+      {selo}
       <span className="text-[11px]" style={{ color: "var(--bi-faint)" }}>{sub}</span>
       {contagem && (
         <span className="bi-num ml-auto text-[11px]" style={{ color: "var(--bi-muted)" }}>
@@ -907,6 +951,53 @@ export function AbaDocumentosView({
   const crcAusente = !!cagec && cagec.detalhe_do_crc === false;
   const crcVelho = !!cagec && cagec.detalhe_do_crc !== false && !!cagec.crc_erro;
 
+  /* CARIMBO DE COLETA POR ESFERA.
+     Na carteira não existe "o" município, então o carimbo é o da coleta MAIS
+     ANTIGA — não a mais nova. Mostrar a mais nova diria "atualizado agora" numa
+     carteira em que 40 dos 41 municípios estão parados há uma semana, que é
+     exatamente o erro que o cartão antigo cometia ao ler `por_municipio[0]`. */
+  const maisAntigo = (xs: Array<{ atualizado_em?: string | null }>) => {
+    const ts = xs.map((x) => x.atualizado_em).filter(Boolean) as string[];
+    return ts.length ? ts.reduce((a, b) => (a < b ? a : b)) : null;
+  };
+  const coletaCauc = carteira ? maisAntigo(c.por_municipio) : primeiro?.atualizado_em ?? null;
+  const coletaCagec = carteira ? maisAntigo(d.cagec.por_municipio) : cagec?.atualizado_em ?? null;
+
+  /* O QUE OCUPA O LUGAR DO CARTÃO DE DATA (município único): a próxima
+     obrigação a vencer, somando as duas esferas. Um cadastro "Em dia" hoje fica
+     irregular sozinho na semana que vem, e essa é a única informação da fileira
+     sobre a qual o gestor ainda pode AGIR. A data de coleta saiu daqui porque
+     agora está ao lado do nome de cada fonte, onde diz de quem ela é. */
+  /* ⚠️ O "AGORA" VEM DE EFEITO, NÃO DO RENDER. Duas razões, e a segunda é a que
+     importa: `Date.now()` durante o render é impuro (o lint barra, com razão),
+     e esta tela roda em TV DE GABINETE que fica ligada por dias — um "vence em
+     12 dias" calculado no dia em que a TV foi ligada continuaria dizendo 12
+     para sempre. O relógio se refaz de hora em hora. */
+  const [agora, setAgora] = React.useState(0);
+  React.useEffect(() => {
+    /* Microtask: `setState` síncrono dentro de effect dispara render em cascata
+       e o lint barra — mesmo idioma já usado em `dashboard/cofinanciamento`. */
+    let vivo = true;
+    Promise.resolve().then(() => { if (vivo) setAgora(Date.now()); });
+    const t = setInterval(() => { if (vivo) setAgora(Date.now()); }, 3_600_000);
+    return () => { vivo = false; clearInterval(t); };
+  }, []);
+
+  const proxVencimento = React.useMemo(() => {
+    if (carteira || !agora) return null;
+    const todos = [...(primeiro?.itens ?? []), ...(cagec?.itens ?? [])];
+    let melhor: { dias: number; data: Date; label: string } | null = null;
+    for (const i of todos) {
+      if (i.tipo !== "regular" || !i.validade) continue;
+      const dt = parseDate(i.validade);
+      if (!dt) continue;
+      const dias = Math.ceil((dt.getTime() - agora) / 86_400_000);
+      if (dias < 0) continue; // vencido já conta como pendência no cartão ao lado
+      if (!melhor || dias < melhor.dias) melhor = { dias, data: dt, label: i.label };
+    }
+    return melhor;
+  }, [carteira, primeiro, cagec, agora]);
+
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -960,18 +1051,38 @@ export function AbaDocumentosView({
               ? `de ${primeiro?.total_itens ?? 0} · CAGEC não conferido`
               : `de ${(primeiro?.total_itens ?? 0) + (cagec?.itens?.length ?? 0)} exigências`}
           grande={tv} />
-        <Metric icon={CalendarClock}
-          label={carteira ? "Municípios conferidos" : "Última consulta"}
-          valor={carteira
-            ? `${formatInt(c.com_dados)} de ${formatInt(c.total_municipios)}`
-            : primeiro?.data_pesquisa ? formatDate(primeiro.data_pesquisa) : "—"}
-          /* ⚠️ O corte do detalhe DECLARADO. `bi_abas.py` só examina os
-             primeiros municípios da carteira; sem esta linha, "18 de 41" seria
-             lido como "23 estão irregulares" quando 21 nunca foram olhados. */
-          sub={carteira && c.detalhe_limitado
-            ? `conferência limitada aos ${formatInt(c.examinados ?? 0)} primeiros`
-            : undefined}
-          grande={tv} />
+        {/* ⚠️ ESTE CARTÃO NÃO MOSTRA MAIS DATA DE COLETA. Ele exibia
+            `data_pesquisa` sob o rótulo "Última consulta" e mentia por
+            construção: no CAUC aquele campo é a data do extrato do TESOURO, que
+            só publica o arquivo do dia entre 7h e 9h20 — às 9h do dia 7 a tela
+            dizia "06 de ago" e o gestor concluía que o robô tinha falhado. E na
+            carteira o valor vinha de `por_municipio[0]`, um município
+            arbitrário. O carimbo de coleta virou selo ao lado do NOME de cada
+            fonte (ver SeloColeta), onde fica claro de qual esfera ele fala.
+            Aqui entra a única coisa acionável que faltava na fileira: o próximo
+            vencimento. Na carteira o cartão continua sendo o de cobertura —
+            que não é data e não tinha por que sair. */}
+        {carteira ? (
+          <Metric icon={FileCheck2} label="Municípios conferidos"
+            valor={`${formatInt(c.com_dados)} de ${formatInt(c.total_municipios)}`}
+            /* ⚠️ O corte do detalhe DECLARADO. `bi_abas.py` só examina os
+               primeiros municípios da carteira; sem esta linha, "18 de 41"
+               seria lido como "23 estão irregulares" quando 21 nunca foram
+               olhados. */
+            sub={c.detalhe_limitado
+              ? `conferência limitada aos ${formatInt(c.examinados ?? 0)} primeiros`
+              : undefined}
+            grande={tv} />
+        ) : (
+          <Metric icon={CalendarX2}
+            tom={!proxVencimento ? "neutro" : proxVencimento.dias <= 30 ? "warn" : "ok"}
+            label="Vence em breve"
+            valor={proxVencimento ? formatDate(proxVencimento.data.toISOString()) : "—"}
+            sub={proxVencimento
+              ? `${diasLabel(proxVencimento.dias)} · ${proxVencimento.label}`
+              : "nenhuma validade informada"}
+            grande={tv} />
+        )}
       </div>
 
       {/* DUAS ESFERAS, CADA UMA NA SUA SEÇÃO ROTULADA.
@@ -995,6 +1106,7 @@ export function AbaDocumentosView({
           <section className="min-w-0">
             <EsferaHead
               titulo="CAUC — União"
+              selo={<SeloColeta em={coletaCauc} />}
               sub="Tesouro Nacional · exigências federais"
               /* Conta o que esta NA TELA. `total_itens` exclui os `na`, entao
                  o cabecalho dizia "25 exigencias" sobre blocos que somam 28 —
@@ -1065,6 +1177,10 @@ export function AbaDocumentosView({
                     ? tituloEstadual(ufsSemFonte[0])
                     : `Cadastro estadual — ${ufsSemFonte.join(", ")}`)
                 : "CAGEC — Minas Gerais"}
+              /* Sem fonte na UF não há coleta para carimbar — e um selo dizendo
+                 "sem registro" ao lado de "ainda não acompanhada" repetiria a
+                 mesma frase duas vezes. */
+              selo={semFonteNoEscopo ? undefined : <SeloColeta em={coletaCagec} />}
               sub={semFonteNoEscopo
                 ? "regularidade estadual · ainda não acompanhada por este sistema"
                 : cagecParcial
