@@ -14,6 +14,13 @@ interface Fonte {
   idade_dias: number | null;
   registros: number | null;
   status: "fresco" | "atrasado" | "critico" | "desconhecido";
+  /** Última TENTATIVA e o status cru dela — diferentes de `ultima_coleta`, que
+   *  agora só conta rodada bem-sucedida. Uma fonte que roda de hora em hora e
+   *  falha há três dias tem tentativa recente e coleta velha; antes as duas
+   *  eram o mesmo número e a linha ficava verde. */
+  ultima_tentativa?: string | null;
+  ultimo_status?: string | null;
+  falhando?: boolean;
 }
 
 const STATUS_TOM: Record<string, { tom: "neutro" | "ok" | "atencao" | "critico"; label: string }> = {
@@ -85,9 +92,13 @@ export default function FrescorPage() {
           <p className="mt-1 text-sm" style={{ color: "var(--bi-muted)" }}>
             <strong style={{ color: "var(--bi-text)" }}>Último dado</strong>: a data do
             registro mais recente que temos dessa fonte.{" "}
-            <strong style={{ color: "var(--bi-text)" }}>Última coleta</strong>: quando o robô
-            rodou pela última vez. As duas podem divergir — uma coleta bem-sucedida hoje pode
-            trazer dado antigo, e é isso que o status considera.
+            <strong style={{ color: "var(--bi-text)" }}>Última coleta com sucesso</strong>: a
+            última rodada que terminou bem — rodada que falhou ou veio incompleta NÃO conta
+            aqui.{" "}
+            <strong style={{ color: "var(--bi-text)" }}>Última tentativa</strong>: aparece só
+            quando a última rodada não foi um sucesso limpo, com o status cru do coletor ao
+            lado. As três podem divergir: uma coleta boa hoje pode trazer dado antigo, e uma
+            fonte pode estar rodando de hora em hora e falhando há dias.
           </p>
         </div>
         <Button variant="outline" onClick={carregar} disabled={loading}>
@@ -153,7 +164,17 @@ export default function FrescorPage() {
                         <Campos
                           campos={[
                             { rotulo: "Último dado", valor: fmtDt(f.ultimo_dado) },
-                            { rotulo: "Última coleta", valor: fmtDt(f.ultima_coleta) },
+                            { rotulo: "Última coleta com sucesso", valor: fmtDt(f.ultima_coleta) },
+                            /* Só aparece quando a última tentativa NÃO deu certo.
+                               Na linha saudável seria ruído: tentativa e sucesso
+                               são o mesmo instante. */
+                            ...(f.falhando
+                              ? [{
+                                  rotulo: "Última tentativa",
+                                  tom: "critico" as const,
+                                  valor: `${fmtDt(f.ultima_tentativa ?? null)} — ${f.ultimo_status ?? "?"}`,
+                                }]
+                              : []),
                           ]}
                         />
                       </ItemLinha>

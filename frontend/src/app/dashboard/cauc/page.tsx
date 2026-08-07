@@ -25,6 +25,7 @@ import api from "@/lib/api";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 import { acompanhamosEstadual, subtituloEstadual, tituloEstadual } from "@/lib/estadual";
 import { Bloco, BlocoHead, Lista, Selo, Vazio, situacaoTom } from "@/components/ui/superficies";
+import { formatDataHora, horasDesde } from "@/lib/bi-format";
 
 interface Item {
   codigo: string;
@@ -107,6 +108,34 @@ function fmtDate(iso?: string | null): string {
   if (!iso) return "-";
   try { return new Date(iso).toLocaleDateString("pt-BR", { timeZone: "UTC" }); }
   catch { return iso.slice(0, 10); }
+}
+
+/** "Atualizado em <data> <hora>", ao lado do nome da fonte.
+ *
+ *  ⚠️ O CAMPO É `atualizado_em` (TIMESTAMPTZ, hora da NOSSA coleta) e o fuso é
+ *  Brasília, cravado em `formatDataHora`. Não use o `fmtDate` daqui: ele
+ *  formata em `timeZone: "UTC"` — correto para data pura vinda do banco, errado
+ *  para um instante, porque mostraria a hora do servidor (3h à frente).
+ *
+ *  O rodapé de cada esfera dizia isto em texto miúdo no fim da lista. Subiu
+ *  para o cabeçalho porque a pergunta "isto está atualizado?" é a primeira que
+ *  se faz ao abrir a tela, não a última. */
+function SeloColeta({ em }: { em?: string | null }) {
+  if (!em) return null;
+  const h = horasDesde(em);
+  const atrasado = h !== null && h > 26;
+  return (
+    <span
+      className="text-[10px]"
+      /* `--bi-warn-ink`: em texto de 10px o token de exibição não tem
+         contraste, e é a regra que todos os outros seis usos de warn neste
+         arquivo já seguem. */
+      style={{ color: atrasado ? "var(--bi-warn-ink)" : "var(--bi-muted)" }}
+      title={atrasado ? "Sem coleta nova há mais de um dia" : undefined}
+    >
+      Atualizado em {formatDataHora(em)}
+    </span>
+  );
 }
 
 function agrupar(itens: Item[]): Array<[string, Item[]]> {
@@ -590,8 +619,9 @@ export default function RegularidadePage() {
                   coluna inteira e tem que ler como cabeçalho do sistema, não
                   como um degrau próprio. 15px não existia em nenhuma outra tela. */}
               <h2 className="bi-title text-[14px]">CAUC — União</h2>
+              <SeloColeta em={cauc?.atualizado_em} />
               <span className="text-[10px]" style={{ color: "var(--bi-faint)" }}>
-                Tesouro Nacional{cauc?.data_pesquisa ? ` · pesquisa de ${fmtDate(cauc.data_pesquisa)}` : ""}
+                Tesouro Nacional{cauc?.data_pesquisa ? ` · extrato de ${fmtDate(cauc.data_pesquisa)}` : ""}
               </span>
             </div>
 
@@ -609,9 +639,7 @@ export default function RegularidadePage() {
                     : ` — itens ${(cauc.pendencias_codigos || []).join(", ")} podem travar transferências.`)}
                 />
                 <Exigencias itens={cauc.itens || []} esfera="cauc" />
-                <p className="text-[10px]" style={{ color: "var(--bi-faint)" }}>
-                  Atualizado em {fmtDate(cauc.atualizado_em)}.
-                </p>
+
               </>
             )}
           </section>
@@ -624,11 +652,9 @@ export default function RegularidadePage() {
                   de GO nada aqui pode falar de Minas: o cliente trocou de
                   ambiente, e o ambiente é dele. */}
               <h2 className="bi-title text-[14px]">{tituloEstadual(ufDoMunicipio)}</h2>
+              {!semFonteEstadual && <SeloColeta em={cagec?.atualizado_em} />}
               <span className="text-[10px]" style={{ color: "var(--bi-faint)" }}>
                 {subtituloEstadual(ufDoMunicipio)}
-                {!semFonteEstadual && cagec?.data_pesquisa
-                  ? ` · pesquisa de ${fmtDate(cagec.data_pesquisa)}`
-                  : ""}
               </span>
             </div>
 
@@ -766,12 +792,11 @@ export default function RegularidadePage() {
                   doCrc={cagec.detalhe_do_crc} />
                 <Exigencias itens={cagec.itens || []} esfera="cagec" />
                 <OutrasEntidades entidades={cagec.entidades || []} />
-                <p className="text-[10px]" style={{ color: "var(--bi-faint)" }}>
-                  Atualizado em {fmtDate(cagec.atualizado_em)}.
-                  {cagec.crc_em && (
-                    <> Documentos conferidos no CRC de {fmtDate(cagec.crc_em)}.</>
-                  )}
-                </p>
+                {cagec.crc_em && (
+                  <p className="text-[10px]" style={{ color: "var(--bi-faint)" }}>
+                    Documentos conferidos no CRC de {fmtDate(cagec.crc_em)}.
+                  </p>
+                )}
               </>
             )}
           </section>
