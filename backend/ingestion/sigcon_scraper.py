@@ -588,11 +588,20 @@ def _marca_coleta(municipio_id: int, ok: bool, erro: str | None = None) -> None:
                         (FONTE_COLETA, municipio_id),
                     )
                 else:
+                    # CARIMBA ultima_coleta_em TAMBEM NO ERRO. Antes so o sucesso
+                    # carimbava e, como a fila ordena NULLS FIRST, um municipio que
+                    # falha login DETERMINISTICAMENTE ficava eternamente em 1o lugar:
+                    # abria TODA rodada, queimava ~40s, e empurrava os saudaveis para
+                    # fora da janela. Medido na Freitas: 7 municipios nunca coletaram
+                    # (Espinosa com 183 tentativas) e seguiam furando a fila todo dia.
+                    # Carimbando aqui, a fila vira round-robin honesto; o diagnostico
+                    # do problema fica em ultimo_erro/tentativas, nao na ordenacao.
                     cur.execute(
                         "INSERT INTO scraper_municipio_coleta "
-                        "(fonte, municipio_id, ultimo_erro_em, ultimo_erro, tentativas) "
-                        "VALUES (%s, %s, now(), %s, 1) "
+                        "(fonte, municipio_id, ultima_coleta_em, ultimo_erro_em, ultimo_erro, tentativas) "
+                        "VALUES (%s, %s, now(), now(), %s, 1) "
                         "ON CONFLICT (fonte, municipio_id) DO UPDATE SET "
+                        "ultima_coleta_em = now(), "
                         "ultimo_erro_em = now(), ultimo_erro = EXCLUDED.ultimo_erro, "
                         "tentativas = scraper_municipio_coleta.tentativas + 1",
                         (FONTE_COLETA, municipio_id, (erro or "")[:500]),
@@ -628,10 +637,19 @@ def _list_credentials() -> list[dict]:
         {order}
     """
     try:
+        # BACKOFF por falha consecutiva: quem falha login toda rodada (credencial
+        # invalida/trocada) e adiado progressivamente — 1 dia por tentativa, ate 5.
+        # Sem isso, mesmo com o carimbo no erro, um municipio quebrado volta ao topo
+        # da fila em poucas horas e continua roubando janela dos saudaveis. Tambem
+        # reduz o risco de lockout no portal por tentativas repetidas (Espinosa ja
+        # acumulou 183). `tentativas` zera no primeiro sucesso, entao a punicao some
+        # sozinha quando a credencial for corrigida.
         cur.execute(_SQL_BASE.format(
             join=("LEFT JOIN scraper_municipio_coleta sc "
                   "ON sc.municipio_id = cs.municipio_id AND sc.fonte = 'sigcon'"),
-            order="ORDER BY sc.ultima_coleta_em ASC NULLS FIRST, m.nome",
+            order=("ORDER BY (COALESCE(sc.ultima_coleta_em, sc.ultimo_erro_em, TIMESTAMPTZ 'epoch') "
+                   "          + (LEAST(COALESCE(sc.tentativas,0), 5) * INTERVAL '1 day')) ASC, "
+                   "         m.nome"),
         ))
     except Exception:
         # Tabela do rodizio ainda nao migrada: cai no comportamento antigo.
@@ -969,6 +987,22 @@ async def _run():
         _wanted = {_norm(x) for x in _only.split(",") if x.strip()}
         creds = [c for c in creds if _norm(c["municipio_nome"]) in _wanted]
         logger.info(f"SIGCON_ONLY ativo: {[c['municipio_nome'] for c in creds]}")
+
+    # LOTE POR RODADA: com a fila ja ordenada por rodizio+backoff, basta cortar os
+    # N primeiros. Rodadas curtas e FREQUENTES cobrem a carteira melhor do que
+    # poucas rodadas longas — foi o que resolveu o TransfereGov (PR #158): la a
+    # rodada unica nunca terminava, e fatiada passou a entregar 41/41 frescos.
+    # Aqui o efeito e o mesmo: em vez de 4 janelas/dia que cobrem ~11 municipios,
+    # varias janelas menores somam mais cobertura e nenhuma morre no meio.
+    # 0 ou vazio = sem corte (comportamento antigo).
+    try:
+        _lote = max(0, int(os.getenv("SIGCON_LOTE_MUNICIPIOS", "0") or "0"))
+    except ValueError:
+        _lote = 0
+    if _lote and len(creds) > _lote:
+        creds = creds[:_lote]
+        logger.info(f"LOTE: {len(creds)} municipio(s) desta rodada (mais desatualizados): "
+                    f"{[c['municipio_nome'] for c in creds]}")
 
     mun_map = _municipio_id_lookup()
     logger.info(f"Credenciais SIGCON-MG: {len(creds)}, municipios DB: {len(mun_map)}")
