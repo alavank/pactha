@@ -263,9 +263,15 @@ async def control_ingestion(
     historico real de ingestao — cada script grava aqui."""
     try:
         rows = (await db.execute(text(
-            "SELECT source, status, records_inserted, "
+            # inserted+updated na MESMA chave que a Central ja le: o sigcon
+            # passou a gravar as duas colunas separadas, e em regime estavel
+            # (quase tudo update) o inserted cru viraria 0 e pareceria coleta
+            # quebrada no console. LIMIT 80: o lote horario adiciona 24
+            # linhas/dia e com 40 o historico encolhia para ~1 dia.
+            "SELECT source, status, "
+            "records_inserted + coalesce(records_updated, 0) AS records_inserted, "
             "to_char(finished_at, 'YYYY-MM-DD\"T\"HH24:MI:SS') AS finished_at "
-            "FROM ingestion_log ORDER BY id DESC LIMIT 40"
+            "FROM ingestion_log ORDER BY id DESC LIMIT 80"
         ))).mappings().all()
         return {"log": [dict(r) for r in rows]}
     except Exception:
@@ -277,7 +283,7 @@ async def control_ingestion(
 # ativo = o que o cliente REALMENTE ve) + nomes que cada scraper grava no ingestion_log.
 _FONTES_MONITOR = [
     {"key": "convenios_estadual", "sources": ["sigcon_scraper", "sigcon_ckan_backfill"]},
-    {"key": "transferegov_propostas", "sources": ["transferegov_voluntarias"]},
+    {"key": "transferegov_propostas", "sources": ["transferegov_voluntarias", "transferegov_lote"]},
     {"key": "emendas_estaduais", "sources": ["emendas_estaduais"]},
     {"key": "cauc_situacao", "sources": ["cauc"]},
     {"key": "acordofes_credor", "sources": ["acordofes"]},

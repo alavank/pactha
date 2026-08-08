@@ -74,6 +74,13 @@ def _jwt_minutos_restantes(cookies: list[dict]) -> float:
 # virava (n_municipios x teto).
 _HIST_ORC: dict = {"restante": None}
 
+# Subcoleta de paginacao detectada na ULTIMA visita de cada municipio
+# (municipio_id -> (coletadas, total_oficial); ver o fim de _scrape_municipio).
+# No modulo pelo mesmo motivo do _HIST_ORC: quem consome e o chamador
+# (run_proximos grava 'parcial' no ingestion_log), sem mudar a assinatura dos
+# 3 call sites de _scrape_municipio.
+_PAGINACAO_INCOMPLETA: dict = {}
+
 
 def _hist_orcamento() -> dict:
     """Contador de orcamento da EXECUCAO (lazy, a partir do env na 1a chamada)."""
@@ -327,7 +334,10 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
             return await _scrape_municipio(page, mun, _retry + 1, is_auth=is_auth,
                                            page_auth=page_auth)
         logger.warning(f"  {mun['nome']}: select UF nao encontrado apos retries (sessao falhou)")
-        return []
+        # Levanta em vez de devolver []: lista vazia aqui virava "sucesso com
+        # zero propostas" no chamador — carimbava coleta boa, zerava tentativas
+        # e o municipio quebrado sumia de todos os radares novos.
+        raise RuntimeError("portal/sessao indisponivel (select UF ausente apos retries)")
     await page.wait_for_timeout(3500)  # carrega municipios via ajax
 
     # Match municipio por nome normalizado
@@ -338,7 +348,9 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
     alvo = [m for m in muns if _norm(m["t"]) == _norm(mun["nome"])]
     if not alvo:
         logger.warning(f"  {mun['nome']}: nao encontrado no select ({len(muns)} municipios)")
-        return []
+        # Mesmo raciocinio do raise acima: municipio ausente do dropdown e erro
+        # (nome divergente/portal), nao "zero propostas".
+        raise RuntimeError(f"municipio nao encontrado no select do portal ({len(muns)} opcoes)")
     await page.select_option("select[name=municipioAcessoLivre]", alvo[0]["v"])
     await page.wait_for_timeout(1500)
 
@@ -410,6 +422,7 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
         return _clean(r["cols"][0]) if r.get("cols") else ""
     seen_keys = {_key(r) for r in res["rows"] if _key(r)}
     total = (res.get("info") or {}).get("total")
+    itens_oficial = (res.get("info") or {}).get("items")
     cur = 1
     paginas = 1
     tried = set()
@@ -445,6 +458,7 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
             if k and k not in seen_keys:
                 seen_keys.add(k); novos += 1
         all_rows.extend(res["rows"])
+        itens_oficial = (res.get("info") or {}).get("items") or itens_oficial
         cur += 1
         paginas += 1
         if novos == 0:
@@ -467,6 +481,25 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
             "_detalhe_url": row["href"],
         })
     logger.info(f"  {mun['nome']}: {paginas} pagina(s) -> {len(propostas)} propostas")
+
+    # Valida completude contra o total oficial do banner do displaytag
+    # ("Pagina X de Y (Z item(s))"). O Z sempre foi capturado e jogado fora:
+    # paginacao que parava no meio (grid vazia, 'novos==0', janela quebrada)
+    # saia como coleta normal — subcoleta SILENCIOSA com cara de sucesso, o
+    # unico vetor real de "dado incompleto sem falha de job" do pipeline.
+    # Registra no modulo p/ o chamador marcar a rodada como 'parcial'
+    # (mesmo motivo do _HIST_ORC: nao muda a assinatura dos 3 call sites).
+    # TOLERANCIA de max(2, 2%): `propostas` e DEDUPLICADA e filtrada (linha sem
+    # numero/colunas cai fora), o Z conta itens brutos — uma divergencia
+    # estavel de 1-2 itens marcaria o municipio como subcoleta em TODA visita
+    # (letal no tenant de 1 municipio: nunca mais gravaria 'success').
+    _faltam = (itens_oficial - len(propostas)) if itens_oficial else 0
+    if _faltam > max(2, int(itens_oficial * 0.02) if itens_oficial else 0):
+        logger.warning(f"  {mun['nome']}: PAGINACAO INCOMPLETA — {len(propostas)} de "
+                       f"{itens_oficial} proposta(s) do total oficial")
+        _PAGINACAO_INCOMPLETA[mun["id"]] = (len(propostas), itens_oficial)
+    else:
+        _PAGINACAO_INCOMPLETA.pop(mun["id"], None)
 
     # Modo rapido (re-run "carregar todos"): pula o enrich por-proposta (lento,
     # ~2.5s cada). As linhas-base (numero, situacao, orgao, proponente, parecer,
@@ -1575,6 +1608,9 @@ async def run():
             logger.warning(f"  camada de dados abertos falhou (segue p/ navegador): {e}")
 
     total = 0
+    _ok_diario = 0
+    _falhas_diario: list = []
+    _subs_diario: list = []
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True, args=["--ignore-certificate-errors", "--no-sandbox", "--disable-dev-shm-usage"])
         ctx_guest = None
@@ -1644,8 +1680,13 @@ async def run():
                     n = _upsert(mun["id"], props)
                     logger.info(f"  {mun['nome']}: {len(props)} propostas -> {n} upsert")
                     total += n
+                    _ok_diario += 1
+                    if mun["id"] in _PAGINACAO_INCOMPLETA:
+                        _cd, _ed = _PAGINACAO_INCOMPLETA[mun["id"]]
+                        _subs_diario.append(f"{mun['nome']} ({_cd}/{_ed})")
                 except Exception as e:
                     logger.error(f"  {mun['nome']}: ERRO {str(e)[:200]}")
+                    _falhas_diario.append(mun["nome"])
         finally:
             # Fecha SEMPRE, inclusive em excecao/cancelamento: e este caminho que,
             # sem o finally, deixava Chromium orfao vivo consumindo CPU para sempre.
@@ -1663,13 +1704,27 @@ async def run():
     # (backfills de parlamentar e clausula/contratacao rodam ANTES do loop de
     #  browser — ver o bloco logo apos o open data. Ficavam aqui e nunca eram
     #  alcancados quando o timeout matava dentro do loop.)
-    # Log de ingestao
+    # Log de ingestao — mesma regra honesta do lote e do sigcon: uma rodada
+    # diaria em que TODO municipio falhou (ou veio subcoletado) nao pode pintar
+    # 'success' no monitor de frescor, que le exatamente esta fonte.
     try:
         import psycopg2
+        if _ok_diario == 0 and _falhas_diario:
+            _st_d = "erro"
+        elif _falhas_diario or _subs_diario:
+            _st_d = "parcial"
+        else:
+            _st_d = "success"
+        _partes_d = []
+        if _falhas_diario:
+            _partes_d.append(f"{len(_falhas_diario)} municipio(s) com erro: {', '.join(_falhas_diario[:5])}")
+        if _subs_diario:
+            _partes_d.append(f"paginacao incompleta: {', '.join(_subs_diario[:5])}")
         url = os.getenv("DATABASE_URL_SYNC", "").replace("&channel_binding=require", "").replace("?channel_binding=require", "")
         conn = psycopg2.connect(url); cur = conn.cursor()
-        cur.execute("INSERT INTO ingestion_log (source, status, records_inserted, finished_at) "
-                    "VALUES ('transferegov_voluntarias','success',%s,NOW())", (total,))
+        cur.execute("INSERT INTO ingestion_log (source, status, records_processed, records_inserted, error_message, finished_at) "
+                    "VALUES ('transferegov_voluntarias',%s,%s,%s,%s,NOW())",
+                    (_st_d, _ok_diario + len(_falhas_diario), total, "; ".join(_partes_d) or None))
         conn.commit(); cur.close(); conn.close()
     except Exception:
         pass
@@ -1723,15 +1778,21 @@ def _marca_coleta(municipio_id: int, ok: bool, erro: str | None = None) -> None:
     try:
         conn = psycopg2.connect(os.getenv("DATABASE_URL_SYNC", "").replace("&channel_binding=require", "").replace("?channel_binding=require", ""))
         cur = conn.cursor()
+        # tentativas do INSERT tambem respeita `ok` (0 no sucesso, 1 no erro):
+        # gravar 1 fixo marcava a 1a coleta BOA de um municipio novo como
+        # 'falha consecutiva' ate a 2a rodada. E o ultimo_erro_em do INSERT
+        # agora e expressao SQL — antes ia a STRING "NOW()" como parametro de
+        # timestamptz, que o Postgres rejeita (o except engolia e o municipio
+        # novo com erro ficava sem linha nenhuma no rodizio).
         cur.execute(
             "INSERT INTO scraper_municipio_coleta (fonte, municipio_id, ultima_coleta_em, ultimo_erro_em, ultimo_erro, tentativas) "
-            "VALUES (%s,%s,NOW(),%s,%s,1) "
+            "VALUES (%s,%s,NOW(), CASE WHEN %s THEN NULL ELSE NOW() END, %s, CASE WHEN %s THEN 0 ELSE 1 END) "
             "ON CONFLICT (fonte, municipio_id) DO UPDATE SET "
             "  ultima_coleta_em = NOW(), "
             "  ultimo_erro_em = CASE WHEN %s THEN scraper_municipio_coleta.ultimo_erro_em ELSE NOW() END, "
             "  ultimo_erro    = CASE WHEN %s THEN scraper_municipio_coleta.ultimo_erro ELSE %s END, "
             "  tentativas     = CASE WHEN %s THEN 0 ELSE scraper_municipio_coleta.tentativas + 1 END",
-            (FONTE_COLETA, municipio_id, None if ok else "NOW()", (erro or "")[:400] if not ok else None,
+            (FONTE_COLETA, municipio_id, ok, (erro or "")[:400] if not ok else None, ok,
              ok, ok, (erro or "")[:400], ok))
         conn.commit(); cur.close(); conn.close()
     except Exception:
@@ -1769,6 +1830,9 @@ async def run_proximos(n: int | None = None, deadline_s: int | None = None):
                 f"{', '.join(m['nome'] for m in muns)} ===")
     _t0 = time.monotonic()
     total = 0
+    ok_n = 0
+    falhas_mun: list = []
+    subcoletas: list = []
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True,
                                           args=["--ignore-certificate-errors", "--no-sandbox", "--disable-dev-shm-usage"])
@@ -1797,15 +1861,52 @@ async def run_proximos(n: int | None = None, deadline_s: int | None = None):
                     logger.info(f"  {mun['nome']}: {len(props)} propostas -> {n_up} upsert "
                                 f"({time.monotonic()-_t0:.0f}s acumulados)")
                     _marca_coleta(mun["id"], ok=True)
+                    ok_n += 1
+                    if mun["id"] in _PAGINACAO_INCOMPLETA:
+                        _col, _esp = _PAGINACAO_INCOMPLETA[mun["id"]]
+                        subcoletas.append(f"{mun['nome']} ({_col}/{_esp})")
                 except Exception as e:
                     logger.error(f"  {mun['nome']}: ERRO {str(e)[:200]}")
                     _marca_coleta(mun["id"], ok=False, erro=str(e))
+                    falhas_mun.append(mun["nome"])
         finally:
             try:
                 await browser.close()
             except Exception:
                 pass
     logger.info(f"=== LOTE concluido: {total} propostas em {time.monotonic()-_t0:.0f}s ===")
+
+    # Log de ingestao do LOTE, com fonte PROPRIA ('transferegov_lote'): o lote
+    # horario nao gravava ingestion_log nenhum e podia falhar por dias sem o
+    # watchdog ver (ele so vigiava o 'transferegov_voluntarias' do run diario).
+    # Vocabulario do freshness/watchdog: 'parcial' = rodou mas degradado
+    # (municipio com erro ou paginacao incompleta); 'erro' = nenhum municipio
+    # saiu. Watchdog tolera 6h sem success — um 'parcial' isolado nao alarma,
+    # seis seguidos sim.
+    try:
+        import psycopg2
+        _u = os.getenv("DATABASE_URL_SYNC", "").replace("&channel_binding=require", "").replace("?channel_binding=require", "")
+        if ok_n == 0 and falhas_mun:
+            _st = "erro"
+        elif falhas_mun or subcoletas:
+            _st = "parcial"
+        else:
+            _st = "success"
+        _partes = []
+        if falhas_mun:
+            _partes.append(f"{len(falhas_mun)} municipio(s) com erro: {', '.join(falhas_mun[:5])}")
+        if subcoletas:
+            _partes.append(f"paginacao incompleta: {', '.join(subcoletas[:5])}")
+        _cn = psycopg2.connect(_u); _cu = _cn.cursor()
+        _cu.execute(
+            "INSERT INTO ingestion_log (source, status, records_processed, "
+            "records_inserted, error_message, finished_at) "
+            "VALUES ('transferegov_lote', %s, %s, %s, %s, NOW())",
+            (_st, ok_n + len(falhas_mun), total, "; ".join(_partes) or None),
+        )
+        _cn.commit(); _cu.close(); _cn.close()
+    except Exception as e:
+        logger.warning(f"  ingestion_log do lote falhou: {str(e)[:120]}")
 
 
 async def run_one(municipio_id: int):
