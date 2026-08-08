@@ -56,7 +56,21 @@ FRESCOR_HORAS = {
     # o CAGEC falhando todo dia e nada apitou.
     # 4x/dia -> 6h entre rodadas; 30h = quase cinco janelas perdidas.
     "cagec": 30,
+    # Lote horario do TransfereGov (PR #158): fonte PROPRIA no ingestion_log,
+    # separada do run() diario — um nao pode esconder a falha do outro. Roda de
+    # hora em hora; 6h = seis rodadas sem 'success' (perdidas OU 'parcial'
+    # persistente), que ja e problema real e nao ruido.
+    "transferegov_lote": 6,
 }
+
+# Teto de idade (horas) da ultima coleta BOA por MUNICIPIO, por fonte do
+# scraper_municipio_coleta. E o alerta que faltava: o frescor por FONTE acima
+# fica verde com a fonte rodando, mesmo que municipios especificos passem dias
+# sem dado (rodizio lento, portal recusando um convenente, etc.) — foi assim
+# que a Freitas chegou a 21/40 municipios defasados sem nada apitar.
+# sigcon 48h: meta e <24h, mas 48h evita flapping enquanto o fatiamento por
+# rodada curta faz a fila baixar. transferegov 36h: ciclo real e <24h + folga.
+STALENESS_MUNICIPIO_H = {"sigcon": 48, "transferegov": 36}
 
 # ⚠️ SUCESSO E SO SUCESSO. Cada coletor escreve a palavra na sua lingua:
 # cauc/gconv_es/sismob/simec_par gravam 'success', o cagec_scraper grava 'ok'.
@@ -111,17 +125,86 @@ def _fontes_paradas(cur) -> list[dict]:
                 "chave": source,
                 "detalhe": f"ultimo sucesso ha {idade_h:.1f}h (limite {limite_h}h)",
             })
-    # Fontes ESPERADAS que nunca tiveram sucesso nenhum tambem contam.
+    # Fontes ESPERADAS que ja REGISTRARAM alguma execucao mas nunca um sucesso.
+    # Fonte sem NENHUMA linha fica de fora: task nao configurada neste tenant
+    # (lote horario e por-tenant no Coolify; SISMOB pode estar desligado) nao
+    # pode virar alarme eterno — e a mesma armadilha ja documentada no INFRA.md
+    # (caso SISMOB_ENABLED=0), que este ramo reproduzia para toda fonte nova.
+    cur.execute("SELECT DISTINCT source FROM ingestion_log")
+    com_linha = {r[0] for r in cur.fetchall()}
     cur.execute("SELECT DISTINCT source FROM ingestion_log "
                 "WHERE lower(coalesce(status, '')) = ANY(%s)", (list(STATUS_SUCESSO),))
     com_sucesso = {r[0] for r in cur.fetchall()}
     for source in FRESCOR_HORAS:
-        if source not in com_sucesso:
+        if source in com_linha and source not in com_sucesso:
             achados.append({
                 "tipo": "fonte_parada",
                 "chave": source,
                 "detalhe": "nenhum sucesso registrado ainda",
             })
+    return achados
+
+
+def _municipios_defasados(cur) -> list[dict]:
+    """Municipios cuja ultima coleta BOA e mais velha que o teto da fonte.
+
+    Pos-#159 o carimbo de `ultima_coleta_em` acontece TAMBEM no erro (para o
+    rodizio nao sofrer starvation), entao o carimbo sozinho nao significa "dado
+    novo". Dado bom = carimbo com tentativas=0 (a streak zera no 1o sucesso).
+    Municipio em falha persistente (tentativas>0) e problema de credencial ou
+    de portal: entra como NOTA agregada no texto do alerta, nunca como alarme
+    proprio — credencial quebrada nao trava (nem polui) o jogo.
+
+    Um alerta AGREGADO por fonte (chave = fonte), com contagem + piores casos,
+    para o cooldown valer por fonte e nao virar spam por municipio.
+    """
+    achados = []
+    for fonte, limite_h in STALENESS_MUNICIPIO_H.items():
+        try:
+            cur.execute("""
+                SELECT m.nome,
+                       EXTRACT(EPOCH FROM (now() - sc.ultima_coleta_em)) / 3600.0 AS idade_h,
+                       coalesce(sc.tentativas, 0)
+                FROM scraper_municipio_coleta sc
+                JOIN municipios m ON m.id = sc.municipio_id
+                WHERE sc.fonte = %s
+                ORDER BY sc.ultima_coleta_em ASC
+            """, (fonte,))
+            rows = cur.fetchall()
+        except Exception as e:
+            # Tabela do rodizio ausente (worker subiu antes da migration) nao
+            # pode abortar o watchdog inteiro; rollback para nao envenenar a
+            # transacao dos checks seguintes (_deve_alertar usa a mesma conexao).
+            try:
+                cur.connection.rollback()
+            except Exception:
+                pass
+            logger.debug(f"  staleness {fonte} indisponivel: {e}")
+            continue
+        if not rows:
+            continue  # fonte sem rastreio neste tenant (ex.: sem credencial SIGCON)
+        defasados = []
+        com_erro = 0
+        for nome, idade, tent in rows:
+            if tent > 0:
+                com_erro += 1     # falha persistente = credencial/portal -> nota, nao alarme
+            elif idade is None:
+                defasados.append((nome, None))   # linha existe mas nunca coletou (legado pre-#159)
+            elif idade > limite_h:
+                defasados.append((nome, idade))
+        if com_erro:
+            logger.info(f"  {fonte}: {com_erro} municipio(s) em falha persistente "
+                        f"(credencial/portal) — nota, nao alarme")
+        if defasados:
+            defasados.sort(key=lambda t: float("inf") if t[1] is None else t[1], reverse=True)
+            piores = ", ".join(("%s (nunca)" % n if i is None else "%s (%.0fh)" % (n, i))
+                               for n, i in defasados[:5])
+            detalhe = f"{len(defasados)} municipio(s) sem coleta boa ha >{limite_h}h: {piores}"
+            if len(defasados) > 5:
+                detalhe += " ..."
+            if com_erro:
+                detalhe += f" | nota: {com_erro} municipio(s) em falha persistente (credencial?)"
+            achados.append({"tipo": "municipio_defasado", "chave": fonte, "detalhe": detalhe})
     return achados
 
 
@@ -227,17 +310,21 @@ def main() -> None:
         _garante_tabela(cur)
         conn.commit()
 
-        achados = _fontes_paradas(cur) + _processos_travados()
+        achados = _fontes_paradas(cur) + _municipios_defasados(cur) + _processos_travados()
         if not achados:
-            logger.info("coleta saudavel: nenhuma fonte parada, nenhum processo travado")
+            logger.info("coleta saudavel: nenhuma fonte parada, nenhum municipio defasado, nenhum processo travado")
             return
 
+        _ICONES = {"processo_travado": "\U0001F534", "fonte_parada": "\U0001F7E0",
+                   "municipio_defasado": "\U0001F7E1"}
+        _TITULOS = {"processo_travado": "processo travado", "fonte_parada": "fonte parada",
+                    "municipio_defasado": "municipios defasados"}
         enviados = 0
         for a in achados:
             if _deve_alertar(cur, a["tipo"], a["chave"], cooldown):
                 conn.commit()
-                icone = "\U0001F534" if a["tipo"] == "processo_travado" else "\U0001F7E0"
-                titulo = "processo travado" if a["tipo"] == "processo_travado" else "fonte parada"
+                icone = _ICONES.get(a["tipo"], "\U0001F7E0")
+                titulo = _TITULOS.get(a["tipo"], a["tipo"])
                 _alerta(f"{icone} *PACTHA {inst}* — {titulo}\n`{a['chave']}`\n{a['detalhe']}")
                 enviados += 1
             else:

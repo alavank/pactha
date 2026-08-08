@@ -579,10 +579,15 @@ def _marca_coleta(municipio_id: int, ok: bool, erro: str | None = None) -> None:
         try:
             with conn.cursor() as cur:
                 if ok:
+                    # tentativas=0 TAMBEM no INSERT: `tentativas` significa
+                    # "falhas consecutivas", e a 1a coleta boa de um municipio
+                    # novo nao e falha nenhuma. Com 1 aqui, o municipio nascia
+                    # marcado como 'em falha' para o monitor de staleness ate a
+                    # 2a coleta boa (so o ON CONFLICT zerava).
                     cur.execute(
                         "INSERT INTO scraper_municipio_coleta "
                         "(fonte, municipio_id, ultima_coleta_em, tentativas) "
-                        "VALUES (%s, %s, now(), 1) "
+                        "VALUES (%s, %s, now(), 0) "
                         "ON CONFLICT (fonte, municipio_id) DO UPDATE SET "
                         "ultima_coleta_em = now(), tentativas = 0, ultimo_erro = NULL",
                         (FONTE_COLETA, municipio_id),
@@ -978,6 +983,22 @@ async def _run():
     creds = _list_credentials()
     if not creds:
         logger.warning("Nenhuma credencial SIGCON-MG no cofre - cadastre via UI")
+        # Grava a rodada no ingestion_log MESMO sem credencial: sem esta linha,
+        # o watchdog acusaria 'nenhum sucesso registrado ainda' para sempre num
+        # tenant que simplesmente nao tem SIGCON (ex.: Trust) — e credencial
+        # ausente e nota, nao alarme.
+        import psycopg2
+        try:
+            _c0 = psycopg2.connect(_sync_dsn())
+            with _c0.cursor() as _cu0:
+                _cu0.execute(
+                    "INSERT INTO ingestion_log (source, status, records_processed, "
+                    "records_inserted, records_updated, error_message, finished_at) "
+                    "VALUES ('sigcon_scraper', 'success', 0, 0, 0, "
+                    "'sem credenciais SIGCON cadastradas', NOW())")
+            _c0.commit(); _c0.close()
+        except Exception as e:
+            logger.warning(f"  ingestion_log falhou: {str(e)[:120]}")
         return
 
     # Filtro opcional: SIGCON_ONLY="Nome1,Nome2" reprocessa so esses municipios
@@ -1084,6 +1105,30 @@ async def _run():
             + (" ..." if len(adiados) > 10 else "")
         )
 
+    # Status HONESTO, nao 'success' incondicional. Antes, uma rodada em que TODO
+    # login falhava (ou sem credencial nenhuma) gravava 'success' e deixava o
+    # watchdog e o painel de frescor verdes com a fonte quebrada. Regras:
+    #   - >=1 municipio ok -> success (falha pontual de login e NOTA em
+    #     error_message, nao alarme: rodizio+backoff ja tratam, e credencial
+    #     quebrada nao trava o jogo);
+    #   - todos os tentados falharam -> erro (portal fora / bug / sessao);
+    #   - nada tentado -> success com nota (sem credencial cadastrada, ou
+    #     orcamento esgotado antes do 1o — comportamento correto do rodizio).
+    _tentados = muns_ok + len(falhas)
+    if _tentados == 0:
+        _status = "success"
+        # (creds vazio aqui so acontece via filtro SIGCON_ONLY: o caso "cofre
+        #  vazio" ja retornou la em cima, com log proprio.)
+        _msg = ("SIGCON_ONLY nao casou nenhuma credencial" if not creds
+                else f"nenhum municipio tentado nesta rodada ({len(adiados)} adiado(s) pelo orcamento)")
+    elif muns_ok == 0:
+        _status = "erro"
+        _msg = f"todas as {len(falhas)} tentativas falharam: {', '.join(falhas[:8])}"
+    else:
+        _status = "success"
+        _msg = (f"{len(falhas)} falha(s) de login/scrape: {', '.join(falhas[:8])}"
+                if falhas else None)
+
     # Log de ingestao final: conexao PROPRIA e curta (abre, grava, fecha).
     # Nunca reaproveita conexao do scrape — essa ja foi fechada ha muito tempo.
     import psycopg2
@@ -1092,9 +1137,10 @@ async def _run():
         _c = psycopg2.connect(_sync_dsn())
         _cu = _c.cursor()
         _cu.execute(
-            "INSERT INTO ingestion_log (source, status, records_inserted, finished_at) "
-            "VALUES ('sigcon_scraper', 'success', %s, NOW())",
-            (tot_ins + tot_upd,)
+            "INSERT INTO ingestion_log (source, status, records_processed, "
+            "records_inserted, records_updated, error_message, finished_at) "
+            "VALUES ('sigcon_scraper', %s, %s, %s, %s, %s, NOW())",
+            (_status, _tentados, tot_ins, tot_upd, _msg),
         )
         _c.commit()
     except Exception as e:

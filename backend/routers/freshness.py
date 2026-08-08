@@ -46,9 +46,13 @@ _SOURCES = [
     ("SISMOB — Obras da Saúde",
      "SELECT max(updated_at), count(*) FROM sismob_obras WHERE ausente_desde IS NULL",
      "sismob"),
+    # Duas fontes no ingestion_log: o run() diario ('transferegov_voluntarias')
+    # e o lote horario ('transferegov_lote', quem de fato atualiza as propostas
+    # ao longo do dia) — sem o lote aqui, um 'erro'/'parcial' persistente dele
+    # ficaria invisivel no monitor.
     ("TransfereGov — Voluntárias",
      "SELECT max(updated_at), count(*) FROM transferegov_propostas",
-     "transferegov_voluntarias"),
+     ("transferegov_voluntarias", "transferegov_lote")),
     ("TransfereGov — PAC (Novo PAC)",
      "SELECT max(updated_at), count(*) FROM transferegov_pac",
      None),
@@ -188,8 +192,13 @@ async def freshness(
                 last_data, count = row[0], row[1]
         except Exception:
             pass
-        last_run = runs.get(src) if src else None
-        tent = tentativas.get(src) if src else None
+        # src pode ser uma string ou uma TUPLA de fontes do ingestion_log (ex.:
+        # TransfereGov = run diario + lote horario). Sucesso = o mais recente
+        # entre elas; tentativa = a mais recente (e o status dela).
+        _srcs = src if isinstance(src, (tuple, list)) else ((src,) if src else ())
+        last_run = max((runs[s] for s in _srcs if s in runs), default=None)
+        _tents = [tentativas[s] for s in _srcs if s in tentativas]
+        tent = max(_tents, key=lambda t: t[0]) if _tents else None
         # frescor = mais recente entre dado gravado e execucao BEM-SUCEDIDA.
         # A tentativa que falhou de proposito NAO entra: era ela que fazia uma
         # fonte morta aparecer verde.
