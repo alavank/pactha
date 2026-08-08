@@ -23,6 +23,7 @@ import logging
 import os
 import re
 import sys
+import time
 import unicodedata
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -1682,6 +1683,131 @@ async def run():
         logger.warning(f"  PAC (apos voluntarias) falhou: {str(e)[:160]}")
 
 
+FONTE_COLETA = "transferegov"
+
+
+def _proximos_municipios(n: int) -> list[dict]:
+    """Os N municipios mais desatualizados (rodizio), como o sigcon ja faz.
+
+    Ordena por `ultima_coleta_em NULLS FIRST` em scraper_municipio_coleta — quem
+    esta parado ha mais tempo (ou nunca coletado) vem primeiro. Se a tabela nao
+    existir, degrada para a ordem alfabetica de sempre."""
+    import psycopg2
+    url = os.getenv("DATABASE_URL_SYNC", "").replace("&channel_binding=require", "").replace("?channel_binding=require", "")
+    try:
+        conn = psycopg2.connect(url); cur = conn.cursor()
+        cur.execute(
+            "SELECT m.id, m.nome, m.uf FROM municipios m "
+            "LEFT JOIN scraper_municipio_coleta sc "
+            "       ON sc.municipio_id = m.id AND sc.fonte = %s "
+            "WHERE m.active = true "
+            "ORDER BY sc.ultima_coleta_em ASC NULLS FIRST, m.nome "
+            "LIMIT %s", (FONTE_COLETA, n))
+        out = [{"id": r[0], "nome": r[1], "uf": r[2]} for r in cur.fetchall()]
+        cur.close(); conn.close()
+        return out
+    except Exception as e:
+        logger.warning(f"  rodizio indisponivel ({str(e)[:70]}) — ordem alfabetica")
+        return _municipios_pacta()[:n]
+
+
+def _marca_coleta(municipio_id: int, ok: bool, erro: str | None = None) -> None:
+    """Carimba a passagem pelo municipio. SEMPRE — inclusive em erro/corte.
+
+    Diferenca DELIBERADA do sigcon (que so carimba no sucesso): com NULLS FIRST,
+    carimbar so no sucesso faz um municipio problematico (ou grande demais p/ a
+    janela) ocupar o primeiro lugar da fila em TODA rodada, para sempre, e os
+    demais nunca serem alcancados. Carimbando sempre, a fila e um round-robin
+    honesto; o erro fica registrado em ultimo_erro para diagnostico."""
+    import psycopg2
+    try:
+        conn = psycopg2.connect(os.getenv("DATABASE_URL_SYNC", "").replace("&channel_binding=require", "").replace("?channel_binding=require", ""))
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO scraper_municipio_coleta (fonte, municipio_id, ultima_coleta_em, ultimo_erro_em, ultimo_erro, tentativas) "
+            "VALUES (%s,%s,NOW(),%s,%s,1) "
+            "ON CONFLICT (fonte, municipio_id) DO UPDATE SET "
+            "  ultima_coleta_em = NOW(), "
+            "  ultimo_erro_em = CASE WHEN %s THEN scraper_municipio_coleta.ultimo_erro_em ELSE NOW() END, "
+            "  ultimo_erro    = CASE WHEN %s THEN scraper_municipio_coleta.ultimo_erro ELSE %s END, "
+            "  tentativas     = CASE WHEN %s THEN 0 ELSE scraper_municipio_coleta.tentativas + 1 END",
+            (FONTE_COLETA, municipio_id, None if ok else "NOW()", (erro or "")[:400] if not ok else None,
+             ok, ok, (erro or "")[:400], ok))
+        conn.commit(); cur.close(); conn.close()
+    except Exception:
+        pass  # contabilidade do rodizio nunca derruba a coleta
+
+
+async def run_proximos(n: int | None = None, deadline_s: int | None = None):
+    """LOTE PEQUENO E FREQUENTE — o padrao que funciona na mao, virado cron.
+
+    Por que existe: `run()` processa TODOS os municipios numa execucao so e nao
+    cabe na janela do cron (freitas 41 mun / trust 19 mun grandes) — morria no
+    timeout, sempre. Rodando na mao sempre funcionou porque eu chamava
+    `run_one(id)` municipio a municipio, com TG_OPENDATA=0, varias vezes. Esta
+    funcao e exatamente isso, automatizado: pega os N mais desatualizados
+    (rodizio), respeita um DEADLINE de relogio e sai limpo. Como o cron roda de
+    hora em hora, a carteira inteira e coberta todo dia, em pedacos que sempre
+    cabem — em vez de uma rodada grande que nunca termina.
+
+    NAO faz open data nem backfills: quem faz e o cron `transferegov` (base),
+    1x/dia. Repetir aqui seria baixar 200MB de novo por nada (era o que o cron
+    de enrich fazia)."""
+    from playwright.async_api import async_playwright
+    try:
+        n = n if n is not None else max(1, int(os.getenv("TG_LOTE_MUNICIPIOS", "3") or "3"))
+    except ValueError:
+        n = 3
+    try:
+        deadline_s = deadline_s if deadline_s is not None else max(60, int(os.getenv("TG_BUDGET_S", "1500") or "1500"))
+    except ValueError:
+        deadline_s = 1500
+    muns = _proximos_municipios(n)
+    if not muns:
+        logger.info("=== nenhum municipio a coletar ==="); return
+    logger.info(f"=== TransfereGov LOTE: {len(muns)} municipio(s) | budget {deadline_s}s | "
+                f"{', '.join(m['nome'] for m in muns)} ===")
+    _t0 = time.monotonic()
+    total = 0
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True,
+                                          args=["--ignore-certificate-errors", "--no-sandbox", "--disable-dev-shm-usage"])
+        try:
+            ctx_guest = await browser.new_context(ignore_https_errors=True, user_agent="Mozilla/5.0 Chrome/131")
+            page_guest = await ctx_guest.new_page()
+            page_auth = None
+            govbr_cks = _load_govbr_cookies() if (os.getenv("TRANSFEREGOV_AUTH", "1") or "1").strip() not in ("0", "false", "no") else None
+            if govbr_cks:
+                try:
+                    ctx_auth = await browser.new_context(ignore_https_errors=True, user_agent="Mozilla/5.0 Chrome/131")
+                    await ctx_auth.add_cookies(govbr_cks)
+                    page_auth = await ctx_auth.new_page()
+                    logger.info(f"  contexto AUTH criado com {len(govbr_cks)} cookies SSO")
+                except Exception as e:
+                    logger.warning(f"  falha ao criar contexto AUTH: {str(e)[:80]}")
+            for mun in muns:
+                gasto = time.monotonic() - _t0
+                if gasto > deadline_s:
+                    logger.info(f"  orcamento esgotado ({gasto:.0f}s) — {mun['nome']} fica p/ a proxima rodada")
+                    break
+                try:
+                    props = await _scrape_municipio(page_guest, mun, page_auth=page_auth)
+                    n_up = _upsert(mun["id"], props)
+                    total += n_up
+                    logger.info(f"  {mun['nome']}: {len(props)} propostas -> {n_up} upsert "
+                                f"({time.monotonic()-_t0:.0f}s acumulados)")
+                    _marca_coleta(mun["id"], ok=True)
+                except Exception as e:
+                    logger.error(f"  {mun['nome']}: ERRO {str(e)[:200]}")
+                    _marca_coleta(mun["id"], ok=False, erro=str(e))
+        finally:
+            try:
+                await browser.close()
+            except Exception:
+                pass
+    logger.info(f"=== LOTE concluido: {total} propostas em {time.monotonic()-_t0:.0f}s ===")
+
+
 async def run_one(municipio_id: int):
     """Versao test: roda so para um municipio (debug)."""
     from playwright.async_api import async_playwright
@@ -1741,7 +1867,17 @@ async def run_one(municipio_id: int):
 
 if __name__ == "__main__":
     import sys
-    if len(sys.argv) > 1 and sys.argv[1].isdigit():
-        asyncio.run(run_one(int(sys.argv[1])))
+    _arg = sys.argv[1] if len(sys.argv) > 1 else ""
+    if _arg.isdigit():
+        asyncio.run(run_one(int(_arg)))          # um municipio (debug/manual)
+    elif _arg.startswith("lote"):
+        # `lote` ou `lote:N` — rodizio, N municipios, com deadline (TG_BUDGET_S).
+        _n = None
+        if ":" in _arg:
+            try:
+                _n = int(_arg.split(":", 1)[1])
+            except ValueError:
+                _n = None
+        asyncio.run(run_proximos(_n))
     else:
-        asyncio.run(run())
+        asyncio.run(run())                        # rodada completa (cron base)
