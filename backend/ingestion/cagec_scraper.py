@@ -366,20 +366,22 @@ def _municipios_alvo() -> list[dict]:
         cur.execute(_sql.format(join="", order="ORDER BY m.nome"))
     alvos = [{"id": r[0], "nome": r[1], "uf": r[2], "cnpj": r[3]} for r in cur.fetchall()]
     conn.close()
-    # Fatia com DEFAULT LIGADO (8; env CAGEC_LOTE_MUNICIPIOS=0 volta a "todos").
+    # Fatia com DEFAULT LIGADO (11; env CAGEC_LOTE_MUNICIPIOS=0 volta a "todos").
     # O default "todos" matava o proprio diagnostico: uma rodada cheia de 44
     # municipios precisa de ~35min (~47s cada) contra 25min de kill interno —
     # o run coletava, morria (124/137) e NUNCA chegava no INSERT do
     # ingestion_log, entao a "ultima tentativa" do freshness congelou em 08/08
-    # e o selo dizia "Atrasado" com dado do proprio dia na tela. Com o rodizio
-    # acima, 8 por rodada fecham em ~7min, o run FECHA (o log anda, e lote sem
-    # municipio problematico fecha 'ok'), e 4 crons/dia percorrem uma carteira
-    # de 44 em ~33h — dentro das 48h do watchdog. Tenant pequeno (<=8 de MG)
-    # nem percebe: a fatia e a carteira inteira.
+    # e o selo dizia "Atrasado" com dado do proprio dia na tela.
+    # Por que 11: e ceil(44/4) — com os 4 crons diarios (:50 de 4 janelas), a
+    # maior carteira atual (freitas, 44 de MG) e visitada INTEIRA a cada dia
+    # (decisao do dono, 09/08: ciclo diario > ciclo de 33h). Rodada de 11 fecha
+    # em ~8min (43s/municipio medidos na 1a rodada do rodizio) — folga de 3x no
+    # kill de 25min. Carteira crescer alem de 44: subir a env junto (lote =
+    # ceil(municipios_MG/4)), senao o ciclo passa de 24h em silencio.
     try:
-        _lote = max(0, int(os.getenv("CAGEC_LOTE_MUNICIPIOS", "8") or "8"))
+        _lote = max(0, int(os.getenv("CAGEC_LOTE_MUNICIPIOS", "11") or "11"))
     except ValueError:
-        _lote = 8
+        _lote = 11
     if _lote:
         alvos = alvos[:_lote]
     return alvos
