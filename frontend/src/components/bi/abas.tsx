@@ -114,6 +114,46 @@ export function AbaGeral({ ov, alertas, tv }: AbaProps & { ov: Overview; alertas
           sub="há mais de 90 dias" grande={tv} />
       </div>
 
+      {/* FRESCOR DA CARTEIRA — só no consolidado (município único tem o selo
+          por tela) e NUNCA na TV: vigilância operacional é do gestor dentro do
+          módulo — a TV do gabinete e o link público /t/<slug> não são lugar
+          para estado interno de coleta. Uma faixa, não um painel.
+          'sem acesso no momento' = tentativas>0 (credencial OU portal — o
+          sistema não sabe a causa, então não afirma); 'sem coleta ainda' =
+          município da cobertura da fonte sem linha (novo/sem credencial) — o
+          backend já exclui municípios FORA da cobertura (GO/ES/TO no sigcon).
+          O title lista os piores para o gestor saber QUEM está para trás. */}
+      {!tv && ov.consolidado && ov.frescor_carteira && (
+        <div className="bi-card-flat flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2 text-[11px]">
+          <span className="font-medium uppercase tracking-wide text-[10px]" style={{ color: "var(--bi-faint)" }}>
+            Frescor da coleta
+          </span>
+          {(["sigcon", "transferegov"] as const).map((f) => {
+            const d = ov.frescor_carteira?.[f];
+            if (!d) return null;
+            const rotulo = f === "sigcon" ? "SIGCON" : "TransfereGov";
+            const piores = d.piores?.length
+              ? `Mais defasados: ${d.piores.map((p) => `${p.nome}${p.horas != null ? ` (${Math.round(p.horas)}h)` : " (nunca)"}`).join(", ")}`
+              : undefined;
+            return (
+              <span key={f} className="inline-flex items-center gap-1.5" title={piores}>
+                <span style={{ color: "var(--bi-muted)" }}>{rotulo}:</span>
+                <span style={{ color: "var(--bi-ok-ink, var(--bi-muted))" }}>{d.em_dia} em dia</span>
+                {d.defasados > 0 && (
+                  <span style={{ color: "var(--bi-warn-ink)" }}>· {d.defasados} defasado(s)</span>
+                )}
+                {d.falhando > 0 && (
+                  <span style={{ color: "var(--bi-muted)" }}>· {d.falhando} sem acesso no momento</span>
+                )}
+                {d.sem_registro > 0 && (
+                  <span style={{ color: "var(--bi-faint)" }}>· {d.sem_registro} sem coleta ainda</span>
+                )}
+              </span>
+            );
+          })}
+        </div>
+      )}
+
       <div className={grid(tv, "grid grid-cols-1 min-h-0 gap-3 lg:grid-cols-3", "grid min-h-0 flex-1 grid-cols-3 gap-3")}>
         <Painel>
           <PainelHead icon={TrendingUp} titulo="Composição da captação" sub="de onde veio o recurso" />

@@ -228,6 +228,89 @@ async def _semaforo_cagec(db: AsyncSession, ids: list[int]) -> dict:
     }
 
 
+async def _frescor_carteira(db: AsyncSession, ids: list[int]) -> Optional[dict]:
+    """Frescor da coleta POR FONTE para a visao consolidada da assessoria.
+
+    Mesma regra de honestidade dos selos (services/coleta.py): pos-#159 o
+    carimbo acontece tambem no erro, entao 'em dia' exige tentativas=0.
+    Buckets: em_dia (<24h) / defasados (>=24h) / falhando (tentativas>0 —
+    credencial/portal; nota, nao alarme) / sem_registro (municipio ativo sem
+    linha da fonte: novo sem credencial ou nunca coletado). Best-effort:
+    tabela ausente -> None e o overview segue sem o bloco.
+    """
+    from services.bi_abas import UF_DA_FONTE
+    try:
+        # Denominadores POR FONTE, do banco (nao len(ids)): (a) o conjunto do
+        # usuario nao-admin pode conter municipio DESATIVADO (mesma classe de
+        # bug do PR #165); (b) o sigcon so cobre MG — "sem coleta ainda" para
+        # municipio de GO/ES/TO prometeria coleta que nunca vira ("FORA DA
+        # FONTE ≠ SEM COLETA", doutrina do bi_abas/_semaforo_cagec).
+        r = await db.execute(text("""
+            SELECT count(*) FILTER (WHERE upper(coalesce(uf, '')) = :uf_fonte) AS na_fonte,
+                   count(*) AS todos
+            FROM municipios WHERE id = ANY(:ids) AND coalesce(active, true)
+        """), {"ids": ids, "uf_fonte": UF_DA_FONTE})
+        row = r.first()
+        den_sigcon, den_todos = (int(row[0]), int(row[1])) if row else (0, 0)
+        multi_uf = den_todos > den_sigcon > 0 or (den_sigcon == 0 and den_todos > 0)
+
+        # Base ZERADA para as fontes aplicaveis: carteira nova sem linha
+        # nenhuma e informacao legitima ("N sem coleta ainda"), nao ausencia.
+        base: dict = {}
+        if den_sigcon > 0:
+            base["sigcon"] = {"em_dia": 0, "defasados": 0, "falhando": 0, "piores": []}
+        if den_todos > 0:
+            base["transferegov"] = {"em_dia": 0, "defasados": 0, "falhando": 0, "piores": []}
+        if not base:
+            return None
+
+        r = await db.execute(text("""
+            SELECT sc.fonte,
+                   count(*) FILTER (WHERE coalesce(sc.tentativas,0)=0
+                                    AND sc.ultima_coleta_em > now() - interval '24 hours') AS em_dia,
+                   count(*) FILTER (WHERE coalesce(sc.tentativas,0)=0
+                                    AND (sc.ultima_coleta_em IS NULL
+                                         OR sc.ultima_coleta_em <= now() - interval '24 hours')) AS defasados,
+                   count(*) FILTER (WHERE coalesce(sc.tentativas,0) > 0) AS falhando
+            FROM scraper_municipio_coleta sc
+            JOIN municipios m ON m.id = sc.municipio_id AND coalesce(m.active, true)
+            WHERE sc.fonte IN ('sigcon', 'transferegov') AND sc.municipio_id = ANY(:ids)
+            GROUP BY sc.fonte
+        """), {"ids": ids})
+        for fonte, em_dia, defasados, falhando in r.all():
+            if fonte in base:
+                base[fonte].update({"em_dia": int(em_dia), "defasados": int(defasados),
+                                    "falhando": int(falhando)})
+
+        r = await db.execute(text("""
+            SELECT fonte, nome, uf, horas FROM (
+                SELECT sc.fonte, m.nome, upper(coalesce(m.uf, '')) AS uf,
+                       EXTRACT(EPOCH FROM (now() - sc.ultima_coleta_em)) / 3600.0 AS horas,
+                       row_number() OVER (PARTITION BY sc.fonte ORDER BY sc.ultima_coleta_em ASC NULLS FIRST) AS rn
+                FROM scraper_municipio_coleta sc
+                JOIN municipios m ON m.id = sc.municipio_id AND coalesce(m.active, true)
+                WHERE sc.fonte IN ('sigcon', 'transferegov') AND sc.municipio_id = ANY(:ids)
+                  AND coalesce(sc.tentativas, 0) = 0
+                  AND (sc.ultima_coleta_em IS NULL OR sc.ultima_coleta_em <= now() - interval '24 hours')
+            ) x WHERE rn <= 5
+            ORDER BY fonte, rn
+        """), {"ids": ids})
+        for fonte, nome, uf, horas in r.all():
+            if fonte not in base:
+                continue
+            rotulo = f"{nome} – {uf}" if (multi_uf and uf) else nome
+            base[fonte]["piores"].append(
+                {"nome": rotulo, "horas": round(float(horas), 1) if horas is not None else None})
+
+        for fonte, d in base.items():
+            den = den_sigcon if fonte == "sigcon" else den_todos
+            d["sem_registro"] = max(0, den - (d["em_dia"] + d["defasados"] + d["falhando"]))
+        return base
+    except Exception:
+        await db.rollback()
+        return None
+
+
 async def _compute_overview(db: AsyncSession, ids: list[int], cons: bool, single: bool,
                             ano: Optional[list[int]], live: bool) -> dict:
     """Monta o payload do overview SEQUENCIALMENTE na sessao do request. NAO usar
@@ -249,8 +332,12 @@ async def _compute_overview(db: AsyncSession, ids: list[int], cons: bool, single
         ranking = await aggregate_parlamentares(db, municipio_ids=ids, ano=ano, incluir_plano_acao=live)
     mudancas = await listar_core(db, ids, 30, 8)
     execucao = await bi_execucao(db, ids, ano)
+    # So no consolidado: municipio unico ja tem o selo por tela (PR #164);
+    # a assessoria e quem precisa ver a carteira inteira de uma vez.
+    frescor_carteira = await _frescor_carteira(db, ids) if cons else None
     return {
         "consolidado": cons,
+        "frescor_carteira": frescor_carteira,
         "municipios_count": len(ids),
         "municipio_ids": ids,
         "ano": ano[0] if (ano and len(ano) == 1) else None,
