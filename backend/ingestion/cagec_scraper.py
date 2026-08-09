@@ -308,7 +308,7 @@ def _municipios_alvo() -> list[dict]:
     url = url.replace("&channel_binding=require", "").replace("?channel_binding=require", "")
     conn = psycopg2.connect(url)
     cur = conn.cursor()
-    cur.execute("""
+    _sql = """
         SELECT m.id, m.nome, m.uf,
                COALESCE(
                  (SELECT regexp_replace(e.cnpj_beneficiario, '\\D', '', 'g')
@@ -323,6 +323,7 @@ def _municipios_alvo() -> list[dict]:
                    LIMIT 1)
                ) AS cnpj
         FROM municipios m
+        {join}
         WHERE m.active = true
           -- ⚠️ SO MINAS, E O MOTIVO E A FONTE — nao o conceito.
           --
@@ -338,11 +339,89 @@ def _municipios_alvo() -> list[dict]:
           -- tela nao pode dizer, em tempo nenhum, e que o municipio "nao tem"
           -- cadastro estadual. Ela nao sabe disso; sabe que nos nao coletamos.
           AND upper(coalesce(m.uf, '')) = 'MG'
-        ORDER BY m.nome
-    """)
+        {order}
+    """
+    # RODIZIO ANTI-STARVATION (mesma formula do sigcon, PR #159). O ORDER BY
+    # m.nome era a divida documentada no CONTINUAR ha semanas: qualquer corte
+    # por tempo sacrificava SEMPRE os mesmos municipios, os ultimos do alfabeto
+    # (a Freitas parou em "Santa Helena de Minas" duas vezes; com o kill curto
+    # de 09/08, o fim do alfabeto nao veria CAGEC nunca). Agora quem esta ha
+    # mais tempo sem coleta boa vem primeiro e falha ganha backoff de 1 dia por
+    # tentativa (max 5) — municipio sem cadastro no portal (ex.: Uba, no trust)
+    # para de furar a fila em toda rodada.
+    try:
+        cur.execute(_sql.format(
+            join=("LEFT JOIN scraper_municipio_coleta sc "
+                  "ON sc.municipio_id = m.id AND sc.fonte = 'cagec'"),
+            order=("ORDER BY (COALESCE(sc.ultima_coleta_em, sc.ultimo_erro_em, TIMESTAMPTZ 'epoch') "
+                   "          + (LEAST(COALESCE(sc.tentativas, 0), 5) * INTERVAL '1 day')) ASC, "
+                   "         m.nome")))
+    except Exception as e:
+        # Tabela do rodizio ausente (worker subiu antes da migration): a ordem
+        # antiga ainda funciona — degrada, nao quebra. Mas AVISA: um erro real
+        # no SQL novo teria como unico sintoma a volta da fila alfabetica.
+        logger.warning("rodizio cagec indisponivel (%s: %s) — caindo para ORDER BY nome",
+                       type(e).__name__, str(e)[:120])
+        conn.rollback()
+        cur.execute(_sql.format(join="", order="ORDER BY m.nome"))
     alvos = [{"id": r[0], "nome": r[1], "uf": r[2], "cnpj": r[3]} for r in cur.fetchall()]
     conn.close()
+    # Fatia opcional (0/vazio = todos = comportamento atual): com a fila
+    # ordenada, cortar os N primeiros da o modelo de rodadas curtas e
+    # frequentes do transferegov/sigcon — liga-se pela env quando quiserem.
+    try:
+        _lote = max(0, int(os.getenv("CAGEC_LOTE_MUNICIPIOS", "0") or "0"))
+    except ValueError:
+        _lote = 0
+    if _lote:
+        alvos = alvos[:_lote]
     return alvos
+
+
+def _marca_coleta(municipio_id: int, ok: bool, erro: str | None = None) -> None:
+    """Carimbo do rodizio do CAGEC (fonte='cagec' em scraper_municipio_coleta).
+
+    Mesmas regras do sigcon pos-#159: carimba TAMBEM no erro (senao quem falha
+    deterministicamente fura a fila para sempre), tentativas=0 no sucesso
+    (inclusive no INSERT — 1a coleta boa nao e falha) e best-effort (a
+    contabilidade do rodizio nunca derruba a coleta).
+
+    SEMANTICA (decisoes conscientes): o carimbo e POR MUNICIPIO e ok=True
+    inclui rodada parcial (>=1 entidade coletada; entidade que falhou 2x ou
+    veio sem CRC fica para a proxima volta — o 'parcial' da FONTE vai no
+    ingestion_log). E 'nenhuma entidade encontrada' entra no backoff padrao
+    (ate 5 dias): grafia divergente e persistente e a consulta e publica —
+    se um dia doer, teto menor so para esse desfecho."""
+    import psycopg2
+    try:
+        conn = psycopg2.connect(
+            os.getenv("DATABASE_URL_SYNC", "")
+            .replace("&channel_binding=require", "").replace("?channel_binding=require", ""))
+        try:
+            with conn.cursor() as cur:
+                if ok:
+                    cur.execute(
+                        "INSERT INTO scraper_municipio_coleta "
+                        "(fonte, municipio_id, ultima_coleta_em, tentativas) "
+                        "VALUES ('cagec', %s, now(), 0) "
+                        "ON CONFLICT (fonte, municipio_id) DO UPDATE SET "
+                        "ultima_coleta_em = now(), tentativas = 0, ultimo_erro = NULL",
+                        (municipio_id,))
+                else:
+                    cur.execute(
+                        "INSERT INTO scraper_municipio_coleta "
+                        "(fonte, municipio_id, ultima_coleta_em, ultimo_erro_em, ultimo_erro, tentativas) "
+                        "VALUES ('cagec', %s, now(), now(), %s, 1) "
+                        "ON CONFLICT (fonte, municipio_id) DO UPDATE SET "
+                        "ultima_coleta_em = now(), "
+                        "ultimo_erro_em = now(), ultimo_erro = EXCLUDED.ultimo_erro, "
+                        "tentativas = scraper_municipio_coleta.tentativas + 1",
+                        (municipio_id, (erro or "")[:500]))
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.debug("  (rodizio cagec nao registrado p/ municipio %s: %s)", municipio_id, e)
 
 
 _JS_GRADE = (
@@ -758,171 +837,198 @@ async def _rodar() -> tuple[int, int, list[str]]:
         cur = conn.cursor()
         try:
             for mun in alvos:
-                # Descoberta pelo NOME: acha a prefeitura E os fundos, que sao
-                # cadastros separados. O CNPJ inferido das emendas serve so para
-                # saber QUAL das entidades e a prefeitura.
                 try:
-                    entidades, listagem_completa = await descobrir_entidades(
-                        page, mun["nome"], mun["uf"])
-                except Exception as e:
-                    logger.error("  %s: falha ao listar entidades — %s: %s",
-                                 mun["nome"], type(e).__name__, str(e)[:110])
-                    falha += 1
-                    continue
-                if not entidades:
-                    logger.warning("  %s: nenhuma entidade publica no CAGEC", mun["nome"])
-                    falha += 1
-                    continue
-
-                cnpj_prefeitura = _so_digitos(mun["cnpj"] or "")
-
-                # A busca por nome nao acha quem nao esta cadastrado, e tambem
-                # pode nao achar quem esta com nome diferente. Os CNPJs que
-                # outras fontes conhecem sao consultados DIRETO — e o que nao
-                # aparecer fica registrado como ausente do CAGEC, que e
-                # justamente o achado (fundo ativo fora do cadastro estadual).
-                achados = {_so_digitos(re.search(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}",
-                                                 " ".join(e.values())).group(0))
-                           for e in entidades
-                           if re.search(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}", " ".join(e.values()))}
-                for conhecido in _cnpjs_conhecidos(cur, mun["id"]):
-                    if conhecido["cnpj"] in achados:
-                        continue
-                    linha_extra = None
+                    # Descoberta pelo NOME: acha a prefeitura E os fundos, que sao
+                    # cadastros separados. O CNPJ inferido das emendas serve so para
+                    # saber QUAL das entidades e a prefeitura.
                     try:
-                        linha_extra = await _consultar(page, conhecido["cnpj"])
+                        entidades, listagem_completa = await descobrir_entidades(
+                            page, mun["nome"], mun["uf"])
+                    except Exception as e:
+                        logger.error("  %s: falha ao listar entidades — %s: %s",
+                                     mun["nome"], type(e).__name__, str(e)[:110])
+                        falha += 1
+                        _marca_coleta(mun["id"], ok=False,
+                                      erro=f"listar entidades: {type(e).__name__}: {str(e)[:200]}")
+                        continue
+                    if not entidades:
+                        logger.warning("  %s: nenhuma entidade publica no CAGEC", mun["nome"])
+                        falha += 1
+                        # Nao encontrado na CONSULTA (grafia? sem cadastro?) — o
+                        # backoff tira o municipio da frente da fila; a mensagem
+                        # nunca afirma "nao tem cadastro" (a busca e por nome).
+                        _marca_coleta(mun["id"], ok=False,
+                                      erro="nenhuma entidade publica encontrada na consulta (nome sem match?)")
+                        continue
+
+                    cnpj_prefeitura = _so_digitos(mun["cnpj"] or "")
+
+                    # A busca por nome nao acha quem nao esta cadastrado, e tambem
+                    # pode nao achar quem esta com nome diferente. Os CNPJs que
+                    # outras fontes conhecem sao consultados DIRETO — e o que nao
+                    # aparecer fica registrado como ausente do CAGEC, que e
+                    # justamente o achado (fundo ativo fora do cadastro estadual).
+                    achados = {_so_digitos(re.search(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}",
+                                                     " ".join(e.values())).group(0))
+                               for e in entidades
+                               if re.search(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}", " ".join(e.values()))}
+                    for conhecido in _cnpjs_conhecidos(cur, mun["id"]):
+                        if conhecido["cnpj"] in achados:
+                            continue
+                        linha_extra = None
+                        try:
+                            linha_extra = await _consultar(page, conhecido["cnpj"])
+                        except Exception:
+                            pass
+                        if linha_extra:
+                            logger.info("    %s: achado por CNPJ (a busca por nome nao pegou)",
+                                        conhecido["nome"] or conhecido["cnpj"])
+                            entidades.append(linha_extra)
+                        else:
+                            logger.warning("    %s (%s): NAO esta cadastrado no CAGEC — "
+                                           "e uma entidade que recebe recurso federal",
+                                           conhecido["nome"] or "entidade",
+                                           conhecido["cnpj"])
+
+                    # Uma rodada PARCIAL nao pode autorizar DELETE: se a listagem
+                    # veio truncada ou uma entidade nao respondeu, o CNPJ dela nao
+                    # entra em `vistos` e _limpar_sumidos a apagaria como se tivesse
+                    # saido do CAGEC — levando junto o detalhamento preservado, que
+                    # hoje e a UNICA copia (o portal nao emite CRC novo).
+                    rodada_completa = listagem_completa
+                    vistos, coletadas = [], 0
+                    for ent in entidades:
+                        cnpj_ent = re.search(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}",
+                                             " ".join(ent.values()))
+                        if not cnpj_ent:
+                            rodada_completa = False
+                            continue
+                        cnpj_fmt = cnpj_ent.group(0)
+                        tipo = _pegar(ent, "tipo")
+                        principal = (_so_digitos(cnpj_fmt) == cnpj_prefeitura
+                                     or _sem_acento(tipo or "") == "municipio")
+
+                        # Duas tentativas: o portal e instavel e uma falha isolada
+                        # deixaria a entidade com dado velho ate o proximo cron.
+                        linha, erro = None, None
+                        for tentativa in (1, 2):
+                            try:
+                                linha = await _consultar(page, _so_digitos(cnpj_fmt))
+                            except Exception as e:
+                                erro = f"{type(e).__name__}: {str(e)[:110]}"
+                            if linha:
+                                break
+                            if tentativa == 1:
+                                await page.wait_for_timeout(5000)
+                        if not linha:
+                            logger.warning("    %s (%s): sem resultado apos 2 tentativas%s",
+                                           (_pegar(ent, "nome", "razao social") or cnpj_fmt)[:40],
+                                           cnpj_fmt, f" — {erro}" if erro else "")
+                            rodada_completa = False
+                            continue
+
+                        situacao = _pegar(linha, "situacao", "parceria")
+                        nome = (_pegar(linha, "nome", "razao social")
+                                or _pegar(linha, "razao social"))
+                        numero = None
+
+                        # Caminho principal: o CRC, com as obrigacoes uma a uma.
+                        itens: list[dict] = []
+                        pdf, crc_erro = await _baixar_crc(page)
+                        if pdf:
+                            try:
+                                cab, itens = parse_crc(_texto_do_pdf(pdf))
+                                situacao = cab.get("situacao") or situacao
+                                nome = cab.get("razao_social") or nome
+                                numero = cab.get("numero_cadastro")
+                            except Exception as e:
+                                logger.warning("    %s: CRC baixou mas nao foi lido — %s: %s",
+                                               cnpj_fmt, type(e).__name__, str(e)[:110])
+                                itens = []
+                                crc_erro = ("O certificado foi emitido mas não pôde ser lido "
+                                            f"({type(e).__name__}).")
+
+                        crc_ok = bool(itens)
+                        if not crc_ok and not crc_erro:
+                            # `parse_crc` devolve lista VAZIA sem levantar excecao
+                            # quando o texto do PDF nao rende item nenhum (PDF so
+                            # imagem, fonte sem ToUnicode, pagina de erro emitida
+                            # como certificado). Sem motivo aqui, o unico caminho
+                            # que preenchia `crc_erro` era o `except` — e a falha
+                            # voltaria a ser silenciosa, que e o bug desta PR.
+                            crc_erro = ("O certificado foi emitido mas veio sem a lista "
+                                        "de documentos (texto ilegível).")
+                        if not itens:
+                            # Fallback: so o que a linha da. Nao substitui detalhe ja
+                            # conhecido — quem decide isso e o _salvar.
+                            imped = _pegar(linha, "impedimento")
+                            itens = [{
+                                "codigo": "SIT", "grupo": "CAGEC",
+                                "label": "Situação para Parceria", "valor": situacao or "-",
+                                "status": situacao or "-", "validade": None,
+                                "tipo": "regular" if (situacao and _sem_acento(situacao) in _REGULARES)
+                                        else "pendente",
+                            }]
+                            if imped:
+                                itens.append({
+                                    "codigo": "IMP", "grupo": "CAGEC",
+                                    "label": "Possui Impedimento", "valor": imped,
+                                    "status": imped, "validade": None,
+                                    "tipo": "pendente" if _sem_acento(imped) == "sim" else "regular",
+                                })
+
+                        _salvar(cur, mun, cnpj_fmt, situacao, nome, tipo, principal,
+                                numero, itens, crc_ok, None if crc_ok else crc_erro)
+                        if not crc_ok:
+                            degradadas.append(f"{(nome or cnpj_fmt)[:34]}: {crc_erro}")
+                        vistos.append(cnpj_fmt)
+                        coletadas += 1
+                        if crc_ok:
+                            pend = [i["codigo"] for i in itens if i.get("tipo") == "pendente"]
+                            logger.info("    [%s] %s: %s | %d obrigacao(oes) | pendente(s): %s",
+                                        "principal" if principal else (tipo or "entidade"),
+                                        (nome or cnpj_fmt)[:38], situacao, len(itens),
+                                        ", ".join(pend) or "nenhuma")
+                        else:
+                            # Nao logar len(itens) aqui: o detalhamento pode ter sido
+                            # PRESERVADO no banco, e "2 obrigacoes" seria mentira no
+                            # log — a mesma mentira que a tela contava.
+                            logger.warning("    [%s] %s: %s | SEM detalhamento do CRC — %s",
+                                           "principal" if principal else (tipo or "entidade"),
+                                           (nome or cnpj_fmt)[:38], situacao, crc_erro)
+
+                    removidas = (_limpar_sumidos(cur, mun["id"], vistos)
+                                 if rodada_completa else 0)
+                    if not rodada_completa:
+                        logger.warning("    %s: rodada incompleta — nao removo entidade "
+                                       "nenhuma nesta passada", mun["nome"])
+                    conn.commit()
+                    if removidas:
+                        logger.info("    %s: %d entidade(s) sumiram do CAGEC e foram "
+                                    "removidas", mun["nome"], removidas)
+                    if coletadas:
+                        ok += 1
+                        _marca_coleta(mun["id"], ok=True)
+                    else:
+                        falha += 1
+                        _marca_coleta(mun["id"], ok=False,
+                                      erro="nenhuma entidade coletada nesta rodada")
+                except Exception as e:
+                    # PARIDADE COM O SIGCON (#159): qualquer excecao no MIOLO do
+                    # municipio (portal instavel, banco, pagina morta) carimba
+                    # ok=False e segue para o proximo. Sem isso, falha
+                    # deterministica abortava a rodada inteira SEM carimbo e o
+                    # municipio voltava a FRENTE da fila — a starvation que este
+                    # rodizio veio matar, so que por outro caminho.
+                    logger.error("  %s: excecao no meio do municipio — %s: %s",
+                                 mun["nome"], type(e).__name__, str(e)[:160])
+                    try:
+                        conn.rollback()
                     except Exception:
                         pass
-                    if linha_extra:
-                        logger.info("    %s: achado por CNPJ (a busca por nome nao pegou)",
-                                    conhecido["nome"] or conhecido["cnpj"])
-                        entidades.append(linha_extra)
-                    else:
-                        logger.warning("    %s (%s): NAO esta cadastrado no CAGEC — "
-                                       "e uma entidade que recebe recurso federal",
-                                       conhecido["nome"] or "entidade",
-                                       conhecido["cnpj"])
-
-                # Uma rodada PARCIAL nao pode autorizar DELETE: se a listagem
-                # veio truncada ou uma entidade nao respondeu, o CNPJ dela nao
-                # entra em `vistos` e _limpar_sumidos a apagaria como se tivesse
-                # saido do CAGEC — levando junto o detalhamento preservado, que
-                # hoje e a UNICA copia (o portal nao emite CRC novo).
-                rodada_completa = listagem_completa
-                vistos, coletadas = [], 0
-                for ent in entidades:
-                    cnpj_ent = re.search(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}",
-                                         " ".join(ent.values()))
-                    if not cnpj_ent:
-                        rodada_completa = False
-                        continue
-                    cnpj_fmt = cnpj_ent.group(0)
-                    tipo = _pegar(ent, "tipo")
-                    principal = (_so_digitos(cnpj_fmt) == cnpj_prefeitura
-                                 or _sem_acento(tipo or "") == "municipio")
-
-                    # Duas tentativas: o portal e instavel e uma falha isolada
-                    # deixaria a entidade com dado velho ate o proximo cron.
-                    linha, erro = None, None
-                    for tentativa in (1, 2):
-                        try:
-                            linha = await _consultar(page, _so_digitos(cnpj_fmt))
-                        except Exception as e:
-                            erro = f"{type(e).__name__}: {str(e)[:110]}"
-                        if linha:
-                            break
-                        if tentativa == 1:
-                            await page.wait_for_timeout(5000)
-                    if not linha:
-                        logger.warning("    %s (%s): sem resultado apos 2 tentativas%s",
-                                       (_pegar(ent, "nome", "razao social") or cnpj_fmt)[:40],
-                                       cnpj_fmt, f" — {erro}" if erro else "")
-                        rodada_completa = False
-                        continue
-
-                    situacao = _pegar(linha, "situacao", "parceria")
-                    nome = (_pegar(linha, "nome", "razao social")
-                            or _pegar(linha, "razao social"))
-                    numero = None
-
-                    # Caminho principal: o CRC, com as obrigacoes uma a uma.
-                    itens: list[dict] = []
-                    pdf, crc_erro = await _baixar_crc(page)
-                    if pdf:
-                        try:
-                            cab, itens = parse_crc(_texto_do_pdf(pdf))
-                            situacao = cab.get("situacao") or situacao
-                            nome = cab.get("razao_social") or nome
-                            numero = cab.get("numero_cadastro")
-                        except Exception as e:
-                            logger.warning("    %s: CRC baixou mas nao foi lido — %s: %s",
-                                           cnpj_fmt, type(e).__name__, str(e)[:110])
-                            itens = []
-                            crc_erro = ("O certificado foi emitido mas não pôde ser lido "
-                                        f"({type(e).__name__}).")
-
-                    crc_ok = bool(itens)
-                    if not crc_ok and not crc_erro:
-                        # `parse_crc` devolve lista VAZIA sem levantar excecao
-                        # quando o texto do PDF nao rende item nenhum (PDF so
-                        # imagem, fonte sem ToUnicode, pagina de erro emitida
-                        # como certificado). Sem motivo aqui, o unico caminho
-                        # que preenchia `crc_erro` era o `except` — e a falha
-                        # voltaria a ser silenciosa, que e o bug desta PR.
-                        crc_erro = ("O certificado foi emitido mas veio sem a lista "
-                                    "de documentos (texto ilegível).")
-                    if not itens:
-                        # Fallback: so o que a linha da. Nao substitui detalhe ja
-                        # conhecido — quem decide isso e o _salvar.
-                        imped = _pegar(linha, "impedimento")
-                        itens = [{
-                            "codigo": "SIT", "grupo": "CAGEC",
-                            "label": "Situação para Parceria", "valor": situacao or "-",
-                            "status": situacao or "-", "validade": None,
-                            "tipo": "regular" if (situacao and _sem_acento(situacao) in _REGULARES)
-                                    else "pendente",
-                        }]
-                        if imped:
-                            itens.append({
-                                "codigo": "IMP", "grupo": "CAGEC",
-                                "label": "Possui Impedimento", "valor": imped,
-                                "status": imped, "validade": None,
-                                "tipo": "pendente" if _sem_acento(imped) == "sim" else "regular",
-                            })
-
-                    _salvar(cur, mun, cnpj_fmt, situacao, nome, tipo, principal,
-                            numero, itens, crc_ok, None if crc_ok else crc_erro)
-                    if not crc_ok:
-                        degradadas.append(f"{(nome or cnpj_fmt)[:34]}: {crc_erro}")
-                    vistos.append(cnpj_fmt)
-                    coletadas += 1
-                    if crc_ok:
-                        pend = [i["codigo"] for i in itens if i.get("tipo") == "pendente"]
-                        logger.info("    [%s] %s: %s | %d obrigacao(oes) | pendente(s): %s",
-                                    "principal" if principal else (tipo or "entidade"),
-                                    (nome or cnpj_fmt)[:38], situacao, len(itens),
-                                    ", ".join(pend) or "nenhuma")
-                    else:
-                        # Nao logar len(itens) aqui: o detalhamento pode ter sido
-                        # PRESERVADO no banco, e "2 obrigacoes" seria mentira no
-                        # log — a mesma mentira que a tela contava.
-                        logger.warning("    [%s] %s: %s | SEM detalhamento do CRC — %s",
-                                       "principal" if principal else (tipo or "entidade"),
-                                       (nome or cnpj_fmt)[:38], situacao, crc_erro)
-
-                removidas = (_limpar_sumidos(cur, mun["id"], vistos)
-                             if rodada_completa else 0)
-                if not rodada_completa:
-                    logger.warning("    %s: rodada incompleta — nao removo entidade "
-                                   "nenhuma nesta passada", mun["nome"])
-                conn.commit()
-                if removidas:
-                    logger.info("    %s: %d entidade(s) sumiram do CAGEC e foram "
-                                "removidas", mun["nome"], removidas)
-                if coletadas:
-                    ok += 1
-                else:
                     falha += 1
+                    _marca_coleta(mun["id"], ok=False,
+                                  erro=f"{type(e).__name__}: {str(e)[:200]}")
         finally:
             conn.close()
             await br.close()

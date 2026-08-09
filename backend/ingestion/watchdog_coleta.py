@@ -70,7 +70,9 @@ FRESCOR_HORAS = {
 # que a Freitas chegou a 21/40 municipios defasados sem nada apitar.
 # sigcon 48h: meta e <24h, mas 48h evita flapping enquanto o fatiamento por
 # rodada curta faz a fila baixar. transferegov 36h: ciclo real e <24h + folga.
-STALENESS_MUNICIPIO_H = {"sigcon": 48, "transferegov": 36}
+# cagec 48h: 4 rodadas/dia cobrem a carteira em 1-2 passadas com o rodizio;
+# 48h = o MESMO municipio perdeu duas janelas inteiras.
+STALENESS_MUNICIPIO_H = {"sigcon": 48, "transferegov": 36, "cagec": 48}
 
 # ⚠️ SUCESSO E SO SUCESSO. Cada coletor escreve a palavra na sua lingua:
 # cauc/gconv_es/sismob/simec_par gravam 'success', o cagec_scraper grava 'ok'.
