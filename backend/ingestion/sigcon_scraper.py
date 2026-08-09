@@ -564,7 +564,8 @@ def _municipio_id_lookup() -> dict:
 FONTE_COLETA = "sigcon"
 
 
-def _marca_coleta(municipio_id: int, ok: bool, erro: str | None = None) -> None:
+def _marca_coleta(municipio_id: int, ok: bool, erro: str | None = None,
+                  fonte: str = FONTE_COLETA) -> None:
     """Registra que este municipio foi coletado (ou falhou) agora.
 
     E o que alimenta o rodizio: a proxima rodada ordena por `ultima_coleta_em`
@@ -572,6 +573,12 @@ def _marca_coleta(municipio_id: int, ok: bool, erro: str | None = None) -> None:
     esta parado ha mais tempo vem primeiro. Best-effort: se a tabela ainda nao
     existir (worker subiu antes da migration da API), apenas ignora -- o scraper
     nao pode quebrar por causa da contabilidade do rodizio.
+
+    `fonte` permite carimbos por DATASET dentro do mesmo run: 'sigcon_emendas'
+    registra a coleta de emendas separada da de convenios, porque a falha de
+    _scrape_emendas e engolida (warning) e o carimbo compartilhado diria
+    "fresco" para a tela de Emendas com o dado congelado — a mesma cegueira do
+    incidente do CAGEC de 01/08. O rodizio continua lendo so fonte='sigcon'.
     """
     import psycopg2
     try:
@@ -590,7 +597,7 @@ def _marca_coleta(municipio_id: int, ok: bool, erro: str | None = None) -> None:
                         "VALUES (%s, %s, now(), 0) "
                         "ON CONFLICT (fonte, municipio_id) DO UPDATE SET "
                         "ultima_coleta_em = now(), tentativas = 0, ultimo_erro = NULL",
-                        (FONTE_COLETA, municipio_id),
+                        (fonte, municipio_id),
                     )
                 else:
                     # CARIMBA ultima_coleta_em TAMBEM NO ERRO. Antes so o sucesso
@@ -609,7 +616,7 @@ def _marca_coleta(municipio_id: int, ok: bool, erro: str | None = None) -> None:
                         "ultima_coleta_em = now(), "
                         "ultimo_erro_em = now(), ultimo_erro = EXCLUDED.ultimo_erro, "
                         "tentativas = scraper_municipio_coleta.tentativas + 1",
-                        (FONTE_COLETA, municipio_id, (erro or "")[:500]),
+                        (fonte, municipio_id, (erro or "")[:500]),
                     )
             conn.commit()
         finally:
@@ -942,10 +949,12 @@ async def _scrape_one(browser, cred, anos_emendas, sem, deadline=None):
             # e o Neon/Postgres a fecharia por idle timeout ("connection already
             # closed"). Abrimos SO AGORA (fresca) p/ gravar rapido e fechar.
             emendas = []
+            emendas_erro: str | None = None
             try:
                 emendas = await _scrape_emendas(page, anos_emendas)
             except Exception as e:
                 logger.warning(f"  Emendas falharam para {nome}: {e}")
+                emendas_erro = str(e)
 
             conn = psycopg2.connect(_sync_dsn())
             try:
@@ -965,6 +974,12 @@ async def _scrape_one(browser, cred, anos_emendas, sem, deadline=None):
             logger.info(f"  {nome}: {len(mun_records)} convenios (+{i}/~{u}) | "
                         f"emendas +{ei}/~{eu}")
             _marca_coleta(cred["municipio_id"], ok=True)
+            # Carimbo do DATASET de emendas (ver docstring de _marca_coleta):
+            # o selo da tela de Emendas responde por ESTA coleta, sem punir a
+            # tela de Convenios quando so as emendas quebram (e vice-versa).
+            _marca_coleta(cred["municipio_id"], ok=emendas_erro is None,
+                          erro=(f"emendas: {emendas_erro[:300]}" if emendas_erro else None),
+                          fonte="sigcon_emendas")
             return (nome, i, u, ei, eu, True)
         except Exception as e:
             logger.error(f"  Falha {nome}: {e}")

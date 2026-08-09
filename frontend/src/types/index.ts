@@ -85,6 +85,11 @@ export interface ConvenioList {
   page: number;
   per_page: number;
   pages: number;
+  /** Frescor da coleta SIGCON do município filtrado (null = sem registro ou
+   *  coleta falhando; ver coleta_falhas). */
+  coleta_em?: string | null;
+  /** Falhas consecutivas de login/scrape — >0 = avisar em vez de datar. */
+  coleta_falhas?: number;
 }
 
 export interface ConvenioStats {

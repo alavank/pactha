@@ -11,6 +11,7 @@ from database import get_db
 from models import ConvenioEstadual
 from schemas.convenio import ConvenioResponse, ConvenioListResponse, ConvenioStats, AlertaVigencia
 from services.auth import get_current_user, ensure_municipio_access, ensure_tela
+from services.coleta import frescor_coleta
 from services.audit import registrar
 # Trava de permissao em MODO AVISO. `ensure_dono` responde a pergunta que
 # `ensure_tela` nao responde: "este id e de um municipio que a pessoa enxerga?".
@@ -292,8 +293,14 @@ async def list_convenios(
         return (1, -d)
     items.sort(key=_sort_key)
 
+    # Frescor da coleta SIGCON deste municipio, para o selo "Atualizado em" da
+    # tela (regra de honestidade centralizada em services/coleta.py).
+    coleta_em, coleta_falhas = (await frescor_coleta(db, municipio_id, ("sigcon",))
+                                if municipio_id else (None, 0))
+
     pages = math.ceil(total / per_page) if total > 0 else 1
-    return ConvenioListResponse(items=items, total=total, page=page, per_page=per_page, pages=pages)
+    return ConvenioListResponse(items=items, total=total, page=page, per_page=per_page,
+                                pages=pages, coleta_em=coleta_em, coleta_falhas=coleta_falhas)
 
 
 @router.get("/stats", response_model=ConvenioStats,

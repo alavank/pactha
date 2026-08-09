@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 import { useUfDoMunicipio } from "@/lib/useUfDoMunicipio";
@@ -15,6 +15,7 @@ import AnotacaoButton, { precarregarContagens } from "@/components/AnotacaoButto
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatDataHora, horasDesde } from "@/lib/bi-format";
 import type { Convenio, ConvenioList } from "@/types";
 import ConvenioDetailModal from "./ConvenioDetailModal";
 
@@ -249,6 +250,15 @@ export default function ConveniosPage() {
     setPage(1);
   }, [fontesSel, situacoesSel, pagamentosSel, anosSel, vigenciasSel, intervalo, debouncedSearch]);
 
+  // Guarda de corrida: na troca A→B duas respostas podem chegar fora de ordem
+  // e a de A assentar por cima da de B — com o selo de frescor no payload, isso
+  // viraria "Atualizado em" do município errado. Só a resposta mais recente
+  // assenta; o reset abaixo cobre o intervalo de loading.
+  const reqSeq = useRef(0);
+  useEffect(() => {
+    setData(null);
+  }, [municipioId]);
+
   const fetchData = useCallback(() => {
     if (!municipioId) return;
     setLoading(true);
@@ -267,9 +277,12 @@ export default function ConveniosPage() {
     if (intervalo.ate) params.vig_fim_ate = intervalo.ate;
     if (debouncedSearch) params.search = debouncedSearch;
 
+    const seq = ++reqSeq.current;
     api
       .get<ConvenioList>("/convenios", { params })
-      .then((res) => setData(res.data))
+      .then((res) => {
+        if (seq === reqSeq.current) setData(res.data);
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [municipioId, page, fontesSel, situacoesSel, pagamentosSel, anosSel, vigenciasSel, intervalo, debouncedSearch]);
@@ -375,6 +388,29 @@ export default function ConveniosPage() {
                 : `${NOME_UF[ufAmbiente] || ufAmbiente} — a fonte estadual deste estado ainda não está integrada`}
             </p>
           )}
+          {/* Frescor da COLETA (não confundir com a legenda da fonte acima):
+              responde "isto está atualizado?" na abertura da tela, como o CAUC
+              já faz. Com a coleta falhando, AVISA sem afirmar causa (o backend
+              só sabe que falhou — pode ser credencial, portal fora ou layout) e
+              sem datar: o carimbo, nesse caso, seria a hora do último ERRO.
+              Some quando o filtro mostra só FNS (outra origem, outra cadência —
+              o frescor do SIGCON não cobre aquelas linhas). */}
+          {municipioId && data &&
+            !(fontesSel.length > 0 && fontesSel.every((f) => f === "FNS")) &&
+            ((data.coleta_falhas ?? 0) > 0 ? (
+            <p className="text-[11px]" style={{ color: "var(--bi-warn-ink)" }}>
+              não foi possível concluir a última coleta no portal do Estado
+              {data.items.length > 0 ? " — exibindo os últimos dados obtidos" : ""}
+            </p>
+          ) : data.coleta_em ? (
+            <p
+              className="text-[11px]"
+              style={{ color: (horasDesde(data.coleta_em) ?? 0) > 26 ? "var(--bi-warn-ink)" : "var(--bi-muted)" }}
+              title={(horasDesde(data.coleta_em) ?? 0) > 26 ? "Sem coleta nova há mais de um dia" : undefined}
+            >
+              Atualizado em {formatDataHora(data.coleta_em)}
+            </p>
+          ) : null)}
         </div>
         <div className="flex items-center gap-2">
           {refreshMsg && (

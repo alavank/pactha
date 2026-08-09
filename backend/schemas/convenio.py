@@ -52,6 +52,13 @@ class ConvenioListResponse(BaseModel):
     page: int
     per_page: int
     pages: int
+    # Frescor da coleta SIGCON do municipio filtrado (None sem municipio_id,
+    # sem rastreio ou com coleta falhando). coleta_falhas > 0 = login/portal
+    # falhando ha N rodadas: a tela avisa em vez de exibir um "atualizado em"
+    # que na verdade seria a hora do ultimo ERRO (pos-#159 o carimbo tambem
+    # acontece na falha, para o rodizio nao sofrer starvation).
+    coleta_em: Optional[str] = None
+    coleta_falhas: int = 0
 
 
 class ConvenioStats(BaseModel):

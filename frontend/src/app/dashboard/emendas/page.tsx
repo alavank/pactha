@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useCallback, useMemo } from "react";
+import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { ChevronLeft, ChevronRight, Search as SearchIcon, ChevronDown, ChevronUp } from "lucide-react";
 import api from "@/lib/api";
 import { useMunicipio } from "@/contexts/MunicipioContext";
@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { Bloco, BlocoHead, Campos, ItemLinha, Lista, Selo, situacaoTom } from "@/components/ui/superficies";
 import { atalhosAnos, resumoAnos } from "@/lib/periodo";
+import { formatDataHora, horasDesde } from "@/lib/bi-format";
 import {
   Table,
   TableBody,
@@ -67,12 +68,23 @@ export default function EmendasEstaduaisPage() {
   const [stats, setStats] = useState<{ total: number; valor_total: number; responsaveis: number; aprovadas: number } | null>(null);
   const [anos, setAnos] = useState<number[]>([]);
   const [collapsedYears, setCollapsedYears] = useState<Set<number>>(new Set());
+  // Frescor da coleta SIGCON (as emendas vem do mesmo scrape dos convenios).
+  const [coleta, setColeta] = useState<{ em: string | null; falhas: number }>({ em: null, falhas: 0 });
 
   useEffect(() => {
     if (!municipioId) return;
     api.get<number[]>("/emendas-estaduais/anos", { params: { municipio_id: municipioId } })
       .then((r) => setAnos(Array.isArray(r.data) ? r.data : []))
       .catch(() => {});
+  }, [municipioId]);
+
+  // Mesma guarda de corrida da tela de Convênios: só a resposta mais recente
+  // assenta, e a troca de município zera o estado (senão o selo de frescor do
+  // município anterior fica na tela durante o loading).
+  const reqSeq = useRef(0);
+  useEffect(() => {
+    setItems([]);
+    setColeta({ em: null, falhas: 0 });
   }, [municipioId]);
 
   const fetchData = useCallback(() => {
@@ -88,8 +100,13 @@ export default function EmendasEstaduaisPage() {
     if (anosSel.length) params.anos = anosSel;
     if (responsavel) params.responsavel = responsavel;
     if (tiposSel.length) params.tipos = tiposSel;
-    api.get<{ items: Emenda[]; total: number }>("/emendas-estaduais", { params })
-      .then((r) => setItems(r.data.items || []))
+    const seq = ++reqSeq.current;
+    api.get<{ items: Emenda[]; total: number; coleta_em?: string | null; coleta_falhas?: number }>("/emendas-estaduais", { params })
+      .then((r) => {
+        if (seq !== reqSeq.current) return;
+        setItems(r.data.items || []);
+        setColeta({ em: r.data.coleta_em ?? null, falhas: r.data.coleta_falhas ?? 0 });
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
 
@@ -141,7 +158,26 @@ export default function EmendasEstaduaisPage() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-2xl font-bold text-base-content">Emendas Parlamentares Estaduais</h1>
+        <div>
+          <h1 className="text-2xl font-bold text-base-content">Emendas Parlamentares Estaduais</h1>
+          {/* Frescor da coleta — mesma regra da tela de Convênios: com a coleta
+              falhando, avisa SEM afirmar causa e sem datar (o carimbo seria a
+              hora do último erro). */}
+          {municipioId && (coleta.falhas > 0 ? (
+            <p className="text-[11px]" style={{ color: "var(--bi-warn-ink)" }}>
+              não foi possível concluir a última coleta no portal do Estado
+              {items.length > 0 ? " — exibindo os últimos dados obtidos" : ""}
+            </p>
+          ) : coleta.em ? (
+            <p
+              className="text-[11px]"
+              style={{ color: (horasDesde(coleta.em) ?? 0) > 26 ? "var(--bi-warn-ink)" : "var(--bi-muted)" }}
+              title={(horasDesde(coleta.em) ?? 0) > 26 ? "Sem coleta nova há mais de um dia" : undefined}
+            >
+              Atualizado em {formatDataHora(coleta.em)}
+            </p>
+          ) : null)}
+        </div>
         <Button onClick={exportPdf} size="sm" variant="outline" title="Exportar para PDF">
           📄 PDF
         </Button>
