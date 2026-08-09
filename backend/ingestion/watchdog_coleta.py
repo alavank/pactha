@@ -167,7 +167,11 @@ def _municipios_defasados(cur) -> list[dict]:
                        coalesce(sc.tentativas, 0)
                 FROM scraper_municipio_coleta sc
                 JOIN municipios m ON m.id = sc.municipio_id
-                WHERE sc.fonte = %s
+                -- so municipios ATIVOS: contrato encerrado mantem a linha do
+                -- rodizio (historico), mas nao pode inflar a nota de 'falha
+                -- persistente' nem virar defasado (visto 09/08: 9 ex-clientes
+                -- da freitas contando como falha de credencial no log).
+                WHERE sc.fonte = %s AND coalesce(m.active, true)
                 ORDER BY sc.ultima_coleta_em ASC
             """, (fonte,))
             rows = cur.fetchall()
