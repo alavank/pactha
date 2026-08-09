@@ -94,7 +94,7 @@ npm run dev
 
 Painel do Coolify: `http://54.232.208.118:8000` — projeto `pactha`, environment `production`.
 
-**Cada tenant** tem o mesmo conjunto de 4 resources (o Monte Siao tem um 5o, o Painel):
+**Cada tenant** tem o mesmo conjunto de 4 resources:
 
 | Resource | Build | Dominio |
 |----------|-------|---------|
@@ -102,7 +102,6 @@ Painel do Coolify: `http://54.232.208.118:8000` — projeto `pactha`, environmen
 | API (`<tenant>-api`) | `backend/Dockerfile.api` (Base Dir = `/`) | subdominio proprio |
 | Frontend (`<tenant>-frontend`) | `frontend/Dockerfile` (Base Dir = `frontend`) | subdominio proprio |
 | Worker (`<tenant>-worker`) | `backend/Dockerfile.scraper` (PID 1 = `tini` + `reaper.sh`; crons via Scheduled Tasks) | interno |
-| Painel (so `montesiao-mg`) | `painel/Dockerfile` (Base Dir = `painel`) | subdominio proprio |
 
 O frontend faz **proxy same-origin** de `/api` para o host interno da API
 (`rewrites()` em `frontend/next.config.ts`, alvo em `API_PROXY_TARGET`, build-time). Por isso
