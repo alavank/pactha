@@ -37,7 +37,7 @@ env:
 jobs:
   build:
     concurrency:
-      group: build-frontend-${{ github.ref }}
+      group: build-frontend-${{ github.ref }}-${{ matrix.image }}
       cancel-in-progress: true
     runs-on: ubuntu-latest
     permissions:
