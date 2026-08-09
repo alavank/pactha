@@ -102,7 +102,11 @@ const NAV_ITEMS: NavEntry[] = [
     icon: BI_ON ? BarChart3 : LayoutDashboard,
   },
   { href: "/dashboard/ai", label: "IA PACTHA", icon: Sparkles },
-  { href: "/dashboard/telegram", label: "Telegram", icon: Send },
+  // Telegram desativado até segunda ordem (ver lib/telas.ts) — o item fica
+  // atrás da mesma flag para sumir também de quem já tinha a permissão antiga.
+  ...(process.env.NEXT_PUBLIC_TELEGRAM_MODULE === "1"
+    ? [{ href: "/dashboard/telegram", label: "Telegram", icon: Send }]
+    : []),
   { href: "/dashboard/parlamentares", label: "Parlamentares", icon: UserCircle2 },
   { href: "/dashboard/gestao", label: "Gestão Interna", icon: Edit2 },
   { href: "/dashboard/rm", label: "Relatório de Monitoramento", icon: FileText },

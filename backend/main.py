@@ -173,7 +173,13 @@ app.include_router(rm.router)
 app.include_router(ai.router)
 app.include_router(gestao.router)
 app.include_router(parlamentares.router)
-app.include_router(telegram.router)
+# TELEGRAM DESATIVADO ATÉ SEGUNDA ORDEM (decisão do dono, 09/08/2026): o canal
+# de avisos será WhatsApp com API oficial; Telegram só sob demanda rara. Sem a
+# flag, as rotas nem existem (404 — webhook incluso) e o catálogo de permissões
+# não oferece as chaves (services/permissoes.py). Religar = TELEGRAM_MODULE=1
+# aqui + NEXT_PUBLIC_TELEGRAM_MODULE=1 no build do frontend.
+if os.getenv("TELEGRAM_MODULE") == "1":
+    app.include_router(telegram.router)
 app.include_router(status_changes.router)
 app.include_router(documentos.router)
 app.include_router(cauc.router)

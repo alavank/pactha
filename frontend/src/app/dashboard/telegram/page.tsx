@@ -84,6 +84,19 @@ function fmtDataHora(iso?: string | null): string {
 }
 
 export default function TelegramPage() {
+  // Desativado até segunda ordem (ver lib/telas.ts). O gate fica AQUI, antes
+  // do componente com hooks, para acesso por URL direta também morrer.
+  if (process.env.NEXT_PUBLIC_TELEGRAM_MODULE !== "1") {
+    return (
+      <div className="p-6 text-sm" style={{ color: "var(--bi-muted)" }}>
+        Recurso indisponível.
+      </div>
+    );
+  }
+  return <TelegramPageInner />;
+}
+
+function TelegramPageInner() {
   const [status, setStatus] = useState<TelegramStatus | null>(null);
   const [links, setLinks] = useState<MyLink[]>([]);
   const [linkCode, setLinkCode] = useState<LinkCode | null>(null);
