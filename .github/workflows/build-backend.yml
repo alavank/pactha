@@ -43,7 +43,7 @@ env:
 jobs:
   build:
     concurrency:
-      group: build-backend-${{ github.ref }}
+      group: build-backend-${{ github.ref }}-${{ matrix.name }}
       cancel-in-progress: true
     runs-on: ubuntu-latest
     permissions:
