@@ -25,15 +25,20 @@ on:
       - '.github/workflows/build-frontend.yml'
   workflow_dispatch: {}
 
-concurrency:
-  group: build-frontend-${{ github.ref }}
-  cancel-in-progress: true
-
+# Concurrency no JOB de build (nao no workflow) — mesmo motivo do backend:
+# cancel no nivel do workflow matava deploy em pleno voo no segundo push.
+# SKEW ACEITO: merge que toca backend+frontend deploya os dois por workflows
+# independentes, sem ordem garantida entre eles (janela de minutos de UI nova
+# com API velha ou vice-versa). Releases sao retrocompativeis por disciplina;
+# se um dia um contrato quebrar de verdade, acoplar via workflow_run.
 env:
   IMAGE_BASE: ghcr.io/${{ github.repository_owner }}/pactha
 
 jobs:
   build:
+    concurrency:
+      group: build-frontend-${{ github.ref }}
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -101,3 +106,65 @@ jobs:
 
       - name: Resumo
         run: echo "Publicado ${{ env.IMAGE_BASE }}-${{ matrix.image }}:latest" >> "$GITHUB_STEP_SUMMARY"
+
+  # Fase D (09/08/2026): o CI fecha o ciclo tambem nos frontends — avanca a tag
+  # (sha COMPLETO, padrao deste workflow) e deploya os 3 apps, confirmando cada
+  # deployment via GET /deployments/{uuid}. Sem gate de janela: frontend nao
+  # roda coleta, um restart de segundos nao machuca. Auto-deploy por webhook do
+  # Coolify DESLIGADO nos apps pactha (recriava com tag antiga e ja matou
+  # coleta). Segredos: COOLIFY_URL + COOLIFY_TOKEN (sem eles, falha alta).
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: deploy-frontend
+      cancel-in-progress: false
+    env:
+      COOLIFY_URL: ${{ secrets.COOLIFY_URL }}
+      COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+    steps:
+      - name: Avanca tag e deploya os 3 frontends
+        run: |
+          # Mesma politica de erro do backend: -e do Actions desligado, mutacao
+          # falha alto com rollback de tag, leitura falha fechado.
+          set +e
+          set -uo pipefail
+          TAG="sha-${GITHUB_SHA}"
+          CURL=(curl -sS --connect-timeout 10 --max-time 30 -H "Authorization: Bearer $COOLIFY_TOKEN")
+          FALHAS=""
+          # mapa app->uuid no Coolify (ver PROVISIONAR_CLIENTE.md p/ tenant novo)
+          for APP in qgmw4e5wjem1e8jit2wyvo1d j5ghp71lff003d5rfaynvy5y bryvqhhcu97lc3ku7a2hss0q; do
+            OLD_TAG=$("${CURL[@]}" "$COOLIFY_URL/api/v1/applications/$APP" | jq -r '.docker_registry_image_tag // ""')
+            if ! "${CURL[@]}" -X PATCH -H "Content-Type: application/json" \
+                 -d "{\"docker_registry_image_tag\":\"$TAG\"}" \
+                 "$COOLIFY_URL/api/v1/applications/$APP" > /dev/null; then
+              echo "::error::frontend $APP: PATCH da tag falhou — app intocado"
+              FALHAS="$FALHAS $APP"; continue
+            fi
+            DEP=$("${CURL[@]}" --retry 3 --retry-all-errors "$COOLIFY_URL/api/v1/deploy?uuid=$APP" \
+                  | jq -r '.deployments[0].deployment_uuid // ""')
+            if [ -z "$DEP" ]; then
+              echo "::error::frontend $APP: deploy nao disparou — revertendo tag p/ '${OLD_TAG:-?}'"
+              [ -n "$OLD_TAG" ] && "${CURL[@]}" -X PATCH -H "Content-Type: application/json" \
+                -d "{\"docker_registry_image_tag\":\"$OLD_TAG\"}" \
+                "$COOLIFY_URL/api/v1/applications/$APP" > /dev/null
+              FALHAS="$FALHAS $APP"; continue
+            fi
+            ok=""
+            for _ in $(seq 1 30); do
+              st=$("${CURL[@]}" "$COOLIFY_URL/api/v1/deployments/$DEP" | jq -r '.status // ""')
+              case "$st" in
+                finished) ok=1; break ;;
+                failed|cancelled*) echo "::error::frontend $APP: deployment '$st'"; break ;;
+              esac
+              sleep 10
+            done
+            if [ -n "$ok" ]; then echo "frontend $APP -> $TAG (confirmado)"; else FALHAS="$FALHAS $APP"; fi
+          done
+          {
+            echo "### Deploy frontend: $TAG"
+            [ -n "$FALHAS" ] && echo "FALHARAM:$FALHAS — conferir no Coolify." || echo "3 frontends confirmados."
+          } >> "$GITHUB_STEP_SUMMARY"
+          [ -z "$FALHAS" ]
