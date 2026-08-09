@@ -9,13 +9,20 @@ name: build-backend
 # 2,4 GB com Chromium. Isso queimou os creditos de burst da instancia duas vezes
 # em 23/07. Buildando aqui UMA vez, a VPS deixa de fazer esse trabalho.
 #
-# ESTADO ATUAL (Fase A): este workflow so PUBLICA a imagem. Nenhum app do Coolify
-# consome ela ainda -- a VPS segue buildando como antes. Quando os apps forem
-# migrados para puxar a imagem (Fase C/D), o build sai de vez da VPS.
+# ESTADO ATUAL (Fase D, desde 09/08/2026): este workflow PUBLICA a imagem e o
+# job `deploy` FECHA o ciclo — avanca a tag dos 6 apps no Coolify e dispara o
+# deploy na ordem certa (APIs primeiro, que rodam as migrations no boot;
+# workers depois, esperando janela sem coleta em voo). O auto-deploy por
+# webhook do Coolify foi DESLIGADO nos apps pactha: ele recriava os containers
+# com a TAG ANTIGA (churn inutil que registra commit novo rodando imagem velha
+# na fila de deploy) e ja matou coleta no meio duas vezes em 08/08.
+#
+# Segredos exigidos no repo: COOLIFY_URL (ex.: http://54.232.208.118:8000) e
+# COOLIFY_TOKEN (token de API com permissao write+deploy).
 #
 # Os FRONTENDS nao entram aqui: cada tenant embute build-args proprios
 # (NEXT_PUBLIC_API_URL, logo, subtitulo) no bundle Next em build time, entao sao
-# genuinamente diferentes -- continuam buildando no Coolify (sao leves).
+# genuinamente diferentes -- ver build-frontend.yml (que tambem deploya).
 
 on:
   push:
@@ -25,16 +32,19 @@ on:
       - '.github/workflows/build-backend.yml'
   workflow_dispatch: {}   # permite rodar manualmente pelo painel do GitHub
 
-concurrency:
-  group: build-backend-${{ github.ref }}
-  cancel-in-progress: true
-
+# Concurrency NO JOB de build (nao no workflow): com cancel no nivel do
+# workflow, um segundo push na main cancelava o RUN INTEIRO — inclusive um
+# deploy em pleno voo, deixando tenants em estado parcial. Assim, build
+# obsoleto e cancelado, mas deploy em andamento sempre termina.
 env:
   REGISTRY: ghcr.io
   IMAGE_BASE: ghcr.io/${{ github.repository_owner }}/pactha
 
 jobs:
   build:
+    concurrency:
+      group: build-backend-${{ github.ref }}
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -91,3 +101,134 @@ jobs:
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           echo "${{ steps.meta.outputs.tags }}" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+  # Fase D: avanca a tag no Coolify e deploya, PAREADO POR TENANT: a API sobe
+  # primeiro (roda as migrations no boot) e o deployment dela e CONFIRMADO via
+  # GET /deployments/{uuid} (poll no status do app seria placebo: o container
+  # velho segue 'running:healthy' enquanto o novo nem puxou imagem). So entao o
+  # worker do MESMO tenant e deployado, esperando janela sem coleta em voo —
+  # API que nao subiu = worker daquele tenant NAO e tocado (evita worker novo
+  # contra schema velho). Segredos exigidos: COOLIFY_URL e COOLIFY_TOKEN
+  # (sem eles o job falha alto no primeiro curl — nunca em silencio).
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    concurrency:
+      group: deploy-backend        # serializa deploys; um novo ESPERA o atual
+      cancel-in-progress: false
+    env:
+      COOLIFY_URL: ${{ secrets.COOLIFY_URL }}
+      COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      # trios nome:api_uuid:worker_uuid (instancia Coolify; PROVISIONAR_CLIENTE.md)
+      TENANTS: >-
+        freitas:givx3567ygxppum10p1oungn:s49c3b58lysqq0tpelneg3g3
+        trust:pphvk2ygkuirjhu9qptvmfs5:xg714h8l7va4ejq70a5pmv5t
+        montesiao:chr0n883hp19tjh7829k85a7:jhf0kjhps5keujiyhhsnvjt6
+    steps:
+      - name: Deploy por tenant (API -> migrations confirmadas -> worker com janela)
+        run: |
+          # POLITICA DE ERRO EXPLICITA. O shell default do Actions e `bash -e {0}`,
+          # entao desligamos o -e e tratamos CADA comando: mutacao (PATCH/deploy)
+          # falha ALTO com rollback de tag; leitura (polls) falha FECHADO
+          # (erro de curl/jq conta como "ocupado"/"nao confirmado", nunca como ok).
+          set +e
+          set -uo pipefail
+          TAG="sha-${GITHUB_SHA::7}"
+          CURL=(curl -sS --connect-timeout 10 --max-time 30 -H "Authorization: Bearer $COOLIFY_TOKEN")
+          # Denylist das tasks sabidamente CURTAS (<30s, toleram restart). Task
+          # nova/desconhecida cai automaticamente no lado PROTEGIDO do gate.
+          CURTAS='^(watchdog|private-keepalive|queue-sigcon|govbr-renew|painel-alertas)$'
+          FALHAS=""
+
+          patch_tag() {  # $1 uuid; usa $TAG; exporta OLD_TAG p/ rollback
+            OLD_TAG=$("${CURL[@]}" "$COOLIFY_URL/api/v1/applications/$1" | jq -r '.docker_registry_image_tag // ""')
+            "${CURL[@]}" -X PATCH -H "Content-Type: application/json" \
+              -d "{\"docker_registry_image_tag\":\"$TAG\"}" \
+              "$COOLIFY_URL/api/v1/applications/$1" > /dev/null
+          }
+          rollback_tag() {  # $1 uuid; usa $OLD_TAG
+            [ -n "$OLD_TAG" ] && "${CURL[@]}" -X PATCH -H "Content-Type: application/json" \
+              -d "{\"docker_registry_image_tag\":\"$OLD_TAG\"}" \
+              "$COOLIFY_URL/api/v1/applications/$1" > /dev/null
+          }
+          disparar_deploy() {  # $1 uuid -> stdout: deployment_uuid (vazio = falhou)
+            "${CURL[@]}" --retry 3 --retry-all-errors "$COOLIFY_URL/api/v1/deploy?uuid=$1" \
+              | jq -r '.deployments[0].deployment_uuid // ""'
+          }
+          espera_deployment() {  # $1 deployment_uuid; 60x10s; 0 = finished
+            local st=""
+            for _ in $(seq 1 60); do
+              st=$("${CURL[@]}" "$COOLIFY_URL/api/v1/deployments/$1" | jq -r '.status // ""')
+              case "$st" in
+                finished) return 0 ;;
+                failed|cancelled*) echo "::error::deployment $1 terminou como '$st'"; return 1 ;;
+              esac
+              sleep 10
+            done
+            echo "::warning::deployment $1 nao concluiu em 10min (status='$st')"
+            return 1
+          }
+          janela_ociosa() {  # $1 worker uuid; ate 15min; nunca bloqueia p/ sempre
+            local TASKS tent rodando T st
+            TASKS=$("${CURL[@]}" "$COOLIFY_URL/api/v1/applications/$1/scheduled-tasks" \
+                    | jq -r --arg re "$CURTAS" '.[] | select(.name|test($re)|not) | .uuid')
+            if [ -z "$TASKS" ]; then
+              echo "::warning::worker $1: lista de tasks vazia/inacessivel — gate pulado"
+              return 0
+            fi
+            for tent in $(seq 1 15); do
+              rodando=0
+              for T in $TASKS; do
+                # So a execucao MAIS RECENTE conta: 'running' fantasma de execucao
+                # orfa antiga nao pode emperrar o gate para sempre.
+                st=$("${CURL[@]}" "$COOLIFY_URL/api/v1/applications/$1/scheduled-tasks/$T/executions" \
+                     | jq -r 'sort_by(.created_at) | last | .status // ""' 2>/dev/null)
+                if [ -z "$st" ] || [ "$st" = "running" ]; then rodando=$((rodando+1)); fi
+              done
+              if [ "$rodando" -eq 0 ]; then return 0; fi
+              echo "worker $1: $rodando task(s) possivelmente em voo — aguardando ($tent/15)"
+              sleep 60
+            done
+            echo "::warning::worker $1 nao ficou ocioso em 15min — deployando assim mesmo (upsert incremental + rodizio recuperam)"
+            return 0
+          }
+          deploy_app() {  # $1 rotulo; $2 uuid; 0 = deployment confirmado
+            local DEP
+            if ! patch_tag "$2"; then
+              echo "::error::$1: PATCH da tag falhou — app intocado"
+              return 1
+            fi
+            DEP=$(disparar_deploy "$2")
+            if [ -z "$DEP" ]; then
+              echo "::error::$1: deploy nao disparou — revertendo tag para '${OLD_TAG:-?}'"
+              rollback_tag "$2"
+              return 1
+            fi
+            espera_deployment "$DEP"
+          }
+
+          for TRIO in $TENANTS; do
+            NOME="${TRIO%%:*}"; RESTO="${TRIO#*:}"; API="${RESTO%%:*}"; WORKER="${RESTO#*:}"
+            echo "=== tenant $NOME ==="
+            if ! deploy_app "api-$NOME" "$API"; then
+              echo "::warning::api-$NOME nao confirmou — worker-$NOME NAO sera deployado"
+              FALHAS="$FALHAS api-$NOME(worker-pulado)"
+              continue
+            fi
+            janela_ociosa "$WORKER"
+            if ! deploy_app "worker-$NOME" "$WORKER"; then
+              FALHAS="$FALHAS worker-$NOME"
+            fi
+          done
+
+          {
+            echo "### Deploy backend: $TAG"
+            if [ -n "$FALHAS" ]; then
+              echo "FALHARAM:$FALHAS — demais apps deployados; conferir no Coolify."
+            else
+              echo "APIs e workers dos 3 tenants deployados e CONFIRMADOS (deployment finished)."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          [ -z "$FALHAS" ]
