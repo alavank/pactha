@@ -9,7 +9,7 @@ from database import get_db
 from routers import (
     auth, municipios, convenios, cofre, service_tokens,
     session_capture, emendas_estaduais, dou_mg, dou_es, dou_go, dou_to, fns, transferegov, export_pdf,
-    users, simec, rm, ai, gestao, parlamentares, telegram, status_changes,
+    users, simec, rm, ai, gestao, parlamentares, status_changes,
     documentos, cauc, cagec, acordofes, control, freshness, painel, bi,
     sismob, auditoria, permissoes, modelos_permissao, repasses, contas_irregulares,
     cofinanciamento,
@@ -178,7 +178,14 @@ app.include_router(parlamentares.router)
 # flag, as rotas nem existem (404 — webhook incluso) e o catálogo de permissões
 # não oferece as chaves (services/permissoes.py). Religar = TELEGRAM_MODULE=1
 # aqui + NEXT_PUBLIC_TELEGRAM_MODULE=1 no build do frontend.
+# ⚠️ O IMPORT também fica atrás da flag — não só o include_router. O decorator
+# das rotas chama exige("telegram.vincular") NO IMPORT, e o exige() valida
+# fail-closed contra o catálogo (que sem a flag não tem as chaves): importar
+# com o módulo desligado DERRUBA O BOOT da API inteira. Foi exatamente o que
+# aconteceu no 1º deploy do #168 — o guardião de rotas fez o papel dele e o
+# rolling deploy segurou a versão antiga; que este comentário poupe o próximo.
 if os.getenv("TELEGRAM_MODULE") == "1":
+    from routers import telegram
     app.include_router(telegram.router)
 app.include_router(status_changes.router)
 app.include_router(documentos.router)
