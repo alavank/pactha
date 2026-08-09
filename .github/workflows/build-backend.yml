@@ -114,7 +114,7 @@ jobs:
     needs: build
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90   # fila do Coolify (concurrent_builds=1) pode custar ~20min/tenant
     concurrency:
       group: deploy-backend        # serializa deploys; um novo ESPERA o atual
       cancel-in-progress: false
@@ -157,17 +157,24 @@ jobs:
             "${CURL[@]}" --retry 3 --retry-all-errors "$COOLIFY_URL/api/v1/deploy?uuid=$1" \
               | jq -r '.deployments[0].deployment_uuid // ""'
           }
-          espera_deployment() {  # $1 deployment_uuid; 60x10s; 0 = finished
-            local st=""
-            for _ in $(seq 1 60); do
-              st=$("${CURL[@]}" "$COOLIFY_URL/api/v1/deployments/$1" | jq -r '.status // ""')
+          espera_deployment() {  # $1 deployment_uuid; fila 20min + execucao 10min
+            # DOIS orcamentos, porque a fila do Coolify tem concurrent_builds=1
+            # e apps de OUTROS projetos buildam na propria VPS (licity: 15-20min
+            # por build) segurando o slot — visto 2x em 09/08: deployment do
+            # pactha (que e so pull, ~15-50s) preso em 'queued' por >10min.
+            # Desistir na fila e falso negativo; o teto de execucao segue curto.
+            local st="" fila=120 execucao=60
+            while :; do
+              st=$("${CURL[@]}" "$COOLIFY_URL/api/v1/deployments/$1" | jq -r '.status // ""' 2>/dev/null)
               case "$st" in
                 finished) return 0 ;;
                 failed|cancelled*) echo "::error::deployment $1 terminou como '$st'"; return 1 ;;
+                queued) fila=$((fila-1)); if [ "$fila" -le 0 ]; then break; fi ;;
+                *) execucao=$((execucao-1)); if [ "$execucao" -le 0 ]; then break; fi ;;
               esac
               sleep 10
             done
-            echo "::warning::deployment $1 nao concluiu em 10min (status='$st')"
+            echo "::warning::deployment $1 nao concluiu (ultimo status='$st')"
             return 1
           }
           janela_ociosa() {  # $1 worker uuid; ate 15min; nunca bloqueia p/ sempre
@@ -182,10 +189,22 @@ jobs:
               rodando=0
               for T in $TASKS; do
                 # So a execucao MAIS RECENTE conta: 'running' fantasma de execucao
-                # orfa antiga nao pode emperrar o gate para sempre.
-                st=$("${CURL[@]}" "$COOLIFY_URL/api/v1/applications/$1/scheduled-tasks/$T/executions" \
-                     | jq -r 'sort_by(.created_at) | last | .status // ""' 2>/dev/null)
-                if [ -z "$st" ] || [ "$st" = "running" ]; then rodando=$((rodando+1)); fi
+                # orfa antiga nao pode emperrar o gate para sempre. E task SEM
+                # NENHUMA execucao e OCIOSA, nao "possivelmente rodando" — task
+                # recem-criada bloqueava o gate pelos 15min inteiros (visto no
+                # 1o deploy: siconv-federal do trust, criada horas antes da 1a
+                # rodada). Erro de curl/jq segue contando como ocupado (fail
+                # closed de LEITURA, nao de ausencia de historico).
+                corpo=$("${CURL[@]}" "$COOLIFY_URL/api/v1/applications/$1/scheduled-tasks/$T/executions")
+                if [ $? -ne 0 ]; then
+                  rodando=$((rodando+1))
+                  continue
+                fi
+                st=$(printf '%s' "$corpo" | jq -r 'if length==0 then "sem-historico" else (sort_by(.created_at) | last | .status // "?") end' 2>/dev/null)
+                case "$st" in
+                  sem-historico|success|failed|cancelled*) : ;;
+                  *) rodando=$((rodando+1)) ;;
+                esac
               done
               if [ "$rodando" -eq 0 ]; then return 0; fi
               echo "worker $1: $rodando task(s) possivelmente em voo — aguardando ($tent/15)"
