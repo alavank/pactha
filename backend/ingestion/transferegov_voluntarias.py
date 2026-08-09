@@ -1849,13 +1849,39 @@ async def run_proximos(n: int | None = None, deadline_s: int | None = None):
                     logger.info(f"  contexto AUTH criado com {len(govbr_cks)} cookies SSO")
                 except Exception as e:
                     logger.warning(f"  falha ao criar contexto AUTH: {str(e)[:80]}")
+            # ⚠️ A PAREDE DURA (o soft-check abaixo NAO basta sozinho). O budget
+            # so era conferido ENTRE municipios: no trust um municipio grande
+            # leva 15-25min sozinho (rede lenta, muitas propostas), entao o 2o
+            # comecava "dentro do orcamento", estourava tudo e o processo
+            # morria no `timeout` EXTERNO da task (35min) — DEPOIS de coletar e
+            # ANTES do ingestion_log: 7 de 8 rodadas do trust morreram assim em
+            # 09/08, o trabalho da cauda era descartado toda rodada e a fonte
+            # 'transferegov_lote' NUNCA apareceu no log do tenant. A parede =
+            # budget + folga: cada municipio roda no maximo o tempo que resta
+            # ate ela; quem estourar leva carimbo de erro (o backoff do rodizio
+            # o espaca — sem isso ele voltaria ao topo da fila e monopolizaria
+            # TODA rodada seguinte) e a rodada FECHA limpa, com log escrito.
+            # Depois de um cancel do wait_for a page fica em estado suspeito:
+            # encerra a rodada em vez de arriscar o proximo municipio nela.
+            _parede = deadline_s + max(120, int(os.getenv("TG_MUN_GRACE_S", "600") or "600"))
             for mun in muns:
                 gasto = time.monotonic() - _t0
                 if gasto > deadline_s:
                     logger.info(f"  orcamento esgotado ({gasto:.0f}s) — {mun['nome']} fica p/ a proxima rodada")
                     break
                 try:
-                    props = await _scrape_municipio(page_guest, mun, page_auth=page_auth)
+                    _cap = _parede - gasto
+                    try:
+                        props = await asyncio.wait_for(
+                            _scrape_municipio(page_guest, mun, page_auth=page_auth),
+                            timeout=_cap)
+                    except asyncio.TimeoutError:
+                        logger.error(f"  {mun['nome']}: estourou o teto da rodada ({_cap:.0f}s) — "
+                                     "carimbo de erro (backoff) e rodada encerrada")
+                        _marca_coleta(mun["id"], ok=False,
+                                      erro=f"orcamento da rodada estourado ({_cap:.0f}s)")
+                        falhas_mun.append(mun["nome"])
+                        break
                     n_up = _upsert(mun["id"], props)
                     total += n_up
                     logger.info(f"  {mun['nome']}: {len(props)} propostas -> {n_up} upsert "
