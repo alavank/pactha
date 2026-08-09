@@ -117,7 +117,7 @@ jobs:
     needs: build
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 75   # fila do Coolify pode custar ~20min/app
     concurrency:
       group: deploy-frontend
       cancel-in-progress: false
@@ -153,11 +153,16 @@ jobs:
               FALHAS="$FALHAS $APP"; continue
             fi
             ok=""
-            for _ in $(seq 1 30); do
-              st=$("${CURL[@]}" "$COOLIFY_URL/api/v1/deployments/$DEP" | jq -r '.status // ""')
+            # fila 20min + execucao 10min (concurrent_builds=1 no server; builds
+            # de outros projetos na VPS seguram o slot — ver build-backend.yml)
+            fila=120; execucao=60
+            while :; do
+              st=$("${CURL[@]}" "$COOLIFY_URL/api/v1/deployments/$DEP" | jq -r '.status // ""' 2>/dev/null)
               case "$st" in
                 finished) ok=1; break ;;
                 failed|cancelled*) echo "::error::frontend $APP: deployment '$st'"; break ;;
+                queued) fila=$((fila-1)); if [ "$fila" -le 0 ]; then break; fi ;;
+                *) execucao=$((execucao-1)); if [ "$execucao" -le 0 ]; then break; fi ;;
               esac
               sleep 10
             done
