@@ -230,8 +230,12 @@ export function AbaGeral({ ov, alertas, tv }: AbaProps & { ov: Overview; alertas
                   : (cg.situacao || `${cg.regulares}/${cg.entidades}`)}
                 legenda={/* SEM a UF: o ambiente E o estado do municipio — quem
                     esta em Goias sabe que o SIGECON e de la. (E "· GO" ainda
-                    empurrava o texto para fora da caixa do SVG.) */
-                  !estadualNaoSeAplica ? "CAGEC"
+                    empurrava o texto para fora da caixa do SVG.)
+                    COM a unidade quando o centro e contagem: 45/45 aqui sao
+                    OBRIGACOES do CRC, e 45 fica a um de 44 — o dono de uma
+                    carteira de 44 municipios leu contagem de municipios.
+                    (Cabe: 18 chars ~ "municípios em dia", que ja renderiza.) */
+                  !estadualNaoSeAplica ? (cgTotal ? "CAGEC · obrigações" : "CAGEC")
                   : ufsForaDaFonte.length === 1
                     ? (CADASTRO_ESTADUAL[ufsForaDaFonte[0]]?.sigla
                         || CADASTRO_ESTADUAL[ufsForaDaFonte[0]]?.curto
@@ -1045,12 +1049,28 @@ export function AbaDocumentosView({
 
   const proxVencimento = React.useMemo(() => {
     if (carteira || !agora) return null;
-    const todos = [...(primeiro?.itens ?? []), ...(cagec?.itens ?? [])];
+    const todos = [
+      ...(primeiro?.itens ?? []).map((item) => ({ item, cauc: true })),
+      ...(cagec?.itens ?? []).map((item) => ({ item, cauc: false })),
+    ];
+    /* ⚠️ A JANELA DO CAUC — a mesma regra do backend (JANELA_MINIMA_DIAS em
+       bi_abas.py), que este loop tinha reimplementado SEM ela: nos itens de
+       verificação contínua a "validade" É a data do extrato do Tesouro, então
+       todo fim de semana o extrato de sexta virava um "Validade vencida ·
+       vencido há 2 dias" vermelho — sobre um item que a lista logo abaixo
+       pinta de branco por decisão documentada, e nomeando "precatórios" só por
+       ser o primeiro por código entre 9 empatados na mesma data. Validade a
+       menos de 3 dias do extrato é cadência de atualização, não vencimento.
+       O CAGEC fica FORA da janela de propósito: lá validade no passado é
+       pendência de verdade (ver o aviso logo abaixo). */
+    const extrato = primeiro?.data_pesquisa ? parseDate(primeiro.data_pesquisa) : null;
     let melhor: { dias: number; data: Date; label: string } | null = null;
-    for (const i of todos) {
+    for (const { item: i, cauc } of todos) {
       if (i.tipo !== "regular" || !i.validade) continue;
       const dt = parseDate(i.validade);
       if (!dt) continue;
+      if (cauc && extrato
+          && (dt.getTime() - extrato.getTime()) / 86_400_000 < 3) continue;
       /* ⚠️ O VENCIDO CONTINUA NA CONTA. A primeira versão descartava `dias < 0`
          supondo que ele já apareceria como pendência no cartão ao lado — e não
          aparece: obrigação do CAGEC com validade no passado continua com
@@ -1146,11 +1166,11 @@ export function AbaDocumentosView({
                atenção). Um limiar próprio faria a MESMA validade sair verde
                aqui e âmbar na lista logo abaixo. */
             tom={!proxVencimento ? "neutro" : diasSeveridade(proxVencimento.dias)}
-            label={proxVencimento && proxVencimento.dias < 0 ? "Validade vencida" : "Vence em breve"}
+            label={proxVencimento && proxVencimento.dias < 0 ? "Validade vencida" : "Próximo vencimento"}
             valor={proxVencimento ? formatDate(proxVencimento.data.toISOString()) : "—"}
             sub={proxVencimento
               ? `${diasLabel(proxVencimento.dias)} · ${proxVencimento.label}`
-              : "nenhuma validade informada"}
+              : "sem vencimento à vista"}
             grande={tv} />
         )}
       </div>
