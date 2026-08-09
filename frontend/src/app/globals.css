@@ -758,3 +758,23 @@ html,
     letter-spacing: -0.01em;
   }
 }
+
+/* Painel de opções do <select> daisyUI. O Chromium 135+ renderiza a lista NA
+   PÁGINA (appearance: base-select do daisyUI 5.6), não mais como popup do SO —
+   e o estilo do daisyUI monta o painel com background-color: inherit e sombra
+   multiplicada por --depth. Nos nossos temas isso dá o desastre exato que o
+   seletor de municípios da sidebar mostrou: --depth é 0 (sombra ZERO) e o
+   fundo herdado é o MESMO bg-base-100 do menu lateral — a lista abria opaca e
+   por cima (top layer), mas sem borda visível, sem sombra e da mesma cor, com
+   os itens de navegação pintados colados na beirada: "parece erro na página".
+   Mesma elevação das outras listas flutuantes do produto (ui/multi-select.tsx:
+   borda base-300 + fundo base-100 + shadow-lg). FORA de @layer de propósito
+   (o estilo do daisyUI mora em @layer utilities; regra sem camada vence) e
+   regra ISOLADA de propósito: navegador sem ::picker (Firefox/Safari) invalida
+   o seletor e descarta SÓ este bloco, seguindo no picker nativo — juntá-la por
+   vírgula a outra regra derrubaria o bloco inteiro nesses navegadores. */
+.select::picker(select) {
+  background-color: var(--color-base-100);
+  border: 1px solid var(--color-base-300);
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+}
