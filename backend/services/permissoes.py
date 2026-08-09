@@ -55,6 +55,7 @@ prefixos do Painel (`services/auth.py::READONLY_WRITE_ALLOW`). Por isso
 allowlist, para o prefeito publicar a propria TV). Marcar pelo verbo, e nao pelo
 que o sistema faz, produziria uma tela que promete um botao que devolve 403.
 """
+import os
 from dataclasses import dataclass
 from typing import Iterable, Optional
 
@@ -390,20 +391,27 @@ _ESPECIAIS: tuple = (
         descricao="Baixar em PDF uma conversa ou um relatório gerado pela IA.",
         escrita=True,    # o endpoint e POST (leva o texto no corpo)
     ),
-    Permissao(
-        chave="telegram.vincular", secao=SEC_TELEGRAM, recurso="telegram",
-        recurso_rotulo="Telegram", verbo_rotulo="Vincular o próprio celular",
-        descricao="Gerar o código que liga o PRÓPRIO Telegram ao sistema, para "
-                  "receber avisos.",
-        escrita=True,
-    ),
-    Permissao(
-        chave="telegram.administrar", secao=SEC_TELEGRAM, recurso="telegram",
-        recurso_rotulo="Telegram", verbo_rotulo="Administrar a integração",
-        descricao="Configurar o webhook e mexer na integração inteira, não só "
-                  "no próprio vínculo.",
-        escrita=True,
-    ),
+    # TELEGRAM DESATIVADO ATÉ SEGUNDA ORDEM (decisão do dono, 09/08/2026): fora
+    # do catálogo = as chaves não aparecem no modal de permissões nem na criação
+    # de usuário, e conceder via API falha por chave desconhecida. Concessões
+    # antigas no banco ficam dormentes (as rotas nem existem — ver main.py).
+    # Canal futuro de avisos = WhatsApp API oficial; religar = TELEGRAM_MODULE=1.
+    *([
+        Permissao(
+            chave="telegram.vincular", secao=SEC_TELEGRAM, recurso="telegram",
+            recurso_rotulo="Telegram", verbo_rotulo="Vincular o próprio celular",
+            descricao="Gerar o código que liga o PRÓPRIO Telegram ao sistema, para "
+                      "receber avisos.",
+            escrita=True,
+        ),
+        Permissao(
+            chave="telegram.administrar", secao=SEC_TELEGRAM, recurso="telegram",
+            recurso_rotulo="Telegram", verbo_rotulo="Administrar a integração",
+            descricao="Configurar o webhook e mexer na integração inteira, não só "
+                      "no próprio vínculo.",
+            escrita=True,
+        ),
+    ] if os.getenv("TELEGRAM_MODULE") == "1" else []),
     Permissao(
         chave="auditoria.ver", secao=SEC_AUDITORIA, recurso="auditoria",
         recurso_rotulo="Auditoria", verbo_rotulo="Ver",

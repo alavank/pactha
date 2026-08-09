@@ -10,7 +10,14 @@ export interface TelaDef {
 export const TELAS: TelaDef[] = [
   { key: "dashboard", label: "Dashboard" },
   { key: "ai", label: "IA PACTHA" },
-  { key: "telegram", label: "Telegram" },
+  // TELEGRAM DESATIVADO ATÉ SEGUNDA ORDEM (decisão do dono, 09/08/2026): o
+  // canal de avisos será WhatsApp com API oficial; Telegram só voltará sob
+  // demanda rara de cliente. Fora do catálogo = fora do menu, fora do modal
+  // de permissões e fora da criação de usuário. O código fica; religar =
+  // NEXT_PUBLIC_TELEGRAM_MODULE=1 (build-time) + TELEGRAM_MODULE=1 na API.
+  ...(process.env.NEXT_PUBLIC_TELEGRAM_MODULE === "1"
+    ? [{ key: "telegram", label: "Telegram" }]
+    : []),
   { key: "parlamentares", label: "Parlamentares" },
   { key: "gestao", label: "Gestão Interna" },
   { key: "rm", label: "Relatório de Monitoramento" },
