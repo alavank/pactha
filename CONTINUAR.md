@@ -2,7 +2,7 @@
 
 > Documento de contexto para a **próxima sessão de IA** (Claude Code) que for continuar este projeto.
 > É **auto-contido**: assuma que você (IA) não tem memória das sessões anteriores. Tudo que precisa está aqui.
-> Última atualização: 2026-07-30.
+> Última atualização: 2026-08-09.
 >
 > 📍 Para servidor, URLs, uuids, bancos e operações no Coolify, a fonte de verdade é o
 > **[`INFRA.md`](INFRA.md)** na raiz. Este arquivo cobre o *projeto*; o `INFRA.md` cobre a *infra*.
@@ -11,10 +11,10 @@
 
 ## 1. O QUE É ISTO (em 30 segundos)
 
-**PACTHA** = sistema de **monitoramento de convênios e transferências governamentais** para municípios de MG. Módulos: SIGCON-MG (convênios estaduais), TransfereGov, Emendas, Parlamentares, CAUC, Acordo FES, FNS, SIMEC/PAR, IA (Claude), DOU-MG, Relatório de Monitoramento (RM), Documentos, Cofre de Senhas (AES-256), Telegram, extensão Chrome de captura gov.br, Painel Executivo (PWA).
+**PACTHA** = sistema de **monitoramento de convênios e transferências governamentais** para municípios e assessorias (MG/ES/GO). Módulos: SIGCON-MG (convênios estaduais), TransfereGov, Emendas, Parlamentares, CAUC, Acordo FES, FNS, SIMEC/PAR, IA (Claude), DOU-MG, Relatório de Monitoramento (RM), Documentos, Cofre de Senhas (AES-256), Telegram, extensão Chrome de captura gov.br, Painel de Indicadores (BI, nos 3 tenants) com Modo Tela/links públicos, selos de frescor por tela e watchdog de coleta.
 
 - **Frontend:** Next.js 16 (App Router) + Tailwind v4 + daisyUI + shadcn. Pasta `frontend/`.
-- **Painel Executivo:** Next.js (PWA para o gestor/prefeito). Pasta `painel/`.
+- **Painel (pasta `painel/`):** DEPRECADO — o BI virou módulo do frontend principal (`/dashboard` + `/tela`). Ver `painel/DEPRECADO.md`.
 - **Backend:** Python 3.12 FastAPI (uvicorn). Pasta `backend/`. Tudo prefixado `/api`.
 - **Banco:** PostgreSQL 16 puro (SQLAlchemy async+asyncpg na API; psycopg2 nos scrapers/migrations).
 - **Scraping:** httpx + Playwright (Chromium) + curl_cffi. Pasta `backend/ingestion/`.
@@ -29,7 +29,38 @@
 
 ---
 
-## 2. ESTADO ATUAL (2026-07-23)
+## 1.5. A SEMANA DE 08–09/08 EM 60 SEGUNDOS (o que mudou de grande)
+
+Partiu de "as atualizações diárias estão falhando e não sabemos por quê" e terminou com o
+sistema operando sozinho. Se você só ler um bloco deste arquivo, leia este:
+
+1. **Deploy é AUTOMÁTICO** (PRs #161-#163): merge na `main` → CI builda → deploya os 3
+   tenants (API→migrations confirmadas→worker esperando janela sem coleta). Auto-deploy
+   por webhook do Coolify DESLIGADO nas 9 apps. Secrets `COOLIFY_URL`/`COOLIFY_TOKEN` no
+   GitHub. Rollback = repontar tag na mão (continua funcionando).
+2. **Coleta fatiada com rodízio anti-starvation** (PRs #158/#159 + tuning de 09/08):
+   rodadas curtas e frequentes, lock compartilhado `/tmp/scraper.lock` por worker
+   (sigcon/lote/cagec nunca simultâneos), agendas entrelaçadas. REGRA: margem do
+   `timeout` interno = orçamento + 1 município pesado (22 min); coluna `timeout` da task
+   = interno + 120s. Fonte de verdade das agendas = o Coolify, não docs.
+3. **Observabilidade honesta** (PR #160): `ingestion_log` com `success`/`parcial`/`erro`
+   reais; watchdog com staleness POR MUNICÍPIO (agregado, anti-spam; credencial falhando
+   = nota, nunca alarme — regra do dono); paginação validada contra o total oficial.
+   Telegram do watchdog ainda SEM token (alertas ficam no log).
+4. **Selo "Atualizado em" nas telas** (PR #164): CAUC/CAGEC já tinham; Convênios
+   Estaduais e Emendas ganharam — só data com coleta saudável (`tentativas=0`), senão
+   avisa sem afirmar causa. Emendas têm carimbo próprio (`fonte='sigcon_emendas'`).
+5. **Carteira da Freitas corrigida (09/08, lista oficial do cliente): 44 municípios** —
+   18 ex-clientes DESATIVADOS (`active=false`, histórico preservado; credenciais deles
+   `INATIVO-SIGCON-MG`) e 21 novos inseridos (IBGE da API oficial). Os "municípios com
+   credencial revogada" do diagnóstico eram, em maioria, ex-clientes.
+6. **Diagnóstico completo de 08/08** (6 causas verificadas + cadência oficial das 17
+   fontes + capacidade): relatório no artifact da sessão e em
+   `Downloads\PACTHA-diagnostico-ingestao-2026-08-08.html` na máquina do dono.
+
+---
+
+## 2. ESTADO ATUAL (2026-08-09)
 
 **São TRÊS tenants em produção**, todos do mesmo código, cada um com containers e banco próprios:
 
@@ -39,11 +70,18 @@
 | **Trust** | https://pactha-trust-54-232-208-118.sslip.io | https://pactha-trust-api-54-232-208-118.sslip.io |
 | **Monte Sião/MG** | https://pactha-montesiao-mg-54-232-208-118.sslip.io | https://pactha-montesiao-mg-api-54-232-208-118.sslip.io |
 
-Monte Sião tem também o **Painel Executivo**: https://pactha-montesiao-mg-painel-54-232-208-118.sslip.io
-
 Os três bancos já estão **populados com dados reais** (a migração vinda do Neon foi concluída — não é mais schema+seed). Login seed só vale em banco novo: `super-admin@alavank.com.br`, com senha ALEATÓRIA por tenant impressa no console do primeiro boot (ou via `ADMIN_PASSWORD`) — pede troca no 1º acesso.
 
-**Um push na `main` NÃO mexe com cliente nenhum.** As 9 aplicações rodam com `build_pack = dockerimage`: elas executam a tag gravada em `docker_registry_image_tag`, e quem constrói é o GitHub Actions publicando no GHCR. Enquanto ninguém repontar a tag de um app específico, o cliente fica na versão dele. **Cuidado com a leitura antiga:** `is_auto_deploy_enabled` está `true` nas 9 — não é ele que segura o deploy, é o `build_pack`. Detalhe e prova empírica em [`INFRA.md`](INFRA.md) §2.
+**⚠️ INVERTIDO EM 09/08: um merge na `main` DEPLOYA os três clientes, sozinho.** As 9
+aplicações seguem `build_pack = dockerimage`, mas o job `deploy` do CI avança a tag e
+dispara o deploy ao fim de cada build (API primeiro com migrations confirmadas; worker do
+mesmo tenant só em janela sem coleta em voo; falha = rollback de tag + run vermelho).
+`is_auto_deploy_enabled` agora está **false** nas 9 (o webhook recriava containers com a
+tag antiga e matou coleta em voo). Mecânica e provas em [`INFRA.md`](INFRA.md) §2 e nos
+próprios workflows. **Tratar todo merge na `main` como um deploy em produção.**
+
+**Carteira Freitas = 44 municípios ativos** (lista oficial de 09/08; 18 ex-clientes com
+`active=false` e histórico preservado — NUNCA deletar município, desativar).
 
 ---
 
@@ -59,17 +97,22 @@ Resumo; o detalhe completo (uuids de todas as aplicações, bancos, crons por te
 
 **Projeto Coolify `pactha`** — uuid `ksmwr13y4iyprom8i1znede8`, environment `production`, **9 aplicações + 3 bancos** (o `montesiao-mg-painel` foi removido):
 
-| Tenant | API | Frontend | Worker | Painel | Banco |
-|---|---|---|---|---|---|
-| freitas | `givx3567ygxppum10p1oungn` | `qgmw4e5wjem1e8jit2wyvo1d` | `s49c3b58lysqq0tpelneg3g3` | — | `tox59kvmkrb0ywmeaty3t02a` |
-| trust | `pphvk2ygkuirjhu9qptvmfs5` | `j5ghp71lff003d5rfaynvy5y` | `xg714h8l7va4ejq70a5pmv5t` | — | `p434vbj35siee57shlsyzuc2` |
-| montesiao-mg | `chr0n883hp19tjh7829k85a7` | `bryvqhhcu97lc3ku7a2hss0q` | `jhf0kjhps5keujiyhhsnvjt6` | `uymt911sgynkbvifyzf6nf1h` | `iogvjlnkpqlugja9j76rktl1` |
+| Tenant | API | Frontend | Worker | Banco |
+|---|---|---|---|---|
+| freitas | `givx3567ygxppum10p1oungn` | `qgmw4e5wjem1e8jit2wyvo1d` | `s49c3b58lysqq0tpelneg3g3` | `tox59kvmkrb0ywmeaty3t02a` |
+| trust | `pphvk2ygkuirjhu9qptvmfs5` | `j5ghp71lff003d5rfaynvy5y` | `xg714h8l7va4ejq70a5pmv5t` | `p434vbj35siee57shlsyzuc2` |
+| montesiao-mg | `chr0n883hp19tjh7829k85a7` | `bryvqhhcu97lc3ku7a2hss0q` | `jhf0kjhps5keujiyhhsnvjt6` | `iogvjlnkpqlugja9j76rktl1` |
 
-Builds: API = `backend/Dockerfile.api` (base `/`) · Frontend = `frontend/Dockerfile` (base `/frontend`, standalone) · Worker = `backend/Dockerfile.scraper` (`sleep infinity`, roda os crons via Scheduled Tasks) · Painel = `painel/Dockerfile` (base `/painel`). Bancos: `postgres:16-alpine`, db/user `pactha`, porta 5432, host = uuid do resource.
+Builds: API = `backend/Dockerfile.api` (base `/`) · Frontend = `frontend/Dockerfile` (base `/frontend`, standalone) · Worker = `backend/Dockerfile.scraper` (PID 1 = `tini` + `reaper.sh`, que mata ingestão >1h e Chromium órfão; crons via Scheduled Tasks). Bancos: `postgres:16-alpine`, db/user `pactha`, porta 5432, host = uuid do resource.
 
 **Segredos** (`JWT_SECRET`, `COFRE_KEY`, `ADMIN_PASSWORD`, `DATABASE_URL`, `ANTHROPIC_API_KEY`, `CONTROL_TOKEN_BOOTSTRAP`, chaves VAPID do Painel): estão **nas env vars do Coolify, por tenant** (recupere com a API — ver §7). A senha do Postgres também está no `internal_db_url` do resource DB (`GET /databases/<uuid>`). **Nunca copie a `COFRE_KEY` de um tenant para outro.**
 
-**Scheduled Tasks:** cada worker tem as suas, com horários **escalonados entre tenants** para não competir por CPU no host burstable. Ver a tabela em [`INFRA.md`](INFRA.md) §5 e `docs/CRON_SETUP.md`. Todos os comandos são embrulhados em `flock -n` (não sobrepõe execução) + `timeout -k 30` (mata processo pendurado).
+**Scheduled Tasks:** cada worker tem as suas, no desenho de 09/08: **lock compartilhado
+`/tmp/scraper.lock`** (sigcon/lote/cagec nunca simultâneos no tenant) + agendas
+entrelaçadas + rodadas fatiadas com rodízio. **A fonte de verdade dos horários é o
+Coolify** (a tabela do `INFRA.md` §5 virou descrição de desenho; `docs/CRON_SETUP.md`
+está histórico). Regra das margens e proibição de editar comando via PowerShell
+interpolado: [`INFRA.md`](INFRA.md) §5.
 
 ---
 
@@ -94,7 +137,7 @@ Builds: API = `backend/Dockerfile.api` (base `/`) · Frontend = `frontend/Docker
 - **`transferegov_propostas` é criada tarde** nas migrations (por `add_voluntarias_id_proposta_siconv.sql`), mas migrations anteriores (`add_voluntarias_valores.sql` etc.) já a ALTERam → em banco **novo do zero**, ~6/22 migrations falham com "relation does not exist". Nos três bancos atuais isso não importa (a tabela já existe). Se um dia precisar de bootstrap 100% limpo, mova a criação de `transferegov_propostas` para o `setup_db.create_tables()`.
 - **COFRE_KEY:** o Cofre e as sessões gov.br são cifrados com AES-256 usando a env `COFRE_KEY` (`backend/services/crypto.py`). Se a chave mudar, `decrypt()` volta `""` **silenciosamente** — sem erro, sem log. **Cada tenant tem a sua**; trocar ou cruzar chaves destrói o Cofre daquele cliente.
 - **must_change_password=True** no admin seed → o 1º login redireciona pra `/change-password`. Normal.
-- Worker aparece como `running:unknown` no Coolify (é `sleep infinity`, sem healthcheck). Normal. Frontends sem healthcheck também.
+- Worker aparece como `running:unknown` no Coolify (roda o reaper, sem healthcheck). Normal. Frontends sem healthcheck também.
 - **Chromium órfão.** O worker já roda com `tini` + reaper (`backend/reaper.sh`) e os crons com `flock`+`timeout`, justamente porque Chromium pendurado comia a RAM do host. Não remova esses wrappers.
 - **O SISMOB é API pública, não scraping.** `sismobcidadao.saude.gov.br/api/public/obras`
   responde JSON sem token e sem login. Três armadilhas, todas silenciosas: (1) a
@@ -124,11 +167,23 @@ As três instâncias ainda respondem por `*.sslip.io`. A landing (`pactha.com.br
 `ANTHROPIC_API_KEY` (módulo IA — hoje só `montesiao-mg-api` tem), `TELEGRAM_BOT_TOKEN` + `TELEGRAM_WEBHOOK_SECRET` (Telegram). Setar via `PATCH /applications/<api_uuid>/envs/bulk` + redeploy.
 
 Credencial do **SIGCON-MG** (uma por município, no Cofre com `sistema='SIGCON-MG'` /
-`automation_key='sigcon'`): sem ela o `sigcon` roda e não traz nada. Monte Sião está
-cadastrada desde 2026-07-30. **O CAGEC não precisa de credencial** — consulta pública.
+`automation_key='sigcon'`): sem ela o `sigcon` roda e não traz nada — e agora grava
+`success` com a nota "sem credenciais" (não alarma; regra do dono: credencial não trava
+o jogo). **O CAGEC não precisa de credencial** — consulta pública.
 
-### 6.3 Auto-deploy
-`is_auto_deploy_enabled = true` nas 9 aplicações — mas **isso não importa**, porque todas usam `build_pack = dockerimage` e não constroem a partir do git. O deploy é sempre um ato explícito: repontar `docker_registry_image_tag` e chamar `/deploy`. Ver [`INFRA.md`](INFRA.md) §2.
+Estado em 09/08: Monte Sião ok · **Freitas: 24 credenciais ativas** p/ 23 municípios
+antigos; **2 PAUSADAS aguardando reset do dono** (Piracema e Ribeirão das Neves —
+portal respondeu "USUÁRIO REVOGADO"; fluxo "Esqueci minha senha" resolve) e **21
+municípios novos SEM credencial** (pedir à Freitas) · **Trust: ZERO credenciais
+SIGCON** apesar de 7 municípios MG (pedir ao cliente). Pausar credencial = trocar
+`sistema` p/ valor fora de `SIGCON%` + `automation_key=NULL` (reversível).
+
+### 6.3 Deploy (automático desde 09/08)
+Merge na `main` = deploy nos 3 tenants via CI (ver §1.5 e [`INFRA.md`](INFRA.md) §2).
+`is_auto_deploy_enabled = false` nas 9 (webhook desligado de propósito). Deploy manual
+para rollback: repontar `docker_registry_image_tag` + `GET /deploy?uuid=`. Pendências do
+plano de médio prazo: **M1** (executor de fila por fonte×município — substitui os crons
+com teto de 1h) e **M5** (host de scraping dedicado quando a carteira crescer).
 
 ### 6.4 Separação de papel no banco para a trilha de auditoria — **decisão do dono**
 A `audit_log` já é append-only no banco (gatilho) com selo encadeado e conferência na tela
@@ -184,5 +239,4 @@ Uma alteração aqui vai para **os três clientes**. Antes de commitar:
 
 - Migration nova precisa ser **idempotente** e rodar limpa nos três bancos (ela executa no boot da API).
 - Feature que depende de env var nova: ou tem default seguro, ou você seta a env nos **três** resources.
-- Mudança no `frontend/` afeta também o build do `painel/`? (São apps Next separados, mas compartilham a API.)
 - Nada de aumentar concorrência de scraping "porque tá lento" — ver §5, a CPU é compartilhada com 10 outros projetos.

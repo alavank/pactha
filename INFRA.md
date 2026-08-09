@@ -51,40 +51,43 @@ Não existe multi-tenancy dentro do código: **o isolamento é por deploy**. O q
 um tenant do outro são as **env vars no Coolify** (`INSTANCE_SLUG`, `DATABASE_URL`,
 `JWT_SECRET`, `COFRE_KEY`, `NEXT_PUBLIC_CLIENT_LOGO`, `NEXT_PUBLIC_CLIENT_SUBTITLE`).
 
-### 🔒 Um push na `main` NÃO mexe em cliente nenhum — quem manda é a tag da imagem
+### 🚀 Um merge na `main` deploya os TRÊS tenants — sozinho, na ordem certa
 
-> Corrigido em **2026-07-31**. A versão anterior deste trecho dizia que o auto-deploy
-> estava **desligado** nas aplicações. **É falso**: `is_auto_deploy_enabled = true` nas
-> **9**. Quem protege os clientes é outra coisa, e confundir as duas leva a "desligar o
-> auto-deploy" achando que isso é o que segura o deploy — quando não é.
+> Corrigido em **2026-08-09** (o modelo mudou de novo, e desta vez de propósito). A versão
+> de 31/07 dizia — corretamente, à época — que push nenhum mexia em cliente e que o deploy
+> era sempre um ato manual de repontar tag. **Isso acabou em 09/08 (PRs #161/#162/#163):
+> o CI agora fecha o ciclo.** E o `is_auto_deploy_enabled`, que era `true` e inofensivo,
+> foi **desligado nas 9 aplicações** — o webhook do Coolify recriava containers com a tag
+> ANTIGA (churn que matou coleta em voo duas vezes em 08/08).
 
-As 9 aplicações têm **`build_pack = dockerimage`**: elas não constroem nada a partir do
-git, apenas **rodam a tag de imagem que estiver gravada** em `docker_registry_image_tag`.
-Quem constrói é o GitHub Actions, que publica no `ghcr.io` a cada push na `main`.
-
-Consequência — e é isto que sustenta o modelo de "cada cliente decide o seu":
+As 9 aplicações continuam com **`build_pack = dockerimage`** (rodam a tag gravada em
+`docker_registry_image_tag`; quem constrói é o GitHub Actions publicando no `ghcr.io`).
+A diferença: o job `deploy` dos workflows **avança a tag e dispara o deploy** ao fim de
+cada build da `main`:
 
 | Ação | O que acontece em produção |
 |---|---|
-| push/merge na `main` | Publica imagem nova no GHCR. **Nada muda em nenhum cliente.** |
-| repontar a tag de UM app + deploy | Só aquele app sobe. |
-| não repontar | O cliente continua na versão dele, indefinidamente. |
+| merge/push na `main` (toca `backend/**`) | Builda `pactha-api`+`pactha-worker` e deploya os 3 tenants: **API primeiro** (roda migrations; deployment confirmado via `GET /deployments/{uuid}`), depois o **worker do mesmo tenant esperando janela sem coleta em voo**. API que não subiu = worker daquele tenant intocado. |
+| merge/push na `main` (toca `frontend/**`) | Builda as 3 imagens de frontend e deploya as 3 (sem gate — frontend não roda coleta). |
+| deploy manual (rollback/exceção) | Continua possível: repontar `docker_registry_image_tag` + `GET /deploy?uuid=` — o mesmo que o CI faz. |
 
-**Prova empírica (2026-07-31):** três merges na `main` no mesmo dia (`#63`, `#64`, `#65`).
-`montesiao-mg` foi para `sha-90d2be9`; `freitas` e `trust` continuam em `sha-6163be4`, de
-23/07. Ninguém tocou neles, e nada os tocou.
+Segredos do CI: `COOLIFY_URL` + `COOLIFY_TOKEN` nos **GitHub Secrets** do repo. Sem eles
+o job de deploy falha com barulho (proposital — nunca em silêncio). A fonte de verdade da
+mecânica (gates, margens, rollback de tag em falha) são os próprios
+`.github/workflows/build-backend.yml` e `build-frontend.yml`, comentados linha a linha.
 
-O campo `git_branch` das aplicações é **decorativo** neste modo (`montesiao-mg-api` e
-`-worker` ainda dizem `feat/painel-executivo`) — não influencia o que roda.
+⚠️ A fila de deploy do Coolify tem **`concurrent_builds = 1`** e apps de OUTROS projetos
+buildam na própria VPS (licity: 15–20 min por build) — um deployment do pactha (que é só
+*pull*, 15–50s) pode esperar `queued` por >10 min. O CI já tolera isso; ao deployar na
+mão, não interprete `queued` demorado como falha.
+
+O campo `git_branch` voltou a importar de leve: `main` nas 9 (webhook desligado, mas o
+CI só deploya o que buildar da `main`).
 
 ⚠️ As imagens de **frontend são uma por tenant** (`pactha-frontend-freitas`,
 `-trust`, `-montesiao-mg`), porque a marca do cliente entra no build. **API e worker
 compartilham** a mesma imagem (`pactha-api`, `pactha-worker`). E as **tags divergem de
-formato**: backend usa sha **curto**, frontend usa sha **completo**.
-
-⚠️ Hoje `freitas` e `trust` estão internamente **descasados**: api/worker em `sha-6163be4`
-e frontend em `sha-5aed21e6…`. Não é erro de deploy, é histórico — mas ao atualizá-los,
-suba os três.
+formato**: backend usa sha **curto**, frontend usa sha **completo** — o CI cuida disso.
 
 ---
 
@@ -170,22 +173,33 @@ schema+seed. Migrações idempotentes rodam no boot da API (`backend/services/st
 
 ## 5. Crons (Scheduled Tasks do Coolify)
 
-Cada worker tem suas próprias Scheduled Tasks, **com horários escalonados entre os tenants**
-para não competir por CPU no host burstable. Todos os comandos usam
-`flock -n` (não sobrepõe execução) + `timeout -k 30` (mata processo pendurado).
+> ⚠️ Atualizado em **2026-08-09**: a tabela de horários que vivia aqui ficou obsoleta DUAS
+> vezes numa semana. **A fonte de verdade das agendas é o próprio Coolify**
+> (`GET /applications/<worker_uuid>/scheduled-tasks`, ou `scheduled_tasks` no coolify-db).
+> Este parágrafo documenta o **desenho**, que muda devagar; os horários, não copie daqui.
 
-| Task | Freitas | Trust | Monte Sião |
-|------|---------|-------|------------|
-| `sigcon` | `0 0,6,12,18 * * *` | `0 2,8,14,20 * * *` | `0 4,10,16,22 * * *` |
-| `transferegov` | `0 2 * * *` | `0 10 * * *` | `0 18 * * *` |
-| `fns` | `30 5 * * *` | `30 6 * * *` | `30 7 * * *` |
-| `govbr-renew` | `5 * * * *` | `25 * * * *` | `45 * * * *` |
-| `queue-sigcon` | `0,30 * * * *` | `10,40 * * * *` | `20,50 * * * *` |
-| `painel-alertas` | `45 */2 * * *` | `15 */2 * * *` | `15 */2 * * *` |
-| `cagec` | `0 10,15,19,23 * * *` | `48 10,15,19,23 * * *` | `46 10,15,19,23 * * *` |
-| `cauc-manha` | `25 10-14 * * *` | `27 10-14 * * *` | `29 10-14 * * *` |
-| `gconv-es` / `transfvol-go` / `cofin-ses-go` | — | `40` / `42` / `44 10,15,19,23` | — |
-| `tcm-go` | — | `45 10 * * *` | — |
+O desenho atual (redesenho de 09/08, "tuning da madrugada"):
+
+- **Lock compartilhado `/tmp/scraper.lock`** por worker: `sigcon`, `transferegov-lote` e
+  `cagec` **nunca rodam ao mesmo tempo no mesmo tenant** (quem chega com o lock tomado
+  sai com `flock -E 99` → remapeado para sucesso = pulou a vez, a próxima rodada cobre).
+- **Agendas entrelaçadas**: lote nas horas pares (`:00`), sigcon nas ímpares (`:25`),
+  cagec nos `:50-58` — cada task tem uma janela que a vizinha respeita.
+- **Rodadas curtas com rodízio**: `SIGCON_LOTE_MUNICIPIOS` / `TG_LOTE_MUNICIPIOS` fatiam a
+  carteira; o rodízio (ordenação por staleness + backoff por falha, PR #159) garante que
+  ninguém starva. É o modelo que levou o TransfereGov a 41/41 frescos.
+- **REGRA DE OURO das margens** (aprendida em produção 09/08): o `timeout -k 30 N` interno
+  precisa de `N ≥ orçamento interno + 1 município PESADO` (Bom Despacho sozinho = 22 min).
+  Margem colada no orçamento = `exit 124` recorrente, sem log e sem `ingestion_log`.
+  E a coluna `timeout` da task (pcntl do Coolify) precisa de `≥ N + 120s`, senão o Coolify
+  mata primeiro e **descarta o stdout**.
+- Todos os comandos: `flock -n` + `timeout -k 30 N` + `2>&1` (o Python loga em stderr e o
+  Coolify só guarda stdout no sucesso) + sufixo `rc=$?; if [ $rc = 99 ]...` — **nunca
+  editar esses comandos com string interpolada de PowerShell** (`$rc`/`$?` viram lixo;
+  foi a causa dos 25 falso-negativos de 08/08). Editar via JSON literal na API.
+- Fontes de **dump** coletam na cadência da fonte (a tabela de cadências oficiais está no
+  relatório de diagnóstico de 08/08): dumps federais/MG diários de manhã = 1×/dia;
+  GConv-ES 2×/dia; GO (transfvol/cofin) 1×/dia; `siconv-federal` mensal (dia 2).
 
 > 🕐 **TUDO EM UTC. Brasília é UTC−3.** Host, `instance_timezone` do Coolify e
 > PHP do container em `Etc/UTC`. As faixas do CAGEC (10/15/19/23 UTC) são
