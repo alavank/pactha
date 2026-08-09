@@ -5,6 +5,7 @@ from sqlalchemy import text
 from typing import Optional
 from database import get_db
 from services.auth import get_current_user, ensure_municipio_access, ensure_tela
+from services.coleta import frescor_coleta
 from services.registro_rotas import exige
 from models.user import User
 
@@ -78,8 +79,17 @@ async def list_emendas_estaduais(
         if it.get("valor_indicacao") is not None:
             it["valor_indicacao"] = float(it["valor_indicacao"])
 
+    # Frescor do DATASET de emendas (fonte='sigcon_emendas', carimbo proprio no
+    # scraper: a falha de _scrape_emendas e engolida com warning e o carimbo
+    # compartilhado diria "fresco" com o dado congelado). Fallback p/ 'sigcon'
+    # enquanto as linhas novas nao existem (1a rodada pos-deploy preenche).
+    coleta_em, coleta_falhas = (await frescor_coleta(db, municipio_id,
+                                                     ("sigcon_emendas", "sigcon"))
+                                if municipio_id else (None, 0))
+
     pages = (total + per_page - 1) // per_page if total > 0 else 1
-    return {"items": items, "total": total, "page": page, "per_page": per_page, "pages": pages}
+    return {"items": items, "total": total, "page": page, "per_page": per_page, "pages": pages,
+            "coleta_em": coleta_em, "coleta_falhas": coleta_falhas}
 
 
 @router.get("/anos", dependencies=[exige("emendas.ver")])
