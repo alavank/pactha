@@ -153,6 +153,19 @@ export interface Overview {
   top_parlamentares: RankingItem[];
   ultimas_mudancas: TimelineItem[];
   ttl: number;
+  /** Frescor da coleta por fonte — SO no consolidado (assessoria vendo a
+   *  carteira). Mesma regra dos selos: 'em dia' exige coleta saudável <24h. */
+  frescor_carteira?: Partial<Record<"sigcon" | "transferegov", FrescorFonte>> | null;
+}
+
+export interface FrescorFonte {
+  em_dia: number;
+  defasados: number;
+  /** tentativas>0 — credencial/portal falhando (nota, não alarme). */
+  falhando: number;
+  /** município ativo sem linha da fonte (novo sem credencial / nunca coletado). */
+  sem_registro: number;
+  piores: { nome: string; horas: number | null }[];
 }
 
 export interface AlertaVigencia {
