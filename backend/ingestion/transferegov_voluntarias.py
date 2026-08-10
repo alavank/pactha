@@ -100,13 +100,36 @@ def _hist_orcamento() -> dict:
 
 
 def _propostas_sem_historico(municipio_id: int) -> set:
-    """Retorna numero_proposta das que AINDA NAO tem Historico de Comunicacoes.
-    Usado para priorizar: cada rodada gasta o orcamento nas pendentes primeiro,
-    entao o conjunto converge em alguns dias em vez de recapturar sempre as mesmas."""
+    """numero_proposta das que precisam de Historico de Comunicacoes: as que nunca
+    tiveram OU cuja captura ja passou de TG_HISTORICO_MAX_AGE_DAYS.
+
+    O `IS NULL` puro (comportamento ate 10/08/2026) converge a primeira passada e
+    depois CONGELA: capturada uma vez, a proposta nunca mais e reprioritizada e o
+    campo passa a ter envelhecimento ILIMITADO. Medido em 10/08: freitas 3.256 de
+    4.846 capturadas, trust apenas 1.580 de 9.101 — e nenhuma delas voltaria a ser
+    lida jamais.
+
+    Com a janela, o conjunto vira um CICLO permanente em vez de uma passada unica.
+    TG_HISTORICO_MAX_AGE_DAYS=0 mantem o comportamento antigo (so as nunca lidas),
+    que e o default p/ nao mudar o custo da rodada sem decisao explicita."""
+    try:
+        _max_age = max(0, int(os.getenv("TG_HISTORICO_MAX_AGE_DAYS", "0") or "0"))
+    except ValueError:
+        _max_age = 0
     try:
         import psycopg2
         url = os.getenv("DATABASE_URL_SYNC", "").replace("&channel_binding=require", "").replace("?channel_binding=require", "")
         conn = psycopg2.connect(url); cur = conn.cursor()
+        if _max_age > 0:
+            cur.execute(
+                "SELECT numero_proposta FROM transferegov_propostas "
+                "WHERE municipio_id=%s AND (historico_atualizado_em IS NULL "
+                "   OR historico_atualizado_em < NOW() - make_interval(days => %s))",
+                (municipio_id, _max_age)
+            )
+            out = {r[0] for r in cur.fetchall()}
+            cur.close(); conn.close()
+            return out
         cur.execute(
             "SELECT numero_proposta FROM transferegov_propostas "
             "WHERE municipio_id=%s AND historico_atualizado_em IS NULL",
@@ -160,20 +183,31 @@ def _stamp_ops_obs(municipio_id: int, numero_proposta: str) -> None:
         pass
 
 
-def _propostas_detalhe_frescas(municipio_id: int, max_age_days: int) -> dict:
+def _propostas_detalhe_frescas(municipio_id: int, max_age_hours: int) -> dict:
     """{numero_proposta: situacao_gravada} das propostas cujo DETALHE foi lido ha
-    menos de max_age_days.
+    menos de max_age_hours.
 
     Por que existe: o loop de detalhe re-lia TODAS as propostas em toda rodada
     (~2,5-3s cada). No trust sao 9.095 propostas = ~7h — nenhum teto de tempo faz
     isso caber numa janela de cron, e por isso o lote morria no SIGKILL sem nunca
     carimbar municipio (livelock observado em 09/08/2026: 10 rodadas, 0 carimbos).
 
+    POR QUE EM HORAS, E NAO EM DIAS. A janela precisa ficar ABAIXO da cadencia com
+    que o rodizio volta ao mesmo municipio, senao a visita vira no-op: ela pula
+    todas as propostas (nao carimba detalhe_atualizado_em, por causa do COALESCE
+    no _upsert) mas CARIMBA ultima_coleta_em e anda a fila — e a releitura real
+    passa a acontecer so a cada DUAS cadencias.
+    Medido em 10/08/2026: com TG_LOTE_MUNICIPIOS=4 a cadencia do freitas e 31h,
+    maior que 24h, entao a janela de 1 dia nao atrapalhava. Subindo p/ 6
+    municipios a cadencia cai p/ 20,7h — abaixo de 24h — e a cobertura CAIRIA de
+    77% p/ 58%, pior que antes. Em dias so havia dois estados uteis e nenhum era o
+    certo: 1 (colide com a cadencia) ou 0 (mata a retomada do [PARCIAL]).
+
     O chamador so pula quando a situacao da LISTAGEM (barata, vem toda rodada)
     continua IGUAL a gravada — qualquer mudanca invalida o skip e forca releitura.
     Devolve dict vazio se a coluna ainda nao existe (migration nao rodou) -> tudo
     e lido, que e o comportamento antigo (fallback seguro)."""
-    if max_age_days <= 0:
+    if max_age_hours <= 0:
         return {}
     try:
         import psycopg2
@@ -182,8 +216,8 @@ def _propostas_detalhe_frescas(municipio_id: int, max_age_days: int) -> dict:
         cur.execute(
             "SELECT numero_proposta, COALESCE(situacao,'') FROM transferegov_propostas "
             "WHERE municipio_id=%s AND detalhe_atualizado_em IS NOT NULL "
-            "AND detalhe_atualizado_em > NOW() - make_interval(days => %s)",
-            (municipio_id, max_age_days)
+            "AND detalhe_atualizado_em > NOW() - make_interval(hours => %s)",
+            (municipio_id, max_age_hours)
         )
         out = {r[0]: r[1] for r in cur.fetchall()}
         cur.close(); conn.close()
@@ -628,11 +662,20 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
     # (historico_comunicacoes, documentos_quadro_resumo, situacao_detalhe).
     #
     # Alem da idade, qualquer mudanca de `situacao` na LISTAGEM (barata, vem toda
-    # rodada) invalida o skip na hora. TG_DETALHE_MAX_AGE_DAYS=0 desliga tudo.
+    # rodada) invalida o skip na hora. TG_DETALHE_MAX_AGE_H=0 desliga tudo.
+    #
+    # A janela e em HORAS e o default e 18h: ela PRECISA ficar abaixo da cadencia
+    # com que o rodizio volta ao mesmo municipio (ver _propostas_detalhe_frescas),
+    # e a cadencia alvo com 6 municipios/rodada e ~20,7h. TG_DETALHE_MAX_AGE_DAYS
+    # ainda e aceito (x24) so p/ rollback sem deploy.
     try:
-        _det_max_age = max(0, int(os.getenv("TG_DETALHE_MAX_AGE_DAYS", "1") or "1"))
+        _dias = os.getenv("TG_DETALHE_MAX_AGE_DAYS")
+        if _dias is not None and _dias.strip() != "":
+            _det_max_age = max(0, int(_dias)) * 24
+        else:
+            _det_max_age = max(0, int(os.getenv("TG_DETALHE_MAX_AGE_H", "18") or "18"))
     except ValueError:
-        _det_max_age = 1
+        _det_max_age = 18
     _det_frescas = _propostas_detalhe_frescas(mun["id"], _det_max_age)
     _tot = len(propostas)
     _enr = 0
