@@ -56,6 +56,8 @@ MIGRATION_FILES = [
     "add_voluntarias_ops_obs_obras.sql",
     # Voluntarias: ops_obs_atualizado_em -> skip incremental da re-navegacao
     "add_voluntarias_ops_obs_atualizado_em.sql",
+    # Voluntarias: detalhe_atualizado_em -> skip incremental do loop de detalhe
+    "add_voluntarias_detalhe_atualizado_em.sql",
     # Modulo Gestao Interna (anotacoes + anexos por item)
     "add_gestao_anotacoes.sql",
     # Integracao Telegram (telegram_users + telegram_link_codes)
