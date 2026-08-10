@@ -46,6 +46,11 @@ interface Voluntaria {
 }
 interface Resp {
   cnpj: string;
+  /** false = o tenant NÃO tem o módulo SICONV (padrão do produto; hoje só a
+   *  Freitas liga). A flag vem no payload de propósito — decidir por build-arg
+   *  criaria um build de frontend por cliente para esconder UMA seção. Sem o
+   *  campo (API antiga), trata como ligado. */
+  siconv_module?: boolean;
   especiais: Especial[]; voluntarias: Voluntaria[];
   total_especiais: number; total_voluntarias: number;
 }
@@ -200,6 +205,14 @@ export default function TransfereGovCnpjPage() {
     };
   }, [data, especiais, voluntarias]);
 
+  /* Módulo ausente NÃO é resultado vazio: onde o SICONV não existe, a seção de
+     voluntárias, os 2 KPIs dela e a menção no subtítulo SOMEM — mostrar
+     "0 convênios" num tenant sem a base leria como defeito ou como "procurei e
+     não achei", e nenhum dos dois é verdade. Antes da primeira consulta a flag
+     é desconhecida e assume ligado (só afeta o subtítulo, e se corrige na
+     primeira resposta). */
+  const siconvOn = data?.siconv_module !== false;
+
   const consultar = async () => {
     const digits = cnpj.replace(/\D/g, "");
     if (digits.length !== 14) { setErro("Informe um CNPJ com 14 dígitos."); return; }
@@ -225,7 +238,9 @@ export default function TransfereGovCnpjPage() {
           <Building2 className="size-6" style={{ color: "var(--bi-muted)" }} /> Consulta TransfereGov por CNPJ
         </h1>
         <p className="text-sm" style={{ color: "var(--bi-muted)" }}>
-          Busca por CNPJ do proponente — Transferência Especial (Plano de Ação, ao vivo) + Voluntárias (dados já coletados). Não entra em relatório.
+          {siconvOn
+            ? "Busca por CNPJ do proponente — Transferência Especial (Plano de Ação, ao vivo) + Voluntárias (dados já coletados). Não entra em relatório."
+            : "Busca por CNPJ do proponente — Transferência Especial (Plano de Ação, ao vivo). Não entra em relatório."}
         </p>
       </div>
 
@@ -286,7 +301,9 @@ export default function TransfereGovCnpjPage() {
         <div className="space-y-4">
           {/* Os cabecalhos das duas tabelas so contavam resultado. Viram KPI:
               quantidade E dinheiro, que e a pergunta que o gestor faz primeiro. */}
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {/* Classes completas nos DOIS ramos — classe montada em runtime o
+              Tailwind não enxerga e falha calada. */}
+          <div className={siconvOn ? "grid grid-cols-2 gap-3 lg:grid-cols-4" : "grid grid-cols-2 gap-3"}>
             <Numero
               icon={Landmark}
               rotulo="Planos de ação"
@@ -299,18 +316,22 @@ export default function TransfereGovCnpjPage() {
               valor={formatCurrency(resumo.valEsp)}
               sub={formatCurrency(resumo.valEsp)}
             />
-            <Numero
-              icon={FileText}
-              rotulo="Propostas voluntárias"
-              valor={voluntarias.length}
-              sub="SICONV — base federal"
-            />
-            <Numero
-              icon={Wallet}
-              rotulo="Repasse (voluntárias)"
-              valor={formatCurrency(resumo.valVol)}
-              sub={`pago ${formatCurrency(resumo.pagoVol)}`}
-            />
+            {siconvOn && (
+              <>
+                <Numero
+                  icon={FileText}
+                  rotulo="Propostas voluntárias"
+                  valor={voluntarias.length}
+                  sub="SICONV — base federal"
+                />
+                <Numero
+                  icon={Wallet}
+                  rotulo="Repasse (voluntárias)"
+                  valor={formatCurrency(resumo.valVol)}
+                  sub={`pago ${formatCurrency(resumo.pagoVol)}`}
+                />
+              </>
+            )}
           </div>
 
           {/* AS DUAS TABELAS VIRARAM LISTA.
@@ -416,7 +437,9 @@ export default function TransfereGovCnpjPage() {
           </section>
 
           {/* Mesmo desenho da secao de cima, com o ANO DESTA lista: aqui ele vem
-              do exercicio da proposta no SICONV, nao do codigo da emenda. */}
+              do exercicio da proposta no SICONV, nao do codigo da emenda.
+              A secao INTEIRA so existe onde o modulo SICONV existe. */}
+          {siconvOn && (
           <section className="space-y-3">
             <BlocoHead
               icon={Landmark}
@@ -516,6 +539,7 @@ export default function TransfereGovCnpjPage() {
               })
             )}
           </section>
+          )}
         </div>
       )}
 

@@ -10,6 +10,7 @@ A listagem retorna TUDO de MG (~8800 items, 5MB) em uma chamada -- a API nao
 suporta filtro server-side por municipio/CNPJ. Cacheamos em memoria por 1h e
 filtramos local.
 """
+import os
 import time
 from typing import Optional
 from fastapi import APIRouter, Depends, Query, HTTPException
@@ -202,30 +203,43 @@ async def por_cnpj(
     except httpx.HTTPError:
         pass  # API fora do ar -> retorna so o que der
 
-    # 2) Voluntarias/Convenios: base SICONV federal (Brasil inteiro, dados abertos),
-    #    por CNPJ. Dado publico -> nao escopado por municipio.
-    rows = (await db.execute(text("""
-        SELECT nr_proposta, situacao, proponente, municipio, uf, ano, objeto,
-               vl_global, vl_repasse, nr_convenio, situacao_convenio,
-               vl_desembolsado, dt_assinatura, dt_fim_vigencia
-        FROM siconv_federal
-        WHERE cnpj = :c
-        ORDER BY ano DESC NULLS LAST, id_proposta DESC
-        LIMIT 800
-    """), {"c": alvo})).fetchall()
-    voluntarias = [{
-        "numero_proposta": r[0], "situacao": r[1], "proponente": r[2],
-        "municipio": r[3], "uf": r[4], "ano": r[5], "objeto": r[6],
-        "valor_global": float(r[7]) if r[7] else None,
-        "valor_repasse": float(r[8]) if r[8] else None,
-        "nr_convenio": r[9], "situacao_convenio": r[10],
-        "valor_desembolsado": float(r[11]) if r[11] else None,
-        "dt_assinatura": r[12].isoformat() if r[12] else None,
-        "dt_fim_vigencia": r[13].isoformat() if r[13] else None,
-    } for r in rows]
+    # 2) Voluntarias/Convenios: base SICONV federal (Brasil inteiro, dados
+    #    abertos), por CNPJ. Dado publico -> nao escopado por municipio.
+    #    ⚠️ ATRAS DA FLAG SICONV_MODULE (decisao do dono, 10/08/2026): o padrao
+    #    do PACTHA e SEM a base SICONV — ela so existe onde o cliente pediu
+    #    (hoje: freitas, unica com o coletor agendado). Nos demais tenants a
+    #    tabela foi TRUNCADA: consultar e devolver [] deixaria a tela mostrar
+    #    "0 convenios encontrados" como se fosse resultado de busca — e modulo
+    #    ausente NAO e resultado vazio, e a diferenca entre "procurei e nao
+    #    achei" e "nem procuro". A flag viaja no payload (`siconv_module`) e o
+    #    frontend esconde a secao inteira; ligar = env SICONV_MODULE=1 SO na
+    #    API do tenant — sem build-arg por cliente, sem CI.
+    _siconv = os.getenv("SICONV_MODULE") == "1"
+    voluntarias = []
+    if _siconv:
+        rows = (await db.execute(text("""
+            SELECT nr_proposta, situacao, proponente, municipio, uf, ano, objeto,
+                   vl_global, vl_repasse, nr_convenio, situacao_convenio,
+                   vl_desembolsado, dt_assinatura, dt_fim_vigencia
+            FROM siconv_federal
+            WHERE cnpj = :c
+            ORDER BY ano DESC NULLS LAST, id_proposta DESC
+            LIMIT 800
+        """), {"c": alvo})).fetchall()
+        voluntarias = [{
+            "numero_proposta": r[0], "situacao": r[1], "proponente": r[2],
+            "municipio": r[3], "uf": r[4], "ano": r[5], "objeto": r[6],
+            "valor_global": float(r[7]) if r[7] else None,
+            "valor_repasse": float(r[8]) if r[8] else None,
+            "nr_convenio": r[9], "situacao_convenio": r[10],
+            "valor_desembolsado": float(r[11]) if r[11] else None,
+            "dt_assinatura": r[12].isoformat() if r[12] else None,
+            "dt_fim_vigencia": r[13].isoformat() if r[13] else None,
+        } for r in rows]
 
     return {
         "cnpj": alvo,
+        "siconv_module": _siconv,
         "especiais": especiais, "voluntarias": voluntarias,
         "total_especiais": len(especiais), "total_voluntarias": len(voluntarias),
     }
