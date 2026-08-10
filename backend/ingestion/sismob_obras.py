@@ -270,7 +270,19 @@ def _aplicar(dest: dict, origem: dict, mapa: dict, datas: bool = False) -> None:
             except (TypeError, ValueError):
                 pass
         elif col in _DECIMAL:
-            dest[col] = _dec(v)
+            d = _dec(v)
+            # ⚠️ COORDENADA-LIXO DA FONTE DERRUBAVA A OBRA INTEIRA. Medido em
+            # 10/08/2026 no trust: o SISMOB manda nuLatitude "1825189838" (sem
+            # o ponto decimal) em obras de Palmas e Conceicao da Barra; o valor
+            # estoura o numeric(11,7) da coluna, o INSERT da OBRA falha e essas
+            # cidades sumiam do painel TODA rodada — 36 runs seguidos 'partial'.
+            # Coordenada fora da faixa terrestre nao e recuperavel com
+            # confianca (chutar onde vai o ponto = inventar lugar no mapa):
+            # descarta SO a coordenada e a obra entra sem pino no mapa.
+            if col in ("latitude", "longitude") and d is not None \
+                    and abs(d) > (90.0 if col == "latitude" else 180.0):
+                continue
+            dest[col] = d
         elif col in _TEXTO:
             dest[col] = str(v).strip() or None
         else:
