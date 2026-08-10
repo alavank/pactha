@@ -81,6 +81,13 @@ _HIST_ORC: dict = {"restante": None}
 # 3 call sites de _scrape_municipio.
 _PAGINACAO_INCOMPLETA: dict = {}
 
+# Estado do ultimo _scrape_municipio: sinaliza se o loop de DETALHE foi CORTADO
+# pelo orcamento (parcial) em vez de ter terminado. Complementar ao
+# _PAGINACAO_INCOMPLETA acima: aquele marca listagem incompleta, este marca
+# detalhe incompleto. Mesmo motivo p/ viver no modulo — `_scrape_municipio`
+# devolve uma lista e mudar a assinatura quebraria os 3 call sites.
+_SCRAPE_STATE: dict = {"parcial": False, "restantes": 0}
+
 
 def _hist_orcamento() -> dict:
     """Contador de orcamento da EXECUCAO (lazy, a partir do env na 1a chamada)."""
@@ -151,6 +158,38 @@ def _stamp_ops_obs(municipio_id: int, numero_proposta: str) -> None:
         conn.commit(); cur.close(); conn.close()
     except Exception:
         pass
+
+
+def _propostas_detalhe_frescas(municipio_id: int, max_age_days: int) -> dict:
+    """{numero_proposta: situacao_gravada} das propostas cujo DETALHE foi lido ha
+    menos de max_age_days.
+
+    Por que existe: o loop de detalhe re-lia TODAS as propostas em toda rodada
+    (~2,5-3s cada). No trust sao 9.095 propostas = ~7h — nenhum teto de tempo faz
+    isso caber numa janela de cron, e por isso o lote morria no SIGKILL sem nunca
+    carimbar municipio (livelock observado em 09/08/2026: 10 rodadas, 0 carimbos).
+
+    O chamador so pula quando a situacao da LISTAGEM (barata, vem toda rodada)
+    continua IGUAL a gravada — qualquer mudanca invalida o skip e forca releitura.
+    Devolve dict vazio se a coluna ainda nao existe (migration nao rodou) -> tudo
+    e lido, que e o comportamento antigo (fallback seguro)."""
+    if max_age_days <= 0:
+        return {}
+    try:
+        import psycopg2
+        url = os.getenv("DATABASE_URL_SYNC", "").replace("&channel_binding=require", "").replace("?channel_binding=require", "")
+        conn = psycopg2.connect(url); cur = conn.cursor()
+        cur.execute(
+            "SELECT numero_proposta, COALESCE(situacao,'') FROM transferegov_propostas "
+            "WHERE municipio_id=%s AND detalhe_atualizado_em IS NOT NULL "
+            "AND detalhe_atualizado_em > NOW() - make_interval(days => %s)",
+            (municipio_id, max_age_days)
+        )
+        out = {r[0]: r[1] for r in cur.fetchall()}
+        cur.close(); conn.close()
+        return out
+    except Exception:
+        return {}
 
 
 def _propostas_ja_enriquecidas(municipio_id: int) -> set:
@@ -308,8 +347,13 @@ async def _goto_with_retry(page, url: str, max_retries: int = 3, base_delay: flo
 
 
 async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = False,
-                            page_auth=None) -> list[dict]:
+                            page_auth=None, deadline: float | None = None) -> list[dict]:
     """Consulta por UF + Municipio, retorna lista de propostas COM detalhe.
+
+    deadline  = instante (time.monotonic) em que o loop de DETALHE deve parar.
+                None = sem corte. Sem isso, o orcamento do lote so era avaliado
+                ENTRE municipios: um municipio grande atravessava a janela
+                inteira e morria no SIGKILL externo, sem carimbar nada.
 
     page      = pagina GUEST (sem cookies) p/ listagem+detalhe via Acesso Livre.
                 A listagem SO funciona em guest: com cookies de sessao, o
@@ -332,7 +376,7 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
         if _retry < 2:
             logger.warning(f"  {mun['nome']}: select UF ausente, retry {_retry+1}")
             return await _scrape_municipio(page, mun, _retry + 1, is_auth=is_auth,
-                                           page_auth=page_auth)
+                                           page_auth=page_auth, deadline=deadline)
         logger.warning(f"  {mun['nome']}: select UF nao encontrado apos retries (sessao falhou)")
         # Levanta em vez de devolver []: lista vazia aqui virava "sucesso com
         # zero propostas" no chamador — carimbava coleta boa, zerava tentativas
@@ -569,13 +613,57 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
         except Exception as e:
             logger.warning(f"  {mun['nome']}: HTTP enrich indisponivel ({str(e)[:60]}) — usando browser")
             _hx = None
+    # SKIP INCREMENTAL DO DETALHE — janela de 1 DIA, deliberadamente.
+    #
+    # O objetivo NAO e ler menos: e nao ler a MESMA proposta duas vezes no mesmo
+    # dia. O lote roda 12x/dia; sem isso, cada proposta era renavegada 12 vezes
+    # por dia (~3s cada) e nenhuma rodada terminava — o trust ficou 09/08 inteiro
+    # com 10 rodadas e ZERO municipios carimbados (livelock).
+    #
+    # Com 1 dia, TUDO continua sendo relido todo dia. O que some e so o
+    # desperdicio. Os campos em massa (situacao, valores, datas, vigencia,
+    # assinatura, SIAFI, processo, programa, parlamentar, clausula) ja sao
+    # atualizados DIARIAMENTE pela camada de dados abertos (CSV, sem navegador,
+    # cron `transferegov`) — o navegador so acrescenta a fatia atras do login
+    # (historico_comunicacoes, documentos_quadro_resumo, situacao_detalhe).
+    #
+    # Alem da idade, qualquer mudanca de `situacao` na LISTAGEM (barata, vem toda
+    # rodada) invalida o skip na hora. TG_DETALHE_MAX_AGE_DAYS=0 desliga tudo.
+    try:
+        _det_max_age = max(0, int(os.getenv("TG_DETALHE_MAX_AGE_DAYS", "1") or "1"))
+    except ValueError:
+        _det_max_age = 1
+    _det_frescas = _propostas_detalhe_frescas(mun["id"], _det_max_age)
     _tot = len(propostas)
     _enr = 0
+    _pulados = 0
+    _SCRAPE_STATE["parcial"] = False
+    _SCRAPE_STATE["restantes"] = 0
     for _i, prop in enumerate(propostas, 1):
+        # Corte por orcamento: para limpo e devolve o que ja foi lido, em vez de
+        # ser morto no meio pelo `timeout` externo (que perdia o carimbo do
+        # municipio e reiniciava tudo na rodada seguinte).
+        if deadline is not None and time.monotonic() >= deadline:
+            _SCRAPE_STATE["parcial"] = True
+            _SCRAPE_STATE["restantes"] = _tot - _i + 1
+            logger.info(f"  {mun['nome']}: orcamento esgotado no detalhe "
+                        f"{_i}/{_tot} — {_SCRAPE_STATE['restantes']} ficam p/ a proxima "
+                        f"(o skip incremental retoma daqui)")
+            break
         if _i % 10 == 0:
-            logger.info(f"    {mun['nome']}: detalhe {_i}/{_tot} (enriquecidos: {_enr})")
+            logger.info(f"    {mun['nome']}: detalhe {_i}/{_tot} "
+                        f"(enriquecidos: {_enr}, pulados: {_pulados})")
         url = prop.pop("_detalhe_url", None)
         if not url:
+            continue
+        # Detalhe fresco E situacao inalterada -> nao renavega. Guarda o
+        # id_proposta_siconv (vem so da URL) antes de sair.
+        _sit_grav = _det_frescas.get(prop["numero_proposta"])
+        if _sit_grav is not None and _sit_grav == (prop.get("situacao") or ""):
+            _idp_skip = _id_proposta_from_url(url)
+            if _idp_skip:
+                prop["id_proposta_siconv"] = _idp_skip
+            _pulados += 1
             continue
         # Guarda o idProposta (da URL) -> casa com o open data siconv_emenda p/
         # backfill do parlamentar sem precisar do arquivo nacional de 199 MB.
@@ -583,17 +671,40 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
         if _idp:
             prop["id_proposta_siconv"] = _idp
         try:
-            if not await _goto_with_retry(detail_page, url):
-                continue
-            await detail_page.wait_for_timeout(700)  # perf: Struts server-rendered (HTML pronto no domcontentloaded)
-            det = await _extrai_detalhe(detail_page)
-            # Tenta capturar parlamentar (best-effort via texto livre na tela)
-            try:
-                parl = await _extrai_parlamentar(detail_page)
-                if parl:
-                    det["_parlamentar"] = parl
-            except Exception:
-                pass
+            # DETALHE POR HTTP (TG_HTTP_DETALHE=1): o mesmo conteudo sem navegar
+            # o Chromium — ~0,7s em vez de ~3s. E o que torna a releitura DIARIA
+            # de todas as propostas possivel neste host: o trust (9.095 x 3s =
+            # 7,6h/dia) nao cabe em janela nenhuma por browser, e por HTTP cai
+            # p/ ~1,8h/dia. Sai pelo mesmo caminho do browser (o GET tambem seta
+            # o contexto Struts). None/erro = cai no browser, sem perder rodada.
+            det = None
+            _via_http = False
+            if _hx is not None and _idp and (os.getenv("TG_HTTP_DETALHE", "0") or "0").strip() == "1":
+                try:
+                    det = _hx.detalhe(str(_idp))
+                    _via_http = det is not None
+                except Exception as e:
+                    logger.warning(f"    detalhe HTTP {prop['numero_proposta']}: {str(e)[:60]} — browser")
+                    det = None
+            if not _via_http:
+                if not await _goto_with_retry(detail_page, url):
+                    continue
+                await detail_page.wait_for_timeout(700)  # perf: Struts server-rendered (HTML pronto no domcontentloaded)
+                det = await _extrai_detalhe(detail_page)
+            # Marca que o detalhe FOI lido nesta rodada -> _upsert carimba
+            # detalhe_atualizado_em, e a proxima rodada pula esta proposta
+            # enquanto a situacao da listagem nao mudar.
+            prop["_detalhe_lido"] = True
+            # Tenta capturar parlamentar (best-effort via texto livre na tela).
+            # So no caminho browser: o parlamentar vem tambem do open data
+            # (siconv_emenda) + backfill, entao a via HTTP nao perde o campo.
+            if not _via_http:
+                try:
+                    parl = await _extrai_parlamentar(detail_page)
+                    if parl:
+                        det["_parlamentar"] = parl
+                except Exception:
+                    pass
             det.pop("_situacao_det_url", None)
             det.pop("_situacao_det_label", None)
             # Limpa U+FFFD de chaves e valores
@@ -1497,9 +1608,9 @@ def _upsert(mun_id: int, propostas: list[dict]):
                  clausula_suspensiva_motivo, parlamentar, situacao_contratacao_detalhe,
                  id_proposta_siconv, processo_execucao_qtd,
                  historico_comunicacoes, documentos_quadro_resumo, historico_atualizado_em,
-                 ops_obs, obras,
+                 ops_obs, obras, detalhe_atualizado_em,
                  detalhe, raw_data, updated_at)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s::jsonb,%s::jsonb,%s,%s::jsonb,%s::jsonb,%s::jsonb,%s::jsonb,NOW())
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s::jsonb,%s::jsonb,%s,%s::jsonb,%s::jsonb,%s,%s::jsonb,%s::jsonb,NOW())
             ON CONFLICT (municipio_id, numero_proposta) DO UPDATE SET
                 situacao=EXCLUDED.situacao, orgao=EXCLUDED.orgao,
                 proponente=EXCLUDED.proponente, possui_parecer=EXCLUDED.possui_parecer,
@@ -1539,6 +1650,11 @@ def _upsert(mun_id: int, propostas: list[dict]):
                 historico_atualizado_em=COALESCE(EXCLUDED.historico_atualizado_em, transferegov_propostas.historico_atualizado_em),
                 ops_obs=COALESCE(EXCLUDED.ops_obs, transferegov_propostas.ops_obs),
                 obras=COALESCE(EXCLUDED.obras, transferegov_propostas.obras),
+                -- So avanca quando o detalhe foi REALMENTE lido nesta rodada
+                -- (_detalhe_lido). Rodada com TG_SKIP_ENRICH=1 chega aqui com
+                -- NULL e o COALESCE preserva o carimbo antigo — senao o skip se
+                -- auto-invalidaria a cada cron diario.
+                detalhe_atualizado_em=COALESCE(EXCLUDED.detalhe_atualizado_em, transferegov_propostas.detalhe_atualizado_em),
                 detalhe=COALESCE(EXCLUDED.detalhe, transferegov_propostas.detalhe),
                 raw_data=EXCLUDED.raw_data, updated_at=NOW()
         """, (mun_id, p["numero_proposta"][:20], p["situacao"][:300], p["orgao"][:300],
@@ -1562,6 +1678,7 @@ def _upsert(mun_id: int, propostas: list[dict]):
                              or p.get("_historico_checado")) else None),
               (json.dumps(p["ops_obs"], ensure_ascii=False) if p.get("ops_obs") else None),
               (json.dumps(p["obras"], ensure_ascii=False) if p.get("obras") else None),
+              (_dt_now() if p.get("_detalhe_lido") else None),
               (json.dumps(det, ensure_ascii=False) if det else None), json.dumps(p, ensure_ascii=False)))
         ins += 1
     conn.commit(); cur.close(); conn.close()
@@ -1855,13 +1972,31 @@ async def run_proximos(n: int | None = None, deadline_s: int | None = None):
                     logger.info(f"  orcamento esgotado ({gasto:.0f}s) — {mun['nome']} fica p/ a proxima rodada")
                     break
                 try:
-                    props = await _scrape_municipio(page_guest, mun, page_auth=page_auth)
+                    # Deadline ABSOLUTO da execucao: o municipio para no meio do
+                    # loop de detalhe em vez de ser morto pelo `timeout` externo.
+                    props = await _scrape_municipio(page_guest, mun, page_auth=page_auth,
+                                                    deadline=_t0 + deadline_s)
                     n_up = _upsert(mun["id"], props)
                     total += n_up
+                    _parc = _SCRAPE_STATE.get("parcial")
                     logger.info(f"  {mun['nome']}: {len(props)} propostas -> {n_up} upsert "
-                                f"({time.monotonic()-_t0:.0f}s acumulados)")
-                    _marca_coleta(mun["id"], ok=True)
-                    ok_n += 1
+                                f"({time.monotonic()-_t0:.0f}s acumulados)"
+                                f"{' [PARCIAL]' if _parc else ''}")
+                    if _parc:
+                        # Parcial NAO e sucesso: registra p/ diagnostico e deixa o
+                        # backoff agir. O carimbo de ultima_coleta_em acontece de
+                        # todo jeito (ver _marca_coleta), entao a fila anda e os
+                        # outros municipios nao passam fome. Na proxima passagem o
+                        # skip incremental pula o que ja foi lido e retoma o resto.
+                        # Por isso tb NAO conta em ok_n: a passagem nao fechou.
+                        _marca_coleta(mun["id"], ok=False,
+                                      erro=f"parcial: orcamento esgotado, "
+                                           f"{_SCRAPE_STATE.get('restantes', 0)} propostas restantes")
+                    else:
+                        _marca_coleta(mun["id"], ok=True)
+                        ok_n += 1
+                    # Subcoleta de paginacao e ortogonal ao corte de detalhe:
+                    # vale registrar nos dois casos.
                     if mun["id"] in _PAGINACAO_INCOMPLETA:
                         _col, _esp = _PAGINACAO_INCOMPLETA[mun["id"]]
                         subcoletas.append(f"{mun['nome']} ({_col}/{_esp})")

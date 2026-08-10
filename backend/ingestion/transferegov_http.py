@@ -281,6 +281,15 @@ class TgHttpEnrich:
         m = re.search(r"Situação\s*\n\s*([^\n]+)", txt)
         if m:
             out["_situacao_macro"] = m.group(1).strip()[:100]
+        # NAO devolver "Situação no SIAFI". Medido em 10/08/2026 comparando esta
+        # saida com a do browser na MESMA pagina: o browser devolve None neste
+        # campo, e a coluna situacao_siafi hoje e preenchida pelo CSV de dados
+        # abertos (siconv_convenio), com valor semanticamente melhor
+        # ("Prestação de Contas Comprovada"). O portal aqui traz o numero da nota
+        # ("Enviado para o SIAFI - 2021NS000360"). Como o upsert usa COALESCE (que
+        # so protege contra NULL), devolver este campo SOBRESCREVERIA o valor bom
+        # do CSV. Omitir mantem o comportamento atual e deixa o CSV mandar.
+        out.pop("Situação no SIAFI", None)
         return out
 
     # ---------- OPs/OBs (Listagem de Repasses, guest) ----------
