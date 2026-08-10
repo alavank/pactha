@@ -36,6 +36,26 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 logger = logging.getLogger("sigcon_scraper")
 
+# DEADLINE DA RODADA, visivel para os loops longos DENTRO de uma credencial.
+#
+# Ate 10/08/2026 o orcamento era checado num lugar so: no topo de `_scrape_one`,
+# ou seja ENTRE credenciais. Uma credencial pesada atravessava a janela inteira e
+# era morta pelo `timeout` externo (medido: rodada de 2042s contra teto de 2040s,
+# exit 124) — perdendo o que estava em voo e sem carimbar. E o mesmo bug ja
+# corrigido no transferegov_voluntarias; aqui as caudas sao tres: a paginacao da
+# listagem, o loop de detalhes e a paginacao dentro de cada ano de emendas.
+#
+# Vive no modulo (mesmo padrao de _HIST_ORC no transferegov) para nao mudar a
+# assinatura de funcoes chamadas em varios pontos. main() preenche; os loops leem.
+_SIG_DEADLINE: dict = {"t": None}
+
+
+def _sig_estourou() -> bool:
+    """True quando o orcamento da rodada acabou. Os loops longos consultam isto
+    para parar LIMPO (o que ja foi lido fica gravado) em vez de tomar SIGKILL."""
+    t = _SIG_DEADLINE.get("t")
+    return t is not None and time.monotonic() >= t
+
 LOGIN_URL = "https://www.convenios.mg.gov.br/sigconv2/public/pages/login.jsf"
 SEARCH_URL = "https://www.convenios.mg.gov.br/sigconv2/pages/GerirPropostaDePlanoDeTrabalho/pesquisaUnificada.jsf"
 EMENDAS_URL = "https://www.convenios.mg.gov.br/sigconv2/pages/EmendaParlamentar/pesquisarEmendasPorConvenente.jsf"
@@ -168,6 +188,12 @@ async def _scrape_municipio(page, municipio_nome: str) -> list[dict]:
     all_rows = []
     page_n = 1
     while True:
+        # Cauda 1/3: paginacao da listagem. Sem este corte, um municipio com
+        # muitas paginas atravessa o orcamento inteiro (ver _SIG_DEADLINE).
+        if _sig_estourou():
+            logger.info(f"  [orcamento] {municipio_nome}: paginacao cortada na pag {page_n} "
+                        f"— {len(all_rows)} linhas ficam gravadas")
+            break
         await page.wait_for_timeout(2000)
         data = await page.evaluate(PARSE_TABLE_JS)
         rows = data.get("rows", [])
@@ -271,6 +297,13 @@ async def _scrape_detalhes(page, max_planos: int = 100) -> dict:
     falhas_seguidas = 0
     idx = 0
     while idx < iter_count:
+        # Cauda 2/3: loop de detalhes. Cada registro custa varios segundos (clique
+        # via DOM + re-estabelecimento da grade); sem corte, uma credencial com
+        # muitos planos come a rodada toda.
+        if _sig_estourou():
+            logger.info(f"  [orcamento] detalhes cortados em {idx}/{iter_count} "
+                        f"— {len(out)} ja capturados ficam gravados")
+            break
         if falhas_seguidas >= 6:
             logger.warning(f"  {falhas_seguidas} falhas seguidas — abortando detalhes (capturados {len(out)})")
             break
@@ -422,6 +455,11 @@ async def _scrape_emendas(page, anos: list[int]) -> list[dict]:
     await page.wait_for_timeout(8000)
 
     for ano in anos:
+        # O corte da paginacao interna so sai de UM ano; sem este, o laco seguiria
+        # para o proximo ano e o orcamento nao seria respeitado de fato.
+        if _sig_estourou():
+            logger.info(f"  [orcamento] emendas interrompidas antes do ano {ano}")
+            break
         try:
             await page.evaluate("""(target) => {
                 const sel = document.getElementById('frmPesquisaEmendasPorConvenentes:anoInciso_input');
@@ -455,6 +493,12 @@ async def _scrape_emendas(page, anos: list[int]) -> list[dict]:
         await page.wait_for_timeout(2000)
         page_n = 1
         while True:
+            # Cauda 3/3: paginacao dentro de cada ano de emendas. Como o laco
+            # externo ja percorre varios anos, sem corte aqui o custo e
+            # (anos x paginas) e nao ha teto nenhum.
+            if _sig_estourou():
+                logger.info(f"  [orcamento] emendas cortadas no ano {ano} pag {page_n}")
+                break
             data = await page.evaluate(PARSE_EMENDAS_JS)
             rows = data.get("rows", []) or []
             logger.info(f"  Ano {ano} pag {page_n} ({data.get('pag','')}): {len(rows)} emendas")
@@ -1070,6 +1114,10 @@ async def _run():
     except ValueError:
         budget = 2700
     deadline = (time.monotonic() + budget) if budget else None
+    # Publica o deadline para os loops longos DENTRO de cada credencial
+    # (paginacao da listagem, detalhes, emendas). Antes so `_scrape_one` o
+    # enxergava, e uma credencial pesada estourava o teto externo.
+    _SIG_DEADLINE["t"] = deadline
 
     logger.info(
         f"SIGCON: {len(creds)} municipios | concorrencia={conc} | "
