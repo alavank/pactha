@@ -4,7 +4,9 @@ import React, {
   createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode,
 } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { TransicaoMunicipio } from "@/components/TransicaoMunicipio";
+import {
+  TransicaoMunicipio, type MunicipioEscolha,
+} from "@/components/TransicaoMunicipio";
 
 /** O escopo "carteira inteira", só existe para assessoria/consórcio (N municípios).
  *  Mesmo valor que o backend entende (`backend/routers/bi.py`). */
@@ -35,6 +37,13 @@ type MunicipioCtx = {
   /** ⭐ O GESTO DO USUÁRIO. Abre o aviso, roda a transição e cai na tela
    *  inicial do destino. `rotulo` é o nome que aparece no aviso. */
   trocarEscopo: (destino: string, rotulo: string) => void;
+  /** Abre a MESMA caixa na fase de escolha (busca + lista). É o que a barra
+   *  lateral chama hoje, no lugar do antigo <select>. */
+  abrirTroca: () => void;
+  /** A barra lateral entrega a lista que veio de `GET /api/municipios` (já
+   *  filtrada por ativos e pelo escopo do usuário) — o provider não busca nada
+   *  por conta própria para não duplicar requisição nem regra de permissão. */
+  registrarMunicipios: (lista: MunicipioEscolha[]) => void;
   emTransicao: boolean;
 };
 
@@ -69,6 +78,9 @@ export function MunicipioProvider({ children }: { children: ReactNode }) {
 
   /** O destino pedido, enquanto o aviso e a animação acontecem. */
   const [pendente, setPendente] = useState<{ destino: string; rotulo: string } | null>(null);
+  /** A caixa está aberta na fase de ESCOLHA (nenhum destino escolhido ainda). */
+  const [escolhendo, setEscolhendo] = useState(false);
+  const [lista, setLista] = useState<MunicipioEscolha[]>([]);
 
   const gravar = useCallback((valor: string) => {
     setEscopo(valor);
@@ -88,9 +100,16 @@ export function MunicipioProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const trocarEscopo = useCallback((destino: string, rotulo: string) => {
-    if (!destino || destino === escopo) return;
+    /* Escolher o município que já está ativo não é troca — fecha a caixa e
+       pronto. Sem este `setEscolhendo(false)` o clique não produziria efeito
+       nenhum e a caixa ficaria aberta, parecendo travada. */
+    if (!destino || destino === escopo) { setEscolhendo(false); return; }
     setPendente({ destino, rotulo });
+    setEscolhendo(false);   // a MESMA caixa passa da escolha para o aviso
   }, [escopo]);
+
+  const abrirTroca = useCallback(() => setEscolhendo(true), []);
+  const registrarMunicipios = useCallback((ms: MunicipioEscolha[]) => setLista(ms), []);
 
   /** Confirmado: grava o destino e cai na TELA INICIAL.
    *
@@ -103,8 +122,8 @@ export function MunicipioProvider({ children }: { children: ReactNode }) {
     router.push("/dashboard");
   }, [gravar, router]);
 
-  const cancelar = useCallback(() => setPendente(null), []);
-  const concluir = useCallback(() => setPendente(null), []);
+  const cancelar = useCallback(() => { setPendente(null); setEscolhendo(false); }, []);
+  const concluir = useCallback(() => { setPendente(null); setEscolhendo(false); }, []);
 
   const setMunicipioId = useCallback((id: string) => gravar(id), [gravar]);
 
@@ -118,14 +137,22 @@ export function MunicipioProvider({ children }: { children: ReactNode }) {
         isConsolidado,
         setMunicipioId,
         trocarEscopo,
+        abrirTroca,
+        registrarMunicipios,
         emTransicao: pendente !== null,
       }}
     >
       {children}
-      {pendente && (
+      {(escolhendo || pendente) && (
         <TransicaoMunicipio
-          rotulo={pendente.rotulo}
-          onConfirmar={() => confirmar(pendente.destino)}
+          /* `rotulo` null = a caixa abre na ESCOLHA. Quando o destino é
+             escolhido, `pendente` chega e a MESMA caixa vira o aviso — sem
+             desmontar, senão seriam dois modais piscando para um gesto só. */
+          rotulo={pendente?.rotulo ?? null}
+          municipios={lista}
+          escopoAtual={escopo}
+          onEscolher={trocarEscopo}
+          onConfirmar={() => pendente && confirmar(pendente.destino)}
           onCancelar={cancelar}
           onConcluir={concluir}
         />
@@ -139,7 +166,9 @@ export function useMunicipio(): MunicipioCtx {
   if (!ctx) {
     return {
       municipioId: "", escopo: "", isConsolidado: false,
-      setMunicipioId: () => {}, trocarEscopo: () => {}, emTransicao: false,
+      setMunicipioId: () => {}, trocarEscopo: () => {},
+      abrirTroca: () => {}, registrarMunicipios: () => {},
+      emTransicao: false,
     };
   }
   return ctx;
