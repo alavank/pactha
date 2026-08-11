@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import api from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
+import { textoDe } from "@/lib/texto";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MultiSelect } from "@/components/ui/multi-select";
@@ -20,11 +21,16 @@ import {
  *  Substitui o `Field` local, que era a setima forma do mesmo padrao no
  *  produto: `wide` virou `span`, `mono` virou `mono`. */
 function campoC(rotulo: string, valor: unknown, extra?: Partial<Campo>): Campo {
-  const vazio = valor === null || valor === undefined || valor === "";
-  const texto = typeof valor === "string" || typeof valor === "number" ? String(valor) : undefined;
+  /* O `valor as React.ReactNode` que estava aqui era um cast que MENTIA: dizia
+     ao compilador que qualquer coisa serve como filho de JSX. Quinze campos
+     desta tela vêm crus da API federal, e um objeto entre eles derruba a
+     árvore inteira do React (erro #31) — o mesmo defeito que apagava a tela de
+     Especiais. `textoDe` resolve o valor E o `title` do mesmo jeito, então os
+     dois nunca mais divergem. */
+  const texto = textoDe(valor);
   return {
     rotulo,
-    valor: vazio ? "-" : (valor as React.ReactNode),
+    valor: texto ?? "-",
     title: texto ? `${rotulo}: ${texto}` : undefined,
     ...extra,
   };

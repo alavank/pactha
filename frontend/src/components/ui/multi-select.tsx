@@ -122,19 +122,39 @@ export function MultiSelect({
           </div>
 
           {/* Atalhos: um clique para o recorte que o gestor pede sempre
-              ("o mandato", "este ano"). Sem eles, marcar 4 anos é 4 cliques. */}
+              ("o mandato", "este ano"). Sem eles, marcar 4 anos é 4 cliques.
+
+              ⚠️ O atalho marca só o que EXISTE na lista. Antes ele mandava os
+              quatro anos do mandato às cegas: num município cuja obra mais nova
+              é de 2024, clicar em "Mandato atual" selecionava 2025 e 2026, que
+              não estão entre as opções — nenhuma caixa marcava, a lista
+              esvaziava e o gestor concluía, com razão, que o botão não fazia
+              nada. Agora o atalho sem nenhum ano com dado aparece DESLIGADO e
+              diz por quê: "não tem obra neste período" é resposta, "nada
+              acontece" não é. */}
           {!!atalhos?.length && (
             <div className="flex flex-wrap gap-1 border-b border-base-300 px-1 py-1.5">
-              {atalhos.map((a) => (
-                <button
-                  key={a.label}
-                  type="button"
-                  onClick={() => onChange([...a.valores])}
-                  className="rounded-full border border-base-300 px-2 py-0.5 text-[11px] font-medium text-base-content/70 hover:bg-base-200"
-                >
-                  {a.label}
-                </button>
-              ))}
+              {atalhos.map((a) => {
+                const disponiveis = a.valores.filter((v) => opcoes.includes(v));
+                const semDado = disponiveis.length === 0;
+                return (
+                  <button
+                    key={a.label}
+                    type="button"
+                    disabled={semDado}
+                    title={semDado ? `Nenhum registro em ${a.label.toLowerCase()}` : undefined}
+                    onClick={() => onChange(disponiveis)}
+                    className={
+                      "rounded-full border border-base-300 px-2 py-0.5 text-[11px] font-medium " +
+                      (semDado
+                        ? "cursor-not-allowed text-base-content/30"
+                        : "text-base-content/70 hover:bg-base-200")
+                    }
+                  >
+                    {a.label}
+                  </button>
+                );
+              })}
             </div>
           )}
           {opcoes.map((o) => {

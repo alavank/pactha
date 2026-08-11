@@ -15,6 +15,7 @@ import api from "@/lib/api";
 import { formatCurrency as moeda } from "@/lib/utils";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { atalhosAnos, resumoAnos } from "@/lib/periodo";
+import { textoDe } from "@/lib/texto";
 import {
   Abas, Aviso, Bloco, BlocoHead, Campo, Campos, Grade, GradeCel,
   GradeLinha, ItemLinha, Lista, Modal, ModalCorpo, ModalHead, Secao, Selo,
@@ -110,7 +111,12 @@ interface ObraSubmeta {
   regime_execucao?: string; valor?: number | null; valor_realizado?: number | null;
 }
 interface ObraArt {
-  tipo?: string; numero?: string; dt_emissao?: string; responsavel_tecnico?: string;
+  /* `unknown`, e não `string`, porque é o que a fonte realmente manda: a API de
+     obras devolve `tipo` como `{codigo:"EXE", descricao:"Execução"}` e
+     `responsavel_tecnico` como `{id, cpf, nome, ...}`. Declarar `string` aqui
+     não fazia virar texto — só escondia o problema do compilador até o
+     navegador do cliente. Passam por `textoDe()` na hora de mostrar. */
+  tipo?: unknown; numero?: string; dt_emissao?: string; responsavel_tecnico?: unknown;
 }
 interface ObraLote {
   tipo?: string; numero?: string; id_contrato?: number | null;
@@ -858,14 +864,22 @@ export default function TransfereGovPropostas({
                                   { label: "Emissão", direita: true }, { label: "Responsável Técnico" },
                                 ]}
                               >
-                                {(lote.arts || []).map((a, ai) => (
+                                {(lote.arts || []).map((a, ai) => {
+                                  /* `tipo` e `responsavel_tecnico` chegam como
+                                     OBJETO da API de obras — `{codigo, descricao}`
+                                     e `{id, cpf, nome, ...}` — e não como texto.
+                                     Era o que derrubava a aba inteira. */
+                                  const tipo = textoDe(a.tipo);
+                                  const resp = textoDe(a.responsavel_tecnico);
+                                  return (
                                   <GradeLinha key={ai} cols={COLS_ART}>
-                                    <GradeCel>{a.tipo || "-"}</GradeCel>
+                                    <GradeCel>{tipo || "-"}</GradeCel>
                                     <GradeCel tom="id">{a.numero || "-"}</GradeCel>
                                     <GradeCel tom="data">{a.dt_emissao || "-"}</GradeCel>
-                                    <GradeCel title={a.responsavel_tecnico || undefined}>{a.responsavel_tecnico || "-"}</GradeCel>
+                                    <GradeCel title={resp || undefined}>{resp || "-"}</GradeCel>
                                   </GradeLinha>
-                                ))}
+                                  );
+                                })}
                               </Grade>
                             ) : (
                               <div className="text-[11px] italic" style={{ color: "var(--bi-faint)" }}>Nenhum item incluído</div>

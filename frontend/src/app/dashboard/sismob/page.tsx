@@ -370,6 +370,22 @@ export default function SismobPage() {
   const [loading, setLoading] = useState(true);
   const [anosSel, setAnosSel] = useState<string[]>([]);
   const [triagem, setTriagem] = useState<"acao" | "em_dia" | "encerradas">("acao");
+  /* Âncora da faixa "precisam de ação": ela virou botão e precisa levar o olho
+     até a lista, que no desktop está abaixo da dobra. */
+  const refTriagens = React.useRef<HTMLDivElement>(null);
+
+  /** Levar o gestor até as obras que pedem providência.
+   *
+   *  Limpa o filtro de anos de propósito: a faixa conta as obras de TODOS os
+   *  anos (o número vem do servidor), então mandar para a lista com um recorte
+   *  de ano ligado entregaria "nenhuma obra" logo depois de anunciar que há
+   *  cinco. Prometer cinco e mostrar zero é pior que não ser clicável. */
+  const irParaAcoes = () => {
+    setTriagem("acao");
+    setAnosSel([]);
+    requestAnimationFrame(() =>
+      refTriagens.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  };
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -409,6 +425,19 @@ export default function SismobPage() {
           {d?.entidade?.nome ? <> — convenente <strong>{d.entidade.nome}</strong>
             <span className="font-mono text-xs"> ({cnpjFmt(d.entidade.cnpj)})</span></> : null}
         </p>
+        {/* COMO SE LÊ A TELA. Escrito porque o dono, que conhece o produto,
+            abriu o módulo e não soube onde clicar nem o que cada quadro dizia —
+            se ele não soube, o secretário de saúde do município não vai saber.
+            Uma linha por gesto, na ordem em que a tela é usada: o alerta em
+            cima, os números no meio, as três abas embaixo. */}
+        <p className="mt-1.5 text-[11px] leading-relaxed" style={{ color: "var(--bi-faint)" }}>
+          A faixa e o cartão vermelhos apontam as obras com prazo vencido ou paradas — clique
+          neles para ir à lista, onde cada obra traz o motivo, a providência exigida e a norma.
+          Os cinco números resumem o município inteiro e não seguem o filtro de anos. Embaixo,
+          as três abas separam as obras em <strong>precisa de ação</strong>, <strong>em dia</strong> e{" "}
+          <strong>concluídas/encerradas</strong> — uma obra está em uma e só uma. O botão SISMOB de
+          cada obra abre a mesma obra no portal do Ministério.
+        </p>
       </div>
 
       {!municipioId && <Vazio>Selecione um município para ver as obras.</Vazio>}
@@ -443,19 +472,37 @@ export default function SismobPage() {
               ocupava a largura da tela. Quem carrega o alerta é o selo — a
               moldura colorida gritava igual quando havia uma obra e quando
               havia vinte. */}
+          {/* A faixa VIROU BOTÃO. Ela anunciava "5 obras precisam de ação" e
+              parava aí: quem lia isso não tinha onde clicar, e a lista com o
+              motivo e a providência de cada obra ficava numa aba abaixo, sem
+              nada ligando as duas. O anúncio de pendência tem que levar à
+              pendência — senão vira um número que assusta e não resolve. */}
           <Bloco className="px-3 pt-3 pb-0.5">
-            <BlocoHead
-              icon={acao.length ? AlertTriangle : CheckCircle2}
-              titulo={acao.length
-                ? `${acao.length} obra(s) precisam de ação`
-                : "Nenhuma obra com pendência de prazo"}
-              sub={t.repasse_parado > 0
-                ? `${moeda(t.repasse_parado)} repassados em obras que não se movem há mais de 60 dias.`
-                : `${t.vivas} obra(s) em andamento, todas dentro do prazo de atualização.`}
-              right={acao.length
-                ? <Selo tom="critico">exige ação</Selo>
-                : <Selo>em dia</Selo>}
-            />
+            {acao.length ? (
+              <button type="button" onClick={irParaAcoes} className="w-full text-left"
+                      title="Ver as obras, o motivo de cada pendência e a providência exigida">
+                <BlocoHead
+                  icon={AlertTriangle}
+                  titulo={`${acao.length} obra(s) precisam de ação`}
+                  sub={
+                    <>
+                      {t.repasse_parado > 0
+                        ? `${moeda(t.repasse_parado)} repassados em obras que não se movem há mais de 60 dias. `
+                        : ""}
+                      Clique para ver cada obra com o motivo, a providência exigida e a norma que a obriga.
+                    </>
+                  }
+                  right={<Selo tom="critico">exige ação</Selo>}
+                />
+              </button>
+            ) : (
+              <BlocoHead
+                icon={CheckCircle2}
+                titulo="Nenhuma obra com pendência de prazo"
+                sub={`${t.vivas} obra(s) em andamento, todas dentro do prazo de atualização.`}
+                right={<Selo>em dia</Selo>}
+              />
+            )}
           </Bloco>
 
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
@@ -469,8 +516,18 @@ export default function SismobPage() {
               valor={moeda(t.repasse_parado)}
               tom={t.repasse_parado > 0 ? "critico" : "neutro"}
               sub={t.repasse_parado > 0 ? "dinheiro em obra que não anda" : "nada parado"} />
-            <Numero icon={AlertTriangle} rotulo="Precisam de ação" valor={String(acao.length)}
-              tom={acao.length ? "critico" : "neutro"} sub="prazo ou pendência" />
+            {/* O único KPI que leva a algum lugar — porque é o único que pede
+                providência. Os outros quatro são leitura. */}
+            {acao.length ? (
+              <button type="button" onClick={irParaAcoes} className="text-left"
+                      title="Ver as obras e o que cada uma exige">
+                <Numero icon={AlertTriangle} rotulo="Precisam de ação" valor={String(acao.length)}
+                  tom="critico" sub="prazo ou pendência · clique para ver" />
+              </button>
+            ) : (
+              <Numero icon={AlertTriangle} rotulo="Precisam de ação" valor="0"
+                tom="neutro" sub="prazo ou pendência" />
+            )}
             <Numero icon={CheckCircle2} rotulo="Concluídas" valor={String(t.concluidas)}
               sub={t.canceladas ? `${t.canceladas} cancelada(s)` : undefined} />
           </div>
@@ -543,6 +600,7 @@ export default function SismobPage() {
                 const g = grupos.find((x) => x.valor === atual)!;
                 const total = g.obras.reduce((s, o) => s + (o.dinheiro.proposta || 0), 0);
                 return (
+                  <div ref={refTriagens} className="scroll-mt-4">
                   <Bloco className="p-3">
                     <BlocoHead
                       titulo={g.rotulo}
@@ -566,6 +624,7 @@ export default function SismobPage() {
                       <Secao obras={g.obras} vazio={g.vazio} />
                     </div>
                   </Bloco>
+                  </div>
                 );
               })()}
             </section>

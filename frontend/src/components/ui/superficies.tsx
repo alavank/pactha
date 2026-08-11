@@ -20,6 +20,10 @@
 // sem precisar do `.bi-skin`.
 import * as React from "react";
 import { createPortal } from "react-dom";
+// Metade do que estas peças recebem é JSON repassado cru do portal federal, que
+// não promete escalar em campo nenhum. Um objeto no JSX derruba a ÁRVORE INTEIRA
+// (React #31) — então a peça coage, e a tela não precisa lembrar. Ver lib/texto.ts.
+import { noSeguro, textoDe } from "@/lib/texto";
 
 // ---------------------------------------------------------------------------
 // Bloco — o cartão. Equivale ao `Painel` do BI.
@@ -121,7 +125,7 @@ export function Selo({
       className="inline-flex shrink-0 items-center rounded px-1.5 py-px text-[10px] font-medium leading-[1.5]"
       style={estilo}
     >
-      {children}
+      {noSeguro(children)}
     </span>
   );
 }
@@ -142,9 +146,15 @@ export function Selo({
  *  Os termos são fragmentos sem acento e sem terminação, porque as fontes
  *  escrevem diferente: "Cancelado", "CANCELADA", "cancelamento". */
 export function situacaoTom(
-  s?: string | null,
+  /* `unknown` e não `string | null`: esta função recebe situação vinda direto
+     de portal em umas quinze telas, e o dia em que uma delas chegar como objeto
+     `{codigo, descricao}` — que é como o TransfereGov serializa enum quando lhe
+     convém — um `.toLowerCase()` em objeto derruba a tela inteira. `textoDe`
+     ainda aproveita o `descricao` de dentro, então a cor continua certa em vez
+     de virar cinza. */
+  s?: unknown,
 ): "neutro" | "ok" | "atencao" | "critico" {
-  const t = (s || "")
+  const t = (textoDe(s) || "")
     .toLowerCase()
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "");
@@ -209,9 +219,9 @@ export function ItemLinha({
   const corpo = (
     <>
       <div className="flex items-baseline gap-3">
-        <span className="min-w-0 flex-1 text-[13px] font-medium leading-snug">{titulo}</span>
+        <span className="min-w-0 flex-1 text-[13px] font-medium leading-snug">{noSeguro(titulo)}</span>
         {valor != null && (
-          <span className="bi-num shrink-0 text-[13px] leading-snug">{valor}</span>
+          <span className="bi-num shrink-0 text-[13px] leading-snug">{noSeguro(valor)}</span>
         )}
       </div>
       {meta && (
@@ -361,7 +371,7 @@ export function Campos({ campos, cols }: { campos: Campo[]; cols?: number }) {
                 : "var(--bi-text)",   // "normal" e "neutro" caem aqui
             }}
           >
-            {c.valor}
+            {noSeguro(c.valor)}
           </div>
         </div>
         );
@@ -1015,13 +1025,14 @@ export function GradeCel({ children, tom = "texto", title, className = "" }: {
   className?: string;
 }) {
   const base = "min-w-0 text-[11px] leading-snug";
+  const c = noSeguro(children);
   if (tom === "id")
-    return <div className={`${base} bi-id truncate ${className}`} style={{ color: "var(--bi-faint)" }} title={title}>{children}</div>;
+    return <div className={`${base} bi-id truncate ${className}`} style={{ color: "var(--bi-faint)" }} title={title}>{c}</div>;
   if (tom === "num")
-    return <div className={`${base} bi-num truncate text-right whitespace-nowrap ${className}`} style={{ color: "var(--bi-text)" }} title={title}>{children}</div>;
+    return <div className={`${base} bi-num truncate text-right whitespace-nowrap ${className}`} style={{ color: "var(--bi-text)" }} title={title}>{c}</div>;
   if (tom === "data")
-    return <div className={`${base} bi-num truncate text-right whitespace-nowrap ${className}`} style={{ color: "var(--bi-muted)" }} title={title}>{children}</div>;
-  return <div className={`${base} break-words ${className}`} style={{ color: "var(--bi-text)" }} title={title}>{children}</div>;
+    return <div className={`${base} bi-num truncate text-right whitespace-nowrap ${className}`} style={{ color: "var(--bi-muted)" }} title={title}>{c}</div>;
+  return <div className={`${base} break-words ${className}`} style={{ color: "var(--bi-text)" }} title={title}>{c}</div>;
 }
 
 // ---------------------------------------------------------------------------
