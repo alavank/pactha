@@ -8,7 +8,13 @@ export interface TelaDef {
 }
 
 export const TELAS: TelaDef[] = [
-  { key: "dashboard", label: "Dashboard" },
+  // "dashboard" SAIU do catálogo (10/08/2026, pedido do dono): desde a fusão
+  // de 29/07 o Painel de Indicadores É o /dashboard — duas entradas no modal
+  // de permissões ("Dashboard" e "Painel de Indicadores") concediam a MESMA
+  // home e só confundiam quem dá permissão. A implicação bi -> dashboard (em
+  // allowedTelasOf, abaixo) continua cobrindo o guard de rota, e concessões
+  // antigas gravadas com a chave "dashboard" seguem valendo — ela só não é
+  // mais oferecida como opção nova.
   { key: "ai", label: "IA PACTHA" },
   // TELEGRAM DESATIVADO ATÉ SEGUNDA ORDEM (decisão do dono, 09/08/2026): o
   // canal de avisos será WhatsApp com API oficial; Telegram só voltará sob

@@ -31,6 +31,9 @@ import {
 } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import {
   Sheet,
@@ -387,29 +390,47 @@ function SidebarContent({
                chave. Dava para estar com um município aqui e outro no Painel ao
                mesmo tempo, com os dois seletores visíveis discordando. Numa
                carteira de clientes diferentes, isso é confundir dado. */
-            <select
-              className="select select-bordered select-sm w-full"
+            /* Era um <select> NATIVO daisyUI — no Chromium 135+ a lista abre NA
+               página (base-select) colada nos itens do menu e "parecia se
+               misturar" mesmo depois do remendo de elevação no globals.css
+               (pedido do dono, 10/08). Virou o Select do produto (Base UI):
+               painel em portal com sombra de verdade, seleção marcada, mesmo
+               componente e voz da tela de usuários. */
+            <Select
               value={escopo}
-              onChange={(e) => {
-                const v = e.target.value;
-                const m = municipios.find((x) => String(x.id) === v);
-                onMunicipioChange(v, m ? `${m.nome} - ${m.uf}` : "Município selecionado");
+              onValueChange={(v) => {
+                const val = String(v ?? "");
+                const m = municipios.find((x) => String(x.id) === val);
+                onMunicipioChange(val, m ? `${m.nome} - ${m.uf}` : "Município selecionado");
               }}
             >
-              <option value="">Município selecionado</option>
-              {/* ⚠️ NÃO EXISTE "Consolidado (todos)" AQUI, e é decisão do dono.
-                  Numa assessoria os municípios são CLIENTES DIFERENTES: somar as
-                  carteiras numa tela só não tem uso legítimo e cria a chance de
-                  ler o número de um cliente achando que é de outro — o risco que
-                  a transição de município (modal + remontagem) existe para
-                  fechar. Quem quiser comparar cidades faz isso trocando de
-                  ambiente, com a tela inteira acompanhando. */}
-              {municipios.map((m) => (
-                <option key={m.id} value={String(m.id)}>
-                  {m.nome} - {m.uf}
-                </option>
-              ))}
-            </select>
+              {/* ⚠️ <SelectValue> sem função de formatação mostra o VALOR CRU
+                  no gatilho fechado (o id, tipo "8") — armadilha já medida na
+                  tela de usuários (rotuloRole). A função traduz id -> nome. */}
+              <SelectTrigger className="w-full">
+                <SelectValue>
+                  {(v: unknown) => {
+                    const m = municipios.find((x) => String(x.id) === String(v ?? ""));
+                    return m ? `${m.nome} - ${m.uf}` : "Município selecionado";
+                  }}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">Município selecionado</SelectItem>
+                {/* ⚠️ NÃO EXISTE "Consolidado (todos)" AQUI, e é decisão do dono.
+                    Numa assessoria os municípios são CLIENTES DIFERENTES: somar as
+                    carteiras numa tela só não tem uso legítimo e cria a chance de
+                    ler o número de um cliente achando que é de outro — o risco que
+                    a transição de município (modal + remontagem) existe para
+                    fechar. Quem quiser comparar cidades faz isso trocando de
+                    ambiente, com a tela inteira acompanhando. */}
+                {municipios.map((m) => (
+                  <SelectItem key={m.id} value={String(m.id)}>
+                    {m.nome} - {m.uf}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           )}
         </div>
       )}
