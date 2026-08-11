@@ -35,7 +35,7 @@ precisa da segunda caixinha, e a revelacao continua virando linha na trilha.
 """
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, text as _sql_text
 from pydantic import BaseModel
 from typing import Optional
 import logging
@@ -61,6 +61,61 @@ ALLOWED_ROLES_REVEAL = {"admin"}
 def _require_role(user: User, allowed: set[str]):
     if (user.role or "").lower() not in allowed:
         raise HTTPException(status_code=403, detail="Ação restrita a administradores")
+
+
+# Fontes com rodizio por municipio que dependem de credencial do cofre. Hoje so
+# o SIGCON: `transferegov` e `cagec` nao usam credencial por cidade.
+_FONTES_DA_CREDENCIAL = {"sigcon": ("sigcon", "sigcon_emendas")}
+
+
+def _portal_da_credencial(sistema: str | None, automation_key: str | None) -> str | None:
+    """Mesmo criterio do coletor (sigcon_scraper: `sistema ILIKE 'SIGCON%' OR
+    automation_key='sigcon'`) — se mudar la, muda aqui."""
+    ak = (automation_key or "").strip().lower()
+    if ak in _FONTES_DA_CREDENCIAL:
+        return ak
+    if (sistema or "").strip().upper().startswith("SIGCON"):
+        return "sigcon"
+    return None
+
+
+async def _destravar_rodizio(db: AsyncSession, municipio_id: int,
+                             sistema: str | None, automation_key: str | None) -> None:
+    """CREDENCIAL NOVA ZERA O BACKOFF DAQUELE MUNICIPIO.
+
+    ⚠️ Sem isto, cadastrar a senha certa NAO adianta por dias. O rodizio do
+    coletor ordena por `COALESCE(ultima_coleta_em, ultimo_erro_em, epoch) +
+    LEAST(tentativas,5) * INTERVAL '1 day'`: um municipio que falhou login 58
+    vezes carrega +5 dias de penalidade, e trocar a senha no Cofre nao mexia
+    nesse contador (so o SUCESSO zerava — e o sucesso nao acontece porque ele
+    nunca e tentado: circulo fechado). Medido em 10/08/2026 na freitas: Piracema
+    recebeu credencial nova as 01:40 e foi para o ULTIMO lugar de uma fila de
+    29, com previsao de primeira tentativa so em 13/08.
+
+    A penalidade existe para credencial QUEBRADA nao furar a fila toda rodada;
+    credencial NOVA e outra coisa — o motivo da punicao deixou de existir no
+    momento em que o admin digitou a senha. Zeramos so `tentativas` (o carimbo
+    de erro fica no historico) e so das fontes daquele portal.
+
+    Best-effort: a contabilidade do rodizio nunca derruba o cadastro da senha.
+    """
+    portal = _portal_da_credencial(sistema, automation_key)
+    if not portal or not municipio_id:
+        return
+    fontes = _FONTES_DA_CREDENCIAL[portal]
+    try:
+        r = await db.execute(_sql_text(
+            "UPDATE scraper_municipio_coleta SET tentativas = 0 "
+            "WHERE municipio_id = :m AND fonte = ANY(:f) AND COALESCE(tentativas, 0) > 0"
+        ), {"m": municipio_id, "f": list(fontes)})
+        await db.commit()
+        if r.rowcount:
+            logger.info("cofre: backoff zerado (municipio %s, fontes %s, %s linha[s])",
+                        municipio_id, ",".join(fontes), r.rowcount)
+    except Exception as e:
+        await db.rollback()
+        logger.warning("cofre: nao consegui zerar o backoff do municipio %s (%s: %s)",
+                       municipio_id, type(e).__name__, str(e)[:120])
 
 
 class CofreCreate(BaseModel):
@@ -198,6 +253,8 @@ async def create_senha(
         target_type="cofre_senha", target_id=item.id,
         details={"sistema": item.sistema, "municipio_id": item.municipio_id},
     )
+    # Credencial nova entra na PROXIMA rodada, nao daqui a dias (ver docstring).
+    await _destravar_rodizio(db, item.municipio_id, item.sistema, item.automation_key)
     return _to_response(item)
 
 
@@ -231,6 +288,10 @@ async def update_senha(
         target_type="cofre_senha", target_id=item.id,
         details={"sistema": item.sistema, "senha_changed": senha_changed},
     )
+    # So quando a SENHA muda: renomear o rotulo ou corrigir a URL nao e motivo
+    # para perdoar o backoff de uma credencial que segue sem logar.
+    if senha_changed:
+        await _destravar_rodizio(db, item.municipio_id, item.sistema, item.automation_key)
     return _to_response(item)
 
 
