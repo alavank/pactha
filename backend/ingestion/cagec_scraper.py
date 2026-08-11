@@ -387,7 +387,8 @@ def _municipios_alvo() -> list[dict]:
     return alvos
 
 
-def _marca_coleta(municipio_id: int, ok: bool, erro: str | None = None) -> None:
+def _marca_coleta(municipio_id: int, ok: bool, erro: str | None = None,
+                  culpa_do_portal: bool = False) -> None:
     """Carimbo do rodizio do CAGEC (fonte='cagec' em scraper_municipio_coleta).
 
     Mesmas regras do sigcon pos-#159: carimba TAMBEM no erro (senao quem falha
@@ -400,7 +401,21 @@ def _marca_coleta(municipio_id: int, ok: bool, erro: str | None = None) -> None:
     veio sem CRC fica para a proxima volta — o 'parcial' da FONTE vai no
     ingestion_log). E 'nenhuma entidade encontrada' entra no backoff padrao
     (ate 5 dias): grafia divergente e persistente e a consulta e publica —
-    se um dia doer, teto menor so para esse desfecho."""
+    se um dia doer, teto menor so para esse desfecho.
+
+    ⭐ `culpa_do_portal=True` — O CASTIGO NAO PODE CAIR SOBRE QUEM NAO ERROU.
+    Medido em 11/08/2026: quando o portal do Estado recusa o certificado (CRC)
+    de um municipio, o carimbo de erro somava +1 em `tentativas` — e o backoff
+    do rodizio (`+ LEAST(tentativas,5) dias` na ordenacao) jogava o municipio
+    para o FIM da fila. Ou seja: exatamente quem precisava de segunda tentativa
+    era quem mais demorava a receber. Os 9 municipios que perderam o CRC na
+    madrugada NAO foram repescados no run seguinte por causa disso.
+    O backoff existe para poupar quem falha por caracteristica PROPRIA (grafia
+    que nao casa, cadastro inexistente) — indisponibilidade do portal e o
+    oposto: passa sozinha, e a resposta certa e tentar de novo na proxima
+    janela. Com a flag, o erro e REGISTRADO (tela e watchdog continuam sabendo)
+    mas `tentativas` NAO sobe e `ultima_coleta_em` NAO e mexido — assim o
+    municipio continua entre os mais atrasados e volta na FRENTE."""
     import psycopg2
     try:
         conn = psycopg2.connect(
@@ -416,6 +431,19 @@ def _marca_coleta(municipio_id: int, ok: bool, erro: str | None = None) -> None:
                         "ON CONFLICT (fonte, municipio_id) DO UPDATE SET "
                         "ultima_coleta_em = now(), tentativas = 0, ultimo_erro = NULL",
                         (municipio_id,))
+                elif culpa_do_portal:
+                    # Registra o erro SEM punir: `tentativas` intacto (nao entra
+                    # no backoff) e `ultima_coleta_em` intacto (continua velho,
+                    # entao ele segue no topo da fila e e repescado na proxima
+                    # janela). O INSERT so acontece se o municipio nunca teve
+                    # linha — e ai nasce com tentativas=0 pelo mesmo motivo.
+                    cur.execute(
+                        "INSERT INTO scraper_municipio_coleta "
+                        "(fonte, municipio_id, ultimo_erro_em, ultimo_erro, tentativas) "
+                        "VALUES ('cagec', %s, now(), %s, 0) "
+                        "ON CONFLICT (fonte, municipio_id) DO UPDATE SET "
+                        "ultimo_erro_em = now(), ultimo_erro = EXCLUDED.ultimo_erro",
+                        (municipio_id, (erro or "")[:500]))
                 else:
                     cur.execute(
                         "INSERT INTO scraper_municipio_coleta "
@@ -1046,9 +1074,13 @@ async def _rodar() -> tuple[int, int, list[str]]:
                         _marca_coleta(mun["id"], ok=True)
                     elif so_fallback:
                         falha += 1
+                        # `culpa_do_portal`: o municipio esta certo, o CRC e que
+                        # nao saiu. Sem castigo — ele fica na frente da fila e a
+                        # proxima janela tenta de novo (ver _marca_coleta).
                         _marca_coleta(mun["id"], ok=False,
                                       erro="portal nao emitiu o certificado (CRC) "
-                                           "de nenhuma entidade nesta rodada")
+                                           "de nenhuma entidade nesta rodada",
+                                      culpa_do_portal=True)
                     else:
                         falha += 1
                         _marca_coleta(mun["id"], ok=False,
