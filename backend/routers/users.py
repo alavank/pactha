@@ -139,6 +139,41 @@ class UpdateUserRequest(BaseModel):
     somente_leitura: Optional[bool] = None
 
 
+async def _validar_role(db: AsyncSession, role: str) -> str:
+    """⭐ O PERFIL AGORA VEM DA TABELA DO CLIENTE (`parametros`, tipo
+    `perfil_usuario`) — antes era uma tupla fixa aqui dentro, repetida em mais
+    tres lugares do backend.
+
+    ⚠️ ACEITA O INATIVO de proposito. `ativo` governa o que o SELETOR oferece;
+    recusar aqui um rotulo desativado quebraria o PATCH de uma conta que ja o
+    tem (a tela reenvia o papel atual ao salvar outra coisa) e a integracao do
+    Console, que ainda cria com `analyst`.
+
+    ⚠️ FALHA ABERTO se a tabela ainda nao existe (tenant com migration atrasada
+    entre o deploy da API e o boot que roda o SQL): cai na lista historica. Um
+    cadastro de usuario nao pode virar 500 por causa da ordem de duas coisas que
+    sobem juntas — e a lista antiga e restritiva, nao permissiva.
+    """
+    r = (role or "").strip()
+    if not r:
+        raise HTTPException(400, "Perfil inválido")
+    try:
+        existe = (await db.execute(
+            text("SELECT 1 FROM parametros WHERE tipo = 'perfil_usuario' AND valor = :v"),
+            {"v": r})).first()
+    except Exception:
+        await db.rollback()
+        return r if r in ("admin", "usuario", "analyst", "user", "prefeito", "viewer") \
+            else _erro_role()
+    if not existe:
+        _erro_role()
+    return r
+
+
+def _erro_role():
+    raise HTTPException(400, "Perfil inválido — cadastre-o em Configurações › Parâmetros")
+
+
 async def _validar_email_novo(db: AsyncSession, alvo: User, bruto: str) -> str:
     """Normaliza e recusa os e-mails que não podem ser assumidos por ninguém.
 
@@ -322,8 +357,7 @@ async def create_user(
     existing = await db.execute(select(User).where(User.email == email))
     if existing.scalar_one_or_none():
         raise HTTPException(400, "Email já cadastrado")
-    if req.role not in ("admin", "usuario", "analyst", "user", "prefeito"):
-        raise HTTPException(400, "Role inválida")
+    await _validar_role(db, req.role)
 
     # ⚠️ CRIAR COM ESCOPO JA E CONCEDER — e sem esta linha era um DESVIO da
     # permissao de conceder.
@@ -454,8 +488,8 @@ async def update_user(
         raise HTTPException(400, "Você não pode desativar a si mesmo")
     if req.role and req.role != "admin" and u.id == current.id and current.role == "admin":
         raise HTTPException(400, "Você não pode rebaixar o próprio perfil de administrador (evita se trancar pra fora)")
-    if req.role and req.role not in ("admin", "usuario", "analyst", "user", "prefeito"):
-        raise HTTPException(400, "Role inválida")
+    if req.role:
+        await _validar_role(db, req.role)
     # Auto-trancamento: pôr a SI MESMO em somente-leitura e uma porta que fecha
     # por fora. O guard de `get_current_user` barra todo POST/PUT/PATCH/DELETE
     # fora do Painel — e este endpoint e um PATCH. A pessoa perderia, no mesmo
