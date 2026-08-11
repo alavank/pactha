@@ -30,6 +30,7 @@ import {
   ScrollText,
   Building2,
   ChevronsUpDown,
+  Settings,
 } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -42,6 +43,9 @@ import {
 } from "@/components/ui/sheet";
 import type { Municipio, User } from "@/types";
 import { hrefToTela, allowedTelasOf } from "@/lib/telas";
+import {
+  ABAS_CONFIGURACOES, ROTAS_LEGADAS_CONFIG, abasVisiveis,
+} from "@/lib/configuracoes";
 import { cofinanciamentoDaUf, repassesDaUf, temDiarioEstadual } from "@/lib/estadual";
 import { ehSuperAdmin } from "@/lib/conta";
 import { CONSOLIDADO, MunicipioProvider, useMunicipio } from "@/contexts/MunicipioContext";
@@ -97,31 +101,22 @@ function allLeafHrefs(items: NavEntry[]): string[] {
 // mesma coisa. Ficou um so.
 const BI_ON = process.env.NEXT_PUBLIC_BI_MODULE === "1";
 
+// ⭐ A ORDEM É A QUE O DONO DITOU (11/08/2026), e ela conta uma história: o
+// PAINEL abre, as FONTES DE RECURSO vêm em bloco (federal, estadual,
+// parlamentares, saúde, educação), a REGULARIDADE fecha o diagnóstico, e só
+// então vêm as ferramentas de ENTREGA (relatório, IA, painéis, diário,
+// documentos, gestão). Configurações não está aqui: virou item próprio no fim
+// da barra, com as telas de administração em abas (lib/configuracoes.ts).
+//
+// ⚠️ Os GRUPOS foram preservados — "Estaduais" e "Transfere Gov" continuam
+// menus com seus submenus, como o dono confirmou. Reordenar folhas soltas
+// dentro deles não estava no pedido, e os condicionais por UF (Repasses e
+// Cofinanciamento só em GO; ver o filtro mais abaixo) dependem dessa estrutura.
 const NAV_ITEMS: NavEntry[] = [
   {
     href: "/dashboard",
     label: BI_ON ? "Painel de Indicadores" : "Dashboard",
     icon: BI_ON ? BarChart3 : LayoutDashboard,
-  },
-  { href: "/dashboard/ai", label: "IA PACTHA", icon: Sparkles },
-  // Telegram desativado até segunda ordem (ver lib/telas.ts) — o item fica
-  // atrás da mesma flag para sumir também de quem já tinha a permissão antiga.
-  ...(process.env.NEXT_PUBLIC_TELEGRAM_MODULE === "1"
-    ? [{ href: "/dashboard/telegram", label: "Telegram", icon: Send }]
-    : []),
-  { href: "/dashboard/parlamentares", label: "Parlamentares", icon: UserCircle2 },
-  { href: "/dashboard/gestao", label: "Gestão Interna", icon: Edit2 },
-  { href: "/dashboard/rm", label: "Relatório de Monitoramento", icon: FileText },
-  { href: "/dashboard/documentos", label: "Geração de Documentos", icon: FileSignature },
-  {
-    label: "Estaduais",
-    icon: FileText,
-    children: [
-      { href: "/dashboard/convenios", label: "Convênios" },
-      { href: "/dashboard/repasses", label: "Repasses" },
-      { href: "/dashboard/cofinanciamento", label: "Cofinanciamento Saúde" },
-      { href: "/dashboard/emendas", label: "Emendas Estaduais" },
-    ],
   },
   {
     label: "Transfere Gov",
@@ -136,15 +131,35 @@ const NAV_ITEMS: NavEntry[] = [
       { href: "/dashboard/transferegov-cnpj", label: "CNPJ" },
     ],
   },
-  { href: "/dashboard/cauc", label: "Regularidade", icon: ShieldCheck },
-  { href: "/dashboard/sismob", label: "Obras da Saúde (SISMOB)", icon: HardHat },
-  { href: "/dashboard/acordofes", label: "Acordo FES (Dívida Saúde)", icon: HeartPulse },
+  {
+    label: "Estaduais",
+    icon: FileText,
+    children: [
+      { href: "/dashboard/convenios", label: "Convênios" },
+      { href: "/dashboard/emendas", label: "Emendas Estaduais" },
+      { href: "/dashboard/repasses", label: "Repasses" },
+      { href: "/dashboard/cofinanciamento", label: "Cofinanciamento Saúde" },
+    ],
+  },
+  { href: "/dashboard/parlamentares", label: "Parlamentares", icon: UserCircle2 },
   { href: "/dashboard/fns", label: "Fundo Nacional de Saúde", icon: Target },
+  { href: "/dashboard/sismob", label: "Obras da Saúde (SISMOB)", icon: HardHat },
   { href: "/dashboard/simec", label: "SIMEC - PAR (MEC)", icon: Target },
+  { href: "/dashboard/acordofes", label: "Acordo FES (Dívida Saúde)", icon: HeartPulse },
+  { href: "/dashboard/cauc", label: "Regularidade", icon: ShieldCheck },
+  { href: "/dashboard/rm", label: "Relatório de Monitoramento", icon: FileText },
+  { href: "/dashboard/ai", label: "IA PACTHA", icon: Sparkles },
   { href: "/dashboard/paineis", label: "Painéis Municipais", icon: LayoutGrid },
   { href: "/dashboard/dou", label: "Diário Oficial", icon: Newspaper },
-  { href: "/dashboard/cofre", label: "Cofre de Senhas", icon: KeyRound },
-  { href: "/dashboard/sessoes", label: "Sessões (gov.br)", icon: KeyRound },
+  { href: "/dashboard/documentos", label: "Geração de Documentos", icon: FileSignature },
+  { href: "/dashboard/gestao", label: "Gestão Interna", icon: Edit2 },
+  // Telegram desativado até segunda ordem (ver lib/telas.ts) — o item fica
+  // atrás da mesma flag para sumir também de quem já tinha a permissão antiga.
+  ...(process.env.NEXT_PUBLIC_TELEGRAM_MODULE === "1"
+    ? [{ href: "/dashboard/telegram", label: "Telegram", icon: Send }]
+    : []),
+  // Cofre de Senhas e Sessões (gov.br) SAÍRAM daqui: viraram abas de
+  // Configurações. As rotas antigas continuam existindo (bookmark não quebra).
 ];
 
 // A secao Administracao. O padrao aqui e "so admin ve", e por isso o bloco
@@ -157,6 +172,12 @@ const NAV_ITEMS: NavEntry[] = [
 // itens continuam sem `tela` e presos ao papel, de proposito.
 type AdminNavItem = NavLeaf & { icon: React.ComponentType<{ className?: string }>; tela?: string };
 
+// ⚠️ A SEÇÃO "Administração" VIROU UM ITEM SÓ — "Configurações", com as telas em
+// abas (ver `lib/configuracoes.ts`). Esta lista continua existindo por UM
+// motivo: as rotas ANTIGAS (/dashboard/usuarios, /frescor, /service-tokens)
+// seguem no ar para não quebrar bookmark, e o guard de rota precisa saber que
+// elas não têm chave de tela — senão o administrador é EXPULSO da própria tela
+// de Usuários ao abrir um link salvo. Ela não desenha mais nada no menu.
 const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { href: "/dashboard/usuarios", label: "Usuários", icon: Users },
   { href: "/dashboard/auditoria", label: "Auditoria", icon: ScrollText, tela: "auditoria" },
@@ -170,7 +191,12 @@ const ADMIN_NAV_ITEMS: AdminNavItem[] = [
 // plataforma pela Alavank. Quem responde "esta conta e dona?" e `lib/conta.ts`
 // — que le a coluna `users.super_admin` e so cai na lista de e-mails quando o
 // campo nao veio. A lista morava AQUI, e era a quarta copia dela no produto.
-const SUPER_ADMIN_ONLY = new Set<string>(["/dashboard/sessoes", "/dashboard/service-tokens"]);
+// O match é EXATO, então cada variante de rota precisa constar: as antigas (que
+// continuam no ar) e as novas de Configurações.
+const SUPER_ADMIN_ONLY = new Set<string>([
+  "/dashboard/sessoes", "/dashboard/service-tokens",
+  "/dashboard/configuracoes/sessoes", "/dashboard/configuracoes/service-tokens",
+]);
 
 // As rotas de Administracao que NAO tem chave de tela.
 //
@@ -184,9 +210,14 @@ const SUPER_ADMIN_ONLY = new Set<string>(["/dashboard/sessoes", "/dashboard/serv
 //
 // Derivado de `ADMIN_NAV_ITEMS` de proposito: item novo sem `tela` ja nasce
 // isento, e nao ha uma segunda lista para alguem esquecer de atualizar.
-const ROTAS_SEM_TELA = new Set(
-  ADMIN_NAV_ITEMS.filter((i) => !i.tela).map((i) => i.href),
-);
+// Soma as duas famílias: as rotas antigas sem chave de tela e as abas de
+// Configurações sem chave de tela — mais a RAIZ `/dashboard/configuracoes`, que
+// não tem tela própria (ela só redireciona para a primeira aba visível).
+const ROTAS_SEM_TELA = new Set<string>([
+  ...ADMIN_NAV_ITEMS.filter((i) => !i.tela).map((i) => i.href),
+  ...ABAS_CONFIGURACOES.filter((a) => !a.tela).map((a) => a.href),
+  "/dashboard/configuracoes",
+]);
 
 function SidebarContent({
   pathname,
@@ -294,12 +325,14 @@ function SidebarContent({
   // service tokens) ainda aplicam no backend. Esconder o item de quem levaria
   // 403 e o certo — o dia em que aqueles endpoints deixarem de olhar o papel,
   // esta linha sai junto, e nao antes.
-  const ehAdmin = user?.role === "admin";
-  const adminNavVisivel = ADMIN_NAV_ITEMS.filter((item) => {
-    if (!isSuper && SUPER_ADMIN_ONLY.has(item.href)) return false;
-    if (item.tela) return ehAdmin || !!allowed?.has(item.tela);
-    return ehAdmin;
-  });
+  // As abas que ESTA pessoa vê em Configurações. A conta (e a lista) moram em
+  // `lib/configuracoes.ts` — a barra de abas de lá usa a MESMA função, então o
+  // menu e a página nunca discordam sobre quem vê o quê.
+  const abasConfig = abasVisiveis(user, allowed);
+  // O item do menu leva direto para a PRIMEIRA aba visível: quem só tem Cofre
+  // cai no Cofre, e não numa raiz que redireciona (um salto a menos, e nada
+  // pisca).
+  const hrefConfig = abasConfig[0]?.href ?? "/dashboard/configuracoes";
   return (
     <div className="flex h-full flex-col bg-base-100">
       {/* Faixa de identidade (ver .gov-stripe em globals.css) */}
@@ -552,50 +585,47 @@ function SidebarContent({
           );
         })}
 
-        {adminNavVisivel.length > 0 && (
-          <>
-            {recolhida ? (
-              <div className="my-2 border-t border-base-300" />
-            ) : (
-              <div className="px-3 mt-4 mb-2 text-[10px] font-semibold uppercase tracking-wider text-base-content/40">
-                Administração
-              </div>
-            )}
-            {adminNavVisivel.map((item) => {
-              const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
-              const Icon = item.icon;
-              if (recolhida) {
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    title={item.label}
-                    aria-label={item.label}
-                    className={`flex items-center justify-center rounded-lg py-2 transition-all ${
-                      isActive ? "bg-warning/15 text-warning" : "text-base-content/60 hover:bg-base-200"
-                    }`}
-                  >
-                    <Icon className="size-[18px]" />
-                  </Link>
-                );
-              }
-              return (
+        {/* ⚙️ CONFIGURAÇÕES — último item, e um só. A seção "Administração" com
+            quatro links soltos virou esta porta única; as telas viraram abas lá
+            dentro (Usuários · Auditoria · Cofre · Sessões · Service Tokens ·
+            Status dos Dados · Parâmetros). Quem não vê nenhuma aba não vê o
+            item — a mesma conta de antes, agora num lugar só. */}
+        {abasConfig.length > 0 && (() => {
+          const isActive = pathname.startsWith("/dashboard/configuracoes")
+            // As rotas ANTIGAS continuam no ar (bookmarks) e são as mesmas
+            // telas: com uma delas aberta, o item precisa aparecer aceso.
+            || ROTAS_LEGADAS_CONFIG.some((r) => pathname === r || pathname.startsWith(`${r}/`));
+          if (recolhida) {
+            return (
+              <>
+                <div className="my-2 border-t border-base-300" />
                 <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
-                    isActive
-                      ? "bg-warning/15 text-warning font-semibold"
-                      : "text-base-content/70 hover:bg-base-200 hover:text-base-content"
+                  href={hrefConfig}
+                  title="Configurações"
+                  aria-label="Configurações"
+                  className={`flex items-center justify-center rounded-lg py-2 transition-all ${
+                    isActive ? "bg-warning/15 text-warning" : "text-base-content/60 hover:bg-base-200"
                   }`}
                 >
-                  <Icon className={`size-4 ${isActive ? "text-warning" : "text-base-content/50"}`} />
-                  <span className="text-[13px]">{item.label}</span>
+                  <Settings className="size-[18px]" />
                 </Link>
-              );
-            })}
-          </>
-        )}
+              </>
+            );
+          }
+          return (
+            <Link
+              href={hrefConfig}
+              className={`mt-4 flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
+                isActive
+                  ? "bg-warning/15 text-warning font-semibold"
+                  : "text-base-content/70 hover:bg-base-200 hover:text-base-content"
+              }`}
+            >
+              <Settings className={`size-4 ${isActive ? "text-warning" : "text-base-content/50"}`} />
+              <span className="text-[13px]">Configurações</span>
+            </Link>
+          );
+        })()}
       </nav>
 
       {/* Footer institucional */}
@@ -758,8 +788,14 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
     // a Auditoria). Sem isso, um usuario cujo unico acesso e a trilha nao teria
     // para onde ser mandado: `find` devolveria undefined, nenhum redirect
     // aconteceria e ele ficaria parado numa tela que nao pode ver.
+    // ⚠️ AS ABAS COM TELA ENTRAM NA LISTA — e agora isso importa mais do que
+    // antes: Cofre e Sessões saíram do menu comum e viraram abas, então quem
+    // tem SÓ o Cofre não tem mais nenhum destino em `NAV_ITEMS`. Sem esta
+    // linha, `find` devolveria undefined e a pessoa ficaria parada numa tela
+    // que não pode ver.
     const destinos = [
       ...allLeafHrefs(NAV_ITEMS),
+      ...ABAS_CONFIGURACOES.filter((a) => a.tela).map((a) => a.href),
       ...ADMIN_NAV_ITEMS.filter((i) => i.tela).map((i) => i.href),
     ];
     const firstAllowed = destinos.find((h) => allowed.has(hrefToTela(h)));
