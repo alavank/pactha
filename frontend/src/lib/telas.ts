@@ -15,7 +15,44 @@ export const TELAS: TelaDef[] = [
   // allowedTelasOf, abaixo) continua cobrindo o guard de rota, e concessões
   // antigas gravadas com a chave "dashboard" seguem valendo — ela só não é
   // mais oferecida como opção nova.
+  // ⭐ A ORDEM AQUI É A DO MENU LATERAL (pedido do dono, 11/08/2026): estes
+  // chips são o que o administrador marca ao cadastrar alguém, e procurar
+  // "Diário Oficial" numa ordem diferente da que ele acabou de ver no menu é
+  // atrito puro. Menu e chips passam a contar a mesma história, na mesma
+  // sequência. As três chaves do BI ficam juntas logo após o Painel, e as de
+  // Configurações (Cofre, Sessões, Auditoria) fecham a lista — é a ordem das
+  // abas de lá.
+  { key: "bi", label: "Painel de Indicadores (BI)" },
+  // Separadas de proposito: ver o painel, jogar na TV e PUBLICAR para fora sao
+  // decisoes diferentes. Um secretario pode precisar da TV da sala dele sem ter
+  // permissao de gerar um link que roda o municipio inteiro pelo WhatsApp.
+  { key: "bi_tela", label: "Modo Tela (TV) do BI" },
+  { key: "bi_link", label: "Gerar link público da TV" },
+  { key: "transferegov", label: "Transfere Gov" },
+  // ⚠️ `convenios` governa TAMBÉM a tela de Repasses (/dashboard/repasses):
+  // é a mesma família de informação (recurso estadual), e o backend gateia as
+  // duas por `convenios.ver`. Chave nova aqui exigiria conceder duas permissões
+  // para a mesma coisa.
+  { key: "convenios", label: "Convênios Estaduais" },
+  { key: "emendas", label: "Emendas Estaduais" },
+  { key: "parlamentares", label: "Parlamentares" },
+  { key: "fns", label: "Fundo Nacional de Saúde" },
+  { key: "sismob", label: "Obras da Saúde (SISMOB)" },
+  { key: "simec", label: "SIMEC - PAR (MEC)" },
+  { key: "acordofes", label: "Acordo FES (dívida saúde MG)" },
+  { key: "cauc", label: "Regularidade (federal e estadual)" },
+  { key: "rm", label: "Relatório de Monitoramento" },
   { key: "ai", label: "IA PACTHA" },
+  // ⚠️ NAO EXISTE MAIS UMA TELA "suas". O painel oficial do MDS (Estrutura
+  // SUAS) nao sumiu — ele mora DENTRO de "Painéis Municipais", ao lado do
+  // Painel Municipalista, desde que os dois foram reunidos numa tela só. A
+  // caixinha avulsa continuava aqui prometendo um controle que não controlava:
+  // quem abria "Painéis Municipais" via o SUAS de qualquer forma, porque a
+  // página não filtra painel por painel. Marcar ou desmarcar não mudava nada.
+  { key: "paineis", label: "Painéis Municipais" },
+  { key: "dou", label: "Diário Oficial" },
+  { key: "documentos", label: "Geração de Documentos" },
+  { key: "gestao", label: "Gestão Interna" },
   // TELEGRAM DESATIVADO ATÉ SEGUNDA ORDEM (decisão do dono, 09/08/2026): o
   // canal de avisos será WhatsApp com API oficial; Telegram só voltará sob
   // demanda rara de cliente. Fora do catálogo = fora do menu, fora do modal
@@ -24,36 +61,9 @@ export const TELAS: TelaDef[] = [
   ...(process.env.NEXT_PUBLIC_TELEGRAM_MODULE === "1"
     ? [{ key: "telegram", label: "Telegram" }]
     : []),
-  { key: "parlamentares", label: "Parlamentares" },
-  { key: "gestao", label: "Gestão Interna" },
-  { key: "rm", label: "Relatório de Monitoramento" },
-  { key: "documentos", label: "Geração de Documentos" },
-  // ⚠️ `convenios` governa TAMBÉM a tela de Repasses (/dashboard/repasses):
-  // é a mesma família de informação (recurso estadual), e o backend gateia as
-  // duas por `convenios.ver`. Chave nova aqui exigiria conceder duas permissões
-  // para a mesma coisa.
-  { key: "convenios", label: "Convênios Estaduais" },
-  { key: "emendas", label: "Emendas Estaduais" },
-  { key: "transferegov", label: "Transfere Gov" },
-  { key: "cauc", label: "Regularidade (federal e estadual)" },
-  { key: "sismob", label: "Obras da Saúde (SISMOB)" },
-  { key: "acordofes", label: "Acordo FES (dívida saúde MG)" },
-  { key: "fns", label: "Fundo Nacional de Saúde" },
-  { key: "simec", label: "SIMEC - PAR (MEC)" },
-  // ⚠️ NAO EXISTE MAIS UMA TELA "suas". O painel oficial do MDS (Estrutura
-  // SUAS) nao sumiu — ele mora DENTRO de "Painéis Municipais", ao lado do
-  // Painel Municipalista, desde que os dois foram reunidos numa tela só. A
-  // caixinha avulsa continuava aqui prometendo um controle que não controlava:
-  // quem abria "Painéis Municipais" via o SUAS de qualquer forma, porque a
-  // página não filtra painel por painel. Marcar ou desmarcar não mudava nada.
-  { key: "paineis", label: "Painéis Municipais" },
-  { key: "bi", label: "Painel de Indicadores (BI)" },
-  // Separadas de proposito: ver o painel, jogar na TV e PUBLICAR para fora sao
-  // decisoes diferentes. Um secretario pode precisar da TV da sala dele sem ter
-  // permissao de gerar um link que roda o municipio inteiro pelo WhatsApp.
-  { key: "bi_tela", label: "Modo Tela (TV) do BI" },
-  { key: "bi_link", label: "Gerar link público da TV" },
-  { key: "dou", label: "Diário Oficial" },
+  // As três de CONFIGURAÇÕES (a ordem das abas de lá). As outras abas —
+  // Usuários, Service Tokens, Status dos Dados, Parâmetros — não têm chave de
+  // tela de propósito: quem as governa é o papel de administrador no backend.
   { key: "cofre", label: "Cofre de Senhas" },
   { key: "sessoes", label: "Sessões (gov.br)" },
   // A trilha de auditoria tem chave PROPRIA em vez de viver so no papel de
@@ -74,8 +84,14 @@ export const TELA_LABELS: Record<string, string> = Object.fromEntries(
 
 /** Deriva a chave de tela a partir de um href da sidebar. */
 export function hrefToTela(href: string): string {
+  // ⭐ AS ABAS DE CONFIGURAÇÕES SÃO AS MESMAS TELAS, e por isso o prefixo cai
+  // ANTES de qualquer outra conta: `/dashboard/configuracoes/cofre` tem de dar
+  // "cofre", exatamente como `/dashboard/cofre` dava. Sem este colapso, a chave
+  // viraria "configuracoes" — que não existe em catálogo nenhum — e o guard de
+  // rota expulsaria da aba justamente quem tem a permissão certa.
+  const semPrefixo = href.replace(/^\/dashboard\/configuracoes(?=\/|$)/, "/dashboard");
   // "/dashboard" -> "dashboard"
-  const seg = href.replace(/^\/dashboard\/?/, "").split("/")[0] || "dashboard";
+  const seg = semPrefixo.replace(/^\/dashboard\/?/, "").split("/")[0] || "dashboard";
   if (seg.startsWith("transferegov")) return "transferegov";
   return seg;
 }
