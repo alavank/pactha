@@ -694,6 +694,15 @@ export function AbaEstaduaisView({ d, tv }: AbaProps & { d: AbaEstaduais }) {
                     <span className="bi-num ml-auto shrink-0 text-[12px]">{formatCurrencyShort(it.valor)}</span>
                   </div>
                   <div className="mt-0.5 flex flex-wrap gap-x-2 text-[10px]" style={{ color: "var(--bi-faint)" }}>
+                    {/* ⭐ O NÚMERO DA INDICAÇÃO VEM PRIMEIRO, e é o que separa
+                        uma emenda da outra. O dono viu seis linhas "AQUISIÇÃO DE
+                        BENS - Ônibus · R$ 427 mil" e leu como repetição — três
+                        DELAS eram indicações diferentes (114429, 114651, 121589)
+                        para o mesmo objeto, o que é comum quando vários
+                        parlamentares bancam o mesmo ônibus. Sem o número, a
+                        lista não tinha como se explicar. (As outras três eram
+                        duplicata de verdade — corrigidas na mesma leva.) */}
+                    {it.numero && <span className="shrink-0 font-mono">nº {it.numero}</span>}
                     {it.parlamentar && <span className="truncate">{it.parlamentar}</span>}
                     {it.destinacao && <span className="truncate">→ {it.destinacao}</span>}
                     {it.situacao && <span className="truncate">· {it.situacao}</span>}

@@ -184,6 +184,11 @@ MIGRATION_FILES = [
     # /Rotulo de usuario) e o sistema puxa nos formularios. Semeia os rotulos
     # que a tela ja oferecia em codigo, para o seletor nao nascer vazio.
     "add_parametros.sql",
+    # ⭐ DUPLICATAS: a chave de identidade estava errada em emendas_estaduais
+    # (o ANO DO FILTRO entrou na chave) e em convenios_estadual (a chave mudava
+    # quando o nº SIAFI nascia). Deduplica o que existe e instala a chave certa,
+    # nos 3 tenants. Idempotente: onde já está limpo, não faz nada.
+    "fix_duplicatas_chave_natural.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",
