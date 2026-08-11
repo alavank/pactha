@@ -989,61 +989,14 @@ async def delete_control_user(
     utelas = await users_admin.get_user_telas(db, uid)
     umuns = await users_admin.get_user_ibges(db, uid)
 
-    async def _null_fk(table: str, col: str):
-        # Checa existencia de TABELA E COLUNA (migrations parciais entre tenants) — se
-        # faltar, so pula, sem abortar a transacao (nao usa to_regclass sozinho porque
-        # ele nao valida a coluna).
-        has = (await db.execute(text(
-            "SELECT 1 FROM information_schema.columns WHERE table_schema='public' "
-            "AND table_name=:t AND column_name=:c"), {"t": table, "c": col})).first()
-        if has:
-            await db.execute(text(f"UPDATE {table} SET {col} = NULL WHERE {col} = :u"), {"u": uid})
-
-    async def _del_rows(table: str, col: str):
-        # Para FK sem ON DELETE em coluna que NAO aceita NULL (ou cujo conteudo e
-        # descartavel): a linha inteira sai. Mesma checagem de existencia do
-        # `_null_fk`, pelo mesmo motivo — tenants com migration parcial.
-        has = (await db.execute(text(
-            "SELECT 1 FROM information_schema.columns WHERE table_schema='public' "
-            "AND table_name=:t AND column_name=:c"), {"t": table, "c": col})).first()
-        if has:
-            await db.execute(text(f"DELETE FROM {table} WHERE {col} = :u"), {"u": uid})
-
-    # FKs sem ON DELETE cuja linha nao sobrevive sem o usuario.
-    #
-    # As duas chegaram em `add_painel_push.sql`, DEPOIS desta rotina, e ninguem
-    # veio somar aqui — entao excluir usuario que ja abriu o Painel devolvia 409
-    # "referencias pendentes" e nao havia como remover a conta pelo produto.
-    # `painel_preferencias.user_id` e PRIMARY KEY: nao da para zerar, so apagar.
-    await _del_rows("painel_preferencias", "user_id")        # preferencia de alerta
-    await _del_rows("painel_push_subscriptions", "user_id")  # inscricao de web-push
-
-    # ⚠️ audit_log NAO entra nesta lista, e a ausencia e deliberada.
-    #
-    # Ate o Incremento 3 havia aqui um `_null_fk("audit_log", "user_id")`, so
-    # para nao esbarrar na FK `audit_log.user_id -> users(id)`. Essa FK foi
-    # DERRUBADA (migrations/add_auditoria_imutavel.sql) e a tabela ganhou gatilho
-    # append-only: qualquer UPDATE nela levanta excecao. Se a chamada tivesse
-    # ficado, ela quebraria a exclusao de usuario — a operacao inteira cairia no
-    # `except` abaixo e voltaria como 409 "referencias pendentes", que e o defeito
-    # que foi consertado dias atras.
-    #
-    # A trilha nao precisa de nada disso: `user_id`, `user_email` e
-    # `usuario_nome` sao SNAPSHOT do instante do ato. `user_id` fica apontando
-    # para uma conta que nao existe mais, e e assim que tem de ser — a auditoria
-    # nao segue o ciclo de vida de quem registrou.
-
-    # FKs sem ON DELETE (bloqueariam o delete) — zera preservando as linhas:
-    await _null_fk("cofre_senhas", "atualizado_por_id")
-    await _null_fk("edital_acompanhamento", "user_id")
-    await _null_fk("prestacao_contas", "responsavel_id")
-    await _null_fk("prestacao_documentos", "responsavel_id")
-    # Colunas de autoria SEM FK (nao bloqueiam, mas evita id orfao):
-    await _null_fk("rm_relatorios", "criado_por")
-    await _null_fk("documentos_gerados", "criado_por")
-    await _null_fk("gestao_anotacoes", "criado_por")
-    await _null_fk("service_tokens", "created_by_user_id")
-    # user_telas/user_municipios/telegram_* têm ON DELETE CASCADE
+    # ⭐ A LIMPEZA DE FKs MUDOU DE ENDEREÇO: mora em
+    # services/users_admin.py::limpar_fks_do_usuario, compartilhada com o canal
+    # do produto (routers/users.py::delete_user, criado em 11/08/2026). As duas
+    # listas viviam separadas e divergiram uma vez — as tabelas do Painel
+    # chegaram depois desta rotina e ninguem veio somar aqui; o sintoma foi 409
+    # sem remedio. A historia toda (audit_log fora da lista de proposito, o que
+    # zera vs o que apaga) esta documentada la, num lugar so.
+    await users_admin.limpar_fks_do_usuario(db, uid)
     try:
         await db.delete(u)
         await db.commit()

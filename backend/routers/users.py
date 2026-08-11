@@ -121,6 +121,14 @@ class CreateUserRequest(BaseModel):
 
 class UpdateUserRequest(BaseModel):
     name: Optional[str] = None
+    # ⚠️ E-MAIL É IDENTIDADE, não rótulo — e por isso o PATCH o trata com as
+    # mesmas guardas de uma promoção. `services/auth.py::is_super_admin` decide
+    # quem é dono da plataforma POR E-MAIL (allowlist SUPER_ADMIN_EMAILS): sem
+    # a guarda de `_validar_email_novo`, renomear o próprio e-mail para um da
+    # lista seria escalada a dono pela porta da frente, e renomear o e-mail de
+    # OUTRO poderia sequestrar a conta do dono. A sessão sobrevive à troca (o
+    # JWT usa `sub = user.id`, nunca o e-mail — auth.py:346).
+    email: Optional[str] = None
     role: Optional[str] = None
     active: Optional[bool] = None
     municipio_ids: Optional[list[int]] = None
@@ -129,6 +137,31 @@ class UpdateUserRequest(BaseModel):
     # que ganhou escrita continua com escrita se for reetiquetado, e e isso que
     # separa as duas coisas de vez.
     somente_leitura: Optional[bool] = None
+
+
+async def _validar_email_novo(db: AsyncSession, alvo: User, bruto: str) -> str:
+    """Normaliza e recusa os e-mails que não podem ser assumidos por ninguém.
+
+    Três recusas, e nenhuma é decorativa:
+      · da allowlist de DONOS (`SUPER_ADMIN_EMAILS`) — quem manda no sistema é
+        decidido por e-mail, então um PATCH que o adotasse seria promoção a dono;
+      · `@painel.local` — sufixo das contas sintéticas de quiosque, que a lista
+        de usuários esconde: adotá-lo faria a conta sumir da própria tela;
+      · prefixo `alavank-sso.` — contas de suporte que o SSO recria sozinho.
+    """
+    from services.auth import SUPER_ADMIN_EMAILS
+    email = (bruto or "").strip().lower()
+    if not email or "@" not in email:
+        raise HTTPException(400, "Email inválido")
+    if email in {e.lower() for e in SUPER_ADMIN_EMAILS}:
+        raise HTTPException(403, "Este e-mail é reservado ao administrador principal")
+    if email.endswith("@painel.local") or email.startswith("alavank-sso."):
+        raise HTTPException(400, "Este e-mail é reservado pelo sistema")
+    if email != (alvo.email or "").lower():
+        existe = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
+        if existe:
+            raise HTTPException(400, "Email já cadastrado")
+    return email
 
 
 def _trava_inicial(role: str, pedido: Optional[bool]) -> bool:
@@ -437,11 +470,16 @@ async def update_user(
     # `somente_leitura` entra no retrato porque conceder ou tirar ESCRITA e a
     # mudanca de poder mais forte que esta tela faz — sem ela na trilha, "quem
     # liberou o prefeito para editar, e quando" ficaria sem resposta.
-    antes = {"name": u.name, "role": u.role, "active": bool(u.active),
+    antes = {"name": u.name, "email": u.email, "role": u.role,
+             "active": bool(u.active),
              "somente_leitura": bool(u.somente_leitura)}
     antes.update(await _snapshot_acessos(db, u.id))
     if req.name is not None:
         u.name = req.name.strip()
+    if req.email is not None:
+        # Guardas de identidade em `_validar_email_novo` — e alvo super-admin já
+        # foi barrado por `_guard_target` (o e-mail DELE é a própria chave).
+        u.email = await _validar_email_novo(db, u, req.email)
     if req.role is not None:
         u.role = req.role
     if req.active is not None:
@@ -452,7 +490,8 @@ async def update_user(
         await _set_user_municipios(db, u.id, req.municipio_ids)
     if req.telas is not None:
         await _set_user_telas(db, u.id, req.telas)
-    depois = {"name": u.name, "role": u.role, "active": bool(u.active),
+    depois = {"name": u.name, "email": u.email, "role": u.role,
+              "active": bool(u.active),
               "somente_leitura": bool(u.somente_leitura)}
     depois.update(await _snapshot_acessos(db, u.id))
     # Critico e ANTES do commit, pelo mesmo motivo do create: conceder acesso e
@@ -483,3 +522,186 @@ async def update_user(
     # editada, e a coluna crua diria "somente_leitura: false" para uma conta de
     # quiosque — que o codigo barra pelo papel. Ver `schemas/auth.py`.
     return UserResponse.de_usuario(u)
+
+
+async def _active_admin_count(db: AsyncSession) -> int:
+    """Quantos zeladores ativos o tenant tem. Exclui as contas de suporte da
+    Alavank (alavank-sso.%): elas sao sinteticas e o SSO as recria — contar com
+    elas deixaria remover o ultimo admin REAL do cliente achando que sobra um."""
+    return int((await db.execute(text(
+        "SELECT count(*) FROM users WHERE role = 'admin' AND active "
+        "AND email NOT LIKE 'alavank-sso.%'"))).scalar() or 0)
+
+
+@router.delete("/{user_id}", dependencies=[exige("usuarios.excluir")])
+async def delete_user(
+    user_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """⭐ EXCLUSAO DEFINITIVA (decisao do dono, 11/08/2026): o usuario some do
+    sistema; fica SO o log. O que ele criou (RM, documentos, anotacoes, senhas
+    do cofre) e PATRIMONIO DO CLIENTE e permanece, com a autoria zerada —
+    "usuario removido". A trilha de auditoria nao e tocada: nome e e-mail do
+    autor estao CONGELADOS em cada linha dela por desenho (add_auditoria_
+    imutavel.sql), entao a historia continua legivel depois que a conta morre.
+
+    A limpeza de FKs mora em services/users_admin.py::limpar_fks_do_usuario —
+    UMA fonte para este canal e o do Console (routers/control.py), porque as
+    duas listas ja divergiram uma vez e o sintoma foi 409 sem remedio."""
+    _require_admin(current)
+    u = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if not u:
+        raise HTTPException(404, "Usuário não encontrado")
+    _guard_target(current, u)
+    if u.id == current.id:
+        raise HTTPException(400, "Você não pode excluir a si mesmo")
+    if _is_super(u):
+        raise HTTPException(403, "A conta do administrador principal não pode ser excluída")
+    email = (u.email or "")
+    if email.endswith("@painel.local"):
+        raise HTTPException(400, "Conta de quiosque não se exclui aqui — revogue o link da TV no Painel")
+    if email.startswith("alavank-sso."):
+        raise HTTPException(409, "Usuário de suporte Alavank não é removível por este canal")
+    if u.role == "admin" and u.active and await _active_admin_count(db) <= 1:
+        raise HTTPException(409, "Não é possível excluir o único administrador ativo")
+
+    # O RETRATO COMPLETO antes do CASCADE apagar as provas: "que acessos essa
+    # conta tinha quando foi removida" e a primeira pergunta de uma auditoria,
+    # e depois do delete nao ha mais onde responder.
+    retrato = {"alvo_email": u.email, "role": u.role,
+               "somente_leitura": bool(u.somente_leitura)}
+    retrato.update(await _snapshot_acessos(db, u.id))
+    retrato["municipios_nomes"] = await _nomes_municipios(db, retrato["municipios"])
+    perms = (await db.execute(
+        text("SELECT permissao FROM user_permissoes WHERE user_id = :u"),
+        {"u": u.id})).fetchall()
+    retrato["permissoes"] = sorted(r[0] for r in perms)
+
+    from services import users_admin
+    await users_admin.limpar_fks_do_usuario(db, u.id)
+    alvo_nome = u.name
+    await db.delete(u)
+    # Critico e NA MESMA transacao do delete (commit=False): ou a conta morre
+    # com a linha "quem excluiu, quando, e o que ela tinha" gravada, ou nada
+    # acontece. E a versao mais forte do canal do Console (la o registro e
+    # melhor-esforco pos-commit).
+    await registrar_critico(
+        db, action="user.excluir", user=current, request=request,
+        target_type="user", target_id=user_id, alvo_nome=alvo_nome,
+        details=retrato, commit=False,
+    )
+    try:
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(409,
+                            f"Não foi possível excluir (referências pendentes: {type(e).__name__})")
+    return {"excluido": True, "id": user_id, "nome": alvo_nome}
+
+
+class CopiarPermissoesRequest(BaseModel):
+    origem_id: int
+    # Escopo de municipios e parte do "perfil" as vezes sim, as vezes nao (o
+    # mesmo analista com outra carteira) — por isso e uma caixinha no modal, e
+    # nao uma regra fixa.
+    incluir_municipios: bool = True
+
+
+@router.post("/{user_id}/copiar-permissoes",
+             dependencies=[exige("usuarios.conceder")])
+async def copiar_permissoes(
+    user_id: int,
+    req: CopiarPermissoesRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """⭐ COPIA O PERFIL DE ACESSO de um usuario para outro (pedido do dono,
+    11/08/2026): telas, permissoes por acao, alcance por modulo, trava de
+    leitura — e, opcionalmente, o escopo de municipios. SUBSTITUI o que o alvo
+    tinha (espelho, nao mescla): "ja fica com as permissoes ajustadas como a do
+    outro".
+
+    E o mesmo ato de conceder do PUT /api/permissoes/usuario/{id}, com a mesma
+    ordem de guardas — quem pode mexer (papel), em quem (_guard_target), o que
+    pode conceder (anti-escalonamento: ninguem copia para os outros o que nao
+    tem). POST e nao GET pelo mesmo motivo do /aplicar dos modelos: a resposta
+    descreve o acesso de pessoas nomeadas."""
+    from routers.permissoes import (
+        _barrar_escalonamento, _barrar_escalonamento_escopo,
+        _concedidas, _escopos_atuais, _gravar_concessao, _gravar_escopos,
+    )
+    from services import permissoes as permissoes_svc
+
+    _require_admin(current)
+    if req.origem_id == user_id:
+        raise HTTPException(400, "Origem e destino são o mesmo usuário")
+    alvo = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    origem = (await db.execute(select(User).where(User.id == req.origem_id))).scalar_one_or_none()
+    if not alvo or not origem:
+        raise HTTPException(404, "Usuário não encontrado")
+    _guard_target(current, alvo)
+    for conta in (alvo, origem):
+        if (conta.email or "").endswith("@painel.local"):
+            raise HTTPException(400, "Conta de quiosque não participa de cópia de permissões")
+
+    # O PERFIL DA ORIGEM, lido dentro da transacao.
+    telas_origem = sorted(r[0] for r in (await db.execute(
+        text("SELECT tela FROM user_telas WHERE user_id = :u"), {"u": origem.id})).fetchall())
+    antes_p = {c for c in await _concedidas(db, alvo.id) if permissoes_svc.existe(c)}
+    depois_p = {c for c in await _concedidas(db, origem.id) if permissoes_svc.existe(c)}
+    _barrar_escalonamento(current, antes_p, depois_p)
+    escopos_antes = await _escopos_atuais(db, alvo.id)
+    escopos_depois = await _escopos_atuais(db, origem.id)
+    _barrar_escalonamento_escopo(current, escopos_antes, escopos_depois)
+
+    antes = {"somente_leitura": bool(alvo.somente_leitura)}
+    antes.update(await _snapshot_acessos(db, alvo.id))
+
+    # A COPIA: telas + permissoes + alcance + trava de leitura; municipios so
+    # com a caixinha marcada.
+    await _set_user_telas(db, alvo.id, telas_origem)
+    await _gravar_concessao(db, alvo.id, antes_p, depois_p, getattr(current, "id", None))
+    await _gravar_escopos(db, alvo.id, escopos_antes, escopos_depois,
+                          getattr(current, "id", None))
+    alvo.somente_leitura = bool(origem.somente_leitura)
+    if req.incluir_municipios:
+        ids_origem = [r[0] for r in (await db.execute(
+            text("SELECT municipio_id FROM user_municipios WHERE user_id = :u"),
+            {"u": origem.id})).fetchall()]
+        await _set_user_municipios(db, alvo.id, ids_origem)
+
+    depois = {"somente_leitura": bool(alvo.somente_leitura)}
+    depois.update(await _snapshot_acessos(db, alvo.id))
+    await registrar_critico(
+        db, action="usuarios.copiar_permissoes", user=current, request=request,
+        target_type="user", target_id=alvo.id, alvo_nome=alvo.name,
+        valor_antes={"telas": antes["telas"], "municipios": antes["municipios"],
+                     "permissoes": sorted(antes_p),
+                     "somente_leitura": antes["somente_leitura"]},
+        valor_depois={"telas": depois["telas"], "municipios": depois["municipios"],
+                      "permissoes": sorted(depois_p),
+                      "somente_leitura": depois["somente_leitura"]},
+        details={
+            "alvo_email": alvo.email,
+            # De quem veio o perfil — congelado por nome E e-mail, porque a
+            # origem pode ser excluida amanha e a trilha precisa continuar
+            # respondendo "copiado de quem?" sozinha.
+            "origem": {"id": origem.id, "nome": origem.name, "email": origem.email},
+            "incluiu_municipios": bool(req.incluir_municipios),
+            "resumo": permissoes_svc.resumo(depois_p) or None,
+        },
+        commit=False,
+    )
+    await db.commit()
+    return {
+        "copiado": True,
+        "de": {"id": origem.id, "nome": origem.name},
+        "para": {"id": alvo.id, "nome": alvo.name},
+        "telas": depois["telas"],
+        "municipios": depois["municipios"],
+        "permissoes": len(depois_p),
+        "incluiu_municipios": bool(req.incluir_municipios),
+    }
