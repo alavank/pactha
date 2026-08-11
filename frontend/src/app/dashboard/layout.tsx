@@ -28,12 +28,11 @@ import {
   PanelLeftOpen,
   HardHat,
   ScrollText,
+  Building2,
+  ChevronsUpDown,
 } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import {
   Sheet,
@@ -194,7 +193,7 @@ function SidebarContent({
   municipios,
   selectedMunicipioId,
   escopo,
-  onMunicipioChange,
+  onAbrirTroca,
   user,
   onLogout,
   recolhida = false,
@@ -207,7 +206,8 @@ function SidebarContent({
    *  `selectedMunicipioId` continua sendo o município concreto (vazio no
    *  consolidado), porque é dele que saem os links do menu. */
   escopo: string;
-  onMunicipioChange: (value: string, rotulo: string) => void;
+  /** Abre o modal de troca (escolha + aviso na mesma caixa). */
+  onAbrirTroca: () => void;
   user: User | null;
   onLogout: () => void;
   /** Modo icone: so os simbolos, com o rotulo no title. */
@@ -390,47 +390,34 @@ function SidebarContent({
                chave. Dava para estar com um município aqui e outro no Painel ao
                mesmo tempo, com os dois seletores visíveis discordando. Numa
                carteira de clientes diferentes, isso é confundir dado. */
-            /* Era um <select> NATIVO daisyUI — no Chromium 135+ a lista abre NA
-               página (base-select) colada nos itens do menu e "parecia se
-               misturar" mesmo depois do remendo de elevação no globals.css
-               (pedido do dono, 10/08). Virou o Select do produto (Base UI):
-               painel em portal com sombra de verdade, seleção marcada, mesmo
-               componente e voz da tela de usuários. */
-            <Select
-              value={escopo}
-              onValueChange={(v) => {
-                const val = String(v ?? "");
-                const m = municipios.find((x) => String(x.id) === val);
-                onMunicipioChange(val, m ? `${m.nome} - ${m.uf}` : "Município selecionado");
-              }}
+            /* NÃO É MAIS UM DROPDOWN — é o gatilho do MODAL de troca
+               (`TransicaoMunicipio`, fase de escolha). Duas tentativas de
+               dropdown falharam pelo mesmo motivo estrutural: 44 municípios não
+               cabem numa lista de canto — ela abria colada no menu, encostava
+               no rodapé e "parecia erro na página" (dono, 09 e 10/08). No modal
+               a lista tem corpo, ganha BUSCA e o aviso de troca acontece na
+               mesma caixa, sem dois pop-ups em sequência.
+               ⚠️ NÃO EXISTE "Consolidado (todos)", e é decisão do dono. Numa
+               assessoria os municípios são CLIENTES DIFERENTES: somar as
+               carteiras numa tela só não tem uso legítimo e cria a chance de
+               ler o número de um cliente achando que é de outro — o risco que a
+               transição (aviso + remontagem) existe para fechar. */
+            <button
+              type="button"
+              onClick={onAbrirTroca}
+              title="Trocar de município"
+              aria-haspopup="dialog"
+              className="flex w-full items-center gap-2 rounded-lg border border-base-300 bg-base-100 px-2.5 py-2 text-left text-sm transition-colors hover:border-base-content/25 focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:outline-none"
             >
-              {/* ⚠️ <SelectValue> sem função de formatação mostra o VALOR CRU
-                  no gatilho fechado (o id, tipo "8") — armadilha já medida na
-                  tela de usuários (rotuloRole). A função traduz id -> nome. */}
-              <SelectTrigger className="w-full">
-                <SelectValue>
-                  {(v: unknown) => {
-                    const m = municipios.find((x) => String(x.id) === String(v ?? ""));
-                    return m ? `${m.nome} - ${m.uf}` : "Município selecionado";
-                  }}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="">Município selecionado</SelectItem>
-                {/* ⚠️ NÃO EXISTE "Consolidado (todos)" AQUI, e é decisão do dono.
-                    Numa assessoria os municípios são CLIENTES DIFERENTES: somar as
-                    carteiras numa tela só não tem uso legítimo e cria a chance de
-                    ler o número de um cliente achando que é de outro — o risco que
-                    a transição de município (modal + remontagem) existe para
-                    fechar. Quem quiser comparar cidades faz isso trocando de
-                    ambiente, com a tela inteira acompanhando. */}
-                {municipios.map((m) => (
-                  <SelectItem key={m.id} value={String(m.id)}>
-                    {m.nome} - {m.uf}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              <Building2 className="size-4 shrink-0 text-primary" />
+              <span className="min-w-0 flex-1 truncate font-medium text-base-content">
+                {municipios.find((m) => String(m.id) === escopo)
+                  ? `${municipios.find((m) => String(m.id) === escopo)!.nome} - ${
+                      municipios.find((m) => String(m.id) === escopo)!.uf}`
+                  : "Escolher município"}
+              </span>
+              <ChevronsUpDown className="size-3.5 shrink-0 text-base-content/40" />
+            </button>
           )}
         </div>
       )}
@@ -661,9 +648,19 @@ function SidebarContent({
 function DashboardShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { municipioId: selectedMunicipioId, escopo, setMunicipioId, trocarEscopo }
-    = useMunicipio();
+  const { municipioId: selectedMunicipioId, escopo, setMunicipioId,
+          abrirTroca, registrarMunicipios } = useMunicipio();
   const [municipios, setMunicipios] = useState<Municipio[]>([]);
+
+  /* A lista de municípios vive AQUI (veio de `GET /api/municipios`, já filtrada
+     por ativos e pelo escopo do usuário) e o modal de troca vive no provider —
+     este efeito é a ponte. Entregar a lista em vez de o provider buscá-la
+     sozinho evita duplicar requisição e, pior, duplicar a regra de permissão. */
+  useEffect(() => {
+    registrarMunicipios(
+      municipios.map((m) => ({ id: m.id, nome: m.nome, uf: m.uf })),
+    );
+  }, [municipios, registrarMunicipios]);
   const [user, setUser] = useState<User | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
   // Barra lateral recolhivel (modo icone). Persiste entre sessoes — quem
@@ -778,11 +775,11 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
     }
   }, [user, pathname, router]);
 
-  /* ⭐ A troca deixou de ser instantânea, e a demora é o ponto: ela abre o
-     aviso, remonta a árvore e cai na tela inicial do destino. Quem faz isso é o
-     `MunicipioContext` — aqui só se pede. Ver o cabeçalho de lá para o motivo
-     (documento e senha eram gravados no município errado). */
-  const handleMunicipioChange = trocarEscopo;
+  /* ⭐ A troca deixou de ser instantânea, e a demora é o ponto: escolher, avisar,
+     remontar a árvore e cair na tela inicial do destino. Quem faz tudo isso é o
+     `MunicipioContext` (a caixa é dele) — daqui só se PEDE, com `abrirTroca`.
+     Ver o cabeçalho de lá para o motivo (documento e senha eram gravados no
+     município errado). */
 
   const handleLogout = useCallback(async () => {
     try {
@@ -840,7 +837,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
           municipios={municipios}
           selectedMunicipioId={selectedMunicipioId}
           escopo={escopo}
-          onMunicipioChange={handleMunicipioChange}
+          onAbrirTroca={abrirTroca}
           user={user}
           onLogout={handleLogout}
           recolhida={sidebarRecolhida}
@@ -866,10 +863,10 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
             municipios={municipios}
             selectedMunicipioId={selectedMunicipioId}
             escopo={escopo}
-            onMunicipioChange={(v, rotulo) => {
-              handleMunicipioChange(v, rotulo);
-              setMobileOpen(false);
-            }}
+            /* A gaveta fecha ANTES de o modal abrir: os dois são camadas
+               flutuantes, e deixar a gaveta atrás do modal empilharia dois véus
+               escuros e prenderia o foco no lugar errado. */
+            onAbrirTroca={() => { setMobileOpen(false); abrirTroca(); }}
             user={user}
             onLogout={handleLogout}
           />
