@@ -263,6 +263,20 @@ export default function EmendasEstaduaisPage() {
                         valor={formatCurrency(em.valor_indicacao)}
                         meta={
                           <>
+                            {/* ⭐ O Nº DA INDICAÇÃO ABRE A META, e não fecha.
+                                Duas emendas do mesmo objeto e do mesmo valor —
+                                caso comum quando vários parlamentares bancam o
+                                mesmo ônibus escolar — só se distinguem por ele,
+                                e ele estava no FIM da linha, depois de tipo,
+                                status, responsável e beneficiário: na prática,
+                                invisível. O dono leu a lista como repetida (e
+                                em parte estava mesmo: ver a correção de chave
+                                em fix_duplicatas_chave_natural.sql). */}
+                            {em.nr_indicacao && (
+                              <span className="shrink-0 font-mono" style={{ color: "var(--bi-muted)" }}>
+                                nº {em.nr_indicacao}
+                              </span>
+                            )}
                             {em.tipo_indicacao && (
                               <Selo title={em.tipo_indicacao}>{siglaTipo(em.tipo_indicacao)}</Selo>
                             )}
@@ -278,8 +292,7 @@ export default function EmendasEstaduaisPage() {
                             )}
                             {em.beneficiario && <span className="truncate">→ {em.beneficiario}</span>}
                             <span className="font-mono">
-                              {em.nr_indicacao ? `· ind ${em.nr_indicacao}` : ""}
-                              {em.cnpj_beneficiario ? ` · CNPJ ${em.cnpj_beneficiario}` : ""}
+                              {em.cnpj_beneficiario ? `· CNPJ ${em.cnpj_beneficiario}` : ""}
                             </span>
                           </>
                         }

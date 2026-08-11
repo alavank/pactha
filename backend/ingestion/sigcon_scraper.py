@@ -770,12 +770,26 @@ def _upsert_convenios_batch(cur, records) -> tuple[int, int]:
         # e scraper Playwright). Se SIAFI presente, usa ON CONFLICT (nr_siafi)
         # pra atualizar o registro existente. Se nao, usa nr_sigcon como fallback.
         nr_siafi = rec.get("nr_siafi") or None
-        # IMPORTANTE: o indice unico de nr_siafi e PARCIAL
-        # (ux_convenios_estadual_nr_siafi WHERE nr_siafi IS NOT NULL AND <> '').
-        # Um "ON CONFLICT (nr_siafi)" simples NAO casa com indice parcial —
-        # precisa repetir o predicado. Sem isso, TODO registro com SIAFI
-        # falhava silenciosamente (causa real do SIGCON travado ha ~24 dias).
-        if nr_siafi:
+        nr_prop = (rec.get("nr_proposta") or "").strip() or None
+        # ⭐⭐ A CHAVE DE DEDUPE E O NUMERO DA PROPOSTA (11/08/2026).
+        #
+        # Ate aqui a chave era `nr_sigcon`, que MUDA DE VALOR durante a vida do
+        # convenio: enquanto esta em celebracao vale o nº do plano; quando e
+        # assinado, passa a valer o nº SIAFI. Chave que muda nao e chave — o
+        # upsert nao achava a linha antiga e INSERIA UMA SEGUNDA. Medido no
+        # freitas: 6 convenios em duplicata, R$ 1.563.275,67 contados em dobro,
+        # e o dono viu na tela "4 convenios" que eram 2.
+        #
+        # `nr_proposta` nasce no cadastramento, nunca muda e esta preenchido em
+        # 100% das linhas (contra 58% do SIAFI). E o unico identificador estavel
+        # do ciclo inteiro. Ver migrations/fix_duplicatas_chave_natural.sql.
+        #
+        # ⚠️ INDICE PARCIAL EXIGE REPETIR O PREDICADO no ON CONFLICT — a mesma
+        # armadilha que ja travou o SIGCON por 24 dias, calada, com o nr_siafi.
+        if nr_prop:
+            conflict_target = ("(municipio_id, nr_proposta) WHERE fonte = 'SIGCON-MG' "
+                               "AND nr_proposta IS NOT NULL AND btrim(nr_proposta) <> ''")
+        elif nr_siafi:
             conflict_target = "(nr_siafi) WHERE nr_siafi IS NOT NULL AND nr_siafi <> ''"
         else:
             conflict_target = "(nr_sigcon)"
@@ -785,17 +799,23 @@ def _upsert_convenios_batch(cur, records) -> tuple[int, int]:
             cur.execute("SAVEPOINT sp_conv")
             cur.execute(f"""
                 INSERT INTO convenios_estadual (
-                    nr_sigcon, nr_siafi, municipio_id, orgao_concedente,
+                    nr_sigcon, nr_siafi, nr_proposta, municipio_id, orgao_concedente,
                     convenente_nome, objeto, situacao,
                     valor_concedente, valor_total, valor_repassado, valor_contrapartida,
                     raw_data, tp_instrumento,
                     nr_plano_trabalho, ano, dt_publicacao,
                     dt_assinatura, dt_vigencia_inicial, dt_vigencia_atual,
                     dt_vigencia_final, qt_alteracoes
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT {conflict_target} DO UPDATE SET
-                    nr_sigcon = COALESCE(convenios_estadual.nr_sigcon, EXCLUDED.nr_sigcon),
-                    nr_siafi = COALESCE(convenios_estadual.nr_siafi, EXCLUDED.nr_siafi),
+                    -- ⭐ `nr_sigcon` e `nr_siafi` PROMOVEM (EXCLUDED vence) em vez
+                    -- de congelar: e a linha em celebracao que RECEBE o numero
+                    -- SIAFI quando o convenio e assinado. Com o COALESCE
+                    -- invertido de antes, o numero novo nunca entrava — e era
+                    -- exatamente por isso que nascia uma segunda linha.
+                    nr_sigcon = COALESCE(EXCLUDED.nr_sigcon, convenios_estadual.nr_sigcon),
+                    nr_siafi = COALESCE(EXCLUDED.nr_siafi, convenios_estadual.nr_siafi),
+                    nr_proposta = COALESCE(EXCLUDED.nr_proposta, convenios_estadual.nr_proposta),
                     situacao = EXCLUDED.situacao,
                     valor_concedente = COALESCE(EXCLUDED.valor_concedente, convenios_estadual.valor_concedente),
                     valor_total = COALESCE(EXCLUDED.valor_total, convenios_estadual.valor_total),
@@ -816,6 +836,7 @@ def _upsert_convenios_batch(cur, records) -> tuple[int, int]:
             """, (
                 nr_sigcon[:80],
                 nr_siafi,
+                (nr_prop or "")[:50] or None,
                 mun_id,
                 rec.get("orgao"),
                 rec.get("convenente"),
@@ -865,7 +886,12 @@ def _upsert_emendas_batch(cur, emendas) -> tuple[int, int]:
     for mun_id, em in emendas:
         nr_ind = em.get("nr_indicacao")
         ano_em = em.get("ano")
-        if not nr_ind or not ano_em:
+        # ⚠️ `ano` DEIXOU DE SER IDENTIDADE (11/08/2026) e por isso nao barra
+        # mais a linha: ele e o ano do FILTRO do dropdown, nao um atributo da
+        # indicacao (a tabela de origem nao tem coluna de ano). Enquanto ele
+        # esteve na chave unica, a mesma indicacao lida sob dois filtros virava
+        # duas linhas — 195 linhas fantasma e R$ 74,7 mi de inflacao no freitas.
+        if not nr_ind or not mun_id:
             continue
         try:
             cur.execute("SAVEPOINT sp_em")
@@ -876,7 +902,14 @@ def _upsert_emendas_batch(cur, emendas) -> tuple[int, int]:
                     grupo_despesa, tipo_atendimento, valor_indicacao, status_indicacao,
                     ano, raw_data
                 ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)
-                ON CONFLICT (nr_indicacao, ano) DO UPDATE SET
+                ON CONFLICT (municipio_id, nr_indicacao) DO UPDATE SET
+                    -- ⚠️ LEAST e nao EXCLUDED: sem isso, cada passada do laco
+                    -- 2022->2026 reescreveria o ano da MESMA linha e o registro
+                    -- ficaria oscilando de ano a cada rodada. LEAST fixa no
+                    -- primeiro ano em que a fonte reportou a indicacao (o
+                    -- correto) e torna o upsert idempotente e independente da
+                    -- ordem do laco. LEAST ignora NULL no Postgres.
+                    ano = LEAST(emendas_estaduais.ano, EXCLUDED.ano),
                     nome_responsavel = EXCLUDED.nome_responsavel,
                     tipo_indicacao = EXCLUDED.tipo_indicacao,
                     uo_codigo = EXCLUDED.uo_codigo,
