@@ -906,6 +906,10 @@ async def _rodar() -> tuple[int, int, list[str]]:
                     # hoje e a UNICA copia (o portal nao emite CRC novo).
                     rodada_completa = listagem_completa
                     vistos, coletadas = [], 0
+                    # `degradadas` acumula a RODADA INTEIRA (todos os municipios
+                    # da leva); este marco isola quantas entidades ficaram sem
+                    # CRC NESTE municipio — usado no carimbo do rodizio, no fim.
+                    deg_antes = len(degradadas)
                     for ent in entidades:
                         cnpj_ent = re.search(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}",
                                              " ".join(ent.values()))
@@ -1015,9 +1019,36 @@ async def _rodar() -> tuple[int, int, list[str]]:
                     if removidas:
                         logger.info("    %s: %d entidade(s) sumiram do CAGEC e foram "
                                     "removidas", mun["nome"], removidas)
-                    if coletadas:
+                    # ⭐ MUNICIPIO QUE NAO CONSEGUIU UM UNICO CRC NAO E COLETA
+                    # BOA — e por isso nao pode ir para o fim da fila.
+                    #
+                    # ⚠️ Medido em 11/08/2026: na rodada da madrugada o portal do
+                    # Estado recusou o certificado de 21 entidades seguidas
+                    # ("Nao foi possivel recuperar dados do Convenente/Parceiro").
+                    # Como `coletadas` conta a entidade salva com o FALLBACK de 2
+                    # linhas, os 9 municipios foram carimbados
+                    # `ultima_coleta_em = now(), tentativas = 0` — coleta
+                    # PERFEITA — e desceram para as posicoes 24-32 da fila de 44.
+                    # Resultado: quem MAIS precisava de uma segunda tentativa era
+                    # justamente quem esperaria mais (Araujos ficou com a leitura
+                    # de 09/08 na tela, que foi o que o dono viu).
+                    #
+                    # `degradadas` ja lista quem ficou sem CRC nesta rodada. Se
+                    # NINGUEM conseguiu detalhamento, a rodada daquele municipio
+                    # foi degradada: carimba como erro. O rodizio entao o mantem
+                    # na frente (o carimbo de erro tambem conta como visita, mas
+                    # `tentativas` sobe e o backoff so cresce se persistir) e a
+                    # proxima janela tenta de novo — que e o comportamento certo
+                    # para indisponibilidade temporaria do portal.
+                    so_fallback = bool(coletadas) and (len(degradadas) - deg_antes) >= coletadas
+                    if coletadas and not so_fallback:
                         ok += 1
                         _marca_coleta(mun["id"], ok=True)
+                    elif so_fallback:
+                        falha += 1
+                        _marca_coleta(mun["id"], ok=False,
+                                      erro="portal nao emitiu o certificado (CRC) "
+                                           "de nenhuma entidade nesta rodada")
                     else:
                         falha += 1
                         _marca_coleta(mun["id"], ok=False,

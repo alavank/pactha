@@ -249,7 +249,17 @@ async def export_voluntarias_pdf(
         municipio_id=municipio_id, situacao=situacao, orgao=orgao, search=search,
         parlamentar=parlamentar, situacao_contratacao=situacao_contratacao,
         vigencia=vigencia, vig_fim_de=vig_fim_de, vig_fim_ate=vig_fim_ate,
-        categoria=categoria, db=db, _=None,
+        # ⚠️ `current=current` E NAO `_=None` — o botao "Gerar PDF" desta tela
+        # ficou QUEBRADO por semanas por causa disto. O parametro do handler
+        # reusado foi renomeado de `_` para `current` no trabalho de RBAC (as
+        # 182 rotas declarando permissao) e este arquivo ficou para tras:
+        # `TypeError: voluntarias() got an unexpected keyword argument '_'` ->
+        # 500 seco. Como o frontend engolia o erro no catch, o gestor clicava e
+        # NADA acontecia — sem PDF e sem aviso.
+        # Passar o usuario de verdade tambem fecha o buraco que o comentario no
+        # topo deste arquivo confessava: o `exigir_tela` interno rodava contra
+        # None.
+        categoria=categoria, db=db, current=current,
     )
     items = res.get("items", [])
     rows = []
@@ -333,7 +343,9 @@ async def export_plano_acao_pdf(
         municipio_id=municipio_id,
         situacao=(situacao if situacao and situacao != "TODAS" else None),
         programa=programa, parlamentar=parlamentar, emenda=emenda, objeto=objeto,
-        refresh=False, db=db, _=None,
+        # Mesmo motivo do export de voluntarias: `_` virou `current` no handler
+        # reusado, e este PDF dava 500 desde entao.
+        refresh=False, db=db, current=current,
     )
     items = res.get("items", [])
     rows = []
