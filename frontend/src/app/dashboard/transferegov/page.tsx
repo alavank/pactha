@@ -16,12 +16,17 @@ import {
   ModalHead, Secao, Selo, Vazio, situacaoTom,
 } from "@/components/ui/superficies";
 import { formatCurrency } from "@/lib/utils";
+import { textoDe } from "@/lib/texto";
 
 /** Preserva o `-` do helper `Field` que existia aqui: a peça `Campos` renderiza
  *  o que receber, e rótulo com nada embaixo parece falha de carregamento.
  *  `0` não é vazio — "0 meses em execução" é um dado. */
 function campoP(rotulo: string, valor: unknown, extra?: Partial<Campo>): Campo {
-  const v = valor === null || valor === undefined || valor === "" ? "-" : String(valor);
+  /* `textoDe` e não `String()`: metade destes campos vem crua da API federal,
+     que devolve objeto onde promete texto. `String({...})` não quebra a tela,
+     mas escreve "[object Object]" nela — e um campo assim no meio de um modal
+     de convênio destrói a confiança no número do lado. */
+  const v = textoDe(valor) ?? "-";
   return { rotulo, valor: v, title: v === "-" ? undefined : `${rotulo}: ${v}`, ...extra };
 }
 
@@ -99,14 +104,23 @@ interface DetalhePlano {
     codigo?: string;
     codigoSufixo?: number;
     ano?: number;
-    modalidade?: string;
-    situacao?: string;
+    /* `unknown` nos campos que a API federal devolve como OBJETO quando lhe
+       convém. `objeto` vem como
+       `{ano, codigo, descricao, descricaoFormatada, funcoes, versao}` — e era
+       ele que derrubava esta tela inteira: objeto no JSX faz o React abortar a
+       ÁRVORE (erro #31), e o que o dono via era só "This page couldn't load",
+       sem nada apontando para um campo.
+       `situacao` e `modalidade` são texto hoje, mas vêm do mesmo backend Java
+       que ora serializa o enum como string, ora como objeto — passam por
+       `textoDe` pelo mesmo motivo, antes de virarem o próximo susto. */
+    modalidade?: unknown;
+    situacao?: unknown;
     motivoImpedimento?: string;
     programaF?: string;
     valorCusteio?: number;
     valorInvestimento?: number;
     valorTotal?: number;
-    objeto?: string;
+    objeto?: unknown;
     objetoDetalhe?: string;
     emailCamara?: string;
     beneficiario?: {
@@ -605,7 +619,7 @@ export default function TransfereGovPage() {
                     <div className="mt-2.5">
                       <div className="text-[9px] uppercase tracking-wide" style={{ color: "var(--bi-faint)" }}>Objeto</div>
                       <p className="mt-0.5 text-[12px] leading-relaxed break-words" style={{ color: "var(--bi-text)" }}>
-                        {detalhe.plano.objeto || detalhe.plano.objetoDetalhe || "-"}
+                        {textoDe(detalhe.plano.objeto) || detalhe.plano.objetoDetalhe || "-"}
                       </p>
                     </div>
                     <div className="mt-2.5">

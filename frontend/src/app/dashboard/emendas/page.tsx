@@ -160,6 +160,15 @@ export default function EmendasEstaduaisPage() {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="text-2xl font-bold text-base-content">Emendas Parlamentares Estaduais</h1>
+          {/* Por que dizer isto em voz alta: as telas do TransfereGov abrem um
+              modal no olhinho, e o gestor procurou o olhinho aqui. Não há —
+              porque não há o que abrir: o SIGCON-MG publica treze campos por
+              indicação e os treze já estão na linha. Sem esta frase, a ausência
+              do ícone se lê como "o detalhe ainda não carregou". */}
+          <p className="text-[11px]" style={{ color: "var(--bi-faint)" }}>
+            Cada indicação já mostra todos os campos publicados pelo SIGCON-MG — não há
+            detalhamento adicional a abrir.
+          </p>
           {/* Frescor da coleta — mesma regra da tela de Convênios: com a coleta
               falhando, avisa SEM afirmar causa e sem datar (o carimbo seria a
               hora do último erro). */}

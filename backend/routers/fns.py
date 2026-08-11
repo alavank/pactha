@@ -40,6 +40,32 @@ _TETO_AVISO_MUNICIPIOS = 5
 
 FNS_BASE = "https://consultafns.saude.gov.br"
 
+
+def _parlamentares(payload: dict) -> list[dict]:
+    """Os parlamentares de uma proposta, com os nomes que a TELA usa.
+
+    O FNS entrega `noApelidoPolitico`, `sgPartido`, `coEmendaPolitica`,
+    `nuAnoExercicio` e `vlIndObjeto`. A tela lê `nome`, `partido`, `nu_emenda`,
+    `ano` e `valor`. Enquanto isto viveu solto dentro do endpoint de detalhe, a
+    lista repassou o payload cru e mostrou os parlamentares com o nome vazio —
+    o pior tipo de defeito, porque parece dado faltando na fonte.
+
+    Aceita as duas grafias de propósito: se um dia o portal padronizar, ou se um
+    payload vier de cache antigo já normalizado, nada quebra.
+    """
+    saida = []
+    for p in (payload.get("parlamentares") or []):
+        if not isinstance(p, dict):
+            continue
+        saida.append({
+            "nome": p.get("noApelidoPolitico") or p.get("nome"),
+            "partido": p.get("sgPartido") or p.get("partido") or "",
+            "nu_emenda": p.get("coEmendaPolitica") or p.get("nu_emenda"),
+            "ano": p.get("nuAnoExercicio") or p.get("ano"),
+            "valor": float(p.get("vlIndObjeto") or p.get("valor") or 0),
+        })
+    return saida
+
 # Codigos IBGE FNS dos municipios PACTHA (6 digitos, sem digito verificador)
 FNS_CODE_OVERRIDE = {
     "ARAUJOS": "310390",
@@ -240,7 +266,14 @@ async def consultar_fns(
             "valor_pago": float(it.get("vlPago") or 0),
             "valor_pagar": float(it.get("vlPagar") or 0),
             "constituido_processo": it.get("constituidoProcesso"),
-            "parlamentares": it.get("parlamentares", []),
+            # ⚠️ Era `it.get("parlamentares", [])` — o payload do FNS repassado
+            # CRU. O portal chama os campos de `noApelidoPolitico` e `sgPartido`;
+            # a tela lê `nome` e `partido`. Resultado: a lista mostrava o bloco
+            # de parlamentares com os nomes EM BRANCO, e o gestor concluía que o
+            # dado não tinha sido coletado — quando estava ali, com outro nome.
+            # O detalhe já normalizava; só a lista não. Agora as duas usam a
+            # mesma função, que é o único jeito de isto não divergir de novo.
+            "parlamentares": _parlamentares(it),
             "pagamentos_count": len(it.get("pagamentos", []) or []),
         })
     return {
@@ -406,17 +439,7 @@ async def detalhe_proposta(
         "vl_empenhado": float(d.get("vlEmpenhado") or 0),
         "vl_pago": float(d.get("vlPago") or 0),
         "vl_pagar": float(d.get("vlPagar") or 0),
-        # Normaliza parlamentares (campo upstream: noApelidoPolitico, sgPartido, vlIndObjeto, coEmendaPolitica, nuAnoExercicio)
-        "parlamentares": [
-            {
-                "nome": p.get("noApelidoPolitico") or p.get("nome"),
-                "partido": p.get("sgPartido") or p.get("partido") or "",
-                "nu_emenda": p.get("coEmendaPolitica"),
-                "ano": p.get("nuAnoExercicio"),
-                "valor": float(p.get("vlIndObjeto") or 0),
-            }
-            for p in (d.get("parlamentares") or [])
-        ],
+        "parlamentares": _parlamentares(d),
         # Normaliza pagamentos (campo upstream: dtCriacaoSiafi (ms), nuParcela, localizacao, nuProcesso, nuOb, vlLiquido, vlAcumulado)
         "pagamentos": [
             {
