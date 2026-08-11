@@ -12,7 +12,7 @@ from routers import (
     users, simec, rm, ai, gestao, parlamentares, status_changes,
     documentos, cauc, cagec, acordofes, control, freshness, painel, bi,
     sismob, auditoria, permissoes, modelos_permissao, repasses, contas_irregulares,
-    cofinanciamento,
+    cofinanciamento, parametros,
 )
 from config import get_settings
 from services.security_headers import SecurityHeadersMiddleware
@@ -196,6 +196,7 @@ app.include_router(acordofes.router)
 app.include_router(control.router)  # /api/control/* (Console Alavank)
 app.include_router(auditoria.router)  # /api/auditoria/* (trilha, so leitura)
 app.include_router(permissoes.router)  # /api/permissoes/* (catalogo de permissoes)
+app.include_router(parametros.router)  # /api/parametros/* (listas do proprio cliente)
 # /api/permissoes/modelos/* — os MOLDES (Incremento 7). Registrado DEPOIS de
 # `permissoes.router` so por leitura: os caminhos nao se sobrepoem (o outro
 # router nao tem rota com parametro na raiz), entao a ordem nao muda nada.

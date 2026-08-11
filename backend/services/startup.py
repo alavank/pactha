@@ -180,6 +180,10 @@ MIGRATION_FILES = [
     "add_contas_irregulares.sql",
     # Cofinanciamento estadual da saude (SES-GO e futuros): teto x a receber.
     "add_cofinanciamento_saude.sql",
+    # Parametros do ambiente: as listas que o cliente cadastra (hoje o Perfil
+    # /Rotulo de usuario) e o sistema puxa nos formularios. Semeia os rotulos
+    # que a tela ja oferecia em codigo, para o seletor nao nascer vazio.
+    "add_parametros.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",

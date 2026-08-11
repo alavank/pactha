@@ -29,6 +29,7 @@ import {
 import {
   listarModelos, podeGerirModelos, type Modelo,
 } from "@/lib/modelos";
+import { listarParametros, type Parametro } from "@/lib/parametros";
 import type { MapaEscopos } from "@/lib/escopo";
 
 interface Usuario {
@@ -62,6 +63,15 @@ interface SenhaResp {
 // tivesse `role == "admin"`. Nao zera mais. O papel serve para o cliente
 // organizar a propria equipe — quem concede acesso sao as telas e os municipios
 // marcados em CADA usuario, individualmente.
+//
+// ⚠️⚠️ ESTA LISTA VIROU SEMENTE, e não mais a fonte.
+//
+// Desde 11/08/2026 os perfis são CADASTRÁVEIS por cliente (Configurações ›
+// Parâmetros → tabela `parametros`, tipo `perfil_usuario`) — pedido do dono. A
+// tela busca a lista do servidor no `carregar()` e usa a de baixo apenas
+// enquanto a chamada não voltou, ou se ela falhar: um seletor de perfil vazio
+// impediria de cadastrar gente, e o valor destas três chaves é exatamente o que
+// a migration semeia.
 //
 // ⚠️ `value` e CHAVE do backend (users.role). So o `label` e texto de tela.
 const ROLES = [
@@ -305,6 +315,9 @@ export default function UsuariosPage() {
   // Os MOLDES. Vivem aqui e nao dentro do modal porque dois lugares os usam: o
   // modal de permissoes (aplicar) e o modal de modelos (manter) — e os dois
   // precisam ver a mesma lista depois que um deles a muda.
+  // Os PERFIS cadastrados pelo cliente (Configurações › Parâmetros). Vazio até
+  // a primeira resposta — aí a tela usa a semente de `ROLES`.
+  const [perfis, setPerfis] = useState<Parametro[]>([]);
   const [modelos, setModelos] = useState<Modelo[]>([]);
   // Quem pode CRIAR/EDITAR/APAGAR molde, respondido pelo servidor. `null` = a
   // API nao disse, e ai vale a conta local sobre a mesma chave.
@@ -372,7 +385,7 @@ export default function UsuariosPage() {
   const carregar = useCallback(async () => {
     setLoading(true);
     try {
-      const [ru, rm, rme, rcat, rminhas, rconc, rmod] = await Promise.all([
+      const [ru, rm, rme, rcat, rminhas, rconc, rmod, rperfis] = await Promise.all([
         api.get<Usuario[]>("/users"),
         api.get<Municipio[]>("/municipios"),
         // Falha isolada de proposito: saber quem sou eu e um EXTRA (serve ao
@@ -390,6 +403,11 @@ export default function UsuariosPage() {
         // Idem para os moldes: sem eles a tela continua inteira, so sem o
         // atalho. Lista vazia e o que o modal desenha como "nenhum cadastrado".
         listarModelos().catch(() => ({ modelos: [], podeGerenciar: null })),
+        // Perfis cadastrados. Falha isolada pela mesma razão das demais: sem
+        // eles a tela continua inteira, com a lista-semente.
+        // `true` = traz também os desativados, para traduzir a chave de quem
+        // já os tem em vez de mostrar "analyst" cru.
+        listarParametros("perfil_usuario", true).catch(() => [] as Parametro[]),
       ]);
       setUsers(ru.data);
       setMunicipios(Array.isArray(rm.data) ? rm.data : []);
@@ -400,6 +418,7 @@ export default function UsuariosPage() {
       setEscopos(rconc.escopos);
       setModelos(rmod.modelos);
       setPodeModelos(rmod.podeGerenciar);
+      setPerfis(rperfis);
       setErro(null);
     } catch (e: unknown) {
       const msg = (e as { response?: { status?: number } })?.response?.status === 403
@@ -651,6 +670,23 @@ export default function UsuariosPage() {
 
   /** As caixinhas MARCADAS de um usuario. Nunca `undefined`: quem nunca recebeu
    *  permissao nenhuma nao tem entrada no mapa, e "sem entrada" e zero. */
+  /* ⭐ OS PERFIS QUE O CLIENTE CADASTROU vencem a lista-semente — e são duas
+     listas diferentes de propósito:
+      · `perfisOferecidos` — só os ATIVOS: é o que o seletor propõe;
+      · `rotuloDoPerfil`   — inclui os desativados, porque uma conta antiga
+        pode carregar um perfil que saiu do cardápio, e mostrar a chave crua
+        ("analyst") é o defeito que a lista fixa já teve uma vez.
+     Sem resposta do servidor (carregando ou falha), vale `ROLES`/`ROLE_LABELS`:
+     seletor vazio impediria de cadastrar gente. */
+  const perfisOferecidos = perfis.length
+    ? perfis.filter((p) => p.ativo).map((p) => ({ value: p.valor, label: p.rotulo }))
+    : ROLES;
+  const rotuloDoPerfil = (v: unknown) => {
+    const chave = String(v ?? "");
+    const achado = perfis.find((p) => p.valor === chave);
+    return achado ? achado.rotulo : rotuloRole(chave);
+  };
+
   const permsDe = (u: Usuario) => concedidas[String(u.id)] ?? [];
   /** O alcance por modulo. Usuario sem entrada nao e usuario sem alcance: e
    *  usuario no padrao (`todos`), que e o caso de quase todo mundo. */
@@ -785,9 +821,9 @@ export default function UsuariosPage() {
                 if (!novoLeituraTocado) setNovoLeitura(papel === "prefeito");
               }}
             >
-              <SelectTrigger><SelectValue>{rotuloRole}</SelectValue></SelectTrigger>
+              <SelectTrigger><SelectValue>{rotuloDoPerfil}</SelectValue></SelectTrigger>
               <SelectContent>
-                {ROLES.map((r) => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}
+                {perfisOferecidos.map((r) => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}
               </SelectContent>
             </Select>
             <p className="mt-1 text-[10px]" style={{ color: "var(--bi-faint)" }}>
@@ -1008,9 +1044,9 @@ export default function UsuariosPage() {
                           Perfil (rótulo)
                         </div>
                         <Select value={u.role} onValueChange={(v) => v && mudarRole(u, v)}>
-                          <SelectTrigger className="h-7 text-[11px]"><SelectValue>{rotuloRole}</SelectValue></SelectTrigger>
+                          <SelectTrigger className="h-7 text-[11px]"><SelectValue>{rotuloDoPerfil}</SelectValue></SelectTrigger>
                           <SelectContent>
-                            {ROLES.map((r) => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}
+                            {perfisOferecidos.map((r) => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}
                           </SelectContent>
                         </Select>
                       </div>
