@@ -684,14 +684,43 @@ def _list_credentials() -> list[dict]:
     sync_url = sync_url.replace("&channel_binding=require", "").replace("?channel_binding=require", "")
     conn = psycopg2.connect(sync_url)
     cur = conn.cursor()
+    # ⭐⭐ TETO DE TENTATIVAS DE LOGIN — ordem do dono (11/08/2026):
+    # "nao fique insistindo demais no login e senha nos portais, senao causa
+    #  problema e da ban ou algo assim; testa no maximo umas 3 vezes, foi
+    #  recusado, ja avisa que eu vejo o que e".
+    #
+    # ⚠️ E o risco e REAL e ja estava correndo: Piracema e Ribeirao das Neves
+    # acumularam 58 tentativas de login cada uma (e Espinosa chegou a 183 antes
+    # de sair da carteira). Portal de governo com dezenas de logins falhos da
+    # mesma origem bloqueia a CONTA — e ai o municipio para de coletar mesmo
+    # depois de a senha ser corrigida.
+    #
+    # O backoff (1 dia por tentativa, ate 5) ESPACA, mas nunca PARA. Este teto
+    # para de vez: passou de 3 recusas de LOGIN, o municipio sai da fila e fica
+    # esperando credencial nova.
+    #
+    # ⚠️ SO CONTA RECUSA DE LOGIN, e a distincao importa: timeout de rede,
+    # portal fora do ar ou erro de parsing NAO sao motivo para desistir de um
+    # municipio para sempre — esses continuam no rodizio normal, so espacados
+    # pelo backoff. O filtro casa o texto que `_marca_coleta` grava quando o
+    # formulario nao autentica.
+    #
+    # O CAMINHO DE VOLTA e automatico e sem SQL: salvar a senha no Cofre zera
+    # `tentativas` (routers/cofre.py::_destravar_rodizio), e o municipio volta
+    # para a fila na rodada seguinte — na FRENTE, porque `ultima_coleta_em`
+    # continua antiga.
+    _MAX_LOGIN = max(1, int(os.getenv("SIGCON_MAX_TENTATIVAS_LOGIN", "3") or "3"))
     _SQL_BASE = """
         SELECT cs.id, cs.municipio_id, cs.usuario, cs.senha_hash, m.nome
         FROM cofre_senhas cs
         JOIN municipios m ON m.id = cs.municipio_id
         {join}
-        WHERE cs.sistema ILIKE 'SIGCON%' OR cs.automation_key = 'sigcon'
+        WHERE (cs.sistema ILIKE 'SIGCON%' OR cs.automation_key = 'sigcon')
+        {teto}
         {order}
     """
+    _TETO = ("AND NOT (COALESCE(sc.tentativas, 0) >= " + str(_MAX_LOGIN) +
+             " AND COALESCE(sc.ultimo_erro, '') ILIKE '%login%')")
     try:
         # BACKOFF por falha consecutiva: quem falha login toda rodada (credencial
         # invalida/trocada) e adiado progressivamente — 1 dia por tentativa, ate 5.
@@ -703,6 +732,7 @@ def _list_credentials() -> list[dict]:
         cur.execute(_SQL_BASE.format(
             join=("LEFT JOIN scraper_municipio_coleta sc "
                   "ON sc.municipio_id = cs.municipio_id AND sc.fonte = 'sigcon'"),
+            teto=_TETO,
             order=("ORDER BY (COALESCE(sc.ultima_coleta_em, sc.ultimo_erro_em, TIMESTAMPTZ 'epoch') "
                    "          + (LEAST(COALESCE(sc.tentativas,0), 5) * INTERVAL '1 day')) ASC, "
                    "         m.nome"),
@@ -710,7 +740,7 @@ def _list_credentials() -> list[dict]:
     except Exception:
         # Tabela do rodizio ainda nao migrada: cai no comportamento antigo.
         conn.rollback()
-        cur.execute(_SQL_BASE.format(join="", order="ORDER BY m.nome"))
+        cur.execute(_SQL_BASE.format(join="", teto="", order="ORDER BY m.nome"))
         logger.warning("  rodizio indisponivel (scraper_municipio_coleta ausente) - ordem alfabetica")
     creds = []
     for r in cur.fetchall():
@@ -723,6 +753,27 @@ def _list_credentials() -> list[dict]:
                 "cpf": r[2],
                 "senha": senha,
             })
+    # ⭐ QUEM FICOU DE FORA PELO TETO — parar em silencio seria trocar um
+    # problema (risco de bloqueio) por outro (municipio parado sem ninguem
+    # saber). O nome sai no log de TODA rodada, e o watchdog transforma isso em
+    # alerta agregado.
+    try:
+        cur.execute(
+            "SELECT m.nome, sc.tentativas, sc.ultimo_erro_em::date "
+            "FROM scraper_municipio_coleta sc JOIN municipios m ON m.id = sc.municipio_id "
+            "WHERE sc.fonte = 'sigcon' AND COALESCE(sc.tentativas,0) >= %s "
+            "  AND COALESCE(sc.ultimo_erro, '') ILIKE '%%login%%' "
+            "ORDER BY m.nome", (_MAX_LOGIN,))
+        parados = cur.fetchall()
+        if parados:
+            logger.warning(
+                "  ⚠️ %d municipio(s) FORA da fila por credencial recusada "
+                "(teto de %d tentativas de login, para nao arriscar bloqueio no "
+                "portal): %s — corrigir a senha no Cofre religa sozinho",
+                len(parados), _MAX_LOGIN,
+                "; ".join(f"{n} ({t}x, desde {d})" for n, t, d in parados))
+    except Exception:
+        conn.rollback()
     conn.close()
     return creds
 

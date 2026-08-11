@@ -161,6 +161,10 @@ def _municipios_defasados(cur) -> list[dict]:
     para o cooldown valer por fonte e nao virar spam por municipio.
     """
     achados = []
+    # O MESMO teto do coletor (sigcon_scraper::_list_credentials). Se mudar la,
+    # muda aqui — o watchdog e quem conta ao dono o que o coletor desistiu de
+    # tentar, e as duas contas discordando fariam o aviso mentir.
+    TETO_LOGIN = max(1, int(os.getenv("SIGCON_MAX_TENTATIVAS_LOGIN", "3") or "3"))
     for fonte, limite_h in STALENESS_MUNICIPIO_H.items():
         try:
             cur.execute("""
@@ -201,6 +205,39 @@ def _municipios_defasados(cur) -> list[dict]:
         if com_erro:
             logger.info(f"  {fonte}: {com_erro} municipio(s) em falha persistente "
                         f"(credencial/portal) — nota, nao alarme")
+        # ⭐ CREDENCIAL RECUSADA E DESISTIDA — este SOBE de nota para ALERTA.
+        #
+        # A partir de 11/08/2026 o coletor PARA de tentar login depois de 3
+        # recusas (ordem do dono: insistir arrisca bloqueio da conta no portal).
+        # Parar e o certo — mas parar CALADO trocaria o risco de bloqueio pelo
+        # risco de um municipio ficar meses sem coleta sem ninguem notar. Aqui
+        # ele vira linha visivel, com o nome e o caminho de volta.
+        try:
+            cur.execute(
+                "SELECT m.nome, coalesce(sc.tentativas,0) "
+                "FROM scraper_municipio_coleta sc "
+                "JOIN municipios m ON m.id = sc.municipio_id "
+                "WHERE sc.fonte = %s AND coalesce(sc.tentativas,0) >= %s "
+                "  AND coalesce(sc.ultimo_erro,'') ILIKE %s "
+                "  AND coalesce(m.active, true) ORDER BY m.nome",
+                (fonte, TETO_LOGIN, "%login%"))
+            travados = cur.fetchall()
+        except Exception:
+            try:
+                cur.connection.rollback()
+            except Exception:
+                pass
+            travados = []
+        if travados:
+            nomes = ", ".join(f"{n} ({t}x)" for n, t in travados[:5])
+            if len(travados) > 5:
+                nomes += " ..."
+            achados.append({
+                "tipo": "credencial_recusada", "chave": fonte,
+                "detalhe": (f"{len(travados)} municipio(s) com CREDENCIAL RECUSADA pelo portal — "
+                            f"coleta SUSPENSA para nao arriscar bloqueio da conta: {nomes}. "
+                            f"Corrigir a senha no Cofre religa automaticamente."),
+            })
         if defasados:
             defasados.sort(key=lambda t: float("inf") if t[1] is None else t[1], reverse=True)
             piores = ", ".join(("%s (nunca)" % n if i is None else "%s (%.0fh)" % (n, i))
@@ -322,9 +359,12 @@ def main() -> None:
             return
 
         _ICONES = {"processo_travado": "\U0001F534", "fonte_parada": "\U0001F7E0",
-                   "municipio_defasado": "\U0001F7E1"}
+                   "municipio_defasado": "\U0001F7E1",
+                   # Chave: e acao de PESSOA (trocar a senha), nao de maquina.
+                   "credencial_recusada": "\U0001F511"}
         _TITULOS = {"processo_travado": "processo travado", "fonte_parada": "fonte parada",
-                    "municipio_defasado": "municipios defasados"}
+                    "municipio_defasado": "municipios defasados",
+                    "credencial_recusada": "credencial recusada — coleta suspensa"}
         enviados = 0
         for a in achados:
             if _deve_alertar(cur, a["tipo"], a["chave"], cooldown):
