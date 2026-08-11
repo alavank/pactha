@@ -49,8 +49,26 @@ function fmtIdade(d: number | null): string {
   return `${Math.round(d)} dias`;
 }
 
+/** Um aviso que o vigia (watchdog) emitiu. */
+interface Aviso {
+  tipo: string;
+  chave: string;
+  mensagem: string;
+  em: string | null;
+}
+
+/** O ícone diz de quem é a bola: chave = alguém precisa trocar uma senha;
+ *  os demais = o sistema/portal. */
+const AVISO_ICONE: Record<string, string> = {
+  credencial_recusada: "🔑",
+  processo_travado: "🔴",
+  fonte_parada: "🟠",
+  municipio_defasado: "🟡",
+};
+
 export default function FrescorPage() {
   const [fontes, setFontes] = useState<Fonte[]>([]);
+  const [avisos, setAvisos] = useState<Aviso[]>([]);
   const [loading, setLoading] = useState(true);
   const [geradoEm, setGeradoEm] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -58,8 +76,9 @@ export default function FrescorPage() {
   const carregar = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await api.get<{ gerado_em: string; fontes: Fonte[] }>("/admin/freshness");
+      const r = await api.get<{ gerado_em: string; fontes: Fonte[]; avisos?: Aviso[] }>("/admin/freshness");
       setFontes(r.data.fontes || []);
+      setAvisos(r.data.avisos || []);
       setGeradoEm(r.data.gerado_em);
       setErro(null);
     } catch (e: unknown) {
@@ -112,6 +131,37 @@ export default function FrescorPage() {
           style={{ background: "color-mix(in oklab, var(--bi-crit) 12%, transparent)", color: "var(--bi-crit-ink)" }}>
           {erro}
         </div>
+      )}
+
+      {/* ⭐ OS AVISOS DO VIGIA — antes da lista, porque avisam o que já
+          aconteceu e pede AÇÃO, enquanto a lista abaixo é estado.
+          Até 11/08/2026 estes avisos morriam no log do servidor: o Telegram foi
+          desligado e o WhatsApp ainda não existe, então o watchdog detectava
+          (bem) e não tinha a quem contar. Aqui eles têm. */}
+      {!erro && avisos.length > 0 && (
+        <Bloco className="p-3">
+          <BlocoHead
+            icon={Activity}
+            titulo="Avisos do monitor"
+            sub={`${avisos.length} nos últimos 7 dias · o sistema detectou e registrou`}
+          />
+          <Lista>
+            {avisos.map((a, i) => (
+              <ItemLinha
+                key={`${a.em}-${i}`}
+                titulo={
+                  <span className="flex items-start gap-1.5">
+                    <span aria-hidden>{AVISO_ICONE[a.tipo] || "🟠"}</span>
+                    {/* A mensagem já vem escrita para gente ler, com o nome dos
+                        municípios e o que fazer — não reescrever aqui. */}
+                    <span className="whitespace-pre-wrap">{a.mensagem}</span>
+                  </span>
+                }
+                meta={<span>{fmtDt(a.em)} · {a.chave}</span>}
+              />
+            ))}
+          </Lista>
+        </Bloco>
       )}
 
       {!erro && (

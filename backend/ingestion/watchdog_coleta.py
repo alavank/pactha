@@ -322,13 +322,61 @@ def _deve_alertar(cur, tipo: str, chave: str, cooldown_min: int) -> bool:
 
 # --------------------------------------------------------------- envio ------
 
-def _alerta(mensagem: str) -> None:
-    """Envia ao Telegram se configurado; sempre loga."""
+def _alerta(mensagem: str, cur=None, tipo: str = "", chave: str = "") -> None:
+    """Entrega o alerta em TODOS os canais disponiveis. Sempre loga.
+
+    ⚠️ ATE 11/08/2026 ESTA FUNCAO PODIA NAO ENTREGAR NADA. O Telegram foi
+    desligado por decisao do dono (09/08) e o WhatsApp ainda nao existe: o
+    watchdog detectava, montava a frase certa e terminava com "(Telegram nao
+    configurado -- alerta so no log)". Um vigia que grita para uma sala vazia e
+    pior que nenhum, porque ele passa a sensacao de que alguem esta olhando.
+
+    Ordem dos canais, do que sempre funciona ao que depende de configuracao:
+      1. LOG — sempre.
+      2. BANCO (`watchdog_historico`) — vira a aba Status dos Dados. Nao depende
+         de credencial nenhuma: o operador abre o sistema e ve. E o canal que
+         resolve HOJE.
+      3. WEBHOOK (`WATCHDOG_WEBHOOK_URL`) — um POST JSON generico. Serve para
+         WhatsApp oficial, Slack, Discord, n8n, Zapier: e so preencher a env, do
+         nosso lado nao muda nada.
+      4. TELEGRAM — continua funcionando se um dia religarem as duas envs.
+    Cada canal e best-effort e isolado: falhar num nao pode impedir os outros
+    (o alerta ja e a noticia ruim; nao pode virar duas)."""
     logger.warning(f"ALERTA: {mensagem}")
+
+    # 2. Banco — o canal que nao depende de ninguem.
+    if cur is not None:
+        try:
+            cur.execute(
+                "INSERT INTO watchdog_historico (tipo, chave, mensagem) VALUES (%s,%s,%s)",
+                (tipo or "alerta", chave or "-", mensagem[:2000]))
+            cur.connection.commit()
+        except Exception as e:
+            try:
+                cur.connection.rollback()
+            except Exception:
+                pass
+            logger.warning(f"  historico do alerta nao gravado: {str(e)[:120]}")
+
+    # 3. Webhook generico.
+    url = (os.getenv("WATCHDOG_WEBHOOK_URL") or "").strip()
+    if url:
+        try:
+            import json as _json
+            import urllib.request
+            corpo = _json.dumps({"texto": mensagem, "tipo": tipo, "chave": chave,
+                                 "instancia": _instancia()}).encode("utf-8")
+            req = urllib.request.Request(
+                url, data=corpo, headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=15) as r:
+                logger.info(f"  webhook: HTTP {r.status}")
+        except Exception as e:
+            logger.warning(f"  falha no webhook: {str(e)[:120]}")
+
+    # 4. Telegram (legado, so se religarem).
     chat = (os.getenv("WATCHDOG_CHAT_ID") or os.getenv("TELEGRAM_CHAT_ID") or "").strip()
     token = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
     if not chat or not token:
-        logger.info("  (Telegram nao configurado -- alerta so no log)")
         return
     try:
         import asyncio
@@ -371,7 +419,8 @@ def main() -> None:
                 conn.commit()
                 icone = _ICONES.get(a["tipo"], "\U0001F7E0")
                 titulo = _TITULOS.get(a["tipo"], a["tipo"])
-                _alerta(f"{icone} *PACTHA {inst}* — {titulo}\n`{a['chave']}`\n{a['detalhe']}")
+                _alerta(f"{icone} *PACTHA {inst}* — {titulo}\n`{a['chave']}`\n{a['detalhe']}",
+                        cur=cur, tipo=a["tipo"], chave=a["chave"])
                 enviados += 1
             else:
                 logger.info(f"  (em cooldown, nao reenviado): {a['tipo']} {a['chave']}")

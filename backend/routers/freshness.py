@@ -233,4 +233,24 @@ async def freshness(
     # ordena piores primeiro
     ordem = {"critico": 0, "desconhecido": 1, "atrasado": 2, "fresco": 3}
     out.sort(key=lambda x: (ordem.get(x["status"], 9), -(x["idade_dias"] or 0)))
-    return {"gerado_em": now.isoformat(), "fontes": out}
+
+    # ⭐ OS AVISOS DO VIGIA, NA TELA — porque ate 11/08/2026 eles nao tinham
+    # para onde ir: o watchdog detectava, escrevia a frase certa e terminava em
+    # "(Telegram nao configurado -- alerta so no log)". Com o Telegram desligado
+    # por decisao do dono e o WhatsApp ainda por fazer, ESTA e a entrega que nao
+    # depende de credencial nenhuma: quem abre Status dos Dados ve o que o
+    # sistema tentou contar. (O webhook opcional continua existindo para quem
+    # quiser receber fora — ver watchdog_coleta.py::_alerta.)
+    avisos: list[dict] = []
+    try:
+        linhas = (await db.execute(text(
+            "SELECT tipo, chave, mensagem, criado_em FROM watchdog_historico "
+            "WHERE criado_em > NOW() - INTERVAL '7 days' "
+            "ORDER BY criado_em DESC LIMIT 20"))).fetchall()
+        avisos = [{"tipo": r[0], "chave": r[1], "mensagem": r[2],
+                   "em": r[3].isoformat() if r[3] else None} for r in linhas]
+    except Exception:
+        # Tabela ainda nao migrada (a API sobe antes do boot que roda o SQL):
+        # a tela continua inteira, so sem a lista.
+        await db.rollback()
+    return {"gerado_em": now.isoformat(), "fontes": out, "avisos": avisos}

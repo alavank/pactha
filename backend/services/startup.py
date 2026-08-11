@@ -189,6 +189,10 @@ MIGRATION_FILES = [
     # quando o nº SIAFI nascia). Deduplica o que existe e instala a chave certa,
     # nos 3 tenants. Idempotente: onde já está limpo, não faz nada.
     "fix_duplicatas_chave_natural.sql",
+    # Historico dos alertas do watchdog: o aviso precisa de um lugar para ir.
+    # Com o Telegram desligado e o WhatsApp ainda por fazer, a tela de Status
+    # dos Dados vira o canal — e ele nao depende de credencial nenhuma.
+    "add_watchdog_historico.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",
