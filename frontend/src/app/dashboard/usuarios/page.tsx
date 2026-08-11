@@ -3,7 +3,8 @@
 import React, { useEffect, useState, useCallback } from "react";
 import {
   UserPlus, Users, KeyRound, Power, Loader2, Copy, Check, X, Building2,
-  ListChecks, ShieldCheck, AlertTriangle, Lock, Layers,
+  ListChecks, ShieldCheck, AlertTriangle, Lock, Layers, Trash2, Pencil,
+  CopyPlus,
 } from "lucide-react";
 import api from "@/lib/api";
 import { TELAS, TELA_LABELS } from "@/lib/telas";
@@ -340,6 +341,26 @@ export default function UsuariosPage() {
   const [senhaGerada, setSenhaGerada] = useState<SenhaResp | null>(null);
   const [copiado, setCopiado] = useState(false);
 
+  // Editar identidade (modal): nome + e-mail. Separado do modal de Acesso de
+  // propósito — quem é a pessoa (nome/e-mail) é uma coisa, o que ela alcança é
+  // outra, e o modal de Acesso já carrega municípios e telas.
+  const [editIdent, setEditIdent] = useState<Usuario | null>(null);
+  const [identNome, setIdentNome] = useState("");
+  const [identEmail, setIdentEmail] = useState("");
+  const [salvandoIdent, setSalvandoIdent] = useState(false);
+
+  // Excluir (modal com confirmação DIGITADA): primeira ação irreversível da
+  // tela, então não basta o confirm() nativo — o admin digita o e-mail.
+  const [excluir, setExcluir] = useState<Usuario | null>(null);
+  const [excluirTexto, setExcluirTexto] = useState("");
+  const [excluindo, setExcluindo] = useState(false);
+
+  // Copiar permissões (modal): de qual usuário puxar o perfil de acesso.
+  const [copiaPara, setCopiaPara] = useState<Usuario | null>(null);
+  const [copiaDe, setCopiaDe] = useState<number | null>(null);
+  const [copiaMunis, setCopiaMunis] = useState(true);
+  const [copiando, setCopiando] = useState(false);
+
   const munNome = useCallback(
     (id: number) => {
       const m = municipios.find((x) => x.id === id);
@@ -555,6 +576,67 @@ export default function UsuariosPage() {
     navigator.clipboard.writeText(s);
     setCopiado(true);
     setTimeout(() => setCopiado(false), 2000);
+  };
+
+  const abrirIdent = (u: Usuario) => {
+    setEditIdent(u);
+    setIdentNome(u.name);
+    setIdentEmail(u.email);
+  };
+  const salvarIdent = async () => {
+    if (!editIdent) return;
+    setSalvandoIdent(true);
+    try {
+      await api.patch(`/users/${editIdent.id}`, {
+        name: identNome.trim(),
+        // Só manda o e-mail se mudou — evita a checagem de colisão bater na
+        // própria linha e poupa uma linha de trilha à toa.
+        ...(identEmail.trim().toLowerCase() !== editIdent.email.toLowerCase()
+          ? { email: identEmail.trim() } : {}),
+      });
+      setEditIdent(null);
+      await carregar();
+    } catch (e: unknown) {
+      alert((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+        || "Erro ao salvar");
+    } finally {
+      setSalvandoIdent(false);
+    }
+  };
+
+  const confirmarExclusao = async () => {
+    if (!excluir) return;
+    setExcluindo(true);
+    try {
+      await api.delete(`/users/${excluir.id}`);
+      setExcluir(null);
+      setExcluirTexto("");
+      await carregar();
+    } catch (e: unknown) {
+      alert((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+        || "Erro ao excluir");
+    } finally {
+      setExcluindo(false);
+    }
+  };
+
+  const confirmarCopia = async () => {
+    if (!copiaPara || !copiaDe) return;
+    setCopiando(true);
+    try {
+      await api.post(`/users/${copiaPara.id}/copiar-permissoes`, {
+        origem_id: copiaDe,
+        incluir_municipios: copiaMunis,
+      });
+      setCopiaPara(null);
+      setCopiaDe(null);
+      await carregar();
+    } catch (e: unknown) {
+      alert((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+        || "Erro ao copiar permissões");
+    } finally {
+      setCopiando(false);
+    }
   };
 
   const ativos = users.filter((u) => u.active).length;
@@ -975,6 +1057,28 @@ export default function UsuariosPage() {
                         </Button>
                         <Button
                           size="sm" variant="outline" className="h-7 px-2 text-[11px]"
+                          onClick={() => abrirIdent(u)}
+                          disabled={superAdmin && !ehSuperAdmin(eu)}
+                          title="Editar nome e e-mail" aria-label={`Editar ${u.name}`}
+                        >
+                          <Pencil className="size-3" />
+                        </Button>
+                        {/* Copiar permissões: puxa o perfil de acesso de outro
+                            usuário para este. Mesma chave do backend
+                            (usuarios.conceder) que o botão Permissões usa. */}
+                        <Button
+                          size="sm" variant="outline" className="h-7 px-2 text-[11px]"
+                          onClick={() => { setCopiaPara(u); setCopiaDe(null); setCopiaMunis(true); }}
+                          disabled={!podeConceder || users.filter((o) => o.id !== u.id && !ehSuperAdmin(o) && !o.email.endsWith("@painel.local")).length === 0}
+                          title={!podeConceder
+                            ? "Você não tem a permissão «Usuários — Conceder permissões»."
+                            : "Copiar as permissões de outro usuário para este"}
+                          aria-label={`Copiar permissões para ${u.name}`}
+                        >
+                          <CopyPlus className="size-3" />
+                        </Button>
+                        <Button
+                          size="sm" variant="outline" className="h-7 px-2 text-[11px]"
                           onClick={() => resetarSenha(u)}
                           title="Resetar senha" aria-label={`Resetar senha de ${u.name}`}
                         >
@@ -988,6 +1092,21 @@ export default function UsuariosPage() {
                         >
                           <Power className="size-3" />
                         </Button>
+                        {/* Excluir: some para si mesmo e para o super-admin (o
+                            backend recusa de qualquer forma; a UI só não oferece
+                            o gesto que vai falhar). Cor de perigo — é a única
+                            ação irreversível da fileira. */}
+                        {u.id !== eu?.id && !superAdmin && (
+                          <Button
+                            size="sm" variant="outline"
+                            className="h-7 px-2 text-[11px] border-[var(--bi-crit)]/40 hover:bg-[var(--bi-crit)]/10"
+                            style={{ color: "var(--bi-crit)" }}
+                            onClick={() => { setExcluir(u); setExcluirTexto(""); }}
+                            title="Excluir usuário" aria-label={`Excluir ${u.name}`}
+                          >
+                            <Trash2 className="size-3" />
+                          </Button>
+                        )}
                       </div>
                     </div>
                   }
@@ -1314,6 +1433,196 @@ export default function UsuariosPage() {
           </div>
         </Modal>
       )}
+
+      {/* Editar identidade: nome + e-mail. */}
+      {editIdent && (
+        <Modal aberto superficie maxW="max-w-md" rotulo="Editar usuário"
+               onFechar={() => setEditIdent(null)}>
+          <div className="p-4">
+            <BlocoHead
+              icon={Pencil} titulo="Editar usuário"
+              sub={`#${editIdent.id} — ${editIdent.email}`}
+              right={
+                <button type="button" onClick={() => setEditIdent(null)} aria-label="Fechar">
+                  <X className="size-4" style={{ color: "var(--bi-faint)" }} />
+                </button>
+              }
+            />
+            <div className="flex flex-col gap-3">
+              <div>
+                <div className="mb-1 text-[11px]" style={{ color: "var(--bi-muted)" }}>Nome</div>
+                <Input value={identNome} onChange={(e) => setIdentNome(e.target.value)} />
+              </div>
+              <div>
+                <div className="mb-1 text-[11px]" style={{ color: "var(--bi-muted)" }}>E-mail de acesso</div>
+                <Input value={identEmail} onChange={(e) => setIdentEmail(e.target.value)} type="email" />
+                <p className="mt-1 text-[10px]" style={{ color: "var(--bi-faint)" }}>
+                  Trocar o e-mail muda o login da pessoa. A sessão atual dela continua valendo.
+                </p>
+              </div>
+              <Button
+                className="w-full hover:opacity-90"
+                style={{ background: "var(--bi-cta)", color: "var(--bi-cta-ink)" }}
+                onClick={salvarIdent}
+                disabled={salvandoIdent || !identNome.trim() || !identEmail.trim()}
+              >
+                {salvandoIdent ? <Loader2 className="size-4 animate-spin mr-1" /> : null} Salvar
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Excluir: confirmação DIGITADA — o admin escreve o e-mail da conta.
+          Primeira ação irreversível da tela; o confirm() nativo não basta. */}
+      {excluir && (
+        <Modal aberto superficie maxW="max-w-md" rotulo="Excluir usuário"
+               onFechar={() => setExcluir(null)}>
+          <div className="p-4">
+            <BlocoHead
+              icon={Trash2} titulo="Excluir usuário"
+              sub={`${excluir.name} — ${excluir.email}`}
+              right={
+                <button type="button" onClick={() => setExcluir(null)} aria-label="Fechar">
+                  <X className="size-4" style={{ color: "var(--bi-faint)" }} />
+                </button>
+              }
+            />
+            <div className="flex flex-col gap-3">
+              <p className="text-[12px]" style={{ color: "var(--bi-muted)" }}>
+                A conta é <b style={{ color: "var(--bi-crit)" }}>removida definitivamente</b>:
+                acesso, permissões e cadastro somem. O que a pessoa criou
+                (relatórios, documentos, anotações) <b>permanece no sistema</b> com a
+                autoria &ldquo;usuário removido&rdquo;, e a trilha de auditoria fica intacta.
+                Não há desfazer.
+              </p>
+              <div>
+                <div className="mb-1 text-[11px]" style={{ color: "var(--bi-muted)" }}>
+                  Para confirmar, digite o e-mail da conta: <b>{excluir.email}</b>
+                </div>
+                <Input value={excluirTexto} onChange={(e) => setExcluirTexto(e.target.value)}
+                       placeholder={excluir.email} autoFocus />
+              </div>
+              <Button
+                className="w-full hover:opacity-90"
+                style={{ background: "var(--bi-crit)", color: "#fff" }}
+                onClick={confirmarExclusao}
+                disabled={excluindo
+                  || excluirTexto.trim().toLowerCase() !== excluir.email.toLowerCase()}
+              >
+                {excluindo ? <Loader2 className="size-4 animate-spin mr-1" /> : <Trash2 className="size-4 mr-1" />}
+                Excluir definitivamente
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Copiar permissões: escolhe a ORIGEM, confere o resumo, confirma. */}
+      {copiaPara && (() => {
+        const candidatos = users.filter((o) =>
+          o.id !== copiaPara.id && !ehSuperAdmin(o) && !o.email.endsWith("@painel.local"));
+        const origem = candidatos.find((o) => o.id === copiaDe) ?? null;
+        return (
+          <Modal aberto superficie maxW="max-w-lg" rotulo="Copiar permissões"
+                 onFechar={() => setCopiaPara(null)}>
+            <div className="p-4">
+              <BlocoHead
+                icon={CopyPlus} titulo="Copiar permissões"
+                sub={`para ${copiaPara.name} — ${copiaPara.email}`}
+                right={
+                  <button type="button" onClick={() => setCopiaPara(null)} aria-label="Fechar">
+                    <X className="size-4" style={{ color: "var(--bi-faint)" }} />
+                  </button>
+                }
+              />
+              <div className="flex flex-col gap-3">
+                <div>
+                  <div className="mb-1 text-[11px]" style={{ color: "var(--bi-muted)" }}>
+                    Copiar as permissões de qual usuário?
+                  </div>
+                  <Select value={copiaDe ? String(copiaDe) : ""}
+                          onValueChange={(v) => setCopiaDe(v ? Number(v) : null)}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue>
+                        {(v: unknown) => {
+                          const o = candidatos.find((c) => String(c.id) === String(v ?? ""));
+                          return o ? `${o.name} — ${o.email}` : "Escolher usuário-modelo";
+                        }}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {candidatos.map((o) => (
+                        <SelectItem key={o.id} value={String(o.id)}>
+                          {o.name} — {o.email}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* O RESUMO que o dono pediu: o que o alvo vai ficar tendo,
+                    lido do estado que a tela já carregou. */}
+                {origem && (
+                  <div className="bi-card-flat p-3">
+                    <div className="mb-2 text-[11px] font-semibold" style={{ color: "var(--bi-muted)" }}>
+                      O perfil de {origem.name} que será copiado:
+                    </div>
+                    <Campos
+                      cols={2}
+                      campos={[
+                        {
+                          rotulo: "Telas",
+                          valor: (origem.telas ?? []).length === 0 ? "Nenhuma"
+                            : `${(origem.telas ?? []).length} tela(s)`,
+                          title: (origem.telas ?? [])
+                            .map((t) => TELA_LABELS[t] ?? t).join(" · ") || undefined,
+                        },
+                        {
+                          rotulo: "Ações liberadas",
+                          valor: `${permsDe(origem).length} permissão(ões)`,
+                        },
+                        {
+                          rotulo: "Municípios",
+                          valor: (origem.municipio_ids ?? []).length === 0 ? "Nenhum"
+                            : `${(origem.municipio_ids ?? []).length} município(s)`,
+                          title: (origem.municipio_ids ?? []).map(munNome).join(" · ") || undefined,
+                        },
+                        {
+                          rotulo: "Modo",
+                          valor: ehSomenteLeitura(origem) ? "Somente leitura" : "Leitura e escrita",
+                        },
+                      ]}
+                    />
+                    <label className="mt-2 flex cursor-pointer items-center gap-2 text-[12px]"
+                           style={{ color: "var(--bi-text)" }}>
+                      <input type="checkbox" checked={copiaMunis}
+                             onChange={(e) => setCopiaMunis(e.target.checked)}
+                             className="size-3.5 accent-[var(--bi-cta)]" />
+                      Copiar também o escopo de municípios
+                    </label>
+                    <p className="mt-2 text-[11px]" style={{ color: "var(--bi-muted)" }}>
+                      As permissões atuais de <b>{copiaPara.name}</b> serão{" "}
+                      <b>substituídas</b> pelas de {origem.name}. A troca fica
+                      registrada na auditoria.
+                    </p>
+                  </div>
+                )}
+
+                <Button
+                  className="w-full hover:opacity-90"
+                  style={{ background: "var(--bi-cta)", color: "var(--bi-cta-ink)" }}
+                  onClick={confirmarCopia}
+                  disabled={copiando || !origem}
+                >
+                  {copiando ? <Loader2 className="size-4 animate-spin mr-1" /> : <CopyPlus className="size-4 mr-1" />}
+                  Confirmar cópia
+                </Button>
+              </div>
+            </div>
+          </Modal>
+        );
+      })()}
     </div>
   );
 }
