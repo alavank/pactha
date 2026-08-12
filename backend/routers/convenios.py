@@ -688,7 +688,29 @@ async def get_convenio_estadual_detail(
         "concedente_orgao": c.orgao_concedente,
         "convenente_nome": c.convenente_nome or raw.get("convenente"),
         "municipio_nome": raw.get("municipio"),
-        "tipo_convenente": raw.get("tipo_beneficiario") or raw.get("tipo_convenente") or "ADMINISTRACAO MUNICIPAL",
+        # "tipo_convenente" REMOVIDO — o campo era um palpite disfarçado de dado.
+        #
+        # A expressão era
+        #     raw.get("tipo_beneficiario") or raw.get("tipo_convenente") or "ADMINISTRACAO MUNICIPAL"
+        # com o elo do meio SEM NENHUMA ocorrência em qualquer linha de qualquer
+        # tenant (código morto). Na prática: o que a fonte disse, ou o literal.
+        #
+        # Medido antes de remover: a fonte informa em 75 linhas de 4.093 (freitas
+        # 71, montesiao 4, trust ZERO). Nas outras 4.018 o sistema escrevia
+        # "Administração Municipal" por conta própria — inclusive onde o
+        # convenente é "FMS DE ANCHIETA", um Fundo Municipal de Saúde com CNPJ
+        # próprio, que administração municipal não é.
+        #
+        # E não valia nem como aproximação útil: nas 75 vezes em que a fonte
+        # falou, ela disse "ADMINISTRAÇÃO MUNICIPAL" em 75 — ou seja, o campo
+        # NUNCA distinguiu nada. Era redundante quando acertava e enganoso
+        # quando errava, logo abaixo de "Convenente / OSC", que já mostra
+        # "PREFEITURA MUNICIPAL DE GUARAPARI" ou "FMS DE ANCHIETA" — onde a
+        # natureza da entidade está escrita, e correta.
+        #
+        # A COLETA CONTINUA: `ingestion/sigcon_scraper.py:379` segue gravando
+        # "Tipo de Beneficiario" em `raw_data.tipo_beneficiario`. Se um dia o
+        # campo voltar à tela, volta com o dado real e sem inventar o resto.
         "valor_concedente": float(c.valor_concedente) if c.valor_concedente else None,
         "valor_contrapartida": float(c.valor_contrapartida) if c.valor_contrapartida else None,
         "valor_total": float(c.valor_total) if c.valor_total else None,
