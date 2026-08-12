@@ -7,7 +7,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query, HTTPException, Body, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, text
+from sqlalchemy import select, text, or_
 from database import get_db
 from models import ConvenioEstadual, Municipio
 from models.user import User
@@ -179,8 +179,25 @@ async def export_convenios_pdf(
     if not mun:
         raise HTTPException(404, "Município não encontrado")
 
+    # ⚠️ O MESMO recorte da TELA. Sem esta linha o PDF contava as propostas do
+    # FNS — que moram nesta tabela e NAO sao convenio estadual — e ainda assinava
+    # o total inflado na trilha de auditoria.
+    #
+    # Medido antes da correcao: Goiania gerava "Convenios SIGCON-MG · 139
+    # convenios registrados" com as 139 sendo propostas federais de saude, num
+    # estado que o SIGCON-MG nem cobre; Monte Siao mostrava 81 na tela e 129 no
+    # PDF; e 22 municipios do freitas tinham PDF inteiramente fabricado, com a
+    # tela corretamente vazia ao lado.
+    #
+    # O predicado vem de routers/convenios.py:229. E a QUINTA copia da mesma
+    # regra (116, 133, 229, 320) — e foi essa duplicacao que permitiu o
+    # esquecimento aqui. Unificar num helper e o conserto de raiz; esta copia
+    # estanca hoje.
+    _sem_fns = or_(ConvenioEstadual.fonte.is_(None),
+                   ~ConvenioEstadual.fonte.ilike("%FNS%"))
     r = await db.execute(
-        select(ConvenioEstadual).where(ConvenioEstadual.municipio_id == municipio_id)
+        select(ConvenioEstadual)
+        .where(ConvenioEstadual.municipio_id == municipio_id, _sem_fns)
         .order_by(ConvenioEstadual.dt_vigencia_atual.asc().nullslast())
     )
     convs = r.scalars().all()
@@ -195,15 +212,34 @@ async def export_convenios_pdf(
             (c.nr_plano_trabalho or "")[:10] if (c.nr_plano_trabalho and "/" not in c.nr_plano_trabalho) else "-",
             nr_instr[:14] or "-",
             (c.orgao_concedente or "")[:15],
-            Paragraph((c.objeto or "")[:120], ParagraphStyle("o", fontSize=7)),
+            # `objetivo` primeiro: no dialeto do ES a coluna `objeto` guarda o
+            # CODIGO do processo ("2026-M632Z") e a descricao real vive em
+            # `objetivo`. Em MG e o contrario — `objeto` e a descricao e
+            # `objetivo` e NULO em 869 de 869 linhas. O `or` resolve os dois
+            # sem precisar ramificar por fonte.
+            Paragraph(((c.objetivo or c.objeto) or "")[:120], ParagraphStyle("o", fontSize=7)),
             (c.situacao or "")[:18],
             _br(c.valor_concedente or c.valor_total),
             _br(c.dt_vigencia_inicial),
             _br(c.dt_vigencia_atual or c.dt_vigencia_final),
         ])
+    # O titulo nao pode mais cravar "SIGCON-MG": o produto e vendido em MG, ES,
+    # GO e TO, e emitir "Convenios SIGCON-MG — Goiania/GO" e afirmar que o dado
+    # veio de um sistema que nao atende aquele estado. Espelha o mapa que o
+    # frontend ja usa (lib/estadual.ts::FONTE_CONVENIOS_ESTADUAIS).
+    _fonte_uf = {"MG": "SIGCON-MG", "ES": "GConv · SEGER"}.get((mun.uf or "").upper())
+    _titulo = (f"Convênios Estaduais ({_fonte_uf}) - {mun.nome}/{mun.uf}" if _fonte_uf
+               else f"Convênios Estaduais - {mun.nome}/{mun.uf}")
+    # Vazio ganha frase, nao tabela so com cabecalho: 38 municipios caem neste
+    # caso, e uma folha em branco le-se como "o municipio nao tem convenio",
+    # que e diferente de "a fonte estadual deste estado ainda nao esta ligada".
+    _sub = (f"{len(convs)} convênio(s) estadual(is) registrado(s)" if convs
+            else ("nenhum convênio estadual coletado para este município"
+                  if _fonte_uf else
+                  "a fonte estadual deste estado ainda não está integrada ao PACTHA"))
     pdf = _build_pdf(
-        f"Convênios SIGCON-MG - {mun.nome}/{mun.uf}",
-        f"{len(convs)} convênios registrados",
+        _titulo,
+        _sub,
         ["Fonte", "Proposta", "Plano", "Instrumento", "Órgão", "Objeto", "Situação", "Repasse", "Assinatura", "Vigência"],
         rows,
     )

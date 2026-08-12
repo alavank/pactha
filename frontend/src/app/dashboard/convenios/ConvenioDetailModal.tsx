@@ -33,7 +33,6 @@ interface ConvenioDetail {
   dias_restantes_label?: string;
   titulo?: string;
   objetivo?: string;
-  prestacao_contas?: string;
   concedente_orgao?: string;
   convenente_nome?: string;
   municipio_nome?: string;
@@ -205,7 +204,6 @@ export default function ConvenioDetailModal({ conv, onClose }: Props) {
                 { tom: tomDias, span: 2 },
               ),
               campo("Qt. Alterações", d.qt_alteracoes ?? 0),
-              campo("Prestação de Contas", d.prestacao_contas, { span: 2 }),
               campo("Proposta Vigência", d.proposta_vigencia, { span: 2 }),
             ]}
           />
@@ -230,9 +228,34 @@ export default function ConvenioDetailModal({ conv, onClose }: Props) {
             <div>
               <div className="text-[9px] uppercase tracking-wide" style={{ color: "var(--bi-faint)" }}>Título</div>
               <p className="mt-0.5 text-[12px] leading-relaxed break-words" style={{ color: "var(--bi-text)" }}>
-                {d.titulo || "-"}
+                {/* "Sem objeto informado" e nao "-": e a mesma frase que a LISTA
+                    ja usa, e um travessao solitario ocupando a largura inteira
+                    do bloco mais importante do modal le-se como falha de
+                    carregamento. Atinge 150 das 788 linhas do freitas. */}
+                {d.titulo || <span style={{ color: "var(--bi-faint)" }}>Sem objeto informado</span>}
               </p>
             </div>
+            {/* ⭐ A DESCRIÇÃO, que existia no banco e nunca era desenhada.
+                No dialeto do Espírito Santo a coluna `objeto` guarda o CÓDIGO do
+                processo — o gestor do Trust abria o convênio e lia "2026-M632Z"
+                no lugar de "AQUISIÇÃO DE EQUIPAMENTOS PARA A SECRETARIA
+                MUNICIPAL DE CULTURA". O texto vinha na resposta da API, estava
+                declarado na interface deste componente, e não era referenciado
+                em nenhuma das 249 linhas.
+
+                ADITIVO, nunca substituição: em MG `objetivo` é NULO nas 869
+                linhas, então lá este bloco simplesmente não renderiza — zero
+                regressão. E em 7 dos 25 convênios do ES o `objeto` carrega o
+                código que o gestor usa para conferir com o processo, então
+                trocar um pelo outro perderia informação útil. */}
+            {d.objetivo && d.objetivo !== d.titulo && (
+              <div className="mt-2.5">
+                <div className="text-[9px] uppercase tracking-wide" style={{ color: "var(--bi-faint)" }}>Descrição</div>
+                <p className="mt-0.5 text-[12px] leading-relaxed break-words" style={{ color: "var(--bi-text)" }}>
+                  {d.objetivo}
+                </p>
+              </div>
+            )}
             {d.fase_etapa_status && d.fase_etapa_status !== d.status && (
               <div className="mt-2.5">
                 <div className="text-[9px] uppercase tracking-wide" style={{ color: "var(--bi-faint)" }}>Fase-Etapa-Status</div>

@@ -265,6 +265,12 @@ async def list_convenios(
         term = f"%{search}%"
         search_filter = or_(
             ConvenioEstadual.objeto.ilike(term),
+            # `objetivo` tambem: no dialeto do ES a descricao vive NESTA coluna e
+            # `objeto` guarda o codigo do processo. Sem isto, buscar "praca" ou
+            # "ambulancia" no Trust devolve ZERO com o convenio na tela ao lado.
+            # No-op em MG (objetivo e NULO em 869 de 869 linhas); no ES leva
+            # PAVIMENTA de 0 para 3 resultados e PRACA de 0 para 5.
+            ConvenioEstadual.objetivo.ilike(term),
             ConvenioEstadual.nr_sigcon.ilike(term),
             ConvenioEstadual.nr_siafi.ilike(term),
             ConvenioEstadual.nr_plano_trabalho.ilike(term),
@@ -548,7 +554,7 @@ def _norm_workflow(s: str) -> str:
     return "".join(c for c in u.normalize("NFKD", s.upper()) if not u.combining(c)).strip()
 
 
-def _build_workflow_state(situacao: str | None) -> dict:
+def _build_workflow_state(situacao: str | None) -> dict | None:
     sit_norm = _norm_workflow(situacao or "")
     aliases = {
         "EM VIGOR": "INSTRUMENTO CADASTRADO / VIGENTE",
@@ -561,6 +567,9 @@ def _build_workflow_state(situacao: str | None) -> dict:
         "PLANO AUTORIZADO": "PLANO AUTORIZADO",
         "PROPOSTA/PLANO DE TRABALHO ENVIADO PARA ANALISE": "PREENCHIMENTO DE CHECKLIST",
         "PROPOSTA/PLANO DE TRABALHO REJEITADOS": "ANALISE - CHECKLIST DE CELEBRACAO",
+        # Etapa que EXISTE na régua e faltava no mapa: 8 convênios paravam em
+        # "0 de 15" estando numa etapa real do fluxo.
+        "ADEQUACAO": "RECEBIDO PELO ORGAO / ANALISE TECNICA / ADEQUACAO",
     }
     target = aliases.get(sit_norm, sit_norm)
     cur_idx = -1
@@ -568,6 +577,21 @@ def _build_workflow_state(situacao: str | None) -> dict:
         if _norm_workflow(step) == target:
             cur_idx = i
             break
+    # ⚠️ SITUACAO QUE NAO E ETAPA -> SEM TRILHA, e nao trilha zerada.
+    #
+    # Antes, `cur_idx = -1` devolvia as 15 etapas todas apagadas, e o modal
+    # escrevia "0 de 15 etapa(s) concluída(s)". Isso e uma AFIRMACAO — diz que o
+    # processo nao andou — e ela era falsa em 3.149 linhas de FNS (proposta
+    # "Paga" abrindo com zero etapas) e em 234 convenios CANCELADOS do SIGCON,
+    # que obviamente andaram antes de serem cancelados.
+    #
+    # Devolver None faz o front esconder a secao inteira sozinho, que e a
+    # leitura honesta: nao sabemos a etapa, entao nao desenhamos regua nenhuma.
+    #
+    # NAO mapear CANCELADO para um indice: cancelamento nao e etapa do fluxo, e
+    # encaixa-lo faria o sistema afirmar um progresso que tambem nao existe.
+    if cur_idx < 0:
+        return None
     return {
         "current_index": cur_idx,
         "current_label": situacao,
@@ -651,7 +675,16 @@ async def get_convenio_estadual_detail(
         "dias_restantes_label": dias_rest_label,
         "titulo": c.objeto,
         "objetivo": c.objetivo,
-        "prestacao_contas": raw.get("prestacao_contas") or raw.get("status_prestacao"),
+        # "prestacao_contas" REMOVIDO: as DUAS chaves tem zero ocorrencia no
+        # raw_data de qualquer fonte dos tres tenants (varridas as 72 chaves do
+        # SIGCON e as 46 do GCONV-ES). Era uma cadeia de dois elos mortos que
+        # rendia "-" em 894 de 894 linhas visiveis, num campo de largura dupla e
+        # justamente o que o gestor mais procura quando um convenio vence.
+        # O sinal que o sistema REALMENTE tem ja aparece na celula vizinha:
+        # "Dias Restantes" exibe o rotulo oficial VENCIDO +90 DIAS - PRESTACAO DE
+        # CONTAS em 282 linhas. Nao re-derivar aqui: duplicaria a celula ao lado
+        # com risco de divergirem, e o derivado so sabe que o PRAZO venceu, nao
+        # se a prestacao foi entregue.
         "concedente_orgao": c.orgao_concedente,
         "convenente_nome": c.convenente_nome or raw.get("convenente"),
         "municipio_nome": raw.get("municipio"),
@@ -669,8 +702,22 @@ async def get_convenio_estadual_detail(
         "ano": c.ano,
         "tp_instrumento": c.tp_instrumento or raw.get("tipo"),
         "fonte": c.fonte,
-        "workflow": _build_workflow_state(c.situacao),
-        "raw_data": raw,
+        # A régua de 15 etapas é do SIGCON-MG e só dela. Aplicá-la a outra fonte
+        # inventa histórico: um convênio "Vigente" do Espírito Santo abria com
+        # "14 de 15 etapas concluídas" e visto verde em "AGUARDANDO ENVIO PARA
+        # SEGOV" e "SEGOV ANALISE" — SEGOV é órgão de MINAS. Eram 25 de 25 do
+        # Trust. O alias VIGENTE casava por acidente com a situação que a
+        # ingestão do ES deriva das datas (gconv_es.py:81).
+        #
+        # `fonte` NULA conta como SIGCON: é o que a própria lista faz em
+        # :116,133,229, e são linhas legadas legítimas de MG.
+        "workflow": (_build_workflow_state(c.situacao)
+                     if (c.fonte or "SIGCON-MG").upper().startswith("SIGCON") else None),
+        # `raw_data` NÃO volta mais. Cada abertura de modal mandava ao navegador
+        # o registro cru inteiro do portal — até 13,7 KB, com domicílio bancário
+        # e CNPJ nas linhas do ES — e o componente nunca leu esse campo. Era
+        # exatamente o tipo de vazamento que o comentário de :588-599 diz querer
+        # evitar. `raw` segue em uso acima, nos campos derivados.
     }
 
 
