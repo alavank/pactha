@@ -8,7 +8,7 @@ from sqlalchemy import select, func, or_, and_, text
 from datetime import date, timedelta
 from typing import Optional
 from database import get_db
-from models import ConvenioEstadual
+from models import ConvenioEstadual, Municipio
 from schemas.convenio import ConvenioResponse, ConvenioListResponse, ConvenioStats, AlertaVigencia
 from services.auth import get_current_user, ensure_municipio_access, ensure_tela
 from services.coleta import frescor_coleta
@@ -22,21 +22,110 @@ from models.user import User
 import math
 import os
 import re
+import unicodedata
 
 router = APIRouter(prefix="/api/convenios", tags=["convenios"])
 
 
-def _dias_restantes_sigcon(c: ConvenioEstadual, computed):
-    """'Dias Restantes de Vigencia' — usa o valor OFICIAL do SIGCON quando existe
-    (raw_data.dias_restantes_str), que conta contra a vigencia EFETIVA (dias de
-    vigencia a partir do inicio), e NAO contra o fim formal exibido — por isso o
-    calculo (dt_vigencia_atual - hoje) diverge (ex.: SIGCON=50 vs calculo=58).
-    Fallback: valor computado (CKAN/sem detalhe SIGCON)."""
-    raw = c.raw_data if isinstance(c.raw_data, dict) else {}
-    s = raw.get("dias_restantes_str")
-    if s is not None and str(s).strip().lstrip("-").isdigit():
-        return int(str(s).strip())
-    return computed
+# --------------------------------------------------------------- sentinelas
+# Sentinela do portal: o texto que ele escreve para dizer "este campo esta
+# vazio". Comparacao por IGUALDADE EXATA do texto aparado, sem acento e em
+# minusculas — NUNCA por substring: "Diretoria de Convenios e Doacoes" contem a
+# palavra, e uma regra por substring engoliria diretoria real.
+#
+# O conjunto tem UM elemento de proposito. Varridos os 3 tenants, os unicos
+# valores nao-diretoria de `setor` sao "Nao ha" (186 linhas) e "Processos
+# Migrados" (20). "Processos Migrados" FICA DE FORA: as 20 linhas que o
+# carregam tem, TODAS, fase_etapa_status = "ALTERAR - ALTERAR - Alterar",
+# espalhadas por 4 situacoes — e fila real do fluxo, nao ausencia de dado.
+# Tambem nao entram "-", "n/a", "nao informado": nenhum aparece em tenant
+# nenhum, e cada entrada especulativa e uma chance de engolir dado real amanha.
+_SENTINELA_VAZIO = {"nao ha"}
+
+
+def _sem_sentinela(v):
+    """Devolve None quando o texto e marcador de vazio do portal."""
+    if not isinstance(v, str):
+        return v or None
+    s = v.strip()
+    if not s:
+        return None
+    chave = "".join(c for c in unicodedata.normalize("NFKD", s.casefold())
+                    if not unicodedata.combining(c))
+    chave = " ".join(chave.split())
+    return None if chave in _SENTINELA_VAZIO else s
+
+
+def _sem_sentinela_composto(v):
+    """'Fase-Etapa-Status' vem como partes unidas por hifen. So some quando
+    TODAS as partes sao sentinela: "Nao ha - Nao ha - Nao ha" (117 linhas) e
+    "- -" (29) saem; "ALTERAR - ALTERAR - Alterar" (20) e "CELEBRACAO -
+    PROPOSTA - ANALISE - CHECKLIST DE CELEBRACAO" (12) ficam INTEIROS. Testar o
+    texto todo apagaria uma fase real que tivesse uma parte vazia."""
+    s = _sem_sentinela(v)
+    if s is None:
+        return None
+    return None if all(_sem_sentinela(p) is None for p in s.split("-")) else s
+
+
+def _proposta_vigencia(raw: dict):
+    """Prazo PROPOSTO, normalizado para "<n> <unidade>".
+
+    O SIGCON entrega o mesmo dado com dois rotulos e dois formatos, escolhidos
+    pelo TIPO DE INSTRUMENTO: "Proposta de Vigencia" = "730 / dias"
+    (Transferencia Especial, 32 linhas) e "Proposta de Dias de Vigencia" = "730"
+    (Convenio, 91 linhas) — ver o mapa em ingestion/sigcon_scraper.py:385-386.
+    Ler so o primeiro deixava 91 linhas com "-" tendo o numero gravado ao lado.
+
+    A unidade NAO e constante: vem escrita no proprio dado, depois da barra. Por
+    isso e ECOADA, nunca assumida — hardcodar " dias" transformaria um futuro
+    "24 / meses" em "24 dias", numero errado na tela, pior que o "-" de hoje.
+    O que nao e numero (o portal escreve "Nao ha") passa intacto."""
+    v = raw.get("proposta_vigencia") or raw.get("proposta_dias_vigencia")
+    if v is None:
+        return None
+    s = str(v).strip()
+    if "/" in s:
+        n, _, unidade = s.partition("/")
+        n, unidade = n.strip(), unidade.strip()
+        return f"{n} {unidade}" if n.isdigit() and unidade.isalpha() else (s or None)
+    return f"{s} dias" if s.isdigit() else (s or None)
+
+
+# ------------------------------------------------------------------- fonte
+# A regra de FONTE mora AQUI, num lugar so. `convenios_estadual` guarda TRES
+# origens: SIGCON-MG (convenio estadual de MG), GCONV-ES (o equivalente
+# capixaba) e FNS (propostas de saude, que NAO sao convenio e tem tela propria).
+# A regra estava copiada em quatro lugares deste arquivo, e foi essa duplicacao
+# que deixou o export PDF de fora e contar propostas de saude como convenio.
+_FNS_EXCL = or_(ConvenioEstadual.fonte.is_(None),
+                ~ConvenioEstadual.fonte.ilike("%FNS%"))
+
+
+def _cond_fonte(fonte: Optional[str], fontes: Optional[list[str]]):
+    """Sem escolha = a regra padrao da tela (tudo menos FNS).
+
+    'SIGCON' e 'SIGCON-MG' sao o MESMO pedido: o dropdown antigo mandava
+    'SIGCON', o novo manda o valor do banco. Os dois casam com as duas grafias
+    E com fonte NULA (linhas legadas de MG).
+
+    Substitui o `_asked_fns`, que significava "o caller citou FNS" e desligava a
+    exclusao para TODAS as fontes juntas — marcar tudo trazia conjunto errado."""
+    if fontes:
+        alvo: list[str] = []
+        com_nulo = False
+        for f in fontes:
+            if f.upper() in ("SIGCON", "SIGCON-MG"):
+                alvo.extend(["SIGCON-MG", "SIGCON"])
+                com_nulo = True
+            else:
+                alvo.append(f)
+        cond = ConvenioEstadual.fonte.in_(alvo)
+        return or_(cond, ConvenioEstadual.fonte.is_(None)) if com_nulo else cond
+    if fonte:
+        cond = ConvenioEstadual.fonte == fonte
+        return cond if "FNS" in fonte.upper() else and_(cond, _FNS_EXCL)
+    return _FNS_EXCL
 
 
 def estadual_to_response(c: ConvenioEstadual) -> ConvenioResponse:
@@ -45,7 +134,13 @@ def estadual_to_response(c: ConvenioEstadual) -> ConvenioResponse:
         dias = (c.dt_vigencia_atual - date.today()).days
     elif c.dt_vigencia_final:
         dias = (c.dt_vigencia_final - date.today()).days
-    dias = _dias_restantes_sigcon(c, dias)
+    # Dias restantes SEMPRE derivado da data que a tela exibe ao lado. O SIGCON
+    # publica um contador proprio em raw_data.dias_restantes_str, mas ele e o
+    # RETRATO DO DIA DA COLETA e sobrevive a rodadas que nao abrem o detalhe:
+    # medido, 65 das 92 linhas que o tinham exibiam numero diferente do calculo,
+    # e um convenio caia no filtro "vence em 120 dias" mostrando "121d". A mesma
+    # coluna respondia por duas contas e discordava do Dashboard, do BI e dos
+    # alertas, que sempre calcularam por data.
     raw = c.raw_data if isinstance(c.raw_data, dict) else {}
     nr_proposta = raw.get("nr_proposta")
     nr_instrumento = raw.get("nr_instrumento")
@@ -75,7 +170,14 @@ def estadual_to_response(c: ConvenioEstadual) -> ConvenioResponse:
         valor_repasse=float(c.valor_concedente) if c.valor_concedente else None,
         valor_empenhado=float(c.valor_emenda_parlamentar) if c.valor_emenda_parlamentar else None,
         valor_desembolsado=float(c.valor_repassado) if c.valor_repassado else None,
-        valor_contrapartida=float(c.valor_contrapartida) if c.valor_contrapartida else None,
+        # `is not None` SO nesta linha do serializador da lista: `0` e falso em
+        # Python e NULO saia igual a ZERO REAL, fazendo a lista discordar do
+        # modal em 180 linhas. NAO estender as vizinhas (valor_total,
+        # valor_repasse, valor_desembolsado): `valor_repasse` = 0 faria a base
+        # do calculo de "Repassado %" virar falsy e a coluna sumiria de linhas
+        # que hoje mostram porcentagem. Unico consumidor conferido: a celula
+        # "Contrapartida" em dashboard/convenios/page.tsx.
+        valor_contrapartida=float(c.valor_contrapartida) if c.valor_contrapartida is not None else None,
         dt_inicio=c.dt_vigencia_inicial,
         dt_fim_vigencia=c.dt_vigencia_atual or c.dt_vigencia_final,
         dias_restantes=dias,
@@ -102,6 +204,8 @@ def estadual_to_response(c: ConvenioEstadual) -> ConvenioResponse:
 @router.get("/situacoes", dependencies=[exige("convenios.ver")])
 async def list_situacoes(
     municipio_id: Optional[int] = None,
+    fonte: Optional[str] = None,
+    fontes: Optional[list[str]] = Query(None, description="Multi-select fonte — a MESMA da lista"),
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
@@ -110,10 +214,13 @@ async def list_situacoes(
     q = select(ConvenioEstadual.situacao).distinct().where(ConvenioEstadual.situacao.is_not(None))
     if municipio_id:
         q = q.where(ConvenioEstadual.municipio_id == municipio_id)
-    # Exclui FNS (tem tela propria). Sem isso, situacoes exclusivas do FNS
-    # ('Pago','Empenhado','Pendente') apareciam no filtro do SIGCON e casavam 0
-    # convenios (a lista SIGCON exclui FNS) -> filtro "vazio".
-    q = q.where(or_(ConvenioEstadual.fonte.is_(None), ~ConvenioEstadual.fonte.ilike("%FNS%")))
+    # A MESMA regra da lista, e nao mais uma copia dela. Sem `fontes` continua
+    # sendo "tudo menos FNS" — identico ao que estava aqui. COM `fontes`, passa a
+    # acompanhar: antes o dropdown aplicava o anti-FNS SEMPRE, entao escolher
+    # Fonte=FNS abria a caixa de situacoes VAZIA enquanto a tela mostrava as
+    # linhas do FNS atras. O `.strip()` fica: a lista filtra `situacao.in_(...)`
+    # sem aparar, e tirar daqui faria a selecao nao casar.
+    q = q.where(_cond_fonte(fonte, fontes))
     r = await db.execute(q)
     return sorted({row[0].strip() for row in r.all() if row[0]})
 
@@ -121,20 +228,52 @@ async def list_situacoes(
 @router.get("/anos", dependencies=[exige("convenios.ver")])
 async def list_anos(
     municipio_id: Optional[int] = None,
+    fonte: Optional[str] = None,
+    fontes: Optional[list[str]] = Query(None, description="Multi-select fonte — a MESMA da lista"),
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
     ensure_municipio_access(current, municipio_id)
     ensure_tela(current, "convenios")
-    # Mesma exclusao do listing: FNS mora na mesma tabela e tem tela propria.
-    # Sem isso o dropdown oferecia 2010-2013 (so FNS) e a lista voltava vazia.
+    # Mesma regra da lista (ver /situacoes): sem escolha, FNS fica de fora; com
+    # Fonte=FNS marcada, os anos do FNS aparecem em vez de o dropdown mentir.
     q = (select(ConvenioEstadual.ano).distinct()
          .where(ConvenioEstadual.ano.is_not(None))
-         .where(or_(ConvenioEstadual.fonte.is_(None), ~ConvenioEstadual.fonte.ilike("%FNS%"))))
+         .where(_cond_fonte(fonte, fontes)))
     if municipio_id:
         q = q.where(ConvenioEstadual.municipio_id == municipio_id)
     r = await db.execute(q)
     return sorted({int(row[0]) for row in r.all() if row[0]}, reverse=True)
+
+
+@router.get("/fontes", dependencies=[exige("convenios.ver")])
+async def list_fontes(
+    municipio_id: Optional[int] = None,
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """AS FONTES QUE ESTE MUNICIPIO TEM DE VERDADE.
+
+    A lista era chumbada no frontend em ["SIGCON","FNS"]. Num municipio do ES a
+    unica opcao que devolvia linha era o FNS — que nao e convenio estadual — e
+    os convenios do GConv-ES nao tinham opcao nenhuma (25 linhas no Trust, em
+    Anchieta, Guarapari e Conceicao da Barra). E em 39 dos 65 municipios dos
+    tres clientes a opcao "SIGCON-MG" oferecida devolvia ZERO.
+
+    Derivar do dado, e nao chumbar "GCONV-ES" ao lado dos outros, e o que
+    impede o defeito de se repetir quando entrar o coletor de GO ou TO."""
+    ensure_municipio_access(current, municipio_id)
+    ensure_tela(current, "convenios")
+    q = select(func.coalesce(ConvenioEstadual.fonte, "SIGCON-MG")).distinct()
+    if municipio_id:
+        q = q.where(ConvenioEstadual.municipio_id == municipio_id)
+    vistas = {str(r[0]).strip() for r in (await db.execute(q)).all() if r[0]}
+    if "SIGCON-MG" in vistas:   # 'SIGCON' e a mesma coisa: nao oferecer as duas
+        vistas.discard("SIGCON")
+    # FNS SEMPRE POR ULTIMO. `sorted` puro poria "FNS" no topo do dropdown em
+    # TODO municipio, promovendo a unica origem que NAO e convenio estadual ao
+    # primeiro lugar — o contrario do que esta correcao existe para fazer.
+    return sorted(vistas, key=lambda f: (1 if "FNS" in f.upper() else 0, f))
 
 
 @router.get("", response_model=ConvenioListResponse,
@@ -205,30 +344,17 @@ async def list_convenios(
             pcond = conds[0] if len(conds) == 1 else or_(*conds)
             q = q.where(pcond)
             q_count = q_count.where(pcond)
-    if fontes:
-        # SIGCON estadual tem fonte=NULL ou 'SIGCON-MG'. Adiciona mapeamento.
-        est_fontes = []
-        for f in fontes:
-            if f.upper() == "SIGCON":
-                est_fontes.extend(["SIGCON-MG", "SIGCON"])
-            else:
-                est_fontes.append(f)
-        cond = ConvenioEstadual.fonte.in_(est_fontes)
-        if "SIGCON" in [f.upper() for f in fontes] or "SIGCON-MG" in fontes:
-            cond = or_(cond, ConvenioEstadual.fonte.is_(None))
-        q = q.where(cond)
-        q_count = q_count.where(cond)
-    elif fonte:
-        q = q.where(ConvenioEstadual.fonte == fonte)
-        q_count = q_count.where(ConvenioEstadual.fonte == fonte)
-    # Esta e a tela de CONVENIOS SIGCON-MG (estadual). convenios_estadual tambem
-    # guarda PROPOSTAS do FNS (fonte=FNS, saude) — que NAO sao convenios e tem tela
-    # propria. Exclui FNS por padrao, exceto se o caller pediu FNS explicitamente.
-    _asked_fns = (fonte and "FNS" in fonte.upper()) or (fontes and any("FNS" in f.upper() for f in fontes))
-    if not _asked_fns:
-        _fns_excl = or_(ConvenioEstadual.fonte.is_(None), ~ConvenioEstadual.fonte.ilike("%FNS%"))
-        q = q.where(_fns_excl)
-        q_count = q_count.where(_fns_excl)
+    # Esta e a tela de CONVENIOS ESTADUAIS. `convenios_estadual` tambem guarda
+    # PROPOSTAS do FNS (saude), que NAO sao convenio e tem tela propria — por
+    # isso, sem escolha de fonte, elas ficam de fora.
+    #
+    # O bloco anterior tinha uma variavel `_asked_fns` que significava "o caller
+    # citou FNS" e, quando verdadeira, desligava a exclusao para TODAS as fontes
+    # juntas — entao "Marcar tudo" no filtro devolvia um conjunto que nao era
+    # nem o padrao nem a uniao pedida. Agora a regra e uma so, em `_cond_fonte`.
+    _cf = _cond_fonte(fonte, fontes)
+    q = q.where(_cf)
+    q_count = q_count.where(_cf)
     _vigencias = vigencias or ([vigencia] if vigencia else [])
     if _vigencias:
         hoje = date.today()
@@ -278,6 +404,14 @@ async def list_convenios(
             ConvenioEstadual.raw_data["nr_instrumento"].astext.ilike(term),
             ConvenioEstadual.raw_data["nr_plano"].astext.ilike(term),
             ConvenioEstadual.raw_data["nr_plano_sigcon"].astext.ilike(term),
+            # O numero publicado do ES vive em `numOriginal` (`nr_instrumento` e
+            # NULO nas 25 de 25 linhas do GConv). Sem esta linha o modal passa a
+            # exibir "004/2026" e a busca por "004/2026" devolve ZERO com o
+            # convenio na lista atras — o mesmo defeito que a busca por
+            # `objetivo` fechou no PR anterior. E mais um ramo de OR: so pode
+            # aumentar o resultado, e a chave nao existe em nenhuma linha
+            # SIGCON-MG nem FNS.
+            ConvenioEstadual.raw_data["numOriginal"].astext.ilike(term),
         )
         q = q.where(search_filter)
         q_count = q_count.where(search_filter)
@@ -636,9 +770,33 @@ async def get_convenio_estadual_detail(
     nr_instrumento = raw.get("nr_instrumento")
     if not nr_instrumento and c.nr_sigcon and re.match(r"^\d{8,12}/\d{4}$", c.nr_sigcon):
         nr_instrumento = c.nr_sigcon
+    # DIALETO DO ES. O GConv-ES nao tem `nr_instrumento` no raw_data e o
+    # `nr_sigcon` e uma chave sintetica nossa ("GCONV-ES-<cod>"), sem barra —
+    # entao os CINCO numeros da secao Identificacao saiam "-" e o titulo do
+    # modal era um travessao solitario nas 25 de 25 linhas do Trust.
+    # O numero publicado vem em `numOriginal` ("004/2026"), presente em 25 de
+    # 25. Texto livre na origem: 6 vem como "TERMO DE CONVENIO 066/2025" — e o
+    # que o portal publica, e exibir verbatim e honesto (a celula trunca com
+    # tooltip). NAO serve como chave: 23 valores distintos em 25 linhas.
+    if not nr_instrumento and (c.fonte or "").upper().startswith("GCONV"):
+        nr_instrumento = str(raw.get("numOriginal") or "").strip() or None
     # Nº Convenio Publicado = numero do INSTRUMENTO (formato XXXXXXXXXX/YYYY).
     # Quando o registro veio do scraper, nr_sigcon eh o SIAFI numerico -> nao usar.
-    nr_conv_pub = nr_instrumento or (c.nr_sigcon if c.nr_sigcon and "/" in c.nr_sigcon else None)
+    #
+    # E NUNCA o do FNS: la o `nr_sigcon` e uma CHAVE SINTETICA NOSSA
+    # ("FNS-316500-2017-AMBULANC-PROGRA-N/A-900194d2") — o `nuProcesso` vem
+    # "N/A" e entrega justamente a barra que este teste procura. Medido: 3.194
+    # linhas (freitas 1.719, trust 1.427, montesiao 48) exibiam essa string com
+    # rotulo de numero oficial de convenio, e como titulo do modal.
+    #
+    # A regra e "TUDO MENOS FNS", a mesma polaridade de `_FNS_EXCL`, e NAO uma
+    # lista de permissao por fonte: numero publicado nao e conceito do SIGCON, e
+    # do convenio — quando entrar o coletor de GO/TO o fallback continua valendo
+    # sozinho, em vez de nascer desligado em silencio. Preserva as 375 linhas
+    # SIGCON que dependem dele (fonte NULA entra: "" nao contem "FNS").
+    _e_fns = "FNS" in (c.fonte or "").upper()
+    nr_conv_pub = nr_instrumento or (
+        c.nr_sigcon if not _e_fns and c.nr_sigcon and "/" in c.nr_sigcon else None)
 
     dias_vig = None
     if c.dt_vigencia_inicial and (c.dt_vigencia_atual or c.dt_vigencia_final):
@@ -650,12 +808,37 @@ async def get_convenio_estadual_detail(
     if c.dt_vigencia_atual or c.dt_vigencia_final:
         dt_fim = c.dt_vigencia_atual or c.dt_vigencia_final
         dias_rest = (dt_fim - date.today()).days
-    dias_rest = _dias_restantes_sigcon(c, dias_rest)  # valor oficial do SIGCON quando houver
+    # (a chamada a `_dias_restantes_sigcon` saiu daqui junto com o helper: o
+    #  numero passa a vir da mesma data que a celula ao lado exibe)
     if dias_rest is not None:
         if dias_rest < -90:
             dias_rest_label = "VENCIDO +90 DIAS - PRESTACAO DE CONTAS"
         elif dias_rest < 0:
             dias_rest_label = "VENCIDO"
+
+    # "Municipio" pela CHAVE ESTRANGEIRA, e nao pelo texto solto do portal.
+    # Mesma resolucao que o BI ja faz (services/bi_abas.py, LEFT JOIN municipios)
+    # — a tela de Convenios era a unica fora do padrao. Medido: `municipio_id`
+    # preenchido em 100% das linhas dos 3 tenants e ZERO FK orfa, entao isto
+    # nunca fica pior que o raw.
+    #
+    # SEM FALLBACK PARA O RAW, de proposito e por tres motivos medidos:
+    #  1. no ES a chave `municipio` NAO EXISTE (25 de 25 linhas do Trust
+    #     mostravam "-"), e a equivalente `nomeMunicipio` vale literalmente
+    #     "SEM MUNICIPIO INFORMADO" — trocaria "-" honesto por afirmacao falsa;
+    #  2. no SIGCON o texto vem em caixa alta sem acento ("CORREGO DANTA" contra
+    #     "Corrego Danta" no resto do sistema) e a fonte e inconsistente consigo
+    #     mesma ("CONCEICAO DO PARA" 42x contra "CONCEIÇAO DO PARA" 18x, o MESMO
+    #     municipio);
+    #  3. em 2 linhas do freitas o raw CONTRADIZ o municipio pelo qual a tela
+    #     filtrou (id 45670 raw="PEQUI" com FK=Bom Despacho; id 26479
+    #     raw="PERDIGAO" com FK=Nova Serrana) — o gestor filtrava uma cidade e
+    #     lia o nome de outra dentro do modal.
+    municipio_nome = None
+    if c.municipio_id:
+        municipio_nome = (await db.execute(
+            select(Municipio.nome).where(Municipio.id == c.municipio_id)
+        )).scalar_one_or_none()
 
     return {
         "id": c.id,
@@ -687,7 +870,7 @@ async def get_convenio_estadual_detail(
         # se a prestacao foi entregue.
         "concedente_orgao": c.orgao_concedente,
         "convenente_nome": c.convenente_nome or raw.get("convenente"),
-        "municipio_nome": raw.get("municipio"),
+        "municipio_nome": municipio_nome,
         # "tipo_convenente" REMOVIDO — o campo era um palpite disfarçado de dado.
         #
         # A expressão era
@@ -711,16 +894,71 @@ async def get_convenio_estadual_detail(
         # A COLETA CONTINUA: `ingestion/sigcon_scraper.py:379` segue gravando
         # "Tipo de Beneficiario" em `raw_data.tipo_beneficiario`. Se um dia o
         # campo voltar à tela, volta com o dado real e sem inventar o resto.
-        "valor_concedente": float(c.valor_concedente) if c.valor_concedente else None,
-        "valor_contrapartida": float(c.valor_contrapartida) if c.valor_contrapartida else None,
-        "valor_total": float(c.valor_total) if c.valor_total else None,
-        "responsaveis": raw.get("responsaveis") or raw.get("responsavel"),
-        "proposta_vigencia": raw.get("proposta_vigencia") or raw.get("prop_vigencia"),
-        "valor_dotacao_complementar": raw.get("valor_dotacao_complementar") or raw.get("vr_dotacao_compl"),
-        "fase_etapa_status": raw.get("fase_etapa_status") or raw.get("fase_etapa") or c.situacao,
-        "setor": raw.get("setor"),
-        "data_criacao": raw.get("data_criacao") or raw.get("dt_criacao"),
-        "qt_alteracoes": c.qt_alteracoes if hasattr(c, "qt_alteracoes") else 0,
+        # `if x else None` colapsava ZERO em "sem dado": Decimal(0) e falso em
+        # Python. Medido (fonte <> FNS): concedente = 0 em 265 linhas,
+        # contrapartida = 0 em 180, total = 0 em 263. Zero informado pela fonte
+        # e DADO — e o que separa "o municipio nao poe contrapartida" de "nao
+        # sabemos quanto e". Sem isto o front nao consegue parar de inventar
+        # "R$ 0,00" sem apagar zero legitimo junto.
+        #
+        # ⚠️ NAO estender ao serializador da LISTA (o `estadual_to_response` no
+        # topo do arquivo): la `valor_repasse` = 0 faria a base virar falsy no
+        # calculo de "Repassado %" e a coluna sumiria de linhas que hoje mostram
+        # porcentagem.
+        "valor_concedente": float(c.valor_concedente) if c.valor_concedente is not None else None,
+        "valor_contrapartida": float(c.valor_contrapartida) if c.valor_contrapartida is not None else None,
+        "valor_total": float(c.valor_total) if c.valor_total is not None else None,
+        # Os `or raw.get(...)` que havia nestas linhas apontavam para chaves com
+        # ZERO ocorrencia em 4.093 linhas dos tres tenants (varridas as 72
+        # chaves do SIGCON-MG, as 46 do GCONV-ES e as 11 do FNS): "responsavel",
+        # "prop_vigencia", "vr_dotacao_compl", "fase_etapa" e "dt_criacao".
+        # Elo morto nao e inofensivo: ele PROMETE uma cobertura que nao existe.
+        # Foi lendo `proposta_vigencia or prop_vigencia` como "isso ja tem
+        # fallback" que o campo real do portal (`proposta_dias_vigencia`, 91
+        # linhas) passou despercebido por meses. Nenhum coletor grava as cinco.
+        "responsaveis": raw.get("responsaveis"),
+        "proposta_vigencia": _proposta_vigencia(raw),
+        "valor_dotacao_complementar": raw.get("valor_dotacao_complementar"),
+        # A sentinela vira None e o `or c.situacao` — FORA do normalizador, de
+        # proposito, porque situacao legitima nunca pode ser anulada — devolve a
+        # situacao; ai o guarda que JA EXISTE no modal (`fase_etapa_status !==
+        # status`) esconde o bloco sozinho, sem tocar no frontend. Some
+        # "Nao ha - Nao ha - Nao ha" (117 linhas) e "- -" (29); ficam inteiros
+        # "ALTERAR - ALTERAR - Alterar" (20) e "CELEBRACAO - PROPOSTA -
+        # ANALISE - CHECKLIST DE CELEBRACAO" (12).
+        "fase_etapa_status": _sem_sentinela_composto(raw.get("fase_etapa_status")) or c.situacao,
+        # 181 linhas traziam literalmente "Nao ha" num campo de largura dupla.
+        # "Processos Migrados" (20) NAO entra na lista de sentinelas: e fila
+        # real do fluxo do portal — ver o comentario de `_SENTINELA_VAZIO`.
+        "setor": _sem_sentinela(raw.get("setor")),
+        "data_criacao": raw.get("data_criacao"),
+        # "Qt. Alteracoes" so e NUMERO quando alguem de fato contou. Tres
+        # origens de "0" conviviam na coluna e so uma era zero de verdade: o
+        # scraper leu "Quantidade de Alteracoes Concluidas: 0" (81 linhas, zero
+        # LEGITIMO, continua "0"); a linha veio do CKAN ou do GCONV-ES, que nao
+        # coletam o campo, e a coluna tem DEFAULT 0 (78 linhas); ou o scraper
+        # nao abriu o detalhe e a coluna e NULL (703 linhas), que o frontend
+        # transformava em 0 com `?? 0`. Somadas, 781 das 899 linhas visiveis
+        # afirmavam "0 alteracoes" sem evidencia — inclusive o convenio do
+        # Trust com R$ 11,65 mi em aditivos que a propria tela mostra.
+        #
+        # A EVIDENCIA e `raw_data.qt_alteracoes_str`, que so o scraper grava e
+        # so quando o portal informou: existe em 118 linhas e bate com a coluna
+        # em 118/118. O `hasattr` que estava aqui era ruido — num objeto do ORM
+        # e sempre True.
+        #
+        # ⚠️ O `> 0` nao e redundancia, e trava: hoje nao muda nenhuma linha,
+        # mas as duas pontas PODEM dessincronizar (o scraper grava a chave mesmo
+        # com valor vazio, e o upsert preserva a coluna antiga com COALESCE).
+        # Sem ele, um convenio com 7 alteracoes REAIS viraria "-" calado.
+        # `raw.get(k, "")` e nao `raw.get(k) or ""`: o `or` e falsy para o
+        # numero JSON 0 e mataria o zero legitimo se a ingestao mudar de tipo.
+        "qt_alteracoes": (
+            c.qt_alteracoes
+            if (str(raw.get("qt_alteracoes_str", "")).strip().isdigit()
+                or (c.qt_alteracoes or 0) > 0)
+            else None
+        ),
         "ano": c.ano,
         "tp_instrumento": c.tp_instrumento or raw.get("tipo"),
         "fonte": c.fonte,

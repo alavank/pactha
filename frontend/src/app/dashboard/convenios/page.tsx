@@ -174,11 +174,30 @@ const PAGAMENTO_LABELS: Record<string, string> = {
  *  O valor "SIGCON" e traduzido no backend para casar tambem com fonte NULL e
  *  "SIGCON-MG" (backend/routers/convenios.py:180-191) — nao trocar por
  *  "SIGCON-MG" aqui sem olhar la. */
-const FONTES_OPCOES = ["SIGCON", "FNS"];
+/** RÓTULO das fontes. A LISTA vem do banco (`/convenios/fontes`), não daqui.
+ *
+ *  Era `["SIGCON","FNS"]` chumbado: num município do ES isso oferecia SIGCON-MG,
+ *  que devolve zero, e escondia o GConv-ES, que é o convênio estadual de
+ *  verdade (25 linhas do Trust, em 3 municípios). Em 39 dos 65 municípios dos
+ *  três clientes a única opção estadual oferecida devolvia ZERO.
+ *
+ *  Fonte nova na ingestão passa a aparecer sozinha; sem rótulo aqui o
+ *  MultiSelect mostra o valor cru, em vez de sumir com a opção. */
 const FONTES_ROTULOS: Record<string, string> = {
   SIGCON: "SIGCON-MG (convênio estadual)",
-  FNS: "Fundo Nacional de Saúde",
+  "SIGCON-MG": "SIGCON-MG (convênio estadual)",
+  "GCONV-ES": "GConv-ES (convênio estadual)",
+  FNS: "Fundo Nacional de Saúde (não é convênio estadual)",
 };
+
+/** ⚠️ FALLBACK, e não é paranoia: o CI tem filtro de `paths` — um commit que só
+ *  toque o frontend NÃO gera imagem de API — e as tags divergem (api = sha
+ *  curto, front = sha completo). Dá para o front novo subir contra uma API que
+ *  ainda não tem `/convenios/fontes`: o 404 cai no `.catch`, a lista ficaria
+ *  vazia e o filtro Fonte abriria sem nenhuma opção, calado.
+ *  Os dois valores continuam válidos no backend porque `_cond_fonte` mantém de
+ *  propósito a grafia legada 'SIGCON' (= 'SIGCON-MG' + fonte NULA). */
+const FONTES_FALLBACK = ["SIGCON", "FNS"];
 
 export default function ConveniosPage() {
   const searchParams = useSearchParams();
@@ -217,21 +236,55 @@ export default function ConveniosPage() {
   const [intervalo, setIntervalo] = useState<Intervalo>({});
   const [searchTerm, setSearchTerm] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [fontes, setFontes] = useState<string[]>([]);
   const [situacoes, setSituacoes] = useState<string[]>([]);
   const [anos, setAnos] = useState<number[]>([]);
 
   // Load distinct situacoes and anos for this municipio
+  // AS FONTES QUE ESTE MUNICÍPIO TEM DE VERDADE. Efeito PRÓPRIO, sem
+  // `fontesSel` nas deps: se dependesse da seleção, a lista de opções
+  // encolheria para a própria seleção e não haveria volta.
   useEffect(() => {
     if (!municipioId) return;
+    let vivo = true;
     api
-      .get<string[]>("/convenios/situacoes", { params: { municipio_id: municipioId } })
+      .get<string[]>("/convenios/fontes", { params: { municipio_id: municipioId } })
+      .then((res) => {
+        if (!vivo) return;
+        const opts = Array.isArray(res.data) ? res.data : [];
+        // ⚠️ ERRO e LISTA VAZIA são coisas diferentes: [] é resposta legítima
+        // (município sem nenhuma linha) e deve continuar vazia. Só o `catch`
+        // cai no fallback.
+        setFontes(opts);
+        // ⚠️ REFERÊNCIA PRESERVADA quando nada foi removido: `sel.filter()`
+        // devolve SEMPRE array novo — até `[].filter()` — e `fontesSel` está
+        // nas deps do fetch. Sem esta guarda, toda abertura da tela e toda
+        // troca de município disparariam uma busca a mais com per_page=2000.
+        setFontesSel((sel) => {
+          const mantidos = sel.filter((f) => opts.includes(f));
+          return mantidos.length === sel.length ? sel : mantidos;
+        });
+      })
+      .catch(() => { if (vivo) setFontes(FONTES_FALLBACK); });
+    return () => { vivo = false; };
+  }, [municipioId]);
+
+  // Situações e anos seguem a FONTE escolhida — senão o dropdown oferece o que
+  // a lista não tem e esconde o que ela tem. Com Fonte=FNS marcada, as duas
+  // caixas abriam VAZIAS enquanto a tela mostrava as linhas do FNS atrás.
+  useEffect(() => {
+    if (!municipioId) return;
+    const params: Record<string, string | number | string[]> = { municipio_id: municipioId };
+    if (fontesSel.length) params.fontes = fontesSel;
+    api
+      .get<string[]>("/convenios/situacoes", { params })
       .then((res) => setSituacoes(Array.isArray(res.data) ? res.data : []))
       .catch(() => {});
     api
-      .get<number[]>("/convenios/anos", { params: { municipio_id: municipioId } })
+      .get<number[]>("/convenios/anos", { params })
       .then((res) => setAnos(Array.isArray(res.data) ? res.data : []))
       .catch(() => {});
-  }, [municipioId]);
+  }, [municipioId, fontesSel]);
 
   // Debounce search input
   useEffect(() => {
@@ -442,12 +495,18 @@ export default function ConveniosPage() {
         {/* Fonte, nao "esfera": a coluna Fonte da tabela ja mostra esses
             mesmos valores, e agora da para filtrar por eles — um ou varios. */}
         <MultiSelect
-          opcoes={FONTES_OPCOES}
+          opcoes={fontes}
           rotulos={FONTES_ROTULOS}
           valor={fontesSel}
           onChange={setFontesSel}
-          placeholder="Todas as fontes"
-          rotuloTodos="Todas as fontes"
+          /* "Estaduais (sem FNS)" e não "Todas as fontes": o estado sem
+             nenhuma caixa marcada EXCLUI o FNS, então "Marcar tudo" devolve
+             MAIS linhas que o padrão — em 65 de 65 municípios os dois
+             discordam, e no Trust eles se invertem (11 convênios estaduais
+             contra 54 propostas do FNS, com os 11 sumindo). O rótulo antigo
+             era uma afirmação falsa na tela. */
+          placeholder="Estaduais (sem FNS)"
+          rotuloTodos="Estaduais (sem FNS)"
           ariaLabel="Fonte do convênio"
           className="w-56"
         />
@@ -662,7 +721,14 @@ export default function ConveniosPage() {
                       },
                       {
                         rotulo: "Contrapartida",
-                        valor: conv.valor_contrapartida ? formatCurrency(conv.valor_contrapartida) : "—",
+                        // `conv.valor_contrapartida ? ... : "—"` era veracidade
+                        // de JS: `0` é falso, então NULO e ZERO REAL saíam
+                        // iguais. Par obrigatório do `is not None` no
+                        // serializador da lista — sem os dois, lista e modal
+                        // discordam nas 180 linhas com contrapartida zero de
+                        // verdade.
+                        valor: conv.valor_contrapartida != null
+                          ? formatCurrency(conv.valor_contrapartida) : "—",
                       },
                       { rotulo: "Assinatura", valor: formatDate(conv.dt_inicio) || "—" },
                       { rotulo: "Fim da vigência", valor: formatDate(conv.dt_fim_vigencia) || "—" },

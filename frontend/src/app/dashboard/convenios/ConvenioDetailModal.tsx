@@ -26,7 +26,7 @@ interface ConvenioDetail {
   dt_assinatura?: string;
   dt_publicacao?: string;
   data_criacao?: string;
-  dias_vigencia_atual?: number;
+  dias_vigencia_atual?: number | null;
   vigencia_inicial?: string;
   vigencia_atual?: string;
   dias_restantes?: number;
@@ -39,13 +39,12 @@ interface ConvenioDetail {
   valor_concedente?: number;
   valor_contrapartida?: number;
   valor_total?: number;
-  valor_repasse?: number;
   valor_dotacao_complementar?: number | string;
   responsaveis?: string;
   proposta_vigencia?: string;
   fase_etapa_status?: string;
   setor?: string;
-  qt_alteracoes?: number;
+  qt_alteracoes?: number | null;
   ano?: number;
   tp_instrumento?: string;
   fonte?: string;
@@ -65,6 +64,25 @@ function campo(rotulo: string, valor: unknown, extra?: Partial<Campo>): Campo {
   const v = valor === null || valor === undefined || valor === "" ? "-" : String(valor);
   return { rotulo, valor: v, title: v === "-" ? undefined : `${rotulo}: ${v}`, ...extra };
 }
+
+/** "o portal nunca informou", que NÃO é zero.
+ *
+ *  `formatCurrency(null)` devolve "R$ 0,00" (lib/utils.ts), então estes cartões
+ *  afirmavam zero onde não houve coleta: contrapartida NULA em 368 das 899
+ *  linhas visíveis, em 23 dos 24 municípios, e Dotação Compl. ausente em 864 de
+ *  899. Zero de verdade continua imprimindo "R$ 0,00" (180 linhas) — e só passou
+ *  a ser distinguível porque o backend parou de colapsar 0 em None.
+ *
+ *  Texto e não "-": este arquivo já recusou o travessão solitário em bloco
+ *  grande (ver o "Objeto"), aqui o número sai grande, e um travessão colidiria
+ *  com o "-" que `campo()` usa nas grades.
+ *
+ *  ⚠️ NÃO alterar `formatCurrency`: são ~40 usos em 11 arquivos que dependem do
+ *  "R$ 0,00" de hoje. */
+const SEM_DADO = (
+  <span className="text-[13px]" style={{ color: "var(--bi-faint)" }}>não informado</span>
+);
+const moeda = (v: number | null | undefined) => (v == null ? SEM_DADO : formatCurrency(v));
 
 export default function ConvenioDetailModal({ conv, onClose }: Props) {
   const [detail, setDetail] = useState<ConvenioDetail | null>(null);
@@ -105,7 +123,20 @@ export default function ConvenioDetailModal({ conv, onClose }: Props) {
       <ModalHead
         titulo={
           <span className="flex flex-wrap items-center gap-2">
-            <span className="bi-num text-[15px]">{d?.nr_convenio_publicado || d?.nr_proposta || "-"}</span>
+            {/* "Sem número" e não "-", pela mesma razão já escrita para o
+                Objeto: travessão sozinho no ponto mais alto do modal lê-se como
+                falha de carregamento. Depois que a chave sintética do FNS saiu
+                do número publicado, 3.194 registros abrem sem identificador —
+                eles não têm proposta, SIAFI nem plano de trabalho. E enquanto
+                `d` é nulo o rótulo ainda não pode ser afirmado: ali o certo é a
+                reticência, que casa com o "Carregando…" logo abaixo. */}
+            <span className="bi-num text-[15px]">
+              {d
+                ? d.nr_convenio_publicado || d.nr_proposta || (
+                    <span style={{ color: "var(--bi-faint)" }}>Sem número</span>
+                  )
+                : "…"}
+            </span>
             {d?.status && <Selo tom={situacaoTom(d.status)}>{d.status}</Selo>}
           </span>
         }
@@ -150,21 +181,34 @@ export default function ConvenioDetailModal({ conv, onClose }: Props) {
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             <Numero
               rotulo="Valor Concedente"
-              valor={formatCurrency(d.valor_concedente ?? d.valor_repasse ?? d.valor_total)}
+              /* `?? d.valor_repasse` SAIU: o endpoint de detalhe nunca devolve
+                 essa chave — era fallback inalcançável. E não escondia número:
+                 `raw_data.valor_repasse` existe em 793 linhas do freitas e é
+                 IDÊNTICO a `valor_concedente` em 792 comparáveis. */
+              valor={moeda(d.valor_concedente ?? d.valor_total)}
             />
-            <Numero rotulo="Contrapartida" valor={formatCurrency(d.valor_contrapartida) || "R$ 0,00"} />
+            <Numero rotulo="Contrapartida" valor={moeda(d.valor_contrapartida)} />
             <Numero
               rotulo="Dotação Compl."
-              /* Bivalente de propósito: o SIGCON manda ora número, ora string
-                 já formatada dentro do raw_data. `formatCurrency` numa string
-                 devolve "R$ NaN". */
-              valor={
-                typeof d.valor_dotacao_complementar === "number"
-                  ? formatCurrency(d.valor_dotacao_complementar)
-                  : d.valor_dotacao_complementar || "R$ 0,00"
-              }
+              /* O SIGCON manda o valor JÁ FORMATADO ("R$ 241.771,54") dentro do
+                 raw_data: `jsonb_typeof` diz 'string' em 100% das 35 linhas que
+                 têm o campo, nas três bases — `formatCurrency` numa string
+                 devolveria "R$ NaN". O ramo de número fica só como guarda, caso
+                 a ingestão passe a converter.
+                 Duas correções: ausente vira "não informado" em vez de
+                 "R$ 0,00" (eram 864 de 899 linhas afirmando zero onde a fonte
+                 nada disse, e há 24 em que ela DE FATO disse "R$ 0,00", hoje
+                 indistinguíveis); e string SEM DÍGITO também vira "não
+                 informado" — uma linha do freitas imprimia o texto "Não há"
+                 dentro de uma caixa de moeda. */
+              valor={(() => {
+                const v = d.valor_dotacao_complementar;
+                if (typeof v === "number") return formatCurrency(v);
+                const s = (v ?? "").trim();
+                return /\d/.test(s) ? s : SEM_DADO;
+              })()}
             />
-            <Numero rotulo="Valor Total" valor={formatCurrency(d.valor_total)} tom="acento" />
+            <Numero rotulo="Valor Total" valor={moeda(d.valor_total)} tom="acento" />
           </div>
 
           <Secao
@@ -189,7 +233,16 @@ export default function ConvenioDetailModal({ conv, onClose }: Props) {
               campo("Data Criação", formatDate(d.data_criacao) || formatDate(d.dt_publicacao)),
               campo("Data Assinatura", formatDate(d.dt_assinatura)),
               campo("Data Publicação", formatDate(d.dt_publicacao)),
-              campo("Dias Vigência Atual", d.dias_vigencia_atual),
+              /* Era "Dias Vigência Atual", encostado em "Dias Restantes" no
+                 mesmo cartão: "Atual" lê-se como "agora" e o gestor entendia
+                 "quanto ainda falta" — mas o número é a DURAÇÃO do período
+                 vigente. E saía "730" pelado ao lado de um vizinho que sai
+                 "433d". O sufixo "d" é de propósito igual ao da célula vizinha:
+                 a convenção já existe no mesmo cartão. */
+              campo(
+                "Duração da Vigência",
+                d.dias_vigencia_atual != null ? `${d.dias_vigencia_atual}d` : null,
+              ),
               campo(
                 "Vigência Atual",
                 d.vigencia_inicial && d.vigencia_atual
@@ -202,7 +255,11 @@ export default function ConvenioDetailModal({ conv, onClose }: Props) {
                 d.dias_restantes_label || (d.dias_restantes != null ? `${d.dias_restantes}d` : null),
                 { tom: tomDias, span: 2 },
               ),
-              campo("Qt. Alterações", d.qt_alteracoes ?? 0),
+              /* Sem o `?? 0`: "não sei" deixa de virar "zero". O helper
+                 `campo()` já preserva o 0 legítimo — ele só troca null/""
+                 por "-", e é isso que separa as 81 linhas em que o portal
+                 contou zero das 703 em que ninguém contou nada. */
+              campo("Qt. Alterações", d.qt_alteracoes),
               campo("Proposta Vigência", d.proposta_vigencia, { span: 2 }),
             ]}
           />
