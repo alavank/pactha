@@ -11,6 +11,7 @@ difere por tabela e esta comentada em cada query:
   transferegov_propostas / transferegov_pac                      -> sufixo de `numero_proposta` ("xxx/AAAA")
 """
 from __future__ import annotations
+from services.nome_parlamentar import e_parlamentar_real
 
 import unicodedata
 from collections import defaultdict
@@ -304,7 +305,10 @@ async def bi_parlamentares_detalhe(
     def _add(nome_bruto: str, lanc: dict):
         for nm in str(nome_bruto or "").split(","):
             nm = nm.strip()
-            if len(nm) < 3:
+            # Mesma regra do ranking de Parlamentares (ver
+            # services/nome_parlamentar.py): "Não há" e marcador de ausencia do
+            # SIGCON, nao pessoa — e liderava o Painel do freitas.
+            if not e_parlamentar_real(nm):
                 continue
             key = _norm(nm)
             if not key:

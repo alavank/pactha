@@ -193,6 +193,12 @@ MIGRATION_FILES = [
     # Com o Telegram desligado e o WhatsApp ainda por fazer, a tela de Status
     # dos Dados vira o canal — e ele nao depende de credencial nenhuma.
     "add_watchdog_historico.sql",
+    # valor_total do SIGCON-MG defasado em 258 linhas: o backfill do CKAN grava
+    # o total com a parte do concedente e o scraper preenche a contrapartida
+    # depois sem recomputar — a tela somava 7.000.000 + 728.020,41 = 7.000.000.
+    # Idempotente por construcao (ver o cabecalho do .sql). ⚠️ REGISTRADA AQUI
+    # porque o runner so executa o que esta NESTA lista.
+    "fix_sigcon_total_com_contrapartida.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",
