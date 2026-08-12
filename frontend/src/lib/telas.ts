@@ -125,3 +125,36 @@ export function allowedTelasOf(
   }
   return null; // fallback seguro (sem info -> nao trava)
 }
+/** A pessoa logada enxerga esta tela?
+ *
+ *  Existe para COMPONENTE que nao esta na arvore de rotas e por isso nao passa
+ *  pelo guard do layout — hoje o botao de anotacao, que aparece dentro das
+ *  listas de Convenios e do TransfereGov.
+ *
+ *  O caso que motivou: o botao e a pre-carga de contagens chamavam
+ *  `/api/gestao/anotacoes/*` para TODO MUNDO. Quem nao tem a tela `gestao`
+ *  levava 403, o `catch` era silencioso e a tela funcionava — mas cada
+ *  abertura de lista gravava uma linha "barrado por falta de permissao" na
+ *  trilha de auditoria. Um usuario novo do Trust entrou, navegou e saiu: das 6
+ *  linhas do periodo dele, 4 eram esse ruido. A trilha existe para mostrar
+ *  tentativa de acesso indevido; enche-la de bloqueio que o proprio sistema
+ *  provocou e apagar o sinal com barulho.
+ *
+ *  Le do `pactha_user` que o layout ja grava no login.
+ *
+ *  ⚠️ NA DUVIDA, LIBERA. Sem info (SSR, localStorage vazio, JSON quebrado) o
+ *  retorno e `true`: esconder por engano tiraria funcionalidade de quem tem
+ *  direito, enquanto liberar por engano so leva ao 403 que o backend ja aplica
+ *  — a decisao de verdade continua sendo do servidor, e este helper e apenas
+ *  cortesia de UI. */
+export function podeVerTela(chave: string): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    const raw = window.localStorage.getItem("pactha_user");
+    if (!raw) return true;
+    const permitidas = allowedTelasOf(JSON.parse(raw));
+    return permitidas === null || permitidas.has(chave);
+  } catch {
+    return true;
+  }
+}
