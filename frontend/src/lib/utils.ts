@@ -13,10 +13,28 @@ export function formatCurrency(value: number | null | undefined): string {
   }).format(value);
 }
 
+/** Data em pt-BR, ou "-" quando não há data legível.
+ *
+ *  ⚠️ Esta função ESCREVIA "Invalid Date" na tela, em inglês. O `+ "T00:00:00"`
+ *  só funciona sobre ISO: quando o valor vem `dd/mm/aaaa` — que é como o SIGCON
+ *  entrega `data_criacao` — o resultado é `"16/04/2018T00:00:00"`, o `Date`
+ *  nasce inválido e `toLocaleDateString` devolve a STRING "Invalid Date", que
+ *  segue direto para a célula. Medido: o campo "Data Criação" do modal de
+ *  Convênios não mostrava uma data válida em NENHUMA das três bases.
+ *
+ *  Duas correções, e a segunda é a que importa: aceitar `dd/mm/aaaa` (com hora
+ *  opcional, que é o formato do ES) e, principalmente, o guard de `isNaN` —
+ *  sem ele, QUALQUER string não-ISO que chegue aqui vira "Invalid Date" na
+ *  cara do cliente. São ~40 usos em 11 arquivos; a mudança é estritamente
+ *  melhoria, porque ISO continua idêntico e nada pode depender de receber
+ *  "Invalid Date". */
 export function formatDate(date: string | null | undefined): string {
   if (!date) return "-";
-  const d = new Date(date + "T00:00:00");
-  return d.toLocaleDateString("pt-BR");
+  const s = String(date).trim();
+  const br = s.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+  const iso = br ? `${br[3]}-${br[2]}-${br[1]}` : s.slice(0, 10);
+  const d = new Date(iso + "T00:00:00");
+  return isNaN(d.getTime()) ? "-" : d.toLocaleDateString("pt-BR");
 }
 
 export function diasRestantesColor(dias: number | null | undefined): string {
