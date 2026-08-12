@@ -19,6 +19,7 @@ from datetime import date
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from models import ConvenioEstadual, Municipio
+from services.nome_parlamentar import e_parlamentar_real
 
 logger = logging.getLogger("rm_builder")
 
@@ -393,6 +394,13 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
         elif not isinstance(_parl, str):
             _parl = str(_parl) if _parl else ""
         _parl = _parl.replace("�", "").replace("  ", " ").strip()
+        # "Não há" nao e parlamentar — e o texto que o SIGCON escreve quando nao
+        # ha responsavel. Sem isto o relatorio mensal atribui convenio a um
+        # parlamentar inexistente, e o RM CONGELA o resultado em
+        # rm_relatorios.conteudo: documento entregue com nome errado nao se
+        # corrige depois. Regra unica em services/nome_parlamentar.py.
+        if not e_parlamentar_real(_parl):
+            _parl = ""
         add_item(parte, secao, orgao, {
             "tipo": tipo_label,
             "numero": nr_instr or nr_proposta or c.nr_sigcon or "",

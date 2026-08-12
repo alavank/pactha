@@ -869,7 +869,24 @@ def _upsert_convenios_batch(cur, records) -> tuple[int, int]:
                     nr_proposta = COALESCE(EXCLUDED.nr_proposta, convenios_estadual.nr_proposta),
                     situacao = EXCLUDED.situacao,
                     valor_concedente = COALESCE(EXCLUDED.valor_concedente, convenios_estadual.valor_concedente),
-                    valor_total = COALESCE(EXCLUDED.valor_total, convenios_estadual.valor_total),
+                    -- ⚠️ valor_total RECOMPUTADO, e nao apenas preservado.
+                    -- O COALESCE simples mantinha o total ANTIGO sempre que a
+                    -- rodada nao trouxesse total novo — e era exatamente esse o
+                    -- caso do defeito: o backfill do CKAN grava o total com so
+                    -- a parte do concedente, e a coleta seguinte preenche a
+                    -- CONTRAPARTIDA sem refazer a soma. A tela somava
+                    -- 7.000.000 + 728.020,41 e exibia 7.000.000, em 258 linhas.
+                    -- Sem esta mudanca, a migration que corrige o passado seria
+                    -- desfeita pela proxima coleta.
+                    -- Se as DUAS parcelas forem desconhecidas, nao ha o que
+                    -- somar e o comportamento antigo vale.
+                    valor_total = CASE
+                        WHEN COALESCE(EXCLUDED.valor_concedente, convenios_estadual.valor_concedente) IS NULL
+                         AND COALESCE(EXCLUDED.valor_contrapartida, convenios_estadual.valor_contrapartida) IS NULL
+                        THEN COALESCE(EXCLUDED.valor_total, convenios_estadual.valor_total)
+                        ELSE COALESCE(EXCLUDED.valor_concedente, convenios_estadual.valor_concedente, 0)
+                           + COALESCE(EXCLUDED.valor_contrapartida, convenios_estadual.valor_contrapartida, 0)
+                      END,
                     valor_repassado = COALESCE(EXCLUDED.valor_repassado, convenios_estadual.valor_repassado),
                     valor_contrapartida = COALESCE(EXCLUDED.valor_contrapartida, convenios_estadual.valor_contrapartida),
                     convenente_nome = COALESCE(EXCLUDED.convenente_nome, convenios_estadual.convenente_nome),

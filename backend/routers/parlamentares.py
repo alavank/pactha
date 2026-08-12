@@ -14,6 +14,7 @@ Endpoints:
 """
 from __future__ import annotations
 import unicodedata
+from services.nome_parlamentar import e_parlamentar_real
 from typing import Optional
 from collections import defaultdict
 from fastapi import APIRouter, Depends, Query, HTTPException
@@ -162,7 +163,13 @@ async def aggregate_parlamentares(
     for row in (await db.execute(text(sql_sigcon), params)).fetchall():
         for nm in str(row[0] or "").split(","):
             nm = nm.strip()
-            if not nm or len(nm) < 3:
+            # "Não há" NAO e parlamentar. O SIGCON escreve esse texto em
+            # `responsaveis` quando nao ha responsavel, e ele estava LIDERANDO o
+            # ranking do freitas com R$ 14.936.735,03 em 12 lancamentos e 7
+            # municipios — treze vezes o segundo colocado. Ver
+            # services/nome_parlamentar.py: a regra mora la porque tres telas
+            # leem esta mesma coluna.
+            if not e_parlamentar_real(nm):
                 continue
             key = _norm(nm)
             if not key:
