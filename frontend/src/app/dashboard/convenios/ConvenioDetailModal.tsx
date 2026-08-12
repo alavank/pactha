@@ -36,7 +36,6 @@ interface ConvenioDetail {
   concedente_orgao?: string;
   convenente_nome?: string;
   municipio_nome?: string;
-  tipo_convenente?: string;
   valor_concedente?: number;
   valor_contrapartida?: number;
   valor_total?: number;
@@ -214,8 +213,14 @@ export default function ConvenioDetailModal({ conv, onClose }: Props) {
             campos={[
               campo("Concedente / Órgão", d.concedente_orgao, { span: 2 }),
               campo("Convenente / OSC", d.convenente_nome, { span: 2 }),
-              campo("Município", d.municipio_nome),
-              campo("Tipo Convenente", d.tipo_convenente),
+              // "Município" fica em coluna inteira agora que "Tipo Convenente"
+              // saiu: o campo removido escrevia "Administração Municipal" por
+              // conta própria em 4.018 de 4.093 linhas — inclusive onde o
+              // convenente é um Fundo Municipal de Saúde, que administração
+              // municipal não é. E nunca distinguia nada: nas 75 vezes em que a
+              // fonte de fato informou, informou sempre a mesma coisa. O que
+              // ele prometia já está na linha de cima, em "Convenente / OSC".
+              campo("Município", d.municipio_nome, { span: 2 }),
               campo("Responsável(is)", d.responsaveis, { span: 2 }),
               campo("Setor", d.setor, { span: 2 }),
             ]}
