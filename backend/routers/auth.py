@@ -175,10 +175,19 @@ async def refresh_token(
     # sessao atravessar a renovacao em vez de virar uma sessao nova por hora.
     # Token antigo, emitido antes desta mudanca, nao tem `sid`: cai no `jti`,
     # que e o comportamento de antes. Ninguem e deslogado pela virada.
-    _sid = payload.get("sid")
-    _claims = {"sub": user.id, "role": user.role}
-    if _sid:
-        _claims["sid"] = _sid
+    # ⚠️ TOKEN ANTIGO GANHA UM `sid` AQUI, em vez de continuar sem.
+    #
+    # Quem ja estava logado quando a telemetria subiu tem refresh SEM `sid`, e
+    # `audit.py::_sessao` cai no `jti` — que e REGERADO a cada renovacao. Ou
+    # seja: a cada hora nascia uma "sessao" nova para a mesma pessoa, e o painel
+    # mostrava DOIS Tiagos online ao mesmo tempo, ambos legitimos e ambos
+    # incompletos.
+    #
+    # Emitir um `sid` novo aqui nao ressuscita a sessao anterior (aquela ja se
+    # perdeu), mas ESTANCA: da renovacao em diante a pessoa tem uma sessao
+    # estavel, sem precisar deslogar e logar de novo.
+    _sid = payload.get("sid") or uuid.uuid4().hex
+    _claims = {"sub": user.id, "role": user.role, "sid": _sid}
     new_access = create_access_token(_claims)
     new_refresh = create_refresh_token(user.id, sid=_sid)
     csrf = generate_csrf_token()

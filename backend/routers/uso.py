@@ -53,6 +53,10 @@ _JANELA_ONLINE_S = 90
 # Depois de parar de dar sinal, a sessao ainda aparece por mais um tempo — para
 # o chip poder ficar vermelho e se despedir, em vez de sumir sem explicacao.
 _JANELA_SAINDO_S = 150
+# Depois de um LOGOUT EXPLICITO o cartao fica so o tempo de se despedir em
+# vermelho. E fato consumado, nao suspeita — segurar mais contradiz o que a
+# pessoa acabou de fazer.
+_JANELA_DESPEDIDA_S = 20
 
 
 class _Evento(BaseModel):
@@ -286,10 +290,18 @@ async def presenca(
                s.seg_ativos, u.role, s.ultimo_sinal, s.fim,
                EXTRACT(EPOCH FROM (NOW() - s.ultimo_sinal))::int AS ha_seg
         FROM uso_sessao s JOIN users u ON u.id = s.user_id
-        WHERE s.ultimo_sinal > NOW() - make_interval(secs => :janela)
-          AND COALESCE(u.role, '') <> 'viewer'
+        WHERE COALESCE(u.role, '') <> 'viewer'
+          -- QUEM SAIU DE VERDADE some rapido; quem sumiu em silencio demora.
+          -- Sao coisas diferentes: o logout explicito e um FATO (a pessoa
+          -- clicou em sair), e deixa-la 2,5 minutos no painel depois disso
+          -- contradiz o que ela acabou de fazer. Ja a sessao que para de dar
+          -- sinal pode ser rede ruim, tunel, notebook fechando a tampa — ali a
+          -- espera maior evita fazer alguem sumir e voltar piscando.
+          AND CASE WHEN s.fim IS NOT NULL
+                   THEN s.fim > NOW() - make_interval(secs => :saiu)
+                   ELSE s.ultimo_sinal > NOW() - make_interval(secs => :janela) END
         ORDER BY s.inicio
-    """), {"janela": _JANELA_SAINDO_S})
+    """), {"janela": _JANELA_SAINDO_S, "saiu": _JANELA_DESPEDIDA_S})
     linhas = r.fetchall()
     return {
         "agora": datetime.now(timezone.utc).isoformat(),
