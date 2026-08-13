@@ -41,8 +41,11 @@ function dur(seg: number | null): string {
   if (m < 60) return `${m}min`;
   return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}min`;
 }
+/** COM SEGUNDOS, de propósito. Sem eles, seis atos do mesmo minuto apareciam
+ *  todos como "22:29" e a lista parecia desordenada — a ordem estava certa, o
+ *  carimbo é que escondia a diferença. */
 function hora(iso: string): string {
-  try { return new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }); }
+  try { return new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "medium" }); }
   catch { return iso; }
 }
 const TOM: Record<string, "ok" | "atencao" | "neutro"> = {
@@ -56,8 +59,8 @@ export default function TelemetriaPage() {
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
 
-  const carregar = useCallback(async () => {
-    setLoading(true);
+  const carregar = useCallback(async (silencioso = false) => {
+    if (!silencioso) setLoading(true);
     try {
       const [s, e] = await Promise.all([
         api.get<{ sessoes: Sessao[] }>("/uso/sessoes", { params: { dias: 7 } }),
@@ -74,6 +77,19 @@ export default function TelemetriaPage() {
   }, []);
 
   useEffect(() => { carregar(); }, [carregar]);
+
+  // ⚠️ A LISTA SE ATUALIZA SOZINHA. Sem isto era preciso apertar "Atualizar"
+  // para ver o que estava acontecendo — numa tela cujo propósito é justamente
+  // acompanhar. 20s casa com o envio de 45s do outro lado: um ato demora no
+  // máximo ~1min para aparecer, e o gargalo é o envio, não esta consulta.
+  // Pausa com a aba escondida: recarregar em segundo plano é gastar CPU do
+  // servidor para atualizar o que ninguém está vendo.
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") carregar(true);
+    }, 20_000);
+    return () => clearInterval(t);
+  }, [carregar]);
 
   const doDia = aberta ? eventos.filter((e) => e.sid === aberta) : eventos;
 
@@ -101,7 +117,7 @@ export default function TelemetriaPage() {
             é uso.
           </p>
         </div>
-        <Button variant="outline" onClick={carregar} disabled={loading}>
+        <Button variant="outline" onClick={() => carregar()} disabled={loading}>
           {loading ? <Loader2 className="mr-1 size-4 animate-spin" /> : <RefreshCw className="mr-1 size-4" />}
           Atualizar
         </Button>

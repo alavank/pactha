@@ -27,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database import get_db
 from models.user import User
 from services.auth import get_current_user
-from services.audit import _sessao as _sessao_do_token
+from services.audit import _sessao as _sessao_do_token, registrar
 from services.registro_rotas import exige
 
 router = APIRouter(prefix="/api/uso", tags=["uso"])
@@ -161,8 +161,17 @@ async def receber_lote(
               -- gravada com o endpoint respondendo 204 alegremente. O silencio
               -- que protege o usuario tambem esconde o defeito: por isso o
               -- logger.exception ao lado nao e enfeite.
-              fim          = CASE WHEN CAST(:encerrar AS varchar) IS NULL THEN fim ELSE NOW() END,
-              motivo_fim   = COALESCE(CAST(:encerrar AS varchar), motivo_fim)
+              -- ⚠️ BATIMENTO SEM `encerrar` RESSUSCITA A SESSAO.
+              -- `pagehide` dispara ao RECARREGAR a pagina, nao so ao fechar —
+              -- entao um F5 marcava a sessao como encerrada, e como o token
+              -- continua o mesmo o batimento seguinte atualizava uma sessao
+              -- morta: o cartao ficava VERMELHO para sempre, inclusive o da
+              -- propria pessoa que estava ali olhando.
+              -- Quem manda sinal esta vivo. A despedida da aba e uma PISTA de
+              -- saida, nunca uma sentenca.
+              fim          = CASE WHEN CAST(:encerrar AS varchar) IS NULL THEN NULL ELSE NOW() END,
+              motivo_fim   = CASE WHEN CAST(:encerrar AS varchar) IS NULL THEN NULL
+                                  ELSE CAST(:encerrar AS varchar) END
             WHERE sid = :sid AND user_id = :uid
         """), {
             "sid": sid, "uid": current.id, "ativo": bool(corpo.sessao.ativo),
@@ -218,6 +227,29 @@ async def receber_lote(
                         for d in cols["det"]],
             })
 
+        # ⭐ SESSAO QUE FECHA VIRA UM ATO NA TRILHA — com o tempo dentro.
+        # E a ponte entre os dois sistemas: a telemetria sabe quanto tempo a
+        # pessoa ficou e quanto foi ocioso; a trilha e quem guarda "fulano saiu"
+        # como evento consequente e imutavel. Sem isto, o "saiu do sistema" da
+        # Auditoria continuaria sendo uma linha seca, sem duracao.
+        # UMA linha por sessao, e nao uma por batimento — o guard e o `encerrar`.
+        if corpo.sessao.encerrar:
+            r = await db.execute(text("""
+                SELECT seg_ativos, seg_ociosos, eventos,
+                       EXTRACT(EPOCH FROM (COALESCE(fim, ultimo_sinal) - inicio))::int
+                FROM uso_sessao WHERE sid = :sid AND user_id = :uid
+            """), {"sid": sid, "uid": current.id})
+            d = r.first()
+            if d:
+                await registrar(
+                    db, action="sessao.encerrada", user=current, request=request,
+                    target_type="sessao", target_id=sid,
+                    details={
+                        "motivo": corpo.sessao.encerrar,
+                        "duracao_seg": d[3], "ativo_seg": d[0],
+                        "ocioso_seg": d[1], "atos": d[2],
+                    },
+                )
         await db.commit()
     except Exception:
         # Engolir e DELIBERADO: a alternativa e a metrica derrubar a acao.
@@ -276,6 +308,13 @@ async def presenca(
             "estado": ("saindo" if (x[8] is not None or (x[9] or 0) > _JANELA_ONLINE_S)
                        else "presente"),
             "ha_seg": x[9],
+            # A COR VEM DO SERVIDOR, derivada do id da sessao. Assim ela e
+            # ESTAVEL enquanto a pessoa estiver logada — nao muda a cada
+            # atualizacao da tela de quem esta olhando — e NOVA quando ela sai e
+            # entra de novo. Nao e por usuario: cor amarrada a pessoa viraria
+            # codigo que a equipe decora.
+            "cor": int(x[0][:8], 16) % 6,
+            "sou_eu": x[1] == current.email,
         } for x in linhas],
     }
 
@@ -336,7 +375,10 @@ async def listar_eventos(
         LEFT JOIN uso_sessao s ON s.sid = e.sid
         LEFT JOIN municipios m ON m.id = e.municipio_id
         WHERE {cond}
-        ORDER BY e.ocorrido_em DESC
+        -- `id DESC` desempata: varios atos do MESMO lote chegam com carimbos
+        -- a milissegundos de distancia, e sem o desempate a lista embaralhava
+        -- dentro do minuto — parecia desordenada porque estava.
+        ORDER BY e.ocorrido_em DESC, e.id DESC
         LIMIT :lim
     """), par)
     return {"eventos": [dict(x._mapping) for x in r.fetchall()]}
