@@ -154,7 +154,18 @@ jobs:
               "$COOLIFY_URL/api/v1/applications/$1" > /dev/null
           }
           disparar_deploy() {  # $1 uuid -> stdout: deployment_uuid (vazio = falhou)
-            "${CURL[@]}" --retry 3 --retry-all-errors "$COOLIFY_URL/api/v1/deploy?uuid=$1" \
+            # POST, e nao GET. O Coolify se atualizou sozinho para a v4.3.1 e o
+            # disparo de deploy virou POST. O GET NAO sumiu — passou a responder
+            # um aviso "isso precisa ser POST", com HTTP 200:
+            #     Route::get ('/deploy', [OtherController::class, 'post_required'])
+            #     Route::post('/deploy', [DeployController::class, 'deploy'])
+            # Por isso a quebra foi SILENCIOSA: 200 com o corpo errado, o jq nao
+            # achou `.deployments[0].deployment_uuid`, devolveu vazio, e o CI
+            # concluiu (corretamente) "deploy nao disparou" e reverteu a tag nos
+            # tres tenants. Um 404 teria feito o --retry-all-errors gritar.
+            # Conferido contra a instancia: o POST devolve o MESMO formato,
+            # entao so o verbo muda.
+            "${CURL[@]}" -X POST --retry 3 --retry-all-errors "$COOLIFY_URL/api/v1/deploy?uuid=$1" \
               | jq -r '.deployments[0].deployment_uuid // ""'
           }
           espera_deployment() {  # $1 deployment_uuid; fila 20min + execucao 10min
