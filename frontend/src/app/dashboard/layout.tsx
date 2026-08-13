@@ -51,6 +51,7 @@ import { ehSuperAdmin } from "@/lib/conta";
 import { CONSOLIDADO, MunicipioProvider, useMunicipio } from "@/contexts/MunicipioContext";
 import { EnteAtendido, SUBTITULO_PACTHA } from "@/components/bi/Marca";
 import UsoProvider from "@/components/UsoProvider";
+import { encerrarSessao } from "@/lib/uso";
 
 type NavLeaf = { href: string; label: string; icon?: React.ComponentType<{ className?: string }> };
 type NavSection = { sectionLabel: string; children: NavLeaf[] };
@@ -819,6 +820,17 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
      município errado). */
 
   const handleLogout = useCallback(async () => {
+    // ⚠️ A TELEMETRIA FECHA A SESSAO **ANTES** do logout, e a ordem e o ponto:
+    // `/auth/logout` limpa o cookie de autenticacao, e depois disso o envio
+    // tomaria 401 — a sessao ficaria eternamente "aberta" no painel, morrendo
+    // so por expiracao 2 minutos depois, e o evento `sessao.encerrada` (com
+    // duracao, tempo ativo e ocioso) nunca seria gravado na trilha.
+    //
+    // `await` de proposito: e o unico momento em que vale segurar o clique por
+    // uma fracao de segundo, porque e a ULTIMA chance de contar o que aconteceu
+    // nesta sessao. Se falhar, `encerrarSessao` engole sozinha e o logout segue
+    // — metrica nunca impede alguem de sair.
+    await encerrarSessao();
     try {
       await api.post("/auth/logout");
     } catch {
