@@ -50,6 +50,9 @@ _TETO_SALTO_S = 150
 # Uma sessao e considerada VIVA se deu sinal nos ultimos 90s (o flush e a cada
 # 45s, entao isto tolera uma perda).
 _JANELA_ONLINE_S = 90
+# Depois de parar de dar sinal, a sessao ainda aparece por mais um tempo — para
+# o chip poder ficar vermelho e se despedir, em vez de sumir sem explicacao.
+_JANELA_SAINDO_S = 150
 
 
 class _Evento(BaseModel):
@@ -148,11 +151,18 @@ async def receber_lote(
               seg_ociosos = seg_ociosos + CASE WHEN :ativo THEN 0
                               ELSE LEAST(EXTRACT(EPOCH FROM (NOW() - ultimo_sinal)), :teto)::int END,
               ultimo_sinal = NOW(),
-              tela_atual   = COALESCE(:tela, tela_atual),
+              tela_atual   = COALESCE(CAST(:tela AS varchar), tela_atual),
               eventos      = eventos + :n,
               descartados  = descartados + :desc,
-              fim          = CASE WHEN :encerrar IS NULL THEN fim ELSE NOW() END,
-              motivo_fim   = COALESCE(:encerrar, motivo_fim)
+              -- ⚠️ CAST OBRIGATORIO. Sem ele o Postgres nao consegue inferir o
+              -- tipo de `:encerrar` em `CASE WHEN ... IS NULL` e devolve
+              -- AmbiguousParameterError — o UPDATE inteiro falhava, o `except`
+              -- engolia (como foi projetado) e o resultado era ZERO sessao
+              -- gravada com o endpoint respondendo 204 alegremente. O silencio
+              -- que protege o usuario tambem esconde o defeito: por isso o
+              -- logger.exception ao lado nao e enfeite.
+              fim          = CASE WHEN CAST(:encerrar AS varchar) IS NULL THEN fim ELSE NOW() END,
+              motivo_fim   = COALESCE(CAST(:encerrar AS varchar), motivo_fim)
             WHERE sid = :sid AND user_id = :uid
         """), {
             "sid": sid, "uid": current.id, "ativo": bool(corpo.sessao.ativo),
@@ -241,22 +251,31 @@ async def presenca(
     """
     r = await db.execute(text("""
         SELECT s.sid, s.user_email, s.usuario_nome, s.inicio, s.tela_atual,
-               s.seg_ativos, u.role
+               s.seg_ativos, u.role, s.ultimo_sinal, s.fim,
+               EXTRACT(EPOCH FROM (NOW() - s.ultimo_sinal))::int AS ha_seg
         FROM uso_sessao s JOIN users u ON u.id = s.user_id
-        WHERE s.fim IS NULL
-          AND s.ultimo_sinal > NOW() - make_interval(secs => :janela)
+        WHERE s.ultimo_sinal > NOW() - make_interval(secs => :janela)
           AND COALESCE(u.role, '') <> 'viewer'
         ORDER BY s.inicio
-    """), {"janela": _JANELA_ONLINE_S})
+    """), {"janela": _JANELA_SAINDO_S})
     linhas = r.fetchall()
     return {
         "agora": datetime.now(timezone.utc).isoformat(),
+        # O ESTADO vem do servidor, nao do relogio do navegador:
+        #   presente  — deu sinal agora e esta ativo
+        #   ocioso    — esta la, mas sem clique/tecla/rolagem
+        #   saindo    — parou de dar sinal; some da lista em poucos segundos
+        # A janela de "saindo" existe para o chip poder despedir-se em vermelho
+        # antes de sumir, em vez de desaparecer sem explicacao.
         "online": [{
             "nome": x[2] or (x[1] or "").split("@")[0],
             "email": x[1],
             "desde": x[3].isoformat() if x[3] else None,
             "tela": x[4],
             "seg_ativos": x[5],
+            "estado": ("saindo" if (x[8] is not None or (x[9] or 0) > _JANELA_ONLINE_S)
+                       else "presente"),
+            "ha_seg": x[9],
         } for x in linhas],
     }
 

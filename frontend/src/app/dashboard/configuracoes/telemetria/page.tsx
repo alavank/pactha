@@ -12,6 +12,7 @@ import { Activity, Loader2, RefreshCw } from "lucide-react";
 import api from "@/lib/api";
 import { Bloco, BlocoHead, Campos, ItemLinha, Lista, Selo, Vazio } from "@/components/ui/superficies";
 import { Button } from "@/components/ui/button";
+import PresencaAgora from "@/components/PresencaAgora";
 
 interface Sessao {
   sid: string; user_email: string; usuario_nome: string | null;
@@ -97,7 +98,7 @@ export default function TelemetriaPage() {
           <p className="mt-1 text-[11px]" style={{ color: "var(--bi-faint)" }}>
             Últimos 7 dias. O tempo <strong>ativo</strong> conta só com a aba em primeiro plano e
             com clique, tecla ou rolagem nos últimos 5 minutos — notebook aberto numa reunião não
-            é uso. Quem está online agora aparece no canto superior direito de qualquer tela.
+            é uso.
           </p>
         </div>
         <Button variant="outline" onClick={carregar} disabled={loading}>
@@ -114,6 +115,10 @@ export default function TelemetriaPage() {
 
       {!erro && (
         <>
+          {/* Quem está agora, ACIMA de tudo: é a única parte viva da tela — o
+              resto é histórico. Fica aqui e em nenhum outro lugar do sistema. */}
+          <PresencaAgora />
+
           <Bloco className="p-3">
             <BlocoHead icon={Activity} titulo="Sessões"
               sub={`${sessoes.length} nos últimos 7 dias · clique para ver só os atos daquela sessão`} />

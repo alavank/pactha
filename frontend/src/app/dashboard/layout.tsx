@@ -51,7 +51,6 @@ import { ehSuperAdmin } from "@/lib/conta";
 import { CONSOLIDADO, MunicipioProvider, useMunicipio } from "@/contexts/MunicipioContext";
 import { EnteAtendido, SUBTITULO_PACTHA } from "@/components/bi/Marca";
 import UsoProvider from "@/components/UsoProvider";
-import PresencaChip from "@/components/PresencaChip";
 
 type NavLeaf = { href: string; label: string; icon?: React.ComponentType<{ className?: string }> };
 type NavSection = { sectionLabel: string; children: NavLeaf[] };
@@ -917,10 +916,6 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
           justamente no gesto mais interessante de medir. */}
       <UsoProvider />
 
-      {/* Quem esta online. Irmao do botao de menu do celular (que e
-          `fixed top-3 left-3`), e nao dentro do `<main>` — la ele subiria junto
-          com a rolagem da pagina. */}
-      <PresencaChip className="fixed top-3 right-4 z-40" />
 
       {/* Main content */}
       {/* pactha-scroll reserva a canaleta da barra: sem isso, trocar de uma aba
