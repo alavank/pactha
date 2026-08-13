@@ -143,7 +143,11 @@ jobs:
               echo "::error::frontend $APP: PATCH da tag falhou — app intocado"
               FALHAS="$FALHAS $APP"; continue
             fi
-            DEP=$("${CURL[@]}" --retry 3 --retry-all-errors "$COOLIFY_URL/api/v1/deploy?uuid=$APP" \
+            # POST, e nao GET — o Coolify v4.3.1 mudou o verbo do disparo. O GET
+            # passou a responder "isso precisa ser POST" com HTTP 200, e foi por
+            # isso que a quebra passou despercebida. Ver o comentario longo no
+            # build-backend.yml.
+            DEP=$("${CURL[@]}" -X POST --retry 3 --retry-all-errors "$COOLIFY_URL/api/v1/deploy?uuid=$APP" \
                   | jq -r '.deployments[0].deployment_uuid // ""')
             if [ -z "$DEP" ]; then
               echo "::error::frontend $APP: deploy nao disparou — revertendo tag p/ '${OLD_TAG:-?}'"
