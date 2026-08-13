@@ -1,3 +1,4 @@
+import uuid
 import time
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -78,8 +79,11 @@ async def sso_login(t: str, request: Request, db: AsyncSession = Depends(get_db)
     u = await db.get(User, int(payload.get("sub", 0) or 0))
     if not u or not u.active:
         return RedirectResponse(url="/login?sso=invalido", status_code=302)
-    access = create_access_token({"sub": u.id, "role": u.role})
-    refresh = create_refresh_token(u.id)
+    # `sid` = a SESSAO, gerada UMA vez e copiada para os dois tokens. Sem ela, a
+    # renovacao de hora em hora abria uma "sessao" nova na trilha e no uso.
+    _sid = uuid.uuid4().hex
+    access = create_access_token({"sub": u.id, "role": u.role, "sid": _sid})
+    refresh = create_refresh_token(u.id, sid=_sid)
     csrf = generate_csrf_token()
     resp = RedirectResponse(url="/dashboard", status_code=302)
     set_auth_cookies(resp, access, refresh, csrf)
@@ -131,8 +135,9 @@ async def login(
     user.last_login_at = datetime.now(timezone.utc)
     await db.commit()
 
-    access = create_access_token({"sub": user.id, "role": user.role})
-    refresh = create_refresh_token(user.id)
+    _sid = uuid.uuid4().hex
+    access = create_access_token({"sub": user.id, "role": user.role, "sid": _sid})
+    refresh = create_refresh_token(user.id, sid=_sid)
     csrf = generate_csrf_token()
     set_auth_cookies(response, access, refresh, csrf)
 
@@ -166,8 +171,16 @@ async def refresh_token(
 
     # rotate: revoga refresh antigo + emite novos
     revoke_jti(payload["jti"])
-    new_access = create_access_token({"sub": user.id, "role": user.role})
-    new_refresh = create_refresh_token(user.id)
+    # COPIA o `sid` do refresh recebido — nao gera um novo. E isto que faz a
+    # sessao atravessar a renovacao em vez de virar uma sessao nova por hora.
+    # Token antigo, emitido antes desta mudanca, nao tem `sid`: cai no `jti`,
+    # que e o comportamento de antes. Ninguem e deslogado pela virada.
+    _sid = payload.get("sid")
+    _claims = {"sub": user.id, "role": user.role}
+    if _sid:
+        _claims["sid"] = _sid
+    new_access = create_access_token(_claims)
+    new_refresh = create_refresh_token(user.id, sid=_sid)
     csrf = generate_csrf_token()
     set_auth_cookies(response, new_access, new_refresh, csrf)
 

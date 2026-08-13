@@ -368,5 +368,5 @@ def test_o_alcance_nao_virou_permissao_do_catalogo():
     O total sobe quando uma permissao NOVA entra no catalogo (Incremento 7
     acrescentou `usuarios.modelos`); o que este teste guarda e a ausencia de
     caixinha de ALCANCE — `gestao.editar_proprios` e a forma que foi recusada."""
-    assert len(permissoes.CATALOGO) == 67
+    assert len(permissoes.CATALOGO) == 68
     assert not any("propri" in c for c in permissoes.CATALOGO)

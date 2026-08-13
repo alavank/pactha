@@ -34,6 +34,7 @@ export type AbaConfig = {
 export const ABAS_CONFIGURACOES: AbaConfig[] = [
   { href: "/dashboard/configuracoes/usuarios", label: "Usuários", icon: Users, soAdmin: true },
   { href: "/dashboard/configuracoes/auditoria", label: "Auditoria", icon: ScrollText, tela: "auditoria" },
+  { href: "/dashboard/configuracoes/telemetria", label: "Telemetria", icon: Activity, tela: "auditoria" },
   { href: "/dashboard/configuracoes/cofre", label: "Cofre de Senhas", icon: KeyRound, tela: "cofre" },
   { href: "/dashboard/configuracoes/sessoes", label: "Sessões (gov.br)", icon: KeyRound, tela: "sessoes", soSuper: true },
   { href: "/dashboard/configuracoes/service-tokens", label: "Service Tokens", icon: KeyRound, soAdmin: true, soSuper: true },

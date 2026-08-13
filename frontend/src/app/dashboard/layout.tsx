@@ -50,6 +50,8 @@ import { cofinanciamentoDaUf, repassesDaUf, temDiarioEstadual } from "@/lib/esta
 import { ehSuperAdmin } from "@/lib/conta";
 import { CONSOLIDADO, MunicipioProvider, useMunicipio } from "@/contexts/MunicipioContext";
 import { EnteAtendido, SUBTITULO_PACTHA } from "@/components/bi/Marca";
+import UsoProvider from "@/components/UsoProvider";
+import PresencaChip from "@/components/PresencaChip";
 
 type NavLeaf = { href: string; label: string; icon?: React.ComponentType<{ className?: string }> };
 type NavSection = { sectionLabel: string; children: NavLeaf[] };
@@ -908,6 +910,17 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
           />
         </SheetContent>
       </Sheet>
+
+      {/* TELEMETRIA. Montado AQUI, e nao dentro do `<div key={escopo}>` logo
+          abaixo: aquela chave remonta a arvore inteira a cada troca de
+          municipio, e o coletor remontaria junto — picando a sessao em pedacos
+          justamente no gesto mais interessante de medir. */}
+      <UsoProvider />
+
+      {/* Quem esta online. Irmao do botao de menu do celular (que e
+          `fixed top-3 left-3`), e nao dentro do `<main>` — la ele subiria junto
+          com a rolagem da pagina. */}
+      <PresencaChip className="fixed top-3 right-4 z-40" />
 
       {/* Main content */}
       {/* pactha-scroll reserva a canaleta da barra: sem isso, trocar de uma aba
