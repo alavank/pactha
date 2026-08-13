@@ -137,6 +137,13 @@ READONLY_WRITE_ALLOW = (
     # PROPRIA linha (chaveada por user_id) e nos PROPRIOS links — nao alcanca
     # dado operacional nem o ambiente de outro gestor.
     "/api/bi/tela-filtros", "/api/bi/tela-links",
+    # TELEMETRIA. Sem esta linha o perfil somente-leitura — que inclui o
+    # PREFEITO, justamente quem mais interessa entender — tomaria 403 a cada
+    # 45 segundos e geraria zero dado de uso. A rota nao escreve dado
+    # operacional: so a propria sessao (chaveada pelo user_id do token) e
+    # eventos de navegacao dela.
+    # ⚠️ `startswith`: nao criar sub-rota sob este prefixo sem reler isto.
+    "/api/uso/lote",
 )
 
 # ---------------------------------------------------------------------------
@@ -215,8 +222,25 @@ def create_access_token(data: dict) -> str:
     return _encode(payload, settings.JWT_EXPIRE_MINUTES)
 
 
-def create_refresh_token(user_id: int) -> str:
-    return _encode({"sub": str(user_id), "typ": "refresh"}, REFRESH_TTL_DAYS * 24 * 60)
+def create_refresh_token(user_id: int, sid: str | None = None) -> str:
+    """`sid` = identificador da SESSAO, que atravessa a renovacao do token.
+
+    Ate aqui o sistema nao tinha sessao: tinha token de 60 minutos, e cada
+    renovacao gerava um `jti` novo. `services/audit.py::_sessao` deriva a sessao
+    de `sid or jti` e caia sempre no `jti` — entao a trilha FATIAVA um expediente
+    de 4 horas em quatro sessoes sem relacao, e qualquer "tempo logado" tinha
+    teto de 60 minutos: um numero plausivel e falso.
+
+    O autor da trilha ja tinha deixado o gancho pronto: "se um dia o token passar
+    a carregar `sid` atravessando o refresh, ele passa a mandar aqui sem mudar
+    mais nada". E o que esta linha faz.
+
+    Ausente (token velho ainda em circulacao) cai no `jti`, que e o
+    comportamento de hoje — a virada e silenciosa e nao invalida ninguem."""
+    corpo = {"sub": str(user_id), "typ": "refresh"}
+    if sid:
+        corpo["sid"] = sid
+    return _encode(corpo, REFRESH_TTL_DAYS * 24 * 60)
 
 
 def create_kiosk_token(user_id: int, dias: int = 365) -> str:

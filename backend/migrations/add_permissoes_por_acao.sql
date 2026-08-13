@@ -181,7 +181,11 @@ INSERT INTO permissoes_catalogo (chave, secao, escrita) VALUES
     ('telegram.vincular', 'telegram', TRUE),
     ('telegram.administrar', 'telegram', TRUE),
     ('auditoria.ver', 'auditoria', FALSE),
-    ('auditoria.exportar', 'auditoria', FALSE)
+    ('auditoria.exportar', 'auditoria', FALSE),
+    -- Telemetria de uso: navegacao e presenca. Separada da Auditoria de
+    -- proposito — a trilha guarda ato consequente e serve de prova; esta guarda
+    -- navegacao e serve para entender o uso.
+    ('uso.ver', 'auditoria', FALSE)
 ON CONFLICT (chave) DO NOTHING;
 
 
@@ -329,7 +333,17 @@ WITH marca AS (
         ('telegram', 'telegram.administrar', TRUE),
         -- Auditoria
         ('auditoria', 'auditoria.ver', FALSE),
-        ('auditoria', 'auditoria.exportar', FALSE)
+        ('auditoria', 'auditoria.exportar', FALSE),
+        -- Telemetria de uso. Herda da tela `auditoria`, e nao de admin: a
+        -- regra da casa (com teste proprio) e que verbo `ver` NUNCA exige
+        -- admin e sempre vem de uma tela — quem tem a tela hoje nao pode
+        -- perder acesso no deploy.
+        -- E o agrupamento e coerente: quem ja enxerga a trilha (quem entrou,
+        -- de que IP, o que revelou) enxerga tambem a navegacao. Sao duas
+        -- ABAS separadas na tela, com propositos diferentes, mas uma
+        -- permissao so. Se um dia o dono quiser separar de verdade, o
+        -- caminho e uma tela `uso` propria — mexe no catalogo de telas.
+        ('auditoria', 'uso.ver', FALSE)
 )
 INSERT INTO user_permissoes (user_id, permissao)
 SELECT u.id, m.permissao

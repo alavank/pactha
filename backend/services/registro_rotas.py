@@ -212,6 +212,11 @@ class Livre:
 
 ROTAS_LIVRES: tuple = (
     # --- Publicas: nao ha usuario ainda ------------------------------------
+    Livre("POST", "/api/uso/lote",
+          "Telemetria. Auto-escopada: o user_id vem do TOKEN e o corpo nao pode "
+          "escolher outro (o UPDATE tem AND user_id = :uid). Exigir permissao "
+          "aqui deixaria de medir justamente quem tem MENOS permissao — que e "
+          "quem mais precisa ser entendido. A leitura (GET /uso/*) exige."),
     Livre("POST", "/api/auth/login", "Publica: e onde a sessao nasce."),
     Livre("POST", "/api/auth/refresh",
           "Publica: renova a sessao pelo cookie de refresh, que e a credencial."),

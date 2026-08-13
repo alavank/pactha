@@ -199,6 +199,10 @@ MIGRATION_FILES = [
     # Idempotente por construcao (ver o cabecalho do .sql). ⚠️ REGISTRADA AQUI
     # porque o runner so executa o que esta NESTA lista.
     "fix_sigcon_total_com_contrapartida.sql",
+    # TELEMETRIA DE USO — tabelas proprias, separadas da trilha. Nao pode ficar
+    # abaixo de add_auditoria_imutavel.sql (que precisa ser a ultima), e o runner
+    # so executa o que esta NESTA lista: migration fora dela e orfa.
+    "add_uso.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",

@@ -13,6 +13,7 @@ from routers import (
     documentos, cauc, cagec, acordofes, control, freshness, painel, bi,
     sismob, auditoria, permissoes, modelos_permissao, repasses, contas_irregulares,
     cofinanciamento, parametros,
+    uso,
 )
 from config import get_settings
 from services.security_headers import SecurityHeadersMiddleware
@@ -195,6 +196,7 @@ app.include_router(sismob.router)   # /api/sismob/* (obras de saude do MS)
 app.include_router(acordofes.router)
 app.include_router(control.router)  # /api/control/* (Console Alavank)
 app.include_router(auditoria.router)  # /api/auditoria/* (trilha, so leitura)
+app.include_router(uso.router)
 app.include_router(permissoes.router)  # /api/permissoes/* (catalogo de permissoes)
 app.include_router(parametros.router)  # /api/parametros/* (listas do proprio cliente)
 # /api/permissoes/modelos/* — os MOLDES (Incremento 7). Registrado DEPOIS de

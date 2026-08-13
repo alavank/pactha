@@ -420,6 +420,17 @@ _ESPECIAIS: tuple = (
         escrita=False,
     ),
     Permissao(
+        chave="uso.ver", secao=SEC_AUDITORIA, recurso="uso",
+        recurso_rotulo="Telemetria", verbo_rotulo="Ver",
+        descricao="Abrir a Telemetria: quais telas cada pessoa abriu, quanto "
+                  "tempo ficou em cada uma e quem está online agora. É DIFERENTE "
+                  "da Auditoria — a trilha guarda ato consequente e serve de "
+                  "prova; a telemetria guarda navegação e serve para entender o "
+                  "uso do sistema. Mostra o horário de trabalho de gente da "
+                  "prefeitura, por isso é caixinha própria e nasce desmarcada.",
+        escrita=False,
+    ),
+    Permissao(
         chave="auditoria.exportar", secao=SEC_AUDITORIA, recurso="auditoria",
         recurso_rotulo="Auditoria", verbo_rotulo="Exportar",
         descricao="Baixar a trilha em arquivo. Quem exporta leva consigo IP, "
