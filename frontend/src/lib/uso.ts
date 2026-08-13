@@ -191,6 +191,20 @@ export function iniciarSessao() {
   window.addEventListener("pagehide", () => { void enviar("saiu", "aba_fechada"); });
   if (temporizador) clearInterval(temporizador);
   temporizador = setInterval(() => { void enviar("intervalo"); }, INTERVALO_MS);
+
+  // ⭐ PRIMEIRO ENVIO IMEDIATO, e nao no fim do primeiro ciclo.
+  //
+  // Sem isto, a sessao so NASCIA no servidor apos 45 segundos — entao quem
+  // estava olhando o painel de presenca via o colega aparecer quase um minuto
+  // depois de ele ter entrado, e a tela parecia atrasada quando na verdade nao
+  // havia o que mostrar ainda. O gargalo do "tempo real" era este, e nao o
+  // intervalo de consulta do painel: encurtar a consulta nao adiantava nada.
+  //
+  // 1,5s e nao zero DE PROPOSITO: da tempo de o primeiro evento de navegacao
+  // (o `ver` da tela inicial, que o UsoProvider emite no efeito seguinte) entrar
+  // no MESMO lote. Uma requisicao em vez de duas, e a sessao ja nasce sabendo
+  // onde a pessoa esta — em vez de aparecer com a tela em branco por 45s.
+  setTimeout(() => { void enviar("inicio"); }, 1500);
 }
 
 export function encerrarSessao() {
