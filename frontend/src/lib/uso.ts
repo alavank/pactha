@@ -207,8 +207,30 @@ export function iniciarSessao() {
   setTimeout(() => { void enviar("inicio"); }, 1500);
 }
 
-export function encerrarSessao() {
-  void enviar("logout", "logout");
+/** Fecha a sessao AGORA — chamada pelo botao "Sair do sistema".
+ *
+ *  Devolve promessa porque quem chama precisa ESPERAR: logo depois disto o
+ *  cookie de autenticacao e apagado, e um envio atrasado tomaria 401. Sem o
+ *  await, a sessao ficava aberta no painel ate expirar por silencio (~2min) e o
+ *  evento `sessao.encerrada` — que leva a duracao para a trilha — nao era
+ *  gravado. E o mesmo defeito da entrada, do outro lado: demorava a aparecer
+ *  quem entrou, e demorava a sumir quem saiu.
+ *
+ *  Nunca rejeita: `enviar` ja trata a propria falha, e metrica nao pode impedir
+ *  alguem de sair do sistema. */
+export async function encerrarSessao(): Promise<void> {
+  await enviar("logout", "logout");
+  // ⚠️ ZERA O ESTADO DO MODULO. Sair e entrar de novo NAO recarrega a pagina —
+  // e uma navegacao do Next, e tudo aqui e escopo de modulo, entao sobrevive.
+  // Sem esta limpeza, `iniciarSessao` sairia cedo no login seguinte (o guard
+  // `if (sid) return`) e a proxima pessoa a usar a mesma maquina herdaria o
+  // temporizador e os ouvintes da anterior — incluindo o relogio de atividade
+  // dela.
+  sid = "";
+  fila = [];
+  ligado = true;   // reabre o disjuntor: sessao nova merece tentativa limpa
+  falhas = 0;
+  if (temporizador) { clearInterval(temporizador); temporizador = null; }
 }
 
 export function guardarPresenca(lista: Presente[], agoraIso: string) {
