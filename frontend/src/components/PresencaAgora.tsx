@@ -13,6 +13,10 @@ import api from "@/lib/api";
 interface Presente {
   nome: string; email: string; desde: string | null;
   tela: string | null; estado: "presente" | "saindo"; ha_seg: number;
+  /** Índice da cor, vindo do SERVIDOR e derivado do id da sessão: estável
+   *  enquanto a pessoa estiver logada, novo quando ela sai e volta. */
+  cor: number;
+  sou_eu: boolean;
 }
 
 /** A PALETA. Tons do próprio tema, não cor de festa: o cartão é fundo suave com
@@ -27,17 +31,16 @@ const PALETA = [
   { fundo: "color-mix(in oklab, #0891b2 14%, transparent)",          tinta: "#0e7490" },
 ];
 
-/** O deslocamento é sorteado UMA vez por montagem da tela, e as cores são
- *  distribuídas por POSIÇÃO na lista — nunca por pessoa.
+/* A COR VEM DO SERVIDOR, derivada do id da sessão.
  *
- *  É o que o dono pediu e faz sentido: cor amarrada ao usuário viraria um código
- *  que a equipe decora ("o roxo é o fulano"), e isso é identificação por outro
- *  meio. Assim, a mesma pessoa é âmbar hoje e azul amanhã, e duas pessoas
- *  simultâneas nunca compartilham a cor porque as posições são distintas. */
-function usarDeslocamento(): number {
-  const [d] = useState(() => Math.floor(Math.random() * PALETA.length));
-  return d;
-}
+ *  A primeira versão sorteava no cliente a cada montagem da tela — e aí a cor de
+ *  uma pessoa mudava toda vez que quem estava olhando atualizava a página, o que
+ *  torna a cor inútil como referência ("quem era o azul mesmo?").
+ *
+ *  Agora ela é da SESSÃO: fixa enquanto a pessoa estiver logada, e diferente
+ *  quando ela sair e voltar. Continua não sendo por usuário — cor amarrada à
+ *  pessoa viraria um código que a equipe decora, e isso é identificar por outro
+ *  meio. */
 
 /** Recalcula do instante ABSOLUTO a cada tique, nunca `segundos++`: o navegador
  *  estrangula `setInterval` em aba de fundo e um contador incremental atrasaria
@@ -56,8 +59,15 @@ function relogio(desdeIso: string | null, desvioMs: number): string {
  *  O ocioso é decidido AQUI, com `ha_seg` que veio do servidor — o relógio da
  *  máquina de quem está olhando não entra na conta. */
 function sinal(p: Presente): { cor: string; pulsa: boolean; texto: string } {
-  if (p.estado === "saindo") return { cor: "var(--bi-crit)", pulsa: false, texto: "saiu agora" };
-  if (p.ha_seg > 30) return { cor: "var(--bi-warn)", pulsa: false, texto: "parado" };
+  // ⚠️ VOCÊ NUNCA FICA VERMELHO. Se você está lendo esta tela, você está no
+  // sistema — um ponto vermelho no próprio nome é o widget contradizendo o que
+  // a pessoa vê com os próprios olhos. O vermelho existe para dizer que ALGUÉM
+  // saiu, e essa informação é sobre outra pessoa.
+  if (p.estado === "saindo" && !p.sou_eu)
+    return { cor: "var(--bi-crit)", pulsa: false, texto: "saiu agora" };
+  // Âmbar TAMBÉM pulsa, mais devagar: parado não é ausente, e o pulso é o que
+  // diz "a sessão está viva". Quem parou de dar sinal é que fica estático.
+  if (p.ha_seg > 30) return { cor: "var(--bi-warn)", pulsa: true, texto: "parado" };
   return { cor: "var(--bi-ok)", pulsa: true, texto: "ativo" };
 }
 
@@ -65,7 +75,6 @@ export default function PresencaAgora() {
   const [lista, setLista] = useState<Presente[] | null>(null);
   const [desvio, setDesvio] = useState(0);
   const [, tique] = useState(0);
-  const desloc = usarDeslocamento();
 
   useEffect(() => {
     let vivo = true;
@@ -81,10 +90,13 @@ export default function PresencaAgora() {
         .catch(() => { if (vivo) setLista([]); });
     };
     buscar();
-    // 15s: aqui a pessoa ESTÁ olhando o painel, então vale a pena ser mais
-    // vivo que os 45s do envio de eventos — e ainda assim são 4 requisições
-    // por minuto de uma tela que quase ninguém abre.
-    const t1 = setInterval(buscar, 15_000);
+    // 8s: aqui a pessoa ESTÁ olhando o painel esperando ver movimento, então
+    // vale ser bem mais vivo que os 45s do envio de eventos. São ~7 requisições
+    // por minuto de uma tela que quase ninguém abre — barato.
+    // ⚠️ O limite de "tempo real" NÃO é este intervalo: uma sessão nova só
+    // existe depois do primeiro envio do outro navegador, que sai em até 45s.
+    // Encurtar mais aqui não faz o colega aparecer antes.
+    const t1 = setInterval(buscar, 8_000);
     const t2 = setInterval(() => tique((n) => n + 1), 1000);
     return () => { vivo = false; clearInterval(t1); clearInterval(t2); };
   }, []);
@@ -105,7 +117,7 @@ export default function PresencaAgora() {
       {lista.length === 0 ? null : (
         <div className="flex flex-wrap gap-2">
           {lista.map((p, i) => {
-            const c = PALETA[(i + desloc) % PALETA.length];
+            const c = PALETA[(p.cor ?? i) % PALETA.length];
             const s = sinal(p);
             return (
               <div key={p.email + p.desde}

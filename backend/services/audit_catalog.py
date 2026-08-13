@@ -134,6 +134,14 @@ def _a(fragmento: str, modulo: str, risco: str, *, prep: Optional[str] = None,
 _TABELA: dict[str, dict] = {
     # --- Acesso (routers/auth.py) -----------------------------------------
     "login.success": _a("entrou no sistema", MOD_ACESSO, _MEDIO, sem_alvo=True),
+    "sessao.encerrada": _a(
+        "encerrou a sessão", MOD_ACESSO, _MEDIO, sem_alvo=True,
+        nota="A PONTE ENTRE OS DOIS SISTEMAS. O «saiu do sistema» sempre foi uma "
+             "linha seca; esta traz a DURAÇÃO junto — quanto tempo total, quanto "
+             "ativo, quanto ocioso e quantos atos. Os números vêm da Telemetria, "
+             "que sabe medir isso; o registro fica aqui, que é onde ele é "
+             "imutável. Uma linha por sessão, nunca uma por batimento.",
+    ),
     "login.fail": _a(
         "tentou entrar e a senha não conferiu", MOD_ACESSO, _MEDIO, sem_alvo=True,
         nota="Várias seguidas do mesmo e-mail ou do mesmo IP é o padrão de "
