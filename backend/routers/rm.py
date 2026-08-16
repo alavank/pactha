@@ -242,11 +242,12 @@ async def criar(
     # rotulo derivado ('completo' quando vazio, 'parcial' quando ha recorte) — usado
     # pelo cabecalho do PDF (padrao Freitas em ambos).
     _anos = sorted({int(a) for a in (body.anos or []) if a})
-    _anos_lit = "{" + ",".join(str(a) for a in _anos) + "}"
     _escopo = "completo" if not _anos else "parcial"
+    # asyncpg exige uma LISTA Python p/ param INT[] (o CAST informa o tipo do
+    # elemento e cobre a lista vazia = completo). Passar string '{2026}' quebra.
     anterior = (await db.execute(text(
         "SELECT id FROM rm_relatorios WHERE municipio_id = :m AND anos = CAST(:a AS INT[])"
-    ), {"m": body.municipio_id, "a": _anos_lit})).first()
+    ), {"m": body.municipio_id, "a": _anos})).first()
     ja_existia = anterior is not None
     if ja_existia:
         # Antes de `montar_conteudo`, que e a parte cara: em modo bloqueio nao ha
@@ -284,7 +285,7 @@ async def criar(
     cidade = (body.cidade_emissao or "").strip() or f"{mun.nome}/{mun.uf}"
     rid = (await db.execute(sql, {
         "mun": body.municipio_id, "dt": body.data_referencia, "escopo": _escopo,
-        "anos": _anos_lit,
+        "anos": _anos,
         "cidade": cidade, "titulo": titulo, "rodape": get_settings().RM_RODAPE,
         "cont": json.dumps(conteudo), "usr": getattr(user, "id", None),
         "overwrite": body.auto_popular,

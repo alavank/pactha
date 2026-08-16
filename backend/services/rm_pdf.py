@@ -231,9 +231,9 @@ def _processo_execucao_destaque(item: dict) -> str | None:
     if qtd is None or "normal" not in sc:
         return None
     if qtd == 0:
-        return ("⚠ <b>Processo de Execução:</b> nenhum registro "
+        return ("⚠ <b>Licitação:</b> nenhum registro "
                 "(contratação Normal, sem licitação/processo de execução iniciado)")
-    partes = [f"<b>Processo de Execução:</b> {qtd} registro(s) de licitação/processo"]
+    partes = [f"<b>Licitação:</b> {qtd} registro(s) de licitação/processo"]
     # Detalhe por licitação — mesmo formato da tela (situação em negrito, depois
     # modalidade · nº · data · sistema · aceite). Só aparece quando o scraper
     # trouxe a lista; senão fica só a contagem (degrada suave).
