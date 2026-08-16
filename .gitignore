@@ -20,7 +20,7 @@ out/
 *.pdf
 *.xlsx
 
-.claude/
+.claude/settings.local.json
 
 # Config local do Claude Code (nao versionar - contem allowlist/segredos)
 .claude/settings.local.json
