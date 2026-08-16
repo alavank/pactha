@@ -77,6 +77,9 @@ export interface Convenio {
   nr_plano_trabalho?: string;
   nr_instrumento?: string;
   nr_siafi?: string;
+  /** Emenda vinculada (casada pelo nº da indicação). Vazio até o scraper popular. */
+  emenda_nr?: string | null;
+  emenda_objeto?: string | null;
 }
 
 export interface ConvenioList {

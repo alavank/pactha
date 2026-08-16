@@ -694,6 +694,12 @@ export default function ConveniosPage() {
                           {conv.situacao}
                         </Selo>
                       )}
+                      {/* Emenda vinculada (espelho do selo "Convênio" da tela de Emendas). */}
+                      {conv.emenda_nr && (
+                        <Selo tom="ok" title={conv.emenda_objeto || `Emenda ${conv.emenda_nr}`}>
+                          Emenda {conv.emenda_nr}
+                        </Selo>
+                      )}
                       {orgao && (
                         <span title={nomeOrgaoFull(conv.orgao_concedente) || orgao}>
                           {siglaOrgao(conv.orgao_concedente)}
