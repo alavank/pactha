@@ -461,6 +461,7 @@ def _coleta(muns: list[dict]) -> dict[int, list[dict]]:
     # grava os nomes distintos unidos por ', '. Acumular (nao pegar so o
     # primeiro) evita que uma busca por parlamentar deixe de achar a proposta.
     nomes_por_prop: dict[str, list[str]] = {}
+    emenda_por_prop: dict[str, float] = {}
     for linha in _linhas("siconv_emenda.zip"):
         id_prop = (linha.get("ID_PROPOSTA") or "").strip()
         if id_prop not in props:
@@ -470,9 +471,18 @@ def _coleta(muns: list[dict]) -> dict[int, list[dict]]:
             lst = nomes_por_prop.setdefault(id_prop, [])
             if nome not in lst:
                 lst.append(nome)
+        # valor_emenda = soma dos repasses de emenda da proposta (pode ter varias).
+        # Validado 16/08/2026: p/ propostas 100% de emenda, a soma bate exatamente
+        # com valor_repasse. valor_voluntario (repasse - emenda) e proponente
+        # (contrapartida) sao DERIVADOS na leitura — sem coluna redundante.
+        _ve = _money(linha.get("VALOR_REPASSE_EMENDA"))
+        if _ve is not None:
+            emenda_por_prop[id_prop] = emenda_por_prop.get(id_prop, 0) + float(_ve)
     for id_prop, nomes in nomes_por_prop.items():
         props[id_prop]["parlamentar"] = ", ".join(nomes)
-    logger.info(f"  com parlamentar: {len(nomes_por_prop)}")
+    for id_prop, tot in emenda_por_prop.items():
+        props[id_prop]["valor_emenda"] = tot
+    logger.info(f"  com parlamentar: {len(nomes_por_prop)} | com valor_emenda: {len(emenda_por_prop)}")
 
     # 4) Programa (proposta -> programa -> nome)
     prop_para_prog: dict[str, str] = {}
@@ -508,7 +518,7 @@ _CAMPOS = ("numero_proposta", "situacao", "orgao", "proponente", "identificacao"
            "dt_proposta", "dt_assinatura", "valor_global", "valor_repasse",
            "valor_contrapartida", "situacao_contratacao",
            "clausula_suspensiva_dt_prevista", "clausula_suspensiva_motivo",
-           "parlamentar", "id_proposta_siconv")
+           "parlamentar", "id_proposta_siconv", "valor_emenda")
 
 
 # Campos em que o dado aberto e a FONTE AUTORITATIVA: quando ele traz um valor,
@@ -529,7 +539,7 @@ _SOBRESCREVE = [
     "dt_inicio_vigencia", "dt_fim_vigencia", "dt_proposta", "dt_assinatura",
     "valor_global", "valor_repasse", "valor_contrapartida", "situacao_contratacao",
     "clausula_suspensiva_dt_prevista", "clausula_suspensiva_motivo",
-    "codigo_instrumento", "id_proposta_siconv",
+    "codigo_instrumento", "id_proposta_siconv", "valor_emenda",
 ]
 # Campo em que o COALESCE protege de verdade: o parlamentar as vezes so aparece
 # no scraper autenticado (emenda impositiva recente que ainda nao entrou no
@@ -563,13 +573,13 @@ def _upsert(mun_id: int, propostas: list[dict]) -> int:
              programa, dt_inicio_vigencia, dt_fim_vigencia, dt_proposta, dt_assinatura,
              valor_global, valor_repasse, valor_contrapartida, situacao_contratacao,
              clausula_suspensiva_dt_prevista, clausula_suspensiva_motivo, parlamentar,
-             id_proposta_siconv, raw_data, updated_at)
+             id_proposta_siconv, valor_emenda, raw_data, updated_at)
         VALUES (%(m)s,%(numero_proposta)s,%(situacao)s,%(orgao)s,%(proponente)s,%(identificacao)s,
              %(codigo_instrumento)s,%(modalidade)s,%(situacao_siafi)s,%(numero_processo)s,%(objeto)s,
              %(programa)s,%(dt_inicio_vigencia)s,%(dt_fim_vigencia)s,%(dt_proposta)s,%(dt_assinatura)s,
              %(valor_global)s,%(valor_repasse)s,%(valor_contrapartida)s,%(situacao_contratacao)s,
              %(clausula_suspensiva_dt_prevista)s,%(clausula_suspensiva_motivo)s,%(parlamentar)s,
-             %(id_proposta_siconv)s,%(raw)s::jsonb, NOW())
+             %(id_proposta_siconv)s,%(valor_emenda)s,%(raw)s::jsonb, NOW())
         ON CONFLICT (municipio_id, numero_proposta) DO UPDATE SET
              {', '.join(sets)}
     """

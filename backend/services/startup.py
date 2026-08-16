@@ -52,6 +52,8 @@ MIGRATION_FILES = [
     "add_voluntarias_processo_execucao.sql",
     # Voluntarias: processo_execucao JSONB (lista COM situacao por licitacao)
     "add_voluntarias_processo_execucao_lista.sql",
+    # Voluntarias: valor_emenda (soma dos repasses de emenda; voluntario/proponente derivam)
+    "add_voluntarias_valor_emenda.sql",
     # Voluntarias: Historico de Comunicacoes + Termos de Notificacao (mandatarias)
     "add_voluntarias_historico_comunicacoes.sql",
     # Voluntarias: OPs/OBs (repasses/desembolsos) + OBRAS (acompanhamento medicao)

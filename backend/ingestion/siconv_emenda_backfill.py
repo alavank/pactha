@@ -150,7 +150,17 @@ def backfill_parlamentar(use_cache: bool = True) -> int:
     content = _download(URL_EMENDA, use_cache=use_cache)
     rd, hdr = _open_csv(content)
     ip, npn = hdr.index("ID_PROPOSTA"), hdr.index("NOME_PARLAMENTAR")
+    ive = hdr.index("VALOR_REPASSE_EMENDA") if "VALOR_REPASSE_EMENDA" in hdr else None
+
+    def _money(s):
+        s = (s or "").strip().replace("R$", "").replace(".", "").replace(",", ".").strip()
+        try:
+            return float(s) if s else None
+        except ValueError:
+            return None
+
     id2nomes: dict[str, list] = {}
+    id2valor: dict[str, float] = {}
     for row in rd:
         if len(row) <= max(ip, npn):
             continue
@@ -158,31 +168,41 @@ def backfill_parlamentar(use_cache: bool = True) -> int:
         if idp not in ids_nossos:
             continue
         nome = " ".join((row[npn] or "").split()).strip().upper()
-        if not nome:
-            continue
-        lst = id2nomes.setdefault(idp, [])
-        if nome not in lst:
-            lst.append(nome)
-    logger.info(f"backfill_parlamentar: {len(id2nomes)} id_proposta com parlamentar no open data")
+        if nome:
+            lst = id2nomes.setdefault(idp, [])
+            if nome not in lst:
+                lst.append(nome)
+        if ive is not None and len(row) > ive:
+            v = _money(row[ive])
+            if v is not None:
+                id2valor[idp] = id2valor.get(idp, 0) + v
+    logger.info(f"backfill_parlamentar: {len(id2nomes)} id_proposta com parlamentar "
+                f"| {len(id2valor)} com valor_emenda")
 
-    if not id2nomes:
+    if not id2nomes and not id2valor:
         return 0
     # id_proposta -> [numero_proposta...]  (pode haver >1 município com mesmo id? não; id é único)
     id_to_nr = {v[1]: nr for nr, v in nossas.items() if v[1]}
     conn = _db(); cur = conn.cursor()
     n = 0
-    for idp, nomes in id2nomes.items():
+    for idp in set(id2nomes) | set(id2valor):
         nr = id_to_nr.get(idp)
         if not nr:
             continue
-        valor = ", ".join(sorted(nomes))[:200]
+        nomes = id2nomes.get(idp)
+        ve = id2valor.get(idp)
+        # atualiza parlamentar (se houver) e valor_emenda (se houver), sem apagar
+        # o que nao veio nesta passada.
         cur.execute(
-            "UPDATE transferegov_propostas SET parlamentar=%s WHERE numero_proposta=%s",
-            (valor, nr),
+            "UPDATE transferegov_propostas SET "
+            "  parlamentar = COALESCE(%s, parlamentar), "
+            "  valor_emenda = COALESCE(%s, valor_emenda) "
+            "WHERE numero_proposta=%s",
+            (", ".join(sorted(nomes))[:200] if nomes else None, ve, nr),
         )
         n += cur.rowcount
     conn.commit(); cur.close(); conn.close()
-    logger.info(f"backfill_parlamentar: {n} linha(s) atualizadas com parlamentar")
+    logger.info(f"backfill_parlamentar: {n} linha(s) atualizadas (parlamentar/valor_emenda)")
     return n
 
 
