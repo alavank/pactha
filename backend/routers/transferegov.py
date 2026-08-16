@@ -450,7 +450,7 @@ async def voluntarias_detalhe(
                valor_global, valor_repasse, valor_contrapartida,
                situacao_contratacao_detalhe, processo_execucao_qtd,
                historico_comunicacoes, documentos_quadro_resumo, historico_atualizado_em,
-               ops_obs, obras, processo_execucao
+               ops_obs, obras, processo_execucao, valor_emenda
         FROM transferegov_propostas
         WHERE municipio_id = :mun AND numero_proposta = :num
     """), {"mun": municipio_id, "num": numero_proposta})
@@ -480,6 +480,12 @@ async def voluntarias_detalhe(
         "obras": row[29] or None,
         # lista de licitacoes COM situacao (Concluído / Em execução ...)
         "processo_execucao": row[30] or [],
+        # valores da emenda: valor_emenda vem do CSV; voluntario e proponente
+        # sao DERIVADOS (voluntario = repasse - emenda; proponente = contrapartida).
+        "valor_emenda": float(row[31]) if row[31] is not None else None,
+        "valor_voluntario": (float(row[21]) - float(row[31]))
+            if (row[21] is not None and row[31] is not None) else None,
+        "valor_proponente": float(row[22]) if row[22] is not None else None,
     }
 
 
