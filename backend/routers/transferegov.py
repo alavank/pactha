@@ -38,6 +38,59 @@ HEADERS = {
 _CACHE: dict = {}
 _CACHE_TTL = 3600  # 1h
 
+import logging as _logging
+logger = _logging.getLogger("transferegov")
+
+
+def _load_especiais_cookies() -> list[dict]:
+    """Cookies do Cofre p/ a API federal 'Especiais' (TE/Emenda Pix).
+
+    A API `/public/plano-acao/listagem` deixou de ser aberta: hoje devolve 403
+    para qualquer requisicao sem sessao autenticada (testado do servidor E de IP
+    residencial). A sessao vem do Cofre — a extensao captura os cookies do
+    `especiais.transferegov` como IRMAO SSO dentro da chave `govbr` (ver
+    extension/background.js), e aceitamos tambem uma chave dedicada `especiais`.
+    Best-effort: [] se nao houver (a coleta degrada para vazio, nunca 500)."""
+    out: list[dict] = []
+    try:
+        import psycopg2
+        import json as _json
+        from services import crypto
+        url = (os.getenv("DATABASE_URL_SYNC", "") or "").replace("&channel_binding=require", "").replace("?channel_binding=require", "")
+        if not url:
+            return []
+        cn = psycopg2.connect(url)
+        cu = cn.cursor()
+        cu.execute(
+            "SELECT senha_hash FROM cofre_senhas "
+            "WHERE automation_key IN ('especiais','govbr') AND length(senha_hash) > 1000 "
+            "ORDER BY (automation_key='especiais') DESC, updated_at DESC LIMIT 2"
+        )
+        rows = cu.fetchall()
+        cu.close(); cn.close()
+        seen = set()
+        for (blob,) in rows:
+            dec = crypto.decrypt(blob) or ""
+            if not dec.startswith("{"):
+                continue
+            for c in (_json.loads(dec).get("cookies") or []):
+                n, v = c.get("name"), c.get("value")
+                d = (c.get("domain") or "").lstrip(".")
+                if not n or v is None:
+                    continue
+                # so o que serve ao SSO do especiais: transferegov + gov.br SSO.
+                if not (d.endswith("transferegov.sistema.gov.br") or d.endswith("sistema.gov.br")
+                        or d.endswith("acesso.gov.br")):
+                    continue
+                k = (n, d)
+                if k in seen:
+                    continue
+                seen.add(k)
+                out.append({"name": n, "value": v, "domain": d, "path": c.get("path") or "/"})
+    except Exception as ex:
+        logger.warning(f"_load_especiais_cookies: {str(ex)[:120]}")
+    return out
+
 
 def _norm(s: str) -> str:
     if not s:
@@ -70,12 +123,28 @@ async def _fetch_listagem(uf: Optional[str]) -> list[dict]:
     params: dict = {"page": 0, "size": 99999}
     if uf:
         params["uf"] = uf  # omitir uf => nacional
-    async with httpx.AsyncClient(timeout=120, verify=False) as cli:
-        r = await cli.get(f"{API_BASE}/public/plano-acao/listagem",
-                          params=params, headers=HEADERS)
-        r.raise_for_status()
-        data = r.json()
-    items = data.get("listaPlanosAcao") or []
+    # A API federal exige sessao autenticada (403 sem ela). Anexa os cookies do
+    # Cofre (SSO gov.br capturado pela extensao). SEM raise: se a fonte recusar
+    # (403/sessao ausente), devolve [] e a tela/RM ficam vazios em vez de 500.
+    cks = _load_especiais_cookies()
+    jar = httpx.Cookies()
+    for c in cks:
+        try:
+            jar.set(c["name"], c["value"], domain=c["domain"], path=c.get("path") or "/")
+        except Exception:
+            pass
+    try:
+        async with httpx.AsyncClient(timeout=120, verify=False, cookies=jar) as cli:
+            r = await cli.get(f"{API_BASE}/public/plano-acao/listagem",
+                              params=params, headers=HEADERS)
+        if r.status_code != 200:
+            logger.warning(f"especiais listagem {key}: HTTP {r.status_code} "
+                           f"(cookies={len(cks)}) — TE/Emenda Pix indisponivel (sessao?)")
+            return []
+        items = r.json().get("listaPlanosAcao") or []
+    except Exception as ex:
+        logger.warning(f"especiais listagem {key}: {str(ex)[:120]} — TE indisponivel")
+        return []
     _CACHE[key] = (now, items)
     return items
 
