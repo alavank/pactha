@@ -88,6 +88,12 @@ interface Proposta {
   valor_contrapartida?: number | null;
   situacao_contratacao_detalhe?: Record<string, string | null> | null;
   processo_execucao_qtd?: number | null;
+  /** Lista das licitações/processos COM situação (Concluído / Em execução ...). */
+  processo_execucao?: Array<{
+    numero?: string | null; modalidade?: string | null;
+    data_publicacao?: string | null; situacao?: string | null;
+    sistema_origem?: string | null; aceite?: string | null;
+  }> | null;
   historico_comunicacoes?: Record<string, string>[];
   documentos_quadro_resumo?: Record<string, string>[];
   historico_atualizado_em?: string | null;
@@ -664,7 +670,25 @@ export default function TransfereGovPropostas({
                           </p>
                         </Aviso>
                       ) : (
-                        <Aviso tom="ok" titulo={`Processo de Execução: ${detalhe.processo_execucao_qtd} registro(s)`} />
+                        <Aviso tom="ok" titulo={`Processo de Execução: ${detalhe.processo_execucao_qtd} registro(s)`}>
+                          {/* Detalhes por licitação/processo (situação, modalidade,
+                              data). Antes só a contagem aparecia; agora, quando o
+                              scraper trouxe a lista, mostra cada registro. */}
+                          {Array.isArray(detalhe.processo_execucao) && detalhe.processo_execucao.length > 0 && (
+                            <div className="mt-1 space-y-1">
+                              {detalhe.processo_execucao.map((pe, i) => (
+                                <div key={i} className="text-[11px] leading-snug" style={{ color: "var(--bi-muted)" }}>
+                                  <b style={{ color: "var(--bi-text)" }}>{pe.situacao || "—"}</b>
+                                  {pe.modalidade ? ` · ${pe.modalidade}` : ""}
+                                  {pe.numero ? ` · nº ${pe.numero}` : ""}
+                                  {pe.data_publicacao ? ` · ${pe.data_publicacao}` : ""}
+                                  {pe.sistema_origem ? ` · ${pe.sistema_origem}` : ""}
+                                  {pe.aceite ? ` · ${pe.aceite}` : ""}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </Aviso>
                       )
                     )}
                   </Secao>
