@@ -81,7 +81,17 @@ async def list_emendas_estaduais(
             WHERE ce.municipio_id = emendas_estaduais.municipio_id
               AND emendas_estaduais.nr_indicacao IS NOT NULL
               AND emendas_estaduais.nr_indicacao <> ''
-              AND ce.raw_data->>'nr_indicacao' = emendas_estaduais.nr_indicacao
+              -- Casa pelo numero da indicacao capturado no convenio (_scrape_indicacoes,
+              -- modal expandido). Escalar (1a indicacao) OU qualquer uma da lista
+              -- `indicacoes` (convenio pode ter varias). Ver ingestion/sigcon_scraper.py.
+              AND (
+                ce.raw_data->>'nr_indicacao' = emendas_estaduais.nr_indicacao
+                OR EXISTS (
+                    SELECT 1 FROM jsonb_array_elements(
+                        CASE WHEN jsonb_typeof(ce.raw_data->'indicacoes') = 'array'
+                             THEN ce.raw_data->'indicacoes' ELSE '[]'::jsonb END) ind
+                    WHERE ind->>'nr_indicacao' = emendas_estaduais.nr_indicacao)
+              )
             LIMIT 1
         ) c ON true
         WHERE {where_sql}
