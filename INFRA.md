@@ -73,7 +73,19 @@ cada build da `main`:
 | deploy manual (rollback/exceção) | Continua possível: repontar `docker_registry_image_tag` + `GET /deploy?uuid=` — o mesmo que o CI faz. |
 
 Segredos do CI: `COOLIFY_URL` + `COOLIFY_TOKEN` nos **GitHub Secrets** do repo. Sem eles
-o job de deploy falha com barulho (proposital — nunca em silêncio). A fonte de verdade da
+o job de deploy falha com barulho (proposital — nunca em silêncio).
+
+> ⚠️ **ROTACIONOU O TOKEN DO COOLIFY? ATUALIZE O SECRET NO MESMO ATO.** Em 16/08/2026 o
+> token foi rotacionado e o secret não acompanhou: **quatro merges seguidos (#220–#223)
+> passaram no build e nenhum chegou em produção**, com os quatro tenants rodando código
+> antigo por horas. O CI só dizia `deploy nao disparou — revertendo tag para '?'`, porque
+> as chamadas voltavam 401 e o `jq` apenas não achava o campo — sintoma idêntico ao de um
+> deploy recusado. Desde então os dois workflows **conferem o status HTTP antes do laço** e
+> falham dizendo "COOLIFY_TOKEN inválido ou revogado", sem tocar em tag nenhuma.
+>
+> Sintoma para reconhecer de longe: a tag no Coolify avança, mas o container continua na
+> imagem anterior. Conferir com `GET /applications/<uuid>` (campo `docker_registry_image_tag`)
+> **e** o `status` — os dois concordando é o que prova o deploy. A fonte de verdade da
 mecânica (gates, margens, rollback de tag em falha) são os próprios
 `.github/workflows/build-backend.yml` e `build-frontend.yml`, comentados linha a linha.
 
