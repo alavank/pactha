@@ -106,6 +106,11 @@ class RmCreate(BaseModel):
     cidade_emissao: Optional[str] = None
     titulo: Optional[str] = None
     auto_popular: bool = True
+    # 'anual' (DEFAULT, comportamento historico: 1 ano por RM) | 'completo' (RM de
+    # TODOS os anos, 4 partes por estagio — padrao "Freitas completo"). O completo
+    # coexiste com os anuais: unique tripla (municipio, data, escopo). Ver
+    # services/rm_builder.montar_conteudo(completo=...) e migrations/add_rm_escopo.sql.
+    escopo: str = "anual"
 
 
 class RmUpdate(BaseModel):
@@ -156,6 +161,8 @@ def _row_to_dict(row, usuario) -> dict:
         "criado_por": criado_por,
         "created_at": row[9].isoformat() if row[9] else None,
         "updated_at": row[10].isoformat() if row[10] else None,
+        # 'anual' | 'completo' — a lista distingue o RM completo (todos os anos).
+        "escopo": row[11],
         "pode_editar": authz.pode_editar_item(usuario, "rm", "editar", criado_por),
         "pode_excluir": authz.pode_editar_item(usuario, "rm", "excluir", criado_por),
     }
@@ -176,7 +183,7 @@ async def listar(
     sql = f"""
         SELECT r.id, r.municipio_id, r.data_referencia, r.cidade_emissao,
                r.titulo, r.rodape, r.status, NULL, r.criado_por,
-               r.created_at, r.updated_at, m.nome AS municipio_nome
+               r.created_at, r.updated_at, r.escopo, m.nome AS municipio_nome
         FROM rm_relatorios r LEFT JOIN municipios m ON m.id = r.municipio_id
         {('WHERE ' + ' AND '.join(where)) if where else ''}
         ORDER BY r.data_referencia DESC, r.id DESC
@@ -185,7 +192,7 @@ async def listar(
     items = []
     for row in rs:
         d = _row_to_dict(row, current)
-        d["municipio_nome"] = row[11]
+        d["municipio_nome"] = row[12]
         items.append(d)
     return {"items": items, "total": len(items)}
 
@@ -226,9 +233,12 @@ async def criar(
     #
     # RM que ainda NAO existe nao passa por aqui: nao ha linha anterior de quem
     # julgar o dono, e o registro nasce de quem esta postando.
+    # 'completo' (todos os anos) coexiste com o 'anual' na MESMA data: a chave e
+    # tripla. Normaliza aqui para nunca gravar valor fora do CHECK implicito.
+    _escopo = "completo" if (body.escopo or "").lower() == "completo" else "anual"
     anterior = (await db.execute(text(
-        "SELECT id FROM rm_relatorios WHERE municipio_id = :m AND data_referencia = :d"
-    ), {"m": body.municipio_id, "d": body.data_referencia})).first()
+        "SELECT id FROM rm_relatorios WHERE municipio_id = :m AND data_referencia = :d AND escopo = :e"
+    ), {"m": body.municipio_id, "d": body.data_referencia, "e": _escopo})).first()
     ja_existia = anterior is not None
     if ja_existia:
         # Antes de `montar_conteudo`, que e a parte cara: em modo bloqueio nao ha
@@ -241,7 +251,8 @@ async def criar(
         _ano = _dr.year if hasattr(_dr, "year") else int(str(_dr)[:4])
     except (ValueError, TypeError):
         _ano = None
-    conteudo = await montar_conteudo(db, body.municipio_id, _ano) if body.auto_popular else {"partes": []}
+    conteudo = (await montar_conteudo(db, body.municipio_id, _ano, completo=(_escopo == "completo"))
+                if body.auto_popular else {"partes": []})
     titulo = body.titulo or f"RELATÓRIO DE MONITORAMENTO – {mun.nome.upper()}/{mun.uf}"
     # `ja_existia` (lido acima, junto do gate de alcance) separa "criou" de
     # "substituiu" na trilha: registrar tudo como "criou" faria o registro mentir
@@ -249,9 +260,9 @@ async def criar(
     # ON CONFLICT: se ja existe RM nessa data, atualiza conteudo
     sql = text("""
         INSERT INTO rm_relatorios
-            (municipio_id, data_referencia, cidade_emissao, titulo, conteudo, criado_por, rodape)
-        VALUES (:mun, :dt, :cidade, :titulo, CAST(:cont AS JSONB), :usr, :rodape)
-        ON CONFLICT (municipio_id, data_referencia) DO UPDATE SET
+            (municipio_id, data_referencia, escopo, cidade_emissao, titulo, conteudo, criado_por, rodape)
+        VALUES (:mun, :dt, :escopo, :cidade, :titulo, CAST(:cont AS JSONB), :usr, :rodape)
+        ON CONFLICT (municipio_id, data_referencia, escopo) DO UPDATE SET
             titulo = EXCLUDED.titulo,
             cidade_emissao = EXCLUDED.cidade_emissao,
             rodape = EXCLUDED.rodape,
@@ -265,7 +276,7 @@ async def criar(
     # nao pode estar errada. So um valor explicito do usuario sobrepoe.
     cidade = (body.cidade_emissao or "").strip() or f"{mun.nome}/{mun.uf}"
     rid = (await db.execute(sql, {
-        "mun": body.municipio_id, "dt": body.data_referencia,
+        "mun": body.municipio_id, "dt": body.data_referencia, "escopo": _escopo,
         "cidade": cidade, "titulo": titulo, "rodape": get_settings().RM_RODAPE,
         "cont": json.dumps(conteudo), "usr": getattr(user, "id", None),
         "overwrite": body.auto_popular,
@@ -301,15 +312,15 @@ async def detalhe(
     row = (await db.execute(text("""
         SELECT r.id, r.municipio_id, r.data_referencia, r.cidade_emissao,
                r.titulo, r.rodape, r.status, r.conteudo, r.criado_por,
-               r.created_at, r.updated_at, m.nome AS municipio_nome, m.uf
+               r.created_at, r.updated_at, r.escopo, m.nome AS municipio_nome, m.uf
         FROM rm_relatorios r LEFT JOIN municipios m ON m.id = r.municipio_id
         WHERE r.id = :id
     """), {"id": rid})).first()
     if not row:
         raise HTTPException(404, "RM não encontrado")
     d = _row_to_dict(row, current)
-    d["municipio_nome"] = row[11]
-    d["uf"] = row[12]
+    d["municipio_nome"] = row[12]
+    d["uf"] = row[13]
     return d
 
 
@@ -379,12 +390,12 @@ async def repopular(
     # DELETE, so que sem apagar a linha. Mesmo gate.
     await _exigir_escrita(db, rid, current)
     row = (await db.execute(text(
-        "SELECT municipio_id, data_referencia, titulo FROM rm_relatorios WHERE id = :id"
+        "SELECT municipio_id, data_referencia, titulo, escopo FROM rm_relatorios WHERE id = :id"
     ), {"id": rid})).first()
     if not row:
         raise HTTPException(404, "RM não encontrado")
     _ano = row[1].year if row[1] and hasattr(row[1], "year") else None
-    conteudo = await montar_conteudo(db, row[0], _ano)
+    conteudo = await montar_conteudo(db, row[0], _ano, completo=(row[3] == "completo"))
     await db.execute(text(
         "UPDATE rm_relatorios SET conteudo = CAST(:c AS JSONB), updated_at = NOW() WHERE id = :id"
     ), {"c": json.dumps(conteudo), "id": rid})
@@ -453,7 +464,7 @@ async def pdf(
     await authz.ensure_dono(db, "rm_relatorios", "id", rid, current)
     row = (await db.execute(text("""
         SELECT r.data_referencia, r.cidade_emissao, r.titulo, r.rodape, r.conteudo, m.nome, m.uf,
-               r.municipio_id
+               r.municipio_id, r.escopo
         FROM rm_relatorios r JOIN municipios m ON m.id = r.municipio_id
         WHERE r.id = :id
     """), {"id": rid})).first()
@@ -464,6 +475,8 @@ async def pdf(
         "cidade_emissao": row[1],
         "titulo": row[2],
         "rodape": row[3],
+        # 'completo' troca o cabecalho (local + data por extenso, sem "exercicio").
+        "escopo": row[8],
     }
     conteudo = row[4] or {"partes": []}
     municipio = f"{row[5]}/{row[6]}"
