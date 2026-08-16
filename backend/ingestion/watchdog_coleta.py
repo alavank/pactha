@@ -81,7 +81,10 @@ FRESCOR_HORAS_POR_UF = {
     },
     "ES": {"gconv_es": 30},
     "GO": {"transfvol_go": 30, "cofin_ses_go": 30, "tcm_go": 30},
-    "RS": {"che_rs": 30},            # 3x/dia; 30h = cinco janelas perdidas
+    "RS": {
+        "che_rs": 30,          # 3x/dia; 30h = cinco janelas perdidas
+        "convenios_rs": 30,    # 1x/dia (a CAGE republica o dump esporadicamente)
+    },
 }
 
 

@@ -38,10 +38,13 @@ alguem reparar que a pagina 2 repete a 1.
 ⚠️ A API VALIDA CAMPO A CAMPO e responde em portugues:
 `[{"message": "Data fim da publicação é obrigatória"}]` com HTTP 400. Isso e
 util para descobrir parametro, e e por isso que o router repassa a mensagem.
+
+⚠️ A FONTE TEM JANELAS DE INSTABILIDADE — `Connection reset by peer` no
+handshake, sem resposta HTTP. Ver `_get_com_retry` para o que foi medido (e para
+a hipotese de TLS que NAO se confirmou).
 """
 import logging
 import re
-import ssl
 import time
 from datetime import date
 from typing import Optional
@@ -74,55 +77,32 @@ def _sem_marcacao(texto: str | None) -> str:
     return _MARCA.sub("", (texto or "").strip())[:600]
 
 
-def _contexto_tls() -> ssl.SSLContext:
-    """⭐ SEM ISTO A FONTE PARECE BLOQUEAR BOT — E NAO BLOQUEIA.
-
-    O host (`tuprd00-00.procergs.com.br`) **derruba a conexao no handshake**
-    quando o ClientHello vem no padrao moderno do Python: `Connection reset by
-    peer`, sem resposta HTTP nenhuma. Medido em 16/08/2026, de dentro do worker:
-
-        httpx padrao ............... ConnectError (reset)
-        curl_cffi impersonate ...... SSLError (reset)
-        curl do host ............... 200  <- a pista
-        TLS 1.2 no maximo .......... 200
-        ALPN vazio ................. 200
-        SECLEVEL=1 ................. 200
-
-    Ou seja: qualquer alteracao no ClientHello resolve, e o mesmo IP responde
-    normalmente ao curl. Nao e anti-bot (senao o curl tambem cairia) nem bloqueio
-    de rede — e um middlebox/balanceador antigo que engasga com TLS 1.3 + ALPN
-    `h2`. Diagnostico importante porque o sintoma engana: `Connection reset` leva
-    direto a "o Estado bloqueou a gente", e a resposta errada seria partir para
-    curl_cffi/Playwright — que aqui tambem falham.
-
-    Fixamos as DUAS diferencas (teto em TLS 1.2 e ALPN vazio) em vez de so uma:
-    isoladamente cada uma funciona, mas nao sabemos qual delas o middlebox
-    realmente rejeita, e adivinhar deixaria a coleta refem da proxima mudanca
-    dele. Verificacao de certificado continua LIGADA — o que se abre mao aqui e
-    de versao de protocolo, nunca de autenticidade do servidor."""
-    ctx = ssl.create_default_context()
-    ctx.maximum_version = ssl.TLSVersion.TLSv1_2
-    ctx.set_alpn_protocols([])
-    return ctx
-
-
 def _get_com_retry(url: str, params: dict, tentativas: int = 3):
     """GET com repeticao curta — o host RESETA DE VEZ EM QUANDO.
 
-    ⚠️ NAO E O MESMO PROBLEMA DO `_contexto_tls`, e por isso sao duas defesas
-    separadas. Aquele conserta um erro DETERMINISTICO (o ClientHello moderno
-    nunca passa). Este cobre o que sobra: com o contexto certo, a mesma chamada
-    ora responde 200, ora derruba a conexao — comportamento tipico de
-    balanceador com um no ruim atras. Medido na sequencia: falha, e dois minutos
-    depois 200 na primeira tentativa, sem nada ter mudado.
+    ⚠️ O QUE FOI MEDIDO, e o que NAO foi. Em 16/08/2026 esta fonte passou uma
+    janela devolvendo `Connection reset by peer` no handshake, sem resposta HTTP
+    nenhuma. Nessa janela falharam o httpx padrao E o `curl_cffi` com
+    `impersonate` — o que **descarta anti-bot por fingerprint**, senao o curl do
+    proprio host tambem cairia, e ele respondia 200. Variantes de TLS (teto em
+    1.2, ALPN vazio, SECLEVEL=1) passaram durante a janela, o que sugeria um
+    middlebox engasgando com TLS 1.3; mas depois o cliente PADRAO respondeu
+    **12/12 nos dois hosts gauchos**, e a hipotese nao se sustentou.
+    Provavelmente foi instabilidade do lado do Estado, e nao negociacao.
+
+    Por isso a defesa aqui e o retry, que cobre o que de fato se observou
+    (falha transitoria), e NAO um contexto TLS rebaixado — que reduziria a
+    seguranca do transporte para tratar uma causa nao comprovada, e ainda
+    mascararia o diagnostico da proxima vez.
 
     Espera curta e proposital: quem espera do outro lado e uma PESSOA que clicou
     em "buscar", nao um cron. Tres tentativas com 0,6s e 1,2s custam no pior caso
-    ~2s a mais; um backoff generoso aqui viraria tela travada."""
+    ~2s a mais; um backoff generoso aqui viraria tela travada. Janela longa de
+    instabilidade vira 502 honesto na tela — melhor que fingir que respondeu."""
     ultimo = None
     for i in range(1, tentativas + 1):
         try:
-            with httpx.Client(timeout=45, verify=_contexto_tls()) as cli:
+            with httpx.Client(timeout=45) as cli:
                 r = cli.get(url, params=params, headers=UA)
                 # ⚠️ 4xx NAO passa por raise_for_status, e nao e teimosia: a API
                 # devolve 400 COM O MOTIVO EM PORTUGUES no corpo ("Data fim da
@@ -217,8 +197,7 @@ def baixar_materia(materia_id: int, formato: str = "pdf") -> bytes:
     e o chamador."""
     fmt = "txt" if str(formato).lower() == "txt" else "pdf"
     url = f"{BASE}/public/materias/download/{materia_id}/{fmt}"
-    with httpx.Client(timeout=60, follow_redirects=True,
-                      verify=_contexto_tls()) as cli:
+    with httpx.Client(timeout=60, follow_redirects=True) as cli:
         r = cli.get(url, headers={"User-Agent": UA["User-Agent"]})
         r.raise_for_status()
         tipo = (r.headers.get("content-type") or "").lower()
