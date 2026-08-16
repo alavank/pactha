@@ -125,14 +125,23 @@ async def run(uf: str | None = None) -> dict:
     cn.autocommit = False
     cur = cn.cursor()
     pares = _municipios_uf(cur, uf)
-    logger.info(f"TE {uf}: {len(pares)} municipios para casar")
+    # RETOMA de onde parou: a API tem QUOTA por IP (bloqueia depois de ~N paginas
+    # numa janela), entao um run so nao pega tudo. Comeca na pagina apos as ja
+    # gravadas (1 pagina de sobreposicao; upsert e idempotente por planoAcaoId) —
+    # cada run diario AVANCA a cobertura ate completar. Se ja cobriu tudo, o loop
+    # fecha logo (tail < pageSize). Reset periodico p/ refrescar: TE_RESET_PAGE=1.
+    cur.execute("SELECT count(*) FROM transferegov_te WHERE uf = %s", (uf,))
+    have = cur.fetchone()[0]
+    reset = (os.getenv("TE_RESET_PAGE", "0") or "0").strip() == "1"
+    start_page = 1 if reset else max(1, have // _PAGE_SIZE)
+    logger.info(f"TE {uf}: {len(pares)} municipios | ja tem {have} linhas -> comeca pagina {start_page}")
     t0 = time.time()
     total_api = None
     gravados = 0
     casados = 0
     completo = False
     async with httpx.AsyncClient(timeout=60, verify=False) as cli:
-        page = 1
+        page = start_page
         while page <= 1000 and (time.time() - t0) < _BUDGET_S:
             data = await _fetch_page(cli, uf, page)
             if data is None:
