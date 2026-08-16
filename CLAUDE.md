@@ -12,14 +12,15 @@ off Railway/Neon/Vercel/Hetzner onto **Coolify on AWS Lightsail**.
 Everything user-facing and every commit message/comment is in **Portuguese**. Match that
 convention in code comments, commit messages, and UI copy.
 
-**⚠️ One repo, THREE tenants — a merge to `main` deploys all three.** Freitas, Trust, and
-Monte Sião/MG each get their own containers and own Postgres database, all built from the
-same code (`backend/**` or `frontend/**` changes trigger `.github/workflows/build-backend.yml`
-/ `build-frontend.yml`, which build, then deploy all 3 tenants via the Coolify API). There is
+**⚠️ One repo, FOUR tenants — a merge to `main` deploys all four.** Freitas, Trust,
+Monte Sião/MG and Santa Maria/RS each get their own containers and own Postgres database,
+all built from the same code (`backend/**` or `frontend/**` changes trigger `.github/workflows/build-backend.yml`
+/ `build-frontend.yml`, which build, then deploy all 4 tenants via the Coolify API). There is
 no multi-tenancy in code — isolation is by *deploy*: env vars differ per tenant
 (`INSTANCE_SLUG`, `DATABASE_URL`, `JWT_SECRET`, `COFRE_KEY`, `NEXT_PUBLIC_CLIENT_LOGO`, …). A
-bug fix here ships to all three clients, and a schema change must be idempotent against all
-three databases. Full infra facts (server, URLs, UUIDs, secrets) live in `INFRA.md`; project
+bug fix here ships to all four clients, and a schema change must be idempotent against all
+four databases — including a **fresh** one: Santa Maria/RS (08/2026) was the first database
+ever created from scratch, and it exposed schema that until then existed only by inheritance. Full infra facts (server, URLs, UUIDs, secrets) live in `INFRA.md`; project
 history/decisions live in `CONTINUAR.md` — read both before large changes, they are written as
 AI-session handoff docs and are kept current.
 

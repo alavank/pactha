@@ -48,11 +48,15 @@ NOVO="pactha_app"
 # com que acerta o certo. Aqui, errar exige digitar o nome errado.
 TENANT="${2:-}"
 case "$TENANT" in
-  montesiao) CONTAINER="iogvjlnkpqlugja9j76rktl1" ;;
-  trust)     CONTAINER="p434vbj35siee57shlsyzuc2" ;;
-  freitas)   CONTAINER="tox59kvmkrb0ywmeaty3t02a" ;;
+  montesiao)  CONTAINER="iogvjlnkpqlugja9j76rktl1" ;;
+  trust)      CONTAINER="p434vbj35siee57shlsyzuc2" ;;
+  freitas)    CONTAINER="tox59kvmkrb0ywmeaty3t02a" ;;
+  # Santa Maria/RS (4o tenant, aberto em 16/08/2026). E o melhor lugar para
+  # ESTREAR a Camada 3: banco novo, sem uso real ainda — o CONTINUAR.md §6.4
+  # pede para nao comecar por montesiao, que e prefeitura em producao.
+  santamaria) CONTAINER="m2ypghl41lbqhv7rdqzffdi3" ;;
   *)
-    echo "uso: bash $0 {ensaiar|aplicar|conferir|desfazer} {montesiao|trust|freitas}" >&2
+    echo "uso: bash $0 {ensaiar|aplicar|conferir|desfazer} {montesiao|trust|freitas|santamaria}" >&2
     exit 2
     ;;
 esac

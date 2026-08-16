@@ -1,16 +1,16 @@
 name: build-backend
 
-# Builda UMA vez as imagens do backend compartilhadas pelos 3 tenants
-# (freitas/trust/montesiao) e publica no GitHub Container Registry (ghcr.io).
+# Builda UMA vez as imagens do backend compartilhadas pelos 4 tenants
+# (freitas/trust/montesiao/santamaria) e publica no GitHub Container Registry (ghcr.io).
 #
-# POR QUE: a API e o worker sao IDENTICOS entre os 3 tenants -- a diferenca deles
+# POR QUE: a API e o worker sao IDENTICOS entre os 4 tenants -- a diferenca deles
 # e so env de runtime. Hoje cada push na main faz a VPS (AWS Lightsail t3.large,
 # 2 vCPU burstable) buildar as 6 imagens (3 api + 3 worker), sendo o worker de
 # 2,4 GB com Chromium. Isso queimou os creditos de burst da instancia duas vezes
 # em 23/07. Buildando aqui UMA vez, a VPS deixa de fazer esse trabalho.
 #
 # ESTADO ATUAL (Fase D, desde 09/08/2026): este workflow PUBLICA a imagem e o
-# job `deploy` FECHA o ciclo — avanca a tag dos 6 apps no Coolify e dispara o
+# job `deploy` FECHA o ciclo — avanca a tag dos 8 apps no Coolify e dispara o
 # deploy na ordem certa (APIs primeiro, que rodam as migrations no boot;
 # workers depois, esperando janela sem coleta em voo). O auto-deploy por
 # webhook do Coolify foi DESLIGADO nos apps pactha: ele recriava os containers
@@ -126,6 +126,7 @@ jobs:
         freitas:givx3567ygxppum10p1oungn:s49c3b58lysqq0tpelneg3g3
         trust:pphvk2ygkuirjhu9qptvmfs5:xg714h8l7va4ejq70a5pmv5t
         montesiao:chr0n883hp19tjh7829k85a7:jhf0kjhps5keujiyhhsnvjt6
+        santamaria:ufjctldngc14dsdw8pxnqivl:wquremniv57gag3tlil8uf6d
     steps:
       - name: Deploy por tenant (API -> migrations confirmadas -> worker com janela)
         run: |
@@ -258,7 +259,7 @@ jobs:
             if [ -n "$FALHAS" ]; then
               echo "FALHARAM:$FALHAS — demais apps deployados; conferir no Coolify."
             else
-              echo "APIs e workers dos 3 tenants deployados e CONFIRMADOS (deployment finished)."
+              echo "APIs e workers dos 4 tenants deployados e CONFIRMADOS (deployment finished)."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
           [ -z "$FALHAS" ]

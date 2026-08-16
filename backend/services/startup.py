@@ -192,6 +192,14 @@ MIGRATION_FILES = [
     # /Rotulo de usuario) e o sistema puxa nos formularios. Semeia os rotulos
     # que a tela ja oferecia em codigo, para o seletor nao nascer vazio.
     "add_parametros.sql",
+    # ⭐ BOOTSTRAP LIMPO: as 12 colunas de convenios_estadual que só existiam
+    # por herança do Neon (`fonte` + os campos do RM). O setup_db não as cria e
+    # o create_all não acrescenta coluna a tabela existente — então em banco
+    # NOVO elas simplesmente não existiam, e as duas migrations logo abaixo
+    # falhavam com `column "fonte" does not exist` (medido no 1º boot do
+    # santamaria-rs, o primeiro banco criado do zero no projeto).
+    # ⚠️ Tem de ficar ACIMA das duas: elas são as primeiras a usar `fonte`.
+    "add_convenios_estadual_colunas_faltantes.sql",
     # ⭐ DUPLICATAS: a chave de identidade estava errada em emendas_estaduais
     # (o ANO DO FILTRO entrou na chave) e em convenios_estadual (a chave mudava
     # quando o nº SIAFI nascia). Deduplica o que existe e instala a chave certa,

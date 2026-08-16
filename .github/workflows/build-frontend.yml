@@ -2,7 +2,7 @@ name: build-frontend
 
 # Builda as imagens dos FRONTENDS no GitHub Actions em vez de na VPS.
 #
-# Diferente do backend (uma imagem para os 3 tenants), cada frontend e
+# Diferente do backend (uma imagem para os 4 tenants), cada frontend e
 # GENUINAMENTE diferente: os build-args NEXT_PUBLIC_* e API_PROXY_TARGET sao
 # INLINED no bundle Next em build-time (o proprio Dockerfile documenta isso).
 # Entao cada tenant precisa da sua propria imagem, com os args embutidos --
@@ -120,7 +120,7 @@ jobs:
         run: echo "Publicado ${{ env.IMAGE_BASE }}-${{ matrix.image }}:latest" >> "$GITHUB_STEP_SUMMARY"
 
   # Fase D (09/08/2026): o CI fecha o ciclo tambem nos frontends — avanca a tag
-  # (sha COMPLETO, padrao deste workflow) e deploya os 3 apps, confirmando cada
+  # (sha COMPLETO, padrao deste workflow) e deploya os 4 apps, confirmando cada
   # deployment via GET /deployments/{uuid}. Sem gate de janela: frontend nao
   # roda coleta, um restart de segundos nao machuca. Auto-deploy por webhook do
   # Coolify DESLIGADO nos apps pactha (recriava com tag antiga e ja matou
@@ -137,7 +137,7 @@ jobs:
       COOLIFY_URL: ${{ secrets.COOLIFY_URL }}
       COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
     steps:
-      - name: Avanca tag e deploya os 3 frontends
+      - name: Avanca tag e deploya os 4 frontends
         run: |
           # Mesma politica de erro do backend: -e do Actions desligado, mutacao
           # falha alto com rollback de tag, leitura falha fechado.
@@ -147,7 +147,9 @@ jobs:
           CURL=(curl -sS --connect-timeout 10 --max-time 30 -H "Authorization: Bearer $COOLIFY_TOKEN")
           FALHAS=""
           # mapa app->uuid no Coolify (ver PROVISIONAR_CLIENTE.md p/ tenant novo)
-          for APP in qgmw4e5wjem1e8jit2wyvo1d j5ghp71lff003d5rfaynvy5y bryvqhhcu97lc3ku7a2hss0q; do
+          # santamaria-rs por ULTIMO de proposito: se ele emperrar na fila do
+          # Coolify, os tres tenants antigos ja terminaram.
+          for APP in qgmw4e5wjem1e8jit2wyvo1d j5ghp71lff003d5rfaynvy5y bryvqhhcu97lc3ku7a2hss0q eohjo0cy4nbl6t7hiaqwagwf; do
             OLD_TAG=$("${CURL[@]}" "$COOLIFY_URL/api/v1/applications/$APP" | jq -r '.docker_registry_image_tag // ""')
             if ! "${CURL[@]}" -X PATCH -H "Content-Type: application/json" \
                  -d "{\"docker_registry_image_tag\":\"$TAG\"}" \
@@ -186,6 +188,6 @@ jobs:
           done
           {
             echo "### Deploy frontend: $TAG"
-            [ -n "$FALHAS" ] && echo "FALHARAM:$FALHAS — conferir no Coolify." || echo "3 frontends confirmados."
+            [ -n "$FALHAS" ] && echo "FALHARAM:$FALHAS — conferir no Coolify." || echo "4 frontends confirmados."
           } >> "$GITHUB_STEP_SUMMARY"
           [ -z "$FALHAS" ]

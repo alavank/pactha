@@ -36,9 +36,9 @@ Consequências práticas para este repo:
 
 ---
 
-## 2. Um repo, TRÊS tenants (leia isto antes de dar push)
+## 2. Um repo, QUATRO tenants (leia isto antes de dar push)
 
-Este repositório atende **três clientes distintos**, cada um com seu **próprio conjunto de
+Este repositório atende **quatro clientes distintos**, cada um com seu **próprio conjunto de
 containers e seu próprio banco**, todos buildados **do mesmo código**:
 
 | Tenant | Slug | Quem é |
@@ -46,6 +46,7 @@ containers e seu próprio banco**, todos buildados **do mesmo código**:
 | Freitas | `freitas` | consultoria Freitas (instância original) |
 | Trust | `trust` | consultoria Trust |
 | Monte Sião | `montesiao-mg` | Prefeitura de Monte Sião/MG (tem também o Painel Executivo) |
+| Santa Maria | `santamaria-rs` | Prefeitura de Santa Maria/RS — **aberto em 16/08/2026**, em avaliação |
 
 Não existe multi-tenancy dentro do código: **o isolamento é por deploy**. O que diferencia
 um tenant do outro são as **env vars no Coolify** (`INSTANCE_SLUG`, `DATABASE_URL`,
@@ -115,10 +116,28 @@ Todas as URLs abaixo foram conferidas respondendo em 2026-07-23.
 ### Monte Sião / MG
 | Resource | Build | URL |
 |---|---|---|
-| `montesiao-mg-frontend` | `frontend/Dockerfile` | https://pactha-montesiao-mg-54-232-208-118.sslip.io |
+| `montesiao-mg-frontend` | `frontend/Dockerfile` | https://montesiao.mg.pactha.com.br · https://pactha-montesiao-mg-54-232-208-118.sslip.io |
 | `montesiao-mg-api` | `backend/Dockerfile.api` | https://pactha-montesiao-mg-api-54-232-208-118.sslip.io |
 | `montesiao-mg-worker` | `backend/Dockerfile.scraper` | interno |
 | `montesiao-mg-db` | `postgres:16-alpine` | interno — db/user `pactha`, uuid `iogvjlnkpqlugja9j76rktl1` |
+
+### Santa Maria / RS
+| Resource | Build | URL |
+|---|---|---|
+| `santamaria-rs-frontend` | imagem `pactha-frontend-santamaria-rs` | https://santamaria.rs.pactha.com.br · https://pactha-santamaria-rs-54-232-208-118.sslip.io |
+| `santamaria-rs-api` | imagem `pactha-api` | https://pactha-santamaria-rs-api-54-232-208-118.sslip.io |
+| `santamaria-rs-worker` | imagem `pactha-worker` | interno |
+| `santamaria-rs-db` | `postgres:16-alpine` | interno — db/user `pactha`, uuid `m2ypghl41lbqhv7rdqzffdi3` |
+
+> ⚠️ **Environment por tenant, não `production`.** O projeto `pactha` tem um environment por
+> cliente (`freitas`, `trust`, `montesiao-mg`, `santamaria-rs`); o `production` está **vazio**.
+> Tenant novo ganha o seu (`POST /projects/{uuid}/environments`, que responde 201).
+>
+> **Santa Maria foi o primeiro banco criado do zero** — os outros três vieram migrados do Neon,
+> já com o schema completo. Isso expôs 12 colunas de `convenios_estadual` (`fonte` + os campos
+> do RM) que existiam **só por herança**: não estavam no `setup_db` nem em migration nenhuma.
+> Corrigido por `add_convenios_estadual_colunas_faltantes.sql`, que é no-op nos três antigos.
+> Sem ela, um bootstrap limpo termina em `62/64 migrations` e a tela de convênios quebra.
 
 > **`montesiao-mg-painel` JÁ FOI REMOVIDO** — conferido em 2026-07-31: zero linhas
 > em `applications` com o uuid `uymt911sgynkbvifyzf6nf1h`. São **9** aplicações no
@@ -164,6 +183,7 @@ ssh -i ~/.ssh/coolify_localhost root@54.232.208.118
 docker exec -it tox59kvmkrb0ywmeaty3t02a psql -U pactha -d pactha   # freitas
 docker exec -it p434vbj35siee57shlsyzuc2 psql -U pactha -d pactha   # trust
 docker exec -it iogvjlnkpqlugja9j76rktl1 psql -U pactha -d pactha   # montesiao-mg
+docker exec -it m2ypghl41lbqhv7rdqzffdi3 psql -U pactha -d pactha   # santamaria-rs
 ```
 
 Os três bancos já estão **populados com dados reais de produção** — não são mais
@@ -313,3 +333,6 @@ UUIDs das aplicações medidos em 2026-07-23:
 | `montesiao-mg-api` | `chr0n883hp19tjh7829k85a7` |
 | `montesiao-mg-frontend` | `bryvqhhcu97lc3ku7a2hss0q` |
 | `montesiao-mg-worker` | `jhf0kjhps5keujiyhhsnvjt6` |
+| `santamaria-rs-api` | `ufjctldngc14dsdw8pxnqivl` |
+| `santamaria-rs-frontend` | `eohjo0cy4nbl6t7hiaqwagwf` |
+| `santamaria-rs-worker` | `wquremniv57gag3tlil8uf6d` |
