@@ -10,7 +10,6 @@ import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Aviso, BOTAO_CTA, BOTAO_SEC, Bloco, ESTILO_CTA, ESTILO_SEC, Selo } from "@/components/ui/superficies";
 import { Input } from "@/components/ui/input";
-import { podeEditarLinha } from "@/lib/escopo";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 
 interface Item {
@@ -239,12 +238,12 @@ export default function RmEditorPage() {
     return <div className="flex h-64 items-center justify-center"><Loader2 className="size-6 animate-spin" style={{ color: "var(--bi-faint)" }} /></div>;
   }
 
-  /* O RM abre para QUALQUER pessoa que tenha a tela — a decisão do dono foi
-     restringir a escrita, e não a leitura. O que muda aqui é que as três ações
-     que gravam ficam desligadas, e a razão disso fica escrita: um "Salvar" que
-     responde 403 depois de vinte minutos de digitação é pior do que um botão
-     apagado com a explicação ao lado. */
-  const podeEditar = podeEditarLinha(rm);
+  /* EDICAO REMOVIDA (decisao do dono, 16/08/2026): o RM e um relatorio GERADO
+     do banco, nao editado a mao. Esta tela agora e so CONSULTA + EXPORTACAO;
+     para atualizar, gera-se de novo na lista (o "Gerar" repopula do banco).
+     Forcando `podeEditar=false` reaproveitamos o modo somente-leitura que ja
+     existia (Salvar/Finalizar/Re-popular desligados) — nada persiste daqui. */
+  const podeEditar = false;
 
   return (
     <div className="space-y-4">
@@ -331,14 +330,14 @@ export default function RmEditorPage() {
         <Aviso
           tom="atencao"
           icon={Lock}
-          titulo="Este RM foi criado por outra pessoa — aqui você só consulta."
+          titulo="O RM é gerado do banco — esta tela é só consulta e exportação."
           className=""
         >
           <p className="text-[11px]" style={{ color: "var(--bi-muted)" }}>
-            O seu acesso a Relatórios de Monitoramento alcança <b>só os que você
-            criou</b>. Salvar, Finalizar e Re-popular estão desligados; consultar
-            e exportar continuam valendo. Para alterar este RM, peça a quem o
-            criou ou a um administrador.
+            O conteúdo vem automaticamente dos dados do município; não se edita à
+            mão. Para atualizar com os dados mais recentes, use <b>Gerar</b> na
+            lista de RMs (ele repopula este exercício). Consultar e exportar
+            continuam valendo aqui.
           </p>
         </Aviso>
       )}
