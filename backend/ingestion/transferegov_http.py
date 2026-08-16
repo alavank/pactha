@@ -40,6 +40,12 @@ logger = logging.getLogger("transferegov_http")
 
 _DISCRIC = "https://discricionarias.transferegov.sistema.gov.br"
 _MAND = "https://mandatarias.transferegov.sistema.gov.br"
+# URL DIRETA da listagem de licitacoes (Execucao Convenente > Processo de Execucao).
+# A antiga (ForwardAction.do?...destino=ListarLicitacoes) passou a exigir re-SAML do
+# modulo `execucao` e devolvia so o form SAML (falso 0). Esta serve a pagina
+# server-rendered com a tabela — validado 16/08/2026 no instrumento 996050.
+_LIC_URL = (_DISCRIC + "/voluntarias/execucao/ListarLicitacoes/"
+            "ListarLicitacoes.do?destino=ListarLicitacoes")
 _IDP = "https://idp.transferegov.sistema.gov.br"
 _MED = "https://medicao.transferegov.sistema.gov.br"
 
@@ -425,14 +431,13 @@ class TgHttpEnrich:
         if not self._seta_contexto(id_proposta):
             return None
         try:
-            r = self.cli.get(f"{_DISCRIC}/voluntarias/ForwardAction.do?modulo=proposta"
-                             f"&path=/SelecionarConvenio/SelecionarConvenio.do?destino=ListarLicitacoes")
+            r = self.cli.get(_LIC_URL)
         except Exception:
             return None
         if r.status_code != 200 or _sessao_caiu(r):
             return None
         body = r.text
-        if not re.search(r"Listagem de Licita|Processo de Execu", body, re.I):
+        if not re.search(r"Listagem de Licita|Processo de Execu|Situa..o no Sistema", body, re.I):
             return None
         # A tela JA VEM POPULADA no GET — ler daqui primeiro.
         #
@@ -516,6 +521,63 @@ class TgHttpEnrich:
             if rows:
                 return len(rows)
         return None  # indeterminado -> NAO assume 0 (evita falso flag)
+
+    @staticmethod
+    def _le_licitacoes_lista(resp) -> list | None:
+        """Linhas da tabela de licitacoes como dicts, COM a situacao.
+        {numero, modalidade, data_publicacao, situacao, sistema_origem, aceite}.
+        None = indeterminado (nao gravar); [] = vazio de verdade.
+
+        Mapeia por CABECALHO (nao por posicao fixa) — o portal reordena colunas.
+        `situacao` e o que o dono pediu ('Concluído' etc.); `modalidade` e a coluna
+        "Processo de Execução" (ex.: 'Licitação - Concorrência', 'Inexigibilidade')."""
+        body = resp.text
+        doc = _parse(resp)
+        for t in doc.findall(".//table"):
+            trs = t.findall(".//tr")
+            if not trs:
+                continue
+            heads = [_txt(x).lower() for x in trs[0].xpath("./th|./td")]
+            chave = "|".join(heads)
+            if "situa" in chave and ("licita" in chave or "processo" in chave or "publica" in chave):
+                def col(frag):
+                    for i, h in enumerate(heads):
+                        if frag in h:
+                            return i
+                    return None
+                i_num, i_mod = col("mero"), col("processo de execu")
+                i_dt, i_sit = col("publica"), col("situa")
+                i_sis, i_ac = col("sistema de orig"), col("aceite")
+                out = []
+                for tr in trs[1:]:
+                    cels = [_txt(c) for c in tr.findall("td")]
+                    if not any(cels):
+                        continue
+                    def g(i):
+                        return (cels[i].strip() if (i is not None and i < len(cels)) else "") or None
+                    out.append({"numero": g(i_num), "modalidade": g(i_mod),
+                                "data_publicacao": g(i_dt), "situacao": g(i_sit),
+                                "sistema_origem": g(i_sis), "aceite": g(i_ac)})
+                return out
+        if re.search(r"Nenhum registro foi encontrado", body, re.I):
+            return []
+        return None
+
+    def processo_execucao_lista(self, id_proposta: str) -> list | None:
+        """Lista de licitacoes/processos de execucao do instrumento, COM situacao.
+        None = indeterminado (nao gravar); [] = vazio. Le a URL DIRETA (server-
+        rendered) — a antiga ForwardAction exige re-SAML do modulo execucao."""
+        if not self._seta_contexto(id_proposta):
+            return None
+        try:
+            r = self.cli.get(_LIC_URL)
+        except Exception:
+            return None
+        if r.status_code != 200 or _sessao_caiu(r):
+            return None
+        if not re.search(r"Listagem de Licita|Processo de Execu|Situa..o no Sistema", r.text, re.I):
+            return None
+        return self._le_licitacoes_lista(r)
 
     # ---------- Obras (medicao, REST com JWT) ----------
 

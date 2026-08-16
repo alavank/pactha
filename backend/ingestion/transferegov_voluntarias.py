@@ -807,10 +807,16 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
             # Funciona em GUEST (detail_page já está no detalhe = contexto setado).
             if _idp and "normal" in _sit.lower():
                 try:
-                    _qtd = (await asyncio.to_thread(_hx.processo_execucao, _idp)) if _hx \
-                        else (await _conta_processo_execucao(detail_page))
-                    if _qtd is not None:
-                        prop["processo_execucao_qtd"] = _qtd
+                    if _hx:
+                        # lista COM situacao por licitacao (URL direta server-rendered)
+                        _lst = await asyncio.to_thread(_hx.processo_execucao_lista, _idp)
+                        if _lst is not None:
+                            prop["processo_execucao_qtd"] = len(_lst)
+                            prop["processo_execucao"] = _lst
+                    else:
+                        _qtd = await _conta_processo_execucao(detail_page)
+                        if _qtd is not None:
+                            prop["processo_execucao_qtd"] = _qtd
                 except Exception as e:
                     logger.warning(f"    proc.exec {prop['numero_proposta']}: {str(e)[:80]}")
             # OPs/OBs (repasses/desembolsos) e OBRAS (acompanhamento/medicao).
@@ -1679,11 +1685,11 @@ def _upsert(mun_id: int, propostas: list[dict]):
                  valor_global, valor_repasse, valor_contrapartida,
                  situacao_contratacao, clausula_suspensiva_dt_prevista,
                  clausula_suspensiva_motivo, parlamentar, situacao_contratacao_detalhe,
-                 id_proposta_siconv, processo_execucao_qtd,
+                 id_proposta_siconv, processo_execucao_qtd, processo_execucao,
                  historico_comunicacoes, documentos_quadro_resumo, historico_atualizado_em,
                  ops_obs, obras, detalhe_atualizado_em,
                  detalhe, raw_data, updated_at)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s::jsonb,%s::jsonb,%s,%s::jsonb,%s::jsonb,%s,%s::jsonb,%s::jsonb,NOW())
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s::jsonb,%s::jsonb,%s::jsonb,%s,%s::jsonb,%s::jsonb,%s,%s::jsonb,%s::jsonb,NOW())
             ON CONFLICT (municipio_id, numero_proposta) DO UPDATE SET
                 situacao=EXCLUDED.situacao, orgao=EXCLUDED.orgao,
                 proponente=EXCLUDED.proponente, possui_parecer=EXCLUDED.possui_parecer,
@@ -1718,6 +1724,7 @@ def _upsert(mun_id: int, propostas: list[dict]):
                 situacao_contratacao_detalhe=COALESCE(EXCLUDED.situacao_contratacao_detalhe, transferegov_propostas.situacao_contratacao_detalhe),
                 id_proposta_siconv=COALESCE(EXCLUDED.id_proposta_siconv, transferegov_propostas.id_proposta_siconv),
                 processo_execucao_qtd=COALESCE(EXCLUDED.processo_execucao_qtd, transferegov_propostas.processo_execucao_qtd),
+                processo_execucao=COALESCE(EXCLUDED.processo_execucao, transferegov_propostas.processo_execucao),
                 historico_comunicacoes=COALESCE(EXCLUDED.historico_comunicacoes, transferegov_propostas.historico_comunicacoes),
                 documentos_quadro_resumo=COALESCE(EXCLUDED.documentos_quadro_resumo, transferegov_propostas.documentos_quadro_resumo),
                 historico_atualizado_em=COALESCE(EXCLUDED.historico_atualizado_em, transferegov_propostas.historico_atualizado_em),
@@ -1743,6 +1750,8 @@ def _upsert(mun_id: int, propostas: list[dict]):
               json.dumps(sit_det_json, ensure_ascii=False) if sit_det_json else None,
               (p.get("id_proposta_siconv") or None),
               p.get("processo_execucao_qtd"),
+              (json.dumps(p["processo_execucao"], ensure_ascii=False)
+               if p.get("processo_execucao") else None),
               (json.dumps(p["historico_comunicacoes"], ensure_ascii=False)
                if p.get("historico_comunicacoes") else None),
               (json.dumps(p["documentos_quadro_resumo"], ensure_ascii=False)

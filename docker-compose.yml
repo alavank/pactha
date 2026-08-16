@@ -1,0 +1,105 @@
+# PACTHA — stack completa SEM Coolify (Docker Compose).
+# Sobe Postgres + API + frontend localmente. O worker (Playwright, pesado) fica
+# atrás do profile "scrapers": `docker compose --profile scrapers up`.
+#
+# Uso:
+#   cp .env.example .env   # (já vem um .env gerado)
+#   docker compose up -d --build db api frontend
+#   API:      http://localhost:8000/api/health
+#   Frontend: http://localhost:3000   (login seed: admin@pactha.com.br)
+
+services:
+  db:
+    image: postgres:18-alpine # casa com o Neon do SIAO (PG 18) p/ o pg_dump/restore
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql # pg18: mount na raiz (dados vão p/ subpasta por versão)
+    ports:
+      - "5433:5432" # host 5433 para não colidir com Postgres local
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.api
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      DATABASE_URL_SYNC: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      JWT_SECRET: ${JWT_SECRET}
+      COFRE_KEY: ${COFRE_KEY}
+      ENV: development # local http: cookies não-secure + sem HSTS
+      FRONTEND_URL: http://localhost:3000
+      ADMIN_EMAIL: admin@pactha.com.br
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # baseURL relativo -> usa o proxy same-origin do Next (evita CORS)
+        NEXT_PUBLIC_API_URL: /api
+        API_PROXY_TARGET: http://api:8000
+    environment:
+      # lido em runtime pelo servidor standalone (rewrites do next.config.ts)
+      API_PROXY_TARGET: http://api:8000
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"
+
+  # Worker de scrapers (Playwright/Chromium) — pesado; só com --profile scrapers.
+  worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.scraper
+    container_name: pactha-worker
+    environment:
+      DATABASE_URL_SYNC: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      COFRE_KEY: ${COFRE_KEY}
+      SIGCON_DATASET_URL: https://dados.mg.gov.br/dataset/convenios-saida
+      TRANSFEREGOV_BASE_URL: http://repositorio.dados.gov.br/seges/detru/
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles: ["scrapers"]
+    labels:
+      # Agendamento (ofelia) — mesmos crons das Scheduled Tasks do Coolify.
+      # Formato ofelia = 6 campos (segundo minuto hora dia mês dia-semana).
+      ofelia.enabled: "true"
+      ofelia.job-exec.sigcon.schedule: "0 0 */6 * * *"
+      ofelia.job-exec.sigcon.command: "python -u ingestion/run_sigcon_cron.py"
+      ofelia.job-exec.transferegov.schedule: "0 0 5 * * *"
+      ofelia.job-exec.transferegov.command: "python -u ingestion/transferegov_voluntarias.py"
+      ofelia.job-exec.fns.schedule: "0 30 5 * * *"
+      ofelia.job-exec.fns.command: "python -u ingestion/run_fns_local.py"
+      ofelia.job-exec.govbr-renew.schedule: "0 */15 * * * *"
+      ofelia.job-exec.govbr-renew.command: "python -u ingestion/govbr_renew.py"
+      ofelia.job-exec.queue-sigcon.schedule: "0 */2 * * * *"
+      ofelia.job-exec.queue-sigcon.command: "python -u ingestion/run_queue_sigcon.py"
+
+  # Agendador de crons (lê os labels do worker e roda via docker exec).
+  scheduler:
+    image: mcuadros/ofelia:latest
+    command: daemon --docker
+    depends_on:
+      - worker
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    profiles: ["scrapers"]
+    restart: unless-stopped
+
+volumes:
+  pgdata:
