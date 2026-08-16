@@ -426,7 +426,8 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
                dt_fim_vigencia, valor_global, valor_repasse, valor_contrapartida,
                situacao_contratacao, clausula_suspensiva_dt_prevista,
                clausula_suspensiva_motivo, parlamentar, situacao_contratacao_detalhe,
-               detalhe->>'Empenhado', processo_execucao_qtd, historico_comunicacoes
+               detalhe->>'Empenhado', processo_execucao_qtd, historico_comunicacoes,
+               detalhe->>'Banco', detalhe->>'Agência', detalhe->>'Conta'
         FROM transferegov_propostas WHERE municipio_id = :m
     """), {"m": municipio_id})
     for row in vol.fetchall():
@@ -461,7 +462,10 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             "valor_global": _money(row[7]),
             "valor_repasse": _money(row[8]),
             "valor_contrapartida": _money(row[9]),
-            "banco": "", "agencia": "", "conta": "",
+            # Banco/agencia/conta ja estao no JSONB `detalhe` (raspados junto do
+            # resto da pagina Dados da Proposta). Antes ficavam "" p/ TransfereGov —
+            # a tela do RM tem os campos, mas nunca eram preenchidos deste lado.
+            "banco": row[18] or "", "agencia": row[19] or "", "conta": row[20] or "",
             "saldo_bancario": None, "dt_saldo": None,
             "dt_fim_vigencia": _iso(dt_fim),
             "situacao_atual": sit,  # status do ciclo (ex.: "Em execução") — sem narrativa
