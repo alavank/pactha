@@ -1,9 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState, useCallback } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { Plus, Trash2, Eye, Download, Loader2, ChevronDown, FileText } from "lucide-react";
+import { Plus, Trash2, Download, Loader2, ChevronDown, FileText } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { MultiSelect } from "@/components/ui/multi-select";
@@ -70,8 +68,7 @@ const ESTILO_ACAO: React.CSSProperties = {
   color: "var(--bi-muted)",
 };
 
-export default function RmListPage() {
-  const router = useRouter();
+export default function RmListPage() {
   const { municipioId } = useMunicipio();
 
   const [items, setItems] = useState<RmListItem[]>([]);
@@ -285,14 +282,13 @@ export default function RmListPage() {
           />
           <Lista>
           {visiveis.map((rm) => {
-            const exercicio = anoDo(rm);
-            const href = `/dashboard/rm/${rm.id}?municipio_id=${municipioId}`;
+            const exercicio = anoDo(rm);
             return (
               <ItemLinha
                 key={rm.id}
-                /* O corpo abre o RM, como nos cartoes do Painel. O botao "Abrir"
-                   continua ali de proposito: e o unico affordance visivel. */
-                onClick={() => router.push(href)}
+                /* Sem edicao: o RM e gerado e EMITIDO direto pelo dropdown
+                   "Relatório" (Completo/Resumido/Totalizado). Nao ha mais "Abrir"
+                   nem clique no corpo — nao existe tela de edicao a abrir. */
                 titulo={rm.titulo || (exercicio ? `RM ${exercicio}` : "RM sem exercício informado")}
                 meta={
                   <>
@@ -303,15 +299,7 @@ export default function RmListPage() {
                 }
                 acao={
                   <>
-                    {/* "Abrir" fica para todo mundo, inclusive em RM de outra
-                        pessoa: a decisão do dono foi restringir a ESCRITA, e a
-                        lista continua sendo do município inteiro. Quem entra num
-                        RM que não é seu encontra a tela em leitura (o próprio
-                        editor desliga Salvar). */}
-                    <Link href={href} className={CLS_ACAO} style={ESTILO_ACAO}
-                          title="Abrir o RM (consulta e exportação)">
-                      <Eye className="size-3.5" /> Abrir
-                    </Link>
+                    {/* Emissão direta pelo dropdown — sem "Abrir"/edição. */}
                     <div className="relative">
                       <button
                         onClick={() => setMenuId(menuId === rm.id ? null : rm.id)}
