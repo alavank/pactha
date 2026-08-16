@@ -362,22 +362,26 @@ def _evento_atual(historico) -> dict:
 
 
 async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int | None = None,
-                          completo: bool = False) -> dict:
+                          completo: bool = False, anos: list[int] | None = None) -> dict:
     """Monta o conteudo JSONB de um RM a partir dos dados do banco.
 
     ano_emissao: ano-base da janela do relatório (year da data de referência).
     Mantém só propostas federais do ano de emissão (em análise/aprovação) + todas
     as empenhadas (qualquer ano). Default = ano atual.
 
-    completo=False (DEFAULT — RM ANUAL): comportamento historico, intacto. 3 Partes
-    classificadas por esfera, recorte por ano_emissao.
+    completo=False (RM ANUAL — legado): 3 Partes por esfera, recorte por ano_emissao.
 
-    completo=True (RM COMPLETO — TODOS OS ANOS, padrao "Freitas completo"): 4 Partes
-    classificadas por ESTAGIO/SITUACAO (ver _destino_completo), sem recorte de ano,
-    com os sub-blocos e rotulos da referencia. Ativado pelo endpoint quando
-    escopo='completo'. Nenhum caminho do anual e tocado quando completo=False."""
+    completo=True (padrao "Freitas"): 4 Partes por ESTAGIO/SITUACAO (ver
+    _destino_completo), com os sub-blocos e rotulos da referencia.
+
+    anos: SELECAO de anos do relatorio (novo modelo — o RM e UM so, com o escopo
+    escolhido). None/vazio = TODOS os anos (o "completo"). Lista com anos = filtra
+    os itens para esses anos (pelo ano do numero do instrumento). O filtro roda por
+    cima da estrutura de 4 partes: 1 ano -> so ele; varios -> os anos juntos num
+    unico relatorio; todos/vazio -> o completo."""
     if not ano_emissao:
         ano_emissao = date.today().year
+    anos_filtro = set(a for a in (anos or []) if a)  # vazio => sem filtro (todos)
     # Estrutura: {partes: [{ordem, titulo, secoes: [{ordem, titulo, grupos:
     #   [{ordem, orgao, itens: [...]}]}]}]}
     # Build incrementally then convert.
@@ -864,6 +868,15 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
         ordenados += [s for s in nomes if s not in SECAO_PRIORIDADE]
         return [(n, secoes_dict[n]) for n in ordenados]
 
+    def _no_escopo(it):
+        # Filtro de SELECAO de anos: mantem o item quando o ano do seu numero esta
+        # entre os anos escolhidos. Vazio = todos (completo). Itens sem ano legivel
+        # so entram no completo (nao em um recorte de anos especifico).
+        if not anos_filtro:
+            return True
+        y = _ano_de(it.get("numero"))
+        return y in anos_filtro
+
     def _ordena_itens(itens):
         # No completo (multi-ano) ordena por ANO desc + numero, como a referencia.
         # No anual mantem a ordem de insercao (comportamento historico).
@@ -878,13 +891,16 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
         for s_idx, (s_titulo, grupos) in enumerate(_ordena_secoes(p["secoes"]), start=1):
             grupos_out = []
             for g_idx, (orgao, itens) in enumerate(grupos.items(), start=1):
-                itens_ord = _ordena_itens(itens)
+                itens_ord = _ordena_itens([it for it in itens if _no_escopo(it)])
+                if not itens_ord:
+                    continue  # grupo fica vazio apos o recorte de anos -> nao entra
                 grupos_out.append({
                     "ordem": g_idx,
                     "orgao": orgao,
                     "itens": [{"ordem": i + 1, **it} for i, it in enumerate(itens_ord)],
                 })
-            secoes_out.append({"ordem": s_idx, "titulo": s_titulo, "grupos": grupos_out})
+            if grupos_out:  # secao vazia apos o recorte de anos nao entra
+                secoes_out.append({"ordem": s_idx, "titulo": s_titulo, "grupos": grupos_out})
         if secoes_out:
             out_partes.append({"ordem": n, "titulo": p["titulo"], "secoes": secoes_out})
     return {"partes": out_partes}
