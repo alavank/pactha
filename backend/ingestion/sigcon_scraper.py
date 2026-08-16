@@ -283,46 +283,124 @@ async def _estabelecer_grid(page, tries: int = 3) -> bool:
 async def _scrape_indicacoes(page) -> dict | None:
     """Le a INDICACAO parlamentar do convenio: nr_indicacao, saldo, valor utilizado.
 
-    Expande a secao 'INFORMAÇÕES DE REPASSE DE RECURSOS' (accordion PrimeFaces,
-    header com id estavel prefixado accPnlPropostaPlanoTrabalho:tab...) e le duas
-    datatables ja presentes no DOM apos o expand (nao precisa clicar 'Visualizar
-    Indicacoes'):
-      - dtTblIndicacaoRecursosEmenda_data      -> Saldo, Valor Utilizado (agregado)
-      - dtTblIndicacaoRecursosEmendaModal_data -> Nome, Indicacao(numero), Status
-    Estrutura confirmada por captura do DOM logado (16/08/2026).
+    Expande a secao 'INFORMAÇÕES DE REPASSE DE RECURSOS' (accordion PrimeFaces).
+    O NUMERO da indicacao vive na tabela dtTblIndicacaoRecursosEmendaModal_data
+    (colunas Indicação/Emenda/Status), que NASCE VAZIA ('Nenhum Registro') e so
+    POPULA quando cada linha da tabela inline agregada (dtTblIndicacaoRecursosEmenda,
+    colunas Ano/Genero/Saldo/Valor/Expandir) e EXPANDIDA pelo seu row-toggler
+    'Expandir'. Confirmado por sonda do DOM logado (16/08/2026): apos expandir,
+    a linha do modal vem ['', <responsavel>, <nr_indicacao>, <cod_emenda>, ...].
+    ERA O BUG: lia as duas tabelas sem expandir -> saldo/valor vinham (inline), mas
+    nr_indicacao ficava sempre None (modal vazio). Agora expande TODAS as linhas
+    (convenio pode ter varias indicacoes) e reespera o modal encher.
+    O saldo/valor continuam saindo da tabela inline.
+
+    Com SIGCON_DEBUG_EXTRAS=1 loga [DIAG-IND] (tbodies/linhas) espelhando
+    _scrape_alteracoes — sem isso a falha era 100% silenciosa.
 
     SEMPRE try/except -> None: NAO pode propagar (o loop de detalhe aborta em 6
-    falhas seguidas). Custa +1 clique/AJAX por convenio -> ligado por env
-    SIGCON_INDICACOES=1 e cortado pelo orcamento (_sig_estourou)."""
+    falhas seguidas). Ligado por env SIGCON_INDICACOES=1 e cortado pelo orcamento."""
+    _dbg = (os.getenv("SIGCON_DEBUG_EXTRAS", "0") or "0").strip() == "1"
+
+    def _shape(t):
+        if not t:
+            return "None"
+        return f"{len(t.get('rows') or [])}linhas cab={t.get('cab')}"
+
+    # JS que le as tabelas + lista os gatilhos candidatos do modal.
+    _READ = r"""() => {
+        const tbById=(sfx)=>{for(const tb of document.querySelectorAll('tbody[id$="_data"]')){if(tb.id.includes(sfx))return tb;}return null;};
+        const parse=(tb)=>{
+            if(!tb) return null;
+            const tbl=tb.closest('table');
+            const cab=tbl?[...tbl.querySelectorAll('thead th')].map(t=>(t.innerText||'').trim()):[];
+            const rows=[...tb.querySelectorAll('tr')].map(tr=>[...tr.querySelectorAll('td')].map(td=>(td.innerText||'').trim())).filter(r=>r.some(c=>c));
+            return {cab, rows};
+        };
+        const allTb=[...document.querySelectorAll('tbody[id$="_data"]')].map(t=>t.id).filter(i=>/ndica/i.test(i));
+        const btns=[...document.querySelectorAll('a,button,input[type=button],input[type=submit],span[onclick],[role=button]')]
+            .filter(e=>/visualizar\s+indica|ver\s+indica|detalhar\s+indica|indica[cç][oõ]es/i.test((e.innerText||'')+' '+(e.title||'')+' '+(e.value||'')))
+            .map(e=>({txt:((e.innerText||e.value||e.title||'')).trim().slice(0,40), id:e.id||''}));
+        return {
+            inline: parse(tbById('dtTblIndicacaoRecursosEmenda_data')),
+            modal:  parse(tbById('dtTblIndicacaoRecursosEmendaModal_data')),
+            valores:parse(tbById('dtTblValoresIndicadosConvenio_data')),
+            sanadas:parse(tbById('dtTblExibirIndicacoesSanadas_data')),
+            allTb, btns,
+        };
+    }"""
+
+    def _clean(t):
+        if not t:
+            return {"cab": [], "rows": []}
+        rows = [r for r in (t.get("rows") or []) if not (len(r) == 1 and "nenhum" in (r[0] or "").lower())]
+        return {"cab": t.get("cab") or [], "rows": rows}
+
+    def _rows_ok(t):
+        return bool(_clean(t)["rows"])
+
     try:
-        clicked = await page.evaluate(r"""() => {
-            const h=[...document.querySelectorAll('.ui-accordion-header, [id*="accPnl"][id*="_head"]')]
-                    .find(e=>/repasse de recursos/i.test(e.innerText||''));
-            if(!h) return false;
-            if(h.getAttribute('aria-expanded')!=='true') (h.querySelector('a')||h).click();
-            return true;
+        diag = await page.evaluate(r"""() => {
+            const heads=[...document.querySelectorAll('.ui-accordion-header, [id*="accPnl"][id*="_head"]')];
+            const h=heads.find(e=>/repasse de recursos/i.test(e.innerText||''));
+            let did=false, wasExp=null;
+            if(h){ wasExp=h.getAttribute('aria-expanded'); if(wasExp!=='true'){(h.querySelector('a')||h).click(); did=true;} }
+            return {n:heads.length, achou:!!h, wasExp, did,
+                    headers: heads.map(e=>(e.innerText||'').replace(/\n.*/,'').slice(0,40))};
         }""")
-        if not clicked:
+        if _dbg:
+            logger.info(f"  [DIAG-IND] headers={diag.get('n')} achou_secao={diag.get('achou')} "
+                        f"wasExpanded={diag.get('wasExp')} clicou={diag.get('did')}")
+            if not diag.get("achou"):
+                logger.info(f"  [DIAG-IND] secoes: {diag.get('headers')}")
+        if not diag.get("achou"):
             return None
         await page.wait_for_timeout(2500)
-        data = await page.evaluate(r"""() => {
-            const tbById=(sfx)=>{for(const tb of document.querySelectorAll('tbody[id$="_data"]')){if(tb.id.includes(sfx))return tb;}return null;};
-            const parse=(tb)=>{
-                if(!tb) return {cab:[],rows:[]};
-                const tbl=tb.closest('table');
-                const cab=tbl?[...tbl.querySelectorAll('thead th')].map(t=>(t.innerText||'').trim()):[];
-                const rows=[...tb.querySelectorAll('tr')].map(tr=>[...tr.querySelectorAll('td')].map(td=>(td.innerText||'').trim())).filter(r=>r.some(c=>c));
-                return {cab, rows};
-            };
-            return {agg:parse(tbById('dtTblIndicacaoRecursosEmenda_data')),
-                    ind:parse(tbById('dtTblIndicacaoRecursosEmendaModal_data'))};
-        }""")
-        agg = data.get("agg") or {"cab": [], "rows": []}
-        ind = data.get("ind") or {"cab": [], "rows": []}
-        # ignora "Nenhum Registro Encontrado."
-        agg_rows = [r for r in agg["rows"] if not (len(r) == 1 and "nenhum" in (r[0] or "").lower())]
-        ind_rows = [r for r in ind["rows"] if not (len(r) == 1 and "nenhum" in (r[0] or "").lower())]
-        if not agg_rows and not ind_rows:
+
+        d = await page.evaluate(_READ)
+        if _dbg:
+            logger.info(f"  [DIAG-IND] tbodies={d.get('allTb')} inline={_shape(d.get('inline'))} "
+                        f"modal={_shape(d.get('modal'))}")
+
+        # O NUMERO da indicacao vive na tabela MODAL (colunas Indicação/Emenda), que
+        # so POPULA quando cada linha da tabela inline (agregada) e EXPANDIDA pelo seu
+        # row-toggler "Expandir" (PrimeFaces). Confirmado por sonda do DOM logado:
+        # sem expandir -> "Nenhum Registro Encontrado."; apos expandir ->
+        # ['', 'BLOCO AVANCA MINAS', '199663', '252', ...]. Expande TODAS as linhas
+        # (convenio pode ter varias indicacoes) e reespera o modal encher.
+        if not _rows_ok(d.get("modal")) and (d.get("inline") and (d["inline"].get("rows") or [])):
+            try:
+                n_tog = await page.evaluate(r"""() => {
+                    const tb=[...document.querySelectorAll('tbody[id$="_data"]')].find(t=>t.id.includes('dtTblIndicacaoRecursosEmenda_data'));
+                    if(!tb) return 0;
+                    const togs=[...tb.querySelectorAll('.ui-row-toggler')];
+                    togs.forEach(t=>t.click());
+                    return togs.length;
+                }""")
+                if n_tog:
+                    try:
+                        await page.wait_for_function(r"""() => {
+                            for(const tb of document.querySelectorAll('tbody[id$="_data"]')){
+                                if(tb.id.includes('dtTblIndicacaoRecursosEmendaModal_data')){
+                                    const rs=[...tb.querySelectorAll('tr')].filter(tr=>[...tr.querySelectorAll('td')].some(td=>(td.innerText||'').trim()));
+                                    if(rs.length && !/nenhum/i.test(rs[0].innerText||'')) return true;
+                                }
+                            }
+                            return false;
+                        }""", timeout=7000)
+                    except Exception:
+                        pass
+                    d = await page.evaluate(_READ)
+                    if _dbg:
+                        logger.info(f"  [DIAG-IND] pos-expand togglers={n_tog} modal={_shape(d.get('modal'))}")
+            except Exception:
+                pass
+
+        inline = _clean(d.get("inline"))
+        modal = _clean(d.get("modal"))
+        valores = _clean(d.get("valores"))
+        sanadas = _clean(d.get("sanadas"))
+        if not inline["rows"] and not modal["rows"] and not valores["rows"] and not sanadas["rows"]:
             return None
 
         def col(cab, *frags):
@@ -333,33 +411,49 @@ async def _scrape_indicacoes(page) -> dict | None:
             return None
 
         out: dict = {}
-        if agg_rows:
-            r = agg_rows[0]
-            ci_sal = col(agg["cab"], "saldo")
-            ci_val = col(agg["cab"], "valor utilizado")
+        # Saldo / Valor Utilizado sempre da tabela inline (agregada).
+        if inline["rows"]:
+            r = inline["rows"][0]
+            ci_sal = col(inline["cab"], "saldo")
+            ci_val = col(inline["cab"], "valor utilizado")
             if ci_sal is not None and ci_sal < len(r):
                 out["indic_saldo_str"] = r[ci_sal]
             if ci_val is not None and ci_val < len(r):
                 out["indic_valor_utilizado_str"] = r[ci_val]
-        if ind_rows:
-            ci_num = col(ind["cab"], "indica")   # coluna "Indicação"
-            ci_nom = col(ind["cab"], "respons")
-            ci_sta = col(ind["cab"], "status")
-            r = ind_rows[0]
-            if ci_num is not None and ci_num < len(r):
-                out["nr_indicacao"] = (r[ci_num] or "").strip() or None
-            if ci_nom is not None and ci_nom < len(r):
-                out["indic_nome_responsavel"] = (r[ci_nom] or "").strip() or None
-            if ci_sta is not None and ci_sta < len(r):
-                out["indic_status"] = (r[ci_sta] or "").strip() or None
-            out["indicacoes"] = [
-                {"nr_indicacao": (rr[ci_num].strip() if ci_num is not None and ci_num < len(rr) else None),
-                 "nome_responsavel": (rr[ci_nom].strip() if ci_nom is not None and ci_nom < len(rr) else None),
-                 "status": (rr[ci_sta].strip() if ci_sta is not None and ci_sta < len(rr) else None)}
-                for rr in ind_rows
-            ]
+
+        # nr_indicacao: primeira fonte que tenha a coluna do numero preenchida.
+        # Ordem por confiabilidade (per-convenio primeiro): modal -> valores ->
+        # inline -> sanadas. Casa tanto "Indicação" quanto "Nº da Ind.".
+        for src in (modal, valores, inline, sanadas):
+            if not src["rows"]:
+                continue
+            ci_num = col(src["cab"], "indica", "da ind", "nº da ind", "n. ind")
+            if ci_num is None:
+                continue
+            ci_nom = col(src["cab"], "respons", "nome")
+            ci_sta = col(src["cab"], "status")
+            first = src["rows"][0]
+            if ci_num < len(first) and (first[ci_num] or "").strip():
+                out["nr_indicacao"] = (first[ci_num] or "").strip() or None
+                if ci_nom is not None and ci_nom < len(first):
+                    out["indic_nome_responsavel"] = (first[ci_nom] or "").strip() or None
+                if ci_sta is not None and ci_sta < len(first):
+                    out["indic_status"] = (first[ci_sta] or "").strip() or None
+                out["indicacoes"] = [
+                    {"nr_indicacao": (rr[ci_num].strip() if ci_num < len(rr) else None),
+                     "nome_responsavel": (rr[ci_nom].strip() if ci_nom is not None and ci_nom < len(rr) else None),
+                     "status": (rr[ci_sta].strip() if ci_sta is not None and ci_sta < len(rr) else None)}
+                    for rr in src["rows"] if ci_num < len(rr) and (rr[ci_num] or "").strip()
+                ]
+                break
+
+        if _dbg:
+            logger.info(f"  [DIAG-IND] -> nr_indicacao={out.get('nr_indicacao')} "
+                        f"indicacoes={len(out.get('indicacoes') or [])}")
         return out or None
-    except Exception:
+    except Exception as ex:
+        if _dbg:
+            logger.info(f"  [DIAG-IND] EXC {str(ex)[:140]}")
         return None
 
 
