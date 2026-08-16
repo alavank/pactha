@@ -44,6 +44,8 @@ MIGRATION_FILES = [
     "add_simec_par.sql",
     # Relatorio de Monitoramento (RM) - padrao Freitas
     "add_rm.sql",
+    # RM: escopo ('anual'|'completo') + unique tripla -> RM completo coexiste
+    "add_rm_escopo.sql",
     # Voluntarias: situacao contratacao + clausula suspensiva detalhe + parlamentar
     "add_voluntarias_clausula_parlamentar.sql",
     # Voluntarias: detalhe generico da Situacao de Contratacao (qualquer tipo)

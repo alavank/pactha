@@ -250,10 +250,16 @@ def gerar_pdf(meta: dict, conteudo: dict, municipio_nome: str) -> bytes:
     titulo = meta.get("titulo") or f"RELATÓRIO DE MONITORAMENTO – {municipio_nome.upper()}"
     story.append(Paragraph(_escape(titulo), s["titulo_principal"]))
     cidade = meta.get("cidade_emissao") or ""   # ver nota em rm_export.py
-    # RM é anual: a linha local/data mostra o EXERCÍCIO (ano de emissão).
-    _dr = str(meta.get("data_referencia") or "")
-    _ano = _dr[:4] if len(_dr) >= 4 and _dr[:4].isdigit() else ""
-    linha = f"{cidade} — Relatório referente ao exercício de {_ano}" if _ano else cidade
+    if meta.get("escopo") == "completo":
+        # RM COMPLETO (todos os anos): nao ha exercicio unico. Linha local + data
+        # por extenso, como a referencia ("Brasília/DF, 29 de Julho de 2026").
+        _de = _data_extenso(meta.get("data_referencia"))
+        linha = f"{cidade}, {_de}".strip(", ") if _de else cidade
+    else:
+        # RM ANUAL: a linha local/data mostra o EXERCÍCIO (ano de emissão).
+        _dr = str(meta.get("data_referencia") or "")
+        _ano = _dr[:4] if len(_dr) >= 4 and _dr[:4].isdigit() else ""
+        linha = f"{cidade} — Relatório referente ao exercício de {_ano}" if _ano else cidade
     story.append(Paragraph(_escape(linha), s["data_local"]))
 
     for p_idx, parte in enumerate(conteudo.get("partes", [])):

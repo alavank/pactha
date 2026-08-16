@@ -31,6 +31,102 @@ _SEC_FED = "INSTRUMENTOS DE REPASSE FEDERAIS"
 _SEC_FED_REJ = "INSTRUMENTOS FEDERAIS REJEITADOS / INDEFERIDOS"
 _SEC_EST = "INSTRUMENTOS DE REPASSE ESTADUAIS"
 
+# ---------------------------------------------------------------------------
+# RM COMPLETO (todos os anos) — padrao "Freitas completo" (ver referencia)
+# ---------------------------------------------------------------------------
+# O RM COMPLETO e um documento estruturalmente DIFERENTE do anual: 4 Partes
+# classificadas por ESTAGIO/SITUACAO do instrumento (e ano do pagamento), NAO
+# por esfera. Todo o comportamento novo fica atras de `completo=True` em
+# montar_conteudo — o RM anual (completo=False) nao muda em nada.
+#
+#   PARTE 1 — pendencia FEDERAL/Brasilia (empenho, desembolso, aceite)
+#   PARTE 2 — acao do MUNICIPIO (licitacao/projeto/clausula) + PAGOS no ano corrente
+#   PARTE 3 — pagamentos de ANOS ANTERIORES / prestacao de contas
+#   PARTE 4 — Propostas Voluntarias (SO cadastros do ano corrente, validade 1 ano)
+#
+# Os rotulos de secao mudam por Parte (a referencia usa plural no topo e singular
+# na Parte 3; o estadual muda de nome entre a Parte 2 e a Parte 3).
+_SEC_FED_PLURAL = "INSTRUMENTOS DE REPASSE FEDERAIS"          # Partes 1, 2, 4
+_SEC_FED_SINGULAR = "INSTRUMENTOS DE REPASSE FEDERAL"        # Parte 3
+_SEC_EST_P2 = "INFORMAÇÕES DE REPASSE ESTADUAIS"             # Parte 2
+_SEC_EST_P3_RES = "Resoluções e Transferências Especiais Estaduais"  # Parte 3
+_SEC_EST_P3_CONV = "Convênios Estaduais"                     # Parte 3
+
+
+def _titulos_partes_completo(ano_ref: int) -> dict:
+    """Titulos EXATOS das 4 Partes do RM completo (padrao da referencia).
+
+    O ano corrente entra no texto da Parte 4 (validade 1 ano) — por isso e
+    parametrizado pelo ano de emissao, nao fixo em 2026."""
+    return {
+        1: "Parte 1 - demandas em Brasília (Pendências de empenho, desembolso e aceite)",
+        2: "Parte 2 - Demandas do Município",
+        3: "Parte 3 – Prestações de contas em análise/aprovadas - pagamentos realizados de anos anteriores",
+        4: (f"Parte 4 – Propostas Voluntárias - OBS: As propostas voluntárias referem-se "
+            f"apenas a cadastros realizados no ano de {ano_ref} tendo validade de 1 ano "
+            f"podendo serem empenhadas e pagas até 31 de dezembro mas não possuem garantia."),
+    }
+
+
+# Palavras que denunciam que a pendencia esta com o MUNICIPIO (nao em Brasilia):
+# licitacao a fazer, projeto/termo de referencia em analise, clausula suspensiva,
+# medicao a inserir. Quando presentes, o instrumento (mesmo federal) vai p/ Parte 2.
+_PEND_MUNICIPAL_KW = (
+    "licita", "projeto de engenharia", "projeto basico", "projeto básico",
+    "termo de refer", "cláusula suspensiva", "clausula suspensiva",
+    "aguardando inser", "inserir medi", "medição", "medicao",
+    "aguardando o munic", "pendência do munic", "pendencia do munic",
+    "contrapartida",
+)
+
+
+def _pend_municipal(*textos: str | None) -> bool:
+    s = " ".join((t or "").lower() for t in textos)
+    return any(k in s for k in _PEND_MUNICIPAL_KW)
+
+
+def _destino_completo(esfera: str, fonte: str, status: str, ano_item: int | None,
+                      ano_pgto: int | None, ano_ref: int, pend_municipal: bool,
+                      pre_empenho_novo: bool, tem_convenio: bool) -> tuple[int, str, str]:
+    """(parte, secao, sufixo_orgao) do RM COMPLETO, por ESTAGIO/SITUACAO.
+
+    - status: rotulo de _fed_status (paga/empenhada/vigente/ativa; 'dead' ja foi
+      cortado na retencao).
+    - ano_pgto: ano do PAGAMENTO quando conhecido (SIMEC dt_pgto, FNS ultimo
+      pagamento, TE concluida, c.ano no estadual). None quando a fonte nao diz.
+    - pre_empenho_novo: proposta voluntaria/FNS cadastrada no ano corrente e ainda
+      pre-empenho -> Parte 4.
+    - tem_convenio: estadual com numero de convenio (nr_instrumento) -> "Convenios
+      Estaduais"; senao (indicacao/resolucao/TE) -> "Resolucoes e T.E.".
+
+    O sufixo_orgao ("- Pagos {ano}") so e usado nos federais PAGOS no ano corrente
+    (bloco "REPASSES DE {ano}:" da Parte 2), como na referencia."""
+    fed = (esfera == "federal")
+    # Janela de "pago recente": federal so o ANO CORRENTE (bloco "REPASSES DE
+    # {ano}"); estadual 2 anos (a referencia poe estaduais pagos 2025-2026 na Parte 2).
+    pago_corrente = (ano_pgto == ano_ref) if fed else (ano_pgto is not None and ano_pgto >= ano_ref - 1)
+
+    if pre_empenho_novo:
+        return 4, _SEC_FED_PLURAL, ""
+
+    if status == "paga":
+        if pago_corrente:
+            if fed:
+                return 2, f"REPASSES DE {ano_ref}:", f" - Pagos {ano_ref}"
+            return 2, _SEC_EST_P2, ""
+        # anos anteriores -> Parte 3
+        if fed:
+            return 3, _SEC_FED_SINGULAR, ""
+        return 3, (_SEC_EST_P3_CONV if tem_convenio else _SEC_EST_P3_RES), ""
+
+    # Nao pago (empenhada / ativa / vigente)
+    if fed:
+        # Empenhado ou aprovado: se a bola esta com o municipio -> Parte 2; senao
+        # a pendencia e federal (aguarda empenho/desembolso/aceite) -> Parte 1.
+        return (2, _SEC_FED_PLURAL, "") if pend_municipal else (1, _SEC_FED_PLURAL, "")
+    # Estadual em ciclo corrente (nao pago) aparece na Parte 2.
+    return 2, _SEC_EST_P2, ""
+
 
 def _money(x) -> float | None:
     if x is None:
@@ -99,19 +195,28 @@ def _fed_empenhada(situacao: str | None) -> bool:
     return _fed_status(situacao) in ("empenhada", "paga")
 
 
-def _fed_retem(ano_prop: int | None, ano_emissao: int, situacao: str | None) -> bool:
+def _fed_retem(ano_prop: int | None, ano_emissao: int, situacao: str | None,
+               completo: bool = False) -> bool:
     """Regra de permanência no RM, por ANO DE REFERÊNCIA (ano_emissao):
       - empenhada/paga -> sempre permanece (avançou; convênio em curso em qualquer ano)
       - dead (rejeitada/indeferida/anulada) -> só permanece no SEU próprio ano de
         referência; NÃO carrega p/ os relatórios dos demais anos (as que não foram
         para frente naquele ano não entram nos outros)
       - ativa (pré-empenho) -> só permanece se for do ano de referência (ou posterior)
+
+    completo=True (RM de TODOS os anos): a MESMA regra do anual, com uma diferença
+    — 'dead' (rejeitada/anulada/indeferida) NUNCA entra (a referência não tem seção
+    de rejeitados). Note que empenhada/paga/vigente já permanecem em qualquer ano no
+    anual; o pré-empenho ('ativa') continua só do ano de referência ou posterior
+    (a referência trata Parte 1/2 como ciclo corrente, não histórico).
     """
     st = _fed_status(situacao)
     if st in ("empenhada", "paga", "vigente"):
         return True
     if st == "dead":
-        return ano_prop is not None and ano_prop == ano_emissao
+        # anual: só no próprio ano; completo: nunca.
+        return False if completo else (ano_prop is not None and ano_prop == ano_emissao)
+    # ativa (pré-empenho): só do ano de referência ou posterior (anual e completo).
     return ano_prop is not None and ano_prop >= ano_emissao
 
 
@@ -138,7 +243,8 @@ def _fns_classifica(situacao_desc: str | None, sit_calc: str) -> str:
 
 
 def _fns_retem(ano_prop: int | None, ano_emissao: int, ind: dict,
-               vl_pago: float, vl_pagar: float, sit_cls: str) -> bool:
+               vl_pago: float, vl_pagar: float, sit_cls: str,
+               completo: bool = False) -> bool:
     """Regra de ano PROPRIA do FNS (nao usa _fed_retem, que e compartilhada com
     TransfereGov/SIGCON e mantem 'paga' para sempre).
 
@@ -150,9 +256,17 @@ def _fns_retem(ano_prop: int | None, ano_emissao: int, ind: dict,
       - e do proprio ano (ou posterior);
       - teve PAGAMENTO no ano de referencia (ainda que a proposta seja antiga);
       - foi empenhada e ainda tem SALDO A RECEBER (pago > 0 e a pagar > 0).
-    Rejeitada/bloqueada so aparece no seu proprio ano."""
+    Rejeitada/bloqueada so aparece no seu proprio ano.
+
+    completo=True (todos os anos): pago/empenhado de QUALQUER ano permanece (é o
+    histórico que alimenta a Parte 3); pré-empenho ('Em análise'/'Pendente') só do
+    ano de referência ou posterior; Rejeitada/dead nunca entra."""
     if sit_cls == "Rejeitada" or _fed_status(sit_cls) == "dead":
-        return ano_prop is not None and ano_prop == ano_emissao
+        return False if completo else (ano_prop is not None and ano_prop == ano_emissao)
+    if completo:
+        if _fed_status(sit_cls) in ("paga", "empenhada", "vigente"):
+            return True
+        return ano_prop is not None and ano_prop >= ano_emissao
     if ano_prop is not None and ano_prop >= ano_emissao:
         return True
     try:
@@ -247,22 +361,35 @@ def _evento_atual(historico) -> dict:
     }
 
 
-async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int | None = None) -> dict:
+async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int | None = None,
+                          completo: bool = False) -> dict:
     """Monta o conteudo JSONB de um RM a partir dos dados do banco.
 
     ano_emissao: ano-base da janela do relatório (year da data de referência).
     Mantém só propostas federais do ano de emissão (em análise/aprovação) + todas
-    as empenhadas (qualquer ano). Default = ano atual."""
+    as empenhadas (qualquer ano). Default = ano atual.
+
+    completo=False (DEFAULT — RM ANUAL): comportamento historico, intacto. 3 Partes
+    classificadas por esfera, recorte por ano_emissao.
+
+    completo=True (RM COMPLETO — TODOS OS ANOS, padrao "Freitas completo"): 4 Partes
+    classificadas por ESTAGIO/SITUACAO (ver _destino_completo), sem recorte de ano,
+    com os sub-blocos e rotulos da referencia. Ativado pelo endpoint quando
+    escopo='completo'. Nenhum caminho do anual e tocado quando completo=False."""
     if not ano_emissao:
         ano_emissao = date.today().year
     # Estrutura: {partes: [{ordem, titulo, secoes: [{ordem, titulo, grupos:
     #   [{ordem, orgao, itens: [...]}]}]}]}
     # Build incrementally then convert.
-    partes_data = {
-        1: {"titulo": "PARTE 1 - DEMANDAS EM BRASÍLIA (Instrumentos Federais)", "secoes": {}},
-        2: {"titulo": "PARTE 2 - DEMANDAS DO MUNICÍPIO (Instrumentos Estaduais)", "secoes": {}},
-        3: {"titulo": "PARTE 3 - PRESTAÇÕES DE CONTAS / PAGAMENTOS DE ANOS ANTERIORES", "secoes": {}},
-    }
+    if completo:
+        _tit = _titulos_partes_completo(ano_emissao)
+        partes_data = {n: {"titulo": _tit[n], "secoes": {}} for n in (1, 2, 3, 4)}
+    else:
+        partes_data = {
+            1: {"titulo": "PARTE 1 - DEMANDAS EM BRASÍLIA (Instrumentos Federais)", "secoes": {}},
+            2: {"titulo": "PARTE 2 - DEMANDAS DO MUNICÍPIO (Instrumentos Estaduais)", "secoes": {}},
+            3: {"titulo": "PARTE 3 - PRESTAÇÕES DE CONTAS / PAGAMENTOS DE ANOS ANTERIORES", "secoes": {}},
+        }
 
     def add_item(parte_n: int, secao: str, orgao: str, item: dict):
         p = partes_data[parte_n]
@@ -326,10 +453,23 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
                     # se moveu nele (pagamento no ano / saldo a receber). Sem
                     # isso o RM de 2026 vinha com proposta "Paga" de 2010.
                     sit_cls = _fns_classifica(ind.get("situacao_desc"), sit)
-                    if not _fns_retem(c.ano, ano_emissao, ind, vlpago or 0, vlpagar or 0, sit_cls):
+                    if not _fns_retem(c.ano, ano_emissao, ind, vlpago or 0, vlpagar or 0, sit_cls, completo):
                         continue
-                    parte, secao = _federal_destino(sit_cls)
-                    add_item(parte, secao, orgao, {
+                    orgao_fns = orgao
+                    if completo:
+                        st = _fed_status(sit_cls)
+                        try:
+                            ano_pg = int(ind.get("ano_ultimo_pagamento") or 0) or None
+                        except (TypeError, ValueError):
+                            ano_pg = None
+                        pre_novo = st == "ativa" and c.ano == ano_emissao
+                        parte, secao, suf = _destino_completo(
+                            "federal", "fns", st, c.ano, ano_pg, ano_emissao,
+                            _pend_municipal(ind.get("situacao_desc"), sit), pre_novo, False)
+                        orgao_fns = orgao + suf
+                    else:
+                        parte, secao = _federal_destino(sit_cls)
+                    add_item(parte, secao, orgao_fns, {
                         "tipo": "Proposta",
                         "numero": f"{nuprop} - {c.ano}" if c.ano else nuprop,
                         "objeto": objeto_fns,
@@ -349,12 +489,22 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
                         "fonte": "fns",
                         "fonte_ref": str(c.id),
                     })
-            elif c.ano is not None and c.ano >= ano_emissao:
+            elif (c.ano is not None and c.ano >= ano_emissao) or (completo and _fed_status(c.situacao) != "dead"):
                 # Fallback: bucket sem individuais (coleta antiga/incompleta). Sem
                 # as propostas individuais nao da pra saber se houve pagamento no
-                # ano — entao so entra se for do proprio ano de referência.
-                parte, secao = _federal_destino(c.situacao)
-                add_item(parte, secao, orgao, {
+                # ano — entao no anual so entra se for do proprio ano de referência.
+                # No completo entra qualquer ano (menos dead).
+                orgao_fb = orgao
+                if completo:
+                    st = _fed_status(c.situacao)
+                    pre_novo = st == "ativa" and c.ano == ano_emissao
+                    parte, secao, suf = _destino_completo(
+                        "federal", "fns", st, c.ano, None, ano_emissao,
+                        _pend_municipal(c.situacao), pre_novo, False)
+                    orgao_fb = orgao + suf
+                else:
+                    parte, secao = _federal_destino(c.situacao)
+                add_item(parte, secao, orgao_fb, {
                     "tipo": "Proposta",
                     "numero": f"{objeto_fns} - {c.ano}" if c.ano else (objeto_fns or "Proposta FNS"),
                     "objeto": objeto_fns,
@@ -378,12 +528,18 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
         # entram no relatorio do ano de referencia; avancadas (em execucao / em
         # vigor / empenhada) e concluidas (encerrada / prestacao) permanecem.
         ano_est = c.ano or _ano_de(nr_instr, nr_proposta, c.nr_sigcon)
-        if not _fed_retem(ano_est, ano_emissao, c.situacao):
+        if not _fed_retem(ano_est, ano_emissao, c.situacao, completo):
             continue
-        secao = _SEC_EST
         orgao = (c.orgao_concedente or "Outros - SIGCON").strip() + " - SIGCON"
-        parte = _classifica_parte("estadual", c.situacao, dt_fim)
         tipo_label = "Convênio" if nr_instr else "Proposta"
+        if completo:
+            st = _fed_status(c.situacao)
+            parte, secao, _suf = _destino_completo(
+                "estadual", "sigcon", st, ano_est, ano_est, ano_emissao,
+                _pend_municipal(c.situacao), False, bool(nr_instr))
+        else:
+            secao = _SEC_EST
+            parte = _classifica_parte("estadual", c.situacao, dt_fim)
         # SIGCON-MG armazena o parlamentar como 'responsaveis' no raw_data.
         _parl = (
             raw.get("parlamentar") or raw.get("responsaveis")
@@ -437,7 +593,7 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
         # saem. Empenho validado pelo STATUS (não pelo flag detalhe->>'Empenhado',
         # que estava marcando "Aprovadas" como empenhadas sem empenho real).
         ano_prop = _ano_de(row[1], row[2])  # numero_proposta NNNNNN/AAAA / codigo
-        if not _fed_retem(ano_prop, ano_emissao, sit):
+        if not _fed_retem(ano_prop, ano_emissao, sit, completo):
             continue
         dt_fim = None
         try:
@@ -446,8 +602,19 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
         except (ValueError, TypeError):
             pass
         tipo_label = "Convênio" if row[2] else "Proposta"
-        parte, secao = _federal_destino(sit)
         orgao = (row[4] or "Outros - Federal").strip()
+        if completo:
+            st = _fed_status(sit)
+            # Voluntaria pre-empenho cadastrada no ano corrente -> Parte 4.
+            pre_novo = st == "ativa" and ano_prop == ano_emissao
+            # Pendencia municipal: situacao do ciclo + contratacao + motivo da clausula.
+            pend = _pend_municipal(sit, row[10], row[12])
+            parte, secao, suf = _destino_completo(
+                "federal", "voluntaria", st, ano_prop, None, ano_emissao,
+                pend, pre_novo, bool(row[2]))
+            orgao = orgao + suf
+        else:
+            parte, secao = _federal_destino(sit)
         # Campos SEPARADOS (sem duplicar): situacao do ciclo, contratacao,
         # detalhe da clausula (motivo/data) e empenho — cada um no seu campo.
         situacao_contr = row[10]
@@ -510,14 +677,25 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
                 # TE ativa (CIENTE/análise) só do ano de emissão; antiga não-
                 # concluída sai. Ano vem do código da emenda (AAAA...) ou do plano.
                 ano_te = _ano_de(cod_em, it.get("planoAcaoCodigo"))
-                if not _fed_retem(ano_te, ano_emissao, sit):
+                if not _fed_retem(ano_te, ano_emissao, sit, completo):
                     continue
                 # CONCLUIDA/paga -> PARTE 3; demais (CIENTE/EM_ANALISE/...) -> PARTE 1.
                 parte_te = 3 if ("conclu" in sl or "pag" in sl or "finaliz" in sl) else 1
                 parl = cod_em.split("-", 1)[1].strip() if "-" in cod_em else ""
                 valor = _money(it.get("valorTotal"))
-                add_item(parte_te, _SEC_FED, "Transferência Especial (Emenda Pix)", {
-                    "tipo": "Transferência Especial",
+                orgao_te = "Transferência Especial (Emenda Pix)"
+                tipo_te = "Transferência Especial"
+                secao_te = _SEC_FED
+                if completo:
+                    st = _fed_status(sit)
+                    parte_te, secao_te, suf = _destino_completo(
+                        "federal", "transferencia_especial", st, ano_te,
+                        ano_te if st == "paga" else None, ano_emissao,
+                        False, False, False)
+                    orgao_te = orgao_te + suf
+                    tipo_te = "Plano de Ação"  # rotulo do numero na referencia (Fazenda/TE)
+                add_item(parte_te, secao_te, orgao_te, {
+                    "tipo": tipo_te,
                     "numero": it.get("planoAcaoCodigo") or "",
                     "objeto": it.get("objetoDescricao") or it.get("politicasPublicas") or "",
                     "parlamentar": parl,
@@ -542,8 +720,17 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
     """), {"m": municipio_id})
     for r in lb.fetchall():
         orgao = "Ministério da Educação"
-        add_item(3, "INSTRUMENTOS DE REPASSE FEDERAIS", orgao, {
-            "tipo": r[0] or "MEC",
+        parte_mec, secao_mec, tipo_mec = 3, "INSTRUMENTOS DE REPASSE FEDERAIS", (r[0] or "MEC")
+        if completo:
+            # SIMEC = pagamentos: ano do pagamento (dt_pgto/ano) manda p/ Parte 2
+            # ("REPASSES DE {ano}") se for do ano corrente, senao Parte 3.
+            ano_pg = r[9] or _ano_de(_iso(r[2]))
+            parte_mec, secao_mec, suf = _destino_completo(
+                "federal", "simec", "paga", ano_pg, ano_pg, ano_emissao, False, False, False)
+            orgao = orgao + suf
+            tipo_mec = "Processo"  # rotulo do numero na referencia (Educacao-SIMEC)
+        add_item(parte_mec, secao_mec, orgao, {
+            "tipo": tipo_mec,
             "numero": r[3] or "",
             "objeto": r[5] or r[1] or r[0],
             "parlamentar": "",
@@ -566,11 +753,21 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
     """), {"m": municipio_id})
     for r in em.fetchall():
         sit = r[8] or ""
-        # Emendas SIGCON => estadual => PARTE 2
-        parte = _classifica_parte("estadual", sit, None)
         orgao = (r[5] or "SIGCON Estadual") + " - Indicação"
         objeto = f"{r[3] or ''} {r[4] or ''}".strip()
-        add_item(parte, "INSTRUMENTOS DE REPASSE ESTADUAIS", orgao, {
+        if completo:
+            st = _fed_status(sit)
+            if st == "dead":
+                continue  # rejeitada/anulada nao entra no completo
+            # Indicacao estadual = "Resolucoes e T.E." (nao e convenio) -> tem_convenio=False.
+            parte, secao_em, _suf = _destino_completo(
+                "estadual", "emenda_estadual", st, r[2], r[2], ano_emissao,
+                _pend_municipal(sit), False, False)
+        else:
+            # Emendas SIGCON => estadual => PARTE 2
+            parte = _classifica_parte("estadual", sit, None)
+            secao_em = "INSTRUMENTOS DE REPASSE ESTADUAIS"
+        add_item(parte, secao_em, orgao, {
             "tipo": "Indicação",
             "numero": f"{r[1]}/{r[2]}" if r[2] else r[1],
             "objeto": objeto,
@@ -586,14 +783,75 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             "fonte_ref": str(r[0]),
         })
 
+    # === Novo PAC / Selecao PAC / Doacao (TransfereGov) — federal, SO no completo ===
+    # A referencia lista itens 'Novo PAC'/'Doacao Selecao Novo PAC'/'(DOACAO)' cujo
+    # "parlamentar" e na verdade o PROGRAMA. Fonte: tabela transferegov_pac.
+    # Best-effort: se a tabela nao existir no tenant, o completo sai sem PAC.
+    if completo:
+        try:
+            pac = await db.execute(text("""
+                SELECT numero_proposta, programa, situacao, valor_repasse,
+                       valor_contrapartida, valor_total, emenda_parlamentar, objeto
+                FROM transferegov_pac WHERE municipio_id = :m
+            """), {"m": municipio_id})
+            for r in pac.fetchall():
+                sit = r[2] or ""
+                st = _fed_status(sit)
+                if st == "dead":
+                    continue
+                ano_pac = _ano_de(r[0])
+                prog = (r[1] or "").strip()
+                is_doacao = "doa" in (prog + " " + sit).lower()
+                # Parlamentar = emenda quando ha; senao o PROGRAMA (Novo PAC / Doacao).
+                parl = (r[6] or "").strip() or prog or "Novo PAC"
+                num = r[0] or ""
+                if ano_pac:
+                    num = f"{num} - {ano_pac}"
+                if is_doacao:
+                    num = f"{num} (DOAÇÃO)"
+                pre_novo = st == "ativa" and ano_pac == ano_emissao
+                parte_pac, secao_pac, suf = _destino_completo(
+                    "federal", "pac", st, ano_pac, None, ano_emissao,
+                    _pend_municipal(sit), pre_novo, False)
+                add_item(parte_pac, secao_pac, ("Novo PAC" + suf), {
+                    "tipo": "Proposta",
+                    "numero": num,
+                    "objeto": r[7] or prog or "",
+                    "parlamentar": parl,
+                    "valor_global": _money(r[5]),
+                    "valor_repasse": _money(r[3]),
+                    "valor_contrapartida": _money(r[4]),
+                    "banco": "", "agencia": "", "conta": "",
+                    "saldo_bancario": None, "dt_saldo": None,
+                    "dt_fim_vigencia": None,
+                    "situacao_atual": sit,
+                    "fonte": "pac",
+                    "fonte_ref": r[0],
+                })
+        except Exception as ex:
+            logger.warning(f"RM completo: PAC indisponivel p/ {municipio_id}: {str(ex)[:120]}")
+
     # === Converte dict -> lista ordenada (formato final) ===
     # Ordem das secoes dentro de cada Parte: FEDERAIS primeiro, ESTADUAIS depois,
     # outras secoes (se houver) preservam ordem de insercao no fim.
-    SECAO_PRIORIDADE = [
-        _SEC_FED,
-        _SEC_EST,
-        _SEC_FED_REJ,
-    ]
+    if completo:
+        # Ordem da referencia: dentro da Parte 2 -> FEDERAIS (pendencia municipal),
+        # depois REPASSES DE {ano} (pagos), depois estadual; na Parte 3 -> FEDERAL,
+        # depois estadual (Resolucoes/T.E., depois Convenios).
+        SECAO_PRIORIDADE = [
+            _SEC_FED_PLURAL,
+            f"REPASSES DE {ano_emissao}:",
+            _SEC_FED_SINGULAR,
+            _SEC_EST_P2,
+            _SEC_EST_P3_RES,
+            _SEC_EST_P3_CONV,
+        ]
+    else:
+        SECAO_PRIORIDADE = [
+            _SEC_FED,
+            _SEC_EST,
+            _SEC_FED_REJ,
+        ]
 
     def _ordena_secoes(secoes_dict):
         nomes = list(secoes_dict.keys())
@@ -602,6 +860,13 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
         ordenados += [s for s in nomes if s not in SECAO_PRIORIDADE]
         return [(n, secoes_dict[n]) for n in ordenados]
 
+    def _ordena_itens(itens):
+        # No completo (multi-ano) ordena por ANO desc + numero, como a referencia.
+        # No anual mantem a ordem de insercao (comportamento historico).
+        if not completo:
+            return itens
+        return sorted(itens, key=lambda it: (-(_ano_de(it.get("numero")) or 0), str(it.get("numero") or "")))
+
     out_partes = []
     for n in sorted(partes_data.keys()):
         p = partes_data[n]
@@ -609,11 +874,11 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
         for s_idx, (s_titulo, grupos) in enumerate(_ordena_secoes(p["secoes"]), start=1):
             grupos_out = []
             for g_idx, (orgao, itens) in enumerate(grupos.items(), start=1):
-                # ordena itens por ano descendente (extraindo do numero) + numero
+                itens_ord = _ordena_itens(itens)
                 grupos_out.append({
                     "ordem": g_idx,
                     "orgao": orgao,
-                    "itens": [{"ordem": i + 1, **it} for i, it in enumerate(itens)],
+                    "itens": [{"ordem": i + 1, **it} for i, it in enumerate(itens_ord)],
                 })
             secoes_out.append({"ordem": s_idx, "titulo": s_titulo, "grupos": grupos_out})
         if secoes_out:

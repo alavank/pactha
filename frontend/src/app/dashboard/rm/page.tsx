@@ -20,6 +20,8 @@ interface RmListItem {
   titulo?: string;
   status: string;
   updated_at?: string;
+  /** 'anual' (1 ano) | 'completo' (todos os anos — padrão Freitas). Ausente = anual. */
+  escopo?: string;
   /** O veredito do servidor sobre ESTE RM — ver `lib/escopo.ts`. Ausente
    *  significa "a API nao respondeu isso", e ai a tela fica como era. */
   pode_editar?: boolean | null;
@@ -68,12 +70,13 @@ const ESTILO_ACAO: React.CSSProperties = {
   color: "var(--bi-muted)",
 };
 
-export default function RmListPage() {
+export default function RmListPage() {
   const { municipioId } = useMunicipio();
 
   const [items, setItems] = useState<RmListItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [criando, setCriando] = useState(false);
+  const [criandoCompleto, setCriandoCompleto] = useState(false);
   const anoAtual = new Date().getFullYear();
   const [menuId, setMenuId] = useState<number | null>(null);
   // Anos oferecidos para GERAR (multiseleção). O RM é auto-populado do banco,
@@ -129,6 +132,27 @@ export default function RmListPage() {
     } catch (e) {
       console.error(e); alert("Erro ao gerar RM.");
     } finally { setCriando(false); }
+  };
+
+  // GERAR COMPLETO: o RM de TODOS os anos (padrão Freitas — 4 partes por estágio).
+  // Diferente do anual, é UM documento só, datado pela EMISSÃO (hoje). O POST é
+  // upsert por (município, data, escopo): gerar de novo no mesmo dia atualiza; em
+  // outro dia sai um novo snapshot datado. Fica na tela, só recarrega a lista.
+  const gerarCompleto = async () => {
+    if (!municipioId) return;
+    setCriandoCompleto(true);
+    try {
+      const hoje = new Date().toISOString().slice(0, 10);
+      await api.post<{ id: number }>("/rm", {
+        municipio_id: Number(municipioId),
+        data_referencia: hoje,
+        escopo: "completo",
+        auto_popular: true,
+      });
+      await buscar();
+    } catch (e) {
+      console.error(e); alert("Erro ao gerar RM completo.");
+    } finally { setCriandoCompleto(false); }
   };
 
   const remover = async (id: number) => {
@@ -202,13 +226,24 @@ export default function RmListPage() {
               className="w-52"
             />
           </div>
-          <Button onClick={gerar} disabled={criando || anosGerar.length === 0}>
+          <Button onClick={gerar} disabled={criando || criandoCompleto || anosGerar.length === 0}>
             {criando ? <Loader2 className="size-4 animate-spin mr-1" /> : <Plus className="size-4 mr-1" />}
             {criando
               ? "Gerando…"
               : anosGerar.length <= 1
                 ? `Gerar RM ${anosGerar[0] || ""}`
                 : `Gerar ${anosGerar.length} RMs`}
+          </Button>
+          {/* RM COMPLETO (todos os anos) — documento único, padrão Freitas: 4 partes
+              por estágio. Não usa o seletor de anos (é sempre tudo). */}
+          <Button
+            variant="outline"
+            onClick={gerarCompleto}
+            disabled={criando || criandoCompleto}
+            title="Gera o RM completo (todos os anos), classificado por estágio — padrão Freitas"
+          >
+            {criandoCompleto ? <Loader2 className="size-4 animate-spin mr-1" /> : <FileText className="size-4 mr-1" />}
+            {criandoCompleto ? "Gerando…" : "Gerar Completo (todos os anos)"}
           </Button>
         </div>
       </Bloco>
@@ -282,17 +317,30 @@ export default function RmListPage() {
           />
           <Lista>
           {visiveis.map((rm) => {
-            const exercicio = anoDo(rm);
+            const exercicio = anoDo(rm);
+            const ehCompleto = rm.escopo === "completo";
             return (
               <ItemLinha
                 key={rm.id}
                 /* Sem edicao: o RM e gerado e EMITIDO direto pelo dropdown
                    "Relatório" (Completo/Resumido/Totalizado). Nao ha mais "Abrir"
                    nem clique no corpo — nao existe tela de edicao a abrir. */
-                titulo={rm.titulo || (exercicio ? `RM ${exercicio}` : "RM sem exercício informado")}
+                titulo={
+                  rm.titulo ||
+                  (ehCompleto
+                    ? "RM Completo — todos os anos"
+                    : exercicio
+                      ? `RM ${exercicio}`
+                      : "RM sem exercício informado")
+                }
                 meta={
                   <>
                     <Selo tom={rmTom(rm.status)} title={`Status: ${rm.status}`}>{rm.status}</Selo>
+                    {/* O escopo do RM: "Completo" (todos os anos) x anual. Sem selo no
+                        anual — é o caso comum, e mais um selo em toda linha viraria ruído. */}
+                    {ehCompleto && (
+                      <Selo tom="ok" title="RM de todos os anos (padrão Freitas)">Completo</Selo>
+                    )}
                     {rm.municipio_nome && <span>{rm.municipio_nome}</span>}
                     <span className="font-mono">· #{rm.id}</span>
                   </>
@@ -343,7 +391,8 @@ export default function RmListPage() {
               >
                 <Campos
                   campos={[
-                    { rotulo: "Exercício", valor: exercicio || "—" },
+                    { rotulo: ehCompleto ? "Abrangência" : "Exercício",
+                      valor: ehCompleto ? "Todos os anos" : (exercicio || "—") },
                     { rotulo: "Cidade de emissão", valor: rm.cidade_emissao || "—" },
                     {
                       rotulo: "Atualizado em",
