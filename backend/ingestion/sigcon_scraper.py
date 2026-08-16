@@ -280,6 +280,160 @@ async def _estabelecer_grid(page, tries: int = 3) -> bool:
     return False
 
 
+async def _scrape_indicacoes(page) -> dict | None:
+    """Le a INDICACAO parlamentar do convenio: nr_indicacao, saldo, valor utilizado.
+
+    Expande a secao 'INFORMAÇÕES DE REPASSE DE RECURSOS' (accordion PrimeFaces,
+    header com id estavel prefixado accPnlPropostaPlanoTrabalho:tab...) e le duas
+    datatables ja presentes no DOM apos o expand (nao precisa clicar 'Visualizar
+    Indicacoes'):
+      - dtTblIndicacaoRecursosEmenda_data      -> Saldo, Valor Utilizado (agregado)
+      - dtTblIndicacaoRecursosEmendaModal_data -> Nome, Indicacao(numero), Status
+    Estrutura confirmada por captura do DOM logado (16/08/2026).
+
+    SEMPRE try/except -> None: NAO pode propagar (o loop de detalhe aborta em 6
+    falhas seguidas). Custa +1 clique/AJAX por convenio -> ligado por env
+    SIGCON_INDICACOES=1 e cortado pelo orcamento (_sig_estourou)."""
+    try:
+        clicked = await page.evaluate(r"""() => {
+            const h=[...document.querySelectorAll('[id^="accPnlPropostaPlanoTrabalho:tab"][id$="_head"]')]
+                    .find(e=>/repasse de recursos/i.test(e.innerText||''));
+            if(!h) return false;
+            if(h.getAttribute('aria-expanded')!=='true') (h.querySelector('a')||h).click();
+            return true;
+        }""")
+        if not clicked:
+            return None
+        await page.wait_for_timeout(2500)
+        data = await page.evaluate(r"""() => {
+            const tbById=(sfx)=>{for(const tb of document.querySelectorAll('tbody[id$="_data"]')){if(tb.id.includes(sfx))return tb;}return null;};
+            const parse=(tb)=>{
+                if(!tb) return {cab:[],rows:[]};
+                const tbl=tb.closest('table');
+                const cab=tbl?[...tbl.querySelectorAll('thead th')].map(t=>(t.innerText||'').trim()):[];
+                const rows=[...tb.querySelectorAll('tr')].map(tr=>[...tr.querySelectorAll('td')].map(td=>(td.innerText||'').trim())).filter(r=>r.some(c=>c));
+                return {cab, rows};
+            };
+            return {agg:parse(tbById('dtTblIndicacaoRecursosEmenda_data')),
+                    ind:parse(tbById('dtTblIndicacaoRecursosEmendaModal_data'))};
+        }""")
+        agg = data.get("agg") or {"cab": [], "rows": []}
+        ind = data.get("ind") or {"cab": [], "rows": []}
+        # ignora "Nenhum Registro Encontrado."
+        agg_rows = [r for r in agg["rows"] if not (len(r) == 1 and "nenhum" in (r[0] or "").lower())]
+        ind_rows = [r for r in ind["rows"] if not (len(r) == 1 and "nenhum" in (r[0] or "").lower())]
+        if not agg_rows and not ind_rows:
+            return None
+
+        def col(cab, *frags):
+            for i, h in enumerate(cab):
+                hl = (h or "").lower()
+                if any(f in hl for f in frags):
+                    return i
+            return None
+
+        out: dict = {}
+        if agg_rows:
+            r = agg_rows[0]
+            ci_sal = col(agg["cab"], "saldo")
+            ci_val = col(agg["cab"], "valor utilizado")
+            if ci_sal is not None and ci_sal < len(r):
+                out["indic_saldo_str"] = r[ci_sal]
+            if ci_val is not None and ci_val < len(r):
+                out["indic_valor_utilizado_str"] = r[ci_val]
+        if ind_rows:
+            ci_num = col(ind["cab"], "indica")   # coluna "Indicação"
+            ci_nom = col(ind["cab"], "respons")
+            ci_sta = col(ind["cab"], "status")
+            r = ind_rows[0]
+            if ci_num is not None and ci_num < len(r):
+                out["nr_indicacao"] = (r[ci_num] or "").strip() or None
+            if ci_nom is not None and ci_nom < len(r):
+                out["indic_nome_responsavel"] = (r[ci_nom] or "").strip() or None
+            if ci_sta is not None and ci_sta < len(r):
+                out["indic_status"] = (r[ci_sta] or "").strip() or None
+            out["indicacoes"] = [
+                {"nr_indicacao": (rr[ci_num].strip() if ci_num is not None and ci_num < len(rr) else None),
+                 "nome_responsavel": (rr[ci_nom].strip() if ci_nom is not None and ci_nom < len(rr) else None),
+                 "status": (rr[ci_sta].strip() if ci_sta is not None and ci_sta < len(rr) else None)}
+                for rr in ind_rows
+            ]
+        return out or None
+    except Exception:
+        return None
+
+
+async def _scrape_alteracoes(page) -> dict | None:
+    """Ultima alteracao do convenio (secao 'ALTERAÇÕES DO CONVÊNIO'):
+    nr_controle, tipo, situacao, data, titulo, usuario. None se nao houver / erro.
+
+    Datatable dtTblListaAlteracaoConvenio_data (id estavel), colunas mapeadas por
+    CABECALHO. Estrutura confirmada por captura do DOM logado (16/08/2026):
+    [Nº Controle, Tipo, Situação, Data Cadastro, Título Alteração, Usuário, Ações].
+    Escolhe a linha de MAIOR Data Cadastro (a mais recente) — nao confia na ordem.
+
+    SEMPRE try/except -> None (nao propaga; o loop de detalhe aborta em 6 falhas).
+    Ligado por env SIGCON_INDICACOES=1, cortado pelo orcamento (_sig_estourou)."""
+    import re as _re
+    try:
+        clicked = await page.evaluate(r"""() => {
+            const h=[...document.querySelectorAll('[id^="accPnlPropostaPlanoTrabalho:tab"][id$="_head"]')]
+                    .find(e=>/altera[cç][aã]o|altera..es do conv/i.test(e.innerText||''));
+            if(!h) return false;
+            if(h.getAttribute('aria-expanded')!=='true') (h.querySelector('a')||h).click();
+            return true;
+        }""")
+        if not clicked:
+            return None
+        await page.wait_for_timeout(2500)
+        data = await page.evaluate(r"""() => {
+            let tb=null;
+            for(const t of document.querySelectorAll('tbody[id$="_data"]')){if(t.id.includes('dtTblListaAlteracaoConvenio_data')){tb=t;break;}}
+            if(!tb) return null;
+            const tbl=tb.closest('table');
+            const cab=tbl?[...tbl.querySelectorAll('thead th')].map(t=>(t.innerText||'').trim()):[];
+            const rows=[...tb.querySelectorAll('tr')].map(tr=>[...tr.querySelectorAll('td')].map(td=>(td.innerText||'').trim())).filter(r=>r.some(c=>c));
+            return {cab, rows};
+        }""")
+        if not data or not data.get("rows"):
+            return None
+        rows = [r for r in data["rows"] if not (len(r) == 1 and "nenhum" in (r[0] or "").lower())]
+        if not rows:
+            return None
+        cab = data.get("cab") or []
+
+        def col(*frags):
+            for i, h in enumerate(cab):
+                hl = (h or "").lower()
+                if any(f in hl for f in frags):
+                    return i
+            return None
+
+        ci_ctrl, ci_tipo, ci_sit = col("controle"), col("tipo"), col("situa")
+        ci_data, ci_tit, ci_usu = col("data"), col("tulo", "titulo"), col("usu")
+
+        def g(r, i):
+            return (r[i].strip() if (i is not None and i < len(r)) else None) or None
+
+        def keydata(r):
+            v = g(r, ci_data) or ""
+            m = _re.search(r"(\d{2})/(\d{2})/(\d{4})", v)
+            return (m.group(3) + m.group(2) + m.group(1)) if m else ""
+
+        r0 = max(rows, key=keydata) if ci_data is not None else rows[0]
+        out = {
+            "ultima_alteracao_nr_controle": g(r0, ci_ctrl),
+            "ultima_alteracao_tipo": g(r0, ci_tipo),
+            "ultima_alteracao_situacao": g(r0, ci_sit),
+            "ultima_alteracao_data": g(r0, ci_data),
+            "ultima_alteracao_titulo": g(r0, ci_tit),
+            "ultima_alteracao_usuario": g(r0, ci_usu),
+        }
+        return out if any(out.values()) else None
+    except Exception:
+        return None
+
+
 async def _scrape_detalhes(page, max_planos: int = 100) -> dict:
     """Para cada linha da Pesquisa Unificada, abre o detalhe e captura os campos.
 
@@ -338,6 +492,18 @@ async def _scrape_detalhes(page, max_planos: int = 100) -> dict:
             }""", timeout=25000)
             await page.wait_for_timeout(700)
             data = await page.evaluate(PARSE_DETALHE_JS)
+            # EXTRAS por env SIGCON_INDICACOES=1 (default off): expande as secoes
+            # de accordion e le a INDICACAO parlamentar (nr_indicacao/saldo/valor)
+            # e a ULTIMA ALTERACAO. Cada helper e try/except->None (nao propaga) e
+            # so roda se ainda ha orcamento. Os campos entram no `data` e fluem
+            # para raw_data (merge no upsert), sem tocar no INSERT posicional.
+            if data and (os.getenv("SIGCON_INDICACOES", "0") or "0").strip() == "1" and not _sig_estourou():
+                _ind = await _scrape_indicacoes(page)
+                if _ind:
+                    data.update(_ind)
+                _alt = await _scrape_alteracoes(page)
+                if _alt:
+                    data.update(_alt)
             if data and (data.get("responsaveis") or data.get("fase_etapa_status")
                          or data.get("dt_assinatura_str") or data.get("valor_contrapartida_atual_str")
                          or data.get("valor_contrapartida_str") or data.get("vigencia_atual_str")):
