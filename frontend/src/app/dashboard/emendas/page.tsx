@@ -10,6 +10,8 @@ import { MultiSelect } from "@/components/ui/multi-select";
 import { Bloco, BlocoHead, Campos, ItemLinha, Lista, Selo, situacaoTom } from "@/components/ui/superficies";
 import { atalhosAnos, resumoAnos } from "@/lib/periodo";
 import { formatDataHora, horasDesde } from "@/lib/bi-format";
+import { fonteEmendasEstaduais, NOME_UF } from "@/lib/estadual";
+import { useUfDoMunicipio } from "@/lib/useUfDoMunicipio";
 import {
   Table,
   TableBody,
@@ -63,6 +65,11 @@ function siglaTipo(t?: string): string {
 
 export default function EmendasEstaduaisPage() {
   const { municipioId } = useMunicipio();
+  // A UF do município aberto decide o nome da fonte. `""` = ainda não sei —
+  // o hook devolve isso de propósito, e não "MG", para a tela não afirmar nada
+  // enquanto carrega.
+  const ufAmbiente = useUfDoMunicipio();
+  const fonteEmendas = fonteEmendasEstaduais(ufAmbiente);
 
   const [items, setItems] = useState<Emenda[]>([]);
   const [loading, setLoading] = useState(true);
@@ -164,15 +171,29 @@ export default function EmendasEstaduaisPage() {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="text-2xl font-bold text-base-content">Emendas Parlamentares Estaduais</h1>
-          {/* Por que dizer isto em voz alta: as telas do TransfereGov abrem um
+          {/* ⚠️ O NOME DA FONTE VEM DO MAPA POR UF, nunca de literal. O texto
+              dizia "SIGCON-MG" fixo — e essa tela abre para qualquer cliente,
+              inclusive um do Rio Grande do Sul, onde o SIGCON não existe e as
+              emendas estaduais nem sequer são impositivas. Sem fonte na UF, a
+              tela diz o que é verdade: que aquele estado ainda não é coletado.
+
+              Por que a primeira frase existe: as telas do TransfereGov abrem um
               modal no olhinho, e o gestor procurou o olhinho aqui. Não há —
-              porque não há o que abrir: o SIGCON-MG publica treze campos por
+              porque não há o que abrir: a fonte publica treze campos por
               indicação e os treze já estão na linha. Sem esta frase, a ausência
               do ícone se lê como "o detalhe ainda não carregou". */}
-          <p className="text-[11px]" style={{ color: "var(--bi-faint)" }}>
-            Cada indicação já mostra todos os campos publicados pelo SIGCON-MG — não há
-            detalhamento adicional a abrir.
-          </p>
+          {fonteEmendas ? (
+            <p className="text-[11px]" style={{ color: "var(--bi-faint)" }}>
+              Cada indicação já mostra todos os campos publicados pelo {fonteEmendas} — não há
+              detalhamento adicional a abrir.
+            </p>
+          ) : (
+            <p className="text-[11px]" style={{ color: "var(--bi-faint)" }}>
+              {ufAmbiente
+                ? `As emendas parlamentares estaduais ${NOME_UF[ufAmbiente] ? `de ${NOME_UF[ufAmbiente]}` : `de ${ufAmbiente}`} ainda não são coletadas por este sistema.`
+                : "A fonte de emendas estaduais deste estado ainda não é coletada por este sistema."}
+            </p>
+          )}
           {/* Frescor da coleta — mesma regra da tela de Convênios: com a coleta
               falhando, avisa SEM afirmar causa e sem datar (o carimbo seria a
               hora do último erro). */}

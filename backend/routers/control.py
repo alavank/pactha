@@ -74,7 +74,12 @@ def _ator(request: Request, p: ControlPrincipal) -> str:
 
 def _mun(m: Municipio) -> dict:
     return {"ibge_code": m.ibge_code, "nome": m.nome, "uf": m.uf,
-            "active": bool(m.active), "fns_code": m.fns_code}
+            "active": bool(m.active), "fns_code": m.fns_code,
+            "cnpj": m.cnpj, "corede": m.corede,
+            "tce_orgao_codigo": m.tce_orgao_codigo,
+            "fundo_reconstrucao": m.fundo_reconstrucao,
+            "fundo_reconstrucao_obs": m.fundo_reconstrucao_obs,
+            "calamidade_ate": m.calamidade_ate.isoformat() if m.calamidade_ate else None}
 
 
 class MunicipioIn(BaseModel):
@@ -84,6 +89,12 @@ class MunicipioIn(BaseModel):
     # estado passava a mentir — Minas e mais um estado, nao o padrao.
     uf: str
     fns_code: str | None = None
+    # ⭐ O CNPJ nao e enfeite de cadastro: e o unico parametro do coletor do
+    # cadastro estadual gaucho (CHE). Ate 08/2026 ele era inferido de dado ja
+    # coletado, o que so funciona onde a coleta estadual existe — em MG.
+    cnpj: str | None = None
+    corede: str | None = None
+    tce_orgao_codigo: str | None = None
 
 
 class MunicipioPatch(BaseModel):
@@ -91,6 +102,30 @@ class MunicipioPatch(BaseModel):
     uf: str | None = None
     active: bool | None = None
     fns_code: str | None = None
+    cnpj: str | None = None
+    corede: str | None = None
+    tce_orgao_codigo: str | None = None
+    fundo_reconstrucao: bool | None = None
+    fundo_reconstrucao_obs: str | None = None
+    # ISO (AAAA-MM-DD) ou "" para limpar.
+    calamidade_ate: str | None = None
+
+
+def _cnpj_valido(bruto: str) -> str | None:
+    """14 digitos, sem mascara — o formato que as APIs de governo aceitam.
+
+    Devolve None para string vazia (limpar o campo e uma acao legitima) e
+    levanta 400 para qualquer coisa que nao seja vazio nem 14 digitos: CNPJ
+    truncado nao "quase funciona", ele consulta a entidade ERRADA."""
+    if bruto is None:
+        return None
+    d = "".join(ch for ch in bruto if ch.isdigit())
+    if not d:
+        return None
+    if len(d) != 14:
+        raise HTTPException(status_code=400,
+                            detail="cnpj deve ter 14 dígitos (com ou sem máscara)")
+    return d
 
 
 # --- Municipios ---
@@ -124,10 +159,13 @@ async def upsert_municipio(
     fns = None
     if body.fns_code is not None:
         fns = "".join(ch for ch in body.fns_code if ch.isdigit())[:6] or None
+    cnpj = _cnpj_valido(body.cnpj) if body.cnpj is not None else None
     m = (await db.execute(select(Municipio).where(Municipio.ibge_code == ibge))).scalar_one_or_none()
     created = m is None
     if m is None:
-        m = Municipio(nome=nome, ibge_code=ibge, uf=uf, active=True, fns_code=fns)
+        m = Municipio(nome=nome, ibge_code=ibge, uf=uf, active=True, fns_code=fns,
+                      cnpj=cnpj, corede=(body.corede or None),
+                      tce_orgao_codigo=(body.tce_orgao_codigo or None))
         db.add(m)
     else:
         m.nome = nome
@@ -135,6 +173,14 @@ async def upsert_municipio(
         m.active = True
         if body.fns_code is not None:
             m.fns_code = fns
+        # Só sobrescreve o que veio no corpo: o upsert é chamado para reativar
+        # município, e apagar o CNPJ nessa hora desligaria o coletor estadual.
+        if body.cnpj is not None:
+            m.cnpj = cnpj
+        if body.corede is not None:
+            m.corede = body.corede or None
+        if body.tce_orgao_codigo is not None:
+            m.tce_orgao_codigo = body.tce_orgao_codigo or None
     await db.commit()
     await db.refresh(m)
     if created:
@@ -210,6 +256,31 @@ async def patch_municipio(
     if body.fns_code is not None:
         m.fns_code = "".join(ch for ch in body.fns_code if ch.isdigit())[:6] or None
         changed.append("fns_code")
+    if body.cnpj is not None:
+        m.cnpj = _cnpj_valido(body.cnpj); changed.append("cnpj")
+    if body.corede is not None:
+        m.corede = body.corede.strip() or None; changed.append("corede")
+    if body.tce_orgao_codigo is not None:
+        m.tce_orgao_codigo = body.tce_orgao_codigo.strip() or None
+        changed.append("tce_orgao_codigo")
+    if body.fundo_reconstrucao is not None:
+        m.fundo_reconstrucao = bool(body.fundo_reconstrucao)
+        changed.append("fundo_reconstrucao")
+    if body.fundo_reconstrucao_obs is not None:
+        m.fundo_reconstrucao_obs = body.fundo_reconstrucao_obs.strip() or None
+        changed.append("fundo_reconstrucao_obs")
+    if body.calamidade_ate is not None:
+        bruto = body.calamidade_ate.strip()
+        if not bruto:
+            m.calamidade_ate = None
+        else:
+            from datetime import date as _date
+            try:
+                m.calamidade_ate = _date.fromisoformat(bruto)
+            except ValueError:
+                raise HTTPException(status_code=400,
+                                    detail="calamidade_ate deve ser AAAA-MM-DD (ou vazio)")
+        changed.append("calamidade_ate")
     await db.commit()
     await db.refresh(m)
     await registrar(db, action="control.municipio.patch", request=request,

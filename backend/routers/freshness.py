@@ -59,9 +59,6 @@ _SOURCES = [
     ("CAUC — Regularidade federal",
      "SELECT max(data_pesquisa)::timestamptz, count(*) FROM cauc_situacao",
      "cauc"),
-    ("Acordo FES — Dívida saúde",
-     "SELECT NULL::timestamptz, count(*) FROM acordofes_credor",
-     "acordofes"),
     ("SIMEC-PAR (MEC)",
      "SELECT max(updated_at), count(*) FROM simec_par_liberacoes",
      "simec_par"),
@@ -93,9 +90,26 @@ _SOURCES_POR_UF: dict[str, list[tuple[str, str, str | None]]] = {
         ("Emendas estaduais (MG)",
          "SELECT max(updated_at), count(*) FROM emendas_estaduais",
          None),
+        # ⚠️ FILTRA POR FONTE. Desde que `cagec_situacao` passou a guardar o
+        # cadastro estadual de outros estados (CHE-RS), contar a tabela inteira
+        # aqui creditaria a Minas linha coletada no Rio Grande do Sul — o mesmo
+        # defeito que o `NOT ILIKE '%FNS%'` sozinho causava com o GConv-ES.
         ("CAGEC — Cadastro estadual (MG)",
-         "SELECT max(atualizado_em), count(*) FROM cagec_situacao",
+         "SELECT max(atualizado_em), count(*) FROM cagec_situacao "
+         "WHERE coalesce(fonte, 'CAGEC-MG') = 'CAGEC-MG'",
          "cagec"),
+        # Programa do Estado de MG (SES-MG). Estava na lista FIXA e por isso
+        # aparecia no monitor de um cliente gaucho, que nao tem nada com a
+        # divida da saude mineira.
+        ("Acordo FES — Dívida saúde (MG)",
+         "SELECT NULL::timestamptz, count(*) FROM acordofes_credor",
+         "acordofes"),
+    ],
+    "RS": [
+        ("CHE — Cadastro estadual (RS)",
+         "SELECT max(atualizado_em), count(*) FROM cagec_situacao "
+         "WHERE fonte = 'CHE-RS'",
+         "che_rs"),
     ],
     "ES": [
         ("GConv-ES — Convênios estaduais (ES)",

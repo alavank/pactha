@@ -557,14 +557,31 @@ async def bi_documentos(db: AsyncSession, ids: list[int]) -> dict:
 
 
 # ⚠️ CADASTRO ESTADUAL NAO E EXCLUSIVIDADE DE MINAS — outros estados tem o seu.
-# O que e de Minas e a FONTE que este sistema sabe consultar: o portal
-# `cagec.mg.gov.br`, que so responde por ente mineiro.
+# O que e nosso e a lista de fontes que este sistema sabe consultar.
 #
 # A diferenca nao e semantica. Dizer "nao se aplica" a um municipio de Goias
 # afirma que ele NAO TEM cadastro estadual — e nos nao sabemos isso. O que
 # sabemos e que nao coletamos o cadastro daquele estado. Uma frase fecha o
 # assunto por engano; a outra descreve a nossa cobertura, que e o fato.
-UF_DA_FONTE = "MG"
+#
+# ⚠️ CONJUNTO, e nao escalar. Era `UF_DA_FONTE = "MG"` ate 08/2026, quando o
+# coletor do CHE gaucho (ingestion/che_rs.py) entrou. Com o escalar, a tela
+# /dashboard/cauc mostraria o CHE de Santa Maria com dado real enquanto o Painel
+# de Indicadores dizia, na MESMA sessao, que o cadastro estadual daquele estado
+# nao e acompanhado — duas telas do mesmo sistema discordando sobre o mesmo fato.
+#
+# Espelha `UFS_ACOMPANHADAS` de frontend/src/lib/estadual.ts. As duas listas
+# precisam andar juntas: entrar aqui e nao la (ou vice-versa) reintroduz
+# exatamente a contradicao acima.
+UFS_COM_CADASTRO_COLETADO: set[str] = {"MG", "RS"}
+
+# ⚠️ OUTRA COISA, apesar do nome parecido: esta e a UF do coletor de CONVENIOS
+# estaduais logado (SIGCON-MG), usada como denominador do medidor de coleta em
+# routers/bi.py. Regularidade e convenio tem coberturas DIFERENTES — no RS
+# coletamos o cadastro (CHE) mas nao ha coletor de convenio estadual logado, e
+# no ES e o inverso. Fundir as duas faria o medidor do SIGCON contar municipio
+# gaucho como "sem coleta ainda", prometendo uma coleta que nunca vira.
+UF_DA_FONTE_SIGCON = "MG"
 # ⚠️ A FRASE NAO CITA MINAS. Ela aparece na tela de um cliente do ES ou de GO, e
 # ali Minas nao tem nada com o assunto: o ambiente e do municipio aberto, e nossa
 # cobertura interna nao e problema do cliente. Diz o que vale para ELE — que a
@@ -597,9 +614,9 @@ async def _escopo_do_cadastro_estadual(
              "WHERE id = ANY(:ids)"),
         {"ids": ids})
     uf_por_id = {r[0]: r[1] for r in linhas.fetchall()}
-    cobertos = [i for i in ids if uf_por_id.get(i) == UF_DA_FONTE]
+    cobertos = [i for i in ids if uf_por_id.get(i) in UFS_COM_CADASTRO_COLETADO]
     fora = sorted({uf for i, uf in uf_por_id.items()
-                   if uf and uf != UF_DA_FONTE and i in set(ids)})
+                   if uf and uf not in UFS_COM_CADASTRO_COLETADO and i in set(ids)})
     return cobertos, fora
 
 

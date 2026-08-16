@@ -51,11 +51,15 @@ export const CADASTRO_ESTADUAL: Record<string, CadastroEstadual> = {
   // fazenda.sp.gov.br/TransferenciaVoluntaria — sistema próprio da SEFAZ.
   SP: { nome: "Sistema de Transferências Voluntárias",
         curto: "Transferências Voluntárias", orgao: "SEFAZ-SP" },
+  // che.sefaz.rs.gov.br — Cadastro de Habilitação em Convênios do Estado,
+  // Instrução Normativa CAGE nº 01/2006. Consulta pública, sem login.
+  RS: { sigla: "CHE", nome: "Cadastro de Habilitação em Convênios do Estado",
+        orgao: "CAGE/SEFAZ-RS" },
 };
 
 /** ⚠️ OS 19 QUE FALTAM, e por que não estão aqui.
  *
- *  AC AL AM AP BA CE DF MA MS MT PA PB PI RJ RN RO RR RS SE.
+ *  AC AL AM AP BA CE DF MA MS MT PA PB PI RJ RN RO RR SE.
  *
  *  Não foi possível fechar o nome oficial de cada um em fonte do próprio
  *  Estado, e nome inventado na tela do cliente é pior que rótulo genérico — é
@@ -110,10 +114,16 @@ export function subtituloEstadual(uf?: string | null): string {
 
 /** Este sistema acompanha a regularidade estadual deste estado hoje?
  *
- *  ⚠️ NÃO é "o estado tem cadastro" — todos têm. É se NÓS coletamos. Hoje o
- *  único coletor é o do portal de Minas (`ingestion/cagec_scraper.py`), que só
- *  responde por ente mineiro. Quando entrar outro, esta lista cresce junto. */
-export const UFS_ACOMPANHADAS = new Set<string>(["MG"]);
+ *  ⚠️ NÃO é "o estado tem cadastro" — todos têm. É se NÓS coletamos. Hoje são
+ *  dois coletores: `ingestion/cagec_scraper.py` (portal de Minas, Playwright +
+ *  PDF) e `ingestion/che_rs.py` (CHE gaúcho, API JSON pública). Cada um só
+ *  responde por ente do seu estado. Quando entrar outro, esta lista cresce junto.
+ *
+ *  ⚠️ E ela cresce SÓ COM COLETOR NO AR, nunca "porque o estado tem cadastro":
+ *  esta lista é o que faz o medidor da Visão Geral afirmar que a regularidade
+ *  está acompanhada. Entrar aqui com a tabela vazia é prometer cobertura que
+ *  não existe. */
+export const UFS_ACOMPANHADAS = new Set<string>(["MG", "RS"]);
 
 export function acompanhamosEstadual(uf?: string | null): boolean {
   return UFS_ACOMPANHADAS.has((uf || "").trim().toUpperCase());
@@ -131,6 +141,26 @@ export const FONTE_CONVENIOS_ESTADUAIS: Record<string, string> = {
   MG: "SIGCON-MG",
   ES: "GConv · SEGER",
 };
+
+/** A fonte de EMENDAS ESTADUAIS que este sistema coleta, por UF.
+ *
+ *  ⚠️ MAPA SEPARADO, e não um campo dentro do de convênios, porque emenda
+ *  estadual não é a mesma coisa em todo estado — e a diferença é material para
+ *  o cliente, não estética. Em Minas ela é IMPOSITIVA (a Constituição estadual
+ *  obriga a execução, e o valor do PACTHA lá é justamente controlar o prazo
+ *  constitucional). No Rio Grande do Sul ela é AUTORIZATIVA: definida ano a ano
+ *  na LDO, sem prazo legal de pagamento. Carimbar na tela gaúcha o discurso
+ *  mineiro seria induzir o gestor a erro sobre um direito que ele não tem.
+ *
+ *  Por isso o RS **não entra aqui** enquanto não houver coletor próprio — e,
+ *  quando entrar, com o rótulo dizendo que são autorizativas. */
+export const FONTE_EMENDAS_ESTADUAIS: Record<string, string> = {
+  MG: "SIGCON-MG",
+};
+
+export function fonteEmendasEstaduais(uf?: string | null): string | null {
+  return FONTE_EMENDAS_ESTADUAIS[(uf || "").trim().toUpperCase()] || null;
+}
 
 export function fonteConveniosEstaduais(uf?: string | null): string | null {
   return FONTE_CONVENIOS_ESTADUAIS[(uf || "").trim().toUpperCase()] || null;

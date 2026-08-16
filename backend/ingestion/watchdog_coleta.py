@@ -37,8 +37,16 @@ logger = logging.getLogger("watchdog_coleta")
 # Idade maxima esperada do ultimo SUCCESS por fonte, em horas. Fontes fora deste
 # mapa nao sao cobradas por frescor (so entram na deteccao de processo travado).
 # Derivado das Scheduled Tasks reais + folga.
-FRESCOR_HORAS = {
-    "sigcon_scraper": 18,            # roda 4x/dia -> 6h; 18h = 3 janelas perdidas
+#
+# ⚠️ O QUE E NACIONAL FICA AQUI; O QUE E DE UM ESTADO FICA EM
+# `FRESCOR_HORAS_POR_UF`. O catalogo era global aos tenants e constante no
+# codigo — entao um tenant sem municipio de MG era cobrado por `sigcon_scraper`,
+# `cagec` e `acordofes`, fontes que ali NUNCA vao rodar. Hoje o unico motivo de
+# isso nao gritar e o ramo "so cobra fonte que ja tem linha no log" logo abaixo;
+# bastava alguem criar a task uma vez para o alarme virar eterno. O padrao certo
+# ja existia ao lado, em routers/freshness.py (_SOURCES_POR_UF + _ufs_do_tenant)
+# — este modulo so tinha ficado para tras.
+FRESCOR_HORAS_NACIONAL = {
     "transferegov_opendata": 30,     # 1x/dia -> 24h + folga
     "transferegov_voluntarias": 30,
     "transferegov_pac": 30,
@@ -55,13 +63,48 @@ FRESCOR_HORAS = {
     # unica fonte em cron sem vigilancia nenhuma: a Freitas passou nove dias com
     # o CAGEC falhando todo dia e nada apitou.
     # 4x/dia -> 6h entre rodadas; 30h = quase cinco janelas perdidas.
-    "cagec": 30,
     # Lote horario do TransfereGov (PR #158): fonte PROPRIA no ingestion_log,
     # separada do run() diario — um nao pode esconder a falha do outro. Roda de
     # hora em hora; 6h = seis rodadas sem 'success' (perdidas OU 'parcial'
     # persistente), que ja e problema real e nao ruido.
     "transferegov_lote": 6,
 }
+
+# Fontes que so existem para certas UFs. A chave e a UF do TENANT (ha municipio
+# ativo daquele estado?), nao a do municipio selecionado — este vigia e do
+# ambiente inteiro. Espelha routers/freshness.py::_SOURCES_POR_UF.
+FRESCOR_HORAS_POR_UF = {
+    "MG": {
+        "sigcon_scraper": 18,        # roda 4x/dia -> 6h; 18h = 3 janelas perdidas
+        "cagec": 30,                 # 4x/dia -> 6h; 30h = quase cinco janelas
+        "acordofes": 12,
+    },
+    "ES": {"gconv_es": 30},
+    "GO": {"transfvol_go": 30, "cofin_ses_go": 30, "tcm_go": 30},
+    "RS": {"che_rs": 30},            # 3x/dia; 30h = cinco janelas perdidas
+}
+
+
+def _ufs_do_tenant(cur) -> set[str]:
+    """UFs com municipio ATIVO. Mesma consulta de routers/freshness.py.
+
+    ⚠️ FAIL-OPEN: erro devolve conjunto vazio, ou seja, so o catalogo nacional.
+    Vigia com catalogo curto e melhor que vigia que nao roda — e o oposto do
+    fail-closed que vale para as LEITURAS de deteccao."""
+    try:
+        cur.execute("SELECT DISTINCT upper(coalesce(uf, '')) FROM municipios "
+                    "WHERE active")
+        return {r[0] for r in cur.fetchall() if r[0]}
+    except Exception:
+        return set()
+
+
+def frescor_esperado(cur) -> dict:
+    """O catalogo que vale NESTE tenant: o nacional + o das UFs presentes."""
+    esperado = dict(FRESCOR_HORAS_NACIONAL)
+    for uf in _ufs_do_tenant(cur):
+        esperado.update(FRESCOR_HORAS_POR_UF.get(uf, {}))
+    return esperado
 
 # Teto de idade (horas) da ultima coleta BOA por MUNICIPIO, por fonte do
 # scraper_municipio_coleta. E o alerta que faltava: o frescor por FONTE acima
@@ -106,8 +149,13 @@ def _instancia() -> str:
 
 # --------------------------------------------------------------- deteccao ---
 
-def _fontes_paradas(cur) -> list[dict]:
-    """Fontes cujo ultimo SUCCESS e mais velho que o limite da fonte."""
+def _fontes_paradas(cur, esperado: dict | None = None) -> list[dict]:
+    """Fontes cujo ultimo SUCCESS e mais velho que o limite da fonte.
+
+    `esperado` e o catalogo ja recortado pelas UFs do tenant (frescor_esperado).
+    O default existe so para chamada avulsa em teste/console."""
+    if esperado is None:
+        esperado = frescor_esperado(cur)
     cur.execute("""
         SELECT source, max(finished_at) AS ultimo
         FROM ingestion_log
@@ -116,7 +164,7 @@ def _fontes_paradas(cur) -> list[dict]:
     """, (list(STATUS_SUCESSO),))
     achados = []
     for source, ultimo in cur.fetchall():
-        limite_h = FRESCOR_HORAS.get(source)
+        limite_h = esperado.get(source)
         if limite_h is None or ultimo is None:
             continue
         cur.execute("SELECT EXTRACT(EPOCH FROM (now() - %s)) / 3600.0", (ultimo,))
@@ -137,7 +185,7 @@ def _fontes_paradas(cur) -> list[dict]:
     cur.execute("SELECT DISTINCT source FROM ingestion_log "
                 "WHERE lower(coalesce(status, '')) = ANY(%s)", (list(STATUS_SUCESSO),))
     com_sucesso = {r[0] for r in cur.fetchall()}
-    for source in FRESCOR_HORAS:
+    for source in esperado:
         if source in com_linha and source not in com_sucesso:
             achados.append({
                 "tipo": "fonte_parada",
@@ -401,7 +449,14 @@ def main() -> None:
         _garante_tabela(cur)
         conn.commit()
 
-        achados = _fontes_paradas(cur) + _municipios_defasados(cur) + _processos_travados()
+        # O catalogo e resolvido UMA vez por rodada, contra as UFs deste tenant:
+        # cobrar frescor de fonte que nao existe aqui e como cobrar coleta de um
+        # estado onde nao temos cliente.
+        esperado = frescor_esperado(cur)
+        logger.info("frescor esperado neste tenant: %s",
+                    ", ".join(sorted(esperado)) or "(nenhuma fonte)")
+        achados = (_fontes_paradas(cur, esperado) + _municipios_defasados(cur)
+                   + _processos_travados())
         if not achados:
             logger.info("coleta saudavel: nenhuma fonte parada, nenhum municipio defasado, nenhum processo travado")
             return
