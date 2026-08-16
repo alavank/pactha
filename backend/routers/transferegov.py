@@ -152,13 +152,18 @@ async def buscar(
     if not mun:
         raise HTTPException(404, "Município não encontrado")
 
-    if refresh:
-        _CACHE.pop(mun.uf, None)
-
-    try:
-        all_items = await _fetch_listagem(mun.uf)
-    except httpx.HTTPError as e:
-        raise HTTPException(502, f"TransfereGov: {e}")
+    # Le da tabela PERSISTIDA (coletor do worker, ingestion/transferegov_te.py). Antes
+    # buscava ao vivo, mas a API "especiais" rate-limita — agora e completo e rapido.
+    # Fallback ao vivo (capado) so se a tabela estiver vazia (coletor ainda nao rodou).
+    rows = (await db.execute(text(
+        "SELECT raw_data FROM transferegov_te WHERE municipio_id = :m"
+    ), {"m": municipio_id})).all()
+    all_items = [r[0] for r in rows if r[0]]
+    if not all_items:
+        try:
+            all_items = await _fetch_listagem(mun.uf)
+        except httpx.HTTPError as e:
+            raise HTTPException(502, f"TransfereGov: {e}")
 
     mun_norm = _norm(mun.nome)
     # Match: nome do beneficiario contem nome do municipio (caso "MUNICIPIO DE ARAUJOS")

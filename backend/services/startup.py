@@ -48,6 +48,8 @@ MIGRATION_FILES = [
     "add_rm_escopo.sql",
     # RM: escopo por SELECAO de anos (coluna anos INT[], unique (municipio, anos))
     "add_rm_anos.sql",
+    # TE/Emenda Pix federal persistida (coletor especiais -> tabela; RM/tela leem)
+    "add_transferegov_te.sql",
     # Voluntarias: situacao contratacao + clausula suspensiva detalhe + parlamentar
     "add_voluntarias_clausula_parlamentar.sql",
     # Voluntarias: detalhe generico da Situacao de Contratacao (qualquer tipo)

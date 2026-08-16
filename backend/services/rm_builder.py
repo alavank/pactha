@@ -658,67 +658,68 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             "fonte_ref": row[1],
         })
 
-    # === Transferencia Especial / Plano de Acao (Emenda Pix) — federal, API ao vivo ===
-    # NAO fica em tabela: vem da listagem publica (cache 1h). Best-effort: se a API
-    # estiver fora, o RM e gerado sem TE (nao quebra).
-    if mun is not None:
-        try:
-            from routers.transferegov import _fetch_listagem, _norm as _norm_tg
-            planos = await _fetch_listagem(mun.uf)
-            mn = _norm_tg(mun.nome)
-            for it in planos:
-                ben = _norm_tg(it.get("beneficiarioNome") or "")
-                if not (mn in ben or ben.endswith(mn)):
-                    continue
-                sit = it.get("planoAcaoSituacao") or ""
-                sl = sit.lower()
-                # Situacao exibida: Plano de Acao (CIENTE/...) + Plano de Trabalho
-                # (a fase real: EM_ANALISE, APROVADO, CONCLUIDO..., EMPENHADO...).
-                # So "ciente" (plano de acao) e pouco informativo p/ o relatorio.
-                _hz = lambda s: (s or "").replace("_", " ").strip()
-                sit_pt = _hz(it.get("planoTrabalhoSituacao"))
-                sit_te = _hz(sit)
-                if sit_pt and _hz(sit).lower() != sit_pt.lower():
-                    sit_te = f"{_hz(sit)} · Plano de Trabalho: {sit_pt}"
-                cod_em = it.get("codigoEmendaFormatado") or ""
-                # Mesma regra do ano de emissão: TE concluída fica (PARTE 3);
-                # TE ativa (CIENTE/análise) só do ano de emissão; antiga não-
-                # concluída sai. Ano vem do código da emenda (AAAA...) ou do plano.
-                ano_te = _ano_de(cod_em, it.get("planoAcaoCodigo"))
-                if not _fed_retem(ano_te, ano_emissao, sit, completo):
-                    continue
-                # CONCLUIDA/paga -> PARTE 3; demais (CIENTE/EM_ANALISE/...) -> PARTE 1.
-                parte_te = 3 if ("conclu" in sl or "pag" in sl or "finaliz" in sl) else 1
-                parl = cod_em.split("-", 1)[1].strip() if "-" in cod_em else ""
-                valor = _money(it.get("valorTotal"))
-                orgao_te = "Transferência Especial (Emenda Pix)"
-                tipo_te = "Transferência Especial"
-                secao_te = _SEC_FED
-                if completo:
-                    st = _fed_status(sit)
-                    parte_te, secao_te, suf = _destino_completo(
-                        "federal", "transferencia_especial", st, ano_te,
-                        ano_te if st == "paga" else None, ano_emissao,
-                        False, False, False)
-                    orgao_te = orgao_te + suf
-                    tipo_te = "Plano de Ação"  # rotulo do numero na referencia (Fazenda/TE)
-                add_item(parte_te, secao_te, orgao_te, {
-                    "tipo": tipo_te,
-                    "numero": it.get("planoAcaoCodigo") or "",
-                    "objeto": it.get("objetoDescricao") or it.get("politicasPublicas") or "",
-                    "parlamentar": parl,
-                    "valor_global": valor,
-                    "valor_repasse": valor,
-                    "valor_contrapartida": 0,
-                    "banco": "", "agencia": "", "conta": "",
-                    "saldo_bancario": None, "dt_saldo": None,
-                    "dt_fim_vigencia": None,
-                    "situacao_atual": sit_te,
-                    "fonte": "transferencia_especial",
-                    "fonte_ref": str(it.get("planoAcaoId") or ""),
-                })
-        except Exception as ex:
-            logger.warning(f"RM: TE/plano-acao indisponivel p/ {municipio_id}: {str(ex)[:120]}")
+    # === Transferencia Especial / Plano de Acao (Emenda Pix) — federal ===
+    # Fonte PERSISTIDA: tabela transferegov_te, alimentada pelo coletor do worker
+    # (ingestion/transferegov_te.py). A API "especiais" rate-limita e nao da p/ buscar
+    # ao vivo numa request; por isso lemos a tabela. Vazio ate o coletor rodar.
+    try:
+        te = await db.execute(text("""
+            SELECT plano_acao_id, codigo, emenda, parlamentar, objeto, situacao,
+                   situacao_trabalho, valor_total
+            FROM transferegov_te WHERE municipio_id = :m
+        """), {"m": municipio_id})
+        for row in te.fetchall():
+            cod = row[1] or ""
+            sit = row[5] or ""            # planoAcaoSituacao (CIENTE/IMPEDIDO/...)
+            sit_trab = row[6] or ""       # planoTrabalhoSituacao (a FASE real)
+            cod_em = row[2] or ""
+            # A fase REAL do dinheiro esta no PLANO DE TRABALHO (EM_ANALISE/APROVADO/
+            # EMPENHADO/CONCLUIDO/...). Uso ela p/ retencao+estagio quando indica avanco
+            # (empenhado/pago/concluido/execucao); senao o plano de acao (CIENTE etc).
+            _tl = sit_trab.lower()
+            sit_efetivo = sit_trab if any(x in _tl for x in ("empenh", "pag", "conclu", "finaliz", "execu")) else sit
+            sl = sit_efetivo.lower()
+            # Situacao exibida: mostra o plano de acao + o plano de trabalho.
+            sit_pt = sit_trab.replace("_", " ").strip()
+            sit_te = sit.replace("_", " ").strip()
+            if sit_pt and sit_te.lower() != sit_pt.lower():
+                sit_te = f"{sit_te} · Plano de Trabalho: {sit_pt}"
+            # Mesma regra de ano: concluida/empenhada fica (Parte 3/qualquer ano); ativa
+            # so do ano de referencia ou posterior. Ano vem do codigo da emenda ou do plano.
+            ano_te = _ano_de(cod_em, cod)
+            if not _fed_retem(ano_te, ano_emissao, sit_efetivo, completo):
+                continue
+            parte_te = 3 if ("conclu" in sl or "pag" in sl or "finaliz" in sl) else 1
+            parl = row[3] or (cod_em.split("-", 1)[1].strip() if "-" in cod_em else "")
+            valor = _money(row[7])
+            orgao_te = "Transferência Especial (Emenda Pix)"
+            tipo_te = "Transferência Especial"
+            secao_te = _SEC_FED
+            if completo:
+                st = _fed_status(sit_efetivo)
+                parte_te, secao_te, suf = _destino_completo(
+                    "federal", "transferencia_especial", st, ano_te,
+                    ano_te if st == "paga" else None, ano_emissao,
+                    False, False, False)
+                orgao_te = orgao_te + suf
+                tipo_te = "Plano de Ação"  # rotulo do numero na referencia (Fazenda/TE)
+            add_item(parte_te, secao_te, orgao_te, {
+                "tipo": tipo_te,
+                "numero": cod,
+                "objeto": row[4] or "",
+                "parlamentar": parl,
+                "valor_global": valor,
+                "valor_repasse": valor,
+                "valor_contrapartida": 0,
+                "banco": "", "agencia": "", "conta": "",
+                "saldo_bancario": None, "dt_saldo": None,
+                "dt_fim_vigencia": None,
+                "situacao_atual": sit_te,
+                "fonte": "transferencia_especial",
+                "fonte_ref": str(row[0] or ""),
+            })
+    except Exception as ex:
+        logger.warning(f"RM: TE indisponivel p/ {municipio_id}: {str(ex)[:120]}")
 
     # === SIMEC liberacoes (MEC) -> agrupado por programa, ja sao pagamentos => PARTE 3 ===
     lb = await db.execute(text("""
