@@ -447,14 +447,13 @@ async def list_convenios(
     if pares:
         muns = sorted({m for m, _ in pares})
         inds = sorted({i for _, i in pares})
-        muns_lit = "{" + ",".join(str(m) for m in muns) + "}"
-        inds_lit = "{" + ",".join('"' + i.replace('"', '') + '"' for i in inds) + "}"
+        # asyncpg exige LISTA Python p/ ANY(array), nao string '{...}'.
         rows = (await db.execute(text("""
             SELECT municipio_id, nr_indicacao, beneficiario, tipo_atendimento, nome_responsavel
             FROM emendas_estaduais
             WHERE municipio_id = ANY(CAST(:muns AS INT[]))
               AND nr_indicacao = ANY(CAST(:inds AS TEXT[]))
-        """), {"muns": muns_lit, "inds": inds_lit})).all()
+        """), {"muns": muns, "inds": inds})).all()
         for r in rows:
             obj = f"{r[2] or ''} {r[3] or ''}".strip() or (r[4] or "")
             emap[(r[0], r[1])] = (r[1], obj)
