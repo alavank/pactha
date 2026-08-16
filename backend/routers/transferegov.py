@@ -11,6 +11,7 @@ suporta filtro server-side por municipio/CNPJ. Cacheamos em memoria por 1h e
 filtramos local.
 """
 import os
+import asyncio
 import time
 from typing import Optional
 from fastapi import APIRouter, Depends, Query, HTTPException
@@ -41,55 +42,10 @@ _CACHE_TTL = 3600  # 1h
 import logging as _logging
 logger = _logging.getLogger("transferegov")
 
-
-def _load_especiais_cookies() -> list[dict]:
-    """Cookies do Cofre p/ a API federal 'Especiais' (TE/Emenda Pix).
-
-    A API `/public/plano-acao/listagem` deixou de ser aberta: hoje devolve 403
-    para qualquer requisicao sem sessao autenticada (testado do servidor E de IP
-    residencial). A sessao vem do Cofre — a extensao captura os cookies do
-    `especiais.transferegov` como IRMAO SSO dentro da chave `govbr` (ver
-    extension/background.js), e aceitamos tambem uma chave dedicada `especiais`.
-    Best-effort: [] se nao houver (a coleta degrada para vazio, nunca 500)."""
-    out: list[dict] = []
-    try:
-        import psycopg2
-        import json as _json
-        from services import crypto
-        url = (os.getenv("DATABASE_URL_SYNC", "") or "").replace("&channel_binding=require", "").replace("?channel_binding=require", "")
-        if not url:
-            return []
-        cn = psycopg2.connect(url)
-        cu = cn.cursor()
-        cu.execute(
-            "SELECT senha_hash FROM cofre_senhas "
-            "WHERE automation_key IN ('especiais','govbr') AND length(senha_hash) > 1000 "
-            "ORDER BY (automation_key='especiais') DESC, updated_at DESC LIMIT 2"
-        )
-        rows = cu.fetchall()
-        cu.close(); cn.close()
-        seen = set()
-        for (blob,) in rows:
-            dec = crypto.decrypt(blob) or ""
-            if not dec.startswith("{"):
-                continue
-            for c in (_json.loads(dec).get("cookies") or []):
-                n, v = c.get("name"), c.get("value")
-                d = (c.get("domain") or "").lstrip(".")
-                if not n or v is None:
-                    continue
-                # so o que serve ao SSO do especiais: transferegov + gov.br SSO.
-                if not (d.endswith("transferegov.sistema.gov.br") or d.endswith("sistema.gov.br")
-                        or d.endswith("acesso.gov.br")):
-                    continue
-                k = (n, d)
-                if k in seen:
-                    continue
-                seen.add(k)
-                out.append({"name": n, "value": v, "domain": d, "path": c.get("path") or "/"})
-    except Exception as ex:
-        logger.warning(f"_load_especiais_cookies: {str(ex)[:120]}")
-    return out
+# pageSize confiavel em TODA a faixa de paginas. O gateway aceita ate 300, mas em
+# 300 a 2a pagina cai em 403 deterministico; 200 e estavel de ponta a ponta
+# (>=400 -> 403 sempre). Concorrencia dispara rate-limit — a coleta e SEQUENCIAL.
+_PAGE_SIZE = 200
 
 
 def _norm(s: str) -> str:
@@ -120,32 +76,54 @@ async def _fetch_listagem(uf: Optional[str]) -> list[dict]:
     cached = _CACHE.get(key)
     if cached and (now - cached[0]) < _CACHE_TTL:
         return cached[1]
-    params: dict = {"page": 0, "size": 99999}
-    if uf:
-        params["uf"] = uf  # omitir uf => nacional
-    # A API federal exige sessao autenticada (403 sem ela). Anexa os cookies do
-    # Cofre (SSO gov.br capturado pela extensao). SEM raise: se a fonte recusar
-    # (403/sessao ausente), devolve [] e a tela/RM ficam vazios em vez de 500.
-    cks = _load_especiais_cookies()
-    jar = httpx.Cookies()
-    for c in cks:
-        try:
-            jar.set(c["name"], c["value"], domain=c["domain"], path=c.get("path") or "/")
-        except Exception:
-            pass
+    # A API mudou os nomes dos params: era `page`/`size` (agora devolve 403 — foi o
+    # que quebrou a coleta), e virou `pageNumber` (1-based) / `pageSize` (teto 300;
+    # >=400 -> 403). Ela e publica com os params certos — NAO precisa de sessao.
+    # Pagina ate juntar `total`. SEM raise: em erro devolve o que tiver (ou []),
+    # entao a tela Especiais e o RM ficam vazios em vez de estourar 500.
+    # ORCAMENTO de tempo: a API RATE-LIMITA (bloqueia depois de ~10 paginas
+    # seguidas, mesmo com delay; concorrencia piora). Coletar MG inteiro (~44
+    # paginas) ao vivo levaria minutos — inviavel numa request web. Entao paginamos
+    # SEQUENCIALMENTE por ate _BUDGET s e cacheamos o que vier (parcial e melhor que
+    # nada e nao estoura 500). Cobertura COMPLETA e trabalho de coletor em segundo
+    # plano (persistir numa tabela) — pendencia registrada.
+    _BUDGET = float(os.getenv("TE_FETCH_BUDGET_S", "15") or "15")
+    t0 = time.time()
+    items: list[dict] = []
+    completo = False
     try:
-        async with httpx.AsyncClient(timeout=120, verify=False, cookies=jar) as cli:
-            r = await cli.get(f"{API_BASE}/public/plano-acao/listagem",
-                              params=params, headers=HEADERS)
-        if r.status_code != 200:
-            logger.warning(f"especiais listagem {key}: HTTP {r.status_code} "
-                           f"(cookies={len(cks)}) — TE/Emenda Pix indisponivel (sessao?)")
-            return []
-        items = r.json().get("listaPlanosAcao") or []
+        async with httpx.AsyncClient(timeout=45, verify=False) as cli:
+            page = 1
+            while page <= 500 and (time.time() - t0) < _BUDGET:
+                params: dict = {"pageNumber": page, "pageSize": _PAGE_SIZE}
+                if uf:
+                    params["uf"] = uf  # omitir uf => nacional
+                data = None
+                for tent in range(3):
+                    r = await cli.get(f"{API_BASE}/public/plano-acao/listagem",
+                                      params=params, headers=HEADERS)
+                    if r.status_code == 200:
+                        data = r.json()
+                        break
+                    await asyncio.sleep(0.8 * (tent + 1))
+                if data is None:
+                    logger.warning(f"especiais listagem {key} p{page}: 403 apos retries (rate-limit)")
+                    break
+                lote = data.get("listaPlanosAcao") or []
+                items.extend(lote)
+                total = int(data.get("total") or 0)
+                if len(lote) < _PAGE_SIZE or (total and len(items) >= total):
+                    completo = True
+                    break
+                page += 1
+                await asyncio.sleep(0.25)
     except Exception as ex:
         logger.warning(f"especiais listagem {key}: {str(ex)[:120]} — TE indisponivel")
-        return []
-    _CACHE[key] = (now, items)
+    # Cacheia o que veio (parcial inclusive) p/ nao repaginar a cada request.
+    if items:
+        _CACHE[key] = (now, items)
+    if not completo:
+        logger.warning(f"especiais listagem {key}: parcial {len(items)} itens (rate-limit / budget {_BUDGET}s)")
     return items
 
 
