@@ -48,6 +48,17 @@ ENTRY = ("https://discricionarias.transferegov.sistema.gov.br/voluntarias/Forwar
 PRIVATE_ENTRY = ("https://mandatarias.transferegov.sistema.gov.br/"
                  "projeto-basico/private/index.jsf")
 
+# Modulo "Execucao Convenente > Processo de Execucao" (ListarLicitacoes). Assim
+# como o /private/, e um SP SAML SEPARADO: a sessao dele expira por inatividade e
+# o govbr-renew (que so reaquece o discricionarias) NAO a mantinha — por isso a
+# situacao da licitacao (processo_execucao) parava de ser capturada horas apos a
+# captura. Navegar esta URL no keepalive reseta o idle desse SP e re-salva os
+# cookies -> mantem `TgHttpEnrich.processo_execucao_lista` funcionando. Se ja
+# caiu no login (idp), navegar aqui NAO revive (precisa re-captura), igual ao
+# /private/.
+EXEC_ENTRY = ("https://discricionarias.transferegov.sistema.gov.br/"
+              "voluntarias/execucao/ListarLicitacoes/ListarLicitacoes.do?destino=ListarLicitacoes")
+
 # Subdominios p/ repovoar JSESSIONIDs frescos + manter o SSO quente.
 SUBDOMINIOS = [
     ENTRY,
@@ -240,6 +251,16 @@ async def keepalive() -> str:
             private_ok = "idp/" not in u and "sso.acesso" not in u
         except Exception as e:
             log.warning(f"keepalive private: {str(e)[:80]}")
+        # 3) execucao (Processo de Execucao): reseta o idle do SP `execucao`,
+        #    mantendo a captura da situacao da licitacao (processo_execucao) viva.
+        exec_ok = False
+        try:
+            await page.goto(EXEC_ENTRY, timeout=45000, wait_until="domcontentloaded")
+            await page.wait_for_timeout(3000)
+            eu = (page.url or "").lower()
+            exec_ok = "idp/" not in eu and "sso.acesso" not in eu
+        except Exception as e:
+            log.warning(f"keepalive execucao: {str(e)[:80]}")
         fresh = await ctx.cookies()
         relevant = [c for c in fresh if any(d in (c.get("domain") or "")
                     for d in ("transferegov", "sso.acesso.gov.br", "gov.br"))]
@@ -251,9 +272,11 @@ async def keepalive() -> str:
     except Exception as e:
         log.error(f"keepalive save: {str(e)[:100]}")
     if private_ok:
-        log.info(f"keepalive OK — /private/ vivo, {len(relevant)} cookies re-salvos")
+        log.info(f"keepalive OK — /private/ vivo, execucao={'vivo' if exec_ok else 'CAIU'}, "
+                 f"{len(relevant)} cookies re-salvos")
         return "alive"
-    log.warning("keepalive — /private/ CAIU (idp/login). Precisa re-captura pela extensao.")
+    log.warning(f"keepalive — /private/ CAIU (idp/login), execucao={'vivo' if exec_ok else 'CAIU'}. "
+                "Precisa re-captura pela extensao.")
     return "private_dead"
 
 
