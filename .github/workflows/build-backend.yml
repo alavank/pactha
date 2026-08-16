@@ -114,7 +114,7 @@ jobs:
     needs: build
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 90   # fila do Coolify (concurrent_builds=1) pode custar ~20min/tenant
+    timeout-minutes: 120   # fila do Coolify (concurrent_builds=1) pode custar ~20min/tenant (4 tenants desde 08/2026)
     concurrency:
       group: deploy-backend        # serializa deploys; um novo ESPERA o atual
       cancel-in-progress: false

@@ -72,6 +72,18 @@ jobs:
               NEXT_PUBLIC_CLIENT_LOGO=/brasao-monte-siao.png
               NEXT_PUBLIC_CLIENT_SUBTITLE=Monte Siao - MG
               NEXT_PUBLIC_BI_MODULE=1
+          # Santa Maria/RS — 4o tenant. O dominio do APP e proprio
+          # (santamaria.rs.pactha.com.br), mas o API_PROXY_TARGET aponta para o
+          # sslip da API DELE: nao existe DNS api-santamaria.rs.pactha.com.br e
+          # nao ha wildcard em *.rs.pactha.com.br. Mesmo arranjo do Monte Siao.
+          - image: frontend-santamaria-rs
+            context: frontend
+            args: |
+              NEXT_PUBLIC_API_URL=/api
+              API_PROXY_TARGET=https://pactha-santamaria-rs-api-54-232-208-118.sslip.io
+              NEXT_PUBLIC_CLIENT_LOGO=/brasao-santa-maria.png
+              NEXT_PUBLIC_CLIENT_SUBTITLE=Santa Maria - RS
+              NEXT_PUBLIC_BI_MODULE=1
           # O antigo "painel executivo" (pasta painel/, imagem painel-montesiao-mg)
           # SAIU da matriz: o Painel de Indicadores e o Modo Tela agora moram no
           # proprio frontend (rotas /dashboard e /tela), no mesmo deploy e no
@@ -117,7 +129,7 @@ jobs:
     needs: build
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 75   # fila do Coolify pode custar ~20min/app
+    timeout-minutes: 100   # fila do Coolify pode custar ~20min/app (4 apps desde 08/2026)
     concurrency:
       group: deploy-frontend
       cancel-in-progress: false
