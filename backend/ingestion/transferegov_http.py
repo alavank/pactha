@@ -396,11 +396,12 @@ class TgHttpEnrich:
         None e IMPORTANTE: significa "nao consegui ler", nao "nenhuma" — quem
         chama nao deve gravar 0 nesse caso (0 vira alerta de 'municipio parado')."""
         body = resp.text
-        if re.search(r"Nenhum registro", body, re.I):
-            return 0
-        m = re.search(r"\((\d+)\s*ite", body, re.I)
-        if m:
-            return int(m.group(1))
+        # 1) TABELA DE LICITACOES pela assinatura do cabecalho — sinal PRIMARIO.
+        #    Rodava por ultimo; agora vem primeiro. O bug do "falso 0": a tela de
+        #    Processo de Execucao tem subsecoes que trazem "Nenhum registro" (sem
+        #    "foi encontrado"), e o check largo abaixo disparava ANTES de contar a
+        #    tabela — um convenio com licitacao Concluida virava 0 (observado no
+        #    instrumento 996050). Contando a tabela primeiro, o 0 falso some.
         doc = _parse(resp)
         for t in doc.findall(".//table"):
             trs = t.findall(".//tr")
@@ -410,6 +411,14 @@ class TgHttpEnrich:
             chave = "|".join(heads).lower()
             if "processo de execu" in chave and ("data da public" in chave or "situa" in chave):
                 return len([tr for tr in trs[1:] if any(_txt(c) for c in tr.findall("td"))])
+        # 2) marcador "(N item(s))" da paginacao
+        m = re.search(r"\((\d+)\s*ite", body, re.I)
+        if m:
+            return int(m.group(1))
+        # 3) vazio ESTRITO — a frase completa, nao o "Nenhum registro" largo que
+        #    casa subsecoes. Alinhado com o fallback de :499.
+        if re.search(r"Nenhum registro foi encontrado", body, re.I):
+            return 0
         return None
 
     def processo_execucao(self, id_proposta: str) -> int | None:
