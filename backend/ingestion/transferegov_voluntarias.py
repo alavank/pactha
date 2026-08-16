@@ -246,7 +246,18 @@ def _propostas_ja_enriquecidas(municipio_id: int) -> set:
 
 
 def _load_session_cookies(automation_key: str) -> list[dict] | None:
-    """Carrega cookies do Cofre p/ uma chave de automacao (best-effort)."""
+    """Carrega cookies do Cofre p/ uma chave de automacao (best-effort).
+
+    ESCOLHA DA SESSAO. Por padrao vence a mais RECENTE com corpo de sessao
+    (>1000 bytes; entradas curtas sao senha, nao cookie). Isso e fragil: qualquer
+    captura nova assume o lugar sem aviso, e uma captura da conta errada troca a
+    identidade da coleta em silencio.
+
+    Para fixar uma conta, defina GOVBR_COFRE_ID com o id da linha do cofre —
+    ai a selecao passa a ser por id e nenhuma captura posterior a substitui.
+    Se o id fixado sumir ou perder o corpo de sessao, cai no comportamento
+    antigo e AVISA no log (melhor coletar com a sessao errada do que nao coletar,
+    mas o aviso tem de aparecer)."""
     try:
         import psycopg2
         from services import crypto
@@ -254,13 +265,28 @@ def _load_session_cookies(automation_key: str) -> list[dict] | None:
         url = url.replace("&channel_binding=require", "").replace("?channel_binding=require", "")
         conn = psycopg2.connect(url)
         cur = conn.cursor()
-        cur.execute(
-            "SELECT senha_hash FROM cofre_senhas "
-            "WHERE automation_key=%s AND length(senha_hash) > 1000 "
-            "ORDER BY updated_at DESC LIMIT 1",
-            (automation_key,),
-        )
-        row = cur.fetchone()
+        _fixo = (os.getenv("GOVBR_COFRE_ID", "") or "").strip()
+        row = None
+        if _fixo.isdigit():
+            cur.execute(
+                "SELECT senha_hash FROM cofre_senhas "
+                "WHERE id=%s AND automation_key=%s AND length(senha_hash) > 1000",
+                (int(_fixo), automation_key),
+            )
+            row = cur.fetchone()
+            if row:
+                logger.info(f"  cofre[{automation_key}]: sessao FIXADA id={_fixo}")
+            else:
+                logger.warning(f"  cofre[{automation_key}]: GOVBR_COFRE_ID={_fixo} nao encontrado "
+                               f"(ou sem corpo de sessao) — caindo p/ a mais recente")
+        if row is None:
+            cur.execute(
+                "SELECT senha_hash FROM cofre_senhas "
+                "WHERE automation_key=%s AND length(senha_hash) > 1000 "
+                "ORDER BY updated_at DESC LIMIT 1",
+                (automation_key,),
+            )
+            row = cur.fetchone()
         cur.close(); conn.close()
         if not row:
             return None
@@ -1065,10 +1091,9 @@ async def _le_listagem_licitacoes(page) -> int | None:
     try:
         return await page.evaluate("""() => {
             const body = document.body.innerText || '';
-            if (/Nenhum registro/i.test(body)) return 0;
-            const m = body.match(/\\((\\d+)\\s*ite/i);          // "Pagina X de Y (N item(s))"
-            if (m) return parseInt(m[1], 10);
-            // tabela cujo CABECALHO tem "Processo de Execucao" + Data/Situacao
+            // 1) TABELA de licitacoes pelo cabecalho — sinal PRIMARIO (antes vinha
+            //    por ultimo; o /Nenhum registro/ largo abaixo disparava antes e
+            //    zerava convenios com licitacao Concluida — o falso 0).
             for (const t of document.querySelectorAll('table')) {
                 const rows = [...t.querySelectorAll('tr')];
                 if (!rows.length) continue;
@@ -1080,6 +1105,11 @@ async def _le_listagem_licitacoes(page) -> int | None:
                         [...r.querySelectorAll('td')].some(c => (c.innerText || '').trim())).length;
                 }
             }
+            // 2) marcador "(N item(s))"
+            const m = body.match(/\\((\\d+)\\s*ite/i);
+            if (m) return parseInt(m[1], 10);
+            // 3) vazio ESTRITO (a frase completa, nao o largo)
+            if (/Nenhum registro foi encontrado/i.test(body)) return 0;
             return null;   // indeterminado
         }""")
     except Exception:
