@@ -10,6 +10,7 @@ Estrutura visual (replica do PDF de exemplo):
 """
 from __future__ import annotations
 import io
+import json
 from datetime import date, datetime
 from typing import Any
 from reportlab.lib import colors
@@ -207,10 +208,24 @@ def _evento_destaque(item: dict) -> str | None:
     return "<br/>".join(partes)
 
 
+def _proc_exec_lista(item: dict) -> list:
+    """A lista de licitações/processos do item, tolerando JSONB vindo como str
+    (dependendo do driver) ou já parseado. Sempre devolve uma lista (vazia se n/a)."""
+    lst = item.get("processo_execucao_lista")
+    if isinstance(lst, str):
+        try:
+            lst = json.loads(lst)
+        except (ValueError, TypeError):
+            lst = None
+    return lst if isinstance(lst, list) else []
+
+
 def _processo_execucao_destaque(item: dict) -> str | None:
     """Destaque p/ convênio com contratação Normal e o Processo de Execução
     (Licitações): 0 = sem processo/licitação iniciado (flag de monitoramento);
-    N = registros. None quando não se aplica (não-Normal ou não capturado)."""
+    N = registros. Quando há a LISTA capturada, imprime CADA licitação com
+    situação/modalidade/nº/data — não só a contagem. None quando não se aplica
+    (não-Normal ou não capturado)."""
     qtd = item.get("processo_execucao_qtd")
     sc = (item.get("situacao_contratacao") or "").lower()
     if qtd is None or "normal" not in sc:
@@ -218,7 +233,29 @@ def _processo_execucao_destaque(item: dict) -> str | None:
     if qtd == 0:
         return ("⚠ <b>Processo de Execução:</b> nenhum registro "
                 "(contratação Normal, sem licitação/processo de execução iniciado)")
-    return f"<b>Processo de Execução:</b> {qtd} registro(s) de licitação/processo"
+    partes = [f"<b>Processo de Execução:</b> {qtd} registro(s) de licitação/processo"]
+    # Detalhe por licitação — mesmo formato da tela (situação em negrito, depois
+    # modalidade · nº · data · sistema · aceite). Só aparece quando o scraper
+    # trouxe a lista; senão fica só a contagem (degrada suave).
+    for pe in _proc_exec_lista(item):
+        if not isinstance(pe, dict):
+            continue
+        extra = []
+        if pe.get("modalidade"):
+            extra.append(_escape(str(pe["modalidade"])))
+        if pe.get("numero"):
+            extra.append("nº " + _escape(str(pe["numero"])))
+        if pe.get("data_publicacao"):
+            extra.append(_escape(str(pe["data_publicacao"])))
+        if pe.get("sistema_origem"):
+            extra.append(_escape(str(pe["sistema_origem"])))
+        if pe.get("aceite"):
+            extra.append(_escape(str(pe["aceite"])))
+        linha = "• <b>" + _escape(str(pe.get("situacao") or "—")) + "</b>"
+        if extra:
+            linha += " · " + " · ".join(extra)
+        partes.append(linha)
+    return "<br/>".join(partes)
 
 
 def _escape(s: str) -> str:

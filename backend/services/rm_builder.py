@@ -583,7 +583,8 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
                situacao_contratacao, clausula_suspensiva_dt_prevista,
                clausula_suspensiva_motivo, parlamentar, situacao_contratacao_detalhe,
                detalhe->>'Empenhado', processo_execucao_qtd, historico_comunicacoes,
-               detalhe->>'Banco', detalhe->>'Agência', detalhe->>'Conta'
+               detalhe->>'Banco', detalhe->>'Agência', detalhe->>'Conta',
+               processo_execucao
         FROM transferegov_propostas WHERE municipio_id = :m
     """), {"m": municipio_id})
     for row in vol.fetchall():
@@ -643,6 +644,9 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             # Processo de Execução (Licitações): só relevante p/ contratação Normal.
             # 0 = Normal SEM processo/licitação registrado (flag); N>0 = tem; None = n/c.
             "processo_execucao_qtd": row[16],
+            # Lista das licitações/processos COM detalhe (situação, modalidade, nº,
+            # data, aceite) — para o RM mostrar cada registro, não só a contagem.
+            "processo_execucao_lista": row[21],
             # EVENTO ATUAL do Histórico de Comunicações (mandatárias): onde o
             # instrumento está de fato na análise, + situação e considerações.
             **_evento_atual(row[17]),
