@@ -44,6 +44,10 @@ interface Emenda {
   valor_indicacao?: number;
   status_indicacao?: string;
   ano?: number;
+  /** Convênio relacionado, casado pelo nº da indicação (#3). Vazio até o
+   *  scraper (#2) popular a indicação no convênio. */
+  conv_nr?: string | null;
+  conv_objeto?: string | null;
 }
 
 const PER_PAGE = 100; // todos por ano
@@ -303,6 +307,12 @@ export default function EmendasEstaduaisPage() {
                             <span className="font-mono">
                               {em.cnpj_beneficiario ? `· CNPJ ${em.cnpj_beneficiario}` : ""}
                             </span>
+                            {/* Convênio relacionado (casado pelo nº da indicação, #3). */}
+                            {em.conv_nr && (
+                              <Selo tom="ok" title={em.conv_objeto || `Convênio ${em.conv_nr}`}>
+                                Convênio {em.conv_nr}
+                              </Selo>
+                            )}
                           </>
                         }
                       >

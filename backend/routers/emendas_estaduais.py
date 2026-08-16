@@ -64,11 +64,26 @@ async def list_emendas_estaduais(
     offset = (page - 1) * per_page
     params["limit"] = per_page
     params["offset"] = offset
+    # CONVENIO RELACIONADO (#3): casa a emenda ao convenio pelo NUMERO DA INDICACAO.
+    # A emenda ja tem nr_indicacao; o convenio passou a ter em raw_data->>'nr_indicacao'
+    # (capturado por _scrape_indicacoes, #2). LATERAL LIMIT 1: o 1o convenio do mesmo
+    # municipio com a mesma indicacao. Vazio enquanto o #2 nao populou aquele convenio.
     r = await db.execute(text(f"""
         SELECT id, municipio_id, nr_indicacao, nome_responsavel, tipo_indicacao,
                uo_codigo, uo_sigla, cnpj_beneficiario, beneficiario,
-               grupo_despesa, tipo_atendimento, valor_indicacao, status_indicacao, ano
+               grupo_despesa, tipo_atendimento, valor_indicacao, status_indicacao, ano,
+               c.conv_nr, c.conv_objeto
         FROM emendas_estaduais
+        LEFT JOIN LATERAL (
+            SELECT COALESCE(ce.nr_proposta, ce.nr_sigcon, ce.nr_siafi) AS conv_nr,
+                   ce.objeto AS conv_objeto
+            FROM convenios_estadual ce
+            WHERE ce.municipio_id = emendas_estaduais.municipio_id
+              AND emendas_estaduais.nr_indicacao IS NOT NULL
+              AND emendas_estaduais.nr_indicacao <> ''
+              AND ce.raw_data->>'nr_indicacao' = emendas_estaduais.nr_indicacao
+            LIMIT 1
+        ) c ON true
         WHERE {where_sql}
         ORDER BY ano DESC NULLS LAST, valor_indicacao DESC NULLS LAST
         LIMIT :limit OFFSET :offset
