@@ -62,13 +62,19 @@ sistema operando sozinho. Se você só ler um bloco deste arquivo, leia este:
 
 ## 2. ESTADO ATUAL (2026-08-09)
 
-**São TRÊS tenants em produção**, todos do mesmo código, cada um com containers e banco próprios:
+**São QUATRO tenants em produção**, todos do mesmo código, cada um com containers e banco próprios:
 
 | Tenant | App | API |
 |---|---|---|
 | **Freitas** | https://pactha-54-232-208-118.sslip.io | https://pactha-api-54-232-208-118.sslip.io |
 | **Trust** | https://pactha-trust-54-232-208-118.sslip.io | https://pactha-trust-api-54-232-208-118.sslip.io |
-| **Monte Sião/MG** | https://pactha-montesiao-mg-54-232-208-118.sslip.io | https://pactha-montesiao-mg-api-54-232-208-118.sslip.io |
+| **Monte Sião/MG** | https://montesiao.mg.pactha.com.br | https://pactha-montesiao-mg-api-54-232-208-118.sslip.io |
+| **Santa Maria/RS** | https://santamaria.rs.pactha.com.br | https://pactha-santamaria-rs-api-54-232-208-118.sslip.io |
+
+⚠️ **Santa Maria (16/08/2026) é o 4º tenant e o primeiro banco criado DO ZERO** — os outros três
+vieram migrados do Neon. Ele nasce só com Santa Maria/RS (IBGE 4316907) e as coleta federais;
+**nenhuma fonte do RS existe em código ainda** (ver `docs/MAPA_RS.md` para o mapa do que falta:
+CHE, convênios da CAGE, TCE-RS, CADIN/CFIL, Portal de Convênios e Parcerias/FPE).
 
 Os três bancos já estão **populados com dados reais** (a migração vinda do Neon foi concluída — não é mais schema+seed). Login seed só vale em banco novo: `super-admin@alavank.com.br`, com senha ALEATÓRIA por tenant impressa no console do primeiro boot (ou via `ADMIN_PASSWORD`) — pede troca no 1º acesso.
 
@@ -95,13 +101,14 @@ Resumo; o detalhe completo (uuids de todas as aplicações, bancos, crons por te
 - **Token da API do Coolify:** NÃO está neste arquivo (é segredo). O usuário fornece (formato `36|xxxx`). Use `Authorization: Bearer <TOKEN>`. **Rotacione periodicamente.**
 - **GitHub App (source):** `alavank-coolify` — já dá acesso ao repo privado `alavank/pactha`. Use o `github_app_uuid` dele ao criar apps.
 
-**Projeto Coolify `pactha`** — uuid `ksmwr13y4iyprom8i1znede8`, environment `production`, **9 aplicações + 3 bancos** (o `montesiao-mg-painel` foi removido):
+**Projeto Coolify `pactha`** — uuid `ksmwr13y4iyprom8i1znede8`, **um environment por tenant** (`production` está vazio), **12 aplicações + 4 bancos** (o `montesiao-mg-painel` foi removido):
 
 | Tenant | API | Frontend | Worker | Banco |
 |---|---|---|---|---|
 | freitas | `givx3567ygxppum10p1oungn` | `qgmw4e5wjem1e8jit2wyvo1d` | `s49c3b58lysqq0tpelneg3g3` | `tox59kvmkrb0ywmeaty3t02a` |
 | trust | `pphvk2ygkuirjhu9qptvmfs5` | `j5ghp71lff003d5rfaynvy5y` | `xg714h8l7va4ejq70a5pmv5t` | `p434vbj35siee57shlsyzuc2` |
 | montesiao-mg | `chr0n883hp19tjh7829k85a7` | `bryvqhhcu97lc3ku7a2hss0q` | `jhf0kjhps5keujiyhhsnvjt6` | `iogvjlnkpqlugja9j76rktl1` |
+| santamaria-rs | `ufjctldngc14dsdw8pxnqivl` | `eohjo0cy4nbl6t7hiaqwagwf` | `wquremniv57gag3tlil8uf6d` | `m2ypghl41lbqhv7rdqzffdi3` |
 
 Builds: API = `backend/Dockerfile.api` (base `/`) · Frontend = `frontend/Dockerfile` (base `/frontend`, standalone) · Worker = `backend/Dockerfile.scraper` (PID 1 = `tini` + `reaper.sh`, que mata ingestão >1h e Chromium órfão; crons via Scheduled Tasks). Bancos: `postgres:16-alpine`, db/user `pactha`, porta 5432, host = uuid do resource.
 

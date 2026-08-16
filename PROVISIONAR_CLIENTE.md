@@ -57,7 +57,7 @@ depois, sem travar a abertura:
 
 Só isto — e é de propósito:
 
-- **Três contas**, as de `services/auth.py::SUPER_ADMIN_EMAILS`:
+- **Quatro contas**, as de `services/auth.py::SUPER_ADMIN_EMAILS`:
   `super-admin@alavank.com.br`, `alavank.tecnologia@gmail.com`,
   `tiagomiller@alavank.com.br`, `matheus@alavank.com.br`. Senhas **aleatórias, impressas no log do primeiro
   boot**, com troca obrigatória no primeiro acesso.
@@ -129,19 +129,45 @@ Então, antes de criar qualquer aplicação:
 > **Nunca aponte o frontend de um cliente para a imagem de outro**, nem "só para
 > testar". Não dá erro — dá vazamento.
 
+> **O passo 0 NÃO exige merge na `main`.** O job `deploy` dos dois workflows tem
+> `if: github.ref == 'refs/heads/main'`, e o `on:` tem `workflow_dispatch`. Então
+> `gh workflow run build-frontend.yml --ref <sua-branch>` **publica a imagem e pula
+> o deploy inteiro** — a imagem passa a existir sem tocar em produção. Anote o
+> **sha COMPLETO** da branch: é a tag que o app novo vai usar.
+
 ### Depois disso
 
-1. Criar o banco do cliente.
-2. Criar as três aplicações no Coolify — api, worker e frontend. O engine em
-   `C:\projetos\coolify-migrate` ajuda a criar a estrutura, mas **o frontend tem
-   de apontar para a imagem do passo 0**, nunca para a herdada do app clonado.
-3. Definir as variáveis da seção 3.
-4. Subir a **api** primeiro (ela roda as migrations e o seed no boot) e **ler o
-   log** para copiar as senhas.
-5. Subir **worker** e **frontend**. **Um app por vez, esperando cada um
+1. **Criar o environment do tenant** no projeto `pactha`
+   (`POST /projects/ksmwr13y4iyprom8i1znede8/environments` com `{"name":"<slug>"}` → 201).
+   ⚠️ A instância usa **um environment por cliente**; o `production` está vazio e
+   não é onde os tenants moram.
+2. Criar o banco do cliente (`<slug>-db`, `postgres:16-alpine`, db/user `pactha`).
+   ⚠️ Gere a senha do Postgres **só com letras e dígitos**: ela vai crua dentro da
+   `DATABASE_URL`, e `@ : / ? #` quebram a URL.
+3. Criar as três aplicações no Coolify — api, worker e frontend —, todas com
+   `instant_deploy:false`. **O frontend tem de apontar para a imagem do passo 0**,
+   nunca para a herdada de outro cliente.
+4. Definir as variáveis da seção 3. ⚠️ **`MUNICIPIO_NOME`/`MUNICIPIO_IBGE`/`MUNICIPIO_UF`
+   vão no resource da API**, e são o que o seed lê no primeiro boot. Elas **não
+   existem** nos três tenants antigos (o banco deles veio populado do Neon) —
+   então clonar as env de um deles produz um tenant que sobe e não coleta nada.
+5. Subir a **api** primeiro (ela roda as migrations e o seed no boot) e **ler o
+   log** para copiar as senhas. Aceite: `Startup migrations: N/N executadas` — se
+   vier `N-1/N`, leia qual falhou antes de seguir.
+   > Suba o primeiro boot com **`AUTHZ_MODO=aviso`** e só depois troque para
+   > `bloqueio` + redeploy. Custa um deploy e evita descobrir um backfill de
+   > permissão quebrado com o tenant já trancado.
+6. Subir **worker** e **frontend**. **Um app por vez, esperando cada um
    terminar** — a VPS é burstable (~0,6 vCPU sustentado).
-6. Entrar como `super-admin@alavank.com.br`, trocar a senha, conferir que o
+7. Entrar como `super-admin@alavank.com.br`, trocar a senha, conferir que o
    município que aparece é o certo.
+8. **Fechar o laço do CI** — e este passo já foi esquecido: acrescentar o uuid do
+   frontend no `for APP in ...` do `build-frontend.yml` **e** o trio
+   `nome:api_uuid:worker_uuid` em `TENANTS` no `build-backend.yml`. Sem isso o
+   tenant novo **nunca mais recebe deploy**, e em silêncio: os merges seguintes
+   simplesmente não o incluem. Ponha-o por último nas duas listas.
+9. Criar as Scheduled Tasks do worker (horários em janelas que os outros tenants
+   não usem) e a 4ª entrada no `case` de `scripts/separar_papel_banco.sh`.
 
 > ⚠️ **Mergear não publica.** As aplicações usam `build_pack = dockerimage`: rodam
 > a tag gravada em `docker_registry_image_tag`. O CI só publica no GHCR. Ver
@@ -155,7 +181,14 @@ Então, antes de criar qualquer aplicação:
   FNS, SISMOB. Confira em **Status dos Dados** no dia seguinte.
 - **gov.br** é captura de sessão pelo bookmarklet — a API dispara o scraper na
   hora, sozinha. Não é credencial guardada.
-- **SIGCON-MG e CAGEC** entram no Cofre quando o dono passar as credenciais.
+- **SIGCON-MG e CAGEC** entram no Cofre quando o dono passar as credenciais — e
+  **só fazem sentido em cliente de MG**. Num tenant de outro estado, não crie as
+  Scheduled Tasks `sigcon`, `cagec` e `queue-sigcon`: os coletores se protegem
+  sozinhos por UF, mas gastariam processo e encheriam o log de "sem credenciais".
+  ⚠️ **Mas repare no efeito colateral**: `run_dadosabertos_cron.run_all()` — que
+  roda CAUC, Acordo FES, SISMOB **e SIMEC-PAR** — é chamado de dentro do
+  `run_sigcon_cron.py`. Sem a task `sigcon`, o **SIMEC-PAR fica órfão** (CAUC e
+  SISMOB têm tasks próprias). Crie uma task `simec` para ele.
 - **Cadastrar os setores** se o cliente for usar tramitação: a tabela nasce vazia.
 
 ---

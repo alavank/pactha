@@ -109,6 +109,13 @@ MIGRATION_FILES = [
     "add_cagec_entidades.sql",
     # de quando e o detalhamento do CRC, e o erro do portal quando ele nao sai
     "add_cagec_crc_estado.sql",
+    # ⭐ cagec_situacao deixa de ser "a tabela do CAGEC" e passa a ser a tabela
+    # do CADASTRO ESTADUAL de convenentes, com coluna `fonte` — e e a coluna
+    # `fonte` que permite `uf_sem_default_mg.sql` purgar POR FONTE em vez de por
+    # UF. ⚠️ Tem de vir ACIMA daquela migration: se viesse depois, no primeiro
+    # boot pos-deploy a purga referenciaria uma coluna inexistente, abortaria a
+    # transacao do arquivo inteiro e derrubaria junto o DROP DEFAULT da uf.
+    "add_cadastro_estadual_rs.sql",
     # Tipo do link publicado: TV de parede ('tela') ou app de celular ('mobile')
     "add_bi_tela_link_kind.sql",
     # Historico da IA por usuario, retencao de 30 dias (expurgo automatico)
@@ -194,6 +201,21 @@ MIGRATION_FILES = [
     # /Rotulo de usuario) e o sistema puxa nos formularios. Semeia os rotulos
     # que a tela ja oferecia em codigo, para o seletor nao nascer vazio.
     "add_parametros.sql",
+    # Identificadores do municipio que o sistema hoje INFERE de dado coletado —
+    # e que fora de MG nao ha de onde inferir. O CNPJ e o caso que motiva: o
+    # coletor do cadastro estadual precisa so dele, mas ele era deduzido de
+    # `emendas_estaduais` (que so existe com SIGCON-MG) ou de `transferegov_pac`
+    # (vazia no dia 1). Mais COREDE, codigo no TCE, flag do FUNRIGS e a data de
+    # calamidade (o antidoto do falso alarme do Decreto 56.939/2023).
+    "add_municipio_identificadores.sql",
+    # ⭐ BOOTSTRAP LIMPO: as 12 colunas de convenios_estadual que só existiam
+    # por herança do Neon (`fonte` + os campos do RM). O setup_db não as cria e
+    # o create_all não acrescenta coluna a tabela existente — então em banco
+    # NOVO elas simplesmente não existiam, e as duas migrations logo abaixo
+    # falhavam com `column "fonte" does not exist` (medido no 1º boot do
+    # santamaria-rs, o primeiro banco criado do zero no projeto).
+    # ⚠️ Tem de ficar ACIMA das duas: elas são as primeiras a usar `fonte`.
+    "add_convenios_estadual_colunas_faltantes.sql",
     # ⭐ DUPLICATAS: a chave de identidade estava errada em emendas_estaduais
     # (o ANO DO FILTRO entrou na chave) e em convenios_estadual (a chave mudava
     # quando o nº SIAFI nascia). Deduplica o que existe e instala a chave certa,

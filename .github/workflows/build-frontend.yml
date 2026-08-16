@@ -2,7 +2,7 @@ name: build-frontend
 
 # Builda as imagens dos FRONTENDS no GitHub Actions em vez de na VPS.
 #
-# Diferente do backend (uma imagem para os 3 tenants), cada frontend e
+# Diferente do backend (uma imagem para os 4 tenants), cada frontend e
 # GENUINAMENTE diferente: os build-args NEXT_PUBLIC_* e API_PROXY_TARGET sao
 # INLINED no bundle Next em build-time (o proprio Dockerfile documenta isso).
 # Entao cada tenant precisa da sua propria imagem, com os args embutidos --
@@ -72,6 +72,18 @@ jobs:
               NEXT_PUBLIC_CLIENT_LOGO=/brasao-monte-siao.png
               NEXT_PUBLIC_CLIENT_SUBTITLE=Monte Siao - MG
               NEXT_PUBLIC_BI_MODULE=1
+          # Santa Maria/RS — 4o tenant. O dominio do APP e proprio
+          # (santamaria.rs.pactha.com.br), mas o API_PROXY_TARGET aponta para o
+          # sslip da API DELE: nao existe DNS api-santamaria.rs.pactha.com.br e
+          # nao ha wildcard em *.rs.pactha.com.br. Mesmo arranjo do Monte Siao.
+          - image: frontend-santamaria-rs
+            context: frontend
+            args: |
+              NEXT_PUBLIC_API_URL=/api
+              API_PROXY_TARGET=https://pactha-santamaria-rs-api-54-232-208-118.sslip.io
+              NEXT_PUBLIC_CLIENT_LOGO=/brasao-santa-maria.png
+              NEXT_PUBLIC_CLIENT_SUBTITLE=Santa Maria - RS
+              NEXT_PUBLIC_BI_MODULE=1
           # O antigo "painel executivo" (pasta painel/, imagem painel-montesiao-mg)
           # SAIU da matriz: o Painel de Indicadores e o Modo Tela agora moram no
           # proprio frontend (rotas /dashboard e /tela), no mesmo deploy e no
@@ -108,7 +120,7 @@ jobs:
         run: echo "Publicado ${{ env.IMAGE_BASE }}-${{ matrix.image }}:latest" >> "$GITHUB_STEP_SUMMARY"
 
   # Fase D (09/08/2026): o CI fecha o ciclo tambem nos frontends — avanca a tag
-  # (sha COMPLETO, padrao deste workflow) e deploya os 3 apps, confirmando cada
+  # (sha COMPLETO, padrao deste workflow) e deploya os 4 apps, confirmando cada
   # deployment via GET /deployments/{uuid}. Sem gate de janela: frontend nao
   # roda coleta, um restart de segundos nao machuca. Auto-deploy por webhook do
   # Coolify DESLIGADO nos apps pactha (recriava com tag antiga e ja matou
@@ -117,7 +129,7 @@ jobs:
     needs: build
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 75   # fila do Coolify pode custar ~20min/app
+    timeout-minutes: 100   # fila do Coolify pode custar ~20min/app (4 apps desde 08/2026)
     concurrency:
       group: deploy-frontend
       cancel-in-progress: false
@@ -125,7 +137,7 @@ jobs:
       COOLIFY_URL: ${{ secrets.COOLIFY_URL }}
       COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
     steps:
-      - name: Avanca tag e deploya os 3 frontends
+      - name: Avanca tag e deploya os 4 frontends
         run: |
           # Mesma politica de erro do backend: -e do Actions desligado, mutacao
           # falha alto com rollback de tag, leitura falha fechado.
@@ -135,7 +147,9 @@ jobs:
           CURL=(curl -sS --connect-timeout 10 --max-time 30 -H "Authorization: Bearer $COOLIFY_TOKEN")
           FALHAS=""
           # mapa app->uuid no Coolify (ver PROVISIONAR_CLIENTE.md p/ tenant novo)
-          for APP in qgmw4e5wjem1e8jit2wyvo1d j5ghp71lff003d5rfaynvy5y bryvqhhcu97lc3ku7a2hss0q; do
+          # santamaria-rs por ULTIMO de proposito: se ele emperrar na fila do
+          # Coolify, os tres tenants antigos ja terminaram.
+          for APP in qgmw4e5wjem1e8jit2wyvo1d j5ghp71lff003d5rfaynvy5y bryvqhhcu97lc3ku7a2hss0q eohjo0cy4nbl6t7hiaqwagwf; do
             OLD_TAG=$("${CURL[@]}" "$COOLIFY_URL/api/v1/applications/$APP" | jq -r '.docker_registry_image_tag // ""')
             if ! "${CURL[@]}" -X PATCH -H "Content-Type: application/json" \
                  -d "{\"docker_registry_image_tag\":\"$TAG\"}" \
@@ -174,6 +188,6 @@ jobs:
           done
           {
             echo "### Deploy frontend: $TAG"
-            [ -n "$FALHAS" ] && echo "FALHARAM:$FALHAS — conferir no Coolify." || echo "3 frontends confirmados."
+            [ -n "$FALHAS" ] && echo "FALHARAM:$FALHAS — conferir no Coolify." || echo "4 frontends confirmados."
           } >> "$GITHUB_STEP_SUMMARY"
           [ -z "$FALHAS" ]

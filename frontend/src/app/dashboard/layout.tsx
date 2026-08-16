@@ -46,7 +46,7 @@ import { hrefToTela, allowedTelasOf } from "@/lib/telas";
 import {
   ABAS_CONFIGURACOES, ROTAS_LEGADAS_CONFIG, abasVisiveis,
 } from "@/lib/configuracoes";
-import { cofinanciamentoDaUf, repassesDaUf, temDiarioEstadual } from "@/lib/estadual";
+import { cofinanciamentoDaUf, fonteEmendasEstaduais, repassesDaUf, temDiarioEstadual } from "@/lib/estadual";
 import { ehSuperAdmin } from "@/lib/conta";
 import { CONSOLIDADO, MunicipioProvider, useMunicipio } from "@/contexts/MunicipioContext";
 import { EnteAtendido, SUBTITULO_PACTHA } from "@/components/bi/Marca";
@@ -292,6 +292,10 @@ function SidebarContent({
   const semFonteNaUf = new Set<string>();
   if (ufAmbiente && !repassesDaUf(ufAmbiente)) semFonteNaUf.add("/dashboard/repasses");
   if (ufAmbiente && !cofinanciamentoDaUf(ufAmbiente)) semFonteNaUf.add("/dashboard/cofinanciamento");
+  // Emendas estaduais: hoje só MG tem coletor. Num cliente gaúcho a tela abria
+  // vazia anunciando o "SIGCON-MG" — e no RS a emenda estadual nem é impositiva,
+  // então além de vazia ela sugeria um direito que não existe lá.
+  if (ufAmbiente && !fonteEmendasEstaduais(ufAmbiente)) semFonteNaUf.add("/dashboard/emendas");
   if (semFonteNaUf.size) {
     const semRepasses = (c: NavLeaf | NavSection): NavLeaf | NavSection | null => {
       // ⚠️ O filho de um grupo pode ser uma SEÇÃO (que não tem `href`, e sim

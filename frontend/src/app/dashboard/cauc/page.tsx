@@ -1,5 +1,12 @@
 "use client";
-// REGULARIDADE DE DOCUMENTAÇÃO — CAUC (federal) e CAGEC (estadual/MG) lado a lado.
+// REGULARIDADE DE DOCUMENTAÇÃO — a federal (CAUC) e a estadual, lado a lado.
+//
+// ⚠️ A COLUNA ESTADUAL NÃO É MAIS SÓ O CAGEC. Desde 08/2026 ela serve dois
+// cadastros — CAGEC (MG) e CHE (RS) — e o nome que aparece na tela sai de
+// `tituloEstadual(uf)`, nunca de literal. O payload traz `fonte` em cada linha.
+// Os nomes de variável e o endpoint continuam "cagec" por custo de renomear;
+// a COPY, não: ela fala com o prefeito, e para ele o cadastro tem o nome do
+// estado DELE.
 //
 // Estavam separados de mentira: para o gestor o assunto é UM só ("minha
 // documentação está em dia para assinar convênio?"). O que muda é a esfera —
@@ -194,10 +201,18 @@ function Situacao({
   );
 }
 
-/** Aviso de que a lista de obrigações do CAGEC NÃO está completa.
+/** Aviso de que a lista de obrigações do cadastro estadual NÃO está completa.
  *
- *  Por que existe: a lista detalhada não vem da consulta pública, vem do CRC em
- *  PDF. Em 01/08/2026 o portal do Estado passou a recusar a emissão para todo
+ *  ⚠️ NASCEU MINEIRO, E A COPY NÃO PODE CONTINUAR SENDO. Em MG o detalhamento
+ *  vem do CRC em PDF, e era isso que o texto dizia. Desde 08/2026 esta tela
+ *  também serve o CHE gaúcho (`ingestion/che_rs.py`), onde as validades vêm
+ *  direto do JSON público — falar de "CRC do portal do CAGEC" para um prefeito
+ *  do Rio Grande do Sul é o mesmo defeito que `lib/estadual.ts` existe para
+ *  fechar. O texto passa a dizer "certificado do cadastro estadual", que é
+ *  verdadeiro nos dois; o nome local sai de `tituloEstadual(uf)`.
+ *
+ *  Por que existe: em MG a lista detalhada não vem da consulta pública, vem do
+ *  CRC em PDF. Em 01/08/2026 o portal do Estado passou a recusar a emissão para todo
  *  mundo ("Não foi possível recuperar dados do Convenente/Parceiro para geração
  *  do relatório" — reproduzido 9 vezes em 9, inclusive para Belo Horizonte), e
  *  a tela passou a exibir as duas linhas de fallback COMO SE FOSSEM o cadastro
@@ -236,8 +251,8 @@ function AvisoCrc({ crcErro, crcEm, doCrc }: {
               : `Documentos conferidos em ${fmtDate(crcEm)} — leitura nova indisponível`}
           </div>
           <div className="mt-0.5">
-            A lista de documentos e suas validades vem do certificado (CRC), emitido
-            pelo portal do CAGEC.{" "}
+            A lista de documentos e suas validades vem do certificado emitido pelo
+            portal do cadastro estadual.{" "}
             {crcErro
               ? <>Nesta consulta ele não saiu. O portal respondeu: <em>“{crcErro}”</em></>
               : <>Nesta consulta ele não pôde ser lido.</>}
@@ -331,7 +346,7 @@ function OutrasEntidades({ entidades }: { entidades: Entidade[] }) {
                       className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] leading-snug"
                       style={{ color: "var(--bi-faint)" }}
                     >
-                      <Selo tom={tomSit} title={`Situação no CAGEC: ${e.situacao || (ok ? "Regular" : "Irregular")}`}>
+                      <Selo tom={tomSit} title={`Situação no cadastro estadual: ${e.situacao || (ok ? "Regular" : "Irregular")}`}>
                         {e.situacao || (ok ? "Regular" : "Irregular")}
                       </Selo>
                       <span>{e.tipo || "entidade"}</span>

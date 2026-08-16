@@ -1,8 +1,19 @@
-"""CAGEC — Cadastro Geral de Convenentes de Minas Gerais (SIGCON-MG).
+"""CADASTRO ESTADUAL DE CONVENENTES — o par estadual do CAUC.
 
-O par ESTADUAL do CAUC: sem CAGEC valido o municipio nao assina convenio com o
-Estado. Fica ao lado do CAUC na tela de regularidade (mesma tela `cauc`), porque
-para o gestor o assunto e um: "minha documentacao esta em dia?".
+⚠️ O NOME DO ARQUIVO E DA TABELA CONTINUA "CAGEC", MAS O ESCOPO NAO E MAIS SO
+MINAS. Desde 08/2026 esta rota serve dois coletores:
+
+    CAGEC-MG   ingestion/cagec_scraper.py  portal do CAGEC (Playwright + CRC PDF)
+    CHE-RS     ingestion/che_rs.py         CHE da CAGE/SEFAZ-RS (API JSON publica)
+
+Cada linha traz `fonte`, e a tela usa `lib/estadual.ts` para dizer o nome certo
+do cadastro em cada estado. Renomear arquivo e tabela custaria tres bancos vivos
+e dezenas de referencias sem comprar nada — o que importa e que ninguem leia
+"cagec" e conclua "so Minas".
+
+Sem cadastro estadual valido o municipio nao assina convenio com o Estado. Fica
+ao lado do CAUC na tela de regularidade (mesma tela `cauc`), porque para o gestor
+o assunto e um: "minha documentacao esta em dia?".
 
 COLETA (ligada em 2026-07-30): `ingestion/cagec_scraper.py` preenche
 `cagec_situacao` a partir da consulta **publica** do portal proprio do CAGEC
@@ -57,7 +68,8 @@ async def fetch_cagec_situacao(db: AsyncSession, municipio_id: int) -> dict:
     linhas = (await db.execute(text("""
         SELECT nome, uf, cnpj, situacao, regular, validade, itens,
                pendencias, pendencias_codigos, data_pesquisa, atualizado_em,
-               tipo, principal, numero_cadastro, crc_em, crc_erro
+               tipo, principal, numero_cadastro, crc_em, crc_erro,
+               fonte, itens_negativos, negativos_em, negativos_erro
         FROM cagec_situacao WHERE municipio_id = :m
         ORDER BY principal DESC, tipo NULLS LAST, nome
     """), {"m": municipio_id})).fetchall()
@@ -85,6 +97,7 @@ async def fetch_cagec_situacao(db: AsyncSession, municipio_id: int) -> dict:
         "crc_em": l[14].isoformat() if l[14] else None,
         "crc_erro": l[15],
         "detalhe_do_crc": bool(l[14]),
+        "fonte": l[16],
     } for l in linhas]
     return {
         "tem_dados": True,
@@ -109,6 +122,21 @@ async def fetch_cagec_situacao(db: AsyncSession, municipio_id: int) -> dict:
         "crc_em": row[14].isoformat() if row[14] else None,
         "crc_erro": row[15],
         "detalhe_do_crc": bool(row[14]),
+        # QUEM COLETOU. 'CAGEC-MG' (Playwright + CRC em PDF) ou 'CHE-RS' (API
+        # JSON publica da CAGE/SEFAZ-RS). A tela usa isto para nao chamar de
+        # "CRC" um detalhamento que veio de outro estado — o dado e o mesmo, o
+        # nome do documento e que e local.
+        "fonte": row[16],
+        # CADASTROS NEGATIVOS (CADIN/RS, CFIL/RS) — outro coletor, outra rodada.
+        # ⚠️ `em: null` NAO significa "nada consta": significa NAO CONSULTADO. A
+        # tela precisa saber a diferenca, senao cala sobre a propria ignorancia
+        # e pinta de verde um municipio que pode estar travado. E o mesmo motivo
+        # de `crc_em`/`crc_erro` existirem.
+        "cadastros_negativos": {
+            "em": row[18].isoformat() if row[18] else None,
+            "erro": row[19],
+            "itens": row[17] if isinstance(row[17], list) else [],
+        },
         # Todas as entidades do municipio, a principal inclusive (para a tela
         # poder listar sem remontar). Quem so quer "a" situacao continua lendo
         # os campos de cima, que sao os da principal — contrato antigo intacto.

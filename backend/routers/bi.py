@@ -171,13 +171,15 @@ async def _semaforo_cagec(db: AsyncSession, ids: list[int]) -> dict:
     # a Visao Geral (e a TV, que recebe este MESMO payload) distinguir "MG
     # aguardando coleta" de "estado que a fonte nao cobre" — onde escrever
     # "Impedido de receber transferencias" era veredito falso na tela do gestor.
-    from services.bi_abas import UF_DA_FONTE
+    from services.bi_abas import UFS_COM_CADASTRO_COLETADO
     ufs_escopo = [u or "" for u in (await db.execute(text(
         "SELECT upper(coalesce(uf, '')) FROM municipios WHERE id = ANY(:ids)"
     ), {"ids": ids})).scalars().all()]
     cobertura = {
-        "municipios_na_fonte": sum(1 for u in ufs_escopo if u == UF_DA_FONTE),
-        "ufs_sem_fonte": sorted({u for u in ufs_escopo if u and u != UF_DA_FONTE}),
+        "municipios_na_fonte": sum(1 for u in ufs_escopo
+                                   if u in UFS_COM_CADASTRO_COLETADO),
+        "ufs_sem_fonte": sorted({u for u in ufs_escopo
+                                 if u and u not in UFS_COM_CADASTRO_COLETADO}),
     }
     linhas = (await db.execute(text("""
         SELECT municipio_id, COALESCE(principal, false), regular, situacao, nome, tipo,
@@ -238,7 +240,7 @@ async def _frescor_carteira(db: AsyncSession, ids: list[int]) -> Optional[dict]:
     linha da fonte: novo sem credencial ou nunca coletado). Best-effort:
     tabela ausente -> None e o overview segue sem o bloco.
     """
-    from services.bi_abas import UF_DA_FONTE
+    from services.bi_abas import UF_DA_FONTE_SIGCON
     try:
         # Denominadores POR FONTE, do banco (nao len(ids)): (a) o conjunto do
         # usuario nao-admin pode conter municipio DESATIVADO (mesma classe de
@@ -249,7 +251,7 @@ async def _frescor_carteira(db: AsyncSession, ids: list[int]) -> Optional[dict]:
             SELECT count(*) FILTER (WHERE upper(coalesce(uf, '')) = :uf_fonte) AS na_fonte,
                    count(*) AS todos
             FROM municipios WHERE id = ANY(:ids) AND coalesce(active, true)
-        """), {"ids": ids, "uf_fonte": UF_DA_FONTE})
+        """), {"ids": ids, "uf_fonte": UF_DA_FONTE_SIGCON})
         row = r.first()
         den_sigcon, den_todos = (int(row[0]), int(row[1])) if row else (0, 0)
         multi_uf = den_todos > den_sigcon > 0 or (den_sigcon == 0 and den_todos > 0)
