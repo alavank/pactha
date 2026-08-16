@@ -287,9 +287,9 @@ def gerar_pdf(meta: dict, conteudo: dict, municipio_nome: str) -> bytes:
     titulo = meta.get("titulo") or f"RELATÓRIO DE MONITORAMENTO – {municipio_nome.upper()}"
     story.append(Paragraph(_escape(titulo), s["titulo_principal"]))
     cidade = meta.get("cidade_emissao") or ""   # ver nota em rm_export.py
-    if meta.get("escopo") == "completo":
-        # RM COMPLETO (todos os anos): nao ha exercicio unico. Linha local + data
-        # por extenso, como a referencia ("Brasília/DF, 29 de Julho de 2026").
+    if meta.get("escopo") in ("completo", "parcial"):
+        # RM por SELECAO de anos (padrao Freitas): nao ha um exercicio unico. Linha
+        # local + data por extenso, como a referencia ("Brasília/DF, 29 de Julho de 2026").
         _de = _data_extenso(meta.get("data_referencia"))
         linha = f"{cidade}, {_de}".strip(", ") if _de else cidade
     else:

@@ -5,7 +5,7 @@ import { Plus, Trash2, Download, Loader2, ChevronDown, FileText } from "lucide-r
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { MultiSelect } from "@/components/ui/multi-select";
-import { atalhosAnos, resumoAnos } from "@/lib/periodo";
+import { atalhosAnos, resumoAnos, anosOpcoes as anosOpcoesPeriodo } from "@/lib/periodo";
 import { Bloco, BlocoHead, Campos, ItemLinha, Lista, Selo, Vazio } from "@/components/ui/superficies";
 import AvisoEscopo from "@/components/AvisoEscopo";
 import { contarSemEscrita, podeExcluirLinha } from "@/lib/escopo";
@@ -20,8 +20,10 @@ interface RmListItem {
   titulo?: string;
   status: string;
   updated_at?: string;
-  /** 'anual' (1 ano) | 'completo' (todos os anos — padrão Freitas). Ausente = anual. */
+  /** 'completo' (todos os anos) | 'parcial' (recorte de anos) | 'anual' (legado). */
   escopo?: string;
+  /** SELEÇÃO de anos do relatório. `[]`/ausente = TODOS (o completo). */
+  anos?: number[];
   /** O veredito do servidor sobre ESTE RM — ver `lib/escopo.ts`. Ausente
    *  significa "a API nao respondeu isso", e ai a tela fica como era. */
   pode_editar?: boolean | null;
@@ -43,19 +45,16 @@ function rmTom(s?: string | null): "neutro" | "ok" | "atencao" | "critico" {
   return "neutro";
 }
 
-/** O ANO do RM — o EXERCÍCIO.
- *
- *  Sai de `data_referencia` e de mais nada: a listagem não devolve campo
- *  `exercicio`, o que o cartão sempre mostrou nesse rótulo já era esta data
- *  recortada, e a criação grava `01/01` do ano escolhido no formulário acima.
- *  Um campo só é o que garante que o filtro e o rótulo nunca discordem.
- *
- *  Casa 4 dígitos seguidos em vez de cortar os 4 primeiros caracteres: a data
- *  chega ISO da API, mas se um dia vier "01/01/2025" o corte devolveria "01/0"
- *  e o RM viraria um exercício que não existe. */
-function anoDo(rm: RmListItem): string {
-  const m = /(\d{4})/.exec(rm.data_referencia || "");
-  return m ? m[1] : "";
+/** O ESCOPO do RM sai de `rm.anos` (a seleção de anos), não mais da data.
+ *  `[]`/ausente = TODOS os anos (o completo). */
+function ehCompleto(rm: RmListItem): boolean {
+  return !rm.anos || rm.anos.length === 0;
+}
+
+/** Rótulo do escopo para a lista: "Todos os anos" | "2026" | "2024, 2025, 2026". */
+function escopoLabel(rm: RmListItem): string {
+  if (ehCompleto(rm)) return "Todos os anos";
+  return [...(rm.anos || [])].sort((a, b) => a - b).join(", ");
 }
 
 /* As pecas da identidade nao trazem botao — entao o botao de acao e montado
@@ -76,25 +75,28 @@ export default function RmListPage() {
   const [items, setItems] = useState<RmListItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [criando, setCriando] = useState(false);
-  const [criandoCompleto, setCriandoCompleto] = useState(false);
-  const anoAtual = new Date().getFullYear();
   const [menuId, setMenuId] = useState<number | null>(null);
-  // Anos oferecidos para GERAR (multiseleção). O RM é auto-populado do banco,
-  // então "gerar" pode fazer vários exercícios de uma vez.
-  const anosOpcoes = [anoAtual + 1, anoAtual, anoAtual - 1, anoAtual - 2].map(String);
-  const [anosGerar, setAnosGerar] = useState<string[]>([String(anoAtual)]);
+  // SELEÇÃO de anos para GERAR. VAZIO = Todos os anos (o completo). Seleção de
+  // anos específicos = um único relatório com esses anos juntos. Começa vazio:
+  // a ação primária é gerar o completo.
+  const opcoesGerar = anosOpcoesPeriodo();     // 2016..ano atual (string[])
+  const [anosGerar, setAnosGerar] = useState<string[]>([]);
   const [anosSel, setAnosSel] = useState<string[]>([]);
 
-  /** Os anos que EXISTEM na lista, para o dropdown não oferecer ano vazio. */
+  /** Os anos que aparecem no ESCOPO de algum RM da lista (para o filtro). */
   const anosDisponiveis = useMemo(
-    () => Array.from(new Set(items.map(anoDo).filter(Boolean))).sort((a, b) => b.localeCompare(a)),
+    () => Array.from(new Set(items.flatMap((r) => (r.anos || []).map(String))))
+      .sort((a, b) => b.localeCompare(a)),
     [items],
   );
 
-  /* Filtro client-side: a listagem do RM vem inteira (é um punhado de
-     registros por município), então não há o que pedir de novo ao servidor. */
+  /* Filtro client-side por ano do ESCOPO: mostra o RM cujo escopo inclui algum
+     ano selecionado; o COMPLETO (todos os anos) aparece sempre (cobre qualquer
+     ano). A listagem vem inteira (poucos registros por município). */
   const visiveis = useMemo(
-    () => (anosSel.length ? items.filter((r) => anosSel.includes(anoDo(r))) : items),
+    () => (anosSel.length
+      ? items.filter((r) => ehCompleto(r) || (r.anos || []).some((a) => anosSel.includes(String(a))))
+      : items),
     [items, anosSel],
   );
 
@@ -111,49 +113,38 @@ export default function RmListPage() {
 
   useEffect(() => { if (municipioId) buscar(); }, [municipioId, buscar]);
 
-  // GERAR: cria OU atualiza (o POST /rm é upsert com auto_popular — repopula o
-  // conteúdo do banco). Faz um exercício por ano selecionado e FICA na tela,
-  // apenas recarregando a lista — não navega para uma tela de edição (o RM é
-  // gerado, não editado à mão).
+  // GERAR: UM único relatório com o escopo escolhido (upsert por município+anos).
+  //   nenhum ano marcado -> TODOS (o completo);
+  //   um ano            -> só ele;
+  //   vários anos       -> esses anos JUNTOS, num só relatório.
+  // É sempre o padrão Freitas (4 partes por estágio), recortado pelos anos. Fica
+  // na tela, só recarrega a lista — o RM é gerado, não editado à mão.
   const gerar = async () => {
-    if (!municipioId || anosGerar.length === 0) return;
+    if (!municipioId) return;
     setCriando(true);
     try {
-      const anos = [...anosGerar].sort();
-      for (const ano of anos) {
-        await api.post<{ id: number }>("/rm", {
-          municipio_id: Number(municipioId),
-          data_referencia: `${ano}-01-01`,
-          // Nao manda cidade: o servidor usa a do proprio municipio do RM.
-          auto_popular: true,
-        });
-      }
+      const anos = [...anosGerar].map(Number).filter(Boolean).sort((a, b) => a - b);
+      await api.post<{ id: number }>("/rm", {
+        municipio_id: Number(municipioId),
+        data_referencia: new Date().toISOString().slice(0, 10),  // data de emissão
+        anos,                                                    // [] = todos = completo
+        // Nao manda cidade: o servidor usa a do proprio municipio do RM.
+        auto_popular: true,
+      });
       await buscar();
     } catch (e) {
       console.error(e); alert("Erro ao gerar RM.");
     } finally { setCriando(false); }
   };
 
-  // GERAR COMPLETO: o RM de TODOS os anos (padrão Freitas — 4 partes por estágio).
-  // Diferente do anual, é UM documento só, datado pela EMISSÃO (hoje). O POST é
-  // upsert por (município, data, escopo): gerar de novo no mesmo dia atualiza; em
-  // outro dia sai um novo snapshot datado. Fica na tela, só recarrega a lista.
-  const gerarCompleto = async () => {
-    if (!municipioId) return;
-    setCriandoCompleto(true);
-    try {
-      const hoje = new Date().toISOString().slice(0, 10);
-      await api.post<{ id: number }>("/rm", {
-        municipio_id: Number(municipioId),
-        data_referencia: hoje,
-        escopo: "completo",
-        auto_popular: true,
-      });
-      await buscar();
-    } catch (e) {
-      console.error(e); alert("Erro ao gerar RM completo.");
-    } finally { setCriandoCompleto(false); }
-  };
+  // Rótulo do botão conforme a seleção (nenhum = completo; 1 = ano; vários = junto).
+  const rotuloGerar = criando
+    ? "Gerando…"
+    : anosGerar.length === 0
+      ? "Gerar RM Completo (todos os anos)"
+      : anosGerar.length === 1
+        ? `Gerar RM ${anosGerar[0]}`
+        : `Gerar RM (${anosGerar.length} anos juntos)`;
 
   const remover = async (id: number) => {
     if (!confirm("Remover este RM?")) return;
@@ -201,9 +192,10 @@ export default function RmListPage() {
           titulo="Novo RM"
           sub={
             <>
-              O RM é <strong>anual</strong> (por ano de emissão). O conteúdo é gerado automaticamente com os
-              dados atuais do banco: propostas do ano em análise/aprovação + todas as empenhadas. Gerar de novo
-              <strong> atualiza</strong> o exercício com os dados mais recentes.
+              É <strong>por seleção de anos</strong>: escolha os anos e clique em Gerar. <strong>Nenhum ano</strong> marcado
+              gera o <strong>completo</strong> (todos os anos); <strong>um ano</strong> gera só ele; <strong>vários anos</strong> geram
+              um único relatório com eles juntos. O conteúdo é gerado automaticamente com os dados atuais do banco
+              (padrão Freitas). Gerar de novo <strong>atualiza</strong> o relatório daquele escopo.
             </>
           }
         />
@@ -213,49 +205,31 @@ export default function RmListPage() {
               className="mb-1 block text-[11px]"
               style={{ color: "var(--bi-muted)" }}
             >
-              Ano(s) de referência
+              Anos do relatório
             </label>
-            {/* Multiseleção: gera/atualiza vários exercícios de uma vez. */}
+            {/* VAZIO = Todos os anos (o completo). Selecionar anos recorta o escopo
+                de UM único relatório — não gera um por ano. */}
             <MultiSelect
-              opcoes={anosOpcoes}
+              opcoes={opcoesGerar}
               valor={anosGerar}
               onChange={setAnosGerar}
-              placeholder="Selecione o(s) ano(s)"
-              rotuloTodos="Todos os anos"
-              ariaLabel="Anos para gerar"
-              className="w-52"
+              atalhos={atalhosAnos()}
+              formatarResumo={resumoAnos}
+              placeholder="Todos os anos (completo)"
+              rotuloTodos="Todos os anos (completo)"
+              ariaLabel="Anos do relatório"
+              className="w-60"
             />
           </div>
-          <Button onClick={gerar} disabled={criando || criandoCompleto || anosGerar.length === 0}>
+          <Button onClick={gerar} disabled={criando}>
             {criando ? <Loader2 className="size-4 animate-spin mr-1" /> : <Plus className="size-4 mr-1" />}
-            {criando
-              ? "Gerando…"
-              : anosGerar.length <= 1
-                ? `Gerar RM ${anosGerar[0] || ""}`
-                : `Gerar ${anosGerar.length} RMs`}
-          </Button>
-          {/* RM COMPLETO (todos os anos) — documento único, padrão Freitas: 4 partes
-              por estágio. Não usa o seletor de anos (é sempre tudo). */}
-          <Button
-            variant="outline"
-            onClick={gerarCompleto}
-            disabled={criando || criandoCompleto}
-            title="Gera o RM completo (todos os anos), classificado por estágio — padrão Freitas"
-          >
-            {criandoCompleto ? <Loader2 className="size-4 animate-spin mr-1" /> : <FileText className="size-4 mr-1" />}
-            {criandoCompleto ? "Gerando…" : "Gerar Completo (todos os anos)"}
+            {rotuloGerar}
           </Button>
         </div>
       </Bloco>
 
-      {/* Filtro de EXERCÍCIO. Mesmo dropdown de anos das demais telas (com os
-          atalhos de mandato), e olhando o MESMO campo que rotula o cartão.
-
-          NÃO há agrupamento por ano aqui, e é decisão e não esquecimento: o
-          banco tem UNIQUE (municipio_id, data_referencia) e a criação sempre
-          grava 01/01 do ano, então existe NO MÁXIMO UM RM por exercício neste
-          município. Um cartão por ano seria um cartão por item — moldura sem
-          agrupar nada. */}
+      {/* Filtro por ano do ESCOPO: mostra os RMs cujo escopo inclui o ano
+          escolhido; o COMPLETO aparece sempre (cobre qualquer ano). */}
       <div className="flex flex-wrap items-center gap-3">
         <MultiSelect
           opcoes={anosDisponiveis}
@@ -299,12 +273,12 @@ export default function RmListPage() {
             titulo="RMs cadastrados"
             sub={
               anosSel.length
-                ? `${visiveis.length} de ${items.length} RM(s) — filtrado por exercício`
+                ? `${visiveis.length} de ${items.length} RM(s) — filtrado por ano`
                 : `${items.length} RM(s)`
             }
           />
           {visiveis.length === 0 ? (
-            <Vazio>Nenhum RM no(s) exercício(s) selecionado(s).</Vazio>
+            <Vazio>Nenhum RM no(s) ano(s) selecionado(s).</Vazio>
           ) : (
           <>
           {/* Conta o que está NA TELA (`visiveis`) e não a lista inteira: com o
@@ -317,8 +291,8 @@ export default function RmListPage() {
           />
           <Lista>
           {visiveis.map((rm) => {
-            const exercicio = anoDo(rm);
-            const ehCompleto = rm.escopo === "completo";
+            const completo = ehCompleto(rm);
+            const escopoTxt = escopoLabel(rm);
             return (
               <ItemLinha
                 key={rm.id}
@@ -327,19 +301,20 @@ export default function RmListPage() {
                    nem clique no corpo — nao existe tela de edicao a abrir. */
                 titulo={
                   rm.titulo ||
-                  (ehCompleto
+                  (completo
                     ? "RM Completo — todos os anos"
-                    : exercicio
-                      ? `RM ${exercicio}`
-                      : "RM sem exercício informado")
+                    : (rm.anos && rm.anos.length === 1)
+                      ? `RM ${escopoTxt}`
+                      : `RM — ${escopoTxt}`)
                 }
                 meta={
                   <>
                     <Selo tom={rmTom(rm.status)} title={`Status: ${rm.status}`}>{rm.status}</Selo>
-                    {/* O escopo do RM: "Completo" (todos os anos) x anual. Sem selo no
-                        anual — é o caso comum, e mais um selo em toda linha viraria ruído. */}
-                    {ehCompleto && (
+                    {/* Escopo do RM: "Completo" (todos os anos) ou os anos escolhidos. */}
+                    {completo ? (
                       <Selo tom="ok" title="RM de todos os anos (padrão Freitas)">Completo</Selo>
+                    ) : (
+                      <Selo tom="neutro" title={`Anos do relatório: ${escopoTxt}`}>{escopoTxt}</Selo>
                     )}
                     {rm.municipio_nome && <span>{rm.municipio_nome}</span>}
                     <span className="font-mono">· #{rm.id}</span>
@@ -391,8 +366,7 @@ export default function RmListPage() {
               >
                 <Campos
                   campos={[
-                    { rotulo: ehCompleto ? "Abrangência" : "Exercício",
-                      valor: ehCompleto ? "Todos os anos" : (exercicio || "—") },
+                    { rotulo: "Abrangência", valor: completo ? "Todos os anos" : escopoTxt },
                     { rotulo: "Cidade de emissão", valor: rm.cidade_emissao || "—" },
                     {
                       rotulo: "Atualizado em",
