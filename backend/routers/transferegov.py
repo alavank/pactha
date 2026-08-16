@@ -450,7 +450,7 @@ async def voluntarias_detalhe(
                valor_global, valor_repasse, valor_contrapartida,
                situacao_contratacao_detalhe, processo_execucao_qtd,
                historico_comunicacoes, documentos_quadro_resumo, historico_atualizado_em,
-               ops_obs, obras
+               ops_obs, obras, processo_execucao
         FROM transferegov_propostas
         WHERE municipio_id = :mun AND numero_proposta = :num
     """), {"mun": municipio_id, "num": numero_proposta})
@@ -478,6 +478,8 @@ async def voluntarias_detalhe(
         "historico_atualizado_em": row[27].isoformat() if row[27] else None,
         "ops_obs": row[28] or None,
         "obras": row[29] or None,
+        # lista de licitacoes COM situacao (Concluído / Em execução ...)
+        "processo_execucao": row[30] or [],
     }
 
 
