@@ -10,7 +10,7 @@ import { MultiSelect } from "@/components/ui/multi-select";
 import { atalhosAnos, resumoAnos } from "@/lib/periodo";
 import { Bloco, BlocoHead, Campos, ItemLinha, Lista, Selo, Vazio } from "@/components/ui/superficies";
 import AvisoEscopo from "@/components/AvisoEscopo";
-import { contarSemEscrita, podeEditarLinha, podeExcluirLinha } from "@/lib/escopo";
+import { contarSemEscrita, podeExcluirLinha } from "@/lib/escopo";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 
 interface RmListItem {
@@ -78,9 +78,11 @@ export default function RmListPage() {
   const [loading, setLoading] = useState(false);
   const [criando, setCriando] = useState(false);
   const anoAtual = new Date().getFullYear();
-  const [novoAno, setNovoAno] = useState<number>(anoAtual);
   const [menuId, setMenuId] = useState<number | null>(null);
-  const anosOpcoes = [anoAtual + 1, anoAtual, anoAtual - 1, anoAtual - 2];
+  // Anos oferecidos para GERAR (multiseleção). O RM é auto-populado do banco,
+  // então "gerar" pode fazer vários exercícios de uma vez.
+  const anosOpcoes = [anoAtual + 1, anoAtual, anoAtual - 1, anoAtual - 2].map(String);
+  const [anosGerar, setAnosGerar] = useState<string[]>([String(anoAtual)]);
   const [anosSel, setAnosSel] = useState<string[]>([]);
 
   /** Os anos que EXISTEM na lista, para o dropdown não oferecer ano vazio. */
@@ -109,22 +111,26 @@ export default function RmListPage() {
 
   useEffect(() => { if (municipioId) buscar(); }, [municipioId, buscar]);
 
-  const criar = async () => {
-    if (!municipioId) return;
+  // GERAR: cria OU atualiza (o POST /rm é upsert com auto_popular — repopula o
+  // conteúdo do banco). Faz um exercício por ano selecionado e FICA na tela,
+  // apenas recarregando a lista — não navega para uma tela de edição (o RM é
+  // gerado, não editado à mão).
+  const gerar = async () => {
+    if (!municipioId || anosGerar.length === 0) return;
     setCriando(true);
     try {
-      const r = await api.post<{ id: number }>("/rm", {
-        municipio_id: Number(municipioId),
-        // RM é ANUAL: a janela usa o ANO. Guardamos 01/01 do ano como referência.
-        data_referencia: `${novoAno}-01-01`,
-        // Nao manda cidade: o servidor usa a do proprio municipio do RM.
-        // Mandar daqui era o que sobrescrevia a cidade certa pela da
-        // consultoria que originou o modulo.
-        auto_popular: true,
-      });
-      router.push(`/dashboard/rm/${r.data.id}?municipio_id=${municipioId}`);
+      const anos = [...anosGerar].sort();
+      for (const ano of anos) {
+        await api.post<{ id: number }>("/rm", {
+          municipio_id: Number(municipioId),
+          data_referencia: `${ano}-01-01`,
+          // Nao manda cidade: o servidor usa a do proprio municipio do RM.
+          auto_popular: true,
+        });
+      }
+      await buscar();
     } catch (e) {
-      console.error(e); alert("Erro ao criar RM.");
+      console.error(e); alert("Erro ao gerar RM.");
     } finally { setCriando(false); }
   };
 
@@ -162,7 +168,7 @@ export default function RmListPage() {
       <div>
         <h1 className="text-2xl font-bold text-base-content">Relatório de Monitoramento (RM)</h1>
         <p className="mt-0.5 text-sm" style={{ color: "var(--bi-muted)" }}>
-          Gestão dos RMs do município — padrão Freitas (criar, editar, exportar PDF).
+          Gestão dos RMs do município — padrão Freitas (gerar e exportar PDF).
         </p>
       </div>
 
@@ -174,37 +180,38 @@ export default function RmListPage() {
           titulo="Novo RM"
           sub={
             <>
-              O RM é <strong>anual</strong> (por ano de emissão). O conteúdo é preenchido automaticamente com os
-              dados atuais do banco: propostas do ano em análise/aprovação + todas as empenhadas. Você edita
-              livremente depois.
+              O RM é <strong>anual</strong> (por ano de emissão). O conteúdo é gerado automaticamente com os
+              dados atuais do banco: propostas do ano em análise/aprovação + todas as empenhadas. Gerar de novo
+              <strong> atualiza</strong> o exercício com os dados mais recentes.
             </>
           }
         />
         <div className="flex flex-wrap items-end gap-3">
           <div>
-            {/* 11px em --bi-muted, como o rotulo de controle das demais telas.
-                Estava em 9px MAIUSCULO, que e o desenho exclusivo do rotulo de
-                <Campos> — um controle vestido de celula de dado. */}
             <label
-              htmlFor="rm-novo-ano"
               className="mb-1 block text-[11px]"
               style={{ color: "var(--bi-muted)" }}
             >
-              Ano de referência
+              Ano(s) de referência
             </label>
-            <select
-              id="rm-novo-ano"
-              className="bi-num h-9 rounded-md border px-2 text-[13px]"
-              style={{ borderColor: "var(--bi-line)", background: "var(--bi-surface)", color: "var(--bi-text)" }}
-              value={novoAno}
-              onChange={(e) => setNovoAno(Number(e.target.value))}
-            >
-              {anosOpcoes.map((a) => <option key={a} value={a}>{a}</option>)}
-            </select>
+            {/* Multiseleção: gera/atualiza vários exercícios de uma vez. */}
+            <MultiSelect
+              opcoes={anosOpcoes}
+              valor={anosGerar}
+              onChange={setAnosGerar}
+              placeholder="Selecione o(s) ano(s)"
+              rotuloTodos="Todos os anos"
+              ariaLabel="Anos para gerar"
+              className="w-52"
+            />
           </div>
-          <Button onClick={criar} disabled={criando}>
+          <Button onClick={gerar} disabled={criando || anosGerar.length === 0}>
             {criando ? <Loader2 className="size-4 animate-spin mr-1" /> : <Plus className="size-4 mr-1" />}
-            Criar RM {novoAno}
+            {criando
+              ? "Gerando…"
+              : anosGerar.length <= 1
+                ? `Gerar RM ${anosGerar[0] || ""}`
+                : `Gerar ${anosGerar.length} RMs`}
           </Button>
         </div>
       </Bloco>
@@ -302,9 +309,7 @@ export default function RmListPage() {
                         RM que não é seu encontra a tela em leitura (o próprio
                         editor desliga Salvar). */}
                     <Link href={href} className={CLS_ACAO} style={ESTILO_ACAO}
-                          title={podeEditarLinha(rm)
-                            ? "Abrir o RM para edição"
-                            : "Abrir o RM (criado por outra pessoa: só leitura)"}>
+                          title="Abrir o RM (consulta e exportação)">
                       <Eye className="size-3.5" /> Abrir
                     </Link>
                     <div className="relative">
