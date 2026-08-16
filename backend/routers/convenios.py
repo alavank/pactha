@@ -421,7 +421,54 @@ async def list_convenios(
     q = q.order_by(ConvenioEstadual.dt_publicacao.desc().nullslast())
     q = q.offset((page - 1) * per_page).limit(per_page)
     result = await db.execute(q)
-    items = [estadual_to_response(c) for c in result.scalars().all()]
+    convs = result.scalars().all()
+
+    # EMENDA vinculada (direcao reversa de #3): o convenio mostra que TEM emenda.
+    # O numero da indicacao vem de _scrape_indicacoes (raw_data->>'nr_indicacao' e a
+    # lista raw_data->'indicacoes'). Uma consulta EM LOTE casa (municipio, indicacao)
+    # -> emenda; vazio ate o scraper popular. Custo: 1 query por pagina.
+    def _inds_do(c) -> set[str]:
+        raw = c.raw_data if isinstance(c.raw_data, dict) else {}
+        out: set[str] = set()
+        s = (raw.get("nr_indicacao") or "").strip()
+        if s:
+            out.add(s)
+        lst = raw.get("indicacoes")
+        if isinstance(lst, list):
+            for it in lst:
+                if isinstance(it, dict):
+                    v = (it.get("nr_indicacao") or "").strip()
+                    if v:
+                        out.add(v)
+        return out
+
+    pares = {(c.municipio_id, ind) for c in convs for ind in _inds_do(c)}
+    emap: dict = {}
+    if pares:
+        muns = sorted({m for m, _ in pares})
+        inds = sorted({i for _, i in pares})
+        muns_lit = "{" + ",".join(str(m) for m in muns) + "}"
+        inds_lit = "{" + ",".join('"' + i.replace('"', '') + '"' for i in inds) + "}"
+        rows = (await db.execute(text("""
+            SELECT municipio_id, nr_indicacao, beneficiario, tipo_atendimento, nome_responsavel
+            FROM emendas_estaduais
+            WHERE municipio_id = ANY(CAST(:muns AS INT[]))
+              AND nr_indicacao = ANY(CAST(:inds AS TEXT[]))
+        """), {"muns": muns_lit, "inds": inds_lit})).all()
+        for r in rows:
+            obj = f"{r[2] or ''} {r[3] or ''}".strip() or (r[4] or "")
+            emap[(r[0], r[1])] = (r[1], obj)
+
+    items = []
+    for c in convs:
+        resp = estadual_to_response(c)
+        if emap:
+            for ind in _inds_do(c):
+                e = emap.get((c.municipio_id, ind))
+                if e:
+                    resp.emenda_nr, resp.emenda_objeto = e
+                    break
+        items.append(resp)
 
     # Sort: vigentes ASC primeiro, vencidos depois (|dias| ASC = mais recentes primeiro), NULL ao final
     def _sort_key(x):

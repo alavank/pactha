@@ -41,6 +41,11 @@ class ConvenioResponse(BaseModel):
     nr_plano_trabalho: Optional[str] = None
     nr_instrumento: Optional[str] = None
     nr_siafi: Optional[str] = None
+    # EMENDA vinculada (direcao reversa de #3): casada pelo nr_indicacao capturado
+    # no convenio (raw_data->>'nr_indicacao' / raw_data->'indicacoes'). Vazio ate o
+    # scraper popular a indicacao. Ver routers/convenios.list_convenios.
+    emenda_nr: Optional[str] = None
+    emenda_objeto: Optional[str] = None
 
     class Config:
         from_attributes = True
