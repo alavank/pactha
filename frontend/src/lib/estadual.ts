@@ -214,6 +214,12 @@ export const DIARIO_POR_UF: Record<string, { api: string; titulo: string; fonte:
      de um excerto — a fonte não dá excerto, e inventar um seria pior. */
   TO: { api: "/dou-to", titulo: "Diário Oficial TO",
         fonte: "Diário Oficial do Estado do Tocantins (diariooficial.to.gov.br)" },
+  /* O DOE-RS NÃO é SIGPub (por isso tem `services/diario_rs.py` próprio), mas é
+     o mais simples dos quatro: API REST JSON pública da PROCERGS, com busca por
+     texto e período. A matéria não tem página pública com URL estável — o que
+     existe é o download em PDF. */
+  RS: { api: "/dou-rs", titulo: "Diário Oficial RS",
+        fonte: "Diário Oficial do Estado do RS (diariooficial.rs.gov.br · PROCERGS)" },
 };
 
 export function diarioDaUf(uf?: string | null) {
