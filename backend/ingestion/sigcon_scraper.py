@@ -296,7 +296,7 @@ async def _scrape_indicacoes(page) -> dict | None:
     SIGCON_INDICACOES=1 e cortado pelo orcamento (_sig_estourou)."""
     try:
         clicked = await page.evaluate(r"""() => {
-            const h=[...document.querySelectorAll('[id^="accPnlPropostaPlanoTrabalho:tab"][id$="_head"]')]
+            const h=[...document.querySelectorAll('.ui-accordion-header, [id*="accPnl"][id*="_head"]')]
                     .find(e=>/repasse de recursos/i.test(e.innerText||''));
             if(!h) return false;
             if(h.getAttribute('aria-expanded')!=='true') (h.querySelector('a')||h).click();
@@ -375,27 +375,41 @@ async def _scrape_alteracoes(page) -> dict | None:
     SEMPRE try/except -> None (nao propaga; o loop de detalhe aborta em 6 falhas).
     Ligado por env SIGCON_INDICACOES=1, cortado pelo orcamento (_sig_estourou)."""
     import re as _re
+    _dbg = (os.getenv("SIGCON_DEBUG_EXTRAS", "0") or "0").strip() == "1"
     try:
-        clicked = await page.evaluate(r"""() => {
-            const h=[...document.querySelectorAll('[id^="accPnlPropostaPlanoTrabalho:tab"][id$="_head"]')]
-                    .find(e=>/altera[cç][aã]o|altera..es do conv/i.test(e.innerText||''));
-            if(!h) return false;
-            if(h.getAttribute('aria-expanded')!=='true') (h.querySelector('a')||h).click();
-            return true;
+        diag = await page.evaluate(r"""() => {
+            const heads=[...document.querySelectorAll('.ui-accordion-header, [id*="accPnl"][id*="_head"]')];
+            const info=heads.map(h=>({t:(h.innerText||'').replace(/\n.*/,'').slice(0,40), ax:h.getAttribute('aria-expanded')}));
+            const h=heads.find(e=>/altera[cç][aã]o|altera..es do conv/i.test(e.innerText||''));
+            let did=false, wasExp=null;
+            if(h){ wasExp=h.getAttribute('aria-expanded'); if(wasExp!=='true'){(h.querySelector('a')||h).click(); did=true;} }
+            return {n:heads.length, headers:info, achou:!!h, wasExp, did};
         }""")
-        if not clicked:
+        if _dbg:
+            logger.info(f"  [DIAG-ALT] headers={diag.get('n')} achou_secao={diag.get('achou')} "
+                        f"wasExpanded={diag.get('wasExp')} clicou={diag.get('did')}")
+            if not diag.get("achou"):
+                logger.info(f"  [DIAG-ALT] secoes vistas: {[h['t'] for h in (diag.get('headers') or [])]}")
+        if not diag.get("achou"):
             return None
-        await page.wait_for_timeout(2500)
+        await page.wait_for_timeout(3500)
         data = await page.evaluate(r"""() => {
+            const all=[...document.querySelectorAll('tbody[id$="_data"]')].map(t=>t.id);
             let tb=null;
             for(const t of document.querySelectorAll('tbody[id$="_data"]')){if(t.id.includes('dtTblListaAlteracaoConvenio_data')){tb=t;break;}}
-            if(!tb) return null;
+            if(!tb) return {tb:false, all};
             const tbl=tb.closest('table');
             const cab=tbl?[...tbl.querySelectorAll('thead th')].map(t=>(t.innerText||'').trim()):[];
             const rows=[...tb.querySelectorAll('tr')].map(tr=>[...tr.querySelectorAll('td')].map(td=>(td.innerText||'').trim())).filter(r=>r.some(c=>c));
-            return {cab, rows};
+            return {tb:true, cab, rows};
         }""")
-        if not data or not data.get("rows"):
+        if _dbg:
+            if not data.get("tb"):
+                logger.info(f"  [DIAG-ALT] tbody dtTblListaAlteracaoConvenio_data NAO achado. "
+                            f"tbodies presentes: {[i for i in (data.get('all') or []) if 'ltera' in i or 'Altera' in i] or (data.get('all') or [])[:8]}")
+            else:
+                logger.info(f"  [DIAG-ALT] tbody achado: {len(data.get('rows') or [])} linhas | cab={data.get('cab')}")
+        if not data or not data.get("tb") or not data.get("rows"):
             return None
         rows = [r for r in data["rows"] if not (len(r) == 1 and "nenhum" in (r[0] or "").lower())]
         if not rows:
