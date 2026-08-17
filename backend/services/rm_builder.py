@@ -316,6 +316,50 @@ def _ano_de(*vals) -> int | None:
     return None
 
 
+def _situacao_estadual(situacao: str | None, raw: dict) -> str:
+    """SITUACAO exibida do instrumento ESTADUAL (SIGCON).
+
+    O campo `situacao` do SIGCON e generico ("Em vigor", "Encerrado", "Cancelado") e
+    NAO diz em que pe o convenio esta — era por isso que o relatorio saia mostrando
+    so "EM VIGOR" nos estaduais. A situacao REAL do momento esta na ULTIMA ALTERACAO
+    (ex.: "ANALISE - CHECKLIST DE TERMO ADITIVO", "CADASTRAMENTO DA ALTERACAO",
+    "VIGENTE"), capturada por _scrape_alteracoes (raw_data.ultima_alteracao_*).
+
+    Junta as duas quando ha alteracao e ela ACRESCENTA informacao; senao devolve so
+    a situacao base (degrada suave — a maioria dos convenios ainda nao foi revisitada
+    pelo rodizio do scraper)."""
+    base = (situacao or "").strip()
+    if not isinstance(raw, dict):
+        return base
+    alt = (raw.get("ultima_alteracao_situacao") or "").strip()
+    if not alt:
+        return base
+    # Nao repete quando a alteracao diz a mesma coisa (ex.: base "Encerrado" x
+    # alteracao "ENCERRADO"): o relatorio ficaria "Encerrado · ... : ENCERRADO".
+    if not base or alt.casefold() == base.casefold():
+        detalhe = alt
+    else:
+        detalhe = f"{base} · Última alteração: {alt}"
+    tipo = (raw.get("ultima_alteracao_tipo") or "").strip()
+    data = (raw.get("ultima_alteracao_data") or "").strip()
+    sufixo = " ".join(x for x in (tipo, f"em {data}" if data else "") if x).strip()
+    return f"{detalhe} ({sufixo})" if sufixo else detalhe
+
+
+def _alteracao_campos(raw: dict) -> dict:
+    """Campos da ultima alteracao do convenio estadual, para a caixa de destaque do
+    PDF (rm_pdf._alteracao_destaque). Vazio quando o scraper ainda nao capturou."""
+    if not isinstance(raw, dict) or not (raw.get("ultima_alteracao_situacao") or "").strip():
+        return {}
+    return {
+        "alteracao_situacao": (raw.get("ultima_alteracao_situacao") or "").strip(),
+        "alteracao_tipo": (raw.get("ultima_alteracao_tipo") or "").strip(),
+        "alteracao_data": (raw.get("ultima_alteracao_data") or "").strip(),
+        "alteracao_titulo": (raw.get("ultima_alteracao_titulo") or "").strip(),
+        "alteracao_nr_controle": (raw.get("ultima_alteracao_nr_controle") or "").strip(),
+    }
+
+
 def _evento_atual(historico) -> dict:
     """EVENTO ATUAL do Histórico de Comunicações (TransfereGov mandatárias):
     onde o instrumento está de fato na análise, com SITUAÇÃO e CONSIDERAÇÕES.
@@ -575,7 +619,13 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             "saldo_bancario": _money(c.saldo_bancario),
             "dt_saldo": _iso(c.dt_saldo),
             "dt_fim_vigencia": _iso(dt_fim),
-            "situacao_atual": (c.situacao or "").strip(),
+            # SITUACAO do estadual: o campo `situacao` do SIGCON e generico ("Em vigor",
+            # "Encerrado") e sozinho nao diz em que PE o convenio esta. A situacao REAL
+            # esta na ULTIMA ALTERACAO (ex.: "ANALISE - CHECKLIST DE TERMO ADITIVO"),
+            # capturada por _scrape_alteracoes em raw_data. Junta as duas — era o motivo
+            # de o relatorio mostrar so "EM VIGOR" nos estaduais.
+            "situacao_atual": _situacao_estadual(c.situacao, raw),
+            **_alteracao_campos(raw),
             "fonte": "sigcon",
             "fonte_ref": str(c.id),
         })
