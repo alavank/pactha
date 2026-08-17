@@ -132,38 +132,70 @@ async def _fetch_page(cli: httpx.AsyncClient, uf: str, page: int) -> dict | None
     return None
 
 
-def _upsert(cur, it: dict, mid: int | None):
+def plano_para_linha(it: dict, mid: int | None) -> dict | None:
+    """Traduz UM plano da API 'especiais' para as colunas de transferegov_te.
+
+    Funcao PURA e importavel de fora: o mapeamento de campos vive num lugar so,
+    usado pelo coletor (psycopg2, abaixo) e pela coleta assistida do
+    control-plane (`routers/control.py::control_te_lote`, SQLAlchemy). Se um
+    campo mudar de nome na API, muda AQUI e os dois caminhos acompanham.
+    """
     pid = it.get("planoAcaoId")
     if pid is None:
+        return None
+    emenda = it.get("codigoEmendaFormatado") or ""
+    return {
+        "plano_acao_id": int(pid),
+        "municipio_id": mid,
+        "uf": it.get("uf"),
+        "codigo": it.get("planoAcaoCodigo"),
+        "emenda": it.get("codigoEmendaFormatado"),
+        # parlamentar = parte apos o '-' do codigo da emenda (ex.: '...-DIMAS FABIANO')
+        "parlamentar": emenda.split("-", 1)[1].strip() if "-" in emenda else None,
+        "objeto": it.get("objetoDescricao") or it.get("politicasPublicas"),
+        "situacao": it.get("planoAcaoSituacao"),
+        "situacao_trabalho": it.get("planoTrabalhoSituacao"),
+        "valor_total": float(it.get("valorTotal") or 0),
+        "valor_investimento": float(it.get("valorInvestimento") or 0),
+        "valor_custeio": float(it.get("valorCusteio") or 0),
+        "beneficiario_nome": it.get("beneficiarioNome"),
+        "beneficiario_cnpj": it.get("beneficiarioCnpj"),
+        "programa_codigo": it.get("programaCodigo"),
+        "raw_data": json.dumps(it, ensure_ascii=False),
+    }
+
+
+# A clausula compartilhada dos dois caminhos de escrita (coletor e control):
+# um so texto SQL, com placeholders nomeados; quem chama escolhe o driver.
+UPSERT_SQL_NOMEADO = """INSERT INTO transferegov_te
+     (plano_acao_id, municipio_id, uf, codigo, emenda, parlamentar, objeto,
+      situacao, situacao_trabalho, valor_total, valor_investimento, valor_custeio,
+      beneficiario_nome, beneficiario_cnpj, programa_codigo, raw_data, updated_at)
+   VALUES (:plano_acao_id, :municipio_id, :uf, :codigo, :emenda, :parlamentar,
+           :objeto, :situacao, :situacao_trabalho, :valor_total,
+           :valor_investimento, :valor_custeio, :beneficiario_nome,
+           :beneficiario_cnpj, :programa_codigo, CAST(:raw_data AS jsonb), NOW())
+   ON CONFLICT (plano_acao_id) DO UPDATE SET
+     municipio_id=EXCLUDED.municipio_id, uf=EXCLUDED.uf, codigo=EXCLUDED.codigo,
+     emenda=EXCLUDED.emenda, parlamentar=EXCLUDED.parlamentar, objeto=EXCLUDED.objeto,
+     situacao=EXCLUDED.situacao, situacao_trabalho=EXCLUDED.situacao_trabalho,
+     valor_total=EXCLUDED.valor_total, valor_investimento=EXCLUDED.valor_investimento,
+     valor_custeio=EXCLUDED.valor_custeio, beneficiario_nome=EXCLUDED.beneficiario_nome,
+     beneficiario_cnpj=EXCLUDED.beneficiario_cnpj, programa_codigo=EXCLUDED.programa_codigo,
+     raw_data=EXCLUDED.raw_data, updated_at=NOW()"""
+
+
+def _upsert(cur, it: dict, mid: int | None):
+    linha = plano_para_linha(it, mid)
+    if linha is None:
         return
-    cur.execute(
-        """INSERT INTO transferegov_te
-             (plano_acao_id, municipio_id, uf, codigo, emenda, parlamentar, objeto,
-              situacao, situacao_trabalho, valor_total, valor_investimento, valor_custeio,
-              beneficiario_nome, beneficiario_cnpj, programa_codigo, raw_data, updated_at)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, NOW())
-           ON CONFLICT (plano_acao_id) DO UPDATE SET
-             municipio_id=EXCLUDED.municipio_id, uf=EXCLUDED.uf, codigo=EXCLUDED.codigo,
-             emenda=EXCLUDED.emenda, parlamentar=EXCLUDED.parlamentar, objeto=EXCLUDED.objeto,
-             situacao=EXCLUDED.situacao, situacao_trabalho=EXCLUDED.situacao_trabalho,
-             valor_total=EXCLUDED.valor_total, valor_investimento=EXCLUDED.valor_investimento,
-             valor_custeio=EXCLUDED.valor_custeio, beneficiario_nome=EXCLUDED.beneficiario_nome,
-             beneficiario_cnpj=EXCLUDED.beneficiario_cnpj, programa_codigo=EXCLUDED.programa_codigo,
-             raw_data=EXCLUDED.raw_data, updated_at=NOW()""",
-        (
-            int(pid), mid, it.get("uf"), it.get("planoAcaoCodigo"),
-            it.get("codigoEmendaFormatado"),
-            # parlamentar = parte apos o '-' do codigo da emenda (ex.: '...-DIMAS FABIANO')
-            (it.get("codigoEmendaFormatado") or "").split("-", 1)[1].strip()
-                if "-" in (it.get("codigoEmendaFormatado") or "") else None,
-            it.get("objetoDescricao") or it.get("politicasPublicas"),
-            it.get("planoAcaoSituacao"), it.get("planoTrabalhoSituacao"),
-            float(it.get("valorTotal") or 0), float(it.get("valorInvestimento") or 0),
-            float(it.get("valorCusteio") or 0),
-            it.get("beneficiarioNome"), it.get("beneficiarioCnpj"),
-            it.get("programaCodigo"), json.dumps(it, ensure_ascii=False),
-        ),
-    )
+    # psycopg2 usa %(nome)s; o texto nomeado usa :nome. Regex de UMA passada —
+    # replace por nome corromperia prefixos (":situacao" dentro de
+    # ":situacao_trabalho").
+    import re as _re
+    sql = UPSERT_SQL_NOMEADO.replace("CAST(:raw_data AS jsonb)", "%(raw_data)s")
+    sql = _re.sub(r":(\w+)", r"%(\1)s", sql)
+    cur.execute(sql, linha)
 
 
 async def run_uf(uf: str, budget_s: float | None = None) -> dict:
