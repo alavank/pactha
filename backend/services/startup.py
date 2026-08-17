@@ -214,6 +214,10 @@ MIGRATION_FILES = [
     # "quando", nunca "QUAIS meses faltam". A regra mora em
     # services/monitoramento_rs.py, com teste proprio.
     "add_monitoramento_convenios.sql",
+    # Consulta Popular / COREDEs (RS) — o mecanismo de participacao que nao
+    # existe em MG. Uma linha por DEMANDA do COREDE, com o desempenho do
+    # municipio ao lado (votos e se classificou).
+    "add_consulta_popular_rs.sql",
     # ⭐ BOOTSTRAP LIMPO: as 12 colunas de convenios_estadual que só existiam
     # por herança do Neon (`fonte` + os campos do RM). O setup_db não as cria e
     # o create_all não acrescenta coluna a tabela existente — então em banco
