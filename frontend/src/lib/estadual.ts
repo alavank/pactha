@@ -194,6 +194,18 @@ export function programasDaUf(uf?: string | null) {
   return PROGRAMAS_POR_UF[(uf || "").trim().toUpperCase()] || null;
 }
 
+/** UFs para as quais mantemos as telas de CONTEÚDO ESTADUAL — fundo de
+ *  reconstrução, emendas estaduais e obrigações do tribunal de contas.
+ *
+ *  ⚠️ Como `PROGRAMAS_POR_UF`, isto NÃO significa "coletamos": significa que há
+ *  conteúdo curado. As três telas mostram o aviso de que não são atualizadas
+ *  automaticamente — ver `components/rs/AvisoCurado.tsx`. */
+export const CONTEUDO_ESTADUAL_POR_UF = new Set<string>(["RS"]);
+
+export function temConteudoEstadual(uf?: string | null): boolean {
+  return CONTEUDO_ESTADUAL_POR_UF.has((uf || "").trim().toUpperCase());
+}
+
 export function fonteConveniosEstaduais(uf?: string | null): string | null {
   return FONTE_CONVENIOS_ESTADUAIS[(uf || "").trim().toUpperCase()] || null;
 }
