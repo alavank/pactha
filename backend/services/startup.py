@@ -208,6 +208,12 @@ MIGRATION_FILES = [
     # (vazia no dia 1). Mais COREDE, codigo no TCE, flag do FUNRIGS e a data de
     # calamidade (o antidoto do falso alarme do Decreto 56.939/2023).
     "add_municipio_identificadores.sql",
+    # Registros do Sistema de Monitoramento de Convenios (Decreto RS
+    # 56.939/2023). Tabela e nao coluna: a obrigacao e por convenio POR MES, e o
+    # alarme e "2 meses consecutivos sem registro" — um timestamp responde
+    # "quando", nunca "QUAIS meses faltam". A regra mora em
+    # services/monitoramento_rs.py, com teste proprio.
+    "add_monitoramento_convenios.sql",
     # ⭐ BOOTSTRAP LIMPO: as 12 colunas de convenios_estadual que só existiam
     # por herança do Neon (`fonte` + os campos do RM). O setup_db não as cria e
     # o create_all não acrescenta coluna a tabela existente — então em banco

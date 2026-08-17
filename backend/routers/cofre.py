@@ -65,7 +65,15 @@ def _require_role(user: User, allowed: set[str]):
 
 # Fontes com rodizio por municipio que dependem de credencial do cofre. Hoje so
 # o SIGCON: `transferegov` e `cagec` nao usam credencial por cidade.
-_FONTES_DA_CREDENCIAL = {"sigcon": ("sigcon", "sigcon_emendas")}
+_FONTES_DA_CREDENCIAL = {
+    "sigcon": ("sigcon", "sigcon_emendas"),
+    # Portal de Convenios e Parcerias RS (perfil PCPRS) -> monitoramento mensal.
+    # ⚠️ Sem esta linha, cadastrar a senha certa NAO adianta por dias: o rodizio
+    # ordena por `ultima_coleta_em + LEAST(tentativas,5) dias`, e a credencial
+    # recem-digitada continuaria no fim da fila (incidente Piracema, 10/08/2026,
+    # documentado logo abaixo em `_destravar_rodizio`).
+    "pcprs": ("fpe_rs",),
+}
 
 
 def _portal_da_credencial(sistema: str | None, automation_key: str | None) -> str | None:
@@ -74,8 +82,11 @@ def _portal_da_credencial(sistema: str | None, automation_key: str | None) -> st
     ak = (automation_key or "").strip().lower()
     if ak in _FONTES_DA_CREDENCIAL:
         return ak
-    if (sistema or "").strip().upper().startswith("SIGCON"):
+    sis = (sistema or "").strip().upper()
+    if sis.startswith("SIGCON"):
         return "sigcon"
+    if sis.startswith("PCPRS"):
+        return "pcprs"
     return None
 
 

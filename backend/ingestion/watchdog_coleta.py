@@ -84,6 +84,10 @@ FRESCOR_HORAS_POR_UF = {
     "RS": {
         "che_rs": 30,          # 3x/dia; 30h = cinco janelas perdidas
         "convenios_rs": 30,    # 1x/dia (a CAGE republica o dump esporadicamente)
+        # ⚠️ 1x/dia e SO de segunda a sabado (o FPE fecha aos domingos e fora do
+        # horario comercial). 54h cobre o fim de semana sem alarme falso: a
+        # rodada de sabado 9h35 so tem a proxima na segunda 9h35, ~48h depois.
+        "fpe_rs": 54,
     },
 }
 
