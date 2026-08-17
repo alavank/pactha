@@ -224,14 +224,24 @@ async def run_uf(uf: str, budget_s: float | None = None) -> dict:
             await asyncio.sleep(_PAGE_DELAY)
     cur.close(); cn.close()
     logger.info(f"TE {uf}: FIM — gravados={gravados} casados={casados} completo={completo} em {time.time()-t0:.0f}s")
-    # ⭐ O QUE CONTA AQUI E `casados`, NAO `gravados`. Foi a ausencia dessa linha
-    # que deixou o bug da UF invisivel por meses: a fonte nao aparecia no Status
-    # dos Dados nem no watchdog, entao ninguem viu que o Trust vinha coletando
-    # Minas. `gravados` alto com `casados=0` e o retrato exato do erro — e agora
-    # ele fica registrado como 'error', que e o que ele e.
-    if gravados == 0:
+    # ⭐ O QUE CONTA AQUI E `casados`, NAO `gravados` — mas SO no contexto certo.
+    # A primeira versao destas regras gritava 'error' em dois casos normais, e
+    # alarme que grita no dia a dia e alarme que se aprende a ignorar:
+    #
+    #   1. VARREDURA JA COMPLETA. A retomada comeca em start_page = have//200;
+    #      com a tabela cheia, a pagina final volta vazia -> gravados=0 com
+    #      completo=True. Isso e "nada novo hoje", nao falha — e acontecia TODO
+    #      DIA no montesiao (varredura MG completa) apos o cron diario.
+    #   2. RETOMADA SEM PLANO DA CARTEIRA. Num tenant de UM municipio, a maioria
+    #      das ~44 paginas de MG nao contem plano dele: casados=0 numa pagina
+    #      retomada e o esperado. O retrato do bug da UF ('gravados' alto com
+    #      'casados' zero) so e diagnostico quando a varredura foi INTEIRA
+    #      (start_page=1 e completo) — ai sim zero casamentos = UF errada.
+    if gravados == 0 and completo:
+        _log_ingestao("success", 0, f"{uf}: varredura completa — sem novidade nesta rodada")
+    elif gravados == 0:
         _log_ingestao("error", 0, f"{uf}: nenhuma pagina coletada (rate-limit ou fonte fora)")
-    elif casados == 0:
+    elif casados == 0 and start_page == 1 and completo:
         _log_ingestao("error", 0, f"{uf}: {gravados} planos baixados e NENHUM casou com municipio da carteira")
     else:
         _log_ingestao("success" if completo else "partial", casados,
