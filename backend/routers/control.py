@@ -344,7 +344,23 @@ async def control_ingestion(
             "to_char(finished_at, 'YYYY-MM-DD\"T\"HH24:MI:SS') AS finished_at "
             "FROM ingestion_log ORDER BY id DESC LIMIT 80"
         ))).mappings().all()
-        return {"log": [dict(r) for r in rows]}
+        # ⭐ A ULTIMA RODADA DE CADA FONTE, sem depender da janela. As 80 linhas
+        # acima sao um HISTORICO, e historico tem janela: numa hora de coleta
+        # intensa (o sigcon reloga cauc/acordofes/simec a cada rodada) as fontes
+        # diarias somem das 80 linhas e quem le conclui "fonte parada" — foi
+        # exatamente o falso-positivo de uma auditoria em 17/08 (42 municipios
+        # acusados por uma fonte que tinha rodado 1h antes). DISTINCT ON e a
+        # resposta certa da pergunta "quando cada fonte rodou pela ultima vez".
+        ultimos = (await db.execute(text(
+            "SELECT DISTINCT ON (source) source, status, "
+            "records_inserted + coalesce(records_updated, 0) AS records_inserted, "
+            "to_char(finished_at, 'YYYY-MM-DD\"T\"HH24:MI:SS') AS finished_at "
+            "FROM ingestion_log ORDER BY source, id DESC"
+        ))).mappings().all()
+        return {"log": [dict(r) for r in rows],
+                "ultimo_por_fonte": {r["source"]: {
+                    "status": r["status"], "records": r["records_inserted"],
+                    "finished_at": r["finished_at"]} for r in ultimos}}
     except Exception:
         await db.rollback()
         return {"log": [], "error": "tabela ingestion_log indisponível"}
