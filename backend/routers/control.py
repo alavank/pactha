@@ -344,7 +344,23 @@ async def control_ingestion(
             "to_char(finished_at, 'YYYY-MM-DD\"T\"HH24:MI:SS') AS finished_at "
             "FROM ingestion_log ORDER BY id DESC LIMIT 80"
         ))).mappings().all()
-        return {"log": [dict(r) for r in rows]}
+        # ⭐ A ULTIMA RODADA DE CADA FONTE, sem depender da janela. As 80 linhas
+        # acima sao um HISTORICO, e historico tem janela: numa hora de coleta
+        # intensa (o sigcon reloga cauc/acordofes/simec a cada rodada) as fontes
+        # diarias somem das 80 linhas e quem le conclui "fonte parada" — foi
+        # exatamente o falso-positivo de uma auditoria em 17/08 (42 municipios
+        # acusados por uma fonte que tinha rodado 1h antes). DISTINCT ON e a
+        # resposta certa da pergunta "quando cada fonte rodou pela ultima vez".
+        ultimos = (await db.execute(text(
+            "SELECT DISTINCT ON (source) source, status, "
+            "records_inserted + coalesce(records_updated, 0) AS records_inserted, "
+            "to_char(finished_at, 'YYYY-MM-DD\"T\"HH24:MI:SS') AS finished_at "
+            "FROM ingestion_log ORDER BY source, id DESC"
+        ))).mappings().all()
+        return {"log": [dict(r) for r in rows],
+                "ultimo_por_fonte": {r["source"]: {
+                    "status": r["status"], "records": r["records_inserted"],
+                    "finished_at": r["finished_at"]} for r in ultimos}}
     except Exception:
         await db.rollback()
         return {"log": [], "error": "tabela ingestion_log indisponível"}
@@ -367,12 +383,10 @@ async def control_ingestion(
 # existe onde a migration do RS rodou.
 _COBERTURA_TABELAS = [
     # (tabela, rotulo legivel, area)
-    ("convenios_estadual",   "Convênios estaduais",          "Estadual"),
     ("emendas_estaduais",    "Emendas estaduais",            "Estadual"),
     ("repasses_estaduais",   "Repasses estaduais",           "Estadual"),
     ("cofinanciamento_saude", "Cofinanciamento saúde",       "Estadual"),
     ("consulta_popular_rs",  "Consulta Popular (RS)",        "Estadual"),
-    ("cagec_situacao",       "Habilitação estadual",         "Regularidade"),
     ("cauc_situacao",        "CAUC (regularidade federal)",  "Regularidade"),
     ("contas_irregulares",   "Contas irregulares",           "Regularidade"),
     ("transferegov_propostas", "TransfereGov (voluntárias)", "Federal"),
@@ -381,6 +395,28 @@ _COBERTURA_TABELAS = [
     ("sismob_obras",         "SISMOB (obras de saúde)",      "Saúde"),
     ("acordofes_credor",     "Acordo FES",                   "Saúde"),
     ("simec_par_liberacoes", "SIMEC-PAR (educação)",         "Educação"),
+]
+
+# ⚠️ DUAS TABELAS SAO MULTI-FONTE, e contar o total mentiria dos dois lados.
+# `convenios_estadual` guarda SIGCON-MG, FNS, GConv-ES e CAGE-RS na mesma
+# tabela, discriminados pela coluna `fonte` (o mesmo criterio do freshness.py);
+# `cagec_situacao` guarda CAGEC-MG e CHE-RS. Um municipio goiano com 40
+# propostas FNS apareceria com "40 convenios estaduais" — e um mineiro sem
+# nenhum convenio SIGCON ficaria escondido atras das propostas FNS dele.
+# O CASE abaixo separa no SQL, uma linha por (municipio, fonte).
+_COBERTURA_POR_FONTE = [
+    ("convenios_estadual", """
+        CASE WHEN fonte ILIKE '%FNS%'   THEN 'FNS (propostas)'
+             WHEN fonte ILIKE '%GCONV%' THEN 'Convênios GConv-ES'
+             WHEN fonte = 'CAGE-RS'     THEN 'Convênios CAGE-RS'
+             ELSE 'Convênios SIGCON-MG' END""",
+     {"FNS (propostas)": "Saúde", "Convênios GConv-ES": "Estadual",
+      "Convênios CAGE-RS": "Estadual", "Convênios SIGCON-MG": "Estadual"}),
+    ("cagec_situacao", """
+        CASE WHEN fonte = 'CHE-RS' THEN 'CHE-RS (habilitação)'
+             ELSE 'CAGEC-MG (habilitação)' END""",
+     {"CHE-RS (habilitação)": "Regularidade",
+      "CAGEC-MG (habilitação)": "Regularidade"}),
 ]
 
 
@@ -420,6 +456,24 @@ async def control_cobertura(
             alvo = saida.get(r["municipio_id"])
             if alvo is not None:
                 alvo["fontes"][rotulo]["n"] = r["n"]
+
+    # As tabelas multi-fonte: uma consulta por tabela, o CASE separa os rotulos.
+    for tabela, case_sql, areas in _COBERTURA_POR_FONTE:
+        try:
+            rows = (await db.execute(text(
+                f"SELECT municipio_id, {case_sql} AS rotulo, COUNT(*) AS n "
+                f"FROM {tabela} WHERE municipio_id IS NOT NULL "
+                f"GROUP BY 1, 2"))).mappings().all()
+        except Exception:
+            await db.rollback()
+            continue
+        for m in saida.values():
+            for rot, area in areas.items():
+                m["fontes"][rot] = {"area": area, "n": 0}
+        for r in rows:
+            alvo = saida.get(r["municipio_id"])
+            if alvo is not None and r["rotulo"] in alvo["fontes"]:
+                alvo["fontes"][r["rotulo"]]["n"] = r["n"]
 
     try:
         coletas = (await db.execute(text(
