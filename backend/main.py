@@ -13,7 +13,7 @@ from routers import (
     users, simec, rm, ai, gestao, parlamentares, status_changes,
     documentos, cauc, cagec, acordofes, control, freshness, painel, bi,
     sismob, auditoria, permissoes, modelos_permissao, repasses, contas_irregulares,
-    cofinanciamento, parametros,
+    cofinanciamento, parametros, monitoramento,
     uso,
 )
 from config import get_settings
@@ -165,6 +165,8 @@ app.include_router(dou_rs.router)
 app.include_router(repasses.router)
 app.include_router(contas_irregulares.router)
 app.include_router(cofinanciamento.router)
+# Monitoramento mensal de convenios (Decreto RS 56.939/2023) — gate `convenios.ver`
+app.include_router(monitoramento.router)
 app.include_router(cofre.router)
 app.include_router(session_capture.router)
 app.include_router(service_tokens.router)
