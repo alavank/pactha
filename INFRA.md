@@ -231,7 +231,18 @@ O desenho atual (redesenho de 09/08, "tuning da madrugada"):
   foi a causa dos 25 falso-negativos de 08/08). Editar via JSON literal na API.
 - Fontes de **dump** coletam na cadência da fonte (a tabela de cadências oficiais está no
   relatório de diagnóstico de 08/08): dumps federais/MG diários de manhã = 1×/dia;
-  GConv-ES 2×/dia; GO (transfvol/cofin) 1×/dia; `siconv-federal` mensal (dia 2).
+  GConv-ES 2×/dia; GO (transfvol/cofin) 1×/dia; `siconv-federal` mensal (dia 2) —
+  desde 17/08 existe **nos 4 workers** (trust e montesiao não a tinham e ficaram
+  meses com `siconv_federal` = 0, a aba CNPJ do TransfereGov abria vazia).
+- **`transferegov-te` é escalonado ENTRE TENANTS de propósito** (17/08): freitas 03:40,
+  trust 04:00, montesiao 04:20, santamaria 04:40 UTC. Os quatro saem do MESMO IP e a
+  API `especiais` do TransfereGov tem quota por IP (~10 páginas/janela, renova em
+  ~15 min): com os quatro no mesmo minuto — como era — quem roda por último só coleta
+  403. Medido ao vivo durante a auditoria de 17/08 (o montesiao errava TODA rodada
+  que caía logo após a janela de outro tenant). Se criar o 5º tenant, continue a
+  escada (+20 min). No mesmo dia o `timeout` da task subiu de 300 para 1720s nos 4
+  workers: estava ABAIXO do orçamento interno (1600s), o Coolify matava primeiro e
+  descartava o stdout — a task nunca tinha logado nada em nenhum tenant.
 
 > 🕐 **TUDO EM UTC. Brasília é UTC−3.** Host, `instance_timezone` do Coolify e
 > PHP do container em `Etc/UTC`. As faixas do CAGEC (10/15/19/23 UTC) são
