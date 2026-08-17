@@ -6,6 +6,10 @@ Documento de inteligência de produto e go-to-market. Mapeia os equivalentes ga�
 
 Emitido em **16 de agosto de 2026**  ·  Fontes oficiais consultadas e linkadas ao longo do texto.
 
+> ⭐ **Atualizado em 17/08/2026 com medição real.** As integrações foram testadas contra os
+> servidores do Estado, a partir do worker de produção, ao abrir o tenant de Santa Maria/RS.
+> **Leia a §12.5 antes do roadmap** — cinco premissas mudaram, e duas delas viram bloqueio.
+
 # **Índice**
 
 1\. Sumário executivo
@@ -31,6 +35,8 @@ Emitido em **16 de agosto de 2026**  ·  Fontes oficiais consultadas e linkadas 
 11\. Legislação estadual-chave
 
 12\. Checklist documental da prefeitura gaúcha
+
+12.5\. ⭐ VERIFICAÇÃO DE CAMPO — o que mudou depois de bater na fonte
 
 13\. Roadmap de produto do PACTHA para o RS
 
@@ -323,14 +329,57 @@ BADESUL, BRDE e Banrisul atuam como repassadores e financiadores de projetos mun
 | TCE-RS | Remessas SIAPC/PAD em dia (mensal) · remessas LicitaCon em dia (semanal/mensal) · cadastro "Meu TCE" ativo |
 | Convênios em execução | Monitoramento mensal atualizado até o dia 15 (Decreto 56.939/2023) · prestações de contas sem pendência na CAGE |
 
+# **12.5. VERIFICAÇÃO DE CAMPO — o que mudou depois de bater na fonte**
+
+> Este documento foi escrito a partir de fontes oficiais **lidas**. Em 16–17/08/2026 as
+> integrações foram **medidas** contra os servidores reais, do próprio worker de produção, ao
+> abrir o tenant de Santa Maria/RS. Cinco premissas do roadmap mudaram — três para melhor,
+> duas para pior. Esta seção vale mais que o roadmap original onde as duas divergirem.
+
+## **Ficou MAIS FÁCIL do que o previsto**
+
+| Fonte | O que o mapa dizia | O que se mediu |
+| :---- | :---- | :---- |
+| **CHE** | "Público, sem login. Dificuldade baixa" — supondo raspagem de portal | **API REST JSON pública.** `GET che.sefaz.rs.gov.br/api/Entidade/Consultar?entidadeCnpj=<14 dígitos>` devolve as exigências com validade individual. Duas requisições `httpx`, sem Playwright e sem PDF — mais barato que o CAGEC mineiro, que custa Chromium + ZK + parse de CRC. **Implementado e coletando** (`ingestion/che_rs.py`). |
+| **Convênios estaduais** | Fase 2: "sem API pública conhecida, portanto raspagem autenticada com credencial do cliente" | **Dado aberto.** A própria CAGE publica a carteira inteira no CKAN estadual (`dados.rs.gov.br`, dataset `convenios-do-estado`): 53.636 convênios com valores pactuados, **valor já pago**, vigência, situação e CNPJ. Santa Maria tem 108 da prefeitura, R$ 56,6 mi pactuados e R$ 30,6 mi pagos. **Implementado** (`ingestion/convenios_rs.py`). O portal logado continua necessário — mas só para proposta, monitoramento e prestação de contas. |
+| **Diário Oficial do RS** | Não aparece no mapa | **API REST JSON pública** da PROCERGS (`doe-backend.pro.rs.gov.br/public/materias/`), com busca por texto e período. O PACTHA já tinha a tela de Diários (MG/ES/GO/TO); o RS entrou como quinto provedor. ⚠️ **Não é SIGPub** — tem serviço próprio (`services/diario_rs.py`). **Implementado.** |
+
+## **Ficou MAIS DIFÍCIL — e um deles é bloqueio de verdade**
+
+| Fonte | O que o mapa dizia | O que se mediu |
+| :---- | :---- | :---- |
+| **CADIN/RS + CFIL/RS** | "Público (verificar captcha). Dificuldade baixa/média" | **A consulta exige reCAPTCHA.** O endpoint sem token (`Consulta/Restricao?documento=`) foi **removido do servidor** — sobrou comentado no código do portal. O atual é `POST Consulta/RestricaoComToken` com `{documento, tokenFront}`, e sem o token responde `400 Validação de Captcha não foi aprovada!`. As **certidões** (`/api/Certidao/EmitirCertidao` e `…Cfil`, POST com `{Documento}`) parecem não exigir captcha, mas **só respondem de segunda a sábado, das 7h às 22h30** — fora disso devolvem `500` com essa frase. Falta confirmar em horário útil. |
+| **TCE-RS (dados abertos)** | Fase 3: "CKAN com API e CSV. Baixa dificuldade, **alto retorno visual**" | ⛔ **O TCE-RS bloqueia o IP do nosso servidor.** `dados.tce.rs.gov.br` devolve `403 Forbidden` para qualquer requisição vinda da VPS (54.232.208.118) — testado com e sem User-Agent de browser, na API e no CSV direto — e responde `200` normalmente de um IP residencial. É bloqueio de faixa de datacenter, não anti-bot por header. **Enquanto isso não for resolvido, o coletor não roda de onde o PACTHA vive.** Saídas: pedir liberação ao TCE (LAI/contato institucional), proxy de saída, ou rodar essa coleta de outro ponto. |
+
+## **Outras observações operacionais**
+
+* **A infraestrutura web do RS tem janelas de instabilidade.** Tanto o CKAN estadual quanto o
+  portal do Diário passaram minutos devolvendo `Connection reset by peer` no handshake, e
+  voltaram sozinhos. Durante a janela, o `curl_cffi` com `impersonate` falhou junto — o que
+  **descarta anti-bot por fingerprint** — enquanto o `curl` do mesmo host respondia 200. Os
+  coletores gaúchos levam retry por causa disso; não é motivo para escalar para Playwright.
+* **O CHE não tem 404.** CNPJ fora do cadastro devolve `200` com o `index.html` do Angular —
+  igual ao que devolve quando o CNPJ vai com máscara. Confundir os dois faz o coletor ou
+  marcar toda rodada como degradada, ou afirmar em silêncio que um município habilitado não
+  tem cadastro estadual.
+* **O Fundo Municipal de Saúde de Santa Maria não tem cadastro no CHE** (confirmado também
+  pelo autocomplete do portal). Em MG, entidade sem cadastro trava o convênio da pasta; vale
+  checar se a regra gaúcha é a mesma antes de usar isso como argumento comercial.
+* **Emendas estaduais**: o Portal da Transparência publica em **Power BI "publish to web"**
+  (`reportId a3378ba6-…`), sem CSV. Raspagem pela API interna do Power BI é possível, mas
+  frágil. Continua sendo o item de pior relação esforço/retorno do estado — agravado pelo
+  fato, já registrado no §5, de que **no RS a emenda estadual não é impositiva**.
+* **Código do órgão no TCE-RS** (quando a coleta for destravada): Prefeitura de Santa Maria =
+  **56900**; a Câmara é **56901** e não é o cliente. As URLs são previsíveis a partir dele.
+
 # **13\. Roadmap de produto do PACTHA para o RS**
 
 ## **Fase 1 — Habilitação e adimplência (fundação)**
 
 | Fonte | URL | Acesso | Dificuldade |
 | :---- | :---- | :---- | :---- |
-| CHE | [che.sefaz.rs.gov.br](http://www.che.sefaz.rs.gov.br/) | Público, sem login | Baixa |
-| CADIN/RS \+ CFIL/RS | [cadin.sefaz.rs.gov.br](https://cadin.sefaz.rs.gov.br/) | Público (verificar captcha) | Baixa/Média |
+| CHE | [che.sefaz.rs.gov.br](https://che.sefaz.rs.gov.br/) | Público, sem login — **API REST JSON** (§12.5) | Baixa · ✅ **implementado** |
+| CADIN/RS \+ CFIL/RS | [cadin.sefaz.rs.gov.br](https://cadin.sefaz.rs.gov.br/) | ⚠️ consulta com **reCAPTCHA**; certidões só seg–sáb 7h–22h30 (§12.5) | **Alta** |
 | Certidão de Situação Fiscal | [atendimento.receita.rs.gov.br](https://atendimento.receita.rs.gov.br/certidao-de-situacao-fiscal) | Público | Baixa |
 | CRP (RPPS) | Gov federal | Público | Baixa |
 
@@ -338,7 +387,9 @@ Entregável: modelar a entidade "Certificado CHE" com status e validade por cert
 
 ## **Fase 2 — Ciclo de convênios estaduais**
 
-* Integrar o Portal de Convênios e Parcerias / FPE — [convenioseparcerias.rs.gov.br](https://www.convenioseparcerias.rs.gov.br/). Exige login gov.br com perfil PCPRS; sem API pública conhecida, portanto raspagem autenticada com credencial do cliente.
+* ✅ **A CARTEIRA DE CONVÊNIOS NÃO EXIGE LOGIN** — ver §12.5. Ela sai do dado aberto da própria CAGE (`dados.rs.gov.br`), já implementado em `ingestion/convenios_rs.py`.
+
+* Integrar o Portal de Convênios e Parcerias / FPE — [convenioseparcerias.rs.gov.br](https://www.convenioseparcerias.rs.gov.br/). Exige login gov.br com perfil PCPRS; sem API pública conhecida, portanto raspagem autenticada com credencial do cliente. **O que só existe lá:** proposta (Banco de Projetos), monitoramento mensal e prestação de contas.
 
 * Modelar: proposta (Banco de Projetos), convênio (nº FPE), monitoramento mensal e prestação de contas.
 
@@ -346,7 +397,7 @@ Entregável: modelar a entidade "Certificado CHE" com status e validade por cert
 
 ## **Fase 3 — TCE-RS e transparência**
 
-* Consumir [dados.tce.rs.gov.br](https://dados.tce.rs.gov.br/dataset) (CKAN, com API e CSV) — licitações, contratos, despesa por empenho. Baixa dificuldade, alto retorno visual.
+* ⛔ **BLOQUEADO HOJE:** [dados.tce.rs.gov.br](https://dados.tce.rs.gov.br/dataset) devolve **403 para o IP do nosso servidor** (§12.5). O dado é aberto e a integração continua barata — o que falta é liberação de acesso, não código.
 
 * Calendarizar os prazos de remessa SIAPC/PAD e LicitaCon, com alertas automáticos.
 
