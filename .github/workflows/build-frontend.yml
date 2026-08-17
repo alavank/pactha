@@ -145,7 +145,7 @@ jobs:
           set -uo pipefail
           TAG="sha-${GITHUB_SHA}"
           CURL=(curl -sS --connect-timeout 10 --max-time 30 -H "Authorization: Bearer $COOLIFY_TOKEN")
-          FALHAS=""
+          FALHAS=""; INCERTOS=""
 
           # ⭐ CREDENCIAL PRIMEIRO — ver o comentario longo no build-backend.yml.
           # Resumo: com o token vencido, TODAS as chamadas voltam 401 e o jq so
@@ -190,9 +190,13 @@ jobs:
               FALHAS="$FALHAS $APP"; continue
             fi
             ok=""
-            # fila 20min + execucao 10min (concurrent_builds=1 no server; builds
-            # de outros projetos na VPS seguram o slot — ver build-backend.yml)
-            fila=120; execucao=60
+            # fila 20min + execucao 20min (concurrent_builds=1 no server; builds
+            # de outros projetos na VPS seguram o slot — ver build-backend.yml).
+            # ⚠️ A execucao era 10min sob a premissa de que deploy de frontend e
+            # "so um pull". Nao e: em 17/08 o montesiao-mg levou 12min49 e o job
+            # desistiu 2min ANTES de ele terminar — deploy correto reportado como
+            # falha. Com 4 tenants a premissa envelheceu; o teto acompanha.
+            fila=120; execucao=120
             while :; do
               st=$("${CURL[@]}" "$COOLIFY_URL/api/v1/deployments/$DEP" | jq -r '.status // ""' 2>/dev/null)
               case "$st" in
@@ -203,10 +207,28 @@ jobs:
               esac
               sleep 10
             done
-            if [ -n "$ok" ]; then echo "frontend $APP -> $TAG (confirmado)"; else FALHAS="$FALHAS $APP"; fi
+            # ⭐ ESTOURAR O RELOGIO NAO E O MESMO QUE FALHAR, e tratar os dois
+            # como falha e o que ensina a ignorar o CI. Quem estourou ainda
+            # 'in_progress' estava deployando e quase certamente terminou (foi o
+            # caso do montesiao) — vira AVISO. Quem estourou em 'queued' nunca
+            # comecou: esse e falha de verdade, o app ficou para tras.
+            if [ -n "$ok" ]; then
+              echo "frontend $APP -> $TAG (confirmado)"
+            elif [ "$st" = "queued" ] || [ -z "$st" ]; then
+              echo "::error::frontend $APP: preso em '${st:-sem resposta}' — nao deployou"
+              FALHAS="$FALHAS $APP"
+            else
+              echo "::warning::frontend $APP: ainda '$st' apos a espera — deploy provavelmente concluiu depois; conferir a tag no Coolify"
+              INCERTOS="$INCERTOS $APP"
+            fi
           done
+          # ⚠️ `if`, e nao `[ … ] && echo`: o shell do step roda com `-e`, e um
+          # `&&` cuja condicao e falsa devolve 1 e MATA o step — o summary
+          # sairia truncado num job que deu certo.
           {
             echo "### Deploy frontend: $TAG"
-            [ -n "$FALHAS" ] && echo "FALHARAM:$FALHAS — conferir no Coolify." || echo "4 frontends confirmados."
+            if [ -n "$FALHAS" ]; then echo "FALHARAM:$FALHAS — conferir no Coolify."; fi
+            if [ -n "$INCERTOS" ]; then echo "NAO CONFIRMADOS (seguiam rodando):$INCERTOS — conferir a tag no Coolify."; fi
+            if [ -z "$FALHAS$INCERTOS" ]; then echo "4 frontends confirmados."; fi
           } >> "$GITHUB_STEP_SUMMARY"
           [ -z "$FALHAS" ]

@@ -212,8 +212,13 @@ jobs:
             # e apps de OUTROS projetos buildam na propria VPS (licity: 15-20min
             # por build) segurando o slot — visto 2x em 09/08: deployment do
             # pactha (que e so pull, ~15-50s) preso em 'queued' por >10min.
-            # Desistir na fila e falso negativo; o teto de execucao segue curto.
-            local st="" fila=120 execucao=60
+            # Desistir na fila e falso negativo.
+            # ⚠️ O teto de execucao era 10min sob a premissa de que deploy de
+            # backend e "so um pull". Com 4 tenants disputando o mesmo slot a
+            # premissa envelheceu: em 17/08 um deploy de frontend levou 12min49
+            # e o CI o reportou como falha 2min antes de ele terminar. O teto
+            # acompanha, e o desfecho passa a distinguir os dois casos abaixo.
+            local st="" fila=120 execucao=120
             while :; do
               st=$("${CURL[@]}" "$COOLIFY_URL/api/v1/deployments/$1" | jq -r '.status // ""' 2>/dev/null)
               case "$st" in
@@ -224,8 +229,18 @@ jobs:
               esac
               sleep 10
             done
-            echo "::warning::deployment $1 nao concluiu (ultimo status='$st')"
-            return 1
+            # ⭐ ESTOURAR O RELOGIO NAO E O MESMO QUE FALHAR. Quem estourou ainda
+            # 'in_progress' estava deployando e quase certamente terminou — vira
+            # aviso, e o deploy do worker daquele tenant SEGUE (tratar como falha
+            # pulava o worker de um tenant cuja API subiu, deixando os dois em
+            # versoes diferentes). Quem estourou em 'queued' nunca comecou: esse
+            # e falha de verdade, e ai pular o worker e o certo.
+            if [ "$st" = "queued" ] || [ -z "$st" ]; then
+              echo "::error::deployment $1 preso em '${st:-sem resposta}' — nao deployou"
+              return 1
+            fi
+            echo "::warning::deployment $1 ainda '$st' apos a espera — provavelmente concluiu depois; conferir a tag no Coolify"
+            return 0
           }
           janela_ociosa() {  # $1 worker uuid; ate 15min; nunca bloqueia p/ sempre
             local TASKS tent rodando T st
