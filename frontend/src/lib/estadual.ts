@@ -162,6 +162,21 @@ export function fonteEmendasEstaduais(uf?: string | null): string | null {
   return FONTE_EMENDAS_ESTADUAIS[(uf || "").trim().toUpperCase()] || null;
 }
 
+/** UFs com mecanismo de ORÇAMENTO PARTICIPATIVO cujo resultado nós coletamos.
+ *
+ *  ⚠️ Hoje só o RS, e não por limitação nossa: a Consulta Popular/COREDEs
+ *  existe desde 1998 e não tem equivalente em Minas — é justamente o que
+ *  nenhum concorrente que atende só MG consegue mostrar. Estado que criar (ou
+ *  que já tenha) um mecanismo assim entra aqui, junto com o coletor. */
+export const CONSULTA_POPULAR_POR_UF: Record<string, { titulo: string; fonte: string }> = {
+  RS: { titulo: "Consulta Popular",
+        fonte: "Consulta Popular / COREDEs · SPGG (consultapopular.rs.gov.br)" },
+};
+
+export function consultaPopularDaUf(uf?: string | null) {
+  return CONSULTA_POPULAR_POR_UF[(uf || "").trim().toUpperCase()] || null;
+}
+
 export function fonteConveniosEstaduais(uf?: string | null): string | null {
   return FONTE_CONVENIOS_ESTADUAIS[(uf || "").trim().toUpperCase()] || null;
 }
