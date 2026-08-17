@@ -208,6 +208,31 @@ def _evento_destaque(item: dict) -> str | None:
     return "<br/>".join(partes)
 
 
+def _alteracao_destaque(item: dict) -> str | None:
+    """Caixa da ULTIMA ALTERACAO do convenio ESTADUAL (SIGCON): onde o instrumento
+    esta de fato (ex.: "ANALISE - CHECKLIST DE TERMO ADITIVO"), com tipo, titulo e
+    data. E o equivalente estadual do _evento_destaque dos federais. None quando o
+    scraper ainda nao capturou a alteracao daquele convenio."""
+    sit = (item.get("alteracao_situacao") or "").strip()
+    if not sit:
+        return None
+    partes = ["<b>Última alteração:</b> " + _escape(sit)]
+    tipo = (item.get("alteracao_tipo") or "").strip()
+    data = (item.get("alteracao_data") or "").strip()
+    nr = (item.get("alteracao_nr_controle") or "").strip()
+    cab = " · ".join(x for x in (
+        _escape(tipo) if tipo else "",
+        ("nº " + _escape(nr)) if nr else "",
+        _escape(data) if data else "",
+    ) if x)
+    if cab:
+        partes.append(cab)
+    tit = (item.get("alteracao_titulo") or "").strip()
+    if tit:
+        partes.append("<b>Título:</b> " + _escape(tit))
+    return "<br/>".join(partes)
+
+
 def _proc_exec_lista(item: dict) -> list:
     """A lista de licitações/processos do item, tolerando JSONB vindo como str
     (dependendo do driver) ou já parseado. Sempre devolve uma lista (vazia se n/a)."""
@@ -331,6 +356,11 @@ def gerar_pdf(meta: dict, conteudo: dict, municipio_nome: str) -> bytes:
                     if destaque_ev:
                         bloco.append(Spacer(1, 2))
                         bloco.append(Paragraph(destaque_ev, s["clausula"]))
+                    # Estadual (SIGCON): a ultima alteracao e o "evento atual" dele.
+                    destaque_alt = _alteracao_destaque(item)
+                    if destaque_alt:
+                        bloco.append(Spacer(1, 2))
+                        bloco.append(Paragraph(destaque_alt, s["clausula"]))
                     bloco.append(Spacer(1, 4))
                     story.append(KeepTogether(bloco))
 
