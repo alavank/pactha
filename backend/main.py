@@ -14,6 +14,7 @@ from routers import (
     documentos, cauc, cagec, acordofes, control, freshness, painel, bi,
     sismob, auditoria, permissoes, modelos_permissao, repasses, contas_irregulares,
     cofinanciamento, parametros, monitoramento, consulta_popular, programas_rs,
+    conteudo_rs,
     uso,
 )
 from config import get_settings
@@ -171,6 +172,8 @@ app.include_router(monitoramento.router)
 app.include_router(consulta_popular.router)
 # Catalogo dos programas estaduais gauchos — conteudo curado, sem coleta
 app.include_router(programas_rs.router)
+# FUNRIGS, emendas estaduais e TCE-RS — conteudo curado onde a coleta nao alcanca
+app.include_router(conteudo_rs.router)
 app.include_router(cofre.router)
 app.include_router(session_capture.router)
 app.include_router(service_tokens.router)
