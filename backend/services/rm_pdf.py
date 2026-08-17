@@ -214,22 +214,24 @@ def _alteracao_destaque(item: dict) -> str | None:
     data. E o equivalente estadual do _evento_destaque dos federais. None quando o
     scraper ainda nao capturou a alteracao daquele convenio."""
     sit = (item.get("alteracao_situacao") or "").strip()
-    if not sit:
-        return None
-    partes = ["<b>Última alteração:</b> " + _escape(sit)]
     tipo = (item.get("alteracao_tipo") or "").strip()
     data = (item.get("alteracao_data") or "").strip()
     nr = (item.get("alteracao_nr_controle") or "").strip()
+    tit0 = (item.get("alteracao_titulo") or "").strip()
+    # Captura PARCIAL tambem vale: sem a situacao, o tipo/data/titulo ja informam.
+    if not (sit or tipo or data or nr or tit0):
+        return None
+    partes = ["<b>Última alteração:</b> " + _escape(sit or tipo or "(sem situação informada)")]
     cab = " · ".join(x for x in (
-        _escape(tipo) if tipo else "",
+        # nao repete o tipo quando ele ja virou o cabecalho (captura sem situacao)
+        _escape(tipo) if (tipo and sit) else "",
         ("nº " + _escape(nr)) if nr else "",
         _escape(data) if data else "",
     ) if x)
     if cab:
         partes.append(cab)
-    tit = (item.get("alteracao_titulo") or "").strip()
-    if tit:
-        partes.append("<b>Título:</b> " + _escape(tit))
+    if tit0:
+        partes.append("<b>Título:</b> " + _escape(tit0))
     return "<br/>".join(partes)
 
 

@@ -346,10 +346,17 @@ def _situacao_estadual(situacao: str | None, raw: dict) -> str:
     return f"{detalhe} ({sufixo})" if sufixo else detalhe
 
 
+_ALT_CHAVES = ("ultima_alteracao_situacao", "ultima_alteracao_tipo", "ultima_alteracao_data",
+               "ultima_alteracao_titulo", "ultima_alteracao_nr_controle")
+
+
 def _alteracao_campos(raw: dict) -> dict:
     """Campos da ultima alteracao do convenio estadual, para a caixa de destaque do
-    PDF (rm_pdf._alteracao_destaque). Vazio quando o scraper ainda nao capturou."""
-    if not isinstance(raw, dict) or not (raw.get("ultima_alteracao_situacao") or "").strip():
+    PDF (rm_pdf._alteracao_destaque). Vazio quando o scraper ainda nao capturou.
+
+    Aceita captura PARCIAL: o scraper grava o que achou (celula vazia vira None), e
+    exigir a `situacao` jogava fora tipo/data/titulo/nº ja capturados."""
+    if not isinstance(raw, dict) or not any((raw.get(k) or "").strip() for k in _ALT_CHAVES):
         return {}
     return {
         "alteracao_situacao": (raw.get("ultima_alteracao_situacao") or "").strip(),
@@ -625,6 +632,12 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             # capturada por _scrape_alteracoes em raw_data. Junta as duas — era o motivo
             # de o relatorio mostrar so "EM VIGOR" nos estaduais.
             "situacao_atual": _situacao_estadual(c.situacao, raw),
+            # ⚠️ A situacao CRUA da fonte, ao lado da enriquecida. `situacao_atual`
+            # passou a carregar a NARRATIVA da ultima alteracao, e quem CLASSIFICA
+            # (rm_export._e_pendencia) nao pode ler narrativa: uma alteracao
+            # "ENCERRADO"/"CONCLUIDA" num convenio ATIVO o faria sumir, calado, do
+            # Resumido (o PDF das pendencias). Classificar sempre por esta.
+            "situacao_base": (c.situacao or "").strip(),
             **_alteracao_campos(raw),
             "fonte": "sigcon",
             "fonte_ref": str(c.id),

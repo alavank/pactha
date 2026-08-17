@@ -202,9 +202,19 @@ _CONCLUIDO_RE = re.compile(r"presta[çc][ãa]o de contas|conclu[íi]d|encerrad|p
 
 
 def _e_pendencia(parte_titulo: str, item: dict) -> bool:
+    """O item conta como PENDENCIA no Resumido (o PDF que lista o que falta).
+
+    ⚠️ Classifica pela situacao CRUA da fonte (`situacao_base`), NAO pela exibida.
+    `situacao_atual` passou a carregar a narrativa da ULTIMA ALTERACAO nos estaduais
+    ("Em vigor · Última alteração: ENCERRADO (TERMO ADITIVO em ...)"), e essa
+    narrativa fala da ALTERACAO, nao do convenio: lida como classificador, ela some
+    com um convenio ATIVO cuja alteracao foi encerrada/concluida. `situacao_base` so
+    existe nos estaduais; nas demais fontes o fallback e a propria `situacao_atual`
+    (que la nao tem narrativa)."""
     if re.search(r"PRESTA|PAGAMENTOS DE ANOS", parte_titulo or "", re.I):
         return False
-    if _CONCLUIDO_RE.search((item.get("situacao_atual") or "")):
+    sit = item.get("situacao_base") or item.get("situacao_atual") or ""
+    if _CONCLUIDO_RE.search(sit):
         return False
     return True
 

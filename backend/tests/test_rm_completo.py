@@ -8,9 +8,10 @@ from datetime import date
 
 from services.rm_builder import (
     _destino_completo, _pend_municipal, _fed_retem, _fns_retem, _fed_status,
-    _titulos_partes_completo,
+    _titulos_partes_completo, _situacao_estadual, _alteracao_campos,
     _SEC_FED_PLURAL, _SEC_FED_SINGULAR, _SEC_EST_P2, _SEC_EST_P3_RES, _SEC_EST_P3_CONV,
 )
+from services.rm_export import _e_pendencia
 
 ANO = 2026
 
@@ -142,3 +143,57 @@ def test_titulos_partes_usam_ano_corrente():
     assert str(ANO) in tit[4]  # Parte 4 cita o ano de validade
     assert tit[1].startswith("Parte 1")
     assert tit[3].startswith("Parte 3")
+
+
+# --------------------------------------------------------------------------
+# SITUACAO do instrumento ESTADUAL (SIGCON) — o campo `situacao` sozinho e
+# generico ("Em vigor"); a situacao REAL vem da ultima alteracao.
+# --------------------------------------------------------------------------
+def test_situacao_estadual_enriquece_com_a_alteracao():
+    assert _situacao_estadual("Em vigor", {
+        "ultima_alteracao_situacao": "ANÁLISE - CHECKLIST DE TERMO ADITIVO",
+        "ultima_alteracao_tipo": "TERMO ADITIVO",
+        "ultima_alteracao_data": "17/03/2026",
+    }) == "Em vigor · Última alteração: ANÁLISE - CHECKLIST DE TERMO ADITIVO (TERMO ADITIVO em 17/03/2026)"
+
+
+def test_situacao_estadual_nao_duplica_quando_dizem_o_mesmo():
+    # base "Encerrado" x alteracao "ENCERRADO" -> nao repete
+    assert _situacao_estadual("Encerrado", {"ultima_alteracao_situacao": "ENCERRADO"}) == "ENCERRADO"
+
+
+def test_situacao_estadual_degrada_sem_alteracao():
+    # a MAIORIA dos convenios ainda nao foi revisitada pelo rodizio do scraper
+    assert _situacao_estadual("Em vigor", {}) == "Em vigor"
+    assert _situacao_estadual("Cancelado", None or {}) == "Cancelado"
+
+
+def test_alteracao_campos_aceita_captura_parcial():
+    # sem `situacao` mas com tipo/data: nao pode jogar fora o que foi capturado
+    campos = _alteracao_campos({"ultima_alteracao_tipo": "TERMO ADITIVO",
+                                "ultima_alteracao_data": "17/03/2026"})
+    assert campos.get("alteracao_tipo") == "TERMO ADITIVO"
+    assert campos.get("alteracao_data") == "17/03/2026"
+    assert _alteracao_campos({}) == {}
+
+
+# --------------------------------------------------------------------------
+# REGRESSAO: o Resumido classifica pela situacao CRUA, nunca pela narrativa.
+# Um convenio ATIVO cuja ULTIMA ALTERACAO foi encerrada/concluida tem de
+# CONTINUAR aparecendo como pendencia — senao ele some calado do relatorio.
+# --------------------------------------------------------------------------
+def test_resumido_nao_esconde_convenio_ativo_com_alteracao_encerrada():
+    raw = {"ultima_alteracao_situacao": "ENCERRADO", "ultima_alteracao_tipo": "TERMO ADITIVO",
+           "ultima_alteracao_data": "30/11/2022"}
+    item = {
+        "situacao_atual": _situacao_estadual("Em vigor", raw),   # narrativa (exibicao)
+        "situacao_base": "Em vigor",                              # crua (classificacao)
+        **_alteracao_campos(raw),
+    }
+    assert "ENCERRADO" in item["situacao_atual"]          # a narrativa CONTEM a palavra
+    assert _e_pendencia("Parte 2 - Demandas do Município", item) is True
+
+
+def test_resumido_ainda_exclui_convenio_realmente_encerrado():
+    item = {"situacao_atual": "Encerrado", "situacao_base": "Encerrado"}
+    assert _e_pendencia("Parte 2 - Demandas do Município", item) is False
