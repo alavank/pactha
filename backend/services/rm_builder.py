@@ -446,12 +446,22 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             3: {"titulo": "PARTE 3 - PRESTAÇÕES DE CONTAS / PAGAMENTOS DE ANOS ANTERIORES", "secoes": {}},
         }
 
-    def add_item(parte_n: int, secao: str, orgao: str, item: dict):
+    def add_item(parte_n: int, secao: str, orgao: str, item: dict, ano: int | None = None):
+        """Adiciona o item na arvore. `ano` e o ano que a FONTE ja calculou (c.ano,
+        ano_prop, ano_te, ano do pagamento...) — carimbado como `ano_item`.
+
+        ⚠️ O recorte por anos (_no_escopo) NAO pode re-derivar o ano do TEXTO do
+        numero: ha fontes cujo numero nao carrega ano (SIMEC usa a OB, PAC/emendas
+        usam so o sequencial), e elas cairiam fora de qualquer RM filtrado por ano,
+        em silencio. Quando a fonte nao sabe o ano, cai no ano do numero e, se ainda
+        assim nao houver, o item PERMANECE (melhor um item a mais do que sumir)."""
         p = partes_data[parte_n]
         if secao not in p["secoes"]:
             p["secoes"][secao] = {}
         if orgao not in p["secoes"][secao]:
             p["secoes"][secao][orgao] = []
+        if ano and not item.get("ano_item"):
+            item["ano_item"] = int(ano)
         p["secoes"][secao][orgao].append(item)
 
     mun = (await db.execute(
@@ -543,7 +553,7 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
                         "empenhado": "Sim" if _fed_empenhada(sit_cls) else "Não",
                         "fonte": "fns",
                         "fonte_ref": str(c.id),
-                    })
+                    }, ano=c.ano)
             elif (c.ano is not None and c.ano >= ano_emissao) or (completo and _fed_status(c.situacao) != "dead"):
                 # Fallback: bucket sem individuais (coleta antiga/incompleta). Sem
                 # as propostas individuais nao da pra saber se houve pagamento no
@@ -574,7 +584,7 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
                     "empenhado": "Sim" if _fed_empenhada(c.situacao) else "Não",
                     "fonte": "fns",
                     "fonte_ref": str(c.id),
-                })
+                }, ano=c.ano)
             continue
 
         # === SIGCON-MG (estadual) -> PARTE 2 ===
@@ -641,7 +651,7 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             **_alteracao_campos(raw),
             "fonte": "sigcon",
             "fonte_ref": str(c.id),
-        })
+        }, ano=ano_est)
 
     # === TransfereGov Voluntarias (SICONV) ===
     vol = await db.execute(text("""
@@ -719,7 +729,7 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             **_evento_atual(row[17]),
             "fonte": "voluntaria",
             "fonte_ref": row[1],
-        })
+        }, ano=ano_prop)
 
     # === Transferencia Especial / Plano de Acao (Emenda Pix) — federal ===
     # Fonte PERSISTIDA: tabela transferegov_te, alimentada pelo coletor do worker
@@ -780,7 +790,7 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
                 "situacao_atual": sit_te,
                 "fonte": "transferencia_especial",
                 "fonte_ref": str(row[0] or ""),
-            })
+            }, ano=ano_te)
     except Exception as ex:
         logger.warning(f"RM: TE indisponivel p/ {municipio_id}: {str(ex)[:120]}")
 
@@ -815,7 +825,7 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             "situacao_atual": f"Pagamento realizado em {_iso(r[2]) or '-'}.",
             "fonte": "simec",
             "fonte_ref": r[3] or "",
-        })
+        }, ano=(r[9] or _ano_de(_iso(r[2]))))
 
     # === Emendas Estaduais (indicacoes SIGCON) -> normalmente Parte 1 (em analise) ===
     em = await db.execute(text("""
@@ -853,7 +863,7 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             "situacao_atual": sit,
             "fonte": "emenda_estadual",
             "fonte_ref": str(r[0]),
-        })
+        }, ano=r[2])
 
     # === Novo PAC / Selecao PAC / Doacao (TransfereGov) — federal, SO no completo ===
     # A referencia lista itens 'Novo PAC'/'Doacao Selecao Novo PAC'/'(DOACAO)' cujo
@@ -899,7 +909,7 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
                     "situacao_atual": sit,
                     "fonte": "pac",
                     "fonte_ref": r[0],
-                })
+                }, ano=ano_pac)
         except Exception as ex:
             logger.warning(f"RM completo: PAC indisponivel p/ {municipio_id}: {str(ex)[:120]}")
 
@@ -932,21 +942,26 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
         ordenados += [s for s in nomes if s not in SECAO_PRIORIDADE]
         return [(n, secoes_dict[n]) for n in ordenados]
 
+    def _ano_do_item(it):
+        """Ano do item: o que a FONTE calculou (`ano_item`, carimbado no add_item) e,
+        so na falta dele, o ano lido do numero. None quando nenhum dos dois sabe."""
+        return it.get("ano_item") or _ano_de(it.get("numero"))
+
     def _no_escopo(it):
-        # Filtro de SELECAO de anos: mantem o item quando o ano do seu numero esta
-        # entre os anos escolhidos. Vazio = todos (completo). Itens sem ano legivel
-        # so entram no completo (nao em um recorte de anos especifico).
+        # Filtro de SELECAO de anos. Vazio = todos (completo).
+        # Item SEM ano conhecido PERMANECE: sumir calado de um relatorio e pior do
+        # que aparecer a mais — e ha fontes cujo numero nao carrega ano (SIMEC/OB).
         if not anos_filtro:
             return True
-        y = _ano_de(it.get("numero"))
-        return y in anos_filtro
+        y = _ano_do_item(it)
+        return True if y is None else (y in anos_filtro)
 
     def _ordena_itens(itens):
         # No completo (multi-ano) ordena por ANO desc + numero, como a referencia.
         # No anual mantem a ordem de insercao (comportamento historico).
         if not completo:
             return itens
-        return sorted(itens, key=lambda it: (-(_ano_de(it.get("numero")) or 0), str(it.get("numero") or "")))
+        return sorted(itens, key=lambda it: (-(_ano_do_item(it) or 0), str(it.get("numero") or "")))
 
     out_partes = []
     for n in sorted(partes_data.keys()):

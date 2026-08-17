@@ -256,7 +256,12 @@ async def criar(
     # RM sempre no padrao Freitas (4 partes por estagio), recortado pelos anos
     # selecionados. ano_emissao = ano corrente (contexto de emissao: rotula
     # "REPASSES DE {ano}" e a Parte 4 de voluntarias do ano).
-    conteudo = (await montar_conteudo(db, body.municipio_id, date.today().year,
+    # ANO DE REFERENCIA do padrao: e o MAIOR ano do escopo escolhido — nao o ano
+    # corrente. Ele rotula o bloco "REPASSES DE {ano}" e o texto da Parte 4; um RM
+    # gerado para [2024] saia dizendo "REPASSES DE 2026". Sem selecao (completo),
+    # a referencia e o ano corrente.
+    _ano_ref = max(_anos) if _anos else date.today().year
+    conteudo = (await montar_conteudo(db, body.municipio_id, _ano_ref,
                                       completo=True, anos=_anos)
                 if body.auto_popular else {"partes": []})
     titulo = body.titulo or f"RELATÓRIO DE MONITORAMENTO – {mun.nome.upper()}/{mun.uf}"
@@ -406,7 +411,9 @@ async def repopular(
         raise HTTPException(404, "RM não encontrado")
     # Regenera no MESMO escopo de anos do relatorio (row[4] = anos; vazio = todos).
     _anos = [int(a) for a in (row[4] or [])]
-    conteudo = await montar_conteudo(db, row[0], date.today().year, completo=True, anos=_anos)
+    # Mesmo ano de referencia da criacao: o maior ano do escopo (ver `criar`).
+    _ano_ref = max(_anos) if _anos else date.today().year
+    conteudo = await montar_conteudo(db, row[0], _ano_ref, completo=True, anos=_anos)
     await db.execute(text(
         "UPDATE rm_relatorios SET conteudo = CAST(:c AS JSONB), updated_at = NOW() WHERE id = :id"
     ), {"c": json.dumps(conteudo), "id": rid})
