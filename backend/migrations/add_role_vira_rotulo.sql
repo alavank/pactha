@@ -104,7 +104,13 @@ WITH marca AS (
            -- pulado e nada muda. Quem lê esta lista daqui para a frente é
            -- apenas o TENANT NOVO, e para ele conceder uma tela que não existe
            -- mais seria dar uma linha morta em `user_telas`.
-           ('simec'), ('paineis'), ('bi'), ('bi_tela'),
+           -- `investsus` ENTROU (08/2026, menu SAUDE). Mesma logica do `suas`
+           -- acima, no sentido inverso: o bloco e guardado pela marca em
+           -- `migration_backfills` e so roda em TENANT NOVO — e um tenant novo
+           -- deve nascer com o administrador vendo a pasta da saude inteira.
+           -- Nos bancos ja aplicados, quem concede aos existentes e o
+           -- add_tela_investsus.sql (quem tem fns ganha investsus).
+           ('simec'), ('investsus'), ('paineis'), ('bi'), ('bi_tela'),
            ('bi_link'), ('dou'), ('cofre'), ('sessoes'), ('auditoria')
 )
 INSERT INTO user_telas (user_id, tela)
