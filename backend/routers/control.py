@@ -496,6 +496,72 @@ async def control_cobertura(
             "municipios": list(saida.values())}
 
 
+# --- Coleta assistida de Transferencias Especiais -------------------------
+class TeLoteIn(BaseModel):
+    planos: list[dict] = []
+    # Presente = fecha a rodada: grava a linha do ingestion_log com este status.
+    registrar_rodada: dict | None = None   # {"status": "success|partial", "obs": "..."}
+
+
+@router.post("/te/lote")
+async def control_te_lote(
+    body: TeLoteIn, request: Request,
+    db: AsyncSession = Depends(get_db),
+    p: ControlPrincipal = Depends(require_control_scope("control:data:write")),
+):
+    """Recebe planos de acao da API 'especiais' coletados por um IP EXTERNO.
+
+    ⭐ POR QUE ISTO EXISTE: a API do TransfereGov Especiais aplica quota por IP
+    com penalidade estendida por martelada (INFRA.md §5) — e em 17/08 o IP da
+    VPS ficou banido por horas, com a API respondendo 200 normalmente a
+    qualquer outro IP. Este endpoint fecha o circuito: a Alavank coleta de um
+    IP limpo e entrega pelos canais ja autenticados, com o MESMO mapeamento de
+    campos e o MESMO upsert do coletor (`ingestion/transferegov_te.py::
+    plano_para_linha` / `UPSERT_SQL_NOMEADO` — um lugar so; drift impossivel).
+
+    O casamento plano->municipio reusa `_casa_municipio` do coletor, contra a
+    carteira DESTE tenant. Idempotente por plano_acao_id: reenviar e inofensivo.
+    """
+    from ingestion.transferegov_te import (
+        UPSERT_SQL_NOMEADO, _casa_municipio, _norm, plano_para_linha,
+    )
+
+    pares_rows = (await db.execute(text(
+        "SELECT id, nome FROM municipios WHERE uf IS NOT NULL"))).all()
+    pares = sorted(((_norm(n), i) for i, n in pares_rows if n),
+                   key=lambda x: len(x[0]), reverse=True)
+
+    recebidos, gravados, casados = len(body.planos), 0, 0
+    for it in body.planos:
+        mid = _casa_municipio(_norm(it.get("beneficiarioNome") or ""), pares)
+        linha = plano_para_linha(it, mid)
+        if linha is None:
+            continue
+        await db.execute(text(UPSERT_SQL_NOMEADO), linha)
+        gravados += 1
+        if mid is not None:
+            casados += 1
+    await db.commit()
+
+    if body.registrar_rodada:
+        st = str(body.registrar_rodada.get("status") or "success")[:20]
+        obs = str(body.registrar_rodada.get("obs") or "coleta assistida (IP externo)")[:480]
+        await db.execute(text(
+            "INSERT INTO ingestion_log (source, status, records_inserted, error_message, finished_at) "
+            "VALUES ('transferegov_te', :st, :n, :obs, NOW())"),
+            {"st": st, "n": casados, "obs": obs})
+        await db.commit()
+
+    await registrar(db, action="control.te.lote", request=request,
+                    user_email=_ator(request, p),
+                    target_type="scraper", target_id="transferegov_te",
+                    alvo_nome="TE (coleta assistida)",
+                    details={"recebidos": recebidos, "gravados": gravados,
+                             "casados": casados, "integracao": p.name,
+                             "rodada": bool(body.registrar_rodada)})
+    return {"recebidos": recebidos, "gravados": gravados, "casados": casados}
+
+
 # Catalogo de fontes p/ o Monitor da Central: tabela contada (escopada por municipio
 # ativo = o que o cliente REALMENTE ve) + nomes que cada scraper grava no ingestion_log.
 _FONTES_MONITOR = [
