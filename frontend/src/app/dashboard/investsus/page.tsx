@@ -18,7 +18,7 @@
  */
 
 import React, { useCallback, useEffect, useState } from "react";
-import { Banknote, ExternalLink, KeyRound, ListChecks, Loader2 } from "lucide-react";
+import { Banknote, ExternalLink, KeyRound, ListChecks, Loader2, ShieldAlert } from "lucide-react";
 
 import api from "@/lib/api";
 import { useMunicipio } from "@/contexts/MunicipioContext";
@@ -37,6 +37,12 @@ interface Resp {
   blocos?: BlocoFin[];
   conferir?: Conferir[];
   links?: [string, string][];
+  bloqueio?: {
+    titulo: string;
+    texto: string;
+    passos: string[];
+    porque_nao_contornamos: string;
+  };
   municipio?: {
     nome: string;
     cnpj: string | null;
@@ -75,6 +81,33 @@ export default function InvestSusPage() {
       </div>
 
       <AvisoCurado>{d.aviso}</AvisoCurado>
+
+      {/* ⭐ O BLOQUEIO VEM PRIMEIRO, e não no rodapé: é a única coisa nesta tela
+          que, feita, destrava todo o resto. Enterrá-lo embaixo do conteúdo
+          explicativo seria descrever o problema para quem já desistiu de rolar. */}
+      {d.bloqueio && (
+        <Bloco className="p-3">
+          <BlocoHead icon={ShieldAlert} titulo={d.bloqueio.titulo}
+                     sub="pendência no cadastro de acesso do município" />
+          <p className="px-1 text-[11px] leading-relaxed" style={{ color: "var(--bi-muted)" }}>
+            {d.bloqueio.texto}
+          </p>
+          <ol className="mt-2 space-y-1.5 px-1">
+            {d.bloqueio.passos.map((p, i) => (
+              <li key={i} className="flex gap-2 text-[11px] leading-relaxed"
+                  style={{ color: "var(--bi-muted)" }}>
+                <span className="shrink-0 font-semibold tabular-nums"
+                      style={{ color: "var(--bi-accent-ink)" }}>{i + 1}.</span>
+                <span>{p}</span>
+              </li>
+            ))}
+          </ol>
+          <p className="mt-2 px-1 text-[10px] italic leading-relaxed"
+             style={{ color: "var(--bi-faint)" }}>
+            {d.bloqueio.porque_nao_contornamos}
+          </p>
+        </Bloco>
+      )}
 
       <Bloco className="p-3">
         <BlocoHead icon={KeyRound} titulo="Situação deste município"

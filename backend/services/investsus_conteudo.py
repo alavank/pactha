@@ -30,12 +30,50 @@ O QUE JÁ ESTÁ DESCOBERTO (para a próxima etapa, e para não repetir a garimpa
                GET /geral/repasses/blocos/<codigoBloco>
                GET /geral/repasses/planilha   (devolve XLSX)
     propostas  GET /propostas/paginado
-    login      https://acesso.saude.gov.br/v2/login — SSO próprio do DATASUS
-               (`clientId: INVESTSUS` no env.json), NÃO é OIDC padrão: o
-               `.well-known/openid-configuration` responde 404. A página traz um
-               `authorization-server` no `<base href>`, o que sugere fluxo
-               próprio. Molde para o coletor: `sigcon_scraper.py` (Playwright +
-               credencial por município no Cofre + upsert incremental).
+    login      OAuth próprio do DATASUS, decifrado no bundle Angular
+               (`AuthService::redirectToAuthorize`):
+
+                   <backendUrl>/oauth/authorize?redirect_uri=<frontendUrl+rota>
+
+               que redireciona para `acesso.saude.gov.br/login` — o SCPA
+               (Sistema de Cadastro e Permissão de Acesso, autenticador central
+               do MS). NÃO é OIDC padrão: `.well-known/openid-configuration` dá
+               404. A sessão volta em COOKIE (`investsus-session`, no domínio do
+               backend), não em bearer; `GET /api/oauth/verify` responde
+               `true`/`false` e é o teste barato de "ainda logado".
+               ⚠️ Entrar direto em `/login`, sem passar pelo `/oauth/authorize`,
+               faz o autorizador responder "Xii, não foi possível concluir o seu
+               acesso" — erro genérico que parece credencial inválida e não é.
+
+⛔ O QUE BLOQUEIA O COLETOR HOJE: MFA OBRIGATÓRIO NO SCPA.
+
+Medido em 17/08/2026 com a credencial real do Monte Sião, pelo fluxo correto. A
+credencial está CERTA — o login passa — e a tela seguinte é o cadastro de
+segundo fator:
+
+    "SISTEMA DE CADASTRO E PERMISSÃO DE ACESSO — Cadastro do MFA
+     1. Instale um aplicativo de autenticação no seu celular
+     2. Leia o QRCode ao lado pelo aplicativo
+     3. (...) informe o código que aparece na tela"
+
+TOTP obrigatório, com cadastro ainda pendente nesta conta. Isso não é
+contornável por scraping — e não deve ser: automatizar o segundo fator anula
+exatamente o que ele protege. Duas consequências de desenho:
+
+  1. NÃO EXISTE coletor de InvestSUS enquanto o MFA não for resolvido do lado do
+     cliente. O caminho é a prefeitura cadastrar o app autenticador e repassar o
+     SEGREDO TOTP (a string base32 por trás do QR Code) — com ele o coletor gera
+     o código (`pyotp`) e o fluxo fecha sozinho, sem gente na frente.
+  2. Quando isso acontecer, o segredo TOTP é CREDENCIAL: entra no Cofre
+     (`automation_key='investsus'`), cifrado, nunca em env var nem no código —
+     mesma regra da senha. E o coletor deve tratar "MFA pendente" como estado
+     próprio no `ingestion_log`, não como erro de senha: são pendências
+     diferentes, com donos diferentes.
+
+Nota lateral: `captcha.saude.gov.br` aparece entre os domínios de cookie, então
+há captcha em ALGUM ponto do SCPA — mas não na tela de login (`.g-recaptcha`,
+`.h-captcha` e `recaptcha/api.js?render` todos ausentes ali). Provavelmente no
+cadastro/recuperação de senha. Reavaliar quando o MFA sair do caminho.
 
 A credencial JÁ PODE SER CADASTRADA — `automation_key='investsus'` existe no
 formulário do Cofre desde antes desta tela. Por isso o endpoint mostra se ela
@@ -45,12 +83,41 @@ está lá: é a única informação DESTE município que a tela tem hoje, e é a
 from __future__ import annotations
 
 AVISO = (
-    "O InvestSUS é fechado: consultar exige login no autorizador do DATASUS. "
-    "Esta tela ainda NÃO coleta os repasses automaticamente — ela reúne o que dá "
-    "sem login (o que cada bloco significa, onde consultar, e se a credencial "
-    "deste município já está no Cofre). Quando a coleta entrar, os valores "
+    "O InvestSUS é fechado: consultar exige login no SCPA, o autenticador do "
+    "Ministério da Saúde. Esta tela ainda NÃO coleta os repasses automaticamente "
+    "— ela reúne o que dá sem login (o que cada bloco significa, o que conferir, "
+    "e a situação do acesso deste município). Quando a coleta entrar, os valores "
     "aparecem aqui e passam a alimentar o alerta e o Relatório de Monitoramento."
 )
+
+# ⭐ O QUE FALTA PARA A COLETA EXISTIR — escrito para o GESTOR, não para o
+# desenvolvedor. É uma pendência DELE (cadastrar o MFA e nos passar o segredo),
+# e uma tela que dissesse só "não é automático" esconderia a única ação que
+# destrava o resto. Detalhes técnicos no cabeçalho deste módulo.
+BLOQUEIO_MFA = {
+    "titulo": "O que falta para os valores aparecerem aqui",
+    "texto": (
+        "O login do InvestSUS passa pelo SCPA (Sistema de Cadastro e Permissão "
+        "de Acesso do Ministério da Saúde), que agora exige verificação em duas "
+        "etapas. Testamos com a credencial cadastrada: a senha está correta, mas "
+        "a conta ainda não tem o aplicativo autenticador configurado."
+    ),
+    "passos": [
+        "No celular, instalar um aplicativo autenticador (Google Authenticator, "
+        "Microsoft Authenticator ou equivalente).",
+        "Entrar em acesso.saude.gov.br com o CPF e a senha do InvestSUS e ler o "
+        "QR Code que aparece na tela de cadastro do MFA.",
+        "Guardar o código/chave que o site mostra junto do QR Code (a sequência "
+        "de letras e números) e nos repassar — é ele que permite a coleta rodar "
+        "sozinha, sem alguém digitar o código de 6 dígitos toda vez.",
+    ],
+    "porque_nao_contornamos": (
+        "A verificação em duas etapas existe justamente para impedir que um "
+        "programa entre sozinho na conta. Contorná-la anularia a proteção do "
+        "acesso do município — por isso a coleta depende desse cadastro, e não "
+        "de um ajuste do nosso lado."
+    ),
+}
 
 TITULO = "InvestSUS"
 SUBTITULO = "Repasses federais de saúde — fundo a fundo do FNS ao Fundo Municipal"
