@@ -253,6 +253,13 @@ MIGRATION_FILES = [
     # banco novo aos antigos e reconstrói as datas a partir do raw_data.
     # No-op nos 3 tenants antigos. Ver o cabeçalho do .sql.
     "fix_transferegov_datas_texto.sql",
+    # ⭐ TE FORA DA CARTEIRA: o coletor de Transferencias Especiais tinha default
+    # `TE_UF=MG` e nenhum tenant define a variavel, entao todos baixavam Minas.
+    # No Trust (ES/GO/MG/TO) e no Santa Maria (RS) isso virou milhares de linhas
+    # com municipio_id nulo — invisiveis ao produto, mas ocupando disco — enquanto
+    # os municipios de verdade ficavam sem TE. Limpa a sobra; o coletor corrigido
+    # passa a seguir a carteira. No-op no Freitas e no Monte Siao (sao de MG).
+    "limpa_transferegov_te_fora_da_carteira.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",

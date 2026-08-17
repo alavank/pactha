@@ -54,6 +54,53 @@ def _sync_url() -> str:
     return u.replace("&channel_binding=require", "").replace("?channel_binding=require", "")
 
 
+def _log_ingestao(status: str, n: int, erro: str | None = None) -> None:
+    """Registra a rodada em `ingestion_log` (source 'transferegov_te').
+
+    Conexao PROPRIA, e engolindo excecao: este coletor commita pagina a pagina e
+    a conexao do run pode ja ter morrido quando chegamos aqui. Falhar ao gravar
+    o log nao pode desfazer coleta que deu certo. Mesmo padrao do sismob_obras.
+    """
+    try:
+        cn = psycopg2.connect(_sync_url())
+        cur = cn.cursor()
+        cur.execute(
+            "INSERT INTO ingestion_log (source, status, records_inserted, error_message, finished_at) "
+            "VALUES ('transferegov_te', %s, %s, %s, NOW())",
+            (status, n, (erro[:500] if erro else None)),
+        )
+        cn.commit(); cur.close(); cn.close()
+    except Exception as e:
+        logger.warning(f"ingestion_log falhou: {str(e)[:120]}")
+
+
+def _ufs_do_tenant(cur) -> list[str]:
+    """As UFs que este tenant realmente acompanha, lidas da carteira.
+
+    ⚠️ SUBSTITUI O DEFAULT "MG", que era um bug caro e mudo. Com `TE_UF` nao
+    definido — que e o caso dos 4 tenants em producao — o coletor baixava Minas
+    inteiro (~8773 planos, ~44 paginas) em TODO tenant. Medido em 17/08:
+
+        freitas     MG=60                -> certo, por coincidencia
+        montesiao   MG=1                 -> certo, por coincidencia
+        trust       ES=3 GO=6 MG=8 TO=3  -> cobria 8 de 20 municipios
+        santamaria  RS=1                 -> cobria ZERO
+
+    No Santa Maria o `_municipios_uf(cur, "MG")` voltava vazio e nenhum
+    beneficiario casava: 25 minutos de paginacao para gravar milhares de linhas
+    de MG com municipio_id nulo. No Trust, 12 dos 20 municipios simplesmente
+    nunca tiveram Transferencia Especial coletada. Sem erro em log nenhum —
+    `gravados` alto, `casados` baixo ou zero, e a fonte sequer aparecia no
+    Status dos Dados (ver `_log_ingestao`, que so passou a existir agora).
+
+    Mesmo padrao de `routers/freshness._ufs_do_tenant`: quem manda e a carteira.
+    `TE_UF` continua valendo como override manual (um estado especifico).
+    """
+    cur.execute("SELECT DISTINCT upper(uf) FROM municipios "
+                "WHERE uf IS NOT NULL AND btrim(uf) <> '' ORDER BY 1")
+    return [r[0] for r in cur.fetchall()]
+
+
 def _municipios_uf(cur, uf: str) -> list[tuple[str, int]]:
     """(_norm(nome), id) dos municipios da UF — para casar o beneficiario ao PACTHA.
     Ordena pelo nome mais LONGO primeiro para 'Nova Serrana' vencer 'Serrana' etc."""
@@ -119,12 +166,25 @@ def _upsert(cur, it: dict, mid: int | None):
     )
 
 
-async def run(uf: str | None = None) -> dict:
-    uf = (uf or os.getenv("TE_UF", "MG") or "MG").upper()
+async def run_uf(uf: str, budget_s: float | None = None) -> dict:
+    uf = uf.upper()
+    budget = _BUDGET_S if budget_s is None else budget_s
     cn = psycopg2.connect(_sync_url())
     cn.autocommit = False
     cur = cn.cursor()
     pares = _municipios_uf(cur, uf)
+    # ⚠️ FALHA ALTO EM VEZ DE BAIXAR UM ESTADO INTEIRO PARA O LIXO. Sem municipio
+    # da UF na carteira, nenhum beneficiario casaria: seriam ~25min de paginacao
+    # para gravar milhares de linhas com municipio_id nulo, que os leitores
+    # (routers/transferegov e rm_builder, ambos `WHERE municipio_id = :m`) nunca
+    # enxergam. Era exatamente o que acontecia no Trust e no Santa Maria.
+    if not pares:
+        msg = f"nenhum municipio de {uf} na carteira deste tenant"
+        logger.error(f"TE {uf}: {msg} — nao vou baixar o estado inteiro")
+        _log_ingestao("error", 0, msg)
+        cur.close(); cn.close()
+        return {"uf": uf, "gravados": 0, "casados": 0, "completo": False,
+                "total_api": None, "erro": msg}
     # RETOMA de onde parou: a API tem QUOTA por IP (bloqueia depois de ~N paginas
     # numa janela), entao um run so nao pega tudo. Comeca na pagina apos as ja
     # gravadas (1 pagina de sobreposicao; upsert e idempotente por planoAcaoId) —
@@ -142,7 +202,7 @@ async def run(uf: str | None = None) -> dict:
     completo = False
     async with httpx.AsyncClient(timeout=60, verify=False) as cli:
         page = start_page
-        while page <= 1000 and (time.time() - t0) < _BUDGET_S:
+        while page <= 1000 and (time.time() - t0) < budget:
             data = await _fetch_page(cli, uf, page)
             if data is None:
                 logger.warning(f"TE {uf}: parando na pagina {page} (403 persistente); retoma na proxima rodada")
@@ -164,7 +224,54 @@ async def run(uf: str | None = None) -> dict:
             await asyncio.sleep(_PAGE_DELAY)
     cur.close(); cn.close()
     logger.info(f"TE {uf}: FIM — gravados={gravados} casados={casados} completo={completo} em {time.time()-t0:.0f}s")
+    # ⭐ O QUE CONTA AQUI E `casados`, NAO `gravados`. Foi a ausencia dessa linha
+    # que deixou o bug da UF invisivel por meses: a fonte nao aparecia no Status
+    # dos Dados nem no watchdog, entao ninguem viu que o Trust vinha coletando
+    # Minas. `gravados` alto com `casados=0` e o retrato exato do erro — e agora
+    # ele fica registrado como 'error', que e o que ele e.
+    if gravados == 0:
+        _log_ingestao("error", 0, f"{uf}: nenhuma pagina coletada (rate-limit ou fonte fora)")
+    elif casados == 0:
+        _log_ingestao("error", 0, f"{uf}: {gravados} planos baixados e NENHUM casou com municipio da carteira")
+    else:
+        _log_ingestao("success" if completo else "partial", casados,
+                      None if completo else f"{uf}: cobertura parcial, retoma na proxima rodada")
     return {"uf": uf, "gravados": gravados, "casados": casados, "completo": completo, "total_api": total_api}
+
+
+async def run(uf: str | None = None) -> list[dict]:
+    """Roda as UFs da carteira deste tenant (ou a de `TE_UF`/`uf`, se informada).
+
+    ⚠️ O ORCAMENTO E DIVIDIDO entre as UFs, nao multiplicado por elas: a
+    Scheduled Task mata o processo em `timeout -k 30 1600`, e dar `_BUDGET_S`
+    cheio a cada UF faria a segunda ser degolada no meio da pagina — perdendo o
+    log final, que e onde `casados` aparece. Como a retomada e por pagina
+    (`start_page` vem do count ja gravado), cortar o tempo so adia cobertura;
+    nunca perde progresso. No Trust, que tem 4 UFs, sao ~375s por UF e a
+    cobertura completa leva algumas rodadas diarias — que e exatamente como o
+    coletor ja foi desenhado para se comportar contra o rate-limit da fonte.
+    """
+    forcado = (uf or os.getenv("TE_UF") or "").strip().upper()
+    if forcado:
+        return [await run_uf(forcado)]
+
+    cn = psycopg2.connect(_sync_url())
+    cur = cn.cursor()
+    try:
+        ufs = _ufs_do_tenant(cur)
+    finally:
+        cur.close(); cn.close()
+
+    if not ufs:
+        logger.warning("TE: nenhum municipio com UF na carteira — nada a coletar")
+        return []
+
+    logger.info(f"TE: carteira deste tenant -> {', '.join(ufs)}")
+    fatia = _BUDGET_S / len(ufs)
+    saidas = []
+    for u in ufs:
+        saidas.append(await run_uf(u, budget_s=fatia))
+    return saidas
 
 
 if __name__ == "__main__":
