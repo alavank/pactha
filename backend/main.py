@@ -13,7 +13,7 @@ from routers import (
     users, simec, rm, ai, gestao, parlamentares, status_changes,
     documentos, cauc, cagec, acordofes, control, freshness, painel, bi,
     sismob, auditoria, permissoes, modelos_permissao, repasses, contas_irregulares,
-    cofinanciamento, parametros, monitoramento, consulta_popular,
+    cofinanciamento, parametros, monitoramento, consulta_popular, programas_rs,
     uso,
 )
 from config import get_settings
@@ -169,6 +169,8 @@ app.include_router(cofinanciamento.router)
 app.include_router(monitoramento.router)
 # Consulta Popular / COREDEs (RS) — a porta de entrada do convenio estadual gaucho
 app.include_router(consulta_popular.router)
+# Catalogo dos programas estaduais gauchos — conteudo curado, sem coleta
+app.include_router(programas_rs.router)
 app.include_router(cofre.router)
 app.include_router(session_capture.router)
 app.include_router(service_tokens.router)
