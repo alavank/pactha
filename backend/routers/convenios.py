@@ -166,6 +166,13 @@ def estadual_to_response(c: ConvenioEstadual) -> ConvenioResponse:
         orgao_concedente=c.orgao_concedente,
         objeto=c.objeto,
         situacao=c.situacao,
+        # ULTIMA ALTERACAO (capturada por _scrape_alteracoes). `situacao` sozinha e
+        # generica ("Em vigor") e nao diz em que pe o convenio esta — a tela mostrava
+        # so isso. Estes campos deixam o cartao exibir a situacao REAL, como o RM ja faz.
+        alteracao_situacao=(raw.get("ultima_alteracao_situacao") or None),
+        alteracao_tipo=(raw.get("ultima_alteracao_tipo") or None),
+        alteracao_data=(raw.get("ultima_alteracao_data") or None),
+        alteracao_titulo=(raw.get("ultima_alteracao_titulo") or None),
         valor_total=float(c.valor_total) if c.valor_total else None,
         valor_repasse=float(c.valor_concedente) if c.valor_concedente else None,
         valor_empenhado=float(c.valor_emenda_parlamentar) if c.valor_emenda_parlamentar else None,

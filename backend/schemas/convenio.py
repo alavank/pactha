@@ -46,6 +46,12 @@ class ConvenioResponse(BaseModel):
     # scraper popular a indicacao. Ver routers/convenios.list_convenios.
     emenda_nr: Optional[str] = None
     emenda_objeto: Optional[str] = None
+    # ULTIMA ALTERACAO do convenio estadual (SIGCON). A situacao real do momento
+    # vive aqui — `situacao` sozinha e generica. Vazio ate o scraper capturar.
+    alteracao_situacao: Optional[str] = None
+    alteracao_tipo: Optional[str] = None
+    alteracao_data: Optional[str] = None
+    alteracao_titulo: Optional[str] = None
 
     class Config:
         from_attributes = True

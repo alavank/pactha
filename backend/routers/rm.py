@@ -414,9 +414,14 @@ async def repopular(
     # Mesmo ano de referencia da criacao: o maior ano do escopo (ver `criar`).
     _ano_ref = max(_anos) if _anos else date.today().year
     conteudo = await montar_conteudo(db, row[0], _ano_ref, completo=True, anos=_anos)
+    # O `escopo` acompanha o que foi REGENERADO. Sem isto um RM legado ('anual')
+    # era reescrito no padrao de 4 partes mas mantinha o rotulo antigo, e o PDF
+    # saia com o cabecalho de exercicio ("Relatório referente ao exercício de X")
+    # num documento que ja nao e anual.
+    _escopo = "completo" if not _anos else "parcial"
     await db.execute(text(
-        "UPDATE rm_relatorios SET conteudo = CAST(:c AS JSONB), updated_at = NOW() WHERE id = :id"
-    ), {"c": json.dumps(conteudo), "id": rid})
+        "UPDATE rm_relatorios SET conteudo = CAST(:c AS JSONB), escopo = :e, updated_at = NOW() WHERE id = :id"
+    ), {"c": json.dumps(conteudo), "e": _escopo, "id": rid})
     await db.commit()
     n_partes = len(conteudo.get("partes", []))
     n_itens = sum(len(it.get("itens", []))

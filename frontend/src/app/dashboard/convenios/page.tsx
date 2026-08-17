@@ -694,6 +694,18 @@ export default function ConveniosPage() {
                           {conv.situacao}
                         </Selo>
                       )}
+                      {/* ÚLTIMA ALTERAÇÃO: a situação REAL do convênio estadual.
+                          `situacao` sozinha é genérica ("Em vigor") e não diz em que
+                          pé ele está — este selo mostra o estágio de fato. */}
+                      {conv.alteracao_situacao && (
+                        <Selo
+                          tom="atencao"
+                          title={[conv.alteracao_tipo, conv.alteracao_data, conv.alteracao_titulo]
+                            .filter(Boolean).join(" · ") || "Última alteração"}
+                        >
+                          {conv.alteracao_situacao}
+                        </Selo>
+                      )}
                       {/* Emenda vinculada (espelho do selo "Convênio" da tela de Emendas). */}
                       {conv.emenda_nr && (
                         <Selo tom="ok" title={conv.emenda_objeto || `Emenda ${conv.emenda_nr}`}>
