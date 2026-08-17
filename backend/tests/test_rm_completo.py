@@ -8,7 +8,7 @@ from datetime import date
 
 from services.rm_builder import (
     _destino_completo, _pend_municipal, _fed_retem, _fns_retem, _fed_status,
-    _titulos_partes_completo, _situacao_estadual, _alteracao_campos,
+    _titulos_partes_completo, _situacao_estadual, _alteracao_campos, _ano_pagamento_ops_obs,
     _SEC_FED_PLURAL, _SEC_FED_SINGULAR, _SEC_EST_P2, _SEC_EST_P3_RES, _SEC_EST_P3_CONV,
 )
 from services.rm_export import _e_pendencia
@@ -240,3 +240,30 @@ def test_licitacao_tolera_lista_ausente_str_e_lixo():
 def test_licitacao_nao_aparece_fora_de_contratacao_normal():
     assert _processo_execucao_destaque({"processo_execucao_qtd": 3, "situacao_contratacao": "Cláusula Suspensiva"}) is None
     assert _processo_execucao_destaque({"processo_execucao_qtd": None, "situacao_contratacao": "Normal"}) is None
+
+
+# --------------------------------------------------------------------------
+# ANO DO PAGAMENTO da voluntaria (OPs/OBs) — alimenta "REPASSES DE {ano}".
+# Sem ele o ano_pgto era sempre None e TODA voluntaria paga descia p/ a Parte 3,
+# inclusive a paga NESTE ano.
+# --------------------------------------------------------------------------
+def test_ano_pagamento_ops_obs():
+    assert _ano_pagamento_ops_obs({"data_ultimo_desembolso": "24/07/2026", "obs": []}) == 2026
+    # sem a data do ultimo desembolso, usa a MAIOR data de emissao de OB
+    assert _ano_pagamento_ops_obs({"obs": [{"data_emissao_ob": "10/01/2024"},
+                                           {"data_emissao_ob": "24/07/2026"}]}) == 2026
+    # tolera vazio/lixo/str
+    for lixo in ({}, None, "x", [], {"obs": [None, 42]}):
+        assert _ano_pagamento_ops_obs(lixo) is None
+
+
+def test_voluntaria_paga_no_ano_vai_para_repasses_do_ano():
+    ano_pgto = _ano_pagamento_ops_obs({"data_ultimo_desembolso": f"24/07/{ANO}", "obs": []})
+    parte, secao, suf = _destino_completo("federal", "voluntaria", "paga", ANO - 1,
+                                          ano_pgto, ANO, False, False, True)
+    assert parte == 2 and secao == f"REPASSES DE {ANO}:" and suf == f" - Pagos {ANO}"
+    # paga em ano anterior continua na Parte 3
+    parte2, secao2, _ = _destino_completo("federal", "voluntaria", "paga", 2021,
+                                          _ano_pagamento_ops_obs({"data_ultimo_desembolso": "10/03/2022"}),
+                                          ANO, False, False, True)
+    assert parte2 == 3 and secao2 == _SEC_FED_SINGULAR

@@ -80,6 +80,11 @@ export interface Convenio {
   /** Emenda vinculada (casada pelo nº da indicação). Vazio até o scraper popular. */
   emenda_nr?: string | null;
   emenda_objeto?: string | null;
+  /** Última alteração (SIGCON): a situação REAL do convênio — `situacao` é genérica. */
+  alteracao_situacao?: string | null;
+  alteracao_tipo?: string | null;
+  alteracao_data?: string | null;
+  alteracao_titulo?: string | null;
 }
 
 export interface ConvenioList {

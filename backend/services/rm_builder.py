@@ -316,6 +316,35 @@ def _ano_de(*vals) -> int | None:
     return None
 
 
+def _ano_pagamento_ops_obs(ops_obs) -> int | None:
+    """ANO do ultimo desembolso da voluntaria, lido de `ops_obs`.
+
+    Sem isto o `ano_pgto` das voluntarias era SEMPRE None, entao `pago_corrente`
+    nunca era verdadeiro e NENHUMA voluntaria caia no bloco "REPASSES DE {ano}" da
+    Parte 2 — toda voluntaria paga descia para a Parte 3 (anos anteriores), mesmo a
+    paga NESTE ano. Formato (raspado do portal):
+      {"data_ultimo_desembolso": "24/07/2026", "obs": [{"data_emissao_ob": "24/07/2026", ...}]}
+    Usa a data do ultimo desembolso e, na falta dela, a MAIOR data de emissao de OB."""
+    if isinstance(ops_obs, str):
+        try:
+            import json as _json
+            ops_obs = _json.loads(ops_obs)
+        except (ValueError, TypeError):
+            return None
+    if not isinstance(ops_obs, dict):
+        return None
+    anos = []
+    y = _ano_de(ops_obs.get("data_ultimo_desembolso"))
+    if y:
+        anos.append(y)
+    for ob in (ops_obs.get("obs") or []):
+        if isinstance(ob, dict):
+            y = _ano_de(ob.get("data_emissao_ob"))
+            if y:
+                anos.append(y)
+    return max(anos) if anos else None
+
+
 def _situacao_estadual(situacao: str | None, raw: dict) -> str:
     """SITUACAO exibida do instrumento ESTADUAL (SIGCON).
 
@@ -661,7 +690,11 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
                clausula_suspensiva_motivo, parlamentar, situacao_contratacao_detalhe,
                detalhe->>'Empenhado', processo_execucao_qtd, historico_comunicacoes,
                detalhe->>'Banco', detalhe->>'Agência', detalhe->>'Conta',
-               processo_execucao
+               processo_execucao,
+               -- OPs/OBs: e daqui que sai o ANO DO PAGAMENTO da voluntaria (o
+               -- bloco "REPASSES DE {ano}" da Parte 2 dependia dele e vinha
+               -- sempre vazio de voluntaria, porque ninguem lia esta coluna).
+               ops_obs
         FROM transferegov_propostas WHERE municipio_id = :m
     """), {"m": municipio_id})
     for row in vol.fetchall():
@@ -687,8 +720,10 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             pre_novo = st == "ativa" and ano_prop == ano_emissao
             # Pendencia municipal: situacao do ciclo + contratacao + motivo da clausula.
             pend = _pend_municipal(sit, row[10], row[12])
+            # ano do PAGAMENTO (OPs/OBs) — alimenta o bloco "REPASSES DE {ano}".
+            ano_pgto_vol = _ano_pagamento_ops_obs(row[22])
             parte, secao, suf = _destino_completo(
-                "federal", "voluntaria", st, ano_prop, None, ano_emissao,
+                "federal", "voluntaria", st, ano_prop, ano_pgto_vol, ano_emissao,
                 pend, pre_novo, bool(row[2]))
             orgao = orgao + suf
         else:
