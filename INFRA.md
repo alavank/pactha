@@ -243,6 +243,16 @@ O desenho atual (redesenho de 09/08, "tuning da madrugada"):
   escada (+20 min). No mesmo dia o `timeout` da task subiu de 300 para 1720s nos 4
   workers: estava ABAIXO do orçamento interno (1600s), o Coolify matava primeiro e
   descartava o stdout — a task nunca tinha logado nada em nenhum tenant.
+  ⛔ **E a quota tem uma segunda camada: PENALIDADE ESTENDIDA por martelada.**
+  Também medido em 17/08: depois de ~1h30 de rodadas encadeadas (cron a cada
+  minuto nos 4 tenants), o IP da VPS passou **>6 horas** com TODO primeiro fetch
+  levando 403 — em qualquer janela, com a API respondendo 200 normalmente a
+  outro IP no mesmo instante. E requisição REJEITADA também renova a pena: as
+  próprias retentativas (5 requests de backoff por rodada) mantinham o bloqueio
+  vivo. Sob penalidade, a única saída é SILÊNCIO longo (60-90 min sem nenhuma
+  requisição do IP) e, depois, disparos únicos espaçados (≥18 min) — nunca
+  encadear de novo. Sintoma inequívoco: `error: nenhuma pagina coletada` em toda
+  rodada, inclusive em janela "limpa".
 
 > 🕐 **TUDO EM UTC. Brasília é UTC−3.** Host, `instance_timezone` do Coolify e
 > PHP do container em `Etc/UTC`. As faixas do CAGEC (10/15/19/23 UTC) são
