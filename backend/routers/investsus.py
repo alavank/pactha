@@ -23,7 +23,7 @@ from database import get_db
 from models.user import User
 from services.auth import ensure_municipio_access, ensure_tela, get_current_user
 from services.investsus_conteudo import (
-    AVISO, BLOCOS, CONFERIR, LINKS, RESUMO, SUBTITULO, TITULO,
+    AVISO, BLOCOS, BLOQUEIO_MFA, CONFERIR, LINKS, RESUMO, SUBTITULO, TITULO,
 )
 from services.registro_rotas import exige
 
@@ -69,6 +69,9 @@ async def investsus(
         "conferir": CONFERIR,
         "links": LINKS,
         "coleta_automatica": False,
+        # Medido em 17/08: a credencial funciona, o SCPA é que exige MFA ainda
+        # não cadastrado. É pendência do município, e a tela precisa dizer qual.
+        "bloqueio": BLOQUEIO_MFA,
         "municipio": {
             "nome": row[0],
             "cnpj": row[1],
