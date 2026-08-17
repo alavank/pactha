@@ -117,10 +117,17 @@ def create_tables():
             numero_processo VARCHAR(50),
             objeto TEXT,
             programa VARCHAR(300),
-            dt_inicio_vigencia DATE,
-            dt_fim_vigencia DATE,
-            dt_proposta DATE,
-            dt_assinatura DATE,
+            -- ⚠️ TEXTO, e não DATE: o coletor grava "dd/mm/aaaa" cru (o rótulo
+            -- vem assim do detalhe do TransfereGov) e as telas leem esse texto.
+            -- Declaradas DATE aqui, o Postgres convertia usando o DateStyle do
+            -- servidor (MDY) e trocava dia por mês EM SILÊNCIO quando o dia era
+            -- <= 12, ou abortava a coleta do município quando passava disso.
+            -- Os 3 bancos vindos do Neon sempre foram varchar; era este arquivo
+            -- que divergia. Ver `migrations/fix_transferegov_datas_texto.sql`.
+            dt_inicio_vigencia VARCHAR(20),
+            dt_fim_vigencia VARCHAR(20),
+            dt_proposta VARCHAR(20),
+            dt_assinatura VARCHAR(20),
             detalhe JSONB,
             raw_data JSONB,
             created_at TIMESTAMPTZ DEFAULT NOW(),

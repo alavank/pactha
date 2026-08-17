@@ -245,6 +245,14 @@ MIGRATION_FILES = [
     # abaixo de add_auditoria_imutavel.sql (que precisa ser a ultima), e o runner
     # so executa o que esta NESTA lista: migration fora dela e orfa.
     "add_uso.sql",
+    # ⭐ DATAS DO TRANSFEREGOV: o setup_db as declarava DATE, mas em produção
+    # (os 3 bancos vindos do Neon) sempre foram TEXTO — e o coletor manda
+    # "dd/mm/aaaa" cru. No 1º banco criado do zero isso corrompeu dado EM
+    # SILÊNCIO (o DateStyle do servidor é MDY: 12/08/2026 virou 8 de dezembro)
+    # e abortou a coleta do município quando o dia passava de 12. Alinha o
+    # banco novo aos antigos e reconstrói as datas a partir do raw_data.
+    # No-op nos 3 tenants antigos. Ver o cabeçalho do .sql.
+    "fix_transferegov_datas_texto.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",
