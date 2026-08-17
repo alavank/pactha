@@ -146,6 +146,12 @@ INSERT INTO permissoes_catalogo (chave, secao, escrita) VALUES
     ('emendas.exportar', 'consultas', FALSE),
     ('fns.ver', 'consultas', FALSE),
     ('fns.exportar', 'consultas', FALSE),
+    -- InvestSUS entrou depois, junto do grupo SAUDE do menu. Herda de
+    -- 'consultas' como o FNS, que e a tela vizinha: quem ja podia ver o Fundo
+    -- Nacional de Saude passa a ver os repasses do InvestSUS sem concessao nova.
+    -- So `ver`: a fonte e fechada e nao ha coletor, entao `exportar`/`atualizar`
+    -- nao teriam rota para governar (ver o comentario em services/permissoes.py).
+    ('investsus.ver', 'consultas', FALSE),
     ('simec.ver', 'consultas', FALSE),
     ('simec.exportar', 'consultas', FALSE),
     ('parlamentares.ver', 'consultas', FALSE),
@@ -283,6 +289,7 @@ WITH marca AS (
         ('emendas', 'emendas.exportar', FALSE),
         ('fns', 'fns.ver', FALSE),
         ('fns', 'fns.exportar', FALSE),
+        ('investsus', 'investsus.ver', FALSE),
         ('simec', 'simec.ver', FALSE),
         ('simec', 'simec.exportar', FALSE),
         ('parlamentares', 'parlamentares.ver', FALSE),
