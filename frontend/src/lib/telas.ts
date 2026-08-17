@@ -36,10 +36,12 @@ export const TELAS: TelaDef[] = [
   { key: "convenios", label: "Convênios Estaduais" },
   { key: "emendas", label: "Emendas Estaduais" },
   { key: "parlamentares", label: "Parlamentares" },
+  // As quatro da pasta SAÚDE, na ordem em que aparecem no grupo do menu.
   { key: "fns", label: "Fundo Nacional de Saúde" },
   { key: "sismob", label: "Obras da Saúde (SISMOB)" },
-  { key: "simec", label: "SIMEC - PAR (MEC)" },
+  { key: "investsus", label: "InvestSUS" },
   { key: "acordofes", label: "Acordo FES (dívida saúde MG)" },
+  { key: "simec", label: "SIMEC - PAR (MEC)" },
   { key: "cauc", label: "Regularidade (federal e estadual)" },
   { key: "rm", label: "Relatório de Monitoramento" },
   { key: "ai", label: "IA PACTHA" },

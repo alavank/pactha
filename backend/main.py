@@ -12,7 +12,8 @@ from routers import (
     fns, transferegov, export_pdf,
     users, simec, rm, ai, gestao, parlamentares, status_changes,
     documentos, cauc, cagec, acordofes, control, freshness, painel, bi,
-    sismob, auditoria, permissoes, modelos_permissao, repasses, contas_irregulares,
+    sismob, investsus, auditoria, permissoes, modelos_permissao, repasses,
+    contas_irregulares,
     cofinanciamento, parametros, monitoramento, consulta_popular, programas_rs,
     conteudo_rs,
     uso,
@@ -204,6 +205,7 @@ app.include_router(documentos.router)
 app.include_router(cauc.router)
 app.include_router(cagec.router)
 app.include_router(sismob.router)   # /api/sismob/* (obras de saude do MS)
+app.include_router(investsus.router)  # /api/investsus/* (repasses fundo a fundo)
 app.include_router(acordofes.router)
 app.include_router(control.router)  # /api/control/* (Console Alavank)
 app.include_router(auditoria.router)  # /api/auditoria/* (trilha, so leitura)

@@ -237,6 +237,16 @@ _RECURSOS: tuple = (
              "as emendas parlamentares estaduais", "", ("ver", "exportar")),
     _Recurso("fns", SEC_CONSULTAS, "Fundo Nacional de Saúde",
              "as propostas do Fundo Nacional de Saúde", "", ("ver", "exportar")),
+    # InvestSUS: os repasses fundo a fundo do FNS, por bloco e por competência.
+    # ⚠️ SÓ `ver`, de propósito. A primeira versão declarava `exportar` e
+    # `atualizar` também — e o `test_registro_rotas` reprovou, com razão: não há
+    # rota que as exija, porque a fonte é fechada e o coletor ainda não existe.
+    # Permissão que não governa nada é pior que permissão faltando: aparece na
+    # tela de concessão, alguém marca, e fica achando que concedeu algo. As duas
+    # entram junto com o coletor e com os endpoints que elas de fato protegem.
+    _Recurso("investsus", SEC_CONSULTAS, "InvestSUS",
+             "os repasses federais de saúde no InvestSUS", "",
+             ("ver",), fonte="no InvestSUS/FNS"),
     _Recurso("simec", SEC_CONSULTAS, "SIMEC - PAR (MEC)",
              "as liberações e dimensões do PAR", "", ("ver", "exportar")),
     _Recurso("parlamentares", SEC_CONSULTAS, "Parlamentares",

@@ -26,7 +26,6 @@ import {
   BarChart3,
   PanelLeftClose,
   PanelLeftOpen,
-  HardHat,
   ScrollText,
   Building2,
   ChevronsUpDown,
@@ -149,10 +148,21 @@ const NAV_ITEMS: NavEntry[] = [
     ],
   },
   { href: "/dashboard/parlamentares", label: "Parlamentares", icon: UserCircle2 },
-  { href: "/dashboard/fns", label: "Fundo Nacional de Saúde", icon: Target },
-  { href: "/dashboard/sismob", label: "Obras da Saúde (SISMOB)", icon: HardHat },
+  // ⭐ SAÚDE é um grupo porque a saúde é uma PASTA do município, não quatro
+  // sistemas avulsos. Quem cuida do fundo municipal de saúde abre as quatro
+  // telas no mesmo dia; espalhadas na barra, cada uma parecia um assunto
+  // diferente. O SIMEC fica FORA de propósito — é educação (FNDE).
+  {
+    label: "Saúde",
+    icon: HeartPulse,
+    children: [
+      { href: "/dashboard/fns", label: "Fundo Nacional de Saúde" },
+      { href: "/dashboard/sismob", label: "Obras da Saúde (SISMOB)" },
+      { href: "/dashboard/investsus", label: "InvestSUS" },
+      { href: "/dashboard/acordofes", label: "Acordo FES (Dívida Saúde)" },
+    ],
+  },
   { href: "/dashboard/simec", label: "SIMEC - PAR (MEC)", icon: Target },
-  { href: "/dashboard/acordofes", label: "Acordo FES (Dívida Saúde)", icon: HeartPulse },
   { href: "/dashboard/cauc", label: "Regularidade", icon: ShieldCheck },
   { href: "/dashboard/rm", label: "Relatório de Monitoramento", icon: FileText },
   { href: "/dashboard/ai", label: "IA PACTHA", icon: Sparkles },
@@ -272,18 +282,16 @@ function SidebarContent({
   const isSuper = ehSuperAdmin(user);
   const allowed = allowedTelasOf(user);
   let visibleNav = filterNav(NAV_ITEMS, allowed);
-  /* TELAS QUE DEPENDEM DA FONTE DO ESTADO. O Acordo FES é a dívida do FES de
-     MG — só existe em Minas. O Diário Oficial agora tem provedor por UF (MG =
-     Jornal Minas Gerais, ES = DOM/ES), então segue `temDiarioEstadual`: fica no
-     ES, some em GO/TO até existir o provedor daquele estado — abrir a busca sem
-     provedor iria ao diário errado. No consolidado (uf vazia) ficam: a carteira
-     pode conter município mineiro. */
+  /* TELAS QUE DEPENDEM DA FONTE DO ESTADO. O Diário Oficial tem provedor por UF
+     (MG = Jornal Minas Gerais, ES = DOM/ES, RS = DOE-RS), então segue
+     `temDiarioEstadual`: some em GO/TO até existir o provedor daquele estado —
+     abrir a busca sem provedor iria ao diário errado. No consolidado (uf vazia)
+     fica: a carteira pode conter município mineiro. */
   const ufAmbiente = (municipios.find((m) => String(m.id) === selectedMunicipioId)?.uf || "")
     .toUpperCase();
   if (ufAmbiente && ufAmbiente !== "MG") {
     visibleNav = visibleNav.filter((it) => {
       if (!("href" in it)) return true;
-      if (it.href === "/dashboard/acordofes") return false;
       if (it.href === "/dashboard/dou") return temDiarioEstadual(ufAmbiente);
       return true;
     });
@@ -295,6 +303,12 @@ function SidebarContent({
   /* Telas que só existem onde há a fonte daquela UF. Uma lista, e não um `if`
      por tela: entrar com a próxima é acrescentar uma linha aqui. */
   const semFonteNaUf = new Set<string>();
+  /* ⚠️ O Acordo FES MUDOU DE MECANISMO ao entrar no grupo Saúde, e não é
+     detalhe: o filtro logo acima só enxerga item de PRIMEIRO NÍVEL (`"href" in
+     it`), então dentro de um grupo ele deixaria de esconder — e a dívida do FES
+     de Minas apareceria para o cliente gaúcho e para o capixaba. Aqui embaixo o
+     filtro desce em grupos e seções, que é o que o caso passou a exigir. */
+  if (ufAmbiente && ufAmbiente !== "MG") semFonteNaUf.add("/dashboard/acordofes");
   if (ufAmbiente && !repassesDaUf(ufAmbiente)) semFonteNaUf.add("/dashboard/repasses");
   if (ufAmbiente && !cofinanciamentoDaUf(ufAmbiente)) semFonteNaUf.add("/dashboard/cofinanciamento");
   // Emendas estaduais: hoje só MG tem coletor. Num cliente gaúcho a tela abria
