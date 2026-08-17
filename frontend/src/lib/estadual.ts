@@ -177,6 +177,23 @@ export function consultaPopularDaUf(uf?: string | null) {
   return CONSULTA_POPULAR_POR_UF[(uf || "").trim().toUpperCase()] || null;
 }
 
+/** UFs com CATÁLOGO DE PROGRAMAS estaduais de fomento mantido por nós.
+ *
+ *  ⚠️ Diferente dos mapas acima, este NÃO significa "coletamos": significa que
+ *  há conteúdo curado sobre as linhas de fomento daquele estado. A regra do
+ *  roadmap do RS (docs/MAPA_RS.md §13) é que nenhuma fonte fica de fora por não
+ *  ser coletável — entrega-se o que dá, com o aviso de que a abertura de edital
+ *  não é monitorada. Estado novo entra aqui junto com o catálogo em
+ *  `services/programas_<uf>.py`. */
+export const PROGRAMAS_POR_UF: Record<string, { titulo: string; fonte: string }> = {
+  RS: { titulo: "Programas do Estado",
+        fonte: "Avançar, Pavimenta, Assistir, RBC/RS, FEAPER e outros" },
+};
+
+export function programasDaUf(uf?: string | null) {
+  return PROGRAMAS_POR_UF[(uf || "").trim().toUpperCase()] || null;
+}
+
 export function fonteConveniosEstaduais(uf?: string | null): string | null {
   return FONTE_CONVENIOS_ESTADUAIS[(uf || "").trim().toUpperCase()] || null;
 }

@@ -46,7 +46,7 @@ import { hrefToTela, allowedTelasOf } from "@/lib/telas";
 import {
   ABAS_CONFIGURACOES, ROTAS_LEGADAS_CONFIG, abasVisiveis,
 } from "@/lib/configuracoes";
-import { cofinanciamentoDaUf, consultaPopularDaUf, fonteEmendasEstaduais, repassesDaUf, temDiarioEstadual } from "@/lib/estadual";
+import { cofinanciamentoDaUf, consultaPopularDaUf, fonteEmendasEstaduais, programasDaUf, repassesDaUf, temDiarioEstadual } from "@/lib/estadual";
 import { ehSuperAdmin } from "@/lib/conta";
 import { CONSOLIDADO, MunicipioProvider, useMunicipio } from "@/contexts/MunicipioContext";
 import { EnteAtendido, SUBTITULO_PACTHA } from "@/components/bi/Marca";
@@ -142,6 +142,7 @@ const NAV_ITEMS: NavEntry[] = [
       { href: "/dashboard/repasses", label: "Repasses" },
       { href: "/dashboard/cofinanciamento", label: "Cofinanciamento Saúde" },
       { href: "/dashboard/consulta-popular", label: "Consulta Popular" },
+      { href: "/dashboard/programas-rs", label: "Programas do Estado" },
     ],
   },
   { href: "/dashboard/parlamentares", label: "Parlamentares", icon: UserCircle2 },
@@ -300,6 +301,8 @@ function SidebarContent({
   // Consulta Popular: mecanismo do RS. Em qualquer outra UF a tela abriria vazia
   // anunciando algo que não existe naquele estado.
   if (ufAmbiente && !consultaPopularDaUf(ufAmbiente)) semFonteNaUf.add("/dashboard/consulta-popular");
+  // Catálogo de programas: existe onde há conteúdo curado daquele estado.
+  if (ufAmbiente && !programasDaUf(ufAmbiente)) semFonteNaUf.add("/dashboard/programas-rs");
   if (semFonteNaUf.size) {
     const semRepasses = (c: NavLeaf | NavSection): NavLeaf | NavSection | null => {
       // ⚠️ O filho de um grupo pode ser uma SEÇÃO (que não tem `href`, e sim
