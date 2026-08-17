@@ -260,6 +260,11 @@ MIGRATION_FILES = [
     # os municipios de verdade ficavam sem TE. Limpa a sobra; o coletor corrigido
     # passa a seguir a carteira. No-op no Freitas e no Monte Siao (sao de MG).
     "limpa_transferegov_te_fora_da_carteira.sql",
+    # A tela InvestSUS (#243) para quem ja tem a tela fns — sem este backfill,
+    # so o super-admin via o item do menu SAUDE (tela nova nao nasce concedida
+    # a ninguem, e o proprio catalogo backend a omitia). Mesmo desenho do
+    # add_bi_tela.sql; NOT EXISTS respeita revogacao futura.
+    "add_tela_investsus.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",
