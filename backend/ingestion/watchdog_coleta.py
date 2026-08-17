@@ -88,6 +88,8 @@ FRESCOR_HORAS_POR_UF = {
         # horario comercial). 54h cobre o fim de semana sem alarme falso: a
         # rodada de sabado 9h35 so tem a proxima na segunda 9h35, ~48h depois.
         "fpe_rs": 54,
+        # semanal: 8 dias de folga (a fonte muda 1x/ano, apos a votacao)
+        "consulta_popular_rs": 192,
     },
 }
 
