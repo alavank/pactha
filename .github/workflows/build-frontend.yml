@@ -146,6 +146,25 @@ jobs:
           TAG="sha-${GITHUB_SHA}"
           CURL=(curl -sS --connect-timeout 10 --max-time 30 -H "Authorization: Bearer $COOLIFY_TOKEN")
           FALHAS=""
+
+          # ⭐ CREDENCIAL PRIMEIRO — ver o comentario longo no build-backend.yml.
+          # Resumo: com o token vencido, TODAS as chamadas voltam 401 e o jq so
+          # devolve vazio, entao a mensagem vira "deploy nao disparou" e esconde
+          # a causa. Aconteceu em 16/08/2026 e custou quatro merges sem deploy.
+          HTTP_AUTH=$("${CURL[@]}" -o /dev/null -w '%{http_code}'                       "$COOLIFY_URL/api/v1/applications" || echo "000")
+          case "$HTTP_AUTH" in
+            200) : ;;
+            401|403)
+              echo "::error::COOLIFY_TOKEN invalido ou revogado (HTTP $HTTP_AUTH) — atualize o"
+              echo "::error::secret COOLIFY_TOKEN do repo. NADA foi deployado."
+              exit 1 ;;
+            000)
+              echo "::error::Coolify inacessivel a partir do Actions ($COOLIFY_URL)."
+              exit 1 ;;
+            *)
+              echo "::error::Coolify respondeu HTTP $HTTP_AUTH — abortando antes de mexer em tag."
+              exit 1 ;;
+          esac
           # mapa app->uuid no Coolify (ver PROVISIONAR_CLIENTE.md p/ tenant novo)
           # santamaria-rs por ULTIMO de proposito: se ele emperrar na fila do
           # Coolify, os tres tenants antigos ja terminaram.

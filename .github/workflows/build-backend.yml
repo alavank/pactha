@@ -143,6 +143,44 @@ jobs:
           CURTAS='^(watchdog|private-keepalive|queue-sigcon|govbr-renew|painel-alertas)$'
           FALHAS=""
 
+          # ⭐ CREDENCIAL PRIMEIRO, E COM O MOTIVO NA TELA.
+          #
+          # Em 16/08/2026 o COOLIFY_TOKEN foi rotacionado e o secret do repo nao
+          # acompanhou. Resultado: QUATRO merges seguidos (#220-#223) "passaram"
+          # pelo build e nenhum chegou em producao — os quatro tenants ficaram
+          # rodando codigo antigo por horas, e ninguem percebeu porque a unica
+          # mensagem era:
+          #
+          #     api-freitas: deploy nao disparou — revertendo tag para '?'
+          #
+          # que descreve o SINTOMA e esconde a causa. Todas as chamadas voltavam
+          # 401 `{"message":"Unauthenticated."}`, mas o `jq` apenas nao achava o
+          # campo esperado e devolvia vazio — indistinguivel de "o Coolify
+          # recusou o deploy". O proprio `'?'` no lugar da tag antiga ja era a
+          # denuncia (o GET de leitura tambem tinha falhado), e passou batido.
+          #
+          # Uma requisicao antes do laco, olhando o STATUS HTTP e nao o corpo,
+          # troca oito mensagens enganosas por uma frase acionavel.
+          HTTP_AUTH=$("${CURL[@]}" -o /dev/null -w '%{http_code}' \
+                      "$COOLIFY_URL/api/v1/applications" || echo "000")
+          case "$HTTP_AUTH" in
+            200) : ;;
+            401|403)
+              echo "::error::COOLIFY_TOKEN invalido ou revogado (HTTP $HTTP_AUTH). O token foi"
+              echo "::error::rotacionado e o secret do repo nao. Gere um novo em Coolify ->"
+              echo "::error::Keys & Tokens -> API tokens e atualize o secret COOLIFY_TOKEN."
+              echo "::error::NADA foi deployado — as tags dos apps estao intocadas."
+              exit 1 ;;
+            000)
+              echo "::error::Coolify inacessivel a partir do Actions (sem resposta em"
+              echo "::error::$COOLIFY_URL). Servidor fora do ar ou COOLIFY_URL errado."
+              exit 1 ;;
+            *)
+              echo "::error::Coolify respondeu HTTP $HTTP_AUTH ao listar aplicacoes —"
+              echo "::error::abortando antes de mexer em tag de qualquer tenant."
+              exit 1 ;;
+          esac
+
           patch_tag() {  # $1 uuid; usa $TAG; exporta OLD_TAG p/ rollback
             OLD_TAG=$("${CURL[@]}" "$COOLIFY_URL/api/v1/applications/$1" | jq -r '.docker_registry_image_tag // ""')
             "${CURL[@]}" -X PATCH -H "Content-Type: application/json" \
