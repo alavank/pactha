@@ -26,6 +26,10 @@ TELAS_CATALOG = [
     {"key": "sismob", "label": "Obras da Saúde (SISMOB)"},
     {"key": "acordofes", "label": "Acordo FES (dívida saúde MG)"},
     {"key": "fns", "label": "Fundo Nacional de Saúde"},
+    # A 4ª tela da pasta SAÚDE do menu (#243). Ficou fora deste catálogo no
+    # próprio #243 — resultado: só o super-admin via o item, e o Console nem
+    # conseguia conceder. Ver add_tela_investsus.sql para o backfill.
+    {"key": "investsus", "label": "InvestSUS"},
     {"key": "simec", "label": "SIMEC - PAR (MEC)"},
     {"key": "dou", "label": "Diário Oficial"},
     {"key": "bi", "label": "Painel de Indicadores (BI)"},
@@ -58,6 +62,6 @@ TELAS_TODAS = [
     "dashboard", "ai", "telegram", "parlamentares", "gestao", "rm",
     "documentos", "convenios", "emendas", "transferegov", "cauc", "sismob",
     # `suas` SAIU: o painel do MDS vive dentro de `paineis` (ver telas.ts).
-    "acordofes", "fns", "simec", "paineis", "bi", "bi_tela",
+    "acordofes", "fns", "investsus", "simec", "paineis", "bi", "bi_tela",
     "bi_link", "dou", "cofre", "sessoes", "auditoria",
 ]
