@@ -12,6 +12,7 @@ from services.rm_builder import (
     _SEC_FED_PLURAL, _SEC_FED_SINGULAR, _SEC_EST_P2, _SEC_EST_P3_RES, _SEC_EST_P3_CONV,
 )
 from services.rm_export import _e_pendencia
+from services.rm_pdf import _processo_execucao_destaque, _alteracao_destaque
 
 ANO = 2026
 
@@ -197,3 +198,45 @@ def test_resumido_nao_esconde_convenio_ativo_com_alteracao_encerrada():
 def test_resumido_ainda_exclui_convenio_realmente_encerrado():
     item = {"situacao_atual": "Encerrado", "situacao_base": "Encerrado"}
     assert _e_pendencia("Parte 2 - Demandas do Município", item) is False
+
+
+# --------------------------------------------------------------------------
+# LICITACAO (ex-"Processo de Execucao") — rotulo, detalhe por licitacao e o
+# alerta de contratacao Normal SEM licitacao.
+# --------------------------------------------------------------------------
+def test_licitacao_alerta_quando_zero_em_contratacao_normal():
+    txt = _processo_execucao_destaque({"processo_execucao_qtd": 0, "situacao_contratacao": "Normal"})
+    assert txt is not None
+    assert "Licitação" in txt and "nenhum registro" in txt
+    assert "Processo de Execução" not in txt   # rotulo antigo nao volta
+
+
+def test_licitacao_lista_cada_registro():
+    txt = _processo_execucao_destaque({
+        "processo_execucao_qtd": 2, "situacao_contratacao": "Normal",
+        "processo_execucao_lista": [
+            {"situacao": "Concluído", "modalidade": "Licitação - Pregão", "numero": "102026",
+             "data_publicacao": "19/06/2026", "aceite": "Aceito"},
+            {"situacao": "Em elaboração", "modalidade": "Licitação - Concorrência", "numero": "042026"},
+        ],
+    })
+    assert "2 registro(s)" in txt
+    assert "Concluído" in txt and "Pregão" in txt and "102026" in txt and "Aceito" in txt
+    assert "Em elaboração" in txt
+
+
+def test_licitacao_tolera_lista_ausente_str_e_lixo():
+    base = {"processo_execucao_qtd": 1, "situacao_contratacao": "Normal"}
+    # sem lista -> so a contagem (degrada suave)
+    assert "1 registro(s)" in _processo_execucao_destaque(base)
+    # JSONB que chegou como string
+    assert "Concluído" in _processo_execucao_destaque(
+        {**base, "processo_execucao_lista": '[{"situacao": "Concluído"}]'})
+    # lixo nao derruba
+    for lixo in (None, [], "nao-json", [None, 42, "x"], {"a": 1}):
+        assert _processo_execucao_destaque({**base, "processo_execucao_lista": lixo}) is not None
+
+
+def test_licitacao_nao_aparece_fora_de_contratacao_normal():
+    assert _processo_execucao_destaque({"processo_execucao_qtd": 3, "situacao_contratacao": "Cláusula Suspensiva"}) is None
+    assert _processo_execucao_destaque({"processo_execucao_qtd": None, "situacao_contratacao": "Normal"}) is None

@@ -112,6 +112,18 @@ def _styles():
         borderColor=colors.HexColor("#D97706"), borderWidth=1, borderPadding=5,
         textColor=colors.HexColor("#7c2d12"),
     )
+    # INFORMATIVO (caixa cinza): licitacoes em dia, evento do historico, ultima
+    # alteracao. ⚠️ Estas NAO sao alerta — usavam o mesmo ambar da clausula
+    # suspensiva, e um convenio saudavel com 5 licitacoes "Concluído" virava um
+    # bloco de alerta de 6 linhas. O ambar fica reservado ao que pede acao
+    # (clausula/liminar e licitacao ZERO em contratacao Normal).
+    s["informativo"] = ParagraphStyle(
+        "Informativo", parent=base["Normal"], fontName="Helvetica",
+        fontSize=9.5, leftIndent=28, rightIndent=10, spaceBefore=3, spaceAfter=3,
+        leading=13, backColor=colors.HexColor("#F1F5F9"),
+        borderColor=colors.HexColor("#CBD5E1"), borderWidth=1, borderPadding=5,
+        textColor=colors.HexColor("#334155"),
+    )
     return s
 
 
@@ -259,8 +271,8 @@ def _processo_execucao_destaque(item: dict) -> str | None:
         return None
     if qtd == 0:
         return ("⚠ <b>Licitação:</b> nenhum registro "
-                "(contratação Normal, sem licitação/processo de execução iniciado)")
-    partes = [f"<b>Licitação:</b> {qtd} registro(s) de licitação/processo"]
+                "(contratação Normal, sem licitação iniciada)")
+    partes = [f"<b>Licitação:</b> {qtd} registro(s)"]
     # Detalhe por licitação — mesmo formato da tela (situação em negrito, depois
     # modalidade · nº · data · sistema · aceite). Só aparece quando o scraper
     # trouxe a lista; senão fica só a contagem (degrada suave).
@@ -350,19 +362,22 @@ def gerar_pdf(meta: dict, conteudo: dict, municipio_nome: str) -> bytes:
                     if destaque:
                         bloco.append(Spacer(1, 2))
                         bloco.append(Paragraph(destaque, s["clausula"]))
+                    # Licitacao: AMBAR so quando e alerta (contratacao Normal com
+                    # ZERO licitacao). Com licitacoes registradas e informativo.
                     destaque_pe = _processo_execucao_destaque(item)
                     if destaque_pe:
+                        _alerta_pe = item.get("processo_execucao_qtd") == 0
                         bloco.append(Spacer(1, 2))
-                        bloco.append(Paragraph(destaque_pe, s["clausula"]))
+                        bloco.append(Paragraph(destaque_pe, s["clausula" if _alerta_pe else "informativo"]))
                     destaque_ev = _evento_destaque(item)
                     if destaque_ev:
                         bloco.append(Spacer(1, 2))
-                        bloco.append(Paragraph(destaque_ev, s["clausula"]))
+                        bloco.append(Paragraph(destaque_ev, s["informativo"]))
                     # Estadual (SIGCON): a ultima alteracao e o "evento atual" dele.
                     destaque_alt = _alteracao_destaque(item)
                     if destaque_alt:
                         bloco.append(Spacer(1, 2))
-                        bloco.append(Paragraph(destaque_alt, s["clausula"]))
+                        bloco.append(Paragraph(destaque_alt, s["informativo"]))
                     bloco.append(Spacer(1, 4))
                     story.append(KeepTogether(bloco))
 

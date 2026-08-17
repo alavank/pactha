@@ -542,7 +542,7 @@ export default function TransfereGovPropostas({
                           "Normal" sem processo de execucao registrado e o achado
                           que faz a equipe ir atras. */}
                       {semProcesso && (
-                        <Selo tom="critico" title="Contratação Normal sem processo de execução/licitação registrado">
+                        <Selo tom="critico" title="Contratação Normal sem licitação registrada">
                           sem processo
                         </Selo>
                       )}
@@ -659,18 +659,20 @@ export default function TransfereGovPropostas({
                         />
                       </Aviso>
                     )}
-                    {/* Processo de Execução (Licitações) — só p/ contratação Normal.
-                        0 = convênio Normal sem processo iniciado (flag, igual à cláusula). */}
+                    {/* LICITAÇÃO — só p/ contratação Normal. 0 = convênio Normal sem
+                        licitação iniciada (flag, igual à cláusula). O nome no portal do
+                        TransfereGov é "Processo de Execução"; aqui e no RM chamamos de
+                        Licitação, que é o que o dado é. */}
                     {detalhe.processo_execucao_qtd != null && (detalhe.situacao_contratacao || "").toLowerCase().includes("normal") && (
                       detalhe.processo_execucao_qtd === 0 ? (
-                        <Aviso tom="critico" icon={AlertTriangle} titulo="Processo de Execução: NENHUM registro">
+                        <Aviso tom="critico" icon={AlertTriangle} titulo="Licitação: NENHUM registro">
                           <p className="text-[11px] leading-snug" style={{ color: "var(--bi-muted)" }}>
-                            Contratação Normal, mas sem licitação/processo de execução registrado no TransfereGov
+                            Contratação Normal, mas sem licitação registrada no TransfereGov
                             (Execução Convenente → Processo de Execução).
                           </p>
                         </Aviso>
                       ) : (
-                        <Aviso tom="ok" titulo={`Processo de Execução: ${detalhe.processo_execucao_qtd} registro(s)`}>
+                        <Aviso tom="ok" titulo={`Licitação: ${detalhe.processo_execucao_qtd} registro(s)`}>
                           {/* Detalhes por licitação/processo (situação, modalidade,
                               data). Antes só a contagem aparecia; agora, quando o
                               scraper trouxe a lista, mostra cada registro. */}
