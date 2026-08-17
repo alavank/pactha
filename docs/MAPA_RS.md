@@ -374,12 +374,41 @@ BADESUL, BRDE e Banrisul atuam como repassadores e financiadores de projetos mun
 
 # **13\. Roadmap de produto do PACTHA para o RS**
 
+> ## ⭐ **A REGRA QUE ORGANIZA ESTE ROADMAP** (diretriz do dono, 17/08/2026)
+>
+> **Monte Sião foi a base estrutural do tenant gaúcho porque é um projeto pronto,
+> rodando e com estrutura bem estabelecida — não porque o RS seja uma cópia dele.**
+> Cada estado tem particularidades, e o Rio Grande do Sul é um dos que mais tem.
+>
+> **Tudo que for convênio, emenda ou transferência para prefeitura gaúcha entra no
+> PACTHA.** Se a fonte precisar de tela e menu próprios, cria-se. **Nenhuma fonte
+> fica de fora por economia de menu** — menu enxuto é preferência nossa; cobertura
+> é o produto.
+>
+> E onde a fonte **não for coletável hoje** (captcha, bloqueio de IP, Power BI,
+> ausência de dado estruturado), entrega-se **o que der** — catálogo do programa,
+> prazos, checklist de exigências, links oficiais — em vez de deixar a tela em
+> branco. **A tela diz, com todas as letras, o que ainda não é automático.**
+>
+> A razão: um painel de captação vale pelo que o gestor **não sabia que existia**.
+> Omitir um programa porque a coleta é difícil transfere a ele o trabalho de
+> descobrir sozinho — que é exatamente o que ele paga para não fazer.
+>
+> ### Como ler as fases abaixo
+>
+> | Marca | Significa |
+> | :---- | :---- |
+> | ✅ | no ar, coletando |
+> | 🟡 | entregue como **conteúdo curado**, com aviso de que não é automático |
+> | ⛔ | bloqueado por terceiro — o que falta não é código |
+> | 🔒 | depende de credencial do cliente (só após a aprovação — ver §14) |
+
 ## **Fase 1 — Habilitação e adimplência (fundação)**
 
 | Fonte | URL | Acesso | Dificuldade |
 | :---- | :---- | :---- | :---- |
-| CHE | [che.sefaz.rs.gov.br](https://che.sefaz.rs.gov.br/) | Público, sem login — **API REST JSON** (§12.5) | Baixa · ✅ **implementado** |
-| CADIN/RS \+ CFIL/RS | [cadin.sefaz.rs.gov.br](https://cadin.sefaz.rs.gov.br/) | ⚠️ consulta com **reCAPTCHA**; certidões só seg–sáb 7h–22h30 (§12.5) | **Alta** |
+| CHE | [che.sefaz.rs.gov.br](https://che.sefaz.rs.gov.br/) | Público, sem login — **API REST JSON** (§12.5) | ✅ **no ar** |
+| CADIN/RS \+ CFIL/RS | [cadin.sefaz.rs.gov.br](https://cadin.sefaz.rs.gov.br/) | ⚠️ consulta com **reCAPTCHA**; certidões só seg–sáb 7h–22h30 (§12.5) | ⛔ coleta · 🟡 conteúdo |
 | Certidão de Situação Fiscal | [atendimento.receita.rs.gov.br](https://atendimento.receita.rs.gov.br/certidao-de-situacao-fiscal) | Público | Baixa |
 | CRP (RPPS) | Gov federal | Público | Baixa |
 
@@ -397,19 +426,25 @@ Entregável: modelar a entidade "Certificado CHE" com status e validade por cert
 
 ## **Fase 3 — TCE-RS e transparência**
 
-* ⛔ **BLOQUEADO HOJE:** [dados.tce.rs.gov.br](https://dados.tce.rs.gov.br/dataset) devolve **403 para o IP do nosso servidor** (§12.5). O dado é aberto e a integração continua barata — o que falta é liberação de acesso, não código.
+* ⛔ **TCE-RS bloqueado hoje:** [dados.tce.rs.gov.br](https://dados.tce.rs.gov.br/dataset) devolve **403 para o IP do nosso servidor** (§12.5). O dado é aberto e o coletor é barato — falta liberação, não código. **Entregar enquanto isso (🟡):** o calendário de remessas SIAPC/PAD e LicitaCon é norma pública e não muda toda semana; vira conteúdo com os prazos do exercício e alerta, dizendo que a conferência do envio ainda não é automática. Código do órgão de Santa Maria já mapeado (56900; a Câmara é 56901 e não é o cliente).
 
-* Calendarizar os prazos de remessa SIAPC/PAD e LicitaCon, com alertas automáticos.
-
-* Consumir os painéis do [transparencia.rs.gov.br](https://www.transparencia.rs.gov.br/emendas-parlamentares/) — emendas estaduais, convênios e obras.
+* 🟡 **Emendas parlamentares estaduais.** O Portal da Transparência publica em **Power BI "publish to web"**, sem CSV e com token de embed dinâmico — raspagem frágil, e a de pior relação esforço/retorno do estado. Entregar como tela própria com: o que são as emendas gaúchas (**autorizativas**, não impositivas — ver §5), o calendário da LDO, o teto por deputado no exercício, e o link do painel oficial. ⚠️ A tela precisa deixar explícito que **não há prazo constitucional de pagamento no RS**, para não induzir o cliente ao discurso mineiro.
 
 ## **Fase 4 — Diferenciais exclusivos do RS**
 
-* Consulta Popular — [consultapopular.rs.gov.br](https://consultapopular.rs.gov.br/): calendário anual, cédula por COREDE, resultados e vínculo projeto → convênio.
+* ✅ **Consulta Popular / COREDEs** — coletando (`ingestion/consulta_popular_rs.py`) e com tela própria. Mostra as demandas eleitas na região e, item a item, se o município se classificou. Falta o vínculo projeto → convênio, que depende de o convênio decorrente aparecer no dump da CAGE.
 
-* Plano Rio Grande / FUNRIGS — [planoriogrande.rs.gov.br](https://planoriogrande.rs.gov.br/municipios): editais fundo a fundo, exigência de Fundo Municipal de Reconstrução, prazos e a exceção dos 120 dias para municípios em calamidade.
+* 🟡 **Plano Rio Grande / FUNRIGS.** Medido em 17/08/2026: o portal publica **apenas normativos** (decretos, portarias, resoluções) e um **formulário em branco** de cadastramento de demandas — não há dado estruturado por município. O painel de Calamidade Pública do Portal da Transparência é **Power BI**. Entregar como tela própria de conteúdo: exigências do fundo a fundo (calamidade decretada, Fundo Municipal de Reconstrução com conselho e conta, nexo causal pela Resolução 09/FUNRIGS), a **exceção dos 120 dias** para o monitoramento em município em calamidade — que o sistema **já respeita** (`municipios.calamidade_ate`) — e os links oficiais.
 
-* Catálogo de programas setoriais com aviso de abertura de chamamento: Pavimenta, Avançar na Saúde, Assistir, RBC/RS, Avançar na Agropecuária, FEAPER, Avançar Poços.
+* 🟡 **Catálogo de programas setoriais.** Cada um é uma porta de captação que o gestor pode não conhecer, e nenhum publica dado estruturado por município: **Pavimenta / Avançar** (Sedur/SOP, chamamento com contrapartida), **Avançar na Saúde**, **Assistir**, **RBC/RS** (custeio mensal por equipe, fundo a fundo), **Avançar na Agropecuária**, **FEAPER**, **Avançar Poços**. Entregar como catálogo navegável — o que é, quem opera, o que exige, como se candidata, link oficial — com aviso de que a abertura de chamamento não é monitorada automaticamente.
+
+## **Fase 5 — Habilitação: fechar o que falta**
+
+* 🔒 **Portal de Convênios e Parcerias / FPE** (proposta, monitoramento mensal, prestação de contas). A regra do **Decreto 56.939/2023 já está escrita e testada** (`services/monitoramento_rs.py`, 16 testes) e a tela já existe dizendo "ainda não conectado" — só falta a credencial PCPRS.
+
+* ⛔🟡 **CADIN/RS + CFIL/RS.** A consulta exige **reCAPTCHA** e as certidões só respondem **seg–sáb, 7h–22h30** (§12.5). Entregar 🟡 na tela de regularidade: explicar que são dois cadastros negativos independentes do CHE, que um município com CHE válido pode estar travado por eles, e o link direto da consulta — com o campo `itens_negativos` já modelado, esperando a coleta.
+
+* 🟡 **Certidão de Situação Fiscal** (Receita Estadual) e **CRP/RPPS**: entram no checklist documental da tela de regularidade.
 
 ## **13.1 Novos campos e entidades no modelo de dados**
 
@@ -445,13 +480,23 @@ Entregável: modelar a entidade "Certificado CHE" com status e validade por cert
 
 * Prazos e chamadas do Plano Rio Grande
 
-## **13.3 Dashboards de venda**
+## **13.3 Telas do RS — e por que cada uma tem menu próprio**
 
-* **Semáforo de habilitação RS** — CHE \+ CADIN \+ CFIL \+ TCE numa única tela.
+Pela regra do topo desta seção, **fonte com assunto próprio ganha tela própria**. O que já existe e o que falta:
 
-* **Funil de convênios estaduais** — proposta → celebração → execução → prestação de contas.
+| Tela | Estado |
+| :---- | :---- |
+| **Regularidade** (CAUC federal \+ CHE estadual, lado a lado) | ✅ no ar — o CHE entrou sem tela nova porque o assunto é o mesmo: "minha documentação está em dia?" |
+| **Convênios Estaduais** (carteira da CAGE, com valor pago e vigência) | ✅ no ar |
+| **Consulta Popular** (demandas eleitas na região e se o município se classificou) | ✅ no ar, menu próprio |
+| **Diário Oficial RS** | ✅ no ar (5º provedor da tela de Diários) |
+| **Monitoramento (Decreto 56.939)** | 🔒 tela pronta dizendo "ainda não conectado"; alarme testado esperando a credencial |
+| **Programas do Estado** (catálogo setorial: Pavimenta/Avançar, Avançar na Saúde, Assistir, RBC/RS, Avançar na Agropecuária, FEAPER, Avançar Poços) | 🟡 a fazer — menu próprio |
+| **Plano Rio Grande / FUNRIGS** | 🟡 a fazer — menu próprio (exigências, prazos, exceção dos 120 dias) |
+| **Emendas Estaduais RS** | 🟡 a fazer — hoje a tela de Emendas some no RS por não haver fonte; passa a existir como conteúdo, deixando explícito que **não são impositivas** |
+| **TCE-RS** (remessas SIAPC/PAD e LicitaCon) | ⛔🟡 a fazer — calendário de prazos como conteúdo enquanto o IP não é liberado |
 
-* **Radar de oportunidades por COREDE** — editais Avançar, Pavimenta, Consulta Popular e FUNRIGS filtrados pela região do município.
+**Radar de oportunidades por COREDE** — a visão que amarra tudo: programas, Consulta Popular e FUNRIGS filtrados pela região do município. Depende do catálogo acima existir primeiro.
 
 # **14\. Ressalvas e pontos a confirmar antes de vender**
 
