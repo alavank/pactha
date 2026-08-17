@@ -350,6 +350,98 @@ async def control_ingestion(
         return {"log": [], "error": "tabela ingestion_log indisponível"}
 
 
+# ⭐ COBERTURA POR MUNICIPIO — a pergunta que o /fontes nao responde.
+#
+# O `/fontes` conta o TENANT inteiro: "2405 convenios estaduais" nao diz se os 60
+# municipios do Freitas tem dado ou se 2405 sao de tres deles. Auditar cobertura
+# exigia abrir o banco a mao, municipio por municipio, toda vez.
+#
+# ⚠️ A LISTA E CURADA, e nao um SELECT no information_schema por `municipio_id`.
+# Varredura automatica traria `user_municipios`, `gestao_anotacoes`,
+# `documentos_gerados` — coisas que o CLIENTE cria, nao que a coleta traz. Zero
+# ali e trabalho nao feito, nao fonte parada, e misturar as duas leituras faria a
+# auditoria mentir nos dois sentidos.
+#
+# Tabela que nao existe naquele tenant e omitida em silencio (cada consulta cai
+# no seu proprio try), que e o comportamento certo: `consulta_popular_rs` so
+# existe onde a migration do RS rodou.
+_COBERTURA_TABELAS = [
+    # (tabela, rotulo legivel, area)
+    ("convenios_estadual",   "Convênios estaduais",          "Estadual"),
+    ("emendas_estaduais",    "Emendas estaduais",            "Estadual"),
+    ("repasses_estaduais",   "Repasses estaduais",           "Estadual"),
+    ("cofinanciamento_saude", "Cofinanciamento saúde",       "Estadual"),
+    ("consulta_popular_rs",  "Consulta Popular (RS)",        "Estadual"),
+    ("cagec_situacao",       "Habilitação estadual",         "Regularidade"),
+    ("cauc_situacao",        "CAUC (regularidade federal)",  "Regularidade"),
+    ("contas_irregulares",   "Contas irregulares",           "Regularidade"),
+    ("transferegov_propostas", "TransfereGov (voluntárias)", "Federal"),
+    ("transferegov_pac",     "TransfereGov PAC",             "Federal"),
+    ("transferegov_te",      "Transferências Especiais",     "Federal"),
+    ("sismob_obras",         "SISMOB (obras de saúde)",      "Saúde"),
+    ("acordofes_credor",     "Acordo FES",                   "Saúde"),
+    ("simec_par_liberacoes", "SIMEC-PAR (educação)",         "Educação"),
+]
+
+
+@router.get("/cobertura")
+async def control_cobertura(
+    db: AsyncSession = Depends(get_db),
+    p: ControlPrincipal = Depends(require_control_scope("control:data:read")),
+):
+    """Quantas linhas cada município tem em cada fonte + a última coleta dele.
+
+    Uma consulta POR TABELA agrupando por `municipio_id` — nunca uma por
+    município. Com 60 municípios e 14 tabelas, o laço ingênuo seriam 840 idas ao
+    banco; assim são 14. `scraper_municipio_coleta` responde a outra metade da
+    pergunta: quando cada município foi visitado por cada fonte, e com que erro.
+    """
+    muns = (await db.execute(text(
+        "SELECT id, nome, upper(coalesce(uf,'')) AS uf, ibge_code, cnpj, active "
+        "FROM municipios ORDER BY uf, nome"))).mappings().all()
+    saida = {m["id"]: {"id": m["id"], "nome": m["nome"], "uf": m["uf"],
+                       "ibge": m["ibge_code"], "cnpj": m["cnpj"],
+                       "ativo": bool(m["active"]), "fontes": {}, "coletas": {}}
+             for m in muns}
+
+    for tabela, rotulo, area in _COBERTURA_TABELAS:
+        try:
+            rows = (await db.execute(text(
+                f"SELECT municipio_id, COUNT(*) AS n FROM {tabela} "
+                f"WHERE municipio_id IS NOT NULL GROUP BY municipio_id"))).mappings().all()
+        except Exception:
+            # Tabela ausente neste tenant (ou sem municipio_id): não é erro, é
+            # uma fonte que aquele cliente não tem. Segue sem registrar a chave.
+            await db.rollback()
+            continue
+        for m in saida.values():
+            m["fontes"][rotulo] = {"area": area, "n": 0}
+        for r in rows:
+            alvo = saida.get(r["municipio_id"])
+            if alvo is not None:
+                alvo["fontes"][rotulo]["n"] = r["n"]
+
+    try:
+        coletas = (await db.execute(text(
+            "SELECT fonte, municipio_id, "
+            "to_char(ultima_coleta_em, 'YYYY-MM-DD\"T\"HH24:MI:SS') AS ultima, "
+            "to_char(ultimo_erro_em,  'YYYY-MM-DD\"T\"HH24:MI:SS') AS erro_em, "
+            "left(coalesce(ultimo_erro, ''), 200) AS erro, tentativas "
+            "FROM scraper_municipio_coleta"))).mappings().all()
+        for c in coletas:
+            alvo = saida.get(c["municipio_id"])
+            if alvo is not None:
+                alvo["coletas"][c["fonte"]] = {
+                    "ultima": c["ultima"], "erro_em": c["erro_em"],
+                    "erro": c["erro"] or None, "tentativas": c["tentativas"],
+                }
+    except Exception:
+        await db.rollback()
+
+    return {"instance_slug": os.getenv("INSTANCE_SLUG", ""),
+            "municipios": list(saida.values())}
+
+
 # Catalogo de fontes p/ o Monitor da Central: tabela contada (escopada por municipio
 # ativo = o que o cliente REALMENTE ve) + nomes que cada scraper grava no ingestion_log.
 _FONTES_MONITOR = [
