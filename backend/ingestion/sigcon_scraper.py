@@ -331,9 +331,25 @@ async def _scrape_indicacoes(page) -> dict | None:
     }"""
 
     def _clean(t):
+        """Descarta a linha-placeholder do PrimeFaces ("Nenhum Registro Encontrado.").
+
+        ⚠️ NAO basta olhar `len(r) == 1`: a linha vazia herda o numero de COLUNAS da
+        tabela (o modal tem 11), entao ela chegava como 11 celulas e passava pelo
+        filtro. Isso fazia `_rows_ok(modal)` dar True com o modal VAZIO e o codigo
+        PULAR o clique no row-toggler — que e justamente o que popula o modal.
+        Resultado: nr_indicacao=None em todo convenio. Agora: e placeholder quando o
+        texto todo da linha diz "nenhum"/"não há registro" ou quando nao ha celula
+        com conteudo util."""
         if not t:
             return {"cab": [], "rows": []}
-        rows = [r for r in (t.get("rows") or []) if not (len(r) == 1 and "nenhum" in (r[0] or "").lower())]
+
+        def _vazia(r):
+            txt = " ".join((c or "").strip() for c in r).strip().lower()
+            if not txt:
+                return True
+            return ("nenhum" in txt and "registro" in txt) or "nenhuma indica" in txt or txt == "nenhum registro encontrado."
+
+        rows = [r for r in (t.get("rows") or []) if not _vazia(r)]
         return {"cab": t.get("cab") or [], "rows": rows}
 
     def _rows_ok(t):
@@ -370,13 +386,27 @@ async def _scrape_indicacoes(page) -> dict | None:
         # (convenio pode ter varias indicacoes) e reespera o modal encher.
         if not _rows_ok(d.get("modal")) and (d.get("inline") and (d["inline"].get("rows") or [])):
             try:
+                # ⚠️ O gatilho do "Expandir" NEM SEMPRE tem a classe .ui-row-toggler
+                # (depende da versao/render do PrimeFaces). Usar SO ela achava 0 e o
+                # clique nunca acontecia -> nr_indicacao=None em todo convenio. Tenta a
+                # cadeia: row-toggler -> icone de triangulo -> qualquer clicavel da
+                # ULTIMA celula (a coluna "Expandir").
                 n_tog = await page.evaluate(r"""() => {
                     const tb=[...document.querySelectorAll('tbody[id$="_data"]')].find(t=>t.id.includes('dtTblIndicacaoRecursosEmenda_data'));
                     if(!tb) return 0;
-                    const togs=[...tb.querySelectorAll('.ui-row-toggler')];
-                    togs.forEach(t=>t.click());
+                    let togs=[...tb.querySelectorAll('.ui-row-toggler, [class*="row-toggler"], .ui-icon-circle-triangle-e, [class*="circle-triangle"]')];
+                    if(!togs.length){
+                        // fallback: o clicavel da ultima celula de cada linha (coluna Expandir)
+                        togs=[...tb.querySelectorAll('tr')].map(tr=>{
+                            const tds=tr.querySelectorAll('td'); const last=tds[tds.length-1];
+                            return last ? (last.querySelector('a,span,div,img,button') || last) : null;
+                        }).filter(Boolean);
+                    }
+                    togs.forEach(t=>{ try{ t.click(); }catch(e){} });
                     return togs.length;
                 }""")
+                if _dbg:
+                    logger.info(f"  [DIAG-IND] togglers clicados={n_tog}")
                 if n_tog:
                     try:
                         await page.wait_for_function(r"""() => {
