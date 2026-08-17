@@ -342,6 +342,27 @@ daquele tenant viram lixo. Cada tenant tem a sua — **nunca copie a de um para 
 - **Domínio:** `PATCH $B/applications/<uuid>` com `{"domains":"https://..."}` + redeploy.
 - **Scheduled Tasks:** `GET/POST $B/applications/<worker_uuid>/scheduled-tasks`.
 - **Banco:** `GET $B/databases/<uuid>` (campos `status`, `internal_db_url`).
+- **Coleta forçada ("run now")**: a API v1 **não tem** disparo imediato de task, e o
+  endpoint `/execute` não existe nesta versão. A manobra que funciona (auditoria de
+  17/08): `PATCH` a `frequency` da task para `* * * * *`, esperar ~90s (um fire), e
+  **restaurar o cron original num `finally`** — cron esquecido em `* * * * *` é o
+  coletor batendo 1440×/dia no portal do governo. O processo já iniciado sobrevive à
+  restauração (roda até o fim). Duas regras aprendidas a caro:
+  1. **Um Chromium por worker por vez.** Os workers têm 2 GB; duas tasks de browser
+     simultâneas (sigcon + lote, ou um one-shot durante uma cadeia) morrem por
+     memória **sem log nenhum** — o fire parece não ter acontecido. Foi por isso que
+     o sigcon do trust "falhou" 3× em 17/08: só rodou quando ganhou janela exclusiva.
+  2. **Deploy mata coleta em voo** (restart do worker) e o fire diário perdido para
+     um `flock` ocupado não se repete sozinho — conferir o `ingestion_log` depois.
+- **Auditoria município × fonte**: `GET /api/control/cobertura` na API de cada tenant
+  (header `X-Control-Token`, valor na env `CONTROL_TOKEN_BOOTSTRAP` da app) devolve,
+  por município, a contagem POR FONTE (separada p/ `convenios_estadual` e
+  `cagec_situacao`, PR #245) e o carimbo do rodízio (`scraper_municipio_coleta`).
+  Para frescor por fonte use `ultimo_por_fonte` de `GET /api/control/ingestion` —
+  as 80 linhas do `log` são janela e, em dia de coleta intensa, fonte diária "some"
+  e parece parada (falso-positivo que atrapalhou a auditoria de 17/08 duas vezes).
+  ⚠️ Contagem **zero é estado legítimo** (município sem emenda Pix, sem obra, sem
+  conta irregular): o veredito é *o coletor visitou sem erro*, nunca a contagem.
 
 UUIDs das aplicações medidos em 2026-07-23:
 
