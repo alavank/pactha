@@ -397,6 +397,28 @@ def _licitacao_aceita(processo_execucao) -> bool:
     return False
 
 
+def _projeto_basico_resumo(projeto_basico) -> str:
+    """"Termo de Referência — Em Análise": QUAL documento sustenta a clausula
+    suspensiva e em que PE ele esta no portal. String vazia quando nao ha captura
+    — o relatorio so imprime a linha quando ha o que dizer."""
+    d = _jsonb(projeto_basico)
+    if not isinstance(d, dict):
+        return ""
+    sit = (d.get("situacao") or "").strip()
+    docs = d.get("documentos") if isinstance(d.get("documentos"), list) else []
+    # ⚠️ O rotulo util e a DESCRICAO do anexo ("Termo de Referência"). O `tipo`
+    # vem abreviado do portal ("Termo Referência") e o nome do arquivo e ruido
+    # ("TERMO DE REFERÊNCIA - ARAÚJOS - ESPORTE.pdf") — nao servem para o RM.
+    rotulo = ""
+    for it in docs:
+        if isinstance(it, dict) and (it.get("descricao") or it.get("tipo")):
+            rotulo = (it.get("descricao") or it.get("tipo") or "").strip()
+            break
+    if rotulo and sit:
+        return f"{rotulo} — {sit}"
+    return sit or rotulo
+
+
 def _ano_pagamento_ops_obs(ops_obs) -> int | None:
     """ANO do ultimo desembolso da voluntaria, lido de `ops_obs`.
 
@@ -775,7 +797,10 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
                -- OPs/OBs: e daqui que sai o ANO DO PAGAMENTO da voluntaria (o
                -- bloco "REPASSES DE {ano}" da Parte 2 dependia dele e vinha
                -- sempre vazio de voluntaria, porque ninguem lia esta coluna).
-               ops_obs
+               ops_obs,
+               -- Situacao do Projeto Basico/Termo de Referencia: o documento que
+               -- sustenta a clausula suspensiva, e em que pe ele esta no portal.
+               projeto_basico
         FROM transferegov_propostas WHERE municipio_id = :m
     """), {"m": municipio_id})
     for row in vol.fetchall():
@@ -875,6 +900,9 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             # Lista das licitações/processos COM detalhe (situação, modalidade, nº,
             # data, aceite) — para o RM mostrar cada registro, não só a contagem.
             "processo_execucao_lista": row[21],
+            # Projeto Básico/Termo de Referência: o `clausula_motivo` diz QUAL
+            # documento trava; este diz a SITUAÇÃO dele ("Em Análise").
+            "projeto_basico": _projeto_basico_resumo(row[23]),
             # EVENTO ATUAL do Histórico de Comunicações (mandatárias): onde o
             # instrumento está de fato na análise, + situação e considerações.
             **_evento_atual(row[17]),
