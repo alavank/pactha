@@ -1016,6 +1016,51 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             "fonte_ref": str(r[0]),
         }, ano=r[2])
 
+    # === SIMEC/PAR — TERMOS DE COMPROMISSO (o INSTRUMENTO do MEC) ===
+    # As liberacoes (simec_par_liberacoes) sao os PAGAMENTOS; aqui entra o termo em
+    # si — processo, tipo, vigencia e valor —, coletado de carregaTermos.php
+    # (ingestion/simec_termos.py). Best-effort: tenant sem a tabela segue sem MEC.
+    if completo:
+        try:
+            tc = await db.execute(text("""
+                SELECT processo, nr_documento, tipo_documento, tipo_objeto,
+                       dt_validacao, periodo_pagamento, vigencia_txt, dt_vigencia,
+                       valor_termo
+                FROM simec_termos WHERE municipio_id = :m
+            """), {"m": municipio_id})
+            for r in tc.fetchall():
+                venceu = bool(r[7]) and r[7] < date.today()
+                # Termo com vigencia vencida ou ja pago -> Parte 3 (anos anteriores /
+                # prestacao); vigente -> pendencia em Brasilia (Parte 1).
+                st = "paga" if venceu else "vigente"
+                ano_tc = (r[4].year if r[4] else None) or _ano_de(r[0], r[1])
+                ano_pg = r[7].year if (venceu and r[7]) else None
+                parte_tc, secao_tc, suf = _destino_completo(
+                    "federal", "simec_termo", st, ano_tc, ano_pg, ano_emissao,
+                    False, False, False)
+                add_item(parte_tc, secao_tc, ("Ministério da Educação — Termo de Compromisso" + suf), {
+                    "tipo": "Processo",   # rotulo do numero na referencia (Educacao/SIMEC)
+                    "numero": r[0] or r[1] or "",
+                    "objeto": " · ".join(x for x in (r[2], r[3]) if x) or "",
+                    "parlamentar": "",
+                    "valor_global": _money(r[8]),
+                    "valor_repasse": _money(r[8]),
+                    "valor_contrapartida": 0,
+                    "banco": "", "agencia": "", "conta": "",
+                    "saldo_bancario": None, "dt_saldo": None,
+                    "dt_fim_vigencia": _iso(r[7]),
+                    "situacao_atual": (r[6] or "").strip() or ("Vigente" if not venceu else "Vigência encerrada"),
+                    "situacao_base": "Vigente" if not venceu else "Encerrado",
+                    # Nº do documento e período de pagamento ficam visíveis no objeto
+                    # do item quando existem (o portal os traz separados).
+                    "simec_documento": r[1] or "",
+                    "simec_periodo_pagamento": r[5] or "",
+                    "fonte": "simec_termo",
+                    "fonte_ref": r[0] or r[1] or "",
+                }, ano=ano_tc)
+        except Exception as ex:
+            logger.warning(f"RM: SIMEC termos indisponivel p/ {municipio_id}: {str(ex)[:120]}")
+
     # === Novo PAC / Selecao PAC / Doacao (TransfereGov) — federal, SO no completo ===
     # A referencia lista itens 'Novo PAC'/'Doacao Selecao Novo PAC'/'(DOACAO)' cujo
     # "parlamentar" e na verdade o PROGRAMA. Fonte: tabela transferegov_pac.
