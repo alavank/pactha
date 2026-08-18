@@ -46,6 +46,13 @@ _MAND = "https://mandatarias.transferegov.sistema.gov.br"
 # server-rendered com a tabela — validado 16/08/2026 no instrumento 996050.
 _LIC_URL = (_DISCRIC + "/voluntarias/execucao/ListarLicitacoes/"
             "ListarLicitacoes.do?destino=ListarLicitacoes")
+# URL DIRETA da aba Projeto Basico/Termo de Referencia (Execucao Convenente).
+# ⚠️ O `idProposta=null` NAO e engano nem placeholder por preencher: e o que o
+# proprio portal poe na barra. A tela le o convenio do CONTEXTO server-side
+# (o que o _seta_contexto estabelece), nao da query string — por isso pedir esta
+# URL "no seco" devolve "Proposta nao encontrada" e cai no Principal.do.
+_PB_URL = (_DISCRIC + "/voluntarias/execucao/ListarDocumentosProjetoBasico/"
+           "ListarDocumentosProjetoBasico.do?idProposta=null")
 _IDP = "https://idp.transferegov.sistema.gov.br"
 _MED = "https://medicao.transferegov.sistema.gov.br"
 
@@ -578,6 +585,109 @@ class TgHttpEnrich:
         if not re.search(r"Listagem de Licita|Processo de Execu|Situa..o no Sistema", r.text, re.I):
             return None
         return self._le_licitacoes_lista(r)
+
+    # ---------- Projeto Basico / Termo de Referencia (guest) ----------
+
+    @staticmethod
+    def _le_projeto_basico(resp) -> dict | None:
+        """Situacao do Projeto Basico/Termo de Referencia + os documentos anexados.
+        {situacao, documentos:[{nome_arquivo, descricao, tipo, data_upload}]}.
+        None = indeterminado (nao gravar).
+
+        A situacao vem de um par <td class="label">Situação</td><td class="field">,
+        e os anexos de uma tabela com cabecalho "Nome Arquivo | Descricao | Tipo |
+        Data Upload" — mapeada por CABECALHO, nunca por posicao (o portal reordena
+        e ainda pendura colunas de acao DETALHAR/BAIXAR no fim da linha)."""
+        doc = _parse(resp)
+        situacao = None
+        for tr in doc.findall(".//tr"):
+            cels = tr.xpath("./th|./td")
+            if len(cels) < 2:
+                continue
+            if re.fullmatch(r"situa..o\s*:?", _txt(cels[0]).strip(), re.I):
+                situacao = _txt(cels[1]).strip() or None
+                break
+        documentos: list[dict] = []
+        for t in doc.findall(".//table"):
+            trs = t.findall(".//tr")
+            if not trs:
+                continue
+            heads = [_txt(x).lower() for x in trs[0].xpath("./th|./td")]
+            if not any("nome arquivo" in h for h in heads):
+                continue
+
+            def col(frag):
+                for i, h in enumerate(heads):
+                    if frag in h:
+                        return i
+                return None
+
+            i_nome, i_desc = col("nome arquivo"), col("descri")
+            i_tipo, i_dt = col("tipo"), col("data upload")
+            for tr in trs[1:]:
+                cels = [_txt(c) for c in tr.findall("td")]
+                if not any(cels):
+                    continue
+
+                def g(i):
+                    return (cels[i].strip() if (i is not None and i < len(cels)) else "") or None
+
+                nome = g(i_nome)
+                if not nome:
+                    continue
+                documentos.append({"nome_arquivo": nome, "descricao": g(i_desc),
+                                   "tipo": g(i_tipo), "data_upload": g(i_dt)})
+            break
+        # Nem situacao nem anexo = pagina que nao e a que queriamos. Devolver
+        # {} aqui gravaria "consultado e vazio" por cima de um dado bom.
+        if situacao is None and not documentos:
+            return None
+        return {"situacao": situacao, "documentos": documentos}
+
+    def projeto_basico(self, id_proposta: str) -> dict | None:
+        """Aba Execucao Convenente > Projeto Basico/Termo de Referencia.
+        None = indeterminado (nao gravar).
+
+        Pedido do dono (18/08/2026): com o convenio em Clausula Suspensiva e SEM
+        licitacao, o RM tem de dizer em que pe esta o documento — ex.: Termo de
+        Referencia -> "Em Análise".
+
+        DUAS COISAS APRENDIDAS AO VIVO EM 18/08/2026 (convenio 981397, Araujos,
+        proposta 2124094 — 200, ~47KB, Situacao "Em Análise", 1 anexo):
+
+        1. NAO e preciso POST com `idConvenio` na action ...INCLUIR (uma sondagem
+           anterior concluiu isso e travou ali). E GET puro na URL direta — o
+           `idProposta=null` da URL e irrelevante, a tela le o convenio do
+           CONTEXTO server-side. Por isso o _seta_contexto vem antes.
+        2. ⚠️ MAS NAO RODA EM GUEST. Esta tela esta sob /voluntarias/execucao/*,
+           o MESMO SP SAML `execucao` do ListarLicitacoes: sem a sessao que cobre
+           esse SP, o portal devolve 200 com a pagina "HTTP Post Binding" de 3469
+           bytes — medido, identico ao _LIC_URL. Ou seja, esta captura vive e
+           morre junto com a da Licitacao: se o keepalive perder o SP `execucao`,
+           as duas voltam a devolver None (nunca apagam — o COALESCE preserva)."""
+        if not self._seta_contexto(id_proposta):
+            return None
+        try:
+            r = self.cli.get(_PB_URL)
+        except Exception:
+            return None
+        if r.status_code != 200 or _sessao_caiu(r):
+            return None
+        # ⚠️ O SP `execucao` frio devolve 200 (nao redireciona), entao _sessao_caiu
+        # nao pega: quem denuncia e o corpo SAML. Sem este teste a parede viraria
+        # so "sem dado", escondendo "a sessao precisa ser recapturada".
+        if re.search(r"Post Binding|SAMLResponse", r.text, re.I):
+            logger.debug("projeto_basico: SP `execucao` frio (SAML) — recapturar sessao")
+            return None
+        # ⚠️ DOIS 200 QUE NAO SAO O DADO. A tela de UPLOAD responde 200 com tamanho
+        # parecido (~44KB) e sem "Situação" — foi o falso positivo que enganou a
+        # sondagem anterior. E sem contexto o portal serve o Principal.do com
+        # "Proposta nao encontrada". Recusar os dois explicitamente.
+        if re.search(r"MantendoProjetoBasicoINSERIR|Descri..o do documento", r.text, re.I):
+            return None
+        if re.search(r"Proposta n..o encontrada|Um erro ocorreu", r.text, re.I):
+            return None
+        return self._le_projeto_basico(r)
 
     # ---------- Obras (medicao, REST com JWT) ----------
 

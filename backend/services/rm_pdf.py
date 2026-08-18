@@ -198,6 +198,12 @@ def _clausula_destaque(item: dict) -> str | None:
         partes.append(f"<b>Situação atual do contrato:</b> {_escape(item['situacao_contrato'])}")
     if item.get("clausula_motivo"):
         partes.append(f"<b>Motivo:</b> {_escape(item['clausula_motivo'])}")
+    # O motivo diz QUAL documento trava (ex.: "Termo de Referência"); esta linha
+    # diz em que PÉ ele está no portal (ex.: "Em Análise"). Sem ela o relatório
+    # apontava a pendência sem saber se o município já havia entregado o documento.
+    if item.get("projeto_basico"):
+        partes.append("<b>Projeto Básico/Termo de Referência:</b> "
+                      + _escape(item["projeto_basico"]))
     if item.get("clausula_dt"):
         partes.append(f"<b>Data prevista para resolução:</b> {_escape(_fmt_dt(item['clausula_dt']))}")
     return "<br/>".join(partes)

@@ -819,6 +819,23 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
                             prop["processo_execucao_qtd"] = _qtd
                 except Exception as e:
                     logger.warning(f"    proc.exec {prop['numero_proposta']}: {str(e)[:80]}")
+            # Projeto Básico/Termo de Referência — o espelho da regra acima, do
+            # outro lado: para o convênio em CLÁUSULA SUSPENSIVA, o que o dono
+            # quer saber é em que pé está o documento que a suspende (Termo de
+            # Referência "Em Análise"). Até aqui o motivo da cláusula só dizia
+            # QUAL documento falta; a situação dele não existia em lugar nenhum.
+            # ⚠️ Depende da MESMA sessão do Processo de Execução (SP SAML
+            # `execucao`): sem ela o portal devolve a página SAML e isto vira
+            # None — nunca 0, nunca vazio. Só o caminho HTTP tem; quem chega aqui
+            # sem _hx segue sem o campo e o COALESCE do upsert preserva o que já
+            # havia. Perder o SP derruba a Licitação junto, e em silêncio.
+            if _idp and _hx and _RE_CLAUSULA.search(_sit):
+                try:
+                    _pb = await asyncio.to_thread(_hx.projeto_basico, _idp)
+                    if _pb is not None:
+                        prop["projeto_basico"] = _pb
+                except Exception as e:
+                    logger.warning(f"    proj.basico {prop['numero_proposta']}: {str(e)[:80]}")
             # OPs/OBs (repasses/desembolsos) e OBRAS (acompanhamento/medicao).
             # Ambas GUEST (nao exigem sessao gov.br), mas cada uma navega o portal
             # por instrumento (~alguns s) — pesado no host burstable. Por isso a
@@ -1686,10 +1703,11 @@ def _upsert(mun_id: int, propostas: list[dict]):
                  situacao_contratacao, clausula_suspensiva_dt_prevista,
                  clausula_suspensiva_motivo, parlamentar, situacao_contratacao_detalhe,
                  id_proposta_siconv, processo_execucao_qtd, processo_execucao,
+                 projeto_basico,
                  historico_comunicacoes, documentos_quadro_resumo, historico_atualizado_em,
                  ops_obs, obras, detalhe_atualizado_em,
                  detalhe, raw_data, updated_at)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s::jsonb,%s::jsonb,%s::jsonb,%s,%s::jsonb,%s::jsonb,%s,%s::jsonb,%s::jsonb,NOW())
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s::jsonb,%s::jsonb,%s::jsonb,%s::jsonb,%s,%s::jsonb,%s::jsonb,%s,%s::jsonb,%s::jsonb,NOW())
             ON CONFLICT (municipio_id, numero_proposta) DO UPDATE SET
                 situacao=EXCLUDED.situacao, orgao=EXCLUDED.orgao,
                 proponente=EXCLUDED.proponente, possui_parecer=EXCLUDED.possui_parecer,
@@ -1725,6 +1743,7 @@ def _upsert(mun_id: int, propostas: list[dict]):
                 id_proposta_siconv=COALESCE(EXCLUDED.id_proposta_siconv, transferegov_propostas.id_proposta_siconv),
                 processo_execucao_qtd=COALESCE(EXCLUDED.processo_execucao_qtd, transferegov_propostas.processo_execucao_qtd),
                 processo_execucao=COALESCE(EXCLUDED.processo_execucao, transferegov_propostas.processo_execucao),
+                projeto_basico=COALESCE(EXCLUDED.projeto_basico, transferegov_propostas.projeto_basico),
                 historico_comunicacoes=COALESCE(EXCLUDED.historico_comunicacoes, transferegov_propostas.historico_comunicacoes),
                 documentos_quadro_resumo=COALESCE(EXCLUDED.documentos_quadro_resumo, transferegov_propostas.documentos_quadro_resumo),
                 historico_atualizado_em=COALESCE(EXCLUDED.historico_atualizado_em, transferegov_propostas.historico_atualizado_em),
@@ -1752,6 +1771,8 @@ def _upsert(mun_id: int, propostas: list[dict]):
               p.get("processo_execucao_qtd"),
               (json.dumps(p["processo_execucao"], ensure_ascii=False)
                if p.get("processo_execucao") else None),
+              (json.dumps(p["projeto_basico"], ensure_ascii=False)
+               if p.get("projeto_basico") else None),
               (json.dumps(p["historico_comunicacoes"], ensure_ascii=False)
                if p.get("historico_comunicacoes") else None),
               (json.dumps(p["documentos_quadro_resumo"], ensure_ascii=False)
