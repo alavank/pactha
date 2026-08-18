@@ -253,6 +253,7 @@ async def _fetch_individuais(client: httpx.AsyncClient, cod_fns: str, ano: int, 
             # O ano do ultimo pagamento e o que diz se uma proposta antiga ainda
             # se moveu no ano de referencia (usado pela regra de ano do RM).
             sit_desc = dt_sit = ano_pgto = None
+            parls_det = []
             try:
                 rd = await client.get(
                     f"{BASE}/recursos/proposta/obter-proposta",
@@ -265,6 +266,15 @@ async def _fetch_individuais(client: httpx.AsyncClient, cod_fns: str, ano: int, 
                     anos_pg = [a for a in (_ano_ms(pg.get("dtCriacaoSiafi"))
                                            for pg in (dd.get("pagamentos") or [])) if a]
                     ano_pgto = max(anos_pg) if anos_pg else None
+                    # PARLAMENTAR: a LISTAGEM sempre devolve parlamentares=[] — por
+                    # isso o RM/tela caiam no rotulo do tipo de recurso e mostravam
+                    # "EMENDA INDIVIDUAL" onde deveria estar o NOME de quem indicou.
+                    # O detalhe (obter-proposta) traz os parlamentares de verdade, e
+                    # esta chamada JA e feita aqui (custo de rede: zero a mais).
+                    parls_det = (dd.get("parlamentares")
+                                 or dd.get("emendas")
+                                 or (dd.get("proposta") or {}).get("parlamentares")
+                                 or [])
             except Exception:
                 pass
             out.append({
@@ -274,7 +284,8 @@ async def _fetch_individuais(client: httpx.AsyncClient, cod_fns: str, ano: int, 
                 "vlProposta": float(it.get("vlProposta") or 0),
                 "vlPago": float(it.get("vlPago") or 0),
                 "vlPagar": float(it.get("vlPagar") or 0),
-                "parlamentares": it.get("parlamentares") or [],
+                # detalhe primeiro (a listagem vem sempre vazia — ver acima)
+                "parlamentares": parls_det or (it.get("parlamentares") or []),
                 "situacao_desc": sit_desc,
                 "ano_ultimo_pagamento": ano_pgto,
                 "ano_situacao": dt_sit,
