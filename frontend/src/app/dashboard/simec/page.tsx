@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useMemo, useCallback } from "react";
 import {
   Loader2, ExternalLink, BarChart3, Wallet, CalendarDays, ChevronDown, ChevronRight,
+  FileText,
 } from "lucide-react";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 import api from "@/lib/api";
@@ -37,6 +38,24 @@ interface Resumo {
   por_programa: Array<{ programa: string; qtde: number; total: number }>;
   por_ano: Array<{ ano: number; qtde: number; total: number }>;
   total_geral: number;
+}
+/** O INSTRUMENTO, não o pagamento — o que a aba de Liberações não mostra.
+ *  `vencido` e `dias_vigencia` vêm calculados do backend de propósito: aqui
+ *  "vencido" é alerta, e alerta não pode depender do relógio do navegador. */
+interface Termo {
+  processo?: string;
+  nr_documento?: string;
+  tipo_documento?: string;
+  tipo_objeto?: string;
+  dt_validacao?: string;
+  periodo_pagamento?: string;
+  vigencia_txt?: string;
+  dt_vigencia?: string;
+  dias_vigencia?: number | null;
+  vencido: boolean;
+  valor_termo?: number | null;
+  quantidade_obra?: string;
+  atualizado_em?: string;
 }
 
 const PORTAL = "https://simec.mec.gov.br/cte/relatoriopublico/principal.php";
@@ -79,6 +98,37 @@ function anoDa(l: Liberacao): string {
   return l.ano != null ? String(l.ano) : "";
 }
 
+/** Em que grupo o termo cai na aba.
+ *
+ *  Agrupa por SITUAÇÃO e não por ano — ao contrário das liberações — porque o
+ *  que o gestor precisa ver primeiro é o que já venceu. Foi esse o caso que
+ *  motivou a coleta: um TC com cláusula suspensiva de R$ 3,15 mi vencido há 596
+ *  dias, que só existia dentro do portal do MEC e não aparecia em lugar nenhum
+ *  do PACTHA.
+ *
+ *  Termo sem data legível de vigência NÃO some: cai num grupo próprio no fim. O
+ *  portal escreve a vigência como texto livre ("30/12/2024 - (-595 dias)") e nem
+ *  sempre dá para extrair a data; esconder o termo por causa disso seria pior
+ *  que mostrá-lo sem ela. */
+const GRUPOS_TERMO = ["Vencidos", "Vigentes", "Sem vigência informada"] as const;
+type GrupoTermo = (typeof GRUPOS_TERMO)[number];
+
+function grupoDoTermo(t: Termo): GrupoTermo {
+  if (t.vencido) return "Vencidos";
+  return t.dt_vigencia ? "Vigentes" : "Sem vigência informada";
+}
+
+/** "vencido há 596 dias" / "vence em 43 dias".
+ *  O número vem do backend (`dias_vigencia`) de propósito: é alerta, e alerta
+ *  não pode depender do relógio do navegador. */
+function prazoDoTermo(t: Termo): string {
+  const d = t.dias_vigencia;
+  if (d == null) return "";
+  if (d < 0) return `vencido há ${Math.abs(d)} dia(s)`;
+  if (d === 0) return "vence hoje";
+  return `vence em ${d} dia(s)`;
+}
+
 /** Aba ativa em tinta forte, inativa em cinza claro. Antes era violeta em cima
  *  de violeta; agora a hierarquia vem do contraste do texto, nao da cor. */
 function estiloAba(ativa: boolean): React.CSSProperties {
@@ -91,9 +141,10 @@ function estiloAba(ativa: boolean): React.CSSProperties {
 export default function SimecPage() {
   const { municipioId } = useMunicipio();
 
-  const [tab, setTab] = useState<"dim" | "lib">("dim");
+  const [tab, setTab] = useState<"dim" | "lib" | "termos">("dim");
   const [dimensoes, setDimensoes] = useState<Dimensao[]>([]);
   const [liberacoes, setLiberacoes] = useState<Liberacao[]>([]);
+  const [termos, setTermos] = useState<Termo[]>([]);
   const [resumo, setResumo] = useState<Resumo | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -110,14 +161,16 @@ export default function SimecPage() {
     if (!municipioId) return;
     setLoading(true);
     try {
-      const [d, l, r] = await Promise.all([
+      const [d, l, r, t] = await Promise.all([
         api.get<{ items: Dimensao[] }>("/simec/dimensoes", { params: { municipio_id: municipioId } }),
         api.get<{ items: Liberacao[] }>("/simec/liberacoes", { params: { municipio_id: municipioId } }),
         api.get<Resumo>("/simec/resumo", { params: { municipio_id: municipioId } }),
+        api.get<{ items: Termo[] }>("/simec/termos", { params: { municipio_id: municipioId } }),
       ]);
       setDimensoes(d.data.items);
       setLiberacoes(l.data.items);
       setResumo(r.data);
+      setTermos(t.data.items);
     } catch (e) { console.error(e); } finally { setLoading(false); }
   }, [municipioId]);
 
@@ -172,6 +225,23 @@ export default function SimecPage() {
     return Array.from(m.entries()).sort((x, y) =>
       x[0] === "Sem ano" ? 1 : y[0] === "Sem ano" ? -1 : y[0].localeCompare(x[0]));
   }, [displayLib]);
+
+  /** Termos por situação, na ordem fixa de GRUPOS_TERMO (vencidos primeiro).
+   *  Grupo sem nenhum termo não vira cartão vazio. */
+  const porGrupoTermo = useMemo(() => {
+    const m = new Map<GrupoTermo, Termo[]>();
+    for (const t of termos) {
+      const g = grupoDoTermo(t);
+      (m.get(g) ?? m.set(g, []).get(g)!).push(t);
+    }
+    return GRUPOS_TERMO.filter((g) => m.has(g)).map((g) => [g, m.get(g)!] as const);
+  }, [termos]);
+
+  const totalTermos = useMemo(
+    () => termos.reduce((s, t) => s + (t.valor_termo || 0), 0),
+    [termos]
+  );
+  const vencidosTermos = useMemo(() => termos.filter((t) => t.vencido).length, [termos]);
 
   const alternarAno = (a: string) =>
     setAnosFechados((prev) => {
@@ -243,6 +313,14 @@ export default function SimecPage() {
         >
           <Wallet className="mr-1 inline size-4" />
           Liberações de recursos ({liberacoes.length})
+        </button>
+        <button
+          onClick={() => setTab("termos")}
+          className="-mb-px border-b-2 px-3 py-2 text-[13px] font-medium"
+          style={estiloAba(tab === "termos")}
+        >
+          <FileText className="mr-1 inline size-4" />
+          Termos de Compromisso ({termos.length})
         </button>
       </div>
 
@@ -317,7 +395,7 @@ export default function SimecPage() {
             Fonte: SIMEC público (PAR diagnóstico).
           </p>
         </div>
-      ) : (
+      ) : tab === "lib" ? (
         <div className="space-y-3">
           {/* Filtros das liberacoes: mesmo comportamento, sem a moldura de
               cartao — na identidade nova o cartao e do dado, nao do controle. */}
@@ -416,6 +494,95 @@ export default function SimecPage() {
               })}
             </div>
           )}
+        </div>
+      ) : (
+        /* TERMOS DE COMPROMISSO — o INSTRUMENTO. As duas abas ao lado mostram o
+           diagnóstico (PAR) e o dinheiro que saiu (liberações); faltava o termo
+           que origina o repasse. Um município pode ter TC vigente com ZERO
+           liberação, e é justamente esse o caso que olhar só as OBs esconde.
+
+           Agrupado por SITUAÇÃO (vencidos primeiro), não por ano: aqui a
+           pergunta não é "quanto veio em 2026" e sim "o que está vencido". */
+        <div className="space-y-3">
+          <div className="flex items-center justify-between px-1 text-[11px]" style={{ color: "var(--bi-muted)" }}>
+            <span>
+              <strong style={{ color: "var(--bi-text)" }}>{termos.length}</strong> termo(s)
+              {vencidosTermos > 0 && (
+                <> · <strong style={{ color: "var(--bi-text)" }}>{vencidosTermos}</strong> vencido(s)</>
+              )}
+            </span>
+            <span className="bi-num" style={{ color: "var(--bi-text)" }}>{formatCurrency(totalTermos)}</span>
+          </div>
+
+          {termos.length === 0 ? (
+            <Vazio>Nenhum termo de compromisso encontrado.</Vazio>
+          ) : (
+            <div className="space-y-3">
+              {porGrupoTermo.map(([grupo, doGrupo]) => (
+                <Bloco key={grupo} className="p-3">
+                  <BlocoHead
+                    icon={FileText}
+                    titulo={grupo}
+                    sub={`${doGrupo.length} termo(s)`}
+                    right={
+                      <span className="bi-num text-[13px]">
+                        {formatCurrency(doGrupo.reduce((s, t) => s + (t.valor_termo || 0), 0))}
+                      </span>
+                    }
+                  />
+                  <Lista>
+                    {doGrupo.map((t, i) => (
+                      <ItemLinha
+                        key={i}
+                        titulo={t.tipo_documento || t.tipo_objeto || "Termo de Compromisso"}
+                        /* Nem todo termo tem valor: os de obra trazem
+                           "Quantidade de Obra" na mesma coluna. Cair para ela
+                           evita um "R$ 0,00" que seria mentira. */
+                        valor={t.valor_termo != null
+                          ? formatCurrency(t.valor_termo)
+                          : (t.quantidade_obra || "—")}
+                        meta={
+                          <>
+                            {t.tipo_objeto && <Selo title="Tipo do objeto">{t.tipo_objeto}</Selo>}
+                            {t.nr_documento && (
+                              <Selo title="Nº do documento no SIMEC">nº {t.nr_documento}</Selo>
+                            )}
+                            {prazoDoTermo(t) && <span>{prazoDoTermo(t)}</span>}
+                          </>
+                        }
+                      >
+                        <Campos
+                          campos={[
+                            { rotulo: "Processo", valor: t.processo || "—", title: t.processo || undefined },
+                            {
+                              rotulo: "Vigência",
+                              /* A data extraída quando existe; senão o texto cru
+                                 do portal, que é o que sobra. */
+                              valor: t.dt_vigencia ? formatDate(t.dt_vigencia) : (t.vigencia_txt || "—"),
+                              tom: t.vencido ? "critico" : undefined,
+                              title: t.vigencia_txt || undefined,
+                            },
+                            {
+                              rotulo: "Data da validação",
+                              valor: t.dt_validacao ? formatDate(t.dt_validacao) : "—",
+                              title: t.atualizado_em
+                                ? `Coletado do SIMEC em ${dataDoCarimbo(t.atualizado_em)}`
+                                : undefined,
+                            },
+                            { rotulo: "Período do pagamento", valor: t.periodo_pagamento || "—" },
+                          ]}
+                        />
+                      </ItemLinha>
+                    ))}
+                  </Lista>
+                </Bloco>
+              ))}
+            </div>
+          )}
+          <p className="px-1 text-[10px]" style={{ color: "var(--bi-faint)" }}>
+            O instrumento (processo, objeto, vigência e valor) — os pagamentos estão em
+            “Liberações de recursos”. Fonte: SIMEC público (Termos de Compromisso do PAR).
+          </p>
         </div>
       )}
     </div>
