@@ -385,7 +385,14 @@ def _licitacao_aceita(processo_execucao) -> bool:
     if not isinstance(lst, list):
         return False
     for it in lst:
-        if isinstance(it, dict) and "aceit" in (it.get("aceite") or "").lower():
+        if not isinstance(it, dict):
+            continue
+        a = (it.get("aceite") or "").strip().casefold()
+        # ⚠️ Substring "aceit" NAO serve: casa "Não Aceito", "Aguardando aceite" e
+        # "Aceite Pendente" — todos o OPOSTO de aceito. So conta o aceite EFETIVO.
+        if not a or "nao" in a.replace("ã", "a") or "pend" in a or "aguard" in a:
+            continue
+        if a.startswith("aceit"):
             return True
     return False
 
@@ -799,6 +806,11 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             # parado esperando Termo de Referencia (acao do MUNICIPIO) era
             # classificado como pendencia de Brasilia. Le os dois.
             pend = _pend_municipal(sit, row[10], row[12], _det_clausula_txt(row[14]))
+            # Contratacao Normal com ZERO licitacao registrada tambem e acao do
+            # MUNICIPIO (falta ele licitar). `== 0` e nao `not row[16]`: None
+            # significa "nao coletado" e jogaria toda proposta nao-raspada p/ ca.
+            if row[16] == 0 and "normal" in (row[10] or "").casefold():
+                pend = True
             # ano do PAGAMENTO (OPs/OBs) — alimenta o bloco "REPASSES DE {ano}".
             ano_pgto_vol = _ano_pagamento_ops_obs(row[22])
             parte, secao, suf = _destino_completo(
@@ -1021,7 +1033,12 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
                 # (Habilitada, Enviada para Análise, Cadastrada, Não Habilitada...)
                 # sao etapas do funil de selecao — nao sao recurso do municipio e
                 # inflavam o relatorio. Ver contagem real: Selecionada e ~1/4 da base.
-                if "selecionad" not in sit.casefold():
+                # Comparacao canonica (sem acento, exata): "selecionad" como
+                # substring casaria "Não Selecionada" — o oposto.
+                import unicodedata as _ud
+                _s = "".join(c for c in _ud.normalize("NFD", sit.strip())
+                             if _ud.category(c) != "Mn").casefold()
+                if _s not in ("selecionada", "selecionado"):
                     continue
                 st = _fed_status(sit)
                 if st == "dead":
