@@ -1,7 +1,9 @@
 """Refresh das fontes de DADOS ABERTOS (nao precisam de login/scraping):
   - CAUC (regularidade fiscal federal - STN)
   - Acordo FES (divida da saude estadual SES-MG)
+  - SISMOB (obras de saude do MS)
   - SIMEC PAR (MEC - liberacoes PNAE/PNATE/QUOTA/PDDE + dimensoes)
+  - SIMEC Termos de Compromisso (MEC - o INSTRUMENTO: processo, vigencia, valor)
 
 Sao ingestoes leves e idempotentes (TRUNCATE/UPSERT). Rodam via o cron
 existente (run_sigcon_cron.py chama run_all()), entao NAO precisam de uma
@@ -22,7 +24,14 @@ def run_all() -> None:
                       # manuais no Coolify (um worker por tenant) para uma fonte
                       # que muda a cada ~60 dias. O proprio ingest() se
                       # auto-limita a 1x/dia (SISMOB_MIN_INTERVAL_H).
-                      ("SISMOB", "ingestion.sismob_obras")):
+                      ("SISMOB", "ingestion.sismob_obras"),
+                      # SIMEC Termos de Compromisso (PR #258): HTTP puro, sem
+                      # login, MESMO criterio do SISMOB — 4 Scheduled Tasks
+                      # manuais no Coolify (uma por worker) nao se pagam para um
+                      # dado que muda em MESES. O ingest() se auto-limita a
+                      # 1x/dia e tem orcamento curto porque o tempo gasto aqui e
+                      # DESCONTADO do orcamento do SIGCON (run_sigcon_cron).
+                      ("SIMEC Termos", "ingestion.simec_termos")):
         try:
             m = __import__(mod, fromlist=["ingest"])
             n = m.ingest()
