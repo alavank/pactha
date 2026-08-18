@@ -192,11 +192,56 @@ def _clausula_destaque(item: dict) -> str | None:
         return None
     sc = item.get("situacao_contratacao") or "Cláusula Suspensiva"
     partes = [f"⚠ <b>Situação de Contratação:</b> {_escape(sc)}"]
+    # Situacao do CONTRATO no TransfereGov (ex.: "Cláusula Suspensiva"), que vinha
+    # so no JSONB do portal e nao era exibida.
+    if item.get("situacao_contrato"):
+        partes.append(f"<b>Situação atual do contrato:</b> {_escape(item['situacao_contrato'])}")
     if item.get("clausula_motivo"):
         partes.append(f"<b>Motivo:</b> {_escape(item['clausula_motivo'])}")
     if item.get("clausula_dt"):
         partes.append(f"<b>Data prevista para resolução:</b> {_escape(_fmt_dt(item['clausula_dt']))}")
     return "<br/>".join(partes)
+
+
+def _desembolso_destaque(item: dict) -> str | None:
+    """Caixa do DESEMBOLSO (OPs/OBs): o valor desembolsado e CADA lancamento
+    (data · valor · nº da OB). Quando nada saiu e a licitacao ja foi aceita, o
+    proprio `situacao_atual` ja diz PENDENTE DE DESEMBOLSO — aqui detalhamos.
+    None quando o instrumento nao tem OPs/OBs coletadas."""
+    vd = item.get("valor_desembolsado")
+    va = item.get("valor_a_desembolsar")
+    lanc = item.get("desembolsos") or []
+    if vd is None and va is None and not lanc:
+        return None
+    partes = []
+    cab = []
+    if vd is not None:
+        cab.append("<b>Desembolsado:</b> " + _escape(_fmt_money_br(vd)))
+    if va:
+        cab.append("<b>A desembolsar:</b> " + _escape(_fmt_money_br(va)))
+    if cab:
+        partes.append(" · ".join(cab))
+    for l in lanc[:12]:
+        if not isinstance(l, dict):
+            continue
+        linha = "• " + _escape(l.get("data") or "—")
+        if l.get("valor") is not None:
+            linha += " · " + _escape(_fmt_money_br(l.get("valor")))
+        if l.get("numero_ob"):
+            linha += " · OB " + _escape(str(l["numero_ob"]))
+        if l.get("situacao"):
+            linha += " · " + _escape(str(l["situacao"]))
+        partes.append(linha)
+    if len(lanc) > 12:
+        partes.append(f"<i>(+{len(lanc) - 12} lançamento(s))</i>")
+    return "<br/>".join(partes) if partes else None
+
+
+def _fmt_money_br(v) -> str:
+    try:
+        return "R$ " + f"{float(v):,.2f}".replace(",", "@").replace(".", ",").replace("@", ".")
+    except (TypeError, ValueError):
+        return ""
 
 
 def _evento_destaque(item: dict) -> str | None:
@@ -378,6 +423,11 @@ def gerar_pdf(meta: dict, conteudo: dict, municipio_nome: str) -> bytes:
                     if destaque_alt:
                         bloco.append(Spacer(1, 2))
                         bloco.append(Paragraph(destaque_alt, s["informativo"]))
+                    # Desembolso (OPs/OBs): valor + lançamentos.
+                    destaque_des = _desembolso_destaque(item)
+                    if destaque_des:
+                        bloco.append(Spacer(1, 2))
+                        bloco.append(Paragraph(destaque_des, s["informativo"]))
                     bloco.append(Spacer(1, 4))
                     story.append(KeepTogether(bloco))
 

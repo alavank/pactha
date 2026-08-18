@@ -316,6 +316,80 @@ def _ano_de(*vals) -> int | None:
     return None
 
 
+def _fmt_brl(v) -> str:
+    """R$ 1.234.567,89 (formato do relatorio)."""
+    try:
+        return "R$ " + f"{float(v):,.2f}".replace(",", "@").replace(".", ",").replace("@", ".")
+    except (TypeError, ValueError):
+        return ""
+
+
+def _jsonb(v):
+    """JSONB que pode chegar como dict OU como str, dependendo do driver."""
+    if isinstance(v, str):
+        try:
+            import json as _json
+            return _json.loads(v)
+        except (ValueError, TypeError):
+            return None
+    return v
+
+
+def _det_clausula_txt(detalhe_contratacao) -> str:
+    """Todo o texto do JSONB `situacao_contratacao_detalhe`, para a deteccao de
+    pendencia municipal. E la que o portal poe "Motivo da Cláusula Suspensiva":
+    "Termo de Referência" — a coluna dedicada costuma vir NULA."""
+    d = _jsonb(detalhe_contratacao)
+    if not isinstance(d, dict):
+        return ""
+    return " ".join(str(v) for v in d.values() if v)
+
+
+def _desembolso_ops_obs(ops_obs) -> dict:
+    """Situacao do DESEMBOLSO a partir de `ops_obs` (ja coletado).
+
+    Devolve valor_desembolsado/valor_a_desembolsar e a lista de LANCAMENTOS
+    (data + valor + nº da OB). O RM usa isto para dizer "PENDENTE DE DESEMBOLSO"
+    quando a licitacao ja foi aceita e nada foi desembolsado, e para mostrar os
+    lancamentos quando houve."""
+    d = _jsonb(ops_obs)
+    if not isinstance(d, dict):
+        return {}
+    def _num(x):
+        try:
+            return float(x)
+        except (TypeError, ValueError):
+            return None
+    lanc = []
+    for ob in (d.get("obs") or []):
+        if not isinstance(ob, dict):
+            continue
+        lanc.append({
+            "data": (ob.get("data_emissao_ob") or "").strip(),
+            "valor": _num(ob.get("valor")),
+            "numero_ob": (ob.get("numero_ob") or "").strip(),
+            "situacao": (ob.get("situacao") or "").strip(),
+        })
+    return {
+        "valor_desembolsado": _num(d.get("valor_desembolsado")),
+        "valor_a_desembolsar": _num(d.get("valor_a_desembolsar")),
+        "dt_ultimo_desembolso": (d.get("data_ultimo_desembolso") or "") or None,
+        "desembolsos": lanc,
+    }
+
+
+def _licitacao_aceita(processo_execucao) -> bool:
+    """True quando alguma licitacao do instrumento esta ACEITA (coluna 'aceite'
+    do Processo de Execucao). E o gatilho de "PENDENTE DE DESEMBOLSO"."""
+    lst = _jsonb(processo_execucao)
+    if not isinstance(lst, list):
+        return False
+    for it in lst:
+        if isinstance(it, dict) and "aceit" in (it.get("aceite") or "").lower():
+            return True
+    return False
+
+
 def _ano_pagamento_ops_obs(ops_obs) -> int | None:
     """ANO do ultimo desembolso da voluntaria, lido de `ops_obs`.
 
@@ -719,7 +793,12 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             # Voluntaria pre-empenho cadastrada no ano corrente -> Parte 4.
             pre_novo = st == "ativa" and ano_prop == ano_emissao
             # Pendencia municipal: situacao do ciclo + contratacao + motivo da clausula.
-            pend = _pend_municipal(sit, row[10], row[12])
+            # ⚠️ O motivo costuma vir SO no JSONB `situacao_contratacao_detalhe`
+            # ("Motivo da Cláusula Suspensiva": "Termo de Referência") com a COLUNA
+            # `clausula_suspensiva_motivo` NULA — lendo so a coluna, um convenio
+            # parado esperando Termo de Referencia (acao do MUNICIPIO) era
+            # classificado como pendencia de Brasilia. Le os dois.
+            pend = _pend_municipal(sit, row[10], row[12], _det_clausula_txt(row[14]))
             # ano do PAGAMENTO (OPs/OBs) — alimenta o bloco "REPASSES DE {ano}".
             ano_pgto_vol = _ano_pagamento_ops_obs(row[22])
             parte, secao, suf = _destino_completo(
@@ -732,11 +811,31 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
         # detalhe da clausula (motivo/data) e empenho — cada um no seu campo.
         situacao_contr = row[10]
         clausula_dt = row[11]
-        clausula_motivo = row[12]
+        # Motivo da clausula: a COLUNA costuma vir nula e o valor real fica no JSONB.
+        _det_c = _jsonb(row[14]) if isinstance(_jsonb(row[14]), dict) else {}
+        clausula_motivo = row[12] or _det_c.get("Motivo da Cláusula Suspensiva") or ""
+        # SITUAÇÃO DO CONTRATO no TransfereGov (ex.: "Cláusula Suspensiva") — vinha
+        # so no JSONB e nao aparecia no relatorio.
+        sit_contrato = (_det_c.get("Situação Atual do Contrato") or "").strip()
         empenhado = "Sim" if _fed_empenhada(sit) else "Não"  # validado pelo status
+        # DESEMBOLSO (OPs/OBs): "PENDENTE DE DESEMBOLSO" quando a licitacao ja foi
+        # ACEITA e nada saiu; senao o valor desembolsado + os lancamentos.
+        _des = _desembolso_ops_obs(row[22])
+        _vd = _des.get("valor_desembolsado")
+        _aceita = _licitacao_aceita(row[21])
+        sit_exibida = sit
+        if _aceita and (_vd or 0) == 0:
+            sit_exibida = f"{sit} · PENDENTE DE DESEMBOLSO" if sit else "PENDENTE DE DESEMBOLSO"
+        elif (_vd or 0) > 0:
+            sit_exibida = f"{sit} · Desembolsado: {_fmt_brl(_vd)}" if sit else f"Desembolsado: {_fmt_brl(_vd)}"
+        # O NUMERO do convenio com o ANO DA PROPOSTA ao lado ("981397 /2025"): o
+        # numero do instrumento sozinho nao diz de que ano ele e.
+        _num_exib = row[2] or row[1] or ""
+        if row[2] and row[1] and "/" in str(row[1]):
+            _num_exib = f"{row[2]} /{str(row[1]).split('/')[-1].strip()}"
         add_item(parte, secao, orgao, {
             "tipo": tipo_label,
-            "numero": row[2] or row[1],
+            "numero": _num_exib,
             "objeto": row[5] or "",
             "parlamentar": row[13] or "",
             "valor_global": _money(row[7]),
@@ -748,11 +847,16 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             "banco": row[18] or "", "agencia": row[19] or "", "conta": row[20] or "",
             "saldo_bancario": None, "dt_saldo": None,
             "dt_fim_vigencia": _iso(dt_fim),
-            "situacao_atual": sit,  # status do ciclo (ex.: "Em execução") — sem narrativa
+            "situacao_atual": sit_exibida,   # ciclo + desembolso (ver acima)
+            "situacao_base": sit,            # CRUA, p/ quem CLASSIFICA (rm_export)
             "empenhado": empenhado,
             "situacao_contratacao": situacao_contr or "",
+            # Situacao do CONTRATO no TransfereGov (do JSONB do portal).
+            "situacao_contrato": sit_contrato,
             "clausula_motivo": clausula_motivo or "",
             "clausula_dt": _iso(clausula_dt) if clausula_dt else "",
+            # DESEMBOLSO: valores + lancamentos (data/valor/OB) p/ o relatorio.
+            **_des,
             # Processo de Execução (Licitações): só relevante p/ contratação Normal.
             # 0 = Normal SEM processo/licitação registrado (flag); N>0 = tem; None = n/c.
             "processo_execucao_qtd": row[16],
@@ -913,6 +1017,12 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             """), {"m": municipio_id})
             for r in pac.fetchall():
                 sit = r[2] or ""
+                # SO as SELECIONADAS entram no RM. As demais situacoes do PAC
+                # (Habilitada, Enviada para Análise, Cadastrada, Não Habilitada...)
+                # sao etapas do funil de selecao — nao sao recurso do municipio e
+                # inflavam o relatorio. Ver contagem real: Selecionada e ~1/4 da base.
+                if "selecionad" not in sit.casefold():
+                    continue
                 st = _fed_status(sit)
                 if st == "dead":
                     continue
