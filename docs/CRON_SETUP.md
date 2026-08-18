@@ -97,8 +97,16 @@ flock -n /tmp/painel-alertas.lock timeout -k 30 900 \
   || echo "[aviso] painel-alertas rc=$? (1=ja rodando, 124=timeout)"
 ```
 
-- `run_sigcon_cron.py` já roda também as fontes de **dados abertos** (CAUC +
-  Acordo FES via `run_dadosabertos_cron.run_all()`) e o backfill CKAN.
+- `run_sigcon_cron.py` já roda também as fontes de **dados abertos**
+  (`run_dadosabertos_cron.run_all()`: CAUC, Acordo FES, SISMOB, SIMEC-PAR e os
+  **Termos de Compromisso do SIMEC**) e o backfill CKAN. Nenhuma delas tem task
+  própria de propósito: SISMOB e SIMEC-Termos se auto-limitam a 1×/dia dentro do
+  próprio `ingest()` (`SISMOB_MIN_INTERVAL_H` / `SIMEC_TERMOS_MIN_INTERVAL_H`).
+  ⚠️ Consequência para quem for acrescentar a próxima: essas fontes **não têm
+  `timeout` próprio** — herdam o `timeout -k 30 3000` da task `sigcon` e gastam do
+  orçamento dele (`SIGCON_BUDGET_SECONDS`, do qual o tempo é descontado). Fonte
+  nova aqui dentro precisa de orçamento interno CURTO, não dos 25 min de quem tem
+  task própria.
 - `run_queue_sigcon.py` consome a tabela `scraper_jobs` — jobs enfileirados pelo
   botão "atualizar SIGCON" da UI (`POST /api/convenios/refresh-sigcon`). Como a task
   roda a cada 30min, o job enfileirado sai em **até 30 minutos** (não em 2min).

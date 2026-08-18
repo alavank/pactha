@@ -62,6 +62,16 @@ _SOURCES = [
     ("SIMEC-PAR (MEC)",
      "SELECT max(updated_at), count(*) FROM simec_par_liberacoes",
      "simec_par"),
+    # O INSTRUMENTO, nao o pagamento: `simec_par_liberacoes` sao as OBs e
+    # `simec_termos` e o Termo de Compromisso (processo, vigencia, valor). Fica
+    # na lista FIXA, e nao em _SOURCES_POR_UF, porque o coletor varre todo
+    # municipio ativo com ibge_code seja qual for o estado — a UF entra so como
+    # parametro do POST. `count(*)` sem filtro de `fonte` porque a tabela e
+    # exclusiva deste coletor (a migration nao tem essa coluna), diferente de
+    # convenios_estadual e cagec_situacao.
+    ("SIMEC — Termos de Compromisso (MEC)",
+     "SELECT max(updated_at), count(*) FROM simec_termos",
+     "simec_termos"),
 ]
 
 # ⚠️ FONTES QUE SO EXISTEM PARA CERTAS UFs, e por isso nao podem morar na lista

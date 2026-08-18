@@ -4,10 +4,15 @@ Endpoints (todos requerem auth):
   GET /api/simec/dimensoes?municipio_id=  -> Sintese PAR por dimensao
   GET /api/simec/liberacoes?municipio_id=&ano=&programa=  -> Liberacoes de recursos
   GET /api/simec/resumo?municipio_id=     -> totais por programa e ano
+  GET /api/simec/termos?municipio_id=     -> Termos de Compromisso (o instrumento)
 
-Os dados sao alimentados pelo scraper ingestion/simec_par.py (cron diario).
-Fonte original: simec.mec.gov.br/cte/relatoriopublico/impressao.php (publico).
+Os dados sao alimentados por DOIS coletores, de duas telas do MEC:
+  - ingestion/simec_par.py    -> dimensoes + liberacoes (os PAGAMENTOS: OB, data)
+  - ingestion/simec_termos.py -> termos de compromisso (o INSTRUMENTO)
+Fonte original: simec.mec.gov.br/cte/relatoriopublico/impressao.php e
+                simec.mec.gov.br/par/carregaTermos.php (ambas publicas).
 """
+from datetime import date
 from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -96,6 +101,64 @@ async def liberacoes(
     } for row in r.fetchall()]
     last = max((i["atualizado_em"] for i in items if i["atualizado_em"]), default=None)
     return {"items": items, "total": len(items), "atualizado_em": last}
+
+
+@router.get("/termos", dependencies=[exige("simec.ver")])
+async def termos(
+    municipio_id: int = Query(...),
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """Termos de Compromisso do PAR — o INSTRUMENTO, nao o pagamento.
+
+    Irmao de /liberacoes e o oposto dele: la estao as OBs (quanto ja saiu); aqui,
+    o termo que as origina (processo, tipo do objeto, vigencia, valor). Um
+    municipio pode ter TC vigente com ZERO liberacao — e exatamente o caso que o
+    relatorio precisa apontar, e que olhar so as liberacoes esconde.
+
+    `vencido` sai calculado do banco (nao do navegador): a data do cliente pode
+    estar errada, e "vencido" aqui vira alerta na tela.
+    """
+    ensure_municipio_access(current, municipio_id)
+    ensure_tela(current, "simec")
+    r = await db.execute(text("""
+        SELECT processo, nr_documento, tipo_documento, tipo_objeto,
+               dt_validacao, periodo_pagamento, vigencia_txt, dt_vigencia,
+               valor_termo, quantidade_obra, updated_at
+        FROM simec_termos
+        WHERE municipio_id = :mun
+        ORDER BY dt_vigencia ASC NULLS LAST, processo
+    """), {"mun": municipio_id})
+    hoje = date.today()
+    items = []
+    for row in r.fetchall():
+        dt_vig = row[7]
+        # dias < 0 = vencido ha N dias; None = o portal nao trouxe data legivel
+        # (a coluna vem como texto livre, ex.: "30/12/2024 - (-595 dias)").
+        dias = (dt_vig - hoje).days if dt_vig else None
+        items.append({
+            "processo": _clean(row[0]),
+            "nr_documento": _clean(row[1]),
+            "tipo_documento": _clean(row[2]),
+            "tipo_objeto": _clean(row[3]),
+            "dt_validacao": row[4].isoformat() if row[4] else None,
+            "periodo_pagamento": _clean(row[5]),
+            "vigencia_txt": _clean(row[6]),
+            "dt_vigencia": dt_vig.isoformat() if dt_vig else None,
+            "dias_vigencia": dias,
+            "vencido": (dias is not None and dias < 0),
+            "valor_termo": float(row[8]) if row[8] is not None else None,
+            "quantidade_obra": _clean(row[9]),
+            "atualizado_em": row[10].isoformat() if row[10] else None,
+        })
+    last = max((i["atualizado_em"] for i in items if i["atualizado_em"]), default=None)
+    return {
+        "items": items,
+        "total": len(items),
+        "vencidos": sum(1 for i in items if i["vencido"]),
+        "valor_total": sum(i["valor_termo"] or 0 for i in items),
+        "atualizado_em": last,
+    }
 
 
 @router.get("/resumo", dependencies=[exige("simec.ver")])

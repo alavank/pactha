@@ -395,6 +395,14 @@ _COBERTURA_TABELAS = [
     ("sismob_obras",         "SISMOB (obras de saúde)",      "Saúde"),
     ("acordofes_credor",     "Acordo FES",                   "Saúde"),
     ("simec_par_liberacoes", "SIMEC-PAR (educação)",         "Educação"),
+    # O INSTRUMENTO, nao o pagamento. Um municipio pode ter Termo de Compromisso
+    # vigente com ZERO liberacao — contar so as liberacoes esconderia
+    # exatamente esse caso, que e o que a auditoria de cobertura existe para
+    # achar. Vai na lista simples (mono-fonte: a migration nao tem coluna
+    # `fonte`, entao o CASE de _COBERTURA_POR_FONTE nao se aplica) e o rotulo e
+    # distinto de proposito: `m["fontes"]` e dict indexado pelo rotulo, e
+    # repetir a string sobrescreveria a contagem das liberacoes em silencio.
+    ("simec_termos",         "SIMEC-PAR (termos de compromisso)", "Educação"),
 ]
 
 # ⚠️ DUAS TABELAS SAO MULTI-FONTE, e contar o total mentiria dos dois lados.

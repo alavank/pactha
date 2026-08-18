@@ -54,6 +54,21 @@ FRESCOR_HORAS_NACIONAL = {
     "cauc": 12,
     "acordofes": 12,
     "simec_par": 12,
+    # Termos de Compromisso do SIMEC/PAR (PR #258). MESMO caso do `sismob` logo
+    # abaixo — e por isso o MESMO numero: entra pendurado no
+    # run_dadosabertos_cron.run_all() (que o cron do sigcon chama 4x/dia), mas o
+    # proprio ingest() se auto-limita a 1x/dia
+    # (SIMEC_TERMOS_MIN_INTERVAL_H=20). A cadencia REAL, portanto, e diaria, e
+    # 30h = um dia + folga. Nao confunda com o irmao 'simec_par' (12h): aquele
+    # roda em toda janela do run_all.
+    # NACIONAL: o run() varre todo municipio ATIVO com ibge_code e manda a UF
+    # como PARAMETRO do POST (estuf), sem recorte de estado — entao o lugar e
+    # aqui, nunca no mapa por UF.
+    # ⚠️ ISTO SO VIGIA DE VERDADE PORQUE, no mesmo PR, o coletor passou a gravar
+    # ingestion_log com source='simec_termos' e status de STATUS_SUCESSO.
+    # Enquanto nao houvesse linha nenhuma, o ramo "so cobra fonte que ja tem
+    # linha no log" (mais abaixo) deixaria a chave dormindo.
+    "simec_termos": 30,              # 1x/dia (auto-throttle no proprio ingest)
     "siconv_convenio_backfill": 30,
     "sismob": 30,                    # 1x/dia (auto-throttle no proprio ingest)
     # ⚠️ CAGEC ENTRA COM O VOCABULARIO CORRIGIDO (ver STATUS_SUCESSO abaixo).
