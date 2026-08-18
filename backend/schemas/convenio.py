@@ -85,6 +85,11 @@ class ConvenioStats(BaseModel):
 class AlertaVigencia(BaseModel):
     id: int
     esfera: str
+    # QUAL municipio — sem isto o consumidor nao sabe de quem e o convenio (o
+    # modal de vigencias do Painel mostrava "—" e nao conseguia nem agrupar nem
+    # filtrar). `municipio_nome` vem junto para a tela nao precisar cruzar.
+    municipio_id: Optional[int] = None
+    municipio_nome: Optional[str] = None
     nr_convenio: Optional[str] = None
     nr_sigcon: Optional[str] = None
     objeto: Optional[str] = None

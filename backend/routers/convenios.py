@@ -550,9 +550,30 @@ async def alertas_vigencia(
 ):
     ensure_municipio_access(current, municipio_id)
     ensure_tela(current, "convenios")
+    # ⚠️ SEM `municipio_id`, o nucleo devolve TODOS os municipios do tenant. Isso
+    # e o esperado para o super-admin (allowed_municipio_ids=None), mas para quem
+    # tem carteira restrita seria vazamento: veria vigencia de municipio que nao
+    # pode abrir. Aqui o pedido "todos" passa a significar "todos OS MEUS".
+    permitidos = getattr(current, "allowed_municipio_ids", None)
+    mids = None
+    if municipio_id is None and permitidos is not None:
+        mids = list(permitidos)
+        if not mids:
+            return []          # carteira vazia: nao ha o que listar
     # O nucleo ja normaliza com `anos_list()`, que aceita int OU lista — aqui
     # so falta a assinatura do FastAPI deixar a lista chegar.
-    return await query_alertas_vigencia(db, municipio_id, dias, anos or ano)
+    alertas = await query_alertas_vigencia(db, municipio_id, dias, anos or ano,
+                                           municipio_ids=mids)
+    # Nome do municipio junto (a tela agrupa/filtra por ele e nao deve ter de
+    # cruzar com outra chamada).
+    ids = {a.municipio_id for a in alertas if a.municipio_id}
+    if ids:
+        nomes = dict((await db.execute(
+            select(Municipio.id, Municipio.nome).where(Municipio.id.in_(ids))
+        )).all())
+        for a in alertas:
+            a.municipio_nome = nomes.get(a.municipio_id)
+    return alertas
 
 
 async def query_alertas_vigencia(
@@ -588,6 +609,7 @@ async def query_alertas_vigencia(
         dias_rest = (c.dt_vigencia_atual - date.today()).days
         alertas.append(AlertaVigencia(
             id=c.id, esfera="estadual", nr_sigcon=c.nr_sigcon,
+            municipio_id=c.municipio_id,
             objeto=c.objeto, orgao_concedente=c.orgao_concedente,
             dt_fim_vigencia=c.dt_vigencia_atual, dias_restantes=dias_rest,
             valor_total=float(c.valor_total) if c.valor_total else None,
@@ -605,7 +627,8 @@ async def query_alertas_vigencia(
         if _anos:
             _vp["anos_txt"] = [str(a) for a in _anos]
         vol = await db.execute(text(f"""
-            SELECT numero_proposta, codigo_instrumento, objeto, orgao, situacao, dt_fim_vigencia
+            SELECT numero_proposta, codigo_instrumento, objeto, orgao, situacao, dt_fim_vigencia,
+                   municipio_id
             FROM transferegov_propostas WHERE {_mun_sql} {_vsql}
         """), _vp)
         for row in vol.fetchall():
@@ -619,6 +642,7 @@ async def query_alertas_vigencia(
                 continue
             alertas.append(AlertaVigencia(
                 id=0, esfera="voluntaria", nr_convenio=row[1] or row[0],
+                municipio_id=(row[6] if len(row) > 6 else municipio_id),
                 nr_sigcon=row[0], objeto=row[2], orgao_concedente=row[3],
                 dt_fim_vigencia=dtf, dias_restantes=(dtf - date.today()).days,
                 valor_total=None, situacao=row[4],
@@ -674,6 +698,7 @@ async def query_prestacao_contas(
         dias_rest = (c.dt_vigencia_atual - date.today()).days
         alertas.append(AlertaVigencia(
             id=c.id, esfera="estadual", nr_sigcon=c.nr_sigcon,
+            municipio_id=c.municipio_id,
             objeto=c.objeto, orgao_concedente=c.orgao_concedente,
             dt_fim_vigencia=c.dt_vigencia_atual, dias_restantes=dias_rest,
             valor_total=float(c.valor_total) if c.valor_total else None,
@@ -691,7 +716,8 @@ async def query_prestacao_contas(
         if _anos:
             _vp["anos_txt"] = [str(a) for a in _anos]
         vol = await db.execute(text(f"""
-            SELECT numero_proposta, codigo_instrumento, objeto, orgao, situacao, dt_fim_vigencia
+            SELECT numero_proposta, codigo_instrumento, objeto, orgao, situacao, dt_fim_vigencia,
+                   municipio_id
             FROM transferegov_propostas WHERE {_mun_sql} {_vsql}
         """), _vp)
         for row in vol.fetchall():
@@ -705,6 +731,7 @@ async def query_prestacao_contas(
                 continue
             alertas.append(AlertaVigencia(
                 id=0, esfera="voluntaria", nr_convenio=row[1] or row[0],
+                municipio_id=(row[6] if len(row) > 6 else municipio_id),
                 nr_sigcon=row[0], objeto=row[2], orgao_concedente=row[3],
                 dt_fim_vigencia=dtf, dias_restantes=(dtf - date.today()).days,
                 valor_total=None, situacao=row[4],

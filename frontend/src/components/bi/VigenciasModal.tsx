@@ -12,7 +12,7 @@
  *  O KPI no topo acompanha o filtro de municípios (multisseleção), então o número
  *  nunca discorda do que está logo abaixo — o erro clássico de dashboard.
  */
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { X, CalendarClock, Circle, List, ArrowUpDown } from "lucide-react";
 import api from "@/lib/api";
 import { MultiSelect } from "@/components/ui/multi-select";
@@ -20,12 +20,14 @@ import type { Municipio } from "@/types";
 
 interface Alerta {
   id: number;
+  esfera?: string | null;
   municipio_id?: number | null;
   nr_convenio?: string | null;
   nr_sigcon?: string | null;
   objeto?: string | null;
   dt_fim_vigencia?: string | null;
   dias_restantes?: number | null;
+  municipio_nome?: string | null;
   orgao_concedente?: string | null;
   valor_total?: number | null;
 }
@@ -39,6 +41,29 @@ function tomDias(d?: number | null): { bg: string; fg: string } {
   return { bg: "var(--bi-surface-2)", fg: "var(--bi-muted)" };
 }
 
+/** Um instrumento a vencer. É o MESMO cartão nas duas visões — na lista solta e
+ *  dentro do município na visão de bolhas — para o dado não mudar de cara. */
+function LinhaAlerta({ i, nome }: { i: Alerta; nome: string }) {
+  const tom = tomDias(i.dias_restantes);
+  return (
+    <div className="flex items-center gap-3 rounded-lg px-3 py-2" style={{ background: "var(--bi-surface-2)" }}>
+      <span className="shrink-0 rounded-md px-2 py-1 text-[11px] font-bold" style={{ background: tom.bg, color: tom.fg }}>
+        {i.dias_restantes ?? "—"}d
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-xs font-medium" style={{ color: "var(--bi-text)" }}>
+          {i.objeto || i.nr_convenio || i.nr_sigcon || "—"}
+        </div>
+        <div className="truncate text-[11px]" style={{ color: "var(--bi-muted)" }}>
+          {nome}
+          {i.nr_convenio || i.nr_sigcon ? ` · ${i.nr_convenio || i.nr_sigcon}` : ""}
+          {i.dt_fim_vigencia ? ` · vence em ${new Date(i.dt_fim_vigencia).toLocaleDateString("pt-BR")}` : ""}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function VigenciasModal({
   municipios, onClose,
 }: { municipios: Municipio[]; onClose: () => void }) {
@@ -47,12 +72,23 @@ export default function VigenciasModal({
   const [visao, setVisao] = useState<"bolhas" | "lista">("bolhas");
   const [asc, setAsc] = useState(true);
   const [munSel, setMunSel] = useState<string[]>([]);
+  // Bolha CLICADA: a visao de bolhas mostra os mesmos itens da lista,
+  // so que agrupados — clicar abre os convenios daquele municipio.
+  const [munAberto, setMunAberto] = useState<string | null>(null);
 
   const nomePorId = useMemo(() => {
     const m: Record<string, string> = {};
     municipios.forEach((x) => { m[String(x.id)] = x.nome; });
     return m;
   }, [municipios]);
+
+  /** Nome do município do alerta. A API passou a mandar `municipio_nome` junto —
+   *  antes a tela cruzava por id e, quando a API nem devolvia o id, a bolha saía
+   *  como "—" e o filtro nascia vazio. O cruzamento fica como queda. */
+  const nomeDo = useCallback(
+    (a: Alerta) => a.municipio_nome || nomePorId[String(a.municipio_id)] || "—",
+    [nomePorId],
+  );
 
   useEffect(() => {
     let vivo = true;
@@ -68,29 +104,29 @@ export default function VigenciasModal({
 
   const visiveis = useMemo(() => {
     const base = munSel.length
-      ? itens.filter((i) => munSel.includes(nomePorId[String(i.municipio_id)] || ""))
+      ? itens.filter((i) => munSel.includes(nomeDo(i)))
       : itens;
     return [...base].sort((a, b) => {
       const x = a.dias_restantes ?? 9999, y = b.dias_restantes ?? 9999;
       return asc ? x - y : y - x;
     });
-  }, [itens, munSel, asc, nomePorId]);
+  }, [itens, munSel, asc, nomeDo]);
 
   const porMunicipio = useMemo(() => {
     const m = new Map<string, { nome: string; qtd: number; menor: number }>();
     visiveis.forEach((i) => {
-      const nome = nomePorId[String(i.municipio_id)] || "—";
+      const nome = nomeDo(i);
       const at = m.get(nome) || { nome, qtd: 0, menor: 9999 };
       at.qtd += 1;
       at.menor = Math.min(at.menor, i.dias_restantes ?? 9999);
       m.set(nome, at);
     });
     return [...m.values()].sort((a, b) => b.qtd - a.qtd);
-  }, [visiveis, nomePorId]);
+  }, [visiveis, nomeDo]);
 
   const opcoesMun = useMemo(
-    () => Array.from(new Set(itens.map((i) => nomePorId[String(i.municipio_id)] || "").filter(Boolean))).sort(),
-    [itens, nomePorId],
+    () => Array.from(new Set(itens.map(nomeDo).filter((n) => n && n !== "—"))).sort(),
+    [itens, nomeDo],
   );
   const maxQtd = Math.max(1, ...porMunicipio.map((p) => p.qtd));
 
@@ -168,50 +204,53 @@ export default function VigenciasModal({
               Nenhum instrumento vencendo em {DIAS} dias.
             </p>
           ) : visao === "bolhas" ? (
-            <div className="flex flex-wrap items-center gap-3">
-              {porMunicipio.map((p) => {
-                // área ~ quantidade: o olho compara tamanho, não número
-                const lado = 46 + Math.round(54 * Math.sqrt(p.qtd / maxQtd));
-                const tom = tomDias(p.menor);
+            <>
+              <div className="flex flex-wrap items-center gap-3">
+                {porMunicipio.map((p) => {
+                  // área ∝ quantidade: o olho compara tamanho, não número
+                  const lado = 46 + Math.round(54 * Math.sqrt(p.qtd / maxQtd));
+                  const tom = tomDias(p.menor);
+                  const ativo = munAberto === p.nome;
+                  return (
+                    <button key={p.nome} onClick={() => setMunAberto(ativo ? null : p.nome)}
+                            className="flex flex-col items-center gap-1 bi-hover rounded-lg p-1"
+                            title={`${p.nome}: ${p.qtd} vencendo — o mais próximo em ${p.menor} dia(s). Clique para ver.`}>
+                      <div className="flex items-center justify-center rounded-full font-bold"
+                           style={{ width: lado, height: lado, background: tom.bg, color: tom.fg,
+                                    border: ativo ? "2px solid var(--bi-text)" : "1px solid var(--bi-line)" }}>
+                        {p.qtd}
+                      </div>
+                      <span className="max-w-[7rem] truncate text-[11px]" style={{ color: "var(--bi-muted)" }}>
+                        {p.nome}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              {/* Os MESMOS itens da lista, do município escolhido. Sem clicar,
+                  mostra o município com o prazo mais curto — a bolha sozinha
+                  dizia "quantos" e nunca "quais". */}
+              {(() => {
+                const alvo = munAberto || (porMunicipio[0]?.nome ?? null);
+                if (!alvo) return null;
+                const doMun = visiveis.filter((i) => nomeDo(i) === alvo);
                 return (
-                  <div key={p.nome} className="flex flex-col items-center gap-1"
-                       title={`${p.nome}: ${p.qtd} vencendo — o mais próximo em ${p.menor} dia(s)`}>
-                    <div className="flex items-center justify-center rounded-full font-bold"
-                         style={{ width: lado, height: lado, background: tom.bg, color: tom.fg,
-                                  border: "1px solid var(--bi-line)" }}>
-                      {p.qtd}
+                  <div className="mt-4 border-t pt-3" style={{ borderColor: "var(--bi-line)" }}>
+                    <div className="mb-2 text-xs font-semibold" style={{ color: "var(--bi-text)" }}>
+                      {alvo} — {doMun.length} vencendo
                     </div>
-                    <span className="max-w-[7rem] truncate text-[11px]" style={{ color: "var(--bi-muted)" }}>
-                      {p.nome}
-                    </span>
+                    <div className="space-y-1.5">
+                      {doMun.map((i) => (
+                        <LinhaAlerta key={`${i.esfera || ""}-${i.id}-${i.nr_convenio || i.nr_sigcon}`} i={i} nome={alvo} />
+                      ))}
+                    </div>
                   </div>
                 );
-              })}
-            </div>
+              })()}
+            </>
           ) : (
             <div className="space-y-1.5">
-              {visiveis.map((i) => {
-                const tom = tomDias(i.dias_restantes);
-                return (
-                  <div key={i.id} className="flex items-center gap-3 rounded-lg px-3 py-2"
-                       style={{ background: "var(--bi-surface-2)" }}>
-                    <span className="shrink-0 rounded-md px-2 py-1 text-[11px] font-bold"
-                          style={{ background: tom.bg, color: tom.fg }}>
-                      {i.dias_restantes ?? "—"}d
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-xs font-medium" style={{ color: "var(--bi-text)" }}>
-                        {i.objeto || i.nr_convenio || i.nr_sigcon || "—"}
-                      </div>
-                      <div className="truncate text-[11px]" style={{ color: "var(--bi-muted)" }}>
-                        {nomePorId[String(i.municipio_id)] || "—"}
-                        {i.nr_convenio || i.nr_sigcon ? ` · ${i.nr_convenio || i.nr_sigcon}` : ""}
-                        {i.dt_fim_vigencia ? ` · vence em ${new Date(i.dt_fim_vigencia).toLocaleDateString("pt-BR")}` : ""}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+              {visiveis.map((i) => <LinhaAlerta key={`${i.esfera || ""}-${i.id}-${i.nr_convenio || i.nr_sigcon}`} i={i} nome={nomeDo(i)} />)}
             </div>
           )}
         </div>
