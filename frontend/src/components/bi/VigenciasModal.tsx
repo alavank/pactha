@@ -1,0 +1,221 @@
+"use client";
+
+/* VIGÊNCIAS A VENCER (<120 dias) — o que está prestes a expirar.
+ *
+ *  Substitui o selo que só REPETIA o município já escolhido na barra lateral
+ *  (informação que a tela toda já dava) por algo acionável: o que vence primeiro.
+ *
+ *  DUAS VISÕES do mesmo recorte, porque as perguntas são diferentes:
+ *   - BOLHAS por município: "onde está concentrado?" — o tamanho é a quantidade,
+ *     então um município com 9 vencendo salta antes de qualquer leitura de lista.
+ *   - LISTA por dias: "o que vence primeiro?" — ordenável nos dois sentidos.
+ *  O KPI no topo acompanha o filtro de municípios (multisseleção), então o número
+ *  nunca discorda do que está logo abaixo — o erro clássico de dashboard.
+ */
+import React, { useEffect, useMemo, useState } from "react";
+import { X, CalendarClock, Circle, List, ArrowUpDown } from "lucide-react";
+import api from "@/lib/api";
+import { MultiSelect } from "@/components/ui/multi-select";
+import type { Municipio } from "@/types";
+
+interface Alerta {
+  id: number;
+  municipio_id?: number | null;
+  nr_convenio?: string | null;
+  nr_sigcon?: string | null;
+  objeto?: string | null;
+  dt_fim_vigencia?: string | null;
+  dias_restantes?: number | null;
+  orgao_concedente?: string | null;
+  valor_total?: number | null;
+}
+
+const DIAS = 120;
+
+function tomDias(d?: number | null): { bg: string; fg: string } {
+  const n = d ?? 999;
+  if (n <= 30) return { bg: "var(--bi-critico-bg, #FEE2E2)", fg: "var(--bi-critico-ink, #991B1B)" };
+  if (n <= 60) return { bg: "var(--bi-atencao-bg, #FEF3C7)", fg: "var(--bi-atencao-ink, #92400E)" };
+  return { bg: "var(--bi-surface-2)", fg: "var(--bi-muted)" };
+}
+
+export default function VigenciasModal({
+  municipios, onClose,
+}: { municipios: Municipio[]; onClose: () => void }) {
+  const [itens, setItens] = useState<Alerta[]>([]);
+  const [carregando, setCarregando] = useState(true);
+  const [visao, setVisao] = useState<"bolhas" | "lista">("bolhas");
+  const [asc, setAsc] = useState(true);
+  const [munSel, setMunSel] = useState<string[]>([]);
+
+  const nomePorId = useMemo(() => {
+    const m: Record<string, string> = {};
+    municipios.forEach((x) => { m[String(x.id)] = x.nome; });
+    return m;
+  }, [municipios]);
+
+  useEffect(() => {
+    let vivo = true;
+    // Sem municipio_id => a carteira inteira (o endpoint já respeita o alcance
+    // do usuário). Um pedido só; o recorte por município é local, para o filtro
+    // responder na hora.
+    api.get<Alerta[]>("/convenios/alertas", { params: { dias: DIAS } })
+      .then((r) => { if (vivo) setItens(r.data || []); })
+      .catch(() => { if (vivo) setItens([]); })
+      .finally(() => { if (vivo) setCarregando(false); });
+    return () => { vivo = false; };
+  }, []);
+
+  const visiveis = useMemo(() => {
+    const base = munSel.length
+      ? itens.filter((i) => munSel.includes(nomePorId[String(i.municipio_id)] || ""))
+      : itens;
+    return [...base].sort((a, b) => {
+      const x = a.dias_restantes ?? 9999, y = b.dias_restantes ?? 9999;
+      return asc ? x - y : y - x;
+    });
+  }, [itens, munSel, asc, nomePorId]);
+
+  const porMunicipio = useMemo(() => {
+    const m = new Map<string, { nome: string; qtd: number; menor: number }>();
+    visiveis.forEach((i) => {
+      const nome = nomePorId[String(i.municipio_id)] || "—";
+      const at = m.get(nome) || { nome, qtd: 0, menor: 9999 };
+      at.qtd += 1;
+      at.menor = Math.min(at.menor, i.dias_restantes ?? 9999);
+      m.set(nome, at);
+    });
+    return [...m.values()].sort((a, b) => b.qtd - a.qtd);
+  }, [visiveis, nomePorId]);
+
+  const opcoesMun = useMemo(
+    () => Array.from(new Set(itens.map((i) => nomePorId[String(i.municipio_id)] || "").filter(Boolean))).sort(),
+    [itens, nomePorId],
+  );
+  const maxQtd = Math.max(1, ...porMunicipio.map((p) => p.qtd));
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+         style={{ background: "rgba(15,23,42,.55)" }} onClick={onClose}>
+      <div className="bi-card w-full max-w-4xl max-h-[86vh] overflow-hidden flex flex-col"
+           onClick={(e) => e.stopPropagation()}>
+        {/* cabeçalho + KPI (acompanha o filtro — nunca discorda da lista abaixo) */}
+        <div className="flex items-start justify-between gap-3 border-b p-4"
+             style={{ borderColor: "var(--bi-line)" }}>
+          <div>
+            <h2 className="flex items-center gap-2 text-base font-bold" style={{ color: "var(--bi-text)" }}>
+              <CalendarClock className="size-4" /> Vigências a vencer
+            </h2>
+            <p className="mt-0.5 text-xs" style={{ color: "var(--bi-muted)" }}>
+              Instrumentos com vigência encerrando em até {DIAS} dias.
+            </p>
+          </div>
+          <button onClick={onClose} className="rounded-md p-1.5 bi-hover" aria-label="Fechar">
+            <X className="size-4" />
+          </button>
+        </div>
+
+        <div className="flex flex-wrap items-end gap-3 p-4 pb-2">
+          <div className="rounded-lg px-4 py-2"
+               style={{ background: "var(--bi-surface-2)", border: "1px solid var(--bi-line)" }}>
+            <div className="text-[10px] uppercase tracking-wide" style={{ color: "var(--bi-muted)" }}>
+              {munSel.length ? `${munSel.length} município(s)` : "Todos os municípios"}
+            </div>
+            <div className="text-2xl font-bold" style={{ color: "var(--bi-text)" }}>
+              {carregando ? "—" : visiveis.length}
+            </div>
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px]" style={{ color: "var(--bi-muted)" }}>Municípios</label>
+            <MultiSelect
+              opcoes={opcoesMun} valor={munSel} onChange={setMunSel}
+              placeholder="Todos" rotuloTodos="Todos" ariaLabel="Municípios" className="w-56"
+            />
+          </div>
+          <div className="ml-auto flex items-center gap-1">
+            <button onClick={() => setVisao("bolhas")}
+                    className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium bi-hover"
+                    style={{ background: visao === "bolhas" ? "var(--bi-surface-2)" : "transparent",
+                             border: "1px solid var(--bi-line)", color: "var(--bi-text)" }}>
+              <Circle className="size-3" /> Bolhas
+            </button>
+            <button onClick={() => setVisao("lista")}
+                    className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium bi-hover"
+                    style={{ background: visao === "lista" ? "var(--bi-surface-2)" : "transparent",
+                             border: "1px solid var(--bi-line)", color: "var(--bi-text)" }}>
+              <List className="size-3" /> Lista
+            </button>
+            {visao === "lista" && (
+              <button onClick={() => setAsc((v) => !v)}
+                      title={asc ? "Menor prazo primeiro" : "Maior prazo primeiro"}
+                      className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] bi-hover"
+                      style={{ border: "1px solid var(--bi-line)", color: "var(--bi-muted)" }}>
+                <ArrowUpDown className="size-3" /> {asc ? "menor→maior" : "maior→menor"}
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-auto p-4 pt-2">
+          {carregando ? (
+            <div className="space-y-1.5">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="h-12 animate-pulse rounded-lg" style={{ background: "var(--bi-surface-2)" }} />
+              ))}
+            </div>
+          ) : visiveis.length === 0 ? (
+            <p className="py-8 text-center text-sm" style={{ color: "var(--bi-muted)" }}>
+              Nenhum instrumento vencendo em {DIAS} dias.
+            </p>
+          ) : visao === "bolhas" ? (
+            <div className="flex flex-wrap items-center gap-3">
+              {porMunicipio.map((p) => {
+                // área ~ quantidade: o olho compara tamanho, não número
+                const lado = 46 + Math.round(54 * Math.sqrt(p.qtd / maxQtd));
+                const tom = tomDias(p.menor);
+                return (
+                  <div key={p.nome} className="flex flex-col items-center gap-1"
+                       title={`${p.nome}: ${p.qtd} vencendo — o mais próximo em ${p.menor} dia(s)`}>
+                    <div className="flex items-center justify-center rounded-full font-bold"
+                         style={{ width: lado, height: lado, background: tom.bg, color: tom.fg,
+                                  border: "1px solid var(--bi-line)" }}>
+                      {p.qtd}
+                    </div>
+                    <span className="max-w-[7rem] truncate text-[11px]" style={{ color: "var(--bi-muted)" }}>
+                      {p.nome}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              {visiveis.map((i) => {
+                const tom = tomDias(i.dias_restantes);
+                return (
+                  <div key={i.id} className="flex items-center gap-3 rounded-lg px-3 py-2"
+                       style={{ background: "var(--bi-surface-2)" }}>
+                    <span className="shrink-0 rounded-md px-2 py-1 text-[11px] font-bold"
+                          style={{ background: tom.bg, color: tom.fg }}>
+                      {i.dias_restantes ?? "—"}d
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-xs font-medium" style={{ color: "var(--bi-text)" }}>
+                        {i.objeto || i.nr_convenio || i.nr_sigcon || "—"}
+                      </div>
+                      <div className="truncate text-[11px]" style={{ color: "var(--bi-muted)" }}>
+                        {nomePorId[String(i.municipio_id)] || "—"}
+                        {i.nr_convenio || i.nr_sigcon ? ` · ${i.nr_convenio || i.nr_sigcon}` : ""}
+                        {i.dt_fim_vigencia ? ` · vence em ${new Date(i.dt_fim_vigencia).toLocaleDateString("pt-BR")}` : ""}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

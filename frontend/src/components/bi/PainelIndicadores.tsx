@@ -8,7 +8,7 @@
 // vai aparecer na TV, sem duas verdades para manter.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { MonitorPlay, RefreshCw } from "lucide-react";
+import { MonitorPlay, RefreshCw, CalendarClock } from "lucide-react";
 import api from "@/lib/api";
 import { Municipio, getMunicipios, putTelaFiltros } from "@/lib/bi";
 import type { User } from "@/types";
@@ -17,7 +17,8 @@ import { useBiScope, CONSOLIDADO } from "@/contexts/BiScopeContext";
 import { ABAS, AbaId, FiltrosTela, abrirJanelaDaTela } from "@/lib/tela";
 import { useTelaControle } from "@/lib/useTela";
 import { prefetchAba, useDadosAba } from "@/lib/useAbaBi";
-import { EscopoIndicador, PeriodoMultiSelect } from "./Filtros";
+import { PeriodoMultiSelect } from "./Filtros";
+import VigenciasModal from "./VigenciasModal";
 import { CabecalhoBi } from "./Marca";
 import { BotaoAjustes } from "./Ajustes";
 import { InsightTicker } from "./InsightTicker";
@@ -34,6 +35,8 @@ export function PainelIndicadores() {
   const { scope, municipioId, anos } = useBiScope();
   const [municipios, setMunicipios] = useState<Municipio[]>([]);
   const [user, setUser] = useState<User | null>(null);
+  // Modal das vigencias <=120d — substituiu o selo que so repetia o municipio.
+  const [vigenciasAberto, setVigenciasAberto] = useState(false);
 
   const abaUrl = params.get("aba") as AbaId | null;
   const [aba, setAbaState] = useState<AbaId>(
@@ -58,11 +61,6 @@ export function PainelIndicadores() {
     getMunicipios().then(setMunicipios).catch(() => {});
   }, []);
 
-  // Consolidado só faz sentido para quem tem CARTEIRA (assessoria/parceiro com
-  // vários municípios). Antes bastava ser admin, e por isso o ambiente de um
-  // município único — que nunca terá outra cidade para comparar — exibia o
-  // seletor com uma opção "Consolidado (todos)" que consolidava um só.
-  const podeConsolidado = useMemo(() => municipios.length > 1, [municipios.length]);
 
   const nomeMunicipio = useMemo(() => {
     const m = municipioId
@@ -133,13 +131,17 @@ export function PainelIndicadores() {
         nomeMunicipio={nomeMunicipio}
         right={
           <>
-            {/* O seletor só existe para quem TEM carteira: assessoria com vários
-                municípios. Num ambiente de município único não há o que
-                escolher, e o dropdown só sugeria que existe dado de outra
-                cidade ali dentro. */}
-            {podeConsolidado && (
-              <EscopoIndicador municipios={municipios} />
-            )}
+            {/* No lugar do selo que só REPETIA o município já escolhido na barra
+                lateral, um botão que abre o que é acionável: o que vence antes.
+                (pedido do dono — ver components/bi/VigenciasModal.tsx) */}
+            <button
+              onClick={() => setVigenciasAberto(true)}
+              className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold bi-hover"
+              style={{ background: "var(--bi-surface)", border: "1px solid var(--bi-line)", color: "var(--bi-text)" }}
+              title="Instrumentos com vigência encerrando em até 120 dias"
+            >
+              <CalendarClock className="size-3.5" /> Vigências ≤120d
+            </button>
             <PeriodoMultiSelect />
             {/* Sem alternador de tema aqui: o do menu lateral e este mantinham
                 estados React SEPARADOS da mesma preferencia, entao clicar num
@@ -223,6 +225,9 @@ export function PainelIndicadores() {
         <div key={aba} className="bi-pane-enter flex flex-col">
           <ConteudoAba dados={dados} />
         </div>
+      )}
+      {vigenciasAberto && (
+        <VigenciasModal municipios={municipios} onClose={() => setVigenciasAberto(false)} />
       )}
     </div>
   );
