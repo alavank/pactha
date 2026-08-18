@@ -225,65 +225,32 @@ def _resumido_money(v):
 
 
 def gerar_resumido_pdf(meta: dict, conteudo: dict, municipio_nome: str) -> bytes:
-    buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=2 * cm, rightMargin=2 * cm,
-                            topMargin=1.5 * cm, bottomMargin=1.8 * cm)
-    tit = ParagraphStyle("rs_tit", fontName="Helvetica-Bold", fontSize=13,
-                         alignment=1, spaceAfter=2, textColor=colors.HexColor("#111827"))
-    sub = ParagraphStyle("rs_sub", fontName="Helvetica", fontSize=9, alignment=1,
-                         spaceAfter=10, textColor=colors.HexColor("#4B5563"))
-    parte_st = ParagraphStyle("rs_parte", fontName="Helvetica-Bold", fontSize=10.5,
-                              spaceBefore=10, spaceAfter=4, textColor=colors.HexColor("#1E3A8A"))
-    orgao_st = ParagraphStyle("rs_orgao", fontName="Helvetica-Bold", fontSize=9.5,
-                              spaceBefore=6, spaceAfter=2, textColor=colors.HexColor("#111827"))
-    ident_st = ParagraphStyle("rs_ident", fontName="Helvetica-Bold", fontSize=9,
-                              leftIndent=10, spaceBefore=3, textColor=colors.HexColor("#111827"))
-    campo_st = ParagraphStyle("rs_campo", fontName="Helvetica", fontSize=9, leading=12,
-                              leftIndent=22, textColor=colors.HexColor("#1F2937"))
+    """RM RESUMIDO = o COMPLETO recortado nas DEMANDAS EM BRASILIA (Parte 1).
 
-    dref = meta.get("data_referencia")
-    ref_txt = _fmt_data_extenso(dref)
-    # Vazio e melhor que a cidade errada: o RM ja grava a cidade certa na
-    # criacao, e um fallback com literal de outro cliente reintroduz o defeito
-    # justamente nos registros antigos, que sao os que ninguem vai reconferir.
-    cidade = meta.get("cidade_emissao") or ""
-    story = [
-        Paragraph(f"RELATÓRIO DE MONITORAMENTO – {_esc(municipio_nome)}", tit),
-        Paragraph(f"{_esc(cidade)}, {ref_txt}", sub),
-    ]
+    ⚠️ MUDANCA DE CONCEITO (pedido do dono): o resumido NAO e "o relatorio com
+    menos informacao". Ele mostra exatamente o que o completo mostra — os mesmos
+    campos, as mesmas caixas de destaque (clausula, licitacao, evento, alteracao,
+    desembolso) — porem SO da Parte 1. Antes ele tinha layout e lista de campos
+    proprios (`_campos_resumido`), entao cada campo novo do completo precisava ser
+    duplicado aqui e, na pratica, ficava faltando.
 
-    algum = False
-    for parte in conteudo.get("partes", []):
-        p_tit = (parte.get("titulo") or "").strip()
-        # monta os grupos com itens pendentes
-        blocos = []
-        for secao in parte.get("secoes", []):
-            for grupo in secao.get("grupos", []):
-                itens = [it for it in grupo.get("itens", []) if _e_pendencia(p_tit, it)]
-                if itens:
-                    blocos.append(((grupo.get("orgao") or "").strip(), itens))
-        if not blocos:
-            continue
-        algum = True
-        story.append(Paragraph(f"● {_esc(p_tit)}", parte_st))
-        for orgao, itens in blocos:
-            if orgao:
-                story.append(Paragraph(f"● {_esc(orgao)}", orgao_st))
-            for it in itens:
-                tipo = (it.get("tipo") or "Instrumento").strip()
-                story.append(Paragraph(f"{_esc(tipo)}: {_esc(it.get('numero') or '')}", ident_st))
-                for label, val in _campos_resumido(it):
-                    story.append(Paragraph(f"➢ <b>{_esc(label)}:</b> {_esc(val)}", campo_st))
-                story.append(Spacer(1, 3))
+    Implementacao: e um RECORTE + o renderizador do completo (`rm_pdf.gerar_pdf`),
+    que ja e puro sobre o conteudo. Qualquer caixa nova do completo aparece aqui
+    de graca. A Parte 1 e identificada por `ordem == 1` (carimbado pelo builder)
+    com queda para o TITULO quando o conteudo e de um RM antigo."""
+    from services.rm_pdf import gerar_pdf
 
-    if not algum:
-        story.append(Paragraph("<i>Sem pendências ativas para o período.</i>", campo_st))
+    def _e_parte1(p: dict) -> bool:
+        if p.get("ordem") == 1:
+            return True
+        t = (p.get("titulo") or "").casefold()
+        return "parte 1" in t or "bras" in t   # "demandas em Brasília"
 
-    rodape_txt = meta.get("rodape", "")
-    doc.build(story,
-              onFirstPage=lambda c, d: _rodape_resumido(c, d, rodape_txt),
-              onLaterPages=lambda c, d: _rodape_resumido(c, d, rodape_txt))
-    return buf.getvalue()
+    partes1 = [p for p in (conteudo.get("partes") or []) if _e_parte1(p)]
+    meta_rs = dict(meta or {})
+    tit = (meta_rs.get("titulo") or f"RELATÓRIO DE MONITORAMENTO – {municipio_nome.upper()}")
+    meta_rs["titulo"] = f"{tit} — DEMANDAS EM BRASÍLIA"
+    return gerar_pdf(meta_rs, {"partes": partes1}, municipio_nome)
 
 
 def _campos_resumido(it: dict):
