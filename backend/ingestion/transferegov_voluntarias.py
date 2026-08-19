@@ -226,6 +226,22 @@ def _propostas_detalhe_frescas(municipio_id: int, max_age_hours: int) -> dict:
         return {}
 
 
+def _sem_clausula_confirmado(sit_portal) -> bool:
+    """True SO quando o portal afirmou, nesta rodada, "Normal" — o valor POSITIVO.
+
+    ⚠️ POR QUE NAO E `not _RE_CLAUSULA.search(...)`. Esta funcao autoriza APAGAR
+    dado (o JSONB da clausula). Com a regra pela NEGATIVA, qualquer valor
+    inesperado no campo — ou a situacao do CICLO ("Em execução"), que e o fallback
+    de `_sit` — viraria ordem de limpeza, e um bug de leitura zeraria a carteira
+    inteira em silencio. A coluna `situacao_contratacao` tem tres valores no
+    portal (Normal / Cláusula Suspensiva / Liminar Judicial, ver
+    SIT_CONTRATACAO_OPCOES no frontend), entao exigir "normal" e a leitura segura:
+    na duvida, PRESERVA.
+
+    String vazia = "nao perguntei" (detalhe nao lido nesta rodada) -> False."""
+    return (sit_portal or "").strip().casefold().startswith("normal")
+
+
 def _propostas_com_clausula(municipio_id: int) -> set:
     """numero_proposta das que o BANCO ja sabe estarem em clausula suspensiva ou
     liminar — por QUALQUER uma das tres fontes que registram isso.
@@ -837,6 +853,24 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
             # navegamos proposta->instrumento->Detalhar na page_auth (cookies).
             _sit = (prop["detalhe"].get("Situação de Contratação Atual")
                     or prop.get("situacao") or "")
+            # ⚠️ "CONFERIDO, E NAO TEM MAIS" — o UNICO caso em que se pode APAGAR o
+            # JSONB da clausula. A condicao e deliberadamente estreita:
+            #
+            #  - exige o campo do PORTAL lido NESTA rodada. NAO vale o fallback
+            #    `prop.get("situacao")` da linha acima: aquilo e a situacao do
+            #    CICLO ("Em execução"), que nunca casa com clausula e faria a
+            #    limpeza disparar para a carteira INTEIRA;
+            #  - exige valor NAO-VAZIO. Detalhe nao lido (TG_SKIP_ENRICH=1, skip
+            #    incremental, falha de rede) chega aqui com "" e NAO limpa nada —
+            #    "nao perguntei" continua preservando, que e o proposito do
+            #    COALESCE no _upsert.
+            #
+            # Sem isto o JSONB era eterno: o CSV diario devolve "Normal" e zera as
+            # colunas dedicadas (siconv_convenio_backfill, UPDATE sem COALESCE),
+            # mas o JSONB — a unica fonte que o RM le — ficava congelado, e a caixa
+            # ambar do relatorio apontava pendencia ja resolvida para sempre.
+            if _sem_clausula_confirmado(prop["detalhe"].get("Situação de Contratação Atual")):
+                prop["_clausula_conferida_sem"] = True
             if page_auth is not None and _RE_CLAUSULA.search(_sit):
                 _idp = _id_proposta_from_url(url)
                 if _idp:
@@ -1848,6 +1882,32 @@ def _upsert(mun_id: int, propostas: list[dict]):
               (_dt_now() if p.get("_detalhe_lido") else None),
               (json.dumps(det, ensure_ascii=False) if det else None), json.dumps(p, ensure_ascii=False)))
         ins += 1
+
+    # CLAUSULA RESOLVIDA -> APAGA o JSONB. E a contrapartida do COALESCE logo
+    # acima: ele existe para "nao perguntei" nao apagar dado bom, mas sem uma
+    # saida o campo virava ETERNO — convenio que saiu da clausula suspensiva
+    # continuava com a caixa ambar no RM para sempre, porque o relatorio le este
+    # JSONB e nenhuma das fontes que se atualizam consegue toca-lo.
+    #
+    # So entra aqui quem foi CONFERIDO nesta rodada (ver
+    # `_clausula_conferida_sem` no laco de coleta): o portal disse, com o campo
+    # lido de verdade, que a Situacao de Contratacao nao e mais clausula/liminar.
+    # UPDATE separado, e nao um CASE no UPSERT de 38 colunas, porque a operacao e
+    # DESTRUTIVA e merece ficar legivel e isolada.
+    _resolvidas = [p["numero_proposta"][:20] for p in propostas
+                   if p.get("_clausula_conferida_sem")]
+    if _resolvidas:
+        cur.execute(
+            "UPDATE transferegov_propostas SET situacao_contratacao_detalhe = NULL "
+            "WHERE municipio_id = %s AND numero_proposta = ANY(%s) "
+            "  AND situacao_contratacao_detalhe IS NOT NULL",
+            (mun_id, _resolvidas),
+        )
+        if cur.rowcount:
+            # Logado sempre: apagar dado em silencio e o tipo de coisa que ninguem
+            # descobre ate precisar dele.
+            logger.info(f"  clausula resolvida em {cur.rowcount} proposta(s) — "
+                        "JSONB de detalhe da clausula limpo (portal diz nao-clausula)")
     conn.commit(); cur.close(); conn.close()
     return ins
 
