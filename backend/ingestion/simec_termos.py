@@ -21,11 +21,11 @@ Valor do Termo (ou Quantidade de Obra). Lemos todas e deduplicamos por
 Rodar:  python -m ingestion.simec_termos
         SIMEC_TERMOS_LOTE=5 python -m ingestion.simec_termos   (so N municipios)
 
-ONDE RODA: pendurado em run_dadosabertos_cron.run_all(), que o cron do `sigcon`
-chama 4x/dia — SEM Scheduled Task nova em nenhum dos 4 workers, pelo mesmo
-motivo do SISMOB (INFRA.md secao 5). O `ingest()` se auto-limita a 1x/dia
-(SIMEC_TERMOS_MIN_INTERVAL_H=20) porque o que ele traz e o INSTRUMENTO, que muda
-em MESES; quem se move e o pagamento, e isso ja vem 4x/dia pelo simec_par.
+ONDE RODA: Scheduled Task `simec-termos` nos QUATRO workers, as 06:10, com lock
+PROPRIO (/tmp/simec_termos.lock — o /tmp/scraper.lock existe para serializar
+Chromium, e esta fonte e httpx puro) e timeout 1700s. 1x/dia basta: o que ela
+traz e o INSTRUMENTO, que muda em MESES; quem se move e o pagamento, e isso vem
+4x/dia pelo simec_par.
 """
 from __future__ import annotations
 import os
@@ -48,14 +48,15 @@ _HEADERS = {
     "Content-Type": "application/x-www-form-urlencoded",
 }
 _DELAY = float(os.getenv("SIMEC_TERMOS_DELAY", "1.5") or "1.5")
-# ⚠️ 600s (10 min), NAO os 25 min de quem tem task propria. Esta fonte roda
-# PENDURADA no orcamento do SIGCON: run_sigcon_cron desconta o tempo gasto no
-# run_dadosabertos e, se sobrarem menos de 300s, nem inicia o scraper — e na
-# Freitas o sigcon ja usa 43 dos 45 min. Medida da maior carteira: ~44
-# municipios x (1,5s de espera + resposta) cabe com folga. Rodada cortada vira
-# 'partial' no ingestion_log e o rodizio cobre o resto na proxima; se isso virar
-# rotina, o certo e SUBIR esta env no worker, nao afrouxar o status.
-_BUDGET_S = float(os.getenv("SIMEC_TERMOS_BUDGET_S", "600") or "600")
+# 1500s, pela regra de ouro do repo: orcamento interno + 1 municipio pesado, e a
+# coluna `timeout` da Scheduled Task = interno + 120s. A task `simec-termos` dos
+# 4 workers tem timeout 1700, entao 1500 e o numero que fecha a conta.
+# ⚠️ O PR #259 baixou isto para 600 porque achava que a fonte rodava pendurada no
+# orcamento do SIGCON. Ela nao roda: tem task PROPRIA, com lock proprio. Rodada
+# cortada vira 'partial' no ingestion_log e o rodizio cobre o resto na proxima;
+# se isso virar rotina, o certo e subir esta env no worker E o timeout da task
+# junto, nunca so uma das duas.
+_BUDGET_S = float(os.getenv("SIMEC_TERMOS_BUDGET_S", "1500") or "1500")
 
 # Cabecalho util (o resto da pagina tem tabelas de layout, sem estes rotulos)
 _COLS = {
@@ -405,19 +406,21 @@ def run(lote: int | None = None) -> dict:
 def ingest() -> int:
     """Entrypoint do agregador de dados abertos (run_dadosabertos_cron.run_all).
 
-    ⚠️ O AUTO-THROTTLE NAO E LUXO, E CONDICAO DE HOSPEDAGEM. Esta fonte entra
-    pendurada no run_all() — que o cron do `sigcon` chama 4x/dia — em vez de
-    virar Scheduled Task nova em CADA um dos 4 workers, pelo mesmo motivo do
-    SISMOB (INFRA.md secao 5). So que run_sigcon_cron DESCONTA do orcamento do
-    SIGCON o tempo gasto aqui e, se sobrarem menos de 300s, o scraper do SIGCON
-    nem inicia — e na Freitas o sigcon ja usa 43 dos 45 min. Dai: 1x/dia (o
-    Termo de Compromisso muda em MESES; quem se move e o pagamento, e isso ja
-    vem 4x/dia pelo simec_par) e orcamento curto (_BUDGET_S).
+    ⚠️ HOJE NINGUEM CHAMA ISTO. A fonte roda pela Scheduled Task `simec-termos`
+    dos 4 workers, que executa o `__main__` (run() direto, sem passar por aqui).
+    Esta funcao fica como porta de entrada alternativa: se um dia a fonte voltar
+    a ser pendurada no run_dadosabertos_cron.run_all(), o gate por env e o
+    auto-throttle ja estao prontos — e sao NECESSARIOS naquele caminho, porque
+    run_sigcon_cron DESCONTA do orcamento do SIGCON o tempo gasto no run_all e,
+    se sobrarem menos de 300s, o scraper do SIGCON nem inicia.
 
-    Env: SIMEC_TERMOS_ENABLED=0 desliga NESTE caminho — use se um dia a fonte
-    ganhar Scheduled Task propria, porque o `__main__` chama run() direto e
-    ignora este gate; SIMEC_TERMOS_MIN_INTERVAL_H (default 20);
-    SIMEC_TERMOS_FORCE=1 ignora o intervalo.
+    O PR #259 chegou a pendura-la la por premissa errada ("nao tem task em
+    nenhum worker"); o PR seguinte desfez, porque a task existe nos quatro e e o
+    caminho melhor (lock proprio, timeout proprio, nao rouba do SIGCON).
+
+    Env: SIMEC_TERMOS_ENABLED=0 desliga NESTE caminho (o `__main__` ignora o
+    gate); SIMEC_TERMOS_MIN_INTERVAL_H (default 20); SIMEC_TERMOS_FORCE=1 ignora
+    o intervalo.
     """
     if os.getenv("SIMEC_TERMOS_ENABLED", "1") == "0":
         logger.info("SIMEC termos: desligado neste tenant (SIMEC_TERMOS_ENABLED=0)")

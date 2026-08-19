@@ -293,29 +293,27 @@ dos alertas ao mesmo tempo, e a rodada era gravada como `success`. Use a válvul
 só quando o encolhimento for real (obra de fato retirada do programa); sem ela, um
 município que legitimamente perca obras fica repetindo a falha.
 
-**SIMEC — Termos de Compromisso** (`ingestion/simec_termos.py`, PR #258) **também não
-tem linha na tabela de tasks, e pelo mesmo motivo do SISMOB**: em vez de uma Scheduled
-Task nova em cada um dos 4 workers, foi pendurado em `run_dadosabertos_cron.run_all()`.
-É HTTP puro (`httpx`), **sem login e sem Playwright** — não disputa o lock do Chromium.
-O `ingest()` se auto-limita a 1×/dia (`SIMEC_TERMOS_MIN_INTERVAL_H=20`;
-`SIMEC_TERMOS_FORCE=1` força, `SIMEC_TERMOS_ENABLED=0` desliga por tenant) porque o que
-ele traz é o **instrumento** (processo, vigência, valor), que muda em MESES — quem se
-move é o pagamento, e isso já vem 4×/dia por `simec_par_liberacoes` no mesmo `run_all()`.
-Bater 4×/dia num portal do MEC que o `simec_par` só vence com `curl_cffi` seria a mesma
-martelada que custou >6h de bloqueio de IP no `transferegov-te`.
+**SIMEC — Termos de Compromisso** (`ingestion/simec_termos.py`, PR #258) tem **Scheduled
+Task própria nos 4 workers**: `simec-termos`, `10 6 * * *`, com lock **próprio**
+(`/tmp/simec_termos.lock`) e `timeout -k 30 1700`. O lock é separado de propósito: o
+`/tmp/scraper.lock` existe para serializar **Chromium**, e esta fonte é `httpx` puro, sem
+login e sem navegador — não precisa disputar aquela fila. 1×/dia basta porque o que ela
+traz é o **instrumento** (processo, vigência, valor), que muda em MESES; quem se move é o
+pagamento, e isso vem 4×/dia por `simec_par_liberacoes` dentro do `run_all()`.
 
-> ⚠️ **O orçamento interno é curto de propósito**: `SIMEC_TERMOS_BUDGET_S=600`, não os
-> 1500 do `transferegov-te`. Quem tem task própria paga o próprio tempo; quem está no
-> `run_all()` gasta do orçamento do SIGCON (`run_sigcon_cron` desconta e, com <300s
-> restantes, nem inicia o scraper — e na Freitas o `sigcon` já usa 43 dos 45 min).
-> Rodada cortada pelo orçamento grava `partial` no `ingestion_log` e o rodízio cobre o
-> resto na janela seguinte; `partial` crônico aqui significa "a carteira não cabe mais
-> em 600s", e a resposta é subir a env — não afrouxar o status.
-> Se um dia o custo no SIGCON incomodar, o caminho é **Scheduled Task própria** com lock
-> PRÓPRIO (`/tmp/simec-termos.lock` — o `/tmp/scraper.lock` existe para serializar
-> Chromium, não HTTP), `timeout -k 30` ≥ orçamento + 120s e coluna `timeout` ≥ mais 120s
-> (regra de ouro acima), **mais `SIMEC_TERMOS_ENABLED=0` no worker** para o `run_all()`
-> parar de rodá-lo — o `__main__` chama `run()` direto e ignora esse gate.
+> ⚠️ **NÃO pendurar esta fonte no `run_dadosabertos_cron.run_all()`.** O PR #259 fez isso
+> por premissa errada (documentou que "não tem task em nenhum worker" — tem, nos quatro) e
+> criou DOIS caminhos vivos: o `run_all()` disparava por volta das 05:25, quando o gate de
+> 20h do `ingest()` já havia vencido desde as 06:10 do dia anterior, e a task coletava de
+> novo 45 min depois. Duas coletas por dia, e a do `run_all()` ainda descontava do
+> orçamento do SIGCON. Desfeito no PR seguinte. `ingest()` continua no arquivo como porta
+> alternativa (com `SIMEC_TERMOS_ENABLED=0` / `SIMEC_TERMOS_MIN_INTERVAL_H` /
+> `SIMEC_TERMOS_FORCE=1`), mas ninguém o chama — a task executa o `__main__`, que vai
+> direto no `run()`.
+>
+> O orçamento interno é `SIMEC_TERMOS_BUDGET_S=1500`, pela regra de ouro: interno +
+> 1 município pesado, e a coluna `timeout` da task = interno + 120s (daí os 1700).
+> Mexer num sem mexer no outro é o erro clássico aqui.
 
 **`cagec`** (desde 2026-07-30, só Monte Sião por enquanto): regularidade **estadual**
 de MG. Roda às 5h40, depois da rodada do `sigcon` das 4h — de propósito, porque o
