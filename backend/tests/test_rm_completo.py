@@ -9,10 +9,11 @@ from datetime import date
 from services.rm_builder import (
     _destino_completo, _pend_municipal, _fed_retem, _fns_retem, _fed_status,
     _titulos_partes_completo, _situacao_estadual, _alteracao_campos, _ano_pagamento_ops_obs,
+    _programa_limpo, _vol_pre_empenho,
     _SEC_FED_PLURAL, _SEC_FED_SINGULAR, _SEC_EST_P2, _SEC_EST_P3_RES, _SEC_EST_P3_CONV,
 )
 from services.rm_export import _e_pendencia
-from services.rm_pdf import _processo_execucao_destaque, _alteracao_destaque
+from services.rm_pdf import _processo_execucao_destaque, _alteracao_destaque, _campos_do_item
 
 ANO = 2026
 
@@ -63,6 +64,42 @@ def test_parte4_voluntaria_do_ano_corrente():
         "federal", "voluntaria", "ativa", ANO, None, ANO,
         pend_municipal=False, pre_empenho_novo=True, tem_convenio=False)
     assert parte == 4 and secao == _SEC_FED_PLURAL
+
+
+# --------------------------------------------------------------------------
+# PARTE 4 = repasse 100% VOLUNTARIO. Proposta com nome de parlamentar e EMENDA
+# (caso Junior Amaral / Min. do Esporte) e sobe para a secao superior.
+# --------------------------------------------------------------------------
+def test_parte4_so_aceita_voluntaria_sem_parlamentar():
+    # sem parlamentar: continua sendo Parte 4 (nao esvaziar o que e voluntario)
+    assert _vol_pre_empenho("ativa", ANO, ANO, "") is True
+    assert _vol_pre_empenho("ativa", ANO, ANO, None) is True
+    # marcador de ausencia do portal NAO e parlamentar -> segue voluntaria
+    assert _vol_pre_empenho("ativa", ANO, ANO, "Nao ha") is True
+    assert _vol_pre_empenho("ativa", ANO, ANO, "Nao informado") is True
+    # COM parlamentar -> nao e voluntaria pura, sai da Parte 4
+    assert _vol_pre_empenho("ativa", ANO, ANO, "JUNIOR AMARAL") is False
+
+
+def test_parte4_expulsa_emenda_para_brasilia_ou_municipio():
+    # sem pendencia municipal a bola e de Brasilia -> Parte 1
+    parte, secao, _ = _destino_completo(
+        "federal", "voluntaria", "ativa", ANO, None, ANO,
+        pend_municipal=False, pre_empenho_novo=False, tem_convenio=False)
+    assert parte == 1 and secao == _SEC_FED_PLURAL
+    # com licitacao/clausula a bola e do municipio -> Parte 2
+    parte2, _s2, _ = _destino_completo(
+        "federal", "voluntaria", "ativa", ANO, None, ANO,
+        pend_municipal=True, pre_empenho_novo=False, tem_convenio=False)
+    assert parte2 == 2
+
+
+def test_parte4_nunca_recebeu_empenhada_nem_ano_anterior():
+    # invariante que a regra do parlamentar NAO pode mascarar: a Parte 4 sempre foi
+    # so pre-empenho do ano corrente, entao condicionar a regra a empenho seria no-op.
+    assert _vol_pre_empenho("empenhada", ANO, ANO, "") is False
+    assert _vol_pre_empenho("paga", ANO, ANO, "") is False
+    assert _vol_pre_empenho("ativa", ANO - 1, ANO, "") is False
 
 
 def test_estadual_pago_recente_vai_parte2():
@@ -136,6 +173,40 @@ def test_fns_retem_completo_mantem_pago_antigo_descarta_pendente_antigo():
     assert _fns_retem(ANO, ANO, ind, 0, 0, "Em análise", completo=True) is True
     # rejeitada nunca entra
     assert _fns_retem(2015, ANO, ind, 0, 0, "Rejeitada", completo=True) is False
+
+
+def test_fns_retem_completo_exige_repasse_efetivo_em_ano_anterior():
+    """Pedido do dono: FNS de 2025 e anos anteriores que NAO foram empenhadas sai
+    do relatorio. O rotulo textual "Empenhado" do portal nao vale como empenho —
+    havia proposta de 2014/2017 marcada assim com repasse R$ 0."""
+    assert _fns_retem(2024, ANO, {}, 0, 0, "Empenhado", completo=True) is False
+    assert _fns_retem(2025, ANO, {}, 0, 0, "Empenhado", completo=True) is False
+    # empenhada COM saldo a receber continua (o que a docstring promete manter)
+    assert _fns_retem(2024, ANO, {}, 50.0, 50.0, "Empenhado", completo=True) is True
+    # paga de ano anterior continua (e o historico que alimenta a Parte 3)
+    assert _fns_retem(2015, ANO, {"ano_ultimo_pagamento": ANO}, 100.0, 0, "Pago",
+                      completo=True) is True
+    # o ano de REFERENCIA nao e afetado, mesmo sem dinheiro
+    assert _fns_retem(ANO, ANO, {}, 0, 0, "Empenhado", completo=True) is True
+    # invariante: o ramo ANUAL (completo=False) nao foi tocado
+    assert _fns_retem(2024, ANO, {}, 0, 0, "Empenhado", completo=False) is False
+
+
+def test_fns_com_selecao_de_anos_cada_ano_vale_por_si():
+    """Regra do dono (19/08/2026): o corte "sem empenho sai" e do relatorio de
+    TODOS OS ANOS. Havendo SELECAO, quem escolheu [2023, 2024, 2025] pediu aqueles
+    anos de proposito — comparar tudo contra o MAIOR ano da selecao derrubaria
+    2023 e 2024, o oposto do pedido."""
+    sel = {2023, 2024, 2025}
+    # sem dinheiro, mas DENTRO da selecao -> permanece
+    assert _fns_retem(2023, 2025, {}, 0, 0, "Empenhado", completo=True, anos_sel=sel) is True
+    assert _fns_retem(2024, 2025, {}, 0, 0, "Em análise", completo=True, anos_sel=sel) is True
+    # FORA da selecao -> sai (o filtro de escopo tambem o removeria depois)
+    assert _fns_retem(2019, 2025, {}, 0, 0, "Empenhado", completo=True, anos_sel=sel) is False
+    # sem selecao (todos os anos), volta a valer o corte por repasse efetivo
+    assert _fns_retem(2023, ANO, {}, 0, 0, "Empenhado", completo=True) is False
+    # e a selecao NAO ressuscita rejeitada
+    assert _fns_retem(2023, 2025, {}, 0, 0, "Rejeitada", completo=True, anos_sel=sel) is False
 
 
 def test_titulos_partes_usam_ano_corrente():
@@ -267,3 +338,39 @@ def test_voluntaria_paga_no_ano_vai_para_repasses_do_ano():
                                           _ano_pagamento_ops_obs({"data_ultimo_desembolso": "10/03/2022"}),
                                           ANO, False, False, True)
     assert parte2 == 3 and secao2 == _SEC_FED_SINGULAR
+
+
+# --------------------------------------------------------------------------
+# PROGRAMA da voluntaria (ex.: "PRONE") — pedido do dono: aparecer nos detalhes,
+# junto do Objeto. A coluna ja existia e ja era populada; o RM e que nao a lia.
+# --------------------------------------------------------------------------
+def test_programa_preserva_sigla_e_tira_codigo_numerico():
+    # a SIGLA e justamente o que o dono quer ver — nao pode ser cortada
+    assert _programa_limpo("PRONE - PROGRAMA NACIONAL") == "PRONE - PROGRAMA NACIONAL"
+    # codigo do programa colado no comeco (so digitos) sai
+    assert _programa_limpo("0036420250001 - PRONE") == "PRONE"
+
+
+def test_programa_corta_lixo_com_tab_do_portal():
+    # mesmo defeito do varredor generico label|valor que ja sujou `modalidade`
+    assert _programa_limpo("PRONE\tEnviada para mandataria?\tNao") == "PRONE"
+    assert _programa_limpo("  APOIO   A   PROJETOS ") == "APOIO A PROJETOS"
+
+
+def test_programa_tolera_vazio_e_nulo():
+    for vazio in (None, "", "   ", "\t"):
+        assert _programa_limpo(vazio) == ""
+
+
+def test_pdf_imprime_programa_logo_abaixo_do_objeto():
+    campos = _campos_do_item({"objeto": "Pavimentacao", "programa": "PRONE",
+                              "parlamentar": "Fulano"})
+    rotulos = [r for r, _ in campos]
+    assert rotulos[:3] == ["Objeto", "Programa",
+                           "Parlamentar responsável pela indicação"]
+
+
+def test_pdf_nao_imprime_programa_quando_a_fonte_nao_tem():
+    # estadual/SIMEC/PAC nao preenchem a chave — a linha nao pode aparecer vazia
+    campos = _campos_do_item({"objeto": "Reforma"})
+    assert "Programa" not in [r for r, _ in campos]

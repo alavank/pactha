@@ -85,6 +85,34 @@ def _pend_municipal(*textos: str | None) -> bool:
     return any(k in s for k in _PEND_MUNICIPAL_KW)
 
 
+def _vol_pre_empenho(st: str, ano_prop: int | None, ano_ref: int,
+                     parlamentar: str | None) -> bool:
+    """True quando a proposta do TransfereGov e cadastro PRE-EMPENHO do ano de
+    referencia E repasse 100% VOLUNTARIO — o unico caso que a Parte 4 aceita.
+
+    REGRA DO DONO (auditoria da Parte 4): repasse 100% voluntario NAO tem nome de
+    parlamentar atrelado. Proposta com autor de emenda (o caso concreto: Junior
+    Amaral / Ministerio do Esporte) e EMENDA, nao voluntaria — cair na Parte 4
+    dizia ao prefeito que aquele dinheiro era discricionario e "sem garantia",
+    quando ele tem padrinho. Devolvendo False aqui, o item segue o caminho normal
+    de qualquer federal nao pago em _destino_completo e sobe para a secao superior:
+    Parte 1 (pendencia de empenho/desembolso/aceite em Brasilia) ou Parte 2 quando
+    a bola esta com o municipio.
+
+    NAO condicionar a estar empenhada: o status 'empenhada' JA nao chega aqui (a
+    Parte 4 exige st == 'ativa'), entao a condicao composta seria letra morta e a
+    emenda relatada continuaria exatamente onde esta.
+
+    e_parlamentar_real e nao `bool(parlamentar)`: o campo carrega marcador de
+    ausencia de portal ("Nao ha", "Nao informado"). Tratar texto de portal como
+    autor de emenda expulsaria da Parte 4 proposta que e voluntaria de verdade —
+    o mesmo defeito que ja custou um "parlamentar" de R$ 14,9 mi no SIGCON
+    (services/nome_parlamentar.py)."""
+    if st != "ativa" or ano_prop != ano_ref:
+        return False
+    return not e_parlamentar_real(parlamentar or "")
+
+
 def _destino_completo(esfera: str, fonte: str, status: str, ano_item: int | None,
                       ano_pgto: int | None, ano_ref: int, pend_municipal: bool,
                       pre_empenho_novo: bool, tem_convenio: bool) -> tuple[int, str, str]:
@@ -244,7 +272,7 @@ def _fns_classifica(situacao_desc: str | None, sit_calc: str) -> str:
 
 def _fns_retem(ano_prop: int | None, ano_emissao: int, ind: dict,
                vl_pago: float, vl_pagar: float, sit_cls: str,
-               completo: bool = False) -> bool:
+               completo: bool = False, anos_sel: set[int] | None = None) -> bool:
     """Regra de ano PROPRIA do FNS (nao usa _fed_retem, que e compartilhada com
     TransfereGov/SIGCON e mantem 'paga' para sempre).
 
@@ -258,14 +286,33 @@ def _fns_retem(ano_prop: int | None, ano_emissao: int, ind: dict,
       - foi empenhada e ainda tem SALDO A RECEBER (pago > 0 e a pagar > 0).
     Rejeitada/bloqueada so aparece no seu proprio ano.
 
-    completo=True (todos os anos): pago/empenhado de QUALQUER ano permanece (é o
-    histórico que alimenta a Parte 3); pré-empenho ('Em análise'/'Pendente') só do
-    ano de referência ou posterior; Rejeitada/dead nunca entra."""
+    completo=True: de ano ANTERIOR so permanece quem teve REPASSE EFETIVO
+    (vl_pago > 0) — e esse o historico que alimenta a Parte 3. O rotulo
+    'Empenhado' vindo do TEXTO do portal NAO basta: _fns_classifica promove esse
+    texto por cima do rotulo do dinheiro, e havia proposta de 2014/2017 marcada
+    'Empenhado' com repasse R$ 0. E a mesma doutrina que o calculo de `sit` em
+    montar_conteudo ja seguia ("Empenho CONFIRMADO exige REPASSE EFETIVO").
+    Pedido do dono: proposta antiga NUNCA empenhada sai do relatorio.
+
+    ⚠️ `anos_sel` = a SELECAO de anos do relatorio (vazia/None = "todos os anos").
+    O corte acima so vale no relatorio de TODOS OS ANOS. Havendo selecao, CADA ANO
+    ESCOLHIDO VALE POR SI: quem selecionou [2023, 2024, 2025] pediu aqueles anos de
+    proposito, e comparar tudo contra o MAIOR ano da selecao (o `ano_emissao`)
+    derrubaria justamente 2023 e 2024 — o oposto do pedido. Por isso, com selecao,
+    a pergunta passa a ser "o ano do item esta na selecao?", nao "e maior ou igual
+    ao ano de referencia?". Regra do dono, decidida em 19/08/2026.
+
+    Rejeitada/dead nunca entra no completo."""
     if sit_cls == "Rejeitada" or _fed_status(sit_cls) == "dead":
         return False if completo else (ano_prop is not None and ano_prop == ano_emissao)
     if completo:
-        if _fed_status(sit_cls) in ("paga", "empenhada", "vigente"):
+        # `and vl_pago > 0`: empenho REAL, nao o rotulo. Nao derruba o que a
+        # docstring promete manter — pagamento no ano de referencia e empenhada
+        # com saldo a receber tem, os dois, vl_pago > 0.
+        if _fed_status(sit_cls) in ("paga", "empenhada", "vigente") and vl_pago > 0:
             return True
+        if anos_sel:
+            return ano_prop is not None and ano_prop in anos_sel
         return ano_prop is not None and ano_prop >= ano_emissao
     if ano_prop is not None and ano_prop >= ano_emissao:
         return True
@@ -417,6 +464,33 @@ def _projeto_basico_resumo(projeto_basico) -> str:
     if rotulo and sit:
         return f"{rotulo} — {sit}"
     return sit or rotulo
+
+
+def _programa_limpo(programa) -> str:
+    """Nome do PROGRAMA da voluntaria, pronto para imprimir (ex.: "PRONE - ...").
+
+    Duas fontes escrevem `transferegov_propostas.programa` e elas NAO tem o mesmo
+    formato:
+      - dado aberto (autoritativo, sobrescreve todo dia): NOME_PROGRAMA de
+        siconv_programa.zip — so o nome, sem codigo.
+      - navegador: a celula "Programa" da tela Dados da Proposta, capturada pelo
+        varredor GENERICO de pares label|valor. Esse mesmo varredor ja colou lixo
+        com TAB em `modalidade` — por isso cortamos no primeiro TAB/quebra, para o
+        RM nao herdar o defeito.
+
+    Tambem descarta o codigo do programa quando ele vem colado no comeco
+    ("0036420250001 - PRONE ..."), SO quando o prefixo e TODO DIGITO: uma SIGLA
+    ("PRONE - PROGRAMA NACIONAL...") e exatamente o que o dono quer ler e NAO pode
+    ser cortada.
+
+    Limpa na LEITURA, nao na ingestao: nao reprocessa milhares de linhas, nao muda
+    o que as telas de proposta ja exibem e vale para dado antigo ja gravado."""
+    import re as _re
+    s = str(programa or "")
+    s = _re.split(r"[\t\r\n]", s)[0]           # corta o lixo colado do portal
+    s = _re.sub(r"\s+", " ", s).strip()
+    s = _re.sub(r"^\d{3,}\s*[-–]\s*", "", s)   # tira SO codigo numerico
+    return s.strip()
 
 
 def _ano_pagamento_ops_obs(ops_obs) -> int | None:
@@ -650,7 +724,8 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
                     # se moveu nele (pagamento no ano / saldo a receber). Sem
                     # isso o RM de 2026 vinha com proposta "Paga" de 2010.
                     sit_cls = _fns_classifica(ind.get("situacao_desc"), sit)
-                    if not _fns_retem(c.ano, ano_emissao, ind, vlpago or 0, vlpagar or 0, sit_cls, completo):
+                    if not _fns_retem(c.ano, ano_emissao, ind, vlpago or 0, vlpagar or 0,
+                                      sit_cls, completo, anos_filtro):
                         continue
                     orgao_fns = orgao
                     if completo:
@@ -686,11 +761,21 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
                         "fonte": "fns",
                         "fonte_ref": str(c.id),
                     }, ano=c.ano)
-            elif (c.ano is not None and c.ano >= ano_emissao) or (completo and _fed_status(c.situacao) != "dead"):
-                # Fallback: bucket sem individuais (coleta antiga/incompleta). Sem
-                # as propostas individuais nao da pra saber se houve pagamento no
-                # ano — entao no anual so entra se for do proprio ano de referência.
-                # No completo entra qualquer ano (menos dead).
+            elif (c.ano is not None and c.ano >= ano_emissao) or (
+                    completo and _fed_status(c.situacao) != "dead"
+                    and ((anos_filtro and c.ano in anos_filtro)
+                         or (not anos_filtro and (_money(raw.get("vlPago")) or 0) > 0))):
+                # Fallback: bucket SEM as propostas individuais. Nao e so "coleta
+                # antiga": _fetch_individuais devolve [] tambem em falha transitoria
+                # (tipo vazio, HTTP != 200, excecao de rede) e a linha do `if
+                # individuais:` acima manda lista vazia para ca. Sem as individuais
+                # nao da pra saber se houve pagamento no ano, entao no anual so
+                # entra se for do proprio ano de referência.
+                # No completo segue a MESMA regra do _fns_retem: com selecao de
+                # anos, o ano escolhido vale por si; sem selecao (todos os anos),
+                # ano anterior so entra com REPASSE EFETIVO (vlPago do agregado,
+                # guardado em raw_data) — a `situacao` gravada pelo scraper marca
+                # "Empenhado" so por vlPagar > 0, que nao e empenho real.
                 orgao_fb = orgao
                 if completo:
                     st = _fed_status(c.situacao)
@@ -800,7 +885,16 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
                ops_obs,
                -- Situacao do Projeto Basico/Termo de Referencia: o documento que
                -- sustenta a clausula suspensiva, e em que pe ele esta no portal.
-               projeto_basico
+               projeto_basico,
+               -- PROGRAMA do instrumento (ex.: "PRONE - ..."): o Objeto diz O QUE
+               -- e; o programa diz DE ONDE vem o dinheiro. Pedido do dono.
+               -- ULTIMA COLUNA DE PROPOSITO (row[24]). O laco abaixo le por INDICE;
+               -- acrescentar no MEIO do SELECT desloca TODOS os row[N] seguintes em
+               -- silencio — `objeto` passaria a ler dt_fim_vigencia, `parlamentar`
+               -- viraria outra coisa (e com ela a decisao de Parte 4), os valores
+               -- trocariam de lugar e os JSONB chegariam como tipo errado.
+               -- Nada disso levanta excecao: sai relatorio errado, calado.
+               programa
         FROM transferegov_propostas WHERE municipio_id = :m
     """), {"m": municipio_id})
     for row in vol.fetchall():
@@ -822,8 +916,11 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
         orgao = (row[4] or "Outros - Federal").strip()
         if completo:
             st = _fed_status(sit)
-            # Voluntaria pre-empenho cadastrada no ano corrente -> Parte 4.
-            pre_novo = st == "ativa" and ano_prop == ano_emissao
+            # Parte 4 = voluntaria PURA (pre-empenho do ano corrente e SEM autor de
+            # emenda). row[13] = coluna `parlamentar`, preenchida pelo dado aberto
+            # (ingestion/transferegov_opendata.py e siconv_emenda_backfill.py) — nao
+            # pelo scraper, que nao ve o autor da emenda na tela guest.
+            pre_novo = _vol_pre_empenho(st, ano_prop, ano_emissao, row[13])
             # Pendencia municipal: situacao do ciclo + contratacao + motivo da clausula.
             # ⚠️ O motivo costuma vir SO no JSONB `situacao_contratacao_detalhe`
             # ("Motivo da Cláusula Suspensiva": "Termo de Referência") com a COLUNA
@@ -874,7 +971,18 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             "tipo": tipo_label,
             "numero": _num_exib,
             "objeto": row[5] or "",
-            "parlamentar": row[13] or "",
+            # PROGRAMA (row[24], ULTIMA coluna do SELECT). Fica ao lado do objeto no
+            # dict e, no PDF, na linha logo abaixo dele (rm_pdf._campos_do_item).
+            # Vazio quando a proposta nunca foi coberta pelo dado aberto nem pelo
+            # enrich — ai a linha simplesmente nao sai.
+            "programa": _programa_limpo(row[24]),
+            # EXIBE pelo mesmo criterio que CLASSIFICA: e `e_parlamentar_real` que
+            # decide se a proposta e emenda (e portanto sai da Parte 4) — se o texto
+            # nao e nome, tambem nao pode ser impresso como pessoa. Sem isto o item
+            # ficava na Parte 4 (correto) e ao lado imprimia "Não há" como
+            # parlamentar — o defeito de R$ 14,9 mi de services/nome_parlamentar.py,
+            # agora do lado do RM, que CONGELA o texto em rm_relatorios.conteudo.
+            "parlamentar": (row[13] or "") if e_parlamentar_real(row[13] or "") else "",
             "valor_global": _money(row[7]),
             "valor_repasse": _money(row[8]),
             "valor_contrapartida": _money(row[9]),

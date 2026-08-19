@@ -145,6 +145,12 @@ def _campos_do_item(item: dict) -> list[tuple[str, str]]:
 
     if item.get("objeto"):
         out.append(("Objeto", item["objeto"]))
+    # PROGRAMA logo abaixo do Objeto (pedido do dono): o objeto diz O QUE é, o
+    # programa diz DE ONDE vem o dinheiro (ex.: "PRONE"). Hoje só as voluntárias
+    # preenchem esta chave; nas demais fontes ela nem existe no item e a linha não
+    # é impressa — por isso não usa o helper `add`, que trata 0 como vazio.
+    if item.get("programa"):
+        out.append(("Programa", item["programa"]))
     if item.get("parlamentar"):
         out.append(("Parlamentar responsável pela indicação", item["parlamentar"]))
     add("Valor global", _fmt_money(item.get("valor_global")))
