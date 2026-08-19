@@ -226,6 +226,49 @@ def _propostas_detalhe_frescas(municipio_id: int, max_age_hours: int) -> dict:
         return {}
 
 
+def _propostas_com_clausula(municipio_id: int) -> set:
+    """numero_proposta das que o BANCO ja sabe estarem em clausula suspensiva ou
+    liminar — por QUALQUER uma das tres fontes que registram isso.
+
+    POR QUE EXISTE. O gate da coleta olhava so `_sit` (a "Situação de Contratação
+    Atual" lida da tela NAQUELA rodada), enquanto a EXIBICAO no RM
+    (services/rm_pdf.py::_tem_clausula) ja considerava tres sinais. Coleta e
+    exibicao divergiam, e o convenio 981397/2025 (Araujos) caiu na fresta:
+
+      - a coluna `situacao_contratacao` e sobrescrita todo dia pelo CSV do dado
+        aberto (transferegov_opendata.py) e hoje diz "Normal";
+      - `clausula_suspensiva_motivo` e `..._dt_prevista` foram ZERADAS por
+        siconv_convenio_backfill.py, que faz UPDATE sem COALESCE e grava None
+        quando o CSV diz normal;
+      - so o JSONB `situacao_contratacao_detalhe` ainda registra a clausula — e
+        ele e protegido por COALESCE no _upsert, entao NUNCA e limpo.
+
+    Resultado: o RM desenhava a caixa ambar ("Motivo: Termo de Referência") e
+    ninguem ia buscar em que pe o documento estava, porque o gate lia justamente
+    a fonte que havia virado "Normal".
+
+    Este SELECT e o espelho SQL de `_tem_clausula`. Em qualquer falha (coluna
+    ausente, banco fora) devolve set() vazio e o gate volta a depender so de
+    `_sit` — o comportamento antigo, nunca pior que ele."""
+    try:
+        import psycopg2
+        url = os.getenv("DATABASE_URL_SYNC", "").replace("&channel_binding=require", "").replace("?channel_binding=require", "")
+        conn = psycopg2.connect(url); cur = conn.cursor()
+        cur.execute(
+            "SELECT numero_proposta FROM transferegov_propostas WHERE municipio_id=%s AND ("
+            "  situacao_contratacao ~* 'cl[áa]usula|suspensiv|liminar'"
+            "  OR clausula_suspensiva_motivo IS NOT NULL"
+            "  OR clausula_suspensiva_dt_prevista IS NOT NULL"
+            "  OR situacao_contratacao_detalhe IS NOT NULL)",
+            (municipio_id,)
+        )
+        out = {r[0] for r in cur.fetchall()}
+        cur.close(); conn.close()
+        return out
+    except Exception:
+        return set()
+
+
 def _propostas_ja_enriquecidas(municipio_id: int) -> set:
     """Retorna numero_proposta das que JA tem parlamentar OU sit_det.
     Permite priorizar as pendentes quando rodando com janela curta de auth."""
@@ -703,6 +746,11 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
     except ValueError:
         _det_max_age = 18
     _det_frescas = _propostas_detalhe_frescas(mun["id"], _det_max_age)
+    # O que o BANCO ja sabe sobre clausula/liminar, para o gate do Projeto Basico
+    # nao depender so da leitura volatil da tela. INCONDICIONAL de proposito: o
+    # bloco de pre-consultas logo acima so roda com `page_auth`, e esta captura
+    # funciona tambem no caminho guest.
+    _com_clausula = _propostas_com_clausula(mun["id"])
     _tot = len(propostas)
     _enr = 0
     _pulados = 0
@@ -829,11 +877,27 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
             # None — nunca 0, nunca vazio. Só o caminho HTTP tem; quem chega aqui
             # sem _hx segue sem o campo e o COALESCE do upsert preserva o que já
             # havia. Perder o SP derruba a Licitação junto, e em silêncio.
-            if _idp and _hx and _RE_CLAUSULA.search(_sit):
+            # ⚠️ O GATE OLHA DUAS FONTES, e nao so `_sit`. A leitura da tela e
+            # volatil: o CSV diario do dado aberto sobrescreve
+            # `situacao_contratacao` para "Normal" e o portal passa a responder o
+            # mesmo, enquanto o JSONB da clausula (que o RM imprime) continua la,
+            # congelado pelo COALESCE. Foi assim que o 981397/2025 ficou com a
+            # caixa ambar no relatorio e SEM o status do Termo de Referencia.
+            # `_com_clausula` e o espelho de rm_pdf._tem_clausula — coleta e
+            # exibicao passam a usar o mesmo criterio.
+            if _idp and _hx and (_RE_CLAUSULA.search(_sit)
+                                 or prop["numero_proposta"] in _com_clausula):
                 try:
                     _pb = await asyncio.to_thread(_hx.projeto_basico, _idp)
                     if _pb is not None:
                         prop["projeto_basico"] = _pb
+                    else:
+                        # Distingue "nao perguntei" de "perguntei e nao veio". Sem
+                        # esta linha, o SP `execucao` frio some sem deixar rastro —
+                        # o retorno None nunca apaga (COALESCE), mas tambem nunca
+                        # preenche, e a falha fica invisivel.
+                        logger.info(f"    proj.basico {prop['numero_proposta']}: "
+                                    "sem retorno (sessao do SP `execucao` fria?)")
                 except Exception as e:
                     logger.warning(f"    proj.basico {prop['numero_proposta']}: {str(e)[:80]}")
             # OPs/OBs (repasses/desembolsos) e OBRAS (acompanhamento/medicao).
