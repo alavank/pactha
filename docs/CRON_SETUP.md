@@ -98,15 +98,20 @@ flock -n /tmp/painel-alertas.lock timeout -k 30 900 \
 ```
 
 - `run_sigcon_cron.py` já roda também as fontes de **dados abertos**
-  (`run_dadosabertos_cron.run_all()`: CAUC, Acordo FES, SISMOB, SIMEC-PAR e os
-  **Termos de Compromisso do SIMEC**) e o backfill CKAN. Nenhuma delas tem task
-  própria de propósito: SISMOB e SIMEC-Termos se auto-limitam a 1×/dia dentro do
-  próprio `ingest()` (`SISMOB_MIN_INTERVAL_H` / `SIMEC_TERMOS_MIN_INTERVAL_H`).
+  (`run_dadosabertos_cron.run_all()`: CAUC, Acordo FES, SISMOB e SIMEC-PAR) e o
+  backfill CKAN. Elas não têm task própria de propósito — o SISMOB se auto-limita a
+  1×/dia dentro do próprio `ingest()` (`SISMOB_MIN_INTERVAL_H`).
   ⚠️ Consequência para quem for acrescentar a próxima: essas fontes **não têm
   `timeout` próprio** — herdam o `timeout -k 30 3000` da task `sigcon` e gastam do
   orçamento dele (`SIGCON_BUDGET_SECONDS`, do qual o tempo é descontado). Fonte
   nova aqui dentro precisa de orçamento interno CURTO, não dos 25 min de quem tem
   task própria.
+  ⚠️ **Os Termos de Compromisso do SIMEC NÃO estão aqui**: têm task própria
+  (`simec-termos`, 06:10, lock `/tmp/simec_termos.lock`, timeout 1700) nos 4
+  workers. O PR #259 chegou a pendurá-los no `run_all()` sem saber que a task já
+  existia, e a fonte passou a coletar duas vezes por dia; foi desfeito. Antes de
+  pendurar QUALQUER fonte aqui, confira as tasks reais no Coolify — elas são a
+  fonte de verdade, não este documento.
 - `run_queue_sigcon.py` consome a tabela `scraper_jobs` — jobs enfileirados pelo
   botão "atualizar SIGCON" da UI (`POST /api/convenios/refresh-sigcon`). Como a task
   roda a cada 30min, o job enfileirado sai em **até 30 minutos** (não em 2min).

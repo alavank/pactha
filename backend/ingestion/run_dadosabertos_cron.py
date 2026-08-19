@@ -3,7 +3,9 @@
   - Acordo FES (divida da saude estadual SES-MG)
   - SISMOB (obras de saude do MS)
   - SIMEC PAR (MEC - liberacoes PNAE/PNATE/QUOTA/PDDE + dimensoes)
-  - SIMEC Termos de Compromisso (MEC - o INSTRUMENTO: processo, vigencia, valor)
+
+Os TERMOS de compromisso do SIMEC (ingestion/simec_termos.py) NAO rodam aqui:
+tem Scheduled Task propria nos 4 workers (`simec-termos`, 06:10).
 
 Sao ingestoes leves e idempotentes (TRUNCATE/UPSERT). Rodam via o cron
 existente (run_sigcon_cron.py chama run_all()), entao NAO precisam de uma
@@ -24,14 +26,17 @@ def run_all() -> None:
                       # manuais no Coolify (um worker por tenant) para uma fonte
                       # que muda a cada ~60 dias. O proprio ingest() se
                       # auto-limita a 1x/dia (SISMOB_MIN_INTERVAL_H).
-                      ("SISMOB", "ingestion.sismob_obras"),
-                      # SIMEC Termos de Compromisso (PR #258): HTTP puro, sem
-                      # login, MESMO criterio do SISMOB — 4 Scheduled Tasks
-                      # manuais no Coolify (uma por worker) nao se pagam para um
-                      # dado que muda em MESES. O ingest() se auto-limita a
-                      # 1x/dia e tem orcamento curto porque o tempo gasto aqui e
-                      # DESCONTADO do orcamento do SIGCON (run_sigcon_cron).
-                      ("SIMEC Termos", "ingestion.simec_termos")):
+                      ("SISMOB", "ingestion.sismob_obras")):
+        # ⚠️ SIMEC Termos NAO entra aqui — e a correcao do PR #259, que o pendurou
+        # neste laco por premissa ERRADA ("nao tem Scheduled Task em nenhum
+        # worker"). Tem: os QUATRO workers ja rodavam `simec-termos` as 06:10,
+        # com lock PROPRIO (/tmp/simec_termos.lock) e timeout proprio (1700s).
+        # Com os dois caminhos vivos a fonte coletava DUAS vezes por dia: o
+        # run_all() rodava ~05:25 (o gate de 20h do ingest() ja tinha vencido
+        # desde as 06:10 do dia anterior) e a task rodava de novo 45 min depois.
+        # A task e o caminho melhor — nao desconta do orcamento do SIGCON.
+        # `ingest()` continua existindo como porta de entrada alternativa (e como
+        # gate por env), so nao e mais chamado daqui.
         try:
             m = __import__(mod, fromlist=["ingest"])
             n = m.ingest()
