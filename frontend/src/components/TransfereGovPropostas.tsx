@@ -97,6 +97,16 @@ interface Proposta {
   historico_comunicacoes?: Record<string, string>[];
   documentos_quadro_resumo?: Record<string, string>[];
   historico_atualizado_em?: string | null;
+  /** Projeto Básico/Termo de Referência: o documento que sustenta a cláusula
+   *  suspensiva e em que pé ele está no portal. Só é coletado para convênio em
+   *  cláusula suspensiva, então vem nulo na maioria das propostas. */
+  projeto_basico?: {
+    situacao?: string | null;
+    documentos?: Array<{
+      nome_arquivo?: string | null; descricao?: string | null;
+      tipo?: string | null; data_upload?: string | null;
+    }>;
+  } | null;
 }
 
 interface Resp { items: Proposta[]; total: number; atualizado_em?: string; }
@@ -657,6 +667,32 @@ export default function TransfereGovPropostas({
                             campo("Data Prevista", detalhe.clausula_suspensiva_dt_prevista),
                           ]}
                         />
+                      </Aviso>
+                    )}
+                    {/* PROJETO BÁSICO / TERMO DE REFERÊNCIA — o Motivo da cláusula diz
+                        QUAL documento trava; este diz em que PÉ ele está no portal
+                        (ex.: "Em Análise"). Só é coletado para convênio em cláusula
+                        suspensiva, e vem NULO quando a sessão do SP `execucao` estava
+                        fria na coleta. Nesse caso a caixa não aparece — melhor não
+                        mostrar nada do que afirmar uma ausência que não foi medida. */}
+                    {detalhe.projeto_basico && (detalhe.projeto_basico.situacao
+                      || (detalhe.projeto_basico.documentos || []).length > 0) && (
+                      <Aviso
+                        tom="atencao"
+                        titulo={`Projeto Básico/Termo de Referência${
+                          detalhe.projeto_basico.situacao ? ` — ${detalhe.projeto_basico.situacao}` : ""}`}
+                      >
+                        {(detalhe.projeto_basico.documentos || []).map((d, i) => (
+                          <Campos
+                            key={i}
+                            cols={2}
+                            campos={[
+                              campo("Documento", d.descricao || d.tipo),
+                              campo("Data de upload", d.data_upload),
+                              campo("Arquivo", d.nome_arquivo),
+                            ]}
+                          />
+                        ))}
                       </Aviso>
                     )}
                     {/* LICITAÇÃO — só p/ contratação Normal. 0 = convênio Normal sem

@@ -502,7 +502,11 @@ async def voluntarias_detalhe(
                valor_global, valor_repasse, valor_contrapartida,
                situacao_contratacao_detalhe, processo_execucao_qtd,
                historico_comunicacoes, documentos_quadro_resumo, historico_atualizado_em,
-               ops_obs, obras, processo_execucao, valor_emenda
+               ops_obs, obras, processo_execucao, valor_emenda,
+               -- Situacao do Projeto Basico/Termo de Referencia. ULTIMA coluna de
+               -- proposito: o dict abaixo le por INDICE, e inserir no meio
+               -- deslocaria todos os row[N] seguintes em silencio.
+               projeto_basico
         FROM transferegov_propostas
         WHERE municipio_id = :mun AND numero_proposta = :num
     """), {"mun": municipio_id, "num": numero_proposta})
@@ -538,6 +542,10 @@ async def voluntarias_detalhe(
         "valor_voluntario": (float(row[21]) - float(row[31]))
             if (row[21] is not None and row[31] is not None) else None,
         "valor_proponente": float(row[22]) if row[22] is not None else None,
+        # {situacao, documentos:[...]} — o documento que sustenta a clausula
+        # suspensiva e em que pe ele esta no portal. None quando a sessao do SP
+        # `execucao` estava fria na coleta (nunca {} — ver ingestion/transferegov_http).
+        "projeto_basico": row[32] or None,
     }
 
 
