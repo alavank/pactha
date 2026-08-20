@@ -32,6 +32,13 @@ class Settings(BaseSettings):
     # de uma consultoria estava no DEFAULT da coluna.
     RM_RODAPE: str = ""
 
+    # Logo do cabecalho do RM, por TENANT. Aceita o MESMO valor que o frontend ja
+    # usa em NEXT_PUBLIC_CLIENT_LOGO (ex.: "/freitas-logo.jpeg") — o rm_pdf usa so
+    # o nome do arquivo e procura em backend/assets/. Tambem aceita caminho
+    # absoluto. Vazio = sem logo, pela mesma razao do RM_RODAPE acima: melhor
+    # cabecalho vazio do que a marca de OUTRO cliente no relatorio.
+    RM_LOGO: str = ""
+
     # Painel Executivo do prefeito — push web (VAPID). Gerar 1x por instancia com
     # web-push generate-vapid-keys (ou py_vapid). A publica tambem vai como build
     # ARG NEXT_PUBLIC_VAPID_PUBLIC_KEY no app painel/.
