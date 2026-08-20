@@ -12,15 +12,22 @@ from __future__ import annotations
 import io
 import json
 from datetime import date, datetime
+from pathlib import Path
 from typing import Any
+
+from config import get_settings
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import cm
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_LEFT
+from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_LEFT, TA_RIGHT
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, PageBreak, KeepTogether,
 )
+
+# Altura do logo no cabecalho. A largura e o dobro apenas como CAIXA maxima — o
+# `preserveAspectRatio` encaixa a imagem dentro dela sem deformar.
+_LOGO_ALT = 1.8 * cm
 
 
 def _fmt_dt(d: Any) -> str:
@@ -67,38 +74,45 @@ def _data_extenso(d: Any) -> str:
 
 
 def _styles():
+    """⚠️ ENTRELINHA 1,5 EM TODO O DOCUMENTO — `leading = 1,5 × fontSize`.
+
+    É a medida da referência: no .docx do padrão Freitas os parágrafos do corpo
+    trazem `w:spacing w:line="360"` com `lineRule` automático, e 360/240 = 1,5
+    linhas. Vale para o título, para o corpo e para os títulos de parte/seção
+    (medido parágrafo a parágrafo no XML). O documento fica mais longo do que
+    estava — é o efeito esperado, não regressão."""
     base = getSampleStyleSheet()
     s = {}
     s["titulo_principal"] = ParagraphStyle(
         "TituloPrincipal", parent=base["Title"], fontName="Helvetica-Bold",
-        fontSize=13, alignment=TA_CENTER, spaceAfter=4, leading=15,
+        fontSize=13, alignment=TA_CENTER, spaceAfter=4, leading=19.5,
     )
+    # LOCAL E DATA À DIREITA — é assim na referência ("Brasília/DF, 29 de Julho de
+    # 2026", `align=right` logo abaixo do título centralizado). Estava centralizada.
     s["data_local"] = ParagraphStyle(
         "DataLocal", parent=base["Normal"], fontName="Helvetica",
-        fontSize=11, alignment=TA_CENTER, spaceAfter=14, leading=13,
+        fontSize=11, alignment=TA_RIGHT, spaceAfter=14, leading=16.5,
     )
     s["parte_titulo"] = ParagraphStyle(
         "ParteTitulo", parent=base["Heading1"], fontName="Helvetica-Bold",
         fontSize=12, alignment=TA_CENTER, spaceBefore=14, spaceAfter=10,
-        textColor=colors.HexColor("#1e40af"),
+        leading=18.0, textColor=colors.HexColor("#1e40af"),
     )
     s["secao_titulo"] = ParagraphStyle(
         "SecaoTitulo", parent=base["Heading2"], fontName="Helvetica-Bold",
         fontSize=11, alignment=TA_CENTER, spaceBefore=10, spaceAfter=8,
-        textColor=colors.HexColor("#111827"),
+        leading=16.5, textColor=colors.HexColor("#111827"),
     )
     s["grupo_titulo"] = ParagraphStyle(
         "GrupoTitulo", parent=base["Normal"], fontName="Helvetica-Bold",
-        fontSize=10.5, spaceBefore=10, spaceAfter=4, leftIndent=4,
-    )
+        fontSize=10.5, spaceBefore=10, spaceAfter=4, leftIndent=4, leading=15.75,)
     s["item_id"] = ParagraphStyle(
         "ItemId", parent=base["Normal"], fontName="Helvetica-Bold",
-        fontSize=10, spaceBefore=4, spaceAfter=2, leftIndent=14,
-    )
+        fontSize=10, spaceBefore=4, spaceAfter=2, leftIndent=14, leading=15.0,)
     s["item_campo"] = ParagraphStyle(
         "ItemCampo", parent=base["Normal"], fontName="Helvetica",
         fontSize=9.5, leftIndent=28, bulletIndent=18, spaceAfter=1,
-        leading=12, alignment=TA_JUSTIFY,
+        leading=14.25, alignment=TA_JUSTIFY,
     )
     s["rodape"] = ParagraphStyle(
         "Rodape", parent=base["Normal"], fontName="Helvetica",
@@ -108,7 +122,7 @@ def _styles():
     s["clausula"] = ParagraphStyle(
         "Clausula", parent=base["Normal"], fontName="Helvetica",
         fontSize=9.5, leftIndent=28, rightIndent=10, spaceBefore=3, spaceAfter=3,
-        leading=13, backColor=colors.HexColor("#FEF3C7"),
+        leading=14.25, backColor=colors.HexColor("#FEF3C7"),
         borderColor=colors.HexColor("#D97706"), borderWidth=1, borderPadding=5,
         textColor=colors.HexColor("#7c2d12"),
     )
@@ -120,15 +134,60 @@ def _styles():
     s["informativo"] = ParagraphStyle(
         "Informativo", parent=base["Normal"], fontName="Helvetica",
         fontSize=9.5, leftIndent=28, rightIndent=10, spaceBefore=3, spaceAfter=3,
-        leading=13, backColor=colors.HexColor("#F1F5F9"),
+        leading=14.25, backColor=colors.HexColor("#F1F5F9"),
         borderColor=colors.HexColor("#CBD5E1"), borderWidth=1, borderPadding=5,
         textColor=colors.HexColor("#334155"),
     )
     return s
 
 
+_ASSETS = Path(__file__).resolve().parent.parent / "assets"
+
+
+def _logo_path() -> str | None:
+    """Caminho do logo do cabecalho, ou None.
+
+    Aceita o MESMO valor que o frontend ja usa em NEXT_PUBLIC_CLIENT_LOGO — por
+    isso fica so com o NOME do arquivo: "/freitas-logo.jpeg" e "freitas-logo.jpeg"
+    dao no mesmo, e o dono pode copiar a env de um app para o outro sem editar.
+    Caminho absoluto tambem vale (monta um volume e aponta).
+
+    Arquivo ausente devolve None e o cabecalho sai sem logo — nunca levanta
+    excecao: um logo faltando nao pode impedir a emissao do relatorio."""
+    try:
+        nome = (get_settings().RM_LOGO or "").strip()
+    except Exception:
+        return None
+    if not nome:
+        return None
+    # ⚠️ A ORDEM IMPORTA. O valor tipico e "/freitas-logo.jpeg", copiado do
+    # NEXT_PUBLIC_CLIENT_LOGO — que em Linux e um caminho ABSOLUTO e nao existe na
+    # raiz do container. Por isso: tenta o caminho literal (serve para quem monta
+    # um volume) e, NAO existindo, cai para o nome do arquivo em backend/assets/.
+    # Sem esse fallback, justamente o valor que o dono ia copiar nao acharia nada.
+    p = Path(nome)
+    if p.is_absolute() and p.is_file():
+        return str(p)
+    alt = _ASSETS / p.name
+    return str(alt) if alt.is_file() else None
+
+
 def _on_page(canvas, doc, rodape_txt: str):
     canvas.saveState()
+    # CABECALHO: logo a ESQUERDA, em TODAS as paginas — a regra da referencia
+    # (o .docx nao marca `titlePg`, entao o cabecalho padrao vale desde a 1a
+    # pagina). Fica na faixa reservada pela margem superior de 4,5 cm, a 1,6 cm do
+    # topo, alinhado a margem esquerda. `preserveAspectRatio` para nao deformar
+    # logos de proporcoes diferentes (o da Freitas e quase quadrado, 512x487; os
+    # brasoes de Monte Siao e Santa Maria nao sao).
+    _logo = _logo_path()
+    if _logo:
+        try:
+            canvas.drawImage(_logo, 2 * cm, A4[1] - 1.6 * cm - _LOGO_ALT,
+                             width=_LOGO_ALT * 2, height=_LOGO_ALT,
+                             preserveAspectRatio=True, anchor="sw", mask="auto")
+        except Exception:
+            pass          # logo ilegivel nunca derruba a emissao
     canvas.setFont("Helvetica", 8)
     canvas.setFillColor(colors.HexColor("#475569"))
     canvas.drawCentredString(A4[0] / 2, 0.8 * cm, rodape_txt)
@@ -372,10 +431,14 @@ def gerar_pdf(meta: dict, conteudo: dict, municipio_nome: str) -> bytes:
     """
     buf = io.BytesIO()
     rodape_txt = meta.get("rodape", "")
+    # MARGENS DA REFERÊNCIA (medidas no .docx do padrão Freitas, sectPr/pgMar):
+    # superior 4,5 · inferior 3,0 · esquerda 2,0 · direita 1,5 cm. São ASSIMÉTRICAS
+    # de propósito — a margem superior larga é o espaço reservado ao cabeçalho, e a
+    # direita é menor que a esquerda (documento pensado para encadernação).
     doc = SimpleDocTemplate(
         buf, pagesize=A4,
-        leftMargin=2 * cm, rightMargin=2 * cm,
-        topMargin=1.8 * cm, bottomMargin=1.6 * cm,
+        leftMargin=2 * cm, rightMargin=1.5 * cm,
+        topMargin=4.5 * cm, bottomMargin=3 * cm,
         title=f"RM - {municipio_nome}",
     )
     s = _styles()
