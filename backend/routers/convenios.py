@@ -576,6 +576,40 @@ async def alertas_vigencia(
     return alertas
 
 
+async def _nomes_municipios(
+    db: AsyncSession,
+    municipio_id: Optional[int] = None,
+    municipio_ids: Optional[list[int]] = None,
+) -> dict:
+    """{municipio_id: nome} dos municipios no escopo da consulta.
+
+    POR QUE EXISTE. O schema AlertaVigencia declara `municipio_nome` e a tela
+    (frontend/src/components/bi/VigenciasModal.tsx) tenta usa-lo ANTES de cruzar
+    por id — o comentario de la ate diz "a API passou a mandar municipio_nome
+    junto". So que NINGUEM preenchia: o campo vinha sempre None e a tela caia no
+    cruzamento por id, que depende de a lista de municipios ter sido carregada no
+    navegador. Para quem nao tem essa lista, TODA bolha virava "—" e o filtro
+    nascia vazio — o modal de Vigencias aparecia EM BRANCO. Relatado em producao.
+
+    Vale para os alertas de vigencia E os de prestacao de contas: os dois usam o
+    mesmo schema e tinham o mesmo buraco.
+
+    Uma consulta por chamada, so do escopo pedido. Falha devolve {} e a tela volta
+    ao cruzamento por id — o comportamento antigo, nunca pior."""
+    try:
+        if municipio_id:
+            r = await db.execute(text("SELECT id, nome FROM municipios WHERE id = :m"),
+                                 {"m": municipio_id})
+        elif municipio_ids:
+            r = await db.execute(text("SELECT id, nome FROM municipios WHERE id = ANY(:mids)"),
+                                 {"mids": list(municipio_ids)})
+        else:
+            r = await db.execute(text("SELECT id, nome FROM municipios"))
+        return {row[0]: row[1] for row in r.fetchall()}
+    except Exception:
+        return {}
+
+
 async def query_alertas_vigencia(
     db: AsyncSession,
     municipio_id: Optional[int] = None,
@@ -594,6 +628,8 @@ async def query_alertas_vigencia(
     limite = date.today() + timedelta(days=dias)
     alertas = []
 
+    _nomes = await _nomes_municipios(db, municipio_id, municipio_ids)
+
     q = select(ConvenioEstadual).where(
         ConvenioEstadual.dt_vigencia_atual <= limite,
         ConvenioEstadual.dt_vigencia_atual >= date.today(),
@@ -610,6 +646,7 @@ async def query_alertas_vigencia(
         alertas.append(AlertaVigencia(
             id=c.id, esfera="estadual", nr_sigcon=c.nr_sigcon,
             municipio_id=c.municipio_id,
+            municipio_nome=_nomes.get(c.municipio_id),
             objeto=c.objeto, orgao_concedente=c.orgao_concedente,
             dt_fim_vigencia=c.dt_vigencia_atual, dias_restantes=dias_rest,
             valor_total=float(c.valor_total) if c.valor_total else None,
@@ -643,6 +680,7 @@ async def query_alertas_vigencia(
             alertas.append(AlertaVigencia(
                 id=0, esfera="voluntaria", nr_convenio=row[1] or row[0],
                 municipio_id=(row[6] if len(row) > 6 else municipio_id),
+                municipio_nome=_nomes.get(row[6] if len(row) > 6 else municipio_id),
                 nr_sigcon=row[0], objeto=row[2], orgao_concedente=row[3],
                 dt_fim_vigencia=dtf, dias_restantes=(dtf - date.today()).days,
                 valor_total=None, situacao=row[4],
@@ -685,6 +723,9 @@ async def query_prestacao_contas(
     _anos = anos_list(ano)
     corte = date.today() - timedelta(days=dias)
     alertas = []
+    # Mesmo buraco da vigencia: o alerta de prestacao usa o MESMO schema e
+    # tambem chegava sem o nome do municipio.
+    _nomes = await _nomes_municipios(db, municipio_id, municipio_ids)
 
     q = select(ConvenioEstadual).where(ConvenioEstadual.dt_vigencia_atual < corte)
     if municipio_id:
@@ -699,6 +740,7 @@ async def query_prestacao_contas(
         alertas.append(AlertaVigencia(
             id=c.id, esfera="estadual", nr_sigcon=c.nr_sigcon,
             municipio_id=c.municipio_id,
+            municipio_nome=_nomes.get(c.municipio_id),
             objeto=c.objeto, orgao_concedente=c.orgao_concedente,
             dt_fim_vigencia=c.dt_vigencia_atual, dias_restantes=dias_rest,
             valor_total=float(c.valor_total) if c.valor_total else None,
@@ -732,6 +774,7 @@ async def query_prestacao_contas(
             alertas.append(AlertaVigencia(
                 id=0, esfera="voluntaria", nr_convenio=row[1] or row[0],
                 municipio_id=(row[6] if len(row) > 6 else municipio_id),
+                municipio_nome=_nomes.get(row[6] if len(row) > 6 else municipio_id),
                 nr_sigcon=row[0], objeto=row[2], orgao_concedente=row[3],
                 dt_fim_vigencia=dtf, dias_restantes=(dtf - date.today()).days,
                 valor_total=None, situacao=row[4],
