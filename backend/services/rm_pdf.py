@@ -235,6 +235,11 @@ def _campos_do_item(item: dict) -> list[tuple[str, str]]:
     # Empenhado (TransfereGov: Sim/Não)
     if item.get("empenhado"):
         out.append(("Empenhado", item["empenhado"]))
+    # Situação do NEs — o documento, logo abaixo do Sim/Não que é inferência.
+    # Só sai quando há nota de empenho REAL coletada: linha ausente não afirma
+    # que não há empenho, porque proposta não consultada cai no mesmo vazio.
+    if item.get("nes"):
+        out.append(("Situação do NEs", item["nes"]))
     # Situação de Contratação "Normal" aparece como linha simples; Cláusula
     # Suspensiva / Liminar Judicial vão para a CAIXA DE DESTAQUE (_clausula_destaque),
     # então NÃO entram aqui.

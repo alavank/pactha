@@ -41,6 +41,7 @@ function anoDa(p: { numero_proposta?: string; dt_proposta?: string; dt_inicio_vi
  *  `grid-cols-[${x}]` produz uma grade sem colunas. */
 const COLS_OB = "grid-cols-[6.5rem_6.5rem_6.5rem_7.5rem_minmax(7rem,1fr)_6.5rem]";
 const COLS_SUBMETA = "grid-cols-[5rem_minmax(10rem,1fr)_7.5rem_9rem_7rem]";
+const COLS_NE = "grid-cols-[8rem_8rem_8rem_8rem_minmax(7rem,1fr)_7rem]";
 const COLS_ART = "grid-cols-[5rem_8rem_6.5rem_minmax(9rem,1fr)]";
 
 /** O `-` de campo vazio precisa continuar exatamente onde estava.
@@ -107,6 +108,15 @@ interface Proposta {
       tipo?: string | null; data_upload?: string | null;
     }>;
   } | null;
+  /** NEs (Notas de Empenho) da aba Execução Concedente.
+   *  ⚠️ `minuta_apenas` marca a linha que NÃO é dinheiro: a listagem do portal
+   *  mistura o empenho com a minuta, que vem sem número e com valor de R$ 1,00. */
+  notas_empenho?: Array<{
+    numero?: string | null; minuta?: string | null;
+    valor?: number | null; valor_siafi?: number | null;
+    situacao?: string | null; dt_emissao?: string | null;
+    minuta_apenas?: boolean;
+  }> | null;
 }
 
 interface Resp { items: Proposta[]; total: number; atualizado_em?: string; }
@@ -667,6 +677,49 @@ export default function TransfereGovPropostas({
                             campo("Data Prevista", detalhe.clausula_suspensiva_dt_prevista),
                           ]}
                         />
+                      </Aviso>
+                    )}
+                    {/* NEs — Notas de Empenho (Execução Concedente). Troca o
+                        "Empenhado: Sim/Não", que é inferência, pelo documento:
+                        número, valor, situação e data.
+                        ⚠️ A MINUTA fica visível mas SEPARADA, com selo próprio e
+                        sem entrar no total: ela vem com R$ 1,00 e sem número, e
+                        somá-la poria um real no relatório como se fosse recurso. */}
+                    {Array.isArray(detalhe.notas_empenho) && detalhe.notas_empenho.length > 0 && (
+                      <Aviso
+                        tom="ok"
+                        titulo={`Notas de Empenho: ${
+                          detalhe.notas_empenho.filter((n) => !n.minuta_apenas).length
+                        } · ${moeda(
+                          detalhe.notas_empenho
+                            .filter((n) => !n.minuta_apenas)
+                            .reduce((s, n) => s + (n.valor || 0), 0)
+                        )} empenhado`}
+                      >
+                        <Grade
+                          rolagem
+                          cols={COLS_NE}
+                          cabecalho={[
+                            { label: "Nº do empenho" }, { label: "Nº da minuta" },
+                            { label: "Valor", direita: true }, { label: "No SIAFI", direita: true },
+                            { label: "Situação" }, { label: "Emissão" },
+                          ]}
+                        >
+                          {detalhe.notas_empenho.map((n, i) => (
+                            <GradeLinha key={i} cols={COLS_NE}>
+                              <GradeCel tom="id">{n.numero || "—"}</GradeCel>
+                              <GradeCel>{n.minuta || "—"}</GradeCel>
+                              <GradeCel tom="num">{n.valor != null ? moeda(n.valor) : "—"}</GradeCel>
+                              <GradeCel tom="num">{n.valor_siafi != null ? moeda(n.valor_siafi) : "—"}</GradeCel>
+                              <GradeCel>
+                                {n.situacao
+                                  ? <Selo tom={n.minuta_apenas ? "neutro" : situacaoTom(n.situacao)}>{n.situacao}</Selo>
+                                  : "—"}
+                              </GradeCel>
+                              <GradeCel>{n.dt_emissao || "—"}</GradeCel>
+                            </GradeLinha>
+                          ))}
+                        </Grade>
                       </Aviso>
                     )}
                     {/* PROJETO BÁSICO / TERMO DE REFERÊNCIA — o Motivo da cláusula diz

@@ -506,7 +506,10 @@ async def voluntarias_detalhe(
                -- Situacao do Projeto Basico/Termo de Referencia. ULTIMA coluna de
                -- proposito: o dict abaixo le por INDICE, e inserir no meio
                -- deslocaria todos os row[N] seguintes em silencio.
-               projeto_basico
+               projeto_basico,
+               -- NEs da aba Execucao Concedente. ULTIMA coluna, mesma razao do
+               -- projeto_basico: o dict abaixo le por INDICE.
+               notas_empenho
         FROM transferegov_propostas
         WHERE municipio_id = :mun AND numero_proposta = :num
     """), {"mun": municipio_id, "num": numero_proposta})
@@ -546,6 +549,9 @@ async def voluntarias_detalhe(
         # suspensiva e em que pe ele esta no portal. None quando a sessao do SP
         # `execucao` estava fria na coleta (nunca {} — ver ingestion/transferegov_http).
         "projeto_basico": row[32] or None,
+        # [{numero, minuta, valor, valor_siafi, situacao, dt_emissao, minuta_apenas}]
+        # `minuta_apenas` marca a linha que NAO e dinheiro (minuta de R$ 1,00).
+        "notas_empenho": row[33] or [],
     }
 
 
