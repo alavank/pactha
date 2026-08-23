@@ -210,6 +210,11 @@ def _campos_do_item(item: dict) -> list[tuple[str, str]]:
     # é impressa — por isso não usa o helper `add`, que trata 0 como vazio.
     if item.get("programa"):
         out.append(("Programa", item["programa"]))
+    # ORIGEM NO NOVO PAC. O item do PAC correspondente deixa de sair separado
+    # (rm_builder pula os que já apareceram como voluntária) — a informação de
+    # que o recurso veio do PAC não se perde, migra para cá.
+    if item.get("pac_origem"):
+        out.append(("Origem — Novo PAC", item["pac_origem"]))
     if item.get("parlamentar"):
         out.append(("Parlamentar responsável pela indicação", item["parlamentar"]))
     add("Valor global", _fmt_money(item.get("valor_global")))

@@ -572,6 +572,51 @@ def _obra_resumo(obras, medicoes: int | None = None) -> str:
             f"{_pct_br(_obra_pct(total, realizado))} do valor total de {_moeda_br(total)}.")
 
 
+def _pac_da_voluntaria(detalhe) -> str:
+    """Numero da proposta do Novo PAC que ORIGINOU esta voluntaria, ou "".
+
+    O portal mostra "Número da Proposta Novo PAC - Seleção: 56000004633/2025" na
+    aba Dados da Proposta, e o varredor generico de pares label:valor do coletor
+    ja guarda isso no JSONB `detalhe` — mas NINGUEM lia. Sem esse elo, o mesmo
+    recurso aparecia DUAS vezes no RM: uma como voluntaria, outra como item do
+    Novo PAC.
+
+    ⚠️ BUSCA TOLERANTE, e nao pela chave exata. O rotulo tem acento, hifen e
+    espacos ("Número da Proposta Novo PAC - Seleção") e passa por _clean antes de
+    virar chave; casar a string inteira e apostar na grafia. Aqui basta a chave
+    conter "novo pac", normalizada sem acento — o que sobrevive a variacao de
+    pontuacao e de caixa."""
+    d = _jsonb(detalhe)
+    if not isinstance(d, dict):
+        return ""
+    import unicodedata as _ud
+
+    def _norm(s):
+        return "".join(c for c in _ud.normalize("NFD", str(s or ""))
+                       if _ud.category(c) != "Mn").lower()
+
+    for k, v in d.items():
+        if str(k).startswith("_"):
+            continue
+        if "novo pac" in _norm(k):
+            val = str(v or "").strip()
+            if val:
+                return val
+    return ""
+
+
+def _mesma_proposta(a, b) -> bool:
+    """True quando dois numeros de proposta sao o MESMO, ignorando pontuacao.
+
+    O numero aparece como "56000004633/2025" na tela da voluntaria e pode chegar
+    com espaco ou formatacao diferente na tabela do PAC. Comparar cru deixaria
+    passar duplicata por causa de um espaco."""
+    def _so_digitos(x):
+        return "".join(c for c in str(x or "") if c.isdigit())
+    da, db = _so_digitos(a), _so_digitos(b)
+    return bool(da) and da == db
+
+
 def _nes_resumo(notas) -> str:
     """"Situacao do NEs" para o RM: uma entrada por nota de empenho REAL.
 
@@ -1016,11 +1061,26 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
                -- coletor grava-la desde sempre: e dai que sai o valor total, o
                -- realizado e o percentual da obra. ULTIMA coluna, como as duas
                -- acima — inserir no meio desloca `programa` e `notas_empenho`.
-               obras
+               obras,
+               -- O `detalhe` INTEIRO. As linhas acima extraem chaves pontuais
+               -- (->>'Empenhado', ->>'Banco'), mas o numero da proposta do Novo
+               -- PAC tem rotulo com acento, hifen e espacos — casar a chave exata
+               -- em SQL seria apostar na grafia. Vem inteiro e a busca tolerante
+               -- acha (_pac_da_voluntaria). ULTIMA coluna.
+               detalhe
         FROM transferegov_propostas WHERE municipio_id = :m
     """), {"m": municipio_id})
+    # PACs que JA aparecem como voluntaria. O mesmo recurso saia DUAS vezes no
+    # relatorio: uma como voluntaria (que e o instrumento de verdade, com valores
+    # e vigencia) e outra como item do Novo PAC (que e so a etapa da selecao).
+    # Preenchido aqui e consumido no bloco do PAC, mais abaixo — a ordem importa.
+    _pac_ja_exibidos: set[str] = set()
     for row in vol.fetchall():
         sit = row[3] or ""
+        # De qual selecao do Novo PAC esta voluntaria nasceu (vazio se nenhuma).
+        _pac_origem_atual = _pac_da_voluntaria(row[27])
+        if _pac_origem_atual:
+            _pac_ja_exibidos.add(_pac_origem_atual)
         # Regra do ANO DE EMISSÃO: empenhada/paga (Em execução / Prestação) fica
         # sempre; "em análise/aprovada" só do ano de emissão; antigas não-avançadas
         # saem. Empenho validado pelo STATUS (não pelo flag detalhe->>'Empenhado',
@@ -1098,6 +1158,10 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             # Vazio quando a proposta nunca foi coberta pelo dado aberto nem pelo
             # enrich — ai a linha simplesmente nao sai.
             "programa": _programa_limpo(row[24]),
+            # ORIGEM NO NOVO PAC. Quando a voluntaria nasceu de uma selecao do
+            # PAC, o portal registra o numero na aba Dados — e e esse elo que
+            # evita o item duplicado logo abaixo.
+            "pac_origem": _pac_origem_atual,
             # EXIBE pelo mesmo criterio que CLASSIFICA: e `e_parlamentar_real` que
             # decide se a proposta e emenda (e portanto sai da Parte 4) — se o texto
             # nao e nome, tambem nao pode ser impresso como pessoa. Sem isto o item
@@ -1340,6 +1404,15 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             """), {"m": municipio_id})
             for r in pac.fetchall():
                 sit = r[2] or ""
+                # ⚠️ NAO REPETIR O QUE JA SAIU COMO VOLUNTARIA. Quando a selecao
+                # do PAC vira instrumento, o mesmo recurso aparecia DUAS vezes no
+                # relatorio: como voluntaria (o instrumento de verdade, com
+                # valores, vigencia e execucao) e como item do PAC (que e so a
+                # etapa da selecao). O elo e o "Número da Proposta Novo PAC" que
+                # a propria voluntaria carrega no detalhe. A voluntaria vence: ela
+                # diz mais. A origem no PAC nao se perde — vai impressa NELA.
+                if any(_mesma_proposta(r[0], p) for p in _pac_ja_exibidos):
+                    continue
                 # SO as SELECIONADAS entram no RM. As demais situacoes do PAC
                 # (Habilitada, Enviada para Análise, Cadastrada, Não Habilitada...)
                 # sao etapas do funil de selecao — nao sao recurso do municipio e
