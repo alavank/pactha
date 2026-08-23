@@ -934,6 +934,27 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
                                     "sem retorno (sessao do SP `execucao` fria?)")
                 except Exception as e:
                     logger.warning(f"    proj.basico {prop['numero_proposta']}: {str(e)[:80]}")
+            # NEs (Notas de Empenho, Execução Concedente). Ligado por TG_NES=1.
+            #
+            # ⚠️ O PORTÃO É O CÓDIGO DO INSTRUMENTO, e ele vem do DETALHE — não de
+            # `prop`. `prop.get("codigo_instrumento")` NÃO EXISTE neste ponto: a
+            # chave só nasce dentro do _upsert, derivada de `det`. Usá-la aqui
+            # faria a coleta rodar em ZERO, sem erro e sem log.
+            #
+            # Só instrumento CELEBRADO tem nota de empenho, então o código é o
+            # recorte natural — e é ele que segura o custo: sem o portão, seria um
+            # GET a mais em TODA proposta, saindo do mesmo TG_BUDGET_S.
+            if (_idp and _hx and prop["detalhe"].get("Código do Instrumento")
+                    and (os.getenv("TG_NES", "0") or "0").strip() == "1"):
+                try:
+                    _ne = await asyncio.to_thread(_hx.notas_empenho, _idp)
+                    if _ne is not None:
+                        prop["notas_empenho"] = _ne
+                    else:
+                        logger.info(f"    NEs {prop['numero_proposta']}: sem retorno "
+                                    "(sessão do SP fria?)")
+                except Exception as e:
+                    logger.warning(f"    NEs {prop['numero_proposta']}: {str(e)[:80]}")
             # OPs/OBs (repasses/desembolsos) e OBRAS (acompanhamento/medicao).
             # Ambas GUEST (nao exigem sessao gov.br), mas cada uma navega o portal
             # por instrumento (~alguns s) — pesado no host burstable. Por isso a
@@ -1801,11 +1822,11 @@ def _upsert(mun_id: int, propostas: list[dict]):
                  situacao_contratacao, clausula_suspensiva_dt_prevista,
                  clausula_suspensiva_motivo, parlamentar, situacao_contratacao_detalhe,
                  id_proposta_siconv, processo_execucao_qtd, processo_execucao,
-                 projeto_basico,
+                 projeto_basico, notas_empenho,
                  historico_comunicacoes, documentos_quadro_resumo, historico_atualizado_em,
                  ops_obs, obras, detalhe_atualizado_em,
                  detalhe, raw_data, updated_at)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s::jsonb,%s::jsonb,%s::jsonb,%s::jsonb,%s,%s::jsonb,%s::jsonb,%s,%s::jsonb,%s::jsonb,NOW())
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s::jsonb,%s::jsonb,%s::jsonb,%s::jsonb,%s::jsonb,%s,%s::jsonb,%s::jsonb,%s,%s::jsonb,%s::jsonb,NOW())
             ON CONFLICT (municipio_id, numero_proposta) DO UPDATE SET
                 situacao=EXCLUDED.situacao, orgao=EXCLUDED.orgao,
                 proponente=EXCLUDED.proponente, possui_parecer=EXCLUDED.possui_parecer,
@@ -1842,6 +1863,7 @@ def _upsert(mun_id: int, propostas: list[dict]):
                 processo_execucao_qtd=COALESCE(EXCLUDED.processo_execucao_qtd, transferegov_propostas.processo_execucao_qtd),
                 processo_execucao=COALESCE(EXCLUDED.processo_execucao, transferegov_propostas.processo_execucao),
                 projeto_basico=COALESCE(EXCLUDED.projeto_basico, transferegov_propostas.projeto_basico),
+                notas_empenho=COALESCE(EXCLUDED.notas_empenho, transferegov_propostas.notas_empenho),
                 historico_comunicacoes=COALESCE(EXCLUDED.historico_comunicacoes, transferegov_propostas.historico_comunicacoes),
                 documentos_quadro_resumo=COALESCE(EXCLUDED.documentos_quadro_resumo, transferegov_propostas.documentos_quadro_resumo),
                 historico_atualizado_em=COALESCE(EXCLUDED.historico_atualizado_em, transferegov_propostas.historico_atualizado_em),
@@ -1871,6 +1893,8 @@ def _upsert(mun_id: int, propostas: list[dict]):
                if p.get("processo_execucao") else None),
               (json.dumps(p["projeto_basico"], ensure_ascii=False)
                if p.get("projeto_basico") else None),
+              (json.dumps(p["notas_empenho"], ensure_ascii=False)
+               if p.get("notas_empenho") else None),
               (json.dumps(p["historico_comunicacoes"], ensure_ascii=False)
                if p.get("historico_comunicacoes") else None),
               (json.dumps(p["documentos_quadro_resumo"], ensure_ascii=False)

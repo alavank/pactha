@@ -493,6 +493,50 @@ def _programa_limpo(programa) -> str:
     return s.strip()
 
 
+def _moeda_br(v) -> str:
+    """R$ 280.000,00 — o formato do relatorio. Esta frase e montada aqui, no
+    builder, e vai CONGELADA no JSONB do RM, entao nao pode depender do render."""
+    try:
+        s = f"{float(v):,.2f}"
+    except (TypeError, ValueError):
+        return str(v)
+    return "R$ " + s.replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def _nes_resumo(notas) -> str:
+    """"Situacao do NEs" para o RM: uma entrada por nota de empenho REAL.
+
+    Ex.: "2026NE000320 — R$ 280.000,00 — Enviado (09/03/2026)"
+
+    ⚠️ IGNORA A MINUTA. A listagem do portal mistura o empenho com a MINUTA de
+    empenho, que vem sem numero e com valor de R$ 1,00 — imprimir ou somar isso
+    poria R$ 1,00 no relatorio como se fosse recurso. O coletor ja marca a linha
+    (`minuta_apenas`) na leitura; aqui so se obedece a marca.
+
+    ⚠️ VAZIO NAO SIGNIFICA "NAO HA EMPENHO". Proposta nunca consultada tem
+    `notas_empenho` NULO e cai no mesmo vazio de quem foi consultado e nao tem
+    NE. Por isso o RM apenas OMITE a linha — nunca escreve "sem empenho", que
+    seria afirmar algo que nao foi medido."""
+    lst = _jsonb(notas)
+    if not isinstance(lst, list):
+        return ""
+    partes = []
+    for n in lst:
+        if not isinstance(n, dict) or n.get("minuta_apenas"):
+            continue
+        p = [str(n.get("numero") or "").strip()]
+        if n.get("valor") is not None:
+            p.append(_moeda_br(n["valor"]))
+        if n.get("situacao"):
+            sit = str(n["situacao"]).strip()
+            dt = str(n.get("dt_emissao") or "").strip()
+            p.append(f"{sit} ({dt})" if dt else sit)
+        linha = " — ".join(x for x in p if x)
+        if linha:
+            partes.append(linha)
+    return "; ".join(partes)
+
+
 def _ano_pagamento_ops_obs(ops_obs) -> int | None:
     """ANO do ultimo desembolso da voluntaria, lido de `ops_obs`.
 
@@ -894,7 +938,11 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
                -- viraria outra coisa (e com ela a decisao de Parte 4), os valores
                -- trocariam de lugar e os JSONB chegariam como tipo errado.
                -- Nada disso levanta excecao: sai relatorio errado, calado.
-               programa
+               programa,
+               -- NEs (Notas de Empenho). ULTIMA coluna de proposito: inserir no
+               -- MEIO deslocaria `programa` (row[24]) e o RM passaria a imprimir
+               -- a lista de empenhos no lugar do nome do programa, calado.
+               notas_empenho
         FROM transferegov_propostas WHERE municipio_id = :m
     """), {"m": municipio_id})
     for row in vol.fetchall():
@@ -1011,6 +1059,11 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             # Projeto Básico/Termo de Referência: o `clausula_motivo` diz QUAL
             # documento trava; este diz a SITUAÇÃO dele ("Em Análise").
             "projeto_basico": _projeto_basico_resumo(row[23]),
+            # "Situação do NEs" — troca a INFERÊNCIA pelo DOCUMENTO. O campo
+            # `empenhado` (Sim/Não) vinha do status do ciclo e o próprio
+            # _fed_status documenta que ele marcava "Aprovadas" como empenhadas
+            # sem empenho real; aqui sai o número, o valor e a data da NE.
+            "nes": _nes_resumo(row[25]),
             # EVENTO ATUAL do Histórico de Comunicações (mandatárias): onde o
             # instrumento está de fato na análise, + situação e considerações.
             **_evento_atual(row[17]),

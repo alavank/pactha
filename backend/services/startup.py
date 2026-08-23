@@ -62,6 +62,8 @@ MIGRATION_FILES = [
     "add_voluntarias_processo_execucao_lista.sql",
     # Voluntarias: projeto_basico JSONB (situacao do Projeto Basico/Termo de Referencia)
     "add_voluntarias_projeto_basico.sql",
+    # Voluntarias: notas_empenho JSONB (NEs da aba Execucao Concedente)
+    "add_voluntarias_notas_empenho.sql",
     # Voluntarias: valor_emenda (soma dos repasses de emenda; voluntario/proponente derivam)
     "add_voluntarias_valor_emenda.sql",
     # Voluntarias: Historico de Comunicacoes + Termos de Notificacao (mandatarias)

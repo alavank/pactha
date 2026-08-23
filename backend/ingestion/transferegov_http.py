@@ -53,6 +53,14 @@ _LIC_URL = (_DISCRIC + "/voluntarias/execucao/ListarLicitacoes/"
 # URL "no seco" devolve "Proposta nao encontrada" e cai no Principal.do.
 _PB_URL = (_DISCRIC + "/voluntarias/execucao/ListarDocumentosProjetoBasico/"
            "ListarDocumentosProjetoBasico.do?idProposta=null")
+# URL DIRETA da aba Execucao Concedente > NEs (Listagem de Notas de Empenho).
+# ⚠️ Mora sob /prestacao/ e e .jsf (JSF), nao Struts como as duas de cima — mas
+# NAO escapa da parede: medido em guest, devolve os MESMOS 3469 bytes de "HTTP
+# Post Binding" que o _LIC_URL e o _PB_URL. O "Acesso Livre" que aparece na tela
+# do portal e a sessao do usuario ja tendo passado pelo SAML, nao a pagina ser
+# publica. Depende da mesma re-captura de sessao.
+_NE_URL = (_DISCRIC + "/voluntarias/prestacao/_proposta/empenho/"
+           "listarEmpenhosNovoSiafi.jsf?destino=ManterEmpenhoNovoSiafi")
 _IDP = "https://idp.transferegov.sistema.gov.br"
 _MED = "https://medicao.transferegov.sistema.gov.br"
 
@@ -688,6 +696,92 @@ class TgHttpEnrich:
         if re.search(r"Proposta n..o encontrada|Um erro ocorreu", r.text, re.I):
             return None
         return self._le_projeto_basico(r)
+
+    # ---------- NEs / Notas de Empenho (Execucao Concedente) ----------
+
+    @staticmethod
+    def _le_notas_empenho(resp) -> list | None:
+        """Linhas da Listagem de Notas de Empenho.
+        [{numero, minuta, valor, valor_siafi, situacao, dt_emissao, minuta_apenas}]
+        None = indeterminado (nao gravar); [] = vazio de verdade.
+
+        Mapeia por CABECALHO, nunca por posicao — mesma disciplina do
+        _le_licitacoes_lista e do _le_projeto_basico, e a unica que sobrevive a
+        reordenacao de coluna.
+
+        ⚠️ `minuta_apenas` E A LINHA QUE NAO E DINHEIRO. A listagem mistura o
+        empenho de verdade com a MINUTA: no caso medido, a minuta vem sem numero
+        de empenho, com "Valor do Empenho" de R$ 1,00 e situacao "Minuta de
+        Empenho". Somar isso como empenho poe R$ 1,00 no relatorio como se fosse
+        recurso — por isso a linha e marcada aqui, na leitura, e nao deixada para
+        quem consome adivinhar."""
+        doc = _parse(resp)
+        for t in doc.findall(".//table"):
+            trs = t.findall(".//tr")
+            if not trs:
+                continue
+            heads = [_txt(x).lower() for x in trs[0].xpath("./th|./td")]
+            chave = "|".join(heads)
+            if "empenho" not in chave or "situa" not in chave:
+                continue
+
+            def col(frag):
+                for i, h in enumerate(heads):
+                    if frag in h:
+                        return i
+                return None
+
+            # "Valor do Empenho" e "Valor do Empenho no SIAFI" comecam igual — o
+            # do SIAFI e identificado pelo sufixo, e o outro pega o PRIMEIRO
+            # indice que nao seja ele.
+            i_siafi = col("siafi")
+            i_val = next((i for i, h in enumerate(heads)
+                          if "valor" in h and i != i_siafi), None)
+            i_num, i_min = col("mero do empenho"), col("minuta")
+            i_sit, i_dt = col("situa"), col("emiss")
+            out = []
+            for tr in trs[1:]:
+                cels = [_txt(c) for c in tr.findall("td")]
+                if not any(cels):
+                    continue
+
+                def g(i):
+                    return (cels[i].strip() if (i is not None and i < len(cels)) else "") or None
+
+                numero, sit = g(i_num), g(i_sit)
+                if not numero and not g(i_min):
+                    continue
+                out.append({
+                    "numero": numero, "minuta": g(i_min),
+                    "valor": _num_br(g(i_val)), "valor_siafi": _num_br(g(i_siafi)),
+                    "situacao": sit, "dt_emissao": g(i_dt),
+                    "minuta_apenas": (not numero) or ("minuta" in (sit or "").casefold()),
+                })
+            return out
+        if re.search(r"Nenhum registro foi encontrado", resp.text, re.I):
+            return []
+        return None
+
+    def notas_empenho(self, id_proposta: str) -> list | None:
+        """NEs do instrumento (Execucao Concedente > NEs). None = nao gravar.
+
+        ⚠️ MESMA PAREDE DA LICITACAO E DO PROJETO BASICO. A aba mora sob
+        /voluntarias/prestacao/ e e JSF, o que parecia livrar do SP SAML — nao
+        livra: medido em guest, devolve 3469 bytes de "HTTP Post Binding",
+        identico aos outros dois. Sem a sessao do cofre cobrindo esse SP, esta
+        captura devolve None (nunca apaga: o upsert e COALESCE)."""
+        if not self._seta_contexto(id_proposta):
+            return None
+        try:
+            r = self.cli.get(_NE_URL)
+        except Exception:
+            return None
+        if r.status_code != 200 or _sessao_caiu(r):
+            return None
+        if re.search(r"Post Binding|SAMLResponse", r.text, re.I):
+            logger.debug("notas_empenho: SP frio (SAML) — recapturar sessao")
+            return None
+        return self._le_notas_empenho(r)
 
     # ---------- Obras (medicao, REST com JWT) ----------
 
