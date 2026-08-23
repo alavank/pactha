@@ -503,6 +503,75 @@ def _moeda_br(v) -> str:
     return "R$ " + s.replace(",", "X").replace(".", ",").replace("X", ".")
 
 
+def _pct_br(p) -> str:
+    """93,70% — duas casas, virgula decimal."""
+    try:
+        return f"{float(p):.2f}".replace(".", ",") + "%"
+    except (TypeError, ValueError):
+        return "-"
+
+
+def _obra_pct(valor_total, valor_realizado) -> float | None:
+    """Percentual de execucao da obra, DERIVADO — sem requisicao nenhuma.
+
+    O portal mostra esse numero no "Resumo Fisico-Financeiro", mas os dois valores
+    que o compoem ja vem no JSONB de obras (valorTotalSubmetas e
+    valorTotalRealizado, ver ingestion/transferegov_http.py). Buscar a tela do
+    resumo so para ler a divisao seria um GET a mais por instrumento num host de
+    2 vCPU — e o resultado bate: 344.827,46 / 368.000,00 = 93,70%, digito a
+    digito com o exemplo do dono.
+
+    None quando nao da para dividir (total ausente ou zero)."""
+    t, r = _money(valor_total), _money(valor_realizado)
+    if t is None or r is None or t <= 0:
+        return None
+    return round(r * 100.0 / t, 2)
+
+
+def _obra_resumo(obras, medicoes: int | None = None) -> str:
+    """Frase de situacao da obra para o RM, no modelo que o dono especificou.
+
+    DUAS SAIDAS, na ordem de precedencia:
+
+    1. SEM ART/RRT cadastrada -> a obra nem pode ser medida, entao a pendencia e
+       essa e nenhum numero de execucao importa:
+       "Necessario cumprir a exigencia de cadastro da ART/RRT para possibilitar o
+        lancamento da primeira medicao no sistema."
+    2. COM execucao -> "A obra encontra-se em execucao, [com N medicoes
+       atestadas, ]totalizando R$ X em valor executado, correspondente a Y% do
+       valor total de R$ Z."
+
+    ⚠️ `medicoes` E OPCIONAL PORQUE O DADO AINDA NAO E COLETADO. O exemplo do dono
+    traz "com 02 medicoes atestadas", mas a contagem de medicoes atestadas nao
+    esta em nenhum endpoint que o obras() ja consulta (contratoslotes, contratos,
+    arts, situacaoParalisacao). Em vez de inventar o numero ou travar a frase
+    inteira, a oracao some quando o valor e desconhecido — o resto e 100%
+    derivado do que ja existe. Quando a coleta da medicao entrar, basta passar o
+    parametro.
+
+    String vazia quando nao ha obra ou nao ha o que dizer."""
+    d = _jsonb(obras)
+    if not isinstance(d, dict):
+        return ""
+    lotes = d.get("lotes") if isinstance(d.get("lotes"), list) else []
+    tem_art = any((l or {}).get("arts") for l in lotes if isinstance(l, dict))
+    if lotes and not tem_art:
+        return ("Necessário cumprir a exigência de cadastro da ART/RRT para "
+                "possibilitar o lançamento da primeira medição no sistema.")
+    total, realizado = _money(d.get("valor_total_submetas")), _money(d.get("valor_total_realizado"))
+    if not total or realizado is None:
+        return ""
+    med = ""
+    if medicoes:
+        # Substantivo e adjetivo trocam JUNTOS: montar por sufixo ("medição" +
+        # "ões") produzia "mediçãoões". O dono escreveu com zero a esquerda.
+        palavra = "medições atestadas" if medicoes != 1 else "medição atestada"
+        med = f"com {medicoes:02d} {palavra}, "
+    return (f"A obra encontra-se em execução, {med}totalizando "
+            f"{_moeda_br(realizado)} em valor executado, correspondente a "
+            f"{_pct_br(_obra_pct(total, realizado))} do valor total de {_moeda_br(total)}.")
+
+
 def _nes_resumo(notas) -> str:
     """"Situacao do NEs" para o RM: uma entrada por nota de empenho REAL.
 
@@ -942,7 +1011,12 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
                -- NEs (Notas de Empenho). ULTIMA coluna de proposito: inserir no
                -- MEIO deslocaria `programa` (row[24]) e o RM passaria a imprimir
                -- a lista de empenhos no lugar do nome do programa, calado.
-               notas_empenho
+               notas_empenho,
+               -- OBRAS (medicao). O RM nunca leu esta coluna, apesar de o
+               -- coletor grava-la desde sempre: e dai que sai o valor total, o
+               -- realizado e o percentual da obra. ULTIMA coluna, como as duas
+               -- acima — inserir no meio desloca `programa` e `notas_empenho`.
+               obras
         FROM transferegov_propostas WHERE municipio_id = :m
     """), {"m": municipio_id})
     for row in vol.fetchall():
@@ -1064,6 +1138,9 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             # _fed_status documenta que ele marcava "Aprovadas" como empenhadas
             # sem empenho real; aqui sai o número, o valor e a data da NE.
             "nes": _nes_resumo(row[25]),
+            # Situação da obra: frase pronta, com o percentual DERIVADO
+            # de valores que já estavam no banco e ninguém exibia.
+            "obra": _obra_resumo(row[26]),
             # EVENTO ATUAL do Histórico de Comunicações (mandatárias): onde o
             # instrumento está de fato na análise, + situação e considerações.
             **_evento_atual(row[17]),
