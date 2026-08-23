@@ -40,7 +40,10 @@ function anoDa(p: { numero_proposta?: string; dt_proposta?: string; dt_inicio_vi
  *  Tailwind só gera a classe se ela aparecer no código-fonte — montar
  *  `grid-cols-[${x}]` produz uma grade sem colunas. */
 const COLS_OB = "grid-cols-[6.5rem_6.5rem_6.5rem_7.5rem_minmax(7rem,1fr)_6.5rem]";
-const COLS_SUBMETA = "grid-cols-[5rem_minmax(10rem,1fr)_7.5rem_9rem_7rem]";
+// ⚠️ De 5 para 7 trilhas: entraram Realizado e %. Escrita LITERAL, como avisa o
+// comentário do topo — classe de grid montada dinamicamente vira grade SEM
+// colunas, porque o Tailwind só gera o que aparece no código-fonte.
+const COLS_SUBMETA = "grid-cols-[5rem_minmax(10rem,1fr)_7.5rem_7.5rem_4.5rem_9rem_7rem]";
 const COLS_NE = "grid-cols-[8rem_8rem_8rem_8rem_minmax(7rem,1fr)_7rem]";
 const COLS_ART = "grid-cols-[5rem_8rem_6.5rem_minmax(9rem,1fr)]";
 
@@ -53,6 +56,20 @@ const COLS_ART = "grid-cols-[5rem_8rem_6.5rem_minmax(9rem,1fr)]";
  *
  *  Repare no que NÃO é vazio: `0`. Escrever `valor || "-"` transformaria zero
  *  em traço, e "0 dias sem medição" viraria "sem informação". */
+/** Percentual de execução da obra — DERIVADO, não buscado.
+ *
+ *  O portal mostra esse número no "Resumo Físico-Financeiro", mas os dois valores
+ *  que o compõem já vêm no JSONB de obras. Derivar aqui evita um GET por
+ *  instrumento num host de 2 vCPU. Confere com o caso real:
+ *  344.827,46 / 368.000,00 = 93,70%.
+ *
+ *  Traço quando não dá para dividir — nunca "0%", que seria afirmar execução
+ *  zerada quando na verdade não se sabe o total. */
+function pctExec(total?: number | null, realizado?: number | null): string {
+  if (!total || total <= 0 || realizado == null) return "—";
+  return `${(realizado * 100 / total).toFixed(2).replace(".", ",")}%`;
+}
+
 function campo(rotulo: string, valor: unknown, extra?: Partial<Campo>): Campo {
   const v = valor === null || valor === undefined || valor === "" ? "-" : String(valor);
   return { rotulo, valor: v, title: v === "-" ? undefined : `${rotulo}: ${v}`, ...extra };
@@ -908,8 +925,15 @@ export default function TransfereGovPropostas({
                   titulo="Acompanhamento de Obras"
                   sub={`${(detalhe.obras.lotes || []).length} lote(s)`}
                   cols={2}
+                  /* RESUMO FÍSICO-FINANCEIRO — os três números que o portal
+                     mostra no topo da tela de obras. Os dois primeiros já eram
+                     coletados e NUNCA exibidos; o percentual é DERIVADO deles,
+                     sem requisição nenhuma. */
                   campos={[
-                    { rotulo: "Valor total das submetas", valor: moeda(detalhe.obras.valor_total_submetas) },
+                    { rotulo: "Valor total", valor: moeda(detalhe.obras.valor_total_submetas) },
+                    { rotulo: "Valor realizado", valor: moeda(detalhe.obras.valor_total_realizado) },
+                    { rotulo: "Percentual de execução", valor: pctExec(
+                        detalhe.obras.valor_total_submetas, detalhe.obras.valor_total_realizado) },
                     ...(detalhe.obras.situacao_paralisacao
                       ? [campo("Paralisação", detalhe.obras.situacao_paralisacao, { tom: "atencao", quebra: true })]
                       : []),
@@ -932,7 +956,10 @@ export default function TransfereGovPropostas({
                           cols={COLS_SUBMETA}
                           cabecalho={[
                             { label: "Submeta" }, { label: "Descrição" },
-                            { label: "Valor", direita: true }, { label: "Situação" }, { label: "Regime" },
+                            { label: "Valor", direita: true },
+                            { label: "Realizado", direita: true },
+                            { label: "%", direita: true },
+                            { label: "Situação" }, { label: "Regime" },
                           ]}
                         >
                           {(lote.submetas || []).map((s, si) => (
@@ -940,6 +967,10 @@ export default function TransfereGovPropostas({
                               <GradeCel tom="id">{s.numero || "-"}</GradeCel>
                               <GradeCel title={s.descricao || undefined}>{s.descricao || "-"}</GradeCel>
                               <GradeCel tom="num">{moeda(s.valor)}</GradeCel>
+                              {/* Realizado já vinha no JSONB (valorRealizadoAcumulado)
+                                  e a grade simplesmente não o mostrava. */}
+                              <GradeCel tom="num">{moeda(s.valor_realizado)}</GradeCel>
+                              <GradeCel tom="num">{pctExec(s.valor, s.valor_realizado)}</GradeCel>
                               <GradeCel>
                                 {s.situacao ? <Selo tom={situacaoTom(s.situacao)}>{s.situacao}</Selo> : "-"}
                               </GradeCel>

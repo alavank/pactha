@@ -279,6 +279,20 @@ def _clausula_destaque(item: dict) -> str | None:
     return "<br/>".join(partes)
 
 
+def _obra_destaque(item: dict) -> str | None:
+    """Caixa da OBRA: a frase de situação pronta, vinda do builder.
+
+    ⚠️ FUNÇÃO PRÓPRIA, DE PROPÓSITO. A tentação é pendurar isto junto do Projeto
+    Básico, dentro de `_clausula_destaque` — mas aquela função começa com
+    `if not _tem_clausula(item): return None`. Obra em execução tipicamente NÃO
+    tem cláusula suspensiva, então o texto nunca sairia, e sairia calado.
+
+    Informativo (caixa cinza), não alerta: obra andando não pede ação. A
+    pendência de ART/RRT vem no mesmo texto e é o próprio conteúdo que avisa."""
+    txt = (item.get("obra") or "").strip()
+    return f"<b>Obra:</b> {_escape(txt)}" if txt else None
+
+
 def _desembolso_destaque(item: dict) -> str | None:
     """Caixa do DESEMBOLSO (OPs/OBs): o valor desembolsado e CADA lancamento
     (data · valor · nº da OB). Quando nada saiu e a licitacao ja foi aceita, o
@@ -508,6 +522,14 @@ def gerar_pdf(meta: dict, conteudo: dict, municipio_nome: str) -> bytes:
                     if destaque_des:
                         bloco.append(Spacer(1, 2))
                         bloco.append(Paragraph(destaque_des, s["informativo"]))
+                    # OBRA — bloco PRÓPRIO, e não dentro da caixa da cláusula.
+                    # Pendurá-lo lá o faria passar por `_tem_clausula`, que aborta
+                    # quando não há cláusula suspensiva: obra com 93,70% executado
+                    # tipicamente NÃO tem cláusula, e o texto nunca sairia — calado.
+                    destaque_obra = _obra_destaque(item)
+                    if destaque_obra:
+                        bloco.append(Spacer(1, 2))
+                        bloco.append(Paragraph(destaque_obra, s["informativo"]))
                     bloco.append(Spacer(1, 4))
                     story.append(KeepTogether(bloco))
 
