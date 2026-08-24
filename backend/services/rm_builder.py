@@ -23,6 +23,10 @@ from services.nome_parlamentar import e_parlamentar_real
 from services.texto_rm import (
     frase, nome_proprio, normalizar_item, proprios_do_municipio,
 )
+# Recorte por CONSULTA. Importado com apelido para nao se confundir com o
+# `_no_escopo` local de `montar_conteudo`, que e o recorte por ANO — sao dois
+# filtros diferentes, em momentos diferentes do mesmo laco.
+from services.rm_fontes import no_escopo as fonte_no_escopo
 
 logger = logging.getLogger("rm_builder")
 
@@ -927,7 +931,8 @@ def _evento_atual(historico) -> dict:
 
 
 async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int | None = None,
-                          completo: bool = False, anos: list[int] | None = None) -> dict:
+                          completo: bool = False, anos: list[int] | None = None,
+                          fontes: list[str] | None = None) -> dict:
     """Monta o conteudo JSONB de um RM a partir dos dados do banco.
 
     ano_emissao: ano-base da janela do relatório (year da data de referência).
@@ -943,10 +948,20 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
     escolhido). None/vazio = TODOS os anos (o "completo"). Lista com anos = filtra
     os itens para esses anos (pelo ano do numero do instrumento). O filtro roda por
     cima da estrutura de 4 partes: 1 ano -> so ele; varios -> os anos juntos num
-    unico relatorio; todos/vazio -> o completo."""
+    unico relatorio; todos/vazio -> o completo.
+
+    fontes: SELECAO de CONSULTAS do relatorio (services/rm_fontes.CHAVES). Cada
+    string e, literalmente, o que a fonte carimba em `item["fonte"]` aqui neste
+    arquivo. None/vazio = TODAS as consultas = o completo de hoje, sem nenhuma
+    diferenca de conteudo. O recorte roda no PONTO UNICO `add_item`, entao ele
+    cobre as NOVE insercoes (as duas do FNS inclusive) e preserva os efeitos
+    colaterais dos lacos — ver a nota em `_pac_ja_exibidos`."""
     if not ano_emissao:
         ano_emissao = date.today().year
     anos_filtro = set(a for a in (anos or []) if a)  # vazio => sem filtro (todos)
+    # Vazio => sem filtro (todas as consultas). `frozenset` porque este valor e
+    # so lido, por item, ate o fim da montagem.
+    fontes_filtro = frozenset(f for f in (fontes or []) if f)
     # Estrutura: {partes: [{ordem, titulo, secoes: [{ordem, titulo, grupos:
     #   [{ordem, orgao, itens: [...]}]}]}]}
     # Build incrementally then convert.
@@ -979,7 +994,21 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
         numero: ha fontes cujo numero nao carrega ano (SIMEC usa a OB, PAC/emendas
         usam so o sequencial), e elas cairiam fora de qualquer RM filtrado por ano,
         em silencio. Quando a fonte nao sabe o ano, cai no ano do numero e, se ainda
-        assim nao houver, o item PERMANECE (melhor um item a mais do que sumir)."""
+        assim nao houver, o item PERMANECE (melhor um item a mais do que sumir).
+
+        ⚠️ RECORTE POR CONSULTA — PONTO UNICO. Fica AQUI, e nao com um `continue`
+        no topo de cada laco, por tres motivos medidos:
+          1. sao NOVE insercoes e OITO fontes; o FNS entra por DUAS chamadas
+             (propostas individuais e o bucket agregado de fallback), e um filtro
+             por laco que pegasse so uma delas entregaria o RM pela metade, calado;
+          2. `continue` no topo do laco muda os EFEITOS COLATERAIS dele — o mais
+             perigoso e `_pac_ja_exibidos`, ver a nota la embaixo;
+          3. fonte nova nasce filtravel de graca, do mesmo jeito que ja nasce
+             padronizada pela normalizacao logo abaixo.
+        Selecao vazia deixa tudo passar, entao o RM completo sai identico ao de
+        hoje."""
+        if not fonte_no_escopo(fontes_filtro, str(item.get("fonte") or "")):
+            return
         # PADRONIZACAO DE MAIUSCULAS — PONTO UNICO (services/texto_rm).
         #
         # Todas as fontes (SIGCON, FNS individuais, FNS fallback, voluntarias,
@@ -1291,7 +1320,21 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
         sit = row[3] or ""
         # De qual selecao do Novo PAC esta voluntaria nasceu (vazio se nenhuma).
         _pac_origem_atual = _pac_da_voluntaria(row[27])
-        if _pac_origem_atual:
+        # ⚠️⚠️ SO CONTA COMO "JA EXIBIDO" SE A VOLUNTARIA PUDER MESMO ENTRAR NESTE
+        # RELATORIO. Este conjunto e preenchido AQUI, no laco das VOLUNTARIAS,
+        # fora e antes do `add_item` — e e consumido la embaixo, no bloco do PAC,
+        # para o mesmo recurso nao sair duas vezes.
+        #
+        # Com o filtro de consultas ligado SEM "voluntaria" (ex.: o usuario marcou
+        # so "Novo PAC"), este laco CONTINUA rodando inteiro — ele nao para, so
+        # deixa de inserir itens. Sem esta condicao, ele alimentaria a deduplicacao
+        # com propostas que NAO estao no documento, e o item do Novo PAC seria
+        # suprimido por uma voluntaria invisivel: o recurso sumiria das DUAS
+        # fontes ao mesmo tempo, sem excecao e sem rastro.
+        #
+        # Sem filtro (todas as consultas) `fonte_no_escopo` devolve True sempre e o
+        # comportamento e exatamente o de hoje.
+        if _pac_origem_atual and fonte_no_escopo(fontes_filtro, "voluntaria"):
             _pac_ja_exibidos.add(_pac_origem_atual)
         # Regra do ANO DE EMISSÃO: empenhada/paga (Em execução / Prestação) fica
         # sempre; "em análise/aprovada" só do ano de emissão; antigas não-avançadas

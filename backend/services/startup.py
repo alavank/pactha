@@ -48,6 +48,14 @@ MIGRATION_FILES = [
     "add_rm_escopo.sql",
     # RM: escopo por SELECAO de anos (coluna anos INT[], unique (municipio, anos))
     "add_rm_anos.sql",
+    # RM: escopo por SELECAO DE CONSULTAS (coluna fontes TEXT[]). DOIS arquivos
+    # de proposito — o runner roda cada um numa transacao unica, e juntos uma
+    # falha do indice reverteria a coluna. Ver o cabecalho de cada um.
+    # ⚠️ ESTE E O DEPLOY 1 DE DOIS: o indice ANTIGO (ux_rm_mun_anos) continua de
+    # pe aqui, para o container velho nao tomar 42P10 durante a troca. O
+    # `drop_rm_unique_anos.sql` entra num PR POSTERIOR.
+    "add_rm_fontes_coluna.sql",
+    "add_rm_fontes_indice.sql",
     # TE/Emenda Pix federal persistida (coletor especiais -> tabela; RM/tela leem)
     "add_transferegov_te.sql",
     # SIMEC: TERMOS DE COMPROMISSO (o instrumento; as liberacoes ja existiam)

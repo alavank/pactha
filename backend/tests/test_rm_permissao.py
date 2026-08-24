@@ -144,13 +144,18 @@ class _Municipio:
 # conseguia distinguir regressão nova de ruído antigo.
 #
 # Ao mexer num SELECT de rm.py, confira o comprimento aqui:
-#   LINHA_DETALHE -> SELECT do `detalhe`   (rm.py, 15 colunas: row[13]=nome, row[14]=uf)
-#   LINHA_PDF     -> SELECT do `pdf`       (rm.py,  9 colunas: row[8]=escopo)
+#   LINHA_DETALHE -> SELECT do `detalhe`   (rm.py, 16 colunas: row[13]=nome, row[14]=uf,
+#                                           row[15]=fontes)
+#   LINHA_PDF     -> SELECT do `pdf`       (rm.py, 10 colunas: row[8]=escopo,
+#                                           row[9]=fontes)
+# ⚠️ `fontes` entrou no FIM de CADA SELECT, e por isso o índice dele é DIFERENTE
+# em cada tupla (15 no detalhe, 9 no pdf, 14 no listar): as colunas de
+# `municipios` vêm depois de `r.anos` em dois deles.
 LINHA_DETALHE = (1, 99, DATA, "Monte Siao/MG", "RM de julho", "rodape",
                  "rascunho", {"partes": []}, 7, None, None,
-                 "completo", [], "Monte Siao", "MG")
+                 "completo", [], "Monte Siao", "MG", [])
 LINHA_PDF = (DATA, "Monte Siao/MG", "RM de julho", "rodape", {"partes": []},
-             "Monte Siao", "MG", 99, "completo")
+             "Monte Siao", "MG", 99, "completo", [])
 LINHA_CTX = (99, "RM de julho", DATA, "rascunho")
 DONO = (99,)          # o que `ensure_dono` le: o municipio_id da linha
 
@@ -241,7 +246,9 @@ CENARIOS = {
         {"updated": True},
     ),
     "auto_popular": (
-        lambda: [_Res(DONO), _Res((99, DATA, "RM de julho", "completo", [])), _Res(None)],
+        # A 2ª resposta espelha o SELECT do `repopular`: 6 colunas desde que
+        # `fontes` entrou no FIM (row[4]=anos, row[5]=fontes).
+        lambda: [_Res(DONO), _Res((99, DATA, "RM de julho", "completo", [], [])), _Res(None)],
         lambda db, u: rm.repopular(rid=1, request=None, db=db, current=u),
         {"ok": True, "partes": 0, "itens": 0},
     ),
@@ -277,6 +284,15 @@ CENARIOS = {
                              formato="docx", db=db, current=u),
         None,
     ),
+    # Catálogo das CONSULTAS. Não toca no banco (é constante do processo), mas
+    # passa pelos MESMOS dois gates dos outros: `exige("rm.ver")` no decorator e
+    # `authz.exigir_tela` no corpo. Entra aqui para a rota nova não ser a única do
+    # router sem cobertura de permissão.
+    "fontes_catalogo": (
+        lambda: [],
+        lambda db, u: rm.fontes_catalogo(current=u),
+        None,
+    ),
 }
 
 NOMES = sorted(CENARIOS)
@@ -289,7 +305,7 @@ COM_ID = ["atualizar", "auto_popular", "detalhe", "pdf", "pdf_docx",
 
 # Onde o gate de TELA nasceu neste incremento (`authz.exigir_tela`). `listar`
 # fica de fora: a tela dele ja era exigida antes, por `ensure_tela`.
-TELA_NOVA = COM_ID + ["criar"]
+TELA_NOVA = COM_ID + ["criar", "fontes_catalogo"]
 
 # Onde a trava de MUNICIPIO ja existia antes do incremento e por isso nega nos
 # DOIS modos. So `listar`, que chama `ensure_municipio_access` direto. `criar`
@@ -302,7 +318,7 @@ FUNCAO = {
     "listar": rm.listar, "criar": rm.criar, "detalhe": rm.detalhe,
     "atualizar": rm.atualizar, "auto_popular": rm.repopular,
     "remover": rm.remover, "pdf": rm.pdf, "pdf_resumido": rm.pdf,
-    "pdf_docx": rm.pdf,
+    "pdf_docx": rm.pdf, "fontes_catalogo": rm.fontes_catalogo,
 }
 
 
@@ -727,8 +743,9 @@ def test_o_router_tem_as_rotas_que_este_teste_acha_que_tem():
     """Se alguem acrescentar um endpoint, este numero muda e o desenvolvedor e
     obrigado a olhar o arquivo — que e exatamente o ponto.
 
-    7 -> 9 com `GET/PUT /api/rm/config` (rodape padrao editavel pela tela)."""
-    assert len(_rotas()) == 9
+    7 -> 9 com `GET/PUT /api/rm/config` (rodapé padrão editável pela tela).
+    9 -> 10 com `GET /api/rm/fontes` (catálogo das consultas do RM)."""
+    assert len(_rotas()) == 10
 
 
 # Rotas do router que NAO tem municipio nenhum a conferir. Lista explicita e
@@ -743,7 +760,7 @@ def test_o_router_tem_as_rotas_que_este_teste_acha_que_tem():
 # acima ja os cobrem: a tela `rm` (`authz.exigir_tela`), a permissao
 # (`exige("rm.ver")` / `exige("rm.editar")`) e, na escrita, o papel `admin`
 # (`_exigir_admin_config`).
-SEM_MUNICIPIO = {"/api/rm/config"}
+SEM_MUNICIPIO = {"/api/rm/config", "/api/rm/fontes"}
 
 
 def _fonte(funcao) -> str:
@@ -821,10 +838,21 @@ def test_a_excecao_de_municipio_e_paga_com_o_papel_admin(caminho):
 
     Sem este teste, `SEM_MUNICIPIO` seria so um jeito de calar o teste acima: a
     proxima rota acrescentada a lista poderia nascer sem gate nenhum e ninguem
-    veria. Aqui a escrita paga a excecao com o papel `admin`."""
-    escrita = [f for c, f in _rotas()
-               if c == caminho and "config_gravar" in getattr(f, "__name__", "")]
-    assert escrita, f"{caminho} deveria ter um endpoint de escrita"
-    for f in escrita:
-        assert "_exigir_admin_config(" in inspect.getsource(f), \
+    veria.
+
+    O preco depende do VERBO. Rota de LEITURA ja paga com os dois gates que os
+    testes acima cobram (a tela `rm` e a permissao `rm.ver`) — e o catalogo de
+    consultas e uma constante do processo, igual para todo mundo. Rota de
+    ESCRITA sem municipio muda configuracao do TENANT INTEIRO, e essa paga com o
+    papel `admin`."""
+    achou = False
+    for c, f in _rotas():
+        if c != caminho:
+            continue
+        achou = True
+        fonte = inspect.getsource(f)
+        if "@router.get(" in fonte:
+            continue
+        assert "_exigir_admin_config(" in fonte, \
             f"{caminho} nao confere municipio: a escrita precisa exigir `admin`"
+    assert achou, f"{caminho} nao existe mais no router — tirar de SEM_MUNICIPIO"

@@ -28,6 +28,12 @@ interface RmListItem {
   escopo?: string;
   /** SELEÇÃO de anos do relatório. `[]`/ausente = TODOS (o completo). */
   anos?: number[];
+  /** SELEÇÃO de CONSULTAS (fontes) do relatório. `[]`/ausente = TODAS.
+   *  As chaves vêm de `GET /rm/fontes` e NUNCA são escritas aqui — ver
+   *  `backend/services/rm_fontes.py`. Uma segunda lista em TypeScript divergiria
+   *  (foi o que aconteceu com telas_catalog.py × lib/telas.ts) e o filtro ficaria
+   *  sem efeito, calado. */
+  fontes?: string[];
   /** O veredito do servidor sobre ESTE RM — ver `lib/escopo.ts`. Ausente
    *  significa "a API nao respondeu isso", e ai a tela fica como era. */
   pode_editar?: boolean | null;
@@ -61,6 +67,54 @@ function escopoLabel(rm: RmListItem): string {
   return [...(rm.anos || [])].sort((a, b) => a - b).join(", ");
 }
 
+/** Uma CONSULTA do catálogo servido por `GET /rm/fontes`. */
+interface FonteRm {
+  chave: string;
+  rotulo: string;
+  curto: string;
+}
+
+/* ⚠️⚠️ `ehCompleto` ACIMA CONTINUA SENDO SÓ SOBRE ANOS, DE PROPÓSITO — e as
+   consultas ganharam as funções próprias abaixo. Ele tem TRÊS consumidores, e
+   fazê-lo exigir também "todas as consultas" quebra dois deles em silêncio:
+
+     • `visiveis` — o filtro por ano da lista é
+       `ehCompleto(r) || (r.anos||[]).some(...)`. Um RM com `anos: []` e
+       `fontes: ["fns"]` deixaria de ser "completo" e, como array vazio não casa
+       com ano nenhum no `.some`, ele SUMIRIA DA LISTA sempre que houvesse
+       filtro de ano ligado. O relatório existe, foi gerado, e não aparece.
+     • `escopoLabel` — cairia no ramo `[...anos].join(", ")` com `anos: []`, que
+       devolve STRING VAZIA: o `<Selo>` do escopo renderiza uma pílula cinza EM
+       BRANCO.
+     • o `const completo` do corpo da lista (título, selo e "Abrangência").
+
+   Abrangência de ANOS e recorte de CONSULTAS são dois eixos independentes do
+   escopo, e é assim que o backend os guarda (`anos` e `fontes` são colunas
+   separadas da mesma chave). Juntá-los numa função só é a próxima tentação —
+   e é a que apaga RM da tela. */
+
+/** O RM cobre TODAS as consultas? (`[]`/ausente = todas, como no backend.) */
+function todasAsConsultas(rm: RmListItem): boolean {
+  return !rm.fontes || rm.fontes.length === 0;
+}
+
+/** Texto do SELO: "TransfereGov + FNS" até duas; daí em diante "3 consultas"
+ *  (a lista inteira fica no `title`, que é onde cabe). */
+function consultasSelo(rm: RmListItem, curto: Record<string, string>): string {
+  const f = rm.fontes || [];
+  if (!f.length) return "Todas as consultas";
+  if (f.length <= 2) return f.map((k) => curto[k] || k).join(" + ");
+  return `${f.length} consultas`;
+}
+
+/** A lista por extenso: "TransfereGov, FNS, SIGCON". Cai na chave crua se o
+ *  catálogo ainda não chegou — melhor a chave do que um espaço em branco. */
+function consultasLista(rm: RmListItem, curto: Record<string, string>): string {
+  const f = rm.fontes || [];
+  if (!f.length) return "Todas as consultas";
+  return f.map((k) => curto[k] || k).join(", ");
+}
+
 /* As pecas da identidade nao trazem botao — entao o botao de acao e montado
    aqui com os tokens, cinza no repouso. Antes eram tres cores de enfeite numa
    linha so (violeta em "Abrir", verde em "Relatorio", vermelho em remover), e
@@ -86,6 +140,12 @@ export default function RmListPage() {
   const opcoesGerar = anosOpcoesPeriodo();     // 2016..ano atual (string[])
   const [anosGerar, setAnosGerar] = useState<string[]>([]);
   const [anosSel, setAnosSel] = useState<string[]>([]);
+  // CATÁLOGO DE CONSULTAS — vem do BACKEND (`GET /rm/fontes`) e não daqui. A
+  // chave é a MESMA string que o item carrega em `fonte` no builder; uma segunda
+  // lista escrita neste arquivo divergiria e o filtro ficaria sem efeito.
+  const [fontesCat, setFontesCat] = useState<FonteRm[]>([]);
+  // SELEÇÃO de consultas para GERAR. VAZIO = todas (é o RM completo de hoje).
+  const [fontesGerar, setFontesGerar] = useState<string[]>([]);
 
   // RODAPÉ PADRÃO do tenant. `origem` diz se o texto exibido veio do banco
   // ("salvo") ou ainda da variável de ambiente ("env") — sem isso a pessoa
@@ -104,6 +164,19 @@ export default function RmListPage() {
   const [rodapeSalvando, setRodapeSalvando] = useState(false);
   const [rodapeOk, setRodapeOk] = useState(false);
   const rodapeSujo = rodape !== rodapeOriginal;
+
+  /* Derivados do catálogo. `opcoesFontes` são as CHAVES (o MultiSelect trabalha
+     com string[]) e `rotuloFonte`/`curtoFonte` traduzem para o olho — é para isso
+     que o componente tem a prop `rotulos`. */
+  const opcoesFontes = useMemo(() => fontesCat.map((f) => f.chave), [fontesCat]);
+  const rotuloFonte = useMemo(
+    () => Object.fromEntries(fontesCat.map((f) => [f.chave, f.rotulo])) as Record<string, string>,
+    [fontesCat],
+  );
+  const curtoFonte = useMemo(
+    () => Object.fromEntries(fontesCat.map((f) => [f.chave, f.curto])) as Record<string, string>,
+    [fontesCat],
+  );
 
   /** Os anos que aparecem no ESCOPO de algum RM da lista (para o filtro). */
   const anosDisponiveis = useMemo(
@@ -149,6 +222,16 @@ export default function RmListPage() {
       .catch((e) => console.error(e));
   }, []);
 
+  // O catálogo de CONSULTAS é do produto, não do município: carrega uma vez, como
+  // o rodapé. Falhando, `fontesCat` fica vazio, o dropdown fica sem opção e a tela
+  // gera o completo — que é o comportamento de sempre. Nada de lista de reserva
+  // escrita aqui: uma lista de reserva é justamente a cópia que diverge.
+  useEffect(() => {
+    api.get<{ fontes: FonteRm[] }>("/rm/fontes")
+      .then((r) => setFontesCat(r.data.fontes || []))
+      .catch((e) => console.error(e));
+  }, []);
+
   /** Fecha o modal DESCARTANDO a edição — o campo volta ao último valor salvo.
    *
    *  Sem o retorno, reabrir o modal mostraria o texto abandonado como se fosse
@@ -190,6 +273,11 @@ export default function RmListPage() {
         municipio_id: Number(municipioId),
         data_referencia: new Date().toISOString().slice(0, 10),  // data de emissão
         anos,                                                    // [] = todos = completo
+        // [] = todas as consultas = completo. Mandado CRU: quem normaliza (ordena,
+        // tira repetido, transforma "todas marcadas" em []) é o servidor, em
+        // rm_fontes.normalizar — a ordem faz parte da identidade do RM e não pode
+        // depender da ordem em que a pessoa clicou nas caixas.
+        fontes: fontesGerar,
         // Nao manda cidade: o servidor usa a do proprio municipio do RM.
         auto_popular: true,
       });
@@ -200,13 +288,25 @@ export default function RmListPage() {
   };
 
   // Rótulo do botão conforme a seleção (nenhum = completo; 1 = ano; vários = junto).
+  // ⚠️ As CONSULTAS entram aqui também: com consulta marcada o relatório NÃO é
+  // "Completo" coisa nenhuma, e o rótulo do botão é a única coisa que a pessoa lê
+  // antes de clicar. "Marcar tudo" no dropdown equivale a não marcar nada (é o que
+  // o servidor faz em `normalizar`), então os dois casos dizem a mesma coisa.
+  const todasGerar =
+    fontesGerar.length === 0 ||
+    (opcoesFontes.length > 0 && fontesGerar.length === opcoesFontes.length);
+  const sufixoConsultas = todasGerar
+    ? ""
+    : fontesGerar.length === 1
+      ? ` — ${curtoFonte[fontesGerar[0]] || fontesGerar[0]}`
+      : ` — ${fontesGerar.length} consultas`;
   const rotuloGerar = criando
     ? "Gerando…"
-    : anosGerar.length === 0
-      ? "Gerar RM Completo (todos os anos)"
-      : anosGerar.length === 1
-        ? `Gerar RM ${anosGerar[0]}`
-        : `Gerar RM (${anosGerar.length} anos juntos)`;
+    : (anosGerar.length === 0
+        ? (todasGerar ? "Gerar RM Completo (todos os anos)" : "Gerar RM (todos os anos)")
+        : anosGerar.length === 1
+          ? `Gerar RM ${anosGerar[0]}`
+          : `Gerar RM (${anosGerar.length} anos juntos)`) + sufixoConsultas;
 
   const remover = async (id: number) => {
     if (!confirm("Remover este RM?")) return;
@@ -244,10 +344,13 @@ export default function RmListPage() {
           titulo="Novo RM"
           sub={
             <>
-              É <strong>por seleção de anos</strong>: escolha os anos e clique em Gerar. <strong>Nenhum ano</strong> marcado
-              gera o <strong>completo</strong> (todos os anos); <strong>um ano</strong> gera só ele; <strong>vários anos</strong> geram
-              um único relatório com eles juntos. O conteúdo é gerado automaticamente com os dados atuais do banco
-              (padrão Freitas). Gerar de novo <strong>atualiza</strong> o relatório daquele escopo.
+              É <strong>por seleção</strong>: escolha os <strong>anos</strong> e as <strong>consultas</strong> e clique em Gerar.
+              <strong> Nenhum ano</strong> marcado cobre <strong>todos os anos</strong>; <strong>um ano</strong> gera só ele;
+              <strong> vários anos</strong> geram um único relatório com eles juntos. <strong>Nenhuma consulta</strong> marcada
+              traz <strong>todas</strong> — esse é o <strong>RM completo</strong>. Marcando consultas você gera um relatório
+              <strong> à parte</strong>, que <strong>convive</strong> com o completo e <strong>não o substitui</strong>. O conteúdo é
+              gerado automaticamente com os dados atuais do banco (padrão Freitas). Gerar de novo <strong>atualiza</strong> o
+              relatório do <strong>mesmo escopo</strong> — mesmos anos <em>e</em> mesmas consultas.
             </>
           }
           right={
@@ -292,6 +395,27 @@ export default function RmListPage() {
               rotuloTodos="Todos os anos (completo)"
               ariaLabel="Anos do relatório"
               className="w-60"
+            />
+          </div>
+          <div>
+            <label
+              className="mb-1 block text-[11px]"
+              style={{ color: "var(--bi-muted)" }}
+            >
+              Consultas
+            </label>
+            {/* VAZIO = todas as consultas (o RM completo). Marcar consultas gera
+                OUTRO relatório, que CONVIVE com o completo — não o substitui.
+                As opções e os rótulos vêm do backend (`GET /rm/fontes`). */}
+            <MultiSelect
+              opcoes={opcoesFontes}
+              valor={fontesGerar}
+              onChange={setFontesGerar}
+              rotulos={rotuloFonte}
+              placeholder="Todas as consultas"
+              rotuloTodos="Todas as consultas"
+              ariaLabel="Consultas do relatório"
+              className="w-72"
             />
           </div>
           <Button onClick={gerar} disabled={criando}>
@@ -450,6 +574,18 @@ export default function RmListPage() {
                     ) : (
                       <Selo tom="neutro" title={`Anos do relatório: ${escopoTxt}`}>{escopoTxt}</Selo>
                     )}
+                    {/* CONSULTAS: o selo só aparece quando HÁ recorte, para a linha do
+                        RM completo continuar exatamente como era. É ele que separa,
+                        no olho, dois relatórios do mesmo período que agora coexistem
+                        — e que hoje têm o mesmo título do servidor. */}
+                    {!todasAsConsultas(rm) && (
+                      <Selo
+                        tom="acento"
+                        title={`Consultas incluídas: ${consultasLista(rm, curtoFonte)}`}
+                      >
+                        {consultasSelo(rm, curtoFonte)}
+                      </Selo>
+                    )}
                     {rm.municipio_nome && <span>{rm.municipio_nome}</span>}
                     <span className="font-mono">· #{rm.id}</span>
                   </>
@@ -500,6 +636,11 @@ export default function RmListPage() {
                 <Campos
                   campos={[
                     { rotulo: "Abrangência", valor: completo ? "Todos os anos" : escopoTxt },
+                    // Aqui, ao contrário do selo, o campo aparece SEMPRE e diz
+                    // "Todas as consultas" no completo: é a linha em que a pessoa
+                    // confere o escopo do documento antes de emitir, e um campo que
+                    // some quando o valor é o padrão obriga a adivinhar.
+                    { rotulo: "Consultas", valor: consultasLista(rm, curtoFonte) },
                     { rotulo: "Cidade de emissão", valor: rm.cidade_emissao || "—" },
                     {
                       rotulo: "Atualizado em",
