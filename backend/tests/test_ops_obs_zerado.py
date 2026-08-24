@@ -99,3 +99,43 @@ def test_a_frase_generica_Um_erro_ocorreu_NAO_derruba_o_enrich():
     # inteiro desabaria para o Chromium (~3s/proposta em vez de ~0,7s) num host
     # de 2 vCPU — calado.
     assert _sem_contexto(_Resp("<div>Um erro ocorreu</div>")) is False
+
+
+# ---------------------------------------------------------------------------
+# ⚠️⚠️ O MURO SAML — achado na coleta real do Freitas (24/08/2026)
+# ---------------------------------------------------------------------------
+def test_o_muro_SAML_conta_como_SEM_CONTEXTO():
+    """Com a sessão do SP `voluntarias` fria, o GET do detalhe devolve HTTP 200
+    com ~3469 bytes de formulário SAML: não redireciona (então `_sessao_caiu`,
+    que só olha a URL, não vê) e não traz a frase de erro do Struts.
+
+    Sem esta detecção, `_seta_contexto` marcava o contexto Struts como VÁLIDO
+    para essa página — e a proposta seguinte lia as OPs/OBs do instrumento
+    anterior."""
+    for txt in ('<form action="https://idp/sso"><input name="SAMLRequest" value="x"/></form>',
+                "<p>HTTP Post Binding</p>",
+                '<input name="SAMLResponse" value="y"/>'):
+        assert _sem_contexto(_Resp(txt)) is True
+
+
+def test_a_pagina_de_detalhe_de_verdade_continua_passando():
+    # A guarda não pode ficar larga a ponto de derrubar o enrich HTTP inteiro
+    # para o Chromium — ~3s/proposta em vez de ~0,7s, num host de 2 vCPU.
+    assert _sem_contexto(_Resp(
+        "<td>Número da Proposta</td><td>048291/2025</td>"
+        "<td>Código do Instrumento</td><td>981397</td>")) is False
+
+
+def test_dicionario_vazio_e_FALHA_e_nao_detalhe():
+    """⚠️ O DEFEITO QUE ISTO FECHA, medido em produção: 113 de 113 propostas do
+    lote do Freitas ficaram sem enriquecer.
+
+    O chamador decide o fallback com `_via_http = det is not None`, e `{}` PASSA
+    nesse teste. Com o detalhe vazio, somem de uma vez `codigo_instrumento`,
+    `modalidade`, `numero_processo`, `objeto`, o portão das NEs e o de
+    ops_obs/obras — e como o `_upsert` usa COALESCE, nada é sobrescrito: sem
+    exceção, sem log, sem sintoma. O único rastro era a proposta parar de
+    enriquecer."""
+    assert ({} is not None) is True          # a armadilha, explicitada
+    # `None` é o que faz o browser assumir; `{}` é o que o desligava.
+    assert (None is not None) is False
