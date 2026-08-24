@@ -117,8 +117,11 @@ FONTES DE DADOS:
   Use `query_voluntarias`.
   * **Situacao de Contratacao** (Normal / Clausula Suspensiva / Liminar Judicial) e um
     campo FEDERAL das Voluntarias. Para "quais estao em clausula suspensiva/liminar",
-    chame `query_voluntarias` com `situacao_contratacao`. A resposta ja traz Empenhado
-    (Sim/Nao) e, na clausula, o Motivo + Data prevista para resolucao. NUNCA use
+    chame `query_voluntarias` com `situacao_contratacao`. A resposta traz "Empenhado:
+    Sim" APENAS quando ha nota de empenho (NE) emitida coletada. A AUSENCIA dessa
+    linha significa "nao comprovado", NUNCA "nao empenhado" — nao afirme que a
+    proposta nao foi empenhada por causa dela. Na clausula, traz tambem o Motivo +
+    Data prevista para resolucao. NUNCA use
     query_situacoes_sigcon para isso (aquilo e estadual e nao tem clausula suspensiva).
 - **SIMEC PAR (MEC)**: liberacoes federais de PNAE, PNATE, QUOTA Salario-Educacao,
   PDDE. Tambem tem sintese do diagnostico do PAR por dimensao.
@@ -231,7 +234,7 @@ TOOLS = [
     },
     {
         "name": "query_voluntarias",
-        "description": "Busca propostas/convenios SICONV (FEDERAL) das Voluntarias. municipio_id e OPCIONAL — sem ele busca em TODO O SEU ESCOPO de uma vez (ideal p/ 'quais em clausula suspensiva'). Categorias: geral (em execucao/aprovados/prestacao), voluntarias (enviado p/ analise), rejeitadas. Retorna orgao, situacao, valores, vigencia, parlamentar, Empenhado (Sim/Nao) e, quando aplicavel, Situacao de Contratacao + Motivo/Data da Clausula Suspensiva. Use situacao_contratacao p/ filtrar 'Clausula Suspensiva' ou 'Liminar Judicial' (isso e FEDERAL — NAO use query_situacoes_sigcon).",
+        "description": "Busca propostas/convenios SICONV (FEDERAL) das Voluntarias. municipio_id e OPCIONAL — sem ele busca em TODO O SEU ESCOPO de uma vez (ideal p/ 'quais em clausula suspensiva'). Categorias: geral (em execucao/aprovados/prestacao), voluntarias (enviado p/ analise), rejeitadas. Retorna orgao, situacao, valores, vigencia, parlamentar, 'Empenhado: Sim' SO quando ha NE emitida coletada (a ausencia da linha significa 'nao comprovado', nunca 'nao empenhado') e, quando aplicavel, Situacao de Contratacao + Motivo/Data da Clausula Suspensiva. Use situacao_contratacao p/ filtrar 'Clausula Suspensiva' ou 'Liminar Judicial' (isso e FEDERAL — NAO use query_situacoes_sigcon).",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -675,7 +678,11 @@ async def _tool_query_voluntarias(db: AsyncSession, inp: dict) -> str:
                v.valor_global, v.valor_repasse, v.valor_contrapartida, v.codigo_instrumento,
                v.parlamentar, v.situacao_contratacao, v.clausula_suspensiva_motivo,
                v.clausula_suspensiva_dt_prevista, v.detalhe->>'Empenhado',
-               (SELECT nome FROM municipios WHERE id = v.municipio_id) AS mun
+               (SELECT nome FROM municipios WHERE id = v.municipio_id) AS mun,
+               -- NEs (Notas de Empenho). ULTIMA coluna DE PROPOSITO: o laco
+               -- abaixo le por INDICE (row[13] = flag, row[14] = mun) e inserir
+               -- no meio deslocaria os dois em silencio.
+               v.notas_empenho
         FROM transferegov_propostas v{where_sql}
         ORDER BY v.municipio_id, v.numero_proposta DESC LIMIT {limit}
     """
@@ -690,8 +697,24 @@ async def _tool_query_voluntarias(db: AsyncSession, inp: dict) -> str:
     out = [f"SICONV ({escopo}, categoria={categoria or 'todas'})", resumo,
            f"Listando {len(rows)} registro(s):"]
     for row in rows:
-        empenhado = (row[13] or "").strip()
-        empenhado = {"sim": "Sim", "não": "Não", "nao": "Não"}.get(empenhado.lower(), empenhado)
+        # EMPENHADO: o DOCUMENTO antes da inferencia — mesma regra do RM
+        # (services/rm_builder._empenhado_rotulo). O flag detalhe->>'Empenhado'
+        # (row[13]) erra nos dois sentidos: marcava "Aprovada" como empenhada, e
+        # o 994997 aparecia "Nao" aqui com "Sim" no portal. Sem prova, CALADO: o
+        # modelo nao pode ler "Empenhado: Nao" e repetir isso ao dono, porque
+        # "nao consultado" nao e "nao empenhado".
+        # ⚠️ row[13] segue no SELECT e segue SEM USO, de proposito: remove-lo
+        # deslocaria row[14] (mun) e row[15] (NEs) em silencio.
+        _nes = row[15]
+        if isinstance(_nes, str):
+            try:
+                _nes = json.loads(_nes)
+            except (ValueError, TypeError):
+                _nes = None
+        _tem_ne = isinstance(_nes, list) and any(
+            isinstance(n, dict) and not n.get("minuta_apenas")
+            and str(n.get("numero") or "").strip() for n in _nes)
+        empenhado = "Sim" if _tem_ne else ""
         extra = []
         if not mun_id and row[14]:
             extra.append(f"Municipio: {row[14]}")

@@ -20,6 +20,9 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from models import ConvenioEstadual, Municipio
 from services.nome_parlamentar import e_parlamentar_real
+from services.texto_rm import (
+    frase, nome_proprio, normalizar_item, proprios_do_municipio,
+)
 
 logger = logging.getLogger("rm_builder")
 
@@ -653,6 +656,151 @@ def _nes_resumo(notas) -> str:
     return "; ".join(partes)
 
 
+def _tem_ne_real(notas) -> bool:
+    """True quando ha pelo menos UMA nota de empenho de verdade em `notas_empenho`.
+
+    ⚠️ MINUTA NAO E EMPENHO. A listagem do portal mistura o empenho com a MINUTA
+    (sem numero, R$ 1,00, situacao "Minuta de Empenho"); o coletor ja marca a
+    linha com `minuta_apenas` na leitura (ingestion/transferegov_http.py
+    ::_le_notas_empenho) e aqui so se obedece a marca — mesma disciplina do
+    _nes_resumo. Sem isto, proposta que so tem minuta apareceria EMPENHADA.
+
+    O `numero` e conferido alem da marca de proposito (redundante hoje, porque o
+    leitor ja poe minuta_apenas=True quando falta numero): defende de linha
+    gravada por versao mais frouxa do coletor."""
+    lst = _jsonb(notas)
+    if not isinstance(lst, list):
+        return False
+    return any(isinstance(n, dict) and not n.get("minuta_apenas")
+               and str(n.get("numero") or "").strip()
+               for n in lst)
+
+
+def _empenhado_rotulo(notas, situacao) -> str:
+    """"Sim" ou "" (CALADO) para a linha "Empenhado" do RM da voluntaria.
+
+    ORDEM DE PROVA, da mais forte para a mais fraca:
+      1. NE REAL coletada (`notas_empenho`) -> "Sim". E o DOCUMENTO: numero de
+         empenho emitido no SIAFI. Manda em tudo.
+      2. status do ciclo empenhada/paga (Em execucao / Pago / Prestacao de
+         Contas) -> "Sim". Nao se executa convenio sem empenho.
+      3. nada disso -> "" (CALADO; rm_pdf omite a linha).
+
+    ⚠️ POR QUE O "NAO" SUMIU, e por que nao pode voltar como default: a ausencia
+    de NE NAO PROVA ausencia de empenho. Ate a correcao do upsert, o `[]`
+    ("consultei e nao ha") virava NULL no banco e ficava identico a "nunca
+    consultei"; e o tenant com TG_NES desligado nunca consulta. Escrever "Nao"
+    seria afirmar o que nao foi medido — exatamente o que _nes_resumo se recusa
+    a fazer. Ate aqui o ternario nunca calava: convenio assinado com NE emitida
+    saia "Empenhado: Nao", porque _fed_status classifica "Em Vigor"/"Assinado"
+    como 'vigente', nao 'empenhada'. Esse era o caso 994997 reportado pelo dono.
+
+    ⚠️ O flag `detalhe->>'Empenhado'` do portal ficou DE FORA de proposito. Ele
+    erra nos DOIS sentidos: o falso positivo esta documentado em _fed_status e
+    em migrations/add_voluntarias_notas_empenho.sql (propostas so "Aprovadas"
+    marcadas como empenhadas sem empenho real), e o falso negativo foi o 994997.
+    Aceita-lo como prova de "Sim" trocaria um falso negativo por um falso
+    POSITIVO em relatorio de dinheiro publico — e nao resolveria o 994997, que e
+    justamente o caso em que o flag mente para menos. Quem responde e o
+    DOCUMENTO (regra 1) ou o CICLO (regra 2).
+
+    Para poder dizer "Nao" com verdade faltaria um carimbo proprio
+    (notas_empenho_atualizado_em, no molde de ops_obs_atualizado_em)."""
+    if _tem_ne_real(notas):
+        return "Sim"
+    if _fed_empenhada(situacao):
+        return "Sim"
+    return ""
+
+
+def _empenho_valor(notas) -> float | None:
+    """VALOR EMPENHADO medido, somando SO as notas de empenho REAIS.
+
+    None = a listagem de NEs NUNCA FOI CONSULTADA (coluna `notas_empenho` nula).
+    0.0  = foi consultada e nao ha empenho nenhum.
+
+    A diferenca entre os dois e o inteiro sentido desta funcao: `None` e `0`
+    chegam iguais em qualquer `or`/`if not`, e e exatamente essa confusao que
+    faria o relatorio escrever "pendente de empenho" em proposta que ninguem
+    mediu — o oposto da promessa de _nes_resumo.
+
+    ⚠️ IGNORA A MINUTA pela marca que o coletor ja poe na leitura."""
+    lst = _jsonb(notas)
+    if not isinstance(lst, list):
+        return None
+    total = 0.0
+    for n in lst:
+        if not isinstance(n, dict) or n.get("minuta_apenas"):
+            continue
+        total += _money(n.get("valor")) or 0.0
+    return total
+
+
+def _sem_empenho(notas) -> bool:
+    """True SO quando a listagem de NEs FOI consultada e nao tem NENHUMA nota
+    real (nenhuma linha, ou so minuta).
+
+    NUNCA devolve True por ausencia de coleta. E a mesma promessa que
+    `_nes_resumo` ja faz ("vazio nao significa 'nao ha empenho'"), so que ali ela
+    servia para OMITIR uma linha e aqui precisa sustentar uma AFIRMACAO impressa
+    no documento. Coluna nula — proposta nunca raspada, ou tenant com TG_NES
+    desligado — devolve False, e o relatorio simplesmente nao diz nada.
+
+    Conta NOTA, e nao valor: ha NE real cuja celula de valor vem vazia no portal
+    (`valor` None). Decidir por `_empenho_valor() == 0` marcaria como pendente
+    justamente a proposta que tem empenho emitido e valor nao lido."""
+    lst = _jsonb(notas)
+    if not isinstance(lst, list):
+        return False
+    return not any(isinstance(n, dict) and not n.get("minuta_apenas") for n in lst)
+
+
+def _e_termo_compromisso(modalidade) -> bool:
+    """True quando a MODALIDADE do instrumento e Termo de Compromisso.
+
+    Duas fontes escrevem `transferegov_propostas.modalidade` e elas nao tem o
+    mesmo formato. O dado aberto grava o rotulo limpo ("Termo de Compromisso");
+    o scraper grava a celula crua da tela pelo varredor generico label|valor — o
+    MESMO varredor que ja colou lixo com TAB nesta coluna ("Contrato de
+    Repasse\tEnviada para mandataria?\tNao\t..."). Por isso corta no primeiro
+    TAB/quebra antes de comparar, como `_programa_limpo` ja faz.
+
+    `startswith` e nao `in`: "Termo de Execucao Descentralizada", "Termo de
+    Fomento" e "Termo de Colaboracao" tambem comecam com "Termo de" e sao
+    modalidades DIFERENTES — so o prefixo completo casa."""
+    import re as _re
+    import unicodedata as _ud
+    s = _re.split(r"[\t\r\n]", str(modalidade or ""))[0]
+    s = "".join(c for c in _ud.normalize("NFD", s) if _ud.category(c) != "Mn")
+    return _re.sub(r"\s+", " ", s).strip().casefold().startswith("termo de compromisso")
+
+
+def _situacao_com_marcas(situacao, pendente_empenho: bool,
+                         licitacao_aceita: bool, valor_desembolsado) -> str:
+    """A `situacao_atual` exibida da voluntaria: a situacao do ciclo mais os
+    marcadores de ESTAGIO DO DINHEIRO, na ordem em que o dinheiro anda —
+    EMPENHO antes de DESEMBOLSO (nao se desembolsa o que nao foi empenhado).
+
+    Funcao PURA e separada de proposito: este texto vai CONGELADO no JSONB do RM
+    (rm_relatorios.conteudo), entao o teste precisa poder fixar a string exata
+    sem tocar no banco.
+
+    ⚠️ NAO-REGRESSAO: com `pendente_empenho=False` a saida e caractere a
+    caractere a de antes. O marcador novo apenas ACRESCENTA."""
+    sit = situacao or ""
+    marcas: list[str] = []
+    if pendente_empenho:
+        marcas.append("PENDENTE DE EMPENHO")
+    vd = valor_desembolsado or 0
+    if licitacao_aceita and vd == 0:
+        marcas.append("PENDENTE DE DESEMBOLSO")
+    elif vd > 0:
+        marcas.append(f"Desembolsado: {_fmt_brl(valor_desembolsado)}")
+    if not marcas:
+        return sit
+    return " · ".join(([sit] if sit else []) + marcas)
+
+
 def _ano_pagamento_ops_obs(ops_obs) -> int | None:
     """ANO do ultimo desembolso da voluntaria, lido de `ops_obs`.
 
@@ -812,6 +960,17 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             3: {"titulo": "PARTE 3 - PRESTAÇÕES DE CONTAS / PAGAMENTOS DE ANOS ANTERIORES", "secoes": {}},
         }
 
+    # Nome do MUNICIPIO do relatorio, para a padronizacao de maiusculas nao
+    # rebaixar o unico nome proprio que o RM sabe qual e ("...NO MUNICIPIO DE
+    # ARAUJOS/MG" -> "...no municipio de Araújos/MG", com o acento vindo da
+    # tabela `municipios` — nao adivinhado).
+    #
+    # Declarado AQUI e preenchido logo abaixo, quando `mun` e lido. `add_item` e
+    # closure e so resolve o nome na CHAMADA (a primeira e depois da leitura de
+    # `mun`), mas um dicionario vazio ja nesta linha garante que uma reordenacao
+    # futura do corpo da funcao nao vire NameError em producao.
+    _proprios: dict[str, str] = {}
+
     def add_item(parte_n: int, secao: str, orgao: str, item: dict, ano: int | None = None):
         """Adiciona o item na arvore. `ano` e o ano que a FONTE ja calculou (c.ano,
         ano_prop, ano_te, ano do pagamento...) — carimbado como `ano_item`.
@@ -821,6 +980,28 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
         usam so o sequencial), e elas cairiam fora de qualquer RM filtrado por ano,
         em silencio. Quando a fonte nao sabe o ano, cai no ano do numero e, se ainda
         assim nao houver, o item PERMANECE (melhor um item a mais do que sumir)."""
+        # PADRONIZACAO DE MAIUSCULAS — PONTO UNICO (services/texto_rm).
+        #
+        # Todas as fontes (SIGCON, FNS individuais, FNS fallback, voluntarias,
+        # TE, SIMEC liberacoes, SIMEC termos, emendas estaduais, PAC) inserem
+        # item por aqui, entao a regra vive num lugar so e fonte nova nasce
+        # padronizada. Repetir a chamada em cada `add_item(...)` seria a receita
+        # de esquecer a nona.
+        #
+        # ⚠️ RODA NO BUILDER, e nao no render do PDF, DE PROPOSITO: o resultado
+        # CONGELA em rm_relatorios.conteudo e o usuario o revisa e corrige na
+        # tela antes de emitir. No render, a correcao manual dele seria
+        # reprocessada a cada download e ele nao teria como vencer a funcao.
+        #
+        # ⚠️ LISTA BRANCA de campos (texto_rm._CAMPOS_FRASE / _CAMPOS_NOME):
+        # `numero`, `situacao_base`, `nes`, `agencia`, `conta`, `tipo` e os
+        # valores NAO sao tocados. Ver o comentario la antes de acrescentar chave.
+        #
+        # `orgao` e a CHAVE do grupo: normalizar aqui tambem funde dois orgaos
+        # que so diferiam na caixa — efeito desejado, e o unico lugar onde a
+        # padronizacao muda a ESTRUTURA e nao so o texto.
+        orgao = nome_proprio(orgao, _proprios)
+        normalizar_item(item, _proprios)
         p = partes_data[parte_n]
         if secao not in p["secoes"]:
             p["secoes"][secao] = {}
@@ -833,6 +1014,13 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
     mun = (await db.execute(
         select(Municipio).where(Municipio.id == municipio_id)
     )).scalar_one_or_none()
+
+    # Preenche o dicionario declarado antes de `add_item`: as palavras do nome do
+    # municipio, com a grafia CANONICA da tabela `municipios`. E dai que sai a
+    # unica restauracao de acento que o modulo faz sem adivinhar — "ARAUJOS"
+    # volta "Araújos" acentuado porque o banco tem a grafia, nao porque alguem
+    # supos. `mun` None devolve {} e a padronizacao segue sem esse nome.
+    _proprios = proprios_do_municipio(mun)
 
     # === Convenios estaduais E FNS (mesma tabela, diferenciados por c.fonte) ===
     # SIGCON-MG => estadual => PARTE 2 / INSTRUMENTOS ESTADUAIS
@@ -856,8 +1044,17 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             # NUMERO REAL (SIPA) + ano — em vez do agregado/chave sintetica.
             tipo = (raw.get("coTipoProposta") or c.tipo_programa or "").strip()
             recurso = (raw.get("dsTipoRecurso") or "").strip()
-            objeto_fns = tipo.title() if tipo else (c.objeto or "").strip()
-            recurso_label = recurso.title() if recurso else ""
+            # ⚠️ SEM `str.title()`. Ele e a versao errada exatamente do que esta
+            # sendo consertado: quebra sigla ("SNEAELIS" -> "Sneaelis", "FNS" ->
+            # "Fns") e sobe particula ("CUSTEIO DE OBRAS" -> "Custeio De Obras").
+            # Pior: ele deixa o texto em caixa MISTA, e a padronizacao de
+            # `add_item` so age em texto TODO alto ou TODO baixo — mantido aqui,
+            # o `.title()` blindaria o proprio defeito contra a correcao, calado.
+            # A padronizacao e feita JA NESTA LINHA (e nao so em add_item) porque
+            # `objeto_fns` tambem vira o `numero` no ramo de fallback abaixo, e
+            # `numero` nunca e reescrito.
+            objeto_fns = frase(tipo, _proprios) if tipo else (c.objeto or "").strip()
+            recurso_label = nome_proprio(recurso, _proprios) if recurso else ""
             orgao = (c.orgao_concedente or "Ministério da Saúde — FNS").strip()
             individuais = raw.get("linhaPropostas") if isinstance(raw.get("linhaPropostas"), list) else []
             if individuais:
@@ -1068,8 +1265,21 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
                -- (->>'Empenhado', ->>'Banco'), mas o numero da proposta do Novo
                -- PAC tem rotulo com acento, hifen e espacos — casar a chave exata
                -- em SQL seria apostar na grafia. Vem inteiro e a busca tolerante
-               -- acha (_pac_da_voluntaria). ULTIMA coluna.
-               detalhe
+               -- acha (_pac_da_voluntaria).
+               detalhe,
+               -- MODALIDADE do instrumento ("Convênio", "Contrato de Repasse",
+               -- "Termo de Compromisso"...). O RM nunca leu esta coluna; ela
+               -- entra para o marcador "PENDENTE DE EMPENHO", que o dono pediu
+               -- SO para o Termo de Compromisso (ver _e_termo_compromisso).
+               -- ULTIMA COLUNA (row[28]), a quinta consecutiva pendurada no fim
+               -- pela mesma razao das quatro acima: o laco le por INDICE, e
+               -- inserir no MEIO deslocaria em silencio `detalhe` (row[27]),
+               -- `obras` (row[26]), `notas_empenho` (row[25]) e `programa`
+               -- (row[24]). Nada disso levanta excecao: sai relatorio errado,
+               -- calado.
+               -- ⚠️ `detalhe->>'Empenhado'` (row[15]) segue no SELECT e segue
+               -- SEM USO, de proposito: remove-lo deslocaria row[16]..row[28].
+               modalidade
         FROM transferegov_propostas WHERE municipio_id = :m
     """), {"m": municipio_id})
     # PACs que JA aparecem como voluntaria. O mesmo recurso saia DUAS vezes no
@@ -1135,17 +1345,41 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
         # SITUAÇÃO DO CONTRATO no TransfereGov (ex.: "Cláusula Suspensiva") — vinha
         # so no JSONB e nao aparecia no relatorio.
         sit_contrato = (_det_c.get("Situação Atual do Contrato") or "").strip()
-        empenhado = "Sim" if _fed_empenhada(sit) else "Não"  # validado pelo status
+        # EMPENHADO: o DOCUMENTO na frente da inferencia. row[25] = notas_empenho
+        # (NE real manda), `sit` = status do ciclo. Devolve "" quando nao ha
+        # prova nenhuma — e rm_pdf OMITE a linha nesse caso, em vez de afirmar
+        # "Não" sem ter medido. Ate aqui o ternario nunca calava: convenio
+        # assinado com NE emitida saia "Empenhado: Não", porque _fed_status
+        # classifica "Em Vigor"/"Assinado" como 'vigente', nao 'empenhada'.
+        # ⚠️ `detalhe->>'Empenhado'` (row[15]) NAO entra: e o flag furado do
+        # portal, que erra nos dois sentidos. Ver _empenhado_rotulo.
+        empenhado = _empenhado_rotulo(row[25], sit)
+        # EMPENHO (NEs): "PENDENTE DE EMPENHO" — o simetrico do PENDENTE DE
+        # DESEMBOLSO logo abaixo, um degrau antes na esteira do dinheiro.
+        #
+        # ⚠️ AS DUAS CONDICOES, e nenhuma e enfeite:
+        #   `_e_termo_compromisso(row[28])` — o dono pediu para o TERMO DE
+        #       COMPROMISSO. Convenio e Contrato de Repasse seguem exatamente
+        #       como estao hoje.
+        #   `_sem_empenho(row[25])` — so afirma quando a listagem de NEs FOI
+        #       CONSULTADA e voltou sem nenhuma nota real. Coluna NULA (proposta
+        #       nao raspada, ou tenant com TG_NES desligado) devolve False e o
+        #       relatorio CALA.
+        _pend_empenho = _e_termo_compromisso(row[28]) and _sem_empenho(row[25])
+        if _pend_empenho:
+            # Nao imprimir "Empenhado: Sim" ao lado de "PENDENTE DE EMPENHO" no
+            # MESMO item: o Sim vem do ciclo e aqui existe MEDICAO dizendo que
+            # nao ha NE. Onde ha documento, o documento vence a inferencia — e
+            # SO nesse caso.
+            empenhado = "Não"
         # DESEMBOLSO (OPs/OBs): "PENDENTE DE DESEMBOLSO" quando a licitacao ja foi
         # ACEITA e nada saiu; senao o valor desembolsado + os lancamentos.
         _des = _desembolso_ops_obs(row[22])
         _vd = _des.get("valor_desembolsado")
         _aceita = _licitacao_aceita(row[21])
-        sit_exibida = sit
-        if _aceita and (_vd or 0) == 0:
-            sit_exibida = f"{sit} · PENDENTE DE DESEMBOLSO" if sit else "PENDENTE DE DESEMBOLSO"
-        elif (_vd or 0) > 0:
-            sit_exibida = f"{sit} · Desembolsado: {_fmt_brl(_vd)}" if sit else f"Desembolsado: {_fmt_brl(_vd)}"
+        # Composicao em funcao PURA (ver _situacao_com_marcas): com
+        # `_pend_empenho` falso a string sai identica a de antes.
+        sit_exibida = _situacao_com_marcas(sit, _pend_empenho, _aceita, _vd)
         # O NUMERO do convenio com o ANO DA PROPOSTA ao lado ("981397 /2025"): o
         # numero do instrumento sozinho nao diz de que ano ele e.
         _num_exib = row[2] or row[1] or ""
@@ -1204,6 +1438,14 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             # _fed_status documenta que ele marcava "Aprovadas" como empenhadas
             # sem empenho real; aqui sai o número, o valor e a data da NE.
             "nes": _nes_resumo(row[25]),
+            # VALOR EMPENHADO medido (soma das NEs REAIS, sem a minuta de R$ 1,00).
+            # `None` = a listagem nunca foi consultada, e aí o PDF não imprime a
+            # linha. `0.0` NÃO é vazio: é resposta medida ("consultei e não há").
+            "valor_empenhado": _empenho_valor(row[25]),
+            # Termo de Compromisso MEDIDO e sem nenhuma NE real. Já aparece dentro
+            # de `situacao_atual`; fica também como CAMPO próprio para o PDF poder
+            # destacar e para quem classifica (rm_export) não precisar reler texto.
+            "pendente_empenho": _pend_empenho,
             # Situação da obra: frase pronta, com o percentual DERIVADO
             # de valores que já estavam no banco e ninguém exibia.
             "obra": _obra_resumo(row[26]),

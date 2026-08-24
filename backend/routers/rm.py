@@ -71,6 +71,7 @@ from services.registro_rotas import exige
 from models.user import User
 from services.audit import registrar
 from services.rm_builder import montar_conteudo
+from services import rm_config
 from services.rm_pdf import gerar_pdf
 from services.rm_export import (
     gerar_totalizado_xlsx, gerar_totalizado_pdf, gerar_resumido_pdf,
@@ -292,10 +293,15 @@ async def criar(
     cidade = ((body.cidade_emissao or "").strip()
               or (get_settings().RM_CIDADE or "").strip()
               or f"{mun.nome}/{mun.uf}")
+    # RODAPE: o padrao SALVO PELA TELA ganha da env; sem linha salva, a env
+    # continua valendo (services/rm_config.py explica a precedencia e por que
+    # rodape salvo VAZIO nao faz a env ressuscitar). Uma consulta minima, por
+    # geracao — nao entra no laco de montagem nem custa nada ao host.
+    rodape = await rm_config.rodape_padrao(db)
     rid = (await db.execute(sql, {
         "mun": body.municipio_id, "dt": body.data_referencia, "escopo": _escopo,
         "anos": _anos,
-        "cidade": cidade, "titulo": titulo, "rodape": get_settings().RM_RODAPE,
+        "cidade": cidade, "titulo": titulo, "rodape": rodape,
         "cont": json.dumps(conteudo), "usr": getattr(user, "id", None),
         "overwrite": body.auto_popular,
     })).scalar()
@@ -312,6 +318,85 @@ async def criar(
                  "via": "upsert", "conteudo_substituido": ja_existia and body.auto_popular},
     )
     return {"id": rid, "created": True}
+
+
+class RmRodapeIn(BaseModel):
+    # Sem `Optional`: aqui o campo E o pedido. String vazia e valor LEGITIMO —
+    # significa "quero pagina sem rodape" (ver services/rm_config.py).
+    rodape: str
+
+
+def _exigir_admin_config(user) -> None:
+    """O rodape sai impresso no pe de TODA pagina de TODO relatorio do tenant —
+    e o endereco de quem ASSINA o documento oficial. Mesmo gate das outras
+    configuracoes do ambiente (routers/parametros.py::_require_admin): a chave
+    `rm.editar` diz que a pessoa mexe em RM, nao que ela redefine o papel
+    timbrado da casa."""
+    if (getattr(user, "role", "") or "") != "admin":
+        raise HTTPException(403, "Apenas administradores alteram o rodapé padrão")
+
+
+# ⚠️⚠️ ESTAS DUAS ROTAS TEM DE FICAR ACIMA DE `@router.get("/{rid}")`, LOGO
+# ABAIXO. O FastAPI casa na ORDEM DE DECLARACAO: com `/{rid}` declarado antes,
+# `GET /api/rm/config` entraria nele e morreria em 422 ("config" nao e int) —
+# nao em 404. O defeito apareceria como "erro de payload" numa rota que nem foi
+# executada, que e das pistas mais caras de seguir.
+@router.get("/config", dependencies=[exige("rm.ver")])
+async def config_ler(
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """O rodape que os PROXIMOS RMs vao receber, e de onde ele vem.
+
+    `origem` existe para a tela nao mentir: "env" quer dizer que ninguem salvou
+    nada ainda e o texto exibido veio do ambiente — o dono precisa saber que
+    aquilo nao esta no banco antes de apagar e estranhar o valor voltar."""
+    authz.exigir_tela(current, "rm")
+    salvo = await rm_config.rodape_salvo(db)
+    return {
+        "rodape": salvo if salvo is not None else rm_config.rodape_env(),
+        "origem": "salvo" if salvo is not None else "env",
+        "rodape_env": rm_config.rodape_env(),
+        # Mesmo desenho de `pode_editar`/`pode_excluir` da lista: o servidor da o
+        # veredito e a tela desliga o campo. ⚠️ Campo escondido NAO e permissao —
+        # quem barra continua sendo o PUT abaixo.
+        "pode_editar": (getattr(current, "role", "") or "") == "admin"
+                       and authz.pode(current, "rm.editar"),
+    }
+
+
+@router.put("/config", dependencies=[exige("rm.editar")])
+async def config_gravar(
+    body: RmRodapeIn,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """Grava o PADRAO do tenant.
+
+    ⚠️ NAO REESCREVE RM JA EMITIDO, de proposito: documento entregue nao muda de
+    rodape sozinho. O valor novo vale do proximo `Gerar` em diante — e como o
+    `POST /api/rm` e UPSERT, gerar de novo o MESMO escopo re-carimba aquele
+    relatorio com o padrao atual (`rodape = EXCLUDED.rodape`, mais acima)."""
+    authz.exigir_tela(current, "rm")
+    _exigir_admin_config(current)
+    antes = await rm_config.rodape_salvo(db)
+    novo = (body.rodape or "").strip()
+    await rm_config.gravar_rodape(db, novo, getattr(current, "id", None))
+    await db.commit()
+    # Vai para a trilha COM OS DOIS LADOS. O rodape identifica quem assina o
+    # documento oficial: "quem trocou, de que para que" e exatamente a pergunta
+    # que aparece depois de um relatorio sair com o endereco errado.
+    await registrar(
+        db, action="rm.config_rodape", user=current, request=request,
+        target_type="rm_config", alvo_nome="Rodapé padrão do RM",
+        valor_antes={"rodape": antes if antes is not None else rm_config.rodape_env(),
+                     "origem": "salvo" if antes is not None else "env"},
+        valor_depois={"rodape": novo, "origem": "salvo"},
+        details={"efeito": "vale para os próximos RMs gerados; "
+                           "não altera relatório já emitido"},
+    )
+    return {"rodape": novo, "origem": "salvo", "pode_editar": True}
 
 
 @router.get("/{rid}", dependencies=[exige("rm.ver")])

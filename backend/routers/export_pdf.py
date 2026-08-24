@@ -259,6 +259,14 @@ async def export_voluntarias_pdf(
     categoria: Optional[str] = Query(None),
     situacao: Optional[str] = Query(None),
     orgao: Optional[str] = Query(None),
+    # Os mesmos campos separados da tela (routers/transferegov.py). Sem isto o
+    # "Gerar PDF (filtrado)" sairia com um recorte DIFERENTE do que está na tela —
+    # o pior defeito possível num relatório, porque nada avisa: parâmetro não
+    # declarado é simplesmente IGNORADO pelo FastAPI.
+    instrumento: Optional[str] = Query(None),
+    proposta: Optional[str] = Query(None),
+    proponente: Optional[str] = Query(None),
+    cnpj: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
     parlamentar: Optional[str] = Query(None),
     situacao_contratacao: Optional[str] = Query(None),
@@ -283,6 +291,7 @@ async def export_voluntarias_pdf(
     from routers.transferegov import voluntarias as _voluntarias
     res = await _voluntarias(
         municipio_id=municipio_id, situacao=situacao, orgao=orgao, search=search,
+        instrumento=instrumento, proposta=proposta, proponente=proponente, cnpj=cnpj,
         parlamentar=parlamentar, situacao_contratacao=situacao_contratacao,
         vigencia=vigencia, vig_fim_de=vig_fim_de, vig_fim_ate=vig_fim_ate,
         # ⚠️ `current=current` E NAO `_=None` — o botao "Gerar PDF" desta tela
@@ -321,6 +330,10 @@ async def export_voluntarias_pdf(
     if vigencia: _f.append(_VIG.get(vigencia, vigencia))
     if vig_fim_de: _f.append(f"fim vig. de {vig_fim_de}")
     if vig_fim_ate: _f.append(f"fim vig. até {vig_fim_ate}")
+    if instrumento: _f.append(f"instrumento: {instrumento}")
+    if proposta: _f.append(f"proposta: {proposta}")
+    if proponente: _f.append(f"proponente: {proponente}")
+    if cnpj: _f.append(f"CNPJ: {cnpj}")
     if search: _f.append(f"busca: {search}")
     filtros = " | ".join(_f) if _f else "sem filtros (todos)"
     pdf = _build_pdf(

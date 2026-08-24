@@ -213,7 +213,10 @@ CENARIOS = {
         {"items": [], "total": 0},
     ),
     "criar": (
-        lambda: [_Res(_Municipio()), _Res(None), _Res(7)],
+        # 1) municipio  2) "ja existe RM nesse escopo?"  3) rodapé padrão
+        # (`configuracoes['rm.rodape']`, adicionado com o campo editável — sem
+        # linha na fila o FakeDb devolveria a resposta seguinte)  4) o upsert.
+        lambda: [_Res(_Municipio()), _Res(None), _Res(None), _Res(7)],
         lambda db, u: rm.criar(
             body=rm.RmCreate(municipio_id=99, data_referencia=DATA,
                              auto_popular=False),
@@ -703,8 +706,25 @@ def _rotas():
 
 def test_o_router_tem_as_rotas_que_este_teste_acha_que_tem():
     """Se alguem acrescentar um endpoint, este numero muda e o desenvolvedor e
-    obrigado a olhar o arquivo — que e exatamente o ponto."""
-    assert len(_rotas()) == 7
+    obrigado a olhar o arquivo — que e exatamente o ponto.
+
+    7 -> 9 com `GET/PUT /api/rm/config` (rodape padrao editavel pela tela)."""
+    assert len(_rotas()) == 9
+
+
+# Rotas do router que NAO tem municipio nenhum a conferir. Lista explicita e
+# curta de proposito: e uma EXCECAO a uma regra de seguranca, e a unica forma de
+# ela nao virar um buraco e cada linha ter de ser escrita a mao aqui, com o
+# motivo.
+#
+# `/config` e o rodape PADRAO DO TENANT: uma linha so na tabela `configuracoes`,
+# valida para todos os municipios do cliente. Nao ha `municipio_id` na query nem
+# no corpo — exigir `ensure_municipio_access` aqui seria conferir um parametro
+# que nao existe. O que protege esta rota e outro par de gates, e os testes
+# acima ja os cobrem: a tela `rm` (`authz.exigir_tela`), a permissao
+# (`exige("rm.ver")` / `exige("rm.editar")`) e, na escrita, o papel `admin`
+# (`_exigir_admin_config`).
+SEM_MUNICIPIO = {"/api/rm/config"}
 
 
 def _fonte(funcao) -> str:
@@ -763,10 +783,29 @@ def test_endpoint_com_id_confere_o_dono_da_linha(caminho, funcao):
 
 
 @pytest.mark.parametrize("caminho,funcao",
-                         [(c, f) for c, f in _rotas() if "{rid}" not in c])
+                         [(c, f) for c, f in _rotas()
+                          if "{rid}" not in c and c not in SEM_MUNICIPIO])
 def test_endpoint_sem_id_confere_o_municipio_pedido(caminho, funcao):
     """Sem `{rid}` nao ha linha de onde tirar dono: o municipio vem da query
-    (listar) ou do corpo (criar), e e ele que precisa estar no escopo."""
+    (listar) ou do corpo (criar), e e ele que precisa estar no escopo.
+
+    As rotas de `SEM_MUNICIPIO` ficam de fora porque nao recebem municipio
+    nenhum — ver o comentario da constante."""
     fonte = inspect.getsource(funcao)
     assert ("ensure_municipio_access(" in fonte or "exigir_municipio(" in fonte), \
         f"{caminho} nao confere o municipio pedido"
+
+
+@pytest.mark.parametrize("caminho", sorted(SEM_MUNICIPIO))
+def test_a_excecao_de_municipio_e_paga_com_o_papel_admin(caminho):
+    """A rota que NAO confere municipio tem de conferir alguma outra coisa.
+
+    Sem este teste, `SEM_MUNICIPIO` seria so um jeito de calar o teste acima: a
+    proxima rota acrescentada a lista poderia nascer sem gate nenhum e ninguem
+    veria. Aqui a escrita paga a excecao com o papel `admin`."""
+    escrita = [f for c, f in _rotas()
+               if c == caminho and "config_gravar" in getattr(f, "__name__", "")]
+    assert escrita, f"{caminho} deveria ter um endpoint de escrita"
+    for f in escrita:
+        assert "_exigir_admin_config(" in inspect.getsource(f), \
+            f"{caminho} nao confere municipio: a escrita precisa exigir `admin`"

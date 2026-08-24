@@ -271,6 +271,11 @@ MIGRATION_FILES = [
     # a ninguem, e o proprio catalogo backend a omitia). Mesmo desenho do
     # add_bi_tela.sql; NOT EXISTS respeita revogacao futura.
     "add_tela_investsus.sql",
+    # Configuracoes do tenant (chave -> valor) editaveis pela tela. Primeira e
+    # unica chave: `rm.rodape`, o rodape padrao do Relatorio de Monitoramento,
+    # que ate aqui so existia em RM_RODAPE e exigia deploy para mudar.
+    # ⚠️ SEM SEMENTE: linha ausente = usa a env (ver services/rm_config.py).
+    "add_configuracoes.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",
