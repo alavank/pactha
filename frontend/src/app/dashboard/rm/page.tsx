@@ -154,20 +154,15 @@ export default function RmListPage() {
     } catch (e) { console.error(e); }
   };
 
-  const exportar = (id: number, tipo: "completo" | "resumido" | "totalizado", formato: "pdf" | "xlsx" = "pdf") => {
+  const exportar = (id: number, tipo: "completo" | "resumido", formato: "pdf" = "pdf") => {
     setMenuId(null);
     const url = `${api.defaults.baseURL}/rm/${id}/pdf?tipo=${tipo}&formato=${formato}`;
     const token = localStorage.getItem("pactha_token");
     fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
       .then((r) => r.blob())
       .then((blob) => {
-        const href = URL.createObjectURL(blob);
-        if (formato === "xlsx") {
-          const a = document.createElement("a");
-          a.href = href; a.download = "RM-Totalizado.xlsx"; a.click();
-        } else {
-          window.open(href, "_blank");
-        }
+        // Só PDF: o totalizado (o único que saía em .xlsx) foi descontinuado.
+        window.open(URL.createObjectURL(blob), "_blank");
       });
   };
 
@@ -342,15 +337,6 @@ export default function RmListPage() {
                             <button className="w-full px-3 py-1.5 text-left hover:bg-base-200" onClick={() => exportar(rm.id, "resumido")}>
                               <span className="font-medium" style={{ color: "var(--bi-text)" }}>Resumido</span>
                               <span className="block text-[10px]" style={{ color: "var(--bi-faint)" }}>Só pendências (PDF)</span>
-                            </button>
-                            <div className="my-1 border-t" style={{ borderColor: "var(--bi-line)" }} />
-                            <button className="w-full px-3 py-1.5 text-left hover:bg-base-200" onClick={() => exportar(rm.id, "totalizado", "xlsx")}>
-                              <span className="font-medium" style={{ color: "var(--bi-text)" }}>Totalizado — Excel</span>
-                              <span className="block text-[10px]" style={{ color: "var(--bi-faint)" }}>Planilha .xlsx</span>
-                            </button>
-                            <button className="w-full px-3 py-1.5 text-left hover:bg-base-200" onClick={() => exportar(rm.id, "totalizado", "pdf")}>
-                              <span className="font-medium" style={{ color: "var(--bi-text)" }}>Totalizado — PDF</span>
-                              <span className="block text-[10px]" style={{ color: "var(--bi-faint)" }}>Grade em PDF</span>
                             </button>
                           </div>
                         </>

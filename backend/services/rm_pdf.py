@@ -108,7 +108,11 @@ def _styles():
         fontSize=10.5, spaceBefore=10, spaceAfter=4, leftIndent=4, leading=15.75,)
     s["item_id"] = ParagraphStyle(
         "ItemId", parent=base["Normal"], fontName="Helvetica-Bold",
-        fontSize=10, spaceBefore=4, spaceAfter=2, leftIndent=14, leading=15.0,)
+        # spaceBefore=14 (era 4): o identificador do instrumento estava colado no
+        # nome do órgão logo acima, e um não se lia como filho do outro. Pedido do
+        # dono, com o print do "22000 - Ministério da Agricultura" seguido de
+        # "Convênio: 993503/2026" sem respiro nenhum.
+        fontSize=10, spaceBefore=14, spaceAfter=2, leftIndent=14, leading=15.0,)
     s["item_campo"] = ParagraphStyle(
         "ItemCampo", parent=base["Normal"], fontName="Helvetica",
         fontSize=9.5, leftIndent=28, bulletIndent=18, spaceAfter=1,
@@ -536,7 +540,19 @@ def gerar_pdf(meta: dict, conteudo: dict, municipio_nome: str) -> bytes:
                         bloco.append(Spacer(1, 2))
                         bloco.append(Paragraph(destaque_obra, s["informativo"]))
                     bloco.append(Spacer(1, 4))
-                    story.append(KeepTogether(bloco))
+                    # ⚠️ KeepTogether SÓ NO CABEÇALHO DO ITEM, não no bloco todo.
+                    #
+                    # Embrulhar o item inteiro fazia o ReportLab empurrar TUDO para
+                    # a página seguinte quando não coubesse — e sobrava meia página
+                    # em branco. O efeito ficou visível depois que a entrelinha 1,5
+                    # e a margem de topo de 4,5 cm (padrão Freitas) engordaram cada
+                    # bloco: o que antes cabia, passou a não caber.
+                    #
+                    # Mantendo junto só o identificador e os dois primeiros campos,
+                    # o item nunca fica órfão do próprio título, mas pode QUEBRAR
+                    # entre páginas em vez de deixar buraco.
+                    story.append(KeepTogether(bloco[:3]))
+                    story.extend(bloco[3:])
 
     if not conteudo.get("partes"):
         story.append(Paragraph(

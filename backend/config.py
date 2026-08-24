@@ -39,6 +39,14 @@ class Settings(BaseSettings):
     # cabecalho vazio do que a marca de OUTRO cliente no relatorio.
     RM_LOGO: str = ""
 
+    # Cidade de emissao do RM ("Brasília/DF, 21 de Agosto de 2026").
+    # ⚠️ E a cidade de QUEM ASSINA o relatorio, nao a do municipio monitorado.
+    # Antes o default era o proprio municipio ("Araújos/MG"), o que estava errado:
+    # o relatorio e emitido pela assessoria, e o documento de referencia do padrao
+    # Freitas traz "Brasília/DF" — a mesma cidade do endereco no rodape. Por
+    # TENANT, como o RM_RODAPE, para uma assessoria de outra praca ajustar.
+    RM_CIDADE: str = "Brasília/DF"
+
     # Painel Executivo do prefeito — push web (VAPID). Gerar 1x por instancia com
     # web-push generate-vapid-keys (ou py_vapid). A publica tambem vai como build
     # ARG NEXT_PUBLIC_VAPID_PUBLIC_KEY no app painel/.
