@@ -582,7 +582,27 @@ async def run(uf: str | None = None) -> list[dict]:
 
     logger.info(f"TE: carteira deste tenant -> {', '.join(ufs)}")
     _t0 = time.time()
-    fatia = _BUDGET_S / len(ufs)
+    # ⚠️ A FATIA DOS PAGAMENTOS E RESERVADA ANTES, e nao o que sobrar depois.
+    #
+    # Medido em producao (Freitas, 24/08): a LISTAGEM e incremental e retoma por
+    # pagina, entao ela consome o orcamento INTEIRO todo dia enquanto houver
+    # atraso a recuperar — e `_BUDGET_S` (1500) sozinho ja passa de
+    # `_TETO_TAREFA_S` (1450). Sem esta reserva, `resto` nasce NEGATIVO e os
+    # pagamentos NUNCA rodam: o log diria "sem tempo nesta rodada" para sempre,
+    # e a coluna `pagamentos` ficaria eternamente NULA sem ninguem ver erro.
+    #
+    # A listagem e quem pode esperar: ela nao perde progresso (retoma da pagina
+    # gravada) e a fonte a limita de qualquer jeito. Os pagamentos sao 1+N GETs
+    # baratos por plano e sao o dado que o RM precisa para dizer PENDENTE DE
+    # DESEMBOLSO — deixa-los para "se sobrar" e deixa-los de fora.
+    _teto_listagem = _BUDGET_S
+    if _PGTO_ON:
+        _teto_listagem = max(60.0, min(_BUDGET_S, _TETO_TAREFA_S - _PGTO_BUDGET_S))
+        if _teto_listagem < _BUDGET_S:
+            logger.info(f"TE: listagem limitada a {_teto_listagem:.0f}s para reservar "
+                        f"{_PGTO_BUDGET_S:.0f}s aos pagamentos (teto da tarefa "
+                        f"{_TETO_TAREFA_S:.0f}s)")
+    fatia = _teto_listagem / len(ufs)
     saidas = []
     for u in ufs:
         saidas.append(await run_uf(u, budget_s=fatia))
