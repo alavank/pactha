@@ -189,6 +189,16 @@ interface ObraLote {
   apto_iniciar?: boolean; atrasado?: boolean | null; paralisado?: boolean | null;
   dias_sem_medicao?: number | null;
   submetas?: ObraSubmeta[];
+  /** Abas de Dados Gerais do contrato (tela de medição). */
+  responsaveis?: Array<{
+    cpf?: string | null; nome?: string | null; atividade?: string | null;
+    tipo?: string | null; crea_cau?: string | null; dt_inclusao?: string | null;
+  }>;
+  documentos?: Array<{
+    nome?: string | null; tipo?: string | null; dt_inclusao?: string | null;
+  }>;
+  medicoes_total?: number | null;
+  medicoes_atestadas?: number | null;
   contrato?: {
     numero?: string; cnpj?: string; empresa?: string; objeto?: string;
     valor?: number | null; dt_assinatura?: string; dt_inicio_vigencia?: string; dt_fim_vigencia?: string;
@@ -979,6 +989,20 @@ export default function TransfereGovPropostas({
                             </span>
                           )}
                           {lote.paralisado && <Selo tom="critico">Paralisado</Selo>}
+                          {/* MEDIÇÕES — o número que sustenta a frase do RM
+                              ("com 02 medições atestadas"). Selo âmbar quando
+                              NENHUMA foi atestada: é o sinal de obra que ainda
+                              não começou a ser medida. */}
+                          {lote.medicoes_total != null && (
+                            <Selo tom={lote.medicoes_atestadas ? "ok" : "atencao"}>
+                              {lote.medicoes_atestadas || 0} de {lote.medicoes_total} medição(ões) atestada(s)
+                            </Selo>
+                          )}
+                          {/* Sem responsável técnico a obra NÃO PODE ser medida —
+                              por isso é alerta, e não ausência silenciosa. */}
+                          {(lote.responsaveis || []).length === 0 && (lote.arts || []).length === 0 && (
+                            <Selo tom="critico">Sem responsável técnico / ART</Selo>
+                          )}
                         </div>
                         <Grade
                           rolagem
@@ -1007,6 +1031,43 @@ export default function TransfereGovPropostas({
                             </GradeLinha>
                           ))}
                         </Grade>
+                        {/* RESPONSÁVEL TÉCNICO — a aba do portal, com os campos
+                            que ela mostra. Vem de /responsavel/listar/{id}, que
+                            foge do padrão /contratos/{id}/... dos vizinhos. */}
+                        {(lote.responsaveis || []).length > 0 && (
+                          <div className="mt-3">
+                            <div className="mb-1.5 text-[11px] font-semibold" style={{ color: "var(--bi-muted)" }}>
+                              Responsável Técnico
+                            </div>
+                            {(lote.responsaveis || []).map((rt, ri) => (
+                              <Campos
+                                key={ri}
+                                cols={3}
+                                campos={[
+                                  campo("Nome", rt.nome), campo("CPF", rt.cpf),
+                                  campo("Atividade", rt.atividade), campo("Tipo", rt.tipo),
+                                  campo("CREA / CAU", rt.crea_cau),
+                                  campo("Data de inclusão", rt.dt_inclusao),
+                                ]}
+                              />
+                            ))}
+                          </div>
+                        )}
+                        {(lote.documentos || []).length > 0 && (
+                          <div className="mt-3">
+                            <div className="mb-1.5 text-[11px] font-semibold" style={{ color: "var(--bi-muted)" }}>
+                              Documentação Complementar
+                            </div>
+                            {(lote.documentos || []).map((d, di) => (
+                              <Campos
+                                key={di}
+                                cols={3}
+                                campos={[campo("Arquivo", d.nome), campo("Tipo", d.tipo),
+                                         campo("Inclusão", d.dt_inclusao)]}
+                              />
+                            ))}
+                          </div>
+                        )}
                         {lote.contrato && (
                           <div className="mt-3 rounded-lg p-2.5" style={{ background: "var(--bi-surface-2)" }}>
                             <div className="mb-1.5 text-[11px] font-semibold" style={{ color: "var(--bi-muted)" }}>

@@ -74,3 +74,41 @@ def test_sem_valor_executado_fica_calado():
     """Obra com ART mas sem nenhum valor realizado ainda: o RM não afirma
     execução — melhor calar do que dizer "0,00% executado" como se fosse notícia."""
     assert _obra_resumo(_obra(368000.00, None)) == ""
+
+
+# --------------------------------------------------------------------------
+# Contagem de medições vinda do coletor (endpoint /contratos/{id}/medicoes)
+# --------------------------------------------------------------------------
+def _obra_com_medicoes(atestadas, com_art=True):
+    return {"valor_total_submetas": 368000.00, "valor_total_realizado": 344827.46,
+            "lotes": [{"arts": [{"numero": "1"}] if com_art else [],
+                       "medicoes_atestadas": atestadas}]}
+
+
+def test_conta_medicoes_dos_lotes_sem_precisar_do_parametro():
+    """O coletor passou a contar as atestadas por lote; a frase soma sozinha."""
+    t = _obra_resumo(_obra_com_medicoes(2))
+    assert "com 02 medições atestadas, totalizando" in t
+
+
+def test_soma_medicoes_de_varios_lotes():
+    o = {"valor_total_submetas": 1000.0, "valor_total_realizado": 500.0,
+         "lotes": [{"arts": [{"n": 1}], "medicoes_atestadas": 2},
+                   {"arts": [{"n": 2}], "medicoes_atestadas": 3}]}
+    assert "com 05 medições atestadas" in _obra_resumo(o)
+
+
+def test_parametro_explicito_vence_a_soma():
+    """Quem chama pode sobrescrever — útil para teste e para dado vindo de outra
+    origem."""
+    assert "com 07 medições atestadas" in _obra_resumo(_obra_com_medicoes(2), medicoes=7)
+
+
+def test_proposta_coletada_antes_desta_versao_nao_inventa_numero():
+    """Sem a chave `medicoes_atestadas` (JSONB antigo), a oração some — a frase
+    continua correta, só mais curta."""
+    o = {"valor_total_submetas": 368000.00, "valor_total_realizado": 344827.46,
+         "lotes": [{"arts": [{"numero": "1"}]}]}
+    t = _obra_resumo(o)
+    assert "medições atestadas" not in t
+    assert t.startswith("A obra encontra-se em execução, totalizando")

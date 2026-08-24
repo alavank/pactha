@@ -835,6 +835,13 @@ class TgHttpEnrich:
                     "valor": s.get("valorSubmeta"), "valor_realizado": s.get("valorRealizadoAcumulado"),
                 } for s in (cont.get("submetas") or [])],
                 "contrato": None, "arts": [],
+                # Abas da tela de Dados Gerais do contrato (medicao): Responsável
+                # Técnico, Documentação Complementar e as medições. Listas vazias
+                # e contagens None quando o contrato não é do tipo "C" (só ele tem
+                # essas abas) — nunca ausentes, para o consumidor não precisar de
+                # `.get(...) or []` em toda leitura.
+                "responsaveis": [], "documentos": [],
+                "medicoes_total": None, "medicoes_atestadas": None,
             }
             if cont.get("tipo") == "C" and idc:
                 cd = _med(f"/contratos/{idc}")
@@ -868,6 +875,57 @@ class TgHttpEnrich:
                         "responsavel_tecnico": a.get("nomeResponsavelTecnico") or a.get("responsavelTecnico"),
                         "submetas": a.get("submetas"),
                     })
+
+                # ---- RESPONSAVEL TECNICO, DOCUMENTOS COMPLEMENTARES, MEDICOES ----
+                # Os tres caminhos NAO foram adivinhados: saem do bundle publico da
+                # SPA de medicao, que traz as chamadas em texto claro nos chunks
+                # lazy do Angular (`listarResponsavelTecnico`,
+                # `consultarDocumentosComplementares`, `listarMedicoes`).
+                #
+                # ⚠️ O DO RT FOGE DO PADRAO: e `/responsavel/listar/{idContrato}`, e
+                # NAO `/contratos/{id}/responsavel...` como todos os vizinhos.
+                # Adivinhar por analogia teria errado — e era o que eu ia fazer.
+                #
+                # Custo: 3 GETs por CONTRATO (nao por proposta), e contrato e bem
+                # mais raro que proposta. Ainda assim sai do mesmo TG_BUDGET_S.
+                rt = _med(f"/responsavel/listar/{idc}")
+                for p in ((rt or {}).get("data") or []):
+                    if not isinstance(p, dict):
+                        continue
+                    lote["responsaveis"].append({
+                        "cpf": p.get("cpf") or p.get("nrCpf"),
+                        "nome": p.get("nome") or p.get("noResponsavel"),
+                        "atividade": p.get("atividade") or p.get("dsAtividade"),
+                        "tipo": p.get("tipo") or p.get("dsTipo"),
+                        "crea_cau": (p.get("creaCau") or p.get("crea") or p.get("cau")
+                                     or p.get("nrCreaCau")),
+                        "dt_inclusao": p.get("dtInclusao") or p.get("dataInclusao"),
+                    })
+
+                dc = _med(f"/contratos/{idc}/documentoscomplementares")
+                for d0 in ((dc or {}).get("data") or []):
+                    if not isinstance(d0, dict):
+                        continue
+                    lote["documentos"].append({
+                        "nome": d0.get("nomeArquivo") or d0.get("nmArquivo") or d0.get("nome"),
+                        "tipo": d0.get("tipo") or d0.get("dsTipo"),
+                        "dt_inclusao": d0.get("dtInclusao") or d0.get("dataInclusao"),
+                    })
+
+                # MEDICOES: o que interessa ao relatorio e QUANTAS foram ATESTADAS
+                # — e o "02 medicoes atestadas" do texto que o dono especificou.
+                # "atestada" e um estado real da medicao: a propria API tem
+                # PUT /medicoes/{id}/ateste (atestarMedicao). Casamos por
+                # SUBSTRING "atest" porque o rotulo exato varia entre
+                # "Atestada"/"Atestado"/"Medição Atestada" e nao foi possivel
+                # confirmar sem sessao.
+                md = _med(f"/contratos/{idc}/medicoes")
+                meds = [m for m in ((md or {}).get("data") or []) if isinstance(m, dict)]
+                lote["medicoes_total"] = len(meds) or None
+                lote["medicoes_atestadas"] = sum(
+                    1 for m in meds
+                    if "atest" in str(m.get("situacao") or m.get("dsSituacao") or "").casefold()
+                ) or None
             lotes.append(lote)
 
         if not lotes:
