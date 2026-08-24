@@ -70,6 +70,29 @@ function pctExec(total?: number | null, realizado?: number | null): string {
   return `${(realizado * 100 / total).toFixed(2).replace(".", ",")}%`;
 }
 
+/** Número da proposta do Novo PAC que originou este instrumento, ou "".
+ *
+ *  O portal registra isso na aba Dados ("Número da Proposta Novo PAC - Seleção").
+ *  É o elo que permite ao relatório parar de mostrar o mesmo recurso duas vezes
+ *  — uma como voluntária, outra como item do PAC. Aqui a informação é promovida
+ *  a campo próprio: ela já aparecia no despejo genérico do detalhe, solta no meio
+ *  de dezenas de pares, e ninguém a via.
+ *
+ *  Busca TOLERANTE (contém "novo pac", sem acento): o rótulo tem acento, hífen e
+ *  espaços, e casar a string inteira seria apostar na grafia. */
+function pacOrigem(det?: Record<string, string | string[]>): string {
+  if (!det) return "";
+  const norm = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  for (const [k, v] of Object.entries(det)) {
+    if (k.startsWith("_")) continue;
+    if (norm(k).includes("novo pac")) {
+      const val = String(Array.isArray(v) ? v[0] : v ?? "").trim();
+      if (val) return val;
+    }
+  }
+  return "";
+}
+
 function campo(rotulo: string, valor: unknown, extra?: Partial<Campo>): Campo {
   const v = valor === null || valor === undefined || valor === "" ? "-" : String(valor);
   return { rotulo, valor: v, title: v === "-" ? undefined : `${rotulo}: ${v}`, ...extra };
@@ -659,6 +682,12 @@ export default function TransfereGovPropostas({
                     campo("Número do Processo", detalhe.numero_processo),
                     campo("Órgão", detalhe.orgao),
                     campo("Programa", detalhe.programa),
+                    // Só aparece quando o instrumento nasceu de uma seleção do
+                    // Novo PAC — é a contrapartida de o item do PAC deixar de
+                    // sair separado no relatório.
+                    ...(pacOrigem(detalhe.detalhe)
+                      ? [campo("Origem — Novo PAC", pacOrigem(detalhe.detalhe))]
+                      : []),
                   ]}
                 />
 
