@@ -135,10 +135,22 @@ class _Municipio:
     uf = "MG"
 
 
+# ⚠️ ESTAS TUPLAS ESPELHAM SELECT LIDOS POR ÍNDICE — e têm de crescer JUNTO.
+#
+# É a armadilha nº 1 deste repositório, e ela mordeu aqui: quando `escopo` e
+# `anos` entraram nos SELECT de rm.py, estas tuplas ficaram para trás e 33 testes
+# passaram a morrer com `IndexError: tuple index out of range` — não por defeito
+# de produção, mas por fixture desatualizada. Com o gate vermelho, ninguém
+# conseguia distinguir regressão nova de ruído antigo.
+#
+# Ao mexer num SELECT de rm.py, confira o comprimento aqui:
+#   LINHA_DETALHE -> SELECT do `detalhe`   (rm.py, 15 colunas: row[13]=nome, row[14]=uf)
+#   LINHA_PDF     -> SELECT do `pdf`       (rm.py,  9 colunas: row[8]=escopo)
 LINHA_DETALHE = (1, 99, DATA, "Monte Siao/MG", "RM de julho", "rodape",
-                 "rascunho", {"partes": []}, 7, None, None, "Monte Siao", "MG")
+                 "rascunho", {"partes": []}, 7, None, None,
+                 "completo", [], "Monte Siao", "MG")
 LINHA_PDF = (DATA, "Monte Siao/MG", "RM de julho", "rodape", {"partes": []},
-             "Monte Siao", "MG", 99)
+             "Monte Siao", "MG", 99, "completo")
 LINHA_CTX = (99, "RM de julho", DATA, "rascunho")
 DONO = (99,)          # o que `ensure_dono` le: o municipio_id da linha
 
@@ -220,7 +232,7 @@ CENARIOS = {
         {"updated": True},
     ),
     "auto_popular": (
-        lambda: [_Res(DONO), _Res((99, DATA, "RM de julho")), _Res(None)],
+        lambda: [_Res(DONO), _Res((99, DATA, "RM de julho", "completo", [])), _Res(None)],
         lambda db, u: rm.repopular(rid=1, request=None, db=db, current=u),
         {"ok": True, "partes": 0, "itens": 0},
     ),
@@ -235,10 +247,14 @@ CENARIOS = {
                              formato="pdf", db=db, current=u),
         None,
     ),
-    "pdf_xlsx": (
+    # Era "pdf_xlsx" (totalizado em Excel), DESCONTINUADO no PR #273 — o endpoint
+    # agora recusa `tipo=totalizado` com 400. O cenario passa a exercitar o
+    # RESUMIDO, que e a outra variante que existe de verdade: o que este arquivo
+    # testa e o GATE de permissao, e ele precisa de duas variantes vivas.
+    "pdf_resumido": (
         lambda: [_Res(DONO), _Res(LINHA_PDF)],
-        lambda db, u: rm.pdf(rid=1, request=None, tipo="totalizado",
-                             formato="xlsx", db=db, current=u),
+        lambda db, u: rm.pdf(rid=1, request=None, tipo="resumido",
+                             formato="pdf", db=db, current=u),
         None,
     ),
 }
@@ -248,7 +264,7 @@ NOMES = sorted(CENARIOS)
 # Os que recebem `{rid}`: ganharam gate de tela NOVO e mais o `ensure_dono`, que
 # confere o municipio DA LINHA. Os dois sao codigo novo, e os dois respeitam o
 # modo — aqui nunca houve checagem nenhuma para preservar.
-COM_ID = ["atualizar", "auto_popular", "detalhe", "pdf", "pdf_xlsx", "remover"]
+COM_ID = ["atualizar", "auto_popular", "detalhe", "pdf", "pdf_resumido", "remover"]
 
 # Onde o gate de TELA nasceu neste incremento (`authz.exigir_tela`). `listar`
 # fica de fora: a tela dele ja era exigida antes, por `ensure_tela`.
@@ -264,7 +280,7 @@ MUNICIPIO_ANTIGO = ["listar"]
 FUNCAO = {
     "listar": rm.listar, "criar": rm.criar, "detalhe": rm.detalhe,
     "atualizar": rm.atualizar, "auto_popular": rm.repopular,
-    "remover": rm.remover, "pdf": rm.pdf, "pdf_xlsx": rm.pdf,
+    "remover": rm.remover, "pdf": rm.pdf, "pdf_resumido": rm.pdf,
 }
 
 
