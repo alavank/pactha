@@ -13,7 +13,7 @@
  *  nunca discorda do que está logo abaixo — o erro clássico de dashboard.
  */
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { X, CalendarClock, Circle, List, ArrowUpDown } from "lucide-react";
+import { X, CalendarClock, Circle, List, ArrowUpDown, Lock } from "lucide-react";
 import api from "@/lib/api";
 import { MultiSelect } from "@/components/ui/multi-select";
 import type { Municipio } from "@/types";
@@ -69,6 +69,15 @@ export default function VigenciasModal({
 }: { municipios: Municipio[]; onClose: () => void }) {
   const [itens, setItens] = useState<Alerta[]>([]);
   const [carregando, setCarregando] = useState(true);
+  /* ⭐ SEM PERMISSAO ≠ SEM NADA VENCENDO, e confundir os dois foi o defeito que
+     motivou este bloco (pedido do dono, 08/2026): quem não tinha acesso levava
+     403, o `catch` zerava a lista em silêncio e o modal anunciava «Nenhum
+     instrumento vencendo em 120 dias». A pessoa fechava tranquila achando que
+     estava tudo em dia — quando na verdade não estava vendo nada.
+
+     Hoje quem libera é a caixinha «Vigências a vencer» do modal de Permissões
+     (ou o módulo de Convênios Estaduais, para quem já o tinha). */
+  const [semAcesso, setSemAcesso] = useState(false);
   const [visao, setVisao] = useState<"bolhas" | "lista">("bolhas");
   const [asc, setAsc] = useState(true);
   const [munSel, setMunSel] = useState<string[]>([]);
@@ -97,7 +106,15 @@ export default function VigenciasModal({
     // responder na hora.
     api.get<Alerta[]>("/convenios/alertas", { params: { dias: DIAS } })
       .then((r) => { if (vivo) setItens(r.data || []); })
-      .catch(() => { if (vivo) setItens([]); })
+      .catch((e: unknown) => {
+        if (!vivo) return;
+        setItens([]);
+        /* SÓ o 403 vira "sem permissão". Uma queda de rede ou um 500 continuam
+           caindo no vazio de sempre — dizer "você não tem acesso" para quem tem
+           mandaria o gestor pedir uma permissão que ele já possui. */
+        const status = (e as { response?: { status?: number } })?.response?.status;
+        setSemAcesso(status === 403);
+      })
       .finally(() => { if (vivo) setCarregando(false); });
     return () => { vivo = false; };
   }, []);
@@ -158,7 +175,9 @@ export default function VigenciasModal({
               {munSel.length ? `${munSel.length} município(s)` : "Todos os municípios"}
             </div>
             <div className="text-2xl font-bold" style={{ color: "var(--bi-text)" }}>
-              {carregando ? "—" : visiveis.length}
+              {/* "—" tambem no bloqueio: um "0" garboso ao lado do aviso de
+                  permissao seria a mesma mentira, so que em numero. */}
+              {carregando || semAcesso ? "—" : visiveis.length}
             </div>
           </div>
           <div>
@@ -198,6 +217,19 @@ export default function VigenciasModal({
               {Array.from({ length: 5 }).map((_, i) => (
                 <div key={i} className="h-12 animate-pulse rounded-lg" style={{ background: "var(--bi-surface-2)" }} />
               ))}
+            </div>
+          ) : semAcesso ? (
+            <div className="mx-auto max-w-md py-8 text-center">
+              <Lock className="mx-auto size-5" style={{ color: "var(--bi-faint)" }} />
+              <p className="mt-2 text-sm font-semibold" style={{ color: "var(--bi-text)" }}>
+                Você não tem acesso às vigências.
+              </p>
+              <p className="mt-1 text-xs leading-relaxed" style={{ color: "var(--bi-muted)" }}>
+                Isto <b>não</b> quer dizer que não há nada vencendo — quer dizer que
+                este conteúdo não está liberado para a sua conta. Peça a quem
+                administra o sistema a permissão <b>«Vigências a vencer»</b>, em
+                Configurações › Usuários › Permissões.
+              </p>
             </div>
           ) : visiveis.length === 0 ? (
             <p className="py-8 text-center text-sm" style={{ color: "var(--bi-muted)" }}>

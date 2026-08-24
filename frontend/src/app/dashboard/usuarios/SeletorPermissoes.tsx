@@ -15,13 +15,15 @@
 // ⚠️ ANTI-ESCALONAMENTO. Quem usa esta peca passa `posso` e `alcanceTravado`; a
 // peca so DESENHA o limite. Quem barra de verdade e o servidor.
 import { useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Lock } from "lucide-react";
+import { ChevronDown, ChevronRight, Lock, MapPin } from "lucide-react";
 import { AcaoMini, Bloco, Selo } from "@/components/ui/superficies";
 import type { Escopo, MapaEscopos } from "@/lib/escopo";
+import { agruparPorEstado, ufsAtendidas } from "@/lib/estadual";
 import {
   chavesDaSecao, escopoDe, permissoesDeEscopo, recursosComEscopo,
   resumoPorRecurso,
-  type Catalogo, type EscopoOpcao, type Permissao, type SecaoCatalogo,
+  type Catalogo, type EscopoOpcao, type Permissao, type RecursoCatalogo,
+  type SecaoCatalogo,
 } from "@/lib/permissoes";
 
 /** Onde a arvore esta desenhada. Muda SO a redacao das frases de trava — o que
@@ -113,7 +115,7 @@ function Alcance({
 
 export default function SeletorPermissoes({
   catalogo, sel, setSel, esc, setEsc, posso, alcanceTravado,
-  contexto = "usuario", seloDe,
+  contexto = "usuario", seloDe, ufsCarteira = [],
 }: {
   catalogo: Catalogo;
   sel: Set<string>;
@@ -128,6 +130,19 @@ export default function SeletorPermissoes({
   /** Selo extra ao lado do verbo — hoje so o "não vale nesta conta" das contas
    *  em somente leitura, que e conceito de CONTA e nao existe num modelo. */
   seloDe?: (p: Permissao) => React.ReactNode;
+  /** ⭐ OS ESTADOS DA CARTEIRA do tenant (pedido do dono, 08/2026). Dentro de
+   *  cada seção os módulos federais vêm primeiro e os estaduais descem para um
+   *  bloco por estado — na Freitas (só MG) fica um bloco «Minas Gerais», numa
+   *  assessoria multi-estado fica um por estado atendido.
+   *
+   *  ⚠️ O RECORTE (esconder o que não é de estado nenhum da carteira) NÃO é
+   *  feito aqui: quem faz é `filtrarCatalogoPorUfs`, na página, ANTES de montar
+   *  o catálogo — assim o "12/66" do cabeçalho, o resumo de cada seção e o
+   *  «Marcar seção» contam todos a mesma coisa. Aqui só se AGRUPA.
+   *
+   *  Vazio = não agrupa (o desenho de sempre): é o que vale enquanto os
+   *  municípios não chegaram e no editor de modelo, que não é de um tenant. */
+  ufsCarteira?: string[];
 }) {
   // Todas fechadas ao abrir: abre com nove linhas, nao com sessenta e seis.
   const [abertas, setAbertas] = useState<Set<string>>(new Set());
@@ -227,15 +242,26 @@ export default function SeletorPermissoes({
               </span>
             </div>
 
-            {aberta && (
-              <div className="mt-2.5 flex flex-col gap-1.5">
-                {s.recursos.map((r) => {
+            {aberta && (() => {
+              /* ⭐ FEDERAIS PRIMEIRO, DEPOIS UM BLOCO POR ESTADO. Com
+                 `ufsCarteira` vazio isto devolve tudo em `federais` e o desenho
+                 fica exatamente o de sempre. */
+              const grupos = agruparPorEstado(s.recursos, ufsCarteira);
+              const cartao = (r: RecursoCatalogo) => {
                   // As caixinhas de escrita por linha (Editar, Excluir) que
                   // estao MARCADAS agora: sao elas que dao sentido a escolha
                   // de alcance, e sao elas que decidem se ela aparece.
                   const escritasLinha = comEscopo.has(r.recurso)
                     ? permissoesDeEscopo(catalogo, r).filter((p) => sel.has(p.chave))
                     : [];
+                  /* ⚠️ O MESMO MODULO PODE ATENDER MAIS DE UM ESTADO — «Convênios
+                     Estaduais» é UMA chave que serve MG, ES, GO e RS. Ele aparece
+                     no bloco de cada estado da carteira que ele serve, e marcar
+                     num marca nos outros: é a verdade da concessão, e a tela tem
+                     de dizê-la em vez de deixar o administrador supor que
+                     concedeu só aquele estado. Quem separa o dado de fato é a
+                     lista de municípios da pessoa, logo acima. */
+                  const compartilhado = ufsAtendidas(r, ufsCarteira);
                   return (
                   /* Item cinza dentro do bloco branco: a terceira camada da
                      identidade (fundo cinza -> bloco branco -> item cinza). */
@@ -243,6 +269,13 @@ export default function SeletorPermissoes({
                     <div className="text-[9px] uppercase tracking-wide" style={{ color: "var(--bi-faint)" }}>
                       {r.recurso_rotulo}
                     </div>
+                    {compartilhado.length > 1 && (
+                      <div className="mt-0.5 text-[10px] leading-snug" style={{ color: "var(--bi-faint)" }}>
+                        Módulo único para {compartilhado.join(" · ")} — marcar aqui
+                        vale para todos eles. Quem separa os estados é a lista de
+                        municípios da pessoa.
+                      </div>
+                    )}
                     <div className="mt-1.5 flex flex-col gap-2">
                       {r.permissoes.map((p) => {
                         const travada = !posso(p.chave);
@@ -310,9 +343,25 @@ export default function SeletorPermissoes({
                     )}
                   </div>
                   );
-                })}
-              </div>
-            )}
+              };
+              return (
+                <div className="mt-2.5 flex flex-col gap-1.5">
+                  {grupos.federais.map(cartao)}
+                  {grupos.estados.map((g) => (
+                    <div key={g.uf} className="mt-1 border-t pt-2" style={{ borderColor: "var(--bi-line)" }}>
+                      <div
+                        className="mb-1.5 flex items-center gap-1 text-[9px] font-semibold uppercase tracking-wide"
+                        style={{ color: "var(--bi-faint)" }}
+                      >
+                        <MapPin className="size-3 shrink-0" />
+                        {g.nome}
+                      </div>
+                      <div className="flex flex-col gap-1.5">{g.itens.map(cartao)}</div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
           </Bloco>
         );
       })}

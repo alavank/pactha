@@ -93,7 +93,7 @@ function Resumo({ linhas }: { linhas: string[] }) {
 
 export default function PermissoesModal({
   alvo, catalogo, minhas, concedidas, escopos, souEu, modelos, podeGerirModelo,
-  onModeloCriado, onFechar, onSalvo,
+  onModeloCriado, onFechar, onSalvo, ufsCarteira = [],
 }: {
   alvo: AlvoPermissoes;
   catalogo: Catalogo;
@@ -117,6 +117,9 @@ export default function PermissoesModal({
   onModeloCriado?: () => void | Promise<void>;
   onFechar: () => void;
   onSalvo: () => void | Promise<void>;
+  /** Os estados da carteira do tenant — só para AGRUPAR a árvore por estado. O
+   *  recorte (o que nem aparece) já veio feito no `catalogo`, na página. */
+  ufsCarteira?: string[];
 }) {
   const original = useMemo(() => new Set(concedidas), [concedidas]);
   const [sel, setSel] = useState<Set<string>>(() => new Set(concedidas));
@@ -346,6 +349,7 @@ export default function PermissoesModal({
         {/* A ÁRVORE — a mesma peça que o editor de modelo usa. */}
         <SeletorPermissoes
           catalogo={catalogo}
+          ufsCarteira={ufsCarteira}
           sel={sel}
           setSel={setSel}
           esc={esc}
@@ -400,6 +404,7 @@ export default function PermissoesModal({
     {virarModelo && (
       <ModeloEditor
         catalogo={catalogo}
+        ufsCarteira={ufsCarteira}
         minhas={minhas}
         modelo={null}
         inicial={{ permissoes: [...sel], escopos: esc }}

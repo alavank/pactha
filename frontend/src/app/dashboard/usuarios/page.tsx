@@ -1,13 +1,14 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import {
   UserPlus, Users, KeyRound, Power, Loader2, Copy, Check, X, Building2,
   ListChecks, ShieldCheck, AlertTriangle, Lock, Layers, Trash2, Pencil,
-  CopyPlus,
+  CopyPlus, MapPin,
 } from "lucide-react";
 import api from "@/lib/api";
 import { TELAS, TELA_LABELS } from "@/lib/telas";
+import { agruparPorEstado, ufsAtendidas, ufsDaCarteira } from "@/lib/estadual";
 import {
   ehSuperAdmin, ehSomenteLeitura, PAPEIS_SEMPRE_SOMENTE_LEITURA,
 } from "@/lib/conta";
@@ -24,6 +25,7 @@ import PermissoesModal from "./PermissoesModal";
 import ModelosModal from "./ModelosModal";
 import {
   buscarCatalogo, buscarConcedidas, buscarMinhas, resumoPorRecurso,
+  filtrarCatalogoPorUfs,
   type Catalogo, type MinhasPermissoes,
 } from "@/lib/permissoes";
 import {
@@ -271,19 +273,83 @@ function MunicipioPicker({
   );
 }
 
-// Seletor de telas/modulos (chips com checkbox)
+/** ⭐ AS TELAS QUE ESTE TENANT PODE OFERECER, e nada além delas.
+ *
+ *  Pedido do dono (08/2026): «se for uma cidade do Rio Grande do Sul, quando for
+ *  criar usuário tem que aparecer só módulos e permissões para usuário daquele
+ *  estado; não tem que aparecer nada de Minas Gerais, e vice-versa».
+ *
+ *  Antes daqui a lista era a mesma em todo cliente: quem cadastrava alguém em
+ *  Santa Maria/RS via «Acordo FES (dívida saúde MG)» na lista e podia marcá-lo —
+ *  e o resultado era uma tela que abre vazia, que é a pior forma de errar,
+ *  porque parece defeito do sistema e não módulo que não existe naquele estado.
+ *
+ *  ⚠️ Carteira vazia (ainda carregando) devolve TODAS: ver `agruparPorEstado`. */
+function telasDaCarteira(ufsCart: string[]): string[] {
+  const g = agruparPorEstado(TELAS, ufsCart);
+  return [...g.federais, ...g.estados.flatMap((e) => e.itens)].map((t) => t.key);
+}
+
+/** Seletor de telas/modulos (chips com checkbox), separado por estado.
+ *
+ *  ⚠️ FEDERAIS PRIMEIRO E SEM CABEÇALHO quando não há estado nenhum na
+ *  carteira: com `ufsCarteira` vazio isto é exatamente o desenho de sempre. */
 function TelaPicker({
-  selected, onToggle,
+  selected, onToggle, ufsCarteira,
 }: {
   selected: Set<string>;
   onToggle: (key: string) => void;
+  ufsCarteira: string[];
 }) {
-  return (
+  const grupos = agruparPorEstado(TELAS, ufsCarteira);
+  const chips = (itens: typeof TELAS) => (
     <div className="flex flex-wrap gap-1.5">
-      {TELAS.map((t) => (
-        <Chip key={t.key} on={selected.has(t.key)} onClick={() => onToggle(t.key)}>
-          {t.label}
-        </Chip>
+      {itens.map((t) => {
+        /* O MESMO MÓDULO PODE ATENDER MAIS DE UM ESTADO — «Convênios
+           Estaduais» é uma chave só que serve MG, ES, GO e RS. Ele aparece no
+           bloco de cada estado atendido e marcar num marca nos outros; o título
+           do chip diz isso, para o administrador não supor que concedeu só
+           aquele estado. Quem separa o dado é a lista de municípios da pessoa. */
+        const compart = ufsAtendidas(t, ufsCarteira);
+        return (
+          <span
+            key={t.key}
+            title={compart.length > 1
+              ? `Módulo único para ${compart.join(" · ")} — marcar aqui vale para todos eles`
+              : undefined}
+          >
+            <Chip on={selected.has(t.key)} onClick={() => onToggle(t.key)}>
+              {t.label}
+              {compart.length > 1 && (
+                <span className="text-[9px] opacity-70">{compart.join("·")}</span>
+              )}
+            </Chip>
+          </span>
+        );
+      })}
+    </div>
+  );
+  if (!grupos.estados.length) return chips(grupos.federais);
+  return (
+    <div className="flex flex-col gap-2">
+      {grupos.federais.length > 0 && (
+        <div>
+          <div className="mb-1 text-[9px] font-semibold uppercase tracking-wide"
+               style={{ color: "var(--bi-faint)" }}>
+            Federais e comuns
+          </div>
+          {chips(grupos.federais)}
+        </div>
+      )}
+      {grupos.estados.map((g) => (
+        <div key={g.uf}>
+          <div className="mb-1 flex items-center gap-1 text-[9px] font-semibold uppercase tracking-wide"
+               style={{ color: "var(--bi-faint)" }}>
+            <MapPin className="size-3 shrink-0" />
+            {g.nome}
+          </div>
+          {chips(g.itens)}
+        </div>
       ))}
     </div>
   );
@@ -461,10 +527,36 @@ export default function UsuariosPage() {
   const toggleEditTela = (k: string) =>
     setEditTelas((prev) => { const n = new Set(prev); n.has(k) ? n.delete(k) : n.add(k); return n; });
 
-  // Atalhos de lote. `TELAS` e a lista do frontend (a mesma que desenha os
-  // chips), entao "marcar todas" concede exatamente o que esta na tela — nao um
-  // conjunto invisivel.
-  const todasTelas = () => TELAS.map((t) => t.key);
+  /** ⭐ OS ESTADOS QUE ESTA CARTEIRA ATENDE — a base de todo o recorte por UF.
+   *
+   *  Sai dos MUNICÍPIOS do tenant, e não de configuração nova: a Freitas dá
+   *  ["MG"], Santa Maria dá ["RS"], a Trust dá os estados das cidades dela. Uma
+   *  assessoria que ganhar um cliente de outro estado passa a ver o cartão
+   *  daquele estado no dia em que o município entrar, sem ninguém configurar
+   *  nada.
+   *
+   *  ⚠️ E vem de `/municipios` (a carteira INTEIRA), NÃO do município escolhido
+   *  na barra lateral. A aba Usuários é a mesma qualquer que seja a seleção lá
+   *  em cima — quem cadastra alguém para o Espírito Santo não pode depender de
+   *  ter trocado o seletor para uma cidade capixaba antes. */
+  const ufsCart = useMemo(() => ufsDaCarteira(municipios), [municipios]);
+
+  /** As telas oferecidas neste tenant (as federais + as dos estados dele). */
+  const telasVisiveis = useMemo(() => telasDaCarteira(ufsCart), [ufsCart]);
+
+  /** O catálogo de permissões recortado para a carteira.
+   *
+   *  ⚠️ RECORTADO UMA VEZ SÓ, AQUI, e não dentro de cada modal: o "12/66" do
+   *  cabeçalho, o resumo de cada seção, o «Marcar seção» e o resumo da lista
+   *  saem todos deste mesmo objeto. Recortar em dois lugares faria uma tela
+   *  contar 66 e a outra 61 sobre a mesma pessoa. */
+  const catalogoUf = useMemo(
+    () => filtrarCatalogoPorUfs(catalogo, ufsCart), [catalogo, ufsCart]);
+
+  // Atalhos de lote. A lista e a que DESENHA os chips (ja recortada pela
+  // carteira), entao "marcar todas" concede exatamente o que esta na tela — nao
+  // um conjunto invisivel, e nao modulo de estado que este cliente nao atende.
+  const todasTelas = () => telasVisiveis;
   const todosMunis = () => municipios.map((m) => m.id);
 
   /** Tenant de UM municipio (prefeitura). Ver a nota no formulario.
@@ -721,7 +813,7 @@ export default function UsuariosPage() {
             secundário — criar usuário continua sendo o que esta tela faz.
             Some para quem não pode mexer neles; aplicar continua disponível
             dentro do modal de permissões. */}
-        {catalogo && (podeModelos ?? podeGerirModelos(minhas)) && (
+        {catalogoUf && (podeModelos ?? podeGerirModelos(minhas)) && (
           <button
             type="button"
             className={BOTAO_SEC}
@@ -884,7 +976,7 @@ export default function UsuariosPage() {
             right={
               <LoteAcoes
                 marcadas={novoTelas.size}
-                total={TELAS.length}
+                total={telasVisiveis.length}
                 onTodas={() => setNovoTelas(new Set(todasTelas()))}
                 onNenhuma={() => setNovoTelas(new Set())}
               />
@@ -892,7 +984,7 @@ export default function UsuariosPage() {
           >
             Telas com acesso
           </Rotulo>
-          <TelaPicker selected={novoTelas} onToggle={toggleNovoTela} />
+          <TelaPicker selected={novoTelas} onToggle={toggleNovoTela} ufsCarteira={ufsCart} />
         </div>
 
         {/* A terceira permissão da conta, junto das outras duas: as listas dizem
@@ -1073,9 +1165,9 @@ export default function UsuariosPage() {
                         <Button
                           size="sm" variant="outline" className="h-7 text-[11px]"
                           onClick={() => setPermUser(u)}
-                          disabled={!catalogo || !podeConceder}
+                          disabled={!catalogoUf || !podeConceder}
                           title={
-                            !catalogo
+                            !catalogoUf
                               ? "Não foi possível carregar o catálogo de permissões. Recarregue a tela."
                               // As duas causas de `!podeConceder` sao diferentes e
                               // precisam de frases diferentes: dizer "voce nao tem a
@@ -1178,7 +1270,7 @@ export default function UsuariosPage() {
                           ? "Todas"
                           : telas.length === 0
                             ? "Nenhuma"
-                            : telas.length >= TELAS.length
+                            : telas.length >= telasVisiveis.length
                               ? "Todas"
                               : `${telas.length} telas`,
                         tom: !superAdmin && telas.length === 0 ? "critico" : "normal",
@@ -1192,20 +1284,20 @@ export default function UsuariosPage() {
                         rotulo: "Permissões",
                         valor: superAdmin
                           ? "Todas"
-                          : !catalogo
+                          : !catalogoUf
                             ? "—"
                             : perms.length === 0
                               ? "Nenhuma"
-                              : `${perms.length} de ${catalogo.total}`,
+                              : `${perms.length} de ${catalogoUf.total}`,
                         // ATENÇÃO e não crítico: enquanto a trava está em modo
                         // aviso, zero caixinha não impede nada — anunciar como
                         // falha seria alarme falso. Vira problema no dia em que
                         // o bloqueio for ligado, e é aí que esta linha ajuda.
-                        tom: !superAdmin && catalogo && perms.length === 0
+                        tom: !superAdmin && catalogoUf && perms.length === 0
                           ? "atencao" : "normal",
                         title: superAdmin
                           ? "Super-admin: pode tudo, sem depender destas caixinhas"
-                          : !catalogo
+                          : !catalogoUf
                             ? "Catálogo de permissões indisponível"
                             : perms.length > 0
                               // O resumo legível, e não 40 chaves cruas: quem
@@ -1215,7 +1307,7 @@ export default function UsuariosPage() {
                               // ele criou)" é uma pessoa DIFERENTE de quem
                               // edita a prefeitura inteira, e a lista precisa
                               // distinguir as duas sem abrir o modal.
-                              ? resumoPorRecurso(catalogo, new Set(perms), undefined, escoposDe(u)).join(" · ")
+                              ? resumoPorRecurso(catalogoUf, new Set(perms), undefined, escoposDe(u)).join(" · ")
                               : "Nenhuma ação liberada: a pessoa entra e não faz nada",
                       },
                       {
@@ -1305,7 +1397,7 @@ export default function UsuariosPage() {
                   right={
                     <LoteAcoes
                       marcadas={editTelas.size}
-                      total={TELAS.length}
+                      total={telasVisiveis.length}
                       onTodas={() => setEditTelas(new Set(todasTelas()))}
                       onNenhuma={() => setEditTelas(new Set())}
                     />
@@ -1316,7 +1408,7 @@ export default function UsuariosPage() {
                 <p className="mb-1.5 text-[11px]" style={{ color: "var(--bi-faint)" }}>
                   Somente as telas marcadas aparecem no menu do usuário.
                 </p>
-                <TelaPicker selected={editTelas} onToggle={toggleEditTela} />
+                <TelaPicker selected={editTelas} onToggle={toggleEditTela} ufsCarteira={ufsCart} />
               </div>
               <div className="border-t pt-3" style={{ borderColor: "var(--bi-line)" }}>
                 <Rotulo icon={Lock}>O que pode fazer</Rotulo>
@@ -1379,10 +1471,11 @@ export default function UsuariosPage() {
           `catalogo` no guarda porque o modal o recebe obrigatorio: sem o
           catalogo nao ha o que desenhar, e o botao que abre este modal ja vem
           desligado nesse caso. */}
-      {permUser && catalogo && (
+      {permUser && catalogoUf && (
         <PermissoesModal
           alvo={permUser}
-          catalogo={catalogo}
+          catalogo={catalogoUf}
+          ufsCarteira={ufsCart}
           minhas={minhas}
           concedidas={permsDe(permUser)}
           escopos={escoposDe(permUser)}
@@ -1397,9 +1490,10 @@ export default function UsuariosPage() {
 
       {/* Os MOLDES — criar, editar e apagar. Nenhuma conta muda por causa
           daqui: quem já recebeu um modelo ficou com uma CÓPIA das caixinhas. */}
-      {verModelos && catalogo && (
+      {verModelos && catalogoUf && (
         <ModelosModal
-          catalogo={catalogo}
+          catalogo={catalogoUf}
+          ufsCarteira={ufsCart}
           minhas={minhas}
           modelos={modelos}
           carregando={loading}

@@ -119,6 +119,22 @@ class Permissao:
     # ⚠️ NAO e "o verbo parece de escrita". E: o guard de somente-leitura barra
     # esta acao? Ver o cabecalho do modulo.
     escrita: bool = False
+    # ⭐ ABRANGENCIA POR UF (pedido do dono, 08/2026): em quais estados este
+    # recurso existe de verdade. VAZIO = federal/nacional (aparece para todo
+    # tenant). A tela de Usuarios usa isto para NAO oferecer módulo de outro
+    # estado: no sistema de Santa Maria/RS nada de Minas Gerais aparece, e
+    # vice-versa; a assessoria multi-estado ve um cartao por estado da carteira.
+    #
+    # ⚠️ ISTO NAO RESTRINGE DADO, E SO O CATALOGO. Quem separa o convenio do ES
+    # do convenio de GO continua sendo a lista de MUNICIPIOS da pessoa
+    # (`ensure_municipio_access`) — a mesma chave `convenios.ver` serve os dois
+    # estados. Filtrar aqui evita oferecer ao administrador um modulo que
+    # naquele tenant nunca teria dado nenhum; nao e uma segunda trava.
+    #
+    # ⚠️ As UFs daqui tem de bater com as da tela equivalente em
+    # `frontend/src/lib/telas.ts` (que desenha os chips de tela) — o teste
+    # `tests/test_catalogo_por_uf.py` quebra se divergirem.
+    ufs: tuple = ()
 
     @property
     def rotulo(self) -> str:
@@ -138,6 +154,8 @@ class Permissao:
             "rotulo": self.rotulo,
             "descricao": self.descricao,
             "escrita": self.escrita,
+            # Lista (e nao tuple): vai para JSON. Vazio = federal/nacional.
+            "ufs": list(self.ufs),
         }
 
 
@@ -192,6 +210,8 @@ class _Recurso:
     singular: str          # "um Relatorio de Monitoramento novo"
     verbos: tuple
     fonte: str = ""        # so para o verbo `atualizar`: "no SIGCON-MG"
+    # UFs em que o recurso existe; vazio = federal/nacional. Ver `Permissao.ufs`.
+    ufs: tuple = ()
 
 
 # ⚠️ Recurso novo entra AQUI e em `migrations/add_permissoes_por_acao.sql` (a
@@ -216,9 +236,40 @@ _RECURSOS: tuple = (
              ("ver", "criar", "editar", "excluir", "exportar")),
 
     # --- Convenios e transferencias (ver / exportar / atualizar) ------------
-    _Recurso("convenios", SEC_CONVENIOS, "SIGCON (convênios estaduais)",
+    # ⚠️ ufs = MG, ES, GO, RS, e a lista e MAIOR do que "onde ha convenio
+    # estadual": esta chave governa o GRUPO ESTADUAIS INTEIRO do menu. Alem de
+    # Convenios (MG=SIGCON, ES=GConv/SEGER), passam por `convenios.ver` as telas
+    # de Repasses e Cofinanciamento (GO — Goias publica a EXECUCAO, nao o
+    # instrumento) e as cinco do RS (Consulta Popular, Programas do Estado,
+    # Plano Rio Grande, Emendas RS e TCE-RS). Ver os routers `repasses.py`,
+    # `cofinanciamento.py`, `consulta_popular.py`, `programas_rs.py` e
+    # `conteudo_rs.py`: todos exigem esta mesma chave.
+    #
+    # ⚠️ TIRAR UMA UF DAQUI ESCONDE A CAIXINHA de um cliente que precisa dela.
+    # A lista espelha a uniao dos mapas de `frontend/src/lib/estadual.ts`
+    # (FONTE_CONVENIOS_ESTADUAIS + REPASSES_POR_UF + COFINANCIAMENTO_POR_UF +
+    # CONSULTA_POPULAR_POR_UF + PROGRAMAS_POR_UF + CONTEUDO_ESTADUAL_POR_UF), e
+    # `tests/test_catalogo_por_uf.py` quebra se as duas divergirem.
+    #
+    # ⚠️ O ROTULO E NEUTRO — nao diz "SIGCON", que e o nome do sistema de MINAS.
+    # A mesma chave serve quatro estados com quatro portais de nomes diferentes
+    # (MG=SIGCON, ES=Portal de Convenios/SEGER, GO=SIGECON, RS=CAGE/SEFAZ), e o
+    # administrador de Santa Maria/RS lia "SIGCON" numa caixinha que no banco
+    # dele so tem dado gaucho. E o mesmo defeito que `frontend/src/lib/
+    # estadual.ts` existe para fechar (o sistema carimbava "CAGEC — Minas
+    # Gerais" sobre cidade de Goias) e a mesma correcao que a tela `cauc` ja
+    # tinha recebido ("Regularidade (federal e estadual)").
+    #
+    # ⚠️ `fonte` VAZIO pela mesma razao: ele so alimenta a frase de «Atualizar»
+    # ("buscar dados novos {fonte}"), e ela dizia "no SIGCON-MG" em TODO tenant
+    # — errado em tres dos quatro. Sem `fonte` a frase fica "buscar dados
+    # novos", verdadeira em qualquer estado. Nomear o portal certo exigiria um
+    # texto por UF, e o catalogo de permissoes nao sabe de que estado e a pessoa
+    # que esta lendo — quem sabe disso e a TELA, que ja escreve a fonte no
+    # cabecalho pelos mapas de `estadual.ts`.
+    _Recurso("convenios", SEC_CONVENIOS, "Convênios Estaduais",
              "os convênios estaduais", "", ("ver", "exportar", "atualizar"),
-             fonte="no SIGCON-MG"),
+             ufs=("MG", "ES", "GO", "RS")),
     _Recurso("transferegov", SEC_CONVENIOS, "Transfere Gov",
              "as transferências voluntárias federais", "",
              ("ver", "exportar", "atualizar"), fonte="no Transfere Gov"),
@@ -230,11 +281,16 @@ _RECURSOS: tuple = (
              ("ver", "exportar", "atualizar"), fonte="no SISMOB"),
     _Recurso("acordofes", SEC_CONVENIOS, "Acordo FES (dívida da saúde MG)",
              "os créditos e parcelas do Acordo FES", "",
-             ("ver", "exportar", "atualizar"), fonte="na SES-MG"),
+             ("ver", "exportar", "atualizar"), fonte="na SES-MG",
+             ufs=("MG",)),
 
     # --- Consultas e fontes (ver / exportar) -------------------------------
+    # ⚠️ ufs = MG: a fonte de emendas estaduais coletada hoje e a do SIGCON-MG
+    # (impositivas). Quando entrar coletor de outro estado, a UF entra aqui —
+    # ver `FONTE_EMENDAS_ESTADUAIS` em `frontend/src/lib/estadual.ts`.
     _Recurso("emendas", SEC_CONSULTAS, "Emendas Estaduais",
-             "as emendas parlamentares estaduais", "", ("ver", "exportar")),
+             "as emendas parlamentares estaduais", "", ("ver", "exportar"),
+             ufs=("MG",)),
     _Recurso("fns", SEC_CONSULTAS, "Fundo Nacional de Saúde",
              "as propostas do Fundo Nacional de Saúde", "", ("ver", "exportar")),
     # InvestSUS: os repasses fundo a fundo do FNS, por bloco e por competência.
@@ -252,8 +308,13 @@ _RECURSOS: tuple = (
     _Recurso("parlamentares", SEC_CONSULTAS, "Parlamentares",
              "a base de parlamentares e a atuação deles no município", "",
              ("ver", "exportar")),
+    # ⚠️ Diario Oficial e ESTADUAL: cada UF tem seu provedor (Jornal Minas,
+    # DOM/ES, DOE-GO, DOE-TO, DOE-RS). A caixinha aparece para o tenant cuja
+    # carteira cruza alguma UF com provedor — ver `DIARIO_POR_UF` em
+    # `frontend/src/lib/estadual.ts` e os routers `dou_*`.
     _Recurso("dou", SEC_CONSULTAS, "Diário Oficial",
-             "as publicações do Diário Oficial", "", ("ver", "exportar")),
+             "as publicações do Diário Oficial", "", ("ver", "exportar"),
+             ufs=("MG", "ES", "GO", "TO", "RS")),
     _Recurso("frescor", SEC_CONSULTAS, "Monitor de frescor dos dados",
              "há quanto tempo cada fonte foi coletada", "", ("ver", "exportar")),
 
@@ -280,10 +341,16 @@ def _gerar(recurso: _Recurso) -> list[Permissao]:
             recurso=recurso.chave,
             recurso_rotulo=recurso.rotulo,
             verbo_rotulo=molde["rotulo"],
+            # ⚠️ O `.replace` fecha o buraco que um `fonte` VAZIO deixa, e
+            # ele passou a existir de verdade quando Convenios Estaduais deixou
+            # de nomear o portal de um estado so: sem isto a frase saia como
+            # "buscar dados novos ." — espaco solto antes do ponto, na tela de
+            # permissao que o cliente le.
             descricao=molde["frase"].format(
                 plural=recurso.plural, singular=recurso.singular,
-                fonte=recurso.fonte),
+                fonte=recurso.fonte).replace("  ", " ").replace(" .", "."),
             escrita=molde["escrita"],
+            ufs=recurso.ufs,
         ))
     return saida
 
@@ -386,6 +453,23 @@ _ESPECIAIS: tuple = (
                   "link viver, quem tiver o endereço vê os dados do município — "
                   "e esses links circulam por WhatsApp.",
         escrita=False,   # mesmo motivo de bi.tela: /api/bi/tela-links esta na allowlist
+    ),
+    # ⭐ VIGÊNCIAS A VENCER — caixinha PROPRIA, e nao parte de `convenios`,
+    # porque o botao mora no Painel de Indicadores e o pedido do dono e liberar
+    # SO o monitoramento de vencimentos para certas pessoas, sem entregar o
+    # modulo inteiro de Convênios Estaduais. O endpoint /api/convenios/alertas
+    # aceita convenios.ver OU vigencias.ver — quem ja tem Convênios continua
+    # vendo, nada muda para ele (ver routers/convenios.py). Federal: o alerta
+    # existe em qualquer tenant que tenha instrumento com vigencia.
+    Permissao(
+        chave="vigencias.ver", secao=SEC_BI, recurso="vigencias",
+        recurso_rotulo="Vigências a vencer", verbo_rotulo="Ver",
+        descricao="Abrir o botão «Vigências ≤120d» do Painel de Indicadores e "
+                  "consultar os instrumentos com vigência encerrando nos "
+                  "próximos 120 dias. Quem já tem Convênios Estaduais já vê "
+                  "isto — esta caixinha libera o botão sem entregar o módulo "
+                  "inteiro.",
+        escrita=False,
     ),
     Permissao(
         chave="ai.usar", secao=SEC_IA, recurso="ai",
@@ -955,6 +1039,11 @@ def por_secao(chaves: Optional[Iterable[str]] = None) -> list[dict]:
             if grupo is None:
                 grupo = {"recurso": permissao.recurso,
                          "recurso_rotulo": permissao.recurso_rotulo,
+                         # A ABRANGENCIA POR UF vive no GRUPO porque e do
+                         # RECURSO, e nao de cada verbo: a tela agrupa por
+                         # recurso e e ali que ela decide mostrar ou esconder.
+                         # Vazio = federal/nacional. Ver `Permissao.ufs`.
+                         "ufs": list(permissao.ufs),
                          # O alcance por linha e um MODIFICADOR deste recurso, e
                          # nao uma caixinha: por isso viaja no grupo e nao na
                          # lista de permissoes. `escopo_permissoes` diz quais

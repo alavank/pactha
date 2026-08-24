@@ -164,6 +164,14 @@ INSERT INTO permissoes_catalogo (chave, secao, escrita) VALUES
     ('bi.exportar', 'bi', FALSE),
     ('bi.tela', 'bi', FALSE),
     ('bi.link', 'bi', FALSE),
+    -- Vigencias a vencer (08/2026). Caixinha PROPRIA, e nao parte de
+    -- `convenios`: o botao «Vigencias <=120d» mora no Painel de Indicadores e o
+    -- pedido do dono e liberar SO o monitoramento de vencimento para certas
+    -- pessoas, sem entregar o modulo inteiro de Convenios Estaduais. Entra
+    -- NESTA semente (que roda a cada boot) e nao numa migration propria, pela
+    -- mesma razao de `usuarios.modelos`: e aqui que mora a tabela-catalogo que
+    -- serve de chave estrangeira.
+    ('vigencias.ver', 'bi', FALSE),
     ('ai.usar', 'ia', TRUE),
     ('ai.exportar', 'ia', TRUE),
     ('cofre.ver', 'cofre', FALSE),
@@ -303,6 +311,19 @@ WITH marca AS (
         ('bi', 'bi.exportar', FALSE),
         ('bi_tela', 'bi.tela', FALSE),
         ('bi_link', 'bi.link', FALSE),
+        -- ⚠️ `vigencias.ver` esta aqui porque TODA chave do catalogo precisa de
+        -- linha neste mapa — sem ela o teste tests/test_permissoes_migration.py
+        -- quebra e a chave nasceria concedida a ninguem sem ninguem ter
+        -- decidido isso.
+        --
+        -- MAS, como `usuarios.modelos`, ela so alcanca BANCO NOVO: este bloco e
+        -- guardado pela marca em `migration_backfills` e nos quatro tenants que
+        -- ja subiram ele e pulado. E esta certo assim — nos bancos que ja estao
+        -- no ar NINGUEM perde nada, porque /api/convenios/alertas passou a
+        -- aceitar `convenios.ver` OU `vigencias.ver` (ver routers/convenios.py):
+        -- quem ja tem Convenios Estaduais continua vendo o botao exatamente
+        -- como antes, e a caixinha nova serve para liberar QUEM NAO TEM.
+        ('convenios', 'vigencias.ver', FALSE),
         -- IA: hoje quem abre a tela conversa e exporta
         ('ai', 'ai.usar', FALSE),
         ('ai', 'ai.exportar', FALSE),

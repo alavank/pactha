@@ -16,7 +16,7 @@ from services.audit import registrar
 # Trava de permissao em MODO AVISO. `ensure_dono` responde a pergunta que
 # `ensure_tela` nao responde: "este id e de um municipio que a pessoa enxerga?".
 from services import authz
-from services.registro_rotas import exige
+from services.registro_rotas import exige, declarado
 from services.bi import anos_list
 from models.user import User
 import math
@@ -538,8 +538,15 @@ async def convenio_stats(
     return stats
 
 
+# ⭐ DOIS CAMINHOS DE PERMISSAO, e por isso `declarado` no lugar de `exige`:
+# `exige()` cobra TODAS as chaves que recebe ("e", nao "ou"), e aqui a regra e
+# "ou". Quem decide e o corpo, logo abaixo.
+#
+# O motivo do "ou": o botao «Vigencias <=120d» do Painel de Indicadores le DESTE
+# endpoint, e o dono pediu para liberar SO o monitoramento de vencimento a certas
+# pessoas — sem entregar o modulo inteiro de Convenios Estaduais.
 @router.get("/alertas", response_model=list[AlertaVigencia],
-            dependencies=[exige("convenios.ver")])
+            dependencies=[declarado("convenios.ver", "vigencias.ver")])
 async def alertas_vigencia(
     municipio_id: Optional[int] = None,
     dias: int = Query(120, ge=1),
@@ -549,7 +556,22 @@ async def alertas_vigencia(
     current: User = Depends(get_current_user),
 ):
     ensure_municipio_access(current, municipio_id)
-    ensure_tela(current, "convenios")
+    # ⚠️ A ORDEM IMPORTA, e ela e o que garante "nada muda para quem ja
+    # funciona hoje": quem NAO tem a caixinha nova cai exatamente nas duas
+    # travas de antes, na mesma sequencia e com as mesmas mensagens. A caixinha
+    # `vigencias.ver` so ACRESCENTA um caminho — nunca tira um.
+    #
+    # `authz.pode` (e nao `authz.exigir`) porque a pergunta aqui e "existe outro
+    # caminho?", nao "barre agora": `exigir` respeita o AUTHZ_MODO e em `aviso`
+    # deixaria passar registrando um falso negado.
+    #
+    # ⚠️ E `ensure_tela` fica DENTRO do mesmo `if`: ela nega nos dois modos
+    # (ver services/auth.py), entao deixa-la de fora barraria justamente a
+    # pessoa que recebeu a caixinha nova e nao tem a tela de Convenios — que e
+    # o caso inteiro para o qual esta permissao existe.
+    if not authz.pode(current, "vigencias.ver"):
+        authz.exigir(current, "convenios.ver")
+        ensure_tela(current, "convenios")
     # ⚠️ SEM `municipio_id`, o nucleo devolve TODOS os municipios do tenant. Isso
     # e o esperado para o super-admin (allowed_municipio_ids=None), mas para quem
     # tem carteira restrita seria vazamento: veria vigencia de municipio que nao

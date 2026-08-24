@@ -273,3 +273,99 @@ export function diarioDaUf(uf?: string | null) {
 export function temDiarioEstadual(uf?: string | null): boolean {
   return !!diarioDaUf(uf);
 }
+
+
+/* ==========================================================================
+   O CATALOGO DE PERMISSOES POR ESTADO — pedido do dono, 08/2026.
+   ==========================================================================
+
+   O PROBLEMA que isto fecha: a aba Usuarios oferecia as MESMAS 24 telas e as
+   MESMAS caixinhas em todo tenant. Quem cadastra alguem no sistema de Santa
+   Maria/RS via «Acordo FES (divida saude MG)» e «Emendas Estaduais» (que so
+   existem em Minas) na lista, e quem cadastra em Monte Siao/MG via modulos do
+   Rio Grande do Sul. Marcar qualquer um deles nao dava erro nenhum — dava uma
+   tela que abre vazia, que e a pior forma de errar: parece que o sistema esta
+   quebrado, e nao que o modulo nao existe naquele estado.
+
+   ⚠️ ISTO NAO E UMA TRAVA DE SEGURANCA, E CATALOGO. Quem separa o convenio do
+   Espirito Santo do convenio de Goias continua sendo a lista de MUNICIPIOS da
+   pessoa (o seletor logo acima, e `ensure_municipio_access` no servidor): a
+   chave `convenios.ver` e UMA SO e serve os dois estados. O que estas funcoes
+   fazem e nao oferecer ao administrador um modulo que naquela carteira nunca
+   teria dado nenhum.
+
+   ⚠️ NA DUVIDA, MOSTRA TUDO. Carteira vazia (ainda carregando, ou um
+   administrador sem municipio marcado) devolve a lista inteira como federal:
+   esconder por engano tiraria do administrador a caixinha que ele precisa
+   marcar, e o custo do contrario e so oferecer um modulo a mais. */
+
+/** Item de catalogo que sabe em que estados existe. `ufs` vazio ou ausente =
+ *  federal/nacional. Espelha `ufs` de `backend/services/permissoes.py`. */
+export interface ComUfs {
+  ufs?: string[];
+}
+
+/** As UFs que a carteira do tenant realmente atende, sem repetir e sem vazio.
+ *  Freitas devolve ["MG"]; a Trust devolve os estados das cidades dela. */
+export function ufsDaCarteira(municipios: Array<{ uf?: string | null }>): string[] {
+  const set = new Set<string>();
+  for (const m of municipios) {
+    const uf = (m?.uf || "").trim().toUpperCase();
+    if (uf) set.add(uf);
+  }
+  return [...set];
+}
+
+export interface GrupoEstadual<T> {
+  uf: string;
+  /** "Minas Gerais" — o nome por extenso e o titulo do cartao. */
+  nome: string;
+  itens: T[];
+}
+
+export interface CatalogoPorEstado<T> {
+  /** O que vale em qualquer estado. Sempre primeiro. */
+  federais: T[];
+  /** Um cartao por estado da carteira, na ordem alfabetica do NOME. Estado sem
+   *  nenhum modulo proprio nao vira cartao — cartao vazio nao informa nada. */
+  estados: Array<GrupoEstadual<T>>;
+}
+
+/** Separa um catalogo em «federais» + um grupo por estado da carteira.
+ *
+ *  ⚠️ UM ITEM PODE CAIR EM MAIS DE UM ESTADO, e isso e verdade e nao defeito:
+ *  «Convenios Estaduais» e uma chave so que atende MG, ES, GO e RS. Ele aparece
+ *  no cartao de cada estado da carteira que ele serve, e marcar num marca nos
+ *  outros — quem chama deve dizer isso na tela quando `ufs.length > 1`. A
+ *  alternativa (uma chave por estado) exigiria uma permissao nova por UF no
+ *  backend, e o que separa os estados na pratica ja e a lista de municipios. */
+export function agruparPorEstado<T extends ComUfs>(
+  itens: T[],
+  ufsCarteira: string[],
+): CatalogoPorEstado<T> {
+  const carteira = ufsCarteira
+    .map((u) => (u || "").trim().toUpperCase())
+    .filter(Boolean);
+  // Sem carteira nao ha o que filtrar (ver "NA DUVIDA, MOSTRA TUDO").
+  if (!carteira.length) return { federais: itens, estados: [] };
+
+  const federais = itens.filter((i) => !i.ufs || i.ufs.length === 0);
+  const estados = carteira
+    .map((uf) => ({
+      uf,
+      nome: NOME_UF[uf] || uf,
+      itens: itens.filter((i) => (i.ufs || []).includes(uf)),
+    }))
+    .filter((g) => g.itens.length > 0)
+    .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+  return { federais, estados };
+}
+
+/** As UFs de um item que a carteira REALMENTE atende — e o que a tela escreve
+ *  ao lado de um modulo compartilhado ("vale tambem no Rio Grande do Sul").
+ *  Listar as quatro UFs possiveis para um cliente que so tem duas seria
+ *  prometer estado que aquele tenant nao atende. */
+export function ufsAtendidas(item: ComUfs, ufsCarteira: string[]): string[] {
+  const carteira = new Set(ufsCarteira.map((u) => (u || "").trim().toUpperCase()));
+  return (item.ufs || []).filter((u) => carteira.has(u));
+}
