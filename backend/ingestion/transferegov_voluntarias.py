@@ -960,7 +960,21 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
             # por instrumento (~alguns s) — pesado no host burstable. Por isso a
             # coleta e ligada por env TG_OPS_OBS=1, hoje so no siao-worker
             # (ativado so p/ SIAO; os demais tenants nao gastam CPU com isto).
-            if _idp and _ops_obs_on and prop["numero_proposta"] not in _ops_obs_frescas:
+            #
+            # ⚠️ SO INSTRUMENTO CELEBRADO — mesmo portão das NEs, logo acima, e
+            # pela mesma razão. "Listagem de Repasses" e "Acompanhamento de
+            # Obras" são telas de EXECUÇÃO: proposta que nunca virou convênio não
+            # tem repasse nem obra, e o portal responde 200 com o resumo zerado
+            # (ou, quando o contexto Struts não trocou, com o do instrumento
+            # ANTERIOR). Era assim que voluntária sem desembolso ganhava aba
+            # "OPs/OBs" na tela e caixa "Desembolsado: R$ 0,00" no RM.
+            # De quebra corta ~2 GET por proposta não celebrada, do mesmo
+            # TG_BUDGET_S, num host de 2 vCPU.
+            # ⚠️ Lê `prop["detalhe"]`, NUNCA `prop["codigo_instrumento"]` — essa
+            # chave só nasce dentro do _upsert e o portão rodaria em ZERO.
+            if (_idp and _ops_obs_on
+                    and prop["detalhe"].get("Código do Instrumento")
+                    and prop["numero_proposta"] not in _ops_obs_frescas):
                 try:
                     _oo = (await asyncio.to_thread(_hx.ops_obs, _idp)) if _hx \
                         else (await _extrai_ops_obs(detail_page))
@@ -977,6 +991,12 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
                     logger.warning(f"    obras {prop['numero_proposta']}: {str(e)[:80]}")
                 # Carimba a checagem (mesmo vazia) -> sai do backlog, nao re-navega toda rodada.
                 _stamp_ops_obs(mun["id"], prop["numero_proposta"])
+            elif (_idp and _ops_obs_on
+                    and not prop["detalhe"].get("Código do Instrumento")):
+                # Log obrigatório: sem isto, "instrumento celebrado que perdeu a
+                # chave para de coletar" seria indistinguível de "não celebrado".
+                logger.info(f"    ops_obs/obras {prop['numero_proposta']}: "
+                            "sem Código do Instrumento — não celebrada, pulando")
             # Historico de Comunicacoes + Termos de Notificacao (Projeto Basico /
             # mandatarias). SO com sessao gov.br viva (area /private/).
             if page_auth is not None and _idp and _orc["restante"] > 0:
@@ -1409,6 +1429,16 @@ async def _extrai_ops_obs(page) -> dict | None:
                     "valor": _num_br(c[6]), "valor_acerto": _num_br(c[7]),
                     "situacao": c[8], "data_emissao_ob": c[9],
                 })
+    except Exception:
+        pass
+    # ⚠️ ZERO NAO E DADO — mesmo corte do caminho HTTP. Este e o caminho PADRAO
+    # (TG_HTTP_ENRICH tem default "0"), entao sem ele a correcao valeria so p/
+    # metade dos tenants. {} = "consultei e nao ha": o _upsert nao grava e o
+    # COALESCE preserva.
+    try:
+        from ingestion.transferegov_http import _ops_obs_vazio
+        if _ops_obs_vazio(out):
+            return {}
     except Exception:
         pass
     return out or {}
@@ -1893,8 +1923,15 @@ def _upsert(mun_id: int, propostas: list[dict]):
                if p.get("processo_execucao") else None),
               (json.dumps(p["projeto_basico"], ensure_ascii=False)
                if p.get("projeto_basico") else None),
+              # ⚠️ `is not None`, NÃO truthy. `[]` é RESPOSTA MEDIDA ("consultei
+              # a listagem de empenhos e não há NE"), não ausência. Com a guarda
+              # antiga a lista vazia era falsy, virava NULL e o COALESCE do
+              # ON CONFLICT preservava o valor anterior — a coluna só podia ser
+              # NULA ou lista não-vazia, e "sem empenho" era indistinguível de
+              # "nunca consultado". Seguro porque `notas_empenho` nunca é
+              # pré-semeada em `prop`: só nasce quando o leitor devolve != None.
               (json.dumps(p["notas_empenho"], ensure_ascii=False)
-               if p.get("notas_empenho") else None),
+               if p.get("notas_empenho") is not None else None),
               (json.dumps(p["historico_comunicacoes"], ensure_ascii=False)
                if p.get("historico_comunicacoes") else None),
               (json.dumps(p["documentos_quadro_resumo"], ensure_ascii=False)

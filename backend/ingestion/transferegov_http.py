@@ -166,6 +166,52 @@ def _sessao_caiu(resp: httpx.Response) -> bool:
     return "idp.transferegov" in u or "sso.acesso" in u
 
 
+def _sem_contexto(resp: httpx.Response) -> bool:
+    """True quando o portal respondeu 200 mas a pagina NAO e o detalhe pedido.
+
+    ⚠️ ESTE 200 E VENENO. Os endpoints guest (ListarRepasses, ListarLicitacoes,
+    ListarDocumentosProjetoBasico, listarEmpenhosNovoSiafi) NAO levam o id na
+    URL: leem o convenio do CONTEXTO server-side da sessao (ver docstring do
+    modulo e da classe). Se o GET do detalhe cai no Principal.do ("Proposta nao
+    encontrada") e mesmo assim marcarmos o contexto como setado, a chamada
+    seguinte devolve o instrumento ANTERIOR do lote — dado do convenio errado,
+    com HTTP 200 e sem excecao nenhuma.
+
+    ⚠️ SO a frase especifica. "Um erro ocorreu" ficou de FORA de proposito: e
+    frase generica do template Struts e, se ela existir no detalhe, `detalhe()`
+    devolveria None para TODA proposta e o enrich HTTP inteiro desabaria para o
+    Chromium (~3s/proposta em vez de ~0,7s) num host de 2 vCPU, calado."""
+    #
+    # ⚠️ `n.{0,2}o` e nao `n..o`. A frase chega em TRES grafias, dependendo de
+    # como o acento sobreviveu ao caminho: "nao" (acento apagado, 0 caracteres),
+    # "n�o" (o U+FFFD que o portal serve, 1 caractere) e "nÃ£o" (UTF-8 lido
+    # como latin-1, 2 caracteres). O `n..o` de antes so casava a TERCEIRA — a
+    # menos provavel — e por isso a guarda do projeto_basico, que usa a mesma
+    # frase, nascia praticamente inerte. Achado por teste.
+    return bool(re.search(r"Proposta n.{0,2}o encontrada", resp.text, re.I))
+
+
+def _ops_obs_vazio(out) -> bool:
+    """True quando a "Listagem de Repasses" foi lida e nao ha repasse nenhum.
+
+    ⚠️ ZERO NAO E DADO. A listagem existe para TODO convenio, inclusive o que
+    nunca teve um centavo repassado: nesse caso o resumo vem
+    "R$ 0,00 | R$ 0,00 | R$ 0,00 | (vazio)" e o `_num_br` devolve 0.0 — que NAO
+    e None. Gravado assim, o RM imprimia a caixa "Desembolsado: R$ 0,00"
+    (rm_pdf._desembolso_destaque testava `is None`) e a tela acendia a aba
+    "OPs/OBs" (temOpsObs testava `!= null`).
+
+    Helper de MODULO de proposito: o caminho browser (transferegov_voluntarias
+    ::_extrai_ops_obs) precisa do mesmo predicado."""
+    if not isinstance(out, dict):
+        return True
+    if out.get("obs") or out.get("data_ultimo_desembolso"):
+        return False
+    return not any((out.get(k) or 0) for k in
+                   ("valor_total_repasse", "valor_desembolsado",
+                    "valor_a_desembolsar"))
+
+
 class TgHttpEnrich:
     """Cliente HTTP stateful p/ o enrich de UM municipio (sequencial).
 
@@ -208,9 +254,23 @@ class TgHttpEnrich:
         for tent in (1, 2):
             try:
                 r = self.cli.get(url)
+                # ⚠️ 200 NAO BASTA. O portal serve o Principal.do com "Proposta
+                # nao encontrada" tambem com 200 — e ai o contexto Struts do
+                # instrumento ANTERIOR continua de pe na sessao. Marcar
+                # `_ctx_idp` nesse caso faz ops_obs/licitacao/NEs devolverem o
+                # convenio errado, calado. Ver _sem_contexto.
                 if r.status_code == 200 and not _sessao_caiu(r):
-                    self._ctx_idp = id_proposta
-                    return True
+                    if _sem_contexto(r):
+                        # Nao retorna aqui: a 1a tentativa pode ter caido no
+                        # Principal.do so porque a sessao guest ainda nao existe
+                        # — o ramo `tent == 1` abaixo a estabelece e repete.
+                        logger.warning(
+                            f"contexto {id_proposta} (tent {tent}): 200 sem o "
+                            f"detalhe da proposta — ops_obs/NEs/licitacao "
+                            f"ficam None se a 2a tentativa tambem falhar")
+                    else:
+                        self._ctx_idp = id_proposta
+                        return True
             except Exception as e:
                 logger.debug(f"contexto {id_proposta}: {str(e)[:60]}")
             # 1a falha: estabelece a sessao guest (Acesso Livre) e tenta de novo
@@ -240,6 +300,17 @@ class TgHttpEnrich:
         except Exception:
             return None
         if r.status_code != 200 or _sessao_caiu(r):
+            return None
+        # ⚠️ CONTEXTO ENVENENADO. Este metodo tambem SETA o contexto Struts, e o
+        # cache do _seta_contexto confia nele (nem refaz o GET quando o id bate).
+        # Se a resposta for o Principal.do, marcar o contexto faz o
+        # ops_obs/licitacao/NEs da proposta seguinte lerem o instrumento
+        # ANTERIOR. Limpar e devolver None: o caminho browser assume, e o
+        # COALESCE do _upsert preserva o que ja havia.
+        if _sem_contexto(r):
+            self._ctx_idp = None
+            logger.warning(f"detalhe {id_proposta}: 200 sem o detalhe da "
+                           f"proposta — caindo no browser")
             return None
         self._ctx_idp = id_proposta  # o GET ja setou o contexto do convenio
         doc = _parse(r)
@@ -406,7 +477,9 @@ class TgHttpEnrich:
                                     })
         except Exception:
             pass
-        return out or {}
+        # {} = "consultei e nao ha repasse". O _upsert nao grava (e falsy) e o
+        # COALESCE preserva o que houver. Ver _ops_obs_vazio: ZERO NAO E DADO.
+        return {} if _ops_obs_vazio(out) else (out or {})
 
     # ---------- Processo de Execucao (Listagem de Licitacoes, guest) ----------
 
@@ -693,7 +766,9 @@ class TgHttpEnrich:
         # "Proposta nao encontrada". Recusar os dois explicitamente.
         if re.search(r"MantendoProjetoBasicoINSERIR|Descri..o do documento", r.text, re.I):
             return None
-        if re.search(r"Proposta n..o encontrada|Um erro ocorreu", r.text, re.I):
+        # `n.{0,2}o` porque o acento chega em tres grafias — ver _sem_contexto,
+        # onde o mesmo `n..o` casava so a menos provavel das tres.
+        if re.search(r"Proposta n.{0,2}o encontrada|Um erro ocorreu", r.text, re.I):
             return None
         return self._le_projeto_basico(r)
 

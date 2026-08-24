@@ -241,7 +241,13 @@ def _campos_do_item(item: dict) -> list[tuple[str, str]]:
     # Situação atual (status do ciclo, ex.: "Em execução")
     if item.get("situacao_atual"):
         out.append(("Situação atual", item["situacao_atual"]))
-    # Empenhado (TransfereGov: Sim/Não)
+    # Empenhado — nas VOLUNTÁRIAS do TransfereGov é "Sim"/"Não"/CALADO, derivado
+    # em rm_builder._empenhado_rotulo. Nas demais fontes (FNS, SIGCON) ainda é o
+    # ternário Sim/Não de sempre; `_campos_do_item` é compartilhado.
+    # ⚠️ VAZIO É DE PROPÓSITO, NÃO É BUG. Na voluntária, "sem NE coletada" não
+    # prova "não empenhado", e o flag detalhe->>'Empenhado' do portal erra nos
+    # dois sentidos. Quando não há prova, a linha SOME. Não repor um "Não"
+    # default aqui — o lugar de mudar a regra é o rm_builder.
     if item.get("empenhado"):
         out.append(("Empenhado", item["empenhado"]))
     # Situação do NEs — o documento, logo abaixo do Sim/Não que é inferência.
@@ -249,6 +255,24 @@ def _campos_do_item(item: dict) -> list[tuple[str, str]]:
     # que não há empenho, porque proposta não consultada cai no mesmo vazio.
     if item.get("nes"):
         out.append(("Situação do NEs", item["nes"]))
+    # VALOR EMPENHADO — o número que sustenta o "PENDENTE DE EMPENHO" que já sai
+    # dentro da Situação atual.
+    #
+    # ⚠️ `is not None`, e NÃO o helper `add` nem um `if` simples: 0,0 aqui é
+    # RESPOSTA ("a listagem foi consultada e não há empenho") e o `add` acima
+    # trata 0 como vazio, o que apagaria justamente o caso que o dono pediu para
+    # ver. Ausente (None) = nunca consultado -> a linha não sai, porque o
+    # relatório não afirma o que ninguém mediu.
+    #
+    # ⚠️ LINHA PRÓPRIA, e não pendurada em `_clausula_destaque`: aquela aborta
+    # com `if not _tem_clausula(item): return None`, e Termo de Compromisso sem
+    # empenho tipicamente NÃO tem cláusula suspensiva — o texto nunca sairia, e
+    # sairia calado (é o mesmo motivo de `_obra_destaque`).
+    if item.get("valor_empenhado") is not None:
+        _ve = _fmt_money(item["valor_empenhado"])
+        if item.get("pendente_empenho"):
+            _ve += " — PENDENTE DE EMPENHO (Termo de Compromisso sem nota de empenho)"
+        out.append(("Valor empenhado", _ve))
     # Situação de Contratação "Normal" aparece como linha simples; Cláusula
     # Suspensiva / Liminar Judicial vão para a CAIXA DE DESTAQUE (_clausula_destaque),
     # então NÃO entram aqui.
@@ -310,7 +334,13 @@ def _desembolso_destaque(item: dict) -> str | None:
     vd = item.get("valor_desembolsado")
     va = item.get("valor_a_desembolsar")
     lanc = item.get("desembolsos") or []
-    if vd is None and va is None and not lanc:
+    # ⚠️ `is None` NÃO BASTA. O coletor grava 0.0 (não None) quando a Listagem de
+    # Repasses existe e está zerada — e 0.0 passava por esta guarda, fazendo o
+    # relatório abrir uma caixa de desembolso "R$ 0,00" em voluntária que nunca
+    # teve repasse. Só há o que dizer quando há LANÇAMENTO ou algum valor
+    # diferente de zero (a desembolsar > 0 continua valendo: é repasse previsto
+    # e ainda não pago, que é informação de verdade).
+    if not lanc and not (vd or 0) and not (va or 0):
         return None
     partes = []
     cab = []

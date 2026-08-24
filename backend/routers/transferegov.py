@@ -217,6 +217,46 @@ def _digits(s) -> str:
     return "".join(c for c in (s or "") if c.isdigit())
 
 
+def _padrao_like(termo: str) -> str:
+    """Termo digitado -> padrao ILIKE que sobrevive ao acento PERDIDO da fonte.
+
+    ⚠️ O portal TransfereGov serve U+FFFD no lugar da letra acentuada e o coletor
+    APAGA esse caractere (ingestion/transferegov_voluntarias.py, `_clean`, por
+    onde `proponente` passa). O banco guarda, entao, "MUNICPIO DE SO GONALO"
+    onde o portal queria "MUNICÍPIO DE SÃO GONÇALO" — e `proponente ILIKE
+    '%São%'` nunca casa. Nem `'%Sao%'`: a letra nao foi desacentuada, foi
+    DELETADA.
+
+    Nao e teoria. Este mesmo arquivo ja convive com isso em _VOLUNTARIA_LIKE
+    ("%enviado para an%lise%") e o upsert do coletor se recusa a sobrescrever
+    `objeto` quando o texto novo contem chr(65533). A busca era o unico lugar
+    que ignorava a regra.
+
+    A saida e a MESMA do _VOLUNTARIA_LIKE, generalizada: cada caractere
+    nao-ASCII do termo vira `%`, que casa a letra presente ("São"), a letra sem
+    acento ("Sao") e a letra ausente ("So").
+
+    Escapa ANTES os curingas do LIKE (`\\`, `%`, `_`): sem isso um `_` digitado
+    casa qualquer caractere e um `%` sozinho devolve a base inteira. O caractere
+    de escape do LIKE no Postgres JA e a barra invertida por padrao — nao ha
+    clausula ESCAPE de proposito, para nao depender de standard_conforming_strings.
+
+    Devolve "" para termo vazio: quem chama TEM de pular o filtro nesse caso, e
+    nunca mandar "%%" (que traria tudo e pareceria "o filtro nao funciona")."""
+    t = (termo or "").strip()
+    if not t:
+        return ""
+    saida = []
+    for ch in t:
+        if ch in ("\\", "%", "_"):
+            saida.append("\\" + ch)
+        elif ord(ch) > 127 or len(unicodedata.normalize("NFD", ch)) > 1:
+            saida.append("%")
+        else:
+            saida.append(ch)
+    return "%" + "".join(saida) + "%"
+
+
 @router.get("/por-cnpj", dependencies=[exige("transferegov.ver")])
 async def por_cnpj(
     cnpj: str = Query(..., description="CNPJ do proponente (com ou sem mascara)"),
@@ -321,6 +361,22 @@ _ENCERRADA_SQL = (
     "(situacao ILIKE '%anulad%' OR situacao ILIKE '%rescind%' OR "
     "(situacao ILIKE '%presta%' AND (situacao ILIKE '%conclu%' OR situacao ILIKE '%aprovad%')))"
 )
+# EM QUAL DAS QUATRO TELAS de propostas um instrumento aparece, como expressao SQL.
+# Existe para o vinculo do /pac poder LINKAR para a tela certa usando AS MESMAS
+# regras que o /voluntarias usa para montar cada categoria — se divergissem, o
+# link do PAC levaria a uma tela onde o convenio nao esta, que e pior que nao
+# linkar. A ordem repete a do handler `voluntarias`: voluntarias -> rejeitadas ->
+# encerradas -> o que sobra. `situacao` NULA cai no ELSE ('geral'), igual ao
+# ramo `situacao IS NULL` de la.
+# ⚠️ `situacao` sem qualificador: so pode ser usado em consulta onde
+# transferegov_propostas e a unica tabela com essa coluna.
+_CATEGORIA_SQL = (
+    "CASE "
+    f"WHEN {_VOLUNTARIA_SQL} THEN 'voluntarias' "
+    "WHEN situacao ILIKE '%rejeitad%' THEN 'rejeitadas' "
+    f"WHEN {_ENCERRADA_SQL} THEN 'encerradas' "
+    "ELSE 'geral' END"
+)
 
 
 @router.get("/voluntarias", dependencies=[exige("transferegov.ver")])
@@ -328,7 +384,18 @@ async def voluntarias(
     municipio_id: int = Query(...),
     situacao: Optional[str] = Query(None),
     orgao: Optional[str] = Query(None),
-    search: Optional[str] = Query(None, description="busca em numero/proponente"),
+    # BUSCA SEPARADA POR CAMPO. A caixa unica ("nº / proponente / CNPJ") era um OR
+    # de tres colunas: nao dava para dizer QUAL numero se procurava, o numero do
+    # CONVENIO nem era consultado, e qualquer digito no termo arrastava CNPJs
+    # parecidos junto. Cada campo abaixo filtra a SUA coluna.
+    instrumento: Optional[str] = Query(None, description="nº do convênio/instrumento (codigo_instrumento ou numero_processo)"),
+    proposta: Optional[str] = Query(None, description="nº da proposta (ex.: 048291/2025)"),
+    proponente: Optional[str] = Query(None, description="nome do proponente"),
+    cnpj: Optional[str] = Query(None, description="CNPJ do proponente, com ou sem máscara"),
+    # LEGADO: a caixa unica saiu da tela, mas URLs salvas ainda mandam `search`.
+    # Continua valendo — e agora tambem olha o codigo_instrumento, que era o
+    # numero que faltava.
+    search: Optional[str] = Query(None, description="LEGADO: busca em nº proposta/instrumento/proponente/CNPJ"),
     parlamentar: Optional[str] = Query(None, description="filtra pelo parlamentar (ILIKE)"),
     # Aceitam VARIOS valores (?vigencia=vence30&vigencia=prestacao). Um valor
     # unico chega como lista de um, entao os links antigos dos KPIs do dashboard
@@ -379,13 +446,41 @@ async def voluntarias(
             _conds.append(f"situacao_contratacao ILIKE :sc{_i}")
             params[f"sc{_i}"] = f"%{_sc}%"
         where.append("(" + " OR ".join(_conds) + ")")
+    # --- BUSCA POR CAMPO (cada um filtra a SUA coluna, e sao combinados com AND) ---
+    if _padrao_like(instrumento or ""):
+        # O numero do CONVENIO ("981397"). E o que a tela imprime na meta de cada
+        # item ("· instr 981397") e o que titula o modal — e era a UNICA coluna que
+        # a busca nao olhava. `numero_processo` entra junto porque e o outro numero
+        # do mesmo instrumento, impresso no detalhe: um quinto campo so para ele
+        # seria formulario a mais para a mesma pergunta.
+        where.append("(codigo_instrumento ILIKE :inst OR numero_processo ILIKE :inst)")
+        params["inst"] = _padrao_like(instrumento)
+    if _padrao_like(proposta or ""):
+        where.append("numero_proposta ILIKE :prop")
+        params["prop"] = _padrao_like(proposta)
+    if _padrao_like(proponente or ""):
+        where.append("proponente ILIKE :propon")
+        params["propon"] = _padrao_like(proponente)
+    if cnpj:
+        # SO OS DIGITOS, dos dois lados: o portal grava com mascara
+        # ("18.243.220/0001-01") e o gestor cola dos dois jeitos. Termo sem digito
+        # nenhum nao filtra — CNPJ e numero, e casar letra contra CNPJ so daria ruido.
+        _c = _digits(cnpj)
+        if _c:
+            where.append(r"regexp_replace(coalesce(identificacao,''), '\D', '', 'g') LIKE :cnpj")
+            params["cnpj"] = f"%{_c}%"
     if search:
-        # Busca por numero / proponente (nome) / CNPJ (identificacao). Aceita CNPJ
-        # com ou sem mascara: compara tambem so os digitos.
-        conds = ["numero_proposta ILIKE :s", "proponente ILIKE :s", "identificacao ILIKE :s"]
-        params["s"] = f"%{search}%"
+        # LEGADO (a tela nao manda mais; links salvos ainda mandam). Duas
+        # correcoes: ganhou codigo_instrumento e passou a usar o padrao tolerante
+        # ao acento apagado.
+        conds = ["numero_proposta ILIKE :s", "codigo_instrumento ILIKE :s",
+                 "proponente ILIKE :s", "identificacao ILIKE :s"]
+        params["s"] = _padrao_like(search) or f"%{search}%"
         _sd = _digits(search)
-        if _sd:
+        # >= 8 digitos: so entao o termo parece pedaco de CNPJ. Antes QUALQUER
+        # numero entrava aqui — buscar "2025" devolvia toda proposta cujo CNPJ
+        # contivesse 2025, misturado com os acertos de verdade.
+        if len(_sd) >= 8:
             conds.append(r"regexp_replace(coalesce(identificacao,''), '\D', '', 'g') LIKE :sd")
             params["sd"] = f"%{_sd}%"
         where.append("(" + " OR ".join(conds) + ")")
@@ -738,6 +833,67 @@ async def listar_pac(
         ORDER BY numero_proposta DESC
     """
     rows = (await db.execute(text(sql), params)).fetchall()
+
+    # === ELO INVERSO: PAC -> VOLUNTARIA/CONVENIO ============================
+    # O RM ja resolve o sentido "de qual selecao do PAC esta voluntaria nasceu"
+    # (services/rm_builder._pac_da_voluntaria, usado para nao imprimir o mesmo
+    # recurso duas vezes). A TELA do PAC precisa do caminho contrario: dado um
+    # item da selecao, QUAL instrumento nasceu dele.
+    #
+    # ⚠️ SEGUNDA CONSULTA, e nao coluna nova no SELECT acima: o dict logo abaixo le
+    # por INDICE (r[0]..r[13]) e uma coluna no meio deslocaria tudo em silencio.
+    #
+    # ⚠️ A leitura do JSONB acontece no BANCO, e nao em Python: trazer a coluna
+    # `detalhe` inteira de todas as propostas do municipio so para ler UMA chave
+    # poria alguns MB no fio a cada abertura da tela, e o host e burstable de
+    # 2 vCPU. Com o LATERAL sai UMA linha por proposta que TEM vinculo.
+    #
+    # ⚠️ O pre-filtro `p.detalhe::text ILIKE '%novo pac%'` NAO e redundante com o
+    # `lower(kv.key) LIKE` de dentro: sem ele o LATERAL expande TODAS as chaves de
+    # TODAS as propostas do municipio (dezenas por proposta) para so entao
+    # descartar. Ele derruba o conjunto para as ~35 propostas que tem o campo,
+    # ANTES da expansao. E o que torna isto viavel num host de 2 vCPU.
+    #
+    # ⚠️ `lower(kv.key) LIKE '%novo pac%'` e o equivalente SQL da busca tolerante de
+    # `_pac_da_voluntaria` (que normaliza NFD e procura "novo pac"): o trecho
+    # procurado nao tem acento nenhum, so o resto do rotulo tem. Se um dia o rotulo
+    # do portal mudar, os DOIS lados precisam mudar juntos.
+    vinc_sql = rf"""
+        SELECT regexp_replace(kv.value, '\D', '', 'g') AS pac_digitos,
+               p.numero_proposta, p.codigo_instrumento, p.situacao,
+               p.dt_inicio_vigencia, p.dt_fim_vigencia, p.valor_repasse,
+               {_CATEGORIA_SQL} AS categoria
+        FROM transferegov_propostas p
+        CROSS JOIN LATERAL jsonb_each_text(
+            CASE WHEN jsonb_typeof(p.detalhe) = 'object' THEN p.detalhe ELSE '{{}}'::jsonb END
+        ) AS kv
+        WHERE p.municipio_id = :m
+          AND p.detalhe::text ILIKE '%novo pac%'
+          AND left(kv.key, 1) <> '_'
+          AND lower(kv.key) LIKE '%novo pac%'
+          AND regexp_replace(kv.value, '\D', '', 'g') <> ''
+    """
+    por_pac: dict[str, list[dict]] = {}
+    try:
+        for v in (await db.execute(text(vinc_sql), {"m": municipio_id})).fetchall():
+            por_pac.setdefault(v[0], []).append({
+                "numero_proposta": v[1],
+                "codigo_instrumento": v[2],
+                "situacao": v[3],
+                "dt_inicio_vigencia": v[4],
+                "dt_fim_vigencia": v[5],
+                "valor_repasse": float(v[6]) if v[6] is not None else None,
+                "dias_restantes": _dias_restantes(v[5]),
+                # Em qual das quatro telas de propostas o instrumento esta —
+                # calculado com AS MESMAS constantes do /voluntarias (_CATEGORIA_SQL).
+                "categoria": v[7],
+            })
+    except Exception as ex:
+        # Best-effort, igual ao bloco do PAC no rm_builder: tenant onde as
+        # voluntarias nunca foram raspadas nao pode PERDER a listagem do PAC por
+        # causa do vinculo. Sem vinculo a tela mostra o que sempre mostrou.
+        logger.warning(f"PAC: vinculo com voluntarias indisponivel p/ {municipio_id}: {str(ex)[:120]}")
+
     def _f(v):
         return float(v) if v is not None else None
     items = [{
@@ -746,6 +902,11 @@ async def listar_pac(
         "valor_repasse": _f(r[6]), "valor_contrapartida": _f(r[7]), "valor_total": _f(r[8]),
         "emenda_parlamentar": r[9], "qualificacao": r[10],
         "objeto": r[11], "justificativa": r[12],
+        # LISTA, e nao um so: nada no portal impede duas propostas apontarem para a
+        # mesma selecao, e escolher uma calada esconderia a outra. Vazia = nao ha
+        # instrumento CONHECIDO — nao e o mesmo que "nao ha instrumento" (tenant
+        # com as voluntarias nunca raspadas cai no mesmo vazio).
+        "vinculos": por_pac.get(_digits(r[0]), []),
     } for r in rows]
     atualizado = max((r[13] for r in rows if r[13]), default=None)
     return {"items": items, "total": len(items),
