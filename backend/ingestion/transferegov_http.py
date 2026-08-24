@@ -188,6 +188,17 @@ def _sem_contexto(resp: httpx.Response) -> bool:
     # como latin-1, 2 caracteres). O `n..o` de antes so casava a TERCEIRA — a
     # menos provavel — e por isso a guarda do projeto_basico, que usa a mesma
     # frase, nascia praticamente inerte. Achado por teste.
+    #
+    # ⚠️ O MURO SAML TAMBEM E "SEM CONTEXTO", e e o caso MAIS COMUM dos dois.
+    # Medido em 24/08/2026: com a sessao do SP `voluntarias` fria, o GET do
+    # detalhe devolve HTTP 200 com ~3469 bytes de formulario SAML — sem
+    # redirecionar (entao `_sessao_caiu` nao ve, porque ela so olha a URL) e sem
+    # a frase de erro do Struts. `_seta_contexto` marcava o contexto como VALIDO
+    # para essa pagina e `detalhe()` a parseava em `{}`. Ver a nota em `detalhe`.
+    # `projeto_basico` ja recusava este mesmo formulario por conta propria; aqui
+    # a recusa passa a valer para todos os consumidores do contexto.
+    if re.search(r"Post Binding|SAMLRequest|SAMLResponse", resp.text, re.I):
+        return True
     return bool(re.search(r"Proposta n.{0,2}o encontrada", resp.text, re.I))
 
 
@@ -382,6 +393,30 @@ class TgHttpEnrich:
         # so protege contra NULL), devolver este campo SOBRESCREVERIA o valor bom
         # do CSV. Omitir mantem o comportamento atual e deixa o CSV mandar.
         out.pop("Situação no SIAFI", None)
+        # ⚠️⚠️ DICIONARIO VAZIO NAO E DETALHE — E FALHA, E TEM DE VIRAR None.
+        #
+        # O chamador decide o fallback com `_via_http = det is not None`
+        # (ingestion/transferegov_voluntarias.py). `{}` passa nesse teste: o
+        # browser NUNCA e acionado, `prop["detalhe"]` fica vazio e TUDO o que
+        # depende dele some de uma vez — `codigo_instrumento`, `modalidade`,
+        # `numero_processo`, `objeto`, o portao das NEs e o de ops_obs/obras. E
+        # como o `_upsert` usa COALESCE, nada e sobrescrito: nao ha excecao, nao
+        # ha log, e o unico sintoma e a proposta parar de enriquecer.
+        #
+        # MEDIDO EM PRODUCAO (Freitas, 24/08/2026): 113 de 113 propostas do lote
+        # cairam aqui — as duas paginas eram o muro SAML de 3469 bytes. O sintoma
+        # so ficou visivel porque o log do portao de ops_obs passou a dizer o
+        # motivo; antes disso a coleta parecia normal.
+        #
+        # O teste e por CAMPO CONHECIDO, e nao por `if out`: a pagina de erro
+        # tambem produz `_situacao_macro` as vezes, e um dicionario com so isso
+        # continua sendo "nao consegui ler o detalhe".
+        if not any(k in out for k in (
+                "Número da Proposta", "Código do Instrumento", "Modalidade",
+                "Objeto do Instrumento", "Número do Processo")):
+            logger.warning(f"detalhe {id_proposta}: pagina sem campo conhecido "
+                           f"({len(r.content)} bytes) — caindo no browser")
+            return None
         return out
 
     # ---------- OPs/OBs (Listagem de Repasses, guest) ----------
