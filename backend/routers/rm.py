@@ -54,6 +54,7 @@ mesmo POST sobrescreve o RM que ja existe naquela data. Ele leva o gate de
 alcance quando a linha JA EXISTE — ver o comentario dentro de `criar`. Sem isso,
 "nao pode editar o RM do colega" seria uma frase que so valia no PUT.
 """
+import asyncio
 from datetime import date
 from typing import Optional
 from fastapi import APIRouter, Depends, Query, HTTPException, Request
@@ -73,8 +74,10 @@ from services.audit import registrar
 from services.rm_builder import montar_conteudo
 from services import rm_config
 from services.rm_pdf import gerar_pdf
+from services.rm_docx import gerar_docx_rm
 from services.rm_export import (
     gerar_totalizado_xlsx, gerar_totalizado_pdf, gerar_resumido_pdf,
+    gerar_resumido_docx,
 )
 
 router = APIRouter(prefix="/api/rm", tags=["rm"])
@@ -562,8 +565,8 @@ async def remover(
 async def pdf(
     rid: int,
     request: Request,
-    tipo: str = Query("completo", description="completo | resumido | totalizado"),
-    formato: str = Query("pdf", description="pdf | xlsx (xlsx só p/ totalizado)"),
+    tipo: str = Query("completo", description="completo | resumido"),
+    formato: str = Query("pdf", description="pdf | docx (Word)"),
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
@@ -635,6 +638,45 @@ async def pdf(
         return Response(
             content=conteudo_bytes,
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{nome}"'},
+        )
+
+    # ─── WORD (.docx) ────────────────────────────────────────────────────────
+    # Pedido do dono: "no relatorio RM alem do pdf, de a opcao de gerar em WORD
+    # tb". Vale para os DOIS tipos vivos (completo e resumido).
+    #
+    # ⚠️ `formato` ERA UM PARAMETRO MORTO. Normalizado logo acima e lido so num
+    # ramo inalcancavel do totalizado, ele fazia `?formato=xlsx` devolver PDF em
+    # silencio. Agora ele decide de verdade — e QUALQUER valor que nao seja
+    # exatamente "docx" continua caindo no PDF, inclusive o "xlsx" de links
+    # antigos: e o comportamento que ja existia, nao uma regressao nova.
+    #
+    # Fica DEPOIS do `raise` do totalizado de proposito: `tipo=totalizado` tem de
+    # continuar recebendo 400, em qualquer formato.
+    if formato == "docx":
+        rotulo = "Resumido" if tipo == "resumido" else "Completo"
+        # ⚠️ EM THREAD. `gerar_docx_rm` e CPU pura e sincrona: medido em 28s para
+        # um RM de 300 itens. Chamado direto de dentro deste `async def`, ele
+        # congela o event loop do worker — e com `--workers 2` no Dockerfile.api
+        # mais o HEALTHCHECK de 5s/3 tentativas, dois exports simultaneos deixam
+        # `/api/health` sem resposta e o container do tenant e REINICIADO,
+        # derrubando quem nao tem nada a ver com o download.
+        docx_bytes = await asyncio.to_thread(
+            gerar_resumido_docx if tipo == "resumido" else gerar_docx_rm,
+            meta, conteudo, municipio,
+        )
+        nome = f"RM-{rotulo}-{row[5]}-{dt_str}.docx".replace(" ", "_")
+        await _registrar_export(nome, "docx", rotulo.lower())
+        # ⚠️ `attachment`, e NAO `inline` como o PDF: o navegador nao renderiza
+        # .docx. Com `inline` o Chrome baixaria assim mesmo, mas o Edge e o
+        # Safari abrem uma aba em branco. O frontend nao depende deste cabecalho
+        # para o download (o conteudo vira blob e perde os headers) — ele o le so
+        # para o NOME do arquivo, o que funciona porque `main.py` lista
+        # `Content-Disposition` em `expose_headers`.
+        return Response(
+            content=docx_bytes,
+            media_type=("application/vnd.openxmlformats-officedocument"
+                        ".wordprocessingml.document"),
             headers={"Content-Disposition": f'attachment; filename="{nome}"'},
         )
 
