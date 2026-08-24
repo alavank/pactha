@@ -541,19 +541,21 @@ def _obra_resumo(obras, medicoes: int | None = None) -> str:
        atestadas, ]totalizando R$ X em valor executado, correspondente a Y% do
        valor total de R$ Z."
 
-    ⚠️ `medicoes` E OPCIONAL PORQUE O DADO AINDA NAO E COLETADO. O exemplo do dono
-    traz "com 02 medicoes atestadas", mas a contagem de medicoes atestadas nao
-    esta em nenhum endpoint que o obras() ja consulta (contratoslotes, contratos,
-    arts, situacaoParalisacao). Em vez de inventar o numero ou travar a frase
-    inteira, a oracao some quando o valor e desconhecido — o resto e 100%
-    derivado do que ja existe. Quando a coleta da medicao entrar, basta passar o
-    parametro.
+    `medicoes` continua OPCIONAL, mas agora tem de onde vir: o coletor passou a
+    ler /contratos/{id}/medicoes e a contar as ATESTADAS por lote. Quando o
+    parametro nao vier, a funcao SOMA o que estiver nos lotes; se nem isso
+    existir (proposta coletada antes desta versao), a oracao some — em vez de
+    inventar o numero ou travar a frase inteira.
 
     String vazia quando nao ha obra ou nao ha o que dizer."""
     d = _jsonb(obras)
     if not isinstance(d, dict):
         return ""
     lotes = d.get("lotes") if isinstance(d.get("lotes"), list) else []
+    if medicoes is None:
+        _soma = sum((l or {}).get("medicoes_atestadas") or 0
+                    for l in lotes if isinstance(l, dict))
+        medicoes = _soma or None
     tem_art = any((l or {}).get("arts") for l in lotes if isinstance(l, dict))
     if lotes and not tem_art:
         return ("Necessário cumprir a exigência de cadastro da ART/RRT para "
