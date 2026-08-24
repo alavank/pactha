@@ -1,0 +1,26 @@
+-- RM por selecao de CONSULTAS (fontes) — PARTE 1 de 2: a COLUNA.
+--
+-- Pedido do dono: "um filtro de multiselecao das consultas, tipo transferegov,
+-- sigconv, fns...". `fontes` entra na IDENTIDADE do relatorio, e nao como
+-- atributo: gerar "so TransfereGov de 2026" NAO PODE sobrescrever o RM completo
+-- de 2026 — isso apagaria trabalho em silencio, pelo `ON CONFLICT DO UPDATE`
+-- de routers/rm.py (o unico UPSERT desta tabela no repo).
+--
+-- CONVENCAO DO VAZIO, a mesma dos anos: '{}' = TODAS as consultas = o completo.
+-- Toda linha QUE JA EXISTE nasce com '{}' pelo DEFAULT, ou seja: continua sendo
+-- exatamente o relatorio que era, com a mesma chave que tinha, sem tocar em
+-- conteudo nem em titulo. NAO HA BACKFILL, e nao pode haver — qualquer UPDATE
+-- aqui reclassificaria RM ja emitido.
+--
+-- ⚠️ POR QUE A COLUNA E O INDICE ESTAO EM ARQUIVOS SEPARADOS. O runner de
+-- services/startup.py executa o arquivo INTEIRO num unico `cur.execute()`, ou
+-- seja, UMA transacao. Juntos, uma falha do CREATE INDEX reverteria tambem o
+-- ALTER — e, como o runner classifica o erro por SUBSTRING ("duplicate"), o log
+-- ainda diria "ja aplicada (skip)". Separados, "coluna sim, indice nao" vira um
+-- estado ALCANCAVEL, que e o unico estado em que o 503 do router faz sentido.
+--
+-- Idempotente: IF NOT EXISTS. Roda igual em banco novo (Santa Maria/RS nasceu do
+-- zero) porque add_rm.sql / add_rm_escopo.sql / add_rm_anos.sql vem antes na
+-- lista, nesta ordem.
+ALTER TABLE rm_relatorios
+    ADD COLUMN IF NOT EXISTS fontes TEXT[] NOT NULL DEFAULT '{}';

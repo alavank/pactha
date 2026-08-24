@@ -369,6 +369,11 @@ def gerar_docx_rm(meta: dict, conteudo: dict, municipio_nome: str) -> bytes:
         elif evento == "local_data":
             p, _ = _paragrafo(doc, "data_local")
             _run(p, dado, "data_local")
+        elif evento == "consultas":
+            # "Consultas incluídas: ..." — só existe em RM filtrado. Mesmo estilo
+            # da linha de cima, como no PDF.
+            p, _ = _paragrafo(doc, "data_local")
+            _run(p, dado, "data_local")
         elif evento == "quebra":
             # No Word a quebra vai NO PARAGRAFO da parte (`page_break_before`), e
             # nao num paragrafo vazio proprio: um paragrafo so para quebrar deixa

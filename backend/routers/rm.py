@@ -62,6 +62,11 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
+# Erro de banco do UPSERT vira mensagem que o usuario entende, e nao 500 cru —
+# ver o `except` em `criar`. `DBAPIError` e a mae de IntegrityError (23505, chave
+# duplicada) e de ProgrammingError (42P10, ON CONFLICT sem indice), que sao
+# exatamente os dois modos de falha da janela dos dois deploys.
+from sqlalchemy.exc import DBAPIError
 import json
 from config import get_settings
 from database import get_db
@@ -73,6 +78,9 @@ from models.user import User
 from services.audit import registrar
 from services.rm_builder import montar_conteudo
 from services import rm_config
+# Catalogo das CONSULTAS que compoem o RM. Fica no BACKEND e a tela consome por
+# `GET /api/rm/fontes` — ver o cabecalho de services/rm_fontes.py.
+from services import rm_fontes
 from services.rm_pdf import gerar_pdf
 from services.rm_docx import gerar_docx_rm
 from services.rm_export import (
@@ -114,9 +122,19 @@ class RmCreate(BaseModel):
     #   []           -> TODOS os anos (o "completo")
     #   [2026]       -> so 2026
     #   [2024,2025]  -> esses anos juntos, num unico relatorio
-    # A identidade do RM e (municipio_id, anos) — ver migrations/add_rm_anos.sql e
-    # services/rm_builder.montar_conteudo(anos=...). Sempre 4 partes (padrao Freitas).
+    # A identidade do RM e (municipio_id, anos, fontes) — ver add_rm_anos.sql,
+    # add_rm_fontes_coluna.sql/add_rm_fontes_indice.sql e
+    # services/rm_builder.montar_conteudo(anos=..., fontes=...).
+    # Sempre 4 partes (padrao Freitas).
     anos: list[int] = []
+    # SELECAO de CONSULTAS do relatorio (as chaves de services/rm_fontes.CHAVES,
+    # que sao literalmente o que o item carrega em `fonte`):
+    #   []                        -> TODAS as consultas (o completo)
+    #   ["voluntaria"]            -> so TransfereGov Voluntarias
+    #   ["voluntaria","fns"]      -> essas duas juntas, num unico relatorio
+    # Chave desconhecida e descartada por `rm_fontes.normalizar` (nao e 400): a
+    # tela so oferece o catalogo, entao chave estranha e link velho.
+    fontes: list[str] = []
 
 
 class RmUpdate(BaseModel):
@@ -171,6 +189,12 @@ def _row_to_dict(row, usuario) -> dict:
         "escopo": row[11],
         # SELECAO de anos do relatorio ([] = todos = completo). A lista mostra o escopo.
         "anos": list(row[12]) if row[12] is not None else [],
+        # ⚠️ `fontes` NAO entra aqui, e a razao e a armadilha nº 1 do repo: coluna
+        # nova vai no FIM de cada SELECT, e o FIM e um INDICE DIFERENTE em cada um
+        # (row[14] no `listar`, row[15] no `detalhe`, porque m.nome/m.uf vem depois
+        # de r.anos). Cada chamador carimba o seu, como ja faz com
+        # `municipio_nome`. Ler por indice fixo aqui daria `uf` como lista de
+        # consultas num dos dois, sem erro nenhum.
         "pode_editar": authz.pode_editar_item(usuario, "rm", "editar", criado_por),
         "pode_excluir": authz.pode_editar_item(usuario, "rm", "excluir", criado_por),
     }
@@ -191,16 +215,25 @@ async def listar(
     sql = f"""
         SELECT r.id, r.municipio_id, r.data_referencia, r.cidade_emissao,
                r.titulo, r.rodape, r.status, NULL, r.criado_por,
-               r.created_at, r.updated_at, r.escopo, r.anos, m.nome AS municipio_nome
+               r.created_at, r.updated_at, r.escopo, r.anos, m.nome AS municipio_nome,
+               -- ⚠️ COLUNA NOVA NO FIM (armadilha nº 1). Nao pode entrar antes de
+               -- `m.nome`: row[13] e lido logo abaixo, e `_row_to_dict` le row[0..12].
+               r.fontes
         FROM rm_relatorios r LEFT JOIN municipios m ON m.id = r.municipio_id
         {('WHERE ' + ' AND '.join(where)) if where else ''}
-        ORDER BY cardinality(r.anos) = 0 DESC, r.anos DESC, r.id DESC
+        -- Dentro do mesmo escopo de anos, o SEM filtro de consultas vem primeiro:
+        -- agora ha dois RMs do mesmo periodo na lista, e o completo e o principal.
+        ORDER BY cardinality(r.anos) = 0 DESC, r.anos DESC,
+                 cardinality(r.fontes) = 0 DESC, r.id DESC
     """
     rs = (await db.execute(text(sql), params)).fetchall()
     items = []
     for row in rs:
         d = _row_to_dict(row, current)
         d["municipio_nome"] = row[13]
+        # CONSULTAS do relatorio ([] = todas). row[14] = o FIM deste SELECT — ver
+        # a nota em `_row_to_dict` sobre por que o indice nao e o mesmo do detalhe.
+        d["fontes"] = list(row[14]) if row[14] is not None else []
         items.append(d)
     return {"items": items, "total": len(items)}
 
@@ -247,11 +280,25 @@ async def criar(
     # pelo cabecalho do PDF (padrao Freitas em ambos).
     _anos = sorted({int(a) for a in (body.anos or []) if a})
     _escopo = "completo" if not _anos else "parcial"
+    # SELECAO de CONSULTAS, normalizada no MESMO lugar e pelo mesmo motivo dos
+    # anos: a chave e um indice UNICO sobre ARRAY, entao ordem e repeticao criam
+    # relatorio duplicado. `normalizar` tambem devolve [] quando TODAS estao
+    # marcadas — "marquei tudo" tem de ser o mesmo RM que "nao marquei nada".
+    # ⚠️ `escopo` continua sendo SO SOBRE ANOS: ele decide o cabecalho do PDF
+    # (exercicio x data por extenso) e o backfill que add_rm_anos.sql roda a cada
+    # boot le esse valor. Consulta nao entra nele.
+    _fontes = rm_fontes.normalizar(body.fontes)
     # asyncpg exige uma LISTA Python p/ param INT[] (o CAST informa o tipo do
     # elemento e cobre a lista vazia = completo). Passar string '{2026}' quebra.
+    # ⚠️ ESTA CONSULTA E O ESPELHO DO `ON CONFLICT` LA EMBAIXO, e as duas tem de
+    # falar da MESMA chave. E ela que define `ja_existia` e, com isso, dispara o
+    # gate de alcance por linha. Se a identidade mudar e esta consulta ficar para
+    # tras, "so pode mexer no que ele criou" passa a errar em silencio — a porta
+    # dos fundos descrita no topo do arquivo.
     anterior = (await db.execute(text(
         "SELECT id FROM rm_relatorios WHERE municipio_id = :m AND anos = CAST(:a AS INT[])"
-    ), {"m": body.municipio_id, "a": _anos})).first()
+        " AND fontes = CAST(:f AS TEXT[])"
+    ), {"m": body.municipio_id, "a": _anos, "f": _fontes})).first()
     ja_existia = anterior is not None
     if ja_existia:
         # Antes de `montar_conteudo`, que e a parte cara: em modo bloqueio nao ha
@@ -266,18 +313,25 @@ async def criar(
     # a referencia e o ano corrente.
     _ano_ref = max(_anos) if _anos else date.today().year
     conteudo = (await montar_conteudo(db, body.municipio_id, _ano_ref,
-                                      completo=True, anos=_anos)
+                                      completo=True, anos=_anos, fontes=_fontes)
                 if body.auto_popular else {"partes": []})
     titulo = body.titulo or f"RELATÓRIO DE MONITORAMENTO – {mun.nome.upper()}/{mun.uf}"
+    # RECORTE DE CONSULTAS NO TITULO PADRAO. O titulo padrao nao varia por escopo:
+    # dois RMs do mesmo municipio saem com texto IDENTICO — e agora eles
+    # COEXISTEM, na lista, no PDF e na pasta de downloads. O sufixo so entra
+    # quando HA recorte e quando o usuario NAO mandou titulo proprio; sem selecao
+    # o titulo do completo continua exatamente o de hoje.
+    if _fontes and not (body.titulo or "").strip():
+        titulo = f"{titulo} — {rm_fontes.rotulo_longo(_fontes)}"
     # `ja_existia` (lido acima, junto do gate de alcance) separa "criou" de
     # "substituiu" na trilha: registrar tudo como "criou" faria o registro mentir
     # justamente no caso que interessa — o relatorio que ja existia e foi trocado.
     # ON CONFLICT: se ja existe RM nessa data, atualiza conteudo
     sql = text("""
         INSERT INTO rm_relatorios
-            (municipio_id, data_referencia, escopo, anos, cidade_emissao, titulo, conteudo, criado_por, rodape)
-        VALUES (:mun, :dt, :escopo, CAST(:anos AS INT[]), :cidade, :titulo, CAST(:cont AS JSONB), :usr, :rodape)
-        ON CONFLICT (municipio_id, anos) DO UPDATE SET
+            (municipio_id, data_referencia, escopo, anos, fontes, cidade_emissao, titulo, conteudo, criado_por, rodape)
+        VALUES (:mun, :dt, :escopo, CAST(:anos AS INT[]), CAST(:fontes AS TEXT[]), :cidade, :titulo, CAST(:cont AS JSONB), :usr, :rodape)
+        ON CONFLICT (municipio_id, anos, fontes) DO UPDATE SET
             titulo = EXCLUDED.titulo,
             cidade_emissao = EXCLUDED.cidade_emissao,
             rodape = EXCLUDED.rodape,
@@ -301,14 +355,47 @@ async def criar(
     # rodape salvo VAZIO nao faz a env ressuscitar). Uma consulta minima, por
     # geracao — nao entra no laco de montagem nem custa nada ao host.
     rodape = await rm_config.rodape_padrao(db)
-    rid = (await db.execute(sql, {
-        "mun": body.municipio_id, "dt": body.data_referencia, "escopo": _escopo,
-        "anos": _anos,
-        "cidade": cidade, "titulo": titulo, "rodape": rodape,
-        "cont": json.dumps(conteudo), "usr": getattr(user, "id", None),
-        "overwrite": body.auto_popular,
-    })).scalar()
-    await db.commit()
+    # ⚠️ JANELA DOS DOIS DEPLOYS. Ate `drop_rm_unique_anos.sql` subir, o indice
+    # ANTIGO `ux_rm_mun_anos (municipio_id, anos)` continua no banco DE PROPOSITO
+    # — e ele que mantem o container velho funcionando durante a troca — e ele
+    # proibe dois RMs com os MESMOS anos, mesmo com consultas diferentes. Sem este
+    # tratamento, o pedido legitimo "so TransfereGov de 2026" num municipio que ja
+    # tem o completo de 2026 sai como 500 cru e o usuario conclui que o filtro
+    # esta quebrado. Depois do deploy 2 este ramo deixa de ser alcancado — e
+    # FICA, porque ele tambem cobre a migration que nao rodou (o runner engole
+    # erro de migration: services/startup.py).
+    try:
+        rid = (await db.execute(sql, {
+            "mun": body.municipio_id, "dt": body.data_referencia, "escopo": _escopo,
+            "anos": _anos, "fontes": _fontes,
+            "cidade": cidade, "titulo": titulo, "rodape": rodape,
+            "cont": json.dumps(conteudo), "usr": getattr(user, "id", None),
+            "overwrite": body.auto_popular,
+        })).scalar()
+        await db.commit()
+    except DBAPIError as ex:
+        await db.rollback()
+        _erro = str(getattr(ex, "orig", ex))
+        # ⚠️ A ORDEM DESTES IFs IMPORTA: "ux_rm_mun_anos" e SUBSTRING de
+        # "ux_rm_mun_anos_fontes". O especifico tem de vir primeiro, senao a
+        # corrida de dois cliques recebe a mensagem da janela de deploy.
+        if "ux_rm_mun_anos_fontes" in _erro:
+            raise HTTPException(
+                409, "Dois pedidos de geração deste mesmo relatório chegaram "
+                     "juntos. Tente novamente.") from ex
+        if "ux_rm_mun_anos" in _erro:
+            raise HTTPException(
+                409, "Este município já tem um RM para esse período. Ainda não é "
+                     "possível manter, ao mesmo tempo, o relatório completo e um "
+                     "relatório filtrado por consultas para o mesmo período — falta "
+                     "um ajuste de banco que sobe no próximo deploy. Enquanto isso, "
+                     "gere o filtrado para outro período ou remova o relatório "
+                     "existente.") from ex
+        if "no unique or exclusion constraint" in _erro:
+            raise HTTPException(
+                503, "A atualização de banco do filtro de consultas ainda não foi "
+                     "aplicada neste ambiente. Avise o suporte.") from ex
+        raise
     await registrar(
         db, action=("rm.update" if ja_existia else "rm.create"),
         user=user, request=request,
@@ -317,6 +404,10 @@ async def criar(
         details={"titulo": titulo, "municipio": f"{mun.nome}/{mun.uf}",
                  "data_referencia": str(body.data_referencia),
                  "anos": (_anos or "todos"),
+                 # Mesmo desenho de `anos`: o escopo INTEIRO do relatorio fica na
+                 # trilha, senao "gerou o RM de Monte Siao" nao distingue o
+                 # completo do filtrado — que agora sao linhas diferentes.
+                 "fontes": (_fontes or "todas"),
                  "cidade_emissao": cidade, "auto_popular": body.auto_popular,
                  "via": "upsert", "conteudo_substituido": ja_existia and body.auto_popular},
     )
@@ -344,6 +435,29 @@ def _exigir_admin_config(user) -> None:
 # `GET /api/rm/config` entraria nele e morreria em 422 ("config" nao e int) —
 # nao em 404. O defeito apareceria como "erro de payload" numa rota que nem foi
 # executada, que e das pistas mais caras de seguir.
+# ⚠️ MESMA REGRA DE ORDEM DAS ROTAS DE `/config` (o aviso acima vale para as
+# TRES): esta rota tem de ficar ACIMA de `@router.get("/{rid}")`. Declarada
+# depois, `GET /api/rm/fontes` entraria no `/{rid}` e morreria em 422 ("fontes"
+# nao e int) — um erro de payload numa rota que nem foi executada.
+@router.get("/fontes", dependencies=[exige("rm.ver")])
+async def fontes_catalogo(
+    current: User = Depends(get_current_user),
+):
+    """As CONSULTAS que podem compor um RM — o catalogo que a tela desenha.
+
+    Existe para a lista NAO ser copiada em TypeScript. `telas_catalog.py` e
+    `frontend/src/lib/telas.ts` sao a mesma lista escrita nos dois lados e ja
+    divergiram; aqui a chave nao e so um rotulo — e a string comparada com
+    `item["fonte"]` no builder. Divergir nao deixa a tela feia: deixa o filtro
+    SEM EFEITO, calado, porque a chave nao casa com fonte nenhuma.
+
+    `rm.ver` e nao `rm.criar`: e o vocabulario do modulo, e quem so consulta a
+    lista precisa dele para o selo de escopo dizer o nome da consulta em vez da
+    chave crua."""
+    authz.exigir_tela(current, "rm")
+    return {"fontes": rm_fontes.catalogo()}
+
+
 @router.get("/config", dependencies=[exige("rm.ver")])
 async def config_ler(
     db: AsyncSession = Depends(get_db),
@@ -419,7 +533,11 @@ async def detalhe(
     row = (await db.execute(text("""
         SELECT r.id, r.municipio_id, r.data_referencia, r.cidade_emissao,
                r.titulo, r.rodape, r.status, r.conteudo, r.criado_por,
-               r.created_at, r.updated_at, r.escopo, r.anos, m.nome AS municipio_nome, m.uf
+               r.created_at, r.updated_at, r.escopo, r.anos, m.nome AS municipio_nome, m.uf,
+               -- ⚠️ COLUNA NOVA NO FIM (armadilha nº 1): DEPOIS de m.nome (row[13])
+               -- e m.uf (row[14]), que sao lidos por indice logo abaixo. Aqui
+               -- `fontes` e row[15]; no `listar` e row[14]. Sao SELECTs diferentes.
+               r.fontes
         FROM rm_relatorios r LEFT JOIN municipios m ON m.id = r.municipio_id
         WHERE r.id = :id
     """), {"id": rid})).first()
@@ -428,6 +546,8 @@ async def detalhe(
     d = _row_to_dict(row, current)
     d["municipio_nome"] = row[13]
     d["uf"] = row[14]
+    # CONSULTAS do relatorio ([] = todas). row[15] aqui, row[14] no `listar`.
+    d["fontes"] = list(row[15]) if row[15] is not None else []
     return d
 
 
@@ -497,15 +617,23 @@ async def repopular(
     # DELETE, so que sem apagar a linha. Mesmo gate.
     await _exigir_escrita(db, rid, current)
     row = (await db.execute(text(
-        "SELECT municipio_id, data_referencia, titulo, escopo, anos FROM rm_relatorios WHERE id = :id"
+        "SELECT municipio_id, data_referencia, titulo, escopo, anos, fontes"
+        " FROM rm_relatorios WHERE id = :id"
     ), {"id": rid})).first()
     if not row:
         raise HTTPException(404, "RM não encontrado")
     # Regenera no MESMO escopo de anos do relatorio (row[4] = anos; vazio = todos).
     _anos = [int(a) for a in (row[4] or [])]
+    # ...e com as MESMAS consultas (row[5] = fontes, coluna nova NO FIM do SELECT;
+    # vazio = todas). ⚠️ Sem isto o "Auto-popular" de um RM filtrado o encheria com
+    # o conteudo do COMPLETO e o gravaria por cima — a linha ficaria com o conteudo
+    # de um escopo e a chave (municipio_id, anos, fontes) de outro, mentindo no
+    # selo, no titulo e no PDF ao mesmo tempo.
+    _fontes = rm_fontes.normalizar(row[5])
     # Mesmo ano de referencia da criacao: o maior ano do escopo (ver `criar`).
     _ano_ref = max(_anos) if _anos else date.today().year
-    conteudo = await montar_conteudo(db, row[0], _ano_ref, completo=True, anos=_anos)
+    conteudo = await montar_conteudo(db, row[0], _ano_ref, completo=True, anos=_anos,
+                                     fontes=_fontes)
     # O `escopo` acompanha o que foi REGENERADO. Sem isto um RM legado ('anual')
     # era reescrito no padrao de 4 partes mas mantinha o rotulo antigo, e o PDF
     # saia com o cabecalho de exercicio ("Relatório referente ao exercício de X")
@@ -579,7 +707,11 @@ async def pdf(
     await authz.ensure_dono(db, "rm_relatorios", "id", rid, current)
     row = (await db.execute(text("""
         SELECT r.data_referencia, r.cidade_emissao, r.titulo, r.rodape, r.conteudo, m.nome, m.uf,
-               r.municipio_id, r.escopo
+               r.municipio_id, r.escopo,
+               -- ⚠️ COLUNA NOVA NO FIM (armadilha nº 1): row[9], depois de r.escopo.
+               -- row[5] (m.nome) monta o nome do arquivo e row[7] a trilha; inserir
+               -- no meio desloca os dois em silencio.
+               r.fontes
         FROM rm_relatorios r JOIN municipios m ON m.id = r.municipio_id
         WHERE r.id = :id
     """), {"id": rid})).first()
@@ -592,12 +724,25 @@ async def pdf(
         "rodape": row[3],
         # 'completo' troca o cabecalho (local + data por extenso, sem "exercicio").
         "escopo": row[8],
+        # CONSULTAS do relatorio ([] = todas). O renderizador imprime a linha
+        # "Consultas incluídas: ..." so quando ha recorte — sem isto o documento
+        # filtrado e o completo saem com paginas IDENTICAS, e quem le o impresso
+        # nao tem como saber que ele nao cobre o municipio inteiro.
+        "fontes": list(row[9]) if row[9] is not None else [],
     }
     conteudo = row[4] or {"partes": []}
     municipio = f"{row[5]}/{row[6]}"
     dt_str = row[0].strftime("%d-%m-%Y") if row[0] else "sem-data"
     tipo = (tipo or "completo").lower()
     formato = (formato or "pdf").lower()
+    # ⚠️ O RECORTE DE CONSULTAS ENTRA NO NOME DO ARQUIVO. Sem isto o RM filtrado e
+    # o completo do mesmo municipio e da mesma data baixam com o MESMO nome e o
+    # segundo sobrescreve o primeiro na pasta de downloads: dois documentos
+    # diferentes, um arquivo so. Vazio (todas as consultas) devolve "" e o nome do
+    # completo continua exatamente o de hoje. Calculado UMA vez porque serve aos
+    # DOIS formatos.
+    _slug = rm_fontes.slug(list(row[9]) if row[9] else [])
+    _sufixo_fontes = ("-" + _slug) if _slug else ""
 
     async def _registrar_export(nome_arquivo: str, fmt: str, variante: str):
         """Toda saida deste endpoint passa por aqui.
@@ -617,6 +762,9 @@ async def pdf(
             target_type="rm", target_id=rid, municipio_id=row[7],
             details={"formato": fmt, "variante": variante, "arquivo": nome_arquivo,
                      "titulo": row[2], "municipio": municipio,
+                     # Com dois RMs coexistindo no mesmo periodo, "exportou o RM de
+                     # Monte Siao de julho" deixou de identificar qual documento saiu.
+                     "fontes": (list(row[9]) if row[9] else "todas"),
                      "data_referencia": row[0].isoformat() if row[0] else None},
         )
 
@@ -665,7 +813,7 @@ async def pdf(
             gerar_resumido_docx if tipo == "resumido" else gerar_docx_rm,
             meta, conteudo, municipio,
         )
-        nome = f"RM-{rotulo}-{row[5]}-{dt_str}.docx".replace(" ", "_")
+        nome = f"RM-{rotulo}-{row[5]}-{dt_str}{_sufixo_fontes}.docx".replace(" ", "_")
         await _registrar_export(nome, "docx", rotulo.lower())
         # ⚠️ `attachment`, e NAO `inline` como o PDF: o navegador nao renderiza
         # .docx. Com `inline` o Chrome baixaria assim mesmo, mas o Edge e o
@@ -690,7 +838,7 @@ async def pdf(
         pdf_bytes = gerar_pdf(meta, conteudo, municipio)
         rotulo = "Completo"
 
-    nome = f"RM-{rotulo}-{row[5]}-{dt_str}.pdf".replace(" ", "_")
+    nome = f"RM-{rotulo}-{row[5]}-{dt_str}{_sufixo_fontes}.pdf".replace(" ", "_")
     await _registrar_export(nome, "pdf", rotulo.lower())
     return Response(
         content=pdf_bytes,

@@ -16,6 +16,9 @@ from pathlib import Path
 from typing import Any
 
 from config import get_settings
+# Nome legivel das consultas para a linha de escopo. Modulo de DADO puro (nao
+# importa banco, nem reportlab): nao cria ciclo com este arquivo.
+from services.rm_fontes import rotulo_longo
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import cm
@@ -521,6 +524,8 @@ def roteiro_rm(meta: dict, conteudo: dict, municipio_nome: str):
     Eventos, na forma (tipo, dado):
       ("titulo",     str)               titulo principal — texto CRU, sem escape
       ("local_data", str)               linha cidade/data — CRU
+      ("consultas",  str)               "Consultas incluídas: ..." — CRU; só sai
+                                        quando HÁ recorte de consultas
       ("quebra",     None)              quebra de pagina; NAO vem antes da 1a parte
       ("parte",      str)               CRU
       ("secao",      str)               CRU
@@ -551,6 +556,19 @@ def roteiro_rm(meta: dict, conteudo: dict, municipio_nome: str):
         _ano = _dr[:4] if len(_dr) >= 4 and _dr[:4].isdigit() else ""
         linha = f"{cidade} — Relatório referente ao exercício de {_ano}" if _ano else cidade
     yield ("local_data", linha)
+    # CONSULTAS INCLUIDAS — so quando HA recorte. `rotulo_longo([])` devolve "",
+    # entao o RM completo nao emite este evento e a pagina continua a de hoje.
+    #
+    # ⚠️ E EVENTO DO ROTEIRO, e nao um `append` no PDF: sem isto o .docx de um RM
+    # FILTRADO sairia visualmente identico ao do completo. E o motivo de o roteiro
+    # existir — regra de apresentacao mora aqui e sai nos dois formatos.
+    #
+    # ⚠️ Sem esta linha, quem recebe o documento IMPRESSO nao tem como saber que
+    # aquele relatorio NAO cobre o municipio inteiro — e um relatorio de
+    # monitoramento que parece completo e nao e vale menos que nenhum.
+    _fontes_txt = rotulo_longo(meta.get("fontes") or [])
+    if _fontes_txt:
+        yield ("consultas", f"Consultas incluídas: {_fontes_txt}")
 
     for p_idx, parte in enumerate(conteudo.get("partes", [])):
         if p_idx > 0:
@@ -608,7 +626,10 @@ def gerar_pdf(meta: dict, conteudo: dict, municipio_nome: str) -> bytes:
     """Gera bytes do PDF.
 
     Args:
-        meta: {data_referencia, cidade_emissao, titulo (opt), rodape, escopo (opt)}
+        meta: {data_referencia, cidade_emissao, titulo (opt), rodape,
+               escopo ('completo'|'parcial'|'anual' — troca o cabecalho),
+               fontes (lista de consultas; vazio = todas, e ai nao sai linha
+               nenhuma a mais e o documento e identico ao de hoje)}
         conteudo: {partes: [{ordem, titulo, secoes: [{ordem, titulo, grupos:
                   [{ordem, orgao, itens: [...]}]}]}]}
         municipio_nome: para o titulo
@@ -633,6 +654,10 @@ def gerar_pdf(meta: dict, conteudo: dict, municipio_nome: str) -> bytes:
         if evento == "titulo":
             story.append(Paragraph(_escape(dado), s["titulo_principal"]))
         elif evento == "local_data":
+            story.append(Paragraph(_escape(dado), s["data_local"]))
+        elif evento == "consultas":
+            # Mesmo estilo da linha de cima, para as duas ficarem no mesmo bloco
+            # de cabecalho.
             story.append(Paragraph(_escape(dado), s["data_local"]))
         elif evento == "quebra":
             story.append(PageBreak())
