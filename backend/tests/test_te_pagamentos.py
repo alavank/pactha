@@ -210,3 +210,40 @@ def test_pago_integral_tolera_um_centavo():
 
 def test_num_nao_quebra_com_lixo():
     assert _num("12,5") is None and _num(None) is None and _num("12.5") == 12.5
+
+
+# ---------------------------------------------------------------------------
+# ⚠️ O ORÇAMENTO — achado na PRIMEIRA rodada real (Freitas, 24/08/2026)
+# ---------------------------------------------------------------------------
+def _teto_listagem(budget, teto, pgto):
+    """A mesma conta de `run()`: a fatia dos pagamentos é RESERVADA antes."""
+    return max(60.0, min(budget, teto - pgto))
+
+
+def test_a_listagem_nao_pode_engolir_o_orcamento_dos_pagamentos():
+    """Com os defaults de PRODUÇÃO (listagem 1500s, teto de tarefa 1450s), o
+    cálculo "pagamentos ficam com o que sobrar" dava −50s: eles NUNCA rodariam,
+    e o log diria "sem tempo nesta rodada" para sempre, com a coluna
+    `pagamentos` eternamente NULA e ninguém vendo erro nenhum.
+
+    A listagem é quem pode esperar — ela retoma da página gravada e a fonte a
+    limita de qualquer jeito. Os pagamentos são 1+N GETs baratos e são o dado
+    que sustenta o PENDENTE DE DESEMBOLSO do RM."""
+    BUDGET, TETO, PGTO = 1500.0, 1450.0, 300.0
+    assert TETO - BUDGET < 0                       # o defeito, explicitado
+    reservado = TETO - _teto_listagem(BUDGET, TETO, PGTO)
+    assert reservado == PGTO                       # a correção
+    assert _teto_listagem(BUDGET, TETO, PGTO) + PGTO <= TETO
+
+
+def test_o_total_cabe_no_kill_da_scheduled_task():
+    """A task roda `timeout -k 30 1600`. Estourar isso degola a rodada no meio e
+    o log final — que é onde o resultado aparece — se perde."""
+    BUDGET, TETO, PGTO, KILL = 1500.0, 1450.0, 300.0, 1600.0
+    assert _teto_listagem(BUDGET, TETO, PGTO) + PGTO < KILL
+
+
+def test_orcamento_apertado_ainda_deixa_a_listagem_andar():
+    """Piso de 60s: um `TE_PGTO_BUDGET_S` grande demais não pode zerar a
+    listagem — sem ela não há plano novo para consultar pagamento nenhum."""
+    assert _teto_listagem(1500.0, 400.0, 900.0) == 60.0
