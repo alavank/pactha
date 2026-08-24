@@ -77,6 +77,7 @@ function ComoFunciona() {
  *  é o caminho "configurei esta pessoa inteira, guarda isso como modelo". */
 export function ModeloEditor({
   catalogo, minhas, modelo, inicial, nivel = 2, onFechar, onSalvo,
+  ufsCarteira = [],
 }: {
   catalogo: Catalogo;
   minhas: MinhasPermissoes | null;
@@ -87,6 +88,9 @@ export function ModeloEditor({
   nivel?: 1 | 2;
   onFechar: () => void;
   onSalvo: (m: Modelo) => void | Promise<void>;
+  /** Os estados da carteira, só para AGRUPAR a árvore por estado — o recorte
+   *  já veio feito no `catalogo`. Vazio = não agrupa. */
+  ufsCarteira?: string[];
 }) {
   const base = modelo ?? inicial ?? { permissoes: [], escopos: {} as MapaEscopos };
   const [nome, setNome] = useState(modelo?.nome ?? inicial?.nome ?? "");
@@ -196,6 +200,7 @@ export function ModeloEditor({
             escrita em outro lugar. */}
         <SeletorPermissoes
           catalogo={catalogo}
+          ufsCarteira={ufsCarteira}
           sel={sel}
           setSel={setSel}
           esc={esc}
@@ -235,7 +240,7 @@ export function ModeloEditor({
 }
 
 export default function ModelosModal({
-  catalogo, minhas, modelos, carregando, onFechar, onMudou,
+  catalogo, minhas, modelos, carregando, onFechar, onMudou, ufsCarteira = [],
 }: {
   catalogo: Catalogo;
   minhas: MinhasPermissoes | null;
@@ -246,6 +251,8 @@ export default function ModelosModal({
    *  recebe dela a mesma lista. Duas releituras — uma aqui e outra lá — dariam
    *  duas listas ligeiramente diferentes na mesma tela. */
   onMudou: () => void | Promise<void>;
+  /** Repassado ao editor: os estados da carteira agrupam a árvore. */
+  ufsCarteira?: string[];
 }) {
   const [editando, setEditando] = useState<Modelo | null>(null);
   const [criando, setCriando] = useState(false);
@@ -377,6 +384,7 @@ export default function ModelosModal({
       {(criando || editando) && (
         <ModeloEditor
           catalogo={catalogo}
+          ufsCarteira={ufsCarteira}
           minhas={minhas}
           modelo={editando}
           onFechar={() => { setCriando(false); setEditando(null); }}

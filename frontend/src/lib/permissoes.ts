@@ -37,6 +37,10 @@ export interface Permissao {
   /** O guard de somente-leitura barra esta acao. NAO e "o verbo parece de
    *  escrita" — `ai.exportar` e escrita (o endpoint e POST) e `bi.link` nao e. */
   escrita: boolean;
+  /** Em que estados este recurso existe. Vazio ou ausente = federal/nacional.
+   *  Vem do backend (`Permissao.ufs`), como todo o resto deste catalogo — nao
+   *  ha lista de UF escrita neste arquivo. Ver `filtrarCatalogoPorUfs`. */
+  ufs?: string[];
 }
 
 export interface RecursoCatalogo {
@@ -52,6 +56,10 @@ export interface RecursoCatalogo {
    *  verbo nenhum — e a regra do dono: a escolha so aparece se alguma delas
    *  estiver marcada. */
   escopo_permissoes?: string[];
+  /** As UFs do RECURSO (todas as caixinhas dele tem as mesmas). Vazio ou
+   *  ausente = federal/nacional. E por aqui que a aba Usuarios decide mostrar
+   *  «Acordo FES» em Minas e nao no Rio Grande do Sul. */
+  ufs?: string[];
 }
 
 /** O VOCABULARIO do alcance, inteiro vindo da API (`catalogo.escopos`).
@@ -191,6 +199,46 @@ export function permissoesDeEscopo(
   if (chaves) return recurso.permissoes.filter((p) => chaves.includes(p.chave));
   const verbos = catalogo?.escopos?.verbos ?? [];
   return recurso.permissoes.filter((p) => verbos.includes(p.verbo));
+}
+
+/** ⭐ O CATALOGO RECORTADO PARA A CARTEIRA DO TENANT (pedido do dono, 08/2026).
+ *
+ *  Tira as caixinhas de modulo que naquele cliente nunca teriam dado nenhum:
+ *  «Acordo FES (divida saude MG)» no sistema de Santa Maria/RS, modulo gaucho no
+ *  de Monte Siao/MG. Assessoria multi-estado mantem os de todos os estados que
+ *  ela atende — e a tela os separa em cartoes com `agruparPorEstado`.
+ *
+ *  ⚠️ NAO E TRAVA, E CATALOGO — o servidor continua sendo quem decide, e quem
+ *  separa o dado do ES do dado de GO continua sendo a lista de MUNICIPIOS da
+ *  pessoa. Ver o cabecalho de `lib/estadual.ts`.
+ *
+ *  ⚠️ ESCONDER NAO REVOGA. O modal manda de volta o conjunto INTEIRO que leu do
+ *  servidor (`sel` nasce de `concedidas` e e salvo como esta), entao uma chave
+ *  que ficou fora da tela continua gravada exatamente como estava — o caso real
+ *  e a assessoria que perde um municipio de um estado e volta a ganha-lo depois.
+ *
+ *  ⚠️ Carteira vazia devolve o catalogo INTEIRO: sem saber os estados, esconder
+ *  seria tirar do administrador a caixinha que ele precisa marcar. */
+export function filtrarCatalogoPorUfs(
+  catalogo: Catalogo | null,
+  ufsCarteira: string[],
+): Catalogo | null {
+  if (!catalogo) return null;
+  const carteira = new Set(
+    ufsCarteira.map((u) => (u || "").trim().toUpperCase()).filter(Boolean),
+  );
+  if (!carteira.size) return catalogo;
+  const serve = (ufs?: string[]) =>
+    !ufs || ufs.length === 0 || ufs.some((u) => carteira.has(u));
+
+  const secoes = catalogo.secoes
+    .map((s) => ({ ...s, recursos: s.recursos.filter((r) => serve(r.ufs)) }))
+    // Secao que ficou sem recurso nenhum sai: um bloco vazio so ocuparia
+    // espaco e faria o administrador procurar dentro dele.
+    .filter((s) => s.recursos.length > 0);
+  const permissoes = catalogo.permissoes.filter((p) => serve(p.ufs));
+  // `total` acompanha, porque e o denominador do "12/66" do cabecalho do modal.
+  return { ...catalogo, secoes, permissoes, total: permissoes.length };
 }
 
 export async function buscarCatalogo(): Promise<Catalogo> {

@@ -5,6 +5,25 @@
 export interface TelaDef {
   key: string;
   label: string;
+  /** ⭐ EM QUE ESTADOS ESTA TELA EXISTE (pedido do dono, 08/2026). Ausente ou
+   *  vazio = federal/nacional: aparece em qualquer tenant.
+   *
+   *  Serve à aba Usuários: no sistema de Santa Maria/RS não se oferece «Acordo
+   *  FES (dívida saúde MG)», e no de Monte Sião/MG não se oferece módulo
+   *  gaúcho. Assessoria multi-estado vê um cartão por estado da carteira (ver
+   *  `agruparPorEstado` em `lib/estadual.ts`).
+   *
+   *  ⚠️ NÃO É TRAVA DE SEGURANÇA, é catálogo: quem separa o convênio do ES do
+   *  convênio de GO continua sendo a lista de MUNICÍPIOS da pessoa. A chave é
+   *  uma só e serve os dois estados.
+   *
+   *  ⚠️ TEM DE BATER com `ufs` de `backend/services/permissoes.py` — o teste
+   *  `backend/tests/test_catalogo_por_uf.py` quebra se divergirem. E são
+   *  LITERAIS de propósito, e não derivados dos mapas de `lib/estadual.ts`:
+   *  derivado o teste não conseguiria ler a lista, e a divergência com o
+   *  backend voltaria a ser silenciosa. O comentário de cada linha diz de qual
+   *  mapa de lá a UF veio. */
+  ufs?: string[];
 }
 
 export const TELAS: TelaDef[] = [
@@ -33,14 +52,25 @@ export const TELAS: TelaDef[] = [
   // é a mesma família de informação (recurso estadual), e o backend gateia as
   // duas por `convenios.ver`. Chave nova aqui exigiria conceder duas permissões
   // para a mesma coisa.
-  { key: "convenios", label: "Convênios Estaduais" },
-  { key: "emendas", label: "Emendas Estaduais" },
+  // ⚠️ AS UFs SÃO A UNIÃO DO GRUPO ESTADUAIS INTEIRO, não só de onde há
+  // convênio: esta chave também governa Repasses e Cofinanciamento (GO, que
+  // publica a EXECUÇÃO em vez do instrumento) e as cinco telas do RS. Ver os
+  // mapas de `lib/estadual.ts`: FONTE_CONVENIOS_ESTADUAIS (MG, ES) +
+  // REPASSES_POR_UF (GO) + COFINANCIAMENTO_POR_UF (GO) +
+  // CONSULTA_POPULAR_POR_UF (RS) + PROGRAMAS_POR_UF (RS) +
+  // CONTEUDO_ESTADUAL_POR_UF (RS).
+  { key: "convenios", label: "Convênios Estaduais", ufs: ["MG", "ES", "GO", "RS"] },
+  // Só MG tem coletor de emenda estadual (FONTE_EMENDAS_ESTADUAIS). No RS a
+  // emenda nem é impositiva — oferecer a caixinha lá prometeria um direito que
+  // não existe naquele estado.
+  { key: "emendas", label: "Emendas Estaduais", ufs: ["MG"] },
   { key: "parlamentares", label: "Parlamentares" },
   // As quatro da pasta SAÚDE, na ordem em que aparecem no grupo do menu.
   { key: "fns", label: "Fundo Nacional de Saúde" },
   { key: "sismob", label: "Obras da Saúde (SISMOB)" },
   { key: "investsus", label: "InvestSUS" },
-  { key: "acordofes", label: "Acordo FES (dívida saúde MG)" },
+  // A dívida da saúde é um acordo da SES-MG: não existe fora de Minas.
+  { key: "acordofes", label: "Acordo FES (dívida saúde MG)", ufs: ["MG"] },
   { key: "simec", label: "SIMEC - PAR (MEC)" },
   { key: "cauc", label: "Regularidade (federal e estadual)" },
   { key: "rm", label: "Relatório de Monitoramento" },
@@ -52,7 +82,9 @@ export const TELAS: TelaDef[] = [
   // quem abria "Painéis Municipais" via o SUAS de qualquer forma, porque a
   // página não filtra painel por painel. Marcar ou desmarcar não mudava nada.
   { key: "paineis", label: "Painéis Municipais" },
-  { key: "dou", label: "Diário Oficial" },
+  // Um provedor por estado (DIARIO_POR_UF em `lib/estadual.ts`). Sem provedor
+  // a tela já some do menu — oferecer a caixinha seria conceder o que não abre.
+  { key: "dou", label: "Diário Oficial", ufs: ["MG", "ES", "GO", "TO", "RS"] },
   { key: "documentos", label: "Geração de Documentos" },
   { key: "gestao", label: "Gestão Interna" },
   // TELEGRAM DESATIVADO ATÉ SEGUNDA ORDEM (decisão do dono, 09/08/2026): o
@@ -84,6 +116,27 @@ export const TELA_LABELS: Record<string, string> = Object.fromEntries(
   TELAS.map((t) => [t.key, t.label])
 );
 
+/** ⭐ AS SETE TELAS DO GRUPO «ESTADUAIS» QUE NÃO TÊM CHAVE PRÓPRIA.
+ *
+ *  Repasses e Cofinanciamento (GO) e as cinco do RS (Consulta Popular,
+ *  Programas do Estado, Plano Rio Grande, Emendas RS, TCE-RS) são gateadas no
+ *  backend pela MESMA `convenios.ver` e pela MESMA `ensure_tela(.., "convenios")`
+ *  — ver `routers/repasses.py`, `cofinanciamento.py`, `consulta_popular.py`,
+ *  `programas_rs.py` e `conteudo_rs.py`.
+ *
+ *  ⚠️ SEM ESTE MAPA elas ficavam invisíveis para TODO MUNDO menos o super-admin,
+ *  e em silêncio: `hrefToTela("/dashboard/repasses")` devolvia "repasses", que
+ *  não existe em catálogo nenhum, então `filterNav` tirava o item do menu e o
+ *  guard de rota expulsava quem digitasse a URL. O backend liberava e a tela
+ *  escondia — o pior par possível, porque não gera erro nenhum para investigar.
+ *
+ *  Chave própria para cada uma exigiria conceder duas permissões para a mesma
+ *  informação; o comentário de `convenios`, acima, é a decisão original. */
+const TELAS_DO_GRUPO_ESTADUAIS = new Set<string>([
+  "repasses", "cofinanciamento", "consulta-popular", "programas-rs",
+  "funrigs", "emendas-rs", "tce-rs",
+]);
+
 /** Deriva a chave de tela a partir de um href da sidebar. */
 export function hrefToTela(href: string): string {
   // ⭐ AS ABAS DE CONFIGURAÇÕES SÃO AS MESMAS TELAS, e por isso o prefixo cai
@@ -95,6 +148,7 @@ export function hrefToTela(href: string): string {
   // "/dashboard" -> "dashboard"
   const seg = semPrefixo.replace(/^\/dashboard\/?/, "").split("/")[0] || "dashboard";
   if (seg.startsWith("transferegov")) return "transferegov";
+  if (TELAS_DO_GRUPO_ESTADUAIS.has(seg)) return "convenios";
   return seg;
 }
 
