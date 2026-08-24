@@ -1506,7 +1506,18 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
     try:
         te = await db.execute(text("""
             SELECT plano_acao_id, codigo, emenda, parlamentar, objeto, situacao,
-                   situacao_trabalho, valor_total
+                   situacao_trabalho, valor_total,
+                   -- PAGAMENTOS (documentos habeis -> OP/OB + historico de
+                   -- eventos), gravados por ingestion/transferegov_te.py no
+                   -- MESMO formato do `ops_obs` das voluntarias — por isso o
+                   -- laco abaixo reusa _desembolso_ops_obs e
+                   -- _ano_pagamento_ops_obs sem uma linha de parsing nova.
+                   -- ULTIMA COLUNA DE PROPOSITO (row[8]): o laco le por INDICE e
+                   -- inserir no MEIO deslocaria todos os row[N] seguintes em
+                   -- silencio — `objeto` passaria a ler `situacao`, o valor
+                   -- trocaria de lugar. Nada disso levanta excecao: sai
+                   -- relatorio errado, calado.
+                   pagamentos
             FROM transferegov_te WHERE municipio_id = :m
         """), {"m": municipio_id})
         for row in te.fetchall():
@@ -1519,16 +1530,51 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             # (empenhado/pago/concluido/execucao); senao o plano de acao (CIENTE etc).
             _tl = sit_trab.lower()
             sit_efetivo = sit_trab if any(x in _tl for x in ("empenh", "pag", "conclu", "finaliz", "execu")) else sit
-            sl = sit_efetivo.lower()
+            # DESEMBOLSO da TE. O coletor grava `pagamentos` (row[8]) com as MESMAS
+            # chaves do `ops_obs` das voluntarias, entao as duas fontes passam pelas
+            # MESMAS funcoes — nenhum parser novo, e nada para divergir depois.
+            _des_te = _desembolso_ops_obs(row[8])
+            _pg_te = _jsonb(row[8]) if isinstance(_jsonb(row[8]), dict) else {}
+            _medido = bool(_pg_te)                       # NULO = nunca consultado
+            _pago_100 = bool(_pg_te.get("pago_integral"))
+            _vd_te = _des_te.get("valor_desembolsado")
+            # ⭐ O DINHEIRO QUE JA SAIU PROMOVE O ESTAGIO — e nao o texto do portal.
+            # Sem isto, plano com Ordem Bancaria emitida mas `planoAcaoSituacao`
+            # ainda "CIENTE" (o caso NORMAL: o plano 91573 tem OB de 22/06/2026 e
+            # segue CIENTE) vira 'ativa' em _fed_status, e o _fed_retem logo abaixo
+            # o DESCARTA de todo RM de ano posterior — some do relatorio calado,
+            # justamente o plano que ja foi pago. Mesma doutrina de _fns_retem
+            # ("Empenho CONFIRMADO exige REPASSE EFETIVO").
+            # A frase usa o vocabulario que _fed_status entende ("pagamento" -> 'paga')
+            # e fica SEPARADA de `sit_te`, que e o texto exibido.
+            _sit_classifica = "Pagamento integral realizado" if _pago_100 else sit_efetivo
+            sl = _sit_classifica.lower()
             # Situacao exibida: mostra o plano de acao + o plano de trabalho.
             sit_pt = sit_trab.replace("_", " ").strip()
             sit_te = sit.replace("_", " ").strip()
             if sit_pt and sit_te.lower() != sit_pt.lower():
                 sit_te = f"{sit_te} · Plano de Trabalho: {sit_pt}"
+            # REGRA DO DONO, na SITUACAO ATUAL: se falta desembolsar, o item grita
+            # PENDENTE DE DESEMBOLSO; se saiu 100%, diz que foi pago. Mesmo texto e
+            # mesma ordem das voluntarias (bloco `sit_exibida`, acima), p/ o
+            # relatorio nao ter dois dialetos para a mesma coisa.
+            # ⚠️ So com `_medido`: `pagamentos` NULO e "nunca consultado", NAO "nao
+            # ha pagamento" — a disciplina de _nes_resumo, que OMITE a linha em vez
+            # de afirmar o que nao mediu.
+            if _medido and _pago_100:
+                _txt_pg = f"Pago integralmente: {_fmt_brl(_vd_te)}"
+            elif _medido and (_vd_te or 0) > 0:
+                _txt_pg = f"Desembolsado: {_fmt_brl(_vd_te)} · PENDENTE DE DESEMBOLSO"
+            elif _medido and (_pg_te.get("obs") or _pg_te.get("pendentes")):
+                _txt_pg = "PENDENTE DE DESEMBOLSO"   # ha empenho/DH e nada saiu
+            else:
+                _txt_pg = ""
+            if _txt_pg:
+                sit_te = f"{sit_te} · {_txt_pg}" if sit_te else _txt_pg
             # Mesma regra de ano: concluida/empenhada fica (Parte 3/qualquer ano); ativa
             # so do ano de referencia ou posterior. Ano vem do codigo da emenda ou do plano.
             ano_te = _ano_de(cod_em, cod)
-            if not _fed_retem(ano_te, ano_emissao, sit_efetivo, completo):
+            if not _fed_retem(ano_te, ano_emissao, _sit_classifica, completo):
                 continue
             parte_te = 3 if ("conclu" in sl or "pag" in sl or "finaliz" in sl) else 1
             parl = row[3] or (cod_em.split("-", 1)[1].strip() if "-" in cod_em else "")
@@ -1537,11 +1583,21 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             tipo_te = "Transferência Especial"
             secao_te = _SEC_FED
             if completo:
-                st = _fed_status(sit_efetivo)
+                st = _fed_status(_sit_classifica)
                 parte_te, secao_te, suf = _destino_completo(
                     "federal", "transferencia_especial", st, ano_te,
-                    ano_te if st == "paga" else None, ano_emissao,
-                    False, False, False)
+                    # ano do PAGAMENTO agora tem fonte: a data da OB. Antes so
+                    # existia o ano do proprio plano.
+                    _ano_pagamento_ops_obs(row[8]) or (ano_te if st == "paga" else None),
+                    ano_emissao, False, False, False)
+                # ⭐ REGRA DO DONO: TE paga 100% vai para a PARTE 3 — e nao para o
+                # bloco "REPASSES DE {ano}" da Parte 2, onde _destino_completo poe
+                # o federal pago no ano corrente. A excecao mora AQUI, e nao dentro
+                # de _destino_completo, porque aquela funcao e compartilhada com
+                # voluntaria/SIMEC/FNS/estadual: mexer la mudaria a Parte de todas
+                # as fontes de uma vez.
+                if _pago_100:
+                    parte_te, secao_te, suf = 3, _SEC_FED_SINGULAR, ""
                 orgao_te = orgao_te + suf
                 tipo_te = "Plano de Ação"  # rotulo do numero na referencia (Fazenda/TE)
             add_item(parte_te, secao_te, orgao_te, {
@@ -1556,6 +1612,13 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
                 "saldo_bancario": None, "dt_saldo": None,
                 "dt_fim_vigencia": None,
                 "situacao_atual": sit_te,
+                # DESEMBOLSO: as MESMAS 4 chaves das voluntarias
+                # (valor_desembolsado / valor_a_desembolsar / dt_ultimo_desembolso /
+                # desembolsos). Com elas, rm_pdf._desembolso_destaque ja imprime a
+                # caixa da TE sem UMA LINHA nova no renderizador. Vazio quando
+                # `pagamentos` e NULO — _desembolso_ops_obs devolve {} e o ** nao
+                # derrama chave nenhuma, entao a caixa simplesmente nao sai.
+                **_des_te,
                 "fonte": "transferencia_especial",
                 "fonte_ref": str(row[0] or ""),
             }, ano=ano_te)
