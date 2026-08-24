@@ -156,22 +156,15 @@ export default function RmEditorPage() {
 
   const [menuRel, setMenuRel] = useState(false);
 
-  const exportar = (tipo: "completo" | "resumido" | "totalizado", formato: "pdf" | "xlsx" = "pdf") => {
+  const exportar = (tipo: "completo" | "resumido", formato: "pdf" = "pdf") => {
     setMenuRel(false);
     const token = localStorage.getItem("pactha_token");
     const url = `${api.defaults.baseURL}/rm/${rid}/pdf?tipo=${tipo}&formato=${formato}`;
     fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
       .then((r) => r.blob())
       .then((blob) => {
-        const href = URL.createObjectURL(blob);
-        if (formato === "xlsx") {
-          const a = document.createElement("a");
-          a.href = href;
-          a.download = `RM-Totalizado.xlsx`;
-          a.click();
-        } else {
-          window.open(href, "_blank");
-        }
+        // Só PDF: o totalizado (o único que saía em .xlsx) foi descontinuado.
+        window.open(URL.createObjectURL(blob), "_blank");
       });
   };
 
@@ -304,16 +297,6 @@ export default function RmEditorPage() {
                   <button className="w-full text-left px-3 py-2 hover:bg-base-200" onClick={() => exportar("resumido")}>
                     <span className="font-medium">Resumido</span>
                     <span className="block text-xs text-base-content/60">Só pendências, layout limpo (PDF)</span>
-                  </button>
-                  <div className="border-t border-base-200 my-1" />
-                  <div className="px-3 py-1 text-xs font-semibold text-base-content/50">Totalizado (grade)</div>
-                  <button className="w-full text-left px-3 py-2 hover:bg-base-200" onClick={() => exportar("totalizado", "xlsx")}>
-                    <span className="font-medium">Totalizado — Excel</span>
-                    <span className="block text-xs text-base-content/60">Planilha .xlsx</span>
-                  </button>
-                  <button className="w-full text-left px-3 py-2 hover:bg-base-200" onClick={() => exportar("totalizado", "pdf")}>
-                    <span className="font-medium">Totalizado — PDF</span>
-                    <span className="block text-xs text-base-content/60">Grade em PDF</span>
                   </button>
                 </div>
               </>

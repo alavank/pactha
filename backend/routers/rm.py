@@ -284,10 +284,14 @@ async def criar(
             updated_at = NOW()
         RETURNING id
     """)
-    # A cidade de emissao e a do PROPRIO municipio do relatorio. `mun` ja esta
-    # carregado aqui, entao nao custa consulta nenhuma — e e a unica fonte que
-    # nao pode estar errada. So um valor explicito do usuario sobrepoe.
-    cidade = (body.cidade_emissao or "").strip() or f"{mun.nome}/{mun.uf}"
+    # A cidade de emissao e a de QUEM ASSINA o relatorio — nao a do municipio
+    # monitorado. Era o municipio, e estava errado: quem emite e a assessoria, e o
+    # documento de referencia do padrao Freitas traz "Brasília/DF", a mesma cidade
+    # do endereco impresso no rodape. Configuravel por tenant (RM_CIDADE) para uma
+    # assessoria de outra praca ajustar. Valor explicito do usuario ainda sobrepoe.
+    cidade = ((body.cidade_emissao or "").strip()
+              or (get_settings().RM_CIDADE or "").strip()
+              or f"{mun.nome}/{mun.uf}")
     rid = (await db.execute(sql, {
         "mun": body.municipio_id, "dt": body.data_referencia, "escopo": _escopo,
         "anos": _anos,
@@ -527,6 +531,16 @@ async def pdf(
                      "titulo": row[2], "municipio": municipio,
                      "data_referencia": row[0].isoformat() if row[0] else None},
         )
+
+    # ⚠️ TOTALIZADO FOI RETIRADO (pedido do dono): o RM sai so em COMPLETO e
+    # RESUMIDO. A grade totalizada repetia, em outro formato, o que o completo ja
+    # diz — e ninguem usava. Recusa EXPLICITA, e nao rota fantasma: link antigo
+    # salvo por alguem recebe uma mensagem que explica, em vez de 500 ou de um
+    # arquivo vazio. Os geradores continuam em services/rm_export.py, sem chamador,
+    # para o caminho de volta ser trivial se a decisao mudar.
+    if tipo == "totalizado":
+        raise HTTPException(
+            400, "O formato 'totalizado' foi descontinuado. Use 'completo' ou 'resumido'.")
 
     # Totalizado em Excel
     if tipo == "totalizado" and formato == "xlsx":
