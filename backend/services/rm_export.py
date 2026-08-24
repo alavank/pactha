@@ -1,11 +1,24 @@
-"""Relatórios de Monitoramento em formatos alternativos ao Completo:
+"""RM em formatos alternativos ao COMPLETO em PDF.
+
+O QUE ESTA VIVO HOJE:
+
+- RESUMIDO: o Completo RECORTADO na Parte 1 (Demandas em Brasília). Sai em PDF
+  (`gerar_resumido_pdf`) e em WORD (`gerar_resumido_docx`). Os dois usam o MESMO
+  recorte (`_recorte_parte1`) e delegam a renderizacao — respectivamente a
+  `rm_pdf.gerar_pdf` e a `rm_docx.gerar_docx_rm`, que por sua vez consomem o
+  MESMO `rm_pdf.roteiro_rm`. Nao ha, em lugar nenhum deste arquivo, uma segunda
+  lista de campos ou uma segunda regra de caixa de destaque.
 
 - TOTALIZADO: grade consolidada (1 linha por instrumento) nas colunas do modelo
-  MOEMA — Concedente, Parlamentar, Ano, Objeto, Proposta/Convênio, Vl. Global,
-  Vl. Repasse, Vl. Contrapartida, Situação Atual. Sai em Excel (.xlsx) e PDF.
+  MOEMA. ⚠️ DESCONTINUADO (pedido do dono): `routers/rm.py` recusa
+  `tipo=totalizado` com 400 ANTES de chegar aqui. `gerar_totalizado_xlsx` e
+  `gerar_totalizado_pdf` continuam no arquivo, SEM CHAMADOR ALCANCAVEL, para o
+  caminho de volta ser trivial se a decisao mudar. Nao apague sem falar com o
+  dono.
 
-Ambos consomem o MESMO `conteudo` JSONB do RM (partes → secoes → grupos →
-itens), então batem 1:1 com o Relatório Completo — muda só a apresentação.
+Tudo aqui consome o MESMO `conteudo` JSONB do RM (partes → secoes → grupos →
+itens), entao bate 1:1 com o Relatorio Completo — muda so o recorte e a
+apresentacao.
 """
 import io
 import re
@@ -240,6 +253,36 @@ def gerar_resumido_pdf(meta: dict, conteudo: dict, municipio_nome: str) -> bytes
     com queda para o TITULO quando o conteudo e de um RM antigo."""
     from services.rm_pdf import gerar_pdf
 
+    meta_rs, conteudo_rs = _recorte_parte1(meta, conteudo, municipio_nome)
+    return gerar_pdf(meta_rs, conteudo_rs, municipio_nome)
+
+
+def gerar_resumido_docx(meta: dict, conteudo: dict, municipio_nome: str) -> bytes:
+    """RM RESUMIDO em WORD — o MESMO recorte, o outro renderizador.
+
+    Duas linhas de corpo, e e o ponto: o criterio de Parte 1, o sufixo do titulo
+    e o resto do `meta` moram em `_recorte_parte1`, entao o Word e o PDF nao
+    podem recortar diferente. Se um dia divergirem, sera porque alguem duplicou
+    o recorte — nao porque ele mudou aqui."""
+    from services.rm_docx import gerar_docx_rm
+
+    meta_rs, conteudo_rs = _recorte_parte1(meta, conteudo, municipio_nome)
+    return gerar_docx_rm(meta_rs, conteudo_rs, municipio_nome)
+
+
+def _recorte_parte1(meta: dict, conteudo: dict, municipio_nome: str) -> tuple[dict, dict]:
+    """O RECORTE do Resumido, sem UMA LINHA de formato. Devolve (meta, conteudo).
+
+    Era o corpo de `gerar_resumido_pdf`. Saiu de la quando o Word entrou: o
+    recorte nunca teve nada de PDF (nem reportlab, nem Paragraph, nem estilo) —
+    a unica linha acoplada ao formato era a chamada final do renderizador.
+
+    A Parte 1 e identificada por `ordem == 1` (carimbo do builder) com queda para
+    o TITULO quando o conteudo e de um RM antigo.
+
+    ⚠️ O RECORTE E RASO, DE PROPOSITO: filtra PARTES inteiras e nao toca em item
+    nenhum. `_e_pendencia` (neste arquivo) NAO e chamado aqui — o Resumido de hoje
+    imprime todos os itens da Parte 1, inclusive os concluidos."""
     def _e_parte1(p: dict) -> bool:
         if p.get("ordem") == 1:
             return True
@@ -250,7 +293,11 @@ def gerar_resumido_pdf(meta: dict, conteudo: dict, municipio_nome: str) -> bytes
     meta_rs = dict(meta or {})
     tit = (meta_rs.get("titulo") or f"RELATÓRIO DE MONITORAMENTO – {municipio_nome.upper()}")
     meta_rs["titulo"] = f"{tit} — DEMANDAS EM BRASÍLIA"
-    return gerar_pdf(meta_rs, {"partes": partes1}, municipio_nome)
+    # ⚠️ `{**conteudo, ...}` e nao `{"partes": partes1}`: o codigo antigo montava um
+    # dict NOVO so com "partes" e descartava calado qualquer outra chave de topo.
+    # Hoje nao se perde nada (os renderizadores so leem "partes"), mas uma chave
+    # de topo futura sumiria sem erro nenhum — e agora sao DOIS formatos perdendo.
+    return meta_rs, {**(conteudo or {}), "partes": partes1}
 
 
 def _campos_resumido(it: dict):

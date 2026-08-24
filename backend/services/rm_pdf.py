@@ -27,7 +27,30 @@ from reportlab.platypus import (
 
 # Altura do logo no cabecalho. A largura e o dobro apenas como CAIXA maxima — o
 # `preserveAspectRatio` encaixa a imagem dentro dela sem deformar.
-_LOGO_ALT = 1.8 * cm
+# MEDIDAS DA REFERÊNCIA, em CENTÍMETROS e em CONSTANTE — lidas por DOIS
+# renderizadores (o PDF daqui e o Word de services/rm_docx). Cravar o número em
+# cada um faz "o logo está pequeno" ser corrigido só no PDF, e o Word sair com
+# outro tamanho — sem erro e sem teste que compare os dois documentos.
+_LOGO_ALT_CM = 1.8
+_LOGO_ALT = _LOGO_ALT_CM * cm
+# Margens medidas no .docx do padrão Freitas (sectPr/pgMar): topo, base, esq, dir.
+# ASSIMÉTRICAS de propósito — a margem superior larga é o espaço do cabeçalho, e
+# a direita é menor que a esquerda (documento pensado para encadernação).
+_MARGENS_CM = (4.5, 3.0, 2.0, 1.5)
+_CAB_DIST_CM = 1.6      # distância da borda ao cabeçalho
+_ROD_DIST_CM = 0.8      # distância da borda ao rodapé
+
+# GLIFOS DA HIERARQUIA VISUAL (docstring do modulo). Ficam em constante porque
+# valem para TODO renderizador do RM. Repetir o caractere solto em cada um e o
+# caminho para o Word sair com bullet diferente do PDF sem ninguem notar.
+_GLIFO_GRUPO = "●"
+_GLIFO_CAMPO = "➢"
+
+# Texto do relatorio sem conteudo. Constante porque os dois renderizadores
+# imprimem exatamente a mesma frase (em italico), e nao ha teste que pegue a
+# divergencia.
+_TXT_VAZIO = ("Relatório sem conteúdo. Use o botão 'Auto-popular' "
+              "para puxar os dados atuais do banco.")
 
 
 def _fmt_dt(d: Any) -> str:
@@ -478,31 +501,44 @@ def _escape(s: str) -> str:
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
-def gerar_pdf(meta: dict, conteudo: dict, municipio_nome: str) -> bytes:
-    """Gera bytes do PDF.
+def roteiro_rm(meta: dict, conteudo: dict, municipio_nome: str):
+    """O RM inteiro como uma SEQUENCIA DE EVENTOS, sem uma linha de ReportLab.
 
-    Args:
-        meta: {data_referencia, cidade_emissao, titulo (opt), rodape}
-        conteudo: {partes: [{ordem, titulo, secoes: [{ordem, titulo, grupos:
-                  [{ordem, orgao, itens: [...]}]}]}]}
-        municipio_nome: para o titulo
+    ⚠️ E A UNICA FONTE DE VERDADE DA APRESENTACAO DO RM: `gerar_pdf` (abaixo) e
+    `services/rm_docx.gerar_docx_rm` sao dois CONSUMIDORES — nenhum dos dois
+    decide o que aparece nem em que ordem, so COMO aquilo e desenhado. Caixa
+    nova, campo novo ou mudanca de ordem entram AQUI e saem nos dois formatos de
+    graca; escrever a mesma regra duas vezes e exatamente como o Word e o PDF
+    passariam a divergir em silencio (nao ha teste que renderize nenhum dos dois).
+
+    ⚠️ NAO e a fonte de verdade do CONTEUDO. O conteudo e montado por
+    `services/rm_builder.montar_conteudo` e CONGELADO em `rm_relatorios.conteudo`
+    (routers/rm.py) no momento em que o relatorio e gerado. Campo novo exige as
+    tres coisas: o builder passar a produzi-lo, `_campos_do_item` passar a le-lo,
+    e cada RM ja emitido ser reprocessado com Auto-popular — senao relatorio
+    antigo e novo tem contratos de campo diferentes, sem erro nenhum.
+
+    Eventos, na forma (tipo, dado):
+      ("titulo",     str)               titulo principal — texto CRU, sem escape
+      ("local_data", str)               linha cidade/data — CRU
+      ("quebra",     None)              quebra de pagina; NAO vem antes da 1a parte
+      ("parte",      str)               CRU
+      ("secao",      str)               CRU
+      ("grupo",      str)               nome do orgao, CRU e SEM o glifo `●`
+      ("item",       str)               identificador do instrumento, CRU (ABRE o item)
+      ("campo",      (label, valor))    ambos CRUS, sem escape e sem o glifo `➢`
+      ("caixa",      (markup, estilo))  markup JA ESCAPADO, com <b>/<i>/<br/>;
+                                        estilo = "clausula" (ambar) | "informativo" (cinza)
+      ("fim_item",   None)              FECHA o item aberto
+      ("vazio",      str)               frase do relatorio sem conteudo, CRU
+
+    ⚠️ A ASSIMETRIA DE ESCAPE E PROPOSITAL e vem do codigo antigo: `campo` sai CRU
+    (quem escapa e o renderizador) e `caixa` sai JA ESCAPADA (as funcoes
+    `_*_destaque` escapam e embutem as tags). Reescapar uma caixa mostra `&lt;b&gt;`
+    no documento; imprimir uma caixa como texto puro mostra `<b>` literal.
     """
-    buf = io.BytesIO()
-    rodape_txt = meta.get("rodape", "")
-    # MARGENS DA REFERÊNCIA (medidas no .docx do padrão Freitas, sectPr/pgMar):
-    # superior 4,5 · inferior 3,0 · esquerda 2,0 · direita 1,5 cm. São ASSIMÉTRICAS
-    # de propósito — a margem superior larga é o espaço reservado ao cabeçalho, e a
-    # direita é menor que a esquerda (documento pensado para encadernação).
-    doc = SimpleDocTemplate(
-        buf, pagesize=A4,
-        leftMargin=2 * cm, rightMargin=1.5 * cm,
-        topMargin=4.5 * cm, bottomMargin=3 * cm,
-        title=f"RM - {municipio_nome}",
-    )
-    s = _styles()
-    story = []
     titulo = meta.get("titulo") or f"RELATÓRIO DE MONITORAMENTO – {municipio_nome.upper()}"
-    story.append(Paragraph(_escape(titulo), s["titulo_principal"]))
+    yield ("titulo", titulo)
     cidade = meta.get("cidade_emissao") or ""   # ver nota em rm_export.py
     if meta.get("escopo") in ("completo", "parcial"):
         # RM por SELECAO de anos (padrao Freitas): nao ha um exercicio unico. Linha
@@ -514,81 +550,128 @@ def gerar_pdf(meta: dict, conteudo: dict, municipio_nome: str) -> bytes:
         _dr = str(meta.get("data_referencia") or "")
         _ano = _dr[:4] if len(_dr) >= 4 and _dr[:4].isdigit() else ""
         linha = f"{cidade} — Relatório referente ao exercício de {_ano}" if _ano else cidade
-    story.append(Paragraph(_escape(linha), s["data_local"]))
+    yield ("local_data", linha)
 
     for p_idx, parte in enumerate(conteudo.get("partes", [])):
         if p_idx > 0:
-            story.append(PageBreak())
-        story.append(Paragraph(_escape(parte.get("titulo", "")), s["parte_titulo"]))
+            yield ("quebra", None)
+        yield ("parte", parte.get("titulo", ""))
         for secao in parte.get("secoes", []):
-            story.append(Paragraph(_escape(secao.get("titulo", "")), s["secao_titulo"]))
+            yield ("secao", secao.get("titulo", ""))
             for grupo in secao.get("grupos", []):
-                story.append(Paragraph(f"● {_escape(grupo.get('orgao', ''))}", s["grupo_titulo"]))
+                yield ("grupo", grupo.get("orgao", ""))
                 for item in grupo.get("itens", []):
-                    bloco = []
                     tipo = item.get("tipo", "")
                     numero = item.get("numero", "")
-                    id_txt = f"{tipo}: {numero}".strip(": ").strip()
-                    bloco.append(Paragraph(_escape(id_txt), s["item_id"]))
+                    yield ("item", f"{tipo}: {numero}".strip(": ").strip())
                     for label, val in _campos_do_item(item):
-                        bloco.append(Paragraph(
-                            f"➢ <b>{_escape(label)}:</b> {_escape(str(val))}",
-                            s["item_campo"],
-                        ))
+                        yield ("campo", (label, val))
+                    # ⚠️ A ORDEM DAS SEIS CAIXAS E CONTRATO: e nesta ordem que elas
+                    # saem no PDF desde sempre e e nesta ordem que o dono confere o
+                    # documento. Mexer aqui mexe nos dois formatos de uma vez — que
+                    # e justamente a razao de existir desta funcao.
                     # Caixa de DESTAQUE p/ Cláusula Suspensiva / Liminar Judicial
                     destaque = _clausula_destaque(item)
                     if destaque:
-                        bloco.append(Spacer(1, 2))
-                        bloco.append(Paragraph(destaque, s["clausula"]))
+                        yield ("caixa", (destaque, "clausula"))
                     # Licitacao: AMBAR so quando e alerta (contratacao Normal com
                     # ZERO licitacao). Com licitacoes registradas e informativo.
                     destaque_pe = _processo_execucao_destaque(item)
                     if destaque_pe:
                         _alerta_pe = item.get("processo_execucao_qtd") == 0
-                        bloco.append(Spacer(1, 2))
-                        bloco.append(Paragraph(destaque_pe, s["clausula" if _alerta_pe else "informativo"]))
+                        yield ("caixa", (destaque_pe, "clausula" if _alerta_pe else "informativo"))
                     destaque_ev = _evento_destaque(item)
                     if destaque_ev:
-                        bloco.append(Spacer(1, 2))
-                        bloco.append(Paragraph(destaque_ev, s["informativo"]))
+                        yield ("caixa", (destaque_ev, "informativo"))
                     # Estadual (SIGCON): a ultima alteracao e o "evento atual" dele.
                     destaque_alt = _alteracao_destaque(item)
                     if destaque_alt:
-                        bloco.append(Spacer(1, 2))
-                        bloco.append(Paragraph(destaque_alt, s["informativo"]))
+                        yield ("caixa", (destaque_alt, "informativo"))
                     # Desembolso (OPs/OBs): valor + lançamentos.
                     destaque_des = _desembolso_destaque(item)
                     if destaque_des:
-                        bloco.append(Spacer(1, 2))
-                        bloco.append(Paragraph(destaque_des, s["informativo"]))
+                        yield ("caixa", (destaque_des, "informativo"))
                     # OBRA — bloco PRÓPRIO, e não dentro da caixa da cláusula.
                     # Pendurá-lo lá o faria passar por `_tem_clausula`, que aborta
                     # quando não há cláusula suspensiva: obra com 93,70% executado
                     # tipicamente NÃO tem cláusula, e o texto nunca sairia — calado.
                     destaque_obra = _obra_destaque(item)
                     if destaque_obra:
-                        bloco.append(Spacer(1, 2))
-                        bloco.append(Paragraph(destaque_obra, s["informativo"]))
-                    bloco.append(Spacer(1, 4))
-                    # ⚠️ KeepTogether SÓ NO CABEÇALHO DO ITEM, não no bloco todo.
-                    #
-                    # Embrulhar o item inteiro fazia o ReportLab empurrar TUDO para
-                    # a página seguinte quando não coubesse — e sobrava meia página
-                    # em branco. O efeito ficou visível depois que a entrelinha 1,5
-                    # e a margem de topo de 4,5 cm (padrão Freitas) engordaram cada
-                    # bloco: o que antes cabia, passou a não caber.
-                    #
-                    # Mantendo junto só o identificador e os dois primeiros campos,
-                    # o item nunca fica órfão do próprio título, mas pode QUEBRAR
-                    # entre páginas em vez de deixar buraco.
-                    story.append(KeepTogether(bloco[:3]))
-                    story.extend(bloco[3:])
+                        yield ("caixa", (destaque_obra, "informativo"))
+                    yield ("fim_item", None)
 
     if not conteudo.get("partes"):
-        story.append(Paragraph(
-            "<i>Relatório sem conteúdo. Use o botão 'Auto-popular' para puxar os dados atuais do banco.</i>",
-            s["item_campo"],
-        ))
+        yield ("vazio", _TXT_VAZIO)
+
+
+def gerar_pdf(meta: dict, conteudo: dict, municipio_nome: str) -> bytes:
+    """Gera bytes do PDF.
+
+    Args:
+        meta: {data_referencia, cidade_emissao, titulo (opt), rodape, escopo (opt)}
+        conteudo: {partes: [{ordem, titulo, secoes: [{ordem, titulo, grupos:
+                  [{ordem, orgao, itens: [...]}]}]}]}
+        municipio_nome: para o titulo
+
+    ⚠️ NAO decide conteudo nem ordem: e um CONSUMIDOR de `roteiro_rm`. Tudo o que
+    este corpo faz e traduzir cada evento para ReportLab. Regra nova vai no
+    roteiro, senao ela sai no PDF e nao sai no Word.
+    """
+    buf = io.BytesIO()
+    rodape_txt = meta.get("rodape", "")
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=_MARGENS_CM[2] * cm, rightMargin=_MARGENS_CM[3] * cm,
+        topMargin=_MARGENS_CM[0] * cm, bottomMargin=_MARGENS_CM[1] * cm,
+        title=f"RM - {municipio_nome}",
+    )
+    s = _styles()
+    story = []
+    bloco: list = []          # o item em construcao, despejado no ("fim_item")
+
+    for evento, dado in roteiro_rm(meta, conteudo, municipio_nome):
+        if evento == "titulo":
+            story.append(Paragraph(_escape(dado), s["titulo_principal"]))
+        elif evento == "local_data":
+            story.append(Paragraph(_escape(dado), s["data_local"]))
+        elif evento == "quebra":
+            story.append(PageBreak())
+        elif evento == "parte":
+            story.append(Paragraph(_escape(dado), s["parte_titulo"]))
+        elif evento == "secao":
+            story.append(Paragraph(_escape(dado), s["secao_titulo"]))
+        elif evento == "grupo":
+            story.append(Paragraph(f"{_GLIFO_GRUPO} {_escape(dado)}", s["grupo_titulo"]))
+        elif evento == "item":
+            bloco = [Paragraph(_escape(dado), s["item_id"])]
+        elif evento == "campo":
+            label, val = dado
+            bloco.append(Paragraph(
+                f"{_GLIFO_CAMPO} <b>{_escape(label)}:</b> {_escape(str(val))}",
+                s["item_campo"],
+            ))
+        elif evento == "caixa":
+            markup, estilo = dado
+            bloco.append(Spacer(1, 2))
+            bloco.append(Paragraph(markup, s[estilo]))
+        elif evento == "fim_item":
+            bloco.append(Spacer(1, 4))
+            # ⚠️ KeepTogether SÓ NO CABEÇALHO DO ITEM, não no bloco todo.
+            #
+            # Embrulhar o item inteiro fazia o ReportLab empurrar TUDO para a
+            # página seguinte quando não coubesse — e sobrava meia página em
+            # branco. O efeito ficou visível depois que a entrelinha 1,5 e a
+            # margem de topo de 4,5 cm (padrão Freitas) engordaram cada bloco:
+            # o que antes cabia, passou a não caber.
+            #
+            # Mantendo junto só o identificador e os dois primeiros campos, o
+            # item nunca fica órfão do próprio título, mas pode QUEBRAR entre
+            # páginas em vez de deixar buraco.
+            story.append(KeepTogether(bloco[:3]))
+            story.extend(bloco[3:])
+            bloco = []
+        elif evento == "vazio":
+            story.append(Paragraph(f"<i>{_escape(dado)}</i>", s["item_campo"]))
 
     doc.build(
         story,

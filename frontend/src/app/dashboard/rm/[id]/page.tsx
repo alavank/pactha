@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Aviso, BOTAO_CTA, BOTAO_SEC, Bloco, ESTILO_CTA, ESTILO_SEC, Selo } from "@/components/ui/superficies";
 import { Input } from "@/components/ui/input";
 import { useMunicipio } from "@/contexts/MunicipioContext";
+import { baixarRelatorioRm, type FormatoRm, type TipoRm } from "@/lib/rmExport";
 
 interface Item {
   ordem?: number;
@@ -156,16 +157,11 @@ export default function RmEditorPage() {
 
   const [menuRel, setMenuRel] = useState(false);
 
-  const exportar = (tipo: "completo" | "resumido", formato: "pdf" = "pdf") => {
+  // Mesma função da LISTA (`lib/rmExport`) — as duas telas eram cópias byte a
+  // byte, e uma delas já foi esquecida numa mudança anterior.
+  const exportar = (tipo: TipoRm, formato: FormatoRm = "pdf") => {
     setMenuRel(false);
-    const token = localStorage.getItem("pactha_token");
-    const url = `${api.defaults.baseURL}/rm/${rid}/pdf?tipo=${tipo}&formato=${formato}`;
-    fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
-      .then((r) => r.blob())
-      .then((blob) => {
-        // Só PDF: o totalizado (o único que saía em .xlsx) foi descontinuado.
-        window.open(URL.createObjectURL(blob), "_blank");
-      });
+    void baixarRelatorioRm(rid, tipo, formato);
   };
 
   // Mutadores do conteudo (imutaveis)
@@ -290,13 +286,21 @@ export default function RmEditorPage() {
                 <div className="absolute right-0 z-20 mt-1 w-60 overflow-hidden py-1 text-[12px]"
                      style={{ background: "var(--bi-surface)", border: "1px solid var(--bi-line)",
                               borderRadius: "var(--bi-radius-sm)", boxShadow: "var(--bi-shadow)" }}>
-                  <button className="w-full text-left px-3 py-2 hover:bg-base-200" onClick={() => exportar("completo")}>
-                    <span className="font-medium">Completo</span>
-                    <span className="block text-xs text-base-content/60">Detalhado (PDF)</span>
+                  <button className="w-full text-left px-3 py-2 hover:bg-base-200" onClick={() => exportar("completo", "pdf")}>
+                    <span className="font-medium">Completo — PDF</span>
+                    <span className="block text-xs text-base-content/60">Detalhado, abre em nova aba</span>
                   </button>
-                  <button className="w-full text-left px-3 py-2 hover:bg-base-200" onClick={() => exportar("resumido")}>
-                    <span className="font-medium">Resumido</span>
-                    <span className="block text-xs text-base-content/60">Só pendências, layout limpo (PDF)</span>
+                  <button className="w-full text-left px-3 py-2 hover:bg-base-200" onClick={() => exportar("completo", "docx")}>
+                    <span className="font-medium">Completo — Word</span>
+                    <span className="block text-xs text-base-content/60">Mesmo conteúdo em .docx (baixa)</span>
+                  </button>
+                  <button className="w-full text-left px-3 py-2 hover:bg-base-200" onClick={() => exportar("resumido", "pdf")}>
+                    <span className="font-medium">Resumido — PDF</span>
+                    <span className="block text-xs text-base-content/60">Só a Parte 1 (Demandas em Brasília)</span>
+                  </button>
+                  <button className="w-full text-left px-3 py-2 hover:bg-base-200" onClick={() => exportar("resumido", "docx")}>
+                    <span className="font-medium">Resumido — Word</span>
+                    <span className="block text-xs text-base-content/60">Só a Parte 1, em .docx (baixa)</span>
                   </button>
                 </div>
               </>

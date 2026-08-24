@@ -6,6 +6,7 @@ import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { atalhosAnos, resumoAnos, anosOpcoes as anosOpcoesPeriodo } from "@/lib/periodo";
+import { baixarRelatorioRm, type FormatoRm, type TipoRm } from "@/lib/rmExport";
 import {
   Bloco, BlocoHead, Campos, ItemLinha, Lista, Modal, ModalCorpo, ModalHead,
   Selo, Vazio,
@@ -215,16 +216,11 @@ export default function RmListPage() {
     } catch (e) { console.error(e); }
   };
 
-  const exportar = (id: number, tipo: "completo" | "resumido", formato: "pdf" = "pdf") => {
+  // PDF abre em aba; WORD baixa. Tudo isso mora em `lib/rmExport` — esta função
+  // só fecha o menu, porque o menu é da tela.
+  const exportar = (id: number, tipo: TipoRm, formato: FormatoRm = "pdf") => {
     setMenuId(null);
-    const url = `${api.defaults.baseURL}/rm/${id}/pdf?tipo=${tipo}&formato=${formato}`;
-    const token = localStorage.getItem("pactha_token");
-    fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
-      .then((r) => r.blob())
-      .then((blob) => {
-        // Só PDF: o totalizado (o único que saía em .xlsx) foi descontinuado.
-        window.open(URL.createObjectURL(blob), "_blank");
-      });
+    void baixarRelatorioRm(id, tipo, formato);
   };
 
   if (!municipioId) {
@@ -472,14 +468,22 @@ export default function RmListPage() {
                       {menuId === rm.id && (
                         <>
                           <div className="fixed inset-0 z-10" onClick={() => setMenuId(null)} />
-                          <div className="bi-card absolute right-0 z-20 mt-1 w-56 py-1 text-left text-xs">
-                            <button className="w-full px-3 py-1.5 text-left hover:bg-base-200" onClick={() => exportar(rm.id, "completo")}>
-                              <span className="font-medium" style={{ color: "var(--bi-text)" }}>Completo</span>
-                              <span className="block text-[10px]" style={{ color: "var(--bi-faint)" }}>Detalhado (PDF)</span>
+                          <div className="bi-card absolute right-0 z-20 mt-1 w-64 py-1 text-left text-xs">
+                            <button className="w-full px-3 py-1.5 text-left hover:bg-base-200" onClick={() => exportar(rm.id, "completo", "pdf")}>
+                              <span className="font-medium" style={{ color: "var(--bi-text)" }}>Completo — PDF</span>
+                              <span className="block text-[10px]" style={{ color: "var(--bi-faint)" }}>Detalhado, abre em nova aba</span>
                             </button>
-                            <button className="w-full px-3 py-1.5 text-left hover:bg-base-200" onClick={() => exportar(rm.id, "resumido")}>
-                              <span className="font-medium" style={{ color: "var(--bi-text)" }}>Resumido</span>
-                              <span className="block text-[10px]" style={{ color: "var(--bi-faint)" }}>Só pendências (PDF)</span>
+                            <button className="w-full px-3 py-1.5 text-left hover:bg-base-200" onClick={() => exportar(rm.id, "completo", "docx")}>
+                              <span className="font-medium" style={{ color: "var(--bi-text)" }}>Completo — Word</span>
+                              <span className="block text-[10px]" style={{ color: "var(--bi-faint)" }}>Mesmo conteúdo em .docx (baixa)</span>
+                            </button>
+                            <button className="w-full px-3 py-1.5 text-left hover:bg-base-200" onClick={() => exportar(rm.id, "resumido", "pdf")}>
+                              <span className="font-medium" style={{ color: "var(--bi-text)" }}>Resumido — PDF</span>
+                              <span className="block text-[10px]" style={{ color: "var(--bi-faint)" }}>Só a Parte 1 (Demandas em Brasília)</span>
+                            </button>
+                            <button className="w-full px-3 py-1.5 text-left hover:bg-base-200" onClick={() => exportar(rm.id, "resumido", "docx")}>
+                              <span className="font-medium" style={{ color: "var(--bi-text)" }}>Resumido — Word</span>
+                              <span className="block text-[10px]" style={{ color: "var(--bi-faint)" }}>Só a Parte 1, em .docx (baixa)</span>
                             </button>
                           </div>
                         </>

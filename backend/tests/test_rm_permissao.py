@@ -199,6 +199,12 @@ def _sem_efeitos(monkeypatch):
     monkeypatch.setattr(rm, "gerar_resumido_pdf", lambda *a, **k: b"%PDF")
     monkeypatch.setattr(rm, "gerar_totalizado_pdf", lambda *a, **k: b"%PDF")
     monkeypatch.setattr(rm, "gerar_totalizado_xlsx", lambda *a, **k: b"PK")
+    # ⚠️ OS DOIS GERADORES DE WORD TAMBÉM. Sem estas duas linhas o teste de
+    # PERMISSÃO passa a renderizar um .docx de verdade a cada cenário — lento e,
+    # pior, um defeito de render viraria falha de permissão, escondendo o que
+    # este arquivo existe para medir.
+    monkeypatch.setattr(rm, "gerar_docx_rm", lambda *a, **k: b"PK")
+    monkeypatch.setattr(rm, "gerar_resumido_docx", lambda *a, **k: b"PK")
 
 
 # ---------------------------------------------------------------------------
@@ -260,6 +266,17 @@ CENARIOS = {
                              formato="pdf", db=db, current=u),
         None,
     ),
+    # WORD (.docx): mesma rota, mesmo gate, OUTRO ramo do corpo e OUTRO
+    # `return Response`. Entra na varredura porque `formato` deixou de ser
+    # parâmetro morto e passou a escolher gerador — ou seja, é um caminho novo
+    # de SAÍDA DE DADO, e todo caminho de saída tem de provar que passa pelo
+    # gate de exportação.
+    "pdf_docx": (
+        lambda: [_Res(DONO), _Res(LINHA_PDF)],
+        lambda db, u: rm.pdf(rid=1, request=None, tipo="completo",
+                             formato="docx", db=db, current=u),
+        None,
+    ),
 }
 
 NOMES = sorted(CENARIOS)
@@ -267,7 +284,8 @@ NOMES = sorted(CENARIOS)
 # Os que recebem `{rid}`: ganharam gate de tela NOVO e mais o `ensure_dono`, que
 # confere o municipio DA LINHA. Os dois sao codigo novo, e os dois respeitam o
 # modo — aqui nunca houve checagem nenhuma para preservar.
-COM_ID = ["atualizar", "auto_popular", "detalhe", "pdf", "pdf_resumido", "remover"]
+COM_ID = ["atualizar", "auto_popular", "detalhe", "pdf", "pdf_docx",
+          "pdf_resumido", "remover"]
 
 # Onde o gate de TELA nasceu neste incremento (`authz.exigir_tela`). `listar`
 # fica de fora: a tela dele ja era exigida antes, por `ensure_tela`.
@@ -284,6 +302,7 @@ FUNCAO = {
     "listar": rm.listar, "criar": rm.criar, "detalhe": rm.detalhe,
     "atualizar": rm.atualizar, "auto_popular": rm.repopular,
     "remover": rm.remover, "pdf": rm.pdf, "pdf_resumido": rm.pdf,
+    "pdf_docx": rm.pdf,
 }
 
 
