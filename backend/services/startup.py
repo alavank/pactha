@@ -56,6 +56,13 @@ MIGRATION_FILES = [
     # `drop_rm_unique_anos.sql` entra num PR POSTERIOR.
     "add_rm_fontes_coluna.sql",
     "add_rm_fontes_indice.sql",
+    # RM: DEPLOY 2 DE DOIS — derruba a identidade ANTIGA (ux_rm_mun_anos), que so
+    # a partir daqui deixa o RM completo e o filtrado coexistirem no mesmo periodo.
+    # ⚠️ DEPOIS de `add_rm_fontes_indice.sql` na lista E num deploy POSTERIOR ao
+    # dele: registrar os dois juntos derrubaria o indice antigo enquanto o
+    # container antigo ainda estivesse no ar. O proprio arquivo tem guard e vira
+    # no-op se o indice novo nao existir naquele tenant.
+    "drop_rm_unique_anos.sql",
     # TE/Emenda Pix federal persistida (coletor especiais -> tabela; RM/tela leem)
     "add_transferegov_te.sql",
     # SIMEC: TERMOS DE COMPROMISSO (o instrumento; as liberacoes ja existiam)
