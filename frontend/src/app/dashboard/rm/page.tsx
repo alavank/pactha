@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState, useCallback } from "react";
-import { Plus, Trash2, Download, Loader2, ChevronDown, FileText } from "lucide-react";
+import { Plus, Trash2, Download, Loader2, ChevronDown, FileText, Save } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { MultiSelect } from "@/components/ui/multi-select";
@@ -83,6 +83,15 @@ export default function RmListPage() {
   const [anosGerar, setAnosGerar] = useState<string[]>([]);
   const [anosSel, setAnosSel] = useState<string[]>([]);
 
+  // RODAPÉ PADRÃO do tenant. `origem` diz se o texto exibido veio do banco
+  // ("salvo") ou ainda da variável de ambiente ("env") — sem isso a pessoa
+  // apaga o campo, salva, e não entende por que o rodapé antigo "voltou".
+  const [rodape, setRodape] = useState("");
+  const [rodapeOrigem, setRodapeOrigem] = useState<"salvo" | "env">("env");
+  const [rodapePodeEditar, setRodapePodeEditar] = useState(false);
+  const [rodapeSalvando, setRodapeSalvando] = useState(false);
+  const [rodapeOk, setRodapeOk] = useState(false);
+
   /** Os anos que aparecem no ESCOPO de algum RM da lista (para o filtro). */
   const anosDisponiveis = useMemo(
     () => Array.from(new Set(items.flatMap((r) => (r.anos || []).map(String))))
@@ -112,6 +121,34 @@ export default function RmListPage() {
   }, [municipioId]);
 
   useEffect(() => { if (municipioId) buscar(); }, [municipioId, buscar]);
+
+  // O rodapé é do TENANT, não do município: carrega uma vez, e não a cada troca
+  // de município no seletor — pendurá-lo ali sugeriria que ele muda por
+  // prefeitura, o que não é verdade.
+  useEffect(() => {
+    api.get<{ rodape: string; origem: "salvo" | "env"; pode_editar: boolean }>("/rm/config")
+      .then((r) => {
+        setRodape(r.data.rodape || "");
+        setRodapeOrigem(r.data.origem);
+        setRodapePodeEditar(!!r.data.pode_editar);
+      })
+      .catch((e) => console.error(e));
+  }, []);
+
+  const salvarRodape = async () => {
+    setRodapeSalvando(true);
+    setRodapeOk(false);
+    try {
+      const r = await api.put<{ rodape: string; origem: "salvo" | "env" }>(
+        "/rm/config", { rodape });
+      setRodape(r.data.rodape);
+      setRodapeOrigem(r.data.origem);
+      setRodapeOk(true);
+    } catch (e) {
+      console.error(e);
+      alert("Não foi possível salvar o rodapé padrão.");
+    } finally { setRodapeSalvando(false); }
+  };
 
   // GERAR: UM único relatório com o escopo escolhido (upsert por município+anos).
   //   nenhum ano marcado -> TODOS (o completo);
@@ -220,6 +257,53 @@ export default function RmListPage() {
             {criando ? <Loader2 className="size-4 animate-spin mr-1" /> : <Plus className="size-4 mr-1" />}
             {rotuloGerar}
           </Button>
+        </div>
+      </Bloco>
+
+      {/* RODAPÉ PADRÃO — o campo digitável que GRAVA o padrão. Fica aqui, ao
+          lado do Gerar, porque é o Gerar que o carimba: o valor salvo entra no
+          próximo relatório gerado, e não nos que já foram emitidos. */}
+      <Bloco className="p-3">
+        <BlocoHead
+          icon={FileText}
+          titulo="Rodapé padrão dos relatórios"
+          sub={
+            <>
+              Sai impresso no <strong>pé de toda página</strong> do RM — é o endereço de quem
+              assina. O que você salvar aqui vira o <strong>padrão</strong> e entra nos relatórios{" "}
+              <strong>gerados a partir de agora</strong>; os já emitidos continuam com o rodapé
+              que receberam.{" "}
+              {rodapeOrigem === "env"
+                ? "Hoje o texto abaixo ainda vem da configuração do servidor — salvando, ele passa a vir daqui."
+                : "Este texto está salvo no sistema."}
+            </>
+          }
+        />
+        <textarea
+          className="bi-field min-h-[64px] w-full px-2 py-1 text-[12px]"
+          value={rodape}
+          disabled={!rodapePodeEditar}
+          onChange={(e) => { setRodape(e.target.value); setRodapeOk(false); }}
+          placeholder="Ex.: SHS Quadra 6, Bloco A, Sala 000 — Brasília/DF — (61) 0000-0000"
+          aria-label="Rodapé padrão dos relatórios"
+        />
+        <div className="mt-2 flex items-center gap-3">
+          <Button onClick={salvarRodape} disabled={!rodapePodeEditar || rodapeSalvando}>
+            {rodapeSalvando ? <Loader2 className="size-4 animate-spin mr-1" /> : <Save className="size-4 mr-1" />}
+            Salvar como padrão
+          </Button>
+          {rodapeOk && (
+            <span className="text-[11px]" style={{ color: "var(--bi-muted)" }}>
+              Salvo. Vale para os próximos RMs gerados.
+            </span>
+          )}
+          {!rodapePodeEditar && (
+            /* Campo desligado NÃO é permissão — quem barra é o servidor. Isto só
+               evita oferecer um botão que devolveria 403. */
+            <span className="text-[11px]" style={{ color: "var(--bi-muted)" }}>
+              Somente administradores alteram o rodapé padrão.
+            </span>
+          )}
         </div>
       </Bloco>
 

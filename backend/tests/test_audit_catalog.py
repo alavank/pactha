@@ -40,7 +40,7 @@ CHAVES_DO_REPO = [
     # nao aparece num grep por `action=` no Python, so no .sql da migration.
     "auditoria.exportar", "auditoria.podar", "auditoria.poda",
     "auditoria.verificar_integridade",
-    "export.rm", "rm.update", "rm.delete", "rm.auto_popular",
+    "export.rm", "rm.update", "rm.delete", "rm.auto_popular", "rm.config_rodape",
     # Chegaram com as pecas de cobertura (bi/convenios/documentos/gestao/
     # export_pdf) DEPOIS da primeira varredura deste catalogo.
     "bi.tela_link.create", "bi.tela_link.revoke",

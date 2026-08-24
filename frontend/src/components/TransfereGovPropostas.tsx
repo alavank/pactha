@@ -21,6 +21,7 @@ import {
   GradeLinha, ItemLinha, Lista, Modal, ModalCorpo, ModalHead, Secao, Selo,
   Vazio, situacaoTom,
 } from "@/components/ui/superficies";
+import { PainelFiltros, type FiltroAtivo } from "@/components/ui/filtros";
 
 /** O ANO de uma proposta.
  *
@@ -89,6 +90,27 @@ function pacOrigem(det?: Record<string, string | string[]>): string {
       const val = String(Array.isArray(v) ? v[0] : v ?? "").trim();
       if (val) return val;
     }
+  }
+  return "";
+}
+
+/** "Sim" ou "" para o campo Empenhado do modal — NUNCA "Não".
+ *
+ *  ⚠️ NÃO é o `detalhe->>'Empenhado'` cru. Aquele flag do portal erra nos dois
+ *  sentidos (marcava "Aprovada" como empenhada, e o 994997 aparecia "Não" aqui
+ *  com "Sim" no TransfereGov) e ficava solto no despejo genérico do detalhe,
+ *  contradizendo — na MESMA tela — a caixa de Notas de Empenho logo acima.
+ *
+ *  Ordem de prova: NE REAL coletada > calado. A MINUTA não conta: vem sem
+ *  número, com R$ 1,00 e situação "Minuta de Empenho".
+ *
+ *  Por que nunca "Não": ausência de NE não prova ausência de empenho — tenant
+ *  com TG_NES desligado nunca consulta, e "consultei e não tem" fica igual a
+ *  "nunca consultei". Mesma doutrina do RM (rm_builder._empenhado_rotulo). */
+function empenhadoDe(det?: Detalhe | null): string {
+  const nes = det?.notas_empenho;
+  if (Array.isArray(nes) && nes.some((n) => !n.minuta_apenas && (n.numero || "").trim())) {
+    return "Sim";
   }
   return "";
 }
@@ -255,11 +277,27 @@ export default function TransfereGovPropostas({
   const sp = useSearchParams();
   const { municipioId } = useMunicipio();
   const vigenciaParam = sp.get("vigencia");
+  /* Semente vinda da tela do PAC: "qual convênio nasceu desta seleção" leva para
+     cá já com o número da proposta no filtro. É por isso que o campo `proposta`
+     do filtro e o link do PAC são a mesma peça. */
+  const propostaParam = sp.get("proposta");
 
   const [items, setItems] = useState<Proposta[]>([]);
   const [atualizadoEm, setAtualizadoEm] = useState<string | undefined>();
   const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState("");
+  /* QUATRO CAMPOS, e não uma caixa. A caixa única era um OR de três colunas — e
+     a coluna do número do CONVÊNIO (`codigo_instrumento`), que é o número que
+     esta tela mostra em destaque, nem entrava nele. */
+  const [instrumento, setInstrumento] = useState("");
+  const [proposta, setProposta] = useState(propostaParam || "");
+  const [proponente, setProponente] = useState("");
+  const [cnpj, setCnpj] = useState("");
+  /* Disparo EXPLÍCITO da busca. Antes o "Limpar" fazia `setTimeout(buscar, 100)`,
+     e aquele `buscar` era o do render ANTERIOR — fechado sobre os filtros que
+     acabavam de ser apagados. Ele corria com a busca limpa que o efeito já tinha
+     disparado e, por sair 100ms depois, normalmente respondia por último: clicar
+     em Limpar deixava a lista FILTRADA. */
+  const [disparo, setDisparo] = useState(0);
   const [situacoesSel, setSituacoesSel] = useState<string[]>([]);
   const [vigenciaSel, setVigenciaSel] = useState<string[]>(vigenciaParam ? [vigenciaParam] : []);
   const [parlamentar, setParlamentar] = useState("");
@@ -282,7 +320,10 @@ export default function TransfereGovPropostas({
     // string[] p/ os filtros multi: o axios serializa como chave repetida
     // (?vigencia=a&vigencia=b), que e o formato que o FastAPI le em list[str].
     const params: Record<string, string | string[]> = { municipio_id: municipioId || "", categoria };
-    if (search.trim()) params.search = search.trim();
+    if (instrumento.trim()) params.instrumento = instrumento.trim();
+    if (proposta.trim()) params.proposta = proposta.trim();
+    if (proponente.trim()) params.proponente = proponente.trim();
+    if (cnpj.trim()) params.cnpj = cnpj.trim();
     if (vigenciaSel.length) params.vigencia = vigenciaSel;
     if (parlamentar.trim()) params.parlamentar = parlamentar.trim();
     if (orgao.trim()) params.orgao = orgao.trim();
@@ -290,7 +331,53 @@ export default function TransfereGovPropostas({
     if (vigFimDe) params.vig_fim_de = vigFimDe;
     if (vigFimAte) params.vig_fim_ate = vigFimAte;
     return params;
-  }, [municipioId, categoria, search, vigenciaSel, parlamentar, orgao, sitContratacaoSel, vigFimDe, vigFimAte]);
+  }, [municipioId, categoria, instrumento, proposta, proponente, cnpj, vigenciaSel,
+      parlamentar, orgao, sitContratacaoSel, vigFimDe, vigFimAte]);
+
+  /** Limpa TUDO e refaz a busca UMA vez.
+   *
+   *  Substitui o `setTimeout(buscar, 100)` de antes, que reenviava os filtros
+   *  velhos. Aqui as limpezas e o `setDisparo` entram no MESMO lote de estado:
+   *  um render, um efeito, uma requisição — com os campos já vazios.
+   *  Zera também `anosSel`, que o Limpar antigo esquecia (filtro client-side
+   *  continuava aplicado depois de "limpar"). */
+  const limparTudo = useCallback(() => {
+    setInstrumento(""); setProposta(""); setProponente(""); setCnpj("");
+    setSituacoesSel([]); setVigenciaSel([]); setAnosSel([]);
+    setParlamentar(""); setOrgao(""); setSitContratacaoSel([]);
+    setVigFimDe(""); setVigFimAte("");
+    setDisparo((d) => d + 1);
+  }, []);
+
+  /** O que está filtrando AGORA, para o cabeçalho do painel recolhido.
+   *
+   *  Filtro escondido é filtro que mente: com o painel fechado, estes chips são
+   *  a única coisa que explica por que a lista tem 3 itens e não 180. Os que vão
+   *  ao servidor precisam de `setDisparo` ao serem removidos; ano e situação são
+   *  client-side e aplicam sozinhos. */
+  const filtrosAtivos = useMemo<FiltroAtivo[]>(() => {
+    const a: FiltroAtivo[] = [];
+    const servidor = (chave: string, rotulo: string, limpar: () => void) =>
+      a.push({ chave, rotulo, remover: () => { limpar(); setDisparo((d) => d + 1); } });
+    if (instrumento.trim()) servidor("instrumento", `Instrumento: ${instrumento.trim()}`, () => setInstrumento(""));
+    if (proposta.trim()) servidor("proposta", `Proposta: ${proposta.trim()}`, () => setProposta(""));
+    if (proponente.trim()) servidor("proponente", `Proponente: ${proponente.trim()}`, () => setProponente(""));
+    if (cnpj.trim()) servidor("cnpj", `CNPJ: ${cnpj.trim()}`, () => setCnpj(""));
+    if (parlamentar.trim()) servidor("parlamentar", `Parlamentar: ${parlamentar.trim()}`, () => setParlamentar(""));
+    if (orgao.trim()) servidor("orgao", `Órgão: ${orgao.trim()}`, () => setOrgao(""));
+    if (vigFimDe) servidor("vigde", `Fim de vigência de ${vigFimDe}`, () => setVigFimDe(""));
+    if (vigFimAte) servidor("vigate", `Fim de vigência até ${vigFimAte}`, () => setVigFimAte(""));
+    sitContratacaoSel.forEach((s) =>
+      servidor(`sc:${s}`, s, () => setSitContratacaoSel((x) => x.filter((y) => y !== s))));
+    vigenciaSel.forEach((v) =>
+      servidor(`vig:${v}`, VIGENCIA_LABELS[v] ?? v, () => setVigenciaSel((x) => x.filter((y) => y !== v))));
+    situacoesSel.forEach((s) =>
+      a.push({ chave: `sit:${s}`, rotulo: s, remover: () => setSituacoesSel((x) => x.filter((y) => y !== s)) }));
+    anosSel.forEach((y) =>
+      a.push({ chave: `ano:${y}`, rotulo: y, remover: () => setAnosSel((x) => x.filter((z) => z !== y)) }));
+    return a;
+  }, [instrumento, proposta, proponente, cnpj, parlamentar, orgao, vigFimDe, vigFimAte,
+      sitContratacaoSel, vigenciaSel, situacoesSel, anosSel]);
 
   const buscar = useCallback(async () => {
     if (!municipioId) return;
@@ -318,8 +405,21 @@ export default function TransfereGovPropostas({
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setVigenciaSel(vigenciaParam ? [vigenciaParam] : []); }, [vigenciaParam]);
 
-  // Busca ao montar e sempre que municipio/categoria/vigencia mudarem
-  useEffect(() => { if (municipioId) buscar(); }, [municipioId, vigenciaSel, categoria]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Sincroniza o filtro de proposta com o parametro da URL (vem do selo de
+  // convenio vinculado, na tela do PAC). Sem este efeito o link so funcionaria
+  // na MONTAGEM: um segundo clique em outro convenio da MESMA categoria trocaria
+  // a URL sem trocar o filtro, e a tela ficaria mostrando o convenio anterior.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setProposta(propostaParam || "");
+    setDisparo((d) => d + 1);
+  }, [propostaParam]);
+
+  // Busca ao montar, quando municipio/categoria/vigencia mudam e a cada disparo
+  // EXPLICITO (Filtrar, Limpar, remover chip). `disparo` na lista de dependencias
+  // e o que permite Limpar disparar UMA busca — com os campos ja vazios — em vez
+  // do `setTimeout` que reenviava os filtros velhos.
+  useEffect(() => { if (municipioId) buscar(); }, [municipioId, vigenciaSel, categoria, disparo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Opcoes do multi-select = situacoes distintas presentes nos dados carregados
   const situacaoOptions = useMemo(
@@ -403,12 +503,42 @@ export default function TransfereGovPropostas({
         </a>
       </div>
 
-      <div className="bg-base-100 border rounded p-4">
+      <PainelFiltros
+        ativos={filtrosAtivos}
+        aoLimparTudo={limparTudo}
+        direita={
+          /* Fica FORA do corpo recolhível: gerar PDF é ação sobre o RESULTADO,
+             não sobre o filtro — sumir junto com o painel seria perder o botão. */
+          <Button variant="outline" size="sm" onClick={gerarPdf} disabled={baixandoPdf}
+                  title="Gera um PDF só com os instrumentos filtrados">
+            {baixandoPdf ? <Loader2 className="size-4 animate-spin mr-1" /> : null} 📄 Gerar PDF (filtrado)
+          </Button>
+        }
+      >
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div>
-            <label className="text-xs text-base-content/70 mb-1 block">Buscar (nº / proponente / CNPJ)</label>
-            <Input value={search} onChange={(e) => setSearch(e.target.value)}
-                   placeholder="Ex: 048291/2025 ou CNPJ" onKeyDown={(e) => { if (e.key === "Enter") buscar(); }} />
+            {/* O número do CONVÊNIO. Era o único número da tela que a busca NÃO
+                consultava, apesar de ser o que aparece na meta de cada item
+                ("instr 981397") e no título do modal. */}
+            <label className="text-xs text-base-content/70 mb-1 block">Instrumento (nº do convênio)</label>
+            <Input value={instrumento} onChange={(e) => setInstrumento(e.target.value)}
+                   placeholder="Ex: 981397" onKeyDown={(e) => { if (e.key === "Enter") buscar(); }} />
+          </div>
+          <div>
+            <label className="text-xs text-base-content/70 mb-1 block">Proposta (nº)</label>
+            <Input value={proposta} onChange={(e) => setProposta(e.target.value)}
+                   placeholder="Ex: 048291/2025" onKeyDown={(e) => { if (e.key === "Enter") buscar(); }} />
+          </div>
+          <div>
+            <label className="text-xs text-base-content/70 mb-1 block">Proponente</label>
+            <Input value={proponente} onChange={(e) => setProponente(e.target.value)}
+                   placeholder="Ex: Município de Araújos" onKeyDown={(e) => { if (e.key === "Enter") buscar(); }} />
+          </div>
+          <div>
+            {/* Com ou sem máscara: o backend compara só os dígitos dos dois lados. */}
+            <label className="text-xs text-base-content/70 mb-1 block">CNPJ</label>
+            <Input value={cnpj} onChange={(e) => setCnpj(e.target.value)} inputMode="numeric"
+                   placeholder="18.243.220/0001-01" onKeyDown={(e) => { if (e.key === "Enter") buscar(); }} />
           </div>
           <div>
             <label className="text-xs text-base-content/70 mb-1 block">Parlamentar</label>
@@ -486,40 +616,20 @@ export default function TransfereGovPropostas({
             <Button onClick={buscar} disabled={loading}>
               {loading ? <Loader2 className="size-4 animate-spin mr-1" /> : <Search className="size-4 mr-1" />} Filtrar
             </Button>
-            <Button variant="outline" onClick={() => {
-              setSearch(""); setSituacoesSel([]); setVigenciaSel([]);
-              setParlamentar(""); setOrgao(""); setSitContratacaoSel([]); setVigFimDe(""); setVigFimAte("");
-              setTimeout(buscar, 100);
-            }}>
+            {/* `limparTudo` e não um onClick inline com setTimeout: ver o
+                comentário da função — o inline reenviava os filtros ANTIGOS. */}
+            <Button variant="outline" onClick={limparTudo}>
               <Eraser className="size-4 mr-1" /> Limpar
-            </Button>
-            <Button variant="outline" onClick={gerarPdf} disabled={baixandoPdf}
-                    title="Gera um PDF só com os instrumentos filtrados">
-              {baixandoPdf ? <Loader2 className="size-4 animate-spin mr-1" /> : null} 📄 Gerar PDF (filtrado)
             </Button>
           </div>
         </div>
-      </div>
+      </PainelFiltros>
 
-      {/* Chips dos filtros de vencimento ativos (podem vir dos KPIs do
-          dashboard ou do proprio dropdown, e agora podem ser varios). */}
-      {vigenciaSel.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-base-content/60">Filtro ativo:</span>
-          {vigenciaSel.map((v) => (
-            <span key={v} className="inline-flex items-center gap-1.5 rounded-full bg-info/15 border border-info px-2.5 py-0.5 text-xs font-medium text-info">
-              {VIGENCIA_LABELS[v] ?? v}
-              <button
-                onClick={() => setVigenciaSel((atual) => atual.filter((x) => x !== v))}
-                className="text-info hover:text-info/80"
-                aria-label={`Remover filtro ${VIGENCIA_LABELS[v] ?? v}`}
-              >
-                ×
-              </button>
-            </span>
-          ))}
-        </div>
-      )}
+      {/* Os chips de vigência que ficavam aqui SAÍRAM: o PainelFiltros já mostra
+          TODOS os filtros ativos no cabeçalho, com o mesmo botão × por chip.
+          Manter os dois faria o mesmo filtro aparecer duas vezes, com dois
+          visuais e dois botões de remover — e duplicata de controle é pior que
+          nenhum, porque o gestor não sabe qual dos dois manda. */}
 
       <div>
         <div className="mb-2 text-[11px]" style={{ color: "var(--bi-muted)" }}>
@@ -654,7 +764,17 @@ export default function TransfereGovPropostas({
         const nHist = (detalhe?.historico_comunicacoes || []).length;
         const nDocs = (detalhe?.documentos_quadro_resumo || []).length;
         const nLotes = (detalhe?.obras?.lotes || []).length;
-        const temOpsObs = !!(detalhe?.ops_obs && (detalhe.ops_obs.valor_total_repasse != null || (detalhe.ops_obs.obs || []).length));
+        // ⚠️ ZERO NÃO LIGA A ABA. O coletor grava 0.0 (não null) quando a
+        // "Listagem de Repasses" existe e está zerada — e `!= null` acendia a aba
+        // "OPs/OBs" em voluntária que nunca teve um centavo de desembolso,
+        // mostrando três linhas de R$ 0,00. Só há o que ver quando há ordem
+        // bancária ou algum valor diferente de zero. Corrige também os registros
+        // zerados JÁ gravados, sem depender de limpeza no banco.
+        const _oo = detalhe?.ops_obs;
+        const temOpsObs = !!(_oo && (((_oo.valor_total_repasse ?? 0) > 0)
+          || ((_oo.valor_desembolsado ?? 0) > 0)
+          || ((_oo.valor_a_desembolsar ?? 0) > 0)
+          || (_oo.obs || []).length));
         const abas: Array<{ valor: typeof aba; label: string; on: boolean }> = [
           { valor: "dados", label: "Dados", on: true },
           { valor: "opsobs", label: "OPs/OBs", on: temOpsObs },
@@ -692,6 +812,12 @@ export default function TransfereGovPropostas({
                     campo("Número do Processo", detalhe.numero_processo),
                     campo("Órgão", detalhe.orgao),
                     campo("Programa", detalhe.programa),
+                    // EMPENHADO — derivado da NE, não o flag cru do portal (ver
+                    // empenhadoDe). Só sai quando há prova: sem NE a linha some,
+                    // porque "não consultado" ≠ "não empenhado". Promovido do
+                    // despejo genérico lá embaixo, onde ficava solto e
+                    // contradizendo a caixa de Notas de Empenho.
+                    ...(empenhadoDe(detalhe) ? [campo("Empenhado", empenhadoDe(detalhe))] : []),
                     // Só aparece quando o instrumento nasceu de uma seleção do
                     // Novo PAC — é a contrapartida de o item do PAC deixar de
                     // sair separado no relatório.
@@ -870,11 +996,15 @@ export default function TransfereGovPropostas({
                   </p>
                 </Secao>
 
+                {/* "Empenhado" entra na lista de exclusão abaixo: o par cru do
+                    portal é o flag furado, e mostrá-lo aqui contradizia, na mesma
+                    tela, a caixa de Notas de Empenho e o campo "Empenhado"
+                    derivado em Dados da Proposta (ver empenhadoDe). */}
                 {detalhe.detalhe && Object.keys(detalhe.detalhe).length > 0 && (
                   <Secao icon={Info} titulo="Justificativa e demais informações">
                     <dl className="flex flex-col gap-1.5">
                       {Object.entries(detalhe.detalhe)
-                        .filter(([k]) => !k.startsWith("_") && !["Modalidade","Situação no SIAFI","Código do Instrumento","Número da Proposta","Número do Processo","Órgão","Objeto do Instrumento"].includes(k))
+                        .filter(([k]) => !k.startsWith("_") && !["Modalidade","Situação no SIAFI","Código do Instrumento","Número da Proposta","Número do Processo","Órgão","Objeto do Instrumento","Empenhado"].includes(k))
                         .map(([k, v]) => (
                           <div key={k} className="border-b pb-1.5 last:border-0 last:pb-0" style={{ borderColor: "var(--bi-line)" }}>
                             <dt className="text-[9px] uppercase tracking-wide" style={{ color: "var(--bi-faint)" }}>{k}</dt>

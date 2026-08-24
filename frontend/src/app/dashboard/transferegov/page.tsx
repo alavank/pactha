@@ -15,6 +15,7 @@ import {
   Abas, Bloco, BlocoHead, Campo, Campos, ItemLinha, Lista, Modal, ModalCorpo,
   ModalHead, Secao, Selo, Vazio, situacaoTom,
 } from "@/components/ui/superficies";
+import { PainelFiltros, type FiltroAtivo } from "@/components/ui/filtros";
 import { formatCurrency } from "@/lib/utils";
 import { textoDe } from "@/lib/texto";
 
@@ -232,6 +233,28 @@ export default function TransfereGovPage() {
     setItems([]); setTotal(0);
   };
 
+  /** O que está filtrando AGORA, para o cabeçalho do painel recolhido — mesma
+   *  regra das telas vizinhas: recorte aplicado nunca fica invisível. */
+  const filtrosAtivos = useMemo<FiltroAtivo[]>(() => {
+    const a: FiltroAtivo[] = [];
+    const t = (chave: string, rot: string, v: string, limparCampo: () => void) => {
+      if (v.trim()) a.push({ chave, rotulo: `${rot}: ${v.trim()}`, remover: limparCampo });
+    };
+    situacoesSel.forEach((s) => a.push({
+      chave: `sit:${s}`, rotulo: SITUACOES_PA_LABEL[s] ?? s,
+      remover: () => setSituacoesSel((x) => x.filter((y) => y !== s)),
+    }));
+    t("programa", "Programa", programa, () => setPrograma(""));
+    t("parlamentar", "Parlamentar", parlamentar, () => setParlamentar(""));
+    t("emenda", "Emenda", emenda, () => setEmenda(""));
+    t("objeto", "Objeto", objeto, () => setObjeto(""));
+    anosSel.forEach((y) => a.push({
+      chave: `ano:${y}`, rotulo: y,
+      remover: () => setAnosSel((x) => x.filter((z) => z !== y)),
+    }));
+    return a;
+  }, [situacoesSel, programa, parlamentar, emenda, objeto, anosSel]);
+
   /** Os anos que EXISTEM no resultado, para o dropdown não oferecer ano vazio. */
   const anosDisponiveis = useMemo(
     () => Array.from(new Set(items.map(anoDa).filter(Boolean))).sort((a, b) => b.localeCompare(a)),
@@ -301,10 +324,21 @@ export default function TransfereGovPage() {
         </div>
       </div>
 
-      {/* Filtros — mesmo comportamento de antes, so trocando a caixa de borda
-          dura pelo <Bloco> da identidade. */}
-      <Bloco className="p-3">
-        <BlocoHead icon={Search} titulo="Pesquisa" sub="Escolha um ou mais critérios" />
+      {/* Filtros RECOLHÍVEIS. Esta tela não tem o defeito de busca das outras (os
+          campos já nascem separados), mas tem cinco colunas de filtro e quatro
+          botões sempre abertos empurrando o primeiro plano de ação para baixo da
+          dobra. Mesmo painel das telas de propostas e do PAC. */}
+      <PainelFiltros
+        ativos={filtrosAtivos}
+        aoLimparTudo={limpar}
+        titulo="Pesquisa"
+        direita={
+          <Button variant="outline" size="sm" onClick={gerarPdf} disabled={baixandoPdf || items.length === 0}
+                  title="Gera um PDF só com os planos filtrados">
+            {baixandoPdf ? <Loader2 className="size-4 animate-spin mr-1" /> : null} 📄 Gerar PDF (filtrado)
+          </Button>
+        }
+      >
         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-3">
           <div>
             <label className="text-[11px] mb-1 block" style={{ color: "var(--bi-muted)" }}>
@@ -357,6 +391,10 @@ export default function TransfereGovPage() {
           </div>
         </div>
         <div className="flex justify-end gap-2 mt-3">
+          {/* ⚠️ `limpar` aqui também esvazia `items` e deixa a tela em branco até
+              alguém apertar Filtrar — diferente das telas vizinhas, onde Limpar
+              REFAZ a busca sem filtro. Não alterado de propósito: é mudança de
+              comportamento, não de layout. */}
           <Button variant="outline" onClick={limpar}><Eraser className="size-4 mr-1" /> Limpar</Button>
           <Button variant="outline" onClick={() => buscar(true)} disabled={loading} title="Refresh cache do TransfereGov">
             <RefreshCw className="size-4 mr-1" /> Atualizar
@@ -367,12 +405,11 @@ export default function TransfereGovPage() {
             {loading ? <Loader2 className="size-4 mr-1 animate-spin" /> : <Search className="size-4 mr-1" />}
             Filtrar
           </Button>
-          <Button variant="outline" onClick={gerarPdf} disabled={baixandoPdf || items.length === 0}
-                  title="Gera um PDF só com os planos filtrados">
-            {baixandoPdf ? <Loader2 className="size-4 animate-spin mr-1" /> : null} 📄 Gerar PDF (filtrado)
-          </Button>
+          {/* O "Gerar PDF (filtrado)" subiu para o cabeçalho do painel (prop
+              `direita`): é ação sobre o RESULTADO, e sumir junto com o painel
+              recolhido seria perder o botão. */}
         </div>
-      </Bloco>
+      </PainelFiltros>
 
       {/* A LISTA DEIXOU DE SER TABELA.
           Eram 8 colunas fixas com selo pintado e cabecalho violeta. Agora cada

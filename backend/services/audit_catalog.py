@@ -398,6 +398,15 @@ _TABELA: dict[str, dict] = {
     ),
     "rm.delete": _a("excluiu o Relatório de Monitoramento", MOD_RELATORIOS,
                     _ALTO, prep="—"),
+    "rm.config_rodape": _a(
+        "alterou o rodapé padrão dos Relatórios de Monitoramento",
+        MOD_RELATORIOS, _MEDIO, sem_alvo=True,
+        nota="O rodapé sai impresso no pé de TODA página de TODO relatório do "
+             "cliente — é o endereço de quem assina o documento oficial. Não é "
+             "por relatório: vale para os próximos que forem gerados. O "
+             "valor-antes/valor-depois traz também de ONDE vinha o texto "
+             "(`env` = variável de ambiente, `salvo` = editado pela tela).",
+    ),
     # --- Trava de permissão em modo aviso (services/authz.py) --------------
     # Módulo "Usuários e permissões" porque é ali que está a CORREÇÃO: cada uma
     # destas linhas é um cadastro para arrumar antes de ligar o bloqueio.
@@ -785,6 +794,9 @@ _TARGET_TYPE_ROTULOS: dict[str, str] = {
     "bi_tela_link": "link público do painel",
     "gestao_anotacao": "anotação da gestão interna",
     "export": "exportação",
+    # Configuracao do modulo RM (hoje so o rodape padrao). Sem esta linha o alvo
+    # sairia como "rm config" — o `_legivel` so desmonta o snake_case.
+    "rm_config": "configuração do Relatório de Monitoramento",
     # Alvos gravados por services/authz.py. "tela" e "municipio" já existem
     # acima; "linha" é o registro solto cujo município está em branco.
     "linha": "registro",
