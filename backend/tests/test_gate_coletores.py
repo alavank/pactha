@@ -125,6 +125,15 @@ class _Resultado:
     def first(self):
         return self._linha
 
+    def scalar_one_or_none(self):
+        """O `detalhe` do plano de ação lê `pagamentos` por escalar. Devolve o
+        que a linha tiver na 1ª posição, ou ela mesma quando não for tupla —
+        assim `FakeDb(None)` significa "plano ainda não coletado", que é o caso
+        que a tela precisa distinguir de "não há pagamento"."""
+        if isinstance(self._linha, (tuple, list)):
+            return self._linha[0] if self._linha else None
+        return self._linha
+
 
 class FakeDb:
     """So o que os endpoints deste grupo usam: execute() -> .first()."""
@@ -367,8 +376,21 @@ def test_plano_acao_em_aviso_responde_igual_e_sai_para_a_rede(monkeypatch, envio
     saidas: list = []
     monkeypatch.setattr(httpx, "AsyncClient", _cliente_falso(saidas))
 
-    resp = asyncio.run(transferegov.detalhe(plano_acao_id=99, current=sem_nada()))
-    assert set(resp) == {"plano", "resumo", "extrato"}
+    # `db` é dublê: `pagamentos` sai da COLUNA que o coletor preencheu, não da
+    # rede — é o ponto do desenho. Sem passar um, o handler recebe o objeto
+    # `Depends` cru, o `except` best-effort engole e o teste não mediria nada
+    # sobre a consulta.
+    resp = asyncio.run(transferegov.detalhe(plano_acao_id=99, db=FakeDb(),
+                                            current=sem_nada()))
+    # `pagamentos` entrou na resposta com os pagamentos da TE (documentos hábeis
+    # -> OP/OB e o histórico de eventos). Este `assert` trava a FORMA da resposta
+    # de propósito: a tela lê por chave, e chave que aparece ou some sem ninguém
+    # ver é como o front e o back divergem.
+    assert set(resp) == {"plano", "resumo", "extrato", "pagamentos"}
+    # ⚠️ CONTINUAM SENDO TRÊS. O `pagamentos` NÃO acrescentou requisição de saída:
+    # ele vem do banco. Este número é o que impede alguém de "melhorar" o
+    # endpoint buscando a lista de documentos hábeis ao vivo — seriam 1+N
+    # requisições por clique, contra a mesma fonte que já puniu o IP da VPS.
     assert len(saidas) == 3                      # detalhe + resumo + extrato
     assert envios[0]["detalhes"]["exigido"] == "transferegov"
 

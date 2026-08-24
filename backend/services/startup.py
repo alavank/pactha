@@ -291,6 +291,11 @@ MIGRATION_FILES = [
     # que ate aqui so existia em RM_RODAPE e exigia deploy para mudar.
     # ⚠️ SEM SEMENTE: linha ausente = usa a env (ver services/rm_config.py).
     "add_configuracoes.sql",
+    # Pagamentos da Transferencia Especial: documentos habeis -> OP/OB e o
+    # historico de eventos de pagamento, no mesmo formato do `ops_obs` das
+    # voluntarias. Puramente ADITIVA (duas colunas + um indice parcial) sobre
+    # transferegov_te; o runner so executa o que esta NESTA lista.
+    "add_te_pagamentos.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",

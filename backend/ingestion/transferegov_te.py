@@ -37,6 +37,54 @@ _HEADERS = {
     "Referer": "https://especiais.transferegov.sistema.gov.br/transferencia-especial/plano-acao/consulta",
 }
 _PAGE_SIZE = 200                 # teto estavel (>=400 -> 403; 300 falha na 2a pagina)
+
+# ---------------------------------------------------------------------------
+# PAGAMENTOS: documentos habeis -> ordem de pagamento/bancaria + historico
+# ---------------------------------------------------------------------------
+# Endpoints PUBLICOS da MESMA base, descobertos no bundle da SPA de especiais
+# (main.js: getPublicUrlDocumentoHabil / getPublicUrlOpob; chunk 527 = tela
+# dados-orcamentarios, chunk 32 = tela detalhar-ordem-pagamento):
+#
+#   GET /public/documentos-habeis/plano-acao/resumido/{planoAcaoId}
+#     -> [{id, numeroEmpenho, nuInternoDh, nuDh, vlDh, descricaoSituacao,
+#          opObId, txOp}]  — e a grade "Lista de Documentos Habeis", coluna a coluna.
+#   GET /public/opob/{opObId}
+#     -> {txOp, txOb, situacao, dtEmissaoOb, dtPagamento, dtAssinaturaOrdDesp,
+#         dtAssinaturaGestFin, txCpfOrdenadorDespesa, txCpfGestorFinanceiro,
+#         historico:[{dhRegistro, txCpfResponsavel, situacao}]}
+#
+# ⚠️ NAO USE /public/opob/plano-acao/{id}. Ele existe e responde 200 com a lista
+# de OPs do plano, mas com `historico` VAZIO e `situacao` NULA — medido no plano
+# 91573. O historico de eventos de pagamento so vem no detalhe por opObId.
+#
+# ⚠️ CUSTO MEDIDO (23/08/2026, 590 requisicoes SEQUENCIAIS, ZERO 403): ~0,22s no
+# endpoint de DH e ~0,32s no de OPOB. O rate-limit brutal desta API e da
+# /plano-acao/listagem (paginas de 5 MB), NAO destes lookups por id. Sao 1 + N
+# requisicoes por plano (N = DHs com OP; medido: 0 DH em 30% dos planos, 1 em
+# 64%, maximo 3). No maior tenant (~60 planos na carteira) da ~120 requisicoes,
+# ~100s por rodada diaria — sem navegador, sem concorrencia, uma conexao so.
+#
+# ⚠️ 403 NAO SIGNIFICA A MESMA COISA NOS DOIS: o de DH devolve `[]` com HTTP 200
+# para plano inexistente, enquanto /opob/{id} devolve **403** (nao 404) para
+# opObId inexistente. Ler esse 403 como rate-limit poria o coletor em backoff
+# por causa de um id que simplesmente nao existe.
+_API_DH = ("https://especiais.transferegov.sistema.gov.br/"
+           "maisbrasil-transferencia-especial-backend/api/public/documentos-habeis"
+           "/plano-acao/resumido/{pid}")
+_API_OPOB = ("https://especiais.transferegov.sistema.gov.br/"
+             "maisbrasil-transferencia-especial-backend/api/public/opob/{oid}")
+_PGTO_ON = (os.getenv("TE_PAGAMENTOS", "1") or "1").strip() == "1"
+_PGTO_DELAY = float(os.getenv("TE_PGTO_DELAY", "0.5") or "0.5")
+_PGTO_BUDGET_S = float(os.getenv("TE_PGTO_BUDGET_S", "300") or "300")
+_PGTO_MAX_AGE_DAYS = int(os.getenv("TE_PGTO_MAX_AGE_DAYS", "3") or "3")
+# ⚠️ TETO DA TAREFA INTEIRA, e nao de uma fase dela. A Scheduled Task mata o
+# processo em `timeout -k 30 1600` (ver a docstring de `run`), e a listagem
+# sozinha ja pede `_BUDGET_S`=1500. Somar `_PGTO_BUDGET_S`=300 em cima daria
+# 1800s: a fase de pagamentos seria degolada no meio e o log final — que e onde
+# o resultado aparece — se perderia. Por isso `run()` CRONOMETRA a listagem e
+# passa o RESTO aos pagamentos, nunca o orcamento cheio. 1450 deixa 150s de
+# folga antes do kill, para o commit final e o log caberem.
+_TETO_TAREFA_S = float(os.getenv("TE_TETO_TAREFA_S", "1450") or "1450")
 _PAGE_DELAY = float(os.getenv("TE_PAGE_DELAY", "2") or "2")   # espaco entre paginas OK
 _BACKOFFS = (8, 20, 45, 90)      # esperas ao tomar 403 (o rate-limit reseta com o tempo)
 _BUDGET_S = float(os.getenv("TE_BUDGET_S", "1500") or "1500")  # teto total (~25min)
@@ -281,6 +329,230 @@ async def run_uf(uf: str, budget_s: float | None = None) -> dict:
     return {"uf": uf, "gravados": gravados, "casados": casados, "completo": completo, "total_api": total_api}
 
 
+def _num(x) -> float | None:
+    try:
+        return float(x)
+    except (TypeError, ValueError):
+        return None
+
+
+def _dt_br(s) -> str:
+    """'2026-06-22' (ou '2026-06-22T08:56:37') -> '22/06/2026'. '' quando nao da.
+
+    dd/mm/aaaa DE PROPOSITO: e o formato que o `ops_obs` das voluntarias grava, e
+    o RM le as duas fontes com as MESMAS funcoes (services/rm_builder
+    _desembolso_ops_obs e _ano_pagamento_ops_obs). Formato diferente aqui obrigaria
+    um segundo parser no builder e as duas acabariam divergindo."""
+    t = str(s or "")[:10]
+    if len(t) == 10 and t[4] == "-" and t[7] == "-":
+        return f"{t[8:10]}/{t[5:7]}/{t[0:4]}"
+    return ""
+
+
+def _dh_br(s) -> str:
+    """'2026-06-22T08:56:37.75667' -> '22/06/2026 08:56' (evento do historico)."""
+    t = str(s or "")
+    d = _dt_br(t)
+    return f"{d} {t[11:16]}".strip() if d else t[:16]
+
+
+def _chave_data(d: str) -> str:
+    """dd/mm/aaaa -> aaaammdd, p/ comparar datas como texto sem parsear."""
+    p = str(d or "").split("/")
+    return (p[2] + p[1] + p[0]) if len(p) == 3 else ""
+
+
+async def pagamentos_do_plano(cli: httpx.AsyncClient, plano_acao_id: int,
+                              valor_total) -> dict | None:
+    """Pagamentos de UM plano de acao, no MESMO formato do `ops_obs` das voluntarias.
+
+    REGRA DO QUE CONTA COMO DESEMBOLSADO: documento habil com Ordem de Pagamento
+    (opObId > 0) cuja OPOB ja tem ORDEM BANCARIA (`txOb` preenchido).
+
+    ⚠️ MINUTA NAO E DINHEIRO — o mesmo cuidado que `_nes_resumo` ja teve de tomar
+    no RM. A grade da tela mistura o DH emitido ("Enviado", com `nuDh`) com a
+    MINUTA de DH ("Minuta de DH", `nuDh` nulo e `opObId` 0). No plano 91573 sao
+    R$ 205.066,16 emitidos e R$ 192.933,84 ainda em minuta: somar a minuta como
+    pago inventaria repasse e mandaria o item para a Parte 3 sem que um centavo
+    tivesse saido. A minuta vai para `pendentes` e o valor dela fica no a-desembolsar.
+
+    ⚠️ `dtPagamento` VEM SEMPRE NULO nesta API publica (medido em 90 OPs de 4
+    faixas de ano). Quem marca a saida do dinheiro e `txOb`/`dtEmissaoOb`.
+
+    None quando a fonte nao respondeu — e NULO no banco significa "nao medido",
+    que e o que impede o RM de escrever PENDENTE DE DESEMBOLSO sem ter medido.
+    """
+    try:
+        r = await cli.get(_API_DH.format(pid=plano_acao_id), headers=_HEADERS)
+    except Exception as e:
+        logger.warning(f"  pgto {plano_acao_id}: DH {str(e)[:80]}")
+        return None
+    if r.status_code != 200:
+        logger.warning(f"  pgto {plano_acao_id}: DH HTTP {r.status_code}")
+        return None
+    try:
+        lista = r.json() or []
+    except ValueError:
+        return None
+    if not isinstance(lista, list):
+        return None
+
+    pagos: list[dict] = []
+    pendentes: list[dict] = []
+    datas: list[str] = []
+    total_pago = 0.0
+    for dh in lista:
+        if not isinstance(dh, dict):
+            continue
+        vl = _num(dh.get("vlDh"))
+        base = {
+            "dh_id": dh.get("id"),
+            "numero_dh": (dh.get("nuDh") or ""),
+            "minuta": (dh.get("nuInternoDh") or ""),
+            "numero_empenho": (dh.get("numeroEmpenho") or ""),
+            "valor": vl,
+            "situacao_dh": (dh.get("descricaoSituacao") or ""),
+        }
+        oid = dh.get("opObId") or 0
+        if not oid:
+            pendentes.append(base)      # minuta: nao ha OP, nao ha o que consultar
+            continue
+        await asyncio.sleep(_PGTO_DELAY)
+        op: dict = {}
+        try:
+            ro = await cli.get(_API_OPOB.format(oid=int(oid)), headers=_HEADERS)
+            # ⚠️ 403 AQUI NAO E RATE-LIMIT: esta rota devolve 403 (nao 404) para
+            # opObId inexistente. Como o id veio da propria lista de DH isso
+            # praticamente nao acontece; se acontecer, o certo e seguir em
+            # frente, nunca entrar em backoff.
+            if ro.status_code == 200 and isinstance(ro.json(), dict):
+                op = ro.json()
+        except Exception as e:
+            logger.warning(f"  pgto {plano_acao_id}: OPOB {oid} {str(e)[:80]}")
+        ob = (op.get("txOb") or "").strip()
+        data_ob = _dt_br(op.get("dtEmissaoOb"))
+        item = {
+            **base,
+            "opob_id": int(oid),
+            "numero_op": (dh.get("txOp") or op.get("txOp") or "").strip(),
+            "numero_ob": ob,
+            "data_emissao_ob": data_ob,
+            "data_emissao_op": _dt_br(op.get("dtEmissaoOp")),
+            "situacao": (op.get("situacao") or "").strip(),
+            "ordenador_despesa": (op.get("txCpfOrdenadorDespesa") or "").strip(),
+            "gestor_financeiro": (op.get("txCpfGestorFinanceiro") or "").strip(),
+            "dt_assinatura_ordenador": _dt_br(op.get("dtAssinaturaOrdDesp")),
+            "dt_assinatura_gestor": _dt_br(op.get("dtAssinaturaGestFin")),
+            # HISTORICO DE EVENTOS DE PAGAMENTO: a tabela da tela
+            # detalhar-ordem-pagamento (Data | Responsavel | Situacao).
+            "historico": [
+                {"data": _dh_br(h.get("dhRegistro")),
+                 "responsavel": (h.get("txCpfResponsavel") or "").strip(),
+                 "situacao": (h.get("situacao") or "").strip()}
+                for h in (op.get("historico") or []) if isinstance(h, dict)
+            ],
+        }
+        if ob:
+            total_pago += vl or 0.0
+            if data_ob:
+                datas.append(data_ob)
+            pagos.append(item)
+        else:
+            pendentes.append(item)
+
+    total = _num(valor_total)
+    a_desembolsar = None if total is None else round(total - total_pago, 2)
+    return {
+        "valor_total": total,
+        # AS CHAVES SAO AS DO `ops_obs` DE PROPOSITO — ver _dt_br acima.
+        "valor_desembolsado": round(total_pago, 2),
+        "valor_a_desembolsar": a_desembolsar,
+        # Ultima OB pela DATA e nao pela ordem da lista: a API nao garante ordem.
+        "data_ultimo_desembolso": max(datas, key=_chave_data) if datas else None,
+        # 1 centavo de tolerancia: o rateio entre documentos habeis fecha em centavos.
+        "pago_integral": bool(total and a_desembolsar is not None and a_desembolsar <= 0.01),
+        "obs": pagos,
+        "pendentes": pendentes,
+    }
+
+
+# ⚠️ UPDATE PROPRIO, e NAO o `UPSERT_SQL_NOMEADO`. Aquele INSERT ... ON CONFLICT
+# usa `EXCLUDED.<coluna>` SEM COALESCE e e compartilhado com a coleta assistida
+# do control-plane (routers/control.py::control_te_lote). Se `pagamentos`
+# entrasse nele, cada passada da listagem — que nao conhece pagamento nenhum —
+# APAGARIA a coluna em silencio, todo dia, nos dois caminhos de escrita.
+_UPDATE_PGTO = """UPDATE transferegov_te
+   SET pagamentos = %(pg)s::jsonb, pagamentos_atualizado_em = NOW()
+ WHERE plano_acao_id = %(pid)s"""
+
+
+async def run_pagamentos(budget_s: float | None = None) -> dict:
+    """Preenche `transferegov_te.pagamentos` dos planos DA CARTEIRA.
+
+    SO os planos com `municipio_id` — sao os unicos que o RM e a tela enxergam
+    (`WHERE municipio_id = :m` nos dois). Enriquecer o resto seria pagar
+    requisicao por dado que ninguem le: exatamente o desperdicio que
+    `_ufs_do_tenant` acabou de matar do outro lado deste arquivo.
+
+    Incremental por `pagamentos_atualizado_em`, como o `ops_obs_atualizado_em`
+    das voluntarias: quem foi checado ha menos de TE_PGTO_MAX_AGE_DAYS nao volta
+    a fila — inclusive quem voltou VAZIO, senao os ~30% de planos sem documento
+    habil consumiriam a rodada inteira todo dia.
+
+    NAO grava em `ingestion_log`: a fonte 'transferegov_te' ja registra a rodada
+    da listagem, e uma segunda linha por dia mudaria o que a tela Status dos
+    Dados le como "ultima coleta" e como `records_inserted`. O que houve aqui
+    sai no log da aplicacao e no retorno desta funcao.
+    """
+    budget = _PGTO_BUDGET_S if budget_s is None else budget_s
+    cn = psycopg2.connect(_sync_url())
+    cn.autocommit = False
+    cur = cn.cursor()
+    cur.execute(
+        "SELECT plano_acao_id, valor_total FROM transferegov_te "
+        "WHERE municipio_id IS NOT NULL "
+        "  AND (pagamentos_atualizado_em IS NULL "
+        "       OR pagamentos_atualizado_em < NOW() - make_interval(days => %s)) "
+        "ORDER BY pagamentos_atualizado_em NULLS FIRST, plano_acao_id",
+        (_PGTO_MAX_AGE_DAYS,))
+    fila = cur.fetchall()
+    if not fila:
+        logger.info("TE pagamentos: nada vencido nesta rodada")
+        cur.close(); cn.close()
+        return {"consultados": 0, "com_documento": 0, "pagos_integral": 0, "completo": True}
+    logger.info(f"TE pagamentos: {len(fila)} plano(s) na fila (orcamento {budget:.0f}s)")
+    t0 = time.time()
+    consultados = com = integrais = 0
+    completo = True
+    async with httpx.AsyncClient(timeout=45, verify=False) as cli:
+        for pid, vtotal in fila:
+            if (time.time() - t0) >= budget:
+                completo = False
+                logger.warning(f"TE pagamentos: orcamento estourado apos {consultados} "
+                               f"plano(s); a fila retoma na proxima rodada")
+                break
+            pg = await pagamentos_do_plano(cli, int(pid), vtotal)
+            consultados += 1
+            if pg is None:
+                # Fonte muda: NAO carimba. O plano volta amanha e a coluna
+                # continua NULA — "nao medido", que e o que impede o RM de
+                # afirmar pendencia sem medida.
+                continue
+            if pg.get("obs") or pg.get("pendentes"):
+                com += 1
+            if pg.get("pago_integral"):
+                integrais += 1
+            cur.execute(_UPDATE_PGTO,
+                        {"pg": json.dumps(pg, ensure_ascii=False), "pid": int(pid)})
+            cn.commit()   # plano a plano: progresso persiste se travar depois
+            await asyncio.sleep(_PGTO_DELAY)
+    cur.close(); cn.close()
+    logger.info(f"TE pagamentos: {consultados} consultado(s), {com} com documento "
+                f"habil, {integrais} pago(s) 100% em {time.time()-t0:.0f}s")
+    return {"consultados": consultados, "com_documento": com,
+            "pagos_integral": integrais, "completo": completo}
+
+
 async def run(uf: str | None = None) -> list[dict]:
     """Roda as UFs da carteira deste tenant (ou a de `TE_UF`/`uf`, se informada).
 
@@ -309,10 +581,33 @@ async def run(uf: str | None = None) -> list[dict]:
         return []
 
     logger.info(f"TE: carteira deste tenant -> {', '.join(ufs)}")
+    _t0 = time.time()
     fatia = _BUDGET_S / len(ufs)
     saidas = []
     for u in ufs:
         saidas.append(await run_uf(u, budget_s=fatia))
+    # PAGAMENTOS na MESMA rodada, de proposito: nao da para criar uma segunda
+    # Scheduled Task barata no Coolify — a API dele nao tem endpoint de execucao
+    # e o comando trava por volta de 255 caracteres.
+    #
+    # ⚠️ O ORCAMENTO E O QUE SOBROU, e nao `_PGTO_BUDGET_S` cheio. A listagem
+    # acabou de consumir ate `_BUDGET_S` (1500s) e a Scheduled Task mata tudo em
+    # 1600s: pedir mais 300 aqui seria pedir 1800 e ser degolado no meio, com o
+    # log final perdido. Se nao sobrou tempo, a fila simplesmente espera a
+    # proxima rodada — ela e incremental e nao perde progresso.
+    #
+    # Exception ENGOLIDA: a listagem ja commitou pagina a pagina e nao pode ser
+    # derrubada por uma falha do enrich.
+    if _PGTO_ON:
+        resto = _TETO_TAREFA_S - (time.time() - _t0)
+        if resto < 30:
+            logger.warning(f"TE pagamentos: sem tempo nesta rodada "
+                           f"(sobraram {resto:.0f}s); fica para a proxima")
+        else:
+            try:
+                saidas.append(await run_pagamentos(budget_s=min(_PGTO_BUDGET_S, resto)))
+            except Exception as e:
+                logger.warning(f"TE pagamentos falhou: {str(e)[:150]}")
     return saidas
 
 

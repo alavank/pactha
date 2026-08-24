@@ -652,8 +652,11 @@ async def voluntarias_detalhe(
 
 @router.get("/plano-acao/{plano_acao_id}",
             dependencies=[exige("transferegov.ver")])
-async def detalhe(plano_acao_id: int, current: User = Depends(get_current_user)):
-    """Detalhe completo de um Plano de Acao + relatorio de gestao + extrato."""
+async def detalhe(plano_acao_id: int,
+                  db: AsyncSession = Depends(get_db),
+                  current: User = Depends(get_current_user)):
+    """Detalhe completo de um Plano de Acao + relatorio de gestao + extrato +
+    PAGAMENTOS (documentos habeis -> OP/OB e o historico de eventos)."""
     # Antes bastava estar LOGADO. Cada chamada dispara TRES requisicoes de saida
     # ao TransfereGov com timeout de 30s cada: sem gate, uma conta sem nenhuma
     # tela usava a API como proxy de rede e prendia workers do servidor.
@@ -688,7 +691,28 @@ async def detalhe(plano_acao_id: int, current: User = Depends(get_current_user))
                 extrato = r_ext.json()
         except Exception:
             pass
-        return {"plano": plano, "resumo": resumo, "extrato": extrato}
+        # PAGAMENTOS: saem da COLUNA que o coletor ja preencheu
+        # (ingestion/transferegov_te.run_pagamentos), NAO da API.
+        #
+        # Custo de rede ZERO no caminho comum, de proposito: este endpoint ja
+        # dispara TRES requisicoes de saida por clique, e a lista de documentos
+        # habeis mais o detalhe de cada OP acrescentariam 1+N — num host de 2
+        # vCPU, e com a mesma fonte que ja puniu o IP da VPS por horas
+        # (INFRA.md §5). A tela passa a mostrar EXATAMENTE o mesmo dado que o RM
+        # congela, que e o que o dono quer comparar.
+        #
+        # None (e nao {}) quando o coletor ainda nao passou por este plano: a
+        # tela distingue "nao coletado" de "nao ha pagamento" — a mesma
+        # disciplina do RM.
+        pagamentos = None
+        try:
+            pagamentos = (await db.execute(text(
+                "SELECT pagamentos FROM transferegov_te WHERE plano_acao_id = :p"
+            ), {"p": plano_acao_id})).scalar_one_or_none()
+        except Exception as ex:
+            logger.warning(f"pagamentos TE {plano_acao_id}: {str(ex)[:120]}")
+        return {"plano": plano, "resumo": resumo, "extrato": extrato,
+                "pagamentos": pagamentos}
 
 
 # ============================================================================

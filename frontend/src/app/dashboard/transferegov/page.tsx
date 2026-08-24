@@ -12,8 +12,8 @@ import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  Abas, Bloco, BlocoHead, Campo, Campos, ItemLinha, Lista, Modal, ModalCorpo,
-  ModalHead, Secao, Selo, Vazio, situacaoTom,
+  Abas, Bloco, BlocoHead, Campo, Campos, Grade, GradeCel, GradeLinha, ItemLinha,
+  Lista, Modal, ModalCorpo, ModalHead, Secao, Selo, Vazio, situacaoTom,
 } from "@/components/ui/superficies";
 import { PainelFiltros, type FiltroAtivo } from "@/components/ui/filtros";
 import { formatCurrency } from "@/lib/utils";
@@ -148,10 +148,55 @@ interface DetalhePlano {
     valorTotalCusteioExecutado?: number;
     valorTotalInvestimentoExecutado?: number;
   };
+  /* PAGAMENTOS: vem da coluna `transferegov_te.pagamentos`, gravada pelo
+     coletor. `null` = o coletor ainda nao passou por este plano — que NAO e o
+     mesmo que "nao ha pagamento", e a tela precisa dizer a diferenca. */
+  pagamentos?: PagamentosTE | null;
+}
+
+/** Uma linha da "Lista de Documentos Habeis" da tela federal, ja resolvida com
+ *  a Ordem de Pagamento/Bancaria e o historico de eventos dela. */
+interface DocumentoHabilTE {
+  dh_id?: number | null;
+  numero_dh?: string | null;
+  minuta?: string | null;
+  numero_empenho?: string | null;
+  valor?: number | null;
+  situacao_dh?: string | null;
+  opob_id?: number | null;
+  numero_op?: string | null;
+  numero_ob?: string | null;
+  data_emissao_ob?: string | null;
+  data_emissao_op?: string | null;
+  situacao?: string | null;
+  ordenador_despesa?: string | null;
+  gestor_financeiro?: string | null;
+  dt_assinatura_ordenador?: string | null;
+  dt_assinatura_gestor?: string | null;
+  historico?: { data?: string | null; responsavel?: string | null; situacao?: string | null }[] | null;
+}
+
+interface PagamentosTE {
+  valor_total?: number | null;
+  valor_desembolsado?: number | null;
+  valor_a_desembolsar?: number | null;
+  data_ultimo_desembolso?: string | null;
+  pago_integral?: boolean | null;
+  /** DHs com Ordem Bancaria emitida (dinheiro que saiu). */
+  obs?: DocumentoHabilTE[] | null;
+  /** Minutas de DH e OPs sem OB (dinheiro que ainda nao saiu). */
+  pendentes?: DocumentoHabilTE[] | null;
 }
 
 // Vazio = TODAS (convencao do <MultiSelect>), entao "TODAS" saiu da lista de
 // opcoes — antes era um valor especial que precisava ser filtrado no envio.
+/* ⚠️ CLASSE DE GRID LITERAL NO CODIGO-FONTE. Montada por concatenacao ou por
+   template string o Tailwind nao ve na varredura e a grade sai SEM COLUNAS —
+   tudo empilhado numa coluna so, sem erro nenhum no console. Mesmo padrao dos
+   COLS_* de components/TransfereGovPropostas.tsx. */
+const COLS_DH = "grid-cols-[8rem_9rem_9rem_8.5rem_minmax(8rem,1fr)_8rem]";
+const COLS_EV = "grid-cols-[9.5rem_8rem_minmax(10rem,1fr)]";
+
 const SITUACOES_PA = ["CIENTE", "EM_ANALISE", "IMPEDIDO", "EM_ELABORACAO", "CONCLUIDA"];
 const SITUACOES_PA_LABEL: Record<string, string> = Object.fromEntries(
   SITUACOES_PA.map((s) => [s, s.replace(/_/g, " ")])
@@ -179,7 +224,11 @@ export default function TransfereGovPage() {
 
   const [detalhe, setDetalhe] = useState<DetalhePlano | null>(null);
   const [loadingDetalhe, setLoadingDetalhe] = useState(false);
-  const [tab, setTab] = useState<"basicos" | "orcamento" | "execucao">("basicos");
+  const [tab, setTab] = useState<"basicos" | "orcamento" | "execucao" | "pagamentos">("basicos");
+  /* Qual pagamento esta com o historico ABERTO ("ao selecionar tem os
+     historicos"). Guarda o opob_id, nao o indice: a lista se reordena quando o
+     coletor roda de novo e o indice apontaria para outra linha. */
+  const [opAberta, setOpAberta] = useState<number | null>(null);
   const [baixandoPdf, setBaixandoPdf] = useState(false);
 
   const filtrosParams = useCallback((): Record<string, string | string[]> => {
@@ -586,6 +635,7 @@ export default function TransfereGovPage() {
                     { valor: "basicos" as const, label: "Dados Básicos" },
                     { valor: "orcamento" as const, label: "Dados Orçamentários" },
                     { valor: "execucao" as const, label: "Execução / Relatório" },
+                    { valor: "pagamentos" as const, label: "Pagamentos" },
                   ]}
                 />
               ) : undefined
@@ -698,6 +748,122 @@ export default function TransfereGovPage() {
                     />
                   )}
                 </>
+              )}
+
+              {tab === "pagamentos" && (
+                !detalhe.pagamentos ? (
+                  /* Terceiro estado, e nao "não há pagamentos": a coluna vem
+                     NULA enquanto o coletor nao visitou este plano. Escrever
+                     "sem pagamentos" aqui seria afirmar o que ninguem mediu. */
+                  <Vazio>Pagamentos ainda não coletados para este plano de ação.</Vazio>
+                ) : (
+                  <Secao
+                    icon={Banknote}
+                    titulo="Pagamentos — Documentos Hábeis e Ordens Bancárias"
+                    cols={4}
+                    campos={[
+                      { rotulo: "Valor Total", valor: formatCurrency(detalhe.pagamentos.valor_total) },
+                      { rotulo: "Desembolsado", valor: formatCurrency(detalhe.pagamentos.valor_desembolsado), tom: "ok" },
+                      { rotulo: "A Desembolsar", valor: formatCurrency(detalhe.pagamentos.valor_a_desembolsar),
+                        tom: detalhe.pagamentos.pago_integral ? "ok" : "atencao" },
+                      campoP("Último Desembolso", detalhe.pagamentos.data_ultimo_desembolso),
+                    ]}
+                  >
+                    {(() => {
+                      const linhas = [
+                        ...(detalhe.pagamentos?.obs || []),
+                        ...(detalhe.pagamentos?.pendentes || []),
+                      ];
+                      if (!linhas.length) {
+                        return <Vazio>Nenhum documento hábil emitido para este plano.</Vazio>;
+                      }
+                      return (
+                        <div className="mt-3">
+                          <div className="mb-1.5 text-[11px] font-semibold" style={{ color: "var(--bi-muted)" }}>
+                            Lista de Documentos Hábeis · {linhas.length}
+                          </div>
+                          <Grade
+                            rolagem
+                            cols={COLS_DH}
+                            cabecalho={[
+                              { label: "Empenho" }, { label: "Minuta" }, { label: "Documento Hábil" },
+                              { label: "Valor", direita: true }, { label: "Situação" },
+                              { label: "Ordem de Pagamento" },
+                            ]}
+                          >
+                            {linhas.map((d, i) => (
+                              <React.Fragment key={d.dh_id ?? i}>
+                                <GradeLinha cols={COLS_DH}>
+                                  <GradeCel tom="id">{d.numero_empenho || "-"}</GradeCel>
+                                  <GradeCel tom="id">{d.minuta || "-"}</GradeCel>
+                                  <GradeCel tom="id">{d.numero_dh || "-"}</GradeCel>
+                                  <GradeCel tom="num">{formatCurrency(d.valor)}</GradeCel>
+                                  <GradeCel>
+                                    {d.situacao_dh
+                                      ? <Selo tom={situacaoTom(d.situacao_dh)}>{d.situacao_dh}</Selo>
+                                      : "-"}
+                                  </GradeCel>
+                                  <GradeCel>
+                                    {d.numero_op ? (
+                                      /* "ao selecionar tem os historicos": a OP é o
+                                         gatilho, como na tela federal, onde o número
+                                         da OP é o link para detalhar-ordem-pagamento. */
+                                      <button
+                                        type="button"
+                                        className="underline underline-offset-2"
+                                        onClick={() => setOpAberta(
+                                          opAberta === (d.opob_id ?? -1) ? null : (d.opob_id ?? null))}
+                                        title="Ver histórico de eventos de pagamento"
+                                      >
+                                        {d.numero_op}
+                                      </button>
+                                    ) : "-"}
+                                  </GradeCel>
+                                </GradeLinha>
+                                {d.opob_id != null && opAberta === d.opob_id && (
+                                  <div className="px-2 py-2" style={{ background: "var(--bi-surface-2)" }}>
+                                    <Campos
+                                      cols={4}
+                                      campos={[
+                                        campoP("Ordem Bancária", d.numero_ob),
+                                        campoP("Emissão da OB", d.data_emissao_ob),
+                                        campoP("Ordenador de Despesa", d.ordenador_despesa),
+                                        campoP("Gestor Financeiro", d.gestor_financeiro),
+                                        campoP("Assinatura do Ordenador", d.dt_assinatura_ordenador),
+                                        campoP("Assinatura do Gestor", d.dt_assinatura_gestor),
+                                        campoP("Situação da OP", d.situacao, { span: 2 }),
+                                      ]}
+                                    />
+                                    <div className="mt-2 mb-1.5 text-[11px] font-semibold" style={{ color: "var(--bi-muted)" }}>
+                                      Histórico de Eventos de Pagamento · {(d.historico || []).length}
+                                    </div>
+                                    {(d.historico || []).length === 0 ? (
+                                      <Vazio>Sem eventos registrados para esta ordem de pagamento.</Vazio>
+                                    ) : (
+                                      <Grade
+                                        rolagem
+                                        cols={COLS_EV}
+                                        cabecalho={[{ label: "Data" }, { label: "Responsável" }, { label: "Situação" }]}
+                                      >
+                                        {(d.historico || []).map((h, j) => (
+                                          <GradeLinha key={j} cols={COLS_EV}>
+                                            <GradeCel tom="data">{h.data || "-"}</GradeCel>
+                                            <GradeCel tom="id">{h.responsavel || "-"}</GradeCel>
+                                            <GradeCel>{h.situacao || "-"}</GradeCel>
+                                          </GradeLinha>
+                                        ))}
+                                      </Grade>
+                                    )}
+                                  </div>
+                                )}
+                              </React.Fragment>
+                            ))}
+                          </Grade>
+                        </div>
+                      );
+                    })()}
+                  </Secao>
+                )
               )}
 
               {tab === "execucao" && (
