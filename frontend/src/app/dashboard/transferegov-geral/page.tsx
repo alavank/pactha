@@ -6,7 +6,7 @@ export default function TransfereGovGeralPage() {
   return (
     <TransfereGovPropostas
       categoria="geral"
-      titulo="Transfere Gov - Geral"
+      titulo="Transfere Gov - Em execução"
       /* O subtítulo antigo dizia "em execução, APROVADOS, etc." — e aprovado é
          justamente o que esta tela NÃO mostra: o filtro manda quem ainda está
          no fluxo de análise (inclusive já aprovado) para Voluntárias. O efeito

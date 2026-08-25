@@ -123,7 +123,12 @@ const NAV_ITEMS: NavEntry[] = [
     label: "Transfere Gov",
     icon: Landmark,
     children: [
-      { href: "/dashboard/transferegov-geral", label: "Geral" },
+      /* «Em execução» e não «Geral» (pedido do dono): a tela sempre mostrou os
+         instrumentos JÁ CELEBRADOS, e «Geral» prometia um apanhado de tudo —
+         quem clicava esperando a visão completa achava que faltava dado. A rota
+         continua `transferegov-geral` de propósito: renomeá-la quebraria URLs
+         salvas e os links que o PAC monta por `categoria`. */
+      { href: "/dashboard/transferegov-geral", label: "Em execução" },
       { href: "/dashboard/transferegov", label: "Especiais" },
       { href: "/dashboard/transferegov-pac", label: "PAC (Novo PAC)" },
       { href: "/dashboard/transferegov-voluntarias", label: "Voluntárias" },
