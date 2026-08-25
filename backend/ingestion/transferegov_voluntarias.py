@@ -948,11 +948,27 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
                     and (os.getenv("TG_NES", "0") or "0").strip() == "1"):
                 try:
                     _ne = await asyncio.to_thread(_hx.notas_empenho, _idp)
+                    # ⚠️ FALLBACK PELO BROWSER — e ele e o caminho NORMAL nesta
+                    # tela, nao a excecao. `listarEmpenhosNovoSiafi.jsf` e JSF e
+                    # so renderiza a grade por POST com ViewState: o GET devolve
+                    # ~52 KB de casca cuja unica tabela e o contador de sessao
+                    # ("30:00"). Medido em 25/08/2026, depois de descartar sessao
+                    # morta, muro SAML e parser — as tres hipoteses erradas.
+                    #
+                    # A tentativa HTTP fica ANTES de proposito: ela custa ~0,7s
+                    # contra ~3s do browser, e no dia em que o portal servir a
+                    # grade no GET (ou migrar de volta para Struts) ela volta a
+                    # resolver sozinha, sem ninguem precisar lembrar de trocar.
+                    if _ne is None:
+                        _ne = await _extrai_notas_empenho(page_auth, _idp)
+                        if _ne is not None:
+                            logger.info(f"    NEs {prop['numero_proposta']}: "
+                                        f"{len(_ne)} linha(s) pelo browser")
                     if _ne is not None:
                         prop["notas_empenho"] = _ne
                     else:
                         logger.info(f"    NEs {prop['numero_proposta']}: sem retorno "
-                                    "(sessão do SP fria?)")
+                                    "por HTTP nem pelo browser")
                 except Exception as e:
                     logger.warning(f"    NEs {prop['numero_proposta']}: {str(e)[:80]}")
             # OPs/OBs (repasses/desembolsos) e OBRAS (acompanhamento/medicao).
@@ -1344,6 +1360,89 @@ def _num_br(s):
         return float(t) if t not in ("", "-", ".") else None
     except ValueError:
         return None
+
+
+async def _extrai_notas_empenho(page_auth, id_proposta: str) -> list | None:
+    """NEs pelo BROWSER — o caminho que a tela de empenhos exige.
+
+    ⚠️ POR QUE ESTA FUNÇÃO EXISTE, medido em 25/08/2026. `TgHttpEnrich
+    .notas_empenho` faz um GET em `listarEmpenhosNovoSiafi.jsf` e recebe uma
+    página de ~52 KB — inteira, com a sessão quente, sem muro SAML — cuja ÚNICA
+    tabela é o contador de sessão do JSF ("30:00"). A grade de empenhos NÃO vem
+    no GET: `.jsf` renderiza a tabela por POST com ViewState.
+
+    É o que separa esta tela das duas que funcionam por HTTP: Licitações e
+    Projeto Básico são `.do` (Struts) e respondem no GET. A diferença estava no
+    sufixo do arquivo.
+
+    Escolhi o browser em vez de reproduzir o POST porque o ViewState é um token
+    opaco por sessão e por view: reproduzi-lo é reimplementar o ciclo de vida do
+    JSF, e ele quebra a cada atualização do portal — calado, do mesmo jeito que
+    este defeito ficou calado. O browser paga ~3s por proposta CELEBRADA, e o
+    portão do Código do Instrumento já corta a maioria.
+
+    Devolve list (pode ser []) ou None. None = não consegui ler — e NUNCA apaga,
+    porque o `_upsert` é COALESCE. `[]` = a tela abriu e não há empenho.
+    """
+    if page_auth is None:
+        return None
+    url = ("https://discricionarias.transferegov.sistema.gov.br/voluntarias/"
+           "prestacao/_proposta/empenho/listarEmpenhosNovoSiafi.jsf"
+           "?destino=ManterEmpenhoNovoSiafi")
+    if not await _goto_with_retry(page_auth, url, timeout=40000):
+        return None
+    await page_auth.wait_for_timeout(1200)
+    u = (page_auth.url or "").lower()
+    if "idp.transferegov" in u or "sso.acesso" in u:
+        return None
+    # A grade agora existe (o JSF renderizou). Sem ela, não afirmar nada.
+    linhas = await page_auth.evaluate("""() => {
+        const norm = s => (s || '').replace(/\\s+/g, ' ').trim();
+        for (const t of document.querySelectorAll('table')) {
+            const trs = [...t.querySelectorAll('tr')];
+            if (trs.length < 1) continue;
+            const heads = [...trs[0].querySelectorAll('th,td')].map(x => norm(x.innerText).toLowerCase());
+            const chave = heads.join('|');
+            if (!/empenho/.test(chave) || !/situa/.test(chave)) continue;
+            const col = f => { for (let i = 0; i < heads.length; i++) if (heads[i].includes(f)) return i; return null; };
+            const iSiafi = col('siafi');
+            let iVal = null;
+            for (let i = 0; i < heads.length; i++) if (heads[i].includes('valor') && i !== iSiafi) { iVal = i; break; }
+            const idx = {num: col('mero do empenho'), min: col('minuta'),
+                         val: iVal, siafi: iSiafi, sit: col('situa'), dt: col('emiss')};
+            const out = [];
+            for (const tr of trs.slice(1)) {
+                const c = [...tr.querySelectorAll('td')].map(x => norm(x.innerText));
+                if (!c.some(x => x)) continue;
+                const g = i => (i !== null && i < c.length && c[i]) ? c[i] : null;
+                out.push({numero: g(idx.num), minuta: g(idx.min), valor: g(idx.val),
+                          valor_siafi: g(idx.siafi), situacao: g(idx.sit), dt_emissao: g(idx.dt)});
+            }
+            return out;
+        }
+        return /Nenhum registro foi encontrado/i.test(document.body.innerText || '') ? [] : null;
+    }""")
+    if linhas is None:
+        return None
+    out = []
+    for r in linhas:
+        numero, minuta = r.get("numero"), r.get("minuta")
+        if not numero and not minuta:
+            continue
+        sit = r.get("situacao")
+        out.append({
+            "numero": numero, "minuta": minuta,
+            # `_num_br` roda em Python: o evaluate devolve só as strings da tela,
+            # como em `_extrai_ops_obs`.
+            "valor": _num_br(r.get("valor")), "valor_siafi": _num_br(r.get("valor_siafi")),
+            "situacao": sit, "dt_emissao": r.get("dt_emissao"),
+            # ⚠️ MINUTA NÃO É EMPENHO — a mesma marca que o leitor HTTP põe. A
+            # listagem mistura o empenho com a minuta (sem número, R$ 1,00,
+            # situação "Minuta de Empenho"), e somá-la põe R$ 1,00 no relatório
+            # como se fosse recurso.
+            "minuta_apenas": (not numero) or ("minuta" in (sit or "").casefold()),
+        })
+    return out
 
 
 async def _extrai_ops_obs(page) -> dict | None:

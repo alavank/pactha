@@ -145,3 +145,71 @@ def test_pagina_sem_a_grade_devolve_None_e_DIZ_o_que_veio(caplog):
     texto = caplog.text
     assert "pagina sem a grade" in texto
     assert "Proposta|Convenente" in texto      # nomeia o que ACHOU
+
+
+# ---------------------------------------------------------------------------
+# ⚠️ O CAMINHO DO BROWSER — a tela de NEs é JSF e o GET só devolve a casca
+# ---------------------------------------------------------------------------
+class _PaginaFalsa:
+    """O mínimo de uma page do Playwright que `_extrai_notas_empenho` usa."""
+
+    def __init__(self, linhas, url="https://discricionarias.transferegov.sistema.gov.br/x"):
+        self._linhas = linhas
+        self.url = url
+        self.visitou = []
+
+    async def goto(self, url, **kw):
+        self.visitou.append(url)
+
+    async def wait_for_timeout(self, _ms):
+        return None
+
+    async def evaluate(self, _js):
+        return self._linhas
+
+
+def _colher(pagina):
+    import asyncio
+    from ingestion.transferegov_voluntarias import _extrai_notas_empenho
+    return asyncio.run(_extrai_notas_empenho(pagina, "123456"))
+
+
+def test_o_browser_le_a_grade_e_marca_a_minuta():
+    """A saída do `evaluate` são só STRINGS da tela; a conversão de valor e a
+    marca da minuta acontecem em Python, como em `_extrai_ops_obs`."""
+    r = _colher(_PaginaFalsa([
+        {"numero": "2026NE000320", "minuta": "2026ME1", "valor": "R$ 280.000,00",
+         "valor_siafi": "R$ 280.000,00", "situacao": "Enviado", "dt_emissao": "09/03/2026"},
+        {"numero": None, "minuta": "2026ME2", "valor": "R$ 1,00", "valor_siafi": None,
+         "situacao": "Minuta de Empenho", "dt_emissao": "10/03/2026"},
+    ]))
+    assert len(r) == 2
+    assert r[0]["valor"] == 280000.0 and r[0]["minuta_apenas"] is False
+    assert r[1]["valor"] == 1.0 and r[1]["minuta_apenas"] is True
+
+
+def test_grade_ausente_devolve_None_e_NUNCA_apaga():
+    """`None` do evaluate = a grade não estava lá. Como o `_upsert` é COALESCE,
+    devolver None preserva o que já havia — devolver `[]` apagaria."""
+    assert _colher(_PaginaFalsa(None)) is None
+
+
+def test_tela_aberta_e_vazia_e_LISTA():
+    assert _colher(_PaginaFalsa([])) == []
+
+
+def test_linha_sem_numero_e_sem_minuta_e_descartada():
+    r = _colher(_PaginaFalsa([{"numero": None, "minuta": None, "valor": "R$ 5,00",
+                               "valor_siafi": None, "situacao": "x", "dt_emissao": None}]))
+    assert r == []
+
+
+def test_sem_sessao_autenticada_nao_tenta():
+    """`page_auth` None = o lote rodou sem browser autenticado. Não há o que
+    fazer, e afirmar `[]` aqui seria dizer "não há empenho" sem ter olhado."""
+    assert _colher(None) is None
+
+
+def test_redirect_para_o_login_devolve_None():
+    p = _PaginaFalsa([], url="https://idp.transferegov.sistema.gov.br/idp/login")
+    assert _colher(p) is None
