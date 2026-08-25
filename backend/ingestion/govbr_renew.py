@@ -59,6 +59,24 @@ PRIVATE_ENTRY = ("https://mandatarias.transferegov.sistema.gov.br/"
 EXEC_ENTRY = ("https://discricionarias.transferegov.sistema.gov.br/"
               "voluntarias/execucao/ListarLicitacoes/ListarLicitacoes.do?destino=ListarLicitacoes")
 
+# Modulo "Execucao Concedente > Notas de Empenho". ⚠️ NAO E O MESMO SP DO
+# `EXEC_ENTRY` ACIMA, ao contrario do que o comentario dele supunha: ele mora sob
+# /voluntarias/PRESTACAO/ (e nao /execucao/) e tem idle PROPRIO.
+#
+# MEDIDO EM PRODUCAO (Freitas, 25/08/2026), e e o que separa os dois:
+#   keepalive .......... execucao=vivo, de 10 em 10 minutos, sem falhar
+#   projeto basico ..... 0 falhas   (mora em /execucao/ -> coberto)
+#   notas de empenho ... 115 falhas (mora em /prestacao/ -> NUNCA tocado)
+# Ou seja: a sessao que o keepalive mantinha viva nao era a que as NEs usam, e
+# elas morriam por inatividade algumas horas depois de cada captura — com o log
+# dizendo "sessao do SP fria?", que estava certo mas apontava para o SP errado.
+#
+# Navegar esta URL reseta o idle DESSE SP e re-salva os cookies. Se ja caiu no
+# login (idp), navegar aqui NAO revive — precisa re-captura, igual aos outros.
+PRESTACAO_ENTRY = ("https://discricionarias.transferegov.sistema.gov.br/"
+                   "voluntarias/prestacao/_proposta/empenho/"
+                   "listarEmpenhosNovoSiafi.jsf?destino=ManterEmpenhoNovoSiafi")
+
 # Subdominios p/ repovoar JSESSIONIDs frescos + manter o SSO quente.
 SUBDOMINIOS = [
     ENTRY,
@@ -261,6 +279,18 @@ async def keepalive() -> str:
             exec_ok = "idp/" not in eu and "sso.acesso" not in eu
         except Exception as e:
             log.warning(f"keepalive execucao: {str(e)[:80]}")
+        # 4) prestacao (Notas de Empenho): SP SEPARADO do de cima, com idle
+        #    proprio — ver o comentario de PRESTACAO_ENTRY. Sem esta navegacao a
+        #    coleta de NEs morria horas depois da captura enquanto o keepalive
+        #    reportava `execucao=vivo`, o que fazia o sintoma parecer outra coisa.
+        prest_ok = False
+        try:
+            await page.goto(PRESTACAO_ENTRY, timeout=45000, wait_until="domcontentloaded")
+            await page.wait_for_timeout(3000)
+            pu = (page.url or "").lower()
+            prest_ok = "idp/" not in pu and "sso.acesso" not in pu
+        except Exception as e:
+            log.warning(f"keepalive prestacao: {str(e)[:80]}")
         fresh = await ctx.cookies()
         relevant = [c for c in fresh if any(d in (c.get("domain") or "")
                     for d in ("transferegov", "sso.acesso.gov.br", "gov.br"))]
@@ -271,11 +301,16 @@ async def keepalive() -> str:
         _save_cookies(cofre_id, relevant)
     except Exception as e:
         log.error(f"keepalive save: {str(e)[:100]}")
+    # ⚠️ `prestacao` sai no log SEPARADO de `execucao`, e nao somado a ele: sao
+    # SPs diferentes, e foi exatamente por eles aparecerem como um so que as NEs
+    # morriam em silencio com o keepalive dizendo "execucao=vivo".
+    _sps = (f"execucao={'vivo' if exec_ok else 'CAIU'}, "
+            f"prestacao={'vivo' if prest_ok else 'CAIU'}")
     if private_ok:
-        log.info(f"keepalive OK — /private/ vivo, execucao={'vivo' if exec_ok else 'CAIU'}, "
+        log.info(f"keepalive OK — /private/ vivo, {_sps}, "
                  f"{len(relevant)} cookies re-salvos")
         return "alive"
-    log.warning(f"keepalive — /private/ CAIU (idp/login), execucao={'vivo' if exec_ok else 'CAIU'}. "
+    log.warning(f"keepalive — /private/ CAIU (idp/login), {_sps}. "
                 "Precisa re-captura pela extensao.")
     return "private_dead"
 
