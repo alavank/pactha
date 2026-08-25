@@ -880,16 +880,29 @@ class TgHttpEnrich:
         livra: medido em guest, devolve 3469 bytes de "HTTP Post Binding",
         identico aos outros dois. Sem a sessao do cofre cobrindo esse SP, esta
         captura devolve None (nunca apaga: o upsert e COALESCE)."""
+        # ⚠️ O MOTIVO DO None VAI PARA O LOG, e nao so o fato. Sao CINCO saidas
+        # diferentes aqui e todas gravavam a mesma coisa no banco (nada, pelo
+        # COALESCE): o chamador so sabia dizer "sem retorno (sessao do SP fria?)".
+        # Foi assim que 115 falhas por rodada apontaram para o SP ERRADO durante
+        # horas — o keepalive dizia `execucao=vivo` e estava certo, porque esta
+        # tela mora sob /prestacao/, que e OUTRO SP (ver govbr_renew.PRESTACAO_ENTRY).
         if not self._seta_contexto(id_proposta):
+            logger.info(f"    NEs {id_proposta}: sem contexto Struts")
             return None
         try:
             r = self.cli.get(_NE_URL)
-        except Exception:
+        except Exception as e:
+            logger.info(f"    NEs {id_proposta}: rede — {str(e)[:60]}")
             return None
-        if r.status_code != 200 or _sessao_caiu(r):
+        if r.status_code != 200:
+            logger.info(f"    NEs {id_proposta}: HTTP {r.status_code}")
+            return None
+        if _sessao_caiu(r):
+            logger.info(f"    NEs {id_proposta}: redirecionou p/ o login (sessao morta)")
             return None
         if re.search(r"Post Binding|SAMLResponse", r.text, re.I):
-            logger.debug("notas_empenho: SP frio (SAML) — recapturar sessao")
+            logger.info(f"    NEs {id_proposta}: SP `prestacao` FRIO (muro SAML, "
+                        f"{len(r.content)} bytes) — o keepalive precisa navegar /prestacao/")
             return None
         return self._le_notas_empenho(r)
 
