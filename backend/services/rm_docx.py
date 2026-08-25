@@ -92,10 +92,20 @@ _ESTILOS = {
                              cor="#1e40af"),
     "secao_titulo":     dict(tam=11, negrito=True, alin="centro", antes=10, depois=8,
                              cor="#111827"),
-    "grupo_titulo":     dict(tam=10.5, negrito=True, antes=10, depois=4, esq=4),
-    "item_id":          dict(tam=10, negrito=True, antes=14, depois=2, esq=14),
+    # ⚠️ `antes` e `esq` ESPELHAM `rm_pdf._styles()` — `spaceBefore` e `leftIndent`
+    # do estilo de mesmo nome. Os dois valores abaixo mudaram em 08/2026 (pedido
+    # do dono: mais respiro ao abrir tópico novo, e o identificador alinhado com
+    # as tags `➢`) e tiveram de mudar NOS DOIS ARQUIVOS. Não há teste comparando
+    # PDF e Word página a página: se um sair sem o outro, ninguém percebe até
+    # alguém abrir os dois lado a lado.
+    "grupo_titulo":     dict(tam=10.5, negrito=True, antes=26, depois=4, esq=4),
+    "item_id":          dict(tam=10, negrito=True, antes=14, depois=2, esq=28),
     "item_campo":       dict(tam=9.5, alin="justificado", depois=1, esq=28),
     "rodape":           dict(tam=8, cor="#475569"),
+    # E-mail do cabeçalho, à direita do logo. Mesmos 9pt/#334155 do
+    # `drawRightString` em `rm_pdf._on_page`. Sem `alin`: quem posiciona é a
+    # tabulação, exatamente como no `rodape` logo acima.
+    "cabecalho_email":  dict(tam=9, cor="#334155"),
     "clausula":         dict(tam=9.5, esq=28, dir=10, antes=3, depois=3,
                              cor="#7c2d12", fundo="#FEF3C7", borda="#D97706"),
     "informativo":      dict(tam=9.5, esq=28, dir=10, antes=3, depois=3,
@@ -279,7 +289,7 @@ def _campo_pagina(p, estilo: str) -> None:
     r._r.append(ini); r._r.append(instr); r._r.append(fim)
 
 
-def _montar_secao(doc, rodape_txt: str) -> None:
+def _montar_secao(doc, rodape_txt: str, email_txt: str = "") -> None:
     """Pagina, margens, cabecalho com logo e rodape — o que no PDF esta em
     `rm_pdf.gerar_pdf` (SimpleDocTemplate) e em `rm_pdf._on_page`.
 
@@ -317,6 +327,21 @@ def _montar_secao(doc, rodape_txt: str) -> None:
             cab.add_run().add_picture(_logo, height=Cm(_LOGO_ALT_CM))
         except Exception:
             pass          # logo ilegivel nunca derruba a emissao (igual ao PDF)
+    # ⭐ E-MAIL A DIREITA, na MESMA linha do logo — o equivalente Word do
+    # `drawRightString` de `rm_pdf._on_page`. A tecnica e a MESMA ja provada no
+    # rodape logo abaixo: uma tabulacao alinhada a direita na borda da area
+    # util, e o texto depois de um `	`. Nao ha "posicao absoluta" para texto
+    # no cabecalho do Word como ha no canvas do PDF.
+    #
+    # ⚠️ `_limpar_tabulacoes` ANTES de por a nossa, pelo motivo documentado na
+    # propria funcao: as tabulacoes do estilo Letter herdado sao CUMULATIVAS, e
+    # a 4680 twips empurraria o e-mail para o meio da pagina.
+    if email_txt:
+        _limpar_tabulacoes(cab)
+        _util = 21.0 - _MARGENS_CM[2] - _MARGENS_CM[3]
+        cab.paragraph_format.tab_stops.add_tab_stop(
+            Cm(_util), WD_TAB_ALIGNMENT.RIGHT)
+        _run(cab, "	" + email_txt, "cabecalho_email")
 
     rod = sec.footer.paragraphs[0]
     _formatar(rod, "rodape")
@@ -350,7 +375,10 @@ def gerar_docx_rm(meta: dict, conteudo: dict, municipio_nome: str) -> bytes:
     base = doc.styles["Normal"]
     base.font.name = _FONTE
     base.font.size = Pt(9.5)
-    _montar_secao(doc, meta.get("rodape", ""))
+    # `or ""` pelo mesmo motivo do PDF: a coluna `email` e NULL em todo RM
+    # gerado antes de ela existir, e o default do `get` so vale para chave
+    # AUSENTE — com a chave presente valendo None, o Word receberia None.
+    _montar_secao(doc, meta.get("rodape", ""), meta.get("email") or "")
 
     quebrar_proxima_parte = False
     # ⚠️ CONTA ELEMENTOS, NAO CAMPOS. O PDF faz `KeepTogether(bloco[:3])`, e

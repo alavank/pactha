@@ -63,6 +63,11 @@ MIGRATION_FILES = [
     # container antigo ainda estivesse no ar. O proprio arquivo tem guard e vira
     # no-op se o indice novo nao existir naquele tenant.
     "drop_rm_unique_anos.sql",
+    # RM: e-mail do cabecalho, carimbado na linha (a 1a das tres camadas do
+    # rodape). Coluna ANULAVEL e sem DEFAULT — NULL = "relatorio anterior ao
+    # campo"; '' gravado pela tela e uma decisao. Nao entra na identidade do
+    # relatorio (nao e chave de UPSERT), entao nao precisa do par coluna+indice.
+    "add_rm_email.sql",
     # TE/Emenda Pix federal persistida (coletor especiais -> tabela; RM/tela leem)
     "add_transferegov_te.sql",
     # SIMEC: TERMOS DE COMPROMISSO (o instrumento; as liberacoes ja existiam)

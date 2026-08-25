@@ -407,6 +407,21 @@ _TABELA: dict[str, dict] = {
              "valor-antes/valor-depois traz também de ONDE vinha o texto "
              "(`env` = variável de ambiente, `salvo` = editado pela tela).",
     ),
+    # Ação PRÓPRIA, e não uma nota dentro de `rm.config_rodape`: os dois campos
+    # são salvos pela mesma tela mas dizem coisas diferentes, e "quem trocou o
+    # contato do papel timbrado" é a pergunta que aparece depois de um relatório
+    # sair com o e-mail de outra assessoria. Junto no mesmo evento, um filtro por
+    # "rodapé" traria trocas de e-mail e vice-versa.
+    "rm.config_email": _a(
+        "alterou o e-mail padrão do cabeçalho dos Relatórios de Monitoramento",
+        MOD_RELATORIOS, _MEDIO, sem_alvo=True,
+        nota="O e-mail sai impresso no cabeçalho de TODA página de TODO "
+             "relatório do cliente, ao lado do logo — é o contato para quem "
+             "recebe o documento responder. Não é por relatório: vale para os "
+             "próximos que forem gerados. O valor-antes/valor-depois traz também "
+             "de ONDE vinha o texto (`env` = variável de ambiente, `salvo` = "
+             "editado pela tela).",
+    ),
     # --- Trava de permissão em modo aviso (services/authz.py) --------------
     # Módulo "Usuários e permissões" porque é ali que está a CORREÇÃO: cada uma
     # destas linhas é um cadastro para arrumar antes de ligar o bloqueio.

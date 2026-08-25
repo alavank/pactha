@@ -131,14 +131,32 @@ def _styles():
     )
     s["grupo_titulo"] = ParagraphStyle(
         "GrupoTitulo", parent=base["Normal"], fontName="Helvetica-Bold",
-        fontSize=10.5, spaceBefore=10, spaceAfter=4, leftIndent=4, leading=15.75,)
+        # ⭐ spaceBefore=26 (era 10): o `●` abre um TÓPICO NOVO — outro órgão,
+        # outro programa — e vinha com quase o mesmo respiro que separa um campo
+        # do outro dentro do mesmo instrumento. Numa página cheia, "Transferência
+        # Especial (Emenda Pix)" colava na caixa de desembolso do convênio
+        # anterior e lia-se como continuação dele. Pedido do dono, com o print.
+        #
+        # O número é maior que o `spaceBefore=14` do `item_id` DE PROPÓSITO: a
+        # hierarquia tem de aparecer no espaço em branco antes de aparecer na
+        # fonte. Tópico > instrumento > campo, e o respiro segue a mesma ordem.
+        fontSize=10.5, spaceBefore=26, spaceAfter=4, leftIndent=4, leading=15.75,)
     s["item_id"] = ParagraphStyle(
         "ItemId", parent=base["Normal"], fontName="Helvetica-Bold",
         # spaceBefore=14 (era 4): o identificador do instrumento estava colado no
         # nome do órgão logo acima, e um não se lia como filho do outro. Pedido do
         # dono, com o print do "22000 - Ministério da Agricultura" seguido de
         # "Convênio: 993503/2026" sem respiro nenhum.
-        fontSize=10, spaceBefore=14, spaceAfter=2, leftIndent=14, leading=15.0,)
+        #
+        # ⭐ leftIndent=28 (era 14): "Plano de Ação: …", "Processo: …",
+        # "Convênio: …" agora começam na MESMA coluna das tags `➢` logo abaixo.
+        # 28 e não 18 porque o glifo `➢` NÃO é bullet do reportlab — ele é o
+        # primeiro caractere do texto (ver `_flow_campo`), então a borda esquerda
+        # visível daquelas linhas é o `leftIndent` delas, 28. `bulletIndent=18`
+        # no `item_campo` é decoração inerte; alinhar por ele deixaria o
+        # identificador 10pt à esquerda das tags — quase alinhado, que é pior de
+        # olhar do que claramente desalinhado.
+        fontSize=10, spaceBefore=14, spaceAfter=2, leftIndent=28, leading=15.0,)
     s["item_campo"] = ParagraphStyle(
         "ItemCampo", parent=base["Normal"], fontName="Helvetica",
         fontSize=9.5, leftIndent=28, bulletIndent=18, spaceAfter=1,
@@ -202,7 +220,7 @@ def _logo_path() -> str | None:
     return str(alt) if alt.is_file() else None
 
 
-def _on_page(canvas, doc, rodape_txt: str):
+def _on_page(canvas, doc, rodape_txt: str, email_txt: str = ""):
     canvas.saveState()
     # CABECALHO: logo a ESQUERDA, em TODAS as paginas — a regra da referencia
     # (o .docx nao marca `titlePg`, entao o cabecalho padrao vale desde a 1a
@@ -218,6 +236,26 @@ def _on_page(canvas, doc, rodape_txt: str):
                              preserveAspectRatio=True, anchor="sw", mask="auto")
         except Exception:
             pass          # logo ilegivel nunca derruba a emissao
+    # ⭐ E-MAIL A DIREITA, na MESMA faixa do logo (pedido do dono). O logo ocupa
+    # de 2cm ate 2cm+_LOGO_ALT*2 na esquerda; aqui e a borda direita, alinhado
+    # pela direita para o texto crescer para dentro e nunca invadir a margem.
+    #
+    # A altura e o MEIO do logo, e nao o topo dele: alinhado pelo topo, um e-mail
+    # de uma linha ficava pendurado ao lado de uma marca de 1,8cm e lia-se como
+    # legenda solta. `A4[1] - 1.6cm - _LOGO_ALT/2` poe os dois no mesmo eixo
+    # optico, e o `- 3` compensa a linha de base da fonte (o `drawRightString`
+    # posiciona a BASE do texto, nao o centro).
+    #
+    # ⚠️ Sai em TODAS as paginas, como o logo — e pelo mesmo motivo: o .docx de
+    # referencia nao marca `titlePg`, entao o cabecalho padrao vale desde a
+    # primeira. Um contato que aparece so na capa some quando alguem imprime ou
+    # encaminha uma pagina do meio.
+    if email_txt:
+        canvas.setFont("Helvetica", 9)
+        canvas.setFillColor(colors.HexColor("#334155"))
+        canvas.drawRightString(A4[0] - 2 * cm,
+                               A4[1] - 1.6 * cm - _LOGO_ALT / 2 - 3,
+                               email_txt)
     canvas.setFont("Helvetica", 8)
     canvas.setFillColor(colors.HexColor("#475569"))
     canvas.drawCentredString(A4[0] / 2, 0.8 * cm, rodape_txt)
@@ -640,6 +678,11 @@ def gerar_pdf(meta: dict, conteudo: dict, municipio_nome: str) -> bytes:
     """
     buf = io.BytesIO()
     rodape_txt = meta.get("rodape", "")
+    # ⚠️ `meta.get("email") or ""` e nao `meta.get("email", "")`: o carimbo da
+    # linha e NULL em todo relatorio gerado ANTES de o campo existir, e o
+    # default do `get` so vale quando a chave esta AUSENTE — com a chave
+    # presente valendo None, `drawRightString` escreveria "None" no cabecalho.
+    email_txt = meta.get("email") or ""
     doc = SimpleDocTemplate(
         buf, pagesize=A4,
         leftMargin=_MARGENS_CM[2] * cm, rightMargin=_MARGENS_CM[3] * cm,
@@ -700,7 +743,7 @@ def gerar_pdf(meta: dict, conteudo: dict, municipio_nome: str) -> bytes:
 
     doc.build(
         story,
-        onFirstPage=lambda c, d: _on_page(c, d, rodape_txt),
-        onLaterPages=lambda c, d: _on_page(c, d, rodape_txt),
+        onFirstPage=lambda c, d: _on_page(c, d, rodape_txt, email_txt),
+        onLaterPages=lambda c, d: _on_page(c, d, rodape_txt, email_txt),
     )
     return buf.getvalue()
