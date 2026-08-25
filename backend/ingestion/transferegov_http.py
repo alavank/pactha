@@ -870,6 +870,31 @@ class TgHttpEnrich:
             return out
         if re.search(r"Nenhum registro foi encontrado", resp.text, re.I):
             return []
+        # ⚠️ A SEXTA SAIDA — e ela era a MUDA. As cinco de `notas_empenho` (contexto,
+        # rede, HTTP, login, SAML) ja dizem o que houve; esta caia daqui sem
+        # nenhum log, e o chamador so sabia escrever "sem retorno (sessao do SP
+        # fria?)". Foi o que fez 115 falhas por rodada parecerem sessao morta
+        # quando a pagina chegava 200, sem muro SAML e com a sessao quente.
+        #
+        # Chegar aqui significa: a pagina veio, mas NENHUMA tabela dela tem um
+        # cabecalho com "empenho" E "situa", e o texto tambem nao traz "Nenhum
+        # registro foi encontrado". Ou o layout mudou, ou a grade e carregada
+        # depois (JSF costuma exigir POST com ViewState), ou a pagina e outra.
+        # O log abaixo mostra QUAL — sem isso o proximo a investigar recomeca do
+        # zero, como eu recomecei.
+        try:
+            _cabs = []
+            for _t in doc.findall(".//table"):
+                _trs = _t.findall(".//tr")
+                if _trs:
+                    _h = "|".join(_txt(x) for x in _trs[0].xpath("./th|./td"))[:70]
+                    if _h.strip():
+                        _cabs.append(_h)
+            logger.info(
+                "    NEs: pagina sem a grade — %d bytes, %d tabela(s); cabecalhos=%s",
+                len(resp.content), len(_cabs), (_cabs[:3] or "nenhum"))
+        except Exception:
+            pass
         return None
 
     def notas_empenho(self, id_proposta: str) -> list | None:

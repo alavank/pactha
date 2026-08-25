@@ -90,3 +90,58 @@ def test_parede_saml_nao_vira_lista_vazia():
 
 def test_sem_registro_e_lista_vazia():
     assert TgHttpEnrich._le_notas_empenho(_resp(_VAZIO)) == []
+
+
+# ---------------------------------------------------------------------------
+# ⚠️ A SEXTA SAÍDA — a que era MUDA (achado em produção, 25/08/2026)
+# ---------------------------------------------------------------------------
+class _RespHtml:
+    def __init__(self, texto):
+        self.text = texto
+        self.content = texto.encode()
+
+
+_GRADE = ("<html><body><table><tr><th>Número do Empenho</th><th>Minuta</th>"
+          "<th>Valor do Empenho</th><th>Valor do Empenho no SIAFI</th>"
+          "<th>Situação</th><th>Data de Emissão</th></tr>"
+          "<tr><td>2026NE000320</td><td>2026ME1</td><td>R$ 280.000,00</td>"
+          "<td>R$ 280.000,00</td><td>Enviado</td><td>09/03/2026</td></tr>"
+          "<tr><td></td><td>2026ME2</td><td>R$ 1,00</td><td></td>"
+          "<td>Minuta de Empenho</td><td>10/03/2026</td></tr></table></body></html>")
+
+
+def test_a_grade_de_verdade_e_lida_e_a_minuta_marcada():
+    from ingestion.transferegov_http import TgHttpEnrich
+    r = TgHttpEnrich._le_notas_empenho(_RespHtml(_GRADE))
+    assert len(r) == 2
+    assert r[0]["numero"] == "2026NE000320" and r[0]["minuta_apenas"] is False
+    assert r[1]["numero"] is None and r[1]["minuta_apenas"] is True
+
+
+def test_vazio_declarado_e_LISTA_e_nao_None():
+    """`[]` = "consultei e não há NE". `None` = "não consegui ler". A diferença
+    decide se o RM pode dizer PENDENTE DE EMPENHO."""
+    from ingestion.transferegov_http import TgHttpEnrich
+    assert TgHttpEnrich._le_notas_empenho(
+        _RespHtml("<html><body><p>Nenhum registro foi encontrado</p></body></html>")) == []
+
+
+def test_pagina_sem_a_grade_devolve_None_e_DIZ_o_que_veio(caplog):
+    """⚠️ ERA A SAÍDA MUDA. `notas_empenho` tem cinco returns que hoje logam o
+    motivo; este sexto caía no fim da função sem uma linha, e o chamador só sabia
+    escrever "sem retorno (sessão do SP fria?)".
+
+    Foi o que fez 115 falhas por rodada parecerem sessão morta quando a página
+    chegava 200, sem muro SAML e com a sessão comprovadamente quente
+    (`keepalive: prestacao=vivo`). O log agora diz quantas tabelas vieram e quais
+    são os cabeçalhos — é o que separa "layout mudou" de "a grade vem por POST"
+    de "a página é outra"."""
+    import logging
+    from ingestion.transferegov_http import TgHttpEnrich
+    outra = ("<html><body><table><tr><th>Proposta</th><th>Convenente</th></tr>"
+             "<tr><td>1</td><td>x</td></tr></table></body></html>")
+    with caplog.at_level(logging.INFO):
+        assert TgHttpEnrich._le_notas_empenho(_RespHtml(outra)) is None
+    texto = caplog.text
+    assert "pagina sem a grade" in texto
+    assert "Proposta|Convenente" in texto      # nomeia o que ACHOU
