@@ -646,8 +646,18 @@ def test_a_lista_de_documentos_devolve_os_campos_por_item(monkeypatch):
 
 def test_a_lista_de_rm_devolve_os_campos_por_item(monkeypatch):
     monkeypatch.setenv("AUTHZ_MODO", "bloqueio")
+    # ⚠️ 13 POSIÇÕES, e não 11: `rm._row_to_dict` lê row[0..12]. A fixture ficou
+    # com 11 quando `escopo` (row[11]) e `anos` (row[12]) entraram nos SELECT do
+    # RM, e o teste morria com `IndexError: tuple index out of range` — falha de
+    # fixture desatualizada, não de produção, mas indistinguível de regressão
+    # enquanto o gate estava vermelho.
+    #
+    # `email` NÃO entra aqui de propósito: ele fica no FIM de cada SELECT e é
+    # carimbado por CADA CHAMADOR (row[15] no `listar`, row[16] no `detalhe`),
+    # exatamente como `fontes` e `municipio_nome`. `_row_to_dict` não o lê — e
+    # não pode ler, porque o índice do fim é diferente em cada consulta.
     linha = (1, 99, None, "Monte Siao/MG", "RM", "rodape", "rascunho", None, 7,
-             None, None)
+             None, None, "completo", [])
     u = Usuario(id=7, permissoes_=["rm.editar", "rm.excluir"],
                 escopos={"rm": "proprios"})
     item = rm._row_to_dict(linha, u)

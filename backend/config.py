@@ -39,6 +39,16 @@ class Settings(BaseSettings):
     # cabecalho vazio do que a marca de OUTRO cliente no relatorio.
     RM_LOGO: str = ""
 
+    # E-mail impresso no cabecalho do RM, a DIREITA, na mesma faixa do logo.
+    # Mesma logica de precedencia do RM_RODAPE (ver services/rm_config.py): esta
+    # env so vale enquanto NINGUEM tiver salvo nada pela tela.
+    #
+    # Vazio por default pelo motivo de sempre neste bloco: cabecalho sem e-mail e
+    # melhor do que cabecalho com o e-mail de OUTRO cliente. Um contato errado num
+    # documento oficial e pior do que contato nenhum — o relatorio circula, e quem
+    # o recebe escreve para o endereco impresso.
+    RM_EMAIL: str = ""
+
     # Cidade de emissao do RM ("Brasília/DF, 21 de Agosto de 2026").
     # ⚠️ E a cidade de QUEM ASSINA o relatorio, nao a do municipio monitorado.
     # Antes o default era o proprio municipio ("Araújos/MG"), o que estava errado:

@@ -1,0 +1,31 @@
+-- E-MAIL do cabecalho do RM, carimbado NA LINHA do relatorio.
+--
+-- Pedido do dono: "coloque o e-mail ao lado do logo do lado direito, assim como
+-- o rodape, um campo para padronizar o email que vai exibir". O "assim como o
+-- rodape" e literal e e o motivo desta coluna existir: o rodape tem TRES camadas
+-- (linha -> configuracoes['rm.rodape'] -> env RM_RODAPE), e a primeira e esta.
+--
+-- ⚠️ POR QUE CARIMBAR NA LINHA, e nao so ler a configuracao na hora de imprimir.
+-- Relatorio ja emitido NAO pode trocar de contato porque alguem editou o padrao
+-- depois. Um RM de marco reimpresso em dezembro tem de sair com o e-mail que
+-- estava no cabecalho quando ele foi emitido — senao o PDF que circulou por
+-- e-mail e o que a plataforma reimprime deixam de ser o mesmo documento.
+--
+-- ⚠️ NULL E DIFERENTE DE ''. Sem DEFAULT de proposito: linha antiga fica NULL, que
+-- significa "este relatorio e anterior ao campo" — e o renderizador trata NULL e
+-- '' do mesmo jeito (nao imprime). Ja um '' GRAVADO pela tela e uma DECISAO ("nao
+-- quero e-mail no cabecalho"), e e ela que impede a env de ressuscitar no
+-- proximo relatorio. A distincao mora em services/rm_config.py; aqui basta nao
+-- inventar um DEFAULT que apagaria a diferenca.
+--
+-- ⚠️ NAO HA BACKFILL, e nao pode haver: preencher retroativamente reescreveria o
+-- cabecalho de relatorio ja emitido — exatamente o que o paragrafo acima proibe.
+--
+-- Idempotente: IF NOT EXISTS. Roda igual em banco novo, porque `add_rm.sql` vem
+-- antes na lista de services/startup.py.
+--
+-- Arquivo SO com o ALTER, sem indice junto: o runner executa o arquivo inteiro
+-- num unico `cur.execute()` (uma transacao) e classifica erro por SUBSTRING, entao
+-- juntar coisas independentes faz uma falhar em silencio arrastando a outra.
+ALTER TABLE rm_relatorios
+    ADD COLUMN IF NOT EXISTS email TEXT;

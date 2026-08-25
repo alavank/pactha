@@ -218,7 +218,11 @@ async def listar(
                r.created_at, r.updated_at, r.escopo, r.anos, m.nome AS municipio_nome,
                -- ⚠️ COLUNA NOVA NO FIM (armadilha nº 1). Nao pode entrar antes de
                -- `m.nome`: row[13] e lido logo abaixo, e `_row_to_dict` le row[0..12].
-               r.fontes
+               r.fontes,
+               -- ⚠️ E-MAIL DEPOIS DE `fontes`, mesma armadilha: e row[15] AQUI e
+               -- row[16] no `detalhe`, porque la m.nome/m.uf entram antes. Cada
+               -- chamador carimba o SEU indice.
+               r.email
         FROM rm_relatorios r LEFT JOIN municipios m ON m.id = r.municipio_id
         {('WHERE ' + ' AND '.join(where)) if where else ''}
         -- Dentro do mesmo escopo de anos, o SEM filtro de consultas vem primeiro:
@@ -234,6 +238,8 @@ async def listar(
         # CONSULTAS do relatorio ([] = todas). row[14] = o FIM deste SELECT — ver
         # a nota em `_row_to_dict` sobre por que o indice nao e o mesmo do detalhe.
         d["fontes"] = list(row[14]) if row[14] is not None else []
+        # E-MAIL carimbado nesta linha. row[15] = o FIM deste SELECT.
+        d["email"] = row[15] or ""
         items.append(d)
     return {"items": items, "total": len(items)}
 
@@ -329,12 +335,16 @@ async def criar(
     # ON CONFLICT: se ja existe RM nessa data, atualiza conteudo
     sql = text("""
         INSERT INTO rm_relatorios
-            (municipio_id, data_referencia, escopo, anos, fontes, cidade_emissao, titulo, conteudo, criado_por, rodape)
-        VALUES (:mun, :dt, :escopo, CAST(:anos AS INT[]), CAST(:fontes AS TEXT[]), :cidade, :titulo, CAST(:cont AS JSONB), :usr, :rodape)
+            (municipio_id, data_referencia, escopo, anos, fontes, cidade_emissao, titulo, conteudo, criado_por, rodape, email)
+        VALUES (:mun, :dt, :escopo, CAST(:anos AS INT[]), CAST(:fontes AS TEXT[]), :cidade, :titulo, CAST(:cont AS JSONB), :usr, :rodape, :email)
         ON CONFLICT (municipio_id, anos, fontes) DO UPDATE SET
             titulo = EXCLUDED.titulo,
             cidade_emissao = EXCLUDED.cidade_emissao,
             rodape = EXCLUDED.rodape,
+            -- Regerar o MESMO relatorio recarimba o e-mail com o padrao ATUAL,
+            -- igual ao rodape. E o comportamento esperado: quem clica em Gerar
+            -- de novo quer o documento como ele sairia hoje.
+            email = EXCLUDED.email,
             data_referencia = EXCLUDED.data_referencia,
             escopo = EXCLUDED.escopo,
             conteudo = CASE WHEN :overwrite THEN EXCLUDED.conteudo
@@ -355,6 +365,9 @@ async def criar(
     # rodape salvo VAZIO nao faz a env ressuscitar). Uma consulta minima, por
     # geracao — nao entra no laco de montagem nem custa nada ao host.
     rodape = await rm_config.rodape_padrao(db)
+    # E-MAIL do cabecalho: a MESMA precedencia de tres camadas do rodape
+    # (linha -> configuracoes -> env). Uma consulta a mais por geracao.
+    email = await rm_config.email_padrao(db)
     # ⚠️ JANELA DOS DOIS DEPLOYS. Ate `drop_rm_unique_anos.sql` subir, o indice
     # ANTIGO `ux_rm_mun_anos (municipio_id, anos)` continua no banco DE PROPOSITO
     # — e ele que mantem o container velho funcionando durante a troca — e ele
@@ -369,6 +382,7 @@ async def criar(
             "mun": body.municipio_id, "dt": body.data_referencia, "escopo": _escopo,
             "anos": _anos, "fontes": _fontes,
             "cidade": cidade, "titulo": titulo, "rodape": rodape,
+            "email": email,
             "cont": json.dumps(conteudo), "usr": getattr(user, "id", None),
             "overwrite": body.auto_popular,
         })).scalar()
@@ -418,6 +432,16 @@ class RmRodapeIn(BaseModel):
     # Sem `Optional`: aqui o campo E o pedido. String vazia e valor LEGITIMO —
     # significa "quero pagina sem rodape" (ver services/rm_config.py).
     rodape: str
+    # ⚠️ TRES ESTADOS AQUI, e os tres importam:
+    #   None -> o campo NAO VEIO no corpo: nao mexer no que esta salvo.
+    #   ""   -> veio VAZIO: e uma DECISAO ("nao quero e-mail no cabecalho"),
+    #           e e ela que impede a env de ressuscitar no proximo RM.
+    #   texto -> o novo padrao.
+    # `Optional` e o que protege a JANELA DE SKEW entre os deploys: backend e
+    # frontend sobem por workflows independentes, e um frontend antigo continua
+    # mandando so `rodape`. Com `email: str` obrigatorio ele levaria 422; com
+    # `email: str = ""` ele APAGARIA o e-mail salvo a cada gravacao de rodape.
+    email: Optional[str] = None
 
 
 def _exigir_admin_config(user) -> None:
@@ -470,10 +494,16 @@ async def config_ler(
     aquilo nao esta no banco antes de apagar e estranhar o valor voltar."""
     authz.exigir_tela(current, "rm")
     salvo = await rm_config.rodape_salvo(db)
+    salvo_email = await rm_config.email_salvo(db)
     return {
         "rodape": salvo if salvo is not None else rm_config.rodape_env(),
         "origem": "salvo" if salvo is not None else "env",
         "rodape_env": rm_config.rodape_env(),
+        # E-MAIL do cabecalho, com a MESMA tripla (valor / origem / env). A
+        # `origem` separada por campo porque um pode estar salvo e o outro nao.
+        "email": salvo_email if salvo_email is not None else rm_config.email_env(),
+        "email_origem": "salvo" if salvo_email is not None else "env",
+        "email_env": rm_config.email_env(),
         # Mesmo desenho de `pode_editar`/`pode_excluir` da lista: o servidor da o
         # veredito e a tela desliga o campo. ⚠️ Campo escondido NAO e permissao —
         # quem barra continua sendo o PUT abaixo.
@@ -500,6 +530,15 @@ async def config_gravar(
     antes = await rm_config.rodape_salvo(db)
     novo = (body.rodape or "").strip()
     await rm_config.gravar_rodape(db, novo, getattr(current, "id", None))
+    # ⚠️ `is not None`, NUNCA `if body.email`. Com o teste ingenuo, mandar ""
+    # (a decisao de apagar) seria lido como "nao veio" e o e-mail antigo
+    # ficaria — a pessoa apagaria o campo, salvaria, e o valor voltaria.
+    antes_email = None
+    novo_email = None
+    if body.email is not None:
+        antes_email = await rm_config.email_salvo(db)
+        novo_email = body.email.strip()
+        await rm_config.gravar_email(db, novo_email, getattr(current, "id", None))
     await db.commit()
     # Vai para a trilha COM OS DOIS LADOS. O rodape identifica quem assina o
     # documento oficial: "quem trocou, de que para que" e exatamente a pergunta
@@ -513,7 +552,25 @@ async def config_gravar(
         details={"efeito": "vale para os próximos RMs gerados; "
                            "não altera relatório já emitido"},
     )
-    return {"rodape": novo, "origem": "salvo", "pode_editar": True}
+    # Evento SEPARADO para o e-mail, e so quando ele mudou de fato: gravar uma
+    # linha "alterou o e-mail" em toda edicao de rodape encheria a trilha de
+    # ruido e faria o filtro por esta acao deixar de significar alguma coisa.
+    if novo_email is not None and novo_email != (antes_email or ""):
+        await registrar(
+            db, action="rm.config_email", user=current, request=request,
+            target_type="rm_config", alvo_nome="E-mail padrão do RM",
+            valor_antes={"email": antes_email if antes_email is not None
+                         else rm_config.email_env(),
+                         "origem": "salvo" if antes_email is not None else "env"},
+            valor_depois={"email": novo_email, "origem": "salvo"},
+            details={"efeito": "vale para os próximos RMs gerados; "
+                               "não altera relatório já emitido"},
+        )
+    resp = {"rodape": novo, "origem": "salvo", "pode_editar": True}
+    if novo_email is not None:
+        resp["email"] = novo_email
+        resp["email_origem"] = "salvo"
+    return resp
 
 
 @router.get("/{rid}", dependencies=[exige("rm.ver")])
@@ -537,7 +594,10 @@ async def detalhe(
                -- ⚠️ COLUNA NOVA NO FIM (armadilha nº 1): DEPOIS de m.nome (row[13])
                -- e m.uf (row[14]), que sao lidos por indice logo abaixo. Aqui
                -- `fontes` e row[15]; no `listar` e row[14]. Sao SELECTs diferentes.
-               r.fontes
+               r.fontes,
+               -- E-MAIL no fim: row[16] AQUI. Nunca copie o indice do outro
+               -- SELECT — sao consultas diferentes, com colunas diferentes antes.
+               r.email
         FROM rm_relatorios r LEFT JOIN municipios m ON m.id = r.municipio_id
         WHERE r.id = :id
     """), {"id": rid})).first()
@@ -548,6 +608,7 @@ async def detalhe(
     d["uf"] = row[14]
     # CONSULTAS do relatorio ([] = todas). row[15] aqui, row[14] no `listar`.
     d["fontes"] = list(row[15]) if row[15] is not None else []
+    d["email"] = row[16] or ""
     return d
 
 
@@ -711,7 +772,10 @@ async def pdf(
                -- ⚠️ COLUNA NOVA NO FIM (armadilha nº 1): row[9], depois de r.escopo.
                -- row[5] (m.nome) monta o nome do arquivo e row[7] a trilha; inserir
                -- no meio desloca os dois em silencio.
-               r.fontes
+               r.fontes,
+               -- E-MAIL do cabecalho: row[10]. Este SELECT e o mais curto dos
+               -- tres — aqui `fontes` e row[9], nao row[14]/row[15].
+               r.email
         FROM rm_relatorios r JOIN municipios m ON m.id = r.municipio_id
         WHERE r.id = :id
     """), {"id": rid})).first()
@@ -729,6 +793,9 @@ async def pdf(
         # filtrado e o completo saem com paginas IDENTICAS, e quem le o impresso
         # nao tem como saber que ele nao cobre o municipio inteiro.
         "fontes": list(row[9]) if row[9] is not None else [],
+        # ⚠️ `or ""` — a coluna e NULL em todo RM gerado antes dela existir, e
+        # o renderizador imprimiria "None" no cabecalho de cada um deles.
+        "email": row[10] or "",
     }
     conteudo = row[4] or {"partes": []}
     municipio = f"{row[5]}/{row[6]}"

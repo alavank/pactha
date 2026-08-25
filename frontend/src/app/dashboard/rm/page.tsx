@@ -163,7 +163,18 @@ export default function RmListPage() {
   const [rodapePodeEditar, setRodapePodeEditar] = useState(false);
   const [rodapeSalvando, setRodapeSalvando] = useState(false);
   const [rodapeOk, setRodapeOk] = useState(false);
-  const rodapeSujo = rodape !== rodapeOriginal;
+  /* E-MAIL DO CABEÇALHO — mesma configuração, mesmo modal, mesma precedência
+     (linha do relatório -> `configuracoes` -> env). Mora aqui e não numa tela
+     própria porque é a mesma decisão: quem é a assessoria que assina este
+     documento. Separar em dois lugares faria alguém trocar o endereço e
+     esquecer o contato. */
+  const [email, setEmail] = useState("");
+  const [emailOriginal, setEmailOriginal] = useState("");
+  const [emailOrigem, setEmailOrigem] = useState<"salvo" | "env">("env");
+  /* ⚠️ O "sujo" cobre OS DOIS campos: o modal fecha por confirmação quando há
+     edição não salva, e medir só o rodapé deixaria uma troca de e-mail ser
+     descartada em silêncio ao clicar fora. */
+  const rodapeSujo = rodape !== rodapeOriginal || email !== emailOriginal;
 
   /* Derivados do catálogo. `opcoesFontes` são as CHAVES (o MultiSelect trabalha
      com string[]) e `rotuloFonte`/`curtoFonte` traduzem para o olho — é para isso
@@ -212,12 +223,19 @@ export default function RmListPage() {
   // de município no seletor — pendurá-lo ali sugeriria que ele muda por
   // prefeitura, o que não é verdade.
   useEffect(() => {
-    api.get<{ rodape: string; origem: "salvo" | "env"; pode_editar: boolean }>("/rm/config")
+    api.get<{ rodape: string; origem: "salvo" | "env"; pode_editar: boolean;
+              email?: string; email_origem?: "salvo" | "env" }>("/rm/config")
       .then((r) => {
         setRodape(r.data.rodape || "");
         setRodapeOriginal(r.data.rodape || "");
         setRodapeOrigem(r.data.origem);
         setRodapePodeEditar(!!r.data.pode_editar);
+        /* `?? ""` e campos OPCIONAIS no tipo: backend e frontend deployam por
+           workflows independentes, e durante a janela de skew o backend antigo
+           responde sem `email`. Sem isto o campo nasceria "undefined". */
+        setEmail(r.data.email ?? "");
+        setEmailOriginal(r.data.email ?? "");
+        setEmailOrigem(r.data.email_origem ?? "env");
       })
       .catch((e) => console.error(e));
   }, []);
@@ -238,23 +256,34 @@ export default function RmListPage() {
    *  o rodapé em vigor, e a pessoa acreditaria ter salvo o que não salvou. */
   const fecharRodape = useCallback(() => {
     setRodape(rodapeOriginal);
+    setEmail(emailOriginal);
     setRodapeOk(false);
     setRodapeAberto(false);
-  }, [rodapeOriginal]);
+  }, [rodapeOriginal, emailOriginal]);
 
   const salvarRodape = async () => {
     setRodapeSalvando(true);
     setRodapeOk(false);
     try {
-      const r = await api.put<{ rodape: string; origem: "salvo" | "env" }>(
-        "/rm/config", { rodape });
+      const r = await api.put<{ rodape: string; origem: "salvo" | "env";
+                               email?: string; email_origem?: "salvo" | "env" }>(
+        /* ⚠️ Manda `email` SEMPRE, inclusive vazio. String vazia é uma DECISÃO
+           ("não quero e-mail no cabeçalho") e o backend a distingue de
+           ausente — omitir o campo quando ele está em branco faria o valor
+           antigo sobreviver e o usuário apagaria de novo sem entender. */
+        "/rm/config", { rodape, email });
       setRodape(r.data.rodape);
       setRodapeOriginal(r.data.rodape);
       setRodapeOrigem(r.data.origem);
+      if (r.data.email !== undefined) {
+        setEmail(r.data.email);
+        setEmailOriginal(r.data.email);
+        setEmailOrigem(r.data.email_origem ?? "salvo");
+      }
       setRodapeOk(true);
     } catch (e) {
       console.error(e);
-      alert("Não foi possível salvar o rodapé padrão.");
+      alert("Não foi possível salvar as configurações do relatório.");
     } finally { setRodapeSalvando(false); }
   };
 
@@ -362,14 +391,18 @@ export default function RmListPage() {
               variant="outline"
               size="sm"
               onClick={() => { setRodapeOk(false); setRodapeAberto(true); }}
-              title={rodape
-                ? `Rodapé em vigor: ${rodape}`
-                : "Nenhum rodapé definido — as páginas do RM saem sem o endereço de quem assina"}
+              title={[
+                rodape ? `Rodapé: ${rodape}` : "Rodapé não definido",
+                email ? `E-mail: ${email}` : "E-mail não definido",
+              ].join(" · ")}
             >
-              <FileText className="size-4 mr-1" /> Rodapé padrão
-              {!rodape && (
+              <FileText className="size-4 mr-1" /> Cabeçalho e rodapé
+              {/* O aviso só aparece quando os DOIS estão vazios. Com um deles
+                  preenchido, "não definido" ao lado do botão seria ambíguo — não
+                  se sabe qual — e o `title` acima já diz os dois. */}
+              {!rodape && !email && (
                 <span className="ml-1.5 text-[10px]" style={{ color: "var(--bi-faint)" }}>
-                  não definido
+                  não definidos
                 </span>
               )}
             </Button>
@@ -433,29 +466,56 @@ export default function RmListPage() {
         onFechar={fecharRodape}
         maxW="max-w-lg"
         superficie
-        rotulo="Rodapé padrão dos relatórios"
+        rotulo="Cabeçalho e rodapé dos relatórios"
         /* ⚠️ As TRÊS saídas (Esc, clique no véu e o X) passam por aqui. Sem esta
            guarda, o endereço que a pessoa acabou de digitar sumia sem aviso — é
            exatamente para isso que a primitiva expõe `podeFechar`. */
         podeFechar={() => !rodapeSujo
-          || confirm("Há alteração não salva no rodapé. Descartar?")}
+          || confirm("Há alteração não salva. Descartar?")}
       >
         <ModalHead
-          titulo="Rodapé padrão dos relatórios"
+          titulo="Cabeçalho e rodapé dos relatórios"
           sub={
             <>
-              Sai impresso no <strong>pé de toda página</strong> do RM — é o endereço de quem
-              assina. O que você salvar aqui vira o <strong>padrão</strong> e entra nos relatórios{" "}
-              <strong>gerados a partir de agora</strong>; os já emitidos continuam com o rodapé
-              que receberam.{" "}
-              {rodapeOrigem === "env"
-                ? "Hoje o texto abaixo ainda vem da configuração do servidor — salvando, ele passa a vir daqui."
-                : "Este texto está salvo no sistema."}
+              O que você salvar aqui vira o <strong>padrão</strong> e entra nos relatórios{" "}
+              <strong>gerados a partir de agora</strong>; os já emitidos continuam com o que
+              receberam — documento entregue não muda sozinho.
             </>
           }
           onFechar={fecharRodape}
         />
         <ModalCorpo>
+          {/* E-MAIL primeiro porque é o que aparece primeiro no documento (topo,
+              ao lado do logo). A ordem dos campos aqui espelha a do papel. */}
+          <label className="mb-1 block text-[11px] font-medium" style={{ color: "var(--bi-text)" }}>
+            E-mail do cabeçalho
+          </label>
+          <p className="mb-1 text-[11px] leading-relaxed" style={{ color: "var(--bi-muted)" }}>
+            Sai <strong>ao lado do logo</strong>, à direita, em toda página.{" "}
+            {emailOrigem === "env"
+              ? "Hoje ainda vem da configuração do servidor — salvando, passa a vir daqui."
+              : "Está salvo no sistema."}{" "}
+            Deixe em branco para o relatório sair <strong>sem e-mail</strong>.
+          </p>
+          <input
+            type="email"
+            className="bi-field w-full px-2 py-1 text-[12px]"
+            value={email}
+            disabled={!rodapePodeEditar}
+            onChange={(e) => { setEmail(e.target.value); setRodapeOk(false); }}
+            placeholder="Ex.: contato@assessoria.com.br"
+            aria-label="E-mail do cabeçalho dos relatórios"
+          />
+
+          <label className="mb-1 mt-4 block text-[11px] font-medium" style={{ color: "var(--bi-text)" }}>
+            Rodapé
+          </label>
+          <p className="mb-1 text-[11px] leading-relaxed" style={{ color: "var(--bi-muted)" }}>
+            Sai impresso no <strong>pé de toda página</strong> — é o endereço de quem assina.{" "}
+            {rodapeOrigem === "env"
+              ? "Hoje ainda vem da configuração do servidor — salvando, passa a vir daqui."
+              : "Está salvo no sistema."}
+          </p>
           <textarea
             className="bi-field min-h-[96px] w-full px-2 py-1 text-[12px]"
             value={rodape}
@@ -479,7 +539,7 @@ export default function RmListPage() {
               /* Campo desligado NÃO é permissão — quem barra é o servidor. Isto só
                  evita oferecer um botão que devolveria 403. */
               <span className="text-[11px]" style={{ color: "var(--bi-muted)" }}>
-                Somente administradores alteram o rodapé padrão.
+                Somente administradores alteram estes padrões.
               </span>
             )}
           </div>

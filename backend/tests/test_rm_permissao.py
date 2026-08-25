@@ -144,18 +144,29 @@ class _Municipio:
 # conseguia distinguir regressão nova de ruído antigo.
 #
 # Ao mexer num SELECT de rm.py, confira o comprimento aqui:
-#   LINHA_DETALHE -> SELECT do `detalhe`   (rm.py, 16 colunas: row[13]=nome, row[14]=uf,
-#                                           row[15]=fontes)
-#   LINHA_PDF     -> SELECT do `pdf`       (rm.py, 10 colunas: row[8]=escopo,
-#                                           row[9]=fontes)
-# ⚠️ `fontes` entrou no FIM de CADA SELECT, e por isso o índice dele é DIFERENTE
-# em cada tupla (15 no detalhe, 9 no pdf, 14 no listar): as colunas de
-# `municipios` vêm depois de `r.anos` em dois deles.
+#   LINHA_DETALHE -> SELECT do `detalhe`   (rm.py, 17 colunas: row[13]=nome, row[14]=uf,
+#                                           row[15]=fontes, row[16]=email)
+#   LINHA_PDF     -> SELECT do `pdf`       (rm.py, 11 colunas: row[8]=escopo,
+#                                           row[9]=fontes, row[10]=email)
+# ⚠️ `fontes` e `email` entraram no FIM de CADA SELECT, e por isso o índice de
+# cada um é DIFERENTE em cada tupla (fontes: 15 no detalhe, 9 no pdf, 14 no
+# listar): as colunas de `municipios` vêm depois de `r.anos` em dois deles.
+#
+# ⚠️ ESTAS TUPLAS SÃO O ÚNICO LUGAR QUE PEGA A ARMADILHA Nº 1. Não há Postgres
+# de teste em parte nenhuma do repo, então uma coluna inserida no MEIO de um
+# SELECT não quebraria nada em teste algum — exceto aqui, porque o comprimento
+# e a ordem da tupla passam a não bater com o que o handler lê por índice.
+# Quando este arquivo quebrar depois de você mexer num SELECT do RM, é ele
+# fazendo o trabalho dele: confira a ORDEM antes de só acrescentar um valor.
 LINHA_DETALHE = (1, 99, DATA, "Monte Siao/MG", "RM de julho", "rodape",
                  "rascunho", {"partes": []}, 7, None, None,
-                 "completo", [], "Monte Siao", "MG", [])
+                 "completo", [], "Monte Siao", "MG", [], "contato@exemplo.com")
+# ⚠️ `None` no e-mail DE PROPÓSITO, e não uma string: é o valor real de todo RM
+# gerado ANTES de a coluna existir. Com uma string aqui, o `or ""` do handler
+# nunca seria exercitado e um `meta.get("email", "")` ingênuo passaria no teste
+# enquanto imprimiria "None" no cabeçalho de cada relatório antigo.
 LINHA_PDF = (DATA, "Monte Siao/MG", "RM de julho", "rodape", {"partes": []},
-             "Monte Siao", "MG", 99, "completo", [])
+             "Monte Siao", "MG", 99, "completo", [], None)
 LINHA_CTX = (99, "RM de julho", DATA, "rascunho")
 DONO = (99,)          # o que `ensure_dono` le: o municipio_id da linha
 
@@ -224,10 +235,13 @@ CENARIOS = {
         {"items": [], "total": 0},
     ),
     "criar": (
+        # A FILA É POSICIONAL — cada `_Res` é uma consulta, na ordem em que
+        # `rm.criar` as faz. Faltando uma linha, o FakeDb entrega a resposta
+        # SEGUINTE à consulta errada, e o erro sai longe da causa.
         # 1) municipio  2) "ja existe RM nesse escopo?"  3) rodapé padrão
-        # (`configuracoes['rm.rodape']`, adicionado com o campo editável — sem
-        # linha na fila o FakeDb devolveria a resposta seguinte)  4) o upsert.
-        lambda: [_Res(_Municipio()), _Res(None), _Res(None), _Res(7)],
+        # (`configuracoes['rm.rodape']`)  4) e-mail padrão (`rm.email`, uma
+        # consulta a mais desde 08/2026)  5) o upsert.
+        lambda: [_Res(_Municipio()), _Res(None), _Res(None), _Res(None), _Res(7)],
         lambda db, u: rm.criar(
             body=rm.RmCreate(municipio_id=99, data_referencia=DATA,
                              auto_popular=False),
