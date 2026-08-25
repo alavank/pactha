@@ -361,6 +361,28 @@ _ENCERRADA_SQL = (
     "(situacao ILIKE '%anulad%' OR situacao ILIKE '%rescind%' OR "
     "(situacao ILIKE '%presta%' AND (situacao ILIKE '%conclu%' OR situacao ILIKE '%aprovad%')))"
 )
+# ⭐ VIVA = o CICLO DE VIDA ATIVO: tudo que NAO foi rejeitado nem encerrado.
+# E o recorte da tela «Voluntarias» desde 08/2026 (pedido do dono).
+#
+# O QUE MUDOU E POR QUE. Antes «Voluntarias» era so o PIPELINE DE ANALISE
+# (_VOLUNTARIA_SQL) e parava exatamente onde a proposta vira instrumento: no dia
+# em que o convenio era celebrado ele SUMIA da tela e reaparecia noutra, chamada
+# «Geral». Quem acompanha uma proposta do inicio ao fim tinha de trocar de aba no
+# meio do caminho — e, pior, o filtro de situacao da tela e montado a partir das
+# LINHAS CARREGADAS (frontend/src/components/TransfereGovPropostas.tsx), entao a
+# opcao "Em execucao" nunca podia aparecer ali: as linhas nao chegavam.
+#
+# ⚠️ NAO INCLUI rejeitadas nem encerradas, de proposito. As duas sao DESFECHO,
+# nao trabalho em curso, e cada uma tem aba propria — traze-las para ca faria
+# «Voluntarias» duplicar duas telas inteiras e contradizer o proprio nome.
+#
+# ⚠️ `situacao IS NULL` ENTRA. Linha sem situacao coletada nao e desfecho — e
+# ausencia de informacao, e sumir com ela seria afirmar um encerramento que
+# ninguem viu. E o mesmo criterio do ramo `geral`, logo abaixo.
+_VIVA_SQL = (
+    "(situacao IS NULL OR (situacao NOT ILIKE '%rejeitad%' "
+    f"AND NOT {_ENCERRADA_SQL}))"
+)
 # EM QUAL DAS QUATRO TELAS de propostas um instrumento aparece, como expressao SQL.
 # Existe para o vinculo do /pac poder LINKAR para a tela certa usando AS MESMAS
 # regras que o /voluntarias usa para montar cada categoria — se divergissem, o
@@ -412,18 +434,30 @@ async def voluntarias(
 
     Dados coletados pelo scraper Playwright (acesso livre guest) em
     transferegov_propostas. Categorias:
-      - voluntarias: status "Proposta/Plano de Trabalho enviado para Analise"
+      - voluntarias: o CICLO DE VIDA ATIVO — pipeline de analise E instrumentos
+              em execucao. Exclui apenas rejeitadas e encerradas. (Era so o
+              pipeline de analise ate 08/2026; ver `_VIVA_SQL`.)
       - rejeitadas: status com "Rejeitad"
       - encerradas: Anulado / Rescindido / Prestacao de Contas Concluida/Aprovada
-      - geral: o restante (Em execucao, Aprovados em curso, em analise, etc.)
-              -- exclui voluntarias, rejeitadas E encerradas
+      - geral: a tela «Em execucao» — o que sobra depois de tirar o pipeline de
+              analise, as rejeitadas e as encerradas.
+
+    ⚠️ `voluntarias` e `geral` agora SE SOBREPOEM, e isso e intencional: sao
+    perguntas diferentes sobre o mesmo dado ("o que esta em andamento?" e "o que
+    ja foi celebrado?"). Nenhuma proposta some de aba nenhuma por causa disso.
     """
     ensure_municipio_access(current, municipio_id)
     ensure_tela(current, "transferegov")
     where = ["municipio_id = :mun"]
     params: dict = {"mun": municipio_id}
     if categoria == "voluntarias":
-        where.append(_VOLUNTARIA_SQL)
+        # ⚠️ `_VIVA_SQL`, NAO `_VOLUNTARIA_SQL`. O segundo continua existindo e
+        # continua sendo usado — pelo `_CATEGORIA_SQL` (que decide para qual aba
+        # o link do PAC aponta) e pelo ramo `geral` logo abaixo, que precisa
+        # EXCLUIR o pipeline de analise para nao mostrar proposta nao celebrada
+        # numa tela chamada «Em execucao». Trocar os dois por `_VIVA_SQL` faria
+        # as duas telas devolverem a mesma coisa.
+        where.append(_VIVA_SQL)
     elif categoria == "rejeitadas":
         where.append("situacao ILIKE :rejpat"); params["rejpat"] = _REJEITADA_LIKE
     elif categoria == "encerradas":
