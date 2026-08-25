@@ -890,9 +890,28 @@ class TgHttpEnrich:
                     _h = "|".join(_txt(x) for x in _trs[0].xpath("./th|./td"))[:70]
                     if _h.strip():
                         _cabs.append(_h)
+            # ⚠️ O QUE A MEDICAO DE 25/08 JA MOSTROU: ~50 KB (nao e o muro SAML
+            # de 3469 bytes), UMA tabela, e o cabecalho dela e "30:00" — o
+            # CONTADOR DE SESSAO do JSF. Ou seja: a pagina da aplicacao chega
+            # inteira e a grade NAO esta nela. Isso e assinatura de JSF que
+            # renderiza a tabela por POST com ViewState, e nao no GET.
+            #
+            # Os campos abaixo sao o que falta para montar esse POST. Ficam no
+            # log de proposito: sem eles, quem for consertar tem de repetir todo
+            # este ciclo de diagnostico — deploy, disputar o lock com o sigcon,
+            # esperar a proxima rodada.
+            _vs = re.search(r'name="javax\.faces\.ViewState"[^>]*value="([^"]{0,40})',
+                            resp.text)
+            _forms = [f"{f.get('id') or f.get('name') or '?'}->{(f.get('action') or '')[-45:]}"
+                      for f in doc.findall(".//form")][:3]
+            _ids = [x for x in re.findall(r'id="([^"]{3,60})"', resp.text)
+                    if "empenho" in x.lower()][:6]
             logger.info(
-                "    NEs: pagina sem a grade — %d bytes, %d tabela(s); cabecalhos=%s",
-                len(resp.content), len(_cabs), (_cabs[:3] or "nenhum"))
+                "    NEs: pagina sem a grade — %d bytes, %d tabela(s); cabecalhos=%s | "
+                "ViewState=%s | forms=%s | ids c/ 'empenho'=%s",
+                len(resp.content), len(_cabs), (_cabs[:3] or "nenhum"),
+                (_vs.group(1)[:24] + "..." if _vs else "AUSENTE"),
+                (_forms or "nenhum"), (_ids or "nenhum"))
         except Exception:
             pass
         return None
