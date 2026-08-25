@@ -13,9 +13,14 @@
  *  nunca discorda do que está logo abaixo — o erro clássico de dashboard.
  */
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { X, CalendarClock, Circle, List, ArrowUpDown, Lock } from "lucide-react";
+import {
+  X, CalendarClock, Circle, List, ArrowUpDown, Lock, Download,
+  FileText, Sheet, Loader2,
+} from "lucide-react";
 import api from "@/lib/api";
 import { MultiSelect } from "@/components/ui/multi-select";
+import { Modal, ModalCorpo, ModalHead } from "@/components/ui/superficies";
+import { baixarVigencias, type FormatoVigencias } from "@/lib/vigenciasExport";
 import type { Municipio } from "@/types";
 
 interface Alerta {
@@ -147,7 +152,36 @@ export default function VigenciasModal({
   );
   const maxQtd = Math.max(1, ...porMunicipio.map((p) => p.qtd));
 
+  /* EXPORTAÇÃO — botão que abre um modal, e não dois botões soltos na barra.
+     A barra já carrega KPI, filtro de municípios, duas visões e a ordenação;
+     mais dois botões ali empurrariam o conteúdo para baixo. O modal ainda
+     resolve um problema que os botões soltos não resolvem: dizer, ANTES de
+     baixar, qual é o recorte que vai para o arquivo. */
+  const [exportAberto, setExportAberto] = useState(false);
+  const [baixando, setBaixando] = useState<FormatoVigencias | null>(null);
+
+  async function exportar(formato: FormatoVigencias) {
+    setBaixando(formato);
+    try {
+      /* ⚠️ MANDA `munSel`, NÃO os municípios visíveis. O backend entende lista
+         vazia como "todos os do meu alcance" e refaz o mesmo recorte da tela.
+         Enviar a lista derivada de `visiveis` daria no mesmo hoje e passaria a
+         divergir no dia em que a tela ganhar outro filtro — o arquivo sairia
+         com um recorte que ninguém pediu. */
+      await baixarVigencias({
+        dias: DIAS,
+        municipios: munSel,
+        ordem: asc ? "asc" : "desc",
+        formato,
+      });
+      setExportAberto(false);
+    } finally {
+      setBaixando(null);
+    }
+  }
+
   return (
+    <>
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
          style={{ background: "rgba(15,23,42,.55)" }} onClick={onClose}>
       <div className="bi-card w-full max-w-4xl max-h-[86vh] overflow-hidden flex flex-col"
@@ -208,6 +242,22 @@ export default function VigenciasModal({
                 <ArrowUpDown className="size-3" /> {asc ? "menor→maior" : "maior→menor"}
               </button>
             )}
+            {/* Desabilitado (e não escondido) quando não há o que exportar: um
+                botão que some deixa a pessoa procurando onde ele estava. O
+                `title` diz o porquê em cada caso. */}
+            <button
+              onClick={() => setExportAberto(true)}
+              disabled={carregando || semAcesso || visiveis.length === 0}
+              title={
+                semAcesso ? "Você não tem acesso às vigências"
+                  : carregando ? "Carregando…"
+                  : visiveis.length === 0 ? "Nada a exportar neste recorte"
+                  : "Exportar em PDF ou Excel"
+              }
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium bi-hover disabled:cursor-not-allowed disabled:opacity-40"
+              style={{ border: "1px solid var(--bi-line)", color: "var(--bi-text)" }}>
+              <Download className="size-3" /> Exportar
+            </button>
           </div>
         </div>
 
@@ -288,5 +338,78 @@ export default function VigenciasModal({
         </div>
       </div>
     </div>
+
+      {/* ⚠️ IRMÃO do overlay de vigências, NUNCA filho dele — e isto não é
+          estética. O overlay de cima tem `onClick={onClose}` no backdrop, e o
+          único filho protegido por `stopPropagation` é o cartão. Dentro dele,
+          QUALQUER clique aqui (escolher formato, fechar) subiria até aquele
+          `onClick` e fecharia o modal de vigências por baixo — o arquivo até
+          baixaria, e a tela sumiria junto.
+
+          `nivel={2}` (z-[60]) põe este por cima do z-50 feito à mão do outro.
+          `esc={false}`: o Esc fecharia os DOIS de uma vez. */}
+      <Modal aberto={exportAberto} onFechar={() => setExportAberto(false)}
+             maxW="max-w-md" nivel={2} esc={false}
+             podeFechar={() => baixando === null} rotulo="Exportar vigências">
+        <ModalHead
+          titulo="Exportar vigências"
+          sub="O arquivo sai com o mesmo recorte que está na tela."
+          onFechar={() => setExportAberto(false)}
+        />
+        <ModalCorpo>
+          {/* O QUE VAI NO ARQUIVO, escrito antes de baixar. É a razão de isto ser
+              um modal e não dois botões: exportação que não diz o próprio
+              recorte vira PDF errado circulando por e-mail, e ninguém descobre. */}
+          <div className="rounded-lg p-3 text-xs leading-relaxed"
+               style={{ background: "var(--bi-surface-2)", color: "var(--bi-muted)" }}>
+            <div>
+              <b style={{ color: "var(--bi-text)" }}>{visiveis.length}</b>{" "}
+              instrumento(s) em{" "}
+              <b style={{ color: "var(--bi-text)" }}>{porMunicipio.length}</b>{" "}
+              município(s), vencendo em até {DIAS} dias.
+            </div>
+            <div className="mt-1">
+              Recorte: {munSel.length
+                ? `${munSel.length} município(s) selecionado(s)`
+                : "todos os municípios da carteira"}
+              {" · "}ordem: {asc ? "menor prazo primeiro" : "maior prazo primeiro"}
+            </div>
+            <div className="mt-1">
+              Os dois formatos trazem a lista completa e o totalizador por município.
+            </div>
+          </div>
+
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <button onClick={() => exportar("pdf")} disabled={baixando !== null}
+                    className="flex flex-col items-center gap-1 rounded-lg p-3 text-xs font-medium bi-hover disabled:cursor-not-allowed disabled:opacity-50"
+                    style={{ border: "1px solid var(--bi-line)", color: "var(--bi-text)" }}>
+              {baixando === "pdf"
+                ? <Loader2 className="size-5 animate-spin" />
+                : <FileText className="size-5" />}
+              PDF
+              <span className="text-[10px] font-normal" style={{ color: "var(--bi-muted)" }}>
+                para ler e circular
+              </span>
+            </button>
+            <button onClick={() => exportar("xlsx")} disabled={baixando !== null}
+                    className="flex flex-col items-center gap-1 rounded-lg p-3 text-xs font-medium bi-hover disabled:cursor-not-allowed disabled:opacity-50"
+                    style={{ border: "1px solid var(--bi-line)", color: "var(--bi-text)" }}>
+              {baixando === "xlsx"
+                ? <Loader2 className="size-5 animate-spin" />
+                : <Sheet className="size-5" />}
+              Excel
+              <span className="text-[10px] font-normal" style={{ color: "var(--bi-muted)" }}>
+                valores somáveis
+              </span>
+            </button>
+          </div>
+          <p className="mt-3 text-[11px] leading-relaxed" style={{ color: "var(--bi-muted)" }}>
+            O PDF abre em outra aba; o Excel baixa. Instrumento sem valor coletado
+            na fonte fica <b>fora da soma</b> e é contado à parte — o total é do
+            que tem valor conhecido.
+          </p>
+        </ModalCorpo>
+      </Modal>
+    </>
   );
 }

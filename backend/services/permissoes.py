@@ -471,6 +471,26 @@ _ESPECIAIS: tuple = (
                   "inteiro.",
         escrita=False,
     ),
+    # ⭐ EXPORTAR é caixinha SEPARADA de Ver, aqui pelo mesmo motivo de todo o
+    # resto do catálogo: baixar não é ler. O arquivo sai da plataforma e deixa de
+    # estar sob controle dela — é o argumento que `routers/export_pdf.py` já
+    # documenta no topo, e o motivo de todo endpoint daquele router gravar linha
+    # na trilha.
+    #
+    # ⚠️ NINGUÉM PERDE NADA AO SUBIR ISTO. O endpoint aceita `vigencias.exportar`
+    # OU `convenios.exportar` (ver routers/export_pdf.py::export_vigencias): quem
+    # já exporta Convênios Estaduais continua exportando. E com `AUTHZ_MODO=aviso`
+    # (o default) a chave nem barra — durante a semana de observação ela só
+    # registra na trilha quem teria sido negado, que é para isso que o modo
+    # existe.
+    Permissao(
+        chave="vigencias.exportar", secao=SEC_BI, recurso="vigencias",
+        recurso_rotulo="Vigências a vencer", verbo_rotulo="Exportar",
+        descricao="Baixar em PDF ou Excel a lista de instrumentos com vigência "
+                  "encerrando, com o totalizador por município. Quem já exporta "
+                  "Convênios Estaduais já pode isto.",
+        escrita=False,
+    ),
     Permissao(
         chave="ai.usar", secao=SEC_IA, recurso="ai",
         recurso_rotulo="IA PACTHA", verbo_rotulo="Usar",

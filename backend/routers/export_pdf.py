@@ -20,7 +20,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, KeepTogether
 from services import authz
-from services.registro_rotas import exige
+from services.registro_rotas import exige, declarado
 
 router = APIRouter(prefix="/api/export-pdf", tags=["export-pdf"])
 
@@ -352,6 +352,90 @@ async def export_voluntarias_pdf(
                  "vigencia": vigencia, "vig_fim_de": vig_fim_de, "vig_fim_ate": vig_fim_ate},
     )
     return StreamingResponse(pdf, media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={nome_arq}"})
+
+
+@router.get("/vigencias",
+            dependencies=[declarado("vigencias.exportar", "convenios.exportar")])
+async def export_vigencias(
+    request: Request,
+    dias: int = Query(120, ge=1, le=3650),
+    # O MultiSelect do modal trabalha com NOMES, e o nome vem do proprio backend
+    # (`_nomes_municipios` preenche `municipio_nome`). Filtrar por nome aqui e o
+    # que garante que o arquivo traga EXATAMENTE as linhas da tela; mandar ids
+    # deixaria de fora o instrumento sem municipio_id, que a tela mostra.
+    municipios: list[str] = Query(default=[]),
+    ordem: str = Query("asc", pattern="^(asc|desc)$"),
+    formato: str = Query("pdf", pattern="^(pdf|xlsx)$"),
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """«Vigências a vencer» em arquivo — PDF ou Excel, com totalizador por município.
+
+    ⭐ DOIS CAMINHOS DE PERMISSAO, espelhando a LEITURA. O endpoint que serve o
+    modal (`/api/convenios/alertas`) aceita `convenios.ver` OU `vigencias.ver`,
+    porque o dono pediu para liberar o monitoramento de vencimento sem entregar o
+    modulo de Convenios Estaduais. Se aqui a regra fosse so `convenios.exportar`,
+    quem recebeu a caixinha nova veria o botao e levaria 403 — permissao que
+    aparece na tela e nao funciona e pior do que botao ausente. Por isso
+    `declarado` (que so MARCA) e o "ou" resolvido no corpo, igual la.
+
+    ⚠️ A LISTA VEM DO ENDPOINT DA TELA, nao de uma consulta nova. `alertas_vigencia`
+    ja resolve o alcance do usuario (carteira restrita, super-admin, `[]` para
+    carteira vazia) e ja preenche `municipio_nome`. Recopiar essa logica aqui
+    criaria a chance de o arquivo mostrar municipio que a tela nao mostra — o
+    defeito que este router ja teve em `/convenios`, quando o PDF contava as
+    propostas do FNS que a tela corretamente escondia."""
+    if not authz.pode(current, "vigencias.exportar"):
+        authz.exigir(current, "convenios.exportar")
+
+    from routers.convenios import alertas_vigencia
+
+    # ⚠️ `ano=None, anos=None` EXPLICITOS. `alertas_vigencia` e um endpoint do
+    # FastAPI e o default de `anos` e um objeto `Query(None)`, nao None — quem
+    # resolve esse default e o framework, e esta chamada e direta. Omitir faz o
+    # `anos_list()` la dentro receber o proprio `Query`. E a mesma pegadinha
+    # documentada em `/parlamentares`, algumas linhas acima.
+    alertas = await alertas_vigencia(municipio_id=None, dias=dias, ano=None,
+                                     anos=None, db=db, current=current)
+    # A MESMA ordenacao da tela (o modal ordena por dias, nos dois sentidos).
+    # `dias_restantes` e obrigatorio no schema, mas o `9999` fica como rede: uma
+    # linha sem prazo iria para o fim em vez de estourar a comparacao.
+    alertas = sorted(alertas, key=lambda a: getattr(a, "dias_restantes", None) or 9999,
+                     reverse=(ordem == "desc"))
+
+    from services import vigencias_export as vx
+    dados = vx.normalizar(alertas, municipios)
+
+    # Nome do cliente no cabecalho: quando o recorte e de UM municipio, ele nomeia
+    # o documento; com varios, quem nomeia e o tenant. Sem isto o arquivo sai da
+    # plataforma sem dizer de quem e.
+    nomes = [t["municipio"] for t in dados["totais"]]
+    titulo_cliente = nomes[0] if len(nomes) == 1 else ""
+
+    hoje = date.today().strftime("%Y-%m-%d")
+    if formato == "xlsx":
+        conteudo = vx.gerar_xlsx(dados, dias=dias, municipios=municipios,
+                                 titulo_cliente=titulo_cliente)
+        mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        nome_arq = f"vigencias_{dias}d_{hoje}.xlsx"
+    else:
+        conteudo = vx.gerar_pdf(dados, dias=dias, municipios=municipios,
+                                titulo_cliente=titulo_cliente)
+        mime = "application/pdf"
+        nome_arq = f"vigencias_{dias}d_{hoje}.pdf"
+
+    await _registrar_export(
+        db, request=request, current=current, tipo="vigencias",
+        # Sem `municipio_id`: o recorte pode ser de varios municipios de uma vez.
+        # Quais foram fica em `filtros`, que e o campo feito para isso.
+        registros=dados["geral"]["qtd"], arquivo=nome_arq,
+        filtros={"dias": dias, "formato": formato, "ordem": ordem,
+                 "municipios": sorted(municipios) or "todos os do alcance",
+                 "municipios_no_arquivo": dados["geral"]["municipios"]},
+    )
+    return StreamingResponse(
+        BytesIO(conteudo), media_type=mime,
         headers={"Content-Disposition": f"attachment; filename={nome_arq}"})
 
 
