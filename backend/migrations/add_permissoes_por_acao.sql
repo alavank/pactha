@@ -172,6 +172,12 @@ INSERT INTO permissoes_catalogo (chave, secao, escrita) VALUES
     -- mesma razao de `usuarios.modelos`: e aqui que mora a tabela-catalogo que
     -- serve de chave estrangeira.
     ('vigencias.ver', 'bi', FALSE),
+    -- Exportar as vigencias (08/2026). Entra NESTA semente, e nao numa migration
+    -- propria, pelo motivo escrito no topo do bloco: e aqui que mora a
+    -- tabela-catalogo que serve de chave estrangeira, e a semente roda a cada
+    -- boot com DO NOTHING — entao a chave nova passa a ser gravavel nos quatro
+    -- tenants que ja estao no ar sem migration nenhuma.
+    ('vigencias.exportar', 'bi', FALSE),
     ('ai.usar', 'ia', TRUE),
     ('ai.exportar', 'ia', TRUE),
     ('cofre.ver', 'cofre', FALSE),
@@ -324,6 +330,12 @@ WITH marca AS (
         -- quem ja tem Convenios Estaduais continua vendo o botao exatamente
         -- como antes, e a caixinha nova serve para liberar QUEM NAO TEM.
         ('convenios', 'vigencias.ver', FALSE),
+        -- Mesma historia de `vigencias.ver`: linha obrigatoria no mapa (senao o
+        -- teste de semente quebra) e alcance so de BANCO NOVO, porque este bloco
+        -- e guardado pela marca em `migration_backfills`. Nos tenants que ja
+        -- subiram ninguem perde: o endpoint aceita `convenios.exportar` OU
+        -- `vigencias.exportar`, e quem exporta Convenios continua exportando.
+        ('convenios', 'vigencias.exportar', FALSE),
         -- IA: hoje quem abre a tela conversa e exporta
         ('ai', 'ai.usar', FALSE),
         ('ai', 'ai.exportar', FALSE),

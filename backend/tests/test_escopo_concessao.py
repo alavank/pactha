@@ -366,7 +366,8 @@ def test_o_alcance_nao_virou_permissao_do_catalogo():
     Junta-las dobraria o catalogo e criaria duas caixinhas que se contradizem.
 
     O total sobe quando uma permissao NOVA entra no catalogo (Incremento 7
-    acrescentou `usuarios.modelos`); o que este teste guarda e a ausencia de
+    acrescentou `usuarios.modelos`; 08/2026, `vigencias.exportar`, para o botao
+    Exportar do modal de Vigencias); o que este teste guarda e a ausencia de
     caixinha de ALCANCE — `gestao.editar_proprios` e a forma que foi recusada."""
-    assert len(permissoes.CATALOGO) == 68
+    assert len(permissoes.CATALOGO) == 69
     assert not any("propri" in c for c in permissoes.CATALOGO)
