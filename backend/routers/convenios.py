@@ -555,7 +555,30 @@ async def alertas_vigencia(
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
-    ensure_municipio_access(current, municipio_id)
+    # ⚠️ SO quando o pedido NOMEIA um municipio. Sem `municipio_id` o pedido
+    # significa "a minha carteira inteira", e quem resolve isso com o recorte
+    # certo e o bloco de `permitidos` trinta linhas abaixo — que existe
+    # EXATAMENTE para este caso e, ate aqui, era codigo morto.
+    #
+    # A guarda chamada com None negava ANTES de qualquer checagem de
+    # permissao: ela levanta 403 ("Selecione um municipio permitido") para
+    # TODO MUNDO que nao seja super-admin, e nega nos DOIS modos de
+    # AUTHZ_MODO (ver services/auth.py). Como o botao «Vigencias <=120d» do
+    # Painel de Indicadores pede sem municipio (components/bi/VigenciasModal.tsx),
+    # ele so funcionava para o super-admin — que e justamente quem testa.
+    #
+    # MEDIDO NO FREITAS (24/08/2026), no log do freitas-api:
+    #   GET /api/convenios/alertas?dias=120 -> 403 Forbidden, em serie
+    #   GET /api/bi/alertas?municipio_id=8  -> 200 OK
+    # E o modal traduz 403 em «voce nao tem acesso», entao conceder
+    # `vigencias.ver` nao mudava NADA na tela e o administrador jurava que a
+    # caixinha nova nao pegava. O 403 nunca vinha da permissao.
+    #
+    # ⚠️ Isto NAO alarga acesso: sem municipio o alcance continua sendo o do
+    # `permitidos` abaixo (carteira do usuario; vazia devolve []), e o gate de
+    # permissao logo em seguida continua valendo igual.
+    if municipio_id is not None:
+        ensure_municipio_access(current, municipio_id)
     # ⚠️ A ORDEM IMPORTA, e ela e o que garante "nada muda para quem ja
     # funciona hoje": quem NAO tem a caixinha nova cai exatamente nas duas
     # travas de antes, na mesma sequencia e com as mesmas mensagens. A caixinha
