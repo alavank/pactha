@@ -794,10 +794,10 @@ def _situacao_com_marcas(situacao, pendente_empenho: bool,
     sit = situacao or ""
     marcas: list[str] = []
     if pendente_empenho:
-        marcas.append("PENDENTE DE EMPENHO")
+        marcas.append("Pendente de empenho")
     vd = valor_desembolsado or 0
     if licitacao_aceita and vd == 0:
-        marcas.append("PENDENTE DE DESEMBOLSO")
+        marcas.append("Pendente de desembolso")
     elif vd > 0:
         marcas.append(f"Desembolsado: {_fmt_brl(valor_desembolsado)}")
     if not marcas:
@@ -1550,7 +1550,13 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             _sit_classifica = "Pagamento integral realizado" if _pago_100 else sit_efetivo
             sl = _sit_classifica.lower()
             # Situacao exibida: mostra o plano de acao + o plano de trabalho.
-            sit_pt = sit_trab.replace("_", " ").strip()
+            # ⚠️ `frase(...)` AQUI, e nao la no renderizador. O portal manda este
+            # campo em caixa alta ("APROVADO"), e depois de composto ele vira
+            # UM segmento de caixa MISTA ("Plano de Trabalho: APROVADO") — que a
+            # guarda do `texto_rm` protege de proposito, para nao estragar texto
+            # ja correto nem o que o usuario editou a mao. Ou seja: normalizado
+            # depois da composicao, nunca seria. Tem de ser antes.
+            sit_pt = frase(sit_trab.replace("_", " ").strip())
             sit_te = sit.replace("_", " ").strip()
             if sit_pt and sit_te.lower() != sit_pt.lower():
                 sit_te = f"{sit_te} · Plano de Trabalho: {sit_pt}"
@@ -1564,9 +1570,9 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             if _medido and _pago_100:
                 _txt_pg = f"Pago integralmente: {_fmt_brl(_vd_te)}"
             elif _medido and (_vd_te or 0) > 0:
-                _txt_pg = f"Desembolsado: {_fmt_brl(_vd_te)} · PENDENTE DE DESEMBOLSO"
+                _txt_pg = f"Desembolsado: {_fmt_brl(_vd_te)} · Pendente de desembolso"
             elif _medido and (_pg_te.get("obs") or _pg_te.get("pendentes")):
-                _txt_pg = "PENDENTE DE DESEMBOLSO"   # ha empenho/DH e nada saiu
+                _txt_pg = "Pendente de desembolso"   # ha empenho/DH e nada saiu
             else:
                 _txt_pg = ""
             if _txt_pg:

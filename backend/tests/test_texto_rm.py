@@ -209,13 +209,39 @@ def test_normalizar_item_usa_nome_proprio_no_parlamentar_e_frase_no_objeto():
 
 
 # --------------------------------------------------------------------------
-# Marcadores do relatorio: caixa alta DE PROPOSITO
+# Marcadores do relatorio: PRESERVADOS COMO O BUILDER ESCREVEU
+#
+# ⚠️ Eles eram caixa alta e deixaram de ser (pedido do dono, 08/2026). O que
+# `_MARCAS` garante NÃO é "caixa alta" — é "não mexa neste segmento, ele é meu".
 # --------------------------------------------------------------------------
 def test_os_avisos_do_relatorio_nao_sao_rebaixados():
-    # São o sinal visual que o rm_builder acrescenta (_situacao_com_marcas);
-    # virar "Pendente de desembolso" apagaria o aviso junto com o defeito.
+    # A grafia de HOJE, que o rm_builder escreve.
+    assert frase("Pendente de desembolso") == "Pendente de desembolso"
+    assert frase("Pendente de empenho") == "Pendente de empenho"
+
+
+def test_a_grafia_ANTIGA_do_marcador_tambem_e_preservada():
+    """⚠️ COMPATIBILIDADE COM RM JÁ EMITIDO. O `conteudo` de um relatório antigo
+    está congelado no JSONB com a forma em caixa alta; reimprimi-lo tem de sair
+    como saiu. Funciona porque a comparação de `_MARCAS` é por `_chave` (sem
+    acento, caixa alta) — a mesma entrada casa as duas grafias."""
     assert frase("PENDENTE DE DESEMBOLSO") == "PENDENTE DE DESEMBOLSO"
     assert frase("PENDENTE DE EMPENHO") == "PENDENTE DE EMPENHO"
+
+
+def test_o_valor_do_plano_de_trabalho_tem_de_vir_normalizado_DA_ORIGEM():
+    """⚠️ O TESTE QUE EXPLICA ONDE O CONSERTO TEVE DE FICAR.
+
+    O portal manda `situacao_plano_trabalho` em caixa alta ("APROVADO"). Depois
+    de composto, o segmento vira "Plano de Trabalho: APROVADO" — caixa MISTA — e
+    a guarda do módulo o devolve intacto, de propósito (é ela que impede estragar
+    texto já correto e o que o usuário editou à mão na tela).
+
+    Ou seja: normalizado DEPOIS da composição, nunca seria. Por isso o
+    `rm_builder` aplica `frase()` no valor ANTES de montar a frase."""
+    assert frase("Plano de Trabalho: APROVADO") == "Plano de Trabalho: APROVADO"
+    # E o valor sozinho — que é o que o builder passa por `frase()` — normaliza:
+    assert frase("APROVADO") == "Aprovado"
 
 
 def test_a_situacao_composta_padroniza_so_o_lado_da_fonte():
