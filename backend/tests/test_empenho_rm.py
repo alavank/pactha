@@ -109,13 +109,23 @@ def test_outros_Termo_de_NAO_casam():
 
 # ---------------------------------------------------------------------------
 # _situacao_com_marcas — NÃO-REGRESSÃO do texto que já saía
+#
+# ⚠️ OS MARCADORES SAÍRAM DO CAIXA ALTA em 08/2026 (pedido do dono: «APROVADO e
+# PENDENTE DE DESEMBOLSO ainda está em caixa alta»). A ideia original era
+# «gritar na página»; na prática o caixa alta virou ruído no meio de um texto
+# todo em sentence case.
+#
+# O conjunto `texto_rm._MARCAS` continua protegendo os dois — a comparação lá é
+# por `_chave`, que remove acento e sobe a caixa, então a MESMA entrada casa as
+# duas grafias. Isso mantém o RM ANTIGO intacto: o `conteudo` já emitido guarda
+# a forma em caixa alta e reimprimi-lo continua saindo como saiu.
 # ---------------------------------------------------------------------------
 def test_sem_o_marcador_novo_a_string_sai_identica_a_de_antes():
     assert _situacao_com_marcas("Em execução", False, True, 0) == \
-        "Em execução · PENDENTE DE DESEMBOLSO"
+        "Em execução · Pendente de desembolso"
     assert _situacao_com_marcas("Em execução", False, False, 280000.0) == \
         "Em execução · Desembolsado: R$ 280.000,00"
-    assert _situacao_com_marcas("", False, True, 0) == "PENDENTE DE DESEMBOLSO"
+    assert _situacao_com_marcas("", False, True, 0) == "Pendente de desembolso"
     assert _situacao_com_marcas("Aprovada", False, False, 0) == "Aprovada"
     assert _situacao_com_marcas("", False, False, None) == ""
 
@@ -124,9 +134,9 @@ def test_o_empenho_vem_ANTES_do_desembolso():
     # A ordem é a da esteira do dinheiro: não se desembolsa o que não foi
     # empenhado.
     assert _situacao_com_marcas("Em execução", True, True, 0) == \
-        "Em execução · PENDENTE DE EMPENHO · PENDENTE DE DESEMBOLSO"
+        "Em execução · Pendente de empenho · Pendente de desembolso"
 
 
 def test_pendente_de_empenho_sozinho():
     assert _situacao_com_marcas("Assinado", True, False, 0) == \
-        "Assinado · PENDENTE DE EMPENHO"
+        "Assinado · Pendente de empenho"

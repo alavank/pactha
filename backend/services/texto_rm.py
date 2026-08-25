@@ -128,10 +128,18 @@ _TOKENS = re.compile(r"[^\W_]+|[\W_]+", re.UNICODE)
 # ("Em execucao · PENDENTE DE DESEMBOLSO").
 _FIM_DE_FRASE = frozenset(".!?·\n")
 
-# MARCADORES do relatorio: caixa alta DE PROPOSITO, e nao texto que o portal
-# escreveu torto. Sao os avisos que o rm_builder ACRESCENTA a `situacao_atual`
-# (ver _situacao_com_marcas) e existem para gritar na pagina — rebaixa-los a
-# "Pendente de desembolso" apagaria justamente o sinal, e ninguem pediu isso.
+# MARCADORES do relatorio: os avisos que o rm_builder ACRESCENTA a
+# `situacao_atual` (ver _situacao_com_marcas), e nao texto que o portal escreveu
+# torto. O que esta entrada garante e: PRESERVE COMO O BUILDER ESCREVEU.
+#
+# ⚠️ NASCERAM EM CAIXA ALTA e deixaram de ser (pedido do dono, 08/2026): a ideia
+# era "gritar na pagina", e na pratica o caixa alta virou ruido no meio de um
+# texto em sentence case. Hoje o builder escreve "Pendente de desembolso" e este
+# conjunto continua valendo INTACTO — a comparacao e por `_chave`, que remove
+# acento e sobe a caixa, entao a mesma entrada casa as duas grafias. Isso importa
+# para o RM ANTIGO: o `conteudo` ja emitido guarda a forma em caixa alta, e
+# reimprimi-lo continua saindo como saiu, sem o `frase()` rebaixar o marcador de
+# um documento que ja circulou.
 #
 # So valem como SEGMENTO INTEIRO entre os separadores ` · ` que o builder usa;
 # a palavra "pendente" no meio de uma frase do portal segue sendo padronizada.

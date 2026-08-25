@@ -42,6 +42,18 @@ _LOGO_ALT = _LOGO_ALT_CM * cm
 _MARGENS_CM = (4.5, 3.0, 2.0, 1.5)
 _CAB_DIST_CM = 1.6      # distância da borda ao cabeçalho
 _ROD_DIST_CM = 0.8      # distância da borda ao rodapé
+# Largura da A4. Em constante pelo motivo do bloco acima: o `rm_docx` precisava
+# dela em DOIS lugares (`sec.page_width` e o cálculo da área útil) e cravava
+# `21.0` nos dois, enquanto aqui ela vinha de `A4[0]`. Mesma medida, três fontes.
+_PAG_LARG_CM = 21.0
+
+# E-mail do cabeçalho: tamanho e cor, LIDOS PELOS DOIS RENDERIZADORES.
+# ⚠️ Estes dois números nasceram duplicados — 9pt/#334155 cravados aqui e de novo
+# em `rm_docx._ESTILOS["cabecalho_email"]`. É exatamente o mecanismo que o
+# comentário de `_LOGO_ALT_CM` descreve: "cravar o número em cada um faz o ajuste
+# ser feito só no PDF, e o Word sair diferente — sem erro e sem teste".
+_EMAIL_TAM = 9
+_EMAIL_COR = "#334155"
 
 # GLIFOS DA HIERARQUIA VISUAL (docstring do modulo). Ficam em constante porque
 # valem para TODO renderizador do RM. Repetir o caractere solto em cada um e o
@@ -79,6 +91,25 @@ def _fmt_money(v: Any) -> str:
     s = f"{v:,.2f}"
     s = s.replace(",", "X").replace(".", ",").replace("X", ".")
     return f"R$ {s}"
+
+
+def _uma_linha(v) -> str:
+    """Colapsa espaço, TAB e quebra de linha num espaço só.
+
+    ⚠️ NÃO É COSMÉTICO. O ReportLab COLAPSA `\\n` e `\\t` em espaço ao montar o
+    Paragraph; o python-docx faz o oposto — converte em `<w:br/>` e `<w:tab/>`.
+    O mesmo valor (o `objeto` de um convênio copiado do portal costuma trazer
+    quebras) sairia numa linha no PDF e em três no Word, com tabulação no meio.
+
+    ⚠️ MORA AQUI, e não no `rm_docx` onde nasceu, porque agora os DOIS
+    renderizadores a usam — e a direção do import é `rm_docx → rm_pdf`. Defini-la
+    lá e importá-la aqui fecharia um ciclo. `rm_docx` a reexporta pelo import, de
+    modo que `from services.rm_docx import _uma_linha` continua funcionando.
+
+    No e-mail do cabeçalho ela importa de verdade: um `\\t` colado junto com o
+    endereço empurraria o texto para a tabulação seguinte no Word — e no Word o
+    e-mail é posicionado JUSTAMENTE por tabulação."""
+    return " ".join(str(v).split())
 
 
 def _meses_pt(n: int) -> str:
@@ -131,7 +162,7 @@ def _styles():
     )
     s["grupo_titulo"] = ParagraphStyle(
         "GrupoTitulo", parent=base["Normal"], fontName="Helvetica-Bold",
-        # ⭐ spaceBefore=26 (era 10): o `●` abre um TÓPICO NOVO — outro órgão,
+        # ⭐ spaceBefore=38 (era 10, depois 26): o `●` abre um TÓPICO NOVO — outro órgão,
         # outro programa — e vinha com quase o mesmo respiro que separa um campo
         # do outro dentro do mesmo instrumento. Numa página cheia, "Transferência
         # Especial (Emenda Pix)" colava na caixa de desembolso do convênio
@@ -140,7 +171,12 @@ def _styles():
         # O número é maior que o `spaceBefore=14` do `item_id` DE PROPÓSITO: a
         # hierarquia tem de aparecer no espaço em branco antes de aparecer na
         # fonte. Tópico > instrumento > campo, e o respiro segue a mesma ordem.
-        fontSize=10.5, spaceBefore=26, spaceAfter=4, leftIndent=4, leading=15.75,)
+        #
+        # 26 ainda ficou apertado no papel (o dono pediu de novo, com o print do
+        # «42000 - Ministério da Cultura» logo abaixo de uma caixa de obra): 38 é
+        # ~1,34 cm de branco, quase o triplo do respiro entre instrumentos, e é o
+        # que faz o tópico ser visto ANTES de ser lido.
+        fontSize=10.5, spaceBefore=38, spaceAfter=4, leftIndent=4, leading=15.75,)
     s["item_id"] = ParagraphStyle(
         "ItemId", parent=base["Normal"], fontName="Helvetica-Bold",
         # spaceBefore=14 (era 4): o identificador do instrumento estava colado no
@@ -231,35 +267,50 @@ def _on_page(canvas, doc, rodape_txt: str, email_txt: str = ""):
     _logo = _logo_path()
     if _logo:
         try:
-            canvas.drawImage(_logo, 2 * cm, A4[1] - 1.6 * cm - _LOGO_ALT,
+            canvas.drawImage(_logo, _MARGENS_CM[2] * cm,
+                             A4[1] - _CAB_DIST_CM * cm - _LOGO_ALT,
                              width=_LOGO_ALT * 2, height=_LOGO_ALT,
                              preserveAspectRatio=True, anchor="sw", mask="auto")
         except Exception:
             pass          # logo ilegivel nunca derruba a emissao
-    # ⭐ E-MAIL A DIREITA, na MESMA faixa do logo (pedido do dono). O logo ocupa
-    # de 2cm ate 2cm+_LOGO_ALT*2 na esquerda; aqui e a borda direita, alinhado
-    # pela direita para o texto crescer para dentro e nunca invadir a margem.
+    # ⭐ E-MAIL A DIREITA, na MESMA faixa do logo (pedido do dono).
     #
-    # A altura e o MEIO do logo, e nao o topo dele: alinhado pelo topo, um e-mail
-    # de uma linha ficava pendurado ao lado de uma marca de 1,8cm e lia-se como
-    # legenda solta. `A4[1] - 1.6cm - _LOGO_ALT/2` poe os dois no mesmo eixo
-    # optico, e o `- 3` compensa a linha de base da fonte (o `drawRightString`
-    # posiciona a BASE do texto, nao o centro).
+    # ⚠️ A BORDA E `_MARGENS_CM[3]`, A MARGEM DIREITA — e escrever `2 * cm` aqui
+    # foi um defeito de verdade, corrigido depois de embarcado. `2 * cm` e o valor
+    # da margem ESQUERDA: parece certo porque o logo ao lado usa o mesmo numero, e
+    # o resultado punha o e-mail a 19,00 cm enquanto o numero da pagina, a borda
+    # util e a tabulacao do Word estavam todos a 19,50. Meio centimetro fora, no
+    # mesmo documento, e nada acusa — nao ha teste que compare PDF e Word, e 5 mm
+    # nao saltam aos olhos de quem nao esta procurando.
+    #
+    # ⚠️ A ALTURA E O MEIO OPTICO DO LOGO, e o Word e ajustado para acompanhar (um
+    # `w:position` que sobe o run em `_LOGO_ALT/2`), NAO o contrario. No Word a
+    # imagem inline assenta o PE na linha de base, entao o padrao de la poria o
+    # e-mail pendurado ABAIXO do logo, como legenda solta. Convergir pelo padrao
+    # do Word seria mais barato de escrever e pior de olhar.
+    #
+    # Sem o `- 3` que havia aqui: era uma correcao a olho da linha de base, e um
+    # numero magico de um lado so e justamente o que faz os dois formatos
+    # divergirem de novo na proxima mudanca.
     #
     # ⚠️ Sai em TODAS as paginas, como o logo — e pelo mesmo motivo: o .docx de
     # referencia nao marca `titlePg`, entao o cabecalho padrao vale desde a
     # primeira. Um contato que aparece so na capa some quando alguem imprime ou
     # encaminha uma pagina do meio.
     if email_txt:
-        canvas.setFont("Helvetica", 9)
-        canvas.setFillColor(colors.HexColor("#334155"))
-        canvas.drawRightString(A4[0] - 2 * cm,
-                               A4[1] - 1.6 * cm - _LOGO_ALT / 2 - 3,
-                               email_txt)
+        canvas.setFont("Helvetica", _EMAIL_TAM)
+        canvas.setFillColor(colors.HexColor(_EMAIL_COR))
+        canvas.drawRightString(A4[0] - _MARGENS_CM[3] * cm,
+                               A4[1] - _CAB_DIST_CM * cm - _LOGO_ALT / 2,
+                               _uma_linha(email_txt))
     canvas.setFont("Helvetica", 8)
     canvas.setFillColor(colors.HexColor("#475569"))
-    canvas.drawCentredString(A4[0] / 2, 0.8 * cm, rodape_txt)
-    canvas.drawRightString(A4[0] - 1.5 * cm, 0.8 * cm, str(doc.page))
+    canvas.drawCentredString(A4[0] / 2, _ROD_DIST_CM * cm, rodape_txt)
+    # A MESMA borda do e-mail acima. Era `1.5 * cm` cravado — o valor certo, por
+    # coincidencia, ja que `_MARGENS_CM[3]` e 1,5: mexer na margem direita movia
+    # um e deixava o outro.
+    canvas.drawRightString(A4[0] - _MARGENS_CM[3] * cm, _ROD_DIST_CM * cm,
+                           str(doc.page))
     canvas.restoreState()
 
 

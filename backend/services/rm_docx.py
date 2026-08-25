@@ -29,8 +29,9 @@ from docx.oxml.ns import qn
 from docx.shared import Cm, Pt, RGBColor
 
 from services.rm_pdf import (
-    _CAB_DIST_CM, _GLIFO_CAMPO, _GLIFO_GRUPO, _LOGO_ALT_CM, _MARGENS_CM,
-    _ROD_DIST_CM, _logo_path, roteiro_rm,
+    _CAB_DIST_CM, _EMAIL_COR, _EMAIL_TAM, _GLIFO_CAMPO, _GLIFO_GRUPO,
+    _LOGO_ALT_CM, _MARGENS_CM, _PAG_LARG_CM, _ROD_DIST_CM, _logo_path,
+    _uma_linha, roteiro_rm,
 )
 
 # ⚠️ ORDEM DO SCHEMA ECMA-376 — A ARMADILHA DESTE ARQUIVO.
@@ -98,14 +99,14 @@ _ESTILOS = {
     # as tags `➢`) e tiveram de mudar NOS DOIS ARQUIVOS. Não há teste comparando
     # PDF e Word página a página: se um sair sem o outro, ninguém percebe até
     # alguém abrir os dois lado a lado.
-    "grupo_titulo":     dict(tam=10.5, negrito=True, antes=26, depois=4, esq=4),
+    "grupo_titulo":     dict(tam=10.5, negrito=True, antes=38, depois=4, esq=4),
     "item_id":          dict(tam=10, negrito=True, antes=14, depois=2, esq=28),
     "item_campo":       dict(tam=9.5, alin="justificado", depois=1, esq=28),
     "rodape":           dict(tam=8, cor="#475569"),
     # E-mail do cabeçalho, à direita do logo. Mesmos 9pt/#334155 do
     # `drawRightString` em `rm_pdf._on_page`. Sem `alin`: quem posiciona é a
     # tabulação, exatamente como no `rodape` logo acima.
-    "cabecalho_email":  dict(tam=9, cor="#334155"),
+    "cabecalho_email":  dict(tam=_EMAIL_TAM, cor=_EMAIL_COR),
     "clausula":         dict(tam=9.5, esq=28, dir=10, antes=3, depois=3,
                              cor="#7c2d12", fundo="#FEF3C7", borda="#D97706"),
     "informativo":      dict(tam=9.5, esq=28, dir=10, antes=3, depois=3,
@@ -227,14 +228,12 @@ def _run(p, texto: str, estilo: str, negrito=False, italico=False):
     return r
 
 
-def _uma_linha(v) -> str:
-    """Colapsa espaco, TAB e quebra de linha num espaco so.
-
-    ⚠️ NAO E COSMETICO. O ReportLab COLAPSA `\\n` e `\\t` em espaco ao montar o
-    Paragraph; o python-docx faz o oposto — converte em `<w:br/>` e `<w:tab/>`.
-    O mesmo valor (o `objeto` de um convenio copiado do portal costuma trazer
-    quebras) sairia numa linha no PDF e em tres no Word, com tabulacao no meio."""
-    return " ".join(str(v).split())
+# ⚠️ `_uma_linha` MUDOU DE CASA — mora em `services/rm_pdf.py` e chega pelo import
+# no topo. Saiu daqui quando o e-mail do cabeçalho passou a precisar dela nos DOIS
+# renderizadores: a direção do import é `rm_docx → rm_pdf`, então mantê-la aqui e
+# importá-la lá fecharia um ciclo. Quem faz `from services.rm_docx import
+# _uma_linha` (é o caso de `tests/test_rm_docx.py`) continua funcionando, porque o
+# import a reexporta.
 
 
 # --------------------------------------------------------------- MINI-HTML ----
@@ -299,7 +298,7 @@ def _montar_secao(doc, rodape_txt: str, email_txt: str = "") -> None:
     sec = doc.sections[0]
     # A4 — o template padrao do python-docx e CARTA (Letter). Sem estas duas
     # linhas o Word abriria o RM em 21,59 x 27,94 cm.
-    sec.page_width = Cm(21.0)
+    sec.page_width = Cm(_PAG_LARG_CM)
     sec.page_height = Cm(29.7)
     # As MESMAS medidas do PDF, lidas da mesma constante (rm_pdf._MARGENS_CM):
     # topo, base, esquerda, direita. Cravar os numeros aqui faria "aumentar a
@@ -336,12 +335,28 @@ def _montar_secao(doc, rodape_txt: str, email_txt: str = "") -> None:
     # ⚠️ `_limpar_tabulacoes` ANTES de por a nossa, pelo motivo documentado na
     # propria funcao: as tabulacoes do estilo Letter herdado sao CUMULATIVAS, e
     # a 4680 twips empurraria o e-mail para o meio da pagina.
+    #
+    # ⚠️ E O `w:position` E QUE FAZ O E-MAIL FICAR AO LADO DO LOGO, E NAO SOB ELE.
+    # No Word a imagem inline assenta o PE na linha de base do paragrafo, e um run
+    # de texto no MESMO paragrafo compartilha essa linha de base — ou seja, o
+    # padrao poe o e-mail pendurado ABAIXO de uma marca de 1,8 cm, lido como
+    # legenda solta. O PDF mira o MEIO OPTICO do logo (`_LOGO_ALT / 2` acima do pe
+    # dele), e e o Word que se ajusta: `w:position` sobe o run pela mesma metade.
+    #
+    # O valor sai de `_LOGO_ALT_CM` — nao e numero magico: trocar a altura do logo
+    # move os dois formatos juntos. A unidade e MEIO PONTO (a mesma do `w:sz`),
+    # entao sao `cm -> pt -> meios-pontos`: 28,3465 pt/cm x 2.
     if email_txt:
         _limpar_tabulacoes(cab)
-        _util = 21.0 - _MARGENS_CM[2] - _MARGENS_CM[3]
+        _util = _PAG_LARG_CM - _MARGENS_CM[2] - _MARGENS_CM[3]
         cab.paragraph_format.tab_stops.add_tab_stop(
             Cm(_util), WD_TAB_ALIGNMENT.RIGHT)
-        _run(cab, "	" + email_txt, "cabecalho_email")
+        # `_uma_linha`: um `\t` ou `\n` que viesse junto no valor pararia na
+        # tabulacao SEGUINTE — e aqui a tabulacao e justamente quem posiciona.
+        r = _run(cab, "\t" + _uma_linha(email_txt), "cabecalho_email")
+        pos = OxmlElement("w:position")
+        pos.set(qn("w:val"), str(round(_LOGO_ALT_CM / 2 * 28.3465 * 2)))
+        r._r.get_or_add_rPr().append(pos)
 
     rod = sec.footer.paragraphs[0]
     _formatar(rod, "rodape")
@@ -351,7 +366,7 @@ def _montar_secao(doc, rodape_txt: str, email_txt: str = "") -> None:
     # PDF (`drawCentredString` + `drawRightString`). No Word isso e uma tabulacao
     # centrada no meio da area util e outra alinhada a direita na borda dela.
     _limpar_tabulacoes(rod)          # ⚠️ ANTES de por as nossas — ver a funcao
-    util = 21.0 - _MARGENS_CM[2] - _MARGENS_CM[3]      # area util em cm
+    util = _PAG_LARG_CM - _MARGENS_CM[2] - _MARGENS_CM[3]   # area util em cm
     tabs = rod.paragraph_format.tab_stops
     tabs.add_tab_stop(Cm(util / 2), WD_TAB_ALIGNMENT.CENTER)
     tabs.add_tab_stop(Cm(util), WD_TAB_ALIGNMENT.RIGHT)

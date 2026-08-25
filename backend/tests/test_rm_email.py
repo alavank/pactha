@@ -149,8 +149,14 @@ def test_pdf_desenha_o_email_A_DIREITA_na_faixa_do_logo():
     achou = [(x, y) for x, y, t in c.direita if t == EMAIL]
     assert len(achou) == 1, c.direita
     x, y = achou[0]
-    # Alinhado pela direita na margem (A4 tem 595,3pt; 2cm = 56,7pt).
-    assert abs(x - (A4[0] - 2 * cm)) < 0.5
+    # ⚠️ `_MARGENS_CM[3]` (a margem DIREITA), e não um literal. A 1ª versão deste
+    # teste afirmava `A4[0] - 2 * cm` — o mesmo engano do código que ele deveria
+    # vigiar, porque os dois saíram da mesma suposição errada. Teste escrito a
+    # partir da implementação confirma a implementação, inclusive quando ela está
+    # errada; por isso a asserção agora vem da constante da margem.
+    from services.rm_pdf import _MARGENS_CM
+
+    assert abs(x - (A4[0] - _MARGENS_CM[3] * cm)) < 0.5
     # E na FAIXA DO LOGO, no topo — não junto ao rodapé.
     assert y > A4[1] / 2
 
@@ -197,6 +203,58 @@ def test_word_NAO_herda_as_tabulacoes_de_papel_carta():
 
 
 # --------------------------------------------------- os dois formatos ---------
+def test_PDF_e_WORD_poem_o_email_NA_MESMA_COLUNA():
+    """⚠️ O TESTE QUE FALTAVA — e a ausência dele deixou um defeito passar.
+
+    A 1ª versão escreveu `A4[0] - 2 * cm` no `drawRightString`, e `2 cm` é a
+    margem ESQUERDA (`_MARGENS_CM[2]`); a direita é 1,5. O e-mail saía a 19,00 cm
+    no PDF enquanto o número da página, a borda útil e a tabulação do Word estavam
+    todos a 19,50. Meio centímetro de divergência entre os dois formatos do mesmo
+    relatório, sem nada acusando — não há nada mais que compare PDF e Word.
+
+    A conta do Word: a tabulação é medida A PARTIR DA MARGEM ESQUERDA no OOXML,
+    então a coluna absoluta é `margem_esq + área_útil`."""
+    from services.rm_pdf import _MARGENS_CM, _PAG_LARG_CM
+
+    c = _CanvasEspiao()
+    _on_page(c, _Doc(), "rodapé", EMAIL)
+    x_pdf_cm = [x for x, _, t in c.direita if t == EMAIL][0] / cm
+
+    xml = _cabecalho_xml({**META, "email": EMAIL})
+    twips = int(re.search(r'<w:tab w:val="right" w:pos="(\d+)"/>'
+                          r'|<w:tab w:pos="(\d+)" w:val="right"/>', xml)
+                .group(1) or re.search(r'w:pos="(\d+)" w:val="right"', xml).group(1))
+    x_word_cm = _MARGENS_CM[2] + twips / 567.0      # 1 cm = 567 twips
+
+    assert abs(x_pdf_cm - x_word_cm) < 0.02, f"PDF {x_pdf_cm:.2f} vs Word {x_word_cm:.2f}"
+    # E os dois na borda útil de verdade — não num número que só por acaso coincide.
+    assert abs(x_pdf_cm - (_PAG_LARG_CM - _MARGENS_CM[3])) < 0.02
+
+
+def test_o_numero_da_pagina_usa_a_MESMA_borda_do_email():
+    """Dentro do próprio PDF: o e-mail no topo e o número da página no pé têm de
+    cair na mesma coluna. Era aqui que os 19,00 contra 19,50 apareciam a olho nu,
+    numa página impressa, para quem soubesse olhar."""
+    c = _CanvasEspiao()
+    _on_page(c, _Doc(), "rodapé", EMAIL)
+    xs = {t: x for x, _, t in c.direita}
+    assert abs(xs[EMAIL] - xs["1"]) < 0.01
+
+
+def test_word_sobe_o_email_para_o_MEIO_do_logo():
+    """⚠️ Sem `w:position` o e-mail sai SOB o logo, não ao lado: no Word a imagem
+    inline assenta o pé na linha de base, e o run de texto compartilha essa linha.
+    O valor é derivado de `_LOGO_ALT_CM` — trocar a altura do logo move os dois
+    formatos juntos."""
+    from services.rm_pdf import _LOGO_ALT_CM
+
+    xml = _cabecalho_xml({**META, "email": EMAIL})
+    m = re.search(r'<w:position w:val="(\d+)"/>', xml)
+    assert m, "o run do e-mail não subiu — ele sairia pendurado abaixo do logo"
+    # meios-pontos -> cm, e tem de bater com metade da altura do logo
+    assert abs(int(m.group(1)) / 2 / 28.3465 - _LOGO_ALT_CM / 2) < 0.02
+
+
 def test_os_DOIS_formatos_recebem_o_email():
     """PDF e Word saem do mesmo `meta`. Este teste falha no dia em que alguém
     acrescentar um campo de cabeçalho em só um dos renderizadores — que é
