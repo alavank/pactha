@@ -30,8 +30,8 @@ from docx.shared import Cm, Pt, RGBColor
 
 from services.rm_pdf import (
     _CAB_DIST_CM, _EMAIL_COR, _EMAIL_TAM, _GLIFO_CAMPO, _GLIFO_GRUPO,
-    _LOGO_ALT_CM, _MARGENS_CM, _PAG_LARG_CM, _ROD_DIST_CM, _logo_path,
-    _uma_linha, roteiro_rm,
+    _LOGO_ALT_CM, _LOGO_LARG_CM, _MARGENS_CM, _PAG_LARG_CM, _ROD_DIST_CM,
+    _logo_path, _uma_linha, roteiro_rm,
 )
 
 # ⚠️ ORDEM DO SCHEMA ECMA-376 — A ARMADILHA DESTE ARQUIVO.
@@ -319,11 +319,33 @@ def _montar_secao(doc, rodape_txt: str, email_txt: str = "") -> None:
     _logo = _logo_path()
     if _logo:
         try:
-            # A mesma altura do PDF (`rm_pdf._LOGO_ALT_CM`). Aqui so a ALTURA e
-            # fixada (a largura acompanha a proporcao); o PDF ainda limita a
-            # largura ao dobro. Nenhum dos quatro brasoes/logos passa de 2:1,
-            # entao na pratica os dois cabecalhos saem do mesmo tamanho.
-            cab.add_run().add_picture(_logo, height=Cm(_LOGO_ALT_CM))
+            # A MESMA CAIXA DO PDF: altura `_LOGO_ALT_CM`, largura limitada a
+            # `_LOGO_LARG_CM`. O PDF consegue isso de graca com
+            # `preserveAspectRatio` dentro de uma caixa; aqui nao ha caixa — o
+            # `add_picture` com so uma dimensao escala a outra sem teto nenhum.
+            #
+            # ⚠️ SEM ESTE CALCULO OS DOIS DIVERGEM em marca muito larga: acima de
+            # ~3,2:1 o PDF passa a limitar pela largura (e a altura cai), e o Word
+            # continuaria com 1,8 cm de altura e transbordaria a faixa. Descobrir
+            # isso depois seria "o Word saiu diferente do PDF" — o defeito que a
+            # constante compartilhada existe para evitar.
+            #
+            # A leitura do tamanho natural e do proprio python-docx (nao acrescenta
+            # dependencia). Falhando, cai no comportamento antigo: so a altura.
+            _larg = None
+            try:
+                from docx.image.image import Image as _Img
+                _im = _Img.from_file(_logo)
+                if _im.px_height:
+                    _prop = _im.px_width / _im.px_height
+                    if _prop * _LOGO_ALT_CM > _LOGO_LARG_CM:
+                        _larg = Cm(_LOGO_LARG_CM)      # larga demais: manda a largura
+            except Exception:
+                _larg = None
+            if _larg is not None:
+                cab.add_run().add_picture(_logo, width=_larg)
+            else:
+                cab.add_run().add_picture(_logo, height=Cm(_LOGO_ALT_CM))
         except Exception:
             pass          # logo ilegivel nunca derruba a emissao (igual ao PDF)
     # ⭐ E-MAIL A DIREITA, na MESMA linha do logo — o equivalente Word do
