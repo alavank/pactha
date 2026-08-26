@@ -167,6 +167,14 @@ interpolado: [`INFRA.md`](INFRA.md) §5.
 
 ## 6. PENDÊNCIAS
 
+> 📍 **O backlog por estado vive em [`docs/BACKLOG_POR_ESTADO.md`](docs/BACKLOG_POR_ESTADO.md).**
+> Ele confere o plano da auditoria de 17/08/2026 contra o repositório (conferência de
+> 25/08: **o plano não foi executado**) e lista, na ordem de prioridade do dono
+> — **MG → RS → GO → ES → TO** —, o que falta em cada estado, com arquivo/linha já
+> verificados. As decisões da Onda 0 e o achado do CAGEC (falha em massa em 17-18/08)
+> estão lá. Ler antes de abrir frente nova de cobertura estadual.
+
+
 ### 6.1 Domínios definitivos (`*.pactha.com.br`)
 As três instâncias ainda respondem por `*.sslip.io`. A landing (`pactha.com.br`) e a Central de Comando (`control-center.pactha.com.br`) já usam domínio próprio. Falta decidir/criar os DNS `A` → `54.232.208.118` para os apps dos clientes e trocar os domínios no Coolify (`PATCH /applications/<uuid>` + redeploy). Lembre de ajustar `FRONTEND_URL`/`CORS_ORIGIN_REGEX` na API e rebuildar o frontend (env build-time).
 
