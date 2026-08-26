@@ -262,3 +262,54 @@ def test_os_DOIS_formatos_recebem_o_email():
     m = {**META, "email": EMAIL}
     assert gerar_pdf(m, CONTEUDO, "Araújos") != gerar_pdf(META, CONTEUDO, "Araújos")
     assert EMAIL in _cabecalho_xml(m)
+
+
+# ---------------------------------------------------------------------------
+# CAIXA DO LOGO — marca LARGA não pode sair encolhida
+#
+# A caixa era 3,6 × 1,8 cm. Com `preserveAspectRatio` manda a dimensão que
+# estoura primeiro, então uma marca de ~3:1 batia na LARGURA e descia para ~1,2 cm
+# de altura — um terço menor que um brasão quase quadrado ao lado. Não era corte,
+# era encolhimento, que é mais difícil de perceber.
+# ---------------------------------------------------------------------------
+def test_a_caixa_comporta_marca_larga_com_a_ALTURA_INTEIRA():
+    from services.rm_pdf import _LOGO_ALT_CM, _LOGO_LARG_CM
+
+    # o logo do Freitas é ~2,8:1; a caixa tem de aguentar isso sem encolher
+    assert _LOGO_LARG_CM / _LOGO_ALT_CM >= 2.8
+
+
+def test_alargar_a_caixa_NAO_mexe_no_brasao_quase_quadrado():
+    """⚠️ O teste que torna a mudança segura para os outros três tenants. Marca
+    limitada pela ALTURA sai igual, porque quem manda é a dimensão que estoura
+    primeiro — e para ela a largura nunca foi o limite."""
+    from services.rm_pdf import _LOGO_ALT_CM, _LOGO_LARG_CM
+
+    for prop in (512 / 487, 1.0, 1.5, 2.0):        # Monte Sião, quadrado, etc.
+        larg = prop * _LOGO_ALT_CM
+        assert larg <= _LOGO_LARG_CM, (
+            f"proporção {prop:.2f}:1 passou a ser limitada pela largura")
+
+
+def test_a_caixa_cabe_na_faixa_ANTES_do_email():
+    """O logo começa na margem esquerda e o e-mail é alinhado à direita. A caixa
+    não pode crescer a ponto de encostar num no outro."""
+    from services.rm_pdf import _LOGO_LARG_CM, _MARGENS_CM, _PAG_LARG_CM
+
+    fim_do_logo = _MARGENS_CM[2] + _LOGO_LARG_CM
+    inicio_do_email = _PAG_LARG_CM - _MARGENS_CM[3]
+    assert fim_do_logo < inicio_do_email - 2.0, "logo perto demais do e-mail"
+
+
+def test_o_WORD_usa_a_MESMA_caixa_do_PDF():
+    """⚠️ O `add_picture` com uma dimensão só escala a outra SEM TETO. Sem o
+    cálculo, acima de ~3,2:1 o PDF passa a limitar pela largura e o Word
+    continuaria com 1,8 cm de altura, transbordando a faixa — e a divergência só
+    apareceria com os dois documentos abertos lado a lado."""
+    import inspect
+
+    from services import rm_docx
+
+    src = inspect.getsource(rm_docx._montar_secao)
+    assert "_LOGO_LARG_CM" in src, "o Word não conhece o teto de largura"
+    assert "px_width" in src and "px_height" in src

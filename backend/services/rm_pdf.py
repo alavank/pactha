@@ -36,6 +36,22 @@ from reportlab.platypus import (
 # outro tamanho — sem erro e sem teste que compare os dois documentos.
 _LOGO_ALT_CM = 1.8
 _LOGO_ALT = _LOGO_ALT_CM * cm
+# ⭐ LARGURA MÁXIMA DA CAIXA — era `_LOGO_ALT * 2` (3,6 cm), e isso ENCOLHIA marca
+# larga. Com `preserveAspectRatio` a imagem cabe INTEIRA na caixa, e quem manda é
+# a dimensão que estourar primeiro: uma marca de ~3:1 batia na LARGURA e descia
+# para ~1,2 cm de altura, um terço menor que a de um brasão quase quadrado ao
+# lado. Não era corte — era encolhimento, que é pior de perceber.
+#
+# ⚠️ ALARGAR A CAIXA NÃO MEXE EM NADA QUE JÁ ESTAVA CERTO. Brasão quase quadrado
+# (Monte Sião 512×487, Santa Maria) é limitado pela ALTURA, não pela largura —
+# continua saindo exatamente do mesmo tamanho. A caixa maior só deixa de apertar
+# quem era largo.
+#
+# 5,8 cm comporta até ~3,2:1 com a altura inteira. O espaço existe: o logo começa
+# na margem esquerda (2,0 cm) e o e-mail do cabeçalho é alinhado à direita em
+# 19,5 — sobram 17,5 cm de faixa, e 5,8 não chega perto de encostar.
+_LOGO_LARG_CM = 5.8
+_LOGO_LARG = _LOGO_LARG_CM * cm
 # Margens medidas no .docx do padrão Freitas (sectPr/pgMar): topo, base, esq, dir.
 # ASSIMÉTRICAS de propósito — a margem superior larga é o espaço do cabeçalho, e
 # a direita é menor que a esquerda (documento pensado para encadernação).
@@ -269,7 +285,7 @@ def _on_page(canvas, doc, rodape_txt: str, email_txt: str = ""):
         try:
             canvas.drawImage(_logo, _MARGENS_CM[2] * cm,
                              A4[1] - _CAB_DIST_CM * cm - _LOGO_ALT,
-                             width=_LOGO_ALT * 2, height=_LOGO_ALT,
+                             width=_LOGO_LARG, height=_LOGO_ALT,
                              preserveAspectRatio=True, anchor="sw", mask="auto")
         except Exception:
             pass          # logo ilegivel nunca derruba a emissao
