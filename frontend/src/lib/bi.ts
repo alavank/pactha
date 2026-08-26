@@ -307,6 +307,32 @@ export interface AbaTransfereGov {
   };
   em_execucao: VoluntariaItem[];
   por_ano: Array<{ ano: number; qtd: number; valor: number }>;
+  /** Painel de ATUALIZAÇÕES: o que mudou de status na janela recente.
+   *
+   *  ⚠️ Vem do backend com `dias` JUNTO, e a tela imprime esse número em vez de
+   *  escrever "15" — se um dia a janela mudar no servidor, o rótulo acompanha.
+   *  Um painel que diz "últimos 15 dias" mostrando 30 é pior que um sem rótulo.
+   *
+   *  Opcional no tipo por causa da janela de skew entre os deploys: backend e
+   *  frontend sobem por workflows independentes, e o frontend novo pode falar
+   *  com um backend que ainda não devolve o campo. */
+  mudancas?: {
+    items: MudancaStatus[];
+    total: number;
+    dias: number;
+  };
+}
+
+/** Uma mudança de status registrada pelo trigger `log_status_change`. */
+export interface MudancaStatus {
+  id: number;
+  fonte: string;
+  ref: string | null;
+  orgao: string | null;
+  objeto: string | null;
+  status_anterior: string | null;
+  status_novo: string | null;
+  changed_at: string | null;
 }
 
 export interface Lancamento {

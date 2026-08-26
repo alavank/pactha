@@ -555,6 +555,76 @@ export function AbaParlamentaresView({ d, tv }: AbaProps & { d: AbaParlamentares
 // TransfereGov
 // ==========================================================================
 
+/** PAINEL DE ATUALIZAÇÕES — o que mudou de status na janela recente.
+ *
+ *  A fonte é a tabela `status_changes`, escrita por um TRIGGER `AFTER UPDATE`:
+ *  quando o coletor reescreve a `situacao` de uma proposta, o próprio banco
+ *  registra o par (antes, depois). Não há coleta nova por trás deste painel.
+ *
+ *  ⚠️ TRÊS ESTADOS, e confundi-los é o defeito clássico deste tipo de aviso:
+ *    - `undefined`  → o backend ainda não devolve o campo (janela de skew entre
+ *                     os deploys, que sobem por workflows independentes);
+ *    - `items: []`  → consultamos e NADA mudou no período. É informação;
+ *    - com itens    → a lista.
+ *  Desenhar os dois primeiros como o mesmo "nenhuma atualização" faria um
+ *  backend desatualizado se passar por semana tranquila.
+ */
+function PainelAtualizacoes({ m, tv }: { m: AbaTransfereGov["mudancas"]; tv?: boolean }) {
+  return (
+    <Painel className="min-h-0">
+      <PainelHead
+        icon={RefreshCw}
+        titulo="Atualizações"
+        /* O número de dias vem do BACKEND, não escrito aqui: é ele quem define a
+           janela da consulta. Cravar "15" nos dois lados faria o rótulo mentir no
+           dia em que a janela do servidor mudasse. */
+        sub={m ? `mudanças de status nos últimos ${m.dias} dias` : undefined}
+      />
+      {!m ? (
+        <Vazio>Atualizações indisponíveis neste servidor.</Vazio>
+      ) : m.items.length === 0 ? (
+        <Vazio>Nenhuma proposta federal mudou de status nos últimos {m.dias} dias.</Vazio>
+      ) : (
+        <ul className="bi-scroll flex min-h-0 flex-col gap-1.5 overflow-y-auto pr-1"
+            style={{ maxHeight: tv ? "12rem" : "17rem" }}>
+          {m.items.slice(0, tv ? 5 : 40).map((it) => (
+            <li key={it.id} className="bi-card-flat px-2.5 py-2">
+              <div className="flex items-baseline gap-2">
+                <span className="truncate text-[12px] font-medium">
+                  {it.objeto || it.ref || "—"}
+                </span>
+                <span className="bi-num ml-auto shrink-0 text-[10px]"
+                      style={{ color: "var(--bi-faint)" }}>
+                  {formatDataCurta(it.changed_at)}
+                </span>
+              </div>
+              {/* A MUDANÇA é o conteúdo do painel — não o item. Por isso o par
+                  antes → depois aparece inteiro, e não só a situação atual: essa
+                  já está na lista de propostas logo acima. */}
+              <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px]">
+                <span className="rounded px-1.5 py-0.5 line-through"
+                      style={{ background: "var(--bi-surface-2)", color: "var(--bi-faint)" }}>
+                  {it.status_anterior || "sem situação"}
+                </span>
+                <span style={{ color: "var(--bi-faint)" }}>→</span>
+                <span className="rounded px-1.5 py-0.5 font-medium"
+                      style={{ background: "var(--bi-ok-bg, #DCFCE7)", color: "var(--bi-ok-ink, #166534)" }}>
+                  {it.status_novo || "sem situação"}
+                </span>
+              </div>
+              <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[10px]"
+                   style={{ color: "var(--bi-faint)" }}>
+                {it.ref && <span>{it.ref}</span>}
+                {it.orgao && <span className="truncate">· {it.orgao}</span>}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Painel>
+  );
+}
+
 export function AbaTransfereGovView({ d, tv }: AbaProps & { d: AbaTransfereGov }) {
   const v = d.voluntarias;
   return (
@@ -566,6 +636,11 @@ export function AbaTransfereGovView({ d, tv }: AbaProps & { d: AbaTransfereGov }
         <Metric icon={Activity} tom="ok" label="Em execução" valor={formatInt(v.em_execucao)}
           sub={d.pac.total ? `${formatInt(d.pac.total)} no Novo PAC` : undefined} grande={tv} />
       </div>
+
+      {/* Logo abaixo dos números e ACIMA dos recortes: é a única coisa desta aba
+          que responde "o que aconteceu desde a última vez que olhei". Enterrado no
+          fim, viraria rodapé de uma tela que ninguém rola até o fim. */}
+      <PainelAtualizacoes m={d.mudancas} tv={tv} />
 
       <div className={grid(tv, "grid grid-cols-1 min-h-0 gap-3 lg:grid-cols-3", "grid min-h-0 flex-1 grid-cols-3 gap-3")}>
         <Painel className="min-h-0">

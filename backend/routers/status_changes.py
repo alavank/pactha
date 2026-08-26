@@ -30,18 +30,38 @@ def _clean(s):
     return s.replace("�", "").replace("  ", " ").strip()
 
 
+# As `fonte` que o trigger grava, e o motivo de existirem por escrito aqui.
+#
+# ⚠️ A DO TRANSFEREGOV E `voluntaria`, NAO `transferegov`. Quem escreve e o
+# `log_status_change` (migrations/add_status_changes.sql): a tabela de origem e
+# `transferegov_propostas`, mas o rotulo gravado e `voluntaria`. Filtrar por
+# 'transferegov' devolveria ZERO linhas — sem erro, sem log, com um painel vazio
+# que se le como "nada mudou". E o mesmo nome tem outro significado em
+# `scraper_municipio_coleta.fonte`, onde 'transferegov' EXISTE: duas colunas
+# chamadas `fonte`, com vocabularios diferentes, a poucas linhas uma da outra.
+FONTE_VOLUNTARIAS = "voluntaria"
+FONTE_SIGCON = "sigcon"
+FONTE_FNS = "fns"
+
+
 async def listar_core(
     db: AsyncSession,
     municipio_ids: list[int],
     days: int = 30,
     limit: int = 100,
+    fontes: tuple[str, ...] | None = None,
 ) -> dict:
     """Nucleo SET-AWARE das mudancas de status, SEM gate de auth. Varre um
     CONJUNTO de municipios (`= ANY(:mids)`); para [X] === por-municipio. Reusado
-    pelo endpoint /api/status-changes e pelo Painel de Indicadores (BI)."""
+    pelo endpoint /api/status-changes e pelo Painel de Indicadores (BI).
+
+    `fontes` recorta por origem (ver as constantes acima). `None` = todas, que e
+    o comportamento historico e o que os dois chamadores antigos continuam
+    recebendo sem mudar uma linha."""
     if not municipio_ids:
         return {"items": [], "total": 0}
-    rows = (await db.execute(text("""
+    _filtro = "AND fonte = ANY(:fontes)" if fontes else ""
+    rows = (await db.execute(text(f"""
         SELECT id, fonte, tabela, ref, orgao, objeto,
                status_anterior, status_novo, changed_at
         FROM status_changes
@@ -49,9 +69,11 @@ async def listar_core(
           AND changed_at >= NOW() - make_interval(days => :days)
           AND length(trim(coalesce(objeto, ''))) > 3
           AND coalesce(ref, '') !~* 'n[aã]o h'
+          {_filtro}
         ORDER BY changed_at DESC
         LIMIT :lim
-    """), {"mids": list(municipio_ids), "days": days, "lim": limit})).fetchall()
+    """), {"mids": list(municipio_ids), "days": days, "lim": limit,
+           **({"fontes": list(fontes)} if fontes else {})})).fetchall()
     items = [{
         "id": r[0],
         "fonte": r[1],

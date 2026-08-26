@@ -49,7 +49,13 @@ from models.user import User
 from routers.cauc import fetch_cauc_situacao
 from routers.parlamentares import aggregate_parlamentares
 from routers.convenios import query_alertas_vigencia, query_prestacao_contas
-from routers.status_changes import listar_core
+from routers.status_changes import FONTE_VOLUNTARIAS, listar_core
+
+# Janela do painel de ATUALIZACOES da aba TransfereGov, em dias (pedido do dono:
+# "de ate 15 dias para tras"). Em constante porque o numero aparece na consulta E
+# no rotulo que a tela imprime — cravado nos dois, um dia diriam coisas
+# diferentes, e o painel mentiria sobre a propria janela.
+_DIAS_ATUALIZACOES = 15
 from services import authz
 
 router = APIRouter(prefix="/api/bi", tags=["bi"])
@@ -520,12 +526,37 @@ async def aba_transferegov(
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
-    """Aba 'TransfereGov': voluntarias + Novo PAC + o que esta em execucao."""
+    """Aba 'TransfereGov': voluntarias + Novo PAC + o que esta em execucao,
+    mais o painel de ATUALIZACOES (mudancas de status recentes)."""
     _gate_bi(current)
     ids, cons = await resolve_scope(db, current, municipio_id)
     periodo = _periodo(ano, anos)
+
+    async def _montar():
+        d = await bi_transferegov(db, ids, periodo)
+        # ⭐ PAINEL DE ATUALIZACOES (pedido do dono): o que MUDOU DE STATUS nos
+        # ultimos 15 dias. Vem da tabela `status_changes`, alimentada por TRIGGER
+        # AFTER UPDATE — ou seja, e o proprio banco que registra a diferenca
+        # quando o coletor reescreve a situacao. Nao ha coleta nova envolvida.
+        #
+        # ⚠️ `FONTE_VOLUNTARIAS` E `'voluntaria'`, e nao `'transferegov'` — ver a
+        # constante. O rotulo errado devolveria zero linhas e o painel diria
+        # "nada mudou" para sempre, sem erro nenhum.
+        #
+        # ⚠️ NAO RESPEITA `periodo`, DE PROPOSITO. O filtro de ano da aba recorta
+        # o ACERVO ("propostas de 2025"); este painel responde outra pergunta —
+        # "o que mexeu nos ultimos 15 dias" — e uma proposta de 2023 que mudou
+        # ontem e exatamente a novidade que interessa. Cruzar os dois esconderia
+        # a mudanca mais relevante justamente quando alguem filtrasse um ano.
+        # Por isso a chave do cache tambem nao leva o periodo neste pedaco: ele e
+        # o mesmo para qualquer recorte de ano.
+        d["mudancas"] = await listar_core(db, ids, _DIAS_ATUALIZACOES, 40,
+                                          fontes=(FONTE_VOLUNTARIAS,))
+        d["mudancas"]["dias"] = _DIAS_ATUALIZACOES
+        return d
+
     key = f"tg|{scope_signature(ids, cons)}|a={anos_signature(periodo)}"
-    return await _aba_cacheada(key, lambda: bi_transferegov(db, ids, periodo))
+    return await _aba_cacheada(key, _montar)
 
 
 @router.get("/parlamentares/detalhe", dependencies=[exige("bi.ver")])
