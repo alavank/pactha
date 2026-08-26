@@ -160,11 +160,15 @@ class _PaginaFalsa:
     selecionado e receber a casca."""
 
     def __init__(self, linhas, url="https://discricionarias.transferegov.sistema.gov.br/x",
-                 texto_detalhe="Dados da Proposta"):
+                 texto_detalhe="Dados da Proposta", vazio_declarado=False):
         # `linhas` vira o payload do JS: `None` = a grade não estava na página.
-        self._payload = ({"linhas": linhas, "cab_na_linha": 0} if linhas is not None
+        # `vazio_declarado` = a página traz "Nenhum registro foi encontrado" —
+        # é ele, e só ele, que autoriza o `[]` que APAGA.
+        self._payload = ({"linhas": linhas, "cab_na_linha": 0,
+                          "vazio_declarado": vazio_declarado} if linhas is not None
                          else {"linhas": None, "tabelas": 1, "tem_dt": False,
-                               "bytes": 51896, "saml": False, "assinaturas": []})
+                               "bytes": 51896, "saml": False, "assinaturas": [],
+                               "vazio_declarado": vazio_declarado})
         self._texto_detalhe = texto_detalhe
         self.url = url
         self.visitou = []
@@ -210,14 +214,29 @@ def test_grade_ausente_devolve_None_e_NUNCA_apaga():
     assert _colher(_PaginaFalsa(None)) is None
 
 
-def test_tela_aberta_e_vazia_e_LISTA():
-    assert _colher(_PaginaFalsa([])) == []
+def test_tela_aberta_e_vazia_COM_A_FRASE_e_lista_vazia():
+    assert _colher(_PaginaFalsa([], vazio_declarado=True)) == []
+
+
+def test_grade_vazia_SEM_a_frase_NAO_apaga():
+    """⚠️ O caso que quase entrou em produção. Grade vazia sem "Nenhum registro
+    foi encontrado" é indeterminado — `[]` gravaria `'[]'` e o COALESCE apagaria
+    os empenhos que já estavam lá."""
+    assert _colher(_PaginaFalsa([], vazio_declarado=False)) is None
 
 
 def test_linha_sem_numero_e_sem_minuta_e_descartada():
-    r = _colher(_PaginaFalsa([{"numero": None, "minuta": None, "valor": "R$ 5,00",
-                               "valor_siafi": None, "situacao": "x", "dt_emissao": None}]))
-    assert r == []
+    """E se TODAS forem descartadas, o resultado é `None`, não `[]`: ler linhas e
+    nenhuma servir é sinal de tabela errada — o rodapé "Voltar", por exemplo — e
+    afirmar "não há empenho" ali apagaria os de verdade.
+
+    ⚠️ É a SEGUNDA porta do mesmo portão: aqui a lista chegou NÃO vazia do JS, e
+    quem a zerou foi o filtro. Uma guarda só no JS não fecharia este caminho."""
+    lixo = {"numero": None, "minuta": None, "valor": "R$ 5,00",
+            "valor_siafi": None, "situacao": "x", "dt_emissao": None}
+    assert _colher(_PaginaFalsa([lixo])) is None
+    # com a frase do portal, o vazio é uma afirmação legítima
+    assert _colher(_PaginaFalsa([lixo], vazio_declarado=True)) == []
 
 
 def test_sem_sessao_autenticada_nao_tenta():
@@ -345,10 +364,26 @@ def test_o_JS_do_browser_procura_o_cabecalho_ALEM_da_primeira_linha():
 
 
 def test_o_JS_do_browser_tem_a_guarda_das_3_COLUNAS():
-    """Sem ela a tabela de layout que envolve a grade casa primeiro — o mesmo
-    defeito que o teste `_a_grade_DENTRO_de_uma_tabela_de_layout` cobre no lado
-    Python."""
-    assert "h.length < 3" in _js_do_browser()
+    """⚠️ A guarda existia e era INERTE. Ela conta células do cabeçalho, e o JS
+    lia as células com `querySelectorAll('th,td')` — DESCENDENTES. A linha da
+    moldura recebia as próprias células mais todas as da grade de dentro,
+    `h.length` passava de 10, e a guarda nunca disparava.
+
+    Por isso a asserção é NEGATIVA: o que protege não é a guarda estar escrita, é
+    a seleção de células ser direta."""
+    js = _js_do_browser()
+    assert "h.length < 3" in js
+    assert "querySelectorAll('th,td')" not in js, "voltou a ler células DESCENDENTES"
+    assert "querySelectorAll(':scope > th, :scope > td')" in js
+
+
+def test_o_JS_do_browser_le_CELULAS_diretas_nas_linhas_de_dado():
+    """Uma célula com tabelinha de botão dentro acrescentaria células fantasma e
+    deslocaria todas as colunas seguintes — o valor de um empenho iria para o
+    campo do número. O parser HTTP sempre usou `findall("td")` (direto)."""
+    js = _js_do_browser()
+    assert "tr.querySelectorAll('td')" not in js, "voltou a ler células DESCENDENTES"
+    assert "querySelectorAll(':scope > td')" in js
 
 
 def test_o_JS_do_browser_le_linhas_DIRETAS():
@@ -356,6 +391,30 @@ def test_o_JS_do_browser_le_linhas_DIRETAS():
     assert ":scope > tbody > tr" in js and ":scope > tr" in js
     # `querySelectorAll('tr')` solto é o que descia na tabela aninhada
     assert "t.querySelectorAll('tr')" not in js
+
+
+def test_o_JS_do_browser_ANCORA_no_id_da_grade():
+    """`dtEmpenhos` é o único sinal que uma moldura nunca tem — guarda por
+    largura cobre moldura de 1 célula, ancorar no id cobre qualquer largura."""
+    assert "dtEmpenhos' i]" in _js_do_browser()
+
+
+def test_o_browser_NAO_pode_devolver_lista_vazia_sozinho():
+    """⚠️ O defeito mais grave da revisão. `[]` grava `'[]'` e o COALESCE do
+    `_upsert` APAGA os empenhos. E o browser só roda quando o HTTP devolveu None
+    — inclusive quando esse None veio da guarda gêmea do lado HTTP. Ou seja: o
+    primeiro leitor se recusava a apagar e o segundo apagava em seguida, no mesmo
+    instrumento e na mesma rodada.
+
+    Quem decide é o Python, e são DOIS portões: a lista chegar vazia, e o filtro
+    de linha zerar uma lista não vazia."""
+    import inspect
+    from ingestion.transferegov_voluntarias import _extrai_notas_empenho
+
+    src = inspect.getsource(_extrai_notas_empenho).split('"""', 2)[2]
+    assert src.count('r_js.get("vazio_declarado")') >= 2, (
+        "faltou um dos dois portões que impedem o browser de apagar")
+    assert "vazio_declarado: vazioDecl" in _js_do_browser()
 
 
 def test_o_JS_do_browser_NAO_afirma_vazio_sem_a_frase_do_portal():

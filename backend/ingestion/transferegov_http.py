@@ -826,7 +826,18 @@ class TgHttpEnrich:
         recurso — por isso a linha e marcada aqui, na leitura, e nao deixada para
         quem consome adivinhar."""
         doc = _parse(resp)
-        for t in doc.findall(".//table"):
+        # ⭐ A GRADE PRIMEIRO, PELO ID, e a varredura por texto so como queda.
+        # `dtEmpenhos` e o unico sinal que uma tabela de MOLDURA nunca tem — e e o
+        # mesmo id que o caminho do browser ja espera em `wait_for_selector`.
+        #
+        # ⚠️ POR QUE ISTO E NECESSARIO alem da guarda de largura logo abaixo: a
+        # moldura de TRES celulas (menu | conteudo | espacador) passa por `len>=3`,
+        # e `_txt` achata a grade inteira dentro da celula do meio — logo ela tem
+        # "empenho" E "situa" e casa como se fosse o cabecalho. Guarda por largura
+        # cobre moldura de 1 celula; ancorar no id cobre qualquer largura.
+        _tabs = (doc.xpath(".//table[contains(@id, 'dtEmpenhos')]")
+                 + doc.findall(".//table"))
+        for t in _tabs:
             # ⚠️ LINHAS DIRETAS, e nao `.//tr`. O `.//` desce em tabela ANINHADA e
             # mistura as linhas da grade com as de um layout interno — o portal usa
             # tabela dentro de tabela em varias telas.
@@ -851,6 +862,11 @@ class TgHttpEnrich:
                 # devolveria None com a grade a um nivel de distancia.
                 # Cabecalho de verdade tem 6 colunas; moldura tem 1.
                 if len(h) < 3:
+                    continue
+                # ⚠️ E CELULA QUE CONTEM TABELA NAO E CABECALHO, seja qual for a
+                # largura. Mata a moldura por CONSTRUCAO, e nao por contagem: um
+                # cabecalho de verdade tem texto nas celulas, nunca outra grade.
+                if tr.xpath("./th//table|./td//table"):
                     continue
                 k = "|".join(h)
                 if "empenho" in k and "situa" in k:
@@ -896,11 +912,23 @@ class TgHttpEnrich:
             # `_upsert` e COALESCE), e cabecalho certo com zero linhas tambem
             # acontece quando o contexto do instrumento nao trocou e o JSF
             # devolveu a grade ainda nao repovoada. So a frase do portal autoriza.
-            if not out and not re.search(r"Nenhum registro foi encontrado", resp.text, re.I):
-                logger.info("    NEs: grade casou o cabecalho mas veio com ZERO "
-                            "linhas e sem 'Nenhum registro' — indeterminado")
-                return None
-            return out
+            #
+            # ⚠️ A FRASE E PROCURADA NA TABELA QUE CASOU, e nao na pagina inteira.
+            # Solta em qualquer canto do HTML, ela converteria o vazio de uma
+            # tabela ERRADA em `[]` — e `[]` apaga os empenhos de verdade que
+            # estavam a uma tabela de distancia. A grade RichFaces vazia traz o
+            # proprio "Nenhum registro" dentro dela (noDataLabel), entao escopar
+            # nao tira o caso legitimo.
+            _vazio_ok = re.search(r"Nenhum registro foi encontrado", _txt(t), re.I)
+            if out or _vazio_ok:
+                return out
+            # ⚠️ `continue`, NAO `return`. Casar o cabecalho e nao render linha
+            # nenhuma significa quase sempre que a tabela era a errada — e
+            # encerrar a busca aqui deixaria a grade de verdade, que pode estar
+            # logo adiante na pagina, sem ser visitada. Foi assim que uma moldura
+            # de layout conseguiu esconder a grade inteira.
+            logger.info("    NEs: uma tabela casou o cabecalho mas rendeu ZERO "
+                        "linhas e sem 'Nenhum registro' — seguindo a busca")
         if re.search(r"Nenhum registro foi encontrado", resp.text, re.I):
             return []
         # ⚠️ A SEXTA SAIDA — e ela era a MUDA. As cinco de `notas_empenho` (contexto,
