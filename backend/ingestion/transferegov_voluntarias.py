@@ -1230,6 +1230,20 @@ async def _captura_historico_impl(page_auth, id_proposta: str) -> dict | None:
                 }
                 return null;
             };
+            // ⚠️ COLUNA DE BOTAO NAO E DADO. A grade do portal tem uma coluna
+            // "Ações" cujas celulas sao botoes do PrimeFaces, e `textContent`
+            // devolve o ONCLICK inteiro como se fosse texto:
+            //   Baixar arquivoPrimeFaces.cw("CommandButton","widget_tabView…
+            // Isso era gravado no JSONB e a tela imprimia, campo a campo, num
+            // modal que o gestor abre para LER o parecer. Relatado com print
+            // (Arapuá/MG, 26/08/2026).
+            //
+            // Duas defesas, e a segunda e a que importa: o NOME da coluna pode
+            // mudar (ou vir vazio), mas a assinatura do PrimeFaces no valor nao
+            // engana. Vale para o historico tambem — os dois usam este `ler`.
+            const ehAcao = (cab, val) =>
+                /^\\s*a[çc][ãaõo](o|es)\\s*$/i.test(cab || '') ||
+                /PrimeFaces\\.|CommandButton|widget_/.test(val || '');
             const ler = (x) => {
                 if (!x) return [];
                 const out = [];
@@ -1237,8 +1251,13 @@ async def _captura_historico_impl(page_auth, id_proposta: str) -> dict | None:
                     const cells = [...r.querySelectorAll('td')].map(c => norm(c.textContent));
                     if (!cells.length || cells.every(c => !c)) continue;
                     const o = {};
-                    cells.forEach((c, i) => { o[x.heads[i] || ('col' + i)] = c; });
-                    out.push(o);
+                    cells.forEach((c, i) => {
+                        const cab = x.heads[i] || ('col' + i);
+                        if (ehAcao(cab, c)) return;
+                        o[cab] = c;
+                    });
+                    // Linha que so tinha botao nao vira registro vazio.
+                    if (Object.keys(o).length) out.push(o);
                 }
                 return out;
             };

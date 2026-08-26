@@ -1309,7 +1309,25 @@ export default function TransfereGovPropostas({
                 >
                   <div className="mt-1 flex flex-col gap-1.5">
                     {detalhe.documentos_quadro_resumo.map((d, i) => {
-                      const vals = Object.entries(d).filter(([, v]) => v && !/^\s*$/.test(v));
+                      /* ⚠️ O FILTRO TAMBÉM AQUI, e não só no coletor. A coluna
+                         "Ações" da grade do portal é um botão do PrimeFaces, e o
+                         `textContent` dela é o `onclick` inteiro — que estava
+                         sendo gravado no JSONB e impresso campo a campo neste
+                         modal, que é onde o gestor vem LER o parecer.
+
+                         O coletor já não guarda mais isso, mas o JSONB de TODAS
+                         as propostas já coletadas continua com o lixo até a
+                         próxima passagem do lote (2 em 2h, e só as celebradas).
+                         Sem este filtro a tela seguiria feia por dias.
+
+                         A 2ª regra é a que aguenta: o nome da coluna pode mudar,
+                         a assinatura do PrimeFaces no valor não engana. */
+                      const vals = Object.entries(d).filter(
+                        ([k, v]) => v && !/^\s*$/.test(v)
+                          && !/^\s*a[çc][ãaõo](o|es)\s*$/i.test(k)
+                          && !/PrimeFaces\.|CommandButton|widget_/.test(v),
+                      );
+                      if (!vals.length) return null;
                       return (
                         <div key={i} className="bi-card-flat p-3">
                           <Campos cols={1} campos={vals.map(([k, v]) => campo(k, v, { quebra: true }))} />
