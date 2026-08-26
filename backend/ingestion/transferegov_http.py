@@ -827,13 +827,38 @@ class TgHttpEnrich:
         quem consome adivinhar."""
         doc = _parse(resp)
         for t in doc.findall(".//table"):
-            trs = t.findall(".//tr")
+            # ⚠️ LINHAS DIRETAS, e nao `.//tr`. O `.//` desce em tabela ANINHADA e
+            # mistura as linhas da grade com as de um layout interno — o portal usa
+            # tabela dentro de tabela em varias telas.
+            trs = (t.xpath("./thead/tr") + t.xpath("./tbody/tr") + t.xpath("./tr"))
             if not trs:
                 continue
-            heads = [_txt(x).lower() for x in trs[0].xpath("./th|./td")]
-            chave = "|".join(heads)
-            if "empenho" not in chave or "situa" not in chave:
+            # ⚠️ O CABECALHO NEM SEMPRE E A PRIMEIRA LINHA — e este era o defeito.
+            # Num `rich:dataTable` (RichFaces, que e o que esta tela usa) a linha 0
+            # costuma ser um espacador/facet vazio e o cabecalho real e a 1. A
+            # versao anterior lia SO `trs[0]`, nao casava, dava `continue`, e
+            # descartava a grade inteira — em silencio, com a pagina certa em maos.
+            #
+            # Reproduzido em bancada em 25/08/2026: com o cabecalho na 2a linha, o
+            # parser antigo devolve "nao achei" para um HTML que CONTEM a grade.
+            i_cab, heads = None, []
+            for i, tr in enumerate(trs[:4]):
+                h = [_txt(x).lower() for x in tr.xpath("./th|./td")]
+                # ⚠️ `len(h) >= 3` NAO E ENFEITE. Sem isto, a tabela de LAYOUT que
+                # envolve a grade casa primeiro: a celula unica dela, achatada,
+                # contem o texto inteiro da grade de dentro — logo tem "empenho" E
+                # "situa" — e o laco para ali, com zero linhas de dado. O parser
+                # devolveria None com a grade a um nivel de distancia.
+                # Cabecalho de verdade tem 6 colunas; moldura tem 1.
+                if len(h) < 3:
+                    continue
+                k = "|".join(h)
+                if "empenho" in k and "situa" in k:
+                    i_cab, heads = i, h
+                    break
+            if i_cab is None:
                 continue
+            trs = trs[i_cab:]           # o resto do laco conta a partir do cabecalho
 
             def col(frag):
                 for i, h in enumerate(heads):
@@ -867,6 +892,14 @@ class TgHttpEnrich:
                     "situacao": sit, "dt_emissao": g(i_dt),
                     "minuta_apenas": (not numero) or ("minuta" in (sit or "").casefold()),
                 })
+            # ⚠️ GRADE CASADA MAS VAZIA NAO E `[]` SEM CONFIRMACAO. `[]` APAGA (o
+            # `_upsert` e COALESCE), e cabecalho certo com zero linhas tambem
+            # acontece quando o contexto do instrumento nao trocou e o JSF
+            # devolveu a grade ainda nao repovoada. So a frase do portal autoriza.
+            if not out and not re.search(r"Nenhum registro foi encontrado", resp.text, re.I):
+                logger.info("    NEs: grade casou o cabecalho mas veio com ZERO "
+                            "linhas e sem 'Nenhum registro' — indeterminado")
+                return None
             return out
         if re.search(r"Nenhum registro foi encontrado", resp.text, re.I):
             return []
@@ -876,12 +909,26 @@ class TgHttpEnrich:
         # fria?)". Foi o que fez 115 falhas por rodada parecerem sessao morta
         # quando a pagina chegava 200, sem muro SAML e com a sessao quente.
         #
-        # Chegar aqui significa: a pagina veio, mas NENHUMA tabela dela tem um
-        # cabecalho com "empenho" E "situa", e o texto tambem nao traz "Nenhum
-        # registro foi encontrado". Ou o layout mudou, ou a grade e carregada
-        # depois (JSF costuma exigir POST com ViewState), ou a pagina e outra.
-        # O log abaixo mostra QUAL — sem isso o proximo a investigar recomeca do
-        # zero, como eu recomecei.
+        # Chegar aqui significa: a pagina veio, mas em NENHUMA tabela dela as
+        # 4 primeiras linhas trazem um cabecalho com "empenho" E "situa", e o
+        # texto tambem nao traz "Nenhum registro foi encontrado".
+        #
+        # ⚠️ ESTE LOG JA MENTIU UMA VEZ, e o conserto dele e metade do valor
+        # deste bloco. A versao anterior imprimia `len(_cabs)` com o rotulo
+        # "%d tabela(s)" — mas `_cabs` NAO conta tabelas: conta tabelas cuja
+        # PRIMEIRA linha tem texto. Uma grade RichFaces cuja linha 0 e um
+        # espacador vazio nao entrava na conta. O "1 tabela(s)" que saiu em
+        # producao foi lido como prova de que a grade nao estava na pagina, e
+        # mandou a investigacao inteira para o caminho errado ("e JSF por POST
+        # com ViewState"), que nunca chegou a ser demonstrado.
+        #
+        # Agora saem TRES numeros com rotulos honestos, e eles se separam:
+        #   tabelas_dom          — quantas <table> existem, sem filtro nenhum
+        #   tabelas_com_cabecalho— quantas tem 1a linha com texto (o antigo)
+        #   dtEmpenhos_na_arvore — a grade esta no HTML parseado?
+        # `dtEmpenhos_na_arvore=False` com o id presente no `resp.text` cru e a
+        # assinatura de o lxml ter PERDIDO a subarvore — remedio diferente
+        # (parser), e so este log separa os dois casos.
         try:
             _cabs = []
             for _t in doc.findall(".//table"):
@@ -890,26 +937,36 @@ class TgHttpEnrich:
                     _h = "|".join(_txt(x) for x in _trs[0].xpath("./th|./td"))[:70]
                     if _h.strip():
                         _cabs.append(_h)
-            # ⚠️ O QUE A MEDICAO DE 25/08 JA MOSTROU: ~50 KB (nao e o muro SAML
-            # de 3469 bytes), UMA tabela, e o cabecalho dela e "30:00" — o
-            # CONTADOR DE SESSAO do JSF. Ou seja: a pagina da aplicacao chega
-            # inteira e a grade NAO esta nela. Isso e assinatura de JSF que
-            # renderiza a tabela por POST com ViewState, e nao no GET.
-            #
-            # Os campos abaixo sao o que falta para montar esse POST. Ficam no
-            # log de proposito: sem eles, quem for consertar tem de repetir todo
-            # este ciclo de diagnostico — deploy, disputar o lock com o sigcon,
-            # esperar a proxima rodada.
+            # As assinaturas das primeiras linhas de cada tabela: e com elas que
+            # se ve, sem outro deploy, se o cabecalho esta na linha 1 ou 2 e o
+            # que exatamente ele diz. Ficam no log de proposito — sem elas, quem
+            # for consertar repete todo o ciclo: deploy, disputar o lock com o
+            # sigcon, esperar a proxima rodada de 2h.
             _vs = re.search(r'name="javax\.faces\.ViewState"[^>]*value="([^"]{0,40})',
                             resp.text)
             _forms = [f"{f.get('id') or f.get('name') or '?'}->{(f.get('action') or '')[-45:]}"
                       for f in doc.findall(".//form")][:3]
             _ids = [x for x in re.findall(r'id="([^"]{3,60})"', resp.text)
                     if "empenho" in x.lower()][:6]
+            _tabelas = doc.findall(".//table")
+            # A grade esta na ARVORE PARSEADA (nao so no texto cru)?
+            _tem_dt = any("dtempenhos" in (t.get("id") or "").lower()
+                          for t in _tabelas)
+            _assin = []
+            for _t in _tabelas[:6]:
+                _tid = (_t.get("id") or "?")[-28:]
+                _lin = (_t.xpath("./thead/tr") + _t.xpath("./tbody/tr")
+                        + _t.xpath("./tr"))[:3]
+                _assin.append(_tid + "::" + "/".join(
+                    "|".join(_txt(c) for c in tr.xpath("./th|./td"))[:40]
+                    for tr in _lin))
             logger.info(
-                "    NEs: pagina sem a grade — %d bytes, %d tabela(s); cabecalhos=%s | "
+                "    NEs: pagina sem a grade — %d bytes | tabelas_dom=%d | "
+                "tabelas_com_cabecalho=%d | dtEmpenhos_na_arvore=%s | "
+                "assinaturas=%s | cabecalhos=%s | "
                 "ViewState=%s | forms=%s | ids c/ 'empenho'=%s",
-                len(resp.content), len(_cabs), (_cabs[:3] or "nenhum"),
+                len(resp.content), len(_tabelas), len(_cabs), _tem_dt,
+                (_assin[:4] or "nenhuma"), (_cabs[:3] or "nenhum"),
                 (_vs.group(1)[:24] + "..." if _vs else "AUSENTE"),
                 (_forms or "nenhum"), (_ids or "nenhum"))
         except Exception:
