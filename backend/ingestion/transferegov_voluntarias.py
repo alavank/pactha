@@ -1363,47 +1363,106 @@ def _num_br(s):
 
 
 async def _extrai_notas_empenho(page_auth, id_proposta: str) -> list | None:
-    """NEs pelo BROWSER — o caminho que a tela de empenhos exige.
+    """NEs pelo BROWSER — a segunda tentativa, quando o HTTP não traz a grade.
 
-    ⚠️ POR QUE ESTA FUNÇÃO EXISTE, medido em 25/08/2026. `TgHttpEnrich
-    .notas_empenho` faz um GET em `listarEmpenhosNovoSiafi.jsf` e recebe uma
-    página de ~52 KB — inteira, com a sessão quente, sem muro SAML — cuja ÚNICA
-    tabela é o contador de sessão do JSF ("30:00"). A grade de empenhos NÃO vem
-    no GET: `.jsf` renderiza a tabela por POST com ViewState.
+    ⚠️ A EXPLICAÇÃO ANTERIOR DESTA DOCSTRING ESTAVA ERRADA, e vale registrar por
+    quê. Ela afirmava que `listarEmpenhosNovoSiafi.jsf` "renderiza a tabela por
+    POST com ViewState" e que o GET só devolve casca. Isso NUNCA foi demonstrado:
+    nasceu de uma linha de diagnóstico que imprimia "1 tabela(s)" quando o número
+    era, na verdade, "1 tabela COM TEXTO NA PRIMEIRA LINHA" — e uma grade
+    RichFaces cuja linha 0 é um espaçador vazio não entrava naquela conta.
 
-    É o que separa esta tela das duas que funcionam por HTTP: Licitações e
-    Projeto Básico são `.do` (Struts) e respondem no GET. A diferença estava no
-    sufixo do arquivo.
+    O que está demonstrado (bancada, 25/08/2026):
+      - o parser HTTP procurava o cabeçalho SÓ na primeira linha da tabela, e num
+        `rich:dataTable` ele costuma estar na SEGUNDA. Com o cabeçalho na 2ª
+        linha, o parser antigo devolve "não achei" para um HTML que CONTÉM a
+        grade. Isso foi corrigido em `_le_notas_empenho`;
+      - esta função navegava DIRETO para a `.jsf` sem estabelecer o contexto do
+        instrumento — o `id_proposta` entrava e não era usado. O contexto vive na
+        sessão do servidor e quem o estabelece é um GET no detalhe da proposta
+        (`_seta_contexto`, do lado HTTP), que mora no cookie jar do httpx e NÃO
+        alcança a página do Chromium. Ou seja: o browser pedia a tela de empenhos
+        sem convênio selecionado, e recebia exatamente a casca que se via.
 
-    Escolhi o browser em vez de reproduzir o POST porque o ViewState é um token
-    opaco por sessão e por view: reproduzi-lo é reimplementar o ciclo de vida do
-    JSF, e ele quebra a cada atualização do portal — calado, do mesmo jeito que
-    este defeito ficou calado. O browser paga ~3s por proposta CELEBRADA, e o
-    portão do Código do Instrumento já corta a maioria.
+    Por isso agora ela faz as duas etapas, na ordem: detalhe (contexto) → grade.
+
+    Devolve list (pode ser []) ou None. None = não consegui ler — e NUNCA apaga,
 
     Devolve list (pode ser []) ou None. None = não consegui ler — e NUNCA apaga,
     porque o `_upsert` é COALESCE. `[]` = a tela abriu e não há empenho.
     """
+    # ⚠️ TODA SAÍDA `None` FALA. Escrever este caminho mudo foi repetir, no mesmo
+    # dia, o defeito que o #286 tinha acabado de corrigir no caminho HTTP ("a
+    # sexta saída era muda"): sabia-se que o browser desistia, não em que ponto.
+    _lg = f"    NEs {id_proposta}"
     if page_auth is None:
+        logger.info(f"{_lg}: sem página autenticada (lote sem browser) — nada olhado")
         return None
-    url = ("https://discricionarias.transferegov.sistema.gov.br/voluntarias/"
-           "prestacao/_proposta/empenho/listarEmpenhosNovoSiafi.jsf"
+
+    _BASE = "https://discricionarias.transferegov.sistema.gov.br/voluntarias"
+    # ETAPA 1 — CONTEXTO. Sem isto o portal serve a tela de empenhos SEM convênio
+    # selecionado, e é dessa casca que saiu a hipótese errada do "POST com
+    # ViewState". É o equivalente, no browser, do `_seta_contexto` do lado HTTP —
+    # que não serve aqui porque vive no cookie jar do httpx, não no Chromium.
+    _det = (f"{_BASE}/ConsultarProposta/"
+            f"ResultadoDaConsultaDePropostaDetalharProposta.do?idProposta={id_proposta}&")
+    if not await _goto_with_retry(page_auth, _det, timeout=40000):
+        logger.info(f"{_lg}: contexto — o detalhe da proposta não abriu")
+        return None
+    await page_auth.wait_for_timeout(900)
+    _txt_det = (await page_auth.evaluate("() => document.body.innerText || ''")) or ""
+    # ⚠️ 200 NÃO BASTA, pelo mesmo motivo documentado em `_seta_contexto`: o portal
+    # serve o Principal.do com "Proposta não encontrada" também com 200, e aí o
+    # contexto do instrumento ANTERIOR continua de pé — as NEs sairiam do convênio
+    # errado, caladas. Pior que não coletar.
+    if re.search(r"Proposta n.{0,2}o encontrada", _txt_det, re.I):
+        logger.info(f"{_lg}: contexto — caiu em 'Proposta não encontrada'")
+        return None
+
+    # ETAPA 2 — a grade, agora com o instrumento selecionado na sessão.
+    url = (f"{_BASE}/prestacao/_proposta/empenho/listarEmpenhosNovoSiafi.jsf"
            "?destino=ManterEmpenhoNovoSiafi")
     if not await _goto_with_retry(page_auth, url, timeout=40000):
+        logger.info(f"{_lg}: a tela de empenhos não abriu")
         return None
-    await page_auth.wait_for_timeout(1200)
     u = (page_auth.url or "").lower()
     if "idp.transferegov" in u or "sso.acesso" in u:
+        logger.info(f"{_lg}: redirecionou para o login (sessão morta) — {u[:70]}")
         return None
+    # ESPERA ANCORADA NA GRADE, e não um `wait_for_timeout` fixo. 1,2s era a menor
+    # espera do arquivo para a tela mais pesada. ⚠️ Sem `networkidle`: esta tela
+    # tem o contador de sessão do JSF, que faz XHR periódico e nunca deixa a rede
+    # ficar ociosa — o wait não fecharia nunca.
+    try:
+        await page_auth.wait_for_selector("[id*='dtEmpenhos']", timeout=12000)
+    except Exception:
+        pass          # pode ser a tela vazia legítima; quem decide é o JS abaixo
     # A grade agora existe (o JSF renderizou). Sem ela, não afirmar nada.
-    linhas = await page_auth.evaluate("""() => {
+    r_js = await page_auth.evaluate("""() => {
         const norm = s => (s || '').replace(/\\s+/g, ' ').trim();
-        for (const t of document.querySelectorAll('table')) {
-            const trs = [...t.querySelectorAll('tr')];
+        const tabelas = [...document.querySelectorAll('table')];
+        for (const t of tabelas) {
+            // Linhas DIRETAS: `querySelectorAll('tr')` desce em tabela aninhada e
+            // mistura as linhas da grade com as de um layout interno.
+            const trs = [...t.querySelectorAll(':scope > thead > tr'),
+                         ...t.querySelectorAll(':scope > tbody > tr'),
+                         ...t.querySelectorAll(':scope > tr')];
             if (trs.length < 1) continue;
-            const heads = [...trs[0].querySelectorAll('th,td')].map(x => norm(x.innerText).toLowerCase());
-            const chave = heads.join('|');
-            if (!/empenho/.test(chave) || !/situa/.test(chave)) continue;
+            // ⚠️ O CABEÇALHO PODE ESTAR NA 2ª LINHA — num rich:dataTable a linha 0
+            // costuma ser um espaçador. Ler só trs[0] era o mesmo ponto cego do
+            // parser HTTP, e descartava a grade inteira em silêncio.
+            let iCab = -1, heads = [];
+            for (let i = 0; i < Math.min(trs.length, 4); i++) {
+                const h = [...trs[i].querySelectorAll('th,td')].map(x => norm(x.innerText).toLowerCase());
+                // `h.length >= 3` pelo mesmo motivo do parser HTTP: a tabela de
+                // LAYOUT que envolve a grade tem UMA célula cujo texto achatado
+                // contém a grade inteira — logo casa "empenho" e "situa" — e o
+                // laço pararia nela, com zero linhas de dado.
+                if (h.length < 3) continue;
+                const k = h.join('|');
+                if (/empenho/.test(k) && /situa/.test(k)) { iCab = i; heads = h; break; }
+            }
+            if (iCab < 0) continue;
             const col = f => { for (let i = 0; i < heads.length; i++) if (heads[i].includes(f)) return i; return null; };
             const iSiafi = col('siafi');
             let iVal = null;
@@ -1411,18 +1470,42 @@ async def _extrai_notas_empenho(page_auth, id_proposta: str) -> list | None:
             const idx = {num: col('mero do empenho'), min: col('minuta'),
                          val: iVal, siafi: iSiafi, sit: col('situa'), dt: col('emiss')};
             const out = [];
-            for (const tr of trs.slice(1)) {
+            for (const tr of trs.slice(iCab + 1)) {
                 const c = [...tr.querySelectorAll('td')].map(x => norm(x.innerText));
                 if (!c.some(x => x)) continue;
                 const g = i => (i !== null && i < c.length && c[i]) ? c[i] : null;
                 out.push({numero: g(idx.num), minuta: g(idx.min), valor: g(idx.val),
                           valor_siafi: g(idx.siafi), situacao: g(idx.sit), dt_emissao: g(idx.dt)});
             }
-            return out;
+            return {linhas: out, cab_na_linha: iCab};
         }
-        return /Nenhum registro foi encontrado/i.test(document.body.innerText || '') ? [] : null;
+        // Não achou a grade: devolve o que VIU, para o log não ficar mudo.
+        const corpo = document.body.innerText || '';
+        return {
+            linhas: /Nenhum registro foi encontrado/i.test(corpo) ? [] : null,
+            vazio_declarado: /Nenhum registro foi encontrado/i.test(corpo),
+            tabelas: tabelas.length,
+            tem_dt: tabelas.some(t => /dtEmpenhos/i.test(t.id || '')),
+            bytes: document.documentElement.outerHTML.length,
+            saml: /Post Binding|SAMLResponse/i.test(document.documentElement.outerHTML),
+            assinaturas: tabelas.slice(0, 5).map(t => (t.id || '?').slice(-26) + '::' +
+                [...t.querySelectorAll(':scope > thead > tr, :scope > tbody > tr, :scope > tr')]
+                    .slice(0, 3)
+                    .map(tr => [...tr.querySelectorAll('th,td')].map(x => norm(x.innerText)).join('|').slice(0, 40))
+                    .join('/')),
+        };
     }""")
+    r_js = r_js or {}
+    linhas = r_js.get("linhas")
     if linhas is None:
+        if r_js.get("saml"):
+            logger.info(f"{_lg}: muro SAML na página ({r_js.get('bytes')} bytes) — "
+                        "o SP `prestacao` está frio")
+        else:
+            logger.info(
+                f"{_lg}: a grade não estava na página — {r_js.get('bytes')} bytes, "
+                f"tabelas={r_js.get('tabelas')}, dtEmpenhos_no_dom={r_js.get('tem_dt')}, "
+                f"assinaturas={(r_js.get('assinaturas') or [])[:3]}")
         return None
     out = []
     for r in linhas:

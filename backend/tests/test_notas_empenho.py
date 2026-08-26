@@ -151,12 +151,24 @@ def test_pagina_sem_a_grade_devolve_None_e_DIZ_o_que_veio(caplog):
 # ⚠️ O CAMINHO DO BROWSER — a tela de NEs é JSF e o GET só devolve a casca
 # ---------------------------------------------------------------------------
 class _PaginaFalsa:
-    """O mínimo de uma page do Playwright que `_extrai_notas_empenho` usa."""
+    """O mínimo de uma page do Playwright que `_extrai_notas_empenho` usa.
 
-    def __init__(self, linhas, url="https://discricionarias.transferegov.sistema.gov.br/x"):
-        self._linhas = linhas
+    ⚠️ DUAS ETAPAS, e a ordem importa: a função primeiro abre o DETALHE da
+    proposta (para estabelecer o contexto do instrumento na sessão) e só depois a
+    grade. O 1º `evaluate` lê o texto do detalhe; o 2º devolve o payload da grade.
+    Foi a falta da 1ª etapa que fazia o browser pedir a tela sem convênio
+    selecionado e receber a casca."""
+
+    def __init__(self, linhas, url="https://discricionarias.transferegov.sistema.gov.br/x",
+                 texto_detalhe="Dados da Proposta"):
+        # `linhas` vira o payload do JS: `None` = a grade não estava na página.
+        self._payload = ({"linhas": linhas, "cab_na_linha": 0} if linhas is not None
+                         else {"linhas": None, "tabelas": 1, "tem_dt": False,
+                               "bytes": 51896, "saml": False, "assinaturas": []})
+        self._texto_detalhe = texto_detalhe
         self.url = url
         self.visitou = []
+        self._chamadas = 0
 
     async def goto(self, url, **kw):
         self.visitou.append(url)
@@ -164,8 +176,12 @@ class _PaginaFalsa:
     async def wait_for_timeout(self, _ms):
         return None
 
+    async def wait_for_selector(self, _sel, **kw):
+        return None
+
     async def evaluate(self, _js):
-        return self._linhas
+        self._chamadas += 1
+        return self._texto_detalhe if self._chamadas == 1 else self._payload
 
 
 def _colher(pagina):
@@ -213,3 +229,171 @@ def test_sem_sessao_autenticada_nao_tenta():
 def test_redirect_para_o_login_devolve_None():
     p = _PaginaFalsa([], url="https://idp.transferegov.sistema.gov.br/idp/login")
     assert _colher(p) is None
+
+
+# ---------------------------------------------------------------------------
+# ⭐ O PONTO CEGO DO CABEÇALHO — a causa real, achada em 25/08/2026
+#
+# O parser procurava o cabeçalho SÓ na primeira linha da tabela. Num
+# `rich:dataTable` (RichFaces, que é o que esta tela usa) a linha 0 costuma ser
+# um espaçador/facet vazio e o cabeçalho real é a 1. Sem casar, dava `continue` e
+# descartava a grade inteira — em silêncio, com a página certa em mãos.
+#
+# Pior: a linha de diagnóstico imprimia "1 tabela(s)" quando o número era, na
+# verdade, "1 tabela COM TEXTO NA PRIMEIRA LINHA". Foi essa medição, lida como
+# prova de que a grade não estava na página, que mandou a investigação inteira
+# para o caminho errado ("é JSF por POST com ViewState") — hipótese que nunca
+# chegou a ser demonstrada.
+# ---------------------------------------------------------------------------
+_LINHA_DADOS = """<tr><td>2026NE000320</td><td>202600000325</td>
+    <td>R$ 280.000,00</td><td>R$ 280.000,00</td><td>Enviado</td><td>09/03/2026</td></tr>"""
+_CAB = """<tr><th>Número do Empenho</th><th>Minuta</th><th>Valor do Empenho</th>
+    <th>Valor do Empenho no SIAFI</th><th>Situação</th><th>Data de Emissão</th></tr>"""
+
+
+def _pagina(miolo):
+    """⚠️ COM `<html><body>`: sem eles o lxml descarta a tabela e o teste acusaria
+    o parser por um defeito da fixture. Já aconteceu neste arquivo."""
+    return f"<html><body>{miolo}</body></html>"
+
+
+def test_cabecalho_na_SEGUNDA_linha_e_encontrado():
+    """O caso que quebrava. A linha 0 é o espaçador do RichFaces."""
+    html = _pagina(f"""
+      <table id="contador"><tr><td>30:00</td></tr></table>
+      <table id="formListarEmpenhosNovoSiafi:dtEmpenhos">
+        <thead><tr><td></td><td></td></tr>{_CAB}</thead>
+        <tbody>{_LINHA_DADOS}</tbody>
+      </table>""")
+    out = TgHttpEnrich._le_notas_empenho(_resp(html))
+    assert out is not None, "a grade estava na página e o parser não a viu"
+    assert len(out) == 1 and out[0]["numero"] == "2026NE000320"
+    assert out[0]["valor"] == 280000.0
+
+
+def test_cabecalho_na_primeira_linha_continua_funcionando():
+    """Não-regressão: a forma antiga não pode ter deixado de ser lida."""
+    html = _pagina(f"<table>{_CAB}{_LINHA_DADOS}</table>")
+    out = TgHttpEnrich._le_notas_empenho(_resp(html))
+    assert out and out[0]["numero"] == "2026NE000320"
+
+
+def test_a_grade_DENTRO_de_uma_tabela_de_layout_e_lida_certa():
+    """⚠️ `.//tr` descia na tabela ANINHADA. O portal envolve grades em tabelas de
+    layout, e assim as linhas da de FORA (a moldura) entravam na contagem da grade
+    — a primeira delas virava "cabeçalho" e a leitura saía torta.
+
+    Agora as linhas são filhas DIRETAS: a moldura de fora não casa cabeçalho
+    nenhum, o laço segue para a tabela de dentro, e é ela que é lida."""
+    html = _pagina(f"""
+      <table id="moldura">
+        <tr><td>Execução Concedente</td></tr>
+        <tr><td>
+          <table id="formListarEmpenhosNovoSiafi:dtEmpenhos">
+            <thead>{_CAB}</thead><tbody>{_LINHA_DADOS}</tbody>
+          </table>
+        </td></tr>
+      </table>""")
+    out = TgHttpEnrich._le_notas_empenho(_resp(html))
+    assert out is not None and len(out) == 1, out
+    assert out[0]["numero"] == "2026NE000320"
+
+
+def test_grade_casada_e_VAZIA_sem_confirmacao_devolve_None():
+    """⚠️ `[]` APAGA (o `_upsert` é COALESCE). Cabeçalho certo com zero linhas
+    também acontece quando o contexto do instrumento não trocou e o JSF devolveu
+    a grade ainda não repovoada — afirmar "não há empenho" ali seria inventar."""
+    html = _pagina(f'<table id="dtEmpenhos"><thead>{_CAB}</thead><tbody></tbody></table>')
+    assert TgHttpEnrich._le_notas_empenho(_resp(html)) is None
+
+
+def test_grade_vazia_COM_a_frase_do_portal_e_lista_vazia():
+    html = _pagina(f'<table id="dtEmpenhos"><thead>{_CAB}</thead><tbody></tbody></table>'
+                   "<p>Nenhum registro foi encontrado</p>")
+    assert TgHttpEnrich._le_notas_empenho(_resp(html)) == []
+
+
+def test_pagina_sem_grade_nenhuma_continua_None():
+    html = _pagina('<table id="contador"><tr><td>30:00</td></tr></table>')
+    assert TgHttpEnrich._le_notas_empenho(_resp(html)) is None
+
+
+# ---------------------------------------------------------------------------
+# PARIDADE ENTRE OS DOIS LEITORES
+#
+# A grade é lida em DOIS lugares — o parser HTTP (lxml, testado acima com HTML
+# real) e o JS injetado no browser. Os dois têm de aplicar as MESMAS regras, e
+# não há como exercitar o JS aqui: jsdom não está no projeto e não vale instalar
+# uma dependência para isto.
+#
+# O que dá para garantir é que ninguém conserte um e esqueça o outro — que é
+# exatamente como este defeito nasceu: o `trs[0]` estava errado NOS DOIS, e a
+# primeira correção mexeu só no Python.
+# ---------------------------------------------------------------------------
+def _js_do_browser() -> str:
+    import io
+    from pathlib import Path
+    fonte = Path(__file__).resolve().parent.parent / "ingestion" / "transferegov_voluntarias.py"
+    s = io.open(fonte, encoding="utf-8").read()
+    return s.split('r_js = await page_auth.evaluate("""')[1].split('""")')[0]
+
+
+def test_o_JS_do_browser_procura_o_cabecalho_ALEM_da_primeira_linha():
+    js = _js_do_browser()
+    assert "Math.min(trs.length, 4)" in js, "o JS voltou a olhar só a 1ª linha"
+    assert "iCab" in js and "trs.slice(iCab + 1)" in js
+
+
+def test_o_JS_do_browser_tem_a_guarda_das_3_COLUNAS():
+    """Sem ela a tabela de layout que envolve a grade casa primeiro — o mesmo
+    defeito que o teste `_a_grade_DENTRO_de_uma_tabela_de_layout` cobre no lado
+    Python."""
+    assert "h.length < 3" in _js_do_browser()
+
+
+def test_o_JS_do_browser_le_linhas_DIRETAS():
+    js = _js_do_browser()
+    assert ":scope > tbody > tr" in js and ":scope > tr" in js
+    # `querySelectorAll('tr')` solto é o que descia na tabela aninhada
+    assert "t.querySelectorAll('tr')" not in js
+
+
+def test_o_JS_do_browser_NAO_afirma_vazio_sem_a_frase_do_portal():
+    """Mesma regra do COALESCE: `[]` apaga, e só a frase do portal autoriza."""
+    js = _js_do_browser()
+    assert "Nenhum registro foi encontrado" in js
+
+
+def test_o_browser_estabelece_o_CONTEXTO_antes_de_pedir_a_grade():
+    """⚠️ A etapa que faltava. O `_seta_contexto` do lado HTTP vive no cookie jar
+    do httpx e não alcança o Chromium: sem repetir o GET do detalhe na própria
+    página, o portal serve a tela de empenhos SEM convênio selecionado."""
+    import inspect
+    from ingestion.transferegov_voluntarias import _extrai_notas_empenho
+
+    # ⚠️ SEM A DOCSTRING. Ela CITA as duas URLs, ao explicar o defeito — medir a
+    # ordem no texto inteiro compara a explicação, não o código. A 1ª versão deste
+    # teste caiu nisso e acusou a ordem errada.
+    src = inspect.getsource(_extrai_notas_empenho).split('"""', 2)[2]
+    i_det = src.find("ResultadoDaConsultaDePropostaDetalharProposta")
+    i_ne = src.find("listarEmpenhosNovoSiafi")
+    assert i_det > 0, "o detalhe da proposta não é aberto"
+    assert i_ne > i_det, "a grade é pedida ANTES de estabelecer o contexto"
+    # e o `id_proposta` tem de ser USADO (ele entrava e era descartado)
+    assert "idProposta={id_proposta}" in src
+
+
+def test_toda_saida_None_do_browser_deixa_log():
+    """O defeito do #286 ('a sexta saída era muda'), que eu reproduzi no caminho
+    novo no mesmo dia. Cada `return None` precisa de um `logger` antes."""
+    import inspect
+    from ingestion.transferegov_voluntarias import _extrai_notas_empenho
+
+    linhas = inspect.getsource(_extrai_notas_empenho).splitlines()
+    mudas = []
+    for i, ln in enumerate(linhas):
+        if ln.strip() == "return None":
+            # olha as 6 linhas acima em busca de um log
+            if not any("logger." in linhas[j] for j in range(max(0, i - 6), i)):
+                mudas.append(i + 1)
+    assert not mudas, f"saídas None sem log nas linhas {mudas}"
