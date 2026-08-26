@@ -107,7 +107,21 @@ export function EnteAtendido({
           src={CLIENT_LOGO}
           alt=""
           aria-hidden
-          className={`${grande ? "h-10" : "h-8"} w-auto max-w-[52px] shrink-0 object-contain`}
+          /* ⚠️ `max-w-[120px]`, era 52. Mesmo defeito que a caixa do logo no RM
+             tinha: `object-contain` nunca corta — ele ENCOLHE —, e um logo largo
+             batia no teto de largura e descia a altura junto. O do Freitas é
+             2,80:1: a `h-8` ele precisa de ~90px e era espremido a 52, saindo com
+             18px de altura em vez de 32. Não sumia nada, só ficava pequeno demais
+             para ler o "& ASSOCIADOS".
+
+             Como no RM, alargar o teto NÃO mexe em quem já estava certo: brasão
+             quase quadrado ocupa ~32px de largura e nunca chegou perto do limite.
+             120px cobre 2,80:1 nos dois tamanhos (h-10 pede 112px).
+
+             O custo é honesto: o nome do município ao lado tem menos espaço. Ele
+             está sob `min-w-0` + `truncate`, então encurta em vez de estourar o
+             layout. */
+          className={`${grande ? "h-10" : "h-8"} w-auto max-w-[120px] shrink-0 object-contain`}
         />
       )}
       <span
