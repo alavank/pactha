@@ -578,7 +578,10 @@ function PainelAtualizacoes({ m, tv }: { m: AbaTransfereGov["mudancas"]; tv?: bo
         /* O número de dias vem do BACKEND, não escrito aqui: é ele quem define a
            janela da consulta. Cravar "15" nos dois lados faria o rótulo mentir no
            dia em que a janela do servidor mudasse. */
-        sub={m ? `mudanças de status nos últimos ${m.dias} dias` : undefined}
+        /* "por instrumento" no rótulo porque a lista é a mudança LÍQUIDA de cada
+           um, e não cada escrita — sem isso o número do painel não bateria com o
+           que alguém contasse na tela de propostas. */
+        sub={m ? `${m.dias} dias · mudança por instrumento` : undefined}
       />
       {!m ? (
         <Vazio>Atualizações indisponíveis neste servidor.</Vazio>
@@ -616,6 +619,14 @@ function PainelAtualizacoes({ m, tv }: { m: AbaTransfereGov["mudancas"]; tv?: bo
                    style={{ color: "var(--bi-faint)" }}>
                 {it.ref && <span>{it.ref}</span>}
                 {it.orgao && <span className="truncate">· {it.orgao}</span>}
+                {/* OSCILAÇÃO DECLARADA, não escondida. O que se mostra acima é o
+                    SALDO da janela; quando houve mais de uma escrita, dizer
+                    quantas é o que separa "avançou" de "ficou indo e voltando" —
+                    e a segunda coisa é um sinal sobre o dado, não sobre o
+                    convênio. */}
+                {(it.passos ?? 1) > 1 && (
+                  <span className="truncate">· {it.passos} atualizações no período</span>
+                )}
               </div>
             </li>
           ))}

@@ -87,6 +87,59 @@ async def listar_core(
     return {"items": items, "total": len(items)}
 
 
+def _mesma_situacao(a, b) -> bool:
+    """Duas grafias do MESMO estado? Compara sem caixa, sem espaço duplicado e
+    sem o `�` que o portal solta no lugar de acento corrompido.
+
+    Existe porque "mudou de status" tem de significar mudou de ESTADO. Uma
+    diferença só de caixa (`Complementado` x `complementado`) é ruído de fonte,
+    não notícia — e o trigger, que compara com `IS DISTINCT FROM`, não tem como
+    saber disso."""
+    def _n(s):
+        return " ".join(str(s or "").replace("�", "").split()).casefold()
+    return _n(a) == _n(b)
+
+
+def consolidar_por_ref(items: list[dict], limite: int = 40) -> list[dict]:
+    """A mudança LÍQUIDA por instrumento na janela, e não cada escrita.
+
+    ⭐ POR QUE ISTO EXISTE (medido em produção, 25/08/2026). A mesma proposta
+    aparecia quatro vezes no painel, indo e voltando entre dois rótulos — porque
+    `transferegov_propostas.situacao` tem DOIS escritores (o scraper e o CSV
+    diário do open data) e cada um desfazia o do outro. O trigger registra toda
+    escrita; o painel tem de responder outra pergunta.
+
+    "O que mudou nos últimos 15 dias" é: onde o instrumento ESTAVA quando a
+    janela começou e onde ele ESTÁ agora. Então:
+      - do grupo, o estado inicial é o `status_anterior` da mudança MAIS ANTIGA
+        e o final é o `status_novo` da MAIS NOVA;
+      - se os dois forem o mesmo estado, o instrumento VOLTOU para onde estava:
+        não houve mudança líquida, e ele sai da lista;
+      - `passos` guarda quantas escritas houve, para a tela poder dizer que
+        aquilo oscilou em vez de fingir que foi um pulo só.
+
+    ⚠️ `items` TEM de vir ordenado do mais novo para o mais antigo (é como o
+    `listar_core` devolve). E o LIMITE se aplica DEPOIS de consolidar — cortar
+    antes truncaria um grupo pela metade e inventaria uma mudança líquida que
+    não existe."""
+    grupos: dict[tuple, dict] = {}
+    for it in items:                       # do mais NOVO para o mais ANTIGO
+        chave = (it.get("fonte"), it.get("ref"))
+        g = grupos.get(chave)
+        if g is None:
+            # 1ª visita = a mudança mais NOVA deste instrumento: ela dá o estado
+            # final, a data e os campos de exibição.
+            grupos[chave] = {**it, "passos": 1}
+        else:
+            # As seguintes são mais antigas: só recuam o estado INICIAL.
+            g["status_anterior"] = it.get("status_anterior")
+            g["passos"] += 1
+    saida = [g for g in grupos.values()
+             if not _mesma_situacao(g.get("status_anterior"), g.get("status_novo"))]
+    saida.sort(key=lambda g: g.get("changed_at") or "", reverse=True)
+    return saida[:limite]
+
+
 @router.get("", dependencies=[declarado(*_FONTES_PERMISSOES)])
 async def listar(
     municipio_id: int = Query(...),

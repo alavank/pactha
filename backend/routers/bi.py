@@ -49,13 +49,17 @@ from models.user import User
 from routers.cauc import fetch_cauc_situacao
 from routers.parlamentares import aggregate_parlamentares
 from routers.convenios import query_alertas_vigencia, query_prestacao_contas
-from routers.status_changes import FONTE_VOLUNTARIAS, listar_core
+from routers.status_changes import (
+    FONTE_VOLUNTARIAS, consolidar_por_ref, listar_core,
+)
 
 # Janela do painel de ATUALIZACOES da aba TransfereGov, em dias (pedido do dono:
 # "de ate 15 dias para tras"). Em constante porque o numero aparece na consulta E
 # no rotulo que a tela imprime — cravado nos dois, um dia diriam coisas
 # diferentes, e o painel mentiria sobre a propria janela.
 _DIAS_ATUALIZACOES = 15
+# Teto de instrumentos exibidos no painel, aplicado DEPOIS de consolidar.
+_MAX_ATUALIZACOES = 40
 from services import authz
 
 router = APIRouter(prefix="/api/bi", tags=["bi"])
@@ -550,9 +554,23 @@ async def aba_transferegov(
         # a mudanca mais relevante justamente quando alguem filtrasse um ano.
         # Por isso a chave do cache tambem nao leva o periodo neste pedaco: ele e
         # o mesmo para qualquer recorte de ano.
-        d["mudancas"] = await listar_core(db, ids, _DIAS_ATUALIZACOES, 40,
-                                          fontes=(FONTE_VOLUNTARIAS,))
-        d["mudancas"]["dias"] = _DIAS_ATUALIZACOES
+        # ⚠️ O LIMITE ALTO AQUI E DE PROPOSITO, e o corte final vem depois.
+        # `consolidar_por_ref` agrupa por instrumento, e cortar ANTES de agrupar
+        # truncaria um grupo pela metade — inventando uma "mudanca liquida" que
+        # nao existe (ficaria so a metade nova de uma ida-e-volta). Entao: pega
+        # cru com folga, consolida, e SO ENTAO limita a lista exibida.
+        _cru = await listar_core(db, ids, _DIAS_ATUALIZACOES, 600,
+                                 fontes=(FONTE_VOLUNTARIAS,))
+        _itens = consolidar_por_ref(_cru["items"], _MAX_ATUALIZACOES)
+        d["mudancas"] = {
+            "items": _itens,
+            "total": len(_itens),
+            "dias": _DIAS_ATUALIZACOES,
+            # Quantas ESCRITAS o banco registrou na janela, antes de consolidar.
+            # Fica na resposta porque a diferenca entre os dois numeros e o
+            # tamanho da oscilacao — se um dia ela voltar, aparece aqui.
+            "brutas": len(_cru["items"]),
+        }
         return d
 
     key = f"tg|{scope_signature(ids, cons)}|a={anos_signature(periodo)}"

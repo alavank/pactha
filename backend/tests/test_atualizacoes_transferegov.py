@@ -140,9 +140,11 @@ def test_a_aba_manda_a_janela_JUNTO_para_a_tela():
     import inspect
 
     fonte = inspect.getsource(bi.aba_transferegov)
-    assert '"dias"] = _DIAS_ATUALIZACOES' in fonte
-    assert "_DIAS_ATUALIZACOES" in fonte
+    assert '"dias": _DIAS_ATUALIZACOES' in fonte
     assert "FONTE_VOLUNTARIAS" in fonte
+    # E a consolidação por instrumento tem de estar no caminho — sem ela o painel
+    # volta a mostrar cada escrita, que foi o defeito relatado.
+    assert "consolidar_por_ref" in fonte
 
 
 def test_o_painel_NAO_e_recortado_pelo_filtro_de_ano():
@@ -156,3 +158,82 @@ def test_o_painel_NAO_e_recortado_pelo_filtro_de_ano():
     # a chamada das mudanças não recebe `periodo`
     chamada = re.search(r"listar_core\((.*?)\)", fonte, re.S)
     assert chamada and "periodo" not in chamada.group(1)
+
+
+# ---------------------------------------------- consolidacao por instrumento --
+# ⭐ O CASO REAL (Nova Serrana/MG, 25/08/2026): a MESMA proposta aparecia quatro
+# vezes no painel, indo e voltando entre dois rotulos, porque
+# `transferegov_propostas.situacao` tem DOIS escritores (o scraper e o CSV diario)
+# e cada um desfazia o do outro. O painel responde "o que mudou na janela", e a
+# resposta honesta para uma ida-e-volta e: nada.
+from routers.status_changes import consolidar_por_ref, _mesma_situacao  # noqa: E402
+
+A = "Proposta/Plano de Trabalho complementado em Análise"
+B = "Proposta Aprovada e Plano de Trabalho Complementado em Análise"
+
+
+def _m(id_, ant, novo, quando, ref="010532/2026"):
+    return {"id": id_, "fonte": "voluntaria", "ref": ref, "orgao": "51000 - ME",
+            "objeto": "Projeto Visão de Jogo", "status_anterior": ant,
+            "status_novo": novo, "changed_at": quando}
+
+
+def test_ida_e_volta_NAO_e_noticia():
+    """A→B→A: o instrumento voltou para onde estava. Não houve mudança líquida —
+    e mostrar isso como três cartões é o defeito que o dono viu na tela."""
+    # do mais NOVO para o mais ANTIGO, como o `listar_core` devolve
+    itens = [_m(3, A, B, "2026-08-25T10:00"),
+             _m(2, B, A, "2026-08-24T22:00"),
+             _m(1, A, B, "2026-08-24T08:00")]
+    # net: começou em A (o mais antigo) e terminou em B (o mais novo) -> aparece
+    assert len(consolidar_por_ref(itens)) == 1
+    # agora com uma volta a mais: começa em B e termina em B -> some
+    itens2 = [_m(4, B, A, "2026-08-25T23:00")] + itens
+    assert consolidar_por_ref(itens2) == []
+
+
+def test_a_mudanca_liquida_e_do_MAIS_ANTIGO_ao_MAIS_NOVO():
+    itens = [_m(3, "Em análise", "Aprovada", "2026-08-25T10:00"),
+             _m(2, "Enviada", "Em análise", "2026-08-24T10:00"),
+             _m(1, "Rascunho", "Enviada", "2026-08-23T10:00")]
+    r = consolidar_por_ref(itens)
+    assert len(r) == 1
+    assert r[0]["status_anterior"] == "Rascunho"   # o mais ANTIGO da janela
+    assert r[0]["status_novo"] == "Aprovada"       # o mais NOVO
+    assert r[0]["passos"] == 3                     # e diz que foram 3 escritas
+
+
+def test_a_data_e_a_do_evento_MAIS_NOVO():
+    itens = [_m(2, "X", "Z", "2026-08-25T10:00"), _m(1, "W", "X", "2026-08-20T10:00")]
+    assert consolidar_por_ref(itens)[0]["changed_at"] == "2026-08-25T10:00"
+
+
+def test_instrumentos_DIFERENTES_nao_se_misturam():
+    itens = [_m(2, "X", "Y", "2026-08-25T10:00", ref="111/2025"),
+             _m(1, "P", "Q", "2026-08-24T10:00", ref="222/2025")]
+    r = consolidar_por_ref(itens)
+    assert {x["ref"] for x in r} == {"111/2025", "222/2025"}
+
+
+def test_diferenca_so_de_CAIXA_nao_e_mudanca():
+    """Ruído de fonte, não notícia. O trigger compara com `IS DISTINCT FROM` e não
+    tem como saber disso — quem sabe é aqui."""
+    assert _mesma_situacao("Em Execução", "em execução")
+    assert _mesma_situacao("Em  execução", "Em execução")
+    assert _mesma_situacao("Prestação de  Contas", "prestação de contas")
+    # `�` é o que o portal solta no lugar de acento corrompido
+    assert _mesma_situacao("Em execu��o", "Em execuo")
+    assert not _mesma_situacao(A, B)      # estes DOIS são estados diferentes
+
+
+def test_o_teto_e_aplicado_DEPOIS_de_consolidar():
+    """⚠️ Cortar antes truncaria um grupo pela metade e inventaria uma mudança
+    líquida que não existe — ficaria só a metade nova de uma ida-e-volta."""
+    itens = []
+    for i in range(60):
+        itens.append(_m(i, "X", "Y", f"2026-08-25T{i % 24:02d}:00", ref=f"{i}/2025"))
+    assert len(consolidar_por_ref(itens, limite=40)) == 40
+
+
+def test_lista_vazia_devolve_vazia():
+    assert consolidar_por_ref([]) == []
