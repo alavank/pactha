@@ -320,10 +320,17 @@ export interface AbaTransfereGov {
     items: MudancaStatus[];
     total: number;
     dias: number;
+    /** Quantas ESCRITAS o banco registrou na janela, antes de consolidar por
+     *  instrumento. A diferença para `total` é o tamanho da oscilação — em base
+     *  saudável os dois ficam próximos. */
+    brutas?: number;
   };
 }
 
-/** Uma mudança de status registrada pelo trigger `log_status_change`. */
+/** A mudança LÍQUIDA de um instrumento na janela — onde ele estava quando ela
+ *  começou e onde está agora. Não é uma linha crua de `status_changes`: o
+ *  backend agrupa por instrumento (`consolidar_por_ref`), porque o trigger
+ *  registra toda escrita e o painel responde outra pergunta. */
 export interface MudancaStatus {
   id: number;
   fonte: string;
@@ -333,6 +340,9 @@ export interface MudancaStatus {
   status_anterior: string | null;
   status_novo: string | null;
   changed_at: string | null;
+  /** Quantas escritas houve neste instrumento na janela. `> 1` = o status foi
+   *  reescrito mais de uma vez e o que se mostra é o saldo. */
+  passos?: number;
 }
 
 export interface Lancamento {
