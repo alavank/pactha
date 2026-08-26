@@ -948,22 +948,22 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
                     and (os.getenv("TG_NES", "0") or "0").strip() == "1"):
                 try:
                     _ne = await asyncio.to_thread(_hx.notas_empenho, _idp)
-                    # ⚠️ FALLBACK PELO BROWSER — e ele e o caminho NORMAL nesta
-                    # tela, nao a excecao. `listarEmpenhosNovoSiafi.jsf` e JSF e
-                    # so renderiza a grade por POST com ViewState: o GET devolve
-                    # ~52 KB de casca cuja unica tabela e o contador de sessao
-                    # ("30:00"). Medido em 25/08/2026, depois de descartar sessao
-                    # morta, muro SAML e parser — as tres hipoteses erradas.
+                    # ⚠️ ESTE BLOCO JA AFIRMOU O CONTRARIO, com carimbo de
+                    # "medido", e a versao antiga mandava quem investigasse atras
+                    # de ViewState. NAO ERA ISSO. O que existia era um defeito de
+                    # PARSER (o cabecalho da grade nao esta na 1a linha) somado a
+                    # o caminho do browser pedir a tela sem o contexto do
+                    # instrumento. A explicacao inteira, com o que foi de fato
+                    # demonstrado e o que nao foi, esta na docstring de
+                    # `_extrai_notas_empenho`.
                     #
-                    # A tentativa HTTP fica ANTES de proposito: ela custa ~0,7s
-                    # contra ~3s do browser, e no dia em que o portal servir a
-                    # grade no GET (ou migrar de volta para Struts) ela volta a
-                    # resolver sozinha, sem ninguem precisar lembrar de trocar.
+                    # A tentativa HTTP fica ANTES pelo custo: ~0,7s contra ~3s do
+                    # browser. NAO afirmo aqui qual dos dois "resolve" — isso
+                    # depende do que o portal devolver, e e justamente o tipo de
+                    # afirmacao que envelheceu mal da ultima vez. O log de cada
+                    # caminho diz o que aconteceu em cada rodada.
                     if _ne is None:
                         _ne = await _extrai_notas_empenho(page_auth, _idp)
-                        if _ne is not None:
-                            logger.info(f"    NEs {prop['numero_proposta']}: "
-                                        f"{len(_ne)} linha(s) pelo browser")
                     if _ne is not None:
                         prop["notas_empenho"] = _ne
                     else:
@@ -1440,7 +1440,12 @@ async def _extrai_notas_empenho(page_auth, id_proposta: str) -> list | None:
     # A grade agora existe (o JSF renderizou). Sem ela, não afirmar nada.
     r_js = await page_auth.evaluate("""() => {
         const norm = s => (s || '').replace(/\\s+/g, ' ').trim();
-        const tabelas = [...document.querySelectorAll('table')];
+        const vazioDecl = /Nenhum registro foi encontrado/i.test(document.body.innerText || '');
+        // ⭐ A GRADE PELO ID PRIMEIRO, varredura por texto so como queda — mesmo
+        // critério do parser HTTP, e o mesmo id que o `wait_for_selector` espera.
+        // `dtEmpenhos` é o único sinal que uma tabela de MOLDURA nunca tem.
+        const tabelas = [...document.querySelectorAll("table[id*='dtEmpenhos' i]"),
+                         ...document.querySelectorAll('table')];
         for (const t of tabelas) {
             // Linhas DIRETAS: `querySelectorAll('tr')` desce em tabela aninhada e
             // mistura as linhas da grade com as de um layout interno.
@@ -1453,12 +1458,21 @@ async def _extrai_notas_empenho(page_auth, id_proposta: str) -> list | None:
             // parser HTTP, e descartava a grade inteira em silêncio.
             let iCab = -1, heads = [];
             for (let i = 0; i < Math.min(trs.length, 4); i++) {
-                const h = [...trs[i].querySelectorAll('th,td')].map(x => norm(x.innerText).toLowerCase());
+                // ⚠️ `:scope >` — CÉLULAS DIRETAS, e este era o defeito. Com
+                // descendentes (o que estava aqui), a linha da MOLDURA recebe as
+                // próprias células MAIS todas as th/td da grade de dentro:
+                // `h.length` passa de 10 e a guarda das 3 colunas NUNCA dispara.
+                // O parser Python usa `./th|./td` desde sempre — os dois liam a
+                // MESMA página de jeitos diferentes, e o browser é quem roda.
+                const h = [...trs[i].querySelectorAll(':scope > th, :scope > td')].map(x => norm(x.innerText).toLowerCase());
                 // `h.length >= 3` pelo mesmo motivo do parser HTTP: a tabela de
                 // LAYOUT que envolve a grade tem UMA célula cujo texto achatado
                 // contém a grade inteira — logo casa "empenho" e "situa" — e o
                 // laço pararia nela, com zero linhas de dado.
                 if (h.length < 3) continue;
+                // Célula que contém tabela não é cabeçalho, seja qual for a
+                // largura — mata a moldura por construção (espelha o Python).
+                if (trs[i].querySelector(':scope > th table, :scope > td table')) continue;
                 const k = h.join('|');
                 if (/empenho/.test(k) && /situa/.test(k)) { iCab = i; heads = h; break; }
             }
@@ -1471,19 +1485,26 @@ async def _extrai_notas_empenho(page_auth, id_proposta: str) -> list | None:
                          val: iVal, siafi: iSiafi, sit: col('situa'), dt: col('emiss')};
             const out = [];
             for (const tr of trs.slice(iCab + 1)) {
-                const c = [...tr.querySelectorAll('td')].map(x => norm(x.innerText));
+                // Mesma razão: uma célula que contenha uma tabelinha de botão
+                // (`<td><table>Detalhar</table>2026NE000320</td>`) acrescentaria
+                // células fantasma e deslocaria TODAS as colunas seguintes — o
+                // valor de um empenho iria para o campo do número.
+                const c = [...tr.querySelectorAll(':scope > td')].map(x => norm(x.innerText));
                 if (!c.some(x => x)) continue;
                 const g = i => (i !== null && i < c.length && c[i]) ? c[i] : null;
                 out.push({numero: g(idx.num), minuta: g(idx.min), valor: g(idx.val),
                           valor_siafi: g(idx.siafi), situacao: g(idx.sit), dt_emissao: g(idx.dt)});
             }
-            return {linhas: out, cab_na_linha: iCab};
+            // ⚠️ `vazio_declarado` VAI JUNTO mesmo com a grade casada. Quem
+            // decide se `[]` pode ser gravado é o Python, no portão logo depois
+            // da chamada. Devolver `[]` daqui como resposta pronta era APAGAR
+            // os empenhos: o `_upsert` é COALESCE e `[]` sobrescreve.
+            return {linhas: out, cab_na_linha: iCab, vazio_declarado: vazioDecl};
         }
         // Não achou a grade: devolve o que VIU, para o log não ficar mudo.
-        const corpo = document.body.innerText || '';
         return {
-            linhas: /Nenhum registro foi encontrado/i.test(corpo) ? [] : null,
-            vazio_declarado: /Nenhum registro foi encontrado/i.test(corpo),
+            linhas: vazioDecl ? [] : null,
+            vazio_declarado: vazioDecl,
             tabelas: tabelas.length,
             tem_dt: tabelas.some(t => /dtEmpenhos/i.test(t.id || '')),
             bytes: document.documentElement.outerHTML.length,
@@ -1491,7 +1512,7 @@ async def _extrai_notas_empenho(page_auth, id_proposta: str) -> list | None:
             assinaturas: tabelas.slice(0, 5).map(t => (t.id || '?').slice(-26) + '::' +
                 [...t.querySelectorAll(':scope > thead > tr, :scope > tbody > tr, :scope > tr')]
                     .slice(0, 3)
-                    .map(tr => [...tr.querySelectorAll('th,td')].map(x => norm(x.innerText)).join('|').slice(0, 40))
+                    .map(tr => [...tr.querySelectorAll(':scope > th, :scope > td')].map(x => norm(x.innerText)).join('|').slice(0, 40))
                     .join('/')),
         };
     }""")
@@ -1506,6 +1527,21 @@ async def _extrai_notas_empenho(page_auth, id_proposta: str) -> list | None:
                 f"{_lg}: a grade não estava na página — {r_js.get('bytes')} bytes, "
                 f"tabelas={r_js.get('tabelas')}, dtEmpenhos_no_dom={r_js.get('tem_dt')}, "
                 f"assinaturas={(r_js.get('assinaturas') or [])[:3]}")
+        return None
+    # ⚠️⚠️ O PORTÃO QUE IMPEDE ESTE CAMINHO DE APAGAR. `[]` grava `'[]'` e o
+    # COALESCE do `_upsert` sobrescreve os empenhos que já estavam lá; só `None`
+    # preserva. E a interação era pior que o caso isolado: o browser SÓ roda
+    # quando o HTTP devolveu `None` — inclusive quando esse `None` veio da guarda
+    # gêmea do lado HTTP ("grade vazia sem confirmação"). Ou seja, o primeiro
+    # leitor se recusava a apagar e o segundo apagava em seguida, no mesmo
+    # instrumento e na mesma rodada.
+    #
+    # O portão fica AQUI, e não no JS, porque o filtro logo abaixo também pode
+    # zerar `out` a partir de uma lista NÃO vazia (linha sem número e sem minuta).
+    # Uma guarda só no JS não fecharia essa segunda porta.
+    if not linhas and not r_js.get("vazio_declarado"):
+        logger.info(f"{_lg}: a grade veio VAZIA e a página não diz 'Nenhum "
+                    "registro foi encontrado' — indeterminado, não vou apagar")
         return None
     out = []
     for r in linhas:
@@ -1525,6 +1561,16 @@ async def _extrai_notas_empenho(page_auth, id_proposta: str) -> list | None:
             # como se fosse recurso.
             "minuta_apenas": (not numero) or ("minuta" in (sit or "").casefold()),
         })
+    # A SEGUNDA PORTA do mesmo portão: o filtro acima pode zerar `out` a partir de
+    # uma lista NÃO vazia (linhas sem número e sem minuta — o rodapé "Voltar",
+    # por exemplo). Chegar aqui com `out` vazio depois de ter lido linhas é sinal
+    # de que a tabela era a errada, e afirmar `[]` apagaria os empenhos.
+    if not out and not r_js.get("vazio_declarado"):
+        logger.info(f"{_lg}: li {len(linhas)} linha(s) e nenhuma tinha número ou "
+                    "minuta — tabela errada, não vou apagar")
+        return None
+    logger.info(f"{_lg}: {len(out)} linha(s) pelo browser "
+                f"(cabeçalho na linha {r_js.get('cab_na_linha')})")
     return out
 
 
