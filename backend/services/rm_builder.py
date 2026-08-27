@@ -993,7 +993,8 @@ def _evento_atual(historico) -> dict:
 
 async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int | None = None,
                           completo: bool = False, anos: list[int] | None = None,
-                          fontes: list[str] | None = None) -> dict:
+                          fontes: list[str] | None = None,
+                          estagio: str | None = None) -> dict:
     """Monta o conteudo JSONB de um RM a partir dos dados do banco.
 
     ano_emissao: ano-base da janela do relatório (year da data de referência).
@@ -1023,6 +1024,14 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
     # Vazio => sem filtro (todas as consultas). `frozenset` porque este valor e
     # so lido, por item, ate o fim da montagem.
     fontes_filtro = frozenset(f for f in (fontes or []) if f)
+    # RECORTE POR ESTAGIO: "" / None = TODAS (o completo). Ver `add_item`.
+    # ⚠️ Valor desconhecido tambem vira "todas", e nao filtro vazio: um typo
+    # no parametro devolveria um relatorio EM BRANCO, e um RM vazio se le
+    # como "o municipio nao tem nada" — o pior erro que este documento pode
+    # cometer. Melhor entregar o completo do que uma folha que mente.
+    estagio_filtro = (estagio or "").strip().lower()
+    if estagio_filtro not in ("pagas", "pendentes"):
+        estagio_filtro = ""
     # Estrutura: {partes: [{ordem, titulo, secoes: [{ordem, titulo, grupos:
     #   [{ordem, orgao, itens: [...]}]}]}]}
     # Build incrementally then convert.
@@ -1047,7 +1056,8 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
     # futura do corpo da funcao nao vire NameError em producao.
     _proprios: dict[str, str] = {}
 
-    def add_item(parte_n: int, secao: str, orgao: str, item: dict, ano: int | None = None):
+    def add_item(parte_n: int, secao: str, orgao: str, item: dict, ano: int | None = None,
+                 pago: bool | None = None):
         """Adiciona o item na arvore. `ano` e o ano que a FONTE ja calculou (c.ano,
         ano_prop, ano_te, ano do pagamento...) — carimbado como `ano_item`.
 
@@ -1070,6 +1080,33 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
         hoje."""
         if not fonte_no_escopo(fontes_filtro, str(item.get("fonte") or "")):
             return
+        # ⭐ RECORTE POR ESTAGIO (pagas / pendentes / todas) — pedido do dono,
+        # 26/08/2026. Fica AQUI pelos MESMOS tres motivos do recorte por consulta
+        # logo acima: sao onze insercoes e oito fontes, um `continue` no topo de
+        # cada laco mudaria os efeitos colaterais (`_pac_ja_exibidos`), e fonte
+        # nova nasce filtravel de graca.
+        #
+        # ⚠️ `pago is None` PASSA SEMPRE. E a mesma disciplina do `ano_item` desta
+        # funcao ("quando a fonte nao sabe o ano, o item PERMANECE"): a fonte que
+        # ainda nao informa o estagio nao pode sumir de um recorte, calada. Some
+        # so quem a fonte AFIRMOU ser o oposto do pedido.
+        #
+        # ⚠️ NAO da para inferir "pago" da PARTE. Federal pago no ano corrente vai
+        # para a secao "REPASSES DE {ano}" da Parte 2, o que seria detectavel —
+        # mas ESTADUAL pago no mesmo periodo cai na Parte 2 com o MESMO nome de
+        # secao do nao pago (`_destino_completo`, ramo `status == "paga"`). Ler a
+        # estrutura em vez do status classificaria estadual pago como pendente.
+        # ⚠️ `pop`, e nao `get`: a marca é de TRANSPORTE — ela existe para viajar
+        # do bloco da fonte até aqui e some antes de o item entrar no JSONB. Sem o
+        # `pop`, `_pago` seria congelado em `rm_relatorios.conteudo`, apareceria
+        # na tela de edição do RM e o usuário teria de olhar para um campo
+        # interno que não sabe o que é.
+        _pago = item.pop("_pago", pago)
+        if estagio_filtro and _pago is not None:
+            if estagio_filtro == "pagas" and not _pago:
+                return
+            if estagio_filtro == "pendentes" and _pago:
+                return
         # PADRONIZACAO DE MAIUSCULAS — PONTO UNICO (services/texto_rm).
         #
         # Todas as fontes (SIGCON, FNS individuais, FNS fallback, voluntarias,
@@ -1189,6 +1226,10 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
                     else:
                         parte, secao = _federal_destino(sit_cls)
                     add_item(parte, secao, orgao_fns, {
+                        # ⭐ Marca o ESTÁGIO na origem, para o recorte pagas/pendentes
+                        # poder existir. `add_item` consome e REMOVE a chave — ela nunca
+                        # chega ao JSONB do relatório.
+                        "_pago": st == "paga",
                         "tipo": "Proposta",
                         "numero": f"{nuprop} - {c.ano}" if c.ano else nuprop,
                         "objeto": objeto_fns,
@@ -1234,6 +1275,10 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
                 else:
                     parte, secao = _federal_destino(c.situacao)
                 add_item(parte, secao, orgao_fb, {
+                    # ⭐ Marca o ESTÁGIO na origem, para o recorte pagas/pendentes
+                    # poder existir. `add_item` consome e REMOVE a chave — ela nunca
+                    # chega ao JSONB do relatório.
+                    "_pago": st == "paga",
                     "tipo": "Proposta",
                     "numero": f"{objeto_fns} - {c.ano}" if c.ano else (objeto_fns or "Proposta FNS"),
                     "objeto": objeto_fns,
@@ -1287,6 +1332,10 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
         if not e_parlamentar_real(_parl):
             _parl = ""
         add_item(parte, secao, orgao, {
+            # ⭐ Marca o ESTÁGIO na origem, para o recorte pagas/pendentes
+            # poder existir. `add_item` consome e REMOVE a chave — ela nunca
+            # chega ao JSONB do relatório.
+            "_pago": st == "paga",
             "tipo": tipo_label,
             "numero": nr_instr or nr_proposta or c.nr_sigcon or "",
             "objeto": c.objeto or "",
@@ -1508,6 +1557,10 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
         if row[2] and row[1] and "/" in str(row[1]):
             _num_exib = f"{row[2]} /{str(row[1]).split('/')[-1].strip()}"
         add_item(parte, secao, orgao, {
+            # ⭐ Marca o ESTÁGIO na origem, para o recorte pagas/pendentes
+            # poder existir. `add_item` consome e REMOVE a chave — ela nunca
+            # chega ao JSONB do relatório.
+            "_pago": st == "paga",
             "tipo": tipo_label,
             "numero": _num_exib,
             "objeto": row[5] or "",
@@ -1686,6 +1739,10 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
                 orgao_te = orgao_te + suf
                 tipo_te = "Plano de Ação"  # rotulo do numero na referencia (Fazenda/TE)
             add_item(parte_te, secao_te, orgao_te, {
+                # ⭐ Marca o ESTÁGIO na origem, para o recorte pagas/pendentes
+                # poder existir. `add_item` consome e REMOVE a chave — ela nunca
+                # chega ao JSONB do relatório.
+                "_pago": st == "paga",
                 "tipo": tipo_te,
                 "numero": cod,
                 "objeto": row[4] or "",
@@ -1728,6 +1785,10 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             orgao = orgao + suf
             tipo_mec = "Processo"  # rotulo do numero na referencia (Educacao-SIMEC)
         add_item(parte_mec, secao_mec, orgao, {
+            # ⭐ Marca o ESTÁGIO na origem, para o recorte pagas/pendentes
+            # poder existir. `add_item` consome e REMOVE a chave — ela nunca
+            # chega ao JSONB do relatório.
+            "_pago": True,
             "tipo": tipo_mec,
             "numero": r[3] or "",
             "objeto": r[5] or r[1] or r[0],
@@ -1766,6 +1827,10 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             parte = _classifica_parte("estadual", sit, None)
             secao_em = "INSTRUMENTOS DE REPASSE ESTADUAIS"
         add_item(parte, secao_em, orgao, {
+            # ⭐ Marca o ESTÁGIO na origem, para o recorte pagas/pendentes
+            # poder existir. `add_item` consome e REMOVE a chave — ela nunca
+            # chega ao JSONB do relatório.
+            "_pago": st == "paga",
             "tipo": "Indicação",
             "numero": f"{r[1]}/{r[2]}" if r[2] else r[1],
             "objeto": objeto,
@@ -1804,6 +1869,10 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
                     "federal", "simec_termo", st, ano_tc, ano_pg, ano_emissao,
                     False, False, False)
                 add_item(parte_tc, secao_tc, ("Ministério da Educação — Termo de Compromisso" + suf), {
+                    # ⭐ Marca o ESTÁGIO na origem, para o recorte pagas/pendentes
+                    # poder existir. `add_item` consome e REMOVE a chave — ela nunca
+                    # chega ao JSONB do relatório.
+                    "_pago": st == "paga",
                     "tipo": "Processo",   # rotulo do numero na referencia (Educacao/SIMEC)
                     "numero": r[0] or r[1] or "",
                     "objeto": " · ".join(x for x in (r[2], r[3]) if x) or "",
@@ -1891,6 +1960,10 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
                     "federal", "pac", st, ano_pac, None, ano_emissao,
                     True, False, False)
                 add_item(parte_pac, secao_pac, ("Novo PAC" + suf), {
+                    # ⭐ Marca o ESTÁGIO na origem, para o recorte pagas/pendentes
+                    # poder existir. `add_item` consome e REMOVE a chave — ela nunca
+                    # chega ao JSONB do relatório.
+                    "_pago": st == "paga",
                     "tipo": "Proposta",
                     "numero": num,
                     "objeto": r[7] or prog or "",

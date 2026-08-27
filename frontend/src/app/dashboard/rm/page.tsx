@@ -168,6 +168,12 @@ export default function RmListPage() {
      própria porque é a mesma decisão: quem é a assessoria que assina este
      documento. Separar em dois lugares faria alguém trocar o endereço e
      esquecer o contato. */
+  /* RECORTE POR ESTÁGIO (pedido do dono, 26/08/2026). "" = todas.
+     ⚠️ Entra na IDENTIDADE do relatório, como anos e consultas: gerar
+     "só pendentes" cria OUTRO RM, que convive com o completo em vez de
+     substituí-lo. Foi decisão explícita — a alternativa sobrescreveria o
+     completo pelo UPSERT, levando junto a redação editada à mão. */
+  const [estagioGerar, setEstagioGerar] = useState("");
   const [email, setEmail] = useState("");
   const [emailOriginal, setEmailOriginal] = useState("");
   const [emailOrigem, setEmailOrigem] = useState<"salvo" | "env">("env");
@@ -307,6 +313,10 @@ export default function RmListPage() {
         // rm_fontes.normalizar — a ordem faz parte da identidade do RM e não pode
         // depender da ordem em que a pessoa clicou nas caixas.
         fontes: fontesGerar,
+        // "" = todos os estágios. Cru, como as consultas: quem normaliza é o
+        // servidor, e valor desconhecido vira "" lá — nunca filtro vazio,
+        // que devolveria um RM em branco.
+        estagio: estagioGerar,
         // Nao manda cidade: o servidor usa a do proprio municipio do RM.
         auto_popular: true,
       });
@@ -450,6 +460,27 @@ export default function RmListPage() {
               ariaLabel="Consultas do relatório"
               className="w-72"
             />
+          </div>
+          <div>
+            <label
+              className="mb-1 block text-[11px]"
+              style={{ color: "var(--bi-muted)" }}
+            >
+              Estágio
+            </label>
+            {/* Vazio = todos os estágios (o completo). Escolher um gera
+                OUTRO relatório, que CONVIVE com o completo — mesma regra
+                dos anos e das consultas. */}
+            <select
+              className="bi-field h-9 w-44 px-2 text-[12px]"
+              value={estagioGerar}
+              onChange={(e) => setEstagioGerar(e.target.value)}
+              aria-label="Estágio do relatório"
+            >
+              <option value="">Todos</option>
+              <option value="pendentes">Somente pendentes</option>
+              <option value="pagas">Somente pagas</option>
+            </select>
           </div>
           <Button onClick={gerar} disabled={criando}>
             {criando ? <Loader2 className="size-4 animate-spin mr-1" /> : <Plus className="size-4 mr-1" />}
