@@ -22,6 +22,10 @@ from models import ConvenioEstadual, Municipio
 from services.nome_parlamentar import e_parlamentar_real
 from services.texto_rm import (
     frase, nome_proprio, normalizar_item, proprios_do_municipio,
+    # ⚠️ `_sem_acento` e privado do modulo, mas e importado de proposito em vez de
+    # copiado: `situacao` vem CRUA do portal, e comparar acento e o tipo de coisa
+    # que duas implementacoes fazem diferente. Ver `_lic_em_elaboracao`.
+    _sem_acento,
 )
 # Recorte por CONSULTA. Importado com apelido para nao se confundir com o
 # `_no_escopo` local de `montar_conteudo`, que e o recorte por ANO — sao dois
@@ -90,6 +94,59 @@ _PEND_MUNICIPAL_KW = (
 def _pend_municipal(*textos: str | None) -> bool:
     s = " ".join((t or "").lower() for t in textos)
     return any(k in s for k in _PEND_MUNICIPAL_KW)
+
+
+def _lic_em_elaboracao(processo_execucao) -> bool:
+    """Alguma licitacao do instrumento esta EM ELABORACAO?
+
+    ⭐ Pedido do dono (26/08/2026): licitacao em elaboracao e acao do MUNICIPIO —
+    quem elabora o edital e a prefeitura, nao Brasilia. Ate aqui o unico sinal de
+    licitacao que empurrava para a Parte 2 era a CONTAGEM ZERO em contratacao
+    Normal (o ramo logo abaixo do chamador); a LISTA de licitacoes nunca era
+    consultada, e um edital em elaboracao ficava listado como pendencia federal.
+
+    ⚠️ AUSENCIA NAO CLASSIFICA. `None` (nao coletado) e `[]` (coletado e nao ha)
+    devolvem False — a mesma disciplina de `_sem_empenho` e `_empenhado_rotulo`.
+    Classificar por ausencia poria cobranca falsa na mesa do prefeito, e o item
+    ainda sumiria do RM Resumido, que so imprime a Parte 1.
+
+    ⚠️ SUBSTRING SEM ACENTO, e nao igualdade: `situacao` e texto CRU do portal,
+    sem enum, e ja se sabe que ele varia a grafia ("Em Elaboração", "EM
+    ELABORACAO", com o acento corrompido em `?`). Comparar string inteira seria
+    apostar numa grafia."""
+    itens = _jsonb(processo_execucao)
+    if not isinstance(itens, list):
+        return False
+    for it in itens:
+        if not isinstance(it, dict):
+            continue
+        if "elabora" in _sem_acento(str(it.get("situacao") or "")).lower():
+            return True
+    return False
+
+
+def _obra_sem_art(obras) -> bool:
+    """A obra tem lotes LIDOS e nenhum deles tem ART/RRT cadastrada?
+
+    ⭐ Pedido do dono (26/08/2026): cumprir a exigencia de ART/RRT e acao do
+    MUNICIPIO. A frase ja existia em `_obra_resumo` — mas so alimentava o campo
+    `obra` do item, que vira caixa cinza INFORMATIVA no PDF. Ou seja: a obra
+    travada por falta de ART ficava na Parte 1 (Brasilia) com a pendencia do
+    municipio escrita ao lado dela.
+
+    ⚠️ Extraida de `_obra_resumo`, que passa a CHAMAR esta funcao. As duas nao
+    podem divergir: o texto que o relatorio imprime e a classificacao que decide
+    a Parte tem de sair da mesma condicao.
+
+    ⚠️ `{}` (instrumento sem medicao — o portal responde 412) e `None` (nao
+    consegui ler) devolvem False. So `lotes` NAO VAZIO autoriza afirmar."""
+    d = _jsonb(obras)
+    if not isinstance(d, dict):
+        return False
+    lotes = d.get("lotes") if isinstance(d.get("lotes"), list) else []
+    if not lotes:
+        return False
+    return not any((l or {}).get("arts") for l in lotes if isinstance(l, dict))
 
 
 def _vol_pre_empenho(st: str, ano_prop: int | None, ano_ref: int,
@@ -563,8 +620,12 @@ def _obra_resumo(obras, medicoes: int | None = None) -> str:
         _soma = sum((l or {}).get("medicoes_atestadas") or 0
                     for l in lotes if isinstance(l, dict))
         medicoes = _soma or None
-    tem_art = any((l or {}).get("arts") for l in lotes if isinstance(l, dict))
-    if lotes and not tem_art:
+    # ⚠️ A MESMA condicao que decide a PARTE (`_obra_sem_art`), e nao uma copia:
+    # o texto que o relatorio imprime e a classificacao que manda o item para a
+    # Parte 2 tem de sair do mesmo lugar. Duas copias divergiriam calado — a
+    # frase diria "falta ART" e o item continuaria listado como pendencia de
+    # Brasilia, que e exatamente o defeito que o dono relatou.
+    if _obra_sem_art(obras):
         return ("Necessário cumprir a exigência de cadastro da ART/RRT para "
                 "possibilitar o lançamento da primeira medição no sistema.")
     total, realizado = _money(d.get("valor_total_submetas")), _money(d.get("valor_total_realizado"))
@@ -1370,6 +1431,24 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             # significa "nao coletado" e jogaria toda proposta nao-raspada p/ ca.
             if row[16] == 0 and "normal" in (row[10] or "").casefold():
                 pend = True
+            # ⭐ LICITAÇÃO EM ELABORAÇÃO e OBRA SEM ART/RRT — os dois são ação do
+            # MUNICÍPIO (pedido do dono, 26/08/2026). Até aqui o item ficava na
+            # Parte 1, listado como pendência de Brasília, e no caso da ART com a
+            # frase da pendência municipal escrita ao lado, numa caixa cinza.
+            #
+            # ⚠️ As duas funções só afirmam com DADO LIDO — `None` e vazio
+            # devolvem False. Classificar por ausência poria cobrança falsa na
+            # mesa do prefeito e ainda tiraria o item do RM Resumido, que só
+            # imprime a Parte 1.
+            #
+            # ⚠️ COBERTURA IRREGULAR, e vale saber: `processo_execucao` (row[21])
+            # só é gravado com detalhe lido E contratação Normal E `_hx` vivo; e
+            # `obras` (row[26]) depende de `TG_OPS_OBS=1`, que hoje está ligado em
+            # freitas/montesiao/santamaria mas NÃO no trust. Onde o dado não
+            # chega, a classificação sai idêntica à de hoje — não piora, mas
+            # também não entrega.
+            if _lic_em_elaboracao(row[21]) or _obra_sem_art(row[26]):
+                pend = True
             # ano do PAGAMENTO (OPs/OBs) — alimenta o bloco "REPASSES DE {ano}".
             ano_pgto_vol = _ano_pagamento_ops_obs(row[22])
             parte, secao, suf = _destino_completo(
@@ -1793,10 +1872,24 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
                     num = f"{num} - {ano_pac}"
                 if is_doacao:
                     num = f"{num} (DOAÇÃO)"
-                pre_novo = st == "ativa" and ano_pac == ano_emissao
+                # ⭐ NOVO PAC É DEMANDA DO MUNICÍPIO (pedido do dono, 26/08/2026).
+                # São DUAS metades, e uma sem a outra não entrega:
+                #
+                #  `pre_empenho_novo=False` — a Parte 4 se chama, literalmente,
+                #  "Propostas Voluntárias … cadastros realizados no ano de {ano} …
+                #  não possuem garantia". Uma seleção do PAC não é proposta
+                #  voluntária, e `_destino_completo` devolve a Parte 4 ANTES de
+                #  olhar a pendência: sem zerar isto, o PAC do ano corrente
+                #  continuaria caindo lá e o pedido não teria efeito nenhum
+                #  justamente nas seleções mais novas.
+                #
+                #  `pend_municipal=True` — leva o não pago para a Parte 2 em vez
+                #  da 1. O PAGO segue o caminho de sempre (Parte 2 no ano
+                #  corrente, Parte 3 nos anteriores): o pedido é sobre onde a
+                #  bola está, e em seleção paga não há bola com ninguém.
                 parte_pac, secao_pac, suf = _destino_completo(
                     "federal", "pac", st, ano_pac, None, ano_emissao,
-                    _pend_municipal(sit), pre_novo, False)
+                    True, False, False)
                 add_item(parte_pac, secao_pac, ("Novo PAC" + suf), {
                     "tipo": "Proposta",
                     "numero": num,
