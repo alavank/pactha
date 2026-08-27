@@ -74,6 +74,12 @@ MIGRATION_FILES = [
     # de consultas ja fez — ver o cabecalho de `add_rm_estagio_indice.sql`.
     "add_rm_estagio_coluna.sql",
     "add_rm_estagio_indice.sql",
+    # Portal da Transparencia MG: empenhos/pagamentos do Estado ao municipio,
+    # vinculados ao convenio pelo HISTORICO do empenho (o unico lugar onde esse
+    # vinculo existe — os dados abertos do Estado nao trazem o campo).
+    # Tabela propria, e nao coluna em convenios_estadual: a busca e por CNPJ e
+    # devolve empenho SEM convenio. Ver o cabecalho do arquivo.
+    "add_transparencia_mg_empenhos.sql",
     # TE/Emenda Pix federal persistida (coletor especiais -> tabela; RM/tela leem)
     "add_transferegov_te.sql",
     # SIMEC: TERMOS DE COMPROMISSO (o instrumento; as liberacoes ja existiam)
