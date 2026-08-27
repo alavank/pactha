@@ -144,10 +144,10 @@ class _Municipio:
 # conseguia distinguir regressão nova de ruído antigo.
 #
 # Ao mexer num SELECT de rm.py, confira o comprimento aqui:
-#   LINHA_DETALHE -> SELECT do `detalhe`   (rm.py, 17 colunas: row[13]=nome, row[14]=uf,
-#                                           row[15]=fontes, row[16]=email)
-#   LINHA_PDF     -> SELECT do `pdf`       (rm.py, 11 colunas: row[8]=escopo,
-#                                           row[9]=fontes, row[10]=email)
+#   LINHA_DETALHE -> SELECT do `detalhe`   (rm.py, 18 colunas: row[13]=nome, row[14]=uf,
+#                                           row[15]=fontes, row[16]=email, row[17]=estagio)
+#   LINHA_PDF     -> SELECT do `pdf`       (rm.py, 12 colunas: row[8]=escopo,
+#                                           row[9]=fontes, row[10]=email, row[11]=estagio)
 # ⚠️ `fontes` e `email` entraram no FIM de CADA SELECT, e por isso o índice de
 # cada um é DIFERENTE em cada tupla (fontes: 15 no detalhe, 9 no pdf, 14 no
 # listar): as colunas de `municipios` vêm depois de `r.anos` em dois deles.
@@ -160,13 +160,14 @@ class _Municipio:
 # fazendo o trabalho dele: confira a ORDEM antes de só acrescentar um valor.
 LINHA_DETALHE = (1, 99, DATA, "Monte Siao/MG", "RM de julho", "rodape",
                  "rascunho", {"partes": []}, 7, None, None,
-                 "completo", [], "Monte Siao", "MG", [], "contato@exemplo.com")
+                 "completo", [], "Monte Siao", "MG", [], "contato@exemplo.com",
+                 "")   # estagio: "" = todas (o completo)
 # ⚠️ `None` no e-mail DE PROPÓSITO, e não uma string: é o valor real de todo RM
 # gerado ANTES de a coluna existir. Com uma string aqui, o `or ""` do handler
 # nunca seria exercitado e um `meta.get("email", "")` ingênuo passaria no teste
 # enquanto imprimiria "None" no cabeçalho de cada relatório antigo.
 LINHA_PDF = (DATA, "Monte Siao/MG", "RM de julho", "rodape", {"partes": []},
-             "Monte Siao", "MG", 99, "completo", [], None)
+             "Monte Siao", "MG", 99, "completo", [], None, "")
 LINHA_CTX = (99, "RM de julho", DATA, "rascunho")
 DONO = (99,)          # o que `ensure_dono` le: o municipio_id da linha
 
@@ -260,9 +261,11 @@ CENARIOS = {
         {"updated": True},
     ),
     "auto_popular": (
-        # A 2ª resposta espelha o SELECT do `repopular`: 6 colunas desde que
-        # `fontes` entrou no FIM (row[4]=anos, row[5]=fontes).
-        lambda: [_Res(DONO), _Res((99, DATA, "RM de julho", "completo", [], [])), _Res(None)],
+        # A 2ª resposta espelha o SELECT do `repopular`: 7 colunas desde que
+        # `estagio` entrou no FIM (row[4]=anos, row[5]=fontes, row[6]=estagio).
+        # ⚠️ É o SELECT mais CURTO dos quatro do router — o índice do fim NÃO é
+        # o mesmo do `listar` nem do `detalhe`. Nunca copie o número.
+        lambda: [_Res(DONO), _Res((99, DATA, "RM de julho", "completo", [], [], "")), _Res(None)],
         lambda db, u: rm.repopular(rid=1, request=None, db=db, current=u),
         {"ok": True, "partes": 0, "itens": 0},
     ),

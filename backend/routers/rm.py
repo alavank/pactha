@@ -118,6 +118,15 @@ class RmCreate(BaseModel):
     cidade_emissao: Optional[str] = None
     titulo: Optional[str] = None
     auto_popular: bool = True
+    # RECORTE POR ESTAGIO (pedido do dono, 26/08/2026):
+    #   "" / None   -> TODAS (o completo)
+    #   "pagas"     -> so o que ja foi pago
+    #   "pendentes" -> so o que falta
+    # Entra na IDENTIDADE do relatorio, como `anos` e `fontes` — ver
+    # add_rm_estagio_coluna.sql. Valor desconhecido vira "" no builder, e
+    # nao filtro vazio: um typo devolveria um RM EM BRANCO, e relatorio
+    # vazio se le como "o municipio nao tem nada".
+    estagio: Optional[str] = None
     # SELECAO de anos do relatorio. O RM e UM so, com o escopo escolhido:
     #   []           -> TODOS os anos (o "completo")
     #   [2026]       -> so 2026
@@ -222,7 +231,9 @@ async def listar(
                -- ⚠️ E-MAIL DEPOIS DE `fontes`, mesma armadilha: e row[15] AQUI e
                -- row[16] no `detalhe`, porque la m.nome/m.uf entram antes. Cada
                -- chamador carimba o SEU indice.
-               r.email
+               r.email,
+               -- ESTAGIO no fim de novo: row[16] AQUI, row[17] no `detalhe`.
+               r.estagio
         FROM rm_relatorios r LEFT JOIN municipios m ON m.id = r.municipio_id
         {('WHERE ' + ' AND '.join(where)) if where else ''}
         -- Dentro do mesmo escopo de anos, o SEM filtro de consultas vem primeiro:
@@ -240,6 +251,8 @@ async def listar(
         d["fontes"] = list(row[14]) if row[14] is not None else []
         # E-MAIL carimbado nesta linha. row[15] = o FIM deste SELECT.
         d["email"] = row[15] or ""
+        # RECORTE POR ESTAGIO ("" = todas). row[16] = o FIM deste SELECT.
+        d["estagio"] = row[16] or ""
         items.append(d)
     return {"items": items, "total": len(items)}
 
@@ -294,6 +307,9 @@ async def criar(
     # (exercicio x data por extenso) e o backfill que add_rm_anos.sql roda a cada
     # boot le esse valor. Consulta nao entra nele.
     _fontes = rm_fontes.normalizar(body.fontes)
+    _estagio = (body.estagio or "").strip().lower()
+    if _estagio not in ("pagas", "pendentes"):
+        _estagio = ""
     # asyncpg exige uma LISTA Python p/ param INT[] (o CAST informa o tipo do
     # elemento e cobre a lista vazia = completo). Passar string '{2026}' quebra.
     # ⚠️ ESTA CONSULTA E O ESPELHO DO `ON CONFLICT` LA EMBAIXO, e as duas tem de
@@ -303,8 +319,8 @@ async def criar(
     # dos fundos descrita no topo do arquivo.
     anterior = (await db.execute(text(
         "SELECT id FROM rm_relatorios WHERE municipio_id = :m AND anos = CAST(:a AS INT[])"
-        " AND fontes = CAST(:f AS TEXT[])"
-    ), {"m": body.municipio_id, "a": _anos, "f": _fontes})).first()
+        " AND fontes = CAST(:f AS TEXT[]) AND estagio = :e"
+    ), {"m": body.municipio_id, "a": _anos, "f": _fontes, "e": _estagio})).first()
     ja_existia = anterior is not None
     if ja_existia:
         # Antes de `montar_conteudo`, que e a parte cara: em modo bloqueio nao ha
@@ -319,7 +335,8 @@ async def criar(
     # a referencia e o ano corrente.
     _ano_ref = max(_anos) if _anos else date.today().year
     conteudo = (await montar_conteudo(db, body.municipio_id, _ano_ref,
-                                      completo=True, anos=_anos, fontes=_fontes)
+                                      completo=True, anos=_anos, fontes=_fontes,
+                                      estagio=_estagio)
                 if body.auto_popular else {"partes": []})
     titulo = body.titulo or f"RELATÓRIO DE MONITORAMENTO – {mun.nome.upper()}/{mun.uf}"
     # RECORTE DE CONSULTAS NO TITULO PADRAO. O titulo padrao nao varia por escopo:
@@ -335,9 +352,12 @@ async def criar(
     # ON CONFLICT: se ja existe RM nessa data, atualiza conteudo
     sql = text("""
         INSERT INTO rm_relatorios
-            (municipio_id, data_referencia, escopo, anos, fontes, cidade_emissao, titulo, conteudo, criado_por, rodape, email)
-        VALUES (:mun, :dt, :escopo, CAST(:anos AS INT[]), CAST(:fontes AS TEXT[]), :cidade, :titulo, CAST(:cont AS JSONB), :usr, :rodape, :email)
-        ON CONFLICT (municipio_id, anos, fontes) DO UPDATE SET
+            (municipio_id, data_referencia, escopo, anos, fontes, estagio, cidade_emissao, titulo, conteudo, criado_por, rodape, email)
+        VALUES (:mun, :dt, :escopo, CAST(:anos AS INT[]), CAST(:fontes AS TEXT[]), :estagio, :cidade, :titulo, CAST(:cont AS JSONB), :usr, :rodape, :email)
+        -- ⚠️ `estagio` ENTRA NA CHAVE (decisao do dono, 26/08/2026). Sem ele
+        -- aqui, gerar "so pendentes" do mesmo periodo e das mesmas consultas
+        -- SOBRESCREVERIA o completo — junto com a redacao editada a mao.
+        ON CONFLICT (municipio_id, anos, fontes, estagio) DO UPDATE SET
             titulo = EXCLUDED.titulo,
             cidade_emissao = EXCLUDED.cidade_emissao,
             rodape = EXCLUDED.rodape,
@@ -382,7 +402,7 @@ async def criar(
             "mun": body.municipio_id, "dt": body.data_referencia, "escopo": _escopo,
             "anos": _anos, "fontes": _fontes,
             "cidade": cidade, "titulo": titulo, "rodape": rodape,
-            "email": email,
+            "email": email, "estagio": _estagio,
             "cont": json.dumps(conteudo), "usr": getattr(user, "id", None),
             "overwrite": body.auto_popular,
         })).scalar()
@@ -393,6 +413,13 @@ async def criar(
         # ⚠️ A ORDEM DESTES IFs IMPORTA: "ux_rm_mun_anos" e SUBSTRING de
         # "ux_rm_mun_anos_fontes". O especifico tem de vir primeiro, senao a
         # corrida de dois cliques recebe a mensagem da janela de deploy.
+        # ⚠️ MAIS ESPECIFICO PRIMEIRO, de novo: "ux_rm_mun_anos_fontes" e
+        # SUBSTRING de "ux_rm_mun_anos_fontes_estagio". Na ordem errada, a
+        # janela do deploy do estagio receberia a mensagem da corrida.
+        if "ux_rm_mun_anos_fontes_estagio" in _erro:
+            raise HTTPException(
+                409, "Dois pedidos de geração deste mesmo relatório chegaram "
+                     "juntos. Tente novamente.") from ex
         if "ux_rm_mun_anos_fontes" in _erro:
             raise HTTPException(
                 409, "Dois pedidos de geração deste mesmo relatório chegaram "
@@ -597,7 +624,8 @@ async def detalhe(
                r.fontes,
                -- E-MAIL no fim: row[16] AQUI. Nunca copie o indice do outro
                -- SELECT — sao consultas diferentes, com colunas diferentes antes.
-               r.email
+               r.email,
+               r.estagio
         FROM rm_relatorios r LEFT JOIN municipios m ON m.id = r.municipio_id
         WHERE r.id = :id
     """), {"id": rid})).first()
@@ -609,6 +637,7 @@ async def detalhe(
     # CONSULTAS do relatorio ([] = todas). row[15] aqui, row[14] no `listar`.
     d["fontes"] = list(row[15]) if row[15] is not None else []
     d["email"] = row[16] or ""
+    d["estagio"] = row[17] or ""
     return d
 
 
@@ -678,7 +707,11 @@ async def repopular(
     # DELETE, so que sem apagar a linha. Mesmo gate.
     await _exigir_escrita(db, rid, current)
     row = (await db.execute(text(
-        "SELECT municipio_id, data_referencia, titulo, escopo, anos, fontes"
+        "SELECT municipio_id, data_referencia, titulo, escopo, anos, fontes,"
+        # ⚠️ NO FIM, como sempre — aqui `estagio` e row[6]. Este SELECT e o
+        # mais curto dos quatro do arquivo, entao o indice do fim nao e o
+        # mesmo dos outros. Nunca copie o numero de outro SELECT.
+        " estagio"
         " FROM rm_relatorios WHERE id = :id"
     ), {"id": rid})).first()
     if not row:
@@ -691,9 +724,15 @@ async def repopular(
     # de um escopo e a chave (municipio_id, anos, fontes) de outro, mentindo no
     # selo, no titulo e no PDF ao mesmo tempo.
     _fontes = rm_fontes.normalizar(row[5])
+    # ...e com o MESMO recorte de estagio (row[6]). Pelo motivo do paragrafo
+    # acima: sem isto, o Auto-popular de um RM "so pendentes" o encheria com
+    # o conteudo COMPLETO e gravaria por cima — a linha ficaria com o
+    # conteudo de um recorte e a chave de outro.
+    _estagio = (row[6] or "").strip().lower()
     # Mesmo ano de referencia da criacao: o maior ano do escopo (ver `criar`).
     _ano_ref = max(_anos) if _anos else date.today().year
     conteudo = await montar_conteudo(db, row[0], _ano_ref, completo=True, anos=_anos,
+                                     estagio=_estagio,
                                      fontes=_fontes)
     # O `escopo` acompanha o que foi REGENERADO. Sem isto um RM legado ('anual')
     # era reescrito no padrao de 4 partes mas mantinha o rotulo antigo, e o PDF
@@ -775,7 +814,8 @@ async def pdf(
                r.fontes,
                -- E-MAIL do cabecalho: row[10]. Este SELECT e o mais curto dos
                -- tres — aqui `fontes` e row[9], nao row[14]/row[15].
-               r.email
+               r.email,
+               r.estagio
         FROM rm_relatorios r JOIN municipios m ON m.id = r.municipio_id
         WHERE r.id = :id
     """), {"id": rid})).first()
@@ -796,6 +836,11 @@ async def pdf(
         # ⚠️ `or ""` — a coluna e NULL em todo RM gerado antes dela existir, e
         # o renderizador imprimiria "None" no cabecalho de cada um deles.
         "email": row[10] or "",
+        # O recorte por estagio entra no cabecalho do documento pelo mesmo
+        # motivo das consultas: sem isso, o filtrado e o completo saem com
+        # paginas IDENTICAS e quem le o impresso nao sabe que ele nao cobre
+        # o municipio inteiro.
+        "estagio": row[11] or "",
     }
     conteudo = row[4] or {"partes": []}
     municipio = f"{row[5]}/{row[6]}"

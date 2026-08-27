@@ -674,6 +674,20 @@ def roteiro_rm(meta: dict, conteudo: dict, municipio_nome: str):
     _fontes_txt = rotulo_longo(meta.get("fontes") or [])
     if _fontes_txt:
         yield ("consultas", f"Consultas incluídas: {_fontes_txt}")
+    # ⭐ O RECORTE POR ESTÁGIO tem de sair impresso pela MESMA razão do de
+    # consultas, e aqui ela é ainda mais forte: um relatório "só pendentes" e um
+    # completo do mesmo período têm a mesma capa, o mesmo título e as mesmas
+    # seções — a única diferença é o que NÃO está lá. Quem recebe o impresso não
+    # tem como perceber a ausência.
+    #
+    # Reusa o evento `consultas` de propósito: é o mesmo estilo, o mesmo lugar na
+    # página, e os dois renderizadores (PDF e Word) já sabem desenhá-lo. Um
+    # evento novo exigiria mexer nos dois e nasceria com chance de sair só num.
+    _EST_TXT = {"pagas": "Apenas instrumentos JÁ PAGOS",
+                "pendentes": "Apenas instrumentos PENDENTES"}
+    _est_txt = _EST_TXT.get((meta.get("estagio") or "").strip().lower())
+    if _est_txt:
+        yield ("consultas", f"Recorte: {_est_txt}")
 
     for p_idx, parte in enumerate(conteudo.get("partes", [])):
         if p_idx > 0:

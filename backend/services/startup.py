@@ -68,6 +68,12 @@ MIGRATION_FILES = [
     # campo"; '' gravado pela tela e uma decisao. Nao entra na identidade do
     # relatorio (nao e chave de UPSERT), entao nao precisa do par coluna+indice.
     "add_rm_email.sql",
+    # RM por ESTAGIO (pagas/pendentes/todas) — DEPLOY 1 DE DOIS. A coluna e o
+    # indice NOVO; o DROP do anterior (`ux_rm_mun_anos_fontes`) so entra num PR
+    # posterior, depois deste estar nos quatro tenants. Mesma danca que o filtro
+    # de consultas ja fez — ver o cabecalho de `add_rm_estagio_indice.sql`.
+    "add_rm_estagio_coluna.sql",
+    "add_rm_estagio_indice.sql",
     # TE/Emenda Pix federal persistida (coletor especiais -> tabela; RM/tela leem)
     "add_transferegov_te.sql",
     # SIMEC: TERMOS DE COMPROMISSO (o instrumento; as liberacoes ja existiam)

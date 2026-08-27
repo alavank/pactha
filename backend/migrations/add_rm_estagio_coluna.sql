@@ -1,0 +1,33 @@
+-- RM por ESTAGIO (pagas / pendentes / todas) — PARTE 1 de 2: a COLUNA.
+--
+-- Pedido do dono (26/08/2026): "coloque mais um filtro no RM se a consulta e
+-- para buscar somente pagas, pendente, ou todas".
+--
+-- ⭐ ENTRA NA IDENTIDADE DO RELATORIO, e essa foi decisao explicita do dono. O
+-- UPSERT de routers/rm.py e o UNICO desta tabela, e a chave dele e o que impede
+-- um recorte de sobrescrever outro. Se `estagio` ficasse so como apresentacao,
+-- gerar "so pendentes de 2026" APAGARIA o completo de 2026 pelo
+-- `ON CONFLICT DO UPDATE` — junto com a redacao que o usuario editou a mao, sem
+-- aviso nenhum. Foi o mesmo raciocinio de `anos` e de `fontes`.
+--
+-- CONVENCAO DO VAZIO, a mesma das outras duas: '' = TODAS = o completo. Toda
+-- linha QUE JA EXISTE nasce com '' pelo DEFAULT, ou seja: continua sendo
+-- exatamente o relatorio que era, com a mesma chave que tinha. NAO HA BACKFILL,
+-- e nao pode haver — qualquer UPDATE aqui reclassificaria RM ja emitido.
+--
+-- ⚠️ SO DOIS VALORES ALEM DO VAZIO: 'pagas' e 'pendentes'. O builder normaliza
+-- qualquer outra coisa para '' (ver services/rm_builder.montar_conteudo): um typo
+-- no parametro devolveria um relatorio EM BRANCO, e RM vazio se le como "o
+-- municipio nao tem nada" — o pior erro que este documento pode cometer.
+--
+-- ⚠️ POR QUE A COLUNA E O INDICE ESTAO EM ARQUIVOS SEPARADOS. O runner de
+-- services/startup.py executa o arquivo INTEIRO num unico `cur.execute()`, ou
+-- seja, UMA transacao. Juntos, uma falha do CREATE INDEX reverteria tambem o
+-- ALTER — e, como o runner classifica o erro por SUBSTRING ("duplicate"), o log
+-- ainda diria "ja aplicada (skip)". Separados, "coluna sim, indice nao" vira um
+-- estado ALCANCAVEL, que e o unico em que o 503 do router faz sentido.
+--
+-- Idempotente: IF NOT EXISTS. Roda igual em banco novo, porque add_rm.sql /
+-- add_rm_anos.sql / add_rm_fontes_coluna.sql vem antes na lista.
+ALTER TABLE rm_relatorios
+    ADD COLUMN IF NOT EXISTS estagio TEXT NOT NULL DEFAULT '';
