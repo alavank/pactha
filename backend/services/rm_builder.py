@@ -493,39 +493,50 @@ def _mg_pagamentos(linhas) -> dict:
     """Funde os pagamentos dos VARIOS empenhos de um mesmo convenio estadual num
     unico bloco no formato `ops_obs` — o mesmo que `_desembolso_ops_obs` ja le.
 
-    `linhas` = [(pagamentos_jsonb, detalhe_lido: bool), ...] de
-    `transparencia_mg_empenhos` daquele convenio. Um convenio de MG costuma ter
-    mais de um empenho (um por exercicio, por exemplo), e cada um traz suas
-    proprias ordens de pagamento.
+    `linhas` = [pagamentos_jsonb, ...] de `transparencia_mg_empenhos` daquele
+    convenio. Um convenio de MG costuma ter mais de um empenho (um por exercicio,
+    por exemplo), e cada um traz suas proprias ordens de pagamento.
 
-    ⚠️ `consultado` NAO E `bool(linhas)`. `pagamentos` NULO significa NAO
-    CONSULTADO — nunca "nao houve pagamento"; e a mesma doutrina escrita no
-    `add_transparencia_mg_empenhos.sql` e nas Notas de Empenho. Sem esta
-    distincao, todo convenio cujo detalhe ainda esta na fila sairia no relatorio
-    como "Pendente de desembolso", que e uma AFIRMACAO sobre dinheiro publico
-    feita a partir de uma fila de coleta.
+    ⚠️ SO O BLOCO `pagamentos` PROVA QUE HOUVE MEDICAO — nunca `detalhe_lido_em`.
+    Esta funcao ja aceitou a coluna `detalhe_lido_em IS NOT NULL` como prova, e
+    era um defeito GRAVE e PERMANENTE: o coletor carimba aquela coluna tambem
+    quando a aba de Pagamento devolveu corpo vazio (o portal faz isso com cookie
+    velho — "nao erro, nao 403: vazio"), deixando `pagamentos` NULO. Uma leitura
+    que FALHOU virava "Pendente de desembolso" num convenio que podia ter
+    recebido tudo — e o texto CONGELA em `rm_relatorios.conteudo`.
+    NULO = NAO CONSULTADO. E a doutrina do `add_transparencia_mg_empenhos.sql` e
+    das Notas de Empenho, e agora a coluna nem chega mais ate aqui.
+
+    ⚠️ E `valor_desembolsado` conta SO O QUE A SITUACAO DA OP CONFIRMA. Somar
+    toda linha da aba fazia uma OP "Devolvida pelo banco" virar dinheiro
+    recebido — e, pior, APAGAR o "Pendente de desembolso", tirando da lista de
+    cobranca justamente o convenio que nao recebeu.
 
     Devolve {} quando nao ha nada a dizer."""
     total = 0.0
-    tem_valor = False
     obs: list = []
     consultado = False
+    incerto = False
+    ops = 0
     ultima = ""
-    for pagamentos, lido in (linhas or []):
-        if lido:
-            consultado = True
+    for pagamentos in (linhas or []):
         d = _jsonb(pagamentos)
         if not isinstance(d, dict):
             continue
-        # `pagamentos` presente ja e medicao: o detalhe foi lido e gravou o bloco.
+        # O bloco existe => o detalhe foi lido E a aba de Pagamento respondeu.
         consultado = True
-        try:
-            v = float(d.get("valor_desembolsado") or 0)
-        except (TypeError, ValueError):
-            v = 0.0
-        if v:
-            total += v
-            tem_valor = True
+        total += _num0(d.get("valor_desembolsado"))
+        ops += int(_num0(d.get("qtd_ops")) or len(d.get("obs") or []))
+        # ⚠️ Bloco ANTIGO (gravado antes de a situacao passar a ser lida) nao tem
+        # `tem_situacao_desconhecida`. Reclassifica pelas proprias `obs`, senao
+        # uma linha velha passaria por "tudo confirmado" — que e a afirmacao que
+        # este conserto existe para impedir.
+        if "tem_situacao_desconhecida" in d:
+            incerto = incerto or bool(d.get("tem_situacao_desconhecida"))
+        else:
+            incerto = incerto or any(
+                _pgto_confirmado(ob.get("situacao")) is None
+                for ob in (d.get("obs") or []) if isinstance(ob, dict))
         for ob in (d.get("obs") or []):
             if isinstance(ob, dict):
                 obs.append(ob)
@@ -537,11 +548,34 @@ def _mg_pagamentos(linhas) -> dict:
     if not consultado:
         return {}
     return {
-        "valor_desembolsado": total if tem_valor else 0.0,
+        "valor_desembolsado": round(total, 2),
         "data_ultimo_desembolso": ultima or None,
         "obs": obs,
         "_consultado": True,
+        # ⚠️ O TERCEIRO ESTADO. Ha OP cuja situacao este codigo nao sabe ler:
+        # nao da para afirmar "pendente" (o dinheiro pode ter saido) nem
+        # "desembolsado" (pode nao ter). O RM CALA — ver o call site.
+        "_incerto": incerto and total == 0,
+        "_qtd_ops": ops,
     }
+
+
+def _num0(x) -> float:
+    try:
+        return float(x or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _pgto_confirmado(situacao):
+    """A situacao da OP diz que o dinheiro saiu? True/False/None (nao sei).
+
+    ⚠️ IMPORTADA do coletor, e nao recopiada aqui. O vocabulario e da FONTE, e
+    este repo ja mostrou o que acontece quando a mesma regra vive em dois
+    arquivos: as duas copias divergem e ninguem percebe. Import LOCAL para o
+    service nao carregar o modulo de ingestao no boot da API."""
+    from ingestion.transparencia_mg import pagamento_confirmado
+    return pagamento_confirmado(situacao)
 
 
 def _chave_data_br(v) -> str:
@@ -1259,13 +1293,18 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
     # Uma consulta so para o municipio inteiro (nao uma por convenio): o laco
     # abaixo roda por convenio e um SELECT la dentro seria N+1 numa tela que ja e
     # a mais pesada do sistema.
+    # ⚠️ `pagamentos IS NOT NULL` no WHERE, e `detalhe_lido_em` NAO entra aqui.
+    # A coluna `detalhe_lido_em` e carimbada mesmo quando a aba de Pagamento
+    # devolveu corpo vazio — usa-la como prova de medicao transformava uma
+    # leitura FALHA em "Pendente de desembolso" permanente. So o bloco prova.
     _mg: dict = {}
-    for _cid, _pg, _lido in (await db.execute(text("""
-        SELECT convenio_id, pagamentos, (detalhe_lido_em IS NOT NULL)
+    for _cid, _pg in (await db.execute(text("""
+        SELECT convenio_id, pagamentos
           FROM transparencia_mg_empenhos
          WHERE municipio_id = :mid AND convenio_id IS NOT NULL
+           AND pagamentos IS NOT NULL
     """), {"mid": municipio_id})).all():
-        _mg.setdefault(_cid, []).append((_pg, _lido))
+        _mg.setdefault(_cid, []).append(_pg)
 
     rs = await db.execute(
         select(ConvenioEstadual).where(ConvenioEstadual.municipio_id == municipio_id)
@@ -1484,9 +1523,17 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             # afirmar "pendente de empenho" a partir da AUSENCIA de linha no
             # portal confundiria "o Estado nao empenhou" com "o rodizio ainda nao
             # passou neste municipio".
+            # ⚠️ `_incerto` DESLIGA o marcador. Ha OP na aba de Pagamento cuja
+            # situacao este codigo nao sabe ler: dizer "Pendente de desembolso"
+            # pode ser falso (o dinheiro talvez tenha saido) e dizer
+            # "Desembolsado" tambem. Entao o relatorio nao afirma nenhum dos
+            # dois — a caixa abaixo mostra as OPs com a situacao literal, e quem
+            # le decide. Calar no desconhecido e o unico jeito de o marcador
+            # continuar valendo alguma coisa quando ele APARECE.
             "situacao_atual": _situacao_com_marcas(
                 _situacao_estadual(c.situacao, raw), False,
-                bool(_mg_pg.get("_consultado")), _mg_pg.get("valor_desembolsado")),
+                bool(_mg_pg.get("_consultado")) and not _mg_pg.get("_incerto"),
+                _mg_pg.get("valor_desembolsado")),
             # ⚠️ A situacao CRUA da fonte, ao lado da enriquecida. `situacao_atual`
             # passou a carregar a NARRATIVA da ultima alteracao, e quem CLASSIFICA
             # (rm_export._e_pendencia) nao pode ler narrativa: uma alteracao

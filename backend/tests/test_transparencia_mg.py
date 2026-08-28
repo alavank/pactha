@@ -208,3 +208,76 @@ def test_o_fluxo_completo_com_o_HTML_REAL():
     assert (cid, st, met) == (10, "casado", "nr_proposta")
     assert pg["valor_desembolsado"] == 938793.55
     assert classificar(True, d["tem_rotulo"], d["historico"], ref, cid, st) == "casado"
+
+
+# --------------------------------------------------------------------------
+# A FILA DO DETALHE. Três motivos para entrar, e os dois últimos vieram de um
+# defeito GRAVE: `detalhe_lido_em IS NULL` sozinho tornava PERMANENTE tanto uma
+# leitura que falhou quanto um retrato tirado antes de o Estado pagar.
+# --------------------------------------------------------------------------
+import re as _re                                                    # noqa: E402
+from ingestion import transparencia_mg as _mg                       # noqa: E402
+
+
+class _CurFake:
+    """Só guarda o SQL e os parâmetros — a fila é uma consulta, e o que se testa
+    aqui é a CONSULTA."""
+    def __init__(self):
+        self.sql = self.params = None
+
+    def execute(self, sql, params=None):
+        self.sql, self.params = sql, params
+
+    def fetchall(self):
+        return []
+
+
+def _sql_da_fila():
+    c = _CurFake()
+    _mg._fila_detalhe(c, 150)
+    return " ".join(c.sql.split()), c.params
+
+
+def test_a_fila_do_coletor_resgata_a_leitura_que_falhou():
+    """⚠️ A metade de baixo do conserto (a de cima está em
+    `test_LEITURA_QUE_FALHOU_nao_pode_virar_pendencia`).
+
+    O coletor grava `detalhe_lido_em = NOW()` mesmo quando a aba de Pagamento
+    devolveu corpo vazio, deixando `pagamentos` NULO. Com a fila filtrando só por
+    `detalhe_lido_em IS NULL`, essa linha NUNCA MAIS voltava — não havia caminho
+    de resgate em lugar nenhum do repo, e o RM afirmava "Pendente de desembolso"
+    para sempre. `pagamentos IS NULL` é o que a devolve para a fila."""
+    sql, _ = _sql_da_fila()
+    assert "pagamentos IS NULL" in sql
+
+
+def test_a_fila_reve_quem_ainda_nao_recebeu():
+    """`pagamentos` é um RETRATO, não o estado atual. Um empenho lido em janeiro,
+    antes de o Estado pagar, congelava "não pagou" e o pagamento de junho nunca
+    entrava no relatório. Enquanto não há dinheiro confirmado, o empenho volta
+    para a fila a cada `_REVER_DIAS`."""
+    sql, params = _sql_da_fila()
+    assert "valor_desembolsado" in sql and "interval" in sql.lower()
+    assert str(_mg._REVER_DIAS) in [str(p) for p in params]
+
+
+def test_quem_JA_RECEBEU_sai_da_fila_de_vez():
+    """O custo é 2 GET por empenho num host de 2 vCPU: a revisita é só da cauda
+    que ainda não recebeu. O `= 0` é o que faz o pago parar de voltar."""
+    sql, _ = _sql_da_fila()
+    assert _re.search(r"valor_desembolsado'\)::numeric,\s*0\)\s*=\s*0", sql)
+
+
+def test_a_fila_atende_o_nunca_lido_primeiro():
+    """NULLS FIRST: quem nunca foi lido tem prioridade sobre a revisita — senão
+    uma cauda grande de revisitas atrasaria a cobertura inicial."""
+    sql, _ = _sql_da_fila()
+    assert "NULLS FIRST" in sql
+
+
+def test_o_SQL_da_fila_e_valido_na_gramatica_do_postgres():
+    """Não há Postgres de teste em lugar nenhum do projeto — `pglast` usa a
+    gramática real."""
+    import pglast
+    sql, _ = _sql_da_fila()
+    pglast.parse_sql(sql.replace("%s", "7", 1).replace("%s", "150"))
