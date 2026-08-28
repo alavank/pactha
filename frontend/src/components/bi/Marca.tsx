@@ -17,12 +17,27 @@ export const SUBTITULO_PACTHA =
 /** Brasão/logo do cliente, embutido no build por tenant (build-arg do CI). */
 export const CLIENT_LOGO = process.env.NEXT_PUBLIC_CLIENT_LOGO || "";
 
-/** Classe extra do <img> do cliente. A logo do Freitas é PNG transparente com
- *  letras azul-marinho: no tema escuro ela some sobre o fundo. Ganha um fundo
- *  claro só lá (ver `.logo-cliente-fundo-claro` em globals.css). Os brasões
- *  (Monte Sião, Santa Maria) são coloridos e leem bem nos dois temas — por isso
- *  a regra é por arquivo, e não para todo cliente. */
-export const CLIENT_LOGO_CLASSE = /freitas/i.test(CLIENT_LOGO) ? "logo-cliente-fundo-claro" : "";
+/** AJUSTES POR ARTE. Os brasões (Monte Sião, Santa Maria) são quase quadrados,
+ *  coloridos e de peso centrado: o alinhamento padrão serve. A logo do Freitas
+ *  não, em dois pontos:
+ *
+ *  - é PNG transparente com letras azul-marinho e some sobre o fundo escuro —
+ *    ganha fundo claro só nesse tema (`.logo-cliente-fundo-claro`, globals.css);
+ *  - o PESO VISUAL dela fica no terço de cima ("FREITAS" grande em cima,
+ *    "& ASSOCIADOS" fino embaixo, e a cauda do leão no canto inferior). O
+ *    `items-center` alinha o centro GEOMÉTRICO da imagem ao centro do nome da
+ *    cidade, e o "FREITAS" saía acima da linha do nome — o dono viu a logo
+ *    "meio pra cima". Medido no arquivo (28/08/2026, 998×354): o centro de
+ *    massa do alfa está a 36% da altura; deslocar a imagem 14% da própria
+ *    altura para baixo põe o "FREITAS" na linha do nome. ⚠️ Se a arte for
+ *    recortada de novo, medir de novo (centro de massa do canal alfa).
+ *
+ *  Só ao lado do nome (`EnteAtendido`); no login a logo fica sozinha, centrada
+ *  numa coluna, e não há o que alinhar. */
+const AJUSTE_LOGO = /freitas/i.test(CLIENT_LOGO)
+  ? { classe: "logo-cliente-fundo-claro", deslocamento: "14%" }
+  : { classe: "", deslocamento: undefined };
+export const CLIENT_LOGO_CLASSE = AJUSTE_LOGO.classe;
 
 /** Nome do cliente embutido no build — usado só como último recurso, quando a
  *  API ainda não respondeu (o nome real vem de /api/municipios). */
@@ -129,6 +144,9 @@ export function EnteAtendido({
              está sob `min-w-0` + `truncate`, então encurta em vez de estourar o
              layout. */
           className={`${grande ? "h-10" : "h-8"} w-auto max-w-[120px] shrink-0 object-contain ${CLIENT_LOGO_CLASSE}`}
+          /* O deslocamento óptico é em % da PRÓPRIA altura (transform), então
+             vale igual no h-10 do cabeçalho e no h-8 da barra lateral. */
+          style={AJUSTE_LOGO.deslocamento ? { transform: `translateY(${AJUSTE_LOGO.deslocamento})` } : undefined}
         />
       )}
       <span
