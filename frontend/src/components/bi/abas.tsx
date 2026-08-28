@@ -19,7 +19,10 @@ import {
   AbaDocumentos, AbaEstaduais, AbaFns, AbaParlamentares, AbaSismob, AbaTransfereGov,
   Alertas, CaucItemDetalhe, Lancamento, Overview, isRollup,
 } from "@/lib/bi";
-import { CADASTRO_ESTADUAL, NOME_UF, tituloEstadual } from "@/lib/estadual";
+import {
+  CADASTRO_ESTADUAL, NOME_UF, tituloEstadual, tituloEstadualPorUfs, subtituloEstadualPorUfs,
+  rotuloCadastroEstadual, nomeEstadoOuGenerico, certificadoEstadual, travaEstadual,
+} from "@/lib/estadual";
 import {
   formatCurrencyShort, formatInt, formatDate, formatDataCurta, formatDataHora, horasDesde,
   diasLabel, parseDate, diasSeveridade,
@@ -97,6 +100,15 @@ export function AbaGeral({ ov, alertas, tv }: AbaProps & { ov: Overview; alertas
     !cg?.tem_dados && (cg?.municipios_na_fonte ?? 1) === 0 && ufsForaDaFonte.length > 0;
   const cgTom = !cg?.tem_dados ? (estadualNaoSeAplica ? "ok" : "warn")
     : cgPct >= 0.99 ? "ok" : cgPct >= 0.5 ? "warn" : "crit";
+  /* ⚠️ O NOME DO CADASTRO É O DO ESTADO DO ESCOPO — "CAGEC" é nome de Minas,
+     e este medidor o escrevia (com "Minas:" na frase de baixo) no painel de
+     Santa Maria/RS, onde o cadastro é o CHE. As UFs cobertas vêm do servidor;
+     payload antigo sem elas cai no genérico, que nunca está errado. */
+  const ufsNaFonte = cg?.ufs_na_fonte ?? [];
+  const siglaEst = rotuloCadastroEstadual(ufsNaFonte);
+  const estadoEst = nomeEstadoOuGenerico(ufsNaFonte);
+  const travaEst = ufsNaFonte.length === 1
+    ? travaEstadual(ufsNaFonte[0]) : "impede celebrar convênio com o Estado";
 
 
   return (
@@ -235,7 +247,7 @@ export function AbaGeral({ ov, alertas, tv }: AbaProps & { ov: Overview; alertas
                     OBRIGACOES do CRC, e 45 fica a um de 44 — o dono de uma
                     carteira de 44 municipios leu contagem de municipios.
                     (Cabe: 18 chars ~ "municípios em dia", que ja renderiza.) */
-                  !estadualNaoSeAplica ? (cgTotal ? "CAGEC · obrigações" : "CAGEC")
+                  !estadualNaoSeAplica ? (cgTotal ? `${siglaEst} · obrigações` : siglaEst)
                   : ufsForaDaFonte.length === 1
                     ? (CADASTRO_ESTADUAL[ufsForaDaFonte[0]]?.sigla
                         || CADASTRO_ESTADUAL[ufsForaDaFonte[0]]?.curto
@@ -291,13 +303,13 @@ export function AbaGeral({ ov, alertas, tv }: AbaProps & { ov: Overview; alertas
                   ? (estadualNaoSeAplica
                       ? `${ufsForaDaFonte.map((u) => NOME_UF[u] || u).join(", ")}: `
                         + "regularidade estadual ainda não acompanhada por este sistema."
-                      : "Minas: regularidade estadual ainda não coletada.")
+                      : `${estadoEst}: regularidade estadual ainda não coletada.`)
                   : cagecCrit
-                    ? `Minas: ${cg.quem?.[0]?.nome ? `${cg.quem[0].nome.slice(0, 34)} — ` : ""}`
-                      + "impede convênio estadual e liberação de parcela."
+                    ? `${estadoEst}: ${cg.quem?.[0]?.nome ? `${cg.quem[0].nome.slice(0, 34)} — ` : ""}`
+                      + `${travaEst}.`
                     : cgTotal && cgTotal - cgOk > 0
-                      ? `Minas: ${cgTotal - cgOk} obrigação(ões) pendente(s).`
-                      : `Minas: ${cg.entidades} cadastro(s) em situação regular.`}
+                      ? `${estadoEst}: ${cgTotal - cgOk} obrigação(ões) pendente(s).`
+                      : `${estadoEst}: ${cg.entidades} cadastro(s) em situação regular.`}
               </div>
             </div>
           </div>
@@ -1099,6 +1111,19 @@ export function AbaDocumentosView({
     && (d.cagec.fora_de_mg ?? 0) > 0;
   const cagecParcial = (d.cagec.fora_de_mg ?? 0) > 0
     && (d.cagec.municipios_no_escopo ?? 0) > 0;
+  /* E O NOME DO QUE A FONTE COBRE — o par de `ufs_sem_fonte`. A tela sabia
+     nomear quem ficou de fora ("SIGECON — Goiás") e chamava todo o resto de
+     "CAGEC — Minas Gerais", inclusive o CHE de Santa Maria. Uma UF → o nome
+     dela; várias ou nenhuma (payload antigo) → o genérico. O certificado só
+     existe em Minas (CRC): fora dele a contagem fala em exigências, não em
+     "documentos do CRC". */
+  const ufsNaFonte = d.cagec.ufs_na_fonte ?? [];
+  const siglaEst = rotuloCadastroEstadual(ufsNaFonte);
+  const tituloEst = tituloEstadualPorUfs(ufsNaFonte);
+  const subEst = subtituloEstadualPorUfs(ufsNaFonte);
+  const certificadoEst = ufsNaFonte.length === 1 ? certificadoEstadual(ufsNaFonte[0]) : null;
+  const travaEst = ufsNaFonte.length === 1
+    ? travaEstadual(ufsNaFonte[0]) : "impede celebrar convênio com o Estado";
 
   const crcAusente = !!cagec && cagec.detalhe_do_crc === false;
   const crcVelho = !!cagec && cagec.detalhe_do_crc !== false && !!cagec.crc_erro;
@@ -1205,12 +1230,15 @@ export function AbaDocumentosView({
             ? (ufsSemFonte.length === 1
                 ? tituloEstadual(ufsSemFonte[0])
                 : `Cadastro estadual — ${ufsSemFonte.join(", ")}`)
-            : "CAGEC — Minas Gerais"}
+            : tituloEst}
           valor={semFonteNoEscopo ? "Não acompanhado"
             : !cagec ? "Sem coleta"
             : cagecIrregular ? (cagec.situacao || "Irregular") : "Em dia"}
           sub={semFonteNoEscopo ? "ainda não acompanhado aqui"
-            : cagecParcial ? `só os ${d.cagec.municipios_no_escopo} de MG`
+            : cagecParcial
+              ? (ufsNaFonte.length
+                  ? `só os ${d.cagec.municipios_no_escopo} de ${ufsNaFonte.join(", ")}`
+                  : `só ${d.cagec.municipios_no_escopo} com fonte estadual`)
             : "convênios estaduais"}
           grande={tv} />
         {/* Com o CRC indisponivel nao existe denominador: as pendencias do
@@ -1230,7 +1258,7 @@ export function AbaDocumentosView({
           sub={carteira
             ? `${formatInt(c.com_dados - c.regulares)} município(s) com pendência`
             : crcAusente
-              ? `de ${primeiro?.total_itens ?? 0} · CAGEC não conferido`
+              ? `de ${primeiro?.total_itens ?? 0} · ${siglaEst} não conferido`
               : `de ${(primeiro?.total_itens ?? 0) + (cagec?.itens?.length ?? 0)} exigências`}
           grande={tv} />
         {/* ⚠️ ESTE CARTÃO NÃO MOSTRA MAIS DATA DE COLETA. Ele exibia
@@ -1377,7 +1405,7 @@ export function AbaDocumentosView({
                 ? (ufsSemFonte.length === 1
                     ? tituloEstadual(ufsSemFonte[0])
                     : `Cadastro estadual — ${ufsSemFonte.join(", ")}`)
-                : "CAGEC — Minas Gerais"}
+                : tituloEst}
               /* Sem fonte na UF não há coleta para carimbar — e um selo dizendo
                  "sem registro" ao lado de "ainda não acompanhada" repetiria a
                  mesma frase duas vezes. */
@@ -1385,11 +1413,12 @@ export function AbaDocumentosView({
               sub={semFonteNoEscopo
                 ? "regularidade estadual · ainda não acompanhada por este sistema"
                 : cagecParcial
-                ? `Cadastro Geral de Convenentes · cobre ${d.cagec.municipios_no_escopo} de ${(d.cagec.municipios_no_escopo ?? 0) + (d.cagec.fora_de_mg ?? 0)} municípios (os de MG)`
-                : "Cadastro Geral de Convenentes · exigências estaduais"}
+                ? `${subEst} · cobre ${d.cagec.municipios_no_escopo} de ${(d.cagec.municipios_no_escopo ?? 0) + (d.cagec.fora_de_mg ?? 0)} municípios${ufsNaFonte.length ? ` (${ufsNaFonte.join(", ")})` : ""}`
+                : subEst}
               /* "27 exigencias" nao existe em documento nenhum: o CRC tem 24
                  documentos, e as outras 3 linhas (CADIN-MG, SIAFI-MG, mandato)
-                 vem do CABECALHO do certificado. Separar por procedencia. */
+                 vem do CABECALHO do certificado. Separar por procedencia — so
+                 onde HA certificado; no CHE cada linha e uma exigencia. */
               contagem={semFonteNoEscopo
                 ? "fonte não disponível"
                 : crcAusente
@@ -1400,9 +1429,11 @@ export function AbaDocumentosView({
                 : crcVelho
                 ? `documentos de ${formatDate(cagec.crc_em)}`
                 : cagec?.itens?.length
-                ? `${cagec.itens.length} linhas · ${
-                    cagec.itens.filter((x) => !["CADIN-MG", "SIAFI-MG", "MANDATO"].includes(x.codigo || "")).length
-                  } documentos do CRC`
+                ? (certificadoEst
+                    ? `${cagec.itens.length} linhas · ${
+                        cagec.itens.filter((x) => !["CADIN-MG", "SIAFI-MG", "MANDATO"].includes(x.codigo || "")).length
+                      } documentos do ${certificadoEst}`
+                    : `${cagec.itens.length} exigências`)
                 : "aguardando coleta"}
             />
             {/* Falha do PORTAL do Estado — nao nossa e nao do municipio. Mas
@@ -1424,8 +1455,8 @@ export function AbaDocumentosView({
                     </>
                   ) : (
                     <>
-                      <strong>Leitura de {formatDate(cagec.crc_em)}.</strong> O portal do
-                      CAGEC não emitiu certificado novo, então a lista abaixo pode estar
+                      <strong>Leitura de {formatDate(cagec.crc_em)}.</strong> O portal do{" "}
+                      {siglaEst} não emitiu certificado novo, então a lista abaixo pode estar
                       desatualizada.
                     </>
                   )}
@@ -1443,9 +1474,8 @@ export function AbaDocumentosView({
               >
                 <ShieldAlert className="mt-[1px] size-4 shrink-0" style={{ color: "var(--bi-crit)" }} />
                 <p className="text-[11px] font-semibold leading-snug" style={{ color: "var(--bi-crit)" }}>
-                  Situação {cagec?.situacao || "Irregular"} no CAGEC
-                  {pendCagec ? ` · ${pendCagec} pendência(s)` : ""} — impede assinar convênio
-                  estadual e liberação de parcela.
+                  Situação {cagec?.situacao || "Irregular"} no {siglaEst}
+                  {pendCagec ? ` · ${pendCagec} pendência(s)` : ""} — {travaEst}.
                 </p>
               </div>
             )}

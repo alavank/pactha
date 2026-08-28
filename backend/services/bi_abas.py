@@ -21,6 +21,10 @@ from typing import Optional
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from services.cadastro_estadual import (
+    UFS_COM_CADASTRO_COLETADO, motivo_sem_coleta, sigla_da_fonte,
+)
+
 # Situacoes que o gestor le como "dinheiro andando" (convenio vivo, executando).
 EM_EXECUCAO_TOKENS = ("EXECU", "VIGENTE", "ANDAMENTO", "CELEBRAD", "ASSINAD")
 
@@ -572,8 +576,10 @@ async def bi_documentos(db: AsyncSession, ids: list[int]) -> dict:
 #
 # Espelha `UFS_ACOMPANHADAS` de frontend/src/lib/estadual.ts. As duas listas
 # precisam andar juntas: entrar aqui e nao la (ou vice-versa) reintroduz
-# exatamente a contradicao acima.
-UFS_COM_CADASTRO_COLETADO: set[str] = {"MG", "RS"}
+# exatamente a contradicao acima. O conjunto mora em
+# `services/cadastro_estadual.py` (junto com o NOME de cada cadastro) e e
+# importado no topo deste modulo — `UFS_COM_CADASTRO_COLETADO` continua
+# acessivel daqui para quem ja o importava.
 
 # ⚠️ OUTRA COISA, apesar do nome parecido: esta e a UF do coletor de CONVENIOS
 # estaduais logado (SIGCON-MG), usada como denominador do medidor de coleta em
@@ -593,22 +599,31 @@ MOTIVO_ESTADO_SEM_FONTE = (
 )
 
 
-def _cagec_indisponivel(motivo: str | None = None) -> dict:
-    from routers.cagec import MOTIVO_SEM_COLETA
-    return {"disponivel": False, "motivo": motivo or MOTIVO_SEM_COLETA,
-            "por_municipio": [], "municipios_no_escopo": 0, "fora_de_mg": 0}
+def _cagec_indisponivel(motivo: str | None = None,
+                        ufs_na_fonte: list[str] | None = None) -> dict:
+    # O motivo nomeia o cadastro DO ESTADO coberto (CAGEC em MG, CHE no RS).
+    # Carteira com mais de um estado coberto cai no generico — nao ha um nome
+    # so que seja verdadeiro para os dois.
+    ufs = ufs_na_fonte or []
+    if not motivo:
+        motivo = motivo_sem_coleta(ufs[0] if len(ufs) == 1 else None)
+    return {"disponivel": False, "motivo": motivo,
+            "por_municipio": [], "municipios_no_escopo": 0, "fora_de_mg": 0,
+            "ufs_na_fonte": ufs}
 
 
 async def _escopo_do_cadastro_estadual(
     db: AsyncSession, ids: list[int]
-) -> tuple[list[int], list[str]]:
+) -> tuple[list[int], list[str], list[str]]:
     """Separa o escopo entre o que a fonte alcanca e o que ela nao alcanca.
 
-    Devolve `(ids_cobertos, ufs_sem_fonte)` — e a segunda parte importa tanto
-    quanto a primeira: e com ela que a tela nomeia os estados de fora em vez de
-    dizer um "nao se aplica" que nao tem como saber."""
+    Devolve `(ids_cobertos, ufs_sem_fonte, ufs_cobertas)` — e a segunda parte
+    importa tanto quanto a primeira: e com ela que a tela nomeia os estados de
+    fora em vez de dizer um "nao se aplica" que nao tem como saber. A terceira
+    e o que permite a tela chamar o cadastro pelo nome certo (CAGEC ou CHE)
+    em vez de carimbar o mineiro em cima de um municipio gaucho."""
     if not ids:
-        return [], []
+        return [], [], []
     linhas = await db.execute(
         text("SELECT id, upper(coalesce(uf, '')) FROM municipios "
              "WHERE id = ANY(:ids)"),
@@ -617,7 +632,8 @@ async def _escopo_do_cadastro_estadual(
     cobertos = [i for i in ids if uf_por_id.get(i) in UFS_COM_CADASTRO_COLETADO]
     fora = sorted({uf for i, uf in uf_por_id.items()
                    if uf and uf not in UFS_COM_CADASTRO_COLETADO and i in set(ids)})
-    return cobertos, fora
+    cobertas = sorted({uf_por_id[i] for i in cobertos})
+    return cobertos, fora, cobertas
 
 
 async def _cagec_bloco(db: AsyncSession, ids: list[int]) -> dict:
@@ -633,7 +649,7 @@ async def _cagec_bloco(db: AsyncSession, ids: list[int]) -> dict:
     # ⭐ SO O QUE A FONTE ALCANCA. Antes varria os ids todos: numa carteira
     # multi-estado, consultava o portal mineiro para cidades de GO/TO/ES e a tela
     # carimbava "CAGEC — Minas Gerais" sobre elas.
-    ids_mg, ufs_fora = await _escopo_do_cadastro_estadual(db, ids)
+    ids_mg, ufs_fora, ufs_cobertas = await _escopo_do_cadastro_estadual(db, ids)
     fora = len(ids) - len(ids_mg)
     if not ids_mg:
         vazio = _cagec_indisponivel(MOTIVO_ESTADO_SEM_FONTE if fora else None)
@@ -673,7 +689,11 @@ async def _cagec_bloco(db: AsyncSession, ids: list[int]) -> dict:
         })
 
     if not por_municipio:
-        return _cagec_indisponivel()
+        vazio = _cagec_indisponivel(ufs_na_fonte=ufs_cobertas)
+        vazio["municipios_no_escopo"] = len(ids_mg)
+        vazio["fora_de_mg"] = fora
+        vazio["ufs_sem_fonte"] = ufs_fora
+        return vazio
     return {
         "disponivel": True,
         "motivo": "",
@@ -686,6 +706,11 @@ async def _cagec_bloco(db: AsyncSession, ids: list[int]) -> dict:
         # As UFs que ficaram de fora, NOMEADAS. E o que permite a tela dizer
         # "GO, TO" em vez de uma frase generica que o gestor nao sabe conferir.
         "ufs_sem_fonte": ufs_fora,
+        # E as que a fonte COBRE, tambem nomeadas: e daqui que a tela tira o
+        # nome do cadastro ("CAGEC — Minas Gerais", "CHE — Rio Grande do Sul").
+        # Sem isto ela so sabia quem ficou de fora e chamava todo o resto de
+        # CAGEC.
+        "ufs_na_fonte": ufs_cobertas,
         "regulares": sum(1 for m in por_municipio if m["regular"]),
         "pendencias_total": sum(m["pendencias"] for m in por_municipio),
         # So os de MG: o CAGEC nao alcanca os outros, e incluir os demais faria
@@ -857,8 +882,11 @@ async def documentos_vencendo(db: AsyncSession, ids: list[int],
         # do fundo, e trocar rotulo incompleto por omissao e regressao.
         # `cauc_situacao` nao tem essas colunas (uma linha por municipio), entao
         # o ramo do CAUC manda NULL e a tela nao rotula nada.
-        extra = ("c.nome, COALESCE(c.principal, false)" if esfera == "CAGEC"
-                 else "NULL::text, true")
+        # `fonte` so no cadastro estadual: e o que diz se a linha e do CAGEC
+        # mineiro ou do CHE gaucho, e o rotulo que a tela mostra ao lado do
+        # prazo ("CHE · vence em ...") sai dela — nao do nome da tabela.
+        extra = ("c.nome, COALESCE(c.principal, false), c.fonte" if esfera == "CAGEC"
+                 else "NULL::text, true, NULL::text")
         rows = (await db.execute(text(f"""
             SELECT c.municipio_id, COALESCE(m.nome, c.nome), c.itens, c.data_pesquisa,
                    {extra}
@@ -866,13 +894,14 @@ async def documentos_vencendo(db: AsyncSession, ids: list[int],
             LEFT JOIN municipios m ON m.id = c.municipio_id
             WHERE c.municipio_id = ANY(:ids)
         """), {"ids": ids})).fetchall()
-        for mid, nome, itens, pesquisa, ent_nome, principal in rows:
+        for mid, nome, itens, pesquisa, ent_nome, principal, fonte in rows:
+            rotulo = sigla_da_fonte(fonte) if esfera == "CAGEC" else esfera
             for p in prazos_dos_itens(itens, pesquisa, esfera, dias, hoje):
                 out.append({"municipio_id": mid, "municipio": nome,
                             # So quando NAO e a principal: repetir "Prefeitura"
                             # em toda linha e ruido que ninguem le.
                             "entidade": (None if principal else (ent_nome or None)),
-                            **p})
+                            **p, "esfera": rotulo})
 
     out.sort(key=lambda x: (x["dias_restantes"], x["esfera"], x["codigo"] or ""))
     return out

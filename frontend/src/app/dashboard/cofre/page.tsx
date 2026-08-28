@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { useMunicipio } from "@/contexts/MunicipioContext";
+import { useUfDoMunicipio } from "@/lib/useUfDoMunicipio";
 import { Eye, EyeOff, KeyRound, Lock, Plus, Trash2, ExternalLink, Pencil, Zap } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -63,8 +64,14 @@ function parseSessionPayload(senha?: string): { isSession: boolean; cookieCount?
   return { isSession: false };
 }
 
-// Sistemas com integracao automatica (scraper) - URL/categoria/automation_key pre-vinculados
-const INTEGRACOES = [
+// Sistemas com integracao automatica (scraper) - URL/categoria/automation_key pre-vinculados.
+// `ufs` marca integracao que so existe em certos estados: o SIGCON e o sistema
+// de convenios de MINAS, e a lista o oferecia num municipio gaucho — onde nao
+// ha SIGCON para logar. Sem `ufs` = vale em qualquer estado.
+const INTEGRACOES: Array<{
+  automation_key: string; label: string; sistema: string; url: string;
+  categoria: string; usuario_hint: string; senha_hint: string; ufs?: string[];
+}> = [
   {
     automation_key: "govbr",
     label: "gov.br SSO (acesso único federal)",
@@ -82,6 +89,7 @@ const INTEGRACOES = [
     categoria: "Estadual",
     usuario_hint: "CPF do gestor do Convenente (cadastrado no SIGCON-MG deste município)",
     senha_hint: "Senha do SIGCON-MG",
+    ufs: ["MG"],
   },
   {
     automation_key: "fns",
@@ -180,6 +188,11 @@ const ESTILO_LINK: React.CSSProperties = { color: "var(--bi-text)" };
 
 export default function CofrePage() {
   const { municipioId } = useMunicipio();
+  // "" = UF ainda carregando: mostra tudo, para a lista não piscar em MG.
+  const ufAmbiente = useUfDoMunicipio();
+  const integracoesDaUf = INTEGRACOES.filter(
+    (i) => !i.ufs || !ufAmbiente || i.ufs.includes(ufAmbiente),
+  );
 
   const [senhas, setSenhas] = useState<Senha[]>([]);
   const [loading, setLoading] = useState(true);
@@ -422,7 +435,7 @@ export default function CofrePage() {
                       onChange={(e) => handleSelecionarIntegracao(e.target.value)}
                     >
                       <option value="">-- Selecione o sistema --</option>
-                      {INTEGRACOES.map((i) => (
+                      {integracoesDaUf.map((i) => (
                         <option key={i.automation_key} value={i.automation_key}>
                           {i.label}
                         </option>

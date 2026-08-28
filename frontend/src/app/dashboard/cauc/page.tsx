@@ -30,7 +30,10 @@ import {
 } from "lucide-react";
 import api from "@/lib/api";
 import { useMunicipio } from "@/contexts/MunicipioContext";
-import { acompanhamosEstadual, subtituloEstadual, tituloEstadual } from "@/lib/estadual";
+import {
+  CADASTRO_ESTADUAL, NOME_UF, acompanhamosEstadual, certificadoEstadual, siglaEstadual,
+  subtituloEstadual, tituloEstadual,
+} from "@/lib/estadual";
 import { Bloco, BlocoHead, Lista, Selo, Vazio, situacaoTom } from "@/components/ui/superficies";
 import { formatDataHora, horasDesde } from "@/lib/bi-format";
 
@@ -314,7 +317,7 @@ function OutrasEntidades({ entidades }: { entidades: Entidade[] }) {
           Outros cadastros deste município ({outras.length})
         </h3>
         <p className="mt-0.5 text-[10px] leading-snug" style={{ color: "var(--bi-faint)" }}>
-          Cada entidade tem CRC próprio e trava <strong>apenas o seu</strong> convênio:
+          Cada entidade tem cadastro próprio e trava <strong>apenas o seu</strong> convênio:
           a prefeitura estar regular não libera o convênio da saúde se o fundo estiver irregular.
         </p>
       </div>
@@ -572,11 +575,21 @@ export default function RegularidadePage() {
      e não de uma lista escrita aqui: é o dado que já está na tela. Enquanto ele
      não chegou, nada é anunciado — não se fala da cobertura antes de saber de
      onde é o município. */
-  const ufDoMunicipio = (cauc?.uf || "").toUpperCase();
+  const [cagec, setCagec] = useState<CagecResp | null>(null);
+  /* O cadastro estadual também traz a UF (inclusive quando ainda não há
+     coleta) — serve de reserva se o extrato do CAUC não tiver chegado. */
+  const ufDoMunicipio = (cauc?.uf || cagec?.uf || "").toUpperCase();
   /* Nome e cobertura vêm do mapa por UF (`lib/estadual.ts`), onde cada linha é
      pesquisada — e não de um `!== "MG"` escrito aqui. */
   const semFonteEstadual = !!ufDoMunicipio && !acompanhamosEstadual(ufDoMunicipio);
-  const [cagec, setCagec] = useState<CagecResp | null>(null);
+  /* ⚠️ TODA FRASE DESTA COLUNA CHAMA O CADASTRO PELO NOME DO ESTADO. O título
+     já saía de `tituloEstadual`, mas o corpo dizia "Regular no CAGEC", "O CAGEC
+     deste município..." e "cadastro de convenentes do Estado de Minas Gerais"
+     — em cima do CHE de Santa Maria/RS. A sigla, o nome e o documento (CRC só
+     existe em Minas) saem do mesmo mapa. */
+  const siglaEst = siglaEstadual(ufDoMunicipio);
+  const certificadoEst = certificadoEstadual(ufDoMunicipio);
+  const nomeCadastroEst = CADASTRO_ESTADUAL[ufDoMunicipio]?.nome || "cadastro estadual de convenentes";
   /* ⚠️ FORA DO MEDIDOR, de propósito: a ausência de conta irregular NÃO é
      regularidade — é "sem conta irregular listada". Verde por isto colocaria um
      "apto" falso na frente de um prefeito. */
@@ -659,7 +672,7 @@ export default function RegularidadePage() {
             )}
           </section>
 
-          {/* ---------------- CAGEC (estadual / MG) ---------------- */}
+          {/* ---------------- Cadastro estadual (CAGEC em MG, CHE no RS) ---------------- */}
           <section className="space-y-2.5">
             <div className="flex flex-wrap items-baseline gap-x-2">
               {/* ⚠️ O TÍTULO É DO AMBIENTE ABERTO, e "CAGEC" é nome de Minas
@@ -767,17 +780,17 @@ export default function RegularidadePage() {
                     <div className="bi-title text-[13px] leading-tight">Aguardando coleta</div>
                     <p className="text-[11px] leading-snug" style={{ color: "var(--bi-muted)" }}>
                       {cagec?.motivo
-                        || "O CAGEC deste município ainda não foi coletado."}
+                        || `O ${siglaEst} deste município ainda não foi coletado.`}
                     </p>
-                    {/* A coleta do CAGEC NÃO usa credencial — a consulta do portal
-                        é pública e basta o CNPJ. Mandar o gestor cadastrar senha
-                        aqui seria trabalho inútil. O que falta, quando falta, é o
-                        CNPJ do município nas bases. */}
+                    {/* A coleta do cadastro estadual NÃO usa credencial — nos dois
+                        portais (CAGEC e CHE) a consulta é pública e basta o CNPJ.
+                        Mandar o gestor cadastrar senha aqui seria trabalho inútil.
+                        O que falta, quando falta, é o CNPJ do município nas bases. */}
                     <p className="text-[10px] leading-snug" style={{ color: "var(--bi-faint)" }}>
-                      A consulta do CAGEC é pública e usa o CNPJ do município — não
+                      A consulta do {siglaEst} é pública e usa o CNPJ do município — não
                       depende de senha. Se o CNPJ ainda não foi identificado nas bases,
-                      a coleta o encontra assim que houver emenda estadual ou registro
-                      no PAC.
+                      a coleta o encontra assim que ele aparecer em outra fonte já
+                      coletada.
                     </p>
                   </div>
                 </div>
@@ -786,7 +799,13 @@ export default function RegularidadePage() {
               <>
                 <Situacao
                   regular={!!cagec.regular}
-                  titulo={cagec.regular ? "Regular no CAGEC" : (cagec.situacao || `${cagec.pendencias} pendência(s)`)}
+                  /* A PALAVRA da fonte com o nome do cadastro do estado: "Regular
+                     no CAGEC" em Minas, "Habilitado no CHE" no RS — cada portal
+                     tem o seu vocabulário e a tela existe para ser conferida
+                     contra ele. */
+                  titulo={cagec.regular
+                    ? `${cagec.situacao || "Regular"} no ${siglaEst}`
+                    : (cagec.situacao || `${cagec.pendencias} pendência(s)`)}
                   /* `validade` NÃO é a validade do certificado — o CRC não tem uma.
                      É a data mais próxima entre as obrigações ainda vigentes, ou
                      seja, o próximo prazo a segurar. Chamar de "certificado válido
@@ -798,7 +817,7 @@ export default function RegularidadePage() {
                      entra aqui, no lugar mais visível da coluna. */
                   detalhe={`${cagec.nome}/${cagec.uf}` + (cagec.validade
                     ? ` — próxima obrigação a vencer: ${fmtDate(cagec.validade)}.`
-                    : " — cadastro de convenentes do Estado de Minas Gerais.")
+                    : ` — ${nomeCadastroEst} (${NOME_UF[ufDoMunicipio] || ufDoMunicipio}).`)
                     + (cagec.pendencias_outras_entidades
                       ? ` Atenção: outra(s) entidade(s) do município somam ${cagec.pendencias_outras_entidades} pendência(s) — veja abaixo.`
                       : "")}
@@ -807,9 +826,14 @@ export default function RegularidadePage() {
                   doCrc={cagec.detalhe_do_crc} />
                 <Exigencias itens={cagec.itens || []} esfera="cagec" />
                 <OutrasEntidades entidades={cagec.entidades || []} />
+                {/* Em Minas a lista vem do CRC daquela data; no RS não há
+                    certificado — `crc_em` é o dia em que as validades foram
+                    lidas do portal. Dizer "CRC" ali seria inventar documento. */}
                 {cagec.crc_em && (
                   <p className="text-[10px]" style={{ color: "var(--bi-faint)" }}>
-                    Documentos conferidos no CRC de {fmtDate(cagec.crc_em)}.
+                    {certificadoEst
+                      ? `Documentos conferidos no ${certificadoEst} de ${fmtDate(cagec.crc_em)}.`
+                      : `Validades consultadas no portal do ${siglaEst} em ${fmtDate(cagec.crc_em)}.`}
                   </p>
                 )}
               </>

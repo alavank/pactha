@@ -190,6 +190,10 @@ async def _semaforo_cagec(db: AsyncSession, ids: list[int]) -> dict:
                                    if u in UFS_COM_CADASTRO_COLETADO),
         "ufs_sem_fonte": sorted({u for u in ufs_escopo
                                  if u and u not in UFS_COM_CADASTRO_COLETADO}),
+        # As UFs COBERTAS, nomeadas: e daqui que o medidor tira "CAGEC" ou
+        # "CHE" — sem isto ele escrevia CAGEC para um municipio gaucho.
+        "ufs_na_fonte": sorted({u for u in ufs_escopo
+                                if u in UFS_COM_CADASTRO_COLETADO}),
     }
     linhas = (await db.execute(text("""
         SELECT municipio_id, COALESCE(principal, false), regular, situacao, nome, tipo,
@@ -985,16 +989,26 @@ async def _fatos_da_aba(db: AsyncSession, ids: list[int], cons: bool, aba: str,
             tpl = [f"{c['pendencias_total']} pendência(s) no CAUC bloqueiam novas transferências voluntárias."]
         else:
             tpl = ["Documentação federal (CAUC) em dia — município apto a receber transferências voluntárias."]
-        if not g_muns:
-            tpl.append("CAGEC (regularidade estadual de MG) ainda não coletado para este escopo.")
+        # O NOME DO CADASTRO E DO ESTADO DO ESCOPO (CAGEC em MG, CHE no RS), e a
+        # consequência também: em Minas a irregularidade trava até o PAGAMENTO
+        # de convênio já assinado; no RS o que ela impede é celebrar. A faixa
+        # dizia "CAGEC (regularidade estadual de MG)" na TV de Santa Maria.
+        from services.cadastro_estadual import rotulo_por_ufs, trava_da_uf
+        ufs_fonte = g.get("ufs_na_fonte") or []
+        sigla = rotulo_por_ufs(ufs_fonte)
+        estado = f" de {ufs_fonte[0]}" if len(ufs_fonte) == 1 else ""
+        if g.get("ufs_sem_fonte") and not ufs_fonte:
+            tpl.append("Regularidade estadual ainda não acompanhada por este sistema "
+                       "para este escopo.")
+        elif not g_muns:
+            tpl.append(f"{sigla} (regularidade estadual{estado}) ainda não coletado para este escopo.")
         elif g_irregulares:
-            # A consequência é diferente da do CAUC e precisa ser dita: no CAGEC
-            # a irregularidade trava também o PAGAMENTO de convênio já assinado.
-            tpl.append(f"{len(g_irregulares)} município(s) IRREGULAR(es) no CAGEC "
-                       f"({g_pend_total} pendência(s)) — impede assinar convênio estadual "
-                       f"e a liberação de parcela de convênio em execução.")
+            trava = (trava_da_uf(ufs_fonte[0]) if len(ufs_fonte) == 1
+                     else "impede celebrar convênio com o Estado")
+            tpl.append(f"{len(g_irregulares)} município(s) IRREGULAR(es) no {sigla} "
+                       f"({g_pend_total} pendência(s)) — {trava}.")
         else:
-            tpl.append("CAGEC (regularidade estadual de MG) em dia.")
+            tpl.append(f"{sigla} (regularidade estadual{estado}) em dia.")
         return fatos, tpl
 
     if aba == "sismob":

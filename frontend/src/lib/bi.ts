@@ -132,14 +132,19 @@ export interface SemaforoCagec {
    *  de "estado que a fonte não cobre", onde "Impedido" era veredito falso. */
   municipios_na_fonte?: number;
   ufs_sem_fonte?: string[];
+  /** As UFs do escopo que a fonte COBRE, nomeadas. É daqui que o medidor tira
+   *  o nome do cadastro ("CAGEC", "CHE") — sem isto ele chamava tudo de CAGEC,
+   *  inclusive o cadastro gaúcho. Ausente em payload antigo → rótulo genérico. */
+  ufs_na_fonte?: string[];
   /** Rótulo cru do portal quando há uma única entidade (ex.: "Irregular"). */
   situacao?: string | null;
   quem?: Array<{ nome: string | null; tipo: string | null; principal: boolean; situacao: string | null }>;
 }
 
 export interface Overview {
-  /** Regularidade ESTADUAL (MG). Independente do CAUC: regular na União não
-   *  é regular em Minas, e a estadual trava até parcela de convênio assinado. */
+  /** Regularidade ESTADUAL (CAGEC em MG, CHE no RS — o nome sai de
+   *  `lib/estadual.ts`). Independente do CAUC: regular na União não é regular
+   *  no Estado, e a estadual trava convênio estadual. */
   semaforo_cagec?: SemaforoCagec;
   consolidado: boolean;
   municipios_count: number;
@@ -184,11 +189,13 @@ export interface AlertaVigencia {
 export interface DocumentoVencendo {
   municipio_id: number;
   municipio: string | null;
-  /** "CAUC" (federal) ou "CAGEC" (estadual/MG). */
+  /** "CAUC" (federal) ou a sigla do cadastro estadual da linha ("CAGEC",
+   *  "CHE") — o servidor a tira da `fonte` de cada registro. */
   esfera: string;
-  /** Só no CAGEC e só quando NÃO é a prefeitura: o CAGEC tem um cadastro por
-   *  entidade (Fundo Municipal de Saúde, FMAS…) e cada um trava apenas o SEU
-   *  convênio. Sem isto, o prazo do fundo era lido como se fosse do município. */
+  /** Só no cadastro estadual e só quando NÃO é a prefeitura: ele tem um
+   *  cadastro por entidade (Fundo Municipal de Saúde, FMAS…) e cada um trava
+   *  apenas o SEU convênio. Sem isto, o prazo do fundo era lido como se fosse
+   *  do município. */
   entidade?: string | null;
   codigo: string;
   label: string;
@@ -442,20 +449,25 @@ export interface AbaDocumentos {
      *  antiga entre as que couberam". */
     coleta_mais_antiga?: string | null;
   };
-  /** CAGEC = regularidade ESTADUAL (MG), coletada do CRC público do portal do
-   *  CAGEC (por CNPJ, sem credencial). Mesmo formato do CAUC; `disponivel:
-   *  false` só quando o município ainda não foi coletado. */
+  /** `cagec` = regularidade ESTADUAL — o nome do campo ficou, o escopo não:
+   *  guarda o cadastro do estado do município (CAGEC-MG, CHE-RS), e o nome que
+   *  aparece na tela sai de `lib/estadual.ts` com `ufs_na_fonte`. Mesmo formato
+   *  do CAUC; `disponivel: false` só quando o município ainda não foi coletado. */
   cagec: {
     disponivel: boolean;
     motivo: string;
-    /** Quantos municípios do escopo são de MG (o CAGEC é cadastro de Minas) e
-     *  quantos ficaram de fora. Sem estes dois a tela não distingue "ainda não
-     *  coletamos" de "não existe para este ente". */
+    /** Quantos municípios do escopo a fonte cobre e quantos ficaram de fora
+     *  (`fora_de_mg` é nome histórico: conta os de QUALQUER estado sem fonte).
+     *  Sem estes dois a tela não distingue "ainda não coletamos" de "não
+     *  existe para este ente". */
     municipios_no_escopo?: number;
     fora_de_mg?: number;
     /** As UFs do escopo que a fonte atual não alcança, NOMEADAS — é o que
      *  permite a tela dizer "GO, TO" em vez de uma frase genérica. */
     ufs_sem_fonte?: string[];
+    /** E as que ela COBRE — é daqui que sai o nome do cadastro no título.
+     *  Ausente (payload antigo) → rótulo genérico, nunca "CAGEC". */
+    ufs_na_fonte?: string[];
     /** Igual ao do CAUC, restrito aos municípios de MG (a fonte não alcança os
      *  outros). Ver a nota em `cauc.coleta_mais_antiga`. */
     coleta_mais_antiga?: string | null;

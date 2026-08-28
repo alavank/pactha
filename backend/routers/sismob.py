@@ -196,17 +196,24 @@ async def fetch_sismob_obras(db: AsyncSession, municipio_id: int) -> dict:
             WHERE municipio_id = :m
               AND regexp_replace(cnpj, '\\D', '', 'g') = :c
         """), {"m": municipio_id, "c": ent["nu_cnpj"]})).first()
+        # O cadastro e o DO ESTADO do municipio (CAGEC em MG, CHE no RS). Onde
+        # nao coletamos o cadastro daquele estado, "nao tem cadastro" seria
+        # afirmar o que ninguem conferiu — ai o motivo fica em branco.
+        from services.cadastro_estadual import cadastro_da_uf
+        cad_uf = cadastro_da_uf(mun[1] if mun else None)
+        motivo = None
+        if not cad and cad_uf:
+            motivo = (f"Esta entidade executa recurso federal mas não tem cadastro "
+                      f"no {cad_uf['sigla']}. Sem ele não assina convênio estadual de "
+                      f"saúde — e a prefeitura estar regular não resolve, porque no "
+                      f"{cad_uf['sigla']} cada entidade tem cadastro próprio.")
         entidade = {
             "nome": ent["entidade"], "cnpj": ent["nu_cnpj"],
             "cagec": {
                 "cadastrado": bool(cad),
                 "situacao": cad[0] if cad else None,
                 "regular": cad[1] if cad else None,
-                "motivo": (None if cad else
-                           "Esta entidade executa recurso federal mas não tem cadastro "
-                           "no CAGEC-MG. Sem ele não assina convênio estadual de saúde "
-                           "nem recebe parcela — e a prefeitura estar regular não resolve, "
-                           "porque no CAGEC cada entidade tem cadastro próprio."),
+                "motivo": motivo,
             },
         }
     return {

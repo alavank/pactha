@@ -366,7 +366,7 @@ function DashboardOperacional() {
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <MetricCard
                 icon={FileText} iconBg="bg-primary/10" iconText="text-primary"
-                label="Total de Convênios (SIGCON)"
+                label="Total de Convênios Estaduais"
                 value={summary?.total_convenios_estadual ?? 0}
                 valueClass="text-3xl text-base-content"
                 right={<EsferaTag tipo="estadual" />}
