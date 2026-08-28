@@ -85,10 +85,13 @@ export function MultiSelect({
         : `${valor.length} selecionados`;
 
   return (
-    <div ref={boxRef} className={`relative ${className}`}>
+    // `data-uso-grupo`: o nome do filtro que a telemetria grava quando uma
+    // opcao e marcada ("filtrou Anos: 2024"). Sem ele o evento diria so "2024".
+    <div ref={boxRef} className={`relative ${className}`} data-uso-grupo={ariaLabel || placeholder || rotuloTodos}>
       <button
         type="button"
         onClick={() => setAberto((v) => !v)}
+        data-uso-ignorar=""
         aria-haspopup="listbox"
         aria-expanded={aberto}
         aria-label={ariaLabel}

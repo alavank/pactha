@@ -15,7 +15,9 @@ Duas regras que valem para o arquivo inteiro:
 """
 from __future__ import annotations
 
+import hashlib
 import logging
+import random
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
@@ -33,12 +35,20 @@ from services.registro_rotas import exige
 router = APIRouter(prefix="/api/uso", tags=["uso"])
 logger = logging.getLogger("uso")
 
-# Vocabulario FECHADO. Com nove verbos e ~23 telas, "o que acessam mais" cabe
-# numa frase; sem o fechamento, em seis meses o agregado tem 200 categorias que
-# ninguem sabe ler. Valor desconhecido vira "outro" — NUNCA erro (recusar
-# quebraria o lote inteiro por causa de uma linha).
+# Vocabulario FECHADO. Com uma duzia de verbos e ~23 telas, "o que acessam
+# mais" cabe numa frase; sem o fechamento, em seis meses o agregado tem 200
+# categorias que ninguem sabe ler. Valor desconhecido vira "outro" — NUNCA erro
+# (recusar quebraria o lote inteiro por causa de uma linha).
+#
+# Os cinco ultimos entraram em 28/08/2026 com a captura GENERICA do navegador
+# (lib/uso.ts): `aba` (trocou de aba), `selecionar` (marcou item/opcao),
+# `alterar` (gravou algo — vem do POST/PUT/DELETE que deu certo), `trocar`
+# (mudou de municipio) e `abrir` (abriu link externo). O dono pediu para ler
+# "fulano filtrou isto, selecionou aquilo, gerou tal relatorio" — e nao
+# "abriu /dashboard/x".
 _ACOES = {"ver", "detalhe", "filtrar", "buscar", "exportar",
-          "gerar", "perguntar", "acionar", "sair"}
+          "gerar", "perguntar", "acionar", "sair",
+          "aba", "selecionar", "alterar", "trocar", "abrir"}
 
 # Teto de eventos por requisicao. O excedente e cortado e CONTADO — a tela
 # mostra `descartados`, porque telemetria que descarta calada ensina o dono a
@@ -57,6 +67,16 @@ _JANELA_SAINDO_S = 150
 # vermelho. E fato consumado, nao suspeita — segurar mais contradiz o que a
 # pessoa acabou de fazer.
 _JANELA_DESPEDIDA_S = 20
+# ⭐ SILENCIO MAIOR QUE ISTO ABRE UMA SESSAO NOVA. A sessao de uso e um TRECHO
+# CONTIGUO, nao a vida do token (que atravessa o refresh e dura 30 dias): quem
+# fecha o navegador as 18h e volta as 9h ENTROU de novo — e e assim que o
+# painel tem de mostrar. 5 minutos tolera F5, rede oscilando e o notebook
+# fechando a tampa por um instante; acima disso e outra entrada.
+_GAP_NOVO_TRECHO_S = 300
+# Retencao pedida pelo dono: no maximo 6 meses. O expurgo e oportunista (uma
+# fracao dos lotes), porque esta infra nao tem agendador dentro do processo.
+_RETENCAO_DIAS = 180
+_CHANCE_EXPURGO = 0.02
 
 
 class _Evento(BaseModel):
@@ -118,33 +138,73 @@ async def receber_lote(
     trabalho de ninguem.
     """
     try:
-        sid, _ = _sessao_do_token(request)
-        if not sid:
+        token_sid, _ = _sessao_do_token(request)
+        if not token_sid:
             # Sem sessao identificavel (token sem claim, expirado): nao ha o que
             # agrupar. Silencio, nao erro.
             return Response(status_code=204)
 
+        # ⭐ O TRECHO. A linha de `uso_sessao` e um periodo CONTIGUO de uso, e
+        # nao a vida do token. O token (`sessao_token`) atravessa o refresh e
+        # dura 30 dias; se a linha fosse ele, quem fechasse o navegador na
+        # sexta e voltasse na segunda apareceria "logado ha 3 dias" — que e
+        # exatamente o que o dono viu no cartao dele.
+        #
+        # Regra: o trecho vivo mais recente deste token continua SE deu sinal
+        # nos ultimos _GAP_NOVO_TRECHO_S e nao terminou por logout. Caso
+        # contrario, o anterior e fechado (com o motivo que se sabe) e nasce
+        # outro, com `inicio = agora`. `AND user_id = :uid` faz o token ser
+        # chave de AGRUPAMENTO, jamais de autorizacao.
+        ultimo = (await db.execute(text("""
+            SELECT sid, fim, motivo_fim,
+                   EXTRACT(EPOCH FROM (NOW() - ultimo_sinal))::int AS calado_ha
+            FROM uso_sessao
+            WHERE sessao_token = :tok AND user_id = :uid
+            ORDER BY inicio DESC LIMIT 1
+        """), {"tok": token_sid, "uid": current.id})).first()
+
+        sid = ultimo[0] if ultimo else None
+        abrir_novo = (
+            ultimo is None
+            or ultimo[2] == "logout"
+            or (ultimo[3] or 0) > _GAP_NOVO_TRECHO_S
+        )
+        if abrir_novo:
+            if ultimo is not None and ultimo[1] is None:
+                # Morreu em silencio (sem pagehide, sem logout): o fim e o
+                # ultimo sinal, e o motivo e o que se sabe — nada.
+                await db.execute(text("""
+                    UPDATE uso_sessao SET fim = ultimo_sinal, motivo_fim = 'expirou'
+                    WHERE sid = :sid AND user_id = :uid AND fim IS NULL
+                """), {"sid": ultimo[0], "uid": current.id})
+            elif ultimo is not None and ultimo[2] == "aba_fechada":
+                # A aba se despediu E ninguem voltou em 5 min: fechou o
+                # navegador de verdade (um F5 teria voltado em segundos).
+                await db.execute(text("""
+                    UPDATE uso_sessao SET motivo_fim = 'navegador_fechado'
+                    WHERE sid = :sid AND user_id = :uid
+                """), {"sid": ultimo[0], "uid": current.id})
+            agora_iso = datetime.now(timezone.utc).isoformat()
+            sid = hashlib.sha256(f"{token_sid}:{agora_iso}".encode("utf-8")).hexdigest()[:32]
+            await db.execute(text("""
+                INSERT INTO uso_sessao
+                  (sid, sessao_token, user_id, user_email, usuario_nome, tela_atual, ip, user_agent)
+                VALUES (:sid, :tok, :uid, :email, :nome, :tela, :ip, :ua)
+                ON CONFLICT (sid) DO NOTHING
+            """), {
+                "sid": sid, "tok": token_sid, "uid": current.id, "email": current.email,
+                "nome": getattr(current, "nome", None) or getattr(current, "name", None),
+                "tela": _corta(corpo.sessao.tela, 40),
+                "ip": _corta(request.client.host if request.client else None, 64),
+                "ua": _corta(request.headers.get("user-agent"), 400),
+            })
+
         # A ARITMETICA DO TEMPO E DO SERVIDOR, e e ela que torna os tres numeros
         # (total / ativo / ocioso) coerentes por construcao.
-        #
-        # `AND user_id = :uid` faz o sid ser chave de AGRUPAMENTO, jamais de
-        # autorizacao: sid de outra pessoa simplesmente nao atualiza nada.
         #
         # E DUAS ABAS NAO CONTAM DOBRADO por construcao — a segunda encontra
         # `ultimo_sinal` ja avancado e soma ~0. Vale para N abas, N navegadores
         # e retentativa de rede.
-        await db.execute(text("""
-            INSERT INTO uso_sessao (sid, user_id, user_email, usuario_nome, tela_atual, ip, user_agent)
-            VALUES (:sid, :uid, :email, :nome, :tela, :ip, :ua)
-            ON CONFLICT (sid) DO NOTHING
-        """), {
-            "sid": sid, "uid": current.id, "email": current.email,
-            "nome": getattr(current, "nome", None) or getattr(current, "name", None),
-            "tela": _corta(corpo.sessao.tela, 40),
-            "ip": _corta(request.client.host if request.client else None, 64),
-            "ua": _corta(request.headers.get("user-agent"), 400),
-        })
-
         n_eventos = min(len(corpo.eventos), _TETO_LOTE)
         descartados = max(0, len(corpo.eventos) - _TETO_LOTE)
 
@@ -254,6 +314,18 @@ async def receber_lote(
                         "ocioso_seg": d[1], "atos": d[2],
                     },
                 )
+
+        # EXPURGO DE 6 MESES, oportunista. O dono pediu o detalhe fino ("sei
+        # que gera mais banco, mas nao vou guardar por tanto tempo — maximo 6
+        # meses"). Sem agendador no processo, uma fracao dos lotes limpa o que
+        # passou do prazo; os indices por data tornam isto barato.
+        if random.random() < _CHANCE_EXPURGO:
+            await db.execute(text(
+                "DELETE FROM uso_evento WHERE ocorrido_em < NOW() - make_interval(days => :d)"
+            ), {"d": _RETENCAO_DIAS})
+            await db.execute(text(
+                "DELETE FROM uso_sessao WHERE inicio < NOW() - make_interval(days => :d)"
+            ), {"d": _RETENCAO_DIAS})
         await db.commit()
     except Exception:
         # Engolir e DELIBERADO: a alternativa e a metrica derrubar a acao.
@@ -348,41 +420,55 @@ async def listar_sessoes(
     aba), e a despedida e otimizacao de precisao, jamais fonte de verdade.
     """
     r = await db.execute(text("""
-        SELECT s.sid, s.user_email, s.usuario_nome, s.inicio,
+        SELECT s.sid, s.sessao_token, s.user_id, s.user_email, s.usuario_nome, s.inicio,
                s.ultimo_sinal, s.fim, s.motivo_fim,
                s.seg_ativos, s.seg_ociosos, s.eventos, s.descartados,
                s.tela_atual, s.ip, s.user_agent,
                EXTRACT(EPOCH FROM (COALESCE(s.fim, s.ultimo_sinal) - s.inicio))::int AS seg_total,
-               CASE WHEN s.fim IS NOT NULL THEN COALESCE(s.motivo_fim, 'encerrada')
-                    WHEN s.ultimo_sinal > NOW() - INTERVAL '90 seconds' THEN 'ativa'
+               -- A situacao, na ordem em que as evidencias mandam:
+               --   'ativa'    — deu sinal ha pouco (mesmo que uma aba tenha se
+               --                despedido: F5 tambem dispara pagehide);
+               --   motivo_fim — 'logout' (clicou em Sair), 'navegador_fechado'
+               --                (a aba se despediu e ninguem voltou),
+               --                'aba_fechada' (despediu-se ha pouco; pode voltar),
+               --                'expirou' (parou de dar sinal, sem despedida);
+               --   'expirou'  — sem fim gravado e sem sinal: morreu em silencio.
+               CASE WHEN s.ultimo_sinal > NOW() - INTERVAL '90 seconds'
+                         AND COALESCE(s.motivo_fim, '') <> 'logout' THEN 'ativa'
+                    WHEN s.fim IS NOT NULL THEN COALESCE(s.motivo_fim, 'encerrada')
                     ELSE 'expirou' END AS situacao
         FROM uso_sessao s
         WHERE s.inicio > NOW() - make_interval(days => :dias)
         ORDER BY s.inicio DESC
         LIMIT :lim
-    """), {"dias": max(1, min(dias, 90)), "lim": max(1, min(limite, 500))})
+    """), {"dias": max(1, min(dias, 90)), "lim": max(1, min(limite, 1000))})
     return {"sessoes": [dict(x._mapping) for x in r.fetchall()]}
 
 
 @router.get("/eventos", dependencies=[exige("uso.ver")])
 async def listar_eventos(
     sid: Optional[str] = None,
+    user_id: Optional[int] = None,
     dias: int = 7,
     limite: int = 300,
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
-    """Os atos, em ordem de acontecimento. Com `sid`, so os daquela sessao."""
+    """Os eventos, em ordem de acontecimento. Com `sid`, so os daquela sessao;
+    com `user_id`, so os daquela pessoa."""
     cond = "e.ocorrido_em > NOW() - make_interval(days => :dias)"
     par: dict[str, Any] = {"dias": max(1, min(dias, 90)),
-                           "lim": max(1, min(limite, 1000))}
+                           "lim": max(1, min(limite, 2000))}
     if sid:
         cond += " AND e.sid = :sid"
         par["sid"] = sid[:32]
+    if user_id:
+        cond += " AND e.user_id = :uid"
+        par["uid"] = int(user_id)
     r = await db.execute(text(f"""
-        SELECT e.ocorrido_em, e.tela, e.rota, e.acao, e.alvo, e.ms,
+        SELECT e.id, e.ocorrido_em, e.tela, e.rota, e.acao, e.alvo, e.ms,
                e.municipio_id, m.nome AS municipio, e.detalhe,
-               s.user_email, s.usuario_nome, e.sid
+               s.user_email, s.usuario_nome, e.sid, s.ip, s.user_agent
         FROM uso_evento e
         LEFT JOIN uso_sessao s ON s.sid = e.sid
         LEFT JOIN municipios m ON m.id = e.municipio_id

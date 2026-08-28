@@ -1,4 +1,5 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from "axios";
+import { observarResposta } from "@/lib/uso";
 
 const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api",
@@ -91,7 +92,13 @@ async function tryRefresh(): Promise<boolean> {
 }
 
 api.interceptors.response.use(
-  (r) => r,
+  (r) => {
+    // TELEMETRIA: toda resposta que deu certo passa pelo coletor — GET com
+    // parametros e o filtro que a pessoa aplicou; POST/PUT/DELETE e o que ela
+    // gravou. Fora do caminho do erro, e sem tocar na resposta.
+    observarResposta(r.config?.method, r.config?.url, r.config?.params, r.status);
+    return r;
+  },
   async (error: AxiosError) => {
     const original = error.config as
       | (InternalAxiosRequestConfig & { _retry?: boolean })

@@ -219,7 +219,12 @@ export function ItemLinha({
   const corpo = (
     <>
       <div className="flex items-baseline gap-3">
-        <span className="min-w-0 flex-1 text-[13px] font-medium leading-snug">{noSeguro(titulo)}</span>
+        {/* `data-uso-titulo`: e o que a telemetria (lib/uso.ts) grava como
+            alvo quando o item e clicado — "abriu o detalhe de «Convenio
+            123/2024»", e nao o cartao inteiro com valor e meta. */}
+        <span className="min-w-0 flex-1 text-[13px] font-medium leading-snug" data-uso-titulo="">
+          {noSeguro(titulo)}
+        </span>
         {valor != null && (
           <span className="bi-num shrink-0 text-[13px] leading-snug">{noSeguro(valor)}</span>
         )}
@@ -240,6 +245,7 @@ export function ItemLinha({
       <div className="flex items-start gap-2">
         {onClick ? (
           <button type="button" onClick={onClick} className="min-w-0 flex-1 text-left"
+                  data-uso="detalhe"
                   {...(expandido !== undefined ? { "aria-expanded": expandido } : {})}>
             {corpo}
           </button>

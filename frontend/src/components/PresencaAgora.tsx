@@ -106,11 +106,11 @@ export default function PresencaAgora() {
   return (
     <div className="rounded-2xl p-3" style={{ background: "var(--bi-surface)", border: "1px solid var(--bi-line)" }}>
       <div className="mb-2 flex items-baseline gap-2">
-        <span className="bi-title text-[14px]">No sistema agora</span>
+        <span className="bi-title text-[14px]">Online no Sistema</span>
         <span className="text-[11px]" style={{ color: "var(--bi-faint)" }}>
           {lista.length === 0
             ? "ninguém, nem você — a sessão começa a contar no próximo login"
-            : `${lista.length} sessão(ões) · o contador é o tempo desde que entrou`}
+            : `${lista.length} pessoa(s) · o contador é o tempo desde que entrou nesta sessão`}
         </span>
       </div>
 
