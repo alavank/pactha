@@ -365,8 +365,14 @@ function aoMudar(ev: Event) {
 /** Chaves que carregam TEXTO DIGITADO: o valor vira "…" — fica registrado que
  *  houve busca, nunca o que foi buscado. */
 const CHAVES_DE_TEXTO = /^(q|busca|termo|texto|palavra|search|query|pesquisa|nome|razao|objeto)$/i;
-/** Chaves que sao mecanica de paginacao/escopo, nao escolha do usuario. */
-const CHAVES_IGNORADAS = new Set(["municipio_id", "page", "per_page", "page_size", "limit", "offset", "skip", "_t", "ts"]);
+/** Chaves que sao mecanica de paginacao/escopo, nao escolha do usuario.
+ *  `live` e `aba` sao do Painel de Indicadores: `live=false` e o cache do
+ *  overview, e a aba ja entra pelo clique nela (role=tab) — como parametro
+ *  virava "filtrou Painel: aba: geral" a cada abertura. */
+const CHAVES_IGNORADAS = new Set([
+  "municipio_id", "page", "per_page", "page_size", "limit", "offset", "skip",
+  "_t", "ts", "live", "aba", "scope",
+]);
 
 function paramsRelevantes(params: unknown): Record<string, string> | null {
   if (!params || typeof params !== "object") return null;
@@ -410,9 +416,10 @@ export function observarResposta(metodo: string | undefined, url: string | undef
   try {
     if (!disponivel() || !metodo || !url) return;
     const caminho = caminhoDaApi(url);
-    // A propria telemetria, a sessao e o que o layout busca a cada abertura:
-    // mecanica do sistema, nao gesto de ninguem.
-    if (/^\/(uso|auth|municipios|users\/me)(\/|$)/.test(caminho)) return;
+    // A propria telemetria, a sessao, o que o layout busca a cada abertura e
+    // o que o Painel grava SOZINHO (os filtros da TV, salvos 600ms depois de
+    // qualquer render): mecanica do sistema, nao gesto de ninguem.
+    if (/^\/(uso|auth|municipios|users\/me|bi\/tela-filtros|bi\/tela-pub)(\/|$)/.test(caminho)) return;
     const m = metodo.toUpperCase();
     if (m === "GET") {
       const p = paramsRelevantes(params);

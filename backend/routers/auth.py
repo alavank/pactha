@@ -204,6 +204,27 @@ async def logout(
     user: User = Depends(get_current_user),
 ):
     """Revoga tokens atuais e limpa cookies."""
+    # ⭐ A SESSAO DE TELEMETRIA FECHA AQUI, NO SERVIDOR. O navegador ja manda
+    # um "encerrar=logout" antes de chamar esta rota (lib/uso.ts), mas esse
+    # envio pode falhar — token vencido, rede, disjuntor da telemetria — e ai
+    # a sessao ficava "aberta" no painel ate expirar por silencio. Clicar em
+    # Sair e um ato com intencao de encerrar (pedido do dono, 28/08/2026):
+    # quem o recebe e quem garante o fim. Nunca derruba o logout.
+    try:
+        from services.audit import _sessao as _sessao_do_token
+        tok, _ = _sessao_do_token(request)
+        if tok:
+            await db.execute(text("""
+                UPDATE uso_sessao SET fim = NOW(), motivo_fim = 'logout'
+                WHERE sessao_token = :tok AND user_id = :uid
+                  AND (fim IS NULL OR motivo_fim = 'aba_fechada')
+            """), {"tok": tok, "uid": user.id})
+            await db.commit()
+    except Exception:
+        try:
+            await db.rollback()
+        except Exception:
+            pass
     # Revoga access
     access = request.cookies.get(COOKIE_NAME_ACCESS) or (
         request.headers.get("Authorization", "").replace("Bearer ", "") or None
