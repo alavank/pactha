@@ -60,6 +60,50 @@ sistema operando sozinho. Se você só ler um bloco deste arquivo, leia este:
 
 ---
 
+## 1.6. A SESSÃO DE 28/08/2026 EM 60 SEGUNDOS (PRs #309–#313, todos mergeados e no ar)
+
+Diretriz do dono, repetida e agora em código: **Minas NUNCA é padrão** — cada estado tem
+suas particularidades, e nome de fonte/cadastro sai de catálogo por UF, não de literal.
+
+1. **Nome do cadastro estadual pelo estado do município** (PR #309). Santa Maria/RS via
+   "CAGEC — Minas Gerais" e "Regular no CAGEC" em cima do CHE gaúcho. Entrou
+   `backend/services/cadastro_estadual.py`, ESPELHO de `frontend/src/lib/estadual.ts`
+   (sigla, nome, fonte, portal, certificado, o que a irregularidade trava). Os payloads do BI
+   trazem `ufs_na_fonte` (par de `ufs_sem_fonte`); IA, narrativa, push e `/api/cagec` usam o
+   catálogo. Sem UF conhecida o rótulo é o genérico "Cadastro estadual" — nunca "CAGEC".
+   ⚠️ Estado novo entra nos DOIS arquivos, só com coletor no ar.
+2. **Telemetria (Configurações → Telemetria)** (PRs #310 e #311). A sessão de uso era o `sid`
+   do TOKEN (30 dias): quem fechava o navegador e voltava no dia seguinte "estava logado há
+   15h". Agora cada linha de `uso_sessao` é um **trecho contíguo** (`add_uso_trechos.sql`:
+   `sessao_token` + `motivo_fim` largo): silêncio > 5 min ou logout abre linha nova; a
+   anterior fecha como `logout` / `navegador_fechado` / `expirou`. **Sair encerra na hora**
+   (o próprio `POST /auth/logout` fecha a sessão; `/uso/presenca` não segura logout).
+   Captura de eventos **genérica** em `lib/uso.ts`: clique (rótulo visível), parâmetros de
+   GET (= filtro aplicado) e POST/PUT/DELETE 2xx (= o que gravou); nada de texto digitado;
+   `data-uso` / `data-uso-alvo` / `data-uso-ignorar` para dizer melhor ou calar. Frases em
+   `lib/uso-rotulos.ts` (tela por rota, escrita por caminho — acrescentar linha lá quando
+   sair "gravou dados em X"). Retenção 6 meses (expurgo oportunista em `/uso/lote`).
+   Card "Online no Sistema"; Eventos à esquerda (por dia, filtro por pessoa/tipo, modal);
+   Sessões à direita (por dia → pessoa → sessão, com como terminou, modal).
+3. **Menu por esfera** (PR #312): grupos **FEDERAIS** (ex-"Transfere Gov") e **ESTADUAIS**,
+   em maiúsculo — municipais virão. A fonte foi para o card: campo "Fonte: TransfereGov"
+   no canto inferior direito de cada proposta (Em execução, Especiais, PAC, Voluntárias,
+   Rejeitadas, Encerradas). Rótulos do catálogo de permissões não mudaram.
+4. **Logo do Freitas** (PRs #312 e #313): arte nova `frontend/public/logo-freitas.png`
+   (PNG transparente, corte do dono, 998×354); `build-frontend.yml` do `frontend-freitas`
+   aponta para `/logo-freitas.png`. O RM em PDF lê `backend/assets/freitas-logo.jpeg`
+   (regerado da arte nova sobre branco — a env `RM_LOGO` NÃO mudou). Em `Marca.tsx`,
+   `AJUSTE_LOGO`: fundo claro só no tema escuro e deslocamento óptico de 14% (centro de
+   massa da arte a 36% da altura) para o "FREITAS" ficar na linha do nome da cidade —
+   se a arte for recortada de novo, remedir.
+5. **Fluxo de trabalho desta sessão**: branch → PR → dono merge → CI deploya os 4 tenants.
+   Testes do backend: 1931 passando; **11 falhas pré-existentes** em
+   `test_permissoes_*`/`test_registro_rotas.py` (não são regressão — conferir com
+   `git stash` antes de culpar uma mudança). ESLint tem erros `set-state-in-effect`
+   pré-existentes nas telas do TransfereGov e no `dashboard/page.tsx`.
+
+---
+
 ## 2. ESTADO ATUAL (2026-08-09)
 
 **São QUATRO tenants em produção**, todos do mesmo código, cada um com containers e banco próprios:
