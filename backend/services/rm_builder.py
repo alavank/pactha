@@ -489,6 +489,69 @@ def _desembolso_ops_obs(ops_obs) -> dict:
     }
 
 
+def _mg_pagamentos(linhas) -> dict:
+    """Funde os pagamentos dos VARIOS empenhos de um mesmo convenio estadual num
+    unico bloco no formato `ops_obs` — o mesmo que `_desembolso_ops_obs` ja le.
+
+    `linhas` = [(pagamentos_jsonb, detalhe_lido: bool), ...] de
+    `transparencia_mg_empenhos` daquele convenio. Um convenio de MG costuma ter
+    mais de um empenho (um por exercicio, por exemplo), e cada um traz suas
+    proprias ordens de pagamento.
+
+    ⚠️ `consultado` NAO E `bool(linhas)`. `pagamentos` NULO significa NAO
+    CONSULTADO — nunca "nao houve pagamento"; e a mesma doutrina escrita no
+    `add_transparencia_mg_empenhos.sql` e nas Notas de Empenho. Sem esta
+    distincao, todo convenio cujo detalhe ainda esta na fila sairia no relatorio
+    como "Pendente de desembolso", que e uma AFIRMACAO sobre dinheiro publico
+    feita a partir de uma fila de coleta.
+
+    Devolve {} quando nao ha nada a dizer."""
+    total = 0.0
+    tem_valor = False
+    obs: list = []
+    consultado = False
+    ultima = ""
+    for pagamentos, lido in (linhas or []):
+        if lido:
+            consultado = True
+        d = _jsonb(pagamentos)
+        if not isinstance(d, dict):
+            continue
+        # `pagamentos` presente ja e medicao: o detalhe foi lido e gravou o bloco.
+        consultado = True
+        try:
+            v = float(d.get("valor_desembolsado") or 0)
+        except (TypeError, ValueError):
+            v = 0.0
+        if v:
+            total += v
+            tem_valor = True
+        for ob in (d.get("obs") or []):
+            if isinstance(ob, dict):
+                obs.append(ob)
+        dt = (d.get("data_ultimo_desembolso") or "").strip()
+        # Datas em dd/mm/aaaa: comparar como string daria 08/08 > 25/03. A chave
+        # de ordem e (ano, mes, dia).
+        if dt and _chave_data_br(dt) > _chave_data_br(ultima):
+            ultima = dt
+    if not consultado:
+        return {}
+    return {
+        "valor_desembolsado": total if tem_valor else 0.0,
+        "data_ultimo_desembolso": ultima or None,
+        "obs": obs,
+        "_consultado": True,
+    }
+
+
+def _chave_data_br(v) -> str:
+    """'25/03/2026' -> '20260325', para ORDENAR datas brasileiras. String vazia
+    para o que nao casa — assim ela perde de qualquer data real."""
+    import re as _re
+    m = _re.search(r"(\d{2})/(\d{2})/(\d{4})", str(v or ""))
+    return (m.group(3) + m.group(2) + m.group(1)) if m else ""
+
+
 def _licitacao_aceita(processo_execucao) -> bool:
     """True quando alguma licitacao do instrumento esta ACEITA (coluna 'aceite'
     do Processo de Execucao). E o gatilho de "PENDENTE DE DESEMBOLSO"."""
@@ -841,10 +904,17 @@ def _e_termo_compromisso(modalidade) -> bool:
 
 
 def _situacao_com_marcas(situacao, pendente_empenho: bool,
-                         licitacao_aceita: bool, valor_desembolsado) -> str:
-    """A `situacao_atual` exibida da voluntaria: a situacao do ciclo mais os
-    marcadores de ESTAGIO DO DINHEIRO, na ordem em que o dinheiro anda —
-    EMPENHO antes de DESEMBOLSO (nao se desembolsa o que nao foi empenhado).
+                         pode_desembolsar: bool, valor_desembolsado) -> str:
+    """A `situacao_atual` exibida: a situacao do ciclo mais os marcadores de
+    ESTAGIO DO DINHEIRO, na ordem em que o dinheiro anda — EMPENHO antes de
+    DESEMBOLSO (nao se desembolsa o que nao foi empenhado).
+
+    ⚠️ `pode_desembolsar` chamava-se `licitacao_aceita` e nao e mais so isso: e
+    "o processo CHEGOU no ponto em que o dinheiro deveria sair". Na voluntaria
+    isso e a licitacao aceita; no estadual de MG e "ha empenho no portal e os
+    pagamentos dele ja foram consultados". Os DOIS passam por aqui de proposito —
+    o pedido era que o estadual entrasse "no mesmo status como o transferegov", e
+    duplicar a composicao e o jeito conhecido, neste repo, de as duas divergirem.
 
     Funcao PURA e separada de proposito: este texto vai CONGELADO no JSONB do RM
     (rm_relatorios.conteudo), entao o teste precisa poder fixar a string exata
@@ -857,7 +927,7 @@ def _situacao_com_marcas(situacao, pendente_empenho: bool,
     if pendente_empenho:
         marcas.append("Pendente de empenho")
     vd = valor_desembolsado or 0
-    if licitacao_aceita and vd == 0:
+    if pode_desembolsar and vd == 0:
         marcas.append("Pendente de desembolso")
     elif vd > 0:
         marcas.append(f"Desembolsado: {_fmt_brl(valor_desembolsado)}")
@@ -1173,6 +1243,30 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
     # === Convenios estaduais E FNS (mesma tabela, diferenciados por c.fonte) ===
     # SIGCON-MG => estadual => PARTE 2 / INSTRUMENTOS ESTADUAIS
     # FNS (Min Saude) => federal => PARTE 1 / INSTRUMENTOS FEDERAIS
+    # PAGAMENTOS DO ESTADO (Portal da Transparencia de MG), por convenio.
+    #
+    # Pedido do dono (26/08/2026): "pegue tb a informacao do pagamento data e
+    # situacao da ordem de pagamento, aquele que nao tiver empenho, exibir no
+    # relatorio como 'pendente de desembolso', entrando no mesmo status como o
+    # transferegov".
+    #
+    # ⚠️ LEITURA ADOTADA: o marcador sai quando HA EMPENHO no portal e NENHUM
+    # pagamento saiu dele. E a unica leitura em que "pendente de DESEMBOLSO"
+    # significa alguma coisa — sem empenho o que falta e o EMPENHO, e para isso o
+    # relatorio ja tem marcador proprio. E e a mesma regra da voluntaria: o
+    # processo chegou no ponto em que o dinheiro deveria sair e ele nao saiu.
+    #
+    # Uma consulta so para o municipio inteiro (nao uma por convenio): o laco
+    # abaixo roda por convenio e um SELECT la dentro seria N+1 numa tela que ja e
+    # a mais pesada do sistema.
+    _mg: dict = {}
+    for _cid, _pg, _lido in (await db.execute(text("""
+        SELECT convenio_id, pagamentos, (detalhe_lido_em IS NOT NULL)
+          FROM transparencia_mg_empenhos
+         WHERE municipio_id = :mid AND convenio_id IS NOT NULL
+    """), {"mid": municipio_id})).all():
+        _mg.setdefault(_cid, []).append((_pg, _lido))
+
     rs = await db.execute(
         select(ConvenioEstadual).where(ConvenioEstadual.municipio_id == municipio_id)
     )
@@ -1352,6 +1446,14 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
         # corrige depois. Regra unica em services/nome_parlamentar.py.
         if not e_parlamentar_real(_parl):
             _parl = ""
+        # Pagamentos do Estado para ESTE convenio (varios empenhos -> um bloco).
+        _mg_pg = _mg_pagamentos(_mg.get(c.id))
+        # Passa pelo MESMO leitor da voluntaria: e ele que vira os campos que a
+        # caixa de desembolso do PDF/Word ja sabe desenhar (data, nº da OB e a
+        # SITUACAO da ordem de pagamento — a parte "data e situacao da ordem de
+        # pagamento" do pedido). `{}` quando nao ha nada consultado, e ai a caixa
+        # nao aparece.
+        _mg_des = _desembolso_ops_obs(_mg_pg) if _mg_pg else {}
         add_item(parte, secao, orgao, {
             # ⭐ Marca o ESTÁGIO na origem, para o recorte pagas/pendentes
             # poder existir. `add_item` consome e REMOVE a chave — ela nunca
@@ -1375,7 +1477,16 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             # esta na ULTIMA ALTERACAO (ex.: "ANALISE - CHECKLIST DE TERMO ADITIVO"),
             # capturada por _scrape_alteracoes em raw_data. Junta as duas — era o motivo
             # de o relatorio mostrar so "EM VIGOR" nos estaduais.
-            "situacao_atual": _situacao_estadual(c.situacao, raw),
+            # SITUACAO + o ESTAGIO DO DINHEIRO medido no Portal da Transparencia
+            # de MG. `_situacao_com_marcas` e a MESMA funcao da voluntaria: era
+            # isso o "entrando no mesmo status como o transferegov".
+            # `pendente_empenho=False` aqui — este coletor mede PAGAMENTO, e
+            # afirmar "pendente de empenho" a partir da AUSENCIA de linha no
+            # portal confundiria "o Estado nao empenhou" com "o rodizio ainda nao
+            # passou neste municipio".
+            "situacao_atual": _situacao_com_marcas(
+                _situacao_estadual(c.situacao, raw), False,
+                bool(_mg_pg.get("_consultado")), _mg_pg.get("valor_desembolsado")),
             # ⚠️ A situacao CRUA da fonte, ao lado da enriquecida. `situacao_atual`
             # passou a carregar a NARRATIVA da ultima alteracao, e quem CLASSIFICA
             # (rm_export._e_pendencia) nao pode ler narrativa: uma alteracao
@@ -1384,6 +1495,11 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             "situacao_base": (c.situacao or "").strip(),
             **_alteracao_campos(raw),
             **_prestacao_contas_campos(raw),
+            # ⚠️ DEPOIS de `valor_repasse`/`valor_contrapartida` de proposito: as
+            # chaves aqui (`valor_desembolsado`, `desembolsos`, ...) nao colidem
+            # com nenhuma acima, mas a ordem torna visivel que este bloco e o
+            # ULTIMO a falar sobre dinheiro no item.
+            **_mg_des,
             "fonte": "sigcon",
             "fonte_ref": str(c.id),
         }, ano=ano_est)
