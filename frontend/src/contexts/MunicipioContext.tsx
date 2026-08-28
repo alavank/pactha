@@ -7,6 +7,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   TransicaoMunicipio, type MunicipioEscolha,
 } from "@/components/TransicaoMunicipio";
+import { registrar as registrarUso } from "@/lib/uso";
 
 /** O escopo "carteira inteira", só existe para assessoria/consórcio (N municípios).
  *  Mesmo valor que o backend entende (`backend/routers/bi.py`). */
@@ -118,9 +119,16 @@ export function MunicipioProvider({ children }: { children: ReactNode }) {
    *  específico, e mantê-la aberta depois da troca deixaria na frente do usuário
    *  o registro do cliente anterior sob o nome do novo. */
   const confirmar = useCallback((destino: string) => {
+    // Telemetria: a troca de municipio e o gesto que o layout remonta inteiro,
+    // e por isso nenhuma tela consegue registra-la — so daqui.
+    registrarUso({
+      tela: "dashboard", rota: "/dashboard", acao: "trocar",
+      alvo: pendente?.rotulo || (destino === CONSOLIDADO ? "carteira inteira" : destino),
+      municipio_id: destino === CONSOLIDADO ? null : Number(destino) || null,
+    });
     gravar(destino);
     router.push("/dashboard");
-  }, [gravar, router]);
+  }, [gravar, router, pendente]);
 
   const cancelar = useCallback(() => { setPendente(null); setEscolhendo(false); }, []);
   const concluir = useCallback(() => { setPendente(null); setEscolhendo(false); }, []);

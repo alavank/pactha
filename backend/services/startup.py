@@ -313,6 +313,9 @@ MIGRATION_FILES = [
     # voluntarias. Puramente ADITIVA (duas colunas + um indice parcial) sobre
     # transferegov_te; o runner so executa o que esta NESTA lista.
     "add_te_pagamentos.sql",
+    # TELEMETRIA: sessao de uso vira TRECHO contiguo (sessao_token + motivo_fim
+    # mais largo). Precisa de add_uso.sql acima, e nao toca audit_log.
+    "add_uso_trechos.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",
