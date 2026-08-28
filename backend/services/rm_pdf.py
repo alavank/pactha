@@ -552,6 +552,34 @@ def _alteracao_destaque(item: dict) -> str | None:
     return "<br/>".join(partes)
 
 
+def _prestacao_contas_destaque(item: dict) -> str | None:
+    """Caixa da PRESTACAO DE CONTAS do convenio ESTADUAL (SIGCON): em que pe esta a
+    ENTREGA, com o processo SEI e as duas datas. None quando o scraper ainda nao
+    abriu a secao daquele convenio.
+
+    ⚠️ Nao confundir com "VENCIDO +90 DIAS - PRESTACAO DE CONTAS", que o relatorio
+    ja escreve a partir da VIGENCIA: aquilo e o prazo, isto e a entrega."""
+    st = (item.get("prestacao_contas_status") or "").strip()
+    dt = (item.get("prestacao_contas_data") or "").strip()
+    dts = (item.get("prestacao_contas_status_data") or "").strip()
+    sei = (item.get("prestacao_contas_sei") or "").strip()
+    if not (st or dt or dts or sei):
+        return None
+    partes = ["<b>Prestação de contas:</b> " + _escape(st or "(sem status informado)")]
+    # As DUAS datas saem rotuladas. Sem o rotulo, "06/05/2024 · 08/08/2024" nao diz
+    # qual e a entrega do municipio e qual e o carimbo do Estado — e a leitura
+    # natural (a primeira e a mais importante) e justamente a errada.
+    cab = " · ".join(x for x in (
+        ("apresentada em " + _escape(dt)) if dt else "",
+        ("status preenchido em " + _escape(dts)) if dts else "",
+    ) if x)
+    if cab:
+        partes.append(cab)
+    if sei:
+        partes.append("<b>Nº SEI:</b> " + _escape(sei))
+    return "<br/>".join(partes)
+
+
 def _proc_exec_lista(item: dict) -> list:
     """A lista de licitações/processos do item, tolerando JSONB vindo como str
     (dependendo do driver) ou já parseado. Sempre devolve uma lista (vazia se n/a)."""
@@ -724,6 +752,13 @@ def roteiro_rm(meta: dict, conteudo: dict, municipio_nome: str):
                     destaque_alt = _alteracao_destaque(item)
                     if destaque_alt:
                         yield ("caixa", (destaque_alt, "informativo"))
+                    # Estadual (SIGCON): a PRESTACAO DE CONTAS. Logo depois da
+                    # alteracao de proposito — uma diz onde o CONVENIO esta, a
+                    # outra onde a ENTREGA esta, e lidas juntas e que fecham o
+                    # quadro do que ainda cabe cobrar do municipio.
+                    destaque_pc = _prestacao_contas_destaque(item)
+                    if destaque_pc:
+                        yield ("caixa", (destaque_pc, "informativo"))
                     # Desembolso (OPs/OBs): valor + lançamentos.
                     destaque_des = _desembolso_destaque(item)
                     if destaque_des:

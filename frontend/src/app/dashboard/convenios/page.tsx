@@ -706,6 +706,23 @@ export default function ConveniosPage() {
                           {conv.alteracao_situacao}
                         </Selo>
                       )}
+                      {/* PRESTAÇÃO DE CONTAS: o estágio da ENTREGA, que é outra
+                          pergunta que a alteração acima (o estágio do CONVÊNIO).
+                          Vai prefixado porque com os dois selos lado a lado a
+                          linha passa a ter duas situações, e sem o prefixo não dá
+                          para saber qual é qual. O SEI e as datas ficam no título
+                          — o detalhe inteiro está no modal. */}
+                      {conv.prestacao_contas_status && (
+                        <Selo
+                          tom="neutro"
+                          title={["Prestação de contas", conv.prestacao_contas_status,
+                                  conv.prestacao_contas_data && `apresentada em ${conv.prestacao_contas_data}`,
+                                  conv.prestacao_contas_sei && `SEI ${conv.prestacao_contas_sei}`]
+                            .filter(Boolean).join(" · ")}
+                        >
+                          PC · {conv.prestacao_contas_status}
+                        </Selo>
+                      )}
                       {/* Emenda vinculada (espelho do selo "Convênio" da tela de Emendas). */}
                       {conv.emenda_nr && (
                         <Selo tom="ok" title={conv.emenda_objeto || `Emenda ${conv.emenda_nr}`}>

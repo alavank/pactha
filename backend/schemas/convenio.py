@@ -52,6 +52,14 @@ class ConvenioResponse(BaseModel):
     alteracao_tipo: Optional[str] = None
     alteracao_data: Optional[str] = None
     alteracao_titulo: Optional[str] = None
+    # PRESTACAO DE CONTAS (secao propria do detalhe SIGCON). Sao DUAS datas e elas
+    # respondem perguntas diferentes: `_data` e quando o MUNICIPIO apresentou a
+    # prestacao final; `_status_data` e quando o ESTADO mexeu no status. Vazio ate
+    # o scraper rodar com SIGCON_INDICACOES=1.
+    prestacao_contas_status: Optional[str] = None
+    prestacao_contas_data: Optional[str] = None
+    prestacao_contas_status_data: Optional[str] = None
+    prestacao_contas_sei: Optional[str] = None
 
     class Config:
         from_attributes = True

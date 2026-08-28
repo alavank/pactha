@@ -85,6 +85,13 @@ export interface Convenio {
   alteracao_tipo?: string | null;
   alteracao_data?: string | null;
   alteracao_titulo?: string | null;
+  // PRESTAÇÃO DE CONTAS (seção própria do detalhe SIGCON). `_data` = quando o
+  // município APRESENTOU a prestação final; `_status_data` = quando o Estado
+  // mexeu no status. Datas em dd/mm/aaaa, como o portal escreve — NÃO são ISO.
+  prestacao_contas_status?: string | null;
+  prestacao_contas_data?: string | null;
+  prestacao_contas_status_data?: string | null;
+  prestacao_contas_sei?: string | null;
 }
 
 export interface ConvenioList {

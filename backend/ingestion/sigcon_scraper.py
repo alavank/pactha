@@ -26,6 +26,7 @@ import io
 import json
 import logging
 import os
+import re
 import sys
 import time
 import unicodedata
@@ -572,6 +573,185 @@ async def _scrape_alteracoes(page) -> dict | None:
         return None
 
 
+# --------------------------------------------------------------------------
+# PRESTACAO DE CONTAS (secao 'PRESTAÇÃO DE CONTAS' do detalhe do convenio)
+#
+# Pedido do dono (27/08/2026): "no sigcon na aba prestacao de contas, precisamos
+# tb carregar para a tela do sigcon e relatorio a situacao atual que exibe nessa
+# local, o numero do SEI e a data".
+#
+# ⚠️ ESTA SECAO NAO E UMA DATATABLE. As duas leitoras de accordion que ja existem
+# (`_scrape_indicacoes`, `_scrape_alteracoes`) ancoram num `tbody[id$="_data"]`;
+# aqui o conteudo sao PARES ROTULO: VALOR em texto corrido, entao a ancora tem de
+# ser o ROTULO. Por isso o parsing e uma FUNCAO PURA (`ler_prestacao_contas`) e
+# nao mais um `page.evaluate` gigante: assim ele tem teste com o texto real, do
+# jeito que o parser do Portal de MG tem.
+_ACENTOS = str.maketrans(
+    "áàâãäéèêëíìîïóòôõöúùûüçÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇº°",
+    "aaaaaeeeeiiiiooooouuuucAAAAAEEEEIIIIOOOOOUUUUCoo")
+
+
+def _fold(s: str) -> str:
+    """Minusculas SEM ACENTO e — o ponto que importa — do MESMO COMPRIMENTO.
+
+    ⚠️ Nao da para usar `unicodedata.normalize('NFKD', ...)` aqui: ela QUEBRA o
+    'ç' em dois code points e desloca todos os indices seguintes. Como o casamento
+    dos rotulos acontece no texto dobrado e o VALOR e fatiado do texto ORIGINAL
+    pelos mesmos indices, qualquer mudanca de comprimento cortaria o valor no
+    lugar errado — e so em convenio com acento antes do rotulo, que e o tipo de
+    defeito que passa despercebido por meses."""
+    return s.translate(_ACENTOS).lower()
+
+
+# Os rotulos, na grafia do portal (capturada da tela em 27/08/2026):
+#   Status Atual: Aguardando análise da prestação de contas final
+#   Data do Preenchimento do Status: 06/05/2024
+#   Data da Apresentação da Prestação de Contas Final: 08/08/2024
+#   Nº SEI: 1500.01.0234833/2024-4
+#
+# ⚠️ SAO DUAS DATAS, e o pedido dizia "a data" no singular. As duas sao gravadas:
+# escolher uma seria adivinhar, e a que interessa muda com a pergunta (quando o
+# municipio ENTREGOU vs quando o Estado MEXEU no status). A tela e o RM mostram a
+# da APRESENTACAO e levam a do status no titulo.
+_PC_ROTULOS = (
+    ("prestacao_contas_status", r"\bstatus\s+atual\b"),
+    ("prestacao_contas_status_data", r"\bdata\s+do\s+preenchimento\s+do\s+status\b"),
+    ("prestacao_contas_data",
+     r"\bdata\s+da\s+apresenta\w*\s+da\s+presta\w*\s+de\s+contas\b"),
+    ("prestacao_contas_sei", r"\bn[o.]?\s*sei\b"),
+)
+# `[^:\n]{0,40}?:` (preguicoso, com os dois-pontos OBRIGATORIOS) e o que deixa o
+# rotulo absorver um sufixo que eu nao previ — 'Nº SEI Prestação de Contas:' — sem
+# comer o VALOR quando nao ha sufixo nenhum.
+_PC_COMPILADOS = tuple(
+    (campo, re.compile(pad + r"[^:\n]{0,40}?:")) for campo, pad in _PC_ROTULOS
+)
+
+
+def _pc_valor(bruto: str) -> str:
+    """O valor vai ate o PROXIMO ROTULO — inclusive um que este parser NAO conhece.
+
+    ⚠️ Sem o corte por `\\n<texto curto>:`, o ULTIMO rotulo reconhecido engoliria
+    todo o resto do painel (o SEI viria com meia secao grudada). E a mesma
+    doutrina do `ler_detalhe_empenho` do Portal de MG, onde parar em "dois
+    espacos" devolvia None em tudo."""
+    v = bruto.lstrip(" \t\r\n:\u00a0")
+    corte = re.search(r"\n\s*[^\n:]{2,60}:", v)
+    if corte:
+        v = v[:corte.start()]
+    return re.sub(r"[\s\u00a0]+", " ", v).strip()
+
+
+def ler_prestacao_contas(texto: Optional[str]) -> Optional[dict]:
+    """Extrai status/datas/SEI do texto da secao. None quando nao ha rotulo algum.
+
+    Devolve so as chaves que ACHOU: chave ausente e "nao veio", e o upsert faz
+    merge em `raw_data` — gravar string vazia apagaria o valor da rodada anterior
+    num convenio cujo painel nao abriu."""
+    if not texto:
+        return None
+    plano = _fold(texto)
+    marcas = []
+    for campo, rx in _PC_COMPILADOS:
+        for m in rx.finditer(plano):
+            marcas.append((m.start(), m.end(), campo))
+    if not marcas:
+        return None
+    marcas.sort()
+    # Rotulos sobrepostos: o que comeca antes ganha (nunca dois valores da mesma
+    # fatia de texto).
+    limpo: list = []
+    for ini, fim, campo in marcas:
+        if limpo and ini < limpo[-1][1]:
+            continue
+        limpo.append([ini, fim, campo])
+    out: dict = {}
+    for i, (ini, fim, campo) in enumerate(limpo):
+        prox = limpo[i + 1][0] if i + 1 < len(limpo) else len(texto)
+        valor = _pc_valor(texto[fim:prox])
+        if not valor:
+            continue
+        rotulo = plano[ini:fim]
+        # Se o portal listar a parcial E a final, a FINAL vence — as duas casam no
+        # mesmo rotulo ate a palavra 'contas'.
+        if campo in out and "final" not in rotulo:
+            continue
+        out[campo] = valor
+    return out or None
+
+
+# JS minimo: expande o accordion e devolve o TEXTO. Zero parsing aqui — ver
+# `ler_prestacao_contas`.
+_PC_JS = r"""() => {
+    const heads=[...document.querySelectorAll('.ui-accordion-header, [id*="accPnl"][id*="_head"]')];
+    const h=heads.find(e=>/presta[cç][aã]o\s+de\s+contas/i.test(e.innerText||''));
+    let did=false, wasExp=null;
+    if(h){ wasExp=h.getAttribute('aria-expanded'); if(wasExp!=='true'){(h.querySelector('a')||h).click(); did=true;} }
+    return {achou:!!h, wasExp, did,
+            headers:heads.map(e=>(e.innerText||'').replace(/\n[\s\S]*/,'').slice(0,40))};
+}"""
+
+_PC_JS_TEXTO = r"""() => {
+    const heads=[...document.querySelectorAll('.ui-accordion-header, [id*="accPnl"][id*="_head"]')];
+    const h=heads.find(e=>/presta[cç][aã]o\s+de\s+contas/i.test(e.innerText||''));
+    let p=null;
+    if(h){
+        let n=h.nextElementSibling;
+        while(n && !/ui-accordion-content|ui-tabs-panel/.test(n.className||'')) n=n.nextElementSibling;
+        p=n || (h.id ? document.getElementById(h.id.replace(/_head$/,'_content')) : null);
+    }
+    return {painel: p ? (p.innerText||'') : '', corpo: document.body ? (document.body.innerText||'') : ''};
+}"""
+
+
+async def _scrape_prestacao_contas(page) -> Optional[dict]:
+    """Le a secao 'PRESTAÇÃO DE CONTAS': status atual, as duas datas e o nº SEI.
+
+    Tenta o PAINEL do accordion primeiro e o CORPO da pagina como rede — os
+    rotulos sao especificos o bastante ('Status Atual', 'Nº SEI') para nao
+    colidirem com os do resto do detalhe, onde o campo se chama so 'Status'.
+
+    ⚠️ E o fallback LOGA de onde veio (`origem=corpo`). O ciclo das Notas de
+    Empenho custou uma semana justamente porque uma mudanca de layout se
+    disfarcava de "nao ha dado": aqui, se o seletor do painel parar de valer, o
+    dado continua saindo e o log diz que foi pela rede.
+
+    SEMPRE try/except -> None: nao pode propagar (o loop de detalhe aborta em 6
+    falhas seguidas). Ligado por SIGCON_INDICACOES=1, cortado pelo orcamento."""
+    _dbg = (os.getenv("SIGCON_DEBUG_EXTRAS", "0") or "0").strip() == "1"
+    try:
+        diag = await page.evaluate(_PC_JS)
+        if _dbg:
+            logger.info(f"  [DIAG-PC] achou_secao={diag.get('achou')} "
+                        f"wasExpanded={diag.get('wasExp')} clicou={diag.get('did')}")
+            if not diag.get("achou"):
+                logger.info(f"  [DIAG-PC] secoes vistas: {diag.get('headers')}")
+        if not diag.get("achou"):
+            return None
+        # ⚠️ So espera quando de fato CLICOU. O accordion ja aberto nao dispara
+        # ajax nenhum, e esta e a TERCEIRA leitura por convenio num host de 2
+        # vCPU: 3s cobrados a toa em cada registro sairiam do orcamento da rodada
+        # e o rodizio cobriria menos municipios — pagando com COBERTURA por uma
+        # espera que nao esperava nada.
+        if diag.get("did"):
+            await page.wait_for_timeout(3000)
+        t = await page.evaluate(_PC_JS_TEXTO)
+        out = ler_prestacao_contas(t.get("painel"))
+        origem = "painel"
+        if not out:
+            out = ler_prestacao_contas(t.get("corpo"))
+            origem = "corpo"
+        if _dbg:
+            logger.info(f"  [DIAG-PC] origem={origem if out else '-'} "
+                        f"painel={len(t.get('painel') or '')}ch campos={sorted(out or {})}")
+        if out and origem == "corpo":
+            logger.info("  [PC] painel do accordion nao rendeu texto — lido pelo corpo "
+                        "da pagina (seletor do painel pode ter mudado)")
+        return out
+    except Exception:
+        return None
+
+
 async def _scrape_detalhes(page, max_planos: int = 100) -> dict:
     """Para cada linha da Pesquisa Unificada, abre o detalhe e captura os campos.
 
@@ -642,6 +822,15 @@ async def _scrape_detalhes(page, max_planos: int = 100) -> dict:
                 _alt = await _scrape_alteracoes(page)
                 if _alt:
                     data.update(_alt)
+                # O orcamento e RECHECADO aqui: a prestacao de contas e a terceira
+                # e mais nova das leituras extras, entao e a primeira a cair
+                # quando as duas anteriores ja consumiram a janela. Sem isto ela
+                # empurraria a rodada para fora do teto e o `timeout` externo
+                # mataria o que estivesse em voo — sem carimbar nada.
+                if not _sig_estourou():
+                    _pc = await _scrape_prestacao_contas(page)
+                    if _pc:
+                        data.update(_pc)
             if data and (data.get("responsaveis") or data.get("fase_etapa_status")
                          or data.get("dt_assinatura_str") or data.get("valor_contrapartida_atual_str")
                          or data.get("valor_contrapartida_str") or data.get("vigencia_atual_str")):
