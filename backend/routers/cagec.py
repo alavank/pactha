@@ -46,15 +46,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database import get_db
 from models.user import User
 from services.auth import get_current_user, ensure_municipio_access, ensure_tela
+from services.cadastro_estadual import motivo_sem_coleta
 from services.registro_rotas import exige
 
 router = APIRouter(prefix="/api/cagec", tags=["cagec"])
 
-MOTIVO_SEM_COLETA = (
-    "O CAGEC deste município ainda não foi coletado. A coleta é automática e usa o "
-    "CNPJ do município; se ele ainda não foi identificado nas bases, consulte em "
-    "www.cagec.mg.gov.br/convenente-web/consultaParceiros."
-)
+# ⚠️ A frase de "sem coleta" TEM ESTADO: nome do cadastro e portal sao os do
+# estado do municipio (services/cadastro_estadual.py). Esta constante e a
+# versao mineira, mantida para quem ainda a importa; quem sabe a UF usa
+# `motivo_sem_coleta(uf)`.
+MOTIVO_SEM_COLETA = motivo_sem_coleta("MG")
 
 
 async def fetch_cagec_situacao(db: AsyncSession, municipio_id: int) -> dict:
@@ -75,7 +76,12 @@ async def fetch_cagec_situacao(db: AsyncSession, municipio_id: int) -> dict:
     """), {"m": municipio_id})).fetchall()
 
     if not linhas:
-        return {"tem_dados": False, "motivo": MOTIVO_SEM_COLETA}
+        # Sem linha nao ha `uf` na tabela: vem de `municipios`, porque o motivo
+        # nomeia o cadastro DO ESTADO do municipio — um gaucho sem coleta lia
+        # "O CAGEC deste município..." com o portal mineiro para consultar.
+        uf = (await db.execute(text("SELECT uf FROM municipios WHERE id = :m"),
+                               {"m": municipio_id})).scalar()
+        return {"tem_dados": False, "uf": uf, "motivo": motivo_sem_coleta(uf)}
 
     row = linhas[0]
     itens = row[6] if isinstance(row[6], list) else []

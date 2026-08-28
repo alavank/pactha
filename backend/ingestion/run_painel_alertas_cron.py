@@ -81,28 +81,34 @@ def _candidatos(cur, mid):
     # UMA LINHA POR ENTIDADE: Prefeitura, Fundo Municipal de Saúde e FMAS têm
     # cadastros separados no CAGEC. `fetchone()` aqui pegaria uma qualquer e o
     # prefeito receberia (ou deixaria de receber) o alerta errado.
+    # ⚠️ O NOME DO CADASTRO SAI DA `fonte` DA LINHA (CAGEC-MG ou CHE-RS), e a
+    # consequencia tambem: o push do prefeito gaucho dizia "Irregular no CAGEC".
+    # O `ref` NAO muda com o rotulo — e a chave de idempotencia, e troca-la
+    # re-dispararia todo alerta ja enviado.
     try:
+        from services.cadastro_estadual import sigla_da_fonte, trava_da_uf, uf_da_fonte
         cur.execute(
             "SELECT COALESCE(pendencias, 0), regular, situacao, itens, nome, tipo, "
-            "COALESCE(principal, false), cnpj "
+            "COALESCE(principal, false), cnpj, fonte "
             "FROM cagec_situacao WHERE municipio_id = %s "
             "ORDER BY principal DESC, tipo NULLS LAST", (mid,))
-        for pend, regular, situacao, itens, nome, tipo, principal, cnpj in cur.fetchall():
+        for pend, regular, situacao, itens, nome, tipo, principal, cnpj, fonte in cur.fetchall():
             if regular is not False:
                 continue
+            sigla = sigla_da_fonte(fonte)
             nomes = [i.get("label") for i in (itens or [])
                      if isinstance(i, dict) and i.get("tipo") == "pendente"]
             detalhe = "; ".join(n for n in nomes[:2] if n) or f"{pend} pendência(s)"
             quem = "Município" if principal else (tipo or nome or "Entidade")
-            trava = ("Impede assinar convênio estadual e liberar parcela."
+            trava = (trava_da_uf(uf_da_fonte(fonte)).capitalize() + "."
                      if principal else
                      f"Trava os convênios estaduais desta entidade — a prefeitura "
                      f"estar regular não resolve.")
             out.append(("cauc_vencendo", f"cagec:{cnpj}:{situacao}:{pend}",
-                        "Regularidade estadual (CAGEC)",
-                        f"{quem} {situacao or 'irregular'} no CAGEC — {detalhe[:100]}. {trava}"))
+                        f"Regularidade estadual ({sigla})",
+                        f"{quem} {situacao or 'irregular'} no {sigla} — {detalhe[:100]}. {trava}"))
     except Exception as e:
-        _log(f"ERRO ao montar alerta do CAGEC: {type(e).__name__}: {e}")
+        _log(f"ERRO ao montar alerta do cadastro estadual: {type(e).__name__}: {e}")
         cur.connection.rollback()
 
     # DOCUMENTAÇÃO VENCENDO — avisa ANTES de travar, que é o ponto.
@@ -114,13 +120,21 @@ def _candidatos(cur, mid):
     # vezes na mesma faixa (a idempotência é por `ref`).
     try:
         from services.bi_abas import prazos_dos_itens
+        from services.cadastro_estadual import sigla_da_fonte
         for tabela, esfera in (("cagec_situacao", "CAGEC"), ("cauc_situacao", "CAUC")):
             # fetchall: o CAGEC tem uma linha por ENTIDADE (prefeitura, fundo
             # de saude, FMAS). fetchone() perderia os prazos dos fundos.
-            cur.execute(f"SELECT itens, data_pesquisa FROM {tabela} WHERE municipio_id = %s", (mid,))
+            # `fonte` so existe no cadastro estadual — e o que da o nome certo
+            # ao push ("CHE" no RS). O `ref` continua com `esfera` (a chave de
+            # idempotencia nao acompanha o rotulo).
+            fonte_col = "fonte" if esfera == "CAGEC" else "NULL"
+            cur.execute(f"SELECT itens, data_pesquisa, {fonte_col} FROM {tabela} "
+                        f"WHERE municipio_id = %s", (mid,))
             prazos = []
             for r in cur.fetchall():
-                prazos += prazos_dos_itens(r[0], r[1], esfera, dias=30)
+                rotulo = sigla_da_fonte(r[2]) if esfera == "CAGEC" else esfera
+                prazos += [{**p, "rotulo": rotulo}
+                           for p in prazos_dos_itens(r[0], r[1], esfera, dias=30)]
             for p in prazos:
                 faixa = next((f for f in (7, 15, 30) if p["dias_restantes"] <= f), None)
                 if faixa is None:
@@ -130,7 +144,7 @@ def _candidatos(cur, mid):
                 out.append((
                     "cauc_vencendo",                        # mesma preferência de regularidade
                     f"doc:{esfera}:{p['codigo']}:{faixa}",  # 1 push por faixa
-                    f"Documento vencendo ({esfera})",
+                    f"Documento vencendo ({p['rotulo']})",
                     f"{(p['label'] or p['codigo'])[:90]} {quando}. "
                     f"Renove antes para não travar convênio."))
     except Exception as e:

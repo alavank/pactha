@@ -338,7 +338,7 @@ TOOLS = [
     },
     {
         "name": "query_regularidade",
-        "description": "Regularidade do municipio para RECEBER recursos e ASSINAR convenios, nas DUAS esferas: CAUC (federal) e CAGEC (estadual, MG). Use SEMPRE que a pergunta falar em estar 'regular', 'em dia', 'apto a assinar convenio', 'bloqueado', 'impedido', 'pendencia de documentacao' ou 'certidao'. Retorna a situacao de cada esfera e a lista de exigencias, marcando o que esta pendente. NAO confunda com a situacao de um convenio especifico.",
+        "description": "Regularidade do municipio para RECEBER recursos e ASSINAR convenios, nas DUAS esferas: CAUC (federal) e o cadastro estadual de convenentes (CAGEC em MG, CHE no RS). Use SEMPRE que a pergunta falar em estar 'regular', 'em dia', 'apto a assinar convenio', 'bloqueado', 'impedido', 'pendencia de documentacao' ou 'certidao'. Retorna a situacao de cada esfera e a lista de exigencias, marcando o que esta pendente. NAO confunda com a situacao de um convenio especifico.",
         "input_schema": {
             "type": "object",
             "properties": {"municipio_id": {"type": "integer"}},
@@ -1157,7 +1157,7 @@ async def _tool_query_plano_acao(db: AsyncSession, inp: dict) -> str:
 
 
 async def _tool_query_regularidade(db: AsyncSession, inp: dict) -> str:
-    """CAUC (federal) + CAGEC (estadual/MG) na mesma resposta.
+    """CAUC (federal) + cadastro estadual (CAGEC em MG, CHE no RS) na mesma resposta.
 
     Reusa as funcoes dos routers em vez de reescrever a SQL: se a regra de
     classificacao de uma exigencia mudar la, muda aqui junto — a IA nao pode
@@ -1187,16 +1187,26 @@ async def _tool_query_regularidade(db: AsyncSession, inp: dict) -> str:
         if len(pend) > 20:
             out.append(f"  ... e mais {len(pend) - 20} pendencia(s).")
 
+    # O CADASTRO E O DO ESTADO DO MUNICIPIO (services/cadastro_estadual.py):
+    # CAGEC em Minas, CHE no Rio Grande do Sul. Era `uf != "MG"` -> "nao
+    # acompanhado", e a IA de Santa Maria negava ao prefeito um dado que a tela
+    # ao lado mostrava. Estado que nao coletamos continua parando aqui — antes,
+    # o bloco saia rotulado "CAGEC/MG" e o modelo tratava a ausencia como
+    # pendencia do municipio.
+    from services.cadastro_estadual import cadastro_da_uf
     uf_mun = (mun.uf or "").strip().upper()
-    if uf_mun and uf_mun != "MG":
-        # O CAGEC e fonte de MINAS. Para municipio de outro estado a resposta
-        # certa termina aqui — antes, o bloco saia rotulado "CAGEC/MG" e o
-        # modelo tratava a ausencia como pendencia do municipio.
-        out.append(f"\n[ESTADUAL — {uf_mun}: cadastro estadual de convenentes]")
+    cad = cadastro_da_uf(uf_mun)
+    if not cad:
+        out.append(f"\n[ESTADUAL — {uf_mun or 'UF'}: cadastro estadual de convenentes]")
         out.append("  Ainda NAO acompanhado por este sistema — a consulta e no portal do"
                    " proprio Estado. Nao trate como pendencia nem como regularidade.")
         return "\n".join(out)
-    out.append("\n[ESTADUAL — CAGEC/Cadastro Geral de Convenentes de MG]")
+    sigla, nome_cad = cad["sigla"], cad["nome"]
+    # Em MG o detalhamento vem do CRC (certificado em PDF); no RS as validades
+    # saem da consulta publica e nao existe certificado — as frases sobre o
+    # CRC so valem onde ele existe.
+    certificado = cad.get("certificado")
+    out.append(f"\n[ESTADUAL — {sigla}/{nome_cad} de {uf_mun}]")
     if not cagec.get("tem_dados"):
         out.append(f"  Sem coleta registrada. {cagec.get('motivo', '')}".rstrip())
     else:
@@ -1229,7 +1239,7 @@ async def _tool_query_regularidade(db: AsyncSession, inp: dict) -> str:
                        " exigencias do cadastro — nos nao sabemos quais sao.")
         elif crc_velho:
             out.append(f"  >>> ATENCAO: o detalhamento abaixo e do certificado lido em"
-                       f" {cagec.get('crc_em') or '-'}, nao de hoje — o portal do CAGEC"
+                       f" {cagec.get('crc_em') or '-'}, nao de hoje — o portal do {sigla}"
                        f" nao emite certificado novo (\"{cagec.get('crc_erro') or '-'}\")."
                        " Diga essa data ao responder; algum documento pode ter vencido"
                        " depois dela.")
@@ -1250,8 +1260,10 @@ async def _tool_query_regularidade(db: AsyncSession, inp: dict) -> str:
         out.append(
             f"  Linhas da consulta publica ({len(itens_cagec)}) — NAO sao as exigencias:"
             if crc_ausente else
-            f"  Obrigacoes lidas do CRC de {cagec.get('crc_em') or 'hoje'}"
-            f" ({len(itens_cagec)}), com validade:")
+            f"  Obrigacoes lidas do {certificado} de {cagec.get('crc_em') or 'hoje'}"
+            f" ({len(itens_cagec)}), com validade:"
+            if certificado else
+            f"  Exigencias do {sigla} ({len(itens_cagec)}), com validade:")
         for i in itens_cagec:
             if i.get("tipo") == "pendente":
                 continue
@@ -1281,21 +1293,25 @@ async def _tool_query_regularidade(db: AsyncSession, inp: dict) -> str:
                     if i.get("tipo") == "pendente":
                         venc = f" (venceu em {i['validade']})" if i.get("validade") else ""
                         out.append(f"          PENDENTE: {i.get('label')}{venc}")
-            out.append("  REGRA: cada entidade tem cadastro PROPRIO no CAGEC e trava"
+            out.append(f"  REGRA: cada entidade tem cadastro PROPRIO no {sigla} e trava"
                        " apenas o SEU convenio. Prefeitura regular NAO destrava o"
                        " convenio da saude se o Fundo Municipal de Saude estiver"
                        " irregular, e vice-versa. Ao responder sobre um fundo,"
                        " use a linha DELE — nunca a do cadastro principal.")
         out.append(
-            "  Fonte: consulta publica do CAGEC. O certificado (CRC), que traz os"
+            f"  Fonte: consulta publica do {sigla}. O certificado ({certificado}), que traz os"
             " documentos, nao pode ser emitido nesta consulta."
             if crc_ausente else
-            "  Fonte: CRC (Certificado de Registro Cadastral) do proprio CAGEC. "
+            f"  Fonte: {certificado} (Certificado de Registro Cadastral) do proprio {sigla}. "
             "Cite as datas de validade quando forem uteis — o gestor precisa "
-            "renovar ANTES do vencimento.")
+            "renovar ANTES do vencimento."
+            if certificado else
+            f"  Fonte: consulta publica do {sigla} ({cad['portal']}), que publica a "
+            "validade de cada exigencia. Cite as datas de validade quando forem "
+            "uteis — o gestor precisa renovar ANTES do vencimento.")
 
-    out.append("\nATENCAO ao responder: CAUC vale para convenio FEDERAL e CAGEC para convenio "
-               "ESTADUAL (MG). Estar regular em um NAO implica estar no outro.")
+    out.append(f"\nATENCAO ao responder: CAUC vale para convenio FEDERAL e {sigla} para convenio "
+               f"ESTADUAL ({uf_mun}). Estar regular em um NAO implica estar no outro.")
     return "\n".join(out)
 
 

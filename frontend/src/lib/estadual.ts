@@ -24,11 +24,21 @@ export interface CadastroEstadual {
   curto?: string;
   /** Quem opera, quando ajuda a localizar. */
   orgao?: string;
+  /** O DOCUMENTO de onde sai o detalhamento, quando existe um. Em Minas as
+   *  obrigações e validades vêm do CRC (certificado em PDF) e a tela precisa
+   *  dizer de que leitura são; no RS as validades saem da consulta pública e
+   *  não há certificado nenhum — falar em "CRC" ali é inventar documento. */
+  certificado?: string;
+  /** O que a irregularidade TRAVA — e é diferente por estado, e a diferença
+   *  é material para o gestor: em Minas segura até a parcela de convênio já
+   *  assinado; no RS o CHE é exigido para celebrar. Só entra com fonte. */
+  trava?: string;
 }
 
 export const CADASTRO_ESTADUAL: Record<string, CadastroEstadual> = {
   // portalcagec.mg.gov.br — Cadastro Geral de Convenentes, Decreto 44.293/2006.
-  MG: { sigla: "CAGEC", nome: "Cadastro Geral de Convenentes" },
+  MG: { sigla: "CAGEC", nome: "Cadastro Geral de Convenentes", certificado: "CRC",
+        trava: "impede convênio estadual e liberação de parcela" },
   // portal.convenios.go.gov.br — Sistema Estadual de Gestão de Transferências
   // Voluntárias, operado pela Controladoria-Geral do Estado.
   GO: { sigla: "SIGECON", nome: "Sistema Estadual de Gestão de Transferências Voluntárias" },
@@ -54,8 +64,76 @@ export const CADASTRO_ESTADUAL: Record<string, CadastroEstadual> = {
   // che.sefaz.rs.gov.br — Cadastro de Habilitação em Convênios do Estado,
   // Instrução Normativa CAGE nº 01/2006. Consulta pública, sem login.
   RS: { sigla: "CHE", nome: "Cadastro de Habilitação em Convênios do Estado",
-        orgao: "CAGE/SEFAZ-RS" },
+        orgao: "CAGE/SEFAZ-RS", trava: "impede celebrar convênio com o Estado" },
 };
+
+/** O rótulo que vale em qualquer estado — e o que sai quando NÃO se sabe de
+ *  qual estado é o dado. Genérico é chato; nome errado na tela do cliente é
+ *  pior, e "CAGEC" em cima de município gaúcho foi exatamente o defeito. */
+export const ROTULO_ESTADUAL_GENERICO = "Cadastro estadual";
+
+function ufsLimpas(ufs?: ReadonlyArray<string | null | undefined> | null): string[] {
+  const set = new Set<string>();
+  for (const u of ufs || []) {
+    const s = (u || "").trim().toUpperCase();
+    if (s) set.add(s);
+  }
+  return [...set].sort();
+}
+
+/** A sigla curta do cadastro de um estado ("CAGEC", "CHE"), para caber num
+ *  medidor ou num selo. Sem entrada no mapa, o genérico. */
+export function siglaEstadual(uf?: string | null): string {
+  const c = CADASTRO_ESTADUAL[(uf || "").trim().toUpperCase()];
+  return c?.sigla || c?.curto || ROTULO_ESTADUAL_GENERICO;
+}
+
+/** ⭐ O NOME DO CADASTRO PARA UM CONJUNTO DE UFs — que é o que o Painel de
+ *  Indicadores recebe (`ufs_na_fonte`), porque o escopo pode ser uma carteira.
+ *  Um estado só → a sigla dele; vários ou nenhum → o genérico, que é
+ *  verdadeiro em qualquer lugar. Nunca "CAGEC" por padrão. */
+export function rotuloCadastroEstadual(ufs?: ReadonlyArray<string | null | undefined> | null): string {
+  const lista = ufsLimpas(ufs);
+  return lista.length === 1 ? siglaEstadual(lista[0]) : ROTULO_ESTADUAL_GENERICO;
+}
+
+/** `tituloEstadual` para um conjunto: "CHE — Rio Grande do Sul" com uma UF,
+ *  "Cadastro estadual — MG, RS" com várias, o genérico sem nenhuma. */
+export function tituloEstadualPorUfs(ufs?: ReadonlyArray<string | null | undefined> | null): string {
+  const lista = ufsLimpas(ufs);
+  if (lista.length === 1) return tituloEstadual(lista[0]);
+  if (lista.length > 1) return `${ROTULO_ESTADUAL_GENERICO} — ${lista.join(", ")}`;
+  return ROTULO_ESTADUAL_GENERICO;
+}
+
+/** `subtituloEstadual` para um conjunto — com várias UFs não há UM nome por
+ *  extenso, então fica a descrição. */
+export function subtituloEstadualPorUfs(ufs?: ReadonlyArray<string | null | undefined> | null): string {
+  const lista = ufsLimpas(ufs);
+  return lista.length === 1 ? subtituloEstadual(lista[0]) : "regularidade estadual para convênios";
+}
+
+/** O nome do estado para abrir uma frase ("Minas Gerais: 3 pendências"). Com
+ *  várias UFs ou nenhuma, "Estado" — que é verdadeiro e não aponta para o
+ *  lugar errado. */
+export function nomeEstadoOuGenerico(ufs?: ReadonlyArray<string | null | undefined> | null): string {
+  const lista = ufsLimpas(ufs);
+  return lista.length === 1 ? (NOME_UF[lista[0]] || lista[0]) : "Estado";
+}
+
+/** O documento de onde sai o detalhamento ("CRC" em Minas), ou null onde o
+ *  estado não emite certificado — aí a tela fala em "exigências", nunca em
+ *  "documentos do CRC". */
+export function certificadoEstadual(uf?: string | null): string | null {
+  return CADASTRO_ESTADUAL[(uf || "").trim().toUpperCase()]?.certificado || null;
+}
+
+/** O que a irregularidade trava naquele estado. Sem entrada, a consequência
+ *  mínima que vale em qualquer UF: sem cadastro não se celebra convênio. */
+export function travaEstadual(uf?: string | null): string {
+  return CADASTRO_ESTADUAL[(uf || "").trim().toUpperCase()]?.trava
+    || "impede celebrar convênio com o Estado";
+}
 
 /** ⚠️ OS 19 QUE FALTAM, e por que não estão aqui.
  *
