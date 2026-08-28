@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import api from "@/lib/api";
 import { Input } from "@/components/ui/input";
 import toast from "react-hot-toast";
+import { CLIENT_LOGO_CLASSE } from "@/components/bi/Marca";
 
 // Config de marca por instância (build-time).
 const CLIENT_LOGO = process.env.NEXT_PUBLIC_CLIENT_LOGO || "";
@@ -93,7 +94,7 @@ export default function LoginPage() {
           {CLIENT_LOGO && (
             <div className="mt-1 flex flex-col items-center gap-1">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={CLIENT_LOGO} alt="Cliente" className="h-14 w-auto max-w-[160px] object-contain" />
+              <img src={CLIENT_LOGO} alt="Cliente" className={`h-14 w-auto max-w-[160px] object-contain ${CLIENT_LOGO_CLASSE}`} />
               {CLIENT_SUBTITLE && (
                 <p className="text-[11px] font-semibold" style={{ color: "var(--bi-muted)" }}>{CLIENT_SUBTITLE}</p>
               )}

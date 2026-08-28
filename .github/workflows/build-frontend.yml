@@ -53,7 +53,7 @@ jobs:
             args: |
               NEXT_PUBLIC_API_URL=/api
               API_PROXY_TARGET=https://pactha-api-54-232-208-118.sslip.io
-              NEXT_PUBLIC_CLIENT_LOGO=/freitas-logo.jpeg
+              NEXT_PUBLIC_CLIENT_LOGO=/logo-freitas.png
               NEXT_PUBLIC_CLIENT_SUBTITLE=Assessoria
               NEXT_PUBLIC_BI_MODULE=1
           - image: frontend-trust

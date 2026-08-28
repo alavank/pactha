@@ -602,6 +602,9 @@ export default function TransfereGovPage() {
                       tom: p.motivo_impedimento ? "critico" : "normal",
                       title: p.motivo_impedimento,
                     },
+                    // A FONTE, no canto inferior direito (pedido do dono): o menu
+                    // diz a esfera (FEDERAIS), o card diz o sistema de origem.
+                    { rotulo: "Fonte", valor: "TransfereGov" },
                   ]}
                 />
               </ItemLinha>
