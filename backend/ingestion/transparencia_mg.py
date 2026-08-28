@@ -56,6 +56,12 @@ _BUDGET_S = float(os.getenv("TRANSPMG_BUDGET_S", "600") or 600)
 _MAX_MUNICIPIOS = int(os.getenv("TRANSPMG_LOTE_MUNICIPIOS", "8") or 8)
 _MAX_DETALHES = int(os.getenv("TRANSPMG_MAX_DETALHES", "150") or 150)
 _PAUSA_S = float(os.getenv("TRANSPMG_PAUSA_S", "0.4") or 0.4)
+# De quantos em quantos dias um empenho SEM PAGAMENTO CONFIRMADO volta para a
+# fila do detalhe. `pagamentos` e um RETRATO, e sem isto o retrato de janeiro
+# valeria para sempre: o pagamento de junho nunca entraria no relatorio. Quem ja
+# tem pagamento confirmado sai da fila de vez — o custo e so da cauda que ainda
+# nao recebeu.
+_REVER_DIAS = int(os.getenv("TRANSPMG_REVER_DIAS", "7") or 7)
 
 # ⚠️ MODO MEDICAO. `TRANSPMG_SO_LISTAGEM=1` varre as listagens, loga quantos
 # empenhos cada municipio tem e NAO BUSCA DETALHE NEM GRAVA NADA. Existe porque
@@ -169,19 +175,66 @@ def classificar(detalhe_ok: bool, tem_rotulo: bool, historico: str | None,
     return status_casamento if not convenio_id else "casado"
 
 
+# SITUACAO DA ORDEM DE PAGAMENTO: o que confirma que o dinheiro SAIU.
+#
+# ⚠️ TRES estados, e o terceiro NAO e um dos outros dois. Somar toda linha da aba
+# como desembolso era o defeito: uma OP "Devolvida pelo banco" entrava como
+# dinheiro recebido E apagava o "Pendente de desembolso" — o convenio sumia da
+# lista do que falta cobrar, que e exatamente o que o dono pediu para ver.
+# O proprio `ler_pagamentos` ja dizia isso ("ha estados intermediarios que NAO
+# sao pagamento") e o resto do codigo nao escutava.
+_PGTO_CONFIRMA = ("acatad",)                 # medido: "Acatada pelo banco"
+_PGTO_NEGA = ("devolvid", "cancelad", "estornad", "rejeitad", "anulad")
+
+
+def pagamento_confirmado(situacao) -> bool | None:
+    """True = o dinheiro saiu; False = nao saiu; None = NAO SEI.
+
+    ⚠️ O None e o ponto. O vocabulario do portal nao esta documentado em lugar
+    nenhum e so um valor foi MEDIDO ("Acatada pelo banco"); chutar que todo o
+    resto e pagamento infla o desembolso, e chutar que todo o resto nao e gera
+    "Pendente de desembolso" contra convenio ja pago. Nos dois casos o relatorio
+    afirma coisa errada sobre dinheiro publico — entao no desconhecido ele CALA."""
+    s = (situacao or "").strip().lower()
+    if not s:
+        return None
+    if any(k in s for k in _PGTO_CONFIRMA):
+        return True
+    if any(k in s for k in _PGTO_NEGA):
+        return False
+    return None
+
+
 def montar_pagamentos(linhas: list[dict]) -> dict:
     """O bloco `pagamentos`, no MESMO formato de `ops_obs` das voluntarias.
 
     ⚠️ O formato e copiado de proposito: `rm_builder._desembolso_ops_obs` e
     `rm_pdf._desembolso_destaque` ja sabem ler isso. Um formato proprio exigiria
     um segundo parser no builder — e seria a segunda copia da mesma regra, que
-    neste repo e o jeito conhecido de as duas divergirem."""
+    neste repo e o jeito conhecido de as duas divergirem.
+
+    `valor_desembolsado` conta SO o que a situacao CONFIRMA. O que ficou de fora
+    nao some: vai em `valor_nao_confirmado`/`valor_desconhecido` e todas as
+    linhas continuam em `obs`, com a situacao, para a caixa do relatorio."""
     obs = []
-    total = 0.0
+    pago = nega = desconhecido = 0.0
+    tem_desconhecido = False
+    ultima = None
     for l in linhas:
         v = l.get("valor")
+        conf = pagamento_confirmado(l.get("situacao"))
         if v is not None:
-            total += float(v)
+            if conf is True:
+                pago += float(v)
+            elif conf is False:
+                nega += float(v)
+            else:
+                desconhecido += float(v)
+        if conf is None:
+            tem_desconhecido = True
+        if conf is True:
+            # A data do ULTIMO desembolso e a da ultima OP QUE PAGOU.
+            ultima = l.get("data") or ultima
         obs.append({
             "data_emissao_ob": l.get("data"),
             "valor": v,
@@ -189,8 +242,13 @@ def montar_pagamentos(linhas: list[dict]) -> dict:
             "situacao": l.get("situacao"),
         })
     return {
-        "valor_desembolsado": round(total, 2),
-        "data_ultimo_desembolso": (obs[-1].get("data_emissao_ob") if obs else None),
+        "valor_desembolsado": round(pago, 2),
+        "valor_nao_confirmado": round(nega, 2),
+        "valor_desconhecido": round(desconhecido, 2),
+        # ⚠️ O sinal que manda o RM CALAR: ha OP cuja situacao eu nao sei ler.
+        "tem_situacao_desconhecida": tem_desconhecido,
+        "qtd_ops": len(obs),
+        "data_ultimo_desembolso": ultima,
         "obs": obs,
     }
 
@@ -396,14 +454,36 @@ def _grava_empenhos(cur, mun: dict, id_fav: str, ids: list[str], ano: int) -> in
 
 
 def _fila_detalhe(cur, limite: int) -> list[dict]:
-    """Empenhos ainda sem detalhe lido, os mais antigos primeiro."""
+    """Empenhos a ler, os mais antigos primeiro. TRES motivos para entrar na fila.
+
+    ⚠️ `detalhe_lido_em IS NULL` SOZINHO estava errado, e de um jeito PERMANENTE:
+
+      1. NUNCA LIDO — o caso obvio.
+      2. LIDO E SEM BLOCO DE PAGAMENTO (`pagamentos IS NULL`). Este e o carimbo de
+         uma leitura que FALHOU: a aba Empenho respondeu, a aba Pagamento devolveu
+         corpo curto (o portal faz isso quando o cookie envelhece — "nao erro, nao
+         403: vazio"), `pgs` ficou None e o UPDATE gravou `detalhe_lido_em = NOW()`
+         assim mesmo. Com o filtro antigo essa linha NUNCA MAIS voltava, e o RM
+         passava a afirmar "Pendente de desembolso" para sempre — inclusive num
+         convenio ja pago. Nao havia caminho de resgate em lugar nenhum do repo.
+      3. LIDO, SEM PAGAMENTO CONFIRMADO E VELHO. `pagamentos` e um RETRATO: um
+         empenho lido em janeiro, antes de o Estado pagar, congelava "nao pagou"
+         e o pagamento de junho nunca entrava. Enquanto nao ha dinheiro
+         confirmado, o empenho volta para a fila a cada `_REVER_DIAS` — e para de
+         voltar assim que o pagamento aparece, que e quando o retrato vira fato.
+
+    Regravar custa 2 GET por empenho, entao o item 3 e limitado pela janela: quem
+    ja tem pagamento confirmado sai da fila para sempre."""
     cur.execute("""
         SELECT id_empenho, municipio_id, ano_exercicio
         FROM transparencia_mg_empenhos
         WHERE detalhe_lido_em IS NULL
-        ORDER BY id_empenho
+           OR pagamentos IS NULL
+           OR (COALESCE((pagamentos->>'valor_desembolsado')::numeric, 0) = 0
+               AND detalhe_lido_em < NOW() - (%s || ' days')::interval)
+        ORDER BY detalhe_lido_em NULLS FIRST, id_empenho
         LIMIT %s
-    """, (limite,))
+    """, (str(_REVER_DIAS), limite))
     return [{"id": r[0], "municipio_id": r[1], "ano": r[2] or date.today().year}
             for r in cur.fetchall()]
 
