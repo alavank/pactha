@@ -303,3 +303,236 @@ def ler_pagamentos(html: str) -> list[dict]:
             "valor": _num_br(m.group(5)),
         })
     return out
+
+
+# ---------------------------------------------------------------------------
+# O LACO DE COLETA
+# ---------------------------------------------------------------------------
+def _db():
+    import psycopg2
+    return psycopg2.connect(os.getenv("DATABASE_URL_SYNC", ""))
+
+
+def _sessao():
+    """httpx com o UA de navegador e o cookie jar vivo.
+
+    ⚠️ O COOKIE E OBRIGATORIO e sai da propria listagem: sem ele o endpoint de
+    detalhe devolve ZERO BYTE — nao erro, nao 403, vazio. Um cliente sem cookie
+    jar coletaria a listagem inteira e depois falharia em todo detalhe, com o log
+    dizendo apenas "veio vazio"."""
+    import httpx
+    return httpx.Client(headers={"User-Agent": _UA}, follow_redirects=True,
+                        timeout=60.0)
+
+
+def _url_listagem(ano: int, id_fav: str, cnpj: str, fase: str = "empenhado") -> str:
+    return (f"{_BASE}/consultas-1/despesa-estado/despesa/despesa-favorecidos/"
+            f"{ano}/01-01-{ano}/31-12-{ano}/{id_fav}/0/{cnpj}/4/0/{fase}")
+
+
+def _url_detalhe(id_empenho: str, aba: int, token: str, ano: int) -> str:
+    return (f"{_BASE}/index.php?option=com_transparenciamg"
+            f"&task=estado_despesa.filtrarDetalhamento&detalhamento={aba}"
+            f"&id_empenho={id_empenho}&dataInicio=01/01/{ano}&dataFim=31/12/{ano}"
+            f"&{token}=1")
+
+
+def _municipios_mg(cur) -> list[dict]:
+    """Municipios de MG com CNPJ, do MAIS DESATUALIZADO para o mais recente.
+
+    ⚠️ RODIZIO, e nao ordem alfabetica. E a licao que `add_scraper_municipio_
+    coleta.sql` registra: com ordem fixa, a rodada era cortada por volta do 10º de
+    41 e os do fim da lista NUNCA eram atualizados — em silencio."""
+    cur.execute(r"""
+        SELECT m.id, m.nome, regexp_replace(COALESCE(m.cnpj, ''), '\D', '', 'g') AS cnpj,
+               MAX(e.id_favorecido) AS id_fav,
+               MAX(e.updated_at)    AS visto_em
+        FROM municipios m
+        LEFT JOIN transparencia_mg_empenhos e ON e.municipio_id = m.id
+        WHERE upper(COALESCE(m.uf, '')) = 'MG'
+          AND length(regexp_replace(COALESCE(m.cnpj, ''), '\D', '', 'g')) = 14
+          AND COALESCE(m.active, true)
+        GROUP BY m.id, m.nome, m.cnpj
+        ORDER BY visto_em ASC NULLS FIRST, m.id
+    """)
+    return [{"id": r[0], "nome": r[1], "cnpj": r[2], "id_fav": r[3]}
+            for r in cur.fetchall()]
+
+
+def _convenios(cur, municipio_id: int) -> list[dict]:
+    """Candidatos a vinculo, do MESMO municipio.
+
+    ⚠️ Restrito ao municipio DE PROPOSITO: numero de convenio nao e unico entre
+    municipios, e casar carteira inteira acharia homonimo de outra prefeitura."""
+    cur.execute("""
+        SELECT id, nr_proposta, nr_plano_trabalho, nr_siafi, nr_sigcon
+        FROM convenios_estadual WHERE municipio_id = %s
+    """, (municipio_id,))
+    return [{"id": r[0], "nr_proposta": r[1], "nr_plano_trabalho": r[2],
+             "nr_siafi": r[3], "nr_sigcon": r[4]} for r in cur.fetchall()]
+
+
+def _grava_empenhos(cur, mun: dict, id_fav: str, ids: list[str], ano: int) -> int:
+    """Insere os empenhos da listagem. NAO toca no detalhe — quem preenche
+    historico/pagamento e a fila, depois.
+
+    ⚠️ `DO UPDATE` so no que a LISTAGEM sabe. Um `DO UPDATE SET historico=...`
+    aqui apagaria o detalhe ja lido a cada rodada, e a fila re-leria tudo todo
+    dia — 2 requisicoes por empenho, para sempre."""
+    n = 0
+    for i in ids:
+        cur.execute("""
+            INSERT INTO transparencia_mg_empenhos
+                (id_empenho, municipio_id, cnpj_favorecido, id_favorecido,
+                 ano_exercicio, raw_data)
+            VALUES (%s, %s, %s, %s, %s, %s::jsonb)
+            ON CONFLICT (id_empenho) DO UPDATE SET
+                id_favorecido = EXCLUDED.id_favorecido,
+                updated_at    = NOW()
+        """, (int(i), mun["id"], mun["cnpj"], id_fav, ano,
+              '{"fonte": "listagem", "ano": %d}' % ano))
+        n += cur.rowcount or 0
+    return n
+
+
+def _fila_detalhe(cur, limite: int) -> list[dict]:
+    """Empenhos ainda sem detalhe lido, os mais antigos primeiro."""
+    cur.execute("""
+        SELECT id_empenho, municipio_id, ano_exercicio
+        FROM transparencia_mg_empenhos
+        WHERE detalhe_lido_em IS NULL
+        ORDER BY id_empenho
+        LIMIT %s
+    """, (limite,))
+    return [{"id": r[0], "municipio_id": r[1], "ano": r[2] or date.today().year}
+            for r in cur.fetchall()]
+
+
+def coletar() -> dict:
+    """Uma rodada. Devolve o resumo, que tambem vai para o log.
+
+    DUAS FASES, e elas sao separadas de proposito:
+      1. LISTAGEM  — 1 ou 2 GET por municipio, descobre os empenhos que existem;
+      2. DETALHE   — 2 GET por empenho AINDA NAO LIDO, preenche historico e
+                     pagamento, e tenta o vinculo com o convenio.
+    A fase 2 e limitada por `TRANSPMG_MAX_DETALHES` e pelo orcamento de tempo: e
+    melhor cobrir um pedaco por rodada, todo dia, do que estourar a janela e ser
+    morto no meio.
+    """
+    t0 = time.monotonic()
+    ano = date.today().year
+    res = {"municipios": 0, "empenhos_novos": 0, "detalhes": 0,
+           "casados": 0, "sem_convenio": 0, "sem_municipio_mg": False}
+    conn = _db()
+    conn.autocommit = False
+    cur = conn.cursor()
+    muns = _municipios_mg(cur)
+    if not muns:
+        # ⚠️ DIZER ISTO EM VOZ ALTA. Tenant sem municipio de MG nao tem o que
+        # coletar aqui, e "nao coletou" jamais pode se confundir com "nao ha o que
+        # coletar" — e o portal e do ESTADO de Minas.
+        logger.info("nenhum municipio de MG com CNPJ neste tenant — nada a coletar")
+        res["sem_municipio_mg"] = True
+        conn.close()
+        return res
+
+    cli = _sessao()
+    token = None
+    try:
+        for mun in muns[:_MAX_MUNICIPIOS]:
+            if time.monotonic() - t0 > _BUDGET_S:
+                logger.info("orcamento esgotado na listagem — resto fica p/ a proxima")
+                break
+            id_fav = mun.get("id_fav")
+            try:
+                if not id_fav:
+                    # PASSO 1: resolve o id interno. So na primeira vez do
+                    # municipio — depois ele fica na tabela.
+                    r0 = cli.get(_url_listagem(ano, "0", mun["cnpj"]).rsplit("/0/", 1)[0])
+                    id_fav = ler_id_favorecido(r0.text, mun["cnpj"])
+                    if not id_fav:
+                        logger.info(f"  {mun['nome']}: CNPJ nao resolveu id no portal "
+                                    f"({len(r0.content)} bytes) — sem empenho estadual?")
+                        continue
+                r = cli.get(_url_listagem(ano, id_fav, mun["cnpj"]))
+                ids = ler_ids_empenho(r.text)
+                token = ler_token(r.text) or token
+                logger.info(f"  {mun['nome']}: {len(ids)} empenho(s) em {ano} "
+                            f"(id_favorecido={id_fav})")
+                if not _SO_LISTAGEM:
+                    res["empenhos_novos"] += _grava_empenhos(cur, mun, id_fav, ids, ano)
+                    conn.commit()
+                res["municipios"] += 1
+            except Exception as e:
+                logger.warning(f"  {mun['nome']}: listagem falhou — {str(e)[:90]}")
+            time.sleep(_PAUSA_S)
+
+        if _SO_LISTAGEM:
+            logger.warning("TRANSPMG_SO_LISTAGEM=1 — NADA foi gravado (modo medicao)")
+            return res
+        if not token:
+            logger.info("sem token de sessao — nenhuma listagem respondeu; fila do "
+                        "detalhe nao roda nesta rodada")
+            return res
+
+        # FASE 2 — a fila do detalhe.
+        for it in _fila_detalhe(cur, _MAX_DETALHES):
+            if time.monotonic() - t0 > _BUDGET_S:
+                logger.info("orcamento esgotado na fila do detalhe")
+                break
+            try:
+                r1 = cli.get(_url_detalhe(str(it["id"]), _ABA_EMPENHO, token, it["ano"]))
+                ok = len(r1.content) > 200
+                d = ler_detalhe_empenho(r1.text) if ok else {"tem_rotulo": False, "historico": ""}
+                ref, solto = extrair_referencias(d.get("historico"))
+                cid, st_casa, metodo = casar_convenio(ref, _convenios(cur, it["municipio_id"]))
+                status = classificar(ok, d.get("tem_rotulo", False), d.get("historico"),
+                                     ref, cid, st_casa)
+                pgs = None
+                if ok:
+                    r3 = cli.get(_url_detalhe(str(it["id"]), _ABA_PAGAMENTO, token, it["ano"]))
+                    linhas = ler_pagamentos(r3.text)
+                    # ⚠️ `None` quando a chamada nem respondeu; `montar_pagamentos([])`
+                    # quando ela respondeu e nao ha pagamento. NULO e "nao
+                    # consultado" — nunca "nao houve pagamento".
+                    pgs = montar_pagamentos(linhas) if len(r3.content) > 100 else None
+                import json as _json
+                cur.execute("""
+                    UPDATE transparencia_mg_empenhos SET
+                        historico = %s, convenio_ref = %s, numero_solto = %s,
+                        convenio_id = %s, vinculo_status = %s, vinculo_metodo = %s,
+                        nr_empenho = COALESCE(%s, nr_empenho),
+                        tipo_empenho = COALESCE(%s, tipo_empenho),
+                        pagamentos = COALESCE(%s::jsonb, pagamentos),
+                        detalhe_lido_em = NOW(), updated_at = NOW()
+                    WHERE id_empenho = %s
+                """, (d.get("historico"), ref, solto, cid, status, metodo,
+                      d.get("nr_empenho"), d.get("tipo_empenho"),
+                      (_json.dumps(pgs, ensure_ascii=False) if pgs is not None else None),
+                      it["id"]))
+                conn.commit()
+                res["detalhes"] += 1
+                if cid:
+                    res["casados"] += 1
+                else:
+                    res["sem_convenio"] += 1
+            except Exception as e:
+                conn.rollback()
+                logger.warning(f"  empenho {it['id']}: detalhe falhou — {str(e)[:90]}")
+            time.sleep(_PAUSA_S)
+    finally:
+        cli.close()
+        cur.close()
+        conn.close()
+    logger.info(
+        f"=== Transparencia MG: {res['municipios']} municipio(s), "
+        f"{res['empenhos_novos']} empenho(s) novo(s), {res['detalhes']} detalhe(s) — "
+        f"{res['casados']} casaram com convenio, {res['sem_convenio']} nao "
+        f"({time.monotonic()-t0:.0f}s) ===")
+    return res
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO,
+                        format="%(asctime)s [%(levelname)s] %(message)s")
+    coletar()
