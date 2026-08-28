@@ -682,23 +682,49 @@ def ler_prestacao_contas(texto: Optional[str]) -> Optional[dict]:
 
 # JS minimo: expande o accordion e devolve o TEXTO. Zero parsing aqui — ver
 # `ler_prestacao_contas`.
+# ⚠️ ACCORDION **E ABA**. O dono escreveu "no sigcon na ABA prestacao de contas",
+# e a 1a versao daqui procurava so `.ui-accordion-header` — o que as outras duas
+# leitoras usam. Se a secao for um `p:tabView` do PrimeFaces, aquele seletor nao
+# acha NADA e a leitura devolvia None em todo convenio, calada. Procura os dois, e
+# o `headers` do diagnostico lista o que existe na pagina para nao ter que
+# adivinhar de novo.
 _PC_JS = r"""() => {
-    const heads=[...document.querySelectorAll('.ui-accordion-header, [id*="accPnl"][id*="_head"]')];
-    const h=heads.find(e=>/presta[cç][aã]o\s+de\s+contas/i.test(e.innerText||''));
+    const alvo=/presta[cç][aã]o\s+de\s+contas/i;
+    const sel='.ui-accordion-header, [id*="accPnl"][id*="_head"],'
+            + '.ui-tabs-nav li, [role="tab"], .ui-tabs-nav a';
+    const heads=[...document.querySelectorAll(sel)];
+    const h=heads.find(e=>alvo.test(e.innerText||''));
     let did=false, wasExp=null;
-    if(h){ wasExp=h.getAttribute('aria-expanded'); if(wasExp!=='true'){(h.querySelector('a')||h).click(); did=true;} }
+    if(h){
+        // Accordion usa aria-expanded; aba usa aria-selected/classe ui-state-active.
+        wasExp=h.getAttribute('aria-expanded') || h.getAttribute('aria-selected')
+               || (/ui-state-active/.test(h.className||'') ? 'true' : null);
+        if(wasExp!=='true'){ (h.querySelector('a')||h).click(); did=true; }
+    }
     return {achou:!!h, wasExp, did,
-            headers:heads.map(e=>(e.innerText||'').replace(/\n[\s\S]*/,'').slice(0,40))};
+            headers:heads.map(e=>(e.innerText||'').replace(/\n[\s\S]*/,'').slice(0,40)).filter(Boolean)};
 }"""
 
 _PC_JS_TEXTO = r"""() => {
-    const heads=[...document.querySelectorAll('.ui-accordion-header, [id*="accPnl"][id*="_head"]')];
-    const h=heads.find(e=>/presta[cç][aã]o\s+de\s+contas/i.test(e.innerText||''));
+    const alvo=/presta[cç][aã]o\s+de\s+contas/i;
+    const heads=[...document.querySelectorAll(
+        '.ui-accordion-header, [id*="accPnl"][id*="_head"],'
+        + '.ui-tabs-nav li, [role="tab"], .ui-tabs-nav a')];
+    const h=heads.find(e=>alvo.test(e.innerText||''));
     let p=null;
     if(h){
-        let n=h.nextElementSibling;
-        while(n && !/ui-accordion-content|ui-tabs-panel/.test(n.className||'')) n=n.nextElementSibling;
-        p=n || (h.id ? document.getElementById(h.id.replace(/_head$/,'_content')) : null);
+        // ACCORDION: o conteudo e o proximo irmao. ABA: o painel e apontado pelo
+        // href/aria-controls do cabecalho e vive em OUTRO lugar do DOM.
+        const alvoId=(h.getAttribute('aria-controls')
+            || ((h.getAttribute('href')||'').replace(/^#/,''))
+            || ((h.querySelector('a')||{}).getAttribute
+                ? (h.querySelector('a').getAttribute('href')||'').replace(/^#/,'') : ''));
+        if(alvoId) p=document.getElementById(alvoId);
+        if(!p){
+            let n=h.nextElementSibling;
+            while(n && !/ui-accordion-content|ui-tabs-panel/.test(n.className||'')) n=n.nextElementSibling;
+            p=n || (h.id ? document.getElementById(h.id.replace(/_head$/,'_content')) : null);
+        }
     }
     return {painel: p ? (p.innerText||'') : '', corpo: document.body ? (document.body.innerText||'') : ''};
 }"""
@@ -707,14 +733,21 @@ _PC_JS_TEXTO = r"""() => {
 async def _scrape_prestacao_contas(page) -> Optional[dict]:
     """Le a secao 'PRESTAÇÃO DE CONTAS': status atual, as duas datas e o nº SEI.
 
-    Tenta o PAINEL do accordion primeiro e o CORPO da pagina como rede — os
+    Tenta o PAINEL (accordion OU aba) primeiro e o CORPO da pagina como rede — os
     rotulos sao especificos o bastante ('Status Atual', 'Nº SEI') para nao
     colidirem com os do resto do detalhe, onde o campo se chama so 'Status'.
 
-    ⚠️ E o fallback LOGA de onde veio (`origem=corpo`). O ciclo das Notas de
-    Empenho custou uma semana justamente porque uma mudanca de layout se
-    disfarcava de "nao ha dado": aqui, se o seletor do painel parar de valer, o
-    dado continua saindo e o log diz que foi pela rede.
+    ⚠️ NAO RETORNA CEDO QUANDO NAO ACHA O CABECALHO. A 1a versao fazia
+    `if not achou: return None` — e isso MATAVA a propria rede de seguranca duas
+    linhas abaixo. Bastava o cabecalho ter outro nome, ou a secao ser uma aba e
+    nao um accordion, para o dado nunca sair, calado, mesmo estando na pagina.
+    E exatamente a forma do defeito das Notas de Empenho, que custou uma semana:
+    uma diferenca de estrutura se disfarcando de "nao ha dado". Agora a leitura
+    do texto SEMPRE acontece; o cabecalho decide se ha o que CLICAR, nao se ha o
+    que ler.
+
+    O log diz de onde veio (`origem=corpo`) — se o seletor do painel parar de
+    valer, o dado continua saindo e a linha do log acusa.
 
     SEMPRE try/except -> None: nao pode propagar (o loop de detalhe aborta em 6
     falhas seguidas). Ligado por SIGCON_INDICACOES=1, cortado pelo orcamento."""
@@ -725,13 +758,11 @@ async def _scrape_prestacao_contas(page) -> Optional[dict]:
             logger.info(f"  [DIAG-PC] achou_secao={diag.get('achou')} "
                         f"wasExpanded={diag.get('wasExp')} clicou={diag.get('did')}")
             if not diag.get("achou"):
-                logger.info(f"  [DIAG-PC] secoes vistas: {diag.get('headers')}")
-        if not diag.get("achou"):
-            return None
-        # ⚠️ So espera quando de fato CLICOU. O accordion ja aberto nao dispara
-        # ajax nenhum, e esta e a TERCEIRA leitura por convenio num host de 2
-        # vCPU: 3s cobrados a toa em cada registro sairiam do orcamento da rodada
-        # e o rodizio cobriria menos municipios — pagando com COBERTURA por uma
+                logger.info(f"  [DIAG-PC] secoes/abas vistas: {diag.get('headers')}")
+        # ⚠️ So espera quando de fato CLICOU. Secao ja aberta nao dispara ajax
+        # nenhum, e esta e a TERCEIRA leitura por convenio num host de 2 vCPU: 3s
+        # cobrados a toa em cada registro sairiam do orcamento da rodada e o
+        # rodizio cobriria menos municipios — pagando com COBERTURA por uma
         # espera que nao esperava nada.
         if diag.get("did"):
             await page.wait_for_timeout(3000)
@@ -745,8 +776,8 @@ async def _scrape_prestacao_contas(page) -> Optional[dict]:
             logger.info(f"  [DIAG-PC] origem={origem if out else '-'} "
                         f"painel={len(t.get('painel') or '')}ch campos={sorted(out or {})}")
         if out and origem == "corpo":
-            logger.info("  [PC] painel do accordion nao rendeu texto — lido pelo corpo "
-                        "da pagina (seletor do painel pode ter mudado)")
+            logger.info("  [PC] painel nao rendeu texto — lido pelo corpo da pagina "
+                        f"(achou_cabecalho={diag.get('achou')}; seletor pode ter mudado)")
         return out
     except Exception:
         return None

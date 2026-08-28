@@ -170,3 +170,87 @@ def test_o_numero_do_SEI_NAO_e_reescrito_pelo_normalizador():
     assert item["prestacao_contas_sei"] == "1500.01.0234833/2024-4"
     assert item["prestacao_contas_data"] == "08/08/2024"
     assert item["prestacao_contas_status"] == "Aguardando análise"
+
+
+# --------------------------------------------------------------------------
+# COMO A SEÇÃO É ACHADA NA PÁGINA. Dois buracos que faziam o dado nunca sair,
+# calado — e "calado" é a forma exata do defeito das Notas de Empenho.
+# --------------------------------------------------------------------------
+from ingestion.sigcon_scraper import (                                # noqa: E402
+    _PC_JS, _PC_JS_TEXTO, _scrape_prestacao_contas,
+)
+
+
+class _PageFake:
+    """Uma `page` do Playwright reduzida ao que esta leitora usa. O JS não roda:
+    cada `evaluate` devolve o que o teste disser, então dá para fixar "não achei
+    cabeçalho" + "o corpo tem os campos" e observar a DECISÃO do Python, que é o
+    que está sob teste."""
+    def __init__(self, diag, texto):
+        self._diag, self._texto = diag, texto
+        self.esperou = 0
+
+    async def evaluate(self, js):
+        return self._diag if js is _PC_JS else self._texto
+
+    async def wait_for_timeout(self, ms):
+        self.esperou += ms
+
+
+def _corre(page):
+    import asyncio
+    return asyncio.run(_scrape_prestacao_contas(page))
+
+
+def test_cabecalho_NAO_ACHADO_ainda_assim_le_o_corpo():
+    """⚠️ REGRESSÃO. A 1ª versão fazia `if not achou: return None` — e isso matava
+    a própria rede de segurança duas linhas abaixo. Bastava o cabeçalho ter outro
+    nome (ou a seção ser uma ABA e não um accordion) para o dado nunca sair,
+    calado, MESMO ESTANDO NA PÁGINA. Falha contra o código anterior."""
+    p = _PageFake({"achou": False, "did": False, "headers": ["IDENTIFICAÇÃO"]},
+                  {"painel": "", "corpo": PAINEL})
+    d = _corre(p)
+    assert d and d["prestacao_contas_sei"] == "1500.01.0234833/2024-4"
+
+
+def test_sem_cabecalho_nao_clica_nem_espera():
+    """Não achou o que clicar => não paga os 3s. O custo continua condicional."""
+    p = _PageFake({"achou": False, "did": False, "headers": []},
+                  {"painel": "", "corpo": PAINEL})
+    _corre(p)
+    assert p.esperou == 0
+
+
+def test_secao_ja_aberta_nao_paga_os_3s():
+    p = _PageFake({"achou": True, "wasExp": "true", "did": False, "headers": []},
+                  {"painel": PAINEL, "corpo": ""})
+    assert _corre(p)["prestacao_contas_status"].startswith("Aguardando")
+    assert p.esperou == 0
+
+
+def test_pagina_sem_o_dado_continua_devolvendo_None():
+    """A rede de segurança não pode virar invenção: sem os rótulos, nada sai."""
+    p = _PageFake({"achou": False, "did": False, "headers": []},
+                  {"painel": "", "corpo": "Convênio 1234/2024 — SEGOV\nStatus: Em vigor"})
+    assert _corre(p) is None
+
+
+def test_o_seletor_cobre_ACCORDION_E_ABA():
+    """⚠️ O dono escreveu "no sigcon na ABA prestação de contas". A 1ª versão
+    procurava só `.ui-accordion-header` — o que as outras duas leitoras usam. Num
+    `p:tabView` do PrimeFaces aquele seletor não acha nada."""
+    for js in (_PC_JS, _PC_JS_TEXTO):
+        assert "ui-accordion-header" in js
+        assert "ui-tabs-nav" in js and 'role="tab"' in js
+
+
+def test_o_painel_da_ABA_e_achado_por_aria_controls_e_href():
+    """Accordion: o conteúdo é o próximo irmão. Aba: o painel vive em OUTRO lugar
+    do DOM e o cabeçalho aponta para ele por `aria-controls`/`href="#id"`."""
+    assert "aria-controls" in _PC_JS_TEXTO and "href" in _PC_JS_TEXTO
+
+
+def test_aba_ja_selecionada_conta_como_aberta():
+    """Accordion usa `aria-expanded`; aba usa `aria-selected`/`ui-state-active`.
+    Sem os três, uma aba já aberta seria clicada de novo e pagaria 3s à toa."""
+    assert "aria-selected" in _PC_JS and "ui-state-active" in _PC_JS
