@@ -13,6 +13,8 @@ import api from "@/lib/api";
 interface Presente {
   nome: string; email: string; desde: string | null;
   tela: string | null; estado: "presente" | "saindo"; ha_seg: number;
+  /** A aba se despediu (fato do servidor). Diferente de "parou de dar sinal". */
+  encerrada?: boolean;
   /** Índice da cor, vindo do SERVIDOR e derivado do id da sessão: estável
    *  enquanto a pessoa estiver logada, novo quando ela sai e volta. */
   cor: number;
@@ -59,11 +61,13 @@ function relogio(desdeIso: string | null, desvioMs: number): string {
  *  O ocioso é decidido AQUI, com `ha_seg` que veio do servidor — o relógio da
  *  máquina de quem está olhando não entra na conta. */
 function sinal(p: Presente): { cor: string; pulsa: boolean; texto: string } {
-  // ⚠️ VOCÊ NUNCA FICA VERMELHO. Se você está lendo esta tela, você está no
-  // sistema — um ponto vermelho no próprio nome é o widget contradizendo o que
-  // a pessoa vê com os próprios olhos. O vermelho existe para dizer que ALGUÉM
-  // saiu, e essa informação é sobre outra pessoa.
-  if (p.estado === "saindo" && !p.sou_eu)
+  // ⚠️ VOCÊ NÃO FICA VERMELHO POR SILÊNCIO. Se você está lendo esta tela, você
+  // está no sistema — um ponto vermelho no próprio nome é o widget contradizendo
+  // o que a pessoa vê com os próprios olhos. A EXCEÇÃO é a sessão que se
+  // DESPEDIU (`encerrada`): aí é outra aba/sessão sua que fechou, e ela tem que
+  // aparecer vermelha e sumir — o dono viu a própria sessão encerrada ao lado
+  // da nova, as duas verdes, e leu que o sistema "segurava" a anterior.
+  if (p.estado === "saindo" && (p.encerrada || !p.sou_eu))
     return { cor: "var(--bi-crit)", pulsa: false, texto: "saiu agora" };
   // Âmbar TAMBÉM pulsa, mais devagar: parado não é ausente, e o pulso é o que
   // diz "a sessão está viva". Quem parou de dar sinal é que fica estático.

@@ -363,12 +363,16 @@ async def presenca(
                EXTRACT(EPOCH FROM (NOW() - s.ultimo_sinal))::int AS ha_seg
         FROM uso_sessao s JOIN users u ON u.id = s.user_id
         WHERE COALESCE(u.role, '') <> 'viewer'
-          -- QUEM SAIU DE VERDADE some rapido; quem sumiu em silencio demora.
-          -- Sao coisas diferentes: o logout explicito e um FATO (a pessoa
-          -- clicou em sair), e deixa-la 2,5 minutos no painel depois disso
-          -- contradiz o que ela acabou de fazer. Ja a sessao que para de dar
-          -- sinal pode ser rede ruim, tunel, notebook fechando a tampa — ali a
-          -- espera maior evita fazer alguem sumir e voltar piscando.
+          -- ⭐ QUEM CLICOU EM SAIR SOME NA HORA. Nao ha "despedida": e um ato
+          -- com intencao de encerrar, e cada segundo a mais no painel — ainda
+          -- que em vermelho — e o sistema dizendo que segurou a sessao. O dono
+          -- viu a propria sessao encerrada ao lado da nova, verde, e leu
+          -- exatamente isso.
+          AND COALESCE(s.motivo_fim, '') <> 'logout'
+          -- A aba que se despediu fica 20s (pode ser F5 e voltar); quem sumiu
+          -- em silencio demora mais: pode ser rede ruim, tunel, notebook
+          -- fechando a tampa — ali a espera maior evita alguem sumir e voltar
+          -- piscando.
           AND CASE WHEN s.fim IS NOT NULL
                    THEN s.fim > NOW() - make_interval(secs => :saiu)
                    ELSE s.ultimo_sinal > NOW() - make_interval(secs => :janela) END
@@ -391,6 +395,10 @@ async def presenca(
             "seg_ativos": x[5],
             "estado": ("saindo" if (x[8] is not None or (x[9] or 0) > _JANELA_ONLINE_S)
                        else "presente"),
+            # A aba se DESPEDIU (pagehide): fato, nao suspeita. E o que permite
+            # ao cartao ficar vermelho mesmo quando a sessao e da propria
+            # pessoa que esta olhando — porque ai e OUTRA aba dela que fechou.
+            "encerrada": x[8] is not None,
             "ha_seg": x[9],
             # A COR VEM DO SERVIDOR, derivada do id da sessao. Assim ela e
             # ESTAVEL enquanto a pessoa estiver logada — nao muda a cada
@@ -433,15 +441,23 @@ async def listar_sessoes(
                --                'aba_fechada' (despediu-se ha pouco; pode voltar),
                --                'expirou' (parou de dar sinal, sem despedida);
                --   'expirou'  — sem fim gravado e sem sinal: morreu em silencio.
+               -- ⚠️ 'aba_fechada' VELHA VIRA 'navegador_fechado' NA LEITURA. O
+               -- servidor so promove o motivo quando um batimento NOVO do mesmo
+               -- token chega; se a pessoa saiu e entrou com outro login, o
+               -- token e outro e a linha ficaria "fechou a aba ha pouco" para
+               -- sempre. Passado o gap sem ninguem voltar, fechou de vez.
                CASE WHEN s.ultimo_sinal > NOW() - INTERVAL '90 seconds'
                          AND COALESCE(s.motivo_fim, '') <> 'logout' THEN 'ativa'
+                    WHEN s.motivo_fim = 'aba_fechada'
+                         AND s.fim < NOW() - make_interval(secs => :gap) THEN 'navegador_fechado'
                     WHEN s.fim IS NOT NULL THEN COALESCE(s.motivo_fim, 'encerrada')
                     ELSE 'expirou' END AS situacao
         FROM uso_sessao s
         WHERE s.inicio > NOW() - make_interval(days => :dias)
         ORDER BY s.inicio DESC
         LIMIT :lim
-    """), {"dias": max(1, min(dias, 90)), "lim": max(1, min(limite, 1000))})
+    """), {"dias": max(1, min(dias, 90)), "lim": max(1, min(limite, 1000)),
+           "gap": _GAP_NOVO_TRECHO_S})
     return {"sessoes": [dict(x._mapping) for x in r.fetchall()]}
 
 
