@@ -119,8 +119,12 @@ const NAV_ITEMS: NavEntry[] = [
     label: BI_ON ? "Painel de Indicadores" : "Dashboard",
     icon: BI_ON ? BarChart3 : LayoutDashboard,
   },
+  /* ⭐ FEDERAIS / ESTADUAIS, EM MAIÚSCULO (pedido do dono, 28/08/2026): o que o
+     sistema mostra são emendas e convênios por ESFERA — federais, estaduais e,
+     mais à frente, municipais. "Transfere Gov" era o nome da fonte, não da
+     divisão; a fonte passa a aparecer no card de cada proposta. */
   {
-    label: "Transfere Gov",
+    label: "FEDERAIS",
     icon: Landmark,
     children: [
       /* «Em execução» e não «Geral» (pedido do dono): a tela sempre mostrou os
@@ -138,7 +142,7 @@ const NAV_ITEMS: NavEntry[] = [
     ],
   },
   {
-    label: "Estaduais",
+    label: "ESTADUAIS",
     icon: FileText,
     children: [
       { href: "/dashboard/convenios", label: "Convênios" },

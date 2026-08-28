@@ -244,6 +244,12 @@ interface Detalhe extends Proposta {
 
 const PORTAL_BASE = "https://discricionarias.transferegov.sistema.gov.br/voluntarias/ForwardAction.do?modulo=Principal&path=/MostraPrincipalConsultarProposta.do&Usr=guest&Pwd=guest";
 
+/** A FONTE, no card (pedido do dono, 28/08/2026). O grupo do menu passou a se
+ *  chamar FEDERAIS — é a esfera, não o sistema —, então quem diz de onde veio
+ *  cada proposta é o card. Quando entrar outra fonte federal, o valor aqui vira
+ *  campo do registro; hoje tudo desta tela sai do TransfereGov. */
+const FONTE = "TransfereGov";
+
 // Estava incompleto (faltavam vence30 e vence90), e o chip do filtro vindo dos
 // KPIs mostrava o codigo cru ("vence30") em vez do rotulo.
 const VIGENCIA_LABELS: Record<string, string> = {
@@ -745,6 +751,9 @@ export default function TransfereGovPropostas({
                         valor: dias != null ? `${Math.abs(dias)}d` : "—",
                         tom: dias == null ? "normal" : dias < 0 ? "critico" : dias <= 60 ? "atencao" : "ok",
                       },
+                      /* Última coluna = canto inferior direito do card, abaixo
+                         do olhinho e na linha dos dias restantes. */
+                      { rotulo: "Fonte", valor: FONTE },
                     ]}
                   />
                 </ItemLinha>

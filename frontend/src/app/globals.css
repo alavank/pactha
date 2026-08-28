@@ -657,6 +657,18 @@
 .bi-skin[data-bi-theme="light"] .marca-clara { display: block; }
 .bi-skin[data-bi-theme="light"] .marca-escura { display: none; }
 
+/* LOGO DO CLIENTE QUE PRECISA DE FUNDO CLARO no tema escuro (ver
+   CLIENT_LOGO_CLASSE em components/bi/Marca.tsx): a do Freitas é PNG
+   transparente com letras azul-marinho, e sumia sobre o fundo escuro. O fundo
+   branco só entra no escuro — no claro a transparência fica como está. */
+[data-theme="pactha-dark"] .logo-cliente-fundo-claro,
+.bi-skin[data-bi-theme="dark"] .logo-cliente-fundo-claro {
+  background: #fff;
+  border-radius: 6px;
+  padding: 2px 5px;
+  box-sizing: content-box;
+}
+
 /* A BARRA DE ROLAGEM NAO PODE DESLOCAR A TELA.
    Cada aba tem uma altura, entao umas rolavam e outras nao; ao trocar, a
    barra sumia, a area util ficava ~15px mais larga e TODO o conteudo pulava

@@ -516,6 +516,9 @@ export default function TransfereGovPacPage() {
                     valor: i.valor_contrapartida != null ? formatCurrency(i.valor_contrapartida) : "—",
                   },
                   { rotulo: "Ano da proposta", valor: anoDaProposta(i.numero_proposta) || "—" },
+                  // A FONTE, no canto inferior direito (pedido do dono): o menu
+                  // diz a esfera (FEDERAIS), o card diz o sistema de origem.
+                  { rotulo: "Fonte", valor: "TransfereGov" },
                 ]}
               />
             </ItemLinha>

@@ -17,6 +17,13 @@ export const SUBTITULO_PACTHA =
 /** Brasão/logo do cliente, embutido no build por tenant (build-arg do CI). */
 export const CLIENT_LOGO = process.env.NEXT_PUBLIC_CLIENT_LOGO || "";
 
+/** Classe extra do <img> do cliente. A logo do Freitas é PNG transparente com
+ *  letras azul-marinho: no tema escuro ela some sobre o fundo. Ganha um fundo
+ *  claro só lá (ver `.logo-cliente-fundo-claro` em globals.css). Os brasões
+ *  (Monte Sião, Santa Maria) são coloridos e leem bem nos dois temas — por isso
+ *  a regra é por arquivo, e não para todo cliente. */
+export const CLIENT_LOGO_CLASSE = /freitas/i.test(CLIENT_LOGO) ? "logo-cliente-fundo-claro" : "";
+
 /** Nome do cliente embutido no build — usado só como último recurso, quando a
  *  API ainda não respondeu (o nome real vem de /api/municipios). */
 export const CLIENT_SUBTITLE = process.env.NEXT_PUBLIC_CLIENT_SUBTITLE || "";
@@ -121,7 +128,7 @@ export function EnteAtendido({
              O custo é honesto: o nome do município ao lado tem menos espaço. Ele
              está sob `min-w-0` + `truncate`, então encurta em vez de estourar o
              layout. */
-          className={`${grande ? "h-10" : "h-8"} w-auto max-w-[120px] shrink-0 object-contain`}
+          className={`${grande ? "h-10" : "h-8"} w-auto max-w-[120px] shrink-0 object-contain ${CLIENT_LOGO_CLASSE}`}
         />
       )}
       <span
