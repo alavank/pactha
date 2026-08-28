@@ -173,6 +173,13 @@ def estadual_to_response(c: ConvenioEstadual) -> ConvenioResponse:
         alteracao_tipo=(raw.get("ultima_alteracao_tipo") or None),
         alteracao_data=(raw.get("ultima_alteracao_data") or None),
         alteracao_titulo=(raw.get("ultima_alteracao_titulo") or None),
+        # PRESTACAO DE CONTAS: o estagio em que a prestacao esta, o processo SEI e
+        # as datas. Fica ao lado do selo de alteracao porque responde a outra
+        # pergunta — a alteracao e sobre o CONVENIO, esta e sobre a ENTREGA.
+        prestacao_contas_status=(raw.get("prestacao_contas_status") or None),
+        prestacao_contas_data=(raw.get("prestacao_contas_data") or None),
+        prestacao_contas_status_data=(raw.get("prestacao_contas_status_data") or None),
+        prestacao_contas_sei=(raw.get("prestacao_contas_sei") or None),
         valor_total=float(c.valor_total) if c.valor_total else None,
         valor_repasse=float(c.valor_concedente) if c.valor_concedente else None,
         valor_empenhado=float(c.valor_emenda_parlamentar) if c.valor_emenda_parlamentar else None,
@@ -1026,16 +1033,28 @@ async def get_convenio_estadual_detail(
         "dias_restantes_label": dias_rest_label,
         "titulo": c.objeto,
         "objetivo": c.objetivo,
-        # "prestacao_contas" REMOVIDO: as DUAS chaves tem zero ocorrencia no
-        # raw_data de qualquer fonte dos tres tenants (varridas as 72 chaves do
-        # SIGCON e as 46 do GCONV-ES). Era uma cadeia de dois elos mortos que
-        # rendia "-" em 894 de 894 linhas visiveis, num campo de largura dupla e
-        # justamente o que o gestor mais procura quando um convenio vence.
-        # O sinal que o sistema REALMENTE tem ja aparece na celula vizinha:
-        # "Dias Restantes" exibe o rotulo oficial VENCIDO +90 DIAS - PRESTACAO DE
-        # CONTAS em 282 linhas. Nao re-derivar aqui: duplicaria a celula ao lado
-        # com risco de divergirem, e o derivado so sabe que o PRAZO venceu, nao
-        # se a prestacao foi entregue.
+        # PRESTACAO DE CONTAS — o campo VOLTOU, agora com fonte.
+        #
+        # Ele existiu, saia `raw.get("prestacao_contas") or raw.get("presta_contas")`
+        # e foi REMOVIDO porque as duas chaves tinham zero ocorrencia no raw_data
+        # de qualquer fonte dos tres tenants (varridas as 72 chaves do SIGCON e as
+        # 46 do GCONV-ES): rendia "-" em 894 de 894 linhas, num campo de largura
+        # dupla e justamente o que o gestor mais procura quando um convenio vence.
+        # Aquele comentario terminava assim: "o derivado so sabe que o PRAZO
+        # venceu, nao se a prestacao foi entregue".
+        #
+        # E essa a lacuna que o pedido de 27/08/2026 fecha. As chaves agora
+        # EXISTEM porque ha coletor: `_scrape_prestacao_contas` abre a secao
+        # 'PRESTAÇÃO DE CONTAS' do detalhe e le status, SEI e as duas datas.
+        # ⚠️ Isto NAO substitui `dias_restantes_label` ("VENCIDO +90 DIAS -
+        # PRESTACAO DE CONTAS"): aquilo e o PRAZO derivado da vigencia, isto e a
+        # ENTREGA declarada pelo Estado. Um convenio pode ter os dois — vencido ha
+        # 200 dias E com prestacao final ja apresentada — e e a diferenca entre os
+        # dois que diz se ha algo a cobrar do municipio.
+        "prestacao_contas_status": raw.get("prestacao_contas_status"),
+        "prestacao_contas_data": raw.get("prestacao_contas_data"),
+        "prestacao_contas_status_data": raw.get("prestacao_contas_status_data"),
+        "prestacao_contas_sei": raw.get("prestacao_contas_sei"),
         "concedente_orgao": c.orgao_concedente,
         "convenente_nome": c.convenente_nome or raw.get("convenente"),
         "municipio_nome": municipio_nome,

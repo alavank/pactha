@@ -946,6 +946,27 @@ def _alteracao_campos(raw: dict) -> dict:
     }
 
 
+_PC_CHAVES = ("prestacao_contas_status", "prestacao_contas_data",
+              "prestacao_contas_status_data", "prestacao_contas_sei")
+
+
+def _prestacao_contas_campos(raw: dict) -> dict:
+    """PRESTACAO DE CONTAS do convenio estadual (secao propria do detalhe SIGCON),
+    para a caixa do PDF (rm_pdf._prestacao_contas_destaque).
+
+    ⚠️ E COISA DIFERENTE do rotulo "VENCIDO +90 DIAS - PRESTACAO DE CONTAS" que o
+    relatorio ja mostra em `dias_restantes_label`. Aquele e o PRAZO, derivado da
+    vigencia — ele so sabe que a data passou. Este e a ENTREGA, declarada pelo
+    Estado. Um convenio pode ter os dois ao mesmo tempo, e e a diferenca entre eles
+    que diz se ainda ha algo a cobrar do municipio.
+
+    Aceita captura PARCIAL, como `_alteracao_campos`: exigir o status jogaria fora
+    SEI e datas ja capturados."""
+    if not isinstance(raw, dict) or not any((raw.get(k) or "").strip() for k in _PC_CHAVES):
+        return {}
+    return {k: (raw.get(k) or "").strip() for k in _PC_CHAVES}
+
+
 def _evento_atual(historico) -> dict:
     """EVENTO ATUAL do Histórico de Comunicações (TransfereGov mandatárias):
     onde o instrumento está de fato na análise, com SITUAÇÃO e CONSIDERAÇÕES.
@@ -1362,6 +1383,7 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             # Resumido (o PDF das pendencias). Classificar sempre por esta.
             "situacao_base": (c.situacao or "").strip(),
             **_alteracao_campos(raw),
+            **_prestacao_contas_campos(raw),
             "fonte": "sigcon",
             "fonte_ref": str(c.id),
         }, ano=ano_est)

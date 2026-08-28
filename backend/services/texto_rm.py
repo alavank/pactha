@@ -328,6 +328,10 @@ _CAMPOS_FRASE = (
     "clausula_motivo", "projeto_basico", "obra",
     "evento_atual", "evento_situacao", "evento_consideracoes",
     "alteracao_situacao", "alteracao_tipo", "alteracao_titulo",
+    # SO o status da prestacao de contas. `prestacao_contas_sei` e IDENTIFICADOR
+    # ("1500.01.0234833/2024-4") e as duas datas sao datas: passar qualquer um dos
+    # tres por `frase()` e pedir para o relatorio reescrever um numero de processo.
+    "prestacao_contas_status",
 )
 _CAMPOS_NOME = ("parlamentar", "banco", "programa", "evento_responsavel")
 

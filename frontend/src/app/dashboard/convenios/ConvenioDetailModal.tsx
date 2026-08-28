@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Building2, CalendarClock, FileText, Fingerprint } from "lucide-react";
+import { Building2, CalendarClock, ClipboardCheck, FileText, Fingerprint } from "lucide-react";
 import api from "@/lib/api";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import {
@@ -44,6 +44,14 @@ interface ConvenioDetail {
   proposta_vigencia?: string;
   fase_etapa_status?: string;
   setor?: string;
+  /* PRESTAÇÃO DE CONTAS, lida da seção própria do detalhe SIGCON. Duas datas
+     porque respondem perguntas diferentes: `_data` é quando o município
+     APRESENTOU a prestação final, `_status_data` é quando o Estado mexeu no
+     status. */
+  prestacao_contas_status?: string | null;
+  prestacao_contas_data?: string | null;
+  prestacao_contas_status_data?: string | null;
+  prestacao_contas_sei?: string | null;
   qt_alteracoes?: number | null;
   ano?: number;
   tp_instrumento?: string;
@@ -263,6 +271,29 @@ export default function ConvenioDetailModal({ conv, onClose }: Props) {
               campo("Proposta Vigência", d.proposta_vigencia, { span: 2 }),
             ]}
           />
+
+          {/* PRESTAÇÃO DE CONTAS — seção própria, e ela SÓ APARECE quando há dado.
+              O campo antigo com este nome foi removido do modal justamente por
+              desenhar "-" em 894 de 894 linhas; a seção volta com coletor, mas
+              renascer vazia repetiria o defeito em todo convênio de fonte que não
+              é SIGCON-MG (GConv-ES, FNS) e em todo tenant sem `SIGCON_INDICACOES`.
+
+              ⚠️ NÃO passar as datas por `formatDate`: o portal já entrega
+              "08/08/2024", e o helper espera ISO — ele devolveria "Invalid Date"
+              ou, pior, trocaria dia por mês em silêncio. São strings verbatim. */}
+          {(d.prestacao_contas_status || d.prestacao_contas_data
+            || d.prestacao_contas_sei || d.prestacao_contas_status_data) && (
+            <Secao
+              icon={ClipboardCheck}
+              titulo="Prestação de Contas"
+              campos={[
+                campo("Status Atual", d.prestacao_contas_status, { span: 4 }),
+                campo("Apresentação da Prestação Final", d.prestacao_contas_data, { span: 2 }),
+                campo("Preenchimento do Status", d.prestacao_contas_status_data, { span: 2 }),
+                campo("Nº SEI", d.prestacao_contas_sei, { span: 4 }),
+              ]}
+            />
+          )}
 
           <Secao
             icon={Building2}
