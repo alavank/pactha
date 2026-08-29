@@ -649,7 +649,21 @@ def _pc_valor(bruto: str) -> str:
 
 
 _RE_DATA_BR = re.compile(r"\b\d{2}/\d{2}/\d{4}\b")
-_RE_SEI = re.compile(r"\d[\d./-]{6,}")
+# ⚠️ O NUMERO SEI EXIGE A BARRA COM ANO DE 4 DIGITOS, e isso NAO e capricho.
+#
+# MEDIDO EM PRODUCAO (29/08/2026): com a regra frouxa (`\d[\d./-]{6,}`), um dos
+# valores gravados como "Nº SEI" era `030.725.676-62` — UM CPF. Ele nao e so o
+# campo errado: e DADO PESSOAL indo para a tela e para um documento entregue ao
+# municipio, colhido de um campo vizinho do formulario.
+#
+# O que separa os dois e a estrutura: SEI e `1500.01.0069235/2025-73` — tem
+# BARRA seguida de ANO. CPF (`NNN.NNN.NNN-NN`) e CNPJ nao tem barra com ano.
+# E a mesma licao que o Portal de MG ja tinha me ensinado no `_RE_CONVENIO`, e
+# que eu nao apliquei aqui: exigir a barra e o ano de 4 digitos.
+_RE_SEI = re.compile(r"\d[\d.\-]*/(?:19|20)\d{2}[\d.\-]*")
+# Rede de seguranca explicita, por ser dado pessoal: mesmo que a forma acima um
+# dia aceite algo parecido, mascara de CPF/CNPJ nunca vira numero de processo.
+_RE_CPF_CNPJ = re.compile(r"\b\d{3}\.\d{3}\.\d{3}-\d{2}\b|\b\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}\b")
 
 
 def _pc_forma(campo: str, valor: str) -> Optional[str]:
@@ -674,6 +688,13 @@ def _pc_forma(campo: str, valor: str) -> Optional[str]:
         m = _RE_DATA_BR.search(valor)
         return m.group(0) if m else None
     if campo == "prestacao_contas_sei":
+        # ⚠️ CPF/CNPJ ANTES DE QUALQUER COISA. O formulario tem campos de pessoa
+        # ao lado, e um CPF ja foi parar neste campo em producao. Dado pessoal
+        # nao entra em relatorio por engano de parser: se a fatia tem mascara de
+        # CPF/CNPJ, o campo inteiro e descartado — nao se tenta "achar o bom
+        # pedaco" perto de dado pessoal.
+        if _RE_CPF_CNPJ.search(valor):
+            return None
         for m in _RE_SEI.finditer(valor):
             s = m.group(0)
             # Uma data nao e um numero de processo. Sem esta linha, um valor que
