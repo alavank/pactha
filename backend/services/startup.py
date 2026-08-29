@@ -84,6 +84,10 @@ MIGRATION_FILES = [
     # freitas traziam o rotulo dos botoes). Depende do parser ja corrigido; roda
     # a cada boot de proposito — idempotente e autocurativa.
     "limpa_prestacao_contas_sei_lixo.sql",
+    # Rodizio de PAGINA no laco de detalhe do SIGCON: sem ele o laco relia
+    # so a pagina 1 da grade, e 24 dos 28 convenios de Araujos nunca ganhavam
+    # prestacao de contas / ultima alteracao / indicacao.
+    "add_detalhe_pagina_rodizio.sql",
     # TE/Emenda Pix federal persistida (coletor especiais -> tabela; RM/tela leem)
     "add_transferegov_te.sql",
     # SIMEC: TERMOS DE COMPROMISSO (o instrumento; as liberacoes ja existiam)

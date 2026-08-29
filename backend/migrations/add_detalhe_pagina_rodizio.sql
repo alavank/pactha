@@ -1,0 +1,27 @@
+-- RODIZIO DE PAGINA no laco de DETALHE do SIGCON.
+--
+-- MEDIDO EM PRODUCAO (29/08/2026, Araujos): o municipio tem 28 convenios SIGCON
+-- e apenas 4 tiveram o detalhe aberto ALGUMA VEZ. O log da coleta explica:
+--
+--     Pag 1 (Pagina 1 de 2): 25 linhas
+--     Pag 2 (Pagina 2 de 2): 3 linhas
+--     Total parsed: 28 convenios para ARAUJOS
+--     Detalhe: 7 links cmdLink na tabela      <- so os da PAGINA 1
+--     Detalhes capturados: 4
+--
+-- A LISTAGEM pagina; o LACO DE DETALHE nao. E `_estabelecer_grid`, chamado entre
+-- cada registro, faz `goto` + "Pesquisar" — o que DEVOLVE a grade para a pagina
+-- 1. Resultado: toda rodada le os MESMOS primeiros links, e os demais convenios
+-- do municipio nunca ganham a secao de prestacao de contas, a ultima alteracao
+-- nem a indicacao. Nao e questao de esperar mais rodadas: e permanente.
+--
+-- Esta coluna guarda POR MUNICIPIO em que pagina a proxima rodada deve comecar.
+-- O laco a incrementa ao terminar e volta para 1 quando nao ha proxima pagina —
+-- entao a cobertura ACUMULA sem aumentar o custo de uma rodada: o numero de
+-- detalhes lidos por vez continua o mesmo, muda QUAIS.
+--
+-- ⚠️ SMALLINT com DEFAULT 1, e nao 0: a pagina 1 e a primeira de verdade no
+-- vocabulario do PrimeFaces e do log. Linha que ja existe herda 1 pelo DEFAULT,
+-- entao o comportamento no primeiro boot e identico ao de hoje.
+ALTER TABLE scraper_municipio_coleta
+    ADD COLUMN IF NOT EXISTS detalhe_pagina SMALLINT NOT NULL DEFAULT 1;
