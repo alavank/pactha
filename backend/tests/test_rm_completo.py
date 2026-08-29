@@ -374,3 +374,72 @@ def test_pdf_nao_imprime_programa_quando_a_fonte_nao_tem():
     # estadual/SIMEC/PAC nao preenchem a chave — a linha nao pode aparecer vazia
     campos = _campos_do_item({"objeto": "Reforma"})
     assert "Programa" not in [r for r, _ in campos]
+
+
+# --------------------------------------------------------------------------
+# "TODOS OS ANOS" tem de significar TODOS OS ANOS, e seleção de vários anos
+# não pode derrubar todos menos o maior.
+#
+# Caso real do dono (29/08/2026): instrumento 932836, proposta 059522/2021,
+# "Proposta/Plano de Trabalho Aprovados", vigência encerrada em 16/12/2024
+# (vencida há 621 dias). Ele gerou o RM de TODOS OS ANOS e ela não saiu.
+# --------------------------------------------------------------------------
+from datetime import date as _date                                    # noqa: E402
+from services.rm_builder import _vigencia_vencida                     # noqa: E402
+
+_APROV = "Proposta/Plano de Trabalho Aprovados"
+_VENC = _date(2024, 12, 16)
+
+
+def test_TODOS_OS_ANOS_nao_pode_virar_so_o_ano_corrente():
+    """⚠️ `anos_sel` vazio faz o router usar `date.today().year` como referência.
+    Sem a regra B, "Todos os anos" significava na prática "só o ano corrente"
+    para tudo que não foi empenhado — e uma proposta APROVADA de 2021 com a
+    janela já fechada sumia do relatório COMPLETO, calada."""
+    assert _fed_retem(2021, 2026, _APROV, True, dt_fim=_VENC) is True
+
+
+def test_selecao_de_VARIOS_anos_nao_derruba_todos_menos_o_maior():
+    """⚠️ O router calcula `ano_emissao = max(anos)`. Quem marcou [2021, 2025]
+    pediu os dois de propósito. É o MESMO defeito já corrigido no `_fns_retem`
+    em 19/08/2026 — o conserto ficou só no FNS e o federal nunca o recebeu."""
+    assert _fed_retem(2021, 2025, _APROV, True, anos_sel={2021, 2025}) is True
+    # e a seleção continua sendo respeitada: quem não foi pedido, não entra
+    assert _fed_retem(2021, 2025, _APROV, True, anos_sel={2025}) is False
+
+
+def test_o_que_a_regra_ORIGINAL_barrava_continua_barrado():
+    """A regra existia por um motivo: "proposta antiga NUNCA empenhada sai do
+    relatório". A opção B não a revoga — só abre exceção para quem TEVE janela
+    e a perdeu. Sem vigência, ou com vigência no futuro, continua fora."""
+    assert _fed_retem(2021, 2026, _APROV, True, dt_fim=None) is False
+    assert _fed_retem(2021, 2026, _APROV, True, dt_fim=_date(2027, 1, 1)) is False
+
+
+def test_chamada_ANTIGA_de_4_argumentos_sai_identica():
+    """Não-regressão: os parâmetros novos são opcionais e sem eles o resultado é
+    caractere a caractere o de antes."""
+    for ano, ref, sit in [(2021, 2026, _APROV), (2026, 2026, _APROV),
+                          (2019, 2026, "Em execução"), (2021, 2026, "Rejeitada")]:
+        assert _fed_retem(ano, ref, sit, True) == _fed_retem(ano, ref, sit, True,
+                                                             anos_sel=None, dt_fim=None)
+
+
+def test_empenhada_e_paga_seguem_entrando_em_qualquer_ano():
+    assert _fed_retem(2014, 2026, "Em execução", True) is True
+    assert _fed_retem(2014, 2026, "Prestação de contas", True) is True
+
+
+def test_vigencia_vencida_aceita_os_formatos_que_o_banco_devolve():
+    assert _vigencia_vencida(_date(2024, 12, 16), hoje=_date(2026, 8, 29)) is True
+    assert _vigencia_vencida("2024-12-16", hoje=_date(2026, 8, 29)) is True
+    assert _vigencia_vencida("16/12/2024", hoje=_date(2026, 8, 29)) is True
+    assert _vigencia_vencida(_date(2027, 1, 1), hoje=_date(2026, 8, 29)) is False
+
+
+def test_sem_data_NUNCA_conta_como_vencida():
+    """⚠️ "Não sei quando vence" não pode virar "venceu": este marcador
+    ACRESCENTA item ao relatório, e supor vencimento encheria o documento de
+    proposta que ninguém pode afirmar estar vencida."""
+    for v in (None, "", "   ", "sem data", "13/2024", 0):
+        assert _vigencia_vencida(v, hoje=_date(2026, 8, 29)) is False

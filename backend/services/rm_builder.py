@@ -15,7 +15,8 @@ O usuario depois reorganiza tudo manualmente (edicao completa por item).
 """
 from __future__ import annotations
 import logging
-from datetime import date
+import re
+from datetime import date, datetime
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from models import ConvenioEstadual, Municipio
@@ -287,20 +288,60 @@ def _fed_empenhada(situacao: str | None) -> bool:
     return _fed_status(situacao) in ("empenhada", "paga")
 
 
+def _vigencia_vencida(dt_fim, hoje: date | None = None) -> bool:
+    """A vigência já terminou? Aceita date/datetime/ISO/'dd/mm/aaaa'.
+
+    None ou ilegível devolve False — "não sei quando vence" NUNCA vira "venceu".
+    O marcador que depende disto ACRESCENTA item ao relatório; supor vencimento
+    encheria o documento de proposta que ninguém pode afirmar estar vencida."""
+    if not dt_fim:
+        return False
+    d = dt_fim
+    if isinstance(d, datetime):
+        d = d.date()
+    elif not isinstance(d, date):
+        s = str(d).strip()
+        m = re.match(r"^(\d{4})-(\d{2})-(\d{2})", s)
+        if m:
+            d = date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        else:
+            m = re.match(r"^(\d{2})/(\d{2})/(\d{4})", s)
+            if not m:
+                return False
+            d = date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+    return d < (hoje or date.today())
+
+
 def _fed_retem(ano_prop: int | None, ano_emissao: int, situacao: str | None,
-               completo: bool = False) -> bool:
+               completo: bool = False, anos_sel: set | list | None = None,
+               dt_fim=None) -> bool:
     """Regra de permanência no RM, por ANO DE REFERÊNCIA (ano_emissao):
       - empenhada/paga -> sempre permanece (avançou; convênio em curso em qualquer ano)
       - dead (rejeitada/indeferida/anulada) -> só permanece no SEU próprio ano de
         referência; NÃO carrega p/ os relatórios dos demais anos (as que não foram
         para frente naquele ano não entram nos outros)
-      - ativa (pré-empenho) -> só permanece se for do ano de referência (ou posterior)
+      - ativa (pré-empenho) -> ver as DUAS regras abaixo
 
     completo=True (RM de TODOS os anos): a MESMA regra do anual, com uma diferença
     — 'dead' (rejeitada/anulada/indeferida) NUNCA entra (a referência não tem seção
-    de rejeitados). Note que empenhada/paga/vigente já permanecem em qualquer ano no
-    anual; o pré-empenho ('ativa') continua só do ano de referência ou posterior
-    (a referência trata Parte 1/2 como ciclo corrente, não histórico).
+    de rejeitados).
+
+    ⚠️ `anos_sel` = a SELEÇÃO de anos do relatório (vazia/None = "todos os anos").
+    HAVENDO SELEÇÃO, CADA ANO ESCOLHIDO VALE POR SI: quem marcou [2021, 2025] pediu
+    os dois de propósito, e comparar contra o MAIOR ano da seleção (o `ano_emissao`,
+    que o router calcula como `max(anos)`) derrubava justamente 2021 — o oposto do
+    pedido. Este é o MESMO defeito já corrigido no `_fns_retem` em 19/08/2026; o
+    conserto ficou só no FNS e o federal nunca o recebeu. Medido: com [2021, 2025],
+    a proposta 932836/2021 sumia do relatório, calada.
+
+    ⚠️ E EM "TODOS OS ANOS", pré-empenho ANTIGA entra QUANDO A VIGÊNCIA VENCEU.
+    Sem isto, "Todos os anos" significava na prática "só o ano corrente" para tudo
+    que não foi empenhado: `anos_sel` vazio faz o router usar `date.today().year`, e
+    uma proposta APROVADA de 2021 com vigência encerrada em 2024 caía fora do
+    relatório COMPLETO. Decisão do dono (29/08/2026), opção B de três: recurso
+    aprovado cuja janela FECHOU é justamente o que se precisa cobrar; já o que
+    nunca teve vigência (e nunca andou) continua fora, que era o motivo original
+    da regra.
     """
     st = _fed_status(situacao)
     if st in ("empenhada", "paga", "vigente"):
@@ -308,8 +349,12 @@ def _fed_retem(ano_prop: int | None, ano_emissao: int, situacao: str | None,
     if st == "dead":
         # anual: só no próprio ano; completo: nunca.
         return False if completo else (ano_prop is not None and ano_prop == ano_emissao)
-    # ativa (pré-empenho): só do ano de referência ou posterior (anual e completo).
-    return ano_prop is not None and ano_prop >= ano_emissao
+    # ativa (pré-empenho).
+    if anos_sel:
+        return ano_prop is not None and ano_prop in anos_sel
+    if ano_prop is not None and ano_prop >= ano_emissao:
+        return True
+    return _vigencia_vencida(dt_fim)
 
 
 def _fns_classifica(situacao_desc: str | None, sit_calc: str) -> str:
@@ -1456,7 +1501,13 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
         # entram no relatorio do ano de referencia; avancadas (em execucao / em
         # vigor / empenhada) e concluidas (encerrada / prestacao) permanecem.
         ano_est = c.ano or _ano_de(nr_instr, nr_proposta, c.nr_sigcon)
-        if not _fed_retem(ano_est, ano_emissao, c.situacao, completo):
+        # `dt_fim` vem ANTES do filtro agora: a regra B (pre-empenho antiga entra
+        # quando a vigencia venceu) precisa dele para decidir. Convenio em
+        # "Cadastramento" que nunca foi celebrado nao tem vigencia -> continua
+        # fora, que e exatamente o caso que a regra original queria barrar.
+        if not _fed_retem(ano_est, ano_emissao, c.situacao, completo,
+                          anos_sel=anos_filtro,
+                          dt_fim=(c.dt_vigencia_atual or c.dt_vigencia_final)):
             continue
         orgao = (c.orgao_concedente or "Outros - SIGCON").strip() + " - SIGCON"
         tipo_label = "Convênio" if nr_instr else "Proposta"
@@ -1636,7 +1687,11 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
         # saem. Empenho validado pelo STATUS (não pelo flag detalhe->>'Empenhado',
         # que estava marcando "Aprovadas" como empenhadas sem empenho real).
         ano_prop = _ano_de(row[1], row[2])  # numero_proposta NNNNNN/AAAA / codigo
-        if not _fed_retem(ano_prop, ano_emissao, sit, completo):
+        # row[6] = dt_fim_vigencia. E o que faz a regra B valer: proposta
+        # APROVADA e nunca empenhada cuja janela FECHOU volta ao relatorio
+        # completo — foi o caso da 932836/2021 (venceu em 16/12/2024).
+        if not _fed_retem(ano_prop, ano_emissao, sit, completo,
+                          anos_sel=anos_filtro, dt_fim=row[6]):
             continue
         dt_fim = None
         try:
@@ -1897,7 +1952,8 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             # Mesma regra de ano: concluida/empenhada fica (Parte 3/qualquer ano); ativa
             # so do ano de referencia ou posterior. Ano vem do codigo da emenda ou do plano.
             ano_te = _ano_de(cod_em, cod)
-            if not _fed_retem(ano_te, ano_emissao, _sit_classifica, completo):
+            if not _fed_retem(ano_te, ano_emissao, _sit_classifica, completo,
+                              anos_sel=anos_filtro):
                 continue
             parte_te = 3 if ("conclu" in sl or "pag" in sl or "finaliz" in sl) else 1
             parl = row[3] or (cod_em.split("-", 1)[1].strip() if "-" in cod_em else "")
