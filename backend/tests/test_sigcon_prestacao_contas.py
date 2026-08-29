@@ -254,3 +254,86 @@ def test_aba_ja_selecionada_conta_como_aberta():
     """Accordion usa `aria-expanded`; aba usa `aria-selected`/`ui-state-active`.
     Sem os três, uma aba já aberta seria clicada de novo e pagaria 3s à toa."""
     assert "aria-selected" in _PC_JS and "ui-state-active" in _PC_JS
+
+
+# --------------------------------------------------------------------------
+# O QUE A PRODUÇÃO MOSTROU (29/08/2026, freitas, 99 convênios).
+# O status saía certo; os outros TRÊS campos saíam lixo. A causa não era o
+# parser de rótulos — era a FONTE do texto: o painel é um FORMULÁRIO, as datas
+# e o SEI são <input>, e `innerText` não inclui valor de input.
+# --------------------------------------------------------------------------
+from ingestion.sigcon_scraper import _pc_forma                        # noqa: E402
+
+# innerText de um formulário PrimeFaces: sobra o rótulo, o "*" de obrigatório e,
+# logo depois, a barra de botões. Foi ISTO que os 99 convênios gravaram.
+PAINEL_INNERTEXT = """Status Atual: Aguardando análise da prestação de contas final
+Data do Preenchimento do Status: *
+Nº SEI:
+Cancelar Histórico Status
+"""
+
+
+def test_o_LIXO_que_a_producao_gravou_nao_passa_mais():
+    """⚠️ Reprodução literal do medido: `prestacao_contas_sei` = "Cancelar
+    Histórico Status" em 99 de 99, e `prestacao_contas_status_data` = "*".
+    Nenhum dos dois é dado — e um número de processo inventado num documento
+    entregue ao município é pior do que campo vazio."""
+    d = ler_prestacao_contas(PAINEL_INNERTEXT)
+    assert d["prestacao_contas_status"] == "Aguardando análise da prestação de contas final"
+    assert "prestacao_contas_sei" not in d
+    assert "prestacao_contas_status_data" not in d
+
+
+def test_a_forma_manda_por_campo():
+    """Data tem cara de data, processo tem cara de processo. O que não tem, não
+    entra — e o valor bom é EXTRAÍDO de dentro do ruído, não descartado junto."""
+    assert _pc_forma("prestacao_contas_sei", "Cancelar Histórico Status") is None
+    assert _pc_forma("prestacao_contas_status_data", "*") is None
+    assert _pc_forma("prestacao_contas_sei", "1500.01.0234833/2024-4 Cancelar") \
+        == "1500.01.0234833/2024-4"
+    assert _pc_forma("prestacao_contas_data", "08/08/2024 *") == "08/08/2024"
+    # o status é texto livre: não dá para exigir forma sem inventar vocabulário
+    assert _pc_forma("prestacao_contas_status", "Prestação de contas aprovada") \
+        == "Prestação de contas aprovada"
+
+
+def test_uma_DATA_nao_vira_numero_de_processo():
+    """Se a fatia do SEI escorregar para a data vizinha, o relatório mostraria
+    "Nº SEI 08/08/2024" — um processo que não existe."""
+    assert _pc_forma("prestacao_contas_sei", "08/08/2024") is None
+
+
+def test_o_caminhador_le_INPUT_e_ignora_BOTAO():
+    """⚠️ As duas metades da correção, e a segunda é a que mata o lixo na
+    origem: `value` de <button>/<input type=submit> é o RÓTULO dele ("Cancelar"),
+    que foi exatamente a contaminação medida."""
+    js = _PC_JS_TEXTO
+    assert "n.value" in js, "tem de ler o valor dos campos"
+    assert "BUTTON" in js and "submit|button|reset" in js, "tem de excluir botao"
+    assert "selectedOptions" in js, "select tambem tem valor"
+    assert "innerText" not in js.split("const alvo")[0], \
+        "o texto do painel NAO pode voltar a sair de innerText"
+
+
+def test_o_texto_do_caminhador_e_lido_certo():
+    """Com os valores dos <input> no lugar, os quatro campos saem — é o mesmo
+    texto de antes, mas agora com o que estava dentro dos campos."""
+    d = ler_prestacao_contas(
+        "Status Atual: Aguardando análise da prestação de contas final\n"
+        "Data do Preenchimento do Status: * 06/05/2024\n"
+        "Data de Apresentação da Prestação de Contas Final: * 08/08/2024\n"
+        "Nº SEI: 1500.01.0234833/2024-4\n")
+    assert d["prestacao_contas_status_data"] == "06/05/2024"
+    assert d["prestacao_contas_data"] == "08/08/2024"
+    assert d["prestacao_contas_sei"] == "1500.01.0234833/2024-4"
+
+
+def test_o_rotulo_da_data_tolera_a_grafia_do_portal():
+    """⚠️ A 1ª versão exigia a frase inteira `data DA apresentacao DA prestacao DE
+    CONTAS`, copiada de UMA captura de tela. "de" no lugar de "da" derruba a
+    frase e o parser cala sem dizer por quê."""
+    for r in ("Data da Apresentação da Prestação de Contas Final",
+              "Data de Apresentação da Prestação de Contas",
+              "Data de Apresentacao"):
+        assert ler_prestacao_contas(f"{r}: 08/08/2024")["prestacao_contas_data"] \
+            == "08/08/2024"

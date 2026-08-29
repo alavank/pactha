@@ -80,6 +80,10 @@ MIGRATION_FILES = [
     # Tabela propria, e nao coluna em convenios_estadual: a busca e por CNPJ e
     # devolve empenho SEM convenio. Ver o cabecalho do arquivo.
     "add_transparencia_mg_empenhos.sql",
+    # Limpa o `prestacao_contas_sei` que nao e numero de processo (99 de 99 no
+    # freitas traziam o rotulo dos botoes). Depende do parser ja corrigido; roda
+    # a cada boot de proposito — idempotente e autocurativa.
+    "limpa_prestacao_contas_sei_lixo.sql",
     # TE/Emenda Pix federal persistida (coletor especiais -> tabela; RM/tela leem)
     "add_transferegov_te.sql",
     # SIMEC: TERMOS DE COMPROMISSO (o instrumento; as liberacoes ja existiam)

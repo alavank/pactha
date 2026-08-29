@@ -613,11 +613,17 @@ def _fold(s: str) -> str:
 # escolher uma seria adivinhar, e a que interessa muda com a pergunta (quando o
 # municipio ENTREGOU vs quando o Estado MEXEU no status). A tela e o RM mostram a
 # da APRESENTACAO e levam a do status no titulo.
+#
+# ⚠️ OS ROTULOS DE DATA SAO TOLERANTES DE PROPOSITO ("data d<qualquer coisa>
+# apresentacao"). A 1a versao exigia a frase inteira, `data DA apresentacao DA
+# prestacao DE CONTAS`, copiada de UMA captura de tela — e em producao NENHUM
+# convenio casou: 99 gravaram o status e ZERO gravaram a data. Uma palavrinha
+# diferente na grafia do portal ('de' no lugar de 'da') derruba a frase inteira,
+# e o parser cala sem dizer por que. O rotulo ancora no que e ESTAVEL.
 _PC_ROTULOS = (
     ("prestacao_contas_status", r"\bstatus\s+atual\b"),
-    ("prestacao_contas_status_data", r"\bdata\s+do\s+preenchimento\s+do\s+status\b"),
-    ("prestacao_contas_data",
-     r"\bdata\s+da\s+apresenta\w*\s+da\s+presta\w*\s+de\s+contas\b"),
+    ("prestacao_contas_status_data", r"\bdata\s+d\w+\s+preenchimento\b"),
+    ("prestacao_contas_data", r"\bdata\s+d\w+\s+apresenta\w*"),
     ("prestacao_contas_sei", r"\bn[o.]?\s*sei\b"),
 )
 # `[^:\n]{0,40}?:` (preguicoso, com os dois-pontos OBRIGATORIOS) e o que deixa o
@@ -640,6 +646,47 @@ def _pc_valor(bruto: str) -> str:
     if corte:
         v = v[:corte.start()]
     return re.sub(r"[\s\u00a0]+", " ", v).strip()
+
+
+_RE_DATA_BR = re.compile(r"\b\d{2}/\d{2}/\d{4}\b")
+_RE_SEI = re.compile(r"\d[\d./-]{6,}")
+
+
+def _pc_forma(campo: str, valor: str) -> Optional[str]:
+    """O valor tem a CARA do campo? Devolve o pedaco que tem, ou None.
+
+    ⚠️ MEDIDO EM PRODUCAO (29/08/2026), e foi o que me obrigou a escrever isto: o
+    `prestacao_contas_sei` gravado nos convenios do Freitas era a string
+    "Cancelar Histórico Status" — os ROTULOS DOS BOTOES do PrimeFaces.
+
+    O caminho: quando o campo SEI vem VAZIO, o texto logo depois do rotulo e a
+    barra de botoes. O corte de `_pc_valor` para no proximo ROTULO, e botao nao
+    tem dois-pontos — entao nada o cortava, e o relatorio saia com "Nº SEI:
+    Cancelar Histórico Status" num documento entregue ao municipio.
+
+    Cortar por lista de botoes conhecidos seria correr atras do portal para
+    sempre. A regra certa e a inversa e POSITIVA: numero de processo tem cara de
+    numero de processo, data tem cara de data. O que nao tem, NAO ENTRA — e
+    'campo ausente' e um estado que o resto do codigo ja sabe tratar."""
+    if not valor:
+        return None
+    if campo in ("prestacao_contas_data", "prestacao_contas_status_data"):
+        m = _RE_DATA_BR.search(valor)
+        return m.group(0) if m else None
+    if campo == "prestacao_contas_sei":
+        for m in _RE_SEI.finditer(valor):
+            s = m.group(0)
+            # Uma data nao e um numero de processo. Sem esta linha, um valor que
+            # escorregou para a data vizinha viraria "SEI 08/08/2024".
+            if _RE_DATA_BR.fullmatch(s):
+                continue
+            if sum(ch.isdigit() for ch in s) >= 7:
+                return s
+        return None
+    # O status e texto livre: nao da para exigir forma sem inventar vocabulario.
+    # E ele e o campo que a producao mostrou FUNCIONANDO — cinco valores reais e
+    # limpos em 99 convenios.
+    return valor
 
 
 def ler_prestacao_contas(texto: Optional[str]) -> Optional[dict]:
@@ -668,7 +715,10 @@ def ler_prestacao_contas(texto: Optional[str]) -> Optional[dict]:
     out: dict = {}
     for i, (ini, fim, campo) in enumerate(limpo):
         prox = limpo[i + 1][0] if i + 1 < len(limpo) else len(texto)
-        valor = _pc_valor(texto[fim:prox])
+        # ⚠️ A FORMA MANDA. Sem `_pc_forma`, o campo vazio no portal capturava o
+        # que vinha depois — em producao, os rotulos dos BOTOES ("Cancelar
+        # Histórico Status") entravam como numero do processo SEI.
+        valor = _pc_forma(campo, _pc_valor(texto[fim:prox]))
         if not valor:
             continue
         rotulo = plano[ini:fim]
@@ -705,7 +755,53 @@ _PC_JS = r"""() => {
             headers:heads.map(e=>(e.innerText||'').replace(/\n[\s\S]*/,'').slice(0,40)).filter(Boolean)};
 }"""
 
-_PC_JS_TEXTO = r"""() => {
+# ⚠️ NAO USA `innerText`, E ESSA E A CORRECAO QUE FEZ O DADO APARECER.
+#
+# MEDIDO EM PRODUCAO (29/08/2026, freitas, 99 convenios): o status saia certo e
+# os outros tres campos saiam LIXO — `prestacao_contas_sei` = "Cancelar Histórico
+# Status" (os rotulos dos BOTOES) e `prestacao_contas_status_data` = "*".
+#
+# O "*" foi o que entregou a causa: e o marcador de campo OBRIGATORIO de um
+# FORMULARIO. O painel nao e texto renderizado — as datas e o SEI sao <input>, e
+# `innerText` NAO INCLUI o valor de input. Sobrava o rotulo, o asterisco e, logo
+# depois, a barra de botoes; o parser capturava isso.
+#
+# Este caminhador monta o texto lendo `.value` dos campos e IGNORANDO botao —
+# porque o `value` de um botao e o rotulo dele ("Cancelar"), que era exatamente
+# a contaminacao. Preserva as quebras de linha dos elementos de bloco, das quais
+# o corte "proximo rotulo" do parser depende.
+_PC_TEXTO_FN = r"""
+    const _txt=(raiz)=>{
+        if(!raiz) return '';
+        const fora=/^(SCRIPT|STYLE|BUTTON|NOSCRIPT)$/;
+        const bloco=/^(DIV|TR|LI|P|TABLE|TBODY|THEAD|BR|FIELDSET|H1|H2|H3|H4|UL|OL)$/;
+        const semValor=/^(hidden|submit|button|reset|image)$/;
+        const partes=[];
+        const anda=(n)=>{
+            if(n.nodeType===3){ partes.push(n.nodeValue); return; }
+            if(n.nodeType!==1) return;
+            const tag=n.tagName;
+            if(fora.test(tag)) return;
+            if(tag==='INPUT'){
+                if(!semValor.test((n.type||'').toLowerCase())) partes.push(' '+(n.value||'')+' ');
+                return;
+            }
+            if(tag==='TEXTAREA'){ partes.push(' '+(n.value||'')+' '); return; }
+            if(tag==='SELECT'){
+                const o=n.selectedOptions&&n.selectedOptions[0];
+                partes.push(' '+(o?o.text:'')+' '); return;
+            }
+            const b=bloco.test(tag);
+            if(b) partes.push('\n');
+            for(const c of n.childNodes) anda(c);
+            if(b) partes.push('\n');
+        };
+        anda(raiz);
+        return partes.join('').replace(/[ \t ]+/g,' ').replace(/\n[ \t]*/g,'\n').replace(/\n{2,}/g,'\n');
+    };
+"""
+
+_PC_JS_TEXTO = r"""() => {""" + _PC_TEXTO_FN + r"""
     const alvo=/presta[cç][aã]o\s+de\s+contas/i;
     const heads=[...document.querySelectorAll(
         '.ui-accordion-header, [id*="accPnl"][id*="_head"],'
@@ -726,7 +822,7 @@ _PC_JS_TEXTO = r"""() => {
             p=n || (h.id ? document.getElementById(h.id.replace(/_head$/,'_content')) : null);
         }
     }
-    return {painel: p ? (p.innerText||'') : '', corpo: document.body ? (document.body.innerText||'') : ''};
+    return {painel: _txt(p), corpo: _txt(document.body)};
 }"""
 
 
