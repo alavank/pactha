@@ -253,6 +253,18 @@ async def _scrape_municipio(page, municipio_nome: str) -> list[dict]:
     return all_rows
 
 
+# TETO DO RODIZIO DE PAGINA no laco de detalhe.
+#
+# ⚠️ MEDIDO (conta, nao chute): `_estabelecer_grid` roda entre CADA registro e
+# re-avanca (pagina-1) cliques de ~2s. Com 25 registros na pagina 10 sao 432s SO
+# de paginacao. O `_sig_estourou()` do laco impede que isso estoure a rodada —
+# mas o tempo sai do ORCAMENTO, entao a rodada passaria a paginar em vez de ler
+# detalhe, e a cobertura CAIRIA.
+#
+# 4 paginas x 25 linhas = 100, exatamente o `SIGCON_MAX_PLANOS` que ja limita
+# quantos detalhes uma credencial abre. Alem desse teto o rodizio volta para a 1.
+_DET_MAX_PAG = int(os.getenv("SIGCON_DET_MAX_PAG", "4") or 4)
+
 LINK_SELECTOR_DET = (
     'a[id*="cmdLinkPropostaResult"], a[id*="cmdLinkPlanoResult"], '
     'a[id*="cmdLinkInstrumento"], a[id*="cmdLinkConvenio"], '
@@ -260,9 +272,73 @@ LINK_SELECTOR_DET = (
 )
 
 
-async def _estabelecer_grid(page, tries: int = 3) -> bool:
+async def _volta_ao_inicio(page) -> bool:
+    """Leva a grade para a PAGINA 1 pelo proprio paginador (1 clique). True se a
+    grade esta comprovadamente na primeira pagina ao sair.
+
+    ⚠️ 'primeira' DESABILITADO significa que ja estamos nela; paginador AUSENTE
+    significa pagina unica. Os dois sao sucesso — so excecao e falha."""
+    try:
+        if await page.locator("a.ui-paginator-first").count() == 0:
+            return True                      # sem paginador => pagina unica
+        b = page.locator("a.ui-paginator-first:not(.ui-state-disabled)").first
+        if await b.count() > 0:
+            await b.click(timeout=10000)
+            await page.wait_for_timeout(1500)
+        return True                          # desabilitado => ja esta na 1a
+    except Exception:
+        return False
+
+
+async def _ir_para_pagina(page, pagina: int) -> int:
+    """Leva a grade ate `pagina`. Devolve a pagina REALMENTE alcancada.
+
+    ⚠️ NAO ASSUME QUE A GRADE ESTA NA PAGINA 1 — e essa suposicao quebrou a
+    primeira versao disto. `_scrape_municipio` pagina ate o 'proxima' SUMIR, ou
+    seja termina na ULTIMA pagina, e `_scrape_one` passa a MESMA `page` para o
+    laco de detalhe sem nenhum reset. Comecando de `atual = 1` num municipio de 2
+    paginas: o 'proxima' ja estava desabilitado, davam-se ZERO cliques, devolvia-se
+    1, o ramo de "pagina nao existe" disparava e a pagina 1 era relida — para
+    sempre. O rodizio virava um no-op que so cobrava tempo.
+
+    Por isso a grade e NORMALIZADA antes de contar. O portal nao aceita ir direto
+    para a pagina N (o paginador do PrimeFaces e um postback por clique), entao o
+    custo e 1 clique de 'primeira' + (N-1) de 'proxima'.
+
+    Quem chama trata o retorno: pedir a pagina 5 num municipio de 2 devolve 2, e
+    e assim que o rodizio sabe que deu a volta."""
+    if not await _volta_ao_inicio(page):
+        # O paginador nao cooperou. Refazer a busca e caro (~10s), mas ler a
+        # pagina errada achando que e a certa e pior: o rodizio gravaria cobertura
+        # que nao aconteceu.
+        await _estabelecer_grid(page)
+    atual = 1
+    while atual < max(1, pagina):
+        # ⚠️ Paginar tambem custa. Sem este corte, um municipio no fim do rodizio
+        # gastaria o resto da janela clicando 'proxima' e nao leria detalhe nenhum.
+        if _sig_estourou():
+            logger.info(f"  [orcamento] avanco de pagina cortado em {atual}/{pagina}")
+            break
+        try:
+            btn = page.locator('a.ui-paginator-next:not(.ui-state-disabled)').first
+            if await btn.count() == 0:
+                break
+            await btn.click(timeout=10000)
+            await page.wait_for_timeout(1500)
+            atual += 1
+        except Exception:
+            break
+    return atual
+
+
+async def _estabelecer_grid(page, tries: int = 3, pagina: int = 1) -> bool:
     """(Re)estabelece a grade da Pesquisa Unificada: goto SEARCH_URL + Pesquisar
-    + espera as linhas. Com retries. Retorna True se a grade tem linhas."""
+    + espera as linhas. Com retries. Retorna True se a grade tem linhas.
+
+    ⚠️ `pagina` existe porque este metodo DEVOLVE A GRADE PARA A PAGINA 1 — e ele
+    e chamado entre CADA registro do laco de detalhe. Sem re-avancar aqui, o laco
+    so consegue ler os links da primeira pagina, para sempre. Medido em Araujos:
+    28 convenios, 7 links, 4 detalhes — e os outros 21 nunca."""
     for t in range(tries):
         try:
             await page.goto(SEARCH_URL, wait_until="domcontentloaded", timeout=40000)
@@ -274,6 +350,8 @@ async def _estabelecer_grid(page, tries: int = 3) -> bool:
                 return tb && tb.querySelectorAll(':scope > tr:not(.ui-datatable-empty-message)').length > 0;
             }""", timeout=60000)
             await page.wait_for_timeout(1200)
+            if pagina > 1:
+                await _ir_para_pagina(page, pagina)
             return True
         except Exception as e:
             logger.warning(f"  estabelecer_grid try {t+1}/{tries}: {str(e)[:70]}")
@@ -900,18 +978,48 @@ async def _scrape_prestacao_contas(page) -> Optional[dict]:
         return None
 
 
-async def _scrape_detalhes(page, max_planos: int = 100) -> dict:
+async def _scrape_detalhes(page, max_planos: int = 100, pagina: int = 1) -> dict:
     """Para cada linha da Pesquisa Unificada, abre o detalhe e captura os campos.
 
     RESILIENTE: clique via DOM (el.click() — passa por cima de overlay/scroll do
     PrimeFaces), re-estabelece a grade entre registros, e NUNCA quebra o loop por
     1 falha — pula o registro e segue (aborta so apos muitas falhas seguidas).
-    """
+
+    ⚠️ `pagina` e o RODIZIO. A listagem pagina, este laco nao paginava: lia so os
+    links da pagina 1 e, como `_estabelecer_grid` devolve a grade para a primeira
+    pagina entre cada registro, relia OS MESMOS toda rodada. Medido em Araujos:
+    28 convenios, 7 links na pagina 1, 4 detalhes capturados — e os outros 21 sem
+    prestacao de contas, sem ultima alteracao e sem indicacao, PARA SEMPRE.
+    Comecar cada rodada numa pagina diferente faz a cobertura ACUMULAR sem mudar
+    o custo: o numero de detalhes por rodada e o mesmo, muda QUAIS.
+
+    Devolve `(detalhes, pagina_lida)`. ⚠️ TUPLA, e nao uma chave dentro do dict:
+    `out` e indexado por numero de proposta/plano e `len(out)` e o que loga
+    "Detalhes capturados: N". Uma chave de controle ali dentro somaria +1 na
+    contagem e ainda poderia ser servida como se fosse um convenio."""
     out: dict = {}
+    # ⚠️ SEMPRE, inclusive para a pagina 1: a grade chega aqui na ULTIMA
+    # pagina (ver `_ir_para_pagina`). Pular a normalizacao quando pagina==1
+    # fazia o laco ler a ULTIMA pagina e LOGAR "pagina 1".
+    alcancada = await _ir_para_pagina(page, pagina)
+    if alcancada < pagina:
+        # Deu a volta: o municipio tem menos paginas do que o rodizio pediu.
+        # Recomeca da 1 JA NESTA rodada, em vez de gastar a vez lendo o fim.
+        logger.info(f"  Detalhe: pagina {pagina} nao existe (so {alcancada}) — volta para a 1")
+        await _estabelecer_grid(page)
+        alcancada = 1
     n_links = await page.locator(LINK_SELECTOR_DET).count()
-    logger.info(f"  Detalhe: {n_links} links cmdLink na tabela")
+    # ⚠️ LINHAS vs LINKS na mesma linha de log, de proposito: em Araujos foram 25
+    # linhas para 7 links, e sem os dois numeros lado a lado nao da para saber se
+    # o que falta e PAGINACAO (resolvido aqui) ou SELETOR (linhas sem link que o
+    # LINK_SELECTOR_DET nao reconhece) — sao consertos diferentes.
+    n_linhas = await page.locator(
+        'tbody[id$="dtTblExibeListaPlanosDeTrabalho_data"] > tr:not(.ui-datatable-empty-message)'
+    ).count()
+    logger.info(f"  Detalhe: {n_links} links cmdLink em {n_linhas} linha(s) "
+                f"| pagina {alcancada}")
     if n_links == 0:
-        return out
+        return out, alcancada
 
     iter_count = min(n_links, max_planos)
     falhas_seguidas = 0
@@ -990,16 +1098,16 @@ async def _scrape_detalhes(page, max_planos: int = 100) -> dict:
             falhas_seguidas = 0
             idx += 1
             # Re-estabelece a grade para o proximo registro
-            if idx < iter_count and not await _estabelecer_grid(page):
+            if idx < iter_count and not await _estabelecer_grid(page, pagina=alcancada):
                 logger.warning("  nao restabeleceu a grade apos detalhe — tentando seguir")
                 falhas_seguidas += 1
         except Exception as e:
             logger.warning(f"  Detalhe iter {idx} falhou: {str(e)[:110]}")
             falhas_seguidas += 1
             idx += 1
-            await _estabelecer_grid(page)  # restaura p/ o proximo
+            await _estabelecer_grid(page, pagina=alcancada)  # restaura p/ o proximo
     logger.info(f"  Detalhes capturados: {len(out)}")
-    return out
+    return out, alcancada
 
 
 PARSE_DETALHE_JS = r"""
@@ -1249,8 +1357,32 @@ def _municipio_id_lookup() -> dict:
 FONTE_COLETA = "sigcon"
 
 
+def _le_pagina_detalhe(municipio_id: int, fonte: str = FONTE_COLETA) -> int:
+    """Em que pagina da grade o laco de detalhe deve COMECAR neste municipio.
+
+    Best-effort igual ao `_marca_coleta`: banco fora do ar ou coluna ainda nao
+    migrada devolve 1, que e o comportamento de sempre. A contabilidade do
+    rodizio nunca pode derrubar a coleta."""
+    try:
+        import psycopg2
+        conn = psycopg2.connect(_sync_dsn())
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT COALESCE(detalhe_pagina, 1) FROM scraper_municipio_coleta "
+                    "WHERE fonte = %s AND municipio_id = %s",
+                    (fonte, municipio_id),
+                )
+                r = cur.fetchone()
+                return max(1, int(r[0])) if r and r[0] else 1
+        finally:
+            conn.close()
+    except Exception:
+        return 1
+
+
 def _marca_coleta(municipio_id: int, ok: bool, erro: str | None = None,
-                  fonte: str = FONTE_COLETA) -> None:
+                  fonte: str = FONTE_COLETA, prox_pagina: int = 1) -> None:
     """Registra que este municipio foi coletado (ou falhou) agora.
 
     E o que alimenta o rodizio: a proxima rodada ordena por `ultima_coleta_em`
@@ -1278,11 +1410,14 @@ def _marca_coleta(municipio_id: int, ok: bool, erro: str | None = None,
                     # 2a coleta boa (so o ON CONFLICT zerava).
                     cur.execute(
                         "INSERT INTO scraper_municipio_coleta "
-                        "(fonte, municipio_id, ultima_coleta_em, tentativas) "
-                        "VALUES (%s, %s, now(), 0) "
+                        "(fonte, municipio_id, ultima_coleta_em, tentativas, detalhe_pagina) "
+                        "VALUES (%s, %s, now(), 0, %s) "
                         "ON CONFLICT (fonte, municipio_id) DO UPDATE SET "
-                        "ultima_coleta_em = now(), tentativas = 0, ultimo_erro = NULL",
-                        (fonte, municipio_id),
+                        "ultima_coleta_em = now(), tentativas = 0, ultimo_erro = NULL, "
+                        # ⚠️ SO no SUCESSO. Avancar a pagina depois de uma coleta que
+                        # FALHOU pularia justamente a pagina que nao foi lida.
+                        "detalhe_pagina = EXCLUDED.detalhe_pagina",
+                        (fonte, municipio_id, max(1, int(prox_pagina or 1))),
                     )
                 else:
                     # CARIMBA ultima_coleta_em TAMBEM NO ERRO. Antes so o sucesso
@@ -1696,6 +1831,7 @@ async def _scrape_one(browser, cred, anos_emendas, sem, deadline=None):
             await _login(page, cred["cpf"], cred["senha"])
             rows = await _scrape_municipio(page, _norm(nome))
             detalhes: dict = {}
+            _prox_pag = 1
             try:
                 # Tunavel por env: em maquina apertada da para baixar o teto e
                 # cobrir mais municipios por rodada (o rodizio garante que todos
@@ -1704,7 +1840,20 @@ async def _scrape_one(browser, cred, anos_emendas, sem, deadline=None):
                     _max_planos = max(1, int(os.getenv("SIGCON_MAX_PLANOS", "100") or "100"))
                 except ValueError:
                     _max_planos = 100
-                detalhes = await _scrape_detalhes(page, max_planos=_max_planos)
+                # RODIZIO DE PAGINA: cada rodada comeca onde a anterior parou.
+                _pag = _le_pagina_detalhe(cred["municipio_id"])
+                detalhes, _pag_lida = await _scrape_detalhes(
+                    page, max_planos=_max_planos, pagina=_pag)
+                # A PROXIMA e a seguinte a que foi REALMENTE lida. Quando o
+                # municipio tem menos paginas do que o rodizio pediu, o laco
+                # ja voltou para a 1 e `_pag_lida` vem 1 — dai a proxima e 2 e
+                # o ciclo recomeca sozinho, sem precisar saber o total.
+                # ⚠️ E VOLTA PARA A 1 no teto: sem isso o rodizio subiria
+                # indefinidamente e cada rodada pagaria mais paginacao para
+                # ler os mesmos poucos detalhes.
+                _prox_pag = int(_pag_lida or 1) + 1
+                if _prox_pag > _DET_MAX_PAG:
+                    _prox_pag = 1
             except Exception as e:
                 logger.warning(f"  Detalhes failed ({nome}): {e}")
             by_key: dict = {}
@@ -1759,7 +1908,7 @@ async def _scrape_one(browser, cred, anos_emendas, sem, deadline=None):
                     pass
             logger.info(f"  {nome}: {len(mun_records)} convenios (+{i}/~{u}) | "
                         f"emendas +{ei}/~{eu}")
-            _marca_coleta(cred["municipio_id"], ok=True)
+            _marca_coleta(cred["municipio_id"], ok=True, prox_pagina=_prox_pag)
             # Carimbo do DATASET de emendas (ver docstring de _marca_coleta):
             # o selo da tela de Emendas responde por ESTA coleta, sem punir a
             # tela de Convenios quando so as emendas quebram (e vice-versa).
