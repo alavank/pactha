@@ -32,11 +32,19 @@
 --
 -- O criterio certo e POSITIVO e sobre o valor INTEIRO: numero de processo NAO
 -- TEM LETRA. "1500.01.0234833/2024-4" nao tem; qualquer rotulo de botao tem.
+--
+-- ⚠️ E EXIGE A BARRA COM ANO. Medido em producao (29/08/2026): com a regra
+-- anterior, `030.725.676-62` — UM CPF — estava gravado como "Nº SEI". Nao e so
+-- campo errado: e DADO PESSOAL na tela e num documento entregue ao municipio.
+-- O que separa os dois e a estrutura: SEI e `1500.01.0069235/2025-73`, tem
+-- BARRA seguida de ANO; CPF e CNPJ nao tem. Esta linha APAGA o CPF ja gravado —
+-- corrigir so o coletor o deixaria la para sempre (o merge do jsonb e raso).
 UPDATE convenios_estadual
    SET raw_data = raw_data - 'prestacao_contas_sei'
  WHERE raw_data ? 'prestacao_contas_sei'
    AND (raw_data->>'prestacao_contas_sei' ~ '[[:alpha:]]'
-        OR raw_data->>'prestacao_contas_sei' !~ '[0-9]{4}');
+        OR raw_data->>'prestacao_contas_sei' !~ '[0-9]{4}'
+        OR raw_data->>'prestacao_contas_sei' !~ '/(19|20)[0-9]{2}');
 
 -- AS DATAS, pelo mesmo motivo e no mesmo lote. `prestacao_contas_status_data`
 -- foi gravada como "*" — o marcador de campo obrigatorio do formulario, medido

@@ -337,3 +337,40 @@ def test_o_rotulo_da_data_tolera_a_grafia_do_portal():
               "Data de Apresentacao"):
         assert ler_prestacao_contas(f"{r}: 08/08/2024")["prestacao_contas_data"] \
             == "08/08/2024"
+
+
+# --------------------------------------------------------------------------
+# CPF NO CAMPO DO SEI — medido em produção 29/08/2026.
+# Não é só campo errado: é DADO PESSOAL indo para a tela e para um documento
+# entregue ao município.
+# --------------------------------------------------------------------------
+def test_um_CPF_NUNCA_vira_numero_de_processo():
+    """⚠️ O valor real gravado em produção era `030.725.676-62`, colhido de um
+    campo vizinho do formulário. A regra frouxa (`\d[\d./-]{6,}`) o aceitava."""
+    assert _pc_forma("prestacao_contas_sei", "030.725.676-62") is None
+    assert _pc_forma("prestacao_contas_sei", "CPF 030.725.676-62") is None
+
+
+def test_perto_de_dado_pessoal_o_campo_INTEIRO_e_descartado():
+    """Não se tenta "achar o bom pedaço" ao lado de um CPF: se a fatia trouxe
+    dado pessoal, o parser errou de campo e não dá para confiar no resto dela."""
+    assert _pc_forma("prestacao_contas_sei",
+                     "030.725.676-62 1500.01.0069235/2025-73") is None
+
+
+def test_um_CNPJ_tambem_nao():
+    assert _pc_forma("prestacao_contas_sei", "18.313.874/0001-64") is None
+
+
+def test_o_SEI_de_verdade_continua_passando():
+    """Os dois valores REAIS que a produção gravou certo."""
+    for s in ("1230.01.0000015/2025-42", "1500.01.0069235/2025-73"):
+        assert _pc_forma("prestacao_contas_sei", s) == s
+
+
+def test_o_que_separa_SEI_de_CPF_e_a_BARRA_COM_ANO():
+    """⚠️ A mesma lição que o Portal de MG já tinha ensinado no `_RE_CONVENIO` e
+    que eu não apliquei aqui: exigir a barra e o ano de 4 dígitos. Sem ela,
+    qualquer número pontuado com 7+ dígitos entra."""
+    assert _pc_forma("prestacao_contas_sei", "1500.01.0069235") is None   # sem barra
+    assert _pc_forma("prestacao_contas_sei", "1500.01.0069/12-7") is None  # sem ano
