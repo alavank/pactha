@@ -417,6 +417,61 @@ def _clean(s):
     return s.replace("�", "").replace("  ", " ").strip()
 
 
+_INCOERENTES = {"n": 0}
+
+
+def _log_incoerente(num, glob, repasse, contrap) -> None:
+    """Conta e loga o trio recusado. ⚠️ O SILENCIO E QUE DEIXOU ISTO VIVER: o
+    deslocamento roda desde que `grab_money` nasceu e so apareceu quando uma
+    auditoria externa comparou com o portal. Recusar calado seria trocar um
+    defeito silencioso por outro."""
+    _INCOERENTES["n"] += 1
+    if _INCOERENTES["n"] <= 10:      # nao inunda o log de uma rodada grande
+        logger.warning(
+            f"  [valores] proposta {num}: trio incoerente, NAO gravado "
+            f"(global={glob} repasse={repasse} contrap={contrap}) — "
+            f"o CSV de dados abertos continua valendo")
+
+
+def valores_coerentes(glob, repasse, contrap, tol: float = 0.02) -> bool:
+    """O trio de valores fecha a conta? global == repasse + contrapartida.
+
+    ⚠️ E A UNICA TRAVA que separa dinheiro medido de dinheiro DESLOCADO.
+    MEDIDO EM PRODUCAO (29/08/2026, auditoria externa + bancada): `grab_money`
+    (transferegov_http.py) procura o proximo "R$" DEPOIS do rotulo, e o portal
+    imprime o valor ANTES dele. Com os tres campos em sequencia, cada rotulo
+    colhe o valor do SEGUINTE:
+
+        valor_global      <- o REPASSE          (3.819.853,65)
+        valor_repasse     <- a CONTRAPARTIDA    (3.823,68)
+        valor_contrapartida <- nada
+
+    O caso real da creche de Araujos, e a aritmetica que o nomeia:
+        3.823.677,33 - 3.819.853,65 = 3.823,68   (exato)
+    O numero que aparecia como "repasse" ERA a contrapartida. Nao era troca de
+    campo (o que a auditoria externa afirmou) nem truncamento de milhar (a
+    primeira hipotese desta sessao): era DESLOCAMENTO de um campo. As duas
+    correcoes erradas — "des-inverter as colunas" e "fazer a regex olhar para
+    tras" — quebrariam o layout que hoje sai CERTO, porque o portal serve os dois
+    formatos.
+
+    Por isso a trava e sobre o RESULTADO, nao sobre o layout: um trio deslocado
+    NUNCA fecha a soma, qualquer que seja a forma da pagina. E o mesmo principio
+    que `_pc_forma` usa no SIGCON — validar a FORMA do que se leu em vez de
+    perseguir cada jeito novo de o portal errar.
+
+    None conta como ZERO so na CONTRAPARTIDA (convenio sem contrapartida e
+    normal). Faltando global ou repasse, nao ha o que conferir -> False, e o
+    chamador nao grava: o CSV de dados abertos e a fonte AUTORITATIVA declarada
+    para estes tres campos (`transferegov_opendata._SOBRESCREVE`)."""
+    if glob is None or repasse is None:
+        return False
+    try:
+        return abs(float(glob) - (float(repasse) + float(contrap or 0))) <= tol
+    except (TypeError, ValueError):
+        return False
+
+
 def _money(s):
     """Converte 'R$ 1.234.567,89' (pt-BR) em float. Retorna None se vazio/invalido."""
     if not s:
@@ -2065,6 +2120,22 @@ def _upsert(mun_id: int, propostas: list[dict]):
         valor_global = _money(g("Valor Global", "Valor Global do Instrumento"))
         valor_repasse = _money(g("Valor de Repasse", "Valor de Repasse da União", "Valor do Repasse"))
         valor_contrap = _money(g("Valor de Contrapartida", "Valor da Contrapartida"))
+        # ⚠️ A TRAVA DE COERENCIA. Ponto UNICO de escrita dos tres valores — os
+        # dois leitores (HTTP e navegador) desaguam aqui, entao uma guarda so
+        # cobre os dois. Trio que nao fecha a soma NAO E GRAVADO, e os TRES viram
+        # None de uma vez: gravar so o que "parece bom" deixaria um valor
+        # deslocado ao lado de um correto, que e pior de detectar.
+        #
+        # None faz o COALESCE do upsert PRESERVAR o que ja esta na coluna — e o
+        # que esta la vem do CSV de dados abertos, a fonte autoritativa declarada
+        # para estes campos. Sem isto, o lote de 2 em 2 horas RE-CORROMPIA o que
+        # o dump oficial tinha acabado de consertar: o COALESCE so protege contra
+        # NULL, e valor errado nao-nulo vence valor bom.
+        if not valores_coerentes(valor_global, valor_repasse, valor_contrap):
+            if valor_global is not None or valor_repasse is not None:
+                _log_incoerente(p.get("numero_proposta"), valor_global,
+                                valor_repasse, valor_contrap)
+            valor_global = valor_repasse = valor_contrap = None
         situacao_contr = g("Situação de Contratação Atual")
         parlamentar = g("_parlamentar")
         # Detalhe generico da situacao de contratacao (qualquer tipo)
