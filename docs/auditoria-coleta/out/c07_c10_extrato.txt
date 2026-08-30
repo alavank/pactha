@@ -1,0 +1,587 @@
+=== c07a: tasks do worker Freitas ===
+id|uuid|name
+4|s49c3b58lysqq0tpelneg3g3|freitas-worker
+(1 row)
+id|name|frequency|timeout|enabled|cmd
+34|cagec|50 4,10,16,22 * * *|3420|t|flock -n -E 99 /tmp/scraper.lock timeout -k 30 1020 python -u ingestion/cagec_scraper.py 2>&1; rc=$?; if [ $rc = 99 ]; then rc=0; fi; exit $rc
+47|cauc-manha|25 10-14 * * *|420|t|flock -n -E 99 /tmp/cauc.lock timeout -k 30 300 python -u ingestion/cauc_ingest.py 2>&1; rc=$?; if [ $rc = 99 ]; then rc=0; fi; exit $rc
+1|fns|30 5 * * *|1920|t|flock -n -E 99 /tmp/fns.lock timeout -k 30 1800 python -u ingestion/run_fns_local.py 2>&1; rc=$?; if [ $rc = 99 ]; then rc=0; fi; exit $rc
+2|govbr-renew|5 * * * *|720|t|flock -n -E 99 /tmp/gov.lock timeout -k 30 600 python -u ingestion/govbr_renew.py 2>&1; rc=$?; if [ $rc = 99 ]; then rc=0; fi; exit $rc
+36|painel-alertas|45 */2 * * *|1020|t|flock -n -E 99 /tmp/pa.lock timeout -k 30 900 python -u ingestion/run_painel_alertas_cron.py 2>&1; rc=$?; if [ $rc = 99 ]; then rc=0; fi; exit $rc
+31|private-keepalive|3,13,23,33,43,53 * * * *|420|t|flock -n -E 99 /tmp/ka.lock timeout -k 20 300 python -u ingestion/govbr_renew.py keepalive 2>&1; rc=$?; if [ $rc = 99 ]; then rc=0; fi; exit $rc
+3|queue-sigcon|0,30 * * * *|1020|t|SIGCON_CONCURRENCY=1 SIGCON_STALE_MINUTES=360 flock -n -E 99 /tmp/q.lock timeout -k 30 900 python -u ingestion/run_queue_sigcon.py 2>&1; rc=$?; if [ $rc = 99 ]; then rc=0; fi; exit $rc
+50|siconv-federal|0 13 * * *|3420|t|flock -n -E 99 /tmp/siconv-fed.lock timeout -k 30 3300 python -u ingestion/siconv_federal_ingest.py 2>&1; rc=$?; if [ $rc = 99 ]; then rc=0; fi; exit $rc
+4|sigcon|25 1-23/2 * * *|3120|t|SIGCON_INDICACOES=1 SIGCON_CONCURRENCY=1 SIGCON_LOTE_MUNICIPIOS=5 SIGCON_BUDGET_SECONDS=1200 flock -n -E 99 /tmp/scraper.lock timeout -k 30 2040 python -u ingestion/run_sigcon_cron.py 2>&1; rc=$?; if [ $rc = 99 ]; then rc=0; fi; exit $rc
+90|simec-termos|10 6 * * *|300|t|flock -n -E 99 /tmp/simec_termos.lock timeout -k 30 1700 python -u ingestion/simec_termos.py 2>&1; rc=$?; if [ $rc = 99 ]; then rc=0; fi; exit $rc
+35|sismob|0 7 * * *|1020|t|flock -n -E 99 /tmp/sismob.lock timeout -k 30 900 python -u ingestion/sismob_obras.py 2>&1; rc=$?; if [ $rc = 99 ]; then rc=0; fi; exit $rc
+5|transferegov|50 6 * * *|3120|t|TG_SKIP_ENRICH=1 SIGCON_CONCURRENCY=1 flock -n -E 99 /tmp/scraper.lock timeout -k 30 2400 python -u ingestion/transferegov_voluntarias.py 2>&1; rc=$?; if [ $rc = 99 ]; then rc=0; fi; exit $rc
+37|transferegov-lote|0 0-22/2 * * *|2820|t|TG_OPENDATA=0 TG_SKIP_ENRICH=0 TG_HTTP_DETALHE=1 TG_BUDGET_S=1500 TG_LOTE_MUNICIPIOS=4 flock -n -E 99 /tmp/scraper.lock timeout -k 30 2100 python -u ingestion/transferegov_voluntarias.py lote 2>&1; rc=$?; if [ $rc = 99 ]; then rc=0; fi; exit $rc
+80|transferegov-te|40 3 * * *|1720|t|flock -n -E 99 /tmp/te.lock timeout -k 30 1600 python -u ingestion/transferegov_te.py 2>&1; rc=$?; if [ $rc = 99 ]; then rc=0; fi; exit $rc
+26|watchdog|7,37 * * * *|420|t|flock -n -E 99 /tmp/wd.lock timeout -k 15 300 python -u ingestion/watchdog_coleta.py 2>&1; rc=$?; if [ $rc = 99 ]; then rc=0; fi; exit $rc
+(15 rows)
+=== c07b: duracao real 30d por task x status ===
+name|status|n|avg_s|med_s|max_s|teto_task_s|bateu_teto|msg_timeout|msg_lock_pulou|msg_vazia
+cagec|failed|28|893|1021|2701|3420|0|0|0|0
+cagec|success|107|436|480|2032|3420|0|0|0|42
+cauc-manha|failed|1|192|192|192|420|0|0|0|0
+cauc-manha|success|113|2|2|6|420|0|0|0|7
+fns|failed|1|16|16|16|1920|0|0|0|0
+fns|success|31|185|160|467|1920|0|0|0|10
+govbr-renew|success|720|21|23|63|720|0|0|0|212
+painel-alertas|success|328|1|1|6|1020|0|0|0|0
+private-keepalive|failed|4|10|11|16|420|0|1|0|0
+private-keepalive|success|3948|16|15|101|420|0|0|0|901
+queue-sigcon|failed|3|903|902|904|1020|0|0|0|0
+queue-sigcon|success|1437|3|3|8|1020|0|0|0|423
+siconv-federal|success|25|202|199|343|3420|0|0|0|1
+sigcon|failed|42|2330|3002|3120|3120|4|0|0|0
+sigcon|running|1|0|0|0|3120|0|0|0|1
+sigcon|success|308|1120|1223|3017|3120|0|0|0|69
+simec-termos|success|12|122|114|162|300|0|0|0|0
+sismob|success|31|4|1|35|1020|0|0|0|6
+transferegov|failed|3|1030|973|1337|3120|0|0|0|0
+transferegov|success|32|1369|1469|1656|3120|0|0|0|10
+transferegov-lote|failed|32|732|505|3603|2820|2|0|0|0
+transferegov-lote|success|331|376|175|1519|2820|0|0|0|84
+transferegov-te|failed|2|278|278|308|1720|0|0|0|0
+transferegov-te|success|83|67|2|309|1720|0|0|0|44
+watchdog|success|1440|1|1|4|420|0|0|0|423
+(25 rows)
+=== c07c: execucoes TransfereGov (diaria + lote), duracao vs teto ===
+name|id|status|inicio_brt|dur_s|teto_task_s|alerta|msg_inicio|msg_fim
+transferegov|52661|success|08-29 03:50|1473|3120||2026-08-29 06:50:06,033 [INFO] === TransfereGov Voluntarias: 42 municipios === | 2026-08-29 06:50:06,080 [INFO] === Tran|cos do Moji: 11 PAC upsert | 2026-08-29 07:14:35,930 [INFO]   Toledo: 10 PAC upsert | 2026-08-29 07:14:36,017 [INFO] === PAC concluido: 555 propostas em 39s ===
+transferegov|51302|success|08-28 03:50|1476|3120||2026-08-28 06:50:06,322 [INFO] === TransfereGov Voluntarias: 42 municipios === | 2026-08-28 06:50:06,355 [INFO] === Tran|cos do Moji: 11 PAC upsert | 2026-08-28 07:14:39,939 [INFO]   Toledo: 10 PAC upsert | 2026-08-28 07:14:39,960 [INFO] === PAC concluido: 555 propostas em 41s ===
+transferegov|49968|success|08-27 03:50|1468|3120||2026-08-27 06:50:04,964 [INFO] === TransfereGov Voluntarias: 42 municipios === | 2026-08-27 06:50:05,028 [INFO] === Tran|cos do Moji: 11 PAC upsert | 2026-08-27 07:14:30,258 [INFO]   Toledo: 10 PAC upsert | 2026-08-27 07:14:30,279 [INFO] === PAC concluido: 555 propostas em 39s ===
+transferegov|48631|success|08-26 03:50|1478|3120||2026-08-26 06:50:04,616 [INFO] === TransfereGov Voluntarias: 42 municipios === | 2026-08-26 06:50:04,648 [INFO] === Tran|cos do Moji: 11 PAC upsert | 2026-08-26 07:14:40,363 [INFO]   Toledo: 10 PAC upsert | 2026-08-26 07:14:40,389 [INFO] === PAC concluido: 555 propostas em 35s ===
+transferegov|47293|success|08-25 03:50|1470|3120||2026-08-25 06:50:04,414 [INFO] === TransfereGov Voluntarias: 42 municipios === | 2026-08-25 06:50:04,458 [INFO] === Tran|cos do Moji: 11 PAC upsert | 2026-08-25 07:14:32,778 [INFO]   Toledo: 10 PAC upsert | 2026-08-25 07:14:32,876 [INFO] === PAC concluido: 555 propostas em 44s ===
+transferegov|45953|success|08-24 03:50|1449|3120||2026-08-24 06:50:04,739 [INFO] === TransfereGov Voluntarias: 42 municipios === | 2026-08-24 06:50:04,790 [INFO] === Tran|cos do Moji: 11 PAC upsert | 2026-08-24 07:14:11,583 [INFO]   Toledo: 10 PAC upsert | 2026-08-24 07:14:11,599 [INFO] === PAC concluido: 555 propostas em 30s ===
+transferegov|44615|success|08-23 03:50|1455|3120||2026-08-23 06:50:04,311 [INFO] === TransfereGov Voluntarias: 42 municipios === | 2026-08-23 06:50:04,346 [INFO] === Tran|cos do Moji: 11 PAC upsert | 2026-08-23 07:14:16,698 [INFO]   Toledo: 10 PAC upsert | 2026-08-23 07:14:16,724 [INFO] === PAC concluido: 555 propostas em 32s ===
+transferegov|43284|success|08-22 03:50|1450|3120||2026-08-22 06:50:04,992 [INFO] === TransfereGov Voluntarias: 42 municipios === | 2026-08-22 06:50:05,067 [INFO] === Tran|cos do Moji: 11 PAC upsert | 2026-08-22 07:14:12,382 [INFO]   Toledo: 10 PAC upsert | 2026-08-22 07:14:12,398 [INFO] === PAC concluido: 555 propostas em 32s ===
+transferegov|41950|success|08-21 03:50|1454|3120||2026-08-21 06:50:05,258 [INFO] === TransfereGov Voluntarias: 42 municipios === | 2026-08-21 06:50:05,306 [INFO] === Tran|cos do Moji: 11 PAC upsert | 2026-08-21 07:14:16,524 [INFO]   Toledo: 10 PAC upsert | 2026-08-21 07:14:16,545 [INFO] === PAC concluido: 555 propostas em 32s ===
+transferegov|40616|success|08-20 03:50|1469|3120||2026-08-20 06:50:04,343 [INFO] === TransfereGov Voluntarias: 42 municipios === | 2026-08-20 06:50:04,439 [INFO] === Tran|cos do Moji: 11 PAC upsert | 2026-08-20 07:14:31,483 [INFO]   Toledo: 10 PAC upsert | 2026-08-20 07:14:31,499 [INFO] === PAC concluido: 555 propostas em 32s ===
+transferegov|39250|success|08-19 03:50|1452|3120||2026-08-19 06:50:04,296 [INFO] === TransfereGov Voluntarias: 42 municipios === | 2026-08-19 06:50:04,328 [INFO] === Tran|cos do Moji: 11 PAC upsert | 2026-08-19 07:14:14,877 [INFO]   Toledo: 10 PAC upsert | 2026-08-19 07:14:14,895 [INFO] === PAC concluido: 555 propostas em 31s ===
+transferegov|37905|success|08-18 03:50|1433|3120||2026-08-18 06:50:04,418 [INFO] === TransfereGov Voluntarias: 42 municipios === | 2026-08-18 06:50:04,468 [INFO] === Tran|cos do Moji: 11 PAC upsert | 2026-08-18 07:13:55,466 [INFO]   Toledo: 10 PAC upsert | 2026-08-18 07:13:55,482 [INFO] === PAC concluido: 555 propostas em 30s ===
+transferegov|36466|success|08-17 05:23|2|3120|||
+transferegov|36464|success|08-17 05:22|1460|3120||2026-08-17 08:22:04,710 [INFO] === TransfereGov Voluntarias: 42 municipios === | 2026-08-17 08:22:04,762 [INFO] === Tran|cos do Moji: 11 PAC upsert | 2026-08-17 08:46:22,392 [INFO]   Toledo: 10 PAC upsert | 2026-08-17 08:46:22,408 [INFO] === PAC concluido: 555 propostas em 29s ===
+transferegov|36350|success|08-17 03:50|3|3120|||
+transferegov|35959|failed|08-17 01:21|1337|3120||Job permanently failed after 1 attempts: SSH command failed with exit code: 137|Job permanently failed after 1 attempts: SSH command failed with exit code: 137
+transferegov|35956|success|08-17 01:20|2|3120|||
+transferegov|34864|success|08-16 03:50|1446|3120||2026-08-16 06:50:05,173 [INFO] === TransfereGov Voluntarias: 42 municipios === | 2026-08-16 06:50:05,243 [INFO] === Tran|cos do Moji: 11 PAC upsert | 2026-08-16 07:14:09,026 [INFO]   Toledo: 10 PAC upsert | 2026-08-16 07:14:09,047 [INFO] === PAC concluido: 555 propostas em 30s ===
+transferegov|33772|success|08-15 03:50|1448|3120||2026-08-15 06:50:03,837 [INFO] === TransfereGov Voluntarias: 42 municipios === | 2026-08-15 06:50:03,862 [INFO] === Tran|cos do Moji: 11 PAC upsert | 2026-08-15 07:14:10,475 [INFO]   Toledo: 10 PAC upsert | 2026-08-15 07:14:10,491 [INFO] === PAC concluido: 555 propostas em 30s ===
+transferegov|31987|success|08-14 03:50|1444|3120||2026-08-14 06:50:04,282 [INFO] === TransfereGov Voluntarias: 42 municipios === | 2026-08-14 06:50:04,323 [INFO] === Tran|cos do Moji: 11 PAC upsert | 2026-08-14 07:14:06,646 [INFO]   Toledo: 10 PAC upsert | 2026-08-14 07:14:06,662 [INFO] === PAC concluido: 555 propostas em 31s ===
+transferegov|30871|success|08-13 03:50|1438|3120||2026-08-13 06:50:04,783 [INFO] === TransfereGov Voluntarias: 42 municipios === | 2026-08-13 06:50:04,853 [INFO] === Tran|cos do Moji: 11 PAC upsert | 2026-08-13 07:14:00,506 [INFO]   Toledo: 10 PAC upsert | 2026-08-13 07:14:00,532 [INFO] === PAC concluido: 555 propostas em 28s ===
+transferegov|29779|success|08-12 03:50|1507|3120||2026-08-12 06:50:03,805 [INFO] === TransfereGov Voluntarias: 44 municipios === | 2026-08-12 06:50:03,855 [INFO] === Tran|cos do Moji: 11 PAC upsert | 2026-08-12 07:15:09,009 [INFO]   Toledo: 10 PAC upsert | 2026-08-12 07:15:09,025 [INFO] === PAC concluido: 617 propostas em 30s ===
+transferegov|28687|success|08-11 03:50|1539|3120||2026-08-11 06:50:03,647 [INFO] === TransfereGov Voluntarias: 44 municipios === | 2026-08-11 06:50:03,689 [INFO] === Tran|cos do Moji: 11 PAC upsert | 2026-08-11 07:15:40,902 [INFO]   Toledo: 10 PAC upsert | 2026-08-11 07:15:40,932 [INFO] === PAC concluido: 617 propostas em 27s ===
+transferegov|27594|success|08-10 03:50|1501|3120||2026-08-10 06:50:04,127 [INFO] === TransfereGov Voluntarias: 44 municipios === | 2026-08-10 06:50:04,182 [INFO] === Tran|cos do Moji: 11 PAC upsert | 2026-08-10 07:15:02,631 [INFO]   Toledo: 10 PAC upsert | 2026-08-10 07:15:02,647 [INFO] === PAC concluido: 617 propostas em 28s ===
+transferegov|26495|success|08-09 03:50|1429|3120||2026-08-09 06:50:06,385 [INFO] === TransfereGov Voluntarias: 41 municipios === | 2026-08-09 06:50:06,418 [INFO] === Tran|  Teixeiras: 15 PAC upsert | 2026-08-09 07:13:52,783 [INFO]   Toledo: 10 PAC upsert | 2026-08-09 07:13:52,802 [INFO] === PAC concluido: 570 propostas em 33s ===
+transferegov|26256|success|08-08 23:00|1588|3120||2026-08-09 02:00:07,079 [INFO] === TransfereGov Voluntarias: 41 municipios === | 2026-08-09 02:00:07,368 [INFO] === Tran|  Teixeiras: 15 PAC upsert | 2026-08-09 02:26:31,873 [INFO]   Toledo: 10 PAC upsert | 2026-08-09 02:26:31,890 [INFO] === PAC concluido: 570 propostas em 31s ===
+transferegov|25119|success|08-07 23:00|1646|3120|||
+transferegov|24056|success|08-06 23:00|1654|3120|||
+transferegov|23016|success|08-05 23:00|1600|3120|||
+transferegov|21983|success|08-04 23:00|1653|3120|||
+transferegov|20963|failed|08-03 23:00|973|3120||Job permanently failed after 1 attempts: 2026-08-04 02:00:10,819 [INFO] === TransfereGov Voluntarias: 41 municipios === |16:01,820 [INFO]   Nova Serrana: enrich pulado (TG_SKIP_ENRICH=1) — 78 propostas base | 2026-08-04 02:16:01,895 [INFO]   Nova Serrana: 78 propostas -> 78 upsert
+transferegov|19950|failed|08-02 23:00|780|3120||Job permanently failed after 1 attempts: 2026-08-03 02:00:12,937 [INFO] === TransfereGov Voluntarias: 41 municipios === |:43,715 [INFO]   Lagoa Dourada: enrich pulado (TG_SKIP_ENRICH=1) — 67 propostas base | 2026-08-03 02:12:43,781 [INFO]   Lagoa Dourada: 67 propostas -> 67 upsert
+transferegov|19181|success|08-01 23:00|1644|3120|||
+transferegov|18617|success|07-31 23:00|1617|3120|||
+transferegov|18052|success|07-30 23:00|1656|3120|||
+transferegov-te|52470|success|08-29 00:40|309|1720||2026-08-29 03:40:07,539 [INFO] TE: carteira deste tenant -> MG | 2026-08-29 03:40:07,539 [INFO] TE: listagem limitada a |9 plano(s); a fila retoma na proxima rodada | 2026-08-29 03:45:15,472 [INFO] TE pagamentos: 229 consultado(s), 210 com documento habil, 210 pago(s) 100% em 301s
+transferegov-te|51119|failed|08-28 00:40|308|1720||Job permanently failed after 1 attempts: 2026-08-28 03:40:06,295 [INFO] TE: carteira deste tenant -> MG | 2026-08-28 03:|45:11,755 [INFO] HTTP Request: GET https://especiais.transferegov.sistema.gov.br/maisbrasil-transferencia-especial-backend/api/public/opob/20150 "HTTP/1.1 200 "
+transferegov-te|49785|success|08-27 00:40|8|1720||2026-08-27 03:40:04,620 [INFO] TE: carteira deste tenant -> MG | 2026-08-27 03:40:04,620 [INFO] TE: listagem limitada a |026-08-27 03:40:10,925 [INFO] TE MG: FIM — gravados=373 casados=31 completo=True em 6s | 2026-08-27 03:40:10,964 [INFO] TE pagamentos: nada vencido nesta rodada
+transferegov-te|48448|success|08-26 00:40|8|1720||2026-08-26 03:40:06,733 [INFO] TE: carteira deste tenant -> MG | 2026-08-26 03:40:06,733 [INFO] TE: listagem limitada a |026-08-26 03:40:13,775 [INFO] TE MG: FIM — gravados=373 casados=31 completo=True em 7s | 2026-08-26 03:40:13,813 [INFO] TE pagamentos: nada vencido nesta rodada
+transferegov-te|47109|success|08-25 00:40|142|1720||2026-08-25 03:40:07,224 [INFO] TE: carteira deste tenant -> MG | 2026-08-25 03:40:07,225 [INFO] TE: listagem limitada a |ackend/api/public/opob/54904 "HTTP/1.1 200 " | 2026-08-25 03:42:26,009 [INFO] TE pagamentos: 117 consultado(s), 111 com documento habil, 81 pago(s) 100% em 132s
+transferegov-te|45770|success|08-24 00:40|9|1720||2026-08-24 03:40:06,404 [INFO] TE: carteira deste tenant -> MG | 2026-08-24 03:40:06,507 [INFO] TE MG: 60 municipios | j|196 [INFO] TE MG: pagina 44 (173 itens) | gravados=373/8773 casados=31 | 2026-08-24 03:40:13,197 [INFO] TE MG: FIM — gravados=373 casados=31 completo=True em 7s
+transferegov-te|44432|success|08-23 00:40|8|1720||2026-08-23 03:40:05,150 [INFO] TE: carteira deste tenant -> MG | 2026-08-23 03:40:05,194 [INFO] TE MG: 60 municipios | j|843 [INFO] TE MG: pagina 44 (173 itens) | gravados=373/8773 casados=31 | 2026-08-23 03:40:11,843 [INFO] TE MG: FIM — gravados=373 casados=31 completo=True em 7s
+transferegov-te|43101|success|08-22 00:40|10|1720||2026-08-22 03:40:09,888 [INFO] TE: carteira deste tenant -> MG | 2026-08-22 03:40:10,230 [INFO] TE MG: 60 municipios | j|961 [INFO] TE MG: pagina 44 (173 itens) | gravados=373/8773 casados=31 | 2026-08-22 03:40:17,962 [INFO] TE MG: FIM — gravados=373 casados=31 completo=True em 8s
+transferegov-te|41767|success|08-21 00:40|11|1720||2026-08-21 03:40:07,241 [INFO] TE: carteira deste tenant -> MG | 2026-08-21 03:40:07,528 [INFO] TE MG: 60 municipios | j|670 [INFO] TE MG: pagina 44 (173 itens) | gravados=373/8773 casados=31 | 2026-08-21 03:40:14,671 [INFO] TE MG: FIM — gravados=373 casados=31 completo=True em 7s
+transferegov-te|40433|success|08-20 00:40|11|1720||2026-08-20 03:40:05,770 [INFO] TE: carteira deste tenant -> MG | 2026-08-20 03:40:05,848 [INFO] TE MG: 60 municipios | j|932 [INFO] TE MG: pagina 44 (173 itens) | gravados=373/8773 casados=31 | 2026-08-20 03:40:13,933 [INFO] TE MG: FIM — gravados=373 casados=31 completo=True em 8s
+transferegov-te|39058|success|08-19 00:40|11|1720||2026-08-19 03:40:07,321 [INFO] TE: carteira deste tenant -> MG | 2026-08-19 03:40:07,374 [INFO] TE MG: 60 municipios | j|582 [INFO] TE MG: pagina 44 (173 itens) | gravados=373/8773 casados=31 | 2026-08-19 03:40:14,583 [INFO] TE MG: FIM — gravados=373 casados=31 completo=True em 7s
+transferegov-te|37721|success|08-18 00:40|9|1720||2026-08-18 03:40:06,106 [INFO] TE: carteira deste tenant -> MG | 2026-08-18 03:40:06,135 [INFO] TE MG: 60 municipios | j|359 [INFO] TE MG: pagina 44 (173 itens) | gravados=373/8773 casados=31 | 2026-08-18 03:40:13,359 [INFO] TE MG: FIM — gravados=373 casados=31 completo=True em 7s
+transferegov-te|37271|success|08-17 16:26|1|1720|||
+transferegov-te|37270|success|08-17 16:25|151|1720||2026-08-17 19:25:16,618 [INFO] TE: carteira deste tenant -> MG | 2026-08-17 19:25:16,650 [INFO] TE MG: 60 municipios | j|NFO] TE MG: pagina 44 (173 itens) | gravados=7173/8773 casados=454 | 2026-08-17 19:27:46,171 [INFO] TE MG: FIM — gravados=7173 casados=454 completo=True em 150s
+transferegov-te|37252|success|08-17 16:03|178|1720||2026-08-17 19:03:20,881 [INFO] TE: carteira deste tenant -> MG | 2026-08-17 19:03:20,902 [INFO] TE MG: 60 municipios | j|G: parando na pagina 11 (403 persistente); retoma na proxima rodada | 2026-08-17 19:06:18,198 [INFO] TE MG: FIM — gravados=400 casados=30 completo=False em 177s
+transferegov-te|37227|success|08-17 15:41|179|1720||2026-08-17 18:41:03,107 [INFO] TE: carteira deste tenant -> MG | 2026-08-17 18:41:03,125 [INFO] TE MG: 60 municipios | j|G: parando na pagina 11 (403 persistente); retoma na proxima rodada | 2026-08-17 18:44:00,573 [INFO] TE MG: FIM — gravados=400 casados=30 completo=False em 177s
+transferegov-te|37207|success|08-17 15:19|179|1720||2026-08-17 18:19:03,783 [INFO] TE: carteira deste tenant -> MG | 2026-08-17 18:19:03,804 [INFO] TE MG: 60 municipios | j|G: parando na pagina 11 (403 persistente); retoma na proxima rodada | 2026-08-17 18:22:01,110 [INFO] TE MG: FIM — gravados=400 casados=30 completo=False em 177s
+transferegov-te|37186|success|08-17 14:57|179|1720||2026-08-17 17:57:03,650 [INFO] TE: carteira deste tenant -> MG | 2026-08-17 17:57:03,668 [INFO] TE MG: 60 municipios | j|G: parando na pagina 11 (403 persistente); retoma na proxima rodada | 2026-08-17 18:00:01,744 [INFO] TE MG: FIM — gravados=400 casados=30 completo=False em 178s
+transferegov-te|37065|success|08-17 12:52|1|1720|||
+transferegov-te|37063|success|08-17 12:51|1|1720|||
+transferegov-te|37061|success|08-17 12:50|178|1720||2026-08-17 15:50:04,608 [INFO] TE: carteira deste tenant -> MG | 2026-08-17 15:50:04,628 [INFO] TE MG: 60 municipios | j|G: parando na pagina 11 (403 persistente); retoma na proxima rodada | 2026-08-17 15:53:01,189 [INFO] TE MG: FIM — gravados=400 casados=30 completo=False em 177s
+transferegov-te|37060|success|08-17 12:49|1|1720|||
+transferegov-te|37059|success|08-17 12:48|1|1720|||
+transferegov-te|37057|success|08-17 12:47|178|1720||2026-08-17 15:47:04,535 [INFO] TE: carteira deste tenant -> MG | 2026-08-17 15:47:04,554 [INFO] TE MG: 60 municipios | j|G: parando na pagina 11 (403 persistente); retoma na proxima rodada | 2026-08-17 15:50:01,110 [INFO] TE MG: FIM — gravados=400 casados=30 completo=False em 177s
+transferegov-te|37055|success|08-17 12:46|1|1720|||
+transferegov-te|37054|success|08-17 12:45|3|1720|||
+transferegov-te|37051|success|08-17 12:44|1|1720|||
+transferegov-te|37050|success|08-17 12:43|183|1720||2026-08-17 15:43:09,563 [INFO] TE: carteira deste tenant -> MG | 2026-08-17 15:43:09,595 [INFO] TE MG: 60 municipios | j|G: parando na pagina 11 (403 persistente); retoma na proxima rodada | 2026-08-17 15:46:07,456 [INFO] TE MG: FIM — gravados=400 casados=30 completo=False em 178s
+transferegov-te|37046|success|08-17 12:42|1|1720|||
+transferegov-te|37044|success|08-17 12:41|2|1720|||
+transferegov-te|37042|success|08-17 12:40|179|1720||2026-08-17 15:40:05,528 [INFO] TE: carteira deste tenant -> MG | 2026-08-17 15:40:05,596 [INFO] TE MG: 60 municipios | j|G: parando na pagina 11 (403 persistente); retoma na proxima rodada | 2026-08-17 15:43:02,337 [INFO] TE MG: FIM — gravados=400 casados=30 completo=False em 177s
+transferegov-te|37040|success|08-17 12:39|1|1720|||
+transferegov-te|37039|success|08-17 12:38|1|1720|||
+transferegov-te|37037|success|08-17 12:37|180|1720||2026-08-17 15:37:04,584 [INFO] TE: carteira deste tenant -> MG | 2026-08-17 15:37:04,605 [INFO] TE MG: 60 municipios | j|G: parando na pagina 11 (403 persistente); retoma na proxima rodada | 2026-08-17 15:40:01,660 [INFO] TE MG: FIM — gravados=400 casados=30 completo=False em 177s
+transferegov-te|37035|success|08-17 12:36|1|1720|||
+transferegov-te|37034|success|08-17 12:35|2|1720|||
+transferegov-te|37032|success|08-17 12:34|1|1720|||
+transferegov-te|37031|success|08-17 12:33|181|1720||2026-08-17 15:33:08,842 [INFO] TE: carteira deste tenant -> MG | 2026-08-17 15:33:08,923 [INFO] TE MG: 60 municipios | j|G: parando na pagina 11 (403 persistente); retoma na proxima rodada | 2026-08-17 15:36:07,406 [INFO] TE MG: FIM — gravados=400 casados=30 completo=False em 178s
+transferegov-te|37027|success|08-17 12:32|1|1720|||
+transferegov-te|37026|success|08-17 12:31|1|1720|||
+transferegov-te|37025|success|08-17 12:30|179|1720||2026-08-17 15:30:09,180 [INFO] TE: carteira deste tenant -> MG | 2026-08-17 15:30:09,203 [INFO] TE MG: 60 municipios | j|G: parando na pagina 11 (403 persistente); retoma na proxima rodada | 2026-08-17 15:33:05,821 [INFO] TE MG: FIM — gravados=400 casados=30 completo=False em 177s
+transferegov-te|37021|success|08-17 12:29|1|1720|||
+transferegov-te|37020|success|08-17 12:28|1|1720|||
+transferegov-te|37018|success|08-17 12:27|179|1720||2026-08-17 15:27:04,406 [INFO] TE: carteira deste tenant -> MG | 2026-08-17 15:27:04,426 [INFO] TE MG: 60 municipios | j|G: parando na pagina 11 (403 persistente); retoma na proxima rodada | 2026-08-17 15:30:01,560 [INFO] TE MG: FIM — gravados=400 casados=30 completo=False em 177s
+transferegov-te|37016|success|08-17 12:26|1|1720|||
+transferegov-te|37015|success|08-17 12:26|1|1720|||
+transferegov-te|37012|success|08-17 12:24|1|1720|||
+transferegov-te|37011|success|08-17 12:23|178|1720||2026-08-17 15:23:19,156 [INFO] TE: carteira deste tenant -> MG | 2026-08-17 15:23:19,176 [INFO] TE MG: 60 municipios | j|G: parando na pagina 11 (403 persistente); retoma na proxima rodada | 2026-08-17 15:26:15,850 [INFO] TE MG: FIM — gravados=400 casados=30 completo=False em 177s
+transferegov-te|37007|success|08-17 12:22|2|1720|||
+transferegov-te|37005|success|08-17 12:21|1|1720|||
+transferegov-te|37004|success|08-17 12:20|179|1720||2026-08-17 15:20:05,009 [INFO] TE: carteira deste tenant -> MG | 2026-08-17 15:20:05,027 [INFO] TE MG: 60 municipios | j|G: parando na pagina 11 (403 persistente); retoma na proxima rodada | 2026-08-17 15:23:01,825 [INFO] TE MG: FIM — gravados=400 casados=30 completo=False em 177s
+transferegov-te|37002|success|08-17 12:19|1|1720|||
+transferegov-te|37001|success|08-17 12:18|2|1720|||
+transferegov-te|36999|success|08-17 12:17|178|1720||2026-08-17 15:17:04,343 [INFO] TE: carteira deste tenant -> MG | 2026-08-17 15:17:04,363 [INFO] TE MG: 60 municipios | j|G: parando na pagina 11 (403 persistente); retoma na proxima rodada | 2026-08-17 15:20:01,819 [INFO] TE MG: FIM — gravados=400 casados=30 completo=False em 177s
+transferegov-te|36997|success|08-17 12:16|1|1720|||
+transferegov-te|36996|success|08-17 12:15|1|1720|||
+transferegov-te|36994|success|08-17 12:14|1|1720|||
+transferegov-te|36990|success|08-17 12:13|182|1720||2026-08-17 15:13:06,164 [INFO] TE: carteira deste tenant -> MG | 2026-08-17 15:13:06,197 [INFO] TE MG: 60 municipios | j|G: parando na pagina 11 (403 persistente); retoma na proxima rodada | 2026-08-17 15:16:05,845 [INFO] TE MG: FIM — gravados=400 casados=30 completo=False em 180s
+transferegov-te|36988|success|08-17 12:12|1|1720|||
+transferegov-te|36987|success|08-17 12:11|1|1720|||
+transferegov-te|36986|success|08-17 12:10|179|1720||2026-08-17 15:10:04,782 [INFO] TE: carteira deste tenant -> MG | 2026-08-17 15:10:04,816 [INFO] TE MG: 60 municipios | j|G: parando na pagina 11 (403 persistente); retoma na proxima rodada | 2026-08-17 15:13:01,410 [INFO] TE MG: FIM — gravados=400 casados=30 completo=False em 177s
+transferegov-te|36984|success|08-17 12:09|1|1720|||
+transferegov-te|36982|success|08-17 12:08|2|1720|||
+transferegov-te|36981|success|08-17 12:07|179|1720||2026-08-17 15:07:03,778 [INFO] TE: carteira deste tenant -> MG | 2026-08-17 15:07:03,797 [INFO] TE MG: 60 municipios | j|G: parando na pagina 11 (403 persistente); retoma na proxima rodada | 2026-08-17 15:10:02,083 [INFO] TE MG: FIM — gravados=400 casados=30 completo=False em 178s
+transferegov-te|36979|success|08-17 12:06|1|1720|||
+transferegov-te|36978|success|08-17 12:05|1|1720|||
+transferegov-te|36976|success|08-17 12:04|1|1720|||
+transferegov-te|36975|success|08-17 12:03|179|1720||2026-08-17 15:03:19,397 [INFO] TE: carteira deste tenant -> MG | 2026-08-17 15:03:19,439 [INFO] TE MG: 60 municipios | j|G: parando na pagina 11 (403 persistente); retoma na proxima rodada | 2026-08-17 15:06:16,765 [INFO] TE MG: FIM — gravados=400 casados=30 completo=False em 177s
+transferegov-te|36971|success|08-17 12:02|1|1720|||
+transferegov-te|36970|success|08-17 12:01|1|1720|||
+transferegov-te|36969|success|08-17 12:00|180|1720||2026-08-17 15:00:10,774 [INFO] TE: carteira deste tenant -> MG | 2026-08-17 15:00:10,805 [INFO] TE MG: 60 municipios | j|G: parando na pagina 11 (403 persistente); retoma na proxima rodada | 2026-08-17 15:03:08,427 [INFO] TE MG: FIM — gravados=400 casados=30 completo=False em 178s
+transferegov-te|36964|success|08-17 11:59|1|1720|||
+transferegov-te|36963|success|08-17 11:58|2|1720|||
+transferegov-te|36961|success|08-17 11:57|179|1720||2026-08-17 14:57:04,759 [INFO] TE: carteira deste tenant -> MG | 2026-08-17 14:57:04,779 [INFO] TE MG: 60 municipios | j|G: parando na pagina 11 (403 persistente); retoma na proxima rodada | 2026-08-17 15:00:02,276 [INFO] TE MG: FIM — gravados=400 casados=30 completo=False em 177s
+transferegov-te|36959|success|08-17 11:56|1|1720|||
+transferegov-te|36958|success|08-17 11:55|2|1720|||
+transferegov-te|36956|success|08-17 11:54|1|1720|||
+transferegov-te|36955|success|08-17 11:53|179|1720||2026-08-17 14:53:22,615 [INFO] TE: carteira deste tenant -> MG | 2026-08-17 14:53:22,651 [INFO] TE MG: 60 municipios | j|G: parando na pagina 11 (403 persistente); retoma na proxima rodada | 2026-08-17 14:56:20,028 [INFO] TE MG: FIM — gravados=400 casados=30 completo=False em 177s
+transferegov-te|36191|success|08-17 03:00|180|1720||2026-08-17 06:00:16,989 [INFO] TE: carteira deste tenant -> MG | 2026-08-17 06:00:17,021 [INFO] TE MG: 60 municipios | j|G: parando na pagina 11 (403 persistente); retoma na proxima rodada | 2026-08-17 06:03:14,365 [INFO] TE MG: FIM — gravados=400 casados=30 completo=False em 177s
+transferegov-te|36122|failed|08-17 02:46|248|1720||Job permanently failed after 1 attempts: SSH command failed with exit code: 1|Job permanently failed after 1 attempts: SSH command failed with exit code: 1
+transferegov-te|36108|success|08-17 02:40|174|1720||2026-08-17 05:40:42,088 [INFO] TE: carteira deste tenant -> MG | 2026-08-17 05:40:42,169 [INFO] TE MG: 60 municipios | j|MG: parando na pagina 2 (403 persistente); retoma na proxima rodada | 2026-08-17 05:43:34,850 [INFO] TE MG: FIM — gravados=200 casados=13 completo=False em 173s
+transferegov-te|36094|success|08-17 02:34|174|1720||2026-08-17 05:34:51,843 [INFO] TE: carteira deste tenant -> MG | 2026-08-17 05:34:51,865 [INFO] TE MG: 60 municipios | j|MG: parando na pagina 2 (403 persistente); retoma na proxima rodada | 2026-08-17 05:37:44,711 [INFO] TE MG: FIM — gravados=200 casados=13 completo=False em 173s
+transferegov-te|35950|success|08-17 01:13|1|1720|||
+transferegov-te|35944|success|08-17 01:12|175|1720||2026-08-17 04:12:05,343 [INFO] TE MG: 60 municipios | ja tem 200 linhas -> comeca pagina 1 | 2026-08-17 04:12:07,521 [IN|MG: parando na pagina 2 (403 persistente); retoma na proxima rodada | 2026-08-17 04:14:58,319 [INFO] TE MG: FIM — gravados=200 casados=13 completo=False em 173s
+transferegov-te|35886|success|08-17 00:40|180|1720||2026-08-17 03:40:13,571 [INFO] TE MG: 60 municipios | ja tem 200 linhas -> comeca pagina 1 | 2026-08-17 03:40:15,685 [IN|MG: parando na pagina 2 (403 persistente); retoma na proxima rodada | 2026-08-17 03:43:06,694 [INFO] TE MG: FIM — gravados=200 casados=13 completo=False em 173s
+(120 rows)
+=== c07d: execucoes por dia x task ===
+dia_brt|name|execs|ok|failed|running
+2026-08-03|cagec|1|0|1|0
+2026-08-04|cagec|1|0|1|0
+2026-08-05|cagec|1|0|1|0
+2026-08-06|cagec|3|1|2|0
+2026-08-07|cagec|5|3|2|0
+2026-08-08|cagec|4|3|1|0
+2026-08-09|cagec|5|3|2|0
+2026-08-10|cagec|3|3|0|0
+2026-08-11|cagec|4|3|1|0
+2026-08-12|cagec|4|3|1|0
+2026-08-13|cagec|4|3|1|0
+2026-08-14|cagec|4|3|1|0
+2026-08-15|cagec|4|3|1|0
+2026-08-16|cagec|4|3|1|0
+2026-08-17|cagec|40|37|3|0
+2026-08-18|cagec|4|4|0|0
+2026-08-19|cagec|4|4|0|0
+2026-08-20|cagec|4|3|1|0
+2026-08-21|cagec|4|3|1|0
+2026-08-22|cagec|4|3|1|0
+2026-08-23|cagec|4|3|1|0
+2026-08-24|cagec|4|4|0|0
+2026-08-25|cagec|4|3|1|0
+2026-08-26|cagec|4|3|1|0
+2026-08-27|cagec|4|3|1|0
+2026-08-28|cagec|4|3|1|0
+2026-08-29|cagec|4|3|1|0
+2026-08-07|cauc-manha|2|2|0|0
+2026-08-08|cauc-manha|5|5|0|0
+2026-08-09|cauc-manha|5|5|0|0
+2026-08-10|cauc-manha|5|5|0|0
+2026-08-11|cauc-manha|5|5|0|0
+2026-08-12|cauc-manha|5|5|0|0
+2026-08-13|cauc-manha|5|5|0|0
+2026-08-14|cauc-manha|5|5|0|0
+2026-08-15|cauc-manha|5|5|0|0
+2026-08-16|cauc-manha|5|5|0|0
+2026-08-17|cauc-manha|7|7|0|0
+2026-08-18|cauc-manha|5|5|0|0
+2026-08-19|cauc-manha|5|5|0|0
+2026-08-20|cauc-manha|5|5|0|0
+2026-08-21|cauc-manha|5|5|0|0
+2026-08-22|cauc-manha|5|5|0|0
+2026-08-23|cauc-manha|5|5|0|0
+2026-08-24|cauc-manha|5|4|1|0
+2026-08-25|cauc-manha|5|5|0|0
+2026-08-26|cauc-manha|5|5|0|0
+2026-08-27|cauc-manha|5|5|0|0
+2026-08-28|cauc-manha|5|5|0|0
+2026-08-29|cauc-manha|5|5|0|0
+2026-07-31|fns|1|1|0|0
+2026-08-01|fns|1|1|0|0
+2026-08-02|fns|1|1|0|0
+2026-08-03|fns|1|1|0|0
+2026-08-04|fns|1|1|0|0
+2026-08-05|fns|1|1|0|0
+2026-08-06|fns|1|1|0|0
+2026-08-07|fns|1|1|0|0
+2026-08-08|fns|1|1|0|0
+2026-08-09|fns|1|1|0|0
+2026-08-10|fns|1|1|0|0
+2026-08-11|fns|1|1|0|0
+2026-08-12|fns|1|1|0|0
+2026-08-13|fns|1|1|0|0
+2026-08-14|fns|1|1|0|0
+2026-08-15|fns|1|1|0|0
+2026-08-16|fns|1|1|0|0
+2026-08-17|fns|3|3|0|0
+2026-08-18|fns|1|1|0|0
+2026-08-19|fns|1|0|1|0
+2026-08-20|fns|1|1|0|0
+2026-08-21|fns|1|1|0|0
+2026-08-22|fns|1|1|0|0
+2026-08-23|fns|1|1|0|0
+2026-08-24|fns|1|1|0|0
+2026-08-25|fns|1|1|0|0
+2026-08-26|fns|1|1|0|0
+2026-08-27|fns|1|1|0|0
+2026-08-28|fns|1|1|0|0
+2026-08-29|fns|1|1|0|0
+2026-07-30|govbr-renew|1|1|0|0
+2026-07-31|govbr-renew|24|24|0|0
+2026-08-01|govbr-renew|24|24|0|0
+2026-08-02|govbr-renew|24|24|0|0
+2026-08-03|govbr-renew|24|24|0|0
+2026-08-04|govbr-renew|24|24|0|0
+2026-08-05|govbr-renew|24|24|0|0
+2026-08-06|govbr-renew|24|24|0|0
+2026-08-07|govbr-renew|24|24|0|0
+2026-08-08|govbr-renew|24|24|0|0
+2026-08-09|govbr-renew|24|24|0|0
+2026-08-10|govbr-renew|24|24|0|0
+2026-08-11|govbr-renew|24|24|0|0
+2026-08-12|govbr-renew|24|24|0|0
+2026-08-13|govbr-renew|24|24|0|0
+2026-08-14|govbr-renew|24|24|0|0
+2026-08-15|govbr-renew|24|24|0|0
+2026-08-16|govbr-renew|24|24|0|0
+2026-08-17|govbr-renew|24|24|0|0
+2026-08-18|govbr-renew|24|24|0|0
+2026-08-19|govbr-renew|24|24|0|0
+2026-08-20|govbr-renew|24|24|0|0
+2026-08-21|govbr-renew|24|24|0|0
+2026-08-22|govbr-renew|24|24|0|0
+2026-08-23|govbr-renew|24|24|0|0
+2026-08-24|govbr-renew|24|24|0|0
+2026-08-25|govbr-renew|24|24|0|0
+2026-08-26|govbr-renew|24|24|0|0
+2026-08-27|govbr-renew|24|24|0|0
+2026-08-28|govbr-renew|24|24|0|0
+2026-08-29|govbr-renew|23|23|0|0
+2026-08-02|painel-alertas|5|5|0|0
+2026-08-03|painel-alertas|12|12|0|0
+2026-08-04|painel-alertas|12|12|0|0
+2026-08-05|painel-alertas|12|12|0|0
+2026-08-06|painel-alertas|12|12|0|0
+2026-08-07|painel-alertas|12|12|0|0
+2026-08-08|painel-alertas|12|12|0|0
+2026-08-09|painel-alertas|12|12|0|0
+2026-08-10|painel-alertas|12|12|0|0
+2026-08-11|painel-alertas|12|12|0|0
+2026-08-12|painel-alertas|12|12|0|0
+2026-08-13|painel-alertas|12|12|0|0
+2026-08-14|painel-alertas|12|12|0|0
+2026-08-15|painel-alertas|12|12|0|0
+2026-08-16|painel-alertas|12|12|0|0
+2026-08-17|painel-alertas|12|12|0|0
+2026-08-18|painel-alertas|12|12|0|0
+2026-08-19|painel-alertas|12|12|0|0
+2026-08-20|painel-alertas|12|12|0|0
+2026-08-21|painel-alertas|12|12|0|0
+2026-08-22|painel-alertas|12|12|0|0
+2026-08-23|painel-alertas|12|12|0|0
+2026-08-24|painel-alertas|12|12|0|0
+2026-08-25|painel-alertas|12|12|0|0
+2026-08-26|painel-alertas|12|12|0|0
+2026-08-27|painel-alertas|12|12|0|0
+2026-08-28|painel-alertas|12|12|0|0
+2026-08-29|painel-alertas|11|11|0|0
+2026-08-02|private-keepalive|72|72|0|0
+2026-08-03|private-keepalive|144|144|0|0
+2026-08-04|private-keepalive|144|144|0|0
+2026-08-05|private-keepalive|144|144|0|0
+2026-08-06|private-keepalive|144|144|0|0
+2026-08-07|private-keepalive|144|144|0|0
+2026-08-08|private-keepalive|144|144|0|0
+2026-08-09|private-keepalive|145|145|0|0
+2026-08-10|private-keepalive|144|144|0|0
+2026-08-11|private-keepalive|144|144|0|0
+2026-08-12|private-keepalive|144|144|0|0
+2026-08-13|private-keepalive|144|144|0|0
+2026-08-14|private-keepalive|144|144|0|0
+2026-08-15|private-keepalive|144|143|1|0
+2026-08-16|private-keepalive|144|144|0|0
+2026-08-17|private-keepalive|144|143|1|0
+2026-08-18|private-keepalive|144|144|0|0
+2026-08-19|private-keepalive|144|144|0|0
+2026-08-20|private-keepalive|144|143|1|0
+2026-08-21|private-keepalive|144|144|0|0
+2026-08-22|private-keepalive|143|143|0|0
+2026-08-23|private-keepalive|144|144|0|0
+2026-08-24|private-keepalive|144|144|0|0
+2026-08-25|private-keepalive|144|144|0|0
+2026-08-26|private-keepalive|144|144|0|0
+2026-08-27|private-keepalive|144|144|0|0
+2026-08-28|private-keepalive|144|143|1|0
+2026-08-29|private-keepalive|136|136|0|0
+2026-07-30|queue-sigcon|2|2|0|0
+2026-07-31|queue-sigcon|48|48|0|0
+2026-08-01|queue-sigcon|48|48|0|0
+2026-08-02|queue-sigcon|48|48|0|0
+2026-08-03|queue-sigcon|48|48|0|0
+2026-08-04|queue-sigcon|48|48|0|0
+2026-08-05|queue-sigcon|48|48|0|0
+2026-08-06|queue-sigcon|48|48|0|0
+2026-08-07|queue-sigcon|48|48|0|0
+2026-08-08|queue-sigcon|48|48|0|0
+2026-08-09|queue-sigcon|48|48|0|0
+2026-08-10|queue-sigcon|48|48|0|0
+2026-08-11|queue-sigcon|48|47|1|0
+2026-08-12|queue-sigcon|48|48|0|0
+2026-08-13|queue-sigcon|48|48|0|0
+2026-08-14|queue-sigcon|48|48|0|0
+2026-08-15|queue-sigcon|48|48|0|0
+2026-08-16|queue-sigcon|48|47|1|0
+2026-08-17|queue-sigcon|48|48|0|0
+2026-08-18|queue-sigcon|48|48|0|0
+2026-08-19|queue-sigcon|48|48|0|0
+2026-08-20|queue-sigcon|48|48|0|0
+2026-08-21|queue-sigcon|48|48|0|0
+2026-08-22|queue-sigcon|48|48|0|0
+2026-08-23|queue-sigcon|48|48|0|0
+2026-08-24|queue-sigcon|48|48|0|0
+2026-08-25|queue-sigcon|48|48|0|0
+2026-08-26|queue-sigcon|48|48|0|0
+2026-08-27|queue-sigcon|48|48|0|0
+2026-08-28|queue-sigcon|48|48|0|0
+2026-08-29|queue-sigcon|46|45|1|0
+2026-08-08|siconv-federal|1|1|0|0
+2026-08-09|siconv-federal|1|1|0|0
+2026-08-10|siconv-federal|2|2|0|0
+2026-08-11|siconv-federal|1|1|0|0
+2026-08-12|siconv-federal|1|1|0|0
+2026-08-13|siconv-federal|1|1|0|0
+2026-08-14|siconv-federal|1|1|0|0
+2026-08-15|siconv-federal|1|1|0|0
+2026-08-16|siconv-federal|1|1|0|0
+2026-08-17|siconv-federal|3|3|0|0
+2026-08-18|siconv-federal|1|1|0|0
+2026-08-19|siconv-federal|1|1|0|0
+2026-08-20|siconv-federal|1|1|0|0
+2026-08-21|siconv-federal|1|1|0|0
+2026-08-22|siconv-federal|1|1|0|0
+2026-08-23|siconv-federal|1|1|0|0
+2026-08-24|siconv-federal|1|1|0|0
+2026-08-25|siconv-federal|1|1|0|0
+2026-08-26|siconv-federal|1|1|0|0
+2026-08-27|siconv-federal|1|1|0|0
+2026-08-28|siconv-federal|1|1|0|0
+2026-08-29|siconv-federal|1|1|0|0
+2026-07-31|sigcon|4|3|1|0
+2026-08-01|sigcon|4|0|4|0
+2026-08-02|sigcon|4|1|3|0
+2026-08-03|sigcon|4|0|4|0
+2026-08-04|sigcon|4|1|3|0
+2026-08-05|sigcon|4|1|3|0
+2026-08-06|sigcon|4|2|2|0
+2026-08-07|sigcon|4|1|3|0
+2026-08-08|sigcon|6|3|3|0
+2026-08-09|sigcon|13|10|3|0
+2026-08-10|sigcon|12|11|1|0
+2026-08-11|sigcon|12|12|0|0
+2026-08-12|sigcon|12|12|0|0
+2026-08-13|sigcon|12|12|0|0
+2026-08-14|sigcon|12|12|0|0
+2026-08-15|sigcon|12|12|0|0
+2026-08-16|sigcon|12|12|0|0
+2026-08-17|sigcon|72|69|3|0
+2026-08-18|sigcon|12|12|0|0
+2026-08-19|sigcon|12|12|0|0
+2026-08-20|sigcon|12|12|0|0
+2026-08-21|sigcon|12|12|0|0
+2026-08-22|sigcon|12|12|0|0
+2026-08-23|sigcon|12|12|0|0
+2026-08-24|sigcon|12|10|2|0
+2026-08-25|sigcon|12|6|6|0
+2026-08-26|sigcon|12|12|0|0
+2026-08-27|sigcon|12|12|0|0
+2026-08-28|sigcon|12|11|1|0
+2026-08-29|sigcon|12|11|0|1
+2026-08-18|simec-termos|1|1|0|0
+2026-08-19|simec-termos|1|1|0|0
+2026-08-20|simec-termos|1|1|0|0
+2026-08-21|simec-termos|1|1|0|0
+2026-08-22|simec-termos|1|1|0|0
+2026-08-23|simec-termos|1|1|0|0
+2026-08-24|simec-termos|1|1|0|0
+2026-08-25|simec-termos|1|1|0|0
+2026-08-26|simec-termos|1|1|0|0
+2026-08-27|simec-termos|1|1|0|0
+2026-08-28|simec-termos|1|1|0|0
+2026-08-29|simec-termos|1|1|0|0
+2026-08-03|sismob|1|1|0|0
+2026-08-04|sismob|1|1|0|0
+2026-08-05|sismob|1|1|0|0
+2026-08-06|sismob|1|1|0|0
+2026-08-07|sismob|1|1|0|0
+2026-08-08|sismob|1|1|0|0
+2026-08-09|sismob|1|1|0|0
+2026-08-10|sismob|1|1|0|0
+2026-08-11|sismob|1|1|0|0
+2026-08-12|sismob|1|1|0|0
+2026-08-13|sismob|1|1|0|0
+2026-08-14|sismob|1|1|0|0
+2026-08-15|sismob|1|1|0|0
+2026-08-16|sismob|1|1|0|0
+2026-08-17|sismob|5|5|0|0
+2026-08-18|sismob|1|1|0|0
+2026-08-19|sismob|1|1|0|0
+2026-08-20|sismob|1|1|0|0
+2026-08-21|sismob|1|1|0|0
+2026-08-22|sismob|1|1|0|0
+2026-08-23|sismob|1|1|0|0
+2026-08-24|sismob|1|1|0|0
+2026-08-25|sismob|1|1|0|0
+2026-08-26|sismob|1|1|0|0
+2026-08-27|sismob|1|1|0|0
+2026-08-28|sismob|1|1|0|0
+2026-08-29|sismob|1|1|0|0
+2026-07-30|transferegov|1|1|0|0
+2026-07-31|transferegov|1|1|0|0
+2026-08-01|transferegov|1|1|0|0
+2026-08-02|transferegov|1|0|1|0
+2026-08-03|transferegov|1|0|1|0
+2026-08-04|transferegov|1|1|0|0
+2026-08-05|transferegov|1|1|0|0
+2026-08-06|transferegov|1|1|0|0
+2026-08-07|transferegov|1|1|0|0
+2026-08-08|transferegov|1|1|0|0
+2026-08-09|transferegov|1|1|0|0
+2026-08-10|transferegov|1|1|0|0
+2026-08-11|transferegov|1|1|0|0
+2026-08-12|transferegov|1|1|0|0
+2026-08-13|transferegov|1|1|0|0
+2026-08-14|transferegov|1|1|0|0
+2026-08-15|transferegov|1|1|0|0
+2026-08-16|transferegov|1|1|0|0
+2026-08-17|transferegov|5|4|1|0
+2026-08-18|transferegov|1|1|0|0
+2026-08-19|transferegov|1|1|0|0
+2026-08-20|transferegov|1|1|0|0
+2026-08-21|transferegov|1|1|0|0
+2026-08-22|transferegov|1|1|0|0
+2026-08-23|transferegov|1|1|0|0
+2026-08-24|transferegov|1|1|0|0
+2026-08-25|transferegov|1|1|0|0
+2026-08-26|transferegov|1|1|0|0
+2026-08-27|transferegov|1|1|0|0
+2026-08-28|transferegov|1|1|0|0
+2026-08-29|transferegov|1|1|0|0
+2026-08-03|transferegov-lote|1|0|1|0
+2026-08-04|transferegov-lote|1|0|1|0
+2026-08-05|transferegov-lote|1|0|1|0
+2026-08-06|transferegov-lote|1|0|1|0
+2026-08-07|transferegov-lote|1|0|1|0
+2026-08-08|transferegov-lote|25|11|14|0
+2026-08-09|transferegov-lote|13|13|0|0
+2026-08-10|transferegov-lote|12|11|1|0
+2026-08-11|transferegov-lote|12|12|0|0
+2026-08-12|transferegov-lote|12|11|1|0
+2026-08-13|transferegov-lote|13|12|1|0
+2026-08-14|transferegov-lote|13|13|0|0
+2026-08-15|transferegov-lote|12|11|1|0
+2026-08-16|transferegov-lote|13|12|1|0
+2026-08-17|transferegov-lote|84|83|1|0
+2026-08-18|transferegov-lote|13|12|1|0
+2026-08-19|transferegov-lote|13|13|0|0
+2026-08-20|transferegov-lote|12|12|0|0
+2026-08-21|transferegov-lote|12|12|0|0
+2026-08-22|transferegov-lote|12|11|1|0
+2026-08-23|transferegov-lote|13|13|0|0
+2026-08-24|transferegov-lote|12|12|0|0
+2026-08-25|transferegov-lote|12|11|1|0
+2026-08-26|transferegov-lote|13|13|0|0
+2026-08-27|transferegov-lote|12|11|1|0
+2026-08-28|transferegov-lote|13|11|2|0
+2026-08-29|transferegov-lote|12|11|1|0
+2026-08-17|transferegov-te|73|72|1|0
+2026-08-18|transferegov-te|1|1|0|0
+2026-08-19|transferegov-te|1|1|0|0
+2026-08-20|transferegov-te|1|1|0|0
+2026-08-21|transferegov-te|1|1|0|0
+2026-08-22|transferegov-te|1|1|0|0
+2026-08-23|transferegov-te|1|1|0|0
+2026-08-24|transferegov-te|1|1|0|0
+2026-08-25|transferegov-te|1|1|0|0
+2026-08-26|transferegov-te|1|1|0|0
+2026-08-27|transferegov-te|1|1|0|0
+2026-08-28|transferegov-te|1|0|1|0
+2026-08-29|transferegov-te|1|1|0|0
+2026-07-30|watchdog|3|3|0|0
+2026-07-31|watchdog|48|48|0|0
+2026-08-01|watchdog|48|48|0|0
+2026-08-02|watchdog|48|48|0|0
+2026-08-03|watchdog|48|48|0|0
+2026-08-04|watchdog|48|48|0|0
+2026-08-05|watchdog|48|48|0|0
+2026-08-06|watchdog|48|48|0|0
+2026-08-07|watchdog|48|48|0|0
+2026-08-08|watchdog|48|48|0|0
+2026-08-09|watchdog|48|48|0|0
+2026-08-10|watchdog|48|48|0|0
+2026-08-11|watchdog|48|48|0|0
+2026-08-12|watchdog|48|48|0|0
+2026-08-13|watchdog|48|48|0|0
+2026-08-14|watchdog|48|48|0|0
+2026-08-15|watchdog|48|48|0|0
+2026-08-16|watchdog|48|48|0|0
+2026-08-17|watchdog|48|48|0|0
+2026-08-18|watchdog|48|48|0|0
+2026-08-19|watchdog|48|48|0|0
+2026-08-20|watchdog|48|48|0|0
+2026-08-21|watchdog|48|48|0|0
+2026-08-22|watchdog|48|48|0|0
+2026-08-23|watchdog|48|48|0|0
+2026-08-24|watchdog|48|48|0|0
+2026-08-25|watchdog|48|48|0|0
+2026-08-26|watchdog|48|48|0|0
+2026-08-27|watchdog|48|48|0|0
+2026-08-28|watchdog|48|48|0|0
+2026-08-29|watchdog|45|45|0|0
+(391 rows)
+=== c10a: estado da sessao pela task govbr (horas acumuladas) ===
+name|estado|execs|horas_acumuladas
+govbr-renew|indeterminado|212|212.0
+govbr-renew|morta|298|297.5
+govbr-renew|viva|210|210.0
+private-keepalive|falhou_task|4|0.7
+private-keepalive|indeterminado|2264|377.1
+private-keepalive|morta|1684|280.8
+(6 rows)
+=== c10b: episodios de sessao ===
+name|inicio_brt|estado|horas
+govbr-renew|07-30 23:05|outro|212.0
+govbr-renew|08-08 19:05|viva|79.0
+govbr-renew|08-12 02:05|morta|93.0
+govbr-renew|08-15 23:05|viva|20.0
+govbr-renew|08-16 19:05|morta|38.0
+govbr-renew|08-18 09:05|viva|63.0
+govbr-renew|08-21 00:05|morta|95.0
+govbr-renew|08-24 23:05|viva|48.0
+govbr-renew|08-26 23:05|morta|71.5
+(9 rows)

@@ -1,0 +1,568 @@
+=== Q00: ambiente ===
+version
+PostgreSQL 16.14 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit
+(1 row)
+tz|agora_utc|agora_brt
+UTC|2026-08-30 01:30:52.423368+00|2026-08-29 22:30:52.423368
+(1 row)
+=== Q00: tamanhos ===
+relname|n_live_tup|tamanho
+audit_log|1248|1200 kB
+cagec_situacao|93|608 kB
+cagec_situacao|3|32 kB
+cauc_situacao|60|152 kB
+cauc_situacao|2|16 kB
+cofre_senhas|66|288 kB
+cofre_senhas|1|16 kB
+convenios_estadual|2406|6056 kB
+convenios_estadual|111|136 kB
+emendas_estaduais|762|2528 kB
+emendas_estaduais|0|8192 bytes
+ingestion_log|5769|760 kB
+municipios|60|96 kB
+municipios|2|8192 bytes
+rm_relatorios|0|8192 bytes
+rm_relatorios|15|536 kB
+scraper_municipio_coleta|173|112 kB
+scraper_municipio_coleta|5|16 kB
+transferegov_propostas|260|1224 kB
+transferegov_propostas|3199|35 MB
+(20 rows)
+=== Q00: indices ===
+tablename|indexname|indexdef
+convenios_estadual|convenios_estadual_pkey|CREATE UNIQUE INDEX convenios_estadual_pkey ON public.convenios_estadual USING btree (id)
+convenios_estadual|idx_convenios_est_municipio|CREATE INDEX idx_convenios_est_municipio ON public.convenios_estadual USING btree (municipio_id)
+convenios_estadual|idx_convenios_est_situacao|CREATE INDEX idx_convenios_est_situacao ON public.convenios_estadual USING btree (situacao)
+convenios_estadual|idx_convenios_est_vigencia|CREATE INDEX idx_convenios_est_vigencia ON public.convenios_estadual USING btree (dt_vigencia_atual)
+convenios_estadual|ix_convenios_estadual_nr_proposta|CREATE INDEX ix_convenios_estadual_nr_proposta ON public.convenios_estadual USING btree (nr_proposta) WHERE (nr_proposta IS NOT NULL)
+convenios_estadual|ix_convenios_estadual_nrsigcon|CREATE UNIQUE INDEX ix_convenios_estadual_nrsigcon ON public.convenios_estadual USING btree (nr_sigcon)
+convenios_estadual|ux_convenios_estadual_nr_siafi|CREATE UNIQUE INDEX ux_convenios_estadual_nr_siafi ON public.convenios_estadual USING btree (nr_siafi) WHERE ((nr_siafi IS NOT NULL) AND ((nr_siafi)::text <> ''::text))
+convenios_estadual|ux_convenios_sigcon_mun_proposta|CREATE UNIQUE INDEX ux_convenios_sigcon_mun_proposta ON public.convenios_estadual USING btree (municipio_id, nr_proposta) WHERE (((fonte)::text = 'SIGCON-MG'::text) AND (nr_proposta IS NOT NULL) AND (btrim((nr_proposta)::text) <> ''::text))
+ingestion_log|ingestion_log_pkey|CREATE UNIQUE INDEX ingestion_log_pkey ON public.ingestion_log USING btree (id)
+scraper_municipio_coleta|idx_scraper_coleta_ordem|CREATE INDEX idx_scraper_coleta_ordem ON public.scraper_municipio_coleta USING btree (fonte, ultima_coleta_em NULLS FIRST)
+scraper_municipio_coleta|scraper_municipio_coleta_pkey|CREATE UNIQUE INDEX scraper_municipio_coleta_pkey ON public.scraper_municipio_coleta USING btree (fonte, municipio_id)
+transferegov_propostas|idx_tgprop_detalhe_atualizado|CREATE INDEX idx_tgprop_detalhe_atualizado ON public.transferegov_propostas USING btree (municipio_id, detalhe_atualizado_em)
+transferegov_propostas|idx_tgprop_id_proposta_siconv|CREATE INDEX idx_tgprop_id_proposta_siconv ON public.transferegov_propostas USING btree (id_proposta_siconv)
+transferegov_propostas|transferegov_propostas_pkey|CREATE UNIQUE INDEX transferegov_propostas_pkey ON public.transferegov_propostas USING btree (id)
+transferegov_propostas|ux_tg_prop_mun_num|CREATE UNIQUE INDEX ux_tg_prop_mun_num ON public.transferegov_propostas USING btree (municipio_id, numero_proposta)
+(15 rows)
+=== Q00: schema ===
+Table "public.ingestion_log"
+Column|Type|Collation|Nullable|Default
+id|integer||not null|nextval('ingestion_log_id_seq'::regclass)
+source|character varying(100)||not null|
+started_at|timestamp with time zone|||now()
+finished_at|timestamp with time zone|||
+status|character varying(50)|||'running'::character varying
+records_processed|integer|||0
+records_inserted|integer|||0
+records_updated|integer|||0
+error_message|text|||
+Indexes:
+    "ingestion_log_pkey" PRIMARY KEY, btree (id)
+Table "public.scraper_municipio_coleta"
+Column|Type|Collation|Nullable|Default
+fonte|character varying(40)||not null|
+municipio_id|integer||not null|
+ultima_coleta_em|timestamp with time zone|||
+ultimo_erro_em|timestamp with time zone|||
+ultimo_erro|text|||
+tentativas|integer||not null|0
+detalhe_pagina|smallint||not null|1
+Indexes:
+    "scraper_municipio_coleta_pkey" PRIMARY KEY, btree (fonte, municipio_id)
+    "idx_scraper_coleta_ordem" btree (fonte, ultima_coleta_em NULLS FIRST)
+Foreign-key constraints:
+    "scraper_municipio_coleta_municipio_id_fkey" FOREIGN KEY (municipio_id) REFERENCES municipios(id) ON DELETE CASCADE
+Table "public.transferegov_propostas"
+Column|Type|Collation|Nullable|Default
+id|integer||not null|nextval('transferegov_propostas_id_seq'::regclass)
+municipio_id|integer|||
+numero_proposta|character varying(20)|||
+situacao|character varying(300)|||
+orgao|character varying(300)|||
+proponente|character varying(300)|||
+possui_parecer|character varying(10)|||
+identificacao|character varying(30)|||
+raw_data|jsonb|||
+updated_at|timestamp with time zone|||now()
+created_at|timestamp with time zone|||now()
+codigo_instrumento|character varying(30)|||
+modalidade|character varying(100)|||
+situacao_siafi|character varying(200)|||
+numero_processo|character varying(50)|||
+objeto|text|||
+programa|character varying(300)|||
+dt_inicio_vigencia|character varying(20)|||
+dt_fim_vigencia|character varying(20)|||
+dt_proposta|character varying(20)|||
+dt_assinatura|character varying(20)|||
+detalhe|jsonb|||
+valor_global|numeric|||
+valor_repasse|numeric|||
+valor_contrapartida|numeric|||
+situacao_contratacao|text|||
+clausula_suspensiva_dt_prevista|date|||
+clausula_suspensiva_motivo|text|||
+parlamentar|text|||
+situacao_contratacao_detalhe|jsonb|||
+id_proposta_siconv|text|||
+processo_execucao_qtd|integer|||
+historico_comunicacoes|jsonb|||
+documentos_quadro_resumo|jsonb|||
+historico_atualizado_em|timestamp with time zone|||
+ops_obs|jsonb|||
+obras|jsonb|||
+ops_obs_atualizado_em|timestamp with time zone|||
+detalhe_atualizado_em|timestamp with time zone|||
+processo_execucao|jsonb|||
+valor_emenda|numeric|||
+projeto_basico|jsonb|||
+notas_empenho|jsonb|||
+Indexes:
+    "transferegov_propostas_pkey" PRIMARY KEY, btree (id)
+    "idx_tgprop_detalhe_atualizado" btree (municipio_id, detalhe_atualizado_em)
+    "idx_tgprop_id_proposta_siconv" btree (id_proposta_siconv)
+    "ux_tg_prop_mun_num" UNIQUE, btree (municipio_id, numero_proposta)
+Foreign-key constraints:
+    "transferegov_propostas_municipio_id_fkey" FOREIGN KEY (municipio_id) REFERENCES municipios(id) ON DELETE CASCADE
+Triggers:
+    trg_status_change_tgprop AFTER UPDATE ON transferegov_propostas FOR EACH ROW EXECUTE FUNCTION log_status_change()
+Table "public.municipios"
+Column|Type|Collation|Nullable|Default
+id|integer||not null|nextval('municipios_id_seq'::regclass)
+nome|character varying(200)||not null|
+ibge_code|character varying(7)||not null|
+uf|character varying(2)|||
+active|boolean|||true
+created_at|timestamp with time zone|||now()
+fns_code|character varying(6)|||
+cnpj|character varying(14)|||
+corede|character varying(60)|||
+tce_orgao_codigo|character varying(10)|||
+fundo_reconstrucao|boolean|||
+fundo_reconstrucao_obs|text|||
+calamidade_ate|date|||
+Indexes:
+    "municipios_pkey" PRIMARY KEY, btree (id)
+    "municipios_ibge_code_key" UNIQUE CONSTRAINT, btree (ibge_code)
+    "ux_municipios_cnpj" UNIQUE, btree (cnpj) WHERE cnpj IS NOT NULL AND length(cnpj::text) = 14
+Referenced by:
+    TABLE "acordofes_credor" CONSTRAINT "acordofes_credor_municipio_id_fkey" FOREIGN KEY (municipio_id) REFERENCES municipios(id)
+    TABLE "cagec_situacao" CONSTRAINT "cagec_situacao_municipio_id_fkey" FOREIGN KEY (municipio_id) REFERENCES municipios(id)
+    TABLE "cauc_situacao" CONSTRAINT "cauc_situacao_municipio_id_fkey" FOREIGN KEY (municipio_id) REFERENCES municipios(id)
+    TABLE "cofinanciamento_saude" CONSTRAINT "cofinanciamento_saude_municipio_id_fkey" FOREIGN KEY (municipio_id) REFERENCES municipios(id)
+    TABLE "cofre_senhas" CONSTRAINT "cofre_senhas_municipio_id_fkey" FOREIGN KEY (municipio_id) REFERENCES municipios(id)
+    TABLE "consulta_popular_rs" CONSTRAINT "consulta_popular_rs_municipio_id_fkey" FOREIGN KEY (municipio_id) REFERENCES municipios(id)
+    TABLE "contas_irregulares" CONSTRAINT "contas_irregulares_municipio_id_fkey" FOREIGN KEY (municipio_id) REFERENCES municipios(id)
+    TABLE "convenios_estadual" CONSTRAINT "convenios_estadual_municipio_id_fkey" FOREIGN KEY (municipio_id) REFERENCES municipios(id)
+    TABLE "edital_acompanhamento" CONSTRAINT "edital_acompanhamento_municipio_id_fkey" FOREIGN KEY (municipio_id) REFERENCES municipios(id)
+    TABLE "emendas_estaduais" CONSTRAINT "emendas_estaduais_municipio_id_fkey" FOREIGN KEY (municipio_id) REFERENCES municipios(id) ON DELETE CASCADE
+    TABLE "monitoramento_convenios" CONSTRAINT "monitoramento_convenios_municipio_id_fkey" FOREIGN KEY (municipio_id) REFERENCES municipios(id)
+    TABLE "painel_push_subscriptions" CONSTRAINT "painel_push_subscriptions_municipio_id_fkey" FOREIGN KEY (municipio_id) REFERENCES municipios(id)
+    TABLE "repasses_estaduais" CONSTRAINT "repasses_estaduais_municipio_id_fkey" FOREIGN KEY (municipio_id) REFERENCES municipios(id)
+    TABLE "scraper_municipio_coleta" CONSTRAINT "scraper_municipio_coleta_municipio_id_fkey" FOREIGN KEY (municipio_id) REFERENCES municipios(id) ON DELETE CASCADE
+    TABLE "simec_termos" CONSTRAINT "simec_termos_municipio_id_fkey" FOREIGN KEY (municipio_id) REFERENCES municipios(id)
+    TABLE "sismob_obras" CONSTRAINT "sismob_obras_municipio_id_fkey" FOREIGN KEY (municipio_id) REFERENCES municipios(id) ON DELETE CASCADE
+    TABLE "telegram_users" CONSTRAINT "telegram_users_municipio_id_fkey" FOREIGN KEY (municipio_id) REFERENCES municipios(id) ON DELETE SET NULL
+    TABLE "transferegov_pac" CONSTRAINT "transferegov_pac_municipio_id_fkey" FOREIGN KEY (municipio_id) REFERENCES municipios(id)
+    TABLE "transferegov_propostas" CONSTRAINT "transferegov_propostas_municipio_id_fkey" FOREIGN KEY (municipio_id) REFERENCES municipios(id) ON DELETE CASCADE
+    TABLE "transferegov_te" CONSTRAINT "transferegov_te_municipio_id_fkey" FOREIGN KEY (municipio_id) REFERENCES municipios(id)
+    TABLE "transparencia_mg_empenhos" CONSTRAINT "transparencia_mg_empenhos_municipio_id_fkey" FOREIGN KEY (municipio_id) REFERENCES municipios(id) ON DELETE CASCADE
+    TABLE "user_municipios" CONSTRAINT "user_municipios_municipio_id_fkey" FOREIGN KEY (municipio_id) REFERENCES municipios(id) ON DELETE CASCADE
+Table "public.convenios_estadual"
+Column|Type|Collation|Nullable|Default
+id|integer||not null|nextval('convenios_estadual_id_seq'::regclass)
+nr_sigcon|character varying(50)|||
+nr_siafi|character varying(50)|||
+municipio_id|integer|||
+convenente_nome|character varying(500)|||
+orgao_concedente|character varying(500)|||
+objeto|text|||
+objetivo|text|||
+situacao|character varying(200)|||
+tp_instrumento|character varying(100)|||
+valor_concedente|numeric(18,2)|||
+valor_emenda_parlamentar|numeric(18,2)|||
+valor_contrapartida|numeric(18,2)|||
+valor_total|numeric(18,2)|||
+valor_repassado|numeric(18,2)|||
+dt_publicacao|date|||
+dt_vigencia_inicial|date|||
+dt_vigencia_final|date|||
+dt_vigencia_atual|date|||
+ano|integer|||
+etapa_sigcon|character varying(200)|||
+etapa_sigcon_nr|integer|||
+raw_data|jsonb|||
+created_at|timestamp with time zone|||now()
+updated_at|timestamp with time zone|||now()
+fonte|character varying(50)|||'SIGCON-MG'::character varying
+banco|character varying(100)|||
+agencia|character varying(20)|||
+conta_corrente|character varying(50)|||
+saldo_bancario|numeric(18,2)|||
+dt_saldo|date|||
+nr_sei|character varying(100)|||
+dt_empenho|date|||
+dt_desembolso|date|||
+tipo_programa|character varying(100)|||
+nr_indicacao|character varying(50)|||
+resolucao|character varying(100)|||
+nr_proposta|character varying(50)|||
+nr_plano_trabalho|character varying(50)|||
+qt_alteracoes|integer|||0
+dt_assinatura|date|||
+Indexes:
+    "convenios_estadual_pkey" PRIMARY KEY, btree (id)
+    "idx_convenios_est_municipio" btree (municipio_id)
+    "idx_convenios_est_situacao" btree (situacao)
+    "idx_convenios_est_vigencia" btree (dt_vigencia_atual)
+    "ix_convenios_estadual_nr_proposta" btree (nr_proposta) WHERE nr_proposta IS NOT NULL
+    "ix_convenios_estadual_nrsigcon" UNIQUE, btree (nr_sigcon)
+    "ux_convenios_estadual_nr_siafi" UNIQUE, btree (nr_siafi) WHERE nr_siafi IS NOT NULL AND nr_siafi::text <> ''::text
+    "ux_convenios_sigcon_mun_proposta" UNIQUE, btree (municipio_id, nr_proposta) WHERE fonte::text = 'SIGCON-MG'::text AND nr_proposta IS NOT NULL AND btrim(nr_proposta::text) <> ''::text
+Foreign-key constraints:
+    "convenios_estadual_municipio_id_fkey" FOREIGN KEY (municipio_id) REFERENCES municipios(id)
+Referenced by:
+    TABLE "monitoramento_convenios" CONSTRAINT "monitoramento_convenios_convenio_id_fkey" FOREIGN KEY (convenio_id) REFERENCES convenios_estadual(id)
+    TABLE "transparencia_mg_empenhos" CONSTRAINT "transparencia_mg_empenhos_convenio_id_fkey" FOREIGN KEY (convenio_id) REFERENCES convenios_estadual(id) ON DELETE SET NULL
+Triggers:
+    trg_status_change_conv AFTER UPDATE ON convenios_estadual FOR EACH ROW EXECUTE FUNCTION log_status_change()
+Table "public.cagec_situacao"
+Column|Type|Collation|Nullable|Default
+municipio_id|integer||not null|
+nome|text|||
+uf|character varying(2)|||
+cnpj|character varying(20)||not null|
+situacao|text|||
+regular|boolean|||
+validade|date|||
+itens|jsonb|||
+pendencias|integer|||0
+pendencias_codigos|text[]|||
+data_pesquisa|date|||
+atualizado_em|timestamp with time zone|||now()
+tipo|text|||
+principal|boolean|||false
+numero_cadastro|text|||
+crc_em|date|||
+crc_erro|text|||
+fonte|character varying(40)|||
+raw_data|jsonb|||
+itens_negativos|jsonb|||
+negativos_em|date|||
+negativos_erro|text|||
+Indexes:
+    "cagec_situacao_pkey" PRIMARY KEY, btree (municipio_id, cnpj)
+    "cagec_situacao_municipio_idx" btree (municipio_id)
+    "cagec_situacao_principal_uniq" UNIQUE, btree (municipio_id) WHERE principal
+    "ix_cagec_situacao_fonte" btree (fonte)
+Foreign-key constraints:
+    "cagec_situacao_municipio_id_fkey" FOREIGN KEY (municipio_id) REFERENCES municipios(id)
+Table "public.cauc_situacao"
+Column|Type|Collation|Nullable|Default
+municipio_id|integer||not null|
+ibge|character varying(7)|||
+nome|text|||
+uf|character varying(2)|||
+cod_siafi|character varying(10)|||
+populacao|integer|||
+data_pesquisa|date|||
+itens|jsonb|||
+pendencias|integer|||0
+pendencias_codigos|text[]|||
+regular|boolean|||
+atualizado_em|timestamp with time zone|||now()
+Indexes:
+    "cauc_situacao_pkey" PRIMARY KEY, btree (municipio_id)
+Foreign-key constraints:
+    "cauc_situacao_municipio_id_fkey" FOREIGN KEY (municipio_id) REFERENCES municipios(id)
+Table "public.emendas_estaduais"
+Column|Type|Collation|Nullable|Default
+id|integer||not null|nextval('emendas_estaduais_id_seq'::regclass)
+municipio_id|integer|||
+nr_indicacao|character varying(50)|||
+nome_responsavel|character varying(300)|||
+tipo_indicacao|character varying(100)|||
+uo_codigo|character varying(20)|||
+uo_sigla|character varying(50)|||
+cnpj_beneficiario|character varying(20)|||
+beneficiario|character varying(300)|||
+grupo_despesa|character varying(200)|||
+tipo_atendimento|character varying(300)|||
+valor_indicacao|numeric(15,2)|||
+status_indicacao|character varying(50)|||
+ano|integer|||
+parlamentar_id|integer|||
+raw_data|jsonb|||
+created_at|timestamp with time zone|||now()
+updated_at|timestamp with time zone|||now()
+Indexes:
+    "emendas_estaduais_pkey" PRIMARY KEY, btree (id)
+    "ix_emendas_estaduais_ano" btree (ano)
+    "ix_emendas_estaduais_mun" btree (municipio_id)
+    "ix_emendas_estaduais_parl" btree (parlamentar_id)
+    "uq_emendas_estaduais_mun_nr" UNIQUE CONSTRAINT, btree (municipio_id, nr_indicacao)
+Foreign-key constraints:
+    "emendas_estaduais_municipio_id_fkey" FOREIGN KEY (municipio_id) REFERENCES municipios(id) ON DELETE CASCADE
+    "emendas_estaduais_parlamentar_id_fkey" FOREIGN KEY (parlamentar_id) REFERENCES parlamentares(id) ON DELETE SET NULL
+Table "public.rm_relatorios"
+Column|Type|Collation|Nullable|Default
+id|integer||not null|nextval('rm_relatorios_id_seq'::regclass)
+municipio_id|integer||not null|
+data_referencia|date||not null|
+cidade_emissao|text||not null|''::text
+titulo|text|||
+rodape|text||not null|''::text
+status|text||not null|'rascunho'::text
+conteudo|jsonb||not null|'{"partes": []}'::jsonb
+criado_por|integer|||
+created_at|timestamp with time zone||not null|now()
+updated_at|timestamp with time zone||not null|now()
+escopo|character varying(12)||not null|'anual'::character varying
+anos|integer[]||not null|'{}'::integer[]
+fontes|text[]||not null|'{}'::text[]
+email|text|||
+estagio|text||not null|''::text
+Indexes:
+    "rm_relatorios_pkey" PRIMARY KEY, btree (id)
+    "ix_rm_mun_data" btree (municipio_id, data_referencia DESC)
+    "ux_rm_mun_anos_fontes" UNIQUE, btree (municipio_id, anos, fontes)
+    "ux_rm_mun_anos_fontes_estagio" UNIQUE, btree (municipio_id, anos, fontes, estagio)
+Table "public.audit_log"
+Column|Type|Collation|Nullable|Default
+id|integer||not null|nextval('audit_log_id_seq'::regclass)
+user_id|integer|||
+user_email|character varying(255)|||
+action|character varying(100)||not null|
+target_type|character varying(50)|||
+target_id|character varying(100)|||
+ip|character varying(64)|||
+user_agent|character varying(500)|||
+details|jsonb|||
+created_at|timestamp with time zone|||now()
+municipio_id|integer|||
+sessao_id|character varying(64)|||
+sessao_inicio|timestamp with time zone|||
+resultado|character varying(16)|||
+http_metodo|character varying(10)|||
+http_path|character varying(300)|||
+alvo_nome|character varying(300)|||
+usuario_nome|character varying(200)|||
+valor_antes|jsonb|||
+valor_depois|jsonb|||
+hash_anterior|character(64)|||
+hash|character(64)|||
+Indexes:
+    "audit_log_pkey" PRIMARY KEY, btree (id)
+    "idx_audit_action" btree (action)
+    "idx_audit_action_created" btree (action, created_at DESC)
+    "idx_audit_created" btree (created_at)
+    "idx_audit_email" btree (user_email)
+    "idx_audit_municipio_created" btree (municipio_id, created_at DESC)
+    "idx_audit_sessao" btree (sessao_id) WHERE sessao_id IS NOT NULL
+    "idx_audit_user" btree (user_id)
+    "ix_audit_log_sem_selo" btree (id) WHERE hash IS NULL
+Check constraints:
+    "ck_audit_resultado" CHECK (resultado IS NULL OR (resultado::text = ANY (ARRAY['sucesso'::character varying, 'negado'::character varying, 'erro'::character varying]::text[])))
+Triggers:
+    trg_audit_log_encadear BEFORE INSERT ON audit_log FOR EACH ROW EXECUTE FUNCTION audit_log_encadear()
+Triggers firing always:
+    trg_audit_log_imutavel BEFORE DELETE OR UPDATE ON audit_log FOR EACH ROW EXECUTE FUNCTION audit_log_imutavel()
+    trg_audit_log_truncate BEFORE TRUNCATE ON audit_log FOR EACH STATEMENT EXECUTE FUNCTION audit_log_imutavel_truncate()
+Table "public.simec_termos"
+Column|Type|Collation|Nullable|Default
+id|integer||not null|nextval('simec_termos_id_seq'::regclass)
+municipio_id|integer||not null|
+processo|character varying(40)|||
+nr_documento|character varying(40)|||
+tipo_documento|character varying(200)|||
+tipo_objeto|character varying(120)|||
+dt_validacao|date|||
+periodo_pagamento|text|||
+vigencia_txt|text|||
+dt_vigencia|date|||
+valor_termo|numeric(16,2)|||
+quantidade_obra|character varying(20)|||
+raw_data|jsonb|||
+created_at|timestamp with time zone|||now()
+updated_at|timestamp with time zone|||now()
+Indexes:
+    "simec_termos_pkey" PRIMARY KEY, btree (id)
+    "idx_simec_termos_municipio" btree (municipio_id)
+    "ux_simec_termos_chave" UNIQUE, btree (municipio_id, COALESCE(processo, ''::character varying), COALESCE(nr_documento, ''::character varying))
+Foreign-key constraints:
+    "simec_termos_municipio_id_fkey" FOREIGN KEY (municipio_id) REFERENCES municipios(id)
+column_name|data_type|character_maximum_length
+id|integer|
+id|integer|
+municipio_id|integer|
+municipio_id|integer|
+sistema|character varying|200
+sistema|character varying|200
+url|text|
+url|text|
+usuario|character varying|200
+usuario|character varying|200
+observacao|text|
+observacao|text|
+categoria|character varying|100
+categoria|character varying|100
+atualizado_por_id|integer|
+atualizado_por_id|integer|
+created_at|timestamp with time zone|
+created_at|timestamp with time zone|
+updated_at|timestamp with time zone|
+updated_at|timestamp with time zone|
+automation_key|character varying|50
+automation_key|character varying|50
+(22 rows)
+=== Q01: carteira ===
+uf|active|n
+MG|f|18
+MG|t|42
+(2 rows)
+id|nome|uf|ibge_code|tem_cnpj|tem_fns|pos_alfa
+8|Arapuá|MG|3103801|t|f|1
+1|Araújos|MG|3103900|t|f|2
+43|Arcos|MG|3104205|t|f|3
+3|Bom Despacho|MG|3107406|t|f|4
+11|Bonfim|MG|3108107|t|f|5
+44|Camacho|MG|3110400|t|f|6
+45|Capela Nova|MG|3112208|t|f|7
+46|Caranaíba|MG|3113107|t|f|8
+13|Carandaí|MG|3113206|t|f|9
+47|Carmópolis de Minas|MG|3114501|t|f|10
+48|Casa Grande|MG|3114907|t|f|11
+49|Cláudio|MG|3116605|t|f|12
+14|Conceição do Pará|MG|3117603|t|f|13
+15|Córrego Danta|MG|3119807|t|f|14
+16|Desterro de Entre Rios|MG|3121407|t|f|15
+50|Estrela do Indaiá|MG|3124708|t|f|16
+51|Heliodora|MG|3129202|t|f|17
+52|Ibitiúra de Minas|MG|3129905|t|f|18
+53|Igarapé|MG|3130101|t|f|19
+18|Igaratinga|MG|3130200|t|f|20
+54|Iguatama|MG|3130309|t|f|21
+55|Itaguara|MG|3132206|t|f|22
+20|Japaraíba|MG|3135308|t|f|23
+22|Lagoa Dourada|MG|3137403|t|f|24
+24|Martinho Campos|MG|3140506|t|f|25
+25|Moema|MG|3142403|t|f|26
+56|Nova Lima|MG|3144805|t|f|27
+2|Nova Serrana|MG|3145208|t|f|28
+57|Oliveira Fortes|MG|3145703|t|f|29
+58|Papagaios|MG|3146909|t|f|30
+59|Passa Tempo|MG|3147709|t|f|31
+40|Pequi|MG|3149606|t|f|32
+7|Perdigão|MG|3149705|t|f|33
+6|Piracema|MG|3150604|t|f|34
+60|Santo Antônio do Monte|MG|3160405|t|f|35
+61|Senhora dos Remédios|MG|3166204|t|f|36
+34|São Brás do Suaçuí|MG|3160900|t|f|37
+35|São Francisco de Paula|MG|3161205|t|f|38
+36|São Sebastião do Oeste|MG|3164605|t|f|39
+4|São Tiago|MG|3165008|t|f|40
+62|Tocos do Moji|MG|3169059|t|f|41
+5|Toledo|MG|3169109|t|f|42
+(42 rows)
+id|nome|uf|ibge_code
+9|Bela Vista de Minas|MG|3106002
+10|Berizal|MG|3106655
+12|Cajuri|MG|3110202
+19|Espinosa|MG|3124302
+17|Gameleiras|MG|3127339
+21|Jeceaba|MG|3135407
+23|Leandro Ferreira|MG|3138302
+26|Morada Nova de Minas|MG|3143500
+27|Novo Cruzeiro|MG|3145307
+28|Pains|MG|3146503
+29|Pedra do Anta|MG|3148806
+30|Rio Doce|MG|3155009
+31|Santa Bárbara do Tugúrio|MG|3157302
+32|Santa Cruz do Escalvado|MG|3157401
+33|Santa Helena de Minas|MG|3157658
+37|Senador Amaral|MG|3165578
+38|Setubinha|MG|3165552
+39|Teixeiras|MG|3168507
+(18 rows)
+fonte|n|municipios
+FNS|1608|42
+SIGCON-MG|798|22
+(2 rows)
+=== Q02: inventario ingestion_log ===
+source|n|primeira_brt|ultima_brt
+acordofes|351|2026-07-04|2026-08-29 22:25
+almg|15|2026-05-11|2026-05-15 15:19
+cagec|74|2026-08-06|2026-08-29 19:58
+camara_deputados|70|2026-05-11|2026-05-16 02:15
+cauc|513|2026-07-04|2026-08-29 22:25
+ceis_api|203|2026-05-11|2026-05-16 02:16
+cnes|214|2026-05-11|2026-05-16 02:16
+codevasf|150|2026-05-11|2026-05-16 03:35
+editais_pncp|172|2026-04-14|2026-05-16 10:16
+emendas_estaduais|120|2026-04-14|2026-05-15 10:55
+emendas_federais|160|2026-04-14|2026-05-16 10:13
+fns|41|2026-07-21|2026-08-29 02:33
+oportunidades|26|2026-05-12|2026-05-16 00:57
+portal_transparencia|157|2026-05-11|2026-05-16 10:16
+senado|215|2026-05-11|2026-05-16 02:15
+siconv_convenio_backfill|69|2026-06-28|2026-08-29 03:51
+siconv_federal|27|2026-07-03|2026-08-29 10:03
+sigcon|3|2026-04-13|2026-04-14 08:09
+sigcon_ckan_backfill|1072|2026-06-15|2026-08-29 22:25
+sigcon_full|48|2026-04-14|2026-05-17 10:09
+sigcon_real|1|2026-04-13|2026-04-13 21:37
+sigcon_scraper|1086|2026-05-15|2026-08-29 20:45
+simec_par|354|2026-06-01|2026-08-29 22:25
+simec_termos|12|2026-08-18|2026-08-29 03:12
+sismob|30|2026-08-02|2026-08-29 11:00
+transferegov|48|2026-04-13|2026-05-16 10:13
+transferegov_lote|261|2026-08-08|2026-08-29 21:23
+transferegov_opendata|63|2026-07-23|2026-08-29 03:51
+transferegov_pac|36|2026-07-23|2026-08-29 04:14
+transferegov_te|42|2026-08-17|2026-08-29 00:40
+transferegov_voluntarias|87|2026-05-25|2026-08-29 04:13
+tse|32|2026-04-13|2026-05-11 20:37
+(32 rows)
+source|status|n
+acordofes|success|299
+cagec|erro|10
+cagec|ok|49
+cagec|parcial|15
+cauc|success|412
+fns|success|31
+siconv_convenio_backfill|success|39
+siconv_federal|success|25
+sigcon_ckan_backfill|success|257
+sigcon_scraper|success|233
+simec_par|success|287
+simec_termos|success|12
+sismob|success|30
+transferegov_lote|parcial|5
+transferegov_lote|success|256
+transferegov_opendata|success|55
+transferegov_pac|success|29
+transferegov_te|partial|25
+transferegov_te|success|17
+transferegov_voluntarias|success|29
+(20 rows)
+source|n|sem_finished|running|dur_media_s|dur_max_s
+acordofes|299|0|0|0|0.000000
+cagec|74|0|0|0|0.000000
+cauc|412|0|0|0|0.000000
+fns|31|0|0|0|0.000000
+siconv_convenio_backfill|39|0|0|0|0.000000
+siconv_federal|25|0|0|0|0.000000
+sigcon_ckan_backfill|257|0|0|0|0.000000
+sigcon_scraper|233|0|0|0|0.000000
+simec_par|287|0|0|0|0.000000
+simec_termos|12|0|0|0|0.000000
+sismob|30|0|0|0|0.000000
+transferegov_lote|261|0|0|0|0.000000
+transferegov_opendata|55|0|0|0|0.000000
+transferegov_pac|29|0|0|0|0.000000
+transferegov_te|42|0|0|0|0.000000
+transferegov_voluntarias|29|0|0|0|0.000000
+(16 rows)
