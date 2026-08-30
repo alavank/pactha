@@ -24,3 +24,8 @@ out/
 
 # Config local do Claude Code (nao versionar - contem allowlist/segredos)
 .claude/settings.local.json
+
+# Dicionario oficial dos dados abertos do TransfereGov (host antigo desligado em 31/08/2026):
+# versionado de proposito, ver docs/dados-abertos-transferegov/README.md
+!docs/dados-abertos-transferegov/modelo_dados_siconv.zip
+!docs/dados-abertos-transferegov/historico_de_versoes.pdf
