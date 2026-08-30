@@ -1826,7 +1826,11 @@ async def _extrai_obras(page, id_proposta: str) -> dict | None:
                 "situacao": s.get("situacao"), "regime_execucao": s.get("regimeExecucao"),
                 "valor": s.get("valorSubmeta"), "valor_realizado": s.get("valorRealizadoAcumulado"),
             } for s in (cont.get("submetas") or [])],
-            "contrato": None, "arts": [],
+            # ⚠️ None = NAO LI; [] so quando a captura RESPONDEU e nao havia
+            # ART. Ver o gemeo em transferegov_http.py — os DOIS leitores
+            # gravavam [] nos dois casos, e o RM transformava a falha de
+            # leitura numa ACUSACAO ao municipio.
+            "contrato": None, "arts": None,
         }
         if cont.get("tipo") == "C" and idc:
             cd = capt.get(f"/contratos/{idc}")
@@ -1854,14 +1858,15 @@ async def _extrai_obras(page, id_proposta: str) -> dict | None:
                     "dt_fim_vigencia": cdd.get("dtFimVigencia"),
                 }
             ar = capt.get(f"/contratos/{idc}/arts/") or capt.get(f"/contratos/{idc}/arts")
-            ard = (ar or {}).get("data") if isinstance(ar, dict) else None
-            for a in (ard or []):
-                lote["arts"].append({
+            # SO promove para lista quando a captura respondeu (dict). Sem
+            # resposta, `arts` fica None e o relatorio CALA em vez de acusar.
+            if isinstance(ar, dict):
+                lote["arts"] = [{
                     "tipo": a.get("tipo"), "numero": a.get("numeroArt") or a.get("numero"),
                     "dt_emissao": a.get("dtEmissao"),
                     "responsavel_tecnico": a.get("nomeResponsavelTecnico") or a.get("responsavelTecnico"),
                     "submetas": a.get("submetas"),
-                })
+                } for a in (ar.get("data") or [])]
         lotes.append(lote)
 
     if not lotes:

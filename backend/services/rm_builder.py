@@ -140,12 +140,28 @@ def _obra_sem_art(obras) -> bool:
     a Parte tem de sair da mesma condicao.
 
     ⚠️ `{}` (instrumento sem medicao — o portal responde 412) e `None` (nao
-    consegui ler) devolvem False. So `lotes` NAO VAZIO autoriza afirmar."""
+    consegui ler) devolvem False. So `lotes` NAO VAZIO autoriza afirmar.
+
+    ⚠️ E TODO LOTE PRECISA TER TIDO A LEITURA RESPONDIDA. `arts` None significa
+    que a chamada das ARTs nao respondeu naquele lote (portal fora, sessao
+    expirada, 412); [] significa que respondeu e nao ha ART. Antes o coletor
+    gravava [] nos DOIS casos, e esta funcao transformava a falha de leitura numa
+    ACUSACAO ao municipio — "cumprir a exigencia de ART/RRT e demanda do
+    MUNICIPIO" — num documento entregue ao prefeito, sem nada indicando que a
+    leitura nao tinha acontecido.
+
+    Basta UM lote nao lido para calar: com dois lotes, um lido e vazio e outro
+    nao lido, afirmar "nao tem ART" seria apostar que o nao lido tambem esta
+    vazio. ⚠️ Linha ANTIGA no banco tem [] das duas origens e e indistinguivel —
+    ela so passa a valer quando a obra for recoletada."""
     d = _jsonb(obras)
     if not isinstance(d, dict):
         return False
     lotes = d.get("lotes") if isinstance(d.get("lotes"), list) else []
     if not lotes:
+        return False
+    if any(not isinstance((l or {}).get("arts"), list)
+           for l in lotes if isinstance(l, dict)):
         return False
     return not any((l or {}).get("arts") for l in lotes if isinstance(l, dict))
 
