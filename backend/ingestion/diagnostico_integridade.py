@@ -13,7 +13,14 @@ nao escala, perde a riqueza da consulta e, pior, ja me fez ler LOG VELHO como
 se fosse resultado novo mais de uma vez. O mecanismo certo e este: o SQL mora no
 repositorio, versionado e revisavel, e a task do Coolify vira um comando curto.
 
-    flock -n -E 99 /tmp/scraper.lock python -u scripts/diagnostico_integridade.py
+    flock -n -E 99 /tmp/scraper.lock python -u ingestion/diagnostico_integridade.py
+
+⚠️ MORA EM `ingestion/` E NAO EM `scripts/`, e isso NAO e arrumacao: o
+`Dockerfile.scraper` copia so ingestion/, models/, services/, schemas/ e dois
+arquivos soltos. Um verificador em `scripts/` simplesmente NAO EXISTE dentro do
+container — a task rodaria e diria 'can't open file'. E a companhia certa: e
+onde ja vivem `watchdog_coleta.py` e os `run_*_cron.py`, que sao operacionais
+pelo mesmo motivo.
 
 ⚠️ SO LEITURA. Nenhuma consulta aqui escreve. E de proposito: um verificador que
 tambem conserta nao serve para AUDITAR o conserto.
