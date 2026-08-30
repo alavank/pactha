@@ -363,6 +363,15 @@ class TgHttpEnrich:
             ("Valor de Repasse", ("Valor de Repasse da União", "Valor de Repasse", "Valor do Repasse")),
             ("Valor de Contrapartida", ("Valor da Contrapartida", "Valor de Contrapartida", "Valor Contrapartida")),
         ):
+            # ⚠️ `chave not in out` — a mesma guarda que o `grab` de texto tem
+            # logo acima (linha ~354) e que faltava SO aqui. O laco de `set_kv`
+            # ja leu os pares rotulo|valor das TABELAS, que e a leitura
+            # confiavel; sem esta guarda o regex de texto, que varre a PAGINA
+            # INTEIRA e pega a ocorrencia mais a esquerda, SOBRESCREVIA o par
+            # certo. Bancada: uma frase "Consulta por Valor Global — a partir de
+            # R$ 1.000,00" antes da tabela fazia o Valor Global sair R$ 1.000,00.
+            if chave in out:
+                continue
             for lbl in variantes:
                 v = grab_money(lbl)
                 if v:
