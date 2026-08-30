@@ -1095,7 +1095,16 @@ class TgHttpEnrich:
                     "situacao": s.get("situacao"), "regime_execucao": s.get("regimeExecucao"),
                     "valor": s.get("valorSubmeta"), "valor_realizado": s.get("valorRealizadoAcumulado"),
                 } for s in (cont.get("submetas") or [])],
-                "contrato": None, "arts": [],
+                # ⚠️ `arts` NASCE None, e nao []. None = NAO CONSEGUI LER; []
+                # so e gravado quando a chamada RESPONDEU e nao havia ART.
+                #
+                # A diferenca vira FRASE NO RELATORIO: `_obra_sem_art` transforma
+                # "sem ART" em "demanda do MUNICIPIO" e move a obra de Parte. Com
+                # o default [], uma leitura que FALHOU (portal fora, sessao
+                # expirada, 412) virava uma ACUSACAO ao municipio num documento
+                # entregue ao prefeito — e nada no papel dizia que a leitura nao
+                # tinha acontecido.
+                "contrato": None, "arts": None,
                 # Abas da tela de Dados Gerais do contrato (medicao): Responsável
                 # Técnico, Documentação Complementar e as medições. Listas vazias
                 # e contagens None quando o contrato não é do tipo "C" (só ele tem
@@ -1128,14 +1137,18 @@ class TgHttpEnrich:
                         "dt_fim_vigencia": cdd.get("dtFimVigencia"),
                     }
                 ar = _med(f"/contratos/{idc}/arts/")
-                ard = (ar or {}).get("data") if isinstance(ar, dict) else None
-                for a in (ard or []):
-                    lote["arts"].append({
+                # ⚠️ SO PROMOVE PARA LISTA QUANDO A CHAMADA RESPONDEU. `_med`
+                # devolve None quando nao houve JSON (portal fora, HTML de login,
+                # sessao expirada) — e esse None tem de CHEGAR ao relatorio como
+                # "nao sei", nao como "nao tem". Antes, o `for` sobre `(ard or [])`
+                # simplesmente nao rodava e o `[]` do default virava a afirmacao.
+                if isinstance(ar, dict):
+                    lote["arts"] = [{
                         "tipo": a.get("tipo"), "numero": a.get("numeroArt") or a.get("numero"),
                         "dt_emissao": a.get("dtEmissao"),
                         "responsavel_tecnico": a.get("nomeResponsavelTecnico") or a.get("responsavelTecnico"),
                         "submetas": a.get("submetas"),
-                    })
+                    } for a in (ar.get("data") or [])]
 
                 # ---- RESPONSAVEL TECNICO, DOCUMENTOS COMPLEMENTARES, MEDICOES ----
                 # Os tres caminhos NAO foram adivinhados: saem do bundle publico da
