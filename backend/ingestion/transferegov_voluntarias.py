@@ -88,6 +88,51 @@ _PAGINACAO_INCOMPLETA: dict = {}
 # devolve uma lista e mudar a assinatura quebraria os 3 call sites.
 _SCRAPE_STATE: dict = {"parcial": False, "restantes": 0}
 
+# TERCEIRO EIXO DO STATUS DA RODADA: a fatia atras do LOGIN gov.br.
+#
+# ⚠️ O status era montado a partir de DUAS dimensoes apenas — municipio falhou?
+# paginacao veio curta? — e a terceira, "a fatia gated nao respondeu", nao tinha
+# como virar 'parcial'. Consequencia MEDIDA (auditoria + verificacao,
+# 29/08/2026): com a sessao gov.br morta, as notas de empenho, o projeto basico,
+# a licitacao e o historico param de atualizar, os leitores devolvem None
+# CORRETAMENTE, o COALESCE preserva o dado velho CORRETAMENTE — e a rodada e
+# gravada como 'success'. O apagao fica invisivel para o monitor de frescor e
+# para o watchdog, que leem justamente esta linha.
+#
+# Contador de MODULO no mesmo molde de `_PAGINACAO_INCOMPLETA` e `_SCRAPE_STATE`:
+# nao muda assinatura de funcao nenhuma, que e o que torna isto barato.
+_GATED: dict = {"tentadas": 0, "sem_retorno": 0}
+
+
+def _gated_conta(tentou: bool, teve_retorno: bool) -> None:
+    """Registra UMA leitura atras do login. `tentou=False` nao conta — tenant com
+    TG_HTTP_ENRICH/TG_NES desligado tem de ficar em ZERO, e nao virar 'parcial'
+    por nunca ter perguntado."""
+    if not tentou:
+        return
+    _GATED["tentadas"] += 1
+    if not teve_retorno:
+        _GATED["sem_retorno"] += 1
+
+
+def _gated_zera() -> None:
+    _GATED["tentadas"] = 0
+    _GATED["sem_retorno"] = 0
+
+
+def _gated_frase() -> str | None:
+    """A frase para o `error_message` da rodada, ou None quando nao ha o que
+    dizer. METADE das leituras sem retorno e o limiar: uma ou outra falha e
+    ruido do portal; metade e sessao fria.
+
+    ⚠️ `tentadas` ZERO devolve None — nunca uma divisao solta. Sem esta guarda,
+    um tenant que nao le a fatia gated nasceria 'parcial' para sempre."""
+    t, s = _GATED["tentadas"], _GATED["sem_retorno"]
+    if not t or s * 2 < t:
+        return None
+    return (f"sessao gov.br fria: {s}/{t} leituras atras do login sem retorno "
+            f"(dado gated NAO atualizou nesta rodada)")
+
 
 def _hist_orcamento() -> dict:
     """Contador de orcamento da EXECUCAO (lazy, a partir do env na 1a chamada)."""
@@ -947,6 +992,8 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
                     if _hx:
                         # lista COM situacao por licitacao (URL direta server-rendered)
                         _lst = await asyncio.to_thread(_hx.processo_execucao_lista, _idp)
+                        # 3o eixo do status: None = a fatia atras do login nao respondeu.
+                        _gated_conta(True, _lst is not None)
                         if _lst is not None:
                             prop["processo_execucao_qtd"] = len(_lst)
                             prop["processo_execucao"] = _lst
@@ -978,6 +1025,7 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
                                  or prop["numero_proposta"] in _com_clausula):
                 try:
                     _pb = await asyncio.to_thread(_hx.projeto_basico, _idp)
+                    _gated_conta(True, _pb is not None)
                     if _pb is not None:
                         prop["projeto_basico"] = _pb
                     else:
@@ -1003,6 +1051,7 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
                     and (os.getenv("TG_NES", "0") or "0").strip() == "1"):
                 try:
                     _ne = await asyncio.to_thread(_hx.notas_empenho, _idp)
+                    _gated_conta(True, _ne is not None)
                     # ⚠️ ESTE BLOCO JA AFIRMOU O CONTRARIO, com carimbo de
                     # "medido", e a versao antiga mandava quem investigasse atras
                     # de ViewState. NAO ERA ISSO. O que existia era um defeito de
@@ -2339,6 +2388,7 @@ async def run():
     _ok_diario = 0
     _falhas_diario: list = []
     _subs_diario: list = []
+    _gated_zera()          # contador de MODULO: zera a cada rodada
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True, args=["--ignore-certificate-errors", "--no-sandbox", "--disable-dev-shm-usage"])
         ctx_guest = None
@@ -2437,13 +2487,18 @@ async def run():
     # 'success' no monitor de frescor, que le exatamente esta fonte.
     try:
         import psycopg2
+        _gated_d = _gated_frase()
         if _ok_diario == 0 and _falhas_diario:
             _st_d = "erro"
-        elif _falhas_diario or _subs_diario:
+        elif _falhas_diario or _subs_diario or _gated_d:
+            # ⚠️ NUNCA rebaixa 'erro' para 'parcial': o eixo gated so ACRESCENTA
+            # motivo, e o ramo do erro vem antes de proposito.
             _st_d = "parcial"
         else:
             _st_d = "success"
         _partes_d = []
+        if _gated_d:
+            _partes_d.append(_gated_d)
         if _falhas_diario:
             _partes_d.append(f"{len(_falhas_diario)} municipio(s) com erro: {', '.join(_falhas_diario[:5])}")
         if _subs_diario:
@@ -2561,6 +2616,7 @@ async def run_proximos(n: int | None = None, deadline_s: int | None = None):
     ok_n = 0
     falhas_mun: list = []
     subcoletas: list = []
+    _gated_zera()          # contador de MODULO: zera a cada rodada
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True,
                                           args=["--ignore-certificate-errors", "--no-sandbox", "--disable-dev-shm-usage"])
@@ -2632,13 +2688,16 @@ async def run_proximos(n: int | None = None, deadline_s: int | None = None):
     try:
         import psycopg2
         _u = os.getenv("DATABASE_URL_SYNC", "").replace("&channel_binding=require", "").replace("?channel_binding=require", "")
+        _gated_l = _gated_frase()
         if ok_n == 0 and falhas_mun:
             _st = "erro"
-        elif falhas_mun or subcoletas:
+        elif falhas_mun or subcoletas or _gated_l:
             _st = "parcial"
         else:
             _st = "success"
         _partes = []
+        if _gated_l:
+            _partes.append(_gated_l)
         if falhas_mun:
             _partes.append(f"{len(falhas_mun)} municipio(s) com erro: {', '.join(falhas_mun[:5])}")
         if subcoletas:
