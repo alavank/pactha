@@ -1,0 +1,558 @@
+=== Q03: frescor por fonte vs catalogo ===
+source|frescor_h|ult_sucesso_brt|h_desde_sucesso|atrasada|h_desde_suc_ou_parcial|ult_qualquer_brt|ultimo_status|ult_proc|ult_ins|ok30|parcial30|erro30|outro30|total30|ult_msg
+acordofes|12|08-29 22:25|0.1|nao|0.1|08-29 22:25|success|0|1368|299|0|0|0|299|
+cagec|30|08-29 13:57|8.6|nao|2.6|08-29 19:58|parcial|0|10|49|15|10|0|74|
+cauc|12|08-29 22:25|0.1|nao|0.1|08-29 22:25|success|0|60|412|0|0|0|412|
+fns|30|08-29 02:33|20.0|nao|20.0|08-29 02:33|success|0|1608|31|0|0|0|31|
+siconv_convenio_backfill|30|08-29 03:51|18.7|nao|18.7|08-29 03:51|success|0|1115|39|0|0|0|39|
+sigcon_scraper|18|08-29 20:45|1.8|nao|1.8|08-29 20:45|success|1|0|233|0|0|0|233|
+simec_par|12|08-29 22:25|0.1|nao|0.1|08-29 22:25|success|0|532|287|0|0|0|287|
+simec_termos|30|08-29 03:12|19.3|nao|19.3|08-29 03:12|success|0|222|12|0|0|0|12|
+sismob|30|08-29 11:00|11.5|nao|11.5|08-29 11:00|success|0|141|30|0|0|0|30|
+transferegov_lote|6|08-29 21:23|1.1|nao|1.1|08-29 21:23|success|4|221|256|5|0|0|261|
+transferegov_opendata|30|08-29 03:51|18.7|nao|18.7|08-29 03:51|success|0|3192|55|0|0|0|55|
+transferegov_pac|30|08-29 04:14|18.3|nao|18.3|08-29 04:14|success|0|555|29|0|0|0|29|
+transferegov_voluntarias|30|08-29 04:13|18.3|nao|18.3|08-29 04:13|success|42|3199|29|0|0|0|29|
+almg||05-15 15:19|2551.2|sem-catalogo|2551.2|05-15 15:19|success|0|77|0|0|0|0|0|
+camara_deputados||05-16 02:15|2540.3|sem-catalogo|2540.3|05-16 02:15|success|0|0|0|0|0|0|0|
+ceis_api||05-16 02:16|2540.3|sem-catalogo|2540.3|05-16 02:16|success|0|0|0|0|0|0|0|
+cnes||05-16 02:16|2540.3|sem-catalogo|2540.3|05-16 02:16|success|0|120|0|0|0|0|0|
+codevasf||05-16 03:35|2538.9|sem-catalogo|2538.9|05-16 03:35|success|0|0|0|0|0|0|0|
+editais_pncp||05-16 10:16|2532.2|sem-catalogo|2532.2|05-16 10:16|success|0|43|0|0|0|0|0|
+emendas_estaduais||05-15 10:55|2555.6|sem-catalogo|2555.6|05-15 10:55|success|0|0|0|0|0|0|0|
+emendas_federais||05-16 10:13|2532.3|sem-catalogo|2532.3|05-16 10:13|success|0|97|0|0|0|0|0|
+oportunidades||05-16 00:57|2541.6|sem-catalogo|2541.6|05-16 00:57|success|0|23|0|0|0|0|0|
+portal_transparencia||05-16 10:16|2532.2|sem-catalogo|2532.2|05-16 10:16|success|0|0|0|0|0|0|0|
+senado||05-16 02:15|2540.3|sem-catalogo|2540.3|05-16 02:15|success|0|3|0|0|0|0|0|
+siconv_federal||08-29 10:03|12.5|sem-catalogo|12.5|08-29 10:03|success|0|1156786|25|0|0|0|25|
+sigcon||04-14 08:09|3302.4|sem-catalogo|3302.4|04-14 08:09|success|50|50|0|0|0|0|0|
+sigcon_ckan_backfill||08-29 22:25|0.1|sem-catalogo|0.1|08-29 22:25|success|0|458|257|0|0|0|257|
+sigcon_full||05-17 10:09|2508.4|sem-catalogo|2508.4|05-17 10:09|success|0|0|0|0|0|0|0|
+sigcon_real||04-13 21:37|3312.9|sem-catalogo|3312.9|04-13 21:37|success|343|343|0|0|0|0|0|
+transferegov||05-16 10:13|2532.3|sem-catalogo|2532.3|05-16 10:13|success|195|195|0|0|0|0|0|
+transferegov_te||08-29 00:40|21.9|sem-catalogo|21.9|08-29 00:40|success|0|31|17|25|0|0|42|
+tse||05-11 20:37|2641.9|sem-catalogo|2641.9|05-11 20:37|success|2795|2795|0|0|0|0|0|
+(32 rows)
+=== Q04: serie diaria 30d ===
+source|dia_brt|rodadas|ok|parcial|erro|processed|ins_upd|ins_upd_max_rodada
+acordofes|2026-07-31|4|4|0|0|0|5472|1368
+acordofes|2026-08-01|4|4|0|0|0|5472|1368
+acordofes|2026-08-02|4|4|0|0|0|5472|1368
+acordofes|2026-08-03|4|4|0|0|0|5472|1368
+acordofes|2026-08-04|4|4|0|0|0|5472|1368
+acordofes|2026-08-05|4|4|0|0|0|5472|1368
+acordofes|2026-08-06|4|4|0|0|0|5472|1368
+acordofes|2026-08-07|4|4|0|0|0|5472|1368
+acordofes|2026-08-08|6|6|0|0|0|8208|1368
+acordofes|2026-08-09|12|12|0|0|0|16416|1368
+acordofes|2026-08-10|12|12|0|0|0|16416|1368
+acordofes|2026-08-11|13|13|0|0|0|17784|1368
+acordofes|2026-08-12|12|12|0|0|0|16416|1368
+acordofes|2026-08-13|12|12|0|0|0|16416|1368
+acordofes|2026-08-14|12|12|0|0|0|16416|1368
+acordofes|2026-08-15|12|12|0|0|0|16416|1368
+acordofes|2026-08-16|13|13|0|0|0|17784|1368
+acordofes|2026-08-17|15|15|0|0|0|20520|1368
+acordofes|2026-08-18|12|12|0|0|0|16416|1368
+acordofes|2026-08-19|11|11|0|0|0|15048|1368
+acordofes|2026-08-20|12|12|0|0|0|16416|1368
+acordofes|2026-08-21|12|12|0|0|0|16416|1368
+acordofes|2026-08-22|12|12|0|0|0|16416|1368
+acordofes|2026-08-23|12|12|0|0|0|16416|1368
+acordofes|2026-08-24|12|12|0|0|0|16416|1368
+acordofes|2026-08-25|16|16|0|0|0|21888|1368
+acordofes|2026-08-26|12|12|0|0|0|16416|1368
+acordofes|2026-08-27|12|12|0|0|0|16416|1368
+acordofes|2026-08-28|12|12|0|0|0|16416|1368
+acordofes|2026-08-29|13|13|0|0|0|17784|1368
+cagec|2026-08-06|2|0|2|0|0|80|40
+cagec|2026-08-07|3|0|3|0|0|120|40
+cagec|2026-08-08|3|0|3|0|0|120|40
+cagec|2026-08-09|1|0|1|0|0|7|7
+cagec|2026-08-10|3|2|1|0|0|32|11
+cagec|2026-08-11|3|2|1|0|0|32|11
+cagec|2026-08-12|3|2|1|0|0|32|11
+cagec|2026-08-13|3|3|0|0|0|33|11
+cagec|2026-08-14|3|2|1|0|0|32|11
+cagec|2026-08-15|3|3|0|0|0|33|11
+cagec|2026-08-16|4|3|0|1|0|33|11
+cagec|2026-08-17|4|3|0|1|0|33|11
+cagec|2026-08-18|4|0|0|4|0|0|0
+cagec|2026-08-19|4|1|0|3|0|11|11
+cagec|2026-08-20|3|3|0|0|0|33|11
+cagec|2026-08-21|3|3|0|0|0|33|11
+cagec|2026-08-22|3|3|0|0|0|33|11
+cagec|2026-08-23|3|2|1|0|0|32|11
+cagec|2026-08-24|4|3|0|1|0|33|11
+cagec|2026-08-25|3|3|0|0|0|33|11
+cagec|2026-08-26|3|3|0|0|0|33|11
+cagec|2026-08-27|3|3|0|0|0|33|11
+cagec|2026-08-28|3|3|0|0|0|33|11
+cagec|2026-08-29|3|2|1|0|0|32|11
+cauc|2026-07-31|4|4|0|0|0|164|41
+cauc|2026-08-01|4|4|0|0|0|164|41
+cauc|2026-08-02|4|4|0|0|0|164|41
+cauc|2026-08-03|4|4|0|0|0|164|41
+cauc|2026-08-04|4|4|0|0|0|164|41
+cauc|2026-08-05|4|4|0|0|0|164|41
+cauc|2026-08-06|5|5|0|0|0|205|41
+cauc|2026-08-07|7|7|0|0|0|287|41
+cauc|2026-08-08|11|11|0|0|0|451|41
+cauc|2026-08-09|17|17|0|0|0|949|62
+cauc|2026-08-10|17|17|0|0|0|1054|62
+cauc|2026-08-11|18|18|0|0|0|1116|62
+cauc|2026-08-12|17|17|0|0|0|1048|62
+cauc|2026-08-13|17|17|0|0|0|1020|60
+cauc|2026-08-14|16|16|0|0|0|960|60
+cauc|2026-08-15|17|17|0|0|0|1020|60
+cauc|2026-08-16|19|19|0|0|0|1140|60
+cauc|2026-08-17|22|22|0|0|0|1320|60
+cauc|2026-08-18|17|17|0|0|0|1020|60
+cauc|2026-08-19|16|16|0|0|0|960|60
+cauc|2026-08-20|17|17|0|0|0|1020|60
+cauc|2026-08-21|17|17|0|0|0|1020|60
+cauc|2026-08-22|17|17|0|0|0|1020|60
+cauc|2026-08-23|17|17|0|0|0|1020|60
+cauc|2026-08-24|14|14|0|0|0|840|60
+cauc|2026-08-25|21|21|0|0|0|1260|60
+cauc|2026-08-26|17|17|0|0|0|1020|60
+cauc|2026-08-27|17|17|0|0|0|1020|60
+cauc|2026-08-28|17|17|0|0|0|1020|60
+cauc|2026-08-29|18|18|0|0|0|1080|60
+fns|2026-07-31|1|1|0|0|0|1637|1637
+fns|2026-08-01|1|1|0|0|0|1637|1637
+fns|2026-08-02|1|1|0|0|0|1637|1637
+fns|2026-08-03|1|1|0|0|0|1637|1637
+fns|2026-08-04|1|1|0|0|0|1637|1637
+fns|2026-08-05|1|1|0|0|0|1637|1637
+fns|2026-08-06|1|1|0|0|0|1637|1637
+fns|2026-08-07|1|1|0|0|0|1637|1637
+fns|2026-08-08|1|1|0|0|0|1637|1637
+fns|2026-08-09|1|1|0|0|0|1637|1637
+fns|2026-08-10|1|1|0|0|0|1719|1719
+fns|2026-08-11|1|1|0|0|0|1719|1719
+fns|2026-08-12|1|1|0|0|0|1719|1719
+fns|2026-08-13|1|1|0|0|0|1608|1608
+fns|2026-08-14|1|1|0|0|0|1608|1608
+fns|2026-08-15|1|1|0|0|0|1608|1608
+fns|2026-08-16|2|2|0|0|0|3216|1608
+fns|2026-08-17|2|2|0|0|0|3216|1608
+fns|2026-08-18|1|1|0|0|0|1608|1608
+fns|2026-08-20|1|1|0|0|0|1608|1608
+fns|2026-08-21|1|1|0|0|0|1608|1608
+fns|2026-08-22|1|1|0|0|0|1608|1608
+fns|2026-08-23|1|1|0|0|0|1608|1608
+fns|2026-08-24|1|1|0|0|0|1608|1608
+fns|2026-08-25|1|1|0|0|0|1608|1608
+fns|2026-08-26|1|1|0|0|0|1608|1608
+fns|2026-08-27|1|1|0|0|0|1608|1608
+fns|2026-08-28|1|1|0|0|0|1608|1608
+fns|2026-08-29|1|1|0|0|0|1608|1608
+siconv_convenio_backfill|2026-07-30|1|1|0|0|0|1030|1030
+siconv_convenio_backfill|2026-07-31|1|1|0|0|0|1030|1030
+siconv_convenio_backfill|2026-08-01|1|1|0|0|0|1030|1030
+siconv_convenio_backfill|2026-08-04|1|1|0|0|0|1030|1030
+siconv_convenio_backfill|2026-08-05|1|1|0|0|0|1032|1032
+siconv_convenio_backfill|2026-08-06|1|1|0|0|0|1034|1034
+siconv_convenio_backfill|2026-08-07|2|2|0|0|0|2068|1034
+siconv_convenio_backfill|2026-08-08|2|2|0|0|0|2070|1036
+siconv_convenio_backfill|2026-08-09|1|1|0|0|0|1036|1036
+siconv_convenio_backfill|2026-08-10|1|1|0|0|0|1602|1602
+siconv_convenio_backfill|2026-08-11|2|2|0|0|0|2400|1200
+siconv_convenio_backfill|2026-08-12|1|1|0|0|0|1200|1200
+siconv_convenio_backfill|2026-08-13|1|1|0|0|0|1110|1110
+siconv_convenio_backfill|2026-08-14|1|1|0|0|0|1110|1110
+siconv_convenio_backfill|2026-08-15|2|2|0|0|0|2220|1110
+siconv_convenio_backfill|2026-08-16|3|3|0|0|0|3330|1110
+siconv_convenio_backfill|2026-08-17|2|2|0|0|0|2220|1110
+siconv_convenio_backfill|2026-08-18|3|3|0|0|0|3330|1110
+siconv_convenio_backfill|2026-08-19|1|1|0|0|0|1111|1111
+siconv_convenio_backfill|2026-08-20|1|1|0|0|0|1111|1111
+siconv_convenio_backfill|2026-08-21|1|1|0|0|0|1112|1112
+siconv_convenio_backfill|2026-08-22|1|1|0|0|0|1113|1113
+siconv_convenio_backfill|2026-08-23|1|1|0|0|0|1113|1113
+siconv_convenio_backfill|2026-08-24|2|2|0|0|0|2226|1113
+siconv_convenio_backfill|2026-08-25|1|1|0|0|0|1113|1113
+siconv_convenio_backfill|2026-08-26|1|1|0|0|0|1113|1113
+siconv_convenio_backfill|2026-08-27|1|1|0|0|0|1115|1115
+siconv_convenio_backfill|2026-08-28|1|1|0|0|0|1115|1115
+siconv_convenio_backfill|2026-08-29|1|1|0|0|0|1115|1115
+siconv_federal|2026-08-08|1|1|0|0|0|1155647|1155647
+siconv_federal|2026-08-09|1|1|0|0|0|1155659|1155659
+siconv_federal|2026-08-10|2|2|0|0|0|2311318|1155659
+siconv_federal|2026-08-11|1|1|0|0|0|1155741|1155741
+siconv_federal|2026-08-12|1|1|0|0|0|1155782|1155782
+siconv_federal|2026-08-13|1|1|0|0|0|1155825|1155825
+siconv_federal|2026-08-14|1|1|0|0|0|1155881|1155881
+siconv_federal|2026-08-15|1|1|0|0|0|1156008|1156008
+siconv_federal|2026-08-16|2|2|0|0|0|2312146|1156073
+siconv_federal|2026-08-17|2|2|0|0|0|2312232|1156159
+siconv_federal|2026-08-18|1|1|0|0|0|1156217|1156217
+siconv_federal|2026-08-19|1|1|0|0|0|1156250|1156250
+siconv_federal|2026-08-20|1|1|0|0|0|1156292|1156292
+siconv_federal|2026-08-21|1|1|0|0|0|1156323|1156323
+siconv_federal|2026-08-22|1|1|0|0|0|1156323|1156323
+siconv_federal|2026-08-23|1|1|0|0|0|1156372|1156372
+siconv_federal|2026-08-24|1|1|0|0|0|1156372|1156372
+siconv_federal|2026-08-25|1|1|0|0|0|1156424|1156424
+siconv_federal|2026-08-26|1|1|0|0|0|1156524|1156524
+siconv_federal|2026-08-27|1|1|0|0|0|1156608|1156608
+siconv_federal|2026-08-28|1|1|0|0|0|1156608|1156608
+siconv_federal|2026-08-29|1|1|0|0|0|1156786|1156786
+sigcon_ckan_backfill|2026-07-31|3|3|0|0|0|2085|695
+sigcon_ckan_backfill|2026-08-02|1|1|0|0|0|695|695
+sigcon_ckan_backfill|2026-08-04|1|1|0|0|0|695|695
+sigcon_ckan_backfill|2026-08-05|1|1|0|0|0|695|695
+sigcon_ckan_backfill|2026-08-06|2|2|0|0|0|1390|695
+sigcon_ckan_backfill|2026-08-07|1|1|0|0|0|695|695
+sigcon_ckan_backfill|2026-08-08|3|3|0|0|0|2085|695
+sigcon_ckan_backfill|2026-08-09|12|12|0|0|0|8340|695
+sigcon_ckan_backfill|2026-08-10|12|12|0|0|0|7503|695
+sigcon_ckan_backfill|2026-08-11|12|12|0|0|0|5476|458
+sigcon_ckan_backfill|2026-08-12|12|12|0|0|0|5496|458
+sigcon_ckan_backfill|2026-08-13|11|11|0|0|0|5038|458
+sigcon_ckan_backfill|2026-08-14|12|12|0|0|0|5496|458
+sigcon_ckan_backfill|2026-08-15|12|12|0|0|0|5496|458
+sigcon_ckan_backfill|2026-08-16|12|12|0|0|0|5496|458
+sigcon_ckan_backfill|2026-08-17|15|15|0|0|0|6870|458
+sigcon_ckan_backfill|2026-08-18|12|12|0|0|0|5496|458
+sigcon_ckan_backfill|2026-08-19|11|11|0|0|0|5038|458
+sigcon_ckan_backfill|2026-08-20|12|12|0|0|0|5496|458
+sigcon_ckan_backfill|2026-08-21|12|12|0|0|0|5496|458
+sigcon_ckan_backfill|2026-08-22|12|12|0|0|0|5496|458
+sigcon_ckan_backfill|2026-08-23|12|12|0|0|0|5496|458
+sigcon_ckan_backfill|2026-08-24|11|11|0|0|0|5038|458
+sigcon_ckan_backfill|2026-08-25|5|5|0|0|0|2290|458
+sigcon_ckan_backfill|2026-08-26|12|12|0|0|0|5496|458
+sigcon_ckan_backfill|2026-08-27|12|12|0|0|0|5496|458
+sigcon_ckan_backfill|2026-08-28|12|12|0|0|0|5496|458
+sigcon_ckan_backfill|2026-08-29|12|12|0|0|0|5496|458
+sigcon_scraper|2026-07-31|3|3|0|0|0|446|237
+sigcon_scraper|2026-08-02|1|1|0|0|0|89|89
+sigcon_scraper|2026-08-04|2|2|0|0|0|193|142
+sigcon_scraper|2026-08-05|1|1|0|0|0|56|56
+sigcon_scraper|2026-08-06|2|2|0|0|0|208|126
+sigcon_scraper|2026-08-07|1|1|0|0|0|197|197
+sigcon_scraper|2026-08-08|5|5|0|0|7|334|118
+sigcon_scraper|2026-08-09|9|9|0|0|18|665|171
+sigcon_scraper|2026-08-10|12|12|0|0|26|800|100
+sigcon_scraper|2026-08-11|12|12|0|0|31|792|98
+sigcon_scraper|2026-08-12|12|12|0|0|33|991|138
+sigcon_scraper|2026-08-13|12|12|0|0|39|1169|143
+sigcon_scraper|2026-08-14|12|12|0|0|41|1208|153
+sigcon_scraper|2026-08-15|12|12|0|0|43|1313|143
+sigcon_scraper|2026-08-16|23|23|0|0|51|1657|143
+sigcon_scraper|2026-08-17|13|13|0|0|36|1117|124
+sigcon_scraper|2026-08-18|12|12|0|0|31|992|131
+sigcon_scraper|2026-08-19|11|11|0|0|24|797|124
+sigcon_scraper|2026-08-20|12|12|0|0|33|918|124
+sigcon_scraper|2026-08-21|10|10|0|0|25|765|124
+sigcon_scraper|2026-08-24|6|6|0|0|13|464|124
+sigcon_scraper|2026-08-25|4|4|0|0|11|273|113
+sigcon_scraper|2026-08-26|12|12|0|0|33|986|131
+sigcon_scraper|2026-08-27|12|12|0|0|32|1004|131
+sigcon_scraper|2026-08-28|11|11|0|0|27|844|124
+sigcon_scraper|2026-08-29|11|11|0|0|33|873|113
+simec_par|2026-07-31|4|4|0|0|0|1684|421
+simec_par|2026-08-01|4|4|0|0|0|1684|421
+simec_par|2026-08-02|4|4|0|0|0|1684|421
+simec_par|2026-08-03|4|4|0|0|0|1684|421
+simec_par|2026-08-04|4|4|0|0|0|1684|421
+simec_par|2026-08-05|4|4|0|0|0|1684|421
+simec_par|2026-08-06|4|4|0|0|0|1684|421
+simec_par|2026-08-07|4|4|0|0|0|1684|421
+simec_par|2026-08-08|6|6|0|0|0|2526|421
+simec_par|2026-08-09|12|12|0|0|0|5084|425
+simec_par|2026-08-10|12|12|0|0|0|5100|425
+simec_par|2026-08-11|13|13|0|0|0|5525|425
+simec_par|2026-08-12|12|12|0|0|0|5016|425
+simec_par|2026-08-13|12|12|0|0|0|4848|404
+simec_par|2026-08-14|12|12|0|0|0|4848|404
+simec_par|2026-08-15|12|12|0|0|0|4848|404
+simec_par|2026-08-16|13|13|0|0|0|5252|404
+simec_par|2026-08-17|15|15|0|0|0|6060|404
+simec_par|2026-08-18|12|12|0|0|0|4848|404
+simec_par|2026-08-19|11|11|0|0|0|4516|416
+simec_par|2026-08-20|12|12|0|0|0|4992|416
+simec_par|2026-08-21|12|12|0|0|0|4891|416
+simec_par|2026-08-22|12|12|0|0|0|4352|389
+simec_par|2026-08-23|12|12|0|0|0|4326|412
+simec_par|2026-08-24|11|11|0|0|0|1408|379
+simec_par|2026-08-25|5|5|0|0|0|1922|532
+simec_par|2026-08-26|12|12|0|0|0|6384|532
+simec_par|2026-08-27|12|12|0|0|0|6384|532
+simec_par|2026-08-28|12|12|0|0|0|6384|532
+simec_par|2026-08-29|13|13|0|0|0|6916|532
+simec_termos|2026-08-18|1|1|0|0|0|223|223
+simec_termos|2026-08-19|1|1|0|0|0|223|223
+simec_termos|2026-08-20|1|1|0|0|0|223|223
+simec_termos|2026-08-21|1|1|0|0|0|223|223
+simec_termos|2026-08-22|1|1|0|0|0|223|223
+simec_termos|2026-08-23|1|1|0|0|0|223|223
+simec_termos|2026-08-24|1|1|0|0|0|223|223
+simec_termos|2026-08-25|1|1|0|0|0|223|223
+simec_termos|2026-08-26|1|1|0|0|0|222|222
+simec_termos|2026-08-27|1|1|0|0|0|222|222
+simec_termos|2026-08-28|1|1|0|0|0|222|222
+simec_termos|2026-08-29|1|1|0|0|0|222|222
+sismob|2026-08-02|1|1|0|0|0|179|179
+sismob|2026-08-03|1|1|0|0|0|179|179
+sismob|2026-08-04|1|1|0|0|0|179|179
+sismob|2026-08-05|1|1|0|0|0|179|179
+sismob|2026-08-06|1|1|0|0|0|179|179
+sismob|2026-08-07|1|1|0|0|0|179|179
+sismob|2026-08-08|1|1|0|0|0|179|179
+sismob|2026-08-09|1|1|0|0|0|179|179
+sismob|2026-08-10|1|1|0|0|0|179|179
+sismob|2026-08-11|1|1|0|0|0|179|179
+sismob|2026-08-12|1|1|0|0|0|179|179
+sismob|2026-08-13|1|1|0|0|0|141|141
+sismob|2026-08-14|2|2|0|0|0|282|141
+sismob|2026-08-15|1|1|0|0|0|141|141
+sismob|2026-08-16|1|1|0|0|0|141|141
+sismob|2026-08-17|1|1|0|0|0|141|141
+sismob|2026-08-18|1|1|0|0|0|141|141
+sismob|2026-08-19|1|1|0|0|0|141|141
+sismob|2026-08-20|1|1|0|0|0|141|141
+sismob|2026-08-21|1|1|0|0|0|141|141
+sismob|2026-08-22|1|1|0|0|0|141|141
+sismob|2026-08-23|1|1|0|0|0|141|141
+sismob|2026-08-24|2|2|0|0|0|282|141
+sismob|2026-08-25|1|1|0|0|0|141|141
+sismob|2026-08-26|1|1|0|0|0|141|141
+sismob|2026-08-27|1|1|0|0|0|141|141
+sismob|2026-08-28|1|1|0|0|0|141|141
+sismob|2026-08-29|1|1|0|0|0|141|141
+transferegov_lote|2026-08-08|2|1|1|0|6|264|173
+transferegov_lote|2026-08-09|12|12|0|0|45|3330|361
+transferegov_lote|2026-08-10|12|11|1|0|59|4516|556
+transferegov_lote|2026-08-11|12|12|0|0|56|4345|539
+transferegov_lote|2026-08-12|12|12|0|0|48|3463|487
+transferegov_lote|2026-08-13|12|12|0|0|48|3616|417
+transferegov_lote|2026-08-14|12|12|0|0|48|3515|487
+transferegov_lote|2026-08-15|12|12|0|0|48|3628|417
+transferegov_lote|2026-08-16|12|12|0|0|48|3659|487
+transferegov_lote|2026-08-17|23|23|0|0|92|6773|487
+transferegov_lote|2026-08-18|12|12|0|0|48|3538|487
+transferegov_lote|2026-08-19|12|12|0|0|48|3536|417
+transferegov_lote|2026-08-20|12|12|0|0|48|3565|487
+transferegov_lote|2026-08-21|12|11|1|0|48|3603|417
+transferegov_lote|2026-08-22|12|12|0|0|48|3646|487
+transferegov_lote|2026-08-23|12|12|0|0|48|3744|444
+transferegov_lote|2026-08-24|14|14|0|0|49|3611|487
+transferegov_lote|2026-08-25|10|9|1|0|34|2793|487
+transferegov_lote|2026-08-26|12|11|1|0|46|3533|405
+transferegov_lote|2026-08-27|11|11|0|0|28|3058|341
+transferegov_lote|2026-08-28|11|11|0|0|31|3045|351
+transferegov_lote|2026-08-29|10|10|0|0|30|2867|433
+transferegov_opendata|2026-07-30|1|1|0|0|0|3142|3142
+transferegov_opendata|2026-07-31|1|1|0|0|0|3142|3142
+transferegov_opendata|2026-08-01|1|1|0|0|0|3142|3142
+transferegov_opendata|2026-08-02|11|11|0|0|0|34562|3142
+transferegov_opendata|2026-08-03|2|2|0|0|0|6284|3142
+transferegov_opendata|2026-08-04|2|2|0|0|0|6286|3144
+transferegov_opendata|2026-08-05|2|2|0|0|0|6294|3147
+transferegov_opendata|2026-08-06|2|2|0|0|0|6295|3148
+transferegov_opendata|2026-08-07|2|2|0|0|0|6297|3149
+transferegov_opendata|2026-08-08|2|2|0|0|0|6298|3149
+transferegov_opendata|2026-08-09|1|1|0|0|0|3149|3149
+transferegov_opendata|2026-08-10|1|1|0|0|0|3440|3440
+transferegov_opendata|2026-08-11|2|2|0|0|0|6883|3443
+transferegov_opendata|2026-08-12|1|1|0|0|0|3443|3443
+transferegov_opendata|2026-08-13|1|1|0|0|0|3191|3191
+transferegov_opendata|2026-08-14|1|1|0|0|0|3192|3192
+transferegov_opendata|2026-08-15|2|2|0|0|0|6384|3192
+transferegov_opendata|2026-08-16|3|3|0|0|0|9576|3192
+transferegov_opendata|2026-08-17|2|2|0|0|0|6384|3192
+transferegov_opendata|2026-08-18|3|3|0|0|0|9576|3192
+transferegov_opendata|2026-08-19|1|1|0|0|0|3192|3192
+transferegov_opendata|2026-08-20|1|1|0|0|0|3192|3192
+transferegov_opendata|2026-08-21|1|1|0|0|0|3192|3192
+transferegov_opendata|2026-08-22|1|1|0|0|0|3192|3192
+transferegov_opendata|2026-08-23|1|1|0|0|0|3192|3192
+transferegov_opendata|2026-08-24|2|2|0|0|0|6384|3192
+transferegov_opendata|2026-08-25|1|1|0|0|0|3192|3192
+transferegov_opendata|2026-08-26|1|1|0|0|0|3192|3192
+transferegov_opendata|2026-08-27|1|1|0|0|0|3192|3192
+transferegov_opendata|2026-08-28|1|1|0|0|0|3192|3192
+transferegov_opendata|2026-08-29|1|1|0|0|0|3192|3192
+transferegov_pac|2026-07-30|1|1|0|0|0|570|570
+transferegov_pac|2026-07-31|1|1|0|0|0|570|570
+transferegov_pac|2026-08-01|1|1|0|0|0|570|570
+transferegov_pac|2026-08-04|1|1|0|0|0|570|570
+transferegov_pac|2026-08-05|1|1|0|0|0|570|570
+transferegov_pac|2026-08-06|1|1|0|0|0|570|570
+transferegov_pac|2026-08-07|1|1|0|0|0|570|570
+transferegov_pac|2026-08-08|1|1|0|0|0|570|570
+transferegov_pac|2026-08-09|1|1|0|0|0|570|570
+transferegov_pac|2026-08-10|1|1|0|0|0|617|617
+transferegov_pac|2026-08-11|1|1|0|0|0|617|617
+transferegov_pac|2026-08-12|1|1|0|0|0|617|617
+transferegov_pac|2026-08-13|1|1|0|0|0|555|555
+transferegov_pac|2026-08-14|1|1|0|0|0|555|555
+transferegov_pac|2026-08-15|1|1|0|0|0|555|555
+transferegov_pac|2026-08-16|1|1|0|0|0|555|555
+transferegov_pac|2026-08-17|1|1|0|0|0|555|555
+transferegov_pac|2026-08-18|1|1|0|0|0|555|555
+transferegov_pac|2026-08-19|1|1|0|0|0|555|555
+transferegov_pac|2026-08-20|1|1|0|0|0|555|555
+transferegov_pac|2026-08-21|1|1|0|0|0|555|555
+transferegov_pac|2026-08-22|1|1|0|0|0|555|555
+transferegov_pac|2026-08-23|1|1|0|0|0|555|555
+transferegov_pac|2026-08-24|1|1|0|0|0|555|555
+transferegov_pac|2026-08-25|1|1|0|0|0|555|555
+transferegov_pac|2026-08-26|1|1|0|0|0|555|555
+transferegov_pac|2026-08-27|1|1|0|0|0|555|555
+transferegov_pac|2026-08-28|1|1|0|0|0|555|555
+transferegov_pac|2026-08-29|1|1|0|0|0|555|555
+transferegov_te|2026-08-17|28|3|25|0|0|1201|454
+transferegov_te|2026-08-18|2|2|0|0|0|62|31
+transferegov_te|2026-08-19|1|1|0|0|0|31|31
+transferegov_te|2026-08-20|1|1|0|0|0|31|31
+transferegov_te|2026-08-21|1|1|0|0|0|31|31
+transferegov_te|2026-08-22|1|1|0|0|0|31|31
+transferegov_te|2026-08-23|1|1|0|0|0|31|31
+transferegov_te|2026-08-24|2|2|0|0|0|62|31
+transferegov_te|2026-08-25|1|1|0|0|0|31|31
+transferegov_te|2026-08-26|1|1|0|0|0|31|31
+transferegov_te|2026-08-27|1|1|0|0|0|31|31
+transferegov_te|2026-08-28|1|1|0|0|0|31|31
+transferegov_te|2026-08-29|1|1|0|0|0|31|31
+transferegov_voluntarias|2026-07-30|1|1|0|0|0|3113|3113
+transferegov_voluntarias|2026-07-31|1|1|0|0|0|2923|2923
+transferegov_voluntarias|2026-08-01|1|1|0|0|0|3160|3160
+transferegov_voluntarias|2026-08-04|1|1|0|0|0|3165|3165
+transferegov_voluntarias|2026-08-05|1|1|0|0|0|2952|2952
+transferegov_voluntarias|2026-08-06|1|1|0|0|0|3167|3167
+transferegov_voluntarias|2026-08-07|1|1|0|0|0|3167|3167
+transferegov_voluntarias|2026-08-08|1|1|0|0|41|3168|3168
+transferegov_voluntarias|2026-08-09|1|1|0|0|41|3168|3168
+transferegov_voluntarias|2026-08-10|1|1|0|0|44|3283|3283
+transferegov_voluntarias|2026-08-11|1|1|0|0|44|3458|3458
+transferegov_voluntarias|2026-08-12|1|1|0|0|44|3358|3358
+transferegov_voluntarias|2026-08-13|1|1|0|0|42|3199|3199
+transferegov_voluntarias|2026-08-14|1|1|0|0|42|3199|3199
+transferegov_voluntarias|2026-08-15|1|1|0|0|42|3199|3199
+transferegov_voluntarias|2026-08-16|1|1|0|0|42|3199|3199
+transferegov_voluntarias|2026-08-17|1|1|0|0|42|3199|3199
+transferegov_voluntarias|2026-08-18|1|1|0|0|42|3068|3068
+transferegov_voluntarias|2026-08-19|1|1|0|0|42|3199|3199
+transferegov_voluntarias|2026-08-20|1|1|0|0|42|3199|3199
+transferegov_voluntarias|2026-08-21|1|1|0|0|42|3191|3191
+transferegov_voluntarias|2026-08-22|1|1|0|0|42|3193|3193
+transferegov_voluntarias|2026-08-23|1|1|0|0|42|3199|3199
+transferegov_voluntarias|2026-08-24|1|1|0|0|42|3199|3199
+transferegov_voluntarias|2026-08-25|1|1|0|0|42|3199|3199
+transferegov_voluntarias|2026-08-26|1|1|0|0|42|3199|3199
+transferegov_voluntarias|2026-08-27|1|1|0|0|42|3199|3199
+transferegov_voluntarias|2026-08-28|1|1|0|0|42|3199|3199
+transferegov_voluntarias|2026-08-29|1|1|0|0|42|3199|3199
+(412 rows)
+=== Q05: quedas >25% vs mediana das 5 anteriores ===
+source|ts_brt|status|n|proc|n_prev|med5|queda_pct|regime
+cagec|08-09 16:55|parcial|7|0|5|40.0|83|RODIZIO: variacao esperada
+cagec|08-10 07:58|ok|11|0|5|40.0|73|RODIZIO: variacao esperada
+cagec|08-10 13:58|parcial|10|0|5|40.0|75|RODIZIO: variacao esperada
+sigcon_ckan_backfill|08-10 18:25|success|416|0|5|695.0|40|comparavel
+sigcon_ckan_backfill|08-10 20:25|success|416|0|5|695.0|40|comparavel
+sigcon_ckan_backfill|08-10 22:25|success|416|0|5|695.0|40|comparavel
+sigcon_scraper|07-31 09:46|success|48|0|5|82.0|41|RODIZIO: variacao esperada
+sigcon_scraper|08-04 15:48|success|51|0|5|142.0|64|RODIZIO: variacao esperada
+sigcon_scraper|08-05 03:47|success|56|0|5|142.0|61|RODIZIO: variacao esperada
+sigcon_scraper|08-08 18:25|success|0|0|5|118.0|100|RODIZIO: variacao esperada
+sigcon_scraper|08-08 19:01|success|43|0|5|118.0|64|RODIZIO: variacao esperada
+sigcon_scraper|08-09 04:45|success|44|1|5|70.0|37|RODIZIO: variacao esperada
+sigcon_scraper|08-09 10:45|success|16|1|5|82.0|80|RODIZIO: variacao esperada
+sigcon_scraper|08-09 16:46|success|45|1|5|70.0|36|RODIZIO: variacao esperada
+sigcon_scraper|08-09 22:46|success|11|1|5|70.0|84|RODIZIO: variacao esperada
+sigcon_scraper|08-10 06:47|success|44|2|5|80.0|45|RODIZIO: variacao esperada
+sigcon_scraper|08-10 10:46|success|42|1|5|74.0|43|RODIZIO: variacao esperada
+sigcon_scraper|08-10 12:19|success|28|1|5|74.0|62|RODIZIO: variacao esperada
+sigcon_scraper|08-11 02:45|success|15|2|5|78.0|81|RODIZIO: variacao esperada
+sigcon_scraper|08-11 08:45|success|43|1|5|75.0|43|RODIZIO: variacao esperada
+sigcon_scraper|08-11 14:45|success|39|4|5|75.0|48|RODIZIO: variacao esperada
+sigcon_scraper|08-11 22:45|success|43|3|5|74.0|42|RODIZIO: variacao esperada
+sigcon_scraper|08-12 14:45|success|43|1|5|95.0|55|RODIZIO: variacao esperada
+sigcon_scraper|08-12 16:45|success|15|1|5|84.0|82|RODIZIO: variacao esperada
+sigcon_scraper|08-13 08:45|success|42|2|5|110.0|62|RODIZIO: variacao esperada
+sigcon_scraper|08-13 12:45|success|43|2|5|105.0|59|RODIZIO: variacao esperada
+sigcon_scraper|08-14 00:45|success|67|3|5|107.0|37|RODIZIO: variacao esperada
+sigcon_scraper|08-14 08:45|success|38|3|5|111.0|66|RODIZIO: variacao esperada
+sigcon_scraper|08-14 14:45|success|15|2|5|110.0|86|RODIZIO: variacao esperada
+sigcon_scraper|08-14 22:45|success|78|3|5|138.0|43|RODIZIO: variacao esperada
+sigcon_scraper|08-15 04:45|success|42|3|5|110.0|62|RODIZIO: variacao esperada
+sigcon_scraper|08-15 12:45|success|78|3|5|112.0|30|RODIZIO: variacao esperada
+sigcon_scraper|08-15 18:45|success|81|3|5|110.0|26|RODIZIO: variacao esperada
+sigcon_scraper|08-16 00:18|success|83|3|5|114.0|27|RODIZIO: variacao esperada
+sigcon_scraper|08-16 00:36|success|15|1|5|114.0|87|RODIZIO: variacao esperada
+sigcon_scraper|08-16 00:57|success|15|1|5|83.0|82|RODIZIO: variacao esperada
+sigcon_scraper|08-16 01:14|success|15|1|5|78.0|81|RODIZIO: variacao esperada
+sigcon_scraper|08-16 08:45|success|79|2|5|107.0|26|RODIZIO: variacao esperada
+sigcon_scraper|08-16 12:45|success|52|2|5|107.0|51|RODIZIO: variacao esperada
+sigcon_scraper|08-16 16:34|success|48|1|5|88.0|45|RODIZIO: variacao esperada
+sigcon_scraper|08-16 17:57|success|48|1|5|88.0|45|RODIZIO: variacao esperada
+sigcon_scraper|08-16 18:29|success|36|1|5|52.0|31|RODIZIO: variacao esperada
+sigcon_scraper|08-16 23:28|success|48|1|5|96.0|50|RODIZIO: variacao esperada
+sigcon_scraper|08-16 23:31|success|48|1|5|96.0|50|RODIZIO: variacao esperada
+sigcon_scraper|08-16 23:34|success|48|1|5|96.0|50|RODIZIO: variacao esperada
+sigcon_scraper|08-17 12:45|success|71|4|5|104.0|32|RODIZIO: variacao esperada
+sigcon_scraper|08-17 16:45|success|59|2|5|96.0|39|RODIZIO: variacao esperada
+sigcon_scraper|08-18 04:45|success|70|4|5|104.0|33|RODIZIO: variacao esperada
+sigcon_scraper|08-18 08:45|success|10|1|5|97.0|90|RODIZIO: variacao esperada
+sigcon_scraper|08-18 12:45|success|15|1|5|79.0|81|RODIZIO: variacao esperada
+sigcon_scraper|08-19 04:45|success|10|2|5|102.0|90|RODIZIO: variacao esperada
+sigcon_scraper|08-19 08:45|success|22|1|5|85.0|74|RODIZIO: variacao esperada
+sigcon_scraper|08-19 20:45|success|43|1|5|98.0|56|RODIZIO: variacao esperada
+sigcon_scraper|08-20 00:45|success|38|4|5|98.0|61|RODIZIO: variacao esperada
+sigcon_scraper|08-20 04:45|success|15|1|5|79.0|81|RODIZIO: variacao esperada
+sigcon_scraper|08-20 16:45|success|43|1|5|98.0|56|RODIZIO: variacao esperada
+sigcon_scraper|08-20 20:45|success|38|4|5|98.0|61|RODIZIO: variacao esperada
+sigcon_scraper|08-21 00:45|success|15|1|5|79.0|81|RODIZIO: variacao esperada
+sigcon_scraper|08-21 12:45|success|43|1|5|98.0|56|RODIZIO: variacao esperada
+sigcon_scraper|08-21 16:45|success|38|4|5|98.0|61|RODIZIO: variacao esperada
+sigcon_scraper|08-24 10:45|success|19|1|5|79.0|76|RODIZIO: variacao esperada
+sigcon_scraper|08-25 00:45|success|43|1|5|97.0|56|RODIZIO: variacao esperada
+sigcon_scraper|08-25 20:45|success|38|4|5|97.0|61|RODIZIO: variacao esperada
+sigcon_scraper|08-26 00:45|success|47|2|5|79.0|41|RODIZIO: variacao esperada
+sigcon_scraper|08-26 14:45|success|38|4|5|102.0|63|RODIZIO: variacao esperada
+sigcon_scraper|08-26 18:45|success|15|1|5|102.0|85|RODIZIO: variacao esperada
+sigcon_scraper|08-27 04:45|success|43|1|5|104.0|59|RODIZIO: variacao esperada
+sigcon_scraper|08-27 12:45|success|15|1|5|79.0|81|RODIZIO: variacao esperada
+sigcon_scraper|08-28 02:45|success|43|1|5|102.0|58|RODIZIO: variacao esperada
+sigcon_scraper|08-28 06:45|success|37|4|5|102.0|64|RODIZIO: variacao esperada
+sigcon_scraper|08-28 10:45|success|17|1|5|79.0|78|RODIZIO: variacao esperada
+sigcon_scraper|08-28 20:45|success|43|1|5|104.0|59|RODIZIO: variacao esperada
+sigcon_scraper|08-29 00:45|success|38|4|5|98.0|61|RODIZIO: variacao esperada
+sigcon_scraper|08-29 04:45|success|15|1|5|79.0|81|RODIZIO: variacao esperada
+sigcon_scraper|08-29 20:45|success|15|1|5|95.0|84|RODIZIO: variacao esperada
+simec_par|08-24 10:28|success|49|0|5|338.0|86|comparavel
+simec_par|08-24 12:26|success|0|0|5|325.0|100|comparavel
+simec_par|08-24 14:26|success|0|0|5|311.0|100|comparavel
+simec_par|08-24 16:25|success|0|0|5|49.0|100|comparavel
+transferegov_lote|08-09 23:10|success|208|4|5|288.0|28|RODIZIO: variacao esperada
+transferegov_lote|08-10 11:08|success|129|4|5|337.0|62|RODIZIO: variacao esperada
+transferegov_lote|08-11 07:03|success|376|6|5|523.0|28|RODIZIO: variacao esperada
+transferegov_lote|08-11 09:09|success|326|4|5|516.0|37|RODIZIO: variacao esperada
+transferegov_lote|08-11 11:09|success|251|4|5|376.0|33|RODIZIO: variacao esperada
+transferegov_lote|08-11 15:10|success|251|4|5|376.0|33|RODIZIO: variacao esperada
+transferegov_lote|08-11 19:04|success|225|4|5|326.0|31|RODIZIO: variacao esperada
+transferegov_lote|08-12 03:02|success|266|4|5|380.0|30|RODIZIO: variacao esperada
+transferegov_lote|08-14 11:02|success|221|4|5|309.0|28|RODIZIO: variacao esperada
+transferegov_lote|08-14 13:02|success|230|4|5|309.0|26|RODIZIO: variacao esperada
+transferegov_lote|08-16 05:04|success|221|4|5|309.0|28|RODIZIO: variacao esperada
+transferegov_lote|08-16 07:04|success|211|4|5|309.0|32|RODIZIO: variacao esperada
+transferegov_lote|08-17 03:51|success|221|4|5|309.0|28|RODIZIO: variacao esperada
+transferegov_lote|08-17 03:53|success|230|4|5|309.0|26|RODIZIO: variacao esperada
+transferegov_lote|08-19 17:04|success|175|4|5|300.0|42|RODIZIO: variacao esperada
+transferegov_lote|08-20 13:06|success|221|4|5|309.0|28|RODIZIO: variacao esperada
+transferegov_lote|08-20 15:08|success|230|4|5|309.0|26|RODIZIO: variacao esperada
+transferegov_lote|08-22 07:02|success|221|4|5|309.0|28|RODIZIO: variacao esperada
+transferegov_lote|08-22 09:02|success|230|4|5|309.0|26|RODIZIO: variacao esperada
+transferegov_lote|08-24 01:03|success|221|4|5|309.0|28|RODIZIO: variacao esperada
+transferegov_lote|08-24 03:03|success|230|4|5|309.0|26|RODIZIO: variacao esperada
+transferegov_lote|08-24 18:06|success|113|2|5|292.0|61|RODIZIO: variacao esperada
+transferegov_lote|08-24 22:56|success|143|2|5|267.0|46|RODIZIO: variacao esperada
+transferegov_lote|08-26 07:06|success|266|4|5|363.0|27|RODIZIO: variacao esperada
+transferegov_lote|08-26 23:25|success|191|2|5|280.0|32|RODIZIO: variacao esperada
+transferegov_te|08-17 17:39|success|0|0|5|30.0|100|comparavel
+(105 rows)

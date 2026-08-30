@@ -1,0 +1,448 @@
+=== Q08a: municipio ativo x fonte (scraper_municipio_coleta), piores primeiro ===
+pos_alfa|nome|fonte|ultima_coleta_brt|dias_desde_carimbo|tentativas|ultimo_erro_brt|qualidade|detalhe_pagina|ultimo_erro
+3|Arcos|cagec|08-29 19:53|0.1|6|08-29 19:53|carimbo-em-erro|1|nenhuma entidade publica encontrada na consulta (nome sem match?)
+27|Nova Lima|cagec|08-24 02:03|5.9|5|08-24 02:03|carimbo-em-erro|1|nenhuma entidade publica encontrada na consulta (nome sem match?)
+41|Tocos do Moji|cagec|08-28 19:53|1.1|0|08-25 01:59|bom|1|
+19|Igarapé|cagec|08-28 19:54|1.1|0|08-25 02:01|bom|1|
+20|Igaratinga|cagec|08-28 19:55|1.1|0|08-25 02:03|bom|1|
+42|Toledo|cagec|08-28 19:56|1.1|0|08-25 02:05|bom|1|
+21|Iguatama|cagec|08-28 19:56|1.1|0|08-25 02:06|bom|1|
+1|Arapuá|cagec|08-28 19:57|1.1|0|08-24 01:55|bom|1|
+22|Itaguara|cagec|08-28 19:58|1.1|0|08-24 01:56|bom|1|
+23|Japaraíba|cagec|08-28 19:59|1.1|0|08-24 01:58|bom|1|
+2|Araújos|cagec|08-29 07:51|0.6|0|08-29 01:51|bom|1|
+24|Lagoa Dourada|cagec|08-29 07:51|0.6|0|08-29 01:53|bom|1|
+4|Bom Despacho|cagec|08-29 07:52|0.6|0|08-29 01:54|bom|1|
+25|Martinho Campos|cagec|08-29 07:53|0.6|0|08-29 01:56|bom|1|
+5|Bonfim|cagec|08-29 07:54|0.6|0|08-29 01:57|bom|1|
+26|Moema|cagec|08-29 07:55|0.6|0|08-29 01:59|bom|1|
+28|Nova Serrana|cagec|08-29 07:55|0.6|0|08-29 02:01|bom|1|
+6|Camacho|cagec|08-29 07:56|0.6|0|08-29 02:03|bom|1|
+7|Capela Nova|cagec|08-29 07:57|0.6|0|08-29 02:05|bom|1|
+8|Caranaíba|cagec|08-29 07:58|0.6|0|08-28 01:56|bom|1|
+9|Carandaí|cagec|08-29 07:59|0.6|0|08-28 01:57|bom|1|
+29|Oliveira Fortes|cagec|08-29 13:50|0.4|0|08-28 01:59|bom|1|
+10|Carmópolis de Minas|cagec|08-29 13:51|0.4|0|08-28 02:00|bom|1|
+30|Papagaios|cagec|08-29 13:52|0.4|0|08-28 02:02|bom|1|
+11|Casa Grande|cagec|08-29 13:52|0.4|0|08-28 02:03|bom|1|
+31|Passa Tempo|cagec|08-29 13:53|0.4|0|08-28 02:05|bom|1|
+12|Cláudio|cagec|08-29 13:54|0.4|0|08-28 02:06|bom|1|
+32|Pequi|cagec|08-29 13:54|0.4|0|08-27 01:56|bom|1|
+13|Conceição do Pará|cagec|08-29 13:55|0.4|0|08-27 01:57|bom|1|
+34|Piracema|cagec|08-29 13:56|0.4|0|08-27 01:58|bom|1|
+33|Perdigão|cagec|08-29 13:56|0.4|0|08-27 02:00|bom|1|
+35|Santo Antônio do Monte|cagec|08-29 13:57|0.4|0|08-27 02:02|bom|1|
+14|Córrego Danta|cagec|08-29 19:50|0.1|0|08-27 02:04|bom|1|
+36|Senhora dos Remédios|cagec|08-29 19:51|0.1|0|08-27 02:06|bom|1|
+37|São Brás do Suaçuí|cagec|08-29 19:52|0.1|0|08-26 01:58|bom|1|
+15|Desterro de Entre Rios|cagec|08-29 19:53|0.1|0|08-26 02:00|bom|1|
+38|São Francisco de Paula|cagec|08-29 19:54|0.1|0|08-26 02:01|bom|1|
+16|Estrela do Indaiá|cagec|08-29 19:54|0.1|0|08-26 02:03|bom|1|
+39|São Sebastião do Oeste|cagec|08-29 19:55|0.1|0|08-26 02:04|bom|1|
+17|Heliodora|cagec|08-29 19:56|0.1|0|08-26 02:06|bom|1|
+40|São Tiago|cagec|08-29 19:57|0.1|0|08-25 01:55|bom|1|
+18|Ibitiúra de Minas|cagec|08-29 19:58|0.1|0|08-25 01:57|bom|1|
+3|Arcos|sigcon|||||NUNCA||
+6|Camacho|sigcon|||||NUNCA||
+7|Capela Nova|sigcon|||||NUNCA||
+8|Caranaíba|sigcon|||||NUNCA||
+10|Carmópolis de Minas|sigcon|||||NUNCA||
+11|Casa Grande|sigcon|||||NUNCA||
+12|Cláudio|sigcon|||||NUNCA||
+16|Estrela do Indaiá|sigcon|||||NUNCA||
+17|Heliodora|sigcon|||||NUNCA||
+18|Ibitiúra de Minas|sigcon|||||NUNCA||
+19|Igarapé|sigcon|||||NUNCA||
+22|Itaguara|sigcon|||||NUNCA||
+27|Nova Lima|sigcon|||||NUNCA||
+31|Passa Tempo|sigcon|||||NUNCA||
+36|Senhora dos Remédios|sigcon|||||NUNCA||
+40|São Tiago|sigcon|||||NUNCA||
+41|Tocos do Moji|sigcon|||||NUNCA||
+34|Piracema|sigcon|||58|08-08 15:04|carimbo-em-erro|1|login SIGCON nao completou (form nao submeteu ou credencial invalida)
+30|Papagaios|sigcon|08-15 08:26|14.6|3|08-15 08:26|carimbo-em-erro|1|login SIGCON nao completou (form nao submeteu ou credencial invalida)
+35|Santo Antônio do Monte|sigcon|08-15 08:26|14.6|3|08-15 08:26|carimbo-em-erro|1|login SIGCON nao completou (form nao submeteu ou credencial invalida)
+26|Moema|sigcon|08-29 06:32|0.7|0||bom|1|
+21|Iguatama|sigcon|08-29 06:41|0.7|0||bom|1|
+29|Oliveira Fortes|sigcon|08-29 08:33|0.6|0||bom|1|
+32|Pequi|sigcon|08-29 08:36|0.6|0||bom|1|
+33|Perdigão|sigcon|08-29 08:45|0.6|0||bom|1|
+38|São Francisco de Paula|sigcon|08-29 10:28|0.5|0||bom|1|
+39|São Sebastião do Oeste|sigcon|08-29 10:36|0.5|0||bom|1|
+42|Toledo|sigcon|08-29 10:45|0.5|0||bom|1|
+2|Araújos|sigcon|08-29 11:04|0.5|0||bom|1|
+28|Nova Serrana|sigcon|08-29 11:14|0.5|0||bom|1|
+9|Carandaí|sigcon|08-29 12:34|0.4|0||bom|1|
+13|Conceição do Pará|sigcon|08-29 12:44|0.4|0||bom|1|
+4|Bom Despacho|sigcon|08-29 12:45|0.4|0||bom|1|
+14|Córrego Danta|sigcon|08-29 14:39|0.3|0||bom|1|
+1|Arapuá|sigcon|08-29 14:45|0.3|0|08-27 22:43|bom|1|
+20|Igaratinga|sigcon|08-29 16:37|0.2|0||bom|1|
+15|Desterro de Entre Rios|sigcon|08-29 16:42|0.2|0|08-29 16:38|bom|1|
+23|Japaraíba|sigcon|08-29 16:45|0.2|0||bom|1|
+24|Lagoa Dourada|sigcon|08-29 18:29|0.2|0||bom|1|
+25|Martinho Campos|sigcon|08-29 18:40|0.2|0||bom|1|
+5|Bonfim|sigcon|08-29 18:45|0.2|0|08-29 18:41|bom|1|
+37|São Brás do Suaçuí|sigcon|08-29 20:45|0.1|0||bom|2|
+3|Arcos|sigcon_emendas|||||NUNCA||
+6|Camacho|sigcon_emendas|||||NUNCA||
+7|Capela Nova|sigcon_emendas|||||NUNCA||
+8|Caranaíba|sigcon_emendas|||||NUNCA||
+10|Carmópolis de Minas|sigcon_emendas|||||NUNCA||
+11|Casa Grande|sigcon_emendas|||||NUNCA||
+12|Cláudio|sigcon_emendas|||||NUNCA||
+16|Estrela do Indaiá|sigcon_emendas|||||NUNCA||
+17|Heliodora|sigcon_emendas|||||NUNCA||
+18|Ibitiúra de Minas|sigcon_emendas|||||NUNCA||
+19|Igarapé|sigcon_emendas|||||NUNCA||
+22|Itaguara|sigcon_emendas|||||NUNCA||
+27|Nova Lima|sigcon_emendas|||||NUNCA||
+30|Papagaios|sigcon_emendas|||||NUNCA||
+31|Passa Tempo|sigcon_emendas|||||NUNCA||
+34|Piracema|sigcon_emendas|||||NUNCA||
+35|Santo Antônio do Monte|sigcon_emendas|||||NUNCA||
+36|Senhora dos Remédios|sigcon_emendas|||||NUNCA||
+40|São Tiago|sigcon_emendas|||||NUNCA||
+41|Tocos do Moji|sigcon_emendas|||||NUNCA||
+26|Moema|sigcon_emendas|08-29 06:32|0.7|0||bom|1|
+21|Iguatama|sigcon_emendas|08-29 06:41|0.7|0||bom|1|
+29|Oliveira Fortes|sigcon_emendas|08-29 08:33|0.6|0||bom|1|
+32|Pequi|sigcon_emendas|08-29 08:36|0.6|0||bom|1|
+33|Perdigão|sigcon_emendas|08-29 08:45|0.6|0||bom|1|
+38|São Francisco de Paula|sigcon_emendas|08-29 10:28|0.5|0||bom|1|
+39|São Sebastião do Oeste|sigcon_emendas|08-29 10:36|0.5|0||bom|1|
+42|Toledo|sigcon_emendas|08-29 10:45|0.5|0||bom|1|
+2|Araújos|sigcon_emendas|08-29 11:04|0.5|0||bom|1|
+28|Nova Serrana|sigcon_emendas|08-29 11:14|0.5|0||bom|1|
+9|Carandaí|sigcon_emendas|08-29 12:34|0.4|0||bom|1|
+13|Conceição do Pará|sigcon_emendas|08-29 12:44|0.4|0||bom|1|
+4|Bom Despacho|sigcon_emendas|08-29 12:45|0.4|0||bom|1|
+14|Córrego Danta|sigcon_emendas|08-29 14:39|0.3|0||bom|1|
+1|Arapuá|sigcon_emendas|08-29 14:45|0.3|0||bom|1|
+20|Igaratinga|sigcon_emendas|08-29 16:37|0.2|0||bom|1|
+15|Desterro de Entre Rios|sigcon_emendas|08-29 16:42|0.2|0||bom|1|
+23|Japaraíba|sigcon_emendas|08-29 16:45|0.2|0||bom|1|
+24|Lagoa Dourada|sigcon_emendas|08-29 18:29|0.2|0||bom|1|
+25|Martinho Campos|sigcon_emendas|08-29 18:40|0.2|0||bom|1|
+5|Bonfim|sigcon_emendas|08-29 18:45|0.2|0||bom|1|
+37|São Brás do Suaçuí|sigcon_emendas|08-29 20:45|0.1|0||bom|1|
+1|Arapuá|simec_termos|08-29 03:10|0.8|0||bom|1|
+2|Araújos|simec_termos|08-29 03:10|0.8|0||bom|1|
+3|Arcos|simec_termos|08-29 03:10|0.8|0||bom|1|
+4|Bom Despacho|simec_termos|08-29 03:10|0.8|0||bom|1|
+5|Bonfim|simec_termos|08-29 03:10|0.8|0||bom|1|
+6|Camacho|simec_termos|08-29 03:10|0.8|0||bom|1|
+7|Capela Nova|simec_termos|08-29 03:10|0.8|0||bom|1|
+8|Caranaíba|simec_termos|08-29 03:10|0.8|0||bom|1|
+9|Carandaí|simec_termos|08-29 03:10|0.8|0||bom|1|
+10|Carmópolis de Minas|simec_termos|08-29 03:10|0.8|0||bom|1|
+11|Casa Grande|simec_termos|08-29 03:10|0.8|0||bom|1|
+12|Cláudio|simec_termos|08-29 03:10|0.8|0||bom|1|
+13|Conceição do Pará|simec_termos|08-29 03:10|0.8|0||bom|1|
+14|Córrego Danta|simec_termos|08-29 03:10|0.8|0||bom|1|
+15|Desterro de Entre Rios|simec_termos|08-29 03:10|0.8|0||bom|1|
+16|Estrela do Indaiá|simec_termos|08-29 03:10|0.8|0||bom|1|
+17|Heliodora|simec_termos|08-29 03:10|0.8|0||bom|1|
+18|Ibitiúra de Minas|simec_termos|08-29 03:10|0.8|0||bom|1|
+19|Igarapé|simec_termos|08-29 03:10|0.8|0||bom|1|
+20|Igaratinga|simec_termos|08-29 03:11|0.8|0||bom|1|
+21|Iguatama|simec_termos|08-29 03:11|0.8|0||bom|1|
+22|Itaguara|simec_termos|08-29 03:11|0.8|0||bom|1|
+23|Japaraíba|simec_termos|08-29 03:11|0.8|0||bom|1|
+24|Lagoa Dourada|simec_termos|08-29 03:11|0.8|0||bom|1|
+25|Martinho Campos|simec_termos|08-29 03:11|0.8|0||bom|1|
+26|Moema|simec_termos|08-29 03:11|0.8|0||bom|1|
+27|Nova Lima|simec_termos|08-29 03:11|0.8|0||bom|1|
+28|Nova Serrana|simec_termos|08-29 03:11|0.8|0||bom|1|
+29|Oliveira Fortes|simec_termos|08-29 03:11|0.8|0||bom|1|
+30|Papagaios|simec_termos|08-29 03:11|0.8|0||bom|1|
+31|Passa Tempo|simec_termos|08-29 03:11|0.8|0||bom|1|
+32|Pequi|simec_termos|08-29 03:11|0.8|0||bom|1|
+33|Perdigão|simec_termos|08-29 03:11|0.8|0||bom|1|
+34|Piracema|simec_termos|08-29 03:11|0.8|0||bom|1|
+35|Santo Antônio do Monte|simec_termos|08-29 03:11|0.8|0||bom|1|
+36|Senhora dos Remédios|simec_termos|08-29 03:11|0.8|0||bom|1|
+37|São Brás do Suaçuí|simec_termos|08-29 03:11|0.8|0||bom|1|
+38|São Francisco de Paula|simec_termos|08-29 03:12|0.8|0||bom|1|
+39|São Sebastião do Oeste|simec_termos|08-29 03:12|0.8|0||bom|1|
+40|São Tiago|simec_termos|08-29 03:12|0.8|0||bom|1|
+41|Tocos do Moji|simec_termos|08-29 03:12|0.8|0||bom|1|
+42|Toledo|simec_termos|08-29 03:12|0.8|0||bom|1|
+22|Itaguara|transferegov|08-29 03:25|0.8|1|08-29 03:25|carimbo-em-erro|1|parcial: orcamento esgotado, 11 propostas restantes
+31|Passa Tempo|transferegov|08-29 05:25|0.7|1|08-29 05:25|carimbo-em-erro|1|parcial: orcamento esgotado, 21 propostas restantes
+9|Carandaí|transferegov|08-29 07:25|0.6|1|08-29 07:25|carimbo-em-erro|1|parcial: orcamento esgotado, 54 propostas restantes
+25|Martinho Campos|transferegov|08-29 11:25|0.5|1|08-29 11:25|carimbo-em-erro|1|parcial: orcamento esgotado, 5 propostas restantes
+33|Perdigão|transferegov|08-29 13:25|0.4|1|08-29 13:25|carimbo-em-erro|1|parcial: orcamento esgotado, 17 propostas restantes
+2|Araújos|transferegov|08-29 17:25|0.2|1|08-29 17:25|carimbo-em-erro|1|parcial: orcamento esgotado, 18 propostas restantes
+3|Arcos|transferegov|08-29 19:25|0.1|1|08-29 19:25|carimbo-em-erro|1|parcial: orcamento esgotado, 143 propostas restantes
+11|Casa Grande|transferegov|08-28 21:21|1.1|0||bom|1|
+12|Cláudio|transferegov|08-28 23:13|1.0|0||bom|1|
+16|Estrela do Indaiá|transferegov|08-28 23:18|1.0|0|08-27 23:25|bom|1|parcial: orcamento esgotado, 11 propostas restantes
+17|Heliodora|transferegov|08-29 01:05|0.9|0|08-26 23:25|bom|1|parcial: orcamento esgotado, 3 propostas restantes
+18|Ibitiúra de Minas|transferegov|08-29 01:09|0.9|0||bom|1|
+19|Igarapé|transferegov|08-29 03:04|0.8|0|08-28 01:25|bom|1|parcial: orcamento esgotado, 1 propostas restantes
+21|Iguatama|transferegov|08-29 03:13|0.8|0|08-27 01:25|bom|1|parcial: orcamento esgotado, 10 propostas restantes
+27|Nova Lima|transferegov|08-29 05:11|0.7|0|08-28 03:25|bom|1|parcial: orcamento esgotado, 82 propostas restantes
+29|Oliveira Fortes|transferegov|08-29 05:16|0.7|0||bom|1|
+30|Papagaios|transferegov|08-29 05:22|0.7|0||bom|1|
+35|Santo Antônio do Monte|transferegov|08-29 07:12|0.6|0|08-28 05:25|bom|1|parcial: orcamento esgotado, 26 propostas restantes
+36|Senhora dos Remédios|transferegov|08-29 07:19|0.6|0||bom|1|
+41|Tocos do Moji|transferegov|08-29 07:23|0.6|0|08-25 11:37|bom|1|parcial: orcamento esgotado, 24 propostas restantes
+13|Conceição do Pará|transferegov|08-29 09:01|0.6|0|08-28 07:25|bom|1|parcial: orcamento esgotado, 4 propostas restantes
+14|Córrego Danta|transferegov|08-29 09:09|0.6|0|08-25 12:24|bom|1|parcial: orcamento esgotado, 51 propostas restantes
+15|Desterro de Entre Rios|transferegov|08-29 09:14|0.6|0||bom|1|
+20|Igaratinga|transferegov|08-29 09:24|0.5|0||bom|1|
+23|Japaraíba|transferegov|08-29 11:06|0.5|0|08-28 09:25|bom|1|parcial: orcamento esgotado, 23 propostas restantes
+24|Lagoa Dourada|transferegov|08-29 11:14|0.5|0||bom|1|
+26|Moema|transferegov|08-29 13:08|0.4|0|08-28 11:25|bom|1|parcial: orcamento esgotado, 17 propostas restantes
+28|Nova Serrana|transferegov|08-29 13:15|0.4|0||bom|1|
+32|Pequi|transferegov|08-29 13:20|0.4|0|08-25 15:00|bom|1|Page.evaluate: TypeError: Cannot read properties of null (reading 'options') at eval (eval at evaluate (:311:30), <anonymous>:1:70) at UtilityScript.evaluate (<
+34|Piracema|transferegov|08-29 15:10|0.3|0|08-28 13:25|bom|1|parcial: orcamento esgotado, 38 propostas restantes
+37|São Brás do Suaçuí|transferegov|08-29 15:14|0.3|0||bom|1|
+38|São Francisco de Paula|transferegov|08-29 15:19|0.3|0||bom|1|
+39|São Sebastião do Oeste|transferegov|08-29 15:25|0.3|0||bom|1|
+40|São Tiago|transferegov|08-29 17:12|0.2|0|08-27 15:25|bom|1|parcial: orcamento esgotado, 15 propostas restantes
+42|Toledo|transferegov|08-29 17:16|0.2|0||bom|1|
+1|Arapuá|transferegov|08-29 17:21|0.2|0||bom|1|
+4|Bom Despacho|transferegov|08-29 19:17|0.1|0|08-28 17:25|bom|1|parcial: orcamento esgotado, 37 propostas restantes
+5|Bonfim|transferegov|08-29 19:24|0.1|0||bom|1|
+6|Camacho|transferegov|08-29 21:05|0.1|0|08-28 19:25|bom|1|parcial: orcamento esgotado, 28 propostas restantes
+7|Capela Nova|transferegov|08-29 21:09|0.1|0||bom|1|
+8|Caranaíba|transferegov|08-29 21:11|0.1|0||bom|1|
+10|Carmópolis de Minas|transferegov|08-29 21:23|0.0|0||bom|1|
+(210 rows)
+=== Q08b: resumo por fonte vs STALENESS_MUNICIPIO_H ===
+fonte|teto_h|ativos|com_linha|bons|em_erro|nunca|bons_mas_velhos|med_h|max_h
+cagec|48|42|42|40|2|0|0|8.7|140.5
+sigcon|48|42|25|22|3|17|0|10.6|350.1
+sigcon_emendas||42|22|22|0|20|0|9.9|16.0
+simec_termos||42|42|42|0|0|0|19.4|19.4
+transferegov|36|42|42|35|7|0|0|11.4|25.2
+(5 rows)
+=== Q08c: semantica empirica do carimbo ===
+fonte|n|erro_apos_carimbo|carimbo_no_erro|sem_carimbo
+cagec|42|0|2|0
+sigcon|25|0|2|1
+sigcon_emendas|22|0|0|0
+simec_termos|42|0|0|0
+transferegov|42|0|7|0
+(5 rows)
+=== Q08d: terco alfabetico x atraso ===
+fonte|terco|n|media_dias|max_dias|media_tentativas
+cagec|1|14|0.50|1.11|0.43
+cagec|2|14|1.02|5.85|0.36
+cagec|3|14|0.38|1.11|0.00
+sigcon|1|7|0.36|0.48|0.00
+sigcon|2|8|0.36|0.67|0.00
+sigcon|3|10|3.61|14.59|6.40
+sigcon_emendas|1|7|0.36|0.48|0.00
+sigcon_emendas|2|8|0.36|0.67|0.00
+sigcon_emendas|3|7|0.47|0.58|0.00
+simec_termos|1|14|0.81|0.81|0.00
+simec_termos|2|14|0.81|0.81|0.00
+simec_termos|3|14|0.81|0.81|0.00
+transferegov|1|14|0.34|1.05|0.21
+transferegov|2|14|0.66|0.97|0.14
+transferegov|3|14|0.46|0.72|0.14
+(15 rows)
+fonte|corr_pos_x_dias|corr_pos_x_tentativas
+cagec|0.02|-0.14
+sigcon|0.25|0.20
+sigcon_emendas|0.24|
+simec_termos|-1.00|
+transferegov|0.15|-0.13
+(5 rows)
+=== Q09a: carimbos das tabelas de dados por municipio ativo ===
+pos_alfa|nome|n_prop|d_tg_upd|d_tg_det|d_tg_hist|d_tg_ops|n_sigcon|d_sigcon|n_fns|d_fns|d_cagec|cagec_pesq|cagec_reg|d_cauc|cauc_pesq|n_em_est|d_em_est
+1|Arapuá|66|0.2|0.2|4.1|0.2|47|0.0|25|0.8|1.1|2026-08-28|f|0.0|2026-08-28|32|2.0
+2|Araújos|83|0.2|0.2|5.2|0.2|28|0.0|43|0.8|0.6|2026-08-29|f|0.0|2026-08-28|21|0.5
+3|Arcos|147|0.1|0.1|4.0|2.1|0||53|0.8||||0.0|2026-08-28||
+4|Bom Despacho|145|0.1|0.1|0.1|0.1|49|0.0|80|0.8|0.6|2026-08-29|f|0.0|2026-08-28|55|13.0
+5|Bonfim|69|0.1|0.1|1.1|0.1|47|0.0|44|0.8|0.6|2026-08-29|f|0.0|2026-08-28|55|18.0
+6|Camacho|44|0.1|0.1|0.1|0.1|0||31|0.8|0.6|2026-08-29|f|0.0|2026-08-28||
+7|Capela Nova|34|0.1|0.1|1.1|2.1|0||26|0.8|0.6|2026-08-29|f|0.0|2026-08-28||
+8|Caranaíba|36|0.1|0.1|5.0|2.1|0||20|0.8|0.6|2026-08-29|f|0.0|2026-08-28||
+9|Carandaí|78|0.6|0.6|3.6|2.6|36|0.0|45|0.8|0.6|2026-08-29|f|0.0|2026-08-28|50|0.4
+10|Carmópolis de Minas|107|0.0|0.0|2.0|1.1|0||46|0.8|0.4|2026-08-29|f|0.0|2026-08-28||
+11|Casa Grande|39|0.8|1.1|5.0|2.0|0||19|0.8|0.4|2026-08-29|f|0.0|2026-08-28||
+12|Cláudio|82|0.8|1.0|1.0|2.0|0||52|0.8|0.4|2026-08-29|t|0.0|2026-08-28||
+13|Conceição do Pará|68|0.6|0.6|0.6|2.6|60|0.0|32|0.8|0.4|2026-08-29|f|0.0|2026-08-28|38|0.4
+14|Córrego Danta|64|0.6|0.6|1.6|2.6|43|0.0|34|0.8|0.1|2026-08-29|f|0.0|2026-08-28|30|0.3
+15|Desterro de Entre Rios|59|0.6|0.6|4.4|0.6|27|0.0|36|0.8|0.1|2026-08-29|t|0.0|2026-08-28|39|0.2
+16|Estrela do Indaiá|38|0.8|1.0|6.6|1.0|0||29|0.8|0.1|2026-08-29|f|0.0|2026-08-28||
+17|Heliodora|71|0.8|0.9|0.9|1.9|0||38|0.8|0.1|2026-08-29|t|0.0|2026-08-28||
+18|Ibitiúra de Minas|54|0.8|0.9|2.9|1.9|0||23|0.8|0.1|2026-08-29|t|0.0|2026-08-28||
+19|Igarapé|171|0.8|0.8|0.8|0.8|0||61|0.8|1.1|2026-08-28|f|0.0|2026-08-28||
+20|Igaratinga|73|0.5|0.5|3.5|0.5|37|0.0|42|0.8|1.1|2026-08-28|t|0.0|2026-08-28|25|0.2
+21|Iguatama|100|0.8|0.8|1.8|1.8|38|0.0|40|0.8|1.1|2026-08-28|f|0.0|2026-08-28|33|0.7
+22|Itaguara|162|0.8|0.8|2.8|1.8|0||40|0.8|1.1|2026-08-28|f|0.0|2026-08-28||
+23|Japaraíba|52|0.5|0.5|0.5|3.5|23|0.0|27|0.8|1.1|2026-08-28|t|0.0|2026-08-28|22|2.6
+24|Lagoa Dourada|67|0.5|0.5|1.5|2.5|28|0.0|36|0.8|0.6|2026-08-29|f|0.0|2026-08-28|32|0.2
+25|Martinho Campos|134|0.5|0.5|6.2|0.5|40|0.0|45|0.8|0.6|2026-08-29|f|0.0|2026-08-28|36|0.2
+26|Moema|58|0.4|0.4|0.4|0.4|32|0.0|34|0.8|0.6|2026-08-29|t|0.0|2026-08-28|43|0.7
+27|Nova Lima|89|0.7|0.7|0.7|0.7|0||49|0.8||||0.0|2026-08-28||
+28|Nova Serrana|78|0.4|0.4|1.4|0.4|38|0.0|70|0.8|0.6|2026-08-29|t|0.0|2026-08-28|35|0.5
+29|Oliveira Fortes|66|0.7|0.7|1.7|1.7|31|0.0|27|0.8|0.4|2026-08-29|f|0.0|2026-08-28|36|13.2
+30|Papagaios|63|0.7|0.7|6.5|1.7|0||38|0.8|0.4|2026-08-29|f|0.0|2026-08-28||
+31|Passa Tempo|52|0.7|0.7|3.6|1.7|0||37|0.8|0.4|2026-08-29|t|0.0|2026-08-28||
+32|Pequi|42|0.4|0.4|19.8|0.4|28|0.0|33|0.8|0.4|2026-08-29|f|0.0|2026-08-28|35|0.6
+33|Perdigão|73|0.4|0.4|4.3|0.4|39|0.0|47|0.8|0.4|2026-08-29|t|0.0|2026-08-28|20|2.2
+34|Piracema|107|0.3|0.3|0.3|0.3|0||40|0.8|0.4|2026-08-29|f|0.0|2026-08-28||
+35|Santo Antônio do Monte|107|0.6|0.6|0.6|0.6|0||62|0.8|0.4|2026-08-29|t|0.0|2026-08-28||
+36|Senhora dos Remédios|76|0.6|0.6|1.6|1.6|0||31|0.8|0.1|2026-08-29|f|0.0|2026-08-28||
+37|São Brás do Suaçuí|57|0.3|0.3|1.3|0.3|22|0.0|18|0.8|0.1|2026-08-29|f|0.0|2026-08-28|16|3.9
+38|São Francisco de Paula|72|0.3|0.3|4.1|0.3|27|0.0|30|0.8|0.1|2026-08-29|f|0.0|2026-08-28|23|0.5
+39|São Sebastião do Oeste|44|0.3|0.3|6.1|0.3|39|0.0|33|0.8|0.1|2026-08-29|f|0.0|2026-08-28|47|0.5
+40|São Tiago|94|0.2|0.2|0.2|0.2|0||33|0.8|0.1|2026-08-29|f|0.0|2026-08-28||
+41|Tocos do Moji|31|0.6|0.6|6.4|1.6|0||22|0.8|1.1|2026-08-28|f|0.0|2026-08-28||
+42|Toledo|47|0.2|0.2|1.2|0.2|39|0.0|37|0.8|1.1|2026-08-28|f|0.0|2026-08-28|39|2.1
+(42 rows)
+=== Q09c: terco alfabetico x idade do detalhe/historico ===
+terco|n|media_d_det|max_d_det|media_d_hist|sem_detalhe
+1|14|0.3|1.1|2.4|0
+2|14|0.7|1.0|2.5|0
+3|14|0.5|0.7|4.1|0
+(3 rows)
+corr_pos_x_dias_detalhe
+0.15
+(1 row)
+=== Q10: sessoes gov.br no Cofre (sem coluna cifrada) ===
+id|municipio_id|sistema|automation_key|categoria|len_cifrado|criado_brt|atualizado_brt|h_desde_update|observacao
+16|1|gov.br - Conta Unica|govbr|Federal|17967|2026-06-03 08:00|2026-08-29 22:33|0.0|[SESSION] capturado em 2026-08-25T01:36:49.991249+00:00 | cookies=17 httpOnly=10 | url=https://discricionarias.transferegov.sistema.gov.br/voluntarias/ConsultarProposta/ResultadoDaConsult | ua=Mozilla
+99|34|gov.br - Conta Unica|govbr|Federal|61|2026-08-10 22:51|2026-08-10 22:51|455.7|
+97|60|gov.br - Conta Unica|govbr|Federal|54|2026-08-10 22:46|2026-08-10 22:46|455.8|
+94|7|gov.br - Conta Unica|govbr|Federal|51|2026-08-10 22:37|2026-08-10 22:37|455.9|
+87|24|gov.br - Conta Unica|govbr|Federal|57|2026-08-10 22:27|2026-08-10 22:27|456.1|
+82|20|gov.br - Conta Unica|govbr|Federal|51|2026-08-10 22:22|2026-08-10 22:22|456.2|
+78|18|gov.br - Conta Unica|govbr|Federal|62|2026-08-10 21:51|2026-08-10 21:51|456.7|
+77|16|gov.br - Conta Unica|govbr|Federal|54|2026-08-10 21:47|2026-08-10 21:47|456.8|
+75|15|gov.br - Conta Unica|govbr|Federal|54|2026-08-10 21:45|2026-08-10 21:45|456.8|
+74|49|gov.br - Conta Unica|govbr|Federal|59|2026-08-10 21:40|2026-08-10 21:40|456.9|
+73|48|gov.br - Conta Unica|govbr|Federal|58|2026-08-10 21:39|2026-08-10 21:39|456.9|
+67|8|gov.br - Conta Unica|govbr|Federal|59|2026-08-02 09:45|2026-08-02 09:45|660.8|GOV
+18|2|Sessao GOVBR|govbr|Sessao|59|2026-06-03 14:44|2026-07-02 08:05|1406.5|[SESSION] capturado em 2026-06-03T17:44:47.643069+00:00 | cookies=11 httpOnly=6 | url=https://parcerias.transferegov.sistema.gov.br/ep-atos-prep-web/home | ua=Mozilla/5.0 (Windows NT 10.0; Win64; x64)
+17|3|Sessao GOVBR|govbr|Sessao|59|2026-06-03 12:11|2026-07-02 08:05|1406.5|[SESSION] capturado em 2026-06-03T15:11:03.477457+00:00 | cookies=11 httpOnly=6 | url=https://parcerias.transferegov.sistema.gov.br/ep-atos-prep-web/home | ua=Mozilla/5.0 (Windows NT 10.0; Win64; x64)
+12|6|gov.br - Conta Unica|govbr|Federal|8393|2026-05-11 00:32|2026-05-11 01:28|2661.1|[SESSION] capturado em 2026-05-11T04:28:27.620853+00:00 | cookies=13 httpOnly=10 | url=https://www.gov.br/pt-br | ua=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
+(15 rows)
+=== Q10b: credenciais por automation_key/sistema (contagem) ===
+automation_key|sistema|n|municipios
+fns|FNS - Fundo Nacional de Saude|5|5
+fns|Sessao FNS|1|1
+govbr|Sessao GOVBR|2|2
+govbr|gov.br - Conta Unica|13|13
+sigcon|SIGCON-MG|29|25
+simec|SIMEC/PAR - FNDE|5|5
+sismob|SISMOB - Obras de Saude|10|10
+suas|Estrutura SUAS|1|1
+(8 rows)
+=== Q11a: por municipio ativo — carimbos de detalhe/historico/ops ===
+nome|n|com_instr|det_null|det_med_dias|det_valor_sem_carimbo|hist_com_valor|hist_valor_sem_carimbo|hist_valor_velho_30d|hist_med_dias|ops_null|com_clausula|com_claus_det|com_pb|com_ne|com_parl|max_upd_brt
+Igarapé|171|43|0|0.9|0|13|0|0|18.0|0|5|0|5|10|29|08-29 04:01
+Itaguara|162|52|0|0.8|0|10|0|0|17.9|0|1|0|1|20|25|08-29 04:03
+Arcos|147|57|0|1.1|0|18|0|0|18.0|0|1|0|1|43|38|08-29 19:25
+Bom Despacho|145|63|0|0.1|0|15|0|0|26.0|0|7|10|10|28|34|08-29 19:17
+Martinho Campos|134|36|0|0.5|0|9|0|0|26.1|0|1|0|1|12|25|08-29 11:25
+Santo Antônio do Monte|107|43|0|0.6|0|8|0|0|18.0|0|0|0|0|18|38|08-29 07:12
+Piracema|107|30|0|0.3|0|9|0|0|26.5|0|3|3|3|8|16|08-29 15:10
+Carmópolis de Minas|107|44|0|0.0|0|16|0|0|17.9|0|5|0|5|21|26|08-29 21:23
+Iguatama|100|29|0|0.8|0|9|0|0|18.0|0|2|0|2|14|19|08-29 04:02
+São Tiago|94|41|0|0.2|0|13|0|0|26.9|0|4|4|4|18|30|08-29 17:12
+Nova Lima|89|44|0|0.7|0|4|0|0|17.9|0|3|0|4|17|34|08-29 05:11
+Araújos|83|22|0|0.2|0|9|0|0|23.9|0|1|1|3|9|19|08-29 17:25
+Cláudio|82|44|0|1.0|0|8|0|0|18.0|0|1|0|1|17|31|08-29 03:57
+Carandaí|78|25|0|1.6|0|14|0|0|23.9|0|2|0|2|13|13|08-29 07:25
+Nova Serrana|78|32|0|0.4|0|13|0|0|26.2|0|2|2|2|9|19|08-29 13:15
+Senhora dos Remédios|76|25|0|0.6|0|7|0|0|18.0|0|1|0|1|10|19|08-29 07:19
+Perdigão|73|31|0|0.4|0|11|0|0|17.9|0|1|0|1|11|19|08-29 13:25
+Igaratinga|73|34|0|0.5|0|10|0|0|26.8|0|3|0|3|13|25|08-29 09:24
+São Francisco de Paula|72|14|0|0.3|0|8|0|0|26.4|0|0|0|0|5|8|08-29 15:19
+Heliodora|71|25|0|1.0|0|7|0|0|17.9|0|2|0|2|8|15|08-29 04:00
+Bonfim|69|17|0|0.1|0|7|0|0|23.9|0|3|0|3|6|8|08-29 19:24
+Conceição do Pará|68|22|0|1.6|0|7|0|0|23.9|0|3|0|3|9|13|08-29 09:01
+Lagoa Dourada|67|30|0|0.5|0|6|0|0|26.7|0|1|0|1|8|10|08-29 11:14
+Oliveira Fortes|66|13|0|0.7|0|7|0|0|17.9|0|0|0|0|5|6|08-29 05:16
+Arapuá|66|19|0|0.2|0|2|0|0|21.9|0|2|0|2|5|7|08-29 17:21
+Córrego Danta|64|27|0|0.6|0|7|0|0|23.9|0|1|0|1|5|11|08-29 09:09
+Papagaios|63|23|0|0.7|0|9|0|0|18.0|0|1|0|1|6|13|08-29 05:22
+Desterro de Entre Rios|59|20|0|0.6|0|5|0|0|23.9|0|0|0|1|10|10|08-29 09:14
+Moema|58|30|0|0.4|0|9|0|0|26.7|0|2|0|2|10|20|08-29 13:08
+São Brás do Suaçuí|57|11|0|0.3|0|4|0|0|26.5|0|0|0|0|6|6|08-29 15:14
+Ibitiúra de Minas|54|11|0|0.9|0|3|0|0|17.9|0|3|0|3|4|7|08-29 04:00
+Passa Tempo|52|20|0|0.7|0|4|0|0|17.9|0|0|0|0|4|14|08-29 05:25
+Japaraíba|52|20|0|0.5|0|3|0|0|26.7|0|1|0|1|6|17|08-29 11:06
+Toledo|47|15|0|0.2|0|5|0|0|26.9|0|4|3|4|6|8|08-29 17:16
+Camacho|44|18|0|0.1|0|4|0|0|17.9|0|0|0|0|13|14|08-29 21:05
+São Sebastião do Oeste|44|17|0|0.3|0|5|0|0|26.4|0|4|0|4|6|9|08-29 15:25
+Pequi|42|14|0|0.4|0|7|0|0|26.2|0|0|0|0|7|9|08-29 13:20
+Casa Grande|39|6|0|1.1|0|2|0|0|17.9|0|1|0|1|2|5|08-29 03:57
+Estrela do Indaiá|38|21|0|1.0|0|10|0|0|17.9|0|1|0|1|14|12|08-29 03:59
+Caranaíba|36|10|0|0.1|0|3|0|0|17.9|0|1|0|1|6|9|08-29 21:11
+Capela Nova|34|11|0|0.1|0|5|0|0|17.9|0|1|0|1|9|8|08-29 21:09
+Tocos do Moji|31|12|0|0.6|0|8|0|0|17.9|0|0|0|0|7|8|08-29 07:23
+(42 rows)
+=== Q11b: histograma de idade dos carimbos (carteira ativa) ===
+carimbo|faixa|count
+detalhe|1 <1d|2843
+detalhe|2 1-7d|356
+historico|1 <1d|180
+historico|2 1-7d|465
+historico|3 7-30d|2554
+ops_obs|1 <1d|414
+ops_obs|2 1-7d|1662
+ops_obs|3 7-30d|1123
+(8 rows)
+=== Q11c: propostas vivas com detalhe >30d ou nunca lido (top 60) ===
+nome|numero_proposta|situacao|codigo_instrumento|d_det|d_hist|tem_hist|upd
+(0 rows)
+vivas_det_velho_ou_nulo
+0
+(1 row)
+=== Q11d: propostas em municipios inativos ===
+active|propostas|municipios
+t|3199|42
+(1 row)
+=== Q12: candidatos a reconciliacao ===
+pos_alfa|nome|ibge_code|n_prop|det_null|tg_tent|tg_dias|det_med_dias|sig_tent|sig_dias|marcas|rank_pior
+9|Carandaí|3113206|78|0|1|0.6|1.6|0|0.4||1
+3|Arcos|3104205|147|0|1|0.1|1.1||||2
+22|Itaguara|3132206|162|0|1|0.8|0.8||||3
+31|Passa Tempo|3147709|52|0|1|0.7|0.7||||4
+25|Martinho Campos|3140506|134|0|1|0.5|0.5|0|0.2||5
+33|Perdigão|3149705|73|0|1|0.4|0.4|0|0.6||6
+2|Araújos|3103900|83|0|1|0.2|0.2|0|0.5||7
+13|Conceição do Pará|3117603|68|0|0|0.6|1.6|0|0.4||8
+11|Casa Grande|3114907|39|0|0|1.1|1.1||||9
+12|Cláudio|3116605|82|0|0|1.0|1.0||||10
+16|Estrela do Indaiá|3124708|38|0|0|1.0|1.0||||11
+17|Heliodora|3129202|71|0|0|0.9|1.0||||12
+18|Ibitiúra de Minas|3129905|54|0|0|0.9|0.9||||13
+19|Igarapé|3130101|171|0|0|0.8|0.9|||MAIS-PESADO|14
+21|Iguatama|3130309|100|0|0|0.8|0.8|0|0.7||15
+27|Nova Lima|3144805|89|0|0|0.7|0.7||||16
+29|Oliveira Fortes|3145703|66|0|0|0.7|0.7|0|0.6||17
+30|Papagaios|3146909|63|0|0|0.7|0.7|3|14.6||18
+35|Santo Antônio do Monte|3160405|107|0|0|0.6|0.6|3|14.6||19
+36|Senhora dos Remédios|3166204|76|0|0|0.6|0.6||||20
+41|Tocos do Moji|3169059|31|0|0|0.6|0.6||||21
+14|Córrego Danta|3119807|64|0|0|0.6|0.6|0|0.3||22
+15|Desterro de Entre Rios|3121407|59|0|0|0.6|0.6|0|0.2||23
+20|Igaratinga|3130200|73|0|0|0.5|0.5|0|0.2||24
+23|Japaraíba|3135308|52|0|0|0.5|0.5|0|0.2||25
+24|Lagoa Dourada|3137403|67|0|0|0.5|0.5|0|0.2||26
+26|Moema|3142403|58|0|0|0.4|0.4|0|0.7||27
+28|Nova Serrana|3145208|78|0|0|0.4|0.4|0|0.5||28
+32|Pequi|3149606|42|0|0|0.4|0.4|0|0.6||29
+34|Piracema|3150604|107|0|0|0.3|0.3|58|||30
+37|São Brás do Suaçuí|3160900|57|0|0|0.3|0.3|0|0.1||31
+38|São Francisco de Paula|3161205|72|0|0|0.3|0.3|0|0.5||32
+39|São Sebastião do Oeste|3164605|44|0|0|0.3|0.3|0|0.5||33
+40|São Tiago|3165008|94|0|0|0.2|0.2||||34
+42|Toledo|3169109|47|0|0|0.2|0.2|0|0.5|FIM-ALFABETO|35
+1|Arapuá|3103801|66|0|0|0.2|0.2|0|0.3||36
+4|Bom Despacho|3107406|145|0|0|0.1|0.1|0|0.4|BOM-DESPACHO|37
+5|Bonfim|3108107|69|0|0|0.1|0.1|0|0.2||38
+6|Camacho|3110400|44|0|0|0.1|0.1||||39
+7|Capela Nova|3112208|34|0|0|0.1|0.1||||40
+8|Caranaíba|3113107|36|0|0|0.1|0.1||||41
+10|Carmópolis de Minas|3114501|107|0|0|0.0|0.0||||42
+(42 rows)
