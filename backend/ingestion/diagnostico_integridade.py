@@ -111,18 +111,25 @@ CHECAGENS = [
         "limite": 3,
     },
     {
-        "nome": "ingestion_log: rodadas sem par inicio/fim",
+        "nome": "ingestion_log: rodadas que nasceram JA ENCERRADAS (crash e invisivel)",
         "sql": """
-            SELECT count(*) FILTER (WHERE started_at IS NULL OR finished_at IS NULL),
+            SELECT count(*) FILTER (WHERE finished_at IS NOT NULL
+                                      AND (started_at IS NULL
+                                           OR finished_at - started_at < interval '1 second')),
                    count(*)
               FROM ingestion_log
-             WHERE finished_at > now() - interval '30 days'
-                OR started_at  > now() - interval '30 days'
+             WHERE COALESCE(finished_at, started_at) > now() - interval '30 days'
         """,
         "explica": (
-            "O log e escrito no ENCERRAMENTO: rodada morta por SIGKILL (timeout, "
-            "OOM, deploy) nao deixa rastro. O auditor falou em 102 crashes sem "
-            "linha; o numero nao foi confirmado, o mecanismo sim."
+            "⚠️ A PRIMEIRA VERSAO DESTA CHECAGEM ESTAVA ERRADA e deu 0 de 2.172, "
+            "parecendo aprovacao. Ela contava 'linha sem par inicio/fim' — mas a "
+            "rodada que MORRE nao deixa linha NENHUMA para ser contada. Estava "
+            "medindo o que EXISTE, quando o defeito e o que FALTA. E o mesmo erro "
+            "de forma que os seis achados da auditoria tem.\n"
+            "           Agora mede o SINTOMA que da para ver: linha que nasce ja "
+            "encerrada (duracao zero ou sem `started_at`) e coletor que nao abre a "
+            "rodada — e coletor que nao abre e coletor cujo crash e invisivel. "
+            "Alto e o esperado hoje: nenhum dos 28 INSERTs grava 'running'."
         ),
         "limite": 999999,          # informativo: ainda nao ha conserto no ar
     },
