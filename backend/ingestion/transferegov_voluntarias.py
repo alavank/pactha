@@ -2190,6 +2190,28 @@ def _upsert(mun_id: int, propostas: list[dict]):
                 _log_incoerente(p.get("numero_proposta"), valor_global,
                                 valor_repasse, valor_contrap)
             valor_global = valor_repasse = valor_contrap = None
+            # ⚠️ E O MESMO DINHEIRO SAI DO `detalhe`, NAO SO DAS COLUNAS.
+            #
+            # A trava acima nasceu protegendo as tres COLUNAS, e nisso ela
+            # funciona. Mas o `det` seguia sendo gravado inteiro, com os valores
+            # deslocados dentro dele. Medido em Araujos (30/08/2026): 83 de 83
+            # propostas tinham o trio trocado no JSONB — "Valor Global" com o
+            # repasse, "Valor de Repasse" com a contrapartida — e 61 tinham sido
+            # regravadas naquele mesmo dia. Nao era passivo antigo: era o mesmo
+            # numero errado sendo reescrito a cada rodada, ao lado de uma coluna
+            # certa, esperando alguem ler o blob em vez da coluna.
+            #
+            # Apagar em vez de corrigir e deliberado. O `detalhe` e o que a
+            # PAGINA disse; consertar o valor aqui inventaria uma leitura que
+            # nunca houve. Quem precisa do numero tem as colunas ao lado, que vem
+            # do CSV oficial. O marcador deixa o silencio auditavel — sem ele,
+            # "nao tem valor no detalhe" seria indistinguivel de "nunca li".
+            _sujos = [k for k in ("Valor Global", "Valor de Repasse",
+                                  "Valor de Contrapartida") if k in det]
+            if _sujos:
+                for k in _sujos:
+                    det.pop(k, None)
+                det["_valores_descartados"] = _sujos
         situacao_contr = g("Situação de Contratação Atual")
         parlamentar = g("_parlamentar")
         # Detalhe generico da situacao de contratacao (qualquer tipo)
@@ -2253,9 +2275,30 @@ def _upsert(mun_id: int, propostas: list[dict]):
                 dt_fim_vigencia=COALESCE(EXCLUDED.dt_fim_vigencia, transferegov_propostas.dt_fim_vigencia),
                 dt_proposta=COALESCE(EXCLUDED.dt_proposta, transferegov_propostas.dt_proposta),
                 dt_assinatura=COALESCE(EXCLUDED.dt_assinatura, transferegov_propostas.dt_assinatura),
-                valor_global=COALESCE(EXCLUDED.valor_global, transferegov_propostas.valor_global),
-                valor_repasse=COALESCE(EXCLUDED.valor_repasse, transferegov_propostas.valor_repasse),
-                valor_contrapartida=COALESCE(EXCLUDED.valor_contrapartida, transferegov_propostas.valor_contrapartida),
+                -- ⚠️ A COLUNA VEM PRIMEIRO: o scraper so PREENCHE O VAZIO, nunca
+                -- sobrescreve. Isto e a consequencia de uma frase que ja estava
+                -- escrita no `valores_coerentes` e que o codigo nao obedecia: "o
+                -- CSV de dados abertos e a fonte AUTORITATIVA declarada para
+                -- estes tres campos".
+                --
+                -- Com o EXCLUDED na frente, a trava de coerencia so parava o
+                -- trio que NAO FECHA. Um deslocamento que por acaso FECHA
+                -- atravessava e sobrescrevia o valor certo do CSV. Caso medido
+                -- (30/08/2026, 053238/2015 de Araujos): portal
+                -- 150.000/100.000/50.000, tela 100.000/50.000/50.000 — e
+                -- 50.000 + 50.000 = 100.000, entao a trava aprovou. Pior: o cron
+                -- das 06:50 regravava o valor certo do CSV e o lote de 2 em 2
+                -- horas regravava o errado de volta, duas vezes por dia.
+                --
+                -- E a mesma inversao do #328 (vigencia), na direcao contraria:
+                -- la a TELA e a fonte da verdade, aqui e o CSV. O criterio nao e
+                -- "quem roda por ultimo", e quem a fonte declara como dono.
+                --
+                -- Proposta NOVA, que o CSV ainda nao cobre, continua nascendo com
+                -- o valor da tela: a coluna esta vazia e o COALESCE cai nele.
+                valor_global=COALESCE(transferegov_propostas.valor_global, EXCLUDED.valor_global),
+                valor_repasse=COALESCE(transferegov_propostas.valor_repasse, EXCLUDED.valor_repasse),
+                valor_contrapartida=COALESCE(transferegov_propostas.valor_contrapartida, EXCLUDED.valor_contrapartida),
                 situacao_contratacao=COALESCE(EXCLUDED.situacao_contratacao, transferegov_propostas.situacao_contratacao),
                 clausula_suspensiva_dt_prevista=COALESCE(EXCLUDED.clausula_suspensiva_dt_prevista, transferegov_propostas.clausula_suspensiva_dt_prevista),
                 clausula_suspensiva_motivo=COALESCE(EXCLUDED.clausula_suspensiva_motivo, transferegov_propostas.clausula_suspensiva_motivo),
