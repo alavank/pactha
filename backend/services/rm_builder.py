@@ -2164,7 +2164,11 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             tc = await db.execute(text("""
                 SELECT processo, nr_documento, tipo_documento, tipo_objeto,
                        dt_validacao, periodo_pagamento, vigencia_txt, dt_vigencia,
-                       valor_termo
+                       valor_termo,
+                       -- ⚠️ AS QUATRO NOVAS VAO NO FIM. Este resultado e lido por
+                       -- INDICE (r[0]..r[8]); coluna inserida no meio desloca
+                       -- tudo em silencio.
+                       valor_empenhado, valor_pago, saldo_bancario, prestacao_contas
                 FROM simec_termos WHERE municipio_id = :m
             """), {"m": municipio_id})
             for r in tc.fetchall():
@@ -2190,7 +2194,21 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
                     "valor_repasse": _money(r[8]),
                     "valor_contrapartida": 0,
                     "banco": "", "agencia": "", "conta": "",
-                    "saldo_bancario": None, "dt_saldo": None,
+                    # ⚠️ ERAM TRES ZEROS FIXOS ate 31/08/2026 — nao porque o SIMEC
+                    # nao publicasse, mas porque `_COLS` do coletor parava no
+                    # "Valor do Termo". A pagina traz Valor Empenhado, Pagamento
+                    # Efetivado e Saldo Bancario ao lado dele. Era por isso que a
+                    # creche de Araujos (TC 202141430-1: R$ 1.875.147,32
+                    # empenhados e R$ 572.978,05 pagos) aparecia no relatorio
+                    # como se nada tivesse andado.
+                    "saldo_bancario": _money(r[11]) if r[11] is not None else None,
+                    "dt_saldo": None,
+                    "valor_empenhado": _money(r[9]) if r[9] is not None else None,
+                    # `valor_desembolsado` e a chave GENERICA que a caixa de
+                    # desembolso do PDF ja le (rm_pdf._desembolso_destaque); o
+                    # termo do MEC passa a preenche-la com o pagamento efetivado.
+                    "valor_desembolsado": _money(r[10]) if r[10] is not None else None,
+                    "prestacao_contas_status": (r[12] or "").strip(),
                     "dt_fim_vigencia": _iso(r[7]),
                     "situacao_atual": (r[6] or "").strip() or ("Vigente" if not venceu else "Vigência encerrada"),
                     "situacao_base": "Vigente" if not venceu else "Encerrado",

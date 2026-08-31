@@ -92,6 +92,9 @@ MIGRATION_FILES = [
     "add_transferegov_te.sql",
     # SIMEC: TERMOS DE COMPROMISSO (o instrumento; as liberacoes ja existiam)
     "add_simec_termos.sql",
+    # As quatro colunas de dinheiro que a pagina do SIMEC sempre teve e o parser
+    # descartava (empenhado, pago, saldo, prestacao de contas). Aditiva.
+    "add_simec_termos_dinheiro.sql",
     # Voluntarias: situacao contratacao + clausula suspensiva detalhe + parlamentar
     "add_voluntarias_clausula_parlamentar.sql",
     # Voluntarias: detalhe generico da Situacao de Contratacao (qualquer tipo)

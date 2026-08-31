@@ -69,6 +69,22 @@ _COLS = {
     "vigencia_txt": ("vig",),
     "valor_termo": ("valor do termo",),
     "quantidade_obra": ("quantidade de obra",),
+    # ⚠️ AS QUATRO DE DINHEIRO, ausentes ate 31/08/2026. A pagina sempre as
+    # trouxe; o mapa e que parava no "valor do termo". Era por isso que o RM
+    # mostrava so o valor pactuado do TC e nada do que foi empenhado ou pago.
+    #
+    # ⚠️ O rotulo do PAGO MUDA entre as tabelas da MESMA pagina: "Pagamento
+    # Efetivado" no bloco de TC/aditivo, "Valor Pago" no de PAR/PAC. Os dois
+    # fragmentos caem no mesmo campo.
+    #
+    # ⚠️ Fragmento CURTO aqui casa coluna errada, porque `_mapa_colunas` usa
+    # `any`. "valor" sozinho pegaria "Valor do Termo"; "pagamento" sozinho
+    # pegaria "Periodo do Pagamento". Por isso os fragmentos sao as expressoes
+    # inteiras — ha um teste que reprova se um deles voltar a ser curto.
+    "valor_empenhado": ("valor empenhado",),
+    "valor_pago": ("pagamento efetivado", "valor pago"),
+    "saldo_bancario": ("saldo banc",),
+    "prestacao_contas": ("presta",),
 }
 
 
@@ -232,6 +248,10 @@ def parse_termos(html: str) -> list[dict]:
                 "dt_vigencia": _data(g("vigencia_txt")),
                 "valor_termo": _valor(g("valor_termo")),
                 "quantidade_obra": (g("quantidade_obra") or None),
+                "valor_empenhado": _valor(g("valor_empenhado")),
+                "valor_pago": _valor(g("valor_pago")),
+                "saldo_bancario": _valor(g("saldo_bancario")),
+                "prestacao_contas": (g("prestacao_contas") or None),
                 "raw": {k: g(k) for k in _COLS},
             }
     return list(achados.values())
@@ -242,18 +262,28 @@ def _upsert(cur, mid: int, t: dict):
         """INSERT INTO simec_termos
              (municipio_id, processo, nr_documento, tipo_documento, tipo_objeto,
               dt_validacao, periodo_pagamento, vigencia_txt, dt_vigencia,
-              valor_termo, quantidade_obra, raw_data, updated_at)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, NOW())
+              valor_termo, quantidade_obra,
+              valor_empenhado, valor_pago, saldo_bancario, prestacao_contas,
+              raw_data, updated_at)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, NOW())
            ON CONFLICT (municipio_id, COALESCE(processo, ''), COALESCE(nr_documento, ''))
            DO UPDATE SET
              tipo_documento=EXCLUDED.tipo_documento, tipo_objeto=EXCLUDED.tipo_objeto,
              dt_validacao=EXCLUDED.dt_validacao, periodo_pagamento=EXCLUDED.periodo_pagamento,
              vigencia_txt=EXCLUDED.vigencia_txt, dt_vigencia=EXCLUDED.dt_vigencia,
              valor_termo=EXCLUDED.valor_termo, quantidade_obra=EXCLUDED.quantidade_obra,
+             -- ⚠️ SOBRESCRITA DIRETA, sem COALESCE: o SIMEC e a fonte unica
+             -- destas quatro, e empenho, pago e saldo MUDAM. Um COALESCE
+             -- congelaria o numero do dia em que a coluna nasceu.
+             valor_empenhado=EXCLUDED.valor_empenhado, valor_pago=EXCLUDED.valor_pago,
+             saldo_bancario=EXCLUDED.saldo_bancario,
+             prestacao_contas=EXCLUDED.prestacao_contas,
              raw_data=EXCLUDED.raw_data, updated_at=NOW()""",
         (mid, t["processo"], t["nr_documento"], t["tipo_documento"], t["tipo_objeto"],
          t["dt_validacao"], t["periodo_pagamento"], t["vigencia_txt"], t["dt_vigencia"],
-         t["valor_termo"], t["quantidade_obra"], json.dumps(t["raw"], ensure_ascii=False)),
+         t["valor_termo"], t["quantidade_obra"],
+         t["valor_empenhado"], t["valor_pago"], t["saldo_bancario"],
+         t["prestacao_contas"], json.dumps(t["raw"], ensure_ascii=False)),
     )
 
 
