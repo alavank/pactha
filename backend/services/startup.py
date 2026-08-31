@@ -329,6 +329,11 @@ MIGRATION_FILES = [
     # sempre que ele nao e zero). Repara o ja gravado lendo do proprio raw_data;
     # idempotente e autocurativa, roda a cada boot.
     "fix_fns_valor_pago_na_coluna_certa.sql",
+    # SIGCON: apaga a data de publicacao SUBSTITUTA (1o de janeiro do ano) que o
+    # coletor gravava na mesma coluna da data real e o modal imprimia como
+    # "Data Publicação". Depende do coletor ja corrigido; a data de verdade volta
+    # pelo backfill do CKAN. Idempotente.
+    "limpa_dt_publicacao_substituta.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",
