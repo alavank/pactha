@@ -231,6 +231,12 @@ def _index_dataset(gz_bytes: bytes):
                 "vig_ini": _dt(g(row, "dt_vigencia_inicial")),
                 "vig_fim": _dt(g(row, "dt_vigencia_final")),
                 "vig_atual": _dt(g(row, "dt_vigencia_atual")),
+                # A data de publicacao REAL. O scraper do SIGCON gravava
+                # `date(ano, 1, 1)` como substituto quando nao abria o detalhe, e
+                # ela ficava na mesma coluna da verdadeira (15 dos 28 convenios
+                # de Araujos). Este campo sempre esteve no arquivo que a
+                # plataforma ja baixa a cada 6 horas — so nao era aproveitado.
+                "dt_pub": _dt(g(row, "dt_publicacao")),
                 "ver": int(g(row, "fl_versao") or 0),
             }
             siafi = (g(row, "nr_siafi") or "").strip()
@@ -461,13 +467,19 @@ def backfill() -> int:
             dt_vigencia_inicial = COALESCE(dt_vigencia_inicial, %s),
             dt_vigencia_atual   = COALESCE(dt_vigencia_atual, %s),
             dt_vigencia_final   = COALESCE(dt_vigencia_final, %s),
+            -- A data de publicacao REAL, so onde nao ha nenhuma. O scraper
+            -- gravava 1o de janeiro como substituto; a migration
+            -- `limpa_dt_publicacao_substituta.sql` zera esses, e daqui vem a
+            -- verdadeira. COALESCE e nao sobrescrita: a data lida da TELA, se
+            -- houver, continua mandando.
+            dt_publicacao = COALESCE(dt_publicacao, %s),
             objeto = CASE WHEN length(trim(coalesce(objeto, ''))) <= 3
                           THEN COALESCE(NULLIF(%s, ''), objeto) ELSE objeto END,
             valor_repassado = CASE WHEN %s::numeric IS NOT NULL THEN %s::numeric ELSE valor_repassado END,
             updated_at = NOW()
           WHERE id = %s""",
           (rec["contra"], rec["vig_ini"], rec["vig_atual"] or rec["vig_fim"], rec["vig_fim"],
-           rec.get("obj"), repassado, repassado, cid))
+           rec.get("dt_pub"), rec.get("obj"), repassado, repassado, cid))
         if cur.rowcount:
             upd += 1
     conn.commit()
