@@ -612,8 +612,18 @@ export default function ConveniosPage() {
           ))}
         </div>
       ) : items.length === 0 ? (
-        <div className="flex h-48 items-center justify-center rounded-lg border text-muted-foreground">
-          Nenhum dado encontrado.
+        /* ⚠️ O VAZIO TINHA TRÊS CAUSAS E DIZIA UMA SÓ.
+           "Nenhum dado encontrado." aparecia igual quando (a) não há credencial
+           do SIGCON no Cofre para o município, (b) a credencial foi recusada, e
+           (c) a coleta rodou e realmente não há convênio. O cliente lia todas
+           como (c) — e as duas primeiras são pendências acionáveis, com um lugar
+           exato para resolver. O backend agora classifica (services/coleta.py) e
+           manda a frase pronta. */
+        <div className="flex h-48 flex-col items-center justify-center gap-2 rounded-lg border px-6 text-center">
+          <span className="text-muted-foreground">Nenhum dado encontrado.</span>
+          {data?.credencial_aviso ? (
+            <span className="max-w-md text-sm text-warning">{data.credencial_aviso}</span>
+          ) : null}
         </div>
       ) : (
         <>

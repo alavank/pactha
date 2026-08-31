@@ -11,7 +11,7 @@ from database import get_db
 from models import ConvenioEstadual, Municipio
 from schemas.convenio import ConvenioResponse, ConvenioListResponse, ConvenioStats, AlertaVigencia
 from services.auth import get_current_user, ensure_municipio_access, ensure_tela
-from services.coleta import frescor_coleta
+from services.coleta import FRASE_CREDENCIAL, classificar_credencial, frescor_coleta
 from services.audit import registrar
 # Trava de permissao em MODO AVISO. `ensure_dono` responde a pergunta que
 # `ensure_tela` nao responde: "este id e de um municipio que a pessoa enxerga?".
@@ -510,9 +510,70 @@ async def list_convenios(
     coleta_em, coleta_falhas = (await frescor_coleta(db, municipio_id, ("sigcon",))
                                 if municipio_id else (None, 0))
 
+    # ESTADO DA CREDENCIAL: "nenhum dado" tem tres causas e a tela dizia uma so.
+    #
+    # ⚠️ DUAS CONSULTAS SEPARADAS, e nao um JOIN. `scraper_municipio_coleta` pode
+    # nao existir num tenant novo (Santa Maria/RS foi o primeiro banco criado do
+    # zero e expos exatamente esse tipo de schema herdado); juntando as duas, a
+    # tabela fragil derrubaria tambem a contagem de credenciais, que e a que
+    # sustenta a mensagem principal.
+    #
+    # ⚠️ `await db.rollback()` nos DOIS except. Sem ele a transacao fica invalida
+    # e a LISTAGEM INTEIRA passa a devolver 500 — trocar "tela sem aviso" por
+    # "tela quebrada" seria o unico jeito de piorar isto.
+    credencial = "ok"
+    if municipio_id:
+        _n = 0
+        try:
+            # ⚠️ `municipio_id = :m` e nao "ou escopo de instancia": o coletor do
+            # SIGCON faz INNER JOIN em `municipios`, entao credencial sem
+            # municipio NUNCA e usada — conta-la diria "cadastrada" sobre um
+            # municipio que jamais sera coletado. (E onde o precedente do
+            # InvestSUS NAO se copia: la a credencial de instancia vale.)
+            # ⚠️ `length(senha_hash) > 0`: o coletor so aceita quando o decrypt
+            # devolve algo. Nao decifrar aqui e deliberado — com COFRE_KEY errada
+            # o decrypt volta vazio em silencio e a tela afirmaria "cadastrada"
+            # enquanto o coletor nao ve nada. O comprimento e o proxy honesto.
+            _r = await db.execute(text(
+                "SELECT count(*) FROM cofre_senhas "
+                "WHERE municipio_id = :m "
+                "  AND (sistema ILIKE 'SIGCON%' OR automation_key = 'sigcon') "
+                "  AND senha_hash IS NOT NULL AND length(senha_hash) > 0"),
+                {"m": municipio_id})
+            _n = int((_r.scalar() or 0))
+        except Exception:
+            await db.rollback()
+            _n = -1                      # desconhecido: nao acusa nem absolve
+        if _n >= 0:
+            _tent, _login, _coletou = 0, False, True
+            try:
+                _r = await db.execute(text(
+                    "SELECT coalesce(tentativas, 0), coalesce(ultimo_erro, '') "
+                    "FROM scraper_municipio_coleta "
+                    "WHERE fonte = 'sigcon' AND municipio_id = :m"), {"m": municipio_id})
+                _row = _r.first()
+                # Sem linha no rodizio = a primeira coleta ainda nao rodou. E o
+                # QUARTO estado: quem acabou de cadastrar a senha via "Nenhum
+                # dado encontrado" e concluia que ela nao funcionou.
+                _coletou = _row is not None
+                if _row:
+                    _tent = int(_row[0] or 0)
+                    # ⚠️ ERRO DE LOGIN, e nao "falhou". Timeout, portal fora do ar
+                    # e erro de parsing NAO sao culpa da senha; acusar a
+                    # credencial por uma queda do portal manda o cliente trocar
+                    # uma senha que esta certa.
+                    _e = (_row[1] or "").lower()
+                    _login = any(t in _e for t in ("login", "senha", "credencial",
+                                                   "autentic", "usuario"))
+            except Exception:
+                await db.rollback()
+            credencial = classificar_credencial(_n, _tent, _login, houve_coleta=_coletou)
+
     pages = math.ceil(total / per_page) if total > 0 else 1
     return ConvenioListResponse(items=items, total=total, page=page, per_page=per_page,
-                                pages=pages, coleta_em=coleta_em, coleta_falhas=coleta_falhas)
+                                pages=pages, coleta_em=coleta_em, coleta_falhas=coleta_falhas,
+                                credencial=credencial,
+                                credencial_aviso=FRASE_CREDENCIAL.get(credencial, ""))
 
 
 @router.get("/stats", response_model=ConvenioStats,

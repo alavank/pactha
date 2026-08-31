@@ -78,6 +78,17 @@ class ConvenioListResponse(BaseModel):
     # acontece na falha, para o rodizio nao sofrer starvation).
     coleta_em: Optional[str] = None
     coleta_falhas: int = 0
+    # ESTADO DA CREDENCIAL do SIGCON deste municipio. "Nenhum dado encontrado"
+    # tem TRES causas — sem credencial no Cofre, credencial recusada, e coletado
+    # e realmente vazio — e a tela dizia uma so, entao o cliente lia todas como a
+    # terceira. As duas primeiras sao pendencias ACIONAVEIS.
+    # 'ok' | 'sem_credencial' | 'recusada' | 'fora_da_fila'.
+    # DEFAULT 'ok' de proposito: sem municipio_id nao ha o que classificar, e o
+    # front nao pode passar a mostrar aviso na tela agregada.
+    credencial: str = "ok"
+    # A frase pronta, para tela/PDF nao reimplementarem a regra cada um do seu
+    # jeito. Vazia quando 'ok'.
+    credencial_aviso: str = ""
 
 
 class ConvenioStats(BaseModel):
