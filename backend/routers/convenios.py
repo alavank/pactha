@@ -718,37 +718,47 @@ async def query_alertas_vigencia(
         ))
 
     # TransfereGov Voluntarias (dt_fim_vigencia eh string dd/mm/yyyy)
-    if municipio_id or municipio_ids:
-        from datetime import datetime as _dt
-        if municipio_id:
-            _mun_sql = "municipio_id = :m"; _vp = {"m": municipio_id}
-        else:
-            _mun_sql = "municipio_id = ANY(:mids)"; _vp = {"mids": list(municipio_ids)}
-        _vsql = "AND split_part(numero_proposta, '/', 2) = ANY(:anos_txt)" if _anos else ""
-        if _anos:
-            _vp["anos_txt"] = [str(a) for a in _anos]
-        vol = await db.execute(text(f"""
-            SELECT numero_proposta, codigo_instrumento, objeto, orgao, situacao, dt_fim_vigencia,
-                   municipio_id
-            FROM transferegov_propostas WHERE {_mun_sql} {_vsql}
-        """), _vp)
-        for row in vol.fetchall():
-            dtf = None
-            for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
-                try:
-                    dtf = _dt.strptime(str(row[5]).strip()[:10], fmt).date(); break
-                except (ValueError, AttributeError, TypeError):
-                    continue
-            if not dtf or not (date.today() <= dtf <= limite):
+    #
+    # ⚠️ SEM PORTAO. Aqui havia um `if municipio_id or municipio_ids:` e ele
+    # apagava as voluntarias INTEIRAS para o super-admin: `allowed_municipio_ids`
+    # e None para ele (services/auth.py), o handler deixa `mids = None`, e os dois
+    # parametros nulos davam falso no portao. O bloco dos ESTADUAIS, logo acima,
+    # nunca teve esse portao — sem municipio ele consulta o tenant inteiro. Dai a
+    # assimetria que o dono relatou: o modal de Vigencias do super-admin mostrava
+    # so estaduais, enquanto o de um usuario comum (carteira = lista nao vazia)
+    # mostrava os dois. "Sem recorte" significa TODOS, e nao NENHUM.
+    from datetime import datetime as _dt
+    if municipio_id:
+        _mun_sql = "municipio_id = :m"; _vp = {"m": municipio_id}
+    elif municipio_ids:
+        _mun_sql = "municipio_id = ANY(:mids)"; _vp = {"mids": list(municipio_ids)}
+    else:
+        _mun_sql = "TRUE"; _vp = {}
+    _vsql = "AND split_part(numero_proposta, '/', 2) = ANY(:anos_txt)" if _anos else ""
+    if _anos:
+        _vp["anos_txt"] = [str(a) for a in _anos]
+    vol = await db.execute(text(f"""
+        SELECT numero_proposta, codigo_instrumento, objeto, orgao, situacao, dt_fim_vigencia,
+               municipio_id
+        FROM transferegov_propostas WHERE {_mun_sql} {_vsql}
+    """), _vp)
+    for row in vol.fetchall():
+        dtf = None
+        for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
+            try:
+                dtf = _dt.strptime(str(row[5]).strip()[:10], fmt).date(); break
+            except (ValueError, AttributeError, TypeError):
                 continue
-            alertas.append(AlertaVigencia(
-                id=0, esfera="voluntaria", nr_convenio=row[1] or row[0],
-                municipio_id=(row[6] if len(row) > 6 else municipio_id),
-                municipio_nome=_nomes.get(row[6] if len(row) > 6 else municipio_id),
-                nr_sigcon=row[0], objeto=row[2], orgao_concedente=row[3],
-                dt_fim_vigencia=dtf, dias_restantes=(dtf - date.today()).days,
-                valor_total=None, situacao=row[4],
-            ))
+        if not dtf or not (date.today() <= dtf <= limite):
+            continue
+        alertas.append(AlertaVigencia(
+            id=0, esfera="voluntaria", nr_convenio=row[1] or row[0],
+            municipio_id=(row[6] if len(row) > 6 else municipio_id),
+            municipio_nome=_nomes.get(row[6] if len(row) > 6 else municipio_id),
+            nr_sigcon=row[0], objeto=row[2], orgao_concedente=row[3],
+            dt_fim_vigencia=dtf, dias_restantes=(dtf - date.today()).days,
+            valor_total=None, situacao=row[4],
+        ))
 
     alertas.sort(key=lambda x: x.dias_restantes)
     return alertas
@@ -812,37 +822,47 @@ async def query_prestacao_contas(
         ))
 
     # TransfereGov Voluntarias (dt_fim_vigencia eh string dd/mm/yyyy)
-    if municipio_id or municipio_ids:
-        from datetime import datetime as _dt
-        if municipio_id:
-            _mun_sql = "municipio_id = :m"; _vp = {"m": municipio_id}
-        else:
-            _mun_sql = "municipio_id = ANY(:mids)"; _vp = {"mids": list(municipio_ids)}
-        _vsql = "AND split_part(numero_proposta, '/', 2) = ANY(:anos_txt)" if _anos else ""
-        if _anos:
-            _vp["anos_txt"] = [str(a) for a in _anos]
-        vol = await db.execute(text(f"""
-            SELECT numero_proposta, codigo_instrumento, objeto, orgao, situacao, dt_fim_vigencia,
-                   municipio_id
-            FROM transferegov_propostas WHERE {_mun_sql} {_vsql}
-        """), _vp)
-        for row in vol.fetchall():
-            dtf = None
-            for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
-                try:
-                    dtf = _dt.strptime(str(row[5]).strip()[:10], fmt).date(); break
-                except (ValueError, AttributeError, TypeError):
-                    continue
-            if not dtf or dtf >= corte:
+    #
+    # ⚠️ SEM PORTAO. Aqui havia um `if municipio_id or municipio_ids:` e ele
+    # apagava as voluntarias INTEIRAS para o super-admin: `allowed_municipio_ids`
+    # e None para ele (services/auth.py), o handler deixa `mids = None`, e os dois
+    # parametros nulos davam falso no portao. O bloco dos ESTADUAIS, logo acima,
+    # nunca teve esse portao — sem municipio ele consulta o tenant inteiro. Dai a
+    # assimetria que o dono relatou: o modal de Vigencias do super-admin mostrava
+    # so estaduais, enquanto o de um usuario comum (carteira = lista nao vazia)
+    # mostrava os dois. "Sem recorte" significa TODOS, e nao NENHUM.
+    from datetime import datetime as _dt
+    if municipio_id:
+        _mun_sql = "municipio_id = :m"; _vp = {"m": municipio_id}
+    elif municipio_ids:
+        _mun_sql = "municipio_id = ANY(:mids)"; _vp = {"mids": list(municipio_ids)}
+    else:
+        _mun_sql = "TRUE"; _vp = {}
+    _vsql = "AND split_part(numero_proposta, '/', 2) = ANY(:anos_txt)" if _anos else ""
+    if _anos:
+        _vp["anos_txt"] = [str(a) for a in _anos]
+    vol = await db.execute(text(f"""
+        SELECT numero_proposta, codigo_instrumento, objeto, orgao, situacao, dt_fim_vigencia,
+               municipio_id
+        FROM transferegov_propostas WHERE {_mun_sql} {_vsql}
+    """), _vp)
+    for row in vol.fetchall():
+        dtf = None
+        for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
+            try:
+                dtf = _dt.strptime(str(row[5]).strip()[:10], fmt).date(); break
+            except (ValueError, AttributeError, TypeError):
                 continue
-            alertas.append(AlertaVigencia(
-                id=0, esfera="voluntaria", nr_convenio=row[1] or row[0],
-                municipio_id=(row[6] if len(row) > 6 else municipio_id),
-                municipio_nome=_nomes.get(row[6] if len(row) > 6 else municipio_id),
-                nr_sigcon=row[0], objeto=row[2], orgao_concedente=row[3],
-                dt_fim_vigencia=dtf, dias_restantes=(dtf - date.today()).days,
-                valor_total=None, situacao=row[4],
-            ))
+        if not dtf or dtf >= corte:
+            continue
+        alertas.append(AlertaVigencia(
+            id=0, esfera="voluntaria", nr_convenio=row[1] or row[0],
+            municipio_id=(row[6] if len(row) > 6 else municipio_id),
+            municipio_nome=_nomes.get(row[6] if len(row) > 6 else municipio_id),
+            nr_sigcon=row[0], objeto=row[2], orgao_concedente=row[3],
+            dt_fim_vigencia=dtf, dias_restantes=(dtf - date.today()).days,
+            valor_total=None, situacao=row[4],
+        ))
 
     # Mais recentemente vencidos primeiro (|dias| menor primeiro)
     alertas.sort(key=lambda x: -x.dias_restantes)
