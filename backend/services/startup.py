@@ -334,6 +334,16 @@ MIGRATION_FILES = [
     # "Data Publicação". Depende do coletor ja corrigido; a data de verdade volta
     # pelo backfill do CKAN. Idempotente.
     "limpa_dt_publicacao_substituta.sql",
+    # Voluntarias: tira do JSONB `detalhe` o trio de valores que nao fecha a
+    # conta. A trava do #322 protegia so as COLUNAS; o blob seguia gravado com o
+    # dinheiro deslocado (83 de 83 em Araujos, 61 regravadas no mesmo dia).
+    # APAGA, nao corrige — o detalhe e o que a pagina disse. Idempotente.
+    "limpa_detalhe_valores_deslocados.sql",
+    # SIGCON: apaga o AVISO do portal ("STATUS DE PRESTAÇÃO DE CONTAS NÃO
+    # INFORMADO") gravado como se fosse o status. Irmao do
+    # `limpa_prestacao_contas_sei_lixo.sql`: o portal dizendo "nao ha" e
+    # ausencia, nao dado. Idempotente.
+    "limpa_prestacao_contas_nao_informado.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",

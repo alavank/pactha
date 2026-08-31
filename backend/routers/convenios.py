@@ -11,7 +11,7 @@ from database import get_db
 from models import ConvenioEstadual, Municipio
 from schemas.convenio import ConvenioResponse, ConvenioListResponse, ConvenioStats, AlertaVigencia
 from services.auth import get_current_user, ensure_municipio_access, ensure_tela
-from services.coleta import frescor_coleta
+from services.coleta import FRASE_CREDENCIAL, classificar_credencial, frescor_coleta
 from services.audit import registrar
 # Trava de permissao em MODO AVISO. `ensure_dono` responde a pergunta que
 # `ensure_tela` nao responde: "este id e de um municipio que a pessoa enxerga?".
@@ -510,9 +510,70 @@ async def list_convenios(
     coleta_em, coleta_falhas = (await frescor_coleta(db, municipio_id, ("sigcon",))
                                 if municipio_id else (None, 0))
 
+    # ESTADO DA CREDENCIAL: "nenhum dado" tem tres causas e a tela dizia uma so.
+    #
+    # ⚠️ DUAS CONSULTAS SEPARADAS, e nao um JOIN. `scraper_municipio_coleta` pode
+    # nao existir num tenant novo (Santa Maria/RS foi o primeiro banco criado do
+    # zero e expos exatamente esse tipo de schema herdado); juntando as duas, a
+    # tabela fragil derrubaria tambem a contagem de credenciais, que e a que
+    # sustenta a mensagem principal.
+    #
+    # ⚠️ `await db.rollback()` nos DOIS except. Sem ele a transacao fica invalida
+    # e a LISTAGEM INTEIRA passa a devolver 500 — trocar "tela sem aviso" por
+    # "tela quebrada" seria o unico jeito de piorar isto.
+    credencial = "ok"
+    if municipio_id:
+        _n = 0
+        try:
+            # ⚠️ `municipio_id = :m` e nao "ou escopo de instancia": o coletor do
+            # SIGCON faz INNER JOIN em `municipios`, entao credencial sem
+            # municipio NUNCA e usada — conta-la diria "cadastrada" sobre um
+            # municipio que jamais sera coletado. (E onde o precedente do
+            # InvestSUS NAO se copia: la a credencial de instancia vale.)
+            # ⚠️ `length(senha_hash) > 0`: o coletor so aceita quando o decrypt
+            # devolve algo. Nao decifrar aqui e deliberado — com COFRE_KEY errada
+            # o decrypt volta vazio em silencio e a tela afirmaria "cadastrada"
+            # enquanto o coletor nao ve nada. O comprimento e o proxy honesto.
+            _r = await db.execute(text(
+                "SELECT count(*) FROM cofre_senhas "
+                "WHERE municipio_id = :m "
+                "  AND (sistema ILIKE 'SIGCON%' OR automation_key = 'sigcon') "
+                "  AND senha_hash IS NOT NULL AND length(senha_hash) > 0"),
+                {"m": municipio_id})
+            _n = int((_r.scalar() or 0))
+        except Exception:
+            await db.rollback()
+            _n = -1                      # desconhecido: nao acusa nem absolve
+        if _n >= 0:
+            _tent, _login, _coletou = 0, False, True
+            try:
+                _r = await db.execute(text(
+                    "SELECT coalesce(tentativas, 0), coalesce(ultimo_erro, '') "
+                    "FROM scraper_municipio_coleta "
+                    "WHERE fonte = 'sigcon' AND municipio_id = :m"), {"m": municipio_id})
+                _row = _r.first()
+                # Sem linha no rodizio = a primeira coleta ainda nao rodou. E o
+                # QUARTO estado: quem acabou de cadastrar a senha via "Nenhum
+                # dado encontrado" e concluia que ela nao funcionou.
+                _coletou = _row is not None
+                if _row:
+                    _tent = int(_row[0] or 0)
+                    # ⚠️ ERRO DE LOGIN, e nao "falhou". Timeout, portal fora do ar
+                    # e erro de parsing NAO sao culpa da senha; acusar a
+                    # credencial por uma queda do portal manda o cliente trocar
+                    # uma senha que esta certa.
+                    _e = (_row[1] or "").lower()
+                    _login = any(t in _e for t in ("login", "senha", "credencial",
+                                                   "autentic", "usuario"))
+            except Exception:
+                await db.rollback()
+            credencial = classificar_credencial(_n, _tent, _login, houve_coleta=_coletou)
+
     pages = math.ceil(total / per_page) if total > 0 else 1
     return ConvenioListResponse(items=items, total=total, page=page, per_page=per_page,
-                                pages=pages, coleta_em=coleta_em, coleta_falhas=coleta_falhas)
+                                pages=pages, coleta_em=coleta_em, coleta_falhas=coleta_falhas,
+                                credencial=credencial,
+                                credencial_aviso=FRASE_CREDENCIAL.get(credencial, ""))
 
 
 @router.get("/stats", response_model=ConvenioStats,
@@ -718,37 +779,47 @@ async def query_alertas_vigencia(
         ))
 
     # TransfereGov Voluntarias (dt_fim_vigencia eh string dd/mm/yyyy)
-    if municipio_id or municipio_ids:
-        from datetime import datetime as _dt
-        if municipio_id:
-            _mun_sql = "municipio_id = :m"; _vp = {"m": municipio_id}
-        else:
-            _mun_sql = "municipio_id = ANY(:mids)"; _vp = {"mids": list(municipio_ids)}
-        _vsql = "AND split_part(numero_proposta, '/', 2) = ANY(:anos_txt)" if _anos else ""
-        if _anos:
-            _vp["anos_txt"] = [str(a) for a in _anos]
-        vol = await db.execute(text(f"""
-            SELECT numero_proposta, codigo_instrumento, objeto, orgao, situacao, dt_fim_vigencia,
-                   municipio_id
-            FROM transferegov_propostas WHERE {_mun_sql} {_vsql}
-        """), _vp)
-        for row in vol.fetchall():
-            dtf = None
-            for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
-                try:
-                    dtf = _dt.strptime(str(row[5]).strip()[:10], fmt).date(); break
-                except (ValueError, AttributeError, TypeError):
-                    continue
-            if not dtf or not (date.today() <= dtf <= limite):
+    #
+    # ⚠️ SEM PORTAO. Aqui havia um `if municipio_id or municipio_ids:` e ele
+    # apagava as voluntarias INTEIRAS para o super-admin: `allowed_municipio_ids`
+    # e None para ele (services/auth.py), o handler deixa `mids = None`, e os dois
+    # parametros nulos davam falso no portao. O bloco dos ESTADUAIS, logo acima,
+    # nunca teve esse portao — sem municipio ele consulta o tenant inteiro. Dai a
+    # assimetria que o dono relatou: o modal de Vigencias do super-admin mostrava
+    # so estaduais, enquanto o de um usuario comum (carteira = lista nao vazia)
+    # mostrava os dois. "Sem recorte" significa TODOS, e nao NENHUM.
+    from datetime import datetime as _dt
+    if municipio_id:
+        _mun_sql = "municipio_id = :m"; _vp = {"m": municipio_id}
+    elif municipio_ids:
+        _mun_sql = "municipio_id = ANY(:mids)"; _vp = {"mids": list(municipio_ids)}
+    else:
+        _mun_sql = "TRUE"; _vp = {}
+    _vsql = "AND split_part(numero_proposta, '/', 2) = ANY(:anos_txt)" if _anos else ""
+    if _anos:
+        _vp["anos_txt"] = [str(a) for a in _anos]
+    vol = await db.execute(text(f"""
+        SELECT numero_proposta, codigo_instrumento, objeto, orgao, situacao, dt_fim_vigencia,
+               municipio_id
+        FROM transferegov_propostas WHERE {_mun_sql} {_vsql}
+    """), _vp)
+    for row in vol.fetchall():
+        dtf = None
+        for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
+            try:
+                dtf = _dt.strptime(str(row[5]).strip()[:10], fmt).date(); break
+            except (ValueError, AttributeError, TypeError):
                 continue
-            alertas.append(AlertaVigencia(
-                id=0, esfera="voluntaria", nr_convenio=row[1] or row[0],
-                municipio_id=(row[6] if len(row) > 6 else municipio_id),
-                municipio_nome=_nomes.get(row[6] if len(row) > 6 else municipio_id),
-                nr_sigcon=row[0], objeto=row[2], orgao_concedente=row[3],
-                dt_fim_vigencia=dtf, dias_restantes=(dtf - date.today()).days,
-                valor_total=None, situacao=row[4],
-            ))
+        if not dtf or not (date.today() <= dtf <= limite):
+            continue
+        alertas.append(AlertaVigencia(
+            id=0, esfera="voluntaria", nr_convenio=row[1] or row[0],
+            municipio_id=(row[6] if len(row) > 6 else municipio_id),
+            municipio_nome=_nomes.get(row[6] if len(row) > 6 else municipio_id),
+            nr_sigcon=row[0], objeto=row[2], orgao_concedente=row[3],
+            dt_fim_vigencia=dtf, dias_restantes=(dtf - date.today()).days,
+            valor_total=None, situacao=row[4],
+        ))
 
     alertas.sort(key=lambda x: x.dias_restantes)
     return alertas
@@ -812,37 +883,47 @@ async def query_prestacao_contas(
         ))
 
     # TransfereGov Voluntarias (dt_fim_vigencia eh string dd/mm/yyyy)
-    if municipio_id or municipio_ids:
-        from datetime import datetime as _dt
-        if municipio_id:
-            _mun_sql = "municipio_id = :m"; _vp = {"m": municipio_id}
-        else:
-            _mun_sql = "municipio_id = ANY(:mids)"; _vp = {"mids": list(municipio_ids)}
-        _vsql = "AND split_part(numero_proposta, '/', 2) = ANY(:anos_txt)" if _anos else ""
-        if _anos:
-            _vp["anos_txt"] = [str(a) for a in _anos]
-        vol = await db.execute(text(f"""
-            SELECT numero_proposta, codigo_instrumento, objeto, orgao, situacao, dt_fim_vigencia,
-                   municipio_id
-            FROM transferegov_propostas WHERE {_mun_sql} {_vsql}
-        """), _vp)
-        for row in vol.fetchall():
-            dtf = None
-            for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
-                try:
-                    dtf = _dt.strptime(str(row[5]).strip()[:10], fmt).date(); break
-                except (ValueError, AttributeError, TypeError):
-                    continue
-            if not dtf or dtf >= corte:
+    #
+    # ⚠️ SEM PORTAO. Aqui havia um `if municipio_id or municipio_ids:` e ele
+    # apagava as voluntarias INTEIRAS para o super-admin: `allowed_municipio_ids`
+    # e None para ele (services/auth.py), o handler deixa `mids = None`, e os dois
+    # parametros nulos davam falso no portao. O bloco dos ESTADUAIS, logo acima,
+    # nunca teve esse portao — sem municipio ele consulta o tenant inteiro. Dai a
+    # assimetria que o dono relatou: o modal de Vigencias do super-admin mostrava
+    # so estaduais, enquanto o de um usuario comum (carteira = lista nao vazia)
+    # mostrava os dois. "Sem recorte" significa TODOS, e nao NENHUM.
+    from datetime import datetime as _dt
+    if municipio_id:
+        _mun_sql = "municipio_id = :m"; _vp = {"m": municipio_id}
+    elif municipio_ids:
+        _mun_sql = "municipio_id = ANY(:mids)"; _vp = {"mids": list(municipio_ids)}
+    else:
+        _mun_sql = "TRUE"; _vp = {}
+    _vsql = "AND split_part(numero_proposta, '/', 2) = ANY(:anos_txt)" if _anos else ""
+    if _anos:
+        _vp["anos_txt"] = [str(a) for a in _anos]
+    vol = await db.execute(text(f"""
+        SELECT numero_proposta, codigo_instrumento, objeto, orgao, situacao, dt_fim_vigencia,
+               municipio_id
+        FROM transferegov_propostas WHERE {_mun_sql} {_vsql}
+    """), _vp)
+    for row in vol.fetchall():
+        dtf = None
+        for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
+            try:
+                dtf = _dt.strptime(str(row[5]).strip()[:10], fmt).date(); break
+            except (ValueError, AttributeError, TypeError):
                 continue
-            alertas.append(AlertaVigencia(
-                id=0, esfera="voluntaria", nr_convenio=row[1] or row[0],
-                municipio_id=(row[6] if len(row) > 6 else municipio_id),
-                municipio_nome=_nomes.get(row[6] if len(row) > 6 else municipio_id),
-                nr_sigcon=row[0], objeto=row[2], orgao_concedente=row[3],
-                dt_fim_vigencia=dtf, dias_restantes=(dtf - date.today()).days,
-                valor_total=None, situacao=row[4],
-            ))
+        if not dtf or dtf >= corte:
+            continue
+        alertas.append(AlertaVigencia(
+            id=0, esfera="voluntaria", nr_convenio=row[1] or row[0],
+            municipio_id=(row[6] if len(row) > 6 else municipio_id),
+            municipio_nome=_nomes.get(row[6] if len(row) > 6 else municipio_id),
+            nr_sigcon=row[0], objeto=row[2], orgao_concedente=row[3],
+            dt_fim_vigencia=dtf, dias_restantes=(dtf - date.today()).days,
+            valor_total=None, situacao=row[4],
+        ))
 
     # Mais recentemente vencidos primeiro (|dias| menor primeiro)
     alertas.sort(key=lambda x: -x.dias_restantes)

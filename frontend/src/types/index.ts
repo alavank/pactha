@@ -105,6 +105,15 @@ export interface ConvenioList {
   coleta_em?: string | null;
   /** Falhas consecutivas de login/scrape — >0 = avisar em vez de datar. */
   coleta_falhas?: number;
+  /** Estado da credencial do SIGCON deste município:
+   *  'ok' | 'sem_credencial' | 'recusada' | 'fora_da_fila'.
+   *  Existe porque "Nenhum dado encontrado" tinha TRÊS causas e a tela dizia
+   *  uma só — e duas delas são pendências acionáveis, com lugar exato para
+   *  resolver (Configurações → Cofre de Senhas). */
+  credencial?: string;
+  /** A frase pronta do estado acima, vazia quando 'ok'. Vem do backend para
+   *  tela e PDF não reimplementarem a regra cada um do seu jeito. */
+  credencial_aviso?: string;
 }
 
 export interface ConvenioStats {

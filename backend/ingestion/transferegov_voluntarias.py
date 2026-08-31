@@ -478,6 +478,19 @@ def _log_incoerente(num, glob, repasse, contrap) -> None:
             f"o CSV de dados abertos continua valendo")
 
 
+def _primeiro_campo(valor):
+    """So o primeiro campo do que o extrator devolveu, cortando no TAB/quebra.
+
+    O leitor de detalhe achata a linha da tabela e as vezes traz o par
+    rotulo/valor SEGUINTE colado por TAB: "Contrato de Repasse\\tEnviada para
+    mandatária?\\tNÃ£o". Medido em 27 de 83 propostas de Araujos.
+
+    None e '' passam intactos — a funcao nao inventa valor, so apara."""
+    if valor is None:
+        return None
+    return re.split(r"[\t\r\n]", str(valor))[0].strip() or None
+
+
 def valores_coerentes(glob, repasse, contrap, tol: float = 0.02) -> bool:
     """O trio de valores fecha a conta? global == repasse + contrapartida.
 
@@ -2036,7 +2049,22 @@ async def _extrai_detalhe(page) -> dict:
     """Captura todos os pares label:valor + campos do topo da tela Dados da Proposta."""
     return await page.evaluate("""() => {
         const out = {};
-        const setKV = (k, v) => { if (k && k.length < 70 && v && !out[k]) out[k] = v.slice(0, 600); };
+        // Espelho de `transferegov_http._parece_rotulo` — ver o comentario longo
+        // la. Resumo: este laco varre TODAS as linhas de 2 ou 4 celulas da pagina
+        // sem saber de que tabela vieram, entao ano do cronograma e nome de
+        // arquivo da grade de documentos viravam CHAVE DE TOPO do detalhe (224
+        // chaves-lixo nas 83 propostas de Araujos). A regra e sobre a FORMA do
+        // rotulo: tem letra, nao e so numero, nao e nome de arquivo.
+        const pareceRotulo = (k) => {
+            const s = (k || '').trim();
+            if (!s) return false;
+            if (/^[\\d\\s.,/:%-]+$/.test(s)) return false;
+            if (/\\.(pdf|docx?|xlsx?|jpe?g|png|zip|p7s|txt|csv)\\s*$/i.test(s)) return false;
+            return /[A-Za-zÀ-ÿ]/.test(s);
+        };
+        const setKV = (k, v) => {
+            if (k && k.length < 70 && v && !out[k] && pareceRotulo(k)) out[k] = v.slice(0, 600);
+        };
         // Pares label|valor: linhas com 2 OU 4 celulas (label|valor|label|valor)
         document.querySelectorAll('tr').forEach(tr => {
             const tds = [...tr.querySelectorAll('td,th')];
@@ -2162,7 +2190,18 @@ def _upsert(mun_id: int, propostas: list[dict]):
                     return str(det[k])
             return None
         codigo_instr = g("Código do Instrumento")
-        modalidade = g("Modalidade")
+        # ⚠️ CORTA NO PRIMEIRO TAB/QUEBRA. O extrator devolve a celula do rotulo
+        # MAIS o par rotulo/valor seguinte da mesma linha da tabela, colados por
+        # TAB. Medido em Araujos (30/08/2026): 27 de 83 propostas gravaram coisas
+        # como "Contrato de Repasse\tEnviada para mandatária?\tNÃ£o", e 21 delas
+        # ainda carregavam o acento duplamente codificado do pedaco extra.
+        #
+        # O `rm_builder._e_termo_compromisso` ja se defendia cortando no TAB
+        # (rm_builder.py:1042) — a defesa existia no CONSUMIDOR e faltava na
+        # origem, entao a sujeira seguia na coluna esperando o proximo leitor que
+        # nao soubesse dela. Cortar aqui e um `split`, e o dado aberto (que e
+        # autoritativo para este campo) continua corrigindo o resto.
+        modalidade = _primeiro_campo(g("Modalidade"))
         situacao_siafi = g("Situação no SIAFI")
         num_processo = g("Número do Processo")
         objeto = g("Objeto do Instrumento")
@@ -2190,6 +2229,28 @@ def _upsert(mun_id: int, propostas: list[dict]):
                 _log_incoerente(p.get("numero_proposta"), valor_global,
                                 valor_repasse, valor_contrap)
             valor_global = valor_repasse = valor_contrap = None
+            # ⚠️ E O MESMO DINHEIRO SAI DO `detalhe`, NAO SO DAS COLUNAS.
+            #
+            # A trava acima nasceu protegendo as tres COLUNAS, e nisso ela
+            # funciona. Mas o `det` seguia sendo gravado inteiro, com os valores
+            # deslocados dentro dele. Medido em Araujos (30/08/2026): 83 de 83
+            # propostas tinham o trio trocado no JSONB — "Valor Global" com o
+            # repasse, "Valor de Repasse" com a contrapartida — e 61 tinham sido
+            # regravadas naquele mesmo dia. Nao era passivo antigo: era o mesmo
+            # numero errado sendo reescrito a cada rodada, ao lado de uma coluna
+            # certa, esperando alguem ler o blob em vez da coluna.
+            #
+            # Apagar em vez de corrigir e deliberado. O `detalhe` e o que a
+            # PAGINA disse; consertar o valor aqui inventaria uma leitura que
+            # nunca houve. Quem precisa do numero tem as colunas ao lado, que vem
+            # do CSV oficial. O marcador deixa o silencio auditavel — sem ele,
+            # "nao tem valor no detalhe" seria indistinguivel de "nunca li".
+            _sujos = [k for k in ("Valor Global", "Valor de Repasse",
+                                  "Valor de Contrapartida") if k in det]
+            if _sujos:
+                for k in _sujos:
+                    det.pop(k, None)
+                det["_valores_descartados"] = _sujos
         situacao_contr = g("Situação de Contratação Atual")
         parlamentar = g("_parlamentar")
         # Detalhe generico da situacao de contratacao (qualquer tipo)
@@ -2253,9 +2314,30 @@ def _upsert(mun_id: int, propostas: list[dict]):
                 dt_fim_vigencia=COALESCE(EXCLUDED.dt_fim_vigencia, transferegov_propostas.dt_fim_vigencia),
                 dt_proposta=COALESCE(EXCLUDED.dt_proposta, transferegov_propostas.dt_proposta),
                 dt_assinatura=COALESCE(EXCLUDED.dt_assinatura, transferegov_propostas.dt_assinatura),
-                valor_global=COALESCE(EXCLUDED.valor_global, transferegov_propostas.valor_global),
-                valor_repasse=COALESCE(EXCLUDED.valor_repasse, transferegov_propostas.valor_repasse),
-                valor_contrapartida=COALESCE(EXCLUDED.valor_contrapartida, transferegov_propostas.valor_contrapartida),
+                -- ⚠️ A COLUNA VEM PRIMEIRO: o scraper so PREENCHE O VAZIO, nunca
+                -- sobrescreve. Isto e a consequencia de uma frase que ja estava
+                -- escrita no `valores_coerentes` e que o codigo nao obedecia: "o
+                -- CSV de dados abertos e a fonte AUTORITATIVA declarada para
+                -- estes tres campos".
+                --
+                -- Com o EXCLUDED na frente, a trava de coerencia so parava o
+                -- trio que NAO FECHA. Um deslocamento que por acaso FECHA
+                -- atravessava e sobrescrevia o valor certo do CSV. Caso medido
+                -- (30/08/2026, 053238/2015 de Araujos): portal
+                -- 150.000/100.000/50.000, tela 100.000/50.000/50.000 — e
+                -- 50.000 + 50.000 = 100.000, entao a trava aprovou. Pior: o cron
+                -- das 06:50 regravava o valor certo do CSV e o lote de 2 em 2
+                -- horas regravava o errado de volta, duas vezes por dia.
+                --
+                -- E a mesma inversao do #328 (vigencia), na direcao contraria:
+                -- la a TELA e a fonte da verdade, aqui e o CSV. O criterio nao e
+                -- "quem roda por ultimo", e quem a fonte declara como dono.
+                --
+                -- Proposta NOVA, que o CSV ainda nao cobre, continua nascendo com
+                -- o valor da tela: a coluna esta vazia e o COALESCE cai nele.
+                valor_global=COALESCE(transferegov_propostas.valor_global, EXCLUDED.valor_global),
+                valor_repasse=COALESCE(transferegov_propostas.valor_repasse, EXCLUDED.valor_repasse),
+                valor_contrapartida=COALESCE(transferegov_propostas.valor_contrapartida, EXCLUDED.valor_contrapartida),
                 situacao_contratacao=COALESCE(EXCLUDED.situacao_contratacao, transferegov_propostas.situacao_contratacao),
                 clausula_suspensiva_dt_prevista=COALESCE(EXCLUDED.clausula_suspensiva_dt_prevista, transferegov_propostas.clausula_suspensiva_dt_prevista),
                 clausula_suspensiva_motivo=COALESCE(EXCLUDED.clausula_suspensiva_motivo, transferegov_propostas.clausula_suspensiva_motivo),
@@ -2291,10 +2373,27 @@ def _upsert(mun_id: int, propostas: list[dict]):
               json.dumps(sit_det_json, ensure_ascii=False) if sit_det_json else None,
               (p.get("id_proposta_siconv") or None),
               p.get("processo_execucao_qtd"),
+              # ⚠️ `is not None` tambem aqui. Lista VAZIA e resposta medida ("o
+              # portal respondeu: nenhuma licitacao"), nao ausencia. Sintoma
+              # concreto em Araujos: 054685/2025 com processo_execucao_qtd = 0 e
+              # processo_execucao = NULL. O `_qtd` ao lado salvava a informacao,
+              # entao nao se perdia — mas duas colunas discordando sobre o mesmo
+              # fato e exatamente o tipo de contradicao que a auditoria caca.
+              # Seguro: `prop["processo_execucao"]` so e atribuido dentro de
+              # `if _lst is not None` (linha ~999), nunca pre-semeado.
               (json.dumps(p["processo_execucao"], ensure_ascii=False)
-               if p.get("processo_execucao") else None),
+               if p.get("processo_execucao") is not None else None),
+              # ⚠️ `is not None`, e nao truthy — a mesma correcao que
+              # `notas_empenho` recebeu logo abaixo, e que faltava aqui.
+              # `projeto_basico` e o UNICO dos quatro campos com esta guarda que
+              # nao tem uma coluna vizinha para salvar o "consultei e nao ha":
+              # `processo_execucao` tem o `_qtd` ao lado, `historico_comunicacoes`
+              # e `documentos_quadro_resumo` tem o `historico_atualizado_em`.
+              # Aqui, dict vazio virava NULL, o COALESCE preservava o anterior, e
+              # "esta proposta nao tem projeto basico" ficava indistinguivel de
+              # "nunca olhei o projeto basico dela".
               (json.dumps(p["projeto_basico"], ensure_ascii=False)
-               if p.get("projeto_basico") else None),
+               if p.get("projeto_basico") is not None else None),
               # ⚠️ `is not None`, NÃO truthy. `[]` é RESPOSTA MEDIDA ("consultei
               # a listagem de empenhos e não há NE"), não ausência. Com a guarda
               # antiga a lista vazia era falsy, virava NULL e o COALESCE do

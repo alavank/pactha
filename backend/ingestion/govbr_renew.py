@@ -152,6 +152,73 @@ def _from_pw_cookies(cookies: list) -> list:
     return out
 
 
+SOURCE_SESSAO = "govbr_sessao"
+# MUDA-OU-VENCE. O keepalive roda de 10 em 10 minutos = 144 linhas por dia. O
+# painel de ingestao mostra as ~80 linhas mais recentes; 144/dia apagariam o
+# historico de TODAS as outras fontes. Grava so quando o estado MUDA ou quando a
+# ultima linha ja venceu — em regime saudavel, ~24 linhas/dia.
+HEARTBEAT_MIN = int(os.getenv("GOVBR_LOG_HEARTBEAT_MIN", "50") or "50")
+
+
+def _status_sessao(private_ok: bool, exec_ok: bool, prest_ok: bool) -> tuple:
+    """(status, vivos, frase) no vocabulario que o frescor JA entende.
+
+    ⚠️ 'success' | 'parcial' | 'erro', e nao 'alive'/'vivo'. Inventar vocabulario
+    aqui obrigaria a mexer no `freshness` e no `watchdog` — o custo de um nome
+    bonito seria dois lugares a mais para errar.
+
+    ⚠️ OS TRES SPs CONTAM SEPARADO. Foi exatamente por `execucao` e `prestacao`
+    aparecerem como um so que as NEs morriam em silencio com o keepalive
+    dizendo "execucao=vivo"."""
+    vivos = sum((bool(private_ok), bool(exec_ok), bool(prest_ok)))
+    frase = (f"private={'vivo' if private_ok else 'CAIU'}, "
+             f"execucao={'vivo' if exec_ok else 'CAIU'}, "
+             f"prestacao={'vivo' if prest_ok else 'CAIU'}")
+    if vivos == 3:
+        return "success", vivos, frase
+    if vivos == 0:
+        return "erro", vivos, frase
+    return "parcial", vivos, frase
+
+
+def _registra_sessao(private_ok: bool, exec_ok: bool, prest_ok: bool) -> None:
+    """Grava a saude da sessao gov.br em `ingestion_log`.
+
+    ⚠️ POR QUE ISTO PRECISOU EXISTIR: a saude da sessao so vivia no LOG DO
+    CONTAINER, que e efemero. "Ha quantas horas a sessao esta viva ou morta" era
+    uma pergunta sem resposta possivel no banco — e a auditoria mediu a sessao
+    morta 297,5h de 720h (41%) sem que nada no produto dissesse isso.
+
+    ⚠️ `cofre_senhas.updated_at` NAO servia de sinal: o keepalive re-salva os
+    cookies mesmo quando a navegacao caiu no idp, entao o carimbo subia com a
+    sessao morta.
+
+    Best-effort de verdade: qualquer falha aqui e engolida. Este e um registro de
+    OBSERVACAO — derrubar o keepalive por causa dele seria trocar a coleta pela
+    contabilidade da coleta."""
+    status, vivos, frase = _status_sessao(private_ok, exec_ok, prest_ok)
+    try:
+        conn = psycopg2.connect(_sync_url())
+        with conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT status, finished_at FROM ingestion_log "
+                "WHERE source = %s ORDER BY id DESC LIMIT 1", (SOURCE_SESSAO,))
+            ult = cur.fetchone()
+            if ult and ult[0] == status and ult[1] is not None:
+                cur.execute("SELECT EXTRACT(epoch FROM (now() - %s)) / 60", (ult[1],))
+                if (cur.fetchone()[0] or 0) < HEARTBEAT_MIN:
+                    conn.close()
+                    return          # mesmo estado e ainda dentro da janela
+            cur.execute(
+                "INSERT INTO ingestion_log (source, status, records_inserted, "
+                "error_message, started_at, finished_at) "
+                "VALUES (%s, %s, %s, %s, NOW(), NOW())",
+                (SOURCE_SESSAO, status, vivos, frase if status != "success" else None))
+        conn.close()
+    except Exception as e:
+        log.info(f"registro da sessao nao gravado ({str(e)[:70]}) — keepalive segue")
+
+
 def _save_cookies(cofre_id: int, cookies_pw: list) -> None:
     """Sobrescreve os cookies da sessao govbr no Cofre (mesma linha id)."""
     payload = {
@@ -306,6 +373,7 @@ async def keepalive() -> str:
     # morriam em silencio com o keepalive dizendo "execucao=vivo".
     _sps = (f"execucao={'vivo' if exec_ok else 'CAIU'}, "
             f"prestacao={'vivo' if prest_ok else 'CAIU'}")
+    _registra_sessao(private_ok, exec_ok, prest_ok)
     if private_ok:
         log.info(f"keepalive OK — /private/ vivo, {_sps}, "
                  f"{len(relevant)} cookies re-salvos")

@@ -71,6 +71,32 @@ _RE_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]
 _RE_VIEWSTATE = re.compile(r'name="javax\.faces\.ViewState"[^>]*value="([^"]+)"')
 
 
+# Rotulos que NAO sao rotulos. O extrator varre TODAS as linhas de 2 ou 4
+# celulas da pagina e achata tudo num dicionario plano, sem saber de que tabela a
+# linha veio. Medido em Araujos (30/08/2026): 224 chaves-lixo nas 83 propostas —
+# em 016886/2021, o `detalhe` tinha "2021": "R$ 418.471,00" (uma linha do
+# CRONOGRAMA) e "DECLARAÇÃO COMPROVAÇÃO DE CONTRAPARTIDA ARAUJOS ASSINADA.pdf":
+# "Baixar Contrapartida" (uma linha da GRADE DE DOCUMENTOS) convivendo com os
+# campos reais como se fossem irmaos.
+#
+# A regra e POSITIVA e sobre a FORMA do rotulo, nao uma lista de excecoes do
+# portal: rotulo tem letra, nao e so numero e nao e nome de arquivo. E a mesma
+# disciplina do `_pc_forma` do SIGCON e do `valores_coerentes` — validar o que se
+# leu em vez de perseguir cada jeito novo de a pagina surpreender.
+_RE_SO_NUMERO = re.compile(r"^[\d\s.,/:%-]+$")
+_RE_ARQUIVO = re.compile(r"\.(pdf|docx?|xlsx?|jpe?g|png|zip|p7s|txt|csv)\s*$", re.I)
+
+
+def _parece_rotulo(k: str) -> bool:
+    """O texto tem cara de RÓTULO de campo, ou e conteudo de outra tabela?"""
+    s = (k or "").strip()
+    if not s or _RE_SO_NUMERO.match(s):
+        return False                      # "2021", "31/12/2026", "1.234,56"
+    if _RE_ARQUIVO.search(s):
+        return False                      # linha da grade de documentos
+    return any(c.isalpha() for c in s)
+
+
 def _txt(el) -> str:
     """text_content normalizado (aprox. innerText p/ as tabelas planas do portal)."""
     return re.sub(r"\s+", " ", el.text_content() or "").strip()
@@ -328,7 +354,7 @@ class TgHttpEnrich:
         out: dict = {}
 
         def set_kv(k, v):
-            if k and len(k) < 70 and v and k not in out:
+            if k and len(k) < 70 and v and k not in out and _parece_rotulo(k):
                 out[k] = v[:600]
 
         # pares label|valor: linhas com 2 OU 4 celulas (label|valor|label|valor)
@@ -1231,6 +1257,20 @@ class TgHttpEnrich:
             # (o portal devolve "ERRO INTERNO" p/ instrumentos antigos). O browser
             # tb chega nessa tela e devolve {} — CHECADA, sem dados. Devolver None
             # aqui faria a proposta nunca sair do backlog.
+            #
+            # ⚠️ O {} PELADO CONFUNDE DOIS CASOS: "consultei e a proposta nao tem
+            # comunicacao nenhuma" e "o portal recusou esta pagina" produzem o
+            # MESMO vazio, e o carimbo `historico_atualizado_em` sobe igual nos
+            # dois. Medido em Araujos (30/08/2026): 83 de 83 carimbadas, so 9 com
+            # dado — e nao havia como saber quantas das 74 eram recusa.
+            #
+            # A distincao vai para o LOG, e nao para o valor de retorno. Poe-la no
+            # dict o tornaria TRUTHY e o chamador (`if _hc:` em
+            # transferegov_voluntarias.py:1143) mudaria de ramo — trocar o
+            # contrato de um retorno para carregar diagnostico e como o defeito
+            # que este comentario descreve, so que na outra ponta.
+            logger.info(f"  historico {id_proposta}: pagina sem JSF view "
+                        "(ERRO INTERNO do portal) — checada, sem dados")
             return {}
         body = {
             "javax.faces.partial.ajax": "true",
