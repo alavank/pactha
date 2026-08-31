@@ -945,7 +945,7 @@ def _tem_ne_real(notas) -> bool:
                for n in lst)
 
 
-def _empenhado_rotulo(notas, situacao) -> str:
+def _empenhado_rotulo(notas, situacao, agregado=None) -> str:
     """"Sim" ou "" (CALADO) para a linha "Empenhado" do RM da voluntaria.
 
     ORDEM DE PROVA, da mais forte para a mais fraca:
@@ -977,6 +977,16 @@ def _empenhado_rotulo(notas, situacao) -> str:
     (notas_empenho_atualizado_em, no molde de ops_obs_atualizado_em)."""
     if _tem_ne_real(notas):
         return "Sim"
+    # ⚠️ REGRA 1.5 (31/08/2026): VL_EMPENHADO_CONV > 0, o agregado MONETARIO que
+    # o dado aberto publica. Entra ACIMA do ciclo porque e medicao do portal, e
+    # nao inferencia de status — mas ABAIXO da NE, que traz o documento.
+    #
+    # NAO confundir com o flag `detalhe->>'Empenhado'` do paragrafo anterior:
+    # aquele e um sim/nao que erra nos dois sentidos; este e um VALOR, e valor
+    # maior que zero so existe se houve empenho. Zero continua calando — pode ser
+    # convenio sem empenho ou coluna nunca coletada, e os dois chegam iguais.
+    if (_money(agregado) or 0) > 0:
+        return "Sim"
     if _fed_empenhada(situacao):
         return "Sim"
     return ""
@@ -1003,6 +1013,31 @@ def _empenho_valor(notas) -> float | None:
             continue
         total += _money(n.get("valor")) or 0.0
     return total
+
+
+def _empenho_total(notas, agregado) -> float | None:
+    """VALOR EMPENHADO com as DUAS fontes, na ordem de quem mediu melhor.
+
+    1. A listagem de NEs (`notas_empenho`) e o DOCUMENTO — nota a nota, da aba
+       logada. Manda sempre que existe, inclusive quando some zero: ali `0.0`
+       quer dizer "consultei e nao ha", que e informacao.
+    2. `valor_empenhado` (VL_EMPENHADO_CONV, do dado aberto) entra SO quando a
+       listagem nunca foi consultada.
+
+    ⚠️ POR QUE ISTO EXISTE: medido em 31/08/2026 no tenant freitas, 2.741 das
+    3.199 propostas tem `notas_empenho` NULA — a aba logada nunca foi lida
+    naquele instrumento. Ate aqui o RM calava nas 2.741, mesmo com o portal
+    publicando o agregado. O 932836 (creche de Araujos) e um deles: R$ 819.375,12
+    empenhados no arquivo publico, e o relatorio nao dizia nada.
+
+    ⚠️ E POR QUE O AGREGADO NAO PASSA NA FRENTE: ele e um numero so, sem nota,
+    sem data e sem situacao. Quando ha listagem, ela responde melhor a mesma
+    pergunta — e quando as duas discordam, a que tem documento por tras vale
+    mais. Isto NAO e o flag `detalhe->>'Empenhado'`, que fica de fora por errar
+    nos dois sentidos (ver `_empenhado_rotulo`); e o valor monetario que o
+    proprio portal publica."""
+    medido = _empenho_valor(notas)
+    return medido if medido is not None else _money(agregado)
 
 
 def _sem_empenho(notas) -> bool:
@@ -1718,7 +1753,14 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
                -- calado.
                -- ⚠️ `detalhe->>'Empenhado'` (row[15]) segue no SELECT e segue
                -- SEM USO, de proposito: remove-lo deslocaria row[16]..row[28].
-               modalidade
+               modalidade,
+               -- VALOR EMPENHADO agregado do dado aberto (VL_EMPENHADO_CONV),
+               -- lido desde o #333. Sem esta linha a coluna existia no banco e
+               -- NINGUEM a consumia: o RM calculava o empenho so pela listagem
+               -- de NEs da aba logada, que e NULA em 2.741 das 3.199 propostas
+               -- do tenant. ULTIMA COLUNA (row[29]), a sexta consecutiva
+               -- pendurada no fim pela mesma razao das cinco acima.
+               valor_empenhado
         FROM transferegov_propostas WHERE municipio_id = :m
     """), {"m": municipio_id})
     # PACs que JA aparecem como voluntaria. O mesmo recurso saia DUAS vezes no
@@ -1832,7 +1874,7 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
         # classifica "Em Vigor"/"Assinado" como 'vigente', nao 'empenhada'.
         # ⚠️ `detalhe->>'Empenhado'` (row[15]) NAO entra: e o flag furado do
         # portal, que erra nos dois sentidos. Ver _empenhado_rotulo.
-        empenhado = _empenhado_rotulo(row[25], sit)
+        empenhado = _empenhado_rotulo(row[25], sit, row[29])
         # EMPENHO (NEs): "PENDENTE DE EMPENHO" — o simetrico do PENDENTE DE
         # DESEMBOLSO logo abaixo, um degrau antes na esteira do dinheiro.
         #
@@ -1844,7 +1886,14 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
         #       CONSULTADA e voltou sem nenhuma nota real. Coluna NULA (proposta
         #       nao raspada, ou tenant com TG_NES desligado) devolve False e o
         #       relatorio CALA.
-        _pend_empenho = _e_termo_compromisso(row[28]) and _sem_empenho(row[25])
+        #   ⚠️ E A TERCEIRA, nova: o agregado do dado aberto (row[29]) NAO pode
+        #       estar dizendo que HA empenho. Quando a listagem volta vazia mas o
+        #       portal publica VL_EMPENHADO_CONV > 0, as duas fontes discordam —
+        #       e diante da discordancia o relatorio CALA, em vez de imprimir
+        #       "PENDENTE DE EMPENHO" na mesa do prefeito sobre um instrumento
+        #       que o proprio governo diz ter empenho.
+        _pend_empenho = (_e_termo_compromisso(row[28]) and _sem_empenho(row[25])
+                         and not (_money(row[29]) or 0))
         if _pend_empenho:
             # Nao imprimir "Empenhado: Sim" ao lado de "PENDENTE DE EMPENHO" no
             # MESMO item: o Sim vem do ciclo e aqui existe MEDICAO dizendo que
@@ -1924,7 +1973,7 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             # VALOR EMPENHADO medido (soma das NEs REAIS, sem a minuta de R$ 1,00).
             # `None` = a listagem nunca foi consultada, e aí o PDF não imprime a
             # linha. `0.0` NÃO é vazio: é resposta medida ("consultei e não há").
-            "valor_empenhado": _empenho_valor(row[25]),
+            "valor_empenhado": _empenho_total(row[25], row[29]),
             # Termo de Compromisso MEDIDO e sem nenhuma NE real. Já aparece dentro
             # de `situacao_atual`; fica também como CAMPO próprio para o PDF poder
             # destacar e para quem classifica (rm_export) não precisar reler texto.
