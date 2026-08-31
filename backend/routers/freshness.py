@@ -56,6 +56,21 @@ _SOURCES = [
     ("TransfereGov — PAC (Novo PAC)",
      "SELECT max(updated_at), count(*) FROM transferegov_pac",
      None),
+    # ⚠️ FONTE SEM TABELA PROPRIA, e de proposito. A sessao gov.br nao produz
+    # linha em lugar nenhum — ela HABILITA a coleta da fatia atras do login
+    # (histórico de comunicações, NEs, projeto básico, licitação). Ate 31/08/2026
+    # a saude dela so existia no log do container, que e efemero: "há quantas
+    # horas a sessão está viva" era uma pergunta sem resposta no banco, e a
+    # auditoria mediu a sessão morta 297,5h de 720h sem que nada no produto
+    # dissesse isso.
+    #
+    # O `records_inserted` de cada linha e QUANTOS DOS TRES SPs responderam
+    # (private / execucao / prestacao), e nao um numero de registros — os tres
+    # contam separado porque foi exatamente por `execucao` e `prestacao`
+    # aparecerem como um so que as NEs morriam em silencio.
+    ("gov.br — Sessão das mandatárias",
+     "SELECT max(finished_at), count(*) FROM ingestion_log WHERE source = 'govbr_sessao'",
+     "govbr_sessao"),
     ("CAUC — Regularidade federal",
      "SELECT max(data_pesquisa)::timestamptz, count(*) FROM cauc_situacao",
      "cauc"),
