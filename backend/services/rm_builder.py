@@ -304,33 +304,53 @@ def _fed_empenhada(situacao: str | None) -> bool:
     return _fed_status(situacao) in ("empenhada", "paga")
 
 
+def _data_fim(dt_fim) -> date | None:
+    """Lê a data de fim de vigência. Aceita date/datetime/ISO/'dd/mm/aaaa'.
+    Devolve None para vazio, lixo e formato desconhecido — a coluna do banco é
+    `character varying`, então chega de tudo por ali."""
+    if not dt_fim:
+        return None
+    if isinstance(dt_fim, datetime):
+        return dt_fim.date()
+    if isinstance(dt_fim, date):
+        return dt_fim
+    s = str(dt_fim).strip()
+    m = re.match(r"^(\d{4})-(\d{2})-(\d{2})", s)
+    if m:
+        return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+    m = re.match(r"^(\d{2})/(\d{2})/(\d{4})", s)
+    if m:
+        return date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+    return None
+
+
 def _vigencia_vencida(dt_fim, hoje: date | None = None) -> bool:
-    """A vigência já terminou? Aceita date/datetime/ISO/'dd/mm/aaaa'.
+    """A vigência já terminou?
 
     None ou ilegível devolve False — "não sei quando vence" NUNCA vira "venceu".
     O marcador que depende disto ACRESCENTA item ao relatório; supor vencimento
     encheria o documento de proposta que ninguém pode afirmar estar vencida."""
-    if not dt_fim:
-        return False
-    d = dt_fim
-    if isinstance(d, datetime):
-        d = d.date()
-    elif not isinstance(d, date):
-        s = str(d).strip()
-        m = re.match(r"^(\d{4})-(\d{2})-(\d{2})", s)
-        if m:
-            d = date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
-        else:
-            m = re.match(r"^(\d{2})/(\d{2})/(\d{4})", s)
-            if not m:
-                return False
-            d = date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
-    return d < (hoje or date.today())
+    d = _data_fim(dt_fim)
+    return d is not None and d < (hoje or date.today())
+
+
+def _vigencia_em_curso(dt_fim, hoje: date | None = None) -> bool:
+    """A vigência foi LIDA e ainda não terminou.
+
+    ⚠️ NÃO é `not _vigencia_vencida`, e a diferença tem teste. As duas devolvem
+    False quando não há data legível, de propósito: as duas ACRESCENTAM item ao
+    relatório, e o que não se sabe não vira afirmação em documento entregue ao
+    cliente. A primeira versão daqui era `bool(dt_fim) and not vencida` e dava
+    True para `'   '`, `'sem data'` e `'13/2024'` — texto não vazio que o parser
+    não lê. Por isso a pergunta é feita à DATA LIDA, não ao campo bruto."""
+    d = _data_fim(dt_fim)
+    return d is not None and d >= (hoje or date.today())
 
 
 def _fed_retem(ano_prop: int | None, ano_emissao: int, situacao: str | None,
                completo: bool = False, anos_sel: set | list | None = None,
-               dt_fim=None) -> bool:
+               dt_fim=None, celebrado: bool = False,
+               hoje: date | None = None) -> bool:
     """Regra de permanência no RM, por ANO DE REFERÊNCIA (ano_emissao):
       - empenhada/paga -> sempre permanece (avançou; convênio em curso em qualquer ano)
       - dead (rejeitada/indeferida/anulada) -> só permanece no SEU próprio ano de
@@ -350,14 +370,40 @@ def _fed_retem(ano_prop: int | None, ano_emissao: int, situacao: str | None,
     conserto ficou só no FNS e o federal nunca o recebeu. Medido: com [2021, 2025],
     a proposta 932836/2021 sumia do relatório, calada.
 
-    ⚠️ E EM "TODOS OS ANOS", pré-empenho ANTIGA entra QUANDO A VIGÊNCIA VENCEU.
-    Sem isto, "Todos os anos" significava na prática "só o ano corrente" para tudo
-    que não foi empenhado: `anos_sel` vazio faz o router usar `date.today().year`, e
-    uma proposta APROVADA de 2021 com vigência encerrada em 2024 caía fora do
-    relatório COMPLETO. Decisão do dono (29/08/2026), opção B de três: recurso
-    aprovado cuja janela FECHOU é justamente o que se precisa cobrar; já o que
-    nunca teve vigência (e nunca andou) continua fora, que era o motivo original
-    da regra.
+    ⚠️ E EM "TODOS OS ANOS", pré-empenho ANTIGA só volta quando FOI PARA FRENTE:
+    virou INSTRUMENTO (`celebrado`) e a VIGÊNCIA AINDA CORRE.
+
+    ESTA REGRA JÁ ESTEVE INVERTIDA, e o erro foi meu. O #317 (29/08/2026) fez o
+    contrário — "entra quando a vigência VENCEU" — para resgatar a 932836. Medido
+    contra produção em 30/08/2026, com as linhas reais e esta mesma função:
+
+        município      antiga   #317 (vencida)   celebrada+viva
+        Araújos          18       59 (+41)         19 (+1)
+        3 municípios     79      190 (+111)        80 (+1)
+
+    Os +41/+111 são exatamente a reclamação do dono: proposta SEM instrumento,
+    "enviada para análise" desde 2009/2015/2017, com a janela fechada há anos —
+    "convênios/propostas que não foram para frente". E a 932836 NÃO estava entre
+    eles: a vigência dela é 31/12/2026, ou seja, ela nunca venceu, e a regra
+    escrita para resgatá-la não a resgatava. Os dois lados errados.
+
+    O que a 932836 tem e as outras não é ter VIRADO INSTRUMENTO (nº 932836,
+    proposta 059522/2021, vigência até 31/12/2026) e seguir viva. Isso é o mesmo
+    "instrumento ativo -> permanece em qualquer ano" que `_fed_status` já
+    reconhece pelas palavras "em vigor"/"assinado"; aqui ele é provado pelo
+    NÚMERO e pela DATA, porque o portal manteve a situação textual em
+    "Proposta/Plano de Trabalho Aprovados" mesmo depois de celebrar.
+
+    ⚠️ E FICA DENTRO DO "TODOS OS ANOS", DEPOIS DO `anos_sel` — não junto do
+    `vigente` lá em cima. Testada nas linhas de produção, a versão "junto do
+    vigente" puxava instrumentos de 2026 (994997, 7AABMT, 7AABSA, 7AAFZT) para
+    dentro de um relatório pedido só para 2025. Quem escolhe anos recebe os anos
+    que escolheu.
+
+    `hoje` existe só para o teste poder FIXAR a data. A vigência da 932836 é
+    31/12/2026: um teste preso a `date.today()` passaria agora e quebraria
+    sozinho em janeiro — o caso do dono deixaria de estar coberto exatamente
+    quando ninguém estivesse olhando.
     """
     st = _fed_status(situacao)
     if st in ("empenhada", "paga", "vigente"):
@@ -370,7 +416,7 @@ def _fed_retem(ano_prop: int | None, ano_emissao: int, situacao: str | None,
         return ano_prop is not None and ano_prop in anos_sel
     if ano_prop is not None and ano_prop >= ano_emissao:
         return True
-    return _vigencia_vencida(dt_fim)
+    return celebrado and _vigencia_em_curso(dt_fim, hoje)
 
 
 def _fns_classifica(situacao_desc: str | None, sit_calc: str) -> str:
@@ -1517,12 +1563,14 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
         # entram no relatorio do ano de referencia; avancadas (em execucao / em
         # vigor / empenhada) e concluidas (encerrada / prestacao) permanecem.
         ano_est = c.ano or _ano_de(nr_instr, nr_proposta, c.nr_sigcon)
-        # `dt_fim` vem ANTES do filtro agora: a regra B (pre-empenho antiga entra
-        # quando a vigencia venceu) precisa dele para decidir. Convenio em
-        # "Cadastramento" que nunca foi celebrado nao tem vigencia -> continua
-        # fora, que e exatamente o caso que a regra original queria barrar.
+        # `celebrado` + `dt_fim` vem ANTES do filtro: em "todos os anos", o que
+        # resgata pre-empenho antiga e ter VIRADO INSTRUMENTO e a vigencia ainda
+        # correr. `nr_instr` e o mesmo numero que decide `tipo_label` logo abaixo
+        # ("Convenio" x "Proposta") — quem la ja e Proposta, aqui ja e barrado.
+        # Convenio em "Cadastramento" nao tem numero nem vigencia -> segue fora,
+        # que e exatamente o caso que a regra original queria barrar.
         if not _fed_retem(ano_est, ano_emissao, c.situacao, completo,
-                          anos_sel=anos_filtro,
+                          anos_sel=anos_filtro, celebrado=bool(nr_instr),
                           dt_fim=(c.dt_vigencia_atual or c.dt_vigencia_final)):
             continue
         orgao = (c.orgao_concedente or "Outros - SIGCON").strip() + " - SIGCON"
@@ -1703,11 +1751,15 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
         # saem. Empenho validado pelo STATUS (não pelo flag detalhe->>'Empenhado',
         # que estava marcando "Aprovadas" como empenhadas sem empenho real).
         ano_prop = _ano_de(row[1], row[2])  # numero_proposta NNNNNN/AAAA / codigo
-        # row[6] = dt_fim_vigencia. E o que faz a regra B valer: proposta
-        # APROVADA e nunca empenhada cuja janela FECHOU volta ao relatorio
-        # completo — foi o caso da 932836/2021 (venceu em 16/12/2024).
+        # row[2] = codigo_instrumento, row[6] = dt_fim_vigencia. Os dois juntos
+        # sao o que resgata pre-empenho ANTIGA no relatorio de todos os anos:
+        # virou instrumento E a vigencia ainda corre. E o caso da 932836/2021
+        # (proposta 059522/2021, instrumento 932836, vigencia ate 31/12/2026),
+        # que o portal ainda mostra como "Proposta/Plano de Trabalho Aprovados".
+        # `row[2]` e o MESMO campo que decide `tipo_label` tres linhas abaixo.
         if not _fed_retem(ano_prop, ano_emissao, sit, completo,
-                          anos_sel=anos_filtro, dt_fim=row[6]):
+                          anos_sel=anos_filtro, dt_fim=row[6],
+                          celebrado=bool(row[2])):
             continue
         dt_fim = None
         try:
