@@ -377,43 +377,97 @@ def test_pdf_nao_imprime_programa_quando_a_fonte_nao_tem():
 
 
 # --------------------------------------------------------------------------
-# "TODOS OS ANOS" tem de significar TODOS OS ANOS, e seleção de vários anos
-# não pode derrubar todos menos o maior.
+# EM "TODOS OS ANOS", PRÉ-EMPENHO ANTIGA SÓ VOLTA SE FOI PARA FRENTE.
 #
-# Caso real do dono (29/08/2026): instrumento 932836, proposta 059522/2021,
-# "Proposta/Plano de Trabalho Aprovados", vigência encerrada em 16/12/2024
-# (vencida há 621 dias). Ele gerou o RM de TODOS OS ANOS e ela não saiu.
+# ⚠️ AS LINHAS ABAIXO SÃO DE PRODUÇÃO, não inventadas para casar com o código.
+# Foram lidas do banco do freitas em 30/08/2026 e conferidas contra a própria
+# `_fed_retem`; é essa procedência que faz o teste valer alguma coisa. Um caso
+# escrito a partir da implementação só repete a implementação de volta.
+#
+# O caso do dono é o instrumento 932836 (proposta 059522/2021, situação ainda
+# "Proposta/Plano de Trabalho Aprovados", vigência até 31/12/2026). O #317 dizia
+# que a vigência dela tinha encerrado em 16/12/2024 — não é o que o banco diz.
 # --------------------------------------------------------------------------
 from datetime import date as _date                                    # noqa: E402
-from services.rm_builder import _vigencia_vencida                     # noqa: E402
+from services.rm_builder import (_vigencia_vencida,                   # noqa: E402
+                                 _vigencia_em_curso)
 
 _APROV = "Proposta/Plano de Trabalho Aprovados"
-_VENC = _date(2024, 12, 16)
+_ANALISE = "Proposta/Plano de Trabalho enviado para Análise"
+_HOJE = _date(2026, 8, 30)
+
+# --- as linhas, como estão no banco (numero, situacao, instrumento, vigencia) --
+_932836 = (2021, _APROV, "932836", _date(2026, 12, 31))       # Araújos, viva
+_006961 = (2017, _ANALISE, None, _date(2017, 12, 31))         # nunca virou nada
+_055157 = (2010, _APROV, "738737", _date(2010, 11, 12))       # virou, e morreu
+_006244 = (2024, _ANALISE, None, _date(2027, 6, 1))           # promessa sem instrumento
 
 
-def test_TODOS_OS_ANOS_nao_pode_virar_so_o_ano_corrente():
-    """⚠️ `anos_sel` vazio faz o router usar `date.today().year` como referência.
-    Sem a regra B, "Todos os anos" significava na prática "só o ano corrente"
-    para tudo que não foi empenhado — e uma proposta APROVADA de 2021 com a
-    janela já fechada sumia do relatório COMPLETO, calada."""
-    assert _fed_retem(2021, 2026, _APROV, True, dt_fim=_VENC) is True
+def _retem(linha, ref=2026, anos_sel=None):
+    """⚠️ `hoje` FIXO. A vigência da 932836 vai até 31/12/2026: preso a
+    `date.today()`, este arquivo passaria agora e quebraria sozinho em janeiro —
+    e o caso do dono deixaria de estar coberto justo quando ninguém olha."""
+    ano, sit, instr, dt = linha
+    return _fed_retem(ano, ref, sit, True, anos_sel=anos_sel,
+                      dt_fim=dt, celebrado=bool(instr), hoje=_HOJE)
+
+
+def test_932836_entra_no_relatorio_de_todos_os_anos():
+    """O caso que o dono apontou duas vezes. Ela é de 2021 e a situação textual
+    nunca saiu de "Aprovados", mas ela VIROU O INSTRUMENTO 932836 e a vigência
+    corre até 31/12/2026 — foi para frente e está viva."""
+    assert _retem(_932836) is True
+
+
+def test_o_que_NAO_foi_para_frente_fica_de_fora():
+    """A reclamação do dono em 30/08/2026: o relatório completo estava cheio de
+    proposta "enviada para análise" de 2009/2015/2017, sem instrumento nenhum e
+    com a janela fechada há anos. Medido em produção: eram +41 itens em Araújos
+    e +111 em três municípios — o #317 as trazia todas."""
+    assert _retem(_006961) is False
+
+
+def test_celebrada_mas_VENCIDA_tambem_fica_de_fora():
+    """Virar instrumento não basta: 738737 foi celebrado em 2010 e a vigência
+    morreu em 12/11/2010. Sozinho, "foi celebrada" traria 4 dessas em Araújos e
+    21 em três municípios."""
+    assert _retem(_055157) is False
+
+
+def test_vigencia_futura_SEM_instrumento_tambem_fica_de_fora():
+    """E viva não basta: a proposta traz a vigência PRETENDIDA no plano de
+    trabalho mesmo sem nunca ter sido celebrada. Sozinho, "está viva" traria
+    006244/2024 e 063849/2025, que nunca viraram instrumento."""
+    assert _retem(_006244) is False
+
+
+def test_a_regra_do_317_nao_resgatava_a_propria_932836():
+    """⚠️ O #317 dizia "pré-empenho antiga entra quando a vigência VENCEU" e foi
+    escrito exatamente para resgatar a 932836. A vigência dela é 31/12/2026:
+    nunca venceu. A regra errava dos dois lados — deixava de fora quem devia
+    entrar e trazia para dentro quem devia ficar de fora."""
+    assert _vigencia_vencida(_932836[3], hoje=_HOJE) is False
+    assert _vigencia_vencida(_006961[3], hoje=_HOJE) is True
 
 
 def test_selecao_de_VARIOS_anos_nao_derruba_todos_menos_o_maior():
     """⚠️ O router calcula `ano_emissao = max(anos)`. Quem marcou [2021, 2025]
     pediu os dois de propósito. É o MESMO defeito já corrigido no `_fns_retem`
     em 19/08/2026 — o conserto ficou só no FNS e o federal nunca o recebeu."""
-    assert _fed_retem(2021, 2025, _APROV, True, anos_sel={2021, 2025}) is True
+    assert _retem(_932836, ref=2025, anos_sel={2021, 2025}) is True
     # e a seleção continua sendo respeitada: quem não foi pedido, não entra
-    assert _fed_retem(2021, 2025, _APROV, True, anos_sel={2025}) is False
+    assert _retem(_932836, ref=2025, anos_sel={2025}) is False
 
 
-def test_o_que_a_regra_ORIGINAL_barrava_continua_barrado():
-    """A regra existia por um motivo: "proposta antiga NUNCA empenhada sai do
-    relatório". A opção B não a revoga — só abre exceção para quem TEVE janela
-    e a perdeu. Sem vigência, ou com vigência no futuro, continua fora."""
-    assert _fed_retem(2021, 2026, _APROV, True, dt_fim=None) is False
-    assert _fed_retem(2021, 2026, _APROV, True, dt_fim=_date(2027, 1, 1)) is False
+def test_quem_escolhe_anos_recebe_os_anos_que_escolheu():
+    """⚠️ O resgate mora DEPOIS do `anos_sel`, e não junto do `vigente` lá em
+    cima. Testada nas linhas de produção, a versão "junto do vigente" enfiava
+    instrumento de 2026 vivo até 2028 dentro de um relatório pedido só para
+    2025 — em quatro municípios, 994997, 7AABMT, 7AABSA e 7AAFZT."""
+    _994997 = (2026, "Proposta Aprovada e Plano de Trabalho Complementado",
+               "994997", _date(2028, 3, 13))
+    assert _retem(_994997, ref=2025, anos_sel={2025}) is False
+    assert _retem(_994997, ref=2026) is True     # no completo ela entra pelo ano
 
 
 def test_chamada_ANTIGA_de_4_argumentos_sai_identica():
@@ -421,8 +475,8 @@ def test_chamada_ANTIGA_de_4_argumentos_sai_identica():
     caractere a caractere o de antes."""
     for ano, ref, sit in [(2021, 2026, _APROV), (2026, 2026, _APROV),
                           (2019, 2026, "Em execução"), (2021, 2026, "Rejeitada")]:
-        assert _fed_retem(ano, ref, sit, True) == _fed_retem(ano, ref, sit, True,
-                                                             anos_sel=None, dt_fim=None)
+        assert _fed_retem(ano, ref, sit, True) == _fed_retem(
+            ano, ref, sit, True, anos_sel=None, dt_fim=None, celebrado=False)
 
 
 def test_empenhada_e_paga_seguem_entrando_em_qualquer_ano():
@@ -443,3 +497,21 @@ def test_sem_data_NUNCA_conta_como_vencida():
     proposta que ninguém pode afirmar estar vencida."""
     for v in (None, "", "   ", "sem data", "13/2024", 0):
         assert _vigencia_vencida(v, hoje=_date(2026, 8, 29)) is False
+
+
+def test_sem_data_TAMBEM_nao_conta_como_em_curso():
+    """⚠️ `_vigencia_em_curso` NÃO é `not _vigencia_vencida`. As duas devolvem
+    False sem data, de propósito: as duas ACRESCENTAM item ao relatório, e o que
+    não se sabe não pode virar afirmação em documento entregue ao cliente. Se
+    fosse a negação, um convênio celebrado sem vigência lida entraria calado."""
+    for v in (None, "", "   ", "sem data", "13/2024", 0):
+        assert _vigencia_em_curso(v, hoje=_date(2026, 8, 29)) is False
+        assert _vigencia_vencida(v, hoje=_date(2026, 8, 29)) is False
+    # e um convênio celebrado sem vigência lida NÃO é resgatado
+    assert _fed_retem(2015, 2026, _APROV, True, dt_fim=None, celebrado=True) is False
+
+
+def test_vigencia_em_curso_e_a_data_de_hoje():
+    assert _vigencia_em_curso("31/12/2026", hoje=_HOJE) is True
+    assert _vigencia_em_curso("2026-12-31", hoje=_HOJE) is True
+    assert _vigencia_em_curso(_date(2026, 8, 29), hoje=_HOJE) is False   # ontem
