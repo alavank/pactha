@@ -155,15 +155,21 @@ export default function EmendasEstaduaisPage() {
     return <div className="flex h-64 items-center justify-center text-muted-foreground">Selecione um município.</div>;
   }
 
-  const exportPdf = () => {
-    const token = localStorage.getItem("pactha_token");
-    const url = `${api.defaults.baseURL}/export-pdf/emendas?municipio_id=${municipioId}`;
-    fetch(url, { headers: { Authorization: `Bearer ${token}` } })
-      .then((r) => r.blob())
-      .then((blob) => {
-        const u = URL.createObjectURL(blob);
-        window.open(u, "_blank");
+  // ⚠️ Mesmo conserto do `dashboard/convenios`: `pactha_token` é apagado do
+  // localStorage no primeiro refresh, e `Bearer null` ATROPELA o cookie bom no
+  // backend (o Bearer é lido antes). Pelo `api` vai o cookie e há retry.
+  const exportPdf = async () => {
+    try {
+      const r = await api.get("/export-pdf/emendas", {
+        params: { municipio_id: municipioId },
+        responseType: "blob",
       });
+      const u = URL.createObjectURL(r.data as Blob);
+      window.open(u, "_blank");
+      setTimeout(() => URL.revokeObjectURL(u), 60000);
+    } catch {
+      alert("Não foi possível gerar o PDF. Tente novamente.");
+    }
   };
 
   return (
