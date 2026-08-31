@@ -324,6 +324,11 @@ MIGRATION_FILES = [
     # TELEMETRIA: sessao de uso vira TRECHO contiguo (sessao_token + motivo_fim
     # mais largo). Precisa de add_uso.sql acima, e nao toca audit_log.
     "add_uso_trechos.sql",
+    # FNS: o valor PAGO ocupava a coluna do valor PROPOSTO nas linhas de
+    # pagamento parcial (`vl_pago or vl_prop` — o `or` do Python devolve o pago
+    # sempre que ele nao e zero). Repara o ja gravado lendo do proprio raw_data;
+    # idempotente e autocurativa, roda a cada boot.
+    "fix_fns_valor_pago_na_coluna_certa.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",
