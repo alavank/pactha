@@ -414,15 +414,29 @@ export default function ConveniosPage() {
 
   const totalPages = data?.pages ?? 1;
 
-  const exportPdf = () => {
-    const token = localStorage.getItem("pactha_token");
-    const url = `${api.defaults.baseURL}/export-pdf/convenios?municipio_id=${municipioId}`;
-    fetch(url, { headers: { Authorization: `Bearer ${token}` } })
-      .then((r) => r.blob())
-      .then((blob) => {
-        const u = URL.createObjectURL(blob);
-        window.open(u, "_blank");
+  // ⚠️ NAO LER `pactha_token` DO localStorage AQUI.
+  //
+  // O interceptor de `lib/api.ts` APAGA essa chave assim que o primeiro refresh
+  // dá certo (a "auto-cura" comentada lá): daí em diante `getItem` devolve null
+  // e este fetch mandava `Authorization: Bearer null`. E o backend lê o Bearer
+  // ANTES do cookie (`services/auth.py`: `if credentials: token = ...`), então
+  // o header inválido ATROPELAVA uma sessão boa e voltava 401 "Token inválido"
+  // — não "Token expirado", que é o que confundia o diagnóstico.
+  //
+  // Pelo `api` o pedido vai com o cookie e, se ainda assim tomar 401, o
+  // interceptor renova a sessão e repete sozinho. Um `fetch` cru não tem isso.
+  const exportPdf = async () => {
+    try {
+      const r = await api.get("/export-pdf/convenios", {
+        params: { municipio_id: municipioId },
+        responseType: "blob",
       });
+      const u = URL.createObjectURL(r.data as Blob);
+      window.open(u, "_blank");
+      setTimeout(() => URL.revokeObjectURL(u), 60000);
+    } catch {
+      alert("Não foi possível gerar o PDF. Tente novamente.");
+    }
   };
 
   return (

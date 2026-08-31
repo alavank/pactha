@@ -179,13 +179,19 @@ export default function DouMGPage() {
     qs.append("municipio_id", "0");
     titulos.forEach((t) => qs.append("titulos", t));
     edicoes.forEach((e) => qs.append("edicoes", e));
-    const token = localStorage.getItem("pactha_token");
-    fetch(`${api.defaults.baseURL}/export-pdf/dou?${qs.toString()}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    }).then((r) => r.blob()).then((blob) => {
-      const u = URL.createObjectURL(blob);
-      window.open(u, "_blank");
-    });
+    // ⚠️ Mesmo conserto do `dashboard/convenios`: `pactha_token` é apagado do
+    // localStorage no primeiro refresh, e `Bearer null` ATROPELA o cookie bom
+    // no backend (o Bearer é lido antes). Pelo `api` vai o cookie e há retry.
+    //
+    // Note que `abrirPublicacao`, logo acima neste mesmo arquivo, JÁ protegia o
+    // header (`token ? {...} : {}`) e por isso nunca quebrou — era só esta.
+    api.get(`/export-pdf/dou?${qs.toString()}`, { responseType: "blob" })
+      .then((r) => {
+        const u = URL.createObjectURL(r.data as Blob);
+        window.open(u, "_blank");
+        setTimeout(() => URL.revokeObjectURL(u), 60000);
+      })
+      .catch(() => setError("Não foi possível gerar o PDF. Tente novamente."));
   };
 
   return (
