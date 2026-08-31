@@ -28,6 +28,11 @@ The `painel/` directory is a **deprecated** standalone Next.js app — its funct
 (`/app`, `/tv`) moved into `frontend/` as `/dashboard` and `/tela`. Don't build on `painel/`;
 see `painel/DEPRECADO.md`.
 
+## Escrita de arquivos
+
+Para criar ou sobrescrever arquivos, use a ferramenta Write/Edit. Não use `cat <<EOF`,
+heredoc ou `echo > arquivo` via Bash.
+
 ## Commands
 
 ### Backend (Python 3.12, FastAPI)

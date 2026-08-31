@@ -536,11 +536,33 @@ _CAMPOS = ("numero_proposta", "situacao", "orgao", "proponente", "identificacao"
 _SOBRESCREVE = [
     "situacao", "orgao", "proponente", "identificacao", "modalidade",
     "situacao_siafi", "numero_processo", "objeto", "programa",
-    "dt_inicio_vigencia", "dt_fim_vigencia", "dt_proposta", "dt_assinatura",
+    "dt_proposta", "dt_assinatura",
     "valor_global", "valor_repasse", "valor_contrapartida", "situacao_contratacao",
     "clausula_suspensiva_dt_prevista", "clausula_suspensiva_motivo",
     "codigo_instrumento", "id_proposta_siconv", "valor_emenda",
 ]
+# ⚠️ A VIGENCIA SAIU DO _SOBRESCREVE EM 30/08/2026, E NAO E ARRUMACAO.
+#
+# Aqui a vigencia do CONVENIO sobrepoe a da proposta (ver `_coleta`, bloco 2), e
+# o `DIA_FIM_VIGENC_CONV` do CSV e a vigencia ORIGINAL, de antes dos aditivos. O
+# scraper le da tela o campo "Data Termino de Vigencia ATUAL", que e a que vale.
+# Onde os dois discordam, quem escreveu por ultimo ganhava.
+#
+# Medido em producao (30/08/2026, 3.199 propostas dos 42 municipios): existe
+# EXATAMENTE UMA linha em que os dois lados discordam — a proposta 059522/2021,
+# instrumento 932836. O CSV do convenio diz 16/12/2024; a tela, o CSV da
+# PROPOSTA e o prazo de prestacao de contas dizem 31/12/2026.
+#
+# Isso nao era so um dado errado: o cron das 06:50 gravava 16/12/2024, o lote de
+# 2 em 2 horas gravava 31/12/2026 de volta, e a regra de ano do RM (#327) le
+# esta coluna para decidir se instrumento celebrado e antigo entra no relatorio
+# completo. Um RM emitido na janela entre os dois PERDIA a 932836 — exatamente o
+# sintoma que o dono relatou duas vezes.
+#
+# Agora o dado aberto so PREENCHE quando a coluna esta vazia. O `NULLIF` impede
+# que uma string vazia do CSV apague o valor lido da tela — as colunas de data
+# aqui sao VARCHAR, entao '' nao e NULL e venceria o COALESCE sozinho.
+_SO_PREENCHE = ["dt_inicio_vigencia", "dt_fim_vigencia"]
 # Campo em que o COALESCE protege de verdade: o parlamentar as vezes so aparece
 # no scraper autenticado (emenda impositiva recente que ainda nao entrou no
 # arquivo de emendas). Se o dado aberto nao tiver, NAO apaga o que o banco tem.
@@ -563,6 +585,10 @@ def _upsert(mun_id: int, propostas: list[dict]) -> int:
     sets = [
         f"{c}=COALESCE(NULLIF(EXCLUDED.{c}::text, '')::{'numeric' if c.startswith('valor') else 'date' if c == 'clausula_suspensiva_dt_prevista' else 'text'}, transferegov_propostas.{c})"
         for c in _SOBRESCREVE
+    ] + [
+        # So preenche o vazio: o valor que ja esta na coluna vence sempre.
+        f"{c}=COALESCE(NULLIF(transferegov_propostas.{c}, ''), NULLIF(EXCLUDED.{c}::text, ''))"
+        for c in _SO_PREENCHE
     ] + [
         f"{c}=COALESCE(EXCLUDED.{c}, transferegov_propostas.{c})" for c in _PRESERVA
     ] + ["raw_data=EXCLUDED.raw_data", "updated_at=NOW()"]
