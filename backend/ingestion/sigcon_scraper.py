@@ -1575,11 +1575,27 @@ def _upsert_convenios_batch(cur, records) -> tuple[int, int]:
         )
         sit_norm = _norm(rec.get("status") or "")
         sit_label = STATUS_MAP.get(sit_norm, rec.get("status"))
-        # dt_publicacao proxy: 1o jan do ano (extraido de "/YYYY" no Plano/Proposta).
-        # NAO eh data exata, mas permite ordenacao correta no front (recentes 1o)
-        # sem precisar fazer click-through em cada plano.
+        # ⚠️ AQUI HAVIA UM SUBSTITUTO DE DATA, E ELE SAIU EM 30/08/2026.
+        #
+        # Quando o detalhe nao era aberto, isto gravava `date(ano, 1, 1)` em
+        # `dt_publicacao` — declaradamente "NAO eh data exata", so para a
+        # ordenacao do front funcionar sem click-through. O problema nao era o
+        # substituto existir: era ele morar na MESMA COLUNA da data verdadeira,
+        # sem nada que os separasse depois.
+        #
+        # Medido em Araujos: 15 dos 28 convenios SIGCON tinham 1o de janeiro
+        # gravado (quatro em 2015, cinco em 2017, e um em cada de 2020, 2021,
+        # 2023 x2, 2025 e 2026), e `ConvenioDetailModal.tsx:202` imprime esse
+        # valor como "Data Publicação". O portal, para os mesmos convenios,
+        # publica 30/11/2017, 24/12/2015, 08/05/2015...
+        #
+        # A ORDENACAO NAO REGREDIU: quem precisa dela faz a queda para 1o de
+        # janeiro do `ano` no proprio SQL (routers/convenios.py), que e o lugar
+        # onde isso e criterio de ordem e nao fato exibido. E a data REAL passa a
+        # vir do dado aberto do Estado, que a plataforma ja baixa a cada 6 horas
+        # (sigcon_ckan_backfill) — ela existe no `dm_convenio` e so nao estava
+        # sendo aproveitada.
         ano = rec.get("ano")
-        dt_pub_proxy = date(ano, 1, 1) if ano else None
         valor = rec.get("valor_repasse")
         # Campos do detalhe (contrapartida, assinatura, vigencia, alteracoes)
         v_contrap = _parse_money(rec.get("valor_contrapartida_atual_str")
@@ -1591,8 +1607,10 @@ def _upsert_convenios_batch(cur, records) -> tuple[int, int]:
         qt_alt = int(_qa) if _qa.isdigit() else None
         # valor_total = concedente (repasse) + contrapartida quando houver
         v_total = ((valor or 0) + (v_contrap or 0)) if (valor or v_contrap) else valor
-        # dt_publicacao: usa a data real do detalhe se houver, senao o proxy (1o jan)
-        dt_pub = dt_pub_real or dt_pub_proxy
+        # dt_publicacao: SO a data real do detalhe. Sem ela, NULL — e NULL diz a
+        # verdade ("nao li a data de publicacao"), que e mais util que uma data
+        # que parece real e nao e.
+        dt_pub = dt_pub_real
         # Conflito de dedupe: prioriza nr_siafi (estavel entre CKAN bulk
         # e scraper Playwright). Se SIAFI presente, usa ON CONFLICT (nr_siafi)
         # pra atualizar o registro existente. Se nao, usa nr_sigcon como fallback.

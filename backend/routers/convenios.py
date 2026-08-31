@@ -432,7 +432,19 @@ async def list_convenios(
 
     total = (await db.execute(q_count)).scalar() or 0
 
-    q = q.order_by(ConvenioEstadual.dt_publicacao.desc().nullslast())
+    # ⚠️ ORDENA POR data-ou-ano, e nao so pela data. O coletor do SIGCON gravava
+    # `date(ano, 1, 1)` em `dt_publicacao` quando nao conseguia abrir o detalhe —
+    # um SUBSTITUTO para esta ordenacao funcionar, guardado na mesma coluna da
+    # data de verdade e impresso no modal como "Data Publicação" (15 dos 28
+    # convenios de Araujos, medido em 30/08/2026). O substituto saiu; para a
+    # ordenacao nao regredir, o proprio SQL faz a queda para 1o de janeiro do
+    # `ano` — no lugar onde ela e um criterio de ordem, e nao um fato exibido.
+    q = q.order_by(
+        func.coalesce(
+            ConvenioEstadual.dt_publicacao,
+            func.make_date(func.coalesce(ConvenioEstadual.ano, 1900), 1, 1),
+        ).desc().nullslast()
+    )
     q = q.offset((page - 1) * per_page).limit(per_page)
     result = await db.execute(q)
     convs = result.scalars().all()
