@@ -151,16 +151,18 @@ def _upsert_items(items: list[dict]) -> int:
     sql = """
         INSERT INTO convenios_estadual
             (municipio_id, nr_sigcon, objeto, situacao, valor_total,
-             valor_concedente, ano, fonte, orgao_concedente,
+             valor_concedente, valor_repassado, ano, fonte, orgao_concedente,
              nr_proposta, tipo_programa, raw_data, created_at, updated_at)
         VALUES (%(municipio_id)s, %(nr_proposta)s, %(objeto)s, %(situacao)s,
-                %(valor)s, %(valor)s, %(ano)s, %(fonte)s, %(orgao_concedente)s,
+                %(valor)s, %(valor)s, %(valor_repassado)s,
+                %(ano)s, %(fonte)s, %(orgao_concedente)s,
                 %(nr_proposta)s, %(tipo_programa)s, %(raw_data)s::jsonb,
                 NOW(), NOW())
         ON CONFLICT (nr_sigcon) DO UPDATE SET
             situacao = EXCLUDED.situacao,
             valor_total = COALESCE(EXCLUDED.valor_total, convenios_estadual.valor_total),
             valor_concedente = COALESCE(EXCLUDED.valor_concedente, convenios_estadual.valor_concedente),
+            valor_repassado = COALESCE(EXCLUDED.valor_repassado, convenios_estadual.valor_repassado),
             objeto = COALESCE(EXCLUDED.objeto, convenios_estadual.objeto),
             raw_data = EXCLUDED.raw_data,
             updated_at = NOW()
@@ -208,7 +210,27 @@ def _normalize(p: dict, ano: int, mun_id: int, cod_fns: str) -> dict:
         "nr_proposta": chave_fns(cod_fns, ano, tipo, recurso, nu_proc),
         "objeto": (f"{tipo} - {recurso}".strip(" -") + (f" — Proc {nu_proc}" if nu_proc not in ("NA", "N/A") else ""))[:500],
         "tipo_programa": tipo[:100],
-        "valor": vl_pago or vl_prop or 0,
+        # ⚠️ `vl_prop` PRIMEIRO. Era `vl_pago or vl_prop`, e o `or` do Python
+        # devolve o pago sempre que ele nao e zero — entao `valor_total` (e
+        # `valor_concedente`, que recebe o mesmo parametro) significava "valor da
+        # PROPOSTA" nas linhas pagas por inteiro e "valor PAGO" nas pagas pela
+        # metade, sem nada na linha dizendo qual dos dois era.
+        #
+        # No pagamento integral os dois numeros sao iguais e o defeito e
+        # invisivel — 28 das 43 linhas de Araujos. Medido nas 2 parciais:
+        #   FNS-310390-2019-INCREMEN  proposta 500.000,00  pago 400.000,00
+        #   FNS-310390-2026-CUSTEIO_  proposta 800.000,00  pago 200.000,00
+        # A tela mostrava 400.000 e 200.000 como valor total: R$ 700.000,00 de
+        # valor proposto sumindo, com as duas linhas rotuladas "Empenhado".
+        #
+        # A raiz era falta de lugar para o pago: `valor_repassado` estava NULO em
+        # 43 de 43 linhas FNS (so o backfill do CKAN escrevia nela, e ele nao
+        # trata FNS). Sem coluna para o pago, o pago ocupava a do proposto.
+        "valor": vl_prop or vl_pago or None,
+        # O pago ganha coluna propria. `or None` e nao `or 0`: zero aqui seria a
+        # afirmacao "nada foi pago", e o FNS omite `vlPago` tambem quando so nao
+        # informa — a mesma disciplina do resto do repo para medido x ausente.
+        "valor_repassado": vl_pago or None,
         "situacao": sit,
         "ano": ano,
         "fonte": "FNS",
