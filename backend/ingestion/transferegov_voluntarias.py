@@ -478,6 +478,19 @@ def _log_incoerente(num, glob, repasse, contrap) -> None:
             f"o CSV de dados abertos continua valendo")
 
 
+def _primeiro_campo(valor):
+    """So o primeiro campo do que o extrator devolveu, cortando no TAB/quebra.
+
+    O leitor de detalhe achata a linha da tabela e as vezes traz o par
+    rotulo/valor SEGUINTE colado por TAB: "Contrato de Repasse\\tEnviada para
+    mandatária?\\tNÃ£o". Medido em 27 de 83 propostas de Araujos.
+
+    None e '' passam intactos — a funcao nao inventa valor, so apara."""
+    if valor is None:
+        return None
+    return re.split(r"[\t\r\n]", str(valor))[0].strip() or None
+
+
 def valores_coerentes(glob, repasse, contrap, tol: float = 0.02) -> bool:
     """O trio de valores fecha a conta? global == repasse + contrapartida.
 
@@ -2036,7 +2049,22 @@ async def _extrai_detalhe(page) -> dict:
     """Captura todos os pares label:valor + campos do topo da tela Dados da Proposta."""
     return await page.evaluate("""() => {
         const out = {};
-        const setKV = (k, v) => { if (k && k.length < 70 && v && !out[k]) out[k] = v.slice(0, 600); };
+        // Espelho de `transferegov_http._parece_rotulo` — ver o comentario longo
+        // la. Resumo: este laco varre TODAS as linhas de 2 ou 4 celulas da pagina
+        // sem saber de que tabela vieram, entao ano do cronograma e nome de
+        // arquivo da grade de documentos viravam CHAVE DE TOPO do detalhe (224
+        // chaves-lixo nas 83 propostas de Araujos). A regra e sobre a FORMA do
+        // rotulo: tem letra, nao e so numero, nao e nome de arquivo.
+        const pareceRotulo = (k) => {
+            const s = (k || '').trim();
+            if (!s) return false;
+            if (/^[\\d\\s.,/:%-]+$/.test(s)) return false;
+            if (/\\.(pdf|docx?|xlsx?|jpe?g|png|zip|p7s|txt|csv)\\s*$/i.test(s)) return false;
+            return /[A-Za-zÀ-ÿ]/.test(s);
+        };
+        const setKV = (k, v) => {
+            if (k && k.length < 70 && v && !out[k] && pareceRotulo(k)) out[k] = v.slice(0, 600);
+        };
         // Pares label|valor: linhas com 2 OU 4 celulas (label|valor|label|valor)
         document.querySelectorAll('tr').forEach(tr => {
             const tds = [...tr.querySelectorAll('td,th')];
@@ -2162,7 +2190,18 @@ def _upsert(mun_id: int, propostas: list[dict]):
                     return str(det[k])
             return None
         codigo_instr = g("Código do Instrumento")
-        modalidade = g("Modalidade")
+        # ⚠️ CORTA NO PRIMEIRO TAB/QUEBRA. O extrator devolve a celula do rotulo
+        # MAIS o par rotulo/valor seguinte da mesma linha da tabela, colados por
+        # TAB. Medido em Araujos (30/08/2026): 27 de 83 propostas gravaram coisas
+        # como "Contrato de Repasse\tEnviada para mandatária?\tNÃ£o", e 21 delas
+        # ainda carregavam o acento duplamente codificado do pedaco extra.
+        #
+        # O `rm_builder._e_termo_compromisso` ja se defendia cortando no TAB
+        # (rm_builder.py:1042) — a defesa existia no CONSUMIDOR e faltava na
+        # origem, entao a sujeira seguia na coluna esperando o proximo leitor que
+        # nao soubesse dela. Cortar aqui e um `split`, e o dado aberto (que e
+        # autoritativo para este campo) continua corrigindo o resto.
+        modalidade = _primeiro_campo(g("Modalidade"))
         situacao_siafi = g("Situação no SIAFI")
         num_processo = g("Número do Processo")
         objeto = g("Objeto do Instrumento")
@@ -2334,10 +2373,27 @@ def _upsert(mun_id: int, propostas: list[dict]):
               json.dumps(sit_det_json, ensure_ascii=False) if sit_det_json else None,
               (p.get("id_proposta_siconv") or None),
               p.get("processo_execucao_qtd"),
+              # ⚠️ `is not None` tambem aqui. Lista VAZIA e resposta medida ("o
+              # portal respondeu: nenhuma licitacao"), nao ausencia. Sintoma
+              # concreto em Araujos: 054685/2025 com processo_execucao_qtd = 0 e
+              # processo_execucao = NULL. O `_qtd` ao lado salvava a informacao,
+              # entao nao se perdia — mas duas colunas discordando sobre o mesmo
+              # fato e exatamente o tipo de contradicao que a auditoria caca.
+              # Seguro: `prop["processo_execucao"]` so e atribuido dentro de
+              # `if _lst is not None` (linha ~999), nunca pre-semeado.
               (json.dumps(p["processo_execucao"], ensure_ascii=False)
-               if p.get("processo_execucao") else None),
+               if p.get("processo_execucao") is not None else None),
+              # ⚠️ `is not None`, e nao truthy — a mesma correcao que
+              # `notas_empenho` recebeu logo abaixo, e que faltava aqui.
+              # `projeto_basico` e o UNICO dos quatro campos com esta guarda que
+              # nao tem uma coluna vizinha para salvar o "consultei e nao ha":
+              # `processo_execucao` tem o `_qtd` ao lado, `historico_comunicacoes`
+              # e `documentos_quadro_resumo` tem o `historico_atualizado_em`.
+              # Aqui, dict vazio virava NULL, o COALESCE preservava o anterior, e
+              # "esta proposta nao tem projeto basico" ficava indistinguivel de
+              # "nunca olhei o projeto basico dela".
               (json.dumps(p["projeto_basico"], ensure_ascii=False)
-               if p.get("projeto_basico") else None),
+               if p.get("projeto_basico") is not None else None),
               # ⚠️ `is not None`, NÃO truthy. `[]` é RESPOSTA MEDIDA ("consultei
               # a listagem de empenhos e não há NE"), não ausência. Com a guarda
               # antiga a lista vazia era falsy, virava NULL e o COALESCE do

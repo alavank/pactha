@@ -646,6 +646,29 @@ async def _scrape_alteracoes(page) -> dict | None:
             "ultima_alteracao_titulo": g(r0, ci_tit),
             "ultima_alteracao_usuario": g(r0, ci_usu),
         }
+        # ⚠️ E A LISTA INTEIRA, e nao so a ultima.
+        #
+        # Ate 31/08/2026 esta funcao reduzia a datatable a UM registro (a linha de
+        # data mais recente) e as outras sumiam sem deixar rastro. Medido em
+        # Araujos: nos 18 convenios casados com o portal, o Estado publica 9
+        # alteracoes e a plataforma guardava 4. No convenio 9223438 havia uma
+        # PRORROGACAO DE OFICIO, uma ADEQUACAO DO CONVENIO e outra prorrogacao;
+        # sobrava so a ultima — e a adequacao, que e de OUTRO TIPO, nao existia em
+        # lugar nenhum. "Quantas vezes este convenio foi prorrogado" era uma
+        # pergunta sem resposta possivel.
+        #
+        # Os seis campos escalares FICAM: a tela e o RM ja os leem, e trocar a
+        # forma de leitura deles seria outra mudanca, com outro risco. A lista
+        # entra ao lado, como historico.
+        alteracoes = []
+        for r in sorted(rows, key=keydata):
+            item = {"nr_controle": g(r, ci_ctrl), "tipo": g(r, ci_tipo),
+                    "situacao": g(r, ci_sit), "data": g(r, ci_data),
+                    "titulo": g(r, ci_tit), "usuario": g(r, ci_usu)}
+            if any(item.values()):
+                alteracoes.append(item)
+        if alteracoes:
+            out["alteracoes"] = alteracoes
         return out if any(out.values()) else None
     except Exception:
         return None
@@ -785,6 +808,22 @@ def _pc_forma(campo: str, valor: str) -> Optional[str]:
     # O status e texto livre: nao da para exigir forma sem inventar vocabulario.
     # E ele e o campo que a producao mostrou FUNCIONANDO — cinco valores reais e
     # limpos em 99 convenios.
+    #
+    # ⚠️ MENOS QUANDO O PORTAL DIZ QUE NAO HA STATUS. A tela imprime o aviso
+    # "STATUS DE PRESTAÇÃO DE CONTAS NÃO INFORMADO" no lugar onde o status
+    # apareceria, e o parser guardava a FRASE como se fosse o status. Medido em
+    # Araujos (30/08/2026): 6 dos 13 convenios com a secao lida traziam esse
+    # aviso gravado, com SEI e data nulos — todos de 2025/2026, recem-assinados.
+    # Na tela e no RM isso vira "Situacao: STATUS DE PRESTAÇÃO DE CONTAS NÃO
+    # INFORMADO", que e ruido em caixa alta no lugar de um campo vazio honesto.
+    #
+    # Nao e inventar vocabulario: e ler a palavra do proprio portal para
+    # AUSENCIA. `_fold` deixa o casamento imune a acento, e a exigencia de
+    # "status" na frase evita engolir um status real que por acaso contenha
+    # "nao informado" em outra parte.
+    _f = _fold(valor).lower()
+    if "nao informad" in _f and "status" in _f:
+        return None
     return valor
 
 

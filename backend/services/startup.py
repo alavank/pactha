@@ -339,6 +339,11 @@ MIGRATION_FILES = [
     # dinheiro deslocado (83 de 83 em Araujos, 61 regravadas no mesmo dia).
     # APAGA, nao corrige — o detalhe e o que a pagina disse. Idempotente.
     "limpa_detalhe_valores_deslocados.sql",
+    # SIGCON: apaga o AVISO do portal ("STATUS DE PRESTAÇÃO DE CONTAS NÃO
+    # INFORMADO") gravado como se fosse o status. Irmao do
+    # `limpa_prestacao_contas_sei_lixo.sql`: o portal dizendo "nao ha" e
+    # ausencia, nao dado. Idempotente.
+    "limpa_prestacao_contas_nao_informado.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",
