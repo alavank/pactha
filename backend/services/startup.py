@@ -344,6 +344,12 @@ MIGRATION_FILES = [
     # `limpa_prestacao_contas_sei_lixo.sql`: o portal dizendo "nao ha" e
     # ausencia, nao dado. Idempotente.
     "limpa_prestacao_contas_nao_informado.sql",
+    # Voluntarias: catorze colunas que o dado aberto JA TRAZ e que o coletor
+    # nunca leu (banco/agencia/conta, saldo, empenhado, prazo de prestacao de
+    # contas, qtd de aditivos, vigencia original...). Primeira etapa da migracao
+    # para o ambiente `api-publica`, e a de menor risco: nenhum endereco novo,
+    # so colunas de arquivos que ja sao baixados todo dia.
+    "add_voluntarias_colunas_do_csv.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",

@@ -414,11 +414,29 @@ def _coleta(muns: list[dict]) -> dict[int, list[dict]]:
             "valor_repasse": _money(linha.get("VL_REPASSE_PROP")),
             "valor_contrapartida": _money(linha.get("VL_CONTRAPARTIDA_PROP")),
             "id_proposta_siconv": id_prop,
+            # ⚠️ COLUNAS QUE O ARQUIVO SEMPRE TEVE E NINGUEM LIA. O
+            # `siconv_proposta` tem 36 colunas e este bloco lia vinte. Banco,
+            # agencia e conta eram raspados da tela LOGADA (`detalhe->>'Banco'`),
+            # e a situacao do projeto basico exigia uma navegacao autenticada
+            # inteira — as tres estao aqui, em arquivo publico, desde sempre.
+            "banco": (linha.get("NM_BANCO") or "").strip() or None,
+            "agencia": (linha.get("CD_AGENCIA") or "").strip() or None,
+            "conta_corrente": (linha.get("CD_CONTA") or "").strip() or None,
+            "situacao_conta": (linha.get("SITUACAO_CONTA") or "").strip() or None,
+            "situacao_projeto_basico": (linha.get("SITUACAO_PROJETO_BASICO") or "").strip() or None,
+            # ⚠️ E ESTE E O CAMPO QUE VINHA COLADO NA MODALIDADE. O extrator da
+            # tela devolvia "Contrato de Repasse\tEnviada para mandatária?\tNÃo"
+            # em 27 de 83 propostas de Araujos, porque a celula seguinte da mesma
+            # linha vinha junto. Aqui ele e uma coluna propria.
+            "enviada_mandataria": (linha.get("ENVIADA_MANDATARIA") or "").strip() or None,
             # preenchidos adiante
             "codigo_instrumento": None, "situacao_siafi": None, "numero_processo": None,
             "dt_assinatura": None, "situacao_contratacao": None,
             "clausula_suspensiva_dt_prevista": None, "clausula_suspensiva_motivo": None,
             "parlamentar": None, "programa": None,
+            "valor_empenhado": None, "valor_desembolsado": None, "saldo_conta": None,
+            "dt_limite_prest_contas": None, "dt_fim_vigencia_original": None,
+            "qtd_termos_aditivos": None, "qtd_prorrogas": None, "opera_obtv": None,
         }
     logger.info(f"  propostas encontradas: {len(props)} (ignoradas {n_ignoradas} nao-listadas)")
     if not props:
@@ -442,19 +460,57 @@ def _coleta(muns: list[dict]) -> dict[int, list[dict]]:
         p["situacao_contratacao"] = (linha.get("SITUACAO_CONTRATACAO") or "").strip() or None
         p["clausula_suspensiva_dt_prevista"] = _data_iso(linha.get("DATA_SUSPENSIVA"))
         p["clausula_suspensiva_motivo"] = (linha.get("MOTIVO_SUSPENSAO") or "").strip() or None
-        # A vigencia do CONVENIO manda sobre a da proposta quando existe
-        vi = _data(linha.get("DIA_INIC_VIGENC_CONV"))
-        vf = _data(linha.get("DIA_FIM_VIGENC_CONV"))
-        if vi:
-            p["dt_inicio_vigencia"] = vi
-        if vf:
-            p["dt_fim_vigencia"] = vf
+        # ⚠️ A VIGENCIA DO CONVENIO DEIXOU DE SOBREPOR A DA PROPOSTA (31/08/2026).
+        #
+        # Este bloco fazia `dt_fim_vigencia = DIA_FIM_VIGENC_CONV`, e era dai que
+        # saia o 16/12/2024 da 932836 — a data que o #317 usou para concluir, por
+        # engano, que a vigencia dela tinha vencido, e que o #328 depois teve de
+        # impedir de sobrescrever o valor da tela.
+        #
+        # Medido nos 1.519 convenios celebrados do tenant: em 1.517 as duas
+        # vigencias sao IGUAIS, e o registro do convenio acompanha os aditivos
+        # normalmente (725 tem fim atual diferente do original). Discordam em
+        # DUAS — 932836 e 936202 — e nas duas o registro do convenio esta parado
+        # sem TA nem prorroga enquanto a proposta E A TELA ja avancaram.
+        #
+        # Preferir a proposta muda duas linhas na base inteira, as duas para o
+        # valor que a tela confirma. E, mais importante, acaba com a disputa NA
+        # ORIGEM: os dois coletores passam a escrever a mesma data, em vez de a
+        # coluna depender de quem rodou por ultimo.
+        #
+        # A do convenio nao se perde — vai para `dt_fim_vigencia_original`, ao
+        # lado, onde da para ver as duas.
+        p["dt_fim_vigencia_original"] = _data(linha.get("DIA_FIM_VIGENC_ORIGINAL_CONV"))
+        # Preenche so o que a proposta nao trouxe (convenio sem vigencia na
+        # proposta e raro, mas existe em base historica).
+        if not p.get("dt_inicio_vigencia"):
+            p["dt_inicio_vigencia"] = _data(linha.get("DIA_INIC_VIGENC_CONV"))
+        if not p.get("dt_fim_vigencia"):
+            p["dt_fim_vigencia"] = _data(linha.get("DIA_FIM_VIGENC_CONV"))
         for campo, col in (("valor_global", "VL_GLOBAL_CONV"),
                            ("valor_repasse", "VL_REPASSE_CONV"),
                            ("valor_contrapartida", "VL_CONTRAPARTIDA_CONV")):
             v = _money(linha.get(col))
             if v is not None:
                 p[campo] = v
+        # ⚠️ AS OITO COLUNAS QUE O ARQUIVO SEMPRE TEVE E NINGUEM LIA.
+        # `valor_empenhado` substitui o flag `detalhe->>'Empenhado'`, que o
+        # proprio `_fed_status` chama de furado ("havia propostas so Aprovadas
+        # marcadas como empenhadas sem empenho real") — aqui e o VALOR, nao um
+        # sim/nao. `saldo_conta` nao existia em lugar nenhum do produto.
+        for campo, col in (("valor_empenhado", "VL_EMPENHADO_CONV"),
+                           ("valor_desembolsado", "VL_DESEMBOLSADO_CONV"),
+                           ("saldo_conta", "VL_SALDO_CONTA")):
+            p[campo] = _money(linha.get(col))
+        p["dt_limite_prest_contas"] = _data(linha.get("DIA_LIMITE_PREST_CONTAS"))
+        p["opera_obtv"] = (linha.get("IND_OPERA_OBTV") or "").strip() or None
+        for campo, col in (("qtd_termos_aditivos", "QTD_TA"),
+                           ("qtd_prorrogas", "QTD_PRORROGA")):
+            s = (linha.get(col) or "").strip()
+            # ⚠️ Vazio vira None, e nao 0. O CSV deixa a coluna em branco quando
+            # nao ha registro, e gravar zero afirmaria "nenhum aditivo" sobre
+            # linha que o portal simplesmente nao preencheu.
+            p[campo] = int(s) if s.isdigit() else None
     logger.info(f"  com convenio celebrado: {n_conv}")
 
     # 3) Parlamentar da emenda. Uma proposta pode ter MAIS DE UMA emenda; o banco
@@ -518,7 +574,17 @@ _CAMPOS = ("numero_proposta", "situacao", "orgao", "proponente", "identificacao"
            "dt_proposta", "dt_assinatura", "valor_global", "valor_repasse",
            "valor_contrapartida", "situacao_contratacao",
            "clausula_suspensiva_dt_prevista", "clausula_suspensiva_motivo",
-           "parlamentar", "id_proposta_siconv", "valor_emenda")
+           "parlamentar", "id_proposta_siconv", "valor_emenda",
+           # As catorze novas (31/08/2026). Esta tupla monta o dicionario de
+           # parametros do upsert; o INSERT nomeia as colunas uma a uma, entao
+           # aqui a ordem nao carrega significado — mas quem acrescentar campo
+           # tem de toca-lo NOS DOIS lugares, senao ele fica sem valor e nada
+           # acusa.
+           "banco", "agencia", "conta_corrente", "situacao_conta",
+           "situacao_projeto_basico", "enviada_mandataria",
+           "valor_empenhado", "valor_desembolsado", "saldo_conta",
+           "dt_limite_prest_contas", "dt_fim_vigencia_original",
+           "qtd_termos_aditivos", "qtd_prorrogas", "opera_obtv")
 
 
 # Campos em que o dado aberto e a FONTE AUTORITATIVA: quando ele traz um valor,
@@ -563,6 +629,19 @@ _SOBRESCREVE = [
 # que uma string vazia do CSV apague o valor lido da tela — as colunas de data
 # aqui sao VARCHAR, entao '' nao e NULL e venceria o COALESCE sozinho.
 _SO_PREENCHE = ["dt_inicio_vigencia", "dt_fim_vigencia"]
+
+# Colunas NOVAS (31/08/2026), vindas de campos que o arquivo sempre teve. O dado
+# aberto e a UNICA fonte delas — nenhum outro coletor escreve nestas colunas —
+# entao sobrescrita direta e o regime certo: nao ha valor de outra origem para
+# preservar, e um COALESCE cego congelaria o numero do dia em que a coluna
+# nasceu (saldo de conta e valor empenhado MUDAM).
+_SOBRESCREVE_NOVAS = [
+    "banco", "agencia", "conta_corrente", "situacao_conta",
+    "situacao_projeto_basico", "enviada_mandataria",
+    "valor_empenhado", "valor_desembolsado", "saldo_conta",
+    "dt_limite_prest_contas", "dt_fim_vigencia_original",
+    "qtd_termos_aditivos", "qtd_prorrogas", "opera_obtv",
+]
 # Campo em que o COALESCE protege de verdade: o parlamentar as vezes so aparece
 # no scraper autenticado (emenda impositiva recente que ainda nao entrou no
 # arquivo de emendas). Se o dado aberto nao tiver, NAO apaga o que o banco tem.
@@ -591,6 +670,11 @@ def _upsert(mun_id: int, propostas: list[dict]) -> int:
         for c in _SO_PREENCHE
     ] + [
         f"{c}=COALESCE(EXCLUDED.{c}, transferegov_propostas.{c})" for c in _PRESERVA
+    ] + [
+        # Fonte unica: sobrescreve direto. Saldo de conta e valor empenhado
+        # MUDAM, e um COALESCE cego congelaria o numero do dia em que a coluna
+        # nasceu.
+        f"{c}=EXCLUDED.{c}" for c in _SOBRESCREVE_NOVAS
     ] + ["raw_data=EXCLUDED.raw_data", "updated_at=NOW()"]
     sql = f"""
         INSERT INTO transferegov_propostas
@@ -599,13 +683,23 @@ def _upsert(mun_id: int, propostas: list[dict]) -> int:
              programa, dt_inicio_vigencia, dt_fim_vigencia, dt_proposta, dt_assinatura,
              valor_global, valor_repasse, valor_contrapartida, situacao_contratacao,
              clausula_suspensiva_dt_prevista, clausula_suspensiva_motivo, parlamentar,
-             id_proposta_siconv, valor_emenda, raw_data, updated_at)
+             id_proposta_siconv, valor_emenda,
+             banco, agencia, conta_corrente, situacao_conta, situacao_projeto_basico,
+             enviada_mandataria, valor_empenhado, valor_desembolsado, saldo_conta,
+             dt_limite_prest_contas, dt_fim_vigencia_original, qtd_termos_aditivos,
+             qtd_prorrogas, opera_obtv,
+             raw_data, updated_at)
         VALUES (%(m)s,%(numero_proposta)s,%(situacao)s,%(orgao)s,%(proponente)s,%(identificacao)s,
              %(codigo_instrumento)s,%(modalidade)s,%(situacao_siafi)s,%(numero_processo)s,%(objeto)s,
              %(programa)s,%(dt_inicio_vigencia)s,%(dt_fim_vigencia)s,%(dt_proposta)s,%(dt_assinatura)s,
              %(valor_global)s,%(valor_repasse)s,%(valor_contrapartida)s,%(situacao_contratacao)s,
              %(clausula_suspensiva_dt_prevista)s,%(clausula_suspensiva_motivo)s,%(parlamentar)s,
-             %(id_proposta_siconv)s,%(valor_emenda)s,%(raw)s::jsonb, NOW())
+             %(id_proposta_siconv)s,%(valor_emenda)s,
+             %(banco)s,%(agencia)s,%(conta_corrente)s,%(situacao_conta)s,%(situacao_projeto_basico)s,
+             %(enviada_mandataria)s,%(valor_empenhado)s,%(valor_desembolsado)s,%(saldo_conta)s,
+             %(dt_limite_prest_contas)s,%(dt_fim_vigencia_original)s,%(qtd_termos_aditivos)s,
+             %(qtd_prorrogas)s,%(opera_obtv)s,
+             %(raw)s::jsonb, NOW())
         ON CONFLICT (municipio_id, numero_proposta) DO UPDATE SET
              {', '.join(sets)}
     """
