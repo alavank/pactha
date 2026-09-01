@@ -12,15 +12,17 @@ off Railway/Neon/Vercel/Hetzner onto **Coolify on AWS Lightsail**.
 Everything user-facing and every commit message/comment is in **Portuguese**. Match that
 convention in code comments, commit messages, and UI copy.
 
-**⚠️ One repo, FOUR tenants — a merge to `main` deploys all four.** Freitas, Trust,
-Monte Sião/MG and Santa Maria/RS each get their own containers and own Postgres database,
+**⚠️ One repo, FIVE tenants — a merge to `main` deploys all five.** Freitas, Trust,
+Monte Sião/MG, Santa Maria/RS and Nova Palma/RS each get their own containers and own Postgres database,
 all built from the same code (`backend/**` or `frontend/**` changes trigger `.github/workflows/build-backend.yml`
-/ `build-frontend.yml`, which build, then deploy all 4 tenants via the Coolify API). There is
+/ `build-frontend.yml`, which build, then deploy all 5 tenants via the Coolify API). There is
 no multi-tenancy in code — isolation is by *deploy*: env vars differ per tenant
 (`INSTANCE_SLUG`, `DATABASE_URL`, `JWT_SECRET`, `COFRE_KEY`, `NEXT_PUBLIC_CLIENT_LOGO`, …). A
-bug fix here ships to all four clients, and a schema change must be idempotent against all
-four databases — including a **fresh** one: Santa Maria/RS (08/2026) was the first database
-ever created from scratch, and it exposed schema that until then existed only by inheritance. Full infra facts (server, URLs, UUIDs, secrets) live in `INFRA.md`; project
+bug fix here ships to all five clients, and a schema change must be idempotent against all
+five databases — including a **fresh** one: Santa Maria/RS (08/2026) was the first database
+ever created from scratch, and Nova Palma/RS (01/09/2026) was the second — it exposed a
+migration ORDERING bug (`add_detalhe_pagina_rodizio.sql` altering a table created later in
+`MIGRATION_FILES`), now guarded by `tests/test_migrations_ordem_tabela.py`. Full infra facts (server, URLs, UUIDs, secrets) live in `INFRA.md`; project
 history/decisions live in `CONTINUAR.md` — read both before large changes, they are written as
 AI-session handoff docs and are kept current.
 
