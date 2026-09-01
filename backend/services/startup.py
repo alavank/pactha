@@ -84,10 +84,6 @@ MIGRATION_FILES = [
     # freitas traziam o rotulo dos botoes). Depende do parser ja corrigido; roda
     # a cada boot de proposito — idempotente e autocurativa.
     "limpa_prestacao_contas_sei_lixo.sql",
-    # Rodizio de PAGINA no laco de detalhe do SIGCON: sem ele o laco relia
-    # so a pagina 1 da grade, e 24 dos 28 convenios de Araujos nunca ganhavam
-    # prestacao de contas / ultima alteracao / indicacao.
-    "add_detalhe_pagina_rodizio.sql",
     # TE/Emenda Pix federal persistida (coletor especiais -> tabela; RM/tela leem)
     "add_transferegov_te.sql",
     # SIMEC: TERMOS DE COMPROMISSO (o instrumento; as liberacoes ja existiam)
@@ -149,6 +145,21 @@ MIGRATION_FILES = [
     # starvation alfabetica: antes, a rodada era cortada por volta do 10o de 41
     # municipios e os do fim da lista NUNCA eram atualizados, em silencio.
     "add_scraper_municipio_coleta.sql",
+    # Rodizio de PAGINA no laco de detalhe do SIGCON: sem ele o laco relia
+    # so a pagina 1 da grade, e 24 dos 28 convenios de Araujos nunca ganhavam
+    # prestacao de contas / ultima alteracao / indicacao.
+    #
+    # ⚠️ ESTAVA LA EM CIMA, ANTES da migration que CRIA a tabela que ela altera.
+    # Em tenant antigo nunca doeu — `scraper_municipio_coleta` ja existia de um
+    # deploy anterior. Em banco NOVO ela falha: medido no primeiro boot do
+    # novapalma-rs (01/09/2026), "relation scraper_municipio_coleta does not
+    # exist". Como o runner ENGOLE a falha e segue, o tenant nascia sem a coluna
+    # de rodizio e o laco de detalhe do SIGCON relia so a pagina 1 — em silencio,
+    # que e exatamente o defeito que esta migration existe para consertar.
+    #
+    # Mesmo tipo de armadilha que o Santa Maria expos em 08/2026, quando foi o
+    # primeiro banco criado do zero. Depende de tabela: vai DEPOIS dela.
+    "add_detalhe_pagina_rodizio.sql",
     # Modo Tela do BI: filtro POR USUARIO + links publicos curtos e revogaveis
     "add_bi_tela.sql",
     # CAGEC (regularidade estadual MG). A coleta e publica, por CNPJ, sem

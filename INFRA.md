@@ -36,7 +36,7 @@ Consequências práticas para este repo:
 
 ---
 
-## 2. Um repo, QUATRO tenants (leia isto antes de dar push)
+## 2. Um repo, CINCO tenants (leia isto antes de dar push)
 
 Este repositório atende **quatro clientes distintos**, cada um com seu **próprio conjunto de
 containers e seu próprio banco**, todos buildados **do mesmo código**:
@@ -47,6 +47,7 @@ containers e seu próprio banco**, todos buildados **do mesmo código**:
 | Trust | `trust` | consultoria Trust |
 | Monte Sião | `montesiao-mg` | Prefeitura de Monte Sião/MG (tem também o Painel Executivo) |
 | Santa Maria | `santamaria-rs` | Prefeitura de Santa Maria/RS — **aberto em 16/08/2026**, em avaliação |
+| Nova Palma | `novapalma-rs` | Prefeitura de Nova Palma/RS — **aberto em 01/09/2026** |
 
 Não existe multi-tenancy dentro do código: **o isolamento é por deploy**. O que diferencia
 um tenant do outro são as **env vars no Coolify** (`INSTANCE_SLUG`, `DATABASE_URL`,
@@ -165,6 +166,26 @@ Todas as URLs abaixo foram conferidas respondendo em 2026-07-23.
 > `public/sw.js`, e `painel_push_subscriptions` vazia. Ou se reconstrói o cliente,
 > ou se remove cron e tabelas — manter código morto vivo já custou tempo de
 > auditoria discutindo notificação que ninguém pode receber.
+
+### Nova Palma / RS
+
+| App | Origem | URL |
+|---|---|---|
+| `novapalma-rs-frontend` | imagem `pactha-frontend-novapalma-rs` | https://pactha-novapalma-rs-54-232-208-118.sslip.io |
+| `novapalma-rs-api` | imagem `pactha-api` | https://pactha-novapalma-rs-api-54-232-208-118.sslip.io |
+| `novapalma-rs-worker` | imagem `pactha-worker` | interno |
+| `novapalma-rs-db` | `postgres:16-alpine` | interno — db/user `pactha`, uuid `dl2jwo0q1ckbplqp6vp1hnu4` |
+
+> **5o tenant, aberto em 01/09/2026.** Nasce so com Nova Palma/RS (IBGE 4313102).
+> **Sem brasao ainda** — `NEXT_PUBLIC_CLIENT_LOGO` e `RM_LOGO` estao VAZIOS de
+> proposito: a marca entra embutida na imagem e subir com logo errado e pior que
+> subir sem. Quando o brasao chegar, e um arquivo em `frontend/public/` + uma
+> linha na matriz do CI + um rebuild.
+>
+> **Os crons dele estao 25 min a frente dos do santamaria-rs** (mesmo conjunto de
+> fontes do RS). Nao "arrume" isso alinhando os dois: os dois workers rodam o
+> mesmo scraping no mesmo host de 0,6 vCPU sustentado, e o `flock` de cada tarefa
+> protege ela de si mesma, nao da tarefa irma no outro container.
 
 ### Fora deste repo, mas do mesmo produto
 | O quê | URL | Repo |
@@ -412,3 +433,6 @@ UUIDs das aplicações medidos em 2026-07-23:
 | `santamaria-rs-api` | `ufjctldngc14dsdw8pxnqivl` |
 | `santamaria-rs-frontend` | `eohjo0cy4nbl6t7hiaqwagwf` |
 | `santamaria-rs-worker` | `wquremniv57gag3tlil8uf6d` |
+| `novapalma-rs-api` | `gemcwirmbelk1dztp2pbcqpf` |
+| `novapalma-rs-frontend` | `rpqpxroy5orsuidrbfezlzkt` |
+| `novapalma-rs-worker` | `kqcnvdsdkgn1efkm4nog8oes` |
