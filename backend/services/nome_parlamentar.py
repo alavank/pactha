@@ -100,6 +100,11 @@ _TERMOS_INSTITUCIONAIS = {
     # acidente, porque "DISTRITO" ja estava na lista acima. As outras quatro
     # seriam exibidas como se fossem gente, na mesma tela.
     "BANCADA",
+    # Emenda de COMISSAO e de RELATOR, pelo mesmo motivo: o autor e o colegiado
+    # ou o cargo, nao uma pessoa. Sao 15 na base ("COMISSAO DE TURISMO E
+    # DESPORTO - CTD", "RELATOR GERAL"), e 4 delas apareciam no ranking de
+    # Conceicao da Barra/ES.
+    "COMISSAO", "RELATOR",
     # pessoas juridicas de direito privado / terceiro setor
     "INSTITUTO", "FUNDACAO", "ASSOCIACAO", "CONSORCIO", "COOPERATIVA",
     "SINDICATO", "EMPRESA", "COMPANHIA", "LTDA", "EIRELI",
@@ -122,8 +127,15 @@ def e_pessoa(nome: str) -> bool:
     """
     if not e_parlamentar_real(nome):
         return False
-    palavras = set(_chave(nome).replace("/", " ").replace(".", " ").split())
+    lista = _chave(nome).replace("/", " ").replace(".", " ").split()
+    palavras = set(lista)
     if palavras & _TERMOS_INSTITUCIONAIS:
+        return False
+    # "COM." e como o TransfereGov abrevia COMISSAO ("COM. TURISMO", "COM.
+    # DESENV REGIONAL E TURISMO"). So vale como PRIMEIRA palavra, e nao entra no
+    # conjunto acima de proposito: "com" solto no meio de um nome e preposicao
+    # comum, e derrubaria gente. Nome de pessoa nao COMECA com "Com".
+    if lista and lista[0] == "COM" and len(lista) > 1:
         return False
     # CNPJ no meio do nome (14 digitos seguidos) — proponente, nunca pessoa.
     if any(p.isdigit() and len(p) >= 11 for p in palavras):
