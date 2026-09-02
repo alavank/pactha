@@ -174,47 +174,84 @@ def run() -> int:
 
     total = 0
     falhas = []
-    with httpx.Client(headers=UA, timeout=TIMEOUT, follow_redirects=True) as cli:
-        for mid, nome, ibge, uf in muns:
-            ibge6 = str(ibge).strip()[:6]
-            for ano in anos:
-                res = busca(cli, ano, ibge6, str(uf).strip().upper())
-                if res is None:
-                    falhas.append(f"{nome}/{ano}")
-                    continue
-                linhas = achata(res)
-                for l in linhas:
-                    cur.execute(_SQL, (mid, ano, "M", l["bloco_codigo"], l["bloco_nome"],
-                                       l["grupo_codigo"], l["grupo_nome"], l["vl_total"],
-                                       l["vl_desconto"], l["vl_liquido"],
-                                       json.dumps(l["raw"], ensure_ascii=False)))
-                total += len(linhas)
-                if linhas:
-                    soma = sum(x["vl_total"] or 0 for x in linhas)
-                    log.info(f"  {nome}/{ano}: {len(linhas)} linha(s), R$ {soma:,.2f}")
-                time.sleep(PAUSA)
-            cn.commit()
-
-    # ⚠️ ZERO E ERRO, NAO SUCESSO VAZIO. Tres dos quatro coletores auditados em
-    # 31/08 gravavam 'success' cravado e pintavam verde sobre rodada vazia; a
-    # tela de Status dos Dados mentia junto. Aqui o status sai do que saiu.
-    if total == 0:
-        status = "error"
-    elif falhas:
-        status = "partial"
-    else:
-        status = "success"
-    msg = (f"{len(falhas)} municipio(s)-ano sem resposta: " + ", ".join(falhas[:8])) if falhas else None
+    incompleta = None
+    # ⚠️ O `try/finally` EXISTE PARA A LINHA DO `ingestion_log` SAIR SEMPRE.
+    # Sem ele, uma excecao no meio (Postgres caiu, o `timeout` do cron matou,
+    # o portal derrubou a conexao) saia sem gravar NADA — e o monitor de frescor
+    # nao ve rodada que nao logou: a fonte ficaria envelhecendo em silencio, que
+    # e exatamente o defeito que este coletor foi escrito para nao repetir.
     try:
-        cur.execute("INSERT INTO ingestion_log (source, status, records_inserted, "
-                    "error_message, finished_at) VALUES (%s,%s,%s,%s,NOW())",
-                    (FONTE, status, total, msg))
-        cn.commit()
-    except Exception:
-        cn.rollback()
-    cur.close()
-    cn.close()
-    log.info(f"FNS fundo a fundo: FIM — {total} linha(s), {len(falhas)} falha(s), status={status}")
+        with httpx.Client(headers=UA, timeout=TIMEOUT, follow_redirects=True) as cli:
+            for mid, nome, ibge, uf in muns:
+                ibge6 = str(ibge).strip()[:6]
+                for ano in anos:
+                    res = busca(cli, ano, ibge6, str(uf).strip().upper())
+                    if res is None:
+                        falhas.append(f"{nome}/{ano}")
+                        # ⚠️ A PAUSA VALE SOBRETUDO DEPOIS DA FALHA. Ela ficava
+                        # so no caminho feliz, entao o coletor martelava mais
+                        # rapido justamente quando o portal estava ruim — e ja
+                        # ha precedente neste projeto de IP penalizado por
+                        # martelada (a quota do TransfereGov, 17/08).
+                        time.sleep(PAUSA)
+                        continue
+                    linhas = achata(res)
+                    for l in linhas:
+                        cur.execute(_SQL, (mid, ano, "M", l["bloco_codigo"], l["bloco_nome"],
+                                           l["grupo_codigo"], l["grupo_nome"], l["vl_total"],
+                                           l["vl_desconto"], l["vl_liquido"],
+                                           json.dumps(l["raw"], ensure_ascii=False)))
+                    total += len(linhas)
+                    if linhas:
+                        soma = sum(x["vl_total"] or 0 for x in linhas)
+                        log.info(f"  {nome}/{ano}: {len(linhas)} linha(s), R$ {soma:,.2f}")
+                    time.sleep(PAUSA)
+                cn.commit()
+    except BaseException as e:  # inclui KeyboardInterrupt/SystemExit do `timeout`
+        incompleta = f"{type(e).__name__}: {e}"[:300]
+        log.error(f"rodada interrompida: {incompleta}")
+        raise
+    finally:
+        # ⚠️ ZERO E ERRO, NAO SUCESSO VAZIO. Tres dos quatro coletores auditados
+        # em 31/08 gravavam 'success' cravado e pintavam verde sobre rodada
+        # vazia; a tela de Status dos Dados mentia junto. Aqui o status sai do
+        # que saiu — e rodada interrompida e 'error', mesmo tendo gravado linha.
+        if incompleta:
+            status = "error"
+        elif total == 0:
+            status = "error"
+        elif falhas:
+            status = "partial"
+        else:
+            status = "success"
+        partes = []
+        if incompleta:
+            partes.append(f"rodada interrompida ({incompleta})")
+        if falhas:
+            partes.append(f"{len(falhas)} municipio(s)-ano sem resposta: "
+                          + ", ".join(falhas[:8]))
+        # ⚠️ O ROLLBACK VAI NUM `try` PROPRIO. Junto do INSERT, qualquer falha
+        # dele — conexao ja morta, driver sem o metodo — levava embora tambem a
+        # gravacao do log, que e a unica coisa que este bloco existe para
+        # garantir. Foi um teste que expos isso: bastou um fake sem `rollback`.
+        try:
+            cn.rollback()  # descarta o que a excecao deixou pendente
+        except Exception:
+            pass
+        try:
+            cur.execute("INSERT INTO ingestion_log (source, status, records_inserted, "
+                        "error_message, finished_at) VALUES (%s,%s,%s,%s,NOW())",
+                        (FONTE, status, total, " | ".join(partes) or None))
+            cn.commit()
+        except Exception as e2:
+            log.error(f"nao consegui gravar o ingestion_log: {e2}")
+        for fechar in (cur.close, cn.close):
+            try:
+                fechar()
+            except Exception:
+                pass
+        log.info(f"FNS fundo a fundo: FIM — {total} linha(s), "
+                 f"{len(falhas)} falha(s), status={status}")
     return total
 
 

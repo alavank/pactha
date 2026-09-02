@@ -86,6 +86,19 @@ from __future__ import annotations
 # dizia "esta tela ainda NÃO coleta os repasses automaticamente"; deixá-lo assim
 # depois de a coleta existir teria sido tão falso quanto omitir a ressalva.
 # Quem mexer em `ingestion/fns_faf.py` mexe aqui no mesmo commit.
+# ⚠️ SÃO DOIS AVISOS PORQUE SÃO DOIS ESTADOS DA TELA, e mandar o primeiro nos
+# dois casos foi um defeito real: o texto abre com "Os valores abaixo" e era
+# exibido também quando NÃO HAVIA valor nenhum abaixo — num tenant onde a coleta
+# ainda não rodou, a tela apontava para um dinheiro que ela não estava mostrando.
+# Quem escolhe é o router, pelo que de fato tem para exibir.
+AVISO_SEM_COLETA = (
+    "A coleta do fundo a fundo ainda não rodou neste ambiente, então esta tela "
+    "ainda não mostra valores. O consolidado por bloco vem do ConsultaFNS — "
+    "fonte pública do Ministério da Saúde, sem login — e aparece aqui assim que "
+    "a primeira rodada passar. O extrato parcela a parcela é outra coisa: esse "
+    "fica no portal do InvestSUS, cujo acesso depende do cadastro descrito abaixo."
+)
+
 AVISO = (
     "Os valores abaixo são o CONSOLIDADO POR BLOCO do fundo a fundo, coletados "
     "automaticamente do ConsultaFNS — fonte pública do Ministério da Saúde, sem "

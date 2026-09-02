@@ -26,36 +26,92 @@ pytest.importorskip("httpx")
 from ingestion import fns_faf  # noqa: E402
 
 
-# Recorte FIEL de
+# A resposta INTEIRA de
 # GET /recursos/consulta-consolidada/repasse-bloco?ano=2026&coMunicipioIbge=314340
-#     &coTipoRepasse=M&sgUf=MG  — captado em 02/09/2026.
+#     &coTipoRepasse=M&sgUf=MG  — Monte Siao/MG, captada em 02/09/2026.
+#
+# ⚠️ INTEIRA, E NAO UM RECORTE — a diferenca ja custou uma investigacao. A
+# primeira versao trazia 2 dos 5 grupos do bloco 10, entao a soma dos grupos NAO
+# batia com o total do bloco e a glosa de R$ 12.980 nao aparecia em grupo nenhum
+# (ela esta no grupo 14, que o recorte tinha deixado de fora). Uma revisao leu
+# essa fixture como se fosse a resposta completa e concluiu — plausivelmente —
+# que o coletor JOGAVA A GLOSA FORA, reportado como defeito CRITICO. Nao jogava:
+# a fixture e que mentia. Fixture recortada e um fato falso deixado no repo com
+# cara de verdade; para um caso com estrutura de arvore, colar a resposta toda
+# custa 30 linhas e evita conclusoes inventadas sobre codigo que estava certo.
 RESPOSTA_REAL = [
     {
         "codigo": 10,
         "nome": "Manutenção das Ações e Serviços Públicos de Saúde",
-        "vlTotal": 4059475.09,
-        "vlDesconto": 12980,
-        "vlLiquido": 4046495.09,
+        "vlTotal": 4059475.09, "vlDesconto": 12980, "vlLiquido": 4046495.09,
         "repasses": [
             {"codigo": 35, "nome": "ASSISTÊNCIA FARMACÊUTICA",
-             "vlTotal": 137963.2, "vlDesconto": 0, "vlLiquido": 137963.2},
+             "vlTotal": 137963.2, "vlDesconto": 0, "vlLiquido": 137963.2, "repasses": []},
+            {"codigo": 14,
+             "nome": "ATENÇÃO DE MÉDIA E ALTA COMPLEXIDADE AMBULATORIAL E HOSPITALAR",
+             "vlTotal": 158783.52, "vlDesconto": 12980, "vlLiquido": 145803.52, "repasses": []},
             {"codigo": 12, "nome": "ATENÇÃO PRIMÁRIA",
-             "vlTotal": 3447463.86, "vlDesconto": 0, "vlLiquido": 3447463.86},
+             "vlTotal": 3447463.86, "vlDesconto": 0, "vlLiquido": 3447463.86, "repasses": []},
+            {"codigo": 17, "nome": "GESTÃO DO SUS",
+             "vlTotal": 8124.7, "vlDesconto": 0, "vlLiquido": 8124.7, "repasses": []},
+            {"codigo": 34, "nome": "VIGILÂNCIA EM SAÚDE",
+             "vlTotal": 307139.81, "vlDesconto": 0, "vlLiquido": 307139.81, "repasses": []},
+        ],
+    },
+    {
+        "codigo": 11,
+        "nome": "Estruturação da Rede de Serviços Públicos de Saúde",
+        "vlTotal": 4494000, "vlDesconto": 0, "vlLiquido": 4494000,
+        "repasses": [
+            {"codigo": 19, "nome": "ATENÇÃO ESPECIALIZADA",
+             "vlTotal": 2506000, "vlDesconto": 0, "vlLiquido": 2506000, "repasses": []},
+            {"codigo": 18, "nome": "ATENÇÃO PRIMÁRIA",
+             "vlTotal": 1988000, "vlDesconto": 0, "vlLiquido": 1988000, "repasses": []},
         ],
     },
 ]
 
 
+def test_o_achatamento_nao_perde_dinheiro_nem_glosa():
+    """⚠️ A INVARIANTE DA FONTE: os grupos somam o bloco, glosa inclusa.
+
+    O portal publica o total no bloco E detalhado nos grupos, e as duas contas
+    fecham — conferido ao vivo. Achatar a arvore so e seguro enquanto isso valer,
+    e este teste e o alarme para o dia em que a fonte mudar: se um bloco passar a
+    trazer valor que nao esta em grupo nenhum, o coletor comeca a subnotificar
+    dinheiro publico em silencio, e a tela some com a glosa.
+
+    Foi a AUSENCIA desta invariante que deixou a fixture recortada passar por
+    completa e gerar um achado critico falso.
+    """
+    linhas = achata_pura = fns_faf.achata(RESPOSTA_REAL)
+    for bloco in RESPOSTA_REAL:
+        do_bloco = [l for l in achata_pura if l["bloco_codigo"] == bloco["codigo"]]
+        assert round(sum(l["vl_total"] for l in do_bloco), 2) == round(bloco["vlTotal"], 2)
+        assert round(sum(l["vl_desconto"] for l in do_bloco), 2) == round(bloco["vlDesconto"], 2)
+        assert round(sum(l["vl_liquido"] for l in do_bloco), 2) == round(bloco["vlLiquido"], 2)
+    # E o total do municipio, que e o numero que aparece grande na tela.
+    assert round(sum(l["vl_total"] for l in linhas), 2) == 8553475.09
+    assert round(sum(l["vl_desconto"] for l in linhas), 2) == 12980.00
+
+
 def test_achata_expande_grupos():
-    """Uma linha por grupo, com bloco carimbado em cada uma."""
+    """Uma linha por grupo, com o bloco carimbado em cada uma."""
     linhas = fns_faf.achata(RESPOSTA_REAL)
-    assert len(linhas) == 2
-    assert {l["grupo_codigo"] for l in linhas} == {35, 12}
-    assert all(l["bloco_codigo"] == 10 for l in linhas)
-    assert all(l["bloco_nome"].startswith("Manutenção") for l in linhas)
+    assert len(linhas) == 7                      # 5 grupos do bloco 10 + 2 do 11
+    assert {l["grupo_codigo"] for l in linhas} == {35, 14, 12, 17, 34, 19, 18}
+    do_dez = [l for l in linhas if l["bloco_codigo"] == 10]
+    assert len(do_dez) == 5
+    assert all(l["bloco_nome"].startswith("Manutenção") for l in do_dez)
     farmacia = next(l for l in linhas if l["grupo_codigo"] == 35)
     assert farmacia["vl_total"] == 137963.2
     assert farmacia["grupo_nome"] == "ASSISTÊNCIA FARMACÊUTICA"
+    # ⚠️ A GLOSA MORA NUM GRUPO, e nao no bloco: R$ 12.980 estao em Média e Alta
+    # Complexidade. Foi por nao ter este grupo na fixture que uma revisao
+    # concluiu que o coletor descartava a glosa.
+    mac = next(l for l in linhas if l["grupo_codigo"] == 14)
+    assert mac["vl_desconto"] == 12980
+    assert mac["vl_liquido"] == 145803.52
 
 
 def test_achata_bloco_sem_grupo_vira_linha_total():

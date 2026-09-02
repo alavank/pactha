@@ -156,3 +156,17 @@ def test_consulta_e_filtrada_pelo_municipio_pedido():
 def test_carimbo_de_coleta_vai_para_a_tela():
     d = _rodar([2026], [_linha(10, "B", 12, "g", 1.0)])
     assert d["atualizado_em"].startswith("2026-09-02")
+
+
+def test_carimbo_sai_tambem_de_bloco_sem_detalhamento():
+    """⚠️ DINHEIRO NA TELA SEM DATA AO LADO era o defeito.
+
+    O carimbo subia apenas no ramo dos grupos reais. Um municipio cujos blocos
+    viessem todos sem detalhamento — caminho previsto e tratado no resto do
+    codigo — exibia valor de verdade e `atualizado_em = null`, e a tela nao sabia
+    dizer de quando aquele numero era. A data e da LINHA, qualquer linha.
+    """
+    d = _rodar([2026], [_linha(10, "Manutenção", 0, "Manutenção", 4059475.09, 12980)])
+    assert d["total"] == 4059475.09
+    assert d["atualizado_em"] is not None
+    assert d["atualizado_em"].startswith("2026-09-02")

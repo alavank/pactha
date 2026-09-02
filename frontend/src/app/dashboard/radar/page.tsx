@@ -42,7 +42,8 @@ interface Programa {
   cod_programa: string | null;
   dias: number | null;
   dias_emenda: number | null;
-  abrangencia: "nacional" | "regional";
+  qt_ufs: number;
+  abrangencia: "nacional" | "regional" | "exclusivo";
 }
 interface Resp {
   municipio: { nome: string; uf: string };
@@ -176,9 +177,17 @@ export default function RadarPage() {
                   <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                     <span>{p.nome}</span>
                     {p.modalidade && <Selo>{p.modalidade.toLowerCase()}</Selo>}
-                    {/* Regional é o achado: menos município disputando. */}
-                    {p.abrangencia === "regional" && (
+                    {/* ⚠️ "só {UF}" SÓ QUANDO É SÓ A UF. O selo era aplicado a
+                        qualquer programa com menos de 27 estados, e mentia no
+                        de Saneamento — aberto a 20 UFs, exibido como exclusivo
+                        de Minas. Exclusivo é o achado de verdade (disputa
+                        curta); "20 estados" é concorrência nacional disfarçada,
+                        e o gestor precisa distinguir os dois. */}
+                    {p.abrangencia === "exclusivo" && (
                       <Selo tom="acento">só {d.municipio.uf}</Selo>
+                    )}
+                    {p.abrangencia === "regional" && (
+                      <Selo>{p.qt_ufs} estados</Selo>
                     )}
                     {p.dias != null && p.dias <= 30 && (
                       <Selo tom={p.dias <= 7 ? "critico" : "atencao"}>

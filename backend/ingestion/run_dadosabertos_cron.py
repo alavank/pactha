@@ -26,7 +26,17 @@ def run_all() -> None:
                       # manuais no Coolify (um worker por tenant) para uma fonte
                       # que muda a cada ~60 dias. O proprio ingest() se
                       # auto-limita a 1x/dia (SISMOB_MIN_INTERVAL_H).
-                      ("SISMOB", "ingestion.sismob_obras")):
+                      ("SISMOB", "ingestion.sismob_obras"),
+                      # RADAR DE CAPTACAO: programas federais com prazo aberto.
+                      # Perfil identico ao do SISMOB — dado aberto, sem login,
+                      # idempotente e LEVE (um zip de 11 MB, ~20s, 17 linhas
+                      # gravadas). Entra aqui em vez de virar Scheduled Task
+                      # porque seriam CINCO tarefas manuais no Coolify, uma por
+                      # worker, para um trabalho de vinte segundos.
+                      # ⚠️ E vem DEPOIS do SISMOB de proposito: a lista roda em
+                      # ordem e o `except` abaixo isola cada fonte, entao a
+                      # ultima e a que menos atrapalha se algum dia engasgar.
+                      ("Radar de captação", "ingestion.programas_captacao")):
         # ⚠️ SIMEC Termos NAO entra aqui — e a correcao do PR #259, que o pendurou
         # neste laco por premissa ERRADA ("nao tem Scheduled Task em nenhum
         # worker"). Tem: os QUATRO workers ja rodavam `simec-termos` as 06:10,

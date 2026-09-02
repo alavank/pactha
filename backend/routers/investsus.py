@@ -32,7 +32,8 @@ from database import get_db
 from models.user import User
 from services.auth import ensure_municipio_access, ensure_tela, get_current_user
 from services.investsus_conteudo import (
-    AVISO, BLOCOS, BLOQUEIO_MFA, CONFERIR, LINKS, RESUMO, SUBTITULO, TITULO,
+    AVISO, AVISO_SEM_COLETA, BLOCOS, BLOQUEIO_MFA, CONFERIR, LINKS, RESUMO,
+    SUBTITULO, TITULO,
 )
 from services.registro_rotas import exige
 
@@ -74,6 +75,13 @@ async def _faf(db: AsyncSession, municipio_id: int, ano: int | None) -> dict | N
                                      "total": 0.0, "desconto": 0.0, "liquido": 0.0,
                                      "_detalhado": False})
         f = lambda v: float(v) if v is not None else 0.0  # noqa: E731
+        # ⚠️ O CARIMBO É DA LINHA, QUALQUER LINHA — e por isso sobe ANTES do
+        # desvio abaixo. Ele ficava só no ramo dos grupos reais, então um
+        # município cujos blocos vieram todos sem detalhamento exibia dinheiro
+        # de verdade sem nenhuma data de coleta ao lado: a tela mostrava o valor
+        # e não sabia dizer de quando ele era.
+        if upd and (atualizado is None or upd > atualizado):
+            atualizado = upd
         if gcod == 0:
             # Total do bloco sem detalhamento: só entra se nenhum grupo real veio.
             b["_total_solto"] = (f(tot), f(desc), f(liq))
@@ -84,8 +92,6 @@ async def _faf(db: AsyncSession, municipio_id: int, ano: int | None) -> dict | N
         b["total"] += f(tot)
         b["desconto"] += f(desc)
         b["liquido"] += f(liq)
-        if upd and (atualizado is None or upd > atualizado):
-            atualizado = upd
 
     for b in blocos.values():
         if not b.pop("_detalhado") and "_total_solto" in b:
@@ -140,7 +146,10 @@ async def investsus(
 
     return {
         "tem_dados": True,
-        "aviso": AVISO,
+        # ⚠️ O AVISO DEPENDE DO QUE HÁ PARA MOSTRAR. O texto padrão abre com
+        # "Os valores abaixo" — mandá-lo num tenant sem coleta apontaria para um
+        # dinheiro que a tela não está exibindo.
+        "aviso": AVISO if faf else AVISO_SEM_COLETA,
         "titulo": TITULO,
         "subtitulo": SUBTITULO,
         "resumo": RESUMO,

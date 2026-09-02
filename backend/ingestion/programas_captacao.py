@@ -39,12 +39,23 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sys
 from datetime import date, datetime
 
 import psycopg2
-from psycopg2.extras import Json  # noqa: F401  (mantido: legibilidade do modulo)
 
-from ingestion.transferegov_opendata import _linhas
+# ⚠️ SEM ESTA LINHA O COLETOR NAO SOBE DO JEITO QUE O CRON O CHAMA. O comando da
+# Scheduled Task e `python -u ingestion/programas_captacao.py`, que poe
+# `backend/ingestion/` em sys.path[0] — e nao `backend/`. Logo
+# `import ingestion.transferegov_opendata` levanta ModuleNotFoundError na
+# PRIMEIRA linha, antes de qualquer log: a task morre calada e a tabela fica
+# vazia para sempre, sem uma linha em `ingestion_log` para acusar.
+# Todos os outros coletores deste diretorio fazem exatamente isto (ver
+# `fns_scraper.py`, `che_rs.py`, `convenios_rs.py`); este ficou de fora e o
+# defeito so aparecia rodando o comando REAL, nao o `pytest`.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from ingestion.transferegov_opendata import _linhas  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("programas_captacao")
@@ -166,8 +177,27 @@ _SQL = """
 """
 
 
+def hoje_br() -> date:
+    """O "hoje" de Brasilia, e nao o do container.
+
+    ⚠️ O CONTAINER RODA EM UTC e o pais que le a tela esta 3 horas atras. Entre
+    21h e meia-noite de Brasilia o `date.today()` do container ja virou o dia —
+    e um programa que fecha HOJE sumiria do radar na noite anterior, justamente
+    nas horas em que alguem correndo atras do prazo iria olhar.
+
+    Sem `zoneinfo` disponivel (imagem enxuta), cai no deslocamento fixo de -3h:
+    o Brasil nao tem mais horario de verao desde 2019, entao o offset e estavel.
+    """
+    from datetime import datetime, timedelta, timezone
+    try:
+        from zoneinfo import ZoneInfo
+        return datetime.now(ZoneInfo("America/Sao_Paulo")).date()
+    except Exception:
+        return (datetime.now(timezone.utc) - timedelta(hours=3)).date()
+
+
 def run() -> int:
-    hoje = date.today()
+    hoje = hoje_br()
     progs = agrupa(_linhas(ARQUIVO), hoje)
     log.info(f"programas abertos hoje ({hoje:%d/%m/%Y}): {len(progs)}")
 
@@ -175,47 +205,85 @@ def run() -> int:
     # layout mudado ou uma queda do TransfereGov devolvem zero programa — e
     # marcar tudo ausente esvaziaria o radar inteiro por causa de uma falha
     # nossa. Sem dado, o certo e sair reclamando e deixar a tela como estava.
-    if not progs:
-        cn = psycopg2.connect(_dsn())
-        cur = cn.cursor()
-        cur.execute("INSERT INTO ingestion_log (source, status, records_inserted, "
-                    "error_message, finished_at) VALUES (%s,'error',0,%s,NOW())",
-                    (FONTE, "nenhum programa aberto encontrado — nada foi marcado "
-                            "como ausente; suspeita de arquivo ou layout"))
-        cn.commit()
-        cur.close()
-        cn.close()
-        log.error("ZERO programas: NAO marquei ausencia. Confira o arquivo.")
-        return 0
-
     cn = psycopg2.connect(_dsn())
     cur = cn.cursor()
-    for p in progs.values():
-        cur.execute(_SQL, (
-            p["id_programa"], p["cod_programa"], p["nome"], p["orgao"], p["cod_orgao"],
-            p["modalidade"], sorted(p["naturezas"]), sorted(p["ufs"]),
-            p["acao_orcamentaria"], p["subtipo"], p["dt_ini_receb"], p["dt_fim_receb"],
-            p["dt_ini_emenda"], p["dt_fim_emenda"], p["dt_disponibilizacao"],
-            p["ano_disponibilizacao"], json.dumps(p["raw"], ensure_ascii=False)))
-    cn.commit()
+    sumiram = 0
+    incompleta = None
+    # ⚠️ UM `try/finally` PARA A LINHA DO `ingestion_log` SAIR SEMPRE. Sem ele,
+    # excecao no meio (Postgres fora, `timeout` do cron, zip corrompido) saia
+    # sem gravar nada — e o monitor de frescor nao ve rodada que nao logou: a
+    # fonte envelheceria em silencio, o defeito que este arquivo existe para
+    # nao repetir.
+    try:
+        if not progs:
+            # ⚠️ RODADA VAZIA NAO MARCA NADA COMO AUSENTE. Download truncado,
+            # layout mudado ou TransfereGov fora do ar devolvem zero programa —
+            # marcar tudo ausente esvaziaria o radar inteiro por causa de uma
+            # falha NOSSA. Sem dado, o certo e sair reclamando e deixar a tela
+            # como estava.
+            log.error("ZERO programas: NAO marquei ausencia. Confira o arquivo.")
+            return 0
 
-    # Quem nao apareceu nesta rodada sai das telas, mas fica no banco.
-    cur.execute("UPDATE programas_captacao "
-                "SET ausente_desde = COALESCE(ausente_desde, NOW()) "
-                "WHERE ausente_desde IS NULL AND NOT (id_programa = ANY(%s))",
-                (list(progs.keys()),))
-    sumiram = cur.rowcount
-    cn.commit()
+        for p in progs.values():
+            cur.execute(_SQL, (
+                p["id_programa"], p["cod_programa"], p["nome"], p["orgao"], p["cod_orgao"],
+                p["modalidade"], sorted(p["naturezas"]), sorted(p["ufs"]),
+                p["acao_orcamentaria"], p["subtipo"], p["dt_ini_receb"], p["dt_fim_receb"],
+                p["dt_ini_emenda"], p["dt_fim_emenda"], p["dt_disponibilizacao"],
+                p["ano_disponibilizacao"], json.dumps(p["raw"], ensure_ascii=False)))
+        cn.commit()
 
-    cur.execute("INSERT INTO ingestion_log (source, status, records_inserted, "
-                "error_message, finished_at) VALUES (%s,'success',%s,%s,NOW())",
-                (FONTE, len(progs),
-                 f"{sumiram} programa(s) saiu(ram) do ar" if sumiram else None))
-    cn.commit()
-    cur.close()
-    cn.close()
-    log.info(f"radar: {len(progs)} programa(s) aberto(s), {sumiram} marcado(s) como ausente(s)")
-    return len(progs)
+        # Quem nao apareceu nesta rodada sai das telas, mas fica no banco.
+        cur.execute("UPDATE programas_captacao "
+                    "SET ausente_desde = COALESCE(ausente_desde, NOW()) "
+                    "WHERE ausente_desde IS NULL AND NOT (id_programa = ANY(%s))",
+                    (list(progs.keys()),))
+        sumiram = cur.rowcount
+        cn.commit()
+        log.info(f"radar: {len(progs)} programa(s) aberto(s), "
+                 f"{sumiram} marcado(s) como ausente(s)")
+        return len(progs)
+    except BaseException as e:  # inclui o SystemExit/KeyboardInterrupt do `timeout`
+        incompleta = f"{type(e).__name__}: {e}"[:300]
+        log.error(f"rodada interrompida: {incompleta}")
+        raise
+    finally:
+        if incompleta:
+            status, msg = "error", f"rodada interrompida ({incompleta})"
+        elif not progs:
+            status, msg = "error", ("nenhum programa aberto encontrado — nada foi "
+                                    "marcado como ausente; suspeita de arquivo ou layout")
+        else:
+            status = "success"
+            msg = f"{sumiram} programa(s) saiu(ram) do ar" if sumiram else None
+        # ⚠️ O ROLLBACK VAI NUM `try` PROPRIO — ver o mesmo bloco em `fns_faf`.
+        # Junto do INSERT, uma falha dele levava embora a gravacao do log, que e
+        # a unica coisa que este bloco existe para garantir.
+        try:
+            cn.rollback()  # limpa o que a excecao deixou pendente
+        except Exception:
+            pass
+        try:
+            cur.execute("INSERT INTO ingestion_log (source, status, records_inserted, "
+                        "error_message, finished_at) VALUES (%s,%s,%s,%s,NOW())",
+                        (FONTE, status, len(progs), msg))
+            cn.commit()
+        except Exception as e2:
+            log.error(f"nao consegui gravar o ingestion_log: {e2}")
+        for fechar in (cur.close, cn.close):
+            try:
+                fechar()
+            except Exception:
+                pass
+
+
+# ⚠️ O `run_dadosabertos_cron` CHAMA `ingest()`, e nao `run()`. O laco dele faz
+# `m.ingest()` por convencao; sem este nome o modulo entraria na lista e
+# levantaria AttributeError, que o `except` do cron engole como aviso — a fonte
+# ficaria "registrada" e nunca coletaria, sem nada acusando.
+def ingest() -> int:
+    """Nome que o cron de dados abertos procura. Devolve o total, como os irmaos."""
+    return run()
 
 
 if __name__ == "__main__":

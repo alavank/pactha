@@ -165,9 +165,17 @@ class _Cursor:
 
 
 class _Conn:
+    """⚠️ TEM `rollback` PORQUE O CODIGO REAL O CHAMA — e a primeira versao deste
+    fake NAO tinha. O `AttributeError` era engolido pelo `except` do bloco de
+    encerramento e a linha do `ingestion_log` deixava de ser gravada: o teste
+    apontou uma fragilidade de verdade no coletor (rollback e log dividiam o
+    mesmo `try`), que foi separada. Fake pobre demais esconde defeito; fake
+    pobre demais que FALHA, revela."""
+
     def __init__(self, cur):
         self._c = cur
         self.commits = 0
+        self.rollbacks = 0
 
     def cursor(self):
         return self._c
@@ -175,8 +183,19 @@ class _Conn:
     def commit(self):
         self.commits += 1
 
+    def rollback(self):
+        self.rollbacks += 1
+
     def close(self):
         pass
+
+
+def _log(cur):
+    """A tupla de parametros do INSERT no ingestion_log, ou None."""
+    for sql, params in cur.execs:
+        if "ingestion_log" in sql:
+            return params
+    return None
 
 
 def test_rodada_vazia_nao_marca_ninguem_como_ausente(monkeypatch):
@@ -195,13 +214,20 @@ def test_rodada_vazia_nao_marca_ninguem_como_ausente(monkeypatch):
     assert P.run() == 0
     sqls = " ".join(s for s, _ in cur.execs)
     assert "UPDATE programas_captacao" not in sqls, "marcou ausencia sobre rodada vazia"
-    assert "ingestion_log" in sqls
     # ⚠️ E o log sai 'error'. Zero programa aberto no Brasil inteiro nao e um
     # resultado plausivel — tratar como 'success' pintaria verde sobre falha,
     # que foi o defeito encontrado em tres coletores na auditoria de 31/08.
-    log = next(p for s, p in cur.execs if "ingestion_log" in s)
-    assert log[0] == P.FONTE
-    assert "'error'" in next(s for s, _ in cur.execs if "ingestion_log" in s)
+    #
+    # ⚠️ O STATUS E CONFERIDO NO PARAMETRO, e nao na string do SQL. A primeira
+    # versao procurava `'error'` DENTRO do texto da consulta; quando o status
+    # virou bind (%s), como manda a casa, o teste passou a nao achar nada e
+    # falhou — mas se o bind tivesse vindo antes do teste, ele teria passado
+    # cego para sempre, porque a substring nunca mais apareceria no SQL.
+    p = _log(cur)
+    assert p is not None, "rodada vazia saiu sem gravar ingestion_log"
+    assert p[0] == P.FONTE
+    assert p[1] == "error"
+    assert p[2] == 0
 
 
 def test_rodada_com_dado_grava_e_marca_os_que_sumiram(monkeypatch):
@@ -216,4 +242,35 @@ def test_rodada_com_dado_grava_e_marca_os_que_sumiram(monkeypatch):
     ausencia = next((s, p) for s, p in cur.execs if s.startswith("UPDATE programas_captacao"))
     # A ausencia e marcada por EXCLUSAO da lista vista — e a lista tem o "7".
     assert ausencia[1] == (["7"],)
-    assert "'success'" in next(s for s in sqls if "ingestion_log" in s)
+    p = _log(cur)
+    assert p is not None and p[1] == "success" and p[2] == 1
+
+
+def test_rodada_que_estoura_no_meio_grava_error_e_nao_some(monkeypatch):
+    """⚠️ EXCECAO NO MEIO TEM DE DEIXAR LINHA NO `ingestion_log`.
+
+    Postgres fora, `timeout` do cron, zip corrompido: sem o `finally`, a rodada
+    morria sem gravar nada — e o monitor de frescor NAO VE rodada que nao logou.
+    A fonte envelheceria em silencio, que e o defeito que este coletor foi
+    escrito para nao repetir. O status tem de ser 'error', nao 'success'.
+    """
+    cur = _Cursor()
+    conn = _Conn(cur)
+
+    def explode(sql, params=None):
+        cur.execs.append((sql, params))
+        if "INSERT INTO programas_captacao" in sql:
+            raise RuntimeError("conexao caiu no meio")
+
+    cur.execute = explode
+    monkeypatch.setattr(P, "_linhas", lambda _a: iter([_linha(ID_PROGRAMA="7")]))
+    monkeypatch.setattr(P.psycopg2, "connect", lambda _d: conn)
+    monkeypatch.setenv("DATABASE_URL_SYNC", "postgresql://x/y")
+
+    with pytest.raises(RuntimeError):
+        P.run()
+    p = _log(cur)
+    assert p is not None, "rodada interrompida saiu sem gravar ingestion_log"
+    assert p[1] == "error"
+    assert "interrompida" in (p[3] or "")
+    assert conn.rollbacks == 1, "nao limpou a transacao antes de gravar o log"

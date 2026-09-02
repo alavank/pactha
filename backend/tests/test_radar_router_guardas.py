@@ -1,23 +1,30 @@
-"""As tres guardas da consulta do radar — verificadas na ARVORE do SQL.
+"""As CINCO guardas da consulta do radar — verificadas na ARVORE do SQL.
 
 Nao ha Postgres de teste neste repo (SQL se valida com `pglast`), entao a
 consulta do `routers/programas_captacao` nao pode ser exercitada contra banco.
 O que da para fazer — e o que este arquivo faz — e PARSEAR o SQL com a gramatica
-real do Postgres e exigir que as tres condicoes estejam la.
+real do Postgres e exigir que as condicoes estejam la.
 
 ⚠️ POR QUE ISSO NAO E `assert "..." in sql`. Uma busca por substring passa com o
 texto dentro de um comentario, de uma string, ou de um `OR` que anula a guarda.
-O parser enxerga a estrutura: as condicoes precisam estar no WHERE, ligadas por
-AND. Cada uma das tres, se cair, produz um defeito diferente e nenhum deles
-levanta erro:
+O parser enxerga a ESTRUTURA: as condicoes tem de estar no WHERE e o topo do
+WHERE tem de ser uma cadeia de AND. Cada guarda, se cair, produz um defeito
+diferente e nenhum deles levanta erro:
 
     sem `ausente_desde IS NULL`   -> programa fora do ar volta para a tela;
     sem `dt_fim_receb >= hoje`    -> a tela anuncia prazo VENCIDO (a tabela e
                                      fotografia do dia da coleta);
+    sem `dt_ini_receb <= hoje`    -> entra na conta de "abertos hoje" programa
+                                     cuja janela so abre em novembro;
+    sem `:nat = ANY(naturezas)`   -> aparece programa que so o consorcio assina;
     sem `:uf = ANY(ufs)`          -> prefeito mineiro recebe programa que so
                                      aceita municipio gaucho — "porta que nao
                                      abre", o defeito que o `programas_rs.py`
                                      ja documenta.
+
+E, no fim do arquivo, a guarda do CARIMBO de coleta, que nao esta no WHERE: ele
+tem de sair de consulta PROPRIA, porque deriva-lo das linhas filtradas fazia um
+radar coletado se declarar nunca coletado.
 
 Rodar: python -m pytest backend/tests/test_radar_router_guardas.py -q
 """
@@ -31,17 +38,33 @@ from routers import programas_captacao as R  # noqa: E402
 
 
 def _sql_da_rota() -> str:
-    """O SELECT literal do modulo, com os :binds trocados por placeholder.
+    """O SELECT do radar, tirado do ARQUIVO do router.
 
-    Le do ARQUIVO e nao de um `str` exportado de proposito: o que vai para o
-    banco e o texto que esta no codigo, e um teste que lesse uma constante
-    paralela poderia passar com a rota usando outra consulta.
+    Le do arquivo, e nao de uma constante exportada, de proposito: o que vai
+    para o banco e o texto que esta no codigo, e um teste que lesse uma copia
+    paralela passaria com a rota usando outra consulta.
+
+    ⚠️ ESCOLHE O BLOCO PELO CONTEUDO, e nao pela posicao. A primeira versao
+    pegava o PRIMEIRO `text(\"\"\"...\"\"\")` do arquivo — bastaria alguem
+    acrescentar outra consulta acima para o teste passar a proteger a consulta
+    errada, em silencio, continuando verde. Aqui o bloco tem de ser o que le
+    `programas_captacao`, e um arquivo com dois candidatos e um erro explicito.
     """
     fonte = open(R.__file__, encoding="utf-8").read()
-    m = re.search(r'text\("""(.*?)"""\)', fonte, re.S)
-    assert m, "SELECT do radar nao encontrado no router"
+    blocos = [b for b in re.findall(r'text\("""(.*?)"""\)', fonte, re.S)
+              if "FROM programas_captacao" in b]
+    assert blocos, "SELECT de programas_captacao nao encontrado no router"
+    assert len(blocos) == 1, (
+        f"{len(blocos)} consultas leem programas_captacao; este teste protege "
+        f"uma so — decida qual e ajuste o extrator de proposito")
     # `:uf`/`:nat` sao binds do SQLAlchemy; o Postgres nao os conhece.
-    return re.sub(r":(\w+)", r"'\1'", m.group(1))
+    return re.sub(r":(\w+)", r"'\1'", blocos[0])
+
+
+def _where_bruto():
+    """O no do WHERE, direto da arvore do Postgres."""
+    arvore = pglast.parse_sql(_sql_da_rota())
+    return arvore[0].stmt.whereClause
 
 
 @pytest.fixture(scope="module")
@@ -82,14 +105,70 @@ def test_filtra_pela_natureza_da_prefeitura(where):
     assert R.NATUREZA_PREFEITURA == "Administração Pública Municipal"
 
 
-def test_as_guardas_estao_ligadas_por_AND_e_nao_por_OR(where):
-    """⚠️ A GUARDA QUE UM `in` NAO PEGARIA.
+def test_o_topo_do_WHERE_e_uma_cadeia_de_AND():
+    """⚠️ A GUARDA QUE UM `in` NAO PEGARIA — e que ja pegou um defeito real.
 
-    Um `OR` no meio do WHERE deixaria todas as substrings acima presentes e
-    ainda assim liberaria a linha errada — basta uma das pernas ser verdadeira.
-    O WHERE do radar nao tem `or` nenhum: se algum dia precisar de um, ele tem
-    de vir entre parenteses e este teste tem de ser reescrito de proposito.
+    Um `OR` no TOPO do WHERE deixaria todas as substrings dos testes acima
+    presentes e ainda assim liberaria a linha errada: basta uma perna ser
+    verdadeira. Este teste olha a ARVORE — exige que a raiz do WHERE seja
+    AND_EXPR, o que torna cada guarda obrigatoria.
+
+    ⚠️ E POR QUE ELE NAO PROIBE `OR` EM QUALQUER LUGAR. A primeira versao
+    proibia, por substring, e isso ACHOU UM DEFEITO DE VERDADE: o WHERE tinha
+    `OR cardinality(ufs) = 0`, tratando array de UF vazio como "vale para todos"
+    — um programa com UF perdida na coleta apareceria para TODO municipio do
+    pais. Removido. Mas a proibicao cega tambem barrou, depois, um `OR`
+    LEGITIMO e entre parenteses (`dt_ini_receb IS NULL OR <= hoje`), que e uma
+    perna so da cadeia. A regra certa nao e "sem OR": e "o topo tem de ser AND",
+    porque e isso que garante que nenhuma guarda pode ser dispensada.
     """
-    trecho = where.split("where", 1)[1].split("order by", 1)[0]
-    assert " or " not in trecho, "apareceu OR no WHERE do radar — reveja a guarda"
-    assert trecho.count(" and ") >= 3
+    raiz = _where_bruto()
+    assert raiz.__class__.__name__ == "BoolExpr", (
+        f"o topo do WHERE virou {raiz.__class__.__name__} — se nao e uma cadeia, "
+        f"nao da para afirmar que toda guarda vale")
+    # ⚠️ `.name`, e nao `str()`: `BoolExprType` e IntEnum, entao `str(boolop)`
+    # devolve "0" e a comparacao com "AND_EXPR" seria SEMPRE falsa — um teste que
+    # falha por engano e so barulho, mas o inverso (comparar com "0") passaria
+    # tambem para OR_EXPR se a ordem do enum mudasse.
+    assert raiz.boolop.name == "AND_EXPR", (
+        f"o topo do WHERE e {raiz.boolop.name}, nao AND: alguma guarda pode ser "
+        f"dispensada por outra")
+    assert len(raiz.args) >= 5, (
+        f"o WHERE tem {len(raiz.args)} guardas no topo; eram 5 "
+        f"(ausente_desde, fim, inicio, natureza, uf)")
+
+
+# --------------------------------------------------------------------------
+# O carimbo de coleta: consulta SEPARADA, e nao derivada do resultado
+# --------------------------------------------------------------------------
+
+def test_o_carimbo_de_coleta_nao_depende_do_filtro():
+    """⚠️ ERA UM DEFEITO DE VERDADE, e o pior tipo: acusava pendencia inventada.
+
+    `atualizado_em` saia de `max(visto_em)` das linhas JA FILTRADAS. Um
+    municipio cuja UF nao tem nenhum programa aberto recebia lista vazia E
+    carimbo nulo — e a tela usa o carimbo nulo para dizer "ainda nao coletamos
+    aqui". Ou seja: radar coletado, funcionando, sem nada para aquela UF, se
+    apresentava como coleta que nunca rodou.
+
+    Sao dois fatos distintos: QUANDO olhamos nao depende do QUE achamos para
+    voce. Por isso o carimbo virou consulta propria, sem WHERE de UF.
+    """
+    fonte = open(R.__file__, encoding="utf-8").read()
+    carimbo = re.search(r'text\(\s*\n?\s*"SELECT max\(visto_em\)[^"]*"', fonte)
+    assert carimbo, "a consulta do carimbo sumiu do router"
+    sql = carimbo.group(0)
+    assert "WHERE" not in sql.upper(), (
+        "o carimbo ganhou um WHERE — se ele filtrar por UF, volta a confundir "
+        "'nao ha programa para voce' com 'nunca coletamos'")
+    # E o SELECT dos programas NAO pode mais trazer visto_em: se trouxer, alguem
+    # voltou a derivar o carimbo dali.
+    assert "visto_em" not in _sql_da_rota(), (
+        "o SELECT dos programas voltou a ler visto_em — o carimbo tem consulta propria")
+
+
+def test_a_janela_de_inicio_tambem_e_guarda():
+    """"Aberto hoje" e estar DENTRO da janela, e nao apenas antes do fim."""
+    where = pglast.prettify(_sql_da_rota()).lower()
+    assert "dt_ini_receb" in where
+    assert "<= current_date" in where
