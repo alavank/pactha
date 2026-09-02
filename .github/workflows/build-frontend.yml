@@ -87,17 +87,16 @@ jobs:
           # Nova Palma/RS — 5o tenant, aberto em 01/09/2026. Mesmo arranjo do
           # Santa Maria (RS tambem): so o sslip por enquanto, sem dominio proprio.
           #
-          # ⚠️ SEM `NEXT_PUBLIC_CLIENT_LOGO` de proposito. Nao temos o brasao do
-          # municipio, e a marca entra EMBUTIDA na imagem — trocar depois custa um
-          # rebuild inteiro nesta VPS burstable. Melhor subir sem imagem, com o
-          # nome do municipio no subtitulo, do que subir com a marca errada. Quando
-          # o brasao chegar: adiciona o arquivo em frontend/public/, acrescenta a
-          # linha aqui e refaz UM build.
+          # O brasao chegou em 02/09/2026 e o tenant deixa de subir sem marca.
+          # Origem: Wikimedia Commons, File:Brasao Nova Palma.jpg — DOMINIO
+          # PUBLICO, de autoria da propria Prefeitura de Nova Palma. E o simbolo
+          # oficial do municipio na plataforma do proprio municipio.
           - image: frontend-novapalma-rs
             context: frontend
             args: |
               NEXT_PUBLIC_API_URL=/api
               API_PROXY_TARGET=https://pactha-novapalma-rs-api-54-232-208-118.sslip.io
+              NEXT_PUBLIC_CLIENT_LOGO=/brasao-nova-palma.png
               NEXT_PUBLIC_CLIENT_SUBTITLE=Nova Palma - RS
               NEXT_PUBLIC_BI_MODULE=1
           # O antigo "painel executivo" (pasta painel/, imagem painel-montesiao-mg)
