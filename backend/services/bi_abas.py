@@ -296,8 +296,15 @@ async def bi_parlamentares_detalhe(
 ) -> dict:
     """Ranking de parlamentares COM os lancamentos de cada um — o que o prefeito
     quer ver na TV: quem mandou, quanto, pra que (finalidade) e pra quem
-    (destinacao/beneficiario). Uma unica varredura das 3 fontes que tem autor
-    nominal no banco (SIGCON, voluntarias, emendas estaduais).
+    (destinacao/beneficiario). Uma unica varredura das QUATRO fontes com autor
+    nominal no banco: SIGCON, voluntarias, emendas estaduais e Transferencia
+    Especial (RP9).
+
+    ⚠️ A TE entrou em 02/09/2026. Sem ela esta aba divergia da tela
+    /dashboard/parlamentares no mesmo municipio e periodo — 3 parlamentares e
+    R$ 1,6 mi contra 6 e R$ 7,33 mi — porque a maioria das emendas de deputado
+    FEDERAL chega por RP9. Duas telas do mesmo sistema com numeros diferentes e
+    pior que uma tela incompleta: o cliente ve as duas.
 
     `tipo`: "parlamentar" (so pessoas) | "outro" (secretarias, fundos que
     aparecem no campo de autor) | "todos". Default "todos" preserva quem ja
@@ -388,6 +395,65 @@ async def bi_parlamentares_detalhe(
             "ano": int(ano_prop) if ano_prop.isdigit() else None,
             "municipio": r[6], "vigencia_ate": _iso(r[7]),
         })
+
+    # 4) TRANSFERENCIA ESPECIAL / Plano de Acao (RP9, "emenda Pix") — a fonte
+    #    por onde chega a MAIORIA das emendas de deputado federal.
+    #
+    #    ⚠️ Faltava aqui, e essa ausencia fazia a aba MENTIR contra a tela
+    #    /dashboard/parlamentares. Em Conceicao da Barra/ES, mandato 2025-2026:
+    #    a tela mostrava 6 parlamentares e R$ 7,33 mi; a aba, 3 e R$ 1,6 mi.
+    #    Helder Salomao (R$ 596 mil) e Magno Malta (R$ 1,09 mi) sumiam inteiros
+    #    porque so tem TE, e Paulo Folletto aparecia com R$ 501 mil em vez de
+    #    R$ 3,58 mi — perdia exatamente os 4 lancamentos de TE.
+    #
+    #    A tela le esta fonte AO VIVO da API federal; aqui lemos a TABELA
+    #    `transferegov_te`, que o coletor preenche extraindo o autor do mesmo
+    #    campo (`codigoEmendaFormatado`, parte apos o '-') com a mesma regra.
+    #    Conferido contra o dado real: os valores batem ao centavo. Ler da
+    #    tabela mantem a aba rapida — o fetch ao vivo e o motivo de ela nao
+    #    existir aqui antes.
+    #
+    #    O ano vem de `programa_codigo` (posicoes 5-8), igual ao recorte que a
+    #    tela aplica no item ao vivo (`pc[4:8]`).
+    #    ⚠️ FILTRO POR CNPJ, e nao so por municipio_id. `transferegov_te` esta
+    #    contaminada: o coletor casa o beneficiario por SUBSTRING do nome
+    #    (`_casa_municipio`), entao "MUNICIPIO DE PARAISO DO TOCANTINS" cai no
+    #    municipio mineiro chamado "Tocantins", "JANAUBA"/"UBAPORANGA" caem em
+    #    "Uba" e "GOIANAPOLIS" cai em "Anapolis". Medido em 02/09/2026 na base
+    #    trust: 628 de 890 linhas com CNPJ divergente, R$ 318,7 mi no municipio
+    #    errado. A tela /parlamentares escapa porque busca a listagem AO VIVO
+    #    por UF; quem le a tabela, nao.
+    #
+    #    O `OR` no fim preserva a linha quando falta CNPJ de um dos lados — sem
+    #    ele, municipio sem CNPJ cadastrado perderia TODA a sua TE, trocando um
+    #    erro visivel por um buraco silencioso.
+    ano_te = " AND substr(te.programa_codigo, 5, 4) = ANY(:anos_txt)" if anos else ""
+    sql_te = f"""
+        SELECT te.parlamentar, te.codigo, te.objeto, te.situacao,
+               COALESCE(te.valor_total, 0), te.beneficiario_nome, m.nome,
+               substr(te.programa_codigo, 5, 4)
+        FROM transferegov_te te LEFT JOIN municipios m ON m.id = te.municipio_id
+        WHERE te.municipio_id = ANY(:ids) AND te.parlamentar IS NOT NULL
+          AND (
+                te.beneficiario_cnpj IS NULL OR m.cnpj IS NULL
+                OR regexp_replace(te.beneficiario_cnpj, '[^0-9]', '', 'g')
+                   = regexp_replace(m.cnpj, '[^0-9]', '', 'g')
+              )
+          {ano_te}
+    """
+    try:
+        for r in (await db.execute(text(sql_te), p)).fetchall():
+            _add(r[0], {
+                "fonte": "transferencia_especial", "numero": r[1],
+                "destinacao": r[5] or r[6], "finalidade": r[2],
+                "valor": _money(r[4]), "situacao": r[3], "orgao": None,
+                "ano": int(r[7]) if (r[7] or "").isdigit() else None,
+                "municipio": r[6],
+            })
+    except Exception:
+        # Degrada em silencio, como as demais: uma fonte a menos nao pode
+        # derrubar a aba inteira (a tabela pode nem existir num tenant novo).
+        pass
 
     itens = []
     for g in grupos.values():
