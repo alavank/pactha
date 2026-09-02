@@ -156,10 +156,24 @@ RESUMO = (
     "lá se acompanha a PROPOSTA, aqui o DINHEIRO que efetivamente caiu."
 )
 
-# Os blocos de financiamento da Portaria GM/MS 6.907/2022, que reorganizou o
-# financiamento federal do SUS. São a chave de leitura de qualquer extrato do
-# InvestSUS — sem eles, o gestor vê um número só e não sabe o que pode gastar
-# em quê. Custeio e investimento não se misturam, e é isso que a coluna diz.
+# As finalidades de financiamento da Portaria GM/MS 6.907/2022, que reorganizou
+# o financiamento federal do SUS. São a chave de leitura de qualquer extrato do
+# InvestSUS — sem elas, o gestor vê um número só e não sabe o que pode gastar em
+# quê. Custeio e investimento não se misturam, e é isso que a coluna diz.
+#
+# ⚠️ ESTA LISTA NÃO SÃO OS "BLOCOS" DO CONSULTAFNS, e chamá-la assim virou um
+# defeito no dia (02/09/2026) em que o valor real entrou na tela. O portal tem
+# DOIS blocos — «Manutenção das Ações e Serviços Públicos de Saúde» (10) e
+# «Estruturação da Rede» (11) — e o que está listado aqui são os GRUPOS dentro
+# deles (Atenção Primária, Assistência Farmacêutica, Vigilância…). Com as duas
+# coisas na mesma tela sob o mesmo rótulo, o gestor lia «Blocos: Atenção
+# Primária…» logo abaixo de «Por bloco: Manutenção…» e não tinha como
+# reconciliar. A tela agora chama esta seção de GRUPOS, que é o vocabulário do
+# portal — e o mesmo que aparece ao expandir cada bloco com o valor real.
+#
+# ⚠️ E A LISTA NÃO É DERIVADA DA COLETA de propósito: ela explica o que cada
+# grupo FINANCIA (a portaria), e não quanto veio. Um município que não recebeu
+# nada de Vigilância no ano continua precisando saber o que Vigilância paga.
 BLOCOS = [
     {"nome": "Atenção Primária à Saúde",
      "tipo": "Custeio",

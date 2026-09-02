@@ -153,12 +153,20 @@ def test_campos_do_arquivo_chegam_inteiros():
 # ------------------------------------------------------------------- run ---
 
 class _Cursor:
+    """⚠️ `fetchone` DEVOLVE ZERO ATIVOS POR PADRAO, e a escolha importa: com
+    zero no banco o piso proporcional nao dispara, entao o caso base continua
+    exercitando a marcacao de ausencia. Os testes do piso sobrescrevem
+    `fetchone` para simular um banco povoado."""
+
     def __init__(self):
         self.execs = []
         self.rowcount = 0
 
     def execute(self, sql, params=None):
         self.execs.append((sql, params))
+
+    def fetchone(self):
+        return (0,)
 
     def close(self):
         pass
@@ -270,6 +278,75 @@ def test_o_upsert_RESSUSCITA_programa_que_voltou():
     assert "visto_em" in alvos, "sem `visto_em` o monitor de frescor congela"
     # E o conflito tem de ser na identidade do programa, nao em outra coisa.
     assert [i.name for i in arvore.onConflictClause.infer.indexElems] == ["id_programa"]
+
+
+def test_prazo_divergente_entre_UFs_grita_no_log(caplog):
+    """⚠️ O ALARME PARA O DIA EM QUE A FONTE MUDAR DE FORMA.
+
+    A tabela guarda UM prazo por programa, e isso só é honesto porque as UFs do
+    mesmo programa trazem a mesma data — medido em 02/09/2026: zero divergências
+    entre os 17 abertos. Se um dia divergir, guardar a maior faria a tela
+    anunciar a um município um prazo que não é dele. Este aviso é o que impede
+    essa mudança de passar em silêncio.
+    """
+    with caplog.at_level("WARNING", logger="programas_captacao"):
+        d = P.agrupa([
+            _linha(UF_PROGRAMA="MG", DT_PROG_FIM_RECEB_PROP="30/09/2026"),
+            _linha(UF_PROGRAMA="SP", DT_PROG_FIM_RECEB_PROP="31/12/2026"),
+        ], HOJE)
+    assert d["56385"]["dt_fim_receb"] == date(2026, 12, 31)
+    assert "PRAZO DIFERENTE entre UFs" in caplog.text
+    assert "56385" in caplog.text
+
+
+def test_prazo_igual_entre_UFs_nao_gera_alarme(caplog):
+    """O aviso acima só serve se NÃO disparar no caso normal — que é a regra."""
+    with caplog.at_level("WARNING", logger="programas_captacao"):
+        P.agrupa([_linha(UF_PROGRAMA="MG"), _linha(UF_PROGRAMA="SP")], HOJE)
+    assert "PRAZO DIFERENTE" not in caplog.text
+
+
+def test_queda_de_mais_da_metade_NAO_marca_ausencia(monkeypatch):
+    """⚠️ O PISO PROPORCIONAL — o caso que o `if not progs` não pega.
+
+    Rodada vazia já é barrada. O perigoso é o PARCIAL: um zip truncado que
+    descomprime e traz 2 dos 17 programas passa por aquela guarda e derruba 15
+    de uma vez. O radar esvazia quase todo e a tela diz "nenhum programa aberto
+    para a sua UF hoje" — frase que se lê como informação, não como falha.
+    """
+    cur = _Cursor()
+    conn = _Conn(cur)
+    cur.fetchone = lambda: (17,)          # 17 ativos no banco...
+    monkeypatch.setattr(P, "_linhas", lambda _a: iter([_linha(ID_PROGRAMA="7")]))
+    monkeypatch.setattr(P.psycopg2, "connect", lambda _d: conn)
+    monkeypatch.setenv("DATABASE_URL_SYNC", "postgresql://x/y")
+
+    assert P.run() == 1                    # ...e a rodada trouxe 1
+    sqls = [s for s, _ in cur.execs]
+    assert any("INSERT INTO programas_captacao" in s for s in sqls), \
+        "os dados novos TEM de ser gravados; o que se suspende e so a ausencia"
+    assert not any(s.startswith("UPDATE programas_captacao") for s in sqls), \
+        "marcou ausencia numa queda de 17 para 1"
+    # ⚠️ E o log sai 'partial': a rodada gravou dado bom mas deixou metade do
+    # trabalho por fazer. 'success' esconderia isso num log que ninguem le.
+    p = _log(cur)
+    assert p[1] == "partial"
+    assert "queda suspeita" in (p[3] or "")
+
+
+def test_queda_pequena_marca_ausencia_normalmente(monkeypatch):
+    """O piso não pode virar trava: programa que sai de cartaz TEM de sair."""
+    cur = _Cursor()
+    conn = _Conn(cur)
+    cur.fetchone = lambda: (2,)           # 2 ativos, a rodada traz 1 -> 50%
+    monkeypatch.setattr(P, "_linhas", lambda _a: iter([_linha(ID_PROGRAMA="7")]))
+    monkeypatch.setattr(P.psycopg2, "connect", lambda _d: conn)
+    monkeypatch.setenv("DATABASE_URL_SYNC", "postgresql://x/y")
+
+    assert P.run() == 1
+    assert any(s.startswith("UPDATE programas_captacao") for s in cur.execs and
+               [s for s, _ in cur.execs]), "deixou de marcar ausencia legitima"
+    assert _log(cur)[1] == "success"
 
 
 def test_rodada_que_estoura_no_meio_grava_error_e_nao_some(monkeypatch):

@@ -310,7 +310,15 @@ export default function InvestSusPage() {
       </Bloco>
 
       <Bloco className="p-3">
-        <BlocoHead icon={Banknote} titulo="Blocos de financiamento" sub={d.resumo} />
+        {/* ⚠️ "GRUPOS", e não "Blocos". Esta seção lista Atenção Primária,
+            Assistência Farmacêutica, Vigilância — que no vocabulário do
+            ConsultaFNS são GRUPOS, dentro de dois blocos («Manutenção» e
+            «Estruturação»). Enquanto a tela não tinha valor real, chamar de
+            bloco não colidia com nada; desde que o dinheiro entrou, a mesma
+            página usava "bloco" para duas coisas diferentes e o gestor não
+            tinha como reconciliar as duas listas. */}
+        <BlocoHead icon={Banknote} titulo="O que cada grupo de financiamento paga"
+                   sub={d.resumo} />
         <Lista>
           {(d.blocos || []).map((b) => (
             <ItemLinha

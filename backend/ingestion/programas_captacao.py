@@ -138,11 +138,30 @@ def agrupa(linhas, hoje: date) -> dict[str, dict]:
         if uf:
             p["ufs"].add(uf)
         # ⚠️ O PRAZO QUE VALE E O MAIS LONGO ENTRE AS LINHAS DO MESMO PROGRAMA.
-        # O arquivo pode trazer datas diferentes por UF; encurtar o programa
-        # inteiro pela linha mais restritiva o faria sumir da tela de quem
-        # ainda tem prazo. As UFs ficam no array; a data e a do programa.
-        if fim > p["dt_fim_receb"]:
-            p["dt_fim_receb"] = fim
+        # Encurtar o programa inteiro pela linha mais restritiva o faria sumir
+        # da tela de quem ainda tem prazo. As UFs ficam no array; a data e a do
+        # programa.
+        #
+        # ⚠️ E ISSO SO E HONESTO ENQUANTO AS DATAS NAO DIVERGIREM POR UF.
+        # Medido em 02/09/2026: dos 17 programas abertos, ZERO trazem prazos
+        # diferentes entre as UFs — a coluna e do programa, nao do par
+        # (programa, UF). Se um dia divergir, guardar so a maior faria a tela
+        # anunciar a um municipio um prazo que nao e dele, e a tabela teria de
+        # passar a ser por (programa, UF). O `divergentes` abaixo existe para
+        # esse dia CHEGAR COM AVISO em vez de em silencio.
+        if fim != p["dt_fim_receb"]:
+            p["_prazos_divergentes"] = True
+            if fim > p["dt_fim_receb"]:
+                p["dt_fim_receb"] = fim
+
+    divergentes = [p["id_programa"] for p in progs.values()
+                   if p.pop("_prazos_divergentes", False)]
+    if divergentes:
+        log.warning(
+            f"⚠️ {len(divergentes)} programa(s) com PRAZO DIFERENTE entre UFs "
+            f"({', '.join(divergentes[:5])}). A tabela guarda um prazo por "
+            f"PROGRAMA e passou a mostrar o mais longo para todas as UFs — "
+            f"revise se a chave precisa virar (programa, UF).")
     return progs
 
 
@@ -208,6 +227,7 @@ def run() -> int:
     cn = psycopg2.connect(_dsn())
     cur = cn.cursor()
     sumiram = 0
+    parcial = None
     incompleta = None
     # ⚠️ UM `try/finally` PARA A LINHA DO `ingestion_log` SAIR SEMPRE. Sem ele,
     # excecao no meio (Postgres fora, `timeout` do cron, zip corrompido) saia
@@ -233,12 +253,35 @@ def run() -> int:
                 p["ano_disponibilizacao"], json.dumps(p["raw"], ensure_ascii=False)))
         cn.commit()
 
-        # Quem nao apareceu nesta rodada sai das telas, mas fica no banco.
-        cur.execute("UPDATE programas_captacao "
-                    "SET ausente_desde = COALESCE(ausente_desde, NOW()) "
-                    "WHERE ausente_desde IS NULL AND NOT (id_programa = ANY(%s))",
-                    (list(progs.keys()),))
-        sumiram = cur.rowcount
+        # ⚠️ PISO PROPORCIONAL ANTES DE MARCAR AUSENCIA — nao basta guardar o
+        # zero. A rodada vazia ja e barrada la em cima, mas o caso perigoso e o
+        # PARCIAL: um arquivo truncado que descomprime e traz 2 dos 17
+        # programas passa pelo `if not progs` e derruba 15 de uma vez. Ai o
+        # radar esvazia quase todo, a tela diz "nenhum programa aberto para a
+        # sua UF hoje" — frase que se le como informacao, nao como falha — e a
+        # rodada seguinte demora um dia para ressuscitar. E o mesmo cuidado que
+        # o `sismob_obras` ja toma; aqui ele faltava.
+        cur.execute("SELECT count(*) FROM programas_captacao "
+                    "WHERE ausente_desde IS NULL")
+        ativos = (cur.fetchone() or [0])[0] or 0
+        sumiram = 0
+        if ativos and len(progs) < ativos * 0.5:
+            log.error(
+                f"⚠️ a rodada trouxe {len(progs)} programa(s) contra {ativos} "
+                f"ativos no banco — queda de mais da metade. NAO marquei "
+                f"ausencia: suspeita de arquivo parcial. Os dados novos foram "
+                f"gravados; o que sumiu continua visivel ate a proxima rodada "
+                f"confirmar.")
+            parcial = (f"queda suspeita: {len(progs)} de {ativos} ativos — "
+                       f"ausencia NAO marcada")
+        else:
+            parcial = None
+            # Quem nao apareceu nesta rodada sai das telas, mas fica no banco.
+            cur.execute("UPDATE programas_captacao "
+                        "SET ausente_desde = COALESCE(ausente_desde, NOW()) "
+                        "WHERE ausente_desde IS NULL AND NOT (id_programa = ANY(%s))",
+                        (list(progs.keys()),))
+            sumiram = cur.rowcount
         cn.commit()
         log.info(f"radar: {len(progs)} programa(s) aberto(s), "
                  f"{sumiram} marcado(s) como ausente(s)")
@@ -254,8 +297,12 @@ def run() -> int:
             status, msg = "error", ("nenhum programa aberto encontrado — nada foi "
                                     "marcado como ausente; suspeita de arquivo ou layout")
         else:
-            status = "success"
-            msg = f"{sumiram} programa(s) saiu(ram) do ar" if sumiram else None
+            # ⚠️ QUEDA SUSPEITA NAO E 'success'. A rodada gravou dado bom, mas
+            # deixou de fazer metade do trabalho — e o monitor de frescor
+            # precisa acusar isso, senao a unica pista fica num log que
+            # ninguem le.
+            status = "partial" if parcial else "success"
+            msg = parcial or (f"{sumiram} programa(s) saiu(ram) do ar" if sumiram else None)
         # ⚠️ O ROLLBACK VAI NUM `try` PROPRIO — ver o mesmo bloco em `fns_faf`.
         # Junto do INSERT, uma falha dele levava embora a gravacao do log, que e
         # a unica coisa que este bloco existe para garantir.
