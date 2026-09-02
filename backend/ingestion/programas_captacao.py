@@ -1,0 +1,337 @@
+"""RADAR DE CAPTACAO: os programas federais com prazo ABERTO para propor.
+
+A plataforma inteira olha para tras — convenio assinado, emenda indicada, obra
+em medicao. Este coletor olha para frente: a porta que ainda esta aberta.
+
+FONTE: `siconv_programa.zip` do TransfereGov (dado aberto, sem login), o mesmo
+arquivo que o `transferegov_opendata` ja baixa para resolver o NOME do programa
+de uma proposta. Aqui ele e lido pelo outro lado: nao "que programa e este que
+eu ja usei", e sim "que programa eu ainda posso usar".
+
+MEDIDO EM 02/09/2026, na rodada que criou este arquivo:
+
+    1.257.102 linhas no arquivo
+    1.006.720 com SIT_PROGRAMA = DISPONIBILIZADO
+        1.314 com o prazo de proposta ainda EM PE
+          307 dessas abertas a Administracao Publica Municipal
+           17 PROGRAMAS distintos  <- o numero que cabe numa tela
+
+⚠️ "DISPONIBILIZADO" SOZINHO NAO E OPORTUNIDADE. Um milhao de linhas trazem essa
+situacao — o campo diz que o programa foi publicado algum dia, e nao que da para
+propor hoje. O corte que importa e a DATA: `DT_PROG_FIM_RECEB_PROP >= hoje`.
+Filtrar so pela situacao devolveria um catalogo historico com cara de radar.
+
+⚠️ O ARQUIVO REPETE O PROGRAMA UMA VEZ POR UF HABILITADA. As 307 linhas
+municipais sao 17 programas. Este coletor AGRUPA por ID_PROGRAMA e junta as UFs
+num array — a tabela guarda 17 linhas, nao 307.
+
+⚠️ E A UF E RESTRICAO DE VERDADE. Dos 17, 8 valem para o Brasil inteiro e 9 sao
+regionais ("INFRA-ESTRUTURA BASICA SR(RS)" so aceita municipio gaucho). Ignorar
+`UF_PROGRAMA` faria a tela oferecer a um prefeito mineiro uma porta que nao abre.
+
+⚠️ SEM ROSTO PROPRIO NO ARQUIVO: nao ha valor, teto, nem dotacao. O radar diz
+QUE existe e ATE QUANDO — nao quanto. Inventar um valor seria pior que omitir.
+
+Rodar:  DATABASE_URL_SYNC=... python -u ingestion/programas_captacao.py
+"""
+from __future__ import annotations
+
+import json
+import logging
+import os
+import sys
+from datetime import date, datetime
+
+import psycopg2
+
+# ⚠️ SEM ESTA LINHA O COLETOR NAO SOBE DO JEITO QUE O CRON O CHAMA. O comando da
+# Scheduled Task e `python -u ingestion/programas_captacao.py`, que poe
+# `backend/ingestion/` em sys.path[0] — e nao `backend/`. Logo
+# `import ingestion.transferegov_opendata` levanta ModuleNotFoundError na
+# PRIMEIRA linha, antes de qualquer log: a task morre calada e a tabela fica
+# vazia para sempre, sem uma linha em `ingestion_log` para acusar.
+# Todos os outros coletores deste diretorio fazem exatamente isto (ver
+# `fns_scraper.py`, `che_rs.py`, `convenios_rs.py`); este ficou de fora e o
+# defeito so aparecia rodando o comando REAL, nao o `pytest`.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from ingestion.transferegov_opendata import _linhas  # noqa: E402
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+log = logging.getLogger("programas_captacao")
+
+FONTE = "programas_captacao"
+ARQUIVO = "siconv_programa.zip"
+
+# As duas naturezas que interessam a uma prefeitura. O consorcio entra porque
+# muitos municipios captam por ele; a TELA filtra so o que a prefeitura propoe
+# direto — ver o cabecalho da migration.
+NATUREZAS = ("Administração Pública Municipal", "Consórcio Público")
+
+
+def _dsn() -> str:
+    u = os.getenv("DATABASE_URL_SYNC", "") or os.getenv("DATABASE_URL", "").replace("+asyncpg", "")
+    return u.replace("&channel_binding=require", "").replace("?channel_binding=require", "")
+
+
+def data_br(s) -> date | None:
+    """dd/mm/aaaa (o formato do arquivo) ou ISO. Funcao PURA.
+
+    ⚠️ Devolve None em qualquer coisa que nao seja data. Um `DT_PROG_FIM_RECEB`
+    ilegivel NAO pode virar "hoje" nem "2099" por acidente: o primeiro sumiria
+    com o programa da tela, o segundo o deixaria aberto para sempre.
+    """
+    s = (s or "").strip()
+    if not s:
+        return None
+    for f in ("%d/%m/%Y", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(s[:10], f).date()
+        except ValueError:
+            pass
+    return None
+
+
+def agrupa(linhas, hoje: date) -> dict[str, dict]:
+    """As linhas (programa x UF) viram um dicionario por programa. PURA.
+
+    O corte inteiro do radar mora aqui: situacao DISPONIBILIZADO, natureza de
+    interesse, e prazo de proposta ainda EM PE.
+    """
+    progs: dict[str, dict] = {}
+    for l in linhas:
+        if (l.get("SIT_PROGRAMA") or "").strip() != "DISPONIBILIZADO":
+            continue
+        nat = (l.get("NATUREZA_JURIDICA_PROGRAMA") or "").strip()
+        if nat not in NATUREZAS:
+            continue
+        fim = data_br(l.get("DT_PROG_FIM_RECEB_PROP"))
+        if fim is None or fim < hoje:
+            continue
+        pid = (l.get("ID_PROGRAMA") or "").strip()
+        if not pid:
+            continue
+
+        p = progs.get(pid)
+        if p is None:
+            p = progs[pid] = {
+                "id_programa": pid,
+                "cod_programa": (l.get("COD_PROGRAMA") or "").strip() or None,
+                "nome": (l.get("NOME_PROGRAMA") or "").strip(),
+                "orgao": (l.get("DESC_ORGAO_SUP_PROGRAMA") or "").strip() or None,
+                "cod_orgao": (l.get("COD_ORGAO_SUP_PROGRAMA") or "").strip() or None,
+                "modalidade": (l.get("MODALIDADE_PROGRAMA") or "").strip() or None,
+                "acao_orcamentaria": (l.get("ACAO_ORCAMENTARIA") or "").strip() or None,
+                "subtipo": (l.get("NOME_SUBTIPO_PROGRAMA") or "").strip() or None,
+                "dt_ini_receb": data_br(l.get("DT_PROG_INI_RECEB_PROP")),
+                "dt_fim_receb": fim,
+                "dt_ini_emenda": data_br(l.get("DT_PROG_INI_EMENDA_PAR")),
+                "dt_fim_emenda": data_br(l.get("DT_PROG_FIM_EMENDA_PAR")),
+                "dt_disponibilizacao": data_br(l.get("DATA_DISPONIBILIZACAO")),
+                "ano_disponibilizacao": _int(l.get("ANO_DISPONIBILIZACAO")),
+                "naturezas": set(),
+                "ufs": set(),
+                "raw": l,
+            }
+        p["naturezas"].add(nat)
+        uf = (l.get("UF_PROGRAMA") or "").strip().upper()
+        if uf:
+            p["ufs"].add(uf)
+        # ⚠️ O PRAZO QUE VALE E O MAIS LONGO ENTRE AS LINHAS DO MESMO PROGRAMA.
+        # Encurtar o programa inteiro pela linha mais restritiva o faria sumir
+        # da tela de quem ainda tem prazo. As UFs ficam no array; a data e a do
+        # programa.
+        #
+        # ⚠️ E ISSO SO E HONESTO ENQUANTO AS DATAS NAO DIVERGIREM POR UF.
+        # Medido em 02/09/2026: dos 17 programas abertos, ZERO trazem prazos
+        # diferentes entre as UFs — a coluna e do programa, nao do par
+        # (programa, UF). Se um dia divergir, guardar so a maior faria a tela
+        # anunciar a um municipio um prazo que nao e dele, e a tabela teria de
+        # passar a ser por (programa, UF). O `divergentes` abaixo existe para
+        # esse dia CHEGAR COM AVISO em vez de em silencio.
+        if fim != p["dt_fim_receb"]:
+            p["_prazos_divergentes"] = True
+            if fim > p["dt_fim_receb"]:
+                p["dt_fim_receb"] = fim
+
+    divergentes = [p["id_programa"] for p in progs.values()
+                   if p.pop("_prazos_divergentes", False)]
+    if divergentes:
+        log.warning(
+            f"⚠️ {len(divergentes)} programa(s) com PRAZO DIFERENTE entre UFs "
+            f"({', '.join(divergentes[:5])}). A tabela guarda um prazo por "
+            f"PROGRAMA e passou a mostrar o mais longo para todas as UFs — "
+            f"revise se a chave precisa virar (programa, UF).")
+    return progs
+
+
+def _int(x):
+    try:
+        return int(str(x).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+_SQL = """
+    INSERT INTO programas_captacao
+        (id_programa, cod_programa, nome, orgao, cod_orgao, modalidade,
+         naturezas, ufs, acao_orcamentaria, subtipo, dt_ini_receb, dt_fim_receb,
+         dt_ini_emenda, dt_fim_emenda, dt_disponibilizacao, ano_disponibilizacao,
+         raw_data, visto_em, ausente_desde, updated_at)
+    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,NOW(),NULL,NOW())
+    ON CONFLICT (id_programa) DO UPDATE SET
+        cod_programa=EXCLUDED.cod_programa, nome=EXCLUDED.nome,
+        orgao=EXCLUDED.orgao, cod_orgao=EXCLUDED.cod_orgao,
+        modalidade=EXCLUDED.modalidade, naturezas=EXCLUDED.naturezas,
+        ufs=EXCLUDED.ufs, acao_orcamentaria=EXCLUDED.acao_orcamentaria,
+        subtipo=EXCLUDED.subtipo, dt_ini_receb=EXCLUDED.dt_ini_receb,
+        dt_fim_receb=EXCLUDED.dt_fim_receb, dt_ini_emenda=EXCLUDED.dt_ini_emenda,
+        dt_fim_emenda=EXCLUDED.dt_fim_emenda,
+        dt_disponibilizacao=EXCLUDED.dt_disponibilizacao,
+        ano_disponibilizacao=EXCLUDED.ano_disponibilizacao,
+        raw_data=EXCLUDED.raw_data, visto_em=NOW(),
+        -- ⚠️ RESSUSCITA. Programa que voltou a ser oferecido volta para a tela;
+        -- sem este NULL ele ficaria marcado como ausente para sempre.
+        ausente_desde=NULL, updated_at=NOW()
+"""
+
+
+def hoje_br() -> date:
+    """O "hoje" de Brasilia, e nao o do container.
+
+    ⚠️ O CONTAINER RODA EM UTC e o pais que le a tela esta 3 horas atras. Entre
+    21h e meia-noite de Brasilia o `date.today()` do container ja virou o dia —
+    e um programa que fecha HOJE sumiria do radar na noite anterior, justamente
+    nas horas em que alguem correndo atras do prazo iria olhar.
+
+    Sem `zoneinfo` disponivel (imagem enxuta), cai no deslocamento fixo de -3h:
+    o Brasil nao tem mais horario de verao desde 2019, entao o offset e estavel.
+    """
+    from datetime import datetime, timedelta, timezone
+    try:
+        from zoneinfo import ZoneInfo
+        return datetime.now(ZoneInfo("America/Sao_Paulo")).date()
+    except Exception:
+        return (datetime.now(timezone.utc) - timedelta(hours=3)).date()
+
+
+def run() -> int:
+    hoje = hoje_br()
+    progs = agrupa(_linhas(ARQUIVO), hoje)
+    log.info(f"programas abertos hoje ({hoje:%d/%m/%Y}): {len(progs)}")
+
+    # ⚠️ RODADA VAZIA NAO MARCA NADA COMO AUSENTE. Um download truncado, um
+    # layout mudado ou uma queda do TransfereGov devolvem zero programa — e
+    # marcar tudo ausente esvaziaria o radar inteiro por causa de uma falha
+    # nossa. Sem dado, o certo e sair reclamando e deixar a tela como estava.
+    cn = psycopg2.connect(_dsn())
+    cur = cn.cursor()
+    sumiram = 0
+    parcial = None
+    incompleta = None
+    # ⚠️ UM `try/finally` PARA A LINHA DO `ingestion_log` SAIR SEMPRE. Sem ele,
+    # excecao no meio (Postgres fora, `timeout` do cron, zip corrompido) saia
+    # sem gravar nada — e o monitor de frescor nao ve rodada que nao logou: a
+    # fonte envelheceria em silencio, o defeito que este arquivo existe para
+    # nao repetir.
+    try:
+        if not progs:
+            # ⚠️ RODADA VAZIA NAO MARCA NADA COMO AUSENTE. Download truncado,
+            # layout mudado ou TransfereGov fora do ar devolvem zero programa —
+            # marcar tudo ausente esvaziaria o radar inteiro por causa de uma
+            # falha NOSSA. Sem dado, o certo e sair reclamando e deixar a tela
+            # como estava.
+            log.error("ZERO programas: NAO marquei ausencia. Confira o arquivo.")
+            return 0
+
+        for p in progs.values():
+            cur.execute(_SQL, (
+                p["id_programa"], p["cod_programa"], p["nome"], p["orgao"], p["cod_orgao"],
+                p["modalidade"], sorted(p["naturezas"]), sorted(p["ufs"]),
+                p["acao_orcamentaria"], p["subtipo"], p["dt_ini_receb"], p["dt_fim_receb"],
+                p["dt_ini_emenda"], p["dt_fim_emenda"], p["dt_disponibilizacao"],
+                p["ano_disponibilizacao"], json.dumps(p["raw"], ensure_ascii=False)))
+        cn.commit()
+
+        # ⚠️ PISO PROPORCIONAL ANTES DE MARCAR AUSENCIA — nao basta guardar o
+        # zero. A rodada vazia ja e barrada la em cima, mas o caso perigoso e o
+        # PARCIAL: um arquivo truncado que descomprime e traz 2 dos 17
+        # programas passa pelo `if not progs` e derruba 15 de uma vez. Ai o
+        # radar esvazia quase todo, a tela diz "nenhum programa aberto para a
+        # sua UF hoje" — frase que se le como informacao, nao como falha — e a
+        # rodada seguinte demora um dia para ressuscitar. E o mesmo cuidado que
+        # o `sismob_obras` ja toma; aqui ele faltava.
+        cur.execute("SELECT count(*) FROM programas_captacao "
+                    "WHERE ausente_desde IS NULL")
+        ativos = (cur.fetchone() or [0])[0] or 0
+        sumiram = 0
+        if ativos and len(progs) < ativos * 0.5:
+            log.error(
+                f"⚠️ a rodada trouxe {len(progs)} programa(s) contra {ativos} "
+                f"ativos no banco — queda de mais da metade. NAO marquei "
+                f"ausencia: suspeita de arquivo parcial. Os dados novos foram "
+                f"gravados; o que sumiu continua visivel ate a proxima rodada "
+                f"confirmar.")
+            parcial = (f"queda suspeita: {len(progs)} de {ativos} ativos — "
+                       f"ausencia NAO marcada")
+        else:
+            parcial = None
+            # Quem nao apareceu nesta rodada sai das telas, mas fica no banco.
+            cur.execute("UPDATE programas_captacao "
+                        "SET ausente_desde = COALESCE(ausente_desde, NOW()) "
+                        "WHERE ausente_desde IS NULL AND NOT (id_programa = ANY(%s))",
+                        (list(progs.keys()),))
+            sumiram = cur.rowcount
+        cn.commit()
+        log.info(f"radar: {len(progs)} programa(s) aberto(s), "
+                 f"{sumiram} marcado(s) como ausente(s)")
+        return len(progs)
+    except BaseException as e:  # inclui o SystemExit/KeyboardInterrupt do `timeout`
+        incompleta = f"{type(e).__name__}: {e}"[:300]
+        log.error(f"rodada interrompida: {incompleta}")
+        raise
+    finally:
+        if incompleta:
+            status, msg = "error", f"rodada interrompida ({incompleta})"
+        elif not progs:
+            status, msg = "error", ("nenhum programa aberto encontrado — nada foi "
+                                    "marcado como ausente; suspeita de arquivo ou layout")
+        else:
+            # ⚠️ QUEDA SUSPEITA NAO E 'success'. A rodada gravou dado bom, mas
+            # deixou de fazer metade do trabalho — e o monitor de frescor
+            # precisa acusar isso, senao a unica pista fica num log que
+            # ninguem le.
+            status = "partial" if parcial else "success"
+            msg = parcial or (f"{sumiram} programa(s) saiu(ram) do ar" if sumiram else None)
+        # ⚠️ O ROLLBACK VAI NUM `try` PROPRIO — ver o mesmo bloco em `fns_faf`.
+        # Junto do INSERT, uma falha dele levava embora a gravacao do log, que e
+        # a unica coisa que este bloco existe para garantir.
+        try:
+            cn.rollback()  # limpa o que a excecao deixou pendente
+        except Exception:
+            pass
+        try:
+            cur.execute("INSERT INTO ingestion_log (source, status, records_inserted, "
+                        "error_message, finished_at) VALUES (%s,%s,%s,%s,NOW())",
+                        (FONTE, status, len(progs), msg))
+            cn.commit()
+        except Exception as e2:
+            log.error(f"nao consegui gravar o ingestion_log: {e2}")
+        for fechar in (cur.close, cn.close):
+            try:
+                fechar()
+            except Exception:
+                pass
+
+
+# ⚠️ O `run_dadosabertos_cron` CHAMA `ingest()`, e nao `run()`. O laco dele faz
+# `m.ingest()` por convencao; sem este nome o modulo entraria na lista e
+# levantaria AttributeError, que o `except` do cron engole como aviso — a fonte
+# ficaria "registrada" e nunca coletaria, sem nada acusando.
+def ingest() -> int:
+    """Nome que o cron de dados abertos procura. Devolve o total, como os irmaos."""
+    return run()
+
+
+if __name__ == "__main__":
+    run()

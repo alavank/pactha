@@ -46,6 +46,21 @@ _SOURCES = [
     ("SISMOB — Obras da Saúde",
      "SELECT max(updated_at), count(*) FROM sismob_obras WHERE ausente_desde IS NULL",
      "sismob"),
+    # ⚠️ ENTROU AQUI NO MESMO COMMIT DO COLETOR, e não depois. Fonte que coleta
+    # sem aparecer no monitor é fonte que pode parar por meses sem ninguém ver —
+    # foi assim que `siconv_federal` ficou zerado em dois tenants. Federal, então
+    # vale para os cinco: fica na lista FIXA, e não numa das listas por UF.
+    ("FNS — Fundo a fundo (saúde)",
+     "SELECT max(updated_at), count(*) FROM fns_repasse_faf",
+     "fns_faf"),
+    # ⚠️ CONTA SÓ OS QUE ESTÃO NO AR. O radar guarda o programa que saiu de
+    # cartaz (marcado com `ausente_desde`, e não apagado); somá-los aqui faria o
+    # monitor crescer para sempre e nunca acusar um radar que parou de achar
+    # programa aberto — que é justamente o defeito a vigiar.
+    ("TransfereGov — Radar de captação",
+     "SELECT max(visto_em), count(*) FROM programas_captacao "
+     "WHERE ausente_desde IS NULL",
+     "programas_captacao"),
     # Duas fontes no ingestion_log: o run() diario ('transferegov_voluntarias')
     # e o lote horario ('transferegov_lote', quem de fato atualiza as propostas
     # ao longo do dia) — sem o lote aqui, um 'erro'/'parcial' persistente dele

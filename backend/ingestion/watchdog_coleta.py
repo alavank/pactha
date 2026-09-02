@@ -83,6 +83,20 @@ FRESCOR_HORAS_NACIONAL = {
     # hora em hora; 6h = seis rodadas sem 'success' (perdidas OU 'parcial'
     # persistente), que ja e problema real e nao ruido.
     "transferegov_lote": 6,
+    # FUNDO A FUNDO da saude (ConsultaFNS, publico). Scheduled Task propria, 1x
+    # por dia -> 30h = um dia + folga, o mesmo numero das outras diarias.
+    # ⚠️ NAO confundir com o irmao `fns` logo acima: aquele e a PROPOSTA
+    # (convenios_estadual, fonte='FNS'), este e o repasse ORDINARIO por bloco.
+    # Sao fontes diferentes, com coletores diferentes, e uma parada nao diz nada
+    # sobre a outra.
+    "fns_faf": 30,
+    # RADAR DE CAPTACAO (siconv_programa.zip). Pendurado no
+    # run_dadosabertos_cron.run_all(), que o cron do sigcon chama 4x/dia -> 6h
+    # entre rodadas. 30h = quase cinco janelas perdidas, o mesmo criterio do
+    # CAGEC. ⚠️ Ele grava 'error' quando a rodada volta VAZIA (zero programa
+    # aberto no Brasil nao e resultado plausivel), entao um arquivo que mudou de
+    # layout aparece aqui como fonte parada, e nao como sucesso silencioso.
+    "programas_captacao": 30,
 }
 
 # Fontes que so existem para certas UFs. A chave e a UF do TENANT (ha municipio

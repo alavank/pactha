@@ -1,0 +1,284 @@
+"""FUNDO A FUNDO da saude: o repasse do FNS ao Fundo Municipal, por bloco.
+
+O que a plataforma ja tinha do FNS era a PROPOSTA (`convenios_estadual` com
+fonte='FNS') — o extraordinario. Isto e o ORDINARIO: o dinheiro que sustenta a
+rede todo mes, por BLOCO e por GRUPO de financiamento.
+
+FONTE (PUBLICA, SEM LOGIN):
+    GET https://consultafns.saude.gov.br/recursos/consulta-consolidada/repasse-bloco
+        ?ano=2026&coMunicipioIbge=314340&coTipoRepasse=M&sgUf=MG&count=100&page=1
+
+⚠️ COMO ESTE ENDERECO FOI ACHADO, porque a historia importa para o proximo que
+mexer aqui. Uma primeira investigacao SONDOU os enderecos por adivinhacao
+(`/recursos/consulta-detalhada/*`, `/recursos/consolidada`) e concluiu, com
+`{}` e HTTP 400 na mao, que "nao ha caminho publico para o fundo a fundo". A
+conclusao foi PUBLICADA e estava errada. O caminho apareceu ao ABRIR A TELA
+(`consultafns.saude.gov.br/#/consolidada`) e ler as chamadas que ela mesma faz.
+A licao, valida para qualquer portal de governo deste repo: **quando a API nao
+responde, abra a tela antes de declarar que nao existe caminho.**
+
+⚠️ O CAMINHO-PAI DA 404. `/recursos/consulta-consolidada` sozinho responde 404;
+so o recurso-folha (`/repasse-bloco`) existe. Sondar o pai e concluir pela
+ausencia foi exatamente o erro acima.
+
+⚠️ A RESPOSTA E UMA ARVORE E A TABELA E PLANA. Cada bloco traz `repasses[]` com
+os grupos. Bloco SEM grupo detalhado vira uma linha com `grupo_codigo = 0`, para
+o total nao se perder — e nao ser confundido com um grupo real.
+
+⚠️ A LATENCIA DO PORTAL VARIA MUITO, e o orcamento tem de caber no pior caso.
+Duas medicoes no MESMO dia (02/09/2026), com o mesmo cliente:
+
+    janela A,  8 consultas: 10 a 38s cada
+    janela B, 40 consultas: mediana 0,7s | p90 1,0s | p99 12,5s | zero falha
+
+Nao ha contradicao: o portal e rapido quase sempre e entra em janelas ruins. Na
+janela boa o freitas (60 municipios x 2 anos) roda em ~4,5 min; na ruim, ~53.
+Por isso timeout generoso, pausa entre consultas e tratamento de falha POR
+MUNICIPIO — uma janela ruim nao pode derrubar a rodada inteira, e o que ficou
+para tras sai como `partial` no ingestion_log, nao como sucesso.
+
+⚠️ E POR ISSO A PRIMEIRA MEDICAO NAO VIROU REGRA. Oito amostras numa janela ruim
+quase viraram "o portal e lento" no cabecalho deste arquivo e no cron. Numero
+medido uma vez so, em janela unica, e anedota — nao caracteriza a fonte.
+
+Rodar:  DATABASE_URL_SYNC=... python -u ingestion/fns_faf.py
+        FNS_FAF_ANOS=3  -> coleta os 3 ultimos anos (padrao: 1, o corrente)
+"""
+from __future__ import annotations
+
+import json
+import logging
+import os
+import time
+from datetime import date
+
+import httpx
+import psycopg2
+from psycopg2.extras import Json
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+log = logging.getLogger("fns_faf")
+
+BASE = "https://consultafns.saude.gov.br/recursos"
+UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+      "Accept": "application/json, text/plain, */*"}
+FONTE = "fns_faf"
+TIMEOUT = float(os.getenv("FNS_FAF_TIMEOUT", "120") or "120")
+PAUSA = float(os.getenv("FNS_FAF_PAUSA", "1.5") or "1.5")
+ANOS = max(1, int(os.getenv("FNS_FAF_ANOS", "1") or "1"))
+
+
+def _dsn() -> str:
+    u = os.getenv("DATABASE_URL_SYNC", "") or os.getenv("DATABASE_URL", "").replace("+asyncpg", "")
+    return u.replace("&channel_binding=require", "").replace("?channel_binding=require", "")
+
+
+_SQL = """
+    INSERT INTO fns_repasse_faf
+        (municipio_id, ano, tipo_repasse, bloco_codigo, bloco_nome,
+         grupo_codigo, grupo_nome, vl_total, vl_desconto, vl_liquido,
+         raw_data, updated_at)
+    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,NOW())
+    ON CONFLICT (municipio_id, ano, tipo_repasse, bloco_codigo, grupo_codigo)
+    DO UPDATE SET
+        bloco_nome=EXCLUDED.bloco_nome, grupo_nome=EXCLUDED.grupo_nome,
+        -- ⚠️ SOBRESCRITA DIRETA, sem COALESCE: o valor do ano em curso CRESCE a
+        -- cada competencia paga. Um COALESCE congelaria o numero da primeira
+        -- coleta e a serie pararia no lugar, em silencio.
+        vl_total=EXCLUDED.vl_total, vl_desconto=EXCLUDED.vl_desconto,
+        vl_liquido=EXCLUDED.vl_liquido,
+        raw_data=EXCLUDED.raw_data, updated_at=NOW()
+"""
+
+
+def _num(x):
+    """None continua None; numero vira float. '' e ausencia, nao zero."""
+    if x is None or x == "":
+        return None
+    try:
+        return float(x)
+    except (TypeError, ValueError):
+        return None
+
+
+def achata(resultado) -> list[dict]:
+    """A arvore bloco->grupo vira lista de linhas. Funcao PURA (testavel).
+
+    ⚠️ Bloco sem grupo detalhado NAO e descartado: vira uma linha com
+    `grupo_codigo = 0` e o nome do proprio bloco. Descartar perderia o total; e
+    usar o codigo de um grupo real inventaria detalhamento que o portal nao deu.
+    """
+    linhas = []
+    for bloco in (resultado or []):
+        if not isinstance(bloco, dict):
+            continue
+        bcod = bloco.get("codigo")
+        bnome = (bloco.get("nome") or "").strip() or None
+        if bcod is None:
+            continue
+        grupos = [g for g in (bloco.get("repasses") or []) if isinstance(g, dict)]
+        if not grupos:
+            linhas.append({"bloco_codigo": int(bcod), "bloco_nome": bnome,
+                           "grupo_codigo": 0, "grupo_nome": bnome,
+                           "vl_total": _num(bloco.get("vlTotal")),
+                           "vl_desconto": _num(bloco.get("vlDesconto")),
+                           "vl_liquido": _num(bloco.get("vlLiquido")),
+                           "raw": bloco})
+            continue
+        for g in grupos:
+            gcod = g.get("codigo")
+            if gcod is None:
+                continue
+            linhas.append({"bloco_codigo": int(bcod), "bloco_nome": bnome,
+                           "grupo_codigo": int(gcod),
+                           "grupo_nome": (g.get("nome") or "").strip() or None,
+                           "vl_total": _num(g.get("vlTotal")),
+                           "vl_desconto": _num(g.get("vlDesconto")),
+                           "vl_liquido": _num(g.get("vlLiquido")),
+                           "raw": g})
+    return linhas
+
+
+def busca(cli: httpx.Client, ano: int, ibge6: str, uf: str) -> list | None:
+    """None = a consulta FALHOU (nao confundir com lista vazia = sem repasse)."""
+    try:
+        r = cli.get(f"{BASE}/consulta-consolidada/repasse-bloco",
+                    params={"ano": ano, "coMunicipioIbge": ibge6, "coTipoRepasse": "M",
+                            "sgUf": uf, "count": 100, "page": 1})
+    except Exception as e:
+        log.warning(f"  {ibge6}/{ano}: {type(e).__name__}")
+        return None
+    if r.status_code != 200:
+        log.warning(f"  {ibge6}/{ano}: HTTP {r.status_code}")
+        return None
+    if "json" not in r.headers.get("content-type", "").lower():
+        # 200 com HTML e a assinatura de muro/erro, nao de "sem dado"
+        log.warning(f"  {ibge6}/{ano}: resposta nao-JSON ({len(r.content)}B)")
+        return None
+    try:
+        corpo = r.json()
+    except Exception:
+        log.warning(f"  {ibge6}/{ano}: JSON ilegivel")
+        return None
+    # ⚠️ JSON VALIDO SEM `resultado` NAO E "SEM REPASSE". Era `.get(...) or []`,
+    # e isso fazia qualquer 200 fora do formato — um envelope de erro, uma
+    # resposta de outro endpoint — passar por "consultei e nao ha nada". O
+    # municipio sumia da lista de falhas e a rodada se declarava completa.
+    if not isinstance(corpo, dict) or "resultado" not in corpo:
+        log.warning(f"  {ibge6}/{ano}: JSON sem o campo `resultado`")
+        return None
+    return corpo.get("resultado") or []
+
+
+def run() -> int:
+    cn = psycopg2.connect(_dsn())
+    cur = cn.cursor()
+    # ⚠️ `uf` TAMBEM E OBRIGATORIA, e nao so o ibge. Sem ela o coletor mandava
+    # `sgUf=NONE` (o `str(None).upper()`) e o portal respondia 400 — o municipio
+    # entrava na lista de falhas por um defeito de cadastro NOSSO, disfarcado de
+    # instabilidade da fonte. Melhor nem consultar e dizer quantos ficaram fora.
+    #
+    # ⚠️ E a ORDEM E POR STALENESS, nao alfabetica. Numa janela ruim do portal a
+    # rodada pode ser cortada pelo `timeout` do cron, e `ORDER BY nome` fazia a
+    # MESMA cauda do alfabeto ser sempre a sacrificada — os ultimos municipios
+    # nunca coletariam. Quem esta ha mais tempo sem dado vai primeiro.
+    cur.execute("""
+        SELECT m.id, m.nome, m.ibge_code, m.uf
+          FROM municipios m
+          LEFT JOIN (SELECT municipio_id, max(updated_at) AS visto
+                       FROM fns_repasse_faf GROUP BY municipio_id) f
+                 ON f.municipio_id = m.id
+         WHERE coalesce(m.active, true)
+           AND m.ibge_code IS NOT NULL AND btrim(m.ibge_code) <> ''
+           AND m.uf IS NOT NULL AND btrim(m.uf) <> ''
+         ORDER BY f.visto ASC NULLS FIRST, m.nome
+    """)
+    muns = cur.fetchall()
+    anos = [date.today().year - i for i in range(ANOS)]
+    log.info(f"FNS fundo a fundo: {len(muns)} municipio(s) x {len(anos)} ano(s) {anos}")
+
+    total = 0
+    falhas = []
+    incompleta = None
+    # ⚠️ O `try/finally` EXISTE PARA A LINHA DO `ingestion_log` SAIR SEMPRE.
+    # Sem ele, uma excecao no meio (Postgres caiu, o `timeout` do cron matou,
+    # o portal derrubou a conexao) saia sem gravar NADA — e o monitor de frescor
+    # nao ve rodada que nao logou: a fonte ficaria envelhecendo em silencio, que
+    # e exatamente o defeito que este coletor foi escrito para nao repetir.
+    try:
+        with httpx.Client(headers=UA, timeout=TIMEOUT, follow_redirects=True) as cli:
+            for mid, nome, ibge, uf in muns:
+                ibge6 = str(ibge).strip()[:6]
+                for ano in anos:
+                    res = busca(cli, ano, ibge6, str(uf).strip().upper())
+                    if res is None:
+                        falhas.append(f"{nome}/{ano}")
+                        # ⚠️ A PAUSA VALE SOBRETUDO DEPOIS DA FALHA. Ela ficava
+                        # so no caminho feliz, entao o coletor martelava mais
+                        # rapido justamente quando o portal estava ruim — e ja
+                        # ha precedente neste projeto de IP penalizado por
+                        # martelada (a quota do TransfereGov, 17/08).
+                        time.sleep(PAUSA)
+                        continue
+                    linhas = achata(res)
+                    for l in linhas:
+                        cur.execute(_SQL, (mid, ano, "M", l["bloco_codigo"], l["bloco_nome"],
+                                           l["grupo_codigo"], l["grupo_nome"], l["vl_total"],
+                                           l["vl_desconto"], l["vl_liquido"],
+                                           json.dumps(l["raw"], ensure_ascii=False)))
+                    total += len(linhas)
+                    if linhas:
+                        soma = sum(x["vl_total"] or 0 for x in linhas)
+                        log.info(f"  {nome}/{ano}: {len(linhas)} linha(s), R$ {soma:,.2f}")
+                    time.sleep(PAUSA)
+                cn.commit()
+    except BaseException as e:  # inclui KeyboardInterrupt/SystemExit do `timeout`
+        incompleta = f"{type(e).__name__}: {e}"[:300]
+        log.error(f"rodada interrompida: {incompleta}")
+        raise
+    finally:
+        # ⚠️ ZERO E ERRO, NAO SUCESSO VAZIO. Tres dos quatro coletores auditados
+        # em 31/08 gravavam 'success' cravado e pintavam verde sobre rodada
+        # vazia; a tela de Status dos Dados mentia junto. Aqui o status sai do
+        # que saiu — e rodada interrompida e 'error', mesmo tendo gravado linha.
+        if incompleta:
+            status = "error"
+        elif total == 0:
+            status = "error"
+        elif falhas:
+            status = "partial"
+        else:
+            status = "success"
+        partes = []
+        if incompleta:
+            partes.append(f"rodada interrompida ({incompleta})")
+        if falhas:
+            partes.append(f"{len(falhas)} municipio(s)-ano sem resposta: "
+                          + ", ".join(falhas[:8]))
+        # ⚠️ O ROLLBACK VAI NUM `try` PROPRIO. Junto do INSERT, qualquer falha
+        # dele — conexao ja morta, driver sem o metodo — levava embora tambem a
+        # gravacao do log, que e a unica coisa que este bloco existe para
+        # garantir. Foi um teste que expos isso: bastou um fake sem `rollback`.
+        try:
+            cn.rollback()  # descarta o que a excecao deixou pendente
+        except Exception:
+            pass
+        try:
+            cur.execute("INSERT INTO ingestion_log (source, status, records_inserted, "
+                        "error_message, finished_at) VALUES (%s,%s,%s,%s,NOW())",
+                        (FONTE, status, total, " | ".join(partes) or None))
+            cn.commit()
+        except Exception as e2:
+            log.error(f"nao consegui gravar o ingestion_log: {e2}")
+        for fechar in (cur.close, cn.close):
+            try:
+                fechar()
+            except Exception:
+                pass
+        log.info(f"FNS fundo a fundo: FIM — {total} linha(s), "
+                 f"{len(falhas)} falha(s), status={status}")
+    return total
+
+
+if __name__ == "__main__":
+    run()
