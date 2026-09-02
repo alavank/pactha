@@ -32,10 +32,53 @@ async function getConfig() {
   });
 }
 
-async function saveConfig(api, token) {
-  return new Promise((res) => {
-    chrome.storage.local.set({ pactha_api: api, pactha_token: token }, res);
+/* `saveConfig` FOI REMOVIDA. Ela gravava o par `pactha_api`/`pactha_token`, que
+ * a lista de ambientes substituiu, e ficou sem nenhum chamador — funcao morta
+ * que ainda escrevia a chave da qual o resto do codigo dependia por engano.
+ * `lerAmbientes()` continua LENDO `pactha_token` uma unica vez, para migrar o
+ * token de quem ja usava a versao antiga; ver `ambientes.js`. */
+
+/** Desenha um campo de token por AMBIENTE.
+ *
+ * ⚠️ UM TOKEN POR AMBIENTE, e nao um so: os service tokens vivem no banco de
+ * cada tenant, entao nao existe chave que sirva para os cinco. Era isso que
+ * tornava a configuracao um ritual de cinco passos — a lista nao remove o
+ * trabalho de colar cinco chaves, mas o transforma em UMA tela, feita uma vez,
+ * em vez de cinco reconfiguracoes toda vez que a sessao cai.
+ */
+async function desenharAmbientes() {
+  const lista = await lerAmbientes();
+  const box = $("cfg-ambientes");
+  if (!box) return;
+  box.innerHTML = "";
+  lista.forEach((amb, i) => {
+    const linha = document.createElement("div");
+    linha.className = "amb-linha";
+    const rot = document.createElement("label");
+    rot.textContent = amb.nome;
+    const inp = document.createElement("input");
+    inp.type = "password";
+    inp.placeholder = "pactha_st_…";
+    inp.value = amb.token || "";
+    inp.dataset.idx = String(i);
+    inp.className = "amb-token";
+    // O ambiente sem token fica marcado: e a diferenca entre "nao configurei"
+    // e "configurei e falhou", e as duas pedem acoes diferentes.
+    if (!amb.token) rot.textContent += "  (sem token)";
+    linha.appendChild(rot);
+    linha.appendChild(inp);
+    box.appendChild(linha);
   });
+}
+
+async function salvarTokensDaTela() {
+  const lista = await lerAmbientes();
+  document.querySelectorAll(".amb-token").forEach((inp) => {
+    const i = parseInt(inp.dataset.idx, 10);
+    if (lista[i]) lista[i].token = inp.value.trim();
+  });
+  await salvarAmbientes(lista);
+  return lista;
 }
 
 function showStatus(msg, kind) {
@@ -92,9 +135,15 @@ async function getAllCookiesForDomain(host) {
 }
 
 async function captureManual() {
-  const cfg = await getConfig();
-  if (!cfg.token) {
-    showStatus("Configure o token PACTHA primeiro", "error");
+  /* ⚠️ O PORTEIRO OLHA A LISTA, e não o `pactha_token` antigo. Depois da
+     migração para multi-ambiente o token único fica VAZIO — quem continuasse
+     barrando por ele recusaria a captura com "configure o token primeiro"
+     mesmo com os cinco ambientes preenchidos, e a mensagem mandaria a pessoa
+     configurar o que já estava configurado. */
+  const ambientes = await lerAmbientes();
+  const comToken = ambientes.filter((a) => a.token && a.ativo !== false);
+  if (!comToken.length) {
+    showStatus("Nenhum ambiente com token. Abra «Configurar ambientes».", "error");
     return;
   }
   const tab = await getCurrentTab();
@@ -126,22 +175,21 @@ async function captureManual() {
     domain_capturado: host,
   };
   try {
-    // Ver nota em background.js: aceita 'pactha_' e o antigo 'pacta_'.
-    const isServiceToken = cfg.token.startsWith("pactha_") || cfg.token.startsWith("pacta_");
-    const authHeaders = isServiceToken
-      ? { "X-Service-Token": cfg.token }
-      : { Authorization: `Bearer ${cfg.token}` };
-    const res = await fetch(`${cfg.api}/session-capture`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...authHeaders },
-      body: JSON.stringify(payload),
-    });
-    if (res.status === 401) { showStatus("Token PACTHA invalido. Reconfigure.", "error"); return; }
-    if (!res.ok) { showStatus(`Erro ${res.status}`, "error"); return; }
-    const data = await res.json();
+    // ⚠️ TODOS OS AMBIENTES, e a lista de resultados aparece NOMEADA. O defeito
+    // que isto conserta e o sucesso parcial invisivel — ver `ambientes.js`.
+    const lista = await lerAmbientes();
+    const resultados = await enviarParaTodos(payload, lista);
+    if (!resultados.length) {
+      showStatus("Nenhum ambiente configurado. Abra «Configurar ambientes».", "error");
+      return;
+    }
+    const ruins = resultados.filter((r) => !r.ok);
+    const linhas = resultados
+      .map((r) => `${r.ok ? "OK" : "FALHOU"} ${r.nome}${r.ok ? "" : " — " + r.detalhe}`)
+      .join("\n");
     showStatus(
-      `OK! ${cookies.length} cookies (${httpOnly} httpOnly) ${data.auto_scrape_started ? "+ scraper disparado" : ""}`,
-      "success"
+      `${cookies.length} cookies (${httpOnly} httpOnly) para ${resumoEnvio(resultados)}\n${linhas}`,
+      ruins.length ? (ruins.length === resultados.length ? "error" : "info") : "success"
     );
   } catch (e) {
     showStatus(`Erro: ${e.message}`, "error");
@@ -164,13 +212,56 @@ async function refreshLastCapture() {
     return;
   }
   const lc = cfg.last_capture;
-  if (lc.ok) {
-    el.innerHTML = `✓ Última: <strong>${lc.host}</strong> · ${lc.n} cookies (${lc.httpOnly} httpOnly) · ${fmtTimeAgo(lc.at)}${lc.auto_scrape ? " · scraper disparado" : ""}`;
+
+  /* ⚠️ O FORMATO MUDOU E O LEITOR NAO TINHA ACOMPANHADO. A auto-captura passou
+     a gravar `{quando, cookies, ambientes_ok, ambientes_total, falhas}` e esta
+     funcao ainda lia `{at, n, ok}` — o card mostraria "undefined cookies" e
+     "NaNs atras", e as `falhas` (que a mudanca grava DE PROPOSITO, nomeadas)
+     nunca chegariam a tela. Dado gravado que ninguem le nao muda nada: e o
+     mesmo defeito de "coluna cheia sem consumidor" que este projeto ja teve.
+     Aceita os DOIS formatos porque o storage pode ter uma captura antiga
+     gravada antes desta versao. */
+  const quando = lc.quando ? Date.parse(lc.quando) : lc.at;
+  const nCookies = lc.cookies != null ? lc.cookies : lc.n;
+  const houveFalha = lc.ok === false;
+
+  if (houveFalha) {
+    el.innerHTML = `✗ Última falhou: ${lc.host} · ${lc.error || "erro"} · ${fmtTimeAgo(quando)}`;
     el.className = "info";
-  } else {
-    el.innerHTML = `✗ Última falhou: ${lc.host} · ${lc.error} · ${fmtTimeAgo(lc.at)}`;
-    el.className = "info";
+    return;
   }
+
+  const falhas = Array.isArray(lc.falhas) ? lc.falhas : [];
+  const alcance = lc.ambientes_total
+    ? `${lc.ambientes_ok} de ${lc.ambientes_total} ambiente(s)`
+    : "";
+
+  /* ⚠️ ZERO AMBIENTES NÃO É "✓". Antes, uma captura que falhou nos CINCO
+     desenhava o mesmo cartão de sucesso — o `✓` é escrito logo abaixo sem olhar
+     `ambientes_ok`, e `lc.ok === false` só cobre o erro de rede, que nunca
+     ocorre porque `enviarParaTodos` trata cada alvo no seu próprio try.
+     Combinado com o `if (bons.length)` que havia no background (e que também
+     saiu), a falha total era duplamente invisível: não gravava, e se gravasse
+     desenhava verde. */
+  if (lc.ambientes_total && !lc.ambientes_ok) {
+    el.innerHTML =
+      `✗ Última NÃO gravou em nenhum ambiente · ${lc.host} · ${fmtTimeAgo(quando)}`
+      + (falhas.length ? `<br><span style="opacity:.85">${falhas.join(" · ")}</span>` : "");
+    el.className = "info";
+    return;
+  }
+
+  el.innerHTML =
+    `${falhas.length ? "⚠" : "✓"} Última: <strong>${lc.host}</strong> · ${nCookies} cookies`
+    + (lc.httpOnly != null ? ` (${lc.httpOnly} httpOnly)` : "")
+    + (alcance ? ` · ${alcance}` : "")
+    + ` · ${fmtTimeAgo(quando)}`
+    // ⚠️ AS FALHAS APARECEM NOMEADAS. "4 de 5" sozinho e um numero sem acao:
+    // quem le nao sabe QUAL refazer.
+    + (falhas.length
+      ? `<br><span style="opacity:.85">falhou em: ${falhas.join(" · ")}</span>`
+      : "");
+  el.className = "info";
 }
 
 async function init() {
@@ -192,7 +283,22 @@ async function init() {
   // Mostra para onde a captura vai de fato. Sem isso, uma config antiga salva
   // apontando para um host fora do host_permissions falha silenciosamente (o
   // Chrome bloqueia o fetch) e nao ha como diagnosticar pela interface.
-  $("api-info").textContent = `API: ${cfg.api}${cfg.token ? "" : "  (sem token configurado)"}`;
+  /* ⚠️ MOSTRA QUANTOS AMBIENTES A CAPTURA ALCANÇA, e nomeia os que ficam de
+     fora. A versão anterior exibia UMA API — o que, num mundo de cinco
+     tenants, é a informação errada: dizia "API: freitas" e a pessoa concluía,
+     corretamente para aquela tela e erradamente para o produto, que a captura
+     estava resolvida. */
+  const ambs = await lerAmbientes();
+  const prontos = ambs.filter((a) => a.token && a.ativo !== false);
+  const faltando = ambs.filter((a) => !a.token).map((a) => a.nome);
+  /* ⚠️ "CONFIGURADOS", E NÃO "CAPTURA EM". Esta linha conta token PREENCHIDO,
+     não token que funciona — ela não valida nada. A frase anterior era "Captura
+     em 5 de 5 ambiente(s)", que com uma chave inválida afirmava exatamente o
+     contrário do que estava acontecendo. Quem responde "funcionou?" é o cartão
+     da última captura, logo abaixo; esta linha responde só "está preenchido?". */
+  $("api-info").textContent =
+    `${prontos.length} de ${ambs.length} ambiente(s) configurado(s)`
+    + (faltando.length ? ` · sem token: ${faltando.join(", ")}` : "");
 
   // Auto-detect select baseado no domínio
   if (host) {
@@ -224,20 +330,31 @@ async function init() {
 
   $("btn-capture").addEventListener("click", captureManual);
 
-  $("btn-config").addEventListener("click", () => {
+  $("btn-config").addEventListener("click", async () => {
     $("main").classList.add("hidden");
     $("config").classList.remove("hidden");
-    $("cfg-api-url").value = cfg.api;
-    $("cfg-token").value = cfg.token;
+    await desenharAmbientes();
   });
   $("btn-save-config").addEventListener("click", async () => {
-    const api = $("cfg-api-url").value.trim();
-    const token = $("cfg-token").value.trim();
-    if (!api || !token) { alert("Preencha API URL e Token"); return; }
-    await saveConfig(api, token);
+    const lista = await salvarTokensDaTela();
+    const semToken = lista.filter((a) => !a.token).map((a) => a.nome);
     $("config").classList.add("hidden");
     $("main").classList.remove("hidden");
-    showStatus("Configuração salva. Auto-captura ativa.", "success");
+    // ⚠️ `refreshLastCapture`, e nao `refresh` — esta funcao NAO EXISTE. A
+    // chamada errada levantava ReferenceError DEPOIS de trocar as telas e
+    // ANTES do aviso abaixo, entao o "SEM TOKEN ainda: …" que eu acrescentei
+    // de proposito nunca chegava a aparecer.
+    await refreshLastCapture();
+    // ⚠️ AVISA QUEM FICOU DE FORA, na hora de salvar. Sem isto a pessoa fecha a
+    // tela achando que configurou tudo, e so descobre o ambiente faltando na
+    // proxima vez que a sessao cair — que foi exatamente o que aconteceu com o
+    // santamaria e o novapalma.
+    showStatus(
+      semToken.length
+        ? `Salvo. SEM TOKEN ainda: ${semToken.join(", ")} — a captura nao alcanca esses.`
+        : "Salvo. Os cinco ambientes tem token.",
+      semToken.length ? "info" : "success"
+    );
   });
   $("btn-cancel-config").addEventListener("click", () => {
     $("config").classList.add("hidden");
@@ -254,8 +371,14 @@ async function init() {
     chrome.tabs.create({ url });
   });
 
-  if (!cfg.token) {
-    showStatus("Configure o token PACTHA antes de capturar", "info");
+  /* ⚠️ AVISA PELA LISTA, e nomeia quem falta. A versao anterior olhava o
+     `pactha_token` unico e dizia "Configure o token PACTHA" — uma frase que
+     contradizia o "Captura em 5 de 5" logo acima e apontava para um campo que
+     nao existe mais na tela. */
+  const semToken = (await lerAmbientes()).filter((a) => !a.token).map((a) => a.nome);
+  if (semToken.length) {
+    showStatus(`Sem token em: ${semToken.join(", ")} — a captura nao alcanca esses.`,
+               "info");
   }
 
   refreshLastCapture();

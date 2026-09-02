@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "PACTHA - Captura Automática",
-  "version": "2.1.0",
-  "description": "Captura cookies do gov.br/TransfereGov/FNS e envia ao PACTHA automaticamente toda vez que a sessão renova. Keep-alive a cada 15min mantém a sessão viva enquanto o Chrome estiver aberto.",
+  "version": "2.3.0",
+  "description": "Captura a sessão gov.br/TransfereGov/FNS e envia a TODOS os ambientes PACTHA de uma vez, mostrando o resultado por ambiente. Keep-alive a cada 15min mantém a sessão viva enquanto o Chrome estiver aberto.",
   "permissions": [
     "cookies",
     "activeTab",
