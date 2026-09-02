@@ -235,8 +235,24 @@ async function refreshLastCapture() {
   const alcance = lc.ambientes_total
     ? `${lc.ambientes_ok} de ${lc.ambientes_total} ambiente(s)`
     : "";
+
+  /* ⚠️ ZERO AMBIENTES NÃO É "✓". Antes, uma captura que falhou nos CINCO
+     desenhava o mesmo cartão de sucesso — o `✓` é escrito logo abaixo sem olhar
+     `ambientes_ok`, e `lc.ok === false` só cobre o erro de rede, que nunca
+     ocorre porque `enviarParaTodos` trata cada alvo no seu próprio try.
+     Combinado com o `if (bons.length)` que havia no background (e que também
+     saiu), a falha total era duplamente invisível: não gravava, e se gravasse
+     desenhava verde. */
+  if (lc.ambientes_total && !lc.ambientes_ok) {
+    el.innerHTML =
+      `✗ Última NÃO gravou em nenhum ambiente · ${lc.host} · ${fmtTimeAgo(quando)}`
+      + (falhas.length ? `<br><span style="opacity:.85">${falhas.join(" · ")}</span>` : "");
+    el.className = "info";
+    return;
+  }
+
   el.innerHTML =
-    `✓ Última: <strong>${lc.host}</strong> · ${nCookies} cookies`
+    `${falhas.length ? "⚠" : "✓"} Última: <strong>${lc.host}</strong> · ${nCookies} cookies`
     + (lc.httpOnly != null ? ` (${lc.httpOnly} httpOnly)` : "")
     + (alcance ? ` · ${alcance}` : "")
     + ` · ${fmtTimeAgo(quando)}`
@@ -275,8 +291,13 @@ async function init() {
   const ambs = await lerAmbientes();
   const prontos = ambs.filter((a) => a.token && a.ativo !== false);
   const faltando = ambs.filter((a) => !a.token).map((a) => a.nome);
+  /* ⚠️ "CONFIGURADOS", E NÃO "CAPTURA EM". Esta linha conta token PREENCHIDO,
+     não token que funciona — ela não valida nada. A frase anterior era "Captura
+     em 5 de 5 ambiente(s)", que com uma chave inválida afirmava exatamente o
+     contrário do que estava acontecendo. Quem responde "funcionou?" é o cartão
+     da última captura, logo abaixo; esta linha responde só "está preenchido?". */
   $("api-info").textContent =
-    `Captura em ${prontos.length} de ${ambs.length} ambiente(s)`
+    `${prontos.length} de ${ambs.length} ambiente(s) configurado(s)`
     + (faltando.length ? ` · sem token: ${faltando.join(", ")}` : "");
 
   // Auto-detect select baseado no domínio

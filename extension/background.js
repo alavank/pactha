@@ -21,6 +21,16 @@
 // CLASSICO (sem "type": "module"). Trocar para modulo exigiria mexer no
 // manifest e no popup ao mesmo tempo, e um dos dois ficando para tras deixa a
 // extensao carregando pela metade — sem erro visivel, so sem funcionar.
+// ⚠️ `tokens.local.js` PRIMEIRO, e dentro de try/catch. Ele é opcional e NÃO
+// está no repositório (carrega segredo): quem instala grava os tokens ali para
+// que ninguém precise colar nada. `importScripts` LANÇA quando o arquivo não
+// existe — sem o try, a instalação limpa (o caso do repo) mataria o service
+// worker inteiro na primeira linha, e a extensão simplesmente não subiria.
+try {
+  importScripts("tokens.local.js");
+} catch (_e) {
+  /* instalação sem tokens pré-configurados: a tela pede a colagem, como antes */
+}
 importScripts("ambientes.js");
 
 const DEFAULT_API = "https://pactha-api-54-232-208-118.sslip.io/api";
@@ -222,22 +232,32 @@ async function capture(host, reason) {
     const ruins = resultados.filter((r) => !r.ok);
     console.log(`[PACTHA] auto: ${resumoEnvio(resultados)}`
       + (ruins.length ? ` | falharam: ${ruins.map((r) => `${r.nome} (${r.detalhe})`).join(", ")}` : ""));
-    if (bons.length) {
-      chrome.storage.local.set({
-        pactha_last_capture: {
-          quando: new Date().toISOString(),
-          cookies: cookies.length,
-          httpOnly: httpOnlyCount,
-          host,
-          reason,
-          ambientes_ok: bons.length,
-          ambientes_total: resultados.length,
-          // ⚠️ Os que falharam vao NOMEADOS para o popup. Guardar so a
-          // contagem faria "4 de 5" virar um numero sem acao possivel.
-          falhas: ruins.map((r) => `${r.nome}: ${r.detalhe}`),
-        },
-      });
-    }
+    // ⚠️ GRAVA SEMPRE, INCLUSIVE 0 DE 5 — e este `if` que nao existe mais era um
+    // defeito FATAL. Havia aqui um `if (bons.length)`: falha TOTAL nao gravava
+    // nada, entao o popup seguia exibindo o cartao verde da ultima captura que
+    // deu certo, de ontem. E o `catch` de baixo nao salvava: `enviarParaTodos`
+    // trata cada alvo no seu proprio try e NUNCA rejeita, logo aquele ramo era
+    // inalcancavel para este caso.
+    //
+    // O detalhe que torna isso grave: com UM token por ambiente a falha realista
+    // era PARCIAL (1 de 5), e parcial era gravado. Quanto mais a configuracao
+    // converge — mesma origem para todos os tokens, tudo emitido de uma vez — mais
+    // a falha realista vira 0 de 5, que era exatamente o unico caso cego. A
+    // instrumentacao precisa ser mais confiavel conforme o resto melhora, nao menos.
+    chrome.storage.local.set({
+      pactha_last_capture: {
+        quando: new Date().toISOString(),
+        cookies: cookies.length,
+        httpOnly: httpOnlyCount,
+        host,
+        reason,
+        ambientes_ok: bons.length,
+        ambientes_total: resultados.length,
+        // ⚠️ Os que falharam vao NOMEADOS para o popup. Guardar so a
+        // contagem faria "4 de 5" virar um numero sem acao possivel.
+        falhas: ruins.map((r) => `${r.nome}: ${r.detalhe}`),
+      },
+    });
   } catch (e) {
     console.error("[PACTHA] erro de rede:", e);
     chrome.storage.local.set({

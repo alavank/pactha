@@ -37,3 +37,7 @@ out/
 !package.json
 !package-lock.json
 !tsconfig.json
+
+# Tokens pre-configurados da extensao de captura (segredo, por instalacao).
+# Gerados por `POST /api/control/session/token` em cada tenant; nunca versionados.
+extension/tokens.local.js

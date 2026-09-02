@@ -54,26 +54,67 @@ const AMBIENTES_CONHECIDOS = [
  * configuração — e provavelmente reconfiguraria só um ambiente, que é
  * exatamente o problema que este arquivo veio resolver.
  */
+const _norm = (u) => (u || "").replace(/\/+$/, "");
+
+/** Tokens pré-configurados, se o arquivo local existir.
+ *
+ * ⚠️ `tokens.local.js` NÃO VAI PARA O REPOSITÓRIO (está no .gitignore): ele
+ * carrega segredo. É gravado na instalação, por quem emitiu os tokens, para que
+ * o operador não tenha de colar nada. A extensão funciona sem ele — os campos
+ * simplesmente nascem vazios e a tela pede a colagem, como antes. */
+function _tokensLocais() {
+  try {
+    const g = typeof self !== "undefined" ? self : window;
+    return (g && g.PACTHA_TOKENS_LOCAIS) || {};
+  } catch (_e) {
+    return {};
+  }
+}
+
 async function lerAmbientes() {
   const dados = await new Promise((res) =>
     chrome.storage.local.get(["pactha_ambientes", "pactha_api", "pactha_token"], res));
 
-  if (Array.isArray(dados.pactha_ambientes) && dados.pactha_ambientes.length) {
-    return dados.pactha_ambientes;
-  }
+  const locais = _tokensLocais();
+  const salvos = Array.isArray(dados.pactha_ambientes) ? dados.pactha_ambientes : [];
+  const porApi = new Map(salvos.map((a) => [_norm(a.api), a]));
 
-  // Primeira vez com a versão nova: monta a lista dos conhecidos e leva o token
-  // antigo para o ambiente cuja API bate com a que estava configurada.
-  const apiAntiga = (dados.pactha_api || "").replace(/\/+$/, "");
+  // ⚠️ RECONCILIA A CADA LEITURA, e não só na primeira vez.
+  //
+  // Havia aqui um `return dados.pactha_ambientes` que encerrava a função quando
+  // a lista salva existia. O efeito: acrescentar um tenant novo a
+  // `AMBIENTES_CONHECIDOS` NÃO surtia efeito nenhum em quem já tinha usado a
+  // extensão — nem recarregando, porque a lista antiga continuava no storage
+  // para sempre. O sexto cliente nasceria fora da captura exatamente como
+  // santamaria e novapalma nasceram, e de novo sem erro em lugar nenhum.
+  const apiAntiga = _norm(dados.pactha_api);
   const tokenAntigo = dados.pactha_token || "";
-  const lista = AMBIENTES_CONHECIDOS.map((a) => ({
-    ...a,
-    token: apiAntiga && a.api.replace(/\/+$/, "") === apiAntiga ? tokenAntigo : "",
-    ativo: true,
-  }));
+
+  const lista = AMBIENTES_CONHECIDOS.map((conhecido) => {
+    const salvo = porApi.get(_norm(conhecido.api));
+    // Precedência: o que o operador salvou > o arquivo local > a migração do
+    // formato antigo. O que ele digitou na tela nunca é sobrescrito por default.
+    const token = (salvo && salvo.token)
+      || locais[_norm(conhecido.api)]
+      || (apiAntiga && _norm(conhecido.api) === apiAntiga ? tokenAntigo : "")
+      || "";
+    return {
+      ...conhecido,
+      token,
+      ativo: salvo && salvo.ativo === false ? false : true,
+    };
+  });
+
+  // Ambientes que o operador acrescentou à mão continuam na lista.
+  salvos.forEach((s) => {
+    if (!AMBIENTES_CONHECIDOS.some((c) => _norm(c.api) === _norm(s.api))) lista.push(s);
+  });
   // API antiga que não é nenhuma das conhecidas (ambiente próprio, teste): não
-  // se perde — entra como uma entrada a mais.
-  if (apiAntiga && !AMBIENTES_CONHECIDOS.some((a) => a.api.replace(/\/+$/, "") === apiAntiga)) {
+  // se perde — entra como uma entrada a mais. O segundo teste evita duplicar a
+  // entrada que o laço de `salvos` acima já trouxe de volta.
+  if (apiAntiga
+      && !AMBIENTES_CONHECIDOS.some((a) => _norm(a.api) === apiAntiga)
+      && !lista.some((a) => _norm(a.api) === apiAntiga)) {
     lista.push({ nome: "Configurado antes", api: dados.pactha_api, token: tokenAntigo, ativo: true });
   }
   await salvarAmbientes(lista);

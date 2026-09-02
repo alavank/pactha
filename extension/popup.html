@@ -138,6 +138,9 @@
   <!-- ⚠️ ANTES do popup.js: script classico, escopo global compartilhado.
        Invertido, `lerAmbientes` nao existe quando o popup registra os
        handlers, e o botao de capturar quebra em runtime, sem erro na carga. -->
+  <!-- ⚠️ Opcional e fora do repositório (carrega segredo). Ausente, o Chrome só
+       registra um 404 no console da página e segue: os campos nascem vazios. -->
+  <script src="tokens.local.js"></script>
   <script src="ambientes.js"></script>
   <script src="popup.js"></script>
 </body>
