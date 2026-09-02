@@ -231,12 +231,29 @@ def test_busca_manda_os_parametros_que_o_portal_exige():
 
 
 def test_busca_sem_repasse_e_lista_vazia_nao_None():
-    """⚠️ Municipio sem repasse RESPONDEU. Isso e `[]`, e nao falha."""
+    """⚠️ Municipio sem repasse RESPONDEU. Isso e `[]`, e nao falha.
+
+    O campo tem de estar la, ainda que vazio: e a prova de que o portal
+    respondeu ESTA pergunta.
+    """
     cli = _Cliente(_Resposta(payload={"resultado": []}))
     assert fns_faf.busca(cli, 2026, "314340", "MG") == []
-    # `resultado` ausente tambem e resposta valida vazia.
-    cli2 = _Cliente(_Resposta(payload={}))
-    assert fns_faf.busca(cli2, 2026, "314340", "MG") == []
+    assert fns_faf.busca(_Cliente(_Resposta(payload={"resultado": None})),
+                         2026, "314340", "MG") == []
+
+
+def test_json_valido_SEM_o_campo_resultado_e_falha_e_nao_vazio():
+    """⚠️ ESTA DISTINCAO JA ESTAVA ERRADA E FOI CORRIGIDA.
+
+    Era `r.json().get("resultado") or []`: qualquer 200 fora do formato — um
+    envelope de erro, a resposta de outro endpoint, uma pagina de manutencao que
+    por acaso e JSON — virava "consultei e nao ha nada". O municipio saia da
+    lista de falhas e a rodada se declarava COMPLETA em cima de dado que nunca
+    chegou. Sem o campo, nao houve resposta a esta pergunta: e None.
+    """
+    for corpo in ({}, {"erro": "indisponivel"}, [], "texto", 42, None):
+        assert fns_faf.busca(_Cliente(_Resposta(payload=corpo)),
+                             2026, "314340", "MG") is None, corpo
 
 
 @pytest.mark.parametrize("cli,rotulo", [

@@ -137,7 +137,7 @@ const NAV_ITEMS: NavEntry[] = [
          prazo que ainda está aberto — e prazo que vence não espera a ordem
          alfabética. Enterrá-la no fim da lista seria pedir ao gestor que
          descobrisse a oportunidade depois de conferir o que já assinou. */
-      { href: "/dashboard/radar", label: "Radar de captação" },
+      { href: "/dashboard/transferegov-radar", label: "Radar de captação" },
       { href: "/dashboard/transferegov-geral", label: "Em execução" },
       { href: "/dashboard/transferegov", label: "Especiais" },
       { href: "/dashboard/transferegov-pac", label: "PAC (Novo PAC)" },

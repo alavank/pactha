@@ -136,7 +136,7 @@ export default function RadarPage() {
         </Bloco>
       ) : (
         <p className="text-[11px]" style={{ color: "var(--bi-faint)" }}>
-          Dados abertos do TransfereGov · lido em {formatarData(d.atualizado_em)} ·
+          Dados abertos do TransfereGov · lido em {formatarQuando(d.atualizado_em)} ·
           {" "}recorte: programas abertos à Administração Pública Municipal com
           prazo de proposta em pé{d.municipio.uf ? `, válidos para ${d.municipio.uf}` : ""}
         </p>
@@ -239,11 +239,35 @@ export default function RadarPage() {
   );
 }
 
-/* ISO -> dd/mm/aaaa. Data ilegível some: numa tela de prazo, data errada é pior
- * que data nenhuma — o gestor programaria a agenda por ela. */
+/* DATA PURA (dd/mm/aaaa) — prazos, que vêm do banco como DATE.
+ *
+ * O `T00:00:00` sem sufixo de fuso faz o JS ler como hora LOCAL, que é o certo
+ * aqui: `2026-12-31` é o dia 31, não um instante. Sem ele, o `Date` trataria a
+ * string como UTC e no Brasil o prazo apareceria como dia 30.
+ *
+ * Data ilegível some: numa tela de prazo, data errada é pior que data nenhuma —
+ * o gestor programaria a agenda por ela. */
 function formatarData(iso: string | null): string {
   if (!iso) return "—";
   const dt = new Date(`${iso.slice(0, 10)}T00:00:00`);
   if (Number.isNaN(dt.getTime())) return "—";
   return dt.toLocaleDateString("pt-BR");
+}
+
+/* INSTANTE (dd/mm/aaaa hh:mm) — o carimbo da coleta, que vem TIMESTAMPTZ.
+ *
+ * ⚠️ FUNÇÃO SEPARADA DE PROPÓSITO. O carimbo passava pela `formatarData` acima,
+ * que corta a string nos 10 primeiros caracteres: uma coleta das 22h de
+ * Brasília chega como `...T01:00:00+00:00` do dia seguinte e era exibida com a
+ * data errada — e a hora, que é o que diz se o radar é de hoje ou de ontem,
+ * sumia. Data e instante não são o mesmo tipo e não podem dividir o formatador.
+ */
+function formatarQuando(iso: string | null): string {
+  if (!iso) return "—";
+  const dt = new Date(iso);
+  if (Number.isNaN(dt.getTime())) return "—";
+  return dt.toLocaleString("pt-BR", {
+    day: "2-digit", month: "2-digit", year: "numeric",
+    hour: "2-digit", minute: "2-digit",
+  });
 }

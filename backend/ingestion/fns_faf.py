@@ -156,18 +156,43 @@ def busca(cli: httpx.Client, ano: int, ibge6: str, uf: str) -> list | None:
         log.warning(f"  {ibge6}/{ano}: resposta nao-JSON ({len(r.content)}B)")
         return None
     try:
-        return r.json().get("resultado") or []
+        corpo = r.json()
     except Exception:
         log.warning(f"  {ibge6}/{ano}: JSON ilegivel")
         return None
+    # ⚠️ JSON VALIDO SEM `resultado` NAO E "SEM REPASSE". Era `.get(...) or []`,
+    # e isso fazia qualquer 200 fora do formato — um envelope de erro, uma
+    # resposta de outro endpoint — passar por "consultei e nao ha nada". O
+    # municipio sumia da lista de falhas e a rodada se declarava completa.
+    if not isinstance(corpo, dict) or "resultado" not in corpo:
+        log.warning(f"  {ibge6}/{ano}: JSON sem o campo `resultado`")
+        return None
+    return corpo.get("resultado") or []
 
 
 def run() -> int:
     cn = psycopg2.connect(_dsn())
     cur = cn.cursor()
-    cur.execute("SELECT id, nome, ibge_code, uf FROM municipios "
-                "WHERE coalesce(active, true) AND ibge_code IS NOT NULL "
-                "AND btrim(ibge_code) <> '' ORDER BY nome")
+    # ⚠️ `uf` TAMBEM E OBRIGATORIA, e nao so o ibge. Sem ela o coletor mandava
+    # `sgUf=NONE` (o `str(None).upper()`) e o portal respondia 400 — o municipio
+    # entrava na lista de falhas por um defeito de cadastro NOSSO, disfarcado de
+    # instabilidade da fonte. Melhor nem consultar e dizer quantos ficaram fora.
+    #
+    # ⚠️ E a ORDEM E POR STALENESS, nao alfabetica. Numa janela ruim do portal a
+    # rodada pode ser cortada pelo `timeout` do cron, e `ORDER BY nome` fazia a
+    # MESMA cauda do alfabeto ser sempre a sacrificada — os ultimos municipios
+    # nunca coletariam. Quem esta ha mais tempo sem dado vai primeiro.
+    cur.execute("""
+        SELECT m.id, m.nome, m.ibge_code, m.uf
+          FROM municipios m
+          LEFT JOIN (SELECT municipio_id, max(updated_at) AS visto
+                       FROM fns_repasse_faf GROUP BY municipio_id) f
+                 ON f.municipio_id = m.id
+         WHERE coalesce(m.active, true)
+           AND m.ibge_code IS NOT NULL AND btrim(m.ibge_code) <> ''
+           AND m.uf IS NOT NULL AND btrim(m.uf) <> ''
+         ORDER BY f.visto ASC NULLS FIRST, m.nome
+    """)
     muns = cur.fetchall()
     anos = [date.today().year - i for i in range(ANOS)]
     log.info(f"FNS fundo a fundo: {len(muns)} municipio(s) x {len(anos)} ano(s) {anos}")

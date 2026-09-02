@@ -81,11 +81,20 @@ export default function InvestSusPage() {
   const [ano, setAno] = useState<number | null>(null);
   const [aberto, setAberto] = useState<number | null>(null);
 
+  /* ⚠️ A ÚLTIMA RESPOSTA A CHEGAR NÃO É A DA ÚLTIMA CLICADA. Trocar de ano
+     dispara uma requisição nova sem cancelar a anterior; duas respostas fora de
+     ordem deixavam a tela mostrando 2025 com o botão 2026 aceso — e o gestor
+     leria o dinheiro do ano errado com o rótulo certo, que é pior do que não
+     mostrar nada. O contador descarta tudo que não for da requisição corrente. */
+  const pedido = React.useRef(0);
   const carregar = useCallback(() => {
     if (!municipioId) return;
+    const meu = ++pedido.current;
     setLoading(true);
     api.get("/investsus", { params: { municipio_id: municipioId, ...(ano ? { ano } : {}) } })
-      .then((r) => setD(r.data)).catch(() => setD(null)).finally(() => setLoading(false));
+      .then((r) => { if (meu === pedido.current) setD(r.data); })
+      .catch(() => { if (meu === pedido.current) setD(null); })
+      .finally(() => { if (meu === pedido.current) setLoading(false); });
   }, [municipioId, ano]);
   useEffect(carregar, [carregar]);
 
@@ -256,7 +265,14 @@ export default function InvestSusPage() {
 
       <Bloco className="p-3">
         <BlocoHead icon={KeyRound} titulo="Situação deste município"
-                   sub="o que já está pronto para quando a coleta entrar" />
+                   /* ⚠️ ESTE TEXTO ENVELHECEU E FOI CORRIGIDO EM 02/09/2026.
+                      Dizia "o que já está pronto para quando a coleta entrar" —
+                      a coleta do consolidado ENTROU, e os valores estão logo
+                      acima nesta mesma tela. O que a credencial destrava agora
+                      é só o extrato parcela a parcela. Prometer de novo o que
+                      já foi entregue faz o gestor procurar na tela algo que
+                      ele acabou de ver. */
+                   sub="o que a credencial do InvestSUS ainda destrava" />
         <Lista>
           <ItemLinha
             titulo={
@@ -271,8 +287,8 @@ export default function InvestSusPage() {
             }
             meta={
               temCred
-                ? "A credencial está guardada e cifrada. Assim que o coletor entrar, este município já é coletado sem nenhuma ação a mais."
-                : "Sem credencial, o coletor futuro não vai conseguir consultar este município. Cadastre em Configurações → Cofre de Senhas, sistema InvestSUS."
+                ? "A credencial está guardada e cifrada. Ela não é necessária para os valores acima — esses vêm de fonte pública — e sim para o extrato parcela a parcela, que ainda depende do cadastro do autenticador."
+                : "Sem credencial, o extrato parcela a parcela não poderá ser consultado para este município. Os valores por bloco acima não dependem dela. Cadastre em Configurações → Cofre de Senhas, sistema InvestSUS."
             }
           />
           <ItemLinha

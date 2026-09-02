@@ -58,7 +58,11 @@ def _sql_da_rota() -> str:
         f"{len(blocos)} consultas leem programas_captacao; este teste protege "
         f"uma so — decida qual e ajuste o extrator de proposito")
     # `:uf`/`:nat` sao binds do SQLAlchemy; o Postgres nao os conhece.
-    return re.sub(r":(\w+)", r"'\1'", blocos[0])
+    # ⚠️ O `(?<!:)` E OBRIGATORIO: sem ele o cast `::date` do Postgres virava
+    # `:'date'` e o parser recusava a consulta INTEIRA — o teste passaria a
+    # falhar por defeito dele proprio, escondendo se as guardas estao ou nao no
+    # lugar. Bind e cast usam o mesmo caractere; so o dobrado e cast.
+    return re.sub(r"(?<!:):(\w+)", r"'\1'", blocos[0])
 
 
 def _where_bruto():
@@ -91,7 +95,11 @@ def test_esconde_prazo_ja_vencido(where):
     deixaria a tela anunciando prazo morto — e o municipio montaria processo
     para nada.
     """
-    assert "dt_fim_receb >= current_date" in where
+    # ⚠️ O "hoje" e o de BRASILIA, e nao o do servidor: `CURRENT_DATE` sai do
+    # fuso da sessao do Postgres, que nos containers e UTC. Entre 21h e
+    # meia-noite o dia ja virou la e o prazo sumiria uma noite antes.
+    assert "dt_fim_receb >=" in where
+    assert "america/sao_paulo" in where
 
 
 def test_filtra_pela_UF_do_municipio(where):
@@ -171,4 +179,7 @@ def test_a_janela_de_inicio_tambem_e_guarda():
     """"Aberto hoje" e estar DENTRO da janela, e nao apenas antes do fim."""
     where = pglast.prettify(_sql_da_rota()).lower()
     assert "dt_ini_receb" in where
-    assert "<= current_date" in where
+    assert "dt_ini_receb <=" in where
+    # As DUAS pontas da janela usam o mesmo fuso — comparar uma em UTC e a outra
+    # em Brasilia daria um dia em que o programa nao esta nem aberto nem fechado.
+    assert where.count("america/sao_paulo") >= 3

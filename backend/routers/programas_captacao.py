@@ -14,8 +14,15 @@ dia em que o coletor rodou; entre uma rodada e outra um prazo vence. Confiar na
 coleta deixaria a tela anunciando prazo morto — e prazo morto numa tela de
 captação faz o município montar processo para nada.
 
-⚠️ GATE `convenios.ver` + tela `convenios`: é o funil de onde nasce o convênio,
-mesma razão da Consulta Popular e dos Programas do RS. Não cria concessão nova.
+⚠️ GATE `transferegov.ver` + tela `transferegov`, e NÃO `convenios.ver`. A
+primeira versão usava `convenios.ver` por analogia com a Consulta Popular e os
+Programas do RS — e estava errada: aquela chave é declarada com
+`ufs=("MG","ES","GO","RS")` no catálogo de permissões, ou seja, a caixinha só
+aparece para cliente desses quatro estados. O radar é FEDERAL e vale para os 27;
+num tenant de outra UF a tela existiria sem permissão possível de conceder.
+`transferegov` não tem recorte de UF, é a mesma família dos irmãos deste grupo
+do menu, e a fonte do radar é literalmente um arquivo do TransfereGov.
+Não cria concessão nova: quem já vê o TransfereGov vê o radar.
 """
 from __future__ import annotations
 
@@ -36,7 +43,7 @@ router = APIRouter(prefix="/api/programas-captacao", tags=["programas-captacao"]
 NATUREZA_PREFEITURA = "Administração Pública Municipal"
 
 
-@router.get("", dependencies=[exige("convenios.ver")])
+@router.get("", dependencies=[exige("transferegov.ver")])
 async def radar(
     municipio_id: int = Query(...),
     db: AsyncSession = Depends(get_db),
@@ -44,7 +51,7 @@ async def radar(
 ):
     """Programas abertos hoje para este município apresentar proposta."""
     ensure_municipio_access(current, municipio_id)
-    ensure_tela(current, "convenios")
+    ensure_tela(current, "transferegov")
 
     mun = (await db.execute(text(
         "SELECT nome, uf FROM municipios WHERE id = :m"), {"m": municipio_id})).first()
@@ -76,19 +83,27 @@ async def radar(
     linhas = (await db.execute(text("""
         SELECT id_programa, nome, orgao, modalidade, dt_ini_receb, dt_fim_receb,
                dt_fim_emenda, acao_orcamentaria, subtipo, cod_programa,
-               (dt_fim_receb - CURRENT_DATE)  AS dias,
-               (dt_fim_emenda - CURRENT_DATE) AS dias_emenda,
+               (dt_fim_receb  - (NOW() AT TIME ZONE 'America/Sao_Paulo')::date) AS dias,
+               (dt_fim_emenda - (NOW() AT TIME ZONE 'America/Sao_Paulo')::date) AS dias_emenda,
                cardinality(ufs) AS qt_ufs
           FROM programas_captacao
          WHERE ausente_desde IS NULL
-           AND dt_fim_receb >= CURRENT_DATE
+           -- ⚠️ O "HOJE" E O DE BRASILIA, e nao o do servidor. `CURRENT_DATE`
+           -- sai do fuso da sessao do Postgres, que nos containers e UTC: entre
+           -- 21h e meia-noite de Brasilia o dia ja virou la, e um prazo que
+           -- fecha HOJE sumiria do radar na noite anterior — justamente nas
+           -- horas em que alguem correndo atras do prazo iria olhar. O mesmo
+           -- criterio do `hoje_br()` no coletor; os dois tem de concordar,
+           -- senao a tabela guarda um recorte e a tela mostra outro.
+           AND dt_fim_receb >= (NOW() AT TIME ZONE 'America/Sao_Paulo')::date
            -- ⚠️ A JANELA TEM DOIS LADOS. "Aberto" é estar DENTRO do período de
            -- recebimento, e não apenas antes do fim: um programa que só abre em
            -- novembro entraria na conta de "abertos hoje" e o gestor montaria
            -- proposta para um sistema que ainda não a aceita. Hoje são zero
            -- casos no arquivo — a guarda existe porque o rótulo da tela promete
            -- "hoje", e promessa de tela não pode depender da sorte do dia.
-           AND (dt_ini_receb IS NULL OR dt_ini_receb <= CURRENT_DATE)
+           AND (dt_ini_receb IS NULL
+                OR dt_ini_receb <= (NOW() AT TIME ZONE 'America/Sao_Paulo')::date)
            AND :nat = ANY(naturezas)
            -- ⚠️ SEM `OR cardinality(ufs) = 0` DE PROPÓSITO. A tentação é tratar
            -- array vazio como "vale para todos"; medido no arquivo real, NENHUM
