@@ -45,6 +45,18 @@ type MunicipioCtx = {
    *  filtrada por ativos e pelo escopo do usuário) — o provider não busca nada
    *  por conta própria para não duplicar requisição nem regra de permissão. */
   registrarMunicipios: (lista: MunicipioEscolha[]) => void;
+  /** ⭐ A LISTA QUE A BARRA LATERAL JÁ CARREGOU, para quem precisa de um filtro
+   *  PRÓPRIO de município — hoje a agenda, que mostra o mês de um município ou
+   *  da carteira inteira sem trocar o escopo global.
+   *
+   *  ⚠️ EXPOSTA EM VEZ DE REBUSCADA, e a razão está três linhas acima: o
+   *  provider não busca por conta própria "para não duplicar requisição nem
+   *  regra de permissão". Uma tela que chamasse `GET /api/municipios` de novo
+   *  duplicaria as duas — e a segunda cópia da regra é a que fica para trás
+   *  quando o alcance do usuário muda.
+   *
+   *  Vem VAZIA até a barra lateral registrar; quem usa trata a lista vazia. */
+  municipios: MunicipioEscolha[];
   emTransicao: boolean;
 };
 
@@ -147,6 +159,7 @@ export function MunicipioProvider({ children }: { children: ReactNode }) {
         trocarEscopo,
         abrirTroca,
         registrarMunicipios,
+        municipios: lista,
         emTransicao: pendente !== null,
       }}
     >
@@ -176,6 +189,7 @@ export function useMunicipio(): MunicipioCtx {
       municipioId: "", escopo: "", isConsolidado: false,
       setMunicipioId: () => {}, trocarEscopo: () => {},
       abrirTroca: () => {}, registrarMunicipios: () => {},
+      municipios: [],
       emTransicao: false,
     };
   }
