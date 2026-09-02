@@ -126,9 +126,15 @@ def _rotulo_anexos(anexos) -> list:
 # do inserido passa a ler o vizinho) não levanta erro: só troca os valores de
 # lugar na tela.
 _SELECT = """
-    SELECT a.id, a.municipio_id, m.nome, a.responsavel_id, ur.nome,
+    -- ⚠️ `users.name`, E NAO `users.nome`. As duas tabelas usam vocabulario
+    -- diferente e isso ja custou um erro em producao: `municipios` tem `nome`
+    -- (portugues) e `users` tem `name` (ingles). O `pglast` valida a GRAMATICA
+    -- do SQL e nao o ESQUEMA, entao `ur.nome` passou por toda a suite e so
+    -- apareceu como ProgrammingError na tela do cliente. Ver
+    -- `test_agendamentos.py::test_o_select_so_usa_coluna_que_existe_no_modelo`.
+    SELECT a.id, a.municipio_id, m.nome, a.responsavel_id, ur.name,
            a.titulo, a.relato, a.data, a.status, a.anexos,
-           a.criado_por, uc.nome, a.created_at, a.updated_at
+           a.criado_por, uc.name, a.created_at, a.updated_at
       FROM agendamentos a
       JOIN municipios m ON m.id = a.municipio_id
       LEFT JOIN users ur ON ur.id = a.responsavel_id
@@ -164,17 +170,36 @@ def _row_to_dict(row, *, with_anexos: bool = False) -> dict:
     }
 
 
-def _filtros(municipio_id, de, ate, status, responsavel_id) -> tuple[str, dict]:
+def _filtros(municipio_id, de, ate, status, responsavel_id,
+             municipios_permitidos=None) -> tuple[str, dict]:
     """O WHERE compartilhado pela lista E pela exportação.
 
     ⚠️ FUNÇÃO ÚNICA DE PROPÓSITO. É o que garante que o arquivo exportado tenha
     exatamente as linhas que a tela mostra. Duas montagens de filtro divergem no
     primeiro ajuste, e a divergência aparece como "o relatório veio com um
     agendamento a mais" — sem nada para culpar.
+
+    ⚠️ `municipios_permitidos` É O RECORTE DO PEDIDO "TODOS", e ele existe
+    porque a primeira versão deste módulo mentia sobre ele. O comentário da tela
+    dizia que, sem `municipio_id`, "o backend devolve o que o alcance da pessoa
+    permite" — e não devolvia: não havia recorte nenhum aqui, e o que impedia o
+    tenant inteiro de sair era o 403 de `ensure_municipio_access(user, None)`.
+    Ou seja, a opção «Todos os meus municípios» respondia 403 para TODO usuário
+    que não fosse o super-admin da Alavank, que é o único com carteira `None`.
+
+    Agora o pedido "todos" significa **todos OS MEUS**, com o mesmo desenho do
+    `routers/convenios.py` (que já resolvia isto): carteira restrita vira um
+    `IN`, carteira `None` (super-admin) não filtra, e carteira VAZIA devolve
+    lista vazia — nunca o tenant inteiro.
     """
     where, params = [], {}
     if municipio_id:
         where.append("a.municipio_id = :m"); params["m"] = municipio_id
+    elif municipios_permitidos is not None:
+        # ⚠️ `= ANY(:mids)` e não `IN :mids`: o SQLAlchemy só expande `IN` com
+        # `expanding=True`, e sem isso a lista chega como um parâmetro só.
+        where.append("a.municipio_id = ANY(:mids)")
+        params["mids"] = list(municipios_permitidos)
     if de:
         where.append("a.data >= :de"); params["de"] = de
     if ate:
@@ -184,6 +209,28 @@ def _filtros(municipio_id, de, ate, status, responsavel_id) -> tuple[str, dict]:
     if responsavel_id:
         where.append("a.responsavel_id = :r"); params["r"] = responsavel_id
     return (" WHERE " + " AND ".join(where) if where else ""), params
+
+
+def _carteira(current, municipio_id):
+    """O recorte de município de um pedido de LEITURA em lote.
+
+    Devolve `(permitidos, vazia)`:
+      - `municipio_id` presente  -> (None, False): o filtro é ele, e quem valida
+        o acesso é `ensure_municipio_access`, chamado pelo endpoint.
+      - ausente, carteira restrita -> (a carteira, False): "todos os MEUS".
+      - ausente, super-admin       -> (None, False): sem filtro, é o alcance dele.
+      - ausente, carteira VAZIA    -> (None, True): não há o que listar. Devolver
+        sem filtro aqui seria entregar o tenant inteiro a quem não alcança
+        município nenhum.
+    """
+    if municipio_id:
+        return None, False
+    permitidos = getattr(current, "allowed_municipio_ids", None)
+    if permitidos is None:
+        return None, False
+    if not permitidos:
+        return None, True
+    return list(permitidos), False
 
 
 async def _exigir_acesso(db: AsyncSession, aid: int, user) -> None:
@@ -230,11 +277,20 @@ async def listar(
     current: User = Depends(get_current_user),
 ):
     """A relação filtrada. Alimenta as TRÊS visualizações."""
-    ensure_municipio_access(current, municipio_id)
+    # ⚠️ `ensure_municipio_access` SÓ COM MUNICÍPIO ESCOLHIDO. Chamada com None
+    # ela levanta 403 ("Selecione um municipio permitido") para todo usuário de
+    # carteira restrita — o que matava a opção «Todos os meus municípios».
+    # Quando não há município, quem faz o recorte é `_carteira`, abaixo.
+    if municipio_id:
+        ensure_municipio_access(current, municipio_id)
     ensure_tela(current, "agendamentos")
     if status and status not in STATUS:
         raise HTTPException(422, f"Status inválido: {status!r}")
-    onde, params = _filtros(municipio_id, de, ate, status, responsavel_id)
+    permitidos, vazia = _carteira(current, municipio_id)
+    if vazia:
+        return {"items": [], "total": 0}
+    onde, params = _filtros(municipio_id, de, ate, status, responsavel_id,
+                            permitidos)
     # ⚠️ ORDEM CRESCENTE de data. A lista é uma AGENDA: o que vem primeiro é o
     # que acontece primeiro. As outras telas do repo ordenam por `updated_at
     # DESC` porque mostram histórico — aqui isso poria o mês que vem no topo.
@@ -455,12 +511,19 @@ async def exportar(
     current: User = Depends(get_current_user),
 ):
     """A relação filtrada, em Excel ou PDF — com os MESMOS filtros da tela."""
-    ensure_municipio_access(current, municipio_id)
+    # Mesma regra da lista — ver o comentário lá. O arquivo tem de trazer
+    # exatamente as linhas da tela, e isso inclui o recorte da carteira.
+    if municipio_id:
+        ensure_municipio_access(current, municipio_id)
     ensure_tela(current, "agendamentos")
     if status and status not in STATUS:
         raise HTTPException(422, f"Status inválido: {status!r}")
 
-    onde, params = _filtros(municipio_id, de, ate, status, responsavel_id)
+    permitidos, vazia = _carteira(current, municipio_id)
+    if vazia:
+        raise HTTPException(403, "Sua conta não alcança nenhum município.")
+    onde, params = _filtros(municipio_id, de, ate, status, responsavel_id,
+                            permitidos)
     sql = _SELECT + onde + " ORDER BY a.data ASC, a.id ASC"
     rows = (await db.execute(text(sql), params)).fetchall()
     if len(rows) > MAX_EXPORT:

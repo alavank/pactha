@@ -189,3 +189,136 @@ def test_a_lista_e_ordenada_do_mais_PROXIMO_para_o_mais_distante():
     compromisso de amanha no fim."""
     assert "ORDER BY a.data ASC" in FONTE
     assert "updated_at DESC" not in FONTE
+
+
+# ------------------------------------------- o pedido "todos os MEUS" -------
+
+def test_sem_municipio_o_recorte_e_a_carteira_da_pessoa():
+    """⚠️ O DEFEITO QUE ESTE TESTE FECHA JA FOI PARA PRODUCAO.
+
+    A opcao «Todos os meus municipios» mandava a consulta sem `municipio_id`.
+    O router chamava `ensure_municipio_access(current, None)`, que levanta 403
+    ("Selecione um municipio permitido") para toda carteira restrita — e
+    carteira so e `None` no super-admin da Alavank. Resultado: a opcao respondia
+    403 para 100% dos usuarios reais do tenant, e o comentario da tela afirmava
+    que o backend fazia um recorte que NAO EXISTIA no router.
+
+    Agora "todos" significa TODOS OS MEUS, com o desenho que o
+    `routers/convenios.py` ja usava.
+    """
+    class U:
+        allowed_municipio_ids = {5, 12, 30}
+
+    permitidos, vazia = R._carteira(U(), None)
+    assert vazia is False
+    assert sorted(permitidos) == [5, 12, 30]
+    onde, params = R._filtros(None, None, None, None, None, permitidos)
+    assert "a.municipio_id = ANY(:mids)" in onde
+    assert sorted(params["mids"]) == [5, 12, 30]
+
+
+def test_super_admin_sem_municipio_nao_ganha_filtro():
+    """Carteira `None` é o alcance total da conta de suporte — filtrar por uma
+    lista vazia esconderia dela justamente o que ela existe para ver."""
+    class U:
+        allowed_municipio_ids = None
+
+    permitidos, vazia = R._carteira(U(), None)
+    assert permitidos is None and vazia is False
+    onde, _ = R._filtros(None, None, None, None, None, permitidos)
+    assert onde == ""
+
+
+def test_carteira_VAZIA_devolve_vazio_e_nao_o_tenant_inteiro():
+    """⚠️ O FAIL-CLOSED. Sem este ramo, quem nao alcanca municipio nenhum cairia
+    no mesmo caminho do super-admin — consulta sem WHERE, tenant inteiro."""
+    class U:
+        allowed_municipio_ids = set()
+
+    permitidos, vazia = R._carteira(U(), None)
+    assert vazia is True and permitidos is None
+
+
+def test_com_municipio_escolhido_quem_valida_e_o_ensure():
+    """Com municipio no pedido, `_carteira` sai de cena: o filtro e ele, e o
+    acesso e conferido por `ensure_municipio_access` — que NEGA nos dois modos
+    de AUTHZ_MODO. Trocar o valor do <select> no navegador da 403."""
+    class U:
+        allowed_municipio_ids = {5}
+
+    assert R._carteira(U(), 9) == (None, False)
+    # ⚠️ TODA chamada de `ensure_municipio_access` tem de vir guardada por
+    # `if municipio_id:`. A primeira versao deste teste procurava a string no
+    # arquivo INTEIRO: com o guard removido da `listar` e mantido na
+    # `exportar`, ele continuava achando e passava — o defeito original voltava
+    # sem quebrar nada. Provado por mutacao; por isso agora e uma varredura de
+    # TODAS as ocorrencias, e nao um `in`.
+    chamadas = [m for m in re.finditer(r"^\s*ensure_municipio_access\(", FONTE, re.M)]
+    assert len(chamadas) == 2, (
+        f"{len(chamadas)} chamadas de ensure_municipio_access; eram 2 "
+        f"(a lista e a exportacao)")
+    for m in chamadas:
+        anterior = FONTE[:m.start()].rstrip().splitlines()[-1].strip()
+        assert anterior.startswith("if municipio_id"), (
+            f"chamada INCONDICIONAL de ensure_municipio_access, precedida por "
+            f"{anterior!r}. Com `municipio_id=None` ela levanta 403 para toda "
+            f"carteira restrita — e era esse o defeito que matava a opcao "
+            f"«Todos os meus municipios»")
+
+
+def test_a_lista_e_a_exportacao_aplicam_O_MESMO_recorte():
+    """O arquivo tem de trazer as linhas da tela, e isso inclui a carteira."""
+    assert FONTE.count("permitidos, vazia = _carteira(") == 2
+    assert FONTE.count("responsavel_id,\n                            permitidos)") == 2
+
+
+# ------------------------------------ o SQL bate com o ESQUEMA de verdade ---
+
+def test_o_select_so_usa_coluna_que_existe_no_modelo():
+    """⚠️ ESTE TESTE NASCEU DE UM ERRO EM PRODUCAO, e o erro foi de vocabulario.
+
+    `municipios` tem `nome` (portugues) e `users` tem `name` (ingles). O
+    `_SELECT` fazia `ur.nome` / `uc.nome` e a tela do cliente respondeu
+    `ProgrammingError` — coluna inexistente.
+
+    ⚠️ E POR QUE A SUITE INTEIRA DEIXOU PASSAR: os testes de arvore validam a
+    GRAMATICA do SQL com `pglast`, que nao conhece esquema nenhum. `ur.nome` e
+    SQL perfeitamente valido; so nao existe naquela tabela. Sem Postgres de
+    teste, a unica forma de cercar isso e cruzar o SQL com os MODELOS
+    SQLAlchemy, que sao a definicao das colunas que o `create_all` cria.
+    """
+    from models.municipio import Municipio
+    from models.user import User
+
+    colunas = {
+        "a": None,   # `agendamentos` nao tem modelo: nasce da migration
+        "m": {c.name for c in Municipio.__table__.columns},
+        "ur": {c.name for c in User.__table__.columns},
+        "uc": {c.name for c in User.__table__.columns},
+    }
+    # ⚠️ SEM OS COMENTARIOS. O `_SELECT` traz uma nota `--` que CITA `ur.nome`
+    # como exemplo do erro que este teste pega; varrer o texto cru fazia o teste
+    # falhar por causa da propria explicacao. Comentario nao vai para o banco.
+    sql = re.sub(r"--[^\n]*", "", R._SELECT)
+    usadas = re.findall(r"\b(a|m|ur|uc)\.([a-z_]+)", sql)
+    assert usadas, "nao achei referencias de coluna no _SELECT"
+    for alias, coluna in usadas:
+        esperadas = colunas[alias]
+        if esperadas is None:
+            continue
+        assert coluna in esperadas, (
+            f"`{alias}.{coluna}` nao existe no modelo. Colunas de {alias}: "
+            f"{sorted(esperadas)}. ⚠️ `municipios` usa `nome` e `users` usa "
+            f"`name` — a troca das duas e o erro que este teste existe para pegar")
+
+
+def test_as_colunas_de_agendamentos_batem_com_a_migration():
+    """O alias `a` nao tem modelo (a tabela nasce da migration), entao a
+    referencia e o proprio CREATE TABLE."""
+    corpo = SQL.split("CREATE TABLE IF NOT EXISTS agendamentos (", 1)[1].split(");", 1)[0]
+    do_banco = set(re.findall(r"^\s{4}([a-z_]+)\s", corpo, re.M))
+    assert "titulo" in do_banco and "relato" in do_banco, (
+        f"nao consegui ler as colunas da migration: {sorted(do_banco)}")
+    usadas = {c for al, c in re.findall(r"\b(a)\.([a-z_]+)", R._SELECT)}
+    faltam = usadas - do_banco
+    assert not faltam, f"o _SELECT usa coluna que a migration nao cria: {sorted(faltam)}"

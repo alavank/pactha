@@ -79,12 +79,20 @@ function isoDoDia(ano: number, mes0: number, dia: number): string {
   return `${ano}-${String(mes0 + 1).padStart(2, "0")}-${String(dia).padStart(2, "0")}`;
 }
 
+/* O nome do município em acesso, para o rótulo da opção padrão. Cai no id cru
+ * enquanto a barra lateral não registrou a lista — melhor um número do que a
+ * palavra "padrão", que não diz de quem é a agenda. */
+function nomeDoMunicipio(lista: { id: number | string; nome: string }[],
+                         id: string): string {
+  return lista.find((m) => String(m.id) === String(id))?.nome || `#${id}`;
+}
+
 const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho",
   "agosto", "setembro", "outubro", "novembro", "dezembro"];
 const SEMANA = ["seg", "ter", "qua", "qui", "sex", "sáb", "dom"];
 
 export default function AgendamentosPage() {
-  const { municipioId } = useMunicipio();
+  const { municipioId, municipios } = useMunicipio();
   /* ⚠️ O CALENDÁRIO ABRE A TELA (decisão do dono). É a visão que responde a
      pergunta que traz a pessoa aqui — "o que tem esta semana" —, e é a única
      das três em que a AUSÊNCIA de compromisso num dia também é informação. A
@@ -94,6 +102,27 @@ export default function AgendamentosPage() {
   const [itens, setItens] = useState<Agendamento[]>([]);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  /* ⚠️ FILTRO PRÓPRIO DE MUNICÍPIO, separado do escopo global (pedido do dono).
+     `""` = herda o que está em acesso na barra lateral; `TODOS` = a carteira
+     inteira; um id = aquele município.
+     A razão de não reaproveitar o seletor global: trocá-lo REMONTA o dashboard
+     inteiro (`key={escopo}` no layout) e leva a pessoa para a home — perder o
+     mês que ela estava olhando só para conferir a agenda do município vizinho
+     é caro demais. Aqui a troca é local e o calendário continua no lugar.
+     ⚠️ E "Todos" É "TODOS OS MEUS". A consulta vai sem `municipio_id` e o
+     backend aplica a carteira da pessoa (`_carteira` em routers/agendamentos.py:
+     carteira restrita vira um IN, super-admin não filtra, carteira vazia
+     devolve vazio). A lista do seletor é a que a barra lateral carregou, já
+     filtrada por permissão.
+     ⚠️ ESTE COMENTÁRIO JÁ ESTEVE ERRADO, e o erro não era só de texto: ele
+     dizia que o backend "devolve o que o alcance permite" quando esse recorte
+     NÃO EXISTIA no router. O que havia era o 403 de
+     `ensure_municipio_access(user, None)` — então a opção respondia 403 para
+     todo usuário de carteira restrita, ou seja, para todos menos o super-admin
+     da Alavank. Comentário que descreve uma garantia inexistente é pior que
+     comentário nenhum: ele faz o revisor seguinte parar de procurar. */
+  const TODOS = "__todos__";
+  const [munFiltro, setMunFiltro] = useState("");
   const [de, setDe] = useState("");
   const [ate, setAte] = useState("");
   const [status, setStatus] = useState("");
@@ -106,11 +135,16 @@ export default function AgendamentosPage() {
   const hoje = new Date();
   const [mes, setMes] = useState<[number, number]>([hoje.getFullYear(), hoje.getMonth()]);
 
+  /* O município que a consulta usa: o do filtro quando escolhido, senão o do
+     escopo global. `TODOS` manda ausência de filtro — que é como o backend
+     entende "tudo o que eu alcanço". */
+  const munEfetivo = munFiltro === TODOS ? "" : (munFiltro || municipioId);
+
   const filtros = useMemo(() => ({
-    ...(municipioId ? { municipio_id: municipioId } : {}),
+    ...(munEfetivo ? { municipio_id: munEfetivo } : {}),
     ...(de ? { de } : {}), ...(ate ? { ate } : {}),
     ...(status ? { status } : {}),
-  }), [municipioId, de, ate, status]);
+  }), [munEfetivo, de, ate, status]);
 
   const pedido = React.useRef(0);
   const carregar = useCallback(() => {
@@ -192,7 +226,7 @@ export default function AgendamentosPage() {
      alcança, e cada cartão passa a dizer de qual cidade é.
      CRIAR continua exigindo um município escolhido: agendamento sem cidade não
      existe, e adivinhar qual seria pior que pedir. */
-  const consolidado = !municipioId;
+  const consolidado = !munEfetivo;
 
   return (
     <div className="space-y-4">
@@ -256,6 +290,30 @@ export default function AgendamentosPage() {
       <Bloco className="p-3">
         <div className="flex flex-wrap items-end gap-3">
           <label className="flex flex-col gap-1">
+            <span className="text-[10px]" style={{ color: "var(--bi-faint)" }}>
+              Município
+            </span>
+            <select value={munFiltro} onChange={(e) => setMunFiltro(e.target.value)}
+                    className="bi-input h-8 min-w-[10rem] rounded-lg px-2 text-[12px]">
+              {/* A opção padrão nomeia o município em acesso em vez de dizer
+                  "padrão": quem abre a tela precisa saber DE QUEM é a agenda
+                  que está vendo, sem conferir a barra lateral. */}
+              <option value="">
+                {municipioId
+                  ? `${nomeDoMunicipio(municipios, municipioId)} (em acesso)`
+                  : "Todos os meus municípios"}
+              </option>
+              {municipioId && <option value={TODOS}>Todos os meus municípios</option>}
+              {municipios
+                .filter((m) => String(m.id) !== String(municipioId))
+                .map((m) => (
+                  <option key={m.id} value={String(m.id)}>
+                    {m.nome}{m.uf ? ` - ${m.uf}` : ""}
+                  </option>
+                ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1">
             <span className="text-[10px]" style={{ color: "var(--bi-faint)" }}>De</span>
             <input type="date" value={de} onChange={(e) => setDe(e.target.value)}
                    className="bi-input h-8 rounded-lg px-2 text-[12px]" />
@@ -275,10 +333,10 @@ export default function AgendamentosPage() {
               ))}
             </select>
           </label>
-          {(de || ate || status) && (
+          {(de || ate || status || munFiltro) && (
             <button type="button" className="text-[11px] underline"
                     style={{ color: "var(--bi-accent-ink)" }}
-                    onClick={() => { setDe(""); setAte(""); setStatus(""); }}>
+                    onClick={() => { setDe(""); setAte(""); setStatus(""); setMunFiltro(""); }}>
               limpar filtros
             </button>
           )}
@@ -311,7 +369,7 @@ export default function AgendamentosPage() {
       {(novo || editando) && (
         <AgendamentoModal
           aberto
-          municipioId={Number(editando?.municipio_id ?? municipioId)}
+          municipioId={Number(editando?.municipio_id ?? munEfetivo)}
           item={editando}
           colunas={COLUNAS.map((c) => ({ valor: c.valor, rotulo: c.rotulo }))}
           onFechar={() => { setNovo(false); setEditando(null); }}
