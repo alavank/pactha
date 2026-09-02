@@ -85,7 +85,12 @@ const SEMANA = ["seg", "ter", "qua", "qui", "sex", "sáb", "dom"];
 
 export default function AgendamentosPage() {
   const { municipioId } = useMunicipio();
-  const [vista, setVista] = useState<"lista" | "calendario" | "kanban">("lista");
+  /* ⚠️ O CALENDÁRIO ABRE A TELA (decisão do dono). É a visão que responde a
+     pergunta que traz a pessoa aqui — "o que tem esta semana" —, e é a única
+     das três em que a AUSÊNCIA de compromisso num dia também é informação. A
+     lista responde "o que existe" e o kanban "em que pé está"; as duas fazem
+     sentido depois, não antes. */
+  const [vista, setVista] = useState<"calendario" | "lista" | "kanban">("calendario");
   const [itens, setItens] = useState<Agendamento[]>([]);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -198,7 +203,33 @@ export default function AgendamentosPage() {
             A agenda de trabalho da equipe
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        {/* ⚠️ TRÊS BOTÕES, e não abas (decisão do dono). São três DESENHOS do
+            mesmo recorte, e aba sugere três conteúdos diferentes — o filtro
+            acima continua valendo nos três, o que a aba faria parecer que não.
+            Ficam no alto à direita, onde a pessoa já olha para exportar.
+            `role="group"` + `aria-pressed`: para o leitor de tela isto é um
+            seletor de modo, não navegação. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div role="group" aria-label="Modo de visualização"
+               className="flex overflow-hidden rounded-xl"
+               style={{ border: "1px solid var(--bi-line)" }}>
+            {([
+              ["calendario", "Calendário", CalendarDays],
+              ["lista", "Lista", LayoutList],
+              ["kanban", "Kanban", Columns3],
+            ] as const).map(([v, rotulo, Icone]) => (
+              <button key={v} type="button" onClick={() => setVista(v)}
+                      aria-pressed={vista === v} title={rotulo}
+                      className="flex h-9 items-center gap-1.5 px-3 text-[12px] transition-colors"
+                      style={vista === v
+                        ? { background: "var(--bi-accent-bg)", color: "var(--bi-accent-ink)", fontWeight: 600 }
+                        : { color: "var(--bi-muted)" }}>
+                <Icone className="size-3.5" />
+                {/* O rótulo some no celular; o ícone e o `title` seguram. */}
+                <span className="hidden sm:inline">{rotulo}</span>
+              </button>
+            ))}
+          </div>
           <button type="button" className={BOTAO_SEC} style={ESTILO_SEC}
                   disabled={!!baixando} onClick={() => exportar("xlsx")}>
             {baixando === "xlsx"
@@ -263,23 +294,6 @@ export default function AgendamentosPage() {
           {erro}
         </div>
       )}
-
-      <div className="flex gap-1 border-b" style={{ borderColor: "var(--bi-line)" }}>
-        {([
-          ["lista", "Lista", LayoutList],
-          ["calendario", "Calendário", CalendarDays],
-          ["kanban", "Kanban", Columns3],
-        ] as const).map(([v, rotulo, Icone]) => (
-          <button key={v} type="button" onClick={() => setVista(v)}
-                  aria-current={vista === v ? "page" : undefined}
-                  className="flex items-center gap-1.5 px-3 py-2 text-[12px] transition-colors"
-                  style={vista === v
-                    ? { borderBottom: "2px solid var(--bi-accent-ink)", color: "var(--bi-accent-ink)" }
-                    : { borderBottom: "2px solid transparent", color: "var(--bi-muted)" }}>
-            <Icone className="size-3.5" /> {rotulo}
-          </button>
-        ))}
-      </div>
 
       {carregando && !itens.length ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
