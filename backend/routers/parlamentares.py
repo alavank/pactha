@@ -14,7 +14,7 @@ Endpoints:
 """
 from __future__ import annotations
 import unicodedata
-from services.nome_parlamentar import e_parlamentar_real
+from services.nome_parlamentar import e_parlamentar_real, e_pessoa
 from typing import Optional
 from collections import defaultdict
 from fastapi import APIRouter, Depends, Query, HTTPException
@@ -62,6 +62,7 @@ async def listar(
     q: Optional[str] = Query(None, description="Busca parcial no nome"),
     ano: Optional[int] = Query(None, description="Filtra por ano (None=todos)"),
     anos: Optional[list[int]] = Query(None, description="Varios anos (mandato); soma-se a `ano`"),
+    tipo: str = Query("parlamentar", description="parlamentar (padrao) | outro | todos"),
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
@@ -75,13 +76,21 @@ async def listar(
         valor_total: 1234567.89,
         municipios: ["Araujos", "Bom Despacho"],
         por_fonte: {sigcon: 8, voluntaria: 2, emenda: 2},
+        tipo: "parlamentar",                    # ou "outro" (fundo, municipio)
       }, ...]
+
+    `tipo` filtra o que volta e vem "parlamentar" por PADRAO: a tela e de
+    parlamentares, e o proponente institucional (Fundo Municipal de Saude,
+    Municipio de X) liderava o ranking em valor sem ser gente. O payload traz
+    `contagem` com os dois lados, para o seletor da tela oferecer "outros"
+    sem precisar de uma segunda chamada.
     """
     ensure_municipio_access(current, municipio_id)
     ensure_tela(current, "parlamentares")
     return await aggregate_parlamentares(
         db, municipio_id=municipio_id, q=q,
         ano=anos_list((anos or []) + ([ano] if ano else [])),
+        tipo=tipo,
     )
 
 
@@ -92,6 +101,7 @@ async def aggregate_parlamentares(
     ano=None,
     incluir_plano_acao: bool = True,
     municipio_ids: Optional[list[int]] = None,
+    tipo: str = "todos",
 ) -> dict:
     """Nucleo da agregacao cross-fonte de parlamentares, SEM gate de auth.
 
@@ -101,7 +111,13 @@ async def aggregate_parlamentares(
 
     `municipio_ids` (lista) = escopo CONSOLIDADO da assessoria: agrega sobre esse
     CONJUNTO (`= ANY(:muns)`). Ignorado quando `municipio_id` (unico) e informado;
-    ausentes ambos = todos (comportamento original preservado)."""
+    ausentes ambos = todos (comportamento original preservado).
+
+    `tipo`: "parlamentar" (so pessoas) | "outro" (so entidades) | "todos".
+    ⚠️ O default e "todos" DE PROPOSITO: seis chamadores (bi.py, painel.py,
+    /comparar) ja dependiam do conjunto inteiro. Quem quer o recorte de pessoas
+    pede — e os endpoints de TELA pedem "parlamentar". Trocar o default aqui
+    mudaria, em silencio, o valor exibido no Painel do prefeito."""
     by_norm: dict[str, dict] = defaultdict(lambda: {
         "nome_normalizado": "",
         "nome_display": "",
@@ -110,6 +126,10 @@ async def aggregate_parlamentares(
         "valor_total": 0.0,
         "municipios": set(),
         "por_fonte": {"sigcon": 0, "voluntaria": 0, "emenda": 0, "plano_acao": 0, "pac": 0, "fns": 0},
+        # Marcado pelas fontes que entram com PROPONENTE no lugar do autor (PAC
+        # sem emenda, FNS). Nao e adivinhacao de texto: a propria origem sabe
+        # que ali nao vem nome de pessoa. Vira `tipo` no final e some do payload.
+        "_inst": False,
     })
 
     where_extra = ""
@@ -299,7 +319,8 @@ async def aggregate_parlamentares(
         SELECT COALESCE(NULLIF(TRIM(emenda_parlamentar), ''), proponente) AS nome,
                municipio_id,
                (SELECT nome FROM municipios WHERE id=transferegov_pac.municipio_id) AS mun_nome,
-               COALESCE(valor_total, 0) AS valor
+               COALESCE(valor_total, 0) AS valor,
+               (NULLIF(TRIM(emenda_parlamentar), '') IS NULL) AS veio_do_proponente
         FROM transferegov_pac
         WHERE COALESCE(NULLIF(TRIM(emenda_parlamentar), ''), proponente) IS NOT NULL
         {where_extra}{ano_pac}
@@ -319,6 +340,10 @@ async def aggregate_parlamentares(
             if row[2]:
                 entry["municipios"].add(row[2])
             entry["por_fonte"]["pac"] += 1
+            # Sem emenda parlamentar, o nome acima E o proponente (o municipio,
+            # o consorcio) — entidade, nao pessoa.
+            if row[4]:
+                entry["_inst"] = True
     except Exception:
         pass
 
@@ -349,6 +374,9 @@ async def aggregate_parlamentares(
             entry["valor_total"] += _money(row[1])
             entry["municipios"].add(mun_nome)
             entry["por_fonte"]["fns"] += 1
+            # `_fns_label` e rotulo sintetico ("FUNDO MUNICIPAL DE SAUDE — X"):
+            # o FNS nao publica o autor da emenda, entao aqui nunca ha pessoa.
+            entry["_inst"] = True
     except Exception:
         pass
 
@@ -366,6 +394,12 @@ async def aggregate_parlamentares(
         entry["nome_display"] = (variants[0] if variants else key).replace("�", "").strip()
         del entry["nome_variants"]
         entry["municipios"] = sorted(entry["municipios"])
+        # `tipo` = "parlamentar" (pessoa) | "outro" (fundo, municipio, consorcio).
+        # Duas perguntas, nesta ordem: a ORIGEM ja sabe que nao e pessoa (PAC no
+        # proponente, FNS)? Se nao, o NOME denuncia entidade? A origem vem
+        # primeiro por ser determinística — nao depende de acertar o texto.
+        institucional = entry.pop("_inst", False) or not e_pessoa(entry["nome_display"])
+        entry["tipo"] = "outro" if institucional else "parlamentar"
         out.append(entry)
 
     # Filtro de busca textual
@@ -373,10 +407,22 @@ async def aggregate_parlamentares(
         q_norm = _norm(q)
         out = [e for e in out if q_norm in e["nome_normalizado"]]
 
+    # Contagem ANTES do filtro de tipo — o seletor da tela precisa saber quantos
+    # existem de cada lado, inclusive do lado que nao esta sendo exibido.
+    total_parlamentares = sum(1 for e in out if e["tipo"] == "parlamentar")
+    total_outros = len(out) - total_parlamentares
+
+    if tipo in ("parlamentar", "outro"):
+        out = [e for e in out if e["tipo"] == tipo]
+
     # Ordena por total descendente
     out.sort(key=lambda e: (-e["total_lancamentos"], -e["valor_total"]))
 
-    return {"items": out, "total": len(out)}
+    return {
+        "items": out,
+        "total": len(out),
+        "contagem": {"parlamentar": total_parlamentares, "outro": total_outros},
+    }
 
 
 # ---------------------------------------------------------------------------

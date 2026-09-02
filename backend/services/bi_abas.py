@@ -11,7 +11,7 @@ difere por tabela e esta comentada em cada query:
   transferegov_propostas / transferegov_pac                      -> sufixo de `numero_proposta` ("xxx/AAAA")
 """
 from __future__ import annotations
-from services.nome_parlamentar import e_parlamentar_real
+from services.nome_parlamentar import e_parlamentar_real, e_pessoa
 
 import unicodedata
 from collections import defaultdict
@@ -292,11 +292,16 @@ async def bi_parlamentares_detalhe(
     anos: Optional[list[int]] = None,
     max_parlamentares: int = 24,
     max_lancamentos: int = 12,
+    tipo: str = "todos",
 ) -> dict:
     """Ranking de parlamentares COM os lancamentos de cada um — o que o prefeito
     quer ver na TV: quem mandou, quanto, pra que (finalidade) e pra quem
     (destinacao/beneficiario). Uma unica varredura das 3 fontes que tem autor
-    nominal no banco (SIGCON, voluntarias, emendas estaduais)."""
+    nominal no banco (SIGCON, voluntarias, emendas estaduais).
+
+    `tipo`: "parlamentar" (so pessoas) | "outro" (secretarias, fundos que
+    aparecem no campo de autor) | "todos". Default "todos" preserva quem ja
+    chamava; a ABA do dashboard pede "parlamentar"."""
     if not ids:
         return {"itens": [], "total": 0, "valor_total": 0.0}
     p = _params(ids, anos)
@@ -396,8 +401,20 @@ async def bi_parlamentares_detalhe(
             "por_fonte": dict(g["por_fonte"]),
             "lancamentos": g["lancamentos"][:max_lancamentos],
             "lancamentos_ocultos": max(0, g["total_lancamentos"] - max_lancamentos),
+            # Aqui as 3 fontes trazem AUTOR NOMINAL (nao ha proponente entrando
+            # no lugar do parlamentar, como no PAC/FNS da tela de Parlamentares),
+            # entao a decisao e so pelo nome. Mesma regra, um lugar so.
+            "tipo": "parlamentar" if e_pessoa(g["nome"]) else "outro",
         })
     itens.sort(key=lambda x: (-x["valor_total"], -x["total_lancamentos"]))
+
+    # Contagem dos DOIS lados antes de filtrar — o seletor da aba precisa dela.
+    contagem = {
+        "parlamentar": sum(1 for i in itens if i["tipo"] == "parlamentar"),
+        "outro": sum(1 for i in itens if i["tipo"] == "outro"),
+    }
+    if tipo in ("parlamentar", "outro"):
+        itens = [i for i in itens if i["tipo"] == tipo]
 
     valor_total = sum(i["valor_total"] for i in itens)
 
@@ -417,8 +434,12 @@ async def bi_parlamentares_detalhe(
         # que nao o da tabela ao lado, e duas verdades na mesma tela e pior que
         # nenhuma.
         if not anos or set(anos) == set(atual):
+            # `tipo` PRECISA descer nas duas chamadas do comparativo: sem isso a
+            # faixa compararia o total de "todos" contra a tabela filtrada em
+            # "parlamentares" — duas verdades na mesma tela, exatamente o que o
+            # comentario acima diz que nao pode acontecer.
             ant = await bi_parlamentares_detalhe(
-                db, ids, anos=anterior, max_parlamentares=1, max_lancamentos=0)
+                db, ids, anos=anterior, max_parlamentares=1, max_lancamentos=0, tipo=tipo)
             base = float(ant.get("valor_total") or 0.0)
             # `valor_total` so vale como "mandato atual" quando a aba ESTA
             # filtrada por ele. Com a aba em "todos os anos", reaproveita-lo
@@ -429,7 +450,7 @@ async def bi_parlamentares_detalhe(
                 topo = valor_total
             else:
                 atu = await bi_parlamentares_detalhe(
-                    db, ids, anos=atual, max_parlamentares=1, max_lancamentos=0)
+                    db, ids, anos=atual, max_parlamentares=1, max_lancamentos=0, tipo=tipo)
                 topo = float(atu.get("valor_total") or 0.0)
             comparativo = {
                 "rotulo_atual": f"{atual[0]}–{atual[-1]}" if len(atual) > 1 else str(atual[0]),
@@ -450,6 +471,7 @@ async def bi_parlamentares_detalhe(
         "valor_total": valor_total,
         "anos": anos or [],
         "comparativo": comparativo,
+        "contagem": contagem,
     }
 
 

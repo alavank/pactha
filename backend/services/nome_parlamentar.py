@@ -66,3 +66,59 @@ def e_parlamentar_real(nome: str) -> bool:
     if len(s) < 3:
         return False
     return _chave(s) not in _NAO_E_NOME
+
+
+# ---------------------------------------------------------------------------
+# PESSOA vs INSTITUICAO
+# ---------------------------------------------------------------------------
+# Motivo, com o caso que originou: na tela de Parlamentares de Conceicao da
+# Barra/ES os dois primeiros colocados eram "FUNDO MUNICIPAL DE SAUDE —
+# Conceicao da Barra" (R$ 37,4 mi) e "MUNICIPIO DE CONCEICAO DA BARRA"
+# (R$ 12,3 mi) — juntos, 80% do valor da tela. Nao sao erro de coleta: o PAC
+# cai no `proponente` quando a proposta nao tem emenda parlamentar, e o FNS nao
+# publica o autor da emenda de saude, entao o Fundo entra como proponente. O
+# dado esta certo; o que estava errado era chama-los de "parlamentar".
+#
+# ⚠️ Isto NAO exclui ninguem. Classifica, para a tela poder separar. Sumir com
+# esses lancamentos esconderia 80% do dinheiro do municipio — o oposto do que
+# se quer. Quem consome decide o que mostrar; aqui so se responde "e pessoa?".
+#
+# ⚠️ Comparacao por PALAVRA INTEIRA do nome normalizado, nunca por substring —
+# a mesma disciplina do bloco acima. "BARRA" contem "ARR", e um parlamentar
+# pode se chamar "Fundao"; so descartamos quando a palavra inteira bate.
+_TERMOS_INSTITUCIONAIS = {
+    # os dois que motivaram o modulo
+    "FUNDO", "FUNDOS", "MUNICIPIO", "MUNICIPAL",
+    # entes e orgaos
+    "PREFEITURA", "ESTADO", "GOVERNO", "UNIAO", "MINISTERIO", "SECRETARIA",
+    "DEPARTAMENTO", "SUPERINTENDENCIA", "AUTARQUIA", "AGENCIA", "GABINETE",
+    "DIRETORIA", "CAMARA", "CONSELHO", "DISTRITO", "TESOURO",
+    # pessoas juridicas de direito privado / terceiro setor
+    "INSTITUTO", "FUNDACAO", "ASSOCIACAO", "CONSORCIO", "COOPERATIVA",
+    "SINDICATO", "EMPRESA", "COMPANHIA", "LTDA", "EIRELI",
+    # equipamentos publicos que aparecem como proponente
+    "HOSPITAL", "UNIVERSIDADE", "FACULDADE", "BANCO",
+}
+
+
+def e_pessoa(nome: str) -> bool:
+    """True quando o texto parece nome de PESSOA (um parlamentar), False quando
+    e uma entidade (fundo, municipio, prefeitura, instituto...).
+
+    Deliberadamente conservadora: na duvida responde True. Um parlamentar
+    classificado como "outro" some da aba que abre por padrao — falha
+    silenciosa e cara. Uma entidade classificada como parlamentar so polui uma
+    lista, e e visivel. Por isso a lista acima nao inclui termos que apelidos
+    parlamentares reais usam ("Delegado", "Professora", "Doutor", "Sargento",
+    "Coronel", "Cabo", "Pastor", "Padre", "Policial", "Bombeiro"), mesmo que
+    alguns tambem nomeiem instituicoes.
+    """
+    if not e_parlamentar_real(nome):
+        return False
+    palavras = set(_chave(nome).replace("/", " ").replace(".", " ").split())
+    if palavras & _TERMOS_INSTITUCIONAIS:
+        return False
+    # CNPJ no meio do nome (14 digitos seguidos) — proponente, nunca pessoa.
+    if any(p.isdigit() and len(p) >= 11 for p in palavras):
+        return False
+    return True
