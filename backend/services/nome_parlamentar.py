@@ -93,6 +93,13 @@ _TERMOS_INSTITUCIONAIS = {
     "PREFEITURA", "ESTADO", "GOVERNO", "UNIAO", "MINISTERIO", "SECRETARIA",
     "DEPARTAMENTO", "SUPERINTENDENCIA", "AUTARQUIA", "AGENCIA", "GABINETE",
     "DIRETORIA", "CAMARA", "CONSELHO", "DISTRITO", "TESOURO",
+    # Emenda de BANCADA e do coletivo, nao de uma pessoa. Entrou depois da
+    # primeira auditoria, que quase deixou passar um resultado INCOERENTE: das
+    # cinco bancadas reais da base (GOIAS, MINAS GERAIS, TOCANTINS, ESPIRITO
+    # SANTO, DISTRITO FEDERAL), so a do DISTRITO FEDERAL caia em "outro" — e por
+    # acidente, porque "DISTRITO" ja estava na lista acima. As outras quatro
+    # seriam exibidas como se fossem gente, na mesma tela.
+    "BANCADA",
     # pessoas juridicas de direito privado / terceiro setor
     "INSTITUTO", "FUNDACAO", "ASSOCIACAO", "CONSORCIO", "COOPERATIVA",
     "SINDICATO", "EMPRESA", "COMPANHIA", "LTDA", "EIRELI",

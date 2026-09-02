@@ -56,8 +56,12 @@ async def visao(
     ensure_municipio_access(current, municipio_id)
     summary = await summary_core(db, municipio_id, ano=ano)
     cauc = await fetch_cauc_situacao(db, municipio_id)
+    # "top parlamentares" da home do Painel: pessoas. O proponente institucional
+    # (Fundo Municipal de Saude, Municipio de X) entrava aqui como se fosse
+    # gente e, por valor, liderava — na tela que o prefeito ve.
     ranking = await aggregate_parlamentares(
-        db, municipio_id=municipio_id, ano=ano, incluir_plano_acao=False
+        db, municipio_id=municipio_id, ano=ano, incluir_plano_acao=False,
+        tipo="parlamentar"
     )
     mudancas = await _status_changes.listar_core(db, [municipio_id], 30, 8)
     # Saúde: dívida do Fundo Estadual de Saúde (Acordo FES/SES-MG) com o município.
@@ -101,13 +105,17 @@ async def ranking_parlamentares(
     municipio_id: int,
     ano: Optional[int] = Query(None),
     live: bool = Query(False, description="Inclui o fetch AO VIVO do RP9 federal (mais lento)"),
+    tipo: str = Query("parlamentar", description="parlamentar (padrao) | outro | todos"),
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
-    """Ranking de quem destinou recurso ao municipio (cross-fonte)."""
+    """Ranking de quem destinou recurso ao municipio (cross-fonte).
+
+    `tipo` = "parlamentar" por padrao, igual as demais telas; `contagem` no
+    payload permite oferecer "outros" sem uma segunda chamada."""
     ensure_municipio_access(current, municipio_id)
     return await aggregate_parlamentares(
-        db, municipio_id=municipio_id, ano=ano, incluir_plano_acao=live
+        db, municipio_id=municipio_id, ano=ano, incluir_plano_acao=live, tipo=tipo
     )
 
 
@@ -155,12 +163,16 @@ async def narrativa(
     ensure_municipio_access(current, municipio_id)
     summary = await summary_core(db, municipio_id, ano=ano)
     cauc = await fetch_cauc_situacao(db, municipio_id)
-    ranking = await aggregate_parlamentares(db, municipio_id=municipio_id, ano=ano, incluir_plano_acao=False)
-    top = [
-        {"n": t["nome_display"], "v": t["valor_total"]}
-        for t in ranking["items"]
-        if "MUNICIPIO" not in (t.get("nome_normalizado") or "") and "PREFEITURA" not in (t.get("nome_normalizado") or "")
-    ][:3]
+    # `tipo="parlamentar"` no lugar do filtro por SUBSTRING que vivia aqui:
+    #     if "MUNICIPIO" not in nome and "PREFEITURA" not in nome
+    # A intencao estava certa e o efeito, nao. Por ser substring solta, deixava
+    # passar "FUNDO MUNICIPAL DE SAUDE — <cidade>" (tem "MUNICIPAL", nao
+    # "MUNICIPIO") e toda "SECRETARIA DE ESTADO ...", que e como o Fundo entrava
+    # no top 3 do Painel do prefeito. Era tambem a QUINTA copia de uma regra que
+    # services/nome_parlamentar.py existe para centralizar.
+    ranking = await aggregate_parlamentares(db, municipio_id=municipio_id, ano=ano,
+                                            incluir_plano_acao=False, tipo="parlamentar")
+    top = [{"n": t["nome_display"], "v": t["valor_total"]} for t in ranking["items"]][:3]
     dados = {
         "municipio": summary.municipio.nome,
         "ano": ano,

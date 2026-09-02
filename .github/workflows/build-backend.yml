@@ -1,9 +1,10 @@
 name: build-backend
 
-# Builda UMA vez as imagens do backend compartilhadas pelos 4 tenants
-# (freitas/trust/montesiao/santamaria) e publica no GitHub Container Registry (ghcr.io).
+# Builda UMA vez as imagens do backend compartilhadas pelos 5 tenants
+# (freitas/trust/montesiao/santamaria/novapalma) e publica no GitHub Container
+# Registry (ghcr.io).
 #
-# POR QUE: a API e o worker sao IDENTICOS entre os 4 tenants -- a diferenca deles
+# POR QUE: a API e o worker sao IDENTICOS entre os 5 tenants -- a diferenca deles
 # e so env de runtime. Hoje cada push na main faz a VPS (AWS Lightsail t3.large,
 # 2 vCPU burstable) buildar as 6 imagens (3 api + 3 worker), sendo o worker de
 # 2,4 GB com Chromium. Isso queimou os creditos de burst da instancia duas vezes
@@ -114,7 +115,7 @@ jobs:
     needs: build
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 120   # fila do Coolify (concurrent_builds=1) pode custar ~20min/tenant (4 tenants desde 08/2026)
+    timeout-minutes: 120   # fila do Coolify (concurrent_builds=1) pode custar ~20min/tenant (5 tenants desde 09/2026)
     concurrency:
       group: deploy-backend        # serializa deploys; um novo ESPERA o atual
       cancel-in-progress: false
@@ -127,6 +128,7 @@ jobs:
         trust:pphvk2ygkuirjhu9qptvmfs5:xg714h8l7va4ejq70a5pmv5t
         montesiao:chr0n883hp19tjh7829k85a7:jhf0kjhps5keujiyhhsnvjt6
         santamaria:ufjctldngc14dsdw8pxnqivl:wquremniv57gag3tlil8uf6d
+        novapalma:gemcwirmbelk1dztp2pbcqpf:kqcnvdsdkgn1efkm4nog8oes
     steps:
       - name: Deploy por tenant (API -> migrations confirmadas -> worker com janela)
         run: |
@@ -214,7 +216,7 @@ jobs:
             # pactha (que e so pull, ~15-50s) preso em 'queued' por >10min.
             # Desistir na fila e falso negativo.
             # ⚠️ O teto de execucao era 10min sob a premissa de que deploy de
-            # backend e "so um pull". Com 4 tenants disputando o mesmo slot a
+            # backend e "so um pull". Com 5 tenants disputando o mesmo slot a
             # premissa envelheceu: em 17/08 um deploy de frontend levou 12min49
             # e o CI o reportou como falha 2min antes de ele terminar. O teto
             # acompanha, e o desfecho passa a distinguir os dois casos abaixo.
@@ -312,7 +314,7 @@ jobs:
             if [ -n "$FALHAS" ]; then
               echo "FALHARAM:$FALHAS — demais apps deployados; conferir no Coolify."
             else
-              echo "APIs e workers dos 4 tenants deployados e CONFIRMADOS (deployment finished)."
+              echo "APIs e workers dos 5 tenants deployados e CONFIRMADOS (deployment finished)."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
           [ -z "$FALHAS" ]
