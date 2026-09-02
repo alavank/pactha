@@ -82,25 +82,39 @@ está lá: é a única informação DESTE município que a tela tem hoje, e é a
 """
 from __future__ import annotations
 
+# ⚠️ ESTE TEXTO DESCREVE O COLETOR, ENTÃO ENVELHECE COM ELE. Até 02/09/2026 ele
+# dizia "esta tela ainda NÃO coleta os repasses automaticamente"; deixá-lo assim
+# depois de a coleta existir teria sido tão falso quanto omitir a ressalva.
+# Quem mexer em `ingestion/fns_faf.py` mexe aqui no mesmo commit.
 AVISO = (
-    "O InvestSUS é fechado: consultar exige login no SCPA, o autenticador do "
-    "Ministério da Saúde. Esta tela ainda NÃO coleta os repasses automaticamente "
-    "— ela reúne o que dá sem login (o que cada bloco significa, o que conferir, "
-    "e a situação do acesso deste município). Quando a coleta entrar, os valores "
-    "aparecem aqui e passam a alimentar o alerta e o Relatório de Monitoramento."
+    "Os valores abaixo são o CONSOLIDADO POR BLOCO do fundo a fundo, coletados "
+    "automaticamente do ConsultaFNS — fonte pública do Ministério da Saúde, sem "
+    "login. É o quanto o Fundo Municipal recebeu no ano, por bloco e por grupo "
+    "de financiamento. O que esta tela ainda NÃO traz é o extrato parcela a "
+    "parcela (data e competência de cada crédito): esse detalhe fica no portal "
+    "do InvestSUS, cujo acesso depende do cadastro descrito abaixo."
 )
 
-# ⭐ O QUE FALTA PARA A COLETA EXISTIR — escrito para o GESTOR, não para o
+# ⭐ O QUE FALTA PARA O DETALHE — escrito para o GESTOR, não para o
 # desenvolvedor. É uma pendência DELE (cadastrar o MFA e nos passar o segredo),
 # e uma tela que dissesse só "não é automático" esconderia a única ação que
 # destrava o resto. Detalhes técnicos no cabeçalho deste módulo.
+#
+# ⚠️ O TÍTULO MUDOU EM 02/09/2026 e a mudança não é cosmética. Ele dizia "para os
+# valores aparecerem aqui" — os valores JÁ aparecem, vindos do ConsultaFNS sem
+# login. O que este cadastro destrava agora é só o extrato parcela a parcela.
+# Mantê-lo no texto antigo pediria ao gestor uma ação em troca de algo que ele
+# já tem na tela, e ele concluiria que a tela está quebrada.
 BLOQUEIO_MFA = {
-    "titulo": "O que falta para os valores aparecerem aqui",
+    "titulo": "O que falta para o detalhe parcela a parcela",
     "texto": (
-        "O login do InvestSUS passa pelo SCPA (Sistema de Cadastro e Permissão "
-        "de Acesso do Ministério da Saúde), que agora exige verificação em duas "
-        "etapas. Testamos com a credencial cadastrada: a senha está correta, mas "
-        "a conta ainda não tem o aplicativo autenticador configurado."
+        "O consolidado por bloco acima vem de fonte pública e não depende de "
+        "acesso nenhum. Já o extrato de cada crédito — data, competência e "
+        "número da parcela — só existe dentro do InvestSUS, cujo login passa "
+        "pelo SCPA (Sistema de Cadastro e Permissão de Acesso do Ministério da "
+        "Saúde), que exige verificação em duas etapas. Testamos com a credencial "
+        "cadastrada: a senha está correta, mas a conta ainda não tem o "
+        "aplicativo autenticador configurado."
     ),
     "passos": [
         "No celular, instalar um aplicativo autenticador (Google Authenticator, "

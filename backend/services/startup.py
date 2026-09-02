@@ -91,6 +91,11 @@ MIGRATION_FILES = [
     # As quatro colunas de dinheiro que a pagina do SIMEC sempre teve e o parser
     # descartava (empenhado, pago, saldo, prestacao de contas). Aditiva.
     "add_simec_termos_dinheiro.sql",
+    # FUNDO A FUNDO da saude: o repasse do FNS ao Fundo Municipal por BLOCO.
+    # A maior transferencia federal recorrente da saude, invisivel para a
+    # plataforma ate 02/09/2026. Depende da tabela `municipios` (FK), que o
+    # create_all dos modelos cria ANTES desta lista.
+    "add_fns_repasse_faf.sql",
     # Voluntarias: situacao contratacao + clausula suspensiva detalhe + parlamentar
     "add_voluntarias_clausula_parlamentar.sql",
     # Voluntarias: detalhe generico da Situacao de Contratacao (qualquer tipo)
