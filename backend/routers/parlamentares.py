@@ -263,52 +263,70 @@ async def aggregate_parlamentares(
                 entry["municipios"].add(row[2])
             entry["por_fonte"]["emenda"] += 1
 
-    # 4) Transferencia Especial / Plano de Acao (RP9, "emenda Pix") — AO VIVO.
-    # Fonte federal que NAO fica no banco (API nacional, cache 1h no router
-    # transferegov). E por onde chega a maioria das emendas de deputado FEDERAL.
-    # O autor vem embutido em codigoEmendaFormatado ('<codigo>-<Nome>').
-    # Degrada em silencio se a API cair — nao pode derrubar a tela.
+    # 4) Transferencia Especial / Plano de Acao (RP9, "emenda Pix") — DA TABELA.
+    #    E por onde chega a maioria das emendas de deputado FEDERAL.
+    #
+    #    ⚠️ ISTO ERA UM FETCH AO VIVO da API federal e custava 5-7s POR ABERTURA
+    #    da tela. Medido em 02/09/2026: 1,8s por pagina da API, ES = 2 paginas,
+    #    e o orcamento (`TE_FETCH_BUDGET_S`, default 15s) chegava a cortar MG no
+    #    meio. O cache de 1h nao salvava porque vive na MEMORIA DO PROCESSO e o
+    #    uvicorn roda `--workers 2`: cada worker aquece o seu, o usuario alterna
+    #    entre eles, e todo deploy zera os dois.
+    #
+    #    O dado ja esta no banco: `transferegov_te`, que o coletor preenche
+    #    extraindo o autor do MESMO campo (`codigoEmendaFormatado`, parte apos o
+    #    '-') com a mesma regra. Conferido contra o ao vivo em Conceicao da
+    #    Barra/ES: mesmos parlamentares, mesmo total (R$ 7.329.500).
+    #
+    #    Ganho: a tela deixa de depender de API externa instavel, passa a ler o
+    #    mesmo dado que a aba do dashboard (services/bi_abas.py) — as duas nao
+    #    podem mais divergir por fonte — e o custo vira o de uma query local.
+    #
+    #    ⚠️ FILTRO POR CNPJ: `transferegov_te` esta contaminada porque o coletor
+    #    casa o beneficiario por SUBSTRING do nome, entao "MUNICIPIO DE PARAISO
+    #    DO TOCANTINS" cai no municipio mineiro "Tocantins" e "CONCEICAO DA
+    #    BARRA DE MINAS" caia aqui. O fetch ao vivo escapava disso so porque
+    #    pedia a listagem POR UF. Sem este filtro, trocar a fonte introduziria
+    #    lancamento de outro municipio. O `OR` preserva a linha quando falta
+    #    CNPJ de um dos lados (municipio sem CNPJ perderia toda a sua TE).
+    #
+    #    `incluir_plano_acao` deixa de significar "pula o fetch caro" — ficou
+    #    como interruptor da fonte, e os chamadores que passavam False (Painel,
+    #    /comparar) seguem funcionando.
+    ano_te = " AND substr(te.programa_codigo, 5, 4) = ANY(:anos_txt)" if anos else ""
+    sql_te = f"""
+        SELECT te.parlamentar,
+               (SELECT nome FROM municipios WHERE id = te.municipio_id) AS mun_nome,
+               COALESCE(te.valor_total, 0) AS valor
+        FROM transferegov_te te
+        LEFT JOIN municipios m ON m.id = te.municipio_id
+        WHERE te.parlamentar IS NOT NULL
+          AND (
+                te.beneficiario_cnpj IS NULL OR m.cnpj IS NULL
+                OR regexp_replace(te.beneficiario_cnpj, '[^0-9]', '', 'g')
+                   = regexp_replace(m.cnpj, '[^0-9]', '', 'g')
+              )
+          {where_extra.replace("municipio_id", "te.municipio_id")}{ano_te}
+    """
     try:
         if not incluir_plano_acao:
             raise _SkipPlanoAcao()
-        from routers.transferegov import _fetch_listagem
-        muns_sql = "SELECT id, nome, uf FROM municipios WHERE active = true"
-        mparams: dict = {}
-        if municipio_id:
-            muns_sql += " AND id = :mid"; mparams["mid"] = municipio_id
-        elif municipio_ids:
-            muns_sql += " AND id = ANY(:mids)"; mparams["mids"] = list(municipio_ids)
-        muns = (await db.execute(text(muns_sql), mparams)).fetchall()
-        listagens: dict[str, list] = {}
-        for m in muns:
-            if m.uf not in listagens:
-                try:
-                    listagens[m.uf] = await _fetch_listagem(m.uf)
-                except Exception:
-                    listagens[m.uf] = []
-        for m in muns:
-            mn = _norm(m.nome)
-            for it in listagens.get(m.uf, []):
-                ben = _norm(it.get("beneficiarioNome") or "")
-                if not (mn in ben or ben.endswith(mn)):
-                    continue
-                if anos:
-                    pc = str(it.get("programaCodigo") or "")
-                    if (pc[4:8] if len(pc) >= 8 else "") not in {str(a) for a in anos}:
-                        continue
-                _, _, autor = (it.get("codigoEmendaFormatado") or "").partition("-")
-                autor = autor.strip()
-                if not autor or len(autor) < 3:
-                    continue  # sem emenda nominal (institucional) -> fora do ranking
-                key = _norm(autor)
-                if not key:
-                    continue
-                entry = by_norm[key]
-                entry["nome_variants"].add(autor)
-                entry["total_lancamentos"] += 1
-                entry["valor_total"] += _money(it.get("valorTotal"))
-                entry["municipios"].add(m.nome)
-                entry["por_fonte"]["plano_acao"] += 1
+        for row in (await db.execute(text(sql_te), params)).fetchall():
+            autor = (row[0] or "").strip()
+            if not autor or len(autor) < 3:
+                continue  # sem emenda nominal (institucional) -> fora do ranking
+            key = _norm(autor)
+            if not key:
+                continue
+            entry = by_norm[key]
+            entry["nome_variants"].add(autor)
+            entry["total_lancamentos"] += 1
+            entry["valor_total"] += _money(row[2])
+            if row[1]:
+                entry["municipios"].add(row[1])
+            entry["por_fonte"]["plano_acao"] += 1
+    except _SkipPlanoAcao:
+        pass
     except Exception:
         pass
 
@@ -639,48 +657,60 @@ async def detalhe(
 
     # Plano de Acao / Transferencia Especial (RP9) — AO VIVO (mesma fonte da tela
     # TransfereGov). Autor vem em codigoEmendaFormatado ('<codigo>-<Nome>').
+    # DA TABELA `transferegov_te`, pela mesma razao da listagem (fonte 4 do
+    # aggregate): o fetch AO VIVO custava 5-7s e o cache de 1h nao ajudava,
+    # porque vive na memoria do processo e o uvicorn roda --workers 2.
+    #
+    # ⚠️ E PRECISA ser a mesma fonte da listagem. Se a lista lesse a tabela e o
+    # detalhe a API ao vivo, o cartao mostraria um total e, ao expandir,
+    # lancamentos que somam outro — a mesma divergencia que ja existia entre a
+    # aba do dashboard e esta tela. Uma fonte so, para nao haver duas verdades.
+    #
+    # Filtro por CNPJ: a tabela esta contaminada pelo casamento por substring do
+    # coletor (ver comentario na fonte 4). Sem ele, o detalhe listaria lancamento
+    # de outro municipio.
     plano_acao: list = []
     try:
-        from routers.transferegov import _fetch_listagem
-        alvo = _norm(nome_param)
-        muns_sql = "SELECT id, nome, uf FROM municipios WHERE active = true"
-        mp: dict = {}
+        ano_te_d = " AND substr(te.programa_codigo, 5, 4) = ANY(:anos_txt_te)" if _anos else ""
+        mun_te_d = " AND te.municipio_id = :mun_te" if municipio_id else ""
+        sql_pa = f"""
+            SELECT te.plano_acao_id, te.municipio_id, m.nome, te.codigo, te.emenda,
+                   te.parlamentar, te.objeto, te.situacao,
+                   COALESCE(te.valor_total, 0), COALESCE(te.valor_custeio, 0),
+                   COALESCE(te.valor_investimento, 0)
+            FROM transferegov_te te
+            LEFT JOIN municipios m ON m.id = te.municipio_id
+            WHERE te.parlamentar IS NOT NULL AND te.municipio_id IS NOT NULL
+              AND (
+                    te.beneficiario_cnpj IS NULL OR m.cnpj IS NULL
+                    OR regexp_replace(te.beneficiario_cnpj, '[^0-9]', '', 'g')
+                       = regexp_replace(m.cnpj, '[^0-9]', '', 'g')
+                  )
+              {mun_te_d}{ano_te_d}
+        """
+        pa_params: dict = {}
         if municipio_id:
-            muns_sql += " AND id = :mun"; mp["mun"] = municipio_id
-        muns = (await db.execute(text(muns_sql), mp)).fetchall()
-        listagens: dict[str, list] = {}
-        for m in muns:
-            if m.uf not in listagens:
-                try:
-                    listagens[m.uf] = await _fetch_listagem(m.uf)
-                except Exception:
-                    listagens[m.uf] = []
-        for m in muns:
-            mn = _norm(m.nome)
-            for it in listagens.get(m.uf, []):
-                ben = _norm(it.get("beneficiarioNome") or "")
-                if not (mn in ben or ben.endswith(mn)):
-                    continue
-                code, _, autor = (it.get("codigoEmendaFormatado") or "").partition("-")
-                if not autor or alvo not in _norm(autor):
-                    continue
-                if _anos:
-                    pc = str(it.get("programaCodigo") or "")
-                    if (pc[4:8] if len(pc) >= 8 else "") not in {str(a) for a in _anos}:
-                        continue
-                plano_acao.append({
-                    "id": it.get("planoAcaoId"),
-                    "municipio_id": m.id, "municipio_nome": m.nome,
-                    "codigo": it.get("planoAcaoCodigo"),
-                    "emenda": code.strip(),
-                    "parlamentar": autor.strip(),
-                    "objeto": it.get("objetoDescricao") or it.get("politicasPublicas"),
-                    "situacao": it.get("planoAcaoSituacao"),
-                    "valor_total": _money(it.get("valorTotal")),
-                    "valor_custeio": _money(it.get("valorCusteio")),
-                    "valor_investimento": _money(it.get("valorInvestimento")),
-                    "fonte": "plano_acao",
-                })
+            pa_params["mun_te"] = municipio_id
+        if _anos:
+            pa_params["anos_txt_te"] = [str(a) for a in _anos]
+        alvo = _norm(nome_param)
+        for r in (await db.execute(text(sql_pa), pa_params)).fetchall():
+            autor = (r[5] or "").strip()
+            if not autor or alvo not in _norm(autor):
+                continue
+            plano_acao.append({
+                "id": r[0],
+                "municipio_id": r[1], "municipio_nome": r[2],
+                "codigo": r[3],
+                "emenda": (r[4] or "").partition("-")[0].strip(),
+                "parlamentar": autor,
+                "objeto": r[6],
+                "situacao": r[7],
+                "valor_total": _money(r[8]),
+                "valor_custeio": _money(r[9]),
+                "valor_investimento": _money(r[10]),
+                "fonte": "plano_acao",
+            })
     except Exception:
         pass
     plano_acao.sort(key=lambda x: x["valor_total"], reverse=True)
