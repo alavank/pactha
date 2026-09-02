@@ -62,6 +62,10 @@
   }
   .last-capture.ok { background: #c6f6d5; color: #22543d; }
   .last-capture.fail { background: #fed7d7; color: #742a2a; }
+  .amb-linha { display:flex; align-items:center; gap:6px; margin:3px 0; }
+  .amb-linha label { flex:0 0 44%; font-size:11px; opacity:.85; }
+  .amb-linha input { flex:1 1 auto; min-width:0; }
+  .status { white-space: pre-line; }
 </style>
 </head>
 <body>
@@ -118,18 +122,23 @@
   </div>
 
   <div class="body hidden" id="config">
+    <!-- Um token por AMBIENTE: os service tokens vivem no banco de cada tenant,
+         entao nao existe chave que sirva para os cinco. A lista nao remove o
+         trabalho de colar cinco chaves — transforma cinco reconfiguracoes
+         repetidas em UMA tela, preenchida uma vez. -->
     <div class="row">
-      <label>API URL</label>
-      <input type="text" id="cfg-api-url" placeholder="https://pactha-api-54-232-208-118.sslip.io/api">
-    </div>
-    <div class="row">
-      <label>Service Token (Administracao &gt; Service Tokens, scope session:write)</label>
-      <input type="password" id="cfg-token" placeholder="pactha_st_...">
+      <label>Service Token por ambiente
+        (Administracao &gt; Service Tokens, scope session:write)</label>
+      <div id="cfg-ambientes"></div>
     </div>
     <button id="btn-save-config">Salvar configuracao</button>
     <button id="btn-cancel-config" class="secondary">Cancelar</button>
   </div>
 
+  <!-- ⚠️ ANTES do popup.js: script classico, escopo global compartilhado.
+       Invertido, `lerAmbientes` nao existe quando o popup registra os
+       handlers, e o botao de capturar quebra em runtime, sem erro na carga. -->
+  <script src="ambientes.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

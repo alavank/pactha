@@ -17,6 +17,12 @@
 // IMPORTANTE: qualquer dominio usado aqui precisa estar em host_permissions no
 // manifest.json, senao o Chrome bloqueia o fetch antes de sair (MV3) e a captura
 // falha sem nunca chegar no servidor.
+// ⚠️ `importScripts` E NAO `import`: o service worker deste manifest e script
+// CLASSICO (sem "type": "module"). Trocar para modulo exigiria mexer no
+// manifest e no popup ao mesmo tempo, e um dos dois ficando para tras deixa a
+// extensao carregando pela metade — sem erro visivel, so sem funcionar.
+importScripts("ambientes.js");
+
 const DEFAULT_API = "https://pactha-api-54-232-208-118.sslip.io/api";
 
 // Mapeamento host → automation_key + URL de keep-alive
@@ -151,8 +157,18 @@ async function getAllCookiesForDomain(host) {
 
 async function capture(host, reason) {
   const cfg = await getConfig();
-  if (!cfg.token) {
-    console.log("[PACTHA] sem token configurado, ignorando captura");
+  /* ⚠️ O PORTEIRO OLHA A LISTA, e a versao anterior desta funcao NAO olhava —
+     era o defeito mais grave desta mudanca, achado em revisao antes de subir.
+     Ele barrava por `cfg.token`, o `pactha_token` UNICO, que depois da migracao
+     multi-ambiente NINGUEM MAIS ESCREVE (o campo saiu da tela e `saveConfig`
+     ficou sem chamador). Em perfil novo ele e "" para sempre, entao este
+     `return` matava TODA a auto-captura — enquanto o popup exibia
+     "Captura em 5 de 5 ambiente(s)" e a captura MANUAL funcionava.
+     Era o mesmo modo de falha silencioso que esta mudanca existe para
+     eliminar, agora com a interface afirmando o contrario. */
+  const ambientes = await lerAmbientes();
+  if (!ambientes.some((a) => a.token && a.ativo !== false)) {
+    console.log("[PACTHA] nenhum ambiente com token, ignorando captura");
     return;
   }
   if (!cfg.auto_enabled) {
@@ -181,6 +197,9 @@ async function capture(host, reason) {
 
   const payload = {
     automation_key: target.key,
+    // ⚠️ IGNORADO por `enviarParaTodos`, que sobrescreve com escopo de
+    // instancia. Fica aqui so para o payload continuar completo se alguem
+    // reaproveitar este objeto — ver a nota em `ambientes.js`.
     municipio_id: cfg.municipio_id || 1,
     cookie: cookies.map((c) => `${c.name}=${c.value}`).join("; "),
     cookies_full: cookies.map((c) => ({
@@ -194,34 +213,29 @@ async function capture(host, reason) {
   };
 
   try {
-    // Token longevo (service token, prefixo 'pactha_') vai como X-Service-Token
-    // — NAO expira em 60min como o JWT. JWT antigo ainda funciona via Bearer.
-    // Aceita os dois prefixos: tokens antigos usavam 'pacta_' (sem H) e cairiam
-    // no caminho do Bearer/JWT, resultando em 401 "token invalido".
-    const isServiceToken = cfg.token.startsWith("pactha_") || cfg.token.startsWith("pacta_");
-    const authHeaders = isServiceToken
-      ? { "X-Service-Token": cfg.token }
-      : { Authorization: `Bearer ${cfg.token}` };
-    const res = await fetch(`${cfg.api}/session-capture`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...authHeaders },
-      body: JSON.stringify(payload),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      console.log(`[PACTHA] ✓ enviado: id=${data.id} auto_scrape=${data.auto_scrape_started}`);
-      // Notifica popup via storage
+    // ⚠️ MANDA PARA TODOS OS AMBIENTES, e nao so para o configurado. Ver o
+    // cabecalho de `ambientes.js`: cada tenant tem Cofre proprio e capturar num
+    // deles deixava os outros com o cookie velho, sem erro nenhum.
+    const lista = await lerAmbientes();
+    const resultados = await enviarParaTodos(payload, lista);
+    const bons = resultados.filter((r) => r.ok);
+    const ruins = resultados.filter((r) => !r.ok);
+    console.log(`[PACTHA] auto: ${resumoEnvio(resultados)}`
+      + (ruins.length ? ` | falharam: ${ruins.map((r) => `${r.nome} (${r.detalhe})`).join(", ")}` : ""));
+    if (bons.length) {
       chrome.storage.local.set({
         pactha_last_capture: {
-          host, reason, n: cookies.length, httpOnly: httpOnlyCount,
-          ok: true, at: now, auto_scrape: !!data.auto_scrape_started,
+          quando: new Date().toISOString(),
+          cookies: cookies.length,
+          httpOnly: httpOnlyCount,
+          host,
+          reason,
+          ambientes_ok: bons.length,
+          ambientes_total: resultados.length,
+          // ⚠️ Os que falharam vao NOMEADOS para o popup. Guardar so a
+          // contagem faria "4 de 5" virar um numero sem acao possivel.
+          falhas: ruins.map((r) => `${r.nome}: ${r.detalhe}`),
         },
-      });
-    } else {
-      const text = (await res.text()).slice(0, 200);
-      console.warn(`[PACTHA] ✗ ${res.status}: ${text}`);
-      chrome.storage.local.set({
-        pactha_last_capture: { host, reason, ok: false, error: `HTTP ${res.status}`, at: now },
       });
     }
   } catch (e) {
@@ -269,7 +283,14 @@ chrome.runtime.onStartup.addListener(() => {
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name !== "pactha_keep_alive") return;
   const cfg = await getConfig();
-  if (!cfg.token || !cfg.auto_enabled) return;
+  /* ⚠️ O KEEP-ALIVE NAO PRECISA DE TOKEN DO PACTHA. Ele faz GET numa URL do
+     GOVERNO para o JSESSIONID nao expirar por ociosidade — nada disso passa
+     pela nossa API. Barrar por token era acoplamento sem motivo, e depois da
+     migracao virou barreira permanente: `cfg.token` nunca mais e preenchido, e
+     a sessao passaria a morrer por ociosidade num perfil novo mesmo com os
+     cinco ambientes configurados. Fica so o `auto_enabled`, que e a escolha
+     explicita do usuario. */
+  if (!cfg.auto_enabled) return;
   // Para cada target com keepAliveUrl, faz GET (mantém JSESSIONID vivo no servidor)
   for (const t of TARGETS) {
     if (!t.keepAliveUrl) continue;
