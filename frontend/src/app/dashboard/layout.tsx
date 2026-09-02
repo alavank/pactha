@@ -30,6 +30,7 @@ import {
   Building2,
   ChevronsUpDown,
   Settings,
+  CalendarClock,
 } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -162,6 +163,10 @@ const NAV_ITEMS: NavEntry[] = [
       { href: "/dashboard/tce-rs", label: "TCE-RS" },
     ],
   },
+  // ⭐ AGENDAMENTOS fica FORA dos grupos de esfera (FEDERAIS/ESTADUAIS) porque
+  // não é fonte de recurso: é o trabalho da equipe SOBRE essas fontes. Vem
+  // logo depois delas, onde começa o que se FAZ com o que foi encontrado.
+  { href: "/dashboard/agendamentos", label: "Agendamentos", icon: CalendarClock },
   { href: "/dashboard/parlamentares", label: "Parlamentares", icon: UserCircle2 },
   // ⭐ SAÚDE é um grupo porque a saúde é uma PASTA do município, não quatro
   // sistemas avulsos. Quem cuida do fundo municipal de saúde abre as quatro

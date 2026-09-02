@@ -89,10 +89,35 @@ def test_telas_todas_e_a_mesma_lista_do_backfill():
     assert len(TELAS_TODAS) == len(set(TELAS_TODAS))
 
 
+# ⚠️ A UNICA CHAVE QUE PODE ESTAR SO NO BACKEND, e a excecao e documentada na
+# fonte. `dashboard` SAIU do catalogo do frontend em 10/08/2026, a pedido do
+# dono: desde a fusao de 29/07 o Painel de Indicadores E o /dashboard, e as duas
+# entradas no modal de permissoes ("Dashboard" e "Painel de Indicadores")
+# concediam a MESMA home — so confundiam quem da permissao. Ver o comentario no
+# topo de `frontend/src/lib/telas.ts`.
+#
+# Ela CONTINUA em `TELAS_TODAS` porque essa lista e o "acesso total" do suporte
+# da Alavank, e concessoes antigas gravadas com a chave `dashboard` seguem
+# valendo — ela so nao e mais OFERECIDA como opcao nova.
+#
+# Este teste comparava as duas listas por igualdade e falhava desde aquele dia:
+# uma decisao de produto aparecia como suite vermelha, e falha permanente e
+# ruido — some no meio das outras e ensina a ignorar o arquivo. A excecao vira
+# LISTA NOMEADA para que uma divergencia NOVA continue quebrando o teste.
+SO_NO_BACKEND = {"dashboard"}
+
+
 def test_telas_todas_e_a_mesma_lista_da_tela_de_usuarios():
     from services.telas_catalog import TELAS_TODAS
 
-    assert sorted(TELAS_TODAS) == sorted(_telas_do_frontend())
+    backend, frontend = set(TELAS_TODAS), set(_telas_do_frontend())
+    assert frontend - backend == set(), (
+        "tela oferecida no frontend que o 'acesso total' do suporte nao cobre — "
+        "quem administra veria uma caixinha que nem o suporte da Alavank tem")
+    assert backend - frontend == SO_NO_BACKEND, (
+        f"divergencia NOVA entre o catalogo do backend e o do frontend: "
+        f"{sorted((backend - frontend) - SO_NO_BACKEND)}. Uma tela so no backend "
+        f"e permissao que ninguem consegue conceder pela tela de Usuarios")
 
 
 def test_telas_todas_contem_o_catalogo_oferecido_ao_cliente():

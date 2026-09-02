@@ -11,6 +11,7 @@ TELAS_CATALOG = [
     {"key": "telegram", "label": "Telegram"},
     {"key": "parlamentares", "label": "Parlamentares"},
     {"key": "gestao", "label": "Gestão Interna"},
+    {"key": "agendamentos", "label": "Agendamentos"},
     {"key": "rm", "label": "Relatório de Monitoramento"},
     {"key": "documentos", "label": "Geração de Documentos"},
     {"key": "convenios", "label": "Convênios Estaduais"},
@@ -59,7 +60,7 @@ CATALOG_KEYS = {t["key"] for t in TELAS_CATALOG}
 # `catalogo(tela)` de `migrations/add_role_vira_rotulo.sql` (que fez o backfill
 # dos administradores). Os três tinham de bater no dia deste incremento.
 TELAS_TODAS = [
-    "dashboard", "ai", "telegram", "parlamentares", "gestao", "rm",
+    "dashboard", "ai", "telegram", "parlamentares", "gestao", "agendamentos", "rm",
     "documentos", "convenios", "emendas", "transferegov", "cauc", "sismob",
     # `suas` SAIU: o painel do MDS vive dentro de `paineis` (ver telas.ts).
     "acordofes", "fns", "investsus", "simec", "paineis", "bi", "bi_tela",

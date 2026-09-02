@@ -190,19 +190,44 @@ export default function AnotacaoModal({
     } catch (e) { console.error(e); }
   };
 
-  const baixarAnexo = (anotId: number, idx: number, nome: string) => {
-    const token = localStorage.getItem("pactha_token");
-    fetch(`${api.defaults.baseURL}/gestao/anotacoes/${anotId}/anexo/${idx}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    })
-      .then((r) => r.blob())
-      .then((blob) => {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url; a.download = nome;
-        a.click();
-        URL.revokeObjectURL(url);
-      });
+  /* ⚠️ ESTA FUNÇÃO BAIXAVA O ERRO COMO SE FOSSE O DOCUMENTO. Ela fazia
+   * `fetch(...).then(r => r.blob())` sem olhar `r.ok`: quando o backend recusa
+   * — 403 de quem não tem `gestao.anexo_baixar`, 404 de índice fora da lista —
+   * o corpo de ERRO virava blob e descia no disco com o nome do arquivo real. A
+   * pessoa recebia um "oficio.pdf" de 90 bytes com `{"detail":"..."}` dentro,
+   * sem aviso nenhum, e concluía que o documento estava corrompido no sistema.
+   *
+   * ⚠️ E o `fetch` manual lia `pactha_token` do localStorage — o token que
+   * `lib/api.ts` APAGA no primeiro refresh (auto-cura). Aqui o header era
+   * guardado (`token ? ... : {}`), então não chegava a mandar `Bearer null`,
+   * mas o caminho continuava sem a renovação automática e sem o retry que o
+   * `api` faz. Passa pelo cliente, como as outras telas já passam. */
+  const baixarAnexo = async (anotId: number, idx: number, nome: string) => {
+    setErr(null);
+    try {
+      const r = await api.get(`/gestao/anotacoes/${anotId}/anexo/${idx}`,
+                              { responseType: "blob" });
+      const url = URL.createObjectURL(r.data);
+      const a = document.createElement("a");
+      a.href = url; a.download = nome;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: unknown) {
+      const erro = e as { response?: { data?: Blob; status?: number } };
+      let msg = "Não foi possível baixar o anexo.";
+      if (erro?.response?.status === 403) {
+        msg = "Você não tem permissão para baixar anexos (peça "
+            + "«Gestão Interna → Baixar anexos» ao administrador).";
+      } else {
+        // O corpo de erro chega como Blob porque pedimos blob: sem o `.text()`
+        // a mensagem do backend some e sobra a genérica.
+        try {
+          const txt = await erro.response?.data?.text();
+          msg = JSON.parse(txt || "{}").detail || msg;
+        } catch { /* corpo não era JSON */ }
+      }
+      setErr(msg);
+    }
   };
 
   return (

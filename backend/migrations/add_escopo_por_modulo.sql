@@ -144,6 +144,7 @@ CREATE INDEX IF NOT EXISTS idx_user_escopos_recurso
 -- nao vale nada enquanto alguem nao a remover a mao.
 INSERT INTO escopo_recursos (recurso, tabela, coluna_dono) VALUES
     ('gestao', 'gestao_anotacoes', 'criado_por'),
+    ('agendamentos', 'agendamentos', 'criado_por'),
     ('rm', 'rm_relatorios', 'criado_por'),
     ('documentos', 'documentos_gerados', 'criado_por')
 ON CONFLICT (recurso) DO NOTHING;

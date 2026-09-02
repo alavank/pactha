@@ -15,7 +15,7 @@ from routers import (
     sismob, investsus, auditoria, permissoes, modelos_permissao, repasses,
     contas_irregulares,
     cofinanciamento, parametros, monitoramento, consulta_popular, programas_rs,
-    conteudo_rs, programas_captacao,
+    conteudo_rs, programas_captacao, agendamentos,
     uso,
 )
 from config import get_settings
@@ -189,6 +189,10 @@ app.include_router(simec.router)
 app.include_router(rm.router)
 app.include_router(ai.router)
 app.include_router(gestao.router)
+# AGENDAMENTOS — a agenda de trabalho da equipe. Fica ao lado da Gestao Interna
+# porque sao os dois unicos modulos em que a equipe ESCREVE; todo o resto do
+# sistema mostra dado que veio de fora.
+app.include_router(agendamentos.router)
 app.include_router(parlamentares.router)
 # TELEGRAM DESATIVADO ATÉ SEGUNDA ORDEM (decisão do dono, 09/08/2026): o canal
 # de avisos será WhatsApp com API oficial; Telegram só sob demanda rara. Sem a

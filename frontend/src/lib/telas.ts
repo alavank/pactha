@@ -87,6 +87,11 @@ export const TELAS: TelaDef[] = [
   { key: "dou", label: "Diário Oficial", ufs: ["MG", "ES", "GO", "TO", "RS"] },
   { key: "documentos", label: "Geração de Documentos" },
   { key: "gestao", label: "Gestão Interna" },
+  // AGENDAMENTOS — a agenda de trabalho da equipe. Ao lado da Gestão Interna
+  // porque são os dois únicos módulos em que a equipe ESCREVE.
+  // ⚠️ SEM `ufs`: é nacional. Pôr um recorte aqui esconderia a caixinha dos
+  // clientes dos outros estados, e uma agenda não depende de que estado é.
+  { key: "agendamentos", label: "Agendamentos" },
   // TELEGRAM DESATIVADO ATÉ SEGUNDA ORDEM (decisão do dono, 09/08/2026): o
   // canal de avisos será WhatsApp com API oficial; Telegram só voltará sob
   // demanda rara de cliente. Fora do catálogo = fora do menu, fora do modal
