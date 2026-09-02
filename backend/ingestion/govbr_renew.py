@@ -97,8 +97,22 @@ def _load_govbr() -> tuple[int | None, list | None]:
     try:
         conn = psycopg2.connect(_sync_url(), connect_timeout=10)
         cur = conn.cursor()
+        # ⚠️ `municipio_id IS NULL` SEPARA A SESSAO DA CREDENCIAL, e sem isso o
+        # renovador le a linha errada. A sessao gov.br e do OPERADOR e vale
+        # cross-mun, entao a extensao a grava em escopo de instancia; uma linha
+        # COM municipio e a credencial daquela prefeitura (CPF + senha).
+        #
+        # Em 02/09 isso apareceu em producao no freitas: a extensao antiga
+        # mandava `municipio_id`, e a captura — que casa por
+        # (automation_key, municipio_id) — gravou o blob de sessao POR CIMA da
+        # senha da credencial do IBGE 3103900. Aquela linha passou a satisfazer
+        # `length(senha_hash) > 1000` e, como o keepalive re-salva nela a cada
+        # ciclo, o `updated_at` dela ficava sempre a frente: a captura nova era
+        # gravada e IGNORADA. O sintoma so apareceria na proxima recuperacao —
+        # recapturar e continuar sem sessao, sem erro em lugar nenhum.
         cur.execute("SELECT id, senha_hash FROM cofre_senhas "
                     "WHERE automation_key='govbr' AND length(senha_hash) > 1000 "
+                    "AND municipio_id IS NULL "
                     "ORDER BY updated_at DESC LIMIT 1")
         row = cur.fetchone()
         cur.close(); conn.close()

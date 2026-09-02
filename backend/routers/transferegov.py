@@ -790,9 +790,15 @@ async def sessao_status(
     import base64
     import json as _json
     r = await db.execute(text("""
+        -- ⚠️ `municipio_id IS NULL`: mesmo recorte dos outros tres leitores da
+        -- sessao (govbr_renew, govbr_keepalive, control.session_status). Linha
+        -- COM municipio e credencial de prefeitura, nao sessao do operador — e
+        -- uma delas pode conter blob de sessao por causa de capturas antigas,
+        -- que mandavam `municipio_id` e gravavam por cima da senha.
         SELECT id, municipio_id, updated_at, observacao, senha_hash
         FROM cofre_senhas
         WHERE automation_key='govbr' AND length(senha_hash) > 1000
+          AND municipio_id IS NULL
         ORDER BY updated_at DESC LIMIT 1
     """))
     row = r.first()

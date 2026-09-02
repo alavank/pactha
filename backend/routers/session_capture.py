@@ -8,6 +8,7 @@ Fluxo:
 4. POST aqui com X-Service-Token (do bookmarklet) ou JWT (logado em PACTHA)
 5. Backend criptografa e salva no Cofre como observacao da credencial
 """
+import logging
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -26,7 +27,26 @@ from models.service_token import ServiceToken
 from services import crypto
 from services.audit import log_event
 
+log = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/session-capture", tags=["session"])
+
+
+def conteudo_e_sessao(claro: str | None) -> bool:
+    """O conteudo decifrado de uma linha do Cofre e uma SESSAO (e nao uma senha)?
+
+    ⚠️ MESMO CRITERIO DE `govbr_renew._load_govbr`, e os dois precisam concordar:
+    la, `dec.startswith("{")` e o que decide se a linha serve como sessao. Se
+    este teste ficar mais frouxo que aquele, a captura considera credencial o que
+    o renovador considera sessao (ou o contrario), e a divergencia so aparece
+    como "recapturei e continua sem sessao".
+
+    Senha de verdade nao comeca com "{"; o payload da extensao e um JSON.
+
+    Sem `strip()` DE PROPOSITO: `_load_govbr` nao faz, e um criterio "mais
+    esperto" aqui reintroduz a divergencia que este docstring existe para evitar.
+    """
+    return (claro or "").startswith("{")
 
 
 class _CapturePrincipal:
@@ -177,6 +197,34 @@ async def capture_session(
     q = q.where(CofreSenha.municipio_id.is_(None) if mid is None else CofreSenha.municipio_id == mid)
     res = await db.execute(q)
     item = res.scalar_one_or_none()
+
+    # ⚠️ NUNCA GRAVA SESSAO POR CIMA DE UMA CREDENCIAL. Isto ja aconteceu em
+    # producao: a extensao antiga mandava `municipio_id`, o casamento por
+    # (automation_key, municipio_id) achou a credencial gov.br da prefeitura e o
+    # blob de cookies substituiu a SENHA. Em 02/09 havia duas assim (freitas
+    # IBGE 3103900 e montesiao IBGE 3143401, mesmo CPF) — a senha nao volta.
+    #
+    # O teste e o mesmo que `govbr_renew._load_govbr` usa para decidir se uma
+    # linha e sessao: o conteudo decifrado comeca com "{". Se a linha achada NAO
+    # e sessao, ela e credencial de verdade — preserva-se, e a sessao vai para
+    # uma linha nova.
+    #
+    # So vale para captura COM municipio (cliente antigo/bookmarklet): a
+    # extensao atual manda sempre escopo de instancia, onde credencial nao mora.
+    if item is not None and mid is not None:
+        try:
+            atual = crypto.decrypt(item.senha_encrypted) or ""
+        except Exception:
+            # Nao decifra => nao da para provar que e sessao => trata como
+            # credencial e preserva. O lado seguro aqui e NAO sobrescrever.
+            atual = ""
+        if not conteudo_e_sessao(atual):
+            log.warning(
+                "session-capture: linha %s do Cofre e credencial (municipio_id=%s), "
+                "nao sessao — preservada; a sessao vai para uma linha nova",
+                item.id, mid,
+            )
+            item = None
 
     captured_at = datetime.now(timezone.utc).isoformat()
     n_cookies = len(payload.cookies_full) if payload.cookies_full else len(cookie_clean.split(";"))

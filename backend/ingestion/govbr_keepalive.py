@@ -69,9 +69,16 @@ def _load_govbr() -> tuple[int, dict] | tuple[None, None]:
     try:
         conn = psycopg2.connect(_sync_url(), connect_timeout=10)
         cur = conn.cursor()
+        # ⚠️ MESMO RECORTE DO `govbr_renew._load_govbr`, e os dois precisam
+        # concordar. Se o keepalive escolher uma linha e o renovador outra, o
+        # keepalive fica re-salvando cookies numa linha que o renovador nunca le
+        # — e, pior, empurrando o `updated_at` dela para a frente, o que faz a
+        # linha errada vencer o ORDER BY para sempre. Foi exatamente assim que a
+        # captura de 02/09 no freitas foi gravada e ignorada.
         cur.execute(
             "SELECT id, senha_hash FROM cofre_senhas "
             "WHERE automation_key='govbr' AND length(senha_hash) > 1000 "
+            "AND municipio_id IS NULL "
             "ORDER BY updated_at DESC LIMIT 1"
         )
         row = cur.fetchone()
