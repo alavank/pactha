@@ -940,9 +940,16 @@ async def control_session_status(
     restantes (decodifica o exp do JWT user-id). Insumo p/ FNS/TransfereGov. A captura
     em si e manual (extensao) — o Console so monitora."""
     row = (await db.execute(text("""
+        -- ⚠️ `municipio_id IS NULL`: mesmo recorte de `govbr_renew._load_govbr`
+        -- e do keepalive. Este endpoint responde "a sessao esta viva?" — se ele
+        -- olhar uma linha diferente da que o renovador usa, passa a responder
+        -- sobre outra sessao, e o Console fica dizendo que esta tudo bem sobre
+        -- uma credencial que ninguem usa. Um monitor que observa o objeto errado
+        -- e pior que monitor nenhum, porque cala a suspeita.
         SELECT id, municipio_id, updated_at, observacao, senha_hash
         FROM cofre_senhas
         WHERE automation_key='govbr' AND length(senha_hash) > 1000
+          AND municipio_id IS NULL
         ORDER BY updated_at DESC LIMIT 1
     """))).first()
     if not row:
