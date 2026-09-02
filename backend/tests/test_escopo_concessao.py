@@ -282,8 +282,13 @@ def test_o_pedido_com_o_campo_manda_o_estado_completo(trilha):
                                  escopos={"rm": "proprios"})
     db, resp = _conceder(Usuario(super_admin=True), alvo, req,
                          escopos=[("gestao", "proprios")])
+    # ⚠️ A RESPOSTA TRAZ TODO RECURSO ESCOPAVEL, e nao so os do pedido — e e
+    # exatamente esse o comportamento que este teste guarda. Por isso a lista
+    # cresce quando um modulo escopavel novo entra (02/09/2026: `agendamentos`).
+    # Derivar de ESCOPO_RECURSOS aqui faria o teste concordar consigo mesmo e
+    # deixaria de acusar um modulo que sumisse da resposta.
     assert resp["escopos"] == {"gestao": "todos", "rm": "proprios",
-                               "documentos": "todos"}
+                               "documentos": "todos", "agendamentos": "todos"}
     assert any("DELETE FROM user_escopos" in s for s in db.sql)
     assert any("INSERT INTO user_escopos" in s for s in db.sql)
 
@@ -345,8 +350,11 @@ def test_a_trilha_usa_registrar_critico():
 def test_minhas_devolve_o_proprio_alcance():
     u = Usuario(id=7, role="usuario", escopos={"gestao": "proprios"})
     resp = asyncio.run(router.minhas(current=u))
+    # Mesma razao do teste acima: a resposta traz TODO recurso escopavel com o
+    # default explicito, entao a lista cresce quando um modulo novo entra
+    # (02/09/2026: `agendamentos`).
     assert resp["escopos"] == {"gestao": "proprios", "rm": "todos",
-                               "documentos": "todos"}
+                               "documentos": "todos", "agendamentos": "todos"}
 
 
 def test_por_usuario_devolve_o_alcance_de_todo_mundo():
@@ -367,7 +375,15 @@ def test_o_alcance_nao_virou_permissao_do_catalogo():
 
     O total sobe quando uma permissao NOVA entra no catalogo (Incremento 7
     acrescentou `usuarios.modelos`; 08/2026, `vigencias.exportar`, para o botao
-    Exportar do modal de Vigencias); o que este teste guarda e a ausencia de
-    caixinha de ALCANCE — `gestao.editar_proprios` e a forma que foi recusada."""
-    assert len(permissoes.CATALOGO) == 69
+    Exportar do modal de Vigencias; 02/09/2026, as SEIS do modulo AGENDAMENTOS —
+    `ver`, `criar`, `editar`, `excluir`, `exportar` e a especial
+    `anexo_baixar`); o que este teste guarda e a ausencia de caixinha de
+    ALCANCE — `gestao.editar_proprios` e a forma que foi recusada.
+
+    ⚠️ O NUMERO E TRIPWIRE, e nao a asserção que importa. Ele existe para que
+    uma permissao entre no catalogo DE PROPOSITO: quem acrescenta uma chave
+    passa por aqui e escreve por que. A guarda de verdade e a linha de baixo —
+    nenhuma chave pode conter "propri", porque alcance de linha e outra coisa e
+    junta-las criaria duas caixinhas que se contradizem."""
+    assert len(permissoes.CATALOGO) == 75
     assert not any("propri" in c for c in permissoes.CATALOGO)

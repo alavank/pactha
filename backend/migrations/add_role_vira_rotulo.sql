@@ -94,7 +94,8 @@ WITH marca AS (
 ), catalogo(tela) AS (
     -- Uniao dos dois catalogos, na ordem do frontend (o mais completo).
     VALUES ('dashboard'), ('ai'), ('telegram'), ('parlamentares'),
-           ('gestao'), ('rm'), ('documentos'), ('convenios'), ('emendas'),
+           ('gestao'), ('agendamentos'), ('rm'), ('documentos'),
+           ('convenios'), ('emendas'),
            ('transferegov'), ('cauc'), ('sismob'), ('acordofes'), ('fns'),
            -- ⚠️ `suas` SAIU DESTA LISTA depois que a tela foi aposentada (o
            -- painel do MDS vive dentro de `paineis`). Editar migration já
@@ -104,6 +105,12 @@ WITH marca AS (
            -- pulado e nada muda. Quem lê esta lista daqui para a frente é
            -- apenas o TENANT NOVO, e para ele conceder uma tela que não existe
            -- mais seria dar uma linha morta em `user_telas`.
+           -- `agendamentos` ENTROU (02/09/2026). Mesma logica: o bloco so
+           -- roda em TENANT NOVO, e um tenant novo deve nascer com o
+           -- administrador vendo a agenda da equipe. Em tenant que JA EXISTE a
+           -- tela e concedida a mao, em Configuracoes -> Usuarios — modulo
+           -- novo e capacidade nova, e dar capacidade nova sem ninguem pedir
+           -- seria decisao de seguranca tomada pela migration.
            -- `investsus` ENTROU (08/2026, menu SAUDE). Mesma logica do `suas`
            -- acima, no sentido inverso: o bloco e guardado pela marca em
            -- `migration_backfills` e so roda em TENANT NOVO — e um tenant novo

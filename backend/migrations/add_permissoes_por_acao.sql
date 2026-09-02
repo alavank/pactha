@@ -117,6 +117,20 @@ INSERT INTO permissoes_catalogo (chave, secao, escrita) VALUES
     ('gestao.excluir', 'trabalho', TRUE),
     ('gestao.exportar', 'trabalho', FALSE),
     ('gestao.anexo_baixar', 'trabalho', FALSE),
+    -- AGENDAMENTOS (02/09/2026), modulo novo.
+    -- ⚠️ ENTRA TAMBEM NO MAPA DE COMPATIBILIDADE mais abaixo, e nao so aqui.
+    -- Um comentario anterior dizia o contrario, e estava errado: permissao sem
+    -- linha no mapa nasce concedida A NINGUEM, e o
+    -- `test_toda_permissao_tem_regra_de_compatibilidade` cobra isso. A regra
+    -- la e "quem tem a TELA agendamentos ganha estas chaves" — que hoje nao
+    -- concede nada a ninguem em tenant existente (ninguem tem a tela ainda) e
+    -- em tenant NOVO da ao administrador o modulo inteiro, junto com o resto.
+    ('agendamentos.ver', 'trabalho', FALSE),
+    ('agendamentos.criar', 'trabalho', TRUE),
+    ('agendamentos.editar', 'trabalho', TRUE),
+    ('agendamentos.excluir', 'trabalho', TRUE),
+    ('agendamentos.exportar', 'trabalho', FALSE),
+    ('agendamentos.anexo_baixar', 'trabalho', FALSE),
     ('rm.ver', 'trabalho', FALSE),
     ('rm.criar', 'trabalho', TRUE),
     ('rm.editar', 'trabalho', TRUE),
@@ -272,6 +286,12 @@ WITH marca AS (
         ('gestao', 'gestao.criar', TRUE),
         ('gestao', 'gestao.editar', TRUE),
         ('gestao', 'gestao.excluir', TRUE),
+        ('agendamentos', 'agendamentos.ver', FALSE),
+        ('agendamentos', 'agendamentos.exportar', FALSE),
+        ('agendamentos', 'agendamentos.anexo_baixar', FALSE),
+        ('agendamentos', 'agendamentos.criar', TRUE),
+        ('agendamentos', 'agendamentos.editar', TRUE),
+        ('agendamentos', 'agendamentos.excluir', TRUE),
         ('rm', 'rm.ver', FALSE),
         ('rm', 'rm.exportar', FALSE),
         ('rm', 'rm.criar', TRUE),

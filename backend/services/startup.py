@@ -102,6 +102,13 @@ MIGRATION_FILES = [
     # cada boot: reusar qualquer um dos dois nomes apagaria a tabela em todo
     # deploy e o sintoma seria "o radar esvaziou sozinho de novo".
     "add_programas_captacao.sql",
+    # AGENDAMENTOS: a agenda de trabalho da equipe (lista, calendario e kanban).
+    # ⚠️ Tem FK para `municipios` E para `users` — as duas vem do create_all dos
+    # modelos, que roda ANTES desta lista. Se um dia esta migration subir para
+    # cima do create_all, o CREATE TABLE falha com "relation users does not
+    # exist" e o runner ENGOLE o erro (compara por substring): a tabela nao
+    # existiria e a tela responderia 500 sem nada no log de boot.
+    "add_agendamentos.sql",
     # Voluntarias: situacao contratacao + clausula suspensiva detalhe + parlamentar
     "add_voluntarias_clausula_parlamentar.sql",
     # Voluntarias: detalhe generico da Situacao de Contratacao (qualquer tipo)

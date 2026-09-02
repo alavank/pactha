@@ -226,6 +226,12 @@ _RECURSOS: tuple = (
              "as anotações da Gestão Interna",
              "uma anotação nova na Gestão Interna",
              ("ver", "criar", "editar", "excluir", "exportar")),
+    # AGENDAMENTOS — a agenda de trabalho da equipe. Sem `ufs`: é nacional, e
+    # uma agenda não depende de que estado é o cliente.
+    _Recurso("agendamentos", SEC_TRABALHO, "Agendamentos",
+             "os agendamentos da equipe",
+             "um agendamento novo",
+             ("ver", "criar", "editar", "excluir", "exportar")),
     _Recurso("rm", SEC_TRABALHO, "Relatorio de Monitoramento",
              "os Relatórios de Monitoramento",
              "um Relatório de Monitoramento novo",
@@ -362,6 +368,16 @@ def _gerar(recurso: _Recurso) -> list[Permissao]:
 # as linhas mais importantes deste arquivo; a descricao de cada uma diz POR QUE
 # ela e uma caixinha propria.
 _ESPECIAIS: tuple = (
+    Permissao(
+        chave="agendamentos.anexo_baixar", secao=SEC_TRABALHO,
+        recurso="agendamentos", recurso_rotulo="Agendamentos",
+        verbo_rotulo="Baixar anexos",
+        descricao="Abrir e baixar os arquivos anexados aos agendamentos. "
+                  "Separado de «Ver» pela mesma razão da Gestão Interna: a "
+                  "lista mostra QUE existe um anexo, esta caixinha entrega o "
+                  "arquivo — que pode ser ofício, contrato ou foto de vistoria.",
+        escrita=False,
+    ),
     Permissao(
         chave="gestao.anexo_baixar", secao=SEC_TRABALHO, recurso="gestao",
         recurso_rotulo="Gestao Interna", verbo_rotulo="Baixar anexos",
@@ -658,10 +674,18 @@ class RecursoEscopavel:
 # que nao faz nada — falha silenciosa de permissao, que e o defeito que este
 # subsistema inteiro existe para nao ter. Os tres abaixo sao os unicos modulos
 # com CRUD de verdade E com `criado_por` gravado no INSERT (routers/rm.py,
-# routers/documentos.py, routers/gestao.py).
+# routers/documentos.py, routers/gestao.py, routers/agendamentos.py).
+#
+# ⚠️ `agendamentos` ENTROU EM 02/09/2026 e a distincao importa: a tabela tem
+# DUAS colunas de pessoa. `responsavel_id` e quem VAI FAZER — campo de negocio,
+# escolhido no formulario, e que muda quando o trabalho passa para outro. Quem
+# governa o alcance e `criado_por`, que e quem REGISTROU e nao muda nunca.
+# Apontar o alcance para o responsavel faria a pessoa perder o direito de editar
+# o proprio registro no instante em que repassasse a tarefa.
 ESCOPO_RECURSOS: dict = {
     r.recurso: r for r in (
         RecursoEscopavel("gestao", "gestao_anotacoes", "criado_por"),
+        RecursoEscopavel("agendamentos", "agendamentos", "criado_por"),
         RecursoEscopavel("rm", "rm_relatorios", "criado_por"),
         RecursoEscopavel("documentos", "documentos_gerados", "criado_por"),
     )

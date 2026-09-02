@@ -40,6 +40,7 @@ const TELAS: Array<[RegExp, string]> = [
   [/^\/dashboard\/emendas/, "Emendas Estaduais"],
   [/^\/dashboard\/repasses/, "Repasses Estaduais"],
   [/^\/dashboard\/cofinanciamento/, "Cofinanciamento da Saúde"],
+  [/^\/dashboard\/agendamentos/, "Agendamentos"],
   [/^\/dashboard\/consulta-popular/, "Consulta Popular"],
   [/^\/dashboard\/programas-rs/, "Programas do Estado"],
   [/^\/dashboard\/funrigs/, "Plano Rio Grande"],

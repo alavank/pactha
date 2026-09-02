@@ -5,8 +5,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 PACTHA is a monitoring platform for government grants/transfers (convênios, repasses,
-emendas) for Brazilian municipalities, tracking **17 official data sources** (federal +
-MG/ES/GO state). This repo (`alavank/pactha`) is a fork of `MattMatiins/PACTA`, migrated
+emendas) for Brazilian municipalities, tracking **19 official data sources** (federal +
+MG/ES/GO/RS state). The two newest, both added 02/09/2026: the health **fundo a fundo**
+(ConsultaFNS, consolidated by bloco — the largest recurring federal health transfer, and
+the platform's only source of the money that sustains the network month to month) and the
+**radar de captação** (`siconv_programa.zip` — federal programs whose proposal window is
+still open; the only screen in PACTHA that looks *forward* instead of at instruments
+already signed). This repo (`alavank/pactha`) is a fork of `MattMatiins/PACTA`, migrated
 off Railway/Neon/Vercel/Hetzner onto **Coolify on AWS Lightsail**.
 
 Everything user-facing and every commit message/comment is in **Portuguese**. Match that
@@ -96,7 +101,7 @@ that area. Read the relevant one before making changes there:
 
 | Skill | Area |
 |---|---|
-| `ingestion` | scrapers/collectors, the 17 data sources, scheduling |
+| `ingestion` | scrapers/collectors, the 19 data sources, scheduling |
 | `migrations` | schema changes, `backend/migrations/`, `MIGRATION_FILES` |
 | `authz` | permissions, route registration, `AUTHZ_MODO`, row-level scope |
 | `secrets` | Cofre / AES credential storage, `COFRE_KEY` |
