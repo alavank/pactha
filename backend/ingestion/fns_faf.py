@@ -25,9 +25,21 @@ ausencia foi exatamente o erro acima.
 os grupos. Bloco SEM grupo detalhado vira uma linha com `grupo_codigo = 0`, para
 o total nao se perder — e nao ser confundido com um grupo real.
 
-⚠️ O PORTAL E LENTO. Medido: o `entidades` estourou 120s no primeiro teste. Por
-isso timeout generoso, uma pausa entre municipios e tratamento de falha POR
-MUNICIPIO — um timeout nao pode derrubar a rodada inteira.
+⚠️ A LATENCIA DO PORTAL VARIA MUITO, e o orcamento tem de caber no pior caso.
+Duas medicoes no MESMO dia (02/09/2026), com o mesmo cliente:
+
+    janela A,  8 consultas: 10 a 38s cada
+    janela B, 40 consultas: mediana 0,7s | p90 1,0s | p99 12,5s | zero falha
+
+Nao ha contradicao: o portal e rapido quase sempre e entra em janelas ruins. Na
+janela boa o freitas (60 municipios x 2 anos) roda em ~4,5 min; na ruim, ~53.
+Por isso timeout generoso, pausa entre consultas e tratamento de falha POR
+MUNICIPIO — uma janela ruim nao pode derrubar a rodada inteira, e o que ficou
+para tras sai como `partial` no ingestion_log, nao como sucesso.
+
+⚠️ E POR ISSO A PRIMEIRA MEDICAO NAO VIROU REGRA. Oito amostras numa janela ruim
+quase viraram "o portal e lento" no cabecalho deste arquivo e no cron. Numero
+medido uma vez so, em janela unica, e anedota — nao caracteriza a fonte.
 
 Rodar:  DATABASE_URL_SYNC=... python -u ingestion/fns_faf.py
         FNS_FAF_ANOS=3  -> coleta os 3 ultimos anos (padrao: 1, o corrente)
