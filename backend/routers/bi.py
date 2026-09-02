@@ -439,15 +439,25 @@ async def parlamentares(
     ano: Optional[int] = Query(None),
     anos: Optional[list[int]] = Query(None),
     live: bool = Query(False),
+    tipo: str = Query("parlamentar", description="parlamentar (padrao) | outro | todos"),
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
+    """Aba Parlamentares do dashboard.
+
+    `tipo` = "parlamentar" por PADRAO, igual a tela /dashboard/parlamentares: o
+    proponente institucional (Fundo Municipal de Saude, Municipio de X) entrava
+    no ranking como se fosse gente e liderava em valor. O payload traz
+    `contagem` dos dois lados para o seletor da aba.
+    """
     _gate_bi(current)
     ids, cons = await resolve_scope(db, current, municipio_id)
     periodo = _periodo(ano, anos)
     if (not cons) and len(ids) == 1:
-        return await aggregate_parlamentares(db, municipio_id=ids[0], ano=periodo, incluir_plano_acao=live)
-    return await aggregate_parlamentares(db, municipio_ids=ids, ano=periodo, incluir_plano_acao=live)
+        return await aggregate_parlamentares(db, municipio_id=ids[0], ano=periodo,
+                                             incluir_plano_acao=live, tipo=tipo)
+    return await aggregate_parlamentares(db, municipio_ids=ids, ano=periodo,
+                                         incluir_plano_acao=live, tipo=tipo)
 
 
 @router.get("/alertas", dependencies=[exige("bi.ver")])
@@ -586,17 +596,24 @@ async def aba_parlamentares_detalhe(
     municipio_id: Optional[int] = Query(None),
     ano: Optional[int] = Query(None),
     anos: Optional[list[int]] = Query(None),
+    tipo: str = Query("parlamentar", description="parlamentar (padrao) | outro | todos"),
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
     """Aba 'Parlamentares': cada parlamentar com as emendas que mandou —
     destinacao (pra quem) e finalidade (pra que), que e o detalhe que o
-    prefeito cobra na tela."""
+    prefeito cobra na tela.
+
+    `tipo` = "parlamentar" por PADRAO: no campo de autor das 3 fontes aparecem
+    tambem secretarias de estado e fundos, que nao sao gente e apareciam no
+    ranking como se fossem."""
     _gate_bi(current)
     ids, cons = await resolve_scope(db, current, municipio_id)
     periodo = _periodo(ano, anos)
-    key = f"parld|{scope_signature(ids, cons)}|a={anos_signature(periodo)}"
-    return await _aba_cacheada(key, lambda: bi_parlamentares_detalhe(db, ids, periodo))
+    # ⚠️ `tipo` ENTRA na chave do cache. Sem isso a primeira aba aberta fixaria
+    # o resultado e trocar o seletor devolveria a lista do outro tipo.
+    key = f"parld|{scope_signature(ids, cons)}|a={anos_signature(periodo)}|t={tipo}"
+    return await _aba_cacheada(key, lambda: bi_parlamentares_detalhe(db, ids, periodo, tipo=tipo))
 
 
 @router.get("/sismob", dependencies=[exige("bi.ver")])
@@ -914,7 +931,10 @@ async def _fatos_da_aba(db: AsyncSession, ids: list[int], cons: bool, aba: str,
     e ja resumidos — a IA nao recebe a base inteira."""
     periodo_txt = ", ".join(str(a) for a in periodo) if periodo else "todos os anos"
     if aba == "parlamentares":
-        d = await bi_parlamentares_detalhe(db, ids, periodo)
+        # "parlamentar" para o texto CONCORDAR com a tabela da aba, que abre
+        # filtrada. Em "todos", a IA anunciaria "a Secretaria de Estado de
+        # Educacao lidera as emendas" logo acima de uma lista que nao a mostra.
+        d = await bi_parlamentares_detalhe(db, ids, periodo, tipo="parlamentar")
         top = d["itens"][:3]
         fatos = {
             "aba": "parlamentares", "periodo": periodo_txt,

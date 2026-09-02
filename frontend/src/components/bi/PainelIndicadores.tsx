@@ -10,7 +10,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { MonitorPlay, RefreshCw, CalendarClock } from "lucide-react";
 import api from "@/lib/api";
-import { Municipio, getMunicipios, putTelaFiltros } from "@/lib/bi";
+import { Municipio, getMunicipios, putTelaFiltros, type TipoParlamentar } from "@/lib/bi";
 import type { User } from "@/types";
 import { allowedTelasOf } from "@/lib/telas";
 import { useBiScope, CONSOLIDADO } from "@/contexts/BiScopeContext";
@@ -97,7 +97,13 @@ export function PainelIndicadores() {
   }, [tela.aba, tela.ativa]);
 
   const pronto = !!scope;
-  const { dados, carregando, erro, recarregar } = useDadosAba(aba, municipioId, anos, { pronto });
+  // Recorte da aba Parlamentares. Abre em "parlamentar" (só pessoas) porque
+  // secretarias e fundos aparecem no campo de autor das fontes e lideravam o
+  // ranking em valor sem ser gente. Ver services/nome_parlamentar.py.
+  const [tipoParl, setTipoParl] = useState<TipoParlamentar>("parlamentar");
+  const { dados, carregando, erro, recarregar } = useDadosAba(aba, municipioId, anos, {
+    pronto, tipo: tipoParl,
+  });
 
   // Aquece a proxima aba: trocar deve ser instantaneo.
   useEffect(() => {
@@ -223,6 +229,32 @@ export function PainelIndicadores() {
         <EsqueletoAba />
       ) : (
         <div key={aba} className="bi-pane-enter flex flex-col">
+          {/* Seletor só da aba Parlamentares: é a única em que a fonte mistura
+              pessoa com instituição no mesmo campo de autor. */}
+          {aba === "parlamentares" && dados.aba === "parlamentares" && (
+            <div className="mb-3 flex items-center gap-2">
+              <span className="text-[11px]" style={{ color: "var(--bi-muted)" }}>Exibir</span>
+              {([
+                ["parlamentar", "Parlamentares", dados.d.contagem?.parlamentar],
+                ["outro", "Outros", dados.d.contagem?.outro],
+                ["todos", "Todos", (dados.d.contagem?.parlamentar ?? 0) + (dados.d.contagem?.outro ?? 0)],
+              ] as const).map(([id, rotulo, n]) => (
+                <button
+                  key={id}
+                  onClick={() => setTipoParl(id as TipoParlamentar)}
+                  className="rounded-full px-3 py-1 text-xs transition-colors"
+                  style={
+                    tipoParl === id
+                      ? { background: "var(--bi-accent, #1f2937)", color: "#fff" }
+                      : { background: "var(--bi-surface-2, #f3f4f6)", color: "var(--bi-muted)" }
+                  }
+                  aria-pressed={tipoParl === id}
+                >
+                  {rotulo}{typeof n === "number" ? ` (${n})` : ""}
+                </button>
+              ))}
+            </div>
+          )}
           <ConteudoAba dados={dados} />
         </div>
       )}

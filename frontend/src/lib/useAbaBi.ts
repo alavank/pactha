@@ -10,6 +10,7 @@ import {
   AbaDocumentos, AbaEstaduais, AbaFns, AbaParlamentares, AbaSismob, AbaTransfereGov,
   Alertas, Overview, getAbaDocumentos, getAbaEstaduais, getAbaFns,
   getAbaParlamentares, getAbaSismob, getAbaTransfereGov, getAlertas, getOverview,
+  type TipoParlamentar,
 } from "./bi";
 import { AbaId } from "./tela";
 
@@ -30,14 +31,19 @@ export type DadosAba =
 const TTL_MS = 40_000;
 const cache = new Map<string, { em: number; dados: DadosAba }>();
 
-function chave(aba: AbaId, municipioId: number | null, anos: number[]) {
-  return `${aba}|${municipioId ?? "all"}|${anos.join(",")}`;
+// ⚠️ `tipo` ENTRA na chave. Sem isso, trocar o seletor da aba Parlamentares
+// devolveria o payload do tipo anterior por até 40 s (o TTL do cache) — o
+// seletor pareceria simplesmente não funcionar.
+function chave(aba: AbaId, municipioId: number | null, anos: number[], tipo: TipoParlamentar) {
+  return `${aba}|${municipioId ?? "all"}|${anos.join(",")}|${tipo}`;
 }
 
-async function carregar(aba: AbaId, municipioId: number | null, anos: number[]): Promise<DadosAba> {
+async function carregar(
+  aba: AbaId, municipioId: number | null, anos: number[], tipo: TipoParlamentar
+): Promise<DadosAba> {
   switch (aba) {
     case "parlamentares":
-      return { aba, d: await getAbaParlamentares(municipioId, anos) };
+      return { aba, d: await getAbaParlamentares(municipioId, anos, tipo) };
     case "transferegov":
       return { aba, d: await getAbaTransfereGov(municipioId, anos) };
     case "estaduais":
@@ -63,22 +69,26 @@ export async function buscarAba(
   aba: AbaId,
   municipioId: number | null,
   anos: number[],
-  forcar = false
+  forcar = false,
+  tipo: TipoParlamentar = "parlamentar"
 ): Promise<DadosAba> {
-  const k = chave(aba, municipioId, anos);
+  const k = chave(aba, municipioId, anos, tipo);
   const hit = cache.get(k);
   if (!forcar && hit && Date.now() - hit.em < TTL_MS) return hit.dados;
-  const dados = await carregar(aba, municipioId, anos);
+  const dados = await carregar(aba, municipioId, anos, tipo);
   cache.set(k, { em: Date.now(), dados });
   return dados;
 }
 
 /** Aquece o cache sem renderizar nada (a proxima aba do slideshow). */
-export function prefetchAba(aba: AbaId, municipioId: number | null, anos: number[]) {
-  const k = chave(aba, municipioId, anos);
+export function prefetchAba(
+  aba: AbaId, municipioId: number | null, anos: number[],
+  tipo: TipoParlamentar = "parlamentar"
+) {
+  const k = chave(aba, municipioId, anos, tipo);
   const hit = cache.get(k);
   if (hit && Date.now() - hit.em < TTL_MS) return;
-  void buscarAba(aba, municipioId, anos).catch(() => {});
+  void buscarAba(aba, municipioId, anos, false, tipo).catch(() => {});
 }
 
 export function invalidarAbas() {
@@ -89,9 +99,9 @@ export function useDadosAba(
   aba: AbaId,
   municipioId: number | null,
   anos: number[],
-  opts: { pronto?: boolean; recarregarMs?: number } = {}
+  opts: { pronto?: boolean; recarregarMs?: number; tipo?: TipoParlamentar } = {}
 ) {
-  const { pronto = true, recarregarMs } = opts;
+  const { pronto = true, recarregarMs, tipo = "parlamentar" } = opts;
   const [dados, setDados] = useState<DadosAba | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
@@ -106,12 +116,12 @@ export function useDadosAba(
       setErro(null);
       // So mostra esqueleto quando ainda nao ha nada em cache para esta aba —
       // trocar de aba com dado quente deve ser instantaneo.
-      const k = chave(aba, municipioId, anos);
+      const k = chave(aba, municipioId, anos, tipo);
       const quente = cache.get(k);
       if (!quente) setCarregando(true);
       else setDados(quente.dados);
       try {
-        const d = await buscarAba(aba, municipioId, anos, forcar);
+        const d = await buscarAba(aba, municipioId, anos, forcar, tipo);
         if (req === reqRef.current) {
           setDados(d);
           setCarregando(false);
@@ -124,7 +134,7 @@ export function useDadosAba(
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [aba, municipioId, anosKey]
+    [aba, municipioId, anosKey, tipo]
   );
 
   useEffect(() => {

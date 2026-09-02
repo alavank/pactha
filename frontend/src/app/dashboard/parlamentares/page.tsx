@@ -11,6 +11,9 @@ import {
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import { Bloco, BlocoHead, Campos, ItemLinha, Lista, Numero, Selo, Vazio, situacaoTom } from "@/components/ui/superficies";
 
 interface ParlamentarItem {
@@ -20,7 +23,16 @@ interface ParlamentarItem {
   valor_total: number;
   municipios: string[];
   por_fonte: { sigcon: number; voluntaria: number; emenda: number; plano_acao: number; pac: number; fns: number };
+  /** "parlamentar" = pessoa; "outro" = fundo/municipio/secretaria que entrou
+   *  como proponente porque a fonte nao publica o autor da emenda. */
+  tipo?: "parlamentar" | "outro";
 }
+
+/** O que a lista esta exibindo. Abre em "parlamentar" porque a tela e de
+ *  parlamentares: o proponente institucional (Fundo Municipal de Saude,
+ *  Municipio de X) liderava o ranking em valor sem ser gente. "outro" nao
+ *  esconde nada — e um clique, e a contagem dele aparece no proprio seletor. */
+type TipoLista = "parlamentar" | "outro" | "todos";
 
 /** Parlamentar que a COMPARACAO trouxe mas que nao esta no recorte de anos da
  *  lista: nao ha contagem por fonte nem municipios para ele, e o cartao precisa
@@ -217,6 +229,8 @@ function ParlamentaresInner() {
   const [items, setItems] = useState<ParlamentarItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [tipoLista, setTipoLista] = useState<TipoLista>("parlamentar");
+  const [contagem, setContagem] = useState<{ parlamentar: number; outro: number }>({ parlamentar: 0, outro: 0 });
   // PERIODO MULTI-ANO (o backend de /parlamentares ja aceitava `anos`; era so o
   // frontend que mandava um ano so). Vazio = todos.
   const [anosSel, setAnosSel] = useState<string[]>([]);
@@ -239,15 +253,20 @@ function ParlamentaresInner() {
       if (municipioId) params.municipio_id = municipioId;
       if (search.trim()) params.q = search.trim();
       if (anosSel.length) params.anos = anosSel;
-      const r = await api.get<{ items: ParlamentarItem[] }>("/parlamentares", { params });
+      params.tipo = tipoLista;
+      const r = await api.get<{ items: ParlamentarItem[]; contagem?: { parlamentar: number; outro: number } }>(
+        "/parlamentares", { params });
       setItems(r.data.items);
+      // A contagem vem SEMPRE dos dois lados, mesmo filtrando um — e o que
+      // permite o seletor dizer "Outros (2)" sem uma segunda chamada.
+      if (r.data.contagem) setContagem(r.data.contagem);
     } catch (e) {
       console.error("erro parlamentares", e);
       setItems([]);
     } finally {
       setLoading(false);
     }
-  }, [municipioId, search, anosSel]);
+  }, [municipioId, search, anosSel, tipoLista]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -404,6 +423,34 @@ function ParlamentaresInner() {
             placeholder="Ex: Eduardo Azevedo"
             onKeyDown={(e) => { if (e.key === "Enter") carregar(); }}
           />
+        </div>
+        <div>
+          <label className="mb-1 block text-[11px]" style={{ color: "var(--bi-muted)" }}>
+            Exibir
+          </label>
+          <Select
+            value={tipoLista}
+            onValueChange={(v) => {
+              setTipoLista(v as TipoLista);
+              setDetailCache({});
+              setExpandedKeys(new Set());
+            }}
+          >
+            <SelectTrigger className="min-w-[190px]">
+              <SelectValue>
+                {tipoLista === "parlamentar"
+                  ? `Parlamentares (${contagem.parlamentar})`
+                  : tipoLista === "outro"
+                    ? `Outros (${contagem.outro})`
+                    : `Todos (${contagem.parlamentar + contagem.outro})`}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="parlamentar">Parlamentares ({contagem.parlamentar})</SelectItem>
+              <SelectItem value="outro">Outros ({contagem.outro})</SelectItem>
+              <SelectItem value="todos">Todos ({contagem.parlamentar + contagem.outro})</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
         <div>
           <label className="mb-1 block text-[11px]" style={{ color: "var(--bi-muted)" }}>

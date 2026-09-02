@@ -376,11 +376,17 @@ export interface ParlamentarDetalhe {
   lancamentos_ocultos: number;
 }
 
+/** O recorte da aba/tela de parlamentares. Ver services/nome_parlamentar.py. */
+export type TipoParlamentar = "parlamentar" | "outro" | "todos";
+
 export interface AbaParlamentares {
   itens: ParlamentarDetalhe[];
   total: number;
   valor_total: number;
   anos: number[];
+  /** Quantos existem de cada lado, sempre os dois — mesmo filtrando um. É o que
+   *  deixa o seletor dizer "Outros (5)" sem uma segunda chamada. */
+  contagem?: { parlamentar: number; outro: number };
   /** Mandato de PREFEITO atual contra o anterior. Só o total — a tabela
    *  comparativa inteira mora na tela do sistema; numa parede de gabinete cabe
    *  um número e a variação. `null` quando a aba está com outro recorte de
@@ -622,10 +628,13 @@ export async function getParlamentares(
 
 export async function getAbaParlamentares(
   municipioId: number | null,
-  anos?: number[]
+  anos?: number[],
+  /** "parlamentar" (padrão) = só pessoas. "outro" = secretarias e fundos que
+   *  aparecem no campo de autor. "todos" = como era antes do seletor. */
+  tipo: TipoParlamentar = "parlamentar"
 ): Promise<AbaParlamentares> {
   const { data } = await api.get<AbaParlamentares>("/bi/parlamentares/detalhe", {
-    params: scopeParams(municipioId, periodoParams(anos)),
+    params: scopeParams(municipioId, { ...periodoParams(anos), tipo }),
   });
   return data;
 }
