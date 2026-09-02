@@ -96,6 +96,12 @@ MIGRATION_FILES = [
     # plataforma ate 02/09/2026. Depende da tabela `municipios` (FK), que o
     # create_all dos modelos cria ANTES desta lista.
     "add_fns_repasse_faf.sql",
+    # RADAR DE CAPTACAO: programas federais com prazo de proposta ABERTO.
+    # ⚠️ Nome novo de proposito. `oportunidades` e `programas_federais` existiram
+    # e o `drop_lean_tables.sql` — que continua nesta lista, ACIMA — as derruba a
+    # cada boot: reusar qualquer um dos dois nomes apagaria a tabela em todo
+    # deploy e o sintoma seria "o radar esvaziou sozinho de novo".
+    "add_programas_captacao.sql",
     # Voluntarias: situacao contratacao + clausula suspensiva detalhe + parlamentar
     "add_voluntarias_clausula_parlamentar.sql",
     # Voluntarias: detalhe generico da Situacao de Contratacao (qualquer tipo)

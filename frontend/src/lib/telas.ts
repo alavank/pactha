@@ -149,6 +149,15 @@ export function hrefToTela(href: string): string {
   const seg = semPrefixo.replace(/^\/dashboard\/?/, "").split("/")[0] || "dashboard";
   if (seg.startsWith("transferegov")) return "transferegov";
   if (TELAS_DO_GRUPO_ESTADUAIS.has(seg)) return "convenios";
+  // ⚠️ O RADAR É FEDERAL mas cai em `convenios`, e não em `transferegov`: o
+  // backend o gateia com `convenios.ver` + `ensure_tela(.., "convenios")`, pela
+  // mesma razão da Consulta Popular — é o funil de onde NASCE o convênio, e não
+  // um instrumento já celebrado. Fica fora do `TELAS_DO_GRUPO_ESTADUAIS` porque
+  // aquele conjunto é dos itens do grupo ESTADUAIS e o nome dele precisa
+  // continuar verdadeiro. Sem esta linha, `hrefToTela` devolveria "radar" — que
+  // não existe em catálogo nenhum — e o item sumiria do menu para todo mundo
+  // menos o super-admin, em silêncio, exatamente como descrito acima.
+  if (seg === "radar") return "convenios";
   return seg;
 }
 

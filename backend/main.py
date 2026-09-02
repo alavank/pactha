@@ -15,7 +15,7 @@ from routers import (
     sismob, investsus, auditoria, permissoes, modelos_permissao, repasses,
     contas_irregulares,
     cofinanciamento, parametros, monitoramento, consulta_popular, programas_rs,
-    conteudo_rs,
+    conteudo_rs, programas_captacao,
     uso,
 )
 from config import get_settings
@@ -173,6 +173,10 @@ app.include_router(monitoramento.router)
 app.include_router(consulta_popular.router)
 # Catalogo dos programas estaduais gauchos — conteudo curado, sem coleta
 app.include_router(programas_rs.router)
+# RADAR DE CAPTACAO — a unica tela federal que olha para FRENTE (prazo aberto).
+# Gate `convenios.ver`: e o funil de onde nasce o convenio, mesma razao da
+# Consulta Popular. Nao cria concessao nova.
+app.include_router(programas_captacao.router)
 # FUNRIGS, emendas estaduais e TCE-RS — conteudo curado onde a coleta nao alcanca
 app.include_router(conteudo_rs.router)
 app.include_router(cofre.router)
