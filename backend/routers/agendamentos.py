@@ -126,9 +126,15 @@ def _rotulo_anexos(anexos) -> list:
 # do inserido passa a ler o vizinho) não levanta erro: só troca os valores de
 # lugar na tela.
 _SELECT = """
-    SELECT a.id, a.municipio_id, m.nome, a.responsavel_id, ur.nome,
+    -- ⚠️ `users.name`, E NAO `users.nome`. As duas tabelas usam vocabulario
+    -- diferente e isso ja custou um erro em producao: `municipios` tem `nome`
+    -- (portugues) e `users` tem `name` (ingles). O `pglast` valida a GRAMATICA
+    -- do SQL e nao o ESQUEMA, entao `ur.nome` passou por toda a suite e so
+    -- apareceu como ProgrammingError na tela do cliente. Ver
+    -- `test_agendamentos.py::test_o_select_so_usa_coluna_que_existe_no_modelo`.
+    SELECT a.id, a.municipio_id, m.nome, a.responsavel_id, ur.name,
            a.titulo, a.relato, a.data, a.status, a.anexos,
-           a.criado_por, uc.nome, a.created_at, a.updated_at
+           a.criado_por, uc.name, a.created_at, a.updated_at
       FROM agendamentos a
       JOIN municipios m ON m.id = a.municipio_id
       LEFT JOIN users ur ON ur.id = a.responsavel_id

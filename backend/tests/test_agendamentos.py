@@ -270,3 +270,55 @@ def test_a_lista_e_a_exportacao_aplicam_O_MESMO_recorte():
     """O arquivo tem de trazer as linhas da tela, e isso inclui a carteira."""
     assert FONTE.count("permitidos, vazia = _carteira(") == 2
     assert FONTE.count("responsavel_id,\n                            permitidos)") == 2
+
+
+# ------------------------------------ o SQL bate com o ESQUEMA de verdade ---
+
+def test_o_select_so_usa_coluna_que_existe_no_modelo():
+    """⚠️ ESTE TESTE NASCEU DE UM ERRO EM PRODUCAO, e o erro foi de vocabulario.
+
+    `municipios` tem `nome` (portugues) e `users` tem `name` (ingles). O
+    `_SELECT` fazia `ur.nome` / `uc.nome` e a tela do cliente respondeu
+    `ProgrammingError` — coluna inexistente.
+
+    ⚠️ E POR QUE A SUITE INTEIRA DEIXOU PASSAR: os testes de arvore validam a
+    GRAMATICA do SQL com `pglast`, que nao conhece esquema nenhum. `ur.nome` e
+    SQL perfeitamente valido; so nao existe naquela tabela. Sem Postgres de
+    teste, a unica forma de cercar isso e cruzar o SQL com os MODELOS
+    SQLAlchemy, que sao a definicao das colunas que o `create_all` cria.
+    """
+    from models.municipio import Municipio
+    from models.user import User
+
+    colunas = {
+        "a": None,   # `agendamentos` nao tem modelo: nasce da migration
+        "m": {c.name for c in Municipio.__table__.columns},
+        "ur": {c.name for c in User.__table__.columns},
+        "uc": {c.name for c in User.__table__.columns},
+    }
+    # ⚠️ SEM OS COMENTARIOS. O `_SELECT` traz uma nota `--` que CITA `ur.nome`
+    # como exemplo do erro que este teste pega; varrer o texto cru fazia o teste
+    # falhar por causa da propria explicacao. Comentario nao vai para o banco.
+    sql = re.sub(r"--[^\n]*", "", R._SELECT)
+    usadas = re.findall(r"\b(a|m|ur|uc)\.([a-z_]+)", sql)
+    assert usadas, "nao achei referencias de coluna no _SELECT"
+    for alias, coluna in usadas:
+        esperadas = colunas[alias]
+        if esperadas is None:
+            continue
+        assert coluna in esperadas, (
+            f"`{alias}.{coluna}` nao existe no modelo. Colunas de {alias}: "
+            f"{sorted(esperadas)}. ⚠️ `municipios` usa `nome` e `users` usa "
+            f"`name` — a troca das duas e o erro que este teste existe para pegar")
+
+
+def test_as_colunas_de_agendamentos_batem_com_a_migration():
+    """O alias `a` nao tem modelo (a tabela nasce da migration), entao a
+    referencia e o proprio CREATE TABLE."""
+    corpo = SQL.split("CREATE TABLE IF NOT EXISTS agendamentos (", 1)[1].split(");", 1)[0]
+    do_banco = set(re.findall(r"^\s{4}([a-z_]+)\s", corpo, re.M))
+    assert "titulo" in do_banco and "relato" in do_banco, (
+        f"nao consegui ler as colunas da migration: {sorted(do_banco)}")
+    usadas = {c for al, c in re.findall(r"\b(a)\.([a-z_]+)", R._SELECT)}
+    faltam = usadas - do_banco
+    assert not faltam, f"o _SELECT usa coluna que a migration nao cria: {sorted(faltam)}"
