@@ -246,6 +246,32 @@ def test_rodada_com_dado_grava_e_marca_os_que_sumiram(monkeypatch):
     assert p is not None and p[1] == "success" and p[2] == 1
 
 
+def test_o_upsert_RESSUSCITA_programa_que_voltou():
+    """⚠️ `ausente_desde=NULL` no ON CONFLICT, verificado na ARVORE do SQL.
+
+    Sem essa atribuicao, um programa marcado como ausente e depois REOFERECIDO
+    pelo TransfereGov continuaria marcado para sempre: a coleta o encontraria,
+    gravaria todos os campos novos, e a tela — que filtra `ausente_desde IS
+    NULL` — nunca mais o mostraria. O radar perderia programa aberto em silencio,
+    e cada rodada reforcaria o erro em vez de corrigi-lo.
+
+    ⚠️ E POR QUE ISSO PRECISA DE TESTE PROPRIO. Os testes do `run()` conferem que
+    o INSERT foi EXECUTADO (`"INSERT INTO programas_captacao" in sql`) e com
+    quais parametros — nada disso olha o corpo do ON CONFLICT. Apagar a linha
+    passava com a suite inteira verde; provado por mutacao em 02/09/2026.
+    """
+    pglast = pytest.importorskip("pglast")
+    sql = P._SQL.replace("%s", "NULL")
+    arvore = pglast.parse_sql(sql)[0].stmt          # sintaxe invalida estoura aqui
+    alvos = [t.name for t in arvore.onConflictClause.targetList]
+    assert "ausente_desde" in alvos, (
+        "o ON CONFLICT parou de zerar `ausente_desde`: programa reoferecido "
+        f"ficaria invisivel para sempre. Campos atualizados: {alvos}")
+    assert "visto_em" in alvos, "sem `visto_em` o monitor de frescor congela"
+    # E o conflito tem de ser na identidade do programa, nao em outra coisa.
+    assert [i.name for i in arvore.onConflictClause.infer.indexElems] == ["id_programa"]
+
+
 def test_rodada_que_estoura_no_meio_grava_error_e_nao_some(monkeypatch):
     """⚠️ EXCECAO NO MEIO TEM DE DEIXAR LINHA NO `ingestion_log`.
 
