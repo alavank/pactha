@@ -11,7 +11,7 @@ from routers import (
     session_capture, emendas_estaduais, dou_mg, dou_es, dou_go, dou_to, dou_rs,
     fns, transferegov, export_pdf,
     users, simec, rm, ai, gestao, parlamentares, status_changes,
-    documentos, cauc, cagec, acordofes, control, freshness, painel, bi,
+    documentos, cauc, cagec, siconfi, acordofes, control, freshness, painel, bi,
     sismob, investsus, auditoria, permissoes, modelos_permissao, repasses,
     contas_irregulares,
     cofinanciamento, parametros, monitoramento, consulta_popular, programas_rs,
@@ -212,6 +212,9 @@ app.include_router(status_changes.router)
 app.include_router(documentos.router)
 app.include_router(cauc.router)
 app.include_router(cagec.router)
+# Terceira coluna da MESMA tela de regularidade (chave `cauc.ver`,
+# tela `cauc`): contas entregues ao Tesouro e nota CAPAG.
+app.include_router(siconfi.router)
 app.include_router(sismob.router)   # /api/sismob/* (obras de saude do MS)
 app.include_router(investsus.router)  # /api/investsus/* (repasses fundo a fundo)
 app.include_router(acordofes.router)

@@ -91,11 +91,79 @@ async def tce(
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
-    """TCE-RS — as remessas obrigatórias que refletem na habilitação."""
+    """TCE-RS — as remessas obrigatórias, e o que o LicitaCon já mostra.
+
+    ⚠️ ESTA TELA DEIXOU DE SER SÓ CURADORIA. O calendário de remessas continua
+    sendo conteúdo (é norma, não muda toda semana), mas as licitações e os
+    contratos vêm agora do `ingestion/tce_rs.py`, que lê os dados abertos do
+    próprio Tribunal. As duas coisas convivem no mesmo payload e a tela precisa
+    dizer qual é qual — `aviso` fala do conteúdo curado, `licitacon` traz dado
+    coletado com data.
+    """
     if not await _guarda(db, current, municipio_id):
         return {"tem_dados": False, "motivo": _FORA_DO_RS}
     codigo = (await db.execute(text(
         "SELECT tce_orgao_codigo FROM municipios WHERE id = :m"),
         {"m": municipio_id})).scalar()
     return {"tem_dados": True, "aviso": AVISO_TCE, **TCE,
-            "municipio": {"tce_orgao_codigo": codigo}}
+            "municipio": {"tce_orgao_codigo": codigo},
+            "licitacon": await _licitacon(db, municipio_id)}
+
+
+async def _licitacon(db: AsyncSession, municipio_id: int) -> dict:
+    """Licitações e contratos coletados do LicitaCon, resumidos por ano.
+
+    ⚠️ `coletado: false` NÃO é "o município não licita". Pode ser bloqueio de IP
+    (o TCE-RS devolve 403 para faixa de datacenter) ou código de órgão ainda não
+    descoberto. A tela precisa dizer isso, senão afirma sobre a prefeitura uma
+    coisa que ela não sabe."""
+    lic = (await db.execute(text("""
+        SELECT ano_licitacao, count(*), sum(vl_licitacao), sum(vl_homologado),
+               max(atualizado_em)
+          FROM tce_rs_licitacoes WHERE municipio_id = :m
+         GROUP BY ano_licitacao ORDER BY ano_licitacao DESC LIMIT 6
+    """), {"m": municipio_id})).fetchall()
+    con = (await db.execute(text("""
+        SELECT ano_contrato, count(*), sum(vl_contrato), max(atualizado_em)
+          FROM tce_rs_contratos WHERE municipio_id = :m
+         GROUP BY ano_contrato ORDER BY ano_contrato DESC LIMIT 6
+    """), {"m": municipio_id})).fetchall()
+
+    if not lic and not con:
+        return {"coletado": False}
+
+    # Os contratos que ainda estão de pé — é o que o gestor precisa ver antes de
+    # assinar o próximo, e o que vence junto com a vigência do convênio.
+    vigentes = (await db.execute(text("""
+        SELECT nr_contrato, ano_contrato, ds_objeto, vl_contrato,
+               dt_final_vigencia, nr_documento, link_licitacon
+          FROM tce_rs_contratos
+         WHERE municipio_id = :m AND dt_final_vigencia >= CURRENT_DATE
+         ORDER BY dt_final_vigencia LIMIT 10
+    """), {"m": municipio_id})).fetchall()
+
+    carimbos = [r[4] for r in lic if r[4]] + [r[3] for r in con if r[3]]
+    return {
+        "coletado": True,
+        "atualizado_em": max(carimbos).isoformat() if carimbos else None,
+        "licitacoes_por_ano": [{
+            "ano": r[0], "total": r[1],
+            "valor_estimado": float(r[2]) if r[2] is not None else None,
+            # ⚠️ Soma só do que FOI homologado. Certame em andamento entra na
+            # contagem e não na soma — por isso os dois números não fecham, e
+            # isso é a verdade, não defeito.
+            "valor_homologado": float(r[3]) if r[3] is not None else None,
+        } for r in lic],
+        "contratos_por_ano": [{
+            "ano": r[0], "total": r[1],
+            "valor": float(r[2]) if r[2] is not None else None,
+        } for r in con],
+        "contratos_vigentes": [{
+            "numero": f"{r[0]}/{r[1]}",
+            "objeto": r[2],
+            "valor": float(r[3]) if r[3] is not None else None,
+            "vigencia_ate": r[4].isoformat() if r[4] else None,
+            "contratado_documento": r[5],
+            "link": r[6],
+        } for r in vigentes],
+    }

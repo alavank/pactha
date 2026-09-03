@@ -102,6 +102,21 @@ _SOURCES = [
     ("SIMEC — Termos de Compromisso (MEC)",
      "SELECT max(updated_at), count(*) FROM simec_termos",
      "simec_termos"),
+    # SICONFI/Tesouro. NACIONAL, como o SIMEC-Termos: o coletor varre todo
+    # municipio ativo com ibge_code, sem recorte de estado. Conta as ENTREGAS
+    # (uma linha por entregavel x periodo) e nao a CAPAG, porque a CAPAG e uma
+    # linha por municipio/ano e ficaria eternamente parecendo pouco — as duas
+    # saem da mesma rodada e do mesmo `source`, entao a data e a mesma.
+    ("SICONFI — Contas no Tesouro",
+     "SELECT max(atualizado_em), count(*) FROM siconfi_entregas",
+     "siconfi"),
+    # Obras.gov.br/CIPI. NACIONAL: varre por UF da carteira e casa por CNPJ do
+    # tomador. ⚠️ Contagem ZERO e estado legitimo (municipio sem obra federal
+    # cadastrada) — o veredito e o `status` da rodada, que sai `partial` quando
+    # a varredura foi interrompida por rate limit.
+    ("Obras.gov.br — Obras federais",
+     "SELECT max(atualizado_em), count(*) FROM obrasgov_projetos",
+     "obrasgov"),
 ]
 
 # ⚠️ FONTES QUE SO EXISTEM PARA CERTAS UFs, e por isso nao podem morar na lista
@@ -157,6 +172,14 @@ _SOURCES_POR_UF: dict[str, list[tuple[str, str, str | None]]] = {
         ("Consulta Popular / COREDEs (RS)",
          "SELECT max(atualizado_em), count(*) FROM consulta_popular_rs",
          "consulta_popular_rs"),
+        # ⚠️ Esta fonte pode estar BLOQUEADA POR IP (o TCE-RS devolve 403 para
+        # faixa de datacenter). Quando esta, o coletor grava `partial` com a
+        # nota — entao o monitor mostra "degradado", que e a verdade, e nao
+        # "parado" nem "em dia". Conta as licitacoes: os contratos vem da mesma
+        # rodada e do mesmo `source`, entao a data e a mesma.
+        ("TCE-RS — Licitações e contratos (RS)",
+         "SELECT max(atualizado_em), count(*) FROM tce_rs_licitacoes",
+         "tce_rs"),
     ],
     "ES": [
         ("GConv-ES — Convênios estaduais (ES)",

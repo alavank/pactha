@@ -138,7 +138,12 @@ export default function PropostasFNSPage() {
   // na sidebar. Assim o usuário não filtra o FNS de município fora da sua permissão.
   const selMun = municipios.find((m) => String(m.id) === municipioId) || null;
   const municipio = selMun?.nome || "";
-  const estado = selMun?.uf || "MG";
+  /* ⚠️ SEM FALLBACK "MG". A UF vai como filtro para o portal do FNS; chutar
+     Minas para um cliente gaucho consultava o estado errado e devolvia vazio —
+     que a tela mostraria como "este municipio nao tem propostas". Sem municipio
+     selecionado nao ha o que consultar, e o efeito de busca ja depende de
+     `municipioId`. */
+  const estado = (selMun?.uf || "").toUpperCase();
   const [data, setData] = useState<Resp | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -201,6 +206,15 @@ export default function PropostasFNSPage() {
   const consultar = React.useCallback(async () => {
     if (!municipio) {
       setError("Selecione um município no menu lateral (Município Atendido).");
+      return;
+    }
+    /* A UF é filtro no portal do FNS, e antes desta guarda ela caía em "MG"
+       quando o cadastro do município não tinha estado — consultando Minas para
+       um cliente gaúcho e devolvendo vazio, que a tela mostrava como "não há
+       propostas". Sem UF a consulta não sai, e o texto diz o que arrumar. */
+    if (!estado) {
+      setError("Este município está sem UF no cadastro, e o FNS filtra por estado. "
+               + "Peça o ajuste do cadastro para consultar.");
       return;
     }
     if (!anosSel.length) {

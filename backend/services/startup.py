@@ -382,6 +382,19 @@ MIGRATION_FILES = [
     # para o ambiente `api-publica`, e a de menor risco: nenhum endereco novo,
     # so colunas de arquivos que ja sao baixados todo dia.
     "add_voluntarias_colunas_do_csv.sql",
+    # SICONFI/Tesouro: o extrato de entregas de contas (o que faltou, e nao so
+    # "irregular") e a CAPAG (a nota de A+ a D que abre ou fecha credito com
+    # garantia da Uniao). Fonte NACIONAL — nao tem recorte de UF. Depende so de
+    # `municipios`, entao pode entrar no fim da lista.
+    "add_siconfi.sql",
+    # TCE-RS/LicitaCon: licitacoes e contratos do municipio, mais a tabela
+    # `fonte_http_cache` — que e infraestrutura, nao do TCE: e a primeira peca
+    # de HTTP CONDICIONAL do repo (a auditoria de 29/08 mediu zero ETag em 44
+    # coletores). Depende so de `municipios`.
+    "add_tce_rs.sql",
+    # Obras.gov.br/CIPI: as obras federais que nao sao de saude (SISMOB) nem
+    # de educacao (SIMEC). Depende so de `municipios`.
+    "add_obrasgov.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",

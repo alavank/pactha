@@ -26,7 +26,7 @@
 import React, { useEffect, useState } from "react";
 import {
   ShieldCheck, ShieldAlert, Check, AlertTriangle, AlertCircle, Ban, Loader2,
-  Clock, Info, Gavel, ExternalLink,
+  Clock, Info, Gavel, ExternalLink, Landmark,
 } from "lucide-react";
 import api from "@/lib/api";
 import { useMunicipio } from "@/contexts/MunicipioContext";
@@ -112,6 +112,38 @@ interface CagecResp {
   crc_em?: string | null;
   crc_erro?: string | null;
   detalhe_do_crc?: boolean;
+}
+
+/** SICONFI / Tesouro Nacional — `GET /api/siconfi`. A terceira leitura da mesma
+ *  pergunta: além de estar em dia (CAUC) e habilitado no estado (CAGEC/CHE), o
+ *  município tem capacidade de pagamento para tomar crédito? */
+interface SiconfiResp {
+  tem_dados: boolean;
+  motivo?: string;
+  ultima_entrega?: string | null;
+  exercicios?: Array<{
+    exercicio: number;
+    total: number;
+    entregaveis: string[];
+    entregas: Array<{
+      entregavel: string; periodo: number; periodicidade?: string | null;
+      status?: string | null; entregue_em?: string | null; forma_envio?: string | null;
+    }>;
+  }>;
+  capag?: {
+    exercicio: number;
+    posicao?: string | null;
+    nota?: string | null;
+    /** A consequência financeira da nota, do servidor — nunca montada aqui. */
+    significado?: string | null;
+    indicadores: Array<{
+      chave: string; titulo: string; descricao: string;
+      valor?: number | null; nota?: string | null;
+    }>;
+    icf?: string | null;
+    observacao?: string | null;
+    atualizado_em?: string | null;
+  } | null;
 }
 
 function fmtDate(iso?: string | null): string {
@@ -307,6 +339,134 @@ function alerta(it: Item, esfera: "cauc" | "cagec"): "critico" | "atencao" | nul
  *  A situação de cada um fica VISÍVEL sem abrir — é a informação que decide
  *  ação. O detalhe item a item fica dentro do `details` para não empurrar a
  *  coluna da prefeitura para fora da tela. */
+/** ⚠️ A NOTA SOZINHA NÃO INFORMA. "C" não diz nada a quem não vive a Portaria
+ *  MF 501/2021; o que muda a decisão do gestor é a frase ao lado — apta, ou NÃO
+ *  apta, a contratar crédito com garantia da União. Por isso o `significado`
+ *  vem do servidor e é exibido junto, sempre. */
+function Capag({ capag }: { capag: NonNullable<SiconfiResp["capag"]> }) {
+  const nota = (capag.nota || "").toUpperCase();
+  // Só duas famílias importam para a decisão: A/B destravam a garantia da
+  // União, C/D não. Nada de escala de cinco cores para uma escolha binária.
+  const apta = nota.startsWith("A") || nota.startsWith("B");
+  /* MESMA DISCIPLINA DE COR DO RESTO DA TELA (ver `Situacao` acima): cartão
+     inteiro em vermelho quando há impedimento, e NENHUMA cor quando está tudo
+     bem. Pintar de verde a nota A+ encheria de cor o estado normal, que é o
+     que esta identidade evita — e faria a nota C, que é a que importa, brigar
+     por atenção com uma dúzia de verdes. Os mesmos valores da faixa de
+     irregularidade do Painel. */
+  const impedido = !!nota && !apta;
+
+  return (
+    <Bloco
+      className="p-4"
+      style={impedido ? {
+        background: "color-mix(in oklab, var(--bi-crit) 12%, transparent)",
+        borderColor: "color-mix(in oklab, var(--bi-crit) 28%, transparent)",
+      } : undefined}
+    >
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <div className="flex items-baseline gap-2">
+          <span className="text-3xl font-bold leading-none"
+                style={{ color: impedido ? "var(--bi-crit-ink)" : "var(--bi-text)" }}>
+            {capag.nota || "—"}
+          </span>
+          <span className="text-[11px] font-semibold uppercase tracking-wide"
+                style={{ color: "var(--bi-muted)" }}>
+            CAPAG
+          </span>
+        </div>
+        <p className="min-w-0 flex-1 text-[12px] leading-snug" style={{ color: "var(--bi-text)" }}>
+          {capag.significado
+            ? <>Município <b>{capag.significado}</b>.</>
+            : "Capacidade de pagamento publicada pelo Tesouro Nacional."}
+          {capag.posicao && (
+            <span style={{ color: "var(--bi-muted)" }}>
+              {" "}Posição de {fmtDate(capag.posicao)}.
+            </span>
+          )}
+        </p>
+        {nota && (
+          <Selo tom={apta ? "ok" : "critico"}>
+            {apta ? "Pode tomar crédito" : "Sem garantia da União"}
+          </Selo>
+        )}
+      </div>
+
+      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+        {capag.indicadores.map((i) => (
+          <div key={i.chave} className="rounded-md px-2.5 py-2"
+               style={{ background: "var(--bi-surface)" }}>
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="bi-title text-[12px]">{i.titulo}</span>
+              <span className="text-[13px] font-bold"
+                    style={{ color: "var(--bi-text)" }}>{i.nota || "—"}</span>
+            </div>
+            <div className="text-[10px] leading-snug" style={{ color: "var(--bi-faint)" }}>
+              {i.descricao}
+            </div>
+            {i.valor != null && (
+              /* Três casas porque o indicador é uma razão, não dinheiro — e
+                 porque o SINAL importa: liquidez negativa (obrigações acima da
+                 disponibilidade de caixa) é o que costuma derrubar a nota. */
+              <div className="mt-0.5 text-[11px] tabular-nums" style={{ color: "var(--bi-muted)" }}>
+                {i.valor.toLocaleString("pt-BR", {
+                  minimumFractionDigits: 3, maximumFractionDigits: 3,
+                })}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </Bloco>
+  );
+}
+
+/** As contas entregues ao Tesouro no exercício mais recente.
+ *
+ *  ⚠️ NÃO se filtra por `status`: RREO, RGF e DCA vêm com 'HO' (homologado) e
+ *  as MSC vêm SEM status nenhum — as duas entregues. Quem prova a entrega é a
+ *  data, e foi por isso que o coletor guarda as duas coisas. */
+function ContasNoTesouro({ ano }: { ano: NonNullable<SiconfiResp["exercicios"]>[number] }) {
+  const porEntregavel = new Map<string, { total: number; ultima?: string | null }>();
+  for (const e of ano.entregas) {
+    const atual = porEntregavel.get(e.entregavel) || { total: 0, ultima: null };
+    atual.total += 1;
+    if (e.entregue_em && (!atual.ultima || e.entregue_em > atual.ultima)) {
+      atual.ultima = e.entregue_em;
+    }
+    porEntregavel.set(e.entregavel, atual);
+  }
+  return (
+    <Bloco className="p-4">
+      <BlocoHead
+        titulo={`Contas entregues ao Tesouro — ${ano.exercicio}`}
+        sub={`${ano.total} envio(s) da prefeitura em ${ano.entregaveis.length} obrigação(ões)`}
+      />
+      <Lista>
+        {[...porEntregavel.entries()].map(([nome, d]) => (
+          <li key={nome} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 py-1">
+            <span className="min-w-0 text-[12px]" style={{ color: "var(--bi-text)" }}>
+              {nome}
+            </span>
+            <span className="shrink-0 text-[11px] tabular-nums" style={{ color: "var(--bi-muted)" }}>
+              {d.total} envio(s)
+              {d.ultima ? ` · último em ${fmtDate(d.ultima)}` : ""}
+            </span>
+          </li>
+        ))}
+      </Lista>
+      {/* O nome com "Simplificado" não é detalhe: é o que explica por que a
+          cadência deste município difere da do vizinho. Ver ingestion/siconfi.py. */}
+      {ano.entregaveis.some((n) => n.includes("Simplificado")) && (
+        <p className="mt-2 text-[10px] leading-snug" style={{ color: "var(--bi-faint)" }}>
+          Este município entrega os demonstrativos na versão <b>Simplificada</b>, permitida
+          aos entes de menor porte — por isso a periodicidade difere da de municípios maiores.
+        </p>
+      )}
+    </Bloco>
+  );
+}
+
 function OutrasEntidades({ entidades }: { entidades: Entidade[] }) {
   const outras = entidades.filter((e) => !e.principal);
   if (!outras.length) return null;
@@ -594,25 +754,31 @@ export default function RegularidadePage() {
      regularidade — é "sem conta irregular listada". Verde por isto colocaria um
      "apto" falso na frente de um prefeito. */
   const [contas, setContas] = useState<ContasResp | null>(null);
+  const [tesouro, setTesouro] = useState<SiconfiResp | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     // Busca de dados: os setState aqui são o "carregando" da primeira pintura e
     // a limpeza ao trocar de município — sincronização com fonte externa, não
     // render em cascata (mesma convenção do resto do app).
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (!municipioId) { setCauc(null); setCagec(null); setContas(null); setLoading(false); return; }
+    if (!municipioId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setCauc(null); setCagec(null); setContas(null); setTesouro(null);
+      setLoading(false); return;
+    }
     setLoading(true);
-    // As duas esferas em paralelo, com allSettled: uma falhar não pode apagar a
-    // outra da tela — são fontes independentes (Tesouro e SIGCON).
+    // As esferas em paralelo, com allSettled: uma falhar não pode apagar as
+    // outras da tela — são fontes independentes (Tesouro e SIGCON).
     Promise.allSettled([
       api.get<CaucResp>("/cauc", { params: { municipio_id: municipioId } }),
       api.get<CagecResp>("/cagec", { params: { municipio_id: municipioId } }),
       api.get<ContasResp>("/contas-irregulares", { params: { municipio_id: municipioId } }),
-    ]).then(([a, b, c]) => {
+      api.get<SiconfiResp>("/siconfi", { params: { municipio_id: municipioId } }),
+    ]).then(([a, b, c, d]) => {
       setCauc(a.status === "fulfilled" ? a.value.data : null);
       setCagec(b.status === "fulfilled" ? b.value.data : null);
       setContas(c.status === "fulfilled" ? c.value.data : null);
+      setTesouro(d.status === "fulfilled" ? d.value.data : null);
     }).finally(() => setLoading(false));
   }, [municipioId]);
 
@@ -840,6 +1006,58 @@ export default function RegularidadePage() {
             )}
           </section>
         </div>
+      )}
+
+      {/* ---------------- Tesouro Nacional (SICONFI) ----------------
+          Largura inteira, e abaixo das duas colunas, porque responde a uma
+          pergunta DIFERENTE das de cima. CAUC e cadastro estadual dizem se a
+          documentação está em dia; a CAPAG diz se o município aguenta tomar
+          crédito, e o extrato de entregas diz O QUE foi entregue e quando —
+          que é o detalhe que falta ao "irregular na obrigação 3.2.2" do CAUC. */}
+      {municipioId && !loading && (
+        <section className="space-y-2.5">
+          <div className="flex flex-wrap items-baseline gap-x-2">
+            <h2 className="bi-title flex items-center gap-1.5 text-[14px]">
+              <Landmark className="size-3.5" style={{ color: "var(--bi-muted)" }} />
+              Tesouro Nacional
+            </h2>
+            <SeloColeta em={tesouro?.capag?.atualizado_em} />
+            <span className="text-[11px]" style={{ color: "var(--bi-muted)" }}>
+              capacidade de pagamento e contas entregues (SICONFI)
+            </span>
+          </div>
+
+          {!tesouro?.tem_dados ? (
+            /* ⚠️ Ausência de coleta NÃO é ausência de pendência. Pintar de
+               verde, ou simplesmente não mostrar a seção, faria a tela calar
+               sobre a própria ignorância — mesmo cuidado do bloco estadual. */
+            <Bloco className="p-4">
+              <div className="flex items-start gap-2.5">
+                <Clock className="mt-0.5 size-4 shrink-0" style={{ color: "var(--bi-warn-ink)" }} />
+                <div className="space-y-1.5">
+                  <div className="bi-title text-[13px] leading-tight">Aguardando coleta</div>
+                  <p className="text-[11px] leading-snug" style={{ color: "var(--bi-muted)" }}>
+                    {tesouro?.motivo
+                      || "As contas deste município no Tesouro Nacional ainda não foram consultadas."}
+                  </p>
+                  <p className="text-[10px] leading-snug" style={{ color: "var(--bi-faint)" }}>
+                    A consulta é pública e usa o código IBGE do município — não depende de
+                    senha nem de credencial.
+                  </p>
+                </div>
+              </div>
+            </Bloco>
+          ) : (
+            <div className="space-y-2.5">
+              {tesouro.capag && <Capag capag={tesouro.capag} />}
+              {tesouro.exercicios?.[0] && <ContasNoTesouro ano={tesouro.exercicios[0]} />}
+              <p className="text-[10px]" style={{ color: "var(--bi-faint)" }}>
+                Fonte: SICONFI / Secretaria do Tesouro Nacional. A CAPAG é publicada algumas
+                vezes por ano; as entregas são atualizadas a cada envio do município.
+              </p>
+            </div>
+          )}
+        </section>
       )}
 
       {municipioId && !loading && (

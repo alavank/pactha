@@ -30,7 +30,7 @@ Usuários"):
 | **P1** — cadastro estadual parametrizado por UF no BI | ⚠️ **meio feito** | título já usa `tituloEstadual` (`abas.tsx:1120,1292`), mas a Visão Geral ainda carimba `"CAGEC · obrigações"` fixo em **`abas.tsx:238`** |
 | **P2** — tela Regularidade: banner e textos por UF | ❌ pendente | |
 | **P4** — Cofre: filtrar integrações pela UF da carteira | ❌ pendente | `dashboard/cofre/page.tsx` lista SIGCON-MG em qualquer tenant |
-| **P5** — remover fallbacks "MG" e placeholder "ARAUJOS" | ❌ pendente | `dashboard/dou/page.tsx:217` · `dashboard/fns/page.tsx:141` (`selMun?.uf \|\| "MG"`) |
+| **P5** — remover fallbacks "MG" e placeholder "ARAUJOS" | ✅ **feito em 02/09/2026** | Eram TRÊS, não dois: `dashboard/dou/page.tsx`, `dashboard/fns/page.tsx` e — o mais grave, porque grava dado — `ingestion/fns_scraper.py`, que assumia Minas para resolver o código FNS pelo NOME e podia casar com município homônimo de outro estado |
 | **P6** — menu esconde módulos estaduais com UF desconhecida | ❌ pendente | `dashboard/layout.tsx:297` guarda com `ufAmbiente &&` → na dúvida mostra tudo |
 | **P7 / P8** — rótulos residuais + `/api/cagec` neutro | ❌ pendente | |
 | **O2** — TE e InvestSUS no catálogo de frescor/watchdog | ❌ pendente | conferido: zero ocorrências de `transferegov_te` / `investsus` em `routers/freshness.py` |
@@ -102,7 +102,7 @@ CADIN, que muda de classificação.
 
 | Item | Mudança |
 | :--- | :--- |
-| **CHE — checklist de 9 → 11 itens** | A **IN CAGE 04/2024** (vigente desde 01/01/2025) redefiniu a habilitação em 11 itens. A lista de 9 que a tela usa é a divulgação antiga. A certidão CHE passou a valer como substituta de toda a documentação **+ espelho da regularidade do monitoramento mensal** |
+| ~~**CHE — checklist de 9 → 11 itens**~~ | ❌ **A premissa não se confirmou (medido 02/09/2026).** A API do CHE devolve **dez** exigências para a Prefeitura de Nova Palma, não onze — e **a tela não usa lista nenhuma**: `ingestion/che_rs.py` grava o que a API mandar, com `GRUPO_PADRAO` para item não mapeado, então exigência nova entra sozinha. Não havia o que consertar no produto; o que estava errado era o `MAPA_RS.md` §2.2, que listava nove e omitia "Adesão Programas Estaduais". Corrigido lá. Segue valendo verificar se a certidão CHE virou espelho do monitoramento mensal |
 | **CADIN/RS — sai de BLOQUEADO** | Desde ~05/2025 existe **consulta autenticada via gov.br com certidão em tempo real** (`cadin.sefaz.rs.gov.br`). Pode migrar de conteúdo curado para **coleta assistida**, mesmo padrão gov.br do TransfereGov. O caminho público segue com captcha + janela seg-sáb 7h-22h30 |
 | **CFIL/RS — rebaixar na tela** | Correção de rota: o CFIL é cadastro de **fornecedores impedidos de licitar** — não é exigência do município convenente. Hoje está no mesmo plano do CADIN, e não deveria |
 | **FUNRIGS — deixou de ser "só normativos"** | O Fundo a Fundo da Reconstrução foi regulamentado (**Decreto 58.119/2025**; 13 municípios contemplados até 04/2026 — **Santa Maria fora da lista**) e o TCE-RS publicou **painel público do FUNRIGS**. Atualizar a tela curada com os requisitos (fundo municipal, conselho, nexo causal) e o painel como link |

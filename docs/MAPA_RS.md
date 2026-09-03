@@ -76,7 +76,20 @@ Emissão exclusivamente pela internet, gratuita, com consulta livre — **não h
 | Acesso | Público, gratuito, sem autenticação |
 | Prazo de emissão | Até 2 dias úteis |
 
-## **2.2 Os nove itens que compõem o CHE**
+## **2.2 Os itens que compõem o CHE**
+
+> ⭐ **MEDIDO EM 02/09/2026, e são DEZ — não nove.** A lista abaixo foi escrita a
+> partir da divulgação do Estado; a API do CHE devolve, para a Prefeitura de Nova
+> Palma, **dez exigências**, todas com validade própria. A que faltava nesta
+> seção é **"Adesão Programas Estaduais"** (`documentoId` 152).
+>
+> ⚠️ E o `BACKLOG_POR_ESTADO.md` §3.2 afirma que a IN CAGE 04/2024 redefiniu a
+> habilitação em **onze** itens e que "a lista de 9 que a tela usa é a divulgação
+> antiga". As duas metades dessa frase não se sustentam contra a fonte: são dez,
+> e **a tela não usa lista nenhuma** — `ingestion/che_rs.py` grava o que a API
+> mandar, e o mapa `CODIGOS` só dá código e grupo estáveis, com
+> `GRUPO_PADRAO` para qualquer item novo. Se a norma acrescentar exigência, ela
+> entra sozinha na tela. O que precisava de conserto era este documento.
 
 O CHE consolida num único cadastro as verificações abaixo. Cada item deve virar uma linha monitorável no PACTHA, com data de validade própria:
 
@@ -490,11 +503,12 @@ Pela regra do topo desta seção, **fonte com assunto próprio ganha tela própr
 | **Convênios Estaduais** (carteira da CAGE, com valor pago e vigência) | ✅ no ar |
 | **Consulta Popular** (demandas eleitas na região e se o município se classificou) | ✅ no ar, menu próprio |
 | **Diário Oficial RS** | ✅ no ar (5º provedor da tela de Diários) |
-| **Monitoramento (Decreto 56.939)** | 🔒 tela pronta dizendo "ainda não conectado"; alarme testado esperando a credencial |
-| **Programas do Estado** (catálogo setorial: Pavimenta/Avançar, Avançar na Saúde, Assistir, RBC/RS, Avançar na Agropecuária, FEAPER, Avançar Poços) | 🟡 a fazer — menu próprio |
-| **Plano Rio Grande / FUNRIGS** | 🟡 a fazer — menu próprio (exigências, prazos, exceção dos 120 dias) |
-| **Emendas Estaduais RS** | 🟡 a fazer — hoje a tela de Emendas some no RS por não haver fonte; passa a existir como conteúdo, deixando explícito que **não são impositivas** |
-| **TCE-RS** (remessas SIAPC/PAD e LicitaCon) | ⛔🟡 a fazer — calendário de prazos como conteúdo enquanto o IP não é liberado |
+| **Monitoramento (Decreto 56.939)** | ✅ tela no ar desde 02/09/2026 — e ela NÃO existia quando esta linha foi escrita. O serviço e os 16 testes estavam prontos desde 08/2026, a rota `/api/monitoramento` no ar, e nenhuma página do frontend a consumia. Segue dizendo "ainda não conectado" enquanto não houver credencial PCPRS, que é o estado correto |
+| **Programas do Estado** (catálogo setorial: Pavimenta/Avançar, Avançar na Saúde, Assistir, RBC/RS, Avançar na Agropecuária, FEAPER, Avançar Poços) | 🟡 **no ar** desde 08/2026 (`programas-rs`) — esta linha dizia "a fazer" e estava errada |
+| **Plano Rio Grande / FUNRIGS** | 🟡 **no ar** (`funrigs`) — idem |
+| **Emendas Estaduais RS** | 🟡 **no ar** (`emendas-rs`), deixando explícito que **não são impositivas** — idem |
+| **Regularidade → Tesouro Nacional** | ✅ no ar desde 02/09/2026 — CAPAG (Nova Palma **A+**, Santa Maria **C**) e o extrato de contas entregues ao SICONFI, ao lado do CAUC e do CHE |
+| **TCE-RS** (remessas SIAPC/PAD e LicitaCon) | ✅🟡 no ar. O calendário de prazos continua conteúdo (é norma), mas **licitações e contratos agora vêm do LicitaCon** (`ingestion/tce_rs.py`): 864 licitações e 1.201 contratos em Nova Palma. ⛔ A coleta depende de liberação de IP — quando bloqueada, a rodada sai `partial` com a nota e a tela diz que ausência não é "não há licitação" |
 
 **Radar de oportunidades por COREDE** — a visão que amarra tudo: programas, Consulta Popular e FUNRIGS filtrados pela região do município. Depende do catálogo acima existir primeiro.
 

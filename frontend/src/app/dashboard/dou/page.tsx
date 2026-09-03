@@ -67,15 +67,21 @@ const ROTULO_COR = { color: "var(--bi-muted)" } as const;
 export default function DouMGPage() {
   /* ⭐ O DIÁRIO SEGUE O ESTADO DO AMBIENTE, pelo registro por UF de
      `lib/estadual.ts` — estado novo é uma linha lá, não um `if` a mais aqui.
-     Sem UF (consolidado ou ainda carregando) cai em MG, que era o comportamento
-     de antes desta tela existir por estado; o menu só abre a tela onde há
-     provedor. `temCaderno` é só de MG: os 3 cadernos (Executivo/Municípios/
-     Terceiros) são conceito do Jornal Minas Gerais — as plataformas do ES e de
-     GO servem edição única. */
+     `temCaderno` é só de MG: os 3 cadernos (Executivo/Municípios/Terceiros) são
+     conceito do Jornal Minas Gerais — as plataformas dos outros estados servem
+     edição única.
+
+     ⚠️ SEM FALLBACK "MG", e a diferença aparece na tela do cliente. Enquanto
+     a UF não chega (primeira pintura, ou carteira sem estado), a tela caía no
+     Jornal Minas Gerais: um servidor de Nova Palma via o título "Diário Oficial
+     MG" e uma busca que ia ao diário de outro estado — sem erro nenhum, só
+     resultado errado. Agora ela espera saber onde está antes de dizer onde
+     busca. O `prov` só é nulo neste intervalo: o menu já esconde a tela onde
+     não há provedor. */
   const ufAmbiente = useUfDoMunicipio();
-  const prov = diarioDaUf(ufAmbiente) || diarioDaUf("MG")!;
-  const temCaderno = prov.api === "/dou-mg";
-  const base = prov.api;
+  const prov = diarioDaUf(ufAmbiente);
+  const temCaderno = prov?.api === "/dou-mg";
+  const base = prov?.api || "";
   const [texto, setTexto] = useState("");
   // Periodo padrao = ultimos 30 dias, IGUAL ao de antes. So mudou onde a conta
   // acontece: no inicializador preguicoso do estado em vez do corpo do
@@ -109,7 +115,7 @@ export default function DouMGPage() {
       if (download) {
         const a = document.createElement("a");
         a.href = url;
-        a.download = `${prov.api.replace("/", "")}-${id}.pdf`;
+        a.download = `${(prov?.api || "").replace("/", "")}-${id}.pdf`;
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -193,6 +199,13 @@ export default function DouMGPage() {
       })
       .catch(() => setError("Não foi possível gerar o PDF. Tente novamente."));
   };
+
+  /* Depois dos hooks, nunca antes: um `return` acima deles mudaria a ordem de
+     chamada entre renders. Aqui a UF ainda não chegou — e a tela prefere ficar
+     em branco por um instante a apontar para o diário do estado errado. */
+  if (!prov) {
+    return <Vazio>Identificando o estado do município…</Vazio>;
+  }
 
   return (
     <div className="space-y-4">

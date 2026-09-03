@@ -41,3 +41,6 @@ out/
 # Tokens pre-configurados da extensao de captura (segredo, por instalacao).
 # Gerados por `POST /api/control/session/token` em cada tenant; nunca versionados.
 extension/tokens.local.js
+
+# Auditoria de seguranca (venv do gerador do relatorio)
+docs/auditoria-seguranca/.venv/

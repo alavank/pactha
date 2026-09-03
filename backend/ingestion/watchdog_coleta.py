@@ -97,6 +97,21 @@ FRESCOR_HORAS_NACIONAL = {
     # aberto no Brasil nao e resultado plausivel), entao um arquivo que mudou de
     # layout aparece aqui como fonte parada, e nao como sucesso silencioso.
     "programas_captacao": 30,
+    # SICONFI/Tesouro (contas entregues + CAPAG). MESMO desenho do `sismob` e do
+    # `simec_termos`: o proprio ingest() se auto-limita
+    # (SICONFI_MIN_INTERVAL_H=20), entao a cadencia REAL e diaria e 30h = um dia
+    # + folga. NACIONAL: varre todo municipio ativo com ibge_code, sem recorte
+    # de estado — o lugar e aqui, nunca no mapa por UF.
+    "siconfi": 30,
+    # Obras.gov.br/CIPI. Cadencia REAL de 2 dias (auto-limite de 44h no proprio
+    # ingest): a varredura e cara — uma pagina a cada 8s por causa do rate
+    # limit — e o CIPI muda devagar. 54h = dois dias + folga.
+    "obrasgov": 54,
+    # ⚠️ `portal_transparencia` NAO ENTRA AQUI de proposito. Ele e um scaffold
+    # inerte (sem PORTAL_TRANSPARENCIA_API_KEY nao coleta nada) e nao tem
+    # Scheduled Task. Por-lo no catalogo faria o vigia cobrar frescor de uma
+    # fonte que ninguem ligou — que e exatamente a armadilha do `SISMOB_ENABLED=0`
+    # documentada no INFRA.md. Entra junto com a decisao de ligar.
 }
 
 # Fontes que so existem para certas UFs. A chave e a UF do TENANT (ha municipio
@@ -119,6 +134,12 @@ FRESCOR_HORAS_POR_UF = {
         "fpe_rs": 54,
         # semanal: 8 dias de folga (a fonte muda 1x/ano, apos a votacao)
         "consulta_popular_rs": 192,
+        # TCE-RS/LicitaCon: o TCE republica os ZIPs por orgao com cadencia
+        # semanal (o de Nova Palma foi atualizado em 31/08/2026, um domingo), e
+        # a rodada e diaria com HTTP condicional — quase toda ela responde 304.
+        # 30h porque o que se vigia e a RODADA, nao a mudanca da fonte: 304 e
+        # sucesso e carimba o log igual.
+        "tce_rs": 30,
     },
 }
 
