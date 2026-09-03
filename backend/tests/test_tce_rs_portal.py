@@ -171,29 +171,64 @@ def test_conexao_derrubada_e_retomada_em_vez_de_matar_a_rodada():
     assert cli.n == 2, "tinha de tentar de novo, não desistir"
 
 
-def test_bloqueio_de_ip_nao_e_retentado():
-    """403 é decisão de borda: insistir só gasta tempo e reforça o bloqueio.
+class _Recusa403:
+    """Cliente que devolve 403 até o enésimo reciclo (ou sempre, se nunca)."""
 
-    E tem de ser uma exceção PRÓPRIA — quem chama precisa poder gravar
-    `partial` com a nota, e nunca `success` com zero linha."""
-    import httpx
+    def __init__(self, para_de_recusar_apos=None):
+        self.n = 0
+        self.reciclos = 0
+        self.para = para_de_recusar_apos
 
-    class Recusa:
-        def __init__(self):
-            self.n = 0
+    def reciclar(self):
+        self.reciclos += 1
 
-        def get(self, *a, **k):
-            self.n += 1
+    def get(self, *a, **k):
+        self.n += 1
+        recusa = self.para is None or self.reciclos < self.para
 
-            class R:
-                status_code = 403
+        class R:
+            status_code = 403 if recusa else 200
 
-            return R()
+            @staticmethod
+            def json():
+                return [{"ok": True}]
 
-    cli = Recusa()
+        return R()
+
+
+def test_403_que_some_ao_reconectar_e_limite_de_conexao_e_nao_bloqueio():
+    """⚠️ O ACHADO QUE MULTIPLICOU A COLETA POR SEIS.
+
+    O portal responde 403 a partir da 201ª requisição NA MESMA CONEXÃO TCP —
+    não é o IP (conexão nova responde 200 no mesmo segundo), não é o cookie
+    (limpá-lo não muda nada) e não é janela de tempo (esperar não resolve).
+
+    A primeira carga de Nova Palma rendeu só ~180 detalhes por passada porque
+    esse 403 era classificado como bloqueio de IP e derrubava o município
+    inteiro. Aqui o cliente recusa uma vez e aceita após reciclar: o `_get` tem
+    de reconectar e seguir, sem levantar."""
+    cli = _Recusa403(para_de_recusar_apos=1)
+    assert _get(cli, "licitacon.contratos", cd_orgao="53100") == [{"ok": True}]
+    assert cli.reciclos == 1, "tinha de reciclar a conexão"
+
+
+def test_403_que_persiste_na_conexao_nova_e_bloqueio_de_ip():
+    """O outro lado, e é o que impede a mentira no `ingestion_log`: quando o
+    403 sobrevive ao reconectar, é bloqueio de verdade (o caso da VPS, onde a
+    primeira requisição já falha) e tem de virar exceção — para a rodada sair
+    `partial` com a nota, nunca `success` com zero linha."""
+    cli = _Recusa403()          # recusa sempre, mesmo reciclando
     with pytest.raises(Bloqueado):
         _get(cli, "licitacon.contratos", cd_orgao="53100")
-    assert cli.n == 1
+    assert cli.reciclos >= 1, "antes de acusar bloqueio, tem de tentar reconectar"
+
+
+def test_conexao_recicla_sozinha_antes_do_teto():
+    """O teto medido é 200; o padrão recicla em 150 para sobrar margem — as
+    repetições internas do `_get` também contam do lado do servidor."""
+    from ingestion.tce_rs_portal import Conexao
+
+    assert Conexao.LIMITE < 200, "sem margem, o reciclo chega tarde demais"
 
 
 def test_orgao_inexistente_devolve_vazio_sem_explodir():

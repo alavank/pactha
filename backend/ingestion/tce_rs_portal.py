@@ -68,11 +68,22 @@ AS ARMADILHAS, todas medidas contra a fonte em 03/09/2026:
    buscando detalhe do que ainda nao tem, prioriza contrato vigente, e continua
    de onde parou na noite seguinte. Nunca estoura o timeout da task.
 
-   **Medido em 80 detalhes seguidos (03/09/2026): 0,57 s cada, zero falha.** Com
-   o orcamento default de 600 s isso da ~1.050 detalhes por rodada — Nova Palma
-   (2.068 registros) fecha em duas noites e Santa Maria (11.503) em seis. A
-   contagem e o valor de cada ano JA aparecem na tela desde a primeira noite; o
-   que chega aos poucos e o valor dos contratos antigos.
+   **Medido em 400 detalhes seguidos (03/09/2026): 0,40 s cada, zero falha.**
+   Com o orcamento default de 600 s isso da ~1.500 detalhes por rodada — Nova
+   Palma (2.068 registros) fecha em duas e Santa Maria (11.503) em oito. A
+   contagem e o valor de cada ano JA aparecem na tela desde a primeira rodada;
+   o que chega aos poucos e o valor dos contratos antigos.
+
+3b. ⚠️⚠️ **E O QUE TORNA ISSO POSSIVEL: O PORTAL RESPONDE 403 A PARTIR DA 201a
+   REQUISICAO NA MESMA CONEXAO TCP.** Nao e o IP, nao e o cookie, nao e janela de
+   tempo — e a conexao, e reconectar resolve na hora. A classe `Conexao` cuida
+   disso sozinha; o isolamento do achado esta documentado nela.
+
+   A primeira carga real de Nova Palma (03/09, seis passadas) rendeu **so ~180
+   detalhes por passada** porque este arquivo classificava aquele 403 como
+   bloqueio de IP e abandonava o municipio — seis vezes, cada uma refazendo as
+   listas do zero. Com o reciclo, as mesmas 400 requisicoes passam sem um unico
+   erro.
 
 4. ⚠️⚠️ **VALOR DE LICITACAO NAO EXISTE NESTA API.** Nem na lista (15 campos),
    nem no detalhe (27), nem em endpoint nenhum do Swagger. `vl_licitacao` e
@@ -170,10 +181,76 @@ class Bloqueado(Exception):
     """O host recusou o IP (403/451). Nao e falha de parser nem dado ausente."""
 
 
+class Conexao:
+    """Cliente HTTP que se RECICLA — e a peca que torna a coleta grande viavel.
+
+    ⚠️⚠️ **O PORTAL RESPONDE 403 A PARTIR DA 201a REQUISICAO NA MESMA CONEXAO
+    TCP.** Medido em 03/09/2026, tres vezes, e isolado assim:
+
+        requisicao 201 da mesma conexao ............ 403
+        mesma conexao, logo apos ................... 403
+        MESMOS cookies limpos, MESMA conexao ....... 403   <- nao e sessao
+        conexao NOVA (mesmo IP, mesmo segundo) ..... 200   <- e a conexao
+
+    Nao e cookie (`JSESSIONID` limpo nao muda nada), nao e o IP (a conexao nova
+    responde 200 no mesmo segundo) e nao e janela de tempo (esperar nao
+    resolve; reconectar resolve na hora).
+
+    Foi isso que fez a primeira carga de Nova Palma render **so ~180 detalhes
+    por rodada**: o coletor tomava o 403, o classificava como bloqueio de IP e
+    abandonava o municipio inteiro — seis vezes seguidas, cada uma recomecando
+    do zero as listas. Com o reciclo, a mesma carga cabe numa rodada.
+
+    ⚠️ E a distincao com o bloqueio DE VERDADE fica nitida, que e o que importa
+    para nao mentir no `ingestion_log`: 403 que SOME ao reconectar e limite de
+    conexao; 403 que PERSISTE numa conexao nova e bloqueio de IP (o caso da
+    VPS, onde a primeira requisicao ja falha)."""
+
+    # 150 e nao 200: margem para as requisicoes que o `_get` repete por conta de
+    # retry, que tambem contam do lado de la.
+    LIMITE = int(os.getenv("TCE_RS_PORTAL_REQ_POR_CONEXAO", "150"))
+
+    def __init__(self):
+        self.n = 0
+        self.reciclos = 0
+        self._c = self._novo()
+
+    @staticmethod
+    def _novo() -> httpx.Client:
+        return httpx.Client(follow_redirects=True, headers=UA, timeout=TIMEOUT)
+
+    def reciclar(self) -> None:
+        try:
+            self._c.close()
+        except Exception:
+            pass
+        self._c = self._novo()
+        self.n = 0
+        self.reciclos += 1
+
+    def get(self, url, **kwargs):
+        if self.n >= self.LIMITE:
+            self.reciclar()
+        self.n += 1
+        return self._c.get(url, **kwargs)
+
+    def close(self) -> None:
+        try:
+            self._c.close()
+        except Exception:
+            pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        self.close()
+
+
 # ---------------------------------------------------------------------------
 # HTTP
 # ---------------------------------------------------------------------------
-def _get(client: httpx.Client, recurso: str, **params):
+def _get(client: "Conexao", recurso: str, **params):
     """GET no Queryon, com backoff. Devolve lista ou dict ja decodificado.
 
     ⚠️ 403/451 viram `Bloqueado` e NAO sao retentados: bloqueio de borda nao
@@ -199,6 +276,17 @@ def _get(client: httpx.Client, recurso: str, **params):
             espera *= 2
             continue
         if r.status_code in (403, 451):
+            # ⚠️ AQUI MORAM DOIS 403 DIFERENTES, e trata-los igual foi o que
+            # fez a carga de 03/09 render um sexto do que podia (ver `Conexao`).
+            # O de LIMITE DE CONEXAO some ao reconectar; o de BLOQUEIO DE IP
+            # persiste. A unica forma honesta de saber qual e: reconectar e
+            # perguntar de novo.
+            if hasattr(client, "reciclar") and tentativa < TENTATIVAS - 1:
+                log.info("  %s: HTTP %s — reciclando a conexao para distinguir "
+                         "limite de conexao de bloqueio de IP", recurso,
+                         r.status_code)
+                client.reciclar()
+                continue
             raise Bloqueado(f"HTTP {r.status_code} em {recurso}")
         if r.status_code == 200:
             return r.json()
@@ -212,7 +300,7 @@ def _get(client: httpx.Client, recurso: str, **params):
     return []
 
 
-def _pagina_tudo(client: httpx.Client, recurso: str, **params) -> list[dict]:
+def _pagina_tudo(client: "Conexao", recurso: str, **params) -> list[dict]:
     """Percorre offset ate a fonte devolver menos que uma pagina cheia."""
     fora, offset = [], 0
     while True:
@@ -288,7 +376,7 @@ def _tp_documento(doc: str | None) -> str | None:
 # ---------------------------------------------------------------------------
 # Fonte
 # ---------------------------------------------------------------------------
-def orgaos_do_municipio(client: httpx.Client, ibge: str) -> dict:
+def orgaos_do_municipio(client: "Conexao", ibge: str) -> dict:
     """De-para oficial por IBGE (armadilha 6).
 
     Devolve {'executivo': {...} | None, 'outros': [...]}. O executivo e a
@@ -311,12 +399,12 @@ def orgaos_do_municipio(client: httpx.Client, ibge: str) -> dict:
     return {"executivo": executivo, "outros": outros}
 
 
-def licitacoes(client: httpx.Client, cd_orgao: str) -> list[dict]:
+def licitacoes(client: "Conexao", cd_orgao: str) -> list[dict]:
     return _pagina_tudo(client, "licitacon.licitacoes", cd_orgao=cd_orgao,
                         tp_situacao="ALL", origem="ALL")
 
 
-def contratos(client: httpx.Client, cd_orgao: str) -> list[dict]:
+def contratos(client: "Conexao", cd_orgao: str) -> list[dict]:
     return _pagina_tudo(client, "licitacon.contratos", cd_orgao=cd_orgao,
                         tp_situacao="ALL", origem="ALL")
 
@@ -814,7 +902,7 @@ def ingest(dry: bool = False) -> int:
             falhas = 0
             orcamento = _Orcamento(ORCAMENTO_S)
 
-            with httpx.Client(follow_redirects=True, headers=UA) as client:
+            with Conexao() as client:
                 for a in alvos:
                     try:
                         gravados += _um_municipio(cur, client, a, orcamento, dry)
@@ -848,7 +936,7 @@ def ingest(dry: bool = False) -> int:
             cur.close()
 
 
-def _um_municipio(cur, client: httpx.Client, a: dict, orcamento: _Orcamento,
+def _um_municipio(cur, client: "Conexao", a: dict, orcamento: _Orcamento,
                   dry: bool) -> int:
     """Coleta um municipio. Devolve quantas linhas gravou."""
     nome, mid = a["nome"], a["id"]
