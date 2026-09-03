@@ -255,6 +255,25 @@ export function consultaPopularDaUf(uf?: string | null) {
   return CONSULTA_POPULAR_POR_UF[(uf || "").trim().toUpperCase()] || null;
 }
 
+/** UFs onde existe REGISTRO MENSAL OBRIGATÓRIO de execução de convênio.
+ *
+ *  ⚠️ MAPA PRÓPRIO, e não um campo dentro do de convênios, porque a obrigação
+ *  não acompanha a existência da carteira: em Minas o SIGCON tem os convênios e
+ *  NÃO tem registro mensal equivalente, e cobrar um município mineiro pelo prazo
+ *  de um decreto gaúcho seria inventar obrigação — do mesmo modo que carimbar
+ *  "impositiva" numa emenda do RS induziria a erro sobre um direito que não
+ *  existe lá.
+ *
+ *  Espelha `FONTES_COM_MONITORAMENTO` em `backend/routers/monitoramento.py`. */
+export const MONITORAMENTO_POR_UF: Record<string, { titulo: string; norma: string }> = {
+  RS: { titulo: "Monitoramento de Convênios",
+        norma: "Decreto Estadual (RS) nº 56.939/2023 — registro mensal até o dia 15" },
+};
+
+export function monitoramentoDaUf(uf?: string | null) {
+  return MONITORAMENTO_POR_UF[(uf || "").trim().toUpperCase()] || null;
+}
+
 /** UFs com CATÁLOGO DE PROGRAMAS estaduais de fomento mantido por nós.
  *
  *  ⚠️ Diferente dos mapas acima, este NÃO significa "coletamos": significa que

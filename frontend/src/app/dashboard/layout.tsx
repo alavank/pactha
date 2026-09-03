@@ -46,7 +46,7 @@ import { hrefToTela, allowedTelasOf } from "@/lib/telas";
 import {
   ABAS_CONFIGURACOES, ROTAS_LEGADAS_CONFIG, abasVisiveis,
 } from "@/lib/configuracoes";
-import { cofinanciamentoDaUf, consultaPopularDaUf, fonteEmendasEstaduais, programasDaUf, repassesDaUf, temConteudoEstadual, temDiarioEstadual } from "@/lib/estadual";
+import { cofinanciamentoDaUf, consultaPopularDaUf, fonteEmendasEstaduais, monitoramentoDaUf, programasDaUf, repassesDaUf, temConteudoEstadual, temDiarioEstadual } from "@/lib/estadual";
 import { ehSuperAdmin } from "@/lib/conta";
 import { CONSOLIDADO, MunicipioProvider, useMunicipio } from "@/contexts/MunicipioContext";
 import { EnteAtendido, SUBTITULO_PACTHA } from "@/components/bi/Marca";
@@ -156,6 +156,7 @@ const NAV_ITEMS: NavEntry[] = [
       { href: "/dashboard/emendas", label: "Emendas Estaduais" },
       { href: "/dashboard/repasses", label: "Repasses" },
       { href: "/dashboard/cofinanciamento", label: "Cofinanciamento Saúde" },
+      { href: "/dashboard/monitoramento", label: "Monitoramento" },
       { href: "/dashboard/consulta-popular", label: "Consulta Popular" },
       { href: "/dashboard/programas-rs", label: "Programas do Estado" },
       { href: "/dashboard/funrigs", label: "Plano Rio Grande" },
@@ -340,6 +341,10 @@ function SidebarContent({
   if (ufAmbiente && !consultaPopularDaUf(ufAmbiente)) semFonteNaUf.add("/dashboard/consulta-popular");
   // Catálogo de programas: existe onde há conteúdo curado daquele estado.
   if (ufAmbiente && !programasDaUf(ufAmbiente)) semFonteNaUf.add("/dashboard/programas-rs");
+  // Monitoramento mensal: só onde a norma estadual cria a obrigação (hoje o RS).
+  // Em MG a tela abriria dizendo "0 convênios avaliados" — verdadeiro e inútil,
+  // porque lá não existe registro mensal a cumprir.
+  if (ufAmbiente && !monitoramentoDaUf(ufAmbiente)) semFonteNaUf.add("/dashboard/monitoramento");
   // As três telas de conteúdo estadual (fundo de reconstrução, emendas do estado
   // e obrigações do tribunal de contas) só existem onde há conteúdo curado.
   if (ufAmbiente && !temConteudoEstadual(ufAmbiente)) {

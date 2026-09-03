@@ -140,6 +140,11 @@ export const TELA_LABELS: Record<string, string> = Object.fromEntries(
 const TELAS_DO_GRUPO_ESTADUAIS = new Set<string>([
   "repasses", "cofinanciamento", "consulta-popular", "programas-rs",
   "funrigs", "emendas-rs", "tce-rs",
+  // O monitoramento É a execução do convênio: uma permissão separada deixaria
+  // um administrador conceder "Convênios" e esconder justamente o que suspende
+  // a parcela. Mesma doutrina do `routers/monitoramento.py`, que já exige
+  // `convenios.ver` e a tela `convenios` no servidor.
+  "monitoramento",
 ]);
 
 /** Deriva a chave de tela a partir de um href da sidebar. */
