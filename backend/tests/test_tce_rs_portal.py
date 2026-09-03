@@ -33,6 +33,7 @@ Rodar:
     python -m pytest backend/tests/test_tce_rs_portal.py -v
 """
 import json
+import time
 from datetime import date, datetime
 from pathlib import Path
 
@@ -171,29 +172,115 @@ def test_conexao_derrubada_e_retomada_em_vez_de_matar_a_rodada():
     assert cli.n == 2, "tinha de tentar de novo, não desistir"
 
 
-def test_bloqueio_de_ip_nao_e_retentado():
-    """403 é decisão de borda: insistir só gasta tempo e reforça o bloqueio.
+class _Recusa403:
+    """Cliente que devolve 403 até o enésimo reciclo (ou sempre, se nunca)."""
 
-    E tem de ser uma exceção PRÓPRIA — quem chama precisa poder gravar
-    `partial` com a nota, e nunca `success` com zero linha."""
-    import httpx
+    def __init__(self, para_de_recusar_apos=None):
+        self.n = 0
+        self.reciclos = 0
+        self.para = para_de_recusar_apos
 
-    class Recusa:
-        def __init__(self):
-            self.n = 0
+    def reciclar(self):
+        self.reciclos += 1
 
-        def get(self, *a, **k):
-            self.n += 1
+    def get(self, *a, **k):
+        self.n += 1
+        recusa = self.para is None or self.reciclos < self.para
 
-            class R:
-                status_code = 403
+        class R:
+            status_code = 403 if recusa else 200
 
-            return R()
+            @staticmethod
+            def json():
+                return [{"ok": True}]
 
-    cli = Recusa()
+        return R()
+
+
+def test_403_que_some_ao_reconectar_e_limite_de_conexao_e_nao_bloqueio():
+    """⚠️ O ACHADO QUE MULTIPLICOU A COLETA POR SEIS.
+
+    O portal responde 403 a partir da 201ª requisição NA MESMA CONEXÃO TCP —
+    não é o IP (conexão nova responde 200 no mesmo segundo), não é o cookie
+    (limpá-lo não muda nada) e não é janela de tempo (esperar não resolve).
+
+    A primeira carga de Nova Palma rendeu só ~180 detalhes por passada porque
+    esse 403 era classificado como bloqueio de IP e derrubava o município
+    inteiro. Aqui o cliente recusa uma vez e aceita após reciclar: o `_get` tem
+    de reconectar e seguir, sem levantar."""
+    cli = _Recusa403(para_de_recusar_apos=1)
+    assert _get(cli, "licitacon.contratos", cd_orgao="53100") == [{"ok": True}]
+    assert cli.reciclos == 1, "tinha de reciclar a conexão"
+
+
+def test_403_que_persiste_na_conexao_nova_e_bloqueio_de_ip():
+    """O outro lado, e é o que impede a mentira no `ingestion_log`: quando o
+    403 sobrevive ao reconectar, é bloqueio de verdade (o caso da VPS, onde a
+    primeira requisição já falha) e tem de virar exceção — para a rodada sair
+    `partial` com a nota, nunca `success` com zero linha."""
+    cli = _Recusa403()          # recusa sempre, mesmo reciclando
     with pytest.raises(Bloqueado):
         _get(cli, "licitacon.contratos", cd_orgao="53100")
-    assert cli.n == 1
+    assert cli.reciclos >= 1, "antes de acusar bloqueio, tem de tentar reconectar"
+
+
+def test_orcamento_nao_conta_o_que_esta_pausado():
+    """⚠️ O DEFEITO QUE TRAVOU SANTA MARIA. O orçamento existe para proteger a
+    fase de DETALHE, mas contava também o download e a gravação das listas —
+    que lá custam 6 minutos (11.505 linhas, uma ida-e-volta por linha pelo
+    túnel). Somados aos 9 minutos das obras, davam os 15 minutos inteiros: a
+    rodada terminava sem buscar UM valor sequer, seis vezes seguidas."""
+    from ingestion.tce_rs_portal import _Orcamento
+
+    o = _Orcamento(1)
+    o.pausar()
+    time.sleep(1.2)          # tempo que NÃO deve ser cobrado
+    o.retomar()
+    assert o.sobrou(), "o trecho pausado não pode consumir o orçamento"
+    assert o.gasto() < 1
+
+
+def test_orcamento_esgota_normalmente_fora_da_pausa():
+    from ingestion.tce_rs_portal import _Orcamento
+
+    o = _Orcamento(0)
+    assert not o.sobrou()
+
+
+def test_obra_com_detalhe_fresco_nao_e_rebuscada():
+    """⚠️ O OUTRO DEFEITO. O detalhe de uma obra custa ~4,5 s (traz a planilha
+    orçamentária inteira) e Santa Maria tem 120 — nove minutos por rodada.
+    Sem esta consulta elas eram TODAS rebuscadas em toda rodada, e os contratos
+    ficavam sem orçamento: 84 detalhes em 90 minutos.
+
+    A marca de "tem detalhe" é `raw_data IS NOT NULL`, porque o coletor só grava
+    o raw quando buscou o detalhe — não precisou de coluna nova."""
+    from ingestion.tce_rs_portal import _obras_com_detalhe_fresco
+
+    class CurFalso:
+        def __init__(self):
+            self.sql = None
+
+        def execute(self, sql, params=None):
+            self.sql = sql
+            self.params = params
+
+        @staticmethod
+        def fetchall():
+            return [(436,), (399,)]
+
+    cur = CurFalso()
+    assert _obras_com_detalhe_fresco(cur, 1) == {436, 399}
+    assert "raw_data IS NOT NULL" in cur.sql, "sem isso, obra sem detalhe seria pulada"
+    assert "interval" in cur.sql, "obra muda: o frescor precisa ter prazo"
+
+
+def test_conexao_recicla_sozinha_antes_do_teto():
+    """O teto medido é 200; o padrão recicla em 150 para sobrar margem — as
+    repetições internas do `_get` também contam do lado do servidor."""
+    from ingestion.tce_rs_portal import Conexao
+
+    assert Conexao.LIMITE < 200, "sem margem, o reciclo chega tarde demais"
 
 
 def test_orgao_inexistente_devolve_vazio_sem_explodir():
