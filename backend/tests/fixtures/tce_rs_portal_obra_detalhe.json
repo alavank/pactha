@@ -1,0 +1,292 @@
+{
+ "ID_OBRA": 436,
+ "CD_ORGAO": 56900,
+ "NOME": "PM DE SANTA MARIA",
+ "DS_OBJETO": "Contratação, pelo regime de execução indireta, do tipo “menor preço”, empreitada por preço global, com fornecimento de material e mão de obra, referente à execução de ponte de concreto sobre o Arroio dos Lourenços, na Estrada Municipal dos Banhados, Distrito de Santa Flora, município de Santa Maria-RS",
+ "ENDERECO": "Estrada Municipal dos Banhados - Distrito de Santa Flora - Santa Maria - CEP: 97300-000",
+ "TP_SITUACAO_OBRA": "EXC",
+ "DS_TP_SITUACAO_OBRA": "Em execução",
+ "DS_LICITACAO": "Tomada de Preços 37/2023",
+ "LINK_CIDADAO_LICITACAO": "https://portal.tce.rs.gov.br/aplicprod/f?p=50500:10:::NO:10:P10_ID_LICITACAO,P10_PAG_RETORNO,F50500_CD_ORGAO:1120132,14,56900&cs=1-P64p-4q5T_iVKnjQj77cMSyw_w",
+ "DS_CONTRATO": "Contrato 122/2024",
+ "LINK_CIDADAO_CONTRATO": "https://portal.tce.rs.gov.br/aplicprod/f?p=50500:23:::NO:23:P23_ID_CONTRATO,P23_PAG_RETORNO,F50500_CD_ORGAO:1068163,25,56900&cs=1lcTYWrGIDSPt_1cC18lSqu3k91s",
+ "ID_CONTRATADO": 2125189,
+ "NM_CONTRATADO": "JB PARTICIPACOES SOCIETARIAS LTDA",
+ "TP_DOC_CONTRATADO": "J",
+ "DS_TP_DOC_CONTRATADO": "CNPJ",
+ "NR_DOC_CONTRATADO": "21228501000108",
+ "NR_DOC_EMPRESA_FORMATADO": "21.228.501/0001-08",
+ "DT_INICIO_VIGENCIA": "2024-03-18 00:00:00",
+ "DT_FIM_VIGENCIA": "2026-07-11 00:00:00",
+ "PRAZO_VIGENCIA_INICIAL": 270,
+ "PRAZO_VIGENCIA_ATUAL": 600,
+ "VL_INICIAL": 1878613.49,
+ "VL_ACRESCIMO": 1108629.61,
+ "PC_ACRESCIMO": 59.013183,
+ "VL_SUPRESSAO": -556476.81,
+ "PC_SUPRESSAO": -29.621676,
+ "VL_REAJUSTE": 0.0,
+ "VL_REEQUILIBRIO": 0.0,
+ "VL_ATUAL": 2430766.29,
+ "VL_TOTAL_MEDIDO": 2297053.89,
+ "VL_SALDO_CONTRATUAL": 237499.12,
+ "PC_FINANCEIRO_EXEC": 90.629546,
+ "PC_EXECUTADO": 0.0,
+ "DT_EVENTO_PARALISACAO": null,
+ "CD_MOTIVO_PARALISACAO": null,
+ "DS_MOTIVO_PARALISACAO": null,
+ "DS_MOTIVO_OUTRO": null,
+ "CD_TIPO_PARALISACAO": null,
+ "DS_TIPO_PARALISACAO": null,
+ "DS_TIPO_PARALIZACAO_OUTRO": null,
+ "DT_PREVISAO_REINICIO": null,
+ "DT_ULTIMA_ALTERACAO": "2026-08-31 14:43:41",
+ "COORDENADAS_GEOGRAFICAS": [
+  {
+   "ID_COORDENADA": 716,
+   "LATITUDE": "-29.953524855605426",
+   "LONGITUDE": "-54.03416490896839",
+   "DS_COORDENADA": null,
+   "DT_CADASTRO_COORDENADA": "2024-03-26 13:08:52"
+  }
+ ],
+ "PRAZO_EXECUCAO_LOTES": [
+  {
+   "NR_LOTE": 1,
+   "DS_LOTE": "Execução de ponte de concreto sobre o Arroio dos Lourenços, na Estrada Municipal dos Banhados, Distrito de Santa Flora, município de Santa Maria-RS.",
+   "DT_INICIO_EXEC": "2024-03-19 00:00:00",
+   "PRAZO_INICIAL": 270.0,
+   "PRAZO_EXEC_ADITADO": 330.0,
+   "PRAZO_EXEC_ATUAL": 600.0,
+   "PARALIZACAO": "23/09/2024<br>20/12/2024<br>27/01/2025",
+   "REINICIO": "26/10/2024<br>07/01/2025<br>11/08/2025",
+   "PERC_EXEC": 108.5,
+   "RECEBIMENTO": null,
+   "FINAL_EXECUCAO": "14/07/2026"
+  }
+ ],
+ "ORIGEM_RECURSOS": [
+  {
+   "ID_ORIGEM_RECURSO": 2336,
+   "COD_TP_RECURSO": "FDL",
+   "DS_TP_RECURSO": "Convênio/Repasse Federal",
+   "DS_FONTE_RECURSO": "Ministerio da Integracao e do Desenvolvimento Regional",
+   "DS_CONVENIO_CONTRATO": "Processo 59053.018691/2024-19",
+   "DATA": "2025-07-30 00:00:00",
+   "VL_RECURSO": 2431396.74,
+   "VL_CONTRATAPARTIDA": 0.0,
+   "LINK_DOC_DOWNLOAD": "https://portal.tce.rs.gov.br/api/obras/v1/orgaos/88488366000100/obras/436/recursos/2336/documentos/35932"
+  }
+ ],
+ "RESPONSAVEIS_TECNICOS": [
+  {
+   "NOME": "Andre Lubeck",
+   "CPF": "***.883.020-**",
+   "TP_CONSELHO_PROFISSIONAL": "CREA",
+   "UF_CONSELHO_PROFISSIONAL": "RS",
+   "NR_CONSELHO_PROFISSIONAL": 140441,
+   "TP_ATIVIDADE": "PRB",
+   "DS_TP_ATIVIDADE": "Projeto Básico",
+   "TP_TIPO_PROJETO": "Estrutural, Fundações, Obras de Artes Especiais",
+   "NR_ART_RRT": 10873033,
+   "DT_PERIODO_INI": null,
+   "DT_PERIODO_FIM": null,
+   "LINK_DOC_DOWNLOAD": "https://portal.tce.rs.gov.br/api/obras/v1/orgaos/88488366000100/obras/436/responsaveis/617/documentos/2435"
+  },
+  {
+   "NOME": "Edison Artur Schlinker",
+   "CPF": "***.247.470-**",
+   "TP_CONSELHO_PROFISSIONAL": "CREA",
+   "UF_CONSELHO_PROFISSIONAL": "RS",
+   "NR_CONSELHO_PROFISSIONAL": 13511,
+   "TP_ATIVIDADE": "EXE",
+   "DS_TP_ATIVIDADE": "Execução",
+   "TP_TIPO_PROJETO": null,
+   "NR_ART_RRT": 13068020,
+   "DT_PERIODO_INI": "2024-03-19 00:00:00",
+   "DT_PERIODO_FIM": "2024-12-13 00:00:00",
+   "LINK_DOC_DOWNLOAD": "https://portal.tce.rs.gov.br/api/obras/v1/orgaos/88488366000100/obras/436/responsaveis/615/documentos/2433"
+  }
+ ],
+ "LICENCAS": [
+  {
+   "ID_LICENCA": 1157,
+   "TP_LICENCA": "LO",
+   "DS_TP_LICENCA": "Licença de Operação",
+   "ORGAO_LICENCIADOR": "FEPAM",
+   "NR_LICENCA": 1249,
+   "DT_EMISSAO": "2025-05-09 00:00:00",
+   "DT_VALIDADE": "2030-05-19 00:00:00",
+   "DS_JUSTIFICATIVA": null,
+   "LINK_DOC_DOWNLOAD": "https://portal.tce.rs.gov.br/api/obras/v1/orgaos/88488366000100/obras/436/licencas/1157/documentos/30450"
+  }
+ ],
+ "PLANILHA_CONTRATUAL_LOTES": [
+  {
+   "ID_LOTE_OBRA": 4115,
+   "NR_LOTE": 1,
+   "DS_LOTE": "Execução de ponte de concreto sobre o Arroio dos Lourenços, na Estrada Municipal dos Banhados, Distrito de Santa Flora, município de Santa Maria-RS.",
+   "VL_LOTE": 1878613.49,
+   "TP_ESTRUTURACAO": "VU",
+   "DS_TP_ESTRUTURACAO": "Preço Unitário",
+   "LOTE_NOVO": "Não",
+   "PLANILHA_CONTRATUAL_ITENS": [
+    {
+     "TP": "ITEM",
+     "NR_ITEM_ORIGINAL": "1.1",
+     "NR_ITEM": 1.0,
+     "DS_ITEM_ETAPA": "Sondagem à Percussão (SPT) com Amostragem Contínua - Referência DAER/RS JAN/2021 (EXCLUSIVE BDI DAER/RS - CORRIGIDO IGP-DI SET/2023)",
+     "QT_ITENS": 60.0,
+     "SG_UNIDADE_MEDIDA": "M",
+     "NM_UNIDADE_MEDIDA": "metro",
+     "VL_UNITARIO": 287.54,
+     "VL_TOTAL": 17252.4,
+     "PC_BDI": 44.75,
+     "PC_ENCARGOS_SOCIAIS": 112.77,
+     "ETAPA": null,
+     "ORDEM": 1.0,
+     "QT_ITENS_POS_ADITIVO": 0.0,
+     "VL_TOTAL_POS_ADITIVO": 0.0,
+     "QT_ITENS_CONSOLIDADO": 60.0,
+     "VL_TOTAL_CONSOLIDADO": 17252.4,
+     "ITEM_NOVO": "Não",
+     "DS_FONTE_REFERENCIA": "COMPOSICAO_PROPRIA",
+     "CD_FONTE_REFERENCIA": " IPMSM 3618 ",
+     "DT_FONTE_REFERENCIA": "2023-11-14 00:00:00"
+    },
+    {
+     "TP": "ITEM",
+     "NR_ITEM_ORIGINAL": "1.2",
+     "NR_ITEM": 2.0,
+     "DS_ITEM_ETAPA": "Caminhão carroceria com capacidade de 5 t - 115 kW",
+     "QT_ITENS": 3.74,
+     "SG_UNIDADE_MEDIDA": "UN",
+     "NM_UNIDADE_MEDIDA": "unidade",
+     "VL_UNITARIO": 165.4,
+     "VL_TOTAL": 618.6,
+     "PC_BDI": 19.6,
+     "PC_ENCARGOS_SOCIAIS": 112.77,
+     "ETAPA": null,
+     "ORDEM": 2.0,
+     "QT_ITENS_POS_ADITIVO": 0.0,
+     "VL_TOTAL_POS_ADITIVO": 0.0,
+     "QT_ITENS_CONSOLIDADO": 3.74,
+     "VL_TOTAL_CONSOLIDADO": 618.6,
+     "ITEM_NOVO": "Não",
+     "DS_FONTE_REFERENCIA": "SICRO/DNIT",
+     "CD_FONTE_REFERENCIA": " E9687 ",
+     "DT_FONTE_REFERENCIA": "2023-11-14 00:00:00"
+    }
+   ],
+   "_NOTA_FIXTURE": "planilha real tem 217 itens; a fixture guarda 2"
+  }
+ ],
+ "MEDICOES": [
+  {
+   "ID_MEDICAO": 716,
+   "TP_MEDICAO": "MDP",
+   "DS_TP_MEDICAO": "Medição a Preços Iniciais",
+   "NR_MEDICAO": 1,
+   "PERIODO_INICIAL": "2024-03-19 00:00:00",
+   "PERIODO_FINAL": "2024-04-30 00:00:00",
+   "TP_PREENCHIMENTO": "Q",
+   "DS_TP_PREENCHIMENTO": "Por Quantidade",
+   "PRECO_MEDIDO": 53536.0,
+   "TP_SITUACAO": "C",
+   "DS_TP_SITUACAO": "Realizada",
+   "DS_COMENTARIO": null,
+   "MEDICAO_FOTOS": [],
+   "MEDICAO_DOCUMENTOS": [
+    {
+     "ID_DOCUMENTO_OBRA": 4038,
+     "TP_MEDICAO": "MDP",
+     "DS_TP_MEDICAO": "Medição a Preços Iniciais",
+     "NR_MEDICAO": 1,
+     "CD_TIPO_DOCUMENTO": "PNM",
+     "DS_TIPO_DOCUMENTO": "Planilha de Medição",
+     "NOME_ARQUIVO_DOCUMENTO": "Ponte dos Banhados - BM 01.pdf",
+     "LINK_DOC_DOWNLOAD": "https://portal.tce.rs.gov.br/api/obras/v1/orgaos/88488366000100/obras/436/medicoes/documentos/4038"
+    }
+   ]
+  },
+  {
+   "ID_MEDICAO": 1723,
+   "TP_MEDICAO": "MDP",
+   "DS_TP_MEDICAO": "Medição a Preços Iniciais",
+   "NR_MEDICAO": 2,
+   "PERIODO_INICIAL": "2024-05-01 00:00:00",
+   "PERIODO_FINAL": "2024-06-06 00:00:00",
+   "TP_PREENCHIMENTO": "Q",
+   "DS_TP_PREENCHIMENTO": "Por Quantidade",
+   "PRECO_MEDIDO": 83310.55,
+   "TP_SITUACAO": "C",
+   "DS_TP_SITUACAO": "Realizada",
+   "DS_COMENTARIO": "Medidos apenas serviços técnicos de elaboração de projeto executivo e licenciamento ambiental. Portanto, não há relatório fotográfico de serviços executados.",
+   "MEDICAO_FOTOS": [],
+   "MEDICAO_DOCUMENTOS": [
+    {
+     "ID_DOCUMENTO_OBRA": 9228,
+     "TP_MEDICAO": "MDP",
+     "DS_TP_MEDICAO": "Medição a Preços Iniciais",
+     "NR_MEDICAO": 2,
+     "CD_TIPO_DOCUMENTO": "PNM",
+     "DS_TIPO_DOCUMENTO": "Planilha de Medição",
+     "NOME_ARQUIVO_DOCUMENTO": "Ponte dos Banhados - BM 02.pdf",
+     "LINK_DOC_DOWNLOAD": "https://portal.tce.rs.gov.br/api/obras/v1/orgaos/88488366000100/obras/436/medicoes/documentos/9228"
+    }
+   ]
+  }
+ ],
+ "TERMOS_ADITIVOS": [
+  {
+   "ID_EVENTO_OBRA": 35914,
+   "NR_ADITIVO": "47-2026",
+   "CD_TIPO_EVENTO": "APO",
+   "DS_TIPO_EVENTO": "Apostila",
+   "DT_EVENTO": "2026-08-25 00:00:00",
+   "TERMO_DOCUMENTOS": [
+    {
+     "CD_TIPO_DOCUMENTO": "APO",
+     "DS_TIPO_DOCUMENTO": "Apostilamento",
+     "NOME_ARQUIVO_DOCUMENTO": "Apostilamento n° 47-2026 - TP 37-2023 - JB.pdf",
+     "LINK_DOC_DOWNLOAD": "https://portal.tce.rs.gov.br/api/obras/v1/orgaos/88488366000100/obras/436/termos-aditivos/APO/47-2026/documentos/75775"
+    },
+    {
+     "CD_TIPO_DOCUMENTO": "APO",
+     "DS_TIPO_DOCUMENTO": "Apostilamento",
+     "NOME_ARQUIVO_DOCUMENTO": "Apostilamento n° 48-2026 - TP 37-2023 - JB.pdf",
+     "LINK_DOC_DOWNLOAD": "https://portal.tce.rs.gov.br/api/obras/v1/orgaos/88488366000100/obras/436/termos-aditivos/APO/47-2026/documentos/75795"
+    },
+    {
+     "CD_TIPO_DOCUMENTO": "OUT",
+     "DS_TIPO_DOCUMENTO": "Outros Documentos",
+     "NOME_ARQUIVO_DOCUMENTO": "Memo 402 - SUCOL - CT 122_2023 - Apostilamento 1.pdf",
+     "LINK_DOC_DOWNLOAD": "https://portal.tce.rs.gov.br/api/obras/v1/orgaos/88488366000100/obras/436/termos-aditivos/APO/47-2026/documentos/75776"
+    },
+    {
+     "CD_TIPO_DOCUMENTO": "OUT",
+     "DS_TIPO_DOCUMENTO": "Outros Documentos",
+     "NOME_ARQUIVO_DOCUMENTO": "Memo 403 - SUCOL - CT 122_2023 - Apostilamento 2.pdf",
+     "LINK_DOC_DOWNLOAD": "https://portal.tce.rs.gov.br/api/obras/v1/orgaos/88488366000100/obras/436/termos-aditivos/APO/47-2026/documentos/75796"
+    }
+   ],
+   "TERMO_ALTERACAO_LOTES": [
+    {
+     "TP_ALTERACAO": "RJP",
+     "DS_TP_ALTERACAO": "Reajustamento de Preços",
+     "ID_ALTERACAO": 35825,
+     "ID_ALTERACAO_LOTE_OBRA": 33963,
+     "NR_LOTE": 1,
+     "DS_LOTE": "Execução de ponte de concreto sobre o Arroio dos Lourenços, na Estrada Municipal dos Banhados, Distrito de Santa Flora, município de Santa Maria-RS.",
+     "VL_ADITIVO": 85666.698039,
+     "VL_ACRESCIMO": 85666.698039,
+     "PC_ACRESCIMO": 0.0,
+     "VL_SUPRESSAO": 0.0,
+     "PC_SUPRESSAO": 0.0,
+     "PRAZO_ACRESCIMO_DIAS": null,
+     "DS_MEMORIA_CALCULO": "Em anexo."
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,47 @@
+[
+ {
+  "CD_ORGAO": "53100",
+  "NR_CONTRATO": 102,
+  "ANO_CONTRATO": 2026,
+  "TP_INSTRUMENTO": "C",
+  "TP_SITUACAO_CONTRATO": "V",
+  "DS_SITUACAO": "Vigente",
+  "APLIC_ORIGEM": "WEB",
+  "DS_OBJETO": "Fornecimento de troféus personalizados, destinados dos campeonatos municipais de futsal, futebol de campo e bocha promovidas pela Prefeitura Municipal de Nova Palma/RS.\r\n\r\n",
+  "LINK_CIDADAO": "https://portal.tce.rs.gov.br/aplicprod/f?p=50500:23:::NO:23:P23_ID_CONTRATO,P23_PAG_RETORNO,F50500_CD_ORGAO:1368768,25,53100&cs=1EmcESD6vnCkNebVIDFIxusMPGUQ",
+  "DATA_INCLUSAO": "2026-08-31 15:25:30",
+  "DATA_ATUALIZACAO": "2026-08-31 23:48:37",
+  "EVALIDADOR_DATA_ULTIMA_REMESSA": null,
+  "EVALIDADOR_RVE_ULTIMA_REMESSA": null
+ },
+ {
+  "CD_ORGAO": "53100",
+  "NR_CONTRATO": 100,
+  "ANO_CONTRATO": 2026,
+  "TP_INSTRUMENTO": "C",
+  "TP_SITUACAO_CONTRATO": "V",
+  "DS_SITUACAO": "Vigente",
+  "APLIC_ORIGEM": "WEB",
+  "DS_OBJETO": "Aquisição de passagens universitárias e de cursos técnicos profissionalizantes para alunos residentes no Município de Nova Palma que se deslocam para a cidade de Santa Maria\r\n",
+  "LINK_CIDADAO": "https://portal.tce.rs.gov.br/aplicprod/f?p=50500:23:::NO:23:P23_ID_CONTRATO,P23_PAG_RETORNO,F50500_CD_ORGAO:1367552,25,53100&cs=1PNb4Ve-gubHkl29MidgXRximZYc",
+  "DATA_INCLUSAO": "2026-08-27 15:57:04",
+  "DATA_ATUALIZACAO": "2026-08-27 15:59:48",
+  "EVALIDADOR_DATA_ULTIMA_REMESSA": null,
+  "EVALIDADOR_RVE_ULTIMA_REMESSA": null
+ },
+ {
+  "CD_ORGAO": "53100",
+  "NR_CONTRATO": 99,
+  "ANO_CONTRATO": 2026,
+  "TP_INSTRUMENTO": "C",
+  "TP_SITUACAO_CONTRATO": "O",
+  "DS_SITUACAO": "Aguardando OIS",
+  "APLIC_ORIGEM": "WEB",
+  "DS_OBJETO": "CONTRATAÇÃO DE EMPRESA ESPECIALIZADA PARA O FORNECIMENTO DE MATERIAL E MÃO DE OBRA NECESSÁRIOS À CONSTRUÇÃO DE 20 UNIDADES HABITACIONAIS EM ALVENARIA",
+  "LINK_CIDADAO": "https://portal.tce.rs.gov.br/aplicprod/f?p=50500:23:::NO:23:P23_ID_CONTRATO,P23_PAG_RETORNO,F50500_CD_ORGAO:1367556,25,53100&cs=1W3SVGeBqQJZuaLrxYvQU06gnMJY",
+  "DATA_INCLUSAO": "2026-08-27 16:18:49",
+  "DATA_ATUALIZACAO": "2026-08-28 09:48:00",
+  "EVALIDADOR_DATA_ULTIMA_REMESSA": null,
+  "EVALIDADOR_RVE_ULTIMA_REMESSA": null
+ }
+]

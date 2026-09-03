@@ -1,0 +1,53 @@
+[
+ {
+  "CD_ORGAO": "53100",
+  "CD_CENTRAL_COMPRA": null,
+  "NR_LICITACAO": 344,
+  "ANO_LICITACAO": 2026,
+  "CD_TIPO_MODALIDADE": "PRD",
+  "CD_TIPO_FASE_ATUAL": "PUB",
+  "TP_SITUACAO": "E",
+  "DS_SITUACAO": "Encerrada",
+  "APLIC_ORIGEM": "WEB",
+  "DS_OBJETO": "Fornecimento de troféus personalizados, destinados dos campeonatos municipais de futsal, futebol de campo e bocha promovidas pela Prefeitura Municipal de Nova Palma/RS.\r\n\r\nSITE: ",
+  "LINK_CIDADAO": "https://portal.tce.rs.gov.br/aplicprod/f?p=50500:10:::NO:10:P10_ID_LICITACAO,P10_PAG_RETORNO,F50500_CD_ORGAO:1581252,14,53100&cs=1Gw9AbRJYA_x7aRLSPtG3hlZBDqQ",
+  "DATA_INCLUSAO": "2026-08-31 15:09:50",
+  "DATA_ATUALIZACAO": "2026-08-31 15:23:31",
+  "EVALIDADOR_DATA_ULTIMA_REMESSA": null,
+  "EVALIDADOR_RVE_ULTIMA_REMESSA": null
+ },
+ {
+  "CD_ORGAO": "53100",
+  "CD_CENTRAL_COMPRA": null,
+  "NR_LICITACAO": 322,
+  "ANO_LICITACAO": 2026,
+  "CD_TIPO_MODALIDADE": "PRD",
+  "CD_TIPO_FASE_ATUAL": "PUB",
+  "TP_SITUACAO": "E",
+  "DS_SITUACAO": "Encerrada",
+  "APLIC_ORIGEM": "WEB",
+  "DS_OBJETO": "Contratação de prestação de serviços de outsourcing de impressão, mediante disponibilização de impressoras multifuncionais monocromáticas.   ",
+  "LINK_CIDADAO": "https://portal.tce.rs.gov.br/aplicprod/f?p=50500:10:::NO:10:P10_ID_LICITACAO,P10_PAG_RETORNO,F50500_CD_ORGAO:1577061,14,53100&cs=1EBcLxmvem1VsG4_Ys1ttxzDhqhg",
+  "DATA_INCLUSAO": "2026-08-21 16:33:49",
+  "DATA_ATUALIZACAO": "2026-08-21 16:53:47",
+  "EVALIDADOR_DATA_ULTIMA_REMESSA": null,
+  "EVALIDADOR_RVE_ULTIMA_REMESSA": null
+ },
+ {
+  "CD_ORGAO": "53100",
+  "CD_CENTRAL_COMPRA": null,
+  "NR_LICITACAO": 306,
+  "ANO_LICITACAO": 2026,
+  "CD_TIPO_MODALIDADE": "PRD",
+  "CD_TIPO_FASE_ATUAL": "PUB",
+  "TP_SITUACAO": "E",
+  "DS_SITUACAO": "Encerrada",
+  "APLIC_ORIGEM": "WEB",
+  "DS_OBJETO": "Contratação de empresa para a realizar coleta, transporte e destinação final, de forma ambientalmente adequada, dos resíduos não comestíveis de agroindústrias municipais situadas do interior do município, classificados na CLASSE II A, conforme norma ABNT NBR – 10.004.",
+  "LINK_CIDADAO": "https://portal.tce.rs.gov.br/aplicprod/f?p=50500:10:::NO:10:P10_ID_LICITACAO,P10_PAG_RETORNO,F50500_CD_ORGAO:1573286,14,53100&cs=1inq3zLv75e7NZyux2X_lqn9X_O0",
+  "DATA_INCLUSAO": "2026-08-13 10:47:26",
+  "DATA_ATUALIZACAO": "2026-08-13 11:04:20",
+  "EVALIDADOR_DATA_ULTIMA_REMESSA": null,
+  "EVALIDADOR_RVE_ULTIMA_REMESSA": null
+ }
+]

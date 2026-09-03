@@ -135,6 +135,23 @@ no produto.
 
 ## 3. TCE-RS — a melhor fonte estadual, esperando um teste de IP
 
+> ⭐ **ATUALIZAÇÃO DE 03/09/2026, tarde — o bloqueio era de UM host, e o acervo
+> inteiro está em outro.** O `portal.tce.rs.gov.br` publica API aberta com o
+> **mesmo acervo** do CKAN bloqueado: 866 licitações e 1.202 contratos de Nova
+> Palma (contra 864 e 1.201 do CKAN), de 2007 a 2026, mais obras, medições e a
+> **origem do recurso** — o convênio que pagou cada obra. O que só o CKAN tem é
+> o valor da licitação (estimado e homologado).
+>
+> Coletor em `backend/ingestion/tce_rs_portal.py`; mapa das APIs, as medições e
+> **dois vereditos da manhã que a tarde derrubou** em
+> [`TCE-RS-APIS.md`](TCE-RS-APIS.md). Falta a única pergunta que decide se ele
+> entra em produção: **o portal responde da VPS?**
+> (`scripts/medir_tce_portal_vps.sh`).
+>
+> Tudo o que está escrito abaixo sobre o CKAN **continua valendo** — ele
+> permanece bloqueado, e o ofício continua útil pelo valor da licitação. Só
+> deixou de ser o caminho crítico.
+
 O CKAN tem **73.439 datasets**, organizados **por órgão e por ano**, e tem o que
 o prompt pede em §2.1:
 

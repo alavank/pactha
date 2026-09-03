@@ -180,6 +180,20 @@ _SOURCES_POR_UF: dict[str, list[tuple[str, str, str | None]]] = {
         ("TCE-RS — Licitações e contratos (RS)",
          "SELECT max(atualizado_em), count(*) FROM tce_rs_licitacoes",
          "tce_rs"),
+        # ⚠️ MESMAS TABELAS, OUTRO CAMINHO — e por isso esta linha conta as
+        # OBRAS, não as licitações: as duas fontes escrevem nas mesmas
+        # `tce_rs_licitacoes`/`tce_rs_contratos` (a chave natural do LicitaCon é
+        # a mesma pelos dois lados), então contar licitação aqui repetiria o
+        # número da linha de cima e as duas pareceriam sempre em dia juntas,
+        # mesmo com uma delas parada. `tce_rs_obras` só este coletor preenche.
+        #
+        # ⚠️ E CONTAGEM ZERO É ESTADO LEGÍTIMO: Nova Palma não tem obra no
+        # LicitaCon Obras (sistema de 2024, município de 5,6 mil habitantes),
+        # Santa Maria tem 120. O veredito é o `status` da rodada, nunca a
+        # contagem — vazio aqui não é coletor quebrado.
+        ("TCE-RS — Obras e origem do recurso (RS)",
+         "SELECT max(atualizado_em), count(*) FROM tce_rs_obras",
+         "tce_rs_portal"),
     ],
     "ES": [
         ("GConv-ES — Convênios estaduais (ES)",

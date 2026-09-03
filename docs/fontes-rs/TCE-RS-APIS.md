@@ -1,26 +1,44 @@
 # TCE-RS: as APIs do `portal.tce.rs.gov.br`
 
-> **Achado de 03/09/2026.** O que está bloqueado é o **`dados.tce.rs.gov.br`**
-> (portal CKAN de dados abertos, 403 medido três vezes). O Tribunal publica
-> APIs em **outro host** — `portal.tce.rs.gov.br` — e elas respondem **sem
-> autenticação**. Medido do IP residencial; falta confirmar da VPS
-> (`scripts/medir_tce_portal_vps.sh`).
+> **Achado de 03/09/2026, medido e revisado no mesmo dia.** O que está bloqueado
+> é o **`dados.tce.rs.gov.br`** (portal CKAN, 403 medido três vezes). O Tribunal
+> publica APIs em **outro host** — `portal.tce.rs.gov.br` — e elas respondem
+> **sem autenticação**. Medido do IP residencial; a confirmação a partir da VPS
+> é `scripts/medir_tce_portal_vps.sh`.
+>
+> ⚠️ **Este documento foi corrigido em 03/09 à tarde.** A primeira versão, da
+> manhã, afirmava duas coisas que a medição derrubou — a remessa como prova de
+> pontualidade (§4) e a perda do acervo histórico (§2). Ficam registradas, com o
+> que as desmentiu, porque o erro em si é a lição.
 
 ---
 
 ## 1. O que isso muda
 
-O ofício pedindo liberação de IP mirava o CKAN. Se o `portal.tce.rs.gov.br`
-responder da VPS, **o caminho crítico deixa de ser o ofício**: dá para coletar
-licitação, contrato, obra e — o que não existia em plano nenhum — a **remessa**,
-sem depender de liberação.
+O ofício pedindo liberação de IP mirava o CKAN. Com o `portal.tce.rs.gov.br`
+respondendo, dá para coletar licitação, contrato, obra e medição **sem depender
+de liberação nenhuma** — e o ofício deixa de ser caminho crítico.
 
-O que se perde sem o CKAN é o **dump histórico completo em CSV** (864 licitações
-e 1.201 contratos de Nova Palma, 2016–2026, com objeto e valores). O que se
-ganha é mais recente e mais operacional.
+**Não se perde o acervo histórico.** Medido:
 
-**As duas fontes são complementares, não substitutas.** O ofício continua
-valendo — muda de urgente para desejável.
+| | CKAN (bloqueado) | API do portal |
+|---|---|---|
+| Licitações de Nova Palma | 864 | **866** (2012–2026) |
+| Contratos de Nova Palma | 1.201 | **1.202** (2007–2026) |
+| Licitações de Santa Maria | — | 5.290 |
+| Contratos de Santa Maria | — | 6.213 |
+
+A diferença de dois registros são contratos incluídos em 31/08, depois da última
+medição do CKAN. **É o mesmo acervo, e mais recente.**
+
+O que o CKAN tem e a API **não**: `VL_LICITACAO` e `VL_HOMOLOGADO` — o valor
+estimado e o homologado do certame. Não existem em endpoint nenhum do portal
+(conferido no Swagger, nos 15 campos da lista e nos 27 do detalhe). Em
+compensação, o portal traz o **valor do contrato em duas versões** (inicial e
+depois dos aditivos), que o CSV não separava, mais o **nome** do contratado, os
+fiscais e os eventos.
+
+As duas fontes continuam complementares — mas agora a que funciona é a maior.
 
 ---
 
@@ -28,100 +46,161 @@ valendo — muda de urgente para desejável.
 
 ### 2.1 Queryon — `/api/qonws/q` (sem autenticação)
 
-Contrato em `https://portal.tce.rs.gov.br/api/qonws/swagger` (Swagger 2.0, 53 KB).
-`securityDefinitions` **vazio**. O `{syntax}` do caminho é o formato: use `json`.
+Contrato em `https://portal.tce.rs.gov.br/api/qonws/swagger` (Swagger 2.0,
+53 KB). `securityDefinitions` **vazio**. O `{syntax}` do caminho é o formato:
+use `json`.
 
 | Endpoint | Parâmetros obrigatórios | O que traz |
 |---|---|---|
-| `licitacon_dominios.orgaos` | — | ⭐ **de-para oficial**: `CD_ORGAO` · `CNPJ` · `CD_MUNICIPIO_IBGE` · `TIPO` · `SITUACAO_ORGAO` |
-| `licitacon.remessas` | `cd_orgao`, `ano_exercicio`, `periodo` | ⭐ **a remessa**: data de recebimento, situação, RVE, responsável e cargo |
-| `licitacon.licitacoes` | `cd_orgao`, `tp_situacao`, `origem` | licitações do órgão com situação |
-| `licitacon.contratos` | `cd_orgao`, `tp_situacao`, `origem` | contratos do órgão com situação |
-| `licitacon.licitacao` | `cd_orgao`, `cd_tipo_modalidade`, `nr_licitacao`, `ano_licitacao` | uma licitação |
-| `licitacon.contrato` | `cd_orgao`, `tp_instrumento`, `nr_contrato`, `ano_contrato` | um contrato |
-| `licitacon.licitacoes_por_processo` | `cd_orgao`, `nr_processo` | licitações de um processo |
-| `licitacon_obras.obras_por_orgao` | `cd_orgao` | obras do órgão |
-| `licitacon.comissoes` | `cd_orgao` | comissões de licitação |
-| `siapes.*`, `fnde.*` | vários | pessoal e despesa/receita FNDE |
+| `licitacon_dominios.orgaos` | — | ⭐ **de-para oficial** dos 1.344 órgãos: `CD_ORGAO` · `CNPJ` · `CD_MUNICIPIO_IBGE` · `TIPO` · `SITUACAO_ORGAO` |
+| `licitacon.licitacoes` | `cd_orgao`, `tp_situacao`, `origem` | ⭐ o acervo de licitações do órgão |
+| `licitacon.contratos` | `cd_orgao`, `tp_situacao`, `origem` | ⭐ o acervo de contratos |
+| `licitacon.licitacao` | + `cd_tipo_modalidade`, `nr_licitacao`, `ano_licitacao` | detalhe: processo, fundamentação legal, data de abertura, resultado |
+| `licitacon.contrato` | + `tp_instrumento`, `nr_contrato`, `ano_contrato` | ⭐ detalhe: **valores**, contratado, vigência, fiscais, eventos |
+| `licitacon.remessas` | `cd_orgao`, `ano_exercicio`, `periodo` | por qual via o órgão opera (ver §4) |
+| `licitacon_obras.obras_por_orgao` | `cd_orgao` | obras do órgão (25 campos) |
+| `licitacon_obras.obra` | `id_obra` | ⭐ **50 campos**: medições, aditivos, licenças, coordenadas e **origem do recurso** |
+| `licitacon.comissoes`, `licitacon.orgaos_modo_acesso`, `licitacon_dominios.fundamentacoes_legais` | vários | apoio |
 
-Todos aceitam `fields`, `order`, `limit`, `offset`.
+Todos aceitam `fields`, `order`, `limit`, `offset`. Não há teto de `limit`
+(5.000 devolveu o acervo inteiro sem reclamar); `[]` com HTTP 200 é a resposta
+para órgão inexistente, e parâmetro obrigatório faltando dá **400** com a
+mensagem dizendo qual é.
 
-**⭐ `licitacon.remessas` é o achado mais valioso**, e não estava em nenhum plano.
-Ele responde a pergunta que a tela `/dashboard/tce-rs` hoje diz **não** saber
-responder: *o município entregou a remessa?* Medido para Nova Palma, exercício
-2026, período 1:
+**⚠️ `tp_situacao` e `origem` derrubaram a primeira leitura.** Os valores estão
+no Swagger e são `A` (em andamento), `E` (encerradas) e `ALL`; e `WEB`
+(LicitaCon Web), `VAL` (eValidador) e `ALL`. A tentativa da manhã usou oito
+combinações inventadas, recebeu listas vazias e concluiu que o endpoint não
+servia para consulta. **Com `ALL/ALL` ele devolve tudo** — foi o que destravou
+todo o resto.
 
-```
-CD_ORGAO 53100 · PM DE NOVA PALMA · TIPO_REMESSA "LicitaCon WEB"
-DT_RECEBIMENTO 2026-02-09 05:14:58 · COD_BARRAS_RVE 012611038484707176
-NOME_REPONSAVEL_ORGAO "JUCEMARA ROSSATO" · DS_CARGO_RESPONSAVEL "PREFEITA"
-```
+### 2.2 LicitaCon Obras — `/api/obras` (leitura sem token)
 
-Atraso de remessa vira pendência no TCE, pendência vira irregularidade fiscal, e
-irregularidade trava habilitação para convênio — a cadeia que a tela já explica,
-e que passa a ser **verificável**.
+Contrato em `/api/obras/v3/api-docs` (OpenAPI 3, 189 KB, 75 caminhos). Declara
+`securitySchemes: bearer-key` e tem `POST /autenticacao` — mas os GET responderam
+**200 sem token**.
 
-### 2.2 LicitaCon Obras — `/api/obras` (leitura sem token; escrita autenticada)
-
-Contrato em `/api/obras/v3/api-docs` (OpenAPI 3, 189 KB). Declara
-`securitySchemes: bearer-key` e tem `POST /autenticacao` — mas **os GET
-responderam 200 sem token**, incluindo dados de órgão específico.
+**Não é o caminho que usamos.** Os 75 endpoints REST cobram uma requisição por
+aspecto de cada obra (medições, licenças, aditivos, fotos, documentos). O
+Queryon entrega tudo isso **aninhado numa única chamada** de
+`licitacon_obras.obra` — e é de lá que sai a origem do recurso. A API REST fica
+documentada para o caso de o Queryon mudar, e para os documentos e fotos, cujos
+downloads são links dela.
 
 Instituído pela **Resolução 1.176/2023** e regulamentado pela **IN 6/2023**;
 obrigatório para órgãos municipais desde **08/01/2024**.
 
-O que a API expõe por obra, além do cadastro: **medições** (com fotos e
-documentos), **cronogramas**, **ordens de início, paralisação e reinício**,
-**termos aditivos** (com prorrogação de prazo, reajuste, reequilíbrio e
-renovação), **termos de recebimento**, **licenças**, **responsáveis técnicos**,
-**registros de imóvel**, **rescisão contratual**, **coordenadas** e ⭐ **origem
-do recurso** — que é o elo direto com o convênio que financiou a obra.
+**Medido:** Santa Maria, **120 obras**; Nova Palma, **0** — resultado legítimo,
+o sistema é de 2024 e o município tem 5,6 mil habitantes. **Não confundir com
+falha de coleta**; a mesma disciplina do SISMOB.
 
-E expõe **`/alertas` por obra**: o próprio Tribunal aponta as pendências. Entre
-elas, do histórico de versões: *"94 — Informar a origem do recurso"*, *"95 —
-Informar as licenças"*, *"96 — Cadastrar as planilhas de medição"*.
+---
 
-**Medido:**
+## 3. ⭐ A origem do recurso — por que a obra importa num produto de convênios
 
-| Órgão | CNPJ | Obras |
+Exemplo real, obra 436 de Santa Maria (drenagem e pavimentação no bairro Diácono
+João Luiz Pozzobon):
+
+```
+Convênio/Repasse Federal · Ministério da Integração e do Desenvolvimento Regional
+Processo 59053.018691/2024-19 · R$ 2.431.396,74 · contrapartida R$ 0,00
+contrato 122/2024 · R$ 1.878.613,49 inicial, R$ 2.430.766,29 atual
+14 medições · R$ 2.297.053,89 medido · saldo R$ 237.499,12
+financeiro 90,6% · físico 0,0%
+```
+
+Em nenhuma outra fonte do PACTHA esse vínculo existe **declarado pelo próprio
+município ao órgão de controle**. O TransfereGov mostra o repasse; o LicitaCon
+mostra o contrato; esta é a única que diz *esta obra foi paga por aquele
+convênio* — e quanto dela já foi medido.
+
+⚠️ **Os dois percentuais divergem** (90,6% financeiro contra 0,0% físico na mesma
+obra): o órgão mede o pagamento e não alimenta o avanço físico. Mostrar um pelo
+outro inventaria execução que ninguém declarou.
+
+---
+
+## 4. ⚠️ A remessa NÃO mede pontualidade — o erro da primeira versão
+
+**A versão da manhã deste documento dizia:**
+
+> ⭐ `licitacon.remessas` é o achado mais valioso, e não estava em nenhum plano.
+> Ele responde a pergunta que a tela `/dashboard/tce-rs` hoje diz **não** saber
+> responder: *o município entregou a remessa?*
+
+**Está errado.** A remessa do tipo **"LicitaCon WEB" é a carga noturna do próprio
+Tribunal**, não a entrega do município. A medição que derrubou a tese: nove
+órgãos de **oito tipos diferentes** (prefeitura, autarquia, fundação, consórcio,
+empresa pública, S/A, associação, Ltda) têm, no mesmo período, a **mesma data e o
+mesmo horário**.
+
+| Período | Data de "recebimento" | Horário |
 |---|---|---|
-| PM de Santa Maria | 88488366000100 | **120** (40 páginas) |
-| PM de Nova Palma | 88488358000156 | 0 |
-| IPLAN — Inst. de Planejamento de Santa Maria | 08537127000156 | 0 |
+| 2026/7 | 10/08/2026 | 05:12 a 05:19 |
+| 2026/6 | 07/07/2026 | 05:12 a 05:18 |
+| 2025/12 | 08/01/2026 | 05:12 a 05:17 |
 
-Zero em Nova Palma é resultado legítimo — o sistema é de 2024 e o município é
-pequeno. **Não confundir com falha de coleta**; a mesma disciplina do SISMOB.
+Nova Palma e Santa Maria coincidem nos **19 meses** conferidos, sempre entre o 7º
+e o 12º dia do mês seguinte. Uma prefeitura que atrasasse teria a data de uma que
+não atrasou.
 
-**Sobre a autorização** (manual §3.2): o ambiente de **produção** é autorizado
-**pelo próprio órgão fiscalizado**, no SISCAD → aba *Autorização de API*, onde o
-Responsável Operacional gera as credenciais. Ou seja, se um dia for preciso
-token, **quem o emite é a prefeitura** — não depende do Tribunal, e é o mesmo
-padrão do PCPRS. Homologação (`hml.tce.rs.gov.br`) pede credencial pela Central
-de Serviços.
+A remessa do tipo **e-Validador** é envio de verdade — as quatro de Nova Palma em
+agosto/2025 são de 15, 22, 27 e 29/08, e nenhum outro órgão tem essas datas. Mas
+quem registra direto no LicitaCon Web não envia nenhuma, e Nova Palma parou de
+enviar em 2026.
+
+**O que a remessa serve, então:** dizer **por qual via** o município opera (Web ou
+e-Validador), se o período foi consolidado, e quem é o responsável cadastrado.
+É pouco, e é honesto.
+
+### O que de fato mede pontualidade
+
+A defasagem entre **assinar** (`DT_ASSINATURA`) e **registrar no Tribunal**
+(`DATA_INCLUSAO`) — os dois vêm do detalhe do contrato. Medido em 25 contratos
+recentes de cada município:
+
+| Município | mínimo | mediana | máximo | acima de 30 dias |
+|---|---|---|---|---|
+| Nova Palma | 0 | **1 dia** | 5 | 0 |
+| Santa Maria | 0 | **5 dias** | 6 | 0 |
+
+**Os dois estão em dia.** Não há alarme a construir aqui — e dizer isso ao
+cliente é uma boa notícia, não um achado vazio.
 
 ---
 
-## 3. O que ainda falta apurar
+## 5. O que ainda falta apurar
 
-1. **Responde da VPS?** É o que decide tudo. `scripts/medir_tce_portal_vps.sh`.
-2. **Os valores de `tp_situacao` e `origem`** de `licitacon.licitacoes` e
-   `licitacon.contratos` — ambos obrigatórios, e o Swagger não lista o domínio.
-3. **Se a leitura sem token é intencional ou permissividade.** O manual trata de
-   autorização no contexto de integração (envio). Se um dia fechar, o caminho já
-   está mapeado: credencial emitida pela própria prefeitura via SISCAD.
-4. **Cadência.** A página do LicitaCon diz que a relação/situação só é atualizada
+1. **Responde da VPS?** É o que decide se o coletor entra em produção agora ou
+   fica pronto e desligado, como o `tce_rs` e o `obrasgov`.
+   `scripts/medir_tce_portal_vps.sh`.
+2. **Se a leitura sem token é intencional ou permissividade.** O manual trata de
+   autorização no contexto de *envio*. Se um dia fechar, o caminho está mapeado:
+   a credencial de produção é emitida **pela própria prefeitura**, no SISCAD →
+   aba *Autorização de API*, pelo Responsável Operacional — não depende do
+   Tribunal, e é o mesmo padrão do PCPRS.
+3. **Cadência.** A página do LicitaCon diz que a relação/situação só é atualizada
    após a carga definitiva da remessa, **diariamente a partir das 21h**.
+4. **As entidades além da prefeitura.** O de-para traz, por município, a Câmara
+   (código próprio, não é o cliente) e as autarquias — Santa Maria tem IPLAN,
+   IPASSP e um consórcio. Ficam **fora da coleta** por ora, e registradas no log
+   de cada rodada: incluí-las multiplica o custo do job e a decisão é do dono,
+   com o número na mão.
 
 ---
 
-## 4. Relação com o que já existe no repo
+## 6. Relação com o que já existe no repo
 
-`backend/ingestion/tce_rs.py` coleta do **CKAN bloqueado** e continua válido: o
-dump histórico é mais completo. O que estas APIs permitem é um **segundo
-coletor**, por outro caminho, que funciona hoje — e que traz remessa, obra e
-medição, que o CSV não tem.
+`backend/ingestion/tce_rs.py` (CKAN, bloqueado) e
+`backend/ingestion/tce_rs_portal.py` (portal, aberto) escrevem nas **mesmas
+tabelas** — `tce_rs_licitacoes` e `tce_rs_contratos` —, porque a chave natural do
+LicitaCon é a mesma pelos dois caminhos. Não duplicam: fazem UPSERT na mesma
+linha, e cada um preenche o que o outro não tem (o CKAN, os valores da licitação;
+o portal, tudo o mais).
 
-O `tce_orgao_codigo` de `municipios` ganha fonte oficial: `licitacon_dominios.orgaos`
-casa `CD_MUNICIPIO_IBGE` com `CD_ORGAO` e `CNPJ`, o que é mais robusto que a
-descoberta por slug do CKAN que `tce_rs.py` faz hoje — e funciona mesmo com o
-CKAN bloqueado.
+`add_tce_rs_portal.sql` acrescenta as colunas do portal e três tabelas novas:
+`tce_rs_remessas`, `tce_rs_obras` e `tce_rs_obras_recursos`.
+
+O `municipios.tce_orgao_codigo` ganha fonte oficial: `licitacon_dominios.orgaos`
+casa IBGE × código × CNPJ, o que é mais robusto que a descoberta por slug no
+CKAN — e funciona com o CKAN fora do ar.

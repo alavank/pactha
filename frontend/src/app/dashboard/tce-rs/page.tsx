@@ -10,20 +10,25 @@
  *
  * ⭐ ESTA TELA DEIXOU DE SER SÓ CURADORIA. O calendário de remessas continua
  * sendo conteúdo — é norma, não muda toda semana. Mas as LICITAÇÕES e os
- * CONTRATOS agora vêm do LicitaCon, pelos dados abertos do próprio Tribunal
- * (`ingestion/tce_rs.py`): em Nova Palma são 864 licitações e 1.201 contratos.
+ * CONTRATOS vêm do LicitaCon, pelos dados abertos do próprio Tribunal: em Nova
+ * Palma são 866 licitações e 1.202 contratos.
  *
- * As duas coisas convivem, e a tela diz qual é qual: o AvisoCurado fala do
- * calendário, e o bloco do LicitaCon traz dado coletado com data.
+ * São DOIS coletores para as mesmas tabelas, por dois hosts diferentes:
+ * `ingestion/tce_rs.py` (dados.tce.rs.gov.br, CKAN — o que devolve 403 ao IP do
+ * servidor) e `ingestion/tce_rs_portal.py` (portal.tce.rs.gov.br, API aberta).
+ * O segundo entrega o mesmo acervo e mais: obra, medição, saldo e a ORIGEM DO
+ * RECURSO — o convênio que pagou a obra, declarado pelo próprio município.
+ *
+ * As três coisas convivem, e a tela diz qual é qual: o AvisoCurado fala do
+ * calendário, e os blocos do LicitaCon trazem dado coletado com data.
  *
  * ⚠️ E quando não há dado coletado, a tela NÃO conclui "o município não licita".
- * O TCE-RS recusa conexões de faixa de datacenter (403), então a ausência pode
- * ser bloqueio nosso, não silêncio da prefeitura — e afirmar o contrário seria
- * acusar o cliente de uma omissão que ele não cometeu.
+ * A ausência pode ser bloqueio nosso, não silêncio da prefeitura — e afirmar o
+ * contrário seria acusar o cliente de uma omissão que ele não cometeu.
  */
 
 import React, { useCallback, useEffect, useState } from "react";
-import { CalendarClock, ExternalLink, Gavel, Landmark, Loader2 } from "lucide-react";
+import { CalendarClock, ExternalLink, Gavel, HardHat, Landmark, Loader2 } from "lucide-react";
 
 import api from "@/lib/api";
 import { useMunicipio } from "@/contexts/MunicipioContext";
@@ -52,7 +57,26 @@ interface Resp {
     contratos_por_ano?: Array<{ ano: number; total: number; valor?: number | null }>;
     contratos_vigentes?: Array<{ numero: string; objeto?: string | null;
       valor?: number | null; vigencia_ate?: string | null;
-      contratado_documento?: string | null; link?: string | null }>;
+      contratado_documento?: string | null; link?: string | null;
+      contratado?: string | null; valor_atual?: number | null }>;
+  };
+  obras?: {
+    coletado: boolean;
+    atualizado_em?: string | null;
+    total?: number;
+    paralisadas?: number;
+    com_origem_declarada?: number;
+    obras?: Array<{
+      id: number; objeto?: string | null; situacao?: string | null;
+      contratado?: string | null; valor?: number | null; medido?: number | null;
+      pc_financeiro?: number | null; pc_fisico?: number | null;
+      vigencia_ate?: string | null; paralisada_em?: string | null;
+      motivo_paralisacao?: string | null; medicoes?: number | null;
+      ultima_medicao?: string | null; contrato?: string | null;
+      recursos?: Array<{ tipo?: string | null; fonte?: string | null;
+        convenio?: string | null; valor?: number | null;
+        contrapartida?: number | null; codigo?: string | null }>;
+    }>;
   };
 }
 
@@ -169,6 +193,22 @@ export default function TceRsPage() {
                         {money(c.valor)} · até {dia(c.vigencia_ate)}
                       </span>
                     </div>
+                    {/* ⚠️ O valor DEPOIS dos aditivos só aparece quando difere
+                        do inicial. Mostrar "R$ X (atual R$ X)" em todo contrato
+                        seria ruído; mostrar a diferença quando ela existe é
+                        exatamente o que o Tribunal fiscaliza. */}
+                    {c.valor_atual != null && c.valor != null
+                      && c.valor_atual !== c.valor && (
+                      <div className="text-[11px] tabular-nums"
+                           style={{ color: "var(--bi-muted)" }}>
+                        com aditivos: {money(c.valor_atual)}
+                      </div>
+                    )}
+                    {c.contratado && (
+                      <div className="text-[11px]" style={{ color: "var(--bi-muted)" }}>
+                        {c.contratado}
+                      </div>
+                    )}
                     {c.objeto && (
                       <div className="text-[11px] leading-snug"
                            style={{ color: "var(--bi-faint)" }}>
@@ -196,6 +236,99 @@ export default function TceRsPage() {
             o código. A consulta pública continua disponível no LicitaCon Cidadão,
             pelo link abaixo.
           </p>
+        </Bloco>
+      )}
+
+      {/* ---------------- LicitaCon Obras: a execução, e quem pagou ------------
+          ⭐ É o bloco que fecha o círculo do produto. O TransfereGov mostra o
+          repasse e o LicitaCon mostra o contrato; aqui está se a obra ANDOU — e,
+          na origem do recurso, o convênio que a financiou, declarado pelo
+          próprio município ao Tribunal.
+
+          ⚠️ Só aparece quando há obra. Ausência aqui é estado legítimo: o
+          sistema é de 2024 e município pequeno pode não ter obra sujeita a
+          registro — inventar um "nenhuma obra encontrada" ao lado de uma tela de
+          convênios sugeriria omissão onde não há. */}
+      {d.obras?.coletado && !!d.obras.obras?.length && (
+        <Bloco className="p-3">
+          <BlocoHead
+            icon={HardHat}
+            titulo="Obras registradas no LicitaCon Obras"
+            sub={`${d.obras.total} obra(s)`
+              + (d.obras.paralisadas ? ` · ${d.obras.paralisadas} paralisada(s)` : "")
+              + (d.obras.com_origem_declarada
+                  ? ` · ${d.obras.com_origem_declarada} com origem de recurso declarada`
+                  : "")}
+            right={d.obras.atualizado_em
+              ? <Selo>{`atualizado em ${dia(d.obras.atualizado_em)}`}</Selo>
+              : undefined}
+          />
+          <Lista>
+            {d.obras.obras.map((o) => (
+              <li key={o.id} className="py-1.5">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+                  <span className="text-[12px]" style={{ color: "var(--bi-text)" }}>
+                    {o.contrato ? `Contrato ${o.contrato}` : `Obra ${o.id}`}
+                    {o.situacao && (
+                      <span className="ml-2 text-[11px]"
+                            style={{ color: "var(--bi-muted)" }}>{o.situacao}</span>
+                    )}
+                  </span>
+                  <span className="text-[11px] tabular-nums"
+                        style={{ color: "var(--bi-muted)" }}>
+                    {money(o.medido)} medido de {money(o.valor)}
+                  </span>
+                </div>
+
+                {o.objeto && (
+                  <div className="text-[11px] leading-snug"
+                       style={{ color: "var(--bi-faint)" }}>
+                    {o.objeto.slice(0, 160)}
+                  </div>
+                )}
+
+                {/* ⚠️ OS DOIS PERCENTUAIS, LADO A LADO E NOMEADOS. Numa obra real
+                    de Santa Maria o financeiro está em 90,6% e o físico em 0,0,
+                    porque o órgão mede o pagamento e não alimenta o avanço da
+                    obra. Um número só, sem dizer qual é, faria o gestor ler
+                    "quase pronta" onde o Tribunal lê "nada informado". */}
+                <div className="mt-0.5 flex flex-wrap gap-x-4 text-[11px] tabular-nums"
+                     style={{ color: "var(--bi-muted)" }}>
+                  {o.pc_financeiro != null && (
+                    <span>financeiro {o.pc_financeiro.toFixed(1)}%</span>
+                  )}
+                  {o.pc_fisico != null && (
+                    <span>físico {o.pc_fisico.toFixed(1)}%</span>
+                  )}
+                  {!!o.medicoes && (
+                    <span>{o.medicoes} medição(ões)
+                      {o.ultima_medicao ? `, última em ${dia(o.ultima_medicao)}` : ""}
+                    </span>
+                  )}
+                  {o.vigencia_ate && <span>vigência até {dia(o.vigencia_ate)}</span>}
+                </div>
+
+                {o.paralisada_em && (
+                  <div className="mt-0.5 text-[11px]" style={{ color: "var(--bi-accent-ink)" }}>
+                    paralisada em {dia(o.paralisada_em)}
+                    {o.motivo_paralisacao ? ` — ${o.motivo_paralisacao}` : ""}
+                  </div>
+                )}
+
+                {/* ⭐ A ORIGEM DO RECURSO — o elo com o convênio. */}
+                {o.recursos?.map((r, i) => (
+                  <div key={i} className="mt-0.5 text-[11px] leading-snug"
+                       style={{ color: "var(--bi-text)" }}>
+                    <span className="font-semibold">{r.tipo}</span>
+                    {r.fonte ? ` · ${r.fonte}` : ""}
+                    {r.convenio ? ` · ${r.convenio}` : ""}
+                    {r.valor != null ? ` · ${money(r.valor)}` : ""}
+                    {r.contrapartida ? ` (contrapartida ${money(r.contrapartida)})` : ""}
+                  </div>
+                ))}
+              </li>
+            ))}
+          </Lista>
         </Bloco>
       )}
 
