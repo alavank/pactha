@@ -116,9 +116,15 @@ suas particularidades, e nome de fonte/cadastro sai de catálogo por UF, não de
 | **Santa Maria/RS** | https://santamaria.rs.pactha.com.br | https://pactha-santamaria-rs-api-54-232-208-118.sslip.io |
 
 ⚠️ **Santa Maria (16/08/2026) é o 4º tenant e o primeiro banco criado DO ZERO** — os outros três
-vieram migrados do Neon. Ele nasce só com Santa Maria/RS (IBGE 4316907) e as coleta federais;
-**nenhuma fonte do RS existe em código ainda** (ver `docs/MAPA_RS.md` para o mapa do que falta:
-CHE, convênios da CAGE, TCE-RS, CADIN/CFIL, Portal de Convênios e Parcerias/FPE).
+vieram migrados do Neon. Ele nasceu só com Santa Maria/RS (IBGE 4316907) e as coletas federais.
+
+> ⚠️ **Este parágrafo dizia "nenhuma fonte do RS existe em código ainda". Isso venceu.**
+> Era verdade em 16/08; hoje coletam CHE (`che_rs.py`), convênios da CAGE
+> (`convenios_rs.py`), Consulta Popular (`consulta_popular_rs.py`) e o DOE-RS
+> (`services/diario_rs.py`), com Scheduled Task ativa. Em 02/09/2026 entraram
+> ainda **SICONFI/CAPAG** (federal, nacional) e **TCE-RS/LicitaCon** — este
+> último pronto mas dependente de liberação de IP (ver `docs/fontes-rs/`).
+> O que segue inerte é o **FPE-RS**, esperando credencial PCPRS, por decisão.
 
 Os três bancos já estão **populados com dados reais** (a migração vinda do Neon foi concluída — não é mais schema+seed). Login seed só vale em banco novo: `super-admin@alavank.com.br`, com senha ALEATÓRIA por tenant impressa no console do primeiro boot (ou via `ADMIN_PASSWORD`) — pede troca no 1º acesso.
 

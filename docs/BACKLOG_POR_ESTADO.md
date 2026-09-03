@@ -30,7 +30,7 @@ Usuários"):
 | **P1** — cadastro estadual parametrizado por UF no BI | ⚠️ **meio feito** | título já usa `tituloEstadual` (`abas.tsx:1120,1292`), mas a Visão Geral ainda carimba `"CAGEC · obrigações"` fixo em **`abas.tsx:238`** |
 | **P2** — tela Regularidade: banner e textos por UF | ❌ pendente | |
 | **P4** — Cofre: filtrar integrações pela UF da carteira | ❌ pendente | `dashboard/cofre/page.tsx` lista SIGCON-MG em qualquer tenant |
-| **P5** — remover fallbacks "MG" e placeholder "ARAUJOS" | ❌ pendente | `dashboard/dou/page.tsx:217` · `dashboard/fns/page.tsx:141` (`selMun?.uf \|\| "MG"`) |
+| **P5** — remover fallbacks "MG" e placeholder "ARAUJOS" | ✅ **feito em 02/09/2026** | Eram TRÊS, não dois: `dashboard/dou/page.tsx`, `dashboard/fns/page.tsx` e — o mais grave, porque grava dado — `ingestion/fns_scraper.py`, que assumia Minas para resolver o código FNS pelo NOME e podia casar com município homônimo de outro estado |
 | **P6** — menu esconde módulos estaduais com UF desconhecida | ❌ pendente | `dashboard/layout.tsx:297` guarda com `ufAmbiente &&` → na dúvida mostra tudo |
 | **P7 / P8** — rótulos residuais + `/api/cagec` neutro | ❌ pendente | |
 | **O2** — TE e InvestSUS no catálogo de frescor/watchdog | ❌ pendente | conferido: zero ocorrências de `transferegov_te` / `investsus` em `routers/freshness.py` |
