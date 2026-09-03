@@ -102,6 +102,14 @@ _SOURCES = [
     ("SIMEC — Termos de Compromisso (MEC)",
      "SELECT max(updated_at), count(*) FROM simec_termos",
      "simec_termos"),
+    # SICONFI/Tesouro. NACIONAL, como o SIMEC-Termos: o coletor varre todo
+    # municipio ativo com ibge_code, sem recorte de estado. Conta as ENTREGAS
+    # (uma linha por entregavel x periodo) e nao a CAPAG, porque a CAPAG e uma
+    # linha por municipio/ano e ficaria eternamente parecendo pouco — as duas
+    # saem da mesma rodada e do mesmo `source`, entao a data e a mesma.
+    ("SICONFI — Contas no Tesouro",
+     "SELECT max(atualizado_em), count(*) FROM siconfi_entregas",
+     "siconfi"),
 ]
 
 # ⚠️ FONTES QUE SO EXISTEM PARA CERTAS UFs, e por isso nao podem morar na lista

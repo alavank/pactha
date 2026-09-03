@@ -97,6 +97,12 @@ FRESCOR_HORAS_NACIONAL = {
     # aberto no Brasil nao e resultado plausivel), entao um arquivo que mudou de
     # layout aparece aqui como fonte parada, e nao como sucesso silencioso.
     "programas_captacao": 30,
+    # SICONFI/Tesouro (contas entregues + CAPAG). MESMO desenho do `sismob` e do
+    # `simec_termos`: o proprio ingest() se auto-limita
+    # (SICONFI_MIN_INTERVAL_H=20), entao a cadencia REAL e diaria e 30h = um dia
+    # + folga. NACIONAL: varre todo municipio ativo com ibge_code, sem recorte
+    # de estado — o lugar e aqui, nunca no mapa por UF.
+    "siconfi": 30,
 }
 
 # Fontes que so existem para certas UFs. A chave e a UF do TENANT (ha municipio
