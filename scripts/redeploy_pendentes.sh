@@ -40,7 +40,18 @@ APLICAR=0
 : "${COOLIFY_TOKEN:?defina COOLIFY_TOKEN='87|...' antes de rodar}"
 HOST="${HOST:-54.232.208.118}"
 B="http://$HOST:8000/api/v1"
-SHA="${SHA:-$(git -C "$(dirname "$0")/.." rev-parse HEAD)}"
+RAIZ="$(cd "$(dirname "$0")/.." && pwd)"
+
+# ⚠️⚠️ O ALVO E `origin/main`, E NAO O HEAD DA BRANCH ATUAL. Esta linha ja
+# custou um susto: em 03/09/2026 o script rodou de uma branch de trabalho, pegou
+# o HEAD dela — um commit que NUNCA foi buildado — e ofereceu essa tag aos 15
+# apps. Quatorze foram salvos pelo Coolify (HTTP 400 no PATCH); o decimo quinto
+# aceitou, tentou deployar uma imagem inexistente e ficou apontando para o
+# vazio. O container velho seguiu no ar, entao ninguem viu — mas a proxima
+# recriacao daquele app teria falhado, e o sintoma apareceria horas depois,
+# longe da causa.
+SHA="${SHA:-$(git -C "$RAIZ" rev-parse origin/main 2>/dev/null)}"
+[ -n "$SHA" ] || { echo "!! nao consegui ler origin/main (rode 'git fetch')" >&2; exit 1; }
 # ⚠️ OS DOIS WORKFLOWS USAM FORMATOS DIFERENTES DE TAG, e nao e escolha deste
 # script: `build-backend.yml` publica com `type=sha,format=short` e grava
 # `sha-${GITHUB_SHA::7}`; `build-frontend.yml` publica e grava o SHA de 40.
@@ -55,6 +66,52 @@ CURL=(curl -sS --connect-timeout 10 --max-time 40 -H "Authorization: Bearer $COO
 
 echo "== alvo: $TAG_CURTA (api/worker)  ·  $TAG_LONGA (frontend)"
 echo "== $(date -u '+%Y-%m-%d %H:%M:%S UTC')  ·  modo: $([ "$APLICAR" = 1 ] && echo APLICAR || echo 'somente listar')"
+
+# ---------------------------------------------------------------------------
+# As duas travas que faltavam
+# ---------------------------------------------------------------------------
+# 1. O commit tem de estar MERGEADO. Um SHA de branch nao tem imagem publicada,
+#    porque so o push na `main` builda.
+if ! git -C "$RAIZ" merge-base --is-ancestor "$SHA" origin/main 2>/dev/null; then
+  echo "!! $SHA nao esta em origin/main." >&2
+  echo "!! So o push na main builda imagem; apontar um app para um SHA de branch" >&2
+  echo "!! grava uma tag que nao existe no registry, e o app morre na proxima" >&2
+  echo "!! recriacao — horas depois, longe da causa. Abortando." >&2
+  exit 1
+fi
+
+# 2. O build daquele commit tem de ter dado CERTO. Estar na main nao basta: se o
+#    build falhou, a imagem nao foi publicada. Sem o `gh` disponivel a checagem e
+#    pulada com aviso, e nao silenciosamente.
+if command -v gh >/dev/null 2>&1; then
+  builds="$(gh run list --limit 40 \
+              --json headSha,name,conclusion 2>/dev/null \
+            | SHA="$SHA" python -c '
+import json, os, sys
+
+sha = os.environ["SHA"]
+try:
+    runs = json.load(sys.stdin)
+except Exception:
+    print("?"); raise SystemExit
+alvo = [r for r in runs if r.get("headSha") == sha
+        and r.get("name") in ("build-backend", "build-frontend")]
+if not alvo:
+    print("?")
+else:
+    print(",".join(sorted({r["name"] + ":" + str(r.get("conclusion")) for r in alvo})))
+')"
+  case "$builds" in
+    "?"|"") echo "-- aviso: nao achei o build de $SHA nas ultimas 40 runs (ok se for antigo)" ;;
+    *failure*|*cancelled*)
+      echo "!! o build deste commit NAO passou: $builds" >&2
+      echo "!! a imagem pode nao ter sido publicada. Abortando." >&2
+      exit 1 ;;
+    *) echo "-- build conferido: $builds" ;;
+  esac
+else
+  echo "-- aviso: 'gh' nao encontrado; nao da para conferir se o build passou"
+fi
 
 # ---------------------------------------------------------------------------
 # Quem esta atrasado
@@ -229,7 +286,17 @@ while read -r uuid nome tag_atual tag_alvo; do
     continue
   fi
   echo "   deployment $dep"
-  acompanhar "$dep" || FALHOU="$FALHOU $nome"
+  # ⚠️ DEPLOYMENT QUE FALHA TAMBEM PRECISA DE ROLLBACK DE TAG. Antes so o
+  # "nao enfileirou" revertia — e foi assim que o `santamaria-rs-frontend`
+  # ficou apontando para uma imagem inexistente em 03/09/2026: o deploy
+  # ENFILEIROU, o pull falhou, e a tag ruim ficou gravada. O container velho
+  # seguiu no ar e escondeu o estrago ate a proxima recriacao.
+  if ! acompanhar "$dep"; then
+    echo "   revertendo a tag para $tag_atual"
+    patch_tag "$uuid" "$tag_atual" >/dev/null || \
+      echo "   !! O ROLLBACK FALHOU — $nome esta em $tag_alvo, que pode nao existir"
+    FALHOU="$FALHOU $nome"
+  fi
 done <<EOF
 $pendentes
 EOF
