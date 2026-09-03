@@ -42,7 +42,32 @@ Carga do host no momento: **0,44 / 0,49 / 0,45**. Há folga.
 2. **SICONFI pode ser ligado imediatamente.** 227 ms e 174 KB numa consulta
    real, do IP certo.
 
-3. **⚠️ Obras.gov.br precisa de segunda medição.** O `429` veio na **primeira**
+3. **⛔ Obras.gov.br também recusa o IP da VPS** *(fechado em 03/09, 03:39
+   UTC)*. Três tentativas espaçadas de 90 s: **429 nas três**, todas em ~0,05 s.
+   Não é penalidade acumulada vencível por espaçamento — três evidências
+   convergem:
+
+   | Evidência | Leitura |
+   |---|---|
+   | Rejeição em **0,05 s** | Regra de borda, não servidor sobrecarregado. O SICONFI, que aceita, leva 0,23 s para **entregar 174 KB** do mesmo IP |
+   | 3 min de silêncio não mudaram nada | Se fosse janela de quota, teria renovado |
+   | O 429 da bateria das 03:11 veio na **primeira** requisição da VPS | Não havia chamada nossa anterior para acumular penalidade |
+
+   **São duas fontes barradas por faixa de datacenter, não uma.** A Scheduled
+   Task do `obrasgov` não é criada, pelo mesmo critério do `tce_rs`.
+
+   ⚠️ *O que a medição não descarta:* uma penalidade **muito** longa — o
+   `INFRA.md` §5 documenta 6 horas no TransfereGov. Se houver suspeita de
+   mudança, repetir `scripts/medir_obrasgov_vps.sh` após horas de silêncio total
+   ao domínio.
+
+4. **Duas barradas mudam a conversa.** Negociar liberação fonte a fonte resolve
+   uma de cada vez; um **proxy de saída** para essas coletas específicas
+   resolveria as duas — e qualquer terceira que apareça. Vale avaliar depois da
+   resposta do TCE-RS ao ofício, que é o caminho de menor custo e já está
+   redigido.
+
+### (histórico) O que a primeira medição deixara em aberto O `429` veio na **primeira**
    requisição da bateria — e isso não distingue duas causas muito diferentes:
    penalidade acumulada no IP (o `INFRA.md` §5 documenta que a API de
    Transferências Especiais já deixou esta VPS 6 horas de castigo) ou recusa
