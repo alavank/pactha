@@ -151,7 +151,34 @@ Palma, está.) Elas publicam em outro veículo.
 
 ---
 
-## 6. Funrigs e reconstrução — não estão no dado aberto do Estado
+## 6. Funrigs e reconstrução — sem caminho de coleta hoje
+
+> **Fechado em 03/09/2026, depois de percorrer os três caminhos possíveis.**
+
+| Caminho tentado | Resultado |
+|---|---|
+| CKAN `dados.rs.gov.br` (`funrigs`, `calamidade`, `reconstru`) | **zero pacotes** nas três buscas |
+| Painel do Funrigs no Portal da Transparência | redireciona para `/recursos-recebidos/` e é **Power BI** embutido — sem CSV, com token de embed dinâmico |
+| Seção de dados abertos da CAGE | responde 200, mas **nenhum link de arquivo no HTML**: os downloads são montados por JavaScript |
+
+**Veredito: não construir agora.** Raspar a API interna do Power BI é frágil por
+natureza — o próprio `MAPA_RS.md` já registra isso para as emendas estaduais, e
+seria a mesma dívida aqui. As saídas reais, em ordem de custo:
+
+1. **Pedir o dado à CAGE** (LAI ou contato institucional): é despesa pública e
+   já publicada; um CSV por credor resolveria de uma vez.
+2. **Renderizar a página com o navegador** para capturar os links que o JS monta
+   — só vale se a estrutura se provar estável.
+3. Continuar como conteúdo curado, que é o estado atual.
+
+A tela `/dashboard/funrigs` segue com `AvisoCurado`, dizendo que não é
+automática. Isso continua correto — e agora está medido, não suposto.
+
+---
+
+## 6-b. Registro original da medição
+
+
 
 Busca no CKAN `dados.rs.gov.br` por `funrigs`, `calamidade` e `reconstru`:
 **zero pacotes** nos três. Confirma o que `docs/MAPA_RS.md` §13 registrou.
