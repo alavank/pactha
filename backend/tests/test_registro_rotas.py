@@ -280,10 +280,16 @@ def test_as_rotas_sensiveis_nunca_sao_livres(metodo, caminho):
 # A lista e ESCRITA, e nao calculada, porque o valor dela e a diferenca: foi
 # assim que `sessoes.capturar` apareceu — orfa no catalogo enquanto a rota que
 # devia cobra-la, `POST /api/session-capture`, estava na allowlist de livres.
+#
+# ⚠️ `usuarios.excluir` SAIU desta lista: ela ganhou rota de verdade em
+# `DELETE /api/users/{user_id}` (routers/users.py). Enquanto ficou aqui, a
+# lista dizia "esta chave não é exigida por rota nenhuma" sobre uma chave que
+# era — e o teste da segunda metade, que existe justamente para pegar isso,
+# vinha falhando desde então.
 PERMISSOES_SEM_ROTA = {
     "acordofes.exportar", "bi.exportar", "bi.tela", "cauc.exportar",
     "fns.exportar", "frescor.exportar", "gestao.exportar", "simec.exportar",
-    "sismob.exportar", "usuarios.excluir",
+    "sismob.exportar",
 }
 
 
