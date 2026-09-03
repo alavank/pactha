@@ -102,6 +102,48 @@ def test_a_tela_mostra_o_TR_do_dado_aberto_quando_a_versao_logada_nao_veio():
         "abrir o portal")
 
 
+def test_o_RM_usa_o_CSV_quando_a_versao_logada_nao_veio():
+    """A precedência: rótulo rico > situação do CSV > nada.
+
+    ⚠️ A chamada de UM argumento tem de continuar valendo. `_projeto_basico_resumo`
+    ganhou um segundo parâmetro opcional; se ele virasse obrigatório, qualquer
+    outro chamador quebraria — e o RM inteiro para de montar.
+    """
+    from services.rm_builder import _projeto_basico_resumo as R
+    rico = {"situacao": "Em Análise", "documentos": [{"descricao": "Termo de Referência"}]}
+    assert R(None, "Em Análise") == "Em Análise"          # o caso real de hoje
+    assert R({}, "Em Análise") == "Em Análise"            # JSONB vazio também cai no CSV
+    assert R(rico, "Aprovado") == "Termo de Referência — Em Análise"  # rica ganha
+    assert R(None, None) == "" and R(None, "") == ""      # sem nada, linha some
+    assert R(rico) == "Termo de Referência — Em Análise"  # chamada antiga intacta
+    assert R(None) == ""
+
+
+def test_o_RM_imprime_o_TR_em_convenio_NORMAL():
+    """⚠️ ERA O TERCEIRO PORTÃO, e o que bloqueava mesmo com o dado em mãos.
+
+    `_clausula_destaque` começa com `if not _tem_clausula(item): return None`, e a
+    linha do TR morava lá dentro. Um convênio de contratação "Normal" — como o
+    981397/2025 de Araújos, com TR "Em Análise" — não imprimia o TR nem depois de
+    consertar coleta e sessão.
+    """
+    from services.rm_pdf import _campos_do_item, _tem_clausula
+    normal = {"situacao_contratacao": "Normal", "projeto_basico": "Em Análise"}
+    campos = dict(_campos_do_item(normal))
+    assert campos.get("Projeto Básico/Termo de Referência") == "Em Análise", (
+        "convênio Normal voltou a não imprimir o Termo de Referência")
+
+    # E não pode DUPLICAR: com cláusula, quem imprime é a caixa de destaque.
+    comcl = {"situacao_contratacao": "Cláusula Suspensiva", "projeto_basico": "Em Análise"}
+    assert _tem_clausula(comcl)
+    assert "Projeto Básico/Termo de Referência" not in dict(_campos_do_item(comcl)), (
+        "a mesma informação passou a sair duas vezes na mesma página")
+
+    # Sem dado, nenhuma linha — melhor calar que afirmar ausência não medida.
+    assert "Projeto Básico/Termo de Referência" not in dict(
+        _campos_do_item({"situacao_contratacao": "Normal"}))
+
+
 def test_o_coletor_continua_gravando_a_coluna():
     """Sem o coletor, a tela nova mostra vazio para sempre — e caladamente."""
     col = (RAIZ / "ingestion" / "transferegov_opendata.py").read_text(encoding="utf-8")

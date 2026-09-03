@@ -136,10 +136,20 @@ def test_a_coluna_nova_e_a_ULTIMA_do_select():
     sel = src[src.rindex("SELECT", 0, ini):ini]
     colunas = [c.strip() for c in sel.replace("SELECT", "", 1).split(",")]
     colunas = [c for c in colunas if c and not c.startswith("--")]
-    assert colunas[-1] == "valor_empenhado", \
-        f"valor_empenhado tem de ser a ULTIMA; a ultima e {colunas[-1]!r}"
-    assert colunas[-2] == "modalidade", "modalidade deixou de ser row[28]"
-    assert len(colunas) == 30, f"o SELECT tem {len(colunas)} colunas, esperava 30"
+    # ⚠️ ESTE GUARDA MORDEU DE VERDADE em 03/09/2026, e a atualizacao e o registro
+    # disso: `situacao_projeto_basico` foi pendurada DEPOIS de `valor_empenhado`
+    # (o Termo de Referencia do dado aberto, PR do TR), entao `valor_empenhado`
+    # deixou de ser a ultima. Nada quebrou porque o teste avisou antes.
+    #
+    # O que ele protege NAO mudou: as colunas novas entram no FIM, e os indices
+    # ja lidos continuam valendo. `valor_empenhado` segue sendo row[29] — o que
+    # importa e a POSICAO dele, nao ser o ultimo.
+    assert colunas[-1] == "situacao_projeto_basico", \
+        f"a ultima coluna virou {colunas[-1]!r} — quem entrar depois vai no FIM"
+    assert colunas.index("valor_empenhado") == 29, \
+        f"valor_empenhado saiu de row[29] (esta em row[{colunas.index('valor_empenhado')}])"
+    assert colunas.index("modalidade") == 28, "modalidade deixou de ser row[28]"
+    assert len(colunas) == 31, f"o SELECT tem {len(colunas)} colunas, esperava 31"
 
 
 def test_o_item_usa_as_duas_fontes_e_nao_so_a_listagem():
