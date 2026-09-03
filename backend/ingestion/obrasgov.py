@@ -6,6 +6,22 @@ execucao fisica, fontes de recurso, tomador e executor. Complementa o SISMOB (so
 saude) e o SIMEC (so educacao): aqui entra o resto — mobilidade, saneamento,
 habitacao, seguranca.
 
+⛔⛔ **MEDIDO EM 03/09/2026: A API RECUSA O IP DA VPS.** Tres tentativas
+espacadas de 90s, todas `429` em ~0,05s — e a primeira requisicao da bateria de
+reconhecimento, feita sem nenhuma chamada nossa anterior, ja veio 429. Rejeicao
+instantanea e assinatura de regra de borda, nao de servidor sobrecarregado: na
+mesma bateria, o SICONFI levou 0,23s para ENTREGAR 174 KB do mesmo IP.
+
+Nao e, portanto, penalidade acumulada vencivel por espacamento — e a segunda
+fonte barrada por faixa de datacenter, ao lado do TCE-RS. **A Scheduled Task
+deste coletor NAO e criada** enquanto isso valer. O codigo e os 13 testes ficam
+prontos; ligar e uma linha no dia em que houver liberacao ou proxy de saida.
+
+⚠️ A ressalva que a medicao NAO descarta: tres minutos de silencio nao excluem
+uma penalidade MUITO longa (o INFRA.md §5 documenta 6h no TransfereGov). Se um
+dia houver suspeita de que mudou, repita `scripts/medir_obrasgov_vps.sh` depois
+de horas sem nenhuma requisicao ao dominio.
+
 ⚠️⚠️ **ESTA API NAO TEM FILTRO POR MUNICIPIO.** Lido no OpenAPI em 02/09/2026
 (`/obrasgov/api/api-obrasgov-docs`, que fica atras de um `configUrl` proprio e
 nao no `/v3/api-docs` de sempre), os unicos parametros de
@@ -118,8 +134,18 @@ def varrer_uf(client: httpx.Client, uf: str) -> tuple[dict, bool]:
     for n in range(TETO_PAGINAS):
         d = pagina(client, uf, n)
         if d is None:
-            log.warning("  %s: varredura interrompida por rate limit na pagina %d "
-                        "(%d projeto(s) ate aqui) — resultado PARCIAL", uf, n, len(por_id))
+            # ⚠️ ONDE a varredura parou muda o diagnostico, e o log tem de dizer
+            # qual dos dois e — senao o operador trata bloqueio como lentidao e
+            # fica esperando melhorar sozinho.
+            if n == 0:
+                log.error("  %s: 429 JA NA PRIMEIRA PAGINA — isto e recusa ao IP, "
+                          "nao rate limit de carga (medido em 03/09/2026: tres "
+                          "tentativas espacadas de 90s, todas 429 em ~0,05s). "
+                          "Nao adianta espacar mais; ver o topo de ingestion/obrasgov.py",
+                          uf)
+            else:
+                log.warning("  %s: varredura interrompida por rate limit na pagina %d "
+                            "(%d projeto(s) ate aqui) — resultado PARCIAL", uf, n, len(por_id))
             return por_id, False
         conteudo = d.get("content") or []
         if not conteudo:
