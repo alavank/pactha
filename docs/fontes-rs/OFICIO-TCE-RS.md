@@ -29,8 +29,8 @@ os próprios atos ajuda o pedido, não atrapalha.
 
 ## 2. Ofício
 
-> **Assunto:** Solicitação de liberação de acesso automatizado ao Portal de Dados
-> Abertos (`dados.tce.rs.gov.br`)
+> **Assunto:** Solicitação de liberação de acesso automatizado aos serviços de
+> dados abertos do Tribunal (`dados.tce.rs.gov.br` e `portal.tce.rs.gov.br`)
 
 Ao Tribunal de Contas do Estado do Rio Grande do Sul
 [Ouvidoria / Serviço de Informação ao Cidadão — SIC]
@@ -54,24 +54,40 @@ Abertos deste Tribunal.
 
 **1. Do objeto**
 
-Os conjuntos de dados do LicitaCon e da execução orçamentária municipal,
-publicados em `dados.tce.rs.gov.br`, são acessíveis por navegador e por
-requisição automatizada a partir de conexões residenciais. Contudo, requisições
-originadas do endereço IP **54.232.208.118** (servidor em nuvem localizado em
-São Paulo/SP) recebem, de forma consistente, resposta **HTTP 403 (Forbidden)**.
+Os conjuntos de dados do LicitaCon, do LicitaCon Obras e da execução
+orçamentária municipal, publicados por este Tribunal, são acessíveis por
+navegador e por requisição automatizada a partir de conexões residenciais.
+Contudo, requisições originadas do endereço IP **54.232.208.118** (servidor em
+nuvem localizado em São Paulo/SP) recebem, de forma consistente, resposta
+**HTTP 403 (Forbidden)**.
 
-O comportamento foi verificado em três ocasiões independentes — **17 de agosto,
-29 de agosto e 3 de setembro de 2026** — nos seguintes endereços:
+O comportamento foi verificado em quatro ocasiões independentes — **17 de
+agosto, 29 de agosto e 3 de setembro de 2026 (duas medições neste último dia)**
+— e alcança **os dois serviços**, em endereços distintos:
 
-- `https://dados.tce.rs.gov.br/api/3/action/package_show?id=licitacoes-pm-de-nova-palma`
-- `https://dados.tce.rs.gov.br/dados/licitacon/licitacao/orgao/53100.csv.zip`
-- `https://dados.tce.rs.gov.br/dados/municipal/empenhos/2026/53100.csv.zip`
+*Portal de Dados Abertos (`dados.tce.rs.gov.br`)*
 
-Na mesma bateria de testes, e a partir do mesmo endereço IP, outros portais
-públicos estaduais responderam normalmente (`HTTP 200`), o que indica que a
-recusa é específica deste servidor e não decorre de indisponibilidade de rede.
-Os mesmos endereços respondem `HTTP 200` quando acessados de conexão
-residencial.
+- `/api/3/action/package_show?id=licitacoes-pm-de-nova-palma`
+- `/dados/licitacon/licitacao/orgao/53100.csv.zip`
+- `/dados/municipal/empenhos/2026/53100.csv.zip`
+
+*Serviços de consulta (`portal.tce.rs.gov.br`)*
+
+- `/api/qonws/q/licitacon_dominios.orgaos.json`
+- `/api/qonws/q/licitacon.remessas.json`
+- `/api/obras/v1/orgaos-fiscalizados`
+- `/api/obras/v1/orgaos/88488366000100/obras`
+
+Nos dois serviços a resposta é idêntica — mesmo corpo (199 bytes, página padrão
+"403 Forbidden") e mesmo tempo de resposta (0,08 a 0,09 segundo) —, o que sugere
+tratar-se de **uma única regra aplicada na borda da rede**, e não de
+configuração de cada aplicação.
+
+Na mesma bateria de testes, e a partir do mesmo endereço IP e no mesmo minuto,
+outros portais públicos estaduais responderam normalmente (`HTTP 200` em 0,35
+segundo, no caso do CHE/SEFAZ-RS), o que indica que a recusa não decorre de
+indisponibilidade de rede. Todos os endereços acima respondem `HTTP 200` quando
+acessados de conexão residencial.
 
 Presume-se tratar-se de regra genérica de proteção aplicada a faixas de
 endereços de datacenter, e não de restrição dirigida a este solicitante.
@@ -84,6 +100,14 @@ transferências voluntárias utilizado por **prefeituras gaúchas**, entre elas 
 licitação e contratação ao lado dos repasses federais e estaduais que os
 originam.
 
+Merece registro específico o **LicitaCon Obras**: o campo de origem do recurso,
+ali informado pelo próprio órgão fiscalizado, é o único registro público que
+vincula uma obra municipal ao convênio ou repasse que a financiou. É justamente
+esse vínculo que permite ao gestor municipal — e ao controle interno da
+prefeitura — acompanhar a execução física e financeira de cada obra ao lado do
+instrumento que a originou, finalidade convergente com a do próprio sistema
+instituído pela Resolução nº 1.176/2023 deste Tribunal.
+
 Não há redistribuição comercial dos dados brutos, tampouco tratamento de dados
 pessoais: os conjuntos utilizados referem-se a atos administrativos de pessoas
 jurídicas de direito público.
@@ -92,23 +116,30 @@ jurídicas de direito público.
 
 O acesso, se liberado, observará as seguintes práticas, já implementadas:
 
-- **Requisições condicionais** (`If-None-Match` / `If-Modified-Since`), de modo
-  que arquivos inalterados não sejam transferidos novamente;
+- **Requisições condicionais** (`If-None-Match` / `If-Modified-Since`) nos
+  arquivos, de modo que conteúdo inalterado não seja transferido novamente;
 - **Uma única rodada diária**, em horário de baixa demanda (madrugada), limitada
   aos órgãos dos municípios atendidos;
+- **Intervalo mínimo de meio segundo entre requisições**, com teto de tempo por
+  rodada e retomada na noite seguinte, de modo que a carga inicial se distribua
+  por vários dias em vez de concentrar-se em um;
+- Busca de detalhe **apenas para registros novos ou alterados** desde a rodada
+  anterior, aferida pelo campo de atualização informado pelo próprio serviço;
 - **Identificação do agente** em todas as requisições;
 - Respeito a limites de taxa e interrupção imediata mediante solicitação deste
   Tribunal.
 
-O volume estimado é de **dois arquivos por município por dia**, com transferência
-efetiva apenas quando houver publicação nova.
+Em regime estável, o volume estimado é de **algumas dezenas de requisições por
+município por dia**. A carga inicial é maior — da ordem de dois mil registros
+para um município de pequeno porte e doze mil para um de médio porte —, e é
+justamente por isso que se propõe distribuí-la ao longo de vários dias.
 
 **4. Do pedido**
 
 Diante do exposto, solicito:
 
-**a)** a liberação do endereço IP **54.232.208.118** para acesso ao portal
-`dados.tce.rs.gov.br`; ou, alternativamente,
+**a)** a liberação do endereço IP **54.232.208.118** para acesso aos serviços
+`dados.tce.rs.gov.br` e `portal.tce.rs.gov.br`; ou, alternativamente,
 
 **b)** a indicação do procedimento adequado para obtenção de acesso
 automatizado — cadastro prévio, chave de identificação, endereço alternativo ou
@@ -130,13 +161,16 @@ Respeitosamente,
 
 ## 3. Versão curta (formulário eletrônico do SIC)
 
-> Requisições automatizadas ao portal de dados abertos
-> (`dados.tce.rs.gov.br`) originadas do IP 54.232.208.118 recebem HTTP 403 de
-> forma consistente, verificado em 17/08, 29/08 e 03/09/2026, nos endpoints do
-> LicitaCon (`/dados/licitacon/licitacao/orgao/{código}.csv.zip`) e da execução
-> orçamentária. Os mesmos endereços respondem HTTP 200 a partir de conexões
-> residenciais, e outros portais estaduais respondem normalmente do mesmo IP —
-> o que sugere filtro aplicado a faixas de datacenter.
+> Requisições automatizadas aos serviços de dados abertos do Tribunal
+> (`dados.tce.rs.gov.br` e `portal.tce.rs.gov.br`) originadas do IP
+> 54.232.208.118 recebem HTTP 403 de forma consistente, verificado em 17/08,
+> 29/08 e 03/09/2026, tanto nos arquivos do LicitaCon
+> (`/dados/licitacon/licitacao/orgao/{código}.csv.zip`) quanto nas APIs de
+> consulta (`/api/qonws/q/...` e `/api/obras/v1/...`). Nos dois serviços a
+> resposta é idêntica em corpo e em tempo (0,08 s), o que sugere regra única de
+> borda. Os mesmos endereços respondem HTTP 200 a partir de conexões
+> residenciais, e outros portais estaduais respondem normalmente do mesmo IP no
+> mesmo minuto — o que sugere filtro aplicado a faixas de datacenter.
 >
 > Os dados são utilizados em painel de acompanhamento de convênios e contratos
 > para prefeituras gaúchas, e o acesso observa requisições condicionais

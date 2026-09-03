@@ -392,6 +392,13 @@ MIGRATION_FILES = [
     # de HTTP CONDICIONAL do repo (a auditoria de 29/08 mediu zero ETag em 44
     # coletores). Depende so de `municipios`.
     "add_tce_rs.sql",
+    # TCE-RS pelo PORTAL: o mesmo Tribunal por um host que responde
+    # (portal.tce.rs.gov.br, API aberta) — remessa, obra, medicao e a ORIGEM DO
+    # RECURSO, que liga a obra ao convenio que a pagou. ⚠️ DEPOIS de
+    # `add_tce_rs.sql`: acrescenta colunas a `tce_rs_licitacoes` e
+    # `tce_rs_contratos`, que nascem la. Inverter a ordem quebra banco NOVO —
+    # a mesma armadilha que `tests/test_migrations_ordem_tabela.py` guarda.
+    "add_tce_rs_portal.sql",
     # Obras.gov.br/CIPI: as obras federais que nao sao de saude (SISMOB) nem
     # de educacao (SIMEC). Depende so de `municipios`.
     "add_obrasgov.sql",

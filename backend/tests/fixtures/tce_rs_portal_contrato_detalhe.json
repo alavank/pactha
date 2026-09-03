@@ -1,0 +1,33 @@
+{
+ "CD_ORGAO": "53100",
+ "DS_ORGAO": "PM DE NOVA PALMA",
+ "NR_CONTRATO": 102,
+ "ANO_CONTRATO": 2026,
+ "TP_INSTRUMENTO": "C",
+ "TP_SITUACAO_CONTRATO": "V",
+ "DS_SITUACAO": "Vigente",
+ "APLIC_ORIGEM": "WEB",
+ "DS_OBJETO": "Fornecimento de troféus personalizados, destinados dos campeonatos municipais de futsal, futebol de campo e bocha promovidas pela Prefeitura Municipal de Nova Palma/RS.\r\n\r\n",
+ "LINK_CIDADAO": "https://portal.tce.rs.gov.br/aplicprod/f?p=50500:23:::NO:23:P23_ID_CONTRATO,P23_PAG_RETORNO,F50500_CD_ORGAO:1368768,25,53100&cs=1EmcESD6vnCkNebVIDFIxusMPGUQ",
+ "DT_ASSINATURA": "2026-08-31 00:00:00",
+ "DT_INICIO_VIGENCIA": "2026-08-31 00:00:00",
+ "DT_FINAL_VIGENCIA": "2026-10-30 00:00:00",
+ "VALOR_INICIAL": 17995.0,
+ "VALOR_ATUAL": 17995.0,
+ "CONTRATADO": "Andreia Arlete Weise Fim",
+ "CPF_CNPJ_CONTRATADO": "94573169000184",
+ "LICITACAO_ORIGEM": "Processo de Dispensa 344 / 2026",
+ "EVENTOS": [],
+ "FISCAIS": [
+  {
+   "NM_RESPONSAVEL_CONTRATO": "Willian da Silva",
+   "TP_RESPONSAVEL": "Fiscal",
+   "DT_INICIO_RESP": "2026-08-31 00:00:00",
+   "DT_FINAL_RESP": null
+  }
+ ],
+ "DATA_INCLUSAO": "2026-08-31 15:25:30",
+ "DATA_ATUALIZACAO": "2026-08-31 23:48:37",
+ "EVALIDADOR_DATA_ULTIMA_REMESSA": null,
+ "EVALIDADOR_RVE_ULTIMA_REMESSA": null
+}

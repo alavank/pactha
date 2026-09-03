@@ -140,6 +140,15 @@ FRESCOR_HORAS_POR_UF = {
         # 30h porque o que se vigia e a RODADA, nao a mudanca da fonte: 304 e
         # sucesso e carimba o log igual.
         "tce_rs": 30,
+        # TCE-RS pelo portal (portal.tce.rs.gov.br). Rodada diaria; 30h = quase
+        # cinco janelas perdidas, o mesmo criterio dos vizinhos.
+        #
+        # ⚠️ A PRIMEIRA CARGA LEVA VARIAS NOITES e isso NAO e defeito: o valor do
+        # contrato so existe no endpoint de detalhe, uma requisicao por contrato,
+        # e Santa Maria tem 6.213. O coletor gasta um orcamento de tempo por
+        # rodada e continua de onde parou — cada uma dessas rodadas grava
+        # `success`, entao o frescor fica em dia desde a primeira.
+        "tce_rs_portal": 30,
     },
 }
 

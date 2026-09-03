@@ -107,7 +107,8 @@ async def tce(
         {"m": municipio_id})).scalar()
     return {"tem_dados": True, "aviso": AVISO_TCE, **TCE,
             "municipio": {"tce_orgao_codigo": codigo},
-            "licitacon": await _licitacon(db, municipio_id)}
+            "licitacon": await _licitacon(db, municipio_id),
+            "obras": await _obras(db, municipio_id)}
 
 
 async def _licitacon(db: AsyncSession, municipio_id: int) -> dict:
@@ -136,7 +137,8 @@ async def _licitacon(db: AsyncSession, municipio_id: int) -> dict:
     # assinar o próximo, e o que vence junto com a vigência do convênio.
     vigentes = (await db.execute(text("""
         SELECT nr_contrato, ano_contrato, ds_objeto, vl_contrato,
-               dt_final_vigencia, nr_documento, link_licitacon
+               dt_final_vigencia, nr_documento, link_licitacon,
+               nm_contratado, vl_atual
           FROM tce_rs_contratos
          WHERE municipio_id = :m AND dt_final_vigencia >= CURRENT_DATE
          ORDER BY dt_final_vigencia LIMIT 10
@@ -165,5 +167,86 @@ async def _licitacon(db: AsyncSession, municipio_id: int) -> dict:
             "vigencia_ate": r[4].isoformat() if r[4] else None,
             "contratado_documento": r[5],
             "link": r[6],
+            "contratado": r[7],
+            # ⚠️ O valor DEPOIS dos aditivos. Vem só do coletor do portal e só
+            # quando o detalhe daquele contrato já foi buscado — `None` aqui é
+            # "ainda não perguntei", não "não teve aditivo". A tela mostra a
+            # diferença apenas quando ela existe.
+            "valor_atual": float(r[8]) if r[8] is not None else None,
         } for r in vigentes],
+    }
+
+
+async def _obras(db: AsyncSession, municipio_id: int) -> dict:
+    """LicitaCon Obras — a execução da obra e o convênio que a pagou.
+
+    ⚠️ `coletado: false` com zero obra NÃO é "o município não tem obra". O
+    LicitaCon Obras é de 2024 e município pequeno pode não ter obra sujeita a
+    registro: Nova Palma tem 0 e Santa Maria, 120. A tela precisa dizer isso —
+    e a diferença entre "não coletamos" e "coletamos e não há" está no `status`
+    da rodada, não nesta contagem."""
+    linhas = (await db.execute(text("""
+        SELECT o.id_obra, o.ds_objeto, o.ds_situacao_obra, o.nm_contratado,
+               o.vl_atual, o.vl_total_medido, o.pc_financeiro_exec,
+               o.pc_executado, o.dt_fim_vigencia, o.dt_evento_paralisacao,
+               o.ds_motivo_paralisacao, o.qt_medicoes, o.dt_ultima_medicao,
+               o.nr_contrato, o.ano_contrato, o.atualizado_em
+          FROM tce_rs_obras o
+         WHERE o.municipio_id = :m
+         ORDER BY (o.dt_evento_paralisacao IS NOT NULL) DESC,
+                  o.vl_atual DESC NULLS LAST
+         LIMIT 20
+    """), {"m": municipio_id})).fetchall()
+
+    recursos = (await db.execute(text("""
+        SELECT id_obra, ds_tp_recurso, ds_fonte_recurso, ds_convenio_contrato,
+               vl_recurso, vl_contrapartida, cod_tp_recurso
+          FROM tce_rs_obras_recursos
+         WHERE municipio_id = :m
+         ORDER BY vl_recurso DESC NULLS LAST
+    """), {"m": municipio_id})).fetchall()
+
+    if not linhas:
+        return {"coletado": False}
+
+    por_obra: dict[int, list] = {}
+    for r in recursos:
+        por_obra.setdefault(r[0], []).append({
+            "tipo": r[1], "fonte": r[2], "convenio": r[3],
+            "valor": float(r[4]) if r[4] is not None else None,
+            "contrapartida": float(r[5]) if r[5] is not None else None,
+            # FDL/EST/PRO — o código é o que permite à tela separar convênio
+            # federal de estadual sem depender do texto, que a fonte escreve
+            # como quer.
+            "codigo": r[6],
+        })
+
+    carimbos = [r[15] for r in linhas if r[15]]
+    return {
+        "coletado": True,
+        "atualizado_em": max(carimbos).isoformat() if carimbos else None,
+        "total": len(linhas),
+        "paralisadas": sum(1 for r in linhas if r[9]),
+        "com_origem_declarada": len(por_obra),
+        "obras": [{
+            "id": r[0],
+            "objeto": r[1],
+            "situacao": r[2],
+            "contratado": r[3],
+            "valor": float(r[4]) if r[4] is not None else None,
+            "medido": float(r[5]) if r[5] is not None else None,
+            # ⚠️ DOIS PERCENTUAIS, e eles divergem: numa obra real de Santa
+            # Maria o financeiro está em 90,6% e o físico em 0,0, porque o órgão
+            # mede o pagamento e não alimenta o avanço da obra. Mostrar um pelo
+            # outro inventaria execução que ninguém declarou.
+            "pc_financeiro": float(r[6]) if r[6] is not None else None,
+            "pc_fisico": float(r[7]) if r[7] is not None else None,
+            "vigencia_ate": r[8].isoformat() if r[8] else None,
+            "paralisada_em": r[9].isoformat() if r[9] else None,
+            "motivo_paralisacao": r[10],
+            "medicoes": r[11],
+            "ultima_medicao": r[12].isoformat() if r[12] else None,
+            "contrato": f"{r[13]}/{r[14]}" if r[13] and r[14] else None,
+            "recursos": por_obra.get(r[0], []),
+        } for r in linhas],
     }
