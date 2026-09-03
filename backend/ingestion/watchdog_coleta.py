@@ -103,6 +103,11 @@ FRESCOR_HORAS_NACIONAL = {
     # + folga. NACIONAL: varre todo municipio ativo com ibge_code, sem recorte
     # de estado — o lugar e aqui, nunca no mapa por UF.
     "siconfi": 30,
+    # ⚠️ `portal_transparencia` NAO ENTRA AQUI de proposito. Ele e um scaffold
+    # inerte (sem PORTAL_TRANSPARENCIA_API_KEY nao coleta nada) e nao tem
+    # Scheduled Task. Por-lo no catalogo faria o vigia cobrar frescor de uma
+    # fonte que ninguem ligou — que e exatamente a armadilha do `SISMOB_ENABLED=0`
+    # documentada no INFRA.md. Entra junto com a decisao de ligar.
 }
 
 # Fontes que so existem para certas UFs. A chave e a UF do TENANT (ha municipio
