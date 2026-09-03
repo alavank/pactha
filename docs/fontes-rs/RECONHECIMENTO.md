@@ -171,7 +171,43 @@ funcionamento, não otimização.
 
 ---
 
-## 7. S2iD — viável, esforço médio
+## 7. S2iD — a estrutura está mapeada; o filtro, não
+
+> **Atualizado em 03/09/2026, depois de tentar de verdade.** A conclusão de
+> "esforço médio" abaixo era otimista: o POST JSF funciona, mas o filtro não.
+
+**O que se conseguiu:**
+
+- A sessão JSF abre, o `javax.faces.ViewState` é extraído e o POST parcial
+  (`Faces-Request: partial/ajax`) responde **HTTP 200** com XML de update — ou
+  seja, o servidor aceita o diálogo, não há captcha nem bloqueio.
+- A tabela `resultados` tem **exatamente as colunas que interessam**:
+  `Localidade · Municípios · Reconhecimentos · Estado de Calamidade Pública (ECP)
+  · Situação de Emergência (SE) · Ano · Documento`.
+- O select de recorte é por **UF** (`Brasil` + 27 estados), não por município.
+
+**Onde parou:** selecionar `RS` e acionar o botão devolve a tabela **zerada**
+(`Todos os registros acima | 0 | 0 | 0 | 0`). Falta um parâmetro — provavelmente
+período/ano, que os componentes `j_idt23`/`j_idt25` sugerem. Duas sequências
+foram tentadas (valueChange isolado, e valueChange seguido do botão com
+`execute=@all`), com o ViewState renovado entre elas.
+
+**⚠️ E há uma armadilha estrutural, independente disso:** os componentes têm id
+gerado (`j_idt30`, `j_idt34`). Esses números **mudam quando o Estado edita a
+página** — um coletor amarrado a eles quebra em silêncio na próxima manutenção,
+e o sintoma seria exatamente este: tabela zerada, HTTP 200, nenhum erro. Se esta
+fonte for retomada, o seletor tem de sair do **rótulo** ou da posição do
+componente, nunca do `j_idt`.
+
+**Recomendação:** retomar com o DevTools do navegador aberto na página, copiando
+o POST real que o filtro dispara — meia hora de observação vale mais que
+tentativa às cegas, e a Chrome extension do repo já serve para isso. O dado
+(reconhecimento de SE/ECP por município, com data e portaria) continua valendo o
+esforço: é o eixo de desastre que o produto não tem.
+
+---
+
+## 7-b. Nota original (16/08), mantida para contraste — "viável, esforço médio"
 
 `s2id.mi.gov.br` responde 200. Não há `robots.txt` (a rota devolve a página de
 erro do JSF). As duas áreas públicas existem:
