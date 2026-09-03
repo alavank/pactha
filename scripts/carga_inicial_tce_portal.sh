@@ -104,18 +104,37 @@ IP_DB="$(ssh -i "$SSH_KEY" -o StrictHostKeyChecking=accept-new -o ConnectTimeout
 [ -n "$IP_DB" ] || { echo "!! nao achei o container $DB_UUID no host" >&2; exit 1; }
 echo "   $DB_UUID -> $IP_DB"
 
-# 3. Tunel. ControlMaster para poder fecha-lo com precisao no fim (e no trap):
-#    um `ssh -f -N` solto ficaria orfao se este script morresse no meio.
-CTRL="$(mktemp -u)"
-fechar_tunel() {
-  ssh -S "$CTRL" -O exit "root@$HOST" 2>/dev/null || true
-}
-trap fechar_tunel EXIT INT TERM
-
+# 3. Tunel.
+#
+#    ⚠️ SEM ControlMaster de proposito: `-M -S <socket>` NAO funciona no OpenSSH
+#    do Windows (multiplexing depende de socket unix), e este script roda da
+#    maquina do dono. O jeito portatil e o processo em background do proprio
+#    shell, cujo PID da para guardar — um `ssh -f` iria para background sozinho
+#    e deixaria um tunel orfao se o script morresse no meio.
 echo "-- abrindo tunel localhost:$PORTA_LOCAL -> $IP_DB:5432"
-ssh -i "$SSH_KEY" -M -S "$CTRL" -f -N \
-    -o ExitOnForwardFailure=yes -o ConnectTimeout=20 \
-    -L "$PORTA_LOCAL:$IP_DB:5432" "root@$HOST"
+ssh -i "$SSH_KEY" -N -o ExitOnForwardFailure=yes -o ConnectTimeout=20 \
+    -o StrictHostKeyChecking=accept-new \
+    -L "$PORTA_LOCAL:$IP_DB:5432" "root@$HOST" &
+SSH_PID=$!
+trap 'kill "$SSH_PID" 2>/dev/null || true' EXIT INT TERM
+
+# Espera a porta atender, em vez de dormir um tempo fixo: o tunel sobe em menos
+# de um segundo numa rede boa e pode levar cinco numa ruim, e um `sleep 2` chuta
+# errado nos dois casos.
+echo -n "   aguardando a porta"
+for _ in $(seq 1 30); do
+  if python -c "
+import socket,sys
+s=socket.socket(); s.settimeout(1)
+sys.exit(0 if s.connect_ex(('127.0.0.1', $PORTA_LOCAL))==0 else 1)
+" 2>/dev/null; then
+    echo " ok"
+    break
+  fi
+  kill -0 "$SSH_PID" 2>/dev/null || { echo; echo "!! o tunel caiu ao subir" >&2; exit 1; }
+  echo -n "."
+  sleep 1
+done
 
 export DATABASE_URL_SYNC="$(leia_url url)"
 export TCE_RS_PORTAL_ORCAMENTO_S="$ORCAMENTO"
