@@ -10,7 +10,49 @@
 
 ---
 
-## 1. Veredito por fonte
+## 0. ⭐ MEDIDO DA VPS — 03/09/2026, 03:11 UTC
+
+Rodado por `scripts/reconhecimento_fontes_vps.sh` do IP **54.232.208.118**, que
+é onde os coletores vivem. **Os dois controles positivos passaram** (CHE em
+`200`/362 ms e CKAN da CAGE em `200`/113 ms), então nada abaixo é problema de
+rede — cada resultado é da fonte.
+
+Carga do host no momento: **0,44 / 0,49 / 0,45**. Há folga.
+
+| Fonte | Da VPS | Veredito |
+|---|---|---|
+| **TCE-RS** — CKAN, ZIP de licitações e ZIP de empenhos | **403 nos três** | ⛔ **Bloqueio confirmado**, terceira medição (17/08, 29/08, 03/09). Não é intermitência |
+| **SICONFI** | `200`, 174 KB em 227 ms | ✅ livre |
+| **IBGE** | `200` | ✅ livre |
+| **S2iD** | `200`, 17 KB | ✅ livre (o que falta é o filtro, §7) |
+| **Transparência RS** — dados abertos e calamidade | `200` | ✅ acessível, mas sem dado estruturado (§6) |
+| **FAMURS** | `200` | ✅ acessível — e sem serventia para nossos municípios (§5) |
+| **Portal da Transparência (CGU)** | `401` | ✅ a API responde; falta só a chave |
+| **dados.gov.br** | `401` | idem |
+| **Obras.gov.br** | **`429` na primeira requisição** | ⚠️ ver abaixo |
+| **`reconstrucao.fazenda.rs`** | **`000` — sem resposta** | ⛔ não resolve da VPS. Reforça o veredito do §6 |
+
+### O que isto decide
+
+1. **TCE-RS entra pronto e DESLIGADO.** O coletor, os 22 testes e a tela estão
+   feitos; a Scheduled Task **não é criada** enquanto o 403 valer. A tela diz,
+   com todas as letras, que ausência de dado não é ausência de licitação. O
+   caminho agora é institucional, não técnico: pedir liberação ao Tribunal.
+
+2. **SICONFI pode ser ligado imediatamente.** 227 ms e 174 KB numa consulta
+   real, do IP certo.
+
+3. **⚠️ Obras.gov.br precisa de segunda medição.** O `429` veio na **primeira**
+   requisição da bateria — e isso não distingue duas causas muito diferentes:
+   penalidade acumulada no IP (o `INFRA.md` §5 documenta que a API de
+   Transferências Especiais já deixou esta VPS 6 horas de castigo) ou recusa
+   imediata a faixa de datacenter. A diferença importa: no primeiro caso o
+   coletor funciona com espaçamento; no segundo, não funciona. **Não condenar a
+   fonte com uma medição.**
+
+---
+
+## 1. Veredito por fonte (medições de 02/09, do IP residencial)
 
 | Fonte | Situação | O que decide |
 |---|---|---|
