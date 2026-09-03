@@ -18,6 +18,10 @@ from services.audit import registrar
 from services import authz
 from services.registro_rotas import exige, declarado
 from services.bi import anos_list
+# ⚠️ O RECORTE DESTA TELA MORA NO SERVICE, e a tela e os tres exports usam a
+# MESMA funcao. Ver o cabecalho de `services/convenios_filtro.py` para o
+# historico: cada copia deste predicado ja custou um documento errado.
+from services import convenios_filtro as filtro
 from models.user import User
 import math
 import os
@@ -93,39 +97,17 @@ def _proposta_vigencia(raw: dict):
 
 
 # ------------------------------------------------------------------- fonte
-# A regra de FONTE mora AQUI, num lugar so. `convenios_estadual` guarda TRES
-# origens: SIGCON-MG (convenio estadual de MG), GCONV-ES (o equivalente
-# capixaba) e FNS (propostas de saude, que NAO sao convenio e tem tela propria).
-# A regra estava copiada em quatro lugares deste arquivo, e foi essa duplicacao
-# que deixou o export PDF de fora e contar propostas de saude como convenio.
-_FNS_EXCL = or_(ConvenioEstadual.fonte.is_(None),
-                ~ConvenioEstadual.fonte.ilike("%FNS%"))
-
-
-def _cond_fonte(fonte: Optional[str], fontes: Optional[list[str]]):
-    """Sem escolha = a regra padrao da tela (tudo menos FNS).
-
-    'SIGCON' e 'SIGCON-MG' sao o MESMO pedido: o dropdown antigo mandava
-    'SIGCON', o novo manda o valor do banco. Os dois casam com as duas grafias
-    E com fonte NULA (linhas legadas de MG).
-
-    Substitui o `_asked_fns`, que significava "o caller citou FNS" e desligava a
-    exclusao para TODAS as fontes juntas — marcar tudo trazia conjunto errado."""
-    if fontes:
-        alvo: list[str] = []
-        com_nulo = False
-        for f in fontes:
-            if f.upper() in ("SIGCON", "SIGCON-MG"):
-                alvo.extend(["SIGCON-MG", "SIGCON"])
-                com_nulo = True
-            else:
-                alvo.append(f)
-        cond = ConvenioEstadual.fonte.in_(alvo)
-        return or_(cond, ConvenioEstadual.fonte.is_(None)) if com_nulo else cond
-    if fonte:
-        cond = ConvenioEstadual.fonte == fonte
-        return cond if "FNS" in fonte.upper() else and_(cond, _FNS_EXCL)
-    return _FNS_EXCL
+# ⚠️ A REGRA DE FONTE MUDOU DE CASA, e o alias abaixo existe só para os dois
+# call sites deste arquivo. Ela mora em `services/convenios_filtro.py` junto com
+# os outros sete filtros, porque o export precisa da MESMA regra e um service
+# não pode importar de um router (routers -> services -> models).
+#
+# O motivo original de ela existir continua valendo: `convenios_estadual` guarda
+# TRÊS origens — SIGCON-MG, GCONV-ES e FNS (propostas de saúde, que NÃO são
+# convênio e têm tela própria) — e a regra estava copiada em quatro lugares
+# deste arquivo, duplicação que "deixou o export PDF de fora e contar propostas
+# de saúde como convênio".
+_cond_fonte = filtro.cond_fonte
 
 
 def estadual_to_response(c: ConvenioEstadual) -> ConvenioResponse:
@@ -328,108 +310,24 @@ async def list_convenios(
     q = select(ConvenioEstadual)
     q_count = select(func.count()).select_from(ConvenioEstadual)
 
-    if municipio_id:
-        q = q.where(ConvenioEstadual.municipio_id == municipio_id)
-        q_count = q_count.where(ConvenioEstadual.municipio_id == municipio_id)
-    _anos = anos or ([ano] if ano else [])
-    if _anos:
-        q = q.where(ConvenioEstadual.ano.in_(_anos))
-        q_count = q_count.where(ConvenioEstadual.ano.in_(_anos))
-    if situacoes:
-        q = q.where(ConvenioEstadual.situacao.in_(situacoes))
-        q_count = q_count.where(ConvenioEstadual.situacao.in_(situacoes))
-    elif situacao:
-        q = q.where(ConvenioEstadual.situacao.ilike(f"%{situacao}%"))
-        q_count = q_count.where(ConvenioEstadual.situacao.ilike(f"%{situacao}%"))
-    _pagamentos = pagamentos or ([pagamento] if pagamento else [])
-    if _pagamentos:
-        vr = ConvenioEstadual.valor_repassado
-        vc = ConvenioEstadual.valor_concedente
-        # UNIAO, nao intersecao: marcar "pago" e "parcial" tem que trazer os
-        # dois grupos. Com AND o resultado seria sempre vazio, porque as
-        # condicoes se excluem — filtro que devolve zero parece base sem dado.
-        _regras = {
-            "pago":     and_(vr.is_not(None), vr > 0, vc.is_not(None), vr >= vc),
-            "parcial":  and_(vr.is_not(None), vr > 0, or_(vc.is_(None), vr < vc)),
-            "nao_pago": or_(vr.is_(None), vr == 0),
-        }
-        conds = [_regras[p] for p in _pagamentos if p in _regras]
-        if conds:
-            pcond = conds[0] if len(conds) == 1 else or_(*conds)
-            q = q.where(pcond)
-            q_count = q_count.where(pcond)
-    # Esta e a tela de CONVENIOS ESTADUAIS. `convenios_estadual` tambem guarda
-    # PROPOSTAS do FNS (saude), que NAO sao convenio e tem tela propria — por
-    # isso, sem escolha de fonte, elas ficam de fora.
-    #
-    # O bloco anterior tinha uma variavel `_asked_fns` que significava "o caller
-    # citou FNS" e, quando verdadeira, desligava a exclusao para TODAS as fontes
-    # juntas — entao "Marcar tudo" no filtro devolvia um conjunto que nao era
-    # nem o padrao nem a uniao pedida. Agora a regra e uma so, em `_cond_fonte`.
-    _cf = _cond_fonte(fonte, fontes)
-    q = q.where(_cf)
-    q_count = q_count.where(_cf)
-    _vigencias = vigencias or ([vigencia] if vigencia else [])
-    if _vigencias:
-        hoje = date.today()
-        dv = ConvenioEstadual.dt_vigencia_atual
-        # UNIAO pelo mesmo motivo do pagamento. Note que "vence60" e um
-        # SUBCONJUNTO de "vence120": marcar os dois e igual a marcar so o 120,
-        # e isso e o esperado — nao ha o que "somar" alem do maior.
-        _regras = {
-            "vence30":   and_(dv >= hoje, dv <= hoje + timedelta(days=30)),
-            "vence60":   and_(dv >= hoje, dv <= hoje + timedelta(days=60)),
-            "vence90":   and_(dv >= hoje, dv <= hoje + timedelta(days=90)),
-            "vence120":  and_(dv >= hoje, dv <= hoje + timedelta(days=120)),
-            "prestacao": dv < hoje - timedelta(days=90),
-        }
-        conds = [_regras[v] for v in _vigencias if v in _regras]
-        if conds:
-            vcond = conds[0] if len(conds) == 1 else or_(*conds)
-            q = q.where(vcond)
-            q_count = q_count.where(vcond)
-    if vig_fim_de or vig_fim_ate:
-        # `dt_vigencia_atual` e a data que a tela mostra e a que o alerta usa;
-        # `dt_vigencia_final` e o fim FORMAL, que diverge quando houve aditivo.
-        # Filtrar pela primeira mantem o filtro coerente com a coluna "Fim da
-        # Vigencia" — filtro que discorda da tela destroi a confianca no numero.
-        dv = func.coalesce(ConvenioEstadual.dt_vigencia_atual,
-                           ConvenioEstadual.dt_vigencia_final)
-        if vig_fim_de:
-            q = q.where(dv >= vig_fim_de)
-            q_count = q_count.where(dv >= vig_fim_de)
-        if vig_fim_ate:
-            q = q.where(dv <= vig_fim_ate)
-            q_count = q_count.where(dv <= vig_fim_ate)
-    if search:
-        term = f"%{search}%"
-        search_filter = or_(
-            ConvenioEstadual.objeto.ilike(term),
-            # `objetivo` tambem: no dialeto do ES a descricao vive NESTA coluna e
-            # `objeto` guarda o codigo do processo. Sem isto, buscar "praca" ou
-            # "ambulancia" no Trust devolve ZERO com o convenio na tela ao lado.
-            # No-op em MG (objetivo e NULO em 869 de 869 linhas); no ES leva
-            # PAVIMENTA de 0 para 3 resultados e PRACA de 0 para 5.
-            ConvenioEstadual.objetivo.ilike(term),
-            ConvenioEstadual.nr_sigcon.ilike(term),
-            ConvenioEstadual.nr_siafi.ilike(term),
-            ConvenioEstadual.nr_plano_trabalho.ilike(term),
-            ConvenioEstadual.raw_data["nr_proposta"].astext.ilike(term),
-            ConvenioEstadual.raw_data["nr_instrumento"].astext.ilike(term),
-            ConvenioEstadual.raw_data["nr_plano"].astext.ilike(term),
-            ConvenioEstadual.raw_data["nr_plano_sigcon"].astext.ilike(term),
-            # O numero publicado do ES vive em `numOriginal` (`nr_instrumento` e
-            # NULO nas 25 de 25 linhas do GConv). Sem esta linha o modal passa a
-            # exibir "004/2026" e a busca por "004/2026" devolve ZERO com o
-            # convenio na lista atras — o mesmo defeito que a busca por
-            # `objetivo` fechou no PR anterior. E mais um ramo de OR: so pode
-            # aumentar o resultado, e a chave nao existe em nenhuma linha
-            # SIGCON-MG nem FNS.
-            ConvenioEstadual.raw_data["numOriginal"].astext.ilike(term),
-        )
-        q = q.where(search_filter)
-        q_count = q_count.where(search_filter)
-
+    # ⚠️ O RECORTE VEM DO SERVICE, e a tela e os tres exports usam A MESMA
+    # funcao. Isto aqui eram ~100 linhas de montagem de filtro, e a copia delas
+    # no export PDF (a quinta da familia) e o que fazia o documento sair com a
+    # base inteira enquanto a tela mostrava o recorte pedido.
+    # `tests/test_convenios_filtro.py` compara as assinaturas dos dois lados,
+    # para que um parametro novo nao possa nascer so num deles.
+    _conds, _ = filtro.condicoes(
+        municipio_id=municipio_id, ano=ano, anos=anos,
+        situacao=situacao, situacoes=situacoes,
+        fonte=fonte, fontes=fontes,
+        vigencia=vigencia, vigencias=vigencias,
+        pagamento=pagamento, pagamentos=pagamentos,
+        vig_fim_de=vig_fim_de, vig_fim_ate=vig_fim_ate,
+        search=search,
+    )
+    for _c in _conds:
+        q = q.where(_c)
+        q_count = q_count.where(_c)
     total = (await db.execute(q_count)).scalar() or 0
 
     # ⚠️ ORDENA POR data-ou-ano, e nao so pela data. O coletor do SIGCON gravava
@@ -439,12 +337,13 @@ async def list_convenios(
     # convenios de Araujos, medido em 30/08/2026). O substituto saiu; para a
     # ordenacao nao regredir, o proprio SQL faz a queda para 1o de janeiro do
     # `ano` — no lugar onde ela e um criterio de ordem, e nao um fato exibido.
-    q = q.order_by(
-        func.coalesce(
-            ConvenioEstadual.dt_publicacao,
-            func.make_date(func.coalesce(ConvenioEstadual.ano, 1900), 1, 1),
-        ).desc().nullslast()
-    )
+    # ⚠️ A ORDEM TAMBEM MORA NO SERVICE. O export precisa repetir exatamente
+    # esta, senao as MESMAS linhas saem embaralhadas em relacao a tela: o
+    # `_sort_key` abaixo empata muito (todo NULL na mesma chave) e o `sort` do
+    # Python e estavel, entao os empates preservam a ordem de chegada — que e
+    # esta. Um export que rode so o WHERE entrega os empates na ordem arbitraria
+    # do Postgres.
+    q = q.order_by(filtro.ordem())
     q = q.offset((page - 1) * per_page).limit(per_page)
     result = await db.execute(q)
     convs = result.scalars().all()

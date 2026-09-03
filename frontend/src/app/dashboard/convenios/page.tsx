@@ -312,23 +312,41 @@ export default function ConveniosPage() {
     setData(null);
   }, [municipioId]);
 
+  /* ⚠️ UMA SÓ MONTAGEM DE FILTROS, usada pela listagem E pelos exports.
+   *
+   * O `exportPdf` mandava só `{ municipio_id }` — por isso o documento saía com
+   * a base inteira mesmo com "Em vigor" marcado. Não era filtro perdido no
+   * caminho: ele nunca era enviado. Montar os params em dois lugares é como a
+   * divergência volta, então a tela passa a ter uma função só.
+   *
+   * ⚠️ `debouncedSearch`, e NÃO `searchTerm`: o documento tem de carregar o
+   * termo que a tela realmente consultou, não o que está sendo digitado. */
+  const filtrosParams = useCallback((): Record<string, string | number | string[]> => {
+    // `municipioId` é `string | null` enquanto o contexto carrega. Os dois
+    // chamadores já saem cedo quando ele é nulo (`if (!municipioId) return`);
+    // o `?? ""` existe só para o tipo, e um `""` nunca chega ao servidor.
+    const p: Record<string, string | number | string[]> = { municipio_id: municipioId ?? "" };
+    if (fontesSel.length) p.fontes = fontesSel;
+    if (situacoesSel.length) p.situacoes = situacoesSel;
+    if (pagamentosSel.length) p.pagamentos = pagamentosSel;
+    if (anosSel.length) p.anos = anosSel;
+    if (vigenciasSel.length) p.vigencias = vigenciasSel;
+    if (intervalo.de) p.vig_fim_de = intervalo.de;
+    if (intervalo.ate) p.vig_fim_ate = intervalo.ate;
+    if (debouncedSearch) p.search = debouncedSearch;
+    return p;
+  }, [municipioId, fontesSel, situacoesSel, pagamentosSel, anosSel, vigenciasSel,
+      intervalo, debouncedSearch]);
+
   const fetchData = useCallback(() => {
     if (!municipioId) return;
     setLoading(true);
 
     const params: Record<string, string | number | string[]> = {
-      municipio_id: municipioId,
+      ...filtrosParams(),
       page,
       per_page: PER_PAGE,
     };
-    if (fontesSel.length) params.fontes = fontesSel;
-    if (situacoesSel.length) params.situacoes = situacoesSel;
-    if (pagamentosSel.length) params.pagamentos = pagamentosSel;
-    if (anosSel.length) params.anos = anosSel;
-    if (vigenciasSel.length) params.vigencias = vigenciasSel;
-    if (intervalo.de) params.vig_fim_de = intervalo.de;
-    if (intervalo.ate) params.vig_fim_ate = intervalo.ate;
-    if (debouncedSearch) params.search = debouncedSearch;
 
     const seq = ++reqSeq.current;
     api
@@ -338,7 +356,9 @@ export default function ConveniosPage() {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [municipioId, page, fontesSel, situacoesSel, pagamentosSel, anosSel, vigenciasSel, intervalo, debouncedSearch]);
+    // `filtrosParams` já depende dos oito filtros; repeti-los aqui só criaria
+    // duas listas para manter em sincronia.
+  }, [municipioId, page, filtrosParams]);
 
   useEffect(() => {
     fetchData();
@@ -425,17 +445,46 @@ export default function ConveniosPage() {
   //
   // Pelo `api` o pedido vai com o cookie e, se ainda assim tomar 401, o
   // interceptor renova a sessão e repete sozinho. Um `fetch` cru não tem isso.
-  const exportPdf = async () => {
+  const [exportando, setExportando] = useState<string | null>(null);
+
+  /* ⚠️ MANDA OS FILTROS DA TELA. Era aqui o defeito: ia só `municipio_id`, e o
+   * documento saía com a base inteira mesmo com "Em vigor" marcado.
+   *
+   * ⚠️ PDF ABRE EM ABA; Word e Excel BAIXAM. `window.open` num .xlsx entrega
+   * uma aba em branco e o arquivo perdido no perfil do navegador — o formato
+   * decide o gesto, não o gosto. */
+  const exportar = async (formato: "pdf" | "docx" | "xlsx") => {
+    if (!municipioId || exportando) return;
+    setExportando(formato);
     try {
       const r = await api.get("/export-pdf/convenios", {
-        params: { municipio_id: municipioId },
+        params: { ...filtrosParams(), formato },
         responseType: "blob",
       });
-      const u = URL.createObjectURL(r.data as Blob);
-      window.open(u, "_blank");
+      const blob = r.data as Blob;
+      /* ⚠️ CORPO DE ERRO CHEGA COMO BLOB. Com `responseType: "blob"` um 403 ou
+       * 500 vira um Blob de JSON, e sem esta checagem o navegador "baixa" a
+       * mensagem de erro com extensão .xlsx — o usuário abre um arquivo
+       * corrompido e culpa o Excel. Mesmo defeito já corrigido no
+       * AnotacaoModal. */
+      if (blob.type.includes("json") || blob.type.startsWith("text/")) {
+        const txt = await blob.text();
+        throw new Error(txt.slice(0, 200));
+      }
+      const u = URL.createObjectURL(blob);
+      if (formato === "pdf") {
+        window.open(u, "_blank");
+      } else {
+        const a = document.createElement("a");
+        a.href = u;
+        a.download = `convenios.${formato}`;
+        a.click();
+      }
       setTimeout(() => URL.revokeObjectURL(u), 60000);
     } catch {
-      alert("Não foi possível gerar o PDF. Tente novamente.");
+      alert("Não foi possível gerar o arquivo. Tente novamente.");
+    } finally {
+      setExportando(null);
     }
   };
 
@@ -483,9 +532,26 @@ export default function ConveniosPage() {
           {refreshMsg && (
             <span className="text-xs text-base-content/70 italic">{refreshMsg}</span>
           )}
-          <Button onClick={exportPdf} size="sm" variant="outline" title="Exportar para PDF">
-            📄 PDF
-          </Button>
+          {/* ⚠️ O TÍTULO DIZ QUE O ARQUIVO SEGUE OS FILTROS. Sem isso, quem foi
+              mordido pelo defeito antigo continua desconfiando do documento —
+              e desconfiança de relatório não se conserta só no backend. */}
+          <div className="flex items-center gap-1" role="group" aria-label="Exportar">
+            <Button onClick={() => exportar("pdf")} size="sm" variant="outline"
+                    disabled={!!exportando}
+                    title="Exportar em PDF, com os filtros aplicados">
+              {exportando === "pdf" ? "…" : "📄 PDF"}
+            </Button>
+            <Button onClick={() => exportar("docx")} size="sm" variant="outline"
+                    disabled={!!exportando}
+                    title="Exportar em Word, com os filtros aplicados">
+              {exportando === "docx" ? "…" : "📝 Word"}
+            </Button>
+            <Button onClick={() => exportar("xlsx")} size="sm" variant="outline"
+                    disabled={!!exportando}
+                    title="Exportar em Excel, com os filtros aplicados">
+              {exportando === "xlsx" ? "…" : "📊 Excel"}
+            </Button>
+          </div>
           {/* O botão dispara o scraper do PORTAL MINEIRO — fora de MG ele
               não tem o que pesquisar, então nem aparece. ("" = UF ainda
               carregando: mantém visível para não piscar em MG.) */}

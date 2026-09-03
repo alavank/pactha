@@ -18,6 +18,13 @@ RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRAPER = os.path.join(RAIZ, "ingestion", "sigcon_scraper.py")
 MIGRATION = os.path.join(RAIZ, "migrations", "limpa_dt_publicacao_substituta.sql")
 ROUTER = os.path.join(RAIZ, "routers", "convenios.py")
+# ⚠️ A ORDENACAO MUDOU DE ARQUIVO em 03/09/2026 e este teste veio junto. Ela saiu
+# de `routers/convenios.py` para `services/convenios_filtro.py:ordem()` porque os
+# exports precisam repetir EXATAMENTE a mesma ordem — sem isso as mesmas linhas
+# saem embaralhadas no documento, ja que `_sort_key` empata muito e o `sort` do
+# Python e estavel, preservando a ordem de chegada. O invariante que este arquivo
+# protege nao mudou; so o endereco.
+FILTRO = os.path.join(RAIZ, "services", "convenios_filtro.py")
 
 
 def _codigo(caminho: str, marca: str) -> str:
@@ -70,9 +77,14 @@ def test_a_ordenacao_nao_regride_sem_o_substituto():
     substituto, ordenar so por `dt_publicacao` jogaria 15 dos 28 convenios de
     Araujos para o fim da lista. A queda para 1o de janeiro do `ano` passa a ser
     feita no SQL da ordenacao — onde e criterio de ordem, nao fato exibido."""
-    src = _codigo(ROUTER, "#")
-    assert "func.make_date(" in src
+    src = _codigo(FILTRO, "#")
+    assert "func.make_date(" in src, (
+        "a queda para 1o de janeiro sumiu de `convenios_filtro.ordem()` — sem "
+        "ela, 15 dos 28 convenios de Araujos voltam para o fim da lista")
     assert re.search(r"func\.coalesce\(\s*ConvenioEstadual\.dt_publicacao", src)
+    # E o router tem de continuar usando ESSA ordem, e nao uma propria: duas
+    # ordenacoes e como a tela e o documento voltam a discordar.
+    assert "filtro.ordem()" in _codigo(ROUTER, "#")
 
 
 def test_a_ordem_resultante_e_a_mesma_de_antes():
