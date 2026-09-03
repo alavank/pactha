@@ -5,8 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 PACTHA is a monitoring platform for government grants/transfers (convênios, repasses,
-emendas) for Brazilian municipalities, tracking **19 official data sources** (federal +
-MG/ES/GO/RS state). The two newest, both added 02/09/2026: the health **fundo a fundo**
+emendas) for Brazilian municipalities, tracking **21 official data sources** (federal +
+MG/ES/GO/RS state). Two of them landed 02/09/2026 on `feat/fontes-rs`: **SICONFI/Tesouro** (contas entregues + CAPAG — the note that decides whether the município can borrow with a federal guarantee: Nova Palma is A+, Santa Maria is C) and **TCE-RS/LicitaCon** (864 licitações and 1.201 contratos in Nova Palma; the collector is ready but the Tribunal returns 403 to datacenter IPs, so the run reports `partial` with the reason instead of pretending the município has no bids). The two before them: the health **fundo a fundo**
 (ConsultaFNS, consolidated by bloco — the largest recurring federal health transfer, and
 the platform's only source of the money that sustains the network month to month) and the
 **radar de captação** (`siconv_programa.zip` — federal programs whose proposal window is
@@ -101,7 +101,7 @@ that area. Read the relevant one before making changes there:
 
 | Skill | Area |
 |---|---|
-| `ingestion` | scrapers/collectors, the 19 data sources, scheduling |
+| `ingestion` | scrapers/collectors, the 21 data sources, scheduling |
 | `migrations` | schema changes, `backend/migrations/`, `MIGRATION_FILES` |
 | `authz` | permissions, route registration, `AUTHZ_MODO`, row-level scope |
 | `secrets` | Cofre / AES credential storage, `COFRE_KEY` |
