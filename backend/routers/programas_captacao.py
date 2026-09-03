@@ -81,12 +81,29 @@ async def radar(
         "SELECT max(visto_em) FROM programas_captacao"))).scalar()
 
     linhas = (await db.execute(text("""
+        WITH hoje AS (SELECT (NOW() AT TIME ZONE 'America/Sao_Paulo')::date AS d),
+        base AS (
+          SELECT p.*,
+                 -- ⚠️ AS DUAS PORTAS, calculadas UMA VEZ e usadas no filtro, na
+                 -- ordenação e na resposta. Repetir a expressão nos três lugares
+                 -- é como eles passam a divergir: some um `dt_ini` de um deles e
+                 -- a tela promete uma janela que o filtro já não garante.
+                 (p.dt_fim_receb  >= h.d AND (p.dt_ini_receb  IS NULL OR p.dt_ini_receb  <= h.d)) AS porta_receb,
+                 (p.dt_fim_emenda >= h.d AND (p.dt_ini_emenda IS NULL OR p.dt_ini_emenda <= h.d)) AS porta_emenda,
+                 h.d AS hoje_br
+            FROM programas_captacao p CROSS JOIN hoje h
+        )
         SELECT id_programa, nome, orgao, modalidade, dt_ini_receb, dt_fim_receb,
                dt_fim_emenda, acao_orcamentaria, subtipo, cod_programa,
-               (dt_fim_receb  - (NOW() AT TIME ZONE 'America/Sao_Paulo')::date) AS dias,
-               (dt_fim_emenda - (NOW() AT TIME ZONE 'America/Sao_Paulo')::date) AS dias_emenda,
-               cardinality(ufs) AS qt_ufs
-          FROM programas_captacao
+               (dt_fim_receb  - hoje_br) AS dias,
+               (dt_fim_emenda - hoje_br) AS dias_emenda,
+               cardinality(ufs) AS qt_ufs,
+               -- ⚠️ COLUNAS NOVAS VAO NO FIM. As linhas sao lidas por indice
+               -- posicional (`r[0]`..`r[12]`) logo abaixo; inserir no meio
+               -- desloca tudo em silencio e a tela passa a mostrar um campo no
+               -- lugar de outro.
+               porta_receb, porta_emenda
+          FROM base
          WHERE ausente_desde IS NULL
            -- ⚠️ O "HOJE" E O DE BRASILIA, e nao o do servidor. `CURRENT_DATE`
            -- sai do fuso da sessao do Postgres, que nos containers e UTC: entre
@@ -95,15 +112,16 @@ async def radar(
            -- horas em que alguem correndo atras do prazo iria olhar. O mesmo
            -- criterio do `hoje_br()` no coletor; os dois tem de concordar,
            -- senao a tabela guarda um recorte e a tela mostra outro.
-           AND dt_fim_receb >= (NOW() AT TIME ZONE 'America/Sao_Paulo')::date
-           -- ⚠️ A JANELA TEM DOIS LADOS. "Aberto" é estar DENTRO do período de
-           -- recebimento, e não apenas antes do fim: um programa que só abre em
-           -- novembro entraria na conta de "abertos hoje" e o gestor montaria
-           -- proposta para um sistema que ainda não a aceita. Hoje são zero
-           -- casos no arquivo — a guarda existe porque o rótulo da tela promete
-           -- "hoje", e promessa de tela não pode depender da sorte do dia.
-           AND (dt_ini_receb IS NULL
-                OR dt_ini_receb <= (NOW() AT TIME ZONE 'America/Sao_Paulo')::date)
+           -- ⚠️ DUAS PORTAS: basta UMA aberta. `porta_receb`/`porta_emenda` são
+           -- calculadas acima com o mesmo critério e voltam para a tela — quem
+           -- decide por onde se entra é a data, não a coleta, porque a coleta
+           -- roda uma vez por dia e um rótulo gravado envelheceria.
+           AND (porta_receb OR porta_emenda)
+           -- ⚠️ A JANELA TEM DOIS LADOS, e isso vale para as duas portas.
+           -- "Aberto" é estar DENTRO do período, e não apenas antes do fim: um
+           -- programa que só abre em novembro entraria na conta de "abertos
+           -- hoje" e o gestor montaria proposta para um sistema que ainda não a
+           -- aceita. O `dt_ini` de cada porta está dentro do respectivo cálculo.
            AND :nat = ANY(naturezas)
            -- ⚠️ SEM `OR cardinality(ufs) = 0` DE PROPÓSITO. A tentação é tratar
            -- array vazio como "vale para todos"; medido no arquivo real, NENHUM
@@ -113,7 +131,14 @@ async def radar(
            -- o gestor abrir processo, o padrão seguro é não mostrar o que não
            -- se sabe a quem se destina.
            AND :uf = ANY(ufs)
-         ORDER BY dt_fim_receb, nome
+         -- ⚠️ ORDENA PELO PRAZO QUE ESTA VALENDO, e nao sempre por
+         -- `dt_fim_receb`. Para um programa que so tem a emenda aberta, aquele
+         -- campo e uma data PASSADA (ou nula): ordenar por ele jogaria o
+         -- programa para o topo como se fosse o mais urgente, ou para o fim com
+         -- os nulos. `LEAST` ignora NULL no Postgres, entao o CASE deixa de fora
+         -- a porta fechada e sobra a data que o gestor precisa cumprir.
+         ORDER BY LEAST(CASE WHEN porta_receb  THEN dt_fim_receb  END,
+                        CASE WHEN porta_emenda THEN dt_fim_emenda END), nome
     """), {"uf": uf, "nat": NATUREZA_PREFEITURA})).all()
 
     # ⚠️ `qt_ufs` VAI CRU PARA A TELA, e a classificação é só de três estados.
@@ -134,6 +159,16 @@ async def radar(
         "abrangencia": ("nacional" if (r[12] or 0) >= 27
                         else "exclusivo" if (r[12] or 0) == 1
                         else "regional"),
+        # ⚠️ POR QUAL PORTA SE ENTRA — o campo mais importante desta resposta
+        # depois do nome. "recebimento" é proposta espontânea: a prefeitura
+        # protocola e pronto. "emenda" depende de um deputado ou senador destinar
+        # o recurso — o gestor NÃO cumpre esse prazo sozinho. Antes de 02/09/2026
+        # o radar só carregava a primeira porta, e por isso a tela nunca precisou
+        # distinguir; agora que as duas chegam, misturá-las faria o prefeito
+        # achar que basta protocolar, o que é pior que não mostrar o programa.
+        "porta": ("ambas" if (r[13] and r[14])
+                  else "recebimento" if r[13]
+                  else "emenda"),
     } for r in linhas]
 
     return {

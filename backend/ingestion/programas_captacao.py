@@ -105,8 +105,40 @@ def agrupa(linhas, hoje: date) -> dict[str, dict]:
         nat = (l.get("NATUREZA_JURIDICA_PROGRAMA") or "").strip()
         if nat not in NATUREZAS:
             continue
+        # ⚠️ DUAS PORTAS, E O `continue` SO FECHA QUANDO AS DUAS ESTAO FECHADAS.
+        #
+        # Havia aqui `if fim is None or fim < hoje: continue`, olhando apenas
+        # DT_PROG_FIM_RECEB_PROP. Medido no arquivo real em 02/09/2026, com o
+        # mesmo recorte (DISPONIBILIZADO + natureza municipal): 17 programas com
+        # recebimento aberto, 72 com emenda aberta, 112 na uniao. O radar
+        # carregava 17 — 15% do que estava em pe. Por UF a distorcao e a que o
+        # gestor sente: MG via 9 quando havia 35.
+        #
+        # E o descarte era ANTES de qualquer gravacao, entao nao era caso de
+        # "temos e nao mostramos": os outros 95 nunca entravam no banco. A coleta
+        # gravava `success` e ninguem tinha como perceber.
+        #
+        # ⚠️ AS DUAS PORTAS NAO SAO A MESMA COISA, e a distincao vai ate a tela.
+        # Recebimento e proposta espontanea: a prefeitura protocola. Emenda
+        # parlamentar depende de um deputado ou senador destinar o recurso — o
+        # gestor NAO cumpre esse prazo sozinho. Listar as duas sem dizer qual e
+        # qual faria o prefeito achar que basta protocolar, o que e pior que nao
+        # mostrar. Por isso `portas` viaja junto com o programa.
+        #
+        # BENEF_ESP (29 programas) fica DE FORA de proposito: o beneficiario ja
+        # vem nomeado no programa, entao so seria oportunidade para quem for o
+        # nomeado. Sem cruzar com o CNPJ do municipio, entraria como ruido numa
+        # tela que manda abrir processo.
         fim = data_br(l.get("DT_PROG_FIM_RECEB_PROP"))
-        if fim is None or fim < hoje:
+        ini = data_br(l.get("DT_PROG_INI_RECEB_PROP"))
+        fim_em = data_br(l.get("DT_PROG_FIM_EMENDA_PAR"))
+        ini_em = data_br(l.get("DT_PROG_INI_EMENDA_PAR"))
+
+        # "Aberta" e estar DENTRO da janela, e nao so antes do fim — o mesmo
+        # criterio dos dois lados que o router ja aplicava ao recebimento.
+        receb_aberta = fim is not None and fim >= hoje and (ini is None or ini <= hoje)
+        emenda_aberta = fim_em is not None and fim_em >= hoje and (ini_em is None or ini_em <= hoje)
+        if not receb_aberta and not emenda_aberta:
             continue
         pid = (l.get("ID_PROGRAMA") or "").strip()
         if not pid:
@@ -123,10 +155,16 @@ def agrupa(linhas, hoje: date) -> dict[str, dict]:
                 "modalidade": (l.get("MODALIDADE_PROGRAMA") or "").strip() or None,
                 "acao_orcamentaria": (l.get("ACAO_ORCAMENTARIA") or "").strip() or None,
                 "subtipo": (l.get("NOME_SUBTIPO_PROGRAMA") or "").strip() or None,
-                "dt_ini_receb": data_br(l.get("DT_PROG_INI_RECEB_PROP")),
+                "dt_ini_receb": ini,
                 "dt_fim_receb": fim,
-                "dt_ini_emenda": data_br(l.get("DT_PROG_INI_EMENDA_PAR")),
-                "dt_fim_emenda": data_br(l.get("DT_PROG_FIM_EMENDA_PAR")),
+                "dt_ini_emenda": ini_em,
+                "dt_fim_emenda": fim_em,
+                # ⚠️ QUAL PORTA ESTA ABERTA NAO E GRAVADO, e sim derivado das
+                # datas no router. A tentacao e persistir "porta" aqui, mas seria
+                # um "hoje" congelado: a coleta roda uma vez por dia e o valor
+                # envelheceria entre uma rodada e outra, afirmando na tela que
+                # uma janela esta aberta depois de ela fechar. As datas nao
+                # envelhecem; a conclusao sobre elas, sim.
                 "dt_disponibilizacao": data_br(l.get("DATA_DISPONIBILIZACAO")),
                 "ano_disponibilizacao": _int(l.get("ANO_DISPONIBILIZACAO")),
                 "naturezas": set(),
