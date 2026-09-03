@@ -378,6 +378,40 @@ def test_pendencia_de_detalhe_fecha_depois_de_buscada():
     assert _pendentes_de_detalhe(lista, versoes, "contratos") == []
 
 
+def test_resposta_vazia_da_fonte_fecha_a_pendencia_em_vez_de_repetir_para_sempre():
+    """⚠️ 134 CONTRATOS DE SANTA MARIA FICARAM PRESOS NISSO.
+
+    A fonte responde **HTTP 200 com `{}`** para registros que ela não detalha —
+    de 2015 a 2026, tipos e situações variados. Isso é uma resposta ("perguntei,
+    e não há"), não uma falha.
+
+    Enquanto vazio era tratado como "ainda não perguntei", a versão nunca era
+    carimbada e os mesmos 134 voltavam à fila em toda rodada: o log registra
+    "contratos: 0 de 134" quatro rodadas seguidas, ~2 min cada, para sempre.
+
+    O que NÃO pode acontecer junto: a resposta vazia apagar o que já se sabe. Os
+    campos do detalhe continuam nulos, e o COALESCE do UPSERT cuida do resto."""
+    r = dict(CONTRATOS[0])
+    linha = linha_contrato(1, None, r, {})       # {} = perguntei, não há
+
+    assert linha["versao"] == _dt(r["DATA_ATUALIZACAO"]), \
+        "sem carimbar a versão, o registro volta à fila para sempre"
+    assert linha["vl"] is None, "não há valor — e inventar zero seria pior"
+    assert linha["contratado"] is None
+
+    versoes = {_CHAVE["contratos"](r): linha["versao"]}
+    assert _pendentes_de_detalhe([r], versoes, "contratos") == [], \
+        "a pendência tem de fechar"
+
+
+def test_nao_perguntei_e_diferente_de_perguntei_e_nao_ha():
+    """`None` (não perguntei) deixa a versão nula e o registro na fila; `{}`
+    (perguntei, não há) fecha. Confundir os dois é o que criou o laço."""
+    r = dict(CONTRATOS[0])
+    assert linha_contrato(1, None, r, None)["versao"] is None
+    assert linha_contrato(1, None, r, {})["versao"] is not None
+
+
 def test_contrato_que_mudou_na_fonte_volta_para_a_fila():
     r = dict(CONTRATOS[0])
     versoes = {_CHAVE["contratos"](r): _dt(r["DATA_ATUALIZACAO"])}
