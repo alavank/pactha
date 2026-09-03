@@ -170,6 +170,12 @@ interface Proposta {
       tipo?: string | null; data_upload?: string | null;
     }>;
   } | null;
+  /** Situação do Projeto Básico/TR vinda do CSV PÚBLICO ("Em Análise",
+   *  "Aprovado", …). É o caminho que funciona com a sessão gov.br fria: o
+   *  `projeto_basico` acima exige o SP `execucao` quente e por isso vem nulo na
+   *  prática. Chega no `siconv_proposta.zip` desde 31/08 e estava preenchida em
+   *  2.799 de 3.200 propostas do Freitas sem que nenhuma tela a lesse. */
+  situacao_projeto_basico?: string | null;
   /** NEs (Notas de Empenho) da aba Execução Concedente.
    *  ⚠️ `minuta_apenas` marca a linha que NÃO é dinheiro: a listagem do portal
    *  mistura o empenho com a minuta, que vem sem número e com valor de R$ 1,00. */
@@ -926,6 +932,8 @@ export default function TransfereGovPropostas({
                         titulo={`Projeto Básico/Termo de Referência${
                           detalhe.projeto_basico.situacao ? ` — ${detalhe.projeto_basico.situacao}` : ""}`}
                       >
+                        {/* ⚠️ Fallback do CSV logo abaixo: quando a versão rica
+                            não veio, ainda assim dizemos em que pé o TR está. */}
                         {(detalhe.projeto_basico.documentos || []).map((d, i) => (
                           <Campos
                             key={i}
@@ -937,6 +945,28 @@ export default function TransfereGovPropostas({
                             ]}
                           />
                         ))}
+                      </Aviso>
+                    )}
+                    {/* TERMO DE REFERÊNCIA pelo CSV PÚBLICO — o caminho que
+                        funciona com a sessão gov.br fria.
+                        ⚠️ SÓ QUANDO A VERSÃO RICA NÃO VEIO. Se `projeto_basico`
+                        chegou, ele já traz situação E documentos, e mostrar as
+                        duas caixas faria o gestor ver o mesmo assunto duas vezes,
+                        eventualmente com rótulos diferentes.
+                        ⚠️ O RÓTULO DIZ DE ONDE VEIO. "Em Análise" sem contexto
+                        parece a leitura da tela logada; dizendo "dado aberto", quem
+                        precisa do detalhe (quais documentos, de que data) sabe que
+                        tem de abrir o portal — e não conclui que o PACTHA está
+                        escondendo. */}
+                    {!detalhe.projeto_basico?.situacao && detalhe.situacao_projeto_basico && (
+                      <Aviso
+                        tom="atencao"
+                        titulo={`Projeto Básico/Termo de Referência — ${detalhe.situacao_projeto_basico}`}
+                      >
+                        <p className="text-[11px] leading-snug" style={{ color: "var(--bi-muted)" }}>
+                          Situação publicada no dado aberto do TransfereGov. A lista de
+                          documentos e as datas só existem na tela autenticada do portal.
+                        </p>
                       </Aviso>
                     )}
                     {/* LICITAÇÃO — só p/ contratação Normal. 0 = convênio Normal sem
