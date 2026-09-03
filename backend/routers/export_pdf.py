@@ -21,6 +21,9 @@ from reportlab.lib.units import mm
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, KeepTogether
 from services import authz
 from services.registro_rotas import exige, declarado
+# O recorte da tela de Convênios e a montagem de linha dos três formatos.
+from services import convenios_filtro as filtro
+from services import convenios_export as cexp
 
 router = APIRouter(prefix="/api/export-pdf", tags=["export-pdf"])
 
@@ -166,10 +169,47 @@ def _build_pdf(title: str, subtitle: str, headers: list, rows: list, landscape_m
     return buf
 
 
+# ⚠️ O MESMO TETO DA TELA (`PER_PAGE = 2000` em app/dashboard/convenios/page.tsx:37,
+# que carrega tudo numa página só). Um teto MAIOR aqui reproduziria a assinatura
+# exata do defeito histórico — 2.000 na tela e 3.500 no arquivo — e seria
+# indistinguível dele para quem lê. Passando disso, o documento diz que foi
+# truncado, em vez de fingir completude.
+MAX_EXPORT_CONVENIOS = 2000
+
+
 @router.get("/convenios", dependencies=[exige("convenios.exportar")])
 async def export_convenios_pdf(
     request: Request,
     municipio_id: int = Query(...),
+    # ⚠️ OS MESMOS FILTROS DA TELA, COM OS MESMOS NOMES E OS MESMOS TIPOS.
+    #
+    # Esta rota aceitava SÓ `municipio_id`, e por isso o documento saía com a
+    # base inteira mesmo com "Em vigor" marcado — o dono relatou em 03/09/2026.
+    # Não era filtro perdido no caminho: ele nunca era enviado, e a rota não
+    # saberia o que fazer com ele. Vale o aviso que já está em
+    # `export_voluntarias_pdf`, logo abaixo: parâmetro não declarado é
+    # simplesmente IGNORADO pelo FastAPI, sem erro nenhum.
+    #
+    # ⚠️ OS TIPOS IMPORTAM. `anos` é list[int] (a coluna é INT) e as datas são
+    # `date`; declarar como str manda bind de texto para o asyncpg e o resultado
+    # é 500 seco ou comparação diferente, sem nada na tela. E toda lista precisa
+    # de `Query(...)` explícito, senão o FastAPI a interpreta como corpo e o GET
+    # vira 422. `tests/test_convenios_filtro.py` compara esta assinatura com a de
+    # `list_convenios`, campo a campo, para que a divergência não volte.
+    ano: Optional[int] = None,
+    anos: Optional[list[int]] = Query(None),
+    situacao: Optional[str] = None,
+    situacoes: Optional[list[str]] = Query(None),
+    fonte: Optional[str] = None,
+    fontes: Optional[list[str]] = Query(None),
+    vigencia: Optional[str] = Query(None),
+    vigencias: Optional[list[str]] = Query(None),
+    pagamento: Optional[str] = Query(None),
+    pagamentos: Optional[list[str]] = Query(None),
+    vig_fim_de: Optional[date] = Query(None),
+    vig_fim_ate: Optional[date] = Query(None),
+    search: Optional[str] = None,
+    formato: str = Query("pdf", pattern="^(pdf|docx|xlsx)$"),
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
@@ -179,50 +219,51 @@ async def export_convenios_pdf(
     if not mun:
         raise HTTPException(404, "Município não encontrado")
 
-    # ⚠️ O MESMO recorte da TELA. Sem esta linha o PDF contava as propostas do
-    # FNS — que moram nesta tabela e NAO sao convenio estadual — e ainda assinava
-    # o total inflado na trilha de auditoria.
+    # ⚠️ O RECORTE VEM DO SERVICE — a MESMA função que a tela usa.
     #
-    # Medido antes da correcao: Goiania gerava "Convenios SIGCON-MG · 139
-    # convenios registrados" com as 139 sendo propostas federais de saude, num
-    # estado que o SIGCON-MG nem cobre; Monte Siao mostrava 81 na tela e 129 no
-    # PDF; e 22 municipios do freitas tinham PDF inteiramente fabricado, com a
-    # tela corretamente vazia ao lado.
-    #
-    # O predicado vem de routers/convenios.py:229. E a QUINTA copia da mesma
-    # regra (116, 133, 229, 320) — e foi essa duplicacao que permitiu o
-    # esquecimento aqui. Unificar num helper e o conserto de raiz; esta copia
-    # estanca hoje.
-    _sem_fns = or_(ConvenioEstadual.fonte.is_(None),
-                   ~ConvenioEstadual.fonte.ilike("%FNS%"))
-    r = await db.execute(
-        select(ConvenioEstadual)
-        .where(ConvenioEstadual.municipio_id == municipio_id, _sem_fns)
-        .order_by(ConvenioEstadual.dt_vigencia_atual.asc().nullslast())
+    # Aqui morava a QUINTA cópia do predicado, e o comentário dela pedia
+    # exatamente isto: "Unificar num helper e o conserto de raiz; esta copia
+    # estanca hoje". O histórico que aquelas cópias produziram: Goiânia com 139
+    # "convênios SIGCON-MG" que eram propostas federais de saúde, num estado que
+    # o SIGCON-MG nem cobre; Monte Sião com 81 na tela e 129 no PDF; e 22
+    # municípios do Freitas com PDF inteiramente fabricado ao lado de uma tela
+    # corretamente vazia.
+    conds, recorte = filtro.condicoes(
+        municipio_id=municipio_id, ano=ano, anos=anos,
+        situacao=situacao, situacoes=situacoes,
+        fonte=fonte, fontes=fontes,
+        vigencia=vigencia, vigencias=vigencias,
+        pagamento=pagamento, pagamentos=pagamentos,
+        vig_fim_de=vig_fim_de, vig_fim_ate=vig_fim_ate,
+        search=search,
     )
-    convs = r.scalars().all()
-    rows = []
-    for c in convs:
-        raw = c.raw_data if isinstance(c.raw_data, dict) else {}
-        nr_proposta = raw.get("nr_proposta") or (c.nr_plano_trabalho if c.nr_plano_trabalho and "/" in c.nr_plano_trabalho else "")
-        nr_instr = raw.get("nr_instrumento") or (c.nr_sigcon if c.nr_sigcon and "/" in c.nr_sigcon else "")
-        rows.append([
-            (c.fonte or "")[:8],
-            nr_proposta[:14] or "-",
-            (c.nr_plano_trabalho or "")[:10] if (c.nr_plano_trabalho and "/" not in c.nr_plano_trabalho) else "-",
-            nr_instr[:14] or "-",
-            (c.orgao_concedente or "")[:15],
-            # `objetivo` primeiro: no dialeto do ES a coluna `objeto` guarda o
-            # CODIGO do processo ("2026-M632Z") e a descricao real vive em
-            # `objetivo`. Em MG e o contrario — `objeto` e a descricao e
-            # `objetivo` e NULO em 869 de 869 linhas. O `or` resolve os dois
-            # sem precisar ramificar por fonte.
-            Paragraph(((c.objetivo or c.objeto) or "")[:120], ParagraphStyle("o", fontSize=7)),
-            (c.situacao or "")[:18],
-            _br(c.valor_concedente or c.valor_total),
-            _br(c.dt_vigencia_inicial),
-            _br(c.dt_vigencia_atual or c.dt_vigencia_final),
-        ])
+    q = select(ConvenioEstadual)
+    for c in conds:
+        q = q.where(c)
+    # ⚠️ A MESMA ORDEM da tela, e `+1` para saber se truncou sem uma segunda
+    # consulta de contagem.
+    q = q.order_by(filtro.ordem()).limit(MAX_EXPORT_CONVENIOS + 1)
+    convs = list((await db.execute(q)).scalars().all())
+    truncado = len(convs) > MAX_EXPORT_CONVENIOS
+    if truncado:
+        convs = convs[:MAX_EXPORT_CONVENIOS]
+    # ⚠️ UMA SÓ MONTAGEM DE LINHA para os três formatos (`convenios_export`).
+    # Se o PDF montasse a linha aqui e o Excel montasse a dele lá, o gestor que
+    # exportasse nos dois encontraria conteúdos diferentes — e a divergência
+    # nasceria exatamente como a do filtro nasceu.
+    linhas = [cexp.linha_de(c) for c in convs]
+    rows = [[
+        (l["fonte"])[:8],
+        l["proposta"][:14] or "-",
+        l["plano"][:10] or "-",
+        l["instrumento"][:14] or "-",
+        l["orgao"][:15],
+        Paragraph(l["objeto"][:120], ParagraphStyle("o", fontSize=7)),
+        l["situacao"][:18],
+        _br(l["repasse"]),
+        _br(l["assinatura"]),
+        _br(l["vigencia"]),
+    ] for l in linhas]
     # O titulo nao pode mais cravar "SIGCON-MG": o produto e vendido em MG, ES,
     # GO e TO, e emitir "Convenios SIGCON-MG — Goiania/GO" e afirmar que o dado
     # veio de um sistema que nao atende aquele estado. Espelha o mapa que o
@@ -233,22 +274,61 @@ async def export_convenios_pdf(
     # Vazio ganha frase, nao tabela so com cabecalho: 38 municipios caem neste
     # caso, e uma folha em branco le-se como "o municipio nao tem convenio",
     # que e diferente de "a fonte estadual deste estado ainda nao esta ligada".
-    _sub = (f"{len(convs)} convênio(s) estadual(is) registrado(s)" if convs
-            else ("nenhum convênio estadual coletado para este município"
-                  if _fonte_uf else
-                  "a fonte estadual deste estado ainda não está integrada ao PACTHA"))
-    pdf = _build_pdf(
-        _titulo,
-        _sub,
-        ["Fonte", "Proposta", "Plano", "Instrumento", "Órgão", "Objeto", "Situação", "Repasse", "Assinatura", "Vigência"],
-        rows,
-    )
-    nome_arq = f"convenios_{mun.nome.replace(' ','_')}.pdf"
+    # ⚠️ VAZIO FILTRADO ≠ VAZIO SEM DADO. Antes só havia duas frases possíveis;
+    # agora o documento pode sair vazio porque o FILTRO não casou nada, e dizer
+    # "nenhum convênio coletado para este município" nesse caso seria acusar a
+    # coleta por uma escolha de quem exportou.
+    if convs:
+        _sub = f"{len(convs)} convênio(s) estadual(is)"
+    elif recorte:
+        _sub = "nenhum convênio atende aos filtros aplicados"
+    elif _fonte_uf:
+        _sub = "nenhum convênio estadual coletado para este município"
+    else:
+        _sub = "a fonte estadual deste estado ainda não está integrada ao PACTHA"
+    if recorte:
+        _sub += " · " + "; ".join(recorte)
+    if truncado:
+        _sub += (f" · ⚠️ o filtro tem mais de {MAX_EXPORT_CONVENIOS} registros; "
+                 f"este documento traz os {len(convs)} primeiros")
+
+    agora = datetime.now()
+    base_nome = f"convenios_{mun.nome.replace(' ', '_')}"
+    if formato == "xlsx":
+        conteudo = cexp.gerar_xlsx(
+            linhas, titulo=_titulo, recorte=recorte, emitido_em=agora,
+            truncado_em=MAX_EXPORT_CONVENIOS if truncado else None)
+        nome_arq = f"{base_nome}.xlsx"
+        mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        corpo = BytesIO(conteudo)
+    elif formato == "docx":
+        conteudo = cexp.gerar_docx(
+            linhas, titulo=_titulo, subtitulo=_sub, recorte=recorte, emitido_em=agora,
+            truncado_em=MAX_EXPORT_CONVENIOS if truncado else None)
+        nome_arq = f"{base_nome}.docx"
+        mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        corpo = BytesIO(conteudo)
+    else:
+        corpo = _build_pdf(
+            _titulo,
+            _sub,
+            ["Fonte", "Proposta", "Plano", "Instrumento", "Órgão", "Objeto", "Situação", "Repasse", "Assinatura", "Vigência"],
+            rows,
+        )
+        nome_arq = f"{base_nome}.pdf"
+        mime = "application/pdf"
+
+    # ⚠️ A TRILHA REGISTRA O RECORTE, e não só o município. Um export auditado
+    # como "convenios · Monte Sião" não permite reconstruir o que saiu no papel:
+    # a mesma linha de auditoria descreveria a base inteira e um único convênio.
     await _registrar_export(db, request=request, current=current, tipo="convenios",
                             municipio_id=municipio_id, registros=len(convs),
                             arquivo=nome_arq,
-                            filtros={"municipio": f"{mun.nome}/{mun.uf}"})
-    return StreamingResponse(pdf, media_type="application/pdf",
+                            filtros={"municipio": f"{mun.nome}/{mun.uf}",
+                                     "formato": formato,
+                                     "recorte": recorte or ["(sem filtro)"],
+                                     "truncado": truncado})
+    return StreamingResponse(corpo, media_type=mime,
         headers={"Content-Disposition": f"attachment; filename={nome_arq}"})
 
 
