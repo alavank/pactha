@@ -420,11 +420,23 @@ def contratos(client: "Conexao", cd_orgao: str) -> list[dict]:
                         tp_situacao="ALL", origem="ALL")
 
 
-def _um(resposta):
-    """A API ora devolve o objeto, ora uma lista de um. Normaliza."""
+def _um(resposta) -> dict:
+    """A API ora devolve o objeto, ora uma lista de um. Normaliza.
+
+    ⚠️ DEVOLVE `{}` E NUNCA `None` quando vem vazio, e a diferenca e o que
+    impede um laco eterno. A fonte responde **HTTP 200 com `{}`** para
+    registros que ela simplesmente nao detalha — 134 contratos de Santa Maria,
+    de 2015 a 2026, situacoes e tipos variados. Isso e uma RESPOSTA, nao uma
+    falha: ela diz "perguntei, e nao ha".
+
+    Enquanto `{}` virava `None`, o coletor nao distinguia isso de "ainda nao
+    perguntei", nunca gravava `detalhe_da_versao` e os mesmos 134 voltavam a
+    fila em toda rodada — "contratos: 0 de 134", quatro rodadas seguidas,
+    ~2 min cada, para sempre. Falha de rede continua levantando excecao, entao
+    ela nunca chega aqui como vazio."""
     if isinstance(resposta, list):
-        return resposta[0] if resposta else None
-    return resposta or None
+        return resposta[0] if resposta else {}
+    return resposta or {}
 
 
 def licitacao_detalhe(client, cd_orgao, modalidade, nr, ano) -> dict | None:
@@ -663,7 +675,7 @@ def linha_licitacao(mid: int, orgao_nome: str | None, r: dict,
         "origem": _txt(r.get("APLIC_ORIGEM"), 8),
         "incl": _dt(r.get("DATA_INCLUSAO")),
         "atu": _dt(r.get("DATA_ATUALIZACAO")),
-        "versao": _dt(r.get("DATA_ATUALIZACAO")) if det else None,
+        "versao": _dt(r.get("DATA_ATUALIZACAO")) if det is not None else None,
         "raw": json.dumps({**r, **d}, ensure_ascii=False),
     }
 
@@ -698,7 +710,7 @@ def linha_contrato(mid: int, orgao_nome: str | None, r: dict,
         "lic_origem": _txt(d.get("LICITACAO_ORIGEM")),
         "incl": _dt(r.get("DATA_INCLUSAO")),
         "atu": _dt(r.get("DATA_ATUALIZACAO")),
-        "versao": _dt(r.get("DATA_ATUALIZACAO")) if det else None,
+        "versao": _dt(r.get("DATA_ATUALIZACAO")) if det is not None else None,
         "raw": json.dumps({**r, **d}, ensure_ascii=False),
     }
 
@@ -779,10 +791,10 @@ def linha_obra(mid: int, r: dict, det: dict | None = None) -> dict:
         "dt_paral": _data(d.get("DT_EVENTO_PARALISACAO")),
         "motivo": _txt(d.get("DS_MOTIVO_PARALISACAO") or d.get("DS_MOTIVO_OUTRO")),
         "dt_reinicio": _data(d.get("DT_PREVISAO_REINICIO")),
-        "qt_med": len(medicoes) if det else None,
+        "qt_med": len(medicoes) if det is not None else None,
         "dt_med": max(datas_med) if datas_med else None,
-        "qt_adit": len(d.get("TERMOS_ADITIVOS") or []) if det else None,
-        "raw": json.dumps(_raw_enxuto({**r, **d}), ensure_ascii=False) if det else None,
+        "qt_adit": len(d.get("TERMOS_ADITIVOS") or []) if det is not None else None,
+        "raw": json.dumps(_raw_enxuto({**r, **d}), ensure_ascii=False) if det is not None else None,
     }
 
 
@@ -1141,15 +1153,22 @@ def _um_municipio(cur, client: "Conexao", a: dict, orcamento: _Orcamento,
     ):
         pendentes = _pendentes_de_detalhe(
             lista, _versoes_detalhadas(cur, mid, tabela), tabela)
-        feitos = 0
+        feitos = vazios = 0
         for r in pendentes:
             if not orcamento.sobrou():
                 break
             nr, ano, tipo = _CHAVE[tabela](r)
             det = buscar(client, orgao, tipo, nr, ano)
             time.sleep(PAUSA)
+            # ⚠️ SEM `if not det: continue` AQUI. `{}` e a resposta da fonte
+            # para registro que ela nao detalha, e pular sem carimbar a versao
+            # devolvia esses registros a fila em toda rodada, para sempre. O
+            # UPSERT abaixo grava a linha da LISTA com a versao carimbada: os
+            # campos do detalhe continuam nulos (COALESCE nao apaga nada), e a
+            # pendencia fecha. Se a fonte um dia mudar aquele registro, a
+            # `DATA_ATUALIZACAO` muda junto e ele volta a fila sozinho.
             if not det:
-                continue
+                vazios += 1
             # ⚠️ `r` (a LISTA) e a base, e o detalhe so acrescenta. E o que faz
             # `detalhe_da_versao` receber a mesma versao que a proxima rodada vai
             # comparar — ver `_versoes_detalhadas`.
@@ -1157,8 +1176,12 @@ def _um_municipio(cur, client: "Conexao", a: dict, orcamento: _Orcamento,
             feitos += 1
             gravados += 1
         if pendentes:
-            log.info("  %s %s: %d de %d detalhe(s) nesta rodada%s", nome, tabela,
-                     feitos, len(pendentes),
+            # ⚠️ O "sem detalhe na fonte" e reportado SEPARADO do que foi
+            # buscado: sao registros que existem na lista e que o Tribunal nao
+            # detalha, e ficariam parecendo coleta incompleta. Nao sao.
+            log.info("  %s %s: %d de %d detalhe(s) nesta rodada%s%s", nome,
+                     tabela, feitos, len(pendentes),
+                     f" ({vazios} sem detalhe na fonte)" if vazios else "",
                      "" if feitos == len(pendentes) else " (o resto na proxima)")
 
     return gravados
