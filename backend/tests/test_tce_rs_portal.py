@@ -33,6 +33,7 @@ Rodar:
     python -m pytest backend/tests/test_tce_rs_portal.py -v
 """
 import json
+import time
 from datetime import date, datetime
 from pathlib import Path
 
@@ -221,6 +222,57 @@ def test_403_que_persiste_na_conexao_nova_e_bloqueio_de_ip():
     with pytest.raises(Bloqueado):
         _get(cli, "licitacon.contratos", cd_orgao="53100")
     assert cli.reciclos >= 1, "antes de acusar bloqueio, tem de tentar reconectar"
+
+
+def test_orcamento_nao_conta_o_que_esta_pausado():
+    """⚠️ O DEFEITO QUE TRAVOU SANTA MARIA. O orçamento existe para proteger a
+    fase de DETALHE, mas contava também o download e a gravação das listas —
+    que lá custam 6 minutos (11.505 linhas, uma ida-e-volta por linha pelo
+    túnel). Somados aos 9 minutos das obras, davam os 15 minutos inteiros: a
+    rodada terminava sem buscar UM valor sequer, seis vezes seguidas."""
+    from ingestion.tce_rs_portal import _Orcamento
+
+    o = _Orcamento(1)
+    o.pausar()
+    time.sleep(1.2)          # tempo que NÃO deve ser cobrado
+    o.retomar()
+    assert o.sobrou(), "o trecho pausado não pode consumir o orçamento"
+    assert o.gasto() < 1
+
+
+def test_orcamento_esgota_normalmente_fora_da_pausa():
+    from ingestion.tce_rs_portal import _Orcamento
+
+    o = _Orcamento(0)
+    assert not o.sobrou()
+
+
+def test_obra_com_detalhe_fresco_nao_e_rebuscada():
+    """⚠️ O OUTRO DEFEITO. O detalhe de uma obra custa ~4,5 s (traz a planilha
+    orçamentária inteira) e Santa Maria tem 120 — nove minutos por rodada.
+    Sem esta consulta elas eram TODAS rebuscadas em toda rodada, e os contratos
+    ficavam sem orçamento: 84 detalhes em 90 minutos.
+
+    A marca de "tem detalhe" é `raw_data IS NOT NULL`, porque o coletor só grava
+    o raw quando buscou o detalhe — não precisou de coluna nova."""
+    from ingestion.tce_rs_portal import _obras_com_detalhe_fresco
+
+    class CurFalso:
+        def __init__(self):
+            self.sql = None
+
+        def execute(self, sql, params=None):
+            self.sql = sql
+            self.params = params
+
+        @staticmethod
+        def fetchall():
+            return [(436,), (399,)]
+
+    cur = CurFalso()
+    assert _obras_com_detalhe_fresco(cur, 1) == {436, 399}
+    assert "raw_data IS NOT NULL" in cur.sql, "sem isso, obra sem detalhe seria pulada"
+    assert "interval" in cur.sql, "obra muda: o frescor precisa ter prazo"
 
 
 def test_conexao_recicla_sozinha_antes_do_teto():

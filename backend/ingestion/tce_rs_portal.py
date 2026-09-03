@@ -156,6 +156,17 @@ PAUSA = float(os.getenv("TCE_RS_PORTAL_PAUSA_S", "0.5"))
 # Teto de tempo gasto com DETALHE (armadilha 3). O default cabe folgado num
 # timeout de 1020s da Scheduled Task, junto com listas, remessas e obras.
 ORCAMENTO_S = int(os.getenv("TCE_RS_PORTAL_ORCAMENTO_S", "600"))
+# ⚠️ SUB-ORCAMENTO DAS OBRAS. O detalhe de UMA obra custa ~4,5 s (o payload traz
+# a planilha orcamentaria inteira) contra 0,40 s do contrato — onze vezes mais.
+# Sem teto proprio, as 120 obras de Santa Maria comiam nove dos quinze minutos
+# de cada rodada e os contratos ficavam sem nada: seis rodadas renderam 84
+# detalhes de contrato. Um terco do orcamento e o bastante para as obras
+# entrarem em duas ou tres rodadas sem sequestrar as demais.
+ORCAMENTO_OBRAS_S = int(os.getenv("TCE_RS_PORTAL_ORCAMENTO_OBRAS_S",
+                                  str(max(60, ORCAMENTO_S // 3))))
+# Por quantos dias o detalhe de uma obra e considerado fresco. Obra muda
+# (medicao, aditivo, paralisacao), mas devagar.
+OBRA_FRESCOR_D = int(os.getenv("TCE_RS_PORTAL_OBRA_FRESCOR_D", "7"))
 # Nao ha teto de `limit` na fonte (5.000 devolveu 1.202 sem reclamar), mas
 # pagina grande demais so aumenta o custo de um retry.
 PAGINA = 1000
@@ -806,6 +817,43 @@ def _alvos(cur) -> list[dict]:
             for r in cur.fetchall()]
 
 
+def _gravar_em_lote(cur, sql: str, linhas: list[dict], pagina: int = 200) -> None:
+    """UPSERT de muitas linhas com poucos ida-e-volta.
+
+    ⚠️ `execute_batch` e nao `executemany`: o do psycopg2 continua mandando uma
+    instrucao por linha. Se a extensao nao estiver disponivel, cai no laco
+    simples — mais lento, nunca errado."""
+    if not linhas:
+        return
+    try:
+        from psycopg2.extras import execute_batch
+    except ImportError:
+        for linha in linhas:
+            cur.execute(sql, linha)
+        return
+    execute_batch(cur, sql, linhas, page_size=pagina)
+
+
+def _obras_com_detalhe_fresco(cur, municipio_id: int) -> set:
+    """Obras cujo detalhe ja temos e ainda vale — nao precisam ser rebuscadas.
+
+    ⚠️ `raw_data IS NOT NULL` E a marca de "tem detalhe": o coletor so grava o
+    raw quando buscou o detalhe (a linha vinda so da lista grava NULL ali). Nao
+    precisou de coluna nova para isso.
+
+    ⚠️ E o frescor tem prazo porque OBRA MUDA: medicao nova, aditivo, ordem de
+    paralisacao. `TCE_RS_PORTAL_OBRA_FRESCOR_D` dias depois, ela volta para a
+    fila — devagar o bastante para nao competir com os contratos, frequente o
+    bastante para a tela nao envelhecer."""
+    cur.execute("""
+        SELECT id_obra FROM tce_rs_obras
+         WHERE municipio_id = %s
+           AND raw_data IS NOT NULL
+           AND atualizado_em > now() - (%s || ' days')::interval
+    """, (municipio_id, OBRA_FRESCOR_D))
+    return {r[0] for r in cur.fetchall()}
+
+
 def _versoes_detalhadas(cur, municipio_id: int, tabela: str) -> dict:
     """{(nr, ano, tipo): versao_da_fonte_ja_detalhada} do que esta no banco.
 
@@ -871,17 +919,38 @@ def _log_ingest(cur, conn, status: str, n: int, erro: str | None = None) -> None
 
 
 class _Orcamento:
-    """Teto de tempo para a fase cara. Nunca estoura o timeout da task."""
+    """Teto de tempo para a fase cara. Nunca estoura o timeout da task.
+
+    ⚠️ AS LISTAS NAO CONTAM, e isso nao e detalhe: em Santa Maria elas levam
+    SEIS MINUTOS (11.500 registros em paginas de 1.000, ~3,5 MB cada). Com elas
+    dentro do orcamento de 900 s, mais os nove minutos das obras, sobrava ZERO
+    para os detalhes — a rodada terminava sem buscar um valor sequer. Quem
+    percorre lista chama `pausar()`/`retomar()`."""
 
     def __init__(self, segundos: int):
         self.limite = segundos
         self.inicio = time.monotonic()
+        self.pausado_em = None
+        self.pausado_total = 0.0
+
+    def pausar(self) -> None:
+        if self.pausado_em is None:
+            self.pausado_em = time.monotonic()
+
+    def retomar(self) -> None:
+        if self.pausado_em is not None:
+            self.pausado_total += time.monotonic() - self.pausado_em
+            self.pausado_em = None
+
+    def _decorrido(self) -> float:
+        agora = self.pausado_em or time.monotonic()
+        return (agora - self.inicio) - self.pausado_total
 
     def sobrou(self) -> bool:
-        return (time.monotonic() - self.inicio) < self.limite
+        return self._decorrido() < self.limite
 
     def gasto(self) -> int:
-        return int(time.monotonic() - self.inicio)
+        return int(self._decorrido())
 
 
 def ingest(dry: bool = False) -> int:
@@ -971,7 +1040,12 @@ def _um_municipio(cur, client: "Conexao", a: dict, orcamento: _Orcamento,
 
     gravados = 0
 
-    # 2. Listas — baratas e completas.
+    # 2. Listas — poucas requisicoes, mas NAO baratas em tempo: sao ~3,5 MB por
+    # pagina de 1.000 e Santa Maria leva seis minutos para baixar as suas. Ficam
+    # FORA do orcamento, que existe para proteger a fase de detalhe (ver
+    # `_Orcamento`) — e sao obrigatorias de qualquer modo, porque e delas que sai
+    # a fila do que falta detalhar.
+    orcamento.pausar()
     lics = licitacoes(client, orgao)
     time.sleep(PAUSA)
     cons = contratos(client, orgao)
@@ -987,12 +1061,19 @@ def _um_municipio(cur, client: "Conexao", a: dict, orcamento: _Orcamento,
                      r.get("ANO_CONTRATO"), r.get("DS_SITUACAO"),
                      (r.get("DS_OBJETO") or "")[:50])
     else:
-        for r in lics:
-            cur.execute(_SQL_LIC, linha_licitacao(mid, orgao_nome, r))
-            gravados += 1
-        for r in cons:
-            cur.execute(_SQL_CON, linha_contrato(mid, orgao_nome, r))
-            gravados += 1
+        # ⚠️ EM LOTE, e nao um `execute` por linha. Sao 11.505 linhas em Santa
+        # Maria, e cada `execute` e um ida-e-volta pela rede: rodando a carga de
+        # fora da VPS, por tunel SSH (~30 ms cada), isso custava SEIS MINUTOS
+        # so para gravar as listas — mais que o dobro do que a coleta inteira
+        # de Nova Palma levou. Em lote sao poucos ida-e-volta.
+        _gravar_em_lote(cur, _SQL_LIC,
+                        [linha_licitacao(mid, orgao_nome, r) for r in lics])
+        _gravar_em_lote(cur, _SQL_CON,
+                        [linha_contrato(mid, orgao_nome, r) for r in cons])
+        gravados += len(lics) + len(cons)
+    # ⚠️ So AGORA o orcamento volta a correr: a gravacao das listas e parte do
+    # custo fixo da rodada, nao da fase de detalhe que ele existe para proteger.
+    orcamento.retomar()
 
     # 3. Remessas — por via de operacao, nao por pontualidade (armadilha 1).
     hoje = date.today()
@@ -1007,12 +1088,33 @@ def _um_municipio(cur, client: "Conexao", a: dict, orcamento: _Orcamento,
             time.sleep(PAUSA)
 
     # 4. Obras — zero e resultado legitimo (armadilha 9).
+    #
+    # ⚠️⚠️ A OBRA SO E REBUSCADA QUANDO PRECISA, E TEM ORCAMENTO PROPRIO. Sem as
+    # duas coisas a carga de Santa Maria travou: o detalhe de uma obra custa
+    # ~4,5 s (o payload traz a planilha inteira) e sao 120 delas, entao cada
+    # rodada gastava NOVE MINUTOS rebuscando as MESMAS obras — e sobrava zero
+    # para os contratos. Seis rodadas de 15 min renderam 84 detalhes de contrato;
+    # Nova Palma, sem obra nenhuma, fez 954 em 70 segundos.
     lista_obras = obras(client, orgao)
-    log.info("  %s: %d obra(s) no LicitaCon Obras", nome, len(lista_obras))
-    for i, o in enumerate(lista_obras):
-        if not orcamento.sobrou():
-            log.info("  %s: orcamento esgotado; %d obra(s) ficam para a proxima "
-                     "rodada", nome, len(lista_obras) - i)
+    ja_frescas = _obras_com_detalhe_fresco(cur, mid) if not dry else set()
+    pendentes_obra = [o for o in lista_obras
+                      if _int(o.get("ID_OBRA")) not in ja_frescas]
+    log.info("  %s: %d obra(s) no LicitaCon Obras — %d com detalhe a buscar",
+             nome, len(lista_obras), len(pendentes_obra))
+
+    # Grava TODAS as da lista primeiro: e barato (nao custa requisicao) e faz a
+    # obra aparecer na tela com objeto, situacao e contratado ja na primeira
+    # rodada, mesmo antes de o detalhe caro chegar.
+    if not dry:
+        for o in lista_obras:
+            cur.execute(_SQL_OBRA, linha_obra(mid, o))
+            gravados += 1
+
+    orcamento_obras = _Orcamento(min(ORCAMENTO_OBRAS_S, ORCAMENTO_S))
+    for i, o in enumerate(pendentes_obra):
+        if not orcamento_obras.sobrou() or not orcamento.sobrou():
+            log.info("  %s: orcamento de obras esgotado; %d ficam para a "
+                     "proxima rodada", nome, len(pendentes_obra) - i)
             break
         det = obra_detalhe(client, o.get("ID_OBRA"))
         time.sleep(PAUSA)
