@@ -44,6 +44,11 @@ interface Programa {
   dias_emenda: number | null;
   qt_ufs: number;
   abrangencia: "nacional" | "regional" | "exclusivo";
+  /* ⚠️ POR QUAL PORTA SE ENTRA. "recebimento" é proposta espontânea — a
+     prefeitura protocola. "emenda" depende de um deputado ou senador destinar o
+     recurso, e o gestor NÃO cumpre esse prazo sozinho. Até 02/09/2026 o radar só
+     carregava a primeira, e por isso a tela não precisava distinguir. */
+  porta: "recebimento" | "emenda" | "ambas";
 }
 interface Resp {
   municipio: { nome: string; uf: string };
@@ -52,6 +57,23 @@ interface Resp {
   atualizado_em: string | null;
   /** Só vem quando o radar não pôde responder — hoje, UF não cadastrada. */
   motivo?: string;
+}
+
+/** O prazo QUE ESTÁ VALENDO para este programa, e não sempre o de recebimento.
+ *
+ * ⚠️ Num programa aberto só por emenda, `dt_fim_receb` é uma data PASSADA (ou
+ * nula): usá-la no cartão mostraria um prazo vencido como se fosse o alvo, ou um
+ * "—" no lugar do prazo real. Quem manda é a porta aberta; com as duas abertas,
+ * vale a que fecha primeiro, porque é a que muda a agenda da semana.
+ */
+function prazo(p: Programa): { data: string | null; dias: number | null } {
+  const receb = { data: p.dt_fim_receb, dias: p.dias };
+  const emenda = { data: p.dt_fim_emenda, dias: p.dias_emenda };
+  if (p.porta === "recebimento") return receb;
+  if (p.porta === "emenda") return emenda;
+  if (receb.dias == null) return emenda;
+  if (emenda.dias == null) return receb;
+  return emenda.dias < receb.dias ? emenda : receb;
 }
 
 export default function RadarPage() {
@@ -100,8 +122,13 @@ export default function RadarPage() {
   const ps = d.programas || [];
   // "Fecha em menos de 30 dias" é o que muda a agenda da semana. Acima disso o
   // programa é planejamento, não urgência.
-  const urgentes = ps.filter((p) => p.dias != null && p.dias <= 30);
-  const comEmenda = ps.filter((p) => p.dias_emenda != null && p.dias_emenda >= 0);
+  // ⚠️ Pelo prazo QUE VALE, senão um programa de emenda fechando em 3 dias não
+  // entra na conta de urgentes (o `dias` dele é de uma janela já vencida).
+  const urgentes = ps.filter((p) => {
+    const q = prazo(p).dias;
+    return q != null && q <= 30;
+  });
+  const comEmenda = ps.filter((p) => p.porta === "emenda" || p.porta === "ambas");
   const nuncaColetado = d.atualizado_em == null;
   // ⚠️ O TRANSFEREGOV PUBLICA PROGRAMAS DISTINTOS COM O MESMO NOME. Medido em
   // 02/09/2026: "Ação 00SX — Apoio a Projetos de Desenvolvimento Sustentável"
@@ -189,25 +216,40 @@ export default function RadarPage() {
                     {p.abrangencia === "regional" && (
                       <Selo>{p.qt_ufs} estados</Selo>
                     )}
-                    {p.dias != null && p.dias <= 30 && (
-                      <Selo tom={p.dias <= 7 ? "critico" : "atencao"}>
-                        {p.dias === 0 ? "fecha hoje"
-                          : p.dias === 1 ? "fecha amanhã"
-                          : `${p.dias} dias`}
+                    {/* ⚠️ O SELO DA PORTA, e ele não é decoração. Um programa
+                        aberto só por emenda parlamentar exige um deputado ou
+                        senador destinar o recurso — sem esse aviso o gestor lê a
+                        lista inteira como "é só protocolar" e monta proposta
+                        para uma porta que não depende dele. É a razão pela qual
+                        os 67 programas de emenda podem entrar na tela. */}
+                    {p.porta === "emenda" && <Selo tom="atencao">via emenda parlamentar</Selo>}
+                    {p.porta === "ambas" && <Selo>proposta ou emenda</Selo>}
+                    {prazo(p).dias != null && prazo(p).dias! <= 30 && (
+                      <Selo tom={prazo(p).dias! <= 7 ? "critico" : "atencao"}>
+                        {prazo(p).dias === 0 ? "fecha hoje"
+                          : prazo(p).dias === 1 ? "fecha amanhã"
+                          : `${prazo(p).dias} dias`}
                       </Selo>
                     )}
                   </span>
                 }
-                valor={p.dt_fim_receb ? formatarData(p.dt_fim_receb) : "—"}
+                valor={prazo(p).data ? formatarData(prazo(p).data!) : "—"}
                 meta={
                   <>
                     {p.orgao && <span>{p.orgao}</span>}
-                    {p.dias != null && p.dias > 30 && (
+                    {/* ⚠️ SÓ QUANDO A PORTA DE RECEBIMENTO ESTÁ ABERTA. Antes
+                        esta linha saía sempre que `dias > 30`; agora chegam
+                        programas cujo recebimento já FECHOU, e escrever
+                        "propostas até <data passada>" convidaria o gestor a
+                        montar proposta por uma porta que não aceita mais. */}
+                    {(p.porta === "recebimento" || p.porta === "ambas")
+                      && p.dias != null && p.dias > 30 && (
                       <span>· propostas até {formatarData(p.dt_fim_receb)} ({p.dias} dias)</span>
                     )}
                     {/* A janela de emenda é outro prazo e por isso vem escrita
                         por extenso: o gestor não a cumpre sozinho. */}
-                    {p.dias_emenda != null && p.dias_emenda >= 0 && (
+                    {(p.porta === "emenda" || p.porta === "ambas")
+                      && p.dias_emenda != null && p.dias_emenda >= 0 && (
                       <span>· emenda parlamentar até {formatarData(p.dt_fim_emenda)}</span>
                     )}
                     {p.cod_programa && <span>· código {p.cod_programa}</span>}

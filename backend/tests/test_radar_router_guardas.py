@@ -141,9 +141,15 @@ def test_o_topo_do_WHERE_e_uma_cadeia_de_AND():
     assert raiz.boolop.name == "AND_EXPR", (
         f"o topo do WHERE e {raiz.boolop.name}, nao AND: alguma guarda pode ser "
         f"dispensada por outra")
-    assert len(raiz.args) >= 5, (
-        f"o WHERE tem {len(raiz.args)} guardas no topo; eram 5 "
-        f"(ausente_desde, fim, inicio, natureza, uf)")
+    # ⚠️ ERAM 5 PERNAS, HOJE SAO 4, e nenhuma guarda foi perdida: as duas de data
+    # (fim e inicio) viraram UMA perna, `porta_receb OR porta_emenda`, calculada
+    # na CTE. O radar passou a carregar as duas portas — recebimento e emenda
+    # parlamentar — e "aberto" deixou de ser uma data so. Quem garante que as
+    # duas pontas de CADA janela continuam sendo exigidas e
+    # `test_a_janela_de_inicio_tambem_e_guarda`, logo abaixo.
+    assert len(raiz.args) >= 4, (
+        f"o WHERE tem {len(raiz.args)} guardas no topo; sao 4 "
+        f"(ausente_desde, portas, natureza, uf)")
 
 
 # --------------------------------------------------------------------------
@@ -176,10 +182,32 @@ def test_o_carimbo_de_coleta_nao_depende_do_filtro():
 
 
 def test_a_janela_de_inicio_tambem_e_guarda():
-    """"Aberto hoje" e estar DENTRO da janela, e nao apenas antes do fim."""
-    where = pglast.prettify(_sql_da_rota()).lower()
-    assert "dt_ini_receb" in where
-    assert "dt_ini_receb <=" in where
-    # As DUAS pontas da janela usam o mesmo fuso — comparar uma em UTC e a outra
-    # em Brasilia daria um dia em que o programa nao esta nem aberto nem fechado.
-    assert where.count("america/sao_paulo") >= 3
+    """"Aberto hoje" e estar DENTRO da janela, e nao apenas antes do fim.
+
+    ⚠️ VALE PARA AS DUAS PORTAS. Desde 02/09/2026 o radar carrega tambem os
+    programas abertos por EMENDA PARLAMENTAR (eram 67 invisiveis: o coletor
+    descartava a linha olhando so `DT_PROG_FIM_RECEB_PROP`). Cada porta tem as
+    suas duas pontas, e esquecer o `dt_ini` de UMA delas traria de volta o
+    defeito que este teste existe para impedir — so que na porta nova, onde
+    ninguem estaria olhando.
+    """
+    sql = pglast.prettify(_sql_da_rota()).lower()
+    for porta in ("receb", "emenda"):
+        assert f"dt_ini_{porta}" in sql, f"a ponta de INICIO da porta {porta} sumiu"
+        assert f"dt_ini_{porta} <=" in sql, (
+            f"`dt_ini_{porta}` aparece mas nao e comparado com hoje — a janela "
+            f"voltou a ter um lado so")
+        assert f"dt_fim_{porta} >=" in sql, f"a ponta de FIM da porta {porta} sumiu"
+
+    # ⚠️ O FUSO E CALCULADO UMA VEZ SO, na CTE `hoje`, e reusado. A versao
+    # anterior deste teste exigia `count("america/sao_paulo") >= 3` porque a
+    # expressao se repetia a cada comparacao — e repeticao e como as pontas
+    # passam a divergir (uma em UTC, outra em Brasilia, e um dia em que o
+    # programa nao esta nem aberto nem fechado). Com uma fonte unica, a
+    # divergencia deixa de ser possivel; o que este teste precisa garantir agora
+    # e que ninguem volte a usar o dia do SERVIDOR.
+    assert "america/sao_paulo" in sql, "o 'hoje' de Brasilia sumiu da consulta"
+    assert "current_date" not in sql, (
+        "voltou `CURRENT_DATE` — ele sai do fuso da sessao do Postgres, que nos "
+        "containers e UTC: entre 21h e meia-noite o prazo que fecha HOJE some do "
+        "radar na noite anterior")
