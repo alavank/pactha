@@ -638,7 +638,24 @@ async def voluntarias_detalhe(
                projeto_basico,
                -- NEs da aba Execucao Concedente. ULTIMA coluna, mesma razao do
                -- projeto_basico: o dict abaixo le por INDICE.
-               notas_empenho
+               notas_empenho,
+               -- ⚠️ A SITUACAO DO TR QUE VEM DO CSV PUBLICO, e nao da tela logada.
+               --
+               -- `projeto_basico` (row[32]) e o JSONB do scraper autenticado e vem
+               -- NULO na pratica: ele exige o SP `execucao` da sessao gov.br
+               -- quente, e a auditoria mediu esse SP frio ("SP execucao frio" 519x,
+               -- sessao morta 298 de 720 horas em 30 dias). Enquanto isso,
+               -- `situacao_projeto_basico` chega no `siconv_proposta.zip` desde
+               -- 31/08 (transferegov_opendata.py:426), esta preenchida em 2.799 de
+               -- 3.200 propostas do freitas, e NENHUMA tela a lia.
+               --
+               -- Medido em 03/09/2026: o convenio 981397/2025 de Araujos, que o
+               -- dono relatou "sem termo de referencia", tem aqui "Em Analise" —
+               -- exatamente a informacao que faltava na tela.
+               --
+               -- ULTIMA coluna, pela mesma razao das duas acima: o dict le por
+               -- INDICE e inserir no meio desloca tudo em silencio.
+               situacao_projeto_basico
         FROM transferegov_propostas
         WHERE municipio_id = :mun AND numero_proposta = :num
     """), {"mun": municipio_id, "num": numero_proposta})
@@ -681,6 +698,10 @@ async def voluntarias_detalhe(
         # [{numero, minuta, valor, valor_siafi, situacao, dt_emissao, minuta_apenas}]
         # `minuta_apenas` marca a linha que NAO e dinheiro (minuta de R$ 1,00).
         "notas_empenho": row[33] or [],
+        # "Em Análise", "Aprovado", "Em Complementação"... — do CSV publico, e o
+        # unico caminho que funciona com a sessao gov.br fria. A tela usa este
+        # campo quando `projeto_basico` (a versao rica, logada) nao veio.
+        "situacao_projeto_basico": row[34] or None,
     }
 
 
