@@ -712,13 +712,24 @@ def _licitacao_aceita(processo_execucao) -> bool:
     return False
 
 
-def _projeto_basico_resumo(projeto_basico) -> str:
+def _projeto_basico_resumo(projeto_basico, situacao_csv=None) -> str:
     """"Termo de Referência — Em Análise": QUAL documento sustenta a clausula
     suspensiva e em que PE ele esta no portal. String vazia quando nao ha captura
-    — o relatorio so imprime a linha quando ha o que dizer."""
+    — o relatorio so imprime a linha quando ha o que dizer.
+
+    ⚠️ `situacao_csv` E O PLANO B, e na pratica ele e quem responde. O JSONB rico
+    vem da tela LOGADA e exige o SP `execucao` quente; a auditoria mediu esse SP
+    frio 519 vezes, com a sessao morta 298 de 720 horas em 30 dias. O CSV publico
+    traz so a situacao ("Em Analise"), sem o rotulo do documento — mas responder
+    "Em Analise" e melhor que a linha sumir, que e o que o dono relatou em
+    03/09/2026 sobre o convenio 981397/2025.
+
+    A precedencia e a rica primeiro: quando as duas existem, o rotulo do
+    documento ("Termo de Referência — Em Análise") vale mais que a situacao seca.
+    """
     d = _jsonb(projeto_basico)
     if not isinstance(d, dict):
-        return ""
+        return (situacao_csv or "").strip()
     sit = (d.get("situacao") or "").strip()
     docs = d.get("documentos") if isinstance(d.get("documentos"), list) else []
     # ⚠️ O rotulo util e a DESCRICAO do anexo ("Termo de Referência"). O `tipo`
@@ -731,7 +742,7 @@ def _projeto_basico_resumo(projeto_basico) -> str:
             break
     if rotulo and sit:
         return f"{rotulo} — {sit}"
-    return sit or rotulo
+    return sit or rotulo or (situacao_csv or "").strip()
 
 
 def _programa_limpo(programa) -> str:
@@ -1760,7 +1771,20 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
                -- de NEs da aba logada, que e NULA em 2.741 das 3.199 propostas
                -- do tenant. ULTIMA COLUNA (row[29]), a sexta consecutiva
                -- pendurada no fim pela mesma razao das cinco acima.
-               valor_empenhado
+               valor_empenhado,
+               -- SITUACAO DO TERMO DE REFERENCIA vinda do CSV PUBLICO.
+               --
+               -- `projeto_basico` (row[23]) e o JSONB da tela LOGADA e vem nulo na
+               -- pratica: exige o SP `execucao` da sessao gov.br quente, medido
+               -- frio 519 vezes no log e com a sessao morta 298 de 720 horas em 30
+               -- dias. Enquanto isso este campo chega no `siconv_proposta.zip`
+               -- desde 31/08 e estava preenchido em 2.799 de 3.200 propostas do
+               -- freitas — sem ninguem ler.
+               --
+               -- ULTIMA COLUNA (row[30]), a setima consecutiva pendurada no fim
+               -- pela mesma razao das seis acima: o laco le por INDICE, e inserir
+               -- no MEIO desloca tudo em silencio.
+               situacao_projeto_basico
         FROM transferegov_propostas WHERE municipio_id = :m
     """), {"m": municipio_id})
     # PACs que JA aparecem como voluntaria. O mesmo recurso saia DUAS vezes no
@@ -1964,7 +1988,8 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             "processo_execucao_lista": row[21],
             # Projeto Básico/Termo de Referência: o `clausula_motivo` diz QUAL
             # documento trava; este diz a SITUAÇÃO dele ("Em Análise").
-            "projeto_basico": _projeto_basico_resumo(row[23]),
+            # row[30] e o plano B do CSV publico — ver o docstring da funcao.
+            "projeto_basico": _projeto_basico_resumo(row[23], row[30]),
             # "Situação do NEs" — troca a INFERÊNCIA pelo DOCUMENTO. O campo
             # `empenhado` (Sim/Não) vinha do status do ciclo e o próprio
             # _fed_status documenta que ele marcava "Aprovadas" como empenhadas

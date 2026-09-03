@@ -410,6 +410,20 @@ def _campos_do_item(item: dict) -> list[tuple[str, str]]:
     sc = (item.get("situacao_contratacao") or "")
     if sc and not _tem_clausula(item):
         out.append(("Situação de Contratação", sc))
+    # ⚠️ O TERMO DE REFERÊNCIA SÓ SAÍA DENTRO DA CAIXA DE CLÁUSULA, e era por isso
+    # que ele nunca aparecia num convênio "Normal".
+    #
+    # `_clausula_destaque` começa com `if not _tem_clausula(item): return None`, e
+    # a linha do Projeto Básico/TR mora lá dentro. Efeito: o convênio 981397/2025
+    # de Araújos — contratação Normal, TR "Em Análise" — não imprimia o TR nem com
+    # o dado coletado. O dono relatou exatamente isso em 03/09/2026.
+    #
+    # Aqui a linha sai pelo caminho comum, com a MESMA condição da Situação de
+    # Contratação logo acima: só quando NÃO há caixa de destaque, senão o gestor
+    # leria a mesma informação duas vezes na mesma página.
+    pb = (item.get("projeto_basico") or "")
+    if pb and not _tem_clausula(item):
+        out.append(("Projeto Básico/Termo de Referência", pb))
     return out
 
 
