@@ -964,6 +964,177 @@ _PC_JS_TEXTO = r"""() => {""" + _PC_TEXTO_FN + r"""
 }"""
 
 
+# =====================================================================
+# CONTA ESPECIFICA — banco, agencia e conta corrente do convenio estadual
+# =====================================================================
+#
+# ⚠️ POR QUE ISTO EXISTE. `convenios_estadual` tem as colunas `banco`, `agencia`,
+# `conta_corrente`, `saldo_bancario` e `dt_saldo` desde sempre, marcadas no modelo
+# como "Campos do Relatorio de Monitoramento (RM)" — e NENHUM coletor as escrevia.
+# O RM ja desenha as quatro linhas; elas saiam vazias porque ninguem produzia o
+# dado. O dono cobrou em 03/09/2026 e gravou um video mostrando onde ele mora.
+#
+# ⚠️ O CABECALHO TEM ESPACO NAO-QUEBRAVEL. Sondado em producao no mesmo dia, o
+# accordion do convenio expoe 25 secoes e a nossa aparece como
+# 'Conta Específica\xa0 ' — com `\xa0` no fim. Casar por igualdade, ou com espaco
+# comum, nao acha nada e FALHA CALADO. Por isso o alvo e uma regex tolerante, e
+# por isso a sonda veio ANTES do parser.
+_ALVO_PC_JS = r"/presta[cç][aã]o\s+de\s+contas/i"
+_ALVO_CE_JS = r"/conta\s+espec[ií]fica/i"
+
+
+def _troca_alvo(js: str) -> str:
+    """O MESMO JS da Prestacao de Contas, mirando outro cabecalho.
+
+    ⚠️ REAPROVEITA EM VEZ DE DUPLICAR. Aquele JS carrega correcoes caras — o
+    `SELECT` que rende `selectedOptions[0].text` (sem ele o "BRASIL" do dropdown
+    de Banco nao apareceria), a queda do painel para o corpo, e o suporte a
+    accordion E aba. Uma copia divergiria na primeira correcao feita so de um
+    lado.
+
+    ⚠️ O `assert` E O PONTO. Se alguem reescrever o alvo la em cima, a troca
+    vira no-op e a secao passa a ser a de Prestacao de Contas — o coletor
+    gravaria banco/agencia lendo o painel errado, sem erro nenhum."""
+    novo = js.replace(_ALVO_PC_JS, _ALVO_CE_JS)
+    assert novo != js, ("o alvo do JS da Prestacao de Contas mudou de grafia; "
+                        "_ALVO_PC_JS precisa acompanhar, senao a Conta Especifica "
+                        "passa a ler o painel errado")
+    return novo
+
+
+_CE_JS = _troca_alvo(_PC_JS)
+_CE_JS_TEXTO = _troca_alvo(_PC_JS_TEXTO)
+
+# Os rotulos, na grafia vista no video do dono (03/09/2026): Banco (um SELECT com
+# "BRASIL"), Agência, Praça bancária, DV da Agência, DV da Conta.
+#
+# ⚠️ OS ROTULOS DE "DV" VEM ANTES DOS SIMPLES, e a ordem nao e cosmetica: dentro
+# de "DV da Agência" existe a palavra "Agência". O desempate de
+# `ler_conta_especifica` e "quem comeca antes ganha", e "DV da Agência" comeca
+# antes do "Agência" que mora dentro dela — mas so se o rotulo do DV existir na
+# lista. Sem ele, o DV seria lido como se fosse a agencia.
+#
+# ⚠️ TOLERANTES DE PROPOSITO. A licao esta escrita no `_PC_ROTULOS` logo acima:
+# a 1a versao de la exigia a frase inteira copiada de uma captura de tela e
+# NENHUM convenio casou em producao. Aqui ancoramos no que e estavel.
+_CE_ROTULOS = (
+    ("_dv_agencia", r"\bdv\s+d\w+\s+ag\w*ncia\b"),
+    ("_dv_conta", r"\bdv\s+d\w+\s+conta\b"),
+    ("_praca", r"\bpra[cç]a\s+banc\w+\b"),
+    ("banco", r"\bbanco\b"),
+    ("agencia", r"\bag\w*ncia\b"),
+    ("conta_corrente", r"\b(?:n[o.]?\s*d\w+\s+)?conta(?:\s+corrente)?\b"),
+)
+_CE_COMPILADOS = tuple(
+    (campo, re.compile(pad + r"[^:\n]{0,40}?:")) for campo, pad in _CE_ROTULOS
+)
+
+# ⚠️ A FORMA MANDA, e aqui ela vale MAIS que na Prestacao de Contas. La, uma
+# regra frouxa gravou um CPF no campo do numero SEI — dado pessoal indo para a
+# tela e para um documento entregue ao municipio. Banco/agencia/conta ficam ao
+# lado de campos com CPF e CNPJ no mesmo formulario, entao os dois sao RECUSADOS
+# explicitamente, alem do teto de tamanho.
+_RE_CPF = re.compile(r"\b\d{3}\.\d{3}\.\d{3}-\d{2}\b")
+_RE_CNPJ = re.compile(r"\b\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}\b")
+_RE_SO_NUM = re.compile(r"^[\d][\d.\-/ ]{0,29}$")
+
+
+def _ce_forma(campo: str, valor: str) -> Optional[str]:
+    """Devolve o valor so quando ele TEM A CARA do campo; senao None."""
+    if not valor:
+        return None
+    v = valor.strip()
+    if _RE_CPF.search(v) or _RE_CNPJ.search(v):
+        return None
+    if campo == "banco":
+        # "BRASIL", "001 - Banco do Brasil", "Caixa Econômica Federal". Recusa
+        # texto longo (o painel inteiro grudado) e valor de "selecione".
+        if len(v) > 60 or _fold(v) in ("", "selecione", "-", "--"):
+            return None
+        return v
+    # agencia e conta: numero, com hifen/ponto tolerados ("1060-0", "5724440080").
+    if not _RE_SO_NUM.match(v):
+        return None
+    return v
+
+
+def ler_conta_especifica(texto: Optional[str]) -> Optional[dict]:
+    """Extrai banco/agencia/conta do texto da secao. None quando nao ha rotulo.
+
+    ⚠️ SO DEVOLVE O QUE ACHOU — mesma doutrina do `ler_prestacao_contas`: chave
+    ausente e "nao veio", e o upsert faz merge; gravar string vazia apagaria o
+    valor da rodada anterior num convenio cujo painel nao abriu.
+
+    ⚠️ OS CAMPOS `_dv_*` E `_praca` SAO LIDOS E DESCARTADOS de proposito. Eles
+    nao entram no retorno — existem so para OCUPAR o rotulo e impedir que "DV da
+    Agência" seja lido como "Agência". Sem eles o convenio do video gravaria
+    agencia="0" (o DV) em vez do numero real.
+    """
+    if not texto:
+        return None
+    plano = _fold(texto)
+    marcas = []
+    for campo, rx in _CE_COMPILADOS:
+        for m in rx.finditer(plano):
+            marcas.append((m.start(), m.end(), campo))
+    if not marcas:
+        return None
+    marcas.sort()
+    limpo: list = []
+    for ini, fim, campo in marcas:
+        if limpo and ini < limpo[-1][1]:
+            continue
+        limpo.append([ini, fim, campo])
+    out: dict = {}
+    for i, (ini, fim, campo) in enumerate(limpo):
+        prox = limpo[i + 1][0] if i + 1 < len(limpo) else len(texto)
+        if campo.startswith("_"):
+            continue                      # ocupou o rotulo; o valor nao interessa
+        if campo in out:
+            continue                      # o primeiro vence
+        valor = _ce_forma(campo, _pc_valor(texto[fim:prox]))
+        if valor:
+            out[campo] = valor
+    return out or None
+
+
+async def _scrape_conta_especifica(page) -> Optional[dict]:
+    """Le a secao 'Conta Específica': banco, agencia e conta corrente.
+
+    Gemeo de `_scrape_prestacao_contas`, com as MESMAS tres decisoes que la foram
+    aprendidas caro: (1) nao retorna cedo quando nao acha o cabecalho — a leitura
+    do corpo e a rede de seguranca e o cabecalho so decide se ha o que CLICAR;
+    (2) so espera os 3s quando de fato CLICOU, porque espera a toa sai do
+    orcamento e o rodizio cobre menos municipios; (3) try/except -> None, porque
+    propagar aborta o loop de detalhe em 6 falhas seguidas."""
+    _dbg = (os.getenv("SIGCON_DEBUG_EXTRAS", "0") or "0").strip() == "1"
+    try:
+        diag = await page.evaluate(_CE_JS)
+        if _dbg:
+            logger.info(f"  [DIAG-CE] achou_secao={diag.get('achou')} "
+                        f"wasExpanded={diag.get('wasExp')} clicou={diag.get('did')}")
+        if diag.get("did"):
+            await page.wait_for_timeout(3000)
+        t = await page.evaluate(_CE_JS_TEXTO)
+        out = ler_conta_especifica(t.get("painel"))
+        origem = "painel"
+        if not out:
+            out = ler_conta_especifica(t.get("corpo"))
+            origem = "corpo"
+        if _dbg:
+            # ⚠️ Despeja o texto do painel: e como o parser vai ser conferido
+            # contra a pagina REAL em vez de contra a minha suposicao.
+            logger.info(f"  [DIAG-CE] origem={origem if out else '-'} "
+                        f"painel={len(t.get('painel') or '')}ch campos={sorted(out or {})}")
+            logger.info(f"  [DIAG-CE] texto={(t.get('painel') or '')[:600]!r}")
+        if out and origem == "corpo":
+            logger.info("  [CE] painel nao rendeu texto — lido pelo corpo da pagina "
+                        f"(achou_cabecalho={diag.get('achou')}; seletor pode ter mudado)")
+        return out
+    except Exception:
+        return None
+
+
 async def _scrape_prestacao_contas(page) -> Optional[dict]:
     """Le a secao 'PRESTAÇÃO DE CONTAS': status atual, as duas datas e o nº SEI.
 
@@ -1126,6 +1297,16 @@ async def _scrape_detalhes(page, max_planos: int = 100, pagina: int = 1) -> dict
                     _pc = await _scrape_prestacao_contas(page)
                     if _pc:
                         data.update(_pc)
+                # CONTA ESPECIFICA (banco/agencia/conta) — a QUARTA e mais nova
+                # das leituras extras, e por isso a ULTIMA da fila e a primeira a
+                # cair quando as tres anteriores ja consumiram a janela. O
+                # orcamento e rechecado pela mesma razao da prestacao de contas:
+                # sem isso ela empurraria a rodada para fora do teto e o `timeout`
+                # externo mataria o que estivesse em voo, sem carimbar nada.
+                if not _sig_estourou():
+                    _ce = await _scrape_conta_especifica(page)
+                    if _ce:
+                        data.update(_ce)
             if data and (data.get("responsaveis") or data.get("fase_etapa_status")
                          or data.get("dt_assinatura_str") or data.get("valor_contrapartida_atual_str")
                          or data.get("valor_contrapartida_str") or data.get("vigencia_atual_str")):
@@ -1689,8 +1870,14 @@ def _upsert_convenios_batch(cur, records) -> tuple[int, int]:
                     raw_data, tp_instrumento,
                     nr_plano_trabalho, ano, dt_publicacao,
                     dt_assinatura, dt_vigencia_inicial, dt_vigencia_atual,
-                    dt_vigencia_final, qt_alteracoes
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    dt_vigencia_final, qt_alteracoes,
+                    -- ⚠️ AS TRES NOVAS VAO NO FIM. O INSERT e POSICIONAL e a
+                    -- tupla abaixo casa por ORDEM: inserir no meio deslocaria
+                    -- tudo em silencio, e `objeto` passaria a receber uma data.
+                    -- Vem da secao "Conta Especifica" do plano de trabalho, lida
+                    -- por `_scrape_conta_especifica`.
+                    banco, agencia, conta_corrente
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT {conflict_target} DO UPDATE SET
                     -- ⭐ `nr_sigcon` e `nr_siafi` PROMOVEM (EXCLUDED vence) em vez
                     -- de congelar: e a linha em celebracao que RECEBE o numero
@@ -1731,6 +1918,15 @@ def _upsert_convenios_batch(cur, records) -> tuple[int, int]:
                     dt_vigencia_atual = COALESCE(EXCLUDED.dt_vigencia_atual, convenios_estadual.dt_vigencia_atual),
                     dt_vigencia_final = COALESCE(EXCLUDED.dt_vigencia_final, convenios_estadual.dt_vigencia_final),
                     qt_alteracoes = COALESCE(EXCLUDED.qt_alteracoes, convenios_estadual.qt_alteracoes),
+                    -- ⚠️ COALESCE, e NAO `EXCLUDED` cru. A leitura da Conta
+                    -- Especifica e a QUARTA e ultima das extras e a primeira a
+                    -- cair quando o orcamento da rodada acaba; com sobrescrita
+                    -- crua, toda rodada que nao chegasse ate ela APAGARIA o banco
+                    -- e a agencia ja coletados. `NULL = nao veio nesta rodada`,
+                    -- nunca "o convenio nao tem conta".
+                    banco = COALESCE(EXCLUDED.banco, convenios_estadual.banco),
+                    agencia = COALESCE(EXCLUDED.agencia, convenios_estadual.agencia),
+                    conta_corrente = COALESCE(EXCLUDED.conta_corrente, convenios_estadual.conta_corrente),
                     raw_data = convenios_estadual.raw_data || EXCLUDED.raw_data,
                     updated_at = NOW()
                 RETURNING (xmax = 0) AS is_insert
@@ -1757,6 +1953,12 @@ def _upsert_convenios_batch(cur, records) -> tuple[int, int]:
                 vig_fim,  # dt_vigencia_atual = fim da vigencia atual
                 vig_fim,  # dt_vigencia_final = mesma (fim atual)
                 qt_alt,
+                # Conta Especifica. `or None` de proposito: string vazia
+                # sobrescreveria com "" e o COALESCE acima nao a protegeria —
+                # so NULL preserva o que a rodada anterior gravou.
+                (rec.get("banco") or None),
+                (rec.get("agencia") or None),
+                (rec.get("conta_corrente") or None),
             ))
             row = cur.fetchone()
             cur.execute("RELEASE SAVEPOINT sp_conv")
