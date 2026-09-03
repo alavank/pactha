@@ -22,6 +22,7 @@ Carga do host no momento: **0,44 / 0,49 / 0,45**. Há folga.
 | Fonte | Da VPS | Veredito |
 |---|---|---|
 | **TCE-RS** — CKAN, ZIP de licitações e ZIP de empenhos | **403 nos três** | ⛔ **Bloqueio confirmado**, terceira medição (17/08, 29/08, 03/09). Não é intermitência |
+| **TCE-RS** — `portal.tce.rs.gov.br` (qonws e obras), *medido 03/09 11:53* | **403 nos quatro** | ⛔ Mesmo corpo (199 B) e mesmo tempo (0,08 s) do CKAN, com o CHE em 200 no mesmo minuto → **regra de borda do domínio inteiro**, não de um host. Ver §3 |
 | **SICONFI** | `200`, 174 KB em 227 ms | ✅ livre |
 | **IBGE** | `200` | ✅ livre |
 | **S2iD** | `200`, 17 KB | ✅ livre (o que falta é o filtro, §7) |
@@ -143,14 +144,18 @@ no produto.
 > o valor da licitação (estimado e homologado).
 >
 > Coletor em `backend/ingestion/tce_rs_portal.py`; mapa das APIs, as medições e
-> **dois vereditos da manhã que a tarde derrubou** em
-> [`TCE-RS-APIS.md`](TCE-RS-APIS.md). Falta a única pergunta que decide se ele
-> entra em produção: **o portal responde da VPS?**
-> (`scripts/medir_tce_portal_vps.sh`).
+> **três vereditos da manhã que a tarde derrubou** em
+> [`TCE-RS-APIS.md`](TCE-RS-APIS.md).
 >
-> Tudo o que está escrito abaixo sobre o CKAN **continua valendo** — ele
-> permanece bloqueado, e o ofício continua útil pelo valor da licitação. Só
-> deixou de ser o caminho crítico.
+> ⛔ **E o desfecho, medido às 11:53 UTC do mesmo dia: o portal TAMBÉM devolve
+> 403 ao IP da VPS.** Mesmo corpo (199 bytes) e mesmo tempo (0,08 s) do CKAN,
+> com o CHE respondendo 200 do mesmo IP no mesmo minuto — **é uma regra de borda
+> para o domínio `tce.rs.gov.br` inteiro**, não um host bloqueado.
+>
+> O coletor entra **pronto e desligado**, e o **ofício volta a ser o caminho
+> crítico** — valendo mais do que antes, porque agora destrava o acervo inteiro
+> por API e o LicitaCon Obras, não só os CSV. Tudo o que está escrito abaixo
+> sobre o CKAN continua valendo.
 
 O CKAN tem **73.439 datasets**, organizados **por órgão e por ano**, e tem o que
 o prompt pede em §2.1:

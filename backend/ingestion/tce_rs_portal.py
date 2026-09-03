@@ -2,15 +2,33 @@
 TCE-RS pelo PORTAL — o mesmo Tribunal, por um host que responde.
 
 O `ingestion/tce_rs.py` baixa os CSV do `dados.tce.rs.gov.br`, e esse host
-devolve **403 ao IP da VPS** desde 17/08/2026 (medido em 17/08, 29/08 e 03/09).
-Este coletor fala com **outro host do mesmo Tribunal** — `portal.tce.rs.gov.br`
-— cuja API responde **sem autenticacao nenhuma**, e entrega o MESMO acervo:
+devolve **403 ao IP da VPS** desde 17/08/2026. Este coletor fala com **outro
+host do mesmo Tribunal** — `portal.tce.rs.gov.br` — cuja API responde **sem
+autenticacao nenhuma**, e entrega o MESMO acervo:
 
     Nova Palma   866 licitacoes (2007-2026) e 1.202 contratos
     CKAN         864 licitacoes             e 1.201 contratos
 
 A diferenca sao dois registros novos de 31/08. **Nao e um subconjunto do dump
 bloqueado; e o dump** — mais remessa, obra e medicao, que o CSV nao tinha.
+
+⛔⛔ **E ESTE HOST TAMBEM RECUSA O IP DA VPS. A TASK NAO E CRIADA.** Medido em
+03/09/2026 11:53 UTC, do proprio servidor: 403 nos quatro enderecos testados
+(`qonws` e `obras`), com o **mesmo corpo** (199 bytes, pagina padrao "403
+Forbidden") e o **mesmo tempo** (0,08-0,09 s) do CKAN — enquanto o
+`che.sefaz.rs.gov.br` respondeu 200 em 0,35 s do mesmo IP no mesmo minuto. Nao
+era "um host bloqueado": e **uma regra de borda para o dominio `tce.rs.gov.br`
+inteiro**.
+
+Este arquivo entra **pronto e desligado**, como o `tce_rs.py` e o `obrasgov.py`.
+Quando a liberacao vier (`docs/fontes-rs/OFICIO-TCE-RS.md`), ligar e uma linha
+no Coolify. Se rodar assim mesmo, grava `partial` com a nota — e **nunca trata
+403 como "municipio sem licitacao"**.
+
+⚠️ E ele roda de QUALQUER outro ponto: nao depende de credencial, so de IP nao
+bloqueado. Uma carga inicial executada de conexao residencial contra o banco do
+tenant enche a tela sem esperar o oficio — e as rodadas seguintes voltam a
+depender dele.
 
 Roda por Scheduled Task no worker de tenant com municipio do RS, ou a mao:
     python -u ingestion/tce_rs_portal.py           # coleta de verdade
@@ -139,11 +157,13 @@ TENTATIVAS = 4
 ANOS_REMESSA = 2
 
 NOTA_BLOQUEIO = (
-    "portal.tce.rs.gov.br recusou este IP. E um host DIFERENTE do "
-    "dados.tce.rs.gov.br (que ja bloqueia desde 17/08/2026) — se os dois "
-    "bloquearem, o caminho volta a ser o oficio de liberacao "
-    "(docs/fontes-rs/OFICIO-TCE-RS.md). Nao e ausencia de dado: o municipio tem "
-    "licitacoes, contratos e possivelmente obras.")
+    "portal.tce.rs.gov.br recusou este IP com 403, como o dados.tce.rs.gov.br. "
+    "Medido do proprio servidor em 03/09/2026: mesmo corpo e mesmo tempo nos "
+    "dois hosts, com outros portais estaduais respondendo 200 no mesmo minuto — "
+    "e regra de borda do dominio tce.rs.gov.br inteiro. NAO e ausencia de dado: "
+    "Nova Palma tem 866 licitacoes e 1.202 contratos publicados. A saida e a "
+    "liberacao do IP (docs/fontes-rs/OFICIO-TCE-RS.md), ou coletar de outro "
+    "ponto de rede.")
 
 
 class Bloqueado(Exception):

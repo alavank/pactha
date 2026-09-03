@@ -1,25 +1,40 @@
 # TCE-RS: as APIs do `portal.tce.rs.gov.br`
 
-> **Achado de 03/09/2026, medido e revisado no mesmo dia.** O que está bloqueado
-> é o **`dados.tce.rs.gov.br`** (portal CKAN, 403 medido três vezes). O Tribunal
-> publica APIs em **outro host** — `portal.tce.rs.gov.br` — e elas respondem
-> **sem autenticação**. Medido do IP residencial; a confirmação a partir da VPS
-> é `scripts/medir_tce_portal_vps.sh`.
+> **Achado de 03/09/2026 — e o desfecho, no mesmo dia.** O Tribunal publica APIs
+> abertas em `portal.tce.rs.gov.br`, com **todo o acervo** do CKAN bloqueado e
+> mais obras, medições e a origem do recurso. Elas respondem sem autenticação
+> nenhuma **de conexão residencial**.
 >
-> ⚠️ **Este documento foi corrigido em 03/09 à tarde.** A primeira versão, da
-> manhã, afirmava duas coisas que a medição derrubou — a remessa como prova de
-> pontualidade (§4) e a perda do acervo histórico (§2). Ficam registradas, com o
-> que as desmentiu, porque o erro em si é a lição.
+> ⛔ **E respondem 403 do IP da VPS, exatamente como o CKAN.** Medido em
+> 03/09/2026 11:53 UTC: os dois hosts devolvem o **mesmo corpo** (199 bytes,
+> página padrão "403 Forbidden") no **mesmo tempo** (0,08–0,09 s), enquanto o
+> CHE/SEFAZ-RS responde 200 do mesmo IP no mesmo minuto. Não era "um host
+> bloqueado": é **uma regra de borda para o domínio `tce.rs.gov.br` inteiro**.
+>
+> Consequência: o coletor entra **pronto e desligado**, como o `tce_rs` e o
+> `obrasgov`, e o **ofício volta a ser o caminho crítico** — agora valendo muito
+> mais, porque destrava o acervo inteiro e as obras, não só os CSV.
+>
+> ⚠️ **Este documento foi corrigido duas vezes em 03/09.** A versão da manhã
+> afirmava três coisas que a medição derrubou: a remessa como prova de
+> pontualidade (§4), a perda do acervo histórico (§1) e o bloqueio como sendo de
+> um host só (esta nota). Ficam registradas, com o que as desmentiu, porque o
+> erro em si é a lição.
 
 ---
 
 ## 1. O que isso muda
 
-O ofício pedindo liberação de IP mirava o CKAN. Com o `portal.tce.rs.gov.br`
-respondendo, dá para coletar licitação, contrato, obra e medição **sem depender
-de liberação nenhuma** — e o ofício deixa de ser caminho crítico.
+**O ofício continua sendo o caminho, e passou a valer mais.** A esperança de
+contornar o bloqueio por outro host morreu na medição da VPS (ver a nota do
+topo): o filtro é do domínio inteiro. O que mudou é o **tamanho do prêmio** — o
+que a liberação destrava não é mais "os CSV do LicitaCon", e sim o acervo
+inteiro por API, mais o LicitaCon Obras com medição, saldo e a origem do
+recurso. O ofício da `OFICIO-TCE-RS.md` foi reescrito para pedir os dois
+serviços e para declarar essa finalidade.
 
-**Não se perde o acervo histórico.** Medido:
+**E não se perde o acervo histórico** — nem por um caminho, nem pelo outro.
+Medido do IP residencial:
 
 | | CKAN (bloqueado) | API do portal |
 |---|---|---|
@@ -171,9 +186,17 @@ cliente é uma boa notícia, não um achado vazio.
 
 ## 5. O que ainda falta apurar
 
-1. **Responde da VPS?** É o que decide se o coletor entra em produção agora ou
-   fica pronto e desligado, como o `tce_rs` e o `obrasgov`.
-   `scripts/medir_tce_portal_vps.sh`.
+1. ~~**Responde da VPS?**~~ **RESPONDIDO em 03/09/2026, 11:53 UTC: não.** 403
+   nos quatro endereços testados, corpo e tempo idênticos aos do CKAN, com o
+   CHE respondendo 200 do mesmo IP no mesmo minuto. **A Scheduled Task não é
+   criada.** As saídas, em ordem de custo:
+
+   | Saída | Custo | Observação |
+   |---|---|---|
+   | **Ofício ao TCE** (`OFICIO-TCE-RS.md`) | zero, mas depende de terceiro | O dado é aberto e o pedido é legítimo. Único caminho que resolve em definitivo |
+   | **Carga inicial de outro ponto** | uma execução manual | O coletor roda de qualquer máquina contra o banco do tenant. Enche a tela hoje; as atualizações seguintes continuam dependendo da liberação |
+   | **Proxy de saída só para esta coleta** | mensalidade | Resolve sem depender de terceiro. Só compensa se o ofício for negado |
+
 2. **Se a leitura sem token é intencional ou permissividade.** O manual trata de
    autorização no contexto de *envio*. Se um dia fechar, o caminho está mapeado:
    a credencial de produção é emitida **pela própria prefeitura**, no SISCAD →
