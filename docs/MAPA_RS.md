@@ -76,7 +76,20 @@ Emissão exclusivamente pela internet, gratuita, com consulta livre — **não h
 | Acesso | Público, gratuito, sem autenticação |
 | Prazo de emissão | Até 2 dias úteis |
 
-## **2.2 Os nove itens que compõem o CHE**
+## **2.2 Os itens que compõem o CHE**
+
+> ⭐ **MEDIDO EM 02/09/2026, e são DEZ — não nove.** A lista abaixo foi escrita a
+> partir da divulgação do Estado; a API do CHE devolve, para a Prefeitura de Nova
+> Palma, **dez exigências**, todas com validade própria. A que faltava nesta
+> seção é **"Adesão Programas Estaduais"** (`documentoId` 152).
+>
+> ⚠️ E o `BACKLOG_POR_ESTADO.md` §3.2 afirma que a IN CAGE 04/2024 redefiniu a
+> habilitação em **onze** itens e que "a lista de 9 que a tela usa é a divulgação
+> antiga". As duas metades dessa frase não se sustentam contra a fonte: são dez,
+> e **a tela não usa lista nenhuma** — `ingestion/che_rs.py` grava o que a API
+> mandar, e o mapa `CODIGOS` só dá código e grupo estáveis, com
+> `GRUPO_PADRAO` para qualquer item novo. Se a norma acrescentar exigência, ela
+> entra sozinha na tela. O que precisava de conserto era este documento.
 
 O CHE consolida num único cadastro as verificações abaixo. Cada item deve virar uma linha monitorável no PACTHA, com data de validade própria:
 
