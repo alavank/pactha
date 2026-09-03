@@ -39,9 +39,9 @@ from pathlib import Path
 import pytest
 
 from ingestion.tce_rs_portal import (
-    _CHAVE, _contrato_da_obra, _dt, _pagina_tudo, _pendentes_de_detalhe,
-    _raw_enxuto, _tp_documento, contratos, licitacoes, linha_contrato,
-    linha_licitacao, linha_obra, linha_recurso, linha_remessa,
+    Bloqueado, _CHAVE, _contrato_da_obra, _dt, _get, _pagina_tudo,
+    _pendentes_de_detalhe, _raw_enxuto, _tp_documento, contratos, licitacoes,
+    linha_contrato, linha_licitacao, linha_obra, linha_recurso, linha_remessa,
     orgaos_do_municipio,
 )
 
@@ -136,6 +136,64 @@ def test_paginacao_para_quando_a_pagina_vem_incompleta():
     assert len(fora) == 1001
     assert len(cli.chamadas) == 2
     assert cli.chamadas[1][1]["offset"] == 1000
+
+
+def test_conexao_derrubada_e_retomada_em_vez_de_matar_a_rodada():
+    """⚠️ MEDIDO CONTRA A FONTE: depois de algumas dezenas de requisições na
+    mesma conexão keep-alive, o servidor responde
+    `RemoteProtocolError: Server disconnected without sending a response`.
+
+    Uma rodada real faz milhares delas. Sem retry, a primeira queda mata o
+    município inteiro — e o log culparia a fonte por "estar fora do ar", que é
+    justamente o diagnóstico errado que faz alguém ir escrever um ofício."""
+    import httpx
+
+    class CaiUmaVez:
+        def __init__(self):
+            self.n = 0
+
+        def get(self, url, params=None, headers=None, timeout=None):
+            self.n += 1
+            if self.n == 1:
+                raise httpx.RemoteProtocolError("Server disconnected")
+
+            class R:
+                status_code = 200
+
+                @staticmethod
+                def json():
+                    return [{"ok": True}]
+
+            return R()
+
+    cli = CaiUmaVez()
+    assert _get(cli, "licitacon.contratos", cd_orgao="53100") == [{"ok": True}]
+    assert cli.n == 2, "tinha de tentar de novo, não desistir"
+
+
+def test_bloqueio_de_ip_nao_e_retentado():
+    """403 é decisão de borda: insistir só gasta tempo e reforça o bloqueio.
+
+    E tem de ser uma exceção PRÓPRIA — quem chama precisa poder gravar
+    `partial` com a nota, e nunca `success` com zero linha."""
+    import httpx
+
+    class Recusa:
+        def __init__(self):
+            self.n = 0
+
+        def get(self, *a, **k):
+            self.n += 1
+
+            class R:
+                status_code = 403
+
+            return R()
+
+    cli = Recusa()
+    with pytest.raises(Bloqueado):
+        _get(cli, "licitacon.contratos", cd_orgao="53100")
+    assert cli.n == 1
 
 
 def test_orgao_inexistente_devolve_vazio_sem_explodir():

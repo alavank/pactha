@@ -46,9 +46,15 @@ AS ARMADILHAS, todas medidas contra a fonte em 03/09/2026:
 
 3. ⚠️ **A LISTA NAO TEM VALOR. So o DETALHE tem** — e e uma requisicao por
    contrato, com 6.213 contratos em Santa Maria. Por isso o orcamento de tempo
-   (`_orcamento`): a rodada gasta ate `TCE_RS_PORTAL_ORCAMENTO_S` segundos
+   (`_Orcamento`): a rodada gasta ate `TCE_RS_PORTAL_ORCAMENTO_S` segundos
    buscando detalhe do que ainda nao tem, prioriza contrato vigente, e continua
    de onde parou na noite seguinte. Nunca estoura o timeout da task.
+
+   **Medido em 80 detalhes seguidos (03/09/2026): 0,57 s cada, zero falha.** Com
+   o orcamento default de 600 s isso da ~1.050 detalhes por rodada — Nova Palma
+   (2.068 registros) fecha em duas noites e Santa Maria (11.503) em seis. A
+   contagem e o valor de cada ano JA aparecem na tela desde a primeira noite; o
+   que chega aos poucos e o valor dos contratos antigos.
 
 4. ⚠️⚠️ **VALOR DE LICITACAO NAO EXISTE NESTA API.** Nem na lista (15 campos),
    nem no detalhe (27), nem em endpoint nenhum do Swagger. `vl_licitacao` e
@@ -124,6 +130,10 @@ ORCAMENTO_S = int(os.getenv("TCE_RS_PORTAL_ORCAMENTO_S", "600"))
 # Nao ha teto de `limit` na fonte (5.000 devolveu 1.202 sem reclamar), mas
 # pagina grande demais so aumenta o custo de um retry.
 PAGINA = 1000
+# Quatro e nao tres por causa da queda de conexao: numa rodada de milhares de
+# requisicoes ela acontece, e gastar duas tentativas com ela ainda deixa duas
+# para o que for de verdade problema da fonte.
+TENTATIVAS = 4
 # Quantos exercicios de remessa conferir. Dois cobrem o ano corrente e o
 # anterior — o suficiente para dizer por qual via o municipio opera.
 ANOS_REMESSA = 2
@@ -147,16 +157,32 @@ def _get(client: httpx.Client, recurso: str, **params):
     """GET no Queryon, com backoff. Devolve lista ou dict ja decodificado.
 
     ⚠️ 403/451 viram `Bloqueado` e NAO sao retentados: bloqueio de borda nao
-    passa com espera (o Obras.gov.br ensinou isso — 429 em 0,05s tres vezes)."""
+    passa com espera (o Obras.gov.br ensinou isso — 429 em 0,05s tres vezes).
+
+    ⚠️⚠️ **O SERVIDOR DERRUBA A CONEXAO EM SEQUENCIA LONGA**, e isso NAO e erro
+    de status: e `RemoteProtocolError: Server disconnected without sending a
+    response`, medido em 03/09/2026 depois de algumas dezenas de requisicoes na
+    mesma conexao keep-alive. Uma rodada real faz milhares delas — sem este
+    ramo, a primeira queda mata o municipio inteiro e o log culpa a fonte por
+    "estar fora do ar". O retry reabre a conexao, que e o que resolve."""
     url = f"{BASE}/{recurso}.json"
     espera = 2.0
-    for tentativa in range(3):
-        r = client.get(url, params=params, headers=UA, timeout=TIMEOUT)
+    for tentativa in range(TENTATIVAS):
+        try:
+            r = client.get(url, params=params, headers=UA, timeout=TIMEOUT)
+        except httpx.TransportError as e:
+            if tentativa == TENTATIVAS - 1:
+                raise
+            log.warning("  %s: conexao caiu (%s), reabrindo em %.0fs",
+                        recurso, type(e).__name__, espera)
+            time.sleep(espera)
+            espera *= 2
+            continue
         if r.status_code in (403, 451):
             raise Bloqueado(f"HTTP {r.status_code} em {recurso}")
         if r.status_code == 200:
             return r.json()
-        if r.status_code in (429, 500, 502, 503, 504) and tentativa < 2:
+        if r.status_code in (429, 500, 502, 503, 504) and tentativa < TENTATIVAS - 1:
             log.warning("  %s: HTTP %s, nova tentativa em %.0fs",
                         recurso, r.status_code, espera)
             time.sleep(espera)
@@ -622,7 +648,10 @@ def linha_obra(mid: int, r: dict, det: dict | None = None) -> dict:
         "doc": _txt(d.get("NR_DOC_CONTRATADO") or r.get("NR_DOC_CONTRATADO"), 20),
         "dt_ini": _data(d.get("DT_INICIO_VIGENCIA") or r.get("DT_INICIO_EXECUCAO")),
         "dt_fim": _data(d.get("DT_FIM_VIGENCIA") or r.get("DT_TERMINO_EXECUCAO")),
-        "vl_ini": _dec(d.get("VL_INICIAL") if d else r.get("VL_INICIAL")),
+        # ⚠️ `is not None` e nao `or`: valor ZERO e falsy, e um `or` faria a obra
+        # de valor zero cair no campo da lista — ou virar NULL — em silencio.
+        "vl_ini": _dec(d["VL_INICIAL"] if d.get("VL_INICIAL") is not None
+                       else r.get("VL_INICIAL")),
         "vl_atual": _dec(d.get("VL_ATUAL")),
         "vl_medido": _dec(d.get("VL_TOTAL_MEDIDO")),
         "vl_saldo": _dec(d.get("VL_SALDO_CONTRATUAL")),
@@ -872,10 +901,10 @@ def _um_municipio(cur, client: httpx.Client, a: dict, orcamento: _Orcamento,
     # 4. Obras — zero e resultado legitimo (armadilha 9).
     lista_obras = obras(client, orgao)
     log.info("  %s: %d obra(s) no LicitaCon Obras", nome, len(lista_obras))
-    for o in lista_obras:
+    for i, o in enumerate(lista_obras):
         if not orcamento.sobrou():
             log.info("  %s: orcamento esgotado; %d obra(s) ficam para a proxima "
-                     "rodada", nome, len(lista_obras) - lista_obras.index(o))
+                     "rodada", nome, len(lista_obras) - i)
             break
         det = obra_detalhe(client, o.get("ID_OBRA"))
         time.sleep(PAUSA)
