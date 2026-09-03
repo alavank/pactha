@@ -165,6 +165,14 @@ _SOURCES_POR_UF: dict[str, list[tuple[str, str, str | None]]] = {
         ("Consulta Popular / COREDEs (RS)",
          "SELECT max(atualizado_em), count(*) FROM consulta_popular_rs",
          "consulta_popular_rs"),
+        # ⚠️ Esta fonte pode estar BLOQUEADA POR IP (o TCE-RS devolve 403 para
+        # faixa de datacenter). Quando esta, o coletor grava `partial` com a
+        # nota — entao o monitor mostra "degradado", que e a verdade, e nao
+        # "parado" nem "em dia". Conta as licitacoes: os contratos vem da mesma
+        # rodada e do mesmo `source`, entao a data e a mesma.
+        ("TCE-RS — Licitações e contratos (RS)",
+         "SELECT max(atualizado_em), count(*) FROM tce_rs_licitacoes",
+         "tce_rs"),
     ],
     "ES": [
         ("GConv-ES — Convênios estaduais (ES)",

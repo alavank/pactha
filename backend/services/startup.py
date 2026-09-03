@@ -387,6 +387,11 @@ MIGRATION_FILES = [
     # garantia da Uniao). Fonte NACIONAL — nao tem recorte de UF. Depende so de
     # `municipios`, entao pode entrar no fim da lista.
     "add_siconfi.sql",
+    # TCE-RS/LicitaCon: licitacoes e contratos do municipio, mais a tabela
+    # `fonte_http_cache` — que e infraestrutura, nao do TCE: e a primeira peca
+    # de HTTP CONDICIONAL do repo (a auditoria de 29/08 mediu zero ETag em 44
+    # coletores). Depende so de `municipios`.
+    "add_tce_rs.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",

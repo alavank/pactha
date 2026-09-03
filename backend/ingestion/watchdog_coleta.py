@@ -125,6 +125,12 @@ FRESCOR_HORAS_POR_UF = {
         "fpe_rs": 54,
         # semanal: 8 dias de folga (a fonte muda 1x/ano, apos a votacao)
         "consulta_popular_rs": 192,
+        # TCE-RS/LicitaCon: o TCE republica os ZIPs por orgao com cadencia
+        # semanal (o de Nova Palma foi atualizado em 31/08/2026, um domingo), e
+        # a rodada e diaria com HTTP condicional — quase toda ela responde 304.
+        # 30h porque o que se vigia e a RODADA, nao a mudanca da fonte: 304 e
+        # sucesso e carimba o log igual.
+        "tce_rs": 30,
     },
 }
 
