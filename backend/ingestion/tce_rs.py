@@ -10,14 +10,23 @@ Medido em Nova Palma (02/09/2026): **864 licitacoes e 1.201 contratos** de 2016 
 o maior deles a "construcao de 25 casas de alvenaria" (R$ 3,64 mi). Numa
 prefeitura de 5,6 mil habitantes.
 
-⛔⛔ **A COLETA PODE ESTAR BLOQUEADA POR IP, E ISSO NAO E DEFEITO DESTE ARQUIVO.**
-Medido em 17/08 e reconfirmado em 29/08/2026: `dados.tce.rs.gov.br` devolve
-**403** para o IP da VPS (54.232.208.118) e **200** para IP residencial —
-bloqueio de faixa de datacenter, com e sem User-Agent de navegador. Enquanto
-isso valer, o coletor grava `ingestion_log` com status `partial` e a nota do
-bloqueio, e **nao trata 403 como "municipio sem licitacao"**. As saidas sao
-liberacao junto ao TCE (pedido institucional/LAI), proxy de saida, ou rodar esta
-coleta de outro ponto. Conferir com `scripts/reconhecimento_fontes_vps.sh`.
+⛔⛔ **A COLETA ESTA BLOQUEADA POR IP, E ISSO NAO E DEFEITO DESTE ARQUIVO.**
+Medido TRES vezes, de forma independente — 17/08, 29/08 e **03/09/2026, este
+ultimo pela bateria do `scripts/reconhecimento_fontes_vps.sh` rodada do proprio
+servidor**: `dados.tce.rs.gov.br` devolve **403** para o IP da VPS
+(54.232.208.118) nos tres enderecos (CKAN, ZIP de licitacoes e ZIP de empenhos)
+e **200** para IP residencial. Nao e intermitencia, e nao e User-Agent: na mesma
+bateria, o CHE e o CKAN da CAGE responderam 200 do mesmo IP no mesmo minuto.
+
+Consequencia pratica: **a Scheduled Task deste coletor NAO e criada** enquanto o
+bloqueio valer. O codigo fica pronto e testado; quando a liberacao vier, ligar e
+uma linha no Coolify. Se rodar assim mesmo, o coletor grava `ingestion_log` com
+status `partial` e a nota do bloqueio — e **nunca trata 403 como "municipio sem
+licitacao"**.
+
+As saidas, em ordem de custo: pedido institucional de liberacao ao TCE (o dado e
+aberto, e o pedido e legitimo), proxy de saida so para esta coleta, ou coleta de
+outro ponto. Ver `docs/fontes-rs/CREDENCIAIS.md` §6.
 
 O ENDERECO E PREVISIVEL a partir do codigo do orgao no TCE (nao e o IBGE):
 
