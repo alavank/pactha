@@ -74,7 +74,20 @@ class FNSScraper(ScraperBase):
         senha = credential.get("senha") or ""
         mun_id = credential.get("municipio_id")
         mun_nome = (credential.get("municipio_nome") or "").upper().strip()
-        mun_uf = credential.get("municipio_uf") or "MG"
+        # ⚠️ SEM FALLBACK "MG", e o motivo e material. A UF entra em DOIS
+        # lugares desta coleta: `/recursos/municipios/uf/{uf}` (que resolve o
+        # codigo FNS pelo NOME) e `sgUf` na busca de propostas. Assumir Minas
+        # quando a credencial nao diz a UF fazia o coletor procurar um municipio
+        # gaucho na lista mineira — e, havendo homonimo (ha "Santa Maria" em
+        # varios estados), casar com o municipio ERRADO e gravar proposta de
+        # outra cidade no tenant. Sem UF a coleta nao acontece, e diz por que.
+        mun_uf = (credential.get("municipio_uf") or "").strip().upper()
+        if len(mun_uf) != 2:
+            logger.warning(
+                f"  mun_id={mun_id}: credencial sem `municipio_uf` — coleta "
+                f"cancelada. Antes disto o coletor assumia 'MG' e podia casar "
+                f"com municipio homonimo de outro estado.")
+            return []
 
         # Detecta sessao capturada (cookies_full JSON)
         cookies_session = None
