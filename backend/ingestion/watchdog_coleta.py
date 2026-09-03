@@ -103,6 +103,10 @@ FRESCOR_HORAS_NACIONAL = {
     # + folga. NACIONAL: varre todo municipio ativo com ibge_code, sem recorte
     # de estado — o lugar e aqui, nunca no mapa por UF.
     "siconfi": 30,
+    # Obras.gov.br/CIPI. Cadencia REAL de 2 dias (auto-limite de 44h no proprio
+    # ingest): a varredura e cara — uma pagina a cada 8s por causa do rate
+    # limit — e o CIPI muda devagar. 54h = dois dias + folga.
+    "obrasgov": 54,
     # ⚠️ `portal_transparencia` NAO ENTRA AQUI de proposito. Ele e um scaffold
     # inerte (sem PORTAL_TRANSPARENCIA_API_KEY nao coleta nada) e nao tem
     # Scheduled Task. Por-lo no catalogo faria o vigia cobrar frescor de uma

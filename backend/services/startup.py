@@ -392,6 +392,9 @@ MIGRATION_FILES = [
     # de HTTP CONDICIONAL do repo (a auditoria de 29/08 mediu zero ETag em 44
     # coletores). Depende so de `municipios`.
     "add_tce_rs.sql",
+    # Obras.gov.br/CIPI: as obras federais que nao sao de saude (SISMOB) nem
+    # de educacao (SIMEC). Depende so de `municipios`.
+    "add_obrasgov.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",

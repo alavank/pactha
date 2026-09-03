@@ -110,6 +110,13 @@ _SOURCES = [
     ("SICONFI — Contas no Tesouro",
      "SELECT max(atualizado_em), count(*) FROM siconfi_entregas",
      "siconfi"),
+    # Obras.gov.br/CIPI. NACIONAL: varre por UF da carteira e casa por CNPJ do
+    # tomador. ⚠️ Contagem ZERO e estado legitimo (municipio sem obra federal
+    # cadastrada) — o veredito e o `status` da rodada, que sai `partial` quando
+    # a varredura foi interrompida por rate limit.
+    ("Obras.gov.br — Obras federais",
+     "SELECT max(atualizado_em), count(*) FROM obrasgov_projetos",
+     "obrasgov"),
 ]
 
 # ⚠️ FONTES QUE SO EXISTEM PARA CERTAS UFs, e por isso nao podem morar na lista
