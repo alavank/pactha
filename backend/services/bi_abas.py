@@ -11,7 +11,7 @@ difere por tabela e esta comentada em cada query:
   transferegov_propostas / transferegov_pac                      -> sufixo de `numero_proposta` ("xxx/AAAA")
 """
 from __future__ import annotations
-from services.nome_parlamentar import e_parlamentar_real, e_pessoa
+from services.nome_parlamentar import e_parlamentar_real, e_pessoa, emendas_saude_por_autor
 
 import unicodedata
 from collections import defaultdict
@@ -453,6 +453,39 @@ async def bi_parlamentares_detalhe(
     except Exception:
         # Degrada em silencio, como as demais: uma fonte a menos nao pode
         # derrubar a aba inteira (a tabela pode nem existir num tenant novo).
+        pass
+
+    # 5) FNS — EMENDA DE SAUDE POR PARLAMENTAR.
+    #
+    # ⚠️ O bloco 2 (SIGCON) acima EXCLUI FNS de proposito (`fonte NOT ILIKE
+    # '%FNS%'`), porque para FNS o autor nao esta no nivel raiz do raw_data. Ele
+    # esta ANINHADO em `linhaPropostas[].parlamentares[]` — e sem este bloco a
+    # emenda de saude sumia desta aba, do mesmo jeito que sumia da tela de
+    # Parlamentares (medido em 04/09/2026: Incremento pap R$400k do Igor Timo).
+    # A extracao e a MESMA do router e do RM (nome_parlamentar.emendas_saude_por_autor),
+    # para as tres nunca divergirem.
+    sql_fns = f"""
+        SELECT c.municipio_id, m.nome, c.objeto, c.ano, c.raw_data->'linhaPropostas'
+        FROM convenios_estadual c LEFT JOIN municipios m ON m.id = c.municipio_id
+        WHERE c.municipio_id = ANY(:ids) AND c.fonte ILIKE '%FNS%'
+          AND jsonb_typeof(c.raw_data->'linhaPropostas') = 'array'
+          {_filtro_ano_col(anos, 'c.ano')}
+    """
+    try:
+        for r in (await db.execute(text(sql_fns), p)).fetchall():
+            mun_nome, objeto, ano = r[1], r[2], r[3]
+            for autor, val in emendas_saude_por_autor(r[4]):
+                # autor None = proposta de saude sem parlamentar -> Fundo
+                # Municipal, para o valor nao se perder (e_pessoa o classifica
+                # como "outro"). Mesmo rotulo do router (_fns_label).
+                nome = autor or f"FUNDO MUNICIPAL DE SAÚDE — {mun_nome}"
+                _add(nome, {
+                    "fonte": "fns", "numero": None,
+                    "destinacao": mun_nome, "finalidade": objeto or "Emenda de saúde (FNS)",
+                    "valor": val, "situacao": None, "orgao": "MS - FNS",
+                    "ano": ano, "municipio": mun_nome,
+                })
+    except Exception:
         pass
 
     itens = []

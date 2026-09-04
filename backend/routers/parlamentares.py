@@ -14,7 +14,7 @@ Endpoints:
 """
 from __future__ import annotations
 import unicodedata
-from services.nome_parlamentar import e_parlamentar_real, e_pessoa
+from services.nome_parlamentar import e_parlamentar_real, e_pessoa, emendas_saude_por_autor
 from typing import Optional
 from collections import defaultdict
 from fastapi import APIRouter, Depends, Query, HTTPException
@@ -365,36 +365,61 @@ async def aggregate_parlamentares(
     except Exception:
         pass
 
-    # 6) FNS (Fundo Municipal de Saude) — o autor da emenda de saude NAO vem na
-    #    base coletada (0 parlamentar em todas as propostas), entao o FMS do
-    #    municipio entra como "parlamentar" (mesma logica do PAC). Fonte:
-    #    convenios_estadual com fonte ILIKE 'FNS' (nao capturado pela fonte #1,
-    #    que exige parlamentar top-level no raw_data — sempre nulo no FNS).
+    # 6) FNS — a EMENDA DE SAUDE, ATRIBUIDA AO PARLAMENTAR AUTOR.
+    #
+    # ⚠️ ESTE BLOCO FOI REESCRITO EM 04/09/2026. A versao anterior partia de "o
+    # autor da emenda de saude NAO vem na base coletada (0 parlamentar em todas
+    # as propostas)" e, por isso, jogava o valor inteiro do convenio no
+    # "FUNDO MUNICIPAL DE SAUDE — X" (via `_fns_label`). A premissa era FALSA:
+    # o autor VEM, so que ANINHADO em `raw_data.linhaPropostas[].parlamentares[]`
+    # — nunca no nivel raiz. Medido: a emenda "Incremento pap" R$400k do Igor
+    # Timo (Nova Serrana) estava no banco e no RM, e sumia desta tela e do Painel.
+    #
+    # O RM ja le esse aninhamento (services/rm_builder.py, laco do FNS:
+    # `ind.get("parlamentares")` -> noApelidoPolitico/noParlamentar/nome). Aqui a
+    # MESMA precedencia e o MESMO valor (o da PROPOSTA individual, `vlProposta`),
+    # para a tela, o Painel (que reusa esta funcao) e o RM nunca divergirem.
+    #
+    # ⚠️ O FALLBACK PARA O FUNDO MUNICIPAL CONTINUA — mas so quando a proposta
+    # REALMENTE nao tem autor: assim nenhum valor se perde, e o que tem autor
+    # deixa de ser escondido atras do fundo. Sem dupla contagem: cada proposta
+    # conta OU para os seus parlamentares OU para o fundo, nunca os dois.
+    #
+    # ⚠️ `jsonb_typeof = 'array'` no WHERE: sem ele, linha FNS antiga sem
+    # `linhaPropostas` traria NULL e o laco Python quebraria; com ele, some da
+    # varredura (nao tem proposta individual a atribuir).
     sql_fns = f"""
-        SELECT (SELECT nome FROM municipios WHERE id=convenios_estadual.municipio_id) AS mun_nome,
-               COALESCE(valor_total, valor_concedente, 0) AS valor
+        SELECT municipio_id,
+               (SELECT nome FROM municipios WHERE id=convenios_estadual.municipio_id) AS mun_nome,
+               raw_data->'linhaPropostas' AS props
         FROM convenios_estadual
         WHERE fonte ILIKE '%FNS%'
+          AND jsonb_typeof(raw_data->'linhaPropostas') = 'array'
         {where_extra}{ano_sig}
     """
     try:
         for row in (await db.execute(text(sql_fns), params)).fetchall():
-            mun_nome = row[0]
-            if not mun_nome:
-                continue
-            nm = _fns_label(mun_nome)
-            key = _norm(nm)
-            if not key:
-                continue
-            entry = by_norm[key]
-            entry["nome_variants"].add(nm)
-            entry["total_lancamentos"] += 1
-            entry["valor_total"] += _money(row[1])
-            entry["municipios"].add(mun_nome)
-            entry["por_fonte"]["fns"] += 1
-            # `_fns_label` e rotulo sintetico ("FUNDO MUNICIPAL DE SAUDE — X"):
-            # o FNS nao publica o autor da emenda, entao aqui nunca ha pessoa.
-            entry["_inst"] = True
+            mun_nome = row[1]
+            # `emendas_saude_por_autor` desce no aninhamento e devolve
+            # (autor|None, valor) por proposta — a MESMA extracao que o RM usa.
+            for autor, val in emendas_saude_por_autor(row[2]):
+                # autor None = proposta sem parlamentar -> Fundo Municipal, para
+                # o valor nao se perder (o comportamento antigo, agora so aqui).
+                nm = autor if autor else (_fns_label(mun_nome) if mun_nome else None)
+                if not nm:
+                    continue
+                key = _norm(nm)
+                if not key:
+                    continue
+                entry = by_norm[key]
+                entry["nome_variants"].add(nm)
+                entry["total_lancamentos"] += 1
+                entry["valor_total"] += val
+                if mun_nome:
+                    entry["municipios"].add(mun_nome)
+                entry["por_fonte"]["fns"] += 1
+                if not autor:
+                    entry["_inst"] = True
     except Exception:
         pass
 
