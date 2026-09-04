@@ -390,24 +390,52 @@ def _tp_documento(doc: str | None) -> str | None:
 def orgaos_do_municipio(client: "Conexao", ibge: str) -> dict:
     """De-para oficial por IBGE (armadilha 6).
 
-    Devolve {'executivo': {...} | None, 'outros': [...]}. O executivo e a
-    administracao direta cujo nome comeca por 'PM DE' — a Camara ('CM DE') tem
-    codigo proprio e nao e o cliente."""
+    Devolve {'executivo', 'coletaveis', 'fora'}.
+
+    ⚠️ O QUE ENTRA E O QUE FICA DE FORA, e por que — medido em Santa Maria,
+    que tem quatro entidades alem da prefeitura:
+
+        56900  PM DE SANTA MARIA        5.291 lic · 6.215 con · 120 obras  ENTRA
+        88153  IPASSP-SM  (autarquia)     213 lic ·   184 con             ENTRA
+        88201  IPLAN      (autarquia)      95 lic ·    50 con             ENTRA
+        56901  CM DE SANTA MARIA          419 lic ·   260 con ·   1 obra   FORA
+        88277  CI/CENTRO  (consorcio)     120 lic ·   541 con             FORA
+
+    **Autarquia e fundacao municipais ENTRAM**: sao do municipio, gastam dinheiro
+    do municipio e podem ter obra com convenio — a regra do roadmap do RS e que
+    tudo que for repasse para a prefeitura gaucha entra. O IPLAN entra mesmo
+    "AGUARDA BAIXA CNPJ": ele esta sendo extinto, mas os contratos que ja
+    assinou existem e podem ter origem em convenio.
+
+    **A CAMARA fica FORA**: e outro Poder, com orcamento proprio, e nao e o
+    cliente — a mesma separacao que o SICONFI e o CHE exigem. **O CONSORCIO fica
+    FORA**: e intermunicipal (a CI/CENTRO atende a regiao inteira), entao o gasto
+    dele nao e do municipio, e soma-lo inflaria o numero da tela com dinheiro de
+    vizinhos.
+
+    ⚠️ Orgao EXTINTO tambem fica de fora: o acervo dele nao muda mais, e gastar
+    orcamento de rodada com isso e tirar de quem ainda anda."""
     todos = _get(client, "licitacon_dominios.orgaos")
     do_municipio = [o for o in (todos or [])
                     if str(o.get("CD_MUNICIPIO_IBGE") or "") == str(ibge)]
     executivo = None
-    outros = []
+    autarquias, fora = [], []
     for o in do_municipio:
         nome = (o.get("NOME") or "").upper()
-        eh_direta = (o.get("TIPO") or "").upper().startswith("ADMINISTRA")
-        if eh_direta and nome.startswith("PM DE"):
+        tipo = (o.get("TIPO") or "").upper()
+        situacao = (o.get("SITUACAO_ORGAO") or "").upper()
+        if tipo.startswith("ADMINISTRA") and nome.startswith("PM DE"):
             # Se houver mais de um (nao ha, nos 1.344 conferidos), fica o ATIVO.
-            if executivo is None or o.get("SITUACAO_ORGAO") == "ATIVO":
+            if executivo is None or situacao == "ATIVO":
                 executivo = o
+        elif (tipo.startswith("AUTARQUIA") or tipo.startswith("FUNDA")) \
+                and situacao != "EXTINTO":
+            autarquias.append(o)
         else:
-            outros.append(o)
-    return {"executivo": executivo, "outros": outros}
+            fora.append(o)
+    return {"executivo": executivo,
+            "coletaveis": ([executivo] if executivo else []) + autarquias,
+            "fora": fora}
 
 
 def licitacoes(client: "Conexao", cd_orgao: str) -> list[dict]:
@@ -1019,37 +1047,59 @@ def ingest(dry: bool = False) -> int:
 
 def _um_municipio(cur, client: "Conexao", a: dict, orcamento: _Orcamento,
                   dry: bool) -> int:
-    """Coleta um municipio. Devolve quantas linhas gravou."""
-    nome, mid = a["nome"], a["id"]
-    orgao, orgao_nome = a["orgao"], None
+    """Coleta um municipio — a prefeitura E as autarquias dele.
 
-    # 1. O codigo do orgao, pelo de-para oficial (armadilha 6).
+    ⚠️ SAO VARIOS ORGAOS, e nao um. A prefeitura e sempre o primeiro (e o dela
+    que vai para `municipios.tce_orgao_codigo`); as autarquias e fundacoes vem
+    depois, em ordem, e por isso pegam o orcamento que sobrar — se a rodada
+    acabar no meio, quem ficou incompleto foi a autarquia, nunca a prefeitura.
+    Quem entra e quem fica de fora esta em `orgaos_do_municipio`."""
+    nome, mid = a["nome"], a["id"]
+    orgao_principal = a["orgao"]
+    coletaveis = []
+
+    # 1. Os codigos, pelo de-para oficial (armadilha 6).
     if a["ibge"]:
         achado = orgaos_do_municipio(client, a["ibge"])
         exe = achado["executivo"]
         if exe:
-            orgao_nome = _txt(exe.get("NOME"))
             codigo = _txt(exe.get("CD_ORGAO"), 10)
-            if codigo and codigo != orgao:
-                log.info("  %s: orgao no TCE = %s (%s)", nome, codigo, orgao_nome)
-                orgao = codigo
+            if codigo and codigo != orgao_principal:
+                log.info("  %s: orgao no TCE = %s (%s)", nome, codigo,
+                         _txt(exe.get("NOME")))
+                orgao_principal = codigo
                 if not dry:
                     cur.execute("UPDATE municipios SET tce_orgao_codigo = %s "
-                                "WHERE id = %s", (orgao, mid))
-        if achado["outros"]:
-            # Nao sao coletados (ver armadilha 6), mas ficam visiveis: a decisao
-            # de incluir a autarquia e do dono, com o numero na mao.
-            log.info("  %s: outras %d entidade(s) no LicitaCon nao coletadas: %s",
-                     nome, len(achado["outros"]),
-                     ", ".join(f"{o.get('CD_ORGAO')} {o.get('NOME', '')[:28]}"
-                               for o in achado["outros"][:6]))
+                                "WHERE id = %s", (orgao_principal, mid))
+        coletaveis = [(_txt(o.get("CD_ORGAO"), 10), _txt(o.get("NOME")))
+                      for o in achado["coletaveis"]]
+        if achado["fora"]:
+            log.info("  %s: fora da coleta por decisao (outro Poder ou "
+                     "intermunicipal): %s", nome,
+                     ", ".join(f"{o.get('CD_ORGAO')} {o.get('NOME', '')[:26]}"
+                               for o in achado["fora"][:6]))
         time.sleep(PAUSA)
 
-    if not orgao:
+    if not coletaveis and orgao_principal:
+        # Sem IBGE cadastrado nao ha de-para: coleta so o que ja estava gravado.
+        coletaveis = [(orgao_principal, None)]
+
+    if not coletaveis:
         log.info("  %s: sem codigo de orgao no LicitaCon — pulado (nao e "
                  "'municipio sem licitacao')", nome)
         return 0
 
+    log.info("  %s: %d entidade(s) na coleta: %s", nome, len(coletaveis),
+             ", ".join(f"{cd} {(nm or '')[:24]}" for cd, nm in coletaveis))
+    total = 0
+    for cd, nm in coletaveis:
+        total += _um_orgao(cur, client, mid, nome, cd, nm, orcamento, dry)
+    return total
+
+
+def _um_orgao(cur, client: "Conexao", mid: int, nome: str, orgao: str,
+              orgao_nome: str | None, orcamento: _Orcamento, dry: bool) -> int:
+    """Coleta UM orgao (prefeitura ou autarquia). Devolve linhas gravadas."""
     gravados = 0
 
     # 2. Listas — poucas requisicoes, mas NAO baratas em tempo: sao ~3,5 MB por
