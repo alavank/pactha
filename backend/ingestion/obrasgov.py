@@ -4,67 +4,63 @@ Obras.gov.br / CIPI — obras federais no municipio, sem login e sem token.
 O Cadastro Integrado de Projetos de Investimento reune as obras federais com
 execucao fisica, fontes de recurso, tomador e executor. Complementa o SISMOB (so
 saude) e o SIMEC (so educacao): aqui entra o resto — mobilidade, saneamento,
-habitacao, seguranca.
+habitacao, seguranca, e a **reconstrucao da Defesa Civil**, que em Nova Palma e
+22 dos 30 projetos.
 
-⛔⛔ **MEDIDO EM 03/09/2026: A API RECUSA O IP DA VPS.** Tres tentativas
-espacadas de 90s, todas `429` em ~0,05s — e a primeira requisicao da bateria de
-reconhecimento, feita sem nenhuma chamada nossa anterior, ja veio 429. Rejeicao
-instantanea e assinatura de regra de borda, nao de servidor sobrecarregado: na
-mesma bateria, o SICONFI levou 0,23s para ENTREGAR 174 KB do mesmo IP.
+⭐⭐ **04/09/2026: A FONTE MUDOU DE HOST, E COM ELA SUMIRAM TRES ARMADILHAS.**
+Ate 03/09 este coletor falava com `api.obrasgov.gestao.gov.br`, que **recusa o
+IP da VPS** (429 na primeira requisicao, medido tres vezes) — e por isso ficou
+pronto e desligado por dois dias. O Governo publica o MESMO acervo em
+**`api-publica.obrasgov.gestao.gov.br/obras`**, com contrato OpenAPI proprio,
+e esse host **responde 200 ao servidor** (0,16 s, medido em 04/09).
 
-Nao e, portanto, penalidade acumulada vencivel por espacamento — e a segunda
-fonte barrada por faixa de datacenter, ao lado do TCE-RS. **A Scheduled Task
-deste coletor NAO e criada** enquanto isso valer. O codigo e os 13 testes ficam
-prontos; ligar e uma linha no dia em que houver liberacao ou proxy de saida.
+O que a medicao contra a API nova mostrou, ponto a ponto contra o que a antiga
+obrigava:
 
-⚠️ A ressalva que a medicao NAO descarta: tres minutos de silencio nao excluem
-uma penalidade MUITO longa (o INFRA.md §5 documenta 6h no TransfereGov). Se um
-dia houver suspeita de que mudou, repita `scripts/medir_obrasgov_vps.sh` depois
-de horas sem nenhuma requisicao ao dominio.
+    paginacao mente (`last` sempre true) .... NAO: total_items constante (10.372
+                                             no RS) em qualquer pagina/tamanho
+    paginas se sobrepoem (41 de 200) ....... NAO: zero repetidos, ordem estavel
+    rate limit apertado (3s -> 429) ........ NAO: 12 requisicoes seguidas SEM
+                                             pausa, zero erro, 0,72 s de media
+    projeto sem CNPJ ....................... MELHOR: 87% tem (antes 60%)
+    filtro desconhecido ignorado em silencio  SIM, CONTINUA — ver armadilha 1
 
-⚠️⚠️ **ESTA API NAO TEM FILTRO POR MUNICIPIO.** Lido no OpenAPI em 02/09/2026
-(`/obrasgov/api/api-obrasgov-docs`, que fica atras de um `configUrl` proprio e
-nao no `/v3/api-docs` de sempre), os unicos parametros de
-`/projeto-investimento` sao:
+Por isso a varredura caiu de ~8 minutos por UF (60 paginas x 8 s de pausa) para
+~75 segundos (52 paginas de 200 a ~0,7 s). O teto de `tamanho_da_pagina` e
+**200**; 201 devolve 422.
 
-    idUnico · situacao · codigoOrganizacao · nomeOrganizacao · uf ·
-    dataCadastro · natureza · pagina · tamanhoDaPagina
+AS ARMADILHAS QUE VALEM NESTA API, todas medidas em 04/09/2026:
 
-Nao ha `codigoIbge`. E o mais perigoso: **passar um parametro desconhecido nao
-da erro** — o Spring ignora em silencio. Uma consulta com `codigoIbge=4313102`
-devolve HTTP 200 com uma obra do **Amapa**. Medido. Por isso o recorte de
-municipio e feito AQUI, pelo CNPJ do tomador/executor, e nunca delegado a fonte.
+1. ⚠️⚠️ **NAO EXISTE FILTRO TERRITORIAL, E PARAMETRO DESCONHECIDO NAO DA ERRO.**
+   `codigo_ibge=4313102` devolve HTTP 200 com o estado inteiro — `total_items`
+   identico ao da consulta sem filtro. Quem confiasse nele gravaria obra do
+   Amapa como sendo do municipio. O recorte e feito AQUI, e o unico filtro do
+   contrato que serve e `uf_principal`.
 
-AS ARMADILHAS, todas medidas em 02/09/2026:
+2. ⚠️⚠️ **O MUNICIPIO SE RECONHECE POR CNPJ, NUNCA POR NOME** (diretriz do dono,
+   04/09/2026). Casar por nome trouxe, na medicao, **379 obras da Universidade
+   Federal de Santa Maria** como se fossem da prefeitura — mais 6 do hospital
+   universitario. Nome tem homonimo e o erro e silencioso: nao levanta excecao,
+   nao zera a contagem, so mistura dinheiro de outro ente no painel do cliente.
+   Por isso este coletor depende de `municipios.cnpj` estar preenchido (o
+   `ingestion/siconfi.py` preenche sozinho, do cadastro de entes do Tesouro) e
+   soma os CNPJs proprios de fundos e autarquias ja conhecidos.
 
-1. ⚠️ **A PAGINACAO MENTE, E MENTE PARA O LADO PERIGOSO.** `last` volta `true`
-   em TODA pagina, e `totalPages`/`totalElements` sao calculados a partir da
-   pagina pedida (com `tamanhoDaPagina=200`, a pagina 0 informa
-   `totalElements: 200, totalPages: 1`; a pagina 1 informa `400` e `2`). Um
-   coletor que confiasse em `last` pararia na primeira pagina e afirmaria ter
-   todas as obras do estado. A parada e por CONTEUDO: pagina vazia, ou duas
-   paginas seguidas sem `idUnico` novo.
+3. ⚠️ **O PROJETO RARAMENTE DIZ ONDE FICA.** De 200 projetos do RS medidos, so
+   32 tinham CEP ou endereco — e 174 tinham CNPJ em `tomadores`/`executores`. O
+   CNPJ e o caminho; endereco e enfeite.
 
-2. ⚠️ **AS PAGINAS SE SOBREPOEM.** Medido: 41 dos 200 itens da pagina 1 ja
-   estavam na pagina 0 — a ordenacao nao e estavel. Sem dedup por `idUnico`, a
-   contagem infla e o upsert reescreve a mesma linha varias vezes.
+4. ⚠️ **`sistema_resp` REVELA SOBREPOSICAO COM O QUE JA COLETAMOS.** Uma UBS do
+   RS veio com `sistema_resp: SISMOB` — ou seja, o CIPI reune obras que o
+   `sismob_obras` ja traz por outro caminho. A coluna `sistema_origem` guarda
+   isso para a tela poder dizer "esta obra voce ja ve no SISMOB" em vez de
+   mostrar a mesma obra duas vezes como se fossem duas.
 
-3. ⚠️⚠️ **429 VEM COM CORPO VAZIO**, e `size_download=0` e indistinguivel de
-   "nenhuma obra" para quem so olha o tamanho da resposta. O rate limit e
-   apertado: em medicao, requisicoes espacadas de 3s levaram 429 e so passaram
-   com 20-45s de espera. Aqui o 429 tem backoff proprio e NUNCA e tratado como
-   resultado.
-
-4. ⚠️ **O PROJETO NAO DIZ ONDE FICA, na maioria das vezes.** De 397 projetos do
-   RS medidos, so 96 tinham `cep` ou `endereco`; 240 tinham CNPJ de 14 digitos
-   em `tomadores`/`executores`. O CNPJ e o caminho — e por isso este coletor
-   depende de `municipios.cnpj` estar preenchido (o `ingestion/siconfi.py`
-   preenche sozinho, a partir do cadastro de entes do Tesouro).
-
-5. ⚠️ `codigoOrganizacao` E `nomeOrganizacao` NAO SERVEM PARA ISSO.
-   `nomeOrganizacao=NOVA PALMA` devolveu obras do Amapa e de Santa Catarina (e
-   ignorado, como o `codigoIbge`); `codigoOrganizacao` com CNPJ de tomador
-   conhecido devolveu ZERO. Ele filtra por outra coisa — nao pelo tomador.
+5. ⚠️ **UMA OBRA PODE TER VARIOS TOMADORES**, e um deles pode ser de outro ente
+   (consorcio, obra intermunicipal). O casamento e por interseccao de CNPJ com a
+   carteira; um projeto que casa com dois municipios da carteira e gravado para
+   os dois, e a chave `id_unico` faz a ultima gravacao vencer — ver o cabecalho
+   de `migrations/add_obrasgov.sql`.
 
 Rodavel por Scheduled Task em qualquer worker, ou a mao:
     python -u ingestion/obrasgov.py            # coleta de verdade
@@ -83,34 +79,75 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 log = logging.getLogger("obrasgov")
 
-BASE = "https://api.obrasgov.gestao.gov.br/obrasgov/api"
+# ⚠️ `api-publica`, e nao `api`. O host sem o prefixo e o que bloqueia a VPS.
+BASE = os.getenv("OBRASGOV_BASE",
+                 "https://api-publica.obrasgov.gestao.gov.br/obras")
 UA = {"User-Agent": "Mozilla/5.0 (PACTHA/1.0 dados abertos Obras.gov.br)",
       "Accept": "application/json"}
 FONTE = "OBRASGOV"
 TIMEOUT = 90
 
-TAMANHO_PAGINA = int(os.getenv("OBRASGOV_TAMANHO_PAGINA", "200") or "200")
-# Armadilha 3: o rate limit e apertado. 8s e o meio-termo entre a medicao (3s
-# levou 429; 20s passou) e o orcamento de uma rodada noturna.
-PAUSA_S = float(os.getenv("OBRASGOV_PAUSA_S", "8") or "8")
-TETO_PAGINAS = int(os.getenv("OBRASGOV_TETO_PAGINAS", "60") or "60")
-# Armadilha 1: duas paginas seguidas sem nada novo = fim.
-SECAS_PARA_PARAR = 2
-MIN_INTERVAL_H = int(os.getenv("OBRASGOV_MIN_INTERVAL_H", "44") or "44")
+# Teto da fonte: 201 devolve 422.
+TAMANHO_PAGINA = min(int(os.getenv("OBRASGOV_TAMANHO_PAGINA", "200") or "200"), 200)
+# Sem rate limit observado (12 requisicoes seguidas, zero erro). Meio segundo e
+# cortesia com a fonte, nao necessidade — e ainda deixa a varredura do RS em
+# ~75 s.
+PAUSA_S = float(os.getenv("OBRASGOV_PAUSA_S", "0.5") or "0.5")
+# Guarda contra `total_pages` absurdo. 52 paginas cobrem o RS; 400 cobre SP com
+# folga e ainda impede um laco infinito se a fonte mudar de comportamento.
+TETO_PAGINAS = int(os.getenv("OBRASGOV_TETO_PAGINAS", "400") or "400")
+MIN_INTERVAL_H = int(os.getenv("OBRASGOV_MIN_INTERVAL_H", "20") or "20")
 
 
 def _so_digitos(s) -> str:
     return re.sub(r"\D", "", str(s or ""))
 
 
-def pagina(client: httpx.Client, uf: str, n: int) -> dict | None:
-    """Uma pagina, com backoff no 429 (armadilha 3).
+# ⚠️ A FONTE MANDA PARTE DO TEXTO COM ACENTO CODIFICADO DUAS VEZES, e isso e
+# dela, nao nosso. Medido em 04/09/2026 pedindo o projeto `137854.31-54`: os
+# bytes que chegam sao
+#
+#     b'Creche Proinf\xc3\x83\xc2\xa2ncia  - Ara\xc3\x83\xc2\xbajos'
+#
+# que e o UTF-8 de "Ã¢" — ou seja, o Governo leu um texto latin-1 como se fosse
+# UTF-8 e gravou o resultado. Na tela sai "Creche ProinfÃ¢ncia - AraÃºjos".
+#
+# O conserto e exato: reinterpretar os bytes como latin-1 desfaz a camada extra.
+# Mas ele SO PODE SER APLICADO ONDE O ESTRAGO EXISTE — em "PAVIMENTAÇÃO", que
+# esta correto, a mesma operacao produziria lixo. Por isso as tres guardas:
+# procurar a assinatura do estrago, tentar a conversao, e desistir se ela nao
+# melhorar. Sem elas, um "conserto" cego corromperia o texto sadio da maioria.
+_MOJIBAKE = re.compile(r"Ã[-¿]|Â[-¿]|â€")
 
-    Devolve None quando desiste — e `None` NAO significa "acabou": quem chama
-    tem de distinguir, senao uma rodada punida por rate limit vira "o estado nao
-    tem obras"."""
-    params = {"uf": uf, "pagina": n, "tamanhoDaPagina": TAMANHO_PAGINA}
-    for espera in (0, 30, 60, 120):
+
+def _texto(v) -> str | None:
+    """Texto da fonte, com o acento duplamente codificado desfeito."""
+    s = str(v or "").strip()
+    if not s:
+        return None
+    for _ in range(2):        # a fonte tem casos de DUAS camadas
+        if not _MOJIBAKE.search(s):
+            break
+        try:
+            candidato = s.encode("latin-1").decode("utf-8")
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            break
+        # So aceita se de fato reduziu o estrago: uma conversao que nao melhora
+        # e uma conversao que esta errada.
+        if len(_MOJIBAKE.findall(candidato)) >= len(_MOJIBAKE.findall(s)):
+            break
+        s = candidato
+    return s or None
+
+
+def pagina(client: httpx.Client, uf: str, n: int) -> dict | None:
+    """Uma pagina da UF. `None` = desistiu, e NAO significa "acabou".
+
+    Mantem backoff no 429 mesmo sem rate limit observado: a medicao de hoje nao
+    promete o comportamento de amanha, e o custo de ter a rede pronta e zero
+    enquanto ela nao for usada."""
+    params = {"uf_principal": uf, "pagina": n, "tamanho_da_pagina": TAMANHO_PAGINA}
+    for espera in (0, 15, 45, 90):
         if espera:
             log.info("    429 — aguardando %ds", espera)
             time.sleep(espera)
@@ -124,59 +161,66 @@ def pagina(client: httpx.Client, uf: str, n: int) -> dict | None:
 
 
 def varrer_uf(client: httpx.Client, uf: str) -> tuple[dict, bool]:
-    """Todos os projetos da UF, deduplicados por `idUnico`.
+    """Todos os projetos da UF, por `id_projeto_investimento`.
 
     Devolve (projetos, completo). `completo=False` quando a varredura parou por
     rate limit ou pelo teto — e nesse caso a rodada NAO pode marcar obra como
-    ausente, porque a ausencia pode ser nossa."""
+    ausente, porque a ausencia pode ser nossa.
+
+    ⚠️ Aqui `total_pages` E confiavel (medido: constante em qualquer pagina e
+    tamanho), diferente da API antiga, onde ele era calculado a partir da pagina
+    pedida. Ainda assim o dedup por id continua: ele custa nada e protege de uma
+    mudanca de ordenacao que ninguem anunciaria."""
     por_id: dict[str, dict] = {}
-    secas = 0
-    for n in range(TETO_PAGINAS):
+    n, total_pages = 1, None
+    while n <= TETO_PAGINAS:
         d = pagina(client, uf, n)
         if d is None:
-            # ⚠️ ONDE a varredura parou muda o diagnostico, e o log tem de dizer
-            # qual dos dois e — senao o operador trata bloqueio como lentidao e
-            # fica esperando melhorar sozinho.
-            if n == 0:
-                log.error("  %s: 429 JA NA PRIMEIRA PAGINA — isto e recusa ao IP, "
-                          "nao rate limit de carga (medido em 03/09/2026: tres "
-                          "tentativas espacadas de 90s, todas 429 em ~0,05s). "
-                          "Nao adianta espacar mais; ver o topo de ingestion/obrasgov.py",
-                          uf)
+            if n == 1:
+                log.error("  %s: 429 JA NA PRIMEIRA PAGINA. Se isto persistir, o "
+                          "host novo passou a recusar o IP como o antigo faz — "
+                          "conferir com scripts/medir_obrasgov_vps.sh", uf)
             else:
-                log.warning("  %s: varredura interrompida por rate limit na pagina %d "
-                            "(%d projeto(s) ate aqui) — resultado PARCIAL", uf, n, len(por_id))
+                log.warning("  %s: interrompida por rate limit na pagina %d "
+                            "(%d projeto(s)) — resultado PARCIAL", uf, n, len(por_id))
             return por_id, False
-        conteudo = d.get("content") or []
-        if not conteudo:
+
+        itens = d.get("data") or []
+        if total_pages is None:
+            total_pages = d.get("total_pages") or 1
+            log.info("  %s: %s projeto(s) em %s pagina(s)",
+                     uf, d.get("total_items"), total_pages)
+        if not itens:
             return por_id, True
         novos = 0
-        for x in conteudo:
-            uid = x.get("idUnico")
+        for x in itens:
+            uid = x.get("id_projeto_investimento")
             if uid and uid not in por_id:
                 por_id[uid] = x
                 novos += 1
-        log.info("  %s pagina %d: %d itens, %d novos (acumulado %d)",
-                 uf, n, len(conteudo), novos, len(por_id))
-        # Armadilha 1: `last`/`totalPages` sao ignorados de proposito.
-        secas = secas + 1 if novos == 0 else 0
-        if secas >= SECAS_PARA_PARAR:
+        if n % 10 == 0 or n == total_pages:
+            log.info("    pagina %d/%s — acumulado %d", n, total_pages, len(por_id))
+        if n >= total_pages:
             return por_id, True
+        n += 1
         time.sleep(PAUSA_S)
     log.warning("  %s: teto de %d paginas — resultado PARCIAL", uf, TETO_PAGINAS)
     return por_id, False
 
 
 def cnpjs_do_projeto(p: dict) -> set[str]:
-    """CNPJs de 14 digitos em tomadores e executores (armadilha 4).
+    """CNPJs de 14 digitos em tomadores e executores (armadilhas 2 e 3).
 
-    Ente municipal aparece com CNPJ; orgao federal aparece com codigo SIAFI/UG
-    curto (36210, 26419), que nao casa com CNPJ nenhum e por isso e descartado
-    naturalmente pelo teste de comprimento."""
+    ⚠️ Cada lista tem o SEU nome de campo (`cnpj_tomador`, `cnpj_executor`) —
+    nao ha um `codigo` generico como na API antiga. Ler o campo errado devolve
+    conjunto vazio e o municipio fica sem nenhuma obra, em silencio."""
     out = set()
-    for lista in ("tomadores", "executores"):
+    for lista, campo in (("tomadores", "cnpj_tomador"),
+                         ("executores", "cnpj_executor")):
         for x in (p.get(lista) or []):
-            c = _so_digitos(x.get("codigo"))
+            c = _so_digitos(x.get(campo))
+            # Orgao federal aparece com codigo SIAFI/UG curto (36210), que nao
+            # casa com CNPJ nenhum e cai fora pelo comprimento.
             if len(c) == 14:
                 out.add(c)
     return out
@@ -197,12 +241,15 @@ def _alvos(cur) -> dict[str, list[dict]]:
     """)
     municipios = [{"id": r[0], "nome": r[1], "uf": r[2], "cnpjs": set()}
                   for r in cur.fetchall()]
+    proprio = {m["id"]: m for m in municipios}
+    ids = list(proprio)
     cur.execute("""
         SELECT id, regexp_replace(coalesce(cnpj,''), '\\D', '', 'g')
           FROM municipios WHERE active
     """)
-    proprio = {r[0]: r[1] for r in cur.fetchall()}
-    ids = [m["id"] for m in municipios]
+    cnpj_proprio = {r[0]: r[1] for r in cur.fetchall()}
+
+    extras: dict[int, set[str]] = {}
     if ids:
         cur.execute("""
             SELECT DISTINCT municipio_id, cnpj FROM (
@@ -215,16 +262,13 @@ def _alvos(cur) -> dict[str, list[dict]]:
                   FROM transferegov_pac p WHERE p.municipio_id = ANY(%s)
             ) t WHERE length(cnpj) = 14
         """, (ids, ids))
-        extras: dict[int, set[str]] = {}
         for mid, cnpj in cur.fetchall():
             extras.setdefault(mid, set()).add(cnpj)
-    else:
-        extras = {}
 
     por_uf: dict[str, list[dict]] = {}
     for m in municipios:
-        if len(proprio.get(m["id"]) or "") == 14:
-            m["cnpjs"].add(proprio[m["id"]])
+        if len(cnpj_proprio.get(m["id"]) or "") == 14:
+            m["cnpjs"].add(cnpj_proprio[m["id"]])
         m["cnpjs"] |= extras.get(m["id"], set())
         if m["cnpjs"]:
             por_uf.setdefault(m["uf"], []).append(m)
@@ -243,13 +287,13 @@ INSERT INTO obrasgov_projetos (
     data_final_efetiva, data_situacao, data_cadastro,
     populacao_beneficiada, empregos_gerados, valor_investimento_previsto,
     origens_recurso, eixos, tipos, tomadores, executores, repassadores,
-    raw_data, atualizado_em)
+    sistema_origem, raw_data, atualizado_em)
 VALUES (%(mid)s, %(uid)s, %(nome)s, %(desc)s, %(social)s, %(meta)s,
         %(natureza)s, %(especie)s, %(situacao)s, %(uf)s, %(cep)s, %(end)s,
         %(dt_ini_prev)s, %(dt_fim_prev)s, %(dt_ini_efe)s, %(dt_fim_efe)s,
         %(dt_sit)s, %(dt_cad)s, %(pop)s, %(empregos)s, %(valor)s,
         %(origens)s, %(eixos)s, %(tipos)s, %(tomadores)s, %(executores)s,
-        %(repassadores)s, %(raw)s::jsonb, NOW())
+        %(repassadores)s, %(sistema)s, %(raw)s::jsonb, NOW())
 ON CONFLICT (id_unico) DO UPDATE SET
     municipio_id = EXCLUDED.municipio_id, nome = EXCLUDED.nome,
     descricao = EXCLUDED.descricao, funcao_social = EXCLUDED.funcao_social,
@@ -267,51 +311,77 @@ ON CONFLICT (id_unico) DO UPDATE SET
     origens_recurso = EXCLUDED.origens_recurso, eixos = EXCLUDED.eixos,
     tipos = EXCLUDED.tipos, tomadores = EXCLUDED.tomadores,
     executores = EXCLUDED.executores, repassadores = EXCLUDED.repassadores,
+    sistema_origem = EXCLUDED.sistema_origem,
     raw_data = EXCLUDED.raw_data, atualizado_em = NOW()
 """
 
 
-def _nomes(lista) -> list[str]:
-    return [str(x.get("nome") or x.get("descricao") or "").strip()
-            for x in (lista or []) if x]
+def _lista(itens, *campos) -> list[str]:
+    """Nomes de uma lista aninhada, tentando os campos na ordem dada."""
+    fora = []
+    for x in (itens or []):
+        for c in campos:
+            v = _texto(x.get(c))
+            if v:
+                fora.append(v)
+                break
+    return fora
+
+
+def _data(v):
+    """`None` continua `None`: data efetiva vazia e "ainda nao aconteceu"."""
+    s = str(v or "").strip()
+    return s[:10] if s else None
 
 
 def linha(municipio_id: int, p: dict) -> dict:
-    fontes = p.get("fontesDeRecurso") or []
-    # Soma das fontes: a API traz uma linha por origem (Federal, Estadual...).
+    """Uma linha do banco a partir do projeto da API nova.
+
+    ⚠️ TODOS os nomes de campo mudaram com o host (camelCase -> snake_case, e
+    varios renomeados: `nome` -> `desc_nome`, `fontesDeRecurso` ->
+    `investimentos_previstos`). Ler um campo antigo devolve `None` sem erro
+    nenhum — a linha grava vazia e ninguem percebe."""
+    invest = p.get("investimentos_previstos") or []
+    # A fonte traz uma linha por origem (Federal, Estadual, Municipal).
     valor = None
-    for f in fontes:
-        v = f.get("valorInvestimentoPrevisto")
+    for f in invest:
+        v = f.get("vl_investimento_previsto")
         if isinstance(v, (int, float)):
             valor = (valor or 0) + v
+    eixos_tipos = p.get("eixos_tipos") or []
     return {
         "mid": municipio_id,
-        "uid": p.get("idUnico"),
-        "nome": (p.get("nome") or "").strip() or None,
-        "desc": (p.get("descricao") or "").strip() or None,
-        "social": (p.get("funcaoSocial") or "").strip() or None,
-        "meta": (p.get("metaGlobal") or "").strip() or None,
-        "natureza": p.get("natureza"),
-        "especie": p.get("especie"),
+        "uid": p.get("id_projeto_investimento"),
+        "nome": _texto(p.get("desc_nome")),
+        "desc": _texto(p.get("desc_projeto")),
+        "social": _texto(p.get("desc_funcao_social")),
+        "meta": _texto(p.get("desc_meta_global")),
+        "natureza": p.get("natureza_intervencao"),
+        "especie": p.get("especie_intervencao"),
         "situacao": p.get("situacao"),
-        "uf": p.get("uf"),
-        "cep": p.get("cep"),
-        "end": p.get("endereco"),
-        "dt_ini_prev": p.get("dataInicialPrevista") or None,
-        "dt_fim_prev": p.get("dataFinalPrevista") or None,
-        "dt_ini_efe": p.get("dataInicialEfetiva") or None,
-        "dt_fim_efe": p.get("dataFinalEfetiva") or None,
-        "dt_sit": p.get("dataSituacao") or None,
-        "dt_cad": p.get("dataCadastro") or None,
-        "pop": p.get("populacaoBeneficiada"),
-        "empregos": p.get("qdtEmpregosGerados"),
+        "uf": p.get("uf_principal"),
+        "cep": str(p.get("nr_cep") or "").strip() or None,
+        "end": _texto(p.get("desc_endereco")),
+        "dt_ini_prev": _data(p.get("dt_inicial_prevista")),
+        "dt_fim_prev": _data(p.get("dt_final_prevista")),
+        "dt_ini_efe": _data(p.get("dt_inicial_efetiva")),
+        "dt_fim_efe": _data(p.get("dt_final_efetiva")),
+        # A API nova nao publica data da situacao; o campo fica nulo em vez de
+        # receber a de cadastro, que responderia outra pergunta.
+        "dt_sit": None,
+        "dt_cad": _data(p.get("dt_cadastro")),
+        "pop": p.get("populacao_beneficiada"),
+        "empregos": p.get("qtd_empregos_gerados"),
         "valor": valor,
-        "origens": [str(f.get("origem") or "") for f in fontes],
-        "eixos": _nomes(p.get("eixos")),
-        "tipos": _nomes(p.get("tipos")),
-        "tomadores": _nomes(p.get("tomadores")),
-        "executores": _nomes(p.get("executores")),
-        "repassadores": _nomes(p.get("repassadores")),
+        "origens": [_texto(f.get("desc_nome_fonte_recurso")) or ""
+                    for f in invest],
+        "eixos": _lista(eixos_tipos, "eixo"),
+        "tipos": _lista(eixos_tipos, "tipo"),
+        "tomadores": _lista(p.get("tomadores"), "organizacao_tomador"),
+        "executores": _lista(p.get("executores"), "organizacao_executor"),
+        "repassadores": _lista(p.get("repassadores"), "organizacao_repassador"),
+        # Armadilha 4: diz se a obra ja chega por outro coletor nosso.
+        "sistema": p.get("sistema_resp"),
         "raw": json.dumps(p, ensure_ascii=False),
     }
 
@@ -361,27 +431,32 @@ def ingest(dry: bool = False) -> int:
                     projetos, completo = varrer_uf(client, uf)
                     if not completo:
                         parciais.append(uf)
-                    # Indice CNPJ -> municipio, montado uma vez.
+                    # Indice CNPJ -> municipio, montado uma vez (armadilha 2).
                     de_quem: dict[str, dict] = {}
                     for m in municipios:
                         for c in m["cnpjs"]:
                             de_quem[c] = m
                     achados = 0
+                    por_municipio: dict[str, int] = {}
                     for p in projetos.values():
-                        donos = {de_quem[c]["id"] for c in cnpjs_do_projeto(p)
-                                 if c in de_quem}
-                        for mid in donos:
+                        donos = {de_quem[c]["id"]: de_quem[c]["nome"]
+                                 for c in cnpjs_do_projeto(p) if c in de_quem}
+                        for mid, nome in donos.items():
                             achados += 1
+                            por_municipio[nome] = por_municipio.get(nome, 0) + 1
                             if dry:
                                 continue
                             cur.execute(_SQL, linha(mid, p))
                             gravados += 1
-                    log.info("  %s: %d projeto(s) varrido(s), %d da carteira",
-                             uf, len(projetos), achados)
+                    log.info("  %s: %d projeto(s) varrido(s), %d da carteira%s",
+                             uf, len(projetos), achados,
+                             (" — " + ", ".join(f"{k}: {v}" for k, v in
+                                                sorted(por_municipio.items())))
+                             if por_municipio else "")
                     if dry:
                         for p in list(projetos.values())[:3]:
-                            log.info("      %s  %s", p.get("idUnico"),
-                                     (p.get("nome") or "")[:60])
+                            log.info("      %s  %s", p.get("id_projeto_investimento"),
+                                     (p.get("desc_nome") or "")[:60])
 
             if dry:
                 return 0

@@ -24,6 +24,7 @@ import {
   LabelList,
 } from "recharts";
 import api from "@/lib/api";
+import { useAnoCorrentePadrao } from "@/lib/anoPadrao";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { anosOpcoes, atalhosAnos, resumoAnos } from "@/lib/periodo";
 import { Badge } from "@/components/ui/badge";
@@ -206,6 +207,9 @@ function DashboardOperacional() {
   // Era um <select> NATIVO de um ano so — o unico do app fora do padrao, e o
   // que fica na tela que o prefeito abre primeiro.
   const [anosSel, setAnosSel] = useState<string[]>([]);
+  /* Abre no ano corrente — ver `lib/anoPadrao.ts`. Esta é a tela que o
+     prefeito abre primeiro, e é onde somar uma década assusta mais. */
+  useAnoCorrentePadrao(anosOpcoes(2010), setAnosSel);
 
   const goConvenios = (vigencia?: string) => {
     if (!municipioId) return;

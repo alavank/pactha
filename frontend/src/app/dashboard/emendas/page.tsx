@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { ChevronLeft, ChevronRight, Search as SearchIcon, ChevronDown, ChevronUp } from "lucide-react";
 import api from "@/lib/api";
+import { useAnoCorrentePadrao } from "@/lib/anoPadrao";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -88,6 +89,9 @@ export default function EmendasEstaduaisPage() {
       .then((r) => setAnos(Array.isArray(r.data) ? r.data : []))
       .catch(() => {});
   }, [municipioId]);
+
+  // Abre no ano corrente em vez de "todos" — ver `lib/anoPadrao.ts`.
+  useAnoCorrentePadrao(anos, setAnosSel);
 
   // Mesma guarda de corrida da tela de Convênios: só a resposta mais recente
   // assenta, e a troca de município zera o estado (senão o selo de frescor do

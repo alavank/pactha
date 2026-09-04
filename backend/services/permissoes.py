@@ -285,6 +285,18 @@ _RECURSOS: tuple = (
     _Recurso("sismob", SEC_CONVENIOS, "Obras da Saúde (SISMOB)",
              "as obras de saúde do SISMOB", "",
              ("ver", "exportar", "atualizar"), fonte="no SISMOB"),
+    # Obras federais de TODAS as áreas (CIPI/Obras.gov.br) — mobilidade,
+    # saneamento, habitação, segurança e a reconstrução da Defesa Civil, que
+    # nenhuma outra tela mostrava.
+    #
+    # ⚠️ SÓ `ver`, e é a mesma razão escrita no InvestSUS logo abaixo: não há
+    # rota de exportação nem de coleta sob demanda, e permissão que não governa
+    # nada é pior que permissão faltando — aparece na tela de concessão, alguém
+    # marca, e fica achando que concedeu algo. As duas entram no dia em que os
+    # endpoints que elas protegeriam existirem.
+    _Recurso("obrasgov", SEC_CONVENIOS, "Obras Federais (Obras.gov.br)",
+             "as obras federais do município no Obras.gov.br", "",
+             ("ver",), fonte="no Obras.gov.br"),
     _Recurso("acordofes", SEC_CONVENIOS, "Acordo FES (dívida da saúde MG)",
              "os créditos e parcelas do Acordo FES", "",
              ("ver", "exportar", "atualizar"), fonte="na SES-MG",

@@ -461,6 +461,11 @@
   --bi-crit-ink:   #d63b5c;   /* 4.53 — o de exibicao ja passa */
   --bi-info:       #4fa3ee;   /* exibicao (mesma familia do grafico c4) */
   --bi-info-ink:   #1477d0;   /* 4.59 */
+  /* Fundo suave da familia INFO — o par de `--bi-accent-soft`, que ja existia
+     so para o verde. Nasceu para o Radar de Captacao no menu: ele precisa se
+     distinguir do verde do sistema (que ali significa "item selecionado") sem
+     virar alarme, que e o que o ambar e o vermelho fariam. */
+  --bi-info-soft:  #e4f1fd;
 }
 
 /* O contêiner do Painel: so aplica o que ja aplicava. Continua existindo
@@ -507,6 +512,9 @@
   --bi-crit-ink:   var(--bi-crit);
   --bi-info:       #63b3f5;
   --bi-info-ink:   #63b3f5;
+  /* No escuro o "suave" e transparencia, e nao um tom claro: um azul-pastel
+     sobre fundo #0a0c0b brilharia mais que o texto. */
+  --bi-info-soft:  rgba(99, 179, 245, 0.14);
 }
 
 @layer utilities {

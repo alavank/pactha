@@ -8,6 +8,7 @@ import {
 import { useMunicipio } from "@/contexts/MunicipioContext";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { atalhosAnos, resumoAnos } from "@/lib/periodo";
+import { useAnoCorrentePadrao } from "@/lib/anoPadrao";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -309,6 +310,8 @@ export default function TransfereGovPage() {
     () => Array.from(new Set(items.map(anoDa).filter(Boolean))).sort((a, b) => b.localeCompare(a)),
     [items]
   );
+  // Abre no ano corrente em vez de "todos" — ver `lib/anoPadrao.ts`.
+  useAnoCorrentePadrao(anosDisponiveis, setAnosSel);
 
   /* Filtro de ano é CLIENT-SIDE: o ano não é parâmetro da API pública do
      TransfereGov, e a listagem já vem inteira para o município. Repare que

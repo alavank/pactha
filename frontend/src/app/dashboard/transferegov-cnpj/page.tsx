@@ -6,6 +6,7 @@ import {
   ChevronDown, ChevronRight,
 } from "lucide-react";
 import api from "@/lib/api";
+import { useAnoCorrentePadrao } from "@/lib/anoPadrao";
 import { formatCurrency } from "@/lib/utils";
 import { textoDe } from "@/lib/texto";
 import { Button } from "@/components/ui/button";
@@ -170,6 +171,8 @@ export default function TransfereGovCnpjPage() {
     for (const v of data.voluntarias) { const a = anoVol(v); if (a) s.add(a); }
     return Array.from(s).sort((a, b) => b.localeCompare(a));
   }, [data]);
+  // Abre no ano corrente em vez de "todos" — ver `lib/anoPadrao.ts`.
+  useAnoCorrentePadrao(anosDisponiveis, setAnosSel);
 
   /* O filtro de ano vale para AS DUAS listas, cada uma pelo SEU campo de ano
      (a emenda no plano de ação, o exercício da proposta na voluntária) — que é

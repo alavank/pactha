@@ -343,6 +343,9 @@ MIGRATION_FILES = [
     # a ninguem, e o proprio catalogo backend a omitia). Mesmo desenho do
     # add_bi_tela.sql; NOT EXISTS respeita revogacao futura.
     "add_tela_investsus.sql",
+    # Mesma logica do investsus: tela nova nao nasce concedida, e o item do
+    # menu e filtrado por `user_telas`. Quem tem `sismob` ganha `obrasgov`.
+    "add_tela_obrasgov.sql",
     # Configuracoes do tenant (chave -> valor) editaveis pela tela. Primeira e
     # unica chave: `rm.rodape`, o rodape padrao do Relatorio de Monitoramento,
     # que ate aqui so existia em RM_RODAPE e exigia deploy para mudar.
@@ -406,6 +409,13 @@ MIGRATION_FILES = [
     # Obras.gov.br/CIPI: as obras federais que nao sao de saude (SISMOB) nem
     # de educacao (SIMEC). Depende so de `municipios`.
     "add_obrasgov.sql",
+    # ⚠️ DEPOIS de `add_obrasgov.sql`: acrescenta `sistema_origem` a uma
+    # tabela que nasce la. Inverter a ordem quebra banco NOVO.
+    "add_obrasgov_sistema_origem.sql",
+    # ⚠️ DEPOIS das duas acima: alarga taxonomias que nascem la. Santa Maria
+    # abortou inteira por UM caractere ("Projeto de Investimento em
+    # Infraestrutura" = 41, coluna = 40).
+    "add_obrasgov_taxonomias_text.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",

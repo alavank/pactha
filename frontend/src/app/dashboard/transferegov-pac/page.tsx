@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useCallback } from "react";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 import { Landmark, Loader2, Search, Eraser, ChevronDown, ChevronRight } from "lucide-react";
 import api from "@/lib/api";
+import { useAnoCorrentePadrao } from "@/lib/anoPadrao";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatCurrency } from "@/lib/utils";
@@ -151,6 +152,8 @@ export default function TransfereGovPacPage() {
       .sort((a, b) => Number(b) - Number(a)),
     [items]
   );
+  // Abre no ano corrente em vez de "todos" — ver `lib/anoPadrao.ts`.
+  useAnoCorrentePadrao(anoOpcoes, setAnosSel);
 
   const filtrados = useMemo(() => items.filter((i) => {
     if (!casa(i.numero_proposta, fProposta)) return false;

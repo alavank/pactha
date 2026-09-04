@@ -68,11 +68,22 @@ AS ARMADILHAS, todas medidas contra a fonte em 03/09/2026:
    buscando detalhe do que ainda nao tem, prioriza contrato vigente, e continua
    de onde parou na noite seguinte. Nunca estoura o timeout da task.
 
-   **Medido em 80 detalhes seguidos (03/09/2026): 0,57 s cada, zero falha.** Com
-   o orcamento default de 600 s isso da ~1.050 detalhes por rodada — Nova Palma
-   (2.068 registros) fecha em duas noites e Santa Maria (11.503) em seis. A
-   contagem e o valor de cada ano JA aparecem na tela desde a primeira noite; o
-   que chega aos poucos e o valor dos contratos antigos.
+   **Medido em 400 detalhes seguidos (03/09/2026): 0,40 s cada, zero falha.**
+   Com o orcamento default de 600 s isso da ~1.500 detalhes por rodada — Nova
+   Palma (2.068 registros) fecha em duas e Santa Maria (11.503) em oito. A
+   contagem e o valor de cada ano JA aparecem na tela desde a primeira rodada;
+   o que chega aos poucos e o valor dos contratos antigos.
+
+3b. ⚠️⚠️ **E O QUE TORNA ISSO POSSIVEL: O PORTAL RESPONDE 403 A PARTIR DA 201a
+   REQUISICAO NA MESMA CONEXAO TCP.** Nao e o IP, nao e o cookie, nao e janela de
+   tempo — e a conexao, e reconectar resolve na hora. A classe `Conexao` cuida
+   disso sozinha; o isolamento do achado esta documentado nela.
+
+   A primeira carga real de Nova Palma (03/09, seis passadas) rendeu **so ~180
+   detalhes por passada** porque este arquivo classificava aquele 403 como
+   bloqueio de IP e abandonava o municipio — seis vezes, cada uma refazendo as
+   listas do zero. Com o reciclo, as mesmas 400 requisicoes passam sem um unico
+   erro.
 
 4. ⚠️⚠️ **VALOR DE LICITACAO NAO EXISTE NESTA API.** Nem na lista (15 campos),
    nem no detalhe (27), nem em endpoint nenhum do Swagger. `vl_licitacao` e
@@ -145,6 +156,17 @@ PAUSA = float(os.getenv("TCE_RS_PORTAL_PAUSA_S", "0.5"))
 # Teto de tempo gasto com DETALHE (armadilha 3). O default cabe folgado num
 # timeout de 1020s da Scheduled Task, junto com listas, remessas e obras.
 ORCAMENTO_S = int(os.getenv("TCE_RS_PORTAL_ORCAMENTO_S", "600"))
+# ⚠️ SUB-ORCAMENTO DAS OBRAS. O detalhe de UMA obra custa ~4,5 s (o payload traz
+# a planilha orcamentaria inteira) contra 0,40 s do contrato — onze vezes mais.
+# Sem teto proprio, as 120 obras de Santa Maria comiam nove dos quinze minutos
+# de cada rodada e os contratos ficavam sem nada: seis rodadas renderam 84
+# detalhes de contrato. Um terco do orcamento e o bastante para as obras
+# entrarem em duas ou tres rodadas sem sequestrar as demais.
+ORCAMENTO_OBRAS_S = int(os.getenv("TCE_RS_PORTAL_ORCAMENTO_OBRAS_S",
+                                  str(max(60, ORCAMENTO_S // 3))))
+# Por quantos dias o detalhe de uma obra e considerado fresco. Obra muda
+# (medicao, aditivo, paralisacao), mas devagar.
+OBRA_FRESCOR_D = int(os.getenv("TCE_RS_PORTAL_OBRA_FRESCOR_D", "7"))
 # Nao ha teto de `limit` na fonte (5.000 devolveu 1.202 sem reclamar), mas
 # pagina grande demais so aumenta o custo de um retry.
 PAGINA = 1000
@@ -170,10 +192,76 @@ class Bloqueado(Exception):
     """O host recusou o IP (403/451). Nao e falha de parser nem dado ausente."""
 
 
+class Conexao:
+    """Cliente HTTP que se RECICLA — e a peca que torna a coleta grande viavel.
+
+    ⚠️⚠️ **O PORTAL RESPONDE 403 A PARTIR DA 201a REQUISICAO NA MESMA CONEXAO
+    TCP.** Medido em 03/09/2026, tres vezes, e isolado assim:
+
+        requisicao 201 da mesma conexao ............ 403
+        mesma conexao, logo apos ................... 403
+        MESMOS cookies limpos, MESMA conexao ....... 403   <- nao e sessao
+        conexao NOVA (mesmo IP, mesmo segundo) ..... 200   <- e a conexao
+
+    Nao e cookie (`JSESSIONID` limpo nao muda nada), nao e o IP (a conexao nova
+    responde 200 no mesmo segundo) e nao e janela de tempo (esperar nao
+    resolve; reconectar resolve na hora).
+
+    Foi isso que fez a primeira carga de Nova Palma render **so ~180 detalhes
+    por rodada**: o coletor tomava o 403, o classificava como bloqueio de IP e
+    abandonava o municipio inteiro — seis vezes seguidas, cada uma recomecando
+    do zero as listas. Com o reciclo, a mesma carga cabe numa rodada.
+
+    ⚠️ E a distincao com o bloqueio DE VERDADE fica nitida, que e o que importa
+    para nao mentir no `ingestion_log`: 403 que SOME ao reconectar e limite de
+    conexao; 403 que PERSISTE numa conexao nova e bloqueio de IP (o caso da
+    VPS, onde a primeira requisicao ja falha)."""
+
+    # 150 e nao 200: margem para as requisicoes que o `_get` repete por conta de
+    # retry, que tambem contam do lado de la.
+    LIMITE = int(os.getenv("TCE_RS_PORTAL_REQ_POR_CONEXAO", "150"))
+
+    def __init__(self):
+        self.n = 0
+        self.reciclos = 0
+        self._c = self._novo()
+
+    @staticmethod
+    def _novo() -> httpx.Client:
+        return httpx.Client(follow_redirects=True, headers=UA, timeout=TIMEOUT)
+
+    def reciclar(self) -> None:
+        try:
+            self._c.close()
+        except Exception:
+            pass
+        self._c = self._novo()
+        self.n = 0
+        self.reciclos += 1
+
+    def get(self, url, **kwargs):
+        if self.n >= self.LIMITE:
+            self.reciclar()
+        self.n += 1
+        return self._c.get(url, **kwargs)
+
+    def close(self) -> None:
+        try:
+            self._c.close()
+        except Exception:
+            pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        self.close()
+
+
 # ---------------------------------------------------------------------------
 # HTTP
 # ---------------------------------------------------------------------------
-def _get(client: httpx.Client, recurso: str, **params):
+def _get(client: "Conexao", recurso: str, **params):
     """GET no Queryon, com backoff. Devolve lista ou dict ja decodificado.
 
     ⚠️ 403/451 viram `Bloqueado` e NAO sao retentados: bloqueio de borda nao
@@ -199,6 +287,17 @@ def _get(client: httpx.Client, recurso: str, **params):
             espera *= 2
             continue
         if r.status_code in (403, 451):
+            # ⚠️ AQUI MORAM DOIS 403 DIFERENTES, e trata-los igual foi o que
+            # fez a carga de 03/09 render um sexto do que podia (ver `Conexao`).
+            # O de LIMITE DE CONEXAO some ao reconectar; o de BLOQUEIO DE IP
+            # persiste. A unica forma honesta de saber qual e: reconectar e
+            # perguntar de novo.
+            if hasattr(client, "reciclar") and tentativa < TENTATIVAS - 1:
+                log.info("  %s: HTTP %s — reciclando a conexao para distinguir "
+                         "limite de conexao de bloqueio de IP", recurso,
+                         r.status_code)
+                client.reciclar()
+                continue
             raise Bloqueado(f"HTTP {r.status_code} em {recurso}")
         if r.status_code == 200:
             return r.json()
@@ -212,7 +311,7 @@ def _get(client: httpx.Client, recurso: str, **params):
     return []
 
 
-def _pagina_tudo(client: httpx.Client, recurso: str, **params) -> list[dict]:
+def _pagina_tudo(client: "Conexao", recurso: str, **params) -> list[dict]:
     """Percorre offset ate a fonte devolver menos que uma pagina cheia."""
     fora, offset = [], 0
     while True:
@@ -288,44 +387,84 @@ def _tp_documento(doc: str | None) -> str | None:
 # ---------------------------------------------------------------------------
 # Fonte
 # ---------------------------------------------------------------------------
-def orgaos_do_municipio(client: httpx.Client, ibge: str) -> dict:
+def orgaos_do_municipio(client: "Conexao", ibge: str) -> dict:
     """De-para oficial por IBGE (armadilha 6).
 
-    Devolve {'executivo': {...} | None, 'outros': [...]}. O executivo e a
-    administracao direta cujo nome comeca por 'PM DE' — a Camara ('CM DE') tem
-    codigo proprio e nao e o cliente."""
+    Devolve {'executivo', 'coletaveis', 'fora'}.
+
+    ⚠️ O QUE ENTRA E O QUE FICA DE FORA, e por que — medido em Santa Maria,
+    que tem quatro entidades alem da prefeitura:
+
+        56900  PM DE SANTA MARIA        5.291 lic · 6.215 con · 120 obras  ENTRA
+        88153  IPASSP-SM  (autarquia)     213 lic ·   184 con             ENTRA
+        88201  IPLAN      (autarquia)      95 lic ·    50 con             ENTRA
+        56901  CM DE SANTA MARIA          419 lic ·   260 con ·   1 obra   FORA
+        88277  CI/CENTRO  (consorcio)     120 lic ·   541 con             FORA
+
+    **Autarquia e fundacao municipais ENTRAM**: sao do municipio, gastam dinheiro
+    do municipio e podem ter obra com convenio — a regra do roadmap do RS e que
+    tudo que for repasse para a prefeitura gaucha entra. O IPLAN entra mesmo
+    "AGUARDA BAIXA CNPJ": ele esta sendo extinto, mas os contratos que ja
+    assinou existem e podem ter origem em convenio.
+
+    **A CAMARA fica FORA**: e outro Poder, com orcamento proprio, e nao e o
+    cliente — a mesma separacao que o SICONFI e o CHE exigem. **O CONSORCIO fica
+    FORA**: e intermunicipal (a CI/CENTRO atende a regiao inteira), entao o gasto
+    dele nao e do municipio, e soma-lo inflaria o numero da tela com dinheiro de
+    vizinhos.
+
+    ⚠️ Orgao EXTINTO tambem fica de fora: o acervo dele nao muda mais, e gastar
+    orcamento de rodada com isso e tirar de quem ainda anda."""
     todos = _get(client, "licitacon_dominios.orgaos")
     do_municipio = [o for o in (todos or [])
                     if str(o.get("CD_MUNICIPIO_IBGE") or "") == str(ibge)]
     executivo = None
-    outros = []
+    autarquias, fora = [], []
     for o in do_municipio:
         nome = (o.get("NOME") or "").upper()
-        eh_direta = (o.get("TIPO") or "").upper().startswith("ADMINISTRA")
-        if eh_direta and nome.startswith("PM DE"):
+        tipo = (o.get("TIPO") or "").upper()
+        situacao = (o.get("SITUACAO_ORGAO") or "").upper()
+        if tipo.startswith("ADMINISTRA") and nome.startswith("PM DE"):
             # Se houver mais de um (nao ha, nos 1.344 conferidos), fica o ATIVO.
-            if executivo is None or o.get("SITUACAO_ORGAO") == "ATIVO":
+            if executivo is None or situacao == "ATIVO":
                 executivo = o
+        elif (tipo.startswith("AUTARQUIA") or tipo.startswith("FUNDA")) \
+                and situacao != "EXTINTO":
+            autarquias.append(o)
         else:
-            outros.append(o)
-    return {"executivo": executivo, "outros": outros}
+            fora.append(o)
+    return {"executivo": executivo,
+            "coletaveis": ([executivo] if executivo else []) + autarquias,
+            "fora": fora}
 
 
-def licitacoes(client: httpx.Client, cd_orgao: str) -> list[dict]:
+def licitacoes(client: "Conexao", cd_orgao: str) -> list[dict]:
     return _pagina_tudo(client, "licitacon.licitacoes", cd_orgao=cd_orgao,
                         tp_situacao="ALL", origem="ALL")
 
 
-def contratos(client: httpx.Client, cd_orgao: str) -> list[dict]:
+def contratos(client: "Conexao", cd_orgao: str) -> list[dict]:
     return _pagina_tudo(client, "licitacon.contratos", cd_orgao=cd_orgao,
                         tp_situacao="ALL", origem="ALL")
 
 
-def _um(resposta):
-    """A API ora devolve o objeto, ora uma lista de um. Normaliza."""
+def _um(resposta) -> dict:
+    """A API ora devolve o objeto, ora uma lista de um. Normaliza.
+
+    ⚠️ DEVOLVE `{}` E NUNCA `None` quando vem vazio, e a diferenca e o que
+    impede um laco eterno. A fonte responde **HTTP 200 com `{}`** para
+    registros que ela simplesmente nao detalha — 134 contratos de Santa Maria,
+    de 2015 a 2026, situacoes e tipos variados. Isso e uma RESPOSTA, nao uma
+    falha: ela diz "perguntei, e nao ha".
+
+    Enquanto `{}` virava `None`, o coletor nao distinguia isso de "ainda nao
+    perguntei", nunca gravava `detalhe_da_versao` e os mesmos 134 voltavam a
+    fila em toda rodada — "contratos: 0 de 134", quatro rodadas seguidas,
+    ~2 min cada, para sempre. Falha de rede continua levantando excecao, entao
+    ela nunca chega aqui como vazio."""
     if isinstance(resposta, list):
-        return resposta[0] if resposta else None
-    return resposta or None
+        return resposta[0] if resposta else {}
+    return resposta or {}
 
 
 def licitacao_detalhe(client, cd_orgao, modalidade, nr, ano) -> dict | None:
@@ -564,7 +703,7 @@ def linha_licitacao(mid: int, orgao_nome: str | None, r: dict,
         "origem": _txt(r.get("APLIC_ORIGEM"), 8),
         "incl": _dt(r.get("DATA_INCLUSAO")),
         "atu": _dt(r.get("DATA_ATUALIZACAO")),
-        "versao": _dt(r.get("DATA_ATUALIZACAO")) if det else None,
+        "versao": _dt(r.get("DATA_ATUALIZACAO")) if det is not None else None,
         "raw": json.dumps({**r, **d}, ensure_ascii=False),
     }
 
@@ -599,7 +738,7 @@ def linha_contrato(mid: int, orgao_nome: str | None, r: dict,
         "lic_origem": _txt(d.get("LICITACAO_ORIGEM")),
         "incl": _dt(r.get("DATA_INCLUSAO")),
         "atu": _dt(r.get("DATA_ATUALIZACAO")),
-        "versao": _dt(r.get("DATA_ATUALIZACAO")) if det else None,
+        "versao": _dt(r.get("DATA_ATUALIZACAO")) if det is not None else None,
         "raw": json.dumps({**r, **d}, ensure_ascii=False),
     }
 
@@ -680,10 +819,10 @@ def linha_obra(mid: int, r: dict, det: dict | None = None) -> dict:
         "dt_paral": _data(d.get("DT_EVENTO_PARALISACAO")),
         "motivo": _txt(d.get("DS_MOTIVO_PARALISACAO") or d.get("DS_MOTIVO_OUTRO")),
         "dt_reinicio": _data(d.get("DT_PREVISAO_REINICIO")),
-        "qt_med": len(medicoes) if det else None,
+        "qt_med": len(medicoes) if det is not None else None,
         "dt_med": max(datas_med) if datas_med else None,
-        "qt_adit": len(d.get("TERMOS_ADITIVOS") or []) if det else None,
-        "raw": json.dumps(_raw_enxuto({**r, **d}), ensure_ascii=False) if det else None,
+        "qt_adit": len(d.get("TERMOS_ADITIVOS") or []) if det is not None else None,
+        "raw": json.dumps(_raw_enxuto({**r, **d}), ensure_ascii=False) if det is not None else None,
     }
 
 
@@ -716,6 +855,43 @@ def _alvos(cur) -> list[dict]:
     return [{"id": r[0], "nome": r[1], "uf": r[2],
              "ibge": (r[3] or "").strip(), "orgao": (r[4] or "").strip()}
             for r in cur.fetchall()]
+
+
+def _gravar_em_lote(cur, sql: str, linhas: list[dict], pagina: int = 200) -> None:
+    """UPSERT de muitas linhas com poucos ida-e-volta.
+
+    ⚠️ `execute_batch` e nao `executemany`: o do psycopg2 continua mandando uma
+    instrucao por linha. Se a extensao nao estiver disponivel, cai no laco
+    simples — mais lento, nunca errado."""
+    if not linhas:
+        return
+    try:
+        from psycopg2.extras import execute_batch
+    except ImportError:
+        for linha in linhas:
+            cur.execute(sql, linha)
+        return
+    execute_batch(cur, sql, linhas, page_size=pagina)
+
+
+def _obras_com_detalhe_fresco(cur, municipio_id: int) -> set:
+    """Obras cujo detalhe ja temos e ainda vale — nao precisam ser rebuscadas.
+
+    ⚠️ `raw_data IS NOT NULL` E a marca de "tem detalhe": o coletor so grava o
+    raw quando buscou o detalhe (a linha vinda so da lista grava NULL ali). Nao
+    precisou de coluna nova para isso.
+
+    ⚠️ E o frescor tem prazo porque OBRA MUDA: medicao nova, aditivo, ordem de
+    paralisacao. `TCE_RS_PORTAL_OBRA_FRESCOR_D` dias depois, ela volta para a
+    fila — devagar o bastante para nao competir com os contratos, frequente o
+    bastante para a tela nao envelhecer."""
+    cur.execute("""
+        SELECT id_obra FROM tce_rs_obras
+         WHERE municipio_id = %s
+           AND raw_data IS NOT NULL
+           AND atualizado_em > now() - (%s || ' days')::interval
+    """, (municipio_id, OBRA_FRESCOR_D))
+    return {r[0] for r in cur.fetchall()}
 
 
 def _versoes_detalhadas(cur, municipio_id: int, tabela: str) -> dict:
@@ -783,17 +959,38 @@ def _log_ingest(cur, conn, status: str, n: int, erro: str | None = None) -> None
 
 
 class _Orcamento:
-    """Teto de tempo para a fase cara. Nunca estoura o timeout da task."""
+    """Teto de tempo para a fase cara. Nunca estoura o timeout da task.
+
+    ⚠️ AS LISTAS NAO CONTAM, e isso nao e detalhe: em Santa Maria elas levam
+    SEIS MINUTOS (11.500 registros em paginas de 1.000, ~3,5 MB cada). Com elas
+    dentro do orcamento de 900 s, mais os nove minutos das obras, sobrava ZERO
+    para os detalhes — a rodada terminava sem buscar um valor sequer. Quem
+    percorre lista chama `pausar()`/`retomar()`."""
 
     def __init__(self, segundos: int):
         self.limite = segundos
         self.inicio = time.monotonic()
+        self.pausado_em = None
+        self.pausado_total = 0.0
+
+    def pausar(self) -> None:
+        if self.pausado_em is None:
+            self.pausado_em = time.monotonic()
+
+    def retomar(self) -> None:
+        if self.pausado_em is not None:
+            self.pausado_total += time.monotonic() - self.pausado_em
+            self.pausado_em = None
+
+    def _decorrido(self) -> float:
+        agora = self.pausado_em or time.monotonic()
+        return (agora - self.inicio) - self.pausado_total
 
     def sobrou(self) -> bool:
-        return (time.monotonic() - self.inicio) < self.limite
+        return self._decorrido() < self.limite
 
     def gasto(self) -> int:
-        return int(time.monotonic() - self.inicio)
+        return int(self._decorrido())
 
 
 def ingest(dry: bool = False) -> int:
@@ -814,7 +1011,7 @@ def ingest(dry: bool = False) -> int:
             falhas = 0
             orcamento = _Orcamento(ORCAMENTO_S)
 
-            with httpx.Client(follow_redirects=True, headers=UA) as client:
+            with Conexao() as client:
                 for a in alvos:
                     try:
                         gravados += _um_municipio(cur, client, a, orcamento, dry)
@@ -848,42 +1045,69 @@ def ingest(dry: bool = False) -> int:
             cur.close()
 
 
-def _um_municipio(cur, client: httpx.Client, a: dict, orcamento: _Orcamento,
+def _um_municipio(cur, client: "Conexao", a: dict, orcamento: _Orcamento,
                   dry: bool) -> int:
-    """Coleta um municipio. Devolve quantas linhas gravou."""
-    nome, mid = a["nome"], a["id"]
-    orgao, orgao_nome = a["orgao"], None
+    """Coleta um municipio — a prefeitura E as autarquias dele.
 
-    # 1. O codigo do orgao, pelo de-para oficial (armadilha 6).
+    ⚠️ SAO VARIOS ORGAOS, e nao um. A prefeitura e sempre o primeiro (e o dela
+    que vai para `municipios.tce_orgao_codigo`); as autarquias e fundacoes vem
+    depois, em ordem, e por isso pegam o orcamento que sobrar — se a rodada
+    acabar no meio, quem ficou incompleto foi a autarquia, nunca a prefeitura.
+    Quem entra e quem fica de fora esta em `orgaos_do_municipio`."""
+    nome, mid = a["nome"], a["id"]
+    orgao_principal = a["orgao"]
+    coletaveis = []
+
+    # 1. Os codigos, pelo de-para oficial (armadilha 6).
     if a["ibge"]:
         achado = orgaos_do_municipio(client, a["ibge"])
         exe = achado["executivo"]
         if exe:
-            orgao_nome = _txt(exe.get("NOME"))
             codigo = _txt(exe.get("CD_ORGAO"), 10)
-            if codigo and codigo != orgao:
-                log.info("  %s: orgao no TCE = %s (%s)", nome, codigo, orgao_nome)
-                orgao = codigo
+            if codigo and codigo != orgao_principal:
+                log.info("  %s: orgao no TCE = %s (%s)", nome, codigo,
+                         _txt(exe.get("NOME")))
+                orgao_principal = codigo
                 if not dry:
                     cur.execute("UPDATE municipios SET tce_orgao_codigo = %s "
-                                "WHERE id = %s", (orgao, mid))
-        if achado["outros"]:
-            # Nao sao coletados (ver armadilha 6), mas ficam visiveis: a decisao
-            # de incluir a autarquia e do dono, com o numero na mao.
-            log.info("  %s: outras %d entidade(s) no LicitaCon nao coletadas: %s",
-                     nome, len(achado["outros"]),
-                     ", ".join(f"{o.get('CD_ORGAO')} {o.get('NOME', '')[:28]}"
-                               for o in achado["outros"][:6]))
+                                "WHERE id = %s", (orgao_principal, mid))
+        coletaveis = [(_txt(o.get("CD_ORGAO"), 10), _txt(o.get("NOME")))
+                      for o in achado["coletaveis"]]
+        if achado["fora"]:
+            log.info("  %s: fora da coleta por decisao (outro Poder ou "
+                     "intermunicipal): %s", nome,
+                     ", ".join(f"{o.get('CD_ORGAO')} {o.get('NOME', '')[:26]}"
+                               for o in achado["fora"][:6]))
         time.sleep(PAUSA)
 
-    if not orgao:
+    if not coletaveis and orgao_principal:
+        # Sem IBGE cadastrado nao ha de-para: coleta so o que ja estava gravado.
+        coletaveis = [(orgao_principal, None)]
+
+    if not coletaveis:
         log.info("  %s: sem codigo de orgao no LicitaCon — pulado (nao e "
                  "'municipio sem licitacao')", nome)
         return 0
 
+    log.info("  %s: %d entidade(s) na coleta: %s", nome, len(coletaveis),
+             ", ".join(f"{cd} {(nm or '')[:24]}" for cd, nm in coletaveis))
+    total = 0
+    for cd, nm in coletaveis:
+        total += _um_orgao(cur, client, mid, nome, cd, nm, orcamento, dry)
+    return total
+
+
+def _um_orgao(cur, client: "Conexao", mid: int, nome: str, orgao: str,
+              orgao_nome: str | None, orcamento: _Orcamento, dry: bool) -> int:
+    """Coleta UM orgao (prefeitura ou autarquia). Devolve linhas gravadas."""
     gravados = 0
 
-    # 2. Listas — baratas e completas.
+    # 2. Listas — poucas requisicoes, mas NAO baratas em tempo: sao ~3,5 MB por
+    # pagina de 1.000 e Santa Maria leva seis minutos para baixar as suas. Ficam
+    # FORA do orcamento, que existe para proteger a fase de detalhe (ver
+    # `_Orcamento`) — e sao obrigatorias de qualquer modo, porque e delas que sai
+    # a fila do que falta detalhar.
+    orcamento.pausar()
     lics = licitacoes(client, orgao)
     time.sleep(PAUSA)
     cons = contratos(client, orgao)
@@ -899,12 +1123,19 @@ def _um_municipio(cur, client: httpx.Client, a: dict, orcamento: _Orcamento,
                      r.get("ANO_CONTRATO"), r.get("DS_SITUACAO"),
                      (r.get("DS_OBJETO") or "")[:50])
     else:
-        for r in lics:
-            cur.execute(_SQL_LIC, linha_licitacao(mid, orgao_nome, r))
-            gravados += 1
-        for r in cons:
-            cur.execute(_SQL_CON, linha_contrato(mid, orgao_nome, r))
-            gravados += 1
+        # ⚠️ EM LOTE, e nao um `execute` por linha. Sao 11.505 linhas em Santa
+        # Maria, e cada `execute` e um ida-e-volta pela rede: rodando a carga de
+        # fora da VPS, por tunel SSH (~30 ms cada), isso custava SEIS MINUTOS
+        # so para gravar as listas — mais que o dobro do que a coleta inteira
+        # de Nova Palma levou. Em lote sao poucos ida-e-volta.
+        _gravar_em_lote(cur, _SQL_LIC,
+                        [linha_licitacao(mid, orgao_nome, r) for r in lics])
+        _gravar_em_lote(cur, _SQL_CON,
+                        [linha_contrato(mid, orgao_nome, r) for r in cons])
+        gravados += len(lics) + len(cons)
+    # ⚠️ So AGORA o orcamento volta a correr: a gravacao das listas e parte do
+    # custo fixo da rodada, nao da fase de detalhe que ele existe para proteger.
+    orcamento.retomar()
 
     # 3. Remessas — por via de operacao, nao por pontualidade (armadilha 1).
     hoje = date.today()
@@ -919,12 +1150,33 @@ def _um_municipio(cur, client: httpx.Client, a: dict, orcamento: _Orcamento,
             time.sleep(PAUSA)
 
     # 4. Obras — zero e resultado legitimo (armadilha 9).
+    #
+    # ⚠️⚠️ A OBRA SO E REBUSCADA QUANDO PRECISA, E TEM ORCAMENTO PROPRIO. Sem as
+    # duas coisas a carga de Santa Maria travou: o detalhe de uma obra custa
+    # ~4,5 s (o payload traz a planilha inteira) e sao 120 delas, entao cada
+    # rodada gastava NOVE MINUTOS rebuscando as MESMAS obras — e sobrava zero
+    # para os contratos. Seis rodadas de 15 min renderam 84 detalhes de contrato;
+    # Nova Palma, sem obra nenhuma, fez 954 em 70 segundos.
     lista_obras = obras(client, orgao)
-    log.info("  %s: %d obra(s) no LicitaCon Obras", nome, len(lista_obras))
-    for i, o in enumerate(lista_obras):
-        if not orcamento.sobrou():
-            log.info("  %s: orcamento esgotado; %d obra(s) ficam para a proxima "
-                     "rodada", nome, len(lista_obras) - i)
+    ja_frescas = _obras_com_detalhe_fresco(cur, mid) if not dry else set()
+    pendentes_obra = [o for o in lista_obras
+                      if _int(o.get("ID_OBRA")) not in ja_frescas]
+    log.info("  %s: %d obra(s) no LicitaCon Obras — %d com detalhe a buscar",
+             nome, len(lista_obras), len(pendentes_obra))
+
+    # Grava TODAS as da lista primeiro: e barato (nao custa requisicao) e faz a
+    # obra aparecer na tela com objeto, situacao e contratado ja na primeira
+    # rodada, mesmo antes de o detalhe caro chegar.
+    if not dry:
+        for o in lista_obras:
+            cur.execute(_SQL_OBRA, linha_obra(mid, o))
+            gravados += 1
+
+    orcamento_obras = _Orcamento(min(ORCAMENTO_OBRAS_S, ORCAMENTO_S))
+    for i, o in enumerate(pendentes_obra):
+        if not orcamento_obras.sobrou() or not orcamento.sobrou():
+            log.info("  %s: orcamento de obras esgotado; %d ficam para a "
+                     "proxima rodada", nome, len(pendentes_obra) - i)
             break
         det = obra_detalhe(client, o.get("ID_OBRA"))
         time.sleep(PAUSA)
@@ -951,15 +1203,22 @@ def _um_municipio(cur, client: httpx.Client, a: dict, orcamento: _Orcamento,
     ):
         pendentes = _pendentes_de_detalhe(
             lista, _versoes_detalhadas(cur, mid, tabela), tabela)
-        feitos = 0
+        feitos = vazios = 0
         for r in pendentes:
             if not orcamento.sobrou():
                 break
             nr, ano, tipo = _CHAVE[tabela](r)
             det = buscar(client, orgao, tipo, nr, ano)
             time.sleep(PAUSA)
+            # ⚠️ SEM `if not det: continue` AQUI. `{}` e a resposta da fonte
+            # para registro que ela nao detalha, e pular sem carimbar a versao
+            # devolvia esses registros a fila em toda rodada, para sempre. O
+            # UPSERT abaixo grava a linha da LISTA com a versao carimbada: os
+            # campos do detalhe continuam nulos (COALESCE nao apaga nada), e a
+            # pendencia fecha. Se a fonte um dia mudar aquele registro, a
+            # `DATA_ATUALIZACAO` muda junto e ele volta a fila sozinho.
             if not det:
-                continue
+                vazios += 1
             # ⚠️ `r` (a LISTA) e a base, e o detalhe so acrescenta. E o que faz
             # `detalhe_da_versao` receber a mesma versao que a proxima rodada vai
             # comparar — ver `_versoes_detalhadas`.
@@ -967,8 +1226,12 @@ def _um_municipio(cur, client: httpx.Client, a: dict, orcamento: _Orcamento,
             feitos += 1
             gravados += 1
         if pendentes:
-            log.info("  %s %s: %d de %d detalhe(s) nesta rodada%s", nome, tabela,
-                     feitos, len(pendentes),
+            # ⚠️ O "sem detalhe na fonte" e reportado SEPARADO do que foi
+            # buscado: sao registros que existem na lista e que o Tribunal nao
+            # detalha, e ficariam parecendo coleta incompleta. Nao sao.
+            log.info("  %s %s: %d de %d detalhe(s) nesta rodada%s%s", nome,
+                     tabela, feitos, len(pendentes),
+                     f" ({vazios} sem detalhe na fonte)" if vazios else "",
                      "" if feitos == len(pendentes) else " (o resto na proxima)")
 
     return gravados

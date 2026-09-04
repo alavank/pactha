@@ -41,17 +41,32 @@ interface BiScope {
 
 const Ctx = createContext<BiScope | null>(null);
 
+/* ⭐ NA PRIMEIRA VISITA, O ANO CORRENTE (pedido do dono, 04/09/2026). O Painel
+   é a tela que abre o sistema; abri-lo somando uma década joga um número
+   absurdo na cara de quem chegou, e a leitura vira "isto aqui é grande demais
+   para eu entender". O ano em que se está é o recorte que quase sempre se quer.
+
+   ⚠️ E "TODOS OS ANOS" CONTINUA SENDO UMA ESCOLHA POSSÍVEL — por isso a chave
+   passa a guardar `[]` em vez de ser APAGADA quando o usuário limpa o período.
+   Sem essa distinção, "escolhi ver tudo" e "nunca escolhi nada" ficariam
+   indistinguíveis no localStorage, e o padrão desfaria a escolha da pessoa toda
+   vez que ela voltasse. Chave ausente = primeira visita; `[]` gravado = ela
+   pediu tudo. */
 function lerAnosIniciais(): number[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(K_ANOS);
     if (raw) {
       const arr = JSON.parse(raw);
+      // `[]` explícito é "quero todos", e tem de sobreviver ao recarregamento.
       if (Array.isArray(arr)) return arr.map(Number).filter(Boolean).sort((a, b) => a - b);
     }
   } catch { /* json invalido -> cai no legado */ }
   const legado = Number(localStorage.getItem(K_ANO_LEGADO) || 0);
-  return legado ? [legado] : [];
+  if (legado) return [legado];
+  // Nunca escolheu nada: abre no ano corrente. `getFullYear` e não um literal —
+  // em janeiro isto vira 2027 sozinho, sem ninguém lembrar de mexer.
+  return [new Date().getFullYear()];
 }
 
 export function BiScopeProvider({ children }: { children: ReactNode }) {
@@ -72,7 +87,9 @@ export function BiScopeProvider({ children }: { children: ReactNode }) {
       if (limpo.length === 1) localStorage.setItem(K_ANO_LEGADO, String(limpo[0]));
       else localStorage.removeItem(K_ANO_LEGADO);
     } else {
-      localStorage.removeItem(K_ANOS);
+      // ⚠️ GRAVA `[]`, não apaga: é assim que "quero todos os anos" se distingue
+      // de "nunca escolhi" — ver `lerAnosIniciais`.
+      localStorage.setItem(K_ANOS, "[]");
       localStorage.removeItem(K_ANO_LEGADO);
     }
   }, []);
@@ -87,7 +104,9 @@ export function BiScopeProvider({ children }: { children: ReactNode }) {
           if (limpo.length === 1) localStorage.setItem(K_ANO_LEGADO, String(limpo[0]));
           else localStorage.removeItem(K_ANO_LEGADO);
         } else {
-          localStorage.removeItem(K_ANOS);
+          // Mesma razão do `setAnos`: desligar a última pastilha é "quero
+          // todos", e isso é uma escolha — tem de sobreviver ao recarregamento.
+          localStorage.setItem(K_ANOS, "[]");
           localStorage.removeItem(K_ANO_LEGADO);
         }
       }

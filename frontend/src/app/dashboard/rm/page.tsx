@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { Plus, Trash2, Download, Loader2, ChevronDown, FileText, Save } from "lucide-react";
 import api from "@/lib/api";
+import { useAnoCorrentePadrao } from "@/lib/anoPadrao";
 import { Button } from "@/components/ui/button";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { atalhosAnos, resumoAnos, anosOpcoes as anosOpcoesPeriodo } from "@/lib/periodo";
@@ -201,6 +202,8 @@ export default function RmListPage() {
       .sort((a, b) => b.localeCompare(a)),
     [items],
   );
+  // Abre no ano corrente em vez de "todos" — ver `lib/anoPadrao.ts`.
+  useAnoCorrentePadrao(anosDisponiveis, setAnosSel);
 
   /* Filtro client-side por ano do ESCOPO: mostra o RM cujo escopo inclui algum
      ano selecionado; o COMPLETO (todos os anos) aparece sempre (cobre qualquer
