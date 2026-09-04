@@ -27,7 +27,7 @@
  * contrário seria acusar o cliente de uma omissão que ele não cometeu.
  */
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { CalendarClock, ExternalLink, Gavel, HardHat, Landmark, Loader2 } from "lucide-react";
 
 import api from "@/lib/api";
@@ -52,13 +52,18 @@ interface Resp {
   licitacon?: {
     coletado: boolean;
     atualizado_em?: string | null;
-    licitacoes_por_ano?: Array<{ ano: number; total: number;
+    entidades?: Array<{ codigo: string; nome?: string | null;
+      licitacoes: number; contratos: number }>;
+    licitacoes_por_ano?: Array<{ ano: number; orgao?: string | null;
+      orgao_nome?: string | null; total: number;
       valor_estimado?: number | null; valor_homologado?: number | null }>;
-    contratos_por_ano?: Array<{ ano: number; total: number; valor?: number | null }>;
+    contratos_por_ano?: Array<{ ano: number; orgao?: string | null;
+      orgao_nome?: string | null; total: number; valor?: number | null }>;
     contratos_vigentes?: Array<{ numero: string; objeto?: string | null;
       valor?: number | null; vigencia_ate?: string | null;
       contratado_documento?: string | null; link?: string | null;
-      contratado?: string | null; valor_atual?: number | null }>;
+      contratado?: string | null; valor_atual?: number | null;
+      orgao?: string | null }>;
   };
   obras?: {
     coletado: boolean;
@@ -68,6 +73,7 @@ interface Resp {
     com_origem_declarada?: number;
     obras?: Array<{
       id: number; objeto?: string | null; situacao?: string | null;
+      orgao?: string | null;
       contratado?: string | null; valor?: number | null; medido?: number | null;
       pc_financeiro?: number | null; pc_fisico?: number | null;
       vigencia_ate?: string | null; paralisada_em?: string | null;
@@ -86,10 +92,41 @@ const money = (v?: number | null) =>
 const dia = (iso?: string | null) =>
   iso ? new Date(iso + (iso.length === 10 ? "T12:00:00" : "")).toLocaleDateString("pt-BR") : "—";
 
+/* ⚠️ O MUNICÍPIO É MAIS DE UMA ENTIDADE NO LICITACON. Além da prefeitura, as
+   autarquias e fundações municipais têm código próprio no Tribunal e licitam
+   por conta — em Santa Maria, o IPASSP-SM e o IPLAN. O coletor traz as três, e
+   somar tudo é correto: é dinheiro público municipal.
+
+   Mas quem abre a tela procurando "os contratos da prefeitura" precisa chegar
+   nesse número sem subtrair de cabeça. Daí o filtro — e ele só aparece quando
+   há mais de uma entidade, porque em Nova Palma (só a prefeitura) seria um
+   controle que não controla nada. */
+const soma = <T extends { ano: number }>(
+  linhas: T[] | undefined,
+  orgaoDe: (l: T) => string | null | undefined,
+  filtro: string | null,
+  juntar: (acc: T, l: T) => T,
+): T[] => {
+  const fora = (linhas || []).filter((l) => !filtro || orgaoDe(l) === filtro);
+  const porAno = new Map<number, T>();
+  for (const l of fora) {
+    const atual = porAno.get(l.ano);
+    porAno.set(l.ano, atual ? juntar(atual, l) : { ...l });
+  }
+  return [...porAno.values()].sort((a, b) => b.ano - a.ano);
+};
+
+/* Nome curto para o chip: o TCE manda "IPASSP-SM - INST. PREV. ASSIST. À SAÚDE
+   SERV. PÚBL. MUN. DE SANTA MARIA". A sigla antes do travessão é como o próprio
+   órgão se chama. */
+const curto = (nome?: string | null, codigo?: string) =>
+  (nome || codigo || "").split(" - ")[0].trim().slice(0, 28) || (codigo ?? "");
+
 export default function TceRsPage() {
   const { municipioId } = useMunicipio();
   const [d, setD] = useState<Resp | null>(null);
   const [loading, setLoading] = useState(false);
+  const [orgao, setOrgao] = useState<string | null>(null);
 
   const carregar = useCallback(() => {
     if (!municipioId) return;
@@ -98,6 +135,53 @@ export default function TceRsPage() {
       .then((r) => setD(r.data)).catch(() => setD(null)).finally(() => setLoading(false));
   }, [municipioId]);
   useEffect(carregar, [carregar]);
+
+  const entidades = d?.licitacon?.entidades || [];
+  // ⚠️ O filtro só existe com MAIS DE UMA entidade. Em Nova Palma há só a
+  // prefeitura, e um seletor de um item é ruído que sugere escolha inexistente.
+  const temFiltro = entidades.length > 1;
+  // ⚠️ O filtro é DERIVADO, e só vale se a entidade existir nos dados que estão
+  // na tela. Sem isso, trocar de município no seletor manteria o código de órgão
+  // do município anterior — que não casa com nada — e a tela apareceria vazia,
+  // como se a prefeitura nova não licitasse. Derivar em vez de resetar num
+  // efeito evita o render extra (e o aviso do lint).
+  const filtro = temFiltro && entidades.some((e) => e.codigo === orgao)
+    ? orgao : null;
+
+  const licPorAno = useMemo(
+    () => soma(d?.licitacon?.licitacoes_por_ano, (l) => l.orgao, filtro,
+               (a, l) => ({
+                 ...a,
+                 total: a.total + l.total,
+                 // ⚠️ null + número não pode virar número: "sem valor" somado a
+                 // "com valor" continua parcial, e mostrar o parcial como total
+                 // seria afirmar que o resto é zero.
+                 valor_estimado: a.valor_estimado == null && l.valor_estimado == null
+                   ? null : (a.valor_estimado ?? 0) + (l.valor_estimado ?? 0),
+                 valor_homologado: a.valor_homologado == null && l.valor_homologado == null
+                   ? null : (a.valor_homologado ?? 0) + (l.valor_homologado ?? 0),
+               })),
+    [d?.licitacon?.licitacoes_por_ano, filtro],
+  );
+  const conPorAno = useMemo(
+    () => soma(d?.licitacon?.contratos_por_ano, (l) => l.orgao, filtro,
+               (a, l) => ({
+                 ...a,
+                 total: a.total + l.total,
+                 valor: a.valor == null && l.valor == null
+                   ? null : (a.valor ?? 0) + (l.valor ?? 0),
+               })),
+    [d?.licitacon?.contratos_por_ano, filtro],
+  );
+  const vigentes = useMemo(
+    () => (d?.licitacon?.contratos_vigentes || [])
+      .filter((c) => !filtro || c.orgao === filtro).slice(0, 10),
+    [d?.licitacon?.contratos_vigentes, filtro],
+  );
+  const obrasFiltradas = useMemo(
+    () => (d?.obras?.obras || []).filter((o) => !filtro || o.orgao === filtro),
+    [d?.obras?.obras, filtro],
+  );
 
   if (loading && !d) {
     return <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -130,11 +214,46 @@ export default function TceRsPage() {
               : undefined}
           />
 
+          {/* ⭐ O FILTRO POR ENTIDADE. O município é a prefeitura MAIS as autarquias
+              e fundações municipais, cada uma com código próprio no Tribunal.
+              O total somado é o correto — é dinheiro público municipal —, e
+              este seletor é o que permite chegar em "só a prefeitura" sem
+              subtrair de cabeça. */}
+          {temFiltro && (
+            <div className="mb-3 flex flex-wrap items-center gap-1.5">
+              {[{ codigo: "", nome: "Todas as entidades", licitacoes: 0, contratos: 0 },
+                ...entidades].map((e) => {
+                const ativo = (e.codigo || null) === filtro;
+                return (
+                  <button
+                    key={e.codigo || "todas"}
+                    type="button"
+                    onClick={() => setOrgao(e.codigo || null)}
+                    className="rounded-full border px-2.5 py-1 text-[11px] transition-colors"
+                    style={{
+                      borderColor: ativo ? "var(--bi-accent-ink)" : "var(--bi-line)",
+                      color: ativo ? "var(--bi-accent-ink)" : "var(--bi-muted)",
+                      fontWeight: ativo ? 600 : 400,
+                    }}
+                    title={e.codigo ? `${e.nome} — código ${e.codigo} no TCE-RS` : undefined}
+                  >
+                    {e.codigo ? curto(e.nome, e.codigo) : e.nome}
+                    {e.codigo ? (
+                      <span style={{ color: "var(--bi-faint)" }}>
+                        {" "}{e.licitacoes + e.contratos}
+                      </span>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
               <div className="bi-title mb-1 text-[12px]">Licitações por ano</div>
               <Lista>
-                {(d.licitacon.licitacoes_por_ano || []).map((a) => (
+                {licPorAno.map((a) => (
                   <li key={a.ano}
                       className="flex flex-wrap items-baseline justify-between gap-x-3 py-1">
                     <span className="text-[12px] tabular-nums"
@@ -159,7 +278,7 @@ export default function TceRsPage() {
             <div>
               <div className="bi-title mb-1 text-[12px]">Contratos por ano</div>
               <Lista>
-                {(d.licitacon.contratos_por_ano || []).map((a) => (
+                {conPorAno.map((a) => (
                   <li key={a.ano}
                       className="flex flex-wrap items-baseline justify-between gap-x-3 py-1">
                     <span className="text-[12px] tabular-nums"
@@ -176,13 +295,13 @@ export default function TceRsPage() {
             </div>
           </div>
 
-          {!!d.licitacon.contratos_vigentes?.length && (
+          {!!vigentes.length && (
             <div className="mt-3">
               <div className="bi-title mb-1 text-[12px]">
                 Contratos vigentes — os próximos a vencer
               </div>
               <Lista>
-                {d.licitacon.contratos_vigentes.map((c) => (
+                {vigentes.map((c) => (
                   <li key={c.numero} className="py-1">
                     <div className="flex flex-wrap items-baseline justify-between gap-x-3">
                       <span className="text-[12px]" style={{ color: "var(--bi-text)" }}>
@@ -249,22 +368,27 @@ export default function TceRsPage() {
           sistema é de 2024 e município pequeno pode não ter obra sujeita a
           registro — inventar um "nenhuma obra encontrada" ao lado de uma tela de
           convênios sugeriria omissão onde não há. */}
-      {d.obras?.coletado && !!d.obras.obras?.length && (
+      {d.obras?.coletado && !!obrasFiltradas.length && (
         <Bloco className="p-3">
           <BlocoHead
             icon={HardHat}
             titulo="Obras registradas no LicitaCon Obras"
-            sub={`${d.obras.total} obra(s)`
-              + (d.obras.paralisadas ? ` · ${d.obras.paralisadas} paralisada(s)` : "")
-              + (d.obras.com_origem_declarada
-                  ? ` · ${d.obras.com_origem_declarada} com origem de recurso declarada`
+            /* ⚠️ O subtítulo conta o que ESTÁ NA LISTA, não o total do
+               município: com o filtro ativo, "120 obras" ao lado de três
+               listadas seria contradição na mesma linha. */
+            sub={`${obrasFiltradas.length} obra(s)`
+              + (obrasFiltradas.some((o) => o.paralisada_em)
+                  ? ` · ${obrasFiltradas.filter((o) => o.paralisada_em).length} paralisada(s)`
+                  : "")
+              + (obrasFiltradas.some((o) => o.recursos?.length)
+                  ? ` · ${obrasFiltradas.filter((o) => o.recursos?.length).length} com origem de recurso declarada`
                   : "")}
             right={d.obras.atualizado_em
               ? <Selo>{`atualizado em ${dia(d.obras.atualizado_em)}`}</Selo>
               : undefined}
           />
           <Lista>
-            {d.obras.obras.map((o) => (
+            {obrasFiltradas.map((o) => (
               <li key={o.id} className="py-1.5">
                 <div className="flex flex-wrap items-baseline justify-between gap-x-3">
                   <span className="text-[12px]" style={{ color: "var(--bi-text)" }}>

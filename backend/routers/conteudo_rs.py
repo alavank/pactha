@@ -118,47 +118,91 @@ async def _licitacon(db: AsyncSession, municipio_id: int) -> dict:
     (o TCE-RS devolve 403 para faixa de datacenter) ou código de órgão ainda não
     descoberto. A tela precisa dizer isso, senão afirma sobre a prefeitura uma
     coisa que ela não sabe."""
+    # ⚠️ QUEBRADO POR ÓRGÃO, e não só por ano. O município é mais de uma
+    # entidade no LicitaCon: além da prefeitura, as autarquias e fundações
+    # municipais (em Santa Maria, o IPASSP-SM e o IPLAN). Somar tudo é correto —
+    # é dinheiro público municipal —, mas um gestor que abre a tela procurando
+    # "os contratos da prefeitura" precisa poder chegar nesse número sem
+    # subtrair de cabeça. Os seis anos são contados sobre o município INTEIRO
+    # (subconsulta), senão um ano em que só a autarquia contratou entraria ou
+    # sairia conforme o filtro, e a série mudaria de tamanho ao filtrar.
     lic = (await db.execute(text("""
-        SELECT ano_licitacao, count(*), sum(vl_licitacao), sum(vl_homologado),
-               max(atualizado_em)
-          FROM tce_rs_licitacoes WHERE municipio_id = :m
-         GROUP BY ano_licitacao ORDER BY ano_licitacao DESC LIMIT 6
+        SELECT ano_licitacao, cd_orgao, max(nm_orgao), count(*),
+               sum(vl_licitacao), sum(vl_homologado), max(atualizado_em)
+          FROM tce_rs_licitacoes
+         WHERE municipio_id = :m
+           AND ano_licitacao IN (SELECT DISTINCT ano_licitacao
+                                   FROM tce_rs_licitacoes WHERE municipio_id = :m
+                                  ORDER BY ano_licitacao DESC LIMIT 6)
+         GROUP BY ano_licitacao, cd_orgao
+         ORDER BY ano_licitacao DESC, cd_orgao
     """), {"m": municipio_id})).fetchall()
     con = (await db.execute(text("""
-        SELECT ano_contrato, count(*), sum(vl_contrato), max(atualizado_em)
-          FROM tce_rs_contratos WHERE municipio_id = :m
-         GROUP BY ano_contrato ORDER BY ano_contrato DESC LIMIT 6
+        SELECT ano_contrato, cd_orgao, max(nm_orgao), count(*),
+               sum(vl_contrato), max(atualizado_em)
+          FROM tce_rs_contratos
+         WHERE municipio_id = :m
+           AND ano_contrato IN (SELECT DISTINCT ano_contrato
+                                  FROM tce_rs_contratos WHERE municipio_id = :m
+                                 ORDER BY ano_contrato DESC LIMIT 6)
+         GROUP BY ano_contrato, cd_orgao
+         ORDER BY ano_contrato DESC, cd_orgao
     """), {"m": municipio_id})).fetchall()
 
     if not lic and not con:
         return {"coletado": False}
 
+    # As entidades que aparecem nos dados, com o total de cada uma. É o que a
+    # tela usa para montar o filtro — e é a resposta a "de quem são estes
+    # números?", que sem isso ficava implícita.
+    entidades = (await db.execute(text("""
+        SELECT cd_orgao, max(nm_orgao), sum(lic), sum(con) FROM (
+            SELECT cd_orgao, nm_orgao, count(*) AS lic, 0 AS con
+              FROM tce_rs_licitacoes WHERE municipio_id = :m
+             GROUP BY cd_orgao, nm_orgao
+             UNION ALL
+            SELECT cd_orgao, nm_orgao, 0, count(*)
+              FROM tce_rs_contratos WHERE municipio_id = :m
+             GROUP BY cd_orgao, nm_orgao
+        ) t GROUP BY cd_orgao ORDER BY sum(lic) + sum(con) DESC
+    """), {"m": municipio_id})).fetchall()
+
     # Os contratos que ainda estão de pé — é o que o gestor precisa ver antes de
     # assinar o próximo, e o que vence junto com a vigência do convênio.
+    # ⚠️ 30 e não 10: a lista é filtrável por entidade na tela, e um teto baixo
+    # faria a autarquia parecer sem contratos vigentes só porque os da
+    # prefeitura, que vencem antes, ocuparam as dez vagas.
     vigentes = (await db.execute(text("""
         SELECT nr_contrato, ano_contrato, ds_objeto, vl_contrato,
                dt_final_vigencia, nr_documento, link_licitacon,
-               nm_contratado, vl_atual
+               nm_contratado, vl_atual, cd_orgao
           FROM tce_rs_contratos
          WHERE municipio_id = :m AND dt_final_vigencia >= CURRENT_DATE
-         ORDER BY dt_final_vigencia LIMIT 10
+         ORDER BY dt_final_vigencia LIMIT 30
     """), {"m": municipio_id})).fetchall()
 
-    carimbos = [r[4] for r in lic if r[4]] + [r[3] for r in con if r[3]]
+    carimbos = [r[6] for r in lic if r[6]] + [r[5] for r in con if r[5]]
     return {
         "coletado": True,
         "atualizado_em": max(carimbos).isoformat() if carimbos else None,
+        # ⚠️ O nome vem do TCE ("PM DE SANTA MARIA", "IPASSP-SM - INST. PREV...")
+        # e não é reescrito aqui: rótulo inventado por nós divergiria do que o
+        # gestor vê no portal do Tribunal.
+        "entidades": [{
+            "codigo": r[0], "nome": r[1],
+            "licitacoes": int(r[2] or 0), "contratos": int(r[3] or 0),
+        } for r in entidades],
         "licitacoes_por_ano": [{
-            "ano": r[0], "total": r[1],
-            "valor_estimado": float(r[2]) if r[2] is not None else None,
+            "ano": r[0], "orgao": r[1], "orgao_nome": r[2], "total": r[3],
+            "valor_estimado": float(r[4]) if r[4] is not None else None,
             # ⚠️ Soma só do que FOI homologado. Certame em andamento entra na
             # contagem e não na soma — por isso os dois números não fecham, e
             # isso é a verdade, não defeito.
-            "valor_homologado": float(r[3]) if r[3] is not None else None,
+            "valor_homologado": float(r[5]) if r[5] is not None else None,
         } for r in lic],
         "contratos_por_ano": [{
-            "ano": r[0], "total": r[1],
-            "valor": float(r[2]) if r[2] is not None else None,
+            "ano": r[0], "orgao": r[1], "orgao_nome": r[2], "total": r[3],
+            "valor": float(r[4]) if r[4] is not None else None,
         } for r in con],
         "contratos_vigentes": [{
             "numero": f"{r[0]}/{r[1]}",
@@ -173,6 +217,7 @@ async def _licitacon(db: AsyncSession, municipio_id: int) -> dict:
             # "ainda não perguntei", não "não teve aditivo". A tela mostra a
             # diferença apenas quando ela existe.
             "valor_atual": float(r[8]) if r[8] is not None else None,
+            "orgao": r[9],
         } for r in vigentes],
     }
 
@@ -190,7 +235,7 @@ async def _obras(db: AsyncSession, municipio_id: int) -> dict:
                o.vl_atual, o.vl_total_medido, o.pc_financeiro_exec,
                o.pc_executado, o.dt_fim_vigencia, o.dt_evento_paralisacao,
                o.ds_motivo_paralisacao, o.qt_medicoes, o.dt_ultima_medicao,
-               o.nr_contrato, o.ano_contrato, o.atualizado_em
+               o.nr_contrato, o.ano_contrato, o.atualizado_em, o.cd_orgao
           FROM tce_rs_obras o
          WHERE o.municipio_id = :m
          ORDER BY (o.dt_evento_paralisacao IS NOT NULL) DESC,
@@ -247,6 +292,8 @@ async def _obras(db: AsyncSession, municipio_id: int) -> dict:
             "medicoes": r[11],
             "ultima_medicao": r[12].isoformat() if r[12] else None,
             "contrato": f"{r[13]}/{r[14]}" if r[13] and r[14] else None,
+            # A obra tambem pode ser de autarquia — o filtro da tela vale aqui.
+            "orgao": r[16],
             "recursos": por_obra.get(r[0], []),
         } for r in linhas],
     }
