@@ -117,7 +117,10 @@ def test_pendente_de_empenho_cala_quando_o_portal_diz_que_ha_empenho():
     i = src.index("_pend_empenho = (")
     expr = " ".join(src[i:i + 260].split())
     assert "_e_termo_compromisso(row[28])" in expr
-    assert "_sem_empenho(row[25])" in expr
+    # ⚠️ `_ne`, e nao `row[25]` cru: desde 04/09 a decisao usa a listagem EFETIVA
+    # (rica do scraper, ou fallback do dado aberto siconv_empenho). Quando o dado
+    # aberto ja mostra a NE, o relatorio deixa de marcar "PENDENTE" indevidamente.
+    assert "_sem_empenho(_ne)" in expr, "a pendencia voltou a ignorar o dado aberto"
     assert "row[29]" in expr, "o agregado nao entra na decisao de PENDENTE"
     assert "not (" in expr, "o agregado tem de NEGAR a pendencia, nao confirma-la"
     # e a premissa que a expressao usa continua valendo
@@ -144,16 +147,36 @@ def test_a_coluna_nova_e_a_ULTIMA_do_select():
     # O que ele protege NAO mudou: as colunas novas entram no FIM, e os indices
     # ja lidos continuam valendo. `valor_empenhado` segue sendo row[29] — o que
     # importa e a POSICAO dele, nao ser o ultimo.
-    assert colunas[-1] == "situacao_projeto_basico", \
+    # 04/09/2026: `notas_empenho_aberto` foi pendurada DEPOIS de
+    # `situacao_projeto_basico` (o fallback de NE do dado aberto). Mesma disciplina:
+    # coluna nova no FIM, indices ja lidos preservados.
+    assert colunas[-1] == "notas_empenho_aberto", \
         f"a ultima coluna virou {colunas[-1]!r} — quem entrar depois vai no FIM"
+    assert colunas.index("situacao_projeto_basico") == 30, "situacao_projeto_basico saiu de row[30]"
     assert colunas.index("valor_empenhado") == 29, \
         f"valor_empenhado saiu de row[29] (esta em row[{colunas.index('valor_empenhado')}])"
     assert colunas.index("modalidade") == 28, "modalidade deixou de ser row[28]"
-    assert len(colunas) == 31, f"o SELECT tem {len(colunas)} colunas, esperava 31"
+    assert len(colunas) == 32, f"o SELECT tem {len(colunas)} colunas, esperava 32"
 
 
 def test_o_item_usa_as_duas_fontes_e_nao_so_a_listagem():
     src = _codigo(BUILDER)
-    assert '"valor_empenhado": _empenho_total(row[25], row[29])' in src, \
+    # ⚠️ `_ne` = listagem EFETIVA (rica do scraper OU fallback do dado aberto).
+    assert '"valor_empenhado": _empenho_total(_ne, row[29])' in src, \
         "o item voltou a ler so a listagem de NEs"
-    assert "_empenhado_rotulo(row[25], sit, row[29])" in src
+    assert "_empenhado_rotulo(_ne, sit, row[29])" in src
+
+
+def test_a_listagem_rica_NUNCA_e_perdida_pelo_fallback():
+    """⚠️ O REQUISITO DO DONO: "nao podemos perder informacao".
+
+    O fallback do dado aberto (`notas_empenho_aberto`, row[31]) so pode entrar
+    quando a listagem rica do scraper (row[25]) e NULA. A rica tem detalhe que a
+    API nao tem; se o `_ne` a preterisse, o relatorio perderia informacao — o
+    oposto do pedido. A regra vive numa linha so; o teste le a expressao."""
+    src = _codigo(BUILDER)
+    i = src.index("_ne = row[25]")
+    expr = " ".join(src[i:i + 60].split())
+    assert expr.startswith("_ne = row[25] if row[25] is not None else row[31]"), (
+        f"a fusao mudou de forma: {expr!r} — a rica (row[25]) TEM de vencer, e o "
+        f"dado aberto (row[31]) so entra quando ela e nula")

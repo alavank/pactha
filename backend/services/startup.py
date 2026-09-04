@@ -382,6 +382,10 @@ MIGRATION_FILES = [
     # para o ambiente `api-publica`, e a de menor risco: nenhum endereco novo,
     # so colunas de arquivos que ja sao baixados todo dia.
     "add_voluntarias_colunas_do_csv.sql",
+    # Notas de Empenho do dado aberto (siconv_empenho.zip) numa coluna SEPARADA,
+    # que o RM le so como fallback quando a listagem rica do scraper e nula.
+    # Baixo risco: so acrescenta colunas; nao toca `notas_empenho`.
+    "add_notas_empenho_aberto.sql",
     # SICONFI/Tesouro: o extrato de entregas de contas (o que faltou, e nao so
     # "irregular") e a CAPAG (a nota de A+ a D que abre ou fecha credito com
     # garantia da Uniao). Fonte NACIONAL — nao tem recorte de UF. Depende so de
