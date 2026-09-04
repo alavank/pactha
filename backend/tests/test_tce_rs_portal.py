@@ -300,23 +300,42 @@ def test_depara_escolhe_a_prefeitura_e_nao_a_camara():
     achado = orgaos_do_municipio(cli, "4313102")
     assert achado["executivo"]["CD_ORGAO"] == "53100"
     assert achado["executivo"]["NOME"].startswith("PM DE")
-    # A Câmara (53101) existe, tem código próprio e fica FORA da coleta — mas
-    # aparece em "outros", para a decisão de incluí-la ser tomada, não esquecida.
-    assert any(o["CD_ORGAO"] == "53101" for o in achado["outros"])
+    # ⚠️ A Câmara (53101) é outro PODER, com orçamento próprio, e não é o
+    # cliente — a mesma separação que o SICONFI e o CHE exigem. Fica fora da
+    # coleta, mas listada, para a decisão ser tomada e não esquecida.
+    assert all(cd != "53101" for cd, _ in
+               [(o["CD_ORGAO"], o) for o in achado["coletaveis"]])
+    assert any(o["CD_ORGAO"] == "53101" for o in achado["fora"])
 
 
-def test_depara_traz_as_autarquias_do_municipio_maior():
+def test_autarquia_municipal_entra_e_camara_e_consorcio_ficam_fora():
+    """⚠️ A REGRA DE QUEM É "DO MUNICÍPIO", medida em Santa Maria:
+
+        56900 PM DE SANTA MARIA   5.291 lic · 6.215 con · 120 obras   ENTRA
+        88153 IPASSP-SM autarquia   213 lic ·   184 con               ENTRA
+        88201 IPLAN    autarquia     95 lic ·    50 con               ENTRA
+        56901 CM DE SANTA MARIA     419 lic ·   260 con ·   1 obra    FORA
+        88277 CI/CENTRO consórcio   120 lic ·   541 con               FORA
+
+    Autarquia e fundação gastam dinheiro do município e podem ter obra com
+    convênio. A Câmara é outro Poder. O consórcio é intermunicipal — somá-lo
+    inflaria o número da tela com dinheiro de municípios vizinhos."""
     achado = orgaos_do_municipio(ClienteFalso([ORGAOS]), "4316907")
-    assert achado["executivo"]["CD_ORGAO"] == "56900"
-    nomes = {o["CD_ORGAO"] for o in achado["outros"]}
-    assert "56901" in nomes, "a Câmara de Santa Maria"
-    assert len(nomes) >= 3, "IPLAN, IPASSP e o consórcio também são do município"
+    coletaveis = [o["CD_ORGAO"] for o in achado["coletaveis"]]
+    fora = [o["CD_ORGAO"] for o in achado["fora"]]
+
+    assert coletaveis[0] == "56900", "a prefeitura vem primeiro — pega o orçamento antes"
+    assert "88153" in coletaveis, "IPASSP-SM é autarquia municipal"
+    assert "88201" in coletaveis, "IPLAN também, mesmo 'AGUARDA BAIXA'"
+    assert "56901" in fora, "a Câmara é outro Poder"
+    assert "88277" in fora, "o consórcio é intermunicipal"
 
 
 def test_depara_de_municipio_sem_orgao_devolve_none_em_vez_de_chutar():
     achado = orgaos_do_municipio(ClienteFalso([ORGAOS]), "3106200")  # BH/MG
     assert achado["executivo"] is None
-    assert achado["outros"] == []
+    assert achado["coletaveis"] == []
+    assert achado["fora"] == []
 
 
 # ---------------------------------------------------------------------------
