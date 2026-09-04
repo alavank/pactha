@@ -23,7 +23,67 @@ nao ha" e "nunca coletamos".
 """
 from __future__ import annotations
 
+import json
 import unicodedata
+
+
+def _valor_proposta(v) -> float:
+    """vlProposta -> float tolerante. O JSON do FNS traz numero, mas defende de
+    string ('500000.0') e de formato inesperado sem derrubar a agregacao."""
+    try:
+        return float(v or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def emendas_saude_por_autor(linha_propostas) -> list[tuple[str | None, float]]:
+    """As emendas de saude do FNS por AUTOR, de `raw_data['linhaPropostas']`.
+
+    ⚠️ POR QUE ESTE MODULO, E NAO CADA TELA. O autor da emenda de saude NAO esta
+    no nivel raiz do raw_data (os campos noAutor/noParlamentar/responsaveis vem
+    vazios para FNS) — ele mora ANINHADO em
+    `linhaPropostas[].parlamentares[].{noApelidoPolitico|noParlamentar|nome}`.
+    O RM ja desce ate la (services/rm_builder.py, laco do FNS); a tela de
+    Parlamentares e a aba do BI liam so o raiz e por isso escondiam a emenda
+    (medido em 04/09/2026: "Incremento pap" R$400k do Igor Timo, Nova Serrana,
+    no banco e no RM, ausente das duas telas). A extracao mora AQUI, num lugar
+    so, pela mesma razao do resto do modulo — a regra de "excluir FNS" ja ficou
+    copiada em cinco lugares e foi esquecida num deles.
+
+    Devolve UMA tupla por proposta individual: `(autor, vlProposta)`, com um par
+    por parlamentar quando a proposta tem varios (rateio da agregacao por autor).
+    `autor` e `None` quando a proposta nao tem parlamentar real — o chamador
+    decide o fallback (o Fundo Municipal, para o valor nao se perder).
+    Tolera `linha_propostas` como lista JSONB ja parseada OU string.
+    """
+    if isinstance(linha_propostas, str):
+        try:
+            linha_propostas = json.loads(linha_propostas)
+        except (ValueError, TypeError):
+            return []
+    if not isinstance(linha_propostas, list):
+        return []
+    out: list[tuple[str | None, float]] = []
+    for prop in linha_propostas:
+        if not isinstance(prop, dict):
+            continue
+        val = _valor_proposta(prop.get("vlProposta"))
+        parls = prop.get("parlamentares")
+        nomes = []
+        if isinstance(parls, list):
+            for pp in parls:
+                if not isinstance(pp, dict):
+                    continue
+                nm = (pp.get("noApelidoPolitico") or pp.get("noParlamentar")
+                      or pp.get("nome") or "").strip()
+                if e_parlamentar_real(nm):
+                    nomes.append(nm)
+        if nomes:
+            for nm in nomes:
+                out.append((nm, val))
+        else:
+            out.append((None, val))
+    return out
 
 # Comparacao por IGUALDADE EXATA do texto normalizado, NUNCA por substring: um
 # parlamentar de verdade pode se chamar "Ana Nao..." ou conter qualquer um
