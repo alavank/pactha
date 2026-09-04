@@ -17,6 +17,7 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import api from "@/lib/api";
+import { useAnoCorrentePadrao } from "@/lib/anoPadrao";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 import { useUfDoMunicipio } from "@/lib/useUfDoMunicipio";
 import { repassesDaUf } from "@/lib/estadual";
@@ -86,6 +87,9 @@ export default function RepassesPage() {
       .catch(() => { if (vivo) setAnosDisp([]); });
     return () => { vivo = false; };
   }, [municipioId]);
+
+  // Abre no ano corrente em vez de "todos" — ver `lib/anoPadrao.ts`.
+  useAnoCorrentePadrao(anosDisp, setAnosSel);
 
   const carregar = useCallback(() => {
     if (!municipioId) return;

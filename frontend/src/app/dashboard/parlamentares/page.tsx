@@ -4,6 +4,7 @@ import React, { useEffect, useState, useCallback, Suspense } from "react";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { anosOpcoes, atalhosAnos, inicioDoMandato, resumoAnos } from "@/lib/periodo";
+import { useAnoCorrentePadrao } from "@/lib/anoPadrao";
 import {
   Loader2, Search, ChevronDown, ChevronRight,
   Landmark, Building2, FileText, Eraser, Coins, HeartPulse, ArrowLeftRight, Users,
@@ -234,6 +235,12 @@ function ParlamentaresInner() {
   // PERIODO MULTI-ANO (o backend de /parlamentares ja aceitava `anos`; era so o
   // frontend que mandava um ano so). Vazio = todos.
   const [anosSel, setAnosSel] = useState<string[]>([]);
+  /* Abre no ano corrente — ver `lib/anoPadrao.ts`.
+     ⚠️ Só o filtro PRINCIPAL. Os `anosA`/`anosB` da comparação ficam
+     vazios de propósito: ali o vazio não significa "todos", significa
+     "escolha os dois lados", e preencher um deles sozinho mostraria uma
+     comparação que o usuário não pediu. */
+  useAnoCorrentePadrao(ANOS_OPCOES, setAnosSel);
   // COMPARACAO entre dois conjuntos LIVRES de anos. Os chips sao atalho, nao
   // regra: da para comparar 2024 com 2025, ou dois anos com um, ou mandato
   // inteiro com mandato inteiro.
