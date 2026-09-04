@@ -17,7 +17,7 @@ superficies nunca divergirem — mesma disciplina do resto de nome_parlamentar.p
 """
 import json
 
-from services.nome_parlamentar import emendas_saude_por_autor
+from services.nome_parlamentar import emendas_saude_por_autor, propostas_saude_por_autor
 
 
 def test_extrai_o_parlamentar_aninhado():
@@ -86,3 +86,83 @@ def test_as_duas_telas_usam_a_MESMA_funcao():
     for rel in ("routers/parlamentares.py", "services/bi_abas.py"):
         src = (raiz / rel).read_text(encoding="utf-8")
         assert "emendas_saude_por_autor" in src, f"{rel} deixou de usar a funcao compartilhada"
+
+
+# ---------------------------------------------------------------------------
+# DETALHE (drill-down): o card por PROPOSTA, sob o autor aninhado
+# ---------------------------------------------------------------------------
+# ⚠️ POR QUE EXISTE. Em 04/09/2026, ja com o #371 no ar, o dono relatou que a
+# aba Parlamentares passou a CONTAR duas emendas do Igor Timo (o cabecalho e os
+# chips), mas ao expandir o card da emenda de saude NAO aparecia. O agregado
+# (bloco 6) descia no aninhamento; o `detalhe` casava so o rotulo do Fundo
+# Municipal contra o nome buscado, entao um parlamentar real nunca batia. A
+# terceira superficie do mesmo bug. `propostas_saude_por_autor` carrega os
+# campos ricos (numero, situacao) que o card precisa e que a versao em tuplas
+# nao tem; `emendas_saude_por_autor` passou a delegar nela, p/ a descida viver
+# num lugar so.
+
+def test_proposta_rica_traz_numero_situacao_e_valor():
+    """O caso do detalhe: numero (nuProposta), situacao (situacao_desc), valor."""
+    props = [{"nuProposta": "0932025", "vlProposta": 400000.0,
+              "situacao_desc": "Em analise",
+              "parlamentares": [{"noApelidoPolitico": "Igor Timo"}]}]
+    assert propostas_saude_por_autor(props) == [
+        {"autor": "Igor Timo", "valor": 400000.0, "numero": "0932025", "situacao": "Em analise"}]
+
+
+def test_numero_cai_para_nuProcesso_quando_falta_nuProposta():
+    r = propostas_saude_por_autor(
+        [{"nuProcesso": "25000.111", "vlProposta": 10, "parlamentares": [{"nome": "Ana Silva"}]}])
+    assert r == [{"autor": "Ana Silva", "valor": 10.0, "numero": "25000.111", "situacao": None}]
+
+
+def test_proposta_rica_sem_autor_vira_None_para_o_fundo():
+    """Mesma disciplina da versao em tuplas: sem parlamentar real, autor=None e
+    o chamador cai no Fundo Municipal — o valor NUNCA se perde."""
+    r = propostas_saude_por_autor([{"nuProposta": "1", "vlProposta": 250000.0, "parlamentares": []}])
+    assert r == [{"autor": None, "valor": 250000.0, "numero": "1", "situacao": None}]
+
+
+def test_varios_autores_rateiam_cada_um_com_a_proposta_inteira():
+    r = propostas_saude_por_autor(
+        [{"nuProposta": "7", "vlProposta": 100000.0,
+          "parlamentares": [{"nome": "Ana Silva"}, {"nome": "Bruno Costa"}]}])
+    assert len(r) == 2
+    assert {"autor": "Ana Silva", "valor": 100000.0, "numero": "7", "situacao": None} in r
+    assert {"autor": "Bruno Costa", "valor": 100000.0, "numero": "7", "situacao": None} in r
+
+
+def test_string_e_lixo_nao_quebram_a_versao_rica():
+    props = [{"nuProposta": "9", "vlProposta": 5, "parlamentares": [{"nome": "José Lima"}]}]
+    assert propostas_saude_por_autor(json.dumps(props)) == [
+        {"autor": "José Lima", "valor": 5.0, "numero": "9", "situacao": None}]
+    assert propostas_saude_por_autor(None) == []
+    assert propostas_saude_por_autor("nao e json") == []
+    assert propostas_saude_por_autor(42) == []
+
+
+def test_tupla_e_a_projecao_exata_da_versao_rica():
+    """⚠️ `emendas_saude_por_autor` DELEGA em `propostas_saude_por_autor`. Se as
+    duas divergirem, o contador e o detalhe voltam a mostrar coisas diferentes —
+    exatamente a "duas verdades" que este conjunto existe para impedir."""
+    props = [
+        {"nuProposta": "1", "vlProposta": 400000.0,
+         "parlamentares": [{"noApelidoPolitico": "Igor Timo"}]},
+        {"nuProposta": "2", "vlProposta": 250000.0, "parlamentares": []},
+        {"nuProposta": "3", "vlProposta": 100000.0,
+         "parlamentares": [{"nome": "Ana Silva"}, {"nome": "Bruno Costa"}]},
+    ]
+    ricas = propostas_saude_por_autor(props)
+    assert emendas_saude_por_autor(props) == [(p["autor"], p["valor"]) for p in ricas]
+
+
+def test_as_TRES_superficies_usam_o_modulo_compartilhado():
+    """Agregado + BI pela versao em tuplas; o detalhe pela versao rica. As tres
+    descem pelo mesmo modulo — se uma parar, volta a divergir das outras."""
+    from pathlib import Path
+    raiz = Path(__file__).resolve().parent.parent
+    router = (raiz / "routers/parlamentares.py").read_text(encoding="utf-8")
+    bi = (raiz / "services/bi_abas.py").read_text(encoding="utf-8")
+    assert "emendas_saude_por_autor" in router      # bloco 6 (agregado)
+    assert "propostas_saude_por_autor" in router     # detalhe (drill-down)
+    assert "emendas_saude_por_autor" in bi           # aba do BI

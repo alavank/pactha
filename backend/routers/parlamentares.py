@@ -14,7 +14,8 @@ Endpoints:
 """
 from __future__ import annotations
 import unicodedata
-from services.nome_parlamentar import e_parlamentar_real, e_pessoa, emendas_saude_por_autor
+from services.nome_parlamentar import (
+    e_parlamentar_real, e_pessoa, emendas_saude_por_autor, propostas_saude_por_autor)
 from typing import Optional
 from collections import defaultdict
 from fastapi import APIRouter, Depends, Query, HTTPException
@@ -768,41 +769,61 @@ async def detalhe(
     except Exception:
         pass
 
-    # FNS — Fundo Municipal de Saude do municipio como "parlamentar" (mesma
-    # logica do PAC; o autor da emenda de saude nao vem na base). Casa por
-    # comparacao normalizada do rotulo FMS (evita problema de acento no ILIKE).
+    # FNS — a emenda de saude sob o AUTOR aninhado, a MESMA regra do agregado
+    # (bloco 6) e do BI (ver services/nome_parlamentar.propostas_saude_por_autor).
+    # Antes este bloco casava so o rotulo "FUNDO MUNICIPAL DE SAUDE — <mun>"
+    # contra o nome buscado, entao ao expandir um parlamentar REAL (Igor Timo,
+    # Nova Serrana, 04/09/2026) o card sumia: o cabecalho ja contava a emenda —
+    # o agregado descia no aninhamento —, mas o detalhe nao. Terceira superficie
+    # do mesmo bug (#371 corrigiu as duas primeiras).
+    #
+    # ⚠️ Um card por PROPOSTA (vlProposta), nao pela linha inteira. A linha FNS
+    # soma varias propostas; emitir o valor da linha faria o total ao expandir
+    # divergir do que o cabecalho atribuiu ao parlamentar — a "duas verdades" que
+    # o comentario do RP9 acima existe para impedir. Sem autor real, a proposta
+    # cai no Fundo Municipal (mesmo fallback do agregado, p/ o valor nao se
+    # perder), e o drill-down do proprio Fundo segue funcionando.
     fns_list: list = []
     try:
         alvo = _norm(nome_param)
         fns_sql = """
             SELECT c.id, c.municipio_id,
                    (SELECT nome FROM municipios WHERE id=c.municipio_id) AS mun,
-                   c.nr_sigcon, c.nr_proposta, c.objeto, c.situacao,
-                   COALESCE(c.valor_total, c.valor_concedente, 0) AS valor,
-                   c.orgao_concedente, c.ano,
-                   c.dt_vigencia_inicial, c.dt_vigencia_final
+                   c.objeto, c.orgao_concedente, c.ano,
+                   c.dt_vigencia_inicial, c.dt_vigencia_final,
+                   c.raw_data->'linhaPropostas'
             FROM convenios_estadual c
             WHERE c.fonte ILIKE '%FNS%'
+              AND jsonb_typeof(c.raw_data->'linhaPropostas') = 'array'
         """
         fns_params: dict = {}
         if municipio_id:
             fns_sql += " AND c.municipio_id = :mun"; fns_params["mun"] = municipio_id
         if _anos:
             fns_sql += " AND c.ano = ANY(:anos)"; fns_params["anos"] = _anos
-        fns_sql += " ORDER BY valor DESC NULLS LAST"
         for r in (await db.execute(text(fns_sql), fns_params)).fetchall():
             mun_nome = r[2] or ""
-            label_key = _norm(_fns_label(mun_nome))
-            if alvo and alvo not in label_key and label_key not in alvo:
-                continue
-            fns_list.append({
-                "id": r[0], "municipio_id": r[1], "municipio_nome": r[2],
-                "numero": r[3] or r[4], "objeto": r[5], "situacao": r[6],
-                "valor_total": _money(r[7]), "orgao": r[8], "ano": r[9],
-                "dt_vigencia_inicial": str(r[10]) if r[10] else None,
-                "dt_vigencia_final": str(r[11]) if r[11] else None,
-                "proponente": _fns_label(mun_nome), "fonte": "fns",
-            })
+            label = _fns_label(mun_nome)
+            label_key = _norm(label)
+            for p in propostas_saude_por_autor(r[8]):
+                autor = p["autor"]
+                if autor:
+                    if alvo and alvo not in _norm(autor):
+                        continue
+                    proponente = autor
+                else:
+                    if alvo and alvo not in label_key and label_key not in alvo:
+                        continue
+                    proponente = label
+                fns_list.append({
+                    "id": r[0], "municipio_id": r[1], "municipio_nome": r[2],
+                    "numero": p["numero"], "objeto": r[3], "situacao": p["situacao"],
+                    "valor_total": _money(p["valor"]), "orgao": r[4], "ano": r[5],
+                    "dt_vigencia_inicial": str(r[6]) if r[6] else None,
+                    "dt_vigencia_final": str(r[7]) if r[7] else None,
+                    "proponente": proponente, "fonte": "fns",
+                })
+        fns_list.sort(key=lambda x: x["valor_total"], reverse=True)
     except Exception:
         pass
 

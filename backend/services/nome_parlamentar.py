@@ -36,25 +36,32 @@ def _valor_proposta(v) -> float:
         return 0.0
 
 
-def emendas_saude_por_autor(linha_propostas) -> list[tuple[str | None, float]]:
-    """As emendas de saude do FNS por AUTOR, de `raw_data['linhaPropostas']`.
+def propostas_saude_por_autor(linha_propostas) -> list[dict]:
+    """As propostas de saude do FNS por AUTOR, RICAS, de `raw_data['linhaPropostas']`.
 
     ⚠️ POR QUE ESTE MODULO, E NAO CADA TELA. O autor da emenda de saude NAO esta
     no nivel raiz do raw_data (os campos noAutor/noParlamentar/responsaveis vem
     vazios para FNS) — ele mora ANINHADO em
     `linhaPropostas[].parlamentares[].{noApelidoPolitico|noParlamentar|nome}`.
     O RM ja desce ate la (services/rm_builder.py, laco do FNS); a tela de
-    Parlamentares e a aba do BI liam so o raiz e por isso escondiam a emenda
-    (medido em 04/09/2026: "Incremento pap" R$400k do Igor Timo, Nova Serrana,
-    no banco e no RM, ausente das duas telas). A extracao mora AQUI, num lugar
-    so, pela mesma razao do resto do modulo — a regra de "excluir FNS" ja ficou
-    copiada em cinco lugares e foi esquecida num deles.
+    Parlamentares (agregado E detalhe) e a aba do BI liam so o raiz e por isso
+    escondiam a emenda (medido em 04/09/2026: "Incremento pap" R$400k do Igor
+    Timo, Nova Serrana, no banco e no RM, ausente das TRES superficies). A
+    extracao mora AQUI, num lugar so, pela mesma razao do resto do modulo — a
+    regra de "excluir FNS" ja ficou copiada em cinco lugares e foi esquecida num
+    deles.
 
-    Devolve UMA tupla por proposta individual: `(autor, vlProposta)`, com um par
-    por parlamentar quando a proposta tem varios (rateio da agregacao por autor).
+    Devolve UM dict por proposta individual, com um por parlamentar quando a
+    proposta tem varios (rateio da agregacao por autor):
+        {"autor": str|None, "valor": float, "numero": str|None, "situacao": str|None}
     `autor` e `None` quando a proposta nao tem parlamentar real — o chamador
-    decide o fallback (o Fundo Municipal, para o valor nao se perder).
-    Tolera `linha_propostas` como lista JSONB ja parseada OU string.
+    decide o fallback (o Fundo Municipal, para o valor nao se perder). Os campos
+    `numero` (nuProposta) e `situacao` (situacao_desc) existem para a tela de
+    DETALHE montar o card do lancamento; o agregado ignora-os (ver
+    `emendas_saude_por_autor`). O card TEM de ser por PROPOSTA (vlProposta), nao
+    pela linha inteira, senao o total ao expandir divergiria do que o cabecalho
+    atribuiu ao parlamentar. Tolera `linha_propostas` como lista JSONB ja
+    parseada OU string.
     """
     if isinstance(linha_propostas, str):
         try:
@@ -63,11 +70,13 @@ def emendas_saude_por_autor(linha_propostas) -> list[tuple[str | None, float]]:
             return []
     if not isinstance(linha_propostas, list):
         return []
-    out: list[tuple[str | None, float]] = []
+    out: list[dict] = []
     for prop in linha_propostas:
         if not isinstance(prop, dict):
             continue
         val = _valor_proposta(prop.get("vlProposta"))
+        numero = str(prop.get("nuProposta") or prop.get("nuProcesso") or "").strip() or None
+        situacao = str(prop.get("situacao_desc") or "").strip() or None
         parls = prop.get("parlamentares")
         nomes = []
         if isinstance(parls, list):
@@ -78,12 +87,21 @@ def emendas_saude_por_autor(linha_propostas) -> list[tuple[str | None, float]]:
                       or pp.get("nome") or "").strip()
                 if e_parlamentar_real(nm):
                     nomes.append(nm)
-        if nomes:
-            for nm in nomes:
-                out.append((nm, val))
-        else:
-            out.append((None, val))
+        for nm in (nomes or [None]):
+            out.append({"autor": nm, "valor": val, "numero": numero, "situacao": situacao})
     return out
+
+
+def emendas_saude_por_autor(linha_propostas) -> list[tuple[str | None, float]]:
+    """As emendas de saude do FNS por AUTOR, de `raw_data['linhaPropostas']`, como
+    `(autor, vlProposta)` — a forma enxuta que o AGREGADO (routers/parlamentares)
+    e a aba do BI consomem. Delega a descida em `propostas_saude_por_autor` para
+    a regra viver num lugar so; se as duas divergissem, a contagem e o detalhe
+    voltariam a mostrar coisas diferentes. `autor` e `None` quando a proposta nao
+    tem parlamentar real (o chamador cai no Fundo Municipal, p/ o valor nao se
+    perder). Tolera lista JSONB ja parseada OU string.
+    """
+    return [(p["autor"], p["valor"]) for p in propostas_saude_por_autor(linha_propostas)]
 
 # Comparacao por IGUALDADE EXATA do texto normalizado, NUNCA por substring: um
 # parlamentar de verdade pode se chamar "Ana Nao..." ou conter qualquer um
