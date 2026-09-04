@@ -103,6 +103,43 @@ def _so_digitos(s) -> str:
     return re.sub(r"\D", "", str(s or ""))
 
 
+# ⚠️ A FONTE MANDA PARTE DO TEXTO COM ACENTO CODIFICADO DUAS VEZES, e isso e
+# dela, nao nosso. Medido em 04/09/2026 pedindo o projeto `137854.31-54`: os
+# bytes que chegam sao
+#
+#     b'Creche Proinf\xc3\x83\xc2\xa2ncia  - Ara\xc3\x83\xc2\xbajos'
+#
+# que e o UTF-8 de "Ã¢" — ou seja, o Governo leu um texto latin-1 como se fosse
+# UTF-8 e gravou o resultado. Na tela sai "Creche ProinfÃ¢ncia - AraÃºjos".
+#
+# O conserto e exato: reinterpretar os bytes como latin-1 desfaz a camada extra.
+# Mas ele SO PODE SER APLICADO ONDE O ESTRAGO EXISTE — em "PAVIMENTAÇÃO", que
+# esta correto, a mesma operacao produziria lixo. Por isso as tres guardas:
+# procurar a assinatura do estrago, tentar a conversao, e desistir se ela nao
+# melhorar. Sem elas, um "conserto" cego corromperia o texto sadio da maioria.
+_MOJIBAKE = re.compile(r"Ã[-¿]|Â[-¿]|â€")
+
+
+def _texto(v) -> str | None:
+    """Texto da fonte, com o acento duplamente codificado desfeito."""
+    s = str(v or "").strip()
+    if not s:
+        return None
+    for _ in range(2):        # a fonte tem casos de DUAS camadas
+        if not _MOJIBAKE.search(s):
+            break
+        try:
+            candidato = s.encode("latin-1").decode("utf-8")
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            break
+        # So aceita se de fato reduziu o estrago: uma conversao que nao melhora
+        # e uma conversao que esta errada.
+        if len(_MOJIBAKE.findall(candidato)) >= len(_MOJIBAKE.findall(s)):
+            break
+        s = candidato
+    return s or None
+
+
 def pagina(client: httpx.Client, uf: str, n: int) -> dict | None:
     """Uma pagina da UF. `None` = desistiu, e NAO significa "acabou".
 
@@ -284,7 +321,7 @@ def _lista(itens, *campos) -> list[str]:
     fora = []
     for x in (itens or []):
         for c in campos:
-            v = str(x.get(c) or "").strip()
+            v = _texto(x.get(c))
             if v:
                 fora.append(v)
                 break
@@ -315,16 +352,16 @@ def linha(municipio_id: int, p: dict) -> dict:
     return {
         "mid": municipio_id,
         "uid": p.get("id_projeto_investimento"),
-        "nome": (p.get("desc_nome") or "").strip() or None,
-        "desc": (p.get("desc_projeto") or "").strip() or None,
-        "social": (p.get("desc_funcao_social") or "").strip() or None,
-        "meta": (p.get("desc_meta_global") or "").strip() or None,
+        "nome": _texto(p.get("desc_nome")),
+        "desc": _texto(p.get("desc_projeto")),
+        "social": _texto(p.get("desc_funcao_social")),
+        "meta": _texto(p.get("desc_meta_global")),
         "natureza": p.get("natureza_intervencao"),
         "especie": p.get("especie_intervencao"),
         "situacao": p.get("situacao"),
         "uf": p.get("uf_principal"),
         "cep": str(p.get("nr_cep") or "").strip() or None,
-        "end": (p.get("desc_endereco") or "").strip() or None,
+        "end": _texto(p.get("desc_endereco")),
         "dt_ini_prev": _data(p.get("dt_inicial_prevista")),
         "dt_fim_prev": _data(p.get("dt_final_prevista")),
         "dt_ini_efe": _data(p.get("dt_inicial_efetiva")),
@@ -336,7 +373,8 @@ def linha(municipio_id: int, p: dict) -> dict:
         "pop": p.get("populacao_beneficiada"),
         "empregos": p.get("qtd_empregos_gerados"),
         "valor": valor,
-        "origens": [str(f.get("desc_nome_fonte_recurso") or "") for f in invest],
+        "origens": [_texto(f.get("desc_nome_fonte_recurso")) or ""
+                    for f in invest],
         "eixos": _lista(eixos_tipos, "eixo"),
         "tipos": _lista(eixos_tipos, "tipo"),
         "tomadores": _lista(p.get("tomadores"), "organizacao_tomador"),
