@@ -19,9 +19,10 @@ dizer de onde veio, em vez de fingir que a repeticao nao existe.
 territorial e o vinculo e feito por CNPJ de tomador/executor. Ver o cabecalho de
 `ingestion/obrasgov.py`.
 
-A classificacao **acao / andamento / encerradas** e feita AQUI, e nao no cliente
-— mesmo motivo do `routers/sismob.py`: tela, TV, celular e PDF precisam
-concordar sobre o que e urgente.
+A classificacao **acao / papel / andamento / encerradas** e feita AQUI, e nao no
+cliente — mesmo motivo do `routers/sismob.py`: tela, TV, celular e PDF precisam
+concordar sobre o que e urgente. Ver `_classificar`, e em especial por que a
+DATA EFETIVA nao serve de sinal nesta fonte.
 """
 from __future__ import annotations
 
@@ -51,6 +52,7 @@ MOTIVO_SEM_COLETA = (
 # "Outros" em silencio.
 ENCERRADAS = ("Concluída", "Cancelada")
 PARADAS = ("Paralisada", "Inacabada")
+EM_EXECUCAO = "Em execução"
 
 
 def _f(v) -> Optional[float]:
@@ -64,34 +66,61 @@ def _d(v) -> Optional[str]:
 def _classificar(o: dict, hoje: date) -> dict:
     """Por que esta obra merece atenção — ou por que não merece.
 
-    ⚠️ ATRASO SE MEDE COM `data_final_prevista` CONTRA `data_final_efetiva`
-    NULA. Nulo na efetiva é "ainda não aconteceu", e é justamente esse par que
-    denuncia obra parada; comparar com a data de cadastro ou preencher a efetiva
-    com a prevista apagaria o único sinal que a fonte dá."""
+    ⚠️⚠️ **A DATA EFETIVA NÃO É SINAL DE NADA NESTA FONTE, e a primeira versão
+    desta função errou por supor que era.** Medido em 04/09/2026 contra a
+    produção dos cinco tenants: `data_inicial_efetiva` e `data_final_efetiva`
+    estão vazias em **100% das 1.011 obras coletadas**, e na própria API são 4
+    de 200 — com **65 obras "Concluída" sem data de conclusão**. Ou seja: o
+    Governo fecha a obra mudando a SITUAÇÃO, não preenchendo a data.
+
+    A consequência da regra antiga era uma lista de urgências inútil: Nova Palma
+    abria com **27 de 30** obras "exigindo atenção", Arapuá com 3 de 3. Uma
+    lista em que quase tudo é urgente não é lida — e o gestor perde justamente
+    a obra que travou de verdade.
+
+    Então **quem classifica é a `situacao`**, e a data prevista só gradua:
+
+      Paralisada · Inacabada ....... ação — a fonte já declara o problema
+      Em execução + prazo vencido .. ação — começou e passou do prazo
+      Cadastrada + previsto vencido  «não saiu do papel» — projeto encalhado,
+                                     que é outra conversa e outra cobrança
+      Concluída · Cancelada ........ encerradas
+      o resto ...................... andamento
+
+    ⚠️ «Não saiu do papel» é grupo PRÓPRIO e não um subtipo de ação, porque a
+    ação de campo é diferente: obra parada se cobra do executor, projeto
+    encalhado se cobra do próprio município e do órgão repassador. Em Nova Palma
+    são as 21 obras da Defesa Civil — R$ 24,7 milhões cadastrados que ainda não
+    viraram canteiro. Some-las às urgências esconderia as duas coisas."""
     situacao = (o.get("situacao") or "").strip()
     fim_prev = o.get("data_final_prevista")
-    fim_efe = o.get("data_final_efetiva")
     ini_prev = o.get("data_inicial_prevista")
-    ini_efe = o.get("data_inicial_efetiva")
 
+    if situacao in ENCERRADAS:
+        return {"grupo": "encerradas", "alerta": None, "motivo": None}
     if situacao in PARADAS:
         return {"grupo": "acao", "alerta": situacao.lower(),
                 "motivo": f"A fonte marca esta obra como {situacao.lower()}."}
-    if situacao in ENCERRADAS:
-        return {"grupo": "encerradas", "alerta": None, "motivo": None}
 
-    if fim_prev and not fim_efe and fim_prev < hoje:
-        dias = (hoje - fim_prev).days
-        return {"grupo": "acao", "alerta": "prazo_vencido",
-                "motivo": (f"O prazo previsto de conclusão venceu há {dias} dia(s) "
-                           f"({fim_prev.strftime('%d/%m/%Y')}) e a fonte não "
-                           "registrou conclusão.")}
-    if ini_prev and not ini_efe and ini_prev < hoje:
-        dias = (hoje - ini_prev).days
-        return {"grupo": "acao", "alerta": "nao_comecou",
-                "motivo": (f"O início estava previsto para "
-                           f"{ini_prev.strftime('%d/%m/%Y')} (há {dias} dia(s)) e "
-                           "a fonte não registrou início.")}
+    if situacao == EM_EXECUCAO:
+        if fim_prev and fim_prev < hoje:
+            dias = (hoje - fim_prev).days
+            return {"grupo": "acao", "alerta": "prazo_vencido",
+                    "motivo": (f"Continua EM EXECUÇÃO e o prazo previsto de "
+                               f"conclusão venceu há {dias} dia(s), em "
+                               f"{fim_prev.strftime('%d/%m/%Y')}.")}
+        return {"grupo": "andamento", "alerta": None, "motivo": None}
+
+    # Não está em execução nem encerrada: é projeto cadastrado. Vencer o prazo
+    # aqui não é obra atrasada — é obra que não começou.
+    vencida = next((d for d in (ini_prev, fim_prev) if d and d < hoje), None)
+    if vencida:
+        dias = (hoje - vencida).days
+        qual = "início" if vencida is ini_prev else "conclusão"
+        return {"grupo": "papel", "alerta": "nao_saiu_do_papel",
+                "motivo": (f"Continua como «{situacao or 'sem situação'}» e a "
+                           f"data prevista de {qual} passou há {dias} dia(s), em "
+                           f"{vencida.strftime('%d/%m/%Y')}.")}
     return {"grupo": "andamento", "alerta": None, "motivo": None}
 
 
@@ -120,8 +149,8 @@ async def fetch_obras_federais(db: AsyncSession, municipio_id: int) -> dict:
         return {"tem_dados": False, "motivo": MOTIVO_SEM_COLETA}
 
     hoje = date.today()
-    acao, andamento, encerradas = [], [], []
-    tot = {"obras": 0, "valor": 0.0, "valor_acao": 0.0,
+    acao, papel, andamento, encerradas = [], [], [], []
+    tot = {"obras": 0, "valor": 0.0, "valor_acao": 0.0, "valor_papel": 0.0,
            "empregos": 0, "populacao": 0}
     por_situacao: dict[str, dict] = {}
     por_eixo: dict[str, dict] = {}
@@ -171,13 +200,15 @@ async def fetch_obras_federais(db: AsyncSession, municipio_id: int) -> dict:
                           + str(o["id_unico"] or "")),
             **diag,
         }
-        {"acao": acao, "andamento": andamento,
+        {"acao": acao, "papel": papel, "andamento": andamento,
          "encerradas": encerradas}[diag["grupo"]].append(item)
 
         tot["obras"] += 1
         tot["valor"] += valor
         if diag["grupo"] == "acao":
             tot["valor_acao"] += valor
+        elif diag["grupo"] == "papel":
+            tot["valor_papel"] += valor
         tot["empregos"] += o["empregos_gerados"] or 0
         tot["populacao"] += o["populacao_beneficiada"] or 0
 
@@ -198,7 +229,8 @@ async def fetch_obras_federais(db: AsyncSession, municipio_id: int) -> dict:
     return {
         "tem_dados": True,
         "totais": tot,
-        "acao": acao, "andamento": andamento, "encerradas": encerradas,
+        "acao": acao, "papel": papel, "andamento": andamento,
+        "encerradas": encerradas,
         "por_situacao": sorted(por_situacao.values(), key=lambda e: -e["valor"]),
         "por_eixo": sorted(por_eixo.values(), key=lambda e: -e["valor"]),
         "por_sistema": sorted(por_sistema.values(), key=lambda e: -e["valor"]),

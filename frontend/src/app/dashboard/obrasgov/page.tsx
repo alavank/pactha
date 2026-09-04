@@ -13,12 +13,16 @@
  * de qual sistema veio — quando é SISMOB, a tela DIZ, em vez de fingir que a
  * repetição não existe.
  *
- * ⚠️ O QUE ORDENA A TELA É O PRAZO, NÃO O VALOR. A obra que exige ação vem
- * primeiro, e o que a torna urgente é o par previsto × efetivo: data prevista no
- * passado com a efetiva vazia é obra que não começou ou não terminou. Nulo na
- * efetiva é "ainda não aconteceu", e é o único sinal que a fonte dá — a
- * classificação é feita no servidor (routers/obrasgov.py) para tela, TV e PDF
- * concordarem sobre o que é urgente.
+ * ⚠️ O QUE ORDENA A TELA É A SITUAÇÃO, NÃO O VALOR — e NÃO a data efetiva, que
+ * a fonte deixa vazia em 100% das obras coletadas (e em 65 das "Concluída" da
+ * própria API). Quem classifica é `_classificar`, no servidor, para tela, TV e
+ * PDF concordarem sobre o que é urgente.
+ *
+ * ⭐ E SÃO QUATRO GRUPOS, não três: «exigem atenção» (obra que começou e travou)
+ * é coisa diferente de «não saiu do papel» (projeto cadastrado cuja data
+ * prevista já passou). A cobrança de cada uma é com gente diferente, e somá-las
+ * esconderia as duas — a primeira versão desta tela abria Nova Palma com 27 de
+ * 30 obras "urgentes", que é o mesmo que nenhuma.
  *
  * ⚠️ E QUANDO NÃO HÁ DADO, A TELA NÃO CONCLUI "o município não tem obra". O
  * vínculo é por CNPJ e a coleta é nossa: a ausência pode ser nossa, e afirmar o
@@ -67,7 +71,7 @@ interface Obra {
   sistema_origem: string | null;
   ano: number | null;
   url_fonte: string;
-  grupo: "acao" | "andamento" | "encerradas";
+  grupo: "acao" | "papel" | "andamento" | "encerradas";
   alerta: string | null;
   motivo: string | null;
 }
@@ -76,8 +80,9 @@ interface Resp {
   tem_dados: boolean;
   motivo?: string;
   totais?: { obras: number; valor: number; valor_acao: number;
-    empregos: number; populacao: number };
+    valor_papel: number; empregos: number; populacao: number };
   acao?: Obra[];
+  papel?: Obra[];
   andamento?: Obra[];
   encerradas?: Obra[];
   por_situacao?: Fatia[];
@@ -102,6 +107,7 @@ const ROTULO_ALERTA: Record<string, string> = {
   nao_comecou: "Não começou",
   paralisada: "Paralisada",
   inacabada: "Inacabada",
+  nao_saiu_do_papel: "Não começou",
 };
 
 function LinhaObra({ o }: { o: Obra }) {
@@ -311,16 +317,18 @@ export default function ObrasFederaisPage() {
   );
 
   const acao = useMemo(() => filtrar(d?.acao), [d, filtrar]);
+  const papel = useMemo(() => filtrar(d?.papel), [d, filtrar]);
   const andamento = useMemo(() => filtrar(d?.andamento), [d, filtrar]);
   const encerradas = useMemo(() => filtrar(d?.encerradas), [d, filtrar]);
-  const visiveis = acao.length + andamento.length + encerradas.length;
+  const visiveis = acao.length + papel.length + andamento.length
+    + encerradas.length;
   /* ⚠️ Os totais dos cartões acompanham o FILTRO, e não os totais do servidor.
      Cartão dizendo 360 com 12 obras na lista abaixo é o tipo de divergência que
      faz o gestor desconfiar de tudo o mais que a tela diz. */
   const somaVisivel = useMemo(
-    () => [...acao, ...andamento, ...encerradas]
+    () => [...acao, ...papel, ...andamento, ...encerradas]
       .reduce((s, o) => s + (o.valor || 0), 0),
-    [acao, andamento, encerradas],
+    [acao, papel, andamento, encerradas],
   );
 
   if (!municipioId) {
@@ -346,10 +354,17 @@ export default function ObrasFederaisPage() {
   }
 
   const t = d.totais!;
+  /* ⚠️ A ORDEM CONTA UMA HISTÓRIA, e «não saiu do papel» é seção PRÓPRIA e não
+     um pedaço de «exigem atenção»: obra parada se cobra do executor, projeto
+     encalhado se cobra do órgão repassador. Somá-las esconderia as duas — e foi
+     o que a primeira versão fez, abrindo Nova Palma com 27 de 30 obras
+     "urgentes". Ver `_classificar` no router. */
   const secoes: Array<[string, string, Obra[],
     React.ComponentType<{ className?: string }>]> = [
-    ["Exigem atenção", "prazo vencido, não iniciada, paralisada ou inacabada",
+    ["Exigem atenção", "em execução com prazo vencido, paralisada ou inacabada",
      acao, AlertTriangle],
+    ["Não saiu do papel", "cadastrada, com a data prevista já vencida",
+     papel, CalendarClock],
     ["Em andamento", "dentro do prazo previsto pela fonte", andamento, HardHat],
     ["Encerradas", "concluídas ou canceladas", encerradas, CheckCircle2],
   ];
@@ -379,9 +394,14 @@ export default function ObrasFederaisPage() {
         <Numero icon={AlertTriangle} rotulo="Exigem atenção" valor={acao.length}
                 tom={acao.length ? "critico" : "neutro"}
                 sub={acao.length ? brl(acao.reduce((s, o) => s + (o.valor || 0), 0))
-                                 : "nenhuma pendência de prazo"} />
-        <Numero icon={CheckCircle2} rotulo="Encerradas" valor={encerradas.length}
-                sub="concluídas ou canceladas" />
+                                 : "nenhuma obra parada"} />
+        {/* ⚠️ O VALOR AQUI É O QUE MAIS DIZ: em Nova Palma são R$ 24,7 milhões
+            cadastrados que ainda não viraram canteiro. A contagem sozinha não
+            mostraria o tamanho do que está encalhado. */}
+        <Numero icon={CalendarClock} rotulo="Não saiu do papel" valor={papel.length}
+                tom={papel.length ? "atencao" : "neutro"}
+                sub={papel.length ? brl(papel.reduce((s, o) => s + (o.valor || 0), 0))
+                                  : "nenhum projeto encalhado"} />
       </div>
 
       <Bloco className="p-3">

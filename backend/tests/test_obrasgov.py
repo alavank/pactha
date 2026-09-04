@@ -301,3 +301,43 @@ def test_sistema_de_origem_e_preservado():
     uma."""
     m = linha(1, {"id_projeto_investimento": "a", "sistema_resp": "SISMOB"})
     assert m["sistema"] == "SISMOB"
+
+
+# ---------------------------------------------------------------------------
+# ⚠️ A FONTE MANDA ACENTO CODIFICADO DUAS VEZES — e o conserto só pode
+# tocar no que está quebrado
+# ---------------------------------------------------------------------------
+def test_desfaz_o_acento_codificado_duas_vezes():
+    """Medido em 04/09/2026 pedindo o projeto `137854.31-54` à API: os bytes que
+    chegam são `b'Creche Proinf\xc3\x83\xc2\xa2ncia  - Ara\xc3\x83\xc2\xbajos'` — o
+    UTF-8 de "Ã¢", ou seja, o Governo leu um texto latin-1 como UTF-8 e gravou o
+    resultado. Sem conserto, a tela mostra "Creche ProinfÃ¢ncia - AraÃºjos"."""
+    quebrado = "Creche ProinfÃ¢ncia  - AraÃºjos"
+    assert linha(1, {"desc_nome": quebrado})["nome"] == (
+        "Creche Proinfância  - Araújos")
+    quebrado = ("PavimentaÃ§Ã£o de Vias Urbanas do "
+                "MunicÃ­pio de Igaratinga/MG.")
+    assert linha(1, {"desc_projeto": quebrado})["desc"] == (
+        "Pavimentação de Vias Urbanas do Município de Igaratinga/MG.")
+
+
+@pytest.mark.parametrize("texto", [
+    "PAVIMENTAÇÃO DE ESTRADA VICINAL",
+    "PAVIMENTAÇÃO DO POVOADO DA GARÇA",
+    "Sedec - Recuperação de Infraestrutura afetada por desastre",
+    "Construção de Unidades Habitacionais",
+    "URBANIZACAO INTEGRADA DE FAVELAS",
+])
+def test_nao_encosta_no_texto_que_esta_certo(texto):
+    """⚠️ O TESTE QUE IMPEDE O CONSERTO DE VIRAR O ESTRAGO. "PAVIMENTAÇÃO" contém
+    "Ã" e passaria por uma busca ingênua por mojibake; reinterpretar seus bytes
+    produziria lixo. A maioria do acervo está correta — um conserto cego
+    corromperia 32.000 obras para arrumar 2."""
+    assert linha(1, {"desc_nome": texto})["nome"] == texto
+
+
+def test_texto_vazio_continua_nulo_e_nao_vira_string():
+    """Nome ausente é `None` na coluna, e não `""` — a tela distingue "a fonte
+    não informou" de "a fonte informou vazio"."""
+    m = linha(1, {"desc_nome": "", "desc_projeto": "   ", "desc_endereco": None})
+    assert m["nome"] is None and m["desc"] is None and m["end"] is None
