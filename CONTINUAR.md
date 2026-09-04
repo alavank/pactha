@@ -2,7 +2,7 @@
 
 > Documento de contexto para a **próxima sessão de IA** (Claude Code) que for continuar este projeto.
 > É **auto-contido**: assuma que você (IA) não tem memória das sessões anteriores. Tudo que precisa está aqui.
-> Última atualização: 2026-08-09.
+> Última atualização: 2026-09-04.
 >
 > 📍 Para servidor, URLs, uuids, bancos e operações no Coolify, a fonte de verdade é o
 > **[`INFRA.md`](INFRA.md)** na raiz. Este arquivo cobre o *projeto*; o `INFRA.md` cobre a *infra*.
@@ -11,7 +11,7 @@
 
 ## 1. O QUE É ISTO (em 30 segundos)
 
-**PACTHA** = sistema de **monitoramento de convênios e transferências governamentais** para municípios e assessorias (MG/ES/GO). Módulos: SIGCON-MG (convênios estaduais), TransfereGov, Emendas, Parlamentares, CAUC, Acordo FES, FNS, SIMEC/PAR, IA (Claude), DOU-MG, Relatório de Monitoramento (RM), Documentos, Cofre de Senhas (AES-256), Telegram, extensão Chrome de captura gov.br, Painel de Indicadores (BI, nos 3 tenants) com Modo Tela/links públicos, selos de frescor por tela e watchdog de coleta.
+**PACTHA** = sistema de **monitoramento de convênios e transferências governamentais** para municípios e assessorias (MG/ES/GO/RS). Módulos: SIGCON-MG (convênios estaduais), TransfereGov, Emendas, Parlamentares, CAUC, Acordo FES, FNS, SIMEC/PAR, **Obras** (SISMOB + Obras.gov.br/CIPI), IA (Claude), DOU-MG, Relatório de Monitoramento (RM), Documentos, Cofre de Senhas (AES-256), Telegram, extensão Chrome de captura gov.br, Painel de Indicadores (BI, nos 5 tenants) com Modo Tela/links públicos, selos de frescor por tela e watchdog de coleta. São **21 fontes oficiais** (o `CLAUDE.md` mantém a contagem em dia).
 
 - **Frontend:** Next.js 16 (App Router) + Tailwind v4 + daisyUI + shadcn. Pasta `frontend/`.
 - **Painel (pasta `painel/`):** DEPRECADO — o BI virou módulo do frontend principal (`/dashboard` + `/tela`). Ver `painel/DEPRECADO.md`.
@@ -22,7 +22,7 @@
 **Este repo (`alavank/pactha`) é um FORK PRÓPRIO** do repo original `MattMatiins/PACTA` (do Matheus). O usuário (alavank) **migrou** a stack para **Coolify + Postgres puro** e renomeou tudo de "PACTA" → "PACTHA". Railway, Neon e Vercel (do repo original) **não são mais usados**; a hospedagem posterior na Hetzner também já foi desativada — hoje é **AWS Lightsail**.
 
 ⚠️ **DOIS clones no PC — não confundir:**
-- `C:\projetos\pactha` → **ESTE** repo (`alavank/pactha`). É onde você trabalha.
+- `C:\dev\pactha` → **ESTE** repo (`alavank/pactha`). É onde você trabalha.
 - `C:\projetos\PACTA` → clone do repo do Matheus (`MattMatiins/PACTA`), usado só para colaboração com ele. **NUNCA** pushe cruzado entre os dois.
 
 ⚠️ **Este repo tem RULESET no GitHub exigindo PR aprovado.** Não tente pushar direto na `main` — crie branch e abra PR.
@@ -104,9 +104,66 @@ suas particularidades, e nome de fonte/cadastro sai de catálogo por UF, não de
 
 ---
 
-## 2. ESTADO ATUAL (2026-08-09)
+## 1.7. A SESSÃO DE 03–04/09/2026 EM 60 SEGUNDOS (PRs #367–#370, todos mergeados e no ar)
 
-**São QUATRO tenants em produção**, todos do mesmo código, cada um com containers e banco próprios:
+Entrou o **Obras.gov.br / CIPI** nos cinco tenants — **1.011 obras federais**, o menu
+**OBRAS** e a tela `/dashboard/obrasgov`. É a fonte que mostra o que nenhuma outra
+mostrava: SISMOB cobre saúde e SIMEC cobre educação, mas mobilidade, saneamento,
+habitação, segurança e a **reconstrução da Defesa Civil** não apareciam em lugar nenhum
+(em Nova Palma são 21 das 30 obras — a reconstrução pós-enchente inteira).
+
+1. **O bloqueio era do HOST, não do Governo** (PR #367). O coletor ficou pronto e
+   desligado desde 02/09 porque `api.obrasgov.gestao.gov.br` devolve **429 na primeira
+   requisição** vinda da VPS. O mesmo acervo está em
+   **`api-publica.obrasgov.gestao.gov.br`**, que responde **200 em 0,13 s**. A troca de
+   host matou três das quatro armadilhas antigas e derrubou a varredura de uma UF de ~8 min
+   para ~75 s. ⭐ **O município sai do CNPJ, NUNCA do nome** (diretriz do dono): casar por
+   nome trouxe 379 obras da UFSM como se fossem da prefeitura de Santa Maria.
+2. **Uma categoria de 41 caracteres derrubou a carga inteira de um tenant** (PR #368).
+   `natureza = 'Projeto de Investimento em Infraestrutura'` contra `VARCHAR(40)`, e o
+   novapalma tinha passado limpo minutos antes — a pior forma de bug, some no primeiro
+   tenant e derruba o segundo. Taxonomia de fonte externa agora é **`TEXT`**; só continua
+   `VARCHAR` o que tem *formato* (`id_unico`, `cep`, `uf`).
+3. **A tela que faltava** (PR #369). A tabela era lida só pelo painel de frescor — provava
+   que a fonte estava viva sem mostrar obra nenhuma. O grupo OBRAS nasce com dois itens e
+   cresce; ⚠️ o **SISMOB aparece em OBRAS e em SAÚDE**, o mesmo link nos dois lugares, de
+   propósito. E as duas telas **se sobrepõem nos dados** (o CIPI reúne obras que o SISMOB
+   publica: 45 das 360 do freitas): decisão do dono é mostrar a visão geral e **dizer**
+   quais são — selo "também no SISMOB" e bloco «Por sistema de origem».
+4. **A data efetiva não é sinal de nada, e por isso 27 de 30 obras "exigiam atenção"**
+   (PR #370). `data_inicial_efetiva`/`data_final_efetiva` vêm **vazias em 100% das 1.011
+   obras**, e 65 obras "Concluída" não têm data de conclusão — o Governo encerra mudando a
+   **situação**, não preenchendo data. Quem classifica passou a ser a `situacao`, e são
+   **quatro** grupos, não três: ⚠️ **«não saiu do papel»** (Cadastrada + previsto vencido) é
+   grupo PRÓPRIO, não um pedaço de «ação» — obra parada se cobra do executor, projeto
+   encalhado se cobra do município e do órgão repassador. Somar as duas escondia as duas.
+   ⭐ E **a fonte manda acento codificado duas vezes** (latin-1 lido como UTF-8 e gravado
+   assim); o conserto vai na ingestão e **desiste** se a reinterpretação não melhorar.
+
+**Auditoria de infra do mesmo dia** (04/09, contra a API do Coolify — as 15 apps na tag
+`sha-4d5a37f`, as 5 APIs `running:healthy`). Três achados corrigidos na hora, todos de
+agendamento e nenhum de código:
+
+- 🔴 **`tmp-g9umo` rodando a cada minuto há 34h** no `montesiao-mg-worker` — sonda de
+  diagnóstico de 03/09 cujo `finally` nunca restaurou o cron. ~1.440 execuções/dia contra o
+  banco da prefeitura com uso real. Apagada. Detalhe e a regra nova em [`INFRA.md`](INFRA.md) §8.
+- 🟠 **`fpe-rs` agendado fora da janela do portal** nos dois tenants do RS (ver §2).
+- 🟡 **`obrasgov` do freitas no mesmo minuto do `transferegov-lote`** (03:25). Os locks são
+  diferentes de propósito, então **não** se serializavam. Movido para 03:30. A escada de 5 min
+  foi desenhada entre tenants sem conferir a coluna vertical de cada worker.
+
+⚠️ E ficou **uma pendência de código** achada nessa auditoria, não corrigida porque mexer em
+`backend/**` deploya os cinco: o **SISMOB tem DOIS caminhos vivos** (Scheduled Task própria
+nos 5 workers **e** a entrada em `run_dadosabertos_cron.run_all()`). Hoje não duplica coleta
+— os dois passam pelo gate de 20h —, mas o docstring de `_deve_pular()` ainda afirma que não
+existe task própria, que é a premissa exata que causou o incidente do PR #259. Ver
+[`INFRA.md`](INFRA.md) §5.
+
+---
+
+## 2. ESTADO ATUAL (2026-09-04)
+
+**São CINCO tenants em produção**, todos do mesmo código, cada um com containers e banco próprios:
 
 | Tenant | App | API |
 |---|---|---|
@@ -114,9 +171,16 @@ suas particularidades, e nome de fonte/cadastro sai de catálogo por UF, não de
 | **Trust** | https://pactha-trust-54-232-208-118.sslip.io | https://pactha-trust-api-54-232-208-118.sslip.io |
 | **Monte Sião/MG** | https://montesiao.mg.pactha.com.br | https://pactha-montesiao-mg-api-54-232-208-118.sslip.io |
 | **Santa Maria/RS** | https://santamaria.rs.pactha.com.br | https://pactha-santamaria-rs-api-54-232-208-118.sslip.io |
+| **Nova Palma/RS** | https://pactha-novapalma-rs-54-232-208-118.sslip.io | https://pactha-novapalma-rs-api-54-232-208-118.sslip.io |
 
-⚠️ **Santa Maria (16/08/2026) é o 4º tenant e o primeiro banco criado DO ZERO** — os outros três
-vieram migrados do Neon. Ele nasceu só com Santa Maria/RS (IBGE 4316907) e as coletas federais.
+⚠️ **Santa Maria (16/08/2026) é o 4º tenant e o primeiro banco criado DO ZERO** — os três
+primeiros vieram migrados do Neon. Ele nasceu só com Santa Maria/RS (IBGE 4316907) e as
+coletas federais. **Nova Palma (01/09/2026) é o 5º e o segundo banco do zero** — nasceu só
+com Nova Palma/RS (IBGE 4313102) e expôs um bug de **ORDEM** nas migrations
+(`add_detalhe_pagina_rodizio.sql` alterando tabela criada depois dela em `MIGRATION_FILES`),
+hoje guardado por `tests/test_migrations_ordem_tabela.py`. Ele ainda está **sem brasão** de
+propósito: `NEXT_PUBLIC_CLIENT_LOGO` e `RM_LOGO` vazios — subir com logo errado é pior que
+subir sem.
 
 > ⚠️ **Este parágrafo dizia "nenhuma fonte do RS existe em código ainda". Isso venceu.**
 > Era verdade em 16/08; hoje coletam CHE (`che_rs.py`), convênios da CAGE
@@ -125,10 +189,19 @@ vieram migrados do Neon. Ele nasceu só com Santa Maria/RS (IBGE 4316907) e as c
 > ainda **SICONFI/CAPAG** (federal, nacional) e **TCE-RS/LicitaCon** — este
 > último pronto mas dependente de liberação de IP (ver `docs/fontes-rs/`).
 > O que segue inerte é o **FPE-RS**, esperando credencial PCPRS, por decisão.
+>
+> ⚠️ **Mas "inerte" escondeu um cron errado por 18 dias.** O portal do FPE só atende
+> **seg–sáb, 7h–22h30 BRT** (fora disso: HTTP 500), e as duas tasks estavam agendadas às
+> **02:04 e 02:34 BRT**, com `* * *` incluindo domingo. Ninguém viu porque o coletor sai
+> antes de tocar no portal e grava `success` por falta de credencial. No dia em que a
+> credencial PCPRS entrasse, os dois tenants passariam a falhar todo dia e o sintoma
+> pareceria coletor quebrado. Corrigido em 04/09 para `14 14 * * 1-6` (santamaria) e
+> `44 14 * * 1-6` (novapalma). **Fonte com janela de funcionamento é restrição de
+> agendamento — anote no cron, não só no docstring.**
 
-Os três bancos já estão **populados com dados reais** (a migração vinda do Neon foi concluída — não é mais schema+seed). Login seed só vale em banco novo: `super-admin@alavank.com.br`, com senha ALEATÓRIA por tenant impressa no console do primeiro boot (ou via `ADMIN_PASSWORD`) — pede troca no 1º acesso.
+Os cinco bancos já estão **populados com dados reais** (a migração vinda do Neon foi concluída — não é mais schema+seed). Login seed só vale em banco novo: `super-admin@alavank.com.br`, com senha ALEATÓRIA por tenant impressa no console do primeiro boot (ou via `ADMIN_PASSWORD`) — pede troca no 1º acesso.
 
-**⚠️ INVERTIDO EM 09/08: um merge na `main` DEPLOYA os três clientes, sozinho.** As 9
+**⚠️ INVERTIDO EM 09/08: um merge na `main` DEPLOYA os cinco clientes, sozinho.** As 15
 aplicações seguem `build_pack = dockerimage`, mas o job `deploy` do CI avança a tag e
 dispara o deploy ao fim de cada build (API primeiro com migrations confirmadas; worker do
 mesmo tenant só em janela sem coleta em voo; falha = rollback de tag + run vermelho).
@@ -151,7 +224,7 @@ Resumo; o detalhe completo (uuids de todas as aplicações, bancos, crons por te
 - **Token da API do Coolify:** NÃO está neste arquivo (é segredo). O usuário fornece (formato `36|xxxx`). Use `Authorization: Bearer <TOKEN>`. **Rotacione periodicamente.**
 - **GitHub App (source):** `alavank-coolify` — já dá acesso ao repo privado `alavank/pactha`. Use o `github_app_uuid` dele ao criar apps.
 
-**Projeto Coolify `pactha`** — uuid `ksmwr13y4iyprom8i1znede8`, **um environment por tenant** (`production` está vazio), **12 aplicações + 4 bancos** (o `montesiao-mg-painel` foi removido):
+**Projeto Coolify `pactha`** — uuid `ksmwr13y4iyprom8i1znede8`, **um environment por tenant** (`production` está vazio), **15 aplicações + 5 bancos** (o `montesiao-mg-painel` foi removido):
 
 | Tenant | API | Frontend | Worker | Banco |
 |---|---|---|---|---|
@@ -159,6 +232,7 @@ Resumo; o detalhe completo (uuids de todas as aplicações, bancos, crons por te
 | trust | `pphvk2ygkuirjhu9qptvmfs5` | `j5ghp71lff003d5rfaynvy5y` | `xg714h8l7va4ejq70a5pmv5t` | `p434vbj35siee57shlsyzuc2` |
 | montesiao-mg | `chr0n883hp19tjh7829k85a7` | `bryvqhhcu97lc3ku7a2hss0q` | `jhf0kjhps5keujiyhhsnvjt6` | `iogvjlnkpqlugja9j76rktl1` |
 | santamaria-rs | `ufjctldngc14dsdw8pxnqivl` | `eohjo0cy4nbl6t7hiaqwagwf` | `wquremniv57gag3tlil8uf6d` | `m2ypghl41lbqhv7rdqzffdi3` |
+| novapalma-rs | `gemcwirmbelk1dztp2pbcqpf` | `rpqpxroy5orsuidrbfezlzkt` | `kqcnvdsdkgn1efkm4nog8oes` | `dl2jwo0q1ckbplqp6vp1hnu4` |
 
 Builds: API = `backend/Dockerfile.api` (base `/`) · Frontend = `frontend/Dockerfile` (base `/frontend`, standalone) · Worker = `backend/Dockerfile.scraper` (PID 1 = `tini` + `reaper.sh`, que mata ingestão >1h e Chromium órfão; crons via Scheduled Tasks). Bancos: `postgres:16-alpine`, db/user `pactha`, porta 5432, host = uuid do resource.
 
@@ -187,11 +261,11 @@ interpolado: [`INFRA.md`](INFRA.md) §5.
 
 ## 5. ARMADILHAS / GOTCHAS (leia antes de debugar)
 
-- **A máquina é burstable (baseline 30%).** Não rode scraping paralelo (`SIGCON_CONCURRENCY=1`), não alinhe os crons dos 3 tenants, não rebuilde os 10 apps de uma vez. Sintoma de estouro: tudo no host fica lento ao mesmo tempo, não só o PACTHA.
+- **A máquina é burstable (baseline 30%).** Não rode scraping paralelo (`SIGCON_CONCURRENCY=1`), não alinhe os crons dos 5 tenants, não rebuilde os apps de uma vez. Sintoma de estouro: tudo no host fica lento ao mesmo tempo, não só o PACTHA.
 - **Coolify STRIPPA o path do domínio.** Se você setar o domínio de um app como `host/api`, o Coolify tira o `/api` antes de chegar no container (testado: `host/api/health`→404, `host/api/api/health`→200). Por isso a API tem **subdomínio próprio SEM path**, e o caminho normal do usuário é o proxy do Next (`API_PROXY_TARGET`).
 - **`*.sslip.io` é public suffix** → `pactha-...sslip.io` e `pactha-api-...sslip.io` são **cross-site** entre si; cookies `SameSite=Lax` httpOnly não trafegam entre eles. É exatamente por isso que existe o proxy same-origin no Next (decisão 7). **Se alguém apontar o front direto no subdomínio da API (`NEXT_PUBLIC_API_URL` absoluto), o refresh silencioso quebra e volta o re-login a cada ~60min.**
 - **`API_PROXY_TARGET` e `NEXT_PUBLIC_*` são BUILD-TIME.** Mudar o valor no Coolify sem rebuildar o frontend não tem efeito nenhum. Marque `is_build_time:true` e redeploy.
-- **`transferegov_propostas` é criada tarde** nas migrations (por `add_voluntarias_id_proposta_siconv.sql`), mas migrations anteriores (`add_voluntarias_valores.sql` etc.) já a ALTERam → em banco **novo do zero**, ~6/22 migrations falham com "relation does not exist". Nos três bancos atuais isso não importa (a tabela já existe). Se um dia precisar de bootstrap 100% limpo, mova a criação de `transferegov_propostas` para o `setup_db.create_tables()`.
+- ~~**`transferegov_propostas` é criada tarde** nas migrations~~ — **RESOLVIDO.** A tabela foi movida para o `setup_db.py` (`CREATE TABLE IF NOT EXISTS`, hoje na linha 105), que é exatamente o conserto que este parágrafo propunha. **A lição fica, porque a classe do bug voltou:** migration que ALTERA tabela criada mais tarde em `MIGRATION_FILES` só quebra em **banco novo do zero** — invisível nos bancos herdados. Foi assim com `transferegov_propostas` e de novo com `add_detalhe_pagina_rodizio.sql` quando o Nova Palma nasceu (01/09). Hoje há guarda automática: `backend/tests/test_migrations_ordem_tabela.py`. São **127** migrations registradas, não 22.
 - **COFRE_KEY:** o Cofre e as sessões gov.br são cifrados com AES-256 usando a env `COFRE_KEY` (`backend/services/crypto.py`). Se a chave mudar, `decrypt()` volta `""` **silenciosamente** — sem erro, sem log. **Cada tenant tem a sua**; trocar ou cruzar chaves destrói o Cofre daquele cliente.
 - **must_change_password=True** no admin seed → o 1º login redireciona pra `/change-password`. Normal.
 - Worker aparece como `running:unknown` no Coolify (roda o reaper, sem healthcheck). Normal. Frontends sem healthcheck também.
@@ -205,6 +279,17 @@ interpolado: [`INFRA.md`](INFRA.md) §5.
   **typo do próprio MS** (`vlPrimeraParcela`, sem o "i"). E o sinal de obra parada **não é
   `dtAtualizacao`** — é o timestamp das fotos. Tudo anotado em
   `backend/ingestion/sismob_obras.py`.
+- **O Obras.gov.br tem DOIS hosts, e só um funciona daqui.** `api.obrasgov.gestao.gov.br`
+  devolve **429 na primeira requisição** vinda da VPS; use
+  **`api-publica.obrasgov.gestao.gov.br`**, que responde 200 em 0,13 s. Três armadilhas
+  silenciosas: (1) o **filtro territorial não existe** — `codigo_ibge` devolve o estado
+  inteiro com HTTP 200, e o recorte é feito em memória; (2) **o município sai do CNPJ,
+  nunca do nome** (por nome, 379 obras da UFSM viram obras da prefeitura de Santa Maria);
+  (3) **a fonte manda acento codificado duas vezes** (latin-1 lido como UTF-8), e o
+  conserto na ingestão precisa desistir quando a reinterpretação não melhora — senão
+  corrompe 32.000 obras para arrumar 2. E **a data efetiva não classifica nada**: vem
+  vazia em 100% das obras. Detalhe em [`INFRA.md`](INFRA.md) §5 e em
+  `backend/ingestion/obrasgov.py`.
 - **Não existem "1ª, 2ª e 3ª parcelas" no fundo a fundo.** A norma vigente (Portaria de
   Consolidação 6/2017, Título IX) é **parcela única**; obras antigas vieram 20%+80%. O
   marco de 90% **não existe** (o de 30% sim). E a prestação de contas é o **Relatório
@@ -226,7 +311,7 @@ interpolado: [`INFRA.md`](INFRA.md) §5.
 
 
 ### 6.1 Domínios definitivos (`*.pactha.com.br`)
-As três instâncias ainda respondem por `*.sslip.io`. A landing (`pactha.com.br`) e a Central de Comando (`control-center.pactha.com.br`) já usam domínio próprio. Falta decidir/criar os DNS `A` → `54.232.208.118` para os apps dos clientes e trocar os domínios no Coolify (`PATCH /applications/<uuid>` + redeploy). Lembre de ajustar `FRONTEND_URL`/`CORS_ORIGIN_REGEX` na API e rebuildar o frontend (env build-time).
+Faltam **três**: `freitas`, `trust` e `novapalma-rs` ainda respondem só por `*.sslip.io`. Monte Sião e Santa Maria já têm domínio próprio (`montesiao.mg.pactha.com.br`, `santamaria.rs.pactha.com.br`), assim como a landing (`pactha.com.br`) e a Central de Comando (`control-center.pactha.com.br`). Falta decidir/criar os DNS `A` → `54.232.208.118` para os apps dos clientes e trocar os domínios no Coolify (`PATCH /applications/<uuid>` + redeploy). Lembre de ajustar `FRONTEND_URL`/`CORS_ORIGIN_REGEX` na API e rebuildar o frontend (env build-time).
 
 ### 6.2 Secrets opcionais por tenant (features ficam OFF até setar)
 `ANTHROPIC_API_KEY` (módulo IA — hoje só `montesiao-mg-api` tem), `TELEGRAM_BOT_TOKEN` + `TELEGRAM_WEBHOOK_SECRET` (Telegram). Setar via `PATCH /applications/<api_uuid>/envs/bulk` + redeploy.
@@ -244,8 +329,8 @@ SIGCON** apesar de 7 municípios MG (pedir ao cliente). Pausar credencial = troc
 `sistema` p/ valor fora de `SIGCON%` + `automation_key=NULL` (reversível).
 
 ### 6.3 Deploy (automático desde 09/08)
-Merge na `main` = deploy nos 3 tenants via CI (ver §1.5 e [`INFRA.md`](INFRA.md) §2).
-`is_auto_deploy_enabled = false` nas 9 (webhook desligado de propósito). Deploy manual
+Merge na `main` = deploy nos 5 tenants via CI (ver §1.5 e [`INFRA.md`](INFRA.md) §2).
+`is_auto_deploy_enabled = false` (webhook desligado de propósito). Deploy manual
 para rollback: repontar `docker_registry_image_tag` + `GET /deploy?uuid=`. Pendências do
 plano de médio prazo: **M1** (executor de fila por fonte×município — substitui os crons
 com teto de 1h) e **M5** (host de scraping dedicado quando a carteira crescer).
@@ -300,8 +385,8 @@ vier em `MUNICIPIO_NOME` / `MUNICIPIO_IBGE` / `MUNICIPIO_UF` — mais nada.
 
 ## 8. AO MEXER NO CÓDIGO, LEMBRE
 
-Uma alteração aqui vai para **os três clientes**. Antes de commitar:
+Uma alteração aqui vai para **os cinco clientes**. Antes de commitar:
 
-- Migration nova precisa ser **idempotente** e rodar limpa nos três bancos (ela executa no boot da API).
-- Feature que depende de env var nova: ou tem default seguro, ou você seta a env nos **três** resources.
+- Migration nova precisa ser **idempotente** e rodar limpa nos cinco bancos (ela executa no boot da API) — **e num banco criado do zero**, que é onde erro de ordem aparece (ver §5).
+- Feature que depende de env var nova: ou tem default seguro, ou você seta a env nos **cinco** resources.
 - Nada de aumentar concorrência de scraping "porque tá lento" — ver §5, a CPU é compartilhada com 10 outros projetos.
