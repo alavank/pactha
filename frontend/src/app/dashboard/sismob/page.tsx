@@ -33,6 +33,7 @@ import {
   Building2, ExternalLink, ChevronDown, ChevronRight, Camera, Layers, ListChecks,
 } from "lucide-react";
 import api from "@/lib/api";
+import { useAnoCorrentePadrao } from "@/lib/anoPadrao";
 // Uma funcao de dinheiro no sistema inteiro. Havia CINCO copias, e a
 // desta tela ja tinha derivado: arredondava, e o mesmo valor aparecia
 // com e sem centavos no mesmo print.
@@ -408,6 +409,8 @@ export default function SismobPage() {
       todas.map((o) => o.ano_referencia).filter((a): a is number => a != null),
     )).sort((a, b) => b - a).map(String);
   }, [d]);
+  // Abre no ano corrente em vez de "todos" — ver `lib/anoPadrao.ts`.
+  useAnoCorrentePadrao(anosDisponiveis, setAnosSel);
 
   /* Nada selecionado = todos, que é a convenção do MultiSelect e do backend. */
   const filtrarAnos = (l: Obra[]) =>

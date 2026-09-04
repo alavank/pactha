@@ -9,6 +9,7 @@ import {
   Banknote, HardHat, MessagesSquare,
 } from "lucide-react";
 import api from "@/lib/api";
+import { useAnoCorrentePadrao } from "@/lib/anoPadrao";
 // Uma funcao de dinheiro no sistema inteiro. Havia CINCO copias, e a
 // desta tela ja tinha derivado: arredondava, e o mesmo valor aparecia
 // com e sem centavos no mesmo print.
@@ -450,6 +451,8 @@ export default function TransfereGovPropostas({
     () => Array.from(new Set(items.map(anoDa).filter(Boolean))).sort((a, b) => b.localeCompare(a)),
     [items]
   );
+  // Abre no ano corrente em vez de "todos" — ver `lib/anoPadrao.ts`.
+  useAnoCorrentePadrao(anosDisponiveis, setAnosSel);
 
   // Filtro de situacao e de ANO, client-side (os dois sao multi-select)
   const displayItems = useMemo(() => {

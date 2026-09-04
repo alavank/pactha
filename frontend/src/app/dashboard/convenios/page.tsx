@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState, useCallback, useRef } from "react"
 import { useSearchParams } from "next/navigation";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 import { useUfDoMunicipio } from "@/lib/useUfDoMunicipio";
+import { useAnoCorrentePadrao } from "@/lib/anoPadrao";
 import { NOME_UF, fonteConveniosEstaduais } from "@/lib/estadual";
 import { Search as SearchIcon, ChevronLeft, ChevronRight, ChevronDown } from "lucide-react";
 import api from "@/lib/api";
@@ -285,6 +286,9 @@ export default function ConveniosPage() {
       .then((res) => setAnos(Array.isArray(res.data) ? res.data : []))
       .catch(() => {});
   }, [municipioId, fontesSel]);
+
+  // Abre no ano corrente em vez de "todos" — ver `lib/anoPadrao.ts`.
+  useAnoCorrentePadrao(anos, setAnosSel);
 
   // Debounce search input
   useEffect(() => {

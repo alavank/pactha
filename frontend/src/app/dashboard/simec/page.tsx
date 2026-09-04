@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 import api from "@/lib/api";
+import { useAnoCorrentePadrao } from "@/lib/anoPadrao";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { atalhosAnos, resumoAnos } from "@/lib/periodo";
 import { Input } from "@/components/ui/input";
@@ -182,6 +183,8 @@ export default function SimecPage() {
     () => Array.from(new Set(liberacoes.map(anoDa).filter(Boolean))).sort((a, b) => b.localeCompare(a)),
     [liberacoes]
   );
+  // Abre no ano corrente em vez de "todos" — ver `lib/anoPadrao.ts`.
+  useAnoCorrentePadrao(anosDisponiveis, setAnosSel);
   const progOptions = useMemo(
     () => Array.from(new Set(liberacoes.map((l) => l.programa).filter(Boolean))).sort(),
     [liberacoes]
