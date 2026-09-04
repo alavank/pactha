@@ -31,6 +31,7 @@ import {
   ChevronsUpDown,
   Settings,
   CalendarClock,
+  Radar,
 } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -53,7 +54,11 @@ import { EnteAtendido, SUBTITULO_PACTHA } from "@/components/bi/Marca";
 import UsoProvider from "@/components/UsoProvider";
 import { encerrarSessao } from "@/lib/uso";
 
-type NavLeaf = { href: string; label: string; icon?: React.ComponentType<{ className?: string }> };
+/* `destaque` marca o item que sai da fila e ganha cor propria — hoje so o
+   Radar de Captacao. Nao e enfeite: e o unico item do menu que olha para
+   FRENTE (prazo ainda aberto), enquanto todo o resto mostra instrumento ja
+   celebrado. Ver o comentario no NAV_ITEMS. */
+type NavLeaf = { href: string; label: string; icon?: React.ComponentType<{ className?: string }>; destaque?: boolean };
 type NavSection = { sectionLabel: string; children: NavLeaf[] };
 type NavGroup = { label: string; icon: React.ComponentType<{ className?: string }>; children: Array<NavLeaf | NavSection> };
 type NavEntry = NavLeaf | NavGroup;
@@ -120,6 +125,22 @@ const NAV_ITEMS: NavEntry[] = [
     label: BI_ON ? "Painel de Indicadores" : "Dashboard",
     icon: BI_ON ? BarChart3 : LayoutDashboard,
   },
+  /* ⭐ RADAR DE CAPTAÇÃO — FORA DE QUALQUER GRUPO, e logo abaixo do Painel
+     (pedido do dono, 04/09/2026).
+     Ele estava dentro de FEDERAIS, abrindo o grupo, e ali competia com sete
+     telas que mostram o que JÁ FOI ASSINADO. Esta é a única que olha para
+     FRENTE: programas com janela de proposta ainda aberta. Um edital que vence
+     não espera o gestor conferir os convênios antigos primeiro — e enterrá-lo
+     num grupo era pedir exatamente isso.
+     A cor (família INFO, azul) diferencia sem alarmar: o verde do sistema já
+     significa "item selecionado" e o âmbar/vermelho diriam "há algo errado",
+     quando o que há é oportunidade. */
+  {
+    href: "/dashboard/transferegov-radar",
+    label: "Radar de captação",
+    icon: Radar,
+    destaque: true,
+  },
   /* ⭐ FEDERAIS / ESTADUAIS, EM MAIÚSCULO (pedido do dono, 28/08/2026): o que o
      sistema mostra são emendas e convênios por ESFERA — federais, estaduais e,
      mais à frente, municipais. "Transfere Gov" era o nome da fonte, não da
@@ -133,12 +154,6 @@ const NAV_ITEMS: NavEntry[] = [
          quem clicava esperando a visão completa achava que faltava dado. A rota
          continua `transferegov-geral` de propósito: renomeá-la quebraria URLs
          salvas e os links que o PAC monta por `categoria`. */
-      /* ⭐ O RADAR ABRE O GRUPO porque é a única tela federal que olha para
-         FRENTE. Todas as outras mostram instrumento já celebrado; esta mostra o
-         prazo que ainda está aberto — e prazo que vence não espera a ordem
-         alfabética. Enterrá-la no fim da lista seria pedir ao gestor que
-         descobrisse a oportunidade depois de conferir o que já assinou. */
-      { href: "/dashboard/transferegov-radar", label: "Radar de captação" },
       { href: "/dashboard/transferegov-geral", label: "Em execução" },
       { href: "/dashboard/transferegov", label: "Especiais" },
       { href: "/dashboard/transferegov-pac", label: "PAC (Novo PAC)" },
@@ -283,6 +298,31 @@ function SidebarContent({
   recolhida?: boolean;
   onToggleRecolhida?: () => void;
 }) {
+  /* ⭐ CONTADOR DO RADAR. Um menu bonito continua sendo um menu que alguém
+     precisa lembrar de clicar; o número é o que transforma "Radar de captação"
+     em "há 7 esperando". Vem de um endpoint que só conta (`/contagem`), e não
+     da listagem — o menu é renderizado em TODA tela, e trazer dezenas de
+     programas com objeto e datas para exibir um inteiro seria caro em cada
+     navegação.
+
+     ⚠️ `null` é "ainda não sei" e mostra NADA. Zero é resposta ("olhamos, não
+     há") e também não vira selo: um "0" aceso ao lado de Radar leria como
+     defeito. Só número positivo aparece. */
+  const [radar, setRadar] = useState<{ total: number; dias?: number | null } | null>(null);
+  useEffect(() => {
+    if (!selectedMunicipioId) { setRadar(null); return; }
+    let vivo = true;
+    api.get("/programas-captacao/contagem", {
+      params: { municipio_id: selectedMunicipioId },
+    })
+      .then((r) => { if (vivo) setRadar({ total: r.data?.total ?? 0, dias: r.data?.dias_mais_proximo }); })
+      // Silêncio proposital: sem permissão, sem coleta ou fora do ar, o item
+      // fica sem número — nunca com um número errado, e nunca com um erro na
+      // barra lateral por causa de um enfeite.
+      .catch(() => { if (vivo) setRadar(null); });
+    return () => { vivo = false; };
+  }, [selectedMunicipioId]);
+
   // Estado de collapse dos grupos (persiste em localStorage)
   const [collapsed, setCollapsed] = useState<Set<string>>(() => {
     if (typeof window === "undefined") return new Set();
@@ -623,12 +663,80 @@ function SidebarContent({
                 href={`${item.href}${qs}`}
                 title={item.label}
                 aria-label={item.label}
-                className={`flex items-center justify-center rounded-lg py-2 transition-all ${
-                  isActive ? "bg-accent text-primary" : "text-base-content/60 hover:bg-base-200"
+                className={`relative flex items-center justify-center rounded-lg py-2 transition-all ${
+                  item.destaque ? "hover:bg-base-200"
+                    : isActive ? "bg-accent text-primary" : "text-base-content/60 hover:bg-base-200"
                 }`}
+                style={item.destaque
+                  ? {
+                      background: isActive ? "var(--bi-info-soft)" : undefined,
+                      color: "var(--bi-info-ink)",
+                    }
+                  : undefined}
               >
-                {Icon && <Icon className="size-[18px]" />}
+                {Icon && (
+                  <Icon
+                    className={`size-[18px] ${item.destaque ? "" : (isActive
+                      ? "text-primary" : "text-base-content/60")}`}
+                  />
+                )}
+                {/* Na barra recolhida não cabe número: vira um ponto. Diz "há
+                    algo aqui" sem prometer quanto, que é tudo o que 4rem de
+                    largura comportam com honestidade. */}
+                {item.destaque && !!radar && radar.total > 0 && (
+                  <span
+                    aria-hidden
+                    className="absolute right-1.5 top-1.5 size-1.5 rounded-full"
+                    style={{ background: "var(--bi-info-ink)" }}
+                  />
+                )}
               </Link>
+            );
+          }
+          /* ⭐ O ITEM EM DESTAQUE (hoje só o Radar) usa a família INFO em vez do
+             verde do sistema — inclusive quando ativo, senão ele perderia a
+             identidade justamente na tela dele. O trilho à esquerda, que marca
+             o item selecionado, acompanha a mesma cor. */
+          if (item.destaque) {
+            return (
+              /* ⚠️ O SEPARADOR VEM DEPOIS, e não antes: ele agrupa o Painel e o
+                 Radar como "as duas visões gerais" e os distingue dos grupos por
+                 esfera que vêm abaixo. Posto acima, separaria o Radar do Painel
+                 — sugerindo que ele é de outra natureza que a tela de abertura,
+                 quando os dois são justamente o que se olha primeiro. */
+              <React.Fragment key={item.href}>
+              <Link
+                href={`${item.href}${qs}`}
+                className="relative mt-1 flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all hover:bg-base-200"
+                style={{
+                  background: isActive ? "var(--bi-info-soft)" : undefined,
+                  color: "var(--bi-info-ink)",
+                  fontWeight: isActive ? 600 : 500,
+                }}
+              >
+                {isActive && (
+                  <span
+                    aria-hidden
+                    className="absolute -left-2 top-1/2 h-6 w-1 -translate-y-1/2 rounded-r-full"
+                    style={{ background: "var(--bi-info-ink)" }}
+                  />
+                )}
+                {Icon && <Icon className="size-4" />}
+                <span className="flex-1 text-[13px]">{item.label}</span>
+                {!!radar && radar.total > 0 && (
+                  <span
+                    className="rounded-full px-1.5 py-px text-[11px] font-semibold tabular-nums"
+                    style={{ background: "var(--bi-info-soft)", color: "var(--bi-info-ink)" }}
+                    title={radar.dias != null
+                      ? `${radar.total} programa(s) com janela aberta — o mais próximo fecha em ${radar.dias} dia(s)`
+                      : `${radar.total} programa(s) com janela aberta`}
+                  >
+                    {radar.total}
+                  </span>
+                )}
+              </Link>
+              <div className="my-2 border-t border-base-300" />
+              </React.Fragment>
             );
           }
           return (
