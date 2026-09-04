@@ -343,6 +343,9 @@ MIGRATION_FILES = [
     # a ninguem, e o proprio catalogo backend a omitia). Mesmo desenho do
     # add_bi_tela.sql; NOT EXISTS respeita revogacao futura.
     "add_tela_investsus.sql",
+    # Mesma logica do investsus: tela nova nao nasce concedida, e o item do
+    # menu e filtrado por `user_telas`. Quem tem `sismob` ganha `obrasgov`.
+    "add_tela_obrasgov.sql",
     # Configuracoes do tenant (chave -> valor) editaveis pela tela. Primeira e
     # unica chave: `rm.rodape`, o rodape padrao do Relatorio de Monitoramento,
     # que ate aqui so existia em RM_RODAPE e exigia deploy para mudar.

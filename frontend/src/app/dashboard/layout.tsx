@@ -32,6 +32,7 @@ import {
   Settings,
   CalendarClock,
   Radar,
+  HardHat,
 } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -196,6 +197,28 @@ const NAV_ITEMS: NavEntry[] = [
       { href: "/dashboard/sismob", label: "Obras da Saúde (SISMOB)" },
       { href: "/dashboard/investsus", label: "InvestSUS" },
       { href: "/dashboard/acordofes", label: "Acordo FES (Dívida Saúde)" },
+    ],
+  },
+  // ⭐ OBRAS é um grupo pelo mesmo motivo que SAÚDE é: quem acompanha obra abre
+  // as telas de obra no mesmo dia, e espalhadas na barra cada uma parecia um
+  // assunto diferente. Nasce com duas e cresce — o Governo publica obra em pelo
+  // menos quatro sistemas, e cada um vira um item aqui.
+  //
+  // ⚠️ O SISMOB APARECE AQUI **E** EM SAÚDE, o mesmo link nos dois lugares. Não
+  // é engano: ele é as duas coisas (é obra e é saúde), e quem chega por "Saúde"
+  // não é a mesma pessoa que chega por "Obras". Tirar de um dos dois obrigaria
+  // metade dos usuários a procurar a tela na pasta do outro assunto.
+  //
+  // ⚠️ E as duas telas se sobrepõem NOS DADOS também: o CIPI reúne obras que o
+  // SISMOB publica (45 das 360 de Freitas). Decisão do dono em 04/09/2026 —
+  // "mesmo que as obras do SISMOB estejam também no obrasgov geral, não tem
+  // problema". A tela de Obras Federais marca quais são, em vez de escondê-las.
+  {
+    label: "Obras",
+    icon: HardHat,
+    children: [
+      { href: "/dashboard/obrasgov", label: "Obras Federais (Obras.gov.br)" },
+      { href: "/dashboard/sismob", label: "Obras da Saúde (SISMOB)" },
     ],
   },
   { href: "/dashboard/simec", label: "SIMEC - PAR (MEC)", icon: Target },

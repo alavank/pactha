@@ -68,6 +68,9 @@ export const TELAS: TelaDef[] = [
   // As quatro da pasta SAÚDE, na ordem em que aparecem no grupo do menu.
   { key: "fns", label: "Fundo Nacional de Saúde" },
   { key: "sismob", label: "Obras da Saúde (SISMOB)" },
+  // A pasta OBRAS do menu (04/09/2026): as obras federais de TODAS as
+  // areas, que o SISMOB (saude) e o SIMEC (educacao) nao cobrem.
+  { key: "obrasgov", label: "Obras Federais (Obras.gov.br)" },
   { key: "investsus", label: "InvestSUS" },
   // A dívida da saúde é um acordo da SES-MG: não existe fora de Minas.
   { key: "acordofes", label: "Acordo FES (dívida saúde MG)", ufs: ["MG"] },
