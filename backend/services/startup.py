@@ -402,6 +402,9 @@ MIGRATION_FILES = [
     # Obras.gov.br/CIPI: as obras federais que nao sao de saude (SISMOB) nem
     # de educacao (SIMEC). Depende so de `municipios`.
     "add_obrasgov.sql",
+    # ⚠️ DEPOIS de `add_obrasgov.sql`: acrescenta `sistema_origem` a uma
+    # tabela que nasce la. Inverter a ordem quebra banco NOVO.
+    "add_obrasgov_sistema_origem.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",

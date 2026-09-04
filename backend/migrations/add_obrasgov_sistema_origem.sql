@@ -1,0 +1,12 @@
+-- Obras.gov.br: de qual sistema a obra veio — e por que isso importa.
+--
+-- 04/09/2026, junto com a troca de host (`api.obrasgov` → `api-publica.obrasgov`,
+-- ver o cabeçalho de `ingestion/obrasgov.py`). A API nova publica um campo que a
+-- antiga não tinha: `sistema_resp`, o sistema de origem do projeto no CIPI.
+--
+-- ⚠️ ELE REVELA SOBREPOSIÇÃO COM COLETORES QUE JÁ TEMOS. Uma UBS do RS veio com
+-- `sistema_resp: SISMOB` — quer dizer que o CIPI reúne obras que o `sismob_obras`
+-- já traz por outro caminho, e sem esta coluna a tela mostraria a mesma obra duas
+-- vezes como se fossem duas. Os valores vistos até agora: CIPI, Transferegov.br,
+-- SIMEC-MCID, SISMOB, Novo PAC.
+ALTER TABLE obrasgov_projetos ADD COLUMN IF NOT EXISTS sistema_origem VARCHAR(40);
