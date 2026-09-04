@@ -377,7 +377,12 @@ def test_o_alcance_nao_virou_permissao_do_catalogo():
     acrescentou `usuarios.modelos`; 08/2026, `vigencias.exportar`, para o botao
     Exportar do modal de Vigencias; 02/09/2026, as SEIS do modulo AGENDAMENTOS —
     `ver`, `criar`, `editar`, `excluir`, `exportar` e a especial
-    `anexo_baixar`); o que este teste guarda e a ausencia de caixinha de
+    `anexo_baixar`; 04/09/2026, UMA — `obrasgov.ver`, a tela de Obras Federais
+    do grupo OBRAS do menu, que mostra o que o SISMOB e o SIMEC nao cobrem:
+    mobilidade, saneamento, habitacao e a reconstrucao da Defesa Civil. Entrou
+    SO com `ver`, e nao com `exportar`/`atualizar`, porque nao ha rota que essas
+    duas governariam — a mesma razao ja escrita no InvestSUS); o que este teste
+    guarda e a ausencia de caixinha de
     ALCANCE — `gestao.editar_proprios` e a forma que foi recusada.
 
     ⚠️ O NUMERO E TRIPWIRE, e nao a asserção que importa. Ele existe para que
@@ -385,5 +390,5 @@ def test_o_alcance_nao_virou_permissao_do_catalogo():
     passa por aqui e escreve por que. A guarda de verdade e a linha de baixo —
     nenhuma chave pode conter "propri", porque alcance de linha e outra coisa e
     junta-las criaria duas caixinhas que se contradizem."""
-    assert len(permissoes.CATALOGO) == 75
+    assert len(permissoes.CATALOGO) == 76
     assert not any("propri" in c for c in permissoes.CATALOGO)

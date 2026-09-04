@@ -153,6 +153,11 @@ INSERT INTO permissoes_catalogo (chave, secao, escrita) VALUES
     ('sismob.ver', 'convenios', FALSE),
     ('sismob.exportar', 'convenios', FALSE),
     ('sismob.atualizar', 'convenios', TRUE),
+    -- Obras Federais (CIPI/Obras.gov.br) entrou em 04/09/2026, junto com o
+    -- grupo OBRAS do menu. Herda de 'convenios' no mapa de compatibilidade
+    -- abaixo pela tela `obrasgov`. So `ver`: nao ha rota de exportacao nem
+    -- de coleta sob demanda para `exportar`/`atualizar` governarem.
+    ('obrasgov.ver', 'convenios', FALSE),
     ('acordofes.ver', 'convenios', FALSE),
     ('acordofes.exportar', 'convenios', FALSE),
     ('acordofes.atualizar', 'convenios', TRUE),
@@ -315,6 +320,7 @@ WITH marca AS (
         ('sismob', 'sismob.ver', FALSE),
         ('sismob', 'sismob.exportar', FALSE),
         ('sismob', 'sismob.atualizar', TRUE),
+        ('obrasgov', 'obrasgov.ver', FALSE),
         ('acordofes', 'acordofes.ver', FALSE),
         ('acordofes', 'acordofes.exportar', FALSE),
         ('acordofes', 'acordofes.atualizar', TRUE),

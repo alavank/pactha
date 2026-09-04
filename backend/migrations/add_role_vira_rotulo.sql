@@ -96,7 +96,8 @@ WITH marca AS (
     VALUES ('dashboard'), ('ai'), ('telegram'), ('parlamentares'),
            ('gestao'), ('agendamentos'), ('rm'), ('documentos'),
            ('convenios'), ('emendas'),
-           ('transferegov'), ('cauc'), ('sismob'), ('acordofes'), ('fns'),
+           ('transferegov'), ('cauc'), ('sismob'), ('obrasgov'),
+           ('acordofes'), ('fns'),
            -- ⚠️ `suas` SAIU DESTA LISTA depois que a tela foi aposentada (o
            -- painel do MDS vive dentro de `paineis`). Editar migration já
            -- aplicada seria proibido se ela pudesse rodar de novo — esta NÃO

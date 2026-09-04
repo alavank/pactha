@@ -25,6 +25,10 @@ TELAS_CATALOG = [
     # mesma tela serve clientes de qualquer estado.
     {"key": "cauc", "label": "Regularidade (federal e estadual)"},
     {"key": "sismob", "label": "Obras da Saúde (SISMOB)"},
+    # A 2a tela da pasta OBRAS do menu (04/09/2026). MESMO TEXTO de
+    # `frontend/src/lib/telas.ts`: dois nomes para a mesma chave fazem o
+    # administrador achar que sao duas permissoes diferentes.
+    {"key": "obrasgov", "label": "Obras Federais (Obras.gov.br)"},
     {"key": "acordofes", "label": "Acordo FES (dívida saúde MG)"},
     {"key": "fns", "label": "Fundo Nacional de Saúde"},
     # A 4ª tela da pasta SAÚDE do menu (#243). Ficou fora deste catálogo no
@@ -62,6 +66,7 @@ CATALOG_KEYS = {t["key"] for t in TELAS_CATALOG}
 TELAS_TODAS = [
     "dashboard", "ai", "telegram", "parlamentares", "gestao", "agendamentos", "rm",
     "documentos", "convenios", "emendas", "transferegov", "cauc", "sismob",
+    "obrasgov",
     # `suas` SAIU: o painel do MDS vive dentro de `paineis` (ver telas.ts).
     "acordofes", "fns", "investsus", "simec", "paineis", "bi", "bi_tela",
     "bi_link", "dou", "cofre", "sessoes", "auditoria",

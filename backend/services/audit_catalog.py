@@ -836,6 +836,7 @@ _ALVO_POR_TIPO: dict[str, dict[str, str]] = {
         "cauc": "CAUC",
         "fns": "Fundo Nacional de Saúde",
         "sismob": "SISMOB",
+        "obrasgov": "Obras.gov.br",
         "simec": "SIMEC - PAR",
         "dou": "Diário Oficial",
     },
