@@ -37,32 +37,42 @@ pglast = pytest.importorskip("pglast")
 from routers import programas_captacao as R  # noqa: E402
 
 
-def _sql_da_rota() -> str:
-    """O SELECT do radar, tirado do ARQUIVO do router.
+def _constante(nome: str) -> str:
+    """O texto de uma constante de SQL, lido do ARQUIVO do router.
 
-    Le do arquivo, e nao de uma constante exportada, de proposito: o que vai
-    para o banco e o texto que esta no codigo, e um teste que lesse uma copia
-    paralela passaria com a rota usando outra consulta.
-
-    ⚠️ ESCOLHE O BLOCO PELO CONTEUDO, e nao pela posicao. A primeira versao
-    pegava o PRIMEIRO `text(\"\"\"...\"\"\")` do arquivo — bastaria alguem
-    acrescentar outra consulta acima para o teste passar a proteger a consulta
-    errada, em silencio, continuando verde. Aqui o bloco tem de ser o que le
-    `programas_captacao`, e um arquivo com dois candidatos e um erro explicito.
-    """
+    Le do arquivo, e nao do modulo importado, pela mesma razao de sempre: o que
+    vai para o banco e o texto que esta no codigo."""
     fonte = open(R.__file__, encoding="utf-8").read()
-    blocos = [b for b in re.findall(r'text\("""(.*?)"""\)', fonte, re.S)
-              if "FROM programas_captacao" in b]
-    assert blocos, "SELECT de programas_captacao nao encontrado no router"
-    assert len(blocos) == 1, (
-        f"{len(blocos)} consultas leem programas_captacao; este teste protege "
-        f"uma so — decida qual e ajuste o extrator de proposito")
+    achado = re.search(rf'^{nome} = """(.*?)"""', fonte, re.S | re.M)
+    assert achado, f"constante {nome} nao encontrada no router"
+    return achado.group(1)
+
+
+def _sql_da_rota() -> str:
+    """O SELECT do radar, montado das MESMAS pecas que a rota monta.
+
+    ⚠️ EM 04/09/2026 A CONSULTA DEIXOU DE SER UM BLOCO SO. A CTE e o filtro
+    viraram constantes compartilhadas com o endpoint `/contagem`, que alimenta o
+    contador do menu — porque um contador que discorde da tela e pior que
+    contador nenhum. Este extrator acompanhou, e continua lendo do arquivo.
+
+    ⚠️ E EXIGE QUE A ROTA CONCATENE ESSAS PECAS, logo abaixo. Sem essa
+    verificacao a refatoracao teria aberto exatamente o buraco que o extrator
+    antigo fechava: alguem define as constantes, o teste as valida, e a rota
+    manda outra coisa para o banco."""
+    fonte = open(R.__file__, encoding="utf-8").read()
+    montagem = "text(_CTE_ABERTOS + _SELECT_LISTA + _FILTRO_ABERTOS + _ORDEM_LISTA)"
+    assert montagem in fonte, (
+        "a rota do radar nao monta mais a consulta com as constantes que este "
+        f"teste valida (esperado: {montagem}) — ajuste o extrator DE PROPOSITO")
+    sql = (_constante("_CTE_ABERTOS") + _constante("_SELECT_LISTA")
+           + _constante("_FILTRO_ABERTOS") + _constante("_ORDEM_LISTA"))
     # `:uf`/`:nat` sao binds do SQLAlchemy; o Postgres nao os conhece.
     # ⚠️ O `(?<!:)` E OBRIGATORIO: sem ele o cast `::date` do Postgres virava
     # `:'date'` e o parser recusava a consulta INTEIRA — o teste passaria a
     # falhar por defeito dele proprio, escondendo se as guardas estao ou nao no
     # lugar. Bind e cast usam o mesmo caractere; so o dobrado e cast.
-    return re.sub(r"(?<!:):(\w+)", r"'\1'", blocos[0])
+    return re.sub(r"(?<!:):(\w+)", r"'\1'", sql)
 
 
 def _where_bruto():
@@ -211,3 +221,28 @@ def test_a_janela_de_inicio_tambem_e_guarda():
         "voltou `CURRENT_DATE` — ele sai do fuso da sessao do Postgres, que nos "
         "containers e UTC: entre 21h e meia-noite o prazo que fecha HOJE some do "
         "radar na noite anterior")
+
+
+def test_o_contador_do_menu_usa_o_MESMO_filtro_da_tela():
+    """⚠️ A GUARDA QUE NASCEU COM O CONTADOR (04/09/2026).
+
+    O menu mostra "Radar de captação · 7", e esse 7 vem de `/contagem`, um
+    endpoint que só conta — a listagem inteira seria cara numa barra lateral
+    renderizada em toda tela. Só que duas consultas para a mesma pergunta é
+    exatamente como as respostas passam a divergir, e aqui a divergência tem
+    consequência direta: o gestor clica em "7 oportunidades" e encontra seis.
+    A partir daí ele não confia em nenhum número do sistema.
+
+    Por isso a contagem tem de montar-se das MESMAS constantes — não de uma
+    cópia do filtro, por mais idêntica que ela pareça no dia em que foi escrita.
+    """
+    fonte = open(R.__file__, encoding="utf-8").read()
+    trecho = fonte[fonte.index("async def contagem"):]
+
+    assert "_CTE_ABERTOS" in trecho, "a contagem não usa a CTE compartilhada"
+    assert "_FILTRO_ABERTOS" in trecho, "a contagem não usa o filtro compartilhado"
+    # E não pode ter reescrito o filtro por dentro: se aparecer um WHERE próprio
+    # sobre a tabela, as duas respostas voltam a poder divergir.
+    assert "FROM programas_captacao" not in trecho, (
+        "a contagem voltou a ler a tabela por conta própria — ela deve partir "
+        "de `base`, a CTE que a listagem também usa")
