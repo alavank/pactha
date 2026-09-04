@@ -111,12 +111,29 @@ echo "   $DB_UUID -> $IP_DB"
 #    maquina do dono. O jeito portatil e o processo em background do proprio
 #    shell, cujo PID da para guardar — um `ssh -f` iria para background sozinho
 #    e deixaria um tunel orfao se o script morresse no meio.
+# ⚠️ ANTES DE ABRIR, FECHA O ORFAO DA VEZ PASSADA. O `trap` abaixo cobre saida
+# normal, Ctrl+C e SIGTERM — mas NAO cobre SIGKILL, e foi o que aconteceu duas
+# vezes em 03/09/2026: o script estourou o timeout de quem o chamava, morreu sem
+# rodar o trap, e deixou um tunel ABERTO PARA O BANCO DE PRODUCAO por horas.
+# Confiar so no trap e apostar que ninguem vai matar o processo; este arquivo
+# guarda o PID e a proxima execucao limpa o que sobrou.
+PID_FILE="${TMPDIR:-/tmp}/pactha-carga-tce-$TENANT.pid"
+if [ -f "$PID_FILE" ]; then
+  velho="$(cat "$PID_FILE" 2>/dev/null || true)"
+  if [ -n "$velho" ] && kill -0 "$velho" 2>/dev/null; then
+    echo "-- encerrando tunel orfao da execucao anterior (pid $velho)"
+    kill "$velho" 2>/dev/null || true
+  fi
+  rm -f "$PID_FILE"
+fi
+
 echo "-- abrindo tunel localhost:$PORTA_LOCAL -> $IP_DB:5432"
 ssh -i "$SSH_KEY" -N -o ExitOnForwardFailure=yes -o ConnectTimeout=20 \
     -o StrictHostKeyChecking=accept-new \
     -L "$PORTA_LOCAL:$IP_DB:5432" "root@$HOST" &
 SSH_PID=$!
-trap 'kill "$SSH_PID" 2>/dev/null || true' EXIT INT TERM
+echo "$SSH_PID" > "$PID_FILE"
+trap 'kill "$SSH_PID" 2>/dev/null || true; rm -f "$PID_FILE"' EXIT INT TERM
 
 # Espera a porta atender, em vez de dormir um tempo fixo: o tunel sobe em menos
 # de um segundo numa rede boa e pode levar cinco numa ruim, e um `sleep 2` chuta
