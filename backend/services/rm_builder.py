@@ -1784,7 +1784,13 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
                -- ULTIMA COLUNA (row[30]), a setima consecutiva pendurada no fim
                -- pela mesma razao das seis acima: o laco le por INDICE, e inserir
                -- no MEIO desloca tudo em silencio.
-               situacao_projeto_basico
+               situacao_projeto_basico,
+               -- NOTAS DE EMPENHO DO DADO ABERTO (siconv_empenho.zip), FALLBACK
+               -- da listagem rica do scraper. ⚠️ NUNCA substitui `notas_empenho`
+               -- (row[25]): o `_ne_efetiva` abaixo usa a rica quando existe e cai
+               -- para esta so quando a rica e nula — o requisito "nao perder
+               -- informacao". OITAVA e ULTIMA coluna (row[31]).
+               notas_empenho_aberto
         FROM transferegov_propostas WHERE municipio_id = :m
     """), {"m": municipio_id})
     # PACs que JA aparecem como voluntaria. O mesmo recurso saia DUAS vezes no
@@ -1890,15 +1896,21 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
         # SITUAÇÃO DO CONTRATO no TransfereGov (ex.: "Cláusula Suspensiva") — vinha
         # so no JSONB e nao aparecia no relatorio.
         sit_contrato = (_det_c.get("Situação Atual do Contrato") or "").strip()
-        # EMPENHADO: o DOCUMENTO na frente da inferencia. row[25] = notas_empenho
+        # ⚠️ A LISTAGEM DE NEs EFETIVA: a RICA do scraper (row[25]) quando existe,
+        # e a do DADO ABERTO (row[31], siconv_empenho) SO como fallback quando a
+        # rica e nula. Este e o ponto unico que garante "nao perder informacao":
+        # a fonte logada, que tem detalhe que a API nao tem, sempre vence; a API
+        # so preenche o vazio (2.742 de 3.200 propostas sem listagem, porque a
+        # sessao gov.br fica fria). As duas colunas tem o MESMO formato, entao as
+        # quatro funcoes abaixo leem qualquer uma sem traducao.
+        _ne = row[25] if row[25] is not None else row[31]
+        # EMPENHADO: o DOCUMENTO na frente da inferencia. `_ne` = listagem de NEs
         # (NE real manda), `sit` = status do ciclo. Devolve "" quando nao ha
         # prova nenhuma — e rm_pdf OMITE a linha nesse caso, em vez de afirmar
-        # "Não" sem ter medido. Ate aqui o ternario nunca calava: convenio
-        # assinado com NE emitida saia "Empenhado: Não", porque _fed_status
-        # classifica "Em Vigor"/"Assinado" como 'vigente', nao 'empenhada'.
+        # "Não" sem ter medido.
         # ⚠️ `detalhe->>'Empenhado'` (row[15]) NAO entra: e o flag furado do
         # portal, que erra nos dois sentidos. Ver _empenhado_rotulo.
-        empenhado = _empenhado_rotulo(row[25], sit, row[29])
+        empenhado = _empenhado_rotulo(_ne, sit, row[29])
         # EMPENHO (NEs): "PENDENTE DE EMPENHO" — o simetrico do PENDENTE DE
         # DESEMBOLSO logo abaixo, um degrau antes na esteira do dinheiro.
         #
@@ -1916,7 +1928,10 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
         #       e diante da discordancia o relatorio CALA, em vez de imprimir
         #       "PENDENTE DE EMPENHO" na mesa do prefeito sobre um instrumento
         #       que o proprio governo diz ter empenho.
-        _pend_empenho = (_e_termo_compromisso(row[28]) and _sem_empenho(row[25])
+        # `_ne` (rica ou fallback aberto): quando o dado aberto ja mostra a NE, o
+        # relatorio deixa de marcar "PENDENTE DE EMPENHO" indevidamente — antes
+        # calava por falta de dado; agora cala porque SABE que ha empenho.
+        _pend_empenho = (_e_termo_compromisso(row[28]) and _sem_empenho(_ne)
                          and not (_money(row[29]) or 0))
         if _pend_empenho:
             # Nao imprimir "Empenhado: Sim" ao lado de "PENDENTE DE EMPENHO" no
@@ -1994,11 +2009,14 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             # `empenhado` (Sim/Não) vinha do status do ciclo e o próprio
             # _fed_status documenta que ele marcava "Aprovadas" como empenhadas
             # sem empenho real; aqui sai o número, o valor e a data da NE.
-            "nes": _nes_resumo(row[25]),
+            # ⚠️ `_ne` (rica do scraper, ou fallback do dado aberto) — a listagem
+            # de NEs completa. A rica sempre vence; o dado aberto so preenche o
+            # vazio. Ver o `_ne = row[25] if ... else row[31]` acima.
+            "nes": _nes_resumo(_ne),
             # VALOR EMPENHADO medido (soma das NEs REAIS, sem a minuta de R$ 1,00).
             # `None` = a listagem nunca foi consultada, e aí o PDF não imprime a
             # linha. `0.0` NÃO é vazio: é resposta medida ("consultei e não há").
-            "valor_empenhado": _empenho_total(row[25], row[29]),
+            "valor_empenhado": _empenho_total(_ne, row[29]),
             # Termo de Compromisso MEDIDO e sem nenhuma NE real. Já aparece dentro
             # de `situacao_atual`; fica também como CAMPO próprio para o PDF poder
             # destacar e para quem classifica (rm_export) não precisar reler texto.
