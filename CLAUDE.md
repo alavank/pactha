@@ -59,16 +59,25 @@ npm run lint
 ```
 
 ### Tests (backend only — no frontend test suite exists)
-`pytest` isn't pinned in `requirements.txt`; install it separately (`pip install pytest`).
-`backend/tests/conftest.py` puts `backend/` on `sys.path`, so pytest works from either the
-repo root or `backend/`:
+Test-only deps live in `backend/requirements-dev.txt` (pytest, pglast — the latter validates
+SQL against the real Postgres grammar without a database):
 ```bash
-python -m pytest backend/tests/ -q                             # from repo root
-python -m pytest backend/tests/test_authz.py -q -k some_test   # single file/test
+pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+python -m pytest                                               # from repo root: the whole suite
+python -m pytest backend/tests/test_authz.py -k some_test      # single file/test
 ```
-Tests use plain `asyncio.run(...)` inside test functions rather than `pytest-asyncio`
-markers. There is no CI workflow running lint or tests — `build-backend.yml` /
-`build-frontend.yml` only build and deploy Docker images on push to `main`.
+**Run it bare.** `pytest.ini` supplies `testpaths` and `backend/tests/conftest.py` supplies the
+three env vars the suite needs — `DATABASE_URL`, `JWT_SECRET` and `BI_MODULE` (the last one
+because the five APIs have it in production; with the flag off, `/api/bi/*` isn't mounted and
+three route-registry tests fail forever). If the bare command needs an argument to go green,
+fix the repo config, not the command. It also puts `backend/` on `sys.path`, so pytest works
+from the repo root or from `backend/`.
+
+Tests use plain `asyncio.run(...)` inside test functions rather than `pytest-asyncio` markers.
+`.github/workflows/testes.yml` runs the suite on every PR and push to `main`; it **reports but
+does not block** until the `pytest (backend)` job is marked a required status check in the main
+ruleset. No lint runs in CI — the frontend has 52 pre-existing findings, and a check that is red
+from day one recreates the exact problem this workflow was added to fix.
 
 ### First login on a fresh database
 Seed user is `super-admin@alavank.com.br`, created by `setup_db.py` only when `users` is

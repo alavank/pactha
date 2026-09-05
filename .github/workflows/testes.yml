@@ -1,0 +1,78 @@
+name: testes
+
+# Roda a suite do backend em cada PR e em cada push na main.
+#
+# POR QUE ESTE ARQUIVO EXISTE. Ate 05/09/2026 este repo nao tinha CI nenhum: os
+# dois workflows (build-backend, build-frontend) so BUILDAM e DEPLOYAM. Nada
+# rodava `pytest`, entao nada impedia um merge com a suite vermelha — e como um
+# merge na main deploya os CINCO tenants direto, sem staging, o unico filtro
+# entre um teste quebrado e a prefeitura era alguem lembrar de rodar na propria
+# maquina.
+#
+# E o efeito disso ja estava medido: eram DEZ testes vermelhos permanentes, que
+# nao vinham de bug nenhum e sim de configuracao (o catalogo de permissoes do
+# Telegram existia so com a flag ligada; o BI, so com a dele). Teste vermelho
+# fixo nao custa um teste, custa a suite inteira: o valor de um alarme esta no
+# contraste, e quem le "10 failed" toda vez aprende a ler qualquer vermelho como
+# ruido. Entre os dez calados estava o guardiao da chave estrangeira que impede
+# uma migration de derrubar o boot de um tenant NOVO — exatamente a classe de bug
+# que ja mordeu duas vezes neste repo (transferegov_propostas e
+# add_detalhe_pagina_rodizio.sql).
+#
+# ⚠️ ESTE WORKFLOW NAO BLOQUEIA MERGE SOZINHO. Ele reporta. Para virar trava de
+# verdade, marque o job `backend` como *required status check* no ruleset da main
+# (Settings > Rules > o ruleset da main > Require status checks to pass). Ate la
+# ele e um aviso — bom, mas ignoravel.
+#
+# ⚠️ E NAO DEPLOYA NADA. Nao toca o Coolify, nao publica imagem, nao le segredo:
+# o unico segredo que existiria aqui seria o do registry, e este job nao builda.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# PR com push em sequencia: cancela a rodada velha em vez de enfileirar duas.
+concurrency:
+  group: testes-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: pytest (backend)
+    runs-on: ubuntu-latest
+    # A suite roda em ~15s. O teto e so para um travamento nao segurar um runner.
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          # A MESMA das imagens de producao (backend/Dockerfile.api e
+          # Dockerfile.scraper, os dois em python:3.12-slim). CI numa versao
+          # diferente da que roda no cliente testa outro programa.
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+
+      - name: Instalar dependencias
+        # As de producao entram porque a suite importa o app de verdade
+        # (routers, services, models); as de dev sao pytest e pglast.
+        # ⚠️ O Playwright entra como PACOTE, mas os navegadores dele NAO sao
+        # baixados (`playwright install` nao roda): nenhum teste abre browser —
+        # scraper se testa contra HTML salvo, nao contra o portal do governo.
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+
+      - name: pytest
+        # Sem argumento e sem env: `testpaths` vem do pytest.ini e as tres
+        # variaveis (DATABASE_URL, JWT_SECRET, BI_MODULE) vem do conftest.py.
+        # Se este comando precisar de um argumento para ficar verde, o defeito
+        # esta na configuracao do repo e nao no comando — conserte la.
+        run: python -m pytest
