@@ -1,26 +1,41 @@
-"""AGENDAMENTOS — a agenda de trabalho da equipe, por município.
+"""AGENDAMENTOS — a agenda de compromissos da equipe.
 
 Todo o resto da plataforma mostra dado que vem de fora. Este é o único módulo em
-que a equipe ESCREVE: o compromisso marcado, quem é o responsável, o que foi
-feito e o documento que sobrou daquilo.
+que a equipe ESCREVE: o compromisso marcado, a que horas, quem pediu, em que pé
+está e o que foi sendo anotado a respeito.
 
-⭐ TRÊS VISUALIZAÇÕES, UMA CONSULTA SÓ. Lista, calendário e kanban leem as mesmas
+⭐ TRÊS VISUALIZAÇÕES, UMA CONSULTA SÓ. Calendário, kanban e lista leem as mesmas
 linhas com os mesmos filtros — o que muda é o desenho na tela, não o recorte. Por
 isso não existe endpoint "de calendário" nem "de kanban": eles pediriam três
 consultas para manter em sincronia, e a primeira a divergir mostraria um
-agendamento que as outras duas escondem.
+compromisso que as outras duas escondem.
 
-⚠️ A EXPORTAÇÃO USA A MESMA FUNÇÃO DE FILTRO DA LISTA, e é o motivo de ela morar
-aqui e não em `routers/export_pdf.py` com as outras seis. O dono pediu "exportar
-a relação conforme o filtro": se a exportação montasse a própria consulta, um
-ajuste no filtro da tela deixaria o arquivo desalinhado com o que a pessoa está
-vendo — e um relatório que não bate com a tela é pior que nenhum, porque ninguém
-descobre pela tela qual dos dois está certo.
+⚠️ O RELATÓRIO USA A MESMA FUNÇÃO DE FILTRO DA LISTA, e é o motivo de ele morar
+aqui e não em `routers/export_pdf.py` com as outras seis. O dono pediu "o
+relatório respeita o filtro ativo": se ele montasse a própria consulta, um ajuste
+no filtro da tela deixaria o arquivo desalinhado com o que a pessoa está vendo — e
+um relatório que não bate com a tela é pior que nenhum, porque ninguém descobre
+pela tela qual dos dois está certo.
+
+⚠️ O MUNICÍPIO É IMPLÍCITO NA PREFEITURA, E OBRIGATÓRIO NA ASSESSORIA — e a regra
+que separa os dois é a CONTAGEM de municípios ativos do tenant, nunca um tipo
+configurado. É a mesma regra que a tela de Usuários já usa
+(`municipioUnico = municipios.length === 1`), e ela acerta nos dois casos sem
+exigir configuração nova. Num tenant de um município só, o formulário não manda
+`municipio_id` e `_municipio_implicito` resolve; com vários, mandar é obrigatório.
+
+⚠️ ANOTAÇÃO É APPEND-ONLY, e a trava é a AUSÊNCIA de rota: não há PUT nem DELETE
+de anotação neste arquivo, e isso é decisão de produto (o histórico de um
+compromisso é o que impede duas pessoas contarem a mesma história de dois jeitos).
+O banco não tem trigger para isso — quem garante é este arquivo.
 
 ⚠️ ANEXO TEM PERMISSÃO PRÓPRIA (`agendamentos.anexo_baixar`), pela mesma razão do
 módulo de Gestão: a lista mostra QUE existe um anexo, esta caixinha entrega o
 ARQUIVO — que pode ser ofício, contrato ou documento pessoal. Ver que existe não
-é ver o conteúdo.
+é ver o conteúdo. O formulário NOVO não anexa nada (o redesenho de 05/09/2026
+trocou anexo+relato por histórico de anotações), mas o que já foi anexado
+continua sendo servido: apagar o acesso a um documento que já está lá seria
+perder dado do cliente por mudança de tela.
 
 ⚠️ E O `dados_b64` NUNCA SAI NA LISTAGEM. Uma agenda de mês com trinta cartões,
 cada um com um PDF em base64, viraria um payload de dezenas de megabytes para
@@ -30,10 +45,10 @@ pela rota de download, uma requisição por vez, e com a permissão própria.
 from __future__ import annotations
 
 import base64
-import json
-from datetime import date
+import re
+from datetime import date, time, timedelta
 from io import BytesIO
-from typing import Any, Optional
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response, StreamingResponse
@@ -50,75 +65,198 @@ from services.registro_rotas import exige
 
 router = APIRouter(prefix="/api/agendamentos", tags=["agendamentos"])
 
-# ⚠️ MESMO TETO DO MÓDULO DE GESTÃO, e o número é do base64 (que é ~33% maior
-# que o binário). Dois módulos com limites diferentes para o mesmo tipo de
-# arquivo fariam a pessoa aprender o limite errado num e ser recusada no outro.
-MAX_ANEXO_BYTES = 2 * 1024 * 1024  # 2MB base64 ≈ 1,5MB de arquivo
+# ---------------------------------------------------------------------------
+# A PALETA DE ACENTO DOS COMPROMISSOS
+# ---------------------------------------------------------------------------
+# ⭐ UMA LISTA SÓ, E ELA MORA AQUI. A tela pede `GET /paleta` em vez de trazer
+# as cores no código — mesma razão pela qual as colunas do kanban também vêm do
+# backend: duas listas divergem no primeiro ajuste, e a divergência aparece como
+# um compromisso salvo numa cor que a tela não sabe desenhar.
+#
+# ⚠️ O HEX É DADO, O CONTRASTE É RECEITA. A tela não guarda variante clara nem
+# escura de cada cor: o chip monta fundo e texto com `color-mix` sobre os tokens
+# do tema (`.ag-chip`, em globals.css), então a MESMA cor lê bem no claro e no
+# escuro sem uma segunda tabela para manter em sincronia.
+#
+# Nove tons na mesma família das cores de gráfico do PACTHA (`--bi-c1..c5`) e do
+# acento do sistema (`--bi-accent`), espaçados no círculo cromático para que dois
+# compromissos vizinhos no calendário nunca se confundam.
+PALETA: tuple[tuple[str, str], ...] = (
+    ("#12b886", "Menta"),
+    ("#2fb0c4", "Turquesa"),
+    ("#4fa3ee", "Azul"),
+    ("#a58cf0", "Violeta"),
+    ("#e07ab0", "Rosa"),
+    ("#f9846a", "Coral"),
+    ("#f5b93f", "Âmbar"),
+    ("#8bb734", "Limão"),
+    ("#7b8794", "Grafite"),
+)
+CORES = tuple(hexa for hexa, _ in PALETA)
+COR_PADRAO = CORES[0]
 
-# As três colunas do kanban. A ordem É a do quadro, da esquerda para a direita.
-# ⚠️ Tem de bater com o CHECK da migration `add_agendamentos.sql`: um valor aqui
-# que o banco recuse vira 500 na cara do usuário; um valor no banco que não
-# esteja aqui some do quadro sem erro nenhum.
-STATUS = ("a_fazer", "em_andamento", "realizado")
-STATUS_ROTULO = {"a_fazer": "A fazer", "em_andamento": "Em andamento",
-                 "realizado": "Realizado"}
+# As três colunas que todo tenant tem. A `chave` é o que o código usa para
+# apontar uma delas; o `nome` é da tela e não se renomeia (ver `atualizar_coluna`).
+# ⚠️ Tem de bater com o seed de `add_agendamentos_compromisso.sql`.
+COLUNAS_FIXAS = ("solicitada", "em_andamento", "concluida")
+COLUNA_ENTRADA = "solicitada"
+# Teto absoluto do quadro e teto de customizadas — os dois são do documento de
+# redesenho, e valem TAMBÉM aqui e não só no botão da tela: um POST repetido por
+# duas abas abertas passaria do limite se quem contasse fosse o navegador.
+MAX_COLUNAS = 5
+MAX_COLUNAS_CUSTOMIZADAS = 2
+
+# ⚠️ BUSCA SEM ACENTO SEM `unaccent`. A extensão não está instalada em nenhum dos
+# cinco bancos (ver `limpa_prestacao_contas_nao_informado.sql`), então o mesmo
+# mapa de tradução é aplicado dos DOIS lados: `translate()` na coluna, aqui em
+# Python no termo digitado. Sendo o mesmo mapa, o casamento é exato por
+# construção — o que um `unaccent` de um lado só nunca garantiria.
+_DE = "áàâãäéèêëíìîïóòôõöúùûüçñ"
+_PARA = "aaaaaeeeeiiiiooooouuuucn"
+_TRADUZ = str.maketrans(_DE, _PARA)
 
 
-class Anexo(BaseModel):
-    nome: str = Field(..., max_length=255)
-    mime: str = Field(..., max_length=100)
-    dados_b64: str
-    tamanho: Optional[int] = None  # bytes do binário, antes do base64
+def _sem_acento(s: str) -> str:
+    return s.lower().translate(_TRADUZ)
 
 
-class AgendamentoCreate(BaseModel):
-    municipio_id: int
-    titulo: str = Field(..., min_length=1, max_length=200)
+def _sql_sem_acento(expr: str) -> str:
+    """O mesmo `_sem_acento`, em SQL, para a coluna."""
+    return f"translate(lower({expr}), '{_DE}', '{_PARA}')"
+
+
+class CompromissoCreate(BaseModel):
+    """⚠️ `municipio_id` É OPCIONAL AQUI E OBRIGATÓRIO NA ASSESSORIA. O pydantic
+    não sabe quantos municípios o tenant tem; quem decide é `_resolver_municipio`,
+    que preenche sozinho quando há um só e recusa com 422 quando há vários."""
+    municipio_id: Optional[int] = None
+    demanda: str = Field(..., min_length=1, max_length=200)
     data: date
-    relato: Optional[str] = None
-    responsavel_id: Optional[int] = None
-    status: str = "a_fazer"
-    anexos: list[Anexo] = Field(default_factory=list)
+    hora_inicio: time
+    tem_periodo: bool = False
+    hora_fim: Optional[time] = None
+    data_solicitacao: Optional[date] = None
+    solicitante: str = Field(..., min_length=1, max_length=120)
+    contato_whatsapp: Optional[str] = None
+    cor: str = COR_PADRAO
+    coluna_id: Optional[int] = None
+    # Na criação o formulário oferece UM campo livre de anotação, que vira a
+    # primeira do histórico. Depois disso, anotação só entra pela rota própria.
+    anotacao: Optional[str] = None
 
 
-class AgendamentoUpdate(BaseModel):
-    titulo: Optional[str] = Field(None, min_length=1, max_length=200)
+class CompromissoUpdate(BaseModel):
+    """Todos anuláveis: o PUT manda só o que mudou.
+
+    ⚠️ `hora_fim` e `contato_whatsapp` PRECISAM PODER VOLTAR A VAZIO, e é por
+    isso que a edição parcial deste modelo é decidida por `model_fields_set` e
+    não por `is not None`. Desmarcar "Definir período" é uma edição legítima que
+    apaga a hora de término; com o teste ingênuo ela seria descartada em
+    silêncio, e o bloco continuaria esticado no calendário."""
+    municipio_id: Optional[int] = None
+    demanda: Optional[str] = Field(None, min_length=1, max_length=200)
     data: Optional[date] = None
-    relato: Optional[str] = None
-    responsavel_id: Optional[int] = None
-    status: Optional[str] = None
-    anexos: Optional[list[Anexo]] = None
+    hora_inicio: Optional[time] = None
+    tem_periodo: Optional[bool] = None
+    hora_fim: Optional[time] = None
+    data_solicitacao: Optional[date] = None
+    solicitante: Optional[str] = Field(None, min_length=1, max_length=120)
+    contato_whatsapp: Optional[str] = None
+    cor: Optional[str] = None
+    coluna_id: Optional[int] = None
 
 
-class StatusUpdate(BaseModel):
+class ColunaUpdate(BaseModel):
     """⚠️ ROTA PRÓPRIA PARA O KANBAN, e não o PUT inteiro.
 
     Arrastar um cartão de coluna muda UMA coisa. Mandar o objeto completo faria
-    o front reenviar `anexos` a cada arrastada — os mesmos megabytes de base64,
-    de ida e de volta —, e um cartão arrastado a partir de uma tela carregada há
-    dez minutos sobrescreveria com dado velho o relato que outra pessoa acabou
-    de editar. Um PATCH de um campo não tem como fazer isso."""
-    status: str
+    um cartão arrastado a partir de uma tela carregada há dez minutos
+    sobrescrever com dado velho a demanda que outra pessoa acabou de editar. Um
+    PATCH de um campo não tem como fazer isso."""
+    coluna_id: int
 
 
-def _valida(body: AgendamentoCreate | AgendamentoUpdate | StatusUpdate) -> None:
-    st = getattr(body, "status", None)
-    if st is not None and st not in STATUS:
-        raise HTTPException(422, f"Status inválido: {st!r}. Use um de {list(STATUS)}.")
-    for a in (getattr(body, "anexos", None) or []):
-        if len(a.dados_b64) > MAX_ANEXO_BYTES:
-            raise HTTPException(
-                413, f"Anexo '{a.nome}' excede o limite de "
-                     f"{MAX_ANEXO_BYTES // 1024}KB (base64).")
+class ColunaNova(BaseModel):
+    nome: str = Field(..., min_length=1, max_length=40)
 
 
-def _rotulo_anexos(anexos) -> list:
-    """Metadado dos anexos para a trilha — NUNCA o `dados_b64`.
+class AnotacaoNova(BaseModel):
+    texto: str = Field(..., min_length=1)
 
-    Copiar o base64 para o `audit_log` duplicaria megabytes numa tabela que, por
-    decisão do dono, não se apaga. Mesma regra do módulo de Gestão."""
-    return [{"nome": a.get("nome"), "mime": a.get("mime"),
-             "tamanho": a.get("tamanho")} for a in (anexos or [])]
+
+# ---------------------------------------------------------------- validação --
+
+def _so_digitos(v: Optional[str]) -> Optional[str]:
+    """`(51) 99999-9999` -> `51999999999`. Vazio vira None.
+
+    ⚠️ A MÁSCARA É DA TELA, O BANCO GUARDA DÍGITO. Gravar a pontuação faria
+    "51999999999" e "(51) 99999-9999" serem dois números diferentes para
+    qualquer busca ou comparação futura — e os dois saem do mesmo formulário,
+    porque colar de outro lugar não passa pela máscara."""
+    if v is None:
+        return None
+    d = re.sub(r"\D", "", v)
+    if not d:
+        return None
+    if len(d) not in (10, 11):
+        raise HTTPException(
+            422, "O contato de WhatsApp precisa ter DDD e 8 ou 9 dígitos — "
+                 f"recebi {len(d)}.")
+    return d
+
+
+def _valida_horario(hora_inicio, tem_periodo, hora_fim) -> None:
+    """As duas regras que a tela também aplica, repetidas aqui de propósito.
+
+    Validação que só existe no navegador é sugestão: um `curl` a ignora, e o
+    resultado é um bloco que termina antes de começar — que o calendário desenha
+    com altura negativa, ou seja, não desenha."""
+    if not tem_periodo:
+        return
+    if hora_fim is None:
+        raise HTTPException(422, "Com período marcado, o horário de término é "
+                                 "obrigatório.")
+    if hora_inicio is not None and hora_fim <= hora_inicio:
+        raise HTTPException(422, "O término precisa ser depois do início.")
+
+
+def _valida_cor(cor: Optional[str]) -> Optional[str]:
+    if cor is None:
+        return None
+    c = cor.strip().lower()
+    if c not in CORES:
+        raise HTTPException(
+            422, f"Cor {cor!r} não é da paleta de compromissos. Use uma de "
+                 f"{list(CORES)}.")
+    return c
+
+
+# ------------------------------------------------------------- o município --
+
+async def _municipio_implicito(db: AsyncSession) -> Optional[int]:
+    """O município do tenant, quando ele tem UM só.
+
+    ⭐ É O QUE FAZ "O MUNICÍPIO É IMPLÍCITO NA PREFEITURA" SER VERDADE NO BANCO.
+    A tela de uma prefeitura não tem campo de município em lugar nenhum — mas a
+    coluna é NOT NULL e é ela que sustenta o recorte de carteira, o JOIN do nome
+    e o carimbo da trilha. Em vez de afrouxar a coluna (que esconderia a linha de
+    todo usuário de carteira restrita, porque `= ANY(:mids)` nunca casa com
+    NULL), o backend responde a pergunta que a tela não faz.
+
+    Devolve None quando há zero ou mais de um: aí o formulário TEM de escolher.
+    """
+    rows = (await db.execute(text(
+        "SELECT id FROM municipios WHERE active = TRUE LIMIT 2"))).fetchall()
+    return rows[0][0] if len(rows) == 1 else None
+
+
+async def _resolver_municipio(db: AsyncSession, pedido: Optional[int]) -> int:
+    if pedido:
+        return pedido
+    unico = await _municipio_implicito(db)
+    if unico is None:
+        raise HTTPException(422, "Escolha o município do compromisso.")
+    return unico
 
 
 # ⚠️ A ORDEM DAS COLUNAS AQUI É LIDA POR ÍNDICE em `_row_to_dict`. Coluna nova
@@ -132,14 +270,24 @@ _SELECT = """
     -- do SQL e nao o ESQUEMA, entao `ur.nome` passou por toda a suite e so
     -- apareceu como ProgrammingError na tela do cliente. Ver
     -- `test_agendamentos.py::test_o_select_so_usa_coluna_que_existe_no_modelo`.
-    SELECT a.id, a.municipio_id, m.nome, a.responsavel_id, ur.name,
-           a.titulo, a.relato, a.data, a.status, a.anexos,
-           a.criado_por, uc.name, a.created_at, a.updated_at
+    SELECT a.id, a.municipio_id, m.nome, m.uf,
+           a.demanda, a.data, a.hora_inicio, a.tem_periodo, a.hora_fim,
+           a.data_solicitacao, a.solicitante, a.contato_whatsapp, a.cor,
+           a.coluna_id, k.nome, a.anexos,
+           a.criado_por, uc.name, a.created_at, a.updated_at,
+           (SELECT COUNT(*) FROM agendamentos_anotacoes n
+             WHERE n.compromisso_id = a.id)
       FROM agendamentos a
       JOIN municipios m ON m.id = a.municipio_id
-      LEFT JOIN users ur ON ur.id = a.responsavel_id
+      JOIN agendamentos_colunas k ON k.id = a.coluna_id
       LEFT JOIN users uc ON uc.id = a.criado_por
 """
+
+
+def _hhmm(v) -> Optional[str]:
+    """`time` -> `HH:MM`. Sem segundos: o formulário é de hora e minuto, e
+    "14:30:00" na tela é ruído que ninguém digitou."""
+    return v.strftime("%H:%M") if v is not None else None
 
 
 def _row_to_dict(row, *, with_anexos: bool = False) -> dict:
@@ -148,49 +296,60 @@ def _row_to_dict(row, *, with_anexos: bool = False) -> dict:
     `agendamentos.anexo_baixar`: quem tem so `ver` ja teria recebido o arquivo.
     Hoje NENHUMA chamada pede `True`; o parametro existe para que um dia pedir
     seja uma decisao escrita, e nao um descuido."""
-    anexos = row[9] or []
+    anexos = row[15] or []
     if not with_anexos:
         anexos = [{k: v for k, v in a.items() if k != "dados_b64"} for a in anexos]
     return {
         "id": row[0],
         "municipio_id": row[1],
         "municipio": row[2],
-        "responsavel_id": row[3],
-        "responsavel": row[4],
-        "titulo": row[5],
-        "relato": row[6],
-        "data": row[7].isoformat() if row[7] else None,
-        "status": row[8],
-        "status_rotulo": STATUS_ROTULO.get(row[8], row[8]),
+        "uf": row[3],
+        "demanda": row[4],
+        "data": row[5].isoformat() if row[5] else None,
+        "hora_inicio": _hhmm(row[6]),
+        "tem_periodo": bool(row[7]),
+        "hora_fim": _hhmm(row[8]),
+        "data_solicitacao": row[9].isoformat() if row[9] else None,
+        "solicitante": row[10] or "",
+        "contato_whatsapp": row[11],
+        "cor": row[12] or COR_PADRAO,
+        "coluna_id": row[13],
+        "coluna": row[14],
         "anexos": anexos,
-        "criado_por": row[10],
-        "criado_por_nome": row[11],
-        "created_at": row[12].isoformat() if row[12] else None,
-        "updated_at": row[13].isoformat() if row[13] else None,
+        "criado_por": row[16],
+        "criado_por_nome": row[17],
+        "created_at": row[18].isoformat() if row[18] else None,
+        "updated_at": row[19].isoformat() if row[19] else None,
+        "anotacoes_qtd": int(row[20] or 0),
     }
 
 
-def _filtros(municipio_id, de, ate, status, responsavel_id,
-             municipios_permitidos=None) -> tuple[str, dict]:
-    """O WHERE compartilhado pela lista E pela exportação.
+def _filtros(municipio_id, de, ate, coluna_id, busca,
+             municipios_permitidos=None, municipio_ids=None) -> tuple[str, dict]:
+    """O WHERE compartilhado pela lista E pelo relatório.
 
-    ⚠️ FUNÇÃO ÚNICA DE PROPÓSITO. É o que garante que o arquivo exportado tenha
+    ⚠️ FUNÇÃO ÚNICA DE PROPÓSITO. É o que garante que o relatório traga
     exatamente as linhas que a tela mostra. Duas montagens de filtro divergem no
     primeiro ajuste, e a divergência aparece como "o relatório veio com um
-    agendamento a mais" — sem nada para culpar.
+    compromisso a mais" — sem nada para culpar.
 
     ⚠️ `municipios_permitidos` É O RECORTE DO PEDIDO "TODOS", e ele existe
     porque a primeira versão deste módulo mentia sobre ele. O comentário da tela
     dizia que, sem `municipio_id`, "o backend devolve o que o alcance da pessoa
     permite" — e não devolvia: não havia recorte nenhum aqui, e o que impedia o
     tenant inteiro de sair era o 403 de `ensure_municipio_access(user, None)`.
-    Ou seja, a opção «Todos os meus municípios» respondia 403 para TODO usuário
-    que não fosse o super-admin da Alavank, que é o único com carteira `None`.
+    Ou seja, a opção «todos os municípios» respondia 403 para TODO usuário que
+    não fosse o super-admin da Alavank, que é o único com carteira `None`.
 
     Agora o pedido "todos" significa **todos OS MEUS**, com o mesmo desenho do
     `routers/convenios.py` (que já resolvia isto): carteira restrita vira um
-    `IN`, carteira `None` (super-admin) não filtra, e carteira VAZIA devolve
+    `= ANY`, carteira `None` (super-admin) não filtra, e carteira VAZIA devolve
     lista vazia — nunca o tenant inteiro.
+
+    ⚠️ `municipio_ids` É O FILTRO DA TOOLBAR e ele se SOMA ao recorte da
+    carteira, nunca o substitui: é escolha do usuário sobre o que ele já pode
+    ver. Marcar cidades no filtro nunca pode alcançar uma que a carteira não
+    tenha.
     """
     where, params = [], {}
     if municipio_id:
@@ -200,14 +359,25 @@ def _filtros(municipio_id, de, ate, status, responsavel_id,
         # `expanding=True`, e sem isso a lista chega como um parâmetro só.
         where.append("a.municipio_id = ANY(:mids)")
         params["mids"] = list(municipios_permitidos)
+    if municipio_ids:
+        where.append("a.municipio_id = ANY(:mfiltro)")
+        params["mfiltro"] = list(municipio_ids)
     if de:
         where.append("a.data >= :de"); params["de"] = de
     if ate:
         where.append("a.data <= :ate"); params["ate"] = ate
-    if status:
-        where.append("a.status = :s"); params["s"] = status
-    if responsavel_id:
-        where.append("a.responsavel_id = :r"); params["r"] = responsavel_id
+    if coluna_id:
+        where.append("a.coluna_id = :k"); params["k"] = coluna_id
+    if busca:
+        # ⚠️ TRÊS CAMPOS, E SÓ ELES (decisão do dono): nome do município,
+        # demanda e solicitante. Varrer também o contato faria uma busca por
+        # "99" devolver metade da agenda; varrer as anotações faria a linha
+        # aparecer por um texto que a tela nem mostra na lista.
+        alvos = " OR ".join(
+            f"{_sql_sem_acento(c)} LIKE :q"
+            for c in ("m.nome", "a.demanda", "a.solicitante"))
+        where.append(f"({alvos})")
+        params["q"] = f"%{_sem_acento(busca)}%"
     return (" WHERE " + " AND ".join(where) if where else ""), params
 
 
@@ -234,70 +404,156 @@ def _carteira(current, municipio_id):
 
 
 async def _exigir_acesso(db: AsyncSession, aid: int, user) -> None:
-    """Os dois recortes de todo endpoint que fala de UM agendamento.
+    """Os dois recortes de todo endpoint que fala de UM compromisso.
 
-    Num lugar só porque são quatro (ler, editar, apagar, baixar anexo) e porque o
-    nome da tabela vira literal de SQL lá dentro: uma cópia divergente é uma
-    porta que continua aberta sem ninguém notar. Mesmo desenho do `gestao`."""
+    Num lugar só porque são cinco (ler, editar, mover, apagar, baixar anexo) e
+    porque o nome da tabela vira literal de SQL lá dentro: uma cópia divergente é
+    uma porta que continua aberta sem ninguém notar. Mesmo desenho do `gestao`."""
     authz.exigir_tela(user, "agendamentos")
     await authz.ensure_dono(db, "agendamentos", "id", aid, user)
 
 
 async def _contexto(db: AsyncSession, aid: int) -> dict:
-    """Município e título da linha, para a trilha de auditoria dizer SOBRE QUAL."""
+    """Município e demanda da linha, para a trilha dizer SOBRE QUAL."""
     row = (await db.execute(text(
-        "SELECT municipio_id, titulo, data FROM agendamentos WHERE id = :id"
+        "SELECT municipio_id, demanda, data FROM agendamentos WHERE id = :id"
     ), {"id": aid})).first()
     if not row:
         return {}
-    return {"municipio_id": row[0], "titulo": row[1],
+    return {"municipio_id": row[0], "demanda": row[1],
             "data": row[2].isoformat() if row[2] else None}
+
+
+async def _anotacoes(db: AsyncSession, aid: int) -> list[dict]:
+    """O histórico, do mais antigo para o mais recente.
+
+    ⚠️ ORDEM CRESCENTE, e ela é do desenho da tela: o campo de escrever fica
+    embaixo, então a anotação nova aparece logo acima dele — que é onde o olho
+    já está. Invertida, cada anotação nova empurraria o histórico para longe do
+    campo que acabou de ser usado."""
+    rows = (await db.execute(text("""
+        SELECT n.id, n.autor_id, u.name, n.texto, n.created_at
+          FROM agendamentos_anotacoes n
+          LEFT JOIN users u ON u.id = n.autor_id
+         WHERE n.compromisso_id = :id
+         ORDER BY n.created_at ASC, n.id ASC
+    """), {"id": aid})).fetchall()
+    return [{"id": r[0], "autor_id": r[1], "autor": r[2],
+             "texto": r[3], "criado_em": r[4].isoformat() if r[4] else None}
+            for r in rows]
+
+
+async def _colunas(db: AsyncSession) -> list[dict]:
+    rows = (await db.execute(text(
+        "SELECT id, nome, ordem, fixa, chave FROM agendamentos_colunas "
+        "ORDER BY ordem ASC, id ASC"))).fetchall()
+    return [{"id": r[0], "nome": r[1], "ordem": r[2], "fixa": bool(r[3]),
+             "chave": r[4]} for r in rows]
+
+
+async def _coluna_de_entrada(db: AsyncSession) -> int:
+    """O id de «Solicitada» neste banco. SERIAL não promete o mesmo número nos
+    cinco tenants — por isso a busca é pela `chave`, nunca por `id = 1`."""
+    rid = (await db.execute(text(
+        "SELECT id FROM agendamentos_colunas WHERE chave = :c"),
+        {"c": COLUNA_ENTRADA})).scalar()
+    if rid is None:
+        raise HTTPException(500, "A coluna «Solicitada» não existe neste banco.")
+    return rid
+
+
+async def _coluna_valida(db: AsyncSession, coluna_id: Optional[int]) -> int:
+    if not coluna_id:
+        return await _coluna_de_entrada(db)
+    existe = (await db.execute(text(
+        "SELECT 1 FROM agendamentos_colunas WHERE id = :i"),
+        {"i": coluna_id})).scalar()
+    if not existe:
+        raise HTTPException(422, "Essa coluna do quadro não existe.")
+    return coluna_id
 
 
 # ---------------------------------------------------------------- leitura ---
 
-@router.get("/status-opcoes", dependencies=[exige("agendamentos.ver")])
-async def status_opcoes(current: User = Depends(get_current_user)):
-    """As colunas do kanban, na ordem, com o rótulo que a tela mostra.
+@router.get("/paleta", dependencies=[exige("agendamentos.ver")])
+async def paleta(current: User = Depends(get_current_user)):
+    """As cores que o formulário oferece.
 
-    Vem do backend para a tela não ter uma segunda lista de status: duas listas
-    divergem, e a divergência esconde cartão."""
+    Vem do backend para a tela não ter uma segunda lista: duas listas divergem, e
+    a divergência aparece como um compromisso salvo numa cor que os swatches não
+    marcam — o usuário abre a edição e nenhuma cor está selecionada."""
     ensure_tela(current, "agendamentos")
-    return {"opcoes": [{"valor": s, "rotulo": STATUS_ROTULO[s]} for s in STATUS]}
+    return {"cores": [{"hex": h, "nome": n} for h, n in PALETA],
+            "padrao": COR_PADRAO}
+
+
+@router.get("/colunas", dependencies=[exige("agendamentos.ver")])
+async def listar_colunas(
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """As colunas do kanban, na ordem do quadro."""
+    ensure_tela(current, "agendamentos")
+    return {"colunas": await _colunas(db),
+            "max": MAX_COLUNAS, "max_customizadas": MAX_COLUNAS_CUSTOMIZADAS}
+
+
+@router.get("/contexto", dependencies=[exige("agendamentos.ver")])
+async def contexto_do_tenant(
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """⭐ SE ESTE TENANT PEDE MUNICÍPIO OU NÃO — a resposta vem do backend.
+
+    A tela poderia deduzir contando a lista que a barra lateral carregou, e era
+    assim que a tela de Usuários fazia. Só que aquela lista é a CARTEIRA DA
+    PESSOA, não o tenant: numa assessoria de 42 municípios, um usuário com um
+    município só veria a agenda em modo prefeitura — sem filtro, sem coluna de
+    município, e com o campo do formulário escondido. Aqui a contagem é a do
+    tenant, e é a mesma para todo mundo que entra."""
+    ensure_tela(current, "agendamentos")
+    unico = await _municipio_implicito(db)
+    return {
+        # `True` = tenant de assessoria/consórcio com carteira: a tela mostra
+        # município no formulário, no filtro e em cada cartão.
+        "multi_municipio": unico is None,
+        "municipio_implicito": unico,
+    }
 
 
 @router.get("", dependencies=[exige("agendamentos.ver")])
 async def listar(
     municipio_id: Optional[int] = Query(None),
+    municipio_ids: Optional[list[int]] = Query(None,
+        description="filtro da toolbar (multi-seleção)"),
     de: Optional[date] = Query(None, description="data inicial (inclusive)"),
     ate: Optional[date] = Query(None, description="data final (inclusive)"),
-    status: Optional[str] = Query(None),
-    responsavel_id: Optional[int] = Query(None),
+    coluna_id: Optional[int] = Query(None),
+    q: Optional[str] = Query(None, description="busca em município/demanda/solicitante"),
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
-    """A relação filtrada. Alimenta as TRÊS visualizações."""
+    """A relação filtrada. Alimenta as TRÊS abas e o card lateral."""
     # ⚠️ `ensure_municipio_access` SÓ COM MUNICÍPIO ESCOLHIDO. Chamada com None
     # ela levanta 403 ("Selecione um municipio permitido") para todo usuário de
-    # carteira restrita — o que matava a opção «Todos os meus municípios».
+    # carteira restrita — o que matava a opção «todos os municípios».
     # Quando não há município, quem faz o recorte é `_carteira`, abaixo.
     if municipio_id:
         ensure_municipio_access(current, municipio_id)
     ensure_tela(current, "agendamentos")
-    if status and status not in STATUS:
-        raise HTTPException(422, f"Status inválido: {status!r}")
     permitidos, vazia = _carteira(current, municipio_id)
     if vazia:
         return {"items": [], "total": 0}
-    onde, params = _filtros(municipio_id, de, ate, status, responsavel_id,
-                            permitidos)
-    # ⚠️ ORDEM CRESCENTE de data. A lista é uma AGENDA: o que vem primeiro é o
-    # que acontece primeiro. As outras telas do repo ordenam por `updated_at
-    # DESC` porque mostram histórico — aqui isso poria o mês que vem no topo.
-    sql = _SELECT + onde + " ORDER BY a.data ASC, a.id ASC"
+    onde, params = _filtros(municipio_id, de, ate, coluna_id, q,
+                            permitidos, municipio_ids)
+    # ⚠️ ORDEM CRESCENTE de data E DE HORA. A lista é uma AGENDA: o que vem
+    # primeiro é o que acontece primeiro. As outras telas do repo ordenam por
+    # `updated_at DESC` porque mostram histórico — aqui isso poria o mês que vem
+    # no topo. A hora entra na ordenação porque o kanban e o card lateral
+    # empilham compromissos do MESMO dia.
+    sql = _SELECT + onde + " ORDER BY a.data ASC, a.hora_inicio ASC, a.id ASC"
     rows = (await db.execute(text(sql), params)).fetchall()
-    return {"items": [_row_to_dict(r) for r in rows],
-            "total": len(rows)}
+    return {"items": [_row_to_dict(r) for r in rows], "total": len(rows)}
 
 
 @router.get("/{aid}", dependencies=[exige("agendamentos.ver")])
@@ -306,45 +562,72 @@ async def detalhe(
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
+    """Um compromisso COM o histórico de anotações.
+
+    O histórico não vai na listagem de propósito: uma agenda de mês com trinta
+    cartões traria trinta históricos para desenhar uma grade que só mostra o
+    CONTADOR de anotações."""
     await _exigir_acesso(db, aid, current)
     row = (await db.execute(text(_SELECT + " WHERE a.id = :id"), {"id": aid})).first()
     if not row:
-        raise HTTPException(404, "Agendamento não encontrado")
-    return _row_to_dict(row)
+        raise HTTPException(404, "Compromisso não encontrado")
+    item = _row_to_dict(row)
+    item["anotacoes"] = await _anotacoes(db, aid)
+    return item
 
 
 # ----------------------------------------------------------------- escrita ---
 
 @router.post("", dependencies=[exige("agendamentos.criar")])
 async def criar(
-    body: AgendamentoCreate,
+    body: CompromissoCreate,
     request: Request,
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
     authz.exigir_tela(current, "agendamentos")
-    authz.exigir_municipio(current, body.municipio_id)
-    _valida(body)
-    anex = json.dumps([a.model_dump() for a in body.anexos], ensure_ascii=False)
+    municipio_id = await _resolver_municipio(db, body.municipio_id)
+    # ⚠️ SÓ `authz.exigir_municipio` — que é a família NOVA de travas, sujeita a
+    # `AUTHZ_MODO`. Acrescentar aqui `ensure_municipio_access` (família antiga,
+    # que nega nos dois modos) faria esta rota passar a bloquear HOJE, fora da
+    # janela de observação que o resto do módulo respeita. Ver a skill `authz`.
+    authz.exigir_municipio(current, municipio_id)
+    _valida_horario(body.hora_inicio, body.tem_periodo, body.hora_fim)
+    cor = _valida_cor(body.cor) or COR_PADRAO
+    coluna_id = await _coluna_valida(db, body.coluna_id)
     rid = (await db.execute(text("""
         INSERT INTO agendamentos
-            (municipio_id, responsavel_id, titulo, relato, data, status,
-             anexos, criado_por)
-        VALUES (:m, :r, :t, :rel, :d, :s, CAST(:a AS JSONB), :u)
+            (municipio_id, demanda, data, hora_inicio, tem_periodo, hora_fim,
+             data_solicitacao, solicitante, contato_whatsapp, cor, coluna_id,
+             criado_por)
+        VALUES (:m, :dem, :d, :hi, :tp, :hf, :ds, :sol, :zap, :cor, :k, :u)
         RETURNING id
     """), {
-        "m": body.municipio_id, "r": body.responsavel_id, "t": body.titulo,
-        "rel": body.relato, "d": body.data, "s": body.status, "a": anex,
+        "m": municipio_id, "dem": body.demanda.strip(), "d": body.data,
+        "hi": body.hora_inicio,
+        # Sem período, a hora de término não é guardada nem que venha no corpo:
+        # é o que impede um bloco esticado de reaparecer se o toggle for
+        # desmarcado depois de a hora já ter sido digitada.
+        "tp": body.tem_periodo, "hf": body.hora_fim if body.tem_periodo else None,
+        "ds": body.data_solicitacao, "sol": body.solicitante.strip(),
+        "zap": _so_digitos(body.contato_whatsapp), "cor": cor, "k": coluna_id,
         "u": getattr(current, "id", None),
     })).scalar()
+    if body.anotacao and body.anotacao.strip():
+        await db.execute(text("""
+            INSERT INTO agendamentos_anotacoes (compromisso_id, autor_id, texto)
+            VALUES (:c, :u, :t)
+        """), {"c": rid, "u": getattr(current, "id", None),
+               "t": body.anotacao.strip()})
     await db.commit()
     await registrar(
         db, action="agendamentos.create", user=current, request=request,
-        target_type="agendamento", target_id=rid, municipio_id=body.municipio_id,
-        alvo_nome=body.titulo,
-        details={"titulo": body.titulo, "data": str(body.data),
-                 "status": body.status, "responsavel_id": body.responsavel_id,
-                 "anexos": _rotulo_anexos([a.model_dump() for a in body.anexos])},
+        target_type="agendamento", target_id=rid, municipio_id=municipio_id,
+        alvo_nome=body.demanda,
+        details={"demanda": body.demanda, "data": str(body.data),
+                 "hora_inicio": _hhmm(body.hora_inicio),
+                 "hora_fim": _hhmm(body.hora_fim) if body.tem_periodo else None,
+                 "solicitante": body.solicitante, "coluna_id": coluna_id},
     )
     return {"id": rid, "created": True}
 
@@ -352,32 +635,61 @@ async def criar(
 @router.put("/{aid}", dependencies=[exige("agendamentos.editar")])
 async def atualizar(
     aid: int,
-    body: AgendamentoUpdate,
+    body: CompromissoUpdate,
     request: Request,
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
     await _exigir_acesso(db, aid, current)
     await authz.exigir_dono_da_linha(db, "agendamentos", aid, current)
-    _valida(body)
     antes = await _contexto(db, aid)
     if not antes:
-        raise HTTPException(404, "Agendamento não encontrado")
+        raise HTTPException(404, "Compromisso não encontrado")
+
+    # ⚠️ `model_fields_set` E NÃO `is not None`. Desmarcar o período (que apaga
+    # `hora_fim`) e limpar o contato são edições legítimas que mandam `null`; o
+    # teste ingênuo descartaria as duas em silêncio — a pessoa apagaria o
+    # término, salvaria, e o bloco continuaria esticado no calendário.
+    enviados = body.model_fields_set
+    atual = (await db.execute(text(
+        "SELECT hora_inicio, tem_periodo, hora_fim FROM agendamentos "
+        "WHERE id = :id"), {"id": aid})).first()
+    hora_inicio = body.hora_inicio if "hora_inicio" in enviados else atual[0]
+    tem_periodo = body.tem_periodo if "tem_periodo" in enviados else atual[1]
+    hora_fim = body.hora_fim if "hora_fim" in enviados else atual[2]
+    _valida_horario(hora_inicio, tem_periodo, hora_fim)
 
     campos, params = [], {"id": aid}
-    for coluna, valor in (("titulo", body.titulo), ("relato", body.relato),
-                          ("data", body.data), ("status", body.status),
-                          ("responsavel_id", body.responsavel_id)):
-        # ⚠️ `is not None` E NÃO "if valor": limpar o relato (mandar "") e tirar
-        # o responsável (mandar null) são edições legítimas, e um teste de
-        # verdade descartaria as duas em silêncio — a pessoa apagaria o texto,
-        # salvaria, e o texto voltaria.
-        if valor is not None:
-            campos.append(f"{coluna} = :{coluna}"); params[coluna] = valor
-    if body.anexos is not None:
-        campos.append("anexos = CAST(:anexos AS JSONB)")
-        params["anexos"] = json.dumps([a.model_dump() for a in body.anexos],
-                                      ensure_ascii=False)
+
+    def _marcar(coluna: str, valor) -> None:
+        campos.append(f"{coluna} = :{coluna}")
+        params[coluna] = valor
+
+    if "municipio_id" in enviados and body.municipio_id:
+        # Mesma família de trava do `criar` — ver o comentário de lá.
+        authz.exigir_municipio(current, body.municipio_id)
+        _marcar("municipio_id", body.municipio_id)
+    if "demanda" in enviados and body.demanda is not None:
+        _marcar("demanda", body.demanda.strip())
+    if "data" in enviados and body.data is not None:
+        _marcar("data", body.data)
+    if "solicitante" in enviados and body.solicitante is not None:
+        _marcar("solicitante", body.solicitante.strip())
+    if "data_solicitacao" in enviados:
+        _marcar("data_solicitacao", body.data_solicitacao)
+    if "contato_whatsapp" in enviados:
+        _marcar("contato_whatsapp", _so_digitos(body.contato_whatsapp))
+    if "cor" in enviados and body.cor is not None:
+        _marcar("cor", _valida_cor(body.cor))
+    if "coluna_id" in enviados and body.coluna_id is not None:
+        _marcar("coluna_id", await _coluna_valida(db, body.coluna_id))
+    # As três do horário andam JUNTAS: mexer numa sem as outras é como o bloco
+    # esticado sobrevive ao toggle desmarcado.
+    if enviados & {"hora_inicio", "tem_periodo", "hora_fim"}:
+        _marcar("hora_inicio", hora_inicio)
+        _marcar("tem_periodo", bool(tem_periodo))
+        _marcar("hora_fim", hora_fim if tem_periodo else None)
+
     if not campos:
         return {"id": aid, "updated": False}
     campos.append("updated_at = NOW()")
@@ -385,45 +697,46 @@ async def atualizar(
         f"UPDATE agendamentos SET {', '.join(campos)} WHERE id = :id"), params)
     await db.commit()
 
-    mudou = {k: (str(v) if isinstance(v, date) else v)
-             for k, v in params.items() if k not in ("id", "anexos")}
-    if body.anexos is not None:
-        mudou["anexos"] = _rotulo_anexos([a.model_dump() for a in body.anexos])
+    mudou = {k: (str(v) if isinstance(v, (date, time)) else v)
+             for k, v in params.items() if k != "id"}
     await registrar(
         db, action="agendamentos.update", user=current, request=request,
         target_type="agendamento", target_id=aid,
-        municipio_id=antes.get("municipio_id"), alvo_nome=antes.get("titulo"),
+        municipio_id=antes.get("municipio_id"), alvo_nome=antes.get("demanda"),
         details=mudou,
     )
     return {"id": aid, "updated": True}
 
 
-@router.patch("/{aid}/status", dependencies=[exige("agendamentos.editar")])
-async def mudar_status(
+@router.patch("/{aid}/coluna", dependencies=[exige("agendamentos.editar")])
+async def mover_de_coluna(
     aid: int,
-    body: StatusUpdate,
+    body: ColunaUpdate,
     request: Request,
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
-    """Mover o cartão de coluna no kanban. Ver o porquê em `StatusUpdate`."""
+    """Arrastar o cartão de coluna no kanban. Ver o porquê em `ColunaUpdate`."""
     await _exigir_acesso(db, aid, current)
     await authz.exigir_dono_da_linha(db, "agendamentos", aid, current)
-    _valida(body)
     antes = await _contexto(db, aid)
     if not antes:
-        raise HTTPException(404, "Agendamento não encontrado")
+        raise HTTPException(404, "Compromisso não encontrado")
+    coluna_id = await _coluna_valida(db, body.coluna_id)
+    nome = (await db.execute(text(
+        "SELECT nome FROM agendamentos_colunas WHERE id = :i"),
+        {"i": coluna_id})).scalar()
     await db.execute(text(
-        "UPDATE agendamentos SET status = :s, updated_at = NOW() WHERE id = :id"),
-        {"s": body.status, "id": aid})
+        "UPDATE agendamentos SET coluna_id = :k, updated_at = NOW() "
+        "WHERE id = :id"), {"k": coluna_id, "id": aid})
     await db.commit()
     await registrar(
-        db, action="agendamentos.status", user=current, request=request,
+        db, action="agendamentos.coluna", user=current, request=request,
         target_type="agendamento", target_id=aid,
-        municipio_id=antes.get("municipio_id"), alvo_nome=antes.get("titulo"),
-        details={"status": body.status, "rotulo": STATUS_ROTULO.get(body.status)},
+        municipio_id=antes.get("municipio_id"), alvo_nome=antes.get("demanda"),
+        details={"coluna_id": coluna_id, "coluna": nome},
     )
-    return {"id": aid, "status": body.status}
+    return {"id": aid, "coluna_id": coluna_id, "coluna": nome}
 
 
 @router.delete("/{aid}", dependencies=[exige("agendamentos.excluir")])
@@ -437,16 +750,176 @@ async def remover(
     await authz.exigir_dono_da_linha(db, "agendamentos", aid, current)
     antes = await _contexto(db, aid)
     if not antes:
-        raise HTTPException(404, "Agendamento não encontrado")
+        raise HTTPException(404, "Compromisso não encontrado")
+    # As anotações vão junto pelo ON DELETE CASCADE da migration: histórico sem
+    # compromisso não tem tela nem dono.
     await db.execute(text("DELETE FROM agendamentos WHERE id = :id"), {"id": aid})
     await db.commit()
     await registrar(
         db, action="agendamentos.delete", user=current, request=request,
         target_type="agendamento", target_id=aid,
-        municipio_id=antes.get("municipio_id"), alvo_nome=antes.get("titulo"),
+        municipio_id=antes.get("municipio_id"), alvo_nome=antes.get("demanda"),
         details=antes,
     )
     return {"id": aid, "deleted": True}
+
+
+# -------------------------------------------------------------- anotações ---
+
+@router.post("/{aid}/anotacoes", dependencies=[exige("agendamentos.editar")])
+async def anotar(
+    aid: int,
+    body: AnotacaoNova,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """Acrescenta uma linha ao histórico. Não existe editar nem apagar.
+
+    ⚠️ AQUI NÃO ENTRA `exigir_dono_da_linha`, E É DE PROPÓSITO. O alcance por
+    linha restringe quem pode ALTERAR o registro de outra pessoa; anotar não
+    altera o compromisso — cria uma linha NOVA, assinada por quem escreveu. O
+    documento de redesenho é explícito: «qualquer usuário adiciona; ninguém edita
+    nem apaga». Aplicar o alcance aqui faria o técnico restrito aos próprios
+    registros não poder responder no compromisso que a secretaria abriu, que é
+    justamente a conversa que o histórico existe para guardar."""
+    await _exigir_acesso(db, aid, current)
+    antes = await _contexto(db, aid)
+    if not antes:
+        raise HTTPException(404, "Compromisso não encontrado")
+    texto = body.texto.strip()
+    if not texto:
+        raise HTTPException(422, "A anotação não pode ser vazia.")
+    nid = (await db.execute(text("""
+        INSERT INTO agendamentos_anotacoes (compromisso_id, autor_id, texto)
+        VALUES (:c, :u, :t) RETURNING id
+    """), {"c": aid, "u": getattr(current, "id", None), "t": texto})).scalar()
+    await db.commit()
+    await registrar(
+        db, action="agendamentos.anotacao", user=current, request=request,
+        target_type="agendamento", target_id=aid,
+        municipio_id=antes.get("municipio_id"), alvo_nome=antes.get("demanda"),
+        # ⚠️ O TEXTO NÃO VAI NA TRILHA. O `audit_log` não se apaga (decisão do
+        # dono) e a anotação é campo livre: pode ter nome, telefone e o teor de
+        # uma conversa. A trilha registra QUE alguém anotou, e o conteúdo fica
+        # onde ele pode ser lido com a permissão do módulo.
+        details={"anotacao_id": nid, "tamanho": len(texto)},
+    )
+    return {"id": nid, "created": True}
+
+
+# ------------------------------------------------------- colunas do kanban ---
+
+@router.post("/colunas", dependencies=[exige("agendamentos.editar")])
+async def criar_coluna(
+    body: ColunaNova,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """Uma coluna customizada.
+
+    ⚠️ OS DOIS TETOS SÃO CONFERIDOS AQUI, e não só no botão da tela. Duas abas
+    abertas contam separado: cada uma vê quatro colunas, cada uma libera o botão,
+    e o quadro acaba com seis. Quem conta de verdade é o banco."""
+    ensure_tela(current, "agendamentos")
+    nome = body.nome.strip()
+    if not nome:
+        raise HTTPException(422, "A coluna precisa de um nome.")
+    colunas = await _colunas(db)
+    if len(colunas) >= MAX_COLUNAS:
+        raise HTTPException(
+            422, f"O quadro comporta {MAX_COLUNAS} colunas — remova uma "
+                 f"customizada antes de criar outra.")
+    if sum(1 for c in colunas if not c["fixa"]) >= MAX_COLUNAS_CUSTOMIZADAS:
+        raise HTTPException(
+            422, f"São no máximo {MAX_COLUNAS_CUSTOMIZADAS} colunas próprias.")
+    if any(_sem_acento(c["nome"]) == _sem_acento(nome) for c in colunas):
+        raise HTTPException(422, f"Já existe uma coluna chamada «{nome}».")
+    ordem = max((c["ordem"] for c in colunas), default=0) + 1
+    rid = (await db.execute(text(
+        "INSERT INTO agendamentos_colunas (nome, ordem, fixa) "
+        "VALUES (:n, :o, FALSE) RETURNING id"), {"n": nome, "o": ordem})).scalar()
+    await db.commit()
+    await registrar(
+        db, action="agendamentos.coluna.create", user=current, request=request,
+        target_type="agendamento_coluna", target_id=rid, alvo_nome=nome,
+        details={"nome": nome, "ordem": ordem},
+    )
+    return {"id": rid, "nome": nome, "ordem": ordem, "fixa": False, "chave": None}
+
+
+@router.put("/colunas/{cid}", dependencies=[exige("agendamentos.editar")])
+async def atualizar_coluna(
+    cid: int,
+    body: ColunaNova,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """Renomeia — só as customizadas."""
+    ensure_tela(current, "agendamentos")
+    colunas = await _colunas(db)
+    alvo = next((c for c in colunas if c["id"] == cid), None)
+    if not alvo:
+        raise HTTPException(404, "Coluna não encontrada")
+    if alvo["fixa"]:
+        raise HTTPException(
+            422, f"«{alvo['nome']}» é uma das três colunas fixas do quadro e "
+                 f"não se renomeia.")
+    nome = body.nome.strip()
+    if not nome:
+        raise HTTPException(422, "A coluna precisa de um nome.")
+    if any(c["id"] != cid and _sem_acento(c["nome"]) == _sem_acento(nome)
+           for c in colunas):
+        raise HTTPException(422, f"Já existe uma coluna chamada «{nome}».")
+    await db.execute(text(
+        "UPDATE agendamentos_colunas SET nome = :n, updated_at = NOW() "
+        "WHERE id = :i"), {"n": nome, "i": cid})
+    await db.commit()
+    await registrar(
+        db, action="agendamentos.coluna.update", user=current, request=request,
+        target_type="agendamento_coluna", target_id=cid, alvo_nome=nome,
+        details={"de": alvo["nome"], "para": nome},
+    )
+    return {"id": cid, "nome": nome}
+
+
+@router.delete("/colunas/{cid}", dependencies=[exige("agendamentos.editar")])
+async def remover_coluna(
+    cid: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """Remove uma coluna customizada. Os cartões dela voltam para «Solicitada».
+
+    ⚠️ OS CARTÕES VOLTAM, NÃO SOMEM. `coluna_id` é NOT NULL e a FK impediria o
+    DELETE de qualquer jeito — mas o que importa não é o erro do banco: apagar
+    uma coluna é arrumar o quadro, e arrumar o quadro não pode apagar
+    compromisso. A tela avisa quantos vão voltar antes de confirmar."""
+    ensure_tela(current, "agendamentos")
+    colunas = await _colunas(db)
+    alvo = next((c for c in colunas if c["id"] == cid), None)
+    if not alvo:
+        raise HTTPException(404, "Coluna não encontrada")
+    if alvo["fixa"]:
+        raise HTTPException(
+            422, f"«{alvo['nome']}» é uma das três colunas fixas do quadro e "
+                 f"não pode ser removida.")
+    entrada = await _coluna_de_entrada(db)
+    movidos = (await db.execute(text(
+        "UPDATE agendamentos SET coluna_id = :e, updated_at = NOW() "
+        "WHERE coluna_id = :c"), {"e": entrada, "c": cid})).rowcount
+    await db.execute(text("DELETE FROM agendamentos_colunas WHERE id = :i"),
+                     {"i": cid})
+    await db.commit()
+    await registrar(
+        db, action="agendamentos.coluna.delete", user=current, request=request,
+        target_type="agendamento_coluna", target_id=cid, alvo_nome=alvo["nome"],
+        details={"nome": alvo["nome"], "compromissos_devolvidos": movidos},
+    )
+    return {"id": cid, "deleted": True, "compromissos_devolvidos": movidos}
 
 
 # ------------------------------------------------------------------ anexo ---
@@ -459,13 +932,18 @@ async def baixar_anexo(
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
-    """O ARQUIVO em si — ofício, comprovante, foto — decodificado do base64."""
+    """O ARQUIVO em si — ofício, comprovante, foto — decodificado do base64.
+
+    Só existe para o que foi anexado ANTES do redesenho de 05/09/2026: o
+    formulário novo não anexa. A rota fica porque o documento já está no banco do
+    cliente, e tirar a única porta que o entrega seria perder o dado por mudança
+    de tela."""
     await _exigir_acesso(db, aid, current)
     row = (await db.execute(text(
-        "SELECT anexos, municipio_id, titulo FROM agendamentos WHERE id = :id"
+        "SELECT anexos, municipio_id, demanda FROM agendamentos WHERE id = :id"
     ), {"id": aid})).first()
     if not row:
-        raise HTTPException(404, "Agendamento não encontrado")
+        raise HTTPException(404, "Compromisso não encontrado")
     anexos = row[0] or []
     if idx < 0 or idx >= len(anexos):
         raise HTTPException(404, "Anexo não encontrado")
@@ -480,7 +958,7 @@ async def baixar_anexo(
         db, action="export.agendamento_anexo", user=current, request=request,
         target_type="agendamento", target_id=aid, municipio_id=row[1],
         alvo_nome=a.get("nome"),
-        details={"agendamento": row[2], "indice": idx, "arquivo": a.get("nome"),
+        details={"compromisso": row[2], "indice": idx, "arquivo": a.get("nome"),
                  "mime": a.get("mime"), "tamanho_bytes": len(dados)},
     )
     return Response(
@@ -489,60 +967,81 @@ async def baixar_anexo(
     )
 
 
-# ------------------------------------------------------------- exportacao ---
+# ------------------------------------------------------------- relatorio ---
 
-# ⚠️ TETO DE LINHAS. Sem ele, um filtro largo (sem município e sem data) monta
-# um PDF de milhares de páginas na memória do container — e o host tem 2 vCPU
-# compartilhados por 43 containers. O teto é alto o bastante para qualquer
-# recorte real e devolve 413 com instrução, em vez de derrubar o worker.
+# ⚠️ TETO DE LINHAS. Sem ele, um filtro largo monta um PDF de milhares de
+# páginas na memória do container — e o host tem 2 vCPU compartilhados por 43
+# containers. O teto é alto o bastante para qualquer recorte real e devolve 413
+# com instrução, em vez de derrubar o worker.
 MAX_EXPORT = 5000
 
+PERIODOS = ("dia", "semana", "mes")
 
-@router.get("/exportar/relacao", dependencies=[exige("agendamentos.exportar")])
-async def exportar(
+
+def _janela(periodo: str, referencia: date) -> tuple[date, date]:
+    """O intervalo fechado do relatório.
+
+    ⚠️ A SEMANA COMEÇA NA SEGUNDA, como a grade do calendário. `weekday()` já dá
+    0 na segunda — o `(d + 6) % 7` que a tela usa é porque o `getDay()` do
+    JavaScript começa no domingo. Trocar um pelo outro desalinharia o arquivo da
+    tela em um dia, que é o tipo de erro que ninguém confere."""
+    if periodo == "dia":
+        return referencia, referencia
+    if periodo == "semana":
+        inicio = referencia - timedelta(days=referencia.weekday())
+        return inicio, inicio + timedelta(days=6)
+    primeiro = referencia.replace(day=1)
+    # Dia 1 do mês seguinte menos um dia = último dia deste, sem tabela de meses.
+    seguinte = (primeiro + timedelta(days=32)).replace(day=1)
+    return primeiro, seguinte - timedelta(days=1)
+
+
+@router.get("/relatorio/pdf", dependencies=[exige("agendamentos.exportar")])
+async def relatorio_pdf(
     request: Request,
-    formato: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
+    periodo: str = Query("mes", pattern="^(dia|semana|mes)$"),
+    referencia: Optional[date] = Query(None, description="data de referência"),
     municipio_id: Optional[int] = Query(None),
-    de: Optional[date] = Query(None),
-    ate: Optional[date] = Query(None),
-    status: Optional[str] = Query(None),
-    responsavel_id: Optional[int] = Query(None),
+    municipio_ids: Optional[list[int]] = Query(None),
+    q: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
-    """A relação filtrada, em Excel ou PDF — com os MESMOS filtros da tela."""
-    # Mesma regra da lista — ver o comentário lá. O arquivo tem de trazer
-    # exatamente as linhas da tela, e isso inclui o recorte da carteira.
+    """A agenda do Dia, da Semana ou do Mês, em PDF.
+
+    ⚠️ MESMO `_filtros` DA LISTA. O dono pediu "o relatório respeita o filtro de
+    município ativo"; duas montagens de WHERE divergem no primeiro ajuste, e a
+    divergência aparece como "o relatório veio com um compromisso a mais" — sem
+    nada para culpar."""
     if municipio_id:
         ensure_municipio_access(current, municipio_id)
     ensure_tela(current, "agendamentos")
-    if status and status not in STATUS:
-        raise HTTPException(422, f"Status inválido: {status!r}")
 
     permitidos, vazia = _carteira(current, municipio_id)
     if vazia:
         raise HTTPException(403, "Sua conta não alcança nenhum município.")
-    onde, params = _filtros(municipio_id, de, ate, status, responsavel_id,
-                            permitidos)
-    sql = _SELECT + onde + " ORDER BY a.data ASC, a.id ASC"
+    ref = referencia or date.today()
+    de, ate = _janela(periodo, ref)
+    onde, params = _filtros(municipio_id, de, ate, None, q,
+                            permitidos, municipio_ids)
+    sql = _SELECT + onde + " ORDER BY a.data ASC, a.hora_inicio ASC, a.id ASC"
     rows = (await db.execute(text(sql), params)).fetchall()
     if len(rows) > MAX_EXPORT:
         raise HTTPException(
-            413, f"O filtro alcançou {len(rows)} agendamentos e o limite de "
-                 f"exportação é {MAX_EXPORT}. Estreite o período ou escolha um "
-                 f"município.")
+            413, f"O filtro alcançou {len(rows)} compromissos e o limite de "
+                 f"emissão é {MAX_EXPORT}. Estreite o período.")
     itens = [_row_to_dict(r) for r in rows]
 
     from services import agendamentos_export as ax
-    hoje = date.today().strftime("%Y-%m-%d")
-    if formato == "xlsx":
-        conteudo = ax.gerar_xlsx(itens)
-        mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        nome = f"agendamentos_{hoje}.xlsx"
-    else:
-        conteudo = ax.gerar_pdf(itens, de=de, ate=ate)
-        mime = "application/pdf"
-        nome = f"agendamentos_{hoje}.pdf"
+    unico = await _municipio_implicito(db)
+    conteudo = ax.gerar_pdf(
+        itens, periodo=periodo, de=de, ate=ate,
+        usuario=getattr(current, "name", None) or getattr(current, "email", ""),
+        # Numa prefeitura o cabeçalho nomeia o município (é a identidade do
+        # tenant); numa assessoria, quem nomeia cada linha é a coluna Município.
+        entidade=await _nome_do_municipio(db, unico) if unico else None,
+    )
+    nome = f"agendamentos-{periodo}-{ref:%Y-%m-%d}.pdf"
 
     await registrar(
         db, action="export.agendamentos", user=current, request=request,
@@ -550,16 +1049,23 @@ async def exportar(
         municipio_id=municipio_id,
         details={
             # ⚠️ O `formato` vai nos FILTROS, e não solto. É a convenção que o
-            # `_registrar_export` do `export_pdf.py` já usa para as Vigências,
-            # que também exportam nos dois formatos.
+            # `_registrar_export` do `export_pdf.py` já usa.
             "registros": len(itens), "arquivo": nome,
             "filtros": {k: v for k, v in {
-                "formato": formato, "municipio_id": municipio_id,
-                "de": str(de) if de else None, "ate": str(ate) if ate else None,
-                "status": status, "responsavel_id": responsavel_id,
+                "formato": "pdf", "periodo": periodo, "referencia": str(ref),
+                "municipio_id": municipio_id, "municipio_ids": municipio_ids,
+                "de": str(de), "ate": str(ate), "q": q,
             }.items() if v not in (None, "", [])} or None,
         },
     )
     return StreamingResponse(
-        BytesIO(conteudo), media_type=mime,
+        BytesIO(conteudo), media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename={nome}"})
+
+
+async def _nome_do_municipio(db: AsyncSession, mid: Optional[int]) -> Optional[str]:
+    if not mid:
+        return None
+    row = (await db.execute(text(
+        "SELECT nome, uf FROM municipios WHERE id = :i"), {"i": mid})).first()
+    return f"{row[0]} - {row[1]}" if row else None

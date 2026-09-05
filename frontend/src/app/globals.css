@@ -779,6 +779,70 @@ html,
   }
 }
 
+/* ==========================================================================
+   AGENDAMENTOS — a cor do compromisso, como RECEITA e não como tabela.
+   --------------------------------------------------------------------------
+   ⭐ A PALETA NÃO MORA AQUI. As cores vêm do backend (`GET /api/agendamentos/
+   paleta`, definidas em `routers/agendamentos.PALETA`) e são gravadas em hex na
+   linha do compromisso. O que mora aqui é COMO aquele hex vira chip, bloco,
+   tarja e ponto — e isso sim é token, porque é o que precisa ser igual nas três
+   abas, no card lateral e no modal.
+
+   ⚠️ POR QUE NÃO HÁ `--ag-cor-1..9` COM VARIANTE CLARA E ESCURA. Seria uma
+   SEGUNDA lista das mesmas nove cores, e este repo já pagou caro por listas
+   gêmeas que divergem (os status do kanban viveram em três lugares). Com
+   `color-mix` sobre os tokens do tema, a MESMA cor que veio do banco lê bem no
+   claro e no escuro sem nada para manter em sincronia: no tema claro
+   `--bi-text` é quase preto e o texto sai escuro; no escuro é quase branco e o
+   mesmo cálculo clareia.
+
+   ⚠️ `--ag-cor` VEM INLINE, do componente (`style={{ "--ag-cor": item.cor }}`),
+   e o fallback é o acento do sistema — compromisso sem cor nunca desenha um
+   chip transparente.
+   ========================================================================== */
+@layer components {
+  /* O chip do mês e o bloco da semana: fundo suave, tarja sólida à esquerda,
+     texto na variante escura da própria cor. */
+  /* ⚠️ O PADRÃO VAI NO `var(..., fallback)` E NÃO NUMA DECLARAÇÃO PRÓPRIA.
+     Escrever `--ag-cor: var(--bi-accent)` DENTRO da regra faria a classe
+     sobrepor um valor herdado do pai — e o cartão do kanban, que define a cor
+     uma vez no contêiner, veria os filhos voltarem todos ao verde do sistema. */
+  .ag-chip {
+    background: color-mix(in oklab, var(--ag-cor, var(--bi-accent)) 14%, var(--bi-surface));
+    color: color-mix(in oklab, var(--ag-cor, var(--bi-accent)) 45%, var(--bi-text));
+    border-left: 3px solid var(--ag-cor, var(--bi-accent));
+    border-radius: 0.4rem;
+    transition: background-color .12s ease;
+  }
+  .ag-chip:hover {
+    background: color-mix(in oklab, var(--ag-cor, var(--bi-accent)) 24%, var(--bi-surface));
+  }
+  /* Tarja e ponto: a cor pura, para a lista e o card lateral, onde o
+     identificador é uma marca fina e não uma superfície. */
+  .ag-tarja { background: var(--ag-cor, var(--bi-accent)); }
+
+  /* A ABA DA PASTA do kanban (`estilo-pastas.jpg`): a faixa colorida no alto
+     do cartão, com o canto superior esquerdo do corpo quadrado para os dois
+     lerem como uma peça só — igual a uma pasta suspensa de arquivo. É a mesma
+     metáfora que o Modo Tela já usa em `.bi-folder-tab`. */
+  .ag-pasta-aba {
+    background: color-mix(in oklab, var(--ag-cor, var(--bi-accent)) 22%, var(--bi-surface));
+    color: color-mix(in oklab, var(--ag-cor, var(--bi-accent)) 50%, var(--bi-text));
+    border: 1px solid var(--bi-line);
+    border-bottom: none;
+    border-radius: 0.7rem 0.7rem 0 0;
+  }
+  .ag-pasta-corpo {
+    /* ⚠️ `--bi-surface`, e NÃO `--bi-card`: este último nunca existiu como
+       token (a primeira versão do kanban o usava e caía em transparente — os
+       cartões só pareciam brancos porque a coluna atrás deles era branca). */
+    background: var(--bi-surface);
+    border: 1px solid var(--bi-line);
+    border-top: 2px solid var(--ag-cor, var(--bi-accent));
+    border-radius: 0 0.9rem 0.9rem 0.9rem;
+  }
+}
+
 /* Painel de opções do <select> daisyUI. O Chromium 135+ renderiza a lista NA
    PÁGINA (appearance: base-select do daisyUI 5.6), não mais como popup do SO —
    e o estilo do daisyUI monta o painel com background-color: inherit e sombra

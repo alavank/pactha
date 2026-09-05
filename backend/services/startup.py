@@ -109,6 +109,14 @@ MIGRATION_FILES = [
     # exist" e o runner ENGOLE o erro (compara por substring): a tabela nao
     # existiria e a tela responderia 500 sem nada no log de boot.
     "add_agendamentos.sql",
+    # AGENDAMENTOS, 2a leva (05/09/2026): o agendamento vira COMPROMISSO — hora
+    # (com ou sem periodo), solicitante, contato, cor, colunas do kanban em
+    # tabela e historico de anotacoes append-only.
+    # ⚠️ DEPOIS de `add_agendamentos.sql` obrigatoriamente: renomeia `titulo`,
+    # acrescenta coluna e cria FK para `agendamentos`. Em banco novo, inverter
+    # a ordem faz o ALTER falhar contra tabela inexistente — e o runner engole
+    # a falha (ver `test_migrations_ordem_tabela.py`).
+    "add_agendamentos_compromisso.sql",
     # Voluntarias: situacao contratacao + clausula suspensiva detalhe + parlamentar
     "add_voluntarias_clausula_parlamentar.sql",
     # Voluntarias: detalhe generico da Situacao de Contratacao (qualquer tipo)
