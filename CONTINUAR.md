@@ -2,7 +2,7 @@
 
 > Documento de contexto para a **próxima sessão de IA** (Claude Code) que for continuar este projeto.
 > É **auto-contido**: assuma que você (IA) não tem memória das sessões anteriores. Tudo que precisa está aqui.
-> Última atualização: 2026-09-04.
+> Última atualização: 2026-09-05.
 >
 > 📍 Para servidor, URLs, uuids, bancos e operações no Coolify, a fonte de verdade é o
 > **[`INFRA.md`](INFRA.md)** na raiz. Este arquivo cobre o *projeto*; o `INFRA.md` cobre a *infra*.
@@ -160,6 +160,58 @@ nos 5 workers **e** a entrada em `run_dadosabertos_cron.run_all()`). Hoje não d
 — os dois passam pelo gate de 20h —, mas o docstring de `_deve_pular()` ainda afirma que não
 existe task própria, que é a premissa exata que causou o incidente do PR #259. Ver
 [`INFRA.md`](INFRA.md) §5.
+
+---
+
+## 1.8. A SESSÃO DE 05/09/2026 EM 60 SEGUNDOS (redesenho do módulo AGENDAMENTOS)
+
+O agendamento — que nasceu em 02/09 como "título + data + status" — virou **COMPROMISSO**,
+e o módulo virou a agenda de verdade da equipe: **três abas** (Calendário | Kanban | Lista),
+card lateral "compromissos de hoje" e **relatório PDF** de Dia/Semana/Mês. Todo o resto da
+plataforma mostra dado que vem de fora; este continua sendo o único que a equipe escreve.
+
+1. **Modelo novo, migration ADITIVA e sem DROP** (`add_agendamentos_compromisso.sql`).
+   `titulo` → `demanda` (RENAME guardado dos dois lados), e entram `hora_inicio`,
+   `tem_periodo`, `hora_fim`, `data_solicitacao`, `solicitante`, `contato_whatsapp`, `cor` e
+   `coluna_id`. O `status` (as três colunas cravadas) virou a tabela
+   **`agendamentos_colunas`** — 3 fixas + até 2 próprias por tenant, teto de 5 conferido
+   **na API** e não só no botão. Nasce também `agendamentos_anotacoes`, **append-only**:
+   a trava é a AUSÊNCIA de rota de editar/apagar, não um trigger.
+   ⚠️ **Nada é apagado**: `status`, `relato`, `responsavel_id` e `anexos` ficam de pé. O
+   `relato` antigo é migrado para a PRIMEIRA anotação do compromisso (idempotente pelo
+   `NOT EXISTS`, seguro só porque anotação não se apaga), e o anexo já gravado continua
+   sendo servido pela rota com permissão própria — o formulário novo não anexa mais.
+2. **⭐ `municipio_id` CONTINUA `NOT NULL`, e é a única divergência consciente do documento
+   de redesenho**, que pedia "nulo em prefeitura". Nulo quebraria três coisas que já
+   existem: o JOIN de `municipios` (INNER — a linha sumiria), o recorte de carteira
+   (`= ANY(:mids)` **nunca casa com NULL**, então o compromisso ficaria invisível para toda
+   carteira restrita) e o carimbo da trilha. O que o documento quer — "o município é
+   implícito na prefeitura" — é sobre a TELA, e é assim que está: num tenant de um município
+   só **não há campo nem filtro de município em lugar nenhum**, e `_municipio_implicito`
+   preenche a coluna. ⚠️ E a contagem é a de **`municipios` ativos do TENANT**, nunca a
+   carteira de quem está logado: numa assessoria de 42 cidades, um usuário com uma cidade só
+   cairia no modo prefeitura e criaria compromisso sem escolher.
+3. **Uma lista só, sempre no backend.** A paleta de acento (9 cores, `GET /paleta`) e as
+   colunas do kanban (`GET /colunas`) vêm da API — este repo já pagou caro por listas gêmeas
+   (os três status viviam em três lugares). Na tela a cor é **receita, não tabela**: `.ag-chip`
+   monta fundo e texto com `color-mix` sobre os tokens do tema, então o mesmo hex lê bem no
+   claro e no escuro sem uma segunda paleta para manter em sincronia.
+4. **Fonte única de dados, de verdade.** As três abas e o card lateral leem o MESMO
+   `GET /api/agendamentos`; a consulta **não tem recorte de data** de propósito (cada aba
+   precisa de uma janela diferente, e recortar no servidor obrigaria a uma busca por aba).
+   O relatório PDF usa a **mesma `_filtros`** da lista — o arquivo tem as linhas da tela.
+   ⚠️ A busca é sem acento **sem `unaccent`** (a extensão não existe nos cinco bancos): o
+   mesmo mapa de `translate()` é aplicado no SQL e no Python, então o casamento é exato por
+   construção.
+5. **Três defeitos silenciosos herdados, corrigidos de passagem:** a tela usava
+   `bi-input` (a classe é **`bi-field`**), `var(--bi-card)` e `var(--bi-crit-bg)` — os três
+   nunca existiram. Campos sem estilo e caixa de erro transparente, sem erro nenhum no
+   console.
+
+Suíte: **verde inteira** (`test_agendamentos.py` reescrito, 61 casos — inclui um que cruza
+o nº de colunas do `_SELECT` com os índices que `_row_to_dict` lê, porque esse defeito não
+levanta erro: só troca os valores de lugar na tela). Front: `tsc --noEmit` limpo,
+`next build` OK, e o lint saiu de **39 para 37** achados no repo.
 
 ---
 

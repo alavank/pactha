@@ -1,157 +1,120 @@
 "use client";
 
-/* AGENDAMENTOS — a agenda de trabalho da equipe, em três desenhos.
+/* AGENDAMENTOS — a agenda de compromissos da equipe, em três abas.
  *
- * ⭐ TRÊS VISUALIZAÇÕES, UMA CONSULTA. Lista, calendário e kanban leem o MESMO
- * `GET /api/agendamentos` com os MESMOS filtros; o que muda é o desenho. Por
- * isso o filtro fica ACIMA das abas e não dentro de cada uma: trocar de desenho
- * não pode zerar o recorte que a pessoa acabou de montar, e três consultas
- * separadas divergiriam — a primeira a divergir mostraria um agendamento que as
- * outras duas escondem.
+ * ⭐ FONTE ÚNICA DE DADOS. Calendário, kanban, lista e o card lateral leem o
+ * MESMO `itens` deste componente, vindo de UM `GET /api/agendamentos`. Trocar de
+ * aba não busca nada e não pode divergir: qualquer alteração — salvar, arrastar
+ * no quadro, anotar — chama `recarregar()`, e as quatro superfícies acompanham
+ * sem F5. Três consultas separadas divergiriam, e a primeira a divergir
+ * mostraria um compromisso que as outras escondem.
  *
- * ⚠️ O EXPORTAR MANDA OS MESMOS PARÂMETROS DA LISTA, do mesmo estado. É o que
- * garante que o arquivo tenha exatamente as linhas da tela. Montar o filtro do
- * export à parte é como as duas cópias de `exportar` do RM divergiram.
+ * ⚠️ A CONSULTA NÃO TEM RECORTE DE DATA, e é essa a razão. Cada aba precisa de
+ * uma janela diferente (o mês navegado, o quadro inteiro, «Este mês») e o card
+ * lateral precisa de hoje; recortar no servidor obrigaria a uma busca por aba, e
+ * aí acabou a fonte única. O que a API recorta é o que TODAS respeitam: a
+ * carteira, o filtro de município e a busca. É uma agenda de equipe — algumas
+ * centenas de linhas por ano —, não um extrato de convênios.
+ *
+ * ⚠️ ESTE MÓDULO IGNORA O MUNICÍPIO DO MENU LATERAL (decisão do dono). Numa
+ * assessoria a agenda é da casa, não da cidade em acesso; numa prefeitura não há
+ * escolha nenhuma a fazer. Quem decide qual dos dois casos é este é o BACKEND
+ * (`GET /agendamentos/contexto`), pela contagem de municípios ativos do tenant —
+ * e não pelo tamanho da carteira de quem está logado, que é diferente.
  *
  * ⚠️ E VAI PELO `api`, NUNCA POR `fetch` COM `pactha_token`. O token é apagado
  * do localStorage no primeiro refresh (`lib/api.ts`, auto-cura) e `Bearer null`
  * ATROPELA o cookie bom no backend, que lê o Bearer antes. Já mordeu três telas
  * — convênios, DOU e emendas — e cada uma tem o comentário do conserto.
- *
- * ⚠️ DATA PURA NÃO É INSTANTE. `new Date("2026-09-15")` é meia-noite UTC e, no
- * Brasil, volta dia 14. Toda data aqui passa por `diaBR`/`isoDoDia`, que
- * trabalham com os componentes Y-M-D e nunca com fuso.
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  CalendarDays, Download, FileSpreadsheet, LayoutList, Loader2, Paperclip,
-  Plus, User as UserIcon, Columns3,
+  CalendarDays, Columns3, FileDown, LayoutList, Search, X,
 } from "lucide-react";
 
 import api from "@/lib/api";
 import { useMunicipio } from "@/contexts/MunicipioContext";
+import { BOTAO_SEC, ESTILO_SEC } from "@/components/ui/superficies";
+import type { User } from "@/types";
+
+import Calendario from "./Calendario";
+import CardDia from "./CardDia";
+import CompromissoModal, { type ModoModal } from "./CompromissoModal";
+import FiltroMunicipios from "./FiltroMunicipios";
+import Kanban from "./Kanban";
+import ListaCompromissos from "./ListaCompromissos";
+import RelatorioModal from "./RelatorioModal";
 import {
-  BOTAO_CTA, BOTAO_SEC, Bloco, BlocoHead, ESTILO_CTA, ESTILO_SEC, ItemLinha,
-  Lista, Selo, Vazio,
-} from "@/components/ui/superficies";
-import AgendamentoModal from "@/components/AgendamentoModal";
+  Coluna, Compromisso, CorPaleta, ModoCalendario, Vista, hojeISO,
+} from "./tipos";
 
-export interface Agendamento {
-  id: number;
-  municipio_id: number;
-  municipio: string;
-  responsavel_id: number | null;
-  responsavel: string | null;
-  titulo: string;
-  relato: string | null;
-  data: string | null;
-  status: string;
-  status_rotulo: string;
-  anexos: { nome: string; mime: string; tamanho?: number }[];
-  criado_por: number | null;
-  criado_por_nome: string | null;
-}
+/** A busca só vai ao servidor depois que a pessoa para de digitar. 350ms é o
+ *  intervalo em que uma palavra inteira cabe entre duas teclas. */
+const DEBOUNCE_MS = 350;
 
-/* As três colunas do quadro. A ORDEM é a do kanban, da esquerda para a direita.
- * ⚠️ O backend também tem esta lista (`routers/agendamentos.STATUS`) e manda o
- * rótulo em `status_rotulo`. Aqui ficam só a ordem e a COR — duas listas de
- * rótulo divergiriam, e a divergência esconde cartão. */
-const COLUNAS = [
-  { valor: "a_fazer", rotulo: "A fazer", cor: "var(--bi-accent)", tom: undefined },
-  { valor: "em_andamento", rotulo: "Em andamento", cor: "var(--bi-warn)", tom: "atencao" as const },
-  { valor: "realizado", rotulo: "Realizado", cor: "var(--bi-ok)", tom: "ok" as const },
+const ABAS: [Vista, string, typeof CalendarDays][] = [
+  ["calendario", "Calendário", CalendarDays],
+  ["kanban", "Kanban", Columns3],
+  ["lista", "Lista", LayoutList],
 ];
-const TOM: Record<string, "ok" | "atencao" | undefined> = {
-  realizado: "ok", em_andamento: "atencao", a_fazer: undefined,
-};
-
-/* `YYYY-MM-DD` -> dd/mm. Sem `Date`, para não haver fuso no caminho. */
-function diaBR(iso: string | null, comAno = false): string {
-  if (!iso) return "—";
-  const [a, m, d] = String(iso).slice(0, 10).split("-");
-  if (!a || !m || !d) return "—";
-  return comAno ? `${d}/${m}/${a}` : `${d}/${m}`;
-}
-
-/* Componentes Y-M-D -> `YYYY-MM-DD`, sem passar por instante. */
-function isoDoDia(ano: number, mes0: number, dia: number): string {
-  return `${ano}-${String(mes0 + 1).padStart(2, "0")}-${String(dia).padStart(2, "0")}`;
-}
-
-/* O nome do município em acesso, para o rótulo da opção padrão. Cai no id cru
- * enquanto a barra lateral não registrou a lista — melhor um número do que a
- * palavra "padrão", que não diz de quem é a agenda. */
-function nomeDoMunicipio(lista: { id: number | string; nome: string }[],
-                         id: string): string {
-  return lista.find((m) => String(m.id) === String(id))?.nome || `#${id}`;
-}
-
-const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho",
-  "agosto", "setembro", "outubro", "novembro", "dezembro"];
-const SEMANA = ["seg", "ter", "qua", "qui", "sex", "sáb", "dom"];
 
 export default function AgendamentosPage() {
-  const { municipioId, municipios } = useMunicipio();
-  /* ⚠️ O CALENDÁRIO ABRE A TELA (decisão do dono). É a visão que responde a
-     pergunta que traz a pessoa aqui — "o que tem esta semana" —, e é a única
-     das três em que a AUSÊNCIA de compromisso num dia também é informação. A
-     lista responde "o que existe" e o kanban "em que pé está"; as duas fazem
-     sentido depois, não antes. */
-  const [vista, setVista] = useState<"calendario" | "lista" | "kanban">("calendario");
-  const [itens, setItens] = useState<Agendamento[]>([]);
-  const [carregando, setCarregando] = useState(false);
-  const [erro, setErro] = useState<string | null>(null);
-  /* ⚠️ FILTRO PRÓPRIO DE MUNICÍPIO, separado do escopo global (pedido do dono).
-     `""` = herda o que está em acesso na barra lateral; `TODOS` = a carteira
-     inteira; um id = aquele município.
-     A razão de não reaproveitar o seletor global: trocá-lo REMONTA o dashboard
-     inteiro (`key={escopo}` no layout) e leva a pessoa para a home — perder o
-     mês que ela estava olhando só para conferir a agenda do município vizinho
-     é caro demais. Aqui a troca é local e o calendário continua no lugar.
-     ⚠️ E "Todos" É "TODOS OS MEUS". A consulta vai sem `municipio_id` e o
-     backend aplica a carteira da pessoa (`_carteira` em routers/agendamentos.py:
-     carteira restrita vira um IN, super-admin não filtra, carteira vazia
-     devolve vazio). A lista do seletor é a que a barra lateral carregou, já
-     filtrada por permissão.
-     ⚠️ ESTE COMENTÁRIO JÁ ESTEVE ERRADO, e o erro não era só de texto: ele
-     dizia que o backend "devolve o que o alcance permite" quando esse recorte
-     NÃO EXISTIA no router. O que havia era o 403 de
-     `ensure_municipio_access(user, None)` — então a opção respondia 403 para
-     todo usuário de carteira restrita, ou seja, para todos menos o super-admin
-     da Alavank. Comentário que descreve uma garantia inexistente é pior que
-     comentário nenhum: ele faz o revisor seguinte parar de procurar. */
-  const TODOS = "__todos__";
-  const [munFiltro, setMunFiltro] = useState("");
-  const [de, setDe] = useState("");
-  const [ate, setAte] = useState("");
-  const [status, setStatus] = useState("");
-  const [editando, setEditando] = useState<Agendamento | null>(null);
-  const [novo, setNovo] = useState(false);
-  const [baixando, setBaixando] = useState("");
-  /* O mês que o calendário mostra. Guardado como [ano, mês0] e nunca como
-     `Date`, pelo mesmo motivo das datas: `new Date()` no dia 1º às 22h de
-     Brasília já é o dia 2 em UTC. */
-  const hoje = new Date();
-  const [mes, setMes] = useState<[number, number]>([hoje.getFullYear(), hoje.getMonth()]);
+  const { municipios } = useMunicipio();
 
-  /* O município que a consulta usa: o do filtro quando escolhido, senão o do
-     escopo global. `TODOS` manda ausência de filtro — que é como o backend
-     entende "tudo o que eu alcanço". */
-  const munEfetivo = munFiltro === TODOS ? "" : (munFiltro || municipioId);
+  /* ⚠️ ABRE SEMPRE NO CALENDÁRIO, MODO MENSAL (documento). É a visão que
+     responde a pergunta que traz a pessoa aqui — "o que tem esta semana" —, e a
+     única em que a AUSÊNCIA de compromisso num dia também é informação. */
+  const [vista, setVista] = useState<Vista>("calendario");
+  const [modoCal, setModoCal] = useState<ModoCalendario>("mensal");
+  const [foco, setFoco] = useState(hojeISO());
+
+  const [itens, setItens] = useState<Compromisso[]>([]);
+  const [colunas, setColunas] = useState<Coluna[]>([]);
+  const [maxColunas, setMaxColunas] = useState(5);
+  const [maxCustomizadas, setMaxCustomizadas] = useState(2);
+  const [paleta, setPaleta] = useState<CorPaleta[]>([]);
+  const [multiMunicipio, setMultiMunicipio] = useState<boolean | null>(null);
+  const [usuario, setUsuario] = useState<User | null>(null);
+
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState<string | null>(null);
+
+  const [busca, setBusca] = useState("");
+  const [buscaAtiva, setBuscaAtiva] = useState("");
+  const [munSel, setMunSel] = useState<number[]>([]);
+
+  /* ⚠️ O CARD SEMPRE ABRE VISÍVEL e o ocultar dura só a sessão (documento):
+     estado de componente, nunca `localStorage`. Guardado, alguém que o fechou
+     em agosto abriria a agenda sem ele em setembro sem lembrar por quê. */
+  const [cardVisivel, setCardVisivel] = useState(true);
+
+  const [modal, setModal] = useState<
+    { modo: ModoModal; item: Compromisso | null; inicial?: { data?: string; hora?: string } } | null
+  >(null);
+  const [relatorio, setRelatorio] = useState(false);
+
+  /* ------------------------------------------------------------- carga --- */
+
+  useEffect(() => {
+    const t = setTimeout(() => setBuscaAtiva(busca.trim()), DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [busca]);
 
   const filtros = useMemo(() => ({
-    ...(munEfetivo ? { municipio_id: munEfetivo } : {}),
-    ...(de ? { de } : {}), ...(ate ? { ate } : {}),
-    ...(status ? { status } : {}),
-  }), [munEfetivo, de, ate, status]);
+    ...(munSel.length ? { municipio_ids: munSel } : {}),
+    ...(buscaAtiva ? { q: buscaAtiva } : {}),
+  }), [munSel, buscaAtiva]);
 
-  const pedido = React.useRef(0);
-  const carregar = useCallback(() => {
+  /* ⚠️ CONTADOR DE PEDIDO. Sem ele, uma busca lenta que volta DEPOIS de uma
+     rápida repinta a tela com o resultado antigo — e a lista passa a não
+     corresponder ao que está escrito no campo. */
+  const pedido = useRef(0);
+  const recarregar = useCallback(() => {
     const meu = ++pedido.current;
     setCarregando(true); setErro(null);
     api.get("/agendamentos", { params: filtros })
-      .then((r) => { if (meu === pedido.current) setItens(r.data.items || []); })
+      .then((r) => { if (meu === pedido.current) setItens(r.data?.items || []); })
       .catch((e) => {
         if (meu !== pedido.current) return;
         setItens([]);
@@ -159,433 +122,285 @@ export default function AgendamentosPage() {
       })
       .finally(() => { if (meu === pedido.current) setCarregando(false); });
   }, [filtros]);
-  useEffect(carregar, [carregar]);
+  useEffect(recarregar, [recarregar]);
 
-  /* ⚠️ `responseType: "blob"` PELO `api`, e o nome do arquivo sai do
-     Content-Disposition que o backend manda — assim o nome no disco é o mesmo
-     que a trilha de auditoria registrou. */
-  const exportar = async (formato: "xlsx" | "pdf") => {
-    setBaixando(formato); setErro(null);
-    try {
-      const r = await api.get("/agendamentos/exportar/relacao", {
-        params: { ...filtros, formato }, responseType: "blob",
-      });
-      const cd = String(r.headers["content-disposition"] || "");
-      const nome = /filename=([^;]+)/.exec(cd)?.[1]?.trim()
-        || `agendamentos.${formato}`;
-      const url = URL.createObjectURL(r.data);
-      const a = document.createElement("a");
-      a.href = url; a.download = nome; a.click();
-      URL.revokeObjectURL(url);
-    } catch (e: unknown) {
-      // ⚠️ O CORPO DE ERRO CHEGA COMO BLOB porque pedimos blob — ler
-      // `data.detail` direto devolve `undefined` e a mensagem do backend (o
-      // 413 do teto de linhas, com a instrução de estreitar o filtro) some.
-      const err = e as { response?: { data?: Blob } };
-      let msg = "Não foi possível gerar o arquivo.";
-      try {
-        const txt = await err.response?.data?.text();
-        msg = JSON.parse(txt || "{}").detail || msg;
-      } catch { /* corpo não era JSON; fica a mensagem genérica */ }
-      setErro(msg);
-    } finally { setBaixando(""); }
-  };
+  const recarregarColunas = useCallback(() => {
+    api.get("/agendamentos/colunas").then((r) => {
+      setColunas(r.data?.colunas || []);
+      if (r.data?.max) setMaxColunas(r.data.max);
+      if (r.data?.max_customizadas) setMaxCustomizadas(r.data.max_customizadas);
+    }).catch(() => { /* sem colunas o kanban se explica sozinho */ });
+  }, []);
 
-  const mover = async (item: Agendamento, novoStatus: string) => {
-    if (item.status === novoStatus) return;
+  useEffect(() => {
+    recarregarColunas();
+    /* A paleta e o contexto do tenant vêm do backend pela mesma razão: duas
+       listas divergem, e a divergência aparece como um compromisso salvo numa
+       cor que os swatches não marcam. */
+    api.get("/agendamentos/paleta")
+      .then((r) => setPaleta(r.data?.cores || []))
+      .catch(() => setPaleta([]));
+    api.get("/agendamentos/contexto")
+      .then((r) => setMultiMunicipio(!!r.data?.multi_municipio))
+      /* Sem resposta, assume PREFEITURA (município implícito): é o caso em que
+         esconder o campo não perde nada — o backend preenche sozinho. Assumir
+         assessoria mostraria um seletor obrigatório num tenant que tem uma
+         cidade só, e o formulário ficaria impossível de enviar. */
+      .catch(() => setMultiMunicipio(false));
+    api.get<User>("/auth/me")
+      .then((r) => setUsuario(r.data))
+      .catch(() => { /* sem nome a saudação sai sem ele */ });
+  }, [recarregarColunas]);
+
+  /* ------------------------------------------------------------- ações --- */
+
+  const mover = async (c: Compromisso, colunaId: number) => {
     const antes = itens;
-    // Otimista: o cartão anda na hora. Se o servidor recusar, volta e explica.
-    setItens((l) => l.map((x) => x.id === item.id
-      ? { ...x, status: novoStatus,
-          status_rotulo: COLUNAS.find((c) => c.valor === novoStatus)?.rotulo || novoStatus }
-      : x));
+    const destino = colunas.find((k) => k.id === colunaId);
+    // Otimista: o cartão anda na hora. Recusado, volta e explica.
+    setItens((l) => l.map((x) => x.id === c.id
+      ? { ...x, coluna_id: colunaId, coluna: destino?.nome || x.coluna } : x));
     try {
-      await api.patch(`/agendamentos/${item.id}/status`, { status: novoStatus });
+      await api.patch(`/agendamentos/${c.id}/coluna`, { coluna_id: colunaId });
     } catch (e: unknown) {
       setItens(antes);
       const err = e as { response?: { data?: { detail?: string } } };
       setErro(err?.response?.data?.detail
-        || "Não foi possível mudar a situação deste agendamento.");
+        || "Não foi possível mudar este compromisso de coluna.");
     }
   };
 
-  const porDia = useMemo(() => {
-    const m: Record<string, Agendamento[]> = {};
-    itens.forEach((i) => {
-      const k = String(i.data || "").slice(0, 10);
-      if (k) (m[k] ||= []).push(i);
-    });
-    return m;
-  }, [itens]);
+  const criarColuna = async (nome: string) => {
+    setErro(null);
+    try {
+      await api.post("/agendamentos/colunas", { nome });
+      recarregarColunas();
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: string } } };
+      setErro(err?.response?.data?.detail || "Não foi possível criar a coluna.");
+    }
+  };
 
-  /* ⚠️ A CARTEIRA INTEIRA É UM CASO VÁLIDO, e não um estado a bloquear. Com
-     «Consolidado» o seletor devolve `municipioId = ""`, e a versão anterior
-     desta tela mostrava "selecione um município" — negando justamente ao
-     cliente de 42 municípios a visão que ele mais precisa: a agenda da semana
-     de todo mundo. Sem filtro de município a consulta traz o que a pessoa
-     alcança, e cada cartão passa a dizer de qual cidade é.
-     CRIAR continua exigindo um município escolhido: agendamento sem cidade não
-     existe, e adivinhar qual seria pior que pedir. */
-  const consolidado = !munEfetivo;
+  const renomearColuna = async (id: number, nome: string) => {
+    setErro(null);
+    try {
+      await api.put(`/agendamentos/colunas/${id}`, { nome });
+      recarregarColunas();
+      recarregar();
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: string } } };
+      setErro(err?.response?.data?.detail || "Não foi possível renomear a coluna.");
+    }
+  };
+
+  const removerColuna = async (id: number, quantos: number) => {
+    const col = colunas.find((k) => k.id === id);
+    /* ⚠️ A CONFIRMAÇÃO DIZ QUANTOS CARTÕES VOLTAM. "Remover esta coluna?" não
+       deixa a pessoa medir o estrago; com o número, a decisão é informada. */
+    const aviso = quantos > 0
+      ? `Remover «${col?.nome}»? Os ${quantos} compromisso(s) desta coluna voltam para «Solicitada».`
+      : `Remover a coluna «${col?.nome}»?`;
+    if (!window.confirm(aviso)) return;
+    setErro(null);
+    try {
+      await api.delete(`/agendamentos/colunas/${id}`);
+      recarregarColunas();
+      recarregar();
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: string } } };
+      setErro(err?.response?.data?.detail || "Não foi possível remover a coluna.");
+    }
+  };
+
+  const abrir = (c: Compromisso) => setModal({ modo: "detalhe", item: c });
+  const editar = (c: Compromisso) => setModal({ modo: "editar", item: c });
+  const criar = (data: string, hora?: string) =>
+    setModal({ modo: "criar", item: null, inicial: { data, hora } });
+
+  /* ------------------------------------------------------------- tela ---- */
+
+  const comMunicipio = multiMunicipio === true;
 
   return (
-    <div className="space-y-4">
+    /* ⭐ A ALTURA DA VIEWPORT MENOS O PADDING DO LAYOUT (`py-6` = 3rem). É o que
+       faz o calendário PREENCHER A TELA em vez de ser um cartão baixo no alto da
+       página. Abaixo de `lg` a altura volta a ser automática: num celular, uma
+       grade de 24 horas presa a 100vh não rola junto com o resto. */
+    <div className="flex flex-col gap-3 lg:h-[calc(100vh-3rem)]">
+      {/* ------------------------------------------------------ cabeçalho */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-base-content">Agendamentos</h1>
           <p className="text-sm text-muted-foreground">
-            A agenda de trabalho da equipe
+            A agenda de compromissos da equipe
           </p>
         </div>
-        {/* ⚠️ TRÊS BOTÕES, e não abas (decisão do dono). São três DESENHOS do
-            mesmo recorte, e aba sugere três conteúdos diferentes — o filtro
-            acima continua valendo nos três, o que a aba faria parecer que não.
-            Ficam no alto à direita, onde a pessoa já olha para exportar.
-            `role="group"` + `aria-pressed`: para o leitor de tela isto é um
-            seletor de modo, não navegação. */}
         <div className="flex flex-wrap items-center gap-2">
-          <div role="group" aria-label="Modo de visualização"
+          <div role="group" aria-label="Abas do módulo"
                className="flex overflow-hidden rounded-xl"
                style={{ border: "1px solid var(--bi-line)" }}>
-            {([
-              ["calendario", "Calendário", CalendarDays],
-              ["lista", "Lista", LayoutList],
-              ["kanban", "Kanban", Columns3],
-            ] as const).map(([v, rotulo, Icone]) => (
+            {ABAS.map(([v, rotulo, Icone]) => (
               <button key={v} type="button" onClick={() => setVista(v)}
                       aria-pressed={vista === v} title={rotulo}
                       className="flex h-9 items-center gap-1.5 px-3 text-[12px] transition-colors"
                       style={vista === v
-                        ? { background: "var(--bi-accent-bg)", color: "var(--bi-accent-ink)", fontWeight: 600 }
+                        ? { background: "var(--bi-accent-soft)", color: "var(--bi-accent-ink)", fontWeight: 600 }
                         : { color: "var(--bi-muted)" }}>
                 <Icone className="size-3.5" />
-                {/* O rótulo some no celular; o ícone e o `title` seguram. */}
                 <span className="hidden sm:inline">{rotulo}</span>
               </button>
             ))}
           </div>
           <button type="button" className={BOTAO_SEC} style={ESTILO_SEC}
-                  disabled={!!baixando} onClick={() => exportar("xlsx")}>
-            {baixando === "xlsx"
-              ? <Loader2 className="size-3.5 animate-spin" />
-              : <FileSpreadsheet className="size-3.5" />} Excel
-          </button>
-          <button type="button" className={BOTAO_SEC} style={ESTILO_SEC}
-                  disabled={!!baixando} onClick={() => exportar("pdf")}>
-            {baixando === "pdf"
-              ? <Loader2 className="size-3.5 animate-spin" />
-              : <Download className="size-3.5" />} PDF
-          </button>
-          <button type="button" className={BOTAO_CTA} style={ESTILO_CTA}
-                  onClick={() => setNovo(true)} disabled={consolidado}
-                  title={consolidado
-                    ? "Escolha um município para criar um agendamento"
-                    : undefined}>
-            <Plus className="size-3.5" /> Novo agendamento
+                  onClick={() => setRelatorio(true)}>
+            <FileDown className="size-3.5" /> Relatório PDF
           </button>
         </div>
       </div>
 
-      {/* ⚠️ O FILTRO FICA FORA DAS ABAS. Ver o cabeçalho do arquivo. */}
-      <Bloco className="p-3">
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="flex flex-col gap-1">
-            <span className="text-[10px]" style={{ color: "var(--bi-faint)" }}>
-              Município
-            </span>
-            <select value={munFiltro} onChange={(e) => setMunFiltro(e.target.value)}
-                    className="bi-input h-8 min-w-[10rem] rounded-lg px-2 text-[12px]">
-              {/* A opção padrão nomeia o município em acesso em vez de dizer
-                  "padrão": quem abre a tela precisa saber DE QUEM é a agenda
-                  que está vendo, sem conferir a barra lateral. */}
-              <option value="">
-                {municipioId
-                  ? `${nomeDoMunicipio(municipios, municipioId)} (em acesso)`
-                  : "Todos os meus municípios"}
-              </option>
-              {municipioId && <option value={TODOS}>Todos os meus municípios</option>}
-              {municipios
-                .filter((m) => String(m.id) !== String(municipioId))
-                .map((m) => (
-                  <option key={m.id} value={String(m.id)}>
-                    {m.nome}{m.uf ? ` - ${m.uf}` : ""}
-                  </option>
-                ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-[10px]" style={{ color: "var(--bi-faint)" }}>De</span>
-            <input type="date" value={de} onChange={(e) => setDe(e.target.value)}
-                   className="bi-input h-8 rounded-lg px-2 text-[12px]" />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-[10px]" style={{ color: "var(--bi-faint)" }}>Até</span>
-            <input type="date" value={ate} onChange={(e) => setAte(e.target.value)}
-                   className="bi-input h-8 rounded-lg px-2 text-[12px]" />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-[10px]" style={{ color: "var(--bi-faint)" }}>Situação</span>
-            <select value={status} onChange={(e) => setStatus(e.target.value)}
-                    className="bi-input h-8 rounded-lg px-2 text-[12px]">
-              <option value="">Todas</option>
-              {COLUNAS.map((c) => (
-                <option key={c.valor} value={c.valor}>{c.rotulo}</option>
-              ))}
-            </select>
-          </label>
-          {(de || ate || status || munFiltro) && (
-            <button type="button" className="text-[11px] underline"
-                    style={{ color: "var(--bi-accent-ink)" }}
-                    onClick={() => { setDe(""); setAte(""); setStatus(""); setMunFiltro(""); }}>
-              limpar filtros
+      {/* -------------------------------------------------------- toolbar */}
+      {/* ⚠️ A TOOLBAR É COMPARTILHADA PELAS TRÊS ABAS, e por isso fica ACIMA
+          delas: trocar de desenho não pode zerar o recorte que a pessoa acabou
+          de montar. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2"
+                  style={{ color: "var(--bi-faint)" }} />
+          <input value={busca} onChange={(e) => setBusca(e.target.value)}
+                 placeholder="Buscar demanda, solicitante ou município"
+                 aria-label="Buscar compromissos"
+                 className="bi-field h-8 w-64 max-w-full pl-8 pr-7 text-[12px]" />
+          {busca && (
+            <button type="button" onClick={() => setBusca("")}
+                    aria-label="Limpar busca"
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5"
+                    style={{ color: "var(--bi-faint)" }}>
+              <X className="size-3.5" />
             </button>
           )}
-          <span className="ml-auto text-[11px]" style={{ color: "var(--bi-faint)" }}>
-            {carregando ? "carregando…" : `${itens.length} agendamento(s)`}
-          </span>
         </div>
-      </Bloco>
+
+        {comMunicipio && (
+          <FiltroMunicipios municipios={municipios} selecionados={munSel}
+                            onMudar={setMunSel} />
+        )}
+
+        <span className="ml-auto text-[11px]" style={{ color: "var(--bi-faint)" }}>
+          {carregando ? "carregando…" : `${itens.length} compromisso(s)`}
+        </span>
+      </div>
 
       {erro && (
-        <div className="rounded-xl px-3 py-2 text-[12px]"
-             style={{ background: "var(--bi-crit-bg)", color: "var(--bi-crit-ink)" }}>
+        <div role="alert" className="rounded-xl px-3 py-2 text-[12px]"
+             style={{ background: "color-mix(in oklab, var(--bi-crit) 14%, transparent)",
+                      color: "var(--bi-crit-ink)" }}>
           {erro}
         </div>
       )}
 
-      {carregando && !itens.length ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" /> carregando…
-        </div>
-      ) : vista === "lista" ? (
-        <VistaLista itens={itens} onAbrir={setEditando} comMunicipio={consolidado} />
-      ) : vista === "calendario" ? (
-        <VistaCalendario porDia={porDia} mes={mes} setMes={setMes}
-                         onAbrir={setEditando} />
-      ) : (
-        <VistaKanban itens={itens} onAbrir={setEditando} onMover={mover} />
-      )}
+      {/* -------------------------------------------------------- conteúdo */}
+      {/* ⚠️ ALTURA TAMBÉM NO CELULAR (`max-lg:h-[36rem]`). Sem ela, a régua de
+          24 horas da vista semanal (1152px) vira a altura REAL do bloco em telas
+          estreitas: a rolagem interna deixa de existir, a página fica com dois
+          metros de madrugada vazia e o cabeçalho some no alto. Com altura, o que
+          rola é a régua — como no desktop. */}
+      <div className="min-h-0 flex-1 max-lg:h-[36rem]">
+        {carregando && itens.length === 0 ? (
+          <Esqueleto vista={vista} />
+        ) : vista === "calendario" ? (
+          <div className="flex h-full min-h-0 flex-col gap-3 lg:flex-row">
+            <div className="flex min-h-0 flex-1 flex-col lg:order-1">
+              <Calendario
+                itens={itens} modo={modoCal} onModo={setModoCal}
+                foco={foco} onFoco={setFoco} comMunicipio={comMunicipio}
+                onCriar={criar} onAbrir={abrir} onEditar={editar}
+                onMostrarCard={cardVisivel ? undefined : () => setCardVisivel(true)}
+              />
+            </div>
+            {/* ⚠️ Abaixo de `lg` o card DEIXA de ser lateral e vira bloco ACIMA
+                do calendário (`order`), com altura própria — é o que impede a
+                grade de 24 horas e o cartão de disputarem a mesma tela num
+                celular. */}
+            {cardVisivel && (
+              <div className="min-h-0 shrink-0 lg:order-2 lg:w-[320px]">
+                <div className="h-56 lg:h-full">
+                  <CardDia itens={itens} nome={usuario?.name}
+                           comMunicipio={comMunicipio} onAbrir={abrir}
+                           onOcultar={() => setCardVisivel(false)} />
+                </div>
+              </div>
+            )}
+          </div>
+        ) : vista === "kanban" ? (
+          /* ⚠️ O QUADRO VAZIO CONTINUA SENDO DESENHADO. A primeira versão trocava
+             o kanban por um "nenhum compromisso ainda" quando a lista vinha
+             vazia — e com isso escondia as colunas E o botão «+ Coluna»
+             justamente no tenant recém-criado, que é o único que precisa
+             configurá-las antes de ter qualquer compromisso. Cada coluna já diz
+             sozinha que está vazia. */
+          <Kanban
+            itens={itens} colunas={colunas} comMunicipio={comMunicipio}
+            maxColunas={maxColunas} maxCustomizadas={maxCustomizadas}
+            onAbrir={abrir} onEditar={editar} onMover={mover}
+            onCriarColuna={criarColuna} onRenomearColuna={renomearColuna}
+            onRemoverColuna={removerColuna}
+          />
+        ) : (
+          <ListaCompromissos itens={itens} comMunicipio={comMunicipio}
+                             onAbrir={abrir} onEditar={editar} />
+        )}
+      </div>
 
-      {(novo || editando) && (
-        <AgendamentoModal
-          aberto
-          municipioId={Number(editando?.municipio_id ?? munEfetivo)}
-          item={editando}
-          colunas={COLUNAS.map((c) => ({ valor: c.valor, rotulo: c.rotulo }))}
-          onFechar={() => { setNovo(false); setEditando(null); }}
-          onSalvo={() => { setNovo(false); setEditando(null); carregar(); }}
+      {/* ---------------------------------------------------------- modais */}
+      {modal && (
+        <CompromissoModal
+          modo={modal.modo} item={modal.item} inicial={modal.inicial}
+          comMunicipio={comMunicipio} municipios={municipios}
+          paleta={paleta} colunas={colunas}
+          onModo={(m) => setModal((x) => (x ? { ...x, modo: m } : x))}
+          onFechar={() => setModal(null)}
+          onMudou={recarregar}
         />
+      )}
+      {relatorio && (
+        <RelatorioModal filtros={filtros} onFechar={() => setRelatorio(false)} />
       )}
     </div>
   );
 }
 
-/* --------------------------------------------------------------- LISTA --- */
+/* ------------------------------------------------------------ esqueleto --- */
 
-function VistaLista({ itens, onAbrir, comMunicipio }: {
-  itens: Agendamento[];
-  onAbrir: (a: Agendamento) => void;
-  /* Só na carteira inteira: com um município escolhido o nome se repetiria em
-     toda linha sem distinguir nada. */
-  comMunicipio: boolean;
-}) {
-  if (!itens.length) {
-    return <Vazio>Nenhum agendamento no recorte selecionado.</Vazio>;
+/** O estado de carregando com a FORMA da aba que vem — não um spinner no meio
+ *  da tela. O calendário ocupa a viewport inteira: um spinner centralizado faria
+ *  a página saltar de vazia para cheia a cada busca. */
+function Esqueleto({ vista }: { vista: Vista }) {
+  if (vista === "kanban") {
+    return (
+      <div className="flex h-full gap-3">
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="h-full w-[18rem] shrink-0 animate-pulse rounded-2xl"
+               style={{ background: "var(--bi-surface-2)" }} />
+        ))}
+      </div>
+    );
+  }
+  if (vista === "lista") {
+    return (
+      <div className="space-y-2">
+        {[0, 1, 2, 3, 4, 5].map((i) => (
+          <div key={i} className="h-14 animate-pulse rounded-xl"
+               style={{ background: "var(--bi-surface-2)" }} />
+        ))}
+      </div>
+    );
   }
   return (
-    <Bloco className="p-3">
-      <BlocoHead icon={LayoutList} titulo="Agendamentos"
-                 sub="do mais próximo para o mais distante" />
-      <Lista>
-        {itens.map((a) => (
-          <ItemLinha
-            key={a.id}
-            onClick={() => onAbrir(a)}
-            titulo={
-              <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span>{a.titulo}</span>
-                <Selo tom={TOM[a.status]}>{a.status_rotulo}</Selo>
-              </span>
-            }
-            valor={diaBR(a.data, true)}
-            meta={
-              <>
-                {comMunicipio && <span>{a.municipio}</span>}
-                {a.responsavel && (
-                  <span className="inline-flex items-center gap-1">
-                    <UserIcon className="size-3" /> {a.responsavel}
-                  </span>
-                )}
-                {a.anexos?.length > 0 && (
-                  <span className="inline-flex items-center gap-1">
-                    <Paperclip className="size-3" /> {a.anexos.length} anexo(s)
-                  </span>
-                )}
-                {a.relato && <span>· {a.relato.slice(0, 120)}
-                  {a.relato.length > 120 ? "…" : ""}</span>}
-              </>
-            }
-          />
-        ))}
-      </Lista>
-    </Bloco>
-  );
-}
-
-/* ---------------------------------------------------------- CALENDÁRIO --- */
-
-/* ⚠️ TETO DE TRÊS POR DIA, com "+N mais". A carteira do freitas tem 42
-   municípios ativos: sem município escolhido, um mês pode ter duzentos
-   compromissos e a grade vira sopa — o calendário deixaria de ser legível
-   justamente no cliente que mais precisa dele. O "+N" abre o dia na lista. */
-const TETO_DIA = 3;
-
-function VistaCalendario({ porDia, mes, setMes, onAbrir }: {
-  porDia: Record<string, Agendamento[]>;
-  mes: [number, number];
-  setMes: (m: [number, number]) => void;
-  onAbrir: (a: Agendamento) => void;
-}) {
-  const [ano, m0] = mes;
-  const [expandido, setExpandido] = useState<string | null>(null);
-  /* Dia 0 do mês seguinte = último dia deste. E `getDay()` domingo=0, mas a
-     semana da grade começa na segunda — daí o `(d + 6) % 7`. */
-  const dias = new Date(ano, m0 + 1, 0).getDate();
-  const vazioAntes = (new Date(ano, m0, 1).getDay() + 6) % 7;
-  const anda = (n: number) => {
-    const d = new Date(ano, m0 + n, 1);
-    setMes([d.getFullYear(), d.getMonth()]);
-  };
-
-  return (
-    <Bloco className="p-3">
-      <div className="mb-2 flex items-center justify-between">
-        <button type="button" className={BOTAO_SEC} style={ESTILO_SEC}
-                onClick={() => anda(-1)} aria-label="Mês anterior">←</button>
-        <span className="text-[13px] font-semibold">
-          {MESES[m0]} de {ano}
-        </span>
-        <button type="button" className={BOTAO_SEC} style={ESTILO_SEC}
-                onClick={() => anda(1)} aria-label="Próximo mês">→</button>
-      </div>
-      <div className="grid grid-cols-7 gap-1">
-        {SEMANA.map((s) => (
-          <div key={s} className="py-1 text-center text-[10px]"
-               style={{ color: "var(--bi-faint)" }}>{s}</div>
-        ))}
-        {Array.from({ length: vazioAntes }).map((_, i) => (
-          <div key={`v${i}`} />
-        ))}
-        {Array.from({ length: dias }, (_, i) => i + 1).map((d) => {
-          const iso = isoDoDia(ano, m0, d);
-          const doDia = porDia[iso] || [];
-          const aberto = expandido === iso;
-          const visiveis = aberto ? doDia : doDia.slice(0, TETO_DIA);
-          return (
-            <div key={iso} className="min-h-[68px] rounded-lg p-1"
-                 style={{ background: "var(--bi-surface)", border: "1px solid var(--bi-line)" }}>
-              <div className="mb-0.5 text-[10px]" style={{ color: "var(--bi-faint)" }}>{d}</div>
-              {visiveis.map((a) => (
-                <button key={a.id} type="button" onClick={() => onAbrir(a)}
-                        title={a.titulo}
-                        className="mb-0.5 block w-full truncate rounded px-1 py-0.5 text-left text-[10px] leading-tight"
-                        style={{
-                          background: a.status === "realizado" ? "var(--bi-ok-bg)"
-                            : a.status === "em_andamento" ? "var(--bi-warn-bg)"
-                              : "var(--bi-accent-bg)",
-                          color: a.status === "realizado" ? "var(--bi-ok-ink)"
-                            : a.status === "em_andamento" ? "var(--bi-warn-ink)"
-                              : "var(--bi-accent-ink)",
-                        }}>
-                  {a.titulo}
-                </button>
-              ))}
-              {doDia.length > TETO_DIA && (
-                <button type="button" className="text-[10px] underline"
-                        style={{ color: "var(--bi-accent-ink)" }}
-                        onClick={() => setExpandido(aberto ? null : iso)}>
-                  {aberto ? "menos" : `+${doDia.length - TETO_DIA} mais`}
-                </button>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </Bloco>
-  );
-}
-
-/* -------------------------------------------------------------- KANBAN --- */
-
-function VistaKanban({ itens, onAbrir, onMover }: {
-  itens: Agendamento[];
-  onAbrir: (a: Agendamento) => void;
-  onMover: (a: Agendamento, s: string) => void;
-}) {
-  const [sobre, setSobre] = useState<string | null>(null);
-
-  return (
-    <div className="grid gap-3 md:grid-cols-3">
-      {COLUNAS.map((col) => {
-        const daColuna = itens.filter((i) => i.status === col.valor);
-        return (
-          <div key={col.valor}
-               onDragOver={(e) => { e.preventDefault(); setSobre(col.valor); }}
-               onDragLeave={() => setSobre((s) => (s === col.valor ? null : s))}
-               onDrop={(e) => {
-                 e.preventDefault(); setSobre(null);
-                 const id = Number(e.dataTransfer.getData("text/plain"));
-                 const item = itens.find((x) => x.id === id);
-                 if (item) onMover(item, col.valor);
-               }}
-               className="rounded-xl p-2 transition-colors"
-               style={{
-                 background: sobre === col.valor ? "var(--bi-accent-bg)" : "var(--bi-surface)",
-                 border: "1px solid var(--bi-line)",
-               }}>
-            <div className="mb-2 flex items-center justify-between px-1">
-              <span className="text-[12px] font-semibold">{col.rotulo}</span>
-              <span className="text-[11px]" style={{ color: "var(--bi-faint)" }}>
-                {daColuna.length}
-              </span>
-            </div>
-            {daColuna.length === 0 && (
-              <p className="px-1 py-3 text-[11px]" style={{ color: "var(--bi-faint)" }}>
-                nada aqui
-              </p>
-            )}
-            {daColuna.map((a) => (
-              <div key={a.id} draggable
-                   onDragStart={(e) => e.dataTransfer.setData("text/plain", String(a.id))}
-                   className="mb-1.5 cursor-grab rounded-lg p-2"
-                   style={{ background: "var(--bi-card)", border: "1px solid var(--bi-line)",
-                            borderLeft: `3px solid ${col.cor}` }}>
-                <button type="button" onClick={() => onAbrir(a)}
-                        className="block w-full text-left">
-                  <p className="text-[12px] font-medium leading-snug">{a.titulo}</p>
-                  <p className="mt-1 text-[10px]" style={{ color: "var(--bi-faint)" }}>
-                    {diaBR(a.data)}
-                    {a.responsavel ? ` · ${a.responsavel}` : ""}
-                    {a.anexos?.length ? ` · ${a.anexos.length} anexo(s)` : ""}
-                  </p>
-                </button>
-                {/* ⚠️ O SELETOR EXISTE ALÉM DO ARRASTAR, e não em vez dele.
-                    Arrastar não funciona com teclado nem com leitor de tela, e
-                    é justamente a interação que um toque desastrado dispara sem
-                    querer. Com o seletor, mover um cartão nunca depende do
-                    mouse — e desfazer é escolher de volta. */}
-                <select value={a.status} aria-label={`Situação de ${a.titulo}`}
-                        onChange={(e) => onMover(a, e.target.value)}
-                        className="bi-input mt-1.5 h-6 w-full rounded px-1 text-[10px]">
-                  {COLUNAS.map((c) => (
-                    <option key={c.valor} value={c.valor}>{c.rotulo}</option>
-                  ))}
-                </select>
-              </div>
-            ))}
-          </div>
-        );
-      })}
+    <div className="flex h-full gap-3">
+      <div className="flex-1 animate-pulse rounded-2xl"
+           style={{ background: "var(--bi-surface-2)" }} />
+      <div className="hidden w-[320px] animate-pulse rounded-2xl lg:block"
+           style={{ background: "var(--bi-surface-2)" }} />
     </div>
   );
 }
