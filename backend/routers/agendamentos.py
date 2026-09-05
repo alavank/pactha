@@ -509,6 +509,48 @@ async def listar_colunas(
             "max": MAX_COLUNAS, "max_customizadas": MAX_COLUNAS_CUSTOMIZADAS}
 
 
+@router.get("/feriados", dependencies=[exige("agendamentos.ver")])
+async def feriados(
+    ano: int = Query(..., ge=1970, le=2200, description="ano civil"),
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """Os feriados do ano — nacionais sempre, estaduais das UFs DO TENANT.
+
+    ⭐ CALCULADO, NÃO COLETADO. Não há coletor, selo de frescor nem watchdog: a
+    regra está em lei e mora em `services/feriados.py`, com o número da lei ao
+    lado de cada linha. Ver o cabeçalho de lá para o porquê.
+
+    ⚠️ AS UFs SAEM DOS MUNICÍPIOS ATIVOS, e não de uma lista fixa. Um cliente de
+    Nova Palma não pode ver o Dia do Evangélico do DF marcado na agenda dele, e
+    uma assessoria que atenda MG e RS tem de ver os dois — cada marca dizendo de
+    qual estado é. Estado sem linha no catálogo mostra só os nacionais: ausência
+    é honesta, feriado inventado manda alguém marcar visita num dia em que não
+    há ninguém para receber.
+
+    ⚠️ E O PONTO FACULTATIVO VEM JUNTO, com `tipo` próprio. Carnaval e Corpus
+    Christi não são feriados nacionais (Portaria MGI 11.460/2025: dez feriados e
+    nove pontos facultativos), mas ninguém marca reunião na terça de carnaval.
+    Mandar os dois com pesos diferentes é o único jeito de ser útil E correto.
+    """
+    ensure_tela(current, "agendamentos")
+    from services import feriados as fer
+
+    rows = (await db.execute(text(
+        "SELECT DISTINCT uf FROM municipios WHERE active = TRUE AND uf IS NOT NULL"
+    ))).fetchall()
+    ufs = {r[0] for r in rows if r[0]}
+    return {
+        "ano": ano,
+        "ufs": sorted(ufs),
+        # As UFs do tenant que o catalogo de fato cobre — a tela usa isto para
+        # dizer "os feriados estaduais de X nao estao no sistema" em vez de
+        # deixar a pessoa achar que aquele estado nao tem nenhum.
+        "ufs_cobertas": sorted(ufs & set(fer.UFS_COM_FERIADO_ESTADUAL)),
+        "itens": fer.do_ano(ano, ufs),
+    }
+
+
 @router.get("/contexto", dependencies=[exige("agendamentos.ver")])
 async def contexto_do_tenant(
     db: AsyncSession = Depends(get_db),

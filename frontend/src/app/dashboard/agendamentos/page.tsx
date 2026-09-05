@@ -46,7 +46,8 @@ import Kanban, { BotaoNovaColuna } from "./Kanban";
 import ListaCompromissos from "./ListaCompromissos";
 import RelatorioModal from "./RelatorioModal";
 import {
-  Coluna, Compromisso, CorPaleta, ModoCalendario, Vista, hojeISO,
+  Coluna, Compromisso, CorPaleta, Feriado, MapaFeriados, ModoCalendario, Vista,
+  anosNecessarios, hojeISO, indexarFeriados,
 } from "./tipos";
 
 /** A busca só vai ao servidor depois que a pessoa para de digitar. 350ms é o
@@ -75,6 +76,13 @@ export default function AgendamentosPage() {
   const [maxCustomizadas, setMaxCustomizadas] = useState(2);
   const [paleta, setPaleta] = useState<CorPaleta[]>([]);
   const [multiMunicipio, setMultiMunicipio] = useState<boolean | null>(null);
+  /* ⚠️ CACHE POR ANO, e não uma busca por navegação de mês. Os feriados são
+     CALCULADOS no servidor (`services/feriados.py`) e não mudam dentro do ano —
+     refazer a requisição a cada clique em ‹ › seria doze idas por ano folheado,
+     todas com a mesma resposta. O `Map` guarda o que já veio; `anosNecessarios`
+     diz o que falta (e cobre a virada do ano na borda da grade). */
+  const [feriadosPorAno, setFeriadosPorAno] = useState<Map<number, Feriado[]>>(
+    () => new Map());
   const [usuario, setUsuario] = useState<User | null>(null);
 
   const [carregando, setCarregando] = useState(true);
@@ -151,6 +159,31 @@ export default function AgendamentosPage() {
       .then((r) => setUsuario(r.data))
       .catch(() => { /* sem nome a saudação sai sem ele */ });
   }, [recarregarColunas]);
+
+  /* Os anos que o calendário está mostrando, buscados uma vez cada. Falha aqui
+     não quebra nada: a agenda continua inteira, só sem as marcas de feriado. */
+  useEffect(() => {
+    const faltam = anosNecessarios(foco).filter((a) => !feriadosPorAno.has(a));
+    if (!faltam.length) return;
+    let vivo = true;
+    Promise.all(faltam.map((ano) =>
+      api.get("/agendamentos/feriados", { params: { ano } })
+        .then((r) => [ano, (r.data?.itens || []) as Feriado[]] as const)
+        .catch(() => [ano, [] as Feriado[]] as const)))
+      .then((pares) => {
+        if (!vivo) return;
+        setFeriadosPorAno((m) => {
+          const novo = new Map(m);
+          pares.forEach(([ano, itens]) => novo.set(ano, itens));
+          return novo;
+        });
+      });
+    return () => { vivo = false; };
+  }, [foco, feriadosPorAno]);
+
+  const feriados: MapaFeriados = useMemo(
+    () => indexarFeriados([...feriadosPorAno.values()].flat()),
+    [feriadosPorAno]);
 
   /* ------------------------------------------------------------- ações --- */
 
@@ -345,7 +378,7 @@ export default function AgendamentosPage() {
               <Calendario
                 itens={itens} modo={modoCal} onModo={setModoCal}
                 foco={foco} onFoco={setFoco} comMunicipio={comMunicipio}
-                onCriar={criar} onAbrir={abrir}
+                onCriar={criar} onAbrir={abrir} feriados={feriados}
                 onMostrarCard={cardVisivel ? undefined : () => setCardVisivel(true)}
               />
             </div>
@@ -386,7 +419,7 @@ export default function AgendamentosPage() {
         <CompromissoModal
           modo={modal.modo} item={modal.item} inicial={modal.inicial}
           comMunicipio={comMunicipio} municipios={municipios}
-          paleta={paleta} colunas={colunas}
+          paleta={paleta} colunas={colunas} feriados={feriados}
           onModo={(m) => setModal((x) => (x ? { ...x, modo: m } : x))}
           onFechar={() => setModal(null)}
           onMudou={recarregar}
