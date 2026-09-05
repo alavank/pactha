@@ -332,11 +332,26 @@ async def export_convenios_pdf(
         headers={"Content-Disposition": f"attachment; filename={nome_arq}"})
 
 
-@router.get("/voluntarias", dependencies=[exige("transferegov.exportar")])
+# ⭐ A CATEGORIA SUBIU PARA O CAMINHO, pelo mesmo motivo da rota de listagem em
+# `routers/transferegov.py`: as quatro telas de FEDERAIS que dividem este export
+# viraram quatro permissoes, e categoria em QUERY nao gateia nada — quem tivesse
+# so «Rejeitadas» pediria `?categoria=geral` e levaria o PDF da outra tela.
+_TELA_POR_CATEGORIA_EXPORT: dict[str, str] = {
+    "geral": "transferegov_geral",
+    "voluntarias": "transferegov_voluntarias",
+    "rejeitadas": "transferegov_rejeitadas",
+    "encerradas": "transferegov_encerradas",
+}
+_CATEGORIA_EXPORT_PERMISSOES: tuple = tuple(
+    f"{t}.exportar" for t in _TELA_POR_CATEGORIA_EXPORT.values())
+
+
+@router.get("/federais/{categoria}",
+            dependencies=[declarado(*_CATEGORIA_EXPORT_PERMISSOES)])
 async def export_voluntarias_pdf(
     request: Request,
+    categoria: str,
     municipio_id: int = Query(...),
-    categoria: Optional[str] = Query(None),
     situacao: Optional[str] = Query(None),
     orgao: Optional[str] = Query(None),
     # Os mesmos campos separados da tela (routers/transferegov.py). Sem isto o
@@ -359,11 +374,15 @@ async def export_voluntarias_pdf(
     """PDF dos instrumentos FEDERAIS (TransfereGov) com os MESMOS filtros da tela —
     relatorio personalizado da selecao (parlamentar, vigencia, situacao, etc.)."""
     ensure_municipio_access(current, municipio_id)
-    # Mesma tela da pagina que oferece o botao (dashboard/transferegov* ->
-    # "transferegov"). O `_voluntarias` reusado abaixo tambem chama `ensure_tela`,
-    # mas com o `current` que RECEBE — e ele recebe `_=None`, nao o usuario. A
-    # unica checagem de tela que realmente corre neste caminho e esta.
-    authz.exigir_tela(current, "transferegov")
+    # A tela e A DA CATEGORIA PEDIDA, lida do caminho. O `_voluntarias` reusado
+    # abaixo tambem chama `ensure_tela`, mas com o `current` que RECEBE — e ele
+    # recebe `_=None`, nao o usuario. A unica checagem que realmente corre neste
+    # caminho e esta.
+    _tela_export = _TELA_POR_CATEGORIA_EXPORT.get((categoria or "").strip().lower())
+    if not _tela_export:
+        raise HTTPException(404, "Categoria desconhecida")
+    authz.exigir(current, f"{_tela_export}.exportar")
+    authz.exigir_tela(current, _tela_export)
     mun = (await db.execute(select(Municipio).where(Municipio.id == municipio_id))).scalar_one_or_none()
     if not mun:
         raise HTTPException(404, "Município não encontrado")
@@ -529,7 +548,8 @@ def _parse_emenda(cod: str):
     return (cod.strip(), "")
 
 
-@router.get("/plano-acao", dependencies=[exige("transferegov.exportar")])
+@router.get("/plano-acao",
+            dependencies=[exige("transferegov_especiais.exportar")])
 async def export_plano_acao_pdf(
     request: Request,
     municipio_id: int = Query(...),
@@ -544,10 +564,10 @@ async def export_plano_acao_pdf(
     """PDF dos Planos de Acao (Transferencia Especial / Pix Parlamentar) com os
     MESMOS filtros da tela Especiais."""
     ensure_municipio_access(current, municipio_id)
-    # "Especiais" e uma aba de TransfereGov, nao um modulo proprio: a tela que o
-    # administrador concede na tela de Usuarios e "transferegov" (ver
-    # routers/transferegov.py::buscar, que serve esta mesma lista).
-    authz.exigir_tela(current, "transferegov")
+    # ⭐ «Especiais» virou TELA PROPRIA em 05/09/2026 (`transferegov_especiais`),
+    # como as outras sete do grupo FEDERAIS. Ate aqui a tela concedida era
+    # "transferegov", uma chave so para as oito.
+    authz.exigir_tela(current, "transferegov_especiais")
     mun = (await db.execute(select(Municipio).where(Municipio.id == municipio_id))).scalar_one_or_none()
     if not mun:
         raise HTTPException(404, "Município não encontrado")

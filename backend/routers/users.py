@@ -30,9 +30,9 @@ from database import get_db
 from models.user import User
 from schemas.auth import UserResponse
 from services import authz
+from services import permissoes as permissoes_svc
 from services.auth import (
-    hash_password, get_current_user, is_super_admin, eh_somente_leitura,
-    READONLY_ROLES,
+    ensure_tela, hash_password, get_current_user, is_super_admin,
 )
 from services.audit import registrar, registrar_critico
 from services.registro_rotas import exige
@@ -46,18 +46,29 @@ def _gen_senha(n: int = 14) -> str:
     return "".join(secrets.choice(ALPHABET) for _ in range(n))
 
 
-def _require_admin(user: User):
-    """Gate de ACAO desta tela — continua olhando o PAPEL, de proposito.
+def _exige_tela_usuarios(user: User):
+    """⭐ ERA `_require_admin`, e DEIXOU DE OLHAR O PAPEL em 05/09/2026 — a
+    propria versao anterior previa o dia:
 
-    `role` deixou de CONCEDER escopo (ver `services/auth.py::load_user_scopes`),
-    mas quem pode dar e tirar permissao dos outros ainda e decidido aqui pelo
-    rotulo. Trocar isto por permissao individual e o Incremento 5 (permissao por
-    ACAO); fazer junto significaria mudar QUEM tem escopo e ONDE se checa no
-    mesmo deploy, e a primeira mudanca ja e a que arrisca trancar o cliente
-    fora. Ate la, `admin` deixou de ser deus mas continua sendo o zelador.
+        "Trocar isto por permissao individual e o Incremento 5 (permissao por
+         ACAO); fazer junto significaria mudar QUEM tem escopo e ONDE se checa no
+         mesmo deploy, e a primeira mudanca ja e a que arrisca trancar o cliente
+         fora. Ate la, `admin` deixou de ser deus mas continua sendo o zelador."
+
+    O Incremento 5 aconteceu: toda rota deste router declara
+    `exige("usuarios.<acao>")`, e com `AUTHZ_MODO` em `bloqueio` essas chaves
+    barram de verdade. Manter o gate por PAPEL por cima virou CONTRADICAO: o
+    dono marcava a aba Usuarios para o controlador interno e o papel o expulsava
+    mesmo assim, sem nada na tela explicando por que.
+
+    Sobrou a TELA — a mesma regra de toda aba de Configuracoes agora. Quem barra
+    a acao sao as caixinhas, cobradas no decorador de cada rota.
+
+    ⚠️ A migration `add_permissoes_por_tela.sql` garante `usuarios.*` e a tela
+    `usuarios` a todo `role='admin'` ativo, para ninguem se trancar fora da
+    unica tela que conserta o problema.
     """
-    if user.role != "admin":
-        raise HTTPException(403, "Apenas administradores podem gerenciar usuários")
+    ensure_tela(user, "usuarios")
 
 
 # Contas donas do sistema: a lista vive em services/auth.py (uma so, para as
@@ -81,14 +92,10 @@ def _guard_target(current: User, target: User):
 # quem manda ja nao exige mais deploy (virou coluna), mas exige acesso ao BANCO,
 # que e outro nivel de confianca.
 #
-# `somente_leitura` ENTRA, e a diferenca e proposital. Ela nao promove ninguem —
-# so restringe —, e sem ela este incremento AFROUXAVA a unica trava de acao do
-# sistema: `READONLY_ROLES = {"prefeito","viewer"}` barrava escrita pelo PAPEL,
-# entao marcar alguem como "Prefeito" nesta tela produzia, ate ontem, uma conta
-# que nao escreve. Com o guard lendo a FLAG e a flag so alcancavel por migration,
-# todo prefeito criado DEPOIS do deploy nasceria com escrita liberada em tudo o
-# que tivesse tela — e sem caminho nenhum, fora do banco, para conte-lo. Era
-# trocar "prefeito nao escreve" por "prefeito escreve", calado.
+# ⚠️ `somente_leitura` SAIU destes payloads em 05/09/2026 com a trava de conta
+# (ver o topo de `services/auth.py`). Quem nao escreve agora e quem esta sem a
+# caixinha de escrita daquela tela — e essas viajam em `permissoes`, logo abaixo,
+# que por isso passou a exigir `usuarios.conceder` como as telas ja exigiam.
 class CreateUserRequest(BaseModel):
     email: str
     name: str
@@ -106,17 +113,26 @@ class CreateUserRequest(BaseModel):
     role: str = "user"
     municipio_ids: Optional[list[int]] = None  # municipios que o usuario pode acessar
     telas: Optional[list[str]] = None  # telas/modulos que o usuario pode acessar
-    # `None` = "nao opinei", e NAO `False`. Omitido, o default e semeado do
-    # rotulo — a MESMA regra que a migration usou para semear as contas que ja
-    # existiam (`role IN ('prefeito','viewer')`). E semente de nascimento, nao
-    # regra de execucao: no minuto seguinte o administrador liga e desliga a flag
-    # nesta mesma tela, individualmente, que e o que o dono pediu.
+    # ⭐ CADASTRO + PERMISSAO NUMA CHAMADA SO (05/09/2026). Antes a tela criava o
+    # usuario aqui e concedia as caixinhas num `PUT /api/permissoes/usuario/{id}`
+    # logo depois — duas transacoes, e um erro entre elas deixava a pessoa
+    # cadastrada e cega, com a senha temporaria ja mostrada na tela. Agora as
+    # duas coisas entram no MESMO commit: ou nasce tudo, ou nao nasce nada.
     #
-    # A licao vem do proprio `role: str = "admin"` que este incremento matou: o
-    # campo OMITIDO nao pode ser o campo mais permissivo. Quem esquece de mandar
-    # `somente_leitura` ao cadastrar um prefeito recebe o comportamento de
-    # ontem — restritivo —, e nao escrita liberada em silencio.
-    somente_leitura: Optional[bool] = None
+    # ⚠️ `None` = "nao mexe", `[]` = "nenhuma". A distincao importa aqui pelo
+    # mesmo motivo de `telas`: cliente de API que nao conhece o campo nao pode
+    # zerar permissao sem querer.
+    permissoes: Optional[list[str]] = None
+    escopos: Optional[dict[str, str]] = None
+    # ⭐ CAMPOS DE CADASTRO (05/09/2026), os dois OPCIONAIS e sem efeito nenhum
+    # em permissao:
+    #   `funcao`   — o cargo da pessoa na organizacao ("Secretário de
+    #                Administração", "Contadora"). Texto livre de propósito: cada
+    #                prefeitura nomeia os cargos dela, e uma lista fechada aqui
+    #                seria mais uma tabela para o cliente manter.
+    #   `whatsapp` — o numero para os disparos que o sistema vai fazer.
+    funcao: Optional[str] = None
+    whatsapp: Optional[str] = None
 
 
 class UpdateUserRequest(BaseModel):
@@ -133,10 +149,12 @@ class UpdateUserRequest(BaseModel):
     active: Optional[bool] = None
     municipio_ids: Optional[list[int]] = None
     telas: Optional[list[str]] = None
-    # `None` = nao mexe. Trocar o ROTULO nao arrasta a flag junto: um prefeito
-    # que ganhou escrita continua com escrita se for reetiquetado, e e isso que
-    # separa as duas coisas de vez.
-    somente_leitura: Optional[bool] = None
+    # As caixinhas e o alcance, no MESMO PATCH e no mesmo commit — ver a nota em
+    # `CreateUserRequest`. `None` = nao mexe.
+    permissoes: Optional[list[str]] = None
+    escopos: Optional[dict[str, str]] = None
+    funcao: Optional[str] = None
+    whatsapp: Optional[str] = None
 
 
 async def _validar_role(db: AsyncSession, role: str) -> str:
@@ -199,21 +217,61 @@ async def _validar_email_novo(db: AsyncSession, alvo: User, bruto: str) -> str:
     return email
 
 
-def _trava_inicial(role: str, pedido: Optional[bool]) -> bool:
-    """A trava de escrita com que a conta NASCE.
+# ⚠️ `_trava_inicial` SAIU em 05/09/2026 com a trava de conta «somente leitura»
+# (ver o topo de `services/auth.py`). Ela semeava `somente_leitura` a partir do
+# papel no nascimento da conta; sem a trava, nao ha o que semear.
 
-    O que o administrador marcou na tela; e, quando ele nao disse nada, o que o
-    sistema fazia com esse rotulo ate a vespera deste incremento
-    (`READONLY_ROLES`). Isso e SEMENTE de nascimento, nao regra de execucao —
-    quem autoriza em runtime e a coluna, e ela se edita usuario a usuario. Um
-    prefeito pode receber escrita no minuto seguinte sem deixar de ser prefeito.
 
-    ⚠️ O campo OMITIDO nao pode ser o mais permissivo — e a licao do
-    `role: str = "admin"` que este mesmo incremento matou. Sem esta semente, um
-    POST sem `somente_leitura` criaria prefeito com escrita liberada em tudo o
-    que tivesse tela, calado, onde ontem sairia uma conta que nao escreve.
-    """
-    return pedido if pedido is not None else role in READONLY_ROLES
+def _limpar_texto(valor: Optional[str], limite: int) -> Optional[str]:
+    """Campo de cadastro livre, normalizado. Vazio vira `None` e nao string
+    vazia: a coluna e opcional, e `""` faria a tela desenhar um campo
+    "preenchido" com nada dentro."""
+    limpo = (valor or "").strip()
+    return limpo[:limite] if limpo else None
+
+
+async def _gravar_permissoes(
+    db: AsyncSession, *, alvo: User, atual: User,
+    permissoes: Optional[list], escopos: Optional[dict],
+) -> dict:
+    """⭐ AS CAIXINHAS E O ALCANCE, NA MESMA TRANSACAO DO CADASTRO.
+
+    Reusa as guardas de `routers/permissoes.py` em vez de copia-las — sao as
+    mesmas quatro que o `PUT /api/permissoes/usuario/{id}` aplica, incluindo o
+    ANTI-ESCALONAMENTO (ninguem concede o que nao tem, nem retira o que nao
+    tem). Uma segunda copia delas aqui e como as copias divergem, e divergencia
+    em regra de permissao nao aparece na tela: aparece como alguem podendo o que
+    nao devia.
+
+    ⚠️ IMPORT LOCAL, e nao no topo: `routers/permissoes.py` importa ESTE modulo
+    (`_guard_target`, `_exige_tela_usuarios`), entao subir o import fecharia o
+    ciclo e quebraria o boot.
+
+    Devolve o par antes/depois para a trilha. Nao commita — quem commita e a
+    rota, junto de tudo o mais."""
+    from routers.permissoes import (
+        _barrar_escalonamento, _barrar_escalonamento_escopo, _concedidas,
+        _escopos_atuais, _gravar_concessao, _gravar_escopos, _validar,
+        _validar_escopos,
+    )
+    from services import permissoes as catalogo
+
+    antes = {c for c in await _concedidas(db, alvo.id) if catalogo.existe(c)}
+    escopos_antes = await _escopos_atuais(db, alvo.id)
+
+    depois, escopos_depois = antes, escopos_antes
+    if permissoes is not None:
+        depois = _validar(permissoes)
+        _barrar_escalonamento(atual, antes, depois)
+        await _gravar_concessao(db, alvo.id, antes, depois,
+                                getattr(atual, "id", None))
+    if escopos is not None:
+        escopos_depois = _validar_escopos(escopos)
+        _barrar_escalonamento_escopo(atual, escopos_antes, escopos_depois)
+        await _gravar_escopos(db, alvo.id, escopos_antes, escopos_depois,
+                              getattr(atual, "id", None))
+    return {"antes": sorted(antes), "depois": sorted(depois),
+            "escopos_antes": escopos_antes, "escopos_depois": escopos_depois}
 
 
 async def _set_user_municipios(db: AsyncSession, user_id: int, ids) -> None:
@@ -306,7 +364,7 @@ async def list_users(
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
-    _require_admin(current)
+    _exige_tela_usuarios(current)
     # Fora da lista os usuarios sinteticos de quiosque (@painel.local): eles nao
     # sao PESSOAS, sao credencial de um link de TV. Cada link publicado cria um,
     # entao deixa-los aqui encheria a tela de "Quiosque de Fulano" e daria a
@@ -324,21 +382,19 @@ async def list_users(
     telas_by_user: dict[int, list[str]] = {}
     for uid, tela in tr.fetchall():
         telas_by_user.setdefault(uid, []).append(tela)
-    # `super_admin` e `somente_leitura` saem CALCULADOS pelos mesmos helpers que
-    # o guard usa (flag OU reforco), e nao lidos crus da coluna: a tela precisa
-    # mostrar o que de fato vale em tempo de execucao. Um usuario cuja coluna
-    # esta `false` mas cujo e-mail esta na semente da Alavank manda no sistema —
-    # exibir "false" ali seria a tela mentindo sobre quem tem a chave.
-    #
-    # Somente LEITURA: nenhum dos dois e aceito de volta em POST/PATCH (ver a
-    # nota em `CreateUserRequest`).
+    # `super_admin` sai CALCULADO pelo mesmo helper que o guard usa (flag OU
+    # reforco), e nao lido cru da coluna: a tela precisa mostrar o que de fato
+    # vale em tempo de execucao. Um usuario cuja coluna esta `false` mas cujo
+    # e-mail esta na semente da Alavank manda no sistema — exibir "false" ali
+    # seria a tela mentindo sobre quem tem a chave. Somente LEITURA: ele nao e
+    # aceito de volta em POST/PATCH.
     return [{
         "id": u.id, "email": u.email, "name": u.name, "role": u.role,
+        "funcao": u.funcao, "whatsapp": u.whatsapp,
         "active": u.active, "must_change_password": u.must_change_password,
         "municipio_ids": by_user.get(u.id, []),
         "telas": sorted(telas_by_user.get(u.id, [])),
         "super_admin": is_super_admin(u),
-        "somente_leitura": eh_somente_leitura(u),
     } for u in users]
 
 
@@ -350,7 +406,7 @@ async def create_user(
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
-    _require_admin(current)
+    _exige_tela_usuarios(current)
     email = req.email.strip().lower()
     if not email or "@" not in email:
         raise HTTPException(400, "Email inválido")
@@ -373,19 +429,21 @@ async def create_user(
     # Conta SEM escopo nenhum continua exigindo so `usuarios.criar`: ela nao
     # alcanca nada ate alguem conceder, e e o fluxo comum de cadastrar a pessoa
     # primeiro e ajustar o acesso depois.
-    if req.telas or req.municipio_ids:
+    # ⚠️ `permissoes` entra na MESMA conta: criar alguem ja com as caixinhas
+    # marcadas e conceder tanto quanto marcar telas.
+    if req.telas or req.municipio_ids or req.permissoes:
         authz.exigir(current, "usuarios.conceder")
 
     senha = _gen_senha()
-    somente_leitura = _trava_inicial(req.role, req.somente_leitura)
     user = User(
         email=email,
         name=req.name.strip(),
         password_hash=hash_password(senha),
         role=req.role,
+        funcao=_limpar_texto(req.funcao, 120),
+        whatsapp=_limpar_texto(req.whatsapp, 32),
         active=True,
         must_change_password=True,
-        somente_leitura=somente_leitura,
     )
     db.add(user)
     # `flush` e NAO `commit`: manda o INSERT (e recebe o `user.id`, necessario
@@ -400,6 +458,15 @@ async def create_user(
         await _set_user_municipios(db, user.id, req.municipio_ids)
     if req.telas is not None:
         await _set_user_telas(db, user.id, req.telas)
+    # ⭐ AS CAIXINHAS ENTRAM AQUI, dentro do MESMO flush/commit — e e o que faz o
+    # cadastro ser tudo-ou-nada. Ate 05/09/2026 a tela criava a conta neste
+    # endpoint e concedia num `PUT /api/permissoes/usuario/{id}` logo depois:
+    # falhando a segunda chamada, sobrava uma pessoa cadastrada e cega, com a
+    # senha temporaria ja exibida na tela e sem caminho de repeticao (o e-mail
+    # ja estava tomado).
+    perms = await _gravar_permissoes(
+        db, alvo=user, atual=current,
+        permissoes=req.permissoes, escopos=req.escopos)
     depois = await _snapshot_acessos(db, user.id)
     # `registrar_critico` com `commit=False`: a trilha entra na MESMA transacao da
     # concessao de acesso. Ou as duas coisas gravam, ou nenhuma — e "permissao
@@ -412,10 +479,15 @@ async def create_user(
         target_type="user", target_id=user.id, alvo_nome=user.name,
         details={
             "alvo_email": email, "role": req.role,
-            "somente_leitura": somente_leitura,
+            "funcao": user.funcao,
             "telas": depois["telas"],
             "municipios": depois["municipios"],
             "municipios_nomes": await _nomes_municipios(db, depois["municipios"]),
+            # As caixinhas que a conta JA NASCE tendo. Sem esta linha, "quem deu
+            # essa permissao a essa pessoa" nao teria resposta para o caso mais
+            # comum de todos — o cadastro inicial.
+            "permissoes": perms["depois"] or None,
+            "resumo_permissoes": permissoes_svc.resumo(perms["depois"]) or None,
         },
         commit=False,
     )
@@ -431,7 +503,7 @@ async def reset_password(
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
-    _require_admin(current)
+    _exige_tela_usuarios(current)
     u = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
     if not u:
         raise HTTPException(404, "Usuário não encontrado")
@@ -462,22 +534,20 @@ async def update_user(
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
-    _require_admin(current)
+    _exige_tela_usuarios(current)
     # ⭐ `usuarios.conceder` e SEPARADA de `usuarios.editar`, e as duas entram
     # pelo mesmo PATCH: corrigir o nome de alguem e uma coisa, decidir o que essa
     # pessoa alcanca e outra. Por isso a rota declara o denominador comum
     # (`editar`) e a segunda so e cobrada quando o pedido mexe em ACESSO.
     #
-    # `somente_leitura` entra na conta com telas e municipios porque conceder ou
-    # tirar ESCRITA e a mudanca de poder mais forte que esta tela faz — e o que a
-    # nota de `UpdateUserRequest` ja dizia por outras palavras.
+    # ⚠️ `permissoes` e `escopos` entram na mesma conta desde 05/09/2026: mexer
+    # nas caixinhas e conceder tanto quanto mexer em telas ou municipios.
     #
-    # `authz.exigir` e nao `exige(...)` no decorador: gate NOVO respeita
-    # `AUTHZ_MODO`, entao hoje isto so registra "eu teria negado". A tela de
-    # Usuarios chama esta rota de tres jeitos e so um deles manda estes campos
-    # (frontend .../dashboard/usuarios/page.tsx: acesso, ativar/desativar, papel).
+    # `authz.exigir` e nao `exige(...)` no decorador: gate NOVO, que respeita
+    # `AUTHZ_MODO` — e com o modo em `bloqueio` (default desde 05/09/2026) ele
+    # nega de verdade, e nao mais so registra.
     if (req.telas is not None or req.municipio_ids is not None
-            or req.somente_leitura is not None):
+            or req.permissoes is not None or req.escopos is not None):
         authz.exigir(current, "usuarios.conceder")
     u = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
     if not u:
@@ -490,23 +560,20 @@ async def update_user(
         raise HTTPException(400, "Você não pode rebaixar o próprio perfil de administrador (evita se trancar pra fora)")
     if req.role:
         await _validar_role(db, req.role)
-    # Auto-trancamento: pôr a SI MESMO em somente-leitura e uma porta que fecha
-    # por fora. O guard de `get_current_user` barra todo POST/PUT/PATCH/DELETE
-    # fora do Painel — e este endpoint e um PATCH. A pessoa perderia, no mesmo
-    # ato, a escrita e o unico caminho de desfaze-la: so voltaria por outro admin
-    # ou pelo banco. Mesma familia das duas protecoes acima.
-    if req.somente_leitura is True and u.id == current.id:
-        raise HTTPException(400, "Você não pode se colocar em somente leitura (evita se trancar pra fora)")
+    # ⚠️ A GUARDA DE AUTO-TRANCAMENTO EM SOMENTE-LEITURA saiu com a propria
+    # trava (05/09/2026). O risco que ela cobria mudou de lugar e NAO sumiu:
+    # hoje da para se tirar a tela `usuarios` desmarcando a caixinha, e ai a
+    # pessoa perde a porta que conserta. Quem avisa disso e a TELA (a mesma
+    # confirmacao que ja existia para "voce vai ficar sem nenhuma tela"), e o
+    # servidor nao proibe — pode ser exatamente o que o administrador quer, e a
+    # conta continua recuperavel por outro admin.
+    #
     # Foto do ANTES tirada antes de qualquer atribuicao: `u` e o objeto vivo da
     # sessao, entao ler `u.name` depois do `u.name = ...` ja devolveria o valor
     # novo e o "de -> para" sairia dizendo que nada mudou.
-    #
-    # `somente_leitura` entra no retrato porque conceder ou tirar ESCRITA e a
-    # mudanca de poder mais forte que esta tela faz — sem ela na trilha, "quem
-    # liberou o prefeito para editar, e quando" ficaria sem resposta.
     antes = {"name": u.name, "email": u.email, "role": u.role,
-             "active": bool(u.active),
-             "somente_leitura": bool(u.somente_leitura)}
+             "funcao": u.funcao, "whatsapp": u.whatsapp,
+             "active": bool(u.active)}
     antes.update(await _snapshot_acessos(db, u.id))
     if req.name is not None:
         u.name = req.name.strip()
@@ -518,15 +585,21 @@ async def update_user(
         u.role = req.role
     if req.active is not None:
         u.active = req.active
-    if req.somente_leitura is not None:
-        u.somente_leitura = req.somente_leitura
+    if req.funcao is not None:
+        u.funcao = _limpar_texto(req.funcao, 120)
+    if req.whatsapp is not None:
+        u.whatsapp = _limpar_texto(req.whatsapp, 32)
     if req.municipio_ids is not None:
         await _set_user_municipios(db, u.id, req.municipio_ids)
     if req.telas is not None:
         await _set_user_telas(db, u.id, req.telas)
+    # As caixinhas, no MESMO commit de tudo o mais — ver `_gravar_permissoes`.
+    perms = await _gravar_permissoes(
+        db, alvo=u, atual=current,
+        permissoes=req.permissoes, escopos=req.escopos)
     depois = {"name": u.name, "email": u.email, "role": u.role,
-              "active": bool(u.active),
-              "somente_leitura": bool(u.somente_leitura)}
+              "funcao": u.funcao, "whatsapp": u.whatsapp,
+              "active": bool(u.active)}
     depois.update(await _snapshot_acessos(db, u.id))
     # Critico e ANTES do commit, pelo mesmo motivo do create: conceder acesso e
     # registrar quem concedeu tem de ser um ato so. Aqui a regra e mais forte
@@ -543,6 +616,13 @@ async def update_user(
         details={
             "alvo_email": u.email,
             "permissao": _concessoes(antes, depois) or None,
+            # As CAIXINHAS, na mesma linha que as telas e os municipios — e vao
+            # como GANHOU/PERDEU, e nao "de que lista para que lista": e a
+            # pergunta que o auditor faz, a mesma de `_concessoes`.
+            "acoes_concedidas": sorted(
+                set(perms["depois"]) - set(perms["antes"])) or None,
+            "acoes_retiradas": sorted(
+                set(perms["antes"]) - set(perms["depois"])) or None,
             # Nomes de TODOS os municipios envolvidos (antes ou depois), para o
             # modal explicar a mudanca sem consultar outra tabela.
             "municipios_nomes": await _nomes_municipios(
@@ -553,8 +633,8 @@ async def update_user(
     await db.commit()
     await db.refresh(u)
     # `de_usuario` e nao `model_validate`: a tela reaplica esta resposta na linha
-    # editada, e a coluna crua diria "somente_leitura: false" para uma conta de
-    # quiosque — que o codigo barra pelo papel. Ver `schemas/auth.py`.
+    # editada, e `super_admin` cru da coluna mentiria sobre quem esta na semente
+    # da Alavank. Ver `schemas/auth.py`.
     return UserResponse.de_usuario(u)
 
 
@@ -584,7 +664,7 @@ async def delete_user(
     A limpeza de FKs mora em services/users_admin.py::limpar_fks_do_usuario —
     UMA fonte para este canal e o do Console (routers/control.py), porque as
     duas listas ja divergiram uma vez e o sintoma foi 409 sem remedio."""
-    _require_admin(current)
+    _exige_tela_usuarios(current)
     u = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
     if not u:
         raise HTTPException(404, "Usuário não encontrado")
@@ -604,8 +684,7 @@ async def delete_user(
     # O RETRATO COMPLETO antes do CASCADE apagar as provas: "que acessos essa
     # conta tinha quando foi removida" e a primeira pergunta de uma auditoria,
     # e depois do delete nao ha mais onde responder.
-    retrato = {"alvo_email": u.email, "role": u.role,
-               "somente_leitura": bool(u.somente_leitura)}
+    retrato = {"alvo_email": u.email, "role": u.role, "funcao": u.funcao}
     retrato.update(await _snapshot_acessos(db, u.id))
     retrato["municipios_nomes"] = await _nomes_municipios(db, retrato["municipios"])
     perms = (await db.execute(
@@ -669,7 +748,7 @@ async def copiar_permissoes(
     )
     from services import permissoes as permissoes_svc
 
-    _require_admin(current)
+    _exige_tela_usuarios(current)
     if req.origem_id == user_id:
         raise HTTPException(400, "Origem e destino são o mesmo usuário")
     alvo = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
@@ -691,33 +770,30 @@ async def copiar_permissoes(
     escopos_depois = await _escopos_atuais(db, origem.id)
     _barrar_escalonamento_escopo(current, escopos_antes, escopos_depois)
 
-    antes = {"somente_leitura": bool(alvo.somente_leitura)}
+    antes: dict = {}
     antes.update(await _snapshot_acessos(db, alvo.id))
 
-    # A COPIA: telas + permissoes + alcance + trava de leitura; municipios so
-    # com a caixinha marcada.
+    # A COPIA: telas + permissoes + alcance; municipios so com a caixinha
+    # marcada. (A trava de leitura saiu da copia junto com a propria trava.)
     await _set_user_telas(db, alvo.id, telas_origem)
     await _gravar_concessao(db, alvo.id, antes_p, depois_p, getattr(current, "id", None))
     await _gravar_escopos(db, alvo.id, escopos_antes, escopos_depois,
                           getattr(current, "id", None))
-    alvo.somente_leitura = bool(origem.somente_leitura)
     if req.incluir_municipios:
         ids_origem = [r[0] for r in (await db.execute(
             text("SELECT municipio_id FROM user_municipios WHERE user_id = :u"),
             {"u": origem.id})).fetchall()]
         await _set_user_municipios(db, alvo.id, ids_origem)
 
-    depois = {"somente_leitura": bool(alvo.somente_leitura)}
+    depois: dict = {}
     depois.update(await _snapshot_acessos(db, alvo.id))
     await registrar_critico(
         db, action="usuarios.copiar_permissoes", user=current, request=request,
         target_type="user", target_id=alvo.id, alvo_nome=alvo.name,
         valor_antes={"telas": antes["telas"], "municipios": antes["municipios"],
-                     "permissoes": sorted(antes_p),
-                     "somente_leitura": antes["somente_leitura"]},
+                     "permissoes": sorted(antes_p)},
         valor_depois={"telas": depois["telas"], "municipios": depois["municipios"],
-                      "permissoes": sorted(depois_p),
-                      "somente_leitura": depois["somente_leitura"]},
+                      "permissoes": sorted(depois_p)},
         details={
             "alvo_email": alvo.email,
             # De quem veio o perfil — congelado por nome E e-mail, porque a

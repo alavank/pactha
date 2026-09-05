@@ -37,20 +37,38 @@ COOKIE_NAME_ACCESS = "pactha_access"
 COOKIE_NAME_REFRESH = "pactha_refresh"
 COOKIE_NAME_CSRF = "pactha_csrf"
 
-# SEMENTE da coluna `users.somente_leitura` — o conjunto de papeis que a
-# migration deste incremento usou para marcar quem ja era somente-leitura. NAO e
-# mais a autoridade do guard: quem decide agora e a FLAG. Ver `eh_somente_leitura`.
-READONLY_ROLES = {"prefeito", "viewer"}
+# ⚠️⚠️ A TRAVA «SOMENTE LEITURA» DA CONTA FOI REMOVIDA em 05/09/2026, por decisao
+# do dono, e vale registrar a frase dele porque ela e o desenho novo:
+#
+#     "essa opçao somente leitura tb pode tirar isso, pq era para o prefeito,
+#      nao precisa, prefiro dar permissao de visualizaçao separada pra cada menu
+#      ou modulo dai eu permito so visualizar sem editar nada"
+#
+# O que ela fazia — barrar TODO metodo mutavel da conta inteira, fora de uma
+# allowlist de prefixos do Painel — agora se faz DESMARCANDO as caixinhas de
+# escrita de cada tela, que e mais fino: dava para ter "so leitura" no Cofre e
+# escrita na Gestao Interna, o que a trava de conta nunca permitiu.
+#
+# ⚠️ E SO FICOU VERDADE NO MESMO DEPLOY, quando `AUTHZ_MODO` deixou de ser
+# `aviso`: enquanto o modo era de aviso, quem impedia a escrita era exatamente
+# esta trava, e as caixinhas so registravam na trilha. Tirar uma sem ligar a
+# outra teria aberto a escrita para todo mundo. Ver `services/authz.py::modo`.
+#
+# ⚠️ A COLUNA `users.somente_leitura` CONTINUA NO BANCO, sem leitor. Mesma
+# receita do Telegram e dos modelos de permissao: dropar coluna em cinco bancos
+# de producao para ganhar nada e risco sem premio.
 
-# Papel que NUNCA e rotulo de pessoa, e por isso continua barrando escrita por si
-# so, independentemente da flag. `viewer` nao e oferecido na tela de Usuarios
-# (`routers/users.py::create_user` so aceita admin/analyst/user/prefeito): e a
-# credencial SINTETICA do link publico de TV, criada em tempo de execucao por
-# `routers/bi.py::_ensure_kiosk_user` com INSERT direto em `users`, que nao passa
-# por este modulo e nao sabe da flag nova. Sem este reforco, todo quiosque
-# emitido DEPOIS do deploy nasceria com `somente_leitura = false` — e o link
-# publico, que circula em WhatsApp, perderia a trava de escrita.
-PAPEIS_SEMPRE_SOMENTE_LEITURA = {"viewer"}
+# ⭐ O QUIOSQUE E OUTRA HISTORIA, e por isso este bloco SOBREVIVEU a remocao
+# acima. `viewer` nao e rotulo de pessoa: e a credencial SINTETICA do link
+# publico de TV, criada em tempo de execucao por `routers/bi.py::_ensure_kiosk_user`
+# com INSERT direto em `users`. Ela circula em WhatsApp e vale 365 dias.
+#
+# O guard principal do quiosque e o `ehQuiosque` + `KIOSK_GET_PERMITIDOS` mais
+# abaixo, que le a coluna `kiosk` e recusa qualquer coisa que nao seja um GET de
+# uma lista exata. Este conjunto e o SEGUNDO cinto, para a conta antiga cuja
+# coluna `kiosk` ficou false: sem ele, um `viewer` legado passaria a escrever no
+# dia em que a trava de conta saiu.
+PAPEIS_SINTETICOS_SEM_ESCRITA = {"viewer"}
 
 # SEMENTE das contas DONAS do sistema (Alavank), nao "mais um admin do cliente".
 # Mandam em Sessoes, Tokens de Servico, e sao as unicas que podem alterar umas as
@@ -109,42 +127,15 @@ def is_super_admin(user) -> bool:
     return (getattr(user, "email", "") or "").strip().lower() in SUPER_ADMIN_EMAILS
 
 
-def eh_somente_leitura(user) -> bool:
-    """Este usuario esta proibido de ESCREVER no sistema?
+def eh_credencial_sintetica(user) -> bool:
+    """Conta que NAO e pessoa e por isso nunca escreve — hoje so o quiosque.
 
-    Autoridade = a coluna `users.somente_leitura`, semeada de
-    `role IN ('prefeito','viewer')` pela migration deste incremento. Testar a
-    FLAG e nao o PAPEL e o que cumpre a regra do dono: `prefeito` passa a ser
-    ROTULO de organizacao interna, e o prefeito que precisar lancar alguma coisa
-    ganha escrita INDIVIDUALMENTE — sem deixar de aparecer como prefeito na
-    tela, e sem que isso escreva nada para os outros prefeitos do sistema.
-    O inverso tambem passa a existir: um usuario marcado `admin` pode ser posto
-    em somente-leitura, o que antes era impossivel.
-
-    `viewer` continua barrado pelo PAPEL — ver `PAPEIS_SEMPRE_SOMENTE_LEITURA`.
-    Nao e a regra velha sobrando: e a unica marca que o quiosque criado em tempo
-    de execucao carrega.
-    """
-    if bool(getattr(user, "somente_leitura", False)):
-        return True
-    return (getattr(user, "role", "") or "") in PAPEIS_SEMPRE_SOMENTE_LEITURA
-
-
-READONLY_WRITE_ALLOW = (
-    "/api/painel/push", "/api/painel/preferencias",
-    "/api/bi/push", "/api/bi/preferencias",
-    # Modo Tela: o prefeito tambem filtra e publica a propria TV. Escreve so na
-    # PROPRIA linha (chaveada por user_id) e nos PROPRIOS links — nao alcanca
-    # dado operacional nem o ambiente de outro gestor.
-    "/api/bi/tela-filtros", "/api/bi/tela-links",
-    # TELEMETRIA. Sem esta linha o perfil somente-leitura — que inclui o
-    # PREFEITO, justamente quem mais interessa entender — tomaria 403 a cada
-    # 45 segundos e geraria zero dado de uso. A rota nao escreve dado
-    # operacional: so a propria sessao (chaveada pelo user_id do token) e
-    # eventos de navegacao dela.
-    # ⚠️ `startswith`: nao criar sub-rota sob este prefixo sem reler isto.
-    "/api/uso/lote",
-)
+    ⚠️ NAO E a antiga `eh_somente_leitura`. Aquela lia a coluna
+    `users.somente_leitura` e valia para PESSOAS (o prefeito); esta olha so o
+    papel sintetico do link publico de TV. A trava por pessoa saiu em 05/09/2026
+    — ver o bloco no topo do modulo — e foi substituida pelas caixinhas de
+    escrita de cada tela."""
+    return (getattr(user, "role", "") or "") in PAPEIS_SINTETICOS_SEM_ESCRITA
 
 # ---------------------------------------------------------------------------
 # QUIOSQUE — o que o link PUBLICO de TV pode alcancar
@@ -379,19 +370,20 @@ async def get_current_user(
     # nao tem nada. `definir_contexto` nunca levanta.
     authz.definir_contexto(request, user)
 
-    # Somente-leitura (ex.: prefeito no Painel Executivo, TV do gabinete): barra
-    # qualquer metodo mutavel fora dos endpoints proprios do Painel.
-    # Defense-in-depth centralizado — TODO endpoint autenticado passa por aqui,
-    # entao vale mesmo que o usuario descubra a URL de um endpoint de escrita.
+    # ⚠️ A TRAVA DE CONTA «somente leitura» SAIU em 05/09/2026 (ver o topo do
+    # modulo). O que barra escrita agora e a caixinha de cada tela, cobrada por
+    # `exige()` em cada rota — e ela so passou a barrar de verdade no mesmo
+    # deploy, quando `AUTHZ_MODO` deixou de ser `aviso`.
     #
-    # O teste passou de PAPEL para FLAG (`eh_somente_leitura`), e a cobertura NAO
-    # afrouxou: `prefeito` marcado hoje continua marcado (a migration semeou a
-    # flag do papel) e `viewer` continua barrado pelo papel, porque o quiosque
-    # nasce fora daqui. O que mudou e que agora da para conceder escrita a UM
-    # prefeito sem conceder a todos.
-    if eh_somente_leitura(user) and request.method in ("POST", "PUT", "PATCH", "DELETE"):
-        if not request.url.path.startswith(READONLY_WRITE_ALLOW):
-            raise HTTPException(status_code=403, detail="Perfil somente-leitura")
+    # O que sobrou aqui e a credencial SINTETICA: o `viewer` do link publico de
+    # TV nunca escreve, e sem allowlist nenhuma. O quiosque nao tem "escrita
+    # legitima" — o bloco logo abaixo ja o limita a uma lista exata de GETs, e
+    # este e o segundo cinto para a conta legada cuja coluna `kiosk` ficou false.
+    if (eh_credencial_sintetica(user)
+            and request.method in ("POST", "PUT", "PATCH", "DELETE")):
+        raise HTTPException(
+            status_code=403,
+            detail="Este link só alcança o Painel de Indicadores")
 
     # QUIOSQUE: so as leituras que a TV e o celular realmente fazem.
     #
@@ -408,6 +400,64 @@ async def get_current_user(
             )
 
     return user
+
+
+# ---------------------------------------------------------------------------
+# ⭐⭐ COMPATIBILIDADE DAS TELAS RENOMEADAS — a rede que NAO depende de migration
+# ---------------------------------------------------------------------------
+# Em 05/09/2026 duas chaves de tela viraram dezoito: `transferegov` -> as 8
+# telas do grupo FEDERAIS, `convenios` -> as 10 do grupo ESTADUAIS (das quais 8
+# eram novas). `add_permissoes_por_tela.sql` traduz as linhas de `user_telas` e
+# `user_permissoes` de todo mundo.
+#
+# ⚠️ MAS UMA MIGRATION QUE FALHA NAO DERRUBA O BOOT — ela loga e o processo
+# segue (`services/startup.py`, o `except` que so trata "already exists"). Com
+# `AUTHZ_MODO=bloqueio` ligado no MESMO deploy, o desfecho de uma falha ali
+# seria: API no ar, ninguem traduzido, e todo usuario perdendo os dois maiores
+# grupos do menu — em cinco prefeituras, em silencio.
+#
+# E `AUTHZ_MODO=aviso` NAO SALVARIA: `ensure_tela` e da familia antiga e nega
+# nos DOIS modos. A valvula de escape que existe para as caixinhas nao existe
+# para as telas.
+#
+# Entao a compatibilidade mora AQUI, no codigo, e nao no dado: quem tem a chave
+# antiga tem as novas, tenha a migration rodado ou nao. Custa um `if` por
+# requisicao e torna o deploy reversivel por rollback de imagem, que e a unica
+# reversao que sempre funciona.
+#
+# ⚠️ ISTO NAO SUBSTITUI A MIGRATION, e nem torna a coisa permanente: a migration
+# grava as chaves NOVAS, que sao as que a tela de Usuarios desenha e edita. Sem
+# ela o administrador veria as telas novas desmarcadas para quem, na pratica,
+# tem acesso — e desmarcar o que ja esta desmarcado nao tira nada. Este mapa e a
+# rede de seguranca do intervalo entre o deploy e a migration ter rodado,
+# e sai quando os cinco bancos estiverem confirmados.
+TELAS_RENOMEADAS: dict = {
+    "transferegov": (
+        "transferegov_radar", "transferegov_geral", "transferegov_especiais",
+        "transferegov_pac", "transferegov_voluntarias",
+        "transferegov_rejeitadas", "transferegov_encerradas",
+        "transferegov_cnpj",
+    ),
+    # `convenios` CONTINUA sendo tela (a de Convenios Estaduais). O que ela ganha
+    # sao as oito que estavam escondidas dentro dela.
+    "convenios": (
+        "repasses", "cofinanciamento", "monitoramento", "consulta_popular",
+        "programas_rs", "funrigs", "emendas_rs", "tce_rs",
+    ),
+    # A aba Telemetria usava a chave `auditoria` — a de outra coisa.
+    "auditoria": ("telemetria",),
+}
+
+
+def expandir_telas_legadas(telas: set) -> set:
+    """As telas da pessoa, mais as que as chaves antigas passaram a significar.
+
+    Idempotente: rodar sobre um conjunto ja traduzido nao muda nada."""
+    saida = set(telas)
+    for antiga, novas in TELAS_RENOMEADAS.items():
+        if antiga in saida:
+            saida.update(novas)
+    return saida
 
 
 async def load_user_scopes(db: AsyncSession, user: User) -> None:
@@ -459,7 +509,7 @@ async def load_user_scopes(db: AsyncSession, user: User) -> None:
     user.allowed_municipio_ids = {r[0] for r in mrows.fetchall()}
     trows = await db.execute(
         text("SELECT tela FROM user_telas WHERE user_id = :u"), {"u": user.id})
-    user.allowed_telas = {r[0] for r in trows.fetchall()}
+    user.allowed_telas = expandir_telas_legadas({r[0] for r in trows.fetchall()})
     user.allowed_permissoes = await _carregar_permissoes(db, user.id)
     user.allowed_escopos = await _carregar_escopos(db, user.id)
 

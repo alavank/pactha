@@ -166,22 +166,53 @@ def test_as_emendas_estaduais_cobrem_os_estados_com_coletor():
     assert _ufs_dos_recursos()["emendas"] == _ufs_do_mapa("FONTE_EMENDAS_ESTADUAIS")
 
 
-def test_convenios_cobre_o_grupo_estaduais_inteiro():
-    """⚠️ `convenios.ver` NAO governa so a tela de Convenios: e a chave de todo o
-    grupo «Estaduais» do menu — Repasses e Cofinanciamento (GO) e as cinco do RS
-    passam pela mesma permissao e pela mesma `ensure_tela(.., "convenios")`.
-    Ver routers/repasses.py, cofinanciamento.py, consulta_popular.py,
-    programas_rs.py e conteudo_rs.py.
+def test_cada_tela_do_grupo_estaduais_carrega_o_proprio_estado():
+    """⭐ ERA O CONTRARIO ATE 05/09/2026, e a inversao e o incremento inteiro.
 
-    Entao a abrangencia dela e a UNIAO dos mapas dessas telas. Um estado que
-    ganhe qualquer uma delas e nao entre aqui fica com o menu mostrando a tela e
-    o cadastro de usuarios sem a caixinha para libera-la."""
+    Ate aqui `convenios.ver` governava as DEZ telas do grupo «Estaduais» do
+    menu, e por isso a abrangencia dela tinha de ser a UNIAO dos mapas de todas
+    elas — (MG, ES, GO, RS). O efeito colateral era o que o dono mandou
+    consertar: liberar «Convênios Estaduais» concedia junto Repasses,
+    Cofinanciamento, Monitoramento e as quatro do RS, sem jeito de separar.
+
+    Agora cada tela tem chave e UF proprias, e a conferencia e uma a uma: uma UF
+    que ganhe a fonte de uma delas e nao entre no catalogo fica com o menu
+    mostrando a tela e o cadastro de usuarios sem a caixinha para libera-la.
+
+    ⚠️ E A UNIAO CONTINUA SENDO CONFERIDA no fim: nenhum estado pode ter sumido
+    do grupo na divisao — que e o defeito que a divisao poderia introduzir."""
+    recursos = _ufs_dos_recursos()
+    por_tela = {
+        "convenios": "FONTE_CONVENIOS_ESTADUAIS",
+        "repasses": "REPASSES_POR_UF",
+        "cofinanciamento": "COFINANCIAMENTO_POR_UF",
+        "consulta_popular": "CONSULTA_POPULAR_POR_UF",
+        "programas_rs": "PROGRAMAS_POR_UF",
+        "funrigs": "CONTEUDO_ESTADUAL_POR_UF",
+        "emendas_rs": "CONTEUDO_ESTADUAL_POR_UF",
+        "tce_rs": "CONTEUDO_ESTADUAL_POR_UF",
+    }
+    for chave, mapa in por_tela.items():
+        assert recursos[chave] == _ufs_do_mapa(mapa), (
+            f"{chave}: catalogo diz {sorted(recursos[chave])} e {mapa} diz "
+            f"{sorted(_ufs_do_mapa(mapa))}")
+
+    # `monitoramento` nao sai de um dos mapas acima: ele espelha
+    # `MONITORAMENTO_POR_UF`, que existe onde a NORMA estadual cria a obrigacao.
+    assert recursos["monitoramento"] == _ufs_do_mapa("MONITORAMENTO_POR_UF")
+
+    # A uniao: o grupo inteiro continua cobrindo os mesmos estados de antes da
+    # divisao. Se esta linha cair, alguma tela perdeu o estado dela no caminho.
+    uniao = set()
+    for chave in list(por_tela) + ["monitoramento"]:
+        uniao |= recursos[chave]
     esperado = set()
     for mapa in ("FONTE_CONVENIOS_ESTADUAIS", "REPASSES_POR_UF",
                  "COFINANCIAMENTO_POR_UF", "CONSULTA_POPULAR_POR_UF",
-                 "PROGRAMAS_POR_UF", "CONTEUDO_ESTADUAL_POR_UF"):
+                 "PROGRAMAS_POR_UF", "CONTEUDO_ESTADUAL_POR_UF",
+                 "MONITORAMENTO_POR_UF"):
         esperado |= _ufs_do_mapa(mapa)
-    assert _ufs_dos_recursos()["convenios"] == esperado
+    assert uniao == esperado
 
 
 def test_o_acordo_fes_e_so_de_minas():

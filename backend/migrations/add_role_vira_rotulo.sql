@@ -98,8 +98,31 @@ WITH marca AS (
     VALUES ('dashboard'), ('ai'), ('parlamentares'),
            ('gestao'), ('agendamentos'), ('rm'), ('documentos'),
            ('convenios'), ('emendas'),
-           ('transferegov'), ('cauc'), ('sismob'), ('obrasgov'),
+           ('cauc'), ('sismob'), ('obrasgov'),
            ('acordofes'), ('fns'),
+           -- ⭐⭐ O INCREMENTO «PERMISSAO POR TELA» (05/09/2026).
+           --
+           -- ⚠️ `transferegov` SAIU: deixou de ser tela quando o grupo FEDERAIS
+           -- virou oito folhas de menu com chave propria. A chave sobrevive no
+           -- catalogo de PERMISSOES so para «Atualizar dados» (a coleta, cujo
+           -- botao mora em Configuracoes › Sessões), e por isso nao entra numa
+           -- lista de TELAS.
+           --
+           -- Mesma logica de `investsus` e `agendamentos` acima: este bloco e
+           -- guardado pela marca em `migration_backfills`, entao so alcanca
+           -- TENANT NOVO — e um tenant novo deve nascer com o administrador
+           -- vendo o produto inteiro. Nos cinco bancos ja no ar, quem traduz as
+           -- concessoes e `add_permissoes_por_tela.sql`.
+           ('transferegov_radar'), ('transferegov_geral'),
+           ('transferegov_especiais'), ('transferegov_pac'),
+           ('transferegov_voluntarias'), ('transferegov_rejeitadas'),
+           ('transferegov_encerradas'), ('transferegov_cnpj'),
+           ('repasses'), ('cofinanciamento'), ('monitoramento'),
+           ('consulta_popular'), ('programas_rs'), ('funrigs'),
+           ('emendas_rs'), ('tce_rs'),
+           -- As quatro abas de Configuracoes que eram governadas pelo PAPEL
+           -- `admin` e viraram telas de verdade.
+           ('telemetria'), ('frescor'), ('usuarios'), ('parametros'),
            -- ⚠️ `suas` SAIU DESTA LISTA depois que a tela foi aposentada (o
            -- painel do MDS vive dentro de `paineis`). Editar migration já
            -- aplicada seria proibido se ela pudesse rodar de novo — esta NÃO

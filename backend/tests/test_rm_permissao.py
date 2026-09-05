@@ -736,13 +736,16 @@ def test_exigir_municipio_do_authz_respeita_o_modo(monkeypatch, envios):
     assert [x["acao"] for x in envios] == [authz.ACAO_NEGOU]
 
 
-def test_modo_desconhecido_cai_em_aviso(monkeypatch, envios):
-    """Fail-OPEN de proposito: digitar `bloqueiop` na env nao pode LIGAR a trava
-    sem ninguem ter pedido. O default e o que NAO quebra."""
-    _modo(monkeypatch, "bloqueiop")
-    assert authz.modo() == "aviso"
-    _, resp = _rodar("detalhe", Usuario(**SEM_A_TELA))
-    assert resp["id"] == 1
+def test_modo_desconhecido_cai_em_bloqueio(monkeypatch, envios):
+    """⭐ INVERTEU em 05/09/2026, junto com o default de `AUTHZ_MODO` (ver
+    `services/authz.py::modo`): digitar `avisoo` na env nao pode DESLIGAR a trava
+    sem ninguem ter pedido. O fail-safe continua existindo — so mudou de lado,
+    porque agora e a trava que protege, e nao a ausencia dela."""
+    _modo(monkeypatch, "avisoo")
+    assert authz.modo() == "bloqueio"
+    with pytest.raises(HTTPException) as e:
+        _rodar("detalhe", Usuario(**SEM_A_TELA))
+    assert e.value.status_code == 403
 
 
 # ---------------------------------------------------------------------------

@@ -15,7 +15,32 @@ TELAS_CATALOG = [
     {"key": "documentos", "label": "Geração de Documentos"},
     {"key": "convenios", "label": "Convênios Estaduais"},
     {"key": "emendas", "label": "Emendas Estaduais"},
-    {"key": "transferegov", "label": "Transfere Gov"},
+    # ⭐ «Transfere Gov» virou OITO telas em 05/09/2026 (uma por folha do menu),
+    # e o Console passa a oferecer as oito: era uma caixinha que concedia sete
+    # telas de uma vez, e o administrador nao tinha como saber disso.
+    {"key": "transferegov_radar", "label": "Radar de captação"},
+    {"key": "transferegov_geral", "label": "Federais — Em execução"},
+    {"key": "transferegov_especiais", "label": "Federais — Especiais"},
+    {"key": "transferegov_pac", "label": "Federais — PAC (Novo PAC)"},
+    {"key": "transferegov_voluntarias", "label": "Federais — Voluntárias"},
+    {"key": "transferegov_rejeitadas", "label": "Federais — Rejeitadas"},
+    {"key": "transferegov_encerradas", "label": "Federais — Encerradas"},
+    {"key": "transferegov_cnpj", "label": "Federais — CNPJ"},
+    # As oito do grupo ESTADUAIS que estavam dentro de `convenios`. ⚠️ MESMO
+    # TEXTO de `frontend/src/lib/telas.ts` — dois nomes para a mesma chave fazem
+    # o administrador achar que sao duas permissoes diferentes.
+    {"key": "repasses", "label": "Repasses Estaduais"},
+    {"key": "cofinanciamento", "label": "Cofinanciamento da Saúde"},
+    {"key": "monitoramento", "label": "Monitoramento de Convênios"},
+    {"key": "consulta_popular", "label": "Consulta Popular"},
+    {"key": "programas_rs", "label": "Programas do Estado"},
+    {"key": "funrigs", "label": "Plano Rio Grande"},
+    {"key": "emendas_rs", "label": "Emendas Estaduais RS"},
+    {"key": "tce_rs", "label": "TCE-RS"},
+    # A Telemetria ganhou tela propria: ate 05/09/2026 a aba usava a chave
+    # `auditoria`, entao conceder a trilha concedia junto o horario de trabalho
+    # de todo mundo. Entra no catalogo do cliente pela mesma razao da Auditoria.
+    {"key": "telemetria", "label": "Telemetria (uso do sistema)"},
     # ⚠️ MESMO TEXTO de `frontend/src/lib/telas.ts`: a Central monta o
     # formulario de permissoes pelo catalogo daqui e o cliente pelo de la —
     # dois nomes para a mesma chave fazem o administrador achar que sao duas
@@ -66,9 +91,27 @@ TELAS_TODAS = [
     # `telegram` SAIU em 05/09/2026, pelo mesmo caminho de `suas`: modulo
     # removido do codigo, tela removida dos tres catalogos.
     "dashboard", "ai", "parlamentares", "gestao", "agendamentos", "rm",
-    "documentos", "convenios", "emendas", "transferegov", "cauc", "sismob",
+    "documentos", "convenios", "emendas", "cauc", "sismob",
     "obrasgov",
     # `suas` SAIU: o painel do MDS vive dentro de `paineis` (ver telas.ts).
     "acordofes", "fns", "investsus", "simec", "paineis", "bi", "bi_tela",
     "bi_link", "dou", "cofre", "sessoes", "auditoria",
+    # ⭐⭐ AS DEZOITO DO INCREMENTO «PERMISSAO POR TELA» (05/09/2026).
+    #
+    # ⚠️ `transferegov` SAIU desta lista: ela deixou de ser TELA. A chave
+    # continua existindo no catalogo de permissoes, mas so para a acao
+    # «Atualizar dados» — a coleta, que nao e de tela nenhuma (o botao mora em
+    # Configuracoes › Sessões). As oito telas do grupo FEDERAIS a substituem.
+    "transferegov_radar", "transferegov_geral", "transferegov_especiais",
+    "transferegov_pac", "transferegov_voluntarias", "transferegov_rejeitadas",
+    "transferegov_encerradas", "transferegov_cnpj",
+    # As oito que estavam escondidas dentro de `convenios` (que continua sendo
+    # tela, a de Convenios Estaduais propriamente dita).
+    "repasses", "cofinanciamento", "monitoramento", "consulta_popular",
+    "programas_rs", "funrigs", "emendas_rs", "tce_rs",
+    # As quatro abas de Configuracoes que eram governadas pelo PAPEL `admin` e
+    # viraram telas de verdade. `telemetria` estava usando a chave `auditoria`,
+    # que e de outra coisa — liberar a trilha liberava o horario de trabalho de
+    # todo mundo junto.
+    "telemetria", "frescor", "usuarios", "parametros",
 ]

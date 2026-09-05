@@ -30,7 +30,7 @@ from services.registro_rotas import exige
 router = APIRouter(prefix="/api/programas-rs", tags=["programas-rs"])
 
 
-@router.get("", dependencies=[exige("convenios.ver")])
+@router.get("", dependencies=[exige("programas_rs.ver")])
 async def programas(
     municipio_id: int = Query(...),
     db: AsyncSession = Depends(get_db),
@@ -38,7 +38,7 @@ async def programas(
 ):
     """Catálogo dos programas estaduais gaúchos de fomento."""
     ensure_municipio_access(current, municipio_id)
-    ensure_tela(current, "convenios")
+    ensure_tela(current, "programas_rs")
 
     uf = (await db.execute(text(
         "SELECT upper(coalesce(uf, '')) FROM municipios WHERE id = :m"),

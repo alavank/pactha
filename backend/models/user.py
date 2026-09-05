@@ -26,11 +26,19 @@ class User(Base):
     # colunas). Sem default NO BANCO, um NOT NULL sem valor viraria erro de
     # insercao em vez de FALSE.
     super_admin = Column(Boolean, default=False, nullable=False, server_default="false")
-    # Trava de ACAO por USUARIO. Antes vinha do papel (READONLY_ROLES =
-    # {'prefeito','viewer'} em services/auth.py), e por isso marcar alguem como
-    # prefeito decidia o acesso dele. Separada do rotulo, da para ter dois
-    # prefeitos com acessos diferentes — e um deles podendo escrever.
+    # ⚠️ APOSENTADA em 05/09/2026: NINGUEM MAIS LE ESTA COLUNA. A trava de conta
+    # «somente leitura» saiu por decisao do dono e foi substituida pelas
+    # caixinhas de escrita de cada tela — ver o bloco no topo de
+    # `services/auth.py`. A coluna fica porque dropa-la em cinco bancos de
+    # producao seria risco sem premio; o mapeamento fica para o INSERT de
+    # quiosque de `routers/bi.py`, que ainda a preenche, nao continuar quebrando.
     somente_leitura = Column(Boolean, default=False, nullable=False, server_default="false")
+    # ⭐ CADASTRO (05/09/2026) — os dois SEM efeito nenhum em permissao.
+    # `funcao` e o cargo na organizacao ("Secretário de Administração"), texto
+    # livre porque cada prefeitura nomeia os cargos dela. `whatsapp` e o numero
+    # para os disparos que o sistema vai fazer.
+    funcao = Column(String(120))
+    whatsapp = Column(String(32))
     # Conta de QUIOSQUE (TV/celular publicados por link). Marca no USUARIO e nao
     # no token: o refresh nao repassa claim, entao claim nao sobrevive a um 401.
     # Ver migrations/add_users_kiosk.sql.

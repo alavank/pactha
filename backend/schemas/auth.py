@@ -21,11 +21,16 @@ class UserResponse(BaseModel):
     # `role == "admin"`; hoje o admin do cliente recebe a lista dele.
     telas: Optional[list[str]] = None
     municipio_ids: Optional[list[int]] = None
-    # As duas condicoes que NAO se leem do papel. Vao CALCULADAS pelos helpers
-    # (`is_super_admin` / `eh_somente_leitura`), como em `GET /users`, e nunca
-    # cruas da coluna: quem esta na semente da Alavank manda no sistema mesmo com
-    # a coluna em `false`, e mandar `false` ali seria a resposta mentindo sobre
-    # quem tem a chave.
+    # ⭐ Cadastro: cargo na organizacao e WhatsApp. Nao concedem nada.
+    funcao: Optional[str] = None
+    whatsapp: Optional[str] = None
+    # A condicao que NAO se le do papel. Vai CALCULADA pelo helper
+    # (`is_super_admin`), como em `GET /users`, e nunca crua da coluna: quem esta
+    # na semente da Alavank manda no sistema mesmo com a coluna em `false`, e
+    # mandar `false` ali seria a resposta mentindo sobre quem tem a chave.
+    #
+    # ⚠️ `somente_leitura` SAIU deste schema em 05/09/2026 junto com a trava de
+    # conta (ver `services/auth.py`). O frontend nao a le mais.
     #
     # ⚠️ Sem estes dois campos, `GET /auth/me` e `GET /users` DISCORDAVAM: o
     # backend ja aceitava um dono promovido por UPDATE na coluna, mas a sidebar
@@ -36,7 +41,6 @@ class UserResponse(BaseModel):
     # Somente LEITURA: nao ha rota que aceite nenhum dos dois de volta neste
     # schema (`RegisterRequest`/`UpdateUserRequest` sao outros modelos).
     super_admin: bool = False
-    somente_leitura: bool = False
 
     class Config:
         from_attributes = True
@@ -48,17 +52,15 @@ class UserResponse(BaseModel):
         Existe para os tres pontos que respondiam um usuario (`/auth/me`,
         `/auth/register`, `PATCH /users/{id}`) nao calcularem cada um o seu:
         `model_validate` sozinho copia a COLUNA crua, e coluna crua nao e a
-        resposta certa para nenhuma das duas flags — `is_super_admin` e
-        `eh_somente_leitura` somam a coluna com o reforco do codigo, e e a soma
-        que vale em tempo de execucao.
+        resposta certa para `super_admin` — `is_super_admin` soma a coluna com o
+        reforco do codigo, e e a soma que vale em tempo de execucao.
 
         Import tardio de proposito: `services.auth` puxa `database` e `config` na
         importacao, e este modulo e carregado por `schemas/__init__.py` bem cedo.
         """
-        from services.auth import is_super_admin, eh_somente_leitura
+        from services.auth import is_super_admin
         resp = cls.model_validate(user)
         resp.super_admin = is_super_admin(user)
-        resp.somente_leitura = eh_somente_leitura(user)
         return resp
 
 

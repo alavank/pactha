@@ -41,6 +41,18 @@ export interface Permissao {
    *  Vem do backend (`Permissao.ufs`), como todo o resto deste catalogo — nao
    *  ha lista de UF escrita neste arquivo. Ver `filtrarCatalogoPorUfs`. */
   ufs?: string[];
+  /** ⭐ A FOLHA DO MENU que esta caixinha governa — a chave de `user_telas`.
+   *
+   *  E a DOBRADICA entre este catalogo e `lib/menu.ts`: a arvore de permissoes
+   *  percorre o menu e casa cada folha com as acoes por este campo. Ver
+   *  `lib/arvorePermissoes.ts`.
+   *
+   *  Vazio = capacidade sem tela (hoje so `transferegov.atualizar`, cujo botao
+   *  mora em Configuracoes › Sessões). */
+  tela?: string;
+  /** A chave existe no catalogo e NAO abre rota nenhuma — marcar nao faz nada.
+   *  A arvore as esconde; ver `Catalogo.inertes`. */
+  inerte?: boolean;
 }
 
 export interface RecursoCatalogo {
@@ -83,23 +95,11 @@ export interface CatalogoEscopos {
   recursos: Record<string, { recurso: string; recurso_rotulo: string; permissoes: string[] }>;
 }
 
-/** O VOCABULARIO DO MOLDE, inteiro vindo da API (`catalogo.modelos`).
- *
- *  ⚠️ Mesma regra do alcance: nem os modos de aplicacao nem o aviso de que
- *  aplicar E COPIAR sao escritos no JavaScript. O aviso em especial e exigencia
- *  do dono — a tela TEM de dizer que nao ha vinculo —, e uma segunda redacao
- *  dele aqui viraria duas telas explicando a mesma regra de dois jeitos. */
-export interface ModoAplicacao {
-  valor: string;
-  rotulo: string;
-  descricao: string;
-}
-
-export interface CatalogoModelos {
-  default: string;
-  modos: ModoAplicacao[];
-  aviso: string;
-}
+// ⚠️ `ModoAplicacao` e `CatalogoModelos` SAIRAM em 05/09/2026 com o subsistema
+// de MODELOS DE PERMISSAO inteiro (decisao do dono: "nao quero modelos ou molde
+// de permissoes... prefiro mais ainda a forma de criar na mao um a um"). O
+// atalho que ficou no lugar e COPIAR as permissoes de outro usuario ja
+// cadastrado, que e copia explicita de UMA pessoa para outra.
 
 export interface SecaoCatalogo {
   chave: string;
@@ -117,22 +117,25 @@ export interface Catalogo {
    *  oferecer "somente os que ele criou" num servidor que nao confere autor
    *  nenhum seria uma trava de mentira, que e pior do que trava nenhuma. */
   escopos?: CatalogoEscopos;
-  /** Opcional pela mesma razao de `escopos`: contra uma API anterior aos moldes
-   *  o campo nao vem, e a tela nao inventa modo nenhum — aplica substituindo,
-   *  que e o padrao do servidor, e nao oferece escolha que ele nao conhece. */
-  modelos?: CatalogoModelos;
+  /** ⭐ AS CHAVES INERTES — as que existem no catalogo e nao abrem rota nenhuma
+   *  (`services/permissoes.py::PERMISSOES_INERTES`). A arvore de permissoes as
+   *  ESCONDE: caixinha que promete e nao entrega e pior que caixinha faltando —
+   *  o administrador marca, salva, e nada muda.
+   *
+   *  Vem da API pelo mesmo motivo do resto: uma copia da lista aqui divergiria
+   *  em silencio no dia em que uma delas ganhasse endpoint. */
+  inertes?: string[];
 }
 
 /** O que o PROPRIO usuario pode — ja resolvido pela funcao pura do backend.
  *
  *  Nao e a lista de caixinhas marcadas dele: super-admin recebe tudo sem ter
- *  caixinha nenhuma, e conta em somente-leitura perde os verbos de escrita. E o
- *  conjunto EFETIVO, que e o que decide o anti-escalonamento da tela. */
+ *  caixinha nenhuma. E o conjunto EFETIVO, que e o que decide o
+ *  anti-escalonamento da tela. */
 export interface MinhasPermissoes {
   chaves: string[];
   resumo: string[];
   super_admin: boolean;
-  somente_leitura: boolean;
   /** `aviso` = a trava so registra "eu teria negado"; `bloqueio` = nega mesmo.
    *  A tela diz isso em portugues para ninguem concluir que a permissao nao
    *  funcionou ao ver um botao que ainda responde. */
@@ -280,28 +283,24 @@ export async function buscarConcedidas(): Promise<ConcedidasResposta> {
  *  mesma decisao ("o que essa pessoa faz aqui"), e separa-los em duas chamadas
  *  criaria o estado meio-salvo — a caixinha de Editar gravada e o alcance nao —
  *  que ninguem consegue ler na trilha depois. */
+/** Grava SO as caixinhas e o alcance, sem tocar em dados nem em telas.
+ *
+ *  ⚠️ O MODAL DE USUARIO NAO USA ESTA FUNCAO. Ele salva tudo — dados,
+ *  municipios, telas e caixinhas — num `POST`/`PATCH /api/users` so, porque o
+ *  cadastro tem de ser tudo-ou-nada: com duas chamadas, um erro entre elas
+ *  deixava a pessoa cadastrada e cega, com a senha temporaria ja exibida na
+ *  tela e sem caminho de repeticao (o e-mail ja estava tomado).
+ *
+ *  Esta continua existindo para quem mexe SO em permissao — e o `PUT` continua
+ *  sendo a mesma porta com as mesmas guardas no servidor. */
 export async function salvarPermissoes(
   userId: number,
   chaves: string[],
   escopos: MapaEscopos,
-  /** ⚠️ DE ONDE ESTE SALVAR PARTIU — so para a TRILHA, e nao cria vinculo
-   *  nenhum: nao ha coluna ligando usuario a modelo, aqui nem no banco.
-   *
-   *  Vai mesmo depois de o administrador ajustar as caixinhas na mao, e o
-   *  servidor NAO confere se elas batem com as do modelo — elas nao devem
-   *  bater. A pergunta que este campo responde e "de onde ele partiu"; o que
-   *  ficou gravado a trilha mede sozinha, no `valor_antes`/`valor_depois` da
-   *  mesma linha. Sem ele, a auditoria da aplicacao de um molde apareceria como
-   *  trinta caixinhas mudadas do nada. */
-  origem?: { modeloId: number; modo: string },
 ): Promise<string[]> {
   const r = await api.put<{ permissoes: string[] }>(
     `/permissoes/usuario/${userId}`,
-    {
-      permissoes: chaves,
-      escopos,
-      ...(origem ? { modelo_id: origem.modeloId, modelo_modo: origem.modo } : {}),
-    },
+    { permissoes: chaves, escopos },
   );
   return r.data?.permissoes ?? chaves;
 }

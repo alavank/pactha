@@ -142,11 +142,16 @@ def test_super_admin_concede_qualquer_uma():
     rota._barrar_escalonamento(dono, set(), set(permissoes.TODAS))
 
 
-def test_editor_em_somente_leitura_nao_concede_escrita():
-    """A funcao pura subtrai os verbos de escrita do conjunto EFETIVO, e e o
-    efetivo que vale aqui. Na pratica o guard de somente-leitura ja barra o PUT
-    antes; esta e a segunda trava, para o dia em que a primeira mudar."""
-    editor = Usuario(permissoes={"rm.ver", "rm.excluir"}, somente_leitura=True)
+def test_editor_sem_a_caixinha_de_escrita_nao_concede_escrita():
+    """⭐ ERA `test_editor_em_somente_leitura_nao_concede_escrita` ate
+    05/09/2026, quando a trava de conta saiu (ver `services/auth.py`). A regra
+    que ele guarda nao mudou nem um pouco — e a mesma de sempre, e a mais
+    importante deste arquivo: ninguem concede o que nao tem.
+
+    O que mudou foi COMO a pessoa fica sem a escrita. Antes era a trava da conta
+    subtraindo os verbos do conjunto efetivo; agora e simplesmente a caixinha
+    desmarcada. O anti-escalonamento le o efetivo nos dois casos."""
+    editor = Usuario(permissoes={"rm.ver"})
     rota._barrar_escalonamento(editor, set(), {"rm.ver"})
     with pytest.raises(HTTPException):
         rota._barrar_escalonamento(editor, set(), {"rm.excluir"})

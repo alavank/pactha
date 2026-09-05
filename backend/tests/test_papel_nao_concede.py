@@ -30,7 +30,7 @@ from services import authz
 from services.auth import (
     SUPER_ADMIN_EMAILS,
     create_access_token,
-    eh_somente_leitura,
+    eh_credencial_sintetica,
     get_current_user,
     is_super_admin,
     load_user_scopes,
@@ -190,33 +190,31 @@ def test_is_super_admin_normaliza_o_email():
 
 
 # ---------------------------------------------------------------------------
-# 3. Somente-leitura virou flag, sem afrouxar o quiosque
+# 3. A CREDENCIAL SINTETICA — o que sobrou da trava de escrita
 # ---------------------------------------------------------------------------
-def test_flag_manda_mesmo_com_papel_de_admin():
-    """O que era impossivel ate aqui: um usuario marcado `admin` posto em
-    somente-leitura."""
-    assert eh_somente_leitura(Usuario(role="admin", somente_leitura=True))
+# ⚠️ ESTA SECAO ENCOLHEU EM 05/09/2026. A trava de conta «somente leitura» foi
+# removida por decisao do dono, e com ela sairam os testes de `prefeito
+# travado`, `flag manda mesmo com papel de admin` e a allowlist de escrita do
+# Painel. O que ela fazia agora se faz desmarcando as caixinhas de escrita de
+# cada tela — coberto por `test_permissoes_concessao.py`.
+#
+# ⚠️ O QUE NAO PODIA SAIR JUNTO, e por isso continua aqui: o `viewer`. Ele nao e
+# rotulo de pessoa, e a credencial do link publico de TV que circula em WhatsApp.
+def test_viewer_continua_sem_escrever():
+    """⚠️ REGRESSAO CARA. `viewer` e criado em tempo de execucao por
+    `routers/bi.py::_ensure_kiosk_user`, com INSERT direto. Se este teste cair,
+    todo quiosque emitido depois do deploy vira uma conta que ESCREVE."""
+    assert eh_credencial_sintetica(Usuario(role="viewer"))
+    assert eh_credencial_sintetica(UsuarioSemColunas(role="viewer"))
 
 
-def test_prefeito_sem_a_flag_pode_escrever():
-    """O desacoplamento que o dono pediu: `prefeito` vira ROTULO. O prefeito que
-    precisar lancar alguma coisa ganha escrita individualmente — sem deixar de
-    aparecer como prefeito, e sem que isso conceda nada aos outros prefeitos."""
-    assert not eh_somente_leitura(Usuario(role="prefeito", somente_leitura=False))
-
-
-def test_viewer_continua_somente_leitura_mesmo_sem_a_flag():
-    """⚠️ REGRESSAO CARA. `viewer` nao e rotulo de pessoa: e a credencial do link
-    publico de TV, criada em tempo de execucao com INSERT direto que nao seta a
-    flag. Se este teste cair, todo quiosque emitido DEPOIS do deploy vira uma
-    conta que ESCREVE — e o link circula em WhatsApp."""
-    assert eh_somente_leitura(Usuario(role="viewer", somente_leitura=False))
-    assert eh_somente_leitura(UsuarioSemColunas(role="viewer"))
-
-
-def test_usuario_comum_nao_e_somente_leitura():
-    assert not eh_somente_leitura(Usuario(role="analyst"))
-    assert not eh_somente_leitura(UsuarioSemColunas())
+def test_pessoa_de_verdade_nao_e_credencial_sintetica():
+    """Inclusive o PREFEITO — e essa e a mudanca. Ate 05/09/2026 ele nascia
+    travado pelo papel; agora ele e um usuario comum cujo acesso e decidido
+    caixinha a caixinha, que e o que o dono pediu no lugar da trava."""
+    for papel in ("admin", "usuario", "analyst", "prefeito"):
+        assert not eh_credencial_sintetica(Usuario(role=papel))
+    assert not eh_credencial_sintetica(UsuarioSemColunas())
 
 
 # ---------------------------------------------------------------------------
@@ -252,34 +250,34 @@ def _chamar(usuario, metodo, caminho, *, telas=("bi",), municipios=(1,)):
         authz.limpar_contexto()
 
 
-def test_guard_barra_escrita_de_quem_tem_a_flag():
-    u = Usuario(role="admin", somente_leitura=True)
-    with pytest.raises(HTTPException) as e:
-        _chamar(u, "POST", "/api/convenios")
-    assert e.value.status_code == 403
-    assert e.value.detail == "Perfil somente-leitura"
-
-
-def test_guard_barra_escrita_do_viewer_sem_flag():
-    """A mesma trava do quiosque, agora pelo caminho real da requisicao."""
+def test_guard_barra_escrita_do_viewer():
+    """A trava do quiosque pelo caminho real da requisicao."""
     with pytest.raises(HTTPException) as e:
         _chamar(Usuario(role="viewer"), "PUT", "/api/convenios/1")
     assert e.value.status_code == 403
 
 
-def test_guard_deixa_o_somente_leitura_escrever_nos_endpoints_do_painel():
-    """A excecao que sempre existiu: o gestor filtra e publica a PROPRIA TV."""
-    u = Usuario(role="prefeito", somente_leitura=True)
-    assert _chamar(u, "POST", "/api/bi/tela-filtros") is u
+def test_guard_barra_o_viewer_SEM_allowlist_nenhuma():
+    """⚠️ A allowlist `READONLY_WRITE_ALLOW` SAIU com a trava de conta, e a saida
+    APERTOU o quiosque de proposito: ela existia para o PREFEITO filtrar a
+    propria TV, e prefeito nao passa mais por aqui. Uma credencial sintetica nao
+    tem escrita legitima nenhuma — nem a do Painel."""
+    with pytest.raises(HTTPException) as e:
+        _chamar(Usuario(role="viewer"), "POST", "/api/bi/tela-filtros")
+    assert e.value.status_code == 403
 
 
 def test_guard_nao_toca_em_leitura():
-    u = Usuario(role="prefeito", somente_leitura=True)
+    u = Usuario(role="prefeito")
     assert _chamar(u, "GET", "/api/convenios") is u
 
 
-def test_guard_deixa_passar_quem_nao_e_somente_leitura():
-    """Sem isto o incremento teria trocado "prefeito nao escreve" por "ninguem
-    escreve" — e o sistema inteiro pararia para o cliente."""
-    u = Usuario(role="admin")
-    assert _chamar(u, "POST", "/api/convenios") is u
+def test_guard_deixa_a_pessoa_de_verdade_escrever():
+    """Sem isto a remocao da trava teria trocado "prefeito nao escreve" por
+    "ninguem escreve" — e o sistema inteiro pararia para o cliente. Quem barra
+    agora e a caixinha da tela, e nao este guard."""
+    for papel in ("admin", "prefeito"):
+        u = Usuario(role=papel)
+        assert _chamar(u, "POST", "/api/convenios") is u
+
+

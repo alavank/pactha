@@ -32,9 +32,9 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 def _user_resp(user) -> UserResponse:
     """UserResponse com escopos (telas/municipios). None = acesso total.
 
-    `de_usuario` e nao `model_validate`: as flags `super_admin`/`somente_leitura`
-    saem CALCULADAS (coluna + reforco do codigo), do mesmo jeito que em
-    `GET /users`. Ler a coluna crua aqui faria a sidebar discordar do backend.
+    `de_usuario` e nao `model_validate`: a flag `super_admin` sai CALCULADA
+    (coluna + reforco do codigo), do mesmo jeito que em `GET /users`. Ler a
+    coluna crua aqui faria a sidebar discordar do backend.
     """
     resp = UserResponse.de_usuario(user)
     at = getattr(user, "allowed_telas", None)

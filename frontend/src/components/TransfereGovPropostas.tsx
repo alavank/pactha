@@ -332,7 +332,12 @@ export default function TransfereGovPropostas({
   const buildParams = useCallback((): Record<string, string | string[]> => {
     // string[] p/ os filtros multi: o axios serializa como chave repetida
     // (?vigencia=a&vigencia=b), que e o formato que o FastAPI le em list[str].
-    const params: Record<string, string | string[]> = { municipio_id: municipioId || "", categoria };
+    // ⚠️ `categoria` SAIU DAQUI em 05/09/2026 e virou SEGMENTO DE CAMINHO nas
+    // duas rotas abaixo. As quatro telas que este componente serve (Em
+    // execução, Voluntárias, Rejeitadas, Encerradas) ganharam permissão própria,
+    // e um gate que lesse a categoria da QUERY não travaria nada — quem tivesse
+    // só «Rejeitadas» pediria `?categoria=geral` e leria a outra tela.
+    const params: Record<string, string | string[]> = { municipio_id: municipioId || "" };
     if (instrumento.trim()) params.instrumento = instrumento.trim();
     if (proposta.trim()) params.proposta = proposta.trim();
     if (proponente.trim()) params.proponente = proponente.trim();
@@ -396,16 +401,18 @@ export default function TransfereGovPropostas({
     if (!municipioId) return;
     setLoading(true);
     try {
-      const r = await api.get<Resp>("/transferegov/voluntarias", { params: buildParams() });
+      const r = await api.get<Resp>(`/transferegov/lista/${categoria}`,
+                                    { params: buildParams() });
       setItems(r.data.items); setAtualizadoEm(r.data.atualizado_em);
     } catch (e) { console.error(e); } finally { setLoading(false); }
-  }, [municipioId, buildParams]);
+  }, [municipioId, categoria, buildParams]);
 
   const gerarPdf = useCallback(async () => {
     if (!municipioId) return;
     setBaixandoPdf(true);
     try {
-      const r = await api.get("/export-pdf/voluntarias", { params: buildParams(), responseType: "blob" });
+      const r = await api.get(`/export-pdf/federais/${categoria}`,
+                              { params: buildParams(), responseType: "blob" });
       const url = window.URL.createObjectURL(new Blob([r.data], { type: "application/pdf" }));
       const a = document.createElement("a");
       a.href = url; a.download = `relatorio-federais-${categoria}.pdf`;

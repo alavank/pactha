@@ -14,15 +14,15 @@ dia em que o coletor rodou; entre uma rodada e outra um prazo vence. Confiar na
 coleta deixaria a tela anunciando prazo morto — e prazo morto numa tela de
 captação faz o município montar processo para nada.
 
-⚠️ GATE `transferegov.ver` + tela `transferegov`, e NÃO `convenios.ver`. A
-primeira versão usava `convenios.ver` por analogia com a Consulta Popular e os
-Programas do RS — e estava errada: aquela chave é declarada com
-`ufs=("MG","ES","GO","RS")` no catálogo de permissões, ou seja, a caixinha só
-aparece para cliente desses quatro estados. O radar é FEDERAL e vale para os 27;
-num tenant de outra UF a tela existiria sem permissão possível de conceder.
-`transferegov` não tem recorte de UF, é a mesma família dos irmãos deste grupo
-do menu, e a fonte do radar é literalmente um arquivo do TransfereGov.
-Não cria concessão nova: quem já vê o TransfereGov vê o radar.
+⭐ GATE PRÓPRIO desde 05/09/2026: `transferegov_radar.ver` + tela
+`transferegov_radar`. O Radar é item de PRIMEIRO NÍVEL do menu, fora de qualquer
+grupo (foi tirado de dentro de FEDERAIS em 04/09 justamente porque é a única
+tela que olha para FRENTE), e agora a permissão diz a mesma coisa que o menu.
+
+⚠️ SEM RECORTE DE UF, e continua sendo a razão de não usar `convenios.ver`: a
+primeira versão usou aquela chave por analogia com a Consulta Popular, e estava
+errada — `convenios` é declarada com `ufs` no catálogo, então a caixinha só
+apareceria para cliente daqueles estados. O radar é FEDERAL e vale para os 27.
 """
 from __future__ import annotations
 
@@ -116,7 +116,7 @@ _ORDEM_LISTA = """         ORDER BY LEAST(CASE WHEN porta_receb  THEN dt_fim_rec
     """
 
 
-@router.get("", dependencies=[exige("transferegov.ver")])
+@router.get("", dependencies=[exige("transferegov_radar.ver")])
 async def radar(
     municipio_id: int = Query(...),
     db: AsyncSession = Depends(get_db),
@@ -124,7 +124,7 @@ async def radar(
 ):
     """Programas abertos hoje para este município apresentar proposta."""
     ensure_municipio_access(current, municipio_id)
-    ensure_tela(current, "transferegov")
+    ensure_tela(current, "transferegov_radar")
 
     mun = (await db.execute(text(
         "SELECT nome, uf FROM municipios WHERE id = :m"), {"m": municipio_id})).first()
@@ -199,7 +199,7 @@ async def radar(
     }
 
 
-@router.get("/contagem", dependencies=[exige("transferegov.ver")])
+@router.get("/contagem", dependencies=[exige("transferegov_radar.ver")])
 async def contagem(
     municipio_id: int = Query(...),
     db: AsyncSession = Depends(get_db),
@@ -220,7 +220,7 @@ async def contagem(
     decidir se o número merece um sinal de urgência, sem uma segunda chamada.
     """
     ensure_municipio_access(current, municipio_id)
-    ensure_tela(current, "transferegov")
+    ensure_tela(current, "transferegov_radar")
 
     uf = (await db.execute(text(
         "SELECT upper(coalesce(uf, '')) FROM municipios WHERE id = :m"),

@@ -12,7 +12,7 @@ from routers import (
     fns, transferegov, export_pdf,
     users, simec, rm, ai, gestao, parlamentares, status_changes,
     documentos, cauc, cagec, siconfi, acordofes, control, freshness, painel, bi,
-    sismob, obrasgov, investsus, auditoria, permissoes, modelos_permissao, repasses,
+    sismob, obrasgov, investsus, auditoria, permissoes, repasses,
     contas_irregulares,
     cofinanciamento, parametros, monitoramento, consulta_popular, programas_rs,
     conteudo_rs, programas_captacao, agendamentos,
@@ -222,10 +222,8 @@ app.include_router(auditoria.router)  # /api/auditoria/* (trilha, so leitura)
 app.include_router(uso.router)
 app.include_router(permissoes.router)  # /api/permissoes/* (catalogo de permissoes)
 app.include_router(parametros.router)  # /api/parametros/* (listas do proprio cliente)
-# /api/permissoes/modelos/* — os MOLDES (Incremento 7). Registrado DEPOIS de
-# `permissoes.router` so por leitura: os caminhos nao se sobrepoem (o outro
-# router nao tem rota com parametro na raiz), entao a ordem nao muda nada.
-app.include_router(modelos_permissao.router)
+# ⚠️ `modelos_permissao.router` (/api/permissoes/modelos/*) SAIU em 05/09/2026
+# com o subsistema de moldes. Ver a nota no topo de `routers/permissoes.py`.
 app.include_router(freshness.router)  # /api/admin/freshness (monitor de frescor)
 app.include_router(painel.router)   # /api/painel/* (Painel Executivo do prefeito)
 if get_settings().BI_MODULE:

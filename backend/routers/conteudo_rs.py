@@ -10,9 +10,12 @@ rodapé nem nota de rodapé: sem ele, conteúdo estático se passa por monitoram
 ⚠️ Só respondem para município do RS. São assuntos do Estado; mostrá-los a uma
 prefeitura de outra UF seria oferecer porta que não abre.
 
-⚠️ Gate `convenios.ver` + tela `convenios` — os três são o funil de onde nasce
-(ou de onde se perde) a transferência estadual. Mesma razão da Consulta Popular e
-do catálogo de programas.
+⭐ GATE PRÓPRIO POR TELA desde 05/09/2026: `funrigs`, `emendas_rs` e `tce_rs`
+têm cada uma a sua chave e a sua tela. Até aqui as três dividiam `convenios.ver`
++ tela `convenios` com o resto do grupo ESTADUAIS, e conceder Convênios abria as
+três de uma vez — o oposto da granularidade Módulo › Tela › Ação que o dono
+pediu. `_guarda` passou a receber a chave da tela justamente por isso: um router
+com três telas dentro precisa saber de QUAL delas cada rota é.
 """
 from __future__ import annotations
 
@@ -34,10 +37,15 @@ _FORA_DO_RS = ("Este conteúdo trata de programas e obrigações do Estado do Ri
                "Grande do Sul e não se aplica a este município.")
 
 
-async def _guarda(db: AsyncSession, current: User, municipio_id: int) -> bool:
-    """Auth + escopo + UF. Devolve True quando o município é do RS."""
+async def _guarda(db: AsyncSession, current: User, municipio_id: int,
+                  tela: str) -> bool:
+    """Auth + escopo + UF. Devolve True quando o município é do RS.
+
+    ⚠️ `tela` é OBRIGATÓRIA e sem default de propósito: as três rotas deste
+    router são três telas do menu, e um default faria a próxima rota nascer
+    gateada pela tela da anterior sem ninguém notar."""
     ensure_municipio_access(current, municipio_id)
-    ensure_tela(current, "convenios")
+    ensure_tela(current, tela)
     uf = (await db.execute(text(
         "SELECT upper(coalesce(uf, '')) FROM municipios WHERE id = :m"),
         {"m": municipio_id})).scalar()
@@ -46,14 +54,14 @@ async def _guarda(db: AsyncSession, current: User, municipio_id: int) -> bool:
     return uf == "RS"
 
 
-@router.get("/funrigs", dependencies=[exige("convenios.ver")])
+@router.get("/funrigs", dependencies=[exige("funrigs.ver")])
 async def funrigs(
     municipio_id: int = Query(...),
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
     """Plano Rio Grande / FUNRIGS — exigências do fundo a fundo da reconstrução."""
-    if not await _guarda(db, current, municipio_id):
+    if not await _guarda(db, current, municipio_id, "funrigs"):
         return {"tem_dados": False, "motivo": _FORA_DO_RS}
     # A data-limite da calamidade é o único campo VIVO desta tela: ela muda o
     # comportamento do alarme do Decreto 56.939 (prazo de 120 dias em vez do
@@ -73,19 +81,19 @@ async def funrigs(
     }
 
 
-@router.get("/emendas", dependencies=[exige("convenios.ver")])
+@router.get("/emendas", dependencies=[exige("emendas_rs.ver")])
 async def emendas(
     municipio_id: int = Query(...),
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
     """Emendas parlamentares estaduais do RS — e por que elas NÃO são impositivas."""
-    if not await _guarda(db, current, municipio_id):
+    if not await _guarda(db, current, municipio_id, "emendas_rs"):
         return {"tem_dados": False, "motivo": _FORA_DO_RS}
     return {"tem_dados": True, "aviso": AVISO_EMENDAS, **EMENDAS}
 
 
-@router.get("/tce", dependencies=[exige("convenios.ver")])
+@router.get("/tce", dependencies=[exige("tce_rs.ver")])
 async def tce(
     municipio_id: int = Query(...),
     db: AsyncSession = Depends(get_db),
@@ -100,7 +108,7 @@ async def tce(
     dizer qual é qual — `aviso` fala do conteúdo curado, `licitacon` traz dado
     coletado com data.
     """
-    if not await _guarda(db, current, municipio_id):
+    if not await _guarda(db, current, municipio_id, "tce_rs"):
         return {"tem_dados": False, "motivo": _FORA_DO_RS}
     codigo = (await db.execute(text(
         "SELECT tce_orgao_codigo FROM municipios WHERE id = :m"),

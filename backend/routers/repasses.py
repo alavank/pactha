@@ -8,9 +8,14 @@ qual unidade orçamentária. São perguntas diferentes, e forçar o dado de GO n
 tela de convênio deixaria metade das colunas vazia — o gestor que conhece Minas
 concluiria que o sistema perdeu dado.
 
-Gateado por `convenios.ver` e pela tela `convenios`: é a mesma família de
-informação (recurso estadual), e não faz sentido uma permissão nova para quem
-já pode ver convênio estadual.
+⭐ GATE PRÓPRIO desde 05/09/2026: `repasses.ver` + tela `repasses`.
+
+⚠️ Até aqui esta tela era gateada por `convenios.ver` e pela tela `convenios`,
+com o argumento de que é "a mesma família de informação". O argumento não
+sobreviveu ao pedido do dono de granularidade Módulo › Tela › Ação: liberar
+Convênios Estaduais concedia junto, em silêncio, mais nove telas do grupo — e o
+administrador não tinha como conceder uma sem a outra. Cada tela do grupo agora
+carrega a própria chave.
 """
 import logging
 from typing import Optional
@@ -28,7 +33,7 @@ router = APIRouter(prefix="/api/repasses", tags=["repasses"])
 logger = logging.getLogger("repasses")
 
 
-@router.get("", dependencies=[exige("convenios.ver")])
+@router.get("", dependencies=[exige("repasses.ver")])
 async def listar(
     municipio_id: Optional[int] = None,
     anos: Optional[list[int]] = Query(None),
@@ -40,7 +45,7 @@ async def listar(
 ):
     """Lista os repasses do município, do mais recente para o mais antigo."""
     ensure_municipio_access(current, municipio_id)
-    ensure_tela(current, "convenios")
+    ensure_tela(current, "repasses")
     if not municipio_id:
         return {"items": [], "total": 0, "page": page, "pages": 1,
                 "total_valor": 0, "fonte": None}
@@ -93,7 +98,7 @@ async def listar(
     }
 
 
-@router.get("/anos", dependencies=[exige("convenios.ver")])
+@router.get("/anos", dependencies=[exige("repasses.ver")])
 async def anos(
     municipio_id: Optional[int] = None,
     db: AsyncSession = Depends(get_db),
@@ -101,7 +106,7 @@ async def anos(
 ):
     """Anos com repasse, para o filtro da tela."""
     ensure_municipio_access(current, municipio_id)
-    ensure_tela(current, "convenios")
+    ensure_tela(current, "repasses")
     if not municipio_id:
         return []
     rows = (await db.execute(text(
