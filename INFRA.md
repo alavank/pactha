@@ -1,6 +1,7 @@
 # INFRA.md — Verdade atual da infraestrutura do PACTHA
 
-> **Fonte única de verdade sobre onde o PACTHA roda.** Medido no servidor em **2026-07-23**.
+> **Fonte única de verdade sobre onde o PACTHA roda.** Medido no servidor em **2026-07-23**,
+> reconferido contra a API do Coolify em **2026-09-04** (aplicações, tags e Scheduled Tasks).
 > Se algum outro documento deste repositório disser coisa diferente (Hetzner, Railway, Neon,
 > Vercel, Supabase), **este arquivo vence** — o outro está desatualizado.
 
@@ -27,8 +28,8 @@ e nesse host moram **outros 10 projetos** além do PACTHA.
 Consequências práticas para este repo:
 
 - **Não paralelizar scraping.** `SIGCON_CONCURRENCY=1` em todos os workers. Não aumente.
-- **Não rodar os crons dos 3 tenants no mesmo horário.** Eles já estão **escalonados de
-  propósito** (ver §4) — não "arrume" isso deixando todos às 5h.
+- **Não rodar os crons dos 5 tenants no mesmo horário.** Eles já estão **escalonados de
+  propósito** (ver §5) — não "arrume" isso deixando todos às 5h.
 - **Não disparar rebuild dos 10 apps ao mesmo tempo.** Build de Next.js + imagem com
   Chromium é caro; faça um de cada vez.
 - Playwright/Chromium é o maior consumidor. Os crons já rodam com `flock` (não sobrepõe
@@ -38,7 +39,7 @@ Consequências práticas para este repo:
 
 ## 2. Um repo, CINCO tenants (leia isto antes de dar push)
 
-Este repositório atende **quatro clientes distintos**, cada um com seu **próprio conjunto de
+Este repositório atende **cinco clientes distintos**, cada um com seu **próprio conjunto de
 containers e seu próprio banco**, todos buildados **do mesmo código**:
 
 | Tenant | Slug | Quem é |
@@ -53,7 +54,7 @@ Não existe multi-tenancy dentro do código: **o isolamento é por deploy**. O q
 um tenant do outro são as **env vars no Coolify** (`INSTANCE_SLUG`, `DATABASE_URL`,
 `JWT_SECRET`, `COFRE_KEY`, `NEXT_PUBLIC_CLIENT_LOGO`, `NEXT_PUBLIC_CLIENT_SUBTITLE`).
 
-### 🚀 Um merge na `main` deploya os TRÊS tenants — sozinho, na ordem certa
+### 🚀 Um merge na `main` deploya os CINCO tenants — sozinho, na ordem certa
 
 > Corrigido em **2026-08-09** (o modelo mudou de novo, e desta vez de propósito). A versão
 > de 31/07 dizia — corretamente, à época — que push nenhum mexia em cliente e que o deploy
@@ -62,15 +63,16 @@ um tenant do outro são as **env vars no Coolify** (`INSTANCE_SLUG`, `DATABASE_U
 > foi **desligado nas 9 aplicações** — o webhook do Coolify recriava containers com a tag
 > ANTIGA (churn que matou coleta em voo duas vezes em 08/08).
 
-As 9 aplicações continuam com **`build_pack = dockerimage`** (rodam a tag gravada em
-`docker_registry_image_tag`; quem constrói é o GitHub Actions publicando no `ghcr.io`).
+As **15** aplicações (eram 9 em 09/08, com três tenants) continuam com
+**`build_pack = dockerimage`** (rodam a tag gravada em `docker_registry_image_tag`; quem
+constrói é o GitHub Actions publicando no `ghcr.io`).
 A diferença: o job `deploy` dos workflows **avança a tag e dispara o deploy** ao fim de
 cada build da `main`:
 
 | Ação | O que acontece em produção |
 |---|---|
-| merge/push na `main` (toca `backend/**`) | Builda `pactha-api`+`pactha-worker` e deploya os 3 tenants: **API primeiro** (roda migrations; deployment confirmado via `GET /deployments/{uuid}`), depois o **worker do mesmo tenant esperando janela sem coleta em voo**. API que não subiu = worker daquele tenant intocado. |
-| merge/push na `main` (toca `frontend/**`) | Builda as 3 imagens de frontend e deploya as 3 (sem gate — frontend não roda coleta). |
+| merge/push na `main` (toca `backend/**`) | Builda `pactha-api`+`pactha-worker` e deploya os 5 tenants: **API primeiro** (roda migrations; deployment confirmado via `GET /deployments/{uuid}`), depois o **worker do mesmo tenant esperando janela sem coleta em voo**. API que não subiu = worker daquele tenant intocado. |
+| merge/push na `main` (toca `frontend/**`) | Builda as 5 imagens de frontend e deploya as 5 (sem gate — frontend não roda coleta). |
 | deploy manual (rollback/exceção) | Continua possível: repontar `docker_registry_image_tag` + `GET /deploy?uuid=` — o mesmo que o CI faz. |
 
 Segredos do CI: `COOLIFY_URL` + `COOLIFY_TOKEN` nos **GitHub Secrets** do repo. Sem eles
@@ -99,9 +101,11 @@ O campo `git_branch` voltou a importar de leve: `main` nas 9 (webhook desligado,
 CI só deploya o que buildar da `main`).
 
 ⚠️ As imagens de **frontend são uma por tenant** (`pactha-frontend-freitas`,
-`-trust`, `-montesiao-mg`), porque a marca do cliente entra no build. **API e worker
-compartilham** a mesma imagem (`pactha-api`, `pactha-worker`). E as **tags divergem de
-formato**: backend usa sha **curto**, frontend usa sha **completo** — o CI cuida disso.
+`-trust`, `-montesiao-mg`, `-santamaria-rs`, `-novapalma-rs`), porque a marca do cliente
+entra no build. **API e worker compartilham** a mesma imagem (`pactha-api`,
+`pactha-worker`). E as **tags divergem de formato**: backend usa sha **curto**, frontend usa
+sha **completo** — o CI cuida disso. Conferido em 04/09/2026: as 15 apps na mesma
+`sha-4d5a37f` / `sha-4d5a37fcb9d542418…`, as 5 APIs `running:healthy`.
 
 ---
 
@@ -143,7 +147,8 @@ Todas as URLs abaixo foram conferidas respondendo em 2026-07-23.
 | `santamaria-rs-db` | `postgres:16-alpine` | interno — db/user `pactha`, uuid `m2ypghl41lbqhv7rdqzffdi3` |
 
 > ⚠️ **Environment por tenant, não `production`.** O projeto `pactha` tem um environment por
-> cliente (`freitas`, `trust`, `montesiao-mg`, `santamaria-rs`); o `production` está **vazio**.
+> cliente (`freitas`, `trust`, `montesiao-mg`, `santamaria-rs`, `novapalma-rs`); o
+> `production` está **vazio**.
 > Tenant novo ganha o seu (`POST /projects/{uuid}/environments`, que responde 201).
 >
 > **Santa Maria foi o primeiro banco criado do zero** — os outros três vieram migrados do Neon,
@@ -217,9 +222,10 @@ docker exec -it tox59kvmkrb0ywmeaty3t02a psql -U pactha -d pactha   # freitas
 docker exec -it p434vbj35siee57shlsyzuc2 psql -U pactha -d pactha   # trust
 docker exec -it iogvjlnkpqlugja9j76rktl1 psql -U pactha -d pactha   # montesiao-mg
 docker exec -it m2ypghl41lbqhv7rdqzffdi3 psql -U pactha -d pactha   # santamaria-rs
+docker exec -it dl2jwo0q1ckbplqp6vp1hnu4 psql -U pactha -d pactha   # novapalma-rs
 ```
 
-Os três bancos já estão **populados com dados reais de produção** — não são mais
+Os cinco bancos já estão **populados com dados reais de produção** — não são mais
 schema+seed. Migrações idempotentes rodam no boot da API (`backend/services/startup.py`).
 
 ---
@@ -252,16 +258,20 @@ O desenho atual (redesenho de 09/08, "tuning da madrugada"):
   foi a causa dos 25 falso-negativos de 08/08). Editar via JSON literal na API.
 - Fontes de **dump** coletam na cadência da fonte (a tabela de cadências oficiais está no
   relatório de diagnóstico de 08/08): dumps federais/MG diários de manhã = 1×/dia;
-  GConv-ES 2×/dia; GO (transfvol/cofin) 1×/dia; `siconv-federal` mensal (dia 2) —
-  desde 17/08 existe **nos 4 workers** (trust e montesiao não a tinham e ficaram
-  meses com `siconv_federal` = 0, a aba CNPJ do TransfereGov abria vazia).
-- **`transferegov-te` é escalonado ENTRE TENANTS de propósito** (17/08): freitas 03:40,
-  trust 04:00, montesiao 04:20, santamaria 04:40 UTC. Os quatro saem do MESMO IP e a
-  API `especiais` do TransfereGov tem quota por IP (~10 páginas/janela, renova em
-  ~15 min): com os quatro no mesmo minuto — como era — quem roda por último só coleta
-  403. Medido ao vivo durante a auditoria de 17/08 (o montesiao errava TODA rodada
-  que caía logo após a janela de outro tenant). Se criar o 5º tenant, continue a
-  escada (+20 min). No mesmo dia o `timeout` da task subiu de 300 para 1720s nos 4
+  GConv-ES 2×/dia; GO (transfvol/cofin) 1×/dia; `siconv-federal` **mensal, e escalonado
+  por DIA do mês, não por hora** — freitas dia 2, trust dia 3, montesiao dia 4,
+  santamaria dia 5, novapalma dia 6 (é um dump grande; um dia por tenant evita cinco
+  downloads pesados na mesma madrugada). Existe **nos 5 workers**; desde 17/08, quando
+  trust e montesiao não a tinham e ficaram meses com `siconv_federal` = 0, a aba CNPJ do
+  TransfereGov abrindo vazia.
+- **`transferegov-te` é escalonado ENTRE TENANTS de propósito** (17/08). Os tenants saem
+  do MESMO IP e a API `especiais` do TransfereGov tem quota por IP (~10 páginas/janela,
+  renova em ~15 min): com todos no mesmo minuto — como era — quem roda por último só
+  coleta 403. Medido ao vivo durante a auditoria de 17/08 (o montesiao errava TODA rodada
+  que caía logo após a janela de outro tenant). Com o 5º tenant a escada foi refeita e o
+  passo subiu de 20 para **30 min** (medido 04/09): freitas 03:00, trust 03:30,
+  montesiao 04:00, santamaria 04:30, **novapalma 05:00** UTC. Tenant novo continua a
+  escada. No mesmo dia de 17/08 o `timeout` da task subiu de 300 para 1720s em todos os
   workers: estava ABAIXO do orçamento interno (1600s), o Coolify matava primeiro e
   descartava o stdout — a task nunca tinha logado nada em nenhum tenant.
   ⛔ **E a quota tem uma segunda camada: PENALIDADE ESTENDIDA por martelada.**
@@ -288,16 +298,34 @@ O desenho atual (redesenho de 09/08, "tuning da madrugada"):
 
 Detalhes de cada rotina e dos comandos completos: `docs/CRON_SETUP.md`.
 
-**SISMOB** (obras de saúde do MS) **não tem linha nesta tabela de propósito**: em vez
-de uma Scheduled Task nova em cada um dos 3 workers, ele foi pendurado em
-`run_dadosabertos_cron.run_all()`, que o `sigcon` já chama 4×/dia. Como a fonte muda
-a cada ~60 dias por obra, o próprio `ingest()` se auto-limita a 1×/dia
-(`SISMOB_MIN_INTERVAL_H=20`; `SISMOB_FORCE=1` força, `SISMOB_ENABLED=0` desliga por
-tenant). A fonte é **API JSON pública** — sem token, sem login, sem Playwright.
+**SISMOB** (obras de saúde do MS) é **API JSON pública** — sem token, sem login, sem
+Playwright. Como a fonte muda a cada ~60 dias por obra, o `ingest()` se auto-limita a
+1×/dia (`SISMOB_MIN_INTERVAL_H=20`; `SISMOB_FORCE=1` força, `SISMOB_ENABLED=0` desliga
+por tenant).
+
+> ⚠️ **Ele tem DOIS caminhos vivos, e a versão anterior deste arquivo dizia que não tinha
+> nenhum.** Medido em 04/09: existe Scheduled Task **`sismob` nos 5 workers** (freitas
+> 03:18 → novapalma 05:18 UTC, lock próprio `/tmp/sismob.lock`, criadas entre 02/08 e
+> 01/09) **e** a entrada `("SISMOB", "ingestion.sismob_obras")` continua em
+> `run_dadosabertos_cron.run_all()`, que o `run_sigcon_cron.py` chama na linha 32.
+>
+> **Hoje isso não duplica coleta, mas por margem e não por desenho:** os dois caminhos
+> entram pelo mesmo `ingest()` e batem no mesmo gate de 20h (`_deve_pular()`, que consulta
+> `ingestion_log`). No freitas a task roda 03:18 e o `sigcon` chega às 05:45 — 2h27 depois,
+> gate fechado. Estreitar essa folga, ou trocar a task para chamar `run()` direto, ressuscita
+> exatamente o incidente do **PR #259** (duas coletas/dia, a segunda descontando do
+> orçamento do SIGCON). Nos dois tenants do RS **não há `sigcon`**, então lá a task é o
+> único caminho — não é redundância, é a coleta.
+>
+> Duas afirmações vencidas que ainda circulam: o docstring de `_deve_pular()` diz *"sem uma
+> Scheduled Task própria no Coolify, o intervalo mora aqui"* (tem, nos cinco) e *"o cron
+> hospedeiro roda 4×/dia"* (o `sigcon` roda **1×/dia** por tenant). Corrigir esse comentário
+> é mudança em `backend/**`, ou seja, deploy nos cinco — não vale sozinho, mas vá junto na
+> próxima leva.
 
 > ⚠️ **`SISMOB_ENABLED=0` deixa o watchdog reclamando para sempre.** O `ingest()`
 > retorna antes de rodar, então nunca grava linha em `ingestion_log`, e o
-> `watchdog_coleta` — cujo catálogo `FRESCOR_HORAS` é **global aos 3 tenants**,
+> `watchdog_coleta` — cujo catálogo `FRESCOR_HORAS` é **global aos 5 tenants**,
 > constante no código — passa a registrar "sismob: nenhum sucesso registrado" a
 > cada ciclo. Hoje isso é só uma linha WARN no log da Scheduled Task (nenhum app
 > do PACTHA tem `TELEGRAM_BOT_TOKEN` configurado), mas se você ligar o Telegram
@@ -315,7 +343,8 @@ só quando o encolhimento for real (obra de fato retirada do programa); sem ela,
 município que legitimamente perca obras fica repetindo a falha.
 
 **SIMEC — Termos de Compromisso** (`ingestion/simec_termos.py`, PR #258) tem **Scheduled
-Task própria nos 4 workers**: `simec-termos`, `10 6 * * *`, com lock **próprio**
+Task própria nos 5 workers** (escada de 30 min como a do `transferegov-te`: freitas 03:12
+→ novapalma 05:12 UTC), com lock **próprio**
 (`/tmp/simec_termos.lock`) e `timeout -k 30 1700`. O lock é separado de propósito: o
 `/tmp/scraper.lock` existe para serializar **Chromium**, e esta fonte é `httpx` puro, sem
 login e sem navegador — não precisa disputar aquela fila. 1×/dia basta porque o que ela
@@ -336,8 +365,9 @@ pagamento, e isso vem 4×/dia por `simec_par_liberacoes` dentro do `run_all()`.
 > 1 município pesado, e a coluna `timeout` da task = interno + 120s (daí os 1700).
 > Mexer num sem mexer no outro é o erro clássico aqui.
 
-**`cagec`** (desde 2026-07-30, só Monte Sião por enquanto): regularidade **estadual**
-de MG. Roda às 5h40, depois da rodada do `sigcon` das 4h — de propósito, porque o
+**`cagec`** (desde 2026-07-30; hoje nos **três tenants com município de MG** — freitas
+06:15, trust 07:00, montesiao 07:15 UTC; os dois tenants do RS não têm, e não devem ter):
+regularidade **estadual** de MG. Roda depois da rodada do `sigcon` — de propósito, porque o
 CNPJ do município é inferido das emendas estaduais que o SIGCON acabou de coletar.
 Não usa credencial: a consulta do CAGEC é **pública** e basta o CNPJ. O detalhe
 (cada obrigação com situação e validade) vem do **CRC em PDF**, que a própria
@@ -346,6 +376,57 @@ consulta emite mesmo para município irregular — por isso o worker precisa de
 de uma vez ao dia; não há download em massa (os botões de exportar só existem
 depois de uma busca). Onde o portal fica e as armadilhas dele:
 `backend/ingestion/cagec_scraper.py`.
+
+**`obrasgov`** (obras federais do Obras.gov.br/CIPI, PRs #367–#370, 03–04/09/2026):
+Scheduled Task **nos 5 workers**, escada de 5 min — santamaria 03:05, novapalma 03:10,
+montesiao 03:15, trust 03:20, **freitas 03:30** UTC. Lock **próprio**
+(`/tmp/obrasgov.lock`) pelo mesmo motivo do `simec-termos`: é `httpx` puro, sem login e
+sem navegador, então não disputa a fila do Chromium do `/tmp/scraper.lock`.
+
+> ⚠️ **O freitas estava em 03:25, no MESMO minuto do `transferegov-lote`** (corrigido para
+> 03:30 em 04/09). Como os locks são diferentes de propósito, os dois **não** se
+> serializam: largavam juntos, e o lote é a task Chromium mais cara do tenant com a maior
+> carteira (`TG_LOTE_MUNICIPIOS=4`). A escada de 5 min foi desenhada **entre tenants** e
+> ninguém a conferiu contra as tasks 03:xx que cada tenant já tinha. **Ao criar task nova
+> em escada, confira também a coluna vertical de cada worker.**
+
+⭐ **O host é `api-publica.obrasgov.gestao.gov.br`, NÃO `api.obrasgov...`** O host sem o
+`-publica` devolve **429 na primeira requisição** vinda da VPS (medido: 0,06 s, sem corpo),
+e foi o que manteve o coletor pronto e desligado desde 02/09. O mesmo acervo, no host
+público, responde **200 em 0,13 s** — era host, não era o Governo nos recusando. Trocar de
+host matou três das quatro armadilhas antigas (paginação que mente, páginas que se
+sobrepõem, rate limit apertado) e derrubou a varredura de uma UF de ~8 min para ~75 s.
+
+As armadilhas que **sobraram**, todas silenciosas e anotadas em `backend/ingestion/obrasgov.py`:
+
+- **O filtro territorial não existe e é ignorado em silêncio**: `codigo_ibge` devolve o
+  **estado inteiro** com HTTP 200. O recorte é feito em memória.
+- **O município sai do CNPJ, NUNCA do nome** (diretriz do dono, 04/09): casar por nome
+  trouxe 379 obras da UFSM como se fossem da prefeitura de Santa Maria.
+- **As taxonomias são `TEXT`, não `VARCHAR`** — `natureza`/`especie`/`situacao`/`sistema`
+  são vocabulário de fonte externa (5 a 9 valores distintos) e o Governo renomeia categoria
+  sem avisar. Uma categoria de 41 caracteres numa coluna `VARCHAR(40)` **abortou a carga
+  inteira do santamaria** depois do novapalma ter passado limpo minutos antes. Só continuam
+  `VARCHAR` os campos que têm *formato*: `id_unico`, `cep`, `uf`.
+- **A fonte manda acento codificado DUAS vezes** (`Proinf\xc3\x83\xc2\xa2ncia`): o Governo
+  leu latin-1 como UTF-8 e gravou o resultado. O conserto está na **ingestão** e desiste se
+  a reinterpretação não melhorar — um conserto cego corromperia 32.000 obras para arrumar 2.
+- **A data efetiva não é sinal de nada**: vazia em 100% das 1.011 obras coletadas, e 65
+  obras "Concluída" não têm data de conclusão. Quem classifica é a `situacao`; a data
+  prevista só gradua.
+
+**`fpe-rs` — a fonte tem HORÁRIO COMERCIAL, e o cron precisa respeitar.** O FPE
+(`portalfpe.sefaz.rs.gov.br`) atende **segunda a sábado, das 7h às 22h30 BRT**; fora
+disso responde **500** com essa frase. Até 04/09 as duas tasks estavam em **02:04 e 02:34
+BRT** (santamaria `4 5 * * *`, novapalma `34 5 * * *`) — madrugada, e `* * *` ainda incluía
+domingo. Corrigidas para `14 14 * * 1-6` e `44 14 * * 1-6` (11:14 e 11:44 BRT, seg–sáb).
+
+> ⚠️ **Isso não estava doendo, e é exatamente por isso que sobreviveu 18 dias.** O coletor
+> é inerte enquanto não houver credencial PCPRS no Cofre: ele sai antes de tocar no portal
+> e grava `success` ("sem credencial" é nota, nunca alarme — regra do dono). No dia em que
+> a credencial entrasse, os dois tenants passariam a falhar **todo dia**, e o sintoma
+> pareceria coletor quebrado, não cron errado. **Fonte com janela de funcionamento é
+> restrição de agendamento — anote-a no cron, não só no docstring do coletor.**
 
 ---
 
@@ -400,13 +481,24 @@ daquele tenant viram lixo. Cada tenant tem a sua — **nunca copie a de um para 
   17/08): `PATCH` a `frequency` da task para `* * * * *`, esperar ~90s (um fire), e
   **restaurar o cron original num `finally`** — cron esquecido em `* * * * *` é o
   coletor batendo 1440×/dia no portal do governo. O processo já iniciado sobrevive à
-  restauração (roda até o fim). Duas regras aprendidas a caro:
+  restauração (roda até o fim). Três regras aprendidas a caro:
   1. **Um Chromium por worker por vez.** Os workers têm 2 GB; duas tasks de browser
      simultâneas (sigcon + lote, ou um one-shot durante uma cadeia) morrem por
      memória **sem log nenhum** — o fire parece não ter acontecido. Foi por isso que
      o sigcon do trust "falhou" 3× em 17/08: só rodou quando ganhou janela exclusiva.
   2. **Deploy mata coleta em voo** (restart do worker) e o fire diário perdido para
      um `flock` ocupado não se repete sozinho — conferir o `ingestion_log` depois.
+  3. ⚠️ **O `finally` já falhou de verdade — task descartável também precisa de dono.**
+     Em 04/09 apareceu uma `tmp-g9umo` no `montesiao-mg-worker`, criada em 03/09
+     01:58Z e ainda em `* * * * *`: **34 horas, ~1.440 execuções**. Era só uma sonda de
+     diagnóstico (`select uf,count(*) from municipios where active group by 1` jogado
+     no stdout do PID 1), então não bateu em portal nenhum — mas foram 1.440 processos
+     Python e 1.440 conexões novas ao Postgres da **prefeitura com uso real**, num host
+     de 0,6 vCPU sustentado, além de encher o log do container e atrapalhar a leitura de
+     log de verdade. Apagada em 04/09. **Ao terminar uma auditoria, releia
+     `GET /applications/<worker>/scheduled-tasks` dos cinco workers e confirme que
+     nenhuma task ficou em `* * * * *` e que não sobrou nome `tmp-*`.** É uma chamada,
+     e é a única prova de que o `finally` rodou.
 - **Auditoria município × fonte**: `GET /api/control/cobertura` na API de cada tenant
   (header `X-Control-Token`, valor na env `CONTROL_TOKEN_BOOTSTRAP` da app) devolve,
   por município, a contagem POR FONTE (separada p/ `convenios_estadual` e
