@@ -857,16 +857,32 @@ html,
    seguem no menta do PACTHA, que é o que impede a agenda de virar outro
    produto. O que muda é só o CHÃO (`--bi-bg`) e o tom das superfícies.
 
-   Os valores saíram de uma amostragem do próprio print (contagem de cores da
-   imagem): fundo dominante `#f8f8f8` com o segundo tom em `#f0f0e8` — o creme.
-   Aqui ele é puxado um pouco mais quente e dessaturado para conviver com o
-   verde-acinzentado do PACTHA (`#eceeed`), em vez de brigar com ele. */
+   ⚠️ O PRIMEIRO PALHA ERA FORTE DEMAIS. A amostragem do print
+   (`estilo-usar-cores.jpg`) devolveu `#f0f0e8` como segundo tom, e usá-lo como
+   chão deixou o módulo com cara de outro produto — não era "um pouco mais
+   quente", era bege. O dono pediu **`#fffdf0`**: palha quase branco, e a
+   diferença para o `#eceeed` do resto do sistema é justamente essa — o ambiente
+   muda de temperatura, não de cor.
+
+   ⚠️ COM O CHÃO QUASE BRANCO, QUEM SEPARA O CARTÃO É A LINHA — e isso está
+   MEDIDO, não estimado. No sistema o degrau `#eceeed` → `#ffffff` vale **6,1 de
+   ΔL\***, e é ele que faz o cartão existir; aqui `#fffdf0` → `#ffffff` vale
+   **0,86**, que está abaixo do limiar de percepção. Ou seja: neste módulo o
+   cartão NÃO se destaca por luminosidade, e se a linha for a mesma do tema o
+   calendário vira uma folha branca sem grade.
+   Por isso `--bi-line` sobe de 1,26 para 1,32 de contraste sobre o branco, e
+   `--bi-line-strong` de 1,49 para 1,65. É pouco de propósito: o suficiente para
+   a grade existir, longe do peso de uma planilha.
+
+   ⚠️ E NÃO ENFRAQUEÇA AS LINHAS "para combinar com o fundo mais claro". É o
+   movimento intuitivo e é exatamente o contrário do que a conta pede — quanto
+   mais claro o chão, mais trabalho sobra para a linha. */
 .ag-modulo {
-  --bi-bg: #f4f1e8;          /* o chão de palha */
-  --bi-surface: #fffdf8;     /* cartão: creme quase branco, não branco puro */
-  --bi-surface-2: #efebdf;   /* cabeçalho desgarrado, coluna do kanban */
-  --bi-line: #e4dfd0;
-  --bi-line-strong: #cfc8b4;
+  --bi-bg: #fffdf0;          /* o chão: palha quase branco (pedido do dono) */
+  --bi-surface: #ffffff;     /* cartão: branco puro, para separar do chão */
+  --bi-surface-2: #faf6e6;   /* cabeçalho desgarrado, coluna do kanban */
+  --bi-line: #e9e0c8;
+  --bi-line-strong: #d3c9a8;
   background: var(--bi-bg);
 }
 
