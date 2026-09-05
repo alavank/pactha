@@ -186,8 +186,7 @@ def test_as_especiais_que_o_dono_pediu_existem():
     delas sumir num refactor, o poder volta a ser concedido de carona."""
     for chave in ("cofre.revelar", "gestao.anexo_baixar", "usuarios.conceder",
                   "usuarios.resetar_senha", "auditoria.exportar", "bi.tela",
-                  "bi.link", "ai.usar", "sessoes.capturar",
-                  "telegram.administrar"):
+                  "bi.link", "ai.usar", "sessoes.capturar"):
         assert chave in CATALOGO, chave
 
 

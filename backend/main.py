@@ -194,20 +194,15 @@ app.include_router(gestao.router)
 # sistema mostra dado que veio de fora.
 app.include_router(agendamentos.router)
 app.include_router(parlamentares.router)
-# TELEGRAM DESATIVADO ATÉ SEGUNDA ORDEM (decisão do dono, 09/08/2026): o canal
-# de avisos será WhatsApp com API oficial; Telegram só sob demanda rara. Sem a
-# flag, as rotas nem existem (404 — webhook incluso) e o catálogo de permissões
-# não oferece as chaves (services/permissoes.py). Religar = TELEGRAM_MODULE=1
-# aqui + NEXT_PUBLIC_TELEGRAM_MODULE=1 no build do frontend.
-# ⚠️ O IMPORT também fica atrás da flag — não só o include_router. O decorator
-# das rotas chama exige("telegram.vincular") NO IMPORT, e o exige() valida
-# fail-closed contra o catálogo (que sem a flag não tem as chaves): importar
-# com o módulo desligado DERRUBA O BOOT da API inteira. Foi exatamente o que
-# aconteceu no 1º deploy do #168 — o guardião de rotas fez o papel dele e o
-# rolling deploy segurou a versão antiga; que este comentário poupe o próximo.
-if os.getenv("TELEGRAM_MODULE") == "1":
-    from routers import telegram
-    app.include_router(telegram.router)
+# TELEGRAM REMOVIDO em 05/09/2026 (decisão do dono). Ficou desativado atrás de
+# `TELEGRAM_MODULE` desde 09/08/2026 e a flag nunca foi ligada em tenant nenhum;
+# o canal de avisos será WhatsApp com a API oficial da Meta, e quando existir
+# nasce com router e permissões próprias.
+# A lição do #168 fica escrita, porque vale para QUALQUER módulo atrás de flag:
+# o import também precisa ficar atrás dela, não só o `include_router` — o
+# decorator das rotas chama `exige(...)` NO IMPORT, e o `exige()` valida
+# fail-closed contra o catálogo. Importar um router cuja chave não está no
+# catálogo DERRUBA O BOOT da API inteira.
 app.include_router(status_changes.router)
 app.include_router(documentos.router)
 app.include_router(cauc.router)

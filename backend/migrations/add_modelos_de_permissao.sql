@@ -261,8 +261,9 @@ WITH marca AS (
         ('Gestao Interna - operacao', 'transferegov.exportar'),
         ('Gestao Interna - operacao', 'cauc.ver'),
         ('Gestao Interna - operacao', 'cauc.exportar'),
-        -- O proprio celular no Telegram, para receber os avisos do setor.
-        ('Gestao Interna - operacao', 'telegram.vincular'),
+        -- (`telegram.vincular` saiu daqui em 05/09/2026, no mesmo commit que a
+        --  tirou da semente de `permissoes_catalogo` — esta coluna e FK daquela
+        --  tabela, entao as duas TEM de sair juntas ou o banco novo nao sobe.)
 
         -- --- 3. Cofre e convenios ---------------------------------------
         ('Cofre e convenios', 'cofre.ver'),

@@ -201,8 +201,9 @@ def declarado(*chaves: str):
 #                         `usuarios.criar`. Uma entrada `/api/auth/*` levaria
 #                         essa rota junto sem ninguem perceber — por isso as
 #                         rotas de auth estao listadas UMA A UMA.
-#   `/api/telegram/my-link`  e do proprio usuario, mas vive na mesma tela do
-#                         vinculo; declara `telegram.vincular`.
+#   (o modulo Telegram, que ocupava este paragrafo com `/api/telegram/my-link`,
+#    saiu do codigo em 05/09/2026 — a decisao continua valendo para o proximo
+#    canal de avisos: rota "do proprio usuario" tambem declara permissao.)
 @dataclass(frozen=True)
 class Livre:
     metodo: str      # "GET", "POST"... ou "*"
@@ -325,10 +326,6 @@ ROTAS_LIVRES: tuple = (
     # usuario de quem cobrar) — a licao fica escrita: motivo de allowlist que
     # descreve UM caminho de autenticacao precisa dizer o que acontece nos
     # OUTROS.
-    Livre("POST", "/api/telegram/webhook",
-          "Chamada do proprio Telegram, autenticada pelo segredo do webhook. "
-          "Nao ha usuario do lado de la."),
-
     # --- Gate MAIS FORTE que permissao: so o dono da plataforma --------------
     # `routers/service_tokens.py::_require_admin` exige `is_super_admin`, e
     # super-admin ja recebe o catalogo INTEIRO (services/permissoes.py). Logo nao

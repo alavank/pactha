@@ -133,7 +133,12 @@ MIGRATION_FILES = [
     "add_voluntarias_detalhe_atualizado_em.sql",
     # Modulo Gestao Interna (anotacoes + anexos por item)
     "add_gestao_anotacoes.sql",
-    # Integracao Telegram (telegram_users + telegram_link_codes)
+    # Integracao Telegram (telegram_users + telegram_link_codes). O MODULO foi
+    # removido em 05/09/2026, mas esta migration FICA de proposito: os cinco
+    # bancos ja tem as duas tabelas (com o que foi vinculado antes de 09/08), e
+    # tirar a entrada daqui so faria banco novo divergir dos que estao no ar sem
+    # ganhar nada. Tabelas dormentes nao custam; DROP em cinco bancos e
+    # irreversivel. Nenhum codigo le mais essas tabelas.
     "add_telegram.sql",
     # Voluntarias: id_proposta_siconv (casa com open data p/ backfill parlamentar)
     "add_voluntarias_id_proposta_siconv.sql",

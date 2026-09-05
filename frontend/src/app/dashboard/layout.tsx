@@ -18,7 +18,6 @@ import {
   Sparkles,
   Edit2,
   UserCircle2,
-  Send,
   FileSignature,
   ShieldCheck,
   HeartPulse,
@@ -229,11 +228,7 @@ const NAV_ITEMS: NavEntry[] = [
   { href: "/dashboard/dou", label: "Diário Oficial", icon: Newspaper },
   { href: "/dashboard/documentos", label: "Geração de Documentos", icon: FileSignature },
   { href: "/dashboard/gestao", label: "Gestão Interna", icon: Edit2 },
-  // Telegram desativado até segunda ordem (ver lib/telas.ts) — o item fica
-  // atrás da mesma flag para sumir também de quem já tinha a permissão antiga.
-  ...(process.env.NEXT_PUBLIC_TELEGRAM_MODULE === "1"
-    ? [{ href: "/dashboard/telegram", label: "Telegram", icon: Send }]
-    : []),
+  // Telegram REMOVIDO em 05/09/2026 (ver lib/telas.ts).
   // Cofre de Senhas e Sessões (gov.br) SAÍRAM daqui: viraram abas de
   // Configurações. As rotas antigas continuam existindo (bookmark não quebra).
 ];

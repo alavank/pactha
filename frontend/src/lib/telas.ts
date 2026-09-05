@@ -95,14 +95,10 @@ export const TELAS: TelaDef[] = [
   // ⚠️ SEM `ufs`: é nacional. Pôr um recorte aqui esconderia a caixinha dos
   // clientes dos outros estados, e uma agenda não depende de que estado é.
   { key: "agendamentos", label: "Agendamentos" },
-  // TELEGRAM DESATIVADO ATÉ SEGUNDA ORDEM (decisão do dono, 09/08/2026): o
-  // canal de avisos será WhatsApp com API oficial; Telegram só voltará sob
-  // demanda rara de cliente. Fora do catálogo = fora do menu, fora do modal
-  // de permissões e fora da criação de usuário. O código fica; religar =
-  // NEXT_PUBLIC_TELEGRAM_MODULE=1 (build-time) + TELEGRAM_MODULE=1 na API.
-  ...(process.env.NEXT_PUBLIC_TELEGRAM_MODULE === "1"
-    ? [{ key: "telegram", label: "Telegram" }]
-    : []),
+  // TELEGRAM REMOVIDO em 05/09/2026 (decisão do dono). Estava desativado atrás
+  // de NEXT_PUBLIC_TELEGRAM_MODULE desde 09/08/2026 e a flag nunca foi ligada
+  // em tenant nenhum. O canal de avisos será WhatsApp com a API oficial da
+  // Meta, e quando existir entra aqui como chave própria.
   // As três de CONFIGURAÇÕES (a ordem das abas de lá). As outras abas —
   // Usuários, Service Tokens, Status dos Dados, Parâmetros — não têm chave de
   // tela de propósito: quem as governa é o papel de administrador no backend.

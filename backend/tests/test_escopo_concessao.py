@@ -381,8 +381,19 @@ def test_o_alcance_nao_virou_permissao_do_catalogo():
     do grupo OBRAS do menu, que mostra o que o SISMOB e o SIMEC nao cobrem:
     mobilidade, saneamento, habitacao e a reconstrucao da Defesa Civil. Entrou
     SO com `ver`, e nao com `exportar`/`atualizar`, porque nao ha rota que essas
-    duas governariam — a mesma razao ja escrita no InvestSUS); o que este teste
-    guarda e a ausencia de caixinha de
+    duas governariam — a mesma razao ja escrita no InvestSUS).
+
+    ⚠️ E em 05/09/2026 o modulo Telegram foi REMOVIDO e este numero NAO mudou —
+    continua 76, e isso e o fato interessante. As duas chaves (`telegram.vincular`
+    e `telegram.administrar`) viviam atras de `TELEGRAM_MODULE`, flag que nunca
+    foi ligada em tenant nenhum: sem ela o catalogo ja era 76, com ela era 78.
+    Enquanto viveram assim, este teste e os de permissao se contradiziam — SEM a
+    flag a secao `telegram` ficava sem nenhuma caixinha embaixo (10 testes
+    vermelhos), COM a flag este aqui quebrava em 78. Nao havia configuracao em
+    que a suite passasse inteira. Catalogo condicional cobra esse preco: o
+    proximo canal de avisos (WhatsApp, API oficial da Meta) entra sem flag.
+
+    O que este teste guarda e a ausencia de caixinha de
     ALCANCE — `gestao.editar_proprios` e a forma que foi recusada.
 
     ⚠️ O NUMERO E TRIPWIRE, e nao a asserção que importa. Ele existe para que

@@ -93,7 +93,9 @@ WITH marca AS (
     RETURNING nome
 ), catalogo(tela) AS (
     -- Uniao dos dois catalogos, na ordem do frontend (o mais completo).
-    VALUES ('dashboard'), ('ai'), ('telegram'), ('parlamentares'),
+    -- `telegram` SAIU desta lista em 05/09/2026 pelo mesmo caminho de `suas`:
+    -- modulo removido do codigo, tela removida dos tres catalogos.
+    VALUES ('dashboard'), ('ai'), ('parlamentares'),
            ('gestao'), ('agendamentos'), ('rm'), ('documentos'),
            ('convenios'), ('emendas'),
            ('transferegov'), ('cauc'), ('sismob'), ('obrasgov'),

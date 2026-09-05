@@ -327,10 +327,10 @@ por tenant).
 > retorna antes de rodar, então nunca grava linha em `ingestion_log`, e o
 > `watchdog_coleta` — cujo catálogo `FRESCOR_HORAS` é **global aos 5 tenants**,
 > constante no código — passa a registrar "sismob: nenhum sucesso registrado" a
-> cada ciclo. Hoje isso é só uma linha WARN no log da Scheduled Task (nenhum app
-> do PACTHA tem `TELEGRAM_BOT_TOKEN` configurado), mas se você ligar o Telegram
-> antes de resolver isso, vira alarme recorrente sobre uma fonte desligada de
-> propósito. Não é defeito do SISMOB: é a lacuna entre expectativa global e
+> cada ciclo. Hoje isso é uma linha WARN no log da Scheduled Task e uma linha na
+> aba Status dos Dados, mas no dia em que existir um canal que **avisa gente**
+> (o WhatsApp da API oficial da Meta), vira alarme recorrente sobre uma fonte
+> desligada de propósito — resolva antes de ligar o canal. Não é defeito do SISMOB: é a lacuna entre expectativa global e
 > desligamento por tenant. Prefira **não deployar** o módulo no tenant do que
 > deployar e desligar pela env.
 

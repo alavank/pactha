@@ -657,6 +657,9 @@ _SUBSTANTIVO_PREFIXO: dict[str, str] = {
     "bi": "um painel de indicadores",
     "audit": "a trilha de auditoria",
     "auditoria": "a trilha de auditoria",
+    # O módulo saiu em 05/09/2026, mas este rótulo FICA: o `audit_log` é
+    # append-only e guarda atos de antes de 09/08/2026. Tirar a tradução não
+    # apagaria o registro — só o deixaria ilegível na tela de Auditoria.
     "telegram": "uma notificação do Telegram",
     "navegacao": "uma tela",
     "exportacao": "uma exportação",

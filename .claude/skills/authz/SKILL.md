@@ -71,12 +71,19 @@ permission bug cause an outage at a live prefeitura.
 ## Feature-flag import trap
 
 Several modules are gated by env vars checked at both import time and route-registration time,
-not just inside the handler. E.g. `TELEGRAM_MODULE=1` in `main.py` guards both the
-`from routers import telegram` import *and* the `include_router` call, because the router's
-decorators call `exige(...)` at import time against a permission catalog that only has those
-keys when the flag is on — importing it unconditionally with the flag off crashes the boot.
+not just inside the handler. `BI_MODULE` (backend) / `NEXT_PUBLIC_BI_MODULE` (frontend,
+build-time) gates the Painel de Indicadores this way.
 
-`BI_MODULE` (backend) / `NEXT_PUBLIC_BI_MODULE` (frontend, build-time) gates the Painel de
-Indicadores the same way, minus the import-time trap.
+The trap itself was learned on `TELEGRAM_MODULE` (module removed 05/09/2026, but the lesson
+outlives it): the flag has to guard the `from routers import <x>` import *and* the
+`include_router` call, because the router's decorators call `exige(...)` at import time
+against the permission catalog — importing a router whose keys aren't in the catalog crashes
+the boot of the whole API. That happened for real on the first deploy of PR #168.
 
-Follow this pattern for new optional modules: **gate the import, not just the route.**
+⚠️ Second lesson from the same module, and the reason it was removed: a **conditional
+catalog** (permission keys that exist only when a flag is on) makes the test suite
+self-contradictory. `permissoes.SECOES` listed the `telegram` section unconditionally while
+`CATALOGO` only had its keys with the flag on — so with the flag off 10 tests failed on an
+empty section, and with it on the catalog-size tripwire failed. There was no configuration
+where the suite passed. Prefer: **gate the import and the route, but keep the catalog
+unconditional** — or remove the module.
