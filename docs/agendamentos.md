@@ -154,19 +154,39 @@ fora da janela de observação que o resto do módulo respeita.
 
 ## 4. Tela
 
-### 4.0. Ocupação e pele (rodada 1)
+### 4.0. Ocupação e pele
 
-- A rota está em `TELAS_LARGAS` (`dashboard/layout.tsx`): o mesmo contêiner do TransfereGov,
-  `max-w-[1600px]`. Em `max-w-7xl` o mês ficava com 174px por dia e cinco colunas de kanban
-  pediam rolagem horizontal.
-- O módulo tem **altura de viewport** (`h-[calc(100vh-3rem)]`, o `py-6` do contêiner) com
-  `min-h-[34rem]` de válvula: em janela baixa quem rola é o `<main>`.
+- A rota está em **`telaCheia`** (`dashboard/layout.tsx`), junto com o Painel de Indicadores:
+  o contêiner da página **não põe `px` nem `py`**, e o módulo cuida do próprio espaçamento.
+  ⚠️ **Não a devolva para `TELAS_LARGAS`.** Ela esteve lá e o padding do contêiner recortava
+  o fundo próprio do módulo numa **moldura do cinza do sistema** — 24px em cima e embaixo, e
+  o que passasse de 1600px nas laterais. Margem negativa resolve só a horizontal. Sem padding
+  externo, o fundo do módulo **é** o fundo da área útil.
+- O módulo tem **altura de viewport** (`h-screen`) com `min-h-[34rem]` de válvula: em janela
+  baixa quem rola é o `<main>`.
+  ⚠️ **`h-screen` e não `h-full`**: o `<div key={escopo}>` que envolve a página é um bloco sem
+  altura própria, e `height: 100%` sobre pai de altura automática resolve para `auto`.
+  `h-screen` é exato porque a casca é `flex h-screen` e o `<main>` estica a altura toda, sem
+  cabeçalho acima dele.
 - ⚠️ **`min-h-0` em toda a cadeia flex.** Um filho flex tem `min-height: auto`, que trava a
   divisão da altura; sem ele o mês nasce do tamanho do texto, espremido no topo.
-- **Pele própria, escopada**: `.ag-modulo` redeclara `--bi-bg`/`--bi-surface`/`--bi-line` num
-  tom palha extraído de `estilo-usar-cores.jpg` (com equivalente escuro). Acento, CTA, links,
-  aba ativa e foco continuam sendo os do PACTHA — é o que impede a agenda de virar outro
-  produto. Nenhum outro módulo muda.
+- **Pele própria, escopada**: `.ag-modulo` redeclara `--bi-bg`/`--bi-surface`/`--bi-line`
+  (com equivalente escuro). Acento, CTA, links, aba ativa e foco continuam sendo os do
+  PACTHA — é o que impede a agenda de virar outro produto. Nenhum outro módulo muda.
+  A rampa final: chão `#fffefa`, cartão `#ffffff`, superfície recuada `#f7f5ef`, linhas
+  `#e4e1d9` / `#cfcbc0`.
+- ⭐ **NUM CALENDÁRIO, QUEM PINTA A TELA É A LINHA DA GRADE, NÃO O FUNDO** — foram três
+  tentativas de cor até ver isso. A malha 7×5 do mês atravessa a tela inteira; o chão aparece
+  só nos vãos entre os cartões. Medindo o "quanto de amarelo" em `r − b`, a 2ª tentativa
+  ficou **mais** amarela que a 1ª com o chão mais **claro**, porque a linha subira de 20 para
+  33. **Contraste se ganha na luminosidade; o calor se mantém constante ao longo da rampa.**
+- ⚠️ **O degrau chão→cartão praticamente não existe** (0,37 de ΔL\*, contra 6,1 no tema do
+  sistema). Quem separa o cartão da página é a **linha**, e por isso ela é um pouco mais
+  escura que a do tema. **Não a enfraqueça "para combinar com o fundo mais claro"**: é o
+  movimento intuitivo e é o contrário do que a conta pede. A tabela completa está no
+  comentário do bloco `.ag-modulo` em `globals.css`.
+  Pelo mesmo motivo, o **dia de fora do mês** sai de `--bi-surface-2` e não de uma mistura
+  com o chão — que, tão perto do branco, o tornaria indistinguível do mês corrente.
 - **Cabeçalho desgarrado** (`.ag-solto`): uma peça só, em três lugares — nomes dos dias da
   semana, cabeçalho de coluna do kanban, cabeçalho de coluna da lista.
   ⚠️ O vão entre os chips é **padding**, nunca `gap`: com `gap` a fileira ganha trilhas

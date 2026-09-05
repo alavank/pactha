@@ -234,11 +234,10 @@ detalhada mora agora em **[`docs/agendamentos.md`](docs/agendamentos.md)** — a
   ⚠️ Renomear **não toca na `chave`** — o código acha a coluna de entrada por
   `chave = 'solicitada'`, e levar a chave junto quebraria o default de todo compromisso novo,
   em silêncio, só no primeiro cadastro seguinte.
-- **Ocupação de tela**: `/dashboard/agendamentos` entrou em `TELAS_LARGAS` — o MESMO
-  contêiner do TransfereGov, não um novo. E ganhou **pele própria escopada** (`.ag-modulo`
-  redeclara `--bi-bg`/`--bi-surface`/`--bi-line` num tom palha amostrado do print de
-  referência, com equivalente escuro). Acento, CTA, link, aba ativa e foco continuam os do
-  PACTHA; nenhum outro módulo muda.
+- **Ocupação de tela**: o módulo ganhou **pele própria escopada** — `.ag-modulo` redeclara
+  `--bi-bg`/`--bi-surface`/`--bi-line` (com equivalente escuro), e os tokens valem da borda
+  do contêiner para dentro. Acento, CTA, link, aba ativa e foco continuam os do PACTHA;
+  nenhum outro módulo muda.
 - **Sem duplo clique para editar em aba nenhuma** (hover → balão, um clique → detalhe, botão
   «Editar» dentro). O duplo clique sobrou só na célula VAZIA, para criar.
 - **Arraste do kanban é próprio, sem biblioteca** — o projeto não tem lib de DnD, e trazer
@@ -246,10 +245,54 @@ detalhada mora agora em **[`docs/agendamentos.md`](docs/agendamentos.md)** — a
   com limiar de 6px, overlay `fixed` inclinado −3°, vão tracejado no destino e Esc para
   cancelar.
 
-⚠️ **O que ficou sem validar nas duas rodadas**: as cores com dado de teste local — não há
-Postgres na máquina de desenvolvimento (a suíte roda sem banco, ver `conftest.py`). Conferir
-na tela: calendário vazio deve ter cor própria (fundo palha, chips dos dias, dia atual em
-acento) e os cabeçalhos do kanban vêm semeados em cinza/âmbar/menta.
+**AS DUAS CORREÇÕES DE COR QUE VIERAM DEPOIS (PRs #380 e #381)**, cada uma com uma lição que
+vale além deste módulo:
+
+- ⭐ **Fundo escopado precisa de contêiner SEM padding, senão vira um retângulo pintado.** O
+  módulo estava em `TELAS_LARGAS`, cujo contêiner põe `px-4 py-6 sm:px-6 lg:px-8` — então o
+  `.ag-modulo` pintava só a caixa dele e sobrava uma **moldura do cinza do sistema** em volta
+  (24px em cima e embaixo, e o que passasse de 1600px nas laterais). Margem negativa
+  resolvia só a horizontal. A rota passou para **`telaCheia`** (o mesmo mecanismo do Painel
+  de Indicadores) e o módulo cuida do próprio espaçamento.
+  ⚠️ E lá dentro é **`h-screen`, não `h-full`**: o `<div key={escopo}>` que envolve a página
+  é um bloco sem altura própria, e `height: 100%` sobre pai de altura automática resolve
+  para `auto` — o módulo voltaria a nascer do tamanho do conteúdo.
+- ⭐ **NUM CALENDÁRIO, QUEM PINTA A TELA É A LINHA DA GRADE, NÃO O FUNDO.** Foram precisas
+  três tentativas até ver isso. Medindo em `r − b` (o "quanto de amarelo" de um cinza; num
+  neutro puro vale 0):
+
+  | tentativa | chão | linha da grade |
+  |---|---|---|
+  | 1ª (`#f4f1e8`) | 12 | 20 |
+  | 2ª (`#fffdf0`) | 15 | **33** ← ficou MAIS amarela que a 1ª, com o chão mais CLARO |
+  | final (`#fffefa`) | 5 | 11 |
+  | tema do sistema | −1 | −2 |
+
+  A malha 7×5 do mês atravessa a tela inteira; o chão aparece só nos vãos entre os cartões.
+  Ao escurecer a linha para compensar o degrau chão→cartão perdido, ela foi escurecida pelo
+  **eixo do bege** — e o módulo ficou mais amarelo justamente na tentativa em que o fundo
+  clareou.
+  ⚠️ **A regra que fica: contraste se ganha na LUMINOSIDADE; o calor se mantém constante ao
+  longo da rampa.** A razão calor(linha)/calor(chão) é 2,2× — a mesma proporção que o tema
+  usa no lado frio (−1 → −2); o que mudou foi o valor absoluto.
+- ⚠️ **Com o chão a 0,37 de ΔL\* do branco, o degrau chão→cartão deixou de existir** (no tema
+  ele vale 6,1). Quem separa o cartão da página passou a ser a linha — e por isso ela é um
+  pouco mais escura que a do tema. **Não a enfraqueça "para combinar com o fundo mais
+  claro"**: é o movimento intuitivo e é o contrário do que a conta pede. A tabela inteira
+  está no comentário do bloco `.ag-modulo` em `globals.css`.
+- Efeito colateral do chão quase branco: o **dia de fora do mês** saía de uma mistura com
+  `--bi-bg` e virou branco puro (agosto ficava idêntico a setembro na grade). Passou a sair
+  de `--bi-surface-2`.
+
+**Estado em 05/09/2026, fim do dia:** cinco PRs (#377 a #381) mergeados e no ar; backend e
+frontend dos cinco tenants na tag `c252c0a`, batendo com o `main` — a checagem que o
+[`INFRA.md`](INFRA.md) manda usar para provar que um deploy chegou. O dono conferiu na tela
+o bloco de período da vista semanal, as cores dos cabeçalhos do kanban e o fundo: tudo certo.
+
+⚠️ **O que continua sem validação automática**: as cores e o layout, porque não há Postgres
+na máquina de desenvolvimento (a suíte roda sem banco, ver `conftest.py`) nem suíte de
+frontend no repo. As três rodadas de ajuste visual desta sessão saíram todas de conferência
+na tela pelo dono — se um dia o módulo ganhar teste de regressão visual, é aqui que ele paga.
 
 ---
 
