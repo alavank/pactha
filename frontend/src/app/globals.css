@@ -843,6 +843,108 @@ html,
   }
 }
 
+/* --------------------------------------------------------------------------
+   A PELE DO MÓDULO — fundo "palha" e superfícies, ESCOPADOS em `.ag-modulo`.
+   --------------------------------------------------------------------------
+   ⭐ ESCOPADO DE PROPÓSITO, e é a única razão de existirem tokens novos: o dono
+   quis o creme de `estilo-usar-cores.jpg` só na agenda. Trocar `--bi-bg` no
+   `:root` pintaria o sistema inteiro — os 1.791 usos de cor apontam para lá.
+   Aqui os tokens são redeclarados no CONTÊINER do módulo, então valem da borda
+   dele para dentro e mais nada.
+
+   ⚠️ AS COMPONENTES `--bi-*` CONTINUAM VALENDO. O módulo não troca o acento, o
+   CTA, o foco nem a linha de divisória — botão principal, link e aba ativa
+   seguem no menta do PACTHA, que é o que impede a agenda de virar outro
+   produto. O que muda é só o CHÃO (`--bi-bg`) e o tom das superfícies.
+
+   Os valores saíram de uma amostragem do próprio print (contagem de cores da
+   imagem): fundo dominante `#f8f8f8` com o segundo tom em `#f0f0e8` — o creme.
+   Aqui ele é puxado um pouco mais quente e dessaturado para conviver com o
+   verde-acinzentado do PACTHA (`#eceeed`), em vez de brigar com ele. */
+.ag-modulo {
+  --bi-bg: #f4f1e8;          /* o chão de palha */
+  --bi-surface: #fffdf8;     /* cartão: creme quase branco, não branco puro */
+  --bi-surface-2: #efebdf;   /* cabeçalho desgarrado, coluna do kanban */
+  --bi-line: #e4dfd0;
+  --bi-line-strong: #cfc8b4;
+  background: var(--bi-bg);
+}
+
+/* No escuro o "palha" vira um marrom-esverdeado MUITO escuro: um creme claro
+   sobre a página preta seria um holofote, e o módulo passaria a ser a coisa
+   mais brilhante do sistema. O que se preserva é a TEMPERATURA — a agenda
+   continua sendo o único canto morno do produto. */
+[data-theme="pactha-dark"] .ag-modulo {
+  --bi-bg: #100f0b;
+  --bi-surface: #1a1813;
+  --bi-surface-2: #221f18;
+  --bi-line: rgba(255, 247, 230, 0.08);
+  --bi-line-strong: rgba(255, 247, 230, 0.16);
+}
+
+@layer components {
+  /* --------------------------------------------------------------------
+     O CABEÇALHO DESGARRADO — uma peça só, em três lugares.
+     --------------------------------------------------------------------
+     ⭐ É a gramática que o dono pediu depois de ver `estilo-usar-cores.jpg`:
+     o rótulo não fica COLADO no quadro, ele flutua acima dele. Vale para os
+     nomes dos dias no calendário, para o cabeçalho de cada coluna do kanban e
+     para o cabeçalho de colunas da lista.
+
+     ⚠️ UMA CLASSE, TRÊS USOS, e é isso que a torna um token. Três desenhos
+     "quase iguais" de cabeçalho é exatamente o que o cabeçalho de
+     `ui/superficies.tsx` descreve como o problema que aquele arquivo existe
+     para não ter — só que uma camada acima.
+
+     Sem `--ag-cor` a peça é neutra (dias da semana, colunas da lista); com
+     `--ag-cor` ela ganha o tom leve escolhido pelo usuário (kanban). O gap que
+     a separa do quadro é do CHAMADOR, não daqui: ele varia entre uma fileira
+     de sete chips e uma coluna só. */
+  .ag-solto {
+    background: var(--bi-surface-2);
+    border: 1px solid var(--bi-line);
+    border-radius: 0.85rem;
+    box-shadow: var(--bi-shadow);
+  }
+  .ag-solto-cor {
+    /* 18% e não 14%: o cabeçalho é uma faixa larga e sozinha na coluna — no
+       mesmo tom do chip do calendário ele quase não se distinguiria do fundo
+       creme, que já é quente. */
+    background: color-mix(in oklab, var(--ag-cor, var(--bi-accent)) 18%, var(--bi-surface));
+    border-color: color-mix(in oklab, var(--ag-cor, var(--bi-accent)) 30%, var(--bi-line));
+    color: color-mix(in oklab, var(--ag-cor, var(--bi-accent)) 45%, var(--bi-text));
+  }
+
+  /* --------------------------------------------------------------------
+     O CARTÃO EM MOVIMENTO (`kanban-card-tombado.png`).
+     --------------------------------------------------------------------
+     ⚠️ A INCLINAÇÃO É O QUE DIZ "ISTO ESTÁ NA MÃO". Sem ela, o cartão que
+     segue o cursor parece um cartão normal desenhado no lugar errado — e o
+     usuário não sabe se soltou ou não. Três graus bastam: mais que isso e o
+     texto fica difícil de ler enquanto se procura a coluna de destino.
+
+     `pointer-events: none` é obrigatório: o cartão fantasma fica SOB o cursor,
+     e sem isso ele intercepta o `pointermove` da coluna que está embaixo — o
+     destino nunca acenderia. */
+  .ag-arrastando {
+    position: fixed;
+    z-index: 60;
+    pointer-events: none;
+    transform: rotate(-3deg) scale(1.02);
+    box-shadow: 0 18px 40px -12px rgba(13, 16, 15, 0.35);
+    opacity: 0.96;
+  }
+  /* O buraco que o cartão deixou, na posição de destino. Tracejado e do mesmo
+     tamanho: é o que faz a lista não "pular" enquanto se arrasta. */
+  .ag-fantasma {
+    border: 1.5px dashed var(--ag-cor, var(--bi-line-strong));
+    background: color-mix(in oklab, var(--ag-cor, var(--bi-accent)) 8%, transparent);
+    border-radius: 0.9rem;
+  }
+  /* A origem, enquanto o cartão está no ar. */
+  .ag-origem { opacity: 0.35; filter: saturate(0.4); }
+}
+
 /* Painel de opções do <select> daisyUI. O Chromium 135+ renderiza a lista NA
    PÁGINA (appearance: base-select do daisyUI 5.6), não mais como popup do SO —
    e o estilo do daisyUI monta o painel com background-color: inherit e sombra

@@ -1056,6 +1056,13 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
                                  // voluntarias, pac e o modulo de especiais
     "/dashboard/convenios",      // 14 colunas
     "/dashboard/emendas",        // 11 colunas
+    // AGENDAMENTOS entra pelo mesmo motivo, por outro caminho: nao sao colunas
+    // de dado, e um CALENDARIO e um QUADRO. Em `max-w-7xl` o mes ficava com
+    // 174px por dia (cabe um chip truncado) e as cinco colunas do kanban
+    // pediam rolagem horizontal — que e justamente o que o teto de cinco
+    // colunas existe para evitar. Pedido do dono (05/09/2026): "a mesma area
+    // util do Dashboard e do TransfereGov".
+    "/dashboard/agendamentos",
   ];
   const telaLarga = TELAS_LARGAS.some((p) => pathname.startsWith(p));
 
