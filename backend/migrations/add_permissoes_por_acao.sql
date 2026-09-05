@@ -144,9 +144,53 @@ INSERT INTO permissoes_catalogo (chave, secao, escrita) VALUES
     ('convenios.ver', 'convenios', FALSE),
     ('convenios.exportar', 'convenios', FALSE),
     ('convenios.atualizar', 'convenios', TRUE),
-    ('transferegov.ver', 'convenios', FALSE),
-    ('transferegov.exportar', 'convenios', FALSE),
+    -- ⚠️ `transferegov.ver` e `transferegov.exportar` SAIRAM em 05/09/2026,
+    -- quando o grupo FEDERAIS virou oito telas (ver o bloco novo abaixo).
+    -- Sobrou `atualizar`: a COLETA nao e de tela nenhuma — o botao dela mora em
+    -- Configuracoes › Sessões, e uma coleta so alimenta as oito de uma vez.
+    -- Sair daqui so alcanca BANCO NOVO; nos cinco que ja estao no ar as duas
+    -- linhas ficam dormentes em `permissoes_catalogo` (apagar esbarraria no ON
+    -- DELETE RESTRICT de `user_permissoes`), e a migration
+    -- `add_permissoes_por_tela.sql` traduz as concessoes antigas para as novas.
     ('transferegov.atualizar', 'convenios', TRUE),
+
+    -- ⭐⭐ AS DEZOITO TELAS DO INCREMENTO «PERMISSAO POR TELA» (05/09/2026).
+    --
+    -- Pedido do dono: granularidade Modulo › Tela › Acao — «em Federais posso
+    -- liberar Em execução e não PAC». Ate aqui UMA chave governava as sete
+    -- telas de FEDERAIS e outra as dez de ESTADUAIS: o administrador marcava
+    -- «Transfere Gov» e concedia sete telas sem saber que estava concedendo
+    -- sete.
+    --
+    -- ⚠️ ENTRAM NESTA SEMENTE, e nao numa migration propria, pela mesma razao
+    -- ja escrita para `vigencias.*` mais abaixo: e AQUI que mora a
+    -- tabela-catalogo que serve de chave estrangeira, e esta semente roda a
+    -- CADA boot com DO NOTHING — entao a chave nova passa a ser gravavel nos
+    -- cinco tenants que ja estao no ar, sem migration nenhuma. Quem traduz as
+    -- concessoes ANTIGAS para elas e `add_permissoes_por_tela.sql`.
+    ('transferegov_radar.ver', 'convenios', FALSE),
+    ('transferegov_geral.ver', 'convenios', FALSE),
+    ('transferegov_geral.exportar', 'convenios', FALSE),
+    ('transferegov_especiais.ver', 'convenios', FALSE),
+    ('transferegov_especiais.exportar', 'convenios', FALSE),
+    ('transferegov_pac.ver', 'convenios', FALSE),
+    ('transferegov_voluntarias.ver', 'convenios', FALSE),
+    ('transferegov_voluntarias.exportar', 'convenios', FALSE),
+    ('transferegov_rejeitadas.ver', 'convenios', FALSE),
+    ('transferegov_rejeitadas.exportar', 'convenios', FALSE),
+    ('transferegov_encerradas.ver', 'convenios', FALSE),
+    ('transferegov_encerradas.exportar', 'convenios', FALSE),
+    ('transferegov_cnpj.ver', 'convenios', FALSE),
+    -- As oito estaduais que sairam de dentro de `convenios`. So `ver`: nenhuma
+    -- delas tem rota de exportacao nem de coleta sob demanda hoje.
+    ('repasses.ver', 'convenios', FALSE),
+    ('cofinanciamento.ver', 'convenios', FALSE),
+    ('monitoramento.ver', 'convenios', FALSE),
+    ('consulta_popular.ver', 'convenios', FALSE),
+    ('programas_rs.ver', 'convenios', FALSE),
+    ('funrigs.ver', 'convenios', FALSE),
+    ('emendas_rs.ver', 'convenios', FALSE),
+    ('tce_rs.ver', 'convenios', FALSE),
     ('cauc.ver', 'convenios', FALSE),
     ('cauc.exportar', 'convenios', FALSE),
     ('cauc.atualizar', 'convenios', TRUE),
@@ -211,12 +255,16 @@ INSERT INTO permissoes_catalogo (chave, secao, escrita) VALUES
     ('usuarios.editar', 'usuarios', TRUE),
     ('usuarios.excluir', 'usuarios', TRUE),
     ('usuarios.conceder', 'usuarios', TRUE),
-    -- Incremento 7 (modelos de permissao). Entra NESTA semente, e nao numa
-    -- migration propria, porque e aqui que mora a tabela-catalogo que serve de
-    -- chave estrangeira — e porque esta semente roda a CADA boot, que e o que
-    -- faz a chave nova virar gravavel num tenant que ja esta no ar.
-    ('usuarios.modelos', 'usuarios', TRUE),
+    -- ⚠️ `usuarios.modelos` (Incremento 7) SAIU desta semente em 05/09/2026,
+    -- com o subsistema de MODELOS DE PERMISSAO inteiro (decisao do dono). Mesma
+    -- mecanica do Telegram, logo abaixo: sair daqui so alcanca BANCO NOVO, e nos
+    -- cinco que ja estao no ar a linha fica dormente em `permissoes_catalogo`.
     ('usuarios.resetar_senha', 'usuarios', TRUE),
+    -- ⭐ PARAMETROS (05/09/2026): a aba que cadastra as listas do cliente ganhou
+    -- chave propria. Ate aqui ela pegava carona em `usuarios.ver`/`editar` —
+    -- quem editava PESSOAS editava as LISTAS, sem jeito de separar.
+    ('parametros.ver', 'usuarios', FALSE),
+    ('parametros.editar', 'usuarios', TRUE),
     -- `telegram.vincular` e `telegram.administrar` SAIRAM desta semente em
     -- 05/09/2026, com o modulo. Editar migration ja aplicada so alcanca BANCO
     -- NOVO — e e exatamente o efeito desejado: nos cinco bancos que ja estao no
@@ -319,9 +367,41 @@ WITH marca AS (
         ('convenios', 'convenios.ver', FALSE),
         ('convenios', 'convenios.exportar', FALSE),
         ('convenios', 'convenios.atualizar', TRUE),
-        ('transferegov', 'transferegov.ver', FALSE),
-        ('transferegov', 'transferegov.exportar', FALSE),
-        ('transferegov', 'transferegov.atualizar', TRUE),
+        -- ⚠️ ESTE BLOCO SO ALCANCA BANCO NOVO. O guard `migration_backfills`
+        -- ('add_permissoes_por_acao:compat_telas_e_papel') ja disparou nos cinco
+        -- tenants no ar, entao acrescentar linhas aqui nao os alcanca — quem
+        -- traduz as concessoes antigas LA e `add_permissoes_por_tela.sql`, com
+        -- guard proprio. Aqui as linhas existem para um tenant criado do zero
+        -- nascer coerente, que e o caso de Santa Maria (08/2026) e Nova Palma
+        -- (01/09/2026).
+        --
+        -- ⚠️ `transferegov.atualizar` sai da tela `sessoes`, e nao de uma das
+        -- oito de FEDERAIS: o botao da coleta mora em Configuracoes › Sessões.
+        ('sessoes', 'transferegov.atualizar', TRUE),
+        ('transferegov_radar', 'transferegov_radar.ver', FALSE),
+        ('transferegov_geral', 'transferegov_geral.ver', FALSE),
+        ('transferegov_geral', 'transferegov_geral.exportar', FALSE),
+        ('transferegov_especiais', 'transferegov_especiais.ver', FALSE),
+        ('transferegov_especiais', 'transferegov_especiais.exportar', FALSE),
+        ('transferegov_pac', 'transferegov_pac.ver', FALSE),
+        ('transferegov_voluntarias', 'transferegov_voluntarias.ver', FALSE),
+        ('transferegov_voluntarias', 'transferegov_voluntarias.exportar', FALSE),
+        ('transferegov_rejeitadas', 'transferegov_rejeitadas.ver', FALSE),
+        ('transferegov_rejeitadas', 'transferegov_rejeitadas.exportar', FALSE),
+        ('transferegov_encerradas', 'transferegov_encerradas.ver', FALSE),
+        ('transferegov_encerradas', 'transferegov_encerradas.exportar', FALSE),
+        ('transferegov_cnpj', 'transferegov_cnpj.ver', FALSE),
+        ('repasses', 'repasses.ver', FALSE),
+        ('cofinanciamento', 'cofinanciamento.ver', FALSE),
+        ('monitoramento', 'monitoramento.ver', FALSE),
+        ('consulta_popular', 'consulta_popular.ver', FALSE),
+        ('programas_rs', 'programas_rs.ver', FALSE),
+        ('funrigs', 'funrigs.ver', FALSE),
+        ('emendas_rs', 'emendas_rs.ver', FALSE),
+        ('tce_rs', 'tce_rs.ver', FALSE),
+        -- Parametros: tela NULL e admin, como as demais abas de administracao.
+        (NULL, 'parametros.ver', TRUE),
+        (NULL, 'parametros.editar', TRUE),
         ('cauc', 'cauc.ver', FALSE),
         ('cauc', 'cauc.exportar', FALSE),
         ('cauc', 'cauc.atualizar', TRUE),
@@ -387,20 +467,7 @@ WITH marca AS (
         (NULL, 'usuarios.editar', TRUE),
         (NULL, 'usuarios.excluir', TRUE),
         (NULL, 'usuarios.conceder', TRUE),
-        -- ⚠️ `usuarios.modelos` (Incremento 7) esta aqui porque TODA chave do
-        -- catalogo precisa de linha neste mapa — sem ela, o teste
-        -- tests/test_permissoes_migration.py quebra e a chave nasceria
-        -- concedida a ninguem sem ninguem ter decidido isso.
-        --
-        -- MAS ela so alcanca BANCO NOVO, e a assimetria e proposital: este
-        -- backfill roda UMA VEZ na vida do banco (a marca em
-        -- `migration_backfills`), e nos tenants que ja subiram a marca existe ha
-        -- semanas. Ou seja: em Monte Siao, ninguem ganha esta caixinha no
-        -- deploy — ela e concedida a mao, pelo dono da plataforma, a quem ele
-        -- escolher. E o resultado CERTO nas duas pontas: ninguem PERDE nada
-        -- (era funcao que nao existia), e a receita que dirige o que os outros
-        -- administradores concedem nao nasce distribuida por deploy.
-        (NULL, 'usuarios.modelos', TRUE),
+        -- (`usuarios.modelos` ocupava esta linha ate 05/09/2026, com os moldes)
         (NULL, 'usuarios.resetar_senha', TRUE),
         -- (o Telegram ocupava estas duas linhas ate 05/09/2026)
         -- Auditoria

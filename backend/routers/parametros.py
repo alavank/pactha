@@ -31,9 +31,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
 from models.user import User
+from services import authz
 from services.audit import registrar
-from services.auth import get_current_user
-from services.registro_rotas import exige
+from services.auth import ensure_tela, get_current_user
+from services.registro_rotas import declarado, exige
 
 router = APIRouter(prefix="/api/parametros", tags=["parametros"])
 
@@ -44,10 +45,15 @@ TIPOS = {
 }
 
 
-def _require_admin(user: User):
-    """Mesmo gate das outras abas de Configuracoes sem chave de tela."""
-    if (user.role or "") != "admin":
-        raise HTTPException(403, "Apenas administradores gerenciam parâmetros")
+# ⚠️ `_require_admin` SAIU em 05/09/2026. Parametros virou uma TELA de verdade
+# (`parametros.ver` / `parametros.editar`, tela `parametros`), e o gate por PAPEL
+# passou a contradizer a nova regra: o dono marcava a aba para alguem e o papel o
+# expulsava mesmo assim. Quem barra agora sao as duas chaves, que e o que a tela
+# de Usuarios desenha. Mesmo movimento feito em `routers/users.py`.
+#
+# ⚠️ E as duas chaves sao NOVAS: ate aqui esta tela pegava carona em
+# `usuarios.ver`/`usuarios.editar` — quem editava PESSOAS editava as LISTAS, sem
+# jeito de separar as duas coisas.
 
 
 def _valida_tipo(tipo: str) -> str:
@@ -86,16 +92,27 @@ def _chave_de(rotulo: str) -> str:
     return base[:40] or "perfil"
 
 
-@router.get("", dependencies=[exige("usuarios.ver")])
+@router.get("", dependencies=[declarado("parametros.ver", "usuarios.ver")])
 async def listar(
     tipo: str,
     incluir_inativos: bool = False,
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
-    """Os parametros de um tipo. SEM `_require_admin`: quem cadastra usuario
-    precisa dos rotulos, e a tela de Usuarios ja e admin-only por conta propria.
-    A lista tambem alimenta a TRADUCAO de chave -> rotulo em qualquer tela."""
+    """Os parametros de um tipo.
+
+    ⭐ ACEITA `parametros.ver` OU `usuarios.ver`, e o OU e a peca importante:
+    quem cadastra PESSOA precisa dos rotulos de perfil para o seletor, e obrigar
+    `parametros.ver` para isso significaria que conceder a tela de Usuarios sem
+    a de Parametros produz um seletor de perfil vazio — cadastro quebrado por
+    uma permissao que ninguem entenderia ter de marcar junto. A lista tambem
+    alimenta a TRADUCAO de chave -> rotulo em qualquer tela.
+
+    ⚠️ E so LEITURA. Escrever parametro continua exigindo `parametros.editar` +
+    a tela `parametros`, que e a separacao que este incremento criou."""
+    if not (authz.pode(current, "parametros.ver")
+            or authz.pode(current, "usuarios.ver")):
+        authz.exigir(current, "parametros.ver")
     _valida_tipo(tipo)
     where = "WHERE tipo = :t" + ("" if incluir_inativos else " AND ativo")
     rows = (await db.execute(text(
@@ -105,14 +122,14 @@ async def listar(
              "ordem": r[4], "ativo": r[5], "reservado": r[6]} for r in rows]
 
 
-@router.post("", dependencies=[exige("usuarios.editar")])
+@router.post("", dependencies=[exige("parametros.editar")])
 async def criar(
     req: ParametroCreate,
     request: Request,
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
-    _require_admin(current)
+    ensure_tela(current, "parametros")
     tipo = _valida_tipo(req.tipo)
     rotulo = (req.rotulo or "").strip()
     if not rotulo:
@@ -150,7 +167,7 @@ async def criar(
             "ordem": ordem, "ativo": True, "reservado": False}
 
 
-@router.patch("/{param_id}", dependencies=[exige("usuarios.editar")])
+@router.patch("/{param_id}", dependencies=[exige("parametros.editar")])
 async def atualizar(
     param_id: int,
     req: ParametroUpdate,
@@ -158,7 +175,7 @@ async def atualizar(
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
-    _require_admin(current)
+    ensure_tela(current, "parametros")
     row = (await db.execute(text(
         "SELECT tipo, valor, rotulo, ordem, ativo, reservado FROM parametros WHERE id = :i"),
         {"i": param_id})).first()
@@ -189,7 +206,7 @@ async def atualizar(
             "ordem": ordem, "ativo": ativo, "reservado": reservado}
 
 
-@router.delete("/{param_id}", dependencies=[exige("usuarios.editar")])
+@router.delete("/{param_id}", dependencies=[exige("parametros.editar")])
 async def excluir(
     param_id: int,
     request: Request,
@@ -198,7 +215,7 @@ async def excluir(
 ):
     """Exclui de vez — SO quando ninguem usa. Com gente cadastrada no perfil, a
     saida honesta e DESATIVAR (some do seletor, continua traduzindo quem tem)."""
-    _require_admin(current)
+    ensure_tela(current, "parametros")
     row = (await db.execute(text(
         "SELECT tipo, valor, rotulo, reservado FROM parametros WHERE id = :i"),
         {"i": param_id})).first()

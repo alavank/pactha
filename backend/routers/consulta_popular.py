@@ -27,7 +27,7 @@ from services.registro_rotas import exige
 router = APIRouter(prefix="/api/consulta-popular", tags=["consulta-popular"])
 
 
-@router.get("", dependencies=[exige("convenios.ver")])
+@router.get("", dependencies=[exige("consulta_popular.ver")])
 async def consulta_popular(
     municipio_id: int = Query(...),
     db: AsyncSession = Depends(get_db),
@@ -38,7 +38,7 @@ async def consulta_popular(
     `tem_dados: false` significa que a coleta ainda não rodou (ou que o município
     não é do RS) — nunca que a região não elegeu nada."""
     ensure_municipio_access(current, municipio_id)
-    ensure_tela(current, "convenios")
+    ensure_tela(current, "consulta_popular")
 
     linhas = (await db.execute(text("""
         SELECT corede, edicao, demanda_ordem, demanda, orgao, votos_corede,

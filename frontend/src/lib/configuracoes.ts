@@ -31,15 +31,28 @@ export type AbaConfig = {
   soSuper?: boolean;
 };
 
+// ⭐⭐ AS ABAS VIRARAM TELAS DE VERDADE em 05/09/2026 — a regra do dono é que se
+// libera a ABA, não «Configurações» inteiro. Quatro delas (Usuários, Telemetria,
+// Status dos Dados, Parâmetros) eram governadas pelo PAPEL `admin`, e por isso
+// não havia como entregar a Auditoria ao controle interno sem torná-lo
+// administrador do sistema — segregação de função é requisito das ISOs, não
+// preferência de menu.
+//
+// ⚠️ TELEMETRIA USAVA A CHAVE `auditoria`, que é de OUTRA coisa: liberar a
+// trilha liberava junto o horário de trabalho de todo mundo. Agora tem a sua.
+//
+// ⚠️ SERVICE TOKENS continua `soAdmin`+`soSuper` e SEM chave de tela, de
+// propósito: é credencial de máquina da Alavank. Uma tela para ela apareceria na
+// árvore de permissões do cliente prometendo o que ninguém pode receber.
 export const ABAS_CONFIGURACOES: AbaConfig[] = [
-  { href: "/dashboard/configuracoes/usuarios", label: "Usuários", icon: Users, soAdmin: true },
+  { href: "/dashboard/configuracoes/usuarios", label: "Usuários", icon: Users, tela: "usuarios" },
   { href: "/dashboard/configuracoes/auditoria", label: "Auditoria", icon: ScrollText, tela: "auditoria" },
-  { href: "/dashboard/configuracoes/telemetria", label: "Telemetria", icon: Activity, tela: "auditoria" },
+  { href: "/dashboard/configuracoes/telemetria", label: "Telemetria", icon: Activity, tela: "telemetria" },
   { href: "/dashboard/configuracoes/cofre", label: "Cofre de Senhas", icon: KeyRound, tela: "cofre" },
   { href: "/dashboard/configuracoes/sessoes", label: "Sessões (gov.br)", icon: KeyRound, tela: "sessoes", soSuper: true },
   { href: "/dashboard/configuracoes/service-tokens", label: "Service Tokens", icon: KeyRound, soAdmin: true, soSuper: true },
-  { href: "/dashboard/configuracoes/frescor", label: "Status dos Dados", icon: Activity, soAdmin: true },
-  { href: "/dashboard/configuracoes/parametros", label: "Parâmetros", icon: SlidersHorizontal, soAdmin: true },
+  { href: "/dashboard/configuracoes/frescor", label: "Status dos Dados", icon: Activity, tela: "frescor" },
+  { href: "/dashboard/configuracoes/parametros", label: "Parâmetros", icon: SlidersHorizontal, tela: "parametros" },
 ];
 
 /** As rotas ANTIGAS continuam montando as mesmas telas (bookmark não quebra) —

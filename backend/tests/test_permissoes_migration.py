@@ -99,10 +99,17 @@ def test_ver_e_exportar_nao_exigem_admin():
     X.ver e X.exportar; os verbos de ESCRITA so para quem e admin hoje".
 
     As excecoes sao NOMINAIS e cada uma tem motivo escrito na migration:
-    `usuarios.*` e `frescor.*` nunca foram tela (sempre `role == 'admin'`), e
-    `cofre.revelar` e admin desde sempre em routers/cofre.py."""
+    `usuarios.*`, `frescor.*` e `parametros.*` nunca foram tela (sempre
+    `role == 'admin'`), e `cofre.revelar` e admin desde sempre em
+    routers/cofre.py.
+
+    ⚠️ `parametros.ver` entrou na lista em 05/09/2026, quando a aba de
+    Parametros ganhou chave propria. Ela e excecao pelo MESMO motivo das outras
+    duas — nunca teve tela, era governada pelo papel —, e por isso o backfill de
+    banco novo a concede so a admin. A tela `parametros` que a acompanha nasce
+    com quem ja era administrador."""
     excecoes = {"usuarios.ver", "frescor.ver", "usuarios.exportar",
-                "frescor.exportar", "cofre.revelar"}
+                "frescor.exportar", "cofre.revelar", "parametros.ver"}
     for tela, permissao, exige_admin in _mapa():
         verbo = permissao.rsplit(".", 1)[1]
         if verbo in ("ver", "exportar") and permissao not in excecoes:

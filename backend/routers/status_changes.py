@@ -21,7 +21,16 @@ router = APIRouter(prefix="/api/status-changes", tags=["status-changes"])
 # misturadas. A exigencia honesta e "uma das duas": `exige()` cobraria as duas
 # juntas e tiraria o aviso do dashboard de quem so acompanha uma das fontes.
 # Mesmo desenho de `routers/municipios.py::municipio_summary`.
-_FONTES_PERMISSOES = ("convenios.ver", "transferegov.ver")
+# ⚠️ `transferegov.ver` VIROU CINCO em 05/09/2026 (divisao do grupo FEDERAIS em
+# uma tela por folha do menu). Mesma razao de `routers/municipios.py`: as
+# mudancas de status vem de `transferegov_propostas`, que as cinco telas leem —
+# citar so uma delas tiraria o painel de quem tem outra.
+_FONTES_PERMISSOES = (
+    "convenios.ver",
+    "transferegov_geral.ver", "transferegov_voluntarias.ver",
+    "transferegov_rejeitadas.ver", "transferegov_encerradas.ver",
+    "transferegov_especiais.ver",
+)
 
 
 def _clean(s):

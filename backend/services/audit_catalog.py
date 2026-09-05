@@ -182,16 +182,23 @@ _TABELA: dict[str, dict] = {
         "alterou as permissões", MOD_USUARIOS, _ALTO, prep="de",
         nota="O detalhe traz o que foi CONCEDIDO e o que foi RETIRADO, caixinha "
              "por caixinha, e o resumo do que a pessoa passou a poder. Quem "
-             "concede só consegue conceder o que ele mesmo tem. Quando o "
-             "administrador partiu de um MODELO, o detalhe diz qual — e há "
-             "uma linha «aplicou um modelo» no mesmo instante.",
+             "concede só consegue conceder o que ele mesmo tem. Em linhas "
+             "anteriores a 09/2026 o detalhe pode citar um MODELO de permissão "
+             "— o subsistema foi removido, mas o registro do que aconteceu "
+             "continua válido.",
     ),
-    # --- Modelos de permissão (o "molde", routers/modelos_permissao.py) ----
-    # Alto nos quatro: um modelo é uma RECEITA de permissão. Quem escreve o
-    # molde influencia o que TODOS os outros administradores vão conceder — um
-    # molde chamado "Somente consulta" que carregue "Revelar a senha" engana
-    # quem confia no nome, e é o único jeito de conceder poder sem que o
-    # administrador que clicou tenha lido a caixinha.
+    # --- Modelos de permissão — HISTÓRICO ----------------------------------
+    # ⚠️ O SUBSISTEMA FOI REMOVIDO em 05/09/2026 (decisão do dono) e nenhuma
+    # destas quatro ações é emitida por código nenhum hoje. Elas CONTINUAM aqui
+    # porque a trilha é append-only: as linhas gravadas nos cinco bancos entre
+    # 08/2026 e 09/2026 existem para sempre, e sem a tradução o auditor leria
+    # `modelo_permissao.aplicar` cru numa tela que existe justamente para não
+    # exigir isso dele. Traduzir o passado não ressuscita a funcionalidade.
+    #
+    # Alto nos quatro, e a razão continua válida para quem lê o histórico: um
+    # modelo era uma RECEITA de permissão. Quem escrevia o molde influenciava o
+    # que TODOS os outros administradores concediam — um molde chamado "Somente
+    # consulta" que carregasse "Revelar a senha" enganava quem confiava no nome.
     "modelo_permissao.criar": _a(
         "criou o modelo de permissões", MOD_USUARIOS, _ALTO, prep="chamado",
         nota="Modelo é um MOLDE, não um grupo: ele não dá permissão a ninguém "

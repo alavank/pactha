@@ -24,7 +24,7 @@ from services.auth import get_current_user, ensure_municipio_access, ensure_tela
 import httpx
 import unicodedata
 from services import authz
-from services.registro_rotas import exige
+from services.registro_rotas import declarado, exige
 
 router = APIRouter(prefix="/api/transferegov", tags=["transferegov"])
 
@@ -127,7 +127,7 @@ async def _fetch_listagem(uf: Optional[str]) -> list[dict]:
     return items
 
 
-@router.get("/buscar", dependencies=[exige("transferegov.ver")])
+@router.get("/buscar", dependencies=[exige("transferegov_especiais.ver")])
 async def buscar(
     municipio_id: int = Query(..., description="ID do municipio PACTHA"),
     # Aceita VARIAS situacoes (?situacao=CIENTE&situacao=IMPEDIDO).
@@ -147,7 +147,7 @@ async def buscar(
     do PACTHA + filtros adicionais.
     """
     ensure_municipio_access(current, municipio_id)
-    ensure_tela(current, "transferegov")
+    ensure_tela(current, "transferegov_especiais")
     mun = (await db.execute(select(Municipio).where(Municipio.id == municipio_id))).scalar_one_or_none()
     if not mun:
         raise HTTPException(404, "Município não encontrado")
@@ -257,7 +257,7 @@ def _padrao_like(termo: str) -> str:
     return "%" + "".join(saida) + "%"
 
 
-@router.get("/por-cnpj", dependencies=[exige("transferegov.ver")])
+@router.get("/por-cnpj", dependencies=[exige("transferegov_cnpj.ver")])
 async def por_cnpj(
     cnpj: str = Query(..., description="CNPJ do proponente (com ou sem mascara)"),
     db: AsyncSession = Depends(get_db),
@@ -269,7 +269,7 @@ async def por_cnpj(
     Nao e escopado por municipio (e o proposito). Voluntarias respeita o escopo
     de municipios do usuario nao-admin.
     """
-    ensure_tela(current, "transferegov")
+    ensure_tela(current, "transferegov_cnpj")
     alvo = _digits(cnpj)
     if len(alvo) != 14:
         raise HTTPException(400, "Informe um CNPJ válido (14 dígitos)")
@@ -401,8 +401,51 @@ _CATEGORIA_SQL = (
 )
 
 
-@router.get("/voluntarias", dependencies=[exige("transferegov.ver")])
+# ⭐⭐ AS QUATRO TELAS QUE DIVIDEM ESTA ROTA — e por que a categoria subiu para o
+# CAMINHO em 05/09/2026.
+#
+# «Em execução», «Voluntárias», «Rejeitadas» e «Encerradas» sao QUATRO folhas do
+# menu lateral, mas um componente so no frontend
+# (`components/TransfereGovPropostas.tsx`) com uma prop `categoria`. Ate aqui a
+# categoria vinha em QUERY, e as quatro telas dividiam a chave `transferegov.ver`
+# — entao conceder uma concedia as quatro, e o pedido do dono e o oposto: «em
+# Federais posso liberar Em execução e não PAC».
+#
+# ⚠️ GATEAR POR QUERY NAO SERIA TRAVA. O parametro e escolha do cliente: quem
+# tivesse so «Rejeitadas» pediria `?categoria=geral` e leria a outra tela. Com a
+# categoria no CAMINHO, o gate le o segmento que a rota casou — e ai vale o mesmo
+# que quatro rotas separadas, sem quatro copias da mesma query de 200 linhas.
+_TELA_POR_CATEGORIA: dict[str, str] = {
+    "geral": "transferegov_geral",
+    "voluntarias": "transferegov_voluntarias",
+    "rejeitadas": "transferegov_rejeitadas",
+    "encerradas": "transferegov_encerradas",
+}
+
+# As quatro chaves, para o `declarado(...)` da rota. A decisao de QUAL cobrar
+# mora no corpo, porque ela depende do caminho.
+_CATEGORIA_PERMISSOES: tuple = tuple(
+    f"{t}.ver" for t in _TELA_POR_CATEGORIA.values())
+
+
+def _guarda_categoria(current: User, categoria: str) -> str:
+    """Cobra a permissao e a tela DA CATEGORIA PEDIDA. Devolve a chave da tela.
+
+    ⚠️ Categoria desconhecida e 404, e nao "sem filtro": um default que
+    devolvesse tudo seria exatamente o furo que este desenho fecha — bastaria
+    inventar um nome para escapar do gate."""
+    tela = _TELA_POR_CATEGORIA.get((categoria or "").strip().lower())
+    if not tela:
+        raise HTTPException(404, "Categoria desconhecida")
+    authz.exigir(current, f"{tela}.ver")
+    ensure_tela(current, tela)
+    return tela
+
+
+@router.get("/lista/{categoria}",
+            dependencies=[declarado(*_CATEGORIA_PERMISSOES)])
 async def voluntarias(
+    categoria: str,
     municipio_id: int = Query(...),
     situacao: Optional[str] = Query(None),
     orgao: Optional[str] = Query(None),
@@ -426,7 +469,6 @@ async def voluntarias(
     vigencia: Optional[list[str]] = Query(None, description="vence30 | vence60 | vence90 | vence120 | prestacao (aceita varios)"),
     vig_fim_de: Optional[str] = Query(None, description="fim de vigencia >= AAAA-MM-DD"),
     vig_fim_ate: Optional[str] = Query(None, description="fim de vigencia <= AAAA-MM-DD"),
-    categoria: Optional[str] = Query(None, description="geral | voluntarias | rejeitadas | encerradas"),
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
@@ -445,9 +487,12 @@ async def voluntarias(
     ⚠️ `voluntarias` e `geral` agora SE SOBREPOEM, e isso e intencional: sao
     perguntas diferentes sobre o mesmo dado ("o que esta em andamento?" e "o que
     ja foi celebrado?"). Nenhuma proposta some de aba nenhuma por causa disso.
+
+    ⚠️ A CATEGORIA E OBRIGATORIA e vem do CAMINHO — ver `_TELA_POR_CATEGORIA`.
+    Ela deixou de ser um filtro opcional para ser a identidade da tela.
     """
     ensure_municipio_access(current, municipio_id)
-    ensure_tela(current, "transferegov")
+    _guarda_categoria(current, categoria)
     where = ["municipio_id = :mun"]
     params: dict = {"mun": municipio_id}
     if categoria == "voluntarias":
@@ -611,16 +656,26 @@ async def voluntarias(
 
 
 @router.get("/voluntarias/{numero_proposta:path}",
-            dependencies=[exige("transferegov.ver")])
+            dependencies=[declarado(*_CATEGORIA_PERMISSOES)])
 async def voluntarias_detalhe(
     numero_proposta: str,
     municipio_id: int = Query(...),
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
-    """Detalhe completo de uma proposta (todos os campos capturados do portal)."""
+    """Detalhe completo de uma proposta (todos os campos capturados do portal).
+
+    ⚠️ ACEITA QUALQUER UMA DAS QUATRO CATEGORIAS, e nao uma tela especifica: a
+    MESMA proposta aparece em «Em execução» ou em «Encerradas» conforme a
+    situacao dela, que muda sozinha com o tempo. Exigir a tela exata faria o
+    detalhe parar de abrir no dia em que o TransfereGov mudasse o status —
+    para o usuario, a linha da lista deixaria de clicar sem explicacao.
+    Quem nao tem nenhuma das quatro nao passa daqui."""
     ensure_municipio_access(current, municipio_id)
-    ensure_tela(current, "transferegov")
+    if not any(authz.pode(current, chave) for chave in _CATEGORIA_PERMISSOES):
+        # Cobra a primeira para a negativa sair com chave, trilha e mensagem
+        # normais em vez de um 403 escrito a mao.
+        authz.exigir(current, _CATEGORIA_PERMISSOES[0])
     r = await db.execute(text("""
         SELECT numero_proposta, situacao, orgao, proponente, identificacao,
                codigo_instrumento, modalidade, situacao_siafi, numero_processo,
@@ -706,7 +761,7 @@ async def voluntarias_detalhe(
 
 
 @router.get("/plano-acao/{plano_acao_id}",
-            dependencies=[exige("transferegov.ver")])
+            dependencies=[exige("transferegov_especiais.ver")])
 async def detalhe(plano_acao_id: int,
                   db: AsyncSession = Depends(get_db),
                   current: User = Depends(get_current_user)):
@@ -873,7 +928,13 @@ async def run_scraper_manual(
     """Dispara o scraper voluntarias manualmente (background). Util apos
     re-capturar a sessao gov.br via bookmarklet."""
     ensure_municipio_access(user, municipio_id)
-    ensure_tela(user, "transferegov")
+    # ⚠️ A TELA E `sessoes`, e nao uma do grupo FEDERAIS. O botao que chama isto
+    # mora em Configuracoes › Sessões (gov.br) — a coleta so anda com uma sessao
+    # autenticada recem-capturada, e e la que se re-captura. Ate 05/09/2026 aqui
+    # se exigia a tela `transferegov`, que deixou de existir quando o grupo foi
+    # dividido em oito telas; cobrar uma das oito seria escolher ao acaso qual
+    # delas "abre o botao" que nao esta em nenhuma.
+    ensure_tela(user, "sessoes")
     import asyncio as _aio
     from ingestion.transferegov_voluntarias import run, run_one
 
@@ -892,7 +953,7 @@ async def run_scraper_manual(
             "message": "Scraper iniciado em background. Acompanhe via logs."}
 
 
-@router.get("/pac", dependencies=[exige("transferegov.ver")])
+@router.get("/pac", dependencies=[exige("transferegov_pac.ver")])
 async def listar_pac(
     municipio_id: int = Query(..., description="ID do municipio PACTHA"),
     parlamentar: Optional[str] = Query(None, description="filtra pela emenda parlamentar (parcial)"),
@@ -903,7 +964,7 @@ async def listar_pac(
     """Selecao PAC / Novo PAC do municipio (coletado do TransfereGov Acesso Livre,
     tabela transferegov_pac). Retorna a listagem por municipio."""
     ensure_municipio_access(current, municipio_id)
-    ensure_tela(current, "transferegov")
+    ensure_tela(current, "transferegov_pac")
     where = ["municipio_id = :m"]
     params: dict = {"m": municipio_id}
     if parlamentar:

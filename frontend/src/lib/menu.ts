@@ -1,0 +1,208 @@
+// ⭐⭐ O MENU LATERAL — E A FONTE DA ÁRVORE DE PERMISSÕES.
+//
+// Este arquivo saiu de dentro de `app/dashboard/layout.tsx` em 05/09/2026 por
+// um motivo só, e ele é o pedido do dono:
+//
+//     "O modal de usuário mostra a árvore do jeito que está no menu lateral do
+//      ambiente. Isso é dinâmico por cliente: cada município e cada estado tem
+//      seu menu, o PACTHA é adaptado por cliente. Se o menu do cliente mudar
+//      (módulo novo liberado, aba nova), a tela de permissões acompanha sem
+//      código novo."
+//
+// Enquanto `NAV_ITEMS` morava no layout, a tela de Usuários desenhava a própria
+// lista de chips a partir de `TELAS` — outra lista, com outra ordem e outros
+// agrupamentos. As duas contavam histórias diferentes sobre o mesmo produto, e
+// quem administra procurava "Diário Oficial" numa ordem que não era a que ele
+// tinha acabado de ver no menu.
+//
+// Agora há UMA estrutura: o menu desenha a barra lateral E a árvore do modal.
+// Módulo novo aparece nos dois no mesmo deploy, sem código novo.
+//
+// ⚠️ O QUE NÃO MORA AQUI: as AÇÕES de cada tela. Elas vêm do backend
+// (`GET /api/permissoes/catalogo`), que é a fonte única delas — ver o cabeçalho
+// de `lib/permissoes.ts`. Aqui está a ESTRUTURA (grupos, ordem, rótulos,
+// rotas); lá está o que se pode FAZER em cada uma. `hrefToTela` é a dobradiça,
+// e `backend/tests/test_arvore_segue_o_menu.py` quebra se os dois lados
+// divergirem.
+
+import {
+  LayoutDashboard, LayoutGrid, FileText, Newspaper, Target, Landmark,
+  Sparkles, Edit2, UserCircle2, FileSignature, ShieldCheck, HeartPulse,
+  BarChart3, CalendarClock, Radar, HardHat, Users, ScrollText, Activity,
+  KeyRound, SlidersHorizontal,
+} from "lucide-react";
+
+/* `destaque` marca o item que sai da fila e ganha cor propria — hoje so o
+   Radar de Captacao. Nao e enfeite: e o unico item do menu que olha para
+   FRENTE (prazo ainda aberto), enquanto todo o resto mostra instrumento ja
+   celebrado. Ver o comentario no NAV_ITEMS. */
+export type NavLeaf = {
+  href: string;
+  label: string;
+  icon?: React.ComponentType<{ className?: string }>;
+  destaque?: boolean;
+};
+export type NavSection = { sectionLabel: string; children: NavLeaf[] };
+export type NavGroup = {
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  children: Array<NavLeaf | NavSection>;
+};
+export type NavEntry = NavLeaf | NavGroup;
+
+// Com o BI ligado, o item "Dashboard" JA E o Painel de Indicadores (mesma rota).
+// Antes havia um link separado logo acima da navegacao — dois menus para a
+// mesma coisa. Ficou um so.
+export const BI_ON = process.env.NEXT_PUBLIC_BI_MODULE === "1";
+
+// ⭐ A ORDEM É A QUE O DONO DITOU (11/08/2026), e ela conta uma história: o
+// PAINEL abre, as FONTES DE RECURSO vêm em bloco (federal, estadual,
+// parlamentares, saúde, educação), a REGULARIDADE fecha o diagnóstico, e só
+// então vêm as ferramentas de ENTREGA (relatório, IA, painéis, diário,
+// documentos, gestão). Configurações não está aqui: é item próprio no fim da
+// barra, com as telas de administração em abas (ver `GRUPO_CONFIGURACOES`).
+//
+// ⚠️ Os GRUPOS foram preservados — "Estaduais" e "Transfere Gov" continuam
+// menus com seus submenus, como o dono confirmou.
+export const NAV_ITEMS: NavEntry[] = [
+  {
+    href: "/dashboard",
+    label: BI_ON ? "Painel de Indicadores" : "Dashboard",
+    icon: BI_ON ? BarChart3 : LayoutDashboard,
+  },
+  /* ⭐ RADAR DE CAPTAÇÃO — FORA DE QUALQUER GRUPO, e logo abaixo do Painel
+     (pedido do dono, 04/09/2026).
+     Ele estava dentro de FEDERAIS, abrindo o grupo, e ali competia com sete
+     telas que mostram o que JÁ FOI ASSINADO. Esta é a única que olha para
+     FRENTE: programas com janela de proposta ainda aberta. */
+  {
+    href: "/dashboard/transferegov-radar",
+    label: "Radar de captação",
+    icon: Radar,
+    destaque: true,
+  },
+  /* ⭐ FEDERAIS / ESTADUAIS, EM MAIÚSCULO (pedido do dono, 28/08/2026): o que o
+     sistema mostra são emendas e convênios por ESFERA. */
+  {
+    label: "FEDERAIS",
+    icon: Landmark,
+    children: [
+      /* «Em execução» e não «Geral» (pedido do dono): a tela sempre mostrou os
+         instrumentos JÁ CELEBRADOS. A rota continua `transferegov-geral` de
+         propósito: renomeá-la quebraria URLs salvas e os links que o PAC monta
+         por `categoria`. */
+      { href: "/dashboard/transferegov-geral", label: "Em execução" },
+      { href: "/dashboard/transferegov", label: "Especiais" },
+      { href: "/dashboard/transferegov-pac", label: "PAC (Novo PAC)" },
+      { href: "/dashboard/transferegov-voluntarias", label: "Voluntárias" },
+      { href: "/dashboard/transferegov-rejeitadas", label: "Rejeitadas" },
+      { href: "/dashboard/transferegov-encerradas", label: "Encerradas" },
+      { href: "/dashboard/transferegov-cnpj", label: "CNPJ" },
+    ],
+  },
+  {
+    label: "ESTADUAIS",
+    icon: FileText,
+    children: [
+      { href: "/dashboard/convenios", label: "Convênios" },
+      { href: "/dashboard/emendas", label: "Emendas Estaduais" },
+      { href: "/dashboard/repasses", label: "Repasses" },
+      { href: "/dashboard/cofinanciamento", label: "Cofinanciamento Saúde" },
+      { href: "/dashboard/monitoramento", label: "Monitoramento" },
+      { href: "/dashboard/consulta-popular", label: "Consulta Popular" },
+      { href: "/dashboard/programas-rs", label: "Programas do Estado" },
+      { href: "/dashboard/funrigs", label: "Plano Rio Grande" },
+      { href: "/dashboard/emendas-rs", label: "Emendas Estaduais RS" },
+      { href: "/dashboard/tce-rs", label: "TCE-RS" },
+    ],
+  },
+  // ⭐ AGENDAMENTOS fica FORA dos grupos de esfera porque não é fonte de
+  // recurso: é o trabalho da equipe SOBRE essas fontes.
+  { href: "/dashboard/agendamentos", label: "Agendamentos", icon: CalendarClock },
+  { href: "/dashboard/parlamentares", label: "Parlamentares", icon: UserCircle2 },
+  // ⭐ SAÚDE é um grupo porque a saúde é uma PASTA do município, não quatro
+  // sistemas avulsos. O SIMEC fica FORA de propósito — é educação (FNDE).
+  {
+    label: "Saúde",
+    icon: HeartPulse,
+    children: [
+      { href: "/dashboard/fns", label: "Fundo Nacional de Saúde" },
+      { href: "/dashboard/sismob", label: "Obras da Saúde (SISMOB)" },
+      { href: "/dashboard/investsus", label: "InvestSUS" },
+      { href: "/dashboard/acordofes", label: "Acordo FES (Dívida Saúde)" },
+    ],
+  },
+  // ⭐ OBRAS é um grupo pelo mesmo motivo que SAÚDE é.
+  //
+  // ⚠️ O SISMOB APARECE AQUI **E** EM SAÚDE, o mesmo link nos dois lugares. Não
+  // é engano: ele é as duas coisas (é obra e é saúde), e quem chega por "Saúde"
+  // não é a mesma pessoa que chega por "Obras".
+  //
+  // ⚠️ NA ÁRVORE DE PERMISSÕES ISSO IMPORTA: a mesma tela em dois grupos daria
+  // duas caixinhas para a mesma concessão. Quem resolve é `arvoreDoMenu`, que
+  // deduplica por chave de tela e mantém a PRIMEIRA ocorrência.
+  {
+    label: "Obras",
+    icon: HardHat,
+    children: [
+      { href: "/dashboard/obrasgov", label: "Obras Federais (Obras.gov.br)" },
+      { href: "/dashboard/sismob", label: "Obras da Saúde (SISMOB)" },
+    ],
+  },
+  { href: "/dashboard/simec", label: "SIMEC - PAR (MEC)", icon: Target },
+  { href: "/dashboard/cauc", label: "Regularidade", icon: ShieldCheck },
+  { href: "/dashboard/rm", label: "Relatório de Monitoramento", icon: FileText },
+  { href: "/dashboard/ai", label: "IA PACTHA", icon: Sparkles },
+  { href: "/dashboard/paineis", label: "Painéis Municipais", icon: LayoutGrid },
+  { href: "/dashboard/dou", label: "Diário Oficial", icon: Newspaper },
+  { href: "/dashboard/documentos", label: "Geração de Documentos", icon: FileSignature },
+  { href: "/dashboard/gestao", label: "Gestão Interna", icon: Edit2 },
+];
+
+/** ⭐ CONFIGURAÇÕES COMO GRUPO DA ÁRVORE.
+ *
+ *  Na barra lateral, Configurações é um item só que abre uma página com abas —
+ *  e por isso não está em `NAV_ITEMS`. Na ÁRVORE DE PERMISSÕES ele precisa ser
+ *  um grupo com as abas dentro, porque a regra do dono é explícita:
+ *
+ *      "Liberar «Configurações» inteiro não existe: libera-se a aba (Usuários,
+ *       Auditoria etc.) e, dentro dela, as ações."
+ *
+ *  ⚠️ SERVICE TOKENS NÃO ESTÁ AQUI, e a ausência é a decisão: é credencial de
+ *  MÁQUINA da Alavank, só super-admin. Oferecê-la na árvore seria prometer o que
+ *  nenhum usuário de cliente pode receber — a mesma regra que mantém as
+ *  caixinhas inertes fora da tela. */
+export const GRUPO_CONFIGURACOES: NavGroup = {
+  label: "Configurações",
+  icon: SlidersHorizontal,
+  children: [
+    { href: "/dashboard/configuracoes/usuarios", label: "Usuários", icon: Users },
+    { href: "/dashboard/configuracoes/auditoria", label: "Auditoria", icon: ScrollText },
+    { href: "/dashboard/configuracoes/telemetria", label: "Telemetria", icon: Activity },
+    { href: "/dashboard/configuracoes/cofre", label: "Cofre de Senhas", icon: KeyRound },
+    { href: "/dashboard/configuracoes/sessoes", label: "Sessões (gov.br)", icon: KeyRound },
+    { href: "/dashboard/configuracoes/frescor", label: "Status dos Dados", icon: Activity },
+    { href: "/dashboard/configuracoes/parametros", label: "Parâmetros", icon: SlidersHorizontal },
+  ],
+};
+
+/** O menu INTEIRO, como a árvore de permissões o enxerga: a barra lateral mais
+ *  o grupo de Configurações. A ordem é a da barra, com Configurações no fim —
+ *  que é onde ele está para quem administra. */
+export const MENU_COMPLETO: NavEntry[] = [...NAV_ITEMS, GRUPO_CONFIGURACOES];
+
+/** Lista plana de hrefs (ordem da sidebar) — usada pelo guard de rota. */
+export function allLeafHrefs(items: NavEntry[]): string[] {
+  const out: string[] = [];
+  for (const item of items) {
+    if ("children" in item) {
+      for (const c of item.children) {
+        if ("sectionLabel" in c) out.push(...c.children.map((l) => l.href));
+        else out.push(c.href);
+      }
+    } else {
+      out.push(item.href);
+    }
+  }
+  return out;
+}

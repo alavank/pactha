@@ -24,14 +24,14 @@ router = APIRouter(prefix="/api/cofinanciamento", tags=["cofinanciamento"])
 logger = logging.getLogger("cofinanciamento")
 
 
-@router.get("", dependencies=[exige("convenios.ver")])
+@router.get("", dependencies=[exige("cofinanciamento.ver")])
 async def listar(
     municipio_id: Optional[int] = None,
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
     ensure_municipio_access(current, municipio_id)
-    ensure_tela(current, "convenios")
+    ensure_tela(current, "cofinanciamento")
     vazio = {"tem_dados": False, "fonte": None,
              "primaria": {"itens": [], "perdido_total": 0, "teto_total": 0},
              "vigilancia": {"itens": [], "travado_total": 0, "travadas": 0,

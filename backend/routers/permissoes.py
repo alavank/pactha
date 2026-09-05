@@ -16,13 +16,16 @@ declaram permissao como qualquer rota de recurso:
     GET /api/permissoes/usuarios          quem tem o que (a tela de Usuarios)
     PUT /api/permissoes/usuario/{id}      ⭐ o ato de CONCEDER
 
-Os MODELOS de permissao (o "molde" do Incremento 7) moram em
-`routers/modelos_permissao.py`, sob `/api/permissoes/modelos`. Eles NAO gravam
-permissao de ninguem: aplicar um molde CALCULA as caixinhas, e quem grava
-continua sendo o `PUT` daqui — uma porta so para escrever permissao, com uma
-copia so de cada guarda. O que este arquivo ganhou foi o campo `modelo_id` no
-corpo do `PUT`, que existe SO para a trilha dizer de onde o administrador
-partiu.
+⚠️ OS MODELOS DE PERMISSAO ("molde", Incremento 7) FORAM REMOVIDOS em
+05/09/2026, por decisao do dono: "nao quero modelos ou molde de permissoes, pode
+tirar isso tudo, eu sei q é pra facilitar mas eu prefiro mais ainda a forma de
+criar na mao um a um". O atalho que ficou no lugar e o que ele pediu — COPIAR as
+permissoes de outro usuario ja cadastrado (`POST /api/users/{id}/copiar-permissoes`
+e o mesmo gesto dentro do modal de cadastro), que e copia explicita de UMA pessoa
+para outra e nao uma receita anonima reaplicavel.
+
+⚠️ O `PUT` daqui continua sendo a UNICA porta que escreve permissao — uma copia
+so de cada guarda. Ela nao mudou com a saida dos moldes.
 
 ⭐ O ALCANCE POR LINHA (Incremento 6) VIAJA NAS MESMAS QUATRO ROTAS
 ------------------------------------------------------------------
@@ -60,7 +63,7 @@ poderia receber mais um campo. Nao recebeu por duas razoes:
      de nome e toda troca de rotulo.
 
 O que este endpoint NAO afrouxa: as duas guardas de `routers/users.py`
-(`_require_admin` pelo PAPEL e `_guard_target`, que protege conta de dono)
+(`_exige_tela_usuarios`, a tela, e `_guard_target`, que protege conta de dono)
 valem aqui IMPORTADAS de la, e nao reescritas — uma segunda copia de regra de
 permissao e como as copias divergem.
 """
@@ -107,9 +110,9 @@ async def minhas(current: User = Depends(get_current_user)):
         # nao desenhar a tela de permissoes como se houvesse algo a conceder a
         # ele — e para nao sugerir que da para tirar.
         "super_admin": is_super_admin(current),
-        "somente_leitura": bool(getattr(current, "somente_leitura", False)),
-        # `AUTHZ_MODO`: enquanto for "aviso" a trava so registra, e a tela pode
-        # explicar isso a quem estranhar ver um botao que ainda funciona.
+        # `AUTHZ_MODO`: com `bloqueio` (default desde 05/09/2026) a trava nega de
+        # verdade; em `aviso` ela so registra, e a tela precisa poder explicar
+        # isso a quem estranhar ver um botao que ainda funciona.
         "modo": authz.modo(),
         # O ALCANCE do PROPRIO usuario, todo modulo escopavel com o valor
         # vigente. Serve a dois consumidores: a tela pode avisar "voce so edita
@@ -125,12 +128,16 @@ async def minhas(current: User = Depends(get_current_user)):
 # CONCESSAO — o que a tela de Usuarios le e grava
 # ---------------------------------------------------------------------------
 # As duas guardas da tela de Usuarios, importadas e nao copiadas:
-#   `_require_admin`  o PAPEL de zelador continua abrindo esta tela (nega SEMPRE,
-#                     nos dois modos de AUTHZ_MODO) — sem ele, enquanto a trava
-#                     estiver em modo aviso, QUALQUER usuario logado gravaria
+#   `_exige_tela_usuarios`
+#                     a TELA `usuarios` abre esta area. Nega SEMPRE, nos dois
+#                     modos de AUTHZ_MODO (`ensure_tela` e da familia antiga) —
+#                     e a garantia importava muito mais enquanto o modo era
+#                     `aviso`: sem ela, QUALQUER usuario logado gravaria
 #                     permissao para si mesmo, porque `exige()` so registraria.
+#                     Com `bloqueio` ligado em 05/09/2026 as duas travas dizem a
+#                     mesma coisa, e a redundancia deixou de custar nada.
 #   `_guard_target`   protege conta de dono da plataforma e conta de admin.
-from routers.users import _guard_target, _require_admin  # noqa: E402
+from routers.users import _guard_target, _exige_tela_usuarios  # noqa: E402
 
 
 class ConcederRequest(BaseModel):
@@ -158,22 +165,11 @@ class ConcederRequest(BaseModel):
     #                     omitido dentro do dicionario volta para `todos`.
     escopos: Optional[dict[str, str]] = None
 
-    # ⭐ O MODELO que serviu de PONTO DE PARTIDA para este Salvar (Incremento 7).
-    #
-    # ⚠️ NAO CRIA VINCULO NENHUM. Nao ha coluna que ligue usuario a modelo, aqui
-    # nem no banco: aplicar e COPIAR, e o vinculo acaba no instante da copia.
-    # Este campo existe SO para a trilha, e a distincao importa — quem o ler como
-    # "o cadastro dela segue o modelo X" vai editar o modelo esperando corrigir a
-    # pessoa, e nao vai corrigir nada.
-    #
-    # ⚠️ E ELE E DECLARADO PELO CLIENTE, nao verificado. O servidor NAO confere
-    # se as caixinhas salvas batem com as do modelo — elas nao devem bater: o
-    # dono pediu que ficassem editaveis, entao o administrador ajusta antes de
-    # salvar e o normal e diferirem. A autoridade da trilha continua sendo o
-    # `valor_antes`/`valor_depois` desta mesma linha, que e medido, e nao
-    # afirmado. `modelo_id` responde outra pergunta: "de onde ele partiu".
-    modelo_id: Optional[int] = None
-    modelo_modo: Optional[str] = None
+    # ⚠️ `modelo_id` e `modelo_modo` SAIRAM em 05/09/2026 com o subsistema de
+    # MODELOS DE PERMISSAO inteiro (decisao do dono). Eles nao concediam nada —
+    # eram declaracao do cliente para a trilha ("de que molde este Salvar
+    # partiu") —, entao a saida nao afrouxa guarda nenhuma: a autoridade da
+    # linha sempre foi o par `valor_antes`/`valor_depois`, que e MEDIDO.
 
 
 async def _concedidas(db: AsyncSession, user_id: int) -> set:
@@ -209,7 +205,7 @@ async def por_usuario(
     dessas pessoas de fato ALCANCA depende de super-admin, de somente-leitura e
     de quiosque, e quem resolve isso e a funcao pura — a tela explica a
     diferenca em vez de esconde-la."""
-    _require_admin(current)
+    _exige_tela_usuarios(current)
     linhas = await db.execute(text("SELECT user_id, permissao FROM user_permissoes"))
     mapa: dict[str, list] = {}
     for uid, chave in linhas.fetchall():
@@ -453,36 +449,6 @@ async def _gravar_concessao(db: AsyncSession, user_id: int, antes: set,
             {"u": user_id, "p": chave, "por": autor_id})
 
 
-async def _modelo_declarado(db: AsyncSession, modelo_id, modo=None) -> Optional[dict]:
-    """O molde que o cliente diz ter usado, resolvido para NOME pelo banco.
-
-    ⚠️ Molde APAGADO (ou id inexistente) NAO derruba o Salvar. A concessao e
-    completa e autoritativa sozinha — `valor_antes`/`valor_depois` estao na
-    mesma linha —, e recusar a gravacao porque um RÓTULO sumiu entre a
-    aplicacao e o clique em Salvar seria o rabo abanando o cachorro: o
-    administrador perderia o trabalho por causa de um campo que existe so para
-    a trilha. Registramos o id com `nome: None`, que e a verdade do que
-    aconteceu."""
-    if modelo_id is None:
-        return None
-    try:
-        alvo_id = int(modelo_id)
-    except (TypeError, ValueError):
-        return None
-    linha = (await db.execute(
-        text("SELECT nome FROM modelos_permissao WHERE id = :i"),
-        {"i": alvo_id})).first()
-    return {
-        "id": alvo_id,
-        "nome": linha[0] if linha else None,
-        "modo": permissoes.normalizar_modo_aplicacao(modo),
-        # Quando o molde sumiu entre aplicar e salvar, a linha da trilha diz
-        # isso em vez de mostrar um nome vazio sem explicacao.
-        "observacao": None if linha else
-                      "o modelo não existe mais no momento do registro",
-    }
-
-
 @router.put("/usuario/{user_id}", dependencies=[exige("usuarios.conceder")])
 async def conceder(
     user_id: int,
@@ -497,7 +463,7 @@ async def conceder(
     (papel), depois em QUEM se pode mexer (`_guard_target`), depois O QUE se
     pode conceder (anti-escalonamento) — e so entao a escrita, com a trilha
     dentro da mesma transacao."""
-    _require_admin(current)
+    _exige_tela_usuarios(current)
     alvo: Optional[User] = (await db.execute(
         select(User).where(User.id == user_id))).scalar_one_or_none()
     if not alvo:
@@ -538,8 +504,6 @@ async def conceder(
         chave for chave in set(escopos_antes) | set(escopos_depois)
         if escopos_antes.get(chave, permissoes.ESCOPO_TODOS)
         != escopos_depois.get(chave, permissoes.ESCOPO_TODOS))
-    # ⭐ O MODELO de onde o administrador partiu (Incremento 7), se houve um.
-    modelo = await _modelo_declarado(db, req.modelo_id, req.modelo_modo)
     await registrar_critico(
         db, action="usuarios.conceder", user=current, request=request,
         target_type="user", target_id=alvo.id, alvo_nome=alvo.name,
@@ -572,44 +536,9 @@ async def conceder(
             "alcance_resumo": [
                 _frase_escopo(c, escopos_depois[c]) for c in sorted(escopos_depois)
             ] or None,
-            # De onde o administrador partiu. `nome` vem do BANCO, e nao do
-            # cliente: o que ele declara e um id.
-            "modelo_aplicado": modelo,
         },
         commit=False,
     )
-    # ⭐ A APLICACAO DO MOLDE VIRA LINHA PROPRIA — e so quando houve uma.
-    #
-    # ⚠️ Sim, sao DUAS linhas para um clique em Salvar, e o repo argumenta
-    # contra isso no alcance por linha (que viaja DENTRO de `usuarios.conceder`).
-    # A diferenca e qual pergunta cada linha responde. O alcance e a segunda
-    # metade de uma frase so ("pode editar, e so os que ele criou") — separa-lo
-    # obrigaria a cruzar dois eventos para entender uma unica decisao. O molde
-    # nao: ele responde "ONDE este molde foi aplicado?", que e pergunta de
-    # REVISAO DE ACESSO ("quem recebeu o molde do Cofre neste semestre?") e que
-    # filtrar `usuarios.conceder` nao responde — la o molde seria um campo dentro
-    # do detalhe de centenas de linhas. E exatamente o mesmo motivo pelo qual
-    # `usuarios.conceder` foi separada de `user.update`.
-    #
-    # Na MESMA transacao (`commit=False`): ou as duas linhas entram com a
-    # concessao, ou nao entra nenhuma.
-    if modelo is not None:
-        await registrar_critico(
-            db, action="modelo_permissao.aplicar", user=current, request=request,
-            # O alvo e a PESSOA — e por ela que o auditor filtra. Qual molde foi
-            # usado esta no detalhe.
-            target_type="user", target_id=alvo.id, alvo_nome=alvo.name,
-            details={
-                "modelo": modelo,
-                "alvo_email": alvo.email,
-                "concedidas": concedidas or None,
-                "retiradas": retiradas or None,
-                "efeito": "Aplicar COPIA as permissões para o cadastro da "
-                          "pessoa. Não há vínculo: mexer no modelo depois não "
-                          "muda mais este usuário.",
-            },
-            commit=False,
-        )
     await db.commit()
     return {"permissoes": sorted(depois),
             "concedidas": concedidas, "retiradas": retiradas,
@@ -617,7 +546,4 @@ async def conceder(
             # explicito): a tela redesenha os radios a partir da resposta sem
             # precisar saber que "ausente" quer dizer `todos`.
             "escopos": _escopos_completos(escopos_depois),
-            "alcance_alterado": escopos_mudados,
-            # O que foi REGISTRADO sobre o molde (nome resolvido pelo banco), ou
-            # None quando o Salvar nao partiu de nenhum.
-            "modelo_aplicado": modelo}
+            "alcance_alterado": escopos_mudados}

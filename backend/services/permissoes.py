@@ -117,6 +117,26 @@ class Permissao:
     recurso_rotulo: str   # "Relatorio de Monitoramento"
     verbo_rotulo: str     # "Excluir"
     descricao: str        # a frase que explica o que a caixinha libera
+    # ⭐ A TELA DO MENU que este recurso governa — a chave de `user_telas`
+    # (05/09/2026). E o que liga o catalogo de PERMISSAO ao MENU LATERAL, e por
+    # isso e o campo que fechou o buraco mais antigo desta tela.
+    #
+    # Ate aqui `user_telas` e `user_permissoes` eram DUAS listas diferentes que
+    # nao casavam: 4 recursos sem tela nenhuma, 1 tela sem recurso nenhum, e o
+    # grupo FEDERAIS inteiro (7 telas) preso a uma chave so. O administrador
+    # marcava «Transfere Gov» e concedia sete telas de uma vez sem saber.
+    #
+    # Agora a regra e 1:1 — cada folha do menu e um recurso, e o recurso diz
+    # QUAL folha. A tela de Usuarios desenha a arvore percorrendo o menu e
+    # casando por este campo (`frontend/src/lib/menu.ts`), e
+    # `tests/test_arvore_segue_o_menu.py` quebra se um dos dois lados ganhar um
+    # item que o outro nao tem.
+    #
+    # ⚠️ VAZIO = CAPACIDADE SEM TELA. Hoje so `transferegov.atualizar`: o botao
+    # que dispara a coleta mora em Configuracoes › Sessoes, nao numa tela do
+    # grupo FEDERAIS. A arvore desenha essas como linha SEM interruptor de
+    # acesso — so a acao —, porque nao ha tela para ligar ou desligar.
+    tela: str = ""
     # ⚠️ NAO e "o verbo parece de escrita". E: o guard de somente-leitura barra
     # esta acao? Ver o cabecalho do modulo.
     escrita: bool = False
@@ -157,6 +177,14 @@ class Permissao:
             "escrita": self.escrita,
             # Lista (e nao tuple): vai para JSON. Vazio = federal/nacional.
             "ufs": list(self.ufs),
+            # A folha do menu que esta caixinha governa. Vazio = capacidade sem
+            # tela (ver o campo `tela` acima).
+            "tela": self.tela,
+            # ⚠️ INERTE: a chave existe no catalogo mas NENHUMA rota a exige —
+            # marcar nao abre nada porque nao ha porta. A arvore ESCONDE estas
+            # (decisao do dono, 05/09/2026): caixinha que promete e nao entrega
+            # e pior que caixinha faltando. Ver `PERMISSOES_INERTES`.
+            "inerte": self.chave in PERMISSOES_INERTES,
         }
 
 
@@ -213,6 +241,9 @@ class _Recurso:
     fonte: str = ""        # so para o verbo `atualizar`: "no SIGCON-MG"
     # UFs em que o recurso existe; vazio = federal/nacional. Ver `Permissao.ufs`.
     ufs: tuple = ()
+    # A folha do menu que este recurso governa (chave de `user_telas`). Vazio =
+    # capacidade sem tela. Ver `Permissao.tela`.
+    tela: str = ""
 
 
 # ⚠️ Recurso novo entra AQUI e em `migrations/add_permissoes_por_acao.sql` (a
@@ -226,41 +257,42 @@ _RECURSOS: tuple = (
     _Recurso("gestao", SEC_TRABALHO, "Gestao Interna",
              "as anotações da Gestão Interna",
              "uma anotação nova na Gestão Interna",
-             ("ver", "criar", "editar", "excluir", "exportar")),
+             ("ver", "criar", "editar", "excluir", "exportar"),
+             tela="gestao"),
     # AGENDAMENTOS — a agenda de trabalho da equipe. Sem `ufs`: é nacional, e
     # uma agenda não depende de que estado é o cliente.
     _Recurso("agendamentos", SEC_TRABALHO, "Agendamentos",
              "os agendamentos da equipe",
              "um agendamento novo",
-             ("ver", "criar", "editar", "excluir", "exportar")),
+             ("ver", "criar", "editar", "excluir", "exportar"),
+             tela="agendamentos"),
     _Recurso("rm", SEC_TRABALHO, "Relatorio de Monitoramento",
              "os Relatórios de Monitoramento",
              "um Relatório de Monitoramento novo",
-             ("ver", "criar", "editar", "excluir", "exportar")),
+             ("ver", "criar", "editar", "excluir", "exportar"),
+             tela="rm"),
     _Recurso("documentos", SEC_TRABALHO, "Geração de Documentos",
              "os documentos gerados",
              "um documento novo",
-             ("ver", "criar", "editar", "excluir", "exportar")),
+             ("ver", "criar", "editar", "excluir", "exportar"),
+             tela="documentos"),
 
     # --- Convenios e transferencias (ver / exportar / atualizar) ------------
-    # ⚠️ ufs = MG, ES, GO, RS, e a lista e MAIOR do que "onde ha convenio
-    # estadual": esta chave governa o GRUPO ESTADUAIS INTEIRO do menu. Alem de
-    # Convenios (MG=SIGCON, ES=GConv/SEGER), passam por `convenios.ver` as telas
-    # de Repasses e Cofinanciamento (GO — Goias publica a EXECUCAO, nao o
-    # instrumento) e as cinco do RS (Consulta Popular, Programas do Estado,
-    # Plano Rio Grande, Emendas RS e TCE-RS). Ver os routers `repasses.py`,
-    # `cofinanciamento.py`, `consulta_popular.py`, `programas_rs.py` e
-    # `conteudo_rs.py`: todos exigem esta mesma chave.
+    # ⚠️ ufs = MG, ES — e ATE 05/09/2026 era (MG, ES, GO, RS), porque esta chave
+    # governava o GRUPO ESTADUAIS INTEIRO: passavam por `convenios.ver` tambem
+    # Repasses e Cofinanciamento (GO), Monitoramento e as quatro do RS. Cada uma
+    # ganhou chave e tela proprias logo abaixo, e as UFs desceram com elas — e
+    # por isso a lista daqui encolheu para onde ha convenio estadual DE VERDADE
+    # (MG=SIGCON, ES=GConv/SEGER).
     #
     # ⚠️ TIRAR UMA UF DAQUI ESCONDE A CAIXINHA de um cliente que precisa dela.
-    # A lista espelha a uniao dos mapas de `frontend/src/lib/estadual.ts`
-    # (FONTE_CONVENIOS_ESTADUAIS + REPASSES_POR_UF + COFINANCIAMENTO_POR_UF +
-    # CONSULTA_POPULAR_POR_UF + PROGRAMAS_POR_UF + CONTEUDO_ESTADUAL_POR_UF), e
-    # `tests/test_catalogo_por_uf.py` quebra se as duas divergirem.
+    # A lista espelha `FONTE_CONVENIOS_ESTADUAIS` de
+    # `frontend/src/lib/estadual.ts`, e `tests/test_catalogo_por_uf.py` quebra se
+    # as duas divergirem.
     #
-    # ⚠️ O ROTULO E NEUTRO — nao diz "SIGCON", que e o nome do sistema de MINAS.
-    # A mesma chave serve quatro estados com quatro portais de nomes diferentes
-    # (MG=SIGCON, ES=Portal de Convenios/SEGER, GO=SIGECON, RS=CAGE/SEFAZ), e o
+    # ⚠️ O ROTULO CONTINUA NEUTRO — nao diz "SIGCON", que e o nome do sistema de
+    # MINAS. A mesma chave serve dois estados com portais de nomes diferentes
+    # (MG=SIGCON, ES=Portal de Convenios/SEGER), e o
     # administrador de Santa Maria/RS lia "SIGCON" numa caixinha que no banco
     # dele so tem dado gaucho. E o mesmo defeito que `frontend/src/lib/
     # estadual.ts` existe para fechar (o sistema carimbava "CAGEC — Minas
@@ -276,16 +308,108 @@ _RECURSOS: tuple = (
     # cabecalho pelos mapas de `estadual.ts`.
     _Recurso("convenios", SEC_CONVENIOS, "Convênios Estaduais",
              "os convênios estaduais", "", ("ver", "exportar", "atualizar"),
-             ufs=("MG", "ES", "GO", "RS")),
-    _Recurso("transferegov", SEC_CONVENIOS, "Transfere Gov",
+             ufs=("MG", "ES"), tela="convenios"),
+
+    # --- ESTADUAIS: as OUTRAS oito telas do grupo -------------------------
+    # ⚠️⚠️ ELAS SAIRAM DE DENTRO DE `convenios` EM 05/09/2026, e a saida e o
+    # ponto deste incremento. Ate aqui UMA chave (`convenios.ver`) abria as DEZ
+    # telas do grupo ESTADUAIS — o administrador marcava «Convênios Estaduais» e
+    # concedia, sem saber, Repasses, Cofinanciamento, Monitoramento e as cinco
+    # do Rio Grande do Sul. A regra do dono agora e Modulo › Tela › Acao: «em
+    # Federais posso liberar Em execução e não PAC».
+    #
+    # Aqui a divisao foi BARATA porque cada tela ja tinha router proprio
+    # (`repasses.py`, `cofinanciamento.py`, `monitoramento.py`,
+    # `consulta_popular.py`, `programas_rs.py`, `conteudo_rs.py`): so trocar o
+    # `exige("convenios.ver")` pela chave da propria tela.
+    #
+    # ⚠️ AS UFs DESCEM COM ELAS, e por isso `convenios` encolheu de
+    # (MG, ES, GO, RS) para (MG, ES): a lista antiga era a UNIAO do grupo
+    # inteiro justamente porque a chave governava o grupo inteiro. Agora cada
+    # tela carrega o proprio estado, e a de MG deixa de aparecer para o cliente
+    # gaucho. As UFs espelham os mapas de `frontend/src/lib/estadual.ts` —
+    # `tests/test_catalogo_por_uf.py` quebra se divergirem.
+    #
+    # ⚠️ SO `ver` NAS OITO: nenhuma delas tem rota de exportacao nem de coleta
+    # sob demanda hoje. E a mesma regra do InvestSUS e do Obras.gov.br abaixo —
+    # permissao que nao governa nada e pior que permissao faltando.
+    _Recurso("repasses", SEC_CONVENIOS, "Repasses Estaduais",
+             "os repasses estaduais recebidos pelo município", "",
+             ("ver",), ufs=("GO",), tela="repasses"),
+    _Recurso("cofinanciamento", SEC_CONVENIOS, "Cofinanciamento da Saúde",
+             "os repasses do fundo estadual ao fundo municipal de saúde", "",
+             ("ver",), ufs=("GO",), tela="cofinanciamento"),
+    _Recurso("monitoramento", SEC_CONVENIOS, "Monitoramento de Convênios",
+             "os registros mensais de execução dos convênios", "",
+             ("ver",), ufs=("RS",), tela="monitoramento"),
+    _Recurso("consulta_popular", SEC_CONVENIOS, "Consulta Popular",
+             "as demandas aprovadas na Consulta Popular/COREDEs", "",
+             ("ver",), ufs=("RS",), tela="consulta_popular"),
+    _Recurso("programas_rs", SEC_CONVENIOS, "Programas do Estado",
+             "as linhas de fomento do governo do estado", "",
+             ("ver",), ufs=("RS",), tela="programas_rs"),
+    _Recurso("funrigs", SEC_CONVENIOS, "Plano Rio Grande",
+             "as linhas do fundo de reconstrução do estado", "",
+             ("ver",), ufs=("RS",), tela="funrigs"),
+    _Recurso("emendas_rs", SEC_CONVENIOS, "Emendas Estaduais RS",
+             "as emendas parlamentares estaduais do Rio Grande do Sul", "",
+             ("ver",), ufs=("RS",), tela="emendas_rs"),
+    _Recurso("tce_rs", SEC_CONVENIOS, "TCE-RS",
+             "as licitações, contratos e obras publicados pelo TCE-RS", "",
+             ("ver",), ufs=("RS",), tela="tce_rs"),
+
+    # --- FEDERAIS: a COLETA, que nao e de tela nenhuma ---------------------
+    # ⚠️ `tela` VAZIO de proposito, e este e o unico recurso assim no catalogo.
+    # O botao que dispara a coleta do Transfere Gov mora em Configuracoes ›
+    # Sessões (`frontend/.../sessoes/page.tsx`), e nao numa das oito telas do
+    # grupo FEDERAIS — uma coleta so alimenta as oito de uma vez. Pendura-la
+    # numa delas faria a arvore mentir sobre onde o botao esta; deixa-la sem
+    # tela e a verdade, e a arvore desenha a linha sem interruptor de acesso.
+    _Recurso("transferegov", SEC_CONVENIOS, "Transfere Gov (coleta)",
              "as transferências voluntárias federais", "",
-             ("ver", "exportar", "atualizar"), fonte="no Transfere Gov"),
+             ("atualizar",), fonte="no Transfere Gov"),
+
+    # --- FEDERAIS: as oito telas do grupo ----------------------------------
+    # Mesma divisao das estaduais, e pelo mesmo pedido. Aqui ela custou mais:
+    # quatro destas telas (Em execução, Voluntárias, Rejeitadas, Encerradas) sao
+    # UM componente so (`components/TransfereGovPropostas.tsx`) batendo no mesmo
+    # endpoint com a categoria em QUERY — e query e escolha do cliente, entao
+    # gatear por ela nao seria trava. A categoria subiu para o CAMINHO
+    # (`GET /api/transferegov/lista/{categoria}`) e o gate le o segmento; ver
+    # `routers/transferegov.py`.
+    _Recurso("transferegov_radar", SEC_CONVENIOS, "Radar de captação",
+             "os programas federais com janela de proposta aberta", "",
+             ("ver",), tela="transferegov_radar"),
+    _Recurso("transferegov_geral", SEC_CONVENIOS, "Federais — Em execução",
+             "os instrumentos federais já celebrados", "",
+             ("ver", "exportar"), tela="transferegov_geral"),
+    _Recurso("transferegov_especiais", SEC_CONVENIOS, "Federais — Especiais",
+             "as transferências especiais e os planos de ação", "",
+             ("ver", "exportar"), tela="transferegov_especiais"),
+    _Recurso("transferegov_pac", SEC_CONVENIOS, "Federais — PAC (Novo PAC)",
+             "os empreendimentos do Novo PAC no município", "",
+             ("ver",), tela="transferegov_pac"),
+    _Recurso("transferegov_voluntarias", SEC_CONVENIOS, "Federais — Voluntárias",
+             "as propostas voluntárias federais", "",
+             ("ver", "exportar"), tela="transferegov_voluntarias"),
+    _Recurso("transferegov_rejeitadas", SEC_CONVENIOS, "Federais — Rejeitadas",
+             "as propostas federais rejeitadas", "",
+             ("ver", "exportar"), tela="transferegov_rejeitadas"),
+    _Recurso("transferegov_encerradas", SEC_CONVENIOS, "Federais — Encerradas",
+             "os instrumentos federais encerrados", "",
+             ("ver", "exportar"), tela="transferegov_encerradas"),
+    _Recurso("transferegov_cnpj", SEC_CONVENIOS, "Federais — CNPJ",
+             "as propostas federais por CNPJ do proponente", "",
+             ("ver",), tela="transferegov_cnpj"),
+
     _Recurso("cauc", SEC_CONVENIOS, "CAUC (regularidade federal)",
              "as pendências de regularidade fiscal do município", "",
-             ("ver", "exportar", "atualizar"), fonte="no CAUC/STN"),
+             ("ver", "exportar", "atualizar"), fonte="no CAUC/STN",
+             tela="cauc"),
     _Recurso("sismob", SEC_CONVENIOS, "Obras da Saúde (SISMOB)",
              "as obras de saúde do SISMOB", "",
-             ("ver", "exportar", "atualizar"), fonte="no SISMOB"),
+             ("ver", "exportar", "atualizar"), fonte="no SISMOB",
+             tela="sismob"),
     # Obras federais de TODAS as áreas (CIPI/Obras.gov.br) — mobilidade,
     # saneamento, habitação, segurança e a reconstrução da Defesa Civil, que
     # nenhuma outra tela mostrava.
@@ -297,11 +421,11 @@ _RECURSOS: tuple = (
     # endpoints que elas protegeriam existirem.
     _Recurso("obrasgov", SEC_CONVENIOS, "Obras Federais (Obras.gov.br)",
              "as obras federais do município no Obras.gov.br", "",
-             ("ver",), fonte="no Obras.gov.br"),
+             ("ver",), fonte="no Obras.gov.br", tela="obrasgov"),
     _Recurso("acordofes", SEC_CONVENIOS, "Acordo FES (dívida da saúde MG)",
              "os créditos e parcelas do Acordo FES", "",
              ("ver", "exportar", "atualizar"), fonte="na SES-MG",
-             ufs=("MG",)),
+             ufs=("MG",), tela="acordofes"),
 
     # --- Consultas e fontes (ver / exportar) -------------------------------
     # ⚠️ ufs = MG: a fonte de emendas estaduais coletada hoje e a do SIGCON-MG
@@ -309,9 +433,10 @@ _RECURSOS: tuple = (
     # ver `FONTE_EMENDAS_ESTADUAIS` em `frontend/src/lib/estadual.ts`.
     _Recurso("emendas", SEC_CONSULTAS, "Emendas Estaduais",
              "as emendas parlamentares estaduais", "", ("ver", "exportar"),
-             ufs=("MG",)),
+             ufs=("MG",), tela="emendas"),
     _Recurso("fns", SEC_CONSULTAS, "Fundo Nacional de Saúde",
-             "as propostas do Fundo Nacional de Saúde", "", ("ver", "exportar")),
+             "as propostas do Fundo Nacional de Saúde", "", ("ver", "exportar"),
+             tela="fns"),
     # InvestSUS: os repasses fundo a fundo do FNS, por bloco e por competência.
     # ⚠️ SÓ `ver`, de propósito. A primeira versão declarava `exportar` e
     # `atualizar` também — e o `test_registro_rotas` reprovou, com razão: não há
@@ -321,32 +446,66 @@ _RECURSOS: tuple = (
     # entram junto com o coletor e com os endpoints que elas de fato protegem.
     _Recurso("investsus", SEC_CONSULTAS, "InvestSUS",
              "os repasses federais de saúde no InvestSUS", "",
-             ("ver",), fonte="no InvestSUS/FNS"),
+             ("ver",), fonte="no InvestSUS/FNS", tela="investsus"),
     _Recurso("simec", SEC_CONSULTAS, "SIMEC - PAR (MEC)",
-             "as liberações e dimensões do PAR", "", ("ver", "exportar")),
+             "as liberações e dimensões do PAR", "", ("ver", "exportar"),
+             tela="simec"),
     _Recurso("parlamentares", SEC_CONSULTAS, "Parlamentares",
              "a base de parlamentares e a atuação deles no município", "",
-             ("ver", "exportar")),
+             ("ver", "exportar"), tela="parlamentares"),
+    # ⚠️ «PAINEIS MUNICIPAIS» NAO ENTRA AQUI, e a ausencia e deliberada — foi
+    # tentada e desfeita em 05/09/2026. Ela e a unica tela do menu sem chave de
+    # ACAO, e a primeira versao deste incremento lhe deu uma (`paineis.ver`) so
+    # para fechar a simetria. `test_registro_rotas` reprovou, com razao: a tela e
+    # um mural de paineis oficiais em iframe (Painel Municipalista e Estrutura
+    # SUAS) e nao tem endpoint proprio nenhum — a chave nao governaria nada, que
+    # e exatamente o defeito que `PERMISSOES_INERTES` documenta.
+    #
+    # Quem a governa e a TELA `paineis` em `user_telas`, e isso basta: a arvore
+    # da tela de Usuarios desenha o interruptor de acesso mesmo sem acoes
+    # embaixo (o mesmo desenho de «Modo Tela (TV)»). A chave entra no dia em que
+    # existir um endpoint que ela proteja.
     # ⚠️ Diario Oficial e ESTADUAL: cada UF tem seu provedor (Jornal Minas,
     # DOM/ES, DOE-GO, DOE-TO, DOE-RS). A caixinha aparece para o tenant cuja
     # carteira cruza alguma UF com provedor — ver `DIARIO_POR_UF` em
     # `frontend/src/lib/estadual.ts` e os routers `dou_*`.
     _Recurso("dou", SEC_CONSULTAS, "Diário Oficial",
              "as publicações do Diário Oficial", "", ("ver", "exportar"),
-             ufs=("MG", "ES", "GO", "TO", "RS")),
-    _Recurso("frescor", SEC_CONSULTAS, "Monitor de frescor dos dados",
-             "há quanto tempo cada fonte foi coletada", "", ("ver", "exportar")),
+             ufs=("MG", "ES", "GO", "TO", "RS"), tela="dou"),
+    _Recurso("frescor", SEC_CONSULTAS, "Status dos Dados",
+             "há quanto tempo cada fonte foi coletada", "", ("ver", "exportar"),
+             tela="frescor"),
 
     # --- Cofre (CRUD; `revelar` e especial, mais abaixo) --------------------
     _Recurso("cofre", SEC_COFRE, "Cofre de senhas",
              "as credenciais guardadas no cofre",
              "uma credencial nova no cofre",
-             ("ver", "criar", "editar", "excluir")),
+             ("ver", "criar", "editar", "excluir"), tela="cofre"),
 
     # --- Usuarios (CRUD; `conceder` e `resetar_senha` sao especiais) --------
+    # ⭐ GANHOU TELA em 05/09/2026, e a mudanca tem consequencia: ate aqui a aba
+    # Usuarios era governada pelo PAPEL (`routers/users.py::_require_admin`), e
+    # so por ele. O docstring daquela funcao ja previa a troca — "trocar isto por
+    # permissao individual e o Incremento 5" — e o incremento aconteceu: toda
+    # rota de `users.py` declara `exige("usuarios.<acao>")`. Com `AUTHZ_MODO` em
+    # `bloqueio`, essas chaves passam a barrar de verdade, e o gate por papel
+    # virou uma segunda regra que CONTRADIZ a primeira: o dono marca a aba para
+    # o controlador interno e o papel o expulsa mesmo assim.
+    #
+    # ⚠️ A migration `add_permissoes_por_tela.sql` GARANTE `usuarios.*` a todo
+    # `role='admin'` ativo. Sem isso, um administrador sem a caixinha marcada se
+    # trancaria fora da unica tela que conserta o problema.
     _Recurso("usuarios", SEC_USUARIOS, "Usuários",
              "o cadastro de usuários", "um usuário novo",
-             ("ver", "criar", "editar", "excluir")),
+             ("ver", "criar", "editar", "excluir"), tela="usuarios"),
+    # PARAMETROS — a aba que cadastra as listas do cliente (hoje os perfis).
+    # ⚠️ Ate 05/09/2026 ela pegava carona em `usuarios.ver`/`usuarios.editar`
+    # (ver `routers/parametros.py`): quem podia editar PESSOAS podia editar as
+    # LISTAS, e nao havia como separar. Sao duas responsabilidades diferentes —
+    # e a regra do dono e que cada aba de Configuracoes se libera sozinha.
+    _Recurso("parametros", SEC_USUARIOS, "Parâmetros",
+             "as listas de cadastro do cliente", "",
+             ("ver", "editar"), tela="parametros"),
 )
 
 
@@ -370,6 +529,7 @@ def _gerar(recurso: _Recurso) -> list[Permissao]:
                 fonte=recurso.fonte).replace("  ", " ").replace(" .", "."),
             escrita=molde["escrita"],
             ufs=recurso.ufs,
+            tela=recurso.tela,
         ))
     return saida
 
@@ -382,7 +542,7 @@ def _gerar(recurso: _Recurso) -> list[Permissao]:
 # ela e uma caixinha propria.
 _ESPECIAIS: tuple = (
     Permissao(
-        chave="agendamentos.anexo_baixar", secao=SEC_TRABALHO,
+        chave="agendamentos.anexo_baixar", secao=SEC_TRABALHO, tela="agendamentos",
         recurso="agendamentos", recurso_rotulo="Agendamentos",
         verbo_rotulo="Baixar anexos",
         descricao="Abrir e baixar os arquivos anexados aos agendamentos. "
@@ -393,6 +553,7 @@ _ESPECIAIS: tuple = (
     ),
     Permissao(
         chave="gestao.anexo_baixar", secao=SEC_TRABALHO, recurso="gestao",
+        tela="gestao",
         recurso_rotulo="Gestao Interna", verbo_rotulo="Baixar anexos",
         descricao="Abrir e baixar os arquivos anexados as anotações. Separado "
                   "de «Ver» de propósito: a lista mostra que existe um anexo, "
@@ -401,7 +562,7 @@ _ESPECIAIS: tuple = (
         escrita=False,
     ),
     Permissao(
-        chave="cofre.revelar", secao=SEC_COFRE, recurso="cofre",
+        chave="cofre.revelar", secao=SEC_COFRE, recurso="cofre", tela="cofre",
         recurso_rotulo="Cofre de senhas", verbo_rotulo="Revelar a senha",
         descricao="Exibir a senha em CLARO na tela. Ver que a credencial existe "
                   "não é ver a credencial: «Ver» mostra o sistema, o usuário e "
@@ -410,14 +571,14 @@ _ESPECIAIS: tuple = (
         escrita=False,   # GET /api/cofre/{id}/reveal — o guard de leitura nao barra
     ),
     Permissao(
-        chave="sessoes.ver", secao=SEC_COFRE, recurso="sessoes",
+        chave="sessoes.ver", secao=SEC_COFRE, recurso="sessoes", tela="sessoes",
         recurso_rotulo="Sessões gov.br", verbo_rotulo="Ver",
         descricao="Consultar o estado das sessões capturadas dos portais "
                   "(válida, expirada, quando foi renovada).",
         escrita=False,
     ),
     Permissao(
-        chave="sessoes.capturar", secao=SEC_COFRE, recurso="sessoes",
+        chave="sessoes.capturar", secao=SEC_COFRE, recurso="sessoes", tela="sessoes",
         recurso_rotulo="Sessões gov.br", verbo_rotulo="Capturar sessão",
         descricao="Gravar uma sessão autenticada de portal do governo. O cookie "
                   "capturado vale como credencial viva enquanto não expira.",
@@ -425,28 +586,28 @@ _ESPECIAIS: tuple = (
     ),
     Permissao(
         chave="usuarios.conceder", secao=SEC_USUARIOS, recurso="usuarios",
+        tela="usuarios",
         recurso_rotulo="Usuários", verbo_rotulo="Conceder permissões",
         descricao="Marcar e desmarcar as permissões de outras pessoas. Quem tem "
                   "esta caixinha decide o que a equipe faz no sistema — e só "
                   "consegue conceder o que ELE MESMO tem.",
         escrita=True,
     ),
-    Permissao(
-        chave="usuarios.modelos", secao=SEC_USUARIOS, recurso="usuarios",
-        recurso_rotulo="Usuários", verbo_rotulo="Gerenciar modelos",
-        descricao="Criar, alterar e apagar os MODELOS de permissão — os moldes "
-                  "que preenchem as caixinhas de uma vez. Separada de «Conceder "
-                  "permissões» de propósito: quem concede decide o que UMA "
-                  "pessoa faz; quem escreve um molde escreve a RECEITA que os "
-                  "outros administradores vao aplicar, e um molde chamado "
-                  "«Somente consulta» que carregue «Revelar a senha» engana "
-                  "quem confia no nome. Aplicar um molde NÃO precisa desta "
-                  "caixinha (basta «Conceder permissões»), e continua limitado "
-                  "ao que quem aplica já tem.",
-        escrita=True,
-    ),
+    # ⚠️ `usuarios.modelos` SAIU em 05/09/2026, junto com o subsistema inteiro de
+    # MODELOS DE PERMISSAO (decisao do dono: "nao quero modelos ou molde de
+    # permissoes, prefiro mais ainda a forma de criar na mao um a um"). No lugar
+    # do molde ficou o que ele pediu: COPIAR as permissoes de outro usuario ja
+    # cadastrado, agora tambem no momento da criacao — ver
+    # `routers/users.py::copiar_permissoes` e o modal de Usuarios.
+    #
+    # ⚠️ As linhas `usuarios.modelos` ja gravadas em `permissoes_catalogo` nos
+    # cinco bancos NAO foram apagadas — mesma receita do Telegram (ver o bloco
+    # mais abaixo): `user_permissoes.permissao` referencia essa tabela com
+    # ON DELETE RESTRICT, e chave no banco sem par no Python e so uma caixinha
+    # que nunca aparece na tela. Inerte, e nao buraco.
     Permissao(
         chave="usuarios.resetar_senha", secao=SEC_USUARIOS, recurso="usuarios",
+        tela="usuarios",
         recurso_rotulo="Usuários", verbo_rotulo="Redefinir senha",
         descricao="Gerar uma senha temporária para outra pessoa. Quem redefine "
                   "a senha de alguém consegue entrar como essa pessoa até a "
@@ -454,19 +615,19 @@ _ESPECIAIS: tuple = (
         escrita=True,
     ),
     Permissao(
-        chave="bi.ver", secao=SEC_BI, recurso="bi",
+        chave="bi.ver", secao=SEC_BI, recurso="bi", tela="bi",
         recurso_rotulo="Painel de Indicadores", verbo_rotulo="Ver",
         descricao="Abrir o Painel de Indicadores e os dashboards.",
         escrita=False,
     ),
     Permissao(
-        chave="bi.exportar", secao=SEC_BI, recurso="bi",
+        chave="bi.exportar", secao=SEC_BI, recurso="bi", tela="bi",
         recurso_rotulo="Painel de Indicadores", verbo_rotulo="Exportar",
         descricao="Baixar os indicadores em arquivo.",
         escrita=False,
     ),
     Permissao(
-        chave="bi.tela", secao=SEC_BI, recurso="bi",
+        chave="bi.tela", secao=SEC_BI, recurso="bi", tela="bi_tela",
         recurso_rotulo="Painel de Indicadores", verbo_rotulo="Modo Tela (TV)",
         descricao="Configurar o Modo Tela — o painel em rodízio para a TV do "
                   "gabinete, com o filtro do próprio gestor.",
@@ -476,7 +637,7 @@ _ESPECIAIS: tuple = (
         escrita=False,
     ),
     Permissao(
-        chave="bi.link", secao=SEC_BI, recurso="bi",
+        chave="bi.link", secao=SEC_BI, recurso="bi", tela="bi_link",
         recurso_rotulo="Painel de Indicadores", verbo_rotulo="Gerar link público",
         descricao="Publicar um endereço que abre o painel SEM LOGIN. Enquanto o "
                   "link viver, quem tiver o endereço vê os dados do município — "
@@ -491,7 +652,7 @@ _ESPECIAIS: tuple = (
     # vendo, nada muda para ele (ver routers/convenios.py). Federal: o alerta
     # existe em qualquer tenant que tenha instrumento com vigencia.
     Permissao(
-        chave="vigencias.ver", secao=SEC_BI, recurso="vigencias",
+        chave="vigencias.ver", secao=SEC_BI, recurso="vigencias", tela="bi",
         recurso_rotulo="Vigências a vencer", verbo_rotulo="Ver",
         descricao="Abrir o botão «Vigências ≤120d» do Painel de Indicadores e "
                   "consultar os instrumentos com vigência encerrando nos "
@@ -513,7 +674,7 @@ _ESPECIAIS: tuple = (
     # registra na trilha quem teria sido negado, que é para isso que o modo
     # existe.
     Permissao(
-        chave="vigencias.exportar", secao=SEC_BI, recurso="vigencias",
+        chave="vigencias.exportar", secao=SEC_BI, recurso="vigencias", tela="bi",
         recurso_rotulo="Vigências a vencer", verbo_rotulo="Exportar",
         descricao="Baixar em PDF ou Excel a lista de instrumentos com vigência "
                   "encerrando, com o totalizador por município. Quem já exporta "
@@ -521,7 +682,7 @@ _ESPECIAIS: tuple = (
         escrita=False,
     ),
     Permissao(
-        chave="ai.usar", secao=SEC_IA, recurso="ai",
+        chave="ai.usar", secao=SEC_IA, recurso="ai", tela="ai",
         recurso_rotulo="IA PACTHA", verbo_rotulo="Usar",
         descricao="Conversar com a IA do PACTHA. Cada pergunta é uma chamada "
                   "paga a API do modelo, e a resposta enxerga os dados dos "
@@ -529,7 +690,7 @@ _ESPECIAIS: tuple = (
         escrita=True,
     ),
     Permissao(
-        chave="ai.exportar", secao=SEC_IA, recurso="ai",
+        chave="ai.exportar", secao=SEC_IA, recurso="ai", tela="ai",
         recurso_rotulo="IA PACTHA", verbo_rotulo="Exportar",
         descricao="Baixar em PDF uma conversa ou um relatório gerado pela IA.",
         escrita=True,    # o endpoint e POST (leva o texto no corpo)
@@ -546,13 +707,20 @@ _ESPECIAIS: tuple = (
     # concessões e modelos em cinco bancos para ganhar nada.
     Permissao(
         chave="auditoria.ver", secao=SEC_AUDITORIA, recurso="auditoria",
+        tela="auditoria",
         recurso_rotulo="Auditoria", verbo_rotulo="Ver",
         descricao="Abrir a trilha de atividades de TODO mundo — quem entrou, de "
                   "que IP, o que revelou e o que apagou.",
         escrita=False,
     ),
     Permissao(
-        chave="uso.ver", secao=SEC_AUDITORIA, recurso="uso",
+        # ⭐ TELA PROPRIA desde 05/09/2026. A aba Telemetria declarava
+        # `tela: "auditoria"` em `lib/configuracoes.ts` — a chave de OUTRA coisa
+        # —, entao liberar a trilha de auditoria liberava junto o horario de
+        # trabalho de todo mundo. A propria descricao abaixo ja dizia que sao
+        # coisas diferentes e que por isso a caixinha «nasce desmarcada»; faltava
+        # a tela acompanhar a caixinha.
+        chave="uso.ver", secao=SEC_AUDITORIA, recurso="uso", tela="telemetria",
         recurso_rotulo="Telemetria", verbo_rotulo="Ver",
         descricao="Abrir a Telemetria: quais telas cada pessoa abriu, quanto "
                   "tempo ficou em cada uma e quem está online agora. É DIFERENTE "
@@ -564,6 +732,7 @@ _ESPECIAIS: tuple = (
     ),
     Permissao(
         chave="auditoria.exportar", secao=SEC_AUDITORIA, recurso="auditoria",
+        tela="auditoria",
         recurso_rotulo="Auditoria", verbo_rotulo="Exportar",
         descricao="Baixar a trilha em arquivo. Quem exporta leva consigo IP, "
                   "e-mail, histórico e quem revelou qual senha — é dado pessoal "
@@ -591,6 +760,48 @@ CATALOGO: dict[str, Permissao] = _montar()
 # Frozenset porque e comparado a cada requisicao e nao pode ser mutado por
 # consumidor nenhum.
 TODAS: frozenset = frozenset(CATALOGO)
+
+
+# ---------------------------------------------------------------------------
+# ⚠️ AS INERTES — caixinha que existe e nao abre porta nenhuma
+# ---------------------------------------------------------------------------
+# Cada uma esta aqui pelo mesmo motivo: o endpoint correspondente NAO EXISTE.
+# Nao ha exportacao nestes modulos, e uma permissao que rota nenhuma consulta e
+# uma promessa vazia na tela — o administrador marca, salva, e nada muda.
+#
+# ⭐ A DECISAO DO DONO (05/09/2026) foi ESCONDE-LAS DA ARVORE, e nao apaga-las:
+# apagar exigiria varrer concessoes em cinco bancos para ganhar nada (a FK de
+# `user_permissoes` e ON DELETE RESTRICT), e no dia em que a rota nascer a
+# caixinha volta a aparecer com as concessoes antigas intactas.
+#
+# ⚠️ `bi.tela` e de outra especie: o Modo Tela e controlado pela TELA `bi_tela`
+# (`user_telas`), nao por esta chave. Ver a nota de `/api/bi/tela-filtros` na
+# allowlist de `registro_rotas` — declara-la ali apagaria a TV do gabinete.
+#
+# ⚠️ A LISTA E ESCRITA, E NAO CALCULADA, e o valor dela e exatamente a
+# diferenca: foi assim que `sessoes.capturar` apareceu um dia — orfa no catalogo
+# enquanto a rota que devia cobra-la estava livre por allowlist. Uma lista
+# derivada teria escondido o defeito em vez de acusa-lo.
+#
+# Ela morava em `tests/test_registro_rotas.py`; subiu para ca em 05/09/2026
+# porque agora o CATALOGO precisa dela (`Permissao.as_dict` marca `inerte`, e a
+# arvore da tela de Usuarios filtra por esse campo). O teste continua sendo o
+# guarda: ele importa esta lista e reprova se ela ficar mentirosa nos dois
+# sentidos — chave inerte que ganhou rota, e chave sem rota fora da lista.
+PERMISSOES_INERTES: frozenset = frozenset({
+    "acordofes.exportar", "bi.exportar", "bi.tela", "cauc.exportar",
+    "fns.exportar", "frescor.exportar", "gestao.exportar", "simec.exportar",
+    "sismob.exportar",
+})
+
+# Rede contra typo: chave inerte que nao existe no catalogo esconderia nada e
+# ninguem notaria.
+_fantasmas = PERMISSOES_INERTES - TODAS
+if _fantasmas:
+    raise RuntimeError(
+        f"PERMISSOES_INERTES cita chave que nao existe no catalogo: "
+        f"{sorted(_fantasmas)}")
+del _fantasmas
 
 
 # ---------------------------------------------------------------------------
@@ -770,237 +981,12 @@ def escopos_para_api() -> dict:
 
 
 # ---------------------------------------------------------------------------
-# ⭐⭐ MODELO DE PERMISSAO (Incremento 7) — o MOLDE, e por que ele nao e grupo
-# ---------------------------------------------------------------------------
-# O problema que o molde resolve e de OPERACAO, e nao de seguranca: o catalogo
-# tem dezenas de caixinhas, e cadastrar um servidor novo virou marcar todas elas
-# a mao. Um administrador cansado marca TUDO — e ai o RBAC por usuario, que e a
-# regra do dono, vira decoracao na pratica. Sem esta peca, a anterior se desfaz
-# sozinha.
-#
-# ⚠️⚠️ E A SOLUCAO NAO PODE TRAIR A REGRA. A regra do dono, palavra por palavra:
-#
-#     "as permissoes sao colocadas no usuario da pessoa, INDIVIDUALMENTE. Grupo
-#      e so ROTULO. Nao da pra limitar dentro de uma prefeitura que todos os
-#      analistas terao o mesmo acesso, isso e besteira."
-#
-# Entao o molde NAO E HERANCA e NAO E "grupo com permissoes". E COPIA: aplicar
-# um modelo preenche as caixinhas DAQUELE usuario NAQUELE instante, e acabou o
-# vinculo. Depois disso o modelo pode mudar, ser renomeado ou ser APAGADO que o
-# usuario nao muda em nada.
-#
-# A diferenca nao e filosofica, e a unica coisa que mantem o sistema
-# respondivel: com heranca, "o que esta pessoa pode?" deixaria de ter resposta
-# olhando a pessoa — seria preciso saber a que grupo ela pertence, o que aquele
-# grupo tem HOJE, e o que ele tinha quando alguem reclamou. Com copia, a
-# resposta continua sendo as caixinhas marcadas no cadastro dela, que e
-# exatamente o que o administrador ve na tela.
-#
-# CONSEQUENCIA PRATICA, e ela precisa estar escrita em algum lugar: editar um
-# molde NAO corrige ninguem. Se um molde saiu errado e ja foi aplicado a cinco
-# pessoas, sao cinco cadastros a corrigir. E o preco da regra do dono, e ele e
-# menor do que o preco de nao conseguir responder quem pode o que.
-MODO_SUBSTITUIR = "substituir"
-MODO_SOMAR = "somar"
-
-MODOS_APLICACAO: tuple = (MODO_SUBSTITUIR, MODO_SOMAR)
-
-# ⚠️ O DEFAULT E `substituir`, E A ESCOLHA E DELIBERADA — pense em quem clica no
-# molde por engano num usuario JA configurado:
-#
-#   SOMAR por engano CONCEDE em silencio. As caixinhas que ja estavam marcadas
-#   continuam marcadas, as do molde aparecem marcadas junto, e nada na tela
-#   distingue uma da outra. O administrador salva sem perceber que acabou de dar
-#   acesso a mais — e desfazer exige saber o que havia antes, que ninguem
-#   guardou. E a direcao que ABRE o sistema.
-#
-#   SUBSTITUIR por engano TIRA — e isso e VISIVEL. Caixinha marcada desmarca na
-#   frente do administrador, e nada foi gravado ainda: Cancelar desfaz tudo. O
-#   erro aparece no exato instante em que acontece, que e a unica hora em que
-#   ele custa barato.
-#
-# E ha a razao de significado: so em `substituir` o nome do molde diz a verdade.
-# Aplicar «Somente consulta» somando a quem operava o Cofre produz uma pessoa
-# que nao e nem uma coisa nem outra, e ninguem consegue mais dizer o que ela e
-# olhando o molde. `somar` continua existindo porque "acrescentar o Cofre ao que
-# ela ja tem" e pedido real, e proibi-lo empurraria o administrador de volta
-# para as vinte caixinhas a mao — mas ele e ESCOLHA EXPLICITA, nunca o silencio.
-# (Mesma regra do repo em `routers/users.py`: o campo omitido nao pode ser o
-# campo mais permissivo.)
-MODO_APLICACAO_OPCOES: tuple = (
-    {"valor": MODO_SUBSTITUIR, "rotulo": "Substituir o que ela tem",
-     "descricao": "As caixinhas passam a ser EXATAMENTE as do modelo. O que "
-                  "estava marcado e não está no modelo é desmarcado — você vê "
-                  "isso acontecer antes de salvar."},
-    {"valor": MODO_SOMAR, "rotulo": "Somar ao que ela já tem",
-     "descricao": "Acrescenta as caixinhas do modelo e não desmarca nenhuma. O "
-                  "alcance por módulo fica como está. Use quando a pessoa "
-                  "acumula duas funções."},
-)
-
-
-def normalizar_modo_aplicacao(valor) -> str:
-    """O modo como o sistema o compara. Desconhecido cai em `substituir` — o
-    modo que nao concede nada por acidente. Ver o comentario acima: aqui o
-    fail-safe e o RESTRITIVO, ao contrario de `normalizar_escopo`, porque
-    errar para o lado do `somar` seria conceder em silencio."""
-    bruto = str(valor or "").strip().lower()
-    return bruto if bruto in MODOS_APLICACAO else MODO_SUBSTITUIR
-
-
-def aplicar_modelo(
-    *,
-    do_modelo: Optional[Iterable[str]] = None,
-    do_alvo: Optional[Iterable[str]] = None,
-    pode_conceder: Optional[Iterable[str]] = None,
-    modo: str = MODO_SUBSTITUIR,
-) -> dict:
-    """⭐ O MOLDE aplicado a uma pessoa — PURO: sem banco, sem `Request`, sem
-    `User`. Devolve o estado que as caixinhas devem mostrar, e nada e gravado.
-
-    Os tres conjuntos de entrada:
-        do_modelo      as chaves do molde
-        do_alvo        as chaves que a pessoa TEM hoje
-        pode_conceder  as chaves de quem esta aplicando (o efetivo dele)
-
-    ⚠️ `pode_conceder` E O ANTI-ESCALONAMENTO, E ELE VALE AQUI TAMBEM. Um molde
-    com `cofre.revelar` aplicado por quem NAO tem `cofre.revelar` nao pode dar
-    essa chave — senao o molde viraria a porta dos fundos da trava que
-    `routers/permissoes.py::_barrar_escalonamento` instalou na porta da frente.
-    Duas travas dizendo a mesma coisa: esta, para a tela nunca PROPOR o que o
-    servidor vai recusar; e a de la, que continua sendo a que decide na hora de
-    gravar (uma tela adulterada nao contorna nada).
-
-    ⚠️ E A TRAVA VALE NOS DOIS SENTIDOS. Em `substituir`, o que a pessoa tem
-    FORA do alcance de quem aplica e PRESERVADO intocado — nao e "removido pelo
-    molde". Sem isso, aplicar um molde seria o jeito de um administrador sem
-    acesso ao Cofre desligar o acesso de quem tem, que e exatamente o que
-    `_barrar_escalonamento` recusa quando a mesma coisa e feita caixinha a
-    caixinha. (E, como efeito colateral util, e o que faz o PUT seguinte nunca
-    esbarrar na trava por causa do molde.)
-
-    Chave fora do catalogo e descartada em silencio, como na funcao pura de
-    resolucao: molde antigo com chave que saiu do catalogo nao pode virar erro
-    na cara do administrador.
-    """
-    modo_limpo = normalizar_modo_aplicacao(modo)
-
-    molde = frozenset(c for c in (normalizar(x) for x in (do_modelo or ()))
-                      if c in CATALOGO)
-    atuais = frozenset(c for c in (normalizar(x) for x in (do_alvo or ()))
-                       if c in CATALOGO)
-    minhas = frozenset(c for c in (normalizar(x) for x in (pode_conceder or ()))
-                       if c in CATALOGO)
-
-    do_molde_permitido = molde & minhas
-    # O que a pessoa tem e quem aplica NAO alcanca: fica como esta, nos dois
-    # modos. E a metade "nao retirar" do anti-escalonamento.
-    intocaveis = atuais - minhas
-
-    if modo_limpo == MODO_SOMAR:
-        resultado = atuais | do_molde_permitido
-    else:
-        resultado = do_molde_permitido | intocaveis
-
-    return {
-        "modo": modo_limpo,
-        # ⭐ O que a tela deve MARCAR.
-        "permissoes": sorted(resultado),
-        "atuais": sorted(atuais),
-        # O que o Salvar seguinte vai mudar, ja mastigado para a tela avisar
-        # antes do clique.
-        "vai_conceder": sorted(resultado - atuais),
-        "vai_retirar": sorted(atuais - resultado),
-        # ⚠️ Caixinha do MOLDE que nao entrou. Tem de aparecer na tela: um molde
-        # aplicado pela metade em silencio faria o administrador jurar que
-        # concedeu o que nao concedeu.
-        "nao_aplicadas": sorted(molde - resultado),
-        # Caixinha da PESSOA que ficou intocada por estar fora do alcance de
-        # quem aplica. Nao e falha — e a trava funcionando —, mas quem aplicou
-        # precisa saber que aquilo continua la.
-        "preservadas": sorted(intocaveis),
-    }
-
-
-def aplicar_modelo_escopos(
-    *,
-    do_modelo: Optional[dict] = None,
-    do_alvo: Optional[dict] = None,
-    pode_definir: Optional[Iterable[str]] = None,
-    modo: str = MODO_SUBSTITUIR,
-) -> dict:
-    """O ALCANCE por modulo que vem junto do molde. Puro, como o de cima.
-
-    `pode_definir` sao os modulos em que QUEM APLICA alcanca todos os registros
-    — os unicos em que ele pode mexer, pela mesma regra de
-    `routers/permissoes.py::_barrar_escalonamento_escopo`.
-
-    ⚠️ EM `somar` O ALCANCE NAO E TOCADO, e a decisao merece a frase: alcance e
-    um RADIO ("todos" x "somente os que ele criou"), e nao existe soma de dois
-    radios. Qualquer regra que inventassemos aqui ("o mais restritivo vence", "o
-    do molde vence") seria uma regra que ninguem consegue prever olhando a tela.
-    Somar acrescenta CAIXINHAS; o alcance fica exatamente como o administrador o
-    deixou, e a tela diz isso.
-
-    Devolve so o que RESTRINGE (`proprios`), que e a mesma convencao do banco e
-    do resto do sistema: ausencia de linha e `todos`."""
-    modo_limpo = normalizar_modo_aplicacao(modo)
-
-    def _limpar(bruto) -> dict:
-        if not isinstance(bruto, dict):
-            return {}
-        limpo = {}
-        for recurso, valor in bruto.items():
-            chave = normalizar(recurso)
-            if not escopavel(chave):
-                continue
-            escopo = normalizar_escopo(valor)
-            if escopo != ESCOPO_TODOS:
-                limpo[chave] = escopo
-        return limpo
-
-    molde = _limpar(do_modelo)
-    atuais = _limpar(do_alvo)
-    meus = {normalizar(r) for r in (pode_definir or ()) if escopavel(normalizar(r))}
-
-    if modo_limpo == MODO_SOMAR:
-        resultado = dict(atuais)
-        nao_aplicados = sorted(
-            r for r in molde if molde[r] != atuais.get(r, ESCOPO_TODOS))
-    else:
-        resultado = {}
-        nao_aplicados = []
-        for recurso in ESCOPO_RECURSOS:
-            desejado = molde.get(recurso, ESCOPO_TODOS)
-            atual = atuais.get(recurso, ESCOPO_TODOS)
-            # Modulo fora do alcance de quem aplica fica como esta — nem
-            # apertando nem soltando. Ver `_barrar_escalonamento_escopo`.
-            escolhido = desejado if recurso in meus else atual
-            if escolhido != ESCOPO_TODOS:
-                resultado[recurso] = escolhido
-            if recurso not in meus and desejado != atual:
-                nao_aplicados.append(recurso)
-
-    return {
-        "modo": modo_limpo,
-        # So o que restringe — a mesma convencao do banco.
-        "escopos": resultado,
-        "atuais": dict(atuais),
-        "nao_aplicados": sorted(nao_aplicados),
-        "alterados": sorted(
-            r for r in set(atuais) | set(resultado)
-            if atuais.get(r, ESCOPO_TODOS) != resultado.get(r, ESCOPO_TODOS)),
-    }
-
-
-# ---------------------------------------------------------------------------
 # ⭐ A FUNCAO PURA
 # ---------------------------------------------------------------------------
 def permissoes_efetivas(
     *,
     super_admin: bool = False,
     concedidas: Optional[Iterable[str]] = None,
-    somente_leitura: bool = False,
     quiosque: bool = False,
     ativo: bool = True,
 ) -> frozenset:
@@ -1034,13 +1020,17 @@ def permissoes_efetivas(
          Incremento 4; aqui None so pode significar "nao carreguei nada", e a
          resposta fail-closed para isso e "entao nao pode nada".
 
-      5. SOMENTE-LEITURA subtrai as permissoes de escrita, DEPOIS de tudo —
-         inclusive do super-admin. Nao e teimosia: o guard de somente-leitura
-         mora em `get_current_user`, ACIMA de qualquer permissao, e barra o
-         metodo HTTP antes de a checagem de permissao acontecer. Se esta funcao
-         dissesse que um super-admin marcado somente-leitura pode `rm.excluir`,
-         ela estaria mentindo sobre o comportamento do sistema — e a tela
-         desenharia um botao que devolve 403. Ver `escrita` no cabecalho.
+    ⚠️ HAVIA UMA QUINTA REGRA — «somente-leitura subtrai as permissoes de
+    escrita» — e ela SAIU em 05/09/2026 junto com o interruptor que a alimentava
+    (decisao do dono: "essa opçao somente leitura tb pode tirar isso, pq era
+    para o prefeito, nao precisa, prefiro dar permissao de visualizaçao separada
+    pra cada menu ou modulo dai eu permito so visualizar sem editar nada").
+
+    O que ela fazia agora se faz DESMARCANDO as caixinhas de escrita daquele
+    modulo — que e mais fino, porque a trava antiga era tudo-ou-nada sobre a
+    conta inteira. ⚠️ E so passou a valer de verdade no mesmo deploy, quando
+    `AUTHZ_MODO` deixou de ser `aviso`: enquanto o modo era de aviso, quem
+    impedia a escrita era exatamente aquele interruptor, e nao estas caixinhas.
 
     Devolve um frozenset (o chamador nao consegue mutar a resposta por engano).
     """
@@ -1048,19 +1038,65 @@ def permissoes_efetivas(
         return frozenset()
 
     if quiosque:
-        efetivas = PERMISSOES_QUIOSQUE
-    elif super_admin:
-        efetivas = TODAS
-    else:
-        efetivas = frozenset(
-            chave for chave in (normalizar(c) for c in (concedidas or ()))
-            if chave in CATALOGO
-        )
+        return PERMISSOES_QUIOSQUE
+    if super_admin:
+        return TODAS
+    marcadas = {normalizar(c) for c in (concedidas or ())}
+    return frozenset(
+        chave for chave in (marcadas | _expandir_renomeadas(marcadas))
+        if chave in CATALOGO
+    )
 
-    if somente_leitura:
-        efetivas = frozenset(c for c in efetivas if not CATALOGO[c].escrita)
 
-    return efetivas
+# ---------------------------------------------------------------------------
+# ⭐⭐ COMPATIBILIDADE DAS CHAVES RENOMEADAS — a mesma rede de `services/auth.py`
+# ---------------------------------------------------------------------------
+# Em 05/09/2026 `transferegov.*` virou oito telas e `convenios.*` ganhou oito
+# irmas. `migrations/add_permissoes_por_tela.sql` traduz as concessoes de todo
+# mundo — mas migration que falha NAO derruba o boot (ver a nota longa em
+# `services/auth.py::TELAS_RENOMEADAS`), e com `AUTHZ_MODO=bloqueio` ligado no
+# mesmo deploy o desfecho seria todo mundo perdendo os dois maiores grupos do
+# menu, em silencio.
+#
+# Entao quem tem a chave ANTIGA tem as NOVAS, tenha a migration rodado ou nao.
+#
+# ⚠️ SO AMPLIA, e essa e a propriedade que torna isto seguro: nao existe caminho
+# em que este mapa TIRE permissao de alguem. E nao ha escalonamento — as chaves
+# de destino sao exatamente as telas que a chave de origem ja abria ontem.
+#
+# ⚠️ E NAO ALCANCA O ANTI-ESCALONAMENTO POR ENGANO: `_barrar_escalonamento` le o
+# EFETIVO de quem concede, e o efetivo agora inclui as novas — que e o certo,
+# porque quem administrava o grupo FEDERAIS inteiro ontem tem de conseguir
+# conceder cada uma das oito hoje.
+_CHAVES_RENOMEADAS: dict = {
+    "transferegov.ver": (
+        "transferegov_radar.ver", "transferegov_geral.ver",
+        "transferegov_especiais.ver", "transferegov_pac.ver",
+        "transferegov_voluntarias.ver", "transferegov_rejeitadas.ver",
+        "transferegov_encerradas.ver", "transferegov_cnpj.ver",
+    ),
+    "transferegov.exportar": (
+        "transferegov_geral.exportar", "transferegov_especiais.exportar",
+        "transferegov_voluntarias.exportar", "transferegov_rejeitadas.exportar",
+        "transferegov_encerradas.exportar",
+    ),
+    "convenios.ver": (
+        "repasses.ver", "cofinanciamento.ver", "monitoramento.ver",
+        "consulta_popular.ver", "programas_rs.ver", "funrigs.ver",
+        "emendas_rs.ver", "tce_rs.ver",
+    ),
+    # A aba de Parametros pegava carona nestas duas.
+    "usuarios.ver": ("parametros.ver",),
+    "usuarios.editar": ("parametros.editar",),
+}
+
+
+def _expandir_renomeadas(marcadas: set) -> set:
+    saida: set = set()
+    for antiga, novas in _CHAVES_RENOMEADAS.items():
+        if antiga in marcadas:
+            saida.update(novas)
+    return saida
 
 
 # ---------------------------------------------------------------------------
@@ -1085,6 +1121,10 @@ def por_secao(chaves: Optional[Iterable[str]] = None) -> list[dict]:
             if grupo is None:
                 grupo = {"recurso": permissao.recurso,
                          "recurso_rotulo": permissao.recurso_rotulo,
+                         # A folha do MENU que este recurso governa. E por aqui
+                         # que a arvore da tela de Usuarios casa catalogo com
+                         # menu lateral. Vazio = capacidade sem tela.
+                         "tela": permissao.tela,
                          # A ABRANGENCIA POR UF vive no GRUPO porque e do
                          # RECURSO, e nao de cada verbo: a tela agrupa por
                          # recurso e e ali que ela decide mostrar ou esconder.
@@ -1115,27 +1155,12 @@ def catalogo_para_api() -> dict:
         "permissoes": [CATALOGO[c].as_dict() for c in sorted(CATALOGO)],
         "total": len(CATALOGO),
         "escopos": escopos_para_api(),
-        # O vocabulario do MOLDE (modos de aplicacao e o aviso obrigatorio). Vem
-        # junto do catalogo pelo mesmo motivo do alcance: o frontend nao copia
-        # texto nenhum deste subsistema.
-        "modelos": modelos_para_api(),
-    }
-
-
-def modelos_para_api() -> dict:
-    """O vocabulario do MOLDE, para o frontend nao reescrever nenhuma parte dele
-    (regra 1 do cabecalho). Vai dentro de `catalogo_para_api`."""
-    return {
-        "default": MODO_SUBSTITUIR,
-        "modos": [dict(m) for m in MODO_APLICACAO_OPCOES],
-        # A frase que a tela e OBRIGADA a mostrar. Ela nao e enfeite: o dono
-        # exigiu que "a tela DIGA" que aplicar e copiar, porque o administrador
-        # que achar que e vinculo vai editar o molde esperando que a pessoa
-        # mude junto — e ela nao muda.
-        "aviso": ("Aplicar um modelo COPIA as permissões para o cadastro desta "
-                  "pessoa, agora. As caixinhas continuam editáveis e nada é "
-                  "gravado até você salvar. Depois de salvo, mexer no modelo "
-                  "NÃO mexe mais nesta pessoa."),
+        # ⚠️ `modelos` SAIU daqui em 05/09/2026 — ver a nota em `usuarios.modelos`,
+        # acima. O frontend nao le mais nada sobre moldes porque nao ha moldes.
+        # As chaves INERTES viajam para a tela poder esconde-las: sem a lista, o
+        # JavaScript teria de manter uma copia dela, e copia de lista de
+        # permissao e a cicatriz que o cabecalho deste arquivo descreve.
+        "inertes": sorted(PERMISSOES_INERTES),
     }
 
 

@@ -134,19 +134,38 @@ def modo() -> str:
     variar o ambiente e para a env valer sem rebuild da imagem — mesma
     convencao de `services/net.py::proxies_confiaveis`.
 
-    Fail-OPEN de proposito, e e o unico lugar do sistema onde isso e a escolha
-    certa: aqui "fechar por engano" e o apagao de segunda-feira que este modulo
-    inteiro existe para evitar. Digitar `AUTHZ_MODO=bloqueiop` nao pode LIGAR a
-    trava; tem de deixa-la como estava."""
+    ⭐⭐ O DEFAULT VIROU `bloqueio` EM 05/09/2026, e esta e a linha de maior
+    alcance do incremento: a partir dela toda caixinha desmarcada RECUSA de
+    verdade, nos cinco clientes.
+
+    Ela mudou porque teve de mudar. O dono pediu para tirar a trava de conta
+    «Somente leitura» ("prefiro dar permissao de visualizaçao separada pra cada
+    menu ou modulo dai eu permito so visualizar sem editar nada") — e quem
+    impedia a escrita ate a vespera era EXATAMENTE aquela trava, porque em
+    `aviso` estas caixinhas so registravam na trilha. Tirar uma sem ligar a
+    outra deixaria o sistema sem trava de escrita nenhuma. As duas viajam no
+    mesmo deploy, por decisao explicita dele depois de a consequencia ter sido
+    posta na mesa.
+
+    ⚠️ O FAIL-OPEN CONTINUA VALENDO PARA ENV DESCONHECIDA, e agora ele aponta
+    para o outro lado: `AUTHZ_MODO=avisoo` (digitado errado) NAO pode desligar a
+    trava, do mesmo modo que antes `bloqueiop` nao podia liga-la. Desligar
+    passou a ser o ato deliberado, e e ele que precisa ser escrito certo.
+
+    Continua lido a cada chamada (nao no import) para o teste poder variar o
+    ambiente e para a env valer sem rebuild — mesma convencao de
+    `services/net.py::proxies_confiaveis`. `AUTHZ_MODO=aviso` continua
+    existindo e e o caminho de recuo se um cliente for barrado indevidamente:
+    troca a env no Coolify, sem deploy."""
     bruto = (os.getenv("AUTHZ_MODO", "") or "").strip().lower()
-    if bruto == MODO_BLOQUEIO:
-        return MODO_BLOQUEIO
-    if bruto and bruto != MODO_AVISO and bruto not in _MODOS_DESCONHECIDOS:
+    if bruto == MODO_AVISO:
+        return MODO_AVISO
+    if bruto and bruto != MODO_BLOQUEIO and bruto not in _MODOS_DESCONHECIDOS:
         # Uma vez por valor: env digitada errada nao pode virar log por request.
         _MODOS_DESCONHECIDOS.add(bruto)
         logger.warning(
-            "AUTHZ_MODO=%r nao e reconhecido; seguindo em %r", bruto, MODO_AVISO)
-    return MODO_AVISO
+            "AUTHZ_MODO=%r nao e reconhecido; seguindo em %r", bruto, MODO_BLOQUEIO)
+    return MODO_BLOQUEIO
 
 
 # ---------------------------------------------------------------------------
@@ -491,13 +510,15 @@ def permissoes_de(usuario) -> frozenset:
     ⚠️ IMPORT LOCAL, e nao no topo: `services/auth.py` importa ESTE modulo no
     topo dele. Subir o import de la para ca fecharia o ciclo e quebraria o boot.
     """
-    from services.auth import ehQuiosque, eh_somente_leitura, is_super_admin
+    from services.auth import ehQuiosque, is_super_admin
     from services import permissoes as catalogo
 
     return catalogo.permissoes_efetivas(
         super_admin=is_super_admin(usuario),
         concedidas=getattr(usuario, "allowed_permissoes", None),
-        somente_leitura=eh_somente_leitura(usuario),
+        # ⚠️ `somente_leitura` SAIU do calculo em 05/09/2026 com a trava de conta
+        # (ver `services/auth.py`). Quem nao escreve agora e quem esta sem a
+        # caixinha de escrita daquela tela — e isso ja esta em `concedidas`.
         quiosque=ehQuiosque(usuario),
         # `active` e NOT NULL com default true; `getattr` porque este modulo
         # tambem e chamado com objetos que nao sao o modelo completo (teste,

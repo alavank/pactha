@@ -1,21 +1,26 @@
 // OS ATRIBUTOS DA CONTA QUE DECIDEM PODER — e que NAO sao o papel.
 //
-// O papel (`users.role`: admin / usuario / prefeito — mais `analyst` e `viewer`,
-// legados) virou ROTULO: ele organiza a equipe do cliente e nao concede nada.
-// Quem concede sao as telas e os municipios marcados em CADA usuario, e as duas
-// excecoes a isso viraram coluna propria no banco:
+// O papel (`users.role`: admin / usuario — mais `prefeito`, `analyst` e
+// `viewer`, legados) virou ROTULO: ele organiza a equipe do cliente e nao
+// concede nada. Quem concede sao as telas, os municipios e as caixinhas de acao
+// marcados em CADA usuario. A unica excecao a isso e uma coluna propria:
 //
-//   · `users.super_admin`     — a Alavank, dona da plataforma. Ignora as listas.
-//   · `users.somente_leitura` — a conta que le tudo o que lhe cabe e nao escreve
-//                               nada (o prefeito no Painel, o quiosque da TV).
+//   · `users.super_admin` — a Alavank, dona da plataforma. Ignora as listas.
 //
-// Este modulo existe para a tela nao ler `role` para responder essas duas
-// perguntas — que e exatamente o habito que este incremento veio desfazer.
+// ⚠️ ERAM DUAS ate 05/09/2026. `users.somente_leitura` — a conta que le tudo o
+// que lhe cabe e nao escreve nada — foi REMOVIDA por decisao do dono, que
+// preferiu o controle mais fino: "prefiro dar permissao de visualizaçao
+// separada pra cada menu ou modulo dai eu permito so visualizar sem editar
+// nada". Quem nao escreve agora e quem esta sem a caixinha de escrita daquela
+// tela. Ver o topo de `backend/services/auth.py`.
 //
-// ⚠️ AS RESERVAS ABAIXO NAO SAO AUTORIDADE, e sao o ESPELHO das do backend
-// (`services/auth.py::is_super_admin` e `::eh_somente_leitura`): a mesma soma
-// por OU, que so amplia e nunca corta. Quem manda e o campo devolvido pela API;
-// a derivacao so entra quando o campo NAO VEIO.
+// Este modulo existe para a tela nao ler `role` para responder essa pergunta —
+// que e exatamente o habito que este incremento veio desfazer.
+//
+// ⚠️ A RESERVA ABAIXO NAO E AUTORIDADE, e e o ESPELHO da do backend
+// (`services/auth.py::is_super_admin`): a mesma soma por OU, que so amplia e
+// nunca corta. Quem manda e o campo devolvido pela API; a derivacao so entra
+// quando o campo NAO VEIO.
 //
 // ONDE ELE NAO VEM, hoje: `GET /users` manda os dois campos, ja calculados.
 // `GET /auth/me` NAO — `schemas/auth.py::UserResponse` nao os declara. Efeito
@@ -38,24 +43,10 @@ export const SUPER_ADMIN_EMAILS = new Set<string>([
   "tiagomiller@alavank.com.br",
 ]);
 
-/** O papel que barra escrita por SI SO, mesmo sem a flag.
- *
- *  Espelha `backend/services/auth.py::PAPEIS_SEMPRE_SOMENTE_LEITURA`, e a lista
- *  tem UM item de proposito. `prefeito` estava junto com `viewer` no antigo
- *  `READONLY_ROLES` e SAIU: e justamente o caso que este incremento existe para
- *  destravar — um prefeito pode receber escrita individualmente sem deixar de
- *  aparecer como prefeito, e sem que isso valha para os outros prefeitos.
- *  Deduzir "prefeito logo somente-leitura" aqui reporia a regra velha na tela.
- *
- *  `viewer` fica porque nao e rotulo de pessoa: e a credencial sintetica do
- *  link publico de TV, criada por INSERT direto que nao conhece a flag nova. */
-export const PAPEIS_SEMPRE_SOMENTE_LEITURA = new Set<string>(["viewer"]);
-
 export interface ContaLike {
   email?: string | null;
   role?: string | null;
   super_admin?: boolean | null;
-  somente_leitura?: boolean | null;
 }
 
 /** Dona da plataforma? Campo OU allowlist — soma, nunca corte.
@@ -70,11 +61,11 @@ export function ehSuperAdmin(u: ContaLike | null | undefined): boolean {
   return SUPER_ADMIN_EMAILS.has((u?.email || "").trim().toLowerCase());
 }
 
-/** Conta que nao escreve nada fora do Painel? Flag OU papel-que-barra-sozinho.
- *
- *  Mesma soma por OU, pela mesma razao — e aqui ela protege o quiosque, que
- *  nasce com a coluna em `false` (INSERT direto em `routers/bi.py`). */
-export function ehSomenteLeitura(u: ContaLike | null | undefined): boolean {
-  if (u?.somente_leitura === true) return true;
-  return PAPEIS_SEMPRE_SOMENTE_LEITURA.has((u?.role || "").trim().toLowerCase());
-}
+// ⚠️ `ehSomenteLeitura` e `PAPEIS_SEMPRE_SOMENTE_LEITURA` SAIRAM em 05/09/2026
+// com a trava de conta que elas espelhavam (ver o topo deste arquivo). A tela
+// nao tem mais o que perguntar: "esta pessoa escreve aqui?" e a caixinha de
+// escrita daquela tela, e quem responde e o catalogo de permissoes.
+//
+// O quiosque continua barrado — mas no BACKEND, que e onde a trava dele sempre
+// esteve de verdade (`ehQuiosque` + `KIOSK_GET_PERMITIDOS`). Espelhar aquilo
+// aqui nunca protegeu nada: o link publico nao passa por esta tela.

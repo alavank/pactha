@@ -45,6 +45,10 @@ import {
 import type { Municipio, User } from "@/types";
 import { hrefToTela, allowedTelasOf } from "@/lib/telas";
 import {
+  BI_ON, NAV_ITEMS, allLeafHrefs,
+  type NavEntry, type NavGroup, type NavLeaf, type NavSection,
+} from "@/lib/menu";
+import {
   ABAS_CONFIGURACOES, ROTAS_LEGADAS_CONFIG, abasVisiveis,
 } from "@/lib/configuracoes";
 import { cofinanciamentoDaUf, consultaPopularDaUf, fonteEmendasEstaduais, monitoramentoDaUf, programasDaUf, repassesDaUf, temConteudoEstadual, temDiarioEstadual } from "@/lib/estadual";
@@ -54,14 +58,11 @@ import { EnteAtendido, SUBTITULO_PACTHA } from "@/components/bi/Marca";
 import UsoProvider from "@/components/UsoProvider";
 import { encerrarSessao } from "@/lib/uso";
 
-/* `destaque` marca o item que sai da fila e ganha cor propria — hoje so o
-   Radar de Captacao. Nao e enfeite: e o unico item do menu que olha para
-   FRENTE (prazo ainda aberto), enquanto todo o resto mostra instrumento ja
-   celebrado. Ver o comentario no NAV_ITEMS. */
-type NavLeaf = { href: string; label: string; icon?: React.ComponentType<{ className?: string }>; destaque?: boolean };
-type NavSection = { sectionLabel: string; children: NavLeaf[] };
-type NavGroup = { label: string; icon: React.ComponentType<{ className?: string }>; children: Array<NavLeaf | NavSection> };
-type NavEntry = NavLeaf | NavGroup;
+// ⭐ `NAV_ITEMS` E OS TIPOS `Nav*` MUDARAM DE CASA em 05/09/2026: foram para
+// `lib/menu.ts`, que passou a ser a FONTE ÚNICA do menu lateral E da árvore de
+// permissões da tela de Usuários. Enquanto a lista morava aqui, aquela tela
+// desenhava a própria (a partir de `TELAS`), com outra ordem e outros
+// agrupamentos — duas histórias sobre o mesmo produto. Ver o cabeçalho de lá.
 
 // Filtra a navegacao pelas telas permitidas (null = ve tudo: admin ou carregando).
 // Grupos so aparecem se sobrar ao menos um filho; secoes idem.
@@ -86,152 +87,6 @@ function filterNav(items: NavEntry[], allowed: Set<string> | null): NavEntry[] {
   }
   return out;
 }
-
-// Lista plana de hrefs (ordem da sidebar) — usada pelo guard de rota.
-function allLeafHrefs(items: NavEntry[]): string[] {
-  const out: string[] = [];
-  for (const item of items) {
-    if ("children" in item) {
-      for (const c of item.children) {
-        if ("sectionLabel" in c) out.push(...c.children.map((l) => l.href));
-        else out.push(c.href);
-      }
-    } else {
-      out.push(item.href);
-    }
-  }
-  return out;
-}
-
-// Com o BI ligado, o item "Dashboard" JA E o Painel de Indicadores (mesma rota).
-// Antes havia um link separado logo acima da navegacao — dois menus para a
-// mesma coisa. Ficou um so.
-const BI_ON = process.env.NEXT_PUBLIC_BI_MODULE === "1";
-
-// ⭐ A ORDEM É A QUE O DONO DITOU (11/08/2026), e ela conta uma história: o
-// PAINEL abre, as FONTES DE RECURSO vêm em bloco (federal, estadual,
-// parlamentares, saúde, educação), a REGULARIDADE fecha o diagnóstico, e só
-// então vêm as ferramentas de ENTREGA (relatório, IA, painéis, diário,
-// documentos, gestão). Configurações não está aqui: virou item próprio no fim
-// da barra, com as telas de administração em abas (lib/configuracoes.ts).
-//
-// ⚠️ Os GRUPOS foram preservados — "Estaduais" e "Transfere Gov" continuam
-// menus com seus submenus, como o dono confirmou. Reordenar folhas soltas
-// dentro deles não estava no pedido, e os condicionais por UF (Repasses e
-// Cofinanciamento só em GO; ver o filtro mais abaixo) dependem dessa estrutura.
-const NAV_ITEMS: NavEntry[] = [
-  {
-    href: "/dashboard",
-    label: BI_ON ? "Painel de Indicadores" : "Dashboard",
-    icon: BI_ON ? BarChart3 : LayoutDashboard,
-  },
-  /* ⭐ RADAR DE CAPTAÇÃO — FORA DE QUALQUER GRUPO, e logo abaixo do Painel
-     (pedido do dono, 04/09/2026).
-     Ele estava dentro de FEDERAIS, abrindo o grupo, e ali competia com sete
-     telas que mostram o que JÁ FOI ASSINADO. Esta é a única que olha para
-     FRENTE: programas com janela de proposta ainda aberta. Um edital que vence
-     não espera o gestor conferir os convênios antigos primeiro — e enterrá-lo
-     num grupo era pedir exatamente isso.
-     A cor (família INFO, azul) diferencia sem alarmar: o verde do sistema já
-     significa "item selecionado" e o âmbar/vermelho diriam "há algo errado",
-     quando o que há é oportunidade. */
-  {
-    href: "/dashboard/transferegov-radar",
-    label: "Radar de captação",
-    icon: Radar,
-    destaque: true,
-  },
-  /* ⭐ FEDERAIS / ESTADUAIS, EM MAIÚSCULO (pedido do dono, 28/08/2026): o que o
-     sistema mostra são emendas e convênios por ESFERA — federais, estaduais e,
-     mais à frente, municipais. "Transfere Gov" era o nome da fonte, não da
-     divisão; a fonte passa a aparecer no card de cada proposta. */
-  {
-    label: "FEDERAIS",
-    icon: Landmark,
-    children: [
-      /* «Em execução» e não «Geral» (pedido do dono): a tela sempre mostrou os
-         instrumentos JÁ CELEBRADOS, e «Geral» prometia um apanhado de tudo —
-         quem clicava esperando a visão completa achava que faltava dado. A rota
-         continua `transferegov-geral` de propósito: renomeá-la quebraria URLs
-         salvas e os links que o PAC monta por `categoria`. */
-      { href: "/dashboard/transferegov-geral", label: "Em execução" },
-      { href: "/dashboard/transferegov", label: "Especiais" },
-      { href: "/dashboard/transferegov-pac", label: "PAC (Novo PAC)" },
-      { href: "/dashboard/transferegov-voluntarias", label: "Voluntárias" },
-      { href: "/dashboard/transferegov-rejeitadas", label: "Rejeitadas" },
-      { href: "/dashboard/transferegov-encerradas", label: "Encerradas" },
-      { href: "/dashboard/transferegov-cnpj", label: "CNPJ" },
-    ],
-  },
-  {
-    label: "ESTADUAIS",
-    icon: FileText,
-    children: [
-      { href: "/dashboard/convenios", label: "Convênios" },
-      { href: "/dashboard/emendas", label: "Emendas Estaduais" },
-      { href: "/dashboard/repasses", label: "Repasses" },
-      { href: "/dashboard/cofinanciamento", label: "Cofinanciamento Saúde" },
-      { href: "/dashboard/monitoramento", label: "Monitoramento" },
-      { href: "/dashboard/consulta-popular", label: "Consulta Popular" },
-      { href: "/dashboard/programas-rs", label: "Programas do Estado" },
-      { href: "/dashboard/funrigs", label: "Plano Rio Grande" },
-      { href: "/dashboard/emendas-rs", label: "Emendas Estaduais RS" },
-      { href: "/dashboard/tce-rs", label: "TCE-RS" },
-    ],
-  },
-  // ⭐ AGENDAMENTOS fica FORA dos grupos de esfera (FEDERAIS/ESTADUAIS) porque
-  // não é fonte de recurso: é o trabalho da equipe SOBRE essas fontes. Vem
-  // logo depois delas, onde começa o que se FAZ com o que foi encontrado.
-  { href: "/dashboard/agendamentos", label: "Agendamentos", icon: CalendarClock },
-  { href: "/dashboard/parlamentares", label: "Parlamentares", icon: UserCircle2 },
-  // ⭐ SAÚDE é um grupo porque a saúde é uma PASTA do município, não quatro
-  // sistemas avulsos. Quem cuida do fundo municipal de saúde abre as quatro
-  // telas no mesmo dia; espalhadas na barra, cada uma parecia um assunto
-  // diferente. O SIMEC fica FORA de propósito — é educação (FNDE).
-  {
-    label: "Saúde",
-    icon: HeartPulse,
-    children: [
-      { href: "/dashboard/fns", label: "Fundo Nacional de Saúde" },
-      { href: "/dashboard/sismob", label: "Obras da Saúde (SISMOB)" },
-      { href: "/dashboard/investsus", label: "InvestSUS" },
-      { href: "/dashboard/acordofes", label: "Acordo FES (Dívida Saúde)" },
-    ],
-  },
-  // ⭐ OBRAS é um grupo pelo mesmo motivo que SAÚDE é: quem acompanha obra abre
-  // as telas de obra no mesmo dia, e espalhadas na barra cada uma parecia um
-  // assunto diferente. Nasce com duas e cresce — o Governo publica obra em pelo
-  // menos quatro sistemas, e cada um vira um item aqui.
-  //
-  // ⚠️ O SISMOB APARECE AQUI **E** EM SAÚDE, o mesmo link nos dois lugares. Não
-  // é engano: ele é as duas coisas (é obra e é saúde), e quem chega por "Saúde"
-  // não é a mesma pessoa que chega por "Obras". Tirar de um dos dois obrigaria
-  // metade dos usuários a procurar a tela na pasta do outro assunto.
-  //
-  // ⚠️ E as duas telas se sobrepõem NOS DADOS também: o CIPI reúne obras que o
-  // SISMOB publica (45 das 360 de Freitas). Decisão do dono em 04/09/2026 —
-  // "mesmo que as obras do SISMOB estejam também no obrasgov geral, não tem
-  // problema". A tela de Obras Federais marca quais são, em vez de escondê-las.
-  {
-    label: "Obras",
-    icon: HardHat,
-    children: [
-      { href: "/dashboard/obrasgov", label: "Obras Federais (Obras.gov.br)" },
-      { href: "/dashboard/sismob", label: "Obras da Saúde (SISMOB)" },
-    ],
-  },
-  { href: "/dashboard/simec", label: "SIMEC - PAR (MEC)", icon: Target },
-  { href: "/dashboard/cauc", label: "Regularidade", icon: ShieldCheck },
-  { href: "/dashboard/rm", label: "Relatório de Monitoramento", icon: FileText },
-  { href: "/dashboard/ai", label: "IA PACTHA", icon: Sparkles },
-  { href: "/dashboard/paineis", label: "Painéis Municipais", icon: LayoutGrid },
-  { href: "/dashboard/dou", label: "Diário Oficial", icon: Newspaper },
-  { href: "/dashboard/documentos", label: "Geração de Documentos", icon: FileSignature },
-  { href: "/dashboard/gestao", label: "Gestão Interna", icon: Edit2 },
-  // Telegram REMOVIDO em 05/09/2026 (ver lib/telas.ts).
-  // Cofre de Senhas e Sessões (gov.br) SAÍRAM daqui: viraram abas de
-  // Configurações. As rotas antigas continuam existindo (bookmark não quebra).
-];
 
 // A secao Administracao. O padrao aqui e "so admin ve", e por isso o bloco
 // inteiro nasceu dentro de um `user?.role === "admin"`.
@@ -1074,6 +929,22 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
     // cinco colunas de kanban pediriam rolagem horizontal), mas o `px`/`py` do
     // container recortava o fundo proprio dele numa moldura cinza. Nao
     // reacrescente aqui sem tirar de la.
+    //
+    // ⭐ CONFIGURAÇÕES ENTROU em 05/09/2026 (pedido do dono): "o menu
+    // Configurações inteiro tem que usar a mesma área útil que o Dashboard e o
+    // TransfereGov (...) hoje o card central fica com margens grandes à
+    // esquerda e à direita — isso sai".
+    //
+    // ⚠️ A MARGEM ERA SÓ ISTO. O layout de Configurações não impõe largura
+    // nenhuma: as margens grandes vinham do `max-w-7xl` (1216px) que é o padrão
+    // desta lista abaixo. Entrando aqui, ele passa a 1600px, o MESMO do
+    // TransfereGov — e não `telaCheia` como o Painel, porque aquele tira também
+    // o padding, e a página de abas precisa dele.
+    //
+    // As duas rotas: a nova (abas) e a antiga (`/dashboard/usuarios` e irmãs
+    // continuam no ar para não quebrar bookmark).
+    "/dashboard/configuracoes",
+    "/dashboard/usuarios",
   ];
   const telaLarga = TELAS_LARGAS.some((p) => pathname.startsWith(p));
 

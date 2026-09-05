@@ -82,24 +82,36 @@ def envios(monkeypatch):
 # ---------------------------------------------------------------------------
 # Modo
 # ---------------------------------------------------------------------------
-@pytest.mark.parametrize("valor", [None, "", "  ", "aviso", "AVISO", "bloquear",
-                                   "bloqueiop", "block", "1", "true", "off"])
-def test_default_e_o_que_nao_quebra(monkeypatch, valor):
-    """Qualquer coisa que nao seja exatamente 'bloqueio' e modo aviso.
+@pytest.mark.parametrize("valor", [None, "", "  ", "bloqueio", "BLOQUEIO",
+                                   "avisar", "avisoo", "warn", "1", "true", "off"])
+def test_default_e_bloqueio_e_desligar_e_ato_deliberado(monkeypatch, valor):
+    """⭐ INVERTEU EM 05/09/2026: qualquer coisa que nao seja exatamente 'aviso'
+    e modo BLOQUEIO.
 
-    Fail-OPEN e a escolha certa AQUI: 'fechar por engano' e o apagao de
-    segunda-feira que este modulo existe para evitar."""
+    O default era `aviso`, e o fail-open apontava para o outro lado — 'fechar
+    por engano' era o apagao de segunda-feira que este modulo existe para
+    evitar. Inverteu porque a trava de conta «somente leitura» foi removida no
+    mesmo deploy: enquanto o modo era de aviso, era ELA que impedia a escrita, e
+    estas caixinhas so registravam. Deixar as duas desligadas seria um sistema
+    sem trava de escrita nenhuma.
+
+    ⚠️ O FAIL-SAFE CONTINUA, so mudou de lado: `AUTHZ_MODO=avisoo` (digitado
+    errado) NAO desliga a trava. Desligar passou a ser o ato deliberado, e e ele
+    que precisa ser escrito certo — `aviso`, exato, continua sendo o caminho de
+    recuo se um cliente for barrado indevidamente."""
     if valor is None:
         monkeypatch.delenv("AUTHZ_MODO", raising=False)
     else:
         monkeypatch.setenv("AUTHZ_MODO", valor)
-    assert authz.modo() == authz.MODO_AVISO
-
-
-@pytest.mark.parametrize("valor", ["bloqueio", "BLOQUEIO", " Bloqueio "])
-def test_bloqueio_so_com_a_palavra_exata(monkeypatch, valor):
-    monkeypatch.setenv("AUTHZ_MODO", valor)
     assert authz.modo() == authz.MODO_BLOQUEIO
+
+
+@pytest.mark.parametrize("valor", ["aviso", "AVISO", " Aviso "])
+def test_aviso_so_com_a_palavra_exata(monkeypatch, valor):
+    """O caminho de recuo, e ele aceita maiuscula e espaco — quem digita isto
+    esta apagando um incendio, nao decorando sintaxe."""
+    monkeypatch.setenv("AUTHZ_MODO", valor)
+    assert authz.modo() == authz.MODO_AVISO
 
 
 # ---------------------------------------------------------------------------

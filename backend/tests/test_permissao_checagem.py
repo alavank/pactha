@@ -145,8 +145,18 @@ def test_super_admin_nao_faz_ruido_na_trilha(bloqueio, envios):
 # ===========================================================================
 # As outras flags do usuario
 # ===========================================================================
-def test_somente_leitura_perde_a_escrita_mesmo_com_a_caixinha_marcada(bloqueio):
-    usuario = Usuario(permissoes={"rm.ver", "rm.excluir"}, somente_leitura=True)
+def test_ve_mas_nao_edita_sai_das_CAIXINHAS_e_nao_de_uma_trava_de_conta(bloqueio):
+    """⭐ ESTE TESTE MEDIA OUTRA COISA ATE 05/09/2026: a trava de conta «somente
+    leitura», que subtraia os verbos de escrita mesmo com a caixinha marcada.
+    Ela foi removida por decisao do dono, que preferiu o controle mais fino —
+    "prefiro dar permissao de visualizaçao separada pra cada menu ou modulo dai
+    eu permito so visualizar sem editar nada".
+
+    A capacidade continua existindo, e e ela que este teste passa a medir: a
+    pessoa que tem `rm.ver` e NAO tem `rm.excluir` ve e nao apaga. A diferenca
+    pratica e que agora da para ser leitor no Cofre e escritor na Gestao
+    Interna, o que a trava de conta nunca permitiu."""
+    usuario = Usuario(permissoes={"rm.ver"})
     authz.exigir(usuario, "rm.ver")
     with pytest.raises(HTTPException):
         authz.exigir(usuario, "rm.excluir")

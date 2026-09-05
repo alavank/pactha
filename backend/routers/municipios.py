@@ -17,7 +17,16 @@ router = APIRouter(prefix="/api/municipios", tags=["municipios"])
 # duas", e nao as duas. `exige()` cobra TODAS as chaves que recebe: com ele, quem
 # so tem TransfereGov perderia a home do sistema. Por isso a rota usa
 # `declarado()` (que so registra) e a decisao mora no corpo, com `authz.pode`.
-_RESUMO_PERMISSOES = ("convenios.ver", "transferegov.ver")
+# ⚠️ `transferegov.ver` VIROU CINCO em 05/09/2026, quando o grupo FEDERAIS foi
+# dividido em uma tela por folha do menu. A lista tem de citar todas as que leem
+# `transferegov_propostas` — que e a tabela somada neste cartao —, senao quem
+# tiver so «Voluntárias» perde a home do sistema por um recorte que nao e dele.
+_RESUMO_PERMISSOES = (
+    "convenios.ver",
+    "transferegov_geral.ver", "transferegov_voluntarias.ver",
+    "transferegov_rejeitadas.ver", "transferegov_encerradas.ver",
+    "transferegov_especiais.ver",
+)
 
 
 def _parse_dt(s) -> date | None:

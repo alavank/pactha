@@ -90,7 +90,7 @@ async def fetch_monitoramento(db: AsyncSession, municipio_id: int,
     return r
 
 
-@router.get("", dependencies=[exige("convenios.ver")])
+@router.get("", dependencies=[exige("monitoramento.ver")])
 async def monitoramento(
     municipio_id: int = Query(...),
     db: AsyncSession = Depends(get_db),
@@ -101,5 +101,5 @@ async def monitoramento(
     `estado='nao_conectado'` significa que a fonte ainda não foi ligada — NÃO
     que o município esteja em dia nem em atraso."""
     ensure_municipio_access(current, municipio_id)
-    ensure_tela(current, "convenios")
+    ensure_tela(current, "monitoramento")
     return await fetch_monitoramento(db, municipio_id)

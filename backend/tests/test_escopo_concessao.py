@@ -401,5 +401,9 @@ def test_o_alcance_nao_virou_permissao_do_catalogo():
     passa por aqui e escreve por que. A guarda de verdade e a linha de baixo —
     nenhuma chave pode conter "propri", porque alcance de linha e outra coisa e
     junta-las criaria duas caixinhas que se contradizem."""
-    assert len(permissoes.CATALOGO) == 76
+    # 05/09/2026: 76 -> 96. A divisao dos grupos FEDERAIS (1 chave -> 8 telas) e
+    # ESTADUAIS (1 chave -> 10 telas) e as abas de Configuracoes que ganharam
+    # chave (Telemetria, Parametros) explicam o salto; `usuarios.modelos` saiu
+    # com os moldes. Ver o cabecalho de `services/permissoes.py`.
+    assert len(permissoes.CATALOGO) == 96
     assert not any("propri" in c for c in permissoes.CATALOGO)

@@ -77,24 +77,28 @@ TABELA = [
      frozenset({"rm.ver"})),
     ("chave com caixa e espaco e normalizada",
      dict(concedidas={" RM.Ver ", "rm.ver"}), frozenset({"rm.ver"})),
+    # ⚠️ USA `gestao.ver`, e nao `convenios.ver` como ate 05/09/2026: aquela
+    # chave passou a EXPANDIR para as oito telas estaduais que sairam de dentro
+    # dela (a rede de `_CHAVES_RENOMEADAS`, coberta por
+    # `test_compat_telas_renomeadas.py`). O que esta linha mede — que o PAPEL
+    # nao acrescenta nada ao conjunto — precisa de uma chave que nao foi
+    # dividida, senao ela passaria a medir a expansao por acidente.
     ("papel nao aparece na conta: quem so tem a lista, so tem a lista",
-     dict(concedidas={"convenios.ver"}), frozenset({"convenios.ver"})),
+     dict(concedidas={"gestao.ver"}), frozenset({"gestao.ver"})),
 
-    # --- 5. Somente-leitura subtrai a escrita, por ultimo ----------------
-    ("somente-leitura perde os verbos de escrita",
-     dict(concedidas={"rm.ver", "rm.editar", "rm.excluir", "rm.exportar"},
-          somente_leitura=True), frozenset({"rm.ver", "rm.exportar"})),
-    ("somente-leitura alcanca ATE o super-admin (o guard e acima da permissao)",
-     dict(super_admin=True, somente_leitura=True), SEM_ESCRITA),
-    ("somente-leitura NAO tira o Modo Tela nem o link publico do prefeito",
-     dict(concedidas={"bi.ver", "bi.tela", "bi.link"}, somente_leitura=True),
-     frozenset({"bi.ver", "bi.tela", "bi.link"})),
-    ("somente-leitura tira a IA (o endpoint e POST e o guard barra)",
-     dict(concedidas={"ai.usar", "ai.exportar"}, somente_leitura=True),
-     frozenset()),
-    ("somente-leitura NAO tira revelar a senha (o endpoint e GET)",
-     dict(concedidas={"cofre.ver", "cofre.revelar", "cofre.excluir"},
-          somente_leitura=True), frozenset({"cofre.ver", "cofre.revelar"})),
+    # --- 5. A REGRA QUE SAIU, e o que ficou no lugar ---------------------
+    # ⚠️ HAVIA UMA QUINTA REGRA — "somente-leitura subtrai a escrita, por
+    # ultimo" — com cinco linhas nesta tabela. Ela saiu em 05/09/2026 junto com
+    # a trava de conta que a alimentava (decisao do dono; ver o topo de
+    # `services/auth.py`). A funcao pura deixou de receber `somente_leitura`.
+    #
+    # O que ela fazia agora se faz DESMARCANDO as caixinhas de escrita, e isso ja
+    # e a regra 4 desta mesma tabela: quem nao tem `rm.editar` marcado nao tem
+    # `rm.editar`, ponto. A linha abaixo e a que substitui as cinco.
+    ("quem so tem os verbos de leitura de um modulo so tem eles — e e assim que "
+     "se faz 've mas nao edita' desde que a trava de conta saiu",
+     dict(concedidas={"rm.ver", "rm.exportar"}),
+     frozenset({"rm.ver", "rm.exportar"})),
 ]
 
 

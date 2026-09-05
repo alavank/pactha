@@ -1,4 +1,10 @@
-"""As DUAS FLAGS que substituiram o papel onde ele decidia poder de verdade.
+"""A FLAG que substituiu o papel onde ele decidia poder de verdade.
+
+⚠️ ERAM DUAS ate 05/09/2026. A segunda — `somente_leitura`, a trava de escrita
+da conta — foi REMOVIDA por decisao do dono, e com ela saiu a secao 3 deste
+arquivo ("a trava de escrita e alcancavel"). O que ela fazia agora se faz
+desmarcando as caixinhas de escrita de cada tela, e quem cobre isso e
+`test_permissoes_concessao.py`. Ver o topo de `services/auth.py`.
 
 `test_papel_nao_concede.py` prova que o papel parou de conceder escopo e
 `test_apagao_incremento_4.py` prova que ninguem fica trancado do lado de fora.
@@ -14,26 +20,14 @@ Sobra o que nenhum dos dois cobre, e que e onde a mudanca vaza:
      capacidade que este incremento abriu — valia no backend e nao chegava na
      tela: a sidebar continuava escondendo Sessoes e Service Tokens dele.
 
-  3. A TRAVA DE ESCRITA E ALCANCAVEL. Sem caminho para liga-la, o guard trocar
-     PAPEL por FLAG AFROUXA a unica trava de acao do sistema: marcar alguem como
-     "Prefeito" produzia, ate a vespera, uma conta que nao escreve. Depois do
-     deploy produziria uma conta que escreve — e sem jeito de conte-la fora do
-     banco.
 """
-import asyncio
 import pathlib
 import re
 
 import pytest
-from fastapi import HTTPException
 
-from routers.users import UpdateUserRequest, _trava_inicial, update_user
 from schemas.auth import UserResponse
-from services.auth import (
-    PAPEIS_SEMPRE_SOMENTE_LEITURA,
-    READONLY_ROLES,
-    SUPER_ADMIN_EMAILS,
-)
+from services.auth import SUPER_ADMIN_EMAILS
 
 BACKEND = pathlib.Path(__file__).resolve().parent.parent
 REPO = BACKEND.parent
@@ -69,7 +63,7 @@ def test_o_seed_de_tenant_novo_semeia_a_mesma_lista():
     assert do_seed == SUPER_ADMIN_EMAILS
 
 
-def test_o_frontend_espelha_as_duas_listas_do_backend():
+def test_o_frontend_espelha_a_lista_de_donos_do_backend():
     """`lib/conta.ts` decide o que a TELA desenha (o selo de dono, o item de menu
     de Sessoes). Nao barra nada — mas divergir esconde a tela de quem tem acesso,
     ou mostra um link que da 403."""
@@ -78,9 +72,6 @@ def test_o_frontend_espelha_as_duas_listas_do_backend():
         pytest.skip("frontend nao esta neste checkout")
     fonte = ts.read_text(encoding="utf-8")
     assert _emails(fonte) == SUPER_ADMIN_EMAILS
-    papeis = fonte[fonte.index("const PAPEIS_SEMPRE_SOMENTE_LEITURA"):]
-    papeis = set(re.findall(r'"(\w+)"', papeis[:papeis.index(";")]))
-    assert papeis == PAPEIS_SEMPRE_SOMENTE_LEITURA
 
 
 def test_o_frontend_soma_por_OU_como_o_backend():
@@ -94,7 +85,6 @@ def test_o_frontend_soma_por_OU_como_o_backend():
     fonte = ts.read_text(encoding="utf-8")
     assert "typeof u?.super_admin" not in fonte
     assert "u?.super_admin === true" in fonte
-    assert "u?.somente_leitura === true" in fonte
 
 
 # ---------------------------------------------------------------------------
@@ -109,28 +99,21 @@ class Conta:
         self.active = kw.get("active", True)
         self.must_change_password = kw.get("must_change_password", False)
         self.super_admin = kw.get("super_admin", False)
-        self.somente_leitura = kw.get("somente_leitura", False)
-        # Lido por `authz.permissoes_de`. Sem ele o duplo nao pode NADA, e os
-        # dois testes de PATCH abaixo passavam a medir a falta de
-        # `usuarios.conceder` em vez da regra que dizem medir.
+        self.funcao = kw.get("funcao")
+        self.whatsapp = kw.get("whatsapp")
         self.allowed_permissoes = kw.get("permissoes", [])
 
 
-def test_a_resposta_calcula_as_flags_e_nao_copia_a_coluna():
-    """A coluna crua nao e a resposta certa para nenhuma das duas: quem esta na
-    semente da Alavank manda no sistema mesmo com `super_admin = false`, e o
-    quiosque nao escreve mesmo com `somente_leitura = false`. `model_validate`
-    sozinho copiaria os dois `false` e a tela mentiria sobre quem tem a chave."""
+def test_a_resposta_calcula_a_flag_e_nao_copia_a_coluna():
+    """A coluna crua nao e a resposta certa: quem esta na semente da Alavank
+    manda no sistema mesmo com `super_admin = false`. `model_validate` sozinho
+    copiaria o `false` e a tela mentiria sobre quem tem a chave."""
     dono = UserResponse.de_usuario(
         Conta(email="matheus@alavank.com.br", super_admin=False))
     assert dono.super_admin is True
 
-    quiosque = UserResponse.de_usuario(
-        Conta(email="kiosk-u3-abc@painel.local", role="viewer", somente_leitura=False))
-    assert quiosque.somente_leitura is True
-
     comum = UserResponse.de_usuario(Conta())
-    assert comum.super_admin is False and comum.somente_leitura is False
+    assert comum.super_admin is False
 
 
 def test_a_promocao_por_coluna_chega_na_tela():
@@ -142,122 +125,8 @@ def test_a_promocao_por_coluna_chega_na_tela():
         Conta(email="suporte@alavank.com.br", role="usuario", super_admin=True))
     assert novo.super_admin is True
     assert "super_admin" in UserResponse.model_fields
-    assert "somente_leitura" in UserResponse.model_fields
+    # ⚠️ E a trava de conta NAO volta pela porta dos fundos: `somente_leitura`
+    # saiu do schema em 05/09/2026, e um campo com esse nome reaparecendo aqui
+    # significaria que alguem reintroduziu a regra sem reler por que ela saiu.
+    assert "somente_leitura" not in UserResponse.model_fields
 
-
-# ---------------------------------------------------------------------------
-# 3. A trava de escrita e alcancavel — e nao afrouxou no caminho
-# ---------------------------------------------------------------------------
-@pytest.mark.parametrize("papel", sorted(READONLY_ROLES))
-def test_quem_era_somente_leitura_pelo_papel_continua_nascendo_travado(papel):
-    """⚠️ A REGRESSAO QUE ESTE TESTE EXISTE PARA PEGAR. O guard passou a ler a
-    FLAG; a migration semeou a flag de quem JA existia. Faltava o nascimento: sem
-    isto, todo prefeito cadastrado DEPOIS do deploy nasce com escrita liberada em
-    tudo o que tiver tela — trocando, em silencio, "prefeito nao escreve" por
-    "prefeito escreve"."""
-    assert _trava_inicial(papel, None) is True
-
-
-def test_quem_nunca_foi_somente_leitura_continua_escrevendo():
-    """O outro lado: a semente nao pode travar quem sempre escreveu."""
-    for papel in ("admin", "analyst", "user", "usuario"):
-        assert _trava_inicial(papel, None) is False
-
-
-def test_a_escolha_explicita_do_administrador_ganha_do_rotulo():
-    """E aqui o papel deixa de decidir tambem isto: dois prefeitos, um que so le
-    o Painel e outro que lanca — os dois marcados "prefeito" no cadastro."""
-    assert _trava_inicial("prefeito", False) is False
-    assert _trava_inicial("admin", True) is True
-
-
-# ---------------------------------------------------------------------------
-# 4. A porta que fecha por fora
-# ---------------------------------------------------------------------------
-class _Resultado:
-    def __init__(self, objeto):
-        self._objeto = objeto
-
-    def scalar_one_or_none(self):
-        return self._objeto
-
-    def fetchall(self):
-        # Escopo vazio: este teste e sobre a flag, nao sobre telas/municipios.
-        return []
-
-
-class FakeDb:
-    def __init__(self, usuario):
-        self.usuario = usuario
-        self.escreveu = False
-
-    async def execute(self, *a, **kw):
-        return _Resultado(self.usuario)
-
-    async def commit(self):
-        self.escreveu = True
-
-    async def refresh(self, *a, **kw):
-        return None
-
-
-def test_ninguem_se_poe_em_somente_leitura():
-    """Em somente leitura a pessoa nao consegue nem desfazer o proprio PATCH — o
-    guard de `get_current_user` barra POST/PUT/PATCH/DELETE fora do Painel, e
-    este endpoint e um PATCH. Ela perderia, no mesmo ato, a escrita e o unico
-    caminho de volta: so por outro admin, ou pelo banco. Mesma familia do
-    "nao pode desativar a si mesmo" que ja existia aqui."""
-    # Com a permissao NA MAO: o 400 tem de vir da regra do proprio umbigo, e nao
-    # de `usuarios.conceder` faltando — senao este teste passaria a verde pelo
-    # motivo errado no dia em que a regra do umbigo fosse removida.
-    eu = Conta(id=1, role="admin", permissoes=["usuarios.conceder"])
-    db = FakeDb(eu)
-    with pytest.raises(HTTPException) as e:
-        asyncio.run(update_user(
-            user_id=1, req=UpdateUserRequest(somente_leitura=True),
-            request=None, db=db, current=eu,
-        ))
-    assert e.value.status_code == 400
-    assert "somente leitura" in e.value.detail.lower()
-    assert not db.escreveu
-
-
-def test_travar_OUTRA_pessoa_continua_permitido(monkeypatch):
-    """A recusa e sobre si mesmo, e so. Travar outra conta e o uso NORMAL da
-    flag — e e por ele que o prefeito volta a ser somente-leitura sem que o
-    rotulo "prefeito" volte a decidir por todos os prefeitos.
-
-    A trilha entra como duplo: `registrar_critico` fala com o banco de verdade e
-    o que se verifica aqui e a decisao, nao a gravacao. Ela tem teste proprio."""
-    registrado = {}
-
-    async def _falsa_trilha(db, **kw):
-        registrado.update(kw)
-
-    monkeypatch.setattr("routers.users.registrar_critico", _falsa_trilha)
-
-    eu = Conta(id=1, role="admin", permissoes=["usuarios.conceder"])
-    outro = Conta(id=2, role="prefeito", somente_leitura=False)
-    db = FakeDb(outro)
-    asyncio.run(update_user(
-        user_id=2, req=UpdateUserRequest(somente_leitura=True),
-        request=None, db=db, current=eu,
-    ))
-    assert outro.somente_leitura is True
-    assert db.escreveu
-    # E a trilha registra a mudanca de poder: sem `somente_leitura` nos dois
-    # retratos, "quem liberou o prefeito para editar, e quando" fica sem resposta.
-    assert registrado["valor_antes"]["somente_leitura"] is False
-    assert registrado["valor_depois"]["somente_leitura"] is True
-
-
-def test_a_flag_nao_e_aceita_para_super_admin():
-    """`super_admin` fica FORA dos payloads de propósito: aceita-lo deixaria
-    qualquer admin do tenant se promover a dono num PATCH e alcancar Sessoes,
-    Service Tokens e as contas dos outros donos."""
-    assert "super_admin" not in UpdateUserRequest.model_fields
-    from routers.users import CreateUserRequest
-    assert "super_admin" not in CreateUserRequest.model_fields
-    # E `somente_leitura` esta nos dois, senao a trava e inalcancavel.
-    assert "somente_leitura" in UpdateUserRequest.model_fields
-    assert "somente_leitura" in CreateUserRequest.model_fields

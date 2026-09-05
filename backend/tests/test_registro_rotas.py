@@ -286,11 +286,14 @@ def test_as_rotas_sensiveis_nunca_sao_livres(metodo, caminho):
 # lista dizia "esta chave não é exigida por rota nenhuma" sobre uma chave que
 # era — e o teste da segunda metade, que existe justamente para pegar isso,
 # vinha falhando desde então.
-PERMISSOES_SEM_ROTA = {
-    "acordofes.exportar", "bi.exportar", "bi.tela", "cauc.exportar",
-    "fns.exportar", "frescor.exportar", "gestao.exportar", "simec.exportar",
-    "sismob.exportar",
-}
+#
+# ⭐ A LISTA MUDOU DE CASA em 05/09/2026: ela mora agora em
+# `services/permissoes.py::PERMISSOES_INERTES`, porque o CATALOGO passou a
+# precisar dela — `Permissao.as_dict` marca `inerte`, e a arvore da tela de
+# Usuarios ESCONDE as caixinhas inertes (decisao do dono: caixinha que promete e
+# nao entrega e pior que caixinha faltando). Continua ESCRITA e nao calculada,
+# pelo motivo do paragrafo acima; o que mudou foi so o arquivo.
+from services.permissoes import PERMISSOES_INERTES as PERMISSOES_SEM_ROTA  # noqa: E402
 
 
 def test_caixinha_do_catalogo_ou_abre_uma_rota_ou_esta_na_lista_das_inertes():
@@ -358,10 +361,15 @@ def test_a_TV_do_gabinete_alcanca_tudo_que_a_allowlist_do_quiosque_promete():
 # 4. Os modos
 # ===========================================================================
 def test_modo_default_acompanha_o_AUTHZ_MODO(monkeypatch):
-    """Enquanto a trava geral esta em aviso, aqui tambem so se fala: no dia do
-    deploy, 130 rotas ainda nao declaradas nao podem comecar a devolver 403 de
-    uma vez."""
-    assert registro.modo() == registro.MODO_AVISO
+    """A varredura SEGUE a trava geral, e por isso ela virou estrita em
+    05/09/2026 junto com o default de `AUTHZ_MODO` — nao ha mais 130 rotas por
+    declarar (o `test_toda_rota_do_app_esta_em_exatamente_um_balde` garante
+    isso), entao o motivo original de falar em vez de barrar acabou.
+
+    ⚠️ `AUTHZ_MODO=aviso` continua arrastando a varredura junto: quem apaga um
+    incendio desligando a trava geral nao pode levar um boot recusado de
+    brinde."""
+    assert registro.modo() == registro.MODO_ESTRITO
     monkeypatch.setenv("AUTHZ_MODO", "aviso")
     assert registro.modo() == registro.MODO_AVISO
 
@@ -390,10 +398,12 @@ def test_AUTHZ_REGISTRO_vence_e_e_a_valvula_de_escape(monkeypatch):
 
 
 def test_valor_desconhecido_nao_liga_nem_desliga_trava(monkeypatch):
+    """Env digitada errada NAO decide nada: cai na derivacao de `AUTHZ_MODO`,
+    que desde 05/09/2026 e `bloqueio` por default (logo, varredura estrita)."""
     monkeypatch.setenv("AUTHZ_REGISTRO", "bloqueiop")
-    assert registro.modo() == registro.MODO_AVISO
-    monkeypatch.setenv("AUTHZ_MODO", "bloqueio")
     assert registro.modo() == registro.MODO_ESTRITO
+    monkeypatch.setenv("AUTHZ_MODO", "aviso")
+    assert registro.modo() == registro.MODO_AVISO
 
 
 # ===========================================================================

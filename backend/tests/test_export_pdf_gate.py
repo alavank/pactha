@@ -51,14 +51,27 @@ MUNICIPIO_DE_FORA = 99
 
 class Usuario:
     """O que o codigo real le do User: id/email/name + os escopos que
-    `load_user_scopes` anexa. Nao-admin com o municipio, sem tela nenhuma."""
+    `load_user_scopes` anexa. Nao-admin com o municipio, sem tela nenhuma.
+
+    ⚠️ NASCE COM TODAS AS CAIXINHAS DE ACAO, e a escolha isola o que este
+    arquivo diz medir. Ele e sobre a trava de TELA; as caixinhas sao outra
+    trava, coberta por `test_permissoes_concessao.py`. Um duplo sem permissao
+    nenhuma faria estes testes falharem na porta ERRADA — e a mensagem de erro
+    diria "sem permissao" onde o assunto e "sem tela", que e exatamente o tipo
+    de confusao que este arquivo existe para evitar.
+
+    Passou a fazer falta em 05/09/2026, quando `/export-pdf/federais/{categoria}`
+    passou a cobrar a chave da CATEGORIA no corpo (a categoria virou caminho, e
+    o decorador nao consegue saber de antemao qual das quatro cobrar)."""
 
     def __init__(self, telas=frozenset(), municipios=frozenset({MUNICIPIO})):
+        from services.permissoes import CATALOGO
         self.id = 7
         self.email = "servidor@montesiao.mg.gov.br"
         self.name = "Servidor"
         self.allowed_telas = set(telas)
         self.allowed_municipio_ids = set(municipios)
+        self.allowed_permissoes = set(CATALOGO)
 
 
 class PassouDaPorta(Exception):
@@ -124,8 +137,12 @@ def _chamar_convenios(user, db):
 
 
 def _chamar_voluntarias(user, db):
+    # ⚠️ A CATEGORIA VIROU CAMINHO em 05/09/2026, e por isso deixou de ser
+    # `categoria=None`: as quatro telas de FEDERAIS que dividem este export
+    # ganharam chave propria, e query nao gateia (quem tivesse so «Rejeitadas»
+    # pediria `?categoria=geral`). A tela cobrada e a da categoria pedida.
     return export_pdf.export_voluntarias_pdf(
-        request=None, municipio_id=MUNICIPIO, categoria=None, situacao=None,
+        request=None, categoria="geral", municipio_id=MUNICIPIO, situacao=None,
         orgao=None, search=None, parlamentar=None, situacao_contratacao=None,
         vigencia=None, vig_fim_de=None, vig_fim_ate=None, db=db, current=user)
 
@@ -156,10 +173,15 @@ def _chamar_parlamentares(user, db, municipio_id=MUNICIPIO):
 # GATES NOVOS: aqui a tela e cobrada por `authz.exigir_tela`, que respeita o
 # modo. Os quatro leem o municipio no banco logo depois da porta, entao a
 # `BancoSentinela` prova "passou" sem Postgres.
+# ⚠️ AS TELAS DO GRUPO FEDERAIS MUDARAM DE NOME em 05/09/2026: `transferegov`
+# virou oito telas (uma por folha do menu), e cada export cobra a DA SUA. O par
+# (rota, tela) e a coisa mais importante desta tabela — par errado aqui inventa
+# uma permissao que nenhum administrador concedeu e tira o arquivo de quem
+# sempre o teve.
 TABELA = [
     ("convenios", "convenios", _chamar_convenios),
-    ("voluntarias", "transferegov", _chamar_voluntarias),
-    ("plano-acao", "transferegov", _chamar_plano_acao),
+    ("voluntarias", "transferegov_geral", _chamar_voluntarias),
+    ("plano-acao", "transferegov_especiais", _chamar_plano_acao),
     ("emendas", "emendas", _chamar_emendas),
 ]
 IDS = [r for r, _, _ in TABELA]

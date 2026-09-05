@@ -433,6 +433,23 @@ MIGRATION_FILES = [
     # abortou inteira por UM caractere ("Projeto de Investimento em
     # Infraestrutura" = 41, coluna = 40).
     "add_obrasgov_taxonomias_text.sql",
+    # --- Incremento «permissao por tela» (05/09/2026) ----------------------
+    # Cadastro: cargo na organizacao e WhatsApp. Duas colunas opcionais em
+    # `users`; nao dependem de nada e nao concedem nada.
+    "add_usuario_funcao_whatsapp.sql",
+    # O rotulo «Prefeito» sai do cardapio. DEPENDE de `add_parametros.sql`
+    # (a tabela e a semente que grava a linha), la em cima.
+    "desativa_perfil_prefeito.sql",
+    # ⚠️ DEPOIS de `add_permissoes_por_acao.sql` — e a dependencia e dura:
+    # este arquivo faz INSERT em `user_permissoes`, cuja FK aponta para
+    # `permissoes_catalogo`, que nasce e e semeada la. Inverter a ordem quebra
+    # banco NOVO no primeiro boot. Guardado por
+    # `tests/test_migrations_ordem_tabela.py`.
+    #
+    # ⚠️ E DEPOIS de `add_usuario_funcao_whatsapp.sql` nao por dependencia, mas
+    # por leitura: as tres do incremento ficam juntas, na ordem em que a
+    # historia aconteceu.
+    "add_permissoes_por_tela.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",
