@@ -66,6 +66,59 @@ export interface CorPaleta {
   nome: string;
 }
 
+/** Um feriado ou ponto facultativo, como o backend calcula
+ *  (`services/feriados.py` — não há coletor, a regra está em lei). */
+export interface Feriado {
+  /** `YYYY-MM-DD` */
+  data: string;
+  nome: string;
+  tipo: "nacional" | "estadual" | "facultativo";
+  /** Só nos estaduais. */
+  uf: string | null;
+  lei: string | null;
+}
+
+/** Os feriados de um dia, indexados. A MESMA data pode ter mais de um — 21 de
+ *  abril é Tiradentes (nacional) E Data Magna de Minas —, e quem calcula não
+ *  pode escolher um e esconder o outro. */
+export type MapaFeriados = Map<string, Feriado[]>;
+
+export function indexarFeriados(lista: Feriado[]): MapaFeriados {
+  const m: MapaFeriados = new Map();
+  for (const f of lista) {
+    const atual = m.get(f.data);
+    if (atual) atual.push(f);
+    else m.set(f.data, [f]);
+  }
+  return m;
+}
+
+/** O rótulo do dia: os nomes, e a UF quando o feriado é de um estado só.
+ *  "Tiradentes · Data Magna de Minas Gerais (MG)" */
+export function rotuloFeriado(fs: Feriado[]): string {
+  return fs.map((f) => (f.uf ? `${f.nome} (${f.uf})` : f.nome)).join(" · ");
+}
+
+/** Feriado de verdade pesa mais que ponto facultativo — e a tela desenha os
+ *  dois com pesos diferentes justamente para não afirmar que Carnaval é
+ *  feriado nacional, que não é (Portaria MGI). */
+export function ehFeriadoDeVerdade(fs?: Feriado[]): boolean {
+  return !!fs?.some((f) => f.tipo !== "facultativo");
+}
+
+/** Os anos que o calendário precisa ter em mãos para o foco atual.
+ *
+ *  ⚠️ A GRADE DO MÊS ATRAVESSA O ANO. Em dezembro ela mostra os primeiros dias
+ *  de janeiro seguinte, e em janeiro os últimos de dezembro anterior — pedir só
+ *  o ano do foco deixaria o 1º de janeiro sem marca na grade de dezembro. */
+export function anosNecessarios(foco: string): number[] {
+  const [ano, mes0] = partes(foco);
+  const anos = [ano];
+  if (mes0 === 0) anos.push(ano - 1);
+  if (mes0 === 11) anos.push(ano + 1);
+  return anos;
+}
+
 export type Vista = "calendario" | "kanban" | "lista";
 export type ModoCalendario = "mensal" | "semanal" | "diaria";
 

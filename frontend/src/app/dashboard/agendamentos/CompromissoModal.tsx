@@ -25,7 +25,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
-  Check, Loader2, MessageSquarePlus, Paperclip, Pencil, Trash2,
+  CalendarOff, Check, Loader2, MessageSquarePlus, Paperclip, Pencil, Trash2,
 } from "lucide-react";
 
 import api from "@/lib/api";
@@ -35,8 +35,9 @@ import {
 } from "@/components/ui/superficies";
 import type { MunicipioEscolha } from "@/components/TransicaoMunicipio";
 import {
-  Anotacao, Coluna, Compromisso, CorPaleta, diaBR, estiloDaCor, hojeISO,
-  horarioDe, mascaraTelefone, minutos, telefoneBR,
+  Anotacao, Coluna, Compromisso, CorPaleta, MapaFeriados, diaBR,
+  ehFeriadoDeVerdade, estiloDaCor, hojeISO, horarioDe, mascaraTelefone, minutos,
+  rotuloFeriado, telefoneBR,
 } from "./tipos";
 
 export type ModoModal = "criar" | "detalhe" | "editar";
@@ -50,6 +51,8 @@ interface Props {
   municipios: MunicipioEscolha[];
   paleta: CorPaleta[];
   colunas: Coluna[];
+  /** Para avisar quando a data escolhida cai em feriado. */
+  feriados: MapaFeriados;
   onModo: (m: ModoModal) => void;
   onFechar: () => void;
   /** Salvou, excluiu ou anotou — a página recarrega a fonte única. */
@@ -91,7 +94,7 @@ function formDe(item: Compromisso | null, inicial: Props["inicial"],
 }
 
 export default function CompromissoModal({
-  modo, item, inicial, comMunicipio, municipios, paleta, colunas,
+  modo, item, inicial, comMunicipio, municipios, paleta, colunas, feriados,
   onModo, onFechar, onMudou,
 }: Props) {
   const padraoCor = paleta[0]?.hex || "#12b886";
@@ -292,6 +295,32 @@ export default function CompromissoModal({
                 )}
               </Campo>
             </div>
+
+            {/* ⭐ O AVISO DE FERIADO É INFORMAÇÃO, NUNCA BLOQUEIO. Marcar
+                compromisso em feriado é legítimo — plantão, mutirão, uma visita
+                combinada com o prefeito num sábado de ponto facultativo. O que
+                não pode é a pessoa descobrir DEPOIS. Fica colado no par
+                Data/Horário, que é onde a escolha acabou de ser feita, e some
+                sozinho quando a data muda.
+                ⚠️ E ele distingue feriado de ponto facultativo, pelo mesmo
+                motivo do calendário: dizer que a terça de carnaval é feriado
+                nacional seria a tela afirmando o que a lei não diz. */}
+            {(() => {
+              const fer = feriados.get(f.data);
+              if (!fer?.length) return null;
+              const forte = ehFeriadoDeVerdade(fer);
+              return (
+                <p className="flex items-start gap-1.5 rounded-lg px-2 py-1.5 text-[11px] leading-snug"
+                   style={{ background: "var(--bi-info-soft)",
+                            color: "var(--bi-info-ink)" }}>
+                  <CalendarOff className="mt-0.5 size-3.5 shrink-0" />
+                  <span>
+                    {diaBR(f.data, true)} é {forte ? "feriado" : "ponto facultativo"}
+                    {" — "}{rotuloFeriado(fer)}.
+                  </span>
+                </p>
+              );
+            })()}
 
             {/* O toggle abre em HORÁRIO FIXO por padrão (documento): a maioria
                 dos compromissos é um ponto na agenda, não uma faixa. */}

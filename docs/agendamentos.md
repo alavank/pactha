@@ -128,6 +128,7 @@ Todas sob `/api/agendamentos`, todas com `exige(...)` declarado.
 | `GET /paleta` | `agendamentos.ver` | as 9 cores + o padrão |
 | `GET /colunas` | `agendamentos.ver` | colunas + os dois tetos |
 | `GET /contexto` | `agendamentos.ver` | `multi_municipio`, `municipio_implicito` |
+| `GET /feriados?ano=` | `agendamentos.ver` | nacionais + estaduais das UFs do tenant (§4.7) |
 | `GET ""` | `agendamentos.ver` | `municipio_id`, `municipio_ids`, `de`, `ate`, `coluna_id`, `q` |
 | `GET /{id}` | `agendamentos.ver` | com o histórico de anotações |
 | `POST ""` | `agendamentos.criar` | |
@@ -276,6 +277,51 @@ WhatsApp** 6. **Demanda\*** 7. **Data da solicitação** 8. **Cor** (swatches) 9
 A validação segue a **mesma ordem** — só uma mensagem aparece por vez, e apontar para um
 campo abaixo do primeiro vazio faria a pessoa subir a tela a cada tentativa. A situação
 aparece como selo, mas **não é campo**: ela muda no kanban.
+
+### 4.7. Feriados
+
+⭐ **Calculados, não coletados** (`backend/services/feriados.py`). É o único "dado
+externo" do repo sem coletor, e de propósito: a regra está em lei e lei nova é mudança de
+produto. Um scraper de feriado traria site de terceiro no caminho, selo de frescor e
+watchdog para produzir uma tabela de cem linhas — e qualquer erro do fornecedor viraria
+compromisso marcado no dia em que a prefeitura está fechada.
+
+**Três tipos, com pesos diferentes na tela:**
+
+| tipo | o que é | como aparece |
+|---|---|---|
+| `nacional` | os **dez** feriados nacionais | célula/chip com fundo `--bi-info-soft` e o nome |
+| `estadual` | só das UFs dos municípios ativos do tenant | idem, com a UF no rótulo |
+| `facultativo` | ponto facultativo federal | só o nome, em itálico e apagado |
+
+⚠️ **Carnaval, Quarta-feira de Cinzas e Corpus Christi NÃO são feriados nacionais** — são
+pontos facultativos (Portaria MGI 11.460/2025 para 2026: dez feriados e nove pontos
+facultativos). A **Sexta-feira Santa**, sim, é feriado. Promover um facultativo a feriado
+deixaria a tela afirmando o que a lei não diz, e é o erro fácil de cometer aqui porque na
+prática quase ninguém trabalha na terça de carnaval.
+
+⚠️ **UF só entra no catálogo com a lei conferida**, e cada linha cita o número dela. Os
+agregadores de feriado da internet erram: o primeiro consultado dava ao Espírito Santo
+"28/10 — Dia do Servidor Público" como feriado estadual, quando o próprio TJES publica essa
+data como **ponto facultativo** e o feriado estadual capixaba é outro — **Nossa Senhora da
+Penha**, móvel, a segunda-feira oito dias depois da Páscoa (Lei estadual 11.010/2019).
+Estado sem linha mostra só os nacionais: **ausência é honesta; feriado inventado manda
+alguém marcar visita num dia em que não há ninguém para receber.** Mesma disciplina de
+`services/cadastro_estadual.py`.
+
+Cobertos hoje: **MG** (Data Magna, que coincide com Tiradentes e não acrescenta dia),
+**ES**, **GO**, **RS** e **DF**. Municipal fica **fora** — não há fonte, e é o que mais
+varia (padroeiro, aniversário da cidade).
+
+⚠️ **A mesma data pode ter dois registros** — 21 de abril é Tiradentes *e* Data Magna de
+Minas. Quem calcula não escolhe um e esconde o outro; quem desenha junta os rótulos.
+
+**Na tela**: célula do mês e chip do dia na semanal/diária marcados, com o nome; e um aviso
+no modal quando a data escolhida cai em feriado — **informação, nunca bloqueio**. Marcar
+compromisso em feriado é legítimo (plantão, mutirão); o que não pode é descobrir depois.
+
+O ano é buscado **uma vez** e fica em cache no `page.tsx`; `anosNecessarios()` cobre a virada
+do ano na borda da grade (a grade de dezembro mostra dias de janeiro).
 
 ---
 

@@ -33,9 +33,10 @@ import { CalendarPlus, ChevronLeft, ChevronRight, PanelRightOpen } from "lucide-
 
 import { BOTAO_CTA, BOTAO_SEC, ESTILO_CTA, ESTILO_SEC } from "@/components/ui/superficies";
 import {
-  Compromisso, MESES, ModoCalendario, SEMANA, diaBR, diaDaSemana, diasEntre,
-  duracaoDe, estiloDaCor, hojeISO, horarioDe, iso, limitesDoMes, minutos,
-  partes, porExtenso, repartirEmColunas, semanaDe, somaDias, temPeriodo,
+  Compromisso, MESES, MapaFeriados, ModoCalendario, SEMANA, diaBR, diaDaSemana,
+  diasEntre, duracaoDe, ehFeriadoDeVerdade, estiloDaCor, hojeISO, horarioDe,
+  iso, limitesDoMes, minutos, partes, porExtenso, repartirEmColunas,
+  rotuloFeriado, semanaDe, somaDias, temPeriodo,
 } from "./tipos";
 
 /** Altura de uma hora na régua, em pixels. 48px comporta o chip compacto de 30
@@ -53,6 +54,8 @@ interface Props {
   foco: string;
   onFoco: (dia: string) => void;
   comMunicipio: boolean;
+  /** Feriados e pontos facultativos por dia — ver `tipos.ts`. */
+  feriados: MapaFeriados;
   onCriar: (dia: string, hora?: string) => void;
   onAbrir: (c: Compromisso) => void;
   /** Só aparece quando o card lateral está oculto. */
@@ -175,7 +178,7 @@ function Cabecalho({
 /* ----------------------------------------------------------------- mensal -- */
 
 function Mensal({
-  porDia, hoje, foco, comMunicipio, onCriar, onAbrir,
+  porDia, hoje, foco, comMunicipio, feriados, onCriar, onAbrir,
 }: Props & { porDia: Record<string, Compromisso[]>; hoje: string }) {
   const [a, m0] = partes(foco);
   const primeiro = iso(a, m0, 1);
@@ -247,9 +250,17 @@ function Mensal({
               const noMes = partes(dia)[1] === m0;
               const ehHoje = dia === hoje;
               const visiveis = doDia.slice(0, cabem);
+              const fer = feriados.get(dia);
+              /* ⚠️ FERIADO E PONTO FACULTATIVO NÃO PESAM IGUAL. Carnaval e
+                 Corpus Christi NÃO são feriados nacionais (Portaria MGI: dez
+                 feriados e nove facultativos); pintar a célula deles como
+                 feriado seria a tela afirmando uma coisa que a lei não diz. O
+                 facultativo aparece só como texto. */
+              const feriadao = ehFeriadoDeVerdade(fer);
               return (
                 <div key={dia}
                      onDoubleClick={() => onCriar(dia)}
+                     title={fer ? rotuloFeriado(fer) : undefined}
                      className="relative min-w-0 border-b border-r p-1"
                      style={{
                        borderColor: "var(--bi-line)",
@@ -259,9 +270,14 @@ function Mensal({
                           dava um tom indistinguível do branco — a coluna de
                           agosto e a de setembro ficavam iguais. O `surface-2`
                           está 3,5 abaixo, que é o degrau que o olho lê. */
-                       background: noMes
-                         ? "color-mix(in oklab, var(--bi-surface-2) 70%, var(--bi-surface))"
-                         : "var(--bi-surface)",
+                       /* O tom do feriado é o da família INFO, que existe no
+                          tema exatamente para "distinguir sem alarmar" — âmbar
+                          e vermelho leriam como problema, e feriado não é. */
+                       background: feriadao
+                         ? "var(--bi-info-soft)"
+                         : noMes
+                           ? "color-mix(in oklab, var(--bi-surface-2) 70%, var(--bi-surface))"
+                           : "var(--bi-surface)",
                      }}>
                   <div className="mb-0.5 flex items-center justify-between">
                     <span className={`grid size-5 place-items-center rounded-full text-[10px] ${ehHoje ? "font-bold" : ""}`}
@@ -279,6 +295,13 @@ function Mensal({
                       </button>
                     )}
                   </div>
+                  {fer && (
+                    <p className="mb-0.5 truncate text-[9px] leading-tight"
+                       style={{ color: feriadao ? "var(--bi-info-ink)" : "var(--bi-faint)",
+                                fontStyle: feriadao ? "normal" : "italic" }}>
+                      {rotuloFeriado(fer)}
+                    </p>
+                  )}
                   <div className="space-y-0.5 overflow-hidden">
                     {visiveis.map((c) => (
                       <ChipMes key={c.id} c={c} balao={balao} onAbrir={onAbrir} />
@@ -364,7 +387,7 @@ function PopoverDia({ dia, itens, comMunicipio, onFechar, onAbrir }: {
 /* -------------------------------------------------- semanal e diária ------ */
 
 function Grade({
-  porDia, hoje, dias, comMunicipio, onCriar, onAbrir, modo,
+  porDia, hoje, dias, comMunicipio, feriados, onCriar, onAbrir, modo,
 }: Props & { porDia: Record<string, Compromisso[]>; hoje: string; dias: string[] }) {
   const balao = useBalao();
   const rolagem = useRef<HTMLDivElement>(null);
@@ -395,10 +418,16 @@ function Grade({
       <div className="flex shrink-0 pl-12">
         {dias.map((dia) => {
           const ehHoje = dia === hoje;
+          const fer = feriados.get(dia);
+          const feriadao = ehFeriadoDeVerdade(fer);
           return (
             <div key={dia} className="min-w-0 flex-1 px-[3px]">
               <div className="ag-solto py-1 text-center"
-                   style={ehHoje ? { borderColor: "var(--bi-accent-ink)" } : undefined}>
+                   title={fer ? rotuloFeriado(fer) : undefined}
+                   style={{
+                     ...(ehHoje ? { borderColor: "var(--bi-accent-ink)" } : {}),
+                     ...(feriadao ? { background: "var(--bi-info-soft)" } : {}),
+                   }}>
                 <div className="text-[10px] uppercase tracking-wider"
                      style={{ color: ehHoje ? "var(--bi-accent-ink)" : "var(--bi-faint)" }}>
                   {SEMANA[diaDaSemana(dia)]}
@@ -409,6 +438,13 @@ function Grade({
                        : { color: "var(--bi-text)" }}>
                   {partes(dia)[2]}
                 </div>
+                {fer && (
+                  <div className="truncate px-1 text-[9px] leading-tight"
+                       style={{ color: feriadao ? "var(--bi-info-ink)" : "var(--bi-faint)",
+                                fontStyle: feriadao ? "normal" : "italic" }}>
+                    {rotuloFeriado(fer)}
+                  </div>
+                )}
               </div>
             </div>
           );

@@ -587,6 +587,26 @@ def test_nao_existe_rota_de_editar_nem_de_apagar_anotacao():
             assert verbo == "post", f"{verbo.upper()} {caminho} nao pode existir"
 
 
+def test_as_rotas_de_caminho_fixo_vem_ANTES_da_de_parametro():
+    """⚠️ `GET /{aid}` ENGOLE TUDO O QUE VIER DEPOIS DELE.
+
+    O FastAPI casa as rotas na ordem em que foram declaradas, e `/{aid}` casa
+    QUALQUER segmento — inclusive `paleta`, `colunas`, `contexto` e `feriados`.
+    Declarada depois, uma delas passa a responder 422 ("aid nao e inteiro") em
+    vez do que devia, e o sintoma na tela e a paleta/o quadro/os feriados
+    sumirem sem erro nenhum no console. Sao quatro hoje, e cada uma acrescentada
+    no lugar errado quebra em silencio.
+    """
+    fixas = ("/paleta", "/colunas", "/contexto", "/feriados")
+    parametro = CODIGO.index('@router.get("/{aid}"')
+    for caminho in fixas:
+        i = CODIGO.find(f'@router.get("{caminho}"')
+        assert i != -1, f"a rota {caminho} sumiu"
+        assert i < parametro, (
+            f'GET "{caminho}" foi declarada DEPOIS de GET "/{{aid}}" — o '
+            f'parametro engole o caminho fixo e a rota nunca responde')
+
+
 def test_anotar_nao_passa_pelo_alcance_por_linha():
     """«Qualquer usuario adiciona» (documento de redesenho). O alcance por linha
     restringe quem ALTERA o registro de outra pessoa; anotar cria linha NOVA,
