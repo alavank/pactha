@@ -857,32 +857,42 @@ html,
    seguem no menta do PACTHA, que é o que impede a agenda de virar outro
    produto. O que muda é só o CHÃO (`--bi-bg`) e o tom das superfícies.
 
-   ⚠️ O PRIMEIRO PALHA ERA FORTE DEMAIS. A amostragem do print
-   (`estilo-usar-cores.jpg`) devolveu `#f0f0e8` como segundo tom, e usá-lo como
-   chão deixou o módulo com cara de outro produto — não era "um pouco mais
-   quente", era bege. O dono pediu **`#fffdf0`**: palha quase branco, e a
-   diferença para o `#eceeed` do resto do sistema é justamente essa — o ambiente
-   muda de temperatura, não de cor.
+   ⭐⭐ QUEM PINTA A TELA É A LINHA, NÃO O CHÃO — e foi por não ver isso que as
+   duas primeiras tentativas saíram amarelas. A conta, medida em `r − b` (o
+   "quanto de amarelo" de um cinza; num neutro puro vale 0):
 
-   ⚠️ COM O CHÃO QUASE BRANCO, QUEM SEPARA O CARTÃO É A LINHA — e isso está
-   MEDIDO, não estimado. No sistema o degrau `#eceeed` → `#ffffff` vale **6,1 de
-   ΔL\***, e é ele que faz o cartão existir; aqui `#fffdf0` → `#ffffff` vale
-   **0,86**, que está abaixo do limiar de percepção. Ou seja: neste módulo o
-   cartão NÃO se destaca por luminosidade, e se a linha for a mesma do tema o
-   calendário vira uma folha branca sem grade.
-   Por isso `--bi-line` sobe de 1,26 para 1,32 de contraste sobre o branco, e
-   `--bi-line-strong` de 1,49 para 1,65. É pouco de propósito: o suficiente para
-   a grade existir, longe do peso de uma planilha.
+       tentativa            chão   linha da grade
+       1ª (#f4f1e8)          12         20
+       2ª (#fffdf0)          15         33      ← ficou MAIS amarela que a 1ª
+       agora (#fffefa)        5         11
+       tema do sistema       −1         −2
 
-   ⚠️ E NÃO ENFRAQUEÇA AS LINHAS "para combinar com o fundo mais claro". É o
-   movimento intuitivo e é exatamente o contrário do que a conta pede — quanto
-   mais claro o chão, mais trabalho sobra para a linha. */
+   Na 2ª tentativa o chão CLAREOU e mesmo assim o módulo ficou mais amarelo, o
+   que parece contraditório até olhar onde a cor mora: num calendário mensal a
+   grade é uma malha 7×5 que atravessa a tela inteira, e o chão aparece só nos
+   vãos entre os cartões. Ao escurecer a linha para compensar o contraste (ver
+   abaixo), eu a escureci pelo eixo do BEGE — 33 de calor contra 15 do chão. Não
+   era o fundo que estava amarelo: era a grade.
+
+   ⭐ A REGRA QUE FICA: contraste se ganha na LUMINOSIDADE, calor se mantém
+   CONSTANTE ao longo da rampa. A razão calor(linha)/calor(chão) aqui é 2,2× — a
+   mesma proporção que o tema do sistema usa no lado frio (−1 → −2). O que mudou
+   foi o valor absoluto, que caiu para um terço.
+
+   ⚠️ E O DEGRAU CHÃO→CARTÃO PRATICAMENTE NÃO EXISTE MAIS. No tema, `#eceeed` →
+   `#ffffff` vale 6,1 de ΔL* e é ele que faz o cartão existir; com `#fffefa` são
+   0,37 — muito abaixo do limiar de percepção. Quem separa o cartão do chão passa
+   a ser a linha, e por isso ela é um pouco mais escura que a do tema (1,31 de
+   contraste sobre o branco contra 1,26). NÃO a enfraqueça "para combinar com o
+   fundo mais claro": é o movimento intuitivo e é o contrário do que a conta
+   pede — quanto mais claro o chão, mais trabalho sobra para a linha. Se ela
+   precisar de ajuste, mexa na LUMINOSIDADE e deixe o `r − b` onde está. */
 .ag-modulo {
-  --bi-bg: #fffdf0;          /* o chão: palha quase branco (pedido do dono) */
-  --bi-surface: #ffffff;     /* cartão: branco puro, para separar do chão */
-  --bi-surface-2: #faf6e6;   /* cabeçalho desgarrado, coluna do kanban */
-  --bi-line: #e9e0c8;
-  --bi-line-strong: #d3c9a8;
+  --bi-bg: #fffefa;          /* o chão: off-white morno (pedido do dono) */
+  --bi-surface: #ffffff;     /* cartão: branco puro */
+  --bi-surface-2: #f7f5ef;   /* cabeçalho desgarrado, coluna do kanban */
+  --bi-line: #e4e1d9;
+  --bi-line-strong: #cfcbc0;
   background: var(--bi-bg);
 }
 

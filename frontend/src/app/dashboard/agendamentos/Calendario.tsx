@@ -253,8 +253,14 @@ function Mensal({
                      className="relative min-w-0 border-b border-r p-1"
                      style={{
                        borderColor: "var(--bi-line)",
+                       /* ⚠️ O DIA DE FORA DO MÊS SAI DE `--bi-surface-2`, e
+                          não do chão. Com o chão a 0,37 de ΔL* do branco (ver a
+                          nota da pele em globals.css), misturá-lo com o cartão
+                          dava um tom indistinguível do branco — a coluna de
+                          agosto e a de setembro ficavam iguais. O `surface-2`
+                          está 3,5 abaixo, que é o degrau que o olho lê. */
                        background: noMes
-                         ? "color-mix(in oklab, var(--bi-bg) 55%, var(--bi-surface))"
+                         ? "color-mix(in oklab, var(--bi-surface-2) 70%, var(--bi-surface))"
                          : "var(--bi-surface)",
                      }}>
                   <div className="mb-0.5 flex items-center justify-between">
