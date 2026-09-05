@@ -227,20 +227,28 @@ export default function AgendamentosPage() {
   return (
     /* ⭐ `ag-modulo` É A PELE DO MÓDULO, e ela é a razão de existir um contêiner
        nomeado: os tokens `--bi-bg`/`--bi-surface` são redeclarados ali (ver
-       globals.css) e valem da borda dele para dentro. O fundo palha não vaza
-       para o resto do sistema, e o acento/CTA/foco continuam sendo os do PACTHA.
+       globals.css) e valem da borda dele para dentro. O fundo não vaza para o
+       resto do sistema, e o acento/CTA/foco continuam sendo os do PACTHA.
 
-       ⭐ E A ALTURA É A DA VIEWPORT MENOS O PADDING DO LAYOUT (`py-6` = 3rem),
-       agora em TODO tamanho de tela e não só em `lg`. É o que faz o calendário
-       chegar até o pé da página mesmo vazio. O `min-h` embaixo é a válvula: numa
-       janela baixa ele vence o `h`, o módulo para de encolher e quem rola é o
-       `<main>` — sem ele, com 500px de altura sobrariam ~180px para a grade de
-       24 horas.
+       ⭐ A ALTURA E O PADDING SÃO DAQUI, porque a rota está em `telaCheia`
+       (`dashboard/layout.tsx`): o contêiner da página não põe `px` nem `py`, e o
+       fundo do módulo passa a SER o fundo da área útil. Com o padding por fora —
+       que foi a primeira tentativa — ele virava um retângulo pintado com uma
+       moldura do cinza do sistema em volta: 24px em cima e embaixo, e o que
+       passasse de 1600px nas laterais. Margem negativa resolvia só a horizontal.
 
-       ⚠️ O `-mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8` desfaz e refaz o
-       padding do contêiner da página: é o que faz o fundo palha sangrar até a
-       borda da área útil em vez de deixar duas faixas cinza nas laterais. */
-    <div className="ag-modulo -mx-4 flex h-[calc(100vh-3rem)] min-h-[34rem] flex-col gap-3 px-4 py-3 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+       ⚠️ `h-screen` E NÃO `h-full`, e a diferença é real. O `<div key={escopo}>`
+       que envolve a página é um bloco SEM altura própria; `height: 100%` sobre
+       um pai de altura automática resolve para `auto` — o módulo voltaria a
+       nascer do tamanho do conteúdo, que é o defeito que a rodada 1 consertou.
+       `h-screen` é exato aqui porque a casca é `flex h-screen` e o `<main>`
+       estica a altura toda, sem cabeçalho acima dele (no celular o botão do
+       menu é `fixed`).
+
+       O `min-h` é a válvula: numa janela baixa ele vence o `h-screen`, o módulo
+       para de encolher e quem rola é o `<main>` — sem ele, com 500px de altura
+       sobrariam ~180px para a grade de 24 horas. */
+    <div className="ag-modulo flex h-screen min-h-[34rem] flex-col gap-3 px-4 py-4 sm:px-6 lg:px-8">
       {/* ------------------------------------------------------ cabeçalho */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>

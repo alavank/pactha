@@ -1041,9 +1041,22 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
     router.push("/login");
   }, [router]);
 
-  // O Painel de Indicadores ocupa a largura toda (e um BI, nao uma tela de
-  // formulario): sem max-w-7xl e sem padding do container.
-  const telaCheia = BI_ON && pathname === "/dashboard";
+  // TELA CHEIA: sem max-w e SEM O PADDING do container — a propria tela cuida
+  // do espacamento. Duas moram aqui, por razoes diferentes:
+  //
+  //  · o Painel de Indicadores, que ocupa a largura toda (e um BI, nao uma tela
+  //    de formulario);
+  //  · AGENDAMENTOS, que tem FUNDO PROPRIO. E aqui esta o motivo de ele nao
+  //    poder ficar em `telaLarga`: com o padding do container por fora, o fundo
+  //    do modulo vira um RETANGULO PINTADO no meio da pagina, e sobra uma
+  //    moldura do cinza do sistema em volta — 24px em cima e embaixo (o `py-6`)
+  //    e o que passar de 1600px nas laterais. A primeira tentativa desfazia isso
+  //    com margem negativa, e ela so alcancava a horizontal: a faixa de cima e a
+  //    de baixo continuavam la. Sem padding externo, o fundo do modulo E o fundo
+  //    da area util, que e o que o dono pediu — "deve sobrepor e preencher aquele
+  //    cinza off-white que fica nos outros modulos".
+  const telaCheia = (BI_ON && pathname === "/dashboard")
+    || pathname.startsWith("/dashboard/agendamentos");
 
   // TELAS LARGAS. `max-w-7xl` da 1216px uteis, e a lista de propostas do
   // TransfereGov tem 12 colunas que pedem ~1440px. Faltando largura, nao existe
@@ -1056,13 +1069,11 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
                                  // voluntarias, pac e o modulo de especiais
     "/dashboard/convenios",      // 14 colunas
     "/dashboard/emendas",        // 11 colunas
-    // AGENDAMENTOS entra pelo mesmo motivo, por outro caminho: nao sao colunas
-    // de dado, e um CALENDARIO e um QUADRO. Em `max-w-7xl` o mes ficava com
-    // 174px por dia (cabe um chip truncado) e as cinco colunas do kanban
-    // pediam rolagem horizontal — que e justamente o que o teto de cinco
-    // colunas existe para evitar. Pedido do dono (05/09/2026): "a mesma area
-    // util do Dashboard e do TransfereGov".
-    "/dashboard/agendamentos",
+    // ⚠️ AGENDAMENTOS ESTEVE AQUI e passou para `telaCheia`, acima. Ele precisa
+    // da largura pelo mesmo motivo destas (o mes com 174px por dia nao cabe, e
+    // cinco colunas de kanban pediriam rolagem horizontal), mas o `px`/`py` do
+    // container recortava o fundo proprio dele numa moldura cinza. Nao
+    // reacrescente aqui sem tirar de la.
   ];
   const telaLarga = TELAS_LARGAS.some((p) => pathname.startsWith(p));
 
