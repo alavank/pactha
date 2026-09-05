@@ -21,7 +21,7 @@
 // ninguém consegue liberar, e uma no catálogo sem entrada no menu é uma
 // caixinha que concede o que não existe.
 
-import { hrefToTela } from "@/lib/telas";
+import { hrefToTela, TELA_LABELS } from "@/lib/telas";
 import { MENU_COMPLETO, type NavEntry, type NavLeaf } from "@/lib/menu";
 import type { Catalogo, Permissao } from "@/lib/permissoes";
 
@@ -104,19 +104,33 @@ export function arvoreDoMenu(
   const vistas = new Set<string>();
   const grupos: GrupoNaArvore[] = [];
 
-  const montarFolha = (folha: NavLeaf): TelaNaArvore | null => {
-    const tela = telaDaFolha(folha.href);
+  const linhaDe = (tela: string, rotulo: string, href: string): TelaNaArvore | null => {
     if (vistas.has(tela)) return null;
     if (telasDoAmbiente && !telasDoAmbiente.has(tela)) return null;
     vistas.add(tela);
     const acoes = porTela.get(tela) ?? [];
     return {
-      tela,
-      rotulo: folha.label,
-      href: folha.href,
-      acoes,
+      tela, rotulo, href, acoes,
       recursos: [...new Set(acoes.map((a) => a.recurso))],
     };
+  };
+
+  /** A folha, mais as telas que ela declara em `telasExtras`.
+   *
+   *  ⚠️ AS EXTRAS VÊM LOGO DEPOIS DELA, e não num grupo próprio: são
+   *  capacidades daquela tela («Modo Tela» e «Gerar link» são botões DENTRO do
+   *  Painel), e separá-las faria o administrador procurá-las como se fossem
+   *  outro módulo. O rótulo sai de `TELA_LABELS` porque elas não têm folha de
+   *  menu de onde tirar um. */
+  const montarFolha = (folha: NavLeaf): TelaNaArvore[] => {
+    const saida: TelaNaArvore[] = [];
+    const principal = linhaDe(telaDaFolha(folha.href), folha.label, folha.href);
+    if (principal) saida.push(principal);
+    for (const extra of folha.telasExtras ?? []) {
+      const linha = linhaDe(extra, TELA_LABELS[extra] ?? extra, folha.href);
+      if (linha) saida.push(linha);
+    }
+    return saida;
   };
 
   // Os itens SOLTOS de primeiro nível são acumulados num grupo sem rótulo, na
@@ -136,13 +150,9 @@ export function arvoreDoMenu(
       const telas: TelaNaArvore[] = [];
       for (const filho of item.children) {
         if ("sectionLabel" in filho) {
-          for (const neta of filho.children) {
-            const f = montarFolha(neta);
-            if (f) telas.push(f);
-          }
+          for (const neta of filho.children) telas.push(...montarFolha(neta));
         } else {
-          const f = montarFolha(filho);
-          if (f) telas.push(f);
+          telas.push(...montarFolha(filho));
         }
       }
       // Grupo que ficou sem tela nenhuma sai: um cabeçalho vazio só ocuparia
@@ -150,8 +160,7 @@ export function arvoreDoMenu(
       // com ESTADUAIS num tenant federal.
       if (telas.length) grupos.push({ rotulo: item.label, icone: item.icon, telas });
     } else {
-      const f = montarFolha(item);
-      if (f) soltos.push(f);
+      soltos.push(...montarFolha(item));
     }
   }
   fecharSoltos();
