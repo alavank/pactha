@@ -235,19 +235,32 @@ export default function UsuarioModal({
    *  Marcar qualquer ação marca «Ver» junto; desmarcar «Ver» desmarca as demais
    *  daquela tela. Sem isto sairiam contas com «Excluir» e sem «Ver» — que no
    *  servidor é uma pessoa que apaga o que não consegue abrir. */
+  const ehVer = (v: string) => v === "ver" || v === "usar";
+
   const alternarAcao = (tela: TelaNaArvore, chave: string) => {
-    const verDaTela = tela.acoes.find(
-      (a) => a.verbo === "ver" || a.verbo === "usar")?.chave;
+    const acao = tela.acoes.find((a) => a.chave === chave);
+    if (!acao) return;
+    // ⚠️ O PRÉ-REQUISITO É POR RECURSO, e não por tela. O Painel tem dois (o
+    // painel e as «Vigências a vencer»): marcar «Exportar» das Vigências não
+    // pode marcar o «Ver» do Painel — são concessões diferentes, e foi para
+    // poder separá-las que `vigencias` virou recurso próprio.
+    const verDoRecurso = tela.acoes.find(
+      (a) => a.recurso === acao.recurso && ehVer(a.verbo))?.chave;
     setAcoesSel((prev) => {
       const n = new Set(prev);
       if (n.has(chave)) {
         n.delete(chave);
-        if (verDaTela && chave === verDaTela) {
-          for (const a of tela.acoes) if (posso(a.chave)) n.delete(a.chave);
+        // Desmarcar «Ver» leva junto as demais DO MESMO recurso: sem isso
+        // sobraria «Excluir» sem «Ver» — no servidor, alguém que apaga o que
+        // não consegue abrir.
+        if (chave === verDoRecurso) {
+          for (const a of tela.acoes) {
+            if (a.recurso === acao.recurso && posso(a.chave)) n.delete(a.chave);
+          }
         }
       } else {
         n.add(chave);
-        if (verDaTela && posso(verDaTela)) n.add(verDaTela);
+        if (verDoRecurso && posso(verDoRecurso)) n.add(verDoRecurso);
       }
       return n;
     });
@@ -266,9 +279,13 @@ export default function UsuarioModal({
       if (n.has(tela.tela)) n.delete(tela.tela);
       else {
         n.add(tela.tela);
-        // Ligar o acesso marca «Ver»: é o mínimo que faz o acesso significar
-        // alguma coisa, e é o que o servidor vai cobrar na primeira rota.
-        const ver = tela.acoes.find((a) => a.verbo === "ver" || a.verbo === "usar");
+        // Ligar o acesso marca o «Ver» do recurso PRINCIPAL: é o mínimo que faz
+        // o acesso significar alguma coisa, e é o que o servidor vai cobrar na
+        // primeira rota. ⚠️ Só o principal — abrir o Painel não concede as
+        // «Vigências a vencer», que são a segunda concessão daquela mesma tela.
+        const principal = tela.recursos[0];
+        const ver = tela.acoes.find(
+          (a) => a.recurso === principal && ehVer(a.verbo));
         if (ver && posso(ver.chave)) {
           setAcoesSel((p) => new Set(p).add(ver.chave));
         }
@@ -292,8 +309,8 @@ export default function UsuarioModal({
           // Um atalho que concedesse «Excluir» de dez telas de uma vez seria o
           // caminho mais curto da tela, e o caminho mais curto é o que as
           // pessoas usam.
-          const ehVer = a.verbo === "ver" || a.verbo === "usar";
-          if (ligar) { if (ehVer) n.add(a.chave); } else n.delete(a.chave);
+          const marcaVer = ehVer(a.verbo);
+          if (ligar) { if (marcaVer) n.add(a.chave); } else n.delete(a.chave);
         }
       }
       return n;
@@ -306,8 +323,7 @@ export default function UsuarioModal({
       const n = new Set(prev);
       for (const g of arvore) for (const t of g.telas) for (const a of t.acoes) {
         if (!posso(a.chave)) continue;
-        const ehVer = a.verbo === "ver" || a.verbo === "usar";
-        if (ligar) { if (ehVer) n.add(a.chave); } else n.delete(a.chave);
+        if (ligar) { if (ehVer(a.verbo)) n.add(a.chave); } else n.delete(a.chave);
       }
       return n;
     });
@@ -778,27 +794,49 @@ export default function UsuarioModal({
                             </div>
 
                             {/* As AÇÕES, indentadas — a hierarquia Tela › Ação
-                                é o que permite varrer quarenta telas rápido. */}
+                                é o que permite varrer quarenta telas rápido.
+
+                                ⚠️ AGRUPADAS POR RECURSO QUANDO HÁ MAIS DE UM, e
+                                isso não é enfeite: o Painel de Indicadores tem
+                                DOIS (o painel e as «Vigências a vencer», que são
+                                um botão dentro dele). Sem o rótulo do recurso,
+                                a linha mostrava «Ver · Ver · Exportar» — duas
+                                caixinhas com o mesmo nome, e nenhuma pista de
+                                que uma delas era a das Vigências. */}
                             {ligada && t.acoes.length > 0 && (
-                              <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 pl-[40px]">
-                                {t.acoes.map((a) => {
-                                  const travada = !posso(a.chave);
+                              <div className="mt-1.5 flex flex-col gap-1 pl-[40px]">
+                                {t.recursos.map((r) => {
+                                  const doRecurso = t.acoes.filter((a) => a.recurso === r);
+                                  const nomear = t.recursos.length > 1;
                                   return (
-                                    <label key={a.chave} title={travada
-                                             ? "Você não tem esta permissão, então não pode concedê-la."
-                                             : a.descricao}
-                                           className={`flex items-center gap-1.5 ${travada ? "cursor-not-allowed" : "cursor-pointer"}`}>
-                                      <input type="checkbox" className="size-3.5"
-                                             checked={acoesSel.has(a.chave)}
-                                             disabled={travada}
-                                             onChange={() => alternarAcao(t, a.chave)}
-                                             style={{ accentColor: "var(--bi-cta)" }} />
-                                      <span className="text-[11px]"
-                                            style={{ color: travada ? "var(--bi-faint)" : "var(--bi-text)" }}>
-                                        {a.verbo_rotulo}
-                                      </span>
-                                      {travada && <Lock className="size-3" style={{ color: "var(--bi-faint)" }} />}
-                                    </label>
+                                    <div key={r} className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                                      {nomear && (
+                                        <span className="w-full text-[9px] uppercase tracking-wide sm:w-auto sm:min-w-[130px]"
+                                              style={{ color: "var(--bi-faint)" }}>
+                                          {doRecurso[0].recurso_rotulo}
+                                        </span>
+                                      )}
+                                      {doRecurso.map((a) => {
+                                        const travada = !posso(a.chave);
+                                        return (
+                                          <label key={a.chave} title={travada
+                                                   ? "Você não tem esta permissão, então não pode concedê-la."
+                                                   : a.descricao}
+                                                 className={`flex items-center gap-1.5 ${travada ? "cursor-not-allowed" : "cursor-pointer"}`}>
+                                            <input type="checkbox" className="size-3.5"
+                                                   checked={acoesSel.has(a.chave)}
+                                                   disabled={travada}
+                                                   onChange={() => alternarAcao(t, a.chave)}
+                                                   style={{ accentColor: "var(--bi-cta)" }} />
+                                            <span className="text-[11px]"
+                                                  style={{ color: travada ? "var(--bi-faint)" : "var(--bi-text)" }}>
+                                              {a.verbo_rotulo}
+                                            </span>
+                                            {travada && <Lock className="size-3" style={{ color: "var(--bi-faint)" }} />}
+                                          </label>
+                                        );
+                                      })}
+                                    </div>
                                   );
                                 })}
                               </div>

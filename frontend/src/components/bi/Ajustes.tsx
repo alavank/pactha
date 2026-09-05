@@ -4,7 +4,7 @@
 // deve aparecer numa TV de gabinete. Aqui vive o que existia em /bi/config:
 // preferências de aviso e o link de quiosque (liga a TV sem login).
 import { useEffect, useMemo, useState } from "react";
-import { Bell, Check, Copy, KeyRound, Settings2, Share2, Smartphone, Trash2, Tv, X } from "lucide-react";
+import { Bell, Check, Copy, KeyRound, Share2, Smartphone, Trash2, Tv, X } from "lucide-react";
 import api from "@/lib/api";
 import type { User } from "@/types";
 import {
@@ -36,6 +36,18 @@ const TIPOS_DE_LINK = [
     texto: "Gera um link de cada, separados — um serve a TV e o outro serve o celular." },
 ];
 
+/** ⭐ ERA UMA ENGRENAGEM MUDA, e o dono disse por que isso estava errado: "o
+ *  gerador de link, o menu dele parece mais um menu de configuração".
+ *
+ *  Estava — e o problema não era só o ícone. O que vive aqui dentro é a coisa
+ *  mais consequente desta barra: PUBLICAR o painel num endereço que abre SEM
+ *  LOGIN, e que circula por WhatsApp. Escondê-lo atrás do símbolo universal de
+ *  "preferências" fazia o gestor não achar o que procurava e, pior, tratar como
+ *  ajuste secundário uma decisão de exposição de dado.
+ *
+ *  ⚠️ AS PREFERÊNCIAS DE AVISO CONTINUAM DENTRO, e é por isso que o rótulo não
+ *  é «Gerar link»: o modal LISTA os links que já existem, revoga, e ainda tem os
+ *  avisos. «Links de acesso» descreve o conjunto sem prometer só uma metade. */
 export function BotaoAjustes() {
   const [aberto, setAberto] = useState(false);
   return (
@@ -43,12 +55,12 @@ export function BotaoAjustes() {
       <button
         type="button"
         onClick={() => setAberto(true)}
-        title="Ajustes do painel"
-        aria-label="Ajustes do painel"
-        className="grid size-9 place-items-center rounded-full"
-        style={{ background: "var(--bi-surface)", border: "1px solid var(--bi-line)", color: "var(--bi-muted)" }}
+        title="Publicar o painel num link que abre sem login — para a TV do gabinete ou o celular do gestor"
+        className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold bi-hover"
+        style={{ background: "var(--bi-surface)", border: "1px solid var(--bi-line)", color: "var(--bi-text)" }}
       >
-        <Settings2 className="size-4" />
+        <Share2 className="size-3.5" />
+        Links de acesso
       </button>
       {aberto && <ModalAjustes onFechar={() => setAberto(false)} />}
     </>
@@ -197,7 +209,7 @@ function ModalAjustes({ onFechar }: { onFechar: () => void }) {
       className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4"
       role="dialog"
       aria-modal="true"
-      aria-label="Ajustes do painel"
+      aria-label="Links de acesso"
       onClick={(e) => e.target === e.currentTarget && onFechar()}
     >
       <div
@@ -205,8 +217,17 @@ function ModalAjustes({ onFechar }: { onFechar: () => void }) {
         style={{ background: "var(--bi-surface)", border: "1px solid var(--bi-line)" }}
       >
         <div className="mb-4 flex items-center gap-2">
-          <Settings2 className="size-4" style={{ color: "var(--bi-muted)" }} />
-          <h2 className="bi-title text-[16px]">Ajustes do painel</h2>
+          <Share2 className="size-4" style={{ color: "var(--bi-muted)" }} />
+          {/* O título acompanha o botão: quem clica em «Links de acesso» tem de
+              chegar num modal que diz a mesma coisa. Os avisos continuam aqui —
+              e aparecem no subtítulo, para não sumirem do mapa de quem os
+              procura. */}
+          <div className="min-w-0">
+            <h2 className="bi-title text-[16px] leading-tight">Links de acesso</h2>
+            <p className="text-[11px] leading-tight" style={{ color: "var(--bi-muted)" }}>
+              Publicar o painel sem login · e os avisos que você recebe
+            </p>
+          </div>
           <button
             type="button"
             onClick={onFechar}

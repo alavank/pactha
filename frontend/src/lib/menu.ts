@@ -41,6 +41,21 @@ export type NavLeaf = {
   label: string;
   icon?: React.ComponentType<{ className?: string }>;
   destaque?: boolean;
+  /** ⭐ TELAS QUE NÃO TÊM ITEM PRÓPRIO NO MENU, mas são permissão separada.
+   *
+   *  Hoje só o Painel: «Modo Tela (TV)» e «Gerar link público» são CAPACIDADES
+   *  dele — botões dentro da tela, não linhas na barra lateral —, e o dono
+   *  quis as três separadas desde 2026: *"um secretário pode precisar da TV da
+   *  sala dele sem ter permissão de gerar um link que roda o município inteiro
+   *  pelo WhatsApp"*.
+   *
+   *  ⚠️ SEM ESTE CAMPO ELAS SUMIAM DA ÁRVORE. A árvore percorre o menu, e o que
+   *  não é folha não aparece — então `bi_tela` e `bi_link` existiam em
+   *  `telas.ts`, no catálogo e no banco, e **não havia onde marcá-las**. O
+   *  administrador não conseguia conceder nem tirar o Modo Tela.
+   *  `test_arvore_segue_o_menu.py` as tinha numa lista de exceção, o que
+   *  escondeu o buraco em vez de acusá-lo. */
+  telasExtras?: string[];
 };
 export type NavSection = { sectionLabel: string; children: NavLeaf[] };
 export type NavGroup = {
@@ -69,6 +84,10 @@ export const NAV_ITEMS: NavEntry[] = [
     href: "/dashboard",
     label: BI_ON ? "Painel de Indicadores" : "Dashboard",
     icon: BI_ON ? BarChart3 : LayoutDashboard,
+    // As duas capacidades do Painel que se concedem separadas — ver
+    // `telasExtras`. Jogar na TV e PUBLICAR um link sem login são decisões
+    // diferentes de abrir o painel.
+    telasExtras: ["bi_tela", "bi_link"],
   },
   /* ⭐ RADAR DE CAPTAÇÃO — FORA DE QUALQUER GRUPO, e logo abaixo do Painel
      (pedido do dono, 04/09/2026).

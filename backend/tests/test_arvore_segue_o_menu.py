@@ -58,6 +58,20 @@ def _chaves_de_tela() -> set[str]:
     return set(re.findall(r'key:\s*"([a-z_]+)"', _fonte(TELAS_TS)))
 
 
+def _telas_extras() -> set[str]:
+    """As telas que uma folha do menu declara como CAPACIDADE dela.
+
+    São telas de verdade (`user_telas`, catálogo, banco) que não têm item na
+    barra lateral porque são botões dentro de outra tela. Ver `NavLeaf` em
+    `lib/menu.ts`."""
+    fonte = _fonte(MENU_TS)
+    return {
+        chave
+        for bloco in re.findall(r"telasExtras:\s*\[([^\]]*)\]", fonte)
+        for chave in re.findall(r'"([a-z_]+)"', bloco)
+    }
+
+
 def _href_para_tela(href: str) -> str:
     """A MESMA conta de `telas.ts::hrefToTela`, reescrita em Python.
 
@@ -102,18 +116,35 @@ def test_toda_chave_de_tela_esta_no_menu():
     concede o que não existe — foi assim que `suas` e `telegram` sobreviveram
     meses depois de os módulos terem sido removidos."""
     do_menu = {_href_para_tela(h) for h in _hrefs_do_menu()}
-    # Estas três não são folhas do menu, e cada uma tem motivo:
-    #   `bi_tela` / `bi_link` — são CAPACIDADES do Painel (jogar na TV, publicar
-    #     o link), não telas próprias na barra. A árvore as desenha dentro do
-    #     grupo do Painel, e conceder uma sem a outra é o pedido do dono
-    #     ("um secretário pode precisar da TV da sala sem poder publicar").
-    #   `dashboard` — a home, cuja chave real é `bi`.
-    fora_do_menu = {"bi_tela", "bi_link"}
-    sobrando = _chaves_de_tela() - do_menu - fora_do_menu
+    # ⚠️ `telasExtras` CONTA COMO ESTAR NO MENU, e esta linha e uma CORRECAO de
+    # 05/09/2026. A versao anterior deste teste tinha `bi_tela` e `bi_link` numa
+    # lista de excecao escrita a mao, com o comentario dizendo que "a arvore as
+    # desenha dentro do grupo do Painel" — e a arvore NAO as desenhava. A
+    # excecao escondeu o buraco em vez de acusa-lo: as duas telas existiam em
+    # `telas.ts`, no catalogo e no banco, e nao havia onde marca-las. O
+    # administrador nao conseguia conceder nem tirar o Modo Tela, e foi o dono
+    # quem percebeu, usando.
+    #
+    # Agora a folha DECLARA as capacidades dela (`telasExtras` em `menu.ts`) e o
+    # teste le a declaracao. Nao ha mais lista de excecao — o que nao estiver
+    # declarado em lugar nenhum quebra, que era o ponto desde o começo.
+    sobrando = _chaves_de_tela() - do_menu - _telas_extras()
     assert not sobrando, (
-        f"chaves em telas.ts que nao tem folha no menu: {sorted(sobrando)}. Ou "
-        "a folha sumiu do menu e a chave ficou, ou a excecao e legitima e entra "
-        "em `fora_do_menu` com o motivo escrito")
+        f"chaves em telas.ts que nao tem folha no menu nem `telasExtras`: "
+        f"{sorted(sobrando)}. Uma tela que nao esta em nenhum dos dois nao "
+        "aparece na arvore, e ninguem consegue conceder nem tirar")
+
+
+def test_as_capacidades_do_painel_estao_declaradas():
+    """⭐ O CASO QUE MOTIVOU `telasExtras`. «Modo Tela (TV)» e «Gerar link
+    público» são botões DENTRO do Painel, não itens da barra lateral — mas são
+    permissão separada, por decisão do dono: *"um secretário pode precisar da TV
+    da sala dele sem ter permissão de gerar um link que roda o município inteiro
+    pelo WhatsApp"*.
+
+    Nominal de propósito: se alguém remover a declaração para "simplificar", as
+    duas somem da árvore em silêncio — que foi exatamente o que aconteceu."""
+    assert {"bi_tela", "bi_link"} <= _telas_extras()
 
 
 # ---------------------------------------------------------------------------

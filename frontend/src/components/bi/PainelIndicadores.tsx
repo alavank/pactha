@@ -8,7 +8,7 @@
 // vai aparecer na TV, sem duas verdades para manter.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { MonitorPlay, RefreshCw, CalendarClock } from "lucide-react";
+import { MonitorPlay, CalendarClock } from "lucide-react";
 import api from "@/lib/api";
 import { Municipio, getMunicipios, putTelaFiltros, type TipoParlamentar } from "@/lib/bi";
 import type { User } from "@/types";
@@ -21,6 +21,7 @@ import { PeriodoMultiSelect } from "./Filtros";
 import VigenciasModal from "./VigenciasModal";
 import { CabecalhoBi } from "./Marca";
 import { BotaoAjustes } from "./Ajustes";
+import BotaoRecarregar from "./BotaoRecarregar";
 import { InsightTicker } from "./InsightTicker";
 import { SlideshowControls } from "./SlideshowControls";
 import { Painel, Skeleton, Vazio } from "./kit";
@@ -101,7 +102,7 @@ export function PainelIndicadores() {
   // secretarias e fundos aparecem no campo de autor das fontes e lideravam o
   // ranking em valor sem ser gente. Ver services/nome_parlamentar.py.
   const [tipoParl, setTipoParl] = useState<TipoParlamentar>("parlamentar");
-  const { dados, carregando, erro, recarregar } = useDadosAba(aba, municipioId, anos, {
+  const { dados, carregando, erro } = useDadosAba(aba, municipioId, anos, {
     pronto, tipo: tipoParl,
   });
 
@@ -140,13 +141,20 @@ export function PainelIndicadores() {
             {/* No lugar do selo que só REPETIA o município já escolhido na barra
                 lateral, um botão que abre o que é acionável: o que vence antes.
                 (pedido do dono — ver components/bi/VigenciasModal.tsx) */}
+            {/* ⭐ A FILEIRA FOI REORDENADA E NOMEADA em 05/09/2026, a pedido do
+                dono. Ela tinha dois ícones mudos — uma engrenagem e um símbolo
+                de reciclagem — e ninguém adivinhava que a engrenagem era onde se
+                GERA O LINK de acesso externo, que é a coisa mais consequente
+                desta barra. A ordem agora conta a sequência de uso:
+                consultar (Vigências) › publicar (Link) › apresentar (Modo Tela)
+                › e, no fim, recarregar. */}
             <button
               onClick={() => setVigenciasAberto(true)}
               className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold bi-hover"
               style={{ background: "var(--bi-surface)", border: "1px solid var(--bi-line)", color: "var(--bi-text)" }}
               title="Instrumentos com vigência encerrando em até 120 dias"
             >
-              <CalendarClock className="size-3.5" /> Vigências ≤120d
+              <CalendarClock className="size-3.5" /> Vigências
             </button>
             <PeriodoMultiSelect />
             {/* Sem alternador de tema aqui: o do menu lateral e este mantinham
@@ -154,16 +162,6 @@ export function PainelIndicadores() {
                 deixava o outro desatualizado e o clique seguinte invertia
                 errado. Um so, e no menu lateral, que existe em toda tela do
                 sistema. (O Modo Tela mantem o dele: la nao ha menu lateral.) */}
-            <button
-              type="button"
-              onClick={recarregar}
-              title="Atualizar dados"
-              aria-label="Atualizar dados"
-              className="grid size-9 place-items-center rounded-full"
-              style={{ background: "var(--bi-surface)", border: "1px solid var(--bi-line)", color: "var(--bi-muted)" }}
-            >
-              <RefreshCw className={carregando ? "size-4 animate-spin" : "size-4"} />
-            </button>
             <BotaoAjustes />
             {podeModoTela && (
               <button
@@ -176,6 +174,7 @@ export function PainelIndicadores() {
                 Modo Tela
               </button>
             )}
+            <BotaoRecarregar />
             {tela.ativa && (
               <SlideshowControls
                 compacto

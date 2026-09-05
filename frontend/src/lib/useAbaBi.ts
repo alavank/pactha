@@ -80,6 +80,17 @@ export async function buscarAba(
   return dados;
 }
 
+/** ⭐ Descarta TUDO o que esta em memoria — o passo 1 do botao «Atualizar» do
+ *  painel (`components/bi/BotaoRecarregar.tsx`).
+ *
+ *  ⚠️ Existe separado de `buscarAba(forcar=true)` porque as duas coisas sao
+ *  diferentes: aquele refaz a busca de UMA aba e regrava o cache dela; este
+ *  esvazia o mapa inteiro, para a pagina recarregada nao reaproveitar nada de
+ *  antes. Sem ele, o reload voltaria com as outras seis abas ainda quentes. */
+export function limparCacheAbas(): void {
+  cache.clear();
+}
+
 /** Aquece o cache sem renderizar nada (a proxima aba do slideshow). */
 export function prefetchAba(
   aba: AbaId, municipioId: number | null, anos: number[],
