@@ -71,7 +71,10 @@ SEC_BI = "bi"
 SEC_IA = "ia"
 SEC_COFRE = "cofre"
 SEC_USUARIOS = "usuarios"
-SEC_TELEGRAM = "telegram"
+# SEC_TELEGRAM saiu em 05/09/2026 junto com o módulo (ver o bloco de permissões
+# abaixo). A seção existia mesmo com o módulo desligado e deixava um cabeçalho
+# sem nenhuma caixinha embaixo — era o que `test_toda_secao_tem_pelo_menos_uma_
+# permissao` acusava em toda rodada da suíte.
 SEC_AUDITORIA = "auditoria"
 
 SECOES: list[dict] = [
@@ -92,8 +95,6 @@ SECOES: list[dict] = [
                   "do sistema."},
     {"chave": SEC_USUARIOS, "rotulo": "Usuários e permissões",
      "descricao": "Quem pode cadastrar pessoas e decidir o que elas fazem."},
-    {"chave": SEC_TELEGRAM, "rotulo": "Telegram",
-     "descricao": "Avisos no celular."},
     {"chave": SEC_AUDITORIA, "rotulo": "Auditoria",
      "descricao": "A trilha de atividades. O arquivo exportado entrega IP, "
                   "e-mail e histórico de todo mundo."},
@@ -533,27 +534,16 @@ _ESPECIAIS: tuple = (
         descricao="Baixar em PDF uma conversa ou um relatório gerado pela IA.",
         escrita=True,    # o endpoint e POST (leva o texto no corpo)
     ),
-    # TELEGRAM DESATIVADO ATÉ SEGUNDA ORDEM (decisão do dono, 09/08/2026): fora
-    # do catálogo = as chaves não aparecem no modal de permissões nem na criação
-    # de usuário, e conceder via API falha por chave desconhecida. Concessões
-    # antigas no banco ficam dormentes (as rotas nem existem — ver main.py).
-    # Canal futuro de avisos = WhatsApp API oficial; religar = TELEGRAM_MODULE=1.
-    *([
-        Permissao(
-            chave="telegram.vincular", secao=SEC_TELEGRAM, recurso="telegram",
-            recurso_rotulo="Telegram", verbo_rotulo="Vincular o próprio celular",
-            descricao="Gerar o código que liga o PRÓPRIO Telegram ao sistema, para "
-                      "receber avisos.",
-            escrita=True,
-        ),
-        Permissao(
-            chave="telegram.administrar", secao=SEC_TELEGRAM, recurso="telegram",
-            recurso_rotulo="Telegram", verbo_rotulo="Administrar a integração",
-            descricao="Configurar o webhook e mexer na integração inteira, não só "
-                      "no próprio vínculo.",
-            escrita=True,
-        ),
-    ] if os.getenv("TELEGRAM_MODULE") == "1" else []),
+    # TELEGRAM REMOVIDO em 05/09/2026 (decisão do dono). Estava desativado desde
+    # 09/08/2026 atrás de `TELEGRAM_MODULE`, e a flag nunca foi ligada em tenant
+    # nenhum — as duas chaves eram catálogo condicional que só existia em
+    # ambiente de teste. O canal de avisos será WhatsApp com a API oficial da
+    # Meta; quando existir, nasce com chaves próprias e não como herança desta.
+    # ⚠️ As linhas `telegram.*` já gravadas em `permissoes_catalogo` nos cinco
+    # bancos NÃO foram apagadas: `user_permissoes.permissao` referencia essa
+    # tabela com ON DELETE RESTRICT, e chave no banco sem par no Python é só uma
+    # caixinha que nunca aparece na tela — inerte. Apagar exigiria varrer
+    # concessões e modelos em cinco bancos para ganhar nada.
     Permissao(
         chave="auditoria.ver", secao=SEC_AUDITORIA, recurso="auditoria",
         recurso_rotulo="Auditoria", verbo_rotulo="Ver",

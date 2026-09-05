@@ -8,7 +8,6 @@ Alavank (gestão de credenciais gov, §12) e não devem ser concedidos a usuári
 TELAS_CATALOG = [
     {"key": "dashboard", "label": "Dashboard"},
     {"key": "ai", "label": "IA PACTHA"},
-    {"key": "telegram", "label": "Telegram"},
     {"key": "parlamentares", "label": "Parlamentares"},
     {"key": "gestao", "label": "Gestão Interna"},
     {"key": "agendamentos", "label": "Agendamentos"},
@@ -64,7 +63,9 @@ CATALOG_KEYS = {t["key"] for t in TELAS_CATALOG}
 # `catalogo(tela)` de `migrations/add_role_vira_rotulo.sql` (que fez o backfill
 # dos administradores). Os três tinham de bater no dia deste incremento.
 TELAS_TODAS = [
-    "dashboard", "ai", "telegram", "parlamentares", "gestao", "agendamentos", "rm",
+    # `telegram` SAIU em 05/09/2026, pelo mesmo caminho de `suas`: modulo
+    # removido do codigo, tela removida dos tres catalogos.
+    "dashboard", "ai", "parlamentares", "gestao", "agendamentos", "rm",
     "documentos", "convenios", "emendas", "transferegov", "cauc", "sismob",
     "obrasgov",
     # `suas` SAIU: o painel do MDS vive dentro de `paineis` (ver telas.ts).

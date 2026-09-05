@@ -217,8 +217,16 @@ INSERT INTO permissoes_catalogo (chave, secao, escrita) VALUES
     -- faz a chave nova virar gravavel num tenant que ja esta no ar.
     ('usuarios.modelos', 'usuarios', TRUE),
     ('usuarios.resetar_senha', 'usuarios', TRUE),
-    ('telegram.vincular', 'telegram', TRUE),
-    ('telegram.administrar', 'telegram', TRUE),
+    -- `telegram.vincular` e `telegram.administrar` SAIRAM desta semente em
+    -- 05/09/2026, com o modulo. Editar migration ja aplicada so alcanca BANCO
+    -- NOVO — e e exatamente o efeito desejado: nos cinco bancos que ja estao no
+    -- ar as duas linhas ficam dormentes em `permissoes_catalogo` (apagar
+    -- esbarraria no ON DELETE RESTRICT de `user_permissoes`), e chave sem par no
+    -- catalogo Python e caixinha que nunca aparece na tela.
+    -- ⚠️ Sairam DAQUI e do modelo em `add_modelos_de_permissao.sql` no MESMO
+    -- commit: aquela tabela referencia esta por chave estrangeira, entao tirar
+    -- so de um lado quebraria o bootstrap de um banco novo — a classe de bug
+    -- que ja mordeu duas vezes neste repo.
     ('auditoria.ver', 'auditoria', FALSE),
     ('auditoria.exportar', 'auditoria', FALSE),
     -- Telemetria de uso: navegacao e presenca. Separada da Auditoria de
@@ -394,9 +402,7 @@ WITH marca AS (
         -- administradores concedem nao nasce distribuida por deploy.
         (NULL, 'usuarios.modelos', TRUE),
         (NULL, 'usuarios.resetar_senha', TRUE),
-        -- Telegram: o proprio vinculo pela tela, o webhook pelo papel
-        ('telegram', 'telegram.vincular', FALSE),
-        ('telegram', 'telegram.administrar', TRUE),
+        -- (o Telegram ocupava estas duas linhas ate 05/09/2026)
         -- Auditoria
         ('auditoria', 'auditoria.ver', FALSE),
         ('auditoria', 'auditoria.exportar', FALSE),

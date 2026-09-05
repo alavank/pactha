@@ -92,7 +92,7 @@ empty. Password is random per tenant, printed to console on first boot (or set v
 
 Several modules are gated by env vars checked at both import time and route-registration
 time (not just inside the handler). Gate the **import**, not just the route — see
-`TELEGRAM_MODULE` / `BI_MODULE` in `main.py`. Details in the `authz` skill.
+`BI_MODULE` in `main.py`. Details in the `authz` skill.
 
 ## Deep-dive docs
 

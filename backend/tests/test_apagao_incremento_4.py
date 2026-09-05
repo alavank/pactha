@@ -223,7 +223,6 @@ GATES_DE_ACAO_PERMITIDOS = {
     "routers/users.py",       # _require_admin + guarda de auto-rebaixamento
     "routers/auth.py",        # /register
     "routers/freshness.py",   # Status dos Dados
-    "routers/telegram.py",    # vinculo de bot
     "routers/cofre.py",       # credencial gov.br do cliente (sai no Incremento 5)
     "routers/control.py",     # contagem de admins ativos do canal do Console
     "services/auth.py",       # coberto pelos testes de load_user_scopes

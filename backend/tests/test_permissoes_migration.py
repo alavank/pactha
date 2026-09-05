@@ -119,12 +119,12 @@ def test_verbos_de_escrita_exigem_admin():
                               HOJE quem abre a tela da IA conversa e exporta,
                               sem ser admin — exigir admin aqui tiraria a IA da
                               equipe inteira no dia do deploy.
-      telegram.vincular       o usuario ligando o PROPRIO celular. Escrita, sim,
-                              mas sobre a propria conta.
+    (`telegram.vincular` era a terceira excecao — o usuario ligando o PROPRIO
+    celular, escrita mas sobre a propria conta. Saiu em 05/09/2026 com o modulo.)
 
     Excecao nova entra nesta lista E ganha comentario na migration, ou o teste
     quebra — que e o ponto: afrouxar a regra tem de ser decisao escrita."""
-    excecoes = {"ai.usar", "ai.exportar", "telegram.vincular"}
+    excecoes = {"ai.usar", "ai.exportar"}
     for _, permissao, exige_admin in _mapa():
         if CATALOGO[permissao].escrita and permissao not in excecoes:
             assert exige_admin, permissao

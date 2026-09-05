@@ -15,9 +15,9 @@ Este cron roda a cada ~30 min e detecta DUAS condicoes que hoje ninguem ve:
      que o esperado para a frequencia dela (ex.: sigcon deveria rodar 4x/dia;
      se o ultimo sucesso tem >18h, algo travou).
 
-Alerta vai para o Telegram (chat em WATCHDOG_CHAT_ID ou TELEGRAM_CHAT_ID) se
-configurado; senao, so loga (o log ja e melhor que o nada de hoje). Nunca falha
-o processo por causa do alerta.
+Alerta sempre vai para o LOG e para a tabela `watchdog_historico` (que vira a
+aba Status dos Dados); se `WATCHDOG_WEBHOOK_URL` estiver configurada, tambem sai
+num POST JSON generico. Nunca falha o processo por causa do alerta.
 
 Anti-spam: nao repete o mesmo alerta dentro de WATCHDOG_COOLDOWN_MIN (default
 180 min) -- estado guardado na tabela watchdog_alertas.
@@ -446,6 +446,10 @@ def _alerta(mensagem: str, cur=None, tipo: str = "", chave: str = "") -> None:
     watchdog detectava, montava a frase certa e terminava com "(Telegram nao
     configurado -- alerta so no log)". Um vigia que grita para uma sala vazia e
     pior que nenhum, porque ele passa a sensacao de que alguem esta olhando.
+    Foi por isso que o canal 2 (banco) nasceu, e e por isso que ele nao depende
+    de env nenhuma. Em 05/09/2026 o Telegram saiu de vez, e a licao continua
+    valendo para o WhatsApp que vem: canal que depende de credencial e o 3o da
+    fila, nunca o 1o.
 
     Ordem dos canais, do que sempre funciona ao que depende de configuracao:
       1. LOG — sempre.
@@ -455,7 +459,9 @@ def _alerta(mensagem: str, cur=None, tipo: str = "", chave: str = "") -> None:
       3. WEBHOOK (`WATCHDOG_WEBHOOK_URL`) — um POST JSON generico. Serve para
          WhatsApp oficial, Slack, Discord, n8n, Zapier: e so preencher a env, do
          nosso lado nao muda nada.
-      4. TELEGRAM — continua funcionando se um dia religarem as duas envs.
+    (havia um 4o canal, TELEGRAM, removido em 05/09/2026 com o modulo: exigia
+    WATCHDOG_CHAT_ID + TELEGRAM_BOT_TOKEN e nenhuma das 15 apps do Coolify tinha
+    as duas envs, entao ele nunca entregou nada em producao.)
     Cada canal e best-effort e isolado: falhar num nao pode impedir os outros
     (o alerta ja e a noticia ruim; nao pode virar duas)."""
     logger.warning(f"ALERTA: {mensagem}")
@@ -489,17 +495,10 @@ def _alerta(mensagem: str, cur=None, tipo: str = "", chave: str = "") -> None:
         except Exception as e:
             logger.warning(f"  falha no webhook: {str(e)[:120]}")
 
-    # 4. Telegram (legado, so se religarem).
-    chat = (os.getenv("WATCHDOG_CHAT_ID") or os.getenv("TELEGRAM_CHAT_ID") or "").strip()
-    token = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
-    if not chat or not token:
-        return
-    try:
-        import asyncio
-        from services.telegram import send_message
-        asyncio.run(send_message(chat, mensagem))
-    except Exception as e:
-        logger.warning(f"  falha ao enviar Telegram: {e}")
+    # 4. O canal Telegram saiu em 05/09/2026 com o modulo. Ele era inerte:
+    #    exigia WATCHDOG_CHAT_ID + TELEGRAM_BOT_TOKEN, e nenhuma das 15 apps do
+    #    Coolify tinha essas envs. O aviso deste watchdog sai pelo webhook (3),
+    #    e o proximo canal sera WhatsApp com a API oficial da Meta.
 
 
 def main() -> None:

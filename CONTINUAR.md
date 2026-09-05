@@ -46,7 +46,9 @@ sistema operando sozinho. Se você só ler um bloco deste arquivo, leia este:
 3. **Observabilidade honesta** (PR #160): `ingestion_log` com `success`/`parcial`/`erro`
    reais; watchdog com staleness POR MUNICÍPIO (agregado, anti-spam; credencial falhando
    = nota, nunca alarme — regra do dono); paginação validada contra o total oficial.
-   Telegram do watchdog ainda SEM token (alertas ficam no log).
+   O canal Telegram do watchdog foi **removido em 05/09/2026** (nunca teve token em
+   tenant nenhum): o alerta sai no log, na tabela `watchdog_historico` (aba Status dos
+   Dados) e, se `WATCHDOG_WEBHOOK_URL` estiver setada, num POST JSON genérico.
 4. **Selo "Atualizado em" nas telas** (PR #164): CAUC/CAGEC já tinham; Convênios
    Estaduais e Emendas ganharam — só data com coleta saudável (`tentativas=0`), senão
    avisa sem afirmar causa. Emendas têm carimbo próprio (`fonte='sigcon_emendas'`).
@@ -314,7 +316,7 @@ interpolado: [`INFRA.md`](INFRA.md) §5.
 Faltam **três**: `freitas`, `trust` e `novapalma-rs` ainda respondem só por `*.sslip.io`. Monte Sião e Santa Maria já têm domínio próprio (`montesiao.mg.pactha.com.br`, `santamaria.rs.pactha.com.br`), assim como a landing (`pactha.com.br`) e a Central de Comando (`control-center.pactha.com.br`). Falta decidir/criar os DNS `A` → `54.232.208.118` para os apps dos clientes e trocar os domínios no Coolify (`PATCH /applications/<uuid>` + redeploy). Lembre de ajustar `FRONTEND_URL`/`CORS_ORIGIN_REGEX` na API e rebuildar o frontend (env build-time).
 
 ### 6.2 Secrets opcionais por tenant (features ficam OFF até setar)
-`ANTHROPIC_API_KEY` (módulo IA — hoje só `montesiao-mg-api` tem), `TELEGRAM_BOT_TOKEN` + `TELEGRAM_WEBHOOK_SECRET` (Telegram). Setar via `PATCH /applications/<api_uuid>/envs/bulk` + redeploy.
+`ANTHROPIC_API_KEY` (módulo IA — hoje só `montesiao-mg-api` tem). Setar via `PATCH /applications/<api_uuid>/envs/bulk` + redeploy. (`TELEGRAM_BOT_TOKEN` e `TELEGRAM_WEBHOOK_SECRET` saíram desta lista em 05/09/2026 com o módulo — nunca foram setados em tenant nenhum.)
 
 Credencial do **SIGCON-MG** (uma por município, no Cofre com `sistema='SIGCON-MG'` /
 `automation_key='sigcon'`): sem ela o `sigcon` roda e não traz nada — e agora grava

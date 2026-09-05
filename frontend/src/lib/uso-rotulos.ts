@@ -60,6 +60,8 @@ const TELAS: Array<[RegExp, string]> = [
   [/^\/dashboard\/documentos\/editor/, "Editor de Documentos"],
   [/^\/dashboard\/documentos/, "Geração de Documentos"],
   [/^\/dashboard\/gestao/, "Gestão Interna"],
+  // Módulo removido em 05/09/2026; o rótulo fica porque a telemetria de uso
+  // guarda navegação ANTIGA, e sem ele a linha aparece como caminho cru.
   [/^\/dashboard\/telegram/, "Telegram"],
   [/^\/dashboard\/(configuracoes\/)?usuarios/, "Configurações · Usuários"],
   [/^\/dashboard\/(configuracoes\/)?cofre/, "Configurações · Cofre de Senhas"],
