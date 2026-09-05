@@ -100,6 +100,9 @@ COR_PADRAO = CORES[0]
 # ⚠️ Tem de bater com o seed de `add_agendamentos_compromisso.sql`.
 COLUNAS_FIXAS = ("solicitada", "em_andamento", "concluida")
 COLUNA_ENTRADA = "solicitada"
+# A cor de partida do cabecalho de uma coluna — o cinza da paleta. Tem de bater
+# com o DEFAULT de `add_agendamentos_coluna_cor.sql`.
+COR_COLUNA_PADRAO = "#7b8794"
 # Teto absoluto do quadro e teto de customizadas — os dois são do documento de
 # redesenho, e valem TAMBÉM aqui e não só no botão da tela: um POST repetido por
 # duas abas abertas passaria do limite se quem contasse fosse o navegador.
@@ -177,7 +180,15 @@ class ColunaUpdate(BaseModel):
 
 
 class ColunaNova(BaseModel):
+    """Nome e cor do cabeçalho da coluna.
+
+    ⚠️ A COR VEM DA MESMA `PALETA` DO COMPROMISSO, e não de uma segunda lista de
+    tons claros. O cabeçalho é desenhado com `color-mix` sobre a superfície do
+    tema (`.ag-solto`, em globals.css), então a mesma cor sai pastel no claro e
+    discreta no escuro — guardar o pastel já calculado exigiria uma paleta
+    paralela só para o tema escuro."""
     nome: str = Field(..., min_length=1, max_length=40)
+    cor: Optional[str] = None
 
 
 class AnotacaoNova(BaseModel):
@@ -445,10 +456,10 @@ async def _anotacoes(db: AsyncSession, aid: int) -> list[dict]:
 
 async def _colunas(db: AsyncSession) -> list[dict]:
     rows = (await db.execute(text(
-        "SELECT id, nome, ordem, fixa, chave FROM agendamentos_colunas "
+        "SELECT id, nome, ordem, fixa, chave, cor FROM agendamentos_colunas "
         "ORDER BY ordem ASC, id ASC"))).fetchall()
     return [{"id": r[0], "nome": r[1], "ordem": r[2], "fixa": bool(r[3]),
-             "chave": r[4]} for r in rows]
+             "chave": r[4], "cor": r[5] or COR_COLUNA_PADRAO} for r in rows]
 
 
 async def _coluna_de_entrada(db: AsyncSession) -> int:
@@ -836,17 +847,20 @@ async def criar_coluna(
             422, f"São no máximo {MAX_COLUNAS_CUSTOMIZADAS} colunas próprias.")
     if any(_sem_acento(c["nome"]) == _sem_acento(nome) for c in colunas):
         raise HTTPException(422, f"Já existe uma coluna chamada «{nome}».")
+    cor = _valida_cor(body.cor) or COR_COLUNA_PADRAO
     ordem = max((c["ordem"] for c in colunas), default=0) + 1
     rid = (await db.execute(text(
-        "INSERT INTO agendamentos_colunas (nome, ordem, fixa) "
-        "VALUES (:n, :o, FALSE) RETURNING id"), {"n": nome, "o": ordem})).scalar()
+        "INSERT INTO agendamentos_colunas (nome, ordem, fixa, cor) "
+        "VALUES (:n, :o, FALSE, :c) RETURNING id"),
+        {"n": nome, "o": ordem, "c": cor})).scalar()
     await db.commit()
     await registrar(
         db, action="agendamentos.coluna.create", user=current, request=request,
         target_type="agendamento_coluna", target_id=rid, alvo_nome=nome,
-        details={"nome": nome, "ordem": ordem},
+        details={"nome": nome, "ordem": ordem, "cor": cor},
     )
-    return {"id": rid, "nome": nome, "ordem": ordem, "fixa": False, "chave": None}
+    return {"id": rid, "nome": nome, "ordem": ordem, "fixa": False,
+            "chave": None, "cor": cor}
 
 
 @router.put("/colunas/{cid}", dependencies=[exige("agendamentos.editar")])
@@ -857,32 +871,42 @@ async def atualizar_coluna(
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
-    """Renomeia — só as customizadas."""
+    """Renomeia e recolore — TODAS as colunas, inclusive as três iniciais.
+
+    ⭐ MUDOU EM 05/09/2026 (rodada 1 de ajustes). A regra anterior recusava
+    renomear as fixas; o dono reviu: «Solicitada | Em andamento | Concluída» são
+    o PONTO DE PARTIDA, não o vocabulário obrigatório de cinco clientes
+    diferentes. O que continua valendo é a remoção — fixa não se apaga.
+
+    ⚠️ E RENOMEAR NÃO TOCA NA `chave`. O código acha a coluna de entrada por
+    `chave = 'solicitada'` (SERIAL não promete o mesmo id nos cinco bancos);
+    o `nome` é só o rótulo da tela. Sem essa separação, renomear «Solicitada»
+    quebraria o destino dos cartões de uma coluna removida e o default de todo
+    compromisso novo — em silêncio, porque `_coluna_de_entrada` levantaria 500
+    só no primeiro cadastro depois da renomeação."""
     ensure_tela(current, "agendamentos")
     colunas = await _colunas(db)
     alvo = next((c for c in colunas if c["id"] == cid), None)
     if not alvo:
         raise HTTPException(404, "Coluna não encontrada")
-    if alvo["fixa"]:
-        raise HTTPException(
-            422, f"«{alvo['nome']}» é uma das três colunas fixas do quadro e "
-                 f"não se renomeia.")
     nome = body.nome.strip()
     if not nome:
         raise HTTPException(422, "A coluna precisa de um nome.")
     if any(c["id"] != cid and _sem_acento(c["nome"]) == _sem_acento(nome)
            for c in colunas):
         raise HTTPException(422, f"Já existe uma coluna chamada «{nome}».")
+    cor = _valida_cor(body.cor) or alvo["cor"]
     await db.execute(text(
-        "UPDATE agendamentos_colunas SET nome = :n, updated_at = NOW() "
-        "WHERE id = :i"), {"n": nome, "i": cid})
+        "UPDATE agendamentos_colunas SET nome = :n, cor = :c, updated_at = NOW() "
+        "WHERE id = :i"), {"n": nome, "c": cor, "i": cid})
     await db.commit()
     await registrar(
         db, action="agendamentos.coluna.update", user=current, request=request,
         target_type="agendamento_coluna", target_id=cid, alvo_nome=nome,
-        details={"de": alvo["nome"], "para": nome},
+        details={"de": alvo["nome"], "para": nome, "cor": cor,
+                 "fixa": alvo["fixa"]},
     )
-    return {"id": cid, "nome": nome}
+    return {"id": cid, "nome": nome, "cor": cor}
 
 
 @router.delete("/colunas/{cid}", dependencies=[exige("agendamentos.editar")])

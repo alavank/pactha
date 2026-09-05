@@ -42,7 +42,7 @@ import Calendario from "./Calendario";
 import CardDia from "./CardDia";
 import CompromissoModal, { type ModoModal } from "./CompromissoModal";
 import FiltroMunicipios from "./FiltroMunicipios";
-import Kanban from "./Kanban";
+import Kanban, { BotaoNovaColuna } from "./Kanban";
 import ListaCompromissos from "./ListaCompromissos";
 import RelatorioModal from "./RelatorioModal";
 import {
@@ -181,10 +181,10 @@ export default function AgendamentosPage() {
     }
   };
 
-  const renomearColuna = async (id: number, nome: string) => {
+  const renomearColuna = async (id: number, nome: string, cor: string) => {
     setErro(null);
     try {
-      await api.put(`/agendamentos/colunas/${id}`, { nome });
+      await api.put(`/agendamentos/colunas/${id}`, { nome, cor });
       recarregarColunas();
       recarregar();
     } catch (e: unknown) {
@@ -212,8 +212,11 @@ export default function AgendamentosPage() {
     }
   };
 
+  /* ⚠️ SÓ EXISTE `abrir`. O duplo clique que abria a edição direto saiu em
+     05/09/2026 (decisão do dono): um clique abre o detalhe, e o botão «Editar»
+     de dentro dele é o único caminho para o modo de edição. O gesto duplo
+     sobreviveu num lugar só — a célula VAZIA, para criar. */
   const abrir = (c: Compromisso) => setModal({ modo: "detalhe", item: c });
-  const editar = (c: Compromisso) => setModal({ modo: "editar", item: c });
   const criar = (data: string, hora?: string) =>
     setModal({ modo: "criar", item: null, inicial: { data, hora } });
 
@@ -222,11 +225,22 @@ export default function AgendamentosPage() {
   const comMunicipio = multiMunicipio === true;
 
   return (
-    /* ⭐ A ALTURA DA VIEWPORT MENOS O PADDING DO LAYOUT (`py-6` = 3rem). É o que
-       faz o calendário PREENCHER A TELA em vez de ser um cartão baixo no alto da
-       página. Abaixo de `lg` a altura volta a ser automática: num celular, uma
-       grade de 24 horas presa a 100vh não rola junto com o resto. */
-    <div className="flex flex-col gap-3 lg:h-[calc(100vh-3rem)]">
+    /* ⭐ `ag-modulo` É A PELE DO MÓDULO, e ela é a razão de existir um contêiner
+       nomeado: os tokens `--bi-bg`/`--bi-surface` são redeclarados ali (ver
+       globals.css) e valem da borda dele para dentro. O fundo palha não vaza
+       para o resto do sistema, e o acento/CTA/foco continuam sendo os do PACTHA.
+
+       ⭐ E A ALTURA É A DA VIEWPORT MENOS O PADDING DO LAYOUT (`py-6` = 3rem),
+       agora em TODO tamanho de tela e não só em `lg`. É o que faz o calendário
+       chegar até o pé da página mesmo vazio. O `min-h` embaixo é a válvula: numa
+       janela baixa ele vence o `h`, o módulo para de encolher e quem rola é o
+       `<main>` — sem ele, com 500px de altura sobrariam ~180px para a grade de
+       24 horas.
+
+       ⚠️ O `-mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8` desfaz e refaz o
+       padding do contêiner da página: é o que faz o fundo palha sangrar até a
+       borda da área útil em vez de deixar duas faixas cinza nas laterais. */
+    <div className="ag-modulo -mx-4 flex h-[calc(100vh-3rem)] min-h-[34rem] flex-col gap-3 px-4 py-3 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
       {/* ------------------------------------------------------ cabeçalho */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
@@ -285,9 +299,24 @@ export default function AgendamentosPage() {
                             onMudar={setMunSel} />
         )}
 
-        <span className="ml-auto text-[11px]" style={{ color: "var(--bi-faint)" }}>
-          {carregando ? "carregando…" : `${itens.length} compromisso(s)`}
-        </span>
+        {/* ⚠️ CRIAR COLUNA É AÇÃO DA ABA, não uma coluna do quadro. Era um
+            retângulo tracejado ao lado das três — e com ele o kanban nunca
+            dividia a largura por igual, porque havia sempre um bloco a mais
+            disputando espaço. Some sozinho no teto de cinco. */}
+        {vista === "kanban" && (
+          <BotaoNovaColuna colunas={colunas} max={maxColunas}
+                           maxCustomizadas={maxCustomizadas} onCriar={criarColuna} />
+        )}
+
+        {/* ⚠️ O CONTADOR NÃO APARECE NA LISTA, e é o conserto de um número
+            duplicado: a aba Lista tem o seu, logo abaixo do filtro de período, e
+            ele conta o PERÍODO FILTRADO — enquanto este conta o recorte inteiro.
+            Dois números com o mesmo rótulo na mesma tela é pior que nenhum. */}
+        {vista !== "lista" && (
+          <span className="ml-auto text-[11px]" style={{ color: "var(--bi-faint)" }}>
+            {carregando ? "carregando…" : `${itens.length} compromisso(s)`}
+          </span>
+        )}
       </div>
 
       {erro && (
@@ -299,12 +328,7 @@ export default function AgendamentosPage() {
       )}
 
       {/* -------------------------------------------------------- conteúdo */}
-      {/* ⚠️ ALTURA TAMBÉM NO CELULAR (`max-lg:h-[36rem]`). Sem ela, a régua de
-          24 horas da vista semanal (1152px) vira a altura REAL do bloco em telas
-          estreitas: a rolagem interna deixa de existir, a página fica com dois
-          metros de madrugada vazia e o cabeçalho some no alto. Com altura, o que
-          rola é a régua — como no desktop. */}
-      <div className="min-h-0 flex-1 max-lg:h-[36rem]">
+      <div className="min-h-0 flex-1">
         {carregando && itens.length === 0 ? (
           <Esqueleto vista={vista} />
         ) : vista === "calendario" ? (
@@ -313,7 +337,7 @@ export default function AgendamentosPage() {
               <Calendario
                 itens={itens} modo={modoCal} onModo={setModoCal}
                 foco={foco} onFoco={setFoco} comMunicipio={comMunicipio}
-                onCriar={criar} onAbrir={abrir} onEditar={editar}
+                onCriar={criar} onAbrir={abrir}
                 onMostrarCard={cardVisivel ? undefined : () => setCardVisivel(true)}
               />
             </div>
@@ -340,14 +364,12 @@ export default function AgendamentosPage() {
              sozinha que está vazia. */
           <Kanban
             itens={itens} colunas={colunas} comMunicipio={comMunicipio}
-            maxColunas={maxColunas} maxCustomizadas={maxCustomizadas}
-            onAbrir={abrir} onEditar={editar} onMover={mover}
-            onCriarColuna={criarColuna} onRenomearColuna={renomearColuna}
-            onRemoverColuna={removerColuna}
+            paleta={paleta} onAbrir={abrir} onMover={mover}
+            onRenomearColuna={renomearColuna} onRemoverColuna={removerColuna}
           />
         ) : (
           <ListaCompromissos itens={itens} comMunicipio={comMunicipio}
-                             onAbrir={abrir} onEditar={editar} />
+                             onAbrir={abrir} />
         )}
       </div>
 
@@ -376,10 +398,12 @@ export default function AgendamentosPage() {
  *  a página saltar de vazia para cheia a cada busca. */
 function Esqueleto({ vista }: { vista: Vista }) {
   if (vista === "kanban") {
+    /* Três colunas dividindo a largura, como o quadro de verdade — um esqueleto
+       com outra geometria faz a tela "pular" quando o dado chega. */
     return (
-      <div className="flex h-full gap-3">
+      <div className="grid h-full grid-cols-3 gap-3">
         {[0, 1, 2].map((i) => (
-          <div key={i} className="h-full w-[18rem] shrink-0 animate-pulse rounded-2xl"
+          <div key={i} className="h-full animate-pulse rounded-2xl"
                style={{ background: "var(--bi-surface-2)" }} />
         ))}
       </div>

@@ -37,7 +37,7 @@ export default function CardDia({
   const quem = primeiroNome(nome);
 
   return (
-    <aside className="bi-card flex min-h-0 flex-col overflow-hidden p-0"
+    <aside className="bi-card flex h-full min-h-0 flex-col overflow-hidden p-0"
            aria-label="Compromissos de hoje">
       <div className="flex items-start justify-between gap-2 px-3.5 pb-2.5 pt-3.5">
         <div className="min-w-0">

@@ -117,6 +117,10 @@ MIGRATION_FILES = [
     # a ordem faz o ALTER falhar contra tabela inexistente — e o runner engole
     # a falha (ver `test_migrations_ordem_tabela.py`).
     "add_agendamentos_compromisso.sql",
+    # AGENDAMENTOS, ajustes da rodada 1: cor no cabecalho da coluna do kanban.
+    # ⚠️ DEPOIS de `add_agendamentos_compromisso.sql`, que e quem CRIA
+    # `agendamentos_colunas`.
+    "add_agendamentos_coluna_cor.sql",
     # Voluntarias: situacao contratacao + clausula suspensiva detalhe + parlamentar
     "add_voluntarias_clausula_parlamentar.sql",
     # Voluntarias: detalhe generico da Situacao de Contratacao (qualquer tipo)

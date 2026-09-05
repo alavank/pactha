@@ -50,6 +50,7 @@ BACKEND = Path(__file__).resolve().parent.parent
 MIGR = BACKEND / "migrations"
 SQL_BASE = (MIGR / "add_agendamentos.sql").read_text(encoding="utf-8")
 SQL_NOVO = (MIGR / "add_agendamentos_compromisso.sql").read_text(encoding="utf-8")
+SQL_COR = (MIGR / "add_agendamentos_coluna_cor.sql").read_text(encoding="utf-8")
 FONTE = Path(R.__file__).read_text(encoding="utf-8")
 
 
@@ -159,13 +160,59 @@ def test_os_tetos_do_quadro_sao_os_do_documento():
     assert "MAX_COLUNAS_CUSTOMIZADAS" in CODIGO
 
 
-def test_coluna_fixa_nao_se_renomeia_nem_se_apaga():
-    """As duas rotas tem de recusar `fixa`. Sem isso, «Concluída» vira o que
-    alguem quiser e `_coluna_de_entrada` continua procurando a chave — o quadro
-    passa a ter uma coluna com nome trocado e o codigo nao percebe."""
-    for rota in ("atualizar_coluna", "remover_coluna"):
-        corpo = CODIGO.split(f"async def {rota}(", 1)[1].split("\n@router", 1)[0]
-        assert 'alvo["fixa"]' in corpo, f"{rota} nao confere se a coluna e fixa"
+def test_coluna_fixa_se_renomeia_mas_NAO_se_apaga():
+    """⭐ A REGRA MUDOU EM 05/09/2026 (rodada 1 de ajustes), e as duas metades
+    importam.
+
+    RENOMEAR E COLORIR passou a valer para TODAS as colunas: «Solicitada | Em
+    andamento | Concluída» sao o ponto de partida, nao o vocabulario obrigatorio
+    de cinco clientes diferentes. Entao `atualizar_coluna` NAO pode mais recusar
+    por `fixa`.
+
+    REMOVER continua proibido nas tres. Sem essa metade, apagar «Solicitada»
+    deixaria `_coluna_de_entrada` sem destino — 500 no proximo compromisso criado
+    e no proximo cartao devolvido por uma coluna removida.
+    """
+    editar = CODIGO.split("async def atualizar_coluna(", 1)[1].split("\n@router", 1)[0]
+    # ⚠️ Procura o GUARD (`if alvo["fixa"]:`), e nao a palavra solta: a rota
+    # cita `alvo["fixa"]` na trilha de auditoria de proposito, para o registro
+    # dizer se quem foi renomeada era uma das tres.
+    assert 'if alvo["fixa"]' not in editar, (
+        "atualizar_coluna voltou a recusar coluna fixa — o dono pediu o "
+        "contrario em 05/09/2026")
+    remover = CODIGO.split("async def remover_coluna(", 1)[1].split("\n@router", 1)[0]
+    assert 'if alvo["fixa"]' in remover, "remover_coluna deixou de proteger as fixas"
+
+
+def test_renomear_a_coluna_NAO_toca_na_chave():
+    """⚠️ O `nome` e da tela; a `chave` e do codigo. `_coluna_de_entrada` procura
+    por `chave = 'solicitada'` porque SERIAL nao promete o mesmo id nos cinco
+    bancos — se o UPDATE do rename levasse a chave junto, renomear «Solicitada»
+    quebraria o default de todo compromisso novo, e so no primeiro cadastro
+    seguinte."""
+    editar = CODIGO.split("async def atualizar_coluna(", 1)[1].split("\n@router", 1)[0]
+    assert "UPDATE agendamentos_colunas SET nome = :n, cor = :c" in editar
+    assert "chave" not in editar.split("UPDATE agendamentos_colunas", 1)[1]
+
+
+def test_a_cor_padrao_da_coluna_e_a_mesma_no_python_e_no_banco():
+    """DEFAULT divergente = coluna que nasce numa cor no banco e noutra na tela,
+    e ninguem percebe ate abrir os dois lado a lado."""
+    m = re.search(r"cor VARCHAR\(7\) NOT NULL DEFAULT '(#[0-9a-f]{6})'",
+                  SQL_COR, re.I)
+    assert m, "o DEFAULT de `cor` sumiu da migration da coluna"
+    assert m.group(1).lower() == R.COR_COLUNA_PADRAO
+    assert R.COR_COLUNA_PADRAO in R.CORES, (
+        "a cor padrao do cabecalho tem de estar na paleta — senao o seletor "
+        "abre sem nenhuma marcada")
+
+
+def test_a_cor_da_coluna_sai_da_MESMA_paleta_do_compromisso():
+    """Duas paletas seriam duas listas para manter em sincronia, e a segunda e
+    sempre a que fica para tras. O cabecalho e o chip usam os mesmos nove tons;
+    o que muda e a RECEITA de contraste, que mora no CSS."""
+    criar = CODIGO.split("async def criar_coluna(", 1)[1].split("\n@router", 1)[0]
+    assert "_valida_cor(body.cor)" in criar
 
 
 # ------------------------------------------------------------- o horario ----
@@ -612,7 +659,8 @@ def test_o_select_so_usa_coluna_que_existe_no_modelo():
         "a": _colunas_de_agendamentos(),
         "m": {c.name for c in Municipio.__table__.columns},
         "uc": {c.name for c in User.__table__.columns},
-        "k": {"id", "nome", "ordem", "fixa", "chave", "created_at", "updated_at"},
+        "k": {"id", "nome", "ordem", "fixa", "chave", "cor", "created_at",
+              "updated_at"},
         "n": {"id", "compromisso_id", "autor_id", "texto", "created_at"},
     }
     # ⚠️ SEM OS COMENTARIOS. O `_SELECT` traz uma nota `--` que CITA `ur.nome`
@@ -665,3 +713,6 @@ def test_a_migration_esta_registrada_DEPOIS_da_que_cria_a_tabela():
     from services.startup import MIGRATION_FILES
     assert MIGRATION_FILES.index("add_agendamentos.sql") < \
         MIGRATION_FILES.index("add_agendamentos_compromisso.sql")
+    # A da cor ALTERA `agendamentos_colunas`, que a de cima e quem cria.
+    assert MIGRATION_FILES.index("add_agendamentos_compromisso.sql") < \
+        MIGRATION_FILES.index("add_agendamentos_coluna_cor.sql")

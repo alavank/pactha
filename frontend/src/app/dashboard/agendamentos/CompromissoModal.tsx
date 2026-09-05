@@ -139,14 +139,13 @@ export default function CompromissoModal({
   const sujo = useMemo(
     () => JSON.stringify(f) !== retratoInicial, [f, retratoInicial]);
 
-  /** As mesmas regras do backend, na ordem em que a pessoa lê o formulário. */
+  /** As mesmas regras do backend, NA ORDEM EM QUE A PESSOA LÊ O FORMULÁRIO.
+   *
+   *  ⚠️ A ordem daqui acompanha a dos campos, e não é detalhe: só uma mensagem
+   *  aparece por vez, e se ela apontar para um campo abaixo do primeiro que está
+   *  vazio, a pessoa conserta um, salva de novo e leva outro erro — subindo a
+   *  tela a cada tentativa. */
   const validar = (): string | null => {
-    if (comMunicipio && !f.municipio_id) {
-      setCampoRuim("municipio_id"); return "Escolha o município do compromisso.";
-    }
-    if (!f.demanda.trim()) {
-      setCampoRuim("demanda"); return "Descreva a demanda — é o que aparece no calendário.";
-    }
     if (!f.data) { setCampoRuim("data"); return "Escolha a data do compromisso."; }
     if (!f.hora_inicio) { setCampoRuim("hora_inicio"); return "Informe o horário."; }
     if (f.tem_periodo) {
@@ -160,10 +159,16 @@ export default function CompromissoModal({
     if (!f.solicitante.trim()) {
       setCampoRuim("solicitante"); return "Diga quem solicitou.";
     }
+    if (comMunicipio && !f.municipio_id) {
+      setCampoRuim("municipio_id"); return "Escolha o município do compromisso.";
+    }
     const zap = f.contato_whatsapp.replace(/\D/g, "");
     if (zap && zap.length !== 10 && zap.length !== 11) {
       setCampoRuim("contato_whatsapp");
       return "O contato precisa ter DDD e 8 ou 9 dígitos.";
+    }
+    if (!f.demanda.trim()) {
+      setCampoRuim("demanda"); return "Descreva a demanda — é o que aparece no calendário.";
     }
     return null;
   };
@@ -259,38 +264,13 @@ export default function CompromissoModal({
       <ModalCorpo className="space-y-3">
         <div className="bi-card p-3">
           <div className="space-y-3">
-            {comMunicipio && (
-              <Campo rotulo="Município" obrigatorio erro={campoRuim === "municipio_id"}>
-                {lendo ? (
-                  <Leitura>{item ? `${item.municipio}${item.uf ? ` - ${item.uf}` : ""}` : "—"}</Leitura>
-                ) : (
-                  /* O MESMO seletor do resto do sistema: a lista vem do
-                     `MunicipioContext`, que a barra lateral já carregou e já
-                     filtrou por permissão. Rebuscar aqui duplicaria a
-                     requisição E a regra de alcance. */
-                  <select value={f.municipio_id}
-                          onChange={(e) => set("municipio_id", e.target.value)}
-                          className="bi-field h-9 w-full px-2 text-[13px]">
-                    <option value="">Selecione…</option>
-                    {municipios.map((m) => (
-                      <option key={m.id} value={String(m.id)}>
-                        {m.nome}{m.uf ? ` - ${m.uf}` : ""}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </Campo>
-            )}
-
-            <Campo rotulo="Demanda" obrigatorio erro={campoRuim === "demanda"}>
-              {lendo ? <Leitura forte>{item?.demanda}</Leitura> : (
-                <input value={f.demanda} maxLength={200} autoFocus={criando}
-                       onChange={(e) => set("demanda", e.target.value)}
-                       placeholder="Visita técnica na obra da creche"
-                       className="bi-field h-9 w-full px-2 text-[13px]" />
-              )}
-            </Campo>
-
+            {/* ⭐ A ORDEM DOS CAMPOS É A DO DONO (rodada 1 de ajustes), e ela
+                conta a história na sequência em que o compromisso acontece:
+                QUANDO é (data e hora), QUEM pediu (solicitante, município,
+                contato), DO QUE se trata (demanda), e só então os acessórios
+                (quando o pedido chegou, a cor). A versão anterior abria pela
+                demanda, que é o campo que a pessoa preenche por último — ela
+                digitava o texto antes de saber para quando estava marcando. */}
             <div className="grid gap-3 sm:grid-cols-2">
               <Campo rotulo="Data" obrigatorio erro={campoRuim === "data"}>
                 {lendo ? <Leitura>{diaBR(item?.data ?? null, true)}</Leitura> : (
@@ -313,6 +293,8 @@ export default function CompromissoModal({
               </Campo>
             </div>
 
+            {/* O toggle abre em HORÁRIO FIXO por padrão (documento): a maioria
+                dos compromissos é um ponto na agenda, não uma faixa. */}
             {!lendo && (
               <div className={`grid gap-3 ${f.tem_periodo ? "sm:grid-cols-2" : ""}`}>
                 <label className="flex cursor-pointer items-center gap-2 text-[12px]">
@@ -337,17 +319,7 @@ export default function CompromissoModal({
               </div>
             )}
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Campo rotulo="Data da solicitação">
-                {lendo ? (
-                  <Leitura>{item?.data_solicitacao ? diaBR(item.data_solicitacao, true) : "—"}</Leitura>
-                ) : (
-                  <input type="date" value={f.data_solicitacao}
-                         onChange={(e) => set("data_solicitacao", e.target.value)}
-                         className="bi-field h-9 w-full px-2 text-[13px]" />
-                )}
-              </Campo>
-
+            <div className={`grid gap-3 ${comMunicipio ? "sm:grid-cols-2" : ""}`}>
               <Campo rotulo="Solicitante" obrigatorio erro={campoRuim === "solicitante"}>
                 {lendo ? <Leitura>{item?.solicitante || "—"}</Leitura> : (
                   <input value={f.solicitante} maxLength={120}
@@ -356,6 +328,29 @@ export default function CompromissoModal({
                          className="bi-field h-9 w-full px-2 text-[13px]" />
                 )}
               </Campo>
+
+              {comMunicipio && (
+                <Campo rotulo="Município" obrigatorio erro={campoRuim === "municipio_id"}>
+                  {lendo ? (
+                    <Leitura>{item ? `${item.municipio}${item.uf ? ` - ${item.uf}` : ""}` : "—"}</Leitura>
+                  ) : (
+                    /* O MESMO seletor do resto do sistema: a lista vem do
+                       `MunicipioContext`, que a barra lateral já carregou e já
+                       filtrou por permissão. Rebuscar aqui duplicaria a
+                       requisição E a regra de alcance. */
+                    <select value={f.municipio_id}
+                            onChange={(e) => set("municipio_id", e.target.value)}
+                            className="bi-field h-9 w-full px-2 text-[13px]">
+                      <option value="">Selecione…</option>
+                      {municipios.map((m) => (
+                        <option key={m.id} value={String(m.id)}>
+                          {m.nome}{m.uf ? ` - ${m.uf}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </Campo>
+              )}
             </div>
 
             <Campo rotulo="Contato WhatsApp" erro={campoRuim === "contato_whatsapp"}>
@@ -375,6 +370,25 @@ export default function CompromissoModal({
                        onChange={(e) => set("contato_whatsapp", mascaraTelefone(e.target.value))}
                        placeholder="(51) 99999-9999"
                        className="bi-field h-9 w-full px-2 text-[13px]" />
+              )}
+            </Campo>
+
+            <Campo rotulo="Demanda" obrigatorio erro={campoRuim === "demanda"}>
+              {lendo ? <Leitura forte>{item?.demanda}</Leitura> : (
+                <input value={f.demanda} maxLength={200}
+                       onChange={(e) => set("demanda", e.target.value)}
+                       placeholder="Visita técnica na obra da creche"
+                       className="bi-field h-9 w-full px-2 text-[13px]" />
+              )}
+            </Campo>
+
+            <Campo rotulo="Data da solicitação">
+              {lendo ? (
+                <Leitura>{item?.data_solicitacao ? diaBR(item.data_solicitacao, true) : "—"}</Leitura>
+              ) : (
+                <input type="date" value={f.data_solicitacao}
+                       onChange={(e) => set("data_solicitacao", e.target.value)}
+                       className="bi-field h-9 w-full px-2 text-[13px] sm:max-w-[15rem]" />
               )}
             </Campo>
 

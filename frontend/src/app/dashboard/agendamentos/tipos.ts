@@ -50,8 +50,15 @@ export interface Coluna {
   id: number;
   nome: string;
   ordem: number;
+  /** `fixa` NÃO significa mais "imutável" (mudou em 05/09/2026): as três
+   *  iniciais são renomeáveis e coloríveis como as outras. O que ela ainda
+   *  impede é a REMOÇÃO — apagar «Solicitada» deixaria os cartões devolvidos por
+   *  uma coluna removida sem destino. */
   fixa: boolean;
   chave: string | null;
+  /** Hex da mesma paleta do compromisso. O cabeçalho é desenhado com
+   *  `color-mix` sobre o tema (`.ag-solto-cor`), então lê nos dois temas. */
+  cor: string;
 }
 
 export interface CorPaleta {
@@ -156,10 +163,29 @@ export function minutos(hora: string | null): number {
   return (h || 0) * 60 + (m || 0);
 }
 
-/** `09:00` ou `09:00 – 11:30`. O travessão é o mesmo do PDF. */
+/** `09:00` ou `09:00 – 11:30`. O travessão é o mesmo do PDF.
+ *  Mesma regra do `temPeriodo`: quem decide é a hora de término. */
 export function horarioDe(c: Compromisso): string {
   const i = c.hora_inicio || "—";
-  return c.tem_periodo && c.hora_fim ? `${i} – ${c.hora_fim}` : i;
+  return temPeriodo(c) ? `${i} – ${c.hora_fim}` : i;
+}
+
+/** ⭐ TEM PERÍODO = TEM HORA DE TÉRMINO. Ponto.
+ *
+ * ⚠️ NÃO OLHA `tem_periodo`, E ISSO É DE PROPÓSITO. As duas informações são
+ * redundantes por construção — o backend grava `hora_fim = NULL` sempre que
+ * `tem_periodo` é falso (`routers/agendamentos.criar`) —, e quando duas fontes
+ * dizem a mesma coisa, quem manda tem de ser UMA. A escolhida é a que o desenho
+ * precisa: sem hora de término não existe até onde esticar o bloco, e com ela
+ * existe, valha o que valer a bandeira.
+ *
+ * O que isso conserta: o compromisso com período estava saindo como chip
+ * compacto na hora de início. Com a bandeira no caminho, bastava ela chegar
+ * falsa (linha anterior ao campo, um PUT parcial, um cliente antigo) para o
+ * bloco encolher — e o sintoma é mudo, porque o compromisso continua na tela,
+ * só que com o tamanho errado. */
+export function temPeriodo(c: Compromisso): boolean {
+  return !!c.hora_fim && minutos(c.hora_fim) > minutos(c.hora_inicio);
 }
 
 /** Duração em minutos para desenhar o bloco na semana/dia.
@@ -168,7 +194,7 @@ export function horarioDe(c: Compromisso): string {
  *  período o piso é o tamanho do chip compacto, que é a regra do documento. */
 export const MIN_BLOCO = 30;
 export function duracaoDe(c: Compromisso): number {
-  if (!c.tem_periodo || !c.hora_fim) return MIN_BLOCO;
+  if (!temPeriodo(c)) return MIN_BLOCO;
   return Math.max(MIN_BLOCO, minutos(c.hora_fim) - minutos(c.hora_inicio));
 }
 
