@@ -1,0 +1,19 @@
+# Dependencias que SO a suite de testes usa. Ficam fora do requirements.txt de
+# proposito: as imagens de producao (Dockerfile.api e Dockerfile.scraper) nao
+# instalam este arquivo, entao nada daqui entra no container do cliente.
+#
+# Instalar junto com as de producao:
+#     pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+#
+# ⚠️ As duas estavam sendo instaladas "de memoria" por quem rodava a suite, e
+# `pglast` chegou a ser a diferenca entre um teste passar na maquina de um e
+# falhar na de outro. Levantadas em 05/09/2026 varrendo os imports dos 68
+# arquivos de teste com AST — as unicas de terceiros que a suite usa e que o
+# requirements.txt nao tem.
+
+pytest>=8.0.0
+
+# Valida SQL contra a gramatica REAL do Postgres, sem subir um banco. E como
+# `test_transparencia_mg.py` confere a query da fila: nao existe Postgres de
+# teste em lugar nenhum do projeto, e nao e para existir.
+pglast>=7.0

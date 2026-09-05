@@ -24,6 +24,25 @@ from pathlib import Path
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://teste:teste@localhost/teste")
 os.environ.setdefault("JWT_SECRET", "segredo-de-teste-nao-usar-em-lugar-nenhum")
 
+# ⚠️ E LIGA O BI, QUE E A CONFIGURACAO DE PRODUCAO. As cinco APIs tem `BI_MODULE`
+# no Coolify (conferido em 05/09/2026 pela API), entao `pytest` sem esta linha
+# testava uma configuracao que NAO existe em lugar nenhum: com a flag desligada
+# o router /api/bi/* nem e montado, e tres testes de `test_registro_rotas.py`
+# ficavam vermelhos para sempre — a allowlist prometia rotas de BI que o app
+# daquele processo nao tinha.
+#
+# Por que isso importa mais do que parece: teste vermelho permanente nao e um
+# teste a menos, e a suite INTEIRA a menos. O valor de um alarme esta no
+# contraste, e "3 failed" fixo ensina o time a ler qualquer numero vermelho como
+# ruido — inclusive o dia em que ele for regressao de verdade. Em 05/09/2026
+# eram 10 vermelhos permanentes (7 do modulo Telegram, ja removido, 3 destes), e
+# entre eles estava justamente o guardiao da chave estrangeira que impede uma
+# migration de derrubar o boot de um tenant NOVO.
+#
+# `setdefault` de novo, e pela mesma razao das duas de cima: quem quiser rodar a
+# suite com o BI desligado exporta `BI_MODULE=0` antes e continua no comando.
+os.environ.setdefault("BI_MODULE", "true")
+
 BACKEND = Path(__file__).resolve().parent.parent
 if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
