@@ -213,6 +213,44 @@ o nº de colunas do `_SELECT` com os índices que `_row_to_dict` lê, porque ess
 levanta erro: só troca os valores de lugar na tela). Front: `tsc --noEmit` limpo,
 `next build` OK, e o lint saiu de **39 para 37** achados no repo.
 
+**RODADA 1 DE AJUSTES no mesmo dia (PR #378)**, depois de o dono ver o módulo no ar. A spec
+detalhada mora agora em **[`docs/agendamentos.md`](docs/agendamentos.md)** — arquivo novo, e
+é ele que a próxima sessão deve ler antes de mexer na agenda. O que vale registrar aqui:
+
+- ⭐ **A tela achatada era um `min-h-0` faltando um nível acima.** O `Calendario` não pedia
+  `flex-1` dentro da coluna flex do contêiner, e um filho flex tem `min-height: auto`
+  ("não encolha abaixo do conteúdo") — o que trava a divisão da altura e faz a grade nascer
+  do tamanho do texto. A regra que fica: **numa cadeia flex que divide altura, `min-h-0` em
+  todos os elos, e o último pede `flex-1`.**
+- ⭐ **O bug do período: a bandeira saiu do caminho.** Compromisso com período saía como chip
+  de 30 min. O backend estava CORRETO (simulado o corpo do modal pelo pydantic e pelo
+  `_row_to_dict`: `tem_periodo`/`hora_fim` vão e voltam intactos), então quem decide o bloco
+  esticado passou a ser a **hora de término**, não a bandeira — as duas são redundantes por
+  construção, e quando duas fontes dizem a mesma coisa quem manda tem de ser uma.
+  ⚠️ **O defeito original não foi reproduzido**; se reaparecer, o que falta é o JSON de
+  `GET /api/agendamentos` do compromisso.
+- **A regra das colunas fixas mudou**: as três iniciais passam a ser **renomeáveis e
+  coloríveis** (migration `add_agendamentos_coluna_cor.sql`); só a remoção continua vedada.
+  ⚠️ Renomear **não toca na `chave`** — o código acha a coluna de entrada por
+  `chave = 'solicitada'`, e levar a chave junto quebraria o default de todo compromisso novo,
+  em silêncio, só no primeiro cadastro seguinte.
+- **Ocupação de tela**: `/dashboard/agendamentos` entrou em `TELAS_LARGAS` — o MESMO
+  contêiner do TransfereGov, não um novo. E ganhou **pele própria escopada** (`.ag-modulo`
+  redeclara `--bi-bg`/`--bi-surface`/`--bi-line` num tom palha amostrado do print de
+  referência, com equivalente escuro). Acento, CTA, link, aba ativa e foco continuam os do
+  PACTHA; nenhum outro módulo muda.
+- **Sem duplo clique para editar em aba nenhuma** (hover → balão, um clique → detalhe, botão
+  «Editar» dentro). O duplo clique sobrou só na célula VAZIA, para criar.
+- **Arraste do kanban é próprio, sem biblioteca** — o projeto não tem lib de DnD, e trazer
+  uma para inclinar um cartão custaria uma dependência nos cinco tenants. `pointer events`
+  com limiar de 6px, overlay `fixed` inclinado −3°, vão tracejado no destino e Esc para
+  cancelar.
+
+⚠️ **O que ficou sem validar nas duas rodadas**: as cores com dado de teste local — não há
+Postgres na máquina de desenvolvimento (a suíte roda sem banco, ver `conftest.py`). Conferir
+na tela: calendário vazio deve ter cor própria (fundo palha, chips dos dias, dia atual em
+acento) e os cabeçalhos do kanban vêm semeados em cinza/âmbar/menta.
+
 ---
 
 ## 2. ESTADO ATUAL (2026-09-04)
