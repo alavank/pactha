@@ -455,6 +455,16 @@ MIGRATION_FILES = [
     # (a casa antes de quem a usa), embora nao haja dependencia dura.
     "add_municipio_entidades.sql",
     "add_emendas_federais.sql",
+    # ⚠️ DEPOIS de `add_emendas_federais.sql`: alarga para TEXT as colunas que
+    # recebem texto de FONTE EXTERNA. Inverter a ordem quebra banco NOVO — a
+    # mesma armadilha que `tests/test_migrations_ordem_tabela.py` guarda.
+    #
+    # A carga real de 06/09/2026 abortou com `value too long for character
+    # varying(20)`: o campo `autor` da CGU traz o NOME do colegiado em emenda
+    # de comissao ("COM. DESENV REGIONAL E TURISMO", 30 chars), e nao um codigo
+    # curto. `tipo_emenda` estava a DOIS caracteres do teto. Mesma licao do
+    # `add_obrasgov_taxonomias_text.sql`, que Santa Maria pagou por UM caractere.
+    "add_emendas_federais_texto.sql",
     # --- Incremento «permissao por tela» (05/09/2026) ----------------------
     # Cadastro: cargo na organizacao e WhatsApp. Duas colunas opcionais em
     # `users`; nao dependem de nada e nao concedem nada.
