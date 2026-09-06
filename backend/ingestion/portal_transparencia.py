@@ -778,6 +778,48 @@ def semear_fila(cur, cnpjs: "list[str] | None" = None) -> int:
     return n
 
 
+def limpar_fila_orfa(cur, cnpjs: "list[str] | None" = None) -> int:
+    """Tira da fila o codigo que nao pertence mais a este municipio.
+
+    ⚠️ POR QUE ISTO EXISTE, e por que o filtro da semeadura nao bastou. A fila e
+    uma tabela PERSISTENTE: o filtro por CNPJ acrescentado em 06/09/2026 impede
+    codigo novo de entrar, mas nao remove os que ja tinham entrado. Medido no
+    mesmo dia: Nova Palma seguia com **283 codigos** na fila para uma carteira de
+    44, e Monte Siao com 545 para 31 — todos herdados da primeira rodada.
+
+    ⚠️⚠️ E O ORFAO ESCAPAVA TAMBEM DO FILTRO DE COLEGIADO. Aquele decide pelo
+    `tipo_parlamentar` da CARTEIRA; codigo que nao esta na carteira tem tipo
+    NULL, nao e reconhecido como colegiado, e volta a puxar as centenas de
+    documentos que o filtro existe para evitar. Os dois consertos so funcionam
+    juntos.
+
+    ⚠️ APAGA SO A FILA, que e CONTROLE. O que ja foi coletado em
+    `emendas_federais_cgu` e `..._documentos` FICA: aquelas tabelas sao nacionais
+    por desenho, nao aparecem na tela sem o JOIN com a carteira, e apagar dado
+    ja pago em requisicao seria trocar espaco em disco por cota da proxima noite.
+
+    Autocurativo: roda a cada rodada e converge sozinho nos cinco tenants, sem
+    migration de limpeza.
+    """
+    try:
+        cur.execute("""
+            DELETE FROM emendas_federais_consulta q
+             WHERE NOT EXISTS (SELECT 1 FROM emendas_federais_carteira c
+                                WHERE c.codigo_emenda = q.codigo_emenda)
+               AND NOT EXISTS (
+                     SELECT 1 FROM transferegov_te te
+                      WHERE te.emenda ~ '^[0-9]{12}-'
+                        AND split_part(te.emenda, '-', 1) = q.codigo_emenda
+                        AND (regexp_replace(coalesce(te.beneficiario_cnpj, ''),
+                                            '\\D', '', 'g') = ANY(%s)
+                             OR coalesce(te.beneficiario_cnpj, '') = ''))
+        """, (list(cnpjs or []),))
+        return cur.rowcount or 0
+    except Exception as e:
+        log.warning("limpar_fila_orfa falhou: %s", str(e)[:120])
+        return 0
+
+
 def fila(cur, limite: int) -> list[tuple]:
     """O rodizio: nunca consultado primeiro, depois o mais velho.
 
@@ -853,7 +895,14 @@ def execucao(cur, conn, client: httpx.Client, orc: Orcamento,
     rel = {"consultados": 0, "achou": 0, "documentos": 0, "pendentes": 0,
            "bloqueado": False, "estrategia": ESTRATEGIA, "truncados": [],
            "colegiado_sem_documentos": 0}
-    semeados = semear_fila(cur, list(alvos(cur).keys()))
+    cnpjs = list(alvos(cur).keys())
+    # ⚠️ LIMPAR ANTES DE SEMEAR: a fila e persistente, e o filtro da
+    # semeadura so vale para codigo NOVO. Sem isto, o orfao da rodada
+    # anterior continua consumindo a cota para sempre.
+    removidos = limpar_fila_orfa(cur, cnpjs)
+    if removidos:
+        log.info("  fila: -%d codigo(s) orfao(s) removido(s)", removidos)
+    semeados = semear_fila(cur, cnpjs)
     if not dry:
         conn.commit()
     log.info("  fila: +%d codigo(s) novo(s)", semeados)

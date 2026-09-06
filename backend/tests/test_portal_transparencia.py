@@ -629,3 +629,29 @@ def test_a_fila_traz_o_tipo_para_a_decisao_de_colegiado():
 
     src = inspect.getsource(pt.fila)
     assert "tipo_parlamentar" in src
+
+def test_a_fila_orfa_e_limpa_antes_de_semear():
+    """⚠️ O FILTRO DA SEMEADURA SOZINHO NÃO BASTOU, e a medição de 06/09/2026
+    mostrou por quê: a fila é uma tabela PERSISTENTE. Depois do conserto, Nova
+    Palma seguia com **283 códigos** para uma carteira de 44, e Monte Sião com
+    545 para 31 — todos herdados da rodada anterior ao filtro.
+
+    ⚠️⚠️ E o órfão escapava TAMBÉM do filtro de colegiado: aquele decide pelo
+    `tipo_parlamentar` da CARTEIRA, e código fora dela tem tipo NULL — não é
+    reconhecido como colegiado e volta a puxar centenas de documentos. Os dois
+    consertos só funcionam juntos.
+
+    ⚠️ E a limpeza é SÓ da fila, que é controle. `emendas_federais_cgu` e
+    `..._documentos` ficam: são nacionais por desenho, não aparecem na tela sem
+    o JOIN com a carteira, e apagar dado já pago em requisição trocaria espaço
+    em disco por cota da próxima noite."""
+    import inspect
+
+    src = inspect.getsource(pt.limpar_fila_orfa)
+    assert "DELETE FROM emendas_federais_consulta" in src
+    # NÃO pode apagar o que já foi coletado.
+    assert "DELETE FROM emendas_federais_cgu" not in src
+    assert "DELETE FROM emendas_federais_documentos" not in src
+    # A ordem importa: limpar ANTES de semear, senão o órfão sobrevive à rodada.
+    ex = inspect.getsource(pt.execucao)
+    assert ex.index("limpar_fila_orfa") < ex.index("semear_fila")
