@@ -445,6 +445,15 @@ MIGRATION_FILES = [
     # lista, e `tests/test_emendas_federais_migration.py` crava isso — o dia em
     # que alguem acrescentar `emendas_federais%` la, o sintoma seria "a tabela
     # esvaziou sozinha" e ninguem iria olhar para um arquivo de 2026-05.
+    # As OUTRAS entidades do municipio, por CNPJ (hospital filantropico, fundo,
+    # associacao). ⚠️ NASCEU DE UM NUMERO: a primeira carga de emendas federais
+    # de Nova Palma trouxe 69 das 77 linhas — as 8 que faltaram sao do Hospital
+    # N. S. da Piedade, R$ 1,2 mi que existem e nao apareciam. `municipios.cnpj`
+    # guarda UM CNPJ (o da prefeitura), e garimpar os demais em `sismob_obras` e
+    # `transferegov_pac` so acha quem por acaso ja apareceu la.
+    # Depende so de `municipios`; ACIMA de `add_emendas_federais.sql` por leitura
+    # (a casa antes de quem a usa), embora nao haja dependencia dura.
+    "add_municipio_entidades.sql",
     "add_emendas_federais.sql",
     # --- Incremento «permissao por tela» (05/09/2026) ----------------------
     # Cadastro: cargo na organizacao e WhatsApp. Duas colunas opcionais em

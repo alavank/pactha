@@ -423,6 +423,14 @@ FEDERAIS, com os cinco estados honestos, o bloco «quem destinou recurso ao muni
 e a sétima fonte da tela de Parlamentares (com anti-join para não inflar o Painel do
 prefeito). Suíte em 2.530; `tsc`, `eslint` e `next build` limpos.
 
+**06/09, depois da primeira carga real:** ela trouxe **69 das 77 linhas** de Nova Palma.
+As 8 que faltaram são da **Associação Hospital Nossa Senhora da Piedade** — R$ 1,2 mi em
+emendas que existem e não apareciam, porque `municipios.cnpj` guarda UM CNPJ e os coletores
+garimpavam os demais em `sismob_obras` e `transferegov_pac` (onde um hospital filantrópico
+nunca aparece). Daí nasceu **`municipio_entidades`** — cadastro explícito de CNPJ por
+município, com `origem`. ⚠️ A saída fácil era casar o NOME no dump de proponentes, que é
+a regra proibida: o CNPJ tem de ter origem, não dedução.
+
 ⚠️ **Achado colateral registrado, e vale conferir:** `add_tela_obrasgov.sql` e
 `add_tela_investsus.sql` concedem só `user_telas`, e o comentário deles afirma que a
 ação «já herda de convênios». Não herda nos cinco no ar — `permissoes_efetivas()`

@@ -470,21 +470,28 @@ def alvos(cur) -> dict[str, dict]:
     como perceber. (O CODIGO da emenda da TE continua sendo usado na fila: ele e
     campo da fonte, nao inferencia nossa.)
 
-    As tres fontes que entram, e por que sao confiaveis:
-      municipios.cnpj        'prefeitura' <- preenchido por ingestion/siconfi.py
-                                             do cadastro de entes do Tesouro,
-                                             POR IBGE. E a origem canonica.
-      sismob_obras.nu_cnpj   'sismob'     <- o coletor consulta por municipio
-                                             (codigo FNS), nao por nome.
-      transferegov_pac.cnpj  'pac'        <- idem, por municipio.
+    As QUATRO fontes que entram, e por que sao confiaveis:
+      municipios.cnpj          'prefeitura' <- preenchido por ingestion/siconfi.py
+                                               do cadastro de entes do Tesouro,
+                                               POR IBGE. E a origem canonica.
+      municipio_entidades.cnpj 'entidade'   <- cadastro EXPLICITO de quem
+                                               provisiona (hospital, fundo,
+                                               associacao). Ver abaixo.
+      sismob_obras.nu_cnpj     'sismob'     <- o coletor consulta por municipio
+                                               (codigo FNS), nao por nome.
+      transferegov_pac.cnpj    'pac'        <- idem, por municipio.
 
-    ⚠️ LACUNA CONHECIDA, e ela e declarada em vez de escondida: emenda a
-    entidade privada do municipio cujo CNPJ nao esta em nenhuma das tres nao
-    aparece. Medido: Nova Palma cobre 69 de 77 linhas (ficam as 8 do Hospital
-    N. S. da Piedade, CNPJ 91026138000115); Monte Siao cobre 53 de 55. O unico
-    atalho seria por nome — a regra proibida. O lugar certo para resolver e um
-    cadastro de CNPJs por municipio, e `add_municipio_identificadores.sql` ja e
-    a casa disso.
+    ⭐ `municipio_entidades` ENTROU EM 06/09/2026 POR CAUSA DE UM NUMERO. A
+    primeira carga real de Nova Palma trouxe 69 das 77 linhas do dump: as 8 que
+    faltavam sao da Associacao Hospital Nossa Senhora da Piedade — R$ 1,2 milhao
+    em emendas que existem, sao do municipio, e nao apareciam. Hospital
+    filantropico nao aparece em obra do SISMOB nem em proposta do PAC, entao as
+    tres fontes antigas nunca o alcancariam.
+
+    ⚠️ E A SAIDA FACIL ERA A PROIBIDA: dava para achar o CNPJ casando o NOME do
+    municipio no dump `siconv_proponentes.zip`. E exatamente a regra que o dono
+    cravou em 04/09/2026. O CNPJ tem de ter ORIGEM, nao deducao — por isso ele
+    e CADASTRADO, e a coluna `origem` diz por quem.
     """
     out: dict[str, dict] = {}
     cur.execute("""
@@ -499,6 +506,13 @@ def alvos(cur) -> dict[str, dict]:
     if not ids:
         return out
     for sql, vinculo in (
+        # ⚠️ PRIMEIRO na ordem: cadastro explicito vence garimpo. Se o mesmo CNPJ
+        # aparecer aqui e no SISMOB, fica o nome que alguem escreveu — e nao o
+        # rotulo que a API de obras usa.
+        ("""SELECT municipio_id, regexp_replace(coalesce(cnpj,''), '\\D', '', 'g'),
+                   max(nome)
+              FROM municipio_entidades WHERE municipio_id = ANY(%s)
+             GROUP BY 1, 2""", "entidade"),
         ("""SELECT municipio_id, regexp_replace(coalesce(nu_cnpj,''), '\\D', '', 'g'),
                    max(entidade)
               FROM sismob_obras WHERE municipio_id = ANY(%s)

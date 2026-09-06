@@ -19,6 +19,8 @@ que mais custariam:
 Rodar:
     python -m pytest backend/tests/test_portal_transparencia.py -v
 """
+import re
+
 import pytest
 
 import ingestion.portal_transparencia as pt
@@ -446,3 +448,54 @@ def test_o_cabecalho_leva_a_chave_no_nome_exato():
     """`chave-api-dados`, confirmado no `components.securitySchemes` do
     `/v3/api-docs`. Um `Authorization: Bearer` devolveria 401 para sempre."""
     assert "chave-api-dados" in pt._cabecalhos()
+
+# ---------------------------------------------------------------------------
+# De onde saem os CNPJs — e a fonte que nasceu de R$ 1,2 milhão invisível
+# ---------------------------------------------------------------------------
+def _codigo_de_alvos() -> str:
+    """O corpo de `alvos()` SEM a docstring.
+
+    ⚠️ A distinção importa: a docstring cita `siconv_proponentes` de propósito,
+    para registrar por que aquele caminho NÃO é usado. Um teste que varresse o
+    texto inteiro reprovaria a explicação junto com o defeito — e o autor
+    seguinte apagaria a explicação para o teste passar."""
+    import inspect
+
+    src = inspect.getsource(pt.alvos)
+    ini = src.find('"""')
+    fim = src.find('"""', ini + 3)
+    return src[:ini] + src[fim + 3:] if ini != -1 and fim != -1 else src
+def test_alvos_le_as_quatro_fontes_de_cnpj_e_o_cadastro_vem_primeiro():
+    """⭐ `municipio_entidades` ENTROU EM 06/09/2026 POR CAUSA DE UM NÚMERO.
+
+    A primeira carga real de Nova Palma trouxe **69 das 77 linhas** do dump. As 8
+    que faltaram são da Associação Hospital Nossa Senhora da Piedade — R$ 1,2
+    milhão em emendas que existem, são do município, e não apareciam em lugar
+    nenhum. Hospital filantrópico não aparece em obra do SISMOB nem em proposta
+    do PAC, então as três fontes antigas nunca o alcançariam.
+
+    ⚠️ E O CADASTRO VEM PRIMEIRO na ordem: se o mesmo CNPJ estiver em duas
+    fontes, fica o nome que uma PESSOA escreveu, e não o rótulo que a API de
+    obras usa.
+
+    ⚠️ A saída fácil era a proibida — casar o NOME do município no dump de
+    proponentes. É a regra que o dono cravou em 04/09/2026 (379 obras da UFSM em
+    Santa Maria). O CNPJ tem de ter ORIGEM, não dedução."""
+    for fonte in ("municipios", "municipio_entidades", "sismob_obras",
+                  "transferegov_pac"):
+        assert fonte in _codigo_de_alvos(), f"{fonte} deixou de ser fonte de CNPJ"
+    assert re.findall(r'""", "(\w+)"', _codigo_de_alvos())[0] == "entidade", (
+        "o cadastro explícito tem de ser consultado ANTES do garimpo")
+
+
+def test_alvos_nao_casa_municipio_por_nome_em_lugar_nenhum():
+    """⚠️ A GUARDA DA REGRA DO DONO, no CÓDIGO da função (a docstring dela fala
+    de `siconv_proponentes` justamente para dizer por que ele NÃO é usado —
+    testar o arquivo inteiro reprovaria a explicação junto com o defeito).
+
+    Nenhuma das quatro fontes pode juntar por nome, nem a de proponentes do
+    dump, que seria o atalho óbvio para achar o hospital."""
+    codigo = _codigo_de_alvos()
+    assert "proponentes" not in codigo.lower()
+    assert "MUNICIPIO_PROPONENTE" not in codigo
+    assert "ILIKE" not in codigo.upper()
