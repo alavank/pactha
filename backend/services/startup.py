@@ -433,6 +433,19 @@ MIGRATION_FILES = [
     # abortou inteira por UM caractere ("Projeto de Investimento em
     # Infraestrutura" = 41, coluna = 40).
     "add_obrasgov_taxonomias_text.sql",
+    # Emendas parlamentares FEDERAIS: carteira (dump SICONV, casada por CNPJ do
+    # beneficiario) + execucao (agregado e documentos da CGU). Depende SO de
+    # `municipios` — a unica FK —, que vem do create_all dos modelos, ou seja
+    # ANTES desta lista. Nenhuma outra migration cria tabela que esta altere:
+    # ela e 100% CREATE, entao nao tem restricao de ordem para cima.
+    #
+    # ⚠️ ABAIXO de `drop_lean_tables.sql` (la em cima), que derruba `emendas`,
+    # `convenios_federal`, `emendas_camara`, `sancoes_ceis`, `programas_federais`
+    # e `oportunidades` a cada boot. Os quatro nomes novos NAO estao naquela
+    # lista, e `tests/test_emendas_federais_migration.py` crava isso — o dia em
+    # que alguem acrescentar `emendas_federais%` la, o sintoma seria "a tabela
+    # esvaziou sozinha" e ninguem iria olhar para um arquivo de 2026-05.
+    "add_emendas_federais.sql",
     # --- Incremento «permissao por tela» (05/09/2026) ----------------------
     # Cadastro: cargo na organizacao e WhatsApp. Duas colunas opcionais em
     # `users`; nao dependem de nada e nao concedem nada.

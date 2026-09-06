@@ -95,7 +95,51 @@ SIGCON_CONCURRENCY=1 SIGCON_STALE_MINUTES=360 flock -n /tmp/queue-sigcon.lock \
 flock -n /tmp/painel-alertas.lock timeout -k 30 900 \
   python -u ingestion/run_painel_alertas_cron.py \
   || echo "[aviso] painel-alertas rc=$? (1=ja rodando, 124=timeout)"
+
+# portal-transparencia (emendas parlamentares federais) — 06/09/2026
+flock -n /tmp/portal_transparencia.lock timeout -k 30 1520 \
+  python -u ingestion/portal_transparencia.py \
+  || echo "[aviso] portal-transparencia rc=$? (1=ja rodando, 124=timeout)"
 ```
+
+### portal-transparencia — a fonte nova (emendas federais)
+
+**Task PROPRIA, e nao pendurada no `run_all()` dos dados abertos.** O perfil da fonte
+convida (dado aberto, leve, idempotente, auto-limitada), mas [`INFRA.md`](../INFRA.md) §5
+e explicito: **nos dois tenants do RS nao ha `sigcon`** — e e ele que chama o
+`run_dadosabertos_cron.run_all()`. Nova Palma e Santa Maria nunca coletariam, e Nova
+Palma e justamente um dos dois municipios onde a chave da CGU foi ligada. Some-se o
+desconto do `SIGCON_BUDGET_SECONDS` e o precedente do PR #259 (fonte coletando 2x/dia).
+
+**Lock proprio** (`/tmp/portal_transparencia.lock`) e nao o `/tmp/scraper.lock`
+compartilhado: e `httpx` puro, sem login e sem navegador, entao nao disputa a fila do
+Chromium. Mesmo argumento do `simec-termos` e do `obrasgov`.
+
+**Margens** (regra de ouro do INFRA.md): orcamento interno `PT_ORCAMENTO_S=1400` →
+`timeout -k 30 **1520**` → coluna `timeout` da Scheduled Task = **1640** (interno + 120).
+Mexer num sem o outro faz o Coolify matar primeiro e **descartar o stdout** — a task
+nunca teria logado nada em tenant nenhum, que foi o que aconteceu em 17/08.
+
+**Escada (UTC), passo de 30 min:** freitas `35 3 * * *` · trust `5 4 * * *` ·
+montesiao `35 4 * * *` · santamaria `5 5 * * *` · **novapalma `35 5 * * *`**.
+
+- Tudo dentro de **03:00–05:59 UTC = 00:00–02:59 BRT**, que e a janela de **700 req/min**
+  da CGU (fora dela sao 400).
+- ⚠️ O passo de 30 min e **maior que o orcamento de 23 min** de proposito: a cota da CGU
+  e **por CHAVE**, e a chave e a mesma nos tenants que a tem. Dois workers nunca podem
+  bater no mesmo token ao mesmo tempo.
+- Os minutos `:35`/`:05` evitam o `transferegov-lote` (`:00`), o `sigcon` (`:25`) e o
+  `cagec` (`:50-58`).
+
+⚠️ **Antes de criar, confira a coluna VERTICAL de cada worker**
+(`GET /applications/<worker_uuid>/scheduled-tasks`, que e a fonte de verdade — nao este
+arquivo). A escada do `obrasgov` foi desenhada *entre tenants* e ninguem a conferiu
+contra as tasks `03:xx` que cada worker ja tinha; o freitas nasceu no mesmo minuto do
+`transferegov-lote`.
+
+⚠️ **A chave (`PORTAL_TRANSPARENCIA_API_KEY`) vai no WORKER**, nao na API, e so em
+`novapalma-rs` e `montesiao-mg`. Sem ela a task ainda vale a pena: a **carteira** de
+emendas sai do dump aberto e roda nos cinco.
 
 - `run_sigcon_cron.py` já roda também as fontes de **dados abertos**
   (`run_dadosabertos_cron.run_all()`: CAUC, Acordo FES, SISMOB e SIMEC-PAR) e o

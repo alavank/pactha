@@ -1,7 +1,7 @@
 # PACTHA — Sistema de Monitoramento de Convenios
 
 Plataforma de monitoramento de convenios, repasses e emendas para municipios e
-assessorias — **21 fontes oficiais** (federais + estaduais de MG/ES/GO/RS), coletadas
+assessorias — **22 fontes oficiais** (federais + estaduais de MG/ES/GO/RS), coletadas
 na cadencia real de cada uma, com selo "atualizado em" nas telas e vigilancia de
 frescor por municipio.
 
@@ -62,13 +62,16 @@ e Nova Palma (01/09/2026) nasceram do zero, e a segunda expos um bug de ORDEM da
 - **Scraping**: httpx + Playwright (Chromium) + curl_cffi
 - **Deploy**: Coolify (Docker) na **AWS Lightsail**
 
-## Fontes de dados (21, cadencia propria por fonte)
+## Fontes de dados (22, cadencia propria por fonte)
 
 **Federais:** TransfereGov (portal Discricionarias + dumps SICONV/Novo PAC em
 `api-publica.transferegov.gestao.gov.br`), radar de captacao (`siconv_programa.zip` — a
 unica tela que olha para FRENTE, com janela de proposta ainda aberta), FNS (pagamentos D-1),
 InvestSUS/ConsultaFNS (fundo a fundo por bloco), CAUC/STN, SISMOB, Obras.gov.br/CIPI,
-SIMEC/PAR, SICONFI/Tesouro (contas entregues + CAPAG).
+SIMEC/PAR, SICONFI/Tesouro (contas entregues + CAPAG), Portal da Transparencia/CGU
+(emendas parlamentares federais: a carteira sai do dump `siconv_emenda.zip` casada pelo
+CNPJ do beneficiario — e por isso alcanca as ~45% que nao viraram proposta e eram
+invisiveis —, e a execucao empenhado/liquidado/pago vem da API com `chave-api-dados`).
 **Estaduais:** SIGCON-MG (portal logado, credencial por municipio no Cofre) + dump
 `dados.mg.gov.br`, CAGEC-MG, Acordo FES (SES-MG), GConv-ES, Transf. Voluntarias GO,
 COFIN/SES-GO, TCM-GO, TCE-RS/LicitaCon, Consulta Popular/COREDEs (RS), diarios oficiais

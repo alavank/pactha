@@ -11,7 +11,7 @@
 
 ## 1. O QUE É ISTO (em 30 segundos)
 
-**PACTHA** = sistema de **monitoramento de convênios e transferências governamentais** para municípios e assessorias (MG/ES/GO/RS). Módulos: SIGCON-MG (convênios estaduais), TransfereGov, Emendas, Parlamentares, CAUC, Acordo FES, FNS, SIMEC/PAR, **Obras** (SISMOB + Obras.gov.br/CIPI), IA (Claude), DOU-MG, Relatório de Monitoramento (RM), Documentos, Cofre de Senhas (AES-256), Telegram, extensão Chrome de captura gov.br, Painel de Indicadores (BI, nos 5 tenants) com Modo Tela/links públicos, selos de frescor por tela e watchdog de coleta. São **21 fontes oficiais** (o `CLAUDE.md` mantém a contagem em dia).
+**PACTHA** = sistema de **monitoramento de convênios e transferências governamentais** para municípios e assessorias (MG/ES/GO/RS). Módulos: SIGCON-MG (convênios estaduais), TransfereGov, Emendas, Parlamentares, CAUC, Acordo FES, FNS, SIMEC/PAR, **Obras** (SISMOB + Obras.gov.br/CIPI), IA (Claude), DOU-MG, Relatório de Monitoramento (RM), Documentos, Cofre de Senhas (AES-256), Telegram, extensão Chrome de captura gov.br, Painel de Indicadores (BI, nos 5 tenants) com Modo Tela/links públicos, selos de frescor por tela e watchdog de coleta. São **22 fontes oficiais** (o `CLAUDE.md` mantém a contagem em dia).
 
 - **Frontend:** Next.js 16 (App Router) + Tailwind v4 + daisyUI + shadcn. Pasta `frontend/`.
 - **Painel (pasta `painel/`):** DEPRECADO — o BI virou módulo do frontend principal (`/dashboard` + `/tela`). Ver `painel/DEPRECADO.md`.
@@ -362,6 +362,66 @@ na tela pelo dono — se um dia o módulo ganhar teste de regressão visual, é 
 
 ---
 
+## 1.9. A SESSÃO DE 06/09/2026 EM 60 SEGUNDOS (emendas parlamentares FEDERAIS)
+
+O dono trouxe um levantamento da API do Portal da Transparência (CGU) e o token dele. A
+fonte já tinha scaffold **deliberadamente inerte** desde 03/09 esperando duas coisas: a
+chave e a decisão do que gravar. As duas chegaram.
+
+**O que o levantamento errava, e foi medido contra o Swagger (`/v3/api-docs`, 106 endpoints):**
+o `ConvenioDTO` **não tem campo de emenda** — o vínculo que a CGU anunciou em nov/2024 está
+na *tela* do portal, não na API. E existe uma classe de **APIs restritas a 180 req/min**,
+com suspensão do token por 8h, que o levantamento não mencionava.
+
+**⭐ O achado que mudou a conta, e ele não é da API.** O dump aberto `siconv_emenda.zip`
+(8,3 MB) tem `BENEFICIARIO_EMENDA` = **CNPJ de 14 dígitos** em 298.107 das 298.114 linhas.
+Casando com o CNPJ que o `siconfi.py` já grava em `municipios.cnpj` — conferido ao vivo
+contra a API de entes do Tesouro, **bate exatamente nos três municípios testados** — sai a
+carteira inteira, sem chave nenhuma:
+
+| | Emendas | Valor | Parlamentares |
+|---|---|---|---|
+| Nova Palma/RS | 44 | R$ 13,68 mi | 17 (Heitor Schuch lidera, 14 emendas) |
+| Monte Sião/MG | 33 | R$ 12,24 mi | 18 (Júlio Delgado lidera, 11) |
+
+E o número que justificou o trabalho: **45% dessas emendas têm `ID_PROPOSTA` vazio**. Todo
+caminho que o produto usava para chegar em emenda federal passava por proposta — quase
+metade da carteira era invisível.
+
+**O desenho, em duas fases:** a **carteira** (dump aberto, por CNPJ) roda nos cinco tenants
+e é *commitada antes* da **execução** (CGU, com chave), que só roda em `novapalma-rs` e
+`montesiao-mg`. É isso que faz a tela nascer útil onde a chave não está.
+
+**Três armadilhas que a medição encontrou e que viraram teste:**
+
+1. **`VALOR_REPASSE_EMENDA` vem vazio em 38% das linhas.** Sem o fallback para
+   `VALOR_REPASSE_PROPOSTA_EMENDA`, Nova Palma sai como R$ 9,23 mi em vez de R$ 13,68 mi —
+   um terço do dinheiro some, e some *plausivelmente*.
+2. **O agregado da CGU é NACIONAL**, da emenda inteira e não da fatia do município. Por
+   isso `emendas_federais_cgu` **não tem `municipio_id`**: sem a coluna, o
+   `SUM(valor_pago) GROUP BY municipio_id` que inflaria o número é impossível de escrever
+   por acidente. A guarda é o schema, não a disciplina de quem escreve a query.
+3. **`NR_EMENDA` vem vazio (7.059 linhas), com 4 dígitos (444) e com 9 (1).** Um `zfill`
+   produziria um código **válido e de outra emenda** — número plausível e errado não tem
+   como ser percebido depois. A função devolve `None` e a linha continua na carteira.
+
+**⚠️ A hipótese que ainda não foi confirmada contra a CGU:** o `codigoEmenda` de 12 dígitos
+é derivado (ano do programa + `NR_EMENDA`). O `--verificar` usa como **grupo de controle** os
+códigos que o próprio Governo já formatou em `transferegov_te.emenda` — se eles responderem
+e os derivados não, o problema é a derivação; se nem eles, é a chave ou o endpoint, e não se
+mexe na fórmula. O **plano B já está implementado** (`PT_ESTRATEGIA=ano_numero`): `/emendas`
+aceita `ano` + `numeroEmenda`, não depende da hipótese, custa a mesma requisição e devolve o
+código verdadeiro — que é gravado em `codigo_confirmado` e nunca mais derivado.
+
+**Cron:** Scheduled Task **própria**, e não `run_dadosabertos_cron.run_all()` — porque
+[`INFRA.md`](INFRA.md) §5 diz que **nos dois tenants do RS não há `sigcon`**, e é ele que
+chama aquele laço. Nova Palma, justamente um dos dois de teste, nunca coletaria.
+
+**Estado:** PR 1 (coleta) pronto — migration com 4 tabelas, coletor, watchdog, monitor de
+frescor e 46 testes; suíte inteira verde (2.514). **A tela ainda não existe** — é o PR 2.
+
+---
+
 ## 2. ESTADO ATUAL (2026-09-04)
 
 **São CINCO tenants em produção**, todos do mesmo código, cada um com containers e banco próprios:
@@ -515,6 +575,19 @@ Faltam **três**: `freitas`, `trust` e `novapalma-rs` ainda respondem só por `*
 
 ### 6.2 Secrets opcionais por tenant (features ficam OFF até setar)
 `ANTHROPIC_API_KEY` (módulo IA — hoje só `montesiao-mg-api` tem). Setar via `PATCH /applications/<api_uuid>/envs/bulk` + redeploy. (`TELEGRAM_BOT_TOKEN` e `TELEGRAM_WEBHOOK_SECRET` saíram desta lista em 05/09/2026 com o módulo — nunca foram setados em tenant nenhum.)
+
+**`PORTAL_TRANSPARENCIA_API_KEY`** (emendas federais — a EXECUÇÃO). Vai no **worker**,
+não na API: quem consulta a CGU é o coletor. Decisão de 06/09/2026: **só em
+`novapalma-rs` e `montesiao-mg`**, porque a chave fica vinculada ao **CPF de quem a
+cadastrou** e com cinco tenants a chave de uma pessoa responderia pelas consultas de
+todas as prefeituras (ver `docs/fontes-rs/CREDENCIAIS.md` §1).
+⚠️ **A CARTEIRA de emendas NÃO depende dela** — sai do dump aberto `siconv_emenda.zip`
+casado por CNPJ, e roda nos cinco. Sem a chave a rodada sai `success` com a nota
+"execucao CGU nao coletada", e a tela diz isso em vez de mostrar R$ 0,00.
+⚠️ Env nova só vale **depois de reiniciar o container**, e cada aplicação no Coolify
+carrega **duas** entradas por env (produção e preview) — é a mesma armadilha do
+`AUTHZ_MODO`. Confira no **log da rodada**, não no painel.
+Desligar = apagar a env + restart. Volta ao estado honesto, sem deploy.
 
 Credencial do **SIGCON-MG** (uma por município, no Cofre com `sistema='SIGCON-MG'` /
 `automation_key='sigcon'`): sem ela o `sigcon` roda e não traz nada — e agora grava

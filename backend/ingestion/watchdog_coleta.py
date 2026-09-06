@@ -107,11 +107,25 @@ FRESCOR_HORAS_NACIONAL = {
     # ingest): a varredura e cara — uma pagina a cada 8s por causa do rate
     # limit — e o CIPI muda devagar. 54h = dois dias + folga.
     "obrasgov": 54,
-    # ⚠️ `portal_transparencia` NAO ENTRA AQUI de proposito. Ele e um scaffold
-    # inerte (sem PORTAL_TRANSPARENCIA_API_KEY nao coleta nada) e nao tem
-    # Scheduled Task. Por-lo no catalogo faria o vigia cobrar frescor de uma
-    # fonte que ninguem ligou — que e exatamente a armadilha do `SISMOB_ENABLED=0`
-    # documentada no INFRA.md. Entra junto com a decisao de ligar.
+    # Portal da Transparencia / CGU — emendas parlamentares FEDERAIS (carteira do
+    # dump SICONV por CNPJ + execucao da CGU). ⭐ ENTROU EM 06/09/2026, junto com
+    # a decisao de ligar; ate aqui este bloco dizia "NAO ENTRA AQUI de proposito"
+    # porque a fonte era um scaffold inerte sem Scheduled Task. Agora tem task
+    # propria (escada 03:35 -> 05:35 UTC, lock /tmp/portal_transparencia.lock),
+    # entao cobrar frescor dela deixou de ser cobrar de fonte que ninguem ligou.
+    #
+    # 30h = 1x/dia + folga, o mesmo numero das outras diarias.
+    #
+    # ⚠️ SEM `PORTAL_TRANSPARENCIA_API_KEY` A FASE 2 (execucao) CONTINUA INERTE,
+    # e isso NAO faz esta chave alarmar: a FASE 1 (carteira) e dado ABERTO e roda
+    # nos cinco, gravando `success` com a nota de que a execucao nao foi
+    # coletada. Fonte parcialmente desligada por decisao nao e fonte quebrada —
+    # e e por isso que a carteira ficou ligada por padrao: com ela desligada, a
+    # linha nasceria "Fresco" com zero registros, que e a pior combinacao.
+    #
+    # ⚠️ NACIONAL, nunca no mapa por UF: a carteira sai do CNPJ do municipio, sem
+    # recorte de estado. Emenda federal existe nos cinco tenants.
+    "portal_transparencia": 30,
 }
 
 # Fontes que so existem para certas UFs. A chave e a UF do TENANT (ha municipio

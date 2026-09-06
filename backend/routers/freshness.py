@@ -117,6 +117,24 @@ _SOURCES = [
     ("Obras.gov.br — Obras federais",
      "SELECT max(atualizado_em), count(*) FROM obrasgov_projetos",
      "obrasgov"),
+    # Emendas parlamentares FEDERAIS (carteira do dump SICONV + execucao da CGU).
+    # ⚠️ ENTROU NO MESMO COMMIT DO COLETOR, e não depois — a regra escrita lá em
+    # cima, que custou nove dias de CAGEC quebrado sem ninguém ver.
+    # NACIONAL, então lista FIXA: emenda federal existe nos cinco tenants.
+    #
+    # ⚠️ CONTA A CARTEIRA, E NÃO A EXECUÇÃO, e a escolha é deliberada.
+    # `emendas_federais_carteira` é a única das quatro tabelas que existe SEM a
+    # chave da CGU (sai do dump aberto do TransfereGov, casado por CNPJ). Contar
+    # `emendas_federais_cgu` faria a linha nascer zerada e parecer coletor
+    # quebrado exatamente nos três tenants onde a chave está desligada — que é o
+    # estado deliberado de hoje, e não um defeito.
+    #
+    # ⚠️ E o carimbo é `visto_em`, não uma data de alteração: a emenda de 2011
+    # não muda mais, então um `max(atualizado_em)` congelaria e a linha
+    # envelheceria sozinha com o coletor rodando todo dia.
+    ("Portal da Transparência — Emendas federais",
+     "SELECT max(visto_em), count(*) FROM emendas_federais_carteira",
+     "portal_transparencia"),
 ]
 
 # ⚠️ FONTES QUE SO EXISTEM PARA CERTAS UFs, e por isso nao podem morar na lista
