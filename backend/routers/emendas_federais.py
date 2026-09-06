@@ -361,22 +361,44 @@ async def documentos(
         """), {"c": codigo_emenda, "m": municipio_id})
         linhas = r.fetchall()
         cons = await db.execute(text(
-            "SELECT consultado_em FROM emendas_federais_consulta "
-            "WHERE codigo_emenda = :c"), {"c": codigo_emenda})
+            "SELECT q.consultado_em, "
+            "       (SELECT max(c.tipo_parlamentar) "
+            "          FROM emendas_federais_carteira c "
+            "         WHERE c.codigo_emenda = q.codigo_emenda "
+            "           AND c.municipio_id = :m) "
+            "  FROM emendas_federais_consulta q "
+            " WHERE q.codigo_emenda = :c"),
+            {"c": codigo_emenda, "m": municipio_id})
         crow = cons.first()
     except Exception:
         await db.rollback()
-        return {"consultado_em": None, "documentos": [],
+        return {"consultado_em": None, "documentos": [], "colegiado": False,
                 "motivo": "A execução desta emenda ainda não foi consultada no "
                           "Portal da Transparência."}
     consultado_em = crow[0].isoformat() if (crow and crow[0]) else None
+    tipo = crow[1] if crow else None
     docs = [{"data": d[0].isoformat() if d[0] else None, "fase": d[1],
              "codigo_documento": d[2], "documento_resumido": d[3],
              "especie_tipo": d[4]} for d in linhas]
+    # ⚠️ GAVETA VAZIA TEM TRÊS CAUSAS, e a terceira nasceu de uma medição:
+    # emenda de COLEGIADO é nacional e tem 900+ documentos, quase nenhum do
+    # município — em Monte Sião, 4 emendas de comissão davam 3.600 documentos
+    # contra 15 das 27 individuais. A linha do tempo delas não é coletada de
+    # propósito (ver TIPOS_COLEGIADO no coletor), e a tela DIZ isso: gaveta
+    # vazia sem explicação seria lida como "não houve execução".
+    colegiado = (tipo or "").strip().upper() in ("COMISSAO", "BANCADA",
+                                                 "RELATOR GERAL")
     motivo = ""
     if not docs:
-        motivo = ("A CGU não publica documento de execução para esta emenda."
-                  if consultado_em else
-                  "A execução desta emenda ainda não foi consultada no Portal "
-                  "da Transparência.")
-    return {"consultado_em": consultado_em, "documentos": docs, "motivo": motivo}
+        if colegiado:
+            motivo = ("Emenda de colegiado (bancada, comissão ou relator-geral): "
+                      "a execução dela é nacional e atende centenas de "
+                      "municípios, então a linha do tempo documento a documento "
+                      "não é coletada. Os valores acima são da emenda inteira.")
+        elif consultado_em:
+            motivo = "A CGU não publica documento de execução para esta emenda."
+        else:
+            motivo = ("A execução desta emenda ainda não foi consultada no "
+                      "Portal da Transparência.")
+    return {"consultado_em": consultado_em, "documentos": docs,
+            "motivo": motivo, "colegiado": colegiado}

@@ -597,3 +597,35 @@ def test_a_fila_da_te_e_filtrada_por_cnpj():
         "o resgate da TE sem CNPJ sumiu — emenda legítima seria perdida")
     # A assinatura tem de aceitar a lista, senão o filtro nunca recebe nada.
     assert "cnpjs" in inspect.signature(pt.semear_fila).parameters
+
+def test_emenda_de_colegiado_nao_busca_linha_do_tempo():
+    """⚠️⚠️ A MEDIÇÃO QUE MOTIVOU, em Monte Sião, primeira rodada com chave:
+
+        COMISSAO      4 emendas -> 3.600 documentos (TODAS truncadas no teto)
+        INDIVIDUAL   27 emendas ->    15 documentos
+
+    Emenda de comissão/bancada é NACIONAL: atende o país inteiro, e os 900+
+    documentos dela são de outros municípios. Buscar isso custou 240
+    requisições — quase toda a cota da noite — para gravar 3.600 linhas que
+    ninguém vai ler e que não dizem nada sobre o município.
+
+    ⚠️ O AGREGADO continua sendo buscado (1 requisição, e é ele que alimenta os
+    valores da tela). O que se pula é só a linha do tempo. E a tela DIZ isso na
+    gaveta — vazio sem explicação seria lido como «não houve execução»."""
+    import inspect
+
+    assert set(pt.TIPOS_COLEGIADO) == {"COMISSAO", "BANCADA", "RELATOR GERAL"}
+    src = inspect.getsource(pt.execucao)
+    assert "colegiado" in src and "not colegiado" in src, (
+        "a linha do tempo voltou a ser buscada para emenda de colegiado")
+    # O agregado NÃO pode ter sido pulado junto — é ele que dá os valores.
+    assert "_consulta_um(client, codigo, ano, estrategia, orc)" in src
+
+
+def test_a_fila_traz_o_tipo_para_a_decisao_de_colegiado():
+    """Sem o tipo na fila, a decisão acima seria impossível — e o coletor
+    voltaria a gastar a noite em documento de emenda nacional."""
+    import inspect
+
+    src = inspect.getsource(pt.fila)
+    assert "tipo_parlamentar" in src

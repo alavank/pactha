@@ -450,6 +450,24 @@ def agregado_por_ano_numero(client: httpx.Client, ano: int, numero: str,
 # interessam. 60 paginas = ~900 documentos, tres vezes o pior caso medido.
 TETO_DOCUMENTOS = int(os.getenv("PT_TETO_DOCUMENTOS", "60") or "60")
 
+# ⚠️⚠️ EMENDA DE COLEGIADO NAO TEM LINHA DO TEMPO — e a medicao e brutal.
+# Monte Siao, 06/09/2026, primeira rodada com chave:
+#
+#     COMISSAO      4 emendas -> 3.600 documentos (TODAS truncadas no teto)
+#     INDIVIDUAL   27 emendas ->    15 documentos
+#
+# Emenda de comissao/bancada e NACIONAL: atende o pais inteiro, e os 900+
+# documentos dela sao de outros municipios. Buscar isso custou 240 requisicoes
+# — quase toda a cota da noite — para gravar 3.600 linhas que ninguem vai ler e
+# que nao dizem nada sobre o municipio.
+#
+# O AGREGADO dessas emendas continua sendo buscado (1 requisicao, e e ele que
+# alimenta os valores da tela). O que se pula e so a linha do tempo.
+#
+# ⚠️ E a tela DIZ isso na gaveta, em vez de mostrar vazio: gaveta vazia sem
+# explicacao seria lida como "nao houve execucao".
+TIPOS_COLEGIADO = ("COMISSAO", "BANCADA", "RELATOR GERAL")
+
 
 def documentos_da_emenda(client: httpx.Client, codigo: str,
                          orcamento: "Orcamento | None" = None) -> tuple[list[dict], bool]:
@@ -769,7 +787,10 @@ def fila(cur, limite: int) -> list[tuple]:
     duas requisicoes por noite, para sempre.
     """
     cur.execute("""
-        SELECT codigo_emenda, ano, origem FROM emendas_federais_consulta
+        SELECT q.codigo_emenda, q.ano, q.origem,
+               (SELECT max(c.tipo_parlamentar) FROM emendas_federais_carteira c
+                 WHERE c.codigo_emenda = q.codigo_emenda) AS tipo
+          FROM emendas_federais_consulta q
          WHERE consultado_em IS NULL
             OR (ano >= EXTRACT(year FROM now())::int - 1
                 AND consultado_em < now() - INTERVAL '20 hours')
@@ -830,7 +851,8 @@ def execucao(cur, conn, client: httpx.Client, orc: Orcamento,
              dry: bool = False) -> dict:
     """FASE 2 — pergunta a CGU sobre cada codigo da fila."""
     rel = {"consultados": 0, "achou": 0, "documentos": 0, "pendentes": 0,
-           "bloqueado": False, "estrategia": ESTRATEGIA, "truncados": []}
+           "bloqueado": False, "estrategia": ESTRATEGIA, "truncados": [],
+           "colegiado_sem_documentos": 0}
     semeados = semear_fila(cur, list(alvos(cur).keys()))
     if not dry:
         conn.commit()
@@ -872,7 +894,7 @@ def execucao(cur, conn, client: httpx.Client, orc: Orcamento,
     lote_cgu: list[dict] = []
     lote_doc: list[dict] = []
     marcas: list[tuple] = []
-    for codigo, ano, _origem in pendentes:
+    for codigo, ano, _origem, tipo in pendentes:
         if not orc.pode():
             rel["pendentes"] = len(pendentes) - rel["consultados"]
             break
@@ -894,7 +916,10 @@ def execucao(cur, conn, client: httpx.Client, orc: Orcamento,
                 if not linha["codigo_emenda"]:
                     linha["codigo_emenda"] = codigo
                 lote_cgu.append(linha)
-            if orc.pode():
+            colegiado = (tipo or "").strip().upper() in TIPOS_COLEGIADO
+            if colegiado:
+                rel["colegiado_sem_documentos"] += 1
+            if orc.pode() and not colegiado:
                 try:
                     brutos, completo = documentos_da_emenda(client, codigo, orc)
                     docs = [d for d in (linha_documento(codigo, b) for b in brutos) if d]
@@ -1054,9 +1079,11 @@ def ingest(dry: bool = False) -> int:
             with httpx.Client(follow_redirects=True) as client:
                 ex = execucao(cur, conn, client, orc, dry)
             log.info("execucao: %d consultado(s), %d encontrado(s), %d "
-                     "documento(s), estrategia=%s, %d requisicao(oes)",
+                     "documento(s), estrategia=%s, %d requisicao(oes); "
+                     "%d de colegiado sem linha do tempo (por desenho)",
                      ex["consultados"], ex["achou"], ex["documentos"],
-                     ex["estrategia"], orc.gastas)
+                     ex["estrategia"], orc.gastas,
+                     ex["colegiado_sem_documentos"])
             if ex.get("veto"):
                 status, nota = "partial", ex["veto"] + " — carteira preservada"
             elif ex["bloqueado"]:
