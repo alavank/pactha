@@ -118,3 +118,21 @@ def test_a_execucao_e_contada_por_consulta_e_nunca_por_valor():
     nenhuma tenha valor — a função não olha valor nenhum, e não pode olhar."""
     assert _c(n_emendas=10, n_execucao_consultada=10) == "ok"
     assert _c(n_emendas=10, n_execucao_consultada=0) == "parcial"
+
+def test_a_frase_de_sem_chave_nao_afirma_sobre_configuracao():
+    """⚠️ MEDIDO EM 06/09/2026: `fonte_ligada` lia a env `PORTAL_TRANSPARENCIA_API_KEY`
+    **na API** — mas ela mora no WORKER, outro container e outro processo. Nova
+    Palma estava com 64 de 67 emendas já consultadas e a tela dizia «a chave não
+    está configurada neste ambiente», escondendo toda a execução atrás de «—».
+
+    O conserto foi perguntar ao DADO (`consultadas > 0`). E a frase teve de mudar
+    junto: ela não pode mais afirmar que a chave não existe, porque quem a lê não
+    tem como saber isso. Ela afirma o FATO — a execução não foi consultada — e
+    explica a causa provável sem cravar."""
+    frase = FRASE_EMENDAS_FEDERAIS["sem_chave"]
+    assert "ainda não foi consultada" in frase
+    assert "não configurada neste ambiente" not in frase, (
+        "a frase voltou a afirmar sobre a configuração de um processo que a API "
+        "não enxerga")
+    # E continua impedindo a leitura errada do «—».
+    assert "não é R$ 0" in frase
