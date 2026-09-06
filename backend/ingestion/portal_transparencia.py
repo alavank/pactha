@@ -443,11 +443,23 @@ def agregado_por_ano_numero(client: httpx.Client, ano: int, numero: str,
     return itens
 
 
+# ⚠️ MEDIDO NA CARGA REAL, e o primeiro valor estava errado. Com `teto=20` a
+# rodada de Nova Palma truncou QUATRO emendas: a maior tem **300 documentos**
+# (2.810 no total das 44), e 300/15 por pagina = exatamente 20 paginas. O teto
+# batia no limite e cortava justamente as emendas mais executadas — as que mais
+# interessam. 60 paginas = ~900 documentos, tres vezes o pior caso medido.
+TETO_DOCUMENTOS = int(os.getenv("PT_TETO_DOCUMENTOS", "60") or "60")
+
+
 def documentos_da_emenda(client: httpx.Client, codigo: str,
                          orcamento: "Orcamento | None" = None) -> tuple[list[dict], bool]:
-    """Empenho, liquidacao e pagamento de UMA emenda — sem valor (o DTO nao traz)."""
+    """Empenho, liquidacao e pagamento de UMA emenda — sem valor (o DTO nao traz).
+
+    Devolve `(itens, completo)`. ⚠️ QUEM CHAMA TEM DE OLHAR O `completo`: uma
+    emenda truncada e "pagamentos faltando" na tela, e sem isso a rodada sairia
+    `success` por cima de dado incompleto."""
     return paginar(client, f"/emendas/documentos/{codigo}", {},
-                   teto_paginas=20, orcamento=orcamento)
+                   teto_paginas=TETO_DOCUMENTOS, orcamento=orcamento)
 
 
 # ---------------------------------------------------------------------------
@@ -794,7 +806,7 @@ def execucao(cur, conn, client: httpx.Client, orc: Orcamento,
              dry: bool = False) -> dict:
     """FASE 2 — pergunta a CGU sobre cada codigo da fila."""
     rel = {"consultados": 0, "achou": 0, "documentos": 0, "pendentes": 0,
-           "bloqueado": False, "estrategia": ESTRATEGIA}
+           "bloqueado": False, "estrategia": ESTRATEGIA, "truncados": []}
     semeados = semear_fila(cur)
     if not dry:
         conn.commit()
@@ -860,10 +872,17 @@ def execucao(cur, conn, client: httpx.Client, orc: Orcamento,
                 lote_cgu.append(linha)
             if orc.pode():
                 try:
-                    brutos, _ = documentos_da_emenda(client, codigo, orc)
+                    brutos, completo = documentos_da_emenda(client, codigo, orc)
                     docs = [d for d in (linha_documento(codigo, b) for b in brutos) if d]
                     lote_doc.extend(docs)
                     rel["documentos"] += len(docs)
+                    # ⚠️ TRUNCOU = A RODADA E `partial`, e nao `success`. Sem
+                    # isto, uma emenda cortada no teto vira "pagamentos
+                    # faltando" com luz verde no monitor — que e o modo de falha
+                    # que este repo mais paga caro. Medido: com o teto de 20,
+                    # QUATRO emendas de Nova Palma truncaram em silencio.
+                    if not completo:
+                        rel["truncados"].append(codigo)
                 except Bloqueado:
                     rel["bloqueado"] = True
                     break
@@ -1019,6 +1038,16 @@ def ingest(dry: bool = False) -> int:
             elif ex["bloqueado"]:
                 status = "partial"
                 nota = "429 da CGU — fase de execucao interrompida SEM retentativa"
+            elif ex["truncados"]:
+                # ⚠️ `partial`, e a lista vai na nota: emenda truncada e
+                # PAGAMENTO FALTANDO na tela. Deixar passar como `success` seria
+                # exatamente o "coleta truncada em silencio" que o proprio
+                # `paginar` existe para impedir.
+                status = "partial"
+                nota = (f"{len(ex['truncados'])} emenda(s) com documentos "
+                        f"TRUNCADOS no teto de {TETO_DOCUMENTOS} paginas: "
+                        + ", ".join(ex["truncados"][:5])
+                        + " — suba PT_TETO_DOCUMENTOS")
             elif ex["pendentes"]:
                 # ⚠️ `success`, e nao `partial`: a primeira carga de um tenant
                 # grande leva tres madrugadas e isso NAO e defeito. E o desenho

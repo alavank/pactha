@@ -499,3 +499,74 @@ def test_alvos_nao_casa_municipio_por_nome_em_lugar_nenhum():
     assert "proponentes" not in codigo.lower()
     assert "MUNICIPIO_PROPONENTE" not in codigo
     assert "ILIKE" not in codigo.upper()
+
+# ---------------------------------------------------------------------------
+# Os três defeitos que só a CARGA REAL de 06/09/2026 revelou
+# ---------------------------------------------------------------------------
+def test_o_teto_de_documentos_cobre_o_pior_caso_medido():
+    """⚠️ O PRIMEIRO VALOR ESTAVA ERRADO, e o erro era invisível.
+
+    Com `teto=20`, a rodada de Nova Palma truncou QUATRO emendas. A maior tem
+    **300 documentos** (2.810 no total das 44) e a CGU serve 15 por página —
+    300/15 = exatamente 20. O teto batia no limite e cortava justamente as
+    emendas mais executadas, que são as que mais interessam.
+
+    60 páginas ≈ 900 documentos: três vezes o pior caso medido."""
+    assert pt.TETO_DOCUMENTOS >= 40, (
+        "teto abaixo do pior caso medido (300 documentos = 20 páginas)")
+
+
+def test_documento_truncado_faz_a_rodada_sair_partial():
+    """⚠️⚠️ «PAGAMENTOS FALTANDO COM LUZ VERDE» é o modo de falha que este repo
+    mais paga caro — foi assim que a Freitas passou nove dias com o CAGEC
+    quebrado. Emenda cortada no teto é execução incompleta na tela, e a rodada
+    tem de dizer isso.
+
+    Este teste lê o próprio código de `execucao()`, porque a alternativa seria
+    um dublê de Postgres que o repo não tem."""
+    import inspect
+
+    src = inspect.getsource(pt.execucao)
+    assert 'rel["truncados"].append' in src, (
+        "o `completo` de documentos_da_emenda voltou a ser descartado")
+    ingest = inspect.getsource(pt.ingest)
+    assert 'ex["truncados"]' in ingest and '"partial"' in ingest, (
+        "truncamento tem de virar `partial`, nunca `success`")
+
+
+def test_documentos_da_emenda_devolve_o_par_e_nao_so_a_lista():
+    """A assinatura é `(itens, completo)`. Quem chama precisa poder saber."""
+    c = ClienteFalso([[{"id": 1}], []])
+    itens, completo = pt.documentos_da_emenda(c, "202332980002")
+    assert completo is True and len(itens) == 1
+
+
+def test_texto_de_fonte_externa_nao_tem_largura_na_migration():
+    """⚠️ A CARGA REAL ABORTOU COM `value too long for character varying(20)`.
+
+    O campo era `autor`, que eu declarei estreito supondo ser um CÓDIGO curto (o
+    `3298` de Heitor Schuch). Não é: em emenda de colegiado a CGU manda o NOME
+    no mesmo campo — «COM. DESENV REGIONAL E TURISMO», 30 caracteres. E
+    `tipo_emenda` estava a DOIS caracteres do teto (58 de 60).
+
+    A regra que sai daqui: texto que vem de fonte externa não tem largura.
+    VARCHAR(n) só protege contra o que NÓS escrevemos; contra o que o Governo
+    escreve, ele troca um dado inesperado por uma coleta abortada."""
+    from pathlib import Path
+
+    sql = (Path(__file__).resolve().parents[1] / "migrations"
+           / "add_emendas_federais_texto.sql").read_text(encoding="utf-8")
+    for col in ("autor", "nome_autor", "tipo_emenda", "numero_emenda",
+                "tipo_parlamentar", "parlamentar", "beneficiario_nome",
+                "codigo_documento"):
+        assert re.search(rf"ALTER COLUMN {col} TYPE TEXT", sql), col
+
+
+def test_a_migration_de_texto_esta_depois_da_que_cria_as_tabelas():
+    """Inverter a ordem quebra banco NOVO: o ALTER cairia sobre tabela que ainda
+    não existe, e o runner ENGOLE a falha (migration que falha não derruba o
+    boot)."""
+    from services.startup import MIGRATION_FILES
+
+    assert (MIGRATION_FILES.index("add_emendas_federais_texto.sql")
+            > MIGRATION_FILES.index("add_emendas_federais.sql"))
