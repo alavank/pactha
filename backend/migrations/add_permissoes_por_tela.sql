@@ -229,8 +229,18 @@ WITH marca AS (
        AND COALESCE(u.super_admin, FALSE) = FALSE
        AND NOT EXISTS (SELECT 1 FROM user_permissoes up WHERE up.user_id = u.id)
 )
+-- ⚠️⚠️ A COLUNA DE `permissoes_catalogo` CHAMA-SE `chave`, E NAO `permissao`.
+-- A primeira versao deste bloco escreveu `pc.permissao` — o nome que a coluna
+-- tem em `user_permissoes`, a tabela vizinha, na mesma consulta. O Postgres
+-- respondeu `column pc.permissao does not exist`, e como o arquivo inteiro roda
+-- numa transacao so, AS CINCO PARTES voltaram atras juntas. A API subiu
+-- saudavel, o log registrou uma linha, e ninguem soube por um dia inteiro.
+--
+-- Duas tabelas, dois nomes para a mesma ideia:
+--     permissoes_catalogo.chave       o catalogo (a definicao)
+--     user_permissoes.permissao       a concessao (quem tem)
 INSERT INTO user_permissoes (user_id, permissao, concedido_por)
-SELECT s.id, pc.permissao, NULL
+SELECT s.id, pc.chave, NULL
   FROM marca, sem_caixinha s
   JOIN user_telas ut ON ut.user_id = s.id
   -- A tela de cada permissao esta no PREFIXO da chave: `rm.editar` -> `rm`.
@@ -238,9 +248,9 @@ SELECT s.id, pc.permissao, NULL
   -- `bi.link`) — e as duas sao inertes ou de tela propria, entao a juncao por
   -- prefixo acerta o conjunto inteiro.
   JOIN permissoes_catalogo pc
-    ON pc.permissao LIKE ut.tela || '.%'
-   AND position('.' in substr(pc.permissao, length(ut.tela) + 2)) = 0
- WHERE pc.permissao NOT IN (
+    ON pc.chave LIKE ut.tela || '.%'
+   AND position('.' in substr(pc.chave, length(ut.tela) + 2)) = 0
+ WHERE pc.chave NOT IN (
         'acordofes.exportar', 'bi.exportar', 'bi.tela', 'cauc.exportar',
         'fns.exportar', 'frescor.exportar', 'gestao.exportar',
         'simec.exportar', 'sismob.exportar')
