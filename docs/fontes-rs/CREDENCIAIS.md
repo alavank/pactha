@@ -43,6 +43,11 @@ sem chave nenhuma, nos cinco tenants:
 | Nova Palma/RS (`88488358000156`) | 44 | R$ 13,68 mi | 2009–2026 | 17 |
 | Monte Sião/MG (`22646525000131`) | 33 | R$ 12,24 mi | 2009–2026 | 18 |
 
+⚠️ **Esses números contam a prefeitura E as entidades do município.** A carga real de
+06/09 trouxe só as da prefeitura (Nova Palma: 37 códigos, R$ 12,28 mi), porque o CNPJ do
+Hospital N. S. da Piedade não estava cadastrado. É o que a tabela `municipio_entidades`
+resolve — cadastro explícito, com `origem`, e nunca casamento por nome.
+
 E o número que justificou o trabalho: **45% dessas emendas têm `ID_PROPOSTA`
 vazio**. Todo caminho que o produto usava para chegar em emenda federal passava
 por proposta — quase metade da carteira era invisível.
