@@ -417,8 +417,19 @@ código verdadeiro — que é gravado em `codigo_confirmado` e nunca mais deriva
 [`INFRA.md`](INFRA.md) §5 diz que **nos dois tenants do RS não há `sigcon`**, e é ele que
 chama aquele laço. Nova Palma, justamente um dos dois de teste, nunca coletaria.
 
-**Estado:** PR 1 (coleta) pronto — migration com 4 tabelas, coletor, watchdog, monitor de
-frescor e 46 testes; suíte inteira verde (2.514). **A tela ainda não existe** — é o PR 2.
+**Estado:** dois PRs. **#391 (coleta)** — migration com 4 tabelas, coletor, watchdog,
+monitor de frescor e 46 testes. **PR 2 (tela)** — `/dashboard/emendas-federais` no grupo
+FEDERAIS, com os cinco estados honestos, o bloco «quem destinou recurso ao município»
+e a sétima fonte da tela de Parlamentares (com anti-join para não inflar o Painel do
+prefeito). Suíte em 2.530; `tsc`, `eslint` e `next build` limpos.
+
+⚠️ **Achado colateral registrado, e vale conferir:** `add_tela_obrasgov.sql` e
+`add_tela_investsus.sql` concedem só `user_telas`, e o comentário deles afirma que a
+ação «já herda de convênios». Não herda nos cinco no ar — `permissoes_efetivas()`
+resolve só de `user_permissoes`, e os dois blocos que derivariam a permissão têm guard
+em `migration_backfills` e já dispararam. Quem foi configurado à mão pode estar vendo
+**Obras Federais** e **InvestSUS** no menu e tomando **403**. O backfill das emendas
+federais já nasce corrigido (concede a tela E a ação); os dois antigos são PR próprio.
 
 ---
 

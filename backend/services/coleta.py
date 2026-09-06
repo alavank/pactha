@@ -112,3 +112,102 @@ FRASE_CREDENCIAL = {
                   "O município entra na próxima rodada.",
     "ok": "",
 }
+
+
+# ---------------------------------------------------------------------------
+# EMENDAS FEDERAIS — os cinco estados, e por que a ORDEM das perguntas e a regra
+#
+# "Nenhuma emenda na tela" tem cinco causas e quatro delas NAO sao "este
+# municipio nao tem emenda". Responder a ultima primeiro e como a tela de
+# Convenios passou meses acusando o cliente de nao ter convenio quando o que
+# faltava era senha no Cofre — o defeito que a funcao acima existe para corrigir.
+#
+# ⚠️ E a fonte tem DUAS FASES com dependencias diferentes: a CARTEIRA sai de um
+# dump ABERTO (roda nos cinco tenants) e a EXECUCAO exige a chave da CGU (ligada
+# em dois). Por isso "sem chave" nao e "sem dado": e carteira sem execucao, e a
+# tela precisa dizer exatamente isso.
+# ---------------------------------------------------------------------------
+def classificar_emendas_federais(chave_configurada: bool, houve_coleta: bool,
+                                 tem_cnpj: bool, n_emendas: int,
+                                 n_execucao_consultada: int) -> str:
+    """'sem_cnpj' | 'sem_coleta' | 'sem_emendas' | 'sem_chave' | 'parcial' | 'ok'.
+
+    ⚠️ `sem_cnpj` VEM PRIMEIRO porque e a unica causa ACIONAVEL e a unica em que
+    o numero na tela seria falso por culpa nossa: a emenda e reconhecida pelo
+    CNPJ do beneficiario, entao municipio sem CNPJ cadastrado nao acha NADA — e
+    dizer "nao ha emenda" ali seria acusar a prefeitura de uma ausencia que e
+    do nosso cadastro.
+
+    ⚠️ `n_execucao_consultada` e contado por `consultado_em IS NOT NULL`, e NAO
+    por `valor_empenhado > 0`. Emenda consultada cujo empenho e zero e um FATO da
+    CGU; emenda nao consultada e ausencia NOSSA. Confundir as duas e a unica
+    forma de esta tela mentir com numeros certos.
+
+    ⚠️ Funcao PURA de proposito, como a `classificar_credencial`: nao ha Postgres
+    de teste neste repo, e a REGRA e o que precisa de teste. A consulta fica no
+    chamador."""
+    if not tem_cnpj:
+        return "sem_cnpj"
+    if not houve_coleta:
+        return "sem_coleta"
+    if n_emendas == 0:
+        return "sem_emendas"
+    if not chave_configurada:
+        return "sem_chave"
+    if n_execucao_consultada < n_emendas:
+        return "parcial"
+    return "ok"
+
+
+FRASE_EMENDAS_FEDERAIS = {
+    # (a) SEM CNPJ. A unica das cinco que pede acao de quem opera, e ela diz
+    # qual. Sem isto a tela vazia seria lida como "o municipio nao tem emenda".
+    "sem_cnpj":
+        "Este município ainda não tem CNPJ cadastrado, e é por ele que a emenda "
+        "federal é reconhecida. Rode a coleta do SICONFI (que preenche o CNPJ a "
+        "partir do cadastro de entes do Tesouro) ou cadastre-o no município.",
+
+    # (b) PRIMEIRA COLETA AINDA NAO RODOU. ⚠️ Este NAO manda mexer em nada — e o
+    # unico dos cinco em que a acao certa e ESPERAR. Mandar conferir
+    # configuracao aqui faria alguem mexer numa fonte que ainda nem rodou.
+    "sem_coleta":
+        "A coleta ainda não rodou para este município. Ela é automática, roda de "
+        "madrugada e reconhece o município pelo CNPJ — não depende de senha. "
+        "O município entra na próxima rodada.",
+
+    # (c) COLETOU E NAO HA. A unica das cinco que e uma AFIRMACAO sobre o
+    # municipio, e por isso ela vem com o metodo declarado: a busca e por CNPJ do
+    # beneficiario, e a tela lista ao lado quais CNPJ foram consultados. Sem essa
+    # ressalva, um CNPJ faltando no cadastro vira "o municipio nao tem emenda" —
+    # e e justamente por CNPJ que a emenda ao hospital ou a APAE chega.
+    "sem_emendas":
+        "A coleta rodou e não encontrou emenda parlamentar federal para os CNPJ "
+        "deste município. A busca é por CNPJ do beneficiário: emenda destinada a "
+        "uma entidade cujo CNPJ não está cadastrado aqui não aparece nesta tela.",
+
+    # (d) CARTEIRA SIM, EXECUCAO NAO. ⚠️ Nao manda o cliente fazer nada, porque
+    # nao ha nada que ele possa fazer: a chave e de pessoa fisica, vinculada ao
+    # CPF de quem a cadastrou, e quem decide liga-la e o dono do PACTHA. O que a
+    # frase PRECISA fazer e impedir a leitura errada — "empenhado R$ 0" nao e
+    # "nada foi empenhado", e sim "ninguem perguntou".
+    "sem_chave":
+        "A execução destas emendas (empenhado, liquidado, pago) vem do Portal da "
+        "Transparência da CGU, que exige uma chave de acesso ainda não "
+        "configurada neste ambiente. A carteira abaixo está completa; o que falta "
+        "é o andamento de cada uma — e onde ele aparece como «—», o dado não foi "
+        "buscado, não é R$ 0.",
+
+    # (e) EXECUCAO PARCIAL. A frase mais importante das cinco: sem ela, oito
+    # emendas sem consulta parecem oito emendas sem pagamento, e o gestor cobra
+    # um parlamentar por um empenho que talvez exista. O {consultadas}/{total} e
+    # formatado pelo router.
+    "parcial":
+        "Carteira coletada; a execução foi consultada em {consultadas} de "
+        "{total} emendas. Onde a execução aparece como «—», o dado ainda não foi "
+        "buscado no Portal da Transparência — não é R$ 0.",
+
+    # (f) TUDO CERTO: vazio, como o 'ok' de FRASE_CREDENCIAL. O selo de frescor
+    # ja carrega a data, e repetir "esta tudo bem" acima de uma tela cheia e
+    # ruido que treina o gestor a nao ler os avisos desta faixa.
+    "ok": "",
+}

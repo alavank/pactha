@@ -23,7 +23,7 @@ interface ParlamentarItem {
   total_lancamentos: number;
   valor_total: number;
   municipios: string[];
-  por_fonte: { sigcon: number; voluntaria: number; emenda: number; plano_acao: number; pac: number; fns: number };
+  por_fonte: { sigcon: number; voluntaria: number; emenda: number; plano_acao: number; pac: number; fns: number; emenda_federal: number };
   /** "parlamentar" = pessoa; "outro" = fundo/municipio/secretaria que entrou
    *  como proponente porque a fonte nao publica o autor da emenda. */
   tipo?: "parlamentar" | "outro";
@@ -341,7 +341,7 @@ function ParlamentaresInner() {
           total_lancamentos: c.lancamentos_a + c.lancamentos_b,
           valor_total: c.valor_b || c.valor_a,
           municipios: [],
-          por_fonte: { sigcon: 0, voluntaria: 0, emenda: 0, plano_acao: 0, pac: 0, fns: 0 },
+          por_fonte: { sigcon: 0, voluntaria: 0, emenda: 0, plano_acao: 0, pac: 0, fns: 0, emenda_federal: 0 },
           foraDoRecorte: true,
         };
       })
@@ -752,6 +752,11 @@ function ParlamentaresInner() {
                       { rotulo: "Transf. especial", valor: p.por_fonte.plano_acao || "—", title: "Transferência Especial / Plano de Ação (RP9)" },
                       { rotulo: "Seleção PAC", valor: p.por_fonte.pac || "—", title: "Propostas do Novo PAC" },
                       { rotulo: "FNS (saúde)", valor: p.por_fonte.fns || "—", title: "Propostas do Fundo Nacional de Saúde" },
+                      /* ⭐ A sétima fonte (06/09/2026): a emenda federal INDICADA, que
+                         não virou instrumento — 45% da carteira nos municípios medidos.
+                         O SQL desconta o que já vem por TransfereGov e por TE, senão
+                         inflaria o total que alimenta também o Painel do prefeito. */
+                      { rotulo: "Emendas fed.", valor: p.por_fonte.emenda_federal || "—", title: "Emendas parlamentares federais (carteira CGU/SICONV) que ainda não viraram instrumento" },
                     ]}
                   />
                 </ItemLinha>

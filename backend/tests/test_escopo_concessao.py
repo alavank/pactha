@@ -405,5 +405,12 @@ def test_o_alcance_nao_virou_permissao_do_catalogo():
     # ESTADUAIS (1 chave -> 10 telas) e as abas de Configuracoes que ganharam
     # chave (Telemetria, Parametros) explicam o salto; `usuarios.modelos` saiu
     # com os moldes. Ver o cabecalho de `services/permissoes.py`.
-    assert len(permissoes.CATALOGO) == 96
+    #
+    # 06/09/2026: 96 -> 97. `emendas_federais.ver` — a nona tela do grupo
+    # FEDERAIS. E UMA chave e nao tres porque a tela so LE: nao ha rota de
+    # exportacao nem de coleta sob demanda para `exportar`/`atualizar`
+    # governarem, e permissao que nao governa nada e pior que permissao
+    # faltando. `exportar` entra no MESMO PR que criar
+    # `GET /api/export-pdf/emendas-federais`.
+    assert len(permissoes.CATALOGO) == 97
     assert not any("propri" in c for c in permissoes.CATALOGO)

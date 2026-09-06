@@ -117,6 +117,13 @@ export const NAV_ITEMS: NavEntry[] = [
       { href: "/dashboard/transferegov-rejeitadas", label: "Rejeitadas" },
       { href: "/dashboard/transferegov-encerradas", label: "Encerradas" },
       { href: "/dashboard/transferegov-cnpj", label: "CNPJ" },
+      /* ⭐ EMENDAS PARLAMENTARES FEDERAIS (06/09/2026). Até aqui a emenda
+         federal só aparecia de raspão: como Transferência Especial em
+         «Especiais» e como selo `TE` na lista de Convênios — e por um caminho
+         que perdia 45% dela (as que nunca viraram proposta).
+         ⚠️ Não confundir com «Emendas Estaduais», do grupo ESTADUAIS: aquela é
+         SIGCON-MG (`ufs: ["MG"]`). Esta é federal e vale em qualquer tenant. */
+      { href: "/dashboard/emendas-federais", label: "Emendas parlamentares" },
     ],
   },
   {

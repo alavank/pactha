@@ -26,6 +26,9 @@ TELAS_CATALOG = [
     {"key": "transferegov_rejeitadas", "label": "Federais — Rejeitadas"},
     {"key": "transferegov_encerradas", "label": "Federais — Encerradas"},
     {"key": "transferegov_cnpj", "label": "Federais — CNPJ"},
+    # ⭐ EMENDAS FEDERAIS (06/09/2026) — a nona folha do grupo FEDERAIS.
+    # ⚠️ MESMO TEXTO de `frontend/src/lib/telas.ts`, como as vizinhas.
+    {"key": "emendas_federais", "label": "Federais — Emendas parlamentares"},
     # As oito do grupo ESTADUAIS que estavam dentro de `convenios`. ⚠️ MESMO
     # TEXTO de `frontend/src/lib/telas.ts` — dois nomes para a mesma chave fazem
     # o administrador achar que sao duas permissoes diferentes.
@@ -104,7 +107,7 @@ TELAS_TODAS = [
     # Configuracoes › Sessões). As oito telas do grupo FEDERAIS a substituem.
     "transferegov_radar", "transferegov_geral", "transferegov_especiais",
     "transferegov_pac", "transferegov_voluntarias", "transferegov_rejeitadas",
-    "transferegov_encerradas", "transferegov_cnpj",
+    "transferegov_encerradas", "transferegov_cnpj", "emendas_federais",
     # As oito que estavam escondidas dentro de `convenios` (que continua sendo
     # tela, a de Convenios Estaduais propriamente dita).
     "repasses", "cofinanciamento", "monitoramento", "consulta_popular",
