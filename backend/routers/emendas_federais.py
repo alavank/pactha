@@ -201,8 +201,6 @@ async def buscar(db: AsyncSession, municipio_id: int) -> dict:
     vem de um endpoint e a lista de outro. **Acima de ~2.000 emendas o filtro
     sobe para o servidor, e os KPIs sobem junto ou passam a mentir.**
     """
-    import os
-
     r = await db.execute(text(
         "SELECT nome, regexp_replace(coalesce(cnpj,''), '\\D', '', 'g') "
         "FROM municipios WHERE id = :m"), {"m": municipio_id})
@@ -336,7 +334,17 @@ async def buscar(db: AsyncSession, municipio_id: int) -> dict:
         key=lambda a: a["indicado"], reverse=True)
     tot["parlamentares"] = sum(1 for a in por_autor if not a["colegiado"])
 
-    chave_ok = bool((os.getenv("PORTAL_TRANSPARENCIA_API_KEY") or "").strip())
+    # ⚠️⚠️ A PROVA DE QUE A FONTE ESTÁ LIGADA É O DADO, E NÃO UMA ENV.
+    # A versão anterior lia `PORTAL_TRANSPARENCIA_API_KEY` aqui — e essa env
+    # mora no WORKER, que é outro container e outro processo. A API nunca a vê.
+    # Resultado medido em 06/09/2026: Nova Palma com 64 de 67 emendas já
+    # consultadas na CGU, e a tela dizendo «a chave não está configurada neste
+    # ambiente», escondendo toda a execução atrás de «—».
+    #
+    # Perguntar ao dado responde certo nos dois sentidos: onde a coleta rodou, a
+    # execução aparece; onde não rodou, a tela não afirma nada sobre a
+    # configuração de um processo que ela não enxerga.
+    chave_ok = consultadas > 0
     estado = classificar_emendas_federais(
         chave_configurada=chave_ok, houve_coleta=bool(linhas) or consultadas > 0,
         tem_cnpj=tem_cnpj, n_emendas=tot["emendas"],

@@ -192,10 +192,10 @@ FRASE_EMENDAS_FEDERAIS = {
     # "nada foi empenhado", e sim "ninguem perguntou".
     "sem_chave":
         "A execução destas emendas (empenhado, liquidado, pago) vem do Portal da "
-        "Transparência da CGU, que exige uma chave de acesso ainda não "
-        "configurada neste ambiente. A carteira abaixo está completa; o que falta "
-        "é o andamento de cada uma — e onde ele aparece como «—», o dado não foi "
-        "buscado, não é R$ 0.",
+        "Transparência da CGU e ainda não foi consultada neste ambiente — ela "
+        "depende de uma chave de acesso que nem todo ambiente tem. A carteira "
+        "abaixo está completa; o que falta é o andamento de cada uma, e onde ele "
+        "aparece como «—» o dado não foi buscado, não é R$ 0.",
 
     # (e) EXECUCAO PARCIAL. A frase mais importante das cinco: sem ela, oito
     # emendas sem consulta parecem oito emendas sem pagamento, e o gestor cobra

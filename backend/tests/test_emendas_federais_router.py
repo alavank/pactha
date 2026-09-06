@@ -139,3 +139,18 @@ def test_o_valor_do_dump_nao_e_multiplicado_pelo_join_com_a_cgu():
     assert tem_lateral or tem_cte, (
         "o agregado da CGU precisa ser reduzido a UMA linha por codigo ANTES do "
         "join (LATERAL ou CTE); um LEFT JOIN direto multiplica o valor do dump")
+
+
+def test_fonte_ligada_vem_do_dado_e_nao_de_uma_env_do_worker():
+    """⚠️⚠️ A env `PORTAL_TRANSPARENCIA_API_KEY` mora no WORKER. A API é outro
+    container e outro processo — ela nunca a vê.
+
+    Medido em 06/09/2026: Nova Palma com **64 de 67 emendas já consultadas** na
+    CGU, e a tela dizendo «a chave não está configurada», escondendo toda a
+    execução atrás de «—». O router estava perguntando à configuração de um
+    processo que ele não enxerga, em vez de perguntar ao dado que ele tem na
+    frente."""
+    codigo = _codigo_sem_comentario()
+    assert "PORTAL_TRANSPARENCIA_API_KEY" not in codigo, (
+        "o router voltou a ler uma env que vive no worker")
+    assert "chave_ok = consultadas > 0" in codigo
