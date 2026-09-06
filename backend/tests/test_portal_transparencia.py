@@ -570,3 +570,30 @@ def test_a_migration_de_texto_esta_depois_da_que_cria_as_tabelas():
 
     assert (MIGRATION_FILES.index("add_emendas_federais_texto.sql")
             > MIGRATION_FILES.index("add_emendas_federais.sql"))
+
+def test_a_fila_da_te_e_filtrada_por_cnpj():
+    """⚠️ DEFEITO MEU, medido na primeira rodada com chave em Monte Sião: a fila
+    nasceu com **545 códigos** em vez dos 31 da carteira — fator de 17.
+
+    A causa: `transferegov_te` guarda os planos do ESTADO inteiro, e o
+    `municipio_id` dela vem de casamento por SUBSTRING DE NOME, com contaminação
+    medida (628 de 890 linhas com CNPJ divergente na base trust). Semear tudo
+    gastava o orçamento da noite consultando emenda de outro município.
+
+    ⚠️ Não CORROMPIA nada — `emendas_federais_cgu` é nacional por desenho e a
+    tela só mostra o que dá JOIN com a carteira. Mas gastava cota com o que
+    ninguém ia ler.
+
+    ⚠️ E o `OR ... = ''` no fim NÃO é descuido: TE sem CNPJ do beneficiário não
+    tem como ser recuperada pelo dump (Transferência Especial vive em outro
+    sistema e não está no `siconv_emenda.zip`). Perder emenda legítima para
+    economizar requisição seria o pior dos dois erros."""
+    import inspect
+
+    src = inspect.getsource(pt.semear_fila)
+    assert "beneficiario_cnpj" in src and "= ANY(%s)" in src, (
+        "a semeadura da TE voltou a não filtrar por CNPJ")
+    assert "coalesce(te.beneficiario_cnpj, '') = ''" in src, (
+        "o resgate da TE sem CNPJ sumiu — emenda legítima seria perdida")
+    # A assinatura tem de aceitar a lista, senão o filtro nunca recebe nada.
+    assert "cnpjs" in inspect.signature(pt.semear_fila).parameters
