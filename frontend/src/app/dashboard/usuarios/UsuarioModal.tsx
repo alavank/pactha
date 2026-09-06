@@ -402,13 +402,40 @@ export default function UsuarioModal({
       // tela desligada ficaram no estado local (para religar sem perder), mas
       // gravá-las produziria uma pessoa com `rm.excluir` e sem a tela `rm` — o
       // tipo de estado que ninguém consegue explicar olhando o cadastro.
-      const telasFinais = todasTelas.filter((t) => telasSel.has(t));
+      //
+      // ⚠️⚠️ MAS O MODAL SÓ PODE TIRAR O QUE ELE DESENHOU, e esta é a regra que
+      // faltava — ela custou um quase-acidente em produção (05/09/2026).
+      //
+      // A conta antiga carrega chaves que a árvore NÃO mostra: a tela velha
+      // `transferegov` (que virou oito), `suas` e `telegram` (módulos removidos),
+      // e telas de outra UF. Filtrar só pela árvore APAGAVA todas elas em
+      // silêncio — então abrir o cadastro de alguém e clicar em «Salvar», sem
+      // mexer em nada, tirava dessa pessoa o grupo FEDERAIS inteiro. Enquanto a
+      // migration de tradução não roda, TODO usuário antigo estava a um clique
+      // de perder acesso.
+      //
+      // A regra correta é conservadora e vale para sempre, não só até a
+      // migration: o que o administrador não viu, ele não decidiu remover.
+      const naArvore = new Set(todasTelas);
+      const preservadas = (alvo?.telas ?? []).filter((t) => !naArvore.has(t));
+      const telasFinais = [
+        ...todasTelas.filter((t) => telasSel.has(t)),
+        ...preservadas,
+      ];
       const permitidas = new Set(
         arvore.flatMap((g) => g.telas)
           .filter((t) => telasSel.has(t.tela))
           .flatMap((t) => t.acoes.map((a) => a.chave)),
       );
-      const acoesFinais = [...acoesSel].filter((a) => permitidas.has(a));
+      // Mesma regra para as AÇÕES: chave que a árvore não desenha (a inerte, a
+      // de módulo removido, a da tela velha) é preservada como estava.
+      const chavesNaArvore = new Set(
+        arvore.flatMap((g) => g.telas).flatMap((t) => t.acoes.map((a) => a.chave)),
+      );
+      const acoesFinais = [
+        ...[...acoesSel].filter((a) => permitidas.has(a)),
+        ...concedidas.filter((a) => !chavesNaArvore.has(a)),
+      ];
       // O mapa INTEIRO dos módulos que aceitam alcance, inclusive os que
       // ficaram no padrão: mandar só o restrito faria o servidor não distinguir
       // "voltou para todos" de "não foi tocado", e o padrão nunca seria reposto.
