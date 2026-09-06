@@ -67,6 +67,12 @@ When adding a new router endpoint, do one of:
 - **`bloqueio` (the default)** — raises 403, and records to `audit_log`
 - `aviso` — records what *would* have been denied (action `authz.negaria`) without blocking
 
+⚠️ **The env var is set explicitly on every tenant, and two of them are on `aviso`**
+(measured 06/09/2026: freitas/trust/montesiao = `bloqueio`, santamaria/novapalma = `aviso`).
+Since «Somente leitura» was removed, a tenant on `aviso` has **no write lock at all** — the
+action checkboxes are the only one left, and in that mode they merely log. Check the Coolify
+env before assuming a permission is being enforced anywhere.
+
 **It used to default to `aviso`, and flipping it was the highest-blast-radius line of the
 05/09/2026 increment.** It had to flip because the account-level «Somente leitura» lock was
 removed in the same deploy: while the mode was `aviso`, *that lock* was what stopped writes
@@ -96,20 +102,30 @@ The public TV link is unaffected: it has its own guard (`ehQuiosque` +
 `KIOSK_GET_PERMITIDOS` in `services/auth.py`), plus the `viewer` role belt in
 `PAPEIS_SINTETICOS_SEM_ESCRITA`.
 
-## ⚠️ Two compatibility nets, and they are temporary
+## The 05/09/2026 near-miss — two lessons worth keeping
 
-`services/auth.py::TELAS_RENOMEADAS` / `TELAS_DE_ADMINISTRACAO` and
-`services/permissoes.py::_CHAVES_RENOMEADAS` exist because
-`migrations/add_permissoes_por_tela.sql` **failed to run on the 05/09/2026 deploy** and
-`services/startup.py` swallows a failed migration into a log line without aborting boot.
+`migrations/add_permissoes_por_tela.sql`, which translates the old tela keys into the new
+ones, **failed on the deploy**: it said `pc.permissao` where the column in
+`permissoes_catalogo` is `chave` (`permissao` is the column name in the *neighbouring*
+table, `user_permissoes`, in the same query). The whole file is one transaction, so all five
+parts rolled back — and `services/startup.py` swallows a failed migration into a log line
+**without aborting boot**, so five APIs came up healthy and nobody was told.
 
-They make access correct in **code** rather than depending on the data migration:
-whoever holds an old key reaches the new ones, and `role='admin'` reopens the three
-administration screens.
+It was patched with compatibility nets in code (`TELAS_RENOMEADAS`,
+`TELAS_DE_ADMINISTRACAO`, `_CHAVES_RENOMEADAS`), then the migration was fixed and confirmed
+`110/110` on all five tenants, and **the nets were removed on 06/09/2026**.
 
-**Remove them once the five databases are confirmed migrated** — they are a bridge, not the
-design. `tests/test_compat_telas_renomeadas.py` pins their properties (only widens, never
-takes away, only the `admin` role).
+Two rules came out of it:
+
+1. **Never make access correctness depend on a backfill having run.** Put the compatibility
+   in code, so a failed migration degrades the *display* and not the *access*.
+2. **A bridge that stays becomes debt.** While the net was up, the Usuários screen showed
+   *unticked* what people actually had — and a «Salvar» would have written that emptiness
+   back. (`UsuarioModal` now only ever removes what it drew, which is the permanent fix.)
+
+`tests/test_migrations_colunas_existem.py` is the guard that would have caught the original
+typo without a database — `pglast` only validates grammar, and a wrong column name is
+perfectly valid SQL.
 
 ## Role is a label
 

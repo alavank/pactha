@@ -29,7 +29,20 @@
 
 ---
 
-## 1.4. ⚠️ O QUE ESTÁ QUEBRADO AGORA (05/09/2026) — leia antes de mexer em permissão
+## 1.4. ⚠️ PERMISSÃO POR TELA — resolvido, e o que sobrou de aviso (06/09/2026)
+
+> **A migration foi corrigida e rodou nos cinco tenants** (`110/110`, conferido no log de
+> cada API em 06/09). A causa foi uma coluna com o nome errado — `pc.permissao` onde
+> `permissoes_catalogo` chama de `chave` —, e as redes de compatibilidade **já saíram**.
+> O relato abaixo fica porque as lições são o que importa.
+>
+> ⚠️ **SOBROU UM PONTO ABERTO, e não é de permissão por tela:** `AUTHZ_MODO` está setado
+> explicitamente por tenant no Coolify, e **santamaria e novapalma estão em `aviso`** —
+> ou seja, com a trava de permissão desligada. Como a trava de conta «Somente leitura» foi
+> removida, esses dois **não têm trava de escrita nenhuma** hoje. Decisão do dono se liga ou
+> não; o fato está aqui para ninguém supor que está ligado.
+
+### O relato (05/09/2026)
 
 O incremento **«Permissão por tela»** (PRs #384–#386) foi deployado nos cinco tenants. O
 código está certo e verificado; **uma migration não rodou**, e isso ainda está aberto.

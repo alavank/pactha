@@ -403,90 +403,31 @@ async def get_current_user(
 
 
 # ---------------------------------------------------------------------------
-# ⭐⭐ COMPATIBILIDADE DAS TELAS RENOMEADAS — a rede que NAO depende de migration
+# ⚠️ AS REDES DE COMPATIBILIDADE SAIRAM EM 06/09/2026 — e o registro fica
 # ---------------------------------------------------------------------------
-# Em 05/09/2026 duas chaves de tela viraram dezoito: `transferegov` -> as 8
-# telas do grupo FEDERAIS, `convenios` -> as 10 do grupo ESTADUAIS (das quais 8
-# eram novas). `add_permissoes_por_tela.sql` traduz as linhas de `user_telas` e
-# `user_permissoes` de todo mundo.
+# Entre 05 e 06/09/2026 este modulo teve `TELAS_RENOMEADAS`,
+# `TELAS_DE_ADMINISTRACAO` e `expandir_telas_legadas`. Elas traduziam, em tempo
+# de execucao, a chave de tela ANTIGA para as novas — porque
+# `add_permissoes_por_tela.sql` falhou no deploy (uma coluna com o nome errado)
+# e `services/startup.py` engole migration quebrada numa linha de log sem
+# abortar o boot. Sem a rede, todo usuario teria perdido os dois maiores grupos
+# do menu, e todo admin nao-super ficaria trancado fora da tela de Usuarios.
 #
-# ⚠️ MAS UMA MIGRATION QUE FALHA NAO DERRUBA O BOOT — ela loga e o processo
-# segue (`services/startup.py`, o `except` que so trata "already exists"). Com
-# `AUTHZ_MODO=bloqueio` ligado no MESMO deploy, o desfecho de uma falha ali
-# seria: API no ar, ninguem traduzido, e todo usuario perdendo os dois maiores
-# grupos do menu — em cinco prefeituras, em silencio.
+# A migration foi corrigida e **rodou nos cinco tenants** (`110/110`, conferido
+# no log de cada API em 06/09/2026), entao as redes viraram codigo morto e
+# sairam. Duas licoes ficam, e elas nao saem:
 #
-# E `AUTHZ_MODO=aviso` NAO SALVARIA: `ensure_tela` e da familia antiga e nega
-# nos DOIS modos. A valvula de escape que existe para as caixinhas nao existe
-# para as telas.
+#   1. **Nunca faca a correcao de acesso depender de o backfill ter rodado.**
+#      Ponha a compatibilidade no CODIGO, para uma falha degradar a EXIBICAO e
+#      nao o ACESSO. Foi o que segurou o cliente naquele dia.
+#   2. **Ponte que fica vira divida.** Enquanto a rede existia, a tela de
+#      Usuarios mostrava DESMARCADO o que a pessoa tinha na pratica — e um
+#      «Salvar» apagava aquilo. Rede tem data para sair, e a data e o dia em que
+#      o dado estiver certo.
 #
-# Entao a compatibilidade mora AQUI, no codigo, e nao no dado: quem tem a chave
-# antiga tem as novas, tenha a migration rodado ou nao. Custa um `if` por
-# requisicao e torna o deploy reversivel por rollback de imagem, que e a unica
-# reversao que sempre funciona.
-#
-# ⚠️ ISTO NAO SUBSTITUI A MIGRATION, e nem torna a coisa permanente: a migration
-# grava as chaves NOVAS, que sao as que a tela de Usuarios desenha e edita. Sem
-# ela o administrador veria as telas novas desmarcadas para quem, na pratica,
-# tem acesso — e desmarcar o que ja esta desmarcado nao tira nada. Este mapa e a
-# rede de seguranca do intervalo entre o deploy e a migration ter rodado,
-# e sai quando os cinco bancos estiverem confirmados.
-TELAS_RENOMEADAS: dict = {
-    "transferegov": (
-        "transferegov_radar", "transferegov_geral", "transferegov_especiais",
-        "transferegov_pac", "transferegov_voluntarias",
-        "transferegov_rejeitadas", "transferegov_encerradas",
-        "transferegov_cnpj",
-    ),
-    # `convenios` CONTINUA sendo tela (a de Convenios Estaduais). O que ela ganha
-    # sao as oito que estavam escondidas dentro dela.
-    "convenios": (
-        "repasses", "cofinanciamento", "monitoramento", "consulta_popular",
-        "programas_rs", "funrigs", "emendas_rs", "tce_rs",
-    ),
-    # A aba Telemetria usava a chave `auditoria` — a de outra coisa.
-    "auditoria": ("telemetria",),
-}
-
-
-# ⭐ AS ABAS DE ADMINISTRACAO QUE O PAPEL `admin` ABRIA ATE 05/09/2026.
-#
-# ⚠️⚠️ ESTA REDE NASCEU DE UM DEFEITO REAL, MEDIDO EM PRODUCAO. Usuarios, Status
-# dos Dados e Parametros eram governadas pelo PAPEL: nao havia linha em
-# `user_telas` para elas, e `_require_admin` (o antigo) abria pelo `role`.
-# Quando elas viraram TELAS, quem devia gravar a linha era a parte 2 de
-# `add_permissoes_por_tela.sql` — e essa migration NAO RODOU no deploy.
-#
-# Resultado medido no freitas: todo `role='admin'` que nao e super-admin ficou
-# com a aba Usuarios VISIVEL (o frontend a mostra por papel, ver
-# `lib/configuracoes.ts::abasVisiveis`) e a tela devolvendo 403. Ou seja: a
-# unica tela que conserta permissao era a que ninguem conseguia abrir. E o
-# `AUTHZ_MODO=aviso` nao salvaria, porque `ensure_tela` nega nos dois modos.
-#
-# Entao a compatibilidade mora AQUI, como a das telas renomeadas: o papel volta
-# a abrir estas tres enquanto a linha nao existir no banco.
-#
-# ⚠️ NAO E AFROUXAMENTO — e a restauracao exata do que valia na vespera. O papel
-# `admin` abria estas tres telas desde sempre; o incremento pretendia trocar o
-# papel pela linha, e a troca so vale quando a linha existir. As DEMAIS telas
-# continuam exigindo concessao: um admin sem `cofre` nao ganha o Cofre por aqui.
-#
-# ⚠️ ELA SAI quando os cinco bancos confirmarem a migration — junto com
-# `TELAS_RENOMEADAS`, pelo mesmo motivo e no mesmo commit.
-TELAS_DE_ADMINISTRACAO: frozenset = frozenset({"usuarios", "frescor", "parametros"})
-
-
-def expandir_telas_legadas(telas: set, papel: str = "") -> set:
-    """As telas da pessoa, mais as que as chaves antigas passaram a significar.
-
-    Idempotente: rodar sobre um conjunto ja traduzido nao muda nada."""
-    saida = set(telas)
-    for antiga, novas in TELAS_RENOMEADAS.items():
-        if antiga in saida:
-            saida.update(novas)
-    if (papel or "").strip().lower() == "admin":
-        saida |= TELAS_DE_ADMINISTRACAO
-    return saida
+# ⚠️ `ensure_tela` continua negando nos DOIS modos de `AUTHZ_MODO`, e e por isso
+# que uma tela renomeada nao tem valvula de escape por env: se um rename destes
+# voltar a acontecer, a rede em codigo volta junto.
 
 
 async def load_user_scopes(db: AsyncSession, user: User) -> None:
@@ -538,8 +479,7 @@ async def load_user_scopes(db: AsyncSession, user: User) -> None:
     user.allowed_municipio_ids = {r[0] for r in mrows.fetchall()}
     trows = await db.execute(
         text("SELECT tela FROM user_telas WHERE user_id = :u"), {"u": user.id})
-    user.allowed_telas = expandir_telas_legadas(
-        {r[0] for r in trows.fetchall()}, getattr(user, "role", "") or "")
+    user.allowed_telas = {r[0] for r in trows.fetchall()}
     user.allowed_permissoes = await _carregar_permissoes(db, user.id)
     user.allowed_escopos = await _carregar_escopos(db, user.id)
 

@@ -153,25 +153,13 @@ export const TELA_LABELS: Record<string, string> = Object.fromEntries(
 
 const TELAS_VALIDAS = new Set(TELAS.map((t) => t.key));
 
-/** ⭐ As telas que uma chave ANTIGA passou a significar (05/09/2026).
+/* ⚠️ `TELAS_RENOMEADAS` VIVEU AQUI ENTRE 05 E 06/09/2026 — a rede que traduzia
+ *  a chave de tela antiga para as novas enquanto a migration de tradução não
+ *  rodava (ela falhou no deploy por uma coluna com o nome errado, e uma
+ *  migration quebrada não derruba o boot).
  *
- *  ⚠️ ESPELHA `backend/services/auth.py::TELAS_RENOMEADAS`, e o teste
- *  `backend/tests/test_compat_telas_renomeadas.py` quebra se divergirem. Vale
- *  enquanto a migration `add_permissoes_por_tela.sql` não estiver confirmada
- *  nos cinco bancos — ela grava as chaves novas, e este mapa é a rede do
- *  intervalo. A nota longa do backend explica por que a rede existe. */
-export const TELAS_RENOMEADAS: Record<string, string[]> = {
-  transferegov: [
-    "transferegov_radar", "transferegov_geral", "transferegov_especiais",
-    "transferegov_pac", "transferegov_voluntarias", "transferegov_rejeitadas",
-    "transferegov_encerradas", "transferegov_cnpj",
-  ],
-  convenios: [
-    "repasses", "cofinanciamento", "monitoramento", "consulta_popular",
-    "programas_rs", "funrigs", "emendas_rs", "tce_rs",
-  ],
-  auditoria: ["telemetria"],
-};
+ *  Saiu quando os cinco bancos confirmaram a migration. A nota completa, com as
+ *  duas lições que ficam, está em `backend/services/auth.py`. */
 
 /** Deriva a chave de tela a partir de um href da sidebar.
  *
@@ -214,15 +202,6 @@ export function allowedTelasOf(
     // Quem tinha so a tela "bi" continuaria batendo no guard de rota e seria
     // expulso da propria home — entao "bi" passa a valer "dashboard" tambem.
     if (set.has("bi")) set.add("dashboard");
-    // ⭐ E O MESMO PARA AS TELAS RENOMEADAS em 05/09/2026 — espelha
-    // `backend/services/auth.py::TELAS_RENOMEADAS`, e existe pelo mesmo motivo:
-    // se a migration que traduz `user_telas` falhar, ela loga e o boot segue.
-    // Sem esta linha o MENU sumiria com os dois maiores grupos enquanto o
-    // backend (que tem a mesma rede) continuaria liberando — a pior combinação,
-    // porque não gera erro nenhum para investigar.
-    for (const [antiga, novas] of Object.entries(TELAS_RENOMEADAS)) {
-      if (set.has(antiga)) for (const nova of novas) set.add(nova);
-    }
     return set;
   }
   return null; // fallback seguro (sem info -> nao trava)

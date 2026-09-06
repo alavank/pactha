@@ -1041,62 +1041,10 @@ def permissoes_efetivas(
         return PERMISSOES_QUIOSQUE
     if super_admin:
         return TODAS
-    marcadas = {normalizar(c) for c in (concedidas or ())}
     return frozenset(
-        chave for chave in (marcadas | _expandir_renomeadas(marcadas))
+        chave for chave in (normalizar(c) for c in (concedidas or ()))
         if chave in CATALOGO
     )
-
-
-# ---------------------------------------------------------------------------
-# ⭐⭐ COMPATIBILIDADE DAS CHAVES RENOMEADAS — a mesma rede de `services/auth.py`
-# ---------------------------------------------------------------------------
-# Em 05/09/2026 `transferegov.*` virou oito telas e `convenios.*` ganhou oito
-# irmas. `migrations/add_permissoes_por_tela.sql` traduz as concessoes de todo
-# mundo — mas migration que falha NAO derruba o boot (ver a nota longa em
-# `services/auth.py::TELAS_RENOMEADAS`), e com `AUTHZ_MODO=bloqueio` ligado no
-# mesmo deploy o desfecho seria todo mundo perdendo os dois maiores grupos do
-# menu, em silencio.
-#
-# Entao quem tem a chave ANTIGA tem as NOVAS, tenha a migration rodado ou nao.
-#
-# ⚠️ SO AMPLIA, e essa e a propriedade que torna isto seguro: nao existe caminho
-# em que este mapa TIRE permissao de alguem. E nao ha escalonamento — as chaves
-# de destino sao exatamente as telas que a chave de origem ja abria ontem.
-#
-# ⚠️ E NAO ALCANCA O ANTI-ESCALONAMENTO POR ENGANO: `_barrar_escalonamento` le o
-# EFETIVO de quem concede, e o efetivo agora inclui as novas — que e o certo,
-# porque quem administrava o grupo FEDERAIS inteiro ontem tem de conseguir
-# conceder cada uma das oito hoje.
-_CHAVES_RENOMEADAS: dict = {
-    "transferegov.ver": (
-        "transferegov_radar.ver", "transferegov_geral.ver",
-        "transferegov_especiais.ver", "transferegov_pac.ver",
-        "transferegov_voluntarias.ver", "transferegov_rejeitadas.ver",
-        "transferegov_encerradas.ver", "transferegov_cnpj.ver",
-    ),
-    "transferegov.exportar": (
-        "transferegov_geral.exportar", "transferegov_especiais.exportar",
-        "transferegov_voluntarias.exportar", "transferegov_rejeitadas.exportar",
-        "transferegov_encerradas.exportar",
-    ),
-    "convenios.ver": (
-        "repasses.ver", "cofinanciamento.ver", "monitoramento.ver",
-        "consulta_popular.ver", "programas_rs.ver", "funrigs.ver",
-        "emendas_rs.ver", "tce_rs.ver",
-    ),
-    # A aba de Parametros pegava carona nestas duas.
-    "usuarios.ver": ("parametros.ver",),
-    "usuarios.editar": ("parametros.editar",),
-}
-
-
-def _expandir_renomeadas(marcadas: set) -> set:
-    saida: set = set()
-    for antiga, novas in _CHAVES_RENOMEADAS.items():
-        if antiga in marcadas:
-            saida.update(novas)
-    return saida
 
 
 # ---------------------------------------------------------------------------
