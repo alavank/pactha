@@ -36,11 +36,21 @@
 > `permissoes_catalogo` chama de `chave` —, e as redes de compatibilidade **já saíram**.
 > O relato abaixo fica porque as lições são o que importa.
 >
-> ⚠️ **SOBROU UM PONTO ABERTO, e não é de permissão por tela:** `AUTHZ_MODO` está setado
-> explicitamente por tenant no Coolify, e **santamaria e novapalma estão em `aviso`** —
-> ou seja, com a trava de permissão desligada. Como a trava de conta «Somente leitura» foi
-> removida, esses dois **não têm trava de escrita nenhuma** hoje. Decisão do dono se liga ou
-> não; o fato está aqui para ninguém supor que está ligado.
+> ✅ **`AUTHZ_MODO=bloqueio` NOS CINCO** desde 06/09/2026 01:38, conferido no log de cada
+> API. Decisão do dono: *"tem q ser bloqueio em tudo... se tá marcado q ela não vai ter
+> acesso, isso muda já"*. A regra de permissão é a mesma para todo cliente; o que varia
+> entre eles é só QUAIS TELAS existem, e disso quem cuida é a carteira de municípios.
+>
+> ⚠️ **ONDE A CONFIGURAÇÃO MORA, e a armadilha de lê-la errado:** `AUTHZ_MODO` é setada
+> explicitamente por tenant no Coolify, e **cada aplicação tem DUAS entradas** — uma de
+> produção (`is_preview: false`) e uma de preview. Ler a lista sem filtrar por `is_preview`
+> devolve a de preview e faz concluir o oposto: foi assim que uma sessão reportou Santa
+> Maria como "sem trava" quando a produção dela sempre esteve em `bloqueio`. Só o
+> **novapalma** estava de fato em `aviso`, e foi ligado.
+>
+> ⚠️ Se um cliente for barrado indevidamente, o recuo é `AUTHZ_MODO=aviso` no Coolify +
+> restart — sem deploy. E o número a olhar antes é o aviso «N contas ativas sem nenhuma ação
+> marcada» em Configurações › Usuários: é exatamente quem para de funcionar.
 
 ### O relato (05/09/2026)
 

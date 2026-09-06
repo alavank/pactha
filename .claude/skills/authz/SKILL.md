@@ -67,11 +67,19 @@ When adding a new router endpoint, do one of:
 - **`bloqueio` (the default)** — raises 403, and records to `audit_log`
 - `aviso` — records what *would* have been denied (action `authz.negaria`) without blocking
 
-⚠️ **The env var is set explicitly on every tenant, and two of them are on `aviso`**
-(measured 06/09/2026: freitas/trust/montesiao = `bloqueio`, santamaria/novapalma = `aviso`).
-Since «Somente leitura» was removed, a tenant on `aviso` has **no write lock at all** — the
-action checkboxes are the only one left, and in that mode they merely log. Check the Coolify
-env before assuming a permission is being enforced anywhere.
+⚠️ **The env var is set explicitly on every tenant, and all five are on `bloqueio`**
+(confirmed in each API's boot log, 06/09/2026). The owner's rule: the permission model is
+the same for every client — what differs between them is *which screens exist*, and that is
+decided by the município portfolio, not by this switch.
+
+⚠️ **Reading that env has a trap.** Each application carries **two** `AUTHZ_MODO` entries —
+production (`is_preview: false`) and preview. Listing them without filtering returns the
+preview one and can tell you the opposite of the truth: that is how one session reported
+Santa Maria as "unlocked" when its production side had always been `bloqueio`.
+
+Since «Somente leitura» was removed, a tenant on `aviso` would have **no write lock at all**
+— the action checkboxes are the only one left, and in that mode they merely log. That is the
+escape hatch, not a resting state: `aviso` + restart in Coolify, no deploy.
 
 **It used to default to `aviso`, and flipping it was the highest-blast-radius line of the
 05/09/2026 increment.** It had to flip because the account-level «Somente leitura» lock was
