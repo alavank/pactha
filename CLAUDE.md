@@ -17,6 +17,25 @@ off Railway/Neon/Vercel/Hetzner onto **Coolify on AWS Lightsail**.
 Everything user-facing and every commit message/comment is in **Portuguese**. Match that
 convention in code comments, commit messages, and UI copy.
 
+## ⚠️ Mantenha os `.md` vivos — é a sua memória, não decoração
+
+Depois de qualquer mudança que altere um fato descrito num `.md` do repo, **atualize o `.md`
+no mesmo trabalho**. Regra do dono (05/09/2026): *"você tá criando um monstro e deixando ele
+te confundir; essa memória é sua, você usa pra saber o que tá fazendo"*.
+
+O custo de não fazer é medido: em 05/09/2026 a skill `authz` ainda dizia que `AUTHZ_MODO`
+tinha default `aviso` (já era `bloqueio`), o `README.md` dizia "17 fontes / TRÊS tenants"
+(são 21 e cinco), e o `INFRA.md` não listava `freitas.pactha.com.br` — o que fez uma sessão
+inteira desconfiar de estar olhando o ambiente errado.
+
+Três regras:
+- **Apague o que ficou falso.** Informação errada custa token e induz a erro; é pior que
+  ausência.
+- **Nada de credencial, token, senha ou dado pessoal** em `.md`. Cite o *nome* da env
+  (`COFRE_KEY`) e onde o valor mora (Coolify, GitHub Secrets) — nunca o valor.
+- **Um fato, um lugar.** Duplicar entre `README`/`INFRA`/`CONTINUAR` garante divergência;
+  aponte para a fonte.
+
 **⚠️ One repo, FIVE tenants — a merge to `main` deploys all five.** Freitas, Trust,
 Monte Sião/MG, Santa Maria/RS and Nova Palma/RS each get their own containers and own Postgres database,
 all built from the same code (`backend/**` or `frontend/**` changes trigger `.github/workflows/build-backend.yml`
@@ -113,6 +132,7 @@ that area. Read the relevant one before making changes there:
 | `ingestion` | scrapers/collectors, the 21 data sources, scheduling |
 | `migrations` | schema changes, `backend/migrations/`, `MIGRATION_FILES` |
 | `authz` | permissions, route registration, `AUTHZ_MODO`, row-level scope |
+| — | **Permissão: Módulo › Tela › Ação** — a regra inteira em `docs/PERMISSOES_POR_TELA.md` |
 | `secrets` | Cofre / AES credential storage, `COFRE_KEY` |
 | `audit` | `audit_log` append-only trigger, hash chain |
 | `frontend-auth` | cookies, same-origin proxy, silent refresh, kiosk tokens |

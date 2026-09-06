@@ -1,6 +1,6 @@
 ---
 name: migrations
-description: Rules for PACTHA database schema changes — plain .sql migrations in backend/migrations/, the MIGRATION_FILES registration list, idempotency requirements across 3 live tenant databases, and ordering constraints. Use when adding, editing, or debugging a migration, changing models, or touching services/startup.py.
+description: Rules for PACTHA database schema changes — plain .sql migrations in backend/migrations/, the MIGRATION_FILES registration list, idempotency across 5 live tenant databases, ordering constraints, and the fact that a failed migration does not abort the boot. Use when adding, editing, or debugging a migration, changing models, or touching services/startup.py.
 ---
 
 # Database & migrations
@@ -19,18 +19,41 @@ boot** (`services/startup.py::run_migrations`, called from `main.py`'s `lifespan
    comments around `add_siconv_federal.sql`.
 
 2. **Must be idempotent** (`IF NOT EXISTS` / `ON CONFLICT DO NOTHING` / guarded `ALTER`). It
-   runs against **3 live tenant databases**, and re-runs on every boot.
+   runs against **5 live tenant databases**, and re-runs on every boot — including a
+   **fresh** one: Santa Maria (08/2026) and Nova Palma (01/09/2026) were created from
+   scratch, and the second exposed an ORDERING bug (a file altering a table created later in
+   `MIGRATION_FILES`), now guarded by `tests/test_migrations_ordem_tabela.py`.
 
-3. **`add_auditoria_imutavel.sql` must always stay last** in the list. It installs the
+   A one-shot data backfill guards itself with a row in `migration_backfills`, so it runs
+   once per database — see `add_permissoes_por_acao.sql` and `add_permissoes_por_tela.sql`.
+
+3. ⚠️ **A FAILED MIGRATION DOES NOT ABORT THE BOOT.** `services/startup.py` catches the
+   exception, writes one log line, and the API comes up healthy. So a broken migration and a
+   working one look identical from outside — and the whole file is one transaction, so if any
+   statement fails, *none* of it applied.
+
+   This bit for real on 05/09/2026: `add_permissoes_por_tela.sql` failed silently, and the
+   only symptom was a screen showing permissions unticked that people actually had. Two
+   consequences for how you write one:
+
+   - **Never make correctness depend on the backfill having run.** Put the compatibility in
+     code (see `services/auth.py::TELAS_RENOMEADAS`), so a failure degrades the *display*
+     and not the *access*.
+   - **After a deploy that carries a migration, check the log** for `Migration OK: <file>`.
+     Nobody will tell you otherwise.
+
+4. **`add_auditoria_imutavel.sql` must always stay last** in the list. It installs the
    append-only trigger on `audit_log`; anything that still needs to `UPDATE`/backfill
    `audit_log` has to be registered **above** it, or the trigger will reject it.
 
-4. A boot-time advisory lock (`pg_try_advisory_lock`) serializes the two uvicorn workers so
+5. A boot-time advisory lock (`pg_try_advisory_lock`) serializes the two uvicorn workers so
    migrations never run concurrently. Don't remove it.
 
 ## Before writing one
 
 Remember the multi-tenant constraint from CLAUDE.md: a schema change here lands on Freitas,
-Trust and Monte Sião/MG. Never write a migration that assumes data present in only one tenant.
+Trust, Monte Sião/MG, Santa Maria/RS and Nova Palma/RS. Never write a migration that assumes
+data present in only one tenant — and never one that assumes a column exists because a
+*migrated* database happens to have it (that was the Santa Maria lesson).
 
 Generate the migration file and register it — do **not** apply it against a live database.
