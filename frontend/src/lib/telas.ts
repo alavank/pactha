@@ -65,6 +65,14 @@ export const TELAS: TelaDef[] = [
   { key: "transferegov_rejeitadas", label: "Federais — Rejeitadas" },
   { key: "transferegov_encerradas", label: "Federais — Encerradas" },
   { key: "transferegov_cnpj", label: "Federais — CNPJ" },
+  /* ⭐ EMENDAS FEDERAIS (06/09/2026) — a nona folha do grupo.
+     ⚠️ SEM `ufs`, e isso não é esquecimento: a fonte é FEDERAL (dump do
+     TransfereGov + API da CGU). A chave da CGU estar ligada só em dois dos cinco
+     tenants é OUTRA COISA — `ufs` diz onde a fonte EXISTE, e ela existe em todo
+     lugar. Marcar a tela como estadual faria o administrador de um tenant sem
+     chave não conseguir liberar uma tela que ele passa a ver no dia em que ela
+     for ligada; quem conta a verdade sobre a chave é o payload da rota. */
+  { key: "emendas_federais", label: "Federais — Emendas parlamentares" },
 
   // --- ESTADUAIS ----------------------------------------------------------
   // ⚠️ AS DEZ ERAM UMA CHAVE SÓ (`convenios`) até 05/09/2026, e as UFs de

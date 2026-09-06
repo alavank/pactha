@@ -812,7 +812,8 @@ async def export_parlamentares_pdf(
                 f"{p['total_lancamentos']} lançamento(s) · Total {_br(p['valor_total'])} · "
                 f"SIGCON: {pf.get('sigcon', 0)} · TransfereGov: {pf.get('voluntaria', 0)} · "
                 f"Emendas: {pf.get('emenda', 0)} · Transf. Especial: {pf.get('plano_acao', 0)} · "
-                f"PAC: {pf.get('pac', 0)} · FNS: {pf.get('fns', 0)}"
+                f"PAC: {pf.get('pac', 0)} · FNS: {pf.get('fns', 0)} · "
+                f"Emendas federais: {pf.get('emenda_federal', 0)}"
                 + (f" · Municípios: {muns}" if muns else ""),
                 meta_style),
         ]

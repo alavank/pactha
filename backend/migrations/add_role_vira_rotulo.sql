@@ -117,6 +117,15 @@ WITH marca AS (
            ('transferegov_especiais'), ('transferegov_pac'),
            ('transferegov_voluntarias'), ('transferegov_rejeitadas'),
            ('transferegov_encerradas'), ('transferegov_cnpj'),
+           -- ⚠️ `emendas_federais` (06/09/2026) entra AQUI porque `TELAS_TODAS`
+           -- e este bloco tem de ser a MESMA lista — e um teste crava isso
+           -- (`test_apagao_incremento_4::test_telas_todas_e_a_mesma_lista_do_backfill`):
+           -- dois "acesso total" diferentes no mesmo sistema divergem em
+           -- silencio. ⚠️ Mas o backfill em si NAO alcanca os cinco tenants:
+           -- este arquivo tem guard em `migration_backfills` e ja disparou, o
+           -- que faz esta linha valer so para banco NOVO. Quem concede a tela
+           -- nos que ja estao no ar e `add_tela_emendas_federais.sql`.
+           ('emendas_federais'),
            ('repasses'), ('cofinanciamento'), ('monitoramento'),
            ('consulta_popular'), ('programas_rs'), ('funrigs'),
            ('emendas_rs'), ('tce_rs'),

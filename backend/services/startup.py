@@ -463,6 +463,17 @@ MIGRATION_FILES = [
     # por leitura: as tres do incremento ficam juntas, na ordem em que a
     # historia aconteceu.
     "add_permissoes_por_tela.sql",
+    # A tela «Federais — Emendas parlamentares» chega a quem ja acompanha
+    # instrumento federal. ⚠️ DEPOIS de `add_permissoes_por_acao.sql` (a FK de
+    # `user_permissoes.permissao` aponta para `permissoes_catalogo.chave`, que
+    # nasce e e semeada la) e DEPOIS de `add_permissoes_por_tela.sql`, pela
+    # mesma leitura das tres do incremento anterior.
+    #
+    # ⚠️ Ele concede a TELA **e** a ACAO, ao contrario de `add_tela_obrasgov.sql`:
+    # `permissoes_efetivas()` resolve so de `user_permissoes`, e os dois blocos
+    # que derivariam a permissao tem guard em `migration_backfills` e ja
+    # dispararam. So a tela daria menu visivel e 403 no clique.
+    "add_tela_emendas_federais.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",

@@ -401,6 +401,28 @@ _RECURSOS: tuple = (
     _Recurso("transferegov_cnpj", SEC_CONVENIOS, "Federais — CNPJ",
              "as propostas federais por CNPJ do proponente", "",
              ("ver",), tela="transferegov_cnpj"),
+    # ⭐ EMENDAS FEDERAIS (06/09/2026) — a carteira de emenda parlamentar federal
+    # do municipio e a execucao dela pela CGU. Nenhuma tela mostrava isso: a
+    # emenda federal aparecia so como Transferencia Especial em «Especiais» e
+    # como selo `TE` na lista de Convenios, e por um caminho que perdia 45% dela
+    # (as que nunca viraram proposta). Ver ingestion/portal_transparencia.py.
+    #
+    # ⚠️ SO `ver`, pela mesma razao escrita acima para as oito estaduais e para o
+    # InvestSUS: nao ha rota de exportacao nem de coleta sob demanda para
+    # `exportar`/`atualizar` governarem. Permissao que nao governa nada e pior
+    # que permissao faltando — e a saida "por na lista das inertes" so esconderia
+    # a caixinha do administrador. `exportar` entra no MESMO PR que criar
+    # `GET /api/export-pdf/emendas-federais`.
+    #
+    # ⚠️ SEM `ufs`: a fonte e FEDERAL. A chave da CGU estar ligada em dois dos
+    # cinco tenants e OUTRA COISA — `ufs` diz onde a fonte EXISTE, e ela existe
+    # em todo lugar. Quem conta a verdade sobre a chave e o payload da rota
+    # (`fonte_ligada`), nao o catalogo de permissoes: marcar a tela como
+    # estadual faria o administrador de Santa Maria nao conseguir liberar uma
+    # tela que ele passa a ver no dia em que a chave for ligada.
+    _Recurso("emendas_federais", SEC_CONVENIOS, "Federais — Emendas parlamentares",
+             "as emendas parlamentares federais destinadas ao município", "",
+             ("ver",), tela="emendas_federais"),
 
     _Recurso("cauc", SEC_CONVENIOS, "CAUC (regularidade federal)",
              "as pendências de regularidade fiscal do município", "",
