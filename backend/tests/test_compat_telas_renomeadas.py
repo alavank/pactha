@@ -33,7 +33,9 @@ from pathlib import Path
 
 import pytest
 
-from services.auth import TELAS_RENOMEADAS, expandir_telas_legadas
+from services.auth import (
+    TELAS_DE_ADMINISTRACAO, TELAS_RENOMEADAS, expandir_telas_legadas,
+)
 from services.permissoes import (
     CATALOGO, _CHAVES_RENOMEADAS, permissoes_efetivas,
 )
@@ -93,6 +95,35 @@ def test_expandir_nunca_tira_tela():
     entrada = {"transferegov", "rm", "gestao", "cofre"}
     saida = expandir_telas_legadas(entrada)
     assert entrada <= saida
+
+
+# ---------------------------------------------------------------------------
+# 2b. A rede das ABAS DE ADMINISTRACAO — a que nasceu do defeito em producao
+# ---------------------------------------------------------------------------
+def test_admin_volta_a_abrir_as_tres_abas_de_administracao():
+    """⚠️ MEDIDO NO FREITAS EM 05/09/2026: a migration que gravaria a linha
+    (`add_permissoes_por_tela.sql`, parte 2) nao rodou, e todo `role='admin'`
+    nao-super ficou com a aba Usuarios VISIVEL e a tela devolvendo 403 — a unica
+    tela que conserta permissao era a que ninguem conseguia abrir."""
+    assert TELAS_DE_ADMINISTRACAO <= expandir_telas_legadas(set(), "admin")
+    assert TELAS_DE_ADMINISTRACAO <= expandir_telas_legadas({"rm"}, "ADMIN")
+
+
+def test_a_rede_de_administracao_alcanca_SO_o_papel_admin():
+    """⚠️ A PROPRIEDADE QUE A IMPEDE DE VIRAR O DEUS POR DEFAULT que o
+    Incremento 4 matou. Ela restaura o que o PAPEL abria na vespera — tres
+    telas, nominais — e nada alem."""
+    for papel in ("usuario", "prefeito", "analyst", "viewer", ""):
+        assert expandir_telas_legadas({"rm"}, papel) == {"rm"}, papel
+
+
+def test_o_admin_nao_ganha_o_produto_por_ser_admin():
+    """Um admin sem linha nenhuma continua sem Cofre, sem Convenios, sem as
+    telas de dado. A rede e nominal e curta de proposito."""
+    telas = expandir_telas_legadas(set(), "admin")
+    assert telas == set(TELAS_DE_ADMINISTRACAO)
+    for proibida in ("cofre", "convenios", "sessoes", "auditoria", "bi"):
+        assert proibida not in telas, proibida
 
 
 def test_quem_nao_tem_a_chave_antiga_nao_ganha_nada():

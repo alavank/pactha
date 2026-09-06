@@ -29,6 +29,7 @@ from fastapi import HTTPException
 from services import authz
 from services.auth import (
     SUPER_ADMIN_EMAILS,
+    TELAS_DE_ADMINISTRACAO,
     create_access_token,
     eh_credencial_sintetica,
     get_current_user,
@@ -103,6 +104,16 @@ class FakeDb:
 # ---------------------------------------------------------------------------
 # 1. `role` deixou de conceder escopo
 # ---------------------------------------------------------------------------
+#
+# ⚠️ OS DOIS TESTES ABAIXO GANHARAM `- TELAS_DE_ADMINISTRACAO` em 05/09/2026, e
+# a excecao tem prazo. O papel `admin` voltou a abrir TRES telas — Usuarios,
+# Status dos Dados e Parametros — porque elas viraram telas naquele incremento e
+# a migration que gravaria a linha (`add_permissoes_por_tela.sql`, parte 2) NAO
+# RODOU no deploy. Sem a rede, todo admin nao-super ficou trancado fora da unica
+# tela que conserta permissao. Ver `services/auth.py::TELAS_DE_ADMINISTRACAO`.
+#
+# A regra que estes testes guardam — o papel nao concede escopo — continua
+# valendo para TODO o resto, e e isso que as duas asserções medem agora.
 def test_admin_do_cliente_nao_zera_mais_os_limites():
     """O coracao do incremento. `role='admin'` era ausencia TOTAL de limite —
     e como o cadastro nascia com esse papel por default, um POST que esquecesse
@@ -111,20 +122,21 @@ def test_admin_do_cliente_nao_zera_mais_os_limites():
     u = Usuario(role="admin", email="secretaria@montesiao.mg.gov.br")
     db = FakeDb(telas=["dashboard", "cauc"], municipios=[3])
     asyncio.run(load_user_scopes(db, u))
-    assert u.allowed_telas == {"dashboard", "cauc"}
+    assert u.allowed_telas - TELAS_DE_ADMINISTRACAO == {"dashboard", "cauc"}
     assert u.allowed_municipio_ids == {3}
 
 
-def test_admin_sem_linha_nenhuma_fica_sem_nada_e_nao_com_tudo():
+def test_admin_sem_linha_nenhuma_nao_ganha_o_sistema_inteiro():
     """Fail-closed: conjunto VAZIO e "nao pode nada", nunca "pode tudo" (`None`).
 
-    E exatamente por isso que a migration deste incremento tem de conceder o
-    catalogo inteiro aos admins ATUAIS antes desta regra valer — sem o backfill,
-    este teste descreve o cliente inteiro trancado para fora."""
+    ⚠️ O admin recebe as TRES telas de administracao pela rede (ver a nota
+    acima) — e NADA alem delas. Um admin sem linha nenhuma continua sem Cofre,
+    sem Convenios, sem o produto: e a diferenca entre restaurar o que o papel
+    abria ontem e devolver o deus por default que este incremento matou."""
     u = Usuario(role="admin")
     db = FakeDb()
     asyncio.run(load_user_scopes(db, u))
-    assert u.allowed_telas == set()
+    assert u.allowed_telas == set(TELAS_DE_ADMINISTRACAO)
     assert u.allowed_municipio_ids == set()
     assert u.allowed_telas is not None and u.allowed_municipio_ids is not None
 

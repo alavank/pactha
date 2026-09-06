@@ -730,7 +730,7 @@ export default function UsuarioModal({
               const liberadas = g.telas.filter((t) => telasSel.has(t.tela)).length;
               const cor = corDoGrupo(g.rotulo);
               return (
-                <div key={g.rotulo || "__soltos"}
+                <div key={g.rotulo}
                      className="overflow-hidden rounded-md border"
                      style={{ borderColor: "var(--bi-line)", borderLeftWidth: 2,
                               borderLeftColor: cor }}>
@@ -747,7 +747,7 @@ export default function UsuarioModal({
                         <Seta className="size-3.5 shrink-0" style={{ color: "var(--bi-faint)" }} />
                         {g.icone && <g.icone className="size-3.5 shrink-0" />}
                         <span className="bi-title text-[13px] leading-tight">
-                          {g.rotulo || "Módulos gerais"}
+                          {g.rotulo}
                         </span>
                         {liberadas > 0 && <Selo>{liberadas} de {g.telas.length}</Selo>}
                       </span>

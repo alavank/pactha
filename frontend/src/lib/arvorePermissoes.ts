@@ -133,20 +133,21 @@ export function arvoreDoMenu(
     return saida;
   };
 
-  // Os itens SOLTOS de primeiro nível são acumulados num grupo sem rótulo, na
-  // ordem em que aparecem. Um grupo por item deixaria a árvore com quinze
-  // cabeçalhos de uma linha cada.
-  let soltos: TelaNaArvore[] = [];
-  const fecharSoltos = () => {
-    if (soltos.length) {
-      grupos.push({ rotulo: "", telas: soltos });
-      soltos = [];
-    }
-  };
+  // ⚠️ OS ITENS SOLTOS VÃO TODOS PARA **UM** GRUPO, e a primeira versão disto
+  // errava feio: ela fechava o grupo a cada vez que um grupo de verdade
+  // interrompia a sequência, e a árvore saía com TRÊS cabeçalhos «Módulos
+  // gerais» (medido em produção, no freitas: `1 de 4`, `1 de 2`, `8 de 8`).
+  //
+  // Não era só feio — era quebrado: o estado de aberto/fechado é chaveado pelo
+  // RÓTULO do grupo, então clicar num abria os três, e «Liberar grupo» de um
+  // deles não correspondia ao que o contador do vizinho mostrava.
+  //
+  // Um grupo por item avulso também não serve — seriam quinze cabeçalhos de uma
+  // linha cada. Então: uma lista só, na ordem do menu, entregue no fim.
+  const soltos: TelaNaArvore[] = [];
 
   for (const item of MENU_COMPLETO as NavEntry[]) {
     if ("children" in item) {
-      fecharSoltos();
       const telas: TelaNaArvore[] = [];
       for (const filho of item.children) {
         if ("sectionLabel" in filho) {
@@ -163,7 +164,9 @@ export function arvoreDoMenu(
       soltos.push(...montarFolha(item));
     }
   }
-  fecharSoltos();
+  // Os avulsos entram no FIM, num cabeçalho só. Ficam depois dos grupos porque
+  // é lá que o olho os procura: um item sem assunto não abre a lista.
+  if (soltos.length) grupos.push({ rotulo: "Módulos gerais", telas: soltos });
   return grupos;
 }
 

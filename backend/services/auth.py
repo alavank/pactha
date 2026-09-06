@@ -449,7 +449,34 @@ TELAS_RENOMEADAS: dict = {
 }
 
 
-def expandir_telas_legadas(telas: set) -> set:
+# ⭐ AS ABAS DE ADMINISTRACAO QUE O PAPEL `admin` ABRIA ATE 05/09/2026.
+#
+# ⚠️⚠️ ESTA REDE NASCEU DE UM DEFEITO REAL, MEDIDO EM PRODUCAO. Usuarios, Status
+# dos Dados e Parametros eram governadas pelo PAPEL: nao havia linha em
+# `user_telas` para elas, e `_require_admin` (o antigo) abria pelo `role`.
+# Quando elas viraram TELAS, quem devia gravar a linha era a parte 2 de
+# `add_permissoes_por_tela.sql` — e essa migration NAO RODOU no deploy.
+#
+# Resultado medido no freitas: todo `role='admin'` que nao e super-admin ficou
+# com a aba Usuarios VISIVEL (o frontend a mostra por papel, ver
+# `lib/configuracoes.ts::abasVisiveis`) e a tela devolvendo 403. Ou seja: a
+# unica tela que conserta permissao era a que ninguem conseguia abrir. E o
+# `AUTHZ_MODO=aviso` nao salvaria, porque `ensure_tela` nega nos dois modos.
+#
+# Entao a compatibilidade mora AQUI, como a das telas renomeadas: o papel volta
+# a abrir estas tres enquanto a linha nao existir no banco.
+#
+# ⚠️ NAO E AFROUXAMENTO — e a restauracao exata do que valia na vespera. O papel
+# `admin` abria estas tres telas desde sempre; o incremento pretendia trocar o
+# papel pela linha, e a troca so vale quando a linha existir. As DEMAIS telas
+# continuam exigindo concessao: um admin sem `cofre` nao ganha o Cofre por aqui.
+#
+# ⚠️ ELA SAI quando os cinco bancos confirmarem a migration — junto com
+# `TELAS_RENOMEADAS`, pelo mesmo motivo e no mesmo commit.
+TELAS_DE_ADMINISTRACAO: frozenset = frozenset({"usuarios", "frescor", "parametros"})
+
+
+def expandir_telas_legadas(telas: set, papel: str = "") -> set:
     """As telas da pessoa, mais as que as chaves antigas passaram a significar.
 
     Idempotente: rodar sobre um conjunto ja traduzido nao muda nada."""
@@ -457,6 +484,8 @@ def expandir_telas_legadas(telas: set) -> set:
     for antiga, novas in TELAS_RENOMEADAS.items():
         if antiga in saida:
             saida.update(novas)
+    if (papel or "").strip().lower() == "admin":
+        saida |= TELAS_DE_ADMINISTRACAO
     return saida
 
 
@@ -509,7 +538,8 @@ async def load_user_scopes(db: AsyncSession, user: User) -> None:
     user.allowed_municipio_ids = {r[0] for r in mrows.fetchall()}
     trows = await db.execute(
         text("SELECT tela FROM user_telas WHERE user_id = :u"), {"u": user.id})
-    user.allowed_telas = expandir_telas_legadas({r[0] for r in trows.fetchall()})
+    user.allowed_telas = expandir_telas_legadas(
+        {r[0] for r in trows.fetchall()}, getattr(user, "role", "") or "")
     user.allowed_permissoes = await _carregar_permissoes(db, user.id)
     user.allowed_escopos = await _carregar_escopos(db, user.id)
 
