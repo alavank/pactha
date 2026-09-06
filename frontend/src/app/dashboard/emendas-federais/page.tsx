@@ -564,8 +564,8 @@ export default function EmendasFederaisPage() {
                        </span>} />
             {lista.length ? (
               <Lista>
-                {lista.map((e) => (
-                  <LinhaEmenda key={`${e.codigo_emenda}-${e.beneficiario_cnpj}`}
+                {lista.map((e, i) => (
+                  <LinhaEmenda key={`${e.codigo_emenda ?? "sem-codigo"}-${e.numero_emenda ?? i}-${e.beneficiario_cnpj}`}
                                e={e} municipioId={municipioId} />
                 ))}
               </Lista>
@@ -651,8 +651,8 @@ export default function EmendasFederaisPage() {
                      </span>} />
           {filtradas.length ? (
             <Lista>
-              {filtradas.map((e) => (
-                <LinhaEmenda key={`${e.codigo_emenda}-${e.beneficiario_cnpj}`}
+              {filtradas.map((e, i) => (
+                <LinhaEmenda key={`${e.codigo_emenda ?? "sem-codigo"}-${e.numero_emenda ?? i}-${e.beneficiario_cnpj}`}
                              e={e} municipioId={municipioId} />
               ))}
             </Lista>

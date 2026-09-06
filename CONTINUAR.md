@@ -450,6 +450,25 @@ das APIs. O dado foi para o banco certo (mesma `DATABASE_URL`), mas a fonte de v
 saber quem é quem é `GET /api/v1/applications` do Coolify, que devolve o nome (`*-api`,
 `*-worker`, `*-frontend`) junto do UUID — e o nome do container é `<uuid>-<timestamp>`.
 
+**✅ A TELA NO AR E CONFERIDA (06/09, 22h).** Chamada com dado real pelo container da
+API: Nova Palma `parcial`, 64/67 consultadas, **R$ 13.682.127,98** indicados (R$ 12,28 mi
+à prefeitura + R$ 1,40 mi ao Hospital N. S. da Piedade), 16 parlamentares, 27 impositivas.
+Monte Sião: 50/52, R$ 12.237.769,16, 12 parlamentares. **Bate ao centavo** com a medição
+feita antes de existir código.
+
+⚠️⚠️ **TREZE DEFEITOS MEUS NESTA FONTE, e o padrão vale para o próximo coletor:** sete só
+apareceram com **dado real e volume real** — nenhum foi pego por revisão de código (três
+agentes), plano (400 linhas) ou teste de unidade. Os piores: a tela dava **500** em todo
+município com carteira (`x[25]` num SELECT de 25 colunas, e dois vizinhos deslocados lendo
+campo errado em silêncio); o KPI somava **R$ 4,05 bilhões** para um município de 5.676
+habitantes (o agregado da CGU é NACIONAL, e eu contornei em Python a guarda que tinha
+posto no schema); e `fonte_ligada` lia uma env que mora no WORKER, escondendo 64 execuções
+já coletadas.
+
+**A lição operacional:** `pytest` verde e CI verde não dizem que funciona. O que diz é
+rodar contra o banco de produção e **chamar a função que a tela chama**. A lista do que
+sobrou (com o que exige decisão do dono) está em `docs/emendas-federais-pendencias.md`.
+
 ⚠️ **Achado colateral registrado, e vale conferir:** `add_tela_obrasgov.sql` e
 `add_tela_investsus.sql` concedem só `user_telas`, e o comentário deles afirma que a
 ação «já herda de convênios». Não herda nos cinco no ar — `permissoes_efetivas()`
