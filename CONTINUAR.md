@@ -431,6 +431,25 @@ nunca aparece). Daí nasceu **`municipio_entidades`** — cadastro explícito de
 município, com `origem`. ⚠️ A saída fácil era casar o NOME no dump de proponentes, que é
 a regra proibida: o CNPJ tem de ter origem, não dedução.
 
+**✅ NO AR EM 06/09/2026, conferido no servidor.** Migrations OK nas cinco APIs; as cinco
+Scheduled Tasks `portal-transparencia` criadas (freitas 03:45 · trust 04:20 · montesiao
+04:50 · santamaria 05:20 · **novapalma 05:50** UTC — horários escolhidos DEPOIS de ler a
+coluna de cada worker, porque os do plano colidiam com `obrasgov` e `tcm-go`). Carga real:
+**Nova Palma 77 linhas / 44 códigos / R$ 13.682.127,98** (69 prefeitura + 8 hospital) e
+**Monte Sião 53 / 31 / R$ 11,96 mi**. Zero duplicatas; a segunda rodada não mudou contagem
+nem valor, e o `visto_em` avançou — idempotência medida em produção, não presumida.
+
+⚠️ **A FASE 2 (execução) NÃO RODOU:** falta a `PORTAL_TRANSPARENCIA_API_KEY` nos workers.
+A rodada sai `success` com a nota «execucao CGU nao coletada», e a tela diz isso em vez de
+mostrar R$ 0,00. **A hipótese do código de 12 dígitos segue sem confirmação** — é o
+`--verificar` que a testa, e ele depende da chave.
+
+⚠️ **E uma armadilha de identificação que me custou tempo:** `ps aux | grep uvicorn` dentro
+do container NÃO distingue API de worker de forma confiável — rodei a primeira carga dentro
+das APIs. O dado foi para o banco certo (mesma `DATABASE_URL`), mas a fonte de verdade para
+saber quem é quem é `GET /api/v1/applications` do Coolify, que devolve o nome (`*-api`,
+`*-worker`, `*-frontend`) junto do UUID — e o nome do container é `<uuid>-<timestamp>`.
+
 ⚠️ **Achado colateral registrado, e vale conferir:** `add_tela_obrasgov.sql` e
 `add_tela_investsus.sql` concedem só `user_telas`, e o comentário deles afirma que a
 ação «já herda de convênios». Não herda nos cinco no ar — `permissoes_efetivas()`

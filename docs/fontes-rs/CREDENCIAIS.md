@@ -43,10 +43,17 @@ sem chave nenhuma, nos cinco tenants:
 | Nova Palma/RS (`88488358000156`) | 44 | R$ 13,68 mi | 2009–2026 | 17 |
 | Monte Sião/MG (`22646525000131`) | 33 | R$ 12,24 mi | 2009–2026 | 18 |
 
-⚠️ **Esses números contam a prefeitura E as entidades do município.** A carga real de
-06/09 trouxe só as da prefeitura (Nova Palma: 37 códigos, R$ 12,28 mi), porque o CNPJ do
-Hospital N. S. da Piedade não estava cadastrado. É o que a tabela `municipio_entidades`
-resolve — cadastro explícito, com `origem`, e nunca casamento por nome.
+✅ **Conferido em produção em 06/09/2026.** Nova Palma fechou em **77 linhas / 44 códigos /
+R$ 13.682.127,98** — 69 da prefeitura (R$ 12,28 mi) e 8 da Associação Hospital Nossa
+Senhora da Piedade (R$ 1,4 mi), esta última só depois de o CNPJ ser cadastrado em
+`municipio_entidades`. Zero duplicatas, e a segunda rodada não alterou contagem nem
+valor (idempotência medida).
+
+⚠️ **Monte Sião cobre 53 de 55 linhas.** Faltam duas entidades — o Fundo Municipal de
+Assistência Social e a REAVIDA, uma emenda cada. Os CNPJ delas **não foram cadastrados**
+de propósito: eu só os conheço por casamento de NOME no dump de proponentes, que é a
+dedução que `municipio_entidades` existe para evitar. Entram quando alguém confirmar a
+origem.
 
 E o número que justificou o trabalho: **45% dessas emendas têm `ID_PROPOSTA`
 vazio**. Todo caminho que o produto usava para chegar em emenda federal passava
