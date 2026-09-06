@@ -78,8 +78,7 @@ interface Emenda {
 }
 interface Autor {
   autor: string; tipo: string | null; colegiado: boolean; emendas: number;
-  indicado: number; empenhado: number; pago: number; parado_n: number;
-  anos: number[];
+  indicado: number; parado_n: number; anos: number[];
 }
 interface Beneficiario {
   cnpj: string; nome: string | null; prefeitura: boolean; emendas: number;
@@ -363,6 +362,10 @@ export default function EmendasFederaisPage() {
       filtradas.reduce((s, e) => s + (f(e) || 0), 0),
     [filtradas]);
   const consultadasNoFiltro = filtradas.filter((e) => e.execucao_consultada).length;
+  /* ⚠️ CONTAGEM, não soma — ver o comentário nos cartões. */
+  const empenhadas = filtradas.filter((e) => (e.valor_empenhado || 0) > 0).length;
+  const pagas = filtradas.filter(
+    (e) => (e.valor_pago || 0) + (e.valor_resto_pago || 0) > 0).length;
 
   const autoresFiltrados = useMemo(() => {
     const vivos = new Set(filtradas.map((e) => e.autor || ""));
@@ -473,18 +476,25 @@ export default function EmendasFederaisPage() {
                     outros beneficiários
                   </>
                 } />
-        {/* ⚠️ O `sub` DIZ O DENOMINADOR. Sem ele o percentual é irreproduzível:
-            emendas não consultadas entram no «indicado» e ficam fora do
-            «empenhado», e o número vira ficção. */}
-        <Numero icon={Banknote} rotulo="Empenhado"
-                valor={d.fonte_ligada ? brl(soma((e) => e.valor_empenhado)) : "—"}
+        {/* ⚠️⚠️ ESTES CARTÕES CONTAM EMENDA, E NÃO SOMAM DINHEIRO — e a razão
+            tem número. A versão anterior somava `valor_empenhado` das emendas e
+            dava **R$ 4.051.927.813,24** para Nova Palma: quatro bilhões num
+            município de 5.676 habitantes cuja carteira é de R$ 13,68 milhões.
+
+            O agregado da CGU é da emenda INTEIRA, nacional. A fonte não publica
+            «quanto DESTA emenda foi pago A ESTE município» — esse número não
+            existe, e inventá-lo somando seria o pior tipo de erro: grande,
+            plausível e conferível por qualquer um.
+
+            O VALOR continua aparecendo, mas na linha de cada emenda e rotulado
+            «da emenda inteira». Aqui em cima, só o que é do município. */}
+        <Numero icon={Banknote} rotulo="Já empenhadas"
+                valor={d.fonte_ligada ? `${empenhadas} de ${consultadasNoFiltro}` : "—"}
                 sub={d.fonte_ligada
-                  ? `sobre as ${consultadasNoFiltro} emendas já consultadas`
+                  ? "emendas com empenho registrado na CGU"
                   : "execução não consultada neste ambiente"} />
-        <Numero icon={Banknote} rotulo="Pago"
-                valor={d.fonte_ligada
-                  ? brl(soma((e) => (e.valor_pago || 0) + (e.valor_resto_pago || 0)))
-                  : "—"}
+        <Numero icon={Banknote} rotulo="Já pagas"
+                valor={d.fonte_ligada ? `${pagas} de ${consultadasNoFiltro}` : "—"}
                 sub={d.fonte_ligada
                   ? "inclui o resto a pagar quitado"
                   : "execução não consultada neste ambiente"} />
@@ -492,7 +502,7 @@ export default function EmendasFederaisPage() {
                 tom={acao.length ? "critico" : "neutro"}
                 onClick={acao.length ? () => setAba("acao") : undefined}
                 sub={acao.length
-                  ? brl(acao.reduce((s, e) => s + (e.valor_empenhado || 0), 0))
+                  ? `${brl(acao.reduce((s, e) => s + e.valor_indicado, 0))} indicados`
                   : "nada empenhado e parado"} />
       </div>
 
@@ -550,7 +560,7 @@ export default function EmendasFederaisPage() {
           <Bloco key={titulo} className="p-3">
             <BlocoHead icon={AlertTriangle} titulo={titulo} sub={sub}
                        right={<span className="bi-num text-[12px]">
-                         {brl(lista.reduce((s, e) => s + (e.valor_empenhado || 0), 0))}
+                         {brl(lista.reduce((s, e) => s + e.valor_indicado, 0))}
                        </span>} />
             {lista.length ? (
               <Lista>
@@ -595,13 +605,16 @@ export default function EmendasFederaisPage() {
                     </span>
                   }
                 >
+                  {/* ⚠️ SÓ «indicado» — empenhado e pago são valores NACIONAIS
+                      da emenda, e somá-los por autor daria bilhões. */}
                   <Campos
                     cols={3}
                     campos={[
-                      { rotulo: "Indicado", valor: brl(a.indicado) },
-                      { rotulo: "Empenhado",
-                        valor: d.fonte_ligada ? brl(a.empenhado) : "—" },
-                      { rotulo: "Pago", valor: d.fonte_ligada ? brl(a.pago) : "—" },
+                      { rotulo: "Indicado ao município", valor: brl(a.indicado) },
+                      { rotulo: "Emendas", valor: a.emendas },
+                      { rotulo: "Sem pagamento",
+                        valor: a.parado_n || "—",
+                        tom: a.parado_n ? "critico" : "normal" },
                     ]}
                   />
                 </ItemLinha>

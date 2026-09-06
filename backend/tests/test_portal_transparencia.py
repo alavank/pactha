@@ -76,6 +76,7 @@ def _sem_espera(monkeypatch):
     # O tamanho de página é APRENDIDO e vive num global — sem zerar, um teste
     # contamina o outro e a parada curta liga cedo demais no seguinte.
     pt._TAM_PAGINA = None
+    pt._REQUISICOES = 0
     monkeypatch.setenv("PORTAL_TRANSPARENCIA_API_KEY", "chave-de-teste")
 
 
@@ -655,3 +656,70 @@ def test_a_fila_orfa_e_limpa_antes_de_semear():
     # A ordem importa: limpar ANTES de semear, senão o órfão sobrevive à rodada.
     ex = inspect.getsource(pt.execucao)
     assert ex.index("limpar_fila_orfa") < ex.index("semear_fila")
+
+
+# ---------------------------------------------------------------------------
+# Os achados da varredura adversarial de 06/09/2026
+# ---------------------------------------------------------------------------
+def test_a_pausa_vale_entre_codigos_e_nao_so_entre_paginas(monkeypatch):
+    """⚠️ O FREIO ESTAVA PELA METADE, e a medição prova.
+
+    A condição era `if pagina > 1 or out`. Como quase toda consulta resolve em
+    UMA página, cada código novo entrava com `pagina=1` e `out=[]` — ou seja,
+    NÃO havia pausa entre códigos, só dentro de um.
+
+    Medido em produção: Nova Palma fez 112 requisições em ~50 s (134 req/min) e
+    Monte Sião 265 em ~133 s (120 req/min), contra os ~86 que o desenho
+    prometia. Não estourou porque `/emendas` está na faixa de 400/700 — mas a
+    faixa RESTRITA é 180, e o freio existe para respeitar o pior caso."""
+    dormiu = []
+    monkeypatch.setattr(pt.time, "sleep", lambda s: dormiu.append(s))
+    pt._REQUISICOES = 0
+    # Três CÓDIGOS diferentes, cada um resolvendo em uma página só.
+    for _ in range(3):
+        paginar(ClienteFalso([[{"a": 1}], []]), "/emendas", {})
+    # 3 códigos x 2 páginas = 6 requisições; a 1ª da rodada não dorme.
+    assert len(dormiu) == 5, (
+        "sem pausa entre códigos o coletor anda a 134 req/min em vez de 86")
+
+
+def test_erro_de_transporte_nao_vira_a_cgu_nao_conhece_este_codigo():
+    """⚠️ `False` em `achou_agregado` é uma AFIRMAÇÃO — a tela imprime «Sem
+    registro na CGU». Timeout, 500 e 503 não afirmam nada sobre a emenda: são
+    ausência NOSSA, e o valor certo é NULL.
+
+    Gravar `False` trocava um problema de rede por uma acusação ao dado, e ainda
+    queimava uma das três tentativas do backoff."""
+    import inspect
+
+    src = inspect.getsource(pt.execucao)
+    assert "marcas.append((codigo, None, 0, str(e)[:200]))" in src, (
+        "erro de transporte voltou a ser gravado como «não conhece o código»")
+
+
+def test_resposta_200_que_nao_e_lista_nao_e_fim_de_paginacao():
+    """⚠️ Se a CGU passar a devolver um envelope (`{\"data\": [...]}`), tratar
+    como «acabou» zeraria a fonte EM SILÊNCIO — o modo de falha mais caro deste
+    repo. `completo=False` faz a rodada sair `partial`."""
+    envelope = ClienteFalso([{"data": [{"a": 1}]}])
+    itens, completo = paginar(envelope, "/emendas", {})
+    assert itens == [] and completo is False
+
+
+def test_json_invalido_com_200_nao_passa_por_fim_de_paginacao():
+    """Página de manutenção ou WAF com HTTP 200: é falha, não fim."""
+    class _Html:
+        status_code = 200
+
+        def json(self):
+            raise ValueError("not json")
+
+        def raise_for_status(self):
+            pass
+
+    class _Cli:
+        def get(self, *a, **k):
+            return _Html()
+
+    itens, completo = paginar(_Cli(), "/emendas", {})
+    assert itens == [] and completo is False

@@ -350,6 +350,9 @@ def linha_documento(codigo: str, x: dict) -> dict | None:
 # ---------------------------------------------------------------------------
 # Tamanho de pagina APRENDIDO na rodada, nunca chutado.
 _TAM_PAGINA: int | None = None
+# Quantas requisicoes a rodada ja fez. So existe para o freio entre
+# codigos — ver `paginar`. Zerado por rodada, nao por chamada.
+_REQUISICOES = 0
 
 
 def paginar(client: httpx.Client, caminho: str, params: dict,
@@ -382,13 +385,24 @@ def paginar(client: httpx.Client, caminho: str, params: dict,
     for pagina in range(1, teto_paginas + 1):
         if orcamento is not None and not orcamento.pode():
             return out, False
-        # ⚠️ A PAUSA VEM ANTES DA REQUISICAO, e nao depois. Antes ela ficava
-        # abaixo do `extend` e era pulada justamente no retorno da pagina
-        # vazia — ou seja, o coletor martelava mais rapido no cenario em que a
-        # maioria dos codigos nao casa, que e exatamente quando ele deve ir
-        # devagar. Mesma licao do `fns_faf`.
-        if pagina > 1 or out:
+        # ⚠️⚠️ A PAUSA VALE ENTRE TODAS AS REQUISICOES DA RODADA, e nao so
+        # entre paginas do mesmo codigo. A versao anterior tinha
+        # `if pagina > 1 or out`, e como quase toda consulta resolve em uma
+        # pagina, cada codigo novo entrava com `pagina=1` e `out=[]` — ou seja,
+        # NAO HAVIA PAUSA ENTRE CODIGOS e o throttle so valia dentro de um.
+        #
+        # Medido em 06/09/2026: Nova Palma fez 112 requisicoes em ~50s (134
+        # req/min) e Monte Siao 265 em ~133s (120 req/min), contra os ~86 que o
+        # desenho prometia. Nao estourou porque `/emendas` esta na faixa de
+        # 400/700, mas o freio estava pela metade — e a faixa RESTRITA e 180.
+        #
+        # O contador e de MODULO porque o freio e da RODADA: `paginar` e
+        # chamado uma vez por codigo, e um contador local zeraria a cada
+        # chamada, que e exatamente o defeito que isto conserta.
+        global _REQUISICOES
+        if _REQUISICOES:
             time.sleep(PAUSA_S)
+        _REQUISICOES += 1
         r = client.get(f"{BASE}{caminho}", params={**params, "pagina": pagina},
                        headers=_cabecalhos(), timeout=TIMEOUT)
         if orcamento is not None:
@@ -403,8 +417,22 @@ def paginar(client: httpx.Client, caminho: str, params: dict,
                 "429 da CGU — cota por minuto estourada. A fase para AQUI, sem "
                 "retentativa: requisicao rejeitada tambem renova a pena.")
         r.raise_for_status()
-        lote = r.json() or []
-        if not isinstance(lote, list) or not lote:
+        try:
+            lote = r.json() or []
+        except ValueError:
+            # ⚠️ HTTP 200 com corpo que nao e JSON: pagina de manutencao, WAF ou
+            # HTML de erro. Nao e fim de paginacao — e falha, e a rodada tem de
+            # saber (`completo=False` faz o chamador marcar `partial`).
+            log.warning("%s: resposta 200 nao-JSON (pagina %d)", caminho, pagina)
+            return out, False
+        if not isinstance(lote, list):
+            # ⚠️ E SE A CGU PASSAR A DEVOLVER UM ENVELOPE (`{"data": [...]}`),
+            # tratar como "acabou" zeraria a fonte em silencio — o modo de falha
+            # mais caro deste repo. `completo=False` -> `partial`.
+            log.warning("%s: resposta 200 com %s no lugar de lista — contrato "
+                        "mudou?", caminho, type(lote).__name__)
+            return out, False
+        if not lote:
             return out, True
         out.extend(lote)
         if _TAM_PAGINA is None or len(lote) > _TAM_PAGINA:
@@ -954,7 +982,13 @@ def execucao(cur, conn, client: httpx.Client, orc: Orcamento,
             rel["bloqueado"] = True
             break
         except httpx.HTTPError as e:
-            marcas.append((codigo, False, 0, str(e)[:200]))
+            # ⚠️ `None`, E NAO `False`. `False` significa "perguntamos e a CGU
+            # NAO CONHECE este codigo" — uma AFIRMACAO, que a tela imprime como
+            # «Sem registro na CGU». Timeout, 500 e 503 nao afirmam nada sobre a
+            # emenda: sao ausencia NOSSA. Gravar False aqui trocava um problema
+            # de rede por uma acusacao ao dado, e ainda queimava uma das tres
+            # tentativas do backoff.
+            marcas.append((codigo, None, 0, str(e)[:200]))
             continue
         rel["consultados"] += 1
         docs: list[dict] = []
@@ -1124,6 +1158,11 @@ def ingest(dry: bool = False) -> int:
                     _log_ingest(cur, conn, status, gravadas, nota)
                 return gravadas
 
+            # Freio e tamanho-de-pagina sao estado de RODADA, nao de processo:
+            # um processo que rode duas vezes nao pode herdar o freio da
+            # primeira nem o tamanho de pagina aprendido em outro endpoint.
+            globals()["_REQUISICOES"] = 0
+            globals()["_TAM_PAGINA"] = None
             orc = Orcamento(ORCAMENTO_S, MAX_REQ)
             with httpx.Client(follow_redirects=True) as client:
                 ex = execucao(cur, conn, client, orc, dry)

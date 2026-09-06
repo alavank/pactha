@@ -153,7 +153,35 @@ SELECT c.codigo_emenda, c.nr_emenda, c.ano, c.parlamentar, c.tipo_parlamentar,
        max(g.localidade_gasto) AS localidade_gasto,
        q.consultado_em, q.achou_agregado, coalesce(q.n_documentos, 0) AS n_docs
   FROM emendas_federais_carteira c
-  LEFT JOIN emendas_federais_cgu g ON g.codigo_emenda = c.codigo_emenda
+  -- ⚠️⚠️ LATERAL, E NÃO UM `LEFT JOIN` DIRETO — a diferença é o dinheiro do
+  -- município. `emendas_federais_cgu` é 1:N por desenho: a chave única é
+  -- (codigo_emenda, localidade_gasto, funcao, subfuncao), e a fonte usa isso.
+  -- MEDIDO em produção, 06/09/2026: o código 202341160001 voltou com DUAS
+  -- linhas — «VERA CRUZ - RS · Saúde · R$ 50.548,00» e «MÚLTIPLO · Encargos
+  -- especiais · R$ 5.000.000,00».
+  --
+  -- Com o join direto, `sum(c.valor_repasse_emenda)` fica no MESMO GROUP BY do
+  -- fan-out: k linhas na CGU multiplicam por k o valor que veio do DUMP. E só o
+  -- dinheiro infla — `max()` e `array_agg(DISTINCT ...)` atravessam o fan-out
+  -- intactos —, então nada na tela denuncia. Pior: a inflação é proporcional a
+  -- quanto a CGU detalha a emenda, ou seja, MAIOR nas mais executadas.
+  --
+  -- Hoje nenhum código da carteira tem duas linhas (medido: zero nos dois
+  -- municípios), então o defeito está LATENTE. A redução prévia é correta nos
+  -- dois mundos: com k=1 não muda número nenhum; com k>1 é a diferença entre o
+  -- total certo e um total maior e plausível.
+  LEFT JOIN LATERAL (
+      SELECT g2.valor_empenhado, g2.valor_liquidado, g2.valor_pago,
+             g2.valor_resto_inscrito, g2.valor_resto_cancelado,
+             g2.valor_resto_pago, g2.funcao, g2.subfuncao, g2.localidade_gasto
+        FROM emendas_federais_cgu g2
+       WHERE g2.codigo_emenda = c.codigo_emenda
+       -- A linha de MAIOR empenho é a que representa a emenda na tela. Somar as
+       -- fatias seria pior: elas se sobrepõem («MÚLTIPLO» é agregado das
+       -- demais), e somar agregado com detalhe dobraria o número.
+       ORDER BY g2.valor_empenhado DESC NULLS LAST
+       LIMIT 1
+  ) g ON TRUE
   LEFT JOIN emendas_federais_consulta q ON q.codigo_emenda = c.codigo_emenda
  WHERE c.municipio_id = :m
  GROUP BY c.codigo_emenda, c.nr_emenda, c.ano, c.parlamentar, c.tipo_parlamentar,
@@ -191,11 +219,12 @@ async def buscar(db: AsyncSession, municipio_id: int) -> dict:
         linhas = []
 
     itens, autores, anos, orgaos, benefs = [], {}, set(), {}, {}
+    # ⚠️ NENHUM TOTAL DE EXECUÇÃO EM DINHEIRO — ver o comentário no laço abaixo.
+    # `indicado` PODE ser somado: ele vem do dump e é a fatia DESTE município.
     tot = {"emendas": 0, "indicado": 0.0, "indicado_prefeitura": 0.0,
-           "indicado_outros": 0.0, "empenhado": 0.0, "liquidado": 0.0,
-           "pago": 0.0, "resto_inscrito": 0.0, "resto_pago": 0.0,
-           "resto_cancelado": 0.0, "parado_n": 0, "parado_valor": 0.0,
-           "nao_consultadas_n": 0, "impositivas_n": 0}
+           "indicado_outros": 0.0, "com_empenho_n": 0, "com_pagamento_n": 0,
+           "com_resto_n": 0, "parado_n": 0, "nao_consultadas_n": 0,
+           "impositivas_n": 0}
     consultadas = 0
     for x in linhas:
         e = {
@@ -207,9 +236,18 @@ async def buscar(db: AsyncSession, municipio_id: int) -> dict:
             "codigo_confirmado": bool(x[10]),
             "valor_indicado": _f(x[11]) or 0.0,
             "propostas": list(x[12] or []),
-            "execucao_consultada": x[23] is not None,
-            "encontrada": x[24],
-            "documentos_n": int(x[25] or 0),
+            # ⚠️⚠️ OS ÍNDICES SÃO POSICIONAIS E ESTAVAM TODOS DESLOCADOS POR UM.
+            # `x[25]` nem existia (o SELECT tem 25 colunas, 0..24), então a tela
+            # devolvia **IndexError → 500 em todo município com carteira** — ela
+            # nunca tinha sido aberta com dado. E os dois vizinhos liam o campo
+            # errado em silêncio: `execucao_consultada` lia `achou_agregado` e
+            # `encontrada` lia a contagem de documentos.
+            #
+            # x[22] = q.consultado_em · x[23] = q.achou_agregado · x[24] = n_docs
+            # `test_indices_do_sql_batem_com_o_python` amarra os dois lados.
+            "execucao_consultada": x[22] is not None,
+            "encontrada": x[23],
+            "documentos_n": int(x[24] or 0),
         }
         # ⚠️ Os seis valores de execução ficam None quando a CGU nunca foi
         # perguntada. Zero aqui seria uma AFIRMAÇÃO que ninguém fez.
@@ -234,18 +272,31 @@ async def buscar(db: AsyncSession, municipio_id: int) -> dict:
             tot["impositivas_n"] += 1
         if e["execucao_consultada"]:
             consultadas += 1
-            for k, campo in (("empenhado", "valor_empenhado"),
-                             ("liquidado", "valor_liquidado"),
-                             ("pago", "valor_pago"),
-                             ("resto_inscrito", "valor_resto_inscrito"),
-                             ("resto_pago", "valor_resto_pago"),
-                             ("resto_cancelado", "valor_resto_cancelado")):
-                tot[k] += e[campo] or 0
+            # ⚠️⚠️ AQUI NÃO SE SOMA DINHEIRO, E ESSA É A REGRA MAIS IMPORTANTE
+            # DESTE ARQUIVO. O agregado da CGU é da emenda INTEIRA, nacional.
+            # Somar `valor_empenhado` das 44 emendas de Nova Palma dava
+            # **R$ 4.051.927.813,24** — quatro bilhões num município de 5.676
+            # habitantes cuja carteira é de R$ 13,68 milhões. Medido em
+            # 06/09/2026, antes de a tela ser aberta com a chave ligada.
+            #
+            # A CGU não publica "quanto DESTA emenda foi pago A ESTE município".
+            # Esse número não existe na fonte — então a tela conta ESTADO
+            # (quantas andaram, quantas pararam) e mostra VALOR só na linha de
+            # cada emenda, rotulado "da emenda inteira".
+            #
+            # ⚠️ O schema já impedia o `SUM(...) GROUP BY municipio_id` (a tabela
+            # do agregado não tem `municipio_id`). Não bastou: eu somei por
+            # emenda, no Python, contornando a própria guarda que escrevi.
+            if (e["valor_empenhado"] or 0) > 0:
+                tot["com_empenho_n"] += 1
+            if (e["valor_pago"] or 0) + (e["valor_resto_pago"] or 0) > 0:
+                tot["com_pagamento_n"] += 1
+            if (e["valor_resto_inscrito"] or 0) > 0:
+                tot["com_resto_n"] += 1
         else:
             tot["nao_consultadas_n"] += 1
         if e["grupo"] == "parado":
             tot["parado_n"] += 1
-            tot["parado_valor"] += e["valor_empenhado"] or 0
         if e["ano"]:
             anos.add(int(e["ano"]))
         if e["orgao_siafi"]:
@@ -269,12 +320,12 @@ async def buscar(db: AsyncSession, municipio_id: int) -> dict:
                                                   "RELATOR GERAL")
         a = autores.setdefault(nome, {
             "autor": nome, "tipo": e["tipo"], "colegiado": colegiado or not e_pessoa(nome),
-            "emendas": 0, "indicado": 0.0, "empenhado": 0.0, "pago": 0.0,
-            "parado_n": 0, "anos": set()})
+            "emendas": 0, "indicado": 0.0, "parado_n": 0, "anos": set()})
         a["emendas"] += 1
+        # ⚠️ Só `indicado` soma: é o valor do DUMP, a fatia deste município.
+        # Empenhado e pago são nacionais e somá-los por autor daria o mesmo
+        # absurdo de bilhões — ver o comentário no laço dos totais.
         a["indicado"] += e["valor_indicado"]
-        a["empenhado"] += e["valor_empenhado"] or 0
-        a["pago"] += (e["valor_pago"] or 0) + (e["valor_resto_pago"] or 0)
         if e["grupo"] == "parado":
             a["parado_n"] += 1
         if e["ano"]:
