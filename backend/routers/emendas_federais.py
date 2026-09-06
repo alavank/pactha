@@ -344,9 +344,24 @@ async def buscar(db: AsyncSession, municipio_id: int) -> dict:
     # Perguntar ao dado responde certo nos dois sentidos: onde a coleta rodou, a
     # execução aparece; onde não rodou, a tela não afirma nada sobre a
     # configuração de um processo que ela não enxerga.
+    # ⚠️ `houve_coleta` VEM DA RODADA, e não das linhas. A versão anterior usava
+    # `bool(linhas) or consultadas > 0` — e com a carteira vazia isso dá False,
+    # então o município que REALMENTE não tem emenda federal caía em
+    # «a coleta ainda não rodou» PARA SEMPRE, e o estado `sem_emendas` (a única
+    # das cinco frases que afirma algo sobre o município) era inalcançável.
+    try:
+        r = await db.execute(text(
+            "SELECT count(*) FROM ingestion_log "
+            "WHERE source = 'portal_transparencia' "
+            "  AND status IN ('success', 'ok', 'partial', 'parcial')"))
+        houve_coleta = int((r.scalar() or 0)) > 0
+    except Exception:
+        await db.rollback()
+        houve_coleta = bool(linhas) or consultadas > 0
+
     chave_ok = consultadas > 0
     estado = classificar_emendas_federais(
-        chave_configurada=chave_ok, houve_coleta=bool(linhas) or consultadas > 0,
+        chave_configurada=chave_ok, houve_coleta=houve_coleta,
         tem_cnpj=tem_cnpj, n_emendas=tot["emendas"],
         n_execucao_consultada=consultadas)
     aviso = FRASE_EMENDAS_FEDERAIS.get(estado, "")

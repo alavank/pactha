@@ -723,3 +723,51 @@ def test_json_invalido_com_200_nao_passa_por_fim_de_paginacao():
 
     itens, completo = paginar(_Cli(), "/emendas", {})
     assert itens == [] and completo is False
+
+
+def test_o_coletor_carimba_o_frescor_por_municipio():
+    """⚠️ O SELO «Atualizado em» ERA CÓDIGO MORTO. O router chama
+    `frescor_coleta(db, mun, ("portal_transparencia",))`, que lê
+    `scraper_municipio_coleta` — e o coletor nunca escrevia nela. A data nunca
+    aparecia, num módulo cujo argumento inteiro é honestidade sobre quando o
+    dado foi visto.
+
+    ⚠️ E `tentativas = 0` importa: a regra de `services/coleta.py` é que só se
+    DATA quando `tentativas = 0`, porque o carimbo acontece também no erro
+    (anti-starvation do rodízio) — datar uma rodada que falhou mostraria a hora
+    do último ERRO."""
+    import inspect
+
+    src = inspect.getsource(pt.marcar_coleta)
+    assert "scraper_municipio_coleta" in src
+    assert "tentativas = 0" in src or "tentativas" in src
+    # E é chamado de onde a carteira é gravada.
+    assert "marcar_coleta(" in inspect.getsource(pt.carteira)
+
+
+def test_o_auto_limite_conta_partial_como_rodada():
+    """⚠️ `partial` é o estado PERMANENTE de qualquer tenant com município sem
+    CNPJ. Ignorá-lo no auto-limite fazia a fonte rodar em TODA janela do cron,
+    para sempre — baixando o dump de 8,3 MB e gastando cota por um estado que
+    não muda sozinho."""
+    import inspect
+
+    src = inspect.getsource(pt._recente_demais)
+    assert "'partial'" in src and "'parcial'" in src
+
+
+def test_o_plano_b_corrige_o_codigo_na_carteira():
+    """⚠️⚠️ O PLANO B SÓ FUNCIONA SE CORRIGIR A CARTEIRA. A estratégia
+    `ano_numero` existe para descobrir o `codigoEmenda` VERDADEIRO quando o
+    derivado estiver errado — mas gravava o agregado sob o verdadeiro e deixava
+    a carteira com o derivado. O JOIN da tela nunca casaria: uma noite inteira
+    de requisições produziria uma tela idêntica à de antes.
+
+    Hoje a hipótese está confirmada (20/20) e derivado == verdadeiro, então o
+    UPDATE é no-op. Ele existe para o dia em que deixarem de coincidir — o único
+    dia em que o plano B importa."""
+    import inspect
+
+    src = inspect.getsource(pt.execucao)
+    assert 'verdadeiro = (itens[0].get("codigoEmenda")' in src
+    assert "SET codigo_emenda = %s, codigo_confirmado = TRUE" in src

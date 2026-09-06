@@ -742,9 +742,40 @@ def carteira(cur, conn, dry: bool = False) -> dict:
         rel["gravadas"] = len(linhas)
         return rel
     psycopg2.extras.execute_batch(cur, _SQL_CARTEIRA, linhas, page_size=200)
+    # O selo «Atualizado em» da tela sai daqui — ver `marcar_coleta`.
+    marcar_coleta(cur, sorted({l["municipio_id"] for l in linhas}))
     conn.commit()
     rel["gravadas"] = len(linhas)
     return rel
+
+
+def marcar_coleta(cur, municipio_ids: "list[int]") -> None:
+    """Carimba `scraper_municipio_coleta`, que e de onde a TELA le o «Atualizado em».
+
+    ⚠️ SEM ISTO O SELO DE FRESCOR E CODIGO MORTO. O router chama
+    `frescor_coleta(db, mun, ("portal_transparencia",))`, que le esta tabela — e
+    o coletor nunca escrevia nela. Resultado: `coleta_em` sempre None e a tela
+    nunca mostrava a data, num modulo cujo argumento inteiro e honestidade sobre
+    quando o dado foi visto.
+
+    ⚠️ `tentativas = 0` porque quem chega aqui coletou. A regra de
+    `services/coleta.py` e que so se DATA quando `tentativas = 0`: pos-#159 o
+    carimbo acontece tambem no erro (anti-starvation do rodizio), entao datar
+    uma rodada que falhou mostraria a hora do ultimo ERRO.
+    """
+    if not municipio_ids:
+        return
+    try:
+        cur.execute("""
+            INSERT INTO scraper_municipio_coleta
+                   (fonte, municipio_id, ultima_coleta_em, tentativas)
+            SELECT 'portal_transparencia', m, NOW(), 0 FROM unnest(%s::int[]) m
+            ON CONFLICT (fonte, municipio_id) DO UPDATE
+               SET ultima_coleta_em = NOW(), tentativas = 0
+        """, (list(municipio_ids),))
+    except Exception as e:
+        # Contabilidade nunca derruba a coleta — mesma regra do `_log_ingest`.
+        log.warning("marcar_coleta falhou: %s", str(e)[:120])
 
 
 def semear_fila(cur, cnpjs: "list[str] | None" = None) -> int:
@@ -1022,9 +1053,34 @@ def execucao(cur, conn, client: httpx.Client, orc: Orcamento,
                     pass
         marcas.append((codigo, bool(itens), len(docs), None))
         if confirmado and itens and not dry:
-            cur.execute("""UPDATE emendas_federais_carteira
-                              SET codigo_confirmado = TRUE
-                            WHERE codigo_emenda = %s""", (codigo,))
+            # ⚠️⚠️ O PLANO B SÓ FUNCIONA SE ELE CORRIGIR A CARTEIRA. A estratégia
+            # `ano_numero` existe para descobrir o `codigoEmenda` VERDADEIRO
+            # quando o derivado estiver errado — mas gravava o agregado sob o
+            # verdadeiro e deixava a carteira com o derivado, e aí o JOIN da tela
+            # nunca casaria: a noite inteira de requisições produziria uma tela
+            # idêntica à de antes.
+            #
+            # Hoje a hipótese está confirmada (20/20 na amostra), então derivado
+            # e verdadeiro coincidem e este UPDATE é no-op. Ele existe para o dia
+            # em que deixarem de coincidir — que é o único dia em que o plano B
+            # importa.
+            verdadeiro = (itens[0].get("codigoEmenda") or "").strip()
+            if verdadeiro and verdadeiro != codigo:
+                log.info("  %s -> codigo verdadeiro %s (plano B corrigiu a "
+                         "carteira)", codigo, verdadeiro)
+                cur.execute("UPDATE emendas_federais_carteira "
+                            "SET codigo_emenda = %s, codigo_confirmado = TRUE "
+                            "WHERE codigo_emenda = %s", (verdadeiro, codigo))
+                cur.execute("UPDATE emendas_federais_consulta "
+                            "SET codigo_emenda = %s WHERE codigo_emenda = %s "
+                            "  AND NOT EXISTS (SELECT 1 FROM "
+                            "      emendas_federais_consulta z "
+                            "      WHERE z.codigo_emenda = %s)",
+                            (verdadeiro, codigo, verdadeiro))
+            else:
+                cur.execute("UPDATE emendas_federais_carteira "
+                            "SET codigo_confirmado = TRUE "
+                            "WHERE codigo_emenda = %s", (codigo,))
         if not dry and len(marcas) >= 50:
             _gravar(cur, conn, lote_cgu, lote_doc, marcas)
             lote_cgu, lote_doc, marcas = [], [], []
@@ -1078,7 +1134,11 @@ def _recente_demais(cur) -> bool:
         return False
     cur.execute(
         "SELECT max(finished_at) FROM ingestion_log "
-        "WHERE source = %s AND status IN ('success','ok') "
+        # ⚠️ `partial` CONTA como rodada. Ele e o estado PERMANENTE de qualquer
+        # tenant com municipio sem CNPJ — e ignora-lo aqui faria a fonte rodar em
+        # TODA janela do cron, para sempre, gastando dump e cota por um estado
+        # que nao muda sozinho.
+        "WHERE source = %s AND status IN ('success','ok','partial','parcial') "
         "  AND coalesce(error_message, '') NOT LIKE 'sem PORTAL%%'", (FONTE,))
     ultimo = (cur.fetchone() or [None])[0]
     if not ultimo:
