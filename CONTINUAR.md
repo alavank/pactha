@@ -29,15 +29,58 @@
 
 ---
 
+## 1.4. ⚠️ O QUE ESTÁ QUEBRADO AGORA (05/09/2026) — leia antes de mexer em permissão
+
+O incremento **«Permissão por tela»** (PRs #384–#386) foi deployado nos cinco tenants. O
+código está certo e verificado; **uma migration não rodou**, e isso ainda está aberto.
+
+**O que mudou.** A permissão passou a ter três níveis — **Módulo › Tela › Ação** —, os grupos
+FEDERAIS e ESTADUAIS viraram 18 telas com chave própria, as abas de Configurações viraram
+telas, e o cadastro de usuário virou **um modal só** que grava tudo num commit. Saíram os
+modelos de permissão, o rótulo «Prefeito» e a trava de conta «Somente leitura». O
+`AUTHZ_MODO` passou a ser **`bloqueio`** por default. Regra inteira em
+[`docs/PERMISSOES_POR_TELA.md`](docs/PERMISSOES_POR_TELA.md).
+
+**O que está quebrado.** `migrations/add_permissoes_por_tela.sql` **executou e falhou** no
+deploy — e `services/startup.py` engole o erro numa linha de log sem abortar o boot, então a
+API subiu saudável e ninguém foi avisado. Medido no freitas pela API em 05/09:
+
+- ninguém tem as 18 chaves novas (só quem foi cadastrado DEPOIS, pelo modal novo);
+- ninguém tem as telas `usuarios`, `frescor`, `parametros`.
+
+**Consequência que já mordeu:** como aquelas três viraram telas, todo `role='admin'`
+não-super ficou com a aba Usuários **visível** e a tela devolvendo **403** — a única tela que
+conserta permissão era a que ninguém abria. O PR #386 remendou isso no **código**
+(`services/auth.py::TELAS_DE_ADMINISTRACAO` e `TELAS_RENOMEADAS`,
+`services/permissoes.py::_CHAVES_RENOMEADAS`): quem tem a chave antiga alcança as novas,
+tenha a migration rodado ou não.
+
+**O que falta fazer, em ordem:**
+1. Pegar a linha do log — Coolify → `<tenant>-api` → Logs → `add_permissoes_por_tela` — e
+   descobrir **por que** falhou. Sem isso só há remendo.
+2. Corrigir a migration e confirmar nos **cinco** bancos.
+3. **Remover as redes de compatibilidade** — elas são ponte, não desenho, e enquanto
+   existirem a tela mostra desmarcado o que a pessoa na prática tem.
+   `tests/test_compat_telas_renomeadas.py` guarda as propriedades delas.
+
+⚠️ **A lição, que vale para toda migration:** nunca faça a correção de acesso depender de o
+backfill ter rodado. Ponha a compatibilidade no código, para uma falha degradar a
+*exibição* e não o *acesso*.
+
+---
+
 ## 1.5. A SEMANA DE 08–09/08 EM 60 SEGUNDOS (o que mudou de grande)
 
 Partiu de "as atualizações diárias estão falhando e não sabemos por quê" e terminou com o
 sistema operando sozinho. Se você só ler um bloco deste arquivo, leia este:
 
-1. **Deploy é AUTOMÁTICO** (PRs #161-#163): merge na `main` → CI builda → deploya os 3
+1. **Deploy é AUTOMÁTICO** (PRs #161-#163): merge na `main` → CI builda → deploya os
    tenants (API→migrations confirmadas→worker esperando janela sem coleta). Auto-deploy
-   por webhook do Coolify DESLIGADO nas 9 apps. Secrets `COOLIFY_URL`/`COOLIFY_TOKEN` no
+   por webhook do Coolify DESLIGADO. Secrets `COOLIFY_URL`/`COOLIFY_TOKEN` no
    GitHub. Rollback = repontar tag na mão (continua funcionando).
+   ⚠️ Eram **3 tenants / 9 apps** quando isto foi escrito; hoje são **5 / 15 + 5 bancos**.
+   ⚠️ "migrations confirmadas" quer dizer que o *deployment* terminou — **não** que a
+   migration deu certo. Ver §1.4.
 2. **Coleta fatiada com rodízio anti-starvation** (PRs #158/#159 + tuning de 09/08):
    rodadas curtas e frequentes, lock compartilhado `/tmp/scraper.lock` por worker
    (sigcon/lote/cagec nunca simultâneos), agendas entrelaçadas. REGRA: margem do
@@ -359,15 +402,14 @@ Resumo; o detalhe completo (uuids de todas as aplicações, bancos, crons por te
 - **Token da API do Coolify:** NÃO está neste arquivo (é segredo). O usuário fornece (formato `36|xxxx`). Use `Authorization: Bearer <TOKEN>`. **Rotacione periodicamente.**
 - **GitHub App (source):** `alavank-coolify` — já dá acesso ao repo privado `alavank/pactha`. Use o `github_app_uuid` dele ao criar apps.
 
-**Projeto Coolify `pactha`** — uuid `ksmwr13y4iyprom8i1znede8`, **um environment por tenant** (`production` está vazio), **15 aplicações + 5 bancos** (o `montesiao-mg-painel` foi removido):
+**Projeto Coolify `pactha`** — **um environment por tenant** (`production` está vazio),
+**15 aplicações + 5 bancos** (o `montesiao-mg-painel` foi removido).
 
-| Tenant | API | Frontend | Worker | Banco |
-|---|---|---|---|---|
-| freitas | `givx3567ygxppum10p1oungn` | `qgmw4e5wjem1e8jit2wyvo1d` | `s49c3b58lysqq0tpelneg3g3` | `tox59kvmkrb0ywmeaty3t02a` |
-| trust | `pphvk2ygkuirjhu9qptvmfs5` | `j5ghp71lff003d5rfaynvy5y` | `xg714h8l7va4ejq70a5pmv5t` | `p434vbj35siee57shlsyzuc2` |
-| montesiao-mg | `chr0n883hp19tjh7829k85a7` | `bryvqhhcu97lc3ku7a2hss0q` | `jhf0kjhps5keujiyhhsnvjt6` | `iogvjlnkpqlugja9j76rktl1` |
-| santamaria-rs | `ufjctldngc14dsdw8pxnqivl` | `eohjo0cy4nbl6t7hiaqwagwf` | `wquremniv57gag3tlil8uf6d` | `m2ypghl41lbqhv7rdqzffdi3` |
-| novapalma-rs | `gemcwirmbelk1dztp2pbcqpf` | `rpqpxroy5orsuidrbfezlzkt` | `kqcnvdsdkgn1efkm4nog8oes` | `dl2jwo0q1ckbplqp6vp1hnu4` |
+> ⚠️ **A tabela de UUIDs saiu daqui em 05/09/2026.** Ela estava duplicada — a mesma lista
+> vivia neste arquivo e no `INFRA.md`, que é a fonte de verdade de infra. Duas cópias de
+> identificador de deploy divergem no dia em que um app é recriado, e aí ninguém sabe qual
+> está certa. **Está em [`INFRA.md`](INFRA.md) §3 e §9**, e o workflow de deploy carrega a
+> sua própria cópia na variável `TENANTS` do GitHub Actions.
 
 Builds: API = `backend/Dockerfile.api` (base `/`) · Frontend = `frontend/Dockerfile` (base `/frontend`, standalone) · Worker = `backend/Dockerfile.scraper` (PID 1 = `tini` + `reaper.sh`, que mata ingestão >1h e Chromium órfão; crons via Scheduled Tasks). Bancos: `postgres:16-alpine`, db/user `pactha`, porta 5432, host = uuid do resource.
 

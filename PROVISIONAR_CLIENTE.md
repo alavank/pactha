@@ -57,9 +57,9 @@ depois, sem travar a abertura:
 
 Só isto — e é de propósito:
 
-- **Quatro contas**, as de `services/auth.py::SUPER_ADMIN_EMAILS`:
-  `super-admin@alavank.com.br`, `alavank.tecnologia@gmail.com`,
-  `tiagomiller@alavank.com.br`, `matheus@alavank.com.br`. Senhas **aleatórias, impressas no log do primeiro
+- **As contas de dono da plataforma**, exatamente a lista de
+  `services/auth.py::SUPER_ADMIN_EMAILS` (não repetida aqui de propósito: e-mail é dado
+  pessoal, e uma segunda cópia diverge). Senhas **aleatórias, impressas no log do primeiro
   boot**, com troca obrigatória no primeiro acesso.
 - **O município informado nas variáveis de ambiente** — um registro, o dele.
 

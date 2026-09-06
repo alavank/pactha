@@ -1,7 +1,7 @@
-# PACTHA - Sistema de Monitoramento de Convenios
+# PACTHA — Sistema de Monitoramento de Convenios
 
 Plataforma de monitoramento de convenios, repasses e emendas para municipios e
-assessorias — **17 fontes oficiais** (federais + estaduais de MG/ES/GO), coletadas
+assessorias — **21 fontes oficiais** (federais + estaduais de MG/ES/GO/RS), coletadas
 na cadencia real de cada uma, com selo "atualizado em" nas telas e vigilancia de
 frescor por municipio.
 
@@ -9,18 +9,26 @@ frescor por municipio.
 > Toda a verdade sobre servidor, URLs, bancos, crons e segredos esta em **[`INFRA.md`](INFRA.md)**.
 > Nao usamos Hetzner, Railway, Neon, Vercel, Netlify nem Supabase.
 
-## ⚠️ Um repo, TRES tenants — e um merge na main DEPLOYA OS TRES (desde 09/08)
+## ⚠️ Um repo, CINCO tenants — e um merge na main DEPLOYA OS CINCO
 
-Este repositorio atende **tres clientes distintos**, cada um com seu proprio conjunto de
+Este repositorio atende **cinco clientes distintos**, cada um com seu proprio conjunto de
 containers e seu **proprio banco**, todos buildados do **mesmo codigo**:
 
-| Tenant | Slug | App | API |
-|--------|------|-----|-----|
-| Freitas | `freitas` | https://pactha-54-232-208-118.sslip.io | https://pactha-api-54-232-208-118.sslip.io |
-| Trust | `trust` | https://pactha-trust-54-232-208-118.sslip.io | https://pactha-trust-api-54-232-208-118.sslip.io |
-| Monte Siao/MG | `montesiao-mg` | https://pactha-montesiao-mg-54-232-208-118.sslip.io | https://pactha-montesiao-mg-api-54-232-208-118.sslip.io |
+| Tenant | Slug | Quem e | Dominio de producao (conferido 05/09/2026) |
+|--------|------|--------|--------------------------------------------|
+| Freitas | `freitas` | consultoria (carteira MG) | `freitas.pactha.com.br` |
+| Trust | `trust` | consultoria (carteira MG) | `trust.pactha.com.br` |
+| Monte Siao/MG | `montesiao-mg` | prefeitura | `montesiao.mg.pactha.com.br` |
+| Santa Maria/RS | `santamaria-rs` | prefeitura | `santamaria.rs.pactha.com.br` |
+| Nova Palma/RS | `novapalma-rs` | prefeitura | **ainda sem dominio proprio** |
 
-**Os TRES tenants** tem o **Painel de Indicadores** (BI) ligado — flag build-time
+> ⚠️ **DOIS ENDERECOS PARA O MESMO CONTAINER, e isto ja custou confusao.** Todo app tem o
+> endereco cru `pactha[-slug]-54-232-208-118.sslip.io` (o IP do servidor resolvido pelo
+> `sslip.io`), e quatro dos cinco tem TAMBEM o dominio da tabela acima. **Sao o mesmo
+> container e o mesmo banco** — nao existe ambiente de teste separado, e mexer por um
+> endereco mexe no outro. A tabela completa esta em [`INFRA.md`](INFRA.md) §3.
+
+**Os cinco tenants** tem o **Painel de Indicadores** (BI) ligado — flag build-time
 `NEXT_PUBLIC_BI_MODULE=1` na matriz do `build-frontend.yml`. `/dashboard` e o
 painel executivo (abas por assunto, filtro multi-ano, insights de IA) e `/tela` e
 o **Modo Tela** (TV de gabinete, com link publico revogavel `/t/<slug>`). O app
@@ -30,16 +38,22 @@ Nao ha multi-tenancy no codigo: **o isolamento e por deploy**. O que muda entre 
 outro sao as env vars no Coolify (`INSTANCE_SLUG`, `DATABASE_URL`, `JWT_SECRET`, `COFRE_KEY`,
 `NEXT_PUBLIC_CLIENT_LOGO`, `NEXT_PUBLIC_CLIENT_SUBTITLE`).
 
-**Consequencia pratica (modelo de 09/08, PRs #161-#163):** merge na `main` que toca
-`backend/**` ou `frontend/**` **builda no GitHub Actions e deploya os 3 tenants sozinho**,
-na ordem certa: API primeiro (roda as migrations; deployment confirmado), depois o worker
-do mesmo tenant **esperando janela sem coleta em voo**. O auto-deploy por webhook do
-Coolify esta **desligado nas 9 aplicacoes** (recriava containers com a tag antiga e matava
-coleta). Deploy manual continua possivel para rollback. Mecanica completa comentada nos
-proprios `.github/workflows/*.yml`; visao de infra em [`INFRA.md`](INFRA.md) §2.
+**Consequencia pratica:** merge na `main` que toca `backend/**` ou `frontend/**` **builda no
+GitHub Actions e deploya os 5 tenants sozinho**, na ordem certa: API primeiro (roda as
+migrations; deployment confirmado), depois o worker do mesmo tenant **esperando janela sem
+coleta em voo**. O auto-deploy por webhook do Coolify esta **desligado**: ele recriava
+containers com a tag antiga e matava coleta. Deploy manual continua possivel para rollback.
+Mecanica completa comentada nos proprios `.github/workflows/*.yml`; visao de infra em
+[`INFRA.md`](INFRA.md) §2.
 
-Alem disso, um mesmo bug corrigido aqui **vai para os tres clientes** — e uma mudanca de
-schema precisa ser idempotente nos tres bancos.
+Alem disso, um mesmo bug corrigido aqui **vai para os cinco clientes** — e uma mudanca de
+schema precisa ser idempotente nos cinco bancos, inclusive num **novo**: Santa Maria (08/2026)
+e Nova Palma (01/09/2026) nasceram do zero, e a segunda expos um bug de ORDEM das migrations.
+
+> ⚠️ **MIGRATION QUE FALHA NAO DERRUBA O BOOT.** `services/startup.py` registra o erro numa
+> linha de log e segue. Depois de um deploy que traga migration, **confira no log** que ela
+> saiu como `Migration OK:` — em 05/09/2026 uma falhou em silencio e so foi descoberta
+> olhando o dado pela API.
 
 ## Stack
 - **Frontend**: Next.js 16 (App Router) + Tailwind v4 + daisyUI
@@ -48,20 +62,30 @@ schema precisa ser idempotente nos tres bancos.
 - **Scraping**: httpx + Playwright (Chromium) + curl_cffi
 - **Deploy**: Coolify (Docker) na **AWS Lightsail**
 
-## Fontes de dados (17, cadencia propria por fonte)
+## Fontes de dados (21, cadencia propria por fonte)
 
 **Federais:** TransfereGov (portal Discricionarias + dumps SICONV/Novo PAC em
-`api-publica.transferegov.gestao.gov.br` — diarios ate 9h BRT), FNS (pagamentos D-1),
-CAUC/STN (diario em dias uteis), SISMOB (API publica), SIMEC/PAR.
+`api-publica.transferegov.gestao.gov.br`), radar de captacao (`siconv_programa.zip` — a
+unica tela que olha para FRENTE, com janela de proposta ainda aberta), FNS (pagamentos D-1),
+InvestSUS/ConsultaFNS (fundo a fundo por bloco), CAUC/STN, SISMOB, Obras.gov.br/CIPI,
+SIMEC/PAR, SICONFI/Tesouro (contas entregues + CAPAG).
 **Estaduais:** SIGCON-MG (portal logado, credencial por municipio no Cofre) + dump
-`dados.mg.gov.br/convenios-saida` (diario ~8h14), CAGEC-MG (consulta publica + CRC),
-Acordo FES (SES-MG), GConv-ES (diario em dias uteis), Transf. Voluntarias GO
-(mensal-irregular!), COFIN/SES-GO, TCM-GO, diarios oficiais MG/ES/GO/TO.
+`dados.mg.gov.br`, CAGEC-MG, Acordo FES (SES-MG), GConv-ES, Transf. Voluntarias GO,
+COFIN/SES-GO, TCM-GO, TCE-RS/LicitaCon, Consulta Popular/COREDEs (RS), diarios oficiais
+MG/ES/GO/TO/RS.
 
 Cada coletor vive em `backend/ingestion/` com as armadilhas anotadas no proprio
-arquivo. Frescor por municipio em `scraper_municipio_coleta` (fontes `sigcon`,
-`sigcon_emendas`, `transferegov`); resultado de cada rodada em `ingestion_log`
-(`success`/`parcial`/`erro` HONESTOS desde o PR #160).
+arquivo. Frescor por municipio em `scraper_municipio_coleta`; resultado de cada rodada em
+`ingestion_log` (`success`/`parcial`/`erro` HONESTOS).
+
+## Permissao: Modulo › Tela › Acao
+
+Desde 05/09/2026 a permissao tem tres niveis encaixados, e a arvore da tela de Usuarios sai
+do **mesmo objeto que desenha o menu lateral** (`frontend/src/lib/menu.ts`) — modulo novo
+aparece nos dois no mesmo deploy, sem codigo novo.
+
+Regra completa, com o que foi removido e por que, em
+[`docs/PERMISSOES_POR_TELA.md`](docs/PERMISSOES_POR_TELA.md).
 
 ## Desenvolvimento local
 
@@ -79,29 +103,34 @@ npm install --legacy-peer-deps
 npm run dev
 ```
 
+### Testes (so backend — nao existe suite de frontend)
+```bash
+pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+python -m pytest        # da raiz, SEM argumento: pytest.ini e conftest.py cuidam do resto
+```
+
 ### Primeiro acesso (banco NOVO)
 - `super-admin@alavank.com.br` — a conta de bootstrap, semeada por `setup_db.py`
   em tenant novo (so quando `users` esta vazia).
 - **A senha nao esta escrita em lugar nenhum**: e gerada aleatoria por tenant e
   IMPRESSA NO CONSOLE do primeiro boot (`_gen_password`), ou definida via
   `ADMIN_PASSWORD`. `must_change_password` e TRUE, entao o primeiro login troca.
-- Senha padrao publicada em README e senha padrao em producao — as duas versoes
-  anteriores desta secao traziam uma.
 
-(validos no seed de um banco novo; em producao as senhas ja foram trocadas)
+> ⚠️ Duas versoes anteriores desta secao traziam uma senha padrao escrita. Nao repita:
+> senha em README e senha em producao ao mesmo tempo.
 
 ## Deploy (Coolify / AWS Lightsail)
 
 Painel do Coolify: `http://54.232.208.118:8000` — projeto `pactha`, environment `production`.
 
-**Cada tenant** tem o mesmo conjunto de 4 resources:
+**Cada tenant** tem o mesmo conjunto de 4 resources (5 tenants = 20 aplicacoes):
 
 | Resource | Build | Dominio |
 |----------|-------|---------|
 | Postgres 16 (`<tenant>-db`) | `postgres:16-alpine` (database one-click) | interno |
 | API (`<tenant>-api`) | `backend/Dockerfile.api` (Base Dir = `/`) | subdominio proprio |
 | Frontend (`<tenant>-frontend`) | `frontend/Dockerfile` (Base Dir = `frontend`) | subdominio proprio |
-| Worker (`<tenant>-worker`) | `backend/Dockerfile.scraper` (PID 1 = `tini` + `reaper.sh`; crons via Scheduled Tasks) | interno |
+| Worker (`<tenant>-worker`) | `backend/Dockerfile.scraper` (PID 1 = `tini` + `reaper.sh`) | interno |
 
 O frontend faz **proxy same-origin** de `/api` para o host interno da API
 (`rewrites()` em `frontend/next.config.ts`, alvo em `API_PROXY_TARGET`, build-time). Por isso
@@ -109,7 +138,7 @@ cookies httpOnly + CSRF + refresh silencioso funcionam sem re-login a cada hora.
 
 Crons = **Scheduled Tasks** anexadas ao Worker de cada tenant (mesma imagem com Chromium),
 com horarios **escalonados entre tenants** de proposito — ver `docs/CRON_SETUP.md` e
-[`INFRA.md`](INFRA.md). Nao alinhe os horarios: a maquina e burstable e nao aguenta os tres
+[`INFRA.md`](INFRA.md). Nao alinhe os horarios: a maquina e burstable e nao aguenta os cinco
 raspando ao mesmo tempo.
 
 Variaveis de ambiente: ver `.env.example`. As migrations idempotentes rodam no
@@ -119,8 +148,11 @@ boot da API (`services/startup.py`).
 
 | Arquivo | Para que serve |
 |---------|----------------|
-| [`INFRA.md`](INFRA.md) | Servidor, URLs, bancos, segredos, operacoes no Coolify — **fonte de verdade** |
-| [`CONTINUAR.md`](CONTINUAR.md) | Handoff para a proxima sessao de IA/dev |
+| [`INFRA.md`](INFRA.md) | Servidor, URLs, bancos, operacoes no Coolify — **fonte de verdade de infra** |
+| [`CLAUDE.md`](CLAUDE.md) | Contexto que a IA le em toda sessao — regras do repo |
+| [`CONTINUAR.md`](CONTINUAR.md) | Handoff: decisoes e historico entre sessoes |
+| [`docs/PERMISSOES_POR_TELA.md`](docs/PERMISSOES_POR_TELA.md) | Modulo › Tela › Acao, e o cadastro de usuario |
 | [`docs/CRON_SETUP.md`](docs/CRON_SETUP.md) | Rotinas de ingestao e Scheduled Tasks |
 | [`docs/SECURITY_CREDENTIALS.md`](docs/SECURITY_CREDENTIALS.md) | Cofre AES-256 + Service Tokens |
+| [`docs/MAPA_RS.md`](docs/MAPA_RS.md) | As fontes do Rio Grande do Sul |
 | [`extension/README.md`](extension/README.md) | Extensao Chrome de captura de sessao gov.br |

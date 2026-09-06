@@ -112,12 +112,31 @@ sha **completo** — o CI cuida disso. Conferido em 04/09/2026: as 15 apps na me
 ## 3. Aplicações e URLs em produção
 
 Projeto Coolify: **`pactha`** (uuid `ksmwr13y4iyprom8i1znede8`), environment `production`.
-Todas as URLs abaixo foram conferidas respondendo em 2026-07-23.
+
+> ⚠️⚠️ **CADA APP TEM DOIS ENDERECOS, E OS DOIS SAO O MESMO CONTAINER.** O `sslip.io`
+> resolve o IP do servidor dentro do proprio nome (`...-54-232-208-118.sslip.io` → 54.232.208.118),
+> e por isso todo app tem esse endereco cru de graca. Quatro dos cinco tem TAMBEM um dominio
+> proprio. **Nao ha ambiente de teste separado**: mexer por um endereco mexe no outro, no
+> mesmo banco.
+>
+> Conferido respondendo em **05/09/2026**:
+>
+> | Tenant | Dominio proprio | Endereco cru |
+> |---|---|---|
+> | Freitas | `freitas.pactha.com.br` | `pactha-54-232-208-118.sslip.io` |
+> | Trust | `trust.pactha.com.br` | `pactha-trust-54-232-208-118.sslip.io` |
+> | Monte Siao | `montesiao.mg.pactha.com.br` | `pactha-montesiao-mg-54-232-208-118.sslip.io` |
+> | Santa Maria | `santamaria.rs.pactha.com.br` | `pactha-santamaria-rs-54-232-208-118.sslip.io` |
+> | Nova Palma | *(nao tem)* | `pactha-novapalma-rs-54-232-208-118.sslip.io` |
+>
+> ⚠️ Os dois primeiros **faltavam neste arquivo** ate 05/09/2026, e a ausencia custou uma
+> sessao inteira de desconfianca: quem le so o `INFRA.md` conclui que `freitas.pactha.com.br`
+> e outro ambiente. Dominio novo entra AQUI no mesmo dia em que e apontado.
 
 ### Freitas
 | Resource | Build | URL |
 |---|---|---|
-| `freitas-frontend` | `frontend/Dockerfile` (base `/frontend`) | https://pactha-54-232-208-118.sslip.io |
+| `freitas-frontend` | `frontend/Dockerfile` (base `/frontend`) | https://freitas.pactha.com.br · https://pactha-54-232-208-118.sslip.io |
 | `freitas-api` | `backend/Dockerfile.api` (base `/`) | https://pactha-api-54-232-208-118.sslip.io |
 | `freitas-worker` | `backend/Dockerfile.scraper` | interno (sem domínio público) |
 | `freitas-db` | `postgres:16-alpine` | interno — db/user `pactha`, uuid `tox59kvmkrb0ywmeaty3t02a` |
@@ -125,7 +144,7 @@ Todas as URLs abaixo foram conferidas respondendo em 2026-07-23.
 ### Trust
 | Resource | Build | URL |
 |---|---|---|
-| `trust-frontend` | `frontend/Dockerfile` | https://pactha-trust-54-232-208-118.sslip.io |
+| `trust-frontend` | `frontend/Dockerfile` | https://trust.pactha.com.br · https://pactha-trust-54-232-208-118.sslip.io |
 | `trust-api` | `backend/Dockerfile.api` | https://pactha-trust-api-54-232-208-118.sslip.io |
 | `trust-worker` | `backend/Dockerfile.scraper` | interno |
 | `trust-db` | `postgres:16-alpine` | interno — db/user `pactha`, uuid `p434vbj35siee57shlsyzuc2` |
