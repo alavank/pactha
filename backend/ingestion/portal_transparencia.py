@@ -701,7 +701,7 @@ def carteira(cur, conn, dry: bool = False) -> dict:
     return rel
 
 
-def semear_fila(cur) -> int:
+def semear_fila(cur, cnpjs: "list[str] | None" = None) -> int:
     """Poe na fila da CGU todo codigo conhecido, das DUAS origens.
 
     ⭐ Os da `transferegov_te` sao o GRUPO DE CONTROLE: `codigoEmendaFormatado`
@@ -710,6 +710,27 @@ def semear_fila(cur) -> int:
     derivacao; se nem eles responderem, o problema e a chave ou o endpoint — e
     nao se mexe na formula. Sem esse grupo, um resultado de 0% e ininterpretavel
     e a reacao natural (mexer na formula) seria a errada.
+
+    ⚠️⚠️ A TE E FILTRADA POR CNPJ, e a versao anterior NAO filtrava — foi um
+    defeito meu, medido na primeira rodada com chave em Monte Siao: a fila
+    nasceu com **545 codigos** em vez dos 31 da carteira, um fator de 17.
+
+    A causa: `transferegov_te` guarda os planos do ESTADO inteiro, e o
+    `municipio_id` dela vem de casamento por SUBSTRING DE NOME
+    (`transferegov_te.py:152-168`), com contaminacao medida — 628 de 890 linhas
+    com CNPJ divergente na base trust. Semear tudo gastava cota consultando
+    emenda de outro municipio.
+
+    ⚠️ Nao CORROMPE nada (a tabela `emendas_federais_cgu` e nacional por
+    desenho, e a tela so mostra o que da JOIN com a carteira), mas gasta o
+    orcamento da noite com o que ninguem vai ler.
+
+    O filtro e por CNPJ do beneficiario, a mesma disciplina de
+    `services/bi_abas.py:431-443`. ⚠️ E o `OR ... IS NULL` no fim NAO e
+    descuido: TE sem CNPJ do beneficiario cairia fora, e ela nao tem como ser
+    recuperada pelo dump (Transferencia Especial vive em outro sistema e nao
+    esta no `siconv_emenda.zip`). Perder emenda legitima para economizar
+    requisicao seria o pior dos dois erros.
     """
     n = 0
     cur.execute("""
@@ -724,12 +745,15 @@ def semear_fila(cur) -> int:
     try:
         cur.execute("""
             INSERT INTO emendas_federais_consulta (codigo_emenda, origem, ano)
-            SELECT DISTINCT split_part(emenda, '-', 1), 'transferegov_te',
-                   NULLIF(substr(coalesce(programa_codigo, ''), 5, 4), '')::int
-              FROM transferegov_te
-             WHERE emenda ~ '^[0-9]{12}-'
+            SELECT DISTINCT split_part(te.emenda, '-', 1), 'transferegov_te',
+                   NULLIF(substr(coalesce(te.programa_codigo, ''), 5, 4), '')::int
+              FROM transferegov_te te
+             WHERE te.emenda ~ '^[0-9]{12}-'
+               AND (regexp_replace(coalesce(te.beneficiario_cnpj, ''),
+                                   '\\D', '', 'g') = ANY(%s)
+                    OR coalesce(te.beneficiario_cnpj, '') = '')
             ON CONFLICT (codigo_emenda) DO NOTHING
-        """)
+        """, (list(cnpjs or []),))
         n += cur.rowcount or 0
     except Exception as e:
         log.warning("semear_fila/te indisponivel: %s", str(e)[:100])
@@ -807,7 +831,7 @@ def execucao(cur, conn, client: httpx.Client, orc: Orcamento,
     """FASE 2 — pergunta a CGU sobre cada codigo da fila."""
     rel = {"consultados": 0, "achou": 0, "documentos": 0, "pendentes": 0,
            "bloqueado": False, "estrategia": ESTRATEGIA, "truncados": []}
-    semeados = semear_fila(cur)
+    semeados = semear_fila(cur, list(alvos(cur).keys()))
     if not dry:
         conn.commit()
     log.info("  fila: +%d codigo(s) novo(s)", semeados)
@@ -1092,7 +1116,7 @@ def verificar() -> int:
     with neon_connect(get_sync_db_url()) as conn:
         cur = conn.cursor()
         try:
-            semear_fila(cur)
+            semear_fila(cur, list(alvos(cur).keys()))
             conn.commit()
             with httpx.Client(follow_redirects=True) as client:
                 for origem in ("transferegov_te", "siconv"):
