@@ -9,7 +9,7 @@ from database import get_db
 from routers import (
     auth, municipios, convenios, cofre, service_tokens,
     session_capture, emendas_estaduais, dou_mg, dou_es, dou_go, dou_to, dou_rs,
-    fns, transferegov, export_pdf,
+    fns, transferegov, emendas_federais, export_pdf,
     users, simec, rm, ai, gestao, parlamentares, status_changes,
     documentos, cauc, cagec, siconfi, acordofes, control, freshness, painel, bi,
     sismob, obrasgov, investsus, auditoria, permissoes, repasses,
@@ -183,6 +183,10 @@ app.include_router(cofre.router)
 app.include_router(session_capture.router)
 app.include_router(service_tokens.router)
 app.include_router(transferegov.router)
+# Emendas parlamentares FEDERAIS — a nona tela do grupo FEDERAIS (06/09/2026).
+# Fica junto do transferegov de proposito: as duas sao do mesmo grupo do menu
+# e a emenda federal aparecia ate aqui embutida nas telas dele.
+app.include_router(emendas_federais.router)
 app.include_router(export_pdf.router)
 app.include_router(users.router)
 app.include_router(simec.router)

@@ -126,7 +126,12 @@ async def aggregate_parlamentares(
         "total_lancamentos": 0,
         "valor_total": 0.0,
         "municipios": set(),
-        "por_fonte": {"sigcon": 0, "voluntaria": 0, "emenda": 0, "plano_acao": 0, "pac": 0, "fns": 0},
+        # ⚠️ `emenda_federal` entra AQUI, e nao so no bloco que a preenche: o
+        # bloco roda dentro de `try/except Exception: pass`, entao sem a chave
+        # no dicionario o KeyError do primeiro `+= 1` seria ENGOLIDO e a fonte
+        # inteira sumiria em silencio, com a tela funcionando.
+        "por_fonte": {"sigcon": 0, "voluntaria": 0, "emenda": 0, "plano_acao": 0,
+                      "pac": 0, "fns": 0, "emenda_federal": 0},
         # Marcado pelas fontes que entram com PROPONENTE no lugar do autor (PAC
         # sem emenda, FNS). Nao e adivinhacao de texto: a propria origem sabe
         # que ali nao vem nome de pessoa. Vira `tipo` no final e some do payload.
@@ -145,6 +150,7 @@ async def aggregate_parlamentares(
     # Filtro de ano — a fonte do ano difere por tabela:
     #   convenios_estadual/emendas_estaduais -> coluna `ano`
     #   transferegov_propostas -> derivado do sufixo do numero_proposta ("xxx/AAAA")
+    #   emendas_federais_carteira -> coluna `ano` (o ano do PROGRAMA da emenda)
     anos = anos_list(ano)
     ano_sig = ano_vol = ano_em = ""
     if anos:
@@ -422,6 +428,89 @@ async def aggregate_parlamentares(
                 if not autor:
                     entry["_inst"] = True
     except Exception:
+        pass
+
+    # 7) EMENDAS FEDERAIS (dump SICONV por CNPJ + CGU) — a CARTEIRA por autor.
+    #
+    # ⭐ O QUE ELA ACRESCENTA. Ate aqui a emenda federal so chegava a esta tela
+    # quando virava INSTRUMENTO: TE (bloco 4), proposta voluntaria (bloco 2),
+    # PAC (bloco 5) ou proposta do FNS (bloco 6). A emenda INDICADA e ainda nao
+    # instrumentalizada nao existia aqui — e ela e 45% da carteira nos dois
+    # municipios medidos. O ranking subestimava sistematicamente quem indicou e
+    # nao viu o dinheiro sair, que e justamente o parlamentar que o gestor
+    # precisa procurar.
+    #
+    # ⚠️⚠️ O RISCO AQUI E DUPLA CONTAGEM, e ele e maior que em qualquer das seis
+    # fontes acima — porque esta le a MESMA base que ja alimenta duas delas:
+    #   · `transferegov_propostas.parlamentar` e preenchido por
+    #     `ingestion/siconv_emenda_backfill.py`, que le ESTE dump e casa por
+    #     `id_proposta_siconv`;
+    #   · `transferegov_te.emenda` guarda o codigo no formato '<codigo>-<Nome>'.
+    # Somar sem descontar inflaria `valor_total` — e esta funcao alimenta TAMBEM
+    # o Painel Executivo do prefeito (`routers/painel.py`) e o BI
+    # (`services/bi_abas.py`). Numero inflado no painel do prefeito e pior que
+    # fonte faltando: o inflado ninguem confere.
+    #
+    # Entao o SQL desconta pelas DUAS chaves que existem de verdade. Onde nao ha
+    # chave (PAC, FNS) NAO se tenta casar por nome: casamento por nome de autor
+    # apagaria emenda legitima, e perder dado bom para evitar dado repetido e o
+    # pior dos dois erros.
+    #
+    # ⚠️ E AQUI NAO HA FILTRO ANTI-CONTAMINACAO POR CNPJ (ao contrario do bloco
+    # 4): esta tabela ja NASCE casada por CNPJ na coleta, entao e limpa por
+    # construcao. A linha FICA mesmo quando o beneficiario nao e a prefeitura —
+    # emenda ao Hospital N. S. da Piedade E emenda daquele parlamentar para
+    # aquele municipio, e esconde-la faria o ranking mentir por omissao.
+    ano_ef = " AND ef.ano = ANY(:anos)" if anos else ""
+    sql_ef = f"""
+        SELECT ef.parlamentar,
+               (SELECT nome FROM municipios WHERE id = ef.municipio_id),
+               COALESCE(ef.valor_repasse_emenda, 0),
+               COALESCE(ef.tipo_parlamentar, '')
+          FROM emendas_federais_carteira ef
+         WHERE ef.parlamentar IS NOT NULL
+           AND length(btrim(ef.parlamentar)) >= 3
+           AND NOT EXISTS (
+                 SELECT 1 FROM transferegov_propostas v
+                  WHERE v.parlamentar IS NOT NULL
+                    AND v.id_proposta_siconv IS NOT NULL
+                    AND v.id_proposta_siconv = ef.id_proposta)
+           AND NOT EXISTS (
+                 SELECT 1 FROM transferegov_te te
+                  WHERE te.parlamentar IS NOT NULL
+                    AND ef.codigo_emenda IS NOT NULL
+                    AND split_part(te.emenda, '-', 1) = ef.codigo_emenda)
+           {where_extra.replace("municipio_id", "ef.municipio_id")}{ano_ef}
+    """
+    try:
+        for row in (await db.execute(text(sql_ef), params)).fetchall():
+            nm = (row[0] or "").strip()
+            # `e_parlamentar_real` pela mesma razao do bloco 1: a fonte escreve
+            # ROTULO no lugar do nome ("RELATOR GERAL" chega assim), e a regra
+            # mora em services/nome_parlamentar.py porque tres telas a usam.
+            if len(nm) < 3 or not e_parlamentar_real(nm):
+                continue
+            key = _norm(nm)
+            if not key:
+                continue
+            entry = by_norm[key]
+            entry["nome_variants"].add(nm)
+            entry["total_lancamentos"] += 1
+            entry["valor_total"] += _money(row[2])
+            if row[1]:
+                entry["municipios"].add(row[1])
+            entry["por_fonte"]["emenda_federal"] += 1
+            # A ORIGEM sabe que nao e pessoa — mesma precedencia deterministica
+            # do PAC (bloco 5) e do FNS (bloco 6), que vem ANTES de `e_pessoa`.
+            # Emenda de COMISSAO, BANCADA e RELATOR GERAL e colegiada por
+            # definicao: sao 7 dos 35 nomes de autor dos dois municipios medidos.
+            if (row[3] or "").strip().upper() in ("COMISSAO", "BANCADA",
+                                                  "RELATOR GERAL"):
+                entry["_inst"] = True
+    except Exception:
+        # Degrada em silencio, como as demais: a tabela pode nem existir num
+        # tenant onde a migration ainda nao rodou, e uma fonte a menos nao pode
+        # derrubar a tela inteira.
         pass
 
     # Resolve nome_display: prefere a variante mais comum sem U+FFFD

@@ -181,6 +181,12 @@ INSERT INTO permissoes_catalogo (chave, secao, escrita) VALUES
     ('transferegov_encerradas.ver', 'convenios', FALSE),
     ('transferegov_encerradas.exportar', 'convenios', FALSE),
     ('transferegov_cnpj.ver', 'convenios', FALSE),
+    -- EMENDAS FEDERAIS (06/09/2026). Entra NESTA semente, que roda a cada boot
+    -- com DO NOTHING: e assim que a chave passa a ser GRAVAVEL nos cinco tenants
+    -- ja no ar (`user_permissoes.permissao` e FK para `permissoes_catalogo.chave`,
+    -- entao chave que existe so no Python nao pode ser concedida a ninguem).
+    -- So `ver` — a razao esta no catalogo do Python.
+    ('emendas_federais.ver', 'convenios', FALSE),
     -- As oito estaduais que sairam de dentro de `convenios`. So `ver`: nenhuma
     -- delas tem rota de exportacao nem de coleta sob demanda hoje.
     ('repasses.ver', 'convenios', FALSE),
@@ -391,6 +397,10 @@ WITH marca AS (
         ('transferegov_encerradas', 'transferegov_encerradas.ver', FALSE),
         ('transferegov_encerradas', 'transferegov_encerradas.exportar', FALSE),
         ('transferegov_cnpj', 'transferegov_cnpj.ver', FALSE),
+        -- ⚠️ Este bloco tem guard em `migration_backfills` e JA DISPAROU nos
+        -- cinco tenants, entao esta linha so alcanca banco NOVO. Quem alcanca os
+        -- cinco e `add_tela_emendas_federais.sql`, que concede a tela E a acao.
+        ('emendas_federais', 'emendas_federais.ver', FALSE),
         ('repasses', 'repasses.ver', FALSE),
         ('cofinanciamento', 'cofinanciamento.ver', FALSE),
         ('monitoramento', 'monitoramento.ver', FALSE),
