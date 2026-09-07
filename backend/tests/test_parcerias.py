@@ -195,3 +195,43 @@ def test_a_acentuacao_nao_decide_a_conta():
     """A fonte já mandou o mesmo rótulo com e sem acento em outros módulos."""
     assert _municipal("Fundo Publico da Administracao Direta Municipal") is True
     assert _municipal("FUNDO PÚBLICO DA ADMINISTRAÇÃO DIRETA MUNICIPAL") is True
+
+
+# ---------------------------------------------------------------------------
+# ⚠️ O CARTÃO QUE REPETIA O CARTÃO AO LADO (07/09/2026).
+#
+# Nesta fonte o valor da proposta É o valor da emenda em quase toda linha:
+# 538 de 547 no freitas, 691 de 706 no trust, 14 de 14 em Monte Sião, 11 de 11
+# em Nova Palma. «Valor total» e «Em emendas» mostravam o MESMO número, e o dono
+# desconfiou de erro ao abrir a tela — desconfiar de um número faz desconfiar de
+# todos. O cartão passou a contar QUANTAS propostas têm emenda.
+# ---------------------------------------------------------------------------
+
+
+def test_o_cartao_conta_propostas_e_nao_repete_o_valor():
+    from routers.parcerias import listar  # noqa: F401  (garante import do módulo)
+    import inspect
+    from routers import parcerias as mod
+    fonte = inspect.getsource(mod.fetch_parcerias)
+    assert '"com_emenda": com_emenda' in fonte
+
+
+def test_a_tela_mostra_a_contagem_no_lugar_do_valor_repetido():
+    """⚠️ A correção só existe se a TELA usar o campo — o router entregar não
+    basta, foi esse exatamente o buraco do `vinculo` nas Obras Federais."""
+    from pathlib import Path
+    tela = (Path(__file__).resolve().parents[2] / "frontend" / "src" / "app"
+            / "dashboard" / "parcerias" / "page.tsx").read_text(encoding="utf-8")
+    assert "Com emenda identificada" in tela
+    assert "d.com_emenda" in tela
+    # E o cartão antigo não pode voltar.
+    assert 'rotulo="Em emendas"' not in tela
+
+
+def test_proposta_sem_emenda_nao_entra_na_contagem():
+    """O `linha()` já devolve `nr_emenda` nulo quando a fonte não manda; o que
+    este teste trava é que a contagem dependa DELE, e não do valor."""
+    import inspect
+    from routers import parcerias as mod
+    fonte = inspect.getsource(mod.fetch_parcerias)
+    assert 'if municipal and p["numero_emenda"]:' in fonte
