@@ -504,6 +504,15 @@ MIGRATION_FILES = [
     # com o vinculo falso para sempre. Guardado por
     # `tests/test_migrations_ordem_tabela.py`.
     "limpa_transferegov_te_vinculo_por_nome.sql",
+    # ⭐ E, LOGO DEPOIS, o residuo do modelo de coleta que acabou: 40.707 linhas
+    # sem municipio nenhum (97,8% da tabela), sobra de quando o coletor baixava a
+    # UF inteira e adivinhava o municipio pelo nome. Ver o cabecalho do .sql.
+    #
+    # ⚠️ DEPOIS da limpeza de vinculo falso, e a ordem importa para o LOG: aquela
+    # desvincula nada (ela apaga), mas as duas contam linhas, e ler "N orfas
+    # removidas" depois de "M vinculos falsos removidos" conta a historia na
+    # ordem em que ela aconteceu.
+    "limpa_transferegov_te_orfas.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",
