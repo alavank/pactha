@@ -90,17 +90,34 @@ def _pagina(client: httpx.Client, caminho: str, params: dict, n: int) -> dict | 
         return None
 
 
-def buscar(client: httpx.Client, caminho: str, params: dict) -> list[dict] | None:
+def buscar(client: httpx.Client, caminho: str, params: dict,
+           teto_itens: int | None = None) -> list[dict] | None:
     """Todas as paginas de uma consulta. `None` quando a PRIMEIRA falhou.
 
     A distincao importa: `[]` e "a fonte respondeu e nao ha nada" (municipio sem
     proposta, proposta que nao virou parceria — estados legitimos e comuns),
     enquanto `None` e "nao consegui perguntar". Quem chama usa isso para nao
     gravar silencio como ausencia.
+
+    ⚠️ `teto_itens` E A GUARDA CONTRA FILTRO IGNORADO. A fonte ignora EM
+    SILENCIO todo parametro que nao reconhece: medido em 07/09/2026,
+    `?cd_ibge_recebedorX=4313102` devolve HTTP 200 com as 89.400 propostas do
+    Brasil, identico a nao filtrar. Um erro de digitacao, ou uma renomeacao do
+    lado deles (o Obras.gov renomeou TODOS os campos numa troca de host), nao
+    daria erro: daria a base nacional gravada como sendo do municipio da vez.
+    Acima do teto devolvemos `None`, que ja e tratado como "nao consegui
+    perguntar" — e nao como ausencia.
     """
     d = _pagina(client, caminho, params, 1)
     if d is None:
         return None
+    if teto_itens is not None:
+        total_itens = int(d.get("total_items") or 0)
+        if total_itens > teto_itens:
+            log.error("  %s %s: %d itens para um teto de %d — o filtro nao "
+                      "foi aplicado. NAO gravando: seria carga nacional.",
+                      caminho, params, total_itens, teto_itens)
+            return None
     itens = list(d.get("data") or [])
     total = min(int(d.get("total_pages") or 1), TETO_PAGINAS)
     for n in range(2, total + 1):
@@ -273,8 +290,12 @@ def ingest(dry: bool = False) -> int:
                         log.warning("orcamento estourado apos %d municipio(s); "
                                     "o resto entra na proxima rodada", atendidos)
                         break
+                    # Teto de 5.000 contra a base nacional de 89.400: o
+                    # maior municipio medido tem 84 propostas, e nem uma
+                    # capital chegaria a milhares. Ver `buscar`.
                     propostas = buscar(client, "proposta",
-                                       {"cd_ibge_recebedor": m["ibge"]})
+                                       {"cd_ibge_recebedor": m["ibge"]},
+                                       teto_itens=5000)
                     atendidos += 1
                     if propostas is None:
                         falhas += 1

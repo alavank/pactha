@@ -78,11 +78,32 @@ def _pagina(client: httpx.Client, caminho: str, params: dict, n: int) -> dict | 
         return None
 
 
-def buscar(client: httpx.Client, caminho: str, params: dict) -> list[dict] | None:
-    """Todas as paginas. `None` quando a PRIMEIRA falhou; `[]` e ausencia real."""
+def buscar(client: httpx.Client, caminho: str, params: dict,
+           teto_itens: int | None = None) -> list[dict] | None:
+    """Todas as paginas. `None` quando a PRIMEIRA falhou; `[]` e ausencia real.
+
+    ⚠️ `teto_itens` E A GUARDA CONTRA FILTRO IGNORADO, e ela existe porque
+    a fonte ignora EM SILENCIO qualquer parametro que nao reconheca: medido em
+    07/09/2026, `?parametro_que_nao_existe=xyz` devolve HTTP 200 com os 31.026
+    beneficiarios do Brasil inteiro, exatamente como se nao houvesse filtro. Um
+    erro de digitacao aqui, ou uma renomeacao do lado deles (o Obras.gov ja
+    renomeou TODOS os campos numa troca de host), nao daria erro nenhum: daria
+    uma carga nacional gravada como se fosse do municipio da vez.
+
+    Por isso quem filtra por municipio passa o teto do que e plausivel, e um
+    `total_items` acima dele devolve `None` — que quem chama ja trata como
+    "nao consegui perguntar", e nao como ausencia.
+    """
     d = _pagina(client, caminho, params, 1)
     if d is None:
         return None
+    if teto_itens is not None:
+        total_itens = int(d.get("total_items") or 0)
+        if total_itens > teto_itens:
+            log.error("  %s %s: %d itens para um teto de %d — o filtro nao "
+                      "foi aplicado. NAO gravando: seria carga nacional.",
+                      caminho, params, total_itens, teto_itens)
+            return None
     itens = list(d.get("data") or [])
     total = min(int(d.get("total_pages") or 1), TETO_PAGINAS)
     for n in range(2, total + 1):
@@ -101,8 +122,12 @@ def cnpjs_do_municipio(client: httpx.Client, ibge: str) -> list[str]:
     `codigo_ibge_..._recebedor` de `/planos-acao` devolve 500, e adivinhar entre
     a prefeitura e o fundo municipal erraria em um dos dois modulos da familia.
     """
+    # O teto de 500: os tres municipios medidos devolvem 5 beneficiarios cada, e
+    # nem a capital chegaria perto disso. Serve so para separar "filtrou" de
+    # "devolveu o Brasil" — ver o docstring de `buscar`.
     itens = buscar(client, "programas-beneficiarios",
-                   {"codigo_ibge_municipio_ente_beneficiario_programa": ibge})
+                   {"codigo_ibge_municipio_ente_beneficiario_programa": ibge},
+                   teto_itens=500)
     if not itens:
         return []
     vistos, fora = set(), []
@@ -277,8 +302,11 @@ def ingest(dry: bool = False) -> int:
                     planos: list[dict] = []
                     for cnpj in cnpjs:
                         time.sleep(PAUSA_S)
+                        # Mesma guarda, mesmo motivo: Nova Palma tem 4 planos
+                        # e a base nacional tem 25.970. Ver `buscar`.
                         achados = buscar(client, "planos-acao",
-                                         {"cnpj_ente_recebedor_plano_acao": cnpj})
+                                         {"cnpj_ente_recebedor_plano_acao": cnpj},
+                                         teto_itens=2000)
                         if achados is None:
                             falhas += 1
                             continue

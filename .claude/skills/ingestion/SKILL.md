@@ -34,6 +34,26 @@ a burstable 2-vCPU instance shared with ~10 other projects.
 
 **Never raise scraping concurrency to "speed things up".**
 
+## Filters that are ignored in silence — always pass `teto_itens`
+
+The four `api-publica.transferegov.gestao.gov.br` modules answer **HTTP 200 with the
+whole national base** when a query parameter is not recognised — no error, no warning.
+Measured 07/09/2026: `?cd_ibge_recebedorX=4313102` returns all **89.400** propostas,
+identical to sending no filter at all. A typo, or a rename on their side (Obras.gov has
+already renamed *every* field in one host migration), would write Brazil into one
+município's rows with a success log.
+
+So `buscar()` / `_pub_todos()` in `parcerias.py`, `faf_planos.py` and
+`transferegov_te.py` take a `teto_itens`, and **every query that establishes the
+município ↔ data link must pass it** — above the ceiling they return `None`, which the
+collectors already treat as "could not ask", never as absence.
+`tests/test_filtro_ignorado_em_silencio.py` parses the collectors and fails naming any
+IBGE/CNPJ query that forgot it. Queries by parent id (`id_proposta`, `id_plano_acao`)
+stay without a ceiling on purpose.
+
+When adding a filter, prove it filters: send an impossible value. `9999999` must return
+**0**, not everything.
+
 ## Authenticated sources
 
 Scrapers that need a logged-in gov.br session (SIGCON, FNS) reuse a session captured by the
