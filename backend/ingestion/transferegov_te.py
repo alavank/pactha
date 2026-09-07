@@ -254,16 +254,34 @@ async def _pub_pagina(cli: httpx.AsyncClient, caminho: str, params: dict,
         return None
 
 
-async def _pub_todos(cli: httpx.AsyncClient, caminho: str, params: dict) -> list[dict] | None:
+async def _pub_todos(cli: httpx.AsyncClient, caminho: str, params: dict,
+                     teto_itens: int | None = None) -> list[dict] | None:
     """Todas as paginas de uma consulta. None quando a PRIMEIRA pagina falhou.
 
     A distincao importa: lista vazia e "a fonte respondeu e nao ha nada" (estado
     legitimo — municipio sem emenda especial), enquanto None e "nao consegui
     perguntar". Quem chama usa isso para nao gravar silencio como ausencia.
+
+    ⚠️ `teto_itens` E A GUARDA CONTRA FILTRO IGNORADO. A fonte ignora EM
+    SILENCIO todo parametro que nao reconhece: medido em 07/09/2026, um
+    `?parametro_inexistente=x` devolve HTTP 200 com a base nacional inteira,
+    identico a nao filtrar. Os filtros usados aqui funcionam hoje (conferidos
+    com valor impossivel, que devolve 0 e nao tudo), mas o Obras.gov ja
+    renomeou TODOS os campos numa troca de host: se acontecer aqui, sem esta
+    guarda a rodada gravaria 57.827 planos do Brasil como sendo do municipio.
+    Acima do teto devolvemos None, que quem chama ja trata como "nao consegui
+    perguntar" — e nao como ausencia.
     """
     d = await _pub_pagina(cli, caminho, params, 1)
     if d is None:
         return None
+    if teto_itens is not None:
+        total_itens = int(d.get("total_items") or 0)
+        if total_itens > teto_itens:
+            logger.error(f"  {caminho} {params}: {total_itens} itens para um teto "
+                         f"de {teto_itens} — o filtro nao foi aplicado. NAO "
+                         f"gravando: seria carga nacional.")
+            return None
     itens = list(d.get("data") or [])
     total_paginas = int(d.get("total_pages") or 1)
     for pag in range(2, total_paginas + 1):
@@ -294,7 +312,8 @@ async def _beneficiario_do_cnpj(cli: httpx.AsyncClient, cnpj: str) -> dict | Non
     if len(so_digitos) != 14:
         return None
     itens = await _pub_todos(cli, "beneficiarios-especiais",
-                             {"cnpj_beneficiario": so_digitos})
+                             {"cnpj_beneficiario": so_digitos},
+                             teto_itens=50)
     if not itens:
         return None
     if len(itens) > 1:
@@ -579,7 +598,8 @@ async def run_municipios(budget_s: float | None = None) -> dict:
                 sem_beneficiario += 1
                 continue
             planos = await _pub_todos(cli, "planos-acao-especiais",
-                                      {"id_beneficiario": ben.get("id_beneficiario")})
+                                      {"id_beneficiario": ben.get("id_beneficiario")},
+                                      teto_itens=2000)
             if planos is None:
                 falhas += 1
                 logger.warning(f"  {mun['nome']}/{mun['uf']}: fonte nao respondeu os planos")

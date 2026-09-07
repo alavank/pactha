@@ -703,6 +703,37 @@ a comparação CNPJ × geometria do #408 — estavam corretas. O que precisou de
 foi a tabela de cobertura do #404 e o relatório em PDF: Monte Sião tem **14 propostas
 de Parcerias e 8 projetos com geometria**, não 7 e 15.
 
+## 1.14. O filtro que a fonte ignora em silêncio (07/09/2026)
+
+Achado ao construir a tela de Fundo a Fundo, medindo a API para saber o que mostrar.
+Os quatro módulos de `api-publica.transferegov.gestao.gov.br` **ignoram calados todo
+parâmetro que não reconhecem** — devolvem HTTP 200 com a base nacional inteira,
+idêntico a não filtrar:
+
+| consulta | resposta |
+|---|---|
+| `/parcerias/proposta?cd_ibge_recebedor=4313102` | 11 |
+| `/parcerias/proposta?cd_ibge_recebedor**X**=4313102` | **89.400** — HTTP 200 |
+| `/fundoafundo/programas-beneficiarios?parametro_que_nao_existe=xyz` | **31.026** — HTTP 200 |
+
+Os filtros que os coletores usam **estão certos hoje** — os cinco foram conferidos com
+um valor impossível (`9999999`), que devolve 0 e não tudo. O que assusta é a facilidade
+do acidente: eu mesmo, medindo, escrevi `codigo_ibge_municipio_beneficiario_programa`
+em vez de `codigo_ibge_municipio_**ente**_beneficiario_programa` e recebi 31.026
+beneficiários do Brasil, com o primeiro plano sendo da SECULT do Amapá. Se isso
+acontecesse dentro do coletor, o Amapá entraria no banco como Nova Palma, com log de
+sucesso.
+
+E o risco não é hipotético: **o Obras.gov já renomeou TODOS os campos numa troca de
+host**. Se acontecer aqui, sem guarda a rodada grava o Brasil inteiro.
+
+A defesa: `buscar()`/`_pub_todos()` aceitam `teto_itens`, e toda consulta que estabelece
+o vínculo município ↔ dado passa o teto do que é plausível. Acima dele devolvem `None`,
+que os coletores já tratam como "não consegui perguntar" e nunca como ausência.
+`tests/test_filtro_ignorado_em_silencio.py` lê o código dos três coletores e falha
+**nomeando** a consulta por IBGE/CNPJ que esquecer o teto — testado por mutação.
+Consulta por id do pai (`id_proposta`, `id_plano_acao`) fica sem teto de propósito.
+
 ## 2. ESTADO ATUAL (2026-09-04)
 
 **São CINCO tenants em produção**, todos do mesmo código, cada um com containers e banco próprios:
