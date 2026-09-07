@@ -513,6 +513,11 @@ MIGRATION_FILES = [
     # removidas" depois de "M vinculos falsos removidos" conta a historia na
     # ordem em que ela aconteceu.
     "limpa_transferegov_te_orfas.sql",
+    # ⭐ CAPAG: as notas parciais viram TEXT porque `VARCHAR(2)` nao cabe "n.d.",
+    # e UM municipio com indicador nao apurado derrubava a coleta da nota de
+    # TODOS. Achado ao rodar o siconfi no freitas pela primeira vez (07/09/2026).
+    # Ver o cabecalho do .sql.
+    "fix_siconfi_capag_notas_texto.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",

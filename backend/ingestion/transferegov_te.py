@@ -454,20 +454,34 @@ def _upsert(cur, it: dict, mid: int | None):
 
 
 def _municipios_da_carteira(cur) -> list[dict]:
-    """Municipios do tenant com o que a coleta precisa: id, nome, uf e CNPJ.
+    """Municipios ATIVOS do tenant: id, nome, uf e CNPJ.
 
     O CNPJ vem de `municipios.cnpj`, que o `ingestion/siconfi.py` preenche
     sozinho a partir do cadastro do Tesouro — a docstring de la ja dizia, desde
     antes desta migracao, que "a Transferencia Especial casa por CNPJ".
+
+    ⚠️ `WHERE active`, e a falta dele custou caro na primeira rodada em producao
+    (07/09/2026, freitas): dos 60 municipios, 18 estao INATIVOS — e sao
+    exatamente os 18 sem CNPJ, porque o `siconfi` tambem filtra por `active` e
+    nunca os visitou. Sem esta clausula o coletor: (1) gastava requisicao com
+    municipio que o cliente nao acompanha mais, (2) gravava linha para ele, e
+    (3) pior, caia no fallback por nome em todos os 18 — e cada queda baixa a
+    lista de beneficiarios da UF INTEIRA. Dezoito varreduras de Minas Gerais
+    para preencher municipio que ninguem le.
+
+    E o padrao do repo, nao invencao: `obrasgov`, `portal_transparencia`,
+    `che_rs`, `cofin_ses_go`, `consulta_popular_rs` e `cagec_scraper` todos
+    filtram `active`.
     """
     cur.execute("SELECT id, nome, upper(coalesce(uf, '')), "
                 "       coalesce(regexp_replace(coalesce(cnpj, ''), '\\D', '', 'g'), '') "
-                "  FROM municipios ORDER BY nome")
+                "  FROM municipios WHERE active ORDER BY nome")
     return [{"id": r[0], "nome": r[1], "uf": r[2], "cnpj": r[3]}
             for r in cur.fetchall()]
 
 
-async def _beneficiario_por_nome(cli: httpx.AsyncClient, mun: dict) -> dict | None:
+async def _beneficiario_por_nome(cli: httpx.AsyncClient, mun: dict,
+                                 cache_uf: dict[str, list[dict]]) -> dict | None:
     """FALLBACK para municipio sem CNPJ cadastrado: acha o beneficiario na UF.
 
     ⚠️ AINDA E CASAMENTO POR NOME, com todos os defeitos que esta fase existe
@@ -478,15 +492,25 @@ async def _beneficiario_por_nome(cli: httpx.AsyncClient, mun: dict) -> dict | No
 
     Exige nome EXATO (normalizado) ou 'MUNICIPIO DE <nome>' — nada de substring,
     que e o que fazia 'SERRANA' capturar 'NOVA SERRANA'.
+
+    ⚠️ A LISTA DA UF E BAIXADA UMA VEZ SO POR RODADA (`cache_uf`). Sem isso, cada
+    municipio sem CNPJ repetia a varredura inteira do estado: na primeira rodada
+    em producao foram 18 quedas no fallback num tenant de Minas, ou seja, 18
+    downloads da mesma lista. O `WHERE active` de `_municipios_da_carteira`
+    resolveu a causa daquele caso, mas o fallback continua existindo para
+    municipio ativo cujo CNPJ ainda nao foi preenchido — e ai o cache e o que
+    impede o custo de voltar.
     """
-    if not mun["uf"]:
+    uf = mun["uf"]
+    if not uf:
         return None
-    itens = await _pub_todos(cli, "beneficiarios-especiais",
-                             {"uf_beneficiario": mun["uf"]})
-    if not itens:
-        return None
+    if uf not in cache_uf:
+        cache_uf[uf] = await _pub_todos(cli, "beneficiarios-especiais",
+                                        {"uf_beneficiario": uf}) or []
+        logger.info(f"  fallback por nome: {len(cache_uf[uf])} beneficiario(s) de {uf} "
+                    f"em cache para esta rodada")
     alvo = _norm(mun["nome"])
-    for b in itens:
+    for b in cache_uf[uf]:
         nome = _norm(b.get("nome_beneficiario") or "")
         if nome == alvo or nome == f"MUNICIPIO DE {alvo}":
             return b
@@ -526,6 +550,9 @@ async def run_municipios(budget_s: float | None = None) -> dict:
     gravados = com_plano = sem_cnpj = sem_beneficiario = falhas = 0
     atendidos = 0
     completo = True
+    # Lista de beneficiarios por UF, baixada no maximo uma vez por rodada e so
+    # se algum municipio cair no fallback por nome. Ver `_beneficiario_por_nome`.
+    cache_uf: dict[str, list[dict]] = {}
     logger.info(f"TE: {len(municipios)} municipio(s) na carteira "
                 f"(orcamento {budget:.0f}s) — fonte: API publica oficial")
     async with httpx.AsyncClient(timeout=60) as cli:
@@ -542,7 +569,7 @@ async def run_municipios(budget_s: float | None = None) -> dict:
                 sem_cnpj += 1
                 logger.warning(f"  {mun['nome']}/{mun['uf']}: sem CNPJ em municipios.cnpj "
                                f"— caindo no casamento por nome (rode o siconfi)")
-                ben = await _beneficiario_por_nome(cli, mun)
+                ben = await _beneficiario_por_nome(cli, mun, cache_uf)
             atendidos += 1
             if not ben:
                 # ⚠️ ESTADO LEGITIMO, e nao erro: municipio que nunca recebeu
