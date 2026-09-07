@@ -246,3 +246,64 @@ def test_os_dois_caminhos_de_requisicao_usam_o_mesmo_retry():
     from ingestion.obrasgov import _pagina_de, pagina
     assert "_get_com_retry" in inspect.getsource(pagina)
     assert "_get_com_retry" in inspect.getsource(_pagina_de)
+
+
+# ---------------------------------------------------------------------------
+# ⚠️ O GUARDA-CHUVA ERA 96% DO VALOR DA TELA (07/09/2026).
+#
+# O coletor já marcava `abrangencia` desde o #408 — o que faltava era a leitura
+# respeitar a marca. Medido no freitas:
+#
+#     abrangencia    56 obras   R$ 15.894.300.865   ← 96% do valor
+#     prefeitura    421 obras   R$    606.809.018
+#     territorio     61 obras   R$     91.560.948
+#
+# É o MESMO projeto repetido: "Manutenção rodoviária na malha federal do DNIT em
+# MG" (R$ 383,3 mi, 790 municípios) cai em 41 das 42 cidades da carteira, e cada
+# uma somava os R$ 383 mi inteiros como se fossem obra da cidade.
+# ---------------------------------------------------------------------------
+
+from routers.obrasgov import conta_no_total
+
+
+def test_o_guarda_chuva_fica_fora_da_conta_do_municipio():
+    assert conta_no_total("abrangencia") is False
+
+
+def test_a_obra_no_territorio_CONTA():
+    """⚠️ Ela é uma obra só, naquele lugar, e quem diz é o Governo
+    (`/geometria?cod_ibge=`). O dono ser a UFSM ou o DNIT não a torna menos real
+    para quem mora na cidade — a tela diz de quem é pelo selo."""
+    assert conta_no_total("territorio") is True
+
+
+def test_a_obra_da_prefeitura_conta():
+    assert conta_no_total("prefeitura") is True
+
+
+def test_vinculo_ausente_conta_como_prefeitura():
+    """Linha gravada antes do #408 tem `vinculo` nulo, e sumir dos totais num
+    deploy seria a tela encolher sem explicação."""
+    assert conta_no_total(None) is True
+    assert conta_no_total("") is True
+
+
+def test_a_resposta_diz_quanto_ficou_de_fora():
+    """Silêncio aqui faria a contagem não bater para quem conferisse contra o
+    portal — a tela precisa poder dizer «56 programas, não somados»."""
+    import inspect
+    from routers.obrasgov import fetch_obras_federais
+    fonte = inspect.getsource(fetch_obras_federais)
+    assert '"guarda_chuva"' in fonte
+
+
+def test_a_tela_usa_a_mesma_regra_do_router():
+    """⚠️ A tela recalcula os totais dos cartões a partir das listas filtradas
+    (de propósito — cartão dizendo 360 com 12 obras na lista faz o gestor
+    desconfiar do resto). Então a regra do servidor não basta: se o filtro do
+    cliente não excluir o guarda-chuva, os R$ 15,89 bi voltam pelos cartões."""
+    from pathlib import Path
+    tela = (Path(__file__).resolve().parents[2] / "frontend" / "src" / "app"
+            / "dashboard" / "obrasgov" / "page.tsx").read_text(encoding="utf-8")
+    assert 'o.vinculo !== "abrangencia"' in tela
+    assert "Programas que passam pelo município" in tela
