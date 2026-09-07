@@ -405,6 +405,26 @@ de uma vez ao dia; não há download em massa (os botões de exportar só existe
 depois de uma busca). Onde o portal fica e as armadilhas dele:
 `backend/ingestion/cagec_scraper.py`.
 
+**`siconfi`** (contas entregues no Tesouro + CAPAG · 07/09/2026): Scheduled Task **nos 5
+workers**, escada de 30 min — **freitas 00:30, trust 01:00, montesiao 01:30**, santamaria
+02:00, novapalma 02:30 UTC. Lock próprio (`/tmp/siconfi.lock`): é `httpx` puro, sem login
+e sem navegador.
+
+> ⚠️ **Existia só nos DOIS tenants do RS até 07/09/2026** — freitas, trust e montesião
+> nunca tinham rodado. Não é só a tela de Regularidade que fica vazia sem ele: este
+> coletor é quem **preenche `municipios.cnpj`** a partir do cadastro de entes do Tesouro,
+> e esse campo virou a CHAVE da Transferência Especial quando a listagem migrou para a
+> API oficial (PR #404). Sem ele, o município cai no casamento por nome — o defeito que
+> aquela migração existiu para matar. Descoberto ao validar o #404 em produção: dos 60
+> municípios do freitas, os 18 sem CNPJ eram exatamente os 18 **inativos**, porque o
+> `siconfi` filtra `WHERE active` e nunca os visitara.
+>
+> ⚠️ **A CAPAG morria inteira por causa de `"n.d."`.** As notas parciais eram `VARCHAR(2)`
+> e o Tesouro publica `n.d.` (4 caracteres) quando o indicador não é apurado: a exception
+> derrubava o bloco todo, então UM município zerava a nota de TODOS e o log dizia apenas
+> "1 falha(s)". Corrigido para `TEXT` em `fix_siconfi_capag_notas_texto.sql`. Depois do
+> conserto, o freitas gravou 1.427 linhas com 0 falhas (antes: 1.385 com a CAPAG perdida).
+
 **`obrasgov`** (obras federais do Obras.gov.br/CIPI, PRs #367–#370, 03–04/09/2026):
 Scheduled Task **nos 5 workers**, escada de 5 min — santamaria 03:05, novapalma 03:10,
 montesiao 03:15, trust 03:20, **freitas 03:30** UTC. Lock **próprio**
