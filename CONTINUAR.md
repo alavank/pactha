@@ -620,6 +620,38 @@ entre tenants de 5 para **30 min** (santamaria 03:05, novapalma 03:35, montesiã
 trust 04:35, freitas 05:05 UTC). Com rodadas de 12-15 min, os 5 min de antes fariam os
 cinco tenants varrerem a fonte federal ao mesmo tempo, do mesmo IP.
 
+## 1.12. FASE 4 — Gestão de Parcerias (a emenda de saúde que faltava)
+
+O módulo de Parcerias é a fonte onde as transferências passaram a ser processadas
+de 2024 em diante: dos 176 programas publicados, **144 são Transferências Fundo a
+Fundo da Saúde**. Era o único instrumento federal que a plataforma não enxergava —
+e é exatamente onde mora a emenda de saúde do município.
+
+**O que a cadeia entrega**, com dado real de Nova Palma (11 propostas,
+R$ 2.184.085, **11 de 11 com emenda identificada**):
+
+    proposta 75376  "AQUISIÇÃO DE EQUIPAMENTO PARA UNIDADE BÁSICA DE SAÚDE"
+      └─ emenda 2026.2023.0002 · PAULO PAIM · Individual · GND4 · R$ 299.999
+      └─ parceria 75161 celebrada
+
+Os parlamentares que apareceram: Paulo Paim, Covatti Filho, Luis Carlos Heinze,
+Afonso Hamm, Márcio Biolchi, Any Ortiz, Pedro Westphalen, Comissão da Saúde.
+
+**⚠️ ESTA FONTE NÃO PODE ENTRAR POR CNPJ.** As 11 propostas de Nova Palma são todas
+do FUNDO MUNICIPAL DA SAUDE (`12240183000100`), diferente do CNPJ da prefeitura
+(`88488358000156`). Um coletor que casasse por `municipios.cnpj` — como o da
+Transferência Especial faz, e com razão lá — não acharia nenhuma. Aqui o
+`cd_ibge_recebedor` filtra no servidor (11 de 89.400), então o vínculo vem pronto
+da fonte.
+
+**O escopo foi cortado por custo medido, não por esquecimento.** Buscar os 8 filhos
+de cada proposta custaria 4.418 requisições no freitas (27 min) e 5.668 no trust
+(35 min) — os tenants têm 547 e 706 propostas. O núcleo (proposta + instrumento +
+emenda, 2 filhos) custa 1.136 e 1.432, ~420s e ~530s. A execução financeira
+(empenho → documento hábil → ordem de pagamento → extrato) entra depois,
+incremental. O `/extrato-bancario` sozinho tem **1.275.217 registros** (6.377
+páginas) e nunca poderá ser varrido inteiro.
+
 ## 2. ESTADO ATUAL (2026-09-04)
 
 **São CINCO tenants em produção**, todos do mesmo código, cada um com containers e banco próprios:

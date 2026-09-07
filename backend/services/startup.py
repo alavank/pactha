@@ -528,6 +528,14 @@ MIGRATION_FILES = [
     # faz o ALTER falhar contra tabela inexistente e o runner engole o erro —
     # guardado por `tests/test_migrations_ordem_tabela.py`.
     "add_obrasgov_territorio_e_detalhe.sql",
+    # ⭐ GESTAO DE PARCERIAS (Comunicado no 23/2026 do MGI): a fonte onde a
+    # emenda de saude de 2024 em diante passou a viver — 144 dos 176 programas
+    # sao Transferencias Fundo a Fundo da Saude. Nao substitui o SICONV. Ver o
+    # cabecalho do .sql.
+    #
+    # ⚠️ FK para `municipios`, que vem do create_all dos modelos (roda ANTES
+    # desta lista). Guardado por `tests/test_migrations_ordem_tabela.py`.
+    "add_parcerias.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",

@@ -87,6 +87,18 @@ _SOURCES = [
     ("TransfereGov — Transferências Especiais (Emenda Pix)",
      "SELECT max(updated_at), count(*) FROM transferegov_te",
      "transferegov_te"),
+    # ⭐ ENTROU AQUI NO MESMO COMMIT DO COLETOR, que e a regra escrita la em
+    # cima e que ja custou nove dias de CAGEC quebrado sem ninguem ver.
+    # NACIONAL: a Gestao de Parcerias existe nos cinco tenants, e o recorte e
+    # por `cd_ibge_recebedor` — nao ha UF envolvida.
+    #
+    # ⚠️ CONTAGEM ZERO E ESTADO LEGITIMO aqui, mais do que nas outras fontes: o
+    # modulo so tem instrumento de 2024 em diante, entao municipio sem parceria
+    # recente aparece zerado sem que nada esteja quebrado. O veredito e o
+    # `status` da rodada.
+    ("TransfereGov — Gestão de Parcerias",
+     "SELECT max(atualizado_em), count(*) FROM parcerias_propostas",
+     "parcerias"),
     # ⚠️ FONTE SEM TABELA PROPRIA, e de proposito. A sessao gov.br nao produz
     # linha em lugar nenhum — ela HABILITA a coleta da fatia atras do login
     # (histórico de comunicações, NEs, projeto básico, licitação). Ate 31/08/2026
