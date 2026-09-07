@@ -644,6 +644,33 @@ Os campos de `/empenho` (`valor_empenho`, `liquidado`, `pago`, `rpinscrito`) for
 conferidos um a um contra a resposta real e estão certos — daí `valor_empenhado` estar
 preenchido em 237 obras enquanto o percentual estava em zero.
 
+### ⚠️⚠️ E o rodízio estava APAGANDO o que não media (07/09/2026)
+
+Descoberto ao conferir a coleta forçada que o dono pediu: o freitas tinha **237 obras
+com `valor_empenhado`** e, depois de uma rodada de `execucao-fisica`, ficou com **82**.
+
+`_detalhe_da_rodada` traz UM dos três endpoints caros por dia — desenho correto, para
+caber no teto de tempo. Mas o UPDATE sobrescrevia **todas** as colunas de detalhe:
+
+| rodada de… | preenche | **apaga** |
+|---|---|---|
+| `execucao-fisica` | percentual | empenhos e valores |
+| `empenho` | empenhos e valores | percentual |
+| `estudo-viabilidade` | estudo | percentual **e** empenhos |
+
+**Nunca havia um dia com os três preenchidos.** O rodízio, criado para economizar
+tempo, destruía justamente o dado que o tempo economizado servia para coletar.
+
+⚠️ **E `coalesce` não resolveria direito.** Ele preservaria o valor antigo também
+quando a fonte legitimamente parasse de informar — «nunca esquece» é tão errado quanto
+«esquece toda vez». A coluna só pode mudar quando ESTA rodada olhou para aquele
+endpoint; se não olhou, fica como está. Daí `sql_detalhe(chaves)`, que monta o `SET`
+com as colunas dos endpoints efetivamente coletados — função pura, testada nos três
+dias do rodízio e validada contra a gramática do Postgres com `pglast`.
+
+⚠️ **Depois do merge, os empenhos não voltam sozinhos**: eles só são recoletados quando
+o rodízio passar por `empenho` (09/09), ou numa rodada forçada.
+
 ## 1.12. FASE 4 — Gestão de Parcerias (a emenda de saúde que faltava)
 
 O módulo de Parcerias é a fonte onde as transferências passaram a ser processadas
