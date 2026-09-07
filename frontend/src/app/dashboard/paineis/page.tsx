@@ -4,12 +4,13 @@ import React, { useEffect, useState, useCallback } from "react";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 import {
   HeartHandshake, Landmark, ExternalLink, ArrowLeft, MousePointerClick, Copy, Check,
-  LayoutGrid, Loader2,
+  Loader2,
 } from "lucide-react";
 import api from "@/lib/api";
 import {
   BOTAO_CTA, BOTAO_SEC, Aviso, Bloco, ESTILO_CTA, ESTILO_SEC,
 } from "@/components/ui/superficies";
+import { TituloTela } from "@/components/TituloTela";
 
 interface Municipio { id: number; nome: string; uf: string; }
 
@@ -146,9 +147,7 @@ export default function PaineisMunicipaisPage() {
         </div>
       ) : (
         <div className="border-b pb-4" style={{ borderColor: "var(--bi-line)" }}>
-          <h1 className="flex items-center gap-2 text-2xl font-bold text-base-content">
-            <LayoutGrid className="size-6" style={{ color: "var(--bi-muted)" }} /> Painéis Municipais
-          </h1>
+          <TituloTela>Painéis Municipais</TituloTela>
           <p className="mt-1 text-sm" style={{ color: "var(--bi-muted)" }}>
             Acesso centralizado aos painéis oficiais do Governo. Clique para abrir (já pré-carregados).
           </p>

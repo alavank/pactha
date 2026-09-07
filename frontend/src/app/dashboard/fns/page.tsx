@@ -15,6 +15,7 @@ import {
   Search, Loader2, Eraser, Printer, Eye, ChevronDown, ChevronRight,
   HeartPulse, Users, Receipt, FileText, Route, Wallet, Hourglass, Building2,
 } from "lucide-react";
+import { TituloTela } from "@/components/TituloTela";
 
 interface Item {
   tipo_proposta?: string;
@@ -335,7 +336,7 @@ export default function PropostasFNSPage() {
   return (
     <div className="space-y-4">
       <div className="border-b pb-4" style={{ borderColor: "var(--bi-line)" }}>
-        <h1 className="text-2xl font-bold text-base-content">Fundo Nacional de Saúde</h1>
+        <TituloTela>Fundo Nacional de Saúde</TituloTela>
         <p className="mt-1 text-sm" style={{ color: "var(--bi-muted)" }}>
           Consulta em tempo real de propostas/emendas no FNS (consultafns.saude.gov.br)
         </p>

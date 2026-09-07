@@ -8,6 +8,7 @@ import remarkGfm from "remark-gfm";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { useMunicipio } from "@/contexts/MunicipioContext";
+import { TituloTela } from "@/components/TituloTela";
 
 interface ToolCallLog {
   tool: string;
@@ -339,9 +340,7 @@ export default function AiChatPage() {
       {/* Header */}
       <div className="flex items-center justify-between gap-2 pb-3 border-b">
         <div>
-          <h1 className="flex items-center gap-2 text-2xl font-bold text-base-content">
-            <Sparkles className="size-6" style={{ color: "var(--bi-muted)" }} /> IA PACTHA
-          </h1>
+          <TituloTela>IA PACTHA</TituloTela>
           <p className="text-sm text-base-content/60">
             Assistente que consulta o banco em tempo real e gera relatórios. Pergunte em português.
           </p>

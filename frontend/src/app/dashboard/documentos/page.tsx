@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/superficies";
 import AvisoEscopo from "@/components/AvisoEscopo";
 import { contarSemEscrita, podeEditarLinha, podeExcluirLinha } from "@/lib/escopo";
+import { TituloTela } from "@/components/TituloTela";
 
 interface Doc {
   id: number;
@@ -92,10 +93,7 @@ export default function DocumentosPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3 border-b pb-4" style={{ borderColor: "var(--bi-line)" }}>
         <div>
-          <h1 className="flex items-center gap-2 text-2xl font-bold text-base-content">
-            <FileSignature className="size-6" style={{ color: "var(--bi-muted)" }} />
-            Geração de Documentos
-          </h1>
+          <TituloTela>Geração de Documentos</TituloTela>
           <p className="mt-1 text-sm" style={{ color: "var(--bi-muted)" }}>
             Preencha, salve e exporte documentos (DOCX/PDF) com edição e exclusão.
           </p>

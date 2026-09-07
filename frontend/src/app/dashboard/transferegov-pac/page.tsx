@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { useMunicipio } from "@/contexts/MunicipioContext";
-import { Landmark, Loader2, Search, Eraser, ChevronDown, ChevronRight } from "lucide-react";
+import { Loader2, Search, Eraser, ChevronDown, ChevronRight } from "lucide-react";
 import api from "@/lib/api";
 import { useAnoCorrentePadrao } from "@/lib/anoPadrao";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import { Bloco, BlocoHead, Campos, ItemLinha, Lista, Selo, Vazio, situacaoTom } 
 import { PainelFiltros, type FiltroAtivo } from "@/components/ui/filtros";
 import { atalhosAnos, resumoAnos } from "@/lib/periodo";
 import Link from "next/link";
+import { TituloTela } from "@/components/TituloTela";
 
 /** O instrumento que NASCEU de uma seleção do PAC.
  *
@@ -267,10 +268,7 @@ export default function TransfereGovPacPage() {
       <div>
         {/* text-2xl como em Convenios, Emendas e as demais telas migradas — o
             titulo desta era o unico em text-xl. */}
-        <h1 className="flex items-center gap-2 text-2xl font-bold text-base-content">
-          <Landmark className="size-6" style={{ color: "var(--bi-muted)" }} />
-          Transfere Gov — Seleção PAC (Novo PAC)
-        </h1>
+        <TituloTela>Transfere Gov — Seleção PAC (Novo PAC)</TituloTela>
         <p className="text-sm text-base-content/60 mt-1">
           Propostas do Novo PAC do município (TransfereGov / Acesso Livre).
           {atualizado ? ` · Atualizado: ${new Date(atualizado).toLocaleDateString("pt-BR")}` : ""}

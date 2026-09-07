@@ -42,6 +42,7 @@ import {
   Bloco, BlocoHead, Campos, ItemLinha, Lista, Numero, Selo, Vazio,
   situacaoTom,
 } from "@/components/ui/superficies";
+import { TituloTela } from "@/components/TituloTela";
 
 interface Obra {
   id_unico: string;
@@ -412,7 +413,7 @@ export default function ObrasFederaisPage() {
   return (
     <div className="flex flex-col gap-4">
       <header>
-        <h1 className="bi-title text-[18px]">Obras Federais</h1>
+        <TituloTela>Obras Federais</TituloTela>
         <p className="mt-1 max-w-3xl text-[12px] leading-snug"
            style={{ color: "var(--bi-muted)" }}>
           Todas as obras federais do município no Cadastro Integrado de Projetos

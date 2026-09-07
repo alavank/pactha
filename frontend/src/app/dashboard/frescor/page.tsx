@@ -5,6 +5,7 @@ import { Activity, Database, RefreshCw, Loader2 } from "lucide-react";
 import api from "@/lib/api";
 import { Bloco, BlocoHead, Campos, ItemLinha, Lista, Selo, Vazio } from "@/components/ui/superficies";
 import { Button } from "@/components/ui/button";
+import { TituloTela } from "@/components/TituloTela";
 
 interface Fonte {
   fonte: string;
@@ -99,10 +100,7 @@ export default function FrescorPage() {
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-3 border-b border-base-300 pb-4">
         <div>
-          <h1 className="flex items-center gap-2 text-2xl font-bold text-base-content">
-            <Activity className="size-6" style={{ color: "var(--bi-accent-ink)" }} />
-            Status dos Dados
-          </h1>
+          <TituloTela>Status dos Dados</TituloTela>
           {/* A legenda explica as DUAS colunas em vez de listar os limiares de
               dias. Os limiares já estão ditos onde importam — no selo colorido
               de cada fonte. O que ninguém adivinha olhando é a diferença entre

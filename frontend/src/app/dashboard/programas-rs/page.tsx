@@ -20,6 +20,7 @@ import { AlertTriangle, ExternalLink, Landmark, Loader2 } from "lucide-react";
 import api from "@/lib/api";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 import { Bloco, BlocoHead, Lista, ItemLinha, Selo, Vazio } from "@/components/ui/superficies";
+import { TituloTela } from "@/components/TituloTela";
 
 interface Programa {
   chave: string;
@@ -72,7 +73,7 @@ export default function ProgramasRsPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold text-base-content">Programas do Estado</h1>
+        <TituloTela>Programas do Estado</TituloTela>
         <p className="text-sm text-muted-foreground">
           As linhas de fomento do Governo do RS pelas quais o município pode captar
         </p>

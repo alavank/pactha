@@ -34,6 +34,7 @@ import {
 } from "@/lib/permissoes";
 import { listarParametros, type Parametro } from "@/lib/parametros";
 import type { MapaEscopos } from "@/lib/escopo";
+import { TituloTela } from "@/components/TituloTela";
 
 interface Usuario extends UsuarioAlvo {
   must_change_password?: boolean;
@@ -242,7 +243,7 @@ export default function UsuariosPage() {
       <div className="flex flex-wrap items-start justify-between gap-3 border-b pb-4"
            style={{ borderColor: "var(--bi-line)" }}>
         <div className="min-w-0">
-          <h1 className="text-2xl font-bold text-base-content">Usuários</h1>
+          <TituloTela>Usuários</TituloTela>
           <p className="mt-1 text-sm" style={{ color: "var(--bi-muted)" }}>
             Acesso à plataforma PACTHA, concedido usuário a usuário.
           </p>

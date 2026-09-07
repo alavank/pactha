@@ -36,6 +36,7 @@ import {
 import type { MunicipioSummary, AlertaVigencia, ConvenioStats } from "@/types";
 import { BiScopeProvider } from "@/contexts/BiScopeContext";
 import { PainelIndicadores } from "@/components/bi/PainelIndicadores";
+import { TituloTela } from "@/components/TituloTela";
 
 interface StatusChange {
   id: number;
@@ -328,7 +329,7 @@ function DashboardOperacional() {
             <span>›</span>
             <span className="text-base-content/70">Painel de Monitoramento</span>
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-base-content">Painel de Monitoramento</h1>
+          <TituloTela>Painel de Monitoramento</TituloTela>
           <p className="mt-1 text-sm text-base-content/60">
             Visão consolidada de convênios, emendas e indicadores do município
           </p>

@@ -19,6 +19,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import { formatDataHora, horasDesde } from "@/lib/bi-format";
 import type { Convenio, ConvenioList } from "@/types";
 import ConvenioDetailModal from "./ConvenioDetailModal";
+import { TituloTela } from "@/components/TituloTela";
 
 /* CARREGA TUDO, e nao 20 por vez.
  *
@@ -496,7 +497,7 @@ export default function ConveniosPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-2xl font-bold text-base-content">Convênios Estaduais</h1>
+          <TituloTela>Convênios Estaduais</TituloTela>
           {/* A fonte é do ESTADO do ambiente e segue a cobertura REAL: onde já
               coletamos (MG=SIGCON, ES=GConv), nomeia a fonte; onde ainda não,
               diz com todas as letras — o vazio sem explicação era lido como

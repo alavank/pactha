@@ -15,6 +15,7 @@ import {
 import AvisoEscopo from "@/components/AvisoEscopo";
 import { contarSemEscrita, podeExcluirLinha } from "@/lib/escopo";
 import { useMunicipio } from "@/contexts/MunicipioContext";
+import { TituloTela } from "@/components/TituloTela";
 
 interface RmListItem {
   id: number;
@@ -372,7 +373,7 @@ export default function RmListPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold text-base-content">Relatório de Monitoramento (RM)</h1>
+        <TituloTela>Relatório de Monitoramento (RM)</TituloTela>
         <p className="mt-0.5 text-sm" style={{ color: "var(--bi-muted)" }}>
           Gestão dos RMs do município — padrão Freitas (gerar e exportar PDF).
         </p>

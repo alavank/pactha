@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Bloco, BlocoHead, Campos, ItemLinha, Lista, Numero, Selo, Vazio } from "@/components/ui/superficies";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { TituloTela } from "@/components/TituloTela";
 
 interface Dimensao {
   dimensao: string;
@@ -261,7 +262,7 @@ export default function SimecPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-2xl font-bold text-base-content">SIMEC - PAR (MEC)</h1>
+          <TituloTela>SIMEC - PAR (MEC)</TituloTela>
           <p className="text-sm" style={{ color: "var(--bi-muted)" }}>
             Plano de Ações Articuladas + liberações de recursos federais (PNAE, PNATE, QUOTA, PDDE, etc.)
           </p>

@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { Banknote, Search, Loader2, HandCoins } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { TituloTela } from "@/components/TituloTela";
 
 interface Repasse {
   id: number;
@@ -145,9 +146,7 @@ export default function RepassesPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold text-base-content">
-          {info?.titulo || "Repasses Estaduais"}
-        </h1>
+        <TituloTela>{info?.titulo || "Repasses Estaduais"}</TituloTela>
         <p className="text-sm text-muted-foreground">
           {info ? info.fonte : "Execução de recurso estadual"}
         </p>

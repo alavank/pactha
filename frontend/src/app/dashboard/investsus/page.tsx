@@ -34,6 +34,7 @@ import { AvisoCurado } from "@/components/rs/AvisoCurado";
 import {
   Bloco, BlocoHead, ItemLinha, Lista, Numero, Selo, Vazio,
 } from "@/components/ui/superficies";
+import { TituloTela } from "@/components/TituloTela";
 
 interface BlocoFin { nome: string; tipo: string; o_que: string }
 interface Conferir { item: string; detalhe: string }
@@ -112,7 +113,7 @@ export default function InvestSusPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold text-base-content">{d.titulo}</h1>
+        <TituloTela>{d.titulo}</TituloTela>
         <p className="text-sm text-muted-foreground">{d.subtitulo}</p>
       </div>
 
