@@ -44,6 +44,23 @@ sonda "che.sefaz.rs.gov.br"        "https://che.sefaz.rs.gov.br/api/Entidade/Con
 sonda "dados.rs.gov.br (CKAN CAGE)" "https://dados.rs.gov.br/api/3/action/package_show?id=convenios-do-estado"
 
 echo
+echo "-- api-publica.*.gestao.gov.br (Comunicado nº 23/2026 do MGI) — EM PRODUÇÃO"
+# ⚠️ ESTAS TRÊS SÃO A CADEIA QUE `ingestion/transferegov_te.py` FAZ TODA RODADA,
+# na ordem em que ele faz: CNPJ do município -> id_beneficiario -> planos. Elas
+# entraram aqui em 07/09/2026, quando a listagem da Transferência Especial trocou
+# a API interna da SPA por esta — até então o script sondava a fonte que o
+# produto NÃO usava mais e não sondava a que ele passou a usar.
+#
+# O host está atrás de Cloudflare e todas as medições da migração saíram de IP
+# residencial. 403/429 aqui significa que o cron `transferegov-te` não vai
+# coletar nada, e o sintoma no produto é mudo: a tabela mantém o dado velho.
+sonda "TE: beneficiário por CNPJ"  "https://api-publica.transferegov.gestao.gov.br/especiais/beneficiarios-especiais?cnpj_beneficiario=88488358000156&pagina=1&tamanho_da_pagina=200"
+sonda "TE: planos do beneficiário" "https://api-publica.transferegov.gestao.gov.br/especiais/planos-acao-especiais?id_beneficiario=9970&pagina=1&tamanho_da_pagina=200"
+sonda "TE: plano de trabalho"      "https://api-publica.transferegov.gestao.gov.br/especiais/planos-trabalho-especiais?id_plano_acao=35239&pagina=1&tamanho_da_pagina=200"
+sonda "obrasgov (uf=RS)"           "https://api-publica.obrasgov.gestao.gov.br/obras/projeto-investimento?uf_principal=RS&pagina=1&tamanho_da_pagina=1"
+sonda "dumps do TransfereGov"      "https://api-publica.transferegov.gestao.gov.br/downloads/dadosgov/siconv_programa.zip" HEAD
+
+echo
 echo "-- TCE-RS (o bloqueio a reconfirmar)"
 sonda "tce-rs CKAN package_show"   "https://dados.tce.rs.gov.br/api/3/action/package_show?id=licitacoes-pm-de-nova-palma"
 sonda "tce-rs ZIP licitações 53100" "https://dados.tce.rs.gov.br/dados/licitacon/licitacao/orgao/53100.csv.zip" HEAD
@@ -51,7 +68,6 @@ sonda "tce-rs ZIP empenhos 2026"   "https://dados.tce.rs.gov.br/dados/municipal/
 
 echo
 echo "-- FEDERAIS AUSENTES DO PRODUTO"
-sonda "obrasgov (uf=RS)"           "https://api-publica.obrasgov.gestao.gov.br/obras/projeto-investimento?uf_principal=RS&pagina=1&tamanho_da_pagina=1"
 sonda "siconfi tt/rreo (SM 2024)"  "https://apidatalake.tesouro.gov.br/ords/siconfi/tt/rreo?an_exercicio=2024&nr_periodo=6&co_tipo_demonstrativo=RREO&no_anexo=RREO-Anexo%2001&id_ente=4316907"
 sonda "ibge municipio 4313102"     "https://servicodados.ibge.gov.br/api/v1/localidades/municipios/4313102"
 sonda "s2id séries históricas"     "https://s2id.mi.gov.br/paginas/series/"
