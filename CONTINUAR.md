@@ -925,6 +925,37 @@ E o **item de lista voltou a nascer fechado**: as duas despejavam todos os campo
 `diagnostico`/`objetivos` inteiros (dois parágrafos de texto legal, na Aldir Blanc) em cada
 linha. Abrir no clique é o gesto que Obras e Emendas Federais já usavam.
 
+## 1.16. O cartão do parlamentar: sete campos fixos viraram selos (07/09/2026)
+
+Segundo pedido do dono no mesmo dia, com print: *"tem campos que ficam vazios e são
+mostrados mesmo assim e por isso toma um espaço maior... não seria melhor manter o mesmo
+padrão das do TransfereGov e Convênios, que têm tags mostrando do que se trata?"*
+
+O cartão fechado de cada parlamentar trazia uma `<Campos cols={3}>` com **as sete fontes
+sempre**: convênios estaduais, TransfereGov, emendas estaduais, Transferência Especial,
+Seleção PAC, FNS e emendas federais. Como quase todo parlamentar tem uma ou duas, cinco
+saíam como «—» — **três linhas de cartão para exibir, em média, dois números**.
+
+Agora são **selos, só das fontes que têm lançamento**, em `FONTES` (ordem fixa, no topo de
+`parlamentares/page.tsx`). O cartão fechado passou de três linhas para uma.
+
+⚠️ **É uma reversão consciente.** Estes selos já foram chips coloridos, e a grade nasceu
+para consertar dois defeitos deles. O primeiro — cor gasta à toa — continua consertado: o
+selo é neutro, como manda a peça. O segundo é o que se paga: a varredura vertical vira
+**ordem** fixa em vez de **posição** fixa. Foi decisão do dono, vendo o resultado.
+
+⚠️ **Rótulo é nome inteiro** ("Transferência Especial", não "Transf. especial"): a
+abreviação existia porque a coluna da grade tinha ~150px, e o selo se ajusta ao texto. É
+também o que faz o resumo casar com o título da seção que aparece ao abrir a setinha.
+
+⚠️ **O valor total ganhou rótulo** ("Valor total dos lançamentos", curto no celular): era um
+número solto no canto de um cartão que, aberto, mostra o valor de *cada* lançamento.
+
+🔴 **E o furo que isso revelou:** «Emendas Federais» conta no resumo e no
+`total_lancamentos`, mas `GET /parlamentares/detalhe` devolve **seis** listas, não sete —
+quem abre não encontra a seção. Não é regressão (a grade tinha o mesmo furo, menos visível).
+Registrado como item 11 em `docs/emendas-federais-pendencias.md`, com o caminho do conserto.
+
 ## 2. ESTADO ATUAL (2026-09-04)
 
 **São CINCO tenants em produção**, todos do mesmo código, cada um com containers e banco próprios:
