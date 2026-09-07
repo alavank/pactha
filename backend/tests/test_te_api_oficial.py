@@ -227,3 +227,35 @@ def test_o_RM_classifica_o_plano_traduzido_como_classificava_antes():
     assert sit_efetivo == "CONCLUIDO_NT_TCU"   # e NÃO "CIENTE"
     # E o texto exibido continua legível depois do replace que o RM faz.
     assert sit_trab.replace("_", " ") == "CONCLUIDO NT TCU"
+
+
+# ---------------------------------------------------------------------------
+# O QUE A PRIMEIRA RODADA EM PRODUÇÃO ENSINOU (07/09/2026)
+# ---------------------------------------------------------------------------
+
+def test_a_carteira_da_coleta_ignora_municipio_inativo():
+    """⭐ DEFEITO ACHADO NA PRIMEIRA RODADA REAL, no freitas: dos 60 municípios,
+    18 estão INATIVOS — e são exatamente os 18 sem CNPJ, porque o `siconfi`
+    (que preenche esse campo) filtra por `active` e nunca os visitou.
+
+    Sem `WHERE active` o coletor gastava requisição com município que o cliente
+    não acompanha, gravava linha para ele e — pior — caía no fallback por nome
+    nos 18, e cada queda baixava a lista de beneficiários da UF inteira. Dezoito
+    varreduras de Minas Gerais para preencher município que ninguém lê.
+
+    O teste lê o SQL da função em vez de bater no banco: o que precisa ser
+    garantido é a cláusula, e ela é uma linha de texto.
+    """
+    import inspect
+    from ingestion.transferegov_te import _municipios_da_carteira
+    fonte = inspect.getsource(_municipios_da_carteira)
+    assert "WHERE active" in fonte, "a coleta voltaria a visitar município inativo"
+
+
+def test_o_fallback_por_nome_baixa_a_UF_uma_vez_so():
+    """O fallback existe para município ativo cujo CNPJ ainda não foi preenchido.
+    Ele baixa a lista de beneficiários do estado — e sem cache repetiria esse
+    download uma vez por município, que foi o custo observado em produção."""
+    import inspect
+    from ingestion.transferegov_te import _beneficiario_por_nome
+    assert "cache_uf" in inspect.signature(_beneficiario_por_nome).parameters
