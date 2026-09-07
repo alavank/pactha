@@ -42,6 +42,53 @@ MOTIVO_SEM_COLETA = (
 )
 
 
+# ⚠️ O QUE CONTA COMO "DO MUNICIPIO", e por que a pergunta precisou ser feita.
+#
+# `cd_ibge_recebedor` filtra pelo municipio do RECEBEDOR — e recebedor nao e so a
+# prefeitura. Medido em 07/09/2026: Goiania tem 172 propostas, das quais 15 sao do
+# FUNDO ESTADUAL DE SAUDE (que atende Goias inteiro) e outras tantas de associacao
+# privada, cooperativa e sociedade empresaria. No tenant trust isso e 20 propostas
+# estaduais (R$ 31,1 mi) e 54 privadas (R$ 55,6 mi) dentro de 706 — 13,6% do valor.
+#
+# ⚠️ E O ESTRAGO MAIOR ERA NO RANKING. A tela responde "quem trouxe recurso para a
+# cidade", e somar o Fundo ESTADUAL de Saude ao nome de um parlamentar afirma algo
+# que a fonte nao afirma: aquele dinheiro e do estado, aplicado no estado inteiro.
+#
+# A fonte diz a esfera em `nm_natureza_juridica`, com vocabulario fechado (amostra
+# de 1.000 propostas nacionais, 07/09/2026):
+#
+#     719  Fundo Publico da Administracao Direta Municipal      <- municipal
+#      20  Municipio                                            <- municipal
+#     152  Associacao Privada          46 Sociedade Empresaria Limitada
+#      18  Cooperativa                 16 Fundacao Privada
+#      18  Fundo Publico da Adm. Direta Estadual ou do DF        <- outra esfera
+#       5  Consorcio Publico            4 Empresario (Individual)
+#
+# ⭐ NADA E DESCARTADO, ao contrario do que `faf_planos` faz. La o plano do estado
+# nao tem vinculo municipal nenhum (o IBGE e a SEDE do ente). Aqui tem: a Santa
+# Casa que recebeu emenda federal ESTA na cidade, e o gestor quer saber. O que nao
+# pode e entrar na conta como se fosse dinheiro da prefeitura. Entao fica, marcado,
+# e fora dos totais.
+_MUNICIPAIS = ("fundo publico da administracao direta municipal", "municipio")
+
+
+def _municipal(natureza: Optional[str]) -> bool:
+    """A proposta e da ADMINISTRACAO MUNICIPAL?
+
+    ⚠️ AUSENCIA CONTA COMO MUNICIPAL. Se a fonte parar de mandar a natureza, a
+    alternativa seria zerar os cartoes da tela em silencio — pior que uma
+    proposta a mais na conta. E `fora_do_municipio` na resposta deixa a mudanca
+    visivel em vez de escondida.
+    """
+    if not natureza:
+        return True
+    t = (natureza.lower()
+         .replace("ç", "c").replace("ã", "a").replace("õ", "o")
+         .replace("é", "e").replace("ú", "u").replace("í", "i")
+         .replace("á", "a").replace("ó", "o").replace("ê", "e").strip())
+    return any(t.startswith(m) for m in _MUNICIPAIS)
+
+
 def _f(v) -> Optional[float]:
     """`None` continua `None`. ⚠️ Proposta sem valor declarado não é proposta de
     R$ 0,00 — zero na tela seria uma afirmação que a fonte não faz."""
@@ -77,12 +124,23 @@ async def fetch_parcerias(db: AsyncSession, municipio_id: int) -> dict:
     por_parlamentar: dict[str, dict] = {}
     por_situacao: dict[str, int] = {}
     total = total_emenda = 0.0
+    fora_qtd = 0
+    fora_valor = 0.0
     for p in linhas:
         valor = _f(p["valor_total"])
         vl_emenda = _f(p["valor_emenda"])
-        total += valor or 0
-        total_emenda += vl_emenda or 0
+        # ⚠️ SÓ A ADMINISTRAÇÃO MUNICIPAL ENTRA NA CONTA. Ver `_municipal`: o
+        # Fundo ESTADUAL de Saúde e a associação privada aparecem na lista, mas
+        # somá-los diria que a prefeitura recebeu o que ela não recebeu.
+        municipal = _municipal(p["natureza_juridica"])
+        if municipal:
+            total += valor or 0
+            total_emenda += vl_emenda or 0
+        else:
+            fora_qtd += 1
+            fora_valor += valor or 0
         itens.append({
+            "municipal": municipal,
             "id_proposta": p["id_proposta"],
             "objeto": p["objeto"],
             "situacao": p["situacao"],
@@ -105,7 +163,7 @@ async def fetch_parcerias(db: AsyncSession, municipio_id: int) -> dict:
             "resultado_esperado": p["resultado_esperado"],
             "url_fonte": URL_FONTE + str(p["id_proposta"]),
         })
-        if p["parlamentar"]:
+        if p["parlamentar"] and municipal:
             e = por_parlamentar.setdefault(
                 p["parlamentar"], {"parlamentar": p["parlamentar"],
                                    "propostas": 0, "valor": 0.0,
@@ -118,7 +176,12 @@ async def fetch_parcerias(db: AsyncSession, municipio_id: int) -> dict:
     return {
         "tem_dados": True,
         "itens": itens,
-        "total": len(itens),
+        # ⚠️ `total` conta a ADMINISTRAÇÃO MUNICIPAL, e `itens` traz TODAS as
+        # linhas — a diferença é `fora_do_municipio`, logo abaixo. Contar tudo
+        # aqui poria o Fundo Estadual de Saúde no cartão «Propostas» da
+        # prefeitura; esconder as linhas faria a lista não bater com o portal.
+        "total": len(itens) - fora_qtd,
+        "total_listado": len(itens),
         "valor_total": round(total, 2),
         "valor_emenda": round(total_emenda, 2),
         # ⭐ O RANKING É O PRODUTO DESTA TELA. Ordenado por valor, que é a
@@ -128,6 +191,10 @@ async def fetch_parcerias(db: AsyncSession, municipio_id: int) -> dict:
         "por_situacao": sorted(
             [{"situacao": k, "qtd": v} for k, v in por_situacao.items()],
             key=lambda e: -e["qtd"]),
+        # ⭐ O QUE FICOU FORA DA CONTA, dito em vez de escondido: a tela mostra
+        # a linha e avisa por que ela não soma. Silêncio aqui viraria "faltam
+        # propostas" para quem conferir contra o portal.
+        "fora_do_municipio": {"qtd": fora_qtd, "valor": round(fora_valor, 2)},
         "atualizado_em": max((p["atualizado_em"] for p in linhas
                               if p["atualizado_em"]), default=None),
     }

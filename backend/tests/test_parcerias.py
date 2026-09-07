@@ -144,3 +144,54 @@ def test_a_fonte_entrou_no_monitor_de_frescor():
     fontes = [s for s in _SOURCES if s[2] == "parcerias"]
     assert len(fontes) == 1
     assert "parcerias_propostas" in fontes[0][1]
+
+
+# ---------------------------------------------------------------------------
+# ⚠️ NEM TODO RECEBEDOR DO MUNICÍPIO É O MUNICÍPIO (07/09/2026).
+#
+# `cd_ibge_recebedor` filtra pelo município do recebedor — e recebedor não é só
+# a prefeitura. Goiânia tem 172 propostas, das quais 15 são do FUNDO ESTADUAL DE
+# SAÚDE, que atende Goiás inteiro. No trust: 20 estaduais (R$ 31,1 mi) e 54 de
+# entidade privada (R$ 55,6 mi) dentro de 706 — 13,6% do valor.
+#
+# O estrago maior era no RANKING: a tela responde "quem trouxe recurso para a
+# cidade", e somar o fundo estadual ao nome de um parlamentar afirma algo que a
+# fonte não afirma.
+# ---------------------------------------------------------------------------
+
+from routers.parcerias import _municipal
+
+
+def test_a_administracao_municipal_conta():
+    assert _municipal("Fundo Público da Administração Direta Municipal") is True
+    assert _municipal("Município") is True
+
+
+def test_o_fundo_ESTADUAL_nao_conta_como_do_municipio():
+    """Ele atende o estado inteiro; a sede ser a capital não faz dele da cidade."""
+    assert _municipal(
+        "Fundo Público da Administração Direta Estadual ou do Distrito Federal"
+    ) is False
+
+
+def test_entidade_privada_nao_entra_na_conta_da_prefeitura():
+    """⭐ Mas NÃO é descartada, ao contrário do que `faf_planos` faz com o ente
+    estadual: a Santa Casa que recebeu emenda federal está na cidade e o gestor
+    quer saber. Ela aparece na lista, marcada, e fora dos totais."""
+    for nat in ("Associação Privada", "Sociedade Empresária Limitada",
+                "Cooperativa", "Fundação Privada", "Empresário (Individual)",
+                "Consórcio Público de Direito Público (Associação Pública)"):
+        assert _municipal(nat) is False, nat
+
+
+def test_natureza_ausente_conta_como_municipal():
+    """⚠️ Se a fonte parar de mandar a natureza, a alternativa seria zerar os
+    cartões da tela em silêncio — pior que uma proposta a mais na conta."""
+    assert _municipal(None) is True
+    assert _municipal("") is True
+
+
+def test_a_acentuacao_nao_decide_a_conta():
+    """A fonte já mandou o mesmo rótulo com e sem acento em outros módulos."""
+    assert _municipal("Fundo Publico da Administracao Direta Municipal") is True
+    assert _municipal("FUNDO PÚBLICO DA ADMINISTRAÇÃO DIRETA MUNICIPAL") is True
