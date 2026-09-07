@@ -719,7 +719,12 @@ def linha_detalhe(pid: str, d: dict) -> dict:
                 default=None) if execucao else None
     return {
         "pid": pid,
-        "pct": _num((atual or {}).get("percentual_execucao")),
+        # ⚠️ `percentual_execucao_FISICA`, e o sufixo nao e detalhe: escrevi
+        # `percentual_execucao` no #408 e a coluna ficou NULA em 538 de 538
+        # obras do freitas por tres dias, sem erro em log nenhum — `.get()`
+        # de chave inexistente devolve None, que aqui e indistinguivel de
+        # "a fonte nao mediu esta obra". Ver `test_os_nomes_dos_campos_...`.
+        "pct": _num((atual or {}).get("percentual_execucao_fisica")),
         "dt_exec": _data((atual or {}).get("dt_cadastro_execucao")),
         "empenhado": _soma(empenhos, "valor_empenho"),
         "liquidado": _soma(empenhos, "liquidado"),

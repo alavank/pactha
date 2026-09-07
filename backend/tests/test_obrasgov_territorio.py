@@ -92,10 +92,19 @@ EMPENHOS = [
     {"id_projeto_investimento": "X", "nr_empenho": "2024NE000456",
      "valor_empenho": 500000.0, "liquidado": 0.0, "pago": 0.0},
 ]
+# ⚠️⚠️ ESTE PAYLOAD ESTAVA ERRADO, E POR ISSO O TESTE PASSAVA COM O BUG.
+# A primeira versão escreveu `percentual_execucao` — o nome que o COLETOR usava,
+# não o que a fonte manda. O campo real é `percentual_execucao_FISICA`, e o
+# resultado foi `percentual_execucao` NULO em 538 de 538 obras do freitas por
+# três dias, sem erro em log nenhum: `.get()` de chave inexistente devolve None,
+# indistinguível de "a fonte não mediu esta obra".
+#
+# A lição: payload de teste se captura da FONTE, não se deduz do código que se
+# quer testar. Estes são de uma resposta real de 07/09/2026.
 EXECUCAO = [
-    {"id_projeto_investimento": "X", "percentual_execucao": 35.5,
+    {"id_projeto_investimento": "X", "percentual_execucao_fisica": 35.5,
      "dt_cadastro_execucao": "2024-11-06T00:00:00"},
-    {"id_projeto_investimento": "X", "percentual_execucao": 62.0,
+    {"id_projeto_investimento": "X", "percentual_execucao_fisica": 62.0,
      "dt_cadastro_execucao": "2025-06-30T00:00:00"},
 ]
 
@@ -307,3 +316,55 @@ def test_a_tela_usa_a_mesma_regra_do_router():
             / "dashboard" / "obrasgov" / "page.tsx").read_text(encoding="utf-8")
     assert 'o.vinculo !== "abrangencia"' in tela
     assert "Programas que passam pelo município" in tela
+
+
+# ---------------------------------------------------------------------------
+# ⚠️ OS NOMES DOS CAMPOS DA FONTE, TRAVADOS (07/09/2026).
+#
+# `.get("nome_errado")` devolve `None` sem reclamar, e `None` nesta base
+# significa "a fonte não informou" — então um erro de digitação vira um campo
+# permanentemente vazio que ninguém percebe. Foi o que aconteceu com
+# `percentual_execucao` vs `percentual_execucao_fisica`.
+#
+# Esta lista é o contrato observado na resposta real. Se a fonte renomear (o
+# Obras.gov já renomeou TODOS os campos numa troca de host), o teste não pega
+# sozinho — mas quem mexer no coletor tem aqui, escrito, o nome que a fonte usa.
+# ---------------------------------------------------------------------------
+
+CAMPOS_DA_FONTE = {
+    "execucao-fisica": {"id_projeto_investimento", "id_execucao_fisica",
+                        "percentual_execucao_fisica", "dt_inicial_execucao",
+                        "dt_final_execucao", "dt_cadastro_execucao",
+                        "dt_atualizacao_execucao"},
+    "empenho": {"valor_empenho", "liquidado", "pago", "rpinscrito"},
+}
+
+
+def test_os_nomes_dos_campos_lidos_existem_na_fonte():
+    """O coletor só pode ler chave que a fonte manda."""
+    import inspect
+    from ingestion import obrasgov
+    fonte = inspect.getsource(obrasgov.linha_detalhe)
+    for campo in ("percentual_execucao_fisica", "dt_cadastro_execucao",
+                  "valor_empenho", "liquidado", "pago", "rpinscrito"):
+        assert campo in fonte, f"{campo} sumiu de linha_detalhe"
+    # ⚠️ E o nome ERRADO não pode voltar. `percentual_execucao` é prefixo do
+    # certo, então a checagem é por delimitador.
+    assert '"percentual_execucao")' not in fonte, (
+        "voltou o nome sem o sufixo _fisica — o campo ficaria NULO em tudo")
+
+
+def test_a_medicao_mais_recente_usa_o_campo_certo():
+    """Prova de ponta a ponta com o payload real: 62,0% e não None."""
+    from ingestion.obrasgov import linha_detalhe
+    l = linha_detalhe("X", {"execucao": EXECUCAO})
+    assert l["pct"] == 62.0, "o percentual voltou a sair NULO"
+
+
+def test_payload_com_o_nome_ANTIGO_nao_preenche():
+    """⚠️ O contrário do teste acima, e é ele que documenta o defeito: se a
+    fonte mandasse o nome antigo, a coluna ficaria nula — e era exatamente esse
+    o estado em produção."""
+    from ingestion.obrasgov import linha_detalhe
+    antigo = [{"percentual_execucao": 62.0, "dt_cadastro_execucao": "2025-06-30"}]
+    assert linha_detalhe("X", {"execucao": antigo})["pct"] is None
