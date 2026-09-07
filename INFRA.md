@@ -426,10 +426,24 @@ e sem navegador.
 > conserto, o freitas gravou 1.427 linhas com 0 falhas (antes: 1.385 com a CAPAG perdida).
 
 **`obrasgov`** (obras federais do Obras.gov.br/CIPI, PRs #367–#370, 03–04/09/2026):
-Scheduled Task **nos 5 workers**, escada de 5 min — santamaria 03:05, novapalma 03:10,
-montesiao 03:15, trust 03:20, **freitas 03:30** UTC. Lock **próprio**
-(`/tmp/obrasgov.lock`) pelo mesmo motivo do `simec-termos`: é `httpx` puro, sem login e
-sem navegador, então não disputa a fila do Chromium do `/tmp/scraper.lock`.
+Scheduled Task **nos 5 workers**, escada de **30 min** — santamaria 03:05, novapalma
+03:35, montesiao 04:05, trust 04:35, **freitas 05:05** UTC, com `timeout -k 30 1800`.
+Lock **próprio** (`/tmp/obrasgov.lock`) pelo mesmo motivo do `simec-termos`: é `httpx`
+puro, sem login e sem navegador, então não disputa a fila do Chromium do
+`/tmp/scraper.lock`.
+
+> ⭐ **A escada era de 5 min e o timeout de 900s até 07/09/2026** — os dois mudaram
+> juntos, e por causa da mesma coisa: a fase de DETALHE. Ela varre os cinco endpoints
+> filhos inteiros (execução física, empenho, contrato, paralisação, estudo de
+> viabilidade — 1.278 páginas, ~450s medidos) e leva a rodada de ~75s para ~12-15 min.
+> Com 5 min entre tenants, os cinco varreriam a fonte federal **ao mesmo tempo, do
+> mesmo IP** — 5× a carga, que é exatamente como se conquista um bloqueio. A escada de
+> 30 min é a mesma disciplina que o `transferegov-te` já segue.
+>
+> ⚠️ Varrer a fonte inteira e casar em memória é mais barato do que perguntar projeto a
+> projeto, e a diferença cresce com a carteira: em Santa Maria seriam 2.180 requisições
+> (~13 min) contra ~450s fixos. O coletor tem `OBRASGOV_TETO_TAREFA_S` (1700) e pula a
+> fase de detalhe inteira se não couber, em vez de ser morto no meio e perder o log.
 
 > ⚠️ **O freitas estava em 03:25, no MESMO minuto do `transferegov-lote`** (corrigido para
 > 03:30 em 04/09). Como os locks são diferentes de propósito, os dois **não** se

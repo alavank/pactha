@@ -15,9 +15,19 @@ esconder metade dela para evitar repeticao daria um numero que nao bate com o
 Obras.gov.br. O campo `sistema_origem` vai junto em cada obra para a tela poder
 dizer de onde veio, em vez de fingir que a repeticao nao existe.
 
-⚠️ `municipio_id` E INFERENCIA NOSSA, nao campo da fonte: a API nao tem filtro
-territorial e o vinculo e feito por CNPJ de tomador/executor. Ver o cabecalho de
-`ingestion/obrasgov.py`.
+⚠️ `municipio_id` PODE SER INFERENCIA NOSSA — e o campo `vinculo` diz qual dos
+dois casos e cada linha:
+
+    'prefeitura'   algum CNPJ do municipio bate com tomador/executor. E
+                   inferencia nossa, como sempre foi.
+    'territorio'   o `/geometria?cod_ibge=` do Governo aponta a obra neste
+                   municipio. Aqui o municipio veio da FONTE, e
+                   `cod_ibge_geometria` guarda a prova. A obra costuma ser de
+                   outro ente (em Santa Maria: UFSM, DNIT, IF Farroupilha).
+    'abrangencia'  projeto guarda-chuva, com geometria em centenas de
+                   municipios — nao e uma obra nesta cidade.
+
+Ver o cabecalho de `ingestion/obrasgov.py`.
 
 A classificacao **acao / papel / andamento / encerradas** e feita AQUI, e nao no
 cliente — mesmo motivo do `routers/sismob.py`: tela, TV, celular e PDF precisam
@@ -131,7 +141,10 @@ _CAMPOS = """
     data_inicial_efetiva, data_final_efetiva, data_cadastro,
     populacao_beneficiada, empregos_gerados, valor_investimento_previsto,
     origens_recurso, eixos, tipos, tomadores, executores, repassadores,
-    sistema_origem, atualizado_em
+    sistema_origem, atualizado_em,
+    vinculo, cod_ibge_geometria, abrangencia_municipios,
+    percentual_execucao, data_execucao, valor_empenhado, valor_liquidado,
+    valor_pago, valor_restos_pagar, empenhos, contratos, paralisacao
 """
 
 
@@ -193,6 +206,28 @@ async def fetch_obras_federais(db: AsyncSession, municipio_id: int) -> dict:
             "executores": list(o["executores"] or []),
             "repassadores": list(o["repassadores"] or []),
             "sistema_origem": o["sistema_origem"],
+            # ⭐ DE QUEM E A OBRA. 'prefeitura' = algum CNPJ do municipio bate;
+            # 'territorio' = so a geometria aponta, e o dono e outro ente (em
+            # Santa Maria sao UFSM, DNIT, IF Farroupilha); 'abrangencia' =
+            # projeto guarda-chuva que nao e uma obra nesta cidade. Sem esta
+            # marca, a tela repetiria por outro caminho o erro que o coletor
+            # documenta: obra da UFSM posando de obra da prefeitura.
+            "vinculo": o["vinculo"] or "prefeitura",
+            "cod_ibge_geometria": o["cod_ibge_geometria"],
+            "abrangencia_municipios": o["abrangencia_municipios"],
+            # ⚠️ `None` e nao 0 em todos os quatro, pela mesma razao do `valor`:
+            # projeto sem empenho coletado nao foi empenhado em zero — nao se
+            # mediu. Zero e uma afirmacao que so a fonte pode fazer.
+            "percentual_execucao": _f(o["percentual_execucao"]),
+            "data_execucao": _d(o["data_execucao"]),
+            "valor_empenhado": _f(o["valor_empenhado"]),
+            "valor_liquidado": _f(o["valor_liquidado"]),
+            "valor_pago": _f(o["valor_pago"]),
+            "valor_restos_pagar": _f(o["valor_restos_pagar"]),
+            "empenhos": o["empenhos"] or [],
+            "contratos": o["contratos"] or [],
+            # A justificativa de por que a obra parou, e se ha tratativas.
+            "paralisacao": o["paralisacao"] or [],
             "ano": ano,
             # O link que deixa qualquer numero desta tela conferivel na fonte.
             "url_fonte": ("https://api-publica.obrasgov.gestao.gov.br/obras/"
