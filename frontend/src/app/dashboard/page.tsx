@@ -319,7 +319,7 @@ function DashboardOperacional() {
   const rowCls = "flex items-center justify-between rounded-xl border border-base-300 p-3 transition-colors hover:bg-base-200/60";
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Cabecalho */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>

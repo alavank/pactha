@@ -493,7 +493,7 @@ export default function ConveniosPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="text-2xl font-bold text-base-content">Convênios Estaduais</h1>

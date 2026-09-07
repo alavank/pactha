@@ -44,6 +44,7 @@ import {
 } from "@/components/ui/sheet";
 import type { Municipio, User } from "@/types";
 import { hrefToTela, allowedTelasOf } from "@/lib/telas";
+import { PADDING_PADRAO } from "@/lib/layout";
 import {
   BI_ON, NAV_ITEMS, allLeafHrefs,
   type NavEntry, type NavGroup, type NavLeaf, type NavSection,
@@ -896,57 +897,45 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
     router.push("/login");
   }, [router]);
 
-  // TELA CHEIA: sem max-w e SEM O PADDING do container — a propria tela cuida
-  // do espacamento. Duas moram aqui, por razoes diferentes:
+  // ⭐⭐ A ÁREA ÚTIL É UMA SÓ — 07/09/2026, pedido do dono com print e setas:
+  // "cada um segue um tamanho, e isso não pode; tem que aproveitar a tela".
   //
-  //  · o Painel de Indicadores, que ocupa a largura toda (e um BI, nao uma tela
-  //    de formulario);
-  //  · AGENDAMENTOS, que tem FUNDO PROPRIO. E aqui esta o motivo de ele nao
-  //    poder ficar em `telaLarga`: com o padding do container por fora, o fundo
-  //    do modulo vira um RETANGULO PINTADO no meio da pagina, e sobra uma
-  //    moldura do cinza do sistema em volta — 24px em cima e embaixo (o `py-6`)
-  //    e o que passar de 1600px nas laterais. A primeira tentativa desfazia isso
-  //    com margem negativa, e ela so alcancava a horizontal: a faixa de cima e a
-  //    de baixo continuavam la. Sem padding externo, o fundo do modulo E o fundo
-  //    da area util, que e o que o dono pediu — "deve sobrepor e preencher aquele
-  //    cinza off-white que fica nos outros modulos".
+  // O QUE HAVIA AQUI: três regimes de largura convivendo. `telaCheia` (largura
+  // toda), `telaLarga` (`max-w-[1600px]`) e o padrão (`max-w-7xl`, 1216px
+  // úteis). Numa janela de 1920 isso dava TRÊS margens esquerdas diferentes
+  // conforme o item de menu clicado — 32px no Painel, ~57px no TransfereGov e
+  // ~185px nas demais. Trocar de tela empurrava o conteúdo lateralmente, e o
+  // dono leu (com razão) como tela mal aproveitada, não como decisão de leitura.
+  //
+  // A JUSTIFICATIVA DO `max-w-7xl` ERA LEITURA DE PARÁGRAFO (~75 caracteres por
+  // linha). Ela não se sustenta aqui: PACTHA não tem tela de texto corrido —
+  // tem grade de dados, cartão e lista, e onde há parágrafo ele já traz
+  // `max-w-3xl` PRÓPRIO (obrasgov, emendas-federais, gestão, auditoria), que é
+  // onde o limite pertence. Travar a página inteira para proteger o parágrafo
+  // custava 700px de dado em todas as outras.
+  //
+  // O PADRÃO É O DO PAINEL DE INDICADORES, a referência que o dono mandou:
+  // largura toda, `PADDING_PADRAO` (`lib/layout.ts`). Uma tela que precise de
+  // outra margem NÃO ganha exceção aqui: ou o padrão muda para todas, ou a
+  // diferença volta a ser o defeito que este comentário desfaz.
+
+  // A ÚNICA EXCEÇÃO QUE SOBRA: telas de FUNDO PRÓPRIO, que precisam pintar até
+  // a borda da área rolável. Com o padding do container por fora, o fundo do
+  // módulo vira um RETÂNGULO PINTADO no meio da página, com uma moldura do
+  // cinza do sistema em volta. A primeira tentativa desfez isso com margem
+  // negativa, e ela só alcançava a horizontal: a faixa de cima e a de baixo
+  // continuavam lá. Sem padding externo, o fundo do módulo É o fundo da área
+  // útil — "deve sobrepor e preencher aquele cinza off-white que fica nos
+  // outros módulos".
+  //
+  //  · o Painel de Indicadores (`bi-skin`), que já aplica `PADDING_PADRAO`
+  //    dentro do próprio fundo;
+  //  · AGENDAMENTOS, pelo mesmo motivo.
+  //
+  // ⚠️ Quem entrar aqui assume o padding por conta própria, com estas MESMAS
+  // classes — senão reabre a divergência de margem que a mudança acima fechou.
   const telaCheia = (BI_ON && pathname === "/dashboard")
     || pathname.startsWith("/dashboard/agendamentos");
-
-  // TELAS LARGAS. `max-w-7xl` da 1216px uteis, e a lista de propostas do
-  // TransfereGov tem 12 colunas que pedem ~1440px. Faltando largura, nao existe
-  // CSS de celula que resolva: ou o texto e cortado, ou a coluna vizinha e
-  // esmagada. Estas telas sao GRADES DE DADOS, nao formularios — o limite de
-  // leitura confortavel (~75 caracteres por linha) vale para paragrafo, nao
-  // para tabela. As demais continuam em max-w-7xl de proposito.
-  const TELAS_LARGAS = [
-    "/dashboard/transferegov",   // cobre geral, cnpj, encerradas, rejeitadas,
-                                 // voluntarias, pac e o modulo de especiais
-    "/dashboard/convenios",      // 14 colunas
-    "/dashboard/emendas",        // 11 colunas
-    // ⚠️ AGENDAMENTOS ESTEVE AQUI e passou para `telaCheia`, acima. Ele precisa
-    // da largura pelo mesmo motivo destas (o mes com 174px por dia nao cabe, e
-    // cinco colunas de kanban pediriam rolagem horizontal), mas o `px`/`py` do
-    // container recortava o fundo proprio dele numa moldura cinza. Nao
-    // reacrescente aqui sem tirar de la.
-    //
-    // ⭐ CONFIGURAÇÕES ENTROU em 05/09/2026 (pedido do dono): "o menu
-    // Configurações inteiro tem que usar a mesma área útil que o Dashboard e o
-    // TransfereGov (...) hoje o card central fica com margens grandes à
-    // esquerda e à direita — isso sai".
-    //
-    // ⚠️ A MARGEM ERA SÓ ISTO. O layout de Configurações não impõe largura
-    // nenhuma: as margens grandes vinham do `max-w-7xl` (1216px) que é o padrão
-    // desta lista abaixo. Entrando aqui, ele passa a 1600px, o MESMO do
-    // TransfereGov — e não `telaCheia` como o Painel, porque aquele tira também
-    // o padding, e a página de abas precisa dele.
-    //
-    // As duas rotas: a nova (abas) e a antiga (`/dashboard/usuarios` e irmãs
-    // continuam no ar para não quebrar bookmark).
-    "/dashboard/configuracoes",
-    "/dashboard/usuarios",
-  ];
-  const telaLarga = TELAS_LARGAS.some((p) => pathname.startsWith(p));
 
   return (
     <div className="flex h-screen overflow-hidden bg-base-200">
@@ -1034,11 +1023,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
             vez de depender de cada tela lembrar de se limpar. */}
         <div
           key={escopo}
-          className={
-            telaCheia ? ""
-            : telaLarga ? "mx-auto max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8"
-            : "mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8"
-          }
+          className={telaCheia ? "" : PADDING_PADRAO}
         >
           {children}
         </div>

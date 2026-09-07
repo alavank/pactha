@@ -29,7 +29,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  Building2, ExternalLink, HandCoins, Landmark, Loader2, Users,
+  Building2, ExternalLink, HandCoins, Landmark, Loader2, Users, Wallet,
 } from "lucide-react";
 
 import api from "@/lib/api";
@@ -135,22 +135,20 @@ export default function ParceriasPage() {
   }, [d, parlamentar]);
 
   if (!municipioId) {
-    return <div className="p-6"><Vazio>Selecione um município.</Vazio></div>;
+    return <Vazio>Selecione um município.</Vazio>;
   }
   if (carregando) {
     return (
-      <div className="flex items-center gap-2 p-6 text-sm"
+      <div className="flex items-center gap-2 py-6 text-sm"
            style={{ color: "var(--bi-muted)" }}>
         <Loader2 className="size-4 animate-spin" /> Carregando parcerias…
       </div>
     );
   }
-  if (erro) return <div className="p-6"><Vazio>{erro}</Vazio></div>;
+  if (erro) return <Vazio>{erro}</Vazio>;
   if (!d?.tem_dados) {
     return (
-      <div className="p-6">
-        <Vazio>{d?.motivo || "Sem parcerias coletadas para este município."}</Vazio>
-      </div>
+      <Vazio>{d?.motivo || "Sem parcerias coletadas para este município."}</Vazio>
     );
   }
 
@@ -158,34 +156,47 @@ export default function ParceriasPage() {
   const fora = d.fora_do_municipio?.qtd ?? 0;
 
   return (
-    <div className="space-y-4 p-4 sm:p-6">
-      <Bloco>
-        <BlocoHead
-          icon={HandCoins}
-          titulo="Parcerias"
-          sub="Transferegov · o módulo onde a emenda de saúde é processada desde 2024"
+    <div className="flex flex-col gap-4">
+      {/* ⭐ CABEÇALHO SOLTO, e não um `Bloco` com `BlocoHead`. A primeira versão
+          embrulhava título + KPIs num cartão só, e os quatro `Numero` — que já
+          são `bi-card` — viravam CARTÃO DENTRO DE CARTÃO, encostados na borda
+          do de fora (o `Bloco` não traz padding próprio). Este é o mesmo
+          cabeçalho das Obras Federais e das Emendas Federais: h1, o parágrafo
+          do que a tela é, e a régua de números logo abaixo, no fundo da
+          página. */}
+      <header>
+        <h1 className="bi-title text-[18px]">Parcerias</h1>
+        <p className="mt-1 max-w-3xl text-[12px] leading-snug"
+           style={{ color: "var(--bi-muted)" }}>
+          O módulo do Transferegov que processa as transferências de 2024 em
+          diante — onde a <b>emenda de saúde</b> vira proposta e, depois,
+          instrumento. Nas propostas listadas aqui o parlamentar que indicou o
+          recurso vem nomeado na própria fonte.
+        </p>
+      </header>
+
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Numero
+          icon={Landmark}
+          rotulo="Propostas"
+          valor={String(d.total ?? 0)}
+          /* ⚠️ O cartão conta a ADMINISTRAÇÃO MUNICIPAL. O resto continua na
+             lista abaixo, marcado — esconder faria a contagem não bater com o
+             portal, e somar diria que a prefeitura recebeu o que não recebeu. */
+          sub={fora > 0
+            ? `+ ${fora} de outro recebedor no município`
+            : undefined}
         />
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <Numero
-            rotulo="Propostas"
-            valor={String(d.total ?? 0)}
-            /* ⚠️ O cartão conta a ADMINISTRAÇÃO MUNICIPAL. O resto continua na
-               lista abaixo, marcado — esconder faria a contagem não bater com o
-               portal, e somar diria que a prefeitura recebeu o que não recebeu. */
-            sub={fora > 0
-              ? `+ ${fora} de outro recebedor no município`
-              : undefined}
-          />
-          <Numero rotulo="Valor total" valor={brl(d.valor_total)} />
-          <Numero rotulo="Em emendas" valor={brl(d.valor_emenda)} />
-          <Numero rotulo="Parlamentares" valor={String(ranking.length)} />
-        </div>
-      </Bloco>
+        <Numero icon={Wallet} rotulo="Valor total" valor={brl(d.valor_total)} />
+        <Numero icon={HandCoins} rotulo="Em emendas" valor={brl(d.valor_emenda)} />
+        <Numero icon={Users} rotulo="Parlamentares"
+                valor={String(ranking.length)} />
+      </div>
 
       {/* ⭐ O RANKING ABRE A TELA porque é a pergunta que o gestor faz primeiro:
           quem trouxe recurso para a cidade. Clicar filtra a lista abaixo. */}
       {ranking.length > 0 && (
-        <Bloco>
+        <Bloco className="p-3">
           <BlocoHead
             icon={Users}
             titulo="Por parlamentar"
@@ -206,7 +217,7 @@ export default function ParceriasPage() {
                 }
                 meta={`${p.propostas} proposta${p.propostas > 1 ? "s" : ""}` +
                       (p.tipo ? ` · ${p.tipo}` : "")}
-                valor={brl(p.valor)}
+                valor={<span className="bi-num">{brl(p.valor)}</span>}
                 onClick={() =>
                   setParlamentar(parlamentar === p.parlamentar ? "" : p.parlamentar)}
               />
@@ -215,7 +226,7 @@ export default function ParceriasPage() {
         </Bloco>
       )}
 
-      <Bloco>
+      <Bloco className="p-3">
         <BlocoHead
           icon={Landmark}
           titulo={parlamentar ? `Propostas · ${parlamentar}` : "Propostas"}
@@ -223,67 +234,7 @@ export default function ParceriasPage() {
         />
         <Lista>
           {itens.map((p) => (
-            <ItemLinha
-              key={p.id_proposta}
-              titulo={p.objeto || `Proposta ${p.id_proposta}`}
-              meta={
-                <span className="flex flex-wrap items-center gap-1.5">
-                  <Selo tom={situacaoTom(p.situacao)}>{p.situacao || "—"}</Selo>
-                  {/* ⚠️ Proposta sem instrumento não é erro: o ciclo tem dois
-                      passos e a maioria do ano corrente ainda não celebrou. */}
-                  <Selo tom={p.id_parceria ? "ok" : "neutro"}>
-                    {p.id_parceria ? "parceria celebrada" : "não celebrada"}
-                  </Selo>
-                  {/* ⚠️ O aviso é a diferença entre «a cidade recebeu» e «alguém
-                      na cidade recebeu». O Fundo Estadual de Saúde atende o
-                      estado inteiro; a associação privada não é a prefeitura. */}
-                  {!p.municipal && (
-                    <Selo tom="atencao"
-                          title={p.natureza_juridica || undefined}>
-                      não é da prefeitura
-                    </Selo>
-                  )}
-                  {p.ano && <span className="text-xs opacity-70">{p.ano}</span>}
-                </span>
-              }
-              valor={brl(p.valor)}
-            >
-              <>
-                  <Campos
-                    campos={[
-                      { rotulo: "Emenda", valor: p.numero_emenda },
-                      { rotulo: "Parlamentar", valor: p.parlamentar },
-                      { rotulo: "Tipo de emenda", valor: p.tipo_emenda },
-                      { rotulo: "Valor da emenda", valor: brl(p.valor_emenda) },
-                      /* Raramente é a prefeitura: em Nova Palma as 11 propostas
-                         são do Fundo Municipal da Saúde, com CNPJ próprio. */
-                      { rotulo: "Recebedor", valor: p.ente_recebedor },
-                      { rotulo: "Natureza jurídica", valor: p.natureza_juridica },
-                      { rotulo: "Proposta em", valor: dataBR(p.data_proposta) },
-                      { rotulo: "Instrumento", valor: p.codigo_parceria },
-                      { rotulo: "Situação do instrumento", valor: p.situacao_parceria },
-                      { rotulo: "Assinatura", valor: dataBR(p.data_assinatura) },
-                    ].filter((c) => c.valor && c.valor !== "—")}
-                  />
-                  {p.resultado_esperado && (
-                    <p className="mt-2 text-xs leading-relaxed"
-                       style={{ color: "var(--bi-muted)" }}>
-                      {p.resultado_esperado}
-                    </p>
-                  )}
-                  {/* O link deixa qualquer número desta tela conferível na
-                      fonte — a mesma disciplina do `url_fonte` das Obras. */}
-                  <a
-                    href={p.url_fonte}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="mt-2 inline-flex items-center gap-1 text-xs underline"
-                    style={{ color: "var(--bi-muted)" }}
-                  >
-                    <ExternalLink className="size-3" /> ver na fonte
-                  </a>
-              </>
-            </ItemLinha>
+            <LinhaProposta key={p.id_proposta} p={p} />
           ))}
         </Lista>
         {itens.length === 0 && (
@@ -303,7 +254,7 @@ export default function ParceriasPage() {
       </Bloco>
 
       {(d.por_situacao?.length ?? 0) > 0 && (
-        <Bloco>
+        <Bloco className="p-3">
           <BlocoHead icon={Building2} titulo="Por situação" />
           <div className="flex flex-wrap gap-2">
             {d.por_situacao!.map((s) => (
@@ -315,5 +266,89 @@ export default function ParceriasPage() {
         </Bloco>
       )}
     </div>
+  );
+}
+
+/** Uma proposta na lista — FECHADA por padrão.
+ *
+ *  ⚠️ NASCEU SEMPRE ABERTA, e foi assim que o dono a viu: cada uma das onze
+ *  linhas despejava dez campos mais o parágrafo de «resultado esperado», e a
+ *  lista virava uma parede de texto de várias telas de rolagem. Lista é para
+ *  varrer; detalhe é para quem pediu. O gesto de abrir é o mesmo das Obras
+ *  Federais e das Emendas Federais — nesta identidade, item de lista que
+ *  esconde detalhe SEMPRE abre no clique, e nunca vem aberto.
+ *
+ *  ⚠️ E O `cols={4}` NÃO É ENFEITE. Sem `cols`, a peça `Campos` abre UMA COLUNA
+ *  POR CAMPO: com dez campos, dez colunas de ~150px numa janela de 1920, e
+ *  «FUNDO PÚBLICO DA ADMINISTRAÇÃO MUNICIPAL» saía como «FUNDO PÚBLICO DA A…».
+ *  Era metade do que o dono chamou de "formatação toda bugada". */
+function LinhaProposta({ p }: { p: Proposta }) {
+  const [aberto, setAberto] = useState(false);
+  return (
+    <ItemLinha
+      titulo={p.objeto || `Proposta ${p.id_proposta}`}
+      valor={<span className="bi-num">{brl(p.valor)}</span>}
+      onClick={() => setAberto((v) => !v)}
+      expandido={aberto}
+      meta={
+        <span className="flex flex-wrap items-center gap-1.5">
+          <Selo tom={situacaoTom(p.situacao)}>{p.situacao || "—"}</Selo>
+          {/* ⚠️ Proposta sem instrumento não é erro: o ciclo tem dois passos e a
+              maioria do ano corrente ainda não celebrou. */}
+          <Selo tom={p.id_parceria ? "ok" : "neutro"}>
+            {p.id_parceria ? "parceria celebrada" : "não celebrada"}
+          </Selo>
+          {/* ⚠️ O aviso é a diferença entre «a cidade recebeu» e «alguém na
+              cidade recebeu». O Fundo Estadual de Saúde atende o estado
+              inteiro; a associação privada não é a prefeitura. */}
+          {!p.municipal && (
+            <Selo tom="atencao" title={p.natureza_juridica || undefined}>
+              não é da prefeitura
+            </Selo>
+          )}
+          {p.parlamentar && <span>{p.parlamentar}</span>}
+          {p.ano && <span>{p.ano}</span>}
+        </span>
+      }
+    >
+      {aberto && (
+        <div className="mt-2 flex flex-col gap-2">
+          <Campos
+            cols={4}
+            campos={[
+              { rotulo: "Emenda", valor: p.numero_emenda, mono: true },
+              { rotulo: "Parlamentar", valor: p.parlamentar },
+              { rotulo: "Tipo de emenda", valor: p.tipo_emenda },
+              { rotulo: "Valor da emenda", valor: brl(p.valor_emenda) },
+              /* Raramente é a prefeitura: em Nova Palma as 11 propostas são do
+                 Fundo Municipal da Saúde, com CNPJ próprio. */
+              { rotulo: "Recebedor", valor: p.ente_recebedor },
+              { rotulo: "Natureza jurídica", valor: p.natureza_juridica },
+              { rotulo: "Proposta em", valor: dataBR(p.data_proposta) },
+              { rotulo: "Instrumento", valor: p.codigo_parceria, mono: true },
+              { rotulo: "Situação do instrumento", valor: p.situacao_parceria },
+              { rotulo: "Assinatura", valor: dataBR(p.data_assinatura) },
+            ].filter((c) => c.valor && c.valor !== "—")}
+          />
+          {p.resultado_esperado && (
+            <p className="text-[11px] leading-relaxed"
+               style={{ color: "var(--bi-muted)" }}>
+              {p.resultado_esperado}
+            </p>
+          )}
+          {/* O link deixa qualquer número desta tela conferível na fonte — a
+              mesma disciplina do `url_fonte` das Obras. */}
+          <a
+            href={p.url_fonte}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex w-fit items-center gap-1 text-[11px] underline"
+            style={{ color: "var(--bi-muted)" }}
+          >
+            <ExternalLink className="size-3" /> ver na fonte
+          </a>
+        </div>
+      )}
+    </ItemLinha>
   );
 }

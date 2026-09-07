@@ -159,10 +159,14 @@ fora da janela de observação que o resto do módulo respeita.
 
 - A rota está em **`telaCheia`** (`dashboard/layout.tsx`), junto com o Painel de Indicadores:
   o contêiner da página **não põe `px` nem `py`**, e o módulo cuida do próprio espaçamento.
-  ⚠️ **Não a devolva para `TELAS_LARGAS`.** Ela esteve lá e o padding do contêiner recortava
-  o fundo próprio do módulo numa **moldura do cinza do sistema** — 24px em cima e embaixo, e
-  o que passasse de 1600px nas laterais. Margem negativa resolve só a horizontal. Sem padding
-  externo, o fundo do módulo **é** o fundo da área útil.
+  ⚠️ **Não a tire de `telaCheia`.** Ela já esteve no contêiner com padding e ele recortava
+  o fundo próprio do módulo numa **moldura do cinza do sistema**, em cima, embaixo e nas
+  laterais. Margem negativa resolve só a horizontal. Sem padding externo, o fundo do módulo
+  **é** o fundo da área útil.
+  ⚠️ Em troca, o módulo **copia o `PADDING_PADRAO`** do contêiner (`px-4 py-5 sm:px-6
+  lg:px-8`, ver `dashboard/layout.tsx`). Mudou lá, muda aqui — senão esta é a única tela do
+  sistema com margem diferente. As `TELAS_LARGAS`, que davam uma terceira largura, saíram em
+  07/09/2026: hoje toda tela que não é `telaCheia` usa a mesma área útil, sem `max-w`.
 - O módulo tem **altura de viewport** (`h-screen`) com `min-h-[34rem]` de válvula: em janela
   baixa quem rola é o `<main>`.
   ⚠️ **`h-screen` e não `h-full`**: o `<div key={escopo}>` que envolve a página é um bloco sem

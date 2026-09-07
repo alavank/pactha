@@ -151,7 +151,7 @@ export default function AcordoFesPage() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <div>
         <h1 className="text-2xl font-bold text-base-content flex items-center gap-2">
           {/* O ícone era vermelho por ser "saúde/dívida" — decoração pintada.
