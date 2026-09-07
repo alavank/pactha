@@ -113,6 +113,7 @@ export const TELAS: TelaDef[] = [
   // A pasta OBRAS do menu (04/09/2026).
   { key: "obrasgov", label: "Obras Federais (Obras.gov.br)" },
   { key: "parcerias", label: "Parcerias (emendas de saúde)" },
+  { key: "faf_planos", label: "Planos de Ação (Fundo a Fundo)" },
   { key: "simec", label: "SIMEC - PAR (MEC)" },
   { key: "cauc", label: "Regularidade (federal e estadual)" },
   { key: "rm", label: "Relatório de Monitoramento" },

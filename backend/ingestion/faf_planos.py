@@ -140,6 +140,39 @@ def cnpjs_do_municipio(client: httpx.Client, ibge: str) -> list[str]:
     return fora
 
 
+# ⚠️ O CAMPO QUE SEPARA O MUNICIPIO DO ESTADO, e o defeito que ele conserta.
+#
+# O filtro `codigo_ibge_municipio_ente_beneficiario_programa` devolve todo ente
+# SEDIADO naquele municipio — e a sede do governo estadual e a capital. Medido
+# em 07/09/2026 no tenant trust: os planos do ESTADO DE GOIAS (R$ 470 mi), da
+# SECRETARIA DE ESTADO DA SEGURANCA PUBLICA (R$ 265 mi) e da DIRETORIA-GERAL DE
+# POLICIA PENAL estavam gravados como planos de GOIANIA, cujo proprio municipio
+# tem R$ 73 mi. O mesmo em Palmas com o ESTADO DO TOCANTINS (R$ 164 mi). Dos
+# R$ 1,42 bilhao da carteira, ~85% era dinheiro estadual creditado a capital.
+#
+# E nao ha o que aproveitar nesses planos: o IBGE ali e a SEDE do ente, nao onde
+# o dinheiro e aplicado — um plano do Estado de Goias e executado no estado
+# inteiro. Guardar seria inventar um vinculo municipal que a fonte nao afirma.
+#
+# `descricao_tipo_unidade_ente_plano_acao` tem exatamente dois valores em toda a
+# base ("Ente Municipal" e "Ente Estadual/Distrital"), e e o que a fonte diz.
+ESFERA_MUNICIPAL = "Ente Municipal"
+
+
+def e_do_municipio(plano: dict) -> bool:
+    """O plano e do MUNICIPIO, e nao do estado sediado nele?
+
+    ⚠️ AUSENCIA NAO E EXCLUSAO. Campo nulo devolve True: a fonte pode parar de
+    mandar a descricao, e nesse dia a alternativa seria a tela esvaziar em
+    silencio — que e pior que um plano estadual a mais. O log conta os
+    descartados para que a mudanca apareca.
+    """
+    v = plano.get("descricao_tipo_unidade_ente_plano_acao")
+    if v in (None, ""):
+        return True
+    return str(v).strip() == ESFERA_MUNICIPAL
+
+
 def _num(v):
     return v if isinstance(v, (int, float)) else None
 
@@ -180,6 +213,9 @@ def linha(municipio_id: int, plano: dict, relatorios: list[dict] | None) -> dict
         "cnpj_ente": (plano.get("cnpj_ente_recebedor_plano_acao") or "")[:14] or None,
         "nome_ente": plano.get("nome_ente_recebedor_plano_acao"),
         "tipo_unidade": plano.get("tipo_unidade_recebedora_plano_acao"),
+        # Gravada apesar do filtro: quem abrir o banco tem de poder conferir que
+        # so ha municipal aqui, sem reler o coletor.
+        "esfera": plano.get("descricao_tipo_unidade_ente_plano_acao"),
         # ⚠️ NULO quando nao ha relatorio, e nunca `[]`: lista vazia no banco
         # seria indistinguivel de "coletei e nao ha", e a diferenca entre "nao
         # medido" e "nao existe" e a mesma disciplina do resto do repo.
@@ -198,13 +234,14 @@ INSERT INTO faf_planos_acao (
     valor_custeio, valor_investimento, valor_saldo_disponivel,
     orgao_repassador, sigla_orgao_repassador, fundo_repassador,
     cnpj_ente_recebedor, nome_ente_recebedor, tipo_unidade_recebedora,
-    relatorios_gestao, raw_data, atualizado_em)
+    esfera_ente, relatorios_gestao, raw_data, atualizado_em)
 VALUES (%(mid)s, %(id_plano)s, %(codigo)s, %(id_programa)s, %(situacao)s,
         %(dt_ini)s, %(dt_fim)s, %(diagnostico)s, %(objetivos)s, %(vl_total)s,
         %(vl_emenda)s, %(vl_especifico)s, %(vl_voluntario)s, %(vl_proprios)s,
         %(vl_rendimentos)s, %(vl_custeio)s, %(vl_investimento)s, %(vl_saldo)s,
         %(orgao)s, %(sigla_orgao)s, %(fundo)s, %(cnpj_ente)s, %(nome_ente)s,
-        %(tipo_unidade)s, %(relatorios)s::jsonb, %(raw)s::jsonb, NOW())
+        %(tipo_unidade)s, %(esfera)s, %(relatorios)s::jsonb, %(raw)s::jsonb,
+        NOW())
 ON CONFLICT (municipio_id, id_plano_acao) DO UPDATE SET
     codigo_plano_acao = EXCLUDED.codigo_plano_acao,
     id_programa = EXCLUDED.id_programa, situacao = EXCLUDED.situacao,
@@ -226,6 +263,7 @@ ON CONFLICT (municipio_id, id_plano_acao) DO UPDATE SET
     cnpj_ente_recebedor = EXCLUDED.cnpj_ente_recebedor,
     nome_ente_recebedor = EXCLUDED.nome_ente_recebedor,
     tipo_unidade_recebedora = EXCLUDED.tipo_unidade_recebedora,
+    esfera_ente = EXCLUDED.esfera_ente,
     -- ⚠️ COALESCE no relatorio: a rodada que nao conseguiu buscar os relatorios
     -- (orcamento estourado, fonte lenta) NAO pode apagar os que ja estavam la.
     relatorios_gestao = coalesce(EXCLUDED.relatorios_gestao,
@@ -286,6 +324,7 @@ def ingest(dry: bool = False) -> int:
                 return 0
 
             gravados = com_plano = com_emenda = falhas = atendidos = 0
+            de_estado = 0
             completo = True
             log.info("FaF: %d municipio(s) na carteira (orcamento %.0fs)",
                      len(municipios), BUDGET_S)
@@ -311,6 +350,16 @@ def ingest(dry: bool = False) -> int:
                             falhas += 1
                             continue
                         planos.extend(achados)
+                    # ⚠️ AQUI SAI O DINHEIRO DO ESTADO. Ver `e_do_municipio`: o
+                    # filtro por IBGE entrega tambem o governo estadual, cuja
+                    # sede e a capital, e somar isso ao municipio ja produziu
+                    # R$ 470 mi do ESTADO DE GOIAS creditados a Goiania.
+                    antes = len(planos)
+                    planos = [p for p in planos if e_do_municipio(p)]
+                    if antes != len(planos):
+                        de_estado += antes - len(planos)
+                        log.info("  %s: %d plano(s) de ente ESTADUAL descartado(s)",
+                                 m["nome"], antes - len(planos))
                     if not planos:
                         continue
                     com_plano += 1
@@ -335,8 +384,10 @@ def ingest(dry: bool = False) -> int:
                 log.info("DRY: %d municipio(s), %d com plano", atendidos, com_plano)
                 return 0
             log.info("=== FaF: %d plano(s) gravado(s), %d com repasse de emenda, "
-                     "%d municipio(s) com plano, %d falha(s) em %.0fs ===",
-                     gravados, com_emenda, com_plano, falhas, time.time() - t0)
+                     "%d municipio(s) com plano, %d de ente estadual descartado(s), "
+                     "%d falha(s) em %.0fs ===",
+                     gravados, com_emenda, com_plano, de_estado, falhas,
+                     time.time() - t0)
 
             # Municipio sem plano fundo a fundo e estado legitimo. O que denuncia
             # defeito e a fonte nao responder a ninguem — ou o filtro por CNPJ

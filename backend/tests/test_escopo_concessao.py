@@ -419,5 +419,10 @@ def test_o_alcance_nao_virou_permissao_do_catalogo():
     # Saude). UMA chave, pela mesma razao ja escrita acima para
     # `emendas_federais.ver` e `obrasgov.ver`: a tela so LE. `exportar` entra
     # no MESMO PR que criar a rota de exportacao — nao antes.
-    assert len(permissoes.CATALOGO) == 98
+    #
+    # 07/09/2026: 98 -> 99. `faf_planos.ver` — o PLANO DE ACAO por tras do
+    # repasse fundo a fundo. A tela de `fns` ja conta o dinheiro que entra;
+    # esta conta o que o justifica, e a decomposicao que diz quanto daquele
+    # repasse veio de emenda. UMA chave, pela mesma razao de sempre: so LE.
+    assert len(permissoes.CATALOGO) == 99
     assert not any("propri" in c for c in permissoes.CATALOGO)

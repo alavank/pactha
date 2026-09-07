@@ -553,6 +553,18 @@ MIGRATION_FILES = [
     #
     # ⚠️ FK para `municipios` (create_all, roda ANTES desta lista).
     "add_faf_planos_acao.sql",
+    # ⚠️ E A LIMPEZA DO DINHEIRO DO ESTADO (07/09/2026): o filtro por IBGE
+    # entrega tambem o governo estadual, cuja sede e a capital, e R$ 470 mi do
+    # ESTADO DE GOIAS estavam creditados a Goiania. Acrescenta `esfera_ente` e
+    # apaga o que a fonte afirma ser estadual. Ver o cabecalho do .sql.
+    #
+    # ⚠️ DEPOIS de `add_faf_planos_acao.sql`, que cria a tabela — dependencia
+    # dura, guardada por `tests/test_migrations_ordem_tabela.py`.
+    "add_faf_esfera_ente.sql",
+    # A tela de Planos de Acao (07/09/2026), pelo mesmo desenho de
+    # `add_tela_parcerias.sql`: concede a TELA **e** a ACAO, porque so a tela
+    # daria menu visivel e 403 no clique. Herda de `convenios`.
+    "add_tela_faf_planos.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",

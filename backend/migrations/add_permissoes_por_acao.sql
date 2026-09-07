@@ -212,6 +212,9 @@ INSERT INTO permissoes_catalogo (chave, secao, escrita) VALUES
     -- 'convenios' pela mesma razao que a tela: quem acompanha a emenda que
     -- virou instrumento e quem ja acompanha convenio. So `ver`.
     ('parcerias.ver', 'convenios', FALSE),
+    -- Planos de Acao Fundo a Fundo (07/09/2026), pelo mesmo criterio: quem
+    -- acompanha o instrumento federal acompanha o plano que o justifica.
+    ('faf_planos.ver', 'convenios', FALSE),
     ('acordofes.ver', 'convenios', FALSE),
     ('acordofes.exportar', 'convenios', FALSE),
     ('acordofes.atualizar', 'convenios', TRUE),
@@ -424,6 +427,7 @@ WITH marca AS (
         ('sismob', 'sismob.atualizar', TRUE),
         ('obrasgov', 'obrasgov.ver', FALSE),
         ('parcerias', 'parcerias.ver', FALSE),
+        ('faf_planos', 'faf_planos.ver', FALSE),
         ('acordofes', 'acordofes.ver', FALSE),
         ('acordofes', 'acordofes.exportar', FALSE),
         ('acordofes', 'acordofes.atualizar', TRUE),

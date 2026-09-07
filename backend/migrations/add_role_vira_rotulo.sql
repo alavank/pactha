@@ -102,6 +102,9 @@ WITH marca AS (
            -- Parcerias (07/09/2026): o modulo do Transferegov onde a emenda
            -- de saude passou a ser processada de 2024 em diante.
            ('parcerias'),
+           -- O plano de acao fundo a fundo (07/09/2026): o que justifica o
+           -- repasse que o `fns` ja conta, e a origem do dinheiro.
+           ('faf_planos'),
            ('acordofes'), ('fns'),
            -- ⭐⭐ O INCREMENTO «PERMISSAO POR TELA» (05/09/2026).
            --

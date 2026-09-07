@@ -8,7 +8,7 @@ conseguiu buscar os relatórios não apaga os que já estavam gravados.
 """
 import json
 
-from ingestion.faf_planos import _SQL, linha
+from ingestion.faf_planos import _SQL, e_do_municipio, linha
 
 # GET /fundoafundo/planos-acao?cnpj_ente_recebedor_plano_acao=88488358000156
 PLANO = {
@@ -36,6 +36,7 @@ PLANO = {
     "nome_ente_recebedor_plano_acao": "MUNICIPIO DE NOVA PALMA",
     "codigo_ibge_municipio_ente_recebedor_plano_acao": 4313102,
     "tipo_unidade_recebedora_plano_acao": "ENTE",
+    "descricao_tipo_unidade_ente_plano_acao": "Ente Municipal",
 }
 RELATORIOS = [{
     "id_relatorio_gestao": "1", "tipo_relatorio_gestao": "FINAL",
@@ -150,3 +151,69 @@ def test_o_caminho_de_entrada_contorna_o_filtro_quebrado_da_fonte():
     fonte = inspect.getsource(cnpjs_do_municipio)
     assert "programas-beneficiarios" in fonte
     assert "cnpj_beneficiario_programa" in fonte
+
+
+# ---------------------------------------------------------------------------
+# ⚠️ O DINHEIRO DO ESTADO NÃO É DO MUNICÍPIO (07/09/2026).
+#
+# O filtro `codigo_ibge_municipio_ente_beneficiario_programa` devolve todo ente
+# SEDIADO no município, e a sede do governo estadual é a capital. No tenant
+# trust isso pôs R$ 470 mi do ESTADO DE GOIAS e R$ 265 mi da Secretaria de
+# Segurança estadual dentro de Goiânia — cujo próprio município tem R$ 73 mi.
+# Cerca de 85% dos R$ 1,42 bilhão da carteira era dinheiro estadual.
+# ---------------------------------------------------------------------------
+
+# GET /fundoafundo/planos-acao?cnpj_ente_recebedor_plano_acao=01409580000138
+PLANO_ESTADUAL = {
+    **PLANO,
+    "id_plano_acao": 9001,
+    "cnpj_ente_recebedor_plano_acao": "01409580000138",
+    "nome_ente_recebedor_plano_acao": "ESTADO DE GOIAS",
+    "codigo_ibge_municipio_ente_recebedor_plano_acao": 5208707,  # Goiânia
+    "nome_municipio_ente_recebedor_plano_acao": "GOIANIA",
+    "descricao_tipo_unidade_ente_plano_acao": "Ente Estadual/Distrital",
+    "valor_total_plano_acao": 470381305.47,
+}
+
+
+def test_o_plano_do_ESTADO_nao_entra_como_do_municipio():
+    """A capital sedia o governo estadual — e isso não faz do orçamento do
+    estado dinheiro da cidade."""
+    assert e_do_municipio(PLANO) is True
+    assert e_do_municipio(PLANO_ESTADUAL) is False
+
+
+def test_campo_ausente_NAO_exclui_o_plano():
+    """⚠️ Ausência não é exclusão. Se a fonte parar de mandar a descrição, a
+    alternativa seria a tela esvaziar em silêncio — pior que um plano estadual
+    a mais. O log conta os descartados para a mudança aparecer."""
+    for ausente in ({k: v for k, v in PLANO.items()
+                     if k != "descricao_tipo_unidade_ente_plano_acao"},
+                    {**PLANO, "descricao_tipo_unidade_ente_plano_acao": None},
+                    {**PLANO, "descricao_tipo_unidade_ente_plano_acao": ""}):
+        assert e_do_municipio(ausente) is True
+
+
+def test_a_esfera_vai_para_a_coluna():
+    """Gravada apesar do filtro: quem abrir o banco confere que só há municipal
+    ali sem precisar reler o coletor."""
+    assert linha(42, PLANO, None)["esfera"] == "Ente Municipal"
+    assert "esfera_ente" in _SQL
+
+
+def test_a_migracao_apaga_o_que_ja_tinha_entrado():
+    """A guarda existir no coletor não conserta as linhas já gravadas — e havia
+    83 delas só no trust."""
+    from pathlib import Path
+    sql = (Path(__file__).resolve().parents[1] / "migrations"
+           / "add_faf_esfera_ente.sql").read_text(encoding="utf-8")
+    assert "DELETE FROM faf_planos_acao" in sql
+    assert "Ente Estadual/Distrital" in sql
+    # ⚠️ Apaga pelo que a FONTE afirma, e não por nome do ente: "MUNICIPIO DE"
+    # como heurística quebraria no primeiro consórcio intermunicipal.
+    assert "raw_data ->> 'descricao_tipo_unidade_ente_plano_acao'" in sql
+
+
+def test_a_migracao_da_esfera_esta_registrada_e_DEPOIS_da_tabela():
+    from services.startup import MIGRATION_FILES
+    assert MIGRATION_FILES.index("add_faf_esfera_ente.sql") >            MIGRATION_FILES.index("add_faf_planos_acao.sql")

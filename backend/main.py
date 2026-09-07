@@ -12,7 +12,8 @@ from routers import (
     fns, transferegov, emendas_federais, export_pdf,
     users, simec, rm, ai, gestao, parlamentares, status_changes,
     documentos, cauc, cagec, siconfi, acordofes, control, freshness, painel, bi,
-    sismob, obrasgov, parcerias, investsus, auditoria, permissoes, repasses,
+    sismob, obrasgov, parcerias, faf_planos, investsus, auditoria, permissoes,
+    repasses,
     contas_irregulares,
     cofinanciamento, parametros, monitoramento, consulta_popular, programas_rs,
     conteudo_rs, programas_captacao, agendamentos,
@@ -224,6 +225,11 @@ app.include_router(obrasgov.router)
 # emenda de saude do municipio. NAO substitui as Voluntarias: aquela mostra o
 # convenio discricionario do SICONV, que segue vindo dos dumps CSV.
 app.include_router(parcerias.router)
+# /api/faf-planos/*: o PLANO DE ACAO por tras do repasse fundo a fundo. O
+# ConsultaFNS (`fns`) ja conta o dinheiro que entra; so aqui se sabe QUANTO
+# daquele repasse veio de emenda, e o que o municipio se comprometeu a fazer
+# com ele. E nao e so saude: os 4 planos de Nova Palma sao do MinC.
+app.include_router(faf_planos.router)
 app.include_router(investsus.router)  # /api/investsus/* (repasses fundo a fundo)
 app.include_router(acordofes.router)
 app.include_router(control.router)  # /api/control/* (Console Alavank)
