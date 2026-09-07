@@ -652,6 +652,44 @@ emenda, 2 filhos) custa 1.136 e 1.432, ~420s e ~530s. A execução financeira
 incremental. O `/extrato-bancario` sozinho tem **1.275.217 registros** (6.377
 páginas) e nunca poderá ser varrido inteiro.
 
+## 1.13. FASE 5 — Fundo a Fundo (o plano de ação por trás do repasse)
+
+A última fonte nova do Comunicado nº 23/2026. O `fns_repasse_faf` já conta o repasse
+consolidado por bloco no ConsultaFNS — **o dinheiro que entra**. Esta traz o que o FNS
+não publica: o **plano de ação** que justifica o repasse, com diagnóstico, objetivos,
+vigência e a decomposição do valor entre emenda, repasse específico, voluntário,
+recursos próprios e rendimentos. Uma não substitui a outra.
+
+**Não é só saúde.** O nome sugere SUS, mas o módulo cobre todo repasse fundo a fundo:
+os quatro planos de Nova Palma (R$ 413.420,20) são do **Ministério da Cultura**, Lei
+Aldir Blanc, com o Fundo Nacional da Cultura como repassador. Um coletor que filtrasse
+por saúde perderia os quatro.
+
+⚠️ **O FILTRO ÓBVIO DA FONTE ESTÁ QUEBRADO.**
+`/planos-acao?codigo_ibge_municipio_ente_recebedor_plano_acao=` está no Swagger e
+devolve **HTTP 500** — medido em 06 **e** 07/09, dias diferentes. O caminho que
+funciona tem dois passos: `/programas-beneficiarios` por IBGE (que filtra bem) devolve
+os CNPJs, e só então `/planos-acao` por CNPJ.
+
+⚠️ **E O CNPJ NÃO PODE SER ADIVINHADO — é o oposto do módulo de Parcerias.** Aqui o
+ente recebedor é a PREFEITURA (`88488358000156` em Nova Palma); lá as propostas do
+mesmo município são todas do FUNDO MUNICIPAL DA SAUDE (`12240183000100`). Assumir
+qualquer um dos dois erraria em um dos módulos — e erraria calado, devolvendo lista
+vazia como se o município não tivesse nada. Por isso a fonte é que diz quem recebe.
+
+Custo: **2 requisições por município** mais 1 por plano para os relatórios de gestão —
+que preenchem um buraco conhecido do modelo, já que `prestacao_contas` é dropada a cada
+boot e hoje prestação de contas só existe como texto dentro de um campo de situação.
+
+### Erro meu corrigido nesta sessão
+
+Usei o IBGE **3143203** para Monte Sião nas medições de exploração — é **Monte Santo de
+Minas**. O correto é **3143401**. Nada no código foi afetado (o coletor lê
+`municipios.ibge_code`, que está certo no banco), e as medições feitas via banco — como
+a comparação CNPJ × geometria do #408 — estavam corretas. O que precisou de correção
+foi a tabela de cobertura do #404 e o relatório em PDF: Monte Sião tem **14 propostas
+de Parcerias e 8 projetos com geometria**, não 7 e 15.
+
 ## 2. ESTADO ATUAL (2026-09-04)
 
 **São CINCO tenants em produção**, todos do mesmo código, cada um com containers e banco próprios:

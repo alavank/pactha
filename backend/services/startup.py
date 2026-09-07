@@ -536,6 +536,12 @@ MIGRATION_FILES = [
     # ⚠️ FK para `municipios`, que vem do create_all dos modelos (roda ANTES
     # desta lista). Guardado por `tests/test_migrations_ordem_tabela.py`.
     "add_parcerias.sql",
+    # ⭐ FUNDO A FUNDO: o plano de acao que justifica o repasse que o
+    # `fns_repasse_faf` ja conta. Nao e so saude — em Nova Palma os quatro
+    # planos sao do Ministerio da Cultura (Lei Aldir Blanc).
+    #
+    # ⚠️ FK para `municipios` (create_all, roda ANTES desta lista).
+    "add_faf_planos_acao.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",
