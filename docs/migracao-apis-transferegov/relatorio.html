@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>PACTHA · Novas APIs do TransfereGov e Obrasgov</title>
+<style>
+  @page { size: A4; margin: 16mm 14mm 14mm 14mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", "Inter", system-ui, sans-serif;
+    font-size: 9.6pt; line-height: 1.5; color: #17202b; margin: 0;
+  }
+  h1 { font-size: 19pt; margin: 0 0 2mm; letter-spacing: -.02em; color: #0b2545; }
+  h2 {
+    font-size: 12.5pt; margin: 8mm 0 2.5mm; color: #0b2545;
+    border-bottom: 2px solid #0b2545; padding-bottom: 1.2mm;
+    break-after: avoid;
+  }
+  h3 { font-size: 10.4pt; margin: 5mm 0 1.5mm; color: #1d3f6e; break-after: avoid; }
+  p { margin: 0 0 2.2mm; }
+  ul { margin: 0 0 2.5mm; padding-left: 5mm; }
+  li { margin-bottom: 1mm; }
+  code {
+    font-family: "Cascadia Mono", Consolas, monospace; font-size: 8.4pt;
+    background: #eef2f7; padding: .4mm 1.1mm; border-radius: 2px; color: #14395f;
+  }
+  table { width: 100%; border-collapse: collapse; margin: 2mm 0 3.5mm; font-size: 8.6pt; }
+  th {
+    background: #0b2545; color: #fff; text-align: left; padding: 1.6mm 2mm;
+    font-weight: 600; font-size: 8.3pt;
+  }
+  td { padding: 1.5mm 2mm; border-bottom: .3pt solid #d6dee8; vertical-align: top; }
+  tr:nth-child(even) td { background: #f6f9fc; }
+  .capa {
+    border-left: 5px solid #0b2545; padding: 0 0 0 5mm; margin-bottom: 7mm;
+  }
+  .sub { color: #52657c; font-size: 9.4pt; margin-top: 1.5mm; }
+  .tag {
+    display: inline-block; font-size: 7.6pt; font-weight: 700; padding: .6mm 2mm;
+    border-radius: 3px; letter-spacing: .03em; text-transform: uppercase;
+  }
+  .t-ok   { background: #d8f0e0; color: #14532d; }
+  .t-erro { background: #fbdcdc; color: #7f1d1d; }
+  .t-novo { background: #dbe7fb; color: #14395f; }
+  .t-att  { background: #fdeecd; color: #78440a; }
+  .box {
+    background: #f6f9fc; border-left: 3px solid #1d5fa8; padding: 2.5mm 3.5mm;
+    margin: 2.5mm 0 3.5mm; break-inside: avoid;
+  }
+  .box-alerta { background: #fff8ec; border-left-color: #c2761a; }
+  .box b { color: #0b2545; }
+  .grid { display: flex; gap: 3mm; margin: 2.5mm 0 3.5mm; }
+  .card {
+    flex: 1; border: .5pt solid #cfd9e4; border-radius: 4px; padding: 2.5mm 3mm;
+    break-inside: avoid;
+  }
+  .card .n { font-size: 16pt; font-weight: 700; color: #0b2545; line-height: 1.1; }
+  .card .l { font-size: 7.8pt; color: #52657c; margin-top: .8mm; }
+  .nota { font-size: 8pt; color: #52657c; margin-top: -1.5mm; margin-bottom: 3mm; }
+  .quebra { break-before: page; }
+  footer {
+    margin-top: 8mm; padding-top: 2.5mm; border-top: .5pt solid #cfd9e4;
+    font-size: 7.8pt; color: #52657c;
+  }
+  .cinza { color: #52657c; }
+</style>
+</head>
+<body>
+
+<div class="capa">
+  <h1>Novas APIs do TransfereGov e do Obrasgov</h1>
+  <div class="sub">
+    O que muda para o PACTHA — impactos, ganhos, riscos e ordem de migração<br>
+    <span class="cinza">Comunicado nº 23/2026 do MGI · desligamento em 31/08/2026 · relatório de 06/09/2026</span>
+  </div>
+</div>
+
+<div class="box">
+<b>Resumo em cinco linhas.</b> O governo desligou três endereços antigos em 31/08/2026 e publicou
+dois hosts novos com <b>68 endpoints e cerca de 1.375 campos</b>. O PACTHA já havia migrado a parte
+crítica — os 65 arquivos de dados abertos e o host do Obras.gov — entre 02 e 04/09, então
+<b>nenhuma tela está fora do ar hoje</b>. O que falta é o que é genuinamente novo: três APIs REST
+(<code>/parcerias</code>, <code>/especiais</code>, <code>/fundoafundo</code>) que trocam raspagem
+frágil por contrato oficial e entregam dado que a plataforma não tem — em especial o
+<b>extrato bancário do recurso</b>: quem recebeu, quanto e quando.
+</div>
+
+<div class="grid">
+  <div class="card"><div class="n">68</div><div class="l">endpoints REST nos 4 módulos novos</div></div>
+  <div class="card"><div class="n">~1.375</div><div class="l">campos documentados</div></div>
+  <div class="card"><div class="n">6×</div><div class="l">mais rápido que a raspagem atual das Especiais</div></div>
+  <div class="card"><div class="n">60%</div><div class="l">das rodadas das Especiais falham hoje por bloqueio de IP</div></div>
+</div>
+<p class="nota">Todos os números deste relatório foram medidos por requisição real em 06/09/2026, não estimados.</p>
+
+<h2>1. O que foi desligado e o que já está resolvido</h2>
+
+<table>
+<tr><th style="width:44%">Endereço</th><th style="width:17%">Situação hoje</th><th>O que isso significa para nós</th></tr>
+<tr>
+  <td><code>repositorio.dados.gov.br/seges/detru/</code></td>
+  <td><span class="tag t-erro">404</span></td>
+  <td>Era a origem dos dumps do SICONV. <b>Já migrado</b> — os coletores usam o host novo desde 02/09.</td>
+</tr>
+<tr>
+  <td><code>docs.api.transferegov.gestao.gov.br/transferenciasespeciais/</code></td>
+  <td><span class="tag t-erro">404</span></td>
+  <td>Documentação da API de Transferências Especiais. Substituída pelo módulo <code>/especiais</code>.</td>
+</tr>
+<tr>
+  <td><code>api.obrasgov.gestao.gov.br/obrasgov/api/</code></td>
+  <td><span class="tag t-erro">429</span></td>
+  <td>Recusa o IP da VPS. <b>Já migrado</b> em 04/09 para <code>api-publica.obrasgov…</code>.</td>
+</tr>
+<tr>
+  <td><code>especiais.transferegov.sistema.gov.br/…/api/public/</code></td>
+  <td><span class="tag t-att">no ar, instável</span></td>
+  <td>Não foi desligado, mas é o que o PACTHA ainda usa para Emenda Pix — e é o ponto mais frágil da coleta.</td>
+</tr>
+</table>
+
+<div class="box">
+<b>Conclusão prática:</b> não há incêndio. A migração obrigatória foi feita a tempo. O que resta é
+migração <i>por oportunidade</i> — trocar o que funciona mal por algo oficial, e coletar o que hoje
+simplesmente não coletamos.
+</div>
+
+<h3>Resíduos a limpar (baixo risco, meia hora de trabalho)</h3>
+<ul>
+  <li><code>docker-compose.yml</code> (linha 73) ainda define a variável apontando para o host morto.</li>
+  <li><code>scripts/reconhecimento_fontes_vps.sh</code> e <code>scripts/medir_obrasgov_vps.sh</code> sondam <code>api.obrasgov</code>, que dá 429 — o diagnóstico sai errado.</li>
+  <li><code>backend/config.py</code> tem a URL certa, mas nenhum código a utiliza (cada coletor repete a string).</li>
+</ul>
+
+<h2>2. Como as APIs novas funcionam</h2>
+
+<p>Os quatro módulos compartilham o mesmo contrato, o que barateia muito a implementação: escreve-se
+um cliente e ele serve para todos.</p>
+
+<table>
+<tr><th style="width:24%">Característica</th><th>Como é</th></tr>
+<tr><td>Autenticação</td><td>Nenhuma. São dados abertos, sem chave e sem cadastro.</td></tr>
+<tr><td>Resposta</td><td><code>{ data: [...], total_pages, total_items, page_number, page_size }</code> — a contagem total vem junto, então dá para planejar a coleta antes de baixar.</td></tr>
+<tr><td>Paginação</td><td><code>pagina</code> começa em 1; <code>tamanho_da_pagina</code> tem teto de <b>200</b> (acima disso devolve 422 com mensagem clara).</td></tr>
+<tr><td>Filtros</td><td><b>Todo campo do retorno também é filtro.</b> São 30 a 50 filtros por endpoint — dá para pedir exatamente o município, o ano e a situação desejados.</td></tr>
+<tr><td>Frescor</td><td>Cada módulo expõe <code>/data-atualizacao</code>. Os quatro estavam atualizados em 06/09/2026.</td></tr>
+<tr><td>Desempenho</td><td>100 registros em 0,54 s. Dez requisições seguidas sem qualquer bloqueio.</td></tr>
+<tr><td>Documentação</td><td>Swagger interativo em cada módulo, mais dicionário de dados em ZIP (SchemaSpy navegável).</td></tr>
+</table>
+
+<h3>Cobertura real nos municípios da carteira</h3>
+<table>
+<tr><th>Município</th><th>Parcerias (propostas)</th><th>Fundo a Fundo (programas)</th><th>Obras federais no território</th></tr>
+<tr><td>Nova Palma / RS</td><td>11</td><td>5</td><td>26 projetos</td></tr>
+<tr><td>Santa Maria / RS</td><td>31</td><td>5</td><td>165+ projetos</td></tr>
+<tr><td>Monte Sião / MG</td><td>14</td><td>5</td><td>8 projetos</td></tr>
+</table>
+
+<div class="box box-alerta">
+<b>Dois defeitos do lado do governo, já contornados.</b><br>
+<b>1.</b> Filtrar planos de ação do Fundo a Fundo por código IBGE do ente recebedor devolve
+<b>erro 500</b> de forma consistente. Contorno testado: filtrar por CNPJ do ente, que funciona.<br>
+<b>2.</b> Nenhum módulo tem filtro do tipo "alterado desde tal data". Só existe a data global de
+atualização. A coleta incremental precisa ser resolvida do nosso lado.
+</div>
+
+<div class="quebra"></div>
+<h2>3. Ganho nº 1 — Transferências Especiais (Emenda Pix)</h2>
+
+<p>Este é o item com maior retorno, e a própria auditoria interna de coleta já o havia recomendado.</p>
+
+<h3>Como está hoje</h3>
+<p>O coletor conversa com o <b>backend interno da tela pública</b> das Especiais — endereços que foram
+descobertos lendo o código JavaScript do site, não uma API publicada. As consequências estão medidas
+e registradas no repositório:</p>
+<ul>
+  <li><b>25 de 42 rodadas terminaram parciais em 30 dias</b> — cerca de 60% de falha.</li>
+  <li>Depois de uma sequência de coletas, o IP da VPS fica <b>mais de 6 horas</b> recebendo erro 403 em toda primeira requisição. Cada nova tentativa renova a punição.</li>
+  <li>O município é identificado por <b>semelhança de nome</b>, não por CNPJ. Isso já produziu contaminação conhecida: num dos ambientes, 628 de 890 registros têm CNPJ divergente do município a que foram atribuídos.</li>
+  <li>Buscar os pagamentos custa cerca de 590 requisições sequenciais.</li>
+</ul>
+
+<h3>Como fica com a API oficial</h3>
+<p>A entrada passa a ser pelo CNPJ do município, que devolve um identificador de beneficiário — chave
+real, não aproximação de texto. Testado com Nova Palma: CNPJ → beneficiário 9970 → 3 planos de ação
+somando <b>R$ 450.000</b>, com nome do parlamentar e código da emenda em cada um.</p>
+
+<table>
+<tr><th style="width:33%">Aspecto</th><th style="width:33%">Raspagem atual</th><th>API oficial</th></tr>
+<tr><td>Tempo de resposta</td><td>2,1 s</td><td><b>0,36 s</b></td></tr>
+<tr><td>Bloqueio por IP</td><td>403 após ~10 páginas; punição &gt; 6 h</td><td>Nenhum bloqueio observado</td></tr>
+<tr><td>Vínculo com o município</td><td>Semelhança de nome</td><td><b>CNPJ</b></td></tr>
+<tr><td>Estabilidade do contrato</td><td>Endereço interno, muda sem aviso</td><td>Publicado e versionado</td></tr>
+<tr><td>Endpoints disponíveis</td><td>3 (descobertos)</td><td><b>21</b></td></tr>
+</table>
+
+<h3>O que passamos a ter e hoje não temos</h3>
+<ul>
+  <li><b>Extrato da conta da emenda</b> — lançamento a lançamento, com data, valor, favorecido e detalhamento por subtransação. É o rastro do dinheiro até quem efetivamente recebeu. Conferido com dados reais de Nova Palma.</li>
+  <li><b>Relatórios de gestão</b> (26.808 registros) — valor executado, valor pendente e verificação do cumprimento do objeto.</li>
+  <li><b>Metas, finalidades e executores</b> do plano de ação, com valores por fonte (emenda, recursos próprios, rendimentos, doação).</li>
+  <li>Cadeia orçamentária completa e oficial: empenho → documento hábil → ordem de pagamento → ordem bancária.</li>
+</ul>
+
+<div class="box box-alerta">
+<b>O que a API oficial não traz.</b> CPF do ordenador de despesa e o histórico de eventos da ordem de
+pagamento — dois campos que a raspagem atual coleta. <b>Decisão adotada:</b> manter as duas fontes. A
+API oficial vira a principal, rápida e confiável; a raspagem fica reduzida a esses dois campos, em
+rodada rara. Preserva-se a rastreabilidade sem manter o custo diário de hoje.
+</div>
+
+<h2>4. Ganho nº 2 — Obras.gov: usamos 1 endpoint de 8</h2>
+
+<p>O coletor atual chama apenas a listagem de projetos de investimento. E, como essa rota ignora o
+filtro por município em silêncio, o vínculo território–obra hoje é <b>inferido</b> a partir do CNPJ
+de quem toma ou executa a obra.</p>
+
+<div class="box">
+<b>O endpoint <code>/geometria</code> resolve isso.</b> Ele devolve o projeto já casado com o código
+IBGE — vínculo territorial vindo da fonte, não deduzido por nós. Medido: 26 projetos em Nova Palma,
+165+ em Santa Maria, 8 em Monte Sião. Troca uma inferência frágil por dado oficial.
+</div>
+
+<table>
+<tr><th style="width:30%">Endpoint não usado</th><th>O que entrega</th></tr>
+<tr><td><code>/geometria</code></td><td>Vínculo obra ↔ município por código IBGE, e coordenadas para mapa.</td></tr>
+<tr><td><code>/execucao-fisica</code></td><td>Percentual de avanço da obra, com datas de início e fim da medição.</td></tr>
+<tr><td><code>/contrato</code></td><td>Fornecedor e seu CNPJ, número da licitação, modalidade, valor global, valor acumulado, vigência e link para o portal da transparência.</td></tr>
+<tr><td><code>/empenho</code></td><td>A liquidar, liquidado, pago e restos a pagar — <b>e o código do autor da emenda</b>, que liga a obra ao parlamentar.</td></tr>
+<tr><td><code>/historico-situacao-cancelada-paralisada</code></td><td><b>Por que a obra parou</b>: justificativa textual, se há tratativas em curso e em que fase estão. São 8.000 registros na base.</td></tr>
+<tr><td><code>/estudo-viabilidade</code></td><td>Tipo e especificação do estudo de viabilidade do projeto.</td></tr>
+</table>
+
+<p>É o ganho mais barato do conjunto: o coletor, o host e a tabela já existem — trata-se de estender,
+não de construir.</p>
+
+<div class="quebra"></div>
+<h2>5. Ganho nº 3 — dois módulos que o PACTHA não coleta</h2>
+
+<h3>Gestão de Parcerias <span class="tag t-novo">fonte nova</span></h3>
+<p>São 176 programas, dos quais <b>144 são Transferências Fundo a Fundo da Saúde</b>, com instrumentos
+de 2024 em diante. É importante entender o que ele <i>não</i> é: <b>não substitui o SICONV legado</b>,
+que continua nos arquivos de dados abertos. Ele complementa — e é justamente onde as emendas de saúde
+estão sendo processadas hoje.</p>
+<p>A cadeia disponível é completa: programa → proposta (com objeto, valor e situação) → metas e itens
+→ cronograma de desembolso → parceria celebrada → empenho → documento hábil → ordem de pagamento →
+extrato bancário. Há ainda a distribuição de recursos por emenda e a lista de beneficiários de emenda
+parlamentar com o respectivo parlamentar e apoiador.</p>
+<p class="nota">Exemplo real: as 11 propostas de Nova Palma somam mais de R$ 2,1 milhões, todas do
+Fundo Municipal de Saúde, entre incremento do piso da atenção primária, aquisição de equipamentos e
+unidade móvel de saúde.</p>
+
+<h3>Fundo a Fundo <span class="tag t-novo">fonte nova</span></h3>
+<p>O PACTHA já coleta o repasse consolidado por bloco no ConsultaFNS — o dinheiro que entra. Esta API
+traz <b>o outro lado</b>: plano de ação com metas e ações, destinação por natureza de despesa,
+análises com parecer e nome do responsável, termo de adesão, empenhos, saldo da conta e lançamentos
+financeiros. Uma não substitui a outra; juntas fecham o ciclo entre o repasse e o que foi feito com
+ele.</p>
+
+<h3>Prestação de contas — preenche um buraco conhecido do modelo</h3>
+<p>Hoje a prestação de contas não existe como dado estruturado no PACTHA: sobrevive apenas como texto
+dentro do campo de situação. Os dois módulos entregam isso pronto — 26.808 relatórios de gestão das
+Especiais e 19.586 do Fundo a Fundo, estes com resultados alcançados, contrapartida, endereço da
+publicidade das ações e declaração de conformidade.</p>
+
+<h2>6. Ganhos operacionais imediatos</h2>
+
+<table>
+<tr><th style="width:28%">Oportunidade</th><th>Detalhe</th></tr>
+<tr>
+  <td><b>Download condicional</b></td>
+  <td>O host novo devolve <code>etag</code>, <code>last-modified</code> e <code>content-md5</code>, e responde <b>304 Not Modified</b> quando o arquivo não mudou — testado. Hoje os coletores rebaixam os arquivos inteiros todo dia; só o dump federal custa 200 MB diários. O componente de cache já existe no repositório, sem uso nesse caminho. Alívio direto para uma VPS de 2 vCPU compartilhada.</td>
+</tr>
+<tr>
+  <td><b>Dicionários de dados</b></td>
+  <td>O repositório registra que o dicionário do SICONV dá 404 no host novo. Os quatro dicionários novos existem e respondem: Especiais (11,5 MB), Parcerias (11,6 MB), Fundo a Fundo (22,7 MB) e — o substituto direto — modelo dos CSVs de Discricionárias e Legais (13,3 MB).</td>
+</tr>
+<tr>
+  <td><b>Monitor de frescor</b></td>
+  <td>Duas fontes federais (Transferências Especiais e base SICONV nacional) estão fora do monitor de frescor. Se pararem de coletar, ninguém é avisado.</td>
+</tr>
+</table>
+
+<h2>7. O que <i>não</i> muda</h2>
+<p>As <b>Transferências Discricionárias e Legais</b> — os convênios tradicionais — continuam
+disponíveis <b>apenas por arquivo CSV</b>, sem API REST. O governo publicou o cronograma:</p>
+<table>
+<tr><th style="width:50%">Entrega</th><th>Prazo anunciado</th></tr>
+<tr><td>Atos preparatórios</td><td>até 31/10/2026</td></tr>
+<tr><td>Instrumentos</td><td>até 28/02/2027</td></tr>
+<tr><td>Execução financeira</td><td>até 30/06/2027</td></tr>
+<tr><td>Módulo de obras</td><td>até 31/10/2027</td></tr>
+</table>
+<p>Convém reavaliar em novembro/2026 e março/2027. Também estão previstas as APIs dos módulos TED e
+Fundo a Fundo — este último, aliás, <b>já está no ar</b>, antes do anunciado.</p>
+
+<div class="quebra"></div>
+<h2>8. Riscos</h2>
+
+<table>
+<tr><th style="width:26%">Risco</th><th style="width:12%">Gravidade</th><th>Como tratar</th></tr>
+<tr>
+  <td><b>Cloudflare na frente do host novo</b></td>
+  <td><span class="tag t-erro">alta</span></td>
+  <td>Todas as medições deste relatório saíram de uma máquina residencial. O TCE-RS já ensinou que endereço de datacenter muda tudo. <b>Medir a partir da VPS antes de agendar qualquer coleta</b> — o script de reconhecimento do repositório já serve para isso. É pré-requisito, não recomendação.</td>
+</tr>
+<tr>
+  <td><b>Um merge implanta os cinco ambientes</b></td>
+  <td><span class="tag t-att">média</span></td>
+  <td>Toda alteração de banco precisa ser idempotente e reversível. Tela nova em ambientes que não pediram é decisão do dono, não consequência automática.</td>
+</tr>
+<tr>
+  <td><b>Perda de dois campos nas Especiais</b></td>
+  <td><span class="tag t-att">média</span></td>
+  <td>Já decidido: manter as duas fontes, com a raspagem reduzida a CPF do ordenador e histórico da ordem de pagamento.</td>
+</tr>
+<tr>
+  <td><b>APIs em evolução</b></td>
+  <td><span class="tag t-att">média</span></td>
+  <td>Na troca de host do Obras.gov, <b>todos</b> os nomes de campo mudaram — e ler um campo antigo devolve vazio, sem erro. Versionar o mapeamento de campos e guardar a data de atualização de cada módulo para detectar mudança de contrato.</td>
+</tr>
+<tr>
+  <td><b>Erro 500 no filtro do Fundo a Fundo</b></td>
+  <td><span class="tag t-ok">baixa</span></td>
+  <td>Contorno por CNPJ validado. Reavaliar a cada rodada.</td>
+</tr>
+<tr>
+  <td><b>Sem coleta incremental</b></td>
+  <td><span class="tag t-ok">baixa</span></td>
+  <td>Volumes por município são pequenos (dezenas de registros). Carga cheia por município é viável.</td>
+</tr>
+</table>
+
+<h2>9. Ordem recomendada</h2>
+
+<table>
+<tr><th style="width:8%">Fase</th><th style="width:30%">O que</th><th style="width:11%">Esforço</th><th style="width:11%">Risco</th><th>Retorno</th></tr>
+<tr>
+  <td><b>1</b></td>
+  <td>Higiene: corrigir os apontamentos para hosts mortos, baixar os quatro dicionários, incluir as duas fontes no monitor de frescor</td>
+  <td>Baixo</td>
+  <td><span class="tag t-ok">baixo</span></td>
+  <td>Diagnóstico volta a ser confiável; documentação deixa de mentir</td>
+</tr>
+<tr>
+  <td><b>2</b></td>
+  <td>Transferências Especiais na API oficial, mantendo a raspagem só para os dois campos ausentes</td>
+  <td>Médio</td>
+  <td><span class="tag t-att">médio</span></td>
+  <td><b>O maior de todos.</b> Acaba com 60% de falha, corrige o vínculo por CNPJ e traz o extrato bancário</td>
+</tr>
+<tr>
+  <td><b>3</b></td>
+  <td>Obras.gov completo — geometria primeiro, depois execução física, contratos, empenhos e paralisações</td>
+  <td>Médio</td>
+  <td><span class="tag t-ok">baixo</span></td>
+  <td>Alto e barato: coletor e host já existem. Município deixa de ser inferido</td>
+</tr>
+<tr>
+  <td><b>4</b></td>
+  <td>Parcerias e Fundo a Fundo como fontes novas, com telas próprias</td>
+  <td>Alto</td>
+  <td><span class="tag t-att">médio</span></td>
+  <td>Duas fontes inéditas, cadeia financeira completa e prestação de contas estruturada</td>
+</tr>
+</table>
+
+<div class="box">
+<b>Recomendação.</b> Começar pelas fases 1 e 3, que são baratas e de risco baixo, enquanto se mede o
+comportamento do host novo a partir da VPS. Com essa medição em mãos, executar a fase 2 — a de maior
+retorno — rodando as duas fontes em paralelo por uma rodada e comparando contagem, soma de valores e
+CNPJ antes de desligar a raspagem. A fase 4 é projeto próprio e merece decisão separada sobre em
+quais ambientes as telas aparecem.
+</div>
+
+<h2>Anexo · Endereços</h2>
+<table>
+<tr><th style="width:30%">Módulo</th><th style="width:42%">Endereço</th><th>Endpoints</th></tr>
+<tr><td>Gestão de Parcerias</td><td><code>api-publica.transferegov.gestao.gov.br/parcerias</code></td><td>18</td></tr>
+<tr><td>Transferências Especiais</td><td><code>api-publica.transferegov.gestao.gov.br/especiais</code></td><td>21</td></tr>
+<tr><td>Fundo a Fundo</td><td><code>api-publica.transferegov.gestao.gov.br/fundoafundo</code></td><td>21</td></tr>
+<tr><td>Discricionárias e Legais</td><td><code>api-publica.transferegov.gestao.gov.br/downloads</code></td><td>65 arquivos (sem API)</td></tr>
+<tr><td>Obras</td><td><code>api-publica.obrasgov.gestao.gov.br/obras</code></td><td>8</td></tr>
+</table>
+<p class="nota">A documentação interativa de cada módulo fica no próprio endereço; a especificação
+técnica, em <code>&lt;módulo&gt;/openapi.json</code>. Contato do MGI: CGIMO.DTPAR@GESTAO.GOV.BR.</p>
+
+<footer>
+PACTHA · Relatório técnico de 06/09/2026 · Base: Comunicado nº 23/2026 do Portal do Transferegov.br,
+especificações OpenAPI dos quatro módulos e medições diretas contra os municípios da carteira.
+</footer>
+
+</body>
+</html>

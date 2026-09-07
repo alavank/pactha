@@ -99,6 +99,16 @@ _SOURCES = [
     ("TransfereGov — Gestão de Parcerias",
      "SELECT max(atualizado_em), count(*) FROM parcerias_propostas",
      "parcerias"),
+    # ⭐ FUNDO A FUNDO: o outro lado do ConsultaFNS. O `fns_faf` conta o
+    # repasse que ENTRA; esta conta o PLANO DE ACAO que o justifica, com a
+    # decomposicao entre emenda, repasse especifico e voluntario. Nao e so
+    # saude: em Nova Palma os quatro planos sao do Ministerio da Cultura.
+    #
+    # ⚠️ Contagem zero e estado legitimo — municipio sem plano fundo a fundo
+    # existe. O veredito e o `status` da rodada.
+    ("TransfereGov — Fundo a Fundo (planos de ação)",
+     "SELECT max(atualizado_em), count(*) FROM faf_planos_acao",
+     "faf_planos"),
     # ⚠️ FONTE SEM TABELA PROPRIA, e de proposito. A sessao gov.br nao produz
     # linha em lugar nenhum — ela HABILITA a coleta da fatia atras do login
     # (histórico de comunicações, NEs, projeto básico, licitação). Ate 31/08/2026
