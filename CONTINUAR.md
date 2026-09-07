@@ -479,6 +479,71 @@ federais já nasce corrigido (concede a tela E a ação); os dois antigos são P
 
 ---
 
+## 1.10. A SESSÃO DE 06/09/2026, PARTE 2 (novas APIs do TransfereGov — fases 1 e 2)
+
+O MGI desligou em 31/08/2026 os endereços antigos de dados abertos (Comunicado nº 23/2026)
+e publicou dois hosts novos com **68 endpoints REST**. O PACTHA já tinha migrado a parte
+obrigatória (os 65 dumps e o host do Obras.gov, em 02–04/09), então nada estava fora do ar:
+o que faltava era o que é genuinamente novo.
+
+**Fase 1 (PR #403, mergeado) — higiene.** `docker-compose.yml` e os dois scripts de
+reconhecimento da VPS ainda apontavam para hosts que hoje devolvem 404/429. No caminho
+apareceu que a env do worker tinha o **nome errado desde sempre**: os coletores leem
+`TRANSFEREGOV_DADOS_URL`, não `TRANSFEREGOV_BASE_URL` (esta última, em `config.py`, nunca
+foi referenciada em lugar nenhum — removida). Também entraram os três dicionários de dados
+novos (Especiais, Parcerias, Fundo a Fundo) e o registro de `siconv_federal` e
+`transferegov_te` no monitor de frescor, onde nunca estiveram.
+
+**Fase 2 — a Transferência Especial trocou de fonte.** A listagem saía da API interna da
+SPA de `especiais.transferegov.sistema.gov.br`, com endereços descobertos no bundle JS.
+Custo registrado: **25 de 42 rodadas parciais em 30 dias** e o IP da VPS punido por >6h. E
+o município era casado por **substring de nome** — 628 de 890 linhas com CNPJ divergente no
+tenant trust. Agora entra pelo CNPJ (`municipios.cnpj` → `id_beneficiario` → planos): 2
+requisições por município, sem 403, vínculo exato.
+
+**O que a medição de 06/09 provou antes de uma linha ser escrita:**
+
+- **Os ids são idênticos nas duas APIs**, na cadeia inteira — plano 3200 = 3200, empenho
+  62311 = 62311, DH 76255 = 76255, OP/OB 53038 = 53038. Sem isso, o upsert por
+  `plano_acao_id` teria duplicado a tabela na primeira rodada.
+- **O vocabulário da situação do plano de trabalho NÃO é o mesmo**, e essa era a armadilha
+  muda da fase: a oficial manda `Legado ADPF 854 STF / NT - TCU` onde a SPA mandava
+  `CONCLUIDO_NT_TCU`. O `rm_builder` decide estágio procurando **substring** ("conclu",
+  "empenh", "pag"...): gravar o rótulo cru faria o plano cair para "CIENTE", e
+  `_fed_retem` **descarta ativa de ano anterior** — o plano sumiria do relatório sem erro
+  nenhum em log. Mapa conferido par a par, 19/19 (`_SITUACAO_PT_PARA_CODIGO`).
+- **`codigo_programa` da API oficial perde o zero à esquerda** ('903' onde a SPA mandava
+  '0903', porque trata como número). O código do plano carrega o do programa intacto antes
+  do último hífen: 800 de 800 conferindo, e sem gastar uma requisição por programa.
+- **`valor_total` não existe na fonte nova** — é custeio + investimento, que bate com o
+  `valorTotal` antigo em 800 de 800.
+- **A API oficial entrega acentuação correta** onde a SPA entrega mojibake
+  ("Ampliação" vs "Amplia??o").
+
+**Os pagamentos ficaram na SPA, de propósito** (decisão do dono): só ela tem o CPF do
+ordenador/gestor e o histórico de eventos da OP. E o rate-limit nunca foi dela — os
+lookups por id fazem 590 requisições sequenciais com zero 403; quem punia era a listagem,
+que é justamente o que saiu.
+
+**Dois consumidores tiveram de acompanhar, e um deles quebraria calado:**
+`routers/transferegov.buscar` lia o `raw_data` cru com as chaves camelCase da SPA — com a
+fonte nova, todo `it.get(...)` devolveria `None` sem levantar exceção e a tela ficaria
+vazia. Passou a ler as **colunas** da tabela (que o RM sempre leu), mantendo os nomes de
+saída idênticos, então o frontend não mudou. E `/por-cnpj`, que baixava a listagem
+**nacional** (~58 mil planos, budget de 15s, quase sempre estourando) para filtrar um CNPJ
+em memória, agora filtra na fonte: 2 requisições, resposta completa.
+
+**A limpeza que o coletor sozinho não faz:** ele corrige, no primeiro upsert, toda linha
+cujo beneficiário esteja na carteira. O que sobra são os planos de municípios **de fora**
+creditados a alguém de dentro — esses nenhuma rodada visita, e ficariam para sempre na tela
+de quem não é dono. `limpa_transferegov_te_vinculo_por_nome.sql` os apaga, exigindo prova
+dos dois lados (CNPJ na linha **e** no município) e respeitando `municipio_entidades`.
+
+⚠️ **PENDENTE, e é pré-requisito de operação:** rodar
+`scripts/reconhecimento_fontes_vps.sh` **na VPS**. Todas as medições acima saíram de IP
+residencial, e o host novo está atrás de Cloudflare — o TCE-RS já ensinou que isso muda
+tudo.
+
 ## 2. ESTADO ATUAL (2026-09-04)
 
 **São CINCO tenants em produção**, todos do mesmo código, cada um com containers e banco próprios:

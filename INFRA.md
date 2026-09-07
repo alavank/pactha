@@ -303,6 +303,15 @@ O desenho atual (redesenho de 09/08, "tuning da madrugada"):
   requisição do IP) e, depois, disparos únicos espaçados (≥18 min) — nunca
   encadear de novo. Sintoma inequívoco: `error: nenhuma pagina coletada` em toda
   rodada, inclusive em janela "limpa".
+  ⭐ **06/09/2026: a LISTAGEM saiu dessa API e o parágrafo acima passou a valer só
+  para os PAGAMENTOS.** Os planos de ação agora vêm da API pública oficial
+  (`api-publica.transferegov.gestao.gov.br/especiais`, Comunicado nº 23/2026 do
+  MGI), que não pagina estado inteiro: são 2 requisições por município, entrando
+  pelo CNPJ. O que continua batendo em `especiais.transferegov.sistema.gov.br`
+  são os documentos hábeis e as OP/OB — lookups por id, que **nunca** foram o
+  que disparava a quota (590 requisições sequenciais, zero 403, medido em
+  23/08). A escada entre tenants e o `timeout` da task seguem valendo: eles
+  protegem justamente essa fase. Ver `ingestion/transferegov_te.py`.
 
 > 🕐 **TUDO EM UTC. Brasília é UTC−3.** Host, `instance_timezone` do Coolify e
 > PHP do container em `Etc/UTC`. As faixas do CAGEC (10/15/19/23 UTC) são

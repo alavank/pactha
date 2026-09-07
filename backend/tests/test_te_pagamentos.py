@@ -8,7 +8,7 @@ MESMO do `ops_obs` das voluntárias, e que "não medido" não vira "não há pag
 import asyncio
 
 from ingestion.transferegov_te import (
-    _chave_data, _dh_br, _dt_br, _num, pagamentos_do_plano,
+    _chave_data, _dh_br, _dt_br, _num, _teto_listagem_s, pagamentos_do_plano,
 )
 from services.rm_builder import (
     _ano_pagamento_ops_obs, _desembolso_ops_obs, _fed_retem, _fed_status,
@@ -215,9 +215,10 @@ def test_num_nao_quebra_com_lixo():
 # ---------------------------------------------------------------------------
 # ⚠️ O ORÇAMENTO — achado na PRIMEIRA rodada real (Freitas, 24/08/2026)
 # ---------------------------------------------------------------------------
-def _teto_listagem(budget, teto, pgto):
-    """A mesma conta de `run()`: a fatia dos pagamentos é RESERVADA antes."""
-    return max(60.0, min(budget, teto - pgto))
+# ⚠️ IMPORTADA do coletor, e não recopiada. Enquanto esta conta vivia duplicada
+# aqui, o teste passaria mesmo que `run()` mudasse a fórmula — que é exatamente
+# o caso que ele existe para pegar.
+_teto_listagem = _teto_listagem_s
 
 
 def test_a_listagem_nao_pode_engolir_o_orcamento_dos_pagamentos():
