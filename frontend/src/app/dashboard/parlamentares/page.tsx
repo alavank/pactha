@@ -809,16 +809,6 @@ function ParlamentaresInner() {
                           · {p.municipios.join(", ")}
                         </span>
                       )}
-                      {/* ⭐ O RESUMO DO QUE ESTÁ ATRÁS DA SETINHA: um selo por
-                          fonte QUE TEM lançamento, na ordem fixa de `FONTES`.
-                          Ver o comentário de lá para o que isto substituiu e o
-                          que se paga pela troca. */}
-                      {FONTES.map(({ chave, label, title }) => {
-                        const n = p.por_fonte[chave];
-                        return n ? (
-                          <Selo key={chave} title={title}>{`${label} · ${n}`}</Selo>
-                        ) : null;
-                      })}
                     </>
                   }
                   acao={cmp && varItem ? (
@@ -863,10 +853,41 @@ function ParlamentaresInner() {
                       </div>
                     </div>
                   ) : undefined}
-                />
-                {/* ⚠️ SEM FILHOS. Aqui morava a grade de sete fontes, que agora
-                    são os selos da meta — ver `FONTES`. O cartão fechado passou
-                    de três linhas para uma. */}
+                >
+                  {/* ⭐ O RESUMO DO QUE ESTÁ ATRÁS DA SETINHA: um selo por fonte
+                      QUE TEM lançamento, na ordem fixa de `FONTES`. Ver o
+                      comentário de lá para o que isto substituiu.
+
+                      ⚠️ E ELE FICA ABAIXO DE UMA DIVISÓRIA, não junto da meta —
+                      pedido do dono em 07/09/2026, comparando este cartão com o
+                      de Convênios Estaduais: "tem uma linha que divide, isso dá
+                      uma estética boa para os cards". A linha não é enfeite
+                      solto: é a MESMA que a peça `Campos` desenha em todo cartão
+                      do sistema (`mt-2 border-t pt-2` sobre `--bi-line`), e é
+                      ela que separa «quem é este registro» de «o que ele tem».
+                      Quando a grade de sete campos virou selo, a divisória foi
+                      junto por acidente, e este cartão passou a ser o único sem
+                      ela. Escrita à mão aqui, e não via `Campos`, porque o que
+                      vai embaixo é uma fileira de selos e não uma grade de
+                      rótulo+valor.
+
+                      ⚠️ Só sai quando há selo: com `por_fonte` zerado — o caso
+                      `foraDoRecorte`, que a comparação traz — uma borda sozinha
+                      seria um risco no meio do cartão sem nada embaixo. */}
+                  {FONTES.some(({ chave }) => p.por_fonte[chave]) && (
+                    <div
+                      className="mt-2 flex flex-wrap items-center gap-1.5 border-t pt-2"
+                      style={{ borderColor: "var(--bi-line)" }}
+                    >
+                      {FONTES.map(({ chave, label, title }) => {
+                        const n = p.por_fonte[chave];
+                        return n ? (
+                          <Selo key={chave} title={title}>{`${label} · ${n}`}</Selo>
+                        ) : null;
+                      })}
+                    </div>
+                  )}
+                </ItemLinha>
 
                 {expanded && (
                   /* O detalhe e um <li> IRMAO, nao filho do cartao: o corpo do
