@@ -366,6 +366,39 @@ def _municipios_alvo() -> list[dict]:
         cur.execute(_sql.format(join="", order="ORDER BY m.nome"))
     alvos = [{"id": r[0], "nome": r[1], "uf": r[2], "cnpj": r[3]} for r in cur.fetchall()]
     conn.close()
+
+    # REPOSICAO DIRIGIDA: `CAGEC_MUNICIPIOS=Nova Lima,Arcos` ou `=43,56`.
+    #
+    # ⚠️ NAO E ATALHO DE DEBUG — e a saida para um caso que ja aconteceu. O
+    # rodizio ordena por staleness e soma BACKOFF de um dia por tentativa (max
+    # 5): municipio que falha vai para o FIM da fila, que e o certo no regime
+    # automatico e o oposto do que se precisa na hora de repor. Em 07/09/2026,
+    # com Nova Lima e Arcos recem-corrigidos (eram os dois que a busca por nome
+    # nunca achava), a unica forma de visita-los era rodar a carteira inteira —
+    # 42 municipios e ~40 min de portal para conferir dois. A alternativa era
+    # editar `scraper_municipio_coleta` na mao no banco de producao, que e pior:
+    # mexe no estado do rodizio para obter um efeito de execucao.
+    #
+    # Ignora o lote de proposito: quem nomeia os municipios ja disse quantos
+    # quer. Nome casa sem acento e sem caixa; id casa exato.
+    _pedidos = [p.strip() for p in (os.getenv("CAGEC_MUNICIPIOS", "") or "").split(",")
+                if p.strip()]
+    if _pedidos:
+        _ids = {p for p in _pedidos if p.isdigit()}
+        _nomes = {_sem_acento(p).upper() for p in _pedidos if not p.isdigit()}
+        escolhidos = [a for a in alvos
+                      if str(a["id"]) in _ids or _sem_acento(a["nome"]).upper() in _nomes]
+        # Silencio aqui seria pior que erro: quem digitou o nome errado veria
+        # "0 municipios" e concluiria que o tenant nao tem municipio de MG.
+        achados = {str(a["id"]) for a in escolhidos} | {
+            _sem_acento(a["nome"]).upper() for a in escolhidos}
+        for p in (_ids | _nomes) - achados:
+            logger.warning("CAGEC_MUNICIPIOS: '%s' nao esta entre os municipios "
+                           "ATIVOS de MG deste tenant — ignorado", p)
+        logger.info("CAGEC: reposicao dirigida por CAGEC_MUNICIPIOS (%d de %d)",
+                    len(escolhidos), len(alvos))
+        return escolhidos
+
     # Fatia com DEFAULT LIGADO (11; env CAGEC_LOTE_MUNICIPIOS=0 volta a "todos").
     # O default "todos" matava o proprio diagnostico: uma rodada cheia de 44
     # municipios precisa de ~35min (~47s cada) contra 25min de kill interno —
