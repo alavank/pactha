@@ -444,6 +444,13 @@ _RECURSOS: tuple = (
     _Recurso("obrasgov", SEC_CONVENIOS, "Obras Federais (Obras.gov.br)",
              "as obras federais do município no Obras.gov.br", "",
              ("ver",), fonte="no Obras.gov.br", tela="obrasgov"),
+    # A Gestão de Parcerias do Transferegov (07/09/2026): o módulo onde as
+    # transferências passaram a ser processadas de 2024 em diante, e onde mora
+    # a emenda de saúde. Só `ver` — não há exportação nem coleta sob demanda,
+    # e permissão que não governa nada é pior que permissão faltando.
+    _Recurso("parcerias", SEC_CONVENIOS, "Parcerias (emendas de saúde)",
+             "as propostas e emendas do módulo de Parcerias", "",
+             ("ver",), fonte="no Transferegov", tela="parcerias"),
     _Recurso("acordofes", SEC_CONVENIOS, "Acordo FES (dívida da saúde MG)",
              "os créditos e parcelas do Acordo FES", "",
              ("ver", "exportar", "atualizar"), fonte="na SES-MG",

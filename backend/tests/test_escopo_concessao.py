@@ -412,5 +412,12 @@ def test_o_alcance_nao_virou_permissao_do_catalogo():
     # governarem, e permissao que nao governa nada e pior que permissao
     # faltando. `exportar` entra no MESMO PR que criar
     # `GET /api/export-pdf/emendas-federais`.
-    assert len(permissoes.CATALOGO) == 97
+    #
+    # 07/09/2026: 97 -> 98. `parcerias.ver` — a decima tela do grupo FEDERAIS,
+    # e a fonte onde a emenda de saude do municipio passou a ser processada de
+    # 2024 em diante (144 dos 176 programas do modulo sao Fundo a Fundo da
+    # Saude). UMA chave, pela mesma razao ja escrita acima para
+    # `emendas_federais.ver` e `obrasgov.ver`: a tela so LE. `exportar` entra
+    # no MESMO PR que criar a rota de exportacao — nao antes.
+    assert len(permissoes.CATALOGO) == 98
     assert not any("propri" in c for c in permissoes.CATALOGO)

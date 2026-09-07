@@ -208,6 +208,10 @@ INSERT INTO permissoes_catalogo (chave, secao, escrita) VALUES
     -- abaixo pela tela `obrasgov`. So `ver`: nao ha rota de exportacao nem
     -- de coleta sob demanda para `exportar`/`atualizar` governarem.
     ('obrasgov.ver', 'convenios', FALSE),
+    -- Parcerias (Transferegov) entrou em 07/09/2026 com a fonte. Herda de
+    -- 'convenios' pela mesma razao que a tela: quem acompanha a emenda que
+    -- virou instrumento e quem ja acompanha convenio. So `ver`.
+    ('parcerias.ver', 'convenios', FALSE),
     ('acordofes.ver', 'convenios', FALSE),
     ('acordofes.exportar', 'convenios', FALSE),
     ('acordofes.atualizar', 'convenios', TRUE),
@@ -419,6 +423,7 @@ WITH marca AS (
         ('sismob', 'sismob.exportar', FALSE),
         ('sismob', 'sismob.atualizar', TRUE),
         ('obrasgov', 'obrasgov.ver', FALSE),
+        ('parcerias', 'parcerias.ver', FALSE),
         ('acordofes', 'acordofes.ver', FALSE),
         ('acordofes', 'acordofes.exportar', FALSE),
         ('acordofes', 'acordofes.atualizar', TRUE),

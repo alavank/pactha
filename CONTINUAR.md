@@ -652,6 +652,19 @@ emenda, 2 filhos) custa 1.136 e 1.432, ~420s e ~530s. A execução financeira
 incremental. O `/extrato-bancario` sozinho tem **1.275.217 registros** (6.377
 páginas) e nunca poderá ser varrido inteiro.
 
+**A TELA CHEGOU EM 07/09/2026** (`/dashboard/parcerias`, `routers/parcerias.py`), e o
+ranking por parlamentar abre a página porque é a leitura que o gestor faz primeiro:
+quem trouxe recurso para a cidade. No trust isso são 84 propostas e R$ 67,7 mi só da
+Comissão da Saúde. A lista de propostas vem abaixo, filtrável por um clique no
+ranking, e cada linha diz «não celebrada» quando a proposta ainda não virou
+instrumento — estado legítimo e frequente do ano corrente, que esconder faria a
+contagem da tela não bater com a da fonte.
+
+⚠️ **Ela fica ao lado de «Voluntárias» no menu de propósito, e não a substitui.**
+Aquela mostra o convênio discricionário do SICONV, que continua vindo dos dumps CSV;
+esta, o instrumento novo. São dois módulos, dois ciclos e dois tipos de instrumento —
+e o dono que abrir as duas lado a lado tem de ver por que os números diferem.
+
 ## 1.13. FASE 5 — Fundo a Fundo (o plano de ação por trás do repasse)
 
 A última fonte nova do Comunicado nº 23/2026. O `fns_repasse_faf` já conta o repasse
