@@ -69,6 +69,12 @@ interface Obra {
   executores: string[];
   repassadores: string[];
   sistema_origem: string | null;
+  /* ⭐ DE QUEM É A OBRA. `prefeitura` = um CNPJ do município bate com
+     tomador/executor; `territorio` = só a geometria do Governo aponta, e o
+     dono é outro ente (UFSM, DNIT, IF); `abrangencia` = programa guarda-chuva
+     que NÃO é uma obra nesta cidade. Ver o cabeçalho do router. */
+  vinculo: "prefeitura" | "territorio" | "abrangencia";
+  abrangencia_municipios: number | null;
   ano: number | null;
   url_fonte: string;
   grupo: "acao" | "papel" | "andamento" | "encerradas";
@@ -90,6 +96,7 @@ interface Resp {
   por_sistema?: Fatia[];
   por_origem?: Fatia[];
   anos?: number[];
+  guarda_chuva?: { obras: number; valor: number };
   coletado_em?: string | null;
 }
 
@@ -127,6 +134,21 @@ function LinhaObra({ o }: { o: Obra }) {
           {o.alerta && (
             <Selo tom="critico" title={o.motivo || undefined}>
               {ROTULO_ALERTA[o.alerta] || o.alerta}
+            </Selo>
+          )}
+          {/* ⚠️ «A obra está aqui» não é «a obra é da prefeitura». Em Santa
+              Maria as obras que só a geometria acha são da UFSM, do DNIT e do
+              IF Farroupilha — o município é o lugar, não o dono. */}
+          {o.vinculo === "territorio" && (
+            <Selo tom="neutro"
+                  title="O Governo aponta esta obra no território do município, mas o tomador/executor é outro ente.">
+              no território
+            </Selo>
+          )}
+          {o.vinculo === "abrangencia" && (
+            <Selo tom="atencao"
+                  title={`Programa com geometria em ${o.abrangencia_municipios ?? "centenas de"} municípios — não é uma obra desta cidade.`}>
+              programa em {o.abrangencia_municipios ?? "vários"} municípios
             </Selo>
           )}
           {/* A repetição com o SISMOB, dita em voz alta. */}
@@ -310,6 +332,14 @@ export default function ObrasFederaisPage() {
     (lista: Obra[] | undefined) =>
       (lista || []).filter(
         (o) =>
+          /* ⚠️ O GUARDA-CHUVA SAI DAQUI e vai para bloco próprio. Medido no
+             freitas: 56 projetos «abrangencia» somam R$ 15,89 BILHÕES contra
+             R$ 606,8 mi de TODAS as 421 obras da prefeitura — 96% do valor. É o
+             mesmo projeto repetido («Manutenção rodoviária na malha federal do
+             DNIT em MG», 790 municípios) caindo em 41 das 42 cidades. Deixá-lo
+             nas listas classificadas também poria 56 obras do DNIT no topo de
+             «Exigem atenção», empurrando para baixo a obra que é da cidade. */
+          o.vinculo !== "abrangencia" &&
           (!anos.length || (o.ano != null && anos.includes(String(o.ano)))) &&
           (!situacao || o.situacao === situacao),
       ),
@@ -322,6 +352,18 @@ export default function ObrasFederaisPage() {
   const encerradas = useMemo(() => filtrar(d?.encerradas), [d, filtrar]);
   const visiveis = acao.length + papel.length + andamento.length
     + encerradas.length;
+  /* Os programas que passam pelo município, no mesmo filtro de ano e situação
+     das demais — mas contados à parte. */
+  const guardaChuva = useMemo(() => {
+    const todas = [...(d?.acao || []), ...(d?.papel || []),
+                   ...(d?.andamento || []), ...(d?.encerradas || [])];
+    return todas.filter(
+      (o) =>
+        o.vinculo === "abrangencia" &&
+        (!anos.length || (o.ano != null && anos.includes(String(o.ano)))) &&
+        (!situacao || o.situacao === situacao),
+    );
+  }, [d, anos, situacao]);
   /* ⚠️ Os totais dos cartões acompanham o FILTRO, e não os totais do servidor.
      Cartão dizendo 360 com 12 obras na lista abaixo é o tipo de divergência que
      faz o gestor desconfiar de tudo o mais que a tela diz. */
@@ -487,6 +529,32 @@ export default function ObrasFederaisPage() {
           )}
         </Bloco>
       ))}
+
+      {guardaChuva.length > 0 && (
+        <Bloco className="p-4">
+          <BlocoHead
+            icon={Layers}
+            titulo="Programas que passam pelo município"
+            sub="não entram nos totais acima — são obras de abrangência estadual ou nacional"
+            right={
+              <span className="bi-num text-[12px]" style={{ color: "var(--bi-muted)" }}>
+                {guardaChuva.length}
+              </span>
+            }
+          />
+          <p className="mb-2 text-[11px] leading-relaxed"
+             style={{ color: "var(--bi-muted)" }}>
+            O Governo cadastra estes projetos com geometria em dezenas ou
+            centenas de municípios — «Manutenção rodoviária na malha federal do
+            DNIT», por exemplo, alcança 790 cidades. O programa de fato passa
+            por aqui, mas o valor dele é do programa inteiro: somá-lo diria que
+            o município tem em obras federais o que o país inteiro tem.
+          </p>
+          <Lista>
+            {guardaChuva.map((o) => <LinhaObra key={o.id_unico} o={o} />)}
+          </Lista>
+        </Bloco>
+      )}
 
       <div className="grid gap-3 lg:grid-cols-3">
         <Distribuicao titulo="Por eixo" icon={Layers}

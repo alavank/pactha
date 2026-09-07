@@ -689,6 +689,44 @@ tem — a Santa Casa que recebeu emenda federal *está* na cidade, e o gestor qu
 Então a linha fica, marcada com «não é da prefeitura», e fora dos totais e do ranking.
 `fora_do_municipio` na resposta e uma nota no rodapé dizem quantas são, para quem
 conferir contra o portal não achar que faltam propostas.
+### ⚠️ E o guarda-chuva do DNIT era 96% do valor da tela de Obras (07/09/2026)
+
+Terceira fonte com a mesma doença, encontrada ao varrer as outras depois do Fundo a
+Fundo. O coletor **já marcava** `abrangencia` desde o #408 — o que faltava era a
+leitura respeitar a marca. Medido no freitas:
+
+| vínculo | obras | valor |
+|---|---:|---:|
+| **abrangencia** | 56 | **R$ 15.894.300.865** ← 96% do valor |
+| prefeitura | 421 | R$ 606.809.018 |
+| territorio | 61 | R$ 91.560.948 |
+
+É o MESMO projeto repetido: «Manutenção rodoviária na malha federal do DNIT em MG»
+(R$ 383,3 mi, **790 municípios**) cai em 41 das 42 cidades da carteira, e cada uma
+somava os R$ 383 mi inteiros. A tela abria com R$ 16,6 bilhões onde o real é ~R$ 698 mi.
+
+⚠️ **E o conserto tinha de ser nos DOIS lados.** A tela recalcula os cartões a partir
+das listas filtradas — de propósito, porque cartão dizendo 360 com 12 obras na lista
+faz o gestor desconfiar do resto. Corrigir só o servidor deixaria os R$ 15,89 bi
+voltarem pelos cartões; `test_a_tela_usa_a_mesma_regra_do_router` lê o `.tsx` e cobra.
+
+⭐ **`territorio` CONTA**, e essa é a diferença que importa: ali a obra é uma obra só,
+naquele lugar, e quem diz é o Governo (`/geometria?cod_ibge=`). O dono ser a UFSM ou o
+DNIT não a torna menos real para quem mora na cidade — a tela diz de quem é pelo selo.
+Já `abrangencia` não é uma obra na cidade: é um programa estadual cuja geometria passa
+por ela.
+
+### As três fontes, o mesmo erro, três respostas diferentes
+
+| fonte | o que entrava | resposta |
+|---|---|---|
+| `faf_planos` | plano do ESTADO (sede = capital) | **apagado** — o IBGE ali é a sede, não onde se aplica |
+| `parcerias` | fundo estadual e entidade privada | **fica, marcado, fora dos totais** — a entidade está na cidade |
+| `obrasgov` | programa guarda-chuva (790 municípios) | **fica, em bloco próprio** — o programa passa por ali |
+
+A pergunta que separa os três: *a linha afirma algo sobre ESTE município?* Se não
+afirma nada (o plano do Estado de Goiás é executado em Goiás inteiro), sai. Se afirma
+mas não é da prefeitura, fica marcada e fora da conta.
 
 ## 1.13. FASE 5 — Fundo a Fundo (o plano de ação por trás do repasse)
 
