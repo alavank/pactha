@@ -29,6 +29,9 @@ out/
 # versionado de proposito, ver docs/dados-abertos-transferegov/README.md
 !docs/dados-abertos-transferegov/modelo_dados_siconv.zip
 !docs/dados-abertos-transferegov/historico_de_versoes.pdf
+!docs/dados-abertos-transferegov/modelo_dados_api-especiais.zip
+!docs/dados-abertos-transferegov/modelo_dados_api_parcerias.zip
+!docs/dados-abertos-transferegov/modelo_dados_api_faf.zip
 
 # Despejo de consulta a portal (JSON solto na raiz), gerado durante
 # investigacao e sem lugar no repo. `mg27.json` (65KB do ConsultaFNS) chegou a

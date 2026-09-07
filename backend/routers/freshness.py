@@ -71,6 +71,22 @@ _SOURCES = [
     ("TransfereGov — PAC (Novo PAC)",
      "SELECT max(updated_at), count(*) FROM transferegov_pac",
      None),
+    # ⚠️ ERA A LACUNA QUE O COMENTARIO LA EM CIMA JA DENUNCIAVA: `siconv_federal`
+    # tinha coletor, tinha `source` proprio no ingestion_log, e nao aparecia
+    # aqui — corrigido em 06/09/2026 junto com a migracao das APIs novas do
+    # TransfereGov. NACIONAL (base SICONV do Brasil inteiro, casada por CNPJ,
+    # sem `municipio_id`): fica na lista FIXA.
+    ("TransfereGov — SICONV federal (por CNPJ)",
+     "SELECT max(atualizado_em), count(*) FROM siconv_federal",
+     "siconv_federal"),
+    # Transferencia Especial / Emenda PIX. Ficava fora do monitor desde que o
+    # coletor foi criado — mesmo defeito do item acima, mesmo commit de
+    # correcao. NACIONAL: a carteira e varrida por UF, mas a tabela nao separa
+    # por estado do tenant, entao fica na lista FIXA como as demais fontes
+    # federais desta secao.
+    ("TransfereGov — Transferências Especiais (Emenda Pix)",
+     "SELECT max(updated_at), count(*) FROM transferegov_te",
+     "transferegov_te"),
     # ⚠️ FONTE SEM TABELA PROPRIA, e de proposito. A sessao gov.br nao produz
     # linha em lugar nenhum — ela HABILITA a coleta da fatia atras do login
     # (histórico de comunicações, NEs, projeto básico, licitação). Ate 31/08/2026

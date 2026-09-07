@@ -51,7 +51,7 @@ sonda "tce-rs ZIP empenhos 2026"   "https://dados.tce.rs.gov.br/dados/municipal/
 
 echo
 echo "-- FEDERAIS AUSENTES DO PRODUTO"
-sonda "obrasgov (uf=RS)"           "https://api.obrasgov.gestao.gov.br/obrasgov/api/projeto-investimento?uf=RS&pagina=0&tamanhoDaPagina=1"
+sonda "obrasgov (uf=RS)"           "https://api-publica.obrasgov.gestao.gov.br/obras/projeto-investimento?uf_principal=RS&pagina=1&tamanho_da_pagina=1"
 sonda "siconfi tt/rreo (SM 2024)"  "https://apidatalake.tesouro.gov.br/ords/siconfi/tt/rreo?an_exercicio=2024&nr_periodo=6&co_tipo_demonstrativo=RREO&no_anexo=RREO-Anexo%2001&id_ente=4316907"
 sonda "ibge municipio 4313102"     "https://servicodados.ibge.gov.br/api/v1/localidades/municipios/4313102"
 sonda "s2id séries históricas"     "https://s2id.mi.gov.br/paginas/series/"
