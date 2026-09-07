@@ -19,6 +19,11 @@
 # COMO RODAR (o `!` do Claude Code serve):
 #     COOLIFY_TOKEN='95|...' bash scripts/carga_cagec.sh freitas
 #     COOLIFY_TOKEN='95|...' CAGEC_LOTE_MUNICIPIOS=1 bash scripts/carga_cagec.sh freitas
+#     COOLIFY_TOKEN='95|...' CAGEC_MUNICIPIOS='Nova Lima,Arcos' bash scripts/carga_cagec.sh freitas
+#
+# `CAGEC_MUNICIPIOS` (nomes ou ids, separados por virgula) atende municipio
+# ESPECIFICO e ignora o lote — e o jeito de repor quem o rodizio jogou para o fim
+# da fila, que e justamente quem vinha falhando.
 #
 # Tenants com CAGEC (so os que tem municipio de MG): freitas · montesiao · trust
 # (novapalma e santamaria sao RS — a regularidade estadual la e o CHE,
