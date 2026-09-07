@@ -45,9 +45,14 @@ export const ABAS: AbaDef[] = [
   { id: "parlamentares", label: "Parlamentares", curto: "Parlam.", descricao: "Emendas por autor, destinação e finalidade" },
   { id: "transferegov", label: "TransfereGov", curto: "Federal", descricao: "Propostas e convênios federais" },
   { id: "estaduais", label: "Verbas Estaduais", curto: "Estadual", descricao: "Convênios e emendas estaduais" },
-  // Rótulo neutro de propósito: "CAGEC" é o nome do cadastro de MINAS, e esta
-  // aba é a mesma para clientes de qualquer estado (ver components/bi/abas.tsx).
-  { id: "documentos", label: "CAUC e cadastro estadual", curto: "Documentos", descricao: "Documentação em dia ou pendente" },
+  // ⚠️ O RÓTULO É O MESMO DO MENU ("Regularidade"), por decisão do dono: o
+  // mesmo assunto não pode ter dois nomes no mesmo sistema — quem clica em
+  // «Regularidade» no menu e vê «CAUC e cadastro estadual» no painel não tem
+  // como saber que é a mesma coisa. Continua neutro quanto ao estado: "CAGEC" é
+  // o nome do cadastro de MINAS, e esta aba é a mesma para qualquer cliente
+  // (ver components/bi/abas.tsx).
+  { id: "documentos", label: "Regularidade", curto: "Regularidade",
+    descricao: "CAUC, cadastro estadual e cadastros negativos — em dia ou pendente" },
   { id: "sismob", label: "Obras da Saúde", curto: "Obras",
     descricao: "Obras do Ministério da Saúde (SISMOB) — prazos e execução" },
   { id: "fns", label: "Fundo Nacional de Saúde", curto: "FNS", descricao: "Propostas do FNS no período" },

@@ -23,10 +23,11 @@
 // que mudou foi só a pele: fim do verde em toda linha comprovada (trinta ✔
 // verdes não informam nada — quando tudo é sinal, nada é sinal), selo cinza por
 // padrão e COR só onde há alerta: pendência impeditiva e prazo vencido.
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   ShieldCheck, ShieldAlert, Check, AlertTriangle, AlertCircle, Ban, Loader2,
-  Clock, Info, Gavel, ExternalLink, Landmark,
+  Clock, Info, Gavel, ExternalLink, Landmark, RefreshCw, FileSearch,
 } from "lucide-react";
 import api from "@/lib/api";
 import { useMunicipio } from "@/contexts/MunicipioContext";
@@ -144,7 +145,64 @@ interface SiconfiResp {
     icf?: string | null;
     observacao?: string | null;
     atualizado_em?: string | null;
+    /** ⭐ O QUE A PLANILHA DO TESOURO TRAZ E A TELA IGNORAVA. Estava tudo em
+     *  `raw_data` desde a primeira coleta; o servidor passou a expor. É o que
+     *  responde as perguntas que a nota sozinha não responde: de que ano-base
+     *  ela é, por que é A+ e não A, se houve rebaixamento, e se o município
+     *  tem as entregas que o próprio cálculo exige. */
+    origem_nota?: string | null;
+    /** "Aicf" é a nota máxima do Indicador da Qualidade da Informação Contábil
+     *  e Fiscal (ICF) no Siconfi — e é dele que vem o "+" do A+. */
+    icf_maximo?: boolean;
+    publicou_rgf?: string | null;
+    publicou_rreo?: string | null;
+    dca?: Record<string, string> | null;
+    ressalvas?: string[];
   } | null;
+}
+
+/** CADASTROS NEGATIVOS — `GET /api/cadastros-negativos`. A quarta pergunta:
+ *  não "está em dia?", e sim "existe pendência INSCRITA contra o ente?".
+ *
+ *  ⚠️ Uma linha por ENTIDADE e por cadastro, e a que importa pode não ser a da
+ *  prefeitura: a única inscrição real da carteira em 07/09/2026 é do Fundo
+ *  Municipal de Saúde de Nova Palma — que nem cadastro estadual tem. */
+interface NegativoItem {
+  cnpj: string;
+  entidade?: string | null;
+  uf?: string | null;
+  /** 'CADIN-MG' · 'CADIN-RS' · 'CFIL-RS' */
+  fonte: string;
+  /** 'regular' | 'pendente' | 'indeterminado'. ⚠️ `indeterminado` NÃO é "nada
+   *  consta": é a certidão que saiu e cujo texto não foi reconhecido. */
+  tipo?: string | null;
+  situacao?: string | null;
+  quantidade?: number | null;
+  /** Quem inscreveu, quando e o contato para sanar. Só vem quando HÁ pendência,
+   *  e é o que transforma "você está travado" em "ligue para tal órgão". */
+  detalhes?: {
+    orgao?: string; inscrito_em?: string; quantidade?: number; contato?: string;
+  } | null;
+  consultado_em?: string | null;
+  erro?: string | null;
+}
+
+interface NegativosResp {
+  tem_dados: boolean;
+  uf?: string;
+  motivo?: string;
+  /** O que EXISTE para este estado, mesmo sem coleta — é o que separa
+   *  "consultamos e nada consta" de "não acompanhamos este estado". */
+  cadastros_previstos?: string[];
+  catalogo?: Record<string, {
+    sigla: string; nome: string; uf: string; orgao?: string; lei?: string;
+    trava?: string; origem?: string;
+  }>;
+  itens?: NegativoItem[];
+  limpo?: boolean;
+  pendencias?: number;
+  indeterminados?: number;
+  consultado_em?: string | null;
 }
 
 function fmtDate(iso?: string | null): string {
@@ -418,6 +476,64 @@ function Capag({ capag }: { capag: NonNullable<SiconfiResp["capag"]> }) {
           </div>
         ))}
       </div>
+
+      {/* ⭐ O RESTO DA PLANILHA. Estava em `raw_data` desde a primeira coleta e
+          nunca chegou ao gestor. Responde o que a nota sozinha não responde. */}
+      <div className="mt-3 space-y-1.5 border-t pt-3" style={{ borderColor: "var(--bi-line)" }}>
+        {/* Por que A+ e não A — a pergunta que o "+" provoca. */}
+        {capag.icf && (
+          <p className="text-[11px] leading-snug" style={{ color: "var(--bi-muted)" }}>
+            <b>ICF {capag.icf}</b> — nota do município no{" "}
+            <b>Indicador da Qualidade da Informação Contábil e Fiscal</b> do Siconfi.
+            {capag.icf_maximo
+              ? <> É a nota máxima, e é dela que vem o <b>“+”</b>: nota A ou B na CAPAG
+                  somada a <i>Aicf</i> no ICF resulta em A+ ou B+.</>
+              : <> O “+” da CAPAG (A+ / B+) exige a nota máxima <i>Aicf</i> aqui.</>}
+          </p>
+        )}
+        {capag.origem_nota && (
+          <p className="text-[11px] leading-snug" style={{ color: "var(--bi-muted)" }}>
+            Base do cálculo: <b>{capag.origem_nota}</b>
+            {/* A data da posição é quando o Tesouro PUBLICOU; o ano-base é o
+                exercício de onde saíram os números. Confundir os dois faz o
+                gestor achar que a nota reflete o ano corrente. */}
+            {capag.posicao ? <> · publicada na posição de {fmtDate(capag.posicao)}</> : null}.
+          </p>
+        )}
+
+        {/* As entregas que o PRÓPRIO cálculo exige. "Não" aqui explica nota
+            ausente ou rebaixada melhor que qualquer texto nosso — e liga esta
+            aba à lista de contas entregues logo abaixo. */}
+        {(capag.publicou_rreo || capag.publicou_rgf || capag.dca) && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]"
+               style={{ color: "var(--bi-muted)" }}>
+            <span style={{ color: "var(--bi-faint)" }}>Pré-requisitos do cálculo:</span>
+            {capag.publicou_rreo && <span>RREO publicado: <b>{capag.publicou_rreo}</b></span>}
+            {capag.publicou_rgf && <span>RGF publicado: <b>{capag.publicou_rgf}</b></span>}
+            {Object.entries(capag.dca || {}).map(([ano, sim]) => (
+              <span key={ano}>DCA {ano}: <b>{sim}</b></span>
+            ))}
+          </div>
+        )}
+
+        {/* Ressalvas metodológicas: quando preenchidas, explicam nota estranha.
+            Vazio é o normal — por isso só aparecem quando existem. */}
+        {!!capag.ressalvas?.length && (
+          <p className="text-[11px] leading-snug" style={{ color: "var(--bi-warn-ink)" }}>
+            <b>Ressalvas do Tesouro:</b> {capag.ressalvas.join(" · ")}.
+          </p>
+        )}
+        {capag.observacao && (
+          <p className="text-[11px] leading-snug" style={{ color: "var(--bi-muted)" }}>
+            {capag.observacao}
+          </p>
+        )}
+        <p className="text-[10px] leading-snug" style={{ color: "var(--bi-faint)" }}>
+          Metodologia da Portaria Normativa MF nº 1.583/2023: três indicadores —
+          endividamento, poupança corrente e liquidez. A nota abre ou fecha crédito
+          com garantia da União.
+        </p>
+      </div>
     </Bloco>
   );
 }
@@ -427,11 +543,24 @@ function Capag({ capag }: { capag: NonNullable<SiconfiResp["capag"]> }) {
  *  ⚠️ NÃO se filtra por `status`: RREO, RGF e DCA vêm com 'HO' (homologado) e
  *  as MSC vêm SEM status nenhum — as duas entregues. Quem prova a entrega é a
  *  data, e foi por isso que o coletor guarda as duas coisas. */
+const PERIODICIDADE: Record<string, string> = {
+  M: "mensal", B: "bimestral", Q: "quadrimestral", S: "semestral", A: "anual",
+};
+
 function ContasNoTesouro({ ano }: { ano: NonNullable<SiconfiResp["exercicios"]>[number] }) {
-  const porEntregavel = new Map<string, { total: number; ultima?: string | null }>();
+  /* ⚠️ ABRE UM ENTREGÁVEL POR VEZ, e não a lista inteira: são 22 envios num ano
+     normal. O resumo fechado responde "ele está prestando contas?" e o detalhe
+     responde "o que faltou no 3º bimestre?" — que é a pergunta que sobra depois
+     do CAUC dizer "irregular na obrigação 3.2.2" sem dizer o que faltou. */
+  const [aberto, setAberto] = useState<string | null>(null);
+  const porEntregavel = new Map<string, {
+    total: number; ultima?: string | null;
+    envios: typeof ano.entregas;
+  }>();
   for (const e of ano.entregas) {
-    const atual = porEntregavel.get(e.entregavel) || { total: 0, ultima: null };
+    const atual = porEntregavel.get(e.entregavel) || { total: 0, ultima: null, envios: [] };
     atual.total += 1;
+    atual.envios.push(e);
     if (e.entregue_em && (!atual.ultima || e.entregue_em > atual.ultima)) {
       atual.ultima = e.entregue_em;
     }
@@ -444,17 +573,60 @@ function ContasNoTesouro({ ano }: { ano: NonNullable<SiconfiResp["exercicios"]>[
         sub={`${ano.total} envio(s) da prefeitura em ${ano.entregaveis.length} obrigação(ões)`}
       />
       <Lista>
-        {[...porEntregavel.entries()].map(([nome, d]) => (
-          <li key={nome} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 py-1">
-            <span className="min-w-0 text-[12px]" style={{ color: "var(--bi-text)" }}>
-              {nome}
-            </span>
-            <span className="shrink-0 text-[11px] tabular-nums" style={{ color: "var(--bi-muted)" }}>
-              {d.total} envio(s)
-              {d.ultima ? ` · último em ${fmtDate(d.ultima)}` : ""}
-            </span>
-          </li>
-        ))}
+        {[...porEntregavel.entries()].map(([nome, d]) => {
+          const abertoAqui = aberto === nome;
+          const per = d.envios.find((e) => e.periodicidade)?.periodicidade || "";
+          return (
+            <li key={nome} className="py-1">
+              <button
+                type="button"
+                onClick={() => setAberto(abertoAqui ? null : nome)}
+                className="flex w-full flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 text-left"
+                aria-expanded={abertoAqui}
+              >
+                <span className="min-w-0 text-[12px]" style={{ color: "var(--bi-text)" }}>
+                  {nome}
+                  {PERIODICIDADE[per] && (
+                    <span className="ml-1.5 text-[10px]" style={{ color: "var(--bi-faint)" }}>
+                      {PERIODICIDADE[per]}
+                    </span>
+                  )}
+                </span>
+                <span className="shrink-0 text-[11px] tabular-nums" style={{ color: "var(--bi-muted)" }}>
+                  {d.total} envio(s)
+                  {d.ultima ? ` · último em ${fmtDate(d.ultima)}` : ""}
+                </span>
+              </button>
+              {abertoAqui && (
+                <ul className="mt-1 space-y-0.5 rounded-lg px-3 py-2"
+                    style={{ background: "var(--bi-surface)" }}>
+                  {[...d.envios]
+                    .sort((a, b) => a.periodo - b.periodo)
+                    .map((e, i) => (
+                      <li key={i}
+                          className="flex flex-wrap items-baseline justify-between gap-x-3 text-[11px]"
+                          style={{ color: "var(--bi-muted)" }}>
+                        <span style={{ color: "var(--bi-text)" }}>
+                          {/* O número do período é o que o gestor procura no
+                              recibo: "o 3º bimestre foi entregue?" */}
+                          {e.periodo}º período
+                        </span>
+                        <span className="tabular-nums">
+                          {e.entregue_em ? fmtDate(e.entregue_em) : "sem data"}
+                          {/* ⚠️ 'HO' (homologado) só aparece em RREO/RGF/DCA. A MSC
+                              vem SEM status e está entregue: quem prova a entrega é
+                              a data, e por isso o status vem depois dela, como
+                              informação adicional. */}
+                          {e.status ? ` · ${e.status}` : ""}
+                          {e.forma_envio ? ` · ${e.forma_envio}` : ""}
+                        </span>
+                      </li>
+                    ))}
+                </ul>
+              )}
+            </li>
+          );
+        })}
       </Lista>
       {/* O nome com "Simplificado" não é detalhe: é o que explica por que a
           cadência deste município difere da do vizinho. Ver ingestion/siconfi.py. */}
@@ -465,96 +637,6 @@ function ContasNoTesouro({ ano }: { ano: NonNullable<SiconfiResp["exercicios"]>[
         </p>
       )}
     </Bloco>
-  );
-}
-
-function OutrasEntidades({ entidades }: { entidades: Entidade[] }) {
-  const outras = entidades.filter((e) => !e.principal);
-  if (!outras.length) return null;
-  return (
-    <div className="space-y-2">
-      <div>
-        <h3 className="bi-title text-[13px] leading-tight">
-          Outros cadastros deste município ({outras.length})
-        </h3>
-        <p className="mt-0.5 text-[10px] leading-snug" style={{ color: "var(--bi-faint)" }}>
-          Cada entidade tem cadastro próprio e trava <strong>apenas o seu</strong> convênio:
-          a prefeitura estar regular não libera o convênio da saúde se o fundo estiver irregular.
-        </p>
-      </div>
-      <Lista>
-        {outras.map((e) => {
-          const ok = e.regular === true;
-          const pend = e.pendencias || 0;
-          // A situação vem escrita pela fonte ("REGULAR", "NÃO HABILITADA"), então
-          // quem classifica é a regra única do sistema. O booleano `regular` só
-          // entra quando ela é falsa: aí é impedimento, escreva a fonte o que
-          // escrever.
-          // `regular === true` -> verde, como o "Regular" do banner e o ✔ da
-          // lista. `situacaoTom` devolveria NEUTRO para a palavra "Regular"
-          // (ela nao esta na lista de termos de alerta), e a entidade ficaria
-          // cinza ao lado de um banner verde dizendo a mesma coisa.
-          const tomSit = e.regular === false ? "critico"
-            : e.regular === true ? "ok"
-            : situacaoTom(e.situacao);
-          return (
-            <li key={e.cnpj || e.nome} className="bi-card-flat overflow-hidden">
-              <details>
-                {/* `flex` no summary é o que esconde o triângulo nativo no
-                    Chrome — trocar por bloco faria o marcador reaparecer em cima
-                    do nome da entidade. */}
-                <summary className="flex cursor-pointer items-start gap-2 px-3 py-2.5">
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[13px] font-medium leading-snug">{e.nome}</div>
-                    <div
-                      className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] leading-snug"
-                      style={{ color: "var(--bi-faint)" }}
-                    >
-                      <Selo tom={tomSit} title={`Situação no cadastro estadual: ${e.situacao || (ok ? "Regular" : "Irregular")}`}>
-                        {e.situacao || (ok ? "Regular" : "Irregular")}
-                      </Selo>
-                      <span>{e.tipo || "entidade"}</span>
-                      {e.cnpj && <span className="font-mono">CNPJ {e.cnpj}</span>}
-                      {e.numero_cadastro && <span className="font-mono">cadastro nº {e.numero_cadastro}</span>}
-                      {/* Este resumo é a ÚNICA coisa visível com o bloco fechado, e
-                          é onde o Fundo Municipal de Saúde apareceu como "Regular ·
-                          sem pendência" sem que nada tivesse sido conferido.
-                          "sem pendência" exige documentos lidos; contador de leitura
-                          antiga exige a data junto, senão passa por atual. */}
-                      <span
-                        style={pend && e.detalhe_do_crc !== false
-                          ? { color: "var(--bi-crit-ink)" } : undefined}
-                      >
-                        {e.detalhe_do_crc === false
-                          ? "documentos não conferidos"
-                          : e.crc_erro
-                            ? `documentos de ${fmtDate(e.crc_em)}`
-                            : pend ? `${pend} pendência(s)` : "sem pendência"}
-                      </span>
-                    </div>
-                  </div>
-                </summary>
-                <div
-                  className="space-y-2 border-t px-3 py-3"
-                  style={{ borderColor: "var(--bi-line)" }}
-                >
-                  <AvisoCrc crcErro={e.crc_erro} crcEm={e.crc_em} doCrc={e.detalhe_do_crc} />
-                  {/* Mesma ressalva do banner da prefeitura: `validade` é a próxima
-                      obrigação a vencer, não a validade do certificado — o CRC não
-                      tem uma. */}
-                  {e.validade && (
-                    <p className="text-[10px]" style={{ color: "var(--bi-muted)" }}>
-                      Próxima obrigação a vencer: <strong>{fmtDate(e.validade)}</strong>.
-                    </p>
-                  )}
-                  <Exigencias itens={e.itens || []} esfera="cagec" />
-                </div>
-              </details>
-            </li>
-          );
-        })}
-      </Lista>
-    </div>
   );
 }
 
@@ -728,6 +810,201 @@ interface ContasResp {
   }>;
 }
 
+/** As SUB-ABAS de entidade: prefeitura, fundo de saúde, FMAS.
+ *
+ *  ⚠️ Elas existem porque cada entidade tem cadastro PRÓPRIO e trava apenas o
+ *  SEU convênio — prefeitura regular não libera o convênio da saúde com o fundo
+ *  irregular. Enquanto tudo ficava numa lista só, a situação do fundo era uma
+ *  linha discreta embaixo de um banner verde. A marca vermelha no rótulo é o
+ *  que permite escolher a aba certa sem abrir as três. */
+function SubAbasEntidade({ opcoes, ativa, onChange }: {
+  opcoes: Array<{ id: string; label: string; alerta?: boolean }>;
+  ativa: string;
+  onChange: (id: string) => void;
+}) {
+  if (opcoes.length < 2) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-1.5" role="tablist">
+      {opcoes.map((o) => {
+        const sel = o.id === ativa;
+        return (
+          <button
+            key={o.id}
+            type="button"
+            role="tab"
+            aria-selected={sel}
+            onClick={() => onChange(o.id)}
+            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-medium transition-colors"
+            style={{
+              background: sel ? "var(--bi-surface-2)" : "transparent",
+              border: `1px solid ${sel ? "var(--bi-line-strong)" : "var(--bi-line)"}`,
+              color: sel ? "var(--bi-text)" : "var(--bi-muted)",
+            }}
+          >
+            {o.alerta && (
+              <span aria-hidden style={{ color: "var(--bi-crit-ink)" }}>●</span>
+            )}
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Um cadastro negativo (CADIN ou CFIL) para UMA entidade.
+ *
+ *  ⚠️ TRÊS ESTADOS, e a diferença entre eles é o produto:
+ *    pendente       — consta inscrição: trava, e a tela diz quem inscreveu;
+ *    regular        — nada consta NA DATA da consulta (não há validade);
+ *    indeterminado  — a certidão saiu e não conseguimos ler. Verde aqui seria
+ *                     afirmar ausência de inscrição a partir do que não se leu. */
+function CadastroNegativo({ item, cat }: {
+  item: NegativoItem;
+  cat?: { sigla: string; nome: string; orgao?: string; lei?: string; trava?: string; origem?: string };
+}) {
+  const pendente = item.tipo === "pendente";
+  const indefinido = item.tipo === "indeterminado" || !item.tipo;
+  const tom = pendente ? "crit" : indefinido ? "warn" : "ok";
+  const d = item.detalhes || null;
+  return (
+    <Bloco
+      className="p-4"
+      style={{
+        background: `color-mix(in oklab, var(--bi-${tom}) 8%, transparent)`,
+        borderColor: `color-mix(in oklab, var(--bi-${tom}) 26%, transparent)`,
+      }}
+    >
+      <div className="flex items-start gap-2.5">
+        {pendente ? <AlertTriangle className="mt-0.5 size-4 shrink-0" style={{ color: "var(--bi-crit-ink)" }} />
+          : indefinido ? <Info className="mt-0.5 size-4 shrink-0" style={{ color: "var(--bi-warn-ink)" }} />
+          : <Check className="mt-0.5 size-4 shrink-0" style={{ color: "var(--bi-ok-ink)" }} />}
+        <div className="min-w-0 space-y-1.5">
+          <div className="bi-title text-[13px] leading-tight"
+               style={{ color: `var(--bi-${tom}-ink)` }}>
+            {item.situacao || "Sem informação"}
+            {cat ? ` — ${cat.sigla}` : ""}
+          </div>
+          <p className="text-[11px] leading-snug" style={{ color: "var(--bi-muted)" }}>
+            {item.entidade || "Entidade"}
+            {cat?.trava && (pendente ? <> — a inscrição <b>{cat.trava}</b>.</> : <> · a inscrição {cat.trava}.</>)}
+          </p>
+
+          {/* O QUE FAZER. Sem este quadro a tela diz que o ente está travado e
+              não diz por quem — o gestor fica sabendo do problema e não tem a
+              quem ligar. Só existe na certidão COM pendência. */}
+          {d && (
+            <div className="mt-1 space-y-0.5 rounded-lg px-3 py-2"
+                 style={{ background: "var(--bi-surface)" }}>
+              {d.orgao && (
+                <div className="text-[11px]" style={{ color: "var(--bi-text)" }}>
+                  Inscrito por <b>{d.orgao}</b>
+                  {d.inscrito_em ? <> em {d.inscrito_em}</> : null}
+                  {d.quantidade ? <> · {d.quantidade} pendência(s)</> : null}
+                </div>
+              )}
+              {d.contato && (
+                <div className="text-[11px]" style={{ color: "var(--bi-muted)" }}>
+                  Contato para sanar: <span style={{ color: "var(--bi-text)" }}>{d.contato}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {item.erro && (
+            <p className="text-[10px] leading-snug" style={{ color: "var(--bi-warn-ink)" }}>
+              {item.erro}
+            </p>
+          )}
+
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px]"
+               style={{ color: "var(--bi-faint)" }}>
+            {/* ⚠️ A DATA NÃO É DETALHE AQUI. A certidão não tem validade: ela
+                afirma a situação "na data de …". Sem este carimbo, uma consulta
+                de duas semanas atrás passa por situação de hoje. */}
+            <span>Consultado em {fmtDate(item.consultado_em)}</span>
+            {item.cnpj && <span className="font-mono">CNPJ {item.cnpj}</span>}
+            {cat?.lei && <span>{cat.lei}</span>}
+            {cat?.orgao && <span>{cat.orgao}</span>}
+          </div>
+          {cat?.origem && (
+            <p className="text-[10px] leading-snug" style={{ color: "var(--bi-faint)" }}>
+              {cat.origem}
+            </p>
+          )}
+        </div>
+      </div>
+    </Bloco>
+  );
+}
+
+/** Contas julgadas irregulares no tribunal de contas do estado.
+ *
+ *  ⚠️ GANHOU ABA PRÓPRIA porque estava escondido: o bloco só era desenhado no
+ *  ramo "estado sem fonte de cadastro" — ou seja, em MG e no RS, onde HÁ
+ *  cadastro, ele nunca aparecia, mesmo com contas listadas.
+ *
+ *  ⚠️ E É INDÍCIO, não documento: a lista diz quem TEM conta julgada irregular
+ *  e não atesta regularidade de quem não aparece nela. */
+function ContasIrregulares({ contas }: { contas: ContasResp }) {
+  if (!contas.tem_dados) {
+    return (
+      <Bloco className="p-4">
+        <div className="flex items-start gap-2.5">
+          <Info className="mt-0.5 size-4 shrink-0" style={{ color: "var(--bi-faint)" }} />
+          <div className="space-y-1.5">
+            <div className="bi-title text-[13px] leading-tight">Nenhuma conta listada</div>
+            <p className="text-[11px] leading-snug" style={{ color: "var(--bi-muted)" }}>
+              Não há conta julgada irregular listada para este município na fonte que
+              acompanhamos. <b>Isso não é atestado de regularidade</b>: a lista diz quem
+              aparece nela, e não que quem não aparece está em dia.
+            </p>
+          </div>
+        </div>
+      </Bloco>
+    );
+  }
+  return (
+    <Bloco className="p-4">
+      <div className="flex items-start gap-2.5">
+        <Gavel className="mt-0.5 size-4 shrink-0" style={{ color: "var(--bi-warn-ink)" }} />
+        <div className="min-w-0 space-y-1.5">
+          <div className="bi-title text-[13px] leading-tight">
+            {contas.total} conta(s) julgada(s) irregular(es) no {contas.fonte}
+          </div>
+          <p className="text-[11px] leading-snug" style={{ color: "var(--bi-muted)" }}>
+            {contas.prefeitura > 0
+              ? <>{contas.prefeitura} da <b>prefeitura</b></>
+              : <>nenhuma da prefeitura</>}
+            {contas.autarquias > 0 && <> · {contas.autarquias} de autarquias e fundos</>}
+            {contas.de_prefeito > 0 && <> · <b>{contas.de_prefeito} de prefeito ou ex-prefeito</b></>}
+            .{" "}
+            É <b>indício</b>, não a situação do município para convênio: a lista diz quem tem
+            conta julgada irregular, e <b>não</b> atesta regularidade de quem não aparece nela.
+          </p>
+          <ul className="space-y-1 pt-0.5">
+            {contas.itens.map((c, i) => (
+              <li key={i} className="text-[11px] leading-snug" style={{ color: "var(--bi-muted)" }}>
+                <span style={{ color: "var(--bi-text)" }}>{c.entidade || "Prefeitura"}</span>
+                {c.responsavel ? ` · ${c.responsavel}` : ""}
+                {c.assunto ? ` · ${c.assunto}` : ""}
+                {c.processo ? ` · proc. ${c.processo}` : ""}
+                {c.url && (
+                  <a href={c.url} target="_blank" rel="noopener noreferrer"
+                     className="ml-1 inline-flex items-center gap-0.5"
+                     style={{ color: "var(--bi-accent-ink)" }}>
+                    ver <ExternalLink className="size-3" />
+                  </a>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </Bloco>
+  );
+}
+
 export default function RegularidadePage() {
   const { municipioId } = useMunicipio();
 
@@ -756,7 +1033,27 @@ export default function RegularidadePage() {
      "apto" falso na frente de um prefeito. */
   const [contas, setContas] = useState<ContasResp | null>(null);
   const [tesouro, setTesouro] = useState<SiconfiResp | null>(null);
+  const [negativos, setNegativos] = useState<NegativosResp | null>(null);
   const [loading, setLoading] = useState(true);
+  /* ⚠️ A ABA VIVE NA URL (`?aba=`). Sem isso, um link mandado para o
+     jurídico ("olha o CADIN do fundo") abre no CAUC, e a pessoa tem de
+     procurar — e o F5 no meio de uma conferência joga de volta para a
+     primeira aba. */
+  const params = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const [aba, setAbaState] = useState<string>(params.get("aba") || "cauc");
+  const setAba = useCallback((id: string) => {
+    setAbaState(id);
+    const p = new URLSearchParams(params.toString());
+    p.set("aba", id);
+    router.replace(`${pathname}?${p.toString()}`, { scroll: false });
+  }, [params, pathname, router]);
+  /* A entidade escolhida dentro da aba (prefeitura / fundo / autarquia). Fica
+     por aba: quem está olhando o fundo no CADIN não quer voltar à prefeitura
+     ao abrir o cadastro estadual. */
+  const [entidadeAtiva, setEntidadeAtiva] = useState<Record<string, string>>({});
+  const [consultando, setConsultando] = useState(false);
 
   useEffect(() => {
     // Busca de dados: os setState aqui são o "carregando" da primeira pintura e
@@ -775,22 +1072,143 @@ export default function RegularidadePage() {
       api.get<CagecResp>("/cagec", { params: { municipio_id: municipioId } }),
       api.get<ContasResp>("/contas-irregulares", { params: { municipio_id: municipioId } }),
       api.get<SiconfiResp>("/siconfi", { params: { municipio_id: municipioId } }),
-    ]).then(([a, b, c, d]) => {
+      api.get<NegativosResp>("/cadastros-negativos", { params: { municipio_id: municipioId } }),
+    ]).then(([a, b, c, d, e]) => {
       setCauc(a.status === "fulfilled" ? a.value.data : null);
       setCagec(b.status === "fulfilled" ? b.value.data : null);
       setContas(c.status === "fulfilled" ? c.value.data : null);
       setTesouro(d.status === "fulfilled" ? d.value.data : null);
+      setNegativos(e.status === "fulfilled" ? e.value.data : null);
     }).finally(() => setLoading(false));
   }, [municipioId]);
+
+  /* ⚠️ SÓ NO RS, e o servidor recusa fora dele. Em Minas o CADIN vem dentro do
+     CRC, e emitir CRC é a rodada do CAGEC (Playwright) — não cabe num clique.
+     O botão existe porque a certidão gaúcha NÃO TEM VALIDADE: ela afirma a
+     situação "na data de …", então numa reunião a de ontem não serve. */
+  const consultarAgora = useCallback(async () => {
+    if (!municipioId || consultando) return;
+    setConsultando(true);
+    try {
+      const { data } = await api.post<NegativosResp>(
+        "/cadastros-negativos/refresh", null, { params: { municipio_id: municipioId } });
+      if (data?.tem_dados !== undefined) setNegativos(data);
+    } catch {
+      /* Silêncio proposital: o payload antigo continua na tela com o carimbo
+         da data dele, que é honesto. Um erro vermelho aqui apagaria o dado
+         bom por causa de um portal fora do ar. */
+    } finally {
+      setConsultando(false);
+    }
+  }, [municipioId, consultando]);
+
+  /* ---------------------------------------------------------------------
+     AS ABAS. Uma por CADASTRO, e não uma tela só com tudo empilhado.
+     Antes eram duas colunas (CAUC | estadual) mais dois blocos soltos; com
+     CADIN e CFIL entrando, e cada um deles tendo uma linha POR ENTIDADE, a
+     página passaria de sessenta linhas de documento numa rolagem só.
+     A regra do dono: "a pessoa entra no menu Regularidade e tem as abas".
+
+     ⚠️ A ABA SÓ EXISTE ONDE O CADASTRO EXISTE. `cadastros_previstos` vem do
+     servidor (por UF): CFIL é gaúcho, e uma aba vazia com esse nome num
+     município mineiro afirmaria que falta coletar algo que não se aplica. */
+  const negPorFonte = useMemo(() => {
+    const m: Record<string, NegativoItem[]> = {};
+    for (const i of negativos?.itens || []) (m[i.fonte] ||= []).push(i);
+    return m;
+  }, [negativos]);
+  const fontesNegativas = useMemo(() => {
+    const s = new Set<string>([...(negativos?.cadastros_previstos || []),
+                               ...Object.keys(negPorFonte)]);
+    return [...s];
+  }, [negativos, negPorFonte]);
+  const fontesCadin = fontesNegativas.filter((f) => f.startsWith("CADIN"));
+  const fontesCfil = fontesNegativas.filter((f) => f.startsWith("CFIL"));
+  /* As chaves de dependência dos `useMemo`: array não é comparável por
+     identidade entre renders, e o lint exige expressão simples. */
+  const chaveCadin = fontesCadin.join(",");
+  const chaveCfil = fontesCfil.join(",");
+  const alertaDe = (fontes: string[]) =>
+    fontes.some((f) => (negPorFonte[f] || []).some((i) => i.tipo === "pendente"));
+
+  const abas = useMemo(() => {
+    const lista: Array<{ id: string; label: string; sub: string; alerta: boolean }> = [
+      { id: "cauc", label: "CAUC", sub: "União",
+        alerta: !!cauc?.tem_dados && !cauc.regular },
+      { id: "estadual", label: siglaEst,
+        sub: NOME_UF[ufDoMunicipio] || "estadual",
+        /* O alerta considera TODAS as entidades: prefeitura regular com fundo
+           irregular não é "em dia" — o convênio daquele fundo está travado. */
+        alerta: !!cagec?.tem_dados
+          && (cagec.regular === false
+              || (cagec.entidades || []).some((e) => e.regular === false)) },
+    ];
+    if (fontesCadin.length)
+      lista.push({ id: "cadin", label: "CADIN", sub: "cadastro informativo",
+                   alerta: alertaDe(fontesCadin) });
+    if (fontesCfil.length)
+      lista.push({ id: "cfil", label: "CFIL", sub: "impedidos de licitar",
+                   alerta: alertaDe(fontesCfil) });
+    lista.push({ id: "contas", label: "Contas irregulares", sub: "tribunal de contas",
+                 alerta: !!contas?.tem_dados && contas.total > 0 });
+    lista.push({ id: "tesouro", label: "Tesouro Nacional", sub: "CAPAG e contas entregues",
+                 alerta: false });
+    return lista;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cauc, cagec, contas, negativos, siglaEst, ufDoMunicipio, chaveCadin, chaveCfil]);
+
+  /* Aba de URL que não existe neste município (um link de Nova Palma aberto
+     num ambiente de Minas pede `?aba=cfil`) volta para a primeira, em vez de
+     desenhar a tela vazia. */
+  useEffect(() => {
+    if (!loading && abas.length && !abas.some((a) => a.id === aba)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setAbaState("cauc");
+    }
+  }, [abas, aba, loading]);
+
+  /** As entidades de uma aba, com a prefeitura primeiro e a marca de quem tem
+   *  pendência — é o que permite escolher a certa sem abrir as três. */
+  const entidadesDaAba = useCallback((id: string) => {
+    if (id === "estadual") {
+      const es = cagec?.entidades || [];
+      return es.map((e) => ({
+        id: e.cnpj || e.nome || "",
+        label: e.principal ? "Prefeitura" : (e.tipo || e.nome || "Entidade"),
+        alerta: e.regular === false,
+      }));
+    }
+    const fontes = id === "cadin" ? fontesCadin : id === "cfil" ? fontesCfil : [];
+    const vistos = new Map<string, { id: string; label: string; alerta: boolean }>();
+    for (const f of fontes) {
+      for (const i of negPorFonte[f] || []) {
+        const atual = vistos.get(i.cnpj);
+        const alerta = i.tipo === "pendente" || atual?.alerta || false;
+        vistos.set(i.cnpj, {
+          id: i.cnpj,
+          label: i.entidade || i.cnpj,
+          alerta,
+        });
+      }
+    }
+    return [...vistos.values()];
+  }, [cagec, negPorFonte, fontesCadin, fontesCfil]);
+
+  const entidadeDa = (id: string) => {
+    const opcoes = entidadesDaAba(id);
+    const escolhida = entidadeAtiva[id];
+    return opcoes.some((o) => o.id === escolhida) ? escolhida : (opcoes[0]?.id || "");
+  };
 
   return (
     <div className="space-y-4">
       <div className="border-b pb-4" style={{ borderColor: "var(--bi-line)" }}>
-        <TituloTela>Regularidade de Documentação</TituloTela>
+        <TituloTela>Regularidade</TituloTela>
         <p className="mt-1 text-sm" style={{ color: "var(--bi-muted)" }}>
-          Exigências para assinar convênio nas duas esferas: a <strong>federal</strong>{" "}
-          (CAUC, Tesouro Nacional) e a <strong>estadual</strong> — o cadastro de
-          convenentes do estado deste município, nomeado na coluna ao lado.
+          Exigências para assinar convênio, uma aba por cadastro: a <strong>federal</strong>{" "}
+          (CAUC), a <strong>estadual</strong> — o cadastro de convenentes do estado deste
+          município —, os <strong>cadastros negativos</strong> (CADIN, CFIL) e o{" "}
+          <strong>Tesouro Nacional</strong> (CAPAG e contas entregues).
         </p>
       </div>
 
@@ -802,10 +1220,42 @@ export default function RegularidadePage() {
         </div>
       )}
 
+      {/* A BARRA DE ABAS — mesmo desenho do Painel de Indicadores
+          (`bi-folder-tab`), para o sistema ter UMA gramática de abas. O ponto
+          vermelho no rótulo é o que faz a barra valer: sem ele, saber onde há
+          pendência exigiria abrir as cinco. */}
       {municipioId && !loading && (
-        <div className="grid gap-4 xl:grid-cols-2">
+        <div
+          className="bi-folder-tabs flex flex-wrap items-end gap-1 border-b"
+          style={{ borderColor: "var(--bi-line)" }}
+          role="tablist"
+        >
+          {abas.map((a) => (
+            <button
+              key={a.id}
+              type="button"
+              role="tab"
+              aria-selected={a.id === aba}
+              data-active={a.id === aba}
+              className="bi-folder-tab text-[13px]"
+              onClick={() => setAba(a.id)}
+              title={a.sub}
+            >
+              <span className="inline-flex items-center gap-1.5">
+                {a.alerta && (
+                  <span aria-hidden style={{ color: "var(--bi-crit-ink)" }}>●</span>
+                )}
+                {a.label}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {municipioId && !loading && (
+        <div className="space-y-4">
           {/* ---------------- CAUC (federal) ---------------- */}
-          <section className="space-y-2.5">
+          <section className={aba === "cauc" ? "space-y-2.5" : "hidden"}>
             <div className="flex flex-wrap items-baseline gap-x-2">
               {/* 14px é o tamanho de título do <BlocoHead>: este h2 encabeça a
                   coluna inteira e tem que ler como cabeçalho do sistema, não
@@ -837,7 +1287,7 @@ export default function RegularidadePage() {
           </section>
 
           {/* ---------------- Cadastro estadual (CAGEC em MG, CHE no RS) ---------------- */}
-          <section className="space-y-2.5">
+          <section className={aba === "estadual" ? "space-y-2.5" : "hidden"}>
             <div className="flex flex-wrap items-baseline gap-x-2">
               {/* ⚠️ O TÍTULO É DO AMBIENTE ABERTO, e "CAGEC" é nome de Minas
                   (Decreto 44.293/2006) — não do produto. Num ambiente do ES ou
@@ -961,50 +1411,145 @@ export default function RegularidadePage() {
               </Bloco>
             ) : (
               <>
-                <Situacao
-                  regular={!!cagec.regular}
-                  /* A PALAVRA da fonte com o nome do cadastro do estado: "Regular
-                     no CAGEC" em Minas, "Habilitado no CHE" no RS — cada portal
-                     tem o seu vocabulário e a tela existe para ser conferida
-                     contra ele. */
-                  titulo={cagec.regular
-                    ? `${cagec.situacao || "Regular"} no ${siglaEst}`
-                    : (cagec.situacao || `${cagec.pendencias} pendência(s)`)}
-                  /* `validade` NÃO é a validade do certificado — o CRC não tem uma.
-                     É a data mais próxima entre as obrigações ainda vigentes, ou
-                     seja, o próximo prazo a segurar. Chamar de "certificado válido
-                     até" faria o gestor achar que tem até lá para tudo. */
-                  /* O banner fala do cadastro da PREFEITURA. Se um fundo estiver
-                     irregular, "Regular no CAGEC" seria lido como "o município
-                     está liberado" — e não está: o convênio daquele fundo
-                     continua travado. Por isso a pendência das outras entidades
-                     entra aqui, no lugar mais visível da coluna. */
-                  detalhe={`${cagec.nome}/${cagec.uf}` + (cagec.validade
-                    ? ` — próxima obrigação a vencer: ${fmtDate(cagec.validade)}.`
-                    : ` — ${nomeCadastroEst} (${NOME_UF[ufDoMunicipio] || ufDoMunicipio}).`)
-                    + (cagec.pendencias_outras_entidades
-                      ? ` Atenção: outra(s) entidade(s) do município somam ${cagec.pendencias_outras_entidades} pendência(s) — veja abaixo.`
-                      : "")}
+                {/* ⚠️ UMA SUB-ABA POR ENTIDADE, decisão do dono: "as
+                    regularidades dos fundos também, uma em cada aba, para
+                    separar da do município". Cada entidade tem cadastro próprio
+                    e trava apenas o SEU convênio — enquanto tudo ficava numa
+                    lista só, a situação do fundo era uma linha discreta embaixo
+                    de um banner verde da prefeitura. */}
+                <SubAbasEntidade
+                  opcoes={entidadesDaAba("estadual")}
+                  ativa={entidadeDa("estadual")}
+                  onChange={(id) => setEntidadeAtiva((s) => ({ ...s, estadual: id }))}
                 />
-                <AvisoCrc crcErro={cagec.crc_erro} crcEm={cagec.crc_em}
-                  doCrc={cagec.detalhe_do_crc} />
-                <Exigencias itens={cagec.itens || []} esfera="cagec" />
-                <OutrasEntidades entidades={cagec.entidades || []} />
-                {/* Em Minas a lista vem do CRC daquela data; no RS não há
-                    certificado — `crc_em` é o dia em que as validades foram
-                    lidas do portal. Dizer "CRC" ali seria inventar documento. */}
-                {cagec.crc_em && (
-                  <p className="text-[10px]" style={{ color: "var(--bi-faint)" }}>
-                    {certificadoEst
-                      ? `Documentos conferidos no ${certificadoEst} de ${fmtDate(cagec.crc_em)}.`
-                      : `Validades consultadas no portal do ${siglaEst} em ${fmtDate(cagec.crc_em)}.`}
-                  </p>
-                )}
+                {(() => {
+                  const ents = cagec.entidades || [];
+                  const sel = ents.find((e) => (e.cnpj || e.nome || "") === entidadeDa("estadual"))
+                    || ents.find((e) => e.principal) || ents[0];
+                  if (!sel) return null;
+                  const pendSel = (sel.itens || []).filter((i) => i.tipo === "pendente").length;
+                  return (
+                    <>
+                      <Situacao
+                        regular={sel.regular === true}
+                        titulo={sel.regular
+                          ? `${sel.situacao || "Regular"} no ${siglaEst}`
+                          : (sel.situacao || `${pendSel} pendência(s)`)}
+                        detalhe={`${sel.nome || cagec.nome}` + (sel.tipo ? ` · ${sel.tipo}` : "")
+                          + (sel.validade
+                            ? ` — próxima obrigação a vencer: ${fmtDate(sel.validade)}.`
+                            : ` — ${nomeCadastroEst} (${NOME_UF[ufDoMunicipio] || ufDoMunicipio}).`)
+                          + (sel.numero_cadastro ? ` Cadastro nº ${sel.numero_cadastro}.` : "")}
+                      />
+                      <AvisoCrc crcErro={sel.crc_erro} crcEm={sel.crc_em}
+                        doCrc={sel.detalhe_do_crc} />
+                      <Exigencias itens={sel.itens || []} esfera="cagec" />
+                      {sel.crc_em && (
+                        <p className="text-[10px]" style={{ color: "var(--bi-faint)" }}>
+                          {certificadoEst
+                            ? `Documentos conferidos no ${certificadoEst} de ${fmtDate(sel.crc_em)}.`
+                            : `Validades consultadas no portal do ${siglaEst} em ${fmtDate(sel.crc_em)}.`}
+                        </p>
+                      )}
+                    </>
+                  );
+                })()}
               </>
             )}
           </section>
+
+          {/* ---------------- CADIN e CFIL (cadastros negativos) ---------------- */}
+          {["cadin", "cfil"].map((qual) => {
+            const fontes = qual === "cadin" ? fontesCadin : fontesCfil;
+            if (!fontes.length) return null;
+            const opcoes = entidadesDaAba(qual);
+            const ent = entidadeDa(qual);
+            const doEnte = fontes
+              .map((f) => (negPorFonte[f] || []).find((i) => i.cnpj === ent))
+              .filter(Boolean) as NegativoItem[];
+            return (
+              <section key={qual} className={aba === qual ? "space-y-2.5" : "hidden"}>
+                <div className="flex flex-wrap items-baseline gap-x-2">
+                  <h2 className="bi-title flex items-center gap-1.5 text-[14px]">
+                    <FileSearch className="size-3.5" style={{ color: "var(--bi-muted)" }} />
+                    {fontes.map((f) => negativos?.catalogo?.[f]?.sigla || f).join(" · ")}
+                  </h2>
+                  <SeloColeta em={negativos?.consultado_em} />
+                  <span className="text-[10px]" style={{ color: "var(--bi-faint)" }}>
+                    {negativos?.catalogo?.[fontes[0]]?.nome}
+                  </span>
+                  {/* Só o RS: em Minas o CADIN vem do CRC, e emitir CRC é a
+                      rodada do CAGEC — não cabe num clique síncrono. */}
+                  {ufDoMunicipio === "RS" && (
+                    <button
+                      type="button"
+                      onClick={consultarAgora}
+                      disabled={consultando}
+                      className="ml-auto inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold bi-hover"
+                      style={{ background: "var(--bi-surface)", border: "1px solid var(--bi-line)",
+                               color: "var(--bi-text)", opacity: consultando ? 0.6 : 1 }}
+                      title="Emite a certidão agora — ela vale para a data em que é emitida"
+                    >
+                      {consultando
+                        ? <Loader2 className="size-3.5 animate-spin" />
+                        : <RefreshCw className="size-3.5" />}
+                      {consultando ? "Consultando…" : "Consultar agora"}
+                    </button>
+                  )}
+                </div>
+
+                {!negativos?.tem_dados ? (
+                  <Bloco className="p-4">
+                    <div className="flex items-start gap-2.5">
+                      <Clock className="mt-0.5 size-4 shrink-0" style={{ color: "var(--bi-warn-ink)" }} />
+                      <div className="space-y-1.5">
+                        <div className="bi-title text-[13px] leading-tight">Aguardando consulta</div>
+                        <p className="text-[11px] leading-snug" style={{ color: "var(--bi-muted)" }}>
+                          {negativos?.motivo || "Ainda não consultado."}
+                        </p>
+                      </div>
+                    </div>
+                  </Bloco>
+                ) : (
+                  <>
+                    <SubAbasEntidade
+                      opcoes={opcoes}
+                      ativa={ent}
+                      onChange={(id) => setEntidadeAtiva((s) => ({ ...s, [qual]: id }))}
+                    />
+                    {doEnte.length ? doEnte.map((i) => (
+                      <CadastroNegativo key={`${i.fonte}-${i.cnpj}`} item={i}
+                        cat={negativos?.catalogo?.[i.fonte]} />
+                    )) : (
+                      <Vazio>Sem consulta registrada para esta entidade.</Vazio>
+                    )}
+                    <p className="text-[10px]" style={{ color: "var(--bi-faint)" }}>
+                      A certidão não tem prazo de validade: ela afirma a situação
+                      <b> na data em que foi emitida</b>. Por isso a consulta é diária
+                      {ufDoMunicipio === "RS" && " e existe o botão de consultar agora"}.
+                    </p>
+                  </>
+                )}
+              </section>
+            );
+          })}
+
+          {/* ---------------- Contas irregulares (tribunal de contas) ---------------- */}
+          <section className={aba === "contas" ? "space-y-2.5" : "hidden"}>
+            <div className="flex flex-wrap items-baseline gap-x-2">
+              <h2 className="bi-title flex items-center gap-1.5 text-[14px]">
+                <Gavel className="size-3.5" style={{ color: "var(--bi-muted)" }} />
+                Contas julgadas irregulares
+              </h2>
+              <span className="text-[10px]" style={{ color: "var(--bi-faint)" }}>
+                {contas?.fonte || "tribunal de contas do estado"} · indício, não documento
+              </span>
+            </div>
+            {contas ? <ContasIrregulares contas={contas} /> : <Vazio>Sem dados.</Vazio>}
+          </section>
         </div>
       )}
+
 
       {/* ---------------- Tesouro Nacional (SICONFI) ----------------
           Largura inteira, e abaixo das duas colunas, porque responde a uma
@@ -1012,7 +1557,7 @@ export default function RegularidadePage() {
           documentação está em dia; a CAPAG diz se o município aguenta tomar
           crédito, e o extrato de entregas diz O QUE foi entregue e quando —
           que é o detalhe que falta ao "irregular na obrigação 3.2.2" do CAUC. */}
-      {municipioId && !loading && (
+      {municipioId && !loading && aba === "tesouro" && (
         <section className="space-y-2.5">
           <div className="flex flex-wrap items-baseline gap-x-2">
             <h2 className="bi-title flex items-center gap-1.5 text-[14px]">
@@ -1048,17 +1593,27 @@ export default function RegularidadePage() {
           ) : (
             <div className="space-y-2.5">
               {tesouro.capag && <Capag capag={tesouro.capag} />}
-              {tesouro.exercicios?.[0] && <ContasNoTesouro ano={tesouro.exercicios[0]} />}
+              {/* ⚠️ TODOS OS EXERCÍCIOS COLETADOS, e não só o mais recente. O
+                  ano corrente sempre parece incompleto (o 6º bimestre ainda não
+                  venceu), e sem o ano fechado ao lado não há como saber se
+                  falta entrega ou falta calendário. */}
+              {(tesouro.exercicios || []).map((ano) => (
+                <ContasNoTesouro key={ano.exercicio} ano={ano} />
+              ))}
               <p className="text-[10px]" style={{ color: "var(--bi-faint)" }}>
                 Fonte: SICONFI / Secretaria do Tesouro Nacional. A CAPAG é publicada algumas
                 vezes por ano; as entregas são atualizadas a cada envio do município.
+                Clique num demonstrativo para ver período a período.
               </p>
             </div>
           )}
         </section>
       )}
 
-      {municipioId && !loading && (
+      {/* A legenda explica os SÍMBOLOS da lista de exigências — só faz sentido
+          nas duas abas que desenham essa lista. Nas de CADIN/CFIL (que têm uma
+          frase, não uma lista) e na do Tesouro ela seria ruído. */}
+      {municipioId && !loading && (aba === "cauc" || aba === "estadual") && (
         <div
           className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px]"
           style={{ color: "var(--bi-faint)" }}
