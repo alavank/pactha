@@ -620,6 +620,30 @@ entre tenants de 5 para **30 min** (santamaria 03:05, novapalma 03:35, montesiã
 trust 04:35, freitas 05:05 UTC). Com rodadas de 12-15 min, os 5 min de antes fariam os
 cinco tenants varrerem a fonte federal ao mesmo tempo, do mesmo IP.
 
+### ⚠️ `percentual_execucao` ficou NULO em 538 de 538 obras por um sufixo (07/09/2026)
+
+O #408 prometeu o percentual de avanço físico. O rodízio passou por `execucao-fisica`
+em 06/09 e a coluna continuou vazia em **538 de 538** obras do freitas. Causa: o
+coletor lia `percentual_execucao` e o campo da fonte é `percentual_execucao_**fisica**`.
+
+⚠️ **E não houve erro em log nenhum.** `.get()` de chave inexistente devolve `None`, que
+nesta base significa "a fonte não informou" — o defeito era indistinguível de um dado
+que a fonte não publica. Só apareceu porque alguém foi conferir o número.
+
+⚠️⚠️ **E o teste passava.** Ele montava o payload com `percentual_execucao` — o nome que
+o *código* usava, deduzido do código em vez de capturado da fonte. Um teste escrito
+assim confirma o bug em vez de pegá-lo.
+
+A lição, que vale para todo coletor: **payload de teste se captura da resposta real da
+fonte, nunca se deduz do código que se quer testar.** Os quatro testes novos
+(`test_os_nomes_dos_campos_lidos_existem_na_fonte`,
+`test_payload_com_o_nome_ANTIGO_nao_preenche`) foram verificados por mutação — voltando
+o nome errado, quatro deles quebram.
+
+Os campos de `/empenho` (`valor_empenho`, `liquidado`, `pago`, `rpinscrito`) foram
+conferidos um a um contra a resposta real e estão certos — daí `valor_empenhado` estar
+preenchido em 237 obras enquanto o percentual estava em zero.
+
 ## 1.12. FASE 4 — Gestão de Parcerias (a emenda de saúde que faltava)
 
 O módulo de Parcerias é a fonte onde as transferências passaram a ser processadas
