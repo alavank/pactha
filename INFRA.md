@@ -405,6 +405,27 @@ de uma vez ao dia; não há download em massa (os botões de exportar só existe
 depois de uma busca). Onde o portal fica e as armadilhas dele:
 `backend/ingestion/cagec_scraper.py`.
 
+**`parcerias`** (Gestão de Parcerias do Transferegov.br · 07/09/2026): Scheduled Task
+**nos 5 workers**, escada de 30 min — freitas 06:00, trust 06:30, montesião 07:00,
+santa maria 07:30, **nova palma 08:30** UTC, com `timeout -k 30 1500`. Lock próprio
+(`/tmp/parcerias.lock`): é `httpx` puro, sem login e sem navegador.
+
+> ⭐ **É onde a emenda de saúde do município vive.** O módulo processa as transferências
+> de 2024 em diante — 144 dos 176 programas publicados são Fundo a Fundo da Saúde — e
+> era o único instrumento federal invisível à plataforma. Em Nova Palma são 11
+> propostas, R$ 2,18 mi, **11 de 11 com emenda e parlamentar identificados**.
+>
+> ⚠️ **NÃO entra por CNPJ, e essa é a diferença para a Transferência Especial.** As 11
+> propostas de Nova Palma são todas do FUNDO MUNICIPAL DA SAUDE (`12240183000100`),
+> não da prefeitura (`88488358000156`): um coletor que casasse por `municipios.cnpj`
+> não acharia nenhuma. O `cd_ibge_recebedor` filtra no servidor e o vínculo vem pronto.
+>
+> ⚠️ **A execução financeira ficou de fora por custo medido.** Os tenants têm 547
+> (freitas) e 706 (trust) propostas; buscar os 8 filhos de cada uma custaria 27 e 35
+> min, contra ~420s e ~530s do núcleo. O `/extrato-bancario` sozinho tem **1.275.217
+> registros** (6.377 páginas) — varrer a fonte inteira, o que funciona no Obras.gov,
+> aqui é inviável.
+
 **`siconfi`** (contas entregues no Tesouro + CAPAG · 07/09/2026): Scheduled Task **nos 5
 workers**, escada de 30 min — **freitas 00:30, trust 01:00, montesiao 01:30**, santamaria
 02:00, novapalma 02:30 UTC. Lock próprio (`/tmp/siconfi.lock`): é `httpx` puro, sem login
