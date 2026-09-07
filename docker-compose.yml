@@ -70,7 +70,7 @@ services:
       DATABASE_URL_SYNC: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       COFRE_KEY: ${COFRE_KEY}
       SIGCON_DATASET_URL: https://dados.mg.gov.br/dataset/convenios-saida
-      TRANSFEREGOV_BASE_URL: http://repositorio.dados.gov.br/seges/detru/
+      TRANSFEREGOV_DADOS_URL: https://api-publica.transferegov.gestao.gov.br/downloads/dadosgov
     depends_on:
       db:
         condition: service_healthy

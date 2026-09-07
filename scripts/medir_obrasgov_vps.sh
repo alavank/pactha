@@ -1,37 +1,37 @@
 #!/usr/bin/env bash
-# OBRAS.GOV.BR — o 429 e penalidade acumulada ou recusa a datacenter?
+# OBRAS.GOV.BR — o host novo responde bem do IP da VPS?
 #
-# POR QUE ESTA MEDICAO EXISTE. Na bateria de 03/09/2026, a API devolveu 429 na
-# PRIMEIRA requisicao feita da VPS. Isso nao distingue duas causas com
-# consequencias opostas:
+# HISTORICO. Na bateria de 03/09/2026, `api.obrasgov.gestao.gov.br` devolveu
+# 429 na PRIMEIRA requisicao feita da VPS. A migracao para
+# `api-publica.obrasgov.gestao.gov.br/obras` (04/09/2026) resolveu isso em
+# producao — ver `backend/ingestion/obrasgov.py` e `INFRA.md` §5 — e o host
+# antigo hoje devolve 429 permanente (confirmado em 06/09/2026, de fora da
+# VPS). Este script deixou de servir para diagnosticar o host antigo.
 #
-#   (a) PENALIDADE ACUMULADA no IP. O `INFRA.md` §5 documenta a API de
-#       Transferencias Especiais deixando esta mesma VPS **mais de 6 horas** de
-#       castigo depois de rodadas encadeadas — e requisicao rejeitada RENOVA a
-#       pena. Se for isso, o coletor funciona: basta espacar.
-#   (b) RECUSA IMEDIATA a faixa de datacenter, como o TCE-RS faz. Se for isso, o
-#       coletor nao funciona daqui, e a Scheduled Tarefa nao deve ser criada.
+# PARA QUE SERVE AGORA. O host novo fica atras de Cloudflare, e o `dados.tce.
+# rs.gov.br` ja ensinou que resposta de IP residencial nao prova nada sobre o
+# IP da VPS. Antes de estender a coleta do Obras.gov.br (mais endpoints) ou de
+# migrar outro modulo do TransfereGov (Especiais, Parcerias, Fundo a Fundo,
+# mesmo dominio `api-publica.*.gestao.gov.br`) para producao, confirme daqui
+# que o host novo responde bem — e nao apenas da maquina de casa.
 #
 # COMO LER O RESULTADO:
 #
-#   * Algum 200 nas tres tentativas  -> e (a). O rate limit e vencivel com
-#     espacamento, e o coletor pode ser ligado (ele ja espaca 8s por pagina e
-#     tem backoff de ate 120s no 429).
-#   * 429 nas tres, com 90s de intervalo -> e (b), ou uma penalidade longa. Nos
-#     dois casos: nao ligar ainda, e repetir esta medicao depois de algumas
-#     horas de silencio total do IP.
+#   * 200 nas tres tentativas -> o host novo trata o IP da VPS igual ao IP
+#     residencial. Pode prosseguir com a extensao/migracao planejada.
+#   * 429 ou 403 -> o host novo pune ou bloqueia faixa de datacenter, como o
+#     TCE-RS. Nao prosseguir; investigar antes de agendar qualquer coleta.
 #
-# ⚠️ TRES REQUISICOES, COM 90s ENTRE ELAS, E SO ISSO. Nao aumente o numero nem
-# reduza a espera "para ter mais dados": sob penalidade, cada tentativa RENOVA o
-# castigo — foi exatamente assim que o IP ficou 6h bloqueado no TransfereGov.
+# Ainda assim, TRES REQUISICOES COM 90s ENTRE ELAS — o habito de nao martelar
+# fonte federal vale mesmo quando ela nao esta mostrando sinal de penalidade.
 #
 # Rodar de casa (o `!` no Claude Code ja serve):
 #     ssh -i ~/.ssh/coolify_localhost root@54.232.208.118 'bash -s' \
 #       < scripts/medir_obrasgov_vps.sh
 
-URL="https://api.obrasgov.gestao.gov.br/obrasgov/api/projeto-investimento?uf=RS&pagina=0&tamanhoDaPagina=5"
+URL="https://api-publica.obrasgov.gestao.gov.br/obras/projeto-investimento?uf_principal=RS&pagina=1&tamanho_da_pagina=5"
 
-echo "== Obras.gov.br a partir de $(curl -s --max-time 20 https://api.ipify.org || echo '?')"
+echo "== Obras.gov.br (host novo) a partir de $(curl -s --max-time 20 https://api.ipify.org || echo '?')"
 echo "== $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
 echo
 
@@ -43,13 +43,13 @@ for i in 1 2 3; do
     -H 'User-Agent: Mozilla/5.0 (PACTHA/1.0 medicao de rate limit)' \
     "$URL"
   if [ "$i" -lt 3 ]; then
-    echo "   (aguardando 90s — sob penalidade, tentar de novo cedo demais RENOVA o castigo)"
+    echo "   (aguardando 90s — nao ha motivo para martelar fonte federal)"
     sleep 90
   fi
 done
 
 echo
-echo "-- amostra do que voltou na ultima tentativa (vazio = 429):"
+echo "-- amostra do que voltou na ultima tentativa (vazio = bloqueio):"
 head -c 300 /tmp/obrasgov_medicao.json 2>/dev/null || echo "(sem corpo)"
 echo
 echo
