@@ -11,7 +11,7 @@ from routers import (
     session_capture, emendas_estaduais, dou_mg, dou_es, dou_go, dou_to, dou_rs,
     fns, transferegov, emendas_federais, export_pdf,
     users, simec, rm, ai, gestao, parlamentares, status_changes,
-    documentos, cauc, cagec, siconfi, acordofes, control, freshness, painel, bi,
+    documentos, cauc, cagec, siconfi, negativos, acordofes, control, freshness, painel, bi,
     sismob, obrasgov, parcerias, faf_planos, investsus, auditoria, permissoes,
     repasses,
     contas_irregulares,
@@ -215,6 +215,12 @@ app.include_router(cagec.router)
 # Terceira coluna da MESMA tela de regularidade (chave `cauc.ver`,
 # tela `cauc`): contas entregues ao Tesouro e nota CAPAG.
 app.include_router(siconfi.router)
+# QUARTA coluna da mesma tela: os cadastros NEGATIVOS (CADIN-MG, CADIN/RS,
+# CFIL/RS). Pergunta diferente das outras tres — nao "esta em dia?", e sim
+# "existe pendencia inscrita contra ele?" —, e que trava sozinha: a unica
+# inscricao real da carteira em 07/09/2026 era de um fundo municipal que nem
+# cadastro estadual tem.
+app.include_router(negativos.router)
 app.include_router(sismob.router)   # /api/sismob/* (obras de saude do MS)
 # /api/obrasgov/* (CIPI): as obras federais de TODAS as areas — o que o SISMOB
 # (saude) e o SIMEC (educacao) nao cobrem. Repete de proposito a obra que ja

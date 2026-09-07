@@ -141,6 +141,12 @@ FRESCOR_HORAS_POR_UF = {
     "GO": {"transfvol_go": 30, "cofin_ses_go": 30, "tcm_go": 30},
     "RS": {
         "che_rs": 30,          # 3x/dia; 30h = cinco janelas perdidas
+        # CADIN/RS + CFIL/RS (certidao publica da CAGE). Roda 1x/dia junto do
+        # CHE; 30h = um dia + folga. ⚠️ Aqui o frescor vale MAIS que nas outras
+        # fontes: a certidao NAO TEM VALIDADE — ela afirma a situacao "na data
+        # de", e so. Uma coleta parada nao envelhece um prazo, ela deixa de
+        # responder a pergunta.
+        "cadin_rs": 30,
         "convenios_rs": 30,    # 1x/dia (a CAGE republica o dump esporadicamente)
         # ⚠️ 1x/dia e SO de segunda a sabado (o FPE fecha aos domingos e fora do
         # horario comercial). 54h cobre o fim de semana sem alarme falso: a

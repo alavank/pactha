@@ -866,6 +866,71 @@ def _salvar(cur, mun: dict, cnpj_fmt: str, situacao: str | None, nome: str | Non
         "crc_ok": crc_ok,
         "preservar": preservar,
     })
+    if crc_ok:
+        _salvar_cadin_mg(cur, mun, cnpj_fmt, nome, itens, hoje)
+
+
+# CADIN-MG do CRC -> `cadastro_negativo`, a MESMA tabela do CADIN/CFIL gaúchos.
+#
+# ⚠️ NÃO É DUPLICAÇÃO DE DADO, É A ABA DE CADIN EXISTINDO NOS DOIS ESTADOS. Em
+# Minas o CADIN não tem consulta própria viável (o portal da Fazenda é formulário
+# com CAPTCHA) — quem o entrega é o CRC do CAGEC, como uma linha entre as ~27.
+# No RS ele é certidão própria. Sem um lugar comum, a tela precisaria de duas
+# implementações da mesma aba, e a de Minas seria a que ninguém lembraria de
+# atualizar. O item continua também em `cagec_situacao.itens`: lá ele é uma
+# obrigação do certificado, aqui é o cadastro negativo — as duas leituras são
+# verdadeiras e cada tela usa a sua.
+_SQL_CADIN_MG = """
+INSERT INTO cadastro_negativo (municipio_id, cnpj, entidade, uf, fonte, tipo,
+                               situacao, quantidade, detalhes, consultado_em,
+                               erro, atualizado_em)
+VALUES (%(mid)s, %(cnpj)s, %(entidade)s, %(uf)s, 'CADIN-MG', %(tipo)s,
+        %(situacao)s, NULL, NULL, %(em)s, NULL, NOW())
+ON CONFLICT (municipio_id, cnpj, fonte) DO UPDATE SET
+    entidade = COALESCE(EXCLUDED.entidade, cadastro_negativo.entidade),
+    uf = EXCLUDED.uf, tipo = EXCLUDED.tipo, situacao = EXCLUDED.situacao,
+    consultado_em = EXCLUDED.consultado_em, erro = NULL, atualizado_em = NOW()
+"""
+
+
+def _salvar_cadin_mg(cur, mun: dict, cnpj_fmt: str, nome: str | None,
+                     itens: list[dict], hoje) -> None:
+    """Espelha a linha CADIN-MG do CRC na tabela de cadastros negativos.
+
+    Só quando o CRC foi lido AGORA (`crc_ok`): num fallback o detalhamento é
+    preservado com a data antiga, e carimbar `consultado_em` de hoje sobre uma
+    leitura de duas semanas atrás afirmaria uma consulta que não houve.
+
+    Best-effort **com SAVEPOINT**, e o savepoint não é zelo: no Postgres, um
+    comando que falha aborta a transação INTEIRA, e um `rollback()` aqui levaria
+    junto o upsert do CAGEC deste município — a coleta boa perdida por causa do
+    espelho. Tabela ausente (worker que subiu antes da migration) tem de custar
+    uma linha de log, nada mais."""
+    linha = next((i for i in itens if (i.get("codigo") or "") == "CADIN-MG"), None)
+    if not linha:
+        return
+    tipo = linha.get("tipo") or "indeterminado"
+    try:
+        cur.execute("SAVEPOINT sp_cadin_mg")
+        cur.execute(_SQL_CADIN_MG, {
+            "mid": mun["id"], "cnpj": _so_digitos(cnpj_fmt),
+            "entidade": nome or mun["nome"], "uf": mun.get("uf") or "MG",
+            "tipo": tipo,
+            # O CRC diz "Regular"/"Irregular" na linha do CADIN; a frase da tela
+            # é a mesma dos gaúchos para o gestor não ter de traduzir duas
+            # linguagens na mesma aba.
+            "situacao": ("Nada consta" if tipo == "regular"
+                         else "Consta inscrição" if tipo == "pendente"
+                         else (linha.get("status") or "Não informado")),
+            "em": hoje,
+        })
+        cur.execute("RELEASE SAVEPOINT sp_cadin_mg")
+    except Exception as e:
+        try:
+            cur.execute("ROLLBACK TO SAVEPOINT sp_cadin_mg")
+        except Exception:
+            pass
+        logger.info("    (CADIN-MG nao espelhado em cadastro_negativo: %s)", str(e)[:90])
 
 
 def _limpar_sumidos(cur, municipio_id: int, cnpjs_vistos: list[str]) -> int:
