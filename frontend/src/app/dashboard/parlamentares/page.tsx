@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useCallback, Suspense } from "react";
+import React, { useEffect, useState, useCallback, useRef, Suspense } from "react";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { anosOpcoes, atalhosAnos, inicioDoMandato, resumoAnos } from "@/lib/periodo";
@@ -332,9 +332,21 @@ function ParlamentaresInner() {
   const [compErro, setCompErro] = useState<string | null>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
-  const [detailCache, setDetailCache] = useState<Record<string, ParlamentarDetalhe | "loading" | "error">>({});
+  const [detailCache, setDetailCache] = useState<Record<string, ParlamentarDetalhe | "loading" | "error" | "vazio">>({});
+
+  /* ⚠️ QUAL BUSCA É A CORRENTE. A tela dispara `carregar()` DUAS vezes ao
+     abrir: uma antes de `useAnoCorrentePadrao` definir o ano (sem filtro) e
+     outra depois (com 2026). Se a primeira — mais pesada, porque varre todos os
+     anos — responder por último, a LISTA fica sem filtro enquanto o DETALHE,
+     pedido depois, respeita o ano.
+     Foi o que apareceu em Araújos/MG: o cartão de «Newton Cardoso Jr» dizia 8
+     lançamentos e R$ 2,28 mi, mas os lançamentos dele são de 2020, 2016 e 2015
+     — nenhum em 2026. Ao expandir, o detalhe filtrava por 2026, não achava nada
+     e a tela mostrava «Erro». */
+  const buscaAtual = useRef(0);
 
   const carregar = useCallback(async () => {
+    const meuTurno = ++buscaAtual.current;
     setLoading(true);
     try {
       const params: Record<string, string | string[]> = {};
@@ -344,15 +356,21 @@ function ParlamentaresInner() {
       params.tipo = tipoLista;
       const r = await api.get<{ items: ParlamentarItem[]; contagem?: { parlamentar: number; outro: number } }>(
         "/parlamentares", { params });
+      // Resposta de uma busca já substituída não pode pintar a tela.
+      if (meuTurno !== buscaAtual.current) return;
       setItems(r.data.items);
       // A contagem vem SEMPRE dos dois lados, mesmo filtrando um — e o que
       // permite o seletor dizer "Outros (2)" sem uma segunda chamada.
       if (r.data.contagem) setContagem(r.data.contagem);
+      // ⚠️ Detalhe em cache foi buscado com OUTRO filtro de ano: some com ele,
+      // ou o cartão reabre mostrando lançamento que o filtro atual exclui.
+      setDetailCache({});
     } catch (e) {
       console.error("erro parlamentares", e);
+      if (meuTurno !== buscaAtual.current) return;
       setItems([]);
     } finally {
-      setLoading(false);
+      if (meuTurno === buscaAtual.current) setLoading(false);
     }
   }, [municipioId, search, anosSel, tipoLista]);
 
@@ -441,7 +459,7 @@ function ParlamentaresInner() {
     // Cache com uma excecao: "error" NAO conta como carregado. Antes qualquer
     // valor no cache barrava a nova busca, entao o "tente novamente" da mensagem
     // era mentira — reabrir o cartao devolvia o mesmo erro sem chamar a API.
-    if (detailCache[k] && detailCache[k] !== "error") return;
+    if (detailCache[k] && detailCache[k] !== "error" && detailCache[k] !== "vazio") return;
     setDetailCache((c) => ({ ...c, [k]: "loading" }));
     try {
       const params: Record<string, string | string[]> = {};
@@ -452,6 +470,15 @@ function ParlamentaresInner() {
       const r = await api.get<ParlamentarDetalhe>(`/parlamentares/${nome}`, { params });
       setDetailCache((c) => ({ ...c, [k]: r.data }));
     } catch (e) {
+      /* ⚠️ 404 AQUI NÃO É FALHA, É AUSÊNCIA: o backend responde 404 quando o
+         parlamentar não tem lançamento no filtro pedido. Tratar como erro fazia
+         a tela dizer «Não foi possível carregar» e mandar tentar de novo — o
+         que nunca resolveria, porque não havia nada a carregar. */
+      const st = (e as { response?: { status?: number } })?.response?.status;
+      if (st === 404) {
+        setDetailCache((c) => ({ ...c, [k]: "vazio" }));
+        return;
+      }
       console.error("erro detalhe", e);
       setDetailCache((c) => ({ ...c, [k]: "error" }));
     }
@@ -912,6 +939,18 @@ function ParlamentaresInner() {
                       <div className="flex flex-wrap items-center justify-center gap-1.5 py-4 text-[12px]" style={{ color: "var(--bi-muted)" }}>
                         <Selo tom="critico">Erro</Selo>
                         Não foi possível carregar os lançamentos. Feche e abra o cartão para tentar de novo.
+                      </div>
+                    )}
+                    {/* ⚠️ AUSÊNCIA NÃO É ERRO, e dizer «erro» aqui mandava o
+                        gestor tentar de novo uma coisa que nunca ia funcionar —
+                        não havia o que carregar. A mensagem nomeia o filtro,
+                        porque é ele que está escondendo os lançamentos. */}
+                    {detail === "vazio" && (
+                      <div className="flex flex-wrap items-center justify-center gap-1.5 py-4 text-center text-[12px]" style={{ color: "var(--bi-muted)" }}>
+                        <Selo tom="neutro">Sem lançamentos</Selo>
+                        {anosSel.length
+                          ? `Este parlamentar não tem lançamentos em ${anosSel.join(", ")}. Limpe o filtro de anos para ver os demais.`
+                          : "Este parlamentar não tem lançamentos neste município."}
                       </div>
                     )}
                     {detail && typeof detail === "object" && (
