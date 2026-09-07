@@ -544,6 +544,82 @@ dos dois lados (CNPJ na linha **e** no município) e respeitando `municipio_enti
 residencial, e o host novo está atrás de Cloudflare — o TCE-RS já ensinou que isso muda
 tudo.
 
+## 1.11. A SESSÃO DE 07/09/2026 (Obras.gov.br — fase 3 da migração de APIs)
+
+O coletor usava **1 dos 8 endpoints** da API. A fase 3 acrescentou os outros sete e,
+no caminho, corrigiu uma afirmação que estava no cabeçalho do próprio arquivo desde
+04/09.
+
+**O filtro territorial existe — só não está onde se procurou.** A armadilha nº 1 do
+`ingestion/obrasgov.py` dizia *"NÃO EXISTE FILTRO TERRITORIAL"*, e isso é verdade para
+`/projeto-investimento` (que ignora `codigo_ibge` e devolve o estado inteiro com HTTP
+200). Mas o `/geometria` filtra de verdade:
+
+    /geometria sem filtro ........... 216.278
+    /geometria?cod_ibge=4313102 .....      26
+    /geometria?cod_ibge=9999999 .....       0   (não devolve tudo)
+
+**E ele não substitui o CNPJ, soma-se a ele.** Medido nos três tenants:
+
+| município | por CNPJ | por geometria | só CNPJ | só geometria |
+|---|---|---|---|---|
+| Nova Palma | 30 | 26 | 5 | 1 |
+| Santa Maria | 78 | 436 | 7 | **365** |
+| Monte Sião | 5 | 8 | 0 | 3 |
+
+Os 365 extras de Santa Maria são obras federais **no território** de outros entes —
+UFSM, DNIT, IF Farroupilha, Receita Federal, Comando da Aeronáutica. Decisão do dono:
+entram, **marcadas** por `vinculo` ('prefeitura' | 'territorio' | 'abrangencia'). Sem a
+marca, seria repetir por outro caminho o erro que o arquivo já documenta — obra da
+UFSM posando de obra da prefeitura.
+
+**O terceiro valor do `vinculo` nasceu de medição.** Amostra de 124 projetos da
+carteira do freitas: 102 com geometria em UM município, 15 em 2 a 5, e **3 em mais de
+cem** — `324.31-80` ("Manutenção rodoviária na malha federal do DNIT em MG", 790
+municípios), FUNASA (202) e uma consultoria de PE (312). O primeiro sozinho cai em 41
+dos 42 municípios do freitas: gravá-lo como obra em Araújos seria o mesmo ruído 41
+vezes. Corte em 20 (`OBRASGOV_ABRANGENCIA_MAX`).
+
+**A chave virou `(municipio_id, id_unico)`** — a troca que `add_obrasgov.sql` previu no
+próprio cabeçalho ("*registrado aqui para que a troca seja uma decisão, e não uma
+descoberta*"). Chegou a hora porque o freitas tem 42 municípios ativos e o território
+multiplica a obra intermunicipal: com a chave global, 40 dos 41 donos do `324.31-80`
+perderiam a obra em silêncio.
+
+**A fase de detalhe varre a fonte inteira e casa em memória**, em vez de perguntar
+projeto a projeto — contra 2.180 requisições só em Santa Maria (~13 min, crescendo com
+a carteira). Sequencial por decisão do dono, mesmo com a VPS nova de 8 núcleos: o
+gargalo é latência de rede, não CPU, e paralelizar contra fonte federal é o que a skill
+`ingestion` proíbe.
+
+⚠️ **A ESTIMATIVA ERROU POR MAIS DO DOBRO, e a medição contra a fonte mudou o
+desenho.** Eu disse ~450s para os cinco endpoints; o real é **1.020s**:
+
+    execucao-fisica ...... 384s    71.743 linhas    3 da carteira (Nova Palma)
+    empenho .............. 301s    89.477 linhas  650
+    estudo-viabilidade ... 276s    78.227 linhas    3
+    contrato .............. 30s     7.624 linhas   73
+    historico-paralisada .. 29s     8.000 linhas    0
+
+Daí saíram duas correções. **Rodízio:** os dois baratos (60s juntos) vão toda rodada e
+os três caros se revezam, um por noite — varrer os cinco todo dia seria 17 min por
+tenant, com os cinco baixando as mesmas 1.278 páginas da mesma fonte federal. Cada
+endpoint caro se atualiza a cada três dias, frequência de sobra para percentual de obra.
+**Teto próprio de páginas:** o `/empenho` tem 448 páginas e o `TETO_PAGINAS` de 400
+cortava a varredura em 80.000 linhas — o coletor gravaria empenho faltando e diria
+apenas "PARCIAL" numa linha de log.
+
+**Dois defeitos meus, pegos antes de ir ao ar:** o log do `httpx` despejaria 1.278
+linhas por rodada, enterrando o resultado (silenciado, como `sismob_obras` já fazia); e
+o loop só olhava os projetos da varredura da UF — mas a `uf_principal` nem sempre é a
+do território (o `123265.26-04` é de PE e tem geometria em MG), então os territoriais
+de outra UF sumiriam. Agora são buscados um a um.
+
+**Infra mudada junto:** `timeout` das tasks de 900/1200 para **1800s**, e a escada
+entre tenants de 5 para **30 min** (santamaria 03:05, novapalma 03:35, montesião 04:05,
+trust 04:35, freitas 05:05 UTC). Com rodadas de 12-15 min, os 5 min de antes fariam os
+cinco tenants varrerem a fonte federal ao mesmo tempo, do mesmo IP.
+
 ## 2. ESTADO ATUAL (2026-09-04)
 
 **São CINCO tenants em produção**, todos do mesmo código, cada um com containers e banco próprios:

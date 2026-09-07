@@ -518,6 +518,16 @@ MIGRATION_FILES = [
     # TODOS. Achado ao rodar o siconfi no freitas pela primeira vez (07/09/2026).
     # Ver o cabecalho do .sql.
     "fix_siconfi_capag_notas_texto.sql",
+    # ⭐ OBRAS.GOV: vinculo territorial (o `/geometria` TEM filtro por IBGE, ao
+    # contrario do `/projeto-investimento`) + o detalhe dos 5 endpoints que a
+    # API publicava e nao liamos. Troca a chave natural para
+    # (municipio_id, id_unico) — a mudanca que `add_obrasgov.sql` ja previa no
+    # proprio cabecalho. Ver o .sql.
+    #
+    # ⚠️ DEPOIS de `add_obrasgov.sql`, que CRIA a tabela. Em banco novo, inverter
+    # faz o ALTER falhar contra tabela inexistente e o runner engole o erro —
+    # guardado por `tests/test_migrations_ordem_tabela.py`.
+    "add_obrasgov_territorio_e_detalhe.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",
