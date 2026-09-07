@@ -79,6 +79,7 @@ interface Resp {
   total?: number;
   valor_total?: number;
   valor_emenda?: number;
+  com_emenda?: number;
   por_parlamentar?: PorParlamentar[];
   por_situacao?: Array<{ situacao: string; qtd: number }>;
   total_listado?: number;
@@ -188,7 +189,22 @@ export default function ParceriasPage() {
             : undefined}
         />
         <Numero icon={Wallet} rotulo="Valor total" valor={brl(d.valor_total)} />
-        <Numero icon={HandCoins} rotulo="Em emendas" valor={brl(d.valor_emenda)} />
+        {/* ⚠️ A CONTAGEM, e não o valor — que seria o mesmo do cartão ao lado.
+            Nesta fonte o valor da proposta É o da emenda em quase toda linha
+            (538 de 547 no freitas, 691 de 706 no trust, 14 de 14 em Monte Sião),
+            então dois cartões com o mesmo número não informavam nada e faziam
+            quem lê desconfiar de erro — o dono desconfiou, olhando Nova Palma,
+            onde os dois davam R$ 2.184.085,00. «11 de 11» diz o que o valor
+            repetido não dizia: toda proposta tem parlamentar nomeado. */}
+        <Numero
+          icon={HandCoins}
+          rotulo="Com emenda identificada"
+          valor={`${d.com_emenda ?? 0} de ${d.total ?? 0}`}
+          sub={(d.total ?? 0) > 0 && d.com_emenda === d.total
+            ? "todas com parlamentar nomeado"
+            : `${(d.total ?? 0) - (d.com_emenda ?? 0)} sem emenda na fonte`}
+          tom={(d.total ?? 0) > 0 && d.com_emenda === d.total ? "ok" : "neutro"}
+        />
         <Numero icon={Users} rotulo="Parlamentares"
                 valor={String(ranking.length)} />
       </div>

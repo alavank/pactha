@@ -126,6 +126,8 @@ async def fetch_parcerias(db: AsyncSession, municipio_id: int) -> dict:
     total = total_emenda = 0.0
     fora_qtd = 0
     fora_valor = 0.0
+    # ⚠️ QUANTAS, e não quanto: ver o comentário de `com_emenda` na resposta.
+    com_emenda = 0
     for p in linhas:
         valor = _f(p["valor_total"])
         vl_emenda = _f(p["valor_emenda"])
@@ -170,6 +172,8 @@ async def fetch_parcerias(db: AsyncSession, municipio_id: int) -> dict:
                                    "tipo": p["tipo_emenda"]})
             e["propostas"] += 1
             e["valor"] += vl_emenda or 0
+        if municipal and p["numero_emenda"]:
+            com_emenda += 1
         sit = p["situacao"] or "Sem situação"
         por_situacao[sit] = por_situacao.get(sit, 0) + 1
 
@@ -184,6 +188,19 @@ async def fetch_parcerias(db: AsyncSession, municipio_id: int) -> dict:
         "total_listado": len(itens),
         "valor_total": round(total, 2),
         "valor_emenda": round(total_emenda, 2),
+        # ⚠️ QUANTAS PROPOSTAS TÊM EMENDA, e é isto que a tela mostra no lugar de
+        # repetir `valor_emenda` num cartão.
+        #
+        # Nesta fonte o valor da proposta É o valor da emenda em quase toda
+        # linha — medido em 07/09/2026: 538 de 547 no freitas, 691 de 706 no
+        # trust, 14 de 14 em Monte Sião. Dois cartões lado a lado com o MESMO
+        # número não informam nada e fazem quem lê desconfiar de erro (o dono
+        # desconfiou, olhando Nova Palma, onde os dois davam R$ 2.184.085,00).
+        #
+        # ⭐ A contagem informa onde o valor repetido não informava: em Nova
+        # Palma é "11 de 11" — toda proposta com parlamentar nomeado —, e no
+        # freitas é "510 de 547", que aponta as 37 sem emenda identificada.
+        "com_emenda": com_emenda,
         # ⭐ O RANKING É O PRODUTO DESTA TELA. Ordenado por valor, que é a
         # pergunta que o gestor faz — "quem trouxe mais para a cidade".
         "por_parlamentar": sorted(por_parlamentar.values(),
