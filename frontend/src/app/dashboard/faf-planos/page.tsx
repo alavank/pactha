@@ -163,22 +163,20 @@ export default function FafPlanosPage() {
   }, [d, orgao]);
 
   if (!municipioId) {
-    return <div className="p-6"><Vazio>Selecione um município.</Vazio></div>;
+    return <Vazio>Selecione um município.</Vazio>;
   }
   if (carregando) {
     return (
-      <div className="flex items-center gap-2 p-6 text-sm"
+      <div className="flex items-center gap-2 py-6 text-sm"
            style={{ color: "var(--bi-muted)" }}>
         <Loader2 className="size-4 animate-spin" /> Carregando planos de ação…
       </div>
     );
   }
-  if (erro) return <div className="p-6"><Vazio>{erro}</Vazio></div>;
+  if (erro) return <Vazio>{erro}</Vazio>;
   if (!d?.tem_dados) {
     return (
-      <div className="p-6">
-        <Vazio>{d?.motivo || "Sem planos de ação coletados para este município."}</Vazio>
-      </div>
+      <Vazio>{d?.motivo || "Sem planos de ação coletados para este município."}</Vazio>
     );
   }
 
@@ -187,30 +185,39 @@ export default function FafPlanosPage() {
   const maiorOrigem = Math.max(...origens.map((o) => o.valor), 1);
 
   return (
-    <div className="space-y-4 p-4 sm:p-6">
-      <Bloco>
-        <BlocoHead
-          icon={Wallet}
-          titulo="Planos de Ação (Fundo a Fundo)"
-          sub="Transferegov · o plano que justifica o repasse, e de onde o dinheiro vem"
-        />
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <Numero rotulo="Planos" valor={String(d.total ?? 0)} />
-          <Numero rotulo="Valor total" valor={brl(d.valor_total)} />
-          <Numero rotulo="Saldo disponível" valor={brl(d.valor_saldo)}
-                  sub="o que ainda não foi usado" />
-          {/* ⭐ Prestação de contas é o buraco que esta fonte preenche: a tabela
-              `prestacao_contas` é dropada a cada boot, e até aqui ela só existia
-              como texto dentro de um campo de situação. */}
-          <Numero rotulo="Com prestação de contas"
-                  valor={`${d.com_relatorio ?? 0} de ${d.total ?? 0}`} />
-        </div>
-      </Bloco>
+    <div className="flex flex-col gap-4">
+      {/* ⭐ CABEÇALHO SOLTO — ver a nota gêmea em `parcerias/page.tsx`. Os quatro
+          `Numero` já são `bi-card`; dentro de um `Bloco` viravam cartão dentro
+          de cartão, encostados na borda do de fora. */}
+      <header>
+        <h1 className="bi-title text-[18px]">Planos de Ação (Fundo a Fundo)</h1>
+        <p className="mt-1 max-w-3xl text-[12px] leading-snug"
+           style={{ color: "var(--bi-muted)" }}>
+          O plano que justifica cada repasse fundo a fundo — diagnóstico,
+          objetivos, vigência — e a <b>decomposição do valor</b> que o repasse
+          consolidado do Fundo Nacional de Saúde não separa: quanto veio de
+          emenda parlamentar, de repasse específico, de recursos próprios.
+          Apesar do nome, não é só saúde: cultura, segurança e educação também
+          repassam por aqui.
+        </p>
+      </header>
+
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Numero icon={Landmark} rotulo="Planos" valor={String(d.total ?? 0)} />
+        <Numero icon={Wallet} rotulo="Valor total" valor={brl(d.valor_total)} />
+        <Numero icon={PiggyBank} rotulo="Saldo disponível"
+                valor={brl(d.valor_saldo)} sub="o que ainda não foi usado" />
+        {/* ⭐ Prestação de contas é o buraco que esta fonte preenche: a tabela
+            `prestacao_contas` é dropada a cada boot, e até aqui ela só existia
+            como texto dentro de um campo de situação. */}
+        <Numero icon={FileCheck2} rotulo="Com prestação de contas"
+                valor={`${d.com_relatorio ?? 0} de ${d.total ?? 0}`} />
+      </div>
 
       {/* ⭐ A DECOMPOSIÇÃO É O PRODUTO DESTA TELA. O ConsultaFNS diz quanto
           entrou; só aqui se sabe quanto daquilo veio de emenda parlamentar. */}
       {origens.length > 0 && (
-        <Bloco>
+        <Bloco className="p-3">
           <BlocoHead
             icon={PiggyBank}
             titulo="De onde vem o dinheiro"
@@ -253,7 +260,7 @@ export default function FafPlanosPage() {
           soa SUS, mas em Nova Palma são quatro planos do Ministério da Cultura.
           Clicar filtra a lista abaixo. */}
       {orgaos.length > 0 && (
-        <Bloco>
+        <Bloco className="p-3">
           <BlocoHead
             icon={Building2}
             titulo="Por órgão repassador"
@@ -267,7 +274,7 @@ export default function FafPlanosPage() {
                 key={o.sigla}
                 titulo={orgao === o.sigla ? `${o.sigla} · filtrando` : o.sigla}
                 meta={o.orgao || undefined}
-                valor={brl(o.valor)}
+                valor={<span className="bi-num">{brl(o.valor)}</span>}
                 onClick={() => setOrgao(orgao === o.sigla ? "" : o.sigla)}
               />
             ))}
@@ -275,7 +282,7 @@ export default function FafPlanosPage() {
         </Bloco>
       )}
 
-      <Bloco>
+      <Bloco className="p-3">
         <BlocoHead
           icon={Landmark}
           titulo={orgao ? `Planos · ${orgao}` : "Planos de ação"}
@@ -283,112 +290,131 @@ export default function FafPlanosPage() {
         />
         <Lista>
           {itens.map((p) => (
-            <ItemLinha
-              key={p.id_plano_acao}
-              titulo={tituloDoPlano(p)}
-              meta={
-                <span className="flex flex-wrap items-center gap-1.5">
-                  <Selo tom={tomDoPlano(p.situacao)}>
-                    {humano(p.situacao) || "—"}
-                  </Selo>
-                  {p.sigla_orgao && (
-                    <Selo tom="neutro" title={p.orgao || undefined}>
-                      {p.sigla_orgao}
-                    </Selo>
-                  )}
-                  {p.relatorios.length > 0 && (
-                    <Selo tom="ok">
-                      <FileCheck2 className="mr-1 inline size-3" />
-                      {p.relatorios.length} relatório
-                      {p.relatorios.length > 1 ? "s" : ""}
-                    </Selo>
-                  )}
-                  {(p.inicio_vigencia || p.fim_vigencia) && (
-                    <span className="text-xs opacity-70">
-                      {dataBR(p.inicio_vigencia) || "?"} a{" "}
-                      {dataBR(p.fim_vigencia) || "?"}
-                    </span>
-                  )}
-                </span>
-              }
-              valor={brl(p.valor_total)}
-            >
-              <>
-                <Campos
-                  campos={[
-                    { rotulo: "Emenda parlamentar", valor: brl(p.valor_emenda) },
-                    { rotulo: "Repasse específico", valor: brl(p.valor_especifico) },
-                    { rotulo: "Repasse voluntário", valor: brl(p.valor_voluntario) },
-                    { rotulo: "Recursos próprios", valor: brl(p.valor_proprios) },
-                    { rotulo: "Rendimentos", valor: brl(p.valor_rendimentos) },
-                    { rotulo: "Custeio", valor: brl(p.valor_custeio) },
-                    { rotulo: "Investimento", valor: brl(p.valor_investimento) },
-                    { rotulo: "Saldo disponível", valor: brl(p.valor_saldo) },
-                    { rotulo: "Fundo repassador", valor: p.fundo },
-                    { rotulo: "Recebedor", valor: p.ente_recebedor },
-                    { rotulo: "Código do plano", valor: p.codigo },
-                  ].filter((c) => c.valor && c.valor !== "—" && c.valor !== "R$ 0,00")}
-                />
-
-                {/* ⭐ O TEXTO QUE O FNS NÃO PUBLICA: por que o repasse existe e
-                    o que o município se comprometeu a fazer com ele. */}
-                {(p.diagnostico || p.objetivos) && (
-                  <div className="mt-2 space-y-1.5 text-xs leading-relaxed"
-                       style={{ color: "var(--bi-muted)" }}>
-                    {p.diagnostico && <p><b>Diagnóstico:</b> {p.diagnostico}</p>}
-                    {p.objetivos && <p><b>Objetivos:</b> {p.objetivos}</p>}
-                  </div>
-                )}
-
-                {p.relatorios.length > 0 && (
-                  <div className="mt-2.5">
-                    <div className="mb-1 text-[11px] font-medium"
-                         style={{ color: "var(--bi-muted)" }}>
-                      Prestação de contas
-                    </div>
-                    <Lista>
-                      {p.relatorios.map((r, i) => (
-                        <ItemLinha
-                          key={r.id ?? i}
-                          titulo={`${humano(r.tipo) || "Relatório"}${
-                            r.data ? ` · ${dataBR(r.data)}` : ""}`}
-                          meta={
-                            <Selo tom={situacaoTom(r.situacao)}>
-                              {humano(r.situacao) || "—"}
-                            </Selo>
-                          }
-                          valor={r.valor_executado != null
-                            ? `executado ${brl(r.valor_executado)}` : undefined}
-                        >
-                          {r.resultados ? (
-                            <p className="text-xs leading-relaxed"
-                               style={{ color: "var(--bi-muted)" }}>
-                              {r.resultados}
-                            </p>
-                          ) : null}
-                        </ItemLinha>
-                      ))}
-                    </Lista>
-                  </div>
-                )}
-
-                {/* O link deixa qualquer número desta tela conferível na fonte —
-                    a mesma disciplina do `url_fonte` das Obras e das Parcerias. */}
-                <a
-                  href={p.url_fonte}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mt-2 inline-flex items-center gap-1 text-xs underline"
-                  style={{ color: "var(--bi-muted)" }}
-                >
-                  <ExternalLink className="size-3" /> ver na fonte
-                </a>
-              </>
-            </ItemLinha>
+            <LinhaPlano key={p.id_plano_acao} p={p} />
           ))}
         </Lista>
         {itens.length === 0 && <Vazio>Nenhum plano deste órgão.</Vazio>}
       </Bloco>
     </div>
+  );
+}
+
+/** Um plano na lista — FECHADO por padrão.
+ *
+ *  ⚠️ ERA ESTA A TELA MAIS MACHUCADA DAS DUAS. Cada plano abria com onze campos
+ *  em ONZE COLUNAS (`Campos` sem `cols` abre uma coluna por campo) e, logo
+ *  abaixo, o `diagnostico` e os `objetivos` INTEIROS — que na Lei Aldir Blanc
+ *  são dois parágrafos de texto legal transcritos por extenso. Quatro planos
+ *  davam quatro telas de rolagem de texto jurídico, e o número, que é o que a
+ *  tela existe para mostrar, ficava perdido no meio.
+ *
+ *  Fechado, o item é título + selos + valor. Aberto, ele entrega o dossiê
+ *  inteiro — nada foi removido, só deixou de ser obrigatório. */
+function LinhaPlano({ p }: { p: Plano }) {
+  const [aberto, setAberto] = useState(false);
+  return (
+    <ItemLinha
+      titulo={tituloDoPlano(p)}
+      valor={<span className="bi-num">{brl(p.valor_total)}</span>}
+      onClick={() => setAberto((v) => !v)}
+      expandido={aberto}
+      meta={
+        <span className="flex flex-wrap items-center gap-1.5">
+          <Selo tom={tomDoPlano(p.situacao)}>{humano(p.situacao) || "—"}</Selo>
+          {p.sigla_orgao && (
+            <Selo tom="neutro" title={p.orgao || undefined}>{p.sigla_orgao}</Selo>
+          )}
+          {p.relatorios.length > 0 && (
+            <Selo tom="ok">
+              <FileCheck2 className="mr-1 inline size-3" />
+              {p.relatorios.length} relatório
+              {p.relatorios.length > 1 ? "s" : ""}
+            </Selo>
+          )}
+          {(p.inicio_vigencia || p.fim_vigencia) && (
+            <span>
+              {dataBR(p.inicio_vigencia) || "?"} a {dataBR(p.fim_vigencia) || "?"}
+            </span>
+          )}
+        </span>
+      }
+    >
+      {aberto && (
+        <div className="mt-2 flex flex-col gap-2">
+          <Campos
+            cols={4}
+            campos={[
+              { rotulo: "Emenda parlamentar", valor: brl(p.valor_emenda) },
+              { rotulo: "Repasse específico", valor: brl(p.valor_especifico) },
+              { rotulo: "Repasse voluntário", valor: brl(p.valor_voluntario) },
+              { rotulo: "Recursos próprios", valor: brl(p.valor_proprios) },
+              { rotulo: "Rendimentos", valor: brl(p.valor_rendimentos) },
+              { rotulo: "Custeio", valor: brl(p.valor_custeio) },
+              { rotulo: "Investimento", valor: brl(p.valor_investimento) },
+              { rotulo: "Saldo disponível", valor: brl(p.valor_saldo) },
+              { rotulo: "Fundo repassador", valor: p.fundo },
+              { rotulo: "Recebedor", valor: p.ente_recebedor },
+              { rotulo: "Código do plano", valor: p.codigo, mono: true },
+            ].filter((c) => c.valor && c.valor !== "—" && c.valor !== "R$ 0,00")}
+          />
+
+          {/* ⭐ O TEXTO QUE O FNS NÃO PUBLICA: por que o repasse existe e o que o
+              município se comprometeu a fazer com ele. Fica atrás do clique
+              porque é dossiê, não linha de lista. */}
+          {(p.diagnostico || p.objetivos) && (
+            <div className="space-y-1.5 text-[11px] leading-relaxed"
+                 style={{ color: "var(--bi-muted)" }}>
+              {p.diagnostico && <p><b>Diagnóstico:</b> {p.diagnostico}</p>}
+              {p.objetivos && <p><b>Objetivos:</b> {p.objetivos}</p>}
+            </div>
+          )}
+
+          {p.relatorios.length > 0 && (
+            <div>
+              <div className="mb-1 text-[11px] font-medium"
+                   style={{ color: "var(--bi-muted)" }}>
+                Prestação de contas
+              </div>
+              <Lista>
+                {p.relatorios.map((r, i) => (
+                  <ItemLinha
+                    key={r.id ?? i}
+                    titulo={`${humano(r.tipo) || "Relatório"}${
+                      r.data ? ` · ${dataBR(r.data)}` : ""}`}
+                    meta={
+                      <Selo tom={situacaoTom(r.situacao)}>
+                        {humano(r.situacao) || "—"}
+                      </Selo>
+                    }
+                    valor={r.valor_executado != null
+                      ? <span className="bi-num">executado {brl(r.valor_executado)}</span>
+                      : undefined}
+                  >
+                    {r.resultados ? (
+                      <p className="mt-1 text-[11px] leading-relaxed"
+                         style={{ color: "var(--bi-faint)" }}>
+                        {r.resultados}
+                      </p>
+                    ) : null}
+                  </ItemLinha>
+                ))}
+              </Lista>
+            </div>
+          )}
+
+          {/* O link deixa qualquer número desta tela conferível na fonte — a
+              mesma disciplina do `url_fonte` das Obras e das Parcerias. */}
+          <a
+            href={p.url_fonte}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex w-fit items-center gap-1 text-[11px] underline"
+            style={{ color: "var(--bi-muted)" }}
+          >
+            <ExternalLink className="size-3" /> ver na fonte
+          </a>
+        </div>
+      )}
+    </ItemLinha>
   );
 }

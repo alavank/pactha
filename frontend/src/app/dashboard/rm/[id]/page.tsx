@@ -356,7 +356,11 @@ export default function RmEditorPage() {
         {rm.conteudo.partes.map((parte, pi) => {
           const popen = openPartes.has(pi);
           return (
-            <Bloco key={pi} className="overflow-hidden">
+            /* `p-0` é DELIBERADO e precisa continuar escrito: a faixa cinza do
+               cabeçalho da parte vai de borda a borda, e o padding padrão que o
+               `Bloco` passou a injetar (07/09/2026) a descolaria das laterais.
+               Escrever o padding é o que diz à peça "eu decido". */
+            <Bloco key={pi} className="overflow-hidden p-0">
               <div className="flex items-center gap-2 border-b p-2"
                    style={{ background: "var(--bi-surface-2)", borderColor: "var(--bi-line)" }}>
                 <button onClick={() => toggle(openPartes as Set<string | number>, pi, (s) => setOpenPartes(s as Set<number>))}>

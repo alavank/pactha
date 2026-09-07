@@ -138,7 +138,7 @@ export default function ServiceTokensPage() {
     s ? new Date(s).toLocaleString("pt-BR") : "-";
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="border-b pb-4" style={{ borderColor: "var(--bi-line)" }}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>

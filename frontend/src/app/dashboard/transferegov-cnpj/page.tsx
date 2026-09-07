@@ -241,7 +241,7 @@ export default function TransfereGovCnpjPage() {
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <div>
         <h1 className="text-2xl font-bold text-base-content flex items-center gap-2">
           <Building2 className="size-6" style={{ color: "var(--bi-muted)" }} /> Consulta TransfereGov por CNPJ

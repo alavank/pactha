@@ -374,24 +374,22 @@ export default function ObrasFederaisPage() {
   );
 
   if (!municipioId) {
-    return <div className="p-6"><Vazio>Selecione um município para ver as obras federais.</Vazio></div>;
+    return <Vazio>Selecione um município para ver as obras federais.</Vazio>;
   }
   if (carregando) {
     return (
-      <div className="flex items-center gap-2 p-6 text-[13px]"
+      <div className="flex items-center gap-2 py-6 text-[13px]"
            style={{ color: "var(--bi-muted)" }}>
         <Loader2 className="size-4 animate-spin" /> Carregando obras federais…
       </div>
     );
   }
   if (erro) {
-    return <div className="p-6"><Vazio>{erro}</Vazio></div>;
+    return <Vazio>{erro}</Vazio>;
   }
   if (!d?.tem_dados) {
     return (
-      <div className="p-6">
-        <Vazio>{d?.motivo || "Sem obras federais coletadas para este município."}</Vazio>
-      </div>
+      <Vazio>{d?.motivo || "Sem obras federais coletadas para este município."}</Vazio>
     );
   }
 
@@ -412,7 +410,7 @@ export default function ObrasFederaisPage() {
   ];
 
   return (
-    <div className="flex flex-col gap-4 p-4 md:p-6">
+    <div className="flex flex-col gap-4">
       <header>
         <h1 className="bi-title text-[18px]">Obras Federais</h1>
         <p className="mt-1 max-w-3xl text-[12px] leading-snug"

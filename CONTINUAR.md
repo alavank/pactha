@@ -2,7 +2,7 @@
 
 > Documento de contexto para a **próxima sessão de IA** (Claude Code) que for continuar este projeto.
 > É **auto-contido**: assuma que você (IA) não tem memória das sessões anteriores. Tudo que precisa está aqui.
-> Última atualização: 2026-09-05.
+> Última atualização: 2026-09-07.
 >
 > 📍 Para servidor, URLs, uuids, bancos e operações no Coolify, a fonte de verdade é o
 > **[`INFRA.md`](INFRA.md)** na raiz. Este arquivo cobre o *projeto*; o `INFRA.md` cobre a *infra*.
@@ -315,11 +315,11 @@ detalhada mora agora em **[`docs/agendamentos.md`](docs/agendamentos.md)** — a
 vale além deste módulo:
 
 - ⭐ **Fundo escopado precisa de contêiner SEM padding, senão vira um retângulo pintado.** O
-  módulo estava em `TELAS_LARGAS`, cujo contêiner põe `px-4 py-6 sm:px-6 lg:px-8` — então o
-  `.ag-modulo` pintava só a caixa dele e sobrava uma **moldura do cinza do sistema** em volta
-  (24px em cima e embaixo, e o que passasse de 1600px nas laterais). Margem negativa
-  resolvia só a horizontal. A rota passou para **`telaCheia`** (o mesmo mecanismo do Painel
-  de Indicadores) e o módulo cuida do próprio espaçamento.
+  módulo estava no contêiner comum, que põe padding — então o `.ag-modulo` pintava só a caixa
+  dele e sobrava uma **moldura do cinza do sistema** em volta, em cima, embaixo e nas
+  laterais. Margem negativa resolvia só a horizontal. A rota passou para **`telaCheia`** (o
+  mesmo mecanismo do Painel de Indicadores) e o módulo cuida do próprio espaçamento — hoje
+  copiando o `PADDING_PADRAO` do layout, para não ficar com margem diferente das demais.
   ⚠️ E lá dentro é **`h-screen`, não `h-full`**: o `<div key={escopo}>` que envolve a página
   é um bloco sem altura própria, e `height: 100%` sobre pai de altura automática resolve
   para `auto` — o módulo voltaria a nascer do tamanho do conteúdo.
@@ -883,6 +883,47 @@ que os coletores já tratam como "não consegui perguntar" e nunca como ausênci
 `tests/test_filtro_ignorado_em_silencio.py` lê o código dos três coletores e falha
 **nomeando** a consulta por IBGE/CNPJ que esquecer o teto — testado por mutação.
 Consulta por id do pai (`id_proposta`, `id_plano_acao`) fica sem teto de propósito.
+
+## 1.15. A ÁREA ÚTIL VIROU UMA SÓ (07/09/2026)
+
+Pedido do dono, com print e setas desenhadas por cima: *"cada um segue um tamanho, e isso
+não pode; tem que aproveitar a tela, tem que padronizar o layout e dimensão e margens e
+tamanho"*. A referência que ele mandou é o **Painel de Indicadores**.
+
+**O que havia.** `dashboard/layout.tsx` tinha **três regimes de largura** convivendo:
+`telaCheia` (largura toda), `telaLarga` (`max-w-[1600px]`, uma lista de rotas) e o padrão
+(`max-w-7xl`, 1216px úteis). Numa janela de 1920 isso dava **três margens esquerdas
+diferentes** conforme o item de menu clicado — ~32px no Painel, ~57px no TransfereGov e
+~185px em todo o resto. Trocar de tela empurrava o conteúdo lateralmente.
+
+**O que ficou.** Um `PADDING_PADRAO = "px-4 py-5 sm:px-6 lg:px-8"`, sem `max-w`, para toda
+tela que não seja `telaCheia`. `TELAS_LARGAS` **não existe mais** — não reintroduza uma
+lista de exceções de largura; ou o padrão muda para todas, ou volta o defeito.
+
+⚠️ A justificativa do `max-w-7xl` era **leitura de parágrafo** (~75 caracteres por linha), e
+ela não se sustentava: o PACTHA não tem tela de texto corrido, e onde há parágrafo ele já
+traz `max-w-3xl` PRÓPRIO (Obras, Emendas Federais, Gestão, Auditoria) — que é onde o limite
+pertence. Travar a página inteira custava ~700px de dado em todas as outras.
+
+⚠️ **`telaCheia` copia o `PADDING_PADRAO` por conta própria** (Painel e Agendamentos). Quem
+entrar lá assume o padding com as MESMAS classes.
+
+**As duas telas novas do TransfereGov saíram junto** (Parcerias e Planos de Ação, nascidas
+nas fases 4 e 5 acima). Elas tinham três defeitos que o container não explicava:
+
+- `p-4 sm:p-6` no wrapper da página **por cima** do padding do container — margem dobrada.
+  As de Obras e Emendas Federais tinham o mesmo, e também saiu.
+- **`<Bloco>` sem `className="p-3"`**: `.bi-card` é só fundo, borda, raio e sombra, e o
+  respiro sempre veio da classe que cada tela escrevia à mão. Sem ela, cartão interno colado
+  na borda do cartão de fora. **Agora o `Bloco` injeta `p-3` quando o `className` não traz
+  padding nenhum** — quem quer zero escreve `p-0` (ver `rm/[id]`).
+- **`<Campos>` sem `cols`**: o default era *uma coluna por campo*, e essas telas tinham 10 e
+  11 — onze colunas de ~150px, tudo em reticências. **O default passou a ter teto de 5**, e
+  as duas telas pedem `cols={4}`.
+
+E o **item de lista voltou a nascer fechado**: as duas despejavam todos os campos mais o
+`diagnostico`/`objetivos` inteiros (dois parágrafos de texto legal, na Aldir Blanc) em cada
+linha. Abrir no clique é o gesto que Obras e Emendas Federais já usavam.
 
 ## 2. ESTADO ATUAL (2026-09-04)
 
