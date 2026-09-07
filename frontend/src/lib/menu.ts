@@ -122,6 +122,14 @@ export const NAV_ITEMS: NavEntry[] = [
          mesma pergunta. Aquela mostra o convênio discricionário do SICONV,
          que continua vindo dos dumps CSV; esta, o instrumento novo. */
       { href: "/dashboard/parcerias", label: "Parcerias (emendas de saúde)" },
+      /* ⭐ PLANOS DE AÇÃO FUNDO A FUNDO (07/09/2026). O «Fundo Nacional de
+         Saúde», na pasta SAÚDE, conta o repasse que ENTRA; esta conta o plano
+         que o justifica — e a decomposição que diz quanto daquele dinheiro
+         veio de emenda, que é o número que o FNS não publica.
+         ⚠️ Fica em FEDERAIS e não em SAÚDE de propósito: o módulo cobre TODO
+         repasse fundo a fundo, e os 4 planos de Nova Palma são do Ministério
+         da Cultura (Lei Aldir Blanc), não do SUS. */
+      { href: "/dashboard/faf-planos", label: "Planos de Ação (Fundo a Fundo)" },
       { href: "/dashboard/transferegov-rejeitadas", label: "Rejeitadas" },
       { href: "/dashboard/transferegov-encerradas", label: "Encerradas" },
       { href: "/dashboard/transferegov-cnpj", label: "CNPJ" },

@@ -59,6 +59,7 @@ TELAS_CATALOG = [
     # MESMO TEXTO de `frontend/src/lib/telas.ts` — dois nomes para a mesma
     # chave fazem o administrador achar que sao duas permissoes diferentes.
     {"key": "parcerias", "label": "Parcerias (emendas de saúde)"},
+    {"key": "faf_planos", "label": "Planos de Ação (Fundo a Fundo)"},
     {"key": "acordofes", "label": "Acordo FES (dívida saúde MG)"},
     {"key": "fns", "label": "Fundo Nacional de Saúde"},
     # A 4ª tela da pasta SAÚDE do menu (#243). Ficou fora deste catálogo no
@@ -98,7 +99,7 @@ TELAS_TODAS = [
     # removido do codigo, tela removida dos tres catalogos.
     "dashboard", "ai", "parlamentares", "gestao", "agendamentos", "rm",
     "documentos", "convenios", "emendas", "cauc", "sismob",
-    "obrasgov", "parcerias",
+    "obrasgov", "parcerias", "faf_planos",
     # `suas` SAIU: o painel do MDS vive dentro de `paineis` (ver telas.ts).
     "acordofes", "fns", "investsus", "simec", "paineis", "bi", "bi_tela",
     "bi_link", "dou", "cofre", "sessoes", "auditoria",

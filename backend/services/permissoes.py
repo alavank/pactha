@@ -451,6 +451,12 @@ _RECURSOS: tuple = (
     _Recurso("parcerias", SEC_CONVENIOS, "Parcerias (emendas de saúde)",
              "as propostas e emendas do módulo de Parcerias", "",
              ("ver",), fonte="no Transferegov", tela="parcerias"),
+    # O plano de ação Fundo a Fundo (07/09/2026). ⚠️ Não é o repasse — esse é
+    # o `fns`. Aqui está o que o justifica, e a decomposição que diz quanto
+    # daquele dinheiro veio de emenda. Só `ver`, pelo mesmo critério.
+    _Recurso("faf_planos", SEC_CONVENIOS, "Planos de Ação (Fundo a Fundo)",
+             "os planos de ação e a origem do repasse fundo a fundo", "",
+             ("ver",), fonte="no Transferegov", tela="faf_planos"),
     _Recurso("acordofes", SEC_CONVENIOS, "Acordo FES (dívida da saúde MG)",
              "os créditos e parcelas do Acordo FES", "",
              ("ver", "exportar", "atualizar"), fonte="na SES-MG",

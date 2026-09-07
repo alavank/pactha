@@ -703,6 +703,42 @@ a comparação CNPJ × geometria do #408 — estavam corretas. O que precisou de
 foi a tabela de cobertura do #404 e o relatório em PDF: Monte Sião tem **14 propostas
 de Parcerias e 8 projetos com geometria**, não 7 e 15.
 
+**A TELA CHEGOU EM 07/09/2026** (`/dashboard/faf-planos`, `routers/faf_planos.py`),
+e o que ela abre é a **decomposição do dinheiro**: quanto daquele repasse veio de
+emenda parlamentar, de repasse específico, de voluntário, de recursos próprios e de
+rendimento de aplicação. É o número que o ConsultaFNS não publica. Abaixo dela vem
+«Por órgão repassador», que existe para desfazer o mal-entendido do nome — no trust
+os órgãos mais frequentes são MinC, SENASP (segurança), SPPE (trabalho), MCID e
+FNDE; o Ministério da Saúde não aparece no topo.
+
+### ⚠️ E a tela quase nasceu mentindo por um fator de 8
+
+Medindo a fonte para desenhar a tela, o total da carteira do trust deu **R$ 1,42
+bilhão** para 20 municípios. O filtro `codigo_ibge_municipio_ente_beneficiario_programa`
+devolve todo ente **sediado** na cidade — e a sede do governo estadual é a capital:
+
+| creditado a | ente | valor |
+|---|---|---:|
+| Goiânia | ESTADO DE GOIAS | R$ 470.381.305 |
+| Goiânia | SEC. DE ESTADO DA SEGURANÇA PÚBLICA | R$ 265.232.961 |
+| Goiânia | **MUNICIPIO DE GOIANIA** | **R$ 73.789.174** |
+| Palmas | SECRETARIA DA SEGURANÇA PÚBLICA (SSP/TO) | R$ 243.681.257 |
+| Palmas | ESTADO DO TOCANTINS | R$ 164.825.590 |
+| Palmas | **MUNICIPIO DE PALMAS** | **R$ 20.297.831** |
+
+Cerca de **85% do valor era dinheiro estadual**. E não havia o que aproveitar: o IBGE
+ali é a SEDE do ente, não onde o dinheiro é aplicado — um plano do Estado de Goiás é
+executado no estado inteiro.
+
+O que separa os dois é `descricao_tipo_unidade_ente_plano_acao`, com exatamente dois
+valores em toda a base ("Ente Municipal" e "Ente Estadual/Distrital"). O coletor passou
+a filtrar por ele (`e_do_municipio`, que devolve `True` no campo ausente — esvaziar a
+tela em silêncio seria pior) e `add_faf_esfera_ente.sql` apaga o que já tinha entrado.
+
+É o mesmo erro de chave que este repo já pagou duas vezes: **filtrar município por algo
+que descreve onde a entidade fica, em vez de de quem é o dinheiro** — as 379 obras da
+UFSM em Santa Maria, os 40.707 planos órfãos de `transferegov_te`.
+
 ## 1.14. O filtro que a fonte ignora em silêncio (07/09/2026)
 
 Achado ao construir a tela de Fundo a Fundo, medindo a API para saber o que mostrar.
