@@ -1,19 +1,43 @@
 """Coletor da TRANSFERENCIA ESPECIAL / EMENDA PIX (federal) -> tabela transferegov_te.
 
-Por que um coletor em vez de buscar ao vivo: a API "especiais"
-(especiais.transferegov.sistema.gov.br/.../public/plano-acao/listagem) RATE-LIMITA
-forte — bloqueia (403) depois de ~10 paginas seguidas, e concorrencia piora. Coletar
-MG inteiro (~8773 planos, ~44 paginas de 200) numa request web e inviavel. Aqui, no
-worker (cron), paginamos DEVAGAR com backoff no 403 e fazemos upsert incremental; se
-o gateway travar no meio, o progresso ja gravado fica e a proxima rodada continua.
+DUAS FONTES, DE PROPOSITO — e a divisao nao e arbitraria, ela segue onde cada
+uma e melhor (medido em 06/09/2026):
+
+  1. LISTAGEM (planos de acao) -> API PUBLICA OFICIAL, `api-publica.transferegov.
+     gestao.gov.br/especiais`. Publicada no Comunicado no 23/2026 do MGI.
+  2. PAGAMENTOS (documentos habeis -> OP/OB) -> continua na API interna da SPA
+     (`especiais.transferegov.sistema.gov.br/.../api/public`), porque so ela tem
+     o CPF do ordenador/gestor e o HISTORICO DE EVENTOS da ordem de pagamento.
+
+⭐ POR QUE A LISTAGEM MUDOU DE FONTE. A da SPA cobra caro por um dado que a
+oficial da de graca:
+
+    ate 05/09/2026 (SPA)                  desde aqui (API oficial)
+    ------------------------------------  ------------------------------------
+    36 paginas de 5 MB por UF             2 requisicoes por MUNICIPIO
+    403 apos ~10 paginas; IP da VPS       nenhum bloqueio observado
+      punido por >6h (INFRA.md §5)
+    25 de 42 rodadas parciais em 30 dias  —
+    municipio casado por SUBSTRING DE     municipio casado por CNPJ
+      NOME (628 de 890 linhas com CNPJ      (`municipios.cnpj` -> id_beneficiario)
+      divergente no tenant trust)
+    "Amplia??o De Sistema..."             "Ampliação De Sistema..."
+      (mojibake na propria fonte)
+
+⚠️ OS IDs SAO OS MESMOS NAS DUAS APIs — conferido campo a campo em 06/09/2026 na
+cadeia inteira: plano 3200 == 3200, empenho 62311 == 62311, documento habil 76255
+== 76255, OP/OB 53038 == 53038. E por isso que a troca de fonte NAO duplica linha
+(a PK e `plano_acao_id`) e que a fase de pagamentos, que entra pelo id do plano,
+continua funcionando sem uma linha de mudanca.
+
+⚠️ O VOCABULARIO DA SITUACAO DO PLANO DE TRABALHO NAO E O MESMO — ver
+`_SITUACAO_PT_PARA_CODIGO`. A oficial manda rotulo legivel ("Aprovado"), a SPA
+mandava codigo ("APROVADO"), e o RM le por SUBSTRING. Normalizamos para o codigo.
 
 O RM (services/rm_builder) e a tela (routers/transferegov.buscar) leem esta tabela.
 
-Params ATUAIS da API (mudaram — o formato antigo page/size da 403): pageNumber
-(1-based) / pageSize (teto 300; 200 e estavel) / uf. Ver memory te-emenda-pix-especiais.
-
-Rodar:  python -m ingestion.transferegov_te            (MG, default)
-        TE_UF=MG TE_PAGE_DELAY=2 python -m ingestion.transferegov_te
+Rodar:  python -m ingestion.transferegov_te
+        TE_MUNICIPIO=123 python -m ingestion.transferegov_te   (um municipio so)
 """
 from __future__ import annotations
 import os
@@ -29,14 +53,74 @@ import psycopg2
 logger = logging.getLogger("transferegov_te")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
-_API = ("https://especiais.transferegov.sistema.gov.br/"
-        "maisbrasil-transferencia-especial-backend/api/public/plano-acao/listagem")
+# Cabecalhos da API interna da SPA — usados SO pelos endpoints de pagamento
+# (`_API_DH` / `_API_OPOB`, mais abaixo). A listagem dela saiu deste coletor.
 _HEADERS = {
     "Accept": "application/json",
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0) Chrome/131 Safari/537.36",
     "Referer": "https://especiais.transferegov.sistema.gov.br/transferencia-especial/plano-acao/consulta",
 }
-_PAGE_SIZE = 200                 # teto estavel (>=400 -> 403; 300 falha na 2a pagina)
+
+# ---------------------------------------------------------------------------
+# API PUBLICA OFICIAL (Comunicado no 23/2026 do MGI) — a LISTAGEM vem daqui
+# ---------------------------------------------------------------------------
+# ⚠️ `api-publica`, e nao `api`. Mesma pegadinha do Obras.gov.br: o host sem o
+# prefixo e o que bloqueia (ver `ingestion/obrasgov.py`).
+_API_PUB = os.getenv("TE_API_PUBLICA",
+                     "https://api-publica.transferegov.gestao.gov.br/especiais")
+# Envelope de todo endpoint: {data, total_pages, total_items, page_number, page_size}.
+# `pagina` e 1-based e `tamanho_da_pagina` tem teto 200 (201 -> HTTP 422).
+_PUB_PAGE_SIZE = 200
+_PUB_DELAY = float(os.getenv("TE_PUB_DELAY", "0.3") or "0.3")
+
+# ⭐ O VOCABULARIO DA SITUACAO DO PLANO DE TRABALHO MUDOU COM A FONTE, e traduzir
+# nao e preciosismo: e o que impede o RM de perder plano em silencio.
+#
+# `services/rm_builder` decide o ESTAGIO do item procurando SUBSTRING no texto:
+#
+#     sit_efetivo = sit_trab if any(x in sit_trab.lower()
+#                    for x in ("empenh", "pag", "conclu", "finaliz", "execu"))
+#                   else sit
+#
+# O rotulo novo "Legado ADPF 854 STF / NT - TCU" nao contem nenhuma delas, onde o
+# codigo antigo "CONCLUIDO_NT_TCU" continha "conclu". Gravar o rotulo cru faria o
+# plano cair para a situacao do PLANO DE ACAO (quase sempre "CIENTE" = ativa), e
+# `_fed_retem` DESCARTA ativa de ano anterior ao do relatorio: o plano sumiria do
+# RM sem erro nenhum em log. E o mesmo tipo de falha muda que o proprio
+# rm_builder documenta no comentario do `row[8]`.
+#
+# O rm_builder tambem faz `sit_trab.replace("_", " ")` antes de exibir, ou seja,
+# ele ja espera o codigo. Traduzimos aqui, no unico lugar que conhece as duas
+# fontes, e nada mais no produto precisa saber que a origem mudou.
+#
+# Mapa conferido PAR A PAR em 06/09/2026 — 19 planos, mesmo `id_plano_acao` nas
+# duas APIs, 19/19 batendo. Nao e deducao de nome parecido.
+_SITUACAO_PT_PARA_CODIGO = {
+    "legado adpf 854 stf / nt - tcu": "CONCLUIDO_NT_TCU",
+    "aprovado": "APROVADO",
+    "reprovado": "REPROVADO",
+    "enviado para analise": "ENVIADO_PARA_ANALISE",
+    "em complementacao": "EM_COMPLEMENTACAO",
+    "em elaboracao": "EM_ELABORACAO",
+}
+
+
+def _situacao_pt_normalizada(rotulo: str | None) -> str | None:
+    """Rotulo da API oficial -> codigo que o RM e a tela ja entendem.
+
+    ⚠️ DESCONHECIDO NAO VIRA VAZIO. Situacao nova que o MGI crie amanha cai no
+    `else` e sai como SCREAMING_SNAKE do proprio rotulo ("Em Diligencia" ->
+    "EM_DILIGENCIA"): o RM continua tendo o que exibir e o que classificar, e o
+    valor aparece no banco pedindo uma linha nova no mapa. Devolver None ou ""
+    esconderia a novidade — e o campo simplesmente sumiria da tela.
+    """
+    if not rotulo:
+        return None
+    chave = _norm(rotulo).lower()
+    mapeado = _SITUACAO_PT_PARA_CODIGO.get(chave)
+    if mapeado:
+        return mapeado
+    return "_".join(_norm(rotulo).split()).replace("/", "_").strip("_") or None
 
 # ---------------------------------------------------------------------------
 # PAGAMENTOS: documentos habeis -> ordem de pagamento/bancaria + historico
@@ -85,8 +169,6 @@ _PGTO_MAX_AGE_DAYS = int(os.getenv("TE_PGTO_MAX_AGE_DAYS", "3") or "3")
 # passa o RESTO aos pagamentos, nunca o orcamento cheio. 1450 deixa 150s de
 # folga antes do kill, para o commit final e o log caberem.
 _TETO_TAREFA_S = float(os.getenv("TE_TETO_TAREFA_S", "1450") or "1450")
-_PAGE_DELAY = float(os.getenv("TE_PAGE_DELAY", "2") or "2")   # espaco entre paginas OK
-_BACKOFFS = (8, 20, 45, 90)      # esperas ao tomar 403 (o rate-limit reseta com o tempo)
 _BUDGET_S = float(os.getenv("TE_BUDGET_S", "1500") or "1500")  # teto total (~25min)
 
 
@@ -122,66 +204,182 @@ def _log_ingestao(status: str, n: int, erro: str | None = None) -> None:
         logger.warning(f"ingestion_log falhou: {str(e)[:120]}")
 
 
-def _ufs_do_tenant(cur) -> list[str]:
-    """As UFs que este tenant realmente acompanha, lidas da carteira.
-
-    ⚠️ SUBSTITUI O DEFAULT "MG", que era um bug caro e mudo. Com `TE_UF` nao
-    definido — que e o caso dos 4 tenants em producao — o coletor baixava Minas
-    inteiro (~8773 planos, ~44 paginas) em TODO tenant. Medido em 17/08:
-
-        freitas     MG=60                -> certo, por coincidencia
-        montesiao   MG=1                 -> certo, por coincidencia
-        trust       ES=3 GO=6 MG=8 TO=3  -> cobria 8 de 20 municipios
-        santamaria  RS=1                 -> cobria ZERO
-
-    No Santa Maria o `_municipios_uf(cur, "MG")` voltava vazio e nenhum
-    beneficiario casava: 25 minutos de paginacao para gravar milhares de linhas
-    de MG com municipio_id nulo. No Trust, 12 dos 20 municipios simplesmente
-    nunca tiveram Transferencia Especial coletada. Sem erro em log nenhum —
-    `gravados` alto, `casados` baixo ou zero, e a fonte sequer aparecia no
-    Status dos Dados (ver `_log_ingestao`, que so passou a existir agora).
-
-    Mesmo padrao de `routers/freshness._ufs_do_tenant`: quem manda e a carteira.
-    `TE_UF` continua valendo como override manual (um estado especifico).
-    """
-    cur.execute("SELECT DISTINCT upper(uf) FROM municipios "
-                "WHERE uf IS NOT NULL AND btrim(uf) <> '' ORDER BY 1")
-    return [r[0] for r in cur.fetchall()]
-
-
-def _municipios_uf(cur, uf: str) -> list[tuple[str, int]]:
-    """(_norm(nome), id) dos municipios da UF — para casar o beneficiario ao PACTHA.
-    Ordena pelo nome mais LONGO primeiro para 'Nova Serrana' vencer 'Serrana' etc."""
-    cur.execute("SELECT id, nome FROM municipios WHERE uf = %s", (uf,))
-    pares = [(_norm(nome), mid) for (mid, nome) in cur.fetchall() if nome]
-    pares.sort(key=lambda x: len(x[0]), reverse=True)
-    return pares
-
-
 def _casa_municipio(ben_norm: str, pares: list[tuple[str, int]]) -> int | None:
-    """Mesma regra do routers/transferegov.buscar: beneficiario CONTEM o nome do
-    municipio (ex.: 'MUNICIPIO DE NOVA SERRANA')."""
+    """Beneficiario CONTEM o nome do municipio (ex.: 'MUNICIPIO DE NOVA SERRANA').
+
+    ⚠️ REGRA DEFEITUOSA, MANTIDA POR UM SO CHAMADOR: 'SERRANA' casa dentro de
+    'NOVA SERRANA', e foi assim que 628 de 890 linhas do tenant trust acabaram
+    com o CNPJ de um municipio e o `municipio_id` de outro. A LISTAGEM nao usa
+    mais isto — ela entra por CNPJ (`_beneficiario_do_cnpj`).
+
+    Quem ainda chama e `routers/control.py::control_te_lote`, a coleta assistida
+    por IP externo: ela recebe planos JA no formato da SPA, sem id de
+    beneficiario resolvido, e nao tem por onde entrar a nao ser pelo nome. Se
+    aquele endpoint for aposentado — a razao de existir dele era o bloqueio de
+    IP, que a API oficial nao tem — esta funcao vai junto.
+    """
     for nome_norm, mid in pares:
         if nome_norm and (nome_norm in ben_norm or ben_norm.endswith(nome_norm)):
             return mid
     return None
 
 
-async def _fetch_page(cli: httpx.AsyncClient, uf: str, page: int) -> dict | None:
-    """Uma pagina, com backoff no 403 (rate-limit). None se falhar de vez."""
-    params = {"pageNumber": page, "pageSize": _PAGE_SIZE, "uf": uf}
-    for espera in (0, *_BACKOFFS):
-        if espera:
-            await asyncio.sleep(espera)
-        r = await cli.get(_API, params=params, headers=_HEADERS)
-        if r.status_code == 200:
-            return r.json()
-        logger.warning(f"  p{page}: HTTP {r.status_code} — aguardando {espera or _BACKOFFS[0]}s (rate-limit)")
-    return None
+async def _pub_pagina(cli: httpx.AsyncClient, caminho: str, params: dict,
+                      pagina: int = 1) -> dict | None:
+    """UMA pagina da API publica oficial. None se a fonte nao respondeu 200.
+
+    ⚠️ SEM BACKOFF DE RATE-LIMIT, e de proposito. Esta API nao pune martelada
+    (10 requisicoes seguidas, todas 200, medido em 06/09/2026) — o backoff de
+    `_fetch_page` existe para a API da SPA, que e outra coisa. Inventar espera
+    aqui so faria a rodada demorar.
+
+    ⚠️ HTTP 500 EM FILTRO VALIDO EXISTE E E DA FONTE: o modulo `/fundoafundo`
+    devolve 500 para um filtro documentado (`codigo_ibge_..._recebedor`). Nao vi
+    isso em `/especiais`, mas por isso o erro aqui e LOGADO com a URL e o
+    parametro — se aparecer, o log diz qual filtro derrubou.
+    """
+    p = {**params, "pagina": pagina, "tamanho_da_pagina": _PUB_PAGE_SIZE}
+    try:
+        r = await cli.get(f"{_API_PUB}/{caminho}", params=p, timeout=60)
+    except Exception as e:
+        logger.warning(f"  API oficial {caminho}: {str(e)[:100]}")
+        return None
+    if r.status_code != 200:
+        logger.warning(f"  API oficial {caminho} {p}: HTTP {r.status_code}")
+        return None
+    try:
+        return r.json()
+    except ValueError:
+        logger.warning(f"  API oficial {caminho}: resposta nao e JSON")
+        return None
+
+
+async def _pub_todos(cli: httpx.AsyncClient, caminho: str, params: dict) -> list[dict] | None:
+    """Todas as paginas de uma consulta. None quando a PRIMEIRA pagina falhou.
+
+    A distincao importa: lista vazia e "a fonte respondeu e nao ha nada" (estado
+    legitimo — municipio sem emenda especial), enquanto None e "nao consegui
+    perguntar". Quem chama usa isso para nao gravar silencio como ausencia.
+    """
+    d = await _pub_pagina(cli, caminho, params, 1)
+    if d is None:
+        return None
+    itens = list(d.get("data") or [])
+    total_paginas = int(d.get("total_pages") or 1)
+    for pag in range(2, total_paginas + 1):
+        await asyncio.sleep(_PUB_DELAY)
+        d = await _pub_pagina(cli, caminho, params, pag)
+        if d is None:
+            logger.warning(f"  {caminho}: parou na pagina {pag}/{total_paginas}")
+            break
+        itens.extend(d.get("data") or [])
+    return itens
+
+
+async def _beneficiario_do_cnpj(cli: httpx.AsyncClient, cnpj: str) -> dict | None:
+    """CNPJ do municipio -> registro de beneficiario da API oficial (ou None).
+
+    ⭐ ESTA E A TROCA QUE JUSTIFICA A FASE INTEIRA. O caminho antigo casava o
+    plano ao municipio por SUBSTRING DE NOME ('MUNICIPIO DE NOVA SERRANA' contem
+    'SERRANA'), e a contaminacao ja estava medida: 628 de 890 linhas com CNPJ
+    divergente num tenant. Aqui a chave e o CNPJ, e o `id_beneficiario` que ele
+    devolve e o que filtra os planos — nao ha como um plano de outro municipio
+    entrar.
+
+    ⚠️ CNPJ E UNICO POR BENEFICIARIO na fonte: 200 beneficiarios do RS, 200 CNPJs
+    distintos, zero vazios (medido em 06/09/2026). Se um dia deixar de ser, o
+    `total_items > 1` aparece no log em vez de escolher um em silencio.
+    """
+    so_digitos = "".join(c for c in (cnpj or "") if c.isdigit())
+    if len(so_digitos) != 14:
+        return None
+    itens = await _pub_todos(cli, "beneficiarios-especiais",
+                             {"cnpj_beneficiario": so_digitos})
+    if not itens:
+        return None
+    if len(itens) > 1:
+        logger.warning(f"  CNPJ {so_digitos}: {len(itens)} beneficiarios na fonte "
+                       f"(esperado 1) — usando o primeiro, ids "
+                       f"{[i.get('id_beneficiario') for i in itens]}")
+    return itens[0]
+
+
+def plano_novo_para_linha(plano: dict, ben: dict, situacao_pt: str | None,
+                          mid: int | None) -> dict | None:
+    """Traduz UM plano da API PUBLICA OFICIAL para as colunas de transferegov_te.
+
+    Funcao PURA e testavel: recebe o plano, o beneficiario ja resolvido e a
+    situacao do plano de trabalho ja normalizada, e devolve exatamente as
+    colunas que `UPSERT_SQL_NOMEADO` grava — as MESMAS que o caminho antigo
+    gravava, para o RM e a tela nao notarem a troca de fonte.
+
+    ⚠️ TRES CAMPOS SAO DERIVADOS, e cada derivacao foi conferida contra a fonte
+    antiga antes de entrar aqui:
+
+    `valor_total` — a API oficial NAO tem o campo; ela manda custeio e
+      investimento separados. A soma bate com o `valorTotal` da SPA em 800 de
+      800 planos conferidos (06/09/2026).
+
+    `programa_codigo` — `/programas-especiais` tem `codigo_programa`, mas ele
+      PERDE O ZERO A ESQUERDA ('903' onde a SPA mandava '0903'), porque a fonte
+      trata como numero. O `codigo_plano_acao` carrega o codigo do programa
+      intacto antes do ultimo hifen ('0903-003200' -> '0903';
+      '09032024-2-069722' -> '09032024-2'): 800 de 800 conferindo, e sem gastar
+      uma requisicao por programa.
+
+    `parlamentar` — o caminho antigo partia o codigo da emenda no primeiro '-'.
+      A API oficial tem `nome_parlamentar_emenda_plano_acao` DIRETO; usamos ele
+      e caimos no split so se vier vazio.
+    """
+    pid = plano.get("id_plano_acao")
+    if pid is None:
+        return None
+    codigo = plano.get("codigo_plano_acao") or ""
+    emenda = plano.get("codigo_emenda_parlamentar_formatado_plano_acao") or ""
+    custeio = float(plano.get("valor_custeio_plano_acao") or 0)
+    investimento = float(plano.get("valor_investimento_plano_acao") or 0)
+    parlamentar = (plano.get("nome_parlamentar_emenda_plano_acao") or "").strip()
+    if not parlamentar and "-" in emenda:
+        parlamentar = emenda.split("-", 1)[1].strip()
+    return {
+        "plano_acao_id": int(pid),
+        "municipio_id": mid,
+        "uf": ben.get("uf_beneficiario"),
+        "codigo": codigo or None,
+        "emenda": emenda or None,
+        "parlamentar": parlamentar or None,
+        # `nome_objeto` e o titulo ('Pavimentação') e `detalhamento_objeto` o
+        # texto livre; a SPA mandava os dois juntos e com mojibake. Preferimos o
+        # detalhamento quando ele acrescenta algo.
+        "objeto": (plano.get("detalhamento_objeto")
+                   or plano.get("nome_objeto")
+                   or plano.get("codigo_descricao_areas_politicas_publicas_plano_acao")),
+        "situacao": plano.get("situacao_plano_acao"),
+        "situacao_trabalho": situacao_pt,
+        "valor_total": round(custeio + investimento, 2),
+        "valor_investimento": investimento,
+        "valor_custeio": custeio,
+        "beneficiario_nome": ben.get("nome_beneficiario"),
+        "beneficiario_cnpj": ben.get("cnpj_beneficiario"),
+        "programa_codigo": (codigo.rsplit("-", 1)[0] if "-" in codigo else None),
+        # ⚠️ RAW DA FONTE NOVA, e nao uma traducao para o formato antigo. Quem le
+        # `raw_data` (routers/transferegov.buscar) foi ajustado no mesmo commit
+        # para as chaves novas. Gravar camelCase sintetico aqui criaria uma
+        # traducao dupla que ninguem mais conseguiria justificar depois.
+        "raw_data": json.dumps({**plano,
+                                "_beneficiario": ben,
+                                "_situacao_plano_trabalho": situacao_pt},
+                               ensure_ascii=False),
+    }
 
 
 def plano_para_linha(it: dict, mid: int | None) -> dict | None:
-    """Traduz UM plano da API 'especiais' para as colunas de transferegov_te.
+    """Traduz UM plano da API 'especiais' (SPA) para as colunas de transferegov_te.
+
+    ⚠️ CAMINHO DA COLETA ASSISTIDA, e nao mais o do cron. A listagem diaria vem
+    da API publica oficial por `plano_novo_para_linha` (acima). Esta funcao
+    continua viva porque `routers/control.py::control_te_lote` recebe planos no
+    formato da SPA de um IP externo — e continua sendo o mesmo upsert.
 
     Funcao PURA e importavel de fora: o mapeamento de campos vive num lugar so,
     usado pelo coletor (psycopg2, abaixo) e pela coleta assistida do
@@ -233,10 +431,12 @@ UPSERT_SQL_NOMEADO = """INSERT INTO transferegov_te
      raw_data=EXCLUDED.raw_data, updated_at=NOW()"""
 
 
-def _upsert(cur, it: dict, mid: int | None):
-    linha = plano_para_linha(it, mid)
-    if linha is None:
-        return
+def _grava_linha(cur, linha: dict) -> None:
+    """Executa o upsert compartilhado com uma linha JA traduzida (psycopg2).
+
+    Os dois tradutores (`plano_novo_para_linha`, da API oficial, e
+    `plano_para_linha`, da SPA) desembocam aqui: um SQL so, um ON CONFLICT so.
+    """
     # psycopg2 usa %(nome)s; o texto nomeado usa :nome. Regex de UMA passada —
     # replace por nome corromperia prefixos (":situacao" dentro de
     # ":situacao_trabalho").
@@ -246,87 +446,173 @@ def _upsert(cur, it: dict, mid: int | None):
     cur.execute(sql, linha)
 
 
-async def run_uf(uf: str, budget_s: float | None = None) -> dict:
-    uf = uf.upper()
+def _upsert(cur, it: dict, mid: int | None):
+    linha = plano_para_linha(it, mid)
+    if linha is None:
+        return
+    _grava_linha(cur, linha)
+
+
+def _municipios_da_carteira(cur) -> list[dict]:
+    """Municipios do tenant com o que a coleta precisa: id, nome, uf e CNPJ.
+
+    O CNPJ vem de `municipios.cnpj`, que o `ingestion/siconfi.py` preenche
+    sozinho a partir do cadastro do Tesouro — a docstring de la ja dizia, desde
+    antes desta migracao, que "a Transferencia Especial casa por CNPJ".
+    """
+    cur.execute("SELECT id, nome, upper(coalesce(uf, '')), "
+                "       coalesce(regexp_replace(coalesce(cnpj, ''), '\\D', '', 'g'), '') "
+                "  FROM municipios ORDER BY nome")
+    return [{"id": r[0], "nome": r[1], "uf": r[2], "cnpj": r[3]}
+            for r in cur.fetchall()]
+
+
+async def _beneficiario_por_nome(cli: httpx.AsyncClient, mun: dict) -> dict | None:
+    """FALLBACK para municipio sem CNPJ cadastrado: acha o beneficiario na UF.
+
+    ⚠️ AINDA E CASAMENTO POR NOME, com todos os defeitos que esta fase existe
+    para matar — mas num universo MUITO menor e sem consequencia sobre o dado
+    dos outros: a lista de beneficiarios de uma UF tem centenas de linhas (498
+    no RS), nao milhares de planos, e o que se escolhe aqui e UM beneficiario,
+    nao um plano. Sem CNPJ, a alternativa seria nao coletar o municipio.
+
+    Exige nome EXATO (normalizado) ou 'MUNICIPIO DE <nome>' — nada de substring,
+    que e o que fazia 'SERRANA' capturar 'NOVA SERRANA'.
+    """
+    if not mun["uf"]:
+        return None
+    itens = await _pub_todos(cli, "beneficiarios-especiais",
+                             {"uf_beneficiario": mun["uf"]})
+    if not itens:
+        return None
+    alvo = _norm(mun["nome"])
+    for b in itens:
+        nome = _norm(b.get("nome_beneficiario") or "")
+        if nome == alvo or nome == f"MUNICIPIO DE {alvo}":
+            return b
+    return None
+
+
+async def run_municipios(budget_s: float | None = None) -> dict:
+    """LISTAGEM pela API publica oficial, municipio a municipio.
+
+    Sem paginacao de UF inteira e sem casamento por nome: para cada municipio da
+    carteira sao 2 requisicoes (beneficiario pelo CNPJ + planos pelo
+    id_beneficiario) mais 1 por plano para a situacao do plano de trabalho, que
+    e o unico campo do retrato antigo que nao vem junto com o plano.
+
+    ⚠️ NAO E INCREMENTAL POR PAGINA, e nao precisa ser. A retomada por
+    `start_page` existia porque a fonte antiga bloqueava no meio da varredura de
+    um estado; aqui cada municipio custa poucos segundos e a rodada inteira cabe
+    folgada no orcamento. Se o tempo acabar, o que ficou de fora entra na
+    proxima — municipio inteiro, nunca pela metade.
+    """
     budget = _BUDGET_S if budget_s is None else budget_s
     cn = psycopg2.connect(_sync_url())
     cn.autocommit = False
     cur = cn.cursor()
-    pares = _municipios_uf(cur, uf)
-    # ⚠️ FALHA ALTO EM VEZ DE BAIXAR UM ESTADO INTEIRO PARA O LIXO. Sem municipio
-    # da UF na carteira, nenhum beneficiario casaria: seriam ~25min de paginacao
-    # para gravar milhares de linhas com municipio_id nulo, que os leitores
-    # (routers/transferegov e rm_builder, ambos `WHERE municipio_id = :m`) nunca
-    # enxergam. Era exatamente o que acontecia no Trust e no Santa Maria.
-    if not pares:
-        msg = f"nenhum municipio de {uf} na carteira deste tenant"
-        logger.error(f"TE {uf}: {msg} — nao vou baixar o estado inteiro")
+    municipios = _municipios_da_carteira(cur)
+    so_um = (os.getenv("TE_MUNICIPIO") or "").strip()
+    if so_um.isdigit():
+        municipios = [m for m in municipios if m["id"] == int(so_um)]
+    if not municipios:
+        msg = "nenhum municipio na carteira deste tenant"
+        logger.error(f"TE: {msg}")
         _log_ingestao("error", 0, msg)
         cur.close(); cn.close()
-        return {"uf": uf, "gravados": 0, "casados": 0, "completo": False,
-                "total_api": None, "erro": msg}
-    # RETOMA de onde parou: a API tem QUOTA por IP (bloqueia depois de ~N paginas
-    # numa janela), entao um run so nao pega tudo. Comeca na pagina apos as ja
-    # gravadas (1 pagina de sobreposicao; upsert e idempotente por planoAcaoId) —
-    # cada run diario AVANCA a cobertura ate completar. Se ja cobriu tudo, o loop
-    # fecha logo (tail < pageSize). Reset periodico p/ refrescar: TE_RESET_PAGE=1.
-    cur.execute("SELECT count(*) FROM transferegov_te WHERE uf = %s", (uf,))
-    have = cur.fetchone()[0]
-    reset = (os.getenv("TE_RESET_PAGE", "0") or "0").strip() == "1"
-    start_page = 1 if reset else max(1, have // _PAGE_SIZE)
-    logger.info(f"TE {uf}: {len(pares)} municipios | ja tem {have} linhas -> comeca pagina {start_page}")
+        return {"municipios": 0, "gravados": 0, "completo": False, "erro": msg}
+
     t0 = time.time()
-    total_api = None
-    gravados = 0
-    casados = 0
-    completo = False
-    async with httpx.AsyncClient(timeout=60, verify=False) as cli:
-        page = start_page
-        while page <= 1000 and (time.time() - t0) < budget:
-            data = await _fetch_page(cli, uf, page)
-            if data is None:
-                logger.warning(f"TE {uf}: parando na pagina {page} (403 persistente); retoma na proxima rodada")
+    gravados = com_plano = sem_cnpj = sem_beneficiario = falhas = 0
+    atendidos = 0
+    completo = True
+    logger.info(f"TE: {len(municipios)} municipio(s) na carteira "
+                f"(orcamento {budget:.0f}s) — fonte: API publica oficial")
+    async with httpx.AsyncClient(timeout=60) as cli:
+        for mun in municipios:
+            if (time.time() - t0) >= budget:
+                completo = False
+                logger.warning(f"TE: orcamento estourado apos {atendidos} municipio(s); "
+                               f"o resto entra na proxima rodada")
                 break
-            lote = data.get("listaPlanosAcao") or []
-            total_api = int(data.get("total") or 0)
-            for it in lote:
-                mid = _casa_municipio(_norm(it.get("beneficiarioNome") or ""), pares)
-                if mid is not None:
-                    casados += 1
-                _upsert(cur, it, mid)
+            ben = None
+            if len(mun["cnpj"]) == 14:
+                ben = await _beneficiario_do_cnpj(cli, mun["cnpj"])
+            else:
+                sem_cnpj += 1
+                logger.warning(f"  {mun['nome']}/{mun['uf']}: sem CNPJ em municipios.cnpj "
+                               f"— caindo no casamento por nome (rode o siconfi)")
+                ben = await _beneficiario_por_nome(cli, mun)
+            atendidos += 1
+            if not ben:
+                # ⚠️ ESTADO LEGITIMO, e nao erro: municipio que nunca recebeu
+                # emenda especial simplesmente nao esta na fonte. Contamos para
+                # o log final poder distinguir "todos sem beneficiario" (que ai
+                # sim cheira a defeito) de "alguns".
+                sem_beneficiario += 1
+                continue
+            planos = await _pub_todos(cli, "planos-acao-especiais",
+                                      {"id_beneficiario": ben.get("id_beneficiario")})
+            if planos is None:
+                falhas += 1
+                logger.warning(f"  {mun['nome']}/{mun['uf']}: fonte nao respondeu os planos")
+                continue
+            if planos:
+                com_plano += 1
+            for plano in planos:
+                await asyncio.sleep(_PUB_DELAY)
+                pts = await _pub_todos(cli, "planos-trabalho-especiais",
+                                       {"id_plano_acao": plano.get("id_plano_acao")})
+                # Lista vazia = plano sem plano de trabalho (11 de 800 na fonte
+                # antiga tambem vinham sem). None = nao consegui perguntar; nos
+                # dois casos a coluna fica NULA, como ficava antes.
+                rotulo = (pts[0].get("situacao_plano_trabalho") if pts else None)
+                linha = plano_novo_para_linha(
+                    plano, ben, _situacao_pt_normalizada(rotulo), mun["id"])
+                if linha is None:
+                    continue
+                _grava_linha(cur, linha)
                 gravados += 1
-            cn.commit()   # grava a pagina (progresso persiste mesmo se travar depois)
-            logger.info(f"TE {uf}: pagina {page} ({len(lote)} itens) | gravados={gravados}/{total_api} casados={casados}")
-            if len(lote) < _PAGE_SIZE or (total_api and gravados >= total_api):
-                completo = True
-                break
-            page += 1
-            await asyncio.sleep(_PAGE_DELAY)
+            cn.commit()   # municipio a municipio: progresso persiste
+            logger.info(f"  {mun['nome']}/{mun['uf']}: {len(planos)} plano(s) "
+                        f"(beneficiario {ben.get('id_beneficiario')})")
     cur.close(); cn.close()
-    logger.info(f"TE {uf}: FIM — gravados={gravados} casados={casados} completo={completo} em {time.time()-t0:.0f}s")
-    # ⭐ O QUE CONTA AQUI E `casados`, NAO `gravados` — mas SO no contexto certo.
-    # A primeira versao destas regras gritava 'error' em dois casos normais, e
-    # alarme que grita no dia a dia e alarme que se aprende a ignorar:
-    #
-    #   1. VARREDURA JA COMPLETA. A retomada comeca em start_page = have//200;
-    #      com a tabela cheia, a pagina final volta vazia -> gravados=0 com
-    #      completo=True. Isso e "nada novo hoje", nao falha — e acontecia TODO
-    #      DIA no montesiao (varredura MG completa) apos o cron diario.
-    #   2. RETOMADA SEM PLANO DA CARTEIRA. Num tenant de UM municipio, a maioria
-    #      das ~44 paginas de MG nao contem plano dele: casados=0 numa pagina
-    #      retomada e o esperado. O retrato do bug da UF ('gravados' alto com
-    #      'casados' zero) so e diagnostico quando a varredura foi INTEIRA
-    #      (start_page=1 e completo) — ai sim zero casamentos = UF errada.
-    if gravados == 0 and completo:
-        _log_ingestao("success", 0, f"{uf}: varredura completa — sem novidade nesta rodada")
-    elif gravados == 0:
-        _log_ingestao("error", 0, f"{uf}: nenhuma pagina coletada (rate-limit ou fonte fora)")
-    elif casados == 0 and start_page == 1 and completo:
-        _log_ingestao("error", 0, f"{uf}: {gravados} planos baixados e NENHUM casou com municipio da carteira")
+    dur = time.time() - t0
+    logger.info(f"TE: FIM — {atendidos} municipio(s), {com_plano} com plano, "
+                f"{gravados} plano(s) gravado(s), {sem_beneficiario} sem beneficiario, "
+                f"{falhas} falha(s) em {dur:.0f}s")
+
+    # ⭐ O QUE E ERRO AQUI MUDOU COM A FONTE. No caminho antigo, `casados`=0 podia
+    # ser normal (pagina de MG sem plano do municipio). Aqui cada consulta ja
+    # nasce filtrada pelo beneficiario do municipio: nao existe plano coletado
+    # que nao seja da carteira, e `municipio_id` nunca e nulo. Entao o alarme
+    # certo e outro — a fonte parar de responder, ou a carteira inteira ficar
+    # sem beneficiario (que so acontece se o CNPJ estiver errado em todos).
+    if falhas and not gravados:
+        _log_ingestao("error", 0, "a fonte nao respondeu a nenhum municipio")
+    elif atendidos and sem_beneficiario == atendidos:
+        _log_ingestao("error", 0, f"nenhum dos {atendidos} municipios tem beneficiario "
+                                  f"na fonte — CNPJ errado ou fonte mudou")
+    elif not completo or falhas:
+        _log_ingestao("partial", gravados,
+                      f"{falhas} municipio(s) sem resposta; retoma na proxima rodada"
+                      if falhas else "orcamento estourado; retoma na proxima rodada")
     else:
-        _log_ingestao("success" if completo else "partial", casados,
-                      None if completo else f"{uf}: cobertura parcial, retoma na proxima rodada")
-    return {"uf": uf, "gravados": gravados, "casados": casados, "completo": completo, "total_api": total_api}
+        _log_ingestao("success", gravados, None)
+    return {"municipios": atendidos, "gravados": gravados, "com_plano": com_plano,
+            "sem_cnpj": sem_cnpj, "sem_beneficiario": sem_beneficiario,
+            "falhas": falhas, "completo": completo}
+
+
+def _teto_listagem_s(budget: float, teto_tarefa: float, pgto: float) -> float:
+    """Quanto tempo a LISTAGEM pode tomar, reservando a fatia dos pagamentos.
+
+    ⚠️ FUNCAO, e nao uma conta solta dentro de `run()`. Ela nasceu de um defeito
+    real (ver `run`) e e coberta por teste; enquanto a formula vivia inline, o
+    teste tinha de RECOPIA-LA — e um teste que reimplementa o codigo nao percebe
+    quando o codigo muda.
+    """
+    return max(60.0, min(budget, teto_tarefa - pgto))
 
 
 def _num(x) -> float | None:
@@ -553,59 +839,36 @@ async def run_pagamentos(budget_s: float | None = None) -> dict:
             "pagos_integral": integrais, "completo": completo}
 
 
-async def run(uf: str | None = None) -> list[dict]:
-    """Roda as UFs da carteira deste tenant (ou a de `TE_UF`/`uf`, se informada).
+async def run() -> list[dict]:
+    """Uma rodada completa: LISTAGEM (API oficial) + PAGAMENTOS (SPA).
 
-    ⚠️ O ORCAMENTO E DIVIDIDO entre as UFs, nao multiplicado por elas: a
-    Scheduled Task mata o processo em `timeout -k 30 1600`, e dar `_BUDGET_S`
-    cheio a cada UF faria a segunda ser degolada no meio da pagina — perdendo o
-    log final, que e onde `casados` aparece. Como a retomada e por pagina
-    (`start_page` vem do count ja gravado), cortar o tempo so adia cobertura;
-    nunca perde progresso. No Trust, que tem 4 UFs, sao ~375s por UF e a
-    cobertura completa leva algumas rodadas diarias — que e exatamente como o
-    coletor ja foi desenhado para se comportar contra o rate-limit da fonte.
+    ⚠️ O ORCAMENTO DA LISTAGEM ENCOLHEU DE PROPOSITO, e isso e consequencia
+    direta da troca de fonte. O caminho antigo precisava de ~1500s porque
+    paginava estados inteiros contra uma API que bloqueava no meio; a oficial
+    faz a carteira inteira em poucos segundos por municipio. O que sobra vai
+    para os pagamentos, que sao a parte cara agora.
     """
-    forcado = (uf or os.getenv("TE_UF") or "").strip().upper()
-    if forcado:
-        return [await run_uf(forcado)]
-
-    cn = psycopg2.connect(_sync_url())
-    cur = cn.cursor()
-    try:
-        ufs = _ufs_do_tenant(cur)
-    finally:
-        cur.close(); cn.close()
-
-    if not ufs:
-        logger.warning("TE: nenhum municipio com UF na carteira — nada a coletar")
-        return []
-
-    logger.info(f"TE: carteira deste tenant -> {', '.join(ufs)}")
     _t0 = time.time()
-    # ⚠️ A FATIA DOS PAGAMENTOS E RESERVADA ANTES, e nao o que sobrar depois.
+    # ⚠️ A FATIA DOS PAGAMENTOS CONTINUA SENDO RESERVADA ANTES, e nao o que
+    # sobrar depois — a conta e a mesma de quando a listagem era o gargalo.
     #
-    # Medido em producao (Freitas, 24/08): a LISTAGEM e incremental e retoma por
-    # pagina, entao ela consome o orcamento INTEIRO todo dia enquanto houver
-    # atraso a recuperar — e `_BUDGET_S` (1500) sozinho ja passa de
-    # `_TETO_TAREFA_S` (1450). Sem esta reserva, `resto` nasce NEGATIVO e os
-    # pagamentos NUNCA rodam: o log diria "sem tempo nesta rodada" para sempre,
-    # e a coluna `pagamentos` ficaria eternamente NULA sem ninguem ver erro.
+    # Medido em producao (Freitas, 24/08, com a fonte ANTIGA): a listagem
+    # consumia o orcamento inteiro todo dia enquanto houvesse atraso a
+    # recuperar, e `_BUDGET_S` (1500) sozinho ja passava de `_TETO_TAREFA_S`
+    # (1450). Sem a reserva, `resto` nascia NEGATIVO e os pagamentos NUNCA
+    # rodavam: o log dizia "sem tempo nesta rodada" para sempre e a coluna
+    # `pagamentos` ficava eternamente NULA sem ninguem ver erro.
     #
-    # A listagem e quem pode esperar: ela nao perde progresso (retoma da pagina
-    # gravada) e a fonte a limita de qualquer jeito. Os pagamentos sao 1+N GETs
-    # baratos por plano e sao o dado que o RM precisa para dizer PENDENTE DE
-    # DESEMBOLSO — deixa-los para "se sobrar" e deixa-los de fora.
-    _teto_listagem = _BUDGET_S
-    if _PGTO_ON:
-        _teto_listagem = max(60.0, min(_BUDGET_S, _TETO_TAREFA_S - _PGTO_BUDGET_S))
-        if _teto_listagem < _BUDGET_S:
-            logger.info(f"TE: listagem limitada a {_teto_listagem:.0f}s para reservar "
-                        f"{_PGTO_BUDGET_S:.0f}s aos pagamentos (teto da tarefa "
-                        f"{_TETO_TAREFA_S:.0f}s)")
-    fatia = _teto_listagem / len(ufs)
-    saidas = []
-    for u in ufs:
-        saidas.append(await run_uf(u, budget_s=fatia))
+    # Com a API oficial a listagem deixou de ser o gargalo, mas a reserva FICA:
+    # ela custa nada quando sobra tempo e continua sendo a unica coisa que
+    # garante os pagamentos numa rodada em que a fonte esteja lenta.
+    teto_listagem = _teto_listagem_s(_BUDGET_S, _TETO_TAREFA_S, _PGTO_BUDGET_S) \
+        if _PGTO_ON else _BUDGET_S
+    if teto_listagem < _BUDGET_S:
+        logger.info(f"TE: listagem limitada a {teto_listagem:.0f}s para reservar "
+                    f"{_PGTO_BUDGET_S:.0f}s aos pagamentos (teto da tarefa "
+                    f"{_TETO_TAREFA_S:.0f}s)")
+    saidas = [await run_municipios(budget_s=teto_listagem)]
     # PAGAMENTOS na MESMA rodada, de proposito: nao da para criar uma segunda
     # Scheduled Task barata no Coolify — a API dele nao tem endpoint de execucao
     # e o comando trava por volta de 255 caracteres.

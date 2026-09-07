@@ -1,18 +1,21 @@
-"""TransfereGov - Plano de Acao (Transferencia Especial Federal).
+"""TransfereGov - Plano de Acao (Transferencia Especial Federal) e Voluntarias.
 
-Fonte: https://especiais.transferegov.sistema.gov.br/transferencia-especial/plano-acao/consulta
-API publica REST descoberta via reverse-eng do main.js:
-  GET /maisbrasil-transferencia-especial-backend/api/public/plano-acao/listagem?uf=MG
-  GET /maisbrasil-transferencia-especial-backend/api/public/plano-acao/{id}
-  GET /maisbrasil-transferencia-especial-backend/api/public/relatorio-gestao/plano-acao/{id}
+TRES ORIGENS, cada uma no seu lugar (06/09/2026):
 
-A listagem retorna TUDO de MG (~8800 items, 5MB) em uma chamada -- a API nao
-suporta filtro server-side por municipio/CNPJ. Cacheamos em memoria por 1h e
-filtramos local.
+  `/buscar`     -> tabela `transferegov_te`, alimentada por
+                   `ingestion/transferegov_te.py` a partir da API PUBLICA
+                   OFICIAL (`api-publica.transferegov.gestao.gov.br/especiais`).
+  `/por-cnpj`   -> a mesma API oficial, AO VIVO, filtrando por CNPJ na fonte.
+  `/plano-acao/{id}` (detalhe) -> ainda a API interna da SPA
+                   (`especiais.transferegov.sistema.gov.br/...`), que e a unica
+                   com o relatorio de gestao e o extrato do plano.
+
+⚠️ A LISTAGEM DA SPA SAIU DAQUI. Ela nao filtrava por municipio nem por CNPJ no
+servidor: era baixar o estado (5 MB) ou o Brasil (~58 mil planos) e peneirar em
+memoria, contra uma fonte que devolve 403 depois de ~10 paginas. O que restou
+dela neste arquivo sao os endpoints de DETALHE por id, que nao paginam nada.
 """
 import os
-import asyncio
-import time
 from typing import Optional
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -35,23 +38,15 @@ HEADERS = {
     "Referer": "https://especiais.transferegov.sistema.gov.br/transferencia-especial/plano-acao/consulta",
 }
 
-# Cache em memoria: {(uf): (timestamp, lista_planos)}
-_CACHE: dict = {}
-_CACHE_TTL = 3600  # 1h
+# API PUBLICA OFICIAL das Transferencias Especiais (Comunicado no 23/2026 do
+# MGI). ⚠️ `api-publica`, e nao `api` — o host sem o prefixo e o que bloqueia.
+# Mesmo endereco que o coletor usa (ingestion/transferegov_te._API_PUB); aqui
+# serve so a consulta por CNPJ, que nao passa por tabela.
+_API_PUB = os.getenv("TE_API_PUBLICA",
+                     "https://api-publica.transferegov.gestao.gov.br/especiais")
 
 import logging as _logging
 logger = _logging.getLogger("transferegov")
-
-# pageSize confiavel em TODA a faixa de paginas. O gateway aceita ate 300, mas em
-# 300 a 2a pagina cai em 403 deterministico; 200 e estavel de ponta a ponta
-# (>=400 -> 403 sempre). Concorrencia dispara rate-limit — a coleta e SEQUENCIAL.
-_PAGE_SIZE = 200
-
-
-def _norm(s: str) -> str:
-    if not s:
-        return ""
-    return "".join(c for c in unicodedata.normalize("NFKD", s.upper()) if not unicodedata.combining(c)).strip()
 
 
 def _dias_restantes(dt_str: Optional[str]) -> Optional[int]:
@@ -68,63 +63,57 @@ def _dias_restantes(dt_str: Optional[str]) -> Optional[int]:
     return None
 
 
-async def _fetch_listagem(uf: Optional[str]) -> list[dict]:
-    """Lista de planos de acao (com cache 1h). uf vazio/None => NACIONAL (todos
-    os estados: ~58k itens). A API nao filtra por CNPJ no servidor -> filtramos local."""
-    key = (uf or "BR").upper()
-    now = time.time()
-    cached = _CACHE.get(key)
-    if cached and (now - cached[0]) < _CACHE_TTL:
-        return cached[1]
-    # A API mudou os nomes dos params: era `page`/`size` (agora devolve 403 — foi o
-    # que quebrou a coleta), e virou `pageNumber` (1-based) / `pageSize` (teto 300;
-    # >=400 -> 403). Ela e publica com os params certos — NAO precisa de sessao.
-    # Pagina ate juntar `total`. SEM raise: em erro devolve o que tiver (ou []),
-    # entao a tela Especiais e o RM ficam vazios em vez de estourar 500.
-    # ORCAMENTO de tempo: a API RATE-LIMITA (bloqueia depois de ~10 paginas
-    # seguidas, mesmo com delay; concorrencia piora). Coletar MG inteiro (~44
-    # paginas) ao vivo levaria minutos — inviavel numa request web. Entao paginamos
-    # SEQUENCIALMENTE por ate _BUDGET s e cacheamos o que vier (parcial e melhor que
-    # nada e nao estoura 500). Cobertura COMPLETA e trabalho de coletor em segundo
-    # plano (persistir numa tabela) — pendencia registrada.
-    _BUDGET = float(os.getenv("TE_FETCH_BUDGET_S", "15") or "15")
-    t0 = time.time()
-    items: list[dict] = []
-    completo = False
+async def _especiais_por_cnpj(cnpj: str) -> list[dict]:
+    """Planos de acao de UM CNPJ, pela API publica oficial. Nunca levanta.
+
+    ⭐ SUBSTITUIU UMA VARREDURA NACIONAL POR DUAS REQUISICOES. Ate 06/09/2026
+    esta consulta baixava a listagem do Brasil inteiro (~58 mil planos, paginas
+    de 5 MB) da API interna da SPA e filtrava o CNPJ em memoria, com orcamento
+    de 15s e cache de 1h. Como a fonte rate-limita, o orcamento estourava quase
+    sempre: a tela respondia com uma FATIA da base nacional e dava por
+    encerrado — se o CNPJ procurado nao tivesse caido nas primeiras paginas, o
+    resultado era "nenhum plano", indistinguivel de nao ter plano nenhum.
+
+    A API oficial filtra no servidor: CNPJ -> `id_beneficiario` -> planos
+    daquele beneficiario. Duas requisicoes, resposta completa, sem cache e sem
+    orcamento para estourar.
+
+    Devolve [] tanto para "CNPJ sem plano" quanto para "fonte fora do ar" — o
+    mesmo contrato de antes, para a tela nao estourar 500.
+    """
+    so_digitos = "".join(c for c in (cnpj or "") if c.isdigit())
+    if len(so_digitos) != 14:
+        return []
     try:
-        async with httpx.AsyncClient(timeout=45, verify=False) as cli:
-            page = 1
-            while page <= 500 and (time.time() - t0) < _BUDGET:
-                params: dict = {"pageNumber": page, "pageSize": _PAGE_SIZE}
-                if uf:
-                    params["uf"] = uf  # omitir uf => nacional
-                data = None
-                for tent in range(3):
-                    r = await cli.get(f"{API_BASE}/public/plano-acao/listagem",
-                                      params=params, headers=HEADERS)
-                    if r.status_code == 200:
-                        data = r.json()
-                        break
-                    await asyncio.sleep(0.8 * (tent + 1))
-                if data is None:
-                    logger.warning(f"especiais listagem {key} p{page}: 403 apos retries (rate-limit)")
+        async with httpx.AsyncClient(timeout=45) as cli:
+            r = await cli.get(f"{_API_PUB}/beneficiarios-especiais",
+                              params={"cnpj_beneficiario": so_digitos,
+                                      "pagina": 1, "tamanho_da_pagina": 200})
+            if r.status_code != 200:
+                logger.warning(f"especiais/beneficiarios {so_digitos}: HTTP {r.status_code}")
+                return []
+            bens = (r.json() or {}).get("data") or []
+            if not bens:
+                return []
+            ben = bens[0]
+            planos: list[dict] = []
+            pagina, total_paginas = 1, 1
+            while pagina <= total_paginas:
+                rp = await cli.get(f"{_API_PUB}/planos-acao-especiais",
+                                   params={"id_beneficiario": ben.get("id_beneficiario"),
+                                           "pagina": pagina, "tamanho_da_pagina": 200})
+                if rp.status_code != 200:
+                    logger.warning(f"especiais/planos {so_digitos}: HTTP {rp.status_code}")
                     break
-                lote = data.get("listaPlanosAcao") or []
-                items.extend(lote)
-                total = int(data.get("total") or 0)
-                if len(lote) < _PAGE_SIZE or (total and len(items) >= total):
-                    completo = True
-                    break
-                page += 1
-                await asyncio.sleep(0.25)
+                d = rp.json() or {}
+                planos.extend(d.get("data") or [])
+                total_paginas = int(d.get("total_pages") or 1)
+                pagina += 1
+            # O beneficiario viaja junto: nome, CNPJ e UF nao vem no plano.
+            return [{**p, "_beneficiario": ben} for p in planos]
     except Exception as ex:
-        logger.warning(f"especiais listagem {key}: {str(ex)[:120]} — TE indisponivel")
-    # Cacheia o que veio (parcial inclusive) p/ nao repaginar a cada request.
-    if items:
-        _CACHE[key] = (now, items)
-    if not completo:
-        logger.warning(f"especiais listagem {key}: parcial {len(items)} itens (rate-limit / budget {_BUDGET}s)")
-    return items
+        logger.warning(f"especiais por CNPJ {so_digitos}: {str(ex)[:120]} — TE indisponivel")
+        return []
 
 
 @router.get("/buscar", dependencies=[exige("transferegov_especiais.ver")])
@@ -136,15 +125,35 @@ async def buscar(
     parlamentar: Optional[str] = Query(None, description="texto livre - busca em codigoEmendaFormatado"),
     emenda: Optional[str] = Query(None, description="codigo da emenda formatado"),
     objeto: Optional[str] = Query(None, description="busca em politicasPublicas"),
-    refresh: bool = Query(False, description="forca refresh do cache"),
+    refresh: bool = Query(False, description=(
+        "SEM EFEITO desde 06/09/2026: a leitura e direta da tabela e nao ha "
+        "mais cache em memoria para invalidar. Continua declarado porque a "
+        "tela envia no botao Atualizar (page.tsx:251)."),),
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
-    """Lista planos de acao filtrados pelo municipio + filtros opcionais.
+    """Lista planos de acao do municipio + filtros opcionais.
 
-    A API do TransfereGov nao oferece filtro server-side por municipio, entao
-    baixa lista completa de MG (com cache 1h) e filtra por nome do municipio
-    do PACTHA + filtros adicionais.
+    ⭐ LE AS COLUNAS DA TABELA, e nao mais o `raw_data` cru.
+
+    Ate 06/09/2026 este endpoint lia `raw_data` e destrinchava as chaves
+    camelCase da API interna da SPA (`planoAcaoSituacao`, `valorTotal`, ...).
+    Isso amarrava a TELA ao formato de UMA fonte: quando o coletor passou a ler
+    a API publica oficial — cujas chaves sao outras (`situacao_plano_acao`,
+    `valor_custeio_plano_acao`) — todo `it.get(...)` aqui devolveria None sem
+    levantar excecao nenhuma, e a tela ficaria com as colunas vazias em
+    silencio.
+
+    As colunas de `transferegov_te` ja guardam o retrato normalizado (e sao o
+    que o RM sempre leu). O `raw_data` continua servindo o punhado de campos
+    que nao viraram coluna, agora com as chaves da fonte nova.
+
+    ⚠️ O FILTRO POR NOME DO MUNICIPIO SAIU DAQUI. Ele existia como segunda rede
+    porque o coletor antigo casava plano->municipio por SUBSTRING DE NOME e
+    podia gravar linha de outro municipio. O coletor novo entra pelo CNPJ
+    (`municipios.cnpj` -> `id_beneficiario` -> planos daquele beneficiario), e o
+    `WHERE municipio_id = :m` ja e exato. Mantido, o filtro passaria a ESCONDER
+    plano correto: basta o beneficiario nao repetir o nome do municipio.
     """
     ensure_municipio_access(current, municipio_id)
     ensure_tela(current, "transferegov_especiais")
@@ -152,64 +161,73 @@ async def buscar(
     if not mun:
         raise HTTPException(404, "Município não encontrado")
 
-    # Le da tabela PERSISTIDA (coletor do worker, ingestion/transferegov_te.py). Antes
-    # buscava ao vivo, mas a API "especiais" rate-limita — agora e completo e rapido.
-    # Fallback ao vivo (capado) so se a tabela estiver vazia (coletor ainda nao rodou).
-    rows = (await db.execute(text(
-        "SELECT raw_data FROM transferegov_te WHERE municipio_id = :m"
-    ), {"m": municipio_id})).all()
-    all_items = [r[0] for r in rows if r[0]]
-    if not all_items:
-        try:
-            all_items = await _fetch_listagem(mun.uf)
-        except httpx.HTTPError as e:
-            raise HTTPException(502, f"TransfereGov: {e}")
+    # Filtros em SQL: sao colunas indexaveis, e filtrar em memoria so fazia
+    # sentido quando a origem era um JSON opaco.
+    where = ["municipio_id = :m"]
+    params: dict = {"m": municipio_id}
+    if situacao:
+        where.append("upper(coalesce(situacao, '')) = ANY(:sits)")
+        params["sits"] = [str(s).upper().strip() for s in situacao]
+    if programa:
+        where.append("coalesce(programa_codigo, '') ILIKE :prog")
+        params["prog"] = f"%{programa}%"
+    if parlamentar:
+        where.append("(coalesce(parlamentar, '') ILIKE :parl OR coalesce(emenda, '') ILIKE :parl)")
+        params["parl"] = f"%{parlamentar}%"
+    if emenda:
+        where.append("coalesce(emenda, '') ILIKE :em")
+        params["em"] = f"%{emenda}%"
+    if objeto:
+        where.append("coalesce(objeto, '') ILIKE :obj")
+        params["obj"] = f"%{objeto}%"
 
-    mun_norm = _norm(mun.nome)
-    # Match: nome do beneficiario contem nome do municipio (caso "MUNICIPIO DE ARAUJOS")
-    # ou cnpj corresponde
-    filtered = []
-    for it in all_items:
-        ben = _norm(it.get("beneficiarioNome") or "")
-        # match exato no fim: "MUNICIPIO DE ARAUJOS" ou nome simples
-        if not (mun_norm in ben or ben.endswith(mun_norm)):
-            continue
-        if situacao and _norm(it.get("planoAcaoSituacao") or "") not in {_norm(x) for x in situacao}:
-            continue
-        if programa and programa not in (it.get("programaCodigo") or ""):
-            continue
-        if parlamentar and _norm(parlamentar) not in _norm(it.get("codigoEmendaFormatado") or ""):
-            continue
-        if emenda and emenda not in (it.get("codigoEmendaFormatado") or ""):
-            continue
-        if objeto and _norm(objeto) not in _norm(it.get("politicasPublicas") or ""):
-            continue
-        filtered.append({
-            "id": it.get("planoAcaoId"),
-            "codigo": it.get("planoAcaoCodigo"),
-            "programa_codigo": it.get("programaCodigo"),
-            "programa_id": it.get("programaId"),
-            "situacao_plano_acao": it.get("planoAcaoSituacao"),
-            "situacao_plano_trabalho": it.get("planoTrabalhoSituacao"),
-            "beneficiario_nome": it.get("beneficiarioNome"),
-            "beneficiario_cnpj": it.get("beneficiarioCnpj"),
-            "uf": it.get("uf"),
-            "politicas_publicas": it.get("politicasPublicas"),
-            "emenda_codigo": it.get("codigoEmendaFormatado"),
-            "valor_custeio": float(it.get("valorCusteio") or 0),
-            "valor_investimento": float(it.get("valorInvestimento") or 0),
-            "valor_total": float(it.get("valorTotal") or 0),
-            "objeto_descricao": it.get("objetoDescricao"),
-            "motivo_impedimento": it.get("motivoImpedimento"),
-            "dt_atualizacao_plano_acao": it.get("dataAtualizacaoPlanoAcao"),
-            "dt_atualizacao_plano_trabalho": it.get("dataAtualizacaoPlanoTrabalho"),
+    rows = (await db.execute(text(
+        "SELECT plano_acao_id, codigo, programa_codigo, situacao, situacao_trabalho, "
+        "       beneficiario_nome, beneficiario_cnpj, uf, emenda, valor_custeio, "
+        "       valor_investimento, valor_total, objeto, raw_data "
+        f"  FROM transferegov_te WHERE {' AND '.join(where)} "
+        " ORDER BY plano_acao_id DESC"
+    ), params)).all()
+
+    items = []
+    for r in rows:
+        raw = r[13] if isinstance(r[13], dict) else {}
+        items.append({
+            "id": r[0],
+            "codigo": r[1],
+            "programa_codigo": r[2],
+            "programa_id": raw.get("id_programa"),
+            "situacao_plano_acao": r[3],
+            "situacao_plano_trabalho": r[4],
+            "beneficiario_nome": r[5],
+            "beneficiario_cnpj": r[6],
+            "uf": r[7],
+            "politicas_publicas": raw.get("codigo_descricao_areas_politicas_publicas_plano_acao"),
+            "emenda_codigo": r[8],
+            "valor_custeio": float(r[9] or 0),
+            "valor_investimento": float(r[10] or 0),
+            "valor_total": float(r[11] or 0),
+            "objeto_descricao": r[12],
+            "motivo_impedimento": raw.get("motivo_impedimento_plano_acao"),
+            # ⚠️ SEMPRE NULOS, e ja eram: 0 de 800 planos da fonte antiga tinham
+            # `dataAtualizacao*` preenchida (medido em 06/09/2026). Ficam no
+            # contrato porque some-los seria mexer no formato de saida sem
+            # necessidade; a data que a fonte nova de fato tem
+            # (`dt_hora_situacao_plano_trabalho`) e outra coisa e seria mentira
+            # servi-la com este nome.
+            "dt_atualizacao_plano_acao": None,
+            "dt_atualizacao_plano_trabalho": None,
         })
 
     return {
-        "items": filtered,
-        "total": len(filtered),
+        "items": items,
+        "total": len(items),
         "municipio": {"id": mun.id, "nome": mun.nome, "uf": mun.uf},
-        "cache_age_seconds": int(time.time() - (_CACHE.get(mun.uf, (time.time(), []))[0])),
+        # ⚠️ SEMPRE 0, e no contrato de proposito. A tela imprime "Cache: Xmin"
+        # quando isto e > 0 (page.tsx:375); agora a leitura e direta da tabela,
+        # sem cache em memoria, entao 0 e a verdade. Tirar o campo faria o
+        # `setCacheAge(r.data.cache_age_seconds)` guardar `undefined`.
+        "cache_age_seconds": 0,
     }
 
 
@@ -274,26 +292,32 @@ async def por_cnpj(
     if len(alvo) != 14:
         raise HTTPException(400, "Informe um CNPJ válido (14 dígitos)")
 
-    # 1) Especiais / Plano de Acao (API publica NACIONAL, filtra por CNPJ)
+    # 1) Especiais / Plano de Acao — API publica oficial, filtrada por CNPJ na
+    #    PROPRIA FONTE (antes: varredura nacional + filtro em memoria).
     especiais = []
-    try:
-        for it in await _fetch_listagem(None):
-            if _digits(it.get("beneficiarioCnpj")) == alvo:
-                especiais.append({
-                    "id": it.get("planoAcaoId"),
-                    "codigo": it.get("planoAcaoCodigo"),
-                    "programa_codigo": it.get("programaCodigo"),
-                    "situacao": it.get("planoAcaoSituacao"),
-                    "beneficiario_nome": it.get("beneficiarioNome"),
-                    "beneficiario_cnpj": it.get("beneficiarioCnpj"),
-                    "uf": it.get("uf"),
-                    "politicas_publicas": it.get("politicasPublicas"),
-                    "emenda_codigo": it.get("codigoEmendaFormatado"),
-                    "valor_total": float(it.get("valorTotal") or 0),
-                    "objeto_descricao": it.get("objetoDescricao"),
-                })
-    except httpx.HTTPError:
-        pass  # API fora do ar -> retorna so o que der
+    for it in await _especiais_por_cnpj(alvo):
+        ben = it.get("_beneficiario") or {}
+        codigo = it.get("codigo_plano_acao") or ""
+        especiais.append({
+            "id": it.get("id_plano_acao"),
+            "codigo": codigo or None,
+            # Mesma derivacao do coletor (ingestion/transferegov_te.
+            # plano_novo_para_linha): `codigo_programa` da fonte perde o zero a
+            # esquerda, o codigo do plano nao.
+            "programa_codigo": (codigo.rsplit("-", 1)[0] if "-" in codigo else None),
+            "situacao": it.get("situacao_plano_acao"),
+            "beneficiario_nome": ben.get("nome_beneficiario"),
+            "beneficiario_cnpj": ben.get("cnpj_beneficiario"),
+            "uf": ben.get("uf_beneficiario"),
+            "politicas_publicas": it.get("codigo_descricao_areas_politicas_publicas_plano_acao"),
+            "emenda_codigo": it.get("codigo_emenda_parlamentar_formatado_plano_acao"),
+            "valor_total": round(float(it.get("valor_custeio_plano_acao") or 0)
+                                 + float(it.get("valor_investimento_plano_acao") or 0), 2),
+            "objeto_descricao": (it.get("detalhamento_objeto") or it.get("nome_objeto")),
+        })
+    # Sem try/except aqui: `_especiais_por_cnpj` ja engole a falha da fonte e
+    # devolve [], que e o mesmo contrato do `except httpx.HTTPError: pass` que
+    # existia neste lugar — com a vantagem de o motivo sair no log de la.
 
     # 2) Voluntarias/Convenios: base SICONV federal (Brasil inteiro, dados
     #    abertos), por CNPJ. Dado publico -> nao escopado por municipio.

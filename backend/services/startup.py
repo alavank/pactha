@@ -493,6 +493,17 @@ MIGRATION_FILES = [
     # que derivariam a permissao tem guard em `migration_backfills` e ja
     # dispararam. So a tela daria menu visivel e 403 no clique.
     "add_tela_emendas_federais.sql",
+    # ⭐ LIMPEZA DA TROCA DE FONTE DA TRANSFERENCIA ESPECIAL (06/09/2026): apaga
+    # os planos que o casamento por NOME creditou ao municipio errado. Ver o
+    # cabecalho do .sql.
+    #
+    # ⚠️ DEPOIS de `add_municipio_entidades.sql` — a dependencia e dura: o DELETE
+    # consulta `municipio_entidades` para nao apagar plano de um fundo do proprio
+    # municipio. Antes dela, banco NOVO quebraria no primeiro boot com
+    # "relation does not exist" e o runner engoliria a falha, deixando o tenant
+    # com o vinculo falso para sempre. Guardado por
+    # `tests/test_migrations_ordem_tabela.py`.
+    "limpa_transferegov_te_vinculo_por_nome.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",
