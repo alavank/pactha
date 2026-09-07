@@ -123,8 +123,11 @@ MIN_INTERVAL_H = int(os.getenv("OBRASGOV_MIN_INTERVAL_H", "20") or "20")
 # onde o resultado aparece. Mesma disciplina do `_TETO_TAREFA_S` da
 # Transferencia Especial.
 TETO_TAREFA_S = float(os.getenv("OBRASGOV_TETO_TAREFA_S", "1700") or "1700")
-# Quanto a fase de detalhe precisa para valer a pena comecar (medido: ~450 s
-# para as cinco varreduras completas, 1.278 paginas a 0,37 s).
+# Quanto a fase de detalhe precisa para comecar. ⚠️ O NUMERO VEIO DA MEDICAO, e
+# a estimativa anterior (450 s para os cinco) errou por mais do dobro: o custo
+# real dos cinco e 1.020 s. Com o rodizio de `_detalhe_da_rodada` a rodada leva
+# os dois baratos (60 s) mais o pior dos caros (384 s) = ~450 s, e 500 s de
+# reserva cobre isso com folga.
 DETALHE_MIN_S = float(os.getenv("OBRASGOV_DETALHE_MIN_S", "500") or "500")
 
 
@@ -582,14 +585,49 @@ def linha(municipio_id: int, p: dict, vinculo: str = "prefeitura",
 # a maquina parada esperando. Paralelizar cortaria o tempo, mas e exatamente o
 # que a skill `ingestion` proibe ("Never raise scraping concurrency"), e o custo
 # de errar contra fonte federal ja foi pago duas vezes (TCE-RS e Especiais).
-_DETALHE = (
-    # (caminho, chave no dicionario montado)
-    ("execucao-fisica", "execucao"),
-    ("empenho", "empenhos"),
+# ⚠️ TETO PROPRIO, e MAIOR que o `TETO_PAGINAS` da varredura por UF. Medido em
+# 07/09/2026: `/empenho` tem 89.477 linhas = 448 paginas, e o teto de 400 cortou
+# a varredura em 80.000 — o coletor gravaria empenho faltando e diria apenas
+# "PARCIAL" numa linha de log. 700 cobre o maior endpoint com folga e continua
+# sendo guarda contra laco infinito.
+TETO_PAGINAS_DETALHE = int(os.getenv("OBRASGOV_TETO_PAGINAS_DETALHE", "700") or "700")
+
+# ⭐ DOIS GRUPOS, E SO UM DOS CAROS POR RODADA. O custo real, medido contra a
+# fonte (a estimativa de 450s errou por mais do dobro):
+#
+#     execucao-fisica ...... 384s    71.743 linhas
+#     empenho .............. 301s    89.477 linhas
+#     estudo-viabilidade ... 276s    78.227 linhas
+#     contrato .............. 30s     7.624 linhas
+#     historico-paralisada .. 29s     8.000 linhas
+#     ------------------------------------------
+#     TODOS ............... 1.020s
+#
+# Varrer os cinco toda noite seria ~17 min POR TENANT, e os cinco tenants
+# baixariam as mesmas 1.278 paginas da mesma fonte federal todo dia. Os dois
+# baratos custam 60s juntos e vao sempre; os tres caros entram em rodizio, um
+# por rodada — cada um se atualiza a cada tres dias, que e frequencia de sobra
+# para percentual de obra e nota de empenho.
+_DETALHE_SEMPRE = (
     ("contrato", "contratos"),
     ("historico-situacao-cancelada-paralisada", "paralisacao"),
+)
+_DETALHE_RODIZIO = (
+    ("execucao-fisica", "execucao"),
+    ("empenho", "empenhos"),
     ("estudo-viabilidade", "estudo"),
 )
+
+
+def _detalhe_da_rodada(dia: int | None = None) -> tuple[tuple[str, str], ...]:
+    """Os endpoints desta rodada: os dois baratos + UM dos caros, por rodizio.
+
+    O rodizio e pelo dia do ano, entao ele avanca sozinho e nao precisa de
+    estado no banco. Funcao PURA para o teste poder percorrer os tres dias.
+    """
+    import datetime
+    d = dia if dia is not None else datetime.date.today().timetuple().tm_yday
+    return _DETALHE_SEMPRE + (_DETALHE_RODIZIO[d % len(_DETALHE_RODIZIO)],)
 
 
 def _num(v):
@@ -614,7 +652,7 @@ def coletar_detalhe(client: httpx.Client, ids: set[str]) -> dict[str, dict]:
     fora: dict[str, dict] = {}
     if not ids:
         return fora
-    for caminho, chave in _DETALHE:
+    for caminho, chave in _detalhe_da_rodada():
         t0 = time.time()
         # ⚠️ FILTRA PAGINA A PAGINA, e nao no fim. `/empenho` sozinho tem 89.477
         # linhas: acumular a fonte inteira para depois jogar 99% fora seria
@@ -622,7 +660,7 @@ def coletar_detalhe(client: httpx.Client, ids: set[str]) -> dict[str, dict]:
         # sobrevive o que e da carteira.
         vistas = casadas = 0
         n, total_pages, completo = 1, None, True
-        while n <= TETO_PAGINAS:
+        while n <= TETO_PAGINAS_DETALHE:
             d = _pagina_de(client, caminho, {}, n)
             if d is None:
                 log.warning("  detalhe %s: rate limit na pagina %d — PARCIAL",

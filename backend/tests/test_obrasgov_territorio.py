@@ -9,7 +9,8 @@ nova deixa a obra intermunicipal existir para todos os donos.
 import json
 
 from ingestion.obrasgov import (
-    ABRANGENCIA_MAX, DETALHE_MIN_S, TETO_TAREFA_S, _SQL, _SQL_DETALHE,
+    ABRANGENCIA_MAX, DETALHE_MIN_S, TETO_PAGINAS_DETALHE, TETO_TAREFA_S,
+    _DETALHE_RODIZIO, _DETALHE_SEMPRE, _SQL, _SQL_DETALHE, _detalhe_da_rodada,
     _soma, linha, linha_detalhe,
 )
 
@@ -152,11 +153,36 @@ def test_o_codigo_do_autor_da_emenda_sobrevive_no_JSONB():
 # ---------------------------------------------------------------------------
 
 def test_a_fase_de_detalhe_cabe_no_teto_da_tarefa():
-    """A varredura dos cinco endpoints leva ~450s fixos (1.278 páginas a 0,37s,
-    medido). Ela só começa se couber — melhor pular inteira do que ser morta no
-    meio e perder o log, que é onde o resultado da rodada aparece."""
-    assert DETALHE_MIN_S >= 450          # o custo medido, com folga
+    """⚠️ O NÚMERO VEIO DA MEDIÇÃO, e a estimativa tinha errado por mais do
+    dobro: varrer os cinco endpoints custa **1.020s**, não 450s. Com o rodízio
+    a rodada leva os dois baratos (60s) mais o pior dos caros (384s) = ~450s."""
+    assert DETALHE_MIN_S >= 450
     assert TETO_TAREFA_S > DETALHE_MIN_S * 2   # sobra para a varredura de projetos
+
+
+def test_o_teto_de_paginas_do_detalhe_cobre_o_maior_endpoint():
+    """⭐ DEFEITO PEGO NA MEDIÇÃO REAL: `/empenho` tem 89.477 linhas = 448
+    páginas, e o `TETO_PAGINAS` de 400 da varredura por UF cortou em 80.000. O
+    coletor gravaria empenho faltando e diria apenas "PARCIAL" numa linha de
+    log."""
+    assert TETO_PAGINAS_DETALHE * 200 > 89_477
+
+
+def test_o_rodizio_cobre_os_tres_caros_em_tres_dias():
+    """Os dois baratos vão sempre (60s juntos); os três caros — 384s, 301s e
+    276s — se revezam. Varrer os cinco toda noite seria 17 min por tenant, e os
+    cinco tenants baixariam as mesmas 1.278 páginas da mesma fonte todo dia."""
+    vistos = set()
+    for dia in range(1, 4):
+        rodada = _detalhe_da_rodada(dia)
+        # os baratos estão sempre
+        for barato in _DETALHE_SEMPRE:
+            assert barato in rodada
+        # e exatamente um dos caros
+        caros = [x for x in rodada if x in _DETALHE_RODIZIO]
+        assert len(caros) == 1
+        vistos.add(caros[0][0])
+    assert vistos == {c[0] for c in _DETALHE_RODIZIO}
 
 
 def test_o_teto_cabe_no_kill_da_scheduled_task():

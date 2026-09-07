@@ -587,10 +587,27 @@ multiplica a obra intermunicipal: com a chave global, 40 dos 41 donos do `324.31
 perderiam a obra em silêncio.
 
 **A fase de detalhe varre a fonte inteira e casa em memória**, em vez de perguntar
-projeto a projeto — 1.278 páginas (~450s fixos) contra 2.180 requisições só em Santa
-Maria (~13 min, crescendo com a carteira). Sequencial por decisão do dono, mesmo com a
-VPS nova de 8 núcleos: o gargalo é latência de rede, não CPU, e paralelizar contra
-fonte federal é o que a skill `ingestion` proíbe.
+projeto a projeto — contra 2.180 requisições só em Santa Maria (~13 min, crescendo com
+a carteira). Sequencial por decisão do dono, mesmo com a VPS nova de 8 núcleos: o
+gargalo é latência de rede, não CPU, e paralelizar contra fonte federal é o que a skill
+`ingestion` proíbe.
+
+⚠️ **A ESTIMATIVA ERROU POR MAIS DO DOBRO, e a medição contra a fonte mudou o
+desenho.** Eu disse ~450s para os cinco endpoints; o real é **1.020s**:
+
+    execucao-fisica ...... 384s    71.743 linhas    3 da carteira (Nova Palma)
+    empenho .............. 301s    89.477 linhas  650
+    estudo-viabilidade ... 276s    78.227 linhas    3
+    contrato .............. 30s     7.624 linhas   73
+    historico-paralisada .. 29s     8.000 linhas    0
+
+Daí saíram duas correções. **Rodízio:** os dois baratos (60s juntos) vão toda rodada e
+os três caros se revezam, um por noite — varrer os cinco todo dia seria 17 min por
+tenant, com os cinco baixando as mesmas 1.278 páginas da mesma fonte federal. Cada
+endpoint caro se atualiza a cada três dias, frequência de sobra para percentual de obra.
+**Teto próprio de páginas:** o `/empenho` tem 448 páginas e o `TETO_PAGINAS` de 400
+cortava a varredura em 80.000 linhas — o coletor gravaria empenho faltando e diria
+apenas "PARCIAL" numa linha de log.
 
 **Dois defeitos meus, pegos antes de ir ao ar:** o log do `httpx` despejaria 1.278
 linhas por rodada, enterrando o resultado (silenciado, como `sismob_obras` já fazia); e
