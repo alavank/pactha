@@ -8,6 +8,7 @@ import { useAnoCorrentePadrao } from "@/lib/anoPadrao";
 import {
   Loader2, Search, ChevronDown, ChevronRight,
   Landmark, Building2, FileText, Eraser, Coins, HeartPulse, ArrowLeftRight, Users,
+  BadgeDollarSign,
 } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -144,6 +145,32 @@ interface DetalheFns {
   proponente: string | null;
 }
 
+/** A carteira de emendas federais INDICADAS — a sétima fonte.
+ *
+ *  ⚠️ Chegou ao detalhe só em 07/09/2026: o agregado a contava desde 06/09, mas
+ *  o endpoint devolvia seis listas. O cartão prometia «Emendas Federais · 3» e
+ *  ao abrir não havia seção nenhuma; quem só tem emenda federal — 45% da
+ *  carteira nos municípios medidos, a indicada que nunca virou instrumento —
+ *  abria o cartão num 404. Ver o bloco `ef_list` em
+ *  `routers/parlamentares.py::detalhe`, que também explica os dois `NOT EXISTS`
+ *  que impedem a mesma emenda de aparecer aqui e no TransfereGov. */
+interface DetalheEmendaFederal {
+  id: number;
+  municipio_nome: string | null;
+  codigo_emenda: string | null;
+  nr_emenda: string | null;
+  ano: number | null;
+  beneficiario_nome: string | null;
+  /** FALSE quando o dinheiro foi para uma entidade do município (hospital,
+   *  APAE, fundo) e não para a prefeitura. Os dois aparecem, e somá-los sem
+   *  dizer prometeria ao gestor um caixa que não é dele. */
+  e_prefeitura: boolean;
+  parlamentar: string | null;
+  tipo_parlamentar: string | null;
+  valor_total: number;
+  qualif_proponente: string | null;
+}
+
 interface ParlamentarDetalhe {
   nome_consulta: string;
   sigcon: DetalheSigcon[];
@@ -152,12 +179,14 @@ interface ParlamentarDetalhe {
   plano_acao: DetalhePlanoAcao[];
   pac: DetalhePac[];
   fns: DetalheFns[];
+  emendas_federais: DetalheEmendaFederal[];
   total_sigcon: number;
   total_voluntarias: number;
   total_emendas: number;
   total_plano_acao: number;
   total_pac: number;
   total_fns: number;
+  total_emendas_federais: number;
   total_geral: number;
   valor_total: number;
 }
@@ -224,10 +253,12 @@ function variacao(delta: number, pct: number | null): {
  *  grade. É também o que faz o resumo casar com o título da seção que a pessoa
  *  encontra ao abrir a setinha — é para isso que o resumo existe.
  *
- *  ⚠️ «Emendas Federais» É A EXCEÇÃO QUE FALTA FECHAR: ela conta aqui e no
- *  `total_lancamentos`, mas o endpoint de detalhe (`GET /parlamentares/detalhe`)
- *  devolve seis listas, não sete — ao abrir, não há seção dela. O `title` avisa.
- *  Não é regressão desta mudança: a grade tinha o mesmo furo, só menos visível. */
+ *  ⚠️ «Emendas Federais» FOI A EXCEÇÃO ATÉ 07/09/2026, e essa é a razão de esta
+ *  nota existir: ela contava aqui e no `total_lancamentos`, mas o endpoint de
+ *  detalhe devolvia seis listas, não sete — ao abrir, não havia seção dela, e
+ *  quem só tem emenda federal caía num 404. Fechado no mesmo dia (ver `ef_list`
+ *  em `routers/parlamentares.py::detalhe`). O furo já existia na grade; foi a
+ *  troca por selo, que promete uma seção por nome, que o tornou visível. */
 const FONTES: Array<{
   chave: keyof ParlamentarItem["por_fonte"];
   label: string;
@@ -247,8 +278,8 @@ const FONTES: Array<{
     title: "Propostas do Fundo Nacional de Saúde" },
   { chave: "emenda_federal", label: "Emendas Federais",
     title: "Emendas parlamentares federais (carteira CGU/SICONV) que ainda não "
-         + "viraram instrumento. A listagem delas ainda não abre aqui — está na "
-         + "tela «Emendas parlamentares»." },
+         + "viraram instrumento — se tivessem virado, contariam em TransfereGov "
+         + "ou em Transferência Especial, e não aqui." },
 ];
 
 /** Grupo de lançamentos de UMA fonte dentro do parlamentar expandido.
@@ -1112,6 +1143,66 @@ function ParlamentaresInner() {
                                   campos={[
                                     { rotulo: "Ano", valor: f.ano ?? "—" },
                                     { rotulo: "Fim da vigência", valor: f.dt_vigencia_final || "—" },
+                                  ]}
+                                />
+                              </ItemLinha>
+                            ))}
+                          </GrupoFonte>
+                        )}
+
+                        {/* EMENDAS FEDERAIS — a sétima fonte, que só passou a
+                            aparecer aqui em 07/09/2026. Ver `DetalheEmendaFederal`.
+
+                            ⚠️ O TÍTULO DIZ «indicadas, ainda sem instrumento» e
+                            isso é a informação, não uma ressalva: o que está
+                            nesta seção é dinheiro APONTADO ao município que não
+                            virou convênio nem plano de ação. Se tivesse virado,
+                            estaria numa das seções acima — os dois `NOT EXISTS`
+                            do SQL garantem que não apareça duas vezes. */}
+                        {detail.emendas_federais && detail.emendas_federais.length > 0 && (
+                          <GrupoFonte
+                            icon={BadgeDollarSign}
+                            titulo="Emendas federais indicadas (ainda sem instrumento)"
+                            sub={`${detail.emendas_federais.length} emenda(s)`}
+                            total={soma(detail.emendas_federais, (e) => e.valor_total)}
+                          >
+                            {detail.emendas_federais.map((e) => (
+                              <ItemLinha
+                                key={e.id}
+                                titulo={e.beneficiario_nome || "Beneficiário não informado"}
+                                valor={fmtMoney(e.valor_total)}
+                                meta={
+                                  <>
+                                    {/* ⚠️ O selo de quem recebeu é o que separa
+                                        «a prefeitura recebeu» de «alguém no
+                                        município recebeu» — mesma disciplina da
+                                        tela de Parcerias. Só marca o caso que
+                                        surpreende: a prefeitura é o esperado. */}
+                                    {!e.e_prefeitura && (
+                                      <Selo tom="atencao"
+                                            title={e.qualif_proponente || "O beneficiário não é a prefeitura"}>
+                                        não é da prefeitura
+                                      </Selo>
+                                    )}
+                                    {e.tipo_parlamentar && (
+                                      <Selo title="Tipo da emenda na fonte (CGU)">
+                                        {e.tipo_parlamentar.toLowerCase()}
+                                      </Selo>
+                                    )}
+                                    {e.municipio_nome && <span>{e.municipio_nome}</span>}
+                                    {e.codigo_emenda && (
+                                      <span className="font-mono">· emenda {e.codigo_emenda}</span>
+                                    )}
+                                  </>
+                                }
+                              >
+                                <Campos
+                                  campos={[
+                                    { rotulo: "Ano", valor: e.ano ?? "—" },
+                                    { rotulo: "Nº da emenda", valor: e.nr_emenda || "—", mono: true },
+                                    { rotulo: "Qualificação do proponente",
+                                      valor: e.qualif_proponente || "—",
+                                      title: e.qualif_proponente || undefined },
                                   ]}
                                 />
                               </ItemLinha>

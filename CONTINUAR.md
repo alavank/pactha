@@ -951,10 +951,18 @@ também o que faz o resumo casar com o título da seção que aparece ao abrir a
 ⚠️ **O valor total ganhou rótulo** ("Valor total dos lançamentos", curto no celular): era um
 número solto no canto de um cartão que, aberto, mostra o valor de *cada* lançamento.
 
-🔴 **E o furo que isso revelou:** «Emendas Federais» conta no resumo e no
-`total_lancamentos`, mas `GET /parlamentares/detalhe` devolve **seis** listas, não sete —
-quem abre não encontra a seção. Não é regressão (a grade tinha o mesmo furo, menos visível).
-Registrado como item 11 em `docs/emendas-federais-pendencias.md`, com o caminho do conserto.
+⭐ **E o furo que isso revelou, fechado no mesmo dia.** «Emendas Federais» contava no
+resumo e no `total_lancamentos`, mas `GET /parlamentares/detalhe` devolvia **seis** listas,
+não sete: quem abria a setinha não achava a seção, o `total_geral` do detalhe não batia com
+o da lista, e o parlamentar que **só** tem emenda federal — 45% da carteira nos municípios
+medidos — recebia **404** e o cartão abria com erro. Não era regressão da troca por selo; a
+grade tinha o mesmo furo, só menos visível. Fechado com o bloco `ef_list` em
+`routers/parlamentares.py::detalhe` mais um `GrupoFonte` na tela.
+
+⚠️ **O SQL da sétima fonte repete os dois `NOT EXISTS` do agregado** (`id_proposta_siconv` e
+`split_part(te.emenda,'-',1)`), e eles não são opcionais: esta tabela lê a mesma base que já
+alimenta TransfereGov e Transferência Especial. Sem o desconto, a mesma emenda apareceria em
+duas seções e o total do detalhe passaria o do cabeçalho — que é onde o gestor confere.
 
 ## 2. ESTADO ATUAL (2026-09-04)
 
