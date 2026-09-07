@@ -179,16 +179,42 @@ def pagina(client: httpx.Client, uf: str, n: int) -> dict | None:
     promete o comportamento de amanha, e o custo de ter a rede pronta e zero
     enquanto ela nao for usada."""
     params = {"uf_principal": uf, "pagina": n, "tamanho_da_pagina": TAMANHO_PAGINA}
+    return _get_com_retry(client, "projeto-investimento", params)
+
+
+# ⚠️ 5xx DERRUBAVA A RODADA INTEIRA, e isso foi medido em producao duas vezes:
+#
+#     06/09 03:18  500 Internal Server Error  na pagina 63 de MG
+#     07/09 02:48  502 Bad Gateway            na pagina 12 de MG
+#
+# Nos dois casos o montesiao registrou `error` com ZERO gravados — a varredura
+# inteira perdida por um soluco de uma pagina. O `raise_for_status()` levantava,
+# a excecao subia ate o `except` do `ingest` e desfazia tudo.
+#
+# 5xx e TRANSITORIO por definicao ("o servidor falhou", nao "voce errou"), e
+# merece o mesmo backoff que o 429 ja tinha. O que continua levantando e 4xx:
+# 404 ou 422 significam que NOS pedimos errado, e insistir nao conserta.
+#
+# ⚠️ E a fase de detalhe multiplicou a exposicao: a rodada passou de ~75s para
+# ~8-10 min e de dezenas para mais de mil paginas. A chance de encontrar um 5xx
+# no caminho deixou de ser desprezivel.
+_STATUS_RETENTAVEIS = (429, 500, 502, 503, 504)
+
+
+def _get_com_retry(client: httpx.Client, caminho: str, params: dict) -> dict | None:
+    """GET com backoff em 429 e 5xx. `None` = desistiu (e NAO "acabou")."""
     for espera in (0, 15, 45, 90):
         if espera:
-            log.info("    429 — aguardando %ds", espera)
             time.sleep(espera)
-        r = client.get(f"{BASE}/projeto-investimento", params=params,
-                       headers=UA, timeout=TIMEOUT)
-        if r.status_code == 429:
+        r = client.get(f"{BASE}/{caminho}", params=params, headers=UA, timeout=TIMEOUT)
+        if r.status_code in _STATUS_RETENTAVEIS:
+            log.info("    %s em %s p%s — aguardando %ds", r.status_code, caminho,
+                     params.get("pagina"), espera or 15)
             continue
         r.raise_for_status()
         return r.json()
+    log.warning("    %s: desisti apos 4 tentativas (ultimo status %s)",
+                caminho, r.status_code)
     return None
 
 
@@ -248,16 +274,7 @@ def _pagina_de(client: httpx.Client, caminho: str, params: dict, n: int) -> dict
     envelope e o mesmo teto de 200 por pagina.
     """
     p = {**params, "pagina": n, "tamanho_da_pagina": TAMANHO_PAGINA}
-    for espera in (0, 15, 45, 90):
-        if espera:
-            log.info("    429 em %s — aguardando %ds", caminho, espera)
-            time.sleep(espera)
-        r = client.get(f"{BASE}/{caminho}", params=p, headers=UA, timeout=TIMEOUT)
-        if r.status_code == 429:
-            continue
-        r.raise_for_status()
-        return r.json()
-    return None
+    return _get_com_retry(client, caminho, p)
 
 
 def varrer(client: httpx.Client, caminho: str, params: dict | None = None,

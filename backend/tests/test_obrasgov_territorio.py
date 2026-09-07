@@ -213,3 +213,36 @@ def test_o_projeto_de_outra_UF_tem_de_ser_buscado_um_a_um():
     assert callable(projeto_por_id)
     fonte = inspect.getsource(ingest)
     assert "faltando" in fonte and "projeto_por_id" in fonte
+
+
+def test_5xx_transitorio_nao_derruba_a_rodada_inteira():
+    """⭐ DEFEITO MEDIDO EM PRODUÇÃO, DUAS VEZES, no montesião:
+
+        06/09 03:18  500 Internal Server Error  na página 63 de MG
+        07/09 02:48  502 Bad Gateway            na página 12 de MG
+
+    Nos dois casos a rodada registrou `error` com ZERO gravados — a varredura
+    inteira perdida por um soluço de uma página, porque `raise_for_status()`
+    levantava e a exceção subia até o `except` do `ingest`.
+
+    5xx é transitório por definição e merece o mesmo backoff que o 429. O que
+    continua levantando é 4xx: 404 ou 422 significam que NÓS pedimos errado, e
+    insistir não conserta.
+
+    ⚠️ A fase de detalhe multiplicou a exposição: a rodada passou de ~75s para
+    ~8-10 min e de dezenas para mais de mil páginas."""
+    from ingestion.obrasgov import _STATUS_RETENTAVEIS
+    for transitorio in (429, 500, 502, 503, 504):
+        assert transitorio in _STATUS_RETENTAVEIS
+    for nosso_erro in (400, 404, 422):
+        assert nosso_erro not in _STATUS_RETENTAVEIS
+
+
+def test_os_dois_caminhos_de_requisicao_usam_o_mesmo_retry():
+    """A varredura por UF e a fase de detalhe/geometria entravam por funções
+    diferentes, e só uma tinha backoff. Um retry que protege metade do coletor
+    não protege o coletor."""
+    import inspect
+    from ingestion.obrasgov import _pagina_de, pagina
+    assert "_get_com_retry" in inspect.getsource(pagina)
+    assert "_get_com_retry" in inspect.getsource(_pagina_de)
