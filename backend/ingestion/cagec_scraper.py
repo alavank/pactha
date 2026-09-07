@@ -888,15 +888,27 @@ async def _rodar() -> tuple[int, int, list[str]]:
                         _marca_coleta(mun["id"], ok=False,
                                       erro=f"listar entidades: {type(e).__name__}: {str(e)[:200]}")
                         continue
+                    # ⚠️ LISTA VAZIA NAO E VEREDITO — E SO A BUSCA POR NOME QUE
+                    # FALHOU. Aqui o `continue` vinha ANTES do bloco de CNPJs
+                    # conhecidos logo abaixo, e por isso o unico caminho que
+                    # ainda podia achar o municipio ficava inalcancavel
+                    # justamente para quem mais precisava dele.
+                    #
+                    # Custo medido em 07/09/2026, na Freitas: Nova Lima e Arcos
+                    # com SEIS tentativas, "nenhuma entidade publica encontrada",
+                    # nenhuma linha em `cagec_situacao` desde sempre — e a
+                    # consulta pelo CNPJ que o PAC ja nos deu devolve os dois na
+                    # hora ("MUNICIPIO DE NOVA LIMA — Regularizado
+                    # Judicialmente", "MUNICIPIO DE ARCOS — Irregular"). Dois
+                    # municipios de um cliente de 42 sem regularidade estadual
+                    # nenhuma na tela, por causa da ordem de duas linhas.
+                    #
+                    # Casa com a regra que este repo ja aprendeu em outra fonte:
+                    # a chave de um municipio e o IBGE ou o CNPJ — nome e a
+                    # ultima escolha, nunca a unica.
                     if not entidades:
-                        logger.warning("  %s: nenhuma entidade publica no CAGEC", mun["nome"])
-                        falha += 1
-                        # Nao encontrado na CONSULTA (grafia? sem cadastro?) — o
-                        # backoff tira o municipio da frente da fila; a mensagem
-                        # nunca afirma "nao tem cadastro" (a busca e por nome).
-                        _marca_coleta(mun["id"], ok=False,
-                                      erro="nenhuma entidade publica encontrada na consulta (nome sem match?)")
-                        continue
+                        logger.info("  %s: busca por nome nao trouxe nada — tentando os "
+                                    "CNPJ(s) conhecidos", mun["nome"])
 
                     cnpj_prefeitura = _so_digitos(mun["cnpj"] or "")
 
@@ -909,7 +921,21 @@ async def _rodar() -> tuple[int, int, list[str]]:
                                                      " ".join(e.values())).group(0))
                                for e in entidades
                                if re.search(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}", " ".join(e.values()))}
-                    for conhecido in _cnpjs_conhecidos(cur, mun["id"]):
+                    # ⚠️ O CNPJ DA PREFEITURA ENTRA NA LISTA, e ele nao vem do
+                    # SISMOB: `_cnpjs_conhecidos` so devolve os fundos de saude,
+                    # enquanto o da prefeitura ja estava em `mun["cnpj"]` (das
+                    # emendas estaduais ou do transferegov_pac) e era usado
+                    # apenas para decidir QUAL entidade e a principal. Sem ele
+                    # aqui, um municipio que a busca por nome nao acha nao tinha
+                    # como ser encontrado de jeito nenhum — o caso de Nova Lima
+                    # e Arcos. Vai primeiro porque e a entidade que importa.
+                    conhecidos = _cnpjs_conhecidos(cur, mun["id"])
+                    if cnpj_prefeitura:
+                        conhecidos = [{"cnpj": cnpj_prefeitura,
+                                       "nome": f"MUNICIPIO DE {_sem_acento(mun['nome']).upper()}"}
+                                      ] + [c for c in conhecidos
+                                           if c["cnpj"] != cnpj_prefeitura]
+                    for conhecido in conhecidos:
                         if conhecido["cnpj"] in achados:
                             continue
                         linha_extra = None
@@ -926,6 +952,22 @@ async def _rodar() -> tuple[int, int, list[str]]:
                                            "e uma entidade que recebe recurso federal",
                                            conhecido["nome"] or "entidade",
                                            conhecido["cnpj"])
+
+                    # AGORA sim: nem o nome nem nenhum CNPJ conhecido acharam
+                    # nada. O erro registrado diz quais caminhos foram tentados,
+                    # porque "nome sem match?" mandava quem depurasse olhar a
+                    # grafia quando o problema podia ser outro (municipio sem
+                    # CNPJ inferido em fonte nenhuma, por exemplo).
+                    if not entidades:
+                        logger.warning("  %s: nenhuma entidade publica no CAGEC "
+                                       "(nome e %d CNPJ(s) conhecido(s) tentados)",
+                                       mun["nome"], len(conhecidos))
+                        falha += 1
+                        _marca_coleta(
+                            mun["id"], ok=False,
+                            erro=("nenhuma entidade encontrada: busca por nome vazia e "
+                                  f"{len(conhecidos)} CNPJ(s) conhecido(s) sem cadastro no CAGEC"))
+                        continue
 
                     # Uma rodada PARCIAL nao pode autorizar DELETE: se a listagem
                     # veio truncada ou uma entidade nao respondeu, o CNPJ dela nao

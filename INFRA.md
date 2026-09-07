@@ -324,6 +324,16 @@ O desenho atual (redesenho de 09/08, "tuning da madrugada"):
 > arquivo de ontem, e às 8h a tela ainda mostrava a data anterior. Esta task
 > insiste de hora em hora (10–14 UTC) até a data virar; é HTTP puro, ~2s.
 
+> ⚠️ **`cagec` é o mesmo tipo de restrição, e custou quatro dias de tela errada.**
+> O portal do CAGEC **não emite o CRC de madrugada** (medido em 07/09/2026, no mesmo
+> worker: 06:15 UTC → "não foi possível recuperar dados do Convenente/Parceiro" em toda
+> entidade; 17:58 UTC → as 27 obrigações em 34s). As três tasks estavam em 03h–04h BRT,
+> então a situação atualizava e o **detalhamento** ficava congelado. Voltaram para a
+> faixa comercial (freitas `0 10,15,19,23`, montesiao `46 10,19`, trust `48 10,19` UTC).
+> A Freitas ainda somava um segundo defeito: 1 rodada/dia × lote 11 = ciclo de 4 dias.
+> Os números, as medições e a regra do lote estão em `docs/CRON_SETUP.md` → *cagec — a
+> fonte tem JANELA*.
+
 Detalhes de cada rotina e dos comandos completos: `docs/CRON_SETUP.md`.
 
 **SISMOB** (obras de saúde do MS) é **API JSON pública** — sem token, sem login, sem
