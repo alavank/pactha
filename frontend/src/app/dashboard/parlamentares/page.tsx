@@ -201,6 +201,56 @@ function variacao(delta: number, pct: number | null): {
   };
 }
 
+/** AS FONTES DE UM PARLAMENTAR, em ORDEM FIXA — e é dela que sai o resumo do
+ *  cartão fechado.
+ *
+ *  ⚠️ ISTO SUBSTITUIU UMA GRADE DE SETE CAMPOS (07/09/2026, pedido do dono com
+ *  print). A grade mostrava as sete fontes SEMPRE, e como quase todo
+ *  parlamentar tem uma ou duas, cinco delas saíam como «—»: três linhas de
+ *  cartão para exibir, em média, dois números. "Tem campos que ficam vazios e
+ *  são mostrados mesmo assim e por isso toma um espaço maior."
+ *
+ *  ⚠️ E ISSO É UMA REVERSÃO CONSCIENTE. Estes selos já foram chips coloridos, e
+ *  a grade nasceu para consertar dois defeitos deles: a cor gasta à toa e a
+ *  posição variável, que impedia descer o olho por uma coluna. O primeiro
+ *  continua consertado — selo neutro, cinza sobre cinza, como manda a peça. O
+ *  segundo é o que se paga: em troca de um cartão três vezes menor, a varredura
+ *  vertical vira ORDEM fixa em vez de POSIÇÃO fixa. Quem tem FNS mostra FNS
+ *  sempre depois de Seleção PAC e sempre antes de Emendas Federais.
+ *
+ *  ⚠️ O RÓTULO É O NOME INTEIRO, não a abreviação ("Transferência Especial", e
+ *  não "Transf. especial"). A abreviação existia porque a coluna da grade tinha
+ *  ~150px; o selo se ajusta ao texto, então o motivo dela sumiu junto com a
+ *  grade. É também o que faz o resumo casar com o título da seção que a pessoa
+ *  encontra ao abrir a setinha — é para isso que o resumo existe.
+ *
+ *  ⚠️ «Emendas Federais» É A EXCEÇÃO QUE FALTA FECHAR: ela conta aqui e no
+ *  `total_lancamentos`, mas o endpoint de detalhe (`GET /parlamentares/detalhe`)
+ *  devolve seis listas, não sete — ao abrir, não há seção dela. O `title` avisa.
+ *  Não é regressão desta mudança: a grade tinha o mesmo furo, só menos visível. */
+const FONTES: Array<{
+  chave: keyof ParlamentarItem["por_fonte"];
+  label: string;
+  title: string;
+}> = [
+  { chave: "sigcon", label: "Convênios Estaduais",
+    title: "Convênios do Estado com o município (SIGCON)" },
+  { chave: "voluntaria", label: "TransfereGov",
+    title: "Propostas TransfereGov / SICONV (federal)" },
+  { chave: "emenda", label: "Emendas Estaduais",
+    title: "Indicações de emenda estadual" },
+  { chave: "plano_acao", label: "Transferência Especial",
+    title: "Transferência Especial / Plano de Ação (RP9)" },
+  { chave: "pac", label: "Seleção PAC",
+    title: "Propostas do Novo PAC" },
+  { chave: "fns", label: "FNS (Saúde)",
+    title: "Propostas do Fundo Nacional de Saúde" },
+  { chave: "emenda_federal", label: "Emendas Federais",
+    title: "Emendas parlamentares federais (carteira CGU/SICONV) que ainda não "
+         + "viraram instrumento. A listagem delas ainda não abre aqui — está na "
+         + "tela «Emendas parlamentares»." },
+];
+
 /** Grupo de lançamentos de UMA fonte dentro do parlamentar expandido.
  *  Substitui a tabela interna: cabeçalho com contagem e total à direita, itens
  *  soltos dentro — a mesma estrutura que Emendas usa para agrupar por ano. */
@@ -411,8 +461,10 @@ function ParlamentaresInner() {
         <p className="mt-1 text-sm" style={{ color: "var(--bi-muted)" }}>
           Lista agregada dos parlamentares (deputados estaduais/federais e senadores)
           com lançamentos vinculados — convênios estaduais, propostas TransfereGov/SICONV,
-          emendas estaduais, Transferência Especial / Plano de Ação (RP9), Seleção PAC e
-          FNS (Fundo Municipal de Saúde, agrupado pelo proponente). Clique para ver os lançamentos.
+          emendas estaduais, Transferência Especial / Plano de Ação (RP9), Seleção PAC,
+          FNS (Fundo Municipal de Saúde, agrupado pelo proponente) e emendas federais
+          indicadas. Cada parlamentar traz os selos das fontes em que tem lançamento;
+          clique na setinha para ver um a um.
         </p>
       </div>
 
@@ -683,7 +735,36 @@ function ParlamentaresInner() {
                       <span className="truncate">{p.nome_display}</span>
                     </span>
                   }
-                  valor={fmtMoney(p.valor_total)}
+                  /* ⭐ O VALOR GANHOU RÓTULO (07/09/2026, pedido do dono): "pra
+                     pessoa que bate o olho entender que aquele valor é
+                     referente a todos os lançamentos". Era um número solto no
+                     canto, e num cartão que também mostra o valor de CADA
+                     lançamento quando aberto, ele podia ser lido como o valor de
+                     um deles. Mesma tipografia dos rótulos da comparação, ao
+                     lado — 9px, caixa alta, cor mais fraca —, para as duas
+                     colunas de número lerem como uma coisa só. */
+                  valor={
+                    <span className="flex flex-col items-end gap-0.5">
+                      {/* Duas versões do MESMO rótulo, e não uma que quebra em
+                          duas linhas: quebrar devolveria ao cartão a altura que
+                          esta mudança acabou de tirar dele. No celular, onde a
+                          linha inteira tem ~390px, o rótulo curto deixa o nome
+                          do parlamentar caber sem truncar. */}
+                      <span
+                        className="whitespace-nowrap text-[9px] font-normal uppercase tracking-wide sm:hidden"
+                        style={{ color: "var(--bi-faint)" }}
+                      >
+                        Valor total
+                      </span>
+                      <span
+                        className="hidden whitespace-nowrap text-[9px] font-normal uppercase tracking-wide sm:inline"
+                        style={{ color: "var(--bi-faint)" }}
+                      >
+                        Valor total dos lançamentos
+                      </span>
+                      <span className="bi-num">{fmtMoney(p.valor_total)}</span>
+                    </span>
+                  }
                   meta={
                     <>
                       <span>{p.total_lancamentos} lançamento(s)</span>
@@ -697,15 +778,27 @@ function ParlamentaresInner() {
                           · {p.municipios.join(", ")}
                         </span>
                       )}
+                      {/* ⭐ O RESUMO DO QUE ESTÁ ATRÁS DA SETINHA: um selo por
+                          fonte QUE TEM lançamento, na ordem fixa de `FONTES`.
+                          Ver o comentário de lá para o que isto substituiu e o
+                          que se paga pela troca. */}
+                      {FONTES.map(({ chave, label, title }) => {
+                        const n = p.por_fonte[chave];
+                        return n ? (
+                          <Selo key={chave} title={title}>{`${label} · ${n}`}</Selo>
+                        ) : null;
+                      })}
                     </>
                   }
                   acao={cmp && varItem ? (
                     /* AS COLUNAS DA COMPARACAO.
                        Continuam a direita e alinhadas entre si para o olho descer
                        a coluna: e assim que se compara uma lista, nao lendo cartao
-                       por cartao. A tipografia agora e a mesma do <Campos> (rotulo
-                       de 9px, numero de 11px) para as duas grades do cartao — a de
-                       baixo e esta — lerem como uma coisa so. */
+                       por cartao. A tipografia (rotulo de 9px em caixa alta, cor
+                       mais fraca) e a MESMA do rotulo do valor total, ao lado —
+                       os dois blocos de numero do cartao leem como uma coisa so.
+                       Era tambem a da grade de fontes que ficava embaixo; ela
+                       virou os selos da meta em 07/09/2026. */
                     <div className="hidden shrink-0 items-start gap-3 sm:flex">
                       <div className="w-28 text-right">
                         <div className="truncate text-[9px] uppercase tracking-wide" style={{ color: "var(--bi-faint)" }}>
@@ -739,27 +832,10 @@ function ParlamentaresInner() {
                       </div>
                     </div>
                   ) : undefined}
-                >
-                  {/* As seis fontes em POSICAO FIXA. Eram chips coloridos soltos
-                      na linha, cada cartao com os seus numa posicao diferente;
-                      na grade da em quem tem FNS ou PAC so descendo o olho. */}
-                  <Campos
-                    cols={3}
-                    campos={[
-                      { rotulo: "Estaduais", valor: p.por_fonte.sigcon || "—", title: "Convênios estaduais" },
-                      { rotulo: "TransfereGov", valor: p.por_fonte.voluntaria || "—", title: "Propostas TransfereGov / SICONV" },
-                      { rotulo: "Emendas est.", valor: p.por_fonte.emenda || "—", title: "Indicações de emenda estadual" },
-                      { rotulo: "Transf. especial", valor: p.por_fonte.plano_acao || "—", title: "Transferência Especial / Plano de Ação (RP9)" },
-                      { rotulo: "Seleção PAC", valor: p.por_fonte.pac || "—", title: "Propostas do Novo PAC" },
-                      { rotulo: "FNS (saúde)", valor: p.por_fonte.fns || "—", title: "Propostas do Fundo Nacional de Saúde" },
-                      /* ⭐ A sétima fonte (06/09/2026): a emenda federal INDICADA, que
-                         não virou instrumento — 45% da carteira nos municípios medidos.
-                         O SQL desconta o que já vem por TransfereGov e por TE, senão
-                         inflaria o total que alimenta também o Painel do prefeito. */
-                      { rotulo: "Emendas fed.", valor: p.por_fonte.emenda_federal || "—", title: "Emendas parlamentares federais (carteira CGU/SICONV) que ainda não viraram instrumento" },
-                    ]}
-                  />
-                </ItemLinha>
+                />
+                {/* ⚠️ SEM FILHOS. Aqui morava a grade de sete fontes, que agora
+                    são os selos da meta — ver `FONTES`. O cartão fechado passou
+                    de três linhas para uma. */}
 
                 {expanded && (
                   /* O detalhe e um <li> IRMAO, nao filho do cartao: o corpo do

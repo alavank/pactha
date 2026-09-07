@@ -78,6 +78,7 @@ Coolify. Hoje o risco é baixo — a rodada leva ~2 min contra 30 de espaçament
 | 8 | `linha_documento` zera a linha do tempo se o formato de data mudar | dois formatos são tentados; um terceiro vira `None` em silêncio |
 | 9 | Documentos são rebaixados a cada volta do rodízio | `documentos_em` e `n_documentos` são regravados mesmo quando a busca foi pulada |
 | 10 | O gatilho dos ~2.000 itens é só prosa | nada mede, nada avisa. Um tenant de assessoria chega lá |
+| 11 | **A tela de Parlamentares conta a emenda federal no resumo, mas não a lista no detalhe** | `por_fonte.emenda_federal` e `total_lancamentos` a incluem; `GET /parlamentares/detalhe` devolve **seis** listas (sigcon, voluntarias, emendas, plano_acao, pac, fns) e nenhuma delas. Quem abre a setinha não acha o que o cartão prometeu, e `total_geral` do detalhe não bate com o `total_lancamentos` da lista. Achado em 07/09/2026 ao trocar a grade de fontes por selos — a grade tinha o mesmo furo, só menos visível. Conserto: uma sétima consulta em `routers/parlamentares.py::detalhe` (a tabela `emendas_federais_carteira` já é lida no agregado, linha ~470) e um `GrupoFonte` na tela |
 
 ---
 
