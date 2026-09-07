@@ -1055,6 +1055,57 @@ dizia *"Regular"* com o aviso das 4 pendências dos outros cadastros. Agora os t
 mesma coisa, e os agregados da carteira (`regulares`, `pendencias_total`) contam todas as
 entidades, como o semáforo sempre contou.
 
+## 1.19. A quarta pergunta da regularidade: CADIN, CFIL e a tela em abas (07/09/2026)
+
+Sequência do 1.18, no mesmo dia. O dono: *"vamos colocar o CADIN MG, RS e de todos os
+outros para funcionar também... o CFIL do RS também... o CAPAG vamos rodar para funcionar
+em todos"*. Três achados e uma tela nova (PRs #431 e #432, mergeados e no ar).
+
+**O CAPAG não estava em todos, e o motivo é uma armadilha operacional.** As tasks
+`siconfi` de freitas, trust e montesião foram criadas em 07/09 às **02:17 UTC**, *depois*
+dos horários agendados (00:30/01:00/01:30) — então **nenhuma rodou**. O freitas tinha dados
+só porque alguém rodou a carga na mão às 02:13; montesião e trust estavam com **zero**, sem
+erro em lugar nenhum. Carga rodada à mão: Monte Sião **CAPAG B**, trust 691 linhas em 20
+municípios. **Criar a task não é ligar a fonte.**
+
+**O CADIN-MG já era coletado e ninguém sabia.** Ele vem dentro do CRC do CAGEC, como uma
+linha entre as ~27, desde julho. No freitas: **89 entidades limpas e 7 inscritas** (Igarapé,
+Lagoa Dourada, Martinho Campos, Nova Lima, Piracema, Senhora dos Remédios, Toledo). Não
+havia coletor a escrever — havia uma aba a criar. (Consulta própria em MG é inviável: o
+portal da Fazenda é formulário com CAPTCHA.)
+
+**CADIN/RS e CFIL/RS são públicos, e o bundle do SPA engana.** `cadin.sefaz.rs.gov.br` é
+Angular e tem `/api/login-cidadao/*` no JS, o que convida a concluir que a emissão exige
+sessão. Não exige: `POST /api/Certidao/EmitirCertidao` e `.../EmitirCertidaoCfil` com
+`{"Documento": "<cnpj14>"}` devolvem **PDF 200 sem cookie nenhum**. Coletor
+`ingestion/cadin_rs.py`, task `cadin-rs` nos dois workers do RS.
+
+⚠️ **A primeira carga achou uma pendência real, e não é da prefeitura:** o **Fundo Municipal
+de Saúde de Nova Palma** tem 1 pendência no CADIN/RS, incluída em **28/08/2026** pela
+Secretaria Estadual da Saúde — com telefone e e-mail para sanar, que a certidão traz e o
+sistema agora guarda.
+
+**Esse fundo decidiu o schema.** `cagec_situacao` tinha desde agosto as colunas
+`itens_negativos`/`negativos_em`/`negativos_erro`, criadas prevendo esta fonte, e a premissa
+delas era que toda entidade consultada teria linha no cadastro estadual. O fundo **não tem
+cadastro no CHE** e é justamente ele o inscrito: na primeira versão do coletor a certidão
+dele foi descartada com um *"sem linha do CHE"* no log. Daí `cadastro_negativo`, tabela
+própria — e o CADIN-MG passou a ser espelhado nela (com `SAVEPOINT`, senão um erro no
+espelho aborta a transação e leva junto a coleta boa do município).
+
+**A tela virou abas** — `[CAUC] [CAGEC/CHE] [CADIN] [CFIL] [Contas irregulares] [Tesouro]`,
+com **sub-aba por entidade** nas que têm fundos. Duas coisas saíram do esconderijo: as
+**contas irregulares** (o bloco só era desenhado no ramo "estado sem cadastro" — em MG e no
+RS **nunca aparecia**) e metade da planilha do **CAPAG**, que estava em `raw_data` desde a
+primeira coleta: o **ICF** (é dele que vem o "+" do A+), o ano-base da nota, RREO/RGF/DCA
+como pré-requisitos do cálculo e as ressalvas do Tesouro.
+
+**Regra que ficou:** o mesmo assunto não tem dois nomes — a aba do Painel passou de "CAUC e
+cadastro estadual" para **"Regularidade"**, igual ao menu.
+
+**Falta:** GO, ES e TO (o dono adiou: *"depois falamos dos outros"*). Nesses estados a
+regularidade estadual segue sem coletor — 12 dos 20 municípios do trust.
+
 ## 2. ESTADO ATUAL (2026-09-04)
 
 **São CINCO tenants em produção**, todos do mesmo código, cada um com containers e banco próprios:

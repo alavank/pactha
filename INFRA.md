@@ -436,10 +436,28 @@ santa maria 07:30, **nova palma 08:30** UTC, com `timeout -k 30 1500`. Lock pró
 > registros** (6.377 páginas) — varrer a fonte inteira, o que funciona no Obras.gov,
 > aqui é inviável.
 
+**`cadin-rs`** (CADIN/RS + CFIL/RS · 07/09/2026): Scheduled Task **só nos dois workers do
+RS** — santamaria `10 5 * * *`, novapalma `40 5 * * *` UTC (10 min depois do `che-rs` de
+cada um). Lock próprio (`/tmp/cadin_rs.lock`), `httpx` + `pypdf`, sem navegador. Certidão
+**pública, sem login**: `POST cadin.sefaz.rs.gov.br/api/Certidao/EmitirCertidao[Cfil]`.
+Em Minas **não há task**: o CADIN-MG vem dentro do CRC, na rodada do `cagec`.
+
+> ⚠️ **A certidão não tem validade** — ela afirma a situação *"na data de …"*. Por isso a
+> coleta é diária **e** a tela tem botão *consultar agora*
+> (`POST /api/cadastros-negativos/refresh?municipio_id=`, só RS). Detalhes da fonte e das
+> margens: `docs/CRON_SETUP.md` → *cadin-rs*.
+
 **`siconfi`** (contas entregues no Tesouro + CAPAG · 07/09/2026): Scheduled Task **nos 5
 workers**, escada de 30 min — **freitas 00:30, trust 01:00, montesiao 01:30**, santamaria
 02:00, novapalma 02:30 UTC. Lock próprio (`/tmp/siconfi.lock`): é `httpx` puro, sem login
 e sem navegador.
+
+> ⚠️ **CRIAR A TASK NÃO É LIGAR A FONTE.** As três tasks novas (freitas, trust,
+> montesião) foram criadas em 07/09 às **02:17 UTC** — *depois* dos horários agendados
+> (00:30, 01:00, 01:30) —, então nenhuma delas rodou naquele dia. O freitas tinha dados só
+> porque alguém rodou a carga na mão às 02:13; montesião e trust ficaram com **zero** CAPAG
+> e zero entregas, sem erro em lugar nenhum. Ao criar uma task cujo horário do dia já
+> passou, **rode a primeira carga à mão** ou confira o banco no dia seguinte.
 
 > ⚠️ **Existia só nos DOIS tenants do RS até 07/09/2026** — freitas, trust e montesião
 > nunca tinham rodado. Não é só a tela de Regularidade que fica vazia sem ele: este
