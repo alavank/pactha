@@ -73,6 +73,26 @@ def _d(v) -> Optional[str]:
     return v.isoformat() if v is not None else None
 
 
+# ⚠️ O QUE ENTRA NA CONTA DO MUNICIPIO, isolado para poder ser testado.
+#
+# Medido em 07/09/2026 no freitas: 56 projetos 'abrangencia' somam R$ 15,89
+# BILHOES contra R$ 606,8 mi de TODAS as 421 obras da prefeitura — 96% do valor
+# da tela. E o MESMO projeto repetido: "Manutencao rodoviaria na malha federal
+# do DNIT em MG" (R$ 383,3 mi, 790 municipios) cai em 41 das 42 cidades da
+# carteira, e cada uma somava os R$ 383 mi inteiros.
+#
+# ⭐ Eles NAO somem: continuam na resposta, marcados, e a tela os mostra em bloco
+# proprio — o programa do DNIT de fato passa por ali. O que nao podem e entrar na
+# conta de "quanto o municipio tem em obras federais".
+#
+# ⚠️ 'territorio' CONTA. Ali a obra e uma obra so, naquele lugar, e o Governo e
+# quem diz (`/geometria?cod_ibge=`). O dono ser a UFSM ou o DNIT nao a torna
+# menos real para quem mora na cidade — a tela diz de quem e pelo selo.
+def conta_no_total(vinculo: Optional[str]) -> bool:
+    """A obra entra nos totais e nos cortes do municipio?"""
+    return (vinculo or "prefeitura") != "abrangencia"
+
+
 def _classificar(o: dict, hoje: date) -> dict:
     """Por que esta obra merece atenção — ou por que não merece.
 
@@ -165,6 +185,17 @@ async def fetch_obras_federais(db: AsyncSession, municipio_id: int) -> dict:
     acao, papel, andamento, encerradas = [], [], [], []
     tot = {"obras": 0, "valor": 0.0, "valor_acao": 0.0, "valor_papel": 0.0,
            "empregos": 0, "populacao": 0}
+    # ⚠️ O GUARDA-CHUVA CONTADO À PARTE, e não somado. Medido em 07/09/2026 no
+    # freitas: 56 projetos 'abrangencia' somam R$ 15,89 BILHÕES contra R$ 606,8
+    # mi de todas as 421 obras da prefeitura — 96% do valor da tela. É o mesmo
+    # projeto repetido: "Manutenção rodoviária na malha federal do DNIT em MG"
+    # (R$ 383,3 mi, 790 municípios) cai em 41 dos 42 municípios da carteira, e
+    # cada um somava os R$ 383 mi inteiros como se fossem obra da cidade.
+    #
+    # ⭐ NÃO SÃO ESCONDIDOS: continuam na lista, marcados, porque o programa do
+    # DNIT de fato passa por ali e o gestor pode querer vê-lo. O que não podem é
+    # entrar na conta de "quanto o município tem em obras federais".
+    guarda_chuva = {"obras": 0, "valor": 0.0}
     por_situacao: dict[str, dict] = {}
     por_eixo: dict[str, dict] = {}
     por_sistema: dict[str, dict] = {}
@@ -238,16 +269,25 @@ async def fetch_obras_federais(db: AsyncSession, municipio_id: int) -> dict:
         {"acao": acao, "papel": papel, "andamento": andamento,
          "encerradas": encerradas}[diag["grupo"]].append(item)
 
-        tot["obras"] += 1
-        tot["valor"] += valor
-        if diag["grupo"] == "acao":
-            tot["valor_acao"] += valor
-        elif diag["grupo"] == "papel":
-            tot["valor_papel"] += valor
-        tot["empregos"] += o["empregos_gerados"] or 0
-        tot["populacao"] += o["populacao_beneficiada"] or 0
+        if not conta_no_total(item["vinculo"]):
+            guarda_chuva["obras"] += 1
+            guarda_chuva["valor"] += valor
+        else:
+            tot["obras"] += 1
+            tot["valor"] += valor
+            if diag["grupo"] == "acao":
+                tot["valor_acao"] += valor
+            elif diag["grupo"] == "papel":
+                tot["valor_papel"] += valor
+            tot["empregos"] += o["empregos_gerados"] or 0
+            tot["populacao"] += o["populacao_beneficiada"] or 0
 
         def soma(mapa: dict, chave: str) -> None:
+            # ⚠️ Os cortes por situação/eixo/sistema/origem seguem o mesmo
+            # critério dos totais: um gráfico em que 96% do valor é um programa
+            # rodoviário do DNIT não descreve o município.
+            if not conta_no_total(item["vinculo"]):
+                return
             e = mapa.setdefault(chave, {"nome": chave, "obras": 0, "valor": 0.0})
             e["obras"] += 1
             e["valor"] += valor
@@ -273,6 +313,11 @@ async def fetch_obras_federais(db: AsyncSession, municipio_id: int) -> dict:
         # ⚠️ DESC: o filtro de ano da tela abre no ANO CORRENTE, e para isso ele
         # precisa da lista de anos que existem. Ver `lib/anoPadrao.ts`.
         "anos": sorted(anos, reverse=True),
+        # ⭐ O QUE FICOU FORA DA CONTA, dito em vez de escondido. A tela mostra
+        # a linha (com o selo) e explica por que ela não soma — silêncio aqui
+        # faria a contagem não bater para quem conferisse contra o portal.
+        "guarda_chuva": {"obras": guarda_chuva["obras"],
+                         "valor": round(guarda_chuva["valor"], 2)},
         "coletado_em": _d(max((r["atualizado_em"] for r in linhas
                                if r["atualizado_em"]), default=None)),
     }
