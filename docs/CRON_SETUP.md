@@ -145,6 +145,37 @@ calado. Hoje: `timeout -k 30 1800`, com a coluna `timeout` da task em 3420.
 Reposição fora do cron: `scripts/carga_cagec.sh <tenant>` roda o coletor na sua máquina e
 grava no banco do tenant por túnel SSH (sem gastar a CPU da VPS e sem o teto do cron).
 
+### cadin-rs — CADIN/RS + CFIL/RS (07/09/2026)
+
+Certidão **pública, sem login e sem token**, da CAGE/SEFAZ-RS. O portal
+`cadin.sefaz.rs.gov.br` é um SPA Angular e por baixo dele há duas rotas que
+devolvem PDF:
+
+```
+POST /api/Certidao/EmitirCertidao      {"Documento":"<cnpj14>"}   -> CADIN/RS
+POST /api/Certidao/EmitirCertidaoCfil  {"Documento":"<cnpj14>"}   -> CFIL/RS
+```
+
+`httpx` + `pypdf`, sem navegador — **lock próprio** (`/tmp/cadin_rs.lock`), como
+o `portal-transparencia` e o `obrasgov`: não disputa a fila do Chromium.
+
+**Só nos dois workers do RS.** Em Minas o CADIN vem dentro do CRC do CAGEC (uma
+linha entre as ~27), então não há coletor separado — os dois estados alimentam a
+mesma tabela `cadastro_negativo` e a mesma aba da tela.
+
+⚠️ **A certidão NÃO TEM VALIDADE**: ela afirma a situação *"na data de …"*, e só.
+Por isso a coleta é diária (junto do `che-rs`) **e** existe o botão *consultar
+agora* na tela (`POST /api/cadastros-negativos/refresh?municipio_id=`) — numa
+reunião, a certidão de ontem não prova a situação de hoje.
+
+Comando:
+
+```bash
+flock -n -E 99 /tmp/cadin_rs.lock timeout -k 30 600 python -u ingestion/cadin_rs.py 2>&1; rc=$?; if [ $rc = 99 ]; then rc=0; fi; exit $rc
+```
+
+Carga/reposição fora do cron: `scripts/carga_cadin_rs.sh {novapalma|santamaria}`.
+
 ### portal-transparencia — a fonte nova (emendas federais)
 
 **Task PROPRIA, e nao pendurada no `run_all()` dos dados abertos.** O perfil da fonte

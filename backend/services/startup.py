@@ -465,6 +465,13 @@ MIGRATION_FILES = [
     # curto. `tipo_emenda` estava a DOIS caracteres do teto. Mesma licao do
     # `add_obrasgov_taxonomias_text.sql`, que Santa Maria pagou por UM caractere.
     "add_emendas_federais_texto.sql",
+    # CADIN e CFIL — os cadastros NEGATIVOS. Tabela propria, e nao mais uma
+    # coluna em `cagec_situacao`: a entidade inscrita pode nao ter cadastro
+    # estadual nenhum (medido: o Fundo Municipal de Saude de Nova Palma esta no
+    # CADIN/RS e nao esta no CHE), e uma linha de cadastro inventada para
+    # pendurar a certidao apareceria na tela como "cadastro sem exigencias".
+    # Depende SO de `municipios`; nao altera tabela de outra migration.
+    "add_cadastro_negativo.sql",
     # --- Incremento «permissao por tela» (05/09/2026) ----------------------
     # Cadastro: cargo na organizacao e WhatsApp. Duas colunas opcionais em
     # `users`; nao dependem de nada e nao concedem nada.
