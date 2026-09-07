@@ -665,6 +665,31 @@ Aquela mostra o convênio discricionário do SICONV, que continua vindo dos dump
 esta, o instrumento novo. São dois módulos, dois ciclos e dois tipos de instrumento —
 e o dono que abrir as duas lado a lado tem de ver por que os números diferem.
 
+### ⚠️ Nem todo recebedor do município é o município (07/09/2026)
+
+`cd_ibge_recebedor` filtra pelo município do RECEBEDOR — e recebedor não é só a
+prefeitura. Goiânia tem 172 propostas, das quais **15 são do FUNDO ESTADUAL DE SAÚDE**,
+que atende Goiás inteiro; outras tantas são de associação privada, cooperativa e
+sociedade empresária. No tenant trust, dentro de 706 propostas:
+
+| natureza | propostas | valor |
+|---|---:|---:|
+| Fundo Público da Adm. Direta **Municipal** | 627 | R$ 549,5 mi |
+| Associação Privada | 26 | R$ 39,5 mi |
+| Fundo Público da Adm. Direta **Estadual** | 20 | R$ 31,1 mi |
+| Sociedade Empresária, Cooperativa, Fundação Privada | 28 | R$ 16,1 mi |
+
+**13,6% do valor não era da prefeitura.** E o estrago maior era no ranking: a tela
+responde «quem trouxe recurso para a cidade», e somar o Fundo Estadual ao nome de um
+parlamentar afirma o que a fonte não afirma.
+
+⭐ **Aqui nada é descartado**, ao contrário do que `faf_planos` faz com o ente estadual.
+Lá o plano do estado não tem vínculo municipal nenhum (o IBGE é a SEDE do ente); aqui
+tem — a Santa Casa que recebeu emenda federal *está* na cidade, e o gestor quer saber.
+Então a linha fica, marcada com «não é da prefeitura», e fora dos totais e do ranking.
+`fora_do_municipio` na resposta e uma nota no rodapé dizem quantas são, para quem
+conferir contra o portal não achar que faltam propostas.
+
 ## 1.13. FASE 5 — Fundo a Fundo (o plano de ação por trás do repasse)
 
 A última fonte nova do Comunicado nº 23/2026. O `fns_repasse_faf` já conta o repasse

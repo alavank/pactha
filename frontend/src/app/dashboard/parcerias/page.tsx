@@ -40,6 +40,10 @@ import {
 } from "@/components/ui/superficies";
 
 interface Proposta {
+  /* ⚠️ Falso quando o recebedor não é a administração municipal — Fundo
+     ESTADUAL de Saúde, associação privada, cooperativa. A linha aparece, mas
+     não entra nos cartões nem no ranking. Ver o cabeçalho do router. */
+  municipal: boolean;
   id_proposta: number;
   objeto: string | null;
   situacao: string | null;
@@ -77,6 +81,8 @@ interface Resp {
   valor_emenda?: number;
   por_parlamentar?: PorParlamentar[];
   por_situacao?: Array<{ situacao: string; qtd: number }>;
+  total_listado?: number;
+  fora_do_municipio?: { qtd: number; valor: number };
   municipio?: { id: number; nome: string; uf: string };
 }
 
@@ -149,6 +155,7 @@ export default function ParceriasPage() {
   }
 
   const ranking = d.por_parlamentar || [];
+  const fora = d.fora_do_municipio?.qtd ?? 0;
 
   return (
     <div className="space-y-4 p-4 sm:p-6">
@@ -159,7 +166,16 @@ export default function ParceriasPage() {
           sub="Transferegov · o módulo onde a emenda de saúde é processada desde 2024"
         />
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <Numero rotulo="Propostas" valor={String(d.total ?? 0)} />
+          <Numero
+            rotulo="Propostas"
+            valor={String(d.total ?? 0)}
+            /* ⚠️ O cartão conta a ADMINISTRAÇÃO MUNICIPAL. O resto continua na
+               lista abaixo, marcado — esconder faria a contagem não bater com o
+               portal, e somar diria que a prefeitura recebeu o que não recebeu. */
+            sub={fora > 0
+              ? `+ ${fora} de outro recebedor no município`
+              : undefined}
+          />
           <Numero rotulo="Valor total" valor={brl(d.valor_total)} />
           <Numero rotulo="Em emendas" valor={brl(d.valor_emenda)} />
           <Numero rotulo="Parlamentares" valor={String(ranking.length)} />
@@ -175,7 +191,9 @@ export default function ParceriasPage() {
             titulo="Por parlamentar"
             sub={parlamentar
               ? `filtrando por ${parlamentar} — clique de novo para ver todos`
-              : "clique num nome para filtrar as propostas"}
+              : fora > 0
+                ? "só o que veio para a administração municipal · clique num nome para filtrar"
+                : "clique num nome para filtrar as propostas"}
           />
           <Lista>
             {ranking.map((p) => (
@@ -216,6 +234,15 @@ export default function ParceriasPage() {
                   <Selo tom={p.id_parceria ? "ok" : "neutro"}>
                     {p.id_parceria ? "parceria celebrada" : "não celebrada"}
                   </Selo>
+                  {/* ⚠️ O aviso é a diferença entre «a cidade recebeu» e «alguém
+                      na cidade recebeu». O Fundo Estadual de Saúde atende o
+                      estado inteiro; a associação privada não é a prefeitura. */}
+                  {!p.municipal && (
+                    <Selo tom="atencao"
+                          title={p.natureza_juridica || undefined}>
+                      não é da prefeitura
+                    </Selo>
+                  )}
                   {p.ano && <span className="text-xs opacity-70">{p.ano}</span>}
                 </span>
               }
@@ -261,6 +288,17 @@ export default function ParceriasPage() {
         </Lista>
         {itens.length === 0 && (
           <Vazio>Nenhuma proposta deste parlamentar.</Vazio>
+        )}
+        {fora > 0 && !parlamentar && (
+          <p className="mt-3 text-[11px] leading-relaxed"
+             style={{ color: "var(--bi-muted)" }}>
+            {fora} proposta{fora > 1 ? "s" : ""} acima {fora > 1 ? "têm" : "tem"}{" "}
+            como recebedor uma entidade do município que não é a administração
+            municipal — fundo estadual, associação, cooperativa. {fora > 1
+              ? "Elas aparecem" : "Ela aparece"} na lista porque o dinheiro chega
+            à cidade, mas {fora > 1 ? "ficam" : "fica"} fora dos totais e do
+            ranking: não é recurso da prefeitura.
+          </p>
         )}
       </Bloco>
 
