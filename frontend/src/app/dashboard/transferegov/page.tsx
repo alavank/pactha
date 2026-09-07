@@ -19,6 +19,7 @@ import {
 import { PainelFiltros, type FiltroAtivo } from "@/components/ui/filtros";
 import { formatCurrency } from "@/lib/utils";
 import { textoDe } from "@/lib/texto";
+import { TituloTela } from "@/components/TituloTela";
 
 /** Preserva o `-` do helper `Field` que existia aqui: a peça `Campos` renderiza
  *  o que receber, e rótulo com nada embaixo parece falha de carregamento.
@@ -368,7 +369,7 @@ export default function TransfereGovPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-2xl font-bold text-base-content">Plano de Ação - TransfereGov</h1>
+          <TituloTela>Plano de Ação - TransfereGov</TituloTela>
           <p className="text-sm text-base-content/60">Transferência Especial Federal (Pix Parlamentar)</p>
         </div>
         <div className="text-[11px]" style={{ color: "var(--bi-faint)" }}>

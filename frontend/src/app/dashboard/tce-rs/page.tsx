@@ -34,6 +34,7 @@ import api from "@/lib/api";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 import { AvisoCurado } from "@/components/rs/AvisoCurado";
 import { Bloco, BlocoHead, ItemLinha, Lista, Selo, Vazio } from "@/components/ui/superficies";
+import { TituloTela } from "@/components/TituloTela";
 
 interface Sistema {
   nome: string; o_que: string; periodicidade: string; prazo: string;
@@ -194,7 +195,7 @@ export default function TceRsPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold text-base-content">{d.titulo}</h1>
+        <TituloTela>{d.titulo}</TituloTela>
         <p className="text-sm text-muted-foreground">{d.subtitulo}</p>
       </div>
 

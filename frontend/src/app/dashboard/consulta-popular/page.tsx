@@ -23,6 +23,7 @@ import { useUfDoMunicipio } from "@/lib/useUfDoMunicipio";
 import { consultaPopularDaUf } from "@/lib/estadual";
 import { Bloco, BlocoHead, ItemLinha, Lista, Numero, Selo, Vazio } from "@/components/ui/superficies";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { TituloTela } from "@/components/TituloTela";
 
 interface Item {
   edicao: string;
@@ -88,9 +89,7 @@ export default function ConsultaPopularPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold text-base-content">
-          {info?.titulo || "Consulta Popular"}
-        </h1>
+        <TituloTela>{info?.titulo || "Consulta Popular"}</TituloTela>
         <p className="text-sm text-muted-foreground">
           COREDE {data.corede} · edição {data.edicao}
           {data.atualizado_em ? ` · atualizado em ${formatDate(data.atualizado_em)}` : ""}

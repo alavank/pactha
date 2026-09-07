@@ -20,6 +20,7 @@ import {
 import AnotacaoModal from "@/components/AnotacaoModal";
 import AvisoEscopo from "@/components/AvisoEscopo";
 import { contarSemEscrita } from "@/lib/escopo";
+import { TituloTela } from "@/components/TituloTela";
 
 interface Anotacao {
   id: number;
@@ -134,9 +135,7 @@ export default function GestaoPage() {
   return (
     <div className="space-y-4">
       <div className="border-b pb-4" style={{ borderColor: "var(--bi-line)" }}>
-        <h1 className="flex items-center gap-2 text-2xl font-bold text-base-content">
-          <Edit2 className="size-6" style={{ color: "var(--bi-muted)" }} /> Gestão Interna
-        </h1>
+        <TituloTela>Gestão Interna</TituloTela>
         <p className="mt-1 max-w-3xl text-sm leading-snug" style={{ color: "var(--bi-muted)" }}>
           Anotações paralelas aos dados oficiais. Marque status próprio (ex: &quot;prestação enviada
           fisicamente&quot;), protocolos, datas, observações e anexe PDFs/imagens sem alterar

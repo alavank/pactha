@@ -42,6 +42,7 @@ import {
   Abas, Aviso, Bloco, BlocoHead, Campos, Grade, GradeCel, GradeLinha,
   ItemLinha, Lista, Numero, Selo, Vazio,
 } from "@/components/ui/superficies";
+import { TituloTela } from "@/components/TituloTela";
 
 interface Emenda {
   codigo_emenda: string | null;
@@ -415,7 +416,7 @@ export default function EmendasFederaisPage() {
     return (
       <div className="flex flex-col gap-3">
         <header>
-          <h1 className="bi-title text-[18px]">Emendas Parlamentares Federais</h1>
+          <TituloTela>Emendas Parlamentares Federais</TituloTela>
         </header>
         {aviso}
         {!d?.aviso && <Vazio>Sem emendas federais coletadas para este município.</Vazio>}
@@ -431,7 +432,7 @@ export default function EmendasFederaisPage() {
   return (
     <div className="flex flex-col gap-4">
       <header>
-        <h1 className="bi-title text-[18px]">Emendas Parlamentares Federais</h1>
+        <TituloTela>Emendas Parlamentares Federais</TituloTela>
         <p className="mt-1 max-w-3xl text-[12px] leading-snug"
            style={{ color: "var(--bi-muted)" }}>
           A carteira de emendas federais destinadas ao município, reconhecida

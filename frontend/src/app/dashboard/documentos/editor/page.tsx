@@ -10,6 +10,7 @@ import {
   Aviso, BOTAO_ACAO, BOTAO_CTA, BOTAO_SEC, Bloco, BlocoHead, ESTILO_CTA, ESTILO_SEC,
 } from "@/components/ui/superficies";
 import { podeEditarLinha } from "@/lib/escopo";
+import { TituloTela } from "@/components/TituloTela";
 
 type Campo = {
   key: string; label: string; tipo: string;
@@ -195,7 +196,7 @@ function EditorInner() {
                   style={ESTILO_SEC}>
             <ArrowLeft className="size-3" /> Voltar
           </button>
-          <h1 className="text-2xl font-bold text-base-content">{schema.titulo}</h1>
+          <TituloTela>{schema.titulo}</TituloTela>
           {schema.descricao && <p className="mt-1 text-sm" style={{ color: "var(--bi-muted)" }}>{schema.descricao}</p>}
         </div>
         <div className="flex items-center gap-2">

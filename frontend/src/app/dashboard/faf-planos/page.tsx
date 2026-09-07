@@ -38,6 +38,7 @@ import {
   Bloco, BlocoHead, Campos, ItemLinha, Lista, Numero, Selo, Vazio,
   situacaoTom,
 } from "@/components/ui/superficies";
+import { TituloTela } from "@/components/TituloTela";
 
 interface Relatorio {
   id: number | string | null;
@@ -190,7 +191,7 @@ export default function FafPlanosPage() {
           `Numero` já são `bi-card`; dentro de um `Bloco` viravam cartão dentro
           de cartão, encostados na borda do de fora. */}
       <header>
-        <h1 className="bi-title text-[18px]">Planos de Ação (Fundo a Fundo)</h1>
+        <TituloTela>Planos de Ação (Fundo a Fundo)</TituloTela>
         <p className="mt-1 max-w-3xl text-[12px] leading-snug"
            style={{ color: "var(--bi-muted)" }}>
           O plano que justifica cada repasse fundo a fundo — diagnóstico,

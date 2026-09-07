@@ -12,6 +12,7 @@ import { Aviso, BOTAO_CTA, BOTAO_SEC, Bloco, ESTILO_CTA, ESTILO_SEC, Selo } from
 import { Input } from "@/components/ui/input";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 import { baixarRelatorioRm, type FormatoRm, type TipoRm } from "@/lib/rmExport";
+import { TituloTela } from "@/components/TituloTela";
 
 interface Item {
   ordem?: number;
@@ -244,9 +245,7 @@ export default function RmEditorPage() {
             <ArrowLeft className="size-4" />
           </Button>
           <div>
-            <h1 className="text-2xl font-bold text-base-content">
-              RM {(rm.data_referencia || "").slice(0, 4)} - {rm.municipio_nome}/{rm.uf}
-            </h1>
+            <TituloTela>RM {(rm.data_referencia || "").slice(0, 4)} - {rm.municipio_nome}/{rm.uf}</TituloTela>
             <div className="mt-1 flex items-center gap-2 text-[11px]" style={{ color: "var(--bi-muted)" }}>
               {/* Rascunho e o estado que pede acao; finalizado e o normal, e
                   por isso fica cinza. */}

@@ -36,6 +36,7 @@ import {
 } from "@/lib/estadual";
 import { Bloco, BlocoHead, Lista, Selo, Vazio, situacaoTom } from "@/components/ui/superficies";
 import { formatDataHora, horasDesde } from "@/lib/bi-format";
+import { TituloTela } from "@/components/TituloTela";
 
 interface Item {
   codigo: string;
@@ -785,10 +786,7 @@ export default function RegularidadePage() {
   return (
     <div className="space-y-4">
       <div className="border-b pb-4" style={{ borderColor: "var(--bi-line)" }}>
-        <h1 className="flex items-center gap-2 text-2xl font-bold text-base-content">
-          <ShieldCheck className="size-6" style={{ color: "var(--bi-muted)" }} />
-          Regularidade de Documentação
-        </h1>
+        <TituloTela>Regularidade de Documentação</TituloTela>
         <p className="mt-1 text-sm" style={{ color: "var(--bi-muted)" }}>
           Exigências para assinar convênio nas duas esferas: a <strong>federal</strong>{" "}
           (CAUC, Tesouro Nacional) e a <strong>estadual</strong> — o cadastro de

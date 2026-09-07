@@ -46,6 +46,7 @@ import {
   ESTILO_SEC, Grade, GradeCel, GradeLinha, ItemLinha, Lista, Modal, ModalCorpo,
   ModalHead, Secao, Selo, Vazio, type Campo,
 } from "@/components/ui/superficies";
+import { TituloTela } from "@/components/TituloTela";
 
 // ===========================================================================
 // O CONTRATO COM O BACKEND — `backend/routers/auditoria.py`
@@ -922,10 +923,7 @@ export default function AuditoriaPage() {
       <div className="border-b pb-4" style={{ borderColor: "var(--bi-line)" }}>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <h1 className="flex items-center gap-2 text-2xl font-bold text-base-content">
-              <ScrollText className="size-6" style={{ color: "var(--bi-muted)" }} />
-              Auditoria
-            </h1>
+            <TituloTela>Auditoria</TituloTela>
             <p className="mt-1 max-w-3xl text-sm" style={{ color: "var(--bi-muted)" }}>
               Tudo o que foi feito na plataforma, em ordem de acontecimento: data, hora, usuário,
               endereço de rede (IP), dispositivo e navegador. Clique em qualquer linha para ver o

@@ -17,6 +17,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Bloco, BlocoHead, Campos, ItemLinha, Lista, Numero, Selo, Vazio, situacaoTom } from "@/components/ui/superficies";
+import { TituloTela } from "@/components/TituloTela";
 
 interface ParlamentarItem {
   nome_normalizado: string;
@@ -515,7 +516,7 @@ function ParlamentaresInner() {
     <div className="space-y-4">
       {/* Header */}
       <div className="border-b pb-4" style={{ borderColor: "var(--bi-line)" }}>
-        <h1 className="text-2xl font-bold text-base-content">Parlamentares</h1>
+        <TituloTela>Parlamentares</TituloTela>
         <p className="mt-1 text-sm" style={{ color: "var(--bi-muted)" }}>
           Lista agregada dos parlamentares (deputados estaduais/federais e senadores)
           com lançamentos vinculados — convênios estaduais, propostas TransfereGov/SICONV,

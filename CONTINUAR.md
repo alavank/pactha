@@ -964,6 +964,46 @@ grade tinha o mesmo furo, só menos visível. Fechado com o bloco `ef_list` em
 alimenta TransfereGov e Transferência Especial. Sem o desconto, a mesma emenda apareceria em
 duas seções e o total do detalhe passaria o do cabeçalho — que é onde o gestor confere.
 
+## 1.17. Os 47 títulos viraram uma peça só (07/09/2026)
+
+Fecha o print da manhã. Pedido do dono: *"deixe todos em tamanho 24px e sempre tenha um
+ícone para cada título; fica bem bonitinho os que têm — Regularidade tem um escudinho,
+Obras tem um capacetinho, Parlamentares já não tem. Sempre ter um fica bem legal, mesmo que
+repetir alguns não tem problema."*
+
+Havia **47 `<h1>` escritos à mão**, divergindo em duas coisas ao mesmo tempo: **tamanho**
+(42 em `text-2xl`, 5 em `text-[18px]` — as telas mais novas) e **ícone** (15 tinham, 32
+não, sem regra: telas irmãs, feitas na mesma semana, umas com e outras sem).
+
+Agora são **45 `<TituloTela>`** (`components/TituloTela.tsx`), que decide o tamanho e busca
+o ícone em `lib/icones-tela.ts` **pela rota**. Tela nova nasce certa sem ninguém lembrar de
+nada.
+
+⚠️ **Por que um mapa e não o ícone do menu.** Seria mais elegante ler de `NAV_ITEMS`, e foi
+a primeira tentativa — mas **só 15 das 47 rotas têm ícone lá**: folha dentro de grupo
+(FEDERAIS, ESTADUAIS, Saúde, Obras) não tem, quem tem é o grupo. Ler do menu daria o mesmo
+`Landmark` às onze telas federais, que é o oposto do pedido.
+
+⚠️ **Repetir é permitido, e às vezes é o certo:** `BadgeDollarSign` marca as três telas de
+emenda (federal, estadual, RS) e `HeartPulse` as quatro de saúde — a repetição agrupa
+visualmente o que o menu já agrupa.
+
+⚠️ **A peça é SÓ o `<h1>`, de propósito.** Embrulhar o cabeçalho inteiro (título + subtítulo
++ botões + selo de frescor) viraria uma pilha de props opcionais, e a primeira tela que não
+coubesse voltaria a escrever `<h1>` à mão.
+
+⚠️ **Ícone de título nunca é colorido.** Três telas pintavam o seu (Acordo FES em vermelho
+"porque é saúde/dívida"; Telemetria e Status dos Dados no acento) — decoração com a cor que
+nesta identidade significa alerta. Agora é `--bi-muted` para todas, garantido pela peça.
+
+⚠️ **`createElement` e não `<Icone />`** dentro da peça: em JSX, o lint do React Compiler lê
+a variável PascalCase atribuída no render como *componente criado no render* e acusa erro.
+Onde o ícone chega por **prop** (`BlocoHead`, `GrupoFonte`) o JSX normal funciona.
+
+**Dois `<h1>` ficaram de fora, e devem ficar:** o do renderizador de markdown das respostas
+da IA (`ai/page.tsx`) e o do painel ATIVO em Painéis Municipais, que usa o ícone do próprio
+painel.
+
 ## 2. ESTADO ATUAL (2026-09-04)
 
 **São CINCO tenants em produção**, todos do mesmo código, cada um com containers e banco próprios:

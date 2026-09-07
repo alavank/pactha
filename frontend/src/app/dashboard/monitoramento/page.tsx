@@ -28,11 +28,12 @@
  */
 
 import React, { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, CalendarClock, Check, Clock, Info, Loader2 } from "lucide-react";
+import { AlertTriangle, Check, Clock, Info, Loader2 } from "lucide-react";
 
 import api from "@/lib/api";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 import { Bloco, BlocoHead, Lista, Selo, Vazio } from "@/components/ui/superficies";
+import { TituloTela } from "@/components/TituloTela";
 
 interface Pendencia {
   chave: string;
@@ -100,10 +101,7 @@ export default function MonitoramentoPage() {
   return (
     <div className="space-y-4">
       <div className="border-b pb-4" style={{ borderColor: "var(--bi-line)" }}>
-        <h1 className="flex items-center gap-2 text-2xl font-bold text-base-content">
-          <CalendarClock className="size-6" style={{ color: "var(--bi-muted)" }} />
-          Monitoramento de Convênios
-        </h1>
+        <TituloTela>Monitoramento de Convênios</TituloTela>
         <p className="mt-1 text-sm" style={{ color: "var(--bi-muted)" }}>
           {d.decreto || "Decreto Estadual (RS) nº 56.939/2023"} — atualização mensal
           obrigatória até o dia 15, por convênio em execução.

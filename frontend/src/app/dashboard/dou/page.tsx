@@ -8,6 +8,7 @@ import { Bloco, BlocoHead, Campos, ItemLinha, Lista, Selo, Vazio } from "@/compo
 import { Search, Loader2, Eye, Download, Newspaper } from "lucide-react";
 import { useUfDoMunicipio } from "@/lib/useUfDoMunicipio";
 import { diarioDaUf } from "@/lib/estadual";
+import { TituloTela } from "@/components/TituloTela";
 
 interface JmgItem {
   id_jornal: number;
@@ -210,7 +211,7 @@ export default function DouMGPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold text-base-content">{prov.titulo}</h1>
+        <TituloTela>{prov.titulo}</TituloTela>
         <p className="text-sm text-muted-foreground">Busca em tempo real no {prov.fonte}</p>
       </div>
 

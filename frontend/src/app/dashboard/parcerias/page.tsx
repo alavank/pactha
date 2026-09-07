@@ -38,6 +38,7 @@ import {
   Bloco, BlocoHead, Campos, ItemLinha, Lista, Numero, Selo, Vazio,
   situacaoTom,
 } from "@/components/ui/superficies";
+import { TituloTela } from "@/components/TituloTela";
 
 interface Proposta {
   /* ⚠️ Falso quando o recebedor não é a administração municipal — Fundo
@@ -166,7 +167,7 @@ export default function ParceriasPage() {
           do que a tela é, e a régua de números logo abaixo, no fundo da
           página. */}
       <header>
-        <h1 className="bi-title text-[18px]">Parcerias</h1>
+        <TituloTela>Parcerias</TituloTela>
         <p className="mt-1 max-w-3xl text-[12px] leading-snug"
            style={{ color: "var(--bi-muted)" }}>
           O módulo do Transferegov que processa as transferências de 2024 em

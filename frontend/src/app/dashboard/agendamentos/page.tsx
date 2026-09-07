@@ -50,6 +50,7 @@ import {
   Coluna, Compromisso, CorPaleta, Feriado, MapaFeriados, ModoCalendario, Vista,
   anosNecessarios, hojeISO, indexarFeriados,
 } from "./tipos";
+import { TituloTela } from "@/components/TituloTela";
 
 /** A busca só vai ao servidor depois que a pessoa para de digitar. 350ms é o
  *  intervalo em que uma palavra inteira cabe entre duas teclas. */
@@ -292,7 +293,7 @@ export default function AgendamentosPage() {
       {/* ------------------------------------------------------ cabeçalho */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-base-content">Agendamentos</h1>
+          <TituloTela>Agendamentos</TituloTela>
           <p className="text-sm text-muted-foreground">
             A agenda de compromissos da equipe
           </p>

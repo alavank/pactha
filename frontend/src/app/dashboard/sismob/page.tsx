@@ -44,6 +44,7 @@ import { atalhosAnos, resumoAnos } from "@/lib/periodo";
 import {
   Abas, Bloco, BlocoHead, Campos, ItemLinha, Lista, Numero, Selo, Vazio, situacaoTom,
 } from "@/components/ui/superficies";
+import { TituloTela } from "@/components/TituloTela";
 
 interface Regra {
   regra: string; titulo: string; detalhe: string; norma: string;
@@ -419,10 +420,7 @@ export default function SismobPage() {
   return (
     <div className="space-y-4">
       <div className="border-b pb-4" style={{ borderColor: "var(--bi-line)" }}>
-        <h1 className="flex items-center gap-2 text-2xl font-bold text-base-content">
-          <HardHat className="size-6" style={{ color: "var(--bi-muted)" }} />
-          Obras da Saúde (SISMOB)
-        </h1>
+        <TituloTela>Obras da Saúde (SISMOB)</TituloTela>
         <p className="mt-1 text-sm" style={{ color: "var(--bi-muted)" }}>
           Obras financiadas fundo a fundo pelo Ministério da Saúde
           {d?.entidade?.nome ? <> — convenente <strong>{d.entidade.nome}</strong>
