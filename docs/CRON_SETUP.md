@@ -8,9 +8,17 @@ As rotinas de ingestão rodam como **Scheduled Tasks** anexadas ao resource
 (`CMD sleep infinity`); cada Scheduled Task executa um comando dentro dele via
 `docker exec`.
 
-⚠️ **Existe um Worker por tenant** (`freitas-worker`, `trust-worker`,
-`montesiao-mg-worker`), cada um com seu banco e sua `COFRE_KEY`. As tasks abaixo
-existem em triplicata, **com horários diferentes de propósito**.
+⚠️ **Existe um Worker por tenant** — hoje **cinco**: `freitas-worker`, `trust-worker`,
+`montesiao-mg-worker`, `santamaria-rs-worker` e `novapalma-rs-worker` —, cada um com seu
+banco e sua `COFRE_KEY`. A mesma task existe em vários deles, **com horários diferentes
+de propósito**. (Os dois do RS não têm `sigcon` nem `cagec`: lá a fonte estadual é o
+`che-rs`.)
+
+⚠️ **A TABELA ABAIXO É UM RETRATO, NÃO A FONTE DE VERDADE.** Ela ficou vencida duas vezes
+numa semana e, em 07/09/2026, ainda anunciava para o `cagec` as quatro janelas que a
+Freitas havia perdido em agosto — enquanto a task real rodava `15 6 * * *`, 1×/dia. Antes
+de confiar num horário daqui, leia o Coolify:
+`GET /applications/<worker_uuid>/scheduled-tasks` (§8 do [`INFRA.md`](../INFRA.md)).
 
 ## Por que os horários são escalonados (não "arrume" isso)
 
@@ -33,7 +41,7 @@ três Chromium abertos, o host inteiro cai para o baseline. Por isso:
 | `govbr-renew` | `5 * * * *` | `25 * * * *` | `45 * * * *` |
 | `queue-sigcon` | `0,30 * * * *` | `10,40 * * * *` | `20,50 * * * *` |
 | `painel-alertas` | `45 */2 * * *` | `15 */2 * * *` | `15 */2 * * *` |
-| `cagec` | `0 10,15,19,23 * * *` | `48 10,15,19,23 * * *` | `46 10,15,19,23 * * *` |
+| `cagec` (medido 07/09/2026) | `0 10,15,19,23 * * *` | `48 10,19 * * *` | `46 10,19 * * *` |
 | `cauc-manha` | `25 10-14 * * *` | `27 10-14 * * *` | `29 10-14 * * *` |
 | `gconv-es` | — | `40 10,15,19,23 * * *` | — |
 | `transfvol-go` | — | `42 10,15,19,23 * * *` | — |
@@ -101,6 +109,41 @@ flock -n /tmp/portal_transparencia.lock timeout -k 30 1520 \
   python -u ingestion/portal_transparencia.py \
   || echo "[aviso] portal-transparencia rc=$? (1=ja rodando, 124=timeout)"
 ```
+
+### cagec — a fonte tem JANELA, e o cron tem de respeitá-la (07/09/2026)
+
+**O portal do CAGEC não emite CRC de madrugada.** O certificado é de onde saem as ~24
+obrigações com validade; sem ele o coletor grava só a situação (Regular/Irregular) da
+consulta pública. Medido no mesmo dia, no **mesmo worker**:
+
+| Quando | O que o portal respondeu |
+|---|---|
+| 06:15 UTC (03h15 BRT) | *"Não foi possível recuperar dados do Convenente/Parceiro para geração do relatório"* — em **todas** as entidades, ~36 s cada |
+| 17:58 UTC (14h58 BRT) | as **27 obrigações** do CRC, em 34 s |
+
+As três tasks estavam em 06:15 / 07:00 / 07:15 UTC (03h15–04h15 BRT). Resultado: a
+situação até atualizava, mas o **detalhamento congelou em 02–03/09** nos três tenants —
+e a tela seguiu mostrando obrigação vencida que já podia ter sido renovada (o coletor
+preserva o CRC anterior por 30 dias, `CAGEC_CRC_CONFIAVEL_DIAS`). É a mesma lição do
+`fpe-rs` (§5 do [`INFRA.md`](../INFRA.md)): **fonte com janela de funcionamento é
+restrição de agendamento, não bug de coletor.**
+
+**A carteira grande precisa das QUATRO janelas.** `CAGEC_LOTE_MUNICIPIOS` tem default
+**11** e o comentário no próprio `cagec_scraper.py` diz por quê: é `ceil(44/4)`, ou seja,
+foi dimensionado para **quatro rodadas diárias**. Com a task em 1×/dia, a Freitas (42
+municípios de MG) levava **quatro dias** para dar a volta — em 07/09 havia 31 municípios
+com mais de 48 h e dois nunca coletados. Regra: **lote = ceil(municípios_MG / rodadas por
+dia)**; se a carteira crescer, sobe o lote ou o número de janelas, senão o ciclo passa de
+24 h em silêncio.
+
+**Margens.** O kill interno da Freitas era `timeout -k 30 1020` (17 min) para uma rodada
+de 11 municípios que, com o portal lento, passa disso: as rodadas de 04, 05, 06 e 07/09
+morreram todas com `exit 124` (EPIPE do Playwright no log). E como o `ingestion_log` só é
+escrito **no fim**, a falha não aparecia em lugar nenhum — o selo de frescor continuava
+calado. Hoje: `timeout -k 30 1800`, com a coluna `timeout` da task em 3420.
+
+Reposição fora do cron: `scripts/carga_cagec.sh <tenant>` roda o coletor na sua máquina e
+grava no banco do tenant por túnel SSH (sem gastar a CPU da VPS e sem o teto do cron).
 
 ### portal-transparencia — a fonte nova (emendas federais)
 

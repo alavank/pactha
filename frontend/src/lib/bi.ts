@@ -501,8 +501,34 @@ export interface AbaDocumentos {
       crc_em?: string | null;
       crc_erro?: string | null;
       detalhe_do_crc?: boolean;
+      /** ⭐ OS OUTROS CADASTROS DO MUNICÍPIO (Fundo Municipal de Saúde, FMAS,
+       *  autarquias). Os campos acima continuam sendo os da PRINCIPAL — o que
+       *  não pode acontecer é a tela parar na prefeitura: cada entidade tem
+       *  cadastro próprio e trava **apenas o seu** convênio, e era exatamente
+       *  isso que fazia o dashboard discordar de si mesmo (o medidor da Visão
+       *  Geral já contava entidades; esta aba, não). */
+      entidades?: CagecEntidade[];
+      pendencias_outras_entidades?: number;
     }>;
   };
+}
+
+/** Uma entidade no cadastro estadual. Espelha o que `GET /api/cagec` devolve
+ *  em `entidades` — a tela de Regularidade do menu já mostra esta lista, e o
+ *  dashboard passou a receber os mesmos campos para não divergir dela. */
+export interface CagecEntidade {
+  nome: string | null;
+  cnpj?: string | null;
+  tipo?: string | null;
+  situacao?: string | null;
+  regular?: boolean | null;
+  validade?: string | null;
+  pendencias?: number;
+  numero_cadastro?: string | null;
+  principal?: boolean;
+  crc_em?: string | null;
+  crc_erro?: string | null;
+  detalhe_do_crc?: boolean;
 }
 
 export interface SismobObraResumo {

@@ -1004,6 +1004,57 @@ Onde o ícone chega por **prop** (`BlocoHead`, `GrupoFonte`) o JSX normal funcio
 da IA (`ai/page.tsx`) e o do painel ATIVO em Painéis Municipais, que usa o ícone do próprio
 painel.
 
+## 1.18. A regularidade estadual parada em 01/09 — três defeitos, nenhum no coletor (07/09/2026)
+
+O dono abriu a tela de Regularidade e viu **"Atualizado em 01/09"** no CAGEC de vários
+municípios da Freitas (Arapuá e Araújos entre eles). O CAUC estava fresco; a coluna
+**estadual** é que estava parada. Diagnóstico feito no banco e no Coolify — a tela não
+mentia, e o coletor não tinha bug:
+
+**1. O portal do CAGEC não emite CRC de madrugada, e as três tasks estavam às 3h–4h BRT.**
+Medido no mesmo dia, no mesmo worker: às 06:15 UTC toda emissão voltou *"Não foi possível
+recuperar dados do Convenente/Parceiro"*; às 17:58 UTC o mesmo coletor leu as **27
+obrigações** em 34 s. A situação (Regular/Irregular) até atualizava — o que congelou foi o
+**detalhamento**, em 02–03/09 nos três tenants de MG, e o coletor preserva o CRC anterior
+por 30 dias (`CAGEC_CRC_CONFIAVEL_DIAS`), então a tela seguia mostrando obrigação vencida
+que já podia ter sido renovada. Mesma classe do `fpe-rs`: **fonte com janela é restrição de
+agendamento.** Corrigido: freitas `0 10,15,19,23`, montesiao `46 10,19`, trust `48 10,19`
+(UTC) — `scripts/agenda_cagec.sh`.
+
+**2. Uma rodada por dia com lote de 11 = ciclo de 4 dias na Freitas.** O lote 11 é o default
+no `cagec_scraper.py` e o comentário lá diz que é `ceil(44/4)` — dimensionado para QUATRO
+rodadas. A task estava em `15 6 * * *`: 31 dos 42 municípios com mais de 48 h. **Regra:
+lote = ceil(municípios_MG ÷ rodadas por dia); carteira que cresce mexe num dos dois.**
+
+**3. O kill interno matava a rodada e ninguém ficava sabendo.** `timeout -k 30 1020` (17 min)
+contra uma rodada que passa disso quando o portal está lento: 04, 05, 06 e 07/09 morreram
+com `exit 124` (EPIPE do Playwright). Como o `ingestion_log` só é escrito **no fim**, não
+sobrava registro — o selo de frescor continuava calado. Subiu para 1800 s.
+
+⚠️ **O watchdog VIU e não avisou.** O log dele em 06/09 traz `fonte_parada cagec` e
+`municipio_defasado cagec`, seguidos de *"(em cooldown, não reenviado)"* e
+**"0 alerta(s) enviado(s)"** — o canal era o Telegram, removido do código em 05/09. Hoje o
+watchdog detecta e o achado morre no log da Scheduled Task. Enquanto não houver canal, quem
+percebe primeiro é o cliente olhando a tela, que foi exatamente o que aconteceu.
+
+**E dois municípios nunca tinham sido coletados.** Nova Lima e Arcos, seis tentativas cada,
+`"nenhuma entidade pública encontrada"`. Causa: a busca é por NOME e, quando ela volta
+vazia, o código dava `continue` **antes** do bloco que consulta os CNPJs já conhecidos — o
+único caminho que os acharia. Pelo CNPJ (que o `transferegov_pac` já nos deu) os dois
+aparecem na hora: *MUNICIPIO DE NOVA LIMA — Regularizado Judicialmente* e *MUNICIPIO DE
+ARCOS — Irregular*. Corrigido em `cagec_scraper.py`: o CNPJ da prefeitura entra na lista de
+conhecidos e a desistência só acontece depois de tentar todos.
+
+**A divergência que o dono nomeou** — *"as regularidades precisam estar iguais nos ambientes
+onde aparecem; dashboard e menu não podem divergir"* — era real e estava no `_cagec_bloco`
+(`services/bi_abas.py`): ele chamava `fetch_cagec_situacao` e **descartava** `entidades` e
+`pendencias_outras_entidades`. Resultado, no mesmo município e na mesma sessão: o medidor da
+Visão Geral dizia *"Impedido de receber transferências"* (sempre contou entidades), a aba
+Documentação logo abaixo dizia *"Em dia · 0 pendências"* (só a prefeitura) e a tela do menu
+dizia *"Regular"* com o aviso das 4 pendências dos outros cadastros. Agora os três leem a
+mesma coisa, e os agregados da carteira (`regulares`, `pendencias_total`) contam todas as
+entidades, como o semáforo sempre contou.
+
 ## 2. ESTADO ATUAL (2026-09-04)
 
 **São CINCO tenants em produção**, todos do mesmo código, cada um com containers e banco próprios:
