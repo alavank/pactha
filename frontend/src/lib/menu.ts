@@ -114,6 +114,14 @@ export const NAV_ITEMS: NavEntry[] = [
       { href: "/dashboard/transferegov", label: "Especiais" },
       { href: "/dashboard/transferegov-pac", label: "PAC (Novo PAC)" },
       { href: "/dashboard/transferegov-voluntarias", label: "Voluntárias" },
+      /* ⭐ PARCERIAS (07/09/2026). O módulo do Transferegov onde as
+         transferências passaram a ser processadas de 2024 em diante — 144 dos
+         176 programas publicados são Fundo a Fundo da Saúde. É onde mora a
+         emenda de saúde do município, com o parlamentar nomeado.
+         ⚠️ Vem logo depois de «Voluntárias» de propósito: são os dois lados da
+         mesma pergunta. Aquela mostra o convênio discricionário do SICONV,
+         que continua vindo dos dumps CSV; esta, o instrumento novo. */
+      { href: "/dashboard/parcerias", label: "Parcerias (emendas de saúde)" },
       { href: "/dashboard/transferegov-rejeitadas", label: "Rejeitadas" },
       { href: "/dashboard/transferegov-encerradas", label: "Encerradas" },
       { href: "/dashboard/transferegov-cnpj", label: "CNPJ" },

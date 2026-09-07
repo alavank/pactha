@@ -493,6 +493,17 @@ MIGRATION_FILES = [
     # que derivariam a permissao tem guard em `migration_backfills` e ja
     # dispararam. So a tela daria menu visivel e 403 no clique.
     "add_tela_emendas_federais.sql",
+    # A tela de Parcerias (07/09/2026), pelo mesmo desenho da anterior:
+    # concede a TELA **e** a ACAO, porque so a tela daria menu visivel e 403
+    # no clique. Herda de `convenios`, e nao de `sismob` — quem acompanha a
+    # emenda que virou instrumento e quem ja acompanha convenio.
+    #
+    # ⚠️ DEPOIS de `add_permissoes_por_acao.sql`, e so dele: a FK de
+    # `user_permissoes.permissao` aponta para `permissoes_catalogo.chave`,
+    # semeada la. NAO depende de `add_parcerias.sql`, que roda mais abaixo
+    # e cria a tabela da fonte — esta migracao so toca as tres tabelas
+    # de permissao, e por isso fica agrupada com as outras concessoes de tela.
+    "add_tela_parcerias.sql",
     # ⭐ LIMPEZA DA TROCA DE FONTE DA TRANSFERENCIA ESPECIAL (06/09/2026): apaga
     # os planos que o casamento por NOME creditou ao municipio errado. Ver o
     # cabecalho do .sql.

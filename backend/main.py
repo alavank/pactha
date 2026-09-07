@@ -12,7 +12,7 @@ from routers import (
     fns, transferegov, emendas_federais, export_pdf,
     users, simec, rm, ai, gestao, parlamentares, status_changes,
     documentos, cauc, cagec, siconfi, acordofes, control, freshness, painel, bi,
-    sismob, obrasgov, investsus, auditoria, permissoes, repasses,
+    sismob, obrasgov, parcerias, investsus, auditoria, permissoes, repasses,
     contas_irregulares,
     cofinanciamento, parametros, monitoramento, consulta_popular, programas_rs,
     conteudo_rs, programas_captacao, agendamentos,
@@ -219,6 +219,11 @@ app.include_router(sismob.router)   # /api/sismob/* (obras de saude do MS)
 # (saude) e o SIMEC (educacao) nao cobrem. Repete de proposito a obra que ja
 # aparece naquelas duas; ver o cabecalho do router.
 app.include_router(obrasgov.router)
+# /api/parcerias/*: a Gestao de Parcerias do Transferegov, onde as
+# transferencias passaram a ser processadas de 2024 em diante — e onde mora a
+# emenda de saude do municipio. NAO substitui as Voluntarias: aquela mostra o
+# convenio discricionario do SICONV, que segue vindo dos dumps CSV.
+app.include_router(parcerias.router)
 app.include_router(investsus.router)  # /api/investsus/* (repasses fundo a fundo)
 app.include_router(acordofes.router)
 app.include_router(control.router)  # /api/control/* (Console Alavank)
