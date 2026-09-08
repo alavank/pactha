@@ -565,6 +565,10 @@ MIGRATION_FILES = [
     # `add_tela_parcerias.sql`: concede a TELA **e** a ACAO, porque so a tela
     # daria menu visivel e 403 no clique. Herda de `convenios`.
     "add_tela_faf_planos.sql",
+    # Tokens do servidor MCP (Claude/ChatGPT em modo leitura). Tabela nova,
+    # independente do audit_log — fica acima da linha da imutabilidade só por
+    # convenção (aquela quer ser a última).
+    "add_mcp_tokens.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",
