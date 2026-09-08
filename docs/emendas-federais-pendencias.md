@@ -81,6 +81,22 @@ Coolify. Hoje o risco é baixo — a rodada leva ~2 min contra 30 de espaçament
 
 ---
 
+## Resolvido depois desta lista
+
+- **A tela de Parlamentares contava a emenda federal no resumo e não a listava no
+  detalhe** (07/09/2026). `por_fonte.emenda_federal` e `total_lancamentos` a incluíam,
+  mas `GET /parlamentares/detalhe` devolvia **seis** listas: quem abria a setinha não
+  achava a seção, o `total_geral` do detalhe não batia com o da lista, e o parlamentar
+  que **só** tem emenda federal — 45% da carteira nos municípios medidos — recebia
+  **404** e o cartão abria com erro. Fechado com o bloco `ef_list` em
+  `routers/parlamentares.py::detalhe` + um `GrupoFonte` na tela.
+  ⚠️ O SQL repete os **dois `NOT EXISTS`** do agregado (`id_proposta_siconv` e
+  `split_part(te.emenda,'-',1)`). Sem eles a mesma emenda apareceria nesta seção **e**
+  na de TransfereGov, e o total do detalhe passaria o do cabeçalho — que é onde o gestor
+  confere.
+
+---
+
 ## Anotado e descartado
 
 - **`max()` coluna a coluna sobre a CGU** — resolvido de fato pelo `LATERAL ... LIMIT 1`:

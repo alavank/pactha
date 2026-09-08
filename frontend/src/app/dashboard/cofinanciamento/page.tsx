@@ -18,6 +18,7 @@ import { cofinanciamentoDaUf } from "@/lib/estadual";
 import { Bloco, BlocoHead, Campos, ItemLinha, Lista, Numero, Selo, Vazio } from "@/components/ui/superficies";
 import { HeartPulse, TrendingDown, Lock, Loader2 } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { TituloTela } from "@/components/TituloTela";
 
 interface ItemAP {
   competencia: string | null;
@@ -102,9 +103,7 @@ export default function CofinanciamentoPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold text-base-content">
-          {info?.titulo || "Cofinanciamento da Saúde"}
-        </h1>
+        <TituloTela>{info?.titulo || "Cofinanciamento da Saúde"}</TituloTela>
         <p className="text-sm text-muted-foreground">{info?.fonte || d.fonte}</p>
       </div>
 

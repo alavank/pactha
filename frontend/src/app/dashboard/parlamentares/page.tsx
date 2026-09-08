@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useCallback, Suspense } from "react";
+import React, { useEffect, useState, useCallback, useRef, Suspense } from "react";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { anosOpcoes, atalhosAnos, inicioDoMandato, resumoAnos } from "@/lib/periodo";
@@ -8,6 +8,7 @@ import { useAnoCorrentePadrao } from "@/lib/anoPadrao";
 import {
   Loader2, Search, ChevronDown, ChevronRight,
   Landmark, Building2, FileText, Eraser, Coins, HeartPulse, ArrowLeftRight, Users,
+  BadgeDollarSign,
 } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -16,6 +17,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Bloco, BlocoHead, Campos, ItemLinha, Lista, Numero, Selo, Vazio, situacaoTom } from "@/components/ui/superficies";
+import { TituloTela } from "@/components/TituloTela";
 
 interface ParlamentarItem {
   nome_normalizado: string;
@@ -144,6 +146,32 @@ interface DetalheFns {
   proponente: string | null;
 }
 
+/** A carteira de emendas federais INDICADAS — a sétima fonte.
+ *
+ *  ⚠️ Chegou ao detalhe só em 07/09/2026: o agregado a contava desde 06/09, mas
+ *  o endpoint devolvia seis listas. O cartão prometia «Emendas Federais · 3» e
+ *  ao abrir não havia seção nenhuma; quem só tem emenda federal — 45% da
+ *  carteira nos municípios medidos, a indicada que nunca virou instrumento —
+ *  abria o cartão num 404. Ver o bloco `ef_list` em
+ *  `routers/parlamentares.py::detalhe`, que também explica os dois `NOT EXISTS`
+ *  que impedem a mesma emenda de aparecer aqui e no TransfereGov. */
+interface DetalheEmendaFederal {
+  id: number;
+  municipio_nome: string | null;
+  codigo_emenda: string | null;
+  nr_emenda: string | null;
+  ano: number | null;
+  beneficiario_nome: string | null;
+  /** FALSE quando o dinheiro foi para uma entidade do município (hospital,
+   *  APAE, fundo) e não para a prefeitura. Os dois aparecem, e somá-los sem
+   *  dizer prometeria ao gestor um caixa que não é dele. */
+  e_prefeitura: boolean;
+  parlamentar: string | null;
+  tipo_parlamentar: string | null;
+  valor_total: number;
+  qualif_proponente: string | null;
+}
+
 interface ParlamentarDetalhe {
   nome_consulta: string;
   sigcon: DetalheSigcon[];
@@ -152,12 +180,14 @@ interface ParlamentarDetalhe {
   plano_acao: DetalhePlanoAcao[];
   pac: DetalhePac[];
   fns: DetalheFns[];
+  emendas_federais: DetalheEmendaFederal[];
   total_sigcon: number;
   total_voluntarias: number;
   total_emendas: number;
   total_plano_acao: number;
   total_pac: number;
   total_fns: number;
+  total_emendas_federais: number;
   total_geral: number;
   valor_total: number;
 }
@@ -200,6 +230,58 @@ function variacao(delta: number, pct: number | null): {
     dinheiro: zero ? null : `${sobe ? "+" : "−"}${fmtMoney(Math.abs(delta))}`,
   };
 }
+
+/** AS FONTES DE UM PARLAMENTAR, em ORDEM FIXA — e é dela que sai o resumo do
+ *  cartão fechado.
+ *
+ *  ⚠️ ISTO SUBSTITUIU UMA GRADE DE SETE CAMPOS (07/09/2026, pedido do dono com
+ *  print). A grade mostrava as sete fontes SEMPRE, e como quase todo
+ *  parlamentar tem uma ou duas, cinco delas saíam como «—»: três linhas de
+ *  cartão para exibir, em média, dois números. "Tem campos que ficam vazios e
+ *  são mostrados mesmo assim e por isso toma um espaço maior."
+ *
+ *  ⚠️ E ISSO É UMA REVERSÃO CONSCIENTE. Estes selos já foram chips coloridos, e
+ *  a grade nasceu para consertar dois defeitos deles: a cor gasta à toa e a
+ *  posição variável, que impedia descer o olho por uma coluna. O primeiro
+ *  continua consertado — selo neutro, cinza sobre cinza, como manda a peça. O
+ *  segundo é o que se paga: em troca de um cartão três vezes menor, a varredura
+ *  vertical vira ORDEM fixa em vez de POSIÇÃO fixa. Quem tem FNS mostra FNS
+ *  sempre depois de Seleção PAC e sempre antes de Emendas Federais.
+ *
+ *  ⚠️ O RÓTULO É O NOME INTEIRO, não a abreviação ("Transferência Especial", e
+ *  não "Transf. especial"). A abreviação existia porque a coluna da grade tinha
+ *  ~150px; o selo se ajusta ao texto, então o motivo dela sumiu junto com a
+ *  grade. É também o que faz o resumo casar com o título da seção que a pessoa
+ *  encontra ao abrir a setinha — é para isso que o resumo existe.
+ *
+ *  ⚠️ «Emendas Federais» FOI A EXCEÇÃO ATÉ 07/09/2026, e essa é a razão de esta
+ *  nota existir: ela contava aqui e no `total_lancamentos`, mas o endpoint de
+ *  detalhe devolvia seis listas, não sete — ao abrir, não havia seção dela, e
+ *  quem só tem emenda federal caía num 404. Fechado no mesmo dia (ver `ef_list`
+ *  em `routers/parlamentares.py::detalhe`). O furo já existia na grade; foi a
+ *  troca por selo, que promete uma seção por nome, que o tornou visível. */
+const FONTES: Array<{
+  chave: keyof ParlamentarItem["por_fonte"];
+  label: string;
+  title: string;
+}> = [
+  { chave: "sigcon", label: "Convênios Estaduais",
+    title: "Convênios do Estado com o município (SIGCON)" },
+  { chave: "voluntaria", label: "TransfereGov",
+    title: "Propostas TransfereGov / SICONV (federal)" },
+  { chave: "emenda", label: "Emendas Estaduais",
+    title: "Indicações de emenda estadual" },
+  { chave: "plano_acao", label: "Transferência Especial",
+    title: "Transferência Especial / Plano de Ação (RP9)" },
+  { chave: "pac", label: "Seleção PAC",
+    title: "Propostas do Novo PAC" },
+  { chave: "fns", label: "FNS (Saúde)",
+    title: "Propostas do Fundo Nacional de Saúde" },
+  { chave: "emenda_federal", label: "Emendas Federais",
+    title: "Emendas parlamentares federais (carteira CGU/SICONV) que ainda não "
+         + "viraram instrumento — se tivessem virado, contariam em TransfereGov "
+         + "ou em Transferência Especial, e não aqui." },
+];
 
 /** Grupo de lançamentos de UMA fonte dentro do parlamentar expandido.
  *  Substitui a tabela interna: cabeçalho com contagem e total à direita, itens
@@ -251,9 +333,21 @@ function ParlamentaresInner() {
   const [compErro, setCompErro] = useState<string | null>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
-  const [detailCache, setDetailCache] = useState<Record<string, ParlamentarDetalhe | "loading" | "error">>({});
+  const [detailCache, setDetailCache] = useState<Record<string, ParlamentarDetalhe | "loading" | "error" | "vazio">>({});
+
+  /* ⚠️ QUAL BUSCA É A CORRENTE. A tela dispara `carregar()` DUAS vezes ao
+     abrir: uma antes de `useAnoCorrentePadrao` definir o ano (sem filtro) e
+     outra depois (com 2026). Se a primeira — mais pesada, porque varre todos os
+     anos — responder por último, a LISTA fica sem filtro enquanto o DETALHE,
+     pedido depois, respeita o ano.
+     Foi o que apareceu em Araújos/MG: o cartão de «Newton Cardoso Jr» dizia 8
+     lançamentos e R$ 2,28 mi, mas os lançamentos dele são de 2020, 2016 e 2015
+     — nenhum em 2026. Ao expandir, o detalhe filtrava por 2026, não achava nada
+     e a tela mostrava «Erro». */
+  const buscaAtual = useRef(0);
 
   const carregar = useCallback(async () => {
+    const meuTurno = ++buscaAtual.current;
     setLoading(true);
     try {
       const params: Record<string, string | string[]> = {};
@@ -263,15 +357,21 @@ function ParlamentaresInner() {
       params.tipo = tipoLista;
       const r = await api.get<{ items: ParlamentarItem[]; contagem?: { parlamentar: number; outro: number } }>(
         "/parlamentares", { params });
+      // Resposta de uma busca já substituída não pode pintar a tela.
+      if (meuTurno !== buscaAtual.current) return;
       setItems(r.data.items);
       // A contagem vem SEMPRE dos dois lados, mesmo filtrando um — e o que
       // permite o seletor dizer "Outros (2)" sem uma segunda chamada.
       if (r.data.contagem) setContagem(r.data.contagem);
+      // ⚠️ Detalhe em cache foi buscado com OUTRO filtro de ano: some com ele,
+      // ou o cartão reabre mostrando lançamento que o filtro atual exclui.
+      setDetailCache({});
     } catch (e) {
       console.error("erro parlamentares", e);
+      if (meuTurno !== buscaAtual.current) return;
       setItems([]);
     } finally {
-      setLoading(false);
+      if (meuTurno === buscaAtual.current) setLoading(false);
     }
   }, [municipioId, search, anosSel, tipoLista]);
 
@@ -360,7 +460,7 @@ function ParlamentaresInner() {
     // Cache com uma excecao: "error" NAO conta como carregado. Antes qualquer
     // valor no cache barrava a nova busca, entao o "tente novamente" da mensagem
     // era mentira — reabrir o cartao devolvia o mesmo erro sem chamar a API.
-    if (detailCache[k] && detailCache[k] !== "error") return;
+    if (detailCache[k] && detailCache[k] !== "error" && detailCache[k] !== "vazio") return;
     setDetailCache((c) => ({ ...c, [k]: "loading" }));
     try {
       const params: Record<string, string | string[]> = {};
@@ -371,6 +471,15 @@ function ParlamentaresInner() {
       const r = await api.get<ParlamentarDetalhe>(`/parlamentares/${nome}`, { params });
       setDetailCache((c) => ({ ...c, [k]: r.data }));
     } catch (e) {
+      /* ⚠️ 404 AQUI NÃO É FALHA, É AUSÊNCIA: o backend responde 404 quando o
+         parlamentar não tem lançamento no filtro pedido. Tratar como erro fazia
+         a tela dizer «Não foi possível carregar» e mandar tentar de novo — o
+         que nunca resolveria, porque não havia nada a carregar. */
+      const st = (e as { response?: { status?: number } })?.response?.status;
+      if (st === 404) {
+        setDetailCache((c) => ({ ...c, [k]: "vazio" }));
+        return;
+      }
       console.error("erro detalhe", e);
       setDetailCache((c) => ({ ...c, [k]: "error" }));
     }
@@ -407,12 +516,14 @@ function ParlamentaresInner() {
     <div className="space-y-4">
       {/* Header */}
       <div className="border-b pb-4" style={{ borderColor: "var(--bi-line)" }}>
-        <h1 className="text-2xl font-bold text-base-content">Parlamentares</h1>
+        <TituloTela>Parlamentares</TituloTela>
         <p className="mt-1 text-sm" style={{ color: "var(--bi-muted)" }}>
           Lista agregada dos parlamentares (deputados estaduais/federais e senadores)
           com lançamentos vinculados — convênios estaduais, propostas TransfereGov/SICONV,
-          emendas estaduais, Transferência Especial / Plano de Ação (RP9), Seleção PAC e
-          FNS (Fundo Municipal de Saúde, agrupado pelo proponente). Clique para ver os lançamentos.
+          emendas estaduais, Transferência Especial / Plano de Ação (RP9), Seleção PAC,
+          FNS (Fundo Municipal de Saúde, agrupado pelo proponente) e emendas federais
+          indicadas. Cada parlamentar traz os selos das fontes em que tem lançamento;
+          clique na setinha para ver um a um.
         </p>
       </div>
 
@@ -683,7 +794,36 @@ function ParlamentaresInner() {
                       <span className="truncate">{p.nome_display}</span>
                     </span>
                   }
-                  valor={fmtMoney(p.valor_total)}
+                  /* ⭐ O VALOR GANHOU RÓTULO (07/09/2026, pedido do dono): "pra
+                     pessoa que bate o olho entender que aquele valor é
+                     referente a todos os lançamentos". Era um número solto no
+                     canto, e num cartão que também mostra o valor de CADA
+                     lançamento quando aberto, ele podia ser lido como o valor de
+                     um deles. Mesma tipografia dos rótulos da comparação, ao
+                     lado — 9px, caixa alta, cor mais fraca —, para as duas
+                     colunas de número lerem como uma coisa só. */
+                  valor={
+                    <span className="flex flex-col items-end gap-0.5">
+                      {/* Duas versões do MESMO rótulo, e não uma que quebra em
+                          duas linhas: quebrar devolveria ao cartão a altura que
+                          esta mudança acabou de tirar dele. No celular, onde a
+                          linha inteira tem ~390px, o rótulo curto deixa o nome
+                          do parlamentar caber sem truncar. */}
+                      <span
+                        className="whitespace-nowrap text-[9px] font-normal uppercase tracking-wide sm:hidden"
+                        style={{ color: "var(--bi-faint)" }}
+                      >
+                        Valor total
+                      </span>
+                      <span
+                        className="hidden whitespace-nowrap text-[9px] font-normal uppercase tracking-wide sm:inline"
+                        style={{ color: "var(--bi-faint)" }}
+                      >
+                        Valor total dos lançamentos
+                      </span>
+                      <span className="bi-num">{fmtMoney(p.valor_total)}</span>
+                    </span>
+                  }
                   meta={
                     <>
                       <span>{p.total_lancamentos} lançamento(s)</span>
@@ -703,9 +843,11 @@ function ParlamentaresInner() {
                     /* AS COLUNAS DA COMPARACAO.
                        Continuam a direita e alinhadas entre si para o olho descer
                        a coluna: e assim que se compara uma lista, nao lendo cartao
-                       por cartao. A tipografia agora e a mesma do <Campos> (rotulo
-                       de 9px, numero de 11px) para as duas grades do cartao — a de
-                       baixo e esta — lerem como uma coisa so. */
+                       por cartao. A tipografia (rotulo de 9px em caixa alta, cor
+                       mais fraca) e a MESMA do rotulo do valor total, ao lado —
+                       os dois blocos de numero do cartao leem como uma coisa so.
+                       Era tambem a da grade de fontes que ficava embaixo; ela
+                       virou os selos da meta em 07/09/2026. */
                     <div className="hidden shrink-0 items-start gap-3 sm:flex">
                       <div className="w-28 text-right">
                         <div className="truncate text-[9px] uppercase tracking-wide" style={{ color: "var(--bi-faint)" }}>
@@ -740,25 +882,39 @@ function ParlamentaresInner() {
                     </div>
                   ) : undefined}
                 >
-                  {/* As seis fontes em POSICAO FIXA. Eram chips coloridos soltos
-                      na linha, cada cartao com os seus numa posicao diferente;
-                      na grade da em quem tem FNS ou PAC so descendo o olho. */}
-                  <Campos
-                    cols={3}
-                    campos={[
-                      { rotulo: "Estaduais", valor: p.por_fonte.sigcon || "—", title: "Convênios estaduais" },
-                      { rotulo: "TransfereGov", valor: p.por_fonte.voluntaria || "—", title: "Propostas TransfereGov / SICONV" },
-                      { rotulo: "Emendas est.", valor: p.por_fonte.emenda || "—", title: "Indicações de emenda estadual" },
-                      { rotulo: "Transf. especial", valor: p.por_fonte.plano_acao || "—", title: "Transferência Especial / Plano de Ação (RP9)" },
-                      { rotulo: "Seleção PAC", valor: p.por_fonte.pac || "—", title: "Propostas do Novo PAC" },
-                      { rotulo: "FNS (saúde)", valor: p.por_fonte.fns || "—", title: "Propostas do Fundo Nacional de Saúde" },
-                      /* ⭐ A sétima fonte (06/09/2026): a emenda federal INDICADA, que
-                         não virou instrumento — 45% da carteira nos municípios medidos.
-                         O SQL desconta o que já vem por TransfereGov e por TE, senão
-                         inflaria o total que alimenta também o Painel do prefeito. */
-                      { rotulo: "Emendas fed.", valor: p.por_fonte.emenda_federal || "—", title: "Emendas parlamentares federais (carteira CGU/SICONV) que ainda não viraram instrumento" },
-                    ]}
-                  />
+                  {/* ⭐ O RESUMO DO QUE ESTÁ ATRÁS DA SETINHA: um selo por fonte
+                      QUE TEM lançamento, na ordem fixa de `FONTES`. Ver o
+                      comentário de lá para o que isto substituiu.
+
+                      ⚠️ E ELE FICA ABAIXO DE UMA DIVISÓRIA, não junto da meta —
+                      pedido do dono em 07/09/2026, comparando este cartão com o
+                      de Convênios Estaduais: "tem uma linha que divide, isso dá
+                      uma estética boa para os cards". A linha não é enfeite
+                      solto: é a MESMA que a peça `Campos` desenha em todo cartão
+                      do sistema (`mt-2 border-t pt-2` sobre `--bi-line`), e é
+                      ela que separa «quem é este registro» de «o que ele tem».
+                      Quando a grade de sete campos virou selo, a divisória foi
+                      junto por acidente, e este cartão passou a ser o único sem
+                      ela. Escrita à mão aqui, e não via `Campos`, porque o que
+                      vai embaixo é uma fileira de selos e não uma grade de
+                      rótulo+valor.
+
+                      ⚠️ Só sai quando há selo: com `por_fonte` zerado — o caso
+                      `foraDoRecorte`, que a comparação traz — uma borda sozinha
+                      seria um risco no meio do cartão sem nada embaixo. */}
+                  {FONTES.some(({ chave }) => p.por_fonte[chave]) && (
+                    <div
+                      className="mt-2 flex flex-wrap items-center gap-1.5 border-t pt-2"
+                      style={{ borderColor: "var(--bi-line)" }}
+                    >
+                      {FONTES.map(({ chave, label, title }) => {
+                        const n = p.por_fonte[chave];
+                        return n ? (
+                          <Selo key={chave} title={title}>{`${label} · ${n}`}</Selo>
+                        ) : null;
+                      })}
+                    </div>
+                  )}
                 </ItemLinha>
 
                 {expanded && (
@@ -784,6 +940,18 @@ function ParlamentaresInner() {
                       <div className="flex flex-wrap items-center justify-center gap-1.5 py-4 text-[12px]" style={{ color: "var(--bi-muted)" }}>
                         <Selo tom="critico">Erro</Selo>
                         Não foi possível carregar os lançamentos. Feche e abra o cartão para tentar de novo.
+                      </div>
+                    )}
+                    {/* ⚠️ AUSÊNCIA NÃO É ERRO, e dizer «erro» aqui mandava o
+                        gestor tentar de novo uma coisa que nunca ia funcionar —
+                        não havia o que carregar. A mensagem nomeia o filtro,
+                        porque é ele que está escondendo os lançamentos. */}
+                    {detail === "vazio" && (
+                      <div className="flex flex-wrap items-center justify-center gap-1.5 py-4 text-center text-[12px]" style={{ color: "var(--bi-muted)" }}>
+                        <Selo tom="neutro">Sem lançamentos</Selo>
+                        {anosSel.length
+                          ? `Este parlamentar não tem lançamentos em ${anosSel.join(", ")}. Limpe o filtro de anos para ver os demais.`
+                          : "Este parlamentar não tem lançamentos neste município."}
                       </div>
                     )}
                     {detail && typeof detail === "object" && (
@@ -1036,6 +1204,66 @@ function ParlamentaresInner() {
                                   campos={[
                                     { rotulo: "Ano", valor: f.ano ?? "—" },
                                     { rotulo: "Fim da vigência", valor: f.dt_vigencia_final || "—" },
+                                  ]}
+                                />
+                              </ItemLinha>
+                            ))}
+                          </GrupoFonte>
+                        )}
+
+                        {/* EMENDAS FEDERAIS — a sétima fonte, que só passou a
+                            aparecer aqui em 07/09/2026. Ver `DetalheEmendaFederal`.
+
+                            ⚠️ O TÍTULO DIZ «indicadas, ainda sem instrumento» e
+                            isso é a informação, não uma ressalva: o que está
+                            nesta seção é dinheiro APONTADO ao município que não
+                            virou convênio nem plano de ação. Se tivesse virado,
+                            estaria numa das seções acima — os dois `NOT EXISTS`
+                            do SQL garantem que não apareça duas vezes. */}
+                        {detail.emendas_federais && detail.emendas_federais.length > 0 && (
+                          <GrupoFonte
+                            icon={BadgeDollarSign}
+                            titulo="Emendas federais indicadas (ainda sem instrumento)"
+                            sub={`${detail.emendas_federais.length} emenda(s)`}
+                            total={soma(detail.emendas_federais, (e) => e.valor_total)}
+                          >
+                            {detail.emendas_federais.map((e) => (
+                              <ItemLinha
+                                key={e.id}
+                                titulo={e.beneficiario_nome || "Beneficiário não informado"}
+                                valor={fmtMoney(e.valor_total)}
+                                meta={
+                                  <>
+                                    {/* ⚠️ O selo de quem recebeu é o que separa
+                                        «a prefeitura recebeu» de «alguém no
+                                        município recebeu» — mesma disciplina da
+                                        tela de Parcerias. Só marca o caso que
+                                        surpreende: a prefeitura é o esperado. */}
+                                    {!e.e_prefeitura && (
+                                      <Selo tom="atencao"
+                                            title={e.qualif_proponente || "O beneficiário não é a prefeitura"}>
+                                        não é da prefeitura
+                                      </Selo>
+                                    )}
+                                    {e.tipo_parlamentar && (
+                                      <Selo title="Tipo da emenda na fonte (CGU)">
+                                        {e.tipo_parlamentar.toLowerCase()}
+                                      </Selo>
+                                    )}
+                                    {e.municipio_nome && <span>{e.municipio_nome}</span>}
+                                    {e.codigo_emenda && (
+                                      <span className="font-mono">· emenda {e.codigo_emenda}</span>
+                                    )}
+                                  </>
+                                }
+                              >
+                                <Campos
+                                  campos={[
+                                    { rotulo: "Ano", valor: e.ano ?? "—" },
+                                    { rotulo: "Nº da emenda", valor: e.nr_emenda || "—", mono: true },
+                                    { rotulo: "Qualificação do proponente",
+                                      valor: e.qualif_proponente || "—",
+                                      title: e.qualif_proponente || undefined },
                                   ]}
                                 />
                               </ItemLinha>

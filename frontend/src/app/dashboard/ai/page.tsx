@@ -8,6 +8,7 @@ import remarkGfm from "remark-gfm";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { useMunicipio } from "@/contexts/MunicipioContext";
+import { TituloTela } from "@/components/TituloTela";
 
 interface ToolCallLog {
   tool: string;
@@ -327,15 +328,19 @@ export default function AiChatPage() {
     return <div className="flex h-64 items-center justify-center text-muted-foreground">Selecione um município.</div>;
   }
 
+  // ⚠️ SEM `max-w-7xl mx-auto` (saiu em 07/09/2026). Era a única tela do
+  // dashboard a impor largura própria por cima do container, e numa janela de
+  // 1920 isso a deixava com margem lateral diferente da tela anterior —
+  // exatamente a divergência que o container único foi arrumar. As bolhas da
+  // conversa já se limitam sozinhas (`max-w-[80%]`/`[92%]`), então a largura
+  // extra vai para o painel de contexto à direita, não para a linha de texto.
   return (
-    <div className="flex gap-4 h-[calc(100vh-7rem)] max-w-7xl mx-auto">
+    <div className="flex gap-4 h-[calc(100vh-7rem)]">
     <div className="flex flex-col flex-1 min-w-0">
       {/* Header */}
       <div className="flex items-center justify-between gap-2 pb-3 border-b">
         <div>
-          <h1 className="flex items-center gap-2 text-2xl font-bold text-base-content">
-            <Sparkles className="size-6" style={{ color: "var(--bi-muted)" }} /> IA PACTHA
-          </h1>
+          <TituloTela>IA PACTHA</TituloTela>
           <p className="text-sm text-base-content/60">
             Assistente que consulta o banco em tempo real e gera relatórios. Pergunte em português.
           </p>

@@ -34,11 +34,17 @@ import { AvisoCurado } from "@/components/rs/AvisoCurado";
 import {
   Bloco, BlocoHead, ItemLinha, Lista, Numero, Selo, Vazio,
 } from "@/components/ui/superficies";
+import { TituloTela } from "@/components/TituloTela";
 
 interface BlocoFin { nome: string; tipo: string; o_que: string }
 interface Conferir { item: string; detalhe: string }
 interface Grupo { codigo: number; nome: string | null; total: number; desconto: number; liquido: number }
 interface BlocoFaf extends Grupo { grupos: Grupo[] }
+/** Um ano da série. `em_curso` marca o ano que ainda está recebendo
+ *  competências — o total dele não é comparável com o de um ano fechado. */
+interface AnoFaf {
+  ano: number; total: number; desconto: number; liquido: number; em_curso: boolean;
+}
 interface Faf {
   ano: number;
   anos: number[];
@@ -46,6 +52,10 @@ interface Faf {
   total: number;
   desconto: number;
   liquido: number;
+  /** Os últimos quatro anos. O desconto de um ano sozinho não diz nada; a
+   *  sequência diz — em Bueno Brandão/MG ela vai de 1,6% do repasse retido em
+   *  2024 para 23,6% em 2026, e é esse salto que faz alguém perguntar por quê. */
+  serie?: AnoFaf[];
   atualizado_em: string | null;
 }
 interface Resp {
@@ -112,7 +122,7 @@ export default function InvestSusPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold text-base-content">{d.titulo}</h1>
+        <TituloTela>{d.titulo}</TituloTela>
         <p className="text-sm text-muted-foreground">{d.subtitulo}</p>
       </div>
 
@@ -156,20 +166,99 @@ export default function InvestSusPage() {
             <Numero icon={Wallet} rotulo="Total repassado no ano" tom="acento"
                     valor={formatCurrency(faf.total)}
                     sub={`${faf.blocos.length} bloco(s) de financiamento`} />
-            {/* ⚠️ O DESCONTO É GLOSA E TEM QUE APARECER. Mostrar só o líquido
-                esconderia dinheiro que o município perdeu — exatamente o número
-                que ele precisa questionar. Fica cinza quando é zero: destacar
-                zero em vermelho treinaria o olho a ignorar o cartão. */}
-            <Numero icon={Banknote} rotulo="Descontado (glosa)"
+            {/* ⚠️ "DESCONTO", E NÃO "GLOSA" — a fonte chama de `vlDesconto` e NÃO
+                diz o motivo. Glosa é uma causa específica (produção rejeitada na
+                auditoria); o desconto no fundo a fundo também pode ser devolução
+                de recurso sendo parcelada ou determinação de controle. Chamar
+                tudo de glosa manda a equipe procurar no SIA/SIH quando o assunto
+                pode ser um parcelamento — foi o que este rótulo fazia até
+                07/09/2026. Mostrar só o líquido seria pior ainda: esconderia o
+                dinheiro retido. Cinza quando é zero, porque destacar zero treina
+                o olho a ignorar o cartão. */}
+            <Numero icon={Banknote} rotulo="Descontado"
                     tom={faf.desconto > 0 ? "atencao" : "neutro"}
                     valor={formatCurrency(faf.desconto)}
                     sub={faf.desconto > 0
-                      ? "valor retido pelo Ministério antes do crédito — vale conferir a origem"
+                      ? "retido antes do crédito — a fonte não informa o motivo"
                       : "nenhum desconto registrado no ano"} />
             <Numero icon={Wallet} rotulo="Creditado no Fundo Municipal" tom="ok"
                     valor={formatCurrency(faf.liquido)}
                     sub="o que efetivamente entrou na conta" />
           </div>
+
+          {/* ⭐ OS QUATRO ÚLTIMOS ANOS, e o que a barra mede é o QUE ENTROU.
+              O desconto de um ano sozinho não diz nada — a sequência diz. É a
+              informação que o gestor levaria meses para juntar abrindo o portal
+              do FNS ano a ano, e é onde um desconto que virou rotina aparece.
+
+              A barra é o repasse do ano; a parte escura, o que foi retido. Sem
+              escala compartilhada entre os anos a comparação seria falsa, então
+              todas as barras dividem o mesmo máximo. */}
+          {(faf.serie?.length ?? 0) > 1 && (
+            <Bloco className="p-3">
+              <BlocoHead icon={Banknote} titulo="Últimos anos"
+                         sub="repasse do ano e quanto foi retido antes do crédito" />
+              <div className="flex flex-col gap-2">
+                {(() => {
+                  const maior = Math.max(...(faf.serie || []).map((a) => a.total), 1);
+                  return (faf.serie || []).map((a) => {
+                    const pct = a.total ? (a.desconto / a.total) * 100 : 0;
+                    return (
+                      <div key={a.ano} className="flex flex-col gap-1">
+                        <div className="flex flex-wrap items-baseline justify-between gap-x-3 text-[11px]">
+                          <span className="font-medium" style={{ color: "var(--bi-text)" }}>
+                            {a.ano}
+                            {a.em_curso && (
+                              <span className="ml-1.5 text-[10px] font-normal"
+                                    style={{ color: "var(--bi-muted)" }}>
+                                em curso
+                              </span>
+                            )}
+                          </span>
+                          <span className="bi-num" style={{ color: "var(--bi-muted)" }}>
+                            repasse {formatCurrency(a.total)} · entrou{" "}
+                            <span style={{ color: "var(--bi-ok-ink)" }}>{formatCurrency(a.liquido)}</span>
+                            {a.desconto > 0 && (
+                              <>
+                                {" · retido "}
+                                <span style={{ color: "var(--bi-warn-ink)" }}>
+                                  {formatCurrency(a.desconto)} ({pct.toFixed(1)}%)
+                                </span>
+                              </>
+                            )}
+                          </span>
+                        </div>
+                        {/* Trilho = o maior ano da série. A faixa verde é o que
+                            entrou; a âmbar, o retido — na mesma barra, porque o
+                            retido saiu de dentro do repasse, não ao lado dele. */}
+                        <div className="flex h-2 overflow-hidden rounded-full"
+                             style={{ background: "var(--bi-surface-2)" }}
+                             role="img"
+                             aria-label={`${a.ano}: repasse de ${formatCurrency(a.total)}, `
+                               + `entrou ${formatCurrency(a.liquido)}, retido ${formatCurrency(a.desconto)}`}>
+                          <div style={{ width: `${(a.liquido / maior) * 100}%`,
+                                        background: "var(--bi-ok)" }} />
+                          <div style={{ width: `${(a.desconto / maior) * 100}%`,
+                                        background: "var(--bi-warn)" }} />
+                        </div>
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+              {/* ⚠️ A RESSALVA É PARTE DO DADO. A fonte publica o valor retido e
+                  NÃO publica a causa: pode ser devolução de recurso sendo
+                  parcelada, glosa de produção ou determinação de controle — e
+                  cada uma leva a uma conversa diferente na Secretaria. Sem esta
+                  linha, a tela empurraria a equipe para o SIA/SIH. */}
+              <p className="mt-2 text-[10px] leading-snug" style={{ color: "var(--bi-faint)" }}>
+                O portal do FNS informa o valor retido, mas <b>não o motivo</b>. Pode ser
+                devolução de recurso parcelada, glosa de produção ou determinação de
+                controle. O motivo aparece no extrato por competência, na área do gestor do
+                FNS, e no extrato bancário da conta do bloco.
+              </p>
+            </Bloco>
+          )}
 
           <Bloco className="p-3">
             <BlocoHead icon={Banknote} titulo="Por bloco de financiamento"
@@ -194,7 +283,7 @@ export default function InvestSusPage() {
                             : <ChevronRight className="size-3.5 shrink-0" />)}
                           <span>{b.nome || `Bloco ${b.codigo}`}</span>
                           {b.desconto > 0 && (
-                            <Selo tom="atencao">glosa {formatCurrency(b.desconto)}</Selo>
+                            <Selo tom="atencao">desconto {formatCurrency(b.desconto)}</Selo>
                           )}
                         </span>
                       }
@@ -210,7 +299,8 @@ export default function InvestSusPage() {
                         titulo={g.nome || `Grupo ${g.codigo}`}
                         valor={formatCurrency(g.total)}
                         meta={g.desconto > 0
-                          ? `glosa de ${formatCurrency(g.desconto)} · creditado ${formatCurrency(g.liquido)}`
+                          ? `descontado ${formatCurrency(g.desconto)} · entrou ${formatCurrency(g.liquido)}`
+                          + ` · ${((g.desconto / (g.total || 1)) * 100).toFixed(1)}% retido`
                           : undefined}
                       />
                     ))}

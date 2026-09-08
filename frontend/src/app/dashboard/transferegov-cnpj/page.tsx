@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState } from "react";
 import {
-  Search as SearchIcon, Loader2, Landmark, Building2, Coins, FileText, Wallet,
+  Search as SearchIcon, Loader2, Landmark, Coins, FileText, Wallet,
   ChevronDown, ChevronRight,
 } from "lucide-react";
 import api from "@/lib/api";
@@ -17,6 +17,7 @@ import {
   Bloco, BlocoHead, Campo, Campos, ItemLinha, Lista, Modal, ModalCorpo, ModalHead,
   Numero, Secao, Selo, Vazio, situacaoTom,
 } from "@/components/ui/superficies";
+import { TituloTela } from "@/components/TituloTela";
 
 /** O `-` de campo vazio, e o `title` para o valor truncado ser recuperavel.
  *  Substitui o `Field` local, que era a setima forma do mesmo padrao no
@@ -241,11 +242,9 @@ export default function TransfereGovCnpjPage() {
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold text-base-content flex items-center gap-2">
-          <Building2 className="size-6" style={{ color: "var(--bi-muted)" }} /> Consulta TransfereGov por CNPJ
-        </h1>
+        <TituloTela>Consulta TransfereGov por CNPJ</TituloTela>
         <p className="text-sm" style={{ color: "var(--bi-muted)" }}>
           {siconvOn
             ? "Busca por CNPJ do proponente — Transferência Especial (Plano de Ação, ao vivo) + Voluntárias (dados já coletados). Não entra em relatório."

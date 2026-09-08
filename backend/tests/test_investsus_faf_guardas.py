@@ -1,4 +1,4 @@
-"""As guardas das DUAS consultas do `_faf` — verificadas na ARVORE do SQL.
+"""As guardas das TRES consultas do `_faf` — verificadas na ARVORE do SQL.
 
 ⚠️ ESTE ARQUIVO EXISTE PORQUE OS TESTES DO `test_investsus_faf.py` ERAM CEGOS
 PARA O SQL, e a cegueira foi provada por mutacao em 02/09/2026. As tres mutacoes
@@ -55,8 +55,8 @@ def _consultas() -> list[str]:
     blocos = re.findall(r'text\(\s*(""".*?"""|(?:"[^"]*"\s*)+)\s*\)', fonte, re.S)
     achadas = [re.sub(r"(?<!:):(\w+)", r"'\1'", b.strip('"').replace('"', " "))
                for b in blocos if "fns_repasse_faf" in b]
-    assert len(achadas) == 2, (
-        f"esperava 2 consultas a fns_repasse_faf no router, achei {len(achadas)} "
+    assert len(achadas) == 3, (
+        f"esperava 3 consultas a fns_repasse_faf no router, achei {len(achadas)} "
         f"— se o numero mudou de proposito, ajuste este teste junto")
     return achadas
 
@@ -76,7 +76,7 @@ def _wheres():
     return saida
 
 
-def test_as_duas_consultas_sao_sql_valido():
+def test_as_tres_consultas_sao_sql_valido():
     for sql in _consultas():
         assert pglast.prettify(sql)
 
@@ -103,7 +103,10 @@ def test_a_consulta_das_LINHAS_filtra_tambem_pelo_ANO():
     anos continuaria funcionando (ele so muda `alvo`), entao a tela pareceria
     certa: trocar o ano nao mudaria o valor, e ninguem estranha um total grande.
     """
-    linhas = next(s for s in _consultas() if "bloco_codigo" in s)
+    # ⚠️ `bloco_codigo` DEIXOU DE IDENTIFICAR esta consulta: a serie historica
+    # tambem usa a coluna, dentro do NOT EXISTS que remove a linha de total do
+    # bloco. Quem a identifica e o `grupo_nome` do SELECT, que so ela projeta.
+    linhas = next(s for s in _consultas() if "grupo_nome" in s)
     texto = " ".join(pglast.prettify(linhas).lower().split())
     assert "ano = 'a'" in texto, f"filtro de ano ausente:\n{texto}"
 
@@ -116,3 +119,24 @@ def test_a_consulta_dos_ANOS_e_do_municipio_pedido():
     # E ordenado do mais recente para o mais antigo: o `alvo` padrao e `anos[0]`,
     # entao inverter a ordem faria a tela abrir no ano mais VELHO.
     assert "order by ano desc" in texto
+
+
+def test_a_SERIE_historica_nao_soma_dinheiro_duas_vezes():
+    """⚠️ A serie e o unico lugar do router que agrega SEM filtrar por ano.
+
+    Por isso ela precisa da mesma protecao do laco: `grupo_codigo = 0` e a linha
+    de TOTAL do bloco, gravada quando o portal nao detalhou grupos, e convive
+    com as linhas de grupo. Somar as duas contaria o mesmo repasse duas vezes —
+    e a barra do historico mostraria um ano com o dobro do dinheiro que existiu,
+    justamente na tela que o gestor usa para comparar ano a ano.
+    """
+    serie = next(s for s in _consultas() if "group by ano" in s.lower())
+    texto = " ".join(pglast.prettify(serie).lower().split())
+    assert "grupo_codigo <> 0" in texto, (
+        f"a serie soma a linha de total do bloco junto com os grupos:\n{texto}")
+    assert "not exists" in texto, (
+        "sem o NOT EXISTS, bloco que veio SO com o total do bloco some da serie")
+    assert "municipio_id = 'm'" in texto
+    # Quatro anos: e o recorte que a tela desenha. Mais que isso nao cabe na
+    # barra; menos esconde justamente o ano em que o desconto mudou de patamar.
+    assert "limit 4" in texto

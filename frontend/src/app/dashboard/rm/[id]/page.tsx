@@ -12,6 +12,7 @@ import { Aviso, BOTAO_CTA, BOTAO_SEC, Bloco, ESTILO_CTA, ESTILO_SEC, Selo } from
 import { Input } from "@/components/ui/input";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 import { baixarRelatorioRm, type FormatoRm, type TipoRm } from "@/lib/rmExport";
+import { TituloTela } from "@/components/TituloTela";
 
 interface Item {
   ordem?: number;
@@ -244,9 +245,7 @@ export default function RmEditorPage() {
             <ArrowLeft className="size-4" />
           </Button>
           <div>
-            <h1 className="text-2xl font-bold text-base-content">
-              RM {(rm.data_referencia || "").slice(0, 4)} - {rm.municipio_nome}/{rm.uf}
-            </h1>
+            <TituloTela>RM {(rm.data_referencia || "").slice(0, 4)} - {rm.municipio_nome}/{rm.uf}</TituloTela>
             <div className="mt-1 flex items-center gap-2 text-[11px]" style={{ color: "var(--bi-muted)" }}>
               {/* Rascunho e o estado que pede acao; finalizado e o normal, e
                   por isso fica cinza. */}
@@ -356,7 +355,11 @@ export default function RmEditorPage() {
         {rm.conteudo.partes.map((parte, pi) => {
           const popen = openPartes.has(pi);
           return (
-            <Bloco key={pi} className="overflow-hidden">
+            /* `p-0` é DELIBERADO e precisa continuar escrito: a faixa cinza do
+               cabeçalho da parte vai de borda a borda, e o padding padrão que o
+               `Bloco` passou a injetar (07/09/2026) a descolaria das laterais.
+               Escrever o padding é o que diz à peça "eu decido". */
+            <Bloco key={pi} className="overflow-hidden p-0">
               <div className="flex items-center gap-2 border-b p-2"
                    style={{ background: "var(--bi-surface-2)", borderColor: "var(--bi-line)" }}>
                 <button onClick={() => toggle(openPartes as Set<string | number>, pi, (s) => setOpenPartes(s as Set<number>))}>

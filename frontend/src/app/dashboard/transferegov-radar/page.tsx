@@ -28,6 +28,7 @@ import { useMunicipio } from "@/contexts/MunicipioContext";
 import {
   Bloco, BlocoHead, ItemLinha, Lista, Numero, Selo, Vazio,
 } from "@/components/ui/superficies";
+import { TituloTela } from "@/components/TituloTela";
 
 interface Programa {
   id_programa: string;
@@ -105,7 +106,7 @@ export default function RadarPage() {
     return (
       <div className="space-y-4">
         <div>
-          <h1 className="text-2xl font-bold text-base-content">Radar de captação</h1>
+          <TituloTela>Radar de captação</TituloTela>
           <p className="text-sm text-muted-foreground">{d.municipio.nome}</p>
         </div>
         <Bloco className="p-3">
@@ -142,7 +143,7 @@ export default function RadarPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold text-base-content">Radar de captação</h1>
+        <TituloTela>Radar de captação</TituloTela>
         <p className="text-sm text-muted-foreground">
           Programas federais com prazo aberto para {d.municipio.nome} apresentar proposta
         </p>

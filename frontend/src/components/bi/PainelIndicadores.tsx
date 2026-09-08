@@ -13,6 +13,7 @@ import api from "@/lib/api";
 import { Municipio, getMunicipios, putTelaFiltros, type TipoParlamentar } from "@/lib/bi";
 import type { User } from "@/types";
 import { allowedTelasOf } from "@/lib/telas";
+import { PADDING_PADRAO } from "@/lib/layout";
 import { useBiScope, CONSOLIDADO } from "@/contexts/BiScopeContext";
 import { ABAS, AbaId, FiltrosTela, abrirJanelaDaTela } from "@/lib/tela";
 import { useTelaControle } from "@/lib/useTela";
@@ -133,7 +134,12 @@ export function PainelIndicadores() {
   const abrirTela = () => abrirJanelaDaTela(filtros);
 
   return (
-    <div className="bi-skin min-h-full px-4 py-5 sm:px-6 lg:px-8">
+    /* O padding vem do `PADDING_PADRAO` (`lib/layout.ts`) e NÃO daqui: esta é
+       uma tela `telaCheia`, o contêiner do dashboard não põe padding nenhum
+       nela (o `bi-skin` precisa pintar até a borda da área rolável), e o
+       valor escrito à mão aqui era o que as outras telas tinham de imitar
+       para ficar com a mesma margem. Agora é literalmente o mesmo valor. */
+    <div className={`bi-skin min-h-full ${PADDING_PADRAO}`}>
       <CabecalhoBi
         nomeMunicipio={nomeMunicipio}
         right={

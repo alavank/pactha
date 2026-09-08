@@ -264,8 +264,105 @@ async def obra(
     for grupo in ("acao", "em_dia", "encerradas"):
         for i in dados.get(grupo, []):
             if i["proposta_id"] == proposta_id:
-                return {**i, "raw_data": row[1]}
+                # A galeria sai daqui e não da listagem: são 12 fotos por obra,
+                # e mandá-las em toda listagem inflaria o payload da tela (e do
+                # Modo Tela) por um dado que só o modal usa.
+                return {**i, "galeria": galeria_do_raw(row[1]), "raw_data": row[1]}
     raise HTTPException(404, "Obra não encontrada")
+
+
+def galeria_do_raw(raw: dict | None) -> list[dict]:
+    """Os grupos de fotografia da obra, normalizados a partir do payload da fonte.
+
+    ⚠️ O GRUPO E A DATA VALEM MESMO SEM A IMAGEM, e hoje isso não é teoria: o
+    serviço de imagem do Ministério devolve 500 (medido em 07/09/2026 em três
+    obras de dois municípios). Ainda assim, saber que as últimas fotos são de
+    «Terreno» e «Placa da obra», e que a mais recente é de 08/08/2025, diz que a
+    obra parou antes de começar — que é a leitura que o gestor precisa fazer.
+    Por isso a galeria é montada do metadado, e a imagem entra por cima quando
+    a origem responde.
+    """
+    grupos = []
+    for g in (raw or {}).get("gruposFotografias") or []:
+        fotos = [{"id": f.get("id"),
+                  "em": (f.get("dtAtualizacao") or "")[:10] or None}
+                 for f in (g.get("fotos") or []) if f.get("id")]
+        if fotos:
+            grupos.append({
+                "grupo": g.get("noGrupo") or "Sem grupo",
+                "total": len(fotos),
+                "ultima_em": max((f["em"] for f in fotos if f["em"]), default=None),
+                "fotos": fotos,
+            })
+    # Mais recente primeiro: é o que responde "em que fase ele parou de registrar".
+    grupos.sort(key=lambda g: (g["ultima_em"] or ""), reverse=True)
+    return grupos
+
+
+@router.get("/obra/{proposta_id}/foto/{foto_id}", dependencies=[exige("sismob.ver")])
+async def foto(
+    proposta_id: int,
+    foto_id: str,
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """A imagem da obra, servida POR AQUI — o usuário não sai do PACTHA.
+
+    ⚠️ O `proposta_id` NO CAMINHO NÃO É ENFEITE: é o que impede este endpoint de
+    virar um proxy aberto para qualquer URL do Ministério. O id da foto só é
+    aceito se estiver no payload DAQUELA obra, e a obra passa pelo gate de
+    município e de tela como qualquer outra leitura. Sem isso, bastaria uma
+    conta de quiosque com um UUID qualquer para usar o servidor de repasse.
+
+    ⚠️ FALHA DA ORIGEM SAI COMO 502, e com a frase — nunca como imagem quebrada:
+    a tela precisa distinguir «o Ministério está fora» de «esta obra não tem
+    foto», que é exatamente o que confundiria quem olha uma obra parada.
+    """
+    row = (await db.execute(text(
+        "SELECT municipio_id, raw_data FROM sismob_obras WHERE proposta_id = :p"
+    ), {"p": proposta_id})).first()
+    if not row:
+        raise HTTPException(404, "Obra não encontrada")
+    ensure_municipio_access(current, row[0])
+    ensure_tela(current, "sismob")
+
+    ids = {f["id"] for g in galeria_do_raw(row[1]) for f in g["fotos"]}
+    if foto_id not in ids:
+        raise HTTPException(404, "Foto não pertence a esta obra")
+
+    import httpx
+    from fastapi import Response
+    from services.sismob_catalogo import URL_FOTO
+    try:
+        async with httpx.AsyncClient(timeout=25, verify=False) as c:
+            r = await c.get(URL_FOTO.format(id=foto_id),
+                            headers={"User-Agent": "PACTHA/1.0",
+                                     "Referer": "https://sismobcidadao.saude.gov.br/",
+                                     # ⚠️ `image/*` SOZINHO É ARMADILHA NESTA ORIGEM,
+                                     # e foi medido: com ele o servidor devolve
+                                     # **406 com corpo vazio**; com `*/*` devolve o
+                                     # 500 de verdade, com a frase do erro. Como o
+                                     # servidor negocia conteúdo, restringir o
+                                     # Accept pode barrar uma imagem que ele
+                                     # entregaria — e ainda esconde o motivo da
+                                     # falha de quem for depurar.
+                                     "Accept": "image/*,*/*;q=0.8"})
+    except Exception as e:
+        raise HTTPException(502, f"O SISMOB não respondeu: {type(e).__name__}") from e
+    # Assinatura de imagem, e não o content-type: a origem devolve
+    # `application/octet-stream` para PNG e JSON de erro com 200 em alguns casos.
+    if r.status_code == 200 and r.content[:4] in (b"\x89PNG", b"\xff\xd8\xff\xe0",
+                                                  b"\xff\xd8\xff\xe1", b"\xff\xd8\xff\xdb"):
+        tipo = "image/png" if r.content[:4] == b"\x89PNG" else "image/jpeg"
+        # Cache no navegador: a foto de uma obra não muda, e sem isto cada
+        # abertura do modal repete a ida ao Ministério.
+        return Response(content=r.content, media_type=tipo,
+                        headers={"Cache-Control": "private, max-age=86400"})
+    # O código da origem vai na frase: quem for depurar daqui a seis meses
+    # precisa distinguir «serviço fora» (500) de «id que não existe mais» (404)
+    # sem ter de reproduzir a chamada à mão.
+    raise HTTPException(
+        502, f"O SISMOB não entregou a imagem (a origem respondeu {r.status_code}).")
 
 
 @router.post("/refresh", dependencies=[exige("sismob.atualizar")])

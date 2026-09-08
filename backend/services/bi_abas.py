@@ -807,6 +807,26 @@ async def _cagec_bloco(db: AsyncSession, ids: list[int]) -> dict:
             "crc_em": s.get("crc_em"),
             "crc_erro": s.get("crc_erro"),
             "detalhe_do_crc": bool(s.get("detalhe_do_crc")),
+            # ⭐ AS OUTRAS ENTIDADES — e a divergencia que este bloco criava.
+            #
+            # `fetch_cagec_situacao` ja devolvia as duas coisas; este bloco as
+            # DESCARTAVA, e por isso o mesmo municipio era descrito de tres
+            # jeitos diferentes na mesma sessao (medido em Arapua/MG,
+            # 07/09/2026):
+            #   * Visao Geral   -> "Impedido de receber transferencias"
+            #     (`_semaforo_cagec`, em routers/bi.py, conta ENTIDADES: o Fundo
+            #      Municipal de Saude estava Irregular com 4 pendencias);
+            #   * aba Documentacao -> cadastro em dia, "0 pendencias"
+            #     (so a linha principal, a prefeitura, que esta Regular);
+            #   * tela Regularidade do menu -> Regular + "outra(s) entidade(s)
+            #     do municipio somam 4 pendencia(s)".
+            #
+            # Cada cadastro trava o SEU convenio: prefeitura regular nao
+            # destrava o convenio da saude com o fundo irregular. Quem le o
+            # dashboard tem de ver o mesmo que a tela do menu — o contrato
+            # antigo (os campos de cima sao os da PRINCIPAL) fica intacto.
+            "entidades": s.get("entidades") or [],
+            "pendencias_outras_entidades": s.get("pendencias_outras_entidades") or 0,
         })
 
     if not por_municipio:
@@ -832,8 +852,18 @@ async def _cagec_bloco(db: AsyncSession, ids: list[int]) -> dict:
         # Sem isto ela so sabia quem ficou de fora e chamava todo o resto de
         # CAGEC.
         "ufs_na_fonte": ufs_cobertas,
-        "regulares": sum(1 for m in por_municipio if m["regular"]),
-        "pendencias_total": sum(m["pendencias"] for m in por_municipio),
+        # ⚠️ OS AGREGADOS CONTAM TODAS AS ENTIDADES, e nao so a prefeitura —
+        # mesma regra do `_semaforo_cagec` (routers/bi.py), que e quem desenha o
+        # medidor da Visao Geral. Contando so a principal, uma carteira com
+        # cinco fundos de saude irregulares aparecia com "0 pendencias" na aba
+        # Documentacao enquanto o medidor logo acima dizia que havia municipio
+        # impedido. Um municipio so entra em `regulares` quando NENHUMA das
+        # entidades dele esta irregular: cada cadastro trava o seu convenio.
+        "regulares": sum(1 for m in por_municipio
+                         if m["regular"] and not any(
+                             e.get("regular") is False for e in m["entidades"])),
+        "pendencias_total": sum(m["pendencias"] + m["pendencias_outras_entidades"]
+                                for m in por_municipio),
         # So os de MG: o CAGEC nao alcanca os outros, e incluir os demais faria
         # o carimbo ficar eternamente vazio numa carteira mista.
         "coleta_mais_antiga": await _coleta_mais_antiga(db, "cagec_situacao", ids_mg),

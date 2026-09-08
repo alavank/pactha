@@ -2,7 +2,7 @@
 
 > Documento de contexto para a **próxima sessão de IA** (Claude Code) que for continuar este projeto.
 > É **auto-contido**: assuma que você (IA) não tem memória das sessões anteriores. Tudo que precisa está aqui.
-> Última atualização: 2026-09-05.
+> Última atualização: 2026-09-07.
 >
 > 📍 Para servidor, URLs, uuids, bancos e operações no Coolify, a fonte de verdade é o
 > **[`INFRA.md`](INFRA.md)** na raiz. Este arquivo cobre o *projeto*; o `INFRA.md` cobre a *infra*.
@@ -11,7 +11,7 @@
 
 ## 1. O QUE É ISTO (em 30 segundos)
 
-**PACTHA** = sistema de **monitoramento de convênios e transferências governamentais** para municípios e assessorias (MG/ES/GO/RS). Módulos: SIGCON-MG (convênios estaduais), TransfereGov, Emendas, Parlamentares, CAUC, Acordo FES, FNS, SIMEC/PAR, **Obras** (SISMOB + Obras.gov.br/CIPI), IA (Claude), DOU-MG, Relatório de Monitoramento (RM), Documentos, Cofre de Senhas (AES-256), Telegram, extensão Chrome de captura gov.br, Painel de Indicadores (BI, nos 5 tenants) com Modo Tela/links públicos, selos de frescor por tela e watchdog de coleta. São **22 fontes oficiais** (o `CLAUDE.md` mantém a contagem em dia).
+**PACTHA** = sistema de **monitoramento de convênios e transferências governamentais** para municípios e assessorias (MG/ES/GO/RS). Módulos: SIGCON-MG (convênios estaduais), TransfereGov, Emendas, Parlamentares, CAUC, Acordo FES, FNS, SIMEC/PAR, **Obras** (SISMOB + Obras.gov.br/CIPI), IA (Claude), DOU-MG, Relatório de Monitoramento (RM), Documentos, Cofre de Senhas (AES-256), Telegram, extensão Chrome de captura gov.br, Painel de Indicadores (BI, nos 5 tenants) com Modo Tela/links públicos, selos de frescor por tela e watchdog de coleta. São **23 fontes oficiais** (o `CLAUDE.md` mantém a contagem em dia).
 
 - **Frontend:** Next.js 16 (App Router) + Tailwind v4 + daisyUI + shadcn. Pasta `frontend/`.
 - **Painel (pasta `painel/`):** DEPRECADO — o BI virou módulo do frontend principal (`/dashboard` + `/tela`). Ver `painel/DEPRECADO.md`.
@@ -315,11 +315,11 @@ detalhada mora agora em **[`docs/agendamentos.md`](docs/agendamentos.md)** — a
 vale além deste módulo:
 
 - ⭐ **Fundo escopado precisa de contêiner SEM padding, senão vira um retângulo pintado.** O
-  módulo estava em `TELAS_LARGAS`, cujo contêiner põe `px-4 py-6 sm:px-6 lg:px-8` — então o
-  `.ag-modulo` pintava só a caixa dele e sobrava uma **moldura do cinza do sistema** em volta
-  (24px em cima e embaixo, e o que passasse de 1600px nas laterais). Margem negativa
-  resolvia só a horizontal. A rota passou para **`telaCheia`** (o mesmo mecanismo do Painel
-  de Indicadores) e o módulo cuida do próprio espaçamento.
+  módulo estava no contêiner comum, que põe padding — então o `.ag-modulo` pintava só a caixa
+  dele e sobrava uma **moldura do cinza do sistema** em volta, em cima, embaixo e nas
+  laterais. Margem negativa resolvia só a horizontal. A rota passou para **`telaCheia`** (o
+  mesmo mecanismo do Painel de Indicadores) e o módulo cuida do próprio espaçamento — hoje
+  copiando o `PADDING_PADRAO` do layout, para não ficar com margem diferente das demais.
   ⚠️ E lá dentro é **`h-screen`, não `h-full`**: o `<div key={escopo}>` que envolve a página
   é um bloco sem altura própria, e `height: 100%` sobre pai de altura automática resolve
   para `auto` — o módulo voltaria a nascer do tamanho do conteúdo.
@@ -620,6 +620,57 @@ entre tenants de 5 para **30 min** (santamaria 03:05, novapalma 03:35, montesiã
 trust 04:35, freitas 05:05 UTC). Com rodadas de 12-15 min, os 5 min de antes fariam os
 cinco tenants varrerem a fonte federal ao mesmo tempo, do mesmo IP.
 
+### ⚠️ `percentual_execucao` ficou NULO em 538 de 538 obras por um sufixo (07/09/2026)
+
+O #408 prometeu o percentual de avanço físico. O rodízio passou por `execucao-fisica`
+em 06/09 e a coluna continuou vazia em **538 de 538** obras do freitas. Causa: o
+coletor lia `percentual_execucao` e o campo da fonte é `percentual_execucao_**fisica**`.
+
+⚠️ **E não houve erro em log nenhum.** `.get()` de chave inexistente devolve `None`, que
+nesta base significa "a fonte não informou" — o defeito era indistinguível de um dado
+que a fonte não publica. Só apareceu porque alguém foi conferir o número.
+
+⚠️⚠️ **E o teste passava.** Ele montava o payload com `percentual_execucao` — o nome que
+o *código* usava, deduzido do código em vez de capturado da fonte. Um teste escrito
+assim confirma o bug em vez de pegá-lo.
+
+A lição, que vale para todo coletor: **payload de teste se captura da resposta real da
+fonte, nunca se deduz do código que se quer testar.** Os quatro testes novos
+(`test_os_nomes_dos_campos_lidos_existem_na_fonte`,
+`test_payload_com_o_nome_ANTIGO_nao_preenche`) foram verificados por mutação — voltando
+o nome errado, quatro deles quebram.
+
+Os campos de `/empenho` (`valor_empenho`, `liquidado`, `pago`, `rpinscrito`) foram
+conferidos um a um contra a resposta real e estão certos — daí `valor_empenhado` estar
+preenchido em 237 obras enquanto o percentual estava em zero.
+
+### ⚠️⚠️ E o rodízio estava APAGANDO o que não media (07/09/2026)
+
+Descoberto ao conferir a coleta forçada que o dono pediu: o freitas tinha **237 obras
+com `valor_empenhado`** e, depois de uma rodada de `execucao-fisica`, ficou com **82**.
+
+`_detalhe_da_rodada` traz UM dos três endpoints caros por dia — desenho correto, para
+caber no teto de tempo. Mas o UPDATE sobrescrevia **todas** as colunas de detalhe:
+
+| rodada de… | preenche | **apaga** |
+|---|---|---|
+| `execucao-fisica` | percentual | empenhos e valores |
+| `empenho` | empenhos e valores | percentual |
+| `estudo-viabilidade` | estudo | percentual **e** empenhos |
+
+**Nunca havia um dia com os três preenchidos.** O rodízio, criado para economizar
+tempo, destruía justamente o dado que o tempo economizado servia para coletar.
+
+⚠️ **E `coalesce` não resolveria direito.** Ele preservaria o valor antigo também
+quando a fonte legitimamente parasse de informar — «nunca esquece» é tão errado quanto
+«esquece toda vez». A coluna só pode mudar quando ESTA rodada olhou para aquele
+endpoint; se não olhou, fica como está. Daí `sql_detalhe(chaves)`, que monta o `SET`
+com as colunas dos endpoints efetivamente coletados — função pura, testada nos três
+dias do rodízio e validada contra a gramática do Postgres com `pglast`.
+
+⚠️ **Depois do merge, os empenhos não voltam sozinhos**: eles só são recoletados quando
+o rodízio passar por `empenho` (09/09), ou numa rodada forçada.
+
 ## 1.12. FASE 4 — Gestão de Parcerias (a emenda de saúde que faltava)
 
 O módulo de Parcerias é a fonte onde as transferências passaram a ser processadas
@@ -833,6 +884,228 @@ que os coletores já tratam como "não consegui perguntar" e nunca como ausênci
 **nomeando** a consulta por IBGE/CNPJ que esquecer o teto — testado por mutação.
 Consulta por id do pai (`id_proposta`, `id_plano_acao`) fica sem teto de propósito.
 
+## 1.15. A ÁREA ÚTIL VIROU UMA SÓ (07/09/2026)
+
+Pedido do dono, com print e setas desenhadas por cima: *"cada um segue um tamanho, e isso
+não pode; tem que aproveitar a tela, tem que padronizar o layout e dimensão e margens e
+tamanho"*. A referência que ele mandou é o **Painel de Indicadores**.
+
+**O que havia.** `dashboard/layout.tsx` tinha **três regimes de largura** convivendo:
+`telaCheia` (largura toda), `telaLarga` (`max-w-[1600px]`, uma lista de rotas) e o padrão
+(`max-w-7xl`, 1216px úteis). Numa janela de 1920 isso dava **três margens esquerdas
+diferentes** conforme o item de menu clicado — ~32px no Painel, ~57px no TransfereGov e
+~185px em todo o resto. Trocar de tela empurrava o conteúdo lateralmente.
+
+**O que ficou.** Um `PADDING_PADRAO = "px-4 py-5 sm:px-6 lg:px-8"`, sem `max-w`, para toda
+tela que não seja `telaCheia`. `TELAS_LARGAS` **não existe mais** — não reintroduza uma
+lista de exceções de largura; ou o padrão muda para todas, ou volta o defeito.
+
+⚠️ A justificativa do `max-w-7xl` era **leitura de parágrafo** (~75 caracteres por linha), e
+ela não se sustentava: o PACTHA não tem tela de texto corrido, e onde há parágrafo ele já
+traz `max-w-3xl` PRÓPRIO (Obras, Emendas Federais, Gestão, Auditoria) — que é onde o limite
+pertence. Travar a página inteira custava ~700px de dado em todas as outras.
+
+⚠️ **`telaCheia` copia o `PADDING_PADRAO` por conta própria** (Painel e Agendamentos). Quem
+entrar lá assume o padding com as MESMAS classes.
+
+**As duas telas novas do TransfereGov saíram junto** (Parcerias e Planos de Ação, nascidas
+nas fases 4 e 5 acima). Elas tinham três defeitos que o container não explicava:
+
+- `p-4 sm:p-6` no wrapper da página **por cima** do padding do container — margem dobrada.
+  As de Obras e Emendas Federais tinham o mesmo, e também saiu.
+- **`<Bloco>` sem `className="p-3"`**: `.bi-card` é só fundo, borda, raio e sombra, e o
+  respiro sempre veio da classe que cada tela escrevia à mão. Sem ela, cartão interno colado
+  na borda do cartão de fora. **Agora o `Bloco` injeta `p-3` quando o `className` não traz
+  padding nenhum** — quem quer zero escreve `p-0` (ver `rm/[id]`).
+- **`<Campos>` sem `cols`**: o default era *uma coluna por campo*, e essas telas tinham 10 e
+  11 — onze colunas de ~150px, tudo em reticências. **O default passou a ter teto de 5**, e
+  as duas telas pedem `cols={4}`.
+
+E o **item de lista voltou a nascer fechado**: as duas despejavam todos os campos mais o
+`diagnostico`/`objetivos` inteiros (dois parágrafos de texto legal, na Aldir Blanc) em cada
+linha. Abrir no clique é o gesto que Obras e Emendas Federais já usavam.
+
+## 1.16. O cartão do parlamentar: sete campos fixos viraram selos (07/09/2026)
+
+Segundo pedido do dono no mesmo dia, com print: *"tem campos que ficam vazios e são
+mostrados mesmo assim e por isso toma um espaço maior... não seria melhor manter o mesmo
+padrão das do TransfereGov e Convênios, que têm tags mostrando do que se trata?"*
+
+O cartão fechado de cada parlamentar trazia uma `<Campos cols={3}>` com **as sete fontes
+sempre**: convênios estaduais, TransfereGov, emendas estaduais, Transferência Especial,
+Seleção PAC, FNS e emendas federais. Como quase todo parlamentar tem uma ou duas, cinco
+saíam como «—» — **três linhas de cartão para exibir, em média, dois números**.
+
+Agora são **selos, só das fontes que têm lançamento**, em `FONTES` (ordem fixa, no topo de
+`parlamentares/page.tsx`). O cartão fechado passou de três linhas para uma.
+
+⚠️ **É uma reversão consciente.** Estes selos já foram chips coloridos, e a grade nasceu
+para consertar dois defeitos deles. O primeiro — cor gasta à toa — continua consertado: o
+selo é neutro, como manda a peça. O segundo é o que se paga: a varredura vertical vira
+**ordem** fixa em vez de **posição** fixa. Foi decisão do dono, vendo o resultado.
+
+⚠️ **Rótulo é nome inteiro** ("Transferência Especial", não "Transf. especial"): a
+abreviação existia porque a coluna da grade tinha ~150px, e o selo se ajusta ao texto. É
+também o que faz o resumo casar com o título da seção que aparece ao abrir a setinha.
+
+⚠️ **O valor total ganhou rótulo** ("Valor total dos lançamentos", curto no celular): era um
+número solto no canto de um cartão que, aberto, mostra o valor de *cada* lançamento.
+
+⭐ **E o furo que isso revelou, fechado no mesmo dia.** «Emendas Federais» contava no
+resumo e no `total_lancamentos`, mas `GET /parlamentares/detalhe` devolvia **seis** listas,
+não sete: quem abria a setinha não achava a seção, o `total_geral` do detalhe não batia com
+o da lista, e o parlamentar que **só** tem emenda federal — 45% da carteira nos municípios
+medidos — recebia **404** e o cartão abria com erro. Não era regressão da troca por selo; a
+grade tinha o mesmo furo, só menos visível. Fechado com o bloco `ef_list` em
+`routers/parlamentares.py::detalhe` mais um `GrupoFonte` na tela.
+
+⚠️ **O SQL da sétima fonte repete os dois `NOT EXISTS` do agregado** (`id_proposta_siconv` e
+`split_part(te.emenda,'-',1)`), e eles não são opcionais: esta tabela lê a mesma base que já
+alimenta TransfereGov e Transferência Especial. Sem o desconto, a mesma emenda apareceria em
+duas seções e o total do detalhe passaria o do cabeçalho — que é onde o gestor confere.
+
+## 1.17. Os 47 títulos viraram uma peça só (07/09/2026)
+
+Fecha o print da manhã. Pedido do dono: *"deixe todos em tamanho 24px e sempre tenha um
+ícone para cada título; fica bem bonitinho os que têm — Regularidade tem um escudinho,
+Obras tem um capacetinho, Parlamentares já não tem. Sempre ter um fica bem legal, mesmo que
+repetir alguns não tem problema."*
+
+Havia **47 `<h1>` escritos à mão**, divergindo em duas coisas ao mesmo tempo: **tamanho**
+(42 em `text-2xl`, 5 em `text-[18px]` — as telas mais novas) e **ícone** (15 tinham, 32
+não, sem regra: telas irmãs, feitas na mesma semana, umas com e outras sem).
+
+Agora são **45 `<TituloTela>`** (`components/TituloTela.tsx`), que decide o tamanho e busca
+o ícone em `lib/icones-tela.ts` **pela rota**. Tela nova nasce certa sem ninguém lembrar de
+nada.
+
+⚠️ **Por que um mapa e não o ícone do menu.** Seria mais elegante ler de `NAV_ITEMS`, e foi
+a primeira tentativa — mas **só 15 das 47 rotas têm ícone lá**: folha dentro de grupo
+(FEDERAIS, ESTADUAIS, Saúde, Obras) não tem, quem tem é o grupo. Ler do menu daria o mesmo
+`Landmark` às onze telas federais, que é o oposto do pedido.
+
+⚠️ **Repetir é permitido, e às vezes é o certo:** `BadgeDollarSign` marca as três telas de
+emenda (federal, estadual, RS) e `HeartPulse` as quatro de saúde — a repetição agrupa
+visualmente o que o menu já agrupa.
+
+⚠️ **A peça é SÓ o `<h1>`, de propósito.** Embrulhar o cabeçalho inteiro (título + subtítulo
++ botões + selo de frescor) viraria uma pilha de props opcionais, e a primeira tela que não
+coubesse voltaria a escrever `<h1>` à mão.
+
+⚠️ **Ícone de título nunca é colorido.** Três telas pintavam o seu (Acordo FES em vermelho
+"porque é saúde/dívida"; Telemetria e Status dos Dados no acento) — decoração com a cor que
+nesta identidade significa alerta. Agora é `--bi-muted` para todas, garantido pela peça.
+
+⚠️ **`createElement` e não `<Icone />`** dentro da peça: em JSX, o lint do React Compiler lê
+a variável PascalCase atribuída no render como *componente criado no render* e acusa erro.
+Onde o ícone chega por **prop** (`BlocoHead`, `GrupoFonte`) o JSX normal funciona.
+
+**Dois `<h1>` ficaram de fora, e devem ficar:** o do renderizador de markdown das respostas
+da IA (`ai/page.tsx`) e o do painel ATIVO em Painéis Municipais, que usa o ícone do próprio
+painel.
+
+## 1.18. A regularidade estadual parada em 01/09 — três defeitos, nenhum no coletor (07/09/2026)
+
+O dono abriu a tela de Regularidade e viu **"Atualizado em 01/09"** no CAGEC de vários
+municípios da Freitas (Arapuá e Araújos entre eles). O CAUC estava fresco; a coluna
+**estadual** é que estava parada. Diagnóstico feito no banco e no Coolify — a tela não
+mentia, e o coletor não tinha bug:
+
+**1. O portal do CAGEC não emite CRC de madrugada, e as três tasks estavam às 3h–4h BRT.**
+Medido no mesmo dia, no mesmo worker: às 06:15 UTC toda emissão voltou *"Não foi possível
+recuperar dados do Convenente/Parceiro"*; às 17:58 UTC o mesmo coletor leu as **27
+obrigações** em 34 s. A situação (Regular/Irregular) até atualizava — o que congelou foi o
+**detalhamento**, em 02–03/09 nos três tenants de MG, e o coletor preserva o CRC anterior
+por 30 dias (`CAGEC_CRC_CONFIAVEL_DIAS`), então a tela seguia mostrando obrigação vencida
+que já podia ter sido renovada. Mesma classe do `fpe-rs`: **fonte com janela é restrição de
+agendamento.** Corrigido: freitas `0 10,15,19,23`, montesiao `46 10,19`, trust `48 10,19`
+(UTC) — `scripts/agenda_cagec.sh`.
+
+**2. Uma rodada por dia com lote de 11 = ciclo de 4 dias na Freitas.** O lote 11 é o default
+no `cagec_scraper.py` e o comentário lá diz que é `ceil(44/4)` — dimensionado para QUATRO
+rodadas. A task estava em `15 6 * * *`: 31 dos 42 municípios com mais de 48 h. **Regra:
+lote = ceil(municípios_MG ÷ rodadas por dia); carteira que cresce mexe num dos dois.**
+
+**3. O kill interno matava a rodada e ninguém ficava sabendo.** `timeout -k 30 1020` (17 min)
+contra uma rodada que passa disso quando o portal está lento: 04, 05, 06 e 07/09 morreram
+com `exit 124` (EPIPE do Playwright). Como o `ingestion_log` só é escrito **no fim**, não
+sobrava registro — o selo de frescor continuava calado. Subiu para 1800 s.
+
+⚠️ **O watchdog VIU e não avisou.** O log dele em 06/09 traz `fonte_parada cagec` e
+`municipio_defasado cagec`, seguidos de *"(em cooldown, não reenviado)"* e
+**"0 alerta(s) enviado(s)"** — o canal era o Telegram, removido do código em 05/09. Hoje o
+watchdog detecta e o achado morre no log da Scheduled Task. Enquanto não houver canal, quem
+percebe primeiro é o cliente olhando a tela, que foi exatamente o que aconteceu.
+
+**E dois municípios nunca tinham sido coletados.** Nova Lima e Arcos, seis tentativas cada,
+`"nenhuma entidade pública encontrada"`. Causa: a busca é por NOME e, quando ela volta
+vazia, o código dava `continue` **antes** do bloco que consulta os CNPJs já conhecidos — o
+único caminho que os acharia. Pelo CNPJ (que o `transferegov_pac` já nos deu) os dois
+aparecem na hora: *MUNICIPIO DE NOVA LIMA — Regularizado Judicialmente* e *MUNICIPIO DE
+ARCOS — Irregular*. Corrigido em `cagec_scraper.py`: o CNPJ da prefeitura entra na lista de
+conhecidos e a desistência só acontece depois de tentar todos.
+
+**A divergência que o dono nomeou** — *"as regularidades precisam estar iguais nos ambientes
+onde aparecem; dashboard e menu não podem divergir"* — era real e estava no `_cagec_bloco`
+(`services/bi_abas.py`): ele chamava `fetch_cagec_situacao` e **descartava** `entidades` e
+`pendencias_outras_entidades`. Resultado, no mesmo município e na mesma sessão: o medidor da
+Visão Geral dizia *"Impedido de receber transferências"* (sempre contou entidades), a aba
+Documentação logo abaixo dizia *"Em dia · 0 pendências"* (só a prefeitura) e a tela do menu
+dizia *"Regular"* com o aviso das 4 pendências dos outros cadastros. Agora os três leem a
+mesma coisa, e os agregados da carteira (`regulares`, `pendencias_total`) contam todas as
+entidades, como o semáforo sempre contou.
+
+## 1.19. A quarta pergunta da regularidade: CADIN, CFIL e a tela em abas (07/09/2026)
+
+Sequência do 1.18, no mesmo dia. O dono: *"vamos colocar o CADIN MG, RS e de todos os
+outros para funcionar também... o CFIL do RS também... o CAPAG vamos rodar para funcionar
+em todos"*. Três achados e uma tela nova (PRs #431 e #432, mergeados e no ar).
+
+**O CAPAG não estava em todos, e o motivo é uma armadilha operacional.** As tasks
+`siconfi` de freitas, trust e montesião foram criadas em 07/09 às **02:17 UTC**, *depois*
+dos horários agendados (00:30/01:00/01:30) — então **nenhuma rodou**. O freitas tinha dados
+só porque alguém rodou a carga na mão às 02:13; montesião e trust estavam com **zero**, sem
+erro em lugar nenhum. Carga rodada à mão: Monte Sião **CAPAG B**, trust 691 linhas em 20
+municípios. **Criar a task não é ligar a fonte.**
+
+**O CADIN-MG já era coletado e ninguém sabia.** Ele vem dentro do CRC do CAGEC, como uma
+linha entre as ~27, desde julho. No freitas: **89 entidades limpas e 7 inscritas** (Igarapé,
+Lagoa Dourada, Martinho Campos, Nova Lima, Piracema, Senhora dos Remédios, Toledo). Não
+havia coletor a escrever — havia uma aba a criar. (Consulta própria em MG é inviável: o
+portal da Fazenda é formulário com CAPTCHA.)
+
+**CADIN/RS e CFIL/RS são públicos, e o bundle do SPA engana.** `cadin.sefaz.rs.gov.br` é
+Angular e tem `/api/login-cidadao/*` no JS, o que convida a concluir que a emissão exige
+sessão. Não exige: `POST /api/Certidao/EmitirCertidao` e `.../EmitirCertidaoCfil` com
+`{"Documento": "<cnpj14>"}` devolvem **PDF 200 sem cookie nenhum**. Coletor
+`ingestion/cadin_rs.py`, task `cadin-rs` nos dois workers do RS.
+
+⚠️ **A primeira carga achou uma pendência real, e não é da prefeitura:** o **Fundo Municipal
+de Saúde de Nova Palma** tem 1 pendência no CADIN/RS, incluída em **28/08/2026** pela
+Secretaria Estadual da Saúde — com telefone e e-mail para sanar, que a certidão traz e o
+sistema agora guarda.
+
+**Esse fundo decidiu o schema.** `cagec_situacao` tinha desde agosto as colunas
+`itens_negativos`/`negativos_em`/`negativos_erro`, criadas prevendo esta fonte, e a premissa
+delas era que toda entidade consultada teria linha no cadastro estadual. O fundo **não tem
+cadastro no CHE** e é justamente ele o inscrito: na primeira versão do coletor a certidão
+dele foi descartada com um *"sem linha do CHE"* no log. Daí `cadastro_negativo`, tabela
+própria — e o CADIN-MG passou a ser espelhado nela (com `SAVEPOINT`, senão um erro no
+espelho aborta a transação e leva junto a coleta boa do município).
+
+**A tela virou abas** — `[CAUC] [CAGEC/CHE] [CADIN] [CFIL] [Contas irregulares] [Tesouro]`,
+com **sub-aba por entidade** nas que têm fundos. Duas coisas saíram do esconderijo: as
+**contas irregulares** (o bloco só era desenhado no ramo "estado sem cadastro" — em MG e no
+RS **nunca aparecia**) e metade da planilha do **CAPAG**, que estava em `raw_data` desde a
+primeira coleta: o **ICF** (é dele que vem o "+" do A+), o ano-base da nota, RREO/RGF/DCA
+como pré-requisitos do cálculo e as ressalvas do Tesouro.
+
+**Regra que ficou:** o mesmo assunto não tem dois nomes — a aba do Painel passou de "CAUC e
+cadastro estadual" para **"Regularidade"**, igual ao menu.
+
+**Falta:** GO, ES e TO (o dono adiou: *"depois falamos dos outros"*). Nesses estados a
+regularidade estadual segue sem coletor — 12 dos 20 municípios do trust.
+
 ## 2. ESTADO ATUAL (2026-09-04)
 
 **São CINCO tenants em produção**, todos do mesmo código, cada um com containers e banco próprios:
@@ -936,7 +1209,7 @@ interpolado: [`INFRA.md`](INFRA.md) §5.
 - **Coolify STRIPPA o path do domínio.** Se você setar o domínio de um app como `host/api`, o Coolify tira o `/api` antes de chegar no container (testado: `host/api/health`→404, `host/api/api/health`→200). Por isso a API tem **subdomínio próprio SEM path**, e o caminho normal do usuário é o proxy do Next (`API_PROXY_TARGET`).
 - **`*.sslip.io` é public suffix** → `pactha-...sslip.io` e `pactha-api-...sslip.io` são **cross-site** entre si; cookies `SameSite=Lax` httpOnly não trafegam entre eles. É exatamente por isso que existe o proxy same-origin no Next (decisão 7). **Se alguém apontar o front direto no subdomínio da API (`NEXT_PUBLIC_API_URL` absoluto), o refresh silencioso quebra e volta o re-login a cada ~60min.**
 - **`API_PROXY_TARGET` e `NEXT_PUBLIC_*` são BUILD-TIME.** Mudar o valor no Coolify sem rebuildar o frontend não tem efeito nenhum. Marque `is_build_time:true` e redeploy.
-- ~~**`transferegov_propostas` é criada tarde** nas migrations~~ — **RESOLVIDO.** A tabela foi movida para o `setup_db.py` (`CREATE TABLE IF NOT EXISTS`, hoje na linha 105), que é exatamente o conserto que este parágrafo propunha. **A lição fica, porque a classe do bug voltou:** migration que ALTERA tabela criada mais tarde em `MIGRATION_FILES` só quebra em **banco novo do zero** — invisível nos bancos herdados. Foi assim com `transferegov_propostas` e de novo com `add_detalhe_pagina_rodizio.sql` quando o Nova Palma nasceu (01/09). Hoje há guarda automática: `backend/tests/test_migrations_ordem_tabela.py`. São **105** migrations registradas, não 22.
+- ~~**`transferegov_propostas` é criada tarde** nas migrations~~ — **RESOLVIDO.** A tabela foi movida para o `setup_db.py` (`CREATE TABLE IF NOT EXISTS`, hoje na linha 105), que é exatamente o conserto que este parágrafo propunha. **A lição fica, porque a classe do bug voltou:** migration que ALTERA tabela criada mais tarde em `MIGRATION_FILES` só quebra em **banco novo do zero** — invisível nos bancos herdados. Foi assim com `transferegov_propostas` e de novo com `add_detalhe_pagina_rodizio.sql` quando o Nova Palma nasceu (01/09). Hoje há guarda automática: `backend/tests/test_migrations_ordem_tabela.py`. **Não fixe aqui quantas são** — o número muda toda semana e este parágrafo já disse 22 e depois 105 quando eram outras tantas; conte com `len(MIGRATION_FILES)` em `backend/services/startup.py`, ou leia `Startup migrations: N/N executadas` no log do boot. O que não muda é a invariante: **`add_auditoria_imutavel.sql` é sempre a última da lista** (instala o gatilho append-only do `audit_log`; qualquer migration que ainda precise escrever nessa tabela tem de vir acima).
 - **COFRE_KEY:** o Cofre e as sessões gov.br são cifrados com AES-256 usando a env `COFRE_KEY` (`backend/services/crypto.py`). Se a chave mudar, `decrypt()` volta `""` **silenciosamente** — sem erro, sem log. **Cada tenant tem a sua**; trocar ou cruzar chaves destrói o Cofre daquele cliente.
 - **must_change_password=True** no admin seed → o 1º login redireciona pra `/change-password`. Normal.
 - Worker aparece como `running:unknown` no Coolify (roda o reaper, sem healthcheck). Normal. Frontends sem healthcheck também.
@@ -968,6 +1241,7 @@ interpolado: [`INFRA.md`](INFRA.md) §5.
 - **O CAGEC NÃO fica dentro do SIGCON-MG.** Perder tempo procurando no portal logado é fácil: a palavra "CAGEC" não aparece uma vez sequer no HTML do sigconv2 nem no menu de 29 itens. Ele tem portal próprio (`cagec.mg.gov.br/convenente-web`) e a consulta é **pública** — basta o CNPJ, não precisa de credencial. Duas armadilhas do portal (ambas fazem a busca *parecer* vazia): a página contém a frase "clique no botão [PESQUISAR]", então seletor por texto casa com a **instrução** e o clique não faz nada; e o cabeçalho do grid usa `th`/`.z-listheader` — fora do seletor de células ele some, e sem cabeçalho não dá para casar coluna por rótulo. Está tudo anotado em `backend/ingestion/cagec_scraper.py`.
 - **O detalhe da irregularidade vem do CRC, e o CRC SAI para município irregular.** Errei isso na primeira versão (assumi que só município regular emitiria) e a diferença é grande: a linha da busca só diz "Irregular", enquanto o botão **"Emitir CRC"** da mesma linha baixa um PDF com as ~24 obrigações uma a uma, **cada uma com situação e data de validade**, mais CADIN-MG, SIAFI e o vencimento do mandato. É o que permite dizer "seu FGTS venceu em 29/07" em vez de "você está irregular". Duas armadilhas do PDF: o cabeçalho tem `SITUAÇÃO: Irregular`, que casa como se fosse item (só ler depois de `DOCUMENTAÇÃO`), e a quebra de página parte um item ao meio (há remendo dedicado).
 - **Espera fixa no portal do CAGEC falha 1 em 4.** O `wait_for_timeout` fixo depois do PESQUISAR lia o grid ainda vazio e reportava **"CNPJ não encontrado no CAGEC"** — sintoma enganoso, parece que o município não existe no cadastro. Use espera adaptativa (poll até a linha aparecer). Vale para qualquer postback do ZK.
+- **Diff gigante numa mudança pequena = fim de linha, não código.** Desde 07/09/2026 o repositório é **LF em todo arquivo de texto** (`.gitattributes`, `* text=auto eol=lf`); antes disso 67 arquivos estavam gravados em CRLF e 2 já misturavam as duas convenções. O sintoma é sempre o mesmo: uma edição de 100 linhas chega ao revisor como 845, e o revisor deixa de ler — foi assim que o defeito foi notado. Duas coisas que não são óbvias: **`eol=lf` não conserta blob já commitado** (age só no checkout, assumindo que o blob está em LF — quem reescreve é `git add --renormalize .`), e **PDF precisa de `binary` explícito**, porque a heurística do byte NUL pode não achar NUL nos primeiros 8 KB e "normalizar" o arquivo o corrompe. Os commits de formatação ficam em `.git-blame-ignore-revs`, senão o `git blame` responderia "CRLF→LF" para 35 mil linhas; localmente, uma vez por clone: `git config blame.ignoreRevsFile .git-blame-ignore-revs`.
 
 ---
 

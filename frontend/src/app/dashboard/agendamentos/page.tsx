@@ -36,6 +36,7 @@ import {
 import api from "@/lib/api";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 import { BOTAO_SEC, ESTILO_SEC } from "@/components/ui/superficies";
+import { PADDING_PADRAO } from "@/lib/layout";
 import type { User } from "@/types";
 
 import Calendario from "./Calendario";
@@ -49,6 +50,7 @@ import {
   Coluna, Compromisso, CorPaleta, Feriado, MapaFeriados, ModoCalendario, Vista,
   anosNecessarios, hojeISO, indexarFeriados,
 } from "./tipos";
+import { TituloTela } from "@/components/TituloTela";
 
 /** A busca só vai ao servidor depois que a pessoa para de digitar. 350ms é o
  *  intervalo em que uma palavra inteira cabe entre duas teclas. */
@@ -267,8 +269,8 @@ export default function AgendamentosPage() {
        (`dashboard/layout.tsx`): o contêiner da página não põe `px` nem `py`, e o
        fundo do módulo passa a SER o fundo da área útil. Com o padding por fora —
        que foi a primeira tentativa — ele virava um retângulo pintado com uma
-       moldura do cinza do sistema em volta: 24px em cima e embaixo, e o que
-       passasse de 1600px nas laterais. Margem negativa resolvia só a horizontal.
+       moldura do cinza do sistema em volta, em cima, embaixo e nas laterais.
+       Margem negativa resolvia só a horizontal.
 
        ⚠️ `h-screen` E NÃO `h-full`, e a diferença é real. O `<div key={escopo}>`
        que envolve a página é um bloco SEM altura própria; `height: 100%` sobre
@@ -280,12 +282,18 @@ export default function AgendamentosPage() {
 
        O `min-h` é a válvula: numa janela baixa ele vence o `h-screen`, o módulo
        para de encolher e quem rola é o `<main>` — sem ele, com 500px de altura
-       sobrariam ~180px para a grade de 24 horas. */
-    <div className="ag-modulo flex h-screen min-h-[34rem] flex-col gap-3 px-4 py-4 sm:px-6 lg:px-8">
+       sobrariam ~180px para a grade de 24 horas.
+
+       ⚠️ O `PADDING_PADRAO` (`lib/layout.ts`) NÃO É ESCOLHA DESTA TELA: é o
+       padding do contêiner do dashboard, aplicado aqui por dentro porque
+       Agendamentos é `telaCheia` (fundo próprio) e por isso não o recebe de
+       fora. Importado e não copiado de propósito — enquanto era um `py-4`
+       escrito à mão, esta era a única tela do sistema com outra margem. */
+    <div className={`ag-modulo flex h-screen min-h-[34rem] flex-col gap-3 ${PADDING_PADRAO}`}>
       {/* ------------------------------------------------------ cabeçalho */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-base-content">Agendamentos</h1>
+          <TituloTela>Agendamentos</TituloTela>
           <p className="text-sm text-muted-foreground">
             A agenda de compromissos da equipe
           </p>

@@ -366,6 +366,39 @@ def _municipios_alvo() -> list[dict]:
         cur.execute(_sql.format(join="", order="ORDER BY m.nome"))
     alvos = [{"id": r[0], "nome": r[1], "uf": r[2], "cnpj": r[3]} for r in cur.fetchall()]
     conn.close()
+
+    # REPOSICAO DIRIGIDA: `CAGEC_MUNICIPIOS=Nova Lima,Arcos` ou `=43,56`.
+    #
+    # ⚠️ NAO E ATALHO DE DEBUG — e a saida para um caso que ja aconteceu. O
+    # rodizio ordena por staleness e soma BACKOFF de um dia por tentativa (max
+    # 5): municipio que falha vai para o FIM da fila, que e o certo no regime
+    # automatico e o oposto do que se precisa na hora de repor. Em 07/09/2026,
+    # com Nova Lima e Arcos recem-corrigidos (eram os dois que a busca por nome
+    # nunca achava), a unica forma de visita-los era rodar a carteira inteira —
+    # 42 municipios e ~40 min de portal para conferir dois. A alternativa era
+    # editar `scraper_municipio_coleta` na mao no banco de producao, que e pior:
+    # mexe no estado do rodizio para obter um efeito de execucao.
+    #
+    # Ignora o lote de proposito: quem nomeia os municipios ja disse quantos
+    # quer. Nome casa sem acento e sem caixa; id casa exato.
+    _pedidos = [p.strip() for p in (os.getenv("CAGEC_MUNICIPIOS", "") or "").split(",")
+                if p.strip()]
+    if _pedidos:
+        _ids = {p for p in _pedidos if p.isdigit()}
+        _nomes = {_sem_acento(p).upper() for p in _pedidos if not p.isdigit()}
+        escolhidos = [a for a in alvos
+                      if str(a["id"]) in _ids or _sem_acento(a["nome"]).upper() in _nomes]
+        # Silencio aqui seria pior que erro: quem digitou o nome errado veria
+        # "0 municipios" e concluiria que o tenant nao tem municipio de MG.
+        achados = {str(a["id"]) for a in escolhidos} | {
+            _sem_acento(a["nome"]).upper() for a in escolhidos}
+        for p in (_ids | _nomes) - achados:
+            logger.warning("CAGEC_MUNICIPIOS: '%s' nao esta entre os municipios "
+                           "ATIVOS de MG deste tenant — ignorado", p)
+        logger.info("CAGEC: reposicao dirigida por CAGEC_MUNICIPIOS (%d de %d)",
+                    len(escolhidos), len(alvos))
+        return escolhidos
+
     # Fatia com DEFAULT LIGADO (11; env CAGEC_LOTE_MUNICIPIOS=0 volta a "todos").
     # O default "todos" matava o proprio diagnostico: uma rodada cheia de 44
     # municipios precisa de ~35min (~47s cada) contra 25min de kill interno —
@@ -833,6 +866,71 @@ def _salvar(cur, mun: dict, cnpj_fmt: str, situacao: str | None, nome: str | Non
         "crc_ok": crc_ok,
         "preservar": preservar,
     })
+    if crc_ok:
+        _salvar_cadin_mg(cur, mun, cnpj_fmt, nome, itens, hoje)
+
+
+# CADIN-MG do CRC -> `cadastro_negativo`, a MESMA tabela do CADIN/CFIL gaúchos.
+#
+# ⚠️ NÃO É DUPLICAÇÃO DE DADO, É A ABA DE CADIN EXISTINDO NOS DOIS ESTADOS. Em
+# Minas o CADIN não tem consulta própria viável (o portal da Fazenda é formulário
+# com CAPTCHA) — quem o entrega é o CRC do CAGEC, como uma linha entre as ~27.
+# No RS ele é certidão própria. Sem um lugar comum, a tela precisaria de duas
+# implementações da mesma aba, e a de Minas seria a que ninguém lembraria de
+# atualizar. O item continua também em `cagec_situacao.itens`: lá ele é uma
+# obrigação do certificado, aqui é o cadastro negativo — as duas leituras são
+# verdadeiras e cada tela usa a sua.
+_SQL_CADIN_MG = """
+INSERT INTO cadastro_negativo (municipio_id, cnpj, entidade, uf, fonte, tipo,
+                               situacao, quantidade, detalhes, consultado_em,
+                               erro, atualizado_em)
+VALUES (%(mid)s, %(cnpj)s, %(entidade)s, %(uf)s, 'CADIN-MG', %(tipo)s,
+        %(situacao)s, NULL, NULL, %(em)s, NULL, NOW())
+ON CONFLICT (municipio_id, cnpj, fonte) DO UPDATE SET
+    entidade = COALESCE(EXCLUDED.entidade, cadastro_negativo.entidade),
+    uf = EXCLUDED.uf, tipo = EXCLUDED.tipo, situacao = EXCLUDED.situacao,
+    consultado_em = EXCLUDED.consultado_em, erro = NULL, atualizado_em = NOW()
+"""
+
+
+def _salvar_cadin_mg(cur, mun: dict, cnpj_fmt: str, nome: str | None,
+                     itens: list[dict], hoje) -> None:
+    """Espelha a linha CADIN-MG do CRC na tabela de cadastros negativos.
+
+    Só quando o CRC foi lido AGORA (`crc_ok`): num fallback o detalhamento é
+    preservado com a data antiga, e carimbar `consultado_em` de hoje sobre uma
+    leitura de duas semanas atrás afirmaria uma consulta que não houve.
+
+    Best-effort **com SAVEPOINT**, e o savepoint não é zelo: no Postgres, um
+    comando que falha aborta a transação INTEIRA, e um `rollback()` aqui levaria
+    junto o upsert do CAGEC deste município — a coleta boa perdida por causa do
+    espelho. Tabela ausente (worker que subiu antes da migration) tem de custar
+    uma linha de log, nada mais."""
+    linha = next((i for i in itens if (i.get("codigo") or "") == "CADIN-MG"), None)
+    if not linha:
+        return
+    tipo = linha.get("tipo") or "indeterminado"
+    try:
+        cur.execute("SAVEPOINT sp_cadin_mg")
+        cur.execute(_SQL_CADIN_MG, {
+            "mid": mun["id"], "cnpj": _so_digitos(cnpj_fmt),
+            "entidade": nome or mun["nome"], "uf": mun.get("uf") or "MG",
+            "tipo": tipo,
+            # O CRC diz "Regular"/"Irregular" na linha do CADIN; a frase da tela
+            # é a mesma dos gaúchos para o gestor não ter de traduzir duas
+            # linguagens na mesma aba.
+            "situacao": ("Nada consta" if tipo == "regular"
+                         else "Consta inscrição" if tipo == "pendente"
+                         else (linha.get("status") or "Não informado")),
+            "em": hoje,
+        })
+        cur.execute("RELEASE SAVEPOINT sp_cadin_mg")
+    except Exception as e:
+        try:
+            cur.execute("ROLLBACK TO SAVEPOINT sp_cadin_mg")
+        except Exception:
+            pass
+        logger.info("    (CADIN-MG nao espelhado em cadastro_negativo: %s)", str(e)[:90])
 
 
 def _limpar_sumidos(cur, municipio_id: int, cnpjs_vistos: list[str]) -> int:
@@ -888,15 +986,27 @@ async def _rodar() -> tuple[int, int, list[str]]:
                         _marca_coleta(mun["id"], ok=False,
                                       erro=f"listar entidades: {type(e).__name__}: {str(e)[:200]}")
                         continue
+                    # ⚠️ LISTA VAZIA NAO E VEREDITO — E SO A BUSCA POR NOME QUE
+                    # FALHOU. Aqui o `continue` vinha ANTES do bloco de CNPJs
+                    # conhecidos logo abaixo, e por isso o unico caminho que
+                    # ainda podia achar o municipio ficava inalcancavel
+                    # justamente para quem mais precisava dele.
+                    #
+                    # Custo medido em 07/09/2026, na Freitas: Nova Lima e Arcos
+                    # com SEIS tentativas, "nenhuma entidade publica encontrada",
+                    # nenhuma linha em `cagec_situacao` desde sempre — e a
+                    # consulta pelo CNPJ que o PAC ja nos deu devolve os dois na
+                    # hora ("MUNICIPIO DE NOVA LIMA — Regularizado
+                    # Judicialmente", "MUNICIPIO DE ARCOS — Irregular"). Dois
+                    # municipios de um cliente de 42 sem regularidade estadual
+                    # nenhuma na tela, por causa da ordem de duas linhas.
+                    #
+                    # Casa com a regra que este repo ja aprendeu em outra fonte:
+                    # a chave de um municipio e o IBGE ou o CNPJ — nome e a
+                    # ultima escolha, nunca a unica.
                     if not entidades:
-                        logger.warning("  %s: nenhuma entidade publica no CAGEC", mun["nome"])
-                        falha += 1
-                        # Nao encontrado na CONSULTA (grafia? sem cadastro?) — o
-                        # backoff tira o municipio da frente da fila; a mensagem
-                        # nunca afirma "nao tem cadastro" (a busca e por nome).
-                        _marca_coleta(mun["id"], ok=False,
-                                      erro="nenhuma entidade publica encontrada na consulta (nome sem match?)")
-                        continue
+                        logger.info("  %s: busca por nome nao trouxe nada — tentando os "
+                                    "CNPJ(s) conhecidos", mun["nome"])
 
                     cnpj_prefeitura = _so_digitos(mun["cnpj"] or "")
 
@@ -909,7 +1019,21 @@ async def _rodar() -> tuple[int, int, list[str]]:
                                                      " ".join(e.values())).group(0))
                                for e in entidades
                                if re.search(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}", " ".join(e.values()))}
-                    for conhecido in _cnpjs_conhecidos(cur, mun["id"]):
+                    # ⚠️ O CNPJ DA PREFEITURA ENTRA NA LISTA, e ele nao vem do
+                    # SISMOB: `_cnpjs_conhecidos` so devolve os fundos de saude,
+                    # enquanto o da prefeitura ja estava em `mun["cnpj"]` (das
+                    # emendas estaduais ou do transferegov_pac) e era usado
+                    # apenas para decidir QUAL entidade e a principal. Sem ele
+                    # aqui, um municipio que a busca por nome nao acha nao tinha
+                    # como ser encontrado de jeito nenhum — o caso de Nova Lima
+                    # e Arcos. Vai primeiro porque e a entidade que importa.
+                    conhecidos = _cnpjs_conhecidos(cur, mun["id"])
+                    if cnpj_prefeitura:
+                        conhecidos = [{"cnpj": cnpj_prefeitura,
+                                       "nome": f"MUNICIPIO DE {_sem_acento(mun['nome']).upper()}"}
+                                      ] + [c for c in conhecidos
+                                           if c["cnpj"] != cnpj_prefeitura]
+                    for conhecido in conhecidos:
                         if conhecido["cnpj"] in achados:
                             continue
                         linha_extra = None
@@ -926,6 +1050,22 @@ async def _rodar() -> tuple[int, int, list[str]]:
                                            "e uma entidade que recebe recurso federal",
                                            conhecido["nome"] or "entidade",
                                            conhecido["cnpj"])
+
+                    # AGORA sim: nem o nome nem nenhum CNPJ conhecido acharam
+                    # nada. O erro registrado diz quais caminhos foram tentados,
+                    # porque "nome sem match?" mandava quem depurasse olhar a
+                    # grafia quando o problema podia ser outro (municipio sem
+                    # CNPJ inferido em fonte nenhuma, por exemplo).
+                    if not entidades:
+                        logger.warning("  %s: nenhuma entidade publica no CAGEC "
+                                       "(nome e %d CNPJ(s) conhecido(s) tentados)",
+                                       mun["nome"], len(conhecidos))
+                        falha += 1
+                        _marca_coleta(
+                            mun["id"], ok=False,
+                            erro=("nenhuma entidade encontrada: busca por nome vazia e "
+                                  f"{len(conhecidos)} CNPJ(s) conhecido(s) sem cadastro no CAGEC"))
+                        continue
 
                     # Uma rodada PARCIAL nao pode autorizar DELETE: se a listagem
                     # veio truncada ou uma entidade nao respondeu, o CNPJ dela nao

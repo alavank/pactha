@@ -916,7 +916,77 @@ async def detalhe(
     except Exception:
         pass
 
-    if not (sigcon or voluntarias or emendas or plano_acao or pac_list or fns_list):
+    # EMENDAS FEDERAIS — a setima fonte, que o agregado conta desde 06/09/2026 e
+    # que este endpoint NAO devolvia ate 07/09.
+    #
+    # ⭐ POR QUE FALTAVA IMPORTAR. `por_fonte.emenda_federal` e o
+    # `total_lancamentos` do cabecalho ja a incluiam, entao o cartao prometia "3
+    # emendas federais" e ao abrir nao havia secao nenhuma; `total_geral` daqui
+    # tambem nao batia com o `total_lancamentos` de la. Pior: o parlamentar que
+    # so tem emenda federal — e sao 45% da carteira nos municipios medidos, a
+    # emenda INDICADA que nunca virou instrumento — caia no 404 abaixo e o card
+    # abria com erro. O defeito ficou invisivel enquanto a tela mostrava as sete
+    # fontes numa grade de "—"; virou obvio quando o resumo passou a ser selo.
+    #
+    # ⚠️⚠️ OS DOIS `NOT EXISTS` SAO OS MESMOS DO AGREGADO, e nao dao para
+    # simplificar: esta tabela le a MESMA base que ja alimenta TransfereGov
+    # (`id_proposta_siconv`, preenchido por `siconv_emenda_backfill.py`) e
+    # Transferencia Especial (`te.emenda` no formato '<codigo>-<Nome>'). Sem o
+    # desconto, a mesma emenda apareceria DUAS VEZES ao expandir e o
+    # `valor_total` daqui passaria o do cabecalho — que e onde o gestor confere.
+    # Onde nao ha chave (PAC, FNS) nao se tenta casar por nome, pela mesma razao
+    # de la: casamento por nome de autor apagaria emenda legitima.
+    ef_list: list = []
+    try:
+        where_ef = ""
+        if municipio_id:
+            where_ef += " AND ef.municipio_id = :mun"
+        if _anos:
+            where_ef += " AND ef.ano = ANY(:anos)"
+        sql_ef_det = f"""
+            SELECT ef.id, ef.municipio_id,
+                   (SELECT nome FROM municipios WHERE id = ef.municipio_id) AS mun,
+                   ef.codigo_emenda, ef.nr_emenda, ef.ano,
+                   ef.beneficiario_nome, ef.e_prefeitura,
+                   ef.parlamentar, ef.tipo_parlamentar,
+                   COALESCE(ef.valor_repasse_emenda, 0),
+                   ef.qualif_proponente
+              FROM emendas_federais_carteira ef
+             WHERE ef.parlamentar ILIKE :n
+               AND NOT EXISTS (
+                     SELECT 1 FROM transferegov_propostas v
+                      WHERE v.parlamentar IS NOT NULL
+                        AND v.id_proposta_siconv IS NOT NULL
+                        AND v.id_proposta_siconv = ef.id_proposta)
+               AND NOT EXISTS (
+                     SELECT 1 FROM transferegov_te te
+                      WHERE te.parlamentar IS NOT NULL
+                        AND ef.codigo_emenda IS NOT NULL
+                        AND split_part(te.emenda, '-', 1) = ef.codigo_emenda)
+               {where_ef}
+             ORDER BY ef.ano DESC NULLS LAST, ef.valor_repasse_emenda DESC NULLS LAST
+        """
+        ef_list = [{
+            "id": r[0], "municipio_id": r[1], "municipio_nome": r[2],
+            "codigo_emenda": r[3], "nr_emenda": r[4] or None, "ano": r[5],
+            "beneficiario_nome": r[6], "e_prefeitura": bool(r[7]),
+            "parlamentar": r[8], "tipo_parlamentar": r[9],
+            # ⚠️ `valor_repasse_emenda` e NAO `valor_repasse_proposta`: e o que o
+            # agregado soma, e usar o outro faria o total ao expandir divergir do
+            # que o cabecalho atribuiu ao parlamentar.
+            "valor_total": _money(r[10]),
+            "qualif_proponente": r[11],
+            "fonte": "emenda_federal",
+        } for r in (await db.execute(text(sql_ef_det), params)).fetchall()]
+    except Exception:
+        # Degrada em silencio, como as demais: a tabela pode nem existir num
+        # tenant onde a migration ainda nao rodou.
+        pass
+
+    # ⚠️ `ef_list` ENTRA NESTA GUARDA. Fora dela, o parlamentar que so tem emenda
+    # federal continuaria recebendo 404 mesmo agora que a lista dele existe.
+    if not (sigcon or voluntarias or emendas or plano_acao or pac_list
+            or fns_list or ef_list):
         raise HTTPException(404, f"Nenhum lancamento encontrado para '{nome_param}'")
 
     return {
@@ -927,13 +997,15 @@ async def detalhe(
         "plano_acao": plano_acao,
         "pac": pac_list,
         "fns": fns_list,
+        "emendas_federais": ef_list,
         "total_sigcon": len(sigcon),
         "total_voluntarias": len(voluntarias),
         "total_emendas": len(emendas),
         "total_plano_acao": len(plano_acao),
         "total_pac": len(pac_list),
         "total_fns": len(fns_list),
-        "total_geral": len(sigcon) + len(voluntarias) + len(emendas) + len(plano_acao) + len(pac_list) + len(fns_list),
+        "total_emendas_federais": len(ef_list),
+        "total_geral": len(sigcon) + len(voluntarias) + len(emendas) + len(plano_acao) + len(pac_list) + len(fns_list) + len(ef_list),
         "valor_total": (
             sum(x["valor_total"] for x in sigcon)
             + sum(x["valor_global"] for x in voluntarias)
@@ -941,5 +1013,6 @@ async def detalhe(
             + sum(x["valor_total"] for x in plano_acao)
             + sum(x["valor_total"] for x in pac_list)
             + sum(x["valor_total"] for x in fns_list)
+            + sum(x["valor_total"] for x in ef_list)
         ),
     }

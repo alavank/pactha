@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState, Suspense, type ReactNode } from "react";
-import { Bookmark, ExternalLink, RefreshCw, Info, ShieldCheck, Play } from "lucide-react";
+import { ExternalLink, RefreshCw, Info, ShieldCheck, Play } from "lucide-react";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 import api from "@/lib/api";
 import {
@@ -13,6 +13,7 @@ import {
   Vazio,
 } from "@/components/ui/superficies";
 import toast from "react-hot-toast";
+import { TituloTela } from "@/components/TituloTela";
 
 interface SessionStatus {
   has_session: boolean;
@@ -224,10 +225,7 @@ function SessoesInner() {
   return (
     <div className="space-y-4">
       <div className="border-b pb-4" style={{ borderColor: "var(--bi-line)" }}>
-        <h1 className="flex items-center gap-2 text-2xl font-bold text-base-content">
-          <Bookmark className="size-6" style={{ color: "var(--bi-muted)" }} />
-          Captura de Sessão
-        </h1>
+        <TituloTela>Captura de Sessão</TituloTela>
         <p className="mt-1 text-sm" style={{ color: "var(--bi-muted)" }}>
           Solução gratuita para portais com anti-bot (gov.br, FNS, etc).
           Você loga manualmente e captura a sessão com 1 clique.

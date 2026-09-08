@@ -26,6 +26,7 @@ import {
   Vazio,
 } from "@/components/ui/superficies";
 import toast from "react-hot-toast";
+import { TituloTela } from "@/components/TituloTela";
 
 interface Senha {
   id: number;
@@ -375,7 +376,7 @@ export default function CofrePage() {
         style={{ borderColor: "var(--bi-line)" }}
       >
         <div>
-          <h1 className="text-2xl font-bold text-base-content">Cofre de Senhas</h1>
+          <TituloTela>Cofre de Senhas</TituloTela>
           <p className="mt-1 text-sm" style={{ color: "var(--bi-muted)" }}>
             Senhas centralizadas dos sistemas governamentais para este município
           </p>

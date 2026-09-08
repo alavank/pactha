@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/superficies";
 import { Input } from "@/components/ui/input";
 import toast from "react-hot-toast";
+import { TituloTela } from "@/components/TituloTela";
 
 interface ServiceToken {
   id: number;
@@ -138,14 +139,11 @@ export default function ServiceTokensPage() {
     s ? new Date(s).toLocaleString("pt-BR") : "-";
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="border-b pb-4" style={{ borderColor: "var(--bi-line)" }}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="flex items-center gap-2 text-2xl font-bold text-base-content">
-              <KeyRound className="size-6" style={{ color: "var(--bi-muted)" }} />
-              Service Tokens
-            </h1>
+            <TituloTela>Service Tokens</TituloTela>
             <p className="mt-1 text-sm" style={{ color: "var(--bi-muted)" }}>
               Tokens de automação para scrapers (FNS, SIMEC, etc).
               Cada chamada é auditada.

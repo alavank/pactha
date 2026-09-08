@@ -22,6 +22,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatCurrency } from "@/lib/utils";
+import { TituloTela } from "@/components/TituloTela";
 
 /** Os tres tipos que o SIGCON usa na indicacao. Ficam aqui como lista fixa
  *  porque o backend compara com ILIKE por item — acento e caixa nao importam,
@@ -180,7 +181,7 @@ export default function EmendasEstaduaisPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-2xl font-bold text-base-content">Emendas Parlamentares Estaduais</h1>
+          <TituloTela>Emendas Parlamentares Estaduais</TituloTela>
           {/* ⚠️ O NOME DA FONTE VEM DO MAPA POR UF, nunca de literal. O texto
               dizia "SIGCON-MG" fixo — e essa tela abre para qualquer cliente,
               inclusive um do Rio Grande do Sul, onde o SIGCON não existe e as

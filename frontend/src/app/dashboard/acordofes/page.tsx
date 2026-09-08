@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { HeartPulse, Search as SearchIcon, Loader2, Building2 } from "lucide-react";
+import { Search as SearchIcon, Loader2, Building2 } from "lucide-react";
 import api from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
 import { useMunicipio } from "@/contexts/MunicipioContext";
@@ -19,6 +19,7 @@ import {
   Selo,
   Vazio,
 } from "@/components/ui/superficies";
+import { TituloTela } from "@/components/TituloTela";
 
 interface Credor {
   cnpj: string;
@@ -151,14 +152,9 @@ export default function AcordoFesPage() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold text-base-content flex items-center gap-2">
-          {/* O ícone era vermelho por ser "saúde/dívida" — decoração pintada.
-              Cor nesta tela agora só sai de <Selo tom> e <Campos tom>. */}
-          <HeartPulse className="size-6" style={{ color: "var(--bi-muted)" }} />
-          Acordo FES — Dívida da Saúde (SES-MG)
-        </h1>
+        <TituloTela>Acordo FES — Dívida da Saúde (SES-MG)</TituloTela>
         <p className="text-sm text-base-content/60 mt-1">
           Dívida do Fundo Estadual de Saúde de MG com os credores da saúde (fundos
           municipais, hospitais, consórcios). Fonte: Painel do Acordo FES (SES-MG).

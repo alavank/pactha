@@ -1091,6 +1091,24 @@ export function AbaDocumentosView({
 
   const pendCagec = (cagec?.itens ?? []).filter((i) => i.tipo === "pendente").length;
   const cagecIrregular = !!cagec && cagec.regular === false;
+  /* ⭐ AS OUTRAS ENTIDADES DO MUNICÍPIO — e por que elas entram no veredito.
+   *
+   *  Os campos acima são os da PRINCIPAL (a prefeitura). Só que no cadastro
+   *  estadual cada entidade tem cadastro próprio e trava **apenas o seu**
+   *  convênio: prefeitura regular não libera o convênio da saúde se o Fundo
+   *  Municipal de Saúde estiver irregular.
+   *
+   *  Enquanto esta aba parava na principal, o mesmo município era descrito de
+   *  três jeitos na mesma sessão (Arapuá/MG, 07/09/2026): o medidor da Visão
+   *  Geral — que sempre contou entidades — dizia "Impedido de receber
+   *  transferências"; esta aba, logo abaixo, dizia "Em dia · 0 pendências"; e a
+   *  tela de Regularidade do menu dizia "Regular" com o aviso das 4 pendências
+   *  dos outros cadastros. Agora as três leem a mesma coisa. */
+  const outrasEntidades = (cagec?.entidades ?? []).filter((e) => !e.principal);
+  const outrasIrregulares = outrasEntidades.filter((e) => e.regular === false);
+  const pendOutras = cagec?.pendencias_outras_entidades ?? 0;
+  /* "Em dia" só quando NENHUM cadastro do município está travado. */
+  const estadualImpedido = cagecIrregular || outrasIrregulares.length > 0;
   const soUmaEsfera = esfera === "cauc" || esfera === "cagec";
   // DOIS estados diferentes, e a tela precisa distinguir os dois:
   //  crcAusente — a lista NÃO é o certificado, são as 2 linhas da consulta
@@ -1217,7 +1235,7 @@ export function AbaDocumentosView({
           valor={pct >= 0.99 ? "Em dia" : `${formatInt(c.pendencias_total)} pendência(s)`}
           sub="transferências federais" grande={tv} />
         <Metric icon={ShieldAlert}
-          tom={semFonteNoEscopo ? "neutro" : cagec ? (cagecIrregular ? "crit" : "ok") : "warn"}
+          tom={semFonteNoEscopo ? "neutro" : cagec ? (estadualImpedido ? "crit" : "ok") : "warn"}
           /* ⚠️ "CAGEC" É NOME DE MINAS, não do produto. Pesquisado: é o
              Cadastro Geral de Convenentes do Estado de MG (Decreto
              44.293/2006); Goiás tem o SIGECON, o Espírito Santo o Portal de
@@ -1233,12 +1251,17 @@ export function AbaDocumentosView({
             : tituloEst}
           valor={semFonteNoEscopo ? "Não acompanhado"
             : !cagec ? "Sem coleta"
-            : cagecIrregular ? (cagec.situacao || "Irregular") : "Em dia"}
+            : cagecIrregular ? (cagec.situacao || "Irregular")
+            /* Prefeitura regular e fundo irregular ainda é impedimento — para
+               o convênio daquele fundo. O `sub` abaixo diz de quem é. */
+            : outrasIrregulares.length ? "Irregular" : "Em dia"}
           sub={semFonteNoEscopo ? "ainda não acompanhado aqui"
             : cagecParcial
               ? (ufsNaFonte.length
                   ? `só os ${d.cagec.municipios_no_escopo} de ${ufsNaFonte.join(", ")}`
                   : `só ${d.cagec.municipios_no_escopo} com fonte estadual`)
+            : !cagecIrregular && outrasIrregulares.length
+              ? `${outrasIrregulares.length} outro(s) cadastro(s) — prefeitura em dia`
             : "convênios estaduais"}
           grande={tv} />
         {/* Com o CRC indisponivel nao existe denominador: as pendencias do
@@ -1247,19 +1270,27 @@ export function AbaDocumentosView({
         {/* Na carteira o que existe é a SOMA das pendências dos municípios;
             "de N exigências" não tem sentido, porque cada município tem o seu
             conjunto. Num município só, segue o detalhe de sempre. */}
+        {/* As pendências das OUTRAS entidades entram na conta: eram elas que
+            faziam este cartão dizer "0" com o fundo de saúde travado — e o
+            número aqui tem de bater com o da tela de Regularidade do menu, que
+            sempre somou os outros cadastros. Com o CRC indisponível na
+            principal, `pendCagec` sai da conta como já saía; as das outras
+            entidades continuam valendo (cada uma tem o seu certificado). */}
         <Metric icon={FileCheck2} tom={carteira
             ? (c.pendencias_total ? "crit" : "ok")
-            : ((primeiro?.itens_pendentes.length || 0) + pendCagec ? "crit" : "ok")}
+            : ((primeiro?.itens_pendentes.length || 0) + pendCagec + pendOutras ? "crit" : "ok")}
           label={carteira ? "Pendências na carteira"
             : crcAusente ? "Pendências no CAUC" : "Pendências (as duas)"}
           valor={formatInt(carteira
             ? c.pendencias_total
-            : (primeiro?.itens_pendentes.length || 0) + (crcAusente ? 0 : pendCagec))}
+            : (primeiro?.itens_pendentes.length || 0) + (crcAusente ? 0 : pendCagec) + pendOutras)}
           sub={carteira
             ? `${formatInt(c.com_dados - c.regulares)} município(s) com pendência`
             : crcAusente
               ? `de ${primeiro?.total_itens ?? 0} · ${siglaEst} não conferido`
-              : `de ${(primeiro?.total_itens ?? 0) + (cagec?.itens?.length ?? 0)} exigências`}
+              : pendOutras
+                ? `inclui ${pendOutras} de outro(s) cadastro(s) do município`
+                : `de ${(primeiro?.total_itens ?? 0) + (cagec?.itens?.length ?? 0)} exigências`}
           grande={tv} />
         {/* ⚠️ ESTE CARTÃO NÃO MOSTRA MAIS DATA DE COLETA. Ele exibia
             `data_pesquisa` sob o rótulo "Última consulta" e mentia por
@@ -1478,6 +1509,52 @@ export function AbaDocumentosView({
                   {pendCagec ? ` · ${pendCagec} pendência(s)` : ""} — {travaEst}.
                 </p>
               </div>
+            )}
+            {/* ⭐ OS OUTROS CADASTROS DO MUNICÍPIO. A tela de Regularidade do
+                menu sempre os listou; aqui a aba parava na prefeitura e, com o
+                Fundo Municipal de Saúde travado, mostrava o município em dia —
+                enquanto o medidor da Visão Geral, na mesma sessão, dizia
+                "Impedido de receber transferências". Cada entidade tem cadastro
+                próprio e trava apenas o SEU convênio, então a lista precisa
+                dizer QUAL está travado, não só que há um. */}
+            {outrasEntidades.length > 0 && (
+              <Painel className="mb-3">
+                <PainelHead
+                  icon={outrasIrregulares.length ? ShieldAlert : ShieldCheck}
+                  titulo={`Outros cadastros deste município (${outrasEntidades.length})`}
+                  sub={outrasIrregulares.length
+                    ? `${outrasIrregulares.length} com impedimento${
+                        pendOutras ? ` · ${pendOutras} pendência(s)` : ""} — trava o convênio DAQUELA entidade`
+                    : "cada entidade tem cadastro próprio e trava apenas o seu convênio"}
+                />
+                <ul className="space-y-1.5">
+                  {outrasEntidades.map((e) => (
+                    <li
+                      key={e.cnpj || e.nome}
+                      className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[11px] leading-snug"
+                    >
+                      <span className="min-w-0 flex-1 truncate font-medium">{e.nome}</span>
+                      <span style={{ color: "var(--bi-faint)" }}>{e.tipo || "entidade"}</span>
+                      <span
+                        className="font-semibold"
+                        style={{ color: e.regular === false ? "var(--bi-crit-ink)" : "var(--bi-ok-ink)" }}
+                      >
+                        {e.situacao || (e.regular === false ? "Irregular" : "Regular")}
+                      </span>
+                      {/* "sem pendência" exige documentos lidos: sem o CRC
+                          daquela entidade nós só sabemos a situação, e afirmar
+                          o resto seria dizer o que ninguém conferiu. */}
+                      <span style={{ color: "var(--bi-faint)" }}>
+                        {e.detalhe_do_crc === false
+                          ? "documentos não conferidos"
+                          : e.pendencias
+                            ? `${e.pendencias} pendência(s)`
+                            : "sem pendência"}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </Painel>
             )}
             {blocosCagec.length ? (
               <div className={soUmaEsfera && tv ? "bi-colunas-2" : ""}>

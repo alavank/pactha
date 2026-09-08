@@ -1,0 +1,21 @@
+# Commits que só mexeram em formatação — o `git blame` deve atravessá-los.
+#
+# Sem este arquivo, o commit de renormalização abaixo tocou 35.570 linhas e
+# passaria a ser o "autor" de todas elas: `git blame` responderia "CRLF→LF" para
+# qualquer pergunta sobre qualquer linha de 69 arquivos, e a autoria real ficaria
+# um commit atrás, invisível. Numa base onde o blame é usado para achar POR QUE
+# uma regra existe, isso apaga a resposta.
+#
+# Para ativar localmente (uma vez por clone):
+#
+#     git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# No GitHub é automático: a interface de blame lê este arquivo do repositório.
+#
+# ⚠️ Só entra aqui commit que NÃO alterou conteúdo nenhum. O critério objetivo é
+# `git diff --ignore-cr-at-eol` (ou `-w`, conforme o caso) sair vazio. Um commit
+# que "aproveitou e arrumou uma coisinha" torna essa linha uma mentira, e a
+# mentira é pior que o ruído — ela esconde uma mudança real do blame para sempre.
+
+# Um diff de 845 linhas para uma mudança de 100 — era CRLF (07/09/2026)
+d45a7bf35c38f67826800b9c2596525395b350b6

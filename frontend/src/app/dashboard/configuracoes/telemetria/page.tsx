@@ -19,7 +19,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Activity, Loader2, RefreshCw, MousePointerClick, Clock, LogOut, Monitor,
+  Loader2, RefreshCw, MousePointerClick, Clock, LogOut, Monitor,
   User as UserIcon, ListFilter,
 } from "lucide-react";
 import api from "@/lib/api";
@@ -33,6 +33,7 @@ import {
   TIPO_EVENTO, chaveDoDia, descreverParams, dispositivo, dur, fimDaSessao, fraseDoEvento,
   horaCompleta, horaCurta, nomeDaTela, nomeDoDia, type EventoUsoLido,
 } from "@/lib/uso-rotulos";
+import { TituloTela } from "@/components/TituloTela";
 
 interface Sessao {
   sid: string; sessao_token: string | null; user_id: number;
@@ -173,10 +174,7 @@ export default function TelemetriaPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-base-300 pb-4">
         <div className="min-w-0">
-          <h1 className="flex items-center gap-2 text-2xl font-bold text-base-content">
-            <Activity className="size-6" style={{ color: "var(--bi-accent-ink)" }} />
-            Telemetria
-          </h1>
+          <TituloTela>Telemetria</TituloTela>
           {/* A frase que separa esta aba da vizinha. Sem ela, as duas parecem a
               mesma coisa com nomes diferentes — e a diferença importa: uma serve
               de prova, a outra de termômetro. */}

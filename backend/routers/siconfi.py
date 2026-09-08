@@ -62,7 +62,8 @@ async def fetch_siconfi(db: AsyncSession, municipio_id: int) -> dict:
         SELECT exercicio, posicao, nota,
                ind_endividamento, nota_endividamento,
                ind_poupanca, nota_poupanca,
-               ind_liquidez, nota_liquidez, icf, observacao, atualizado_em
+               ind_liquidez, nota_liquidez, icf, observacao, atualizado_em,
+               raw_data
           FROM siconfi_capag WHERE municipio_id = :m
          ORDER BY exercicio DESC, posicao DESC NULLS LAST
          LIMIT 1
@@ -144,8 +145,54 @@ async def fetch_siconfi(db: AsyncSession, municipio_id: int) -> dict:
             "icf": capag[9],
             "observacao": capag[10],
             "atualizado_em": capag[11].isoformat() if capag[11] else None,
+            **_capag_extras(capag[12] if isinstance(capag[12], dict) else {}),
         }
     return out
+
+
+# ⚠️ O QUE A PLANILHA TRAZ E A TELA IGNORAVA. `raw_data` guarda a linha inteira
+# do XLSX do Tesouro desde a primeira coleta, e metade dela nunca chegou ao
+# gestor: por que a nota é A+ e não A, de que ano-base ela é, se houve
+# rebaixamento, e se o município tem as entregas que o próprio cálculo exige.
+# Sai daqui e não do coletor porque o dado JÁ ESTÁ NOS CINCO BANCOS — expor é
+# leitura, não recoleta.
+_ICF_NOTA_MAXIMA = "AICF"
+
+
+def _capag_extras(raw: dict) -> dict:
+    """Campos derivados de `raw_data` — nomes literais da planilha do Tesouro."""
+    def v(chave: str) -> str:
+        return str(raw.get(chave) or "").strip()
+
+    # "possui dca 2024?" / "possui dca 2025?" — o ano muda a cada publicação, e
+    # ler por chave fixa deixaria a informação sumir sozinha no ano que vem.
+    dca = {k.replace("possui dca", "").replace("?", "").strip(): (raw.get(k) or "").strip()
+           for k in raw if k.lower().startswith("possui dca")}
+
+    # As ressalvas metodológicas: quando preenchidas, explicam nota estranha.
+    # Nomes literais da planilha, para conferência contra o arquivo.
+    ressalvas = [rot for chave, rot in (
+        ("capag rebaixada", "CAPAG rebaixada"),
+        ("of negativa", "Obrigações financeiras negativas"),
+        ("deducao negativa", "Dedução negativa"),
+        ("dcb zerada ou negativa", "Dívida consolidada bruta zerada ou negativa"),
+    ) if v(chave)]
+
+    return {
+        # De que exercício é a base do cálculo ("CAPAG Ano Base 2025") — não é o
+        # mesmo que a data da posição, e é o que responde "essa nota é de quando?".
+        "origem_nota": v("origem da nota final") or None,
+        # O + do "A+" vem DAQUI: é a nota do Indicador da Qualidade da
+        # Informação Contábil e Fiscal (ICF) no Siconfi. Nota A ou B na CAPAG
+        # somada a "Aicf" no ICF é o que produz A+ / B+.
+        "icf_maximo": v("icf").upper() == _ICF_NOTA_MAXIMA,
+        # As entregas que o próprio cálculo exige. "Não" aqui explica CAPAG
+        # ausente ou rebaixada melhor que qualquer texto nosso.
+        "publicou_rgf": v("publicou rgf") or None,
+        "publicou_rreo": v("publicou rreo") or None,
+        "dca": dca or None,
+        "ressalvas": ressalvas,
+    }
 
 
 @router.get("", dependencies=[exige("cauc.ver")])

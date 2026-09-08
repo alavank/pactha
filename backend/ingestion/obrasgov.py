@@ -719,7 +719,12 @@ def linha_detalhe(pid: str, d: dict) -> dict:
                 default=None) if execucao else None
     return {
         "pid": pid,
-        "pct": _num((atual or {}).get("percentual_execucao")),
+        # ⚠️ `percentual_execucao_FISICA`, e o sufixo nao e detalhe: escrevi
+        # `percentual_execucao` no #408 e a coluna ficou NULA em 538 de 538
+        # obras do freitas por tres dias, sem erro em log nenhum — `.get()`
+        # de chave inexistente devolve None, que aqui e indistinguivel de
+        # "a fonte nao mediu esta obra". Ver `test_os_nomes_dos_campos_...`.
+        "pct": _num((atual or {}).get("percentual_execucao_fisica")),
         "dt_exec": _data((atual or {}).get("dt_cadastro_execucao")),
         "empenhado": _soma(empenhos, "valor_empenho"),
         "liquidado": _soma(empenhos, "liquidado"),
@@ -737,17 +742,56 @@ def linha_detalhe(pid: str, d: dict) -> dict:
     }
 
 
-_SQL_DETALHE = """
-UPDATE obrasgov_projetos SET
-    percentual_execucao = %(pct)s, data_execucao = %(dt_exec)s,
-    valor_empenhado = %(empenhado)s, valor_liquidado = %(liquidado)s,
-    valor_pago = %(pago)s, valor_restos_pagar = %(restos)s,
-    empenhos = %(empenhos)s::jsonb, contratos = %(contratos)s::jsonb,
-    paralisacao = %(paralisacao)s::jsonb,
-    estudo_viabilidade = %(estudo)s::jsonb,
-    detalhe_atualizado_em = NOW()
- WHERE id_unico = %(pid)s
-"""
+# ⚠️⚠️ O UPDATE SO TOCA O QUE ESTA RODADA MEDIU — e a primeira versao nao fazia
+# isso, com um efeito que passou tres dias invisivel.
+#
+# O rodizio de `_detalhe_da_rodada` traz UM dos tres endpoints caros por dia, e o
+# UPDATE original sobrescrevia TODAS as colunas de detalhe. Entao cada rodada
+# apagava o que as outras tinham coletado:
+#
+#     rodada de execucao-fisica  ->  preenche o percentual, ZERA os empenhos
+#     rodada de empenho          ->  preenche os empenhos, ZERA o percentual
+#     rodada de estudo           ->  preenche o estudo,    ZERA os dois
+#
+# NUNCA havia um dia com os tres preenchidos. Medido em 07/09/2026: o freitas
+# tinha 237 obras com `valor_empenhado`, e uma rodada de `execucao-fisica` o
+# derrubou para 82. O rodizio foi criado para caber no teto de tempo, e estava
+# destruindo justamente o dado que economizava tempo para coletar.
+#
+# ⚠️ E `coalesce` NAO resolveria direito. Ele preservaria o valor antigo tambem
+# quando a fonte legitimamente parasse de informar — "nunca esquece" e tao errado
+# quanto "esquece toda vez". A coluna so pode mudar quando ESTA rodada olhou para
+# aquele endpoint; se nao olhou, fica como esta.
+_COLUNAS_POR_ENDPOINT = {
+    "execucao": ("percentual_execucao = %(pct)s",
+                 "data_execucao = %(dt_exec)s"),
+    "empenhos": ("valor_empenhado = %(empenhado)s",
+                 "valor_liquidado = %(liquidado)s",
+                 "valor_pago = %(pago)s",
+                 "valor_restos_pagar = %(restos)s",
+                 "empenhos = %(empenhos)s::jsonb"),
+    "contratos": ("contratos = %(contratos)s::jsonb",),
+    "paralisacao": ("paralisacao = %(paralisacao)s::jsonb",),
+    "estudo": ("estudo_viabilidade = %(estudo)s::jsonb",),
+}
+
+
+def sql_detalhe(chaves) -> str:
+    """O UPDATE das colunas dos endpoints REALMENTE coletados nesta rodada.
+
+    `chaves` sao os nomes internos (`execucao`, `empenhos`, ...) que
+    `_detalhe_da_rodada` devolveu. Funcao PURA, para o teste poder percorrer os
+    tres dias do rodizio sem banco.
+    """
+    partes = []
+    for chave in chaves:
+        partes.extend(_COLUNAS_POR_ENDPOINT.get(chave, ()))
+    if not partes:
+        return ""
+    partes.append("detalhe_atualizado_em = NOW()")
+    return ("UPDATE obrasgov_projetos SET\n    "
+            + ",\n    ".join(partes)
+            + "\n WHERE id_unico = %(pid)s")
 
 
 def _log_ingest(cur, conn, status: str, n: int, erro: str | None = None) -> None:
@@ -897,10 +941,12 @@ def ingest(dry: bool = False) -> int:
             else:
                 try:
                     with httpx.Client(follow_redirects=True) as client:
+                        chaves_da_rodada = [c for _, c in _detalhe_da_rodada()]
                         detalhe = coletar_detalhe(client, da_carteira)
+                        sql_desta_rodada = sql_detalhe(chaves_da_rodada)
                     n_det = 0
                     for pid, d in detalhe.items():
-                        cur.execute(_SQL_DETALHE, linha_detalhe(pid, d))
+                        cur.execute(sql_desta_rodada, linha_detalhe(pid, d))
                         n_det += cur.rowcount
                     conn.commit()
                     log.info("  detalhe: %d linha(s) de projeto enriquecida(s) "

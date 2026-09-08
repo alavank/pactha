@@ -44,8 +44,27 @@ export function Bloco({
    *  dentro de um bloco). É o `bi-card-flat` do Painel. */
   plano?: boolean;
 }) {
+  /* ⚠️ PADDING PADRÃO — 07/09/2026. `.bi-card` é só fundo, borda, raio e sombra:
+     o respiro sempre veio do `className="p-3"` que cada tela escrevia à mão. Em
+     71 chamadas isso funcionou; nas duas telas novas do Transferegov (Parcerias
+     e Planos de Ação) ninguém escreveu, e o resultado foi o que o dono viu num
+     print: cartão interno colado na borda do cartão de fora, sem folga nenhuma.
+     Um defeito que depende de toda tela futura lembrar de uma classe vai
+     acontecer de novo — então a peça passa a garantir o mínimo.
+
+     A detecção é por REGEX no `className` e não por uma prop nova: as 90
+     chamadas existentes passam o padding por lá (`p-3`, `p-4`,
+     `px-3 pt-3 pb-0.5`), e quem já disse o que quer não pode ganhar um `p-3`
+     concorrente — duas classes de padding na mesma string deixam a decisão para
+     a ORDEM DO CSS GERADO, que ninguém controla daqui. */
+  const jaTemPadding = /(^|\s)p[xytblrse]?-/.test(className);
   return (
-    <div className={`${plano ? "bi-card-flat" : "bi-card"} flex flex-col ${className}`} style={style}>
+    <div
+      className={`${plano ? "bi-card-flat" : "bi-card"} flex flex-col ${
+        jaTemPadding ? "" : "p-3"
+      } ${className}`}
+      style={style}
+    >
       {children}
     </div>
   );
@@ -313,7 +332,18 @@ export interface Campo {
  *  como desceria numa tabela. Sem linha de grade, sem borda e sem cor. */
 export function Campos({ campos, cols }: { campos: Campo[]; cols?: number }) {
   if (!campos.length) return null;
-  const n = cols ?? campos.length;
+  /* ⚠️ O TETO DE 5 NO DEFAULT — 07/09/2026. Sem `cols`, a peça abria UMA COLUNA
+     POR CAMPO, e isso só passava despercebido porque toda tela que a usava tinha
+     até cinco. As duas telas novas do Transferegov chegaram com dez e onze: onze
+     colunas de ~150px numa janela de 1920, com «MUNICIPIO DE ARAÚJOS» saindo
+     como «MUNICIPIO DE A…» em TODAS elas. Foi metade do que o dono chamou de
+     "formatação toda bugada" no print de 07/09.
+
+     Cinco é o teto porque é onde o default parou de ser uma decisão e passou a
+     ser um acidente. Quem tem mais campos continua devendo escolher — `cols={4}`
+     nas duas telas citadas —, mas quem esquecer ganha uma grade legível em vez
+     de uma régua de reticências. */
+  const n = cols ?? Math.min(campos.length, 5);
   return (
     <div
       /* `bi-campos` e nao `gridTemplateColumns` inline: estilo inline nao aceita

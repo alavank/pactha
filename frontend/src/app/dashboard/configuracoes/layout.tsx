@@ -3,10 +3,12 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Settings } from "lucide-react";
 import api from "@/lib/api";
 import type { User } from "@/types";
 import { allowedTelasOf } from "@/lib/telas";
 import { abasVisiveis } from "@/lib/configuracoes";
+import { TituloTela } from "@/components/TituloTela";
 
 /** ⭐ CONFIGURAÇÕES — a casa das telas de administração, em abas.
  *
@@ -41,7 +43,7 @@ export default function ConfiguracoesLayout({ children }: { children: React.Reac
   return (
     <div className="space-y-4">
       <div className="border-b pb-3" style={{ borderColor: "var(--bi-line)" }}>
-        <h1 className="text-2xl font-bold text-base-content">Configurações</h1>
+        <TituloTela icon={Settings}>Configurações</TituloTela>
         <p className="mt-1 text-sm" style={{ color: "var(--bi-muted)" }}>
           Administração do ambiente: pessoas, acesso, credenciais e parâmetros.
         </p>

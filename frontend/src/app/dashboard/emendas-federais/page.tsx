@@ -42,6 +42,7 @@ import {
   Abas, Aviso, Bloco, BlocoHead, Campos, Grade, GradeCel, GradeLinha,
   ItemLinha, Lista, Numero, Selo, Vazio,
 } from "@/components/ui/superficies";
+import { TituloTela } from "@/components/TituloTela";
 
 interface Emenda {
   codigo_emenda: string | null;
@@ -373,17 +374,17 @@ export default function EmendasFederaisPage() {
   }, [d, filtradas]);
 
   if (!municipioId) {
-    return <div className="p-6"><Vazio>Selecione um município para ver as emendas federais.</Vazio></div>;
+    return <Vazio>Selecione um município para ver as emendas federais.</Vazio>;
   }
   if (carregando) {
     return (
-      <div className="flex items-center gap-2 p-6 text-[13px]"
+      <div className="flex items-center gap-2 py-6 text-[13px]"
            style={{ color: "var(--bi-muted)" }}>
         <Loader2 className="size-4 animate-spin" /> Carregando emendas federais…
       </div>
     );
   }
-  if (erro) return <div className="p-6"><Vazio>{erro}</Vazio></div>;
+  if (erro) return <Vazio>{erro}</Vazio>;
 
   const t = d?.totais || {};
   /* ⚠️ O AVISO VAI ANTES DO CONTEÚDO, nunca no rodapé — a regra do
@@ -413,9 +414,9 @@ export default function EmendasFederaisPage() {
 
   if (!d?.tem_dados) {
     return (
-      <div className="flex flex-col gap-3 p-4 md:p-6">
+      <div className="flex flex-col gap-3">
         <header>
-          <h1 className="bi-title text-[18px]">Emendas Parlamentares Federais</h1>
+          <TituloTela>Emendas Parlamentares Federais</TituloTela>
         </header>
         {aviso}
         {!d?.aviso && <Vazio>Sem emendas federais coletadas para este município.</Vazio>}
@@ -429,9 +430,9 @@ export default function EmendasFederaisPage() {
   ];
 
   return (
-    <div className="flex flex-col gap-4 p-4 md:p-6">
+    <div className="flex flex-col gap-4">
       <header>
-        <h1 className="bi-title text-[18px]">Emendas Parlamentares Federais</h1>
+        <TituloTela>Emendas Parlamentares Federais</TituloTela>
         <p className="mt-1 max-w-3xl text-[12px] leading-snug"
            style={{ color: "var(--bi-muted)" }}>
           A carteira de emendas federais destinadas ao município, reconhecida

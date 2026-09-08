@@ -8,9 +8,11 @@ nova deixa a obra intermunicipal existir para todos os donos.
 """
 import json
 
+import pytest
+
 from ingestion.obrasgov import (
     ABRANGENCIA_MAX, DETALHE_MIN_S, TETO_PAGINAS_DETALHE, TETO_TAREFA_S,
-    _DETALHE_RODIZIO, _DETALHE_SEMPRE, _SQL, _SQL_DETALHE, _detalhe_da_rodada,
+    _DETALHE_RODIZIO, _DETALHE_SEMPRE, _SQL, _detalhe_da_rodada,
     _soma, linha, linha_detalhe,
 )
 
@@ -92,10 +94,19 @@ EMPENHOS = [
     {"id_projeto_investimento": "X", "nr_empenho": "2024NE000456",
      "valor_empenho": 500000.0, "liquidado": 0.0, "pago": 0.0},
 ]
+# ⚠️⚠️ ESTE PAYLOAD ESTAVA ERRADO, E POR ISSO O TESTE PASSAVA COM O BUG.
+# A primeira versão escreveu `percentual_execucao` — o nome que o COLETOR usava,
+# não o que a fonte manda. O campo real é `percentual_execucao_FISICA`, e o
+# resultado foi `percentual_execucao` NULO em 538 de 538 obras do freitas por
+# três dias, sem erro em log nenhum: `.get()` de chave inexistente devolve None,
+# indistinguível de "a fonte não mediu esta obra".
+#
+# A lição: payload de teste se captura da FONTE, não se deduz do código que se
+# quer testar. Estes são de uma resposta real de 07/09/2026.
 EXECUCAO = [
-    {"id_projeto_investimento": "X", "percentual_execucao": 35.5,
+    {"id_projeto_investimento": "X", "percentual_execucao_fisica": 35.5,
      "dt_cadastro_execucao": "2024-11-06T00:00:00"},
-    {"id_projeto_investimento": "X", "percentual_execucao": 62.0,
+    {"id_projeto_investimento": "X", "percentual_execucao_fisica": 62.0,
      "dt_cadastro_execucao": "2025-06-30T00:00:00"},
 ]
 
@@ -197,8 +208,13 @@ def test_o_detalhe_atualiza_TODOS_os_donos_da_obra():
     obra intermunicipal (o `324.31-80` está em 41) tem 41 linhas, e as 41 têm de
     receber o mesmo detalhe — filtrar por município aqui deixaria 40 delas
     eternamente sem execução física."""
-    assert "WHERE id_unico = %(pid)s" in _SQL_DETALHE
-    assert "municipio_id" not in _SQL_DETALHE
+    # 07/09/2026: o UPDATE virou dinâmico (`sql_detalhe`), porque o rodízio
+    # estava apagando as colunas dos endpoints fora da vez. A regra do
+    # `id_unico` continua valendo em TODOS os dias do rodízio.
+    for dia in (1, 2, 3):
+        sql = sql_detalhe([c for _, c in _detalhe_da_rodada(dia)])
+        assert "WHERE id_unico = %(pid)s" in sql
+        assert "municipio_id" not in sql
 
 
 def test_o_projeto_de_outra_UF_tem_de_ser_buscado_um_a_um():
@@ -307,3 +323,134 @@ def test_a_tela_usa_a_mesma_regra_do_router():
             / "dashboard" / "obrasgov" / "page.tsx").read_text(encoding="utf-8")
     assert 'o.vinculo !== "abrangencia"' in tela
     assert "Programas que passam pelo município" in tela
+
+
+# ---------------------------------------------------------------------------
+# ⚠️ OS NOMES DOS CAMPOS DA FONTE, TRAVADOS (07/09/2026).
+#
+# `.get("nome_errado")` devolve `None` sem reclamar, e `None` nesta base
+# significa "a fonte não informou" — então um erro de digitação vira um campo
+# permanentemente vazio que ninguém percebe. Foi o que aconteceu com
+# `percentual_execucao` vs `percentual_execucao_fisica`.
+#
+# Esta lista é o contrato observado na resposta real. Se a fonte renomear (o
+# Obras.gov já renomeou TODOS os campos numa troca de host), o teste não pega
+# sozinho — mas quem mexer no coletor tem aqui, escrito, o nome que a fonte usa.
+# ---------------------------------------------------------------------------
+
+CAMPOS_DA_FONTE = {
+    "execucao-fisica": {"id_projeto_investimento", "id_execucao_fisica",
+                        "percentual_execucao_fisica", "dt_inicial_execucao",
+                        "dt_final_execucao", "dt_cadastro_execucao",
+                        "dt_atualizacao_execucao"},
+    "empenho": {"valor_empenho", "liquidado", "pago", "rpinscrito"},
+}
+
+
+def test_os_nomes_dos_campos_lidos_existem_na_fonte():
+    """O coletor só pode ler chave que a fonte manda."""
+    import inspect
+    from ingestion import obrasgov
+    fonte = inspect.getsource(obrasgov.linha_detalhe)
+    for campo in ("percentual_execucao_fisica", "dt_cadastro_execucao",
+                  "valor_empenho", "liquidado", "pago", "rpinscrito"):
+        assert campo in fonte, f"{campo} sumiu de linha_detalhe"
+    # ⚠️ E o nome ERRADO não pode voltar. `percentual_execucao` é prefixo do
+    # certo, então a checagem é por delimitador.
+    assert '"percentual_execucao")' not in fonte, (
+        "voltou o nome sem o sufixo _fisica — o campo ficaria NULO em tudo")
+
+
+def test_a_medicao_mais_recente_usa_o_campo_certo():
+    """Prova de ponta a ponta com o payload real: 62,0% e não None."""
+    from ingestion.obrasgov import linha_detalhe
+    l = linha_detalhe("X", {"execucao": EXECUCAO})
+    assert l["pct"] == 62.0, "o percentual voltou a sair NULO"
+
+
+def test_payload_com_o_nome_ANTIGO_nao_preenche():
+    """⚠️ O contrário do teste acima, e é ele que documenta o defeito: se a
+    fonte mandasse o nome antigo, a coluna ficaria nula — e era exatamente esse
+    o estado em produção."""
+    from ingestion.obrasgov import linha_detalhe
+    antigo = [{"percentual_execucao": 62.0, "dt_cadastro_execucao": "2025-06-30"}]
+    assert linha_detalhe("X", {"execucao": antigo})["pct"] is None
+
+
+# ---------------------------------------------------------------------------
+# ⚠️⚠️ O RODIZIO ESTAVA APAGANDO O QUE NAO MEDIU (07/09/2026).
+#
+# `_detalhe_da_rodada` traz UM dos tres endpoints caros por dia, e o UPDATE
+# sobrescrevia TODAS as colunas de detalhe. Cada rodada apagava o que as outras
+# tinham coletado:
+#
+#     rodada de execucao-fisica  ->  preenche o percentual, ZERA os empenhos
+#     rodada de empenho          ->  preenche os empenhos, ZERA o percentual
+#     rodada de estudo           ->  preenche o estudo,    ZERA os dois
+#
+# NUNCA havia um dia com os tres preenchidos. Medido: o freitas tinha 237 obras
+# com `valor_empenhado` e uma rodada de `execucao-fisica` derrubou para 82.
+#
+# O rodizio existe para caber no teto de tempo — e estava destruindo justamente
+# o dado que economizava tempo para coletar.
+# ---------------------------------------------------------------------------
+
+from ingestion.obrasgov import sql_detalhe  # noqa: E402
+
+# (nome interno do endpoint, coluna que ele alimenta)
+_DONO_DA_COLUNA = [
+    ("execucao", "percentual_execucao"),
+    ("execucao", "data_execucao"),
+    ("empenhos", "valor_empenhado"),
+    ("empenhos", "valor_liquidado"),
+    ("empenhos", "valor_pago"),
+    ("empenhos", "valor_restos_pagar"),
+    ("empenhos", "empenhos ="),
+    ("contratos", "contratos ="),
+    ("paralisacao", "paralisacao ="),
+    ("estudo", "estudo_viabilidade"),
+]
+
+
+@pytest.mark.parametrize("dia", [1, 2, 3])
+def test_a_rodada_so_toca_as_colunas_que_ela_mediu(dia):
+    """⭐ O TESTE QUE IMPORTA: coluna de endpoint fora da vez não aparece no SET,
+    então o valor da rodada anterior fica onde está."""
+    chaves = [c for _, c in _detalhe_da_rodada(dia)]
+    sql = sql_detalhe(chaves)
+    for dono, coluna in _DONO_DA_COLUNA:
+        if dono in chaves:
+            assert coluna in sql, f"dia {dia}: {coluna} devia ser atualizada"
+        else:
+            assert coluna not in sql, (
+                f"dia {dia}: {coluna} NAO foi medida nesta rodada e seria apagada")
+
+
+def test_o_percentual_sobrevive_a_rodada_de_empenho():
+    """O caso concreto que quebrou: 237 obras com empenho viraram 82."""
+    sql = sql_detalhe(["contratos", "paralisacao", "empenhos"])
+    assert "valor_empenhado" in sql
+    assert "percentual_execucao" not in sql
+
+
+def test_o_empenho_sobrevive_a_rodada_de_execucao():
+    sql = sql_detalhe(["contratos", "paralisacao", "execucao"])
+    assert "percentual_execucao" in sql
+    assert "valor_empenhado" not in sql
+    assert "empenhos =" not in sql
+
+
+def test_todo_dia_do_rodizio_gera_SQL_valido():
+    """⚠️ SQL montado por concatenação precisa ser conferido contra a gramática
+    real do Postgres — o repo já tem `pglast` para isso."""
+    import pglast
+    for dia in (1, 2, 3):
+        chaves = [c for _, c in _detalhe_da_rodada(dia)]
+        sql = sql_detalhe(chaves).replace("%(", "$$").replace(")s", "$$")
+        pglast.parse_sql(sql)   # levanta se a sintaxe estiver quebrada
+
+
+def test_rodada_sem_endpoint_nenhum_nao_gera_UPDATE_vazio():
+    """`UPDATE ... SET detalhe_atualizado_em = NOW()` sem mais nada carimbaria a
+    linha como atualizada sem ter medido coisa alguma."""
+    assert sql_detalhe([]) == ""
