@@ -16,7 +16,7 @@
 | Região | **sa-east-1a** (São Paulo, Brasil) |
 | Instância | t3.large — **2 vCPU / 7,6 GB RAM / 160 GB SSD (nvme)** |
 | Orquestração | **Coolify v4.1.2** — painel em `http://54.232.208.118:8000` |
-| SSH | `ssh -i ~/.ssh/coolify_localhost root@54.232.208.118` |
+| SSH | `ssh -i ~/.ssh/coolify_localhost root@54.232.208.118` — ⚠️ **é este que funciona.** Existe também um usuário `claude` (`~/.ssh/claude_lightsail`, atalho `lightsail` no `~/.ssh/config`), mas ele **expirou** (`Your account has expired`, medido em 08/09/2026): a chave autentica e o login é recusado depois. Se for renovar, `chage -E -1 claude` no servidor. |
 | Escala do host | 43 containers · 11 projetos · 24 aplicações · 12 bancos PostgreSQL |
 
 ### ⚠️ A máquina é BURSTABLE — leia antes de rodar qualquer coisa pesada
