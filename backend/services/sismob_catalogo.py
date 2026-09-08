@@ -133,3 +133,21 @@ def url_portal(proposta_id) -> str:
         return f"https://sismobcidadao.saude.gov.br/obra/{int(proposta_id)}"
     except (TypeError, ValueError):
         return "https://sismobcidadao.saude.gov.br/"
+
+
+# A imagem de uma fotografia da obra. Fica AQUI, junto do `url_portal`, porque é
+# endereço da fonte — o router só a consome.
+#
+# ⚠️ ROTA LIDA DO BUNDLE DO PORTAL, não adivinhada: `main.<hash>.js` monta
+# `"/api/public/fotografias/" + id` para a imagem cheia e
+# `url(/api/public/fotografias/thumbnail/ + id)` para a miniatura.
+#
+# ⚠️ ESTADO DA ORIGEM EM 07/09/2026: a imagem cheia responde **500**
+# (NullPointerException) e a miniatura devolve um PNG de «Pré-visualização não
+# disponível» — o MESMO arquivo, byte a byte, em obras de municípios
+# diferentes (medido em três). Ou seja, é o serviço do Ministério que está
+# fora, não a obra que não tem foto. Por isso o proxy no router trata falha da
+# origem como 502 com frase, e a tela mostra o metadado (grupo e data), que
+# continua valendo e é o que denuncia obra parada.
+URL_FOTO = "https://sismobcidadao.saude.gov.br/api/public/fotografias/{id}"
+URL_FOTO_MINIATURA = "https://sismobcidadao.saude.gov.br/api/public/fotografias/thumbnail/{id}"
