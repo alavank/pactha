@@ -24,6 +24,8 @@ registrada em `add_permissoes_por_acao.sql`.
 """
 from __future__ import annotations
 
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -101,6 +103,35 @@ async def _faf(db: AsyncSession, municipio_id: int, ano: int | None) -> dict | N
     lista = sorted(blocos.values(), key=lambda x: -x["total"])
     for b in lista:
         b["grupos"].sort(key=lambda g: -g["total"])
+
+    # ⭐ A SÉRIE DOS ÚLTIMOS QUATRO ANOS — o desconto de um ano sozinho não diz
+    # nada; a sequência diz tudo. Medido em Bueno Brandão/MG: 2,2% do repasse
+    # retido em 2023, 1,6% em 2024, **10,0% em 2025 e 23,6% em 2026**. É a mesma
+    # informação que o gestor levaria meses para juntar abrindo o portal ano a
+    # ano — e o salto entre 2024 e 2025 é o que faz alguém perguntar por quê.
+    #
+    # ⚠️ MESMA REGRA DE `grupo_codigo <> 0` DA CONSULTA ACIMA: a linha de total
+    # do bloco convive com as linhas de grupo, e somar as duas contaria o mesmo
+    # dinheiro duas vezes. Aqui o filtro é feito com um NOT EXISTS por (ano,
+    # bloco), que é a tradução em SQL do `_detalhado` do laço.
+    serie = [{
+        "ano": r[0],
+        "total": float(r[1] or 0), "desconto": float(r[2] or 0), "liquido": float(r[3] or 0),
+        # O ano corrente ainda está recebendo competências: o total dele NÃO é
+        # comparável com o de um ano fechado, e a tela precisa dizer isso.
+        "em_curso": r[0] == date.today().year,
+    } for r in (await db.execute(text("""
+        SELECT ano, SUM(vl_total), SUM(vl_desconto), SUM(vl_liquido)
+          FROM fns_repasse_faf f
+         WHERE municipio_id = :m
+           AND (grupo_codigo <> 0 OR NOT EXISTS (
+                 SELECT 1 FROM fns_repasse_faf g
+                  WHERE g.municipio_id = f.municipio_id AND g.ano = f.ano
+                    AND g.bloco_codigo = f.bloco_codigo AND g.grupo_codigo <> 0))
+         GROUP BY ano ORDER BY ano DESC LIMIT 4
+    """), {"m": municipio_id})).all()]
+    serie.reverse()   # do mais antigo para o mais novo: a barra lê da esquerda
+
     return {
         "ano": alvo,
         "anos": anos,
@@ -108,6 +139,7 @@ async def _faf(db: AsyncSession, municipio_id: int, ano: int | None) -> dict | N
         "total": sum(b["total"] for b in lista),
         "desconto": sum(b["desconto"] for b in lista),
         "liquido": sum(b["liquido"] for b in lista),
+        "serie": serie,
         "atualizado_em": atualizado.isoformat() if atualizado else None,
     }
 
