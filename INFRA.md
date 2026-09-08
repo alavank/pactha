@@ -222,7 +222,9 @@ chave-mestra (ao contrário do `service_tokens`). Sem token válido → 401. Fer
 reusam as funções de agregação da própria API. Os tokens se geram na tela de
 **Usuários** (cada um os seus; admin, os de qualquer pessoa). Código: `backend/mcp_app.py`,
 `backend/services/mcp_auth.py`, `backend/routers/mcp_tokens.py`. URL para o cliente:
-`<URL da *-api do tenant>/api/mcp`.
+`<URL da *-api do tenant>/api/mcp/` — **com a barra no fim** (o Mount +
+`redirect_slashes=False` faz `/api/mcp` sem barra devolver 404; com barra, 401 sem
+token e 200 com token válido). Confirmado nos 5 em 07/09/2026.
 
 ### Fora deste repo, mas do mesmo produto
 | O quê | URL | Repo |

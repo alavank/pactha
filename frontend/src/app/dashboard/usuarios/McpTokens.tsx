@@ -183,7 +183,7 @@ export default function McpTokens({ userId }: { userId: number }) {
 
       <p className="mt-2 text-[11px] leading-snug" style={{ color: "var(--bi-muted)" }}>
         Como conectar: no cliente MCP do assistente, adicione o servidor{" "}
-        <code>&lt;URL da API&gt;/api/mcp</code> com o cabeçalho{" "}
+        <code>&lt;URL desta API&gt;/api/mcp/</code> (com a barra no fim) e o cabeçalho{" "}
         <code>Authorization: Bearer &lt;token&gt;</code>. O assistente só consegue LER, e apenas os
         municípios desta conta.
       </p>
