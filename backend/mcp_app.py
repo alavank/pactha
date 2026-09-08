@@ -333,6 +333,81 @@ async def fundo_a_fundo(ctx: Context, municipio_id: int | None = None) -> str:
     return "\n".join(linhas)
 
 
+@mcp_server.tool(
+    name="convenios_estaduais",
+    description=(
+        "Convênios ESTADUAIS de um município (SIGCON-MG e congêneres — NÃO inclui "
+        "saúde FNS): total, valor somado e a quebra por situação. Mesma agregação "
+        "da tela de Convênios (espelha 'convenio_stats': exclui FNS, conta e soma "
+        "'valor_total', agrupa por situação). Valores em reais. Requer "
+        "'municipio_id' quando você vê mais de um."),
+)
+async def convenios_estaduais(ctx: Context, municipio_id: int | None = None) -> str:
+    user = await identidade_do_contexto(ctx)
+    mid, erro = await _um_municipio(user, municipio_id)
+    if erro:
+        return erro
+    # ⚠️ O MESMO filtro do convenio_stats: FNS mora na mesma tabela mas não é
+    # convênio estadual (fica fora dos KPIs). Só leitura, município vem por bind.
+    _sem_fns = "(fonte IS NULL OR fonte NOT ILIKE '%FNS%')"
+    async with async_session() as db:
+        nome = await _nome_municipio(db, mid)
+        tot = (await db.execute(text(
+            f"SELECT count(*), COALESCE(SUM(valor_total), 0) FROM convenios_estadual "
+            f"WHERE {_sem_fns} AND municipio_id = :m"), {"m": mid})).first()
+        rows = (await db.execute(text(
+            f"SELECT COALESCE(situacao, '(sem situação)'), count(*) "
+            f"FROM convenios_estadual WHERE {_sem_fns} AND municipio_id = :m "
+            f"GROUP BY situacao ORDER BY count(*) DESC"), {"m": mid})).fetchall()
+    n = tot[0] if tot else 0
+    if not n:
+        return f"Nada para este filtro: {nome} sem convênios estaduais."
+    linhas = [f"Convênios estaduais de {nome}: {_num(n)} — {_reais(tot[1])}",
+              "", "  Por situação:"]
+    for sit, c in rows[:TETO_LISTA]:
+        linhas.append(f"    - {sit}: {_num(c)}")
+    if len(rows) > TETO_LISTA:
+        linhas.append(f"    … e mais {len(rows) - TETO_LISTA} situação(ões).")
+    return "\n".join(linhas)
+
+
+@mcp_server.tool(
+    name="convenios_federais",
+    description=(
+        "Convênios/propostas FEDERAIS (TransfereGov voluntárias) de um município, "
+        "pela MESMA categorização das telas: Voluntárias/Em execução, Rejeitadas, "
+        "Encerradas, Geral — total, valor e contagem por categoria. Reusa a regra "
+        "'_CATEGORIA_SQL' do módulo transferegov (a mesma que decide cada aba). "
+        "Valores em reais. Requer 'municipio_id' quando você vê mais de um."),
+)
+async def convenios_federais(ctx: Context, municipio_id: int | None = None) -> str:
+    user = await identidade_do_contexto(ctx)
+    mid, erro = await _um_municipio(user, municipio_id)
+    if erro:
+        return erro
+    # `_CATEGORIA_SQL` é uma CASE só sobre `situacao` (constante do código, sem
+    # entrada do usuário) — a mesma expressão que a tela usa para escolher a aba.
+    from routers.transferegov import _CATEGORIA_SQL
+    async with async_session() as db:
+        nome = await _nome_municipio(db, mid)
+        rows = (await db.execute(text(
+            f"SELECT {_CATEGORIA_SQL} AS cat, count(*), "
+            "COALESCE(SUM(COALESCE(valor_global, valor_repasse, 0)), 0) "
+            "FROM transferegov_propostas WHERE municipio_id = :m GROUP BY cat"),
+            {"m": mid})).fetchall()
+    if not rows:
+        return f"Nada para este filtro: {nome} sem propostas federais."
+    rot = {"voluntarias": "Voluntárias/Em execução", "rejeitadas": "Rejeitadas",
+           "encerradas": "Encerradas", "geral": "Geral"}
+    total = sum(r[1] for r in rows)
+    valor = sum(float(r[2] or 0) for r in rows)
+    linhas = [f"Convênios federais (voluntárias) de {nome}: {_num(total)} — "
+              f"{_reais(valor)}", "", "  Por categoria:"]
+    for cat, c, v in sorted(rows, key=lambda r: -r[1]):
+        linhas.append(f"    - {rot.get(cat, cat)}: {_num(c)} ({_reais(v)})")
+    return "\n".join(linhas)
+
+
 # ---------------------------------------------------------------------------
 # Transporte: Starlette app (Streamable HTTP), montado em /api/mcp pelo main.py.
 # stateless_http=True: cada chamada é um POST independente que carrega o próprio
