@@ -1,3 +1,32 @@
-# Scripts e Dockerfile do scraper rodam em Linux (Coolify): LF obrigatorio
-backend/reaper.sh text eol=lf
-backend/Dockerfile.scraper text eol=lf
+# ⚠️ LF EM TODO ARQUIVO DE TEXTO — a regra vale para o repositório inteiro.
+#
+# As duas linhas que existiam aqui protegiam só `reaper.sh` e `Dockerfile.scraper`,
+# porque foram eles que quebraram primeiro rodando em Linux no Coolify. A proteção
+# era estreita demais: em 07/09/2026 havia 67 arquivos de texto gravados 100% em
+# CRLF (35.570 linhas) e 2 com as duas convenções misturadas — entre eles um `.sh`
+# que roda na VPS, os dois workflows do GitHub e onze telas do frontend.
+#
+# ⚠️ E O ATRIBUTO NÃO CONSERTA O QUE JÁ FOI COMMITADO. `eol=lf` age no CHECKOUT,
+# assumindo que o blob já está em LF; blob gravado em CRLF continua em CRLF na VPS,
+# com atributo e tudo. Por isso este arquivo veio acompanhado de um
+# `git add --renormalize`, que é o que reescreve os blobs.
+#
+# O custo não é estético. Arquivo em CRLF que recebe uma edição em LF vira misto,
+# e daí em diante todo `git diff` mostra o arquivo INTEIRO como alterado: uma
+# mudança de dez linhas chega ao revisor como oitocentas — e o revisor deixa de ler.
+# Aconteceu em 07/09/2026 no `dashboard/investsus/page.tsx`: 845 linhas de diff
+# para ~100 de mudança real.
+#
+# `text=auto eol=lf` = o git decide o que é texto (heurística do byte NUL) e grava
+# LF no blob, independentemente do editor, do sistema operacional e de quem escreveu.
+* text=auto eol=lf
+
+# ⚠️ BINÁRIO DECLARADO À MÃO, não deixado para a heurística. Ela acerta em PNG e
+# ZIP, que têm NUL logo no cabeçalho, mas um PDF pode não ter NUL nos primeiros
+# 8 KB — seria tratado como texto, "normalizado", e o arquivo sairia corrompido.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.ico  binary
+*.pdf  binary
+*.zip  binary
