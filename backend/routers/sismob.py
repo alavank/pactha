@@ -338,7 +338,15 @@ async def foto(
             r = await c.get(URL_FOTO.format(id=foto_id),
                             headers={"User-Agent": "PACTHA/1.0",
                                      "Referer": "https://sismobcidadao.saude.gov.br/",
-                                     "Accept": "image/*"})
+                                     # ⚠️ `image/*` SOZINHO É ARMADILHA NESTA ORIGEM,
+                                     # e foi medido: com ele o servidor devolve
+                                     # **406 com corpo vazio**; com `*/*` devolve o
+                                     # 500 de verdade, com a frase do erro. Como o
+                                     # servidor negocia conteúdo, restringir o
+                                     # Accept pode barrar uma imagem que ele
+                                     # entregaria — e ainda esconde o motivo da
+                                     # falha de quem for depurar.
+                                     "Accept": "image/*,*/*;q=0.8"})
     except Exception as e:
         raise HTTPException(502, f"O SISMOB não respondeu: {type(e).__name__}") from e
     # Assinatura de imagem, e não o content-type: a origem devolve
@@ -350,7 +358,11 @@ async def foto(
         # abertura do modal repete a ida ao Ministério.
         return Response(content=r.content, media_type=tipo,
                         headers={"Cache-Control": "private, max-age=86400"})
-    raise HTTPException(502, "O SISMOB não entregou a imagem (erro na origem).")
+    # O código da origem vai na frase: quem for depurar daqui a seis meses
+    # precisa distinguir «serviço fora» (500) de «id que não existe mais» (404)
+    # sem ter de reproduzir a chamada à mão.
+    raise HTTPException(
+        502, f"O SISMOB não entregou a imagem (a origem respondeu {r.status_code}).")
 
 
 @router.post("/refresh", dependencies=[exige("sismob.atualizar")])
