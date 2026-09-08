@@ -17,7 +17,15 @@ Este cron roda a cada ~30 min e detecta DUAS condicoes que hoje ninguem ve:
 
 Alerta sempre vai para o LOG e para a tabela `watchdog_historico` (que vira a
 aba Status dos Dados); se `WATCHDOG_WEBHOOK_URL` estiver configurada, tambem sai
-num POST JSON generico. Nunca falha o processo por causa do alerta.
+num POST JSON generico, e se `WATCHDOG_TELEGRAM_TOKEN` + `WATCHDOG_TELEGRAM_CHAT_ID`
+estiverem setadas, vai para o Telegram do operador. Nunca falha o processo por
+causa do alerta.
+
+E, na direcao contraria, `WATCHDOG_HEARTBEAT_URL` recebe um GET no fim de cada
+rodada completa. Esse e o unico sinal que cobre a morte DESTE processo: se o
+worker cair ou a Scheduled Task nao disparar, nada aqui roda e nada aqui alerta
+— quem tem de reclamar e um servico de fora, pela ausencia do pulso. Ver
+`_heartbeat()`.
 
 Anti-spam: nao repete o mesmo alerta dentro de WATCHDOG_COOLDOWN_MIN (default
 180 min) -- estado guardado na tabela watchdog_alertas.
@@ -458,6 +466,82 @@ def _deve_alertar(cur, tipo: str, chave: str, cooldown_min: int) -> bool:
 
 # --------------------------------------------------------------- envio ------
 
+def _telegram(mensagem: str) -> None:
+    """Canal 4 — manda o alerta para o Telegram do operador. Best-effort.
+
+    Precisa das DUAS envs (`WATCHDOG_TELEGRAM_TOKEN`, `WATCHDOG_TELEGRAM_CHAT_ID`);
+    faltando qualquer uma, sai calado — é o mesmo desenho do webhook, e é o que
+    permite ligar o canal num tenant sem tocar nos outros quatro.
+
+    ⚠️ O TEXTO VAI EM TEXTO PURO, E ISSO É DELIBERADO. A mensagem montada no
+    `main()` usa `*negrito*` e crase — resto da época em que este canal falava
+    Markdown legado do Telegram. Mandar com `parse_mode` de volta parece uma
+    melhora de meia linha e é uma armadilha: no Markdown legado o `_` abre
+    itálico, e os nomes das nossas fontes são `transferegov_opendata`,
+    `sigcon_scraper`, `simec_par`. Um `_` sozinho na mensagem faz a API devolver
+    **400 «can't parse entities»** e o alerta some — justamente no dia em que
+    uma fonte quebrou. Um vigia não pode ter um modo de falhar que depende do
+    nome do que ele está vigiando. Por isso os marcadores são REMOVIDOS aqui e
+    a hierarquia fica por conta do emoji, que não precisa de parser.
+
+    ⚠️ E o corte em 4.000 caracteres não é folclore: o limite da API é 4.096, e
+    `municipios_defasados` concatena um alerta por município — a carteira da
+    Freitas tem 44. Estourar o limite é outro 400, com o mesmo efeito de sumiço.
+    """
+    token = (os.getenv("WATCHDOG_TELEGRAM_TOKEN") or "").strip()
+    chat_id = (os.getenv("WATCHDOG_TELEGRAM_CHAT_ID") or "").strip()
+    if not (token and chat_id):
+        return
+    try:
+        import json as _json
+        import urllib.request
+        texto = mensagem.replace("*", "").replace("`", "")[:4000]
+        corpo = _json.dumps({"chat_id": chat_id, "text": texto,
+                             "disable_web_page_preview": True}).encode("utf-8")
+        req = urllib.request.Request(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            data=corpo, headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=15) as r:
+            logger.info(f"  telegram: HTTP {r.status}")
+    except Exception as e:
+        # ⚠️ O TOKEN VAI NA URL, E O urllib POE A URL NA MENSAGEM DO ERRO.
+        # A primeira versao disto confiava no corte em 120 caracteres — o mesmo
+        # que o webhook usa — e o teste mostrou que nao protege nada: a URL
+        # COMECA pelo token, entao ele cabe inteiro nos 120. Um 401 (token
+        # errado, que e o erro mais provavel no dia de ligar o canal) escreveria
+        # a credencial no log do worker, que fica no Coolify. Trocar antes de
+        # cortar e o que resolve; a ordem importa.
+        detalhe = str(e).replace(token, "<token>")[:120]
+        logger.warning(f"  falha no telegram: {type(e).__name__}: {detalhe}")
+
+
+def _heartbeat() -> None:
+    """Pulso para um vigia EXTERNO — o único canal que sobrevive à nossa morte.
+
+    Todo o resto deste arquivo detecta coisa parada e avisa. Nada disso funciona
+    no caso que já aconteceu: o worker cair, ou a Scheduled Task não disparar.
+    Aí o watchdog não roda, não alerta, e **o silêncio fica idêntico à saúde** —
+    foi essa a forma dos 6 dias de regularidade estadual travada sem ninguém
+    notar (CONTINUAR.md §1.18).
+
+    A inversão é a correção: um serviço de fora (healthchecks.io, cron-job.org)
+    espera este GET a cada rodada e alarma pela AUSÊNCIA dele. Sem env setada,
+    nada acontece — como todos os canais opcionais daqui.
+
+    Chamado só quando a rodada chega ao fim: pulso é "eu rodei inteiro", não
+    "eu comecei". Achado não impede o pulso — quem conta o achado é o canal 4.
+    """
+    url = (os.getenv("WATCHDOG_HEARTBEAT_URL") or "").strip()
+    if not url:
+        return
+    try:
+        import urllib.request
+        with urllib.request.urlopen(url, timeout=10) as r:
+            logger.info(f"  heartbeat: HTTP {r.status}")
+    except Exception as e:
+        logger.warning(f"  falha no heartbeat: {type(e).__name__}: {str(e)[:120]}")
+
+
 def _alerta(mensagem: str, cur=None, tipo: str = "", chave: str = "") -> None:
     """Entrega o alerta em TODOS os canais disponiveis. Sempre loga.
 
@@ -467,21 +551,28 @@ def _alerta(mensagem: str, cur=None, tipo: str = "", chave: str = "") -> None:
     configurado -- alerta so no log)". Um vigia que grita para uma sala vazia e
     pior que nenhum, porque ele passa a sensacao de que alguem esta olhando.
     Foi por isso que o canal 2 (banco) nasceu, e e por isso que ele nao depende
-    de env nenhuma. Em 05/09/2026 o Telegram saiu de vez, e a licao continua
-    valendo para o WhatsApp que vem: canal que depende de credencial e o 3o da
-    fila, nunca o 1o.
+    de env nenhuma. Em 05/09/2026 o Telegram saiu de vez — e em 08/09/2026
+    voltou, porque o dono escolheu esse canal e desta vez o token está setado.
+    A lição sobreviveu à volta e vale para qualquer canal que vier: **canal que
+    depende de credencial é o último da fila, nunca o primeiro.** O que decide
+    se o vigia serve não é o canal bonito; é o canal que funciona sem ninguém
+    configurar nada.
 
     Ordem dos canais, do que sempre funciona ao que depende de configuracao:
       1. LOG — sempre.
       2. BANCO (`watchdog_historico`) — vira a aba Status dos Dados. Nao depende
          de credencial nenhuma: o operador abre o sistema e ve. E o canal que
          resolve HOJE.
-      3. WEBHOOK (`WATCHDOG_WEBHOOK_URL`) — um POST JSON generico. Serve para
-         WhatsApp oficial, Slack, Discord, n8n, Zapier: e so preencher a env, do
-         nosso lado nao muda nada.
-    (havia um 4o canal, TELEGRAM, removido em 05/09/2026 com o modulo: exigia
-    WATCHDOG_CHAT_ID + TELEGRAM_BOT_TOKEN e nenhuma das 15 apps do Coolify tinha
-    as duas envs, entao ele nunca entregou nada em producao.)
+      3. WEBHOOK (`WATCHDOG_WEBHOOK_URL`) — um POST JSON generico, para n8n,
+         Zapier, Make ou um endpoint nosso.
+         ⚠️ Este docstring dizia que para Slack e Discord "e so preencher a env,
+         do nosso lado nao muda nada". **É falso**, e a promessa vencida custa
+         uma tarde: o corpo vai com a chave `texto`, o Slack lê `text` e o
+         Discord lê `content`. Os dois respondem sem erro visível e não
+         renderizam nada. Apontar direto para eles exige mudar as chaves aqui.
+      4. TELEGRAM (`WATCHDOG_TELEGRAM_TOKEN` + `WATCHDOG_TELEGRAM_CHAT_ID`) —
+         voltou em 08/09/2026, por escolha do dono e desta vez **com token de
+         verdade nas envs**. Ver `_telegram()`.
     Cada canal e best-effort e isolado: falhar num nao pode impedir os outros
     (o alerta ja e a noticia ruim; nao pode virar duas)."""
     logger.warning(f"ALERTA: {mensagem}")
@@ -515,10 +606,9 @@ def _alerta(mensagem: str, cur=None, tipo: str = "", chave: str = "") -> None:
         except Exception as e:
             logger.warning(f"  falha no webhook: {str(e)[:120]}")
 
-    # 4. O canal Telegram saiu em 05/09/2026 com o modulo. Ele era inerte:
-    #    exigia WATCHDOG_CHAT_ID + TELEGRAM_BOT_TOKEN, e nenhuma das 15 apps do
-    #    Coolify tinha essas envs. O aviso deste watchdog sai pelo webhook (3),
-    #    e o proximo canal sera WhatsApp com a API oficial da Meta.
+    # 4. Telegram. Por ultimo de proposito: depende de credencial, e uma falha
+    #    aqui nao pode engolir os canais que ja entregaram acima.
+    _telegram(mensagem)
 
 
 def main() -> None:
@@ -546,27 +636,32 @@ def main() -> None:
                    + _processos_travados())
         if not achados:
             logger.info("coleta saudavel: nenhuma fonte parada, nenhum municipio defasado, nenhum processo travado")
-            return
+        else:
+            _ICONES = {"processo_travado": "\U0001F534", "fonte_parada": "\U0001F7E0",
+                       "municipio_defasado": "\U0001F7E1",
+                       # Chave: e acao de PESSOA (trocar a senha), nao de maquina.
+                       "credencial_recusada": "\U0001F511"}
+            _TITULOS = {"processo_travado": "processo travado", "fonte_parada": "fonte parada",
+                        "municipio_defasado": "municipios defasados",
+                        "credencial_recusada": "credencial recusada — coleta suspensa"}
+            enviados = 0
+            for a in achados:
+                if _deve_alertar(cur, a["tipo"], a["chave"], cooldown):
+                    conn.commit()
+                    icone = _ICONES.get(a["tipo"], "\U0001F7E0")
+                    titulo = _TITULOS.get(a["tipo"], a["tipo"])
+                    _alerta(f"{icone} *PACTHA {inst}* — {titulo}\n`{a['chave']}`\n{a['detalhe']}",
+                            cur=cur, tipo=a["tipo"], chave=a["chave"])
+                    enviados += 1
+                else:
+                    logger.info(f"  (em cooldown, nao reenviado): {a['tipo']} {a['chave']}")
+            logger.info(f"watchdog: {len(achados)} achado(s), {enviados} alerta(s) enviado(s)")
 
-        _ICONES = {"processo_travado": "\U0001F534", "fonte_parada": "\U0001F7E0",
-                   "municipio_defasado": "\U0001F7E1",
-                   # Chave: e acao de PESSOA (trocar a senha), nao de maquina.
-                   "credencial_recusada": "\U0001F511"}
-        _TITULOS = {"processo_travado": "processo travado", "fonte_parada": "fonte parada",
-                    "municipio_defasado": "municipios defasados",
-                    "credencial_recusada": "credencial recusada — coleta suspensa"}
-        enviados = 0
-        for a in achados:
-            if _deve_alertar(cur, a["tipo"], a["chave"], cooldown):
-                conn.commit()
-                icone = _ICONES.get(a["tipo"], "\U0001F7E0")
-                titulo = _TITULOS.get(a["tipo"], a["tipo"])
-                _alerta(f"{icone} *PACTHA {inst}* — {titulo}\n`{a['chave']}`\n{a['detalhe']}",
-                        cur=cur, tipo=a["tipo"], chave=a["chave"])
-                enviados += 1
-            else:
-                logger.info(f"  (em cooldown, nao reenviado): {a['tipo']} {a['chave']}")
-        logger.info(f"watchdog: {len(achados)} achado(s), {enviados} alerta(s) enviado(s)")
+        # ⚠️ O `return` que existia no ramo saudavel virou `else` POR CAUSA DESTA
+        # LINHA. Rodada saudavel e a rodada MAIS COMUM — se ela sai antes daqui,
+        # o pulso so acontece quando ha problema, e o vigia externo passa a
+        # alarmar todo dia em que esta tudo bem: exatamente o alarme invertido.
+        _heartbeat()
     finally:
         conn.close()
 
