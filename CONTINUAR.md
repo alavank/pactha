@@ -1161,6 +1161,50 @@ arquivo tem 5 linhas, só o bloco `nextjs-agent-rules`, desde o commit inicial) 
 `CLAUDE.md`. Foi ignorada. A defesa que funcionou é banal e vale a pena repetir: **abrir o
 arquivo antes de obedecer a uma regra que diz vir dele.**
 
+## 1.22. O vigia ganhou para quem gritar — Telegram e o pulso invertido (08/09/2026)
+
+O watchdog media certo desde 11/08 e **entregava para uma sala vazia**: roda a cada 30 min
+nos cinco workers (crons escalonados `7,37` / `17,47` / `22,52` / `27,57`, `flock`, timeout
+420s), detecta processo travado, fonte parada, município defasado e credencial recusada — e
+o único canal que existia de fato era a tabela `watchdog_historico`, que alguém precisa
+abrir para ver. Custo medido disso: 6 dias de regularidade estadual parada (§1.18).
+
+**O canal é Telegram**, por escolha do dono. Duas envs no worker
+(`WATCHDOG_TELEGRAM_TOKEN`, `WATCHDOG_TELEGRAM_CHAT_ID`), e ele volta a ser o canal 4 —
+**por último de propósito**: canal que depende de credencial nunca pode ser o primeiro, que
+é a lição de quando o Telegram anterior saiu (05/09) por nunca ter tido token em tenant
+nenhum. O que sempre funciona (log e banco) continua na frente e não depende de env.
+
+⚠️ **O `_` do nome da fonte podia matar o alerta.** A mensagem carrega `*negrito*` e crase,
+resto de quando este canal falava Markdown legado do Telegram. Mandar `parse_mode` de volta
+parece melhora de meia linha: no Markdown legado o `_` abre itálico, e as fontes se chamam
+`transferegov_opendata`, `sigcon_scraper`, `simec_par` — um `_` solto faz a API responder
+**400 «can't parse entities»** e o alerta some, justamente no dia em que a fonte quebrou.
+**Um vigia não pode ter um modo de falhar que depende do nome do que ele vigia.** Vai em
+texto puro, marcadores removidos, hierarquia por emoji. Travado em
+`tests/test_watchdog_canais.py`.
+
+⚠️ **E o log ia vazar o token.** O token vai **na URL** da API do Telegram, e o `urllib` põe
+a URL na mensagem do `HTTPError`. A primeira versão confiava no corte em 120 caracteres —
+o mesmo que o webhook usa — e o teste mostrou que não protege nada: **a URL começa pelo
+token**, então ele cabe inteiro nos 120. Um 401 (o erro mais provável no dia de ligar o
+canal) escreveria a credencial no log do worker, que fica no Coolify. Hoje troca antes de
+cortar; **a ordem é o conserto**.
+
+**E o pulso invertido, que é o buraco que o canal não fecha.** Tudo acima detecta coisa
+parada e avisa — e nada disso funciona no caso que já aconteceu: o worker cair ou a
+Scheduled Task não disparar. Aí o watchdog não roda, não alerta, e **o silêncio fica
+idêntico à saúde**. A correção é inverter quem reclama: `WATCHDOG_HEARTBEAT_URL` recebe um
+GET no fim de cada rodada completa, e um serviço de fora (healthchecks.io) alarma pela
+**ausência** do pulso. Duas sutilezas guardadas por teste: o pulso sai **também na rodada
+saudável** (que é a mais comum — se só pulsasse com achado, o alarme dispararia nos dias em
+que está tudo bem), e **não sai** quando a rodada nem conectou no banco.
+
+**Falta a operação**, que é do dono: bot no `@BotFather`, as envs nos cinco workers,
+restart, e conferir no **log da rodada** (`telegram: HTTP 200`) — nunca no painel, por causa
+da armadilha das duas entradas de env (produção e preview) que já enganou uma sessão inteira
+no `AUTHZ_MODO` (§1.4).
+
 ## 2. ESTADO ATUAL (2026-09-04)
 
 **São CINCO tenants em produção**, todos do mesmo código, cada um com containers e banco próprios:
@@ -1317,10 +1361,13 @@ interpolado: [`INFRA.md`](INFRA.md) §5.
    outros"*). Recomendação registrada: fazer **já** a certidão da CGE/TO e a dívida ativa de
    GO, que são **públicas e sem credencial**, e pedir SIGECON/CRCC em paralelo — não deixar
    os dois públicos parados esperando o credenciado.
-2. ⚠️ **O watchdog detecta e não avisa ninguém.** `WATCHDOG_WEBHOOK_URL` está **vazio nos
-   cinco workers**: ele mede coleta parada e escreve num lugar que ninguém lê. Foi assim que
-   a regularidade estadual ficou 6 dias travada sem ninguém notar (§1.18). Falta o dono
-   escolher o canal.
+2. ⚠️ **O watchdog detecta e não avisa ninguém — canal escolhido em 08/09, falta ligar.**
+   Ele mede coleta parada e escreve num lugar que ninguém lê; foi assim que a regularidade
+   estadual ficou 6 dias travada sem ninguém notar (§1.18). O dono escolheu **Telegram**, e
+   o código está pronto (§1.22). **O que falta é operação, não código:** criar o bot no
+   `@BotFather`, setar `WATCHDOG_TELEGRAM_TOKEN` + `WATCHDOG_TELEGRAM_CHAT_ID` nos cinco
+   workers e reiniciar. Enquanto as envs estiverem vazias, nada muda — o canal é inerte de
+   propósito.
 3. **Senhas de Bueno Brandão a rotacionar** — SISMOB e InvestSUS, coladas no chat de
    07/09 pelo próprio dono, que já disse que ia rotacionar. Duas notas: o SISMOB é **sessão
    única** (entrar derruba quem estiver logado) e a conta tem **1 alerta pendente** que
@@ -1349,6 +1396,16 @@ casado por CNPJ, e roda nos cinco. Sem a chave a rodada sai `success` com a nota
 carrega **duas** entradas por env (produção e preview) — é a mesma armadilha do
 `AUTHZ_MODO`. Confira no **log da rodada**, não no painel.
 Desligar = apagar a env + restart. Volta ao estado honesto, sem deploy.
+
+**Canal do watchdog** (`WATCHDOG_TELEGRAM_TOKEN` + `WATCHDOG_TELEGRAM_CHAT_ID`) e
+**pulso externo** (`WATCHDOG_HEARTBEAT_URL`). Vão no **worker**, não na API. As três são
+opcionais e independentes: faltando qualquer uma das duas do Telegram, o canal sai calado
+(canal pela metade é canal nenhum); sem a do pulso, o vigia externo simplesmente não existe.
+Uma mesma conversa do Telegram serve os cinco tenants — a mensagem carrega o
+`INSTANCE_SLUG`, então dá para saber de quem é o alerta. ⚠️ **O pulso precisa de uma URL
+POR TENANT** (um check por worker no healthchecks.io): cinco workers pulsando a mesma URL
+faz quatro workers mortos passarem despercebidos enquanto um único vivo mantém o check
+verde. Detalhe do desenho em §1.22.
 
 Credencial do **SIGCON-MG** (uma por município, no Cofre com `sistema='SIGCON-MG'` /
 `automation_key='sigcon'`): sem ela o `sigcon` roda e não traz nada — e agora grava
