@@ -42,9 +42,20 @@ import { useMunicipio } from "@/contexts/MunicipioContext";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { atalhosAnos, resumoAnos } from "@/lib/periodo";
 import {
-  Abas, Bloco, BlocoHead, Campos, ItemLinha, Lista, Numero, Selo, Vazio, situacaoTom,
+  Abas, Bloco, BlocoHead, Campos, ItemLinha, Lista, Modal, ModalCorpo, ModalHead,
+  Numero, Selo, Vazio, situacaoTom,
 } from "@/components/ui/superficies";
 import { TituloTela } from "@/components/TituloTela";
+
+/** Um grupo de fotografias da obra, como o SISMOB organiza (Terreno, Placa da
+ *  obra, Fachada…). A ORDEM E A DATA são o conteúdo: elas dizem em que fase o
+ *  município parou de registrar. */
+interface GrupoFoto {
+  grupo: string;
+  total: number;
+  ultima_em: string | null;
+  fotos: Array<{ id: string; em: string | null }>;
+}
 
 interface Regra {
   regra: string; titulo: string; detalhe: string; norma: string;
@@ -153,12 +164,133 @@ function Barra({ pct, tom }: { pct: number; tom: Tom }) {
  *  Todo campo que a fonte devolve aparece aqui: o que não cabe no título vai
  *  para a meta (programa, tipo, bairro, ano, tipo de recurso, nº da proposta) e
  *  o que é número vai para `<Campos>`, em posições fixas. */
+/** Uma foto: pede a imagem ao PACTHA (que busca no Ministério) e, quando a
+ *  origem não entrega, vira uma placa com a data — não uma imagem quebrada.
+ *
+ *  ⚠️ ISSO NÃO É DEFENSIVA GENÉRICA: medido em 07/09/2026, o serviço de imagem
+ *  do SISMOB responde 500 e a miniatura devolve um PNG de «Pré-visualização não
+ *  disponível» igual para obras de municípios diferentes. Enquanto durar, o que
+ *  o gestor vê aqui é o registro — grupo e data —, que é o que sustenta a
+ *  leitura de obra parada. */
+function Foto({ propostaId, foto, grupo }: {
+  propostaId: number; foto: { id: string; em: string | null }; grupo: string;
+}) {
+  const [estado, setEstado] = useState<"carregando" | "ok" | "falhou">("carregando");
+  return (
+    <figure
+      className="relative flex aspect-[4/3] items-center justify-center overflow-hidden rounded-lg"
+      style={{ background: "var(--bi-surface-2)", border: "1px solid var(--bi-line)" }}
+    >
+      {estado !== "falhou" && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={`/api/sismob/obra/${propostaId}/foto/${foto.id}`}
+          alt={`${grupo}${foto.em ? ` — ${data(foto.em)}` : ""}`}
+          loading="lazy"
+          className="size-full object-cover"
+          onLoad={() => setEstado("ok")}
+          onError={() => setEstado("falhou")}
+        />
+      )}
+      {estado === "falhou" && (
+        <div className="flex flex-col items-center gap-1 px-3 text-center">
+          <Camera className="size-4" style={{ color: "var(--bi-faint)" }} />
+          <span className="text-[10px] leading-snug" style={{ color: "var(--bi-faint)" }}>
+            imagem indisponível na origem
+          </span>
+        </div>
+      )}
+      {foto.em && (
+        <figcaption
+          className="absolute inset-x-0 bottom-0 px-2 py-1 text-[10px] font-medium"
+          style={{ background: "color-mix(in oklab, var(--bi-bg) 82%, transparent)",
+                   color: "var(--bi-muted)" }}
+        >
+          {data(foto.em)}
+        </figcaption>
+      )}
+    </figure>
+  );
+}
+
+/** O registro fotográfico da obra, dentro do PACTHA.
+ *
+ *  A galeria vem do endpoint de DETALHE (`/sismob/obra/{id}`), e não da
+ *  listagem: são ~12 fotos por obra, e carregá-las na lista inteira inflaria a
+ *  tela e o Modo Tela por um dado que só este modal usa. */
+function ModalFotos({ obra, onFechar }: { obra: Obra; onFechar: () => void }) {
+  const [grupos, setGrupos] = useState<GrupoFoto[] | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+
+  useEffect(() => {
+    let vivo = true;
+    api.get<{ galeria?: GrupoFoto[] }>(`/sismob/obra/${obra.proposta_id}`)
+      .then((r) => { if (vivo) setGrupos(r.data.galeria || []); })
+      .catch(() => { if (vivo) setErro("Não foi possível carregar o registro fotográfico."); });
+    return () => { vivo = false; };
+  }, [obra.proposta_id]);
+
+  const totalFotos = (grupos || []).reduce((s, g) => s + g.total, 0);
+  return (
+    <Modal aberto onFechar={onFechar} maxW="max-w-4xl" rotulo="Fotos da obra">
+      <ModalHead
+        titulo={obra.estabelecimento || `Proposta ${obra.numero_proposta || obra.proposta_id}`}
+        sub={
+          <>
+            Registro fotográfico no SISMOB
+            {grupos ? ` · ${totalFotos} foto(s) em ${grupos.length} grupo(s)` : ""}
+            {obra.fotos.ultima_em ? ` · última em ${data(obra.fotos.ultima_em)}` : ""}
+          </>
+        }
+        onFechar={onFechar}
+      />
+      <ModalCorpo>
+        {erro ? <Vazio>{erro}</Vazio>
+          : !grupos ? (
+            <div className="flex justify-center py-12">
+              <Loader2 className="size-5 animate-spin" style={{ color: "var(--bi-muted)" }} />
+            </div>
+          ) : !grupos.length ? (
+            <Vazio>Esta obra não tem fotografia registrada no SISMOB.</Vazio>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {/* ⭐ O QUE ESTE MODAL RESPONDE, e está escrito porque é o ponto:
+                  os grupos vêm do mais recente para o mais antigo, então a
+                  primeira linha diz em que fase o registro parou. Uma obra que
+                  só tem «Terreno» e «Placa da obra» não começou, mesmo que a
+                  situação diga «em execução». */}
+              <p className="text-[11px] leading-snug" style={{ color: "var(--bi-muted)" }}>
+                Grupos do mais recente para o mais antigo. O nome do grupo diz a fase que o
+                município registrou — obra que só tem terreno e placa não saiu do papel.
+              </p>
+              {grupos.map((g) => (
+                <Bloco key={g.grupo} className="p-3">
+                  <BlocoHead
+                    icon={Camera}
+                    titulo={g.grupo}
+                    sub={`${g.total} foto(s)${g.ultima_em ? ` · ${data(g.ultima_em)}` : ""}`}
+                  />
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
+                    {g.fotos.map((f) => (
+                      <Foto key={f.id} propostaId={obra.proposta_id} foto={f} grupo={g.grupo} />
+                    ))}
+                  </div>
+                </Bloco>
+              ))}
+            </div>
+          )}
+      </ModalCorpo>
+    </Modal>
+  );
+}
+
 function CartaoObra({ o }: { o: Obra }) {
   const tom = tomDaSeveridade(o.severidade);
   // `Campos` chama de "normal" o que o `Selo` chama de "neutro", e trata
   // ausência como normal — então o cinza aqui é `undefined`, não uma string.
   const tomCampo = tom === "neutro" ? undefined : tom;
   const temFoto = (o.fotos.grupos || 0) > 0;
+  const [fotosAbertas, setFotosAbertas] = useState(false);
   return (
     <ItemLinha
       titulo={o.estabelecimento || `Proposta ${o.numero_proposta || o.proposta_id}`}
@@ -222,13 +354,21 @@ function CartaoObra({ o }: { o: Obra }) {
           // A data da última atividade É o argumento da estagnação, e por isso
           // acompanha o tom: é a célula que prova o que o selo afirma.
           { rotulo: "Últ. atividade", tom: tomCampo, valor: data(o.ultima_atividade_em) },
+          // ⭐ CLICÁVEL: as fotos abrem AQUI DENTRO. Antes esta célula era um
+          // número morto e a única forma de ver o registro era sair do sistema
+          // e procurar a obra no portal do Ministério.
           { rotulo: "Fotos",
-            title: temFoto ? `${o.fotos.grupos} grupo(s) de foto no SISMOB` : undefined,
+            title: temFoto ? `Ver as ${o.fotos.total} foto(s) em ${o.fotos.grupos} grupo(s)` : undefined,
             valor: temFoto ? (
-              <span className="inline-flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setFotosAbertas(true)}
+                className="inline-flex items-center gap-1 rounded underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2"
+                style={{ color: "var(--bi-accent-ink)" }}
+              >
                 <Camera className="size-3 shrink-0" />
                 {o.fotos.total} · {data(o.fotos.ultima_em)}
-              </span>
+              </button>
             ) : "—" },
         ]}
       />
@@ -290,6 +430,10 @@ function CartaoObra({ o }: { o: Obra }) {
           ))}
         </div>
       )}
+
+      {/* Montado só quando aberto: sem isso, cada obra da lista faria a chamada
+          de detalhe ao carregar a tela. */}
+      {fotosAbertas && <ModalFotos obra={o} onFechar={() => setFotosAbertas(false)} />}
     </ItemLinha>
   );
 }
