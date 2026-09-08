@@ -43,6 +43,7 @@ import {
   Modal, ModalCorpo, ModalHead, Selo,
 } from "@/components/ui/superficies";
 import { Input } from "@/components/ui/input";
+import McpTokens from "./McpTokens";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -930,6 +931,11 @@ export default function UsuarioModal({
             </p>
           )}
         </Bloco>
+
+        {/* Tokens MCP: só para uma pessoa que já existe (tem id). Quem está aqui
+            no modal de Usuários é administrador (ou edita a si) — o backend
+            confirma o gate; a seção some na CRIAÇÃO, quando ainda não há conta. */}
+        {editando && alvo && <McpTokens userId={alvo.id} />}
 
         {erro && (
           <div className="bi-card flex flex-wrap items-center gap-2 p-3 text-[12px]"

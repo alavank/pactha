@@ -17,7 +17,7 @@ from routers import (
     contas_irregulares,
     cofinanciamento, parametros, monitoramento, consulta_popular, programas_rs,
     conteudo_rs, programas_captacao, agendamentos,
-    uso,
+    uso, mcp_tokens,
 )
 from config import get_settings
 from services.security_headers import SecurityHeadersMiddleware
@@ -84,7 +84,15 @@ async def lifespan(app: FastAPI):
     from services.registro_rotas import aplicar as aplicar_registro
     aplicar_registro(app)
 
-    yield
+    # ⭐ Servidor MCP (Streamable HTTP). O app montado NÃO tem seu lifespan rodado
+    # pelo pai automaticamente; sem isto o gerenciador de sessão do transporte não
+    # sobe e toda chamada MCP trava/500. Rodamos o lifespan dele AQUI, em volta do
+    # yield, para viver o mesmo tempo que a API. `registro_rotas` acima ignora o
+    # Mount (só enxerga APIRoute), então a montagem não passa pelo portão de
+    # permissão — o /api/mcp autentica pelo próprio token (services/mcp_auth.py).
+    from mcp_app import mcp_starlette
+    async with mcp_starlette.router.lifespan_context(mcp_starlette):
+        yield
 
 
 app = FastAPI(
@@ -246,6 +254,12 @@ app.include_router(parametros.router)  # /api/parametros/* (listas do proprio cl
 # ⚠️ `modelos_permissao.router` (/api/permissoes/modelos/*) SAIU em 05/09/2026
 # com o subsistema de moldes. Ver a nota no topo de `routers/permissoes.py`.
 app.include_router(freshness.router)  # /api/admin/freshness (monitor de frescor)
+# Servidor MCP de LEITURA (Claude/ChatGPT). Duas peças: o router administra os
+# tokens (por usuário), e o transporte Streamable HTTP é montado como sub-app
+# ASGI — seu lifespan roda no `lifespan()` acima. Ver mcp_app.py / services/mcp_auth.py.
+app.include_router(mcp_tokens.router)   # /api/mcp-tokens/* (gerência de tokens)
+from mcp_app import mcp_asgi            # noqa: E402  (mount precisa do app pronto)
+app.mount("/api/mcp", mcp_asgi)         # /api/mcp — gate de Bearer + Streamable HTTP
 app.include_router(painel.router)   # /api/painel/* (Painel Executivo do prefeito)
 if get_settings().BI_MODULE:
     app.include_router(bi.router)   # /api/bi/* (Painel de Indicadores - BI, flag-gated)

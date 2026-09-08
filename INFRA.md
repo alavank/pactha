@@ -211,6 +211,19 @@ Projeto Coolify: **`pactha`** (uuid `ksmwr13y4iyprom8i1znede8`), environment `pr
 > mesmo scraping no mesmo host de 0,6 vCPU sustentado, e o `flock` de cada tarefa
 > protege ela de si mesma, nao da tarefa irma no outro container.
 
+### Servidor MCP (leitura por IA) — um por tenant
+
+Cada `*-api` expõe **`/api/mcp`** (Streamable HTTP, SDK oficial `mcp` 2.x): um
+servidor MCP **somente leitura** para um assistente de IA (Claude, ChatGPT)
+consultar os dados do município. Autentica por **Bearer token por usuário**
+(`mcp_tokens`, hash SHA-256), que **herda o escopo de município do dono** — não é
+chave-mestra (ao contrário do `service_tokens`). Sem token válido → 401. Ferramentas
+(convênios, parlamentares, obras, regularidade, fundo a fundo, visão do município)
+reusam as funções de agregação da própria API. Os tokens se geram na tela de
+**Usuários** (cada um os seus; admin, os de qualquer pessoa). Código: `backend/mcp_app.py`,
+`backend/services/mcp_auth.py`, `backend/routers/mcp_tokens.py`. URL para o cliente:
+`<URL da *-api do tenant>/api/mcp`.
+
 ### Fora deste repo, mas do mesmo produto
 | O quê | URL | Repo |
 |---|---|---|

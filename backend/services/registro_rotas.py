@@ -310,6 +310,19 @@ ROTAS_LIVRES: tuple = (
           "acesso publico e a acao que nunca se deve negar: barrar aqui por "
           "falta de permissao deixaria o link VIVO."),
 
+    # Tokens do MCP: cada um administra os SEUS (como trocar a propria senha,
+    # sem exigir tela). Criar/listar/revogar EM NOME DE OUTRA pessoa e ato de
+    # administrador, resolvido no corpo por `_pode_gerir_outros` (tela «usuarios»
+    # ou super-admin) — o mesmo portao que ja administra as pessoas.
+    Livre("GET", "/api/mcp-tokens",
+          "Os tokens do PROPRIO usuario; ver os de outra pessoa e checado no corpo."),
+    Livre("POST", "/api/mcp-tokens",
+          "Cria token do PROPRIO usuario; em nome de outra pessoa e ato de admin, "
+          "checado no corpo (_pode_gerir_outros)."),
+    Livre("POST", "/api/mcp-tokens/{token_id}/revoke",
+          "Revoga o PROPRIO token; o de outra pessoa e checado no corpo. Cortar "
+          "acesso e o ato que nunca se deve negar por falta de permissao."),
+
     # --- Canais com PRINCIPAL PROPRIO: nao ha `User` para ter permissao -----
     Livre("*", "/api/control/*",
           "Canal do Console Alavank. Autentica por TOKEN DE CONTROL "
