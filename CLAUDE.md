@@ -25,7 +25,7 @@ te confundir; essa memória é sua, você usa pra saber o que tá fazendo"*.
 
 O custo de não fazer é medido: em 05/09/2026 a skill `authz` ainda dizia que `AUTHZ_MODO`
 tinha default `aviso` (já era `bloqueio`), o `README.md` dizia "17 fontes / TRÊS tenants"
-(são 21 e cinco), e o `INFRA.md` não listava `freitas.pactha.com.br` — o que fez uma sessão
+(são 23 e seis), e o `INFRA.md` não listava `freitas.pactha.com.br` — o que fez uma sessão
 inteira desconfiar de estar olhando o ambiente errado.
 
 Três regras:
@@ -40,11 +40,11 @@ Três regras:
 Monte Sião/MG, Santa Maria/RS, Nova Palma/RS and BGK (assessoria com 10 municípios do RS,
 aberta em 08/09/2026) each get their own containers and own Postgres database,
 all built from the same code (`backend/**` or `frontend/**` changes trigger `.github/workflows/build-backend.yml`
-/ `build-frontend.yml`, which build, then deploy all 5 tenants via the Coolify API). There is
+/ `build-frontend.yml`, which build, then deploy all 6 tenants via the Coolify API). There is
 no multi-tenancy in code — isolation is by *deploy*: env vars differ per tenant
 (`INSTANCE_SLUG`, `DATABASE_URL`, `JWT_SECRET`, `COFRE_KEY`, `NEXT_PUBLIC_CLIENT_LOGO`, …). A
-bug fix here ships to all five clients, and a schema change must be idempotent against all
-five databases — including a **fresh** one: Santa Maria/RS (08/2026) was the first database
+bug fix here ships to all six clients, and a schema change must be idempotent against all
+six databases — including a **fresh** one: Santa Maria/RS (08/2026) was the first database
 ever created from scratch, and Nova Palma/RS (01/09/2026) was the second — it exposed a
 migration ORDERING bug (`add_detalhe_pagina_rodizio.sql` altering a table created later in
 `MIGRATION_FILES`), now guarded by `tests/test_migrations_ordem_tabela.py`. Full infra facts (server, URLs, UUIDs, secrets) live in `INFRA.md`; project
@@ -88,7 +88,7 @@ python -m pytest backend/tests/test_authz.py -k some_test      # single file/tes
 ```
 **Run it bare.** `pytest.ini` supplies `testpaths` and `backend/tests/conftest.py` supplies the
 three env vars the suite needs — `DATABASE_URL`, `JWT_SECRET` and `BI_MODULE` (the last one
-because the five APIs have it in production; with the flag off, `/api/bi/*` isn't mounted and
+because the six APIs have it in production; with the flag off, `/api/bi/*` isn't mounted and
 three route-registry tests fail forever). If the bare command needs an argument to go green,
 fix the repo config, not the command. It also puts `backend/` on `sys.path`, so pytest works
 from the repo root or from `backend/`.

@@ -1,4 +1,4 @@
-# Resumo diario da coleta dos cinco tenants, numa mensagem so no Telegram.
+# Resumo diario da coleta de TODOS os tenants, numa mensagem so no Telegram.
 #
 # ⭐ POR QUE AQUI E NAO NUMA SCHEDULED TASK DO COOLIFY
 #
@@ -14,10 +14,17 @@
 # urgente — quem grita na hora continua sendo o Telegram do worker, a cada 30 min.
 # Nao troque um pelo outro: eles cobrem falhas diferentes.
 #
+# ⚠️ A LISTA DE TENANTS MORA NUM SECRET, E SECRET NAO ACOMPANHA MERGE. O bgk (6o)
+# entrou na `main` no dia seguinte a escrita deste arquivo, que ja nascia dizendo
+# "os cinco". Tenant novo so aparece no resumo quando alguem reeditar o secret —
+# por isso o job compara a lista do secret com os trios TENANTS do
+# `build-backend.yml` e avisa quem esta deployado e fora do relatorio.
+#
 # Segredos exigidos no repo:
-#   PACTHA_RESUMO_TENANTS   JSON com os cinco: [{"slug","api_url","control_token"}]
+#   PACTHA_RESUMO_TENANTS   JSON, um item por tenant deployado:
+#                           [{"slug","api_url","control_token"}]
 #                           control_token = valor de CONTROL_TOKEN_BOOTSTRAP da
-#                           API daquele tenant (ja existe nos cinco).
+#                           API daquele tenant (ja existe em todos).
 #   RESUMO_TELEGRAM_TOKEN   token do bot (o mesmo pactha_watchdog_bot serve)
 #   RESUMO_TELEGRAM_CHAT_ID destino
 name: resumo-coleta

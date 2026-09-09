@@ -9,9 +9,9 @@ frescor por municipio.
 > Toda a verdade sobre servidor, URLs, bancos, crons e segredos esta em **[`INFRA.md`](INFRA.md)**.
 > Nao usamos Hetzner, Railway, Neon, Vercel, Netlify nem Supabase.
 
-## ⚠️ Um repo, CINCO tenants — e um merge na main DEPLOYA OS CINCO
+## ⚠️ Um repo, SEIS tenants — e um merge na main DEPLOYA OS SEIS
 
-Este repositorio atende **cinco clientes distintos**, cada um com seu proprio conjunto de
+Este repositorio atende **seis clientes distintos**, cada um com seu proprio conjunto de
 containers e seu **proprio banco**, todos buildados do **mesmo codigo**:
 
 | Tenant | Slug | Quem e | Dominio de producao (conferido 05/09/2026) |
@@ -21,14 +21,16 @@ containers e seu **proprio banco**, todos buildados do **mesmo codigo**:
 | Monte Siao/MG | `montesiao-mg` | prefeitura | `montesiao.mg.pactha.com.br` |
 | Santa Maria/RS | `santamaria-rs` | prefeitura | `santamaria.rs.pactha.com.br` |
 | Nova Palma/RS | `novapalma-rs` | prefeitura | **ainda sem dominio proprio** |
+| BGK/RS | `bgk-rs` | assessoria (10 municipios do RS) | **DNS a apontar** (`bgk.pactha.com.br`) |
 
 > ⚠️ **DOIS ENDERECOS PARA O MESMO CONTAINER, e isto ja custou confusao.** Todo app tem o
 > endereco cru `pactha[-slug]-54-232-208-118.sslip.io` (o IP do servidor resolvido pelo
-> `sslip.io`), e quatro dos cinco tem TAMBEM o dominio da tabela acima. **Sao o mesmo
+> `sslip.io`), e quatro dos seis tem TAMBEM o dominio da tabela acima. **Sao o mesmo
 > container e o mesmo banco** — nao existe ambiente de teste separado, e mexer por um
 > endereco mexe no outro. A tabela completa esta em [`INFRA.md`](INFRA.md) §3.
 
-**Os cinco tenants** tem o **Painel de Indicadores** (BI) ligado — flag build-time
+**Os seis tenants** tem o **Painel de Indicadores** (BI) ligado — conferido em 09/09/2026
+respondendo `/api/bi/overview` nas seis APIs — flag build-time
 `NEXT_PUBLIC_BI_MODULE=1` na matriz do `build-frontend.yml`. `/dashboard` e o
 painel executivo (abas por assunto, filtro multi-ano, insights de IA) e `/tela` e
 o **Modo Tela** (TV de gabinete, com link publico revogavel `/t/<slug>`). O app
@@ -39,15 +41,15 @@ outro sao as env vars no Coolify (`INSTANCE_SLUG`, `DATABASE_URL`, `JWT_SECRET`,
 `NEXT_PUBLIC_CLIENT_LOGO`, `NEXT_PUBLIC_CLIENT_SUBTITLE`).
 
 **Consequencia pratica:** merge na `main` que toca `backend/**` ou `frontend/**` **builda no
-GitHub Actions e deploya os 5 tenants sozinho**, na ordem certa: API primeiro (roda as
+GitHub Actions e deploya os 6 tenants sozinho**, na ordem certa: API primeiro (roda as
 migrations; deployment confirmado), depois o worker do mesmo tenant **esperando janela sem
 coleta em voo**. O auto-deploy por webhook do Coolify esta **desligado**: ele recriava
 containers com a tag antiga e matava coleta. Deploy manual continua possivel para rollback.
 Mecanica completa comentada nos proprios `.github/workflows/*.yml`; visao de infra em
 [`INFRA.md`](INFRA.md) §2.
 
-Alem disso, um mesmo bug corrigido aqui **vai para os cinco clientes** — e uma mudanca de
-schema precisa ser idempotente nos cinco bancos, inclusive num **novo**: Santa Maria (08/2026)
+Alem disso, um mesmo bug corrigido aqui **vai para os seis clientes** — e uma mudanca de
+schema precisa ser idempotente nos seis bancos, inclusive num **novo**: Santa Maria (08/2026)
 e Nova Palma (01/09/2026) nasceram do zero, e a segunda expos um bug de ORDEM das migrations.
 
 > ⚠️ **MIGRATION QUE FALHA NAO DERRUBA O BOOT.** `services/startup.py` registra o erro numa
@@ -126,7 +128,7 @@ python -m pytest        # da raiz, SEM argumento: pytest.ini e conftest.py cuida
 
 Painel do Coolify: `http://54.232.208.118:8000` — projeto `pactha`, environment `production`.
 
-**Cada tenant** tem o mesmo conjunto de 4 resources (5 tenants = 20 aplicacoes):
+**Cada tenant** tem o mesmo conjunto de 4 resources (6 tenants = 24 resources):
 
 | Resource | Build | Dominio |
 |----------|-------|---------|
@@ -141,7 +143,7 @@ cookies httpOnly + CSRF + refresh silencioso funcionam sem re-login a cada hora.
 
 Crons = **Scheduled Tasks** anexadas ao Worker de cada tenant (mesma imagem com Chromium),
 com horarios **escalonados entre tenants** de proposito — ver `docs/CRON_SETUP.md` e
-[`INFRA.md`](INFRA.md). Nao alinhe os horarios: a maquina e burstable e nao aguenta os cinco
+[`INFRA.md`](INFRA.md). Nao alinhe os horarios: a maquina e burstable e nao aguenta os seis
 raspando ao mesmo tempo.
 
 Variaveis de ambiente: ver `.env.example`. As migrations idempotentes rodam no

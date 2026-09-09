@@ -28,7 +28,7 @@ e nesse host moram **outros 10 projetos** além do PACTHA.
 Consequências práticas para este repo:
 
 - **Não paralelizar scraping.** `SIGCON_CONCURRENCY=1` em todos os workers. Não aumente.
-- **Não rodar os crons dos 5 tenants no mesmo horário.** Eles já estão **escalonados de
+- **Não rodar os crons dos tenants no mesmo horário.** Eles já estão **escalonados de
   propósito** (ver §5) — não "arrume" isso deixando todos às 5h.
 - **Não disparar rebuild dos 10 apps ao mesmo tempo.** Build de Next.js + imagem com
   Chromium é caro; faça um de cada vez.
@@ -37,9 +37,9 @@ Consequências práticas para este repo:
 
 ---
 
-## 2. Um repo, CINCO tenants (leia isto antes de dar push)
+## 2. Um repo, SEIS tenants (leia isto antes de dar push)
 
-Este repositório atende **cinco clientes distintos**, cada um com seu **próprio conjunto de
+Este repositório atende **seis clientes distintos**, cada um com seu **próprio conjunto de
 containers e seu próprio banco**, todos buildados **do mesmo código**:
 
 | Tenant | Slug | Quem é |
@@ -55,7 +55,7 @@ Não existe multi-tenancy dentro do código: **o isolamento é por deploy**. O q
 um tenant do outro são as **env vars no Coolify** (`INSTANCE_SLUG`, `DATABASE_URL`,
 `JWT_SECRET`, `COFRE_KEY`, `NEXT_PUBLIC_CLIENT_LOGO`, `NEXT_PUBLIC_CLIENT_SUBTITLE`).
 
-### 🚀 Um merge na `main` deploya os CINCO tenants — sozinho, na ordem certa
+### 🚀 Um merge na `main` deploya os SEIS tenants — sozinho, na ordem certa
 
 > Corrigido em **2026-08-09** (o modelo mudou de novo, e desta vez de propósito). A versão
 > de 31/07 dizia — corretamente, à época — que push nenhum mexia em cliente e que o deploy
@@ -64,7 +64,7 @@ um tenant do outro são as **env vars no Coolify** (`INSTANCE_SLUG`, `DATABASE_U
 > foi **desligado nas 9 aplicações** — o webhook do Coolify recriava containers com a tag
 > ANTIGA (churn que matou coleta em voo duas vezes em 08/08).
 
-As **15** aplicações (eram 9 em 09/08, com três tenants) continuam com
+As **18** aplicações (eram 9 em 09/08 com três tenants, 15 com cinco) continuam com
 **`build_pack = dockerimage`** (rodam a tag gravada em `docker_registry_image_tag`; quem
 constrói é o GitHub Actions publicando no `ghcr.io`).
 A diferença: o job `deploy` dos workflows **avança a tag e dispara o deploy** ao fim de
@@ -72,8 +72,8 @@ cada build da `main`:
 
 | Ação | O que acontece em produção |
 |---|---|
-| merge/push na `main` (toca `backend/**`) | Builda `pactha-api`+`pactha-worker` e deploya os 5 tenants: **API primeiro** (roda migrations; deployment confirmado via `GET /deployments/{uuid}`), depois o **worker do mesmo tenant esperando janela sem coleta em voo**. API que não subiu = worker daquele tenant intocado. |
-| merge/push na `main` (toca `frontend/**`) | Builda as 5 imagens de frontend e deploya as 5 (sem gate — frontend não roda coleta). |
+| merge/push na `main` (toca `backend/**`) | Builda `pactha-api`+`pactha-worker` e deploya os 6 tenants: **API primeiro** (roda migrations; deployment confirmado via `GET /deployments/{uuid}`), depois o **worker do mesmo tenant esperando janela sem coleta em voo**. API que não subiu = worker daquele tenant intocado. |
+| merge/push na `main` (toca `frontend/**`) | Builda as 6 imagens de frontend e deploya as 6 (sem gate — frontend não roda coleta). |
 | deploy manual (rollback/exceção) | Continua possível: repontar `docker_registry_image_tag` + `GET /deploy?uuid=` — o mesmo que o CI faz. |
 
 Segredos do CI: `COOLIFY_URL` + `COOLIFY_TOKEN` nos **GitHub Secrets** do repo. Sem eles
@@ -116,7 +116,7 @@ Projeto Coolify: **`pactha`** (uuid `ksmwr13y4iyprom8i1znede8`), environment `pr
 
 > ⚠️⚠️ **CADA APP TEM DOIS ENDERECOS, E OS DOIS SAO O MESMO CONTAINER.** O `sslip.io`
 > resolve o IP do servidor dentro do proprio nome (`...-54-232-208-118.sslip.io` → 54.232.208.118),
-> e por isso todo app tem esse endereco cru de graca. Quatro dos cinco tem TAMBEM um dominio
+> e por isso todo app tem esse endereco cru de graca. Quatro dos seis tem TAMBEM um dominio
 > proprio. **Nao ha ambiente de teste separado**: mexer por um endereco mexe no outro, no
 > mesmo banco.
 >
@@ -129,6 +129,7 @@ Projeto Coolify: **`pactha`** (uuid `ksmwr13y4iyprom8i1znede8`), environment `pr
 > | Monte Siao | `montesiao.mg.pactha.com.br` | `pactha-montesiao-mg-54-232-208-118.sslip.io` |
 > | Santa Maria | `santamaria.rs.pactha.com.br` | `pactha-santamaria-rs-54-232-208-118.sslip.io` |
 > | Nova Palma | *(nao tem)* | `pactha-novapalma-rs-54-232-208-118.sslip.io` |
+> | BGK | *(a apontar)* | `pactha-bgk-rs-54-232-208-118.sslip.io` — respondendo 200 em 09/09/2026 |
 >
 > ⚠️ Os dois primeiros **faltavam neste arquivo** ate 05/09/2026, e a ausencia custou uma
 > sessao inteira de desconfianca: quem le so o `INFRA.md` conclui que `freitas.pactha.com.br`
@@ -167,7 +168,7 @@ Projeto Coolify: **`pactha`** (uuid `ksmwr13y4iyprom8i1znede8`), environment `pr
 | `santamaria-rs-db` | `postgres:16-alpine` | interno — db/user `pactha`, uuid `m2ypghl41lbqhv7rdqzffdi3` |
 
 > ⚠️ **Environment por tenant, não `production`.** O projeto `pactha` tem um environment por
-> cliente (`freitas`, `trust`, `montesiao-mg`, `santamaria-rs`, `novapalma-rs`); o
+> cliente (`freitas`, `trust`, `montesiao-mg`, `santamaria-rs`, `novapalma-rs`, `bgk-rs`); o
 > `production` está **vazio**.
 > Tenant novo ganha o seu (`POST /projects/{uuid}/environments`, que responde 201).
 >
@@ -211,6 +212,30 @@ Projeto Coolify: **`pactha`** (uuid `ksmwr13y4iyprom8i1znede8`), environment `pr
 > fontes do RS). Nao "arrume" isso alinhando os dois: os dois workers rodam o
 > mesmo scraping no mesmo host de 0,6 vCPU sustentado, e o `flock` de cada tarefa
 > protege ela de si mesma, nao da tarefa irma no outro container.
+
+### BGK / RS
+
+| App | Origem | URL |
+|---|---|---|
+| `bgk-rs-frontend` | imagem `pactha-frontend-bgk-rs` | https://pactha-bgk-rs-54-232-208-118.sslip.io |
+| `bgk-rs-api` | imagem `pactha-api` | https://pactha-bgk-rs-api-54-232-208-118.sslip.io |
+| `bgk-rs-worker` | imagem `pactha-worker` | interno |
+| `bgk-rs-db` | `postgres:16-alpine` | interno — container `evdmnadr2iiwqhjvnzvqrgvs` |
+
+> **6o tenant, aberto em 08/09/2026 (PR #447).** Primeira **assessoria** com mais de um
+> município: 10 do RS (Bento Gonçalves, Veranópolis, Nova Prata, Guaporé, Serafina
+> Corrêa, São Marcos, Carlos Barbosa, Garibaldi, Portão, Giruá). Environment Coolify
+> `bgk-rs` (id 24); domínio `bgk.pactha.com.br` ainda **a apontar**.
+>
+> Frontend e API **responderam 200 em 09/09/2026**, e a API já subiu com o código do
+> merge #446 (`/api/control/resumo-coleta` devolvendo 401 sem token, que é o certo).
+>
+> ⚠️ **O que ainda NÃO foi conferido neste tenant: se ele coleta.** As medições de
+> Scheduled Task deste arquivo (§5) são todas anteriores a 08/09 e falam de **5**
+> workers — o worker do bgk pode ter nascido sem tarefa nenhuma, e tarefa que não
+> existe não avisa que não existe (ver *"criar task não é ligar a fonte"*). Confira com
+> `GET /applications/6xast9rw0wbzbownss9vamfq/scheduled-tasks` antes de assumir que os
+> 10 municípios estão sendo varridos.
 
 ### Servidor MCP (leitura por IA) — um por tenant
 
@@ -271,6 +296,10 @@ schema+seed. Migrações idempotentes rodam no boot da API (`backend/services/st
 > vezes numa semana. **A fonte de verdade das agendas é o próprio Coolify**
 > (`GET /applications/<worker_uuid>/scheduled-tasks`, ou `scheduled_tasks` no coolify-db).
 > Este parágrafo documenta o **desenho**, que muda devagar; os horários, não copie daqui.
+>
+> ⚠️ **Todo "nos 5 workers" desta seção é anterior a 08/09/2026** e portanto NÃO fala do
+> `bgk-rs`, que é o 6º. Tenant novo não herda Scheduled Task nenhuma — elas se criam uma a
+> uma pela API do Coolify. Antes de assumir que o bgk coleta, pergunte ao Coolify (§3).
 
 O desenho atual (redesenho de 09/08, "tuning da madrugada"):
 
@@ -657,7 +686,8 @@ daquele tenant viram lixo. Cada tenant tem a sua — **nunca copie a de um para 
   ⚠️ Contagem **zero é estado legítimo** (município sem emenda Pix, sem obra, sem
   conta irregular): o veredito é *o coletor visitou sem erro*, nunca a contagem.
 
-UUIDs das aplicações medidos em 2026-07-23:
+UUIDs das aplicações medidos em 2026-07-23 (os três do `bgk-rs` vieram dos workflows do CI
+em 09/09/2026 — `build-backend.yml` e `build-frontend.yml` deployam por esses uuids):
 
 | App | uuid |
 |---|---|
@@ -676,3 +706,6 @@ UUIDs das aplicações medidos em 2026-07-23:
 | `novapalma-rs-api` | `gemcwirmbelk1dztp2pbcqpf` |
 | `novapalma-rs-frontend` | `rpqpxroy5orsuidrbfezlzkt` |
 | `novapalma-rs-worker` | `kqcnvdsdkgn1efkm4nog8oes` |
+| `bgk-rs-api` | `qhafp9uqmsvny75rzykmibdx` |
+| `bgk-rs-frontend` | `srbi2qotciphxdxhn6io25a3` |
+| `bgk-rs-worker` | `6xast9rw0wbzbownss9vamfq` |
