@@ -1152,7 +1152,8 @@ def _ano_pagamento_ops_obs(ops_obs) -> int | None:
     return max(anos) if anos else None
 
 
-def _situacao_estadual(situacao: str | None, raw: dict) -> str:
+def _situacao_estadual(situacao: str | None, raw: dict,
+                       qt_alteracoes: int | None = None) -> str:
     """SITUACAO exibida do instrumento ESTADUAL (SIGCON).
 
     O campo `situacao` do SIGCON e generico ("Em vigor", "Encerrado", "Cancelado") e
@@ -1163,12 +1164,31 @@ def _situacao_estadual(situacao: str | None, raw: dict) -> str:
 
     Junta as duas quando ha alteracao e ela ACRESCENTA informacao; senao devolve so
     a situacao base (degrada suave — a maioria dos convenios ainda nao foi revisitada
-    pelo rodizio do scraper)."""
+    pelo rodizio do scraper).
+
+    Quando NAO ha detalhe de ultima alteracao capturado, `qt_alteracoes` (a coluna
+    "Quantidade de Alteracoes Concluidas" da LISTAGEM, capturada para TODOS) separa
+    dois casos que confundir engana o leitor — a mesma armadilha do "nao empenhou"
+    vs "o rodizio nao passou":
+      - qt_alteracoes == 0: o SIGCON nao registra alteracao. E DEFINITIVO; dizemos
+        "sem alteracoes registradas" para nao restar duvida do porque de sair so
+        "Em vigor".
+      - qt_alteracoes > 0: HA alteracao(oes) e o rodizio do _scrape_alteracoes ainda
+        nao expandiu este convenio. Marca "detalhe em coleta" — NUNCA "sem
+        alteracoes", que seria falso.
+    Sem `qt_alteracoes` (chamador antigo/teste), degrada para a situacao base como
+    antes."""
     base = (situacao or "").strip()
     if not isinstance(raw, dict):
         return base
     alt = (raw.get("ultima_alteracao_situacao") or "").strip()
     if not alt:
+        if base and qt_alteracoes == 0:
+            return f"{base} · sem alterações registradas no SIGCON"
+        if base and isinstance(qt_alteracoes, int) and qt_alteracoes > 0:
+            rotulo = ("alteração registrada" if qt_alteracoes == 1
+                      else "alterações registradas")
+            return f"{base} · {qt_alteracoes} {rotulo} (detalhe em coleta)"
         return base
     # Nao repete quando a alteracao diz a mesma coisa (ex.: base "Encerrado" x
     # alteracao "ENCERRADO"): o relatorio ficaria "Encerrado · ... : ENCERRADO".
@@ -1692,7 +1712,7 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             # le decide. Calar no desconhecido e o unico jeito de o marcador
             # continuar valendo alguma coisa quando ele APARECE.
             "situacao_atual": _situacao_com_marcas(
-                _situacao_estadual(c.situacao, raw), False,
+                _situacao_estadual(c.situacao, raw, c.qt_alteracoes), False,
                 bool(_mg_pg.get("_consultado")) and not _mg_pg.get("_incerto"),
                 _mg_pg.get("valor_desembolsado")),
             # ⚠️ A situacao CRUA da fonte, ao lado da enriquecida. `situacao_atual`

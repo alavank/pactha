@@ -240,6 +240,32 @@ def test_situacao_estadual_degrada_sem_alteracao():
     assert _situacao_estadual("Cancelado", None or {}) == "Cancelado"
 
 
+def test_situacao_estadual_qt_zero_diz_sem_alteracoes():
+    # qt_alteracoes == 0: o SIGCON nao registra alteracao -> e DEFINITIVO. Sem
+    # esta marca, "Em vigor" sozinho confunde o leitor ("cade o detalhe?").
+    assert (_situacao_estadual("Em vigor", {}, 0)
+            == "Em vigor · sem alterações registradas no SIGCON")
+
+
+def test_situacao_estadual_qt_positivo_sem_detalhe_nao_mente():
+    # HA alteracao mas o rodizio ainda nao expandiu este convenio: JAMAIS dizer
+    # "sem alteracoes" (seria falso) — marca "detalhe em coleta".
+    assert (_situacao_estadual("Em vigor", {}, 2)
+            == "Em vigor · 2 alterações registradas (detalhe em coleta)")
+    assert (_situacao_estadual("Em vigor", {}, 1)
+            == "Em vigor · 1 alteração registrada (detalhe em coleta)")
+
+
+def test_situacao_estadual_detalhe_capturado_ignora_qt():
+    # quando o detalhe JA foi capturado, ele manda — qt_alteracoes nao interfere.
+    assert _situacao_estadual("Em vigor", {
+        "ultima_alteracao_situacao": "CADASTRAMENTO DA ALTERAÇÃO",
+        "ultima_alteracao_tipo": "ALTERAÇÃO SIMPLES",
+        "ultima_alteracao_data": "24/06/2026",
+    }, 0) == ("Em vigor · Última alteração: CADASTRAMENTO DA ALTERAÇÃO "
+              "(ALTERAÇÃO SIMPLES em 24/06/2026)")
+
+
 def test_alteracao_campos_aceita_captura_parcial():
     # sem `situacao` mas com tipo/data: nao pode jogar fora o que foi capturado
     campos = _alteracao_campos({"ultima_alteracao_tipo": "TERMO ADITIVO",
