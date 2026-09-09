@@ -387,6 +387,45 @@ def test_le_os_tenants_do_build_backend_de_verdade():
     assert len(nomes) >= 6, nomes
 
 
+# --------------------------------------------------------------------------
+# 7. O workflow precisa CONSEGUIR RODAR.
+#
+# Medido em 09/09/2026: com `permissions: {}` o run 34352914795 morreu no passo 2
+# — «repository 'https://github.com/alavank/pactha/' not found» — porque zerar o
+# escopo tira do GITHUB_TOKEN o `contents: read` de que o actions/checkout
+# precisa num repo PRIVADO. Num repo publico o mesmo arquivo funciona, e foi por
+# isso que passou batido. O script inteiro estava certo e nunca era alcancado.
+#
+# Sem `yaml` de proposito: PyYAML nao esta em requirements-dev, e este vigia nao
+# ganha dependencia nova para se testar.
+# --------------------------------------------------------------------------
+
+def _workflow_do_resumo() -> str:
+    caminho = (Path(__file__).resolve().parents[2] / ".github" / "workflows"
+               / "resumo-coleta.yml")
+    return caminho.read_text(encoding="utf-8")
+
+
+def test_workflow_consegue_clonar_o_repo_privado():
+    # Só as linhas de verdade: o comentário que explica o defeito cita o
+    # `permissions: {}` que ele proíbe, e casar com o texto inteiro acusaria a
+    # própria explicação.
+    linhas = [ln.strip() for ln in _workflow_do_resumo().splitlines()
+              if not ln.strip().startswith("#")]
+    assert "permissions: {}" not in linhas, (
+        "repo e privado: sem contents:read o checkout falha antes do script")
+    assert "contents: read" in linhas
+
+
+def test_workflow_avisa_quando_ele_mesmo_falha():
+    """Job que morre antes do script nao manda mensagem nenhuma — e ausencia de
+    mensagem e o defeito que este vigia existe para matar. Vermelho na aba
+    Actions so avisa quem for olhar a aba Actions."""
+    texto = _workflow_do_resumo()
+    assert "if: failure()" in texto
+    assert "api.telegram.org" in texto.split("python scripts/resumo_coleta.py")[1]
+
+
 def _tenant_fora(slug="freitas", erro="HTTP 401", recusa=False):
     return {"slug": slug, "ok": False, "erro": erro, "recusa": recusa}
 

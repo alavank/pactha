@@ -45,8 +45,15 @@ on:
         required: false
         default: "0"
 
-# Sem permissao nenhuma no repo: o job so le APIs externas e fala no Telegram.
-permissions: {}
+# ⚠️ `permissions: {}` MATA O CHECKOUT NUM REPO PRIVADO — medido em 09/09/2026.
+# Zerar o escopo tira do GITHUB_TOKEN ate o `contents: read`, e o
+# actions/checkout usa esse token para clonar: o run 34352914795 morreu no passo
+# 2 com «repository 'https://github.com/alavank/pactha/' not found», sem chegar
+# a rodar o script. Num repo publico o mesmo arquivo funcionaria — por isso o
+# desenho passou batido. `contents: read` e o minimo que ainda serve: nada de
+# escrever, nada de packages, nada de id-token.
+permissions:
+  contents: read
 
 jobs:
   resumo:
@@ -69,3 +76,31 @@ jobs:
           RESUMO_JANELA_HORAS: ${{ inputs.janela_horas || '24' }}
           RESUMO_DRY_RUN: ${{ inputs.dry_run || '0' }}
         run: python scripts/resumo_coleta.py
+
+      # ⭐ QUEM AVISA QUE O AVISADOR NAO RODOU.
+      #
+      # O defeito do `permissions: {}` mostrou o buraco: o job morria ANTES do
+      # script, entao nao havia mensagem nenhuma — e ausencia de mensagem e
+      # exatamente o que este vigia existe para nao deixar acontecer. Vermelho na
+      # aba Actions so avisa quem for olhar a aba Actions.
+      #
+      # Este passo nao usa o script (que pode ser justamente o que quebrou): e
+      # curl puro, no mesmo canal. Se nem o secret do Telegram existir, ele sai
+      # calado — nao ha para onde gritar.
+      - name: Avisar que o proprio resumo falhou
+        if: failure()
+        env:
+          TG_TOKEN: ${{ secrets.RESUMO_TELEGRAM_TOKEN }}
+          TG_CHAT: ${{ secrets.RESUMO_TELEGRAM_CHAT_ID }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          [ -n "$TG_TOKEN" ] && [ -n "$TG_CHAT" ] || exit 0
+          TEXTO="🔴 PACTHA — o resumo diario da coleta NAO rodou hoje: o job falhou antes de enviar. Nao ha noticia da coleta, nem boa nem ma. Log: $RUN_URL"
+          # `--data-urlencode` monta o corpo sem shell-quoting a mao: o texto tem
+          # acento, emoji e URL, e um JSON montado com echo quebraria no primeiro
+          # caractere estranho. Saida descartada: a resposta repete o token.
+          curl -sS -m 20 -o /dev/null \
+            "https://api.telegram.org/bot$TG_TOKEN/sendMessage" \
+            --data-urlencode "chat_id=$TG_CHAT" \
+            --data-urlencode "text=$TEXTO" \
+            --data "disable_web_page_preview=true" || true
