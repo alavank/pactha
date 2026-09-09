@@ -574,7 +574,8 @@ async def control_te_lote(
 # ativo = o que o cliente REALMENTE ve) + nomes que cada scraper grava no ingestion_log.
 _FONTES_MONITOR = [
     {"key": "convenios_estadual", "sources": ["sigcon_scraper", "sigcon_ckan_backfill"]},
-    {"key": "transferegov_propostas", "sources": ["transferegov_voluntarias", "transferegov_lote"]},
+    {"key": "transferegov_propostas", "sources": ["transferegov_voluntarias", "transferegov_lote",
+                                                  "siconv_licitacao"]},
     {"key": "emendas_estaduais", "sources": ["emendas_estaduais"]},
     {"key": "cauc_situacao", "sources": ["cauc"]},
     {"key": "acordofes_credor", "sources": ["acordofes"]},
