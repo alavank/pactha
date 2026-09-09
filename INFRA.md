@@ -600,6 +600,16 @@ daquele tenant viram lixo. Cada tenant tem a sua — **nunca copie a de um para 
 
 - **Redeploy:** `POST $B/deploy?uuid=<app_uuid>&force=false` → devolve `deployment_uuid`.
   Status: `GET $B/deployments/<deployment_uuid>`.
+- **Restart (sem rebuild):** `POST $B/applications/<uuid>/restart` → `{"message":"Restart
+  request queued.","deployment_uuid":...}`. ⚠️ **É POST; o `GET` devolve 405** — e 405 num
+  endpoint que existe parece endpoint errado, o que faz procurar o nome certo em vez do
+  verbo certo. É o caminho para **env nova entrar em vigor**, que não precisa de deploy.
+  ⚠️ **Env alterada DEPOIS do início de um deploy não entra nos containers dele** — o
+  Coolify injeta as envs na criação do container. Medido em 08/09/2026 ao ligar o canal do
+  watchdog: o deploy do merge subiu os cinco workers com `WATCHDOG_TELEGRAM_TOKEN` vazia
+  porque o valor foi corrigido minutos depois; o sintoma é o pior possível — deploy verde,
+  código novo lá dentro e a feature morta. Confira **dentro do container**
+  (`docker exec <c> sh -c 'echo ${#MINHA_ENV}'`), nunca no painel.
 - **Logs:** `GET $B/applications/<uuid>/logs?lines=120`.
 - **Env vars (bulk):** `PATCH $B/applications/<uuid>/envs/bulk` com
   `{"data":[{"key":..,"value":..,"is_build_time":bool,"is_preview":false}]}`.
