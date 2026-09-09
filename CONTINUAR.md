@@ -1216,9 +1216,40 @@ que está tudo bem), e **não sai** quando a rodada nem conectou no banco.
 (`docker exec <c> sh -c 'echo ${#MINHA_ENV}'`). Painel e API dizem o que está gravado, não o
 que o processo está enxergando — e no dia em que ligar um canal, é o processo que importa.
 
-**Falta o pulso** (`WATCHDOG_HEARTBEAT_URL`, env vazia nos cinco): precisa de conta no
-healthchecks.io e de **cinco checks, um por tenant** — cinco workers no mesmo check fazem
-quatro mortos passarem despercebidos enquanto um vivo mantém o verde.
+**Falta o pulso** (`WATCHDOG_HEARTBEAT_URL`, env vazia nos cinco): precisa de cinco checks,
+um por tenant — cinco workers no mesmo check fazem quatro mortos passarem despercebidos
+enquanto um vivo mantém o verde.
+
+### A proposta que ficou em cima da mesa (08/09/2026, à noite)
+
+O dono perguntou se o pulso precisa mesmo de healthchecks.io, ou se dá para o próprio
+Telegram *"verificar se os crons rodaram, quais deram erro, qual município, por quê"*. A
+resposta desenhada, ainda **não implementada**:
+
+**Um resumo diário rodando no GitHub Actions**, não no worker. A restrição que decide o
+lugar é física, não de canal: **quem está morto não manda mensagem** — o observador não pode
+ser a coisa observada. O Actions já é externo à VPS, já é usado e não custa SaaS novo.
+
+O que ele faria: chamar `GET /api/control/ingestion` dos cinco (rota que já existe, token de
+serviço com escopo `control:data:read`, e que já devolve a **última rodada de cada fonte**
+via `DISTINCT ON` — o mesmo desenho que evitou o falso-positivo de "fonte parada" da
+auditoria de 17/08), montar um resumo e mandar **uma** mensagem no Telegram. Cobre os dois
+casos de uma vez: worker morto vira "fonte X sem rodar há 40h", e VPS inteira fora vira
+"não falei com 5 de 5 APIs" — que é o alarme mais forte e hoje ninguém dá.
+
+⭐ **E fecharia a lacuna E da auditoria da coleta**, que o watchdog atual não cobre: nenhuma
+query dele lê `records_*`, oito coletores gravam `'success'` na mão, e `simec_par` gravou
+**success com 0 registros** três vezes em 24/08 sem ninguém ver. Verde e vazio é
+indistinguível de verde e cheio. Trazer a **contagem ao lado da mediana** no resumo é o
+lugar natural de pegar isso.
+
+Custos honestos: o cron do Actions **atrasa 5–30 min** (irrelevante para resumo diário,
+ruim para urgência — por isso o Telegram do worker continua sendo quem grita na hora), e
+precisa de **um token de serviço por tenant** nos secrets do GitHub. Tamanho estimado:
+~150 linhas de Python + um workflow + 5 secrets.
+
+**Decisões que faltam ao dono:** o horário (sugerido 07h) e se quer **uma mensagem com os
+cinco** ou **uma por tenant**.
 
 ## 2. ESTADO ATUAL (2026-09-04)
 
