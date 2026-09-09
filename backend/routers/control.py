@@ -1308,3 +1308,133 @@ async def delete_control_user(
                     details={"name": uname, "role": urole, "integracao": p.name,
                              "telas": utelas, "municipios": umuns})
     return {"status": "deleted", "email": email}
+
+
+# ⭐ RESUMO DA COLETA — a leitura que um vigia EXTERNO precisa fazer.
+#
+# Existe porque o watchdog de dentro do worker nao consegue relatar a propria
+# morte: se o container cair ou a Scheduled Task nao disparar, ele nao roda e nao
+# alerta, e o silencio fica identico a saude. Quem pergunta "voces coletaram
+# ontem?" tem de estar FORA — hoje e o resumo diario no GitHub Actions
+# (`scripts/resumo_coleta.py`), que chama esta rota nos cinco tenants.
+#
+# Por que uma rota nova em vez de reusar `/ingestion`:
+#
+#   1. **`error_message` nao sai por lugar nenhum.** A coluna existe no
+#      `ingestion_log` desde sempre (setup_db.py) e nenhuma rota a devolve — ou
+#      seja, o PORQUE da falha esta gravado e ninguem le. Era o pedido literal do
+#      dono: "detalhar quais deram erro, qual municipio, por que, pra eu ir na
+#      fonte e ver o que ta acontecendo".
+#   2. **Os achados do watchdog ja estao prontos e presos.** `watchdog_historico`
+#      recebe municipio defasado, credencial recusada e processo travado com
+#      mensagem em portugues, e so sai por `routers/freshness.py`, que exige
+#      permissao de USUARIO — inalcancavel para um chamador de fora.
+#   3. **Volume nao e vigiado por ninguem** (lacuna E da auditoria da coleta):
+#      nenhuma query do watchdog le `records_*`, oito coletores gravam 'success'
+#      na mao, e `simec_par` gravou success com ZERO registros 3x em 24/08 sem
+#      ninguem ver. Verde e vazio e indistinguivel de verde e cheio.
+#
+# ⚠️ A comparacao de volume e SEMPRE da fonte contra ELA MESMA, nunca entre
+# fontes: a semantica das contagens e inconsistente de proposito (o sigcon grava
+# so `updated`, o cagec conta MUNICIPIOS). Mediana entre fontes seria um numero
+# com cara de metrica e sem significado nenhum.
+@router.get("/resumo-coleta")
+async def control_resumo_coleta(
+    horas: int = 24,
+    db: AsyncSession = Depends(get_db),
+    p: ControlPrincipal = Depends(require_control_scope("control:data:read")),
+):
+    """Tudo que um resumo diario precisa, numa chamada. So leitura.
+
+    Fail-safe por bloco: uma tabela ausente (banco novo, migration atrasada)
+    devolve o bloco vazio e uma nota em `erros`, nunca 500 — o resumo tem de sair
+    dizendo o que sabe, porque quem le esta longe do servidor."""
+    janela = max(1, min(int(horas or 24), 168))
+    out: dict = {"instance_slug": os.getenv("INSTANCE_SLUG", ""),
+                 "janela_horas": janela, "erros": []}
+
+    async def _q(nome: str, sql: str, params: dict | None = None):
+        try:
+            return (await db.execute(text(sql), params or {})).mappings().all()
+        except Exception as e:
+            await db.rollback()
+            out["erros"].append(f"{nome}: {str(e)[:120]}")
+            return []
+
+    # 1) Quantas rodadas, e como terminaram. ⚠️ O vocabulario de status e
+    # inconsistente entre coletores (success/ok, parcial/partial, erro/error/failed)
+    # — a auditoria de 29/08 mediu os tres dialetos convivendo no mesmo banco.
+    # Normalizar aqui, e nao no leitor, evita que cada consumidor invente o seu.
+    out["rodadas"] = [dict(r) for r in await _q("rodadas", """
+        SELECT lower(status) AS status, COUNT(*) AS n
+        FROM ingestion_log
+        WHERE finished_at > NOW() - make_interval(hours => :h)
+        GROUP BY lower(status) ORDER BY n DESC
+    """, {"h": janela})]
+
+    # 2) A ultima rodada de CADA fonte — com o porque, quando houver.
+    # DISTINCT ON e nao "as N ultimas linhas": em hora de coleta intensa a fonte
+    # diaria some da janela e parece parada (falso-positivo que ja atrapalhou a
+    # auditoria de 17/08 duas vezes).
+    out["fontes"] = [dict(r) for r in await _q("fontes", """
+        SELECT DISTINCT ON (source)
+               source,
+               lower(status) AS status,
+               records_processed,
+               records_inserted + coalesce(records_updated, 0) AS registros,
+               to_char(finished_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS finished_at,
+               round(EXTRACT(EPOCH FROM (NOW() - finished_at)) / 3600.0, 1) AS horas_desde,
+               left(coalesce(error_message, ''), 400) AS error_message
+        FROM ingestion_log
+        ORDER BY source, id DESC
+    """)]
+
+    # 3) O que o watchdog achou na janela: municipio defasado, credencial
+    # recusada, processo travado — ja em portugues, com o municipio no `chave`.
+    #
+    # ⚠️ DEDUPLICADO POR (tipo, chave), e isso nao e cosmetica. O watchdog roda a
+    # cada 30 min com cooldown de 180, entao um problema que dura o dia inteiro
+    # deixa ~7 linhas identicas: medido no banco do novapalma em 08/09/2026 —
+    # `tce_rs_portal` 7x, `transferegov_lote` 7x, `simec_par` 4x, `cauc` 3x, ou
+    # seja **21 linhas para 4 problemas**. Um resumo diario com essa repeticao
+    # deixa de ser lido na segunda semana, e aí o vigia volta a ser decorativo.
+    # A contagem vira INFORMACAO: 7x em 24h diz "persistente", 1x diz "piscou".
+    out["achados"] = [dict(r) for r in await _q("achados", """
+        SELECT * FROM (
+            SELECT DISTINCT ON (tipo, chave)
+                   tipo, chave, left(mensagem, 500) AS mensagem,
+                   to_char(criado_em, 'YYYY-MM-DD"T"HH24:MI:SS') AS criado_em,
+                   COUNT(*) OVER (PARTITION BY tipo, chave) AS repeticoes
+            FROM watchdog_historico
+            WHERE criado_em > NOW() - make_interval(hours => :h)
+            ORDER BY tipo, chave, criado_em DESC
+        ) x
+        ORDER BY x.repeticoes DESC, x.chave LIMIT 50
+    """, {"h": janela})]
+
+    # 4) Queda de volume: ultima rodada boa contra a mediana das 30 anteriores da
+    # MESMA fonte. Exige >=5 amostras para nao acusar fonte recem-nascida, e so
+    # reporta quem caiu abaixo da metade — o objetivo e pegar o zero silencioso,
+    # nao discutir variacao normal.
+    out["volume"] = [dict(r) for r in await _q("volume", """
+        WITH ranked AS (
+            SELECT source,
+                   records_inserted + coalesce(records_updated, 0) AS n,
+                   ROW_NUMBER() OVER (PARTITION BY source ORDER BY id DESC) AS rn
+            FROM ingestion_log
+            WHERE lower(status) IN ('success', 'ok')
+        ),
+        ultima AS (SELECT source, n FROM ranked WHERE rn = 1),
+        historico AS (
+            SELECT source,
+                   percentile_cont(0.5) WITHIN GROUP (ORDER BY n) AS mediana,
+                   COUNT(*) AS amostras
+            FROM ranked WHERE rn BETWEEN 2 AND 31 GROUP BY source
+        )
+        SELECT u.source, u.n AS ultimo, round(h.mediana) AS mediana, h.amostras
+        FROM ultima u JOIN historico h ON h.source = u.source
+        WHERE h.amostras >= 5 AND h.mediana > 0 AND u.n < h.mediana * 0.5
+        ORDER BY h.mediana - u.n DESC
+    """)]
+
+    return out
