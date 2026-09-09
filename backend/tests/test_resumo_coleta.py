@@ -355,6 +355,61 @@ def test_janela_e_limitada_nos_dois_lados():
 # para matar, so que agora dentro do proprio vigia.
 # --------------------------------------------------------------------------
 
+# --------------------------------------------------------------------------
+# 8. O relatório de 09/09/2026 — os três defeitos do PRIMEIRO envio real.
+#
+# Ele chegou, e chegou dizendo três coisas erradas de um jeito convincente:
+# acusou coletor APOSENTADO (última rodada em maio) de vir vazio; escondeu o
+# MOTIVO das rodadas parciais, que estava gravado no banco; e cortou os últimos
+# tenants inteiros para caber. O dono leu o conjunto como catástrofe.
+# --------------------------------------------------------------------------
+
+def test_o_aviso_de_volume_ignora_coletor_aposentado():
+    """`sigcon_full` "trouxe 0, mediana 518" e `editais_pncp` "43, mediana 342":
+    as duas últimas rodadas eram de MAIO, 116 dias antes. Fonte que parou de
+    rodar é problema de FRESCOR — e disso o watchdog já cuida."""
+    sql = _sql_do_volume()
+    assert "INTERVAL '72 hours'" in sql
+    assert "finished_at >" in sql
+
+
+def test_rodada_parcial_diz_por_que_e_parcial():
+    """O motivo já vinha na rota e o resumo não imprimia: 'fonte parada' sem
+    causa mandou o dono procurar no lugar errado por uma manhã."""
+    msg = rc.montar_mensagem([_tenant_ok(fontes=[{
+        "source": "transferegov_lote", "status": "parcial", "horas_desde": 9.4,
+        "error_message": "sessao gov.br fria: 153/153 leituras atras do login sem retorno",
+        "registros": 230}])])
+    assert "PARCIAL" in msg
+    assert "153/153" in msg
+
+
+def test_parcial_nao_usa_o_icone_de_erro():
+    """Parcial trouxe dado; pintá-lo de vermelho infla o tamanho do problema —
+    e foi assim que quatro avisos de ruído viraram 'catástrofe' na leitura."""
+    msg = rc.montar_mensagem([_tenant_ok(fontes=[{
+        "source": "transferegov_lote", "status": "parcial", "horas_desde": 9.4,
+        "error_message": "x", "registros": 1}])])
+    linha = [ln for ln in msg.splitlines() if "transferegov_lote" in ln][0]
+    assert linha.startswith(rc.ICONE["atencao"])
+
+
+def test_o_corte_nao_come_sempre_os_ultimos_tenants():
+    """⚠️ MEDIDO NO PRIMEIRO ENVIO: 14 itens não couberam, e o corte cego (do fim
+    para o começo) comeu novapalma e bgk INTEIROS enquanto o freitas ficava com
+    doze linhas. Quem tem mais problema calava quem tem menos, todo dia."""
+    muitos = [{"tipo": "fonte_parada", "chave": f"f{i}", "mensagem": "y" * 300,
+               "criado_em": "2026-09-09T03:00:00"} for i in range(60)]
+    msg = rc.montar_mensagem([
+        _tenant_ok(slug="freitas", achados=muitos),
+        _tenant_ok(slug="bgk-rs", achados=[{
+            "tipo": "fonte_parada", "chave": "unico-do-bgk",
+            "mensagem": "z" * 100, "criado_em": "2026-09-09T03:00:00"}]),
+    ])
+    assert len(msg) <= rc.LIMITE_TELEGRAM
+    assert "unico-do-bgk" in msg, "o tenant com UM item foi cortado antes do que tinha 60"
+
+
 def test_tenant_deployado_e_fora_do_secret_vira_linha():
     ausentes = rc.tenants_ausentes(["freitas", "trust"], ["freitas", "trust", "bgk"])
     assert ausentes == ["bgk"]

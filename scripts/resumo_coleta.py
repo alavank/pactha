@@ -244,10 +244,24 @@ def _detalhes(r: dict) -> list:
         out.append(f"{icone} {slug} · {a.get('chave', '?')}{sufixo}\n   {corpo[:300]}")
 
     for f in d.get("fontes", []):
-        if f.get("status") in ("erro", "error", "failed", "falha"):
+        status = f.get("status")
+        # ⭐ O PARCIAL ENTROU AQUI EM 09/09/2026, E E A NOTICIA MAIS UTIL DO
+        # RELATORIO. A rota ja devolvia o `error_message` de TODA fonte e o
+        # resumo so imprimia o das que davam `erro`. Resultado: ele dizia
+        # "transferegov_lote: fonte parada" sem NUNCA contar o motivo, que
+        # estava gravado no banco desde sempre — "sessao gov.br fria: 153/153
+        # leituras atras do login sem retorno". Custou uma manha de investigacao
+        # na mao para descobrir o que a propria mensagem ja sabia.
+        parcial = status in ("parcial", "partial")
+        if parcial or status in ("erro", "error", "failed", "falha"):
             porque = " ".join((f.get("error_message") or "").split())
-            linha = (f"{ICONE['erro']} {slug} · {f['source']}\n"
-                     f"   erro ha {f.get('horas_desde', '?')}h"
+            # Parcial NAO e erro: ele trouxe dado. Icone e verbo diferentes para
+            # nao inflar o tamanho do problema — foi assim que quatro avisos de
+            # ruido viraram "catastrofe" na leitura de quem recebe.
+            icone = ICONE["atencao"] if parcial else ICONE["erro"]
+            cabeca = "rodou PARCIAL ha" if parcial else "erro ha"
+            linha = (f"{icone} {slug} · {f['source']}\n"
+                     f"   {cabeca} {f.get('horas_desde', '?')}h"
                      + (f": {porque[:250]}" if porque else " (sem mensagem gravada)"))
             onde = ONDE_OLHAR.get(f["source"])
             if onde:
@@ -314,7 +328,9 @@ def montar_mensagem(resultados: list, agora=None, ausentes=None) -> str:
                        "do CI e fora deste resumo — falta por no secret "
                        "PACTHA_RESUMO_TENANTS."]
 
-    detalhes = [d for r in resultados for d in _detalhes(r)]
+    # (slug, linha): o slug é o que permite cortar com justiça lá embaixo.
+    itens = [(r["slug"], d) for r in resultados for d in _detalhes(r)]
+    detalhes = [d for _, d in itens]
     if detalhes:
         linhas += ["", "—— o que olhar ——", ""]
         linhas += detalhes
@@ -332,11 +348,21 @@ def montar_mensagem(resultados: list, agora=None, ausentes=None) -> str:
     # cabecalho (que diz de quando e o relatorio) e as linhas por tenant, que sao
     # o resumo; o que se sacrifica sao os detalhes, do fim para o comeco.
     cabecalho = linhas[:linhas.index("—— o que olhar ——") + 2]
-    total = len(detalhes)
-    while detalhes:
-        detalhes.pop()
-        aviso = f"\n\n(… e mais {total - len(detalhes)} itens que nao couberam)"
-        texto = "\n".join(cabecalho + detalhes) + aviso
+    total = len(itens)
+    while itens:
+        # ⚠️ CORTA DO TENANT COM MAIS ITENS, e nao do fim da lista. Medido no
+        # primeiro envio real (09/09/2026): 14 itens nao couberam, e como a lista
+        # e montada tenant a tenant, o corte cego comeu novapalma e bgk INTEIROS
+        # enquanto o freitas ficou com doze linhas. Quem tem mais problema
+        # calava quem tem menos — e o cliente pequeno some do relatorio todo dia.
+        maior = max({s for s, _ in itens},
+                    key=lambda s: sum(1 for x, _ in itens if x == s))
+        for i in range(len(itens) - 1, -1, -1):
+            if itens[i][0] == maior:
+                itens.pop(i)
+                break
+        aviso = f"\n\n(… e mais {total - len(itens)} itens que nao couberam)"
+        texto = "\n".join(cabecalho + [d for _, d in itens]) + aviso
         if len(texto) <= LIMITE_TELEGRAM:
             return texto
 
