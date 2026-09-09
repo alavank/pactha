@@ -78,6 +78,36 @@ CABECALHOS = {
 UF = "RS"
 TIMEOUT = 60
 
+# ⚠️ O PORTAL FOI REESCRITO E FECHOU A CONSULTA — medido em 09/09/2026, dois dias
+# depois de este coletor nascer funcionando. As duas rotas acima passaram a
+# devolver 404 (do Windows E da VPS: NAO e bloqueio de IP como o do TCE-RS), e a
+# consulta nova exige reCAPTCHA no SERVIDOR, nao so na tela:
+#
+#   POST /api/cadinConsulta/consulta {"nrDocumento","recaptchaToken"}
+#     -> 400 {"message": "Erro ao validar recaptcha"}
+#
+# Nao ha o que consertar em codigo: e uma barreira anti-robo que o Estado
+# escolheu por. O que este modulo passa a fazer e DIZER ISSO — porque a falha
+# anterior era muda (`parcial`, zero certidoes, mensagem vazia) e a tela
+# continuava escrevendo "ainda nao foram consultados", que virou mentira.
+CONSULTA_NOVA = "https://cadin.sefaz.rs.gov.br/api/cadinConsulta/consulta"
+PORTAL = "https://cadin.sefaz.rs.gov.br"
+MOTIVO_CAPTCHA = (
+    "Consulta bloqueada na origem desde 09/09/2026: a SEFAZ/RS reescreveu o portal "
+    "e a consulta publica passou a exigir reCAPTCHA, que so uma pessoa resolve. "
+    f"Consulte manualmente em {PORTAL} — o PACTHA le o PDF que sair de la.")
+
+
+class BloqueioNaOrigem(RuntimeError):
+    """O portal deixou de responder a robo — nao e erro nosso nem do municipio.
+
+    Erro comum vira `erro` da entidade e a rodada segue; este NAO: se a porta
+    fechou, insistir nas outras entidades so bate no portal do Estado a toa e
+    enche o log de ruido igual."""
+
+
+_DIAGNOSTICO: dict = {"checado": False, "motivo": None}
+
 # (codigo, rota, label). O `codigo` é a chave estável usada na tela, nos alertas
 # e no `painel_alertas_enviados.ref` — nunca derive do rótulo, que a SEFAZ pode
 # reescrever.
@@ -168,9 +198,41 @@ def _data_da_certidao(texto: str) -> str | None:
     return m.group(1) if m else None
 
 
+def motivo_do_bloqueio(client: httpx.Client, cnpj14: str) -> str | None:
+    """Por que a rota antiga sumiu — perguntado ao portal NOVO, uma vez por rodada.
+
+    Sem isto o 404 chega a tela como "HTTPStatusError: 404", que manda quem le
+    procurar um bug nosso. A pergunta certa ja tem resposta publica: a consulta
+    nova responde dizendo que falta o reCAPTCHA."""
+    if _DIAGNOSTICO["checado"]:
+        return _DIAGNOSTICO["motivo"]
+    _DIAGNOSTICO["checado"] = True
+    try:
+        r = client.post(CONSULTA_NOVA,
+                        json={"nrDocumento": cnpj14, "recaptchaToken": None},
+                        headers=CABECALHOS, timeout=TIMEOUT)
+        if "recaptcha" in (r.text or "").lower():
+            _DIAGNOSTICO["motivo"] = MOTIVO_CAPTCHA
+        else:
+            _DIAGNOSTICO["motivo"] = (
+                f"A rota publica de certidao respondeu 404 e a consulta nova devolveu "
+                f"HTTP {r.status_code}. O portal {PORTAL} mudou; a coleta automatica "
+                "esta suspensa ate sabermos qual e o caminho novo.")
+    except Exception as e:
+        _DIAGNOSTICO["motivo"] = (
+            f"A rota publica de certidao respondeu 404 e o portal nao respondeu a "
+            f"consulta nova ({type(e).__name__}). Coleta automatica suspensa.")
+    return _DIAGNOSTICO["motivo"]
+
+
 def emitir(client: httpx.Client, rota: str, cnpj14: str) -> bytes:
     r = client.post(f"{BASE}/{rota}", json={"Documento": cnpj14},
                     headers=CABECALHOS, timeout=TIMEOUT)
+    # 404 aqui nao e "esta entidade nao existe": e a ROTA que sumiu. Descobrir o
+    # porque uma vez e barato; deixar o 404 cru subir custou dois dias de
+    # "parcial, zero, sem mensagem".
+    if r.status_code == 404:
+        raise BloqueioNaOrigem(motivo_do_bloqueio(client, cnpj14) or "rota 404")
     r.raise_for_status()
     if not r.content[:4] == b"%PDF":
         # HTML/JSON no lugar do PDF é o sintoma de portal fora do ar ou de uma
@@ -232,6 +294,12 @@ def consultar_entidade(client: httpx.Client, cnpj14: str) -> tuple[list[dict], s
                 "nota": ("Certidão do momento, sem prazo de validade: vale para a data "
                          "em que foi emitida."),
             })
+        except BloqueioNaOrigem:
+            # Sobe inteiro: porta fechada nao e falha DESTA certidao, e o fim da
+            # rodada. Engolir aqui repetiria o 404 em cada entidade e cada
+            # cadastro, e a rodada terminaria "parcial" sem dizer o motivo — que
+            # foi exatamente o que aconteceu em 07-09/09/2026.
+            raise
         except Exception as e:
             erros.append(f"{codigo}: {type(e).__name__}: {str(e)[:120]}")
     return itens, ("; ".join(erros) if erros else None)
@@ -334,14 +402,22 @@ def ingest(dry: bool = False, municipios: list[str] | None = None) -> int:
 
             log.info("CADIN/CFIL-RS: %d entidade(s) a consultar", len(alvos))
             gravados = falhas = 0
+            _DIAGNOSTICO["checado"] = False    # diagnostico e por RODADA
+            _DIAGNOSTICO["motivo"] = None
             # Uma certidão por RAIZ: a fonte responde por raiz, e emitir duas
             # vezes o mesmo PDF seria bater no portal do Estado à toa.
             cache: dict[str, tuple[list[dict], str | None]] = {}
+            bloqueio: str | None = None
             with httpx.Client(follow_redirects=True, verify=False) as client:
                 for a in alvos:
                     raiz = a["cnpj14"][:8]
                     if raiz not in cache:
-                        cache[raiz] = consultar_entidade(client, a["cnpj14"])
+                        try:
+                            cache[raiz] = consultar_entidade(client, a["cnpj14"])
+                        except BloqueioNaOrigem as e:
+                            bloqueio = str(e)
+                            log.error("CADIN/CFIL-RS: %s", bloqueio)
+                            break
                     itens, erro = cache[raiz]
                     rotulo = f"{a['nome']}/{a['uf']} {a['cnpj14']}"
                     if not itens:
@@ -365,7 +441,13 @@ def ingest(dry: bool = False, municipios: list[str] | None = None) -> int:
             conn.commit()
             log.info("=== CADIN/CFIL-RS: %d certidao(oes) gravada(s), %d falha(s) ===",
                      gravados, falhas)
-            _log_ingest(cur, conn, "success" if not falhas else "partial", gravados)
+            if bloqueio:
+                # `partial` com o MOTIVO: e o mesmo vocabulario do TCE-RS
+                # bloqueado. O que nao pode voltar a acontecer e o zero mudo —
+                # dele, nem o relatorio das 7h nem a tela conseguem falar.
+                _log_ingest(cur, conn, "partial", gravados, bloqueio)
+            else:
+                _log_ingest(cur, conn, "success" if not falhas else "partial", gravados)
             return gravados
         except Exception as e:
             conn.rollback()
