@@ -1419,13 +1419,21 @@ async def control_resumo_coleta(
     # nao discutir variacao normal.
     out["volume"] = [dict(r) for r in await _q("volume", """
         WITH ranked AS (
-            SELECT source,
+            SELECT source, finished_at,
                    records_inserted + coalesce(records_updated, 0) AS n,
                    ROW_NUMBER() OVER (PARTITION BY source ORDER BY id DESC) AS rn
             FROM ingestion_log
             WHERE lower(status) IN ('success', 'ok')
         ),
-        ultima AS (SELECT source, n FROM ranked WHERE rn = 1),
+        -- ⚠️ SO FONTE QUE AINDA RODA. Sem o corte de 72h o aviso de volume
+        -- ressuscita COLETOR APOSENTADO: em 09/09/2026 o resumo acusou
+        -- `sigcon_full` ("trouxe 0, mediana 518") e `editais_pncp` ("43,
+        -- mediana 342") — as duas ultimas rodadas eram de MAIO, 116 dias
+        -- antes. Fonte que parou de rodar e problema de FRESCOR, e o watchdog
+        -- ja cobra isso; aqui a pergunta e outra: "rodou agora e veio vazia?".
+        -- 72h cobre qualquer fonte diaria com folga e mata o defunto.
+        ultima AS (SELECT source, n FROM ranked
+                    WHERE rn = 1 AND finished_at > NOW() - INTERVAL '72 hours'),
         historico AS (
             SELECT source,
                    percentile_cont(0.5) WITHIN GROUP (ORDER BY n) AS mediana,
