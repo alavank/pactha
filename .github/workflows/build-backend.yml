@@ -30,6 +30,16 @@ on:
     branches: [main]
     paths:
       - 'backend/**'
+      # ⚠️ TESTE NAO VAI A PRODUCAO — e mexer neles custava um deploy inteiro.
+      # Medido em 09/09/2026: os merges #448 e #449 tocaram SO `backend/tests/`
+      # e cada um disparou 7 min de build + deploy dos 6 tenants (6 APIs e 6
+      # workers, cada worker esperando janela sem coleta em voo) numa maquina
+      # burstable que ja vive no teto. A suite continua obrigatoria: o
+      # `testes.yml` roda em TODO push e PR, sem filtro de path — o que se pula
+      # aqui e so o rebuild da imagem, que nao executa pytest em lugar nenhum.
+      # A negacao e posicional: um push que mexe em teste E em codigo casa pelo
+      # `backend/**` e deploya normalmente.
+      - '!backend/tests/**'
       - '.github/workflows/build-backend.yml'
   workflow_dispatch: {}   # permite rodar manualmente pelo painel do GitHub
 
