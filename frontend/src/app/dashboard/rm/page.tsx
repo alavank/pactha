@@ -326,7 +326,14 @@ export default function RmListPage() {
       });
       await buscar();
     } catch (e) {
-      console.error(e); alert("Erro ao gerar RM.");
+      // Mostra o MOTIVO real, não um genérico. O caso mais comum é 403 do
+      // alcance por linha: gerar é um UPSERT por (município, anos, consultas,
+      // estágio), e se um RM com esse MESMO escopo já existe e foi criado por
+      // OUTRA pessoa, o servidor barra a sobrescrita — e "Erro ao gerar RM"
+      // sozinho não dizia isso. O 403 vem com `detail` explicando; o 500 também.
+      const err = e as { response?: { data?: { detail?: string } } };
+      console.error(e);
+      alert(err.response?.data?.detail || "Erro ao gerar RM.");
     } finally { setCriando(false); }
   };
 
