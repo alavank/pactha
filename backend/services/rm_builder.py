@@ -1167,15 +1167,19 @@ def _situacao_estadual(situacao: str | None, raw: dict,
     pelo rodizio do scraper).
 
     Quando NAO ha detalhe de ultima alteracao capturado, `qt_alteracoes` (a coluna
-    "Quantidade de Alteracoes Concluidas" da LISTAGEM, capturada para TODOS) separa
-    dois casos que confundir engana o leitor — a mesma armadilha do "nao empenhou"
-    vs "o rodizio nao passou":
+    "Quantidade de Alteracoes Concluidas" da LISTAGEM/CKAN, capturada para TODOS)
+    separa dois casos que confundir engana o leitor — a dúvida real "cadê o detalhe
+    da situacao atual?":
       - qt_alteracoes == 0: o SIGCON nao registra alteracao. E DEFINITIVO; dizemos
         "sem alteracoes registradas" para nao restar duvida do porque de sair so
         "Em vigor".
-      - qt_alteracoes > 0: HA alteracao(oes) e o rodizio do _scrape_alteracoes ainda
-        nao expandiu este convenio. Marca "detalhe em coleta" — NUNCA "sem
-        alteracoes", que seria falso.
+      - qt_alteracoes > 0: o contador afirma alteracao(oes). Declaramos so o CONTADOR
+        ("N alteracao(oes) registrada(s) no SIGCON") — NAO "detalhe em coleta". Medido
+        na producao (Freitas, Desterro): dos 9 convenios com qt>0, 8 tinham alteracao
+        real (capturada) e 1 abriu o accordion VAZIO. Ou seja, o contador (listagem)
+        e o detalhe (tela autenticada) DIVERGEM: para varios pendentes nao ha o que
+        raspar — prometer "em coleta" seria falso. Afirmar so o contador e sempre
+        verdade, venha o detalhe depois ou nunca.
     Sem `qt_alteracoes` (chamador antigo/teste), degrada para a situacao base como
     antes."""
     base = (situacao or "").strip()
@@ -1188,7 +1192,7 @@ def _situacao_estadual(situacao: str | None, raw: dict,
         if base and isinstance(qt_alteracoes, int) and qt_alteracoes > 0:
             rotulo = ("alteração registrada" if qt_alteracoes == 1
                       else "alterações registradas")
-            return f"{base} · {qt_alteracoes} {rotulo} (detalhe em coleta)"
+            return f"{base} · {qt_alteracoes} {rotulo} no SIGCON"
         return base
     # Nao repete quando a alteracao diz a mesma coisa (ex.: base "Encerrado" x
     # alteracao "ENCERRADO"): o relatorio ficaria "Encerrado · ... : ENCERRADO".

@@ -247,13 +247,14 @@ def test_situacao_estadual_qt_zero_diz_sem_alteracoes():
             == "Em vigor · sem alterações registradas no SIGCON")
 
 
-def test_situacao_estadual_qt_positivo_sem_detalhe_nao_mente():
-    # HA alteracao mas o rodizio ainda nao expandiu este convenio: JAMAIS dizer
-    # "sem alteracoes" (seria falso) — marca "detalhe em coleta".
+def test_situacao_estadual_qt_positivo_declara_so_o_contador():
+    # O contador (listagem/CKAN) afirma alteracao, mas o detalhe autenticado pode
+    # abrir VAZIO (medido: Desterro, 1 de 9 qt>0 sem linha de alteracao). Entao
+    # NAO prometemos "em coleta" — declaramos so o contador, que e sempre verdade.
     assert (_situacao_estadual("Em vigor", {}, 2)
-            == "Em vigor · 2 alterações registradas (detalhe em coleta)")
+            == "Em vigor · 2 alterações registradas no SIGCON")
     assert (_situacao_estadual("Em vigor", {}, 1)
-            == "Em vigor · 1 alteração registrada (detalhe em coleta)")
+            == "Em vigor · 1 alteração registrada no SIGCON")
 
 
 def test_situacao_estadual_detalhe_capturado_ignora_qt():
