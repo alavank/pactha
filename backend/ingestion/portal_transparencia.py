@@ -115,7 +115,21 @@ ESTRATEGIA = (os.getenv("PT_ESTRATEGIA", "auto") or "auto").strip().lower()
 
 
 def chave() -> str:
-    return (os.getenv("PORTAL_TRANSPARENCIA_API_KEY") or "").strip()
+    """A chave da CGU, sem as aspas que o painel deixa passar.
+
+    ⚠️ ISTO JA CUSTOU TRES DIAS DE COLETA, EM SILENCIO. Em 06/09/2026 a chave
+    foi gravada no Coolify COM aspas simples em volta (`'33f7...'`) em
+    `montesiao-mg` e `novapalma-rs`. O `.strip()` sozinho nao tira aspas: o
+    header saia `chave-api-dados: '33f7...'` e a CGU respondia 401 em toda
+    requisicao. Medido em 09/09/2026 contra a API: a MESMA chave sem as aspas
+    responde 200. A fase 2 (execucao das emendas) ficou morta nos dois tenants
+    e nada apitou, porque coletor sem chave e um estado PREVISTO aqui — o
+    inerte por decisao e o 401 se parecem de fora.
+
+    Aspas em volta de env var nao sao erro de quem digitou: em `.env` e em
+    docker-compose elas fazem parte da sintaxe e somem; num campo de painel,
+    ficam. Aceitar as duas formas custa uma linha."""
+    return (os.getenv("PORTAL_TRANSPARENCIA_API_KEY") or "").strip().strip("'\"").strip()
 
 
 def habilitado() -> bool:
