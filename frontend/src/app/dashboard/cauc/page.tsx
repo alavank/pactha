@@ -191,6 +191,10 @@ interface NegativosResp {
   tem_dados: boolean;
   uf?: string;
   motivo?: string;
+  /** Por que a última coleta não trouxe certidão. Em 07/09/2026 a SEFAZ/RS pôs
+   *  reCAPTCHA na consulta pública e a tela continuou dizendo "ainda não
+   *  consultado" — ausência tem causa, e a causa cabe na tela. */
+  bloqueio?: { motivo: string; desde?: string | null; portal?: string } | null;
   /** O que EXISTE para este estado, mesmo sem coleta — é o que separa
    *  "consultamos e nada consta" de "não acompanhamos este estado". */
   cadastros_previstos?: string[];
@@ -1498,15 +1502,43 @@ export default function RegularidadePage() {
                   )}
                 </div>
 
+                {/* Porta fechada na origem vale aviso MESMO com certidão na tela:
+                    dado antigo parece atual só por estar ali. */}
+                {negativos?.bloqueio && negativos?.tem_dados ? (
+                  <Bloco className="mb-2 p-3">
+                    <div className="flex items-start gap-2.5">
+                      <AlertTriangle className="mt-0.5 size-4 shrink-0" style={{ color: "var(--bi-warn-ink)" }} />
+                      <p className="text-[11px] leading-snug" style={{ color: "var(--bi-muted)" }}>
+                        <strong>A consulta automática está bloqueada na origem.</strong>{" "}
+                        {negativos.bloqueio.motivo}
+                      </p>
+                    </div>
+                  </Bloco>
+                ) : null}
+
                 {!negativos?.tem_dados ? (
                   <Bloco className="p-4">
                     <div className="flex items-start gap-2.5">
-                      <Clock className="mt-0.5 size-4 shrink-0" style={{ color: "var(--bi-warn-ink)" }} />
+                      {negativos?.bloqueio
+                        ? <AlertTriangle className="mt-0.5 size-4 shrink-0" style={{ color: "var(--bi-warn-ink)" }} />
+                        : <Clock className="mt-0.5 size-4 shrink-0" style={{ color: "var(--bi-warn-ink)" }} />}
                       <div className="space-y-1.5">
-                        <div className="bi-title text-[13px] leading-tight">Aguardando consulta</div>
+                        <div className="bi-title text-[13px] leading-tight">
+                          {negativos?.bloqueio ? "Consulta bloqueada na origem" : "Aguardando consulta"}
+                        </div>
                         <p className="text-[11px] leading-snug" style={{ color: "var(--bi-muted)" }}>
                           {negativos?.motivo || "Ainda não consultado."}
                         </p>
+                        {/* O caminho manual fica NA TELA, e não num aviso solto:
+                            enquanto o robô não passa, é assim que a informação
+                            chega ao município. */}
+                        {negativos?.bloqueio?.portal ? (
+                          <a href={negativos.bloqueio.portal} target="_blank" rel="noopener noreferrer"
+                             className="inline-block text-[11px] underline"
+                             style={{ color: "var(--bi-warn-ink)" }}>
+                            Consultar no portal da SEFAZ/RS →
+                          </a>
+                        ) : null}
                       </div>
                     </div>
                   </Bloco>

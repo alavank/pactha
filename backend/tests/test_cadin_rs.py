@@ -14,6 +14,8 @@ Padrão testado só contra certidão limpa não foi testado.
 Rodar:
     python -m pytest backend/tests/test_cadin_rs.py -v
 """
+import pytest
+
 from ingestion.cadin_rs import (
     _classifica,
     _data_da_certidao,
@@ -99,6 +101,79 @@ def test_data_e_a_que_a_certidao_afirma():
     """A certidão não tem validade: o que existe é a data da consulta."""
     assert _data_da_certidao(LIMPA) == "07/09/2026"
     assert _data_da_certidao(COM_PENDENCIA) == "07/09/2026"
+
+
+# --------------------------------------------------------------------------
+# A porta que o Estado fechou — e que ficou dois dias sem aparecer na tela.
+#
+# Em 09/09/2026 as duas rotas públicas responderam 404 (do Windows E da VPS: não
+# é bloqueio de IP), porque a SEFAZ/RS reescreveu o portal e pôs reCAPTCHA na
+# consulta — exigido no SERVIDOR: `{"message": "Erro ao validar recaptcha"}`.
+# O coletor gravava `partial` com zero certidões e mensagem VAZIA, e a tela
+# seguia escrevendo "ainda não foram consultados". Ausência tem causa.
+# --------------------------------------------------------------------------
+
+class _Resp:
+    def __init__(self, status=404, texto=""):
+        self.status_code = status
+        self.text = texto
+        self.content = b""
+        self.headers = {}
+
+    def raise_for_status(self):
+        raise AssertionError("nao deveria chegar aqui com 404")
+
+
+class _Client:
+    """httpx.Client de mentira: 404 na rota velha, captcha na consulta nova."""
+    def __init__(self):
+        self.chamadas = []
+
+    def post(self, url, **kwargs):
+        self.chamadas.append(url)
+        if "cadinConsulta/consulta" in url:
+            return _Resp(400, '{"code":400,"message":"Erro ao validar recaptcha"}')
+        return _Resp(404)
+
+
+def test_rota_404_vira_motivo_legivel_e_nao_httpstatuserror():
+    """`HTTPStatusError: 404` na tela manda procurar bug nosso. O motivo real é
+    público e cabe numa frase — basta perguntar ao portal novo."""
+    import ingestion.cadin_rs as c
+
+    c._DIAGNOSTICO["checado"] = False
+    c._DIAGNOSTICO["motivo"] = None
+    cli = _Client()
+    with pytest.raises(c.BloqueioNaOrigem) as e:
+        c.emitir(cli, "EmitirCertidao", "88488358000167")
+    assert "reCAPTCHA" in str(e.value)
+    assert "cadin.sefaz.rs.gov.br" in str(e.value)
+
+
+def test_o_portal_e_perguntado_uma_vez_por_rodada():
+    """Uma carteira de 10 municípios x 2 certidões daria 20 diagnósticos — bater
+    20 vezes no portal do Estado para descobrir a mesma coisa é falta de educação
+    e de propósito."""
+    import ingestion.cadin_rs as c
+
+    c._DIAGNOSTICO["checado"] = False
+    c._DIAGNOSTICO["motivo"] = None
+    cli = _Client()
+    for _ in range(3):
+        with pytest.raises(c.BloqueioNaOrigem):
+            c.emitir(cli, "EmitirCertidao", "88488358000167")
+    assert sum(1 for u in cli.chamadas if "cadinConsulta" in u) == 1
+
+
+def test_bloqueio_sobe_inteiro_em_vez_de_virar_erro_da_entidade():
+    """Engolido como erro comum, o 404 se repetiria em cada entidade e a rodada
+    terminaria 'parcial' sem dizer por quê — que foi exatamente o que aconteceu."""
+    import ingestion.cadin_rs as c
+
+    c._DIAGNOSTICO["checado"] = False
+    c._DIAGNOSTICO["motivo"] = None
+    with pytest.raises(c.BloqueioNaOrigem):
+        c.consultar_entidade(_Client(), "88488358000167")
 
 
 def test_catalogo_do_router_cobre_os_tres_cadastros():

@@ -78,6 +78,34 @@ CATALOGO = {
 }
 
 
+async def _ultimo_bloqueio(db: AsyncSession) -> dict | None:
+    """Por que a última rodada do `cadin_rs` não trouxe certidão.
+
+    ⚠️ ESTA FUNÇÃO EXISTE PORQUE A TELA MENTIU POR DOIS DIAS. Em 07/09/2026 a
+    SEFAZ/RS reescreveu o portal e pôs reCAPTCHA na consulta pública; a coleta
+    passou a gravar `partial` com zero certidões, e a tela seguiu dizendo
+    "ainda não foram consultados" — que é o oposto do que aconteceu. Ausência
+    tem CAUSA, e a causa já estava gravada no `ingestion_log`; ninguém a lia.
+
+    Genérica de propósito: qualquer rodada que termine fora de `success` com
+    mensagem vira aviso na tela. O dia em que a fonte quebrar por outro motivo,
+    a tela conta esse outro motivo sem ninguém precisar mexer aqui."""
+    row = (await db.execute(text("""
+        SELECT lower(status), error_message, finished_at
+          FROM ingestion_log
+         WHERE source = 'cadin_rs'
+         ORDER BY id DESC LIMIT 1
+    """))).first()
+    if not row:
+        return None
+    status, msg, quando = row
+    if status in ("success", "ok") or not (msg or "").strip():
+        return None
+    return {"motivo": " ".join(msg.split())[:400],
+            "desde": quando.isoformat() if quando else None,
+            "portal": "https://cadin.sefaz.rs.gov.br"}
+
+
 async def fetch_negativos(db: AsyncSession, municipio_id: int) -> dict:
     """Núcleo da consulta, SEM gate — reusável pelo Painel como os irmãos."""
     linhas = (await db.execute(text("""
@@ -96,13 +124,18 @@ async def fetch_negativos(db: AsyncSession, municipio_id: int) -> dict:
     # e as duas coisas pintam de verde do mesmo jeito.
     previstos = [c for c, d in CATALOGO.items() if d["uf"] == uf]
 
+    # Só o RS tem coleta automática destes cadastros; em Minas o CADIN vem do CRC.
+    bloqueio = await _ultimo_bloqueio(db) if uf == "RS" else None
+
     if not linhas:
         return {
             "tem_dados": False,
             "uf": uf,
             "cadastros_previstos": previstos,
             "catalogo": {c: CATALOGO[c] for c in previstos},
+            "bloqueio": bloqueio,
             "motivo": (
+                bloqueio["motivo"] if bloqueio else
                 f"Os cadastros negativos deste município ({', '.join(CATALOGO[c]['sigla'] for c in previstos)}) "
                 "ainda não foram consultados."
                 if previstos else
@@ -130,6 +163,9 @@ async def fetch_negativos(db: AsyncSession, municipio_id: int) -> dict:
     return {
         "tem_dados": True,
         "uf": uf,
+        # Certidão velha na tela + porta fechada na origem é o pior par: o dado
+        # parece atual porque está lá. O aviso vai junto MESMO com dados.
+        "bloqueio": bloqueio,
         "cadastros_previstos": previstos,
         "catalogo": {c: CATALOGO[c] for c in sorted({i["fonte"] for i in itens} | set(previstos))
                      if c in CATALOGO},
@@ -187,4 +223,12 @@ async def refresh(
 
     from ingestion.cadin_rs import ingest
     n = await anyio.to_thread.run_sync(lambda: ingest(municipios=[str(municipio_id)]))
-    return {"ok": True, "certidoes": n, **(await fetch_negativos(db, municipio_id))}
+    dados = await fetch_negativos(db, municipio_id)
+    # ⚠️ ZERO CERTIDÃO NÃO É SUCESSO. Enquanto isto devolvia `ok: True` com
+    # `certidoes: 0`, o botão "Consultar agora" piscava e não dizia nada — e o
+    # portal estava fora do alcance desde 07/09/2026. Quem clica precisa saber
+    # que a porta fechou e por onde consultar na mão.
+    if not n and dados.get("bloqueio"):
+        return {"ok": False, "certidoes": 0,
+                "motivo": dados["bloqueio"]["motivo"], **dados}
+    return {"ok": True, "certidoes": n, **dados}
