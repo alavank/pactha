@@ -55,8 +55,10 @@ case "$TENANT" in
   # ESTREAR a Camada 3: banco novo, sem uso real ainda — o CONTINUAR.md §6.4
   # pede para nao comecar por montesiao, que e prefeitura em producao.
   santamaria) CONTAINER="m2ypghl41lbqhv7rdqzffdi3" ;;
+  # BGK Assessoria/RS (6o tenant, aberto em 08/09/2026).
+  bgk)        CONTAINER="evdmnadr2iiwqhjvnzvqrgvs" ;;
   *)
-    echo "uso: bash $0 {ensaiar|aplicar|conferir|desfazer} {montesiao|trust|freitas|santamaria}" >&2
+    echo "uso: bash $0 {ensaiar|aplicar|conferir|desfazer} {montesiao|trust|freitas|santamaria|bgk}" >&2
     exit 2
     ;;
 esac

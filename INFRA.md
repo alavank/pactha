@@ -49,6 +49,7 @@ containers e seu próprio banco**, todos buildados **do mesmo código**:
 | Monte Sião | `montesiao-mg` | Prefeitura de Monte Sião/MG (tem também o Painel Executivo) |
 | Santa Maria | `santamaria-rs` | Prefeitura de Santa Maria/RS — **aberto em 16/08/2026**, em avaliação |
 | Nova Palma | `novapalma-rs` | Prefeitura de Nova Palma/RS — **aberto em 01/09/2026** |
+| BGK | `bgk-rs` | **Assessoria BGK** — 10 municípios do RS (Bento Gonçalves, Veranópolis, Nova Prata, Guaporé, Serafina Corrêa, São Marcos, Carlos Barbosa, Garibaldi, Portão, Giruá). **Aberto em 08/09/2026.** Environment Coolify `bgk-rs` (id 24). Domínio `bgk.pactha.com.br` (DNS a apontar). |
 
 Não existe multi-tenancy dentro do código: **o isolamento é por deploy**. O que diferencia
 um tenant do outro são as **env vars no Coolify** (`INSTANCE_SLUG`, `DATABASE_URL`,
