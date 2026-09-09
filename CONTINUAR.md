@@ -1200,10 +1200,25 @@ GET no fim de cada rodada completa, e um serviço de fora (healthchecks.io) alar
 saudável** (que é a mais comum — se só pulsasse com achado, o alarme dispararia nos dias em
 que está tudo bem), e **não sai** quando a rodada nem conectou no banco.
 
-**Falta a operação**, que é do dono: bot no `@BotFather`, as envs nos cinco workers,
-restart, e conferir no **log da rodada** (`telegram: HTTP 200`) — nunca no painel, por causa
-da armadilha das duas entradas de env (produção e preview) que já enganou uma sessão inteira
-no `AUTHZ_MODO` (§1.4).
+**Ligado no mesmo dia**, e o caminho até lá vale mais que o resultado — a armadilha das
+**duas entradas de env** mordeu duas vezes em vinte minutos:
+
+1. **O token foi colado na entrada de `preview` nos cinco.** A UI do Coolify mostra as duas
+   linhas com o mesmo nome, e a produção continuou vazia. Foi encontrado porque a conferência
+   listou `is_preview` explicitamente — a mesma armadilha do `AUTHZ_MODO` (§1.4), agora com
+   sintoma novo: não é "li o valor errado", é "gravei no lugar errado".
+2. **Env corrigida DEPOIS do deploy não entra no container.** O Coolify injeta as envs na
+   criação; o deploy do merge subiu os cinco com a env ainda vazia. Deploy verde, código
+   novo lá dentro, feature morta. Conserto: `POST /applications/<uuid>/restart` (é **POST**;
+   `GET` devolve 405), sem rebuild. Detalhe em [`INFRA.md`](INFRA.md) §7.
+
+⚠️ **A regra que sai disso: env só está setada quando você a leu DE DENTRO do container**
+(`docker exec <c> sh -c 'echo ${#MINHA_ENV}'`). Painel e API dizem o que está gravado, não o
+que o processo está enxergando — e no dia em que ligar um canal, é o processo que importa.
+
+**Falta o pulso** (`WATCHDOG_HEARTBEAT_URL`, env vazia nos cinco): precisa de conta no
+healthchecks.io e de **cinco checks, um por tenant** — cinco workers no mesmo check fazem
+quatro mortos passarem despercebidos enquanto um vivo mantém o verde.
 
 ## 2. ESTADO ATUAL (2026-09-04)
 
@@ -1361,13 +1376,13 @@ interpolado: [`INFRA.md`](INFRA.md) §5.
    outros"*). Recomendação registrada: fazer **já** a certidão da CGE/TO e a dívida ativa de
    GO, que são **públicas e sem credencial**, e pedir SIGECON/CRCC em paralelo — não deixar
    os dois públicos parados esperando o credenciado.
-2. ⚠️ **O watchdog detecta e não avisa ninguém — canal escolhido em 08/09, falta ligar.**
-   Ele mede coleta parada e escreve num lugar que ninguém lê; foi assim que a regularidade
-   estadual ficou 6 dias travada sem ninguém notar (§1.18). O dono escolheu **Telegram**, e
-   o código está pronto (§1.22). **O que falta é operação, não código:** criar o bot no
-   `@BotFather`, setar `WATCHDOG_TELEGRAM_TOKEN` + `WATCHDOG_TELEGRAM_CHAT_ID` nos cinco
-   workers e reiniciar. Enquanto as envs estiverem vazias, nada muda — o canal é inerte de
-   propósito.
+2. ✅ **O watchdog já avisa — RESOLVIDO em 08/09/2026** (§1.22). Canal Telegram
+   (`pactha_watchdog_bot`), ligado e **provado em produção nos cinco workers**: mensagem
+   disparada de dentro do container do `freitas` e do `novapalma-rs`, `telegram: HTTP 200`
+   nos dois. Era o item que já tinha custado 6 dias de regularidade estadual parada (§1.18).
+   **O que ainda não existe é o pulso externo** (`WATCHDOG_HEARTBEAT_URL`, código pronto e
+   env vazia): sem ele, worker morto continua indistinguível de coleta saudável. Falta só a
+   conta no healthchecks.io e **cinco checks, um por tenant**.
 3. **Senhas de Bueno Brandão a rotacionar** — SISMOB e InvestSUS, coladas no chat de
    07/09 pelo próprio dono, que já disse que ia rotacionar. Duas notas: o SISMOB é **sessão
    única** (entrar derruba quem estiver logado) e a conta tem **1 alerta pendente** que
