@@ -336,10 +336,61 @@ def test_rota_do_resumo_exige_escopo_de_leitura():
 
 
 def test_janela_e_limitada_nos_dois_lados():
-    """`?horas=100000` faria uma varredura sem teto no ingestion_log dos cinco."""
+    """`?horas=100000` faria uma varredura sem teto no ingestion_log de todos."""
     import inspect
 
     from routers import control
 
     fonte = inspect.getsource(control.control_resumo_coleta)
     assert "max(1, min(int(horas or 24), 168))" in fonte
+
+
+# --------------------------------------------------------------------------
+# 5. Tenant deployado que o relatorio nao olha.
+#
+# A lista de tenants mora num SECRET do repo, e secret nao acompanha merge: o
+# `bgk` entrou na `main` em 08/09/2026, um dia depois deste script nascer "para
+# os cinco". Um tenant fora do secret nao vira erro — ele some do relatorio, que
+# continua verde. E exatamente o silencio-que-parece-saude que este vigia existe
+# para matar, so que agora dentro do proprio vigia.
+# --------------------------------------------------------------------------
+
+def test_tenant_deployado_e_fora_do_secret_vira_linha():
+    ausentes = rc.tenants_ausentes(["freitas", "trust"], ["freitas", "trust", "bgk"])
+    assert ausentes == ["bgk"]
+    msg = rc.montar_mensagem([_tenant_ok()], ausentes=ausentes)
+    assert "bgk" in msg
+    assert "PACTHA_RESUMO_TENANTS" in msg
+
+
+def test_nome_curto_do_ci_casa_com_o_instance_slug_por_prefixo():
+    """O CI chama `santamaria`; a API se chama `santamaria-rs`. Exigir igualdade
+    faria o relatorio acusar ausencia dos tres tenants do RS todo santo dia — e
+    alarme que sempre toca vira alarme que ninguem le."""
+    assert rc.tenants_ausentes(
+        ["freitas", "montesiao-mg", "santamaria-rs", "novapalma-rs"],
+        ["freitas", "montesiao", "santamaria", "novapalma"]) == []
+
+
+def test_conferencia_sem_o_arquivo_do_ci_nao_inventa_alarme():
+    """Falha ao ler o workflow nao pode virar 'todos ausentes': a conferencia e
+    um extra, e um extra nunca derruba o relatorio principal."""
+    assert rc.tenants_do_ci("/caminho/que/nao/existe.yml") == []
+    assert rc.tenants_ausentes(["freitas"], []) == []
+
+
+def test_le_os_tenants_do_build_backend_de_verdade():
+    """Se o formato dos trios mudar, a conferencia morre CALADA — devolve lista
+    vazia e nunca mais acusa nada. Este teste e o que percebe."""
+    nomes = rc.tenants_do_ci()
+    assert "freitas" in nomes and "bgk" in nomes, nomes
+    assert len(nomes) >= 6, nomes
+
+
+def test_aviso_de_ausente_sobrevive_ao_corte():
+    """Num dia ruim o corte come os detalhes de tras para frente; o ponto cego
+    tem que estar acima da linha de corte, junto do cabecalho."""
+    achados = [{"tipo": "fonte_parada", "chave": f"f{i}", "mensagem": "y" * 300,
+                "criado_em": "2026-09-09T03:00:00"} for i in range(200)]
+    msg = rc.montar_mensagem([_tenant_ok(achados=achados)], ausentes=["bgk"])
+    assert "bgk" in msg and len(msg) <= rc.LIMITE_TELEGRAM

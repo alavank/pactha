@@ -1,5 +1,5 @@
 """
-Resumo diario da coleta dos cinco tenants, numa mensagem so no Telegram.
+Resumo diario da coleta de todos os tenants, numa mensagem so no Telegram.
 
 ⭐ POR QUE ISTO NAO RODA NO WORKER
 
@@ -12,7 +12,7 @@ estadual parada sem ninguem notar (CONTINUAR.md §1.18).
 Por isso este script roda no **GitHub Actions**, que e a unica coisa que o projeto
 ja usa e que nao mora na mesma VPS. Ele inverte a pergunta: em vez de esperar o
 alerta chegar, vai buscar. E quando NADA responde, isso vira a noticia mais alta
-do relatorio — "nao falei com 5 de 5 APIs" e um alarme que ninguem daria hoje.
+do relatorio — "nao falei com NENHUMA das APIs" e um alarme que ninguem daria hoje.
 
 Divisao de trabalho entre os dois, que e de proposito:
   - o watchdog do worker GRITA NA HORA (a cada 30 min, so quando acha problema);
@@ -34,6 +34,7 @@ Uso:
 """
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.request
@@ -87,6 +88,46 @@ def _tenants() -> list:
     if not isinstance(dados, list) or not dados:
         raise SystemExit("PACTHA_RESUMO_TENANTS deve ser uma lista nao vazia")
     return dados
+
+
+# Trios `nome:api_uuid:worker_uuid` do build-backend.yml — a lista que o deploy
+# usa de verdade, versionada no repo.
+_TRIO_CI = re.compile(r"^\s+([a-z0-9-]+):([a-z0-9]{20,}):([a-z0-9]{20,})\s*$")
+
+CAMINHO_CI = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                          "..", ".github", "workflows", "build-backend.yml")
+
+
+def tenants_do_ci(caminho: str = CAMINHO_CI) -> list:
+    """Os tenants que o deploy realmente atualiza, lidos do workflow do CI.
+
+    Nao chama rede de proposito: a lista precisa existir mesmo quando a VPS
+    inteira esta fora — que e justamente o dia em que este relatorio importa."""
+    try:
+        with open(caminho, encoding="utf-8") as fh:
+            return [m.group(1) for m in
+                    (_TRIO_CI.match(ln) for ln in fh) if m]
+    except OSError:
+        return []
+
+
+def tenants_ausentes(slugs: list, nomes_ci: list) -> list:
+    """Quem o CI deploya e este relatorio nao olha.
+
+    ⚠️ O DEFEITO QUE ISTO PEGA E REAL, NAO HIPOTETICO. A lista de tenants mora
+    num secret do repo, e secret nao acompanha merge: o `bgk` entrou na `main` em
+    08/09/2026, um dia depois deste script ser escrito "para os cinco". Sem esta
+    conferencia, um tenant novo fica invisivel exatamente do jeito mais caro —
+    silencio que se parece com saude, que e o defeito que este vigia existe para
+    matar.
+
+    O CI usa nome curto (`santamaria`) e a API usa o INSTANCE_SLUG
+    (`santamaria-rs`); por isso o casamento e por prefixo, e nao por igualdade.
+    Falta de conferencia nunca vira alarme: lista vazia devolve vazio."""
+    if not nomes_ci:
+        return []
+    return [nome for nome in nomes_ci
+            if not any(s == nome or s.startswith(f"{nome}-") for s in slugs)]
 
 
 def coletar(tenant: dict, janela: int) -> dict:
@@ -219,7 +260,7 @@ def _detalhes(r: dict) -> list:
     return out
 
 
-def montar_mensagem(resultados: list, agora=None) -> str:
+def montar_mensagem(resultados: list, agora=None, ausentes=None) -> str:
     """Monta a mensagem unica. Funcao PURA — e por isso que ela e testavel.
 
     ⚠️ Texto puro, sem `parse_mode`. Os nomes das fontes tem `_`
@@ -238,6 +279,14 @@ def montar_mensagem(resultados: list, agora=None) -> str:
         # O alarme mais alto que este relatorio sabe dar.
         linhas += ["", f"{ICONE['erro']} NENHUMA das {len(fora)} APIs respondeu — "
                        "suspeita de VPS fora do ar, nao de coleta."]
+
+    if ausentes:
+        # Ponto cego, nao detalhe: tenant fora do secret nao aparece nem como
+        # erro — ele some do relatorio inteiro, e o relatorio continua verde.
+        verbo = "esta" if len(ausentes) == 1 else "estao"
+        linhas += ["", f"{ICONE['atencao']} {', '.join(ausentes)} {verbo} no deploy "
+                       "do CI e fora deste resumo — falta por no secret "
+                       "PACTHA_RESUMO_TENANTS."]
 
     detalhes = [d for r in resultados for d in _detalhes(r)]
     if detalhes:
@@ -265,7 +314,7 @@ def montar_mensagem(resultados: list, agora=None) -> str:
         if len(texto) <= LIMITE_TELEGRAM:
             return texto
 
-    # Nem o cabecalho coube (5 tenants com mensagens de erro enormes). Corta duro:
+    # Nem o cabecalho coube (todos os tenants com mensagens de erro enormes). Corta duro:
     # melhor um resumo truncado que chega do que uma mensagem que a API recusa.
     return "\n".join(cabecalho[:-2])[:LIMITE_TELEGRAM - 40] + "\n\n(… truncado)"
 
@@ -295,8 +344,13 @@ def enviar(texto: str) -> bool:
 
 def main() -> int:
     janela = int(os.getenv("RESUMO_JANELA_HORAS", "24") or "24")
-    resultados = [coletar(t, janela) for t in _tenants()]
-    texto = montar_mensagem(resultados)
+    tenants = _tenants()
+    resultados = [coletar(t, janela) for t in tenants]
+    ausentes = tenants_ausentes([str(t.get("slug") or "") for t in tenants],
+                                tenants_do_ci())
+    if ausentes:
+        print(f"[resumo] deployados e fora do secret: {', '.join(ausentes)}")
+    texto = montar_mensagem(resultados, ausentes=ausentes)
     print(texto)
     if (os.getenv("RESUMO_DRY_RUN") or "").strip() == "1":
         print("[resumo] DRY RUN — nada enviado")
