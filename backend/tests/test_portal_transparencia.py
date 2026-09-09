@@ -771,3 +771,31 @@ def test_o_plano_b_corrige_o_codigo_na_carteira():
     src = inspect.getsource(pt.execucao)
     assert 'verdadeiro = (itens[0].get("codigoEmenda")' in src
     assert "SET codigo_emenda = %s, codigo_confirmado = TRUE" in src
+
+
+# --------------------------------------------------------------------------
+# A chave com aspas — três dias de coleta morta, em silêncio.
+#
+# Medido em 09/09/2026: em `montesiao-mg` e `novapalma-rs` a chave estava
+# gravada no Coolify como `'33f7...'` (com aspas simples). O `.strip()` sozinho
+# não tira aspas, o header saía com elas e a CGU respondia 401 em TODA
+# requisição — a mesma chave, sem as aspas, responde 200. E o modo de falha era
+# mudo: coletor sem chave é um estado PREVISTO aqui (inerte por decisão), então
+# 401 e "não configurado" se parecem de fora.
+# --------------------------------------------------------------------------
+
+def test_chave_entre_aspas_e_aceita(monkeypatch):
+    """Aspas em volta de env var não são erro de digitação: em `.env` e em
+    docker-compose elas são sintaxe e somem; num campo de painel, ficam."""
+    for bruto in ("'33f7abc'", '"33f7abc"', "  33f7abc  ", "'33f7abc"):
+        monkeypatch.setenv("PORTAL_TRANSPARENCIA_API_KEY", bruto)
+        assert pt.chave() == "33f7abc", bruto
+
+
+def test_chave_vazia_continua_desligando_o_coletor(monkeypatch):
+    """O inerte por decisão precisa continuar existindo: quem não tem chave não
+    pode virar 'chave inválida' e passar a bater na CGU."""
+    for bruto in ("", "   ", "''", '""'):
+        monkeypatch.setenv("PORTAL_TRANSPARENCIA_API_KEY", bruto)
+        assert pt.chave() == ""
+        assert pt.habilitado() is False
