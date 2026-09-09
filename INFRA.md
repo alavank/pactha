@@ -49,7 +49,7 @@ containers e seu próprio banco**, todos buildados **do mesmo código**:
 | Monte Sião | `montesiao-mg` | Prefeitura de Monte Sião/MG (tem também o Painel Executivo) |
 | Santa Maria | `santamaria-rs` | Prefeitura de Santa Maria/RS — **aberto em 16/08/2026**, em avaliação |
 | Nova Palma | `novapalma-rs` | Prefeitura de Nova Palma/RS — **aberto em 01/09/2026** |
-| BGK | `bgk-rs` | **Assessoria BGK** — 10 municípios do RS (Bento Gonçalves, Veranópolis, Nova Prata, Guaporé, Serafina Corrêa, São Marcos, Carlos Barbosa, Garibaldi, Portão, Giruá). **Aberto em 08/09/2026.** Environment Coolify `bgk-rs` (id 24). Domínio `bgk.pactha.com.br` (DNS a apontar). |
+| BGK | `bgk-rs` | **Assessoria BGK** — 10 municípios do RS (Bento Gonçalves, Veranópolis, Nova Prata, Guaporé, Serafina Corrêa, São Marcos, Carlos Barbosa, Garibaldi, Portão, Giruá). **Aberto em 08/09/2026.** Environment Coolify `bgk-rs` (id 24). Domínio **`bgk.pactha.com.br` no ar desde 09/09/2026**. |
 
 Não existe multi-tenancy dentro do código: **o isolamento é por deploy**. O que diferencia
 um tenant do outro são as **env vars no Coolify** (`INSTANCE_SLUG`, `DATABASE_URL`,
@@ -116,7 +116,7 @@ Projeto Coolify: **`pactha`** (uuid `ksmwr13y4iyprom8i1znede8`), environment `pr
 
 > ⚠️⚠️ **CADA APP TEM DOIS ENDERECOS, E OS DOIS SAO O MESMO CONTAINER.** O `sslip.io`
 > resolve o IP do servidor dentro do proprio nome (`...-54-232-208-118.sslip.io` → 54.232.208.118),
-> e por isso todo app tem esse endereco cru de graca. Quatro dos seis tem TAMBEM um dominio
+> e por isso todo app tem esse endereco cru de graca. Os SEIS tem TAMBEM um dominio
 > proprio. **Nao ha ambiente de teste separado**: mexer por um endereco mexe no outro, no
 > mesmo banco.
 >
@@ -128,8 +128,8 @@ Projeto Coolify: **`pactha`** (uuid `ksmwr13y4iyprom8i1znede8`), environment `pr
 > | Trust | `trust.pactha.com.br` | `pactha-trust-54-232-208-118.sslip.io` |
 > | Monte Siao | `montesiao.mg.pactha.com.br` | `pactha-montesiao-mg-54-232-208-118.sslip.io` |
 > | Santa Maria | `santamaria.rs.pactha.com.br` | `pactha-santamaria-rs-54-232-208-118.sslip.io` |
-> | Nova Palma | *(nao tem)* | `pactha-novapalma-rs-54-232-208-118.sslip.io` |
-> | BGK | *(a apontar)* | `pactha-bgk-rs-54-232-208-118.sslip.io` — respondendo 200 em 09/09/2026 |
+> | Nova Palma | `novapalma.rs.pactha.com.br` | `pactha-novapalma-rs-54-232-208-118.sslip.io` |
+> | BGK | `bgk.pactha.com.br` | `pactha-bgk-rs-54-232-208-118.sslip.io` |
 >
 > ⚠️ Os dois primeiros **faltavam neste arquivo** ate 05/09/2026, e a ausencia custou uma
 > sessao inteira de desconfianca: quem le so o `INFRA.md` conclui que `freitas.pactha.com.br`
@@ -225,7 +225,7 @@ Projeto Coolify: **`pactha`** (uuid `ksmwr13y4iyprom8i1znede8`), environment `pr
 > **6o tenant, aberto em 08/09/2026 (PR #447).** Primeira **assessoria** com mais de um
 > município: 10 do RS (Bento Gonçalves, Veranópolis, Nova Prata, Guaporé, Serafina
 > Corrêa, São Marcos, Carlos Barbosa, Garibaldi, Portão, Giruá). Environment Coolify
-> `bgk-rs` (id 24); domínio `bgk.pactha.com.br` ainda **a apontar**.
+> `bgk-rs` (id 24); domínio `bgk.pactha.com.br` **no ar desde 09/09/2026**.
 >
 > Frontend e API **responderam 200 em 09/09/2026**, e a API já subiu com o código do
 > merge #446 (`/api/control/resumo-coleta` devolvendo 401 sem token, que é o certo).

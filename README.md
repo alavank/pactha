@@ -20,12 +20,12 @@ containers e seu **proprio banco**, todos buildados do **mesmo codigo**:
 | Trust | `trust` | consultoria (carteira MG) | `trust.pactha.com.br` |
 | Monte Siao/MG | `montesiao-mg` | prefeitura | `montesiao.mg.pactha.com.br` |
 | Santa Maria/RS | `santamaria-rs` | prefeitura | `santamaria.rs.pactha.com.br` |
-| Nova Palma/RS | `novapalma-rs` | prefeitura | **ainda sem dominio proprio** |
-| BGK/RS | `bgk-rs` | assessoria (10 municipios do RS) | **DNS a apontar** (`bgk.pactha.com.br`) |
+| Nova Palma/RS | `novapalma-rs` | prefeitura | `novapalma.rs.pactha.com.br` |
+| BGK/RS | `bgk-rs` | assessoria (10 municipios do RS) | `bgk.pactha.com.br` |
 
 > ⚠️ **DOIS ENDERECOS PARA O MESMO CONTAINER, e isto ja custou confusao.** Todo app tem o
 > endereco cru `pactha[-slug]-54-232-208-118.sslip.io` (o IP do servidor resolvido pelo
-> `sslip.io`), e quatro dos seis tem TAMBEM o dominio da tabela acima. **Sao o mesmo
+> `sslip.io`), e os seis tem TAMBEM o dominio da tabela acima. **Sao o mesmo
 > container e o mesmo banco** — nao existe ambiente de teste separado, e mexer por um
 > endereco mexe no outro. A tabela completa esta em [`INFRA.md`](INFRA.md) §3.
 
