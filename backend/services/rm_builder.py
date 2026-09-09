@@ -1959,7 +1959,13 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             "_pago": st == "paga",
             "tipo": tipo_label,
             "numero": _num_exib,
-            "objeto": row[5] or "",
+            # ⚠️ FALLBACK quando o objeto vem NULL. Proposta recem-enviada ("enviado
+            # para Analise") ainda nao tem objeto no portal (medido: 034595/2026,
+            # Araujos, objeto NULL). Sem isto o render do PDF OMITE a linha de Objeto
+            # (rm_pdf: so imprime se truthy) e o item aparece "sem informacao" — so o
+            # numero, num item da Parte 4. Com o texto, a linha sai e a ausencia fica
+            # HONESTA (a proposta e real: tem situacao e valor), em vez de um branco.
+            "objeto": row[5] or "(objeto ainda não informado pelo portal)",
             # PROGRAMA (row[24], ULTIMA coluna do SELECT). Fica ao lado do objeto no
             # dict e, no PDF, na linha logo abaixo dele (rm_pdf._campos_do_item).
             # Vazio quando a proposta nunca foi coberta pelo dado aberto nem pelo
@@ -2242,7 +2248,13 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             "banco": "", "agencia": "", "conta": "",
             "saldo_bancario": None, "dt_saldo": None,
             "dt_fim_vigencia": None,
-            "situacao_atual": sit,
+            # ⚠️ FALLBACK: `status_indicacao` do SIGCON vem vazio com frequencia
+            # (raspado de uma celula que costuma estar em branco). Sem isto o item
+            # "Indicação" sai SEM a linha de Situação atual — o "estadual sem
+            # situação" reclamado. O texto e honesto: nao inventa um estagio, so
+            # diz que a fonte nao informou. (A CLASSIFICACAO por parte usa `st`
+            # acima, derivado do `sit` cru — este fallback e so de EXIBICAO.)
+            "situacao_atual": sit or "Situação não informada pelo SIGCON",
             "fonte": "emenda_estadual",
             "fonte_ref": str(r[0]),
         }, ano=r[2])
