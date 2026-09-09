@@ -215,8 +215,25 @@ WITH marca AS (
         ('Somente consulta', 'documentos.exportar'),
         ('Somente consulta', 'convenios.ver'),
         ('Somente consulta', 'convenios.exportar'),
-        ('Somente consulta', 'transferegov.ver'),
-        ('Somente consulta', 'transferegov.exportar'),
+        -- ⚠️ As oito telas federais, uma a uma. `transferegov.ver` e
+        -- `transferegov.exportar` DEIXARAM DE EXISTIR em 05/09/2026, quando
+        -- add_permissoes_por_tela.sql fatiou o modulo por tela; a lista abaixo
+        -- e a MESMA traducao que aquele arquivo aplica a quem ja tinha a chave
+        -- antiga. So cinco das oito exportam (as tres restantes nao tem rota
+        -- de PDF), e e por isso que `ver` tem oito linhas e `exportar` cinco.
+        ('Somente consulta', 'transferegov_radar.ver'),
+        ('Somente consulta', 'transferegov_geral.ver'),
+        ('Somente consulta', 'transferegov_especiais.ver'),
+        ('Somente consulta', 'transferegov_pac.ver'),
+        ('Somente consulta', 'transferegov_voluntarias.ver'),
+        ('Somente consulta', 'transferegov_rejeitadas.ver'),
+        ('Somente consulta', 'transferegov_encerradas.ver'),
+        ('Somente consulta', 'transferegov_cnpj.ver'),
+        ('Somente consulta', 'transferegov_geral.exportar'),
+        ('Somente consulta', 'transferegov_especiais.exportar'),
+        ('Somente consulta', 'transferegov_voluntarias.exportar'),
+        ('Somente consulta', 'transferegov_rejeitadas.exportar'),
+        ('Somente consulta', 'transferegov_encerradas.exportar'),
         ('Somente consulta', 'cauc.ver'),
         ('Somente consulta', 'cauc.exportar'),
         ('Somente consulta', 'sismob.ver'),
@@ -257,8 +274,20 @@ WITH marca AS (
         -- trabalho de quem opera a Gestao Interna.
         ('Gestao Interna - operacao', 'convenios.ver'),
         ('Gestao Interna - operacao', 'convenios.exportar'),
-        ('Gestao Interna - operacao', 'transferegov.ver'),
-        ('Gestao Interna - operacao', 'transferegov.exportar'),
+        -- As oito telas federais (ver o bloco do molde 1 sobre o fatiamento).
+        ('Gestao Interna - operacao', 'transferegov_radar.ver'),
+        ('Gestao Interna - operacao', 'transferegov_geral.ver'),
+        ('Gestao Interna - operacao', 'transferegov_especiais.ver'),
+        ('Gestao Interna - operacao', 'transferegov_pac.ver'),
+        ('Gestao Interna - operacao', 'transferegov_voluntarias.ver'),
+        ('Gestao Interna - operacao', 'transferegov_rejeitadas.ver'),
+        ('Gestao Interna - operacao', 'transferegov_encerradas.ver'),
+        ('Gestao Interna - operacao', 'transferegov_cnpj.ver'),
+        ('Gestao Interna - operacao', 'transferegov_geral.exportar'),
+        ('Gestao Interna - operacao', 'transferegov_especiais.exportar'),
+        ('Gestao Interna - operacao', 'transferegov_voluntarias.exportar'),
+        ('Gestao Interna - operacao', 'transferegov_rejeitadas.exportar'),
+        ('Gestao Interna - operacao', 'transferegov_encerradas.exportar'),
         ('Gestao Interna - operacao', 'cauc.ver'),
         ('Gestao Interna - operacao', 'cauc.exportar'),
         -- (`telegram.vincular` saiu daqui em 05/09/2026, no mesmo commit que a
@@ -274,8 +303,22 @@ WITH marca AS (
         ('Cofre e convenios', 'convenios.ver'),
         ('Cofre e convenios', 'convenios.exportar'),
         ('Cofre e convenios', 'convenios.atualizar'),
-        ('Cofre e convenios', 'transferegov.ver'),
-        ('Cofre e convenios', 'transferegov.exportar'),
+        -- As oito telas federais (ver o bloco do molde 1 sobre o fatiamento).
+        -- `transferegov.atualizar` NAO foi fatiada e continua valendo: coleta e
+        -- acao de MODULO, nao de tela.
+        ('Cofre e convenios', 'transferegov_radar.ver'),
+        ('Cofre e convenios', 'transferegov_geral.ver'),
+        ('Cofre e convenios', 'transferegov_especiais.ver'),
+        ('Cofre e convenios', 'transferegov_pac.ver'),
+        ('Cofre e convenios', 'transferegov_voluntarias.ver'),
+        ('Cofre e convenios', 'transferegov_rejeitadas.ver'),
+        ('Cofre e convenios', 'transferegov_encerradas.ver'),
+        ('Cofre e convenios', 'transferegov_cnpj.ver'),
+        ('Cofre e convenios', 'transferegov_geral.exportar'),
+        ('Cofre e convenios', 'transferegov_especiais.exportar'),
+        ('Cofre e convenios', 'transferegov_voluntarias.exportar'),
+        ('Cofre e convenios', 'transferegov_rejeitadas.exportar'),
+        ('Cofre e convenios', 'transferegov_encerradas.exportar'),
         ('Cofre e convenios', 'transferegov.atualizar'),
         ('Cofre e convenios', 'cauc.ver'),
         ('Cofre e convenios', 'cauc.exportar'),
@@ -295,10 +338,32 @@ WITH marca AS (
         ('Painel do prefeito', 'bi.exportar'),
         ('Painel do prefeito', 'bi.tela')
 ), ins_conteudo AS (
+    -- ⚠️⚠️ O JOIN COM `permissoes_catalogo` E UM GUARDA, NAO ENFEITE. Leia
+    -- antes de "simplificar" tirando ele.
+    --
+    -- `permissao` e FK do catalogo. Se a lista acima citar UMA chave que o
+    -- catalogo nao tem, o INSERT viola a FK e, como toda esta migration e UMA
+    -- transacao, o rollback desfaz TAMBEM o `CREATE TABLE` das tres tabelas de
+    -- molde la de cima. O runner engole o erro e a API sobe — entao o tenant
+    -- nasce SEM a funcionalidade de modelos e ninguem fica sabendo.
+    --
+    -- Foi exatamente o que aconteceu entre 05/09/2026 e 09/09/2026: o
+    -- fatiamento das permissoes por tela renomeou `transferegov.ver` e
+    -- `transferegov.exportar`, esta semente ficou para tras, e TODO banco
+    -- criado depois disso nasceu sem as tabelas de molde. Nao doeu nos cinco
+    -- tenants antigos porque neles a chave velha continua no catalogo (o
+    -- fatiamento nao apaga nada), o que fez o defeito ser invisivel.
+    --
+    -- Com o JOIN, a mesma distracao no futuro custa um molde INCOMPLETO —
+    -- defeito pequeno, visivel na tela e corrigivel a mao — em vez da
+    -- funcionalidade inteira ausente. `tests/test_modelos_permissao_catalogo.py`
+    -- pega antes, mas o guarda fica: teste protege quem roda a suite, o JOIN
+    -- protege o banco.
     INSERT INTO modelo_permissoes (modelo_id, permissao)
     SELECT n.id, c.permissao
       FROM novos n
       JOIN conteudo c ON c.modelo = n.nome
+      JOIN permissoes_catalogo pc ON pc.chave = c.permissao
     ON CONFLICT DO NOTHING
     RETURNING modelo_id
 ), alcance(modelo, recurso, escopo) AS (
@@ -311,8 +376,12 @@ WITH marca AS (
         ('Gestao Interna - operacao', 'rm', 'proprios'),
         ('Gestao Interna - operacao', 'documentos', 'proprios')
 )
+-- Mesmo guarda do INSERT anterior, pela mesma razao: `recurso` e FK de
+-- `escopo_recursos`. Os tres recursos citados existem hoje, mas quem renomear
+-- um deles amanha nao vai lembrar que esta semente os cita.
 INSERT INTO modelo_escopos (modelo_id, recurso, escopo)
 SELECT n.id, a.recurso, a.escopo
   FROM novos n
   JOIN alcance a ON a.modelo = n.nome
+  JOIN escopo_recursos er ON er.recurso = a.recurso
 ON CONFLICT DO NOTHING;
