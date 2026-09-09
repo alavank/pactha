@@ -1,0 +1,64 @@
+# Resumo diario da coleta dos cinco tenants, numa mensagem so no Telegram.
+#
+# ⭐ POR QUE AQUI E NAO NUMA SCHEDULED TASK DO COOLIFY
+#
+# Porque quem esta morto nao manda mensagem. O watchdog que roda dentro do worker
+# nao consegue relatar a propria morte: se o container cair ou a task nao
+# disparar, ele nao roda, nao alerta, e o silencio fica identico a saude — foi
+# essa a forma dos 6 dias de regularidade estadual parada (CONTINUAR.md §1.18).
+# O runner do GitHub e a unica coisa que este projeto ja usa e que nao mora na
+# mesma VPS: se a VPS inteira cair, este job continua rodando e diz isso.
+#
+# ⚠️ O cron do GitHub Actions ATRASA (5 a 30 min, as vezes mais em horario de
+# pico). Isso e aceitavel para um resumo diario e seria inaceitavel para alarme
+# urgente — quem grita na hora continua sendo o Telegram do worker, a cada 30 min.
+# Nao troque um pelo outro: eles cobrem falhas diferentes.
+#
+# Segredos exigidos no repo:
+#   PACTHA_RESUMO_TENANTS   JSON com os cinco: [{"slug","api_url","control_token"}]
+#                           control_token = valor de CONTROL_TOKEN_BOOTSTRAP da
+#                           API daquele tenant (ja existe nos cinco).
+#   RESUMO_TELEGRAM_TOKEN   token do bot (o mesmo pactha_watchdog_bot serve)
+#   RESUMO_TELEGRAM_CHAT_ID destino
+name: resumo-coleta
+
+on:
+  schedule:
+    # 10:00 UTC = 07:00 BRT. ⚠️ O runner NAO segue horario de verao brasileiro
+    # (que hoje nao existe); se voltar a existir, esta linha vira 09:00 UTC.
+    - cron: "0 10 * * *"
+  workflow_dispatch:
+    inputs:
+      janela_horas:
+        description: "Janela em horas (default 24)"
+        required: false
+        default: "24"
+      dry_run:
+        description: "1 = so imprime no log, nao envia no Telegram"
+        required: false
+        default: "0"
+
+# Sem permissao nenhuma no repo: o job so le APIs externas e fala no Telegram.
+permissions: {}
+
+jobs:
+  resumo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Sem `pip install`: o script e stdlib pura, de proposito. A unica coisa
+      # pior que um vigia mudo e um vigia que quebra resolvendo dependencia.
+      - name: Enviar resumo
+        env:
+          PACTHA_RESUMO_TENANTS: ${{ secrets.PACTHA_RESUMO_TENANTS }}
+          RESUMO_TELEGRAM_TOKEN: ${{ secrets.RESUMO_TELEGRAM_TOKEN }}
+          RESUMO_TELEGRAM_CHAT_ID: ${{ secrets.RESUMO_TELEGRAM_CHAT_ID }}
+          RESUMO_JANELA_HORAS: ${{ inputs.janela_horas || '24' }}
+          RESUMO_DRY_RUN: ${{ inputs.dry_run || '0' }}
+        run: python scripts/resumo_coleta.py

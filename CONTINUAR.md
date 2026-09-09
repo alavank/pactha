@@ -1220,11 +1220,18 @@ que o processo está enxergando — e no dia em que ligar um canal, é o process
 um por tenant — cinco workers no mesmo check fazem quatro mortos passarem despercebidos
 enquanto um vivo mantém o verde.
 
-### A proposta que ficou em cima da mesa (08/09/2026, à noite)
+### O resumo diário (08-09/09/2026) — implementado, faltam os secrets
+
+> ✅ **Código pronto e testado** (PR do resumo diário): rota
+> `GET /api/control/resumo-coleta`, `scripts/resumo_coleta.py` e o workflow
+> `.github/workflows/resumo-coleta.yml` às **10:00 UTC = 07:00 BRT**. Formato escolhido
+> pelo dono: **uma mensagem com os cinco**, detalhando cada situação e o porquê.
+> **Falta só o dono criar 3 secrets no GitHub** — e nenhum token precisa ser criado, o
+> `CONTROL_TOKEN_BOOTSTRAP` já existe nos cinco (conferido dentro dos containers em 08/09).
 
 O dono perguntou se o pulso precisa mesmo de healthchecks.io, ou se dá para o próprio
 Telegram *"verificar se os crons rodaram, quais deram erro, qual município, por quê"*. A
-resposta desenhada, ainda **não implementada**:
+resposta, que virou o desenho:
 
 **Um resumo diário rodando no GitHub Actions**, não no worker. A restrição que decide o
 lugar é física, não de canal: **quem está morto não manda mensagem** — o observador não pode
@@ -1244,12 +1251,27 @@ indistinguível de verde e cheio. Trazer a **contagem ao lado da mediana** no re
 lugar natural de pegar isso.
 
 Custos honestos: o cron do Actions **atrasa 5–30 min** (irrelevante para resumo diário,
-ruim para urgência — por isso o Telegram do worker continua sendo quem grita na hora), e
-precisa de **um token de serviço por tenant** nos secrets do GitHub. Tamanho estimado:
-~150 linhas de Python + um workflow + 5 secrets.
+ruim para urgência — por isso o Telegram do worker continua sendo quem grita na hora).
 
-**Decisões que faltam ao dono:** o horário (sugerido 07h) e se quer **uma mensagem com os
-cinco** ou **uma por tenant**.
+⭐ **Três defeitos que só apareceram ao rodar o SQL contra um banco de verdade** (o
+`novapalma`, em 08/09) e que o `pglast` jamais pegaria:
+
+1. **Os achados se repetem.** O watchdog roda a cada 30 min com cooldown de 180, então um
+   problema que dura o dia deixa ~7 linhas idênticas: `tce_rs_portal` 7×,
+   `transferegov_lote` 7×, `simec_par` 4×, `cauc` 3× — **21 linhas para 4 problemas**. Um
+   resumo assim deixa de ser lido na segunda semana. Hoje é deduplicado por `(tipo, chave)`
+   e a contagem virou informação: 7× em 24h é "persistente", 1× é "piscou".
+2. **A mensagem do watchdog carrega o markdown e o slug**, que o resumo já imprime no
+   cabeçalho do item — três linhas de ruído por achado, num relatório com teto de 4.096
+   caracteres.
+3. **O `error_message` está preenchido de verdade** — 27 de 27 falhas de um tenant tinham
+   texto (`private=CAIU, execucao=CAIU, prestacao=CAIU`, do `govbr_sessao`). Era a premissa
+   do pedido inteiro e valia confirmar antes de prometer.
+
+**Falta ao dono:** criar os três secrets no repositório (`PACTHA_RESUMO_TENANTS`,
+`RESUMO_TELEGRAM_TOKEN`, `RESUMO_TELEGRAM_CHAT_ID`) e rodar o workflow uma vez pelo
+**Run workflow** com `dry_run=1` para ver a mensagem no log antes de ela começar a chegar
+sozinha às 07h.
 
 ## 2. ESTADO ATUAL (2026-09-04)
 
