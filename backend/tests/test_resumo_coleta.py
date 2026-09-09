@@ -387,6 +387,63 @@ def test_le_os_tenants_do_build_backend_de_verdade():
     assert len(nomes) >= 6, nomes
 
 
+def _tenant_fora(slug="freitas", erro="HTTP 401", recusa=False):
+    return {"slug": slug, "ok": False, "erro": erro, "recusa": recusa}
+
+
+# --------------------------------------------------------------------------
+# 6. O alarme mais alto tem de acertar o ENDERECO.
+#
+# Medido em 09/09/2026, ensaiando o script com o secret ainda vazio: as seis
+# APIs responderam 401 e o relatorio anunciou "suspeita de VPS fora do ar".
+# Estava tudo no ar; o errado era a credencial. Alarme que aponta o lugar errado
+# gasta a manha de quem tem pressa e, na terceira vez, deixa de ser lido.
+# --------------------------------------------------------------------------
+
+def test_todas_recusando_o_token_nao_vira_acusacao_de_vps():
+    msg = rc.montar_mensagem([_tenant_fora(s, "HTTP 401", recusa=True)
+                              for s in ("freitas", "trust", "bgk-rs")])
+    assert "credencial" in msg and "PACTHA_RESUMO_TENANTS" in msg
+    assert "VPS fora do ar" not in msg
+
+
+def test_silencio_de_todas_continua_acusando_a_vps():
+    """O alarme original e o motivo de este vigia existir; nao pode se perder no
+    caminho de ensinar o outro caso."""
+    msg = rc.montar_mensagem([_tenant_fora(s, "timeout") for s in ("freitas", "trust")])
+    assert "VPS fora do ar" in msg
+
+
+def test_recusa_misturada_com_silencio_diz_as_duas_coisas():
+    """Metade recusando e metade muda sao duas causas; escolher uma esconde a outra."""
+    msg = rc.montar_mensagem([_tenant_fora("freitas", "HTTP 401", recusa=True),
+                              _tenant_fora("trust", "timeout")])
+    assert "1 recusaram o token" in msg and "1 nao responderam" in msg
+
+
+def test_quem_respondeu_401_nao_e_descrito_como_mudo():
+    linha = rc._linha_tenant(_tenant_fora("bgk-rs", "HTTP 401", recusa=True))
+    assert "recusou o token" in linha and "nao respondeu" not in linha
+
+
+def test_coletar_marca_recusa_so_no_que_e_credencial(monkeypatch):
+    """503 e a VPS engasgando; 401/403/409 e a API viva dizendo nao. Confundir os
+    dois e o que fez o alarme apontar para o servidor errado."""
+    import urllib.error
+    import urllib.request
+
+    def responder(codigo):
+        def falso(req, timeout=None):
+            raise urllib.error.HTTPError(req.full_url, codigo, "x", {}, None)
+        monkeypatch.setattr(urllib.request, "urlopen", falso)
+        return rc.coletar({"slug": "x", "api_url": "https://x", "control_token": "t"}, 24)
+
+    assert responder(401)["recusa"] is True
+    assert responder(409)["recusa"] is True
+    assert responder(503)["recusa"] is False
+    assert "slug do secret" in responder(409)["erro"]
+
+
 def test_aviso_de_ausente_sobrevive_ao_corte():
     """Num dia ruim o corte come os detalhes de tras para frente; o ponto cego
     tem que estar acima da linha de corte, junto do cabecalho."""

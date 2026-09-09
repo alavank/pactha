@@ -156,14 +156,23 @@ def coletar(tenant: dict, janela: int) -> dict:
             detalhe += " (control token invalido, revogado ou sem escopo control:data:read)"
         elif e.code == 404:
             detalhe += " (rota /api/control/resumo-coleta ausente — tenant com codigo antigo)"
-        return {"slug": slug, "ok": False, "erro": detalhe}
+        elif e.code == 409:
+            detalhe += " (slug do secret nao e o desta API — duas URLs trocadas?)"
+        # ⚠️ RESPOSTA HTTP NAO E SILENCIO. Quem respondeu 401 esta VIVO: o
+        # problema e credencial, e mandar o dono olhar a VPS por causa disso e
+        # mandar no lugar errado no dia em que ele tem pressa.
+        return {"slug": slug, "ok": False, "erro": detalhe,
+                "recusa": e.code in (401, 403, 409)}
     except Exception as e:
         return {"slug": slug, "ok": False, "erro": f"{type(e).__name__}: {str(e)[:120]}"}
 
 
 def _linha_tenant(r: dict) -> str:
     if not r["ok"]:
-        return f"{ICONE['erro']} {r['slug']:<14} API nao respondeu — {r['erro']}"
+        # "nao respondeu" para quem respondeu 401 e mentira, e mentira num alarme
+        # manda procurar no lugar errado.
+        verbo = "API recusou o token" if r.get("recusa") else "API nao respondeu"
+        return f"{ICONE['erro']} {r['slug']:<14} {verbo} — {r['erro']}"
 
     d = r["dados"]
     rodadas = {x["status"]: x["n"] for x in d.get("rodadas", [])}
@@ -276,9 +285,25 @@ def montar_mensagem(resultados: list, agora=None, ausentes=None) -> str:
 
     fora = [r for r in resultados if not r["ok"]]
     if fora and len(fora) == len(resultados):
-        # O alarme mais alto que este relatorio sabe dar.
-        linhas += ["", f"{ICONE['erro']} NENHUMA das {len(fora)} APIs respondeu — "
-                       "suspeita de VPS fora do ar, nao de coleta."]
+        # O alarme mais alto que este relatorio sabe dar — e por isso mesmo ele
+        # precisa acertar o ENDERECO. Medido em 09/09/2026 com o secret ainda
+        # vazio: as seis APIs responderam 401 e a versao anterior anunciou
+        # "suspeita de VPS fora do ar". Mandar olhar o servidor quando o que
+        # esta errado e a credencial custa a manha inteira.
+        recusas = [r for r in fora if r.get("recusa")]
+        mudos = len(fora) - len(recusas)
+        if not mudos:
+            linhas += ["", f"{ICONE['erro']} As {len(fora)} APIs responderam e RECUSARAM o "
+                           "token — problema de credencial, nao de VPS: o secret "
+                           "PACTHA_RESUMO_TENANTS esta desatualizado ou o "
+                           "CONTROL_TOKEN_BOOTSTRAP foi rotacionado."]
+        elif recusas:
+            linhas += ["", f"{ICONE['erro']} NENHUM dos {len(fora)} tenants deu dados: "
+                           f"{len(recusas)} recusaram o token e {mudos} nao responderam — "
+                           "sao duas causas diferentes, olhe as duas."]
+        else:
+            linhas += ["", f"{ICONE['erro']} NENHUMA das {len(fora)} APIs respondeu — "
+                           "suspeita de VPS fora do ar, nao de coleta."]
 
     if ausentes:
         # Ponto cego, nao detalhe: tenant fora do secret nao aparece nem como
