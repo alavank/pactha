@@ -59,9 +59,22 @@ FRESCOR_HORAS_NACIONAL = {
     "transferegov_voluntarias": 30,
     "transferegov_pac": 30,
     "fns": 30,                       # 1x/dia
-    "cauc": 12,
-    "acordofes": 12,
-    "simec_par": 12,
+    # ⭐ MEDIDO CONTRA O CRON EM 09/09/2026, NOS SEIS WORKERS. Os prazos abaixo
+    # foram escritos quando estas fontes rodavam vezes ao dia; hoje TODAS rodam
+    # 1x/dia (ou com um vao de 20h, no caso do CAUC), e o prazo menor que a
+    # cadencia fazia a fonte nascer ATRASADA todo santo dia — inclusive as 07h
+    # BRT, que e a hora do resumo diario. O relatorio de 09/09 saiu com quatro
+    # itens que eram so isso, e o dono leu o conjunto como catastrofe.
+    #
+    #   cauc            `25 10-14 * * *`  -> 5 rodadas de manha e um vao de 20h
+    #   acordofes       dentro do run_all do cron `sigcon`, 1x/dia
+    #   simec_par       idem em MG; Scheduled Task propria diaria no RS
+    #
+    # Alarme que toca todo dia nao e alarme: e ruido que esconde o dia ruim.
+    # 30h = a cadencia real + folga, a mesma conta das outras diarias.
+    "cauc": 30,
+    "acordofes": 30,
+    "simec_par": 30,
     # Termos de Compromisso do SIMEC/PAR (PR #258). MESMO caso do `sismob` logo
     # abaixo — e por isso o MESMO numero: entra pendurado no
     # run_dadosabertos_cron.run_all() (que o cron do sigcon chama 4x/dia), mas o
@@ -92,11 +105,14 @@ FRESCOR_HORAS_NACIONAL = {
     # unica fonte em cron sem vigilancia nenhuma: a Freitas passou nove dias com
     # o CAGEC falhando todo dia e nada apitou.
     # 4x/dia -> 6h entre rodadas; 30h = quase cinco janelas perdidas.
-    # Lote horario do TransfereGov (PR #158): fonte PROPRIA no ingestion_log,
-    # separada do run() diario — um nao pode esconder a falha do outro. Roda de
-    # hora em hora; 6h = seis rodadas sem 'success' (perdidas OU 'parcial'
-    # persistente), que ja e problema real e nao ruido.
-    "transferegov_lote": 6,
+    # Lote do TransfereGov (PR #158): fonte PROPRIA no ingestion_log, separada do
+    # run() diario — um nao pode esconder a falha do outro.
+    # ⚠️ NAO E MAIS HORARIO, e o comentario anterior jurava que era. Medido nos
+    # seis workers em 09/09/2026: uma Scheduled Task por tenant, 1x/dia
+    # (freitas 03:25, trust 04:10, montesiao 04:25, santamaria 05:15,
+    # novapalma 05:45, bgk 05:52 UTC). Com o prazo de 6h a fonte ficava
+    # "parada" ~18 das 24 horas — e era o item que mais aparecia no resumo.
+    "transferegov_lote": 30,
     # FUNDO A FUNDO da saude (ConsultaFNS, publico). Scheduled Task propria, 1x
     # por dia -> 30h = um dia + folga, o mesmo numero das outras diarias.
     # ⚠️ NAO confundir com o irmao `fns` logo acima: aquele e a PROPOSTA
@@ -147,7 +163,10 @@ FRESCOR_HORAS_NACIONAL = {
 # ambiente inteiro. Espelha routers/freshness.py::_SOURCES_POR_UF.
 FRESCOR_HORAS_POR_UF = {
     "MG": {
-        "sigcon_scraper": 18,        # roda 4x/dia -> 6h; 18h = 3 janelas perdidas
+        # ⚠️ Tambem nao roda mais 4x/dia: a task `sigcon` e diaria nos tres
+        # tenants de MG (freitas 05:45, trust 06:30, montesiao 06:45 UTC),
+        # medido em 09/09/2026. 18h < 24h fazia o alarme tocar toda tarde.
+        "sigcon_scraper": 30,
         "cagec": 30,                 # 4x/dia -> 6h; 30h = quase cinco janelas
         "acordofes": 12,
     },
