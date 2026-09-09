@@ -36,8 +36,9 @@ Três regras:
 - **Um fato, um lugar.** Duplicar entre `README`/`INFRA`/`CONTINUAR` garante divergência;
   aponte para a fonte.
 
-**⚠️ One repo, FIVE tenants — a merge to `main` deploys all five.** Freitas, Trust,
-Monte Sião/MG, Santa Maria/RS and Nova Palma/RS each get their own containers and own Postgres database,
+**⚠️ One repo, SIX tenants — a merge to `main` deploys all six.** Freitas, Trust,
+Monte Sião/MG, Santa Maria/RS, Nova Palma/RS and BGK (assessoria com 10 municípios do RS,
+aberta em 08/09/2026) each get their own containers and own Postgres database,
 all built from the same code (`backend/**` or `frontend/**` changes trigger `.github/workflows/build-backend.yml`
 / `build-frontend.yml`, which build, then deploy all 5 tenants via the Coolify API). There is
 no multi-tenancy in code — isolation is by *deploy*: env vars differ per tenant

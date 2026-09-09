@@ -99,6 +99,20 @@ jobs:
               NEXT_PUBLIC_CLIENT_LOGO=/brasao-nova-palma.png
               NEXT_PUBLIC_CLIENT_SUBTITLE=Nova Palma - RS
               NEXT_PUBLIC_BI_MODULE=1
+          # BGK Assessoria — 6o tenant, aberto em 08/09/2026. ASSESSORIA com 10
+          # municipios do RS (Bento Goncalves, Veranopolis, Nova Prata, Guapore,
+          # Serafina Correa, Sao Marcos, Carlos Barbosa, Garibaldi, Portao, Girua).
+          # Dominio proprio bgk.pactha.com.br (DNS a apontar para 54.232.208.118);
+          # ate propagar, so o sslip. O API_PROXY_TARGET aponta para o sslip da API
+          # DELE — mesmo arranjo dos outros RS. Logo do proprio cliente.
+          - image: frontend-bgk-rs
+            context: frontend
+            args: |
+              NEXT_PUBLIC_API_URL=/api
+              API_PROXY_TARGET=https://pactha-bgk-rs-api-54-232-208-118.sslip.io
+              NEXT_PUBLIC_CLIENT_LOGO=/logo-bgk.png
+              NEXT_PUBLIC_CLIENT_SUBTITLE=Assessoria
+              NEXT_PUBLIC_BI_MODULE=1
           # O antigo "painel executivo" (pasta painel/, imagem painel-montesiao-mg)
           # SAIU da matriz: o Painel de Indicadores e o Modo Tela agora moram no
           # proprio frontend (rotas /dashboard e /tela), no mesmo deploy e no
@@ -155,7 +169,7 @@ jobs:
       COOLIFY_URL: ${{ secrets.COOLIFY_URL }}
       COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
     steps:
-      - name: Avanca tag e deploya os 5 frontends
+      - name: Avanca tag e deploya os 6 frontends
         run: |
           # Mesma politica de erro do backend: -e do Actions desligado, mutacao
           # falha alto com rollback de tag, leitura falha fechado.
@@ -187,7 +201,7 @@ jobs:
           # Os tenants NOVOS vao por ULTIMO de proposito (santamaria-rs, depois
           # novapalma-rs): se um deles emperrar na fila do Coolify, os antigos
           # ja terminaram. novapalma-rs entrou em 01/09/2026.
-          for APP in qgmw4e5wjem1e8jit2wyvo1d j5ghp71lff003d5rfaynvy5y bryvqhhcu97lc3ku7a2hss0q eohjo0cy4nbl6t7hiaqwagwf rpqpxroy5orsuidrbfezlzkt; do
+          for APP in qgmw4e5wjem1e8jit2wyvo1d j5ghp71lff003d5rfaynvy5y bryvqhhcu97lc3ku7a2hss0q eohjo0cy4nbl6t7hiaqwagwf rpqpxroy5orsuidrbfezlzkt srbi2qotciphxdxhn6io25a3; do
             OLD_TAG=$("${CURL[@]}" "$COOLIFY_URL/api/v1/applications/$APP" | jq -r '.docker_registry_image_tag // ""')
             if ! "${CURL[@]}" -X PATCH -H "Content-Type: application/json" \
                  -d "{\"docker_registry_image_tag\":\"$TAG\"}" \

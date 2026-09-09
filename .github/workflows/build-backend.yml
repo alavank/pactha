@@ -129,6 +129,7 @@ jobs:
         montesiao:chr0n883hp19tjh7829k85a7:jhf0kjhps5keujiyhhsnvjt6
         santamaria:ufjctldngc14dsdw8pxnqivl:wquremniv57gag3tlil8uf6d
         novapalma:gemcwirmbelk1dztp2pbcqpf:kqcnvdsdkgn1efkm4nog8oes
+        bgk:qhafp9uqmsvny75rzykmibdx:6xast9rw0wbzbownss9vamfq
     steps:
       - name: Deploy por tenant (API -> migrations confirmadas -> worker com janela)
         run: |
