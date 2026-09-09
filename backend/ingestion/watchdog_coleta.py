@@ -78,6 +78,12 @@ FRESCOR_HORAS_NACIONAL = {
     # linha no log" (mais abaixo) deixaria a chave dormindo.
     "simec_termos": 30,              # 1x/dia (auto-throttle no proprio ingest)
     "siconv_convenio_backfill": 30,
+    # Licitacoes por dado aberto (PR de 09/09/2026). Pendurada no run()
+    # diario do transferegov_voluntarias -> 1x/dia; 30h = um dia + folga.
+    # ⚠️ Entra no catalogo NO MESMO PR que a fonte: vigia que se adiciona
+    # "depois" e o vigia que nunca chega, e o dado atras do login ja ficou
+    # sete dias parado sem ninguem ver.
+    "siconv_licitacao": 30,
     "sismob": 30,                    # 1x/dia (auto-throttle no proprio ingest)
     # ⚠️ CAGEC ENTRA COM O VOCABULARIO CORRIGIDO (ver STATUS_SUCESSO abaixo).
     # Ele nunca grava 'success' — grava 'ok'/'parcial'/'erro'. Enquanto o filtro

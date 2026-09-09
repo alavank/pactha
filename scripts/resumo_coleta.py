@@ -66,6 +66,7 @@ ONDE_OLHAR = {
     "govbr_renew": "renovacao da sessao gov.br (extensao do Chrome)",
     "obrasgov": "api-publica.obrasgov.gestao.gov.br (o outro host devolve 429)",
     "transferegov_opendata": "dados abertos do TransfereGov (siconv_*.zip)",
+    "siconv_licitacao": "dump publico siconv_licitacao.zip (nao depende de login)",
     "transferegov_voluntarias": "APIs novas do TransfereGov",
     "transferegov_pac": "APIs novas do TransfereGov",
     "siconfi": "SICONFI/Tesouro (contas entregues + CAPAG)",

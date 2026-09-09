@@ -2480,6 +2480,16 @@ async def run():
                 logger.info(f"  backfill clausula/contratacao: {ncl} linha(s) atualizadas")
             except Exception as e:
                 logger.warning(f"  backfill clausula falhou: {str(e)[:160]}")
+            # LICITACOES pelo dado aberto — o mesmo campo que a tela LOGADA
+            # preenchia, sem depender de sessao gov.br (que ficou 7 dias morta em
+            # 09/2026 sem ninguem ver). Fica aqui, junto dos irmaos, pelo mesmo
+            # motivo deles: roda mesmo quando o navegador nao termina.
+            try:
+                from ingestion import siconv_licitacao as _lic
+                nlic = _lic.coletar(use_cache=False)
+                logger.info(f"  licitacoes (dado aberto): {nlic} linha(s) atualizadas")
+            except Exception as e:
+                logger.warning(f"  licitacoes (dado aberto) falhou: {str(e)[:160]}")
         except Exception as e:
             logger.warning(f"  camada de dados abertos falhou (segue p/ navegador): {e}")
 
