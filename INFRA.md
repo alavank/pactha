@@ -605,6 +605,11 @@ daquele tenant viram lixo. Cada tenant tem a sua — **nunca copie a de um para 
   `{"data":[{"key":..,"value":..,"is_build_time":bool,"is_preview":false}]}`.
   ⚠️ O `POST /envs` simples **não aceita** `is_build_time` — use o bulk.
   `NEXT_PUBLIC_*` e `API_PROXY_TARGET` precisam de `is_build_time:true`.
+  ✅ **O bulk é UPSERT, não substituição** — medido em 08/09/2026 nos cinco workers ao
+  ligar o canal do watchdog: mandando 2 chaves, o freitas foi de 11 para 13 envs de
+  produção e **nenhuma** das outras sumiu. O nome "bulk" sugere o contrário e já fez
+  sessão hesitar; mesmo assim, `GET /envs` antes é barato e é a única rede se a
+  próxima versão do Coolify mudar isso.
 - **Domínio:** `PATCH $B/applications/<uuid>` com `{"domains":"https://..."}` + redeploy.
 - **Scheduled Tasks:** `GET/POST $B/applications/<worker_uuid>/scheduled-tasks`.
 - **Banco:** `GET $B/databases/<uuid>` (campos `status`, `internal_db_url`).
