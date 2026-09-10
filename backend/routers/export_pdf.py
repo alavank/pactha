@@ -263,6 +263,9 @@ async def export_convenios_pdf(
         _br(l["repasse"]),
         _br(l["assinatura"]),
         _br(l["vigencia"]),
+        # Dias p/ fim da vigencia — mesma formatacao do Excel/Word (cexp), p/ os
+        # tres formatos mostrarem o mesmo valor.
+        cexp.dias_vigencia_txt(l["dias_vigencia"]),
     ] for l in linhas]
     # O titulo nao pode mais cravar "SIGCON-MG": o produto e vendido em MG, ES,
     # GO e TO, e emitir "Convenios SIGCON-MG — Goiania/GO" e afirmar que o dado
@@ -312,7 +315,7 @@ async def export_convenios_pdf(
         corpo = _build_pdf(
             _titulo,
             _sub,
-            ["Fonte", "Proposta", "Plano", "Instrumento", "Órgão", "Objeto", "Situação", "Repasse", "Assinatura", "Vigência"],
+            ["Fonte", "Proposta", "Plano", "Instrumento", "Órgão", "Objeto", "Situação", "Repasse", "Assinatura", "Vigência", "Dias p/ fim vig."],
             rows,
         )
         nome_arq = f"{base_nome}.pdf"

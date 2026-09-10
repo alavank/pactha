@@ -38,6 +38,11 @@ COLUNAS: list[tuple[str, str, int]] = [
     ("repasse", "Repasse (R$)", 16),
     ("assinatura", "Assinatura", 13),
     ("vigencia", "Fim da vigência", 15),
+    # Dias entre hoje e o fim da vigencia. Inteiro COM sinal: positivo = ainda
+    # faltam; negativo = venceu ha tantos dias (mesma leitura do "Vencido há" da
+    # tela); vazio = sem data de vigencia (nao inventa prazo). Numero no Excel
+    # (da p/ ordenar e achar o que vence antes), texto nos outros dois.
+    ("dias_vigencia", "Dias p/ fim da vigência", 14),
 ]
 
 
@@ -62,6 +67,10 @@ def linha_de(c) -> dict:
     nr_instr = raw.get("nr_instrumento") or raw.get("numOriginal") or (
         c.nr_sigcon if c.nr_sigcon and "/" in c.nr_sigcon else "")
     plano = (c.nr_plano_trabalho or "") if (c.nr_plano_trabalho and "/" not in c.nr_plano_trabalho) else ""
+    # UMA data de fim de vigencia p/ as duas colunas (a data e os dias que faltam),
+    # p/ nunca divergirem: mesma prioridade da tela — a vigencia ATUAL (com aditivos)
+    # manda; a final e o fallback. Ver routers/convenios.py (dias_restantes).
+    venc = _dt(c.dt_vigencia_atual or c.dt_vigencia_final)
     return {
         "fonte": c.fonte or "",
         "proposta": nr_proposta or "",
@@ -73,7 +82,10 @@ def linha_de(c) -> dict:
         # Número de verdade no Excel (dá para somar); o PDF/Word formatam.
         "repasse": c.valor_concedente if c.valor_concedente is not None else c.valor_total,
         "assinatura": _dt(c.dt_vigencia_inicial),
-        "vigencia": _dt(c.dt_vigencia_atual or c.dt_vigencia_final),
+        "vigencia": venc,
+        # Dias que faltam p/ o fim da vigencia (None quando nao ha data — ausencia
+        # nao vira prazo zero). Negativo = ja venceu.
+        "dias_vigencia": (venc - date.today()).days if venc else None,
     }
 
 
@@ -89,6 +101,14 @@ def _brl(v) -> str:
 def _dbr(v) -> str:
     d = _dt(v)
     return d.strftime("%d/%m/%Y") if d else "-"
+
+
+def dias_vigencia_txt(v) -> str:
+    """Dias p/ fim da vigencia em TEXTO (PDF e Word): '-' quando não há data,
+    senão o inteiro com sinal (negativo = já venceu). O Excel usa o número cru
+    para poder ordenar. Público de propósito: o PDF (routers/export_pdf.py) chama
+    esta mesma função, para os três formatos formatarem igual."""
+    return "-" if v is None else str(int(v))
 
 
 def gerar_xlsx(linhas: list[dict], *, titulo: str, recorte: list[str],
@@ -124,9 +144,12 @@ def gerar_xlsx(linhas: list[dict], *, titulo: str, recorte: list[str],
             c = ws.cell(r, i, v if v is not None else "")
             c.font = normal
             c.border = borda
-            c.alignment = centro if chave in ("fonte", "situacao", "assinatura", "vigencia") else esq
+            c.alignment = centro if chave in ("fonte", "situacao", "assinatura", "vigencia", "dias_vigencia") else esq
             if chave in ("assinatura", "vigencia") and v:
                 c.number_format = "DD/MM/YYYY"
+            if chave == "dias_vigencia" and v is not None:
+                # Inteiro (com sinal): ordenavel/filtravel — o motivo de pedir Excel.
+                c.number_format = "0"
             if chave == "repasse" and v is not None:
                 # ⚠️ Número, não texto. Excel existe para somar e ordenar; um
                 # "R$ 1.234,56" em célula de texto quebra as duas coisas, e é o
@@ -231,6 +254,8 @@ def gerar_docx(linhas: list[dict], *, titulo: str, subtitulo: str,
                     txt = _brl(v)
                 elif chave in ("assinatura", "vigencia"):
                     txt = _dbr(v)
+                elif chave == "dias_vigencia":
+                    txt = dias_vigencia_txt(v)
                 else:
                     txt = str(v or "")
                     if chave == "objeto":
