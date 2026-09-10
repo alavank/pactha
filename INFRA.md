@@ -14,26 +14,39 @@
 | Provedor | **AWS Lightsail** |
 | IP | **54.232.208.118** |
 | Região | **sa-east-1a** (São Paulo, Brasil) |
-| Instância | t3.large — **2 vCPU / 7,6 GB RAM / 160 GB SSD (nvme)** |
+| Instância | **8 vCPU / 32 GB RAM / 640 GB SSD** — plano "Uso geral" do Lightsail. ⚠️ Medido na máquina em 09/09/2026 (`nproc` = 8, `free -h` = 30 GiB, `df -h /` = 619 GB com 6% em uso) e conferido no console da AWS. **Não é mais o t3.large de 2 vCPU/7,6 GB** que este arquivo descreveu até aqui — o upgrade foi feito justamente para as coletas rodarem mais rápido. |
 | Orquestração | **Coolify v4.1.2** — painel em `http://54.232.208.118:8000` |
 | SSH | `ssh -i ~/.ssh/coolify_localhost root@54.232.208.118` — ⚠️ **é este que funciona.** Existe também um usuário `claude` (`~/.ssh/claude_lightsail`, atalho `lightsail` no `~/.ssh/config`), mas ele **expirou** (`Your account has expired`, medido em 08/09/2026): a chave autentica e o login é recusado depois. Se for renovar, `chage -E -1 claude` no servidor. |
 | Escala do host | 43 containers · 11 projetos · 24 aplicações · 12 bancos PostgreSQL |
 
-### ⚠️ A máquina é BURSTABLE — leia antes de rodar qualquer coisa pesada
+### A máquina tem folga — mas o host é compartilhado
 
-A instância tem **baseline de CPU de 30%**, ou seja, na prática **~0,6 vCPU sustentado**.
-Rajadas curtas usam créditos; carga contínua derruba a máquina inteira para o baseline —
-e nesse host moram **outros 10 projetos** além do PACTHA.
+⚠️ **Este bloco dizia o contrário até 09/09/2026** ("burstable, baseline de 30%,
+~0,6 vCPU sustentado, não paralelize nada"). Aquilo descrevia o t3.large antigo e
+**parou de valer com o upgrade**. O texto velho custou caro em sessão: levou a
+recusar carga manual nos seis tenants por medo de derrubar o host, quando a
+medição no momento do disparo mostrou **load 3.97 em 8 CPUs** — menos da metade.
 
-Consequências práticas para este repo:
+Referência medida em 09/09/2026, com os seis workers coletando TransfereGov ao
+mesmo tempo:
 
-- **Não paralelizar scraping.** `SIGCON_CONCURRENCY=1` em todos os workers. Não aumente.
-- **Não rodar os crons dos tenants no mesmo horário.** Eles já estão **escalonados de
-  propósito** (ver §5) — não "arrume" isso deixando todos às 5h.
-- **Não disparar rebuild dos 10 apps ao mesmo tempo.** Build de Next.js + imagem com
-  Chromium é caro; faça um de cada vez.
-- Playwright/Chromium é o maior consumidor. Os crons já rodam com `flock` (não sobrepõe
-  execução) e `timeout` (mata processo pendurado).
+| | |
+|---|---|
+| Load com os 6 em coleta | **3.97** (teto confortável = 8) |
+| RAM | 30 GiB total · 6,5 usados · 22 em cache · **24 disponíveis** |
+| Disco | 619 GB · **6% em uso** |
+
+O que continua valendo, e por outros motivos que não a falta de CPU:
+
+- **`SIGCON_CONCURRENCY=1`** — aqui o limite é o PORTAL, não a máquina: o SIGCON
+  recusa e chega a bloquear credencial sob paralelismo. Não aumente.
+- **Crons escalonados entre tenants** (ver §5) — o motivo agora é não bater seis
+  vezes no mesmo portal federal no mesmo minuto, e não poupar vCPU.
+- **Outros 10 projetos moram neste host.** Folga não é convite para ocupar tudo:
+  meça (`uptime`, `free -h`) antes e depois de qualquer carga fora do comum.
+- Playwright/Chromium continua sendo o processo mais pesado, e os crons seguem
+  com `flock` (não sobrepõe execução) e `timeout` (mata processo pendurado) —
+  isso protege contra coleta duplicada, não contra CPU.
 
 ---
 
@@ -210,8 +223,10 @@ Projeto Coolify: **`pactha`** (uuid `ksmwr13y4iyprom8i1znede8`), environment `pr
 >
 > **Os crons dele estao 25 min a frente dos do santamaria-rs** (mesmo conjunto de
 > fontes do RS). Nao "arrume" isso alinhando os dois: os dois workers rodam o
-> mesmo scraping no mesmo host de 0,6 vCPU sustentado, e o `flock` de cada tarefa
-> protege ela de si mesma, nao da tarefa irma no outro container.
+> mesmo scraping contra o MESMO PORTAL, e o `flock` de cada tarefa protege ela de
+> si mesma, nao da tarefa irma no outro container. (O motivo escrito aqui era
+> "host de 0,6 vCPU sustentado"; a maquina tem 8 vCPU desde o upgrade — §1 — e a
+> razao de verdade sempre foi o portal do outro lado.)
 
 ### BGK / RS
 
@@ -670,8 +685,8 @@ daquele tenant viram lixo. Cada tenant tem a sua — **nunca copie a de um para 
      01:58Z e ainda em `* * * * *`: **34 horas, ~1.440 execuções**. Era só uma sonda de
      diagnóstico (`select uf,count(*) from municipios where active group by 1` jogado
      no stdout do PID 1), então não bateu em portal nenhum — mas foram 1.440 processos
-     Python e 1.440 conexões novas ao Postgres da **prefeitura com uso real**, num host
-     de 0,6 vCPU sustentado, além de encher o log do container e atrapalhar a leitura de
+     Python e 1.440 conexões novas ao Postgres da **prefeitura com uso real**, além de
+     encher o log do container e atrapalhar a leitura de
      log de verdade. Apagada em 04/09. **Ao terminar uma auditoria, releia
      `GET /applications/<worker>/scheduled-tasks` dos cinco workers e confirme que
      nenhuma task ficou em `* * * * *` e que não sobrou nome `tmp-*`.** É uma chamada,

@@ -117,7 +117,9 @@ jobs:
           # SAIU da matriz: o Painel de Indicadores e o Modo Tela agora moram no
           # proprio frontend (rotas /dashboard e /tela), no mesmo deploy e no
           # mesmo login. Manter um segundo app so para a TV era um build a mais
-          # por push numa VPS burstable, sem nada em troca.
+          # por push, sem nada em troca. (O texto daqui dizia "VPS burstable";
+          # a maquina tem 8 vCPU desde o upgrade -- ver INFRA.md §1. O argumento
+          # nunca dependeu disso: build inutil e build inutil em qualquer CPU.)
     steps:
       - name: Checkout
         uses: actions/checkout@v4

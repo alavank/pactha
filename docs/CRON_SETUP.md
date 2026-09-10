@@ -22,9 +22,14 @@ de confiar num horário daqui, leia o Coolify:
 
 ## Por que os horários são escalonados (não "arrume" isso)
 
-A máquina é **burstable, com baseline de CPU de 30%** (~0,6 vCPU sustentado) e hospeda
-outros 10 projetos. Se os três tenants rodarem SIGCON/TransfereGov ao mesmo tempo, com
-três Chromium abertos, o host inteiro cai para o baseline. Por isso:
+⚠️ **A razão mudou em 09/09/2026.** Este parágrafo dizia que a máquina era burstable
+com baseline de 30% (~0,6 vCPU) e que o host cairia se os tenants coincidissem. Não é
+mais verdade: a instância tem **8 vCPU e 32 GB**, e os SEIS workers coletando
+TransfereGov ao mesmo tempo deram **load 3.97** — metade do teto.
+
+O escalonamento continua, por um motivo que não é CPU: **seis coletores batendo no
+mesmo portal federal no mesmo minuto** rendem bloqueio por IP e credencial recusada,
+que é justamente o que já custou fonte parada neste projeto. Por isso:
 
 - horários deslocados entre tenants (ver tabela);
 - `SIGCON_CONCURRENCY=1` em todos os workers — **não aumente**;
