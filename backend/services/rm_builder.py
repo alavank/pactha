@@ -254,6 +254,19 @@ def _iso(d) -> str | None:
     return str(d)
 
 
+def _iso_de_br(s) -> str | None:
+    """'dd/mm/aaaa' -> 'aaaa-mm-dd'. A data de pagamento do FNS chega do coletor
+    no formato brasileiro (o detalhe-pagamento devolve 'dataCriacaoSiafi' assim);
+    o resto do RM guarda datas em ISO (dt_saldo, dt_fim_vigencia) e os
+    formatadores (_fmt_dt/_fmt_data_curta) esperam ISO. Tolera valor ja-ISO e
+    vazio sem quebrar."""
+    s = str(s or "").strip()
+    if not s:
+        return None
+    m = re.match(r"^(\d{2})/(\d{2})/(\d{4})$", s)
+    return f"{m.group(3)}-{m.group(2)}-{m.group(1)}" if m else s
+
+
 def _is_prestacao_contas(situacao: str | None, dt_fim: date | None, situacao_atual: str = "") -> bool:
     """Retorna True quando o item deve cair em PARTE 3 (prestacao de contas /
     pagamento ja realizado / vigencia ja vencida)."""
@@ -1568,8 +1581,17 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
                         "valor_global": vlprop or vlpago,
                         "valor_repasse": vlpago,
                         "valor_contrapartida": 0,
-                        "banco": "", "agencia": "", "conta": "",
+                        # Domicilio bancario da OB (banco/agencia/CONTA) e DATA do
+                        # pagamento, coletados por proposta do detalhe-pagamento do
+                        # FNS (run_fns_local._detalhe_pagamento). O `conta` ja e
+                        # renderizado hoje (so vinha vazio no FNS); `dt_pagamento` e
+                        # o campo novo. Vazio/None quando a proposta ainda nao foi
+                        # paga ou nao foi re-coletada — nao vira "sem conta".
+                        "banco": (ind.get("codigo_banco") or ""),
+                        "agencia": (ind.get("codigo_agencia") or ""),
+                        "conta": (ind.get("conta_corrente") or ""),
                         "saldo_bancario": None, "dt_saldo": None,
+                        "dt_pagamento": _iso_de_br(ind.get("data_pagamento")),
                         "dt_fim_vigencia": None,
                         # Situacao REAL do portal FNS (ex.: "EM ANALISE PELA AREA
                         # FINALISTICA"), capturada por proposta no scraper. Fallback

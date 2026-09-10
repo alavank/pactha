@@ -247,6 +247,109 @@ def _ano_ms(epoch_ms) -> int | None:
         return None
 
 
+def _data_br_ms(epoch_ms) -> str | None:
+    """epoch em ms -> 'dd/mm/aaaa'. Usado p/ o obter-proposta, que devolve a data
+    do pagamento em ms (o detalhe-pagamento ja devolve a string pronta)."""
+    try:
+        return datetime.fromtimestamp(int(epoch_ms) / 1000).strftime("%d/%m/%Y")
+    except (TypeError, ValueError, OSError, OverflowError):
+        return None
+
+
+def _ord_data_br(s) -> tuple:
+    """'dd/mm/aaaa' -> (aaaa, mm, dd) p/ ordenar pagamentos; ausencia vai pro fim
+    (conta como o mais antigo)."""
+    try:
+        d, m, y = str(s or "").split("/")
+        return (int(y), int(m), int(d))
+    except (ValueError, AttributeError):
+        return (0, 0, 0)
+
+
+async def _get_json_retry(client: httpx.AsyncClient, url: str, params: dict,
+                          timeout: float = 25, tentativas: int = 3):
+    """GET que tolera o 500 TRANSITORIO do FNS. O portal responde, ~1 vez em 3,
+    HTTP 500 'could not extract ResultSet' (Hibernate) e acerta na tentativa
+    seguinte — medido a mao no obter-proposta desta mesma proposta (500,200,200).
+    Uma tentativa unica descartava em silencio a situacao e a data de ~1/3 das
+    propostas. Retorna o dict `resultado` (ou {}), ou None se esgotar/for 4xx
+    definitivo. Nunca levanta."""
+    for i in range(tentativas):
+        try:
+            r = await client.get(url, params=params, timeout=timeout)
+        except Exception:
+            await asyncio.sleep(0.4 * (i + 1))
+            continue
+        if r.status_code == 200 and "json" in r.headers.get("content-type", "").lower():
+            try:
+                return r.json().get("resultado", {}) or {}
+            except Exception:
+                return {}
+        # 4xx (fora 429) e definitivo: proposta inexistente/param invalido nao
+        # melhora ao repetir. So 5xx/429 e a janela ruim do portal, que readianta.
+        if r.status_code < 500 and r.status_code != 429:
+            return None
+        await asyncio.sleep(0.4 * (i + 1))
+    return None
+
+
+# O detalhe-pagamento do portal EXIGE estes parametros presentes, mesmo vazios:
+# faltando qualquer um, responde HTTP 400 (nao 404). Descobertos lendo as chamadas
+# da propria tela /#/detalhada (app/pages/detalhada/services/detalhadaService.js,
+# metodo recuperarPagamentos -> 'consulta-detalhada/detalhe-pagamento'). Mesma
+# licao do fns_faf.py: quando a API nao responde, abra a tela e leia o que ela chama.
+_DETALHE_PGTO_VAZIOS = {
+    "mes": "", "tipoConsulta": "", "blocos": "", "grupo": "", "componentes": "",
+    "acoes": "", "repasse": "", "dataInicialOb": "", "dataFinalOb": "",
+    "nuAcaoJudicial": "", "cpfCnpjUg": "", "processo": "", "portaria": "",
+}
+
+
+async def _detalhe_pagamento(client: httpx.AsyncClient, uf: str, cod_fns: str,
+                             nuprop: str, anos: list[int]) -> list[dict]:
+    """DATA do pagamento + DOMICILIO BANCARIO (banco/agencia/CONTA) de cada
+    pagamento de UMA proposta, do endpoint publico
+    /recursos/consulta-detalhada/detalhe-pagamento.
+
+    ⚠️ Por que este endpoint, e nao o obter-proposta. O obter-proposta traz os
+    pagamentos com a data (dtCriacaoSiafi) e a Ordem Bancaria (nuOb), mas NAO o
+    numero da conta — varri o payload inteiro e nao ha banco/agencia/conta em
+    lugar nenhum. A conta so aparece nesta tela detalhada (o `contaCorrente`,
+    ao lado de `codigoBanco`/`codigoAgencia`), a mesma que o gestor abre no olho
+    da consulta detalhada.
+
+    ⚠️ O parametro `ano` e o ano do PAGAMENTO (id.ano), nao o da proposta: uma
+    proposta de 2019 paga em 2019 responde com ano=2019 e vazio com 2020/2021.
+    Por isso recebe os anos ja descobertos no obter-proposta (anos_pg) — assim
+    uma proposta paga num ano posterior ao de cadastro nao se perde.
+
+    Falha (400/500/rede/JSON) => [] silencioso: a data ja ficou em
+    `data_pagamento` (via obter-proposta) e conta ausente e "nao coletada", nao
+    a afirmacao "sem conta" — a mesma disciplina de medido x ausente do repo."""
+    rows: list[dict] = []
+    for ano_pg in anos:
+        res = await _get_json_retry(
+            client, f"{BASE}/recursos/consulta-detalhada/detalhe-pagamento",
+            {"ano": ano_pg, "estado": uf, "municipio": cod_fns,
+             "proposta": nuprop, "page": 1, "count": 50, **_DETALHE_PGTO_VAZIOS},
+        )
+        for d in ((res or {}).get("dados", []) or []):
+            try:
+                rows.append({
+                    "data": (d.get("dataCriacaoSiafi") or "").strip() or None,  # dd/mm/aaaa
+                    "conta": (d.get("contaCorrente") or "").strip() or None,
+                    "banco": (d.get("codigoBanco") or "").strip() or None,
+                    "agencia": (d.get("codigoAgencia") or "").strip() or None,
+                    "ob": (d.get("numeroDocumentoSiafi") or "").strip() or None,
+                    "valor": float(d.get("valorLiquido") or 0),
+                    "competencia": (d.get("competencia") or "").strip() or None,
+                })
+            except (TypeError, ValueError, AttributeError):
+                continue
+    rows.sort(key=lambda x: _ord_data_br(x.get("data")))
+    return rows
+
+
 async def _fetch_individuais(client: httpx.AsyncClient, cod_fns: str, ano: int, uf: str,
                              tipo: str, recurso: str) -> list[dict]:
     """Propostas INDIVIDUAIS (Nº SIPA) de um grupo tipo/recurso. O portal usa
@@ -275,19 +378,26 @@ async def _fetch_individuais(client: httpx.AsyncClient, cod_fns: str, ano: int, 
             # O ano do ultimo pagamento e o que diz se uma proposta antiga ainda
             # se moveu no ano de referencia (usado pela regra de ano do RM).
             sit_desc = dt_sit = ano_pgto = None
+            anos_pg: list[int] = []
+            dt_pgto = None
             parls_det = []
             try:
-                rd = await client.get(
-                    f"{BASE}/recursos/proposta/obter-proposta",
-                    params={"nuProposta": nup}, timeout=20,
+                dd = await _get_json_retry(
+                    client, f"{BASE}/recursos/proposta/obter-proposta",
+                    {"nuProposta": nup}, timeout=20,
                 )
-                if rd.status_code == 200:
-                    dd = rd.json().get("resultado", {}) or {}
+                if dd:
                     sit_desc = (dd.get("situacao") or {}).get("descricaoSituacaoproposta")
                     dt_sit = _ano_ms((dd.get("situacao") or {}).get("dataSituacaoProjeto"))
-                    anos_pg = [a for a in (_ano_ms(pg.get("dtCriacaoSiafi"))
-                                           for pg in (dd.get("pagamentos") or [])) if a]
+                    mss = [pg.get("dtCriacaoSiafi") for pg in (dd.get("pagamentos") or [])]
+                    anos_pg = [a for a in (_ano_ms(m) for m in mss) if a]
                     ano_pgto = max(anos_pg) if anos_pg else None
+                    # DATA (dia) do ultimo pagamento, direto do ms do obter-proposta.
+                    # Fica salva mesmo que o detalhe-pagamento (que traz a CONTA)
+                    # falhe — a data nunca depende da segunda chamada.
+                    ms_ok = [int(m) for m in mss if isinstance(m, (int, float))
+                             or (isinstance(m, str) and m.strip().isdigit())]
+                    dt_pgto = _data_br_ms(max(ms_ok)) if ms_ok else None
                     # PARLAMENTAR: a LISTAGEM sempre devolve parlamentares=[] — por
                     # isso o RM/tela caiam no rotulo do tipo de recurso e mostravam
                     # "EMENDA INDIVIDUAL" onde deveria estar o NOME de quem indicou.
@@ -299,6 +409,24 @@ async def _fetch_individuais(client: httpx.AsyncClient, cod_fns: str, ano: int, 
                                  or [])
             except Exception:
                 pass
+            # CONTA + banco/agencia + DATA do pagamento, do detalhe-pagamento
+            # (o obter-proposta nao traz a conta). So quando ha pagamento:
+            #  - anos_pg: os anos de pagamento que o obter-proposta revelou (cobre
+            #    pagamento em ano posterior ao da proposta);
+            #  - `ano` do grupo (= ano da proposta) quando vlPago>0: FALLBACK para
+            #    quando o obter-proposta falhou (500 transitorio) mas a listagem ja
+            #    diz que houve repasse. Cobre o caso comum (pago no proprio ano) sem
+            #    depender da 2a chamada — e por ele a proposta paga do print entra
+            #    mesmo com o obter-proposta fora do ar. Set => sem chamada repetida.
+            vl_pago_it = float(it.get("vlPago") or 0)
+            anos_conta = set(anos_pg)
+            if vl_pago_it > 0:
+                anos_conta.add(ano)
+            pagamentos_det = []
+            if anos_conta:
+                pagamentos_det = await _detalhe_pagamento(
+                    client, uf, cod_fns, str(nup), sorted(anos_conta))
+            ult = pagamentos_det[-1] if pagamentos_det else {}
             out.append({
                 "nuProposta": nup,
                 "entidade": it.get("noEntidade") or "FUNDO MUNICIPAL DE SAUDE",
@@ -311,6 +439,17 @@ async def _fetch_individuais(client: httpx.AsyncClient, cod_fns: str, ano: int, 
                 "situacao_desc": sit_desc,
                 "ano_ultimo_pagamento": ano_pgto,
                 "ano_situacao": dt_sit,
+                # ── Pagamento (data + CONTA), o que o RM da Saude precisa nas pagas ──
+                # `data_pagamento`: dia do ultimo pagamento (dd/mm/aaaa). Prefere a
+                # data do detalhe-pagamento; cai na do obter-proposta se o detalhe
+                # falhar (a data nunca se perde). `conta_corrente`/codigo_banco/
+                # codigo_agencia: domicilio bancario do ultimo pagamento. `pagamentos`:
+                # lista completa (uma proposta pode ter varias parcelas/contas).
+                "data_pagamento": (ult.get("data") if ult else None) or dt_pgto,
+                "conta_corrente": ult.get("conta"),
+                "codigo_banco": ult.get("banco"),
+                "codigo_agencia": ult.get("agencia"),
+                "pagamentos": pagamentos_det,
             })
         return out
     except Exception as ex:

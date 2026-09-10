@@ -13,6 +13,7 @@ import asyncio
 import json
 import logging
 import os
+from datetime import datetime
 from typing import Optional
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -65,6 +66,61 @@ def _parlamentares(payload: dict) -> list[dict]:
             "valor": float(p.get("vlIndObjeto") or p.get("valor") or 0),
         })
     return saida
+
+
+def _ano_ms(epoch_ms) -> int | None:
+    """epoch em ms (formato do FNS) -> ano."""
+    try:
+        return datetime.fromtimestamp(int(epoch_ms) / 1000).year
+    except (TypeError, ValueError, OSError, OverflowError):
+        return None
+
+
+# O detalhe-pagamento EXIGE estes parametros presentes, mesmo vazios (faltando
+# qualquer um => HTTP 400). Ver ingestion/run_fns_local.py, mesma descoberta.
+_DETALHE_PGTO_VAZIOS = {
+    "mes": "", "tipoConsulta": "", "blocos": "", "grupo": "", "componentes": "",
+    "acoes": "", "repasse": "", "dataInicialOb": "", "dataFinalOb": "",
+    "nuAcaoJudicial": "", "cpfCnpjUg": "", "processo": "", "portaria": "",
+}
+
+
+def _contas_por_pagamento(cookies: dict, uf: str, cod_ibge: str,
+                          nu_proposta: str, anos: list[int]) -> dict:
+    """{numeroDocumentoSiafi (a OB): {conta, banco, agencia}} de uma proposta.
+
+    O `obter-proposta` traz a data e a OB de cada pagamento mas NAO a conta; o
+    numero da conta (contaCorrente) so vem do `detalhe-pagamento` da Consulta
+    Detalhada, ao lado de codigoBanco/codigoAgencia. Chaveia pela OB para casar
+    com o `nuOb` do obter-proposta na hora de montar cada parcela. Sincrono de
+    proposito (roda via asyncio.to_thread, como consultar_fns). Falha => {}."""
+    out: dict = {}
+    with httpx.Client(cookies=cookies, timeout=20, verify=False) as cli:
+        for ano_pg in anos:
+            try:
+                r = cli.get(
+                    f"{FNS_BASE}/recursos/consulta-detalhada/detalhe-pagamento",
+                    params={"ano": ano_pg, "estado": uf, "municipio": cod_ibge,
+                            "proposta": nu_proposta, "page": 1, "count": 50,
+                            **_DETALHE_PGTO_VAZIOS},
+                    headers={"Accept": "application/json", "User-Agent": "Mozilla/5.0",
+                             "Referer": f"{FNS_BASE}/"},
+                )
+                if r.status_code != 200 or "json" not in r.headers.get("content-type", "").lower():
+                    continue
+                for d in ((r.json().get("resultado", {}) or {}).get("dados", []) or []):
+                    ob = (d.get("numeroDocumentoSiafi") or "").strip()
+                    if not ob:
+                        continue
+                    out[ob] = {
+                        "conta": (d.get("contaCorrente") or "").strip() or None,
+                        "banco": (d.get("codigoBanco") or "").strip() or None,
+                        "agencia": (d.get("codigoAgencia") or "").strip() or None,
+                    }
+            except Exception:
+                continue
+    return out
+
 
 # Codigos IBGE FNS dos municipios PACTHA (6 digitos, sem digito verificador)
 FNS_CODE_OVERRIDE = {
@@ -421,6 +477,55 @@ async def detalhe_proposta(
             current_etapa = et.get("etapa")
             break
 
+    # CONTA (domicilio bancario) por pagamento — o obter-proposta nao a traz, so
+    # o detalhe-pagamento da Consulta Detalhada. Resolve o IBGE6 pelo municipio/UF
+    # da propria proposta e busca por ano de PAGAMENTO (id.ano no portal). Sem
+    # pagamento nao ha chamada extra; falha => pagamentos sem conta (a data e a OB
+    # continuam vindo do obter-proposta).
+    pgs_raw = d.get("pagamentos") or []
+    contas_por_ob: dict = {}
+    if pgs_raw:
+        anos_pg = sorted({a for a in (_ano_ms(pg.get("dtCriacaoSiafi")) for pg in pgs_raw) if a})
+        if not anos_pg and d.get("nuAnoProposta"):
+            try:
+                anos_pg = [int(d["nuAnoProposta"])]
+            except (TypeError, ValueError):
+                anos_pg = []
+        uf_prop = (d.get("sgUf") or "").strip().upper()
+        cod_ibge = await _resolve_cod(d.get("noMunicipio") or "", uf_prop, db)
+        if cod_ibge and anos_pg:
+            try:
+                contas_por_ob = await asyncio.to_thread(
+                    _contas_por_pagamento, cookies, uf_prop, str(cod_ibge)[:6],
+                    str(nu_proposta), anos_pg)
+            except Exception:
+                contas_por_ob = {}
+
+    def _conta_do_pg(pg: dict) -> dict:
+        ob = (pg.get("nuOb") or "").strip()
+        if ob:
+            for k, v in contas_por_ob.items():
+                if k and (ob.endswith(k) or k in ob):
+                    return v
+        return {}
+
+    pagamentos_norm = []
+    for pg in pgs_raw:
+        conta_pg = _conta_do_pg(pg)
+        pagamentos_norm.append({
+            "parcela": pg.get("nuParcela"),
+            "data": pg.get("dtCriacaoSiafi"),  # ms epoch
+            "valor": float(pg.get("vlLiquido") or 0),
+            "valor_acumulado": float(pg.get("vlAcumulado") or 0),
+            "ordem_bancaria": pg.get("nuOb"),
+            "nu_processo": pg.get("nuProcesso"),
+            "localizacao": pg.get("localizacao"),
+            # do detalhe-pagamento (pode faltar se a 2a consulta falhar)
+            "conta": conta_pg.get("conta"),
+            "banco": conta_pg.get("banco"),
+            "agencia": conta_pg.get("agencia"),
+        })
+
     return {
         "nu_proposta": d.get("nuProposta"),
         "uf": d.get("sgUf"),
@@ -440,19 +545,10 @@ async def detalhe_proposta(
         "vl_pago": float(d.get("vlPago") or 0),
         "vl_pagar": float(d.get("vlPagar") or 0),
         "parlamentares": _parlamentares(d),
-        # Normaliza pagamentos (campo upstream: dtCriacaoSiafi (ms), nuParcela, localizacao, nuProcesso, nuOb, vlLiquido, vlAcumulado)
-        "pagamentos": [
-            {
-                "parcela": pg.get("nuParcela"),
-                "data": pg.get("dtCriacaoSiafi"),  # ms epoch
-                "valor": float(pg.get("vlLiquido") or 0),
-                "valor_acumulado": float(pg.get("vlAcumulado") or 0),
-                "ordem_bancaria": pg.get("nuOb"),
-                "nu_processo": pg.get("nuProcesso"),
-                "localizacao": pg.get("localizacao"),
-            }
-            for pg in (d.get("pagamentos") or [])
-        ],
+        # Pagamentos: data/OB/valores do obter-proposta + banco/agencia/CONTA do
+        # detalhe-pagamento (montado acima). Upstream: dtCriacaoSiafi (ms),
+        # nuParcela, localizacao, nuProcesso, nuOb, vlLiquido, vlAcumulado.
+        "pagamentos": pagamentos_norm,
         "data_portaria": d.get("dtPortaria"),  # ms epoch
         "constituido_processo": d.get("constituidoProcesso"),
         "situacao_ultima_analise": d.get("situacaoUltimaAnalise"),

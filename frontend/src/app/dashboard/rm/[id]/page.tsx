@@ -26,6 +26,8 @@ interface Item {
   banco?: string;
   agencia?: string;
   conta?: string;
+  /** Data do pagamento — propostas pagas da Saúde (FNS). ISO (aaaa-mm-dd). */
+  dt_pagamento?: string | null;
   saldo_bancario?: number | null;
   dt_saldo?: string | null;
   dt_fim_vigencia?: string | null;
@@ -65,6 +67,7 @@ const ITEM_FIELDS: Array<[keyof Item, string, "text" | "number" | "date" | "text
   ["banco", "Banco", "text"],
   ["agencia", "Agência", "text"],
   ["conta", "Conta", "text"],
+  ["dt_pagamento", "Data do Pagamento", "date"],
   ["saldo_bancario", "Saldo Bancário (R$)", "number"],
   ["dt_saldo", "Data do Saldo", "date"],
   ["dt_fim_vigencia", "Final da Vigência", "date"],
