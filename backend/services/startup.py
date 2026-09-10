@@ -581,6 +581,10 @@ MIGRATION_FILES = [
     # independente do audit_log — fica acima da linha da imutabilidade só por
     # convenção (aquela quer ser a última).
     "add_mcp_tokens.sql",
+    # As duas colunas de clausula suspensiva que o `siconv_convenio.zip` sempre
+    # trouxe e o coletor nao lia (retirada + dias). Depende so de
+    # `transferegov_propostas`, criada muito antes.
+    "add_clausula_suspensiva_retirada_dias.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",
