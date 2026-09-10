@@ -984,18 +984,41 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
             # ambar do relatorio apontava pendencia ja resolvida para sempre.
             if _sem_clausula_confirmado(prop["detalhe"].get("Situação de Contratação Atual")):
                 prop["_clausula_conferida_sem"] = True
-            if page_auth is not None and _RE_CLAUSULA.search(_sit):
-                _idp = _id_proposta_from_url(url)
-                if _idp:
-                    try:
-                        sd = await _extrai_clausula_via_instrumento(page_auth, _idp)
-                        if sd:
-                            prop["detalhe"]["_situacao_detalhe"] = {
-                                _clean(k): _clean(v) if isinstance(v, str) else v
-                                for k, v in sd.items()
-                            }
-                    except Exception as e:
-                        logger.warning(f"    clausula {prop['numero_proposta']}: {str(e)[:90]}")
+            # ⚠️ A NAVEGACAO STRUTS DA CLAUSULA SUSPENSIVA SAIU EM 09/09/2026.
+            #
+            # Aqui rodava `_extrai_clausula_via_instrumento(page_auth, _idp)`:
+            # tres navegacoes Playwright por proposta (setar contexto -> abrir o
+            # instrumento -> submit Struts `DetalharClausulaSuspensiva`), possivel
+            # so com sessao gov.br viva. O resultado ia para o JSONB
+            # `situacao_contratacao_detalhe`.
+            #
+            # MEDIDO no tenant freitas em 09/09/2026, depois que o coletor de
+            # dado aberto passou a ler as quatro colunas de clausula do
+            # `siconv_convenio.zip` (PR #464):
+            #
+            #   | propostas com detalhe de clausula | Struts 21 | dump 605 |
+            #   | das 21 do Struts, cobertas pelo dump          | 21 de 21 |
+            #   | casos que SO o Struts sabia                   | 0        |
+            #   | data prevista batendo                         | 18 de 18 |
+            #   | data de RETIRADA (clausula resolvida)         | so o dump|
+            #
+            # O JSONB tinha QUATRO chaves — Instrumento, Situacao Atual do
+            # Contrato, Motivo e Data prevista — e todas as quatro tem coluna
+            # equivalente no dump. O motivo diverge no VOCABULARIO, nao no
+            # conteudo: a tela legada diz "Projeto Basico" e "Licenca Ambiental
+            # Previa" onde o dump ja usa "Projeto de Engenharia" e "Licenciamento
+            # Ambiental Previo".
+            #
+            # Ou seja: esta navegacao entregava 3,5% do que um CSV ja baixado
+            # entrega sozinho, e cobrava por isso uma sessao gov.br viva — a
+            # mesma que, ao morrer, parou a coleta gated dos SEIS tenants por
+            # 169h sem alarme nenhum, porque um Chrome foi fechado.
+            #
+            # ⚠️ O JSONB NAO FOI APAGADO e continua sendo lido por rm_builder,
+            # routers/transferegov, routers/parlamentares e pela tela do RM. Ele
+            # simplesmente para de RECEBER dado novo: o que ja esta la segue
+            # servindo de historico, e o dado novo chega pelas colunas, que o
+            # `_pend_municipal` do RM ja consulta junto com o JSONB.
             # Processo de Execução (Licitações) — SÓ p/ contratação "Normal".
             # Convênio Normal em execução SEM licitação/processo registrado =
             # município parado (flag de monitoramento, destacado igual à cláusula).
@@ -1194,76 +1217,12 @@ async def _extrai_situacao_detalhe(page) -> dict:
 
 _RE_CLAUSULA = re.compile(r"cl[áa]usula|suspensiv|liminar", re.I)
 
-# Botao "Detalhar Clausula Suspensiva/Liminar Judicial" na tela do INSTRUMENTO
-# (EditarDadosProposta.do). E um submit Struts (setaAcao(...)), gated pela
-# funcionalidade EXECUCAO_DETALHAR_CLAUSULA_SUSPENSIVA -> so renderiza logado.
-_CLAUSULA_BTN_SELECTORS = [
-    "css=input[name='editarDadosPropostaDetalharPropostaDetalharClausulaSuspensivaForm']",
-    "css=input[onclick*='DetalharClausulaSuspensiva' i]",
-    "css=input[onclick*='ClausulaSuspensiva' i], a[onclick*='ClausulaSuspensiva' i]",
-    "xpath=//input[contains(@value,'etalhar') and (contains(@value,'láusula') "
-    "or contains(@value,'uspensiva') or contains(@value,'iminar'))]",
-]
-
-
 def _id_proposta_from_url(url: str) -> str | None:
     """Extrai idProposta=NNN da URL de detalhe (guest) p/ navegar o instrumento."""
     if not url:
         return None
     m = re.search(r"[?&]idProposta=(\d+)", url)
     return m.group(1) if m else None
-
-
-async def _extrai_clausula_via_instrumento(page_auth, id_proposta: str) -> dict | None:
-    """Captura motivo + data prevista da Clausula Suspensiva (ou Liminar).
-
-    FLUXO CONFIRMADO ao vivo (sessao gov.br viva + conta com acesso ao
-    instrumento). O botao NAO existe na pagina de detalhe da proposta — fica na
-    tela do INSTRUMENTO:
-      1) ResultadoDaConsultaDePropostaDetalharProposta.do?idProposta=ID  (seta contexto)
-      2) ForwardAction.do ... MostraPrincipalEditarDadosProposta.do      (abre instrumento)
-      3) clica 'Detalhar Clausula Suspensiva/Liminar Judicial' (submit Struts setaAcao)
-      4) le os pares label:valor de /voluntarias/execucao/DetalharClausulaSuspensiva
-
-    Retorna {'Situacao Atual do Contrato':..., 'Data prevista...':..., 'Motivo...':...}
-    ou None (conta sem acesso ao instrumento, ou instrumento sem clausula)."""
-    base = "https://discricionarias.transferegov.sistema.gov.br/voluntarias"
-    det_url = (f"{base}/ConsultarProposta/ResultadoDaConsultaDePropostaDetalharProposta.do"
-               f"?idProposta={id_proposta}&")
-    fwd_url = (f"{base}/ForwardAction.do?modulo=Principal"
-               f"&path=/MostraPrincipalEditarDadosProposta.do")
-    if not await _goto_with_retry(page_auth, det_url, timeout=40000):
-        return None
-    await page_auth.wait_for_timeout(1500)
-    if not await _goto_with_retry(page_auth, fwd_url, timeout=40000):
-        return None
-    await page_auth.wait_for_timeout(3500)
-    btn = None
-    for sel in _CLAUSULA_BTN_SELECTORS:
-        try:
-            cand = page_auth.locator(sel).first
-            if await cand.count() > 0:
-                btn = cand
-                break
-        except Exception:
-            continue
-    if btn is None:
-        return None
-    try:
-        await btn.click(timeout=8000)
-        # submit Struts navega na MESMA pagina -> espera a tela de execucao
-        try:
-            await page_auth.wait_for_url("**/DetalharClausulaSuspensiva**", timeout=15000)
-        except Exception:
-            try:
-                await page_auth.wait_for_load_state("networkidle", timeout=12000)
-            except Exception:
-                pass
-        await page_auth.wait_for_timeout(1500)
-    except Exception:
-        return None
-    sd = await _extrai_situacao_detalhe(page_auth)
-    return sd or None
 
 
 def _dt_now():
