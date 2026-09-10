@@ -433,6 +433,7 @@ def _coleta(muns: list[dict]) -> dict[int, list[dict]]:
             "codigo_instrumento": None, "situacao_siafi": None, "numero_processo": None,
             "dt_assinatura": None, "situacao_contratacao": None,
             "clausula_suspensiva_dt_prevista": None, "clausula_suspensiva_motivo": None,
+            "clausula_suspensiva_dt_retirada": None, "clausula_suspensiva_dias": None,
             "parlamentar": None, "programa": None,
             "valor_empenhado": None, "valor_desembolsado": None, "saldo_conta": None,
             "dt_limite_prest_contas": None, "dt_fim_vigencia_original": None,
@@ -460,6 +461,34 @@ def _coleta(muns: list[dict]) -> dict[int, list[dict]]:
         p["situacao_contratacao"] = (linha.get("SITUACAO_CONTRATACAO") or "").strip() or None
         p["clausula_suspensiva_dt_prevista"] = _data_iso(linha.get("DATA_SUSPENSIVA"))
         p["clausula_suspensiva_motivo"] = (linha.get("MOTIVO_SUSPENSAO") or "").strip() or None
+        # ⚠️ AS DUAS QUE FALTAVAM (09/09/2026), e elas ja vinham no MESMO arquivo:
+        # `siconv_convenio.zip` traz as QUATRO colunas da clausula suspensiva e o
+        # coletor lia so duas. Sem `DATA_RETIRADA_SUSPENSIVA` nao havia como
+        # saber se a clausula foi RESOLVIDA — a tela mostrava a data prevista de
+        # um convenio ja liberado como se ainda estivesse travado.
+        #
+        # A alternativa que o repo usava para isso era navegacao Struts
+        # AUTENTICADA ("Detalhar Clausula Suspensiva"), que depende de sessao
+        # gov.br viva — a mesma sessao que, quando morre, para a coleta gated dos
+        # seis tenants sem erro visivel. Dicionario oficial (versionado em
+        # docs/dados-abertos-transferegov/): "Data de retirada do instrumento da
+        # situacao de Clausula Suspensiva".
+        p["clausula_suspensiva_dt_retirada"] = _data_iso(linha.get("DATA_RETIRADA_SUSPENSIVA"))
+        # "Quantidade de dias calculado a partir da diferenca entre as datas de
+        # previsao para resolucao da Clausula Suspensiva e da data de assinatura
+        # do instrumento" (dicionario oficial). Vem como texto no CSV.
+        #
+        # ⚠️ NAO usa `.isdigit()` como as contagens acima: a definicao e uma
+        # SUBTRACAO de datas, entao valor negativo e legitimo (previsao anterior
+        # a assinatura) e `.isdigit()` devolveria None calado para esses casos.
+        # Vazio continua sendo None, e nao 0, pela mesma razao das outras: zero
+        # afirmaria "resolvida no mesmo dia" sobre linha que o portal nao
+        # preencheu.
+        _dias = (linha.get("DIAS_CLAUSULA_SUSPENSIVA") or "").strip()
+        try:
+            p["clausula_suspensiva_dias"] = int(_dias) if _dias else None
+        except ValueError:
+            p["clausula_suspensiva_dias"] = None
         # ⚠️ A VIGENCIA DO CONVENIO DEIXOU DE SOBREPOR A DA PROPOSTA (31/08/2026).
         #
         # Este bloco fazia `dt_fim_vigencia = DIA_FIM_VIGENC_CONV`, e era dai que
@@ -574,6 +603,7 @@ _CAMPOS = ("numero_proposta", "situacao", "orgao", "proponente", "identificacao"
            "dt_proposta", "dt_assinatura", "valor_global", "valor_repasse",
            "valor_contrapartida", "situacao_contratacao",
            "clausula_suspensiva_dt_prevista", "clausula_suspensiva_motivo",
+           "clausula_suspensiva_dt_retirada", "clausula_suspensiva_dias",
            "parlamentar", "id_proposta_siconv", "valor_emenda",
            # As catorze novas (31/08/2026). Esta tupla monta o dicionario de
            # parametros do upsert; o INSERT nomeia as colunas uma a uma, entao
@@ -641,6 +671,17 @@ _SOBRESCREVE_NOVAS = [
     "valor_empenhado", "valor_desembolsado", "saldo_conta",
     "dt_limite_prest_contas", "dt_fim_vigencia_original",
     "qtd_termos_aditivos", "qtd_prorrogas", "opera_obtv",
+    # ⚠️ AQUI, e nao em _SOBRESCREVE, por DOIS motivos. (1) O scraper nunca
+    # gravou estas duas colunas — nao ha dado antigo a proteger com COALESCE.
+    # (2) `_SOBRESCREVE` faz cast para `text` em tudo que nao seja `valor*` ou
+    # `clausula_suspensiva_dt_prevista`; uma DATE e um INTEGER entrando por la
+    # virariam texto e o INSERT quebraria. Este grupo atribui `EXCLUDED.<col>`
+    # direto, preservando o tipo.
+    #
+    # E sobrescrever e o comportamento CERTO: a clausula é RETIRADA um dia, e um
+    # COALESCE cego congelaria "ainda suspensa" para sempre — exatamente o
+    # defeito que estas colunas vieram corrigir.
+    "clausula_suspensiva_dt_retirada", "clausula_suspensiva_dias",
 ]
 # Campo em que o COALESCE protege de verdade: o parlamentar as vezes so aparece
 # no scraper autenticado (emenda impositiva recente que ainda nao entrou no
@@ -682,7 +723,8 @@ def _upsert(mun_id: int, propostas: list[dict]) -> int:
              codigo_instrumento, modalidade, situacao_siafi, numero_processo, objeto,
              programa, dt_inicio_vigencia, dt_fim_vigencia, dt_proposta, dt_assinatura,
              valor_global, valor_repasse, valor_contrapartida, situacao_contratacao,
-             clausula_suspensiva_dt_prevista, clausula_suspensiva_motivo, parlamentar,
+             clausula_suspensiva_dt_prevista, clausula_suspensiva_motivo,
+             clausula_suspensiva_dt_retirada, clausula_suspensiva_dias, parlamentar,
              id_proposta_siconv, valor_emenda,
              banco, agencia, conta_corrente, situacao_conta, situacao_projeto_basico,
              enviada_mandataria, valor_empenhado, valor_desembolsado, saldo_conta,
@@ -693,7 +735,8 @@ def _upsert(mun_id: int, propostas: list[dict]) -> int:
              %(codigo_instrumento)s,%(modalidade)s,%(situacao_siafi)s,%(numero_processo)s,%(objeto)s,
              %(programa)s,%(dt_inicio_vigencia)s,%(dt_fim_vigencia)s,%(dt_proposta)s,%(dt_assinatura)s,
              %(valor_global)s,%(valor_repasse)s,%(valor_contrapartida)s,%(situacao_contratacao)s,
-             %(clausula_suspensiva_dt_prevista)s,%(clausula_suspensiva_motivo)s,%(parlamentar)s,
+             %(clausula_suspensiva_dt_prevista)s,%(clausula_suspensiva_motivo)s,
+             %(clausula_suspensiva_dt_retirada)s,%(clausula_suspensiva_dias)s,%(parlamentar)s,
              %(id_proposta_siconv)s,%(valor_emenda)s,
              %(banco)s,%(agencia)s,%(conta_corrente)s,%(situacao_conta)s,%(situacao_projeto_basico)s,
              %(enviada_mandataria)s,%(valor_empenhado)s,%(valor_desembolsado)s,%(saldo_conta)s,

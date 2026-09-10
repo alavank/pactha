@@ -16,13 +16,28 @@ from ingestion.transferegov_opendata import (_CAMPOS, _PRESERVA, _SO_PREENCHE,
 
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 COLETOR = os.path.join(RAIZ, "ingestion", "transferegov_opendata.py")
-MIGRATION = os.path.join(RAIZ, "migrations", "add_voluntarias_colunas_do_csv.sql")
+# ⚠️ LISTA, e nao um arquivo so. As colunas de fonte unica chegaram em DUAS
+# levas — as catorze de 31/08/2026 e as duas da clausula suspensiva de
+# 09/09/2026 — e coluna nova NAO entra numa migration ja aplicada nos seis
+# bancos: entra numa nova. Fixar um unico arquivo aqui obrigaria a proxima leva
+# a escolher entre reescrever migration antiga (errado) e afrouxar o teste.
+MIGRATIONS = [
+    os.path.join(RAIZ, "migrations", "add_voluntarias_colunas_do_csv.sql"),
+    os.path.join(RAIZ, "migrations", "add_clausula_suspensiva_retirada_dias.sql"),
+]
 
 NOVAS = ["banco", "agencia", "conta_corrente", "situacao_conta",
          "situacao_projeto_basico", "enviada_mandataria", "valor_empenhado",
          "valor_desembolsado", "saldo_conta", "dt_limite_prest_contas",
          "dt_fim_vigencia_original", "qtd_termos_aditivos", "qtd_prorrogas",
-         "opera_obtv"]
+         "opera_obtv",
+         # As duas da clausula suspensiva (09/09/2026). Mesma natureza das
+         # catorze acima — so o dado aberto escreve nelas, e o valor MUDA (a
+         # clausula e retirada um dia), entao sobrescrevem em vez de COALESCE.
+         # Entrar aqui nao e formalidade: sao estes tres testes que garantem que
+         # a coluna chegou a `_CAMPOS`, a lista do INSERT E ao VALUES — os tres
+         # lugares que, tocados pela metade, gravam NULL em silencio.
+         "clausula_suspensiva_dt_retirada", "clausula_suspensiva_dias"]
 
 
 def _fonte():
@@ -34,39 +49,60 @@ def _codigo(caminho, marca="#"):
                      if not l.lstrip().startswith(marca))
 
 
-def test_as_catorze_colunas_existem_na_migration():
-    sql = _codigo(MIGRATION, "--")
+def _sql_das_migrations():
+    return "\n".join(_codigo(m, "--") for m in MIGRATIONS)
+
+
+def test_toda_coluna_nova_existe_em_alguma_migration():
+    sql = _sql_das_migrations()
     for c in NOVAS:
-        assert re.search(rf"ADD COLUMN IF NOT EXISTS\s+{c}\b", sql), c
+        assert re.search(rf"ADD COLUMN IF NOT EXISTS\s+{c}\b", sql), (
+            f"{c} esta em NOVAS mas nenhuma migration de MIGRATIONS a cria — "
+            "o upsert vai falhar no boot do primeiro tenant"
+        )
 
 
-def test_a_migration_e_puramente_aditiva():
-    """⚠️ Um repo, quatro tenants: um ALTER que nao seja aditivo derruba os
-    quatro de uma vez. Nada de DROP, nada de NOT NULL, nada de DEFAULT.
+def test_as_migrations_sao_puramente_aditivas():
+    """⚠️ Um repo, SEIS tenants: um ALTER que nao seja aditivo derruba os seis
+    de uma vez. Nada de DROP, nada de NOT NULL, nada de DEFAULT.
 
     ⚠️ O `NOT NULL` proibido e o da DECLARACAO da coluna, e por isso a busca e
     linha a linha nas linhas de ADD COLUMN. Procurar a expressao no arquivo
     inteiro reprovava o `WHERE ... IS NOT NULL` do indice parcial, que e
     justamente o que se quer ali."""
-    sql = _codigo(MIGRATION, "--")
-    assert "DROP" not in sql.upper()
-    assert "DEFAULT" not in sql.upper(), \
-        "DEFAULT 0 afirmaria 'nao ha aditivo' sobre linha nunca coletada"
-    colunas = [l for l in sql.splitlines() if "ADD COLUMN" in l.upper()]
-    assert len(colunas) == len(NOVAS), \
-        f"{len(colunas)} linhas de ADD COLUMN para {len(NOVAS)} colunas novas"
-    for l in colunas:
-        assert "NOT NULL" not in l.upper(), f"coluna declarada NOT NULL: {l.strip()}"
+    total_colunas = 0
+    for caminho in MIGRATIONS:
+        sql = _codigo(caminho, "--")
+        nome = os.path.basename(caminho)
+        assert "DROP" not in sql.upper(), nome
+        assert "DEFAULT" not in sql.upper(), \
+            f"{nome}: DEFAULT 0 afirmaria 'nao ha aditivo' sobre linha nunca coletada"
+        colunas = [l for l in sql.splitlines() if "ADD COLUMN" in l.upper()]
+        for l in colunas:
+            assert "NOT NULL" not in l.upper(), \
+                f"{nome}: coluna declarada NOT NULL: {l.strip()}"
+        total_colunas += len(colunas)
+
+    # ⚠️ A soma, e nao a contagem por arquivo: e ela que pega o caso de alguem
+    # por a coluna em NOVAS, escrever a migration e esquecer o `ADD COLUMN` de
+    # uma delas — o teste acima acha a que existe e cala sobre a que falta.
+    assert total_colunas == len(NOVAS), \
+        f"{total_colunas} linhas de ADD COLUMN somadas para {len(NOVAS)} colunas em NOVAS"
 
 
-def test_a_migration_esta_na_lista_do_boot():
+def test_as_migrations_estao_na_lista_do_boot():
+    """Migration fora da MIGRATION_FILES nao roda: a coluna nunca nasce e o
+    upsert quebra no primeiro boot que tentar grava-la."""
     from services.startup import MIGRATION_FILES
-    assert "add_voluntarias_colunas_do_csv.sql" in MIGRATION_FILES
+    for caminho in MIGRATIONS:
+        nome = os.path.basename(caminho)
+        assert nome in MIGRATION_FILES, f"{nome} fora da MIGRATION_FILES"
 
 
-def test_o_sql_da_migration_e_valido_para_o_postgres():
+def test_o_sql_das_migrations_e_valido_para_o_postgres():
     pglast = pytest.importorskip("pglast", reason="pglast ausente — checagem PULADA")
-    pglast.parse_sql(open(MIGRATION, encoding="utf-8").read())
+    for caminho in MIGRATIONS:
+        pglast.parse_sql(open(caminho, encoding="utf-8").read())
 
 
 def test_toda_coluna_nova_chega_ao_INSERT_e_ao_dicionario():
