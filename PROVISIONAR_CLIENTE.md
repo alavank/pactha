@@ -44,7 +44,8 @@ nome, UF e IBGE. E qual é o município "sede", se houver.
 **d) Que credenciais já existem?** Pergunte uma a uma; o que não houver entra
 depois, sem travar a abertura:
 
-- gov.br / TransfereGov (a captura é por bookmarklet, ver seção 5)
+- gov.br / TransfereGov (não é credencial: a captura é pela extensão do Chrome,
+  ver seção 5 e o passo 10)
 - SIGCON-MG (usuário e senha) — só faz sentido em cliente de MG
 - CAGEC — portal próprio, **não fica dentro do SIGCON**
 - Chave da Anthropic, se a IA vai ficar ligada nesse cliente
@@ -168,6 +169,15 @@ Então, antes de criar qualquer aplicação:
    simplesmente não o incluem. Ponha-o por último nas duas listas.
 9. Criar as Scheduled Tasks do worker (horários em janelas que os outros tenants
    não usem) e a 4ª entrada no `case` de `scripts/separar_papel_banco.sh`.
+10. **Colocar o tenant na extensão de captura** — `AMBIENTES_CONHECIDOS` em
+    `extension/ambientes.js` — e emitir o service token dele
+    (`POST /api/control/session/token`, scope `session:write`) para colar no
+    popup da extensão. **Sem isto o tenant nunca recebe a sessão gov.br**, e o
+    silêncio é total: o POST responde 200 para os outros ambientes, e o coletor
+    gated registra `parcial` em vez de erro — o `bgk-rs` passou o primeiro dia
+    inteiro assim, com 216 leituras atrás do login sem retorno.
+    `backend/tests/test_extensao_conhece_os_tenants.py` reprova o PR que
+    esquecer, cruzando esta lista com o `TENANTS` do passo 8.
 
 > ⚠️ **Mergear não publica.** As aplicações usam `build_pack = dockerimage`: rodam
 > a tag gravada em `docker_registry_image_tag`. O CI só publica no GHCR. Ver
@@ -179,8 +189,14 @@ Então, antes de criar qualquer aplicação:
 
 - **Coleta pública** começa sozinha assim que existe município: CAUC, TransfereGov,
   FNS, SISMOB. Confira em **Status dos Dados** no dia seguinte.
-- **gov.br** é captura de sessão pelo bookmarklet — a API dispara o scraper na
-  hora, sozinha. Não é credencial guardada.
+- **gov.br** é captura de sessão pela **extensão do Chrome** (`extension/`), não
+  é credencial guardada e não é mais o bookmarklet — este foi aposentado porque
+  só enxergava `document.cookie` e deixava de fora todo cookie `httpOnly`,
+  justamente onde mora o `JSESSIONID` do SICONV legado. A extensão manda a
+  sessão para os seis ambientes de uma vez e faz keep-alive a cada 12 min.
+  ⚠️ **Ela só funciona com um Chrome aberto**: a sessão JEE morre com 20–30 min
+  de inatividade. Chrome fechado no fim do expediente = coleta gated parada no
+  dia seguinte, em todos os tenants ao mesmo tempo.
 - **SIGCON-MG e CAGEC** entram no Cofre quando o dono passar as credenciais — e
   **só fazem sentido em cliente de MG**. Num tenant de outro estado, não crie as
   Scheduled Tasks `sigcon`, `cagec` e `queue-sigcon`: os coletores se protegem

@@ -32,18 +32,32 @@
  * cross-mun". Por isso a captura multi-ambiente NUNCA manda id de município. */
 const AMBIENTE_ESCOPO_INSTANCIA = 0;
 
-// Os cinco tenants em produção (02/09/2026). O `token` nasce vazio: ele é
+// Os SEIS tenants em produção (09/09/2026). O `token` nasce vazio: ele é
 // PRÓPRIO de cada ambiente (os service tokens vivem no banco de cada um) e é
 // colado pela tela de configuração.
+//
 // ⚠️ Toda URL aqui precisa casar com `host_permissions` no manifest.json —
 // fora dele o Chrome bloqueia o fetch ANTES de sair (MV3) e a captura falha sem
-// nunca chegar ao servidor. `https://*.sslip.io/*` cobre os cinco.
+// nunca chegar ao servidor. `https://*.sslip.io/*` cobre os seis.
+//
+// ⚠️⚠️ CLIENTE NOVO ENTRA AQUI, NO MESMO PR QUE O COLOCA NO DEPLOY. O `bgk`
+// entrou no `TENANTS` do build-backend.yml em 08/09/2026 e ficou DE FORA desta
+// lista — resultado medido em 09/09: `extensao-captura` com último uso em cinco
+// tenants e "nenhum token emitido" no sexto, com o `transferegov_lote` do bgk
+// registrando 216 leituras atrás do login sem retorno desde que ele nasceu.
+// Cliente pagante sem a fonte federal mais rica, e sem erro em lugar nenhum.
+//
+// `tests/test_extensao_conhece_os_tenants.py` agora cruza esta lista com o
+// `TENANTS` do workflow de deploy e reprova o PR quando as duas divergem. Se
+// você chegou aqui por causa daquele teste vermelho: é ele fazendo o trabalho,
+// acrescente a linha e siga.
 const AMBIENTES_CONHECIDOS = [
   { nome: "Freitas", api: "https://pactha-api-54-232-208-118.sslip.io/api" },
   { nome: "Trust", api: "https://pactha-trust-api-54-232-208-118.sslip.io/api" },
   { nome: "Monte Sião - MG", api: "https://pactha-montesiao-mg-api-54-232-208-118.sslip.io/api" },
   { nome: "Santa Maria - RS", api: "https://pactha-santamaria-rs-api-54-232-208-118.sslip.io/api" },
   { nome: "Nova Palma - RS", api: "https://pactha-novapalma-rs-api-54-232-208-118.sslip.io/api" },
+  { nome: "BGK - RS", api: "https://pactha-bgk-rs-api-54-232-208-118.sslip.io/api" },
 ];
 
 /** A lista salva, já migrada do formato antigo.
