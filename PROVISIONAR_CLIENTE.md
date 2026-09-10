@@ -159,7 +159,9 @@ Então, antes de criar qualquer aplicação:
    > `bloqueio` + redeploy. Custa um deploy e evita descobrir um backfill de
    > permissão quebrado com o tenant já trancado.
 6. Subir **worker** e **frontend**. **Um app por vez, esperando cada um
-   terminar** — a VPS é burstable (~0,6 vCPU sustentado).
+   terminar** — não por CPU (a VPS tem 8 vCPU e 32 GB), e sim porque o Coolify
+   roda com `concurrent_builds=1`: disparar tudo junto só faz fila, e fila longa
+   já matou coleta em voo neste projeto.
 7. Entrar como `super-admin@alavank.com.br`, trocar a senha, conferir que o
    município que aparece é o certo.
 8. **Fechar o laço do CI** — e este passo já foi esquecido: acrescentar o uuid do

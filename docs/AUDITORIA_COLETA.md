@@ -1,5 +1,12 @@
 # Auditoria independente — confiabilidade da coleta de dados do PACTHA
 
+> ⚠️ **Documento DATADO — o hardware mudou depois dele.** Este relatório cita
+> várias vezes "host de 0,6 vCPU sustentado" ao dimensionar custo de CSV grande e
+> de dump diário. Aquilo valia para o t3.large de então; a máquina hoje tem
+> **8 vCPU / 32 GB** (ver `INFRA.md` §1, medido em 09/09/2026). As recomendações
+> de streaming, `Range`/`ETag` e cadência mensal continuam boas — economizam rede,
+> I/O e tempo —, mas **não as justifique mais por falta de CPU**.
+>
 > **Data:** 29/08/2026 (medições entre 22:28 e 23:50 BRT; banco e Coolify do tenant **Freitas**).
 > **Auditor:** independente (não defende o produto nem o cliente). Toda afirmação carrega a prova:
 > `arquivo:linha`, query executada + resultado, ou URL consultada + data.

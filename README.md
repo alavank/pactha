@@ -143,8 +143,10 @@ cookies httpOnly + CSRF + refresh silencioso funcionam sem re-login a cada hora.
 
 Crons = **Scheduled Tasks** anexadas ao Worker de cada tenant (mesma imagem com Chromium),
 com horarios **escalonados entre tenants** de proposito — ver `docs/CRON_SETUP.md` e
-[`INFRA.md`](INFRA.md). Nao alinhe os horarios: a maquina e burstable e nao aguenta os seis
-raspando ao mesmo tempo.
+[`INFRA.md`](INFRA.md). Nao alinhe os horarios — mas o motivo NAO e a maquina: ela tem 8
+vCPU e 32 GB e aguenta os seis (medido em 09/09/2026: load 3.97 com os seis coletando).
+O motivo e o PORTAL, que responde com bloqueio de IP e credencial recusada quando seis
+coletores batem nele no mesmo minuto.
 
 Variaveis de ambiente: ver `.env.example`. As migrations idempotentes rodam no
 boot da API (`services/startup.py`).

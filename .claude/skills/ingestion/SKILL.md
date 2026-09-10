@@ -29,8 +29,14 @@ directly — it enqueues into the `scraper_jobs` table, consumed by
 ## Concurrency — hard limit, do not raise
 
 Collection is intentionally **not concurrent** across sources on a worker (`flock`-guarded
-`/tmp/scraper.lock`) and cron schedules are staggered across the five tenants — the host is
-a burstable 2-vCPU instance shared with ~10 other projects.
+`/tmp/scraper.lock`) and cron schedules are staggered across the six tenants.
+
+⚠️ **The reason is the PORTAL, not the host.** This paragraph used to say the box was
+"a burstable 2-vCPU instance" — that described the old t3.large and stopped being true
+after an upgrade. Measured 09/09/2026 with all six workers scraping TransfereGov at once:
+**load 3.97 on 8 vCPUs**, 24 GiB RAM free. The host has room; the portals do not. SIGCON
+refuses and eventually blocks the credential under parallelism, and six collectors hitting
+one federal portal in the same minute is how this project earned an IP block before.
 
 **Never raise scraping concurrency to "speed things up".**
 

@@ -1330,7 +1330,7 @@ próprios workflows. **Tratar todo merge na `main` como um deploy em produção.
 
 Resumo; o detalhe completo (uuids de todas as aplicações, bancos, crons por tenant) está no **[`INFRA.md`](INFRA.md)**.
 
-- **Servidor:** **AWS Lightsail `54.232.208.118`** (sa-east-1a, São Paulo). t3.large: 2 vCPU / 7,6 GB RAM / 160 GB SSD. **Burstable, baseline 30% (~0,6 vCPU sustentado)** — hospeda mais 10 projetos além do PACTHA. **Não paralelize trabalho pesado.**
+- **Servidor:** **AWS Lightsail `54.232.208.118`** (sa-east-1a, São Paulo). **8 vCPU / 32 GB RAM / 640 GB SSD** (plano "Uso geral"), hospeda mais 10 projetos além do PACTHA. ⚠️ **Esta linha dizia "t3.large, 2 vCPU, burstable, baseline 30%" até 09/09/2026** — o upgrade já tinha sido feito havia tempo, para as coletas correrem mais rápido, e a doc não acompanhou. Medido em 09/09/2026 com os SEIS workers coletando ao mesmo tempo: load **3.97** em 8 CPUs, 24 GiB de RAM disponíveis, disco em 6%. **Pode paralelizar trabalho pesado** — medindo antes e depois, porque o host é compartilhado.
 - **Instância Coolify:** `http://54.232.208.118:8000` — API REST em `http://54.232.208.118:8000/api/v1`. Versão v4.1.2.
 - **SSH:** `ssh -i ~/.ssh/coolify_localhost root@54.232.208.118`.
 - **Token da API do Coolify:** NÃO está neste arquivo (é segredo). O usuário fornece (formato `36|xxxx`). Use `Authorization: Bearer <TOKEN>`. **Rotacione periodicamente.**
@@ -1372,7 +1372,7 @@ interpolado: [`INFRA.md`](INFRA.md) §5.
 
 ## 5. ARMADILHAS / GOTCHAS (leia antes de debugar)
 
-- **A máquina é burstable (baseline 30%).** Não rode scraping paralelo (`SIGCON_CONCURRENCY=1`), não alinhe os crons dos 5 tenants, não rebuilde os apps de uma vez. Sintoma de estouro: tudo no host fica lento ao mesmo tempo, não só o PACTHA.
+- **A máquina tem 8 vCPU e 32 GB** (não é mais burstable de 2 vCPU — ver o bloco do servidor acima). `SIGCON_CONCURRENCY=1` continua, mas por causa do **portal**, que recusa e chega a bloquear credencial sob paralelismo — não por falta de CPU. Os crons seguem escalonados para não bater seis vezes no mesmo portal federal no mesmo minuto. Sintoma de estouro, se houver: tudo no host fica lento ao mesmo tempo, não só o PACTHA — confira com `uptime` antes de culpar a aplicação.
 - **Coolify STRIPPA o path do domínio.** Se você setar o domínio de um app como `host/api`, o Coolify tira o `/api` antes de chegar no container (testado: `host/api/health`→404, `host/api/api/health`→200). Por isso a API tem **subdomínio próprio SEM path**, e o caminho normal do usuário é o proxy do Next (`API_PROXY_TARGET`).
 - **`*.sslip.io` é public suffix** → `pactha-...sslip.io` e `pactha-api-...sslip.io` são **cross-site** entre si; cookies `SameSite=Lax` httpOnly não trafegam entre eles. É exatamente por isso que existe o proxy same-origin no Next (decisão 7). **Se alguém apontar o front direto no subdomínio da API (`NEXT_PUBLIC_API_URL` absoluto), o refresh silencioso quebra e volta o re-login a cada ~60min.**
 - **`API_PROXY_TARGET` e `NEXT_PUBLIC_*` são BUILD-TIME.** Mudar o valor no Coolify sem rebuildar o frontend não tem efeito nenhum. Marque `is_build_time:true` e redeploy.

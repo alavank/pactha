@@ -50,7 +50,7 @@ Nenhuma exige código; somadas dão ~1h de execução. Continuam pendentes desde
 | **S3** | Freitas: manter ou desligar `TG_OPS_OBS=1` | Contradiz o "só Monte Sião"; coleta pesada por instrumento em 42 municípios sem decisão consciente |
 | **S4** | SICONV nos 3 tenants: ligar `SICONV_MODULE=1` **ou** remover task + truncar | Hoje está no pior dos dois mundos: ~393 MB/banco e coleta paga, sem tela |
 | **S5** | Faxina de contas `teste.com`, `claude.com`, 35× `painel.local` | Contas não rastreáveis em produção de prefeitura |
-| **S2** | Freitas: `siconv-federal` de diário → mensal (dia 2) | CPU/rede desperdiçados todo dia num host burstable |
+| **S2** | Freitas: `siconv-federal` de diário → mensal (dia 2) | Dump grande baixado todo dia para dado que muda 1×/mês — rede e I/O à toa (a justificativa dizia "host burstable"; a máquina tem 8 vCPU desde o upgrade, mas o desperdício continua) |
 | **O4** | Trust: preencher o CNPJ de Goiânia via control-plane | Repasses e TE de Goiânia não casam com o município |
 | **O3** | Ação comercial: reset de 4 credenciais SIGCON quebradas (Freitas) + 21 faltantes (Freitas) + 7 (Trust) | 28 municípios de MG sem convênios/emendas estaduais |
 
