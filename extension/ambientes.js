@@ -32,18 +32,25 @@
  * cross-mun". Por isso a captura multi-ambiente NUNCA manda id de município. */
 const AMBIENTE_ESCOPO_INSTANCIA = 0;
 
-// Os cinco tenants em produção (02/09/2026). O `token` nasce vazio: ele é
-// PRÓPRIO de cada ambiente (os service tokens vivem no banco de cada um) e é
-// colado pela tela de configuração.
+// Os SEIS tenants em produção. O `token` nasce vazio: ele é PRÓPRIO de cada
+// ambiente (os service tokens vivem no banco de cada um) e é colado pela tela de
+// configuração.
 // ⚠️ Toda URL aqui precisa casar com `host_permissions` no manifest.json —
 // fora dele o Chrome bloqueia o fetch ANTES de sair (MV3) e a captura falha sem
-// nunca chegar ao servidor. `https://*.sslip.io/*` cobre os cinco.
+// nunca chegar ao servidor. `https://*.sslip.io/*` cobre os seis.
+//
+// ⚠️ BGK entrou em 08/09/2026, DEPOIS deste arquivo nascer com cinco. Enquanto
+// ele faltou aqui, a captura multi-ambiente pulava o BGK EM SILÊNCIO — o mesmo
+// modo de falha (capturar e esquecer um ambiente) que este arquivo veio matar.
+// A regra que fica: tenant novo, linha nova aqui NO MESMO trabalho da criação.
+// FQDN confirmado no Coolify (app `bgk-rs-api`).
 const AMBIENTES_CONHECIDOS = [
   { nome: "Freitas", api: "https://pactha-api-54-232-208-118.sslip.io/api" },
   { nome: "Trust", api: "https://pactha-trust-api-54-232-208-118.sslip.io/api" },
   { nome: "Monte Sião - MG", api: "https://pactha-montesiao-mg-api-54-232-208-118.sslip.io/api" },
   { nome: "Santa Maria - RS", api: "https://pactha-santamaria-rs-api-54-232-208-118.sslip.io/api" },
   { nome: "Nova Palma - RS", api: "https://pactha-novapalma-rs-api-54-232-208-118.sslip.io/api" },
+  { nome: "BGK - RS", api: "https://pactha-bgk-rs-api-54-232-208-118.sslip.io/api" },
 ];
 
 /** A lista salva, já migrada do formato antigo.
