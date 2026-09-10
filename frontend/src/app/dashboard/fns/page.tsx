@@ -72,6 +72,10 @@ interface PagamentoFNS {
   ordem_bancaria?: string;
   nu_processo?: string;
   localizacao?: string;
+  // Domicílio bancário da OB (do detalhe-pagamento; o obter-proposta não traz)
+  conta?: string;
+  banco?: string;
+  agencia?: string;
 }
 
 interface PropostaDetalhe {
@@ -866,6 +870,9 @@ export default function PropostasFNSPage() {
                                 { rotulo: "Data pagamento", valor: dataBR(pg.data) },
                                 { rotulo: "Acumulado", valor: formatCurrency(pg.valor_acumulado) },
                                 { rotulo: "Ordem bancária", valor: pg.ordem_bancaria || "—", title: pg.ordem_bancaria },
+                                { rotulo: "Banco", valor: pg.banco || "—" },
+                                { rotulo: "Agência", valor: pg.agencia || "—" },
+                                { rotulo: "Conta", valor: pg.conta || "—", title: pg.conta },
                                 { rotulo: "Nº processo pgto", valor: pg.nu_processo || "—", title: pg.nu_processo },
                               ]}
                             />

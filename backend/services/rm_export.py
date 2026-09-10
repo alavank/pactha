@@ -315,6 +315,9 @@ def _campos_resumido(it: dict):
     for k, lbl in (("banco", "Banco"), ("agencia", "Agência"), ("conta", "Conta")):
         if it.get(k):
             out.append((lbl, it[k]))
+    # Data do pagamento — propostas pagas da Saúde (FNS)
+    if it.get("dt_pagamento"):
+        out.append(("Data do pagamento", _fmt_data_curta(it["dt_pagamento"])))
     if it.get("saldo_bancario") is not None:
         out.append(("Saldo Bancário", _resumido_money(it["saldo_bancario"])))
     if it.get("situacao_atual"):

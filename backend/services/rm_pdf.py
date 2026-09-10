@@ -364,6 +364,10 @@ def _campos_do_item(item: dict) -> list[tuple[str, str]]:
         out.append(("Agência", item["agencia"]))
     if item.get("conta"):
         out.append(("Conta", item["conta"]))
+    # Data do pagamento — nas PROPOSTAS PAGAS da Saúde (FNS). Vem por proposta do
+    # detalhe-pagamento do portal; ausente quando não paga/não re-coletada.
+    if item.get("dt_pagamento"):
+        out.append(("Data do pagamento", _fmt_dt(item["dt_pagamento"])))
     if item.get("saldo_bancario") is not None:
         saldo_txt = _fmt_money(item["saldo_bancario"])
         if item.get("dt_saldo"):
