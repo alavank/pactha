@@ -92,6 +92,11 @@ interface Plano {
   valor_total: number;
   objeto_descricao?: string;
   motivo_impedimento?: string;
+  // Dados bancários da emenda Pix (do plano de ação, via TransfereGov)
+  banco?: string;
+  agencia?: string;
+  conta?: string;
+  situacao_dado_bancario?: string;
 }
 
 interface BuscarResp {
@@ -598,6 +603,17 @@ export default function TransfereGovPage() {
                     },
                     { rotulo: "Custeio", valor: formatCurrency(p.valor_custeio) },
                     { rotulo: "Investimento", valor: formatCurrency(p.valor_investimento) },
+                    // Dados bancários da emenda Pix (plano de ação, TransfereGov).
+                    // "—" quando o plano ainda não tem domicílio bancário definido.
+                    { rotulo: "Banco", valor: p.banco || "—", title: p.banco },
+                    { rotulo: "Agência", valor: p.agencia || "—" },
+                    {
+                      rotulo: "Conta",
+                      valor: p.conta || "—",
+                      title: p.situacao_dado_bancario
+                        ? `Conta ${p.conta || "—"} · ${p.situacao_dado_bancario}`
+                        : p.conta,
+                    },
                     {
                       rotulo: "Motivo de impedimento",
                       valor: p.motivo_impedimento || "—",

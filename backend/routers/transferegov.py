@@ -116,6 +116,17 @@ async def _especiais_por_cnpj(cnpj: str) -> list[dict]:
         return []
 
 
+def _num_dv(num, dv) -> str | None:
+    """'12345' + '6' -> '12345-6' (agência/conta com dígito verificador). Só o
+    número quando não há DV; None quando não há número. Usado pra montar os dados
+    bancários da emenda Pix (TE), que a API `planos-acao-especiais` já traz."""
+    num = str(num or "").strip()
+    dv = str(dv or "").strip()
+    if not num:
+        return None
+    return f"{num}-{dv}" if dv else num
+
+
 @router.get("/buscar", dependencies=[exige("transferegov_especiais.ver")])
 async def buscar(
     municipio_id: int = Query(..., description="ID do municipio PACTHA"),
@@ -209,6 +220,13 @@ async def buscar(
             "valor_total": float(r[11] or 0),
             "objeto_descricao": r[12],
             "motivo_impedimento": raw.get("motivo_impedimento_plano_acao"),
+            # Dados bancários da emenda Pix — a API `planos-acao-especiais` já traz
+            # (banco/agência/conta do plano de ação) e o coletor guarda no raw_data;
+            # aqui só é exposto. Vazio quando o plano ainda não tem domicílio bancário.
+            "banco": raw.get("nome_banco_plano_acao") or (raw.get("codigo_banco_plano_acao") or None),
+            "agencia": _num_dv(raw.get("numero_agencia_plano_acao"), raw.get("dv_agencia_plano_acao")),
+            "conta": _num_dv(raw.get("numero_conta_plano_acao"), raw.get("dv_conta_plano_acao")),
+            "situacao_dado_bancario": raw.get("descricao_situacao_dado_bancario_plano_acao") or None,
             # ⚠️ SEMPRE NULOS, e ja eram: 0 de 800 planos da fonte antiga tinham
             # `dataAtualizacao*` preenchida (medido em 06/09/2026). Ficam no
             # contrato porque some-los seria mexer no formato de saida sem

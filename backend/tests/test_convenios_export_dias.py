@@ -93,3 +93,56 @@ def test_docx_mostra_a_coluna():
     assert "Dias p/ fim da vigência" in cabecalhos
     col = cabecalhos.index("Dias p/ fim da vigência")
     assert tab.rows[1].cells[col].text == "8"
+
+
+# --- data de pagamento + data de empenho (fonte: Transparência-MG, como o RM) ---
+
+def test_pagamento_empenho_entram_nas_colunas_e_na_linha():
+    chaves = [c[0] for c in X.COLUNAS]
+    assert "dt_pagamento" in chaves and "dt_empenho" in chaves
+    mg = {"dt_pagamento": date(2026, 4, 8), "dt_empenho": date(2026, 2, 1)}
+    linha = X.linha_de(_Conv(venc_atual=date(2026, 12, 31)), mg=mg)
+    # a invariante do módulo continua valendo COM o mg
+    assert set(linha) == set(chaves)
+    assert linha["dt_pagamento"] == date(2026, 4, 8)
+    assert linha["dt_empenho"] == date(2026, 2, 1)
+
+
+def test_sem_mg_as_colunas_ficam_vazias_nao_inventadas():
+    """Convênio sem dado de MG (ou tenant não-MG): as duas colunas são None e
+    saem '-'/em branco — nunca uma data inventada."""
+    from services.rm_pdf import _fmt_dt
+    linha = X.linha_de(_Conv(venc_atual=date(2026, 12, 31)))  # sem mg
+    assert linha["dt_pagamento"] is None and linha["dt_empenho"] is None
+    assert _fmt_dt(linha["dt_pagamento"]) == ""      # render vazio, não "-inventado-"
+
+
+def test_pagamento_empenho_no_xlsx():
+    from openpyxl import load_workbook
+    mg = {"dt_pagamento": date(2026, 4, 8), "dt_empenho": date(2026, 2, 1)}
+    linhas = [X.linha_de(_Conv(venc_atual=date(2026, 12, 31)), mg=mg)]
+    buf = io.BytesIO(X.gerar_xlsx(linhas, titulo="T", recorte=[],
+                                  emitido_em=__import__("datetime").datetime.now()))
+    ws = load_workbook(buf)["Convênios"]
+    cab = [c.value for c in ws[1]]
+    assert "Data de pagamento" in cab and "Data de empenho" in cab
+    cp = ws.cell(2, cab.index("Data de pagamento") + 1)
+    ce = ws.cell(2, cab.index("Data de empenho") + 1)
+    # openpyxl lê data de volta como datetime — comparo só a parte de data.
+    def _d(v):
+        return v.date() if hasattr(v, "date") else v
+    assert _d(cp.value) == date(2026, 4, 8) and cp.number_format == "DD/MM/YYYY"
+    assert _d(ce.value) == date(2026, 2, 1)
+
+
+def test_pagamento_empenho_no_docx():
+    from docx import Document
+    mg = {"dt_pagamento": date(2026, 4, 8), "dt_empenho": date(2026, 2, 1)}
+    linhas = [X.linha_de(_Conv(venc_atual=date(2026, 12, 31)), mg=mg)]
+    buf = io.BytesIO(X.gerar_docx(linhas, titulo="T", subtitulo="s", recorte=[],
+                                  emitido_em=__import__("datetime").datetime.now()))
+    tab = Document(buf).tables[0]
+    cab = [c.text for c in tab.rows[0].cells]
+    assert "Data de pagamento" in cab and "Data de empenho" in cab
+    assert tab.rows[1].cells[cab.index("Data de pagamento")].text == "08/04/2026"
+    assert tab.rows[1].cells[cab.index("Data de empenho")].text == "01/02/2026"

@@ -43,6 +43,12 @@ COLUNAS: list[tuple[str, str, int]] = [
     # tela); vazio = sem data de vigencia (nao inventa prazo). Numero no Excel
     # (da p/ ordenar e achar o que vence antes), texto nos outros dois.
     ("dias_vigencia", "Dias p/ fim da vigência", 14),
+    # Data do PAGAMENTO (ultimo desembolso) e do EMPENHO — a MESMA informacao que
+    # o RM ja mostra para o convenio estadual, vinda de `transparencia_mg_empenhos`
+    # (Portal da Transparencia de MG). Vem preenchida so quando quem monta a linha
+    # passa `mg=` (o export faz); "-" quando nao ha (nao-MG, ou sem medicao).
+    ("dt_pagamento", "Data de pagamento", 13),
+    ("dt_empenho", "Data de empenho", 13),
 ]
 
 
@@ -52,8 +58,14 @@ def _dt(v) -> Optional[date]:
     return v if isinstance(v, date) else None
 
 
-def linha_de(c) -> dict:
+def linha_de(c, mg: dict | None = None) -> dict:
     """Um `ConvenioEstadual` vira a linha que os três formatos imprimem.
+
+    `mg` (opcional) traz a data de pagamento e de empenho do convênio, medidas no
+    Portal da Transparência de MG — a MESMA fonte que o RM usa
+    (`transparencia_mg_empenhos`). Só o export as tem, e as calcula com as mesmas
+    funções do `rm_builder`; quem chama sem `mg` (ex.: um teste) recebe as duas
+    colunas como None, sem quebrar a invariante "linha == COLUNAS".
 
     ⚠️ `objetivo` PRIMEIRO, e isso não é preferência de estilo. No dialeto do ES
     a coluna `objeto` guarda o CÓDIGO do processo ("2026-M632Z") e a descrição
@@ -86,6 +98,9 @@ def linha_de(c) -> dict:
         # Dias que faltam p/ o fim da vigencia (None quando nao ha data — ausencia
         # nao vira prazo zero). Negativo = ja venceu.
         "dias_vigencia": (venc - date.today()).days if venc else None,
+        # Data do ultimo pagamento (desembolso) e do empenho — do `mg` (Transparencia MG).
+        "dt_pagamento": (mg or {}).get("dt_pagamento"),
+        "dt_empenho": (mg or {}).get("dt_empenho"),
     }
 
 
@@ -144,8 +159,8 @@ def gerar_xlsx(linhas: list[dict], *, titulo: str, recorte: list[str],
             c = ws.cell(r, i, v if v is not None else "")
             c.font = normal
             c.border = borda
-            c.alignment = centro if chave in ("fonte", "situacao", "assinatura", "vigencia", "dias_vigencia") else esq
-            if chave in ("assinatura", "vigencia") and v:
+            c.alignment = centro if chave in ("fonte", "situacao", "assinatura", "vigencia", "dias_vigencia", "dt_pagamento", "dt_empenho") else esq
+            if chave in ("assinatura", "vigencia", "dt_pagamento", "dt_empenho") and v:
                 c.number_format = "DD/MM/YYYY"
             if chave == "dias_vigencia" and v is not None:
                 # Inteiro (com sinal): ordenavel/filtravel — o motivo de pedir Excel.
@@ -252,7 +267,7 @@ def gerar_docx(linhas: list[dict], *, titulo: str, subtitulo: str,
                 v = item.get(chave)
                 if chave == "repasse":
                     txt = _brl(v)
-                elif chave in ("assinatura", "vigencia"):
+                elif chave in ("assinatura", "vigencia", "dt_pagamento", "dt_empenho"):
                     txt = _dbr(v)
                 elif chave == "dias_vigencia":
                     txt = dias_vigencia_txt(v)
