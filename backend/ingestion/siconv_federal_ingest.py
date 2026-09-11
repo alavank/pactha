@@ -117,8 +117,16 @@ def ingest() -> int:
 
     conn = psycopg2.connect(_sync_url())
     cur = conn.cursor()
+    # ⚠️ C-3/§24 (auditoria 11/09): NAO commitar o TRUNCATE antes de recarregar.
+    # A versao antiga fazia TRUNCATE + commit e SO DEPOIS lia o dump de ~200MB;
+    # se o stream caisse no meio (verify=False, rede), a tabela ficava VAZIA e
+    # gravava 'success' — foi o `siconv_federal`=0 do BGK. Agora TRUNCATE + reload
+    # vivem na MESMA transacao: falha => rollback => os dados antigos permanecem
+    # (o TRUNCATE e transacional no Postgres; leitores veem o dado velho ate o
+    # COMMIT). Guardamos a contagem anterior para detectar queda absurda.
+    cur.execute("SELECT count(*) FROM siconv_federal")
+    antes = int(cur.fetchone()[0] or 0)
     cur.execute("TRUNCATE siconv_federal")
-    conn.commit()
 
     SQL = """INSERT INTO siconv_federal
         (id_proposta, cnpj, proponente, uf, municipio, nr_proposta, ano, situacao,
@@ -150,27 +158,40 @@ def ingest() -> int:
             c[0], c[1], c[2], c[3], c[4],
         ))
         if len(batch) >= 5000:
+            # ⚠️ SEM commit por lote — tudo numa transacao (ver acima). O
+            # execute_values ja envia ao servidor; o COMMIT unico vem no fim.
             execute_values(cur, SQL, batch, page_size=5000)
-            conn.commit()
             total += len(batch)
             batch = []
             if total % 100000 == 0:
                 log.info(f"  {total} propostas inseridas...")
     if batch:
         execute_values(cur, SQL, batch, page_size=5000)
-        conn.commit()
         total += len(batch)
 
-    # log de ingestao
+    # ⚠️ ZERO-GUARD: recarga vazia NAO substitui a base. Se o dump veio sem
+    # nenhuma proposta (stream truncado / layout mudou), desfaz o TRUNCATE e
+    # mantem o que havia — status 'error'. Queda >50% vs. o anterior comita
+    # (pode ser limpeza real da fonte) mas sai 'partial' para o watchdog olhar.
+    if total == 0:
+        conn.rollback()
+        status, erro = "error", f"recarga vazia (0 linhas); TRUNCATE desfeito, base anterior ({antes}) preservada"
+        log.error("SICONV federal: %s", erro)
+    else:
+        conn.commit()
+        if antes and total < antes * 0.5:
+            status, erro = "partial", f"queda de {antes} para {total} linhas (>50%) — verificar fonte"
+        else:
+            status, erro = "success", None
     try:
-        cur.execute("INSERT INTO ingestion_log (source, status, records_inserted, finished_at) "
-                    "VALUES ('siconv_federal','success',%s,NOW())", (total,))
+        cur.execute("INSERT INTO ingestion_log (source, status, records_inserted, error_message, finished_at) "
+                    "VALUES ('siconv_federal',%s,%s,%s,NOW())", (status, total, erro))
         conn.commit()
     except Exception:
         conn.rollback()
     cur.close()
     conn.close()
-    log.info(f"SICONV federal: {total} propostas carregadas (com CNPJ).")
+    log.info(f"SICONV federal: {total} propostas carregadas (com CNPJ), status={status}.")
     return total
 
 

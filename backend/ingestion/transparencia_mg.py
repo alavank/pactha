@@ -488,6 +488,22 @@ def _fila_detalhe(cur, limite: int) -> list[dict]:
             for r in cur.fetchall()]
 
 
+def _log_ingest(status: str, n: int, erro: str | None = None) -> None:
+    """⚠️ C-1 (auditoria 11/09): esta fonte NAO gravava ingestion_log — ficava 100%
+    invisivel (sem task, sem log, 403 por IP na VPS). Agora deixa rastro em toda
+    rodada, com conexao propria (a de coletar() ja fechou no finally). Assim, quando
+    o coletor rodar de um IP permitido, o watchdog/frescor passa a enxerga-lo; e o
+    403 vira 'error' explicito em vez de silencio."""
+    try:
+        c = _db(); c.autocommit = True; k = c.cursor()
+        k.execute("INSERT INTO ingestion_log (source, status, records_inserted, "
+                  "error_message, finished_at) VALUES "
+                  "('transparencia_mg',%s,%s,%s,NOW())", (status, n, erro))
+        k.close(); c.close()
+    except Exception:
+        pass
+
+
 def coletar() -> dict:
     """Uma rodada. Devolve o resumo, que tambem vai para o log.
 
@@ -514,6 +530,7 @@ def coletar() -> dict:
         logger.info("nenhum municipio de MG com CNPJ neste tenant — nada a coletar")
         res["sem_municipio_mg"] = True
         conn.close()
+        _log_ingest("success", 0, "tenant sem municipio de MG — nao se aplica")
         return res
 
     cli = _sessao()
@@ -553,6 +570,12 @@ def coletar() -> dict:
         if not token:
             logger.info("sem token de sessao — nenhuma listagem respondeu; fila do "
                         "detalhe nao roda nesta rodada")
+            # municipios==0 = ninguem respondeu (assinatura do 403 por IP); >0 = a
+            # listagem veio mas o token nao — degradado, nao morto.
+            _log_ingest("error" if res["municipios"] == 0 else "partial",
+                        res["empenhos_novos"],
+                        "nenhuma listagem respondeu (403 por IP na VPS?)"
+                        if res["municipios"] == 0 else "listagem ok mas sem token — fase 2 pulada")
             return res
 
         # FASE 2 — a fila do detalhe.
@@ -609,6 +632,14 @@ def coletar() -> dict:
         f"{res['empenhos_novos']} empenho(s) novo(s), {res['detalhes']} detalhe(s) — "
         f"{res['casados']} casaram com convenio, {res['sem_convenio']} nao "
         f"({time.monotonic()-t0:.0f}s) ===")
+    # Status honesto: municipios de MG existiam mas NENHUM respondeu => 403/bloqueio
+    # (error). Caso contrario a rodada cobriu sua fatia (o rodizio e por desenho) =>
+    # success. `_SO_LISTAGEM` e modo de medicao: nao loga (nao gravou nada).
+    if not _SO_LISTAGEM:
+        if muns and res["municipios"] == 0:
+            _log_ingest("error", 0, "nenhum municipio de MG respondeu (403 por IP na VPS?)")
+        else:
+            _log_ingest("success", res["empenhos_novos"] + res["detalhes"])
     return res
 
 

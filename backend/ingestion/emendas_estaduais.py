@@ -283,11 +283,27 @@ def main():
             })
             extracted += 1
 
-        conn.execute(text("""
-            INSERT INTO ingestion_log (source, status, records_inserted, finished_at)
-            VALUES ('emendas_estaduais', 'success', :n, NOW())
-        """), {"n": extracted})
-        conn.commit()
+        # ⚠️ M-6 + A-1 (auditoria 11/09): NAO comitar recarga vazia. O DELETE-all +
+        # os INSERTs vivem numa transacao so (commit unico), entao uma falha no
+        # meio ja preserva o dado; o buraco era commitar com extracted=0 (o DELETE
+        # esvaziava a tabela e ainda gravava 'success'). Agora: 0 extraidas =>
+        # rollback (mantem a carga anterior) + status honesto. (Modulo ORFAO — nao
+        # e chamado por cron/runner; roda so a mao. Ver relatorio.)
+        if extracted == 0:
+            conn.rollback()
+            with engine.connect() as _c2:
+                _c2.execute(text(
+                    "INSERT INTO ingestion_log (source, status, records_inserted, "
+                    "error_message, finished_at) VALUES "
+                    "('emendas_estaduais','error',0,:e,NOW())"),
+                    {"e": "0 emendas estaduais extraidas — DELETE nao aplicado, carga anterior preservada"})
+                _c2.commit()
+        else:
+            conn.execute(text("""
+                INSERT INTO ingestion_log (source, status, records_inserted, finished_at)
+                VALUES ('emendas_estaduais', 'success', :n, NOW())
+            """), {"n": extracted})
+            conn.commit()
 
     print(f"\n  Emendas estaduais extraidas: {extracted}")
     print(f"  Matchadas com TSE: {matched_tse}")

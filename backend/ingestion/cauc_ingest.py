@@ -132,9 +132,20 @@ def ingest() -> int:
         n += 1
 
     conn.commit()
+    # ⚠️ A-1 (auditoria 11/09): status HONESTO. O CAUC e uma lista NACIONAL — todo
+    # municipio ativo deveria aparecer. Entao aqui zero-inesperado FAZ sentido:
+    # `n` (municipios gravados) < `esperado` (municipios do tenant) => algo casou
+    # errado ou o CSV mudou de layout. Zero com municipios cadastrados => error.
+    esperado = len(by_ibge)
+    if esperado and n == 0:
+        status, erro = "error", f"CAUC casou 0 de {esperado} municipios (CSV/layout?)"
+    elif n < esperado:
+        status, erro = "partial", f"CAUC casou {n} de {esperado} municipios"
+    else:
+        status, erro = "success", None
     try:
-        cur.execute("INSERT INTO ingestion_log (source, status, records_inserted, finished_at) "
-                    "VALUES ('cauc','success',%s,NOW())", (n,))
+        cur.execute("INSERT INTO ingestion_log (source, status, records_inserted, error_message, finished_at) "
+                    "VALUES ('cauc',%s,%s,%s,NOW())", (status, n, erro))
         conn.commit()
     except Exception:
         conn.rollback()

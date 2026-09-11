@@ -113,9 +113,19 @@ def ingest() -> int:
         (cnpj, razao_social, municipio_id, divida_inicial, total_pago,
          divida_atual, valor_retirado, pago_fora, n_empenhos) VALUES %s""", batch)
     conn.commit()
+    # ⚠️ A-1 (auditoria 11/09): status HONESTO. `batch`=0 => a planilha veio vazia /
+    # o parse (indices de coluna fixos) quebrou => error (implausivel 0 credores).
+    # `matched`=0 com credores carregados => partial (o dado nacional entrou, mas
+    # nenhum "FUNDO MUNICIPAL DE SAUDE DE ..." casou um municipio — vinculo quebrou).
+    if len(batch) == 0:
+        status, erro = "error", "planilha AcordoFES vazia/ilegivel (layout/indices?)"
+    elif matched == 0:
+        status, erro = "partial", "credores carregados mas 0 vinculados a municipio (matching por nome?)"
+    else:
+        status, erro = "success", None
     try:
-        cur.execute("INSERT INTO ingestion_log (source, status, records_inserted, finished_at) "
-                    "VALUES ('acordofes','success',%s,NOW())", (len(batch),))
+        cur.execute("INSERT INTO ingestion_log (source, status, records_inserted, error_message, finished_at) "
+                    "VALUES ('acordofes',%s,%s,%s,NOW())", (status, len(batch), erro))
         conn.commit()
     except Exception:
         conn.rollback()

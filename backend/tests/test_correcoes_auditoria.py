@@ -79,3 +79,54 @@ def test_a1_simec_par_status_derivado_nao_hardcoded():
     # e a decisão existe (todos falharam -> error; alguns -> partial)
     assert "falhas == n" in src
     assert '"partial"' in src and '"error"' in src
+
+
+# ── Continuação (2ª leva de correções) ──────────────────────────────────────
+
+def test_a1_restante_status_derivado():
+    for rel, fonte in [("ingestion/sigcon_ckan_backfill.py", "sigcon_ckan_backfill"),
+                       ("ingestion/cauc_ingest.py", "cauc"),
+                       ("ingestion/acordofes_ingest.py", "acordofes")]:
+        src = _fonte(rel)
+        assert f"'{fonte}','success'" not in src, f"{fonte}: success ainda cravado"
+        assert f"'{fonte}',%s" in src, f"{fonte}: status deveria ser parâmetro"
+        assert '"partial"' in src
+
+
+def test_a4_siconv_emenda_backfill_loga_no_caminho_do_cron():
+    src = _fonte("ingestion/siconv_emenda_backfill.py")
+    # o cron chama backfill_parlamentar() — ela agora registra em ingestion_log
+    i = src.index("def backfill_parlamentar")
+    corpo = src[i:src.index("def main", i)]
+    assert "_registra(" in corpo and "siconv_emenda_backfill" in corpo
+
+
+def test_c1_transparencia_mg_grava_ingestion_log():
+    src = _fonte("ingestion/transparencia_mg.py")
+    assert "def _log_ingest(" in src
+    assert "'transparencia_mg'" in src
+    assert "_log_ingest(" in src  # chamado em pelo menos um caminho de saída
+
+
+def test_c3_siconv_federal_zero_guard_e_transacao_unica():
+    src = _fonte("ingestion/siconv_federal_ingest.py")
+    assert "'siconv_federal','success'" not in src        # não é mais cravado
+    assert "if total == 0:" in src and "conn.rollback()" in src  # zero-guard
+    # o commit imediato pós-TRUNCATE saiu (reload na mesma transação)
+    assert "TRUNCATE siconv_federal" in src
+    i = src.index("TRUNCATE siconv_federal")
+    depois = src[i:i+200]
+    assert "conn.commit()" not in depois, "TRUNCATE não pode commitar antes do reload"
+
+
+def test_item6_watchdog_detecta_fonte_nunca_executada():
+    src = _fonte("ingestion/watchdog_coleta.py")
+    assert "fonte_nunca_executada" in src
+    assert "siconv_federal" in src and "siconv_empenho_aberto" in src
+
+
+def test_m6_emendas_estaduais_nao_comita_vazio():
+    src = _fonte("ingestion/emendas_estaduais.py")
+    assert "if extracted == 0:" in src
+    assert "conn.rollback()" in src
+    assert "'emendas_estaduais', 'success'" in src  # caminho normal mantido
