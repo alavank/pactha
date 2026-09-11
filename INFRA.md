@@ -321,8 +321,19 @@ O desenho atual (redesenho de 09/08, "tuning da madrugada"):
 - **Lock compartilhado `/tmp/scraper.lock`** por worker: `sigcon`, `transferegov-lote` e
   `cagec` **nunca rodam ao mesmo tempo no mesmo tenant** (quem chega com o lock tomado
   sai com `flock -E 99` → remapeado para sucesso = pulou a vez, a próxima rodada cobre).
-- **Agendas entrelaçadas**: lote nas horas pares (`:00`), sigcon nas ímpares (`:25`),
-  cagec nos `:50-58` — cada task tem uma janela que a vizinha respeita.
+- **Agendas entrelaçadas — nas DUAS direções.** Na vertical (o mesmo worker): quem cai
+  dentro da janela de outra task do `/tmp/scraper.lock` pula a vez **sem log**, então a
+  janela nova precisa terminar (`timeout` inteiro) antes da próxima vizinha. Na horizontal
+  (tenants diferentes): o lote de dois tenants não se cruza no portal do TransfereGov,
+  porque todos saem do mesmo IP.
+  ⚠️ O "lote nas horas pares, sigcon nas ímpares" que vivia aqui acabou em algum ponto
+  de 2026 sem ninguém anotar. Medido em 10/09/2026: o lote é **1x/dia** na madrugada
+  em montesiao, santamaria, novapalma e bgk, e passou a **4x/dia** em freitas e trust
+  (alternados: freitas `25 1,3,7,21`, trust `10 2,4,8,22` UTC — fora do horário
+  comercial, fora do bloco 03:25–07:00 dos outros tenants e longe das 00:00 UTC, quando
+  o Coolify reinicia e marca como falha o que estiver rodando). Com uma rodada só, a
+  fila de ~60 municípios do freitas (`TG_LOTE_MUNICIPIOS=4`) levava ~15 dias para dar a
+  volta, e o watchdog acusava 30 municípios parados.
 - **Rodadas curtas com rodízio**: `SIGCON_LOTE_MUNICIPIOS` / `TG_LOTE_MUNICIPIOS` fatiam a
   carteira; o rodízio (ordenação por staleness + backoff por falha, PR #159) garante que
   ninguém starva. É o modelo que levou o TransfereGov a 41/41 frescos.

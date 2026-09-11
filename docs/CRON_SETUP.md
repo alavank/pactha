@@ -199,16 +199,27 @@ Chromium. Mesmo argumento do `simec-termos` e do `obrasgov`.
 Mexer num sem o outro faz o Coolify matar primeiro e **descartar o stdout** — a task
 nunca teria logado nada em tenant nenhum, que foi o que aconteceu em 17/08.
 
-**Escada (UTC), passo de 30 min:** freitas `35 3 * * *` · trust `5 4 * * *` ·
-montesiao `35 4 * * *` · santamaria `5 5 * * *` · **novapalma `35 5 * * *`**.
+**Escada (UTC), medida no Coolify em 10/09/2026:** freitas `45 3 * * *` · trust
+`20 4 * * *` · montesiao `50 4 * * *` · santamaria `20 5 * * *` · novapalma
+`50 5 * * *` · **bgk `57 5 * * *`**.
 
 - Tudo dentro de **03:00–05:59 UTC = 00:00–02:59 BRT**, que e a janela de **700 req/min**
   da CGU (fora dela sao 400).
 - ⚠️ O passo de 30 min e **maior que o orcamento de 23 min** de proposito: a cota da CGU
   e **por CHAVE**, e a chave e a mesma nos tenants que a tem. Dois workers nunca podem
   bater no mesmo token ao mesmo tempo.
-- Os minutos `:35`/`:05` evitam o `transferegov-lote` (`:00`), o `sigcon` (`:25`) e o
-  `cagec` (`:50-58`).
+- ⚠️ **O bgk quebra a escada**: entrou 7 min depois do novapalma e passa das 06:00 (sai
+  da janela de 700 req/min). Hoje nao colide porque a rodada do novapalma dura ~22 s
+  (1 municipio, 4 emendas — execucoes de 08 e 09/09), mas a regra acima vale para quando
+  a carteira dele crescer.
+- Lock proprio e sem navegador: a escada so precisa respeitar a cota da chave, nao a fila
+  do `/tmp/scraper.lock`.
+
+**`PT_TETO_DOCUMENTOS=200`** (env do worker) em **freitas e trust** desde 10/09/2026 — o
+default e 60 paginas (~900 documentos). Cada um tinha UMA emenda individual acima disso
+(`201737340001` e `201838580008`) e a rodada saia `partial` todo dia, com os pagamentos
+dela cortados. 200 paginas x 0,7 s de pausa = ~2,5 min no pior caso, dentro do
+`PT_ORCAMENTO_S`. Se a nota "TRUNCADOS no teto" voltar, e a mesma env que sobe.
 
 ⚠️ **Antes de criar, confira a coluna VERTICAL de cada worker**
 (`GET /applications/<worker_uuid>/scheduled-tasks`, que e a fonte de verdade — nao este
@@ -216,9 +227,9 @@ arquivo). A escada do `obrasgov` foi desenhada *entre tenants* e ninguem a confe
 contra as tasks `03:xx` que cada worker ja tinha; o freitas nasceu no mesmo minuto do
 `transferegov-lote`.
 
-⚠️ **A chave (`PORTAL_TRANSPARENCIA_API_KEY`) vai no WORKER**, nao na API, e so em
-`novapalma-rs` e `montesiao-mg`. Sem ela a task ainda vale a pena: a **carteira** de
-emendas sai do dump aberto e roda nos cinco.
+⚠️ **A chave (`PORTAL_TRANSPARENCIA_API_KEY`) vai no WORKER**, nao na API — e esta nos
+**seis** (conferido em 10/09/2026 so pelo tamanho, sem ler o valor). Sem ela a task ainda
+valeria a pena: a **carteira** de emendas sai do dump aberto.
 
 - `run_sigcon_cron.py` já roda também as fontes de **dados abertos**
   (`run_dadosabertos_cron.run_all()`: CAUC, Acordo FES, SISMOB e SIMEC-PAR) e o
