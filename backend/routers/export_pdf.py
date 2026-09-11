@@ -247,11 +247,47 @@ async def export_convenios_pdf(
     truncado = len(convs) > MAX_EXPORT_CONVENIOS
     if truncado:
         convs = convs[:MAX_EXPORT_CONVENIOS]
+    # PAGAMENTO (ultimo desembolso) + EMPENHO por convenio — a MESMA informacao
+    # que o RM ja mostra para o estadual, da MESMA fonte (`transparencia_mg_empenhos`,
+    # Portal da Transparencia de MG). Reusa as funcoes do rm_builder para nao
+    # duplicar a regra (uma consulta so p/ o municipio, nao N+1). `pagamentos` prova
+    # a medicao; `dt_empenho` (a mais recente) e a data de empenho. Tabela ausente
+    # ou tenant nao-MG => mapa vazio e as colunas saem "-".
+    mg_por_conv: dict[int, dict] = {}
+    try:
+        from services.rm_builder import _mg_pagamentos, _desembolso_ops_obs
+        _pgs: dict[int, list] = {}
+        _emp: dict[int, object] = {}
+        for _cid, _pg, _dte in (await db.execute(text(
+            "SELECT convenio_id, pagamentos, dt_empenho FROM transparencia_mg_empenhos "
+            "WHERE municipio_id = :mid AND convenio_id IS NOT NULL"
+        ), {"mid": municipio_id})).all():
+            if _pg is not None:
+                _pgs.setdefault(_cid, []).append(_pg)
+            if _dte and (_cid not in _emp or _dte > _emp[_cid]):
+                _emp[_cid] = _dte
+        for _cid in set(_pgs) | set(_emp):
+            _des = _desembolso_ops_obs(_mg_pagamentos(_pgs.get(_cid))) if _pgs.get(_cid) else {}
+            # dt_ultimo_desembolso vem em dd/mm/aaaa (string) — vira date p/ o
+            # arquivo formatar igual às outras datas.
+            _dtp = _des.get("dt_ultimo_desembolso")
+            _dtp_date = None
+            if _dtp:
+                try:
+                    _dtp_date = datetime.strptime(str(_dtp)[:10], "%d/%m/%Y").date()
+                except ValueError:
+                    _dtp_date = None
+            mg_por_conv[_cid] = {"dt_pagamento": _dtp_date, "dt_empenho": _emp.get(_cid)}
+    except Exception as e:
+        # Nunca derruba o export por causa da coluna nova: sem os dados de MG, as
+        # duas colunas simplesmente saem vazias (mesma disciplina do resto).
+        mg_por_conv = {}
+
     # ⚠️ UMA SÓ MONTAGEM DE LINHA para os três formatos (`convenios_export`).
     # Se o PDF montasse a linha aqui e o Excel montasse a dele lá, o gestor que
     # exportasse nos dois encontraria conteúdos diferentes — e a divergência
     # nasceria exatamente como a do filtro nasceu.
-    linhas = [cexp.linha_de(c) for c in convs]
+    linhas = [cexp.linha_de(c, mg=mg_por_conv.get(c.id)) for c in convs]
     rows = [[
         (l["fonte"])[:8],
         l["proposta"][:14] or "-",
@@ -266,6 +302,8 @@ async def export_convenios_pdf(
         # Dias p/ fim da vigencia — mesma formatacao do Excel/Word (cexp), p/ os
         # tres formatos mostrarem o mesmo valor.
         cexp.dias_vigencia_txt(l["dias_vigencia"]),
+        _br(l["dt_pagamento"]),
+        _br(l["dt_empenho"]),
     ] for l in linhas]
     # O titulo nao pode mais cravar "SIGCON-MG": o produto e vendido em MG, ES,
     # GO e TO, e emitir "Convenios SIGCON-MG — Goiania/GO" e afirmar que o dado
@@ -315,7 +353,7 @@ async def export_convenios_pdf(
         corpo = _build_pdf(
             _titulo,
             _sub,
-            ["Fonte", "Proposta", "Plano", "Instrumento", "Órgão", "Objeto", "Situação", "Repasse", "Assinatura", "Vigência", "Dias p/ fim vig."],
+            ["Fonte", "Proposta", "Plano", "Instrumento", "Órgão", "Objeto", "Situação", "Repasse", "Assinatura", "Vigência", "Dias p/ fim vig.", "Data pgto", "Data empenho"],
             rows,
         )
         nome_arq = f"{base_nome}.pdf"
@@ -588,6 +626,13 @@ async def export_plano_acao_pdf(
     for it in items:
         cod, parl = _parse_emenda(it.get("emenda_codigo") or "")
         benef = f"{it.get('beneficiario_cnpj') or ''} - {it.get('beneficiario_nome') or ''}".strip(" -")
+        # Dados bancários da emenda Pix (banco / agência / conta), vindos do plano
+        # de ação (`buscar` já os expõe do raw_data). Uma célula só, legível.
+        _bco = " · ".join(x for x in (
+            it.get("banco"),
+            f"Ag {it['agencia']}" if it.get("agencia") else "",
+            f"CC {it['conta']}" if it.get("conta") else "",
+        ) if x) or "-"
         rows.append([
             (it.get("codigo") or "")[:16],
             cod[:14] or "-",
@@ -596,6 +641,7 @@ async def export_plano_acao_pdf(
             _br(it.get("valor_total")),
             (it.get("situacao_plano_acao") or "")[:14],
             (it.get("situacao_plano_trabalho") or "-")[:22],
+            Paragraph(_bco[:60], ParagraphStyle("bco", fontSize=7)),
         ])
     _f = []
     if situacao and situacao != "TODAS": _f.append(f"situação: {situacao}")
@@ -607,7 +653,7 @@ async def export_plano_acao_pdf(
     pdf = _build_pdf(
         f"Planos de Ação - Transferência Especial - {mun.nome}/{mun.uf}",
         f"Filtros: {filtros} · {len(rows)} plano(s)",
-        ["Código", "Emenda", "Parlamentar", "Beneficiário", "Valor", "Sit. P. Ação", "Sit. P. Trabalho"],
+        ["Código", "Emenda", "Parlamentar", "Beneficiário", "Valor", "Sit. P. Ação", "Sit. P. Trabalho", "Dados bancários"],
         rows,
     )
     nome_arq = f"plano_acao_{mun.nome.replace(' ','_')}.pdf"
