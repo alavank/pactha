@@ -41,6 +41,23 @@ _CACHE_DIR = os.getenv("SICONV_CACHE_DIR") or os.path.join(
 )
 
 
+def _money(s):
+    """Valor monetario tolerante (M-2, auditoria 11/09). No nivel do modulo p/ ser
+    testavel. Ponto so e separador de milhar QUANDO ha virgula decimal — remover o
+    ponto INCONDICIONALMENTE (versao antiga) transformava '1234.56' em 123456."""
+    s = (s or "").strip().replace("R$", "").strip()
+    if not s:
+        return None
+    if "," in s and "." in s:
+        s = s.replace(".", "").replace(",", ".")
+    elif "," in s:
+        s = s.replace(",", ".")
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
 def _db():
     import psycopg2
     url = os.getenv("DATABASE_URL_SYNC", "")
@@ -141,23 +158,33 @@ def backfill_ids(use_cache: bool = True) -> int:
 
 def backfill_parlamentar(use_cache: bool = True) -> int:
     """Atualiza parlamentar a partir de siconv_emenda (7.6 MB) via id_proposta_siconv."""
+    # ⚠️ A-4 (auditoria 11/09): o CRON chama backfill_parlamentar() direto (nao
+    # main()), entao ANTES esta fonte nao deixava nenhuma linha em ingestion_log —
+    # o card de frescor listava 'siconv_emenda_backfill' sem escritor. Agora todo
+    # caminho de saida grava rastreabilidade.
+    def _registra(status, n, erro=None):
+        try:
+            c = _db(); k = c.cursor()
+            k.execute("INSERT INTO ingestion_log (source, status, records_inserted, "
+                      "error_message, finished_at) VALUES "
+                      "('siconv_emenda_backfill',%s,%s,%s,NOW())", (status, n, erro))
+            c.commit(); k.close(); c.close()
+        except Exception:
+            pass
+
     nossas = _nossas_propostas()
     ids_nossos = {v[1] for v in nossas.values() if v[1]}
     if not ids_nossos:
         logger.info("backfill_parlamentar: nenhuma proposta com id_proposta_siconv ainda")
+        _registra("success", 0, "nenhuma proposta com id_proposta_siconv ainda (backfill_ids pendente)")
         return 0
     logger.info(f"backfill_parlamentar: {len(ids_nossos)} proposta(s) com id — baixando siconv_emenda")
     content = _download(URL_EMENDA, use_cache=use_cache)
     rd, hdr = _open_csv(content)
     ip, npn = hdr.index("ID_PROPOSTA"), hdr.index("NOME_PARLAMENTAR")
     ive = hdr.index("VALOR_REPASSE_EMENDA") if "VALOR_REPASSE_EMENDA" in hdr else None
-
-    def _money(s):
-        s = (s or "").strip().replace("R$", "").replace(".", "").replace(",", ".").strip()
-        try:
-            return float(s) if s else None
-        except ValueError:
-            return None
+    # `_money` agora e do modulo (M-2) — testavel; a versao aninhada, incondicional,
+    # foi removida.
 
     id2nomes: dict[str, list] = {}
     id2valor: dict[str, float] = {}
@@ -180,6 +207,7 @@ def backfill_parlamentar(use_cache: bool = True) -> int:
                 f"| {len(id2valor)} com valor_emenda")
 
     if not id2nomes and not id2valor:
+        _registra("success", 0, "0 id_proposta casaram o siconv_emenda nesta passada")
         return 0
     # id_proposta -> [numero_proposta...]  (pode haver >1 município com mesmo id? não; id é único)
     id_to_nr = {v[1]: nr for nr, v in nossas.items() if v[1]}
@@ -203,6 +231,7 @@ def backfill_parlamentar(use_cache: bool = True) -> int:
         n += cur.rowcount
     conn.commit(); cur.close(); conn.close()
     logger.info(f"backfill_parlamentar: {n} linha(s) atualizadas (parlamentar/valor_emenda)")
+    _registra("success", n)
     return n
 
 

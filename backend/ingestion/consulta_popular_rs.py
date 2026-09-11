@@ -190,6 +190,12 @@ def _log_ingest(cur, conn, status: str, n: int, erro: str | None = None):
         log.warning("ingestion_log falhou: %s", str(e)[:120])
 
 
+try:
+    from ingestion import status_coleta as _st
+except ImportError:
+    import status_coleta as _st
+
+
 def ingest(dry: bool = False) -> int:
     from ingestion._resilience import get_sync_db_url, neon_connect
     with neon_connect(get_sync_db_url()) as conn:
@@ -208,6 +214,7 @@ def ingest(dry: bool = False) -> int:
                 return 0
 
             gravados = 0
+            falhas = 0  # ⚠️ M-3: municipio esperado que NAO rendeu dado
             for mid, nome, corede in municipios:
                 if not corede:
                     # ⚠️ Sem COREDE nao ha como saber QUAL planilha ler — e
@@ -216,16 +223,19 @@ def ingest(dry: bool = False) -> int:
                     # (/api/control/municipios).
                     log.warning("  %s: sem COREDE cadastrado — pulei "
                                 "(preencha em /api/control/municipios)", nome)
+                    falhas += 1
                     continue
                 url = url_da_planilha(corede)
                 if not url:
                     log.warning("  %s (COREDE %s): planilha nao encontrada na "
                                 "edicao %s", nome, corede, EDICAO)
+                    falhas += 1
                     continue
                 demandas = parse_planilha(_get(url).content, nome)
                 if not demandas:
                     log.warning("  %s: planilha lida mas sem demanda reconhecida "
                                 "— o layout pode ter mudado", nome)
+                    falhas += 1
                     continue
                 votou = [d for d in demandas if d.get("votos_municipio") is not None]
                 log.info("  %s (COREDE %s): %d demanda(s) eleita(s), participacao "
@@ -250,8 +260,15 @@ def ingest(dry: bool = False) -> int:
             if dry:
                 return 0
             conn.commit()
-            log.info("=== Consulta Popular %s: %d linha(s) ===", EDICAO, gravados)
-            _log_ingest(cur, conn, "success", gravados)
+            log.info("=== Consulta Popular %s: %d linha(s), %d municipio(s) sem dado ===",
+                     EDICAO, gravados, falhas)
+            # ⚠️ M-3 (auditoria 11/09): antes gravava 'success' cravado mesmo com
+            # municipios pulados (sem COREDE / planilha ausente / layout mudou).
+            # Agora, se algum municipio esperado nao rendeu dado, o status e 'partial'
+            # com o motivo — o painel de frescor deixa de pintar verde sobre coleta
+            # incompleta.
+            status, erro = _st.por_falhas(gravados, falhas, "municipio sem COREDE/planilha/demanda")
+            _log_ingest(cur, conn, status, gravados, erro)
             return gravados
         except Exception as e:
             conn.rollback()

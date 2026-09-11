@@ -21,8 +21,8 @@ bateria, o CHE e o CKAN da CAGE responderam 200 do mesmo IP no mesmo minuto.
 Consequencia pratica: **a Scheduled Task deste coletor NAO e criada** enquanto o
 bloqueio valer. O codigo fica pronto e testado; quando a liberacao vier, ligar e
 uma linha no Coolify. Se rodar assim mesmo, o coletor grava `ingestion_log` com
-status `partial` e a nota do bloqueio — e **nunca trata 403 como "municipio sem
-licitacao"**.
+status `error` (403 e falha de ACESSO — §12 da auditoria) e a nota do bloqueio —
+e **nunca trata 403 como "municipio sem licitacao"** nem como `success`.
 
 As saidas, em ordem de custo: pedido institucional de liberacao ao TCE (o dado e
 aberto, e o pedido e legitimo), proxy de saida so para esta coleta, ou coleta de
@@ -434,7 +434,11 @@ def ingest(dry: bool = False) -> int:
             log.info("=== TCE-RS: %d linha(s) gravada(s), %d falha(s)%s ===",
                      gravados, falhas, ", BLOQUEADO POR IP" if bloqueado else "")
             if bloqueado:
-                _log_ingest(cur, conn, "partial", gravados, NOTA_403)
+                # ⚠️ §12 (auditoria 11/09): 403 e FALHA DE ACESSO -> 'error', nao
+                # 'partial'. Partial insinuava "veio parte"; o bloqueio de IP nao
+                # trouxe o acervo. O `gravados` (se houver) fica registrado, mas o
+                # status alarma o acesso. NUNCA vira 'success' nem some.
+                _log_ingest(cur, conn, "error", gravados, NOTA_403)
             else:
                 _log_ingest(cur, conn, "success" if not falhas else "partial",
                             gravados)

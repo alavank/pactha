@@ -60,6 +60,12 @@ def _parse_dt(s: str):
     return None
 
 
+try:
+    from ingestion import status_coleta as _st
+except ImportError:
+    import status_coleta as _st
+
+
 def ingest() -> int:
     url = _csv_url()
     log.info(f"baixando CSV CAUC: {url.split('/')[-1]}")
@@ -132,9 +138,14 @@ def ingest() -> int:
         n += 1
 
     conn.commit()
+    # ⚠️ A-1 (auditoria 11/09): status HONESTO. O CAUC e uma lista NACIONAL — todo
+    # municipio ativo deveria aparecer. Entao aqui zero-inesperado FAZ sentido:
+    # `n` (municipios gravados) < `esperado` (municipios do tenant) => algo casou
+    # errado ou o CSV mudou de layout. Zero com municipios cadastrados => error.
+    status, erro = _st.cauc(n, len(by_ibge))
     try:
-        cur.execute("INSERT INTO ingestion_log (source, status, records_inserted, finished_at) "
-                    "VALUES ('cauc','success',%s,NOW())", (n,))
+        cur.execute("INSERT INTO ingestion_log (source, status, records_inserted, error_message, finished_at) "
+                    "VALUES ('cauc',%s,%s,%s,NOW())", (status, n, erro))
         conn.commit()
     except Exception:
         conn.rollback()

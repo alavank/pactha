@@ -182,6 +182,12 @@ def _log_ingest(cur, status: str, n: int, erro: str | None = None):
         pass
 
 
+try:
+    from ingestion import status_coleta as _st
+except ImportError:
+    import status_coleta as _st
+
+
 def ingest() -> int:
     from ingestion._resilience import get_sync_db_url, neon_connect
     with neon_connect(get_sync_db_url()) as conn:
@@ -196,21 +202,34 @@ def ingest() -> int:
             log.info("SES-GO: %d municipio(s) de GO", len(mapa))
 
             total = 0
+            falhas = 0  # ⚠️ M-3/M-4: municipio de GO que falhou
             with httpx.Client(timeout=90, follow_redirects=True,
                               headers={"User-Agent": "Mozilla/5.0"}) as cli:
                 for ibge6, mid in sorted(mapa.items()):
-                    ap = _buscar(cli, RES_PRIMARIA, ibge6)
-                    for r in ap:
-                        _grava_primaria(cur, mid, r)
-                    vg = _buscar(cli, RES_VIGILANCIA, ibge6)
-                    for r in vg:
-                        _grava_vigilancia(cur, mid, r)
-                    total += len(ap) + len(vg)
-                    log.info("  ibge %s: %d atencao primaria + %d vigilancia",
-                             ibge6, len(ap), len(vg))
+                    # ⚠️ M-4 (auditoria 11/09): SAVEPOINT por municipio. Antes, uma
+                    # falha de _buscar/_grava propagava e derrubava o run inteiro
+                    # para 'error'. Agora o municipio ruim e isolado e o resto grava.
+                    try:
+                        cur.execute("SAVEPOINT cofin_mun")
+                        ap = _buscar(cli, RES_PRIMARIA, ibge6)
+                        for r in ap:
+                            _grava_primaria(cur, mid, r)
+                        vg = _buscar(cli, RES_VIGILANCIA, ibge6)
+                        for r in vg:
+                            _grava_vigilancia(cur, mid, r)
+                        cur.execute("RELEASE SAVEPOINT cofin_mun")
+                        total += len(ap) + len(vg)
+                        log.info("  ibge %s: %d atencao primaria + %d vigilancia",
+                                 ibge6, len(ap), len(vg))
+                    except Exception as e:
+                        cur.execute("ROLLBACK TO SAVEPOINT cofin_mun")
+                        falhas += 1
+                        log.warning("  ibge %s: falhou (%s)", ibge6, str(e)[:120])
             conn.commit()
-            log.info("SES-GO: %d registro(s) gravados", total)
-            _log_ingest(cur, "success", total)
+            log.info("SES-GO: %d registro(s) gravados, %d municipio(s) com falha", total, falhas)
+            # ⚠️ M-3: 'partial' quando parte dos municipios de GO falhou — nao 'success' cravado.
+            status, erro = _st.por_falhas(total, falhas, "municipio de GO")
+            _log_ingest(cur, status, total, erro)
             conn.commit()
             return total
         except Exception as e:

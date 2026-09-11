@@ -22,8 +22,8 @@ inteiro**.
 
 Este arquivo entra **pronto e desligado**, como o `tce_rs.py` e o `obrasgov.py`.
 Quando a liberacao vier (`docs/fontes-rs/OFICIO-TCE-RS.md`), ligar e uma linha
-no Coolify. Se rodar assim mesmo, grava `partial` com a nota — e **nunca trata
-403 como "municipio sem licitacao"**.
+no Coolify. Se rodar assim mesmo, grava `error` (403 e falha de ACESSO — §12 da
+auditoria) com a nota — e **nunca trata 403 como "municipio sem licitacao"**.
 
 ⚠️ E ele roda de QUALQUER outro ponto: nao depende de credencial, so de IP nao
 bloqueado. Uma carga inicial executada de conexao residencial contra o banco do
@@ -1031,7 +1031,11 @@ def ingest(dry: bool = False) -> int:
                      "detalhe%s ===", gravados, falhas, orcamento.gasto(),
                      ", BLOQUEADO" if bloqueado else "")
             if bloqueado:
-                _log_ingest(cur, conn, "partial", gravados, NOTA_BLOQUEIO)
+                # ⚠️ §12 (auditoria 11/09): 403/451 de borda e FALHA DE ACESSO ->
+                # 'error', nao 'partial' (o 403-de-conexao transitorio ja foi
+                # recuperado antes de virar `Bloqueado`, entao aqui e o bloqueio
+                # REAL). Observavel, nunca 'success' nem ausencia.
+                _log_ingest(cur, conn, "error", gravados, NOTA_BLOQUEIO)
             else:
                 _log_ingest(cur, conn, "success" if not falhas else "partial",
                             gravados)

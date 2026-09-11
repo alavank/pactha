@@ -325,6 +325,20 @@ def _fontes_paradas(cur, esperado: dict | None = None) -> list[dict]:
                 "chave": source,
                 "detalhe": "nenhum sucesso registrado ainda",
             })
+    # ⚠️ ITEM 6 (auditoria 11/09): fonte CRITICA que nunca deixou UMA linha.
+    # O ramo acima ignora de proposito fonte sem linha (task opcional por tenant,
+    # ex.: SISMOB desligado) — nao pode virar alarme eterno. MAS estas duas SAO
+    # federais/nacionais, deveriam rodar em TODO tenant, e a auditoria as pegou
+    # orfas (sem Scheduled Task, sem log). Aqui viram um achado PROPRIO e explicito
+    # ("nunca executada") em vez de sumirem no silencio que este watchdog existe
+    # para acabar. Ao ganharem task e a 1a linha, o ramo de frescor acima assume.
+    _CRITICAS_SEMPRE = {"siconv_federal", "siconv_empenho_aberto"}
+    for source in sorted(_CRITICAS_SEMPRE - com_linha):
+        achados.append({
+            "tipo": "fonte_nunca_executada",
+            "chave": source,
+            "detalhe": "fonte critica federal sem NENHUMA execucao — Scheduled Task nao criada?",
+        })
     return achados
 
 
