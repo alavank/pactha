@@ -59,6 +59,12 @@ def _xlsx_url() -> str:
     raise RuntimeError("link do Valores-acordo.xlsx nao encontrado na pagina do Acordo FES")
 
 
+try:
+    from ingestion import status_coleta as _st
+except ImportError:
+    import status_coleta as _st
+
+
 def ingest() -> int:
     # ⚠️ SO MUNICIPIO DE MINAS. O Acordo FES e um programa do Estado de MG, e o
     # match e por NOME (razao social do Fundo de Saude): sem o filtro de UF, a
@@ -117,12 +123,7 @@ def ingest() -> int:
     # o parse (indices de coluna fixos) quebrou => error (implausivel 0 credores).
     # `matched`=0 com credores carregados => partial (o dado nacional entrou, mas
     # nenhum "FUNDO MUNICIPAL DE SAUDE DE ..." casou um municipio — vinculo quebrou).
-    if len(batch) == 0:
-        status, erro = "error", "planilha AcordoFES vazia/ilegivel (layout/indices?)"
-    elif matched == 0:
-        status, erro = "partial", "credores carregados mas 0 vinculados a municipio (matching por nome?)"
-    else:
-        status, erro = "success", None
+    status, erro = _st.acordofes(len(batch), matched)
     try:
         cur.execute("INSERT INTO ingestion_log (source, status, records_inserted, error_message, finished_at) "
                     "VALUES ('acordofes',%s,%s,%s,NOW())", (status, len(batch), erro))

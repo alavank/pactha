@@ -107,6 +107,12 @@ def _index_convenios() -> dict:
     return out
 
 
+try:
+    from ingestion import status_coleta as _st
+except ImportError:
+    import status_coleta as _st
+
+
 def ingest() -> int:
     conv = _index_convenios()
     rd, ix = _open_csv(PROPOSTA_URL)
@@ -173,16 +179,12 @@ def ingest() -> int:
     # nenhuma proposta (stream truncado / layout mudou), desfaz o TRUNCATE e
     # mantem o que havia — status 'error'. Queda >50% vs. o anterior comita
     # (pode ser limpeza real da fonte) mas sai 'partial' para o watchdog olhar.
+    status, erro = _st.siconv_federal(total, antes)
     if total == 0:
-        conn.rollback()
-        status, erro = "error", f"recarga vazia (0 linhas); TRUNCATE desfeito, base anterior ({antes}) preservada"
+        conn.rollback()   # zero-guard: desfaz o TRUNCATE, preserva a base anterior
         log.error("SICONV federal: %s", erro)
     else:
         conn.commit()
-        if antes and total < antes * 0.5:
-            status, erro = "partial", f"queda de {antes} para {total} linhas (>50%) — verificar fonte"
-        else:
-            status, erro = "success", None
     try:
         cur.execute("INSERT INTO ingestion_log (source, status, records_inserted, error_message, finished_at) "
                     "VALUES ('siconv_federal',%s,%s,%s,NOW())", (status, total, erro))

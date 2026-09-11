@@ -215,6 +215,12 @@ def upsert(mun_id: int, data: dict) -> tuple[int, int]:
     return nd, nl
 
 
+try:
+    from ingestion import status_coleta as _st
+except ImportError:  # rodando como script (python ingestion/simec_par.py)
+    import status_coleta as _st
+
+
 def run():
     municipios = _municipios_pacta()
     logger.info(f"=== SIMEC PAR: {len(municipios)} municipios ===")
@@ -236,13 +242,7 @@ def run():
     # pode legitimamente ter 0 liberacoes (municipio sem PAR), entao 0 registros
     # SEM falha de fetch e success de verdade. Todos falharam => error (fonte fora
     # do ar/Cloudflare); alguns => partial; nenhum => success.
-    n = len(municipios)
-    if n and falhas == n:
-        status, erro = "error", f"todos os {n} municipios sem resposta do SIMEC (curl_cffi/layout?)"
-    elif falhas:
-        status, erro = "partial", f"{falhas} de {n} municipio(s) sem resposta"
-    else:
-        status, erro = "success", None
+    status, erro = _st.simec_par(len(municipios), falhas)
     try:
         import psycopg2
         url = os.getenv("DATABASE_URL_SYNC", "").replace("&channel_binding=require", "").replace("?channel_binding=require", "")

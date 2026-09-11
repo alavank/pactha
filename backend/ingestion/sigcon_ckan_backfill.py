@@ -377,6 +377,12 @@ def _inserir_faltantes(conn, dim_by_id: dict, fatos: dict, situacoes: dict) -> i
     return novos
 
 
+try:
+    from ingestion import status_coleta as _st
+except ImportError:
+    import status_coleta as _st
+
+
 def backfill() -> int:
     """Baixa o dataset, casa com os convenios SIGCON e preenche contrapartida +
     vigencia faltantes. Retorna nº de registros atualizados."""
@@ -489,12 +495,7 @@ def backfill() -> int:
     # erro por si (backfill so enriquece o que ja existe). Os sinais de problema:
     #  - havia convenios SIGCON nossos e NENHUM casou o dump -> matching/dump quebrado;
     #  - o ft_convenio (repasse real) nao baixou -> enriquecimento incompleto.
-    if ours and matched == 0:
-        status, erro = "partial", f"{len(ours)} convenios SIGCON e 0 casaram o dado aberto (dump/matching?)"
-    elif not fatos:
-        status, erro = "partial", "ft_convenio (repasse) nao baixou — enriquecimento parcial"
-    else:
-        status, erro = "success", None
+    status, erro = _st.sigcon_ckan(len(ours), matched, bool(fatos))
     try:
         cur.execute("INSERT INTO ingestion_log (source, status, records_inserted, error_message, finished_at) "
                     "VALUES ('sigcon_ckan_backfill',%s,%s,%s,NOW())", (status, upd + inseridos, erro))

@@ -182,6 +182,12 @@ def _log_ingest(cur, status: str, n: int, erro: str | None = None):
         pass
 
 
+try:
+    from ingestion import status_coleta as _st
+except ImportError:
+    import status_coleta as _st
+
+
 def ingest() -> int:
     from ingestion._resilience import get_sync_db_url, neon_connect
     with neon_connect(get_sync_db_url()) as conn:
@@ -222,10 +228,8 @@ def ingest() -> int:
             conn.commit()
             log.info("SES-GO: %d registro(s) gravados, %d municipio(s) com falha", total, falhas)
             # ⚠️ M-3: 'partial' quando parte dos municipios de GO falhou — nao 'success' cravado.
-            if falhas:
-                _log_ingest(cur, "partial", total, f"{falhas} municipio(s) de GO falharam")
-            else:
-                _log_ingest(cur, "success", total)
+            status, erro = _st.por_falhas(total, falhas, "municipio de GO")
+            _log_ingest(cur, status, total, erro)
             conn.commit()
             return total
         except Exception as e:

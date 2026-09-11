@@ -60,6 +60,12 @@ def _parse_dt(s: str):
     return None
 
 
+try:
+    from ingestion import status_coleta as _st
+except ImportError:
+    import status_coleta as _st
+
+
 def ingest() -> int:
     url = _csv_url()
     log.info(f"baixando CSV CAUC: {url.split('/')[-1]}")
@@ -136,13 +142,7 @@ def ingest() -> int:
     # municipio ativo deveria aparecer. Entao aqui zero-inesperado FAZ sentido:
     # `n` (municipios gravados) < `esperado` (municipios do tenant) => algo casou
     # errado ou o CSV mudou de layout. Zero com municipios cadastrados => error.
-    esperado = len(by_ibge)
-    if esperado and n == 0:
-        status, erro = "error", f"CAUC casou 0 de {esperado} municipios (CSV/layout?)"
-    elif n < esperado:
-        status, erro = "partial", f"CAUC casou {n} de {esperado} municipios"
-    else:
-        status, erro = "success", None
+    status, erro = _st.cauc(n, len(by_ibge))
     try:
         cur.execute("INSERT INTO ingestion_log (source, status, records_inserted, error_message, finished_at) "
                     "VALUES ('cauc',%s,%s,%s,NOW())", (status, n, erro))

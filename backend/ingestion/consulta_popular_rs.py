@@ -190,6 +190,12 @@ def _log_ingest(cur, conn, status: str, n: int, erro: str | None = None):
         log.warning("ingestion_log falhou: %s", str(e)[:120])
 
 
+try:
+    from ingestion import status_coleta as _st
+except ImportError:
+    import status_coleta as _st
+
+
 def ingest(dry: bool = False) -> int:
     from ingestion._resilience import get_sync_db_url, neon_connect
     with neon_connect(get_sync_db_url()) as conn:
@@ -261,11 +267,8 @@ def ingest(dry: bool = False) -> int:
             # Agora, se algum municipio esperado nao rendeu dado, o status e 'partial'
             # com o motivo — o painel de frescor deixa de pintar verde sobre coleta
             # incompleta.
-            if falhas:
-                _log_ingest(cur, conn, "partial", gravados,
-                            f"{falhas} municipio(s) sem COREDE/planilha/demanda")
-            else:
-                _log_ingest(cur, conn, "success", gravados)
+            status, erro = _st.por_falhas(gravados, falhas, "municipio sem COREDE/planilha/demanda")
+            _log_ingest(cur, conn, status, gravados, erro)
             return gravados
         except Exception as e:
             conn.rollback()
