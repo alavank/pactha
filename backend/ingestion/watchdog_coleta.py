@@ -67,13 +67,14 @@ FRESCOR_HORAS_NACIONAL = {
     # itens que eram so isso, e o dono leu o conjunto como catastrofe.
     #
     #   cauc            `25 10-14 * * *`  -> 5 rodadas de manha e um vao de 20h
-    #   acordofes       dentro do run_all do cron `sigcon`, 1x/dia
-    #   simec_par       idem em MG; Scheduled Task propria diaria no RS
+    #   simec_par       dentro do run_all do cron `sigcon` em MG (1x/dia);
+    #                   Scheduled Task propria diaria no RS
+    #   (o `acordofes` tem a mesma cadencia, mas e so de MG: o prazo dele mora
+    #   em FRESCOR_HORAS_POR_UF — ver la por que ele saiu daqui)
     #
     # Alarme que toca todo dia nao e alarme: e ruido que esconde o dia ruim.
     # 30h = a cadencia real + folga, a mesma conta das outras diarias.
     "cauc": 30,
-    "acordofes": 30,
     "simec_par": 30,
     # Termos de Compromisso do SIMEC/PAR (PR #258). MESMO caso do `sismob` logo
     # abaixo — e por isso o MESMO numero: entra pendurado no
@@ -112,6 +113,9 @@ FRESCOR_HORAS_NACIONAL = {
     # (freitas 03:25, trust 04:10, montesiao 04:25, santamaria 05:15,
     # novapalma 05:45, bgk 05:52 UTC). Com o prazo de 6h a fonte ficava
     # "parada" ~18 das 24 horas — e era o item que mais aparecia no resumo.
+    # Desde 10/09/2026 freitas e trust rodam 4x/dia: com uma rodada so, a fila
+    # de ~60 municipios do freitas (4 por rodada) levava ~15 dias para dar a
+    # volta. Os outros quatro seguem 1x/dia, e e por eles que o prazo fica 30h.
     "transferegov_lote": 30,
     # FUNDO A FUNDO da saude (ConsultaFNS, publico). Scheduled Task propria, 1x
     # por dia -> 30h = um dia + folga, o mesmo numero das outras diarias.
@@ -168,7 +172,15 @@ FRESCOR_HORAS_POR_UF = {
         # medido em 09/09/2026. 18h < 24h fazia o alarme tocar toda tarde.
         "sigcon_scraper": 30,
         "cagec": 30,                 # 4x/dia -> 6h; 30h = quase cinco janelas
-        "acordofes": 12,
+        # ⚠️ ESTA LINHA ERA A QUE VALIA, e ninguem via. O acordofes roda dentro
+        # do run_all() do cron `sigcon` — 1x/dia — e o conserto de 09/09 subiu o
+        # prazo para 30h no catalogo NACIONAL. Mas `frescor_esperado()` aplica o
+        # mapa da UF POR CIMA (`update`), entao nos tres tenants de MG o prazo
+        # continuou 12h: o alarme tocou toda tarde, com a fonte em 15-17h de
+        # idade, em freitas, trust e montesiao ate 10/09/2026. Fonte de UM
+        # estado tem prazo em UM lugar — `test_frescor_vs_cron.py` agora reprova
+        # a mesma fonte nos dois mapas.
+        "acordofes": 30,
     },
     "ES": {"gconv_es": 30},
     "GO": {"transfvol_go": 30, "cofin_ses_go": 30, "tcm_go": 30},
