@@ -219,21 +219,36 @@ def run():
     municipios = _municipios_pacta()
     logger.info(f"=== SIMEC PAR: {len(municipios)} municipios ===")
     total_d = total_l = 0
+    falhas = 0
     for mun in municipios:
         data = scrape_municipio(mun)
         if data is None:
+            falhas += 1
             continue
         nd, nl = upsert(mun["id"], data)
         logger.info(f"  {mun['nome']}: {nd} dimensoes + {nl} liberacoes")
         total_d += nd; total_l += nl
-    logger.info(f"=== Finalizado: {total_d} dimensoes + {total_l} liberacoes ===")
-    # Log de ingestao
+    logger.info(f"=== Finalizado: {total_d} dimensoes + {total_l} liberacoes "
+                f"({falhas} municipio(s) sem resposta) ===")
+    # ⚠️ A-1 (auditoria 11/09): status HONESTO, nao 'success' cravado. O SIMEC ja
+    # gravou success com 0 registros 3x quando o curl_cffi/layout quebrou.
+    # A decisao e por FALHA DE FETCH, nao por contagem: um tenant de 1 municipio
+    # pode legitimamente ter 0 liberacoes (municipio sem PAR), entao 0 registros
+    # SEM falha de fetch e success de verdade. Todos falharam => error (fonte fora
+    # do ar/Cloudflare); alguns => partial; nenhum => success.
+    n = len(municipios)
+    if n and falhas == n:
+        status, erro = "error", f"todos os {n} municipios sem resposta do SIMEC (curl_cffi/layout?)"
+    elif falhas:
+        status, erro = "partial", f"{falhas} de {n} municipio(s) sem resposta"
+    else:
+        status, erro = "success", None
     try:
         import psycopg2
         url = os.getenv("DATABASE_URL_SYNC", "").replace("&channel_binding=require", "").replace("?channel_binding=require", "")
         conn = psycopg2.connect(url); cur = conn.cursor()
-        cur.execute("INSERT INTO ingestion_log (source, status, records_inserted, finished_at) "
-                    "VALUES ('simec_par','success',%s,NOW())", (total_d + total_l,))
+        cur.execute("INSERT INTO ingestion_log (source, status, records_inserted, error_message, finished_at) "
+                    "VALUES ('simec_par',%s,%s,%s,NOW())", (status, total_d + total_l, erro))
         conn.commit(); cur.close(); conn.close()
     except Exception:
         pass

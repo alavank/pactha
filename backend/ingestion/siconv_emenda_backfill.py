@@ -41,6 +41,23 @@ _CACHE_DIR = os.getenv("SICONV_CACHE_DIR") or os.path.join(
 )
 
 
+def _money(s):
+    """Valor monetario tolerante (M-2, auditoria 11/09). No nivel do modulo p/ ser
+    testavel. Ponto so e separador de milhar QUANDO ha virgula decimal — remover o
+    ponto INCONDICIONALMENTE (versao antiga) transformava '1234.56' em 123456."""
+    s = (s or "").strip().replace("R$", "").strip()
+    if not s:
+        return None
+    if "," in s and "." in s:
+        s = s.replace(".", "").replace(",", ".")
+    elif "," in s:
+        s = s.replace(",", ".")
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
 def _db():
     import psycopg2
     url = os.getenv("DATABASE_URL_SYNC", "")
@@ -151,13 +168,8 @@ def backfill_parlamentar(use_cache: bool = True) -> int:
     rd, hdr = _open_csv(content)
     ip, npn = hdr.index("ID_PROPOSTA"), hdr.index("NOME_PARLAMENTAR")
     ive = hdr.index("VALOR_REPASSE_EMENDA") if "VALOR_REPASSE_EMENDA" in hdr else None
-
-    def _money(s):
-        s = (s or "").strip().replace("R$", "").replace(".", "").replace(",", ".").strip()
-        try:
-            return float(s) if s else None
-        except ValueError:
-            return None
+    # `_money` agora e do modulo (M-2) — testavel; a versao aninhada, incondicional,
+    # foi removida.
 
     id2nomes: dict[str, list] = {}
     id2valor: dict[str, float] = {}

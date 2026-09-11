@@ -121,9 +121,17 @@ def backfill(use_cache: bool = True) -> int:
         return 0
     n = 0
     for rid, (sc, motivo, dt) in achados.items():
+        # ⚠️ M-1 (auditoria 11/09): COALESCE, nao sobrescrita crua. Antes o UPDATE
+        # gravava NULL em motivo/data (e ate na situacao) quando a linha do CSV
+        # nao era clausula ("Normal") ou vinha sem o campo — ZERANDO dado valido ja
+        # coletado. Ausencia da fonte nao apaga o que temos; valor presente (inclui
+        # "Normal") atualiza normalmente. Regra: nao trocar dado bom por vazio.
         cur.execute(
-            "UPDATE transferegov_propostas SET situacao_contratacao=%s, "
-            "clausula_suspensiva_motivo=%s, clausula_suspensiva_dt_prevista=%s WHERE id=%s",
+            "UPDATE transferegov_propostas SET "
+            "situacao_contratacao=COALESCE(%s, situacao_contratacao), "
+            "clausula_suspensiva_motivo=COALESCE(%s, clausula_suspensiva_motivo), "
+            "clausula_suspensiva_dt_prevista=COALESCE(%s, clausula_suspensiva_dt_prevista) "
+            "WHERE id=%s",
             (sc, motivo, dt, rid),
         )
         n += cur.rowcount
