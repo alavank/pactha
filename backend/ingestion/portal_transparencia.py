@@ -38,8 +38,11 @@ abaixo.
 ⭐ O PLANO B JA ESTA IMPLEMENTADO, e custa a mesma requisicao: `/emendas` aceita
 `ano` E `numeroEmenda` separadamente, e a resposta traz o `codigoEmenda`
 VERDADEIRO. `PT_ESTRATEGIA=ano_numero` nao depende da hipotese; `auto` (padrao)
-comeca pelo codigo e troca sozinho se a amostra reprovar. Codigo confirmado uma
-vez vira dado (`codigo_confirmado`), e nunca mais e derivado.
+comeca pelo codigo e troca sozinho se a amostra reprovar EM MASSA. Divergencia
+de autor isolada e resolvida POR EMENDA (`_confere_autor`: plano B so para ela,
+ou ela e pulada e anotada) — desde 11/09/2026, quando UMA divergencia em 20
+abortava a fase 2 do tenant inteiro, toda noite. Codigo confirmado uma vez vira
+dado (`codigo_confirmado`), e nunca mais e derivado.
 
 ⚠️ O QUE ESTA API **NAO** TEM: filtro por municipio em `/emendas`. Os parametros
 sao `codigoEmenda`, `numeroEmenda`, `nomeAutor`, `tipoEmenda`, `ano`,
@@ -66,8 +69,10 @@ Uso:
 import json
 import logging
 import os
+import re
 import sys
 import time
+import unicodedata
 from datetime import datetime
 
 import httpx
@@ -108,8 +113,12 @@ ORCAMENTO_S = float(os.getenv("PT_ORCAMENTO_S", "1400") or "1400")
 MAX_REQ = int(os.getenv("PT_MAX_REQ", "1800") or "1800")
 # Quantos codigos testar antes de persistir qualquer coisa da CGU.
 AMOSTRA = int(os.getenv("PT_AMOSTRA", "20") or "20")
-# Abaixo desta taxa de acerto a fase 2 aborta sem gravar.
+# Abaixo desta taxa de acerto a rodada passa ao plano B (ano + numero).
 TAXA_MINIMA = float(os.getenv("PT_TAXA_MINIMA", "0.25") or "0.25")
+# Autor divergente ACIMA desta fracao dos encontrados na amostra = a derivacao do
+# codigo quebrou EM MASSA, e a rodada inteira passa ao plano B. Abaixo, e caso
+# isolado, e quem resolve e a conferencia POR EMENDA do laco (`_confere_autor`).
+DIVERGENCIA_MAXIMA = float(os.getenv("PT_DIVERGENCIA_MAXIMA", "0.25") or "0.25")
 # auto | codigo | ano_numero
 ESTRATEGIA = (os.getenv("PT_ESTRATEGIA", "auto") or "auto").strip().lower()
 
@@ -928,6 +937,72 @@ def _consulta_um(client, codigo: str, ano, estrategia: str,
     return agregado_da_emenda(client, codigo, orc), False
 
 
+# Titulos que um lado escreve e o outro nao — e que nao identificam ninguem.
+_TITULOS_AUTOR = frozenset({"DEP", "DEPUTADO", "DEPUTADA", "SEN", "SENADOR", "SENADORA"})
+
+
+def _norm_autor(nome) -> str:
+    """Nome de autor comparavel: maiusculas, sem acento, sem pontuacao, sem titulo."""
+    t = unicodedata.normalize("NFKD", str(nome or "").upper())
+    t = "".join(c for c in t if not unicodedata.combining(c))
+    t = re.sub(r"[^A-Z0-9]+", " ", t)
+    return " ".join(p for p in t.split() if p not in _TITULOS_AUTOR)
+
+
+def mesmo_autor(autor_dump, nomes_cgu) -> "bool | None":
+    """O autor do dump e o da CGU sao a mesma pessoa? None = nao ha como comparar.
+
+    ⚠️ A COMPARACAO ANTIGA ERA SO `upper()` + "um contem o outro": "JOSÉ" contra
+    "JOSE" contava como OUTRO deputado, e UMA divergencia na amostra abortava a
+    fase de execucao do tenant inteiro. Foi o que parou freitas e trust em
+    11/09/2026 ("autor bate em 19, diverge em 1"). Agora compara sem acento,
+    pontuacao e titulo, e por PALAVRA INTEIRA — "ANA" nao pode casar com
+    "JULIANA", que a regra antiga (substring cru) deixava passar."""
+    alvo = _norm_autor(autor_dump)
+    nomes = {_norm_autor(n) for n in nomes_cgu} - {""}
+    if not alvo or not nomes:
+        return None
+    return any(f" {alvo} " in f" {n} " or f" {n} " in f" {alvo} " for n in nomes)
+
+
+def estrategia_pela_amostra(v: dict) -> str:
+    """'codigo' (derivar) ou 'ano_numero' (plano B), pelo veredito da amostra.
+
+    Divergencia ISOLADA nao muda a estrategia — nem para a rodada, como fazia o
+    veto antigo: a conferencia por emenda (`_confere_autor`) trata aquela emenda
+    e deixa as outras seguirem."""
+    if v["taxa"] < TAXA_MINIMA:
+        return "ano_numero"
+    if v["achou"] and v["autor_diverge"] / v["achou"] > DIVERGENCIA_MAXIMA:
+        return "ano_numero"
+    return "codigo"
+
+
+def _confere_autor(client, codigo: str, ano, itens: list[dict], confirmado: bool,
+                   autor_dump, estrategia: str,
+                   orc: Orcamento) -> "tuple[list[dict], bool, dict | None]":
+    """(itens, confirmado, divergencia) — a conferencia de autor POR EMENDA.
+
+    - autor bate, ou nao ha como comparar: segue como veio;
+    - diverge no codigo DERIVADO: pergunta o codigo oficial a CGU (plano B,
+      ano + numero) so para esta emenda; se ai o autor bater, usa o verdadeiro;
+    - diverge mesmo assim: devolve itens VAZIOS e a divergencia. A emenda e
+      pulada — nada dela e gravado — e anotada com os dois nomes, para se saber
+      qual foi. Numero plausivel de OUTRO deputado continua sendo o pior
+      desfecho, so que agora ele barra UMA emenda, e nao a noite inteira."""
+    if mesmo_autor(autor_dump, (i.get("nomeAutor") for i in itens)) is not False:
+        return itens, confirmado, None
+    if estrategia != "ano_numero" and ano and len(codigo) == 12:
+        oficiais = agregado_por_ano_numero(client, int(ano), codigo[4:], orc)
+        if oficiais and mesmo_autor(autor_dump, (i.get("nomeAutor") for i in oficiais)):
+            log.info("  %s: autor divergia no codigo derivado; o plano B achou a "
+                     "emenda certa", codigo)
+            return oficiais, True, None
+    nomes_cgu = sorted({(i.get("nomeAutor") or "").strip() for i in itens} - {""})
+    return [], False, {"codigo": codigo, "dump": (autor_dump or "").strip(),
+                       "cgu": ", ".join(nomes_cgu)[:80]}
+
+
 def validar_hipotese(client: httpx.Client, amostra: list[tuple],
                      orc: Orcamento) -> dict:
     """Testa `AMOSTRA` codigos SEM GRAVAR NADA. Devolve o veredito.
@@ -949,13 +1024,11 @@ def validar_hipotese(client: httpx.Client, amostra: list[tuple],
         if not itens:
             continue
         achou += 1
-        nomes = {(i.get("nomeAutor") or "").strip().upper() for i in itens}
-        alvo = (autor_dump or "").strip().upper()
-        if alvo and nomes:
-            if any(alvo in n or n in alvo for n in nomes if n):
-                autor_bate += 1
-            else:
-                autor_diverge += 1
+        bate = mesmo_autor(autor_dump, (i.get("nomeAutor") for i in itens))
+        if bate is True:
+            autor_bate += 1
+        elif bate is False:
+            autor_diverge += 1
     total = max(1, len(amostra))
     return {"testados": len(amostra), "achou": achou,
             "taxa": achou / total, "autor_bate": autor_bate,
@@ -967,7 +1040,7 @@ def execucao(cur, conn, client: httpx.Client, orc: Orcamento,
     """FASE 2 — pergunta a CGU sobre cada codigo da fila."""
     rel = {"consultados": 0, "achou": 0, "documentos": 0, "pendentes": 0,
            "bloqueado": False, "estrategia": ESTRATEGIA, "truncados": [],
-           "colegiado_sem_documentos": 0}
+           "autor_divergente": [], "colegiado_sem_documentos": 0}
     cnpjs = list(alvos(cur).keys())
     # ⚠️ LIMPAR ANTES DE SEMEAR: a fila e persistente, e o filtro da
     # semeadura so vale para codigo NOVO. Sem isto, o orfao da rodada
@@ -984,33 +1057,33 @@ def execucao(cur, conn, client: httpx.Client, orc: Orcamento,
     if not pendentes:
         return rel
 
-    # A amostra sai da fila e usa o autor do dump como criterio de veto.
+    # O autor do dump de CADA codigo da fila: e o criterio da conferencia por
+    # emenda no laco abaixo, e nao so da amostra.
+    cur.execute("""SELECT codigo_emenda, max(parlamentar)
+                     FROM emendas_federais_carteira
+                    WHERE codigo_emenda = ANY(%s) GROUP BY 1""",
+                ([p[0] for p in pendentes],))
+    autores = dict(cur.fetchall())
+
+    # ⚠️ A AMOSTRA ESCOLHE A ESTRATEGIA, E NAO PARA MAIS A RODADA. Ate
+    # 11/09/2026 UMA divergencia de autor em 20 abortava a fase 2 inteira — e,
+    # como a fila poe primeiro quem nunca foi consultado e o aborto nao consultava
+    # ninguem, a MESMA amostra voltava na noite seguinte: o veto se renovava
+    # sozinho, para sempre. Freitas e trust pararam assim ("autor bate em 19,
+    # diverge em 1"). O pior desfecho (numero plausivel de OUTRO deputado)
+    # continua barrado, agora POR EMENDA, em `_confere_autor`.
     estrategia = ESTRATEGIA
     if estrategia == "auto":
-        cods = [p[0] for p in pendentes[:AMOSTRA]]
-        cur.execute("""SELECT codigo_emenda, max(parlamentar)
-                         FROM emendas_federais_carteira
-                        WHERE codigo_emenda = ANY(%s) GROUP BY 1""", (cods,))
-        autores = dict(cur.fetchall())
         amostra = [(p[0], p[1], p[2], autores.get(p[0])) for p in pendentes[:AMOSTRA]]
         v = validar_hipotese(client, amostra, orc)
         log.info("  amostra: %d/%d encontrados (taxa %.0f%%), autor bate em %d, "
                  "diverge em %d", v["achou"], v["testados"], v["taxa"] * 100,
                  v["autor_bate"], v["autor_diverge"])
-        if v["autor_diverge"]:
-            # ⚠️ VETO. Codigo derivado que devolve emenda de OUTRO deputado e o
-            # pior desfecho possivel — um numero plausivel e errado —, e so a
-            # comparacao de autor o revela.
-            rel["veto"] = (f"autor divergente em {v['autor_diverge']} de "
-                           f"{v['achou']} — derivacao do codigo REPROVADA")
-            return rel
-        if v["taxa"] < TAXA_MINIMA:
-            estrategia = "ano_numero"
-            log.warning("  taxa abaixo de %.0f%% — trocando para a estrategia "
-                        "ano+numeroEmenda (nao depende da hipotese)",
-                        TAXA_MINIMA * 100)
-        else:
-            estrategia = "codigo"
+        estrategia = estrategia_pela_amostra(v)
+        if estrategia == "ano_numero":
+            log.warning("  amostra reprovou a derivacao (taxa %.0f%%, %d divergente[s]) "
+                        "— rodada inteira no plano B, ano+numeroEmenda",
+                        v["taxa"] * 100, v["autor_diverge"])
     rel["estrategia"] = estrategia
 
     lote_cgu: list[dict] = []
@@ -1022,6 +1095,11 @@ def execucao(cur, conn, client: httpx.Client, orc: Orcamento,
             break
         try:
             itens, confirmado = _consulta_um(client, codigo, ano, estrategia, orc)
+            divergencia = None
+            if itens:
+                itens, confirmado, divergencia = _confere_autor(
+                    client, codigo, ano, itens, confirmado, autores.get(codigo),
+                    estrategia, orc)
         except Bloqueado as e:
             log.warning("  %s", e)
             rel["bloqueado"] = True
@@ -1036,21 +1114,41 @@ def execucao(cur, conn, client: httpx.Client, orc: Orcamento,
             marcas.append((codigo, None, 0, str(e)[:200]))
             continue
         rel["consultados"] += 1
+        if divergencia:
+            # Pulada e ANOTADA: nada desta emenda e gravado. `None` no achou,
+            # como no erro de rede — nao afirmamos nada sobre ela —, e o
+            # carimbo de consulta tira o codigo da frente da fila, que era o que
+            # fazia o veto antigo se repetir toda noite.
+            log.warning("  %s: autor divergente — dump '%s', CGU '%s' — emenda "
+                        "PULADA (nada gravado)", codigo, divergencia["dump"],
+                        divergencia["cgu"])
+            rel["autor_divergente"].append(divergencia)
+            marcas.append((codigo, None, 0,
+                           f"autor divergente: dump '{divergencia['dump']}', "
+                           f"CGU '{divergencia['cgu']}'"[:200]))
+            continue
         docs: list[dict] = []
+        # ⚠️ O CODIGO DA CGU, QUANDO ELA O DEU. Com o plano B o codigo oficial
+        # pode diferir do derivado — e buscar a linha do tempo pelo DERIVADO
+        # traria os pagamentos da emenda de OUTRO deputado. Enquanto derivado e
+        # oficial coincidiam este caminho era no-op; a conferencia por emenda o
+        # tornou real.
+        cod_cgu = ((itens[0].get("codigoEmenda") or "").strip() or codigo
+                   if confirmado and itens else codigo)
         if itens:
             rel["achou"] += 1
             for x in itens:
                 linha = linha_cgu(x)
                 if not linha["codigo_emenda"]:
-                    linha["codigo_emenda"] = codigo
+                    linha["codigo_emenda"] = cod_cgu
                 lote_cgu.append(linha)
             colegiado = (tipo or "").strip().upper() in TIPOS_COLEGIADO
             if colegiado:
                 rel["colegiado_sem_documentos"] += 1
             if orc.pode() and not colegiado:
                 try:
-                    brutos, completo = documentos_da_emenda(client, codigo, orc)
-                    docs = [d for d in (linha_documento(codigo, b) for b in brutos) if d]
+                    brutos, completo = documentos_da_emenda(client, cod_cgu, orc)
+                    docs = [d for d in (linha_documento(cod_cgu, b) for b in brutos) if d]
                     lote_doc.extend(docs)
                     rel["documentos"] += len(docs)
                     # ⚠️ TRUNCOU = A RODADA E `partial`, e nao `success`. Sem
@@ -1059,7 +1157,7 @@ def execucao(cur, conn, client: httpx.Client, orc: Orcamento,
                     # que este repo mais paga caro. Medido: com o teto de 20,
                     # QUATRO emendas de Nova Palma truncaram em silencio.
                     if not completo:
-                        rel["truncados"].append(codigo)
+                        rel["truncados"].append(cod_cgu)
                 except Bloqueado:
                     rel["bloqueado"] = True
                     break
@@ -1091,6 +1189,10 @@ def execucao(cur, conn, client: httpx.Client, orc: Orcamento,
                             "      emendas_federais_consulta z "
                             "      WHERE z.codigo_emenda = %s)",
                             (verdadeiro, codigo, verdadeiro))
+                # A marca acima foi feita sob o DERIVADO, e o UPDATE acabou de
+                # renomear a linha da fila: sem esta segunda marca o carimbo se
+                # perde e o codigo volta ao topo da fila na noite seguinte.
+                marcas.append((verdadeiro, True, len(docs), None))
             else:
                 cur.execute("UPDATE emendas_federais_carteira "
                             "SET codigo_confirmado = TRUE "
@@ -1246,21 +1348,28 @@ def ingest(dry: bool = False) -> int:
                      ex["consultados"], ex["achou"], ex["documentos"],
                      ex["estrategia"], orc.gastas,
                      ex["colegiado_sem_documentos"])
-            if ex.get("veto"):
-                status, nota = "partial", ex["veto"] + " — carteira preservada"
-            elif ex["bloqueado"]:
-                status = "partial"
-                nota = "429 da CGU — fase de execucao interrompida SEM retentativa"
-            elif ex["truncados"]:
+            partes = []
+            if ex["bloqueado"]:
+                partes.append("429 da CGU — fase de execucao interrompida SEM retentativa")
+            if ex["truncados"]:
                 # ⚠️ `partial`, e a lista vai na nota: emenda truncada e
                 # PAGAMENTO FALTANDO na tela. Deixar passar como `success` seria
                 # exatamente o "coleta truncada em silencio" que o proprio
                 # `paginar` existe para impedir.
-                status = "partial"
-                nota = (f"{len(ex['truncados'])} emenda(s) com documentos "
-                        f"TRUNCADOS no teto de {TETO_DOCUMENTOS} paginas: "
-                        + ", ".join(ex["truncados"][:5])
-                        + " — suba PT_TETO_DOCUMENTOS")
+                partes.append(f"{len(ex['truncados'])} emenda(s) com documentos "
+                              f"TRUNCADOS no teto de {TETO_DOCUMENTOS} paginas: "
+                              + ", ".join(ex["truncados"][:5])
+                              + " — suba PT_TETO_DOCUMENTOS")
+            if ex["autor_divergente"]:
+                # Emenda PULADA e execucao faltando na tela: `partial`, com os
+                # dois nomes na nota — e o que permite resolver sem abrir log.
+                partes.append(f"{len(ex['autor_divergente'])} emenda(s) com autor "
+                              "divergente na CGU, nao gravadas: "
+                              + "; ".join(f"{d['codigo']} (dump '{d['dump']}', "
+                                          f"CGU '{d['cgu']}')"
+                                          for d in ex["autor_divergente"][:3]))
+            if partes:
+                status, nota = "partial", " | ".join(partes)[:400]
             elif ex["pendentes"]:
                 # ⚠️ `success`, e nao `partial`: a primeira carga de um tenant
                 # grande leva tres madrugadas e isso NAO e defeito. E o desenho
