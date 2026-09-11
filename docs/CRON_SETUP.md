@@ -38,20 +38,28 @@ que é justamente o que já custou fonte parada neste projeto. Por isso:
 
 ## Scheduled Tasks
 
+> ⚠️ **Medida no Coolify em 10/09/2026** — a versão anterior desta tabela dizia
+> `sigcon` 4×/dia e horários do `transferegov` e do `transfvol-go` que não existiam
+> mais havia semanas. A fonte de verdade é o Coolify
+> (`GET /applications/<worker_uuid>/scheduled-tasks`, ver `INFRA.md` §5); isto é
+> fotografia, e fotografia envelhece. Os três tenants do RS (santamaria, novapalma,
+> bgk) não têm as tasks de MG/GO/ES.
+
 | Task | Freitas | Trust | Monte Sião |
 |------|---------|-------|------------|
-| `sigcon` | `0 0,6,12,18 * * *` | `0 2,8,14,20 * * *` | `0 4,10,16,22 * * *` |
-| `transferegov` | `0 2 * * *` | `0 10 * * *` | `0 18 * * *` |
-| `fns` | `30 5 * * *` | `30 6 * * *` | `30 7 * * *` |
-| `govbr-renew` | `5 * * * *` | `25 * * * *` | `45 * * * *` |
-| `queue-sigcon` | `0,30 * * * *` | `10,40 * * * *` | `20,50 * * * *` |
-| `painel-alertas` | `45 */2 * * *` | `15 */2 * * *` | `15 */2 * * *` |
-| `cagec` (medido 07/09/2026) | `0 10,15,19,23 * * *` | `48 10,19 * * *` | `46 10,19 * * *` |
+| `sigcon` | `45 5 * * *` | `30 6 * * *` | `45 6 * * *` |
+| `transferegov-lote` | `25 1,3,7,21 * * *` | `10 2,4,8,22 * * *` | `25 4 * * *` |
+| `transferegov` | `5 4 * * *` | `50 4 * * *` | `5 5 * * *` |
+| `fns` | `55 4 * * *` | `40 5 * * *` | `55 5 * * *` |
+| `govbr-renew` | `4 * * * *` | `12 * * * *` | `20 * * * *` |
+| `queue-sigcon` | `10,40 * * * *` | `18,48 * * * *` | `26,56 * * * *` |
+| `painel-alertas` | `15 */2 * * *` | `25 */2 * * *` | `37 */2 * * *` |
+| `cagec` | `0 10,15,19,23 * * *` | `48 10,19 * * *` | `46 10,19 * * *` |
 | `cauc-manha` | `25 10-14 * * *` | `27 10-14 * * *` | `29 10-14 * * *` |
-| `gconv-es` | — | `40 10,15,19,23 * * *` | — |
-| `transfvol-go` | — | `42 10,15,19,23 * * *` | — |
-| `cofin-ses-go` | — | `44 10,15,19,23 * * *` | — |
-| `tcm-go` | — | `45 10 * * *` | — |
+| `gconv-es` | — | `52 3 * * *` | — |
+| `transfvol-go` | — | `56 3 * * *` | — |
+| `cofin-ses-go` | — | `0 4 * * *` | — |
+| `tcm-go` | — | `4 4 * * *` | — |
 
 > 🕐 **TODOS OS HORÁRIOS ACIMA SÃO UTC.** O host, o `instance_timezone` do
 > Coolify e o PHP do container estão em `Etc/UTC`; **Brasília é UTC−3**. Isto já
@@ -59,7 +67,8 @@ que é justamente o que já custou fonte parada neste projeto. Por isso:
 > o cliente. Ao combinar horário com alguém, converta antes de escrever o cron.
 > As faixas do CAGEC (10/15/19/23 UTC) são **07h, 12h, 16h e 20h de Brasília**.
 > Dentro de cada faixa: Freitas `:00`–`:34`, Monte Sião `:46`, Trust `:48`–`:57`.
-> O 15h virou 16h porque o SIGCON da Freitas ocupa 15:00–15:50 BRT.
+> O 15h virou 16h quando o SIGCON da Freitas ocupava 15:00–15:50 BRT; hoje ele roda
+> 1×/dia de madrugada (tabela acima).
 
 **Duração real medida** (de `scheduled_task_executions`, 7 dias — e **não** de
 `ingestion_log`, cujo `started_at` é NULL e faz toda média sair 0):
@@ -199,19 +208,19 @@ Chromium. Mesmo argumento do `simec-termos` e do `obrasgov`.
 Mexer num sem o outro faz o Coolify matar primeiro e **descartar o stdout** — a task
 nunca teria logado nada em tenant nenhum, que foi o que aconteceu em 17/08.
 
-**Escada (UTC), medida no Coolify em 10/09/2026:** freitas `45 3 * * *` · trust
-`20 4 * * *` · montesiao `50 4 * * *` · santamaria `20 5 * * *` · novapalma
-`50 5 * * *` · **bgk `57 5 * * *`**.
+**Escada (UTC), desde 10/09/2026:** **bgk `15 3 * * *`** · freitas `45 3 * * *` ·
+trust `20 4 * * *` · montesiao `50 4 * * *` · santamaria `20 5 * * *` · novapalma
+`50 5 * * *`.
 
 - Tudo dentro de **03:00–05:59 UTC = 00:00–02:59 BRT**, que e a janela de **700 req/min**
   da CGU (fora dela sao 400).
 - ⚠️ O passo de 30 min e **maior que o orcamento de 23 min** de proposito: a cota da CGU
   e **por CHAVE**, e a chave e a mesma nos tenants que a tem. Dois workers nunca podem
   bater no mesmo token ao mesmo tempo.
-- ⚠️ **O bgk quebra a escada**: entrou 7 min depois do novapalma e passa das 06:00 (sai
-  da janela de 700 req/min). Hoje nao colide porque a rodada do novapalma dura ~22 s
-  (1 municipio, 4 emendas — execucoes de 08 e 09/09), mas a regra acima vale para quando
-  a carteira dele crescer.
+- ⚠️ **O bgk nasceu quebrando a escada** (`57 5`: 7 min depois do novapalma e passando
+  das 06:00, fora da janela de 700 req/min). Foi para o **começo** dela em 10/09/2026:
+  em `15 3` o orçamento de 1.400 s (timeout 1.520 s) termina no máximo às 03:40, antes
+  do freitas.
 - Lock proprio e sem navegador: a escada so precisa respeitar a cota da chave, nao a fila
   do `/tmp/scraper.lock`.
 
