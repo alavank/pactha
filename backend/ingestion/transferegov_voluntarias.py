@@ -578,6 +578,46 @@ async def _goto_with_retry(page, url: str, max_retries: int = 3, base_delay: flo
     return False
 
 
+# Le as opcoes do select de municipio SO com o documento fora de 'loading': ler
+# durante o parse devolve a lista pela metade (ver _scrape_municipio).
+_JS_OPCOES_MUNICIPIO = """() => {
+    if (document.readyState === 'loading') return null;
+    const s = document.querySelector('select[name=municipioAcessoLivre]');
+    return s ? [...s.options].map(o => ({v: o.value, t: o.text})) : null;
+}"""
+
+
+async def _opcoes_municipio(page, mun: dict, timeout_s: float = 30.0,
+                            passo_ms: int = 500) -> list[dict]:
+    """Opcoes do select de municipio DEPOIS que a troca de UF terminou de recarregar.
+
+    Pronto = documento fora de 'loading', select presente com mais que o
+    placeholder, e a MESMA contagem em duas leituras seguidas. Erro de avaliacao
+    (contexto destruido pela navegacao que a troca de UF dispara) e so "ainda
+    nao": tenta de novo.
+
+    Estourou o prazo: LEVANTA. Devolver a lista vazia ou pela metade aqui viraria
+    "municipio nao encontrado no select", que e o diagnostico errado que este
+    helper existe para matar."""
+    fim = time.monotonic() + timeout_s
+    anterior: list[dict] | None = None
+    while True:
+        try:
+            atual = await page.evaluate(_JS_OPCOES_MUNICIPIO)
+        except Exception:
+            atual = None
+        if atual and len(atual) > 1:
+            if anterior is not None and len(atual) == len(anterior):
+                return atual
+            anterior = atual
+        else:
+            anterior = None
+        if time.monotonic() >= fim:
+            raise RuntimeError(f"select de municipios de {mun.get('uf')} nao estabilizou "
+                               f"em {timeout_s:.0f}s (portal lento ou fora do ar)")
+        await page.wait_for_timeout(passo_ms)
+
+
 async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = False,
                             page_auth=None, deadline: float | None = None) -> list[dict]:
     """Consulta por UF + Municipio, retorna lista de propostas COM detalhe.
@@ -614,19 +654,28 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
         # zero propostas" no chamador — carimbava coleta boa, zerava tentativas
         # e o municipio quebrado sumia de todos os radares novos.
         raise RuntimeError("portal/sessao indisponivel (select UF ausente apos retries)")
-    await page.wait_for_timeout(3500)  # carrega municipios via ajax
-
-    # Match municipio por nome normalizado
-    muns = await page.evaluate(
-        "() => [...document.querySelector('select[name=municipioAcessoLivre]').options]"
-        ".map(o => ({v: o.value, t: o.text}))"
-    )
+    # ⚠️ TROCAR A UF RECARREGA A PAGINA INTEIRA — nao e AJAX, como este trecho
+    # supunha. Medido em 10/09/2026 numa sonda em modo guest: o select de
+    # municipios SOME ~0,3s depois da escolha (contexto destruido pela
+    # navegacao) e volta ~0,5s depois com as 855 opcoes de MG. O sleep fixo de
+    # 3,5s que havia aqui caia, com o portal lento, no MEIO do recarregamento, e
+    # os dois erros que o rodizio acumulava eram o mesmo defeito:
+    #   - select ainda ausente    -> "Cannot read properties of null (reading
+    #     'options')" (Papagaios, Passa Tempo, Santo Antonio do Monte, Pequi,
+    #     Pirenopolis, Tocantins);
+    #   - select a meio do parse  -> "nao encontrado no select (727 opcoes)" e
+    #     "(390 opcoes)". Sao Tiago e Oliveira Fortes ESTAO na lista, com o nome
+    #     certo: a lista e que ainda nao tinha terminado de ser desenhada.
+    muns = await _opcoes_municipio(page, mun)
     alvo = [m for m in muns if _norm(m["t"]) == _norm(mun["nome"])]
     if not alvo:
-        logger.warning(f"  {mun['nome']}: nao encontrado no select ({len(muns)} municipios)")
+        logger.warning(f"  {mun['nome']}: nao encontrado no select "
+                       f"({len(muns)} municipios de {mun['uf']}, lista completa)")
         # Mesmo raciocinio do raise acima: municipio ausente do dropdown e erro
-        # (nome divergente/portal), nao "zero propostas".
-        raise RuntimeError(f"municipio nao encontrado no select do portal ({len(muns)} opcoes)")
+        # (nome divergente/portal), nao "zero propostas". Com a lista lida
+        # completa, este erro passa a significar nome divergente DE VERDADE.
+        raise RuntimeError(f"municipio nao encontrado no select do portal "
+                           f"({len(muns)} opcoes de {mun['uf']}, lista completa)")
     await page.select_option("select[name=municipioAcessoLivre]", alvo[0]["v"])
     await page.wait_for_timeout(1500)
 

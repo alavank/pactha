@@ -66,6 +66,46 @@ MESES_ATRAS = 6
 COLUNAS_MINIMAS = {"CPF/CNPJ", "Data do Repasse", "Valor do Pagamento (R$)",
                    "Unidade Orçamentária", "Numero de Processo"}
 
+# ⚠️ ARQUIVO ERRADO NA ORIGEM, JÁ IDENTIFICADO — e isso é diferente de "formato
+# novo". Conferido de novo em 10/09/2026: o recurso "Transferências Voluntárias
+# 202603" (48,9 MB, modificado em 11/05/2026) é a EXTRAÇÃO HISTÓRICA inteira de
+# repasses — 61.598 linhas numa coluna só chamada `linha`, competências de 200301
+# a 202510 e NENHUMA de 2026. Não há março/2026 ali para ler, nem em ZIP (não
+# existe ZIP de 2026). Tratá-lo como formato inesperado deixou a fonte `partial`
+# por mais de um mês, com o vigia dizendo "fonte parada 871h" de uma fonte que
+# grava todo dia — e o alarme perpétuo escondeu o problema de verdade (abaixo).
+#
+# A assinatura (as colunas) faz parte da chave de propósito: se a CGE-GO
+# republicar o mês com o arquivo certo, ele é LIDO normalmente; se trocar por um
+# terceiro arquivo, volta a ser formato inesperado e a fonte volta a acusar.
+ARQUIVO_ERRADO_CONHECIDO = {
+    "202603": (frozenset({"linha"}),
+               "a origem publicou a extracao historica 2003-2025 no lugar do mes "
+               "(arquivo errado ja conhecido; sem dado de 03/2026 na fonte)"),
+}
+
+# ⚠️ A ORIGEM PAROU DE PUBLICAR — medido em 10/09/2026: o recurso mais novo é
+# 202605 (publicado em 22/06/2026); junho, julho e agosto não existem no CKAN.
+# Sem esta conta o coletor relê os mesmos meses para sempre e grava `success`.
+# A CGE-GO publica o mês ~3 semanas depois de fechado; o normal é o mais novo
+# estar 1-2 meses atrás do mês corrente. Passou de 3, é a origem atrasada.
+ATRASO_MAX_MESES = 3
+
+
+def _classificar(competencia: str, colunas: set) -> str:
+    """'ok' | 'errado_conhecido' | 'formato_ruim' para um recurso mensal."""
+    if not (COLUNAS_MINIMAS - colunas):
+        return "ok"
+    conhecido = ARQUIVO_ERRADO_CONHECIDO.get(competencia)
+    if conhecido and frozenset(colunas) == conhecido[0]:
+        return "errado_conhecido"
+    return "formato_ruim"
+
+
+def _meses_de_atraso(mais_nova: str, hoje: date) -> int:
+    """Meses entre a competência AAAAMM mais nova publicada e o mês de `hoje`."""
+    return (hoje.year - int(mais_nova[:4])) * 12 + (hoje.month - int(mais_nova[4:6]))
+
 _NOME_MES = re.compile(r"(\d{6})\s*$")
 # "Emenda ... número 642 ... Deputado (a) FULANO DE TAL" — para antes de
 # "Beneficiario", "Objeto", ponto final ou ponto-e-vírgula.
@@ -261,11 +301,20 @@ def ingest() -> int:
 
             gravados = achados = 0
             formato_ruim: list[str] = []
+            notas: list[str] = []
             with httpx.Client(follow_redirects=True, timeout=120,
                               headers={"User-Agent": "Mozilla/5.0"}) as cli:
                 recursos = _recursos_mensais(cli)[:MESES_ATRAS]
                 if not recursos:
                     raise RuntimeError("nenhum recurso CSV mensal no CKAN de GO")
+                mais_nova = recursos[0][0]
+                atraso = _meses_de_atraso(mais_nova, date.today())
+                atrasada = atraso > ATRASO_MAX_MESES
+                if atrasada:
+                    log.warning("  ORIGEM ATRASADA: a competencia mais nova no CKAN e %s "
+                                "(%d meses atras)", mais_nova, atraso)
+                    notas.append(f"a origem nao publica desde {mais_nova} ({atraso} meses; "
+                                 f"a CGE-GO costuma publicar o mes ~3 semanas depois)")
                 for competencia, url in recursos:
                     resp = cli.get(url)
                     resp.raise_for_status()
@@ -274,7 +323,13 @@ def ingest() -> int:
                     leitor = csv.DictReader(io.StringIO(texto), delimiter=";")
                     achadas = set(leitor.fieldnames or [])
                     faltando = COLUNAS_MINIMAS - achadas
-                    if faltando:
+                    tipo = _classificar(competencia, achadas)
+                    if tipo == "errado_conhecido":
+                        log.warning("  %s: %s — ignorado", competencia,
+                                    ARQUIVO_ERRADO_CONHECIDO[competencia][1])
+                        notas.append(f"{competencia}: {ARQUIVO_ERRADO_CONHECIDO[competencia][1]}")
+                        continue
+                    if tipo == "formato_ruim":
                         # NÃO é "mês sem repasse": é arquivo com outro formato.
                         # Sai alto no log e derruba o status para `partial`, para
                         # o monitor de coleta acusar em vez de mostrar verde.
@@ -303,11 +358,15 @@ def ingest() -> int:
                      achados, gravados,
                      f" | {len(formato_ruim)} mes(es) ignorados: {formato_ruim}"
                      if formato_ruim else "")
-            # Mês ignorado por formato NÃO pode sair como sucesso.
-            status = "success" if (gravados == achados and not formato_ruim) else "partial"
-            _log_ingest(cur, status, gravados,
-                        f"competencias com formato inesperado: {formato_ruim}"
-                        if formato_ruim else None)
+            # Mês ignorado por formato NÃO pode sair como sucesso — e origem
+            # atrasada também não: é mês faltando do mesmo jeito. O arquivo
+            # errado JÁ CONHECIDO vai só como nota: está documentado acima e
+            # não há o que fazer do nosso lado até a CGE-GO republicar.
+            status =("success" if (gravados == achados and not formato_ruim and not atrasada)
+                      else "partial")
+            if formato_ruim:
+                notas.insert(0, f"competencias com formato inesperado: {formato_ruim}")
+            _log_ingest(cur, status, gravados, " | ".join(notas)[:400] if notas else None)
             conn.commit()
             return gravados
         except Exception as e:
