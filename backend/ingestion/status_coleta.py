@@ -58,7 +58,7 @@ def siconv_federal(total: int, antes: int) -> tuple[str, str | None]:
     PRESERVA a base anterior) => error. Queda >50% vs. anterior => partial (pode ser
     limpeza real da fonte, mas o watchdog olha)."""
     if total == 0:
-        return "error", f"recarga vazia (0 linhas); TRUNCATE desfeito, base anterior preservada"
+        return "error", "recarga vazia (0 linhas); TRUNCATE desfeito, base anterior preservada"
     if antes and total < antes * 0.5:
         return "partial", f"queda de {antes} para {total} linhas (>50%) — verificar fonte"
     return "success", None
