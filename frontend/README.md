@@ -4,7 +4,7 @@ App web do PACTHA: **Next.js 16 (App Router)** + Tailwind v4 + daisyUI + shadcn.
 
 > ⚠️ Este app **não é deployado na Vercel**. Ele é buildado como imagem Docker
 > (`frontend/Dockerfile`, `output: "standalone"`) e roda no **Coolify, na AWS Lightsail
-> `54.232.208.118`** — um deploy por tenant (freitas / trust / montesiao-mg).
+> `54.232.208.118`** — um deploy por tenant (seis hoje; a lista vive em `INFRA.md`).
 > Ver [`../INFRA.md`](../INFRA.md).
 
 ## Desenvolvimento local

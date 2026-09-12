@@ -34,7 +34,7 @@ respondendo `/api/bi/overview` nas seis APIs — flag build-time
 `NEXT_PUBLIC_BI_MODULE=1` na matriz do `build-frontend.yml`. `/dashboard` e o
 painel executivo (abas por assunto, filtro multi-ano, insights de IA) e `/tela` e
 o **Modo Tela** (TV de gabinete, com link publico revogavel `/t/<slug>`). O app
-separado `painel/` foi descontinuado — ver `painel/DEPRECADO.md`.
+separado `painel/` foi descontinuado e removido do repositório em 12/09/2026.
 
 Nao ha multi-tenancy no codigo: **o isolamento e por deploy**. O que muda entre um tenant e
 outro sao as env vars no Coolify (`INSTANCE_SLUG`, `DATABASE_URL`, `JWT_SECRET`, `COFRE_KEY`,

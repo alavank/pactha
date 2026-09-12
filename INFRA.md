@@ -195,8 +195,8 @@ Projeto Coolify: **`pactha`** (uuid `ksmwr13y4iyprom8i1znede8`), environment `pr
 > em `applications` com o uuid `uymt911sgynkbvifyzf6nf1h`. São **9** aplicações no
 > projeto, não 10. O Painel Executivo virou parte do frontend principal:
 > `/dashboard` é o **Painel de Indicadores** e `/tela` é o **Modo Tela** (janela de
-> exibição), no mesmo deploy e no mesmo login. A pasta `painel/` saiu do CI (ver
-> `painel/DEPRECADO.md`).
+> exibição), no mesmo deploy e no mesmo login. A pasta `painel/` saiu do CI em 07/2026 e do
+> repositório em 12/09/2026.
 >
 > **Resíduo vivo:** o cron `painel-alertas` monta o payload de push apontando para
 > `/app/alertas`, que era rota **daquele** app — hoje 404 no frontend novo. Sem

@@ -4,7 +4,7 @@
 > garante hoje, o que ele **não** garante, e o passo a passo da **separação de papel no banco**
 > — que é **decisão do dono** e **não foi aplicada**.
 >
-> Infra (Coolify na AWS Lightsail `54.232.208.118`, três tenants): [`../INFRA.md`](../INFRA.md).
+> Infra (Coolify na AWS Lightsail `54.232.208.118`, seis tenants): [`../INFRA.md`](../INFRA.md).
 > Modelo de credenciais dos portais: [`SECURITY_CREDENTIALS.md`](SECURITY_CREDENTIALS.md).
 >
 > Pedido do dono, literal: os logs de auditoria *"são IMUTÁVEIS, não podem ser alterados ou
@@ -134,7 +134,7 @@ privilégio de dono.
 
 Trocar a `DATABASE_URL` de um cliente vivo é mudança de **infra**, não de código. Se faltar um
 privilégio qualquer, o sintoma é a aplicação **subir e não funcionar** — ou pior, funcionar pela
-metade — em três tenants, um deles com prefeitura usando. **Não é para fazer sozinho e não é
+metade — em seis tenants, com prefeituras usando. **Não é para fazer sozinho e não é
 para fazer sexta-feira.**
 
 ### 4.3 O SQL está na migration, e é ele que manda
@@ -249,7 +249,7 @@ descoberta depois."* A resposta, conferida no código:
    tela, que a camada entrou.
 8. **Guarde a senha do dono no cofre**, fora do alcance de quem opera o dia a dia. Sem este
    passo, a separação protege menos do que parece.
-9. **Pare aqui.** Os outros tenants (`freitas`, `trust`) **não entram** enquanto o dono não
+9. **Pare aqui.** Os outros cinco tenants **não entram** enquanto o dono não
    disser. Eles não pediram esta mudança, e uma separação de papel malfeita derruba a API
    de quem está trabalhando. Quando entrarem, é o mesmo roteiro, um de cada vez.
 
@@ -390,14 +390,14 @@ cópia de reserva no front (`RESSALVA_RESERVA`).
 
 ## 8. Checklist para quem for revisar isto depois
 
-- [ ] O botão **Verificar integridade** responde "Sem divergência" nos três tenants.
+- [ ] O botão **Verificar integridade** responde "Sem divergência" nos seis tenants.
 - [ ] Nenhuma trava aparece **Desligada** no painel de conferência.
 - [ ] Nenhum **campo fora do selo** aparece no painel (§2) — checar depois de toda migration que
       acrescente coluna a `audit_log`.
 - [ ] `SELECT tgname, tgenabled FROM pg_trigger WHERE tgrelid = 'audit_log'::regclass` mostra
       `A` (always) nos dois gatilhos que recusam e `O` no de INSERT (§2).
 - [ ] A nota de rodapé da tela e o `aviso_imutabilidade` do catálogo dizem a mesma coisa (§7).
-- [ ] `DATABASE_URL_SYNC` está preenchida nos três tenants (pré-requisito de §4).
+- [ ] `DATABASE_URL_SYNC` está preenchida nos seis tenants (pré-requisito de §4).
 - [ ] Decisão do dono sobre §4 (`pactha_app`): **pendente**.
 - [ ] Exportação periódica do CSV para fora do servidor — a mitigação do corte de cauda (§2).
 - [ ] Âncora externa do último selo do dia: não implementada; decidir se entra.
