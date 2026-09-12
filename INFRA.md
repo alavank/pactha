@@ -2,8 +2,8 @@
 
 > **Fonte única de verdade sobre onde o PACTHA roda.** Medido no servidor em **2026-07-23**,
 > reconferido contra a API do Coolify em **2026-09-04** (aplicações, tags e Scheduled Tasks).
-> Se algum outro documento deste repositório disser coisa diferente (Hetzner, Railway, Neon,
-> Vercel, Supabase), **este arquivo vence** — o outro está desatualizado.
+> Se algum outro documento deste repositório disser coisa diferente, **este arquivo vence** —
+> o outro está desatualizado.
 
 ---
 
@@ -282,10 +282,6 @@ configurado em cada resource `*-api`.
 
 **PostgreSQL 16 puro, container standalone `postgres:16-alpine`, um por tenant.**
 Conexão sempre por `DATABASE_URL` / `DATABASE_URL_SYNC`.
-
-**Não existe Supabase nesta infra** (nem cloud nem self-hosted). Se você vir
-`SUPABASE_URL`, `SUPABASE_ANON_KEY` ou `SERVICE_ROLE_KEY` em algum lugar, é lixo
-de documentação antiga — ignore.
 
 Os bancos são internos à rede Docker do projeto (não têm porta pública). Para
 `psql`/`pg_dump`, ou exponha a porta temporariamente no Coolify (e feche depois), ou
@@ -618,18 +614,9 @@ domingo. Corrigidas para `14 14 * * 1-6` e `44 14 * * 1-6` (11:14 e 11:44 BRT, s
 
 ---
 
-## 6. Plataformas que NÃO usamos mais
+## 6. Plataformas que NÃO usamos
 
-Nada abaixo está no ar. Se um documento, script ou env var apontar para isso, está errado:
-
-- **Hetzner** e o IP **5.78.42.251** — servidor **cancelado**, não responde.
-  Qualquer host `*-5-78-42-251.sslip.io` está morto.
-- **Railway** — não hospeda mais API, worker nem crons. A `COFRE_KEY` **não** mora lá.
-- **Neon** — não é mais o banco. A migração Neon → Postgres do Coolify **já foi feita**.
-- **Vercel**, **Netlify** — o frontend Next.js é buildado como imagem Docker no Coolify.
-- **Supabase** (cloud ou self-hosted) — nunca esteve nesta infra.
-- Especificações de máquina tipo **CCX33 / CPX31 / "8 vCPU dedicado" / "32 GB RAM" /
-  região "us-west"** são de servidores que não existem mais.
+Não usamos Hetzner, Railway, Neon, Vercel, Netlify nem Supabase — infra atual é Coolify na AWS Lightsail (ver INFRA.md).
 
 ---
 
@@ -637,8 +624,8 @@ Nada abaixo está no ar. Se um documento, script ou env var apontar para isso, e
 
 `JWT_SECRET`, `COFRE_KEY`, `ADMIN_PASSWORD`, `DATABASE_URL`, `ANTHROPIC_API_KEY`,
 `CONTROL_TOKEN_BOOTSTRAP` e as chaves VAPID vivem **nas env vars do resource no Coolify**
-(criptografadas no banco do Coolify), **por tenant**. Não estão no git, não estão em
-arquivo no host, e **não estão em Railway/Vercel**.
+(criptografadas no banco do Coolify), **por tenant**. Não estão no git nem em
+arquivo no host.
 
 Para lê-las/alterá-las: painel do Coolify → resource → aba *Environment Variables*, ou a
 API REST em `http://54.232.208.118:8000/api/v1` com `Authorization: Bearer <token>`

@@ -9,7 +9,7 @@ engine = create_async_engine(
     echo=False,
     pool_size=5,
     max_overflow=10,
-    # Neon (serverless) fecha conexoes ociosas -> sem pre_ping o pool entrega
+    # O servidor pode fechar conexoes ociosas -> sem pre_ping o pool entrega
     # conexao morta ("connection is closed"). pre_ping valida/reconecta antes de usar;
     # recycle descarta conexoes velhas. Essencial p/ ambientes com pouco trafego.
     pool_pre_ping=True,

@@ -258,5 +258,5 @@ def main(use_cache: bool = True):
 
 
 if __name__ == "__main__":
-    # Em produção (Railway) sem cache de disco persistente: --no-cache força download fresco.
+    # Em produção (container no Coolify) sem cache de disco persistente: --no-cache força download fresco.
     main(use_cache="--no-cache" not in sys.argv)

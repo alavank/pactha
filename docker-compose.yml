@@ -10,7 +10,7 @@
 
 services:
   db:
-    image: postgres:18-alpine # casa com o Neon do SIAO (PG 18) p/ o pg_dump/restore
+    image: postgres:18-alpine
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}

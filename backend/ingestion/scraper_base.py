@@ -41,7 +41,7 @@ class ScraperBase(ABC):
     uses_govbr: bool = False
 
     async def _fetch_one(self, key: str) -> list[dict]:
-        # Retry para lidar com connection drops do Neon (3 tentativas)
+        # Retry para lidar com connection drops do Postgres (3 tentativas)
         for attempt in range(3):
             try:
                 async with httpx.AsyncClient(timeout=30) as client:

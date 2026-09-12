@@ -396,7 +396,7 @@ async def renovar(headless: bool = True) -> bool:
 
 
 if __name__ == "__main__":
-    # Por padrao tenta headless (Railway); flag --visible roda visivel
+    # Por padrao tenta headless (producao, sem display); flag --visible roda visivel
     visible = "--visible" in sys.argv
     ok = asyncio.run(renovar(headless=not visible))
     sys.exit(0 if ok else 1)

@@ -14,7 +14,7 @@ COMO FUNCIONA:
    - Redireciona p/ idp/login          -> sessao MORTA: loga aviso (precisa
      re-captura via extensao). Continua tentando — assim que o usuario
      re-capturar, o keep-alive volta a manter viva.
-3. Repete pra sempre (loop). Deploy como servico Railway de longa duracao.
+3. Repete pra sempre (loop). Roda como servico de longa duracao no Coolify.
 
 LIMITE HONESTO: o gov.br SSO pode ter um teto duro de sessao (ex: 8-24h) por
 seguranca. Mesmo com keep-alive, pode exigir re-login periodico. Mas estende

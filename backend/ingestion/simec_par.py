@@ -6,7 +6,7 @@ Sem login, sem Cloudflare. Retorna HTML rico (~190KB) com:
   - Liberacoes de Recursos (tabelas 19+): pagamentos federais por programa
     (PNAE, PNATE, QUOTA Salario-Educacao, etc.)
 
-Roda diariamente via cron (Railway). Sem dependencia de browser/credenciais.
+Roda diariamente via cron no Coolify. Sem dependencia de browser/credenciais.
 """
 import json
 import logging

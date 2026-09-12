@@ -23,7 +23,7 @@ export default function LoginPage() {
     // Auto-retry transparente em cold-start (502/503/504/network err).
     // NAO retry em 401 (senha errada real) nem 429 (rate limit).
     // Resolve o sintoma de "email ou senha incorretos" na primeira tentativa
-    // quando o container Railway estava hibernando.
+    // quando o container da API ainda estava subindo.
     const COLD_START_STATUS = new Set([0, 502, 503, 504]);
     let lastErr: unknown = null;
     for (let attempt = 1; attempt <= 3; attempt++) {

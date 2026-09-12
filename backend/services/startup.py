@@ -614,7 +614,7 @@ def run_migrations_full():
 
 
 def _log(msg: str):
-    """Log + print (garante visibilidade nos logs Railway)."""
+    """Log + print (garante visibilidade nos logs do Coolify)."""
     print(f"[STARTUP] {msg}", flush=True)
     logger.warning(msg)
 

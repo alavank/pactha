@@ -2,7 +2,7 @@
 Criptografia simetrica autenticada para o Cofre de Senhas.
 Usa AES-256-GCM via cryptography.
 
-A chave (COFRE_KEY) NAO deve estar no banco. Configure no Railway/env.
+A chave (COFRE_KEY) NAO deve estar no banco. Configure a variavel COFRE_KEY no ambiente do Coolify.
 Gerar uma nova chave: python -c "import secrets; print(secrets.token_urlsafe(32))"
 """
 import os
@@ -17,7 +17,7 @@ def _get_key() -> bytes:
         raise RuntimeError(
             "COFRE_KEY nao configurada. Gere com: "
             "python -c \"import secrets; print(secrets.token_urlsafe(32))\" "
-            "e configure no Railway."
+            "e configure a variavel COFRE_KEY no ambiente do Coolify."
         )
     # Aceita base64-url (44 chars) ou hex (64 chars) ou raw bytes
     try:

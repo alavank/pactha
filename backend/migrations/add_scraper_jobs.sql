@@ -1,5 +1,5 @@
 -- Fila de jobs de scraping on-demand (ex.: refresh SIGCON disparado pela UI).
--- Substitui o antigo gatilho que chamava a API do Railway (serviceInstanceRedeploy).
+-- Substitui o antigo gatilho on-demand que disparava um redeploy remoto via API da plataforma.
 -- O Worker (Scheduled Task no Coolify) consome via ingestion/run_queue_sigcon.py.
 -- Idempotente (roda no boot da API via services/startup.py).
 CREATE TABLE IF NOT EXISTS scraper_jobs (

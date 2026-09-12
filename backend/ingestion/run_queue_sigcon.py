@@ -5,8 +5,8 @@ Roda como Scheduled Task a cada ~2min. Reclama 1 job 'pending' do tipo
 'sigcon' (FOR UPDATE SKIP LOCKED), executa o mesmo pipeline do
 run_sigcon_cron.py e marca o job como 'done' ou 'error'.
 
-Substitui o antigo gatilho on-demand que chamava a API do Railway
-(serviceInstanceRedeploy). Enfileiramento feito por
+Substitui o antigo gatilho on-demand que disparava um redeploy remoto
+via API da plataforma. Enfileiramento feito por
 POST /api/convenios/refresh-sigcon (routers/convenios.py).
 """
 import os
@@ -23,7 +23,7 @@ logger = logging.getLogger("run_queue_sigcon")
 
 def _sync_url() -> str:
     url = os.getenv("DATABASE_URL_SYNC") or os.getenv("DATABASE_URL", "").replace("+asyncpg", "")
-    # Neon usa channel_binding=require (psycopg2 nao suporta); em Postgres puro e no-op.
+    # Remove channel_binding=require (psycopg2 nao suporta); em Postgres puro e no-op.
     return url.replace("&channel_binding=require", "").replace("?channel_binding=require", "")
 
 

@@ -2,7 +2,7 @@
 
 Centraliza:
   - get_sync_db_url(): DATABASE_URL_SYNC limpo de channel_binding
-  - neon_connect(): context manager psycopg2 com retry/backoff p/ Neon
+  - neon_connect(): context manager psycopg2 com retry/backoff p/ Postgres
   - decode_jwt_payload() / jwt_minutes_remaining(): inspecao de JWT
   - normalize_cookies_for_playwright() / _for_httpx(): Cofre -> cliente
 """
@@ -21,7 +21,7 @@ import psycopg2
 
 logger = logging.getLogger("resilience")
 
-# erros transitorios que justificam reconexao ao Neon
+# erros transitorios que justificam reconexao ao Postgres
 _TRANSIENT = (
     psycopg2.OperationalError,
     psycopg2.InterfaceError,
@@ -67,13 +67,13 @@ def neon_connect(url: str | None = None, max_retries: int = 3, base_wait: float 
             if attempt < max_retries - 1:
                 wait = base_wait ** attempt  # 1, 2, 4...
                 logger.warning(
-                    f"Conexao Neon falhou ({attempt+1}/{max_retries}), retry {wait:.0f}s: "
+                    f"Conexao Postgres falhou ({attempt+1}/{max_retries}), retry {wait:.0f}s: "
                     f"{type(e).__name__}: {str(e)[:120]}"
                 )
                 time.sleep(wait)
             else:
                 logger.error(
-                    f"Neon nao respondeu apos {max_retries} tentativas: "
+                    f"Postgres nao respondeu apos {max_retries} tentativas: "
                     f"{type(e).__name__}: {str(e)[:200]}"
                 )
                 raise
@@ -85,7 +85,7 @@ def neon_connect(url: str | None = None, max_retries: int = 3, base_wait: float 
         try:
             conn.close()
         except Exception as e:
-            logger.warning(f"Erro ao fechar conexao Neon: {e}")
+            logger.warning(f"Erro ao fechar conexao Postgres: {e}")
 
 
 def decode_jwt_payload(token: str) -> dict | None:

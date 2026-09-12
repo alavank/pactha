@@ -37,9 +37,9 @@ async def lifespan(app: FastAPI):
     Garante que seed institucional + tabelas estao sempre atualizadas.
 
     Tambem aquece o pool asyncpg pra evitar primeira request travada
-    (cold start no Railway gerava 'email ou senha incorretos' fantasma
+    (cold start do container gerava 'email ou senha incorretos' fantasma
     porque o connect demorava mais que o timeout do frontend)."""
-    # print() para garantir que aparece nos logs do Railway mesmo se logging falhar
+    # print() para garantir que aparece nos logs do Coolify mesmo se logging falhar
     print("=== PACTHA boot - rodando migrations ===", flush=True)
     logging.getLogger("startup").warning("=== PACTHA boot - rodando migrations ===")
     try:

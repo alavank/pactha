@@ -11,8 +11,8 @@ MG/ES/GO/RS state). Two of them landed 02/09/2026 on `feat/fontes-rs`: **SICONFI
 the platform's only source of the money that sustains the network month to month) and the
 **radar de captação** (`siconv_programa.zip` — federal programs whose proposal window is
 still open; the only screen in PACTHA that looks *forward* instead of at instruments
-already signed). This repo (`alavank/pactha`) is a fork of `MattMatiins/PACTA`, migrated
-off Railway/Neon/Vercel/Hetzner onto **Coolify on AWS Lightsail**.
+already signed). This repo (`alavank/pactha`) is a fork of `MattMatiins/PACTA` and runs on
+**Coolify on AWS Lightsail**.
 
 Everything user-facing and every commit message/comment is in **Portuguese**. Match that
 convention in code comments, commit messages, and UI copy.

@@ -1,5 +1,5 @@
 """
-Script para criar tabelas e seed inicial no Neon PostgreSQL.
+Script para criar tabelas e seed inicial no PostgreSQL.
 Executa de forma sincrona para simplicidade.
 """
 import sys
@@ -345,7 +345,7 @@ def seed_data():
 
 
 if __name__ == "__main__":
-    print("Criando tabelas no Neon PostgreSQL...")
+    print("Criando tabelas no PostgreSQL...")
     create_tables()
     print("\nInserindo dados iniciais...")
     seed_data()

@@ -2056,7 +2056,7 @@ def _upsert_emendas_batch(cur, emendas) -> tuple[int, int]:
 
 
 def _sync_dsn() -> str:
-    """DSN psycopg2 (Neon usa channel_binding=require, que psycopg2 nao suporta)."""
+    """DSN psycopg2 (remove channel_binding=require, que psycopg2 nao suporta)."""
     dsn = os.getenv("DATABASE_URL_SYNC", "")
     return dsn.replace("&channel_binding=require", "").replace("?channel_binding=require", "")
 
@@ -2140,7 +2140,7 @@ async def _scrape_one(browser, cred, anos_emendas, sem, deadline=None):
 
             # Emendas ANTES de abrir a conexao — o scrape (login+detalhes+emendas)
             # leva 10-20 min; se a conexao fosse aberta no inicio, ficaria ociosa
-            # e o Neon/Postgres a fecharia por idle timeout ("connection already
+            # e o Postgres a fecharia por idle timeout ("connection already
             # closed"). Abrimos SO AGORA (fresca) p/ gravar rapido e fechar.
             emendas = []
             emendas_erro: str | None = None
