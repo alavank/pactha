@@ -1,7 +1,7 @@
 # Modelo de Segurança de Credenciais — PACTHA
 
 > Infra: **Coolify na AWS Lightsail `54.232.208.118`**. A `COFRE_KEY` mora **nas env vars do
-> resource no Coolify**, uma por tenant (freitas / trust / montesiao-mg). Ver [`../INFRA.md`](../INFRA.md).
+> resource no Coolify**, uma por tenant (os seis estão em [`../INFRA.md`](../INFRA.md)).
 
 ## Princípio: Zero-Trust Credentials
 
@@ -61,7 +61,7 @@ Nenhum operador humano (você, Claude, devs, GitHub admins, quem tem acesso ao p
 
 ## Operação
 
-⚠️ **Tudo abaixo é POR TENANT.** Cada cliente (freitas / trust / montesiao-mg) tem sua própria
+⚠️ **Tudo abaixo é POR TENANT.** Cada um dos seis clientes (lista em `INFRA.md`) tem sua própria
 API, seu próprio banco, sua própria `COFRE_KEY` e seus próprios Service Tokens. Um token de um
 tenant não vale no outro. Substitua `$API` pela API do tenant certo:
 

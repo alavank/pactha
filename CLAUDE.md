@@ -51,9 +51,9 @@ migration ORDERING bug (`add_detalhe_pagina_rodizio.sql` altering a table create
 history/decisions live in `CONTINUAR.md` — read both before large changes, they are written as
 AI-session handoff docs and are kept current.
 
-The `painel/` directory is a **deprecated** standalone Next.js app — its functionality
-(`/app`, `/tv`) moved into `frontend/` as `/dashboard` and `/tela`. Don't build on `painel/`;
-see `painel/DEPRECADO.md`.
+The old standalone `painel/` Next.js app was removed from the repo on 12/09/2026 — its
+functionality (`/app`, `/tv`) lives in `frontend/` as `/dashboard` and `/tela`. The backend
+still serves `/api/painel/*` (used by `/dashboard`); don't resurrect the separate app.
 
 ## Escrita de arquivos
 
