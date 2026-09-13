@@ -41,6 +41,13 @@ o que popula esse banco é a coleta pública daquele município, feita do zero.
 **c) Se for assessoria ou consórcio:** a lista completa de municípios, cada um com
 nome, UF e IBGE. E qual é o município "sede", se houver.
 
+> ⚠️ **Município do RS precisa do COREDE no cadastro** (`municipios.corede`, gravado por
+> `POST /api/control/municipios`), senão a Consulta Popular pula o município e a rodada
+> sai `partial` com "sem COREDE". Não se adivinha pela geografia: confira na planilha
+> "municipios x demandas eleitas" do COREDE em `consultapopular.rs.gov.br` — o nome do
+> município tem de aparecer nela. Em 13/09/2026 o BGK nasceu com os 10 sem COREDE
+> (Giruá é **Missões**, Portão é **Vale do Rio dos Sinos**, os outros oito são **Serra**).
+
 **d) Que credenciais já existem?** Pergunte uma a uma; o que não houver entra
 depois, sem travar a abertura:
 

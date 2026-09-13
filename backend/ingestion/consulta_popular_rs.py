@@ -98,8 +98,20 @@ def url_da_planilha(corede: str) -> str | None:
     if not alvo:
         return None
     html = _get(PAGINA).text
-    candidatos = [u for u in re.findall(r'href="([^"]+\.xlsx)"', html, re.I)
-                  if ARQUIVO_ALVO in u.lower() and f"-{alvo}-" in _sem_acento(u)]
+    return _escolher_planilha(re.findall(r'href="([^"]+\.xlsx)"', html, re.I), alvo)
+
+
+def _escolher_planilha(urls: list[str], alvo: str) -> str | None:
+    """Dentre os .xlsx da pagina, o 'municipios x demandas eleitas' do COREDE.
+
+    ⚠️ O nome do COREDE vem logo depois do prefixo numerico do arquivo
+    (`.../04144308-serra-resultado-...`), e e AI que se casa — nao em qualquer
+    lugar da URL. `-serra-` solto tambem casa `alto-da-serra-do-botucarai`, e
+    so nao trocou a planilha dos oito municipios da Serra do BGK (13/09/2026)
+    porque o desempate por nome preferia, por sorte, o arquivo certo."""
+    candidatos = [u for u in urls
+                  if ARQUIVO_ALVO in u.lower()
+                  and re.search(rf"/\d+-{re.escape(alvo)}-", _sem_acento(u))]
     if not candidatos:
         return None
     # Mais de um = republicacao; o Estado prefixa o nome com data+hora, entao o
@@ -125,16 +137,25 @@ def parse_planilha(conteudo: bytes, municipio: str) -> list[dict]:
         if _sem_acento(r[0]) == "ambito municipal":
             break
         # A linha da demanda tem o COREDE na 1a coluna e um texto numerado
-        # ("1 - Fomento ao setor...") na 2a.
-        texto = r[1] if len(r) > 1 else ""
-        m = re.match(r"^\s*(\d+)\s*[-–]\s*(.+)$", texto)
+        # ("1 - Fomento ao setor...") logo depois. ⚠️ "Logo depois" nao e
+        # "na 2a coluna": cada COREDE monta a planilha na mao, e Missoes
+        # (13/09/2026) deixou a coluna B vazia e escreveu a demanda na C — o
+        # parser antigo lia r[1], nao casava e devolvia ZERO demandas para os
+        # 25 municipios da regiao (Girua ficou sem dado com o COREDE certo).
+        i_txt, m = None, None
+        for j, c in enumerate(r[1:], start=1):
+            m = re.match(r"^\s*(\d+)\s*[-–]\s*(.+)$", c or "")
+            if m:
+                i_txt = j
+                break
         if not m:
             continue
-        nums = [c for c in r[2:] if re.fullmatch(r"-?\d+(\.\d+)?", c or "")]
+        resto = r[i_txt + 1:]
+        nums = [c for c in resto if re.fullmatch(r"-?\d+(\.\d+)?", c or "")]
         demandas.append({
             "ordem": m.group(1),
             "demanda": m.group(2).strip(),
-            "orgao": next((c for c in r[2:] if c and not re.fullmatch(r"-?\d+(\.\d+)?", c)), None),
+            "orgao": next((c for c in resto if c and not re.fullmatch(r"-?\d+(\.\d+)?", c)), None),
             "votos_corede": int(float(nums[0])) if nums else None,
             "valor": float(nums[-1]) if len(nums) > 1 else None,
             "classificada": True,   # este arquivo lista só as ELEITAS
@@ -149,17 +170,33 @@ def parse_planilha(conteudo: bytes, municipio: str) -> list[dict]:
     if i_cab is None:
         return demandas
     alvo = _sem_acento(municipio)
+    cab = [_sem_acento(c) for c in linhas[i_cab]]
+
+    def _coluna(base: int, fim: int, palavra: str, padrao: int) -> int:
+        # Dentro do grupo [base, fim) acha a coluna pelo CABECALHO ("(Votos)",
+        # "STATUS"); sem cabecalho reconhecivel, vale a posicao classica.
+        for j in range(base + 1, fim):
+            if j < len(cab) and palavra in cab[j]:
+                return j
+        return base + padrao
+
     for r in linhas[i_cab + 1:]:
-        # Cada demanda ocupa 3 colunas: (municipio, votos, status).
+        # O nome do municipio se repete uma vez por demanda; o k-esimo grupo e
+        # o da k-esima demanda. ⚠️ O grupo NAO tem largura fixa: o padrao e
+        # (municipio, votos, status), mas Missoes intercala "Nº Eleitores" e
+        # "Percent. Municipios" — com passo fixo de 3 o parser lia o total de
+        # eleitores como votos e o percentual como status.
+        grupos = [j for j, c in enumerate(r) if _sem_acento(c) == alvo]
         for k, d in enumerate(demandas):
-            base = k * 3
-            if len(r) <= base + 2:
-                continue
-            if _sem_acento(r[base]) != alvo:
-                continue
-            votos = r[base + 1]
+            if k >= len(grupos):
+                break
+            base = grupos[k]
+            fim = grupos[k + 1] if k + 1 < len(grupos) else len(r)
+            j_votos = _coluna(base, fim, "voto", 1)
+            j_status = _coluna(base, fim, "status", 2)
+            votos = r[j_votos] if j_votos < len(r) else ""
             d["votos_municipio"] = int(float(votos)) if re.fullmatch(r"\d+(\.\d+)?", votos or "") else None
-            d["status_municipio"] = r[base + 2] or None
+            d["status_municipio"] = (r[j_status] if j_status < len(r) else "") or None
     return demandas
 
 
