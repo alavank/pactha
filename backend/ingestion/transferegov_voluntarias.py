@@ -330,6 +330,49 @@ def _propostas_com_clausula(municipio_id: int) -> set:
         return set()
 
 
+def _proximo_link(res: dict, cur: int) -> str | None:
+    """Link da pagina cur+1: o numero dentro da janela ou, na borda, o [Prox]."""
+    nxt = next((l["href"] for l in res.get("links", []) if l["num"] == cur + 1), None)
+    return nxt or res.get("prox")
+
+
+def _propostas_conhecidas(municipio_id: int) -> int:
+    """Quantas propostas o banco ja tem deste municipio. Referencia da trava de
+    completude quando o portal nao mostrou o total (banner ausente). 0 = sem
+    referencia (municipio novo, ou erro de banco) — ai a trava nao julga."""
+    try:
+        import psycopg2
+        url = os.getenv("DATABASE_URL_SYNC", "").replace("&channel_binding=require", "").replace("?channel_binding=require", "")
+        conn = psycopg2.connect(url); cur = conn.cursor()
+        cur.execute("SELECT count(*) FROM transferegov_propostas WHERE municipio_id=%s", (municipio_id,))
+        n = cur.fetchone()[0]
+        cur.close(); conn.close()
+        return int(n or 0)
+    except Exception:
+        return 0
+
+
+def _listagem_incompleta(listadas: int, oficial: int | None, conhecidas: int) -> tuple[int, str] | None:
+    """(esperado, de onde veio a referencia) quando a listagem veio curta; None se ok.
+
+    Com o total OFICIAL (o Z do banner): tolerancia de max(2, 2%) — `listadas` e
+    deduplicada e filtrada, o Z conta itens brutos, e uma divergencia estavel de
+    1-2 itens marcaria o municipio como subcoleta em toda visita (letal no tenant
+    de 1 municipio: nunca mais gravaria 'success').
+
+    Sem o oficial, contra as propostas que o BANCO ja conhece: abaixo de 90% e
+    corte. Tolerancia larga de proposito — o banco tambem guarda proposta que o
+    portal ja nao lista — e so a partir de 20 conhecidas: municipio pequeno ou
+    novo nao tem referencia que preste, e a trava nao inventa uma."""
+    if oficial:
+        if oficial - listadas > max(2, int(oficial * 0.02)):
+            return oficial, "total oficial do portal"
+        return None
+    if conhecidas >= 20 and listadas < conhecidas * 0.9:
+        return conhecidas, "propostas ja conhecidas no banco — o portal nao mostrou o total"
+    return None
+
+
 def _propostas_ja_enriquecidas(municipio_id: int) -> set:
     """Retorna numero_proposta das que JA tem parlamentar OU sit_det.
     Permite priorizar as pendentes quando rodando com janela curta de auth."""
@@ -733,6 +776,23 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
 
     all_rows = []
     res = await page.evaluate(grid_js)
+    # ⚠️ SEM O BANNER NAO HA TOTAL, E SEM TOTAL A PARADA E SILENCIOSA. O banner
+    # "Pagina X de Y (Z item(s))" e o UNICO lugar de onde sai o total: sem ele o
+    # loop anda pelos links ate a primeira pagina que chegar sem link e para
+    # achando que era a ultima — e a trava de completude la embaixo, que compara
+    # com o Z, fica cega. Medido em 13/09/2026 com o portal lento (varias coletas
+    # simultaneas): Palmas saiu com 100 de 2.121, Goiania com 2.460 de 3.472, os
+    # dois como `success`, sem aviso nenhum. A mesma listagem, sozinha minutos
+    # depois, veio inteira (107 paginas) da VPS e de fora dela — nao era bloqueio
+    # de IP, era a pagina 1 lida antes do displaytag desenhar a paginacao.
+    for _ in range(4):
+        if res.get("info") or not res.get("rows"):
+            break
+        await page.wait_for_timeout(4000)
+        res = await page.evaluate(grid_js)
+    if res.get("rows") and not res.get("info"):
+        logger.warning(f"  {mun['nome']}: pagina 1 sem o banner de paginacao — total desconhecido, "
+                       f"a completude sera conferida contra as propostas ja conhecidas")
     all_rows.extend(res["rows"])
 
     # Paginacao SEM TETO. O displaytag mostra so uma JANELA fixa de numeros
@@ -752,10 +812,29 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
     paginas = 1
     tried = set()
     while (total is None or cur < total) and paginas < 2000:
-        nxt = next((l["href"] for l in res.get("links", []) if l["num"] == cur + 1), None)
-        if not nxt:
-            nxt = res.get("prox")  # borda da janela -> desliza via [Prox] (so -g=)
+        nxt = _proximo_link(res, cur)
+        if not nxt and (total is None or cur < total):
+            # Sem link para a proxima NAO prova que acabou: a grid chega antes da
+            # barra de paginacao quando o portal esta lento. Rele a pagina atual
+            # e, a partir da 2a (que veio por GET), recarrega antes de desistir.
+            # A pagina 1 e resultado de POST (Consultar) — recarregar reenviaria.
+            for _t in range(3):
+                await page.wait_for_timeout(2500 + _t * 2000)
+                if _t == 2 and cur > 1:
+                    try:
+                        await page.reload(timeout=40000, wait_until="domcontentloaded")
+                        await page.wait_for_timeout(3000)
+                    except Exception:
+                        pass
+                res = await page.evaluate(grid_js)
+                total = total or (res.get("info") or {}).get("total")
+                nxt = _proximo_link(res, cur)
+                if nxt:
+                    break
         if not nxt or nxt in tried:
+            if total is not None and cur < total:
+                logger.warning(f"  {mun['nome']}: paginacao INTERROMPIDA na pagina {cur} de {total} "
+                               f"(sem link para a {cur + 1} depois de reler)")
             break  # ultima pagina (nem cur+1 numerico nem [Prox])
         tried.add(nxt)
         # navega com retry: as vezes a grid vem vazia/incompleta (recarrega)
@@ -770,8 +849,11 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
             await page.wait_for_timeout(2500 + attempt * 1500)
             res = await page.evaluate(grid_js)
             info = res.get("info") or {}
-            # ok se veio linha(s) E a pagina reportada avancou p/ cur+1 (ou sem info)
-            if res["rows"] and (not info or info.get("cur") == cur + 1):
+            # ok se veio linha(s) E a pagina reportada avancou p/ cur+1. Pagina SEM
+            # banner so passa se o total nunca foi conhecido: com total conhecido,
+            # grid sem banner e pagina desenhada pela metade — e e dela que sai o
+            # "sem link para a proxima" que encerrava a listagem em silencio.
+            if res["rows"] and ((info and info.get("cur") == cur + 1) or (not info and total is None)):
                 loaded = True
                 break
         if not loaded:
@@ -784,6 +866,7 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
                 seen_keys.add(k); novos += 1
         all_rows.extend(res["rows"])
         itens_oficial = (res.get("info") or {}).get("items") or itens_oficial
+        total = total or (res.get("info") or {}).get("total")
         cur += 1
         paginas += 1
         if novos == 0:
@@ -818,11 +901,16 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
     # numero/colunas cai fora), o Z conta itens brutos — uma divergencia
     # estavel de 1-2 itens marcaria o municipio como subcoleta em TODA visita
     # (letal no tenant de 1 municipio: nunca mais gravaria 'success').
-    _faltam = (itens_oficial - len(propostas)) if itens_oficial else 0
-    if _faltam > max(2, int(itens_oficial * 0.02) if itens_oficial else 0):
+    # Sem o Z (banner ausente), a referencia passa a ser o que o BANCO ja conhece
+    # deste municipio — senao a trava fica cega exatamente no caso que a cegou em
+    # 13/09 (ver o comentario do banner, la em cima).
+    _conhecidas = 0 if itens_oficial else _propostas_conhecidas(mun["id"])
+    _inc = _listagem_incompleta(len(propostas), itens_oficial, _conhecidas)
+    if _inc:
+        _esperado, _ref = _inc
         logger.warning(f"  {mun['nome']}: PAGINACAO INCOMPLETA — {len(propostas)} de "
-                       f"{itens_oficial} proposta(s) do total oficial")
-        _PAGINACAO_INCOMPLETA[mun["id"]] = (len(propostas), itens_oficial)
+                       f"{_esperado} proposta(s) ({_ref})")
+        _PAGINACAO_INCOMPLETA[mun["id"]] = (len(propostas), _esperado)
     else:
         _PAGINACAO_INCOMPLETA.pop(mun["id"], None)
 
@@ -2766,6 +2854,7 @@ async def run_proximos(n: int | None = None, deadline_s: int | None = None):
                     logger.info(f"  {mun['nome']}: {len(props)} propostas -> {n_up} upsert "
                                 f"({time.monotonic()-_t0:.0f}s acumulados)"
                                 f"{' [PARCIAL]' if _parc else ''}")
+                    _pag = _PAGINACAO_INCOMPLETA.get(mun["id"])
                     if _parc:
                         # Parcial NAO e sucesso: registra p/ diagnostico e deixa o
                         # backoff agir. O carimbo de ultima_coleta_em acontece de
@@ -2776,6 +2865,12 @@ async def run_proximos(n: int | None = None, deadline_s: int | None = None):
                         _marca_coleta(mun["id"], ok=False,
                                       erro=f"parcial: orcamento esgotado, "
                                            f"{_SCRAPE_STATE.get('restantes', 0)} propostas restantes")
+                    elif _pag:
+                        # Listagem curta tambem NAO e sucesso. Ate 13/09/2026 este
+                        # caso carimbava ok=True: Palmas "fechou" com 100 de 2.121
+                        # propostas e sumiu do radar — o relatorio a mostrava verde.
+                        _marca_coleta(mun["id"], ok=False,
+                                      erro=f"paginacao incompleta: {_pag[0]} de {_pag[1]} propostas listadas")
                     else:
                         _marca_coleta(mun["id"], ok=True)
                         ok_n += 1
