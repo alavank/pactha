@@ -8,10 +8,10 @@ As rotinas de ingestão rodam como **Scheduled Tasks** anexadas ao resource
 (`CMD sleep infinity`); cada Scheduled Task executa um comando dentro dele via
 `docker exec`.
 
-⚠️ **Existe um Worker por tenant** — hoje **cinco**: `freitas-worker`, `trust-worker`,
-`montesiao-mg-worker`, `santamaria-rs-worker` e `novapalma-rs-worker` —, cada um com seu
+⚠️ **Existe um Worker por tenant** — hoje **seis** (freitas, trust, montesiao, santamaria,
+novapalma e bgk; os uuids estão em `.github/workflows/build-backend.yml`) —, cada um com seu
 banco e sua `COFRE_KEY`. A mesma task existe em vários deles, **com horários diferentes
-de propósito**. (Os dois do RS não têm `sigcon` nem `cagec`: lá a fonte estadual é o
+de propósito**. (Os três do RS não têm `sigcon` nem `cagec`: lá a fonte estadual é o
 `che-rs`.)
 
 ⚠️ **A TABELA ABAIXO É UM RETRATO, NÃO A FONTE DE VERDADE.** Ela ficou vencida duas vezes
@@ -38,37 +38,31 @@ que é justamente o que já custou fonte parada neste projeto. Por isso:
 
 ## Scheduled Tasks
 
-> ⚠️ **Medida no Coolify em 10/09/2026** — a versão anterior desta tabela dizia
-> `sigcon` 4×/dia e horários do `transferegov` e do `transfvol-go` que não existiam
-> mais havia semanas. A fonte de verdade é o Coolify
-> (`GET /applications/<worker_uuid>/scheduled-tasks`, ver `INFRA.md` §5); isto é
-> fotografia, e fotografia envelhece. Os três tenants do RS (santamaria, novapalma,
-> bgk) não têm as tasks de MG/GO/ES.
+> ⛔ **Regra do dono (13/09/2026): todo município de todo cliente, todo dia, entre 19h e
+> 7h BRT (22:00–10:00 UTC).** A agenda das tasks de rodízio (`transferegov-lote`,
+> `transferegov`, `sigcon`, `sigcon-rodizio`, `queue-sigcon`, `cagec`) mora no `PLANO` de
+> [`scripts/agenda_noturna.py`](../scripts/agenda_noturna.py), que também audita a janela
+> em TODAS as tasks do Coolify. Desenho, exceção (`cauc-manha`) e o que fazer quando não
+> couber: [`INFRA.md`](../INFRA.md) §5. As demais tasks: a fonte de verdade é o Coolify
+> (`GET /applications/<worker_uuid>/scheduled-tasks`); a tabela abaixo é fotografia.
 
-| Task | Freitas | Trust | Monte Sião |
-|------|---------|-------|------------|
-| `sigcon` | `45 5 * * *` | `30 6 * * *` | `45 6 * * *` |
-| `transferegov-lote` | `25 1,3,7,21 * * *` | `10 2,4,8,22 * * *` | `25 4 * * *` |
-| `transferegov` | `5 4 * * *` | `50 4 * * *` | `5 5 * * *` |
-| `fns` | `55 4 * * *` | `40 5 * * *` | `55 5 * * *` |
-| `govbr-renew` | `4 * * * *` | `12 * * * *` | `20 * * * *` |
-| `queue-sigcon` | `10,40 * * * *` | `18,48 * * * *` | `26,56 * * * *` |
-| `painel-alertas` | `15 */2 * * *` | `25 */2 * * *` | `37 */2 * * *` |
-| `cagec` | `0 10,15,19,23 * * *` | `48 10,19 * * *` | `46 10,19 * * *` |
-| `cauc-manha` | `25 10-14 * * *` | `27 10-14 * * *` | `29 10-14 * * *` |
-| `gconv-es` | — | `52 3 * * *` | — |
-| `transfvol-go` | — | `56 3 * * *` | — |
-| `cofin-ses-go` | — | `0 4 * * *` | — |
-| `tcm-go` | — | `4 4 * * *` | — |
+Fotografia de 13/09/2026, depois do `--aplicar` (UTC; os três tenants do RS não têm as
+tasks de MG/GO/ES):
+
+| Task | Freitas | Trust | Monte Sião | Santa Maria | Nova Palma | BGK |
+|------|---------|-------|------------|-------------|------------|-----|
+| `transferegov-lote` | `35 0-3,5` | `5 0-4,6-9` | `30 22` | `0 22` | `0 23` | `35 4,6-8` |
+| `transferegov` (base) | `10 4` | `50 4` | `5 5` | `55 5` | `25 6` | `0 6` |
+| `sigcon` | `5 5` | `30 6` | `45 6` | — | — | — |
+| `sigcon-rodizio` | `5 0-4,6-9,22` | — | — | — | — | — |
+| `cagec` | `0 22,23` (lote 22) | `30 22` | `45 22` | — | — | — |
+| `cauc-manha` (exceção) | `25 10-14` | `27 10-14` | `29 10-14` | `31 10-14` | `56 10-14` | `3 10-14` |
 
 > 🕐 **TODOS OS HORÁRIOS ACIMA SÃO UTC.** O host, o `instance_timezone` do
 > Coolify e o PHP do container estão em `Etc/UTC`; **Brasília é UTC−3**. Isto já
 > custou caro: um `cagec` marcado para "07:00" rodava às **04:00 da manhã** para
 > o cliente. Ao combinar horário com alguém, converta antes de escrever o cron.
-> As faixas do CAGEC (10/15/19/23 UTC) são **07h, 12h, 16h e 20h de Brasília**.
-> Dentro de cada faixa: Freitas `:00`–`:34`, Monte Sião `:46`, Trust `:48`–`:57`.
-> O 15h virou 16h quando o SIGCON da Freitas ocupava 15:00–15:50 BRT; hoje ele roda
-> 1×/dia de madrugada (tabela acima).
+> A janela 22:00–10:00 UTC é **19h–07h de Brasília**.
 
 **Duração real medida** (de `scheduled_task_executions`, 7 dias — e **não** de
 `ingestion_log`, cujo `started_at` é NULL e faz toda média sair 0):
@@ -87,7 +81,10 @@ escrito no fim do script. Foi assim que a Freitas passou nove dias sem coletar,
 sem erro em lugar nenhum, só com a data velha na tela. O reaper mata em 3600s,
 que é o teto de tudo isso.
 
-Comandos completos, exatamente como estão no Coolify:
+Comandos de referência das tasks que NÃO são de rodízio (os de `sigcon`,
+`sigcon-rodizio`, `transferegov`, `transferegov-lote` e `cagec` estão no `PLANO` de
+`scripts/agenda_noturna.py`, que é quem os grava; os de baixo são anteriores a 13/09 e
+ainda mostram as travas antigas — confira no Coolify antes de copiar):
 
 ```bash
 # sigcon

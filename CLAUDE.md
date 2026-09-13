@@ -51,6 +51,12 @@ migration ORDERING bug (`add_detalhe_pagina_rodizio.sql` altering a table create
 history/decisions live in `CONTINUAR.md` — read both before large changes, they are written as
 AI-session handoff docs and are kept current.
 
+**⛔ Coleta: TODO município de TODO cliente, TODO dia, entre 19h e 7h (Brasília)** — regra
+do dono (13/09/2026), vale para cliente novo sem exceção; paralelismo na máquina é
+permitido (o limite é o portal). A agenda das tasks de rodízio mora em
+`scripts/agenda_noturna.py`, que audita a regra no Coolify inteiro; desenho e exceção em
+`INFRA.md` §5.
+
 The old standalone `painel/` Next.js app was removed from the repo on 12/09/2026 — its
 functionality (`/app`, `/tv`) lives in `frontend/` as `/dashboard` and `/tela`. The backend
 still serves `/api/painel/*` (used by `/dashboard`); don't resurrect the separate app.

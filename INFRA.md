@@ -312,27 +312,62 @@ schema+seed. Migrações idempotentes rodam no boot da API (`backend/services/st
 > `bgk-rs`, que é o 6º. Tenant novo não herda Scheduled Task nenhuma — elas se criam uma a
 > uma pela API do Coolify. Antes de assumir que o bgk coleta, pergunte ao Coolify (§3).
 
-O desenho atual (redesenho de 09/08, "tuning da madrugada"):
+> ⛔ **REGRA DO DONO (13/09/2026): TODO município de TODO cliente é atualizado TODO dia,
+> entre 19h e 7h de Brasília (22:00–10:00 UTC).** Literal: *"não existe cliente grande e
+> cliente pequeno, TODOS os municípios devem ser atualizados todos os dias para que esteja
+> pronto de manhã para as equipes trabalharem [...] isso é regra, daqui a pouco eu pego
+> mais 20 clientes novos e terá que ser assim também"*. Vale para cliente novo sem
+> exceção. Quem pediu, pediu depois de ver a BGK rodar o lote do TransfereGov 1×/dia com
+> **1 município por rodada** (ciclo de 10 dias) e o SIGCON da Freitas fechar 1–3
+> municípios por noite (ciclo de ~10 dias) — nenhum dos dois era limite da máquina.
+>
+> **A agenda das tasks de rodízio mora em [`scripts/agenda_noturna.py`](scripts/agenda_noturna.py)**
+> (o `PLANO`), e o script audita a regra sobre o Coolify inteiro: `python
+> scripts/agenda_noturna.py` (agenda real) · `--plano --carga` (o que o plano faria e se a
+> capacidade cobre todo município) · `--aplicar`. Cliente novo = um bloco no `PLANO`,
+> num slot que a auditoria lista como livre. As outras tasks continuam tendo o Coolify
+> como fonte de verdade, mas passam pela mesma auditoria da janela.
+>
+> **Única exceção à janela:** `cauc-manha` (o Tesouro só publica o extrato do dia entre
+> 07h e 09h20 BRT — ver abaixo). Fonte que tem horário de funcionamento (CAGEC emite CRC
+> só de dia/início da noite; FPE e CADIN-RS até 22h30) foi posta no **começo** da janela,
+> às 19h BRT, e não fora dela.
+>
+> **Paralelismo é permitido e desejado** (dono, 13/09: *"a máquina agora é mais possante
+> [...] não tem muito problema rodar coisas em paralelo, a gente vai testando, se ver que
+> tá estourando a gente baixa"*). O que segue em fila é o **mesmo portal**, não a máquina.
+> **Quando não couber:** os slots livres do portal do TransfereGov acabam → subir
+> `TG_FAIXAS` para 2 no script (dois clientes no portal ao mesmo tempo), acompanhar uma
+> noite (403, timeout, "detalhe parcial") e só então pensar em 3. A regra não se negocia;
+> o desenho, sim.
 
-- **Lock compartilhado `/tmp/scraper.lock`** por worker: `sigcon`, `transferegov-lote` e
-  `cagec` **nunca rodam ao mesmo tempo no mesmo tenant** (quem chega com o lock tomado
-  sai com `flock -E 99` → remapeado para sucesso = pulou a vez, a próxima rodada cobre).
+O desenho atual (13/09/2026, "coleta noturna"):
+
+- **Uma trava por PORTAL, e não mais uma por worker.** Até 13/09 `sigcon`,
+  `transferegov(-lote)` e `cagec` dividiam `/tmp/scraper.lock` — herança do t3.large de 2
+  vCPU, onde dois Chromium derrubavam o host. Com 8 vCPU a trava única virou o gargalo (a
+  Freitas precisaria de ~12h de fila para SIGCON + TransfereGov + CAGEC). Agora:
+  `/tmp/transferegov.lock` (base diária + lote), `/tmp/sigcon.lock` (`sigcon`,
+  `sigcon-rodizio` e `queue-sigcon`) e `/tmp/cagec.lock`. Quem chega com a trava tomada
+  sai com `flock -E 99` → remapeado para sucesso = pulou a vez.
 - **Agendas entrelaçadas — nas DUAS direções.** Na vertical (o mesmo worker): quem cai
-  dentro da janela de outra task do `/tmp/scraper.lock` pula a vez **sem log**, então a
-  janela nova precisa terminar (`timeout` inteiro) antes da próxima vizinha. Na horizontal
-  (tenants diferentes): o lote de dois tenants não se cruza no portal do TransfereGov,
-  porque todos saem do mesmo IP.
-  ⚠️ O "lote nas horas pares, sigcon nas ímpares" que vivia aqui acabou em algum ponto
-  de 2026 sem ninguém anotar. Medido em 10/09/2026: o lote é **1x/dia** na madrugada
-  em montesiao, santamaria, novapalma e bgk, e passou a **4x/dia** em freitas e trust
-  (alternados: freitas `25 1,3,7,21`, trust `10 2,4,8,22` UTC — fora do horário
-  comercial, fora do bloco 03:25–07:00 dos outros tenants e longe das 00:00 UTC, quando
-  o Coolify reinicia e marca como falha o que estiver rodando). Com uma rodada só, a
-  fila de ~60 municípios do freitas (`TG_LOTE_MUNICIPIOS=4`) levava ~15 dias para dar a
-  volta, e o watchdog acusava 30 municípios parados.
-- **Rodadas curtas com rodízio**: `SIGCON_LOTE_MUNICIPIOS` / `TG_LOTE_MUNICIPIOS` fatiam a
-  carteira; o rodízio (ordenação por staleness + backoff por falha, PR #159) garante que
-  ninguém starva. É o modelo que levou o TransfereGov a 41/41 frescos.
+  dentro da janela de outra task da MESMA trava pula a vez **sem log** — a auditoria do
+  script acusa isso como `CHOQUE`. Na horizontal: o **lote do TransfereGov** de clientes
+  diferentes não se cruza no portal (todos saem do mesmo IP), numa grade de slots de 30
+  min — 22:00 22:30 23:00 | 00:05 00:35 … 09:05 09:35 UTC. A base diária
+  (`transferegov`) de um cliente pode cruzar com o lote de OUTRO, como sempre cruzou.
+- **Rodízio sem teto de municípios, com teto de TEMPO.** O lote roda com
+  `TG_LOTE_MUNICIPIOS=99` e `TG_BUDGET_S=1440`: faz o que couber em 24 min, e a rodada
+  seguinte do mesmo cliente retoma pelo mais velho (`ultima_coleta_em NULLS FIRST`). O
+  número de rodadas por noite de cada cliente sai da carteira (`--carga`: ~1,05 s por
+  proposta + ~40 s por município). `TG_HTTP_DETALHE=1` em TODOS (lê o detalhe sem navegar,
+  ~0,7 s contra ~3 s; cai no navegador sozinho se o HTTP falhar) — até 13/09 só Freitas e
+  Trust tinham, e Santa Maria terminava toda rodada com 80% das propostas sem detalhe.
+- **SIGCON: uma rodada completa + rodadas só do scraper.** A task `sigcon`
+  (`run_sigcon_cron.py`: dados abertos + backfill CKAN + scraper) roda 1×/noite; a
+  `sigcon-rodizio` (só na Freitas, que tem 21 municípios com senha a ~18 min cada) chama
+  `sigcon_scraper.py` direto, de hora em hora, para NÃO repetir CAUC/FES/SIMEC-PAR a cada
+  rodada — o SIMEC tem proteção anti-robô.
 - **REGRA DE OURO das margens** (aprendida em produção 09/08): o `timeout -k 30 N` interno
   precisa de `N ≥ orçamento interno + 1 município PESADO` (Bom Despacho sozinho = 22 min).
   Margem colada no orçamento = `exit 124` recorrente, sem log e sem `ingestion_log`.
@@ -395,8 +430,11 @@ O desenho atual (redesenho de 09/08, "tuning da madrugada"):
 > O portal do CAGEC **não emite o CRC de madrugada** (medido em 07/09/2026, no mesmo
 > worker: 06:15 UTC → "não foi possível recuperar dados do Convenente/Parceiro" em toda
 > entidade; 17:58 UTC → as 27 obrigações em 34s). As três tasks estavam em 03h–04h BRT,
-> então a situação atualizava e o **detalhamento** ficava congelado. Voltaram para a
-> faixa comercial (freitas `0 10,15,19,23`, montesiao `46 10,19`, trust `48 10,19` UTC).
+> então a situação atualizava e o **detalhamento** ficava congelado. Desde 13/09/2026
+> abrem a janela noturna, às **19h BRT** (freitas `0 22,23` com lote 22, trust `30 22`,
+> montesiao `45 22` UTC) — a rodada das 23:08 UTC (20h08 BRT) de 12/09 emitiu CRC
+> (`status=ok`). Se a de 19h passar a sair `parcial`, o portal fecha antes: afaste para
+> as 20h, nunca para a madrugada.
 > A Freitas ainda somava um segundo defeito: 1 rodada/dia × lote 11 = ciclo de 4 dias.
 > Os números, as medições e a regra do lote estão em `docs/CRON_SETUP.md` → *cagec — a
 > fonte tem JANELA*.
@@ -470,10 +508,12 @@ pagamento, e isso vem 4×/dia por `simec_par_liberacoes` dentro do `run_all()`.
 > 1 município pesado, e a coluna `timeout` da task = interno + 120s (daí os 1700).
 > Mexer num sem mexer no outro é o erro clássico aqui.
 
-**`cagec`** (desde 2026-07-30; hoje nos **três tenants com município de MG** — freitas
-06:15, trust 07:00, montesiao 07:15 UTC; os dois tenants do RS não têm, e não devem ter):
-regularidade **estadual** de MG. Roda depois da rodada do `sigcon` — de propósito, porque o
-CNPJ do município é inferido das emendas estaduais que o SIGCON acabou de coletar.
+**`cagec`** (desde 2026-07-30; hoje nos **três tenants com município de MG** — horários no
+bloco do CRC acima; os tenants do RS não têm, e não devem ter):
+regularidade **estadual** de MG. O CNPJ do município é inferido das emendas estaduais já
+gravadas pelo SIGCON (ou do PAC) — por isso um município **sem senha do SIGCON e sem PAC**
+fica sem CNPJ aqui. Rodava depois do `sigcon` por esse motivo; desde 13/09 roda antes (às
+19h, janela do CRC), com o CNPJ que as noites anteriores já gravaram.
 Não usa credencial: a consulta do CAGEC é **pública** e basta o CNPJ. O detalhe
 (cada obrigação com situação e validade) vem do **CRC em PDF**, que a própria
 consulta emite mesmo para município irregular — por isso o worker precisa de
@@ -503,9 +543,9 @@ santa maria 07:30, **nova palma 08:30** UTC, com `timeout -k 30 1500`. Lock pró
 > registros** (6.377 páginas) — varrer a fonte inteira, o que funciona no Obras.gov,
 > aqui é inviável.
 
-**`cadin-rs`** (CADIN/RS + CFIL/RS · 07/09/2026): Scheduled Task **só nos dois workers do
-RS** — santamaria `10 5 * * *`, novapalma `40 5 * * *` UTC (10 min depois do `che-rs` de
-cada um). Lock próprio (`/tmp/cadin_rs.lock`), `httpx` + `pypdf`, sem navegador. Certidão
+**`cadin-rs`** (CADIN/RS + CFIL/RS · 07/09/2026): Scheduled Task **só nos workers do
+RS** — desde 13/09/2026 às 19h BRT (santamaria `10 22`, novapalma `40 22`, bgk `47 22`
+UTC), dentro do horário do portal (até 22h30 BRT); estava às 02h BRT. Lock próprio (`/tmp/cadin_rs.lock`), `httpx` + `pypdf`, sem navegador. Certidão
 **pública, sem login**: `POST cadin.sefaz.rs.gov.br/api/Certidao/EmitirCertidao[Cfil]`.
 Em Minas **não há task**: o CADIN-MG vem dentro do CRC, na rodada do `cagec`.
 
@@ -603,7 +643,9 @@ As armadilhas que **sobraram**, todas silenciosas e anotadas em `backend/ingesti
 (`portalfpe.sefaz.rs.gov.br`) atende **segunda a sábado, das 7h às 22h30 BRT**; fora
 disso responde **500** com essa frase. Até 04/09 as duas tasks estavam em **02:04 e 02:34
 BRT** (santamaria `4 5 * * *`, novapalma `34 5 * * *`) — madrugada, e `* * *` ainda incluía
-domingo. Corrigidas para `14 14 * * 1-6` e `44 14 * * 1-6` (11:14 e 11:44 BRT, seg–sáb).
+domingo. Foram para 11h BRT e, com a regra da coleta noturna (13/09/2026), para o começo
+da janela: santamaria `14 22`, novapalma `44 22`, bgk `51 22` UTC, `* * 1-6` (19h BRT,
+seg–sáb — dentro do horário do portal).
 
 > ⚠️ **Isso não estava doendo, e é exatamente por isso que sobreviveu 18 dias.** O coletor
 > é inerte enquanto não houver credencial PCPRS no Cofre: ele sai antes de tocar no portal
