@@ -614,13 +614,9 @@ domingo. Corrigidas para `14 14 * * 1-6` e `44 14 * * 1-6` (11:14 e 11:44 BRT, s
 
 ---
 
-## 6. Plataformas que NÃO usamos
-
-Não usamos Hetzner, Railway, Neon, Vercel, Netlify nem Supabase — infra atual é Coolify na AWS Lightsail (ver INFRA.md).
-
 ---
 
-## 7. Onde estão os segredos
+## 6. Onde estão os segredos
 
 `JWT_SECRET`, `COFRE_KEY`, `ADMIN_PASSWORD`, `DATABASE_URL`, `ANTHROPIC_API_KEY`,
 `CONTROL_TOKEN_BOOTSTRAP` e as chaves VAPID vivem **nas env vars do resource no Coolify**
@@ -637,7 +633,7 @@ daquele tenant viram lixo. Cada tenant tem a sua — **nunca copie a de um para 
 
 ---
 
-## 8. Operações comuns (Coolify API v1)
+## 7. Operações comuns (Coolify API v1)
 
 `B=http://54.232.208.118:8000/api/v1` · header `Authorization: Bearer <TOKEN>`
 

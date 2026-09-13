@@ -7,7 +7,6 @@ frescor por municipio.
 
 > 📍 **Onde isto roda:** **AWS Lightsail `54.232.208.118` (sa-east-1), orquestrado por Coolify.**
 > Toda a verdade sobre servidor, URLs, bancos, crons e segredos esta em **[`INFRA.md`](INFRA.md)**.
-> Não usamos Hetzner, Railway, Neon, Vercel, Netlify nem Supabase — infra atual é Coolify na AWS Lightsail (ver INFRA.md).
 
 ## ⚠️ Um repo, SEIS tenants — e um merge na main DEPLOYA OS SEIS
 
