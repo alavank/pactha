@@ -21,6 +21,11 @@ auditoria da janela.
     python scripts/agenda_noturna.py --carga         # + capacidade: cabe todo municipio todo dia?
     python scripts/agenda_noturna.py --aplicar       # grava o PLANO no Coolify e audita de novo
 
+⚠️ `--aplicar` PODE DISPARAR TASKS NA HORA: o Coolify roda na mesma hora a task cujo cron
+NOVO tem ocorrencia mais recente que a ultima execucao (medido em 13/09/2026: dois lotes
+do TransfereGov de ~24 min e uma base diaria rodaram 1 min depois). Aplique fora da
+janela noturna e com nada pesado rodando.
+
 Precisa de COOLIFY_TOKEN no ambiente (no Windows do dono ela mora na env de USUARIO:
 `[Environment]::GetEnvironmentVariable('COOLIFY_TOKEN','User')`).
 
@@ -385,7 +390,24 @@ def auditar(estado: dict[str, list[dict]]) -> int:
         livres += [_hm(g)] * max(0, TG_FAIXAS - ocupadas)
     print(f"   slots LIVRES para cliente novo: {', '.join(livres) or 'NENHUM — suba TG_FAIXAS (ver INFRA.md §5)'}")
 
-    print(f"\n== {'OK' if not problemas else f'{problemas} PROBLEMA(S)'}")
+    return problemas
+
+
+def auditar_limites(token: str) -> int:
+    """Worker com teto de memoria/CPU no Coolify. Decisao do dono (13/09/2026): SEM
+    limite. O teto de 2 GB / 1,2 CPU era da era de 2 vCPU e estrangula o paralelismo
+    da coleta noturna sem erro nenhum na tela (so rodada que nao fecha, ou OOM)."""
+    print("\n== 5. Workers sem teto de memoria/CPU (regra de 13/09/2026)")
+    problemas = 0
+    for tenant, (_api, wrk) in tenants().items():
+        a = _req("GET", f"{COOLIFY}/applications/{wrk}", token) or {}
+        tetos = {k: a.get(k) for k in ("limits_memory", "limits_cpus")
+                 if str(a.get(k) or "0").strip() not in ("0", "")}
+        if tetos:
+            problemas += 1
+            print(f"   TETO     {tenant:10} {tetos} — zerar e dar restart no worker")
+    if not problemas:
+        print("   todos sem teto")
     return problemas
 
 
@@ -479,7 +501,8 @@ def main() -> int:
     else:
         estado = novo if a.plano else reais
 
-    n = auditar(estado)
+    n = auditar(estado) + auditar_limites(token)
+    print(f"\n== {'OK' if not n else f'{n} PROBLEMA(S)'}")
     if a.carga:
         carga(token, estado)
     return 1 if n else 0

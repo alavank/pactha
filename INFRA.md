@@ -47,6 +47,16 @@ O que continua valendo, e por outros motivos que não a falta de CPU:
 - Playwright/Chromium continua sendo o processo mais pesado, e os crons seguem
   com `flock` (não sobrepõe execução) e `timeout` (mata processo pendurado) —
   isso protege contra coleta duplicada, não contra CPU.
+- **Workers SEM limite de memória/CPU no Coolify** (`limits_memory`/`limits_cpus` =
+  `0`), decisão do dono em 13/09/2026. Até ali freitas, trust e montesiao tinham **2 GB
+  e 1,2 CPU** e santamaria **1 GB e 1,2 CPU** — teto da era de 2 vCPU que ninguém
+  mexeu no upgrade, e que só apareceu quando a coleta forçada de Santa Maria chegou a
+  **844 MB de 1 GB**. Com a coleta noturna rodando SIGCON, TransfereGov e CAGEC em
+  paralelo no mesmo worker, o teto faria OOM ou estrangularia a CPU até as rodadas não
+  fecharem — sem erro nenhum na tela. Novapalma e bgk já nasceram sem limite. Quem
+  baixa, baixa medindo (`docker stats`); limite mexido só vale depois de **restart** do
+  worker (`POST /applications/<uuid>/restart`) — confira com `docker inspect -f
+  '{{.HostConfig.Memory}} {{.HostConfig.NanoCpus}}'`.
 
 ---
 
@@ -340,6 +350,15 @@ schema+seed. Migrações idempotentes rodam no boot da API (`backend/services/st
 > `TG_FAIXAS` para 2 no script (dois clientes no portal ao mesmo tempo), acompanhar uma
 > noite (403, timeout, "detalhe parcial") e só então pensar em 3. A regra não se negocia;
 > o desenho, sim.
+
+> ⚠️ **Mudar o horário de uma task no Coolify pode DISPARÁ-LA NA HORA.** Medido em
+> 13/09/2026, 1 min depois do `--aplicar`: rodaram sozinhos o `transferegov-lote` da trust
+> e da bgk, o `transferegov` (base) da freitas e os três `fpe-rs` (~24 min cada lote). A
+> regra aparente: se a ocorrência mais recente do cron NOVO é posterior à última
+> execução, o Coolify trata como atrasada e roda. Task **criada** não disparou (o
+> `sigcon-rodizio`, criado às 20:15, não teve execução antes do primeiro horário).
+> Consequência prática: aplicar agenda nova
+> **fora** da janela noturna e com nada pesado rodando, e contar com essas rodadas extras.
 
 O desenho atual (13/09/2026, "coleta noturna"):
 
