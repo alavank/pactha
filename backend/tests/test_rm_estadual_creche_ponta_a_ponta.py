@@ -83,8 +83,9 @@ def _conv(id_, nr_sigcon, situacao, ano=2026, valor=0.0, instrumento=True, siafi
 
 def _voluntaria_creche():
     """A 059522/2021 -> instrumento 932836, programa SIMEC/PAR4, Termo de
-    Compromisso, sem OB no SICONV. 34 colunas, por INDICE (ver o SELECT)."""
-    r = [None] * 34
+    Compromisso, sem OB no SICONV. 36 colunas, por INDICE (ver o SELECT):
+    row[33]/row[34] sao as licitacoes do dump (PR 4), row[35] o processo."""
+    r = [None] * 36
     r[0] = 18
     r[1] = "059522/2021"
     r[2] = "932836"
@@ -96,7 +97,7 @@ def _voluntaria_creche():
     r[18], r[19], r[20] = "Banco do Brasil S.A.", "3829-6", "155853"
     r[24] = "Programa SIMEC/PAR4"
     r[28] = "Termo de Compromisso"
-    r[33] = "23400.002301/2021-01"
+    r[35] = "23400.002301/2021-01"
     return r
 
 
@@ -191,7 +192,7 @@ def test_o_pago_do_simec_sai_na_linha_da_creche_e_o_termo_nao_repete():
 
 def test_sem_processo_igual_nao_junta_e_o_termo_sai_separado():
     v = _voluntaria_creche()
-    v[33] = "23400.999999/2021-00"
+    v[35] = "23400.999999/2021-00"
     c = _monta(_db([], voluntarias=[v], termos=[_TC_CRECHE]))
     creche = _por_numero(c, "932836")[0]
     assert "simec_pagamento" not in creche and not creche.get("valor_desembolsado")

@@ -93,13 +93,14 @@ def test_o_pdf_imprime_a_linha_do_simec():
 
 def test_o_select_das_voluntarias_traz_o_processo_por_ULTIMO():
     """O laco le por INDICE (row[N]); inserir no MEIO desloca tudo em silencio.
-    `numero_processo` e a decima coluna pendurada no fim, row[33]."""
+    `numero_processo` e a coluna pendurada no fim, row[35] (depois das duas
+    licitacoes do dump que o PR 4 pendurou em row[33]/row[34])."""
     src = open(BUILDER, encoding="utf-8").read()
     ini = src.index("SELECT id, numero_proposta, codigo_instrumento, situacao, orgao, objeto,")
     sel = src[ini:src.index("FROM transferegov_propostas WHERE municipio_id = :m", ini)]
     cols = [l.strip() for l in sel.splitlines() if l.strip() and not l.strip().startswith("--")]
     assert cols[-1] == "numero_processo"
-    assert "_so_digitos(row[33])" in src
+    assert "_so_digitos(row[35])" in src
 
 
 def test_o_termo_casado_nao_repete_e_so_e_marcado_DEPOIS_de_a_voluntaria_entrar():
@@ -119,7 +120,7 @@ def test_o_termo_casado_nao_repete_e_so_e_marcado_DEPOIS_de_a_voluntaria_entrar(
     # a marcacao vem DEPOIS do add_item da voluntaria, condicionada ao retorno
     vol = src[src.index("_pac_ja_exibidos: set[str] = set()"):ini]
     i_add = vol.index("_entrou = add_item(parte, secao, orgao, {")
-    i_mark = vol.index("_simec_ja_exibidos.add(_so_digitos(row[33]))")
+    i_mark = vol.index("_simec_ja_exibidos.add(_so_digitos(row[35]))")
     assert i_add < i_mark and "if (_entrou and _tc" in vol
     # e "Pendente de empenho" nao sai ao lado de empenho no SIMEC
     assert "and not _tc_empenhado)" in vol

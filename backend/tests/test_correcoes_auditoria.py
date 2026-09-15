@@ -262,12 +262,14 @@ def test_item6_watchdog_flag_fontes_criticas_orfas():
     # as duas críticas NÃO estão entre as fontes com linha no log
     achados = _fontes_paradas(_FakeCurWD(distinct=["cauc", "fns"]), esperado={})
     orfas = {a["chave"] for a in achados if a["tipo"] == "fonte_nunca_executada"}
-    assert orfas == {"siconv_federal", "siconv_empenho_aberto"}
+    # 15/09/2026: `transferegov_arvore` substituiu `siconv_empenho_aberto` (a
+    # task `empenho-aberto` virou reserva; a árvore grava a mesma coluna).
+    assert orfas == {"siconv_federal", "transferegov_arvore"}
 
 
 def test_item6_watchdog_nao_alarma_quando_ja_rodaram():
     from ingestion.watchdog_coleta import _fontes_paradas
-    cur = _FakeCurWD(distinct=["siconv_federal", "siconv_empenho_aberto"])
+    cur = _FakeCurWD(distinct=["siconv_federal", "transferegov_arvore"])
     achados = _fontes_paradas(cur, esperado={})
     assert not any(a["tipo"] == "fonte_nunca_executada" for a in achados)
 
@@ -349,4 +351,4 @@ def test_item6_watchdog_criticas_no_codigo():
     a órfã volta a sumir no silêncio."""
     src = _fonte("ingestion/watchdog_coleta.py")
     assert "fonte_nunca_executada" in src
-    assert "siconv_federal" in src and "siconv_empenho_aberto" in src
+    assert "siconv_federal" in src and '"transferegov_arvore"}' in src

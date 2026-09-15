@@ -387,6 +387,17 @@ O desenho atual (13/09/2026, "coleta noturna"):
   proposta + ~40 s por município). `TG_HTTP_DETALHE=1` em TODOS (lê o detalhe sem navegar,
   ~0,7 s contra ~3 s; cai no navegador sozinho se o HTTP falhar) — até 13/09 só Freitas e
   Trust tinham, e Santa Maria terminava toda rodada com 80% das propostas sem detalhe.
+- **O que o lote ainda raspa (desde 15/09/2026, PR 4 da §1.26 do CONTINUAR).** Env dos
+  seis workers:
+  - `TG_NES=0` (notas de empenho) e `TG_OPS_OBS=0` (OPs/OBs): vêm do dump
+    (`transferegov-arvore`);
+  - `TG_OBRAS=1`: obras seguem raspadas, porque ART/RT e responsável técnico não estão no
+    dump;
+  - licitações pela tela só com `TG_PROC_EXEC=1`, que nenhum worker tem.
+
+  O que continua pela sessão gov.br: histórico de comunicações, termos de notificação,
+  projeto básico rico e anexos. As chaves e o código ficam como reserva; religar é mudar a
+  env e redeployar o worker.
 - **SIGCON: uma rodada completa + rodadas só do scraper.** A task `sigcon`
   (`run_sigcon_cron.py`: dados abertos + backfill CKAN + scraper) roda 1×/noite; a
   `sigcon-rodizio` (só na Freitas, que tem 21 municípios com senha a ~18 min cada) chama
@@ -620,9 +631,10 @@ Scheduled Task **nos 6 workers**, no PLANO de `scripts/agenda_noturna.py` (`CMD_
   agenda da madrugada seguinte (05:40–08:10) **pular**. O dump é o mesmo (publicado às
   ~11:12 UTC), então nada se perde; mas o vigia de 30 h pode acusar a fonte por algumas
   horas antes da rodada da noite seguinte.
-- A `empenho-aberto` (03:05–03:24 UTC) grava a mesma `notas_empenho_aberto` a partir do
-  mesmo `siconv_empenho.zip`. Com a árvore no ar, ela fica redundante (PR 4 da §1.26 do
-  CONTINUAR).
+- A `empenho-aberto` (03:05 UTC) gravava a mesma `notas_empenho_aberto` a partir do mesmo
+  `siconv_empenho.zip`. Está **desativada nos seis desde 15/09/2026** (`enabled=false`,
+  não apagada: é reserva). O vigia cobra a `transferegov_arvore` como fonte crítica no
+  lugar dela.
 
 **`cadin-rs`** (CADIN/RS + CFIL/RS · 07/09/2026): Scheduled Task **só nos workers do
 RS** — desde 13/09/2026 às 19h BRT (santamaria `10 22`, novapalma `40 22`, bgk `47 22`

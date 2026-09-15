@@ -357,7 +357,45 @@ DEPENDE: dict[str, tuple[str, ...]] = {
     "rendimentos": ("siconv_solicitacao_rendimento_aplicacao",),
     "desbloqueios": ("siconv_desbloqueio_cr",),
     "desbloqueio_recurso": ("siconv_desbloqueio_recurso_cr",),
+    # A lista de licitacoes no formato do "Processo de Execucao" da tela (ver
+    # `_processo_execucao`). Preenchida na secao de licitacoes, depois da arvore.
+    "processo_execucao": ("siconv_licitacao",),
 }
+
+# STATUS_LICITACAO vem em constante ("EM_ELABORACAO"); a tela escrevia
+# "Em elaboração". O RM procura "elabora" sem acento, que casa nos dois.
+_STATUS_LICITACAO = {"CONCLUIDO": "Concluído", "EM_ELABORACAO": "Em elaboração"}
+# Teto da lista na arvore. Convenio do Estado sediado na capital chega a 11.333
+# licitacoes; a contagem inteira fica em `_resumo.n_licitacoes`.
+TETO_PROCESSO_EXECUCAO = 500
+
+
+def _processo_execucao(lics: list[dict]) -> list[dict]:
+    """As licitacoes de UM convenio no MESMO formato do `processo_execucao`
+    raspado da tela (Execucao Convenente -> Processo de Execucao):
+    [{numero, modalidade, data_publicacao, situacao, sistema_origem, aceite}].
+
+    ⭐ E o que deixa a raspagem dessa tela (sessao gov.br, SP `execucao`)
+    virar reserva: o RM decide "Pendente de desembolso" pelo `aceite`
+    (`rm_builder._licitacao_aceita`) e "licitacao em elaboracao" pela
+    `situacao` (`_lic_em_elaboracao`), e o dump tem os dois —
+    `SITUACAO_ACEITE_PROCESSO_EXECU` ("Aceito", "Rejeitado", "Aguardando
+    Aceite") e `STATUS_LICITACAO`. Mais recentes primeiro."""
+    def _chave(li):
+        d = _dt(li.get("DATA_PUBLICACAO_LICITACAO"))
+        return d or datetime.min
+    out = []
+    for li in sorted(lics, key=_chave, reverse=True)[:TETO_PROCESSO_EXECUCAO]:
+        st = li.get("STATUS_LICITACAO")
+        out.append({
+            "numero": li.get("NR_LICITACAO"),
+            "modalidade": li.get("MODALIDADE_LICITACAO") or li.get("TP_PROCESSO_COMPRA"),
+            "data_publicacao": li.get("DATA_PUBLICACAO_LICITACAO"),
+            "situacao": _STATUS_LICITACAO.get(st or "", st),
+            "sistema_origem": li.get("SISTEMA_ORIGEM"),
+            "aceite": li.get("SITUACAO_ACEITE_PROCESSO_EXECU"),
+        })
+    return out
 
 
 def coleta(propostas: dict[str, tuple[int, str | None]], ibges: dict[str, int],
@@ -552,6 +590,9 @@ def coleta(propostas: dict[str, tuple[int, str | None]], ibges: dict[str, int],
     _liquidacoes(c, ler, ids, propostas)
     _canceladas(c, ler, ibges)
     _data_carga(c, ler)
+    # De novo, DEPOIS das secoes: `processo_execucao` depende de
+    # `siconv_licitacao`, que so e lido aqui.
+    c.chaves_mantidas = {k for k, arqs in DEPENDE.items() if c.arquivos_falhos.intersection(arqs)}
 
     # 7) O resumo, depois das tabelas (ele conta pagamentos e liquidacoes — de
     # TODAS as propostas, inclusive as que so guardam o resumo).
@@ -574,6 +615,12 @@ def _licitacoes(c: Coleta, ler, prop_por_conv, propostas):
     lics = _agrupa(ler, c, "licitacoes", "siconv_licitacao", "NR_CONVENIO", set(prop_por_conv))
     if lics is None:
         return
+    # O "Processo de Execucao" de cada convenio vai para a ARVORE, de TODOS —
+    # inclusive quem so guarda o resumo: e pequeno e e o que o RM le.
+    for nc, idp in prop_por_conv.items():
+        arv = c.arvores.get(idp)
+        if arv is not None:
+            arv["processo_execucao"] = _processo_execucao(lics.get(nc, []))
     # Contrato e item so para quem guarda as linhas (opcao B).
     ids_lic = {li["ID_LICITACAO"] for nc, ls in lics.items() if prop_por_conv[nc] not in c.so_resumo
                for li in ls if li.get("ID_LICITACAO")}

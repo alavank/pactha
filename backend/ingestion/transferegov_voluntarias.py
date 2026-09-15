@@ -984,12 +984,28 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
             pass
     # Skip incremental de ops_obs/obras: precomputa quais propostas ja foram
     # checadas recentemente (nao re-navegar). E GUEST, entao independe de page_auth.
+    # ⚠️ DUAS CHAVES DESDE 15/09/2026 (PR 4 da §1.26). `TG_OPS_OBS` ligava as duas
+    # telas juntas; agora liga SO a Listagem de Repasses (OPs/OBs), e `TG_OBRAS`
+    # liga o Acompanhamento de Obras. O desembolso vem do dump
+    # (`siconv_desembolso`, `ops_obs_aberto`) e a raspagem dele virou reserva
+    # (TG_OPS_OBS=0 nos seis workers); a de obras continua, porque ART/RT,
+    # responsavel tecnico e documentos do lote NAO estao no dump.
+    # Sem `TG_OBRAS` na env, vale o que `TG_OPS_OBS` disser — o comportamento
+    # de antes da separacao.
     _ops_obs_on = (os.getenv("TG_OPS_OBS", "0") or "0").strip() == "1"
+    _obras_env = os.getenv("TG_OBRAS")
+    _obras_on = (_obras_env.strip() == "1") if _obras_env not in (None, "") else _ops_obs_on
     try:
         _ops_obs_max_age = max(0, int(os.getenv("TG_OPS_OBS_MAX_AGE_DAYS", "3") or "3"))
     except ValueError:
         _ops_obs_max_age = 3
-    _ops_obs_frescas = _propostas_ops_obs_frescas(mun["id"], _ops_obs_max_age) if _ops_obs_on else set()
+    _ops_obs_frescas = (_propostas_ops_obs_frescas(mun["id"], _ops_obs_max_age)
+                        if (_ops_obs_on or _obras_on) else set())
+    # LICITACOES PELA TELA ("Processo de Execucao", SP `execucao` da sessao
+    # gov.br): RESERVA desde o PR 4. O dump traz a mesma lista, com a situacao do
+    # aceite (`arvore.processo_execucao`), e o RM e a tela ja a preferem. Liga-se
+    # de volta com TG_PROC_EXEC=1.
+    _proc_exec_on = (os.getenv("TG_PROC_EXEC", "0") or "0").strip() == "1"
     # ENRICH POR HTTP (TG_HTTP_ENRICH=1): mesmos dados sem Chromium — ~4s por
     # instrumento em vez de ~22s (validado campo-a-campo contra o browser). O
     # cliente e STATEFUL (contexto do convenio no servidor) -> um por municipio,
@@ -1181,7 +1197,7 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
             # Convênio Normal em execução SEM licitação/processo registrado =
             # município parado (flag de monitoramento, destacado igual à cláusula).
             # Funciona em GUEST (detail_page já está no detalhe = contexto setado).
-            if _idp and "normal" in _sit.lower():
+            if _idp and _proc_exec_on and "normal" in _sit.lower():
                 try:
                     if _hx:
                         # lista COM situacao por licitacao (URL direta server-rendered)
@@ -1286,26 +1302,28 @@ async def _scrape_municipio(page, mun: dict, _retry: int = 0, is_auth: bool = Fa
             # TG_BUDGET_S, num host de 2 vCPU.
             # ⚠️ Lê `prop["detalhe"]`, NUNCA `prop["codigo_instrumento"]` — essa
             # chave só nasce dentro do _upsert e o portão rodaria em ZERO.
-            if (_idp and _ops_obs_on
+            if (_idp and (_ops_obs_on or _obras_on)
                     and prop["detalhe"].get("Código do Instrumento")
                     and prop["numero_proposta"] not in _ops_obs_frescas):
-                try:
-                    _oo = (await asyncio.to_thread(_hx.ops_obs, _idp)) if _hx \
-                        else (await _extrai_ops_obs(detail_page))
-                    if _oo is not None:
-                        prop["ops_obs"] = _oo
-                except Exception as e:
-                    logger.warning(f"    ops_obs {prop['numero_proposta']}: {str(e)[:80]}")
-                try:
-                    _ob = (await asyncio.to_thread(_hx.obras, _idp)) if _hx \
-                        else (await _extrai_obras(detail_page, _idp))
-                    if _ob is not None:
-                        prop["obras"] = _ob
-                except Exception as e:
-                    logger.warning(f"    obras {prop['numero_proposta']}: {str(e)[:80]}")
+                if _ops_obs_on:
+                    try:
+                        _oo = (await asyncio.to_thread(_hx.ops_obs, _idp)) if _hx \
+                            else (await _extrai_ops_obs(detail_page))
+                        if _oo is not None:
+                            prop["ops_obs"] = _oo
+                    except Exception as e:
+                        logger.warning(f"    ops_obs {prop['numero_proposta']}: {str(e)[:80]}")
+                if _obras_on:
+                    try:
+                        _ob = (await asyncio.to_thread(_hx.obras, _idp)) if _hx \
+                            else (await _extrai_obras(detail_page, _idp))
+                        if _ob is not None:
+                            prop["obras"] = _ob
+                    except Exception as e:
+                        logger.warning(f"    obras {prop['numero_proposta']}: {str(e)[:80]}")
                 # Carimba a checagem (mesmo vazia) -> sai do backlog, nao re-navega toda rodada.
                 _stamp_ops_obs(mun["id"], prop["numero_proposta"])
-            elif (_idp and _ops_obs_on
+            elif (_idp and (_ops_obs_on or _obras_on)
                     and not prop["detalhe"].get("Código do Instrumento")):
                 # Log obrigatório: sem isto, "instrumento celebrado que perdeu a
                 # chave para de coletar" seria indistinguível de "não celebrado".
