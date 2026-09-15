@@ -69,24 +69,11 @@ MOTIVO_SEM_COLETA = (
 # Casa que recebeu emenda federal ESTA na cidade, e o gestor quer saber. O que nao
 # pode e entrar na conta como se fosse dinheiro da prefeitura. Entao fica, marcado,
 # e fora dos totais.
-_MUNICIPAIS = ("fundo publico da administracao direta municipal", "municipio")
-
-
-def _municipal(natureza: Optional[str]) -> bool:
-    """A proposta e da ADMINISTRACAO MUNICIPAL?
-
-    ⚠️ AUSENCIA CONTA COMO MUNICIPAL. Se a fonte parar de mandar a natureza, a
-    alternativa seria zerar os cartoes da tela em silencio — pior que uma
-    proposta a mais na conta. E `fora_do_municipio` na resposta deixa a mudanca
-    visivel em vez de escondida.
-    """
-    if not natureza:
-        return True
-    t = (natureza.lower()
-         .replace("ç", "c").replace("ã", "a").replace("õ", "o")
-         .replace("é", "e").replace("ú", "u").replace("í", "i")
-         .replace("á", "a").replace("ó", "o").replace("ê", "e").strip())
-    return any(t.startswith(m) for m in _MUNICIPAIS)
+#
+# A regra mora em `services/natureza.py` desde 15/09/2026: as Voluntarias
+# (dumps de Discricionarias) tem o mesmo problema, com outro vocabulario, e uma
+# regra por fonte divergiria.
+from services.natureza import e_municipal as _municipal  # noqa: E402
 
 
 def _f(v) -> Optional[float]:

@@ -520,6 +520,7 @@ async def _tool_municipio_summary(db: AsyncSession, inp: dict) -> str:
     vol = await db.execute(text("""
         SELECT dt_fim_vigencia, COALESCE(valor_global, valor_repasse, 0), situacao
         FROM transferegov_propostas WHERE municipio_id = :m
+          AND municipal IS NOT FALSE  -- so a prefeitura (services/natureza.py)
     """), {"m": mun_id})
     vol_rows = vol.fetchall()
     total_vol = len(vol_rows); vol_valor = 0.0; vol_120 = vol_60 = vol_prest = 0
@@ -658,6 +659,9 @@ async def _tool_query_voluntarias(db: AsyncSession, inp: dict) -> str:
     else:
         # Sem municipio especifico: varre o escopo permitido — nunca a base inteira.
         where.append("v.municipio_id = ANY(:esc)"); params["esc"] = _ids_do_escopo(inp)
+    # So a PREFEITURA (15/09/2026): o filtro por IBGE traz o que esta sediado na
+    # cidade — ver `services/natureza.py`. A IA responde sobre o municipio.
+    where.append("v.municipal IS NOT FALSE")
     categoria = inp.get("categoria")
     if categoria == "voluntarias":
         where.append("v.situacao ILIKE :vp"); params["vp"] = _VOL_LIKE
@@ -791,7 +795,7 @@ async def _tool_search_by_parlamentar(db: AsyncSession, inp: dict) -> str:
                numero_proposta, codigo_instrumento, objeto, situacao,
                valor_global, parlamentar, situacao_contratacao
         FROM transferegov_propostas v
-        WHERE parlamentar ILIKE :n
+        WHERE parlamentar ILIKE :n AND municipal IS NOT FALSE
     """
     params2: dict = {"n": f"%{nome}%"}
     if mun_filter:
@@ -1040,6 +1044,7 @@ async def _tool_ranking_parlamentares(db: AsyncSession, inp: dict) -> str:
         "SELECT parlamentar, count(*), COALESCE(SUM(COALESCE(valor_global, valor_repasse, 0)), 0) "
         "FROM transferegov_propostas "
         "WHERE municipio_id = :m AND parlamentar IS NOT NULL AND parlamentar <> '' "
+        "AND municipal IS NOT FALSE "   # so a prefeitura (services/natureza.py)
         "GROUP BY parlamentar"), {"m": mun_id})).fetchall()
     for r in rows:
         _acc(r[0], "siconv", r[2], int(r[1]))

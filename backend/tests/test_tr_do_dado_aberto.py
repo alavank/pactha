@@ -66,10 +66,13 @@ def test_a_situacao_do_TR_esta_no_select_e_e_a_ULTIMA_coluna():
     assert "situacao_projeto_basico" in cols, (
         "a rota parou de trazer `situacao_projeto_basico` — é o ÚNICO caminho do "
         "Termo de Referência que funciona com a sessão gov.br fria")
-    assert cols[-1] == "situacao_projeto_basico", (
-        f"`situacao_projeto_basico` deixou de ser a última coluna (é a {cols.index('situacao_projeto_basico')}ª "
-        f"de {len(cols)}). O dict lê por ÍNDICE: inserir no meio desloca todos os "
-        f"row[N] seguintes em silêncio, e a tela passa a mostrar um campo no lugar de outro")
+    # Desde 15/09/2026 duas colunas vieram DEPOIS dela, no fim (quem recebe:
+    # `natureza_juridica`, `municipal`) — acrescentar no FIM e o que o aviso
+    # sempre pediu. O que nao pode e alguem inserir no MEIO.
+    assert cols[-3:] == ["situacao_projeto_basico", "natureza_juridica", "municipal"], (
+        f"a cauda do SELECT mudou: {cols[-3:]}. O dict lê por ÍNDICE: inserir no meio "
+        f"desloca todos os row[N] seguintes em silêncio, e a tela passa a mostrar um "
+        f"campo no lugar de outro — coluna nova entra SÓ no fim")
 
 
 def test_o_indice_lido_bate_com_o_numero_de_colunas():

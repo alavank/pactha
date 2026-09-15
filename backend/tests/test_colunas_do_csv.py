@@ -24,6 +24,7 @@ COLETOR = os.path.join(RAIZ, "ingestion", "transferegov_opendata.py")
 MIGRATIONS = [
     os.path.join(RAIZ, "migrations", "add_voluntarias_colunas_do_csv.sql"),
     os.path.join(RAIZ, "migrations", "add_clausula_suspensiva_retirada_dias.sql"),
+    os.path.join(RAIZ, "migrations", "add_tg_natureza.sql"),
 ]
 
 NOVAS = ["banco", "agencia", "conta_corrente", "situacao_conta",
@@ -37,7 +38,10 @@ NOVAS = ["banco", "agencia", "conta_corrente", "situacao_conta",
          # Entrar aqui nao e formalidade: sao estes tres testes que garantem que
          # a coluna chegou a `_CAMPOS`, a lista do INSERT E ao VALUES — os tres
          # lugares que, tocados pela metade, gravam NULL em silencio.
-         "clausula_suspensiva_dt_retirada", "clausula_suspensiva_dias"]
+         "clausula_suspensiva_dt_retirada", "clausula_suspensiva_dias",
+         # Quem recebe (15/09/2026): o estado sediado na capital nao e a
+         # prefeitura — ver services/natureza.py. Fonte unica, sobrescreve.
+         "natureza_juridica", "municipal"]
 
 
 def _fonte():

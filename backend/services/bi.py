@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models import ConvenioEstadual
 from models.user import User
 from services.auth import ensure_municipio_access
+from services.natureza import SQL_SO_PREFEITURA
 
 
 # --------------------------------------------------------------------------
@@ -184,7 +185,9 @@ async def bi_kpis(db: AsyncSession, ids: list[int], ano=None) -> dict:
         vol_params["anos_txt"] = [str(a) for a in anos]
     vol = await db.execute(text(
         "SELECT dt_fim_vigencia, COALESCE(valor_global, valor_repasse, 0) "
-        "FROM transferegov_propostas WHERE municipio_id = ANY(:ids)" + vol_ano_sql
+        # So a PREFEITURA entra na conta (15/09/2026) — ver `services/natureza.py`.
+        "FROM transferegov_propostas WHERE municipio_id = ANY(:ids) AND "
+        + SQL_SO_PREFEITURA + vol_ano_sql
     ), vol_params)
     vol_rows = vol.fetchall()
     total_vol = len(vol_rows)

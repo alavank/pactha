@@ -409,6 +409,9 @@ async def export_voluntarias_pdf(
     vigencia: Optional[str] = Query(None),
     vig_fim_de: Optional[str] = Query(None),
     vig_fim_ate: Optional[str] = Query(None),
+    # Quem recebe (15/09/2026): prefeitura | outros. Declarado pelo mesmo motivo
+    # do aviso acima — sem ele o PDF ignoraria o filtro da tela calado.
+    recebedor: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
@@ -434,6 +437,7 @@ async def export_voluntarias_pdf(
         instrumento=instrumento, proposta=proposta, proponente=proponente, cnpj=cnpj,
         parlamentar=parlamentar, situacao_contratacao=situacao_contratacao,
         vigencia=vigencia, vig_fim_de=vig_fim_de, vig_fim_ate=vig_fim_ate,
+        recebedor=recebedor,
         # ⚠️ `current=current` E NAO `_=None` — o botao "Gerar PDF" desta tela
         # ficou QUEBRADO por semanas por causa disto. O parametro do handler
         # reusado foi renomeado de `_` para `current` no trabalho de RBAC (as

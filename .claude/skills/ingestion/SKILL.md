@@ -143,6 +143,24 @@ way on 14/09/2026.
 - `relatorios-gestao-analises-responsaveis` only filters by `id_relatorio_gestao_analise`
   — the natural-looking `id_analise_relatorio_gestao` returns the national 22.182.
 
+## Discricionárias e Legais — the CSV dumps (`ingestion/transferegov_opendata.py`)
+
+- **No REST API:** 65 zips in `.../downloads/dadosgov/` (3,5 GB, republished daily ~11:12
+  UTC; `data_carga_siconv.zip` holds the load date). The host supports HTTP Range, so a
+  zip's header can be read without downloading it.
+- **Keys:**
+  - proposal by `COD_MUNIC_IBGE`;
+  - children by `ID_PROPOSTA` or `NR_CONVENIO`;
+  - grandchildren by `ID_LICITACAO`, `ID_DL`, `ID_META`, `NR_MOV_FIN`, etc.
+- **⚠️ IBGE brings what is SEATED in the city, not only the prefeitura.** In Goiânia 75%
+  of the value is the State of Goiás; in Santa Maria 33% is civil-society entities.
+  - `NATUREZA_JURIDICA` goes to `transferegov_propostas.natureza_juridica` and the rule
+    (`services/natureza.py::e_municipal`) goes to `municipal`.
+  - Every reader that sums must filter `municipal IS NOT FALSE`, and
+    `tests/test_voluntarias_so_a_prefeitura.py` fails on a new query without it.
+  - The same trap hit Parcerias (`nm_natureza_juridica`) and Fundo a Fundo (the state
+    seated in the capital).
+
 ## Authenticated sources
 
 **SIGCON** needs a logged-in session. It reuses a session captured by the Chrome extension
