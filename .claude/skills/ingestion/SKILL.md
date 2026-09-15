@@ -211,8 +211,17 @@ Reads 50 of the zips and hangs everything on the proposals **already in the DB**
   - `sinais_do_resumo`: list badges, counted TODAY and only with proof. Prestação vencida
     only when `SIT_CONVENIO` shows it was not delivered.
   - `sem_cpf`: the dump publishes CPF in two files; it never goes to the browser.
-  - NEs keep the RM order (scraped first, dump only when the scraped column is null)
-    until PR 4 turns the scraping off.
+  - `notas_empenho_preferidas` (PR 4): the dump wins and the old scraped listing
+    COMPLETES it. The owner's rule "não perder informação" is tested in
+    `test_rm_empenho_agregado.py`: the minuta and NEs the dump publishes with value 0
+    stay.
+  - `processo_execucao_preferido` (PR 4): `arvore.processo_execucao` has the scraped
+    format (`aceite` drives "Pendente de desembolso", `situacao` "em elaboração"). The
+    count comes from `_resumo.n_licitacoes`, because the list is capped at 500.
+- **Session scraping is reserve since 15/09/2026:**
+  - `TG_NES=0` and `TG_OPS_OBS=0` in the six workers;
+  - `TG_OBRAS=1` keeps obras, because ART/RT is not in the dump;
+  - licitações need `TG_PROC_EXEC=1`, which is off by default.
 
 ## Authenticated sources
 

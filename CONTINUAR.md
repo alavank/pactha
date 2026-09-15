@@ -1479,7 +1479,7 @@ UTC e Trust para 07:20 — com até 55 min, 09:00 e 09:30 passariam das 10:00 UT
   e parecer), Pareceres e Programa e Empenhos.
 - A ferramenta MCP `fundo_a_fundo` passou a citar saldo, pago e devolvido.
 
-## 1.26. Discricionárias e Legais: os dumps inteiros (15/09/2026, em andamento)
+## 1.26. Discricionárias e Legais: os dumps inteiros (15/09/2026, concluída em 4 PRs: #490 a #492 e o do PR 4)
 
 É a quarta e última API da série (§1.23 a §1.25). **Não há API REST para
 Discricionárias**: a oficial está prevista a partir de 10/2026. O que existe são 65 zips de
@@ -1584,8 +1584,22 @@ Também no modal:
 **O RM** lê o desembolso do dump: "Desembolsado: R$" e o ano do pagamento aparecem também
 nos convênios que a raspagem nunca leu.
 
-As regras comuns ficam em `services/voluntarias_dump.py`. As NEs trocam de ordem no PR 4,
-quando a raspagem desligar.
+As regras comuns ficam em `services/voluntarias_dump.py`.
+
+**PR 4 — a sessão vira reserva.** O dump manda, e o código raspado fica atrás de chave.
+- **Notas de empenho:** o dump manda e a raspada antiga completa (NE que só a tela tinha,
+  como a minuta ou a que o dump publica com valor 0, continua). Vale no RM, na tela e na
+  IA. Raspagem: `TG_NES=0`.
+- **Licitações ("Processo de Execução"):** a árvore grava a lista no formato da tela
+  (`arvore.processo_execucao`, com a situação do aceite). O RM decide "Pendente de
+  desembolso" e "em elaboração" por ela. Raspagem: `TG_PROC_EXEC`, desligada por padrão.
+- **OPs/OBs:** `TG_OPS_OBS=0`. As obras ganharam a chave `TG_OBRAS=1` e seguem raspadas
+  (ART/RT não está no dump).
+- **Task `empenho-aberto`:** desativada (reserva). O vigia cobra a `transferegov_arvore`.
+- **Continuam pela sessão:** histórico de comunicações, termos de notificação, projeto
+  básico rico e anexos.
+- **Ainda candidato:** a listagem Playwright da base (~40 s por município) é coberta pelo
+  opendata; só o `possui_parecer` vem só dela. Não foi medido para desligar.
 
 ## 2. ESTADO ATUAL (2026-09-04)
 

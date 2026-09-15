@@ -47,7 +47,7 @@ Nenhuma exige código; somadas dão ~1h de execução. Continuam pendentes desde
 | # | Decisão | Por que importa |
 | :--- | :--- | :--- |
 | **S1** | Santa Maria: `AUTHZ_MODO` de `aviso` → `bloqueio` | Usuário autenticado da prefeitura pode acessar além da permissão **durante a avaliação do sistema** |
-| **S3** | Freitas: manter ou desligar `TG_OPS_OBS=1` | Contradiz o "só Monte Sião"; coleta pesada por instrumento em 42 municípios sem decisão consciente |
+| ~~**S3**~~ | ~~Freitas: manter ou desligar `TG_OPS_OBS=1`~~ | **Resolvido em 15/09/2026** (PR 4 da §1.26 do CONTINUAR): `TG_OPS_OBS=0` nos seis workers, porque o desembolso vem do dump. As obras seguem com a chave própria `TG_OBRAS=1` — ver INFRA §5 |
 | **S4** | SICONV nos 3 tenants: ligar `SICONV_MODULE=1` **ou** remover task + truncar | Hoje está no pior dos dois mundos: ~393 MB/banco e coleta paga, sem tela |
 | **S5** | Faxina de contas `teste.com`, `claude.com`, 35× `painel.local` | Contas não rastreáveis em produção de prefeitura |
 | **S2** | Freitas: `siconv-federal` de diário → mensal (dia 2) | Dump grande baixado todo dia para dado que muda 1×/mês — rede e I/O à toa (a justificativa dizia "host burstable"; a máquina tem 8 vCPU desde o upgrade, mas o desperdício continua) |

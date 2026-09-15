@@ -358,7 +358,11 @@ def _fontes_paradas(cur, esperado: dict | None = None) -> list[dict]:
     # orfas (sem Scheduled Task, sem log). Aqui viram um achado PROPRIO e explicito
     # ("nunca executada") em vez de sumirem no silencio que este watchdog existe
     # para acabar. Ao ganharem task e a 1a linha, o ramo de frescor acima assume.
-    _CRITICAS_SEMPRE = {"siconv_federal", "siconv_empenho_aberto"}
+    # 15/09/2026 (PR 4 da §1.26): `siconv_empenho_aberto` SAIU daqui e entrou
+    # `transferegov_arvore`. A task `empenho-aberto` foi desativada (reserva): a
+    # arvore le o mesmo `siconv_empenho.zip` e grava a mesma coluna, e e ela que
+    # tem de existir em todo tenant.
+    _CRITICAS_SEMPRE = {"siconv_federal", "transferegov_arvore"}
     for source in sorted(_CRITICAS_SEMPRE - com_linha):
         achados.append({
             "tipo": "fonte_nunca_executada",

@@ -99,6 +99,74 @@ def ops_obs_preferido(aberto, raspado) -> tuple[Optional[dict], Optional[str]]:
     return out, "dump"
 
 
+def processo_execucao_preferido(lista_dump, n_dump, lista_raspada, qtd_raspada
+                                ) -> tuple[Optional[list], Optional[int], Optional[str]]:
+    """As licitacoes do instrumento ("Processo de Execucao"): (lista, qtd, fonte).
+
+    ⭐ O DUMP MANDA desde 15/09/2026 (PR 4 da §1.26): `arvore.processo_execucao`
+    tem o MESMO formato da lista raspada, e a raspagem dessa tela (sessao gov.br,
+    SP `execucao`) passou a ser reserva (`TG_PROC_EXEC`, desligada). A contagem
+    vem de `_resumo.n_licitacoes`, porque a lista da arvore tem teto (convenio
+    do Estado chega a 11 mil licitacoes).
+
+    Sem a lista do dump (proposta sem convenio, arvore ainda nao colhida), vale
+    o que a raspagem gravou antes."""
+    ld = _jsonb(lista_dump)
+    if isinstance(ld, list):
+        n = n_dump if isinstance(n_dump, int) else None
+        if n is None:
+            try:
+                n = int(str(n_dump))
+            except (TypeError, ValueError):
+                n = len(ld)
+        return ld, n, "dump"
+    lr = _jsonb(lista_raspada)
+    if lr is None and qtd_raspada is None:
+        return None, None, None
+    return (lr if isinstance(lr, list) else None), qtd_raspada, "portal"
+
+
+def notas_empenho_preferidas(aberto, raspado) -> tuple[Optional[list], Optional[str]]:
+    """A listagem de NEs a usar: (lista, fonte) — "dump", "dump+portal" ou "portal".
+
+    ⭐ O DUMP MANDA desde 15/09/2026 (PR 4 da §1.26), quando existe
+    (`notas_empenho_aberto` nao nulo). A raspagem da aba Execucao Concedente
+    (`TG_NES`, sessao gov.br) foi desligada, e a coluna dela para de ser
+    atualizada: dado velho NA FRENTE do novo e o que isto impede.
+
+    ⚠️ E A RASPAGEM ANTIGA COMPLETA, porque "nao podemos perder informacao"
+    (requisito do dono, `tests/test_rm_empenho_agregado.py`). Ela tem coisas que
+    o dump nao tem, e elas CONTINUAM:
+      - NE que so a tela listava — a MINUTA (`minuta_apenas`, que as funcoes do
+        RM ja ignoram) e a NE que o dump publica com VALOR 0 e por isso fica fora
+        de `notas_empenho_aberto` (convenio 901671: 2 das 3 NEs);
+      - no numero que os dois tem, `minuta` e `valor_siafi` passam para a linha
+        do dump; o valor e a situacao do dump mandam.
+    NE que so o dump tem entra normalmente.
+
+    Sem dump para a proposta, vale a listagem raspada gravada antes."""
+    a = _jsonb(aberto)
+    r = _jsonb(raspado)
+    if not isinstance(a, list):
+        return (r, "portal") if isinstance(r, list) else (None, None)
+    out = [dict(x) for x in a if isinstance(x, dict)]
+    por_num = {(x.get("numero") or "").strip(): x for x in out if (x.get("numero") or "").strip()}
+    completou = False
+    for n in r if isinstance(r, list) else []:
+        if not isinstance(n, dict):
+            continue
+        numero = (n.get("numero") or "").strip()
+        alvo = por_num.get(numero) if numero else None
+        if alvo is not None:
+            for k in ("minuta", "valor_siafi"):
+                if n.get(k) not in (None, "") and alvo.get(k) in (None, ""):
+                    alvo[k] = n[k]
+        else:
+            out.append(dict(n))
+            completou = True
+    return out, ("dump+portal" if completou else "dump")
+
+
 def sinais_do_resumo(resumo, hoje: Optional[date] = None) -> Optional[dict]:
     """Os sinais que a LISTA mostra como selo, a partir do `_resumo` da arvore.
 
