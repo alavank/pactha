@@ -152,15 +152,19 @@ def test_a_coluna_nova_e_a_ULTIMA_do_select():
     # coluna nova no FIM, indices ja lidos preservados.
     # 15/09/2026: `ops_obs_aberto` (o desembolso do dump) entrou DEPOIS dela, como
     # row[32]. `notas_empenho_aberto` segue em row[31].
-    assert colunas[-1] == "ops_obs_aberto", \
-        f"a ultima coluna virou {colunas[-1]!r} — quem entrar depois vai no FIM"
+    # 15/09/2026, PR 4: as licitações do dump (lista e contagem) entraram como
+    # row[33] e row[34].
+    assert colunas[-2:] == ["arvore->'processo_execucao'", "arvore->'_resumo'->'n_licitacoes'"], \
+        f"a cauda virou {colunas[-2:]!r} — quem entrar depois vai no FIM"
+    assert colunas.index("ops_obs_aberto") == 32, "ops_obs_aberto saiu de row[32]"
     assert colunas.index("notas_empenho_aberto") == 31, "notas_empenho_aberto saiu de row[31]"
     assert colunas.index("situacao_projeto_basico") == 30, "situacao_projeto_basico saiu de row[30]"
     assert colunas.index("valor_empenhado") == 29, \
         f"valor_empenhado saiu de row[29] (esta em row[{colunas.index('valor_empenhado')}])"
     assert colunas.index("modalidade") == 28, "modalidade deixou de ser row[28]"
     assert colunas.index("ops_obs") == 22, "ops_obs (o raspado) saiu de row[22]"
-    assert len(colunas) == 33, f"o SELECT tem {len(colunas)} colunas, esperava 33"
+    assert colunas.index("processo_execucao") == 21, "processo_execucao (o raspado) saiu de row[21]"
+    assert len(colunas) == 35, f"o SELECT tem {len(colunas)} colunas, esperava 35"
 
 
 def test_o_item_usa_as_duas_fontes_e_nao_so_a_listagem():
@@ -174,13 +178,31 @@ def test_o_item_usa_as_duas_fontes_e_nao_so_a_listagem():
 def test_a_listagem_rica_NUNCA_e_perdida_pelo_fallback():
     """⚠️ O REQUISITO DO DONO: "nao podemos perder informacao".
 
-    O fallback do dado aberto (`notas_empenho_aberto`, row[31]) so pode entrar
-    quando a listagem rica do scraper (row[25]) e NULA. A rica tem detalhe que a
-    API nao tem; se o `_ne` a preterisse, o relatorio perderia informacao — o
-    oposto do pedido. A regra vive numa linha so; o teste le a expressao."""
+    Ate 15/09/2026 a regra era "a rica do scraper (row[25]) vence, o dado aberto
+    (row[31]) so entra quando ela e nula". No PR 4 da §1.26 a raspagem (`TG_NES`)
+    foi desligada, e a rica virou dado que nao se atualiza mais — deixa-la na
+    frente poria o velho no lugar do novo. A regra passou a ser: o DUMP manda e a
+    rica COMPLETA. O requisito continua o mesmo, e este teste o cobra na funcao:
+    toda NE que so a rica tinha segue no resultado."""
+    from services.voluntarias_dump import notas_empenho_preferidas
     src = _codigo(BUILDER)
-    i = src.index("_ne = row[25]")
-    expr = " ".join(src[i:i + 60].split())
-    assert expr.startswith("_ne = row[25] if row[25] is not None else row[31]"), (
-        f"a fusao mudou de forma: {expr!r} — a rica (row[25]) TEM de vencer, e o "
-        f"dado aberto (row[31]) so entra quando ela e nula")
+    assert "_ne = notas_empenho_preferidas(row[31], row[25])[0]" in src
+    rica = [
+        {"numero": "2020NE803201", "valor": 25529.72, "valor_siafi": 25529.72, "situacao": "Emitida"},
+        {"numero": "2020NE800449", "valor": 213220.28, "situacao": "Emitida"},   # o dump publica 0
+        {"numero": None, "minuta": "2020MN1", "valor": 1.0, "minuta_apenas": True},
+    ]
+    aberta = [{"numero": "2020NE803201", "valor": 25529.72, "situacao": "Enviado",
+               "dt_emissao": "23/06/2020", "minuta_apenas": False}]
+    ne, fonte = notas_empenho_preferidas(aberta, rica)
+    assert fonte == "dump+portal"
+    numeros = [n.get("numero") for n in ne]
+    assert "2020NE800449" in numeros, "a NE que so a rica tinha SUMIU — perda de informacao"
+    assert any(n.get("minuta_apenas") for n in ne), "a minuta da rica sumiu"
+    do_dump = next(n for n in ne if n.get("numero") == "2020NE803201")
+    assert do_dump["situacao"] == "Enviado" and do_dump["valor_siafi"] == 25529.72
+    assert _empenho_valor(ne) == 25529.72 + 213220.28      # a minuta nao soma
+    # Sem dump, a rica inteira; sem nada, nada.
+    assert notas_empenho_preferidas(None, rica) == (rica, "portal")
+    assert notas_empenho_preferidas(None, None) == (None, None)
+    assert notas_empenho_preferidas([], None) == ([], "dump")

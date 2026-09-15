@@ -32,7 +32,8 @@ from services.texto_rm import (
 # `_no_escopo` local de `montar_conteudo`, que e o recorte por ANO — sao dois
 # filtros diferentes, em momentos diferentes do mesmo laco.
 from services.rm_fontes import no_escopo as fonte_no_escopo
-from services.voluntarias_dump import ops_obs_preferido
+from services.voluntarias_dump import (
+    notas_empenho_preferidas, ops_obs_preferido, processo_execucao_preferido)
 
 logger = logging.getLogger("rm_builder")
 
@@ -1841,8 +1842,14 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
                -- DESEMBOLSO DO DUMP (siconv_desembolso.zip, 15/09/2026), no
                -- MESMO formato do `ops_obs` raspado (row[22]). Manda sobre ele
                -- — ver `services/voluntarias_dump.ops_obs_preferido`. NONA e
-               -- ULTIMA coluna (row[32]), pela mesma razao das oito acima.
-               ops_obs_aberto
+               -- NONA coluna (row[32]), pela mesma razao das oito acima.
+               ops_obs_aberto,
+               -- LICITACOES DO DUMP (PR 4, 15/09/2026): a lista no formato do
+               -- `processo_execucao` raspado (row[33]) e a contagem inteira
+               -- (row[34] — a lista tem teto). Mandam sobre row[21]/row[16]:
+               -- ver `voluntarias_dump.processo_execucao_preferido`.
+               arvore->'processo_execucao',
+               arvore->'_resumo'->'n_licitacoes'
         FROM transferegov_propostas WHERE municipio_id = :m
         -- ⚠️ SO A PREFEITURA entra no RM (15/09/2026). O filtro por IBGE traz o
         -- que esta sediado na cidade — o convenio do Estado de Goias nao e
@@ -1863,6 +1870,10 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
         # "REPASSES DE {ano}") passam a sair tambem nos convenios que a
         # raspagem nunca leu — antes o relatorio calava neles.
         _ops_vol = ops_obs_preferido(row[32], row[22])[0]
+        # As LICITACOES ("Processo de Execucao"): a lista e a contagem do dump
+        # (row[33]/row[34]) quando ha, senao as raspadas (row[21]/row[16]). A
+        # raspagem dessa tela virou reserva no PR 4 (`TG_PROC_EXEC`).
+        _pe_lista, _pe_qtd, _ = processo_execucao_preferido(row[33], row[34], row[21], row[16])
         # De qual selecao do Novo PAC esta voluntaria nasceu (vazio se nenhuma).
         _pac_origem_atual = _pac_da_voluntaria(row[27])
         # ⚠️⚠️ SO CONTA COMO "JA EXIBIDO" SE A VOLUNTARIA PUDER MESMO ENTRAR NESTE
@@ -1919,9 +1930,10 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             # classificado como pendencia de Brasilia. Le os dois.
             pend = _pend_municipal(sit, row[10], row[12], _det_clausula_txt(row[14]))
             # Contratacao Normal com ZERO licitacao registrada tambem e acao do
-            # MUNICIPIO (falta ele licitar). `== 0` e nao `not row[16]`: None
+            # MUNICIPIO (falta ele licitar). `== 0` e nao `not _pe_qtd`: None
             # significa "nao coletado" e jogaria toda proposta nao-raspada p/ ca.
-            if row[16] == 0 and "normal" in (row[10] or "").casefold():
+            # Desde o PR 4 (15/09/2026) a contagem vem do dump quando ha arvore.
+            if _pe_qtd == 0 and "normal" in (row[10] or "").casefold():
                 pend = True
             # ⭐ LICITAÇÃO EM ELABORAÇÃO e OBRA SEM ART/RRT — os dois são ação do
             # MUNICÍPIO (pedido do dono, 26/08/2026). Até aqui o item ficava na
@@ -1933,13 +1945,12 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             # mesa do prefeito e ainda tiraria o item do RM Resumido, que só
             # imprime a Parte 1.
             #
-            # ⚠️ COBERTURA IRREGULAR, e vale saber: `processo_execucao` (row[21])
-            # só é gravado com detalhe lido E contratação Normal E `_hx` vivo; e
-            # `obras` (row[26]) depende de `TG_OPS_OBS=1`, que hoje está ligado em
-            # freitas/montesiao/santamaria mas NÃO no trust. Onde o dado não
-            # chega, a classificação sai idêntica à de hoje — não piora, mas
-            # também não entrega.
-            if _lic_em_elaboracao(row[21]) or _obra_sem_art(row[26]):
+            # ⚠️ COBERTURA: a lista de licitações (`_pe_lista`) vem do DUMP desde o
+            # PR 4 (15/09/2026) e cobre todo convênio; a raspada (row[21]) só
+            # era gravada com detalhe lido E contratação Normal E sessão viva.
+            # `obras` (row[26]) segue raspada (`TG_OBRAS`): ART/RT não está no
+            # dump. Onde o dado não chega, a classificação não afirma nada.
+            if _lic_em_elaboracao(_pe_lista) or _obra_sem_art(row[26]):
                 pend = True
             # ano do PAGAMENTO (OPs/OBs) — alimenta o bloco "REPASSES DE {ano}".
             ano_pgto_vol = _ano_pagamento_ops_obs(_ops_vol)
@@ -1959,14 +1970,16 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
         # SITUAÇÃO DO CONTRATO no TransfereGov (ex.: "Cláusula Suspensiva") — vinha
         # so no JSONB e nao aparecia no relatorio.
         sit_contrato = (_det_c.get("Situação Atual do Contrato") or "").strip()
-        # ⚠️ A LISTAGEM DE NEs EFETIVA: a RICA do scraper (row[25]) quando existe,
-        # e a do DADO ABERTO (row[31], siconv_empenho) SO como fallback quando a
-        # rica e nula. Este e o ponto unico que garante "nao perder informacao":
-        # a fonte logada, que tem detalhe que a API nao tem, sempre vence; a API
-        # so preenche o vazio (2.742 de 3.200 propostas sem listagem, porque a
-        # sessao gov.br fica fria). As duas colunas tem o MESMO formato, entao as
-        # quatro funcoes abaixo leem qualquer uma sem traducao.
-        _ne = row[25] if row[25] is not None else row[31]
+        # ⚠️ A LISTAGEM DE NEs EFETIVA. ATE 15/09/2026 a RICA do scraper (row[25])
+        # vencia e a do DADO ABERTO (row[31], siconv_empenho) so preenchia o vazio
+        # (2.742 de 3.200 propostas sem listagem, porque a sessao gov.br ficava
+        # fria). No PR 4 da §1.26 a ordem INVERTEU: a raspagem (`TG_NES`) foi
+        # desligada, a coluna dela parou de ser atualizada, e dado velho na frente
+        # do novo e o erro que esta linha existe para impedir. Ver
+        # `voluntarias_dump.notas_empenho_preferidas`: o que so a rica tinha era a
+        # minuta (que estas funcoes ja ignoram) e o valor SIAFI. As duas colunas
+        # tem o MESMO formato, entao as quatro funcoes abaixo leem qualquer uma.
+        _ne = notas_empenho_preferidas(row[31], row[25])[0]
         # EMPENHADO: o DOCUMENTO na frente da inferencia. `_ne` = listagem de NEs
         # (NE real manda), `sit` = status do ciclo. Devolve "" quando nao ha
         # prova nenhuma — e rm_pdf OMITE a linha nesse caso, em vez de afirmar
@@ -1981,9 +1994,9 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
         #   `_e_termo_compromisso(row[28])` — o dono pediu para o TERMO DE
         #       COMPROMISSO. Convenio e Contrato de Repasse seguem exatamente
         #       como estao hoje.
-        #   `_sem_empenho(row[25])` — so afirma quando a listagem de NEs FOI
-        #       CONSULTADA e voltou sem nenhuma nota real. Coluna NULA (proposta
-        #       nao raspada, ou tenant com TG_NES desligado) devolve False e o
+        #   `_sem_empenho(_ne)` — so afirma quando a listagem de NEs FOI
+        #       CONSULTADA e voltou sem nenhuma nota real. Listagem NULA (sem dump
+        #       para a proposta e sem raspagem antiga) devolve False e o
         #       relatorio CALA.
         #   ⚠️ E A TERCEIRA, nova: o agregado do dado aberto (row[29]) NAO pode
         #       estar dizendo que HA empenho. Quando a listagem volta vazia mas o
@@ -2006,7 +2019,7 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
         # ACEITA e nada saiu; senao o valor desembolsado + os lancamentos.
         _des = _desembolso_ops_obs(_ops_vol)
         _vd = _des.get("valor_desembolsado")
-        _aceita = _licitacao_aceita(row[21])
+        _aceita = _licitacao_aceita(_pe_lista)
         # Composicao em funcao PURA (ver _situacao_com_marcas): com
         # `_pend_empenho` falso a string sai identica a de antes.
         sit_exibida = _situacao_com_marcas(sit, _pend_empenho, _aceita, _vd)
@@ -2066,10 +2079,10 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             **_des,
             # Processo de Execução (Licitações): só relevante p/ contratação Normal.
             # 0 = Normal SEM processo/licitação registrado (flag); N>0 = tem; None = n/c.
-            "processo_execucao_qtd": row[16],
+            "processo_execucao_qtd": _pe_qtd,
             # Lista das licitações/processos COM detalhe (situação, modalidade, nº,
             # data, aceite) — para o RM mostrar cada registro, não só a contagem.
-            "processo_execucao_lista": row[21],
+            "processo_execucao_lista": _pe_lista,
             # Projeto Básico/Termo de Referência: o `clausula_motivo` diz QUAL
             # documento trava; este diz a SITUAÇÃO dele ("Em Análise").
             # row[30] e o plano B do CSV publico — ver o docstring da funcao.
@@ -2080,7 +2093,7 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             # sem empenho real; aqui sai o número, o valor e a data da NE.
             # ⚠️ `_ne` (rica do scraper, ou fallback do dado aberto) — a listagem
             # de NEs completa. A rica sempre vence; o dado aberto so preenche o
-            # vazio. Ver o `_ne = row[25] if ... else row[31]` acima.
+            # vazio. Ver o `_ne = notas_empenho_preferidas(...)` acima.
             "nes": _nes_resumo(_ne),
             # VALOR EMPENHADO medido (soma das NEs REAIS, sem a minuta de R$ 1,00).
             # `None` = a listagem nunca foi consultada, e aí o PDF não imprime a

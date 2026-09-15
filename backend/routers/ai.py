@@ -36,6 +36,7 @@ from database import get_db
 from models import ConvenioEstadual, Municipio
 from services.auth import get_current_user, ensure_municipio_access, ensure_tela
 from services.registro_rotas import exige
+from services.voluntarias_dump import notas_empenho_preferidas
 from models.user import User
 
 logger = logging.getLogger("ai")
@@ -687,9 +688,10 @@ async def _tool_query_voluntarias(db: AsyncSession, inp: dict) -> str:
                -- NEs (Notas de Empenho). ULTIMA coluna DE PROPOSITO: o laco
                -- abaixo le por INDICE (row[13] = flag, row[14] = mun) e inserir
                -- no meio deslocaria os dois em silencio.
-               -- A do DUMP (`notas_empenho_aberto`) entra so quando a raspada
-               -- nunca foi consultada — a MESMA ordem do RM (15/09/2026).
-               COALESCE(v.notas_empenho, v.notas_empenho_aberto)
+               -- PR 4 (15/09/2026): a do DUMP manda e a raspada antiga completa —
+               -- a MESMA fusao do RM (`voluntarias_dump.notas_empenho_preferidas`).
+               -- row[15] = dump, row[16] = raspada.
+               v.notas_empenho_aberto, v.notas_empenho
         FROM transferegov_propostas v{where_sql}
         ORDER BY v.municipio_id, v.numero_proposta DESC LIMIT {limit}
     """
@@ -712,12 +714,9 @@ async def _tool_query_voluntarias(db: AsyncSession, inp: dict) -> str:
         # "nao consultado" nao e "nao empenhado".
         # ⚠️ row[13] segue no SELECT e segue SEM USO, de proposito: remove-lo
         # deslocaria row[14] (mun) e row[15] (NEs) em silencio.
-        _nes = row[15]
-        if isinstance(_nes, str):
-            try:
-                _nes = json.loads(_nes)
-            except (ValueError, TypeError):
-                _nes = None
+        # A fusao do RM: o dump (row[15]) manda, a raspada (row[16]) completa.
+        # `notas_empenho_preferidas` ja aceita JSONB como texto.
+        _nes = notas_empenho_preferidas(row[15], row[16])[0]
         _tem_ne = isinstance(_nes, list) and any(
             isinstance(n, dict) and not n.get("minuta_apenas")
             and str(n.get("numero") or "").strip() for n in _nes)

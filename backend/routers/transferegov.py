@@ -28,7 +28,9 @@ import httpx
 import unicodedata
 from services import authz
 from services.natureza import SQL_SO_PREFEITURA
-from services.voluntarias_dump import ops_obs_preferido, sem_cpf, sinais_do_resumo
+from services.voluntarias_dump import (
+    notas_empenho_preferidas, ops_obs_preferido, processo_execucao_preferido, sem_cpf,
+    sinais_do_resumo)
 from services.registro_rotas import declarado, exige
 
 router = APIRouter(prefix="/api/transferegov", tags=["transferegov"])
@@ -642,7 +644,14 @@ async def voluntarias(
                dt_fim_vigencia, dt_proposta, dt_assinatura, updated_at,
                situacao_contratacao, clausula_suspensiva_dt_prevista,
                clausula_suspensiva_motivo, parlamentar,
-               situacao_contratacao_detalhe, processo_execucao_qtd,
+               situacao_contratacao_detalhe,
+               -- A contagem de licitacoes: a do DUMP quando ha arvore com a
+               -- lista (PR 4, 15/09/2026 — a raspagem da tela virou reserva), senao
+               -- a raspada. MESMA posicao (row[22]) da coluna que substitui.
+               CASE WHEN jsonb_typeof(arvore->'processo_execucao') = 'array'
+                    THEN COALESCE((arvore->'_resumo'->>'n_licitacoes')::int,
+                                  jsonb_array_length(arvore->'processo_execucao'))
+                    ELSE processo_execucao_qtd END,
                -- NO FIM de proposito: o dicionario abaixo le por INDICE.
                natureza_juridica, municipal,
                -- 15/09/2026: SO o resumo da arvore dos dumps (row[25]), e nao
@@ -816,6 +825,14 @@ async def voluntarias_detalhe(
     # com NS/OP/situacao da raspagem onde o numero da OB bate. A aba OPs/OBs e o
     # RM passam a dizer a mesma coisa.
     _ops, _ops_fonte = ops_obs_preferido(row[39], row[28])
+    # PR 4 (15/09/2026): as NEs e as licitacoes tambem saem do dump primeiro — a
+    # raspagem das duas telas (sessao gov.br) virou reserva. As MESMAS funcoes do
+    # RM, para o modal e o relatorio dizerem a mesma coisa.
+    _arv = row[37] if isinstance(row[37], dict) else {}
+    _nes, _nes_fonte = notas_empenho_preferidas(row[40], row[33])
+    _pe, _pe_qtd, _pe_fonte = processo_execucao_preferido(
+        _arv.get("processo_execucao"), (_arv.get("_resumo") or {}).get("n_licitacoes"),
+        row[30], row[24])
     return {
         "numero_proposta": row[0], "situacao": row[1], "orgao": row[2],
         "proponente": row[3], "identificacao": row[4], "codigo_instrumento": row[5],
@@ -831,7 +848,9 @@ async def voluntarias_detalhe(
         "valor_repasse": float(row[21]) if row[21] is not None else None,
         "valor_contrapartida": float(row[22]) if row[22] is not None else None,
         "situacao_contratacao_detalhe": row[23],
-        "processo_execucao_qtd": row[24],
+        # Do dump quando ha (ver `processo_execucao_preferido`), senao a raspada.
+        "processo_execucao_qtd": _pe_qtd,
+        "processo_execucao_fonte": _pe_fonte,
         "historico_comunicacoes": row[25] or [],
         "documentos_quadro_resumo": row[26] or [],
         "historico_atualizado_em": row[27].isoformat() if row[27] else None,
@@ -840,7 +859,7 @@ async def voluntarias_detalhe(
         "ops_obs_fonte": _ops_fonte,
         "obras": row[29] or None,
         # lista de licitacoes COM situacao (Concluído / Em execução ...)
-        "processo_execucao": row[30] or [],
+        "processo_execucao": _pe or [],
         # valores da emenda: valor_emenda vem do CSV; voluntario e proponente
         # sao DERIVADOS (voluntario = repasse - emenda; proponente = contrapartida).
         "valor_emenda": float(row[31]) if row[31] is not None else None,
@@ -853,7 +872,10 @@ async def voluntarias_detalhe(
         "projeto_basico": row[32] or None,
         # [{numero, minuta, valor, valor_siafi, situacao, dt_emissao, minuta_apenas}]
         # `minuta_apenas` marca a linha que NAO e dinheiro (minuta de R$ 1,00).
-        "notas_empenho": row[33] or [],
+        # PR 4: a do DUMP manda e a raspada antiga completa
+        # (`notas_empenho_preferidas`); "dump" | "dump+portal" | "portal".
+        "notas_empenho": _nes or [],
+        "notas_empenho_fonte": _nes_fonte,
         # "Em Análise", "Aprovado", "Em Complementação"... — do CSV publico, e o
         # unico caminho que funciona com a sessao gov.br fria. A tela usa este
         # campo quando `projeto_basico` (a versao rica, logada) nao veio.
@@ -870,13 +892,6 @@ async def voluntarias_detalhe(
         # Sem CPF de pessoa fisica (`sem_cpf`). None = ainda nao colhida.
         "arvore": sem_cpf(row[37]) if row[37] else None,
         "arvore_atualizado_em": row[38].isoformat() if row[38] else None,
-        # As NEs do dump. A tela as mostra quando a listagem raspada NUNCA foi
-        # consultada (coluna nula) — a MESMA ordem do RM
-        # (`_ne = row[25] if row[25] is not None else row[31]`). Por isso a tela
-        # precisa saber a diferenca entre "nula" e "vazia", que o `or []` de
-        # `notas_empenho` acima apaga.
-        "notas_empenho_aberto": row[40] if row[40] is not None else None,
-        "notas_empenho_consultadas": row[33] is not None,
     }
 
 

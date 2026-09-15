@@ -123,18 +123,12 @@ function empenhadoDe(det?: Detalhe | null): string {
   return "";
 }
 
-/** A listagem de NEs a mostrar — a MESMA ordem do RM
- *  (`rm_builder`: `_ne = row[25] if row[25] is not None else row[31]`): a
- *  RASPADA da tela logada quando ela foi consultada (mesmo vazia: ali vazio é
- *  "consultei e não há"), e a do DADO ABERTO (`siconv_empenho`) só quando a
- *  raspada nunca foi lida. Mostrar uma na tela e outra no RM seria a mesma
- *  proposta com dois empenhos diferentes. */
+/** A listagem de NEs a mostrar. Desde o PR 4 (15/09/2026) ela chega PRONTA do
+ *  backend: a do dado aberto manda e a raspada antiga completa
+ *  (`services/voluntarias_dump.notas_empenho_preferidas`) — a MESMA função do
+ *  RM, para a tela e o relatório nunca mostrarem empenhos diferentes. */
 function nesEfetivas(det?: Detalhe | null): Detalhe["notas_empenho"] {
-  if (!det) return null;
-  if (det.notas_empenho_consultadas === false && Array.isArray(det.notas_empenho_aberto)) {
-    return det.notas_empenho_aberto;
-  }
-  return det.notas_empenho;
+  return det?.notas_empenho ?? null;
 }
 
 function campo(rotulo: string, valor: unknown, extra?: Partial<Campo>): Campo {
@@ -296,9 +290,10 @@ interface Detalhe extends Proposta {
   /** A árvore dos dumps de Discricionárias (15/09/2026). */
   arvore?: Arvore | null;
   arvore_atualizado_em?: string | null;
-  notas_empenho_aberto?: Proposta["notas_empenho"];
-  /** false = a listagem raspada de NEs nunca foi consultada (coluna nula). */
-  notas_empenho_consultadas?: boolean;
+  /** De onde vieram as NEs e as licitações: "dump" (dado aberto), "dump+portal"
+   *  (dado aberto completado pela raspagem antiga) ou "portal". */
+  notas_empenho_fonte?: "dump" | "dump+portal" | "portal" | null;
+  processo_execucao_fonte?: "dump" | "portal" | null;
 }
 
 const PORTAL_BASE = "https://discricionarias.transferegov.sistema.gov.br/voluntarias/ForwardAction.do?modulo=Principal&path=/MostraPrincipalConsultarProposta.do&Usr=guest&Pwd=guest";
@@ -1023,12 +1018,12 @@ export default function TransfereGovPropostas({
                         sem entrar no total: ela vem com R$ 1,00 e sem número, e
                         somá-la poria um real no relatório como se fosse recurso. */}
                     {(() => {
-                      /* A listagem EFETIVA (`nesEfetivas`): a raspada quando foi
-                         consultada, a do dado aberto quando nunca foi — a mesma
-                         ordem do RM. O título diz de onde veio. */
+                      /* A listagem EFETIVA (`nesEfetivas`): o dado aberto manda e
+                         a raspada antiga completa — a mesma do RM. O título diz
+                         de onde veio. */
                       const nes = nesEfetivas(detalhe);
                       if (!Array.isArray(nes) || nes.length === 0) return null;
-                      const doDump = nes === detalhe.notas_empenho_aberto;
+                      const doDump = (detalhe.notas_empenho_fonte || "").startsWith("dump");
                       return (
                       <Aviso
                         tom="ok"
@@ -1130,7 +1125,8 @@ export default function TransfereGovPropostas({
                           </p>
                         </Aviso>
                       ) : (
-                        <Aviso tom="ok" titulo={`Licitação: ${detalhe.processo_execucao_qtd} registro(s)`}>
+                        <Aviso tom="ok" titulo={`Licitação: ${detalhe.processo_execucao_qtd} registro(s)${
+                          detalhe.processo_execucao_fonte === "dump" ? " (dado aberto)" : ""}`}>
                           {/* Detalhes por licitação/processo (situação, modalidade,
                               data). Antes só a contagem aparecia; agora, quando o
                               scraper trouxe a lista, mostra cada registro. */}
