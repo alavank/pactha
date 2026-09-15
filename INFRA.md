@@ -608,8 +608,18 @@ Scheduled Task **nos 6 workers**, no PLANO de `scripts/agenda_noturna.py` (`CMD_
 - **Comando:** `flock /tmp/tg_arvore.lock timeout -k 30 1800`; coluna `timeout` do
   Coolify em **1920** (kill + 120). `httpx` puro, sem login, auto-limite de 20 h
   (`TG_ARVORE_FORCE=1` força).
-- **Medido** numa carteira do tamanho da Trust: 1 min de download (3,5 GB, com os zips acima
-  de 50 MB apagados depois de lidos), 3 min de varredura e **1,5 GB de memória no pico**.
+- **Medido na VPS** (primeira rodada, forçada em 15/09/2026 às 17:32–18:14 UTC): **11,5 a
+  12,5 min por tenant, qualquer que seja o tamanho**.
+  - Monte Sião (138 propostas) levou 706 s e a Trust (9.248) levou 744 s: o tempo é o
+    download e a varredura dos 3,5 GB, não a carteira.
+  - Sobra 2,4× de folga até o kill de 30 min.
+  - Os zips acima de 50 MB são apagados depois de lidos.
+  - Localmente, com internet mais rápida, eram 5 min. Pico de memória medido local:
+    1,5 GB.
+- ⚠️ **O auto-limite de 20 h conta a rodada forçada:** as de 15/09 às 18h fazem a
+  agenda da madrugada seguinte (05:40–08:10) **pular**. O dump é o mesmo (publicado às
+  ~11:12 UTC), então nada se perde; mas o vigia de 30 h pode acusar a fonte por algumas
+  horas antes da rodada da noite seguinte.
 - A `empenho-aberto` (03:05–03:24 UTC) grava a mesma `notas_empenho_aberto` a partir do
   mesmo `siconv_empenho.zip`. Com a árvore no ar, ela fica redundante (PR 4 da §1.26 do
   CONTINUAR).

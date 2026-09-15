@@ -193,8 +193,10 @@ Reads 50 of the zips and hangs everything on the proposals **already in the DB**
 - **The source publishes NEs with `VALOR_EMPENHO` 0.** Convênio 901671: 25.529,72 empenhado
   vs 213.220,28 desembolsado. `empenhado` is the sum of what the dump publishes.
 - **Pago > desembolsado is normal:** payments include the contrapartida.
-- **Cost measured** on a Trust-size carteira (7.639 proposals): 1 min download, 3 min scan,
-  **1,5 GB peak memory**. The tenants run one at a time, 30 min apart.
+- **Cost measured on the VPS (15/09/2026): ~12 min per tenant, whatever its size.** Monte
+  Sião (138 proposals) took 706 s and Trust (9.248) took 744 s. The time is downloading
+  and scanning the 3,5 GB, not the carteira. Peak memory is 1,5 GB (measured locally).
+  The tenants run one at a time, 30 min apart; the kill is 30 min.
 - **Option B (owner, 15/09/2026):** for a proposal that is NOT the prefeitura's
   (`municipal IS FALSE`), the collector stores only the `_resumo` counts and sums, not the
   rows of the three big tables.
