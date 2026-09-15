@@ -1838,6 +1838,10 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
                -- informacao". OITAVA e ULTIMA coluna (row[31]).
                notas_empenho_aberto
         FROM transferegov_propostas WHERE municipio_id = :m
+        -- ⚠️ SO A PREFEITURA entra no RM (15/09/2026). O filtro por IBGE traz o
+        -- que esta sediado na cidade — o convenio do Estado de Goias nao e
+        -- instrumento da prefeitura de Goiania. Ver `services/natureza.py`.
+          AND municipal IS NOT FALSE
     """), {"m": municipio_id})
     # PACs que JA aparecem como voluntaria. O mesmo recurso saia DUAS vezes no
     # relatorio: uma como voluntaria (que e o instrumento de verdade, com valores

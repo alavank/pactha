@@ -89,6 +89,8 @@ from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from services.natureza import municipal_ou_nulo  # noqa: E402
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("tg_opendata")
 
@@ -429,6 +431,12 @@ def _coleta(muns: list[dict]) -> dict[int, list[dict]]:
             # em 27 de 83 propostas de Araujos, porque a celula seguinte da mesma
             # linha vinha junto. Aqui ele e uma coluna propria.
             "enviada_mandataria": (linha.get("ENVIADA_MANDATARIA") or "").strip() or None,
+            # ⚠️ O RECEBEDOR E A PREFEITURA? (15/09/2026). O filtro por IBGE traz
+            # o que esta SEDIADO na cidade: em Goiania, 75% do valor e do Estado
+            # de Goias. A regra e `services/natureza.py`; os leitores que somam
+            # usam `municipal IS NOT FALSE`.
+            "natureza_juridica": (linha.get("NATUREZA_JURIDICA") or "").strip() or None,
+            "municipal": municipal_ou_nulo(linha.get("NATUREZA_JURIDICA")),
             # preenchidos adiante
             "codigo_instrumento": None, "situacao_siafi": None, "numero_processo": None,
             "dt_assinatura": None, "situacao_contratacao": None,
@@ -614,7 +622,9 @@ _CAMPOS = ("numero_proposta", "situacao", "orgao", "proponente", "identificacao"
            "situacao_projeto_basico", "enviada_mandataria",
            "valor_empenhado", "valor_desembolsado", "saldo_conta",
            "dt_limite_prest_contas", "dt_fim_vigencia_original",
-           "qtd_termos_aditivos", "qtd_prorrogas", "opera_obtv")
+           "qtd_termos_aditivos", "qtd_prorrogas", "opera_obtv",
+           # 15/09/2026: o recebedor e a prefeitura? (`services/natureza.py`)
+           "natureza_juridica", "municipal")
 
 
 # Campos em que o dado aberto e a FONTE AUTORITATIVA: quando ele traz um valor,
@@ -682,6 +692,9 @@ _SOBRESCREVE_NOVAS = [
     # COALESCE cego congelaria "ainda suspensa" para sempre — exatamente o
     # defeito que estas colunas vieram corrigir.
     "clausula_suspensiva_dt_retirada", "clausula_suspensiva_dias",
+    # Fonte unica tambem (15/09/2026). `municipal` e BOOLEAN e passa por aqui
+    # pelo mesmo motivo das duas acima: `_SOBRESCREVE` a converteria em texto.
+    "natureza_juridica", "municipal",
 ]
 # Campo em que o COALESCE protege de verdade: o parlamentar as vezes so aparece
 # no scraper autenticado (emenda impositiva recente que ainda nao entrou no
@@ -729,7 +742,7 @@ def _upsert(mun_id: int, propostas: list[dict]) -> int:
              banco, agencia, conta_corrente, situacao_conta, situacao_projeto_basico,
              enviada_mandataria, valor_empenhado, valor_desembolsado, saldo_conta,
              dt_limite_prest_contas, dt_fim_vigencia_original, qtd_termos_aditivos,
-             qtd_prorrogas, opera_obtv,
+             qtd_prorrogas, opera_obtv, natureza_juridica, municipal,
              raw_data, updated_at)
         VALUES (%(m)s,%(numero_proposta)s,%(situacao)s,%(orgao)s,%(proponente)s,%(identificacao)s,
              %(codigo_instrumento)s,%(modalidade)s,%(situacao_siafi)s,%(numero_processo)s,%(objeto)s,
@@ -741,7 +754,7 @@ def _upsert(mun_id: int, propostas: list[dict]) -> int:
              %(banco)s,%(agencia)s,%(conta_corrente)s,%(situacao_conta)s,%(situacao_projeto_basico)s,
              %(enviada_mandataria)s,%(valor_empenhado)s,%(valor_desembolsado)s,%(saldo_conta)s,
              %(dt_limite_prest_contas)s,%(dt_fim_vigencia_original)s,%(qtd_termos_aditivos)s,
-             %(qtd_prorrogas)s,%(opera_obtv)s,
+             %(qtd_prorrogas)s,%(opera_obtv)s,%(natureza_juridica)s,%(municipal)s,
              %(raw)s::jsonb, NOW())
         ON CONFLICT (municipio_id, numero_proposta) DO UPDATE SET
              {', '.join(sets)}

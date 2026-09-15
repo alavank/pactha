@@ -224,6 +224,10 @@ async def aggregate_parlamentares(
         FROM transferegov_propostas
         WHERE parlamentar IS NOT NULL
         AND LENGTH(TRIM(parlamentar)) >= 3
+        -- ⚠️ So a PREFEITURA entra no ranking (15/09/2026): a emenda que foi para
+        -- o Estado de Goias nao e recurso trazido para a prefeitura de Goiania.
+        -- Ver `services/natureza.py`.
+        AND municipal IS NOT FALSE
         {where_extra}{ano_vol}
     """
     for row in (await db.execute(text(sql_vol), params)).fetchall():
@@ -732,6 +736,7 @@ async def detalhe(
                v.situacao_contratacao, v.situacao_contratacao_detalhe
         FROM transferegov_propostas v
         WHERE v.parlamentar ILIKE :n
+          AND v.municipal IS NOT FALSE  -- so a prefeitura (services/natureza.py)
         {where_extra_vol}
         ORDER BY v.numero_proposta DESC
     """

@@ -697,10 +697,14 @@ async def query_alertas_vigencia(
     _vsql = "AND split_part(numero_proposta, '/', 2) = ANY(:anos_txt)" if _anos else ""
     if _anos:
         _vp["anos_txt"] = [str(a) for a in _anos]
+    # ⚠️ So a PREFEITURA vira alerta (15/09/2026). O filtro por IBGE traz o que
+    # esta sediado na cidade: o convenio do Estado de Goias vencendo nao e
+    # prazo da prefeitura de Goiania. Ver `services/natureza.py`.
     vol = await db.execute(text(f"""
         SELECT numero_proposta, codigo_instrumento, objeto, orgao, situacao, dt_fim_vigencia,
                municipio_id
-        FROM transferegov_propostas WHERE {_mun_sql} {_vsql}
+        FROM transferegov_propostas
+        WHERE {_mun_sql} AND municipal IS NOT FALSE {_vsql}
     """), _vp)
     for row in vol.fetchall():
         dtf = None
@@ -804,7 +808,8 @@ async def query_prestacao_contas(
     vol = await db.execute(text(f"""
         SELECT numero_proposta, codigo_instrumento, objeto, orgao, situacao, dt_fim_vigencia,
                municipio_id
-        FROM transferegov_propostas WHERE {_mun_sql} {_vsql}
+        FROM transferegov_propostas
+        WHERE {_mun_sql} AND municipal IS NOT FALSE {_vsql}
     """), _vp)
     for row in vol.fetchall():
         dtf = None

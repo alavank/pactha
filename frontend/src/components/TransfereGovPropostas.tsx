@@ -15,6 +15,7 @@ import { useAnoCorrentePadrao } from "@/lib/anoPadrao";
 // com e sem centavos no mesmo print.
 import { formatCurrency as moeda } from "@/lib/utils";
 import { MultiSelect } from "@/components/ui/multi-select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { atalhosAnos, resumoAnos } from "@/lib/periodo";
 import { textoDe } from "@/lib/texto";
 import {
@@ -152,6 +153,13 @@ interface Proposta {
   valor_contrapartida?: number | null;
   situacao_contratacao_detalhe?: Record<string, string | null> | null;
   processo_execucao_qtd?: number | null;
+  /** QUEM RECEBE (15/09/2026). O filtro por IBGE traz o que está SEDIADO na
+   *  cidade — em Goiânia, 75% do valor é do Estado de Goiás. `municipal` falso
+   *  = estado, entidade da sociedade civil, consórcio: aparece na lista, com
+   *  selo, mas fica fora dos totais do painel, dos alertas e do RM. Nulo na
+   *  fonte conta como prefeitura (vem `true`). */
+  natureza_juridica?: string | null;
+  municipal?: boolean;
   /** Lista das licitações/processos COM situação (Concluído / Em execução ...). */
   processo_execucao?: Array<{
     numero?: string | null; modalidade?: string | null;
@@ -188,7 +196,18 @@ interface Proposta {
   }> | null;
 }
 
-interface Resp { items: Proposta[]; total: number; atualizado_em?: string; }
+interface Resp {
+  items: Proposta[]; total: number; atualizado_em?: string;
+  /** Quantas da lista NÃO são da prefeitura (ver `municipal`). */
+  fora_da_prefeitura?: number;
+}
+
+/** O filtro «Recebedor». Vazio = todos. */
+type Recebedor = "" | "prefeitura" | "outros";
+const RECEBEDOR_LABELS: Record<Exclude<Recebedor, "">, string> = {
+  prefeitura: "Só a prefeitura",
+  outros: "Só quem não é a prefeitura",
+};
 
 interface OpsObs {
   valor_total_repasse?: number | null;
@@ -296,6 +315,7 @@ export default function TransfereGovPropostas({
   const propostaParam = sp.get("proposta");
 
   const [items, setItems] = useState<Proposta[]>([]);
+  const [foraDaPrefeitura, setForaDaPrefeitura] = useState(0);
   const [atualizadoEm, setAtualizadoEm] = useState<string | undefined>();
   const [loading, setLoading] = useState(false);
   /* QUATRO CAMPOS, e não uma caixa. A caixa única era um OR de três colunas — e
@@ -315,6 +335,7 @@ export default function TransfereGovPropostas({
   const [vigenciaSel, setVigenciaSel] = useState<string[]>(vigenciaParam ? [vigenciaParam] : []);
   const [parlamentar, setParlamentar] = useState("");
   const [orgao, setOrgao] = useState("");
+  const [recebedor, setRecebedor] = useState<Recebedor>("");
   const [sitContratacaoSel, setSitContratacaoSel] = useState<string[]>([]);
   const [vigFimDe, setVigFimDe] = useState("");
   const [vigFimAte, setVigFimAte] = useState("");
@@ -345,12 +366,13 @@ export default function TransfereGovPropostas({
     if (vigenciaSel.length) params.vigencia = vigenciaSel;
     if (parlamentar.trim()) params.parlamentar = parlamentar.trim();
     if (orgao.trim()) params.orgao = orgao.trim();
+    if (recebedor) params.recebedor = recebedor;
     if (sitContratacaoSel.length) params.situacao_contratacao = sitContratacaoSel;
     if (vigFimDe) params.vig_fim_de = vigFimDe;
     if (vigFimAte) params.vig_fim_ate = vigFimAte;
     return params;
   }, [municipioId, categoria, instrumento, proposta, proponente, cnpj, vigenciaSel,
-      parlamentar, orgao, sitContratacaoSel, vigFimDe, vigFimAte]);
+      parlamentar, orgao, recebedor, sitContratacaoSel, vigFimDe, vigFimAte]);
 
   /** Limpa TUDO e refaz a busca UMA vez.
    *
@@ -362,7 +384,7 @@ export default function TransfereGovPropostas({
   const limparTudo = useCallback(() => {
     setInstrumento(""); setProposta(""); setProponente(""); setCnpj("");
     setSituacoesSel([]); setVigenciaSel([]); setAnosSel([]);
-    setParlamentar(""); setOrgao(""); setSitContratacaoSel([]);
+    setParlamentar(""); setOrgao(""); setRecebedor(""); setSitContratacaoSel([]);
     setVigFimDe(""); setVigFimAte("");
     setDisparo((d) => d + 1);
   }, []);
@@ -383,6 +405,7 @@ export default function TransfereGovPropostas({
     if (cnpj.trim()) servidor("cnpj", `CNPJ: ${cnpj.trim()}`, () => setCnpj(""));
     if (parlamentar.trim()) servidor("parlamentar", `Parlamentar: ${parlamentar.trim()}`, () => setParlamentar(""));
     if (orgao.trim()) servidor("orgao", `Órgão: ${orgao.trim()}`, () => setOrgao(""));
+    if (recebedor) servidor("recebedor", RECEBEDOR_LABELS[recebedor], () => setRecebedor(""));
     if (vigFimDe) servidor("vigde", `Fim de vigência de ${vigFimDe}`, () => setVigFimDe(""));
     if (vigFimAte) servidor("vigate", `Fim de vigência até ${vigFimAte}`, () => setVigFimAte(""));
     sitContratacaoSel.forEach((s) =>
@@ -394,7 +417,7 @@ export default function TransfereGovPropostas({
     anosSel.forEach((y) =>
       a.push({ chave: `ano:${y}`, rotulo: y, remover: () => setAnosSel((x) => x.filter((z) => z !== y)) }));
     return a;
-  }, [instrumento, proposta, proponente, cnpj, parlamentar, orgao, vigFimDe, vigFimAte,
+  }, [instrumento, proposta, proponente, cnpj, parlamentar, orgao, recebedor, vigFimDe, vigFimAte,
       sitContratacaoSel, vigenciaSel, situacoesSel, anosSel]);
 
   const buscar = useCallback(async () => {
@@ -404,6 +427,7 @@ export default function TransfereGovPropostas({
       const r = await api.get<Resp>(`/transferegov/lista/${categoria}`,
                                     { params: buildParams() });
       setItems(r.data.items); setAtualizadoEm(r.data.atualizado_em);
+      setForaDaPrefeitura(r.data.fora_da_prefeitura ?? 0);
     } catch (e) { console.error(e); } finally { setLoading(false); }
   }, [municipioId, categoria, buildParams]);
 
@@ -573,6 +597,26 @@ export default function TransfereGovPropostas({
                    placeholder="Ex: Ministério do Esporte" onKeyDown={(e) => { if (e.key === "Enter") buscar(); }} />
           </div>
           <div>
+            {/* QUEM RECEBE (15/09/2026). O filtro por IBGE traz o que está
+                sediado na cidade: em Goiânia, 75% do valor é do Estado de
+                Goiás. A lista mostra tudo por padrão, com selo; aqui dá para
+                ver só a prefeitura, ou só o resto. */}
+            <label className="text-xs text-base-content/70 mb-1 block">Recebedor</label>
+            <Select value={recebedor || "todos"}
+                    onValueChange={(v) => setRecebedor(v === "todos" ? "" : (v as Recebedor))}>
+              <SelectTrigger className="w-full">
+                <SelectValue>
+                  {recebedor ? RECEBEDOR_LABELS[recebedor] : "Todos"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">Todos</SelectItem>
+                <SelectItem value="prefeitura">{RECEBEDOR_LABELS.prefeitura}</SelectItem>
+                <SelectItem value="outros">{RECEBEDOR_LABELS.outros}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
             <label className="text-xs text-base-content/70 mb-1 block">
               Situação de Contratação <span className="text-base-content/40">(uma, algumas ou todas)</span>
             </label>
@@ -656,6 +700,15 @@ export default function TransfereGovPropostas({
       <div>
         <div className="mb-2 text-[11px]" style={{ color: "var(--bi-muted)" }}>
           <strong className="bi-num">{displayItems.length}</strong> propostas
+          {/* ⚠️ Dizer, e não esconder: o filtro por IBGE traz o que está
+              sediado na cidade (estado, entidades, consórcio). Ficam na lista
+              com selo, mas fora dos totais do painel, dos alertas e do RM —
+              somar diria que a prefeitura recebeu o que não recebeu. */}
+          {foraDaPrefeitura > 0 && recebedor !== "outros" && (
+            <> · <strong className="bi-num">{foraDaPrefeitura}</strong> não {foraDaPrefeitura > 1 ? "são" : "é"} da
+              prefeitura (estado, entidade ou consórcio sediado no município) e
+              {foraDaPrefeitura > 1 ? " ficam" : " fica"} fora dos totais</>
+          )}
         </div>
         {loading ? (
           <div className="space-y-1.5">
@@ -749,6 +802,13 @@ export default function TransfereGovPropostas({
                         </Selo>
                       )}
                       {temDetalhe && <Selo tom="atencao">tem detalhamento</Selo>}
+                      {/* O mesmo selo de Parcerias: está na cidade, não é da
+                          prefeitura — e por isso fica fora dos totais. */}
+                      {p.municipal === false && (
+                        <Selo tom="atencao" title={p.natureza_juridica || undefined}>
+                          não é da prefeitura
+                        </Selo>
+                      )}
                       {p.orgao && <span className="truncate">{p.orgao}</span>}
                       {p.parlamentar && <span className="truncate">· {p.parlamentar}</span>}
                       <span className="font-mono">
@@ -837,6 +897,15 @@ export default function TransfereGovPropostas({
                     campo("Número do Processo", detalhe.numero_processo),
                     campo("Órgão", detalhe.orgao),
                     campo("Programa", detalhe.programa),
+                    // QUEM RECEBE (15/09/2026): o estado ou a entidade sediada na
+                    // cidade não é a prefeitura, e fica fora dos totais.
+                    ...(detalhe.natureza_juridica
+                      ? [campo("Natureza do proponente",
+                               detalhe.municipal === false
+                                 ? `${detalhe.natureza_juridica} — não é da prefeitura`
+                                 : detalhe.natureza_juridica,
+                               detalhe.municipal === false ? { tom: "atencao" } : undefined)]
+                      : []),
                     // EMPENHADO — derivado da NE, não o flag cru do portal (ver
                     // empenhadoDe). Só sai quando há prova: sem NE a linha some,
                     // porque "não consultado" ≠ "não empenhado". Promovido do

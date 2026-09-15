@@ -8,6 +8,7 @@ from models.user import User
 from schemas.municipio import MunicipioResponse, MunicipioSummary
 from services.auth import get_current_user, ensure_municipio_access
 from services import authz
+from services.natureza import SQL_SO_PREFEITURA
 from services.registro_rotas import declarado
 
 router = APIRouter(prefix="/api/municipios", tags=["municipios"])
@@ -151,7 +152,11 @@ async def summary_core(
         vol_params["anos_txt"] = anos_txt
     vol = await db.execute(text(
         "SELECT dt_fim_vigencia, COALESCE(valor_global, valor_repasse, 0) "
-        "FROM transferegov_propostas WHERE municipio_id = :m" + vol_ano_sql
+        # ⚠️ So a PREFEITURA entra na conta (15/09/2026): o filtro por IBGE traz o
+        # que esta sediado na cidade — 75% do valor de Goiania e do Estado de
+        # Goias. Ver `services/natureza.py`.
+        "FROM transferegov_propostas WHERE municipio_id = :m AND "
+        + SQL_SO_PREFEITURA + vol_ano_sql
     ), vol_params)
     vol_rows = vol.fetchall()
     total_vol = len(vol_rows)

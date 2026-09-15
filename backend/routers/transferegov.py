@@ -27,6 +27,7 @@ from services.auth import get_current_user, ensure_municipio_access, ensure_tela
 import httpx
 import unicodedata
 from services import authz
+from services.natureza import SQL_SO_PREFEITURA
 from services.registro_rotas import declarado, exige
 
 router = APIRouter(prefix="/api/transferegov", tags=["transferegov"])
@@ -531,6 +532,10 @@ async def voluntarias(
     vigencia: Optional[list[str]] = Query(None, description="vence30 | vence60 | vence90 | vence120 | prestacao (aceita varios)"),
     vig_fim_de: Optional[str] = Query(None, description="fim de vigencia >= AAAA-MM-DD"),
     vig_fim_ate: Optional[str] = Query(None, description="fim de vigencia <= AAAA-MM-DD"),
+    # QUEM RECEBE (15/09/2026). O filtro por IBGE traz o que esta sediado na
+    # cidade: em Goiania 75% do valor e do Estado de Goias. Sem o parametro a
+    # lista traz TUDO, marcado por `municipal`; a tela oferece o filtro.
+    recebedor: Optional[str] = Query(None, description="prefeitura | outros"),
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
@@ -578,6 +583,10 @@ async def voluntarias(
         where.append("situacao ILIKE :sit"); params["sit"] = f"%{situacao}%"
     if orgao:
         where.append("orgao ILIKE :org"); params["org"] = f"%{orgao}%"
+    if recebedor == "prefeitura":
+        where.append(SQL_SO_PREFEITURA)
+    elif recebedor == "outros":
+        where.append("municipal IS FALSE")
     if parlamentar:
         where.append("parlamentar ILIKE :parl"); params["parl"] = f"%{parlamentar}%"
     if situacao_contratacao:
@@ -632,7 +641,9 @@ async def voluntarias(
                dt_fim_vigencia, dt_proposta, dt_assinatura, updated_at,
                situacao_contratacao, clausula_suspensiva_dt_prevista,
                clausula_suspensiva_motivo, parlamentar,
-               situacao_contratacao_detalhe, processo_execucao_qtd
+               situacao_contratacao_detalhe, processo_execucao_qtd,
+               -- NO FIM de proposito: o dicionario abaixo le por INDICE.
+               natureza_juridica, municipal
         FROM transferegov_propostas
         WHERE {' AND '.join(where)}
         ORDER BY numero_proposta DESC
@@ -653,6 +664,10 @@ async def voluntarias(
         "parlamentar": row[20],
         "situacao_contratacao_detalhe": row[21],
         "processo_execucao_qtd": row[22],
+        "natureza_juridica": row[23],
+        # ⚠️ NULO conta como prefeitura (a fonte nao disse): o selo "nao e da
+        # prefeitura" so aparece quando a fonte AFIRMA outra natureza.
+        "municipal": row[24] is not False,
     } for row in r.fetchall()]
 
     # Filtro de vigencia (presets: dias para vencer) — vindo dos KPIs ou do filtro
@@ -714,7 +729,11 @@ async def voluntarias(
     last = None
     if items:
         last = max((i["atualizado_em"] for i in items if i["atualizado_em"]), default=None)
-    return {"items": items, "total": len(items), "atualizado_em": last}
+    return {"items": items, "total": len(items), "atualizado_em": last,
+            # Quantas da lista NAO sao da prefeitura (estado sediado na cidade,
+            # entidade da sociedade civil, consorcio) — a tela diz isso em vez
+            # de esconder. Ver `services/natureza.py`.
+            "fora_da_prefeitura": sum(1 for i in items if not i["municipal"])}
 
 
 @router.get("/voluntarias/{numero_proposta:path}",
@@ -772,7 +791,9 @@ async def voluntarias_detalhe(
                --
                -- ULTIMA coluna, pela mesma razao das duas acima: o dict le por
                -- INDICE e inserir no meio desloca tudo em silencio.
-               situacao_projeto_basico
+               situacao_projeto_basico,
+               -- 15/09/2026, depois dela pelo mesmo motivo: quem recebe.
+               natureza_juridica, municipal
         FROM transferegov_propostas
         WHERE municipio_id = :mun AND numero_proposta = :num
     """), {"mun": municipio_id, "num": numero_proposta})
@@ -819,6 +840,10 @@ async def voluntarias_detalhe(
         # unico caminho que funciona com a sessao gov.br fria. A tela usa este
         # campo quando `projeto_basico` (a versao rica, logada) nao veio.
         "situacao_projeto_basico": row[34] or None,
+        # Quem recebe (15/09/2026): o estado ou a entidade sediada na cidade nao
+        # e a prefeitura — ver `services/natureza.py`. NULO conta como prefeitura.
+        "natureza_juridica": row[35],
+        "municipal": row[36] is not False,
     }
 
 

@@ -606,6 +606,11 @@ MIGRATION_FILES = [
     # ⚠️ DEPOIS de `add_faf_planos_acao.sql`, que cria a tabela — guardado por
     # `tests/test_migrations_ordem_tabela.py`.
     "add_faf_detalhe.sql",
+    # Voluntarias: a natureza juridica do proponente e se ele e a PREFEITURA
+    # (`municipal`). O filtro por IBGE traz o estado sediado na capital — 75%
+    # do valor de Goiania. So ADD COLUMN; `transferegov_propostas` vem do
+    # setup_db, muito antes.
+    "add_tg_natureza.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",

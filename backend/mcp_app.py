@@ -403,7 +403,9 @@ async def convenios_federais(ctx: Context, municipio_id: int | None = None) -> s
         rows = (await db.execute(text(
             f"SELECT {_CATEGORIA_SQL} AS cat, count(*), "
             "COALESCE(SUM(COALESCE(valor_global, valor_repasse, 0)), 0) "
-            "FROM transferegov_propostas WHERE municipio_id = :m GROUP BY cat"),
+            # So a PREFEITURA (15/09/2026) — ver `services/natureza.py`.
+            "FROM transferegov_propostas WHERE municipio_id = :m AND "
+            "municipal IS NOT FALSE GROUP BY cat"),
             {"m": mid})).fetchall()
     if not rows:
         return f"Nada para este filtro: {nome} sem propostas federais."

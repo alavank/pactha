@@ -1479,6 +1479,50 @@ UTC e Trust para 07:20 — com até 55 min, 09:00 e 09:30 passariam das 10:00 UT
   e parecer), Pareceres e Programa e Empenhos.
 - A ferramenta MCP `fundo_a_fundo` passou a citar saldo, pago e devolvido.
 
+## 1.26. Discricionárias e Legais: os dumps inteiros (15/09/2026, em andamento)
+
+É a quarta e última API da série (§1.23 a §1.25). **Não há API REST para
+Discricionárias**: a oficial está prevista a partir de 10/2026. O que existe são 65 zips de
+CSV em `api-publica.transferegov.gestao.gov.br/downloads/dadosgov/`: 3,5 GB, republicados
+todo dia às ~11:12 UTC. O dicionário fica em
+`docs/migracao-apis-transferegov/ModeloDadosCSVsDiscricionariasLegais/`, com 53 tabelas e
+540 colunas.
+- **Uso atual:** o PACTHA lia 12 dos 65 arquivos. O resto vinha de raspagem, e parte dela
+  exige sessão gov.br.
+- **Custo medido** numa carteira do tamanho da Trust (7.639 propostas): 1 min de download
+  e 3 min de varredura dos 53 arquivos úteis.
+
+O plano tem quatro PRs:
+1. natureza jurídica;
+2. árvore da proposta pelos dumps;
+3. tela;
+4. a sessão vira reserva.
+
+**PR 1 — o que não é da prefeitura sai das somas.** O coletor entra por
+`COD_MUNIC_IBGE`, e isso traz tudo o que está **sediado** na cidade. Medido no dump:
+
+| Cidade | O que não é da prefeitura |
+|---|---|
+| Goiânia | 2.946 de 3.439 propostas (R$ 9,1 bi fora, contra R$ 1,87 bi da prefeitura); 1.897 são do Estado de Goiás |
+| Palmas | 82% do valor é do Tocantins |
+| Santa Maria | 33% é de entidades da sociedade civil (OSC) |
+
+Nada separava isso: o painel, os alertas, o RM e o ranking de parlamentar somavam tudo.
+
+**Decisão do dono:** mostrar marcado e fora das somas, como em Parcerias.
+- **Colunas:** `transferegov_propostas.natureza_juridica` e `municipal`, gravadas pelo
+  `transferegov_opendata`.
+- **Regra única:** `services/natureza.py::e_municipal`, a mesma de Parcerias. Consórcio
+  público não é prefeitura.
+- **Filtro:** todo leitor que soma usa `municipal IS NOT FALSE` (nulo conta como
+  prefeitura). Uma guarda estrutural exige o filtro, ou um motivo registrado, em toda
+  consulta nova à tabela: `tests/test_voluntarias_so_a_prefeitura.py`.
+- **Resultado local em Goiânia:**
+  - resumo do município: 493 propostas e R$ 1,87 bi (antes, 3.439 e ~R$ 11 bi);
+  - alertas de vigência: 35 (antes, 282);
+  - a lista mostra as 369 em execução, 346 com o selo "não é da prefeitura", e tem o
+    filtro "Recebedor".
+
 ## 2. ESTADO ATUAL (2026-09-04)
 
 **São CINCO tenants em produção**, todos do mesmo código, cada um com containers e banco próprios:

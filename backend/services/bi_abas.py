@@ -218,6 +218,8 @@ async def bi_transferegov(db: AsyncSession, ids: list[int], anos: Optional[list[
                v.dt_inicio_vigencia, v.dt_fim_vigencia, v.programa, v.situacao_contratacao
         FROM transferegov_propostas v LEFT JOIN municipios m ON m.id = v.municipio_id
         WHERE v.municipio_id = ANY(:ids)
+          -- So a PREFEITURA (15/09/2026): ver `services/natureza.py`.
+          AND v.municipal IS NOT FALSE
           {_filtro_ano_proposta(anos, 'v.numero_proposta')}
         ORDER BY valor DESC NULLS LAST
     """
@@ -383,6 +385,7 @@ async def bi_parlamentares_detalhe(
                v.dt_fim_vigencia
         FROM transferegov_propostas v LEFT JOIN municipios m ON m.id = v.municipio_id
         WHERE v.municipio_id = ANY(:ids) AND v.parlamentar IS NOT NULL
+          AND v.municipal IS NOT FALSE  -- so a prefeitura (services/natureza.py)
           {_filtro_ano_proposta(anos, 'v.numero_proposta')}
     """
     for r in (await db.execute(text(sql_vol), p)).fetchall():
