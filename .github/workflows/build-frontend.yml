@@ -160,9 +160,9 @@ jobs:
     needs: build
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    # ⚠️ 120, e nao 100: a fila do Coolify custa ~20min/app e desde 01/09/2026 sao
-    # CINCO apps. Com 100 o passo cabia justo em quatro e estouraria no quinto —
-    # e um timeout aqui deixa parte dos tenants na tag nova e parte na velha.
+    # Teto de seguranca. Com os seis disparados juntos (15/09/2026) o normal e a
+    # duracao do mais lento, nao a soma; um timeout aqui ainda deixaria parte dos
+    # tenants na tag nova e parte na velha, por isso o teto continua folgado.
     timeout-minutes: 120
     concurrency:
       group: deploy-frontend
@@ -200,9 +200,14 @@ jobs:
               exit 1 ;;
           esac
           # mapa app->uuid no Coolify (ver PROVISIONAR_CLIENTE.md p/ tenant novo)
-          # Os tenants NOVOS vao por ULTIMO de proposito (santamaria-rs, depois
-          # novapalma-rs): se um deles emperrar na fila do Coolify, os antigos
-          # ja terminaram. novapalma-rs entrou em 01/09/2026.
+          #
+          # ⭐ OS SEIS DE UMA VEZ (15/09/2026, decisao do dono: "a maquina e boa,
+          # tira essas limitacoes"). Antes cada app so era disparado depois que o
+          # anterior confirmava — seis filas de ate 20 min em serie. Agora a tag
+          # avanca e o deploy e disparado nos seis, e so DEPOIS o job espera a
+          # confirmacao de cada um. O paralelismo real vem do `concurrent_builds`
+          # do servidor no Coolify (INFRA.md §4).
+          declare -A DEPS=()
           for APP in qgmw4e5wjem1e8jit2wyvo1d j5ghp71lff003d5rfaynvy5y bryvqhhcu97lc3ku7a2hss0q eohjo0cy4nbl6t7hiaqwagwf rpqpxroy5orsuidrbfezlzkt srbi2qotciphxdxhn6io25a3; do
             OLD_TAG=$("${CURL[@]}" "$COOLIFY_URL/api/v1/applications/$APP" | jq -r '.docker_registry_image_tag // ""')
             if ! "${CURL[@]}" -X PATCH -H "Content-Type: application/json" \
@@ -224,9 +229,16 @@ jobs:
                 "$COOLIFY_URL/api/v1/applications/$APP" > /dev/null
               FALHAS="$FALHAS $APP"; continue
             fi
+            DEPS[$APP]="$DEP"
+            echo "frontend $APP: deployment $DEP disparado"
+          done
+
+          for APP in "${!DEPS[@]}"; do
+            DEP="${DEPS[$APP]}"
             ok=""
-            # fila 20min + execucao 20min (concurrent_builds=1 no server; builds
-            # de outros projetos na VPS seguram o slot — ver build-backend.yml).
+            # fila 20min + execucao 20min (o servidor tinha concurrent_builds=1
+            # ate 15/09/2026; builds de outros projetos na VPS ainda disputam
+            # slot — ver build-backend.yml).
             # ⚠️ A execucao era 10min sob a premissa de que deploy de frontend e
             # "so um pull". Nao e: em 17/08 o montesiao-mg levou 12min49 e o job
             # desistiu 2min ANTES de ele terminar — deploy correto reportado como
@@ -264,6 +276,6 @@ jobs:
             echo "### Deploy frontend: $TAG"
             if [ -n "$FALHAS" ]; then echo "FALHARAM:$FALHAS — conferir no Coolify."; fi
             if [ -n "$INCERTOS" ]; then echo "NAO CONFIRMADOS (seguiam rodando):$INCERTOS — conferir a tag no Coolify."; fi
-            if [ -z "$FALHAS$INCERTOS" ]; then echo "4 frontends confirmados."; fi
+            if [ -z "$FALHAS$INCERTOS" ]; then echo "6 frontends confirmados."; fi
           } >> "$GITHUB_STEP_SUMMARY"
           [ -z "$FALHAS" ]
