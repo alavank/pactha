@@ -298,8 +298,9 @@ async def obras(ctx: Context, municipio_id: int | None = None) -> str:
     description=(
         "Repasses fundo a fundo (planos de ação do Transferegov, saúde e outras "
         "áreas) de um município: nº de planos, valor total, saldo disponível, "
-        "custeio × investimento, e a decomposição por ORIGEM do recurso (emenda, "
-        "repasse específico, voluntário, recursos próprios). Reusa "
+        "custeio × investimento, a decomposição por ORIGEM do recurso (emenda, "
+        "repasse específico, voluntário, recursos próprios) e o que as CONTAS "
+        "dos planos mostram (saldo, pago a beneficiários, devolvido). Reusa "
         "'fetch_faf_planos'. É o lado dos PLANOS de ação — o repasse consolidado "
         "do FNS por bloco não está aqui. Valores em reais. Requer 'municipio_id' "
         "quando você vê mais de um."),
@@ -330,6 +331,15 @@ async def fundo_a_fundo(ctx: Context, municipio_id: int | None = None) -> str:
         for o in por:
             linhas.append(f"    - {o.get('rotulo') or o.get('chave')}: "
                           f"{_reais(o.get('valor'))}")
+    # A conta do plano (saldo informado pela fonte, pagamentos identificados no
+    # extrato) — somada POR CONTA, porque a mesma conta serve a varios planos.
+    ex = f.get("execucao") or {}
+    if ex.get("n_contas"):
+        linhas.append(
+            f"  Nas contas ({_num(ex.get('n_contas'))}): saldo "
+            f"{_reais(ex.get('saldo_em_conta'))}, pago a beneficiários "
+            f"{_reais(ex.get('pago_a_beneficiarios'))}, devolvido à União "
+            f"{_reais(ex.get('devolvido_uniao'))}")
     return "\n".join(linhas)
 
 
