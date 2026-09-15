@@ -687,7 +687,9 @@ async def _tool_query_voluntarias(db: AsyncSession, inp: dict) -> str:
                -- NEs (Notas de Empenho). ULTIMA coluna DE PROPOSITO: o laco
                -- abaixo le por INDICE (row[13] = flag, row[14] = mun) e inserir
                -- no meio deslocaria os dois em silencio.
-               v.notas_empenho
+               -- A do DUMP (`notas_empenho_aberto`) entra so quando a raspada
+               -- nunca foi consultada — a MESMA ordem do RM (15/09/2026).
+               COALESCE(v.notas_empenho, v.notas_empenho_aberto)
         FROM transferegov_propostas v{where_sql}
         ORDER BY v.municipio_id, v.numero_proposta DESC LIMIT {limit}
     """

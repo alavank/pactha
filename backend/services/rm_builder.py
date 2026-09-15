@@ -32,6 +32,7 @@ from services.texto_rm import (
 # `_no_escopo` local de `montar_conteudo`, que e o recorte por ANO — sao dois
 # filtros diferentes, em momentos diferentes do mesmo laco.
 from services.rm_fontes import no_escopo as fonte_no_escopo
+from services.voluntarias_dump import ops_obs_preferido
 
 logger = logging.getLogger("rm_builder")
 
@@ -1835,8 +1836,13 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
                -- da listagem rica do scraper. ⚠️ NUNCA substitui `notas_empenho`
                -- (row[25]): o `_ne_efetiva` abaixo usa a rica quando existe e cai
                -- para esta so quando a rica e nula — o requisito "nao perder
-               -- informacao". OITAVA e ULTIMA coluna (row[31]).
-               notas_empenho_aberto
+               -- informacao". OITAVA coluna (row[31]).
+               notas_empenho_aberto,
+               -- DESEMBOLSO DO DUMP (siconv_desembolso.zip, 15/09/2026), no
+               -- MESMO formato do `ops_obs` raspado (row[22]). Manda sobre ele
+               -- — ver `services/voluntarias_dump.ops_obs_preferido`. NONA e
+               -- ULTIMA coluna (row[32]), pela mesma razao das oito acima.
+               ops_obs_aberto
         FROM transferegov_propostas WHERE municipio_id = :m
         -- ⚠️ SO A PREFEITURA entra no RM (15/09/2026). O filtro por IBGE traz o
         -- que esta sediado na cidade — o convenio do Estado de Goias nao e
@@ -1850,6 +1856,13 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
     _pac_ja_exibidos: set[str] = set()
     for row in vol.fetchall():
         sit = row[3] or ""
+        # O DESEMBOLSO: o do dump (row[32]) quando existe, com NS/OP/situacao da
+        # raspagem (row[22]) onde o numero da OB bate. E o MESMO bloco que a
+        # aba OPs/OBs do modal mostra (`routers/transferegov.voluntarias_detalhe`).
+        # Consequencia: "Desembolsado: R$ ..." e o ano do pagamento (bloco
+        # "REPASSES DE {ano}") passam a sair tambem nos convenios que a
+        # raspagem nunca leu — antes o relatorio calava neles.
+        _ops_vol = ops_obs_preferido(row[32], row[22])[0]
         # De qual selecao do Novo PAC esta voluntaria nasceu (vazio se nenhuma).
         _pac_origem_atual = _pac_da_voluntaria(row[27])
         # ⚠️⚠️ SO CONTA COMO "JA EXIBIDO" SE A VOLUNTARIA PUDER MESMO ENTRAR NESTE
@@ -1929,7 +1942,7 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             if _lic_em_elaboracao(row[21]) or _obra_sem_art(row[26]):
                 pend = True
             # ano do PAGAMENTO (OPs/OBs) — alimenta o bloco "REPASSES DE {ano}".
-            ano_pgto_vol = _ano_pagamento_ops_obs(row[22])
+            ano_pgto_vol = _ano_pagamento_ops_obs(_ops_vol)
             parte, secao, suf = _destino_completo(
                 "federal", "voluntaria", st, ano_prop, ano_pgto_vol, ano_emissao,
                 pend, pre_novo, bool(row[2]))
@@ -1991,7 +2004,7 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             empenhado = "Não"
         # DESEMBOLSO (OPs/OBs): "PENDENTE DE DESEMBOLSO" quando a licitacao ja foi
         # ACEITA e nada saiu; senao o valor desembolsado + os lancamentos.
-        _des = _desembolso_ops_obs(row[22])
+        _des = _desembolso_ops_obs(_ops_vol)
         _vd = _des.get("valor_desembolsado")
         _aceita = _licitacao_aceita(row[21])
         # Composicao em funcao PURA (ver _situacao_com_marcas): com

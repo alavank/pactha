@@ -69,8 +69,11 @@ def test_a_situacao_do_TR_esta_no_select_e_e_a_ULTIMA_coluna():
     # Desde 15/09/2026 duas colunas vieram DEPOIS dela, no fim (quem recebe:
     # `natureza_juridica`, `municipal`) — acrescentar no FIM e o que o aviso
     # sempre pediu. O que nao pode e alguem inserir no MEIO.
-    assert cols[-3:] == ["situacao_projeto_basico", "natureza_juridica", "municipal"], (
-        f"a cauda do SELECT mudou: {cols[-3:]}. O dict lê por ÍNDICE: inserir no meio "
+    # E, também em 15/09/2026, as quatro da ÁRVORE dos dumps de Discricionárias.
+    assert cols[-7:] == ["situacao_projeto_basico", "natureza_juridica", "municipal",
+                         "arvore", "arvore_atualizado_em", "ops_obs_aberto",
+                         "notas_empenho_aberto"], (
+        f"a cauda do SELECT mudou: {cols[-7:]}. O dict lê por ÍNDICE: inserir no meio "
         f"desloca todos os row[N] seguintes em silêncio, e a tela passa a mostrar um "
         f"campo no lugar de outro — coluna nova entra SÓ no fim")
 
@@ -83,7 +86,11 @@ def test_o_indice_lido_bate_com_o_numero_de_colunas():
     cols = _colunas(_bloco_detalhe())
     fonte = ROTA.read_text(encoding="utf-8")
     trecho = fonte[fonte.index("situacao_projeto_basico"):]
-    maior = max(int(n) for n in re.findall(r"row\[(\d+)\]", trecho[:4000]))
+    # Até a PRÓXIMA rota, e não uma janela fixa de caracteres: a de 4.000 deixou
+    # de alcançar o fim do dict quando os comentários da árvore (15/09/2026)
+    # o alongaram — e o teste acusou 39 lidos de 41.
+    trecho = trecho[:trecho.index("\n@router")]
+    maior = max(int(n) for n in re.findall(r"row\[(\d+)\]", trecho))
     assert maior == len(cols) - 1, (
         f"o SELECT tem {len(cols)} colunas (índices 0..{len(cols)-1}) mas o dict "
         f"lê até row[{maior}] — alguém acrescentou coluna sem ler, ou lê índice inexistente")

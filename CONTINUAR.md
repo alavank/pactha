@@ -1550,8 +1550,42 @@ Três achados da medição:
 - A fonte publica NEs com valor 0.
 - Pago > desembolsado é a contrapartida, não um erro.
 
-A tela (PR 3) e o desligamento das fases de sessão (PR 4) vêm depois de uma noite
-conferida em produção.
+**PR 3 — a tela e os leitores, com a opção B.**
+
+A **opção B** (decisão do dono, 15/09): a proposta que não é da prefeitura guarda só o
+resumo (total pago, contagens) e não as linhas de pagamentos, licitações e liquidações.
+- Na carteira de teste, 98% dessas linhas eram de convênio do Estado sediado na capital.
+  As tabelas caíram de ~460 mil para ~8,6 mil linhas (8 MB).
+- A árvore pequena e as canceladas ficam para todos.
+
+**O modal das Voluntárias** ganha seis abas lidas do dump:
+- Execução financeira: cartões e pagamentos/liquidações paginados;
+- Prazos e aditivos: a linha da vigência original até a atual, e a prestação de contas;
+- Plano de trabalho;
+- Licitações: paginadas, com contratos e itens;
+- Obra: somada à aba de obras da raspagem;
+- Linha do tempo.
+
+Também no modal:
+- **OPs/OBs:** o desembolso sai do dump, com NS/OP da raspagem onde a OB bate.
+- **Notas de empenho:** caem para o dump só quando a listagem raspada nunca foi lida (a
+  ordem do RM).
+
+**A lista** ganha selos com prova:
+- prestação de contas vencida ou vencendo (só com o convênio "Em execução" ou
+  "Aguardando Prestação de Contas");
+- sem desembolso há N dias;
+- vigência prorrogada;
+- % da obra;
+- TCE.
+
+**As canceladas** viram um bloco na tela de Rejeitadas.
+
+**O RM** lê o desembolso do dump: "Desembolsado: R$" e o ano do pagamento aparecem também
+nos convênios que a raspagem nunca leu.
+
+As regras comuns ficam em `services/voluntarias_dump.py`. As NEs trocam de ordem no PR 4,
+quando a raspagem desligar.
 
 ## 2. ESTADO ATUAL (2026-09-04)
 

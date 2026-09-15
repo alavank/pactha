@@ -283,6 +283,12 @@ class Coleta:
         self.linhas: dict[str, int] = {}
         self.data_carga: str | None = None
         self.mids_ibge: list[int] = []
+        # Propostas que NAO sao da prefeitura: so o resumo (ver `coleta`).
+        self.so_resumo: set[str] = set()
+        # Contagens e somas por proposta, de TODAS (inclusive `so_resumo`) —
+        # e daqui que o `_resumo` sai, e nao das linhas guardadas.
+        self.agregados: dict[str, dict] = defaultdict(
+            lambda: {"pago": 0.0, "n_pag": 0, "fornecedores": set(), "n_lic": 0, "n_dl": 0})
 
 
 def _agrupa(ler, c: Coleta, secao: str, nome: str, col: str, alvo) -> dict[str, list[dict]] | None:
@@ -355,11 +361,22 @@ DEPENDE: dict[str, tuple[str, ...]] = {
 
 
 def coleta(propostas: dict[str, tuple[int, str | None]], ibges: dict[str, int],
-           ler: Callable[[str], Iterator[dict]] = _ler) -> Coleta:
+           ler: Callable[[str], Iterator[dict]] = _ler,
+           so_resumo: set[str] | frozenset = frozenset()) -> Coleta:
     """`propostas` = {id_proposta_siconv: (municipio_id, cnpj do proponente)};
-    `ibges` = {codigo IBGE: municipio_id} (so para as canceladas)."""
+    `ibges` = {codigo IBGE: municipio_id} (so para as canceladas);
+    `so_resumo` = propostas que NAO sao da prefeitura (`municipal IS FALSE`).
+
+    ⭐ DECISAO DO DONO (15/09/2026, "opcao B"): do que nao e da prefeitura
+    guarda-se o RESUMO — total pago, quantos pagamentos, fornecedores,
+    licitacoes e liquidacoes — e nao as linhas de `tg_pagamentos`,
+    `tg_licitacoes` e `tg_documentos_liquidacao`. Medido na carteira de teste:
+    98% dessas linhas eram de convenios do ESTADO sediados na capital (um so
+    com 12.868 pagamentos), dinheiro que a prefeitura nao gerencia. A arvore
+    pequena continua para todos: vigencia, aditivos, plano e o `_resumo`."""
     c = Coleta()
     c.mids_ibge = sorted(set(ibges.values()))
+    c.so_resumo = set(so_resumo)
     ids = set(propostas)
 
     def g(nome, col, alvo):
@@ -536,21 +553,13 @@ def coleta(propostas: dict[str, tuple[int, str | None]], ibges: dict[str, int],
     _canceladas(c, ler, ibges)
     _data_carga(c, ler)
 
-    # 7) O resumo, depois das tabelas (ele conta pagamentos e liquidacoes).
-    pag_por_prop: dict[str, list] = defaultdict(list)
-    for p in c.pagamentos:
-        pag_por_prop[p["id_proposta"]].append(p)
-    lic_por_prop = defaultdict(int)
-    for li in c.licitacoes:
-        lic_por_prop[li["id_proposta"]] += 1
-    dl_por_prop = defaultdict(int)
-    for d in c.liquidacoes:
-        dl_por_prop[d["id_proposta"]] += 1
+    # 7) O resumo, depois das tabelas (ele conta pagamentos e liquidacoes — de
+    # TODAS as propostas, inclusive as que so guardam o resumo).
     secoes_ok = {s: not c.falhas[s] for s in SECOES}
     for idp, arv in c.arvores.items():
-        arv["_resumo"] = resumo_da_arvore(arv, pag_por_prop.get(idp, []),
-                                         lic_por_prop.get(idp, 0), dl_por_prop.get(idp, 0),
+        arv["_resumo"] = resumo_da_arvore(arv, c.agregados.get(idp),
                                          secoes_ok=secoes_ok, faltam=c.chaves_mantidas)
+        arv["_resumo"]["so_resumo"] = idp in c.so_resumo
         for k in c.chaves_mantidas:
             arv.pop(k, None)
         arv["_mantidas"] = sorted(c.chaves_mantidas)
@@ -565,7 +574,9 @@ def _licitacoes(c: Coleta, ler, prop_por_conv, propostas):
     lics = _agrupa(ler, c, "licitacoes", "siconv_licitacao", "NR_CONVENIO", set(prop_por_conv))
     if lics is None:
         return
-    ids_lic = {li["ID_LICITACAO"] for ls in lics.values() for li in ls if li.get("ID_LICITACAO")}
+    # Contrato e item so para quem guarda as linhas (opcao B).
+    ids_lic = {li["ID_LICITACAO"] for nc, ls in lics.items() if prop_por_conv[nc] not in c.so_resumo
+               for li in ls if li.get("ID_LICITACAO")}
     contratos = _agrupa(ler, c, "licitacoes", "siconv_contrato", "ID_LICITACAO", ids_lic)
     itens = _agrupa(ler, c, "licitacoes", "siconv_itens_licitacao", "ID_LICITACAO", ids_lic)
     if contratos is None or itens is None:
@@ -576,6 +587,9 @@ def _licitacoes(c: Coleta, ler, prop_por_conv, propostas):
         for li in ls:
             k = li.get("ID_LICITACAO")
             if not k:
+                continue
+            c.agregados[idp]["n_lic"] += 1
+            if idp in c.so_resumo:
                 continue
             c.licitacoes.append({
                 "mid": mid, "id_licitacao": k, "id_proposta": idp, "nr_convenio": nc,
@@ -592,7 +606,8 @@ def _pagamentos(c: Coleta, ler, prop_por_conv, propostas):
     pags = _agrupa(ler, c, "pagamentos", "siconv_pagamento", "NR_CONVENIO", set(prop_por_conv))
     if pags is None:
         return
-    movs = {p["NR_MOV_FIN"] for ls in pags.values() for p in ls if p.get("NR_MOV_FIN")}
+    movs = {p["NR_MOV_FIN"] for nc, ls in pags.items() if prop_por_conv[nc] not in c.so_resumo
+            for p in ls if p.get("NR_MOV_FIN")}
     obtv = _agrupa(ler, c, "pagamentos", "siconv_obtv_convenente", "NR_MOV_FIN", movs)
     if obtv is None:
         return
@@ -602,6 +617,14 @@ def _pagamentos(c: Coleta, ler, prop_por_conv, propostas):
         for p in ls:
             k = p.get("NR_MOV_FIN")
             if not k:
+                continue
+            ag = c.agregados[idp]
+            ag["pago"] += _num(p.get("VL_PAGO")) or 0.0
+            ag["n_pag"] += 1
+            forn = p.get("IDENTIF_FORNECEDOR") or p.get("NOME_FORNECEDOR")
+            if forn:
+                ag["fornecedores"].add(forn)
+            if idp in c.so_resumo:
                 continue
             c.pagamentos.append({
                 "mid": mid, "nr_mov_fin": k, "id_proposta": idp, "nr_convenio": nc,
@@ -616,7 +639,8 @@ def _liquidacoes(c: Coleta, ler, ids, propostas):
     dls = _agrupa(ler, c, "liquidacoes", "siconv_dl", "ID_PROPOSTA", ids)
     if dls is None:
         return
-    ids_dl = {d["ID_DL"] for ls in dls.values() for d in ls if d.get("ID_DL")}
+    ids_dl = {d["ID_DL"] for idp, ls in dls.items() if idp not in c.so_resumo
+              for d in ls if d.get("ID_DL")}
     itens = _agrupa(ler, c, "liquidacoes", "siconv_itens_dl", "ID_DL", ids_dl)
     if itens is None:
         return
@@ -625,6 +649,9 @@ def _liquidacoes(c: Coleta, ler, ids, propostas):
         for d in ls:
             k = d.get("ID_DL")
             if not k:
+                continue
+            c.agregados[idp]["n_dl"] += 1
+            if idp in c.so_resumo:
                 continue
             c.liquidacoes.append({
                 "mid": mid, "id_dl": k, "id_proposta": idp, "id_licitacao": d.get("ID_LICITACAO"),
@@ -700,7 +727,7 @@ def ops_obs_do_dump(conv: dict, desembolsos: list[dict]) -> dict:
     }
 
 
-def resumo_da_arvore(arv: dict, pagamentos: list[dict], n_licitacoes: int, n_liquidacoes: int,
+def resumo_da_arvore(arv: dict, agregado: dict | None,
                      secoes_ok: dict | None = None, faltam: set | frozenset = frozenset()) -> dict:
     """O que a lista e o modal mostram da proposta, em numeros. Funcao PURA.
 
@@ -719,8 +746,7 @@ def resumo_da_arvore(arv: dict, pagamentos: list[dict], n_licitacoes: int, n_liq
     rff = arv.get("resumo_fisico_financeiro") or {}
     dias_med = [_int(m.get("QTD_DIAS_SEM_MEDICAO_ACOMPANHAMENTO_OBRA")) for m in meds]
     dias_med = [d for d in dias_med if d is not None]
-    fornecedores = {p.get("fornecedor_doc") or p.get("fornecedor_nome") for p in pagamentos}
-    fornecedores.discard(None)
+    ag = agregado or {}
     prorr = arv.get("prorrogacoes") or []
     ok = secoes_ok or {}
 
@@ -732,17 +758,25 @@ def resumo_da_arvore(arv: dict, pagamentos: list[dict], n_licitacoes: int, n_liq
 
     return {
         "tem_convenio": bool(conv),
+        # "Em execução", "Aguardando Prestação de Contas", "Prestação de Contas
+        # Aprovada"... e a subsituacao ("Em Prorrogação", "Em processo de TCE").
+        # E daqui que a tela prova que a prestacao NAO foi entregue — o historico
+        # de situacao da proposta nao basta, e os indicadores so existem para
+        # parte dos convenios (404 de 2.839 na medicao).
+        "situacao_convenio": conv.get("SIT_CONVENIO"),
+        "subsituacao_convenio": conv.get("SUBSITUACAO_CONV"),
+        "assinatura": conv.get("DIA_ASSIN_CONV"),
         "empenhado": se("empenhos", round(sum(_num(e.get("VALOR_EMPENHO")) or 0.0 for e in ne), 2)),
         "n_empenhos": se("empenhos", len(ne)),
         "desembolsado": ops["valor_desembolsado"] if ops else None,
         "a_desembolsar": ops["valor_a_desembolsar"] if ops else None,
         "ultimo_desembolso": ops["data_ultimo_desembolso"] if ops else None,
         "faixa_sem_desembolso": ops["faixa_sem_desembolso"] if ops else None,
-        "pago_fornecedores": tab("pagamentos", round(sum(p.get("valor") or 0.0 for p in pagamentos), 2)),
-        "n_pagamentos": tab("pagamentos", len(pagamentos)),
-        "n_fornecedores": tab("pagamentos", len(fornecedores)),
-        "n_licitacoes": tab("licitacoes", n_licitacoes),
-        "n_liquidacoes": tab("liquidacoes", n_liquidacoes),
+        "pago_fornecedores": tab("pagamentos", round(ag.get("pago") or 0.0, 2)),
+        "n_pagamentos": tab("pagamentos", ag.get("n_pag") or 0),
+        "n_fornecedores": tab("pagamentos", len(ag.get("fornecedores") or ())),
+        "n_licitacoes": tab("licitacoes", ag.get("n_lic") or 0),
+        "n_liquidacoes": tab("liquidacoes", ag.get("n_dl") or 0),
         "tributos": se("tributos", round(sum(_num(t.get("VL_PAG_TRIBUTOS")) or 0.0
                                              for t in arv.get("tributos") or []), 2)),
         "vigencia_original": conv.get("DIA_FIM_VIGENC_ORIGINAL_CONV"),
@@ -828,10 +862,14 @@ _CHAVE_NA_LINHA = {"licitacoes": "id_licitacao", "pagamentos": "nr_mov_fin",
                    "liquidacoes": "id_dl", "canceladas": "id_proposta"}
 
 
-def _troca_tabela(conn, secao: str, linhas: list[dict], mids: list[int]) -> dict:
+def _troca_tabela(conn, secao: str, linhas: list[dict], mids: list[int],
+                  casadas: int | None = None) -> dict:
     """Deixa a tabela IGUAL ao dump para os municipios da carteira, numa
     transacao: insere o novo, atualiza SO o que mudou e apaga o que saiu da
-    fonte. Chamada so com a secao lida INTEIRA — secao que falhou nunca apaga."""
+    fonte. Chamada so com a secao lida INTEIRA — secao que falhou nunca apaga.
+
+    `casadas` = quantas linhas do dump casaram com a carteira, INCLUSIVE as que
+    nao sao guardadas (opcao B). Sem ele, conta-se `linhas`."""
     from psycopg2.extras import execute_values
     tabela, chave, campos = _TABELAS[secao]
     k_linha = _CHAVE_NA_LINHA[secao]
@@ -847,7 +885,7 @@ def _troca_tabela(conn, secao: str, linhas: list[dict], mids: list[int]) -> dict
            f"RETURNING (xmax = 0) AS inserida")
     cur = conn.cursor()
     try:
-        if not unicas:
+        if not (casadas if casadas is not None else len(unicas)):
             # Carteira inteira sem uma linha, e a tabela com linhas: e a chave
             # que deixou de casar (id_proposta_siconv mudou de formato, p.ex.),
             # nao o municipio que parou de pagar. Nada e apagado.
@@ -904,10 +942,13 @@ def grava(conn, c: Coleta, propostas: dict[str, tuple[int, str | None]]) -> dict
         finally:
             cur.close()
         gravado["arvore"] = {"total": len(linhas), "mudaram": len(mudou)}
-    for secao, linhas in (("licitacoes", c.licitacoes), ("pagamentos", c.pagamentos),
-                          ("liquidacoes", c.liquidacoes)):
+    for secao, linhas, conta in (("licitacoes", c.licitacoes, "n_lic"),
+                                 ("pagamentos", c.pagamentos, "n_pag"),
+                                 ("liquidacoes", c.liquidacoes, "n_dl")):
         if not c.falhas[secao]:
-            gravado[secao] = _troca_tabela(conn, secao, linhas, mids)
+            casadas = sum(ag[conta] for ag in c.agregados.values())
+            gravado[secao] = _troca_tabela(conn, secao, linhas, mids, casadas=casadas)
+            gravado[secao]["so_resumo"] = casadas - len(linhas)
     # As canceladas entram por IBGE, nao pela carteira: municipio sem nenhuma
     # proposta viva ainda pode ter cancelada.
     if not c.falhas["canceladas"]:
@@ -937,20 +978,27 @@ def _grava_data_carga(conn, data_carga: str | None) -> None:
         cur.close()
 
 
-def _carteira(cur) -> tuple[dict[str, tuple[int, str | None]], dict[str, int]]:
-    """As propostas no banco dos municipios ATIVOS, e os IBGEs deles."""
+def _carteira(cur) -> tuple[dict[str, tuple[int, str | None]], dict[str, int], set[str]]:
+    """As propostas no banco dos municipios ATIVOS, os IBGEs deles e as
+    propostas que NAO sao da prefeitura (`municipal IS FALSE` — so o resumo).
+    ⚠️ `IS FALSE`, e nao `NOT municipal`: NULO e "a fonte nao disse" e conta
+    como prefeitura, a mesma regra de `services/natureza.py`."""
     cur.execute("""
         SELECT p.id_proposta_siconv, p.municipio_id,
-               regexp_replace(coalesce(p.identificacao, ''), '\\D', '', 'g')
+               regexp_replace(coalesce(p.identificacao, ''), '\\D', '', 'g'),
+               p.municipal IS FALSE
           FROM transferegov_propostas p
           JOIN municipios m ON m.id = p.municipio_id AND m.active
          WHERE p.id_proposta_siconv IS NOT NULL AND p.id_proposta_siconv <> ''
     """)
-    props = {}
-    for idp, mid, cnpj in cur.fetchall():
+    props: dict[str, tuple[int, str | None]] = {}
+    fora: set[str] = set()
+    for idp, mid, cnpj, nao_e in cur.fetchall():
         props.setdefault(str(idp), (mid, cnpj or None))
+        if nao_e:
+            fora.add(str(idp))
     cur.execute("SELECT ibge_code, id FROM municipios WHERE active AND length(coalesce(ibge_code,'')) = 7")
-    return props, {str(i): mid for i, mid in cur.fetchall()}
+    return props, {str(i): mid for i, mid in cur.fetchall()}, fora
 
 
 def _log_ingest(conn, status: str, n: int, erro: str | None = None,
@@ -1007,7 +1055,7 @@ def ingest() -> int:
                 log.info("ultima rodada ha menos de %.0fh — pulando. TG_ARVORE_FORCE=1 forca.",
                          MIN_INTERVAL_H)
                 return 0
-        propostas, ibges = _carteira(cur)
+        propostas, ibges, fora = _carteira(cur)
         cur.close()
         # ⚠️ Fecha a transacao da leitura ANTES dos 5 min de coleta. Aberta, a
         # conexao fica "idle in transaction" segurando o vacuum, e o NOW() da
@@ -1018,9 +1066,10 @@ def ingest() -> int:
                         "transferegov_opendata")
             _log_ingest(conn, "success", 0, "carteira vazia")
             return 0
-        log.info("arvore: %d proposta(s) de %d municipio(s)", len(propostas), len(ibges))
+        log.info("arvore: %d proposta(s) de %d municipio(s); %d nao sao da prefeitura "
+                 "(so o resumo)", len(propostas), len(ibges), len(fora))
         try:
-            c = coleta(propostas, ibges)
+            c = coleta(propostas, ibges, so_resumo=fora)
             log.info("coleta em %.0fs — %d licitacao(oes), %d pagamento(s), %d liquidacao(oes), "
                      "%d cancelada(s)", time.time() - t0, len(c.licitacoes), len(c.pagamentos),
                      len(c.liquidacoes), len(c.canceladas))
