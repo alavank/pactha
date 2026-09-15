@@ -806,9 +806,9 @@ mesmo município são todas do FUNDO MUNICIPAL DA SAUDE (`12240183000100`). Assu
 qualquer um dos dois erraria em um dos módulos — e erraria calado, devolvendo lista
 vazia como se o município não tivesse nada. Por isso a fonte é que diz quem recebe.
 
-Custo: **2 requisições por município** mais 1 por plano para os relatórios de gestão —
-que preenchem um buraco conhecido do modelo, já que `prestacao_contas` é dropada a cada
-boot e hoje prestação de contas só existe como texto dentro de um campo de situação.
+Os relatórios de gestão preenchem um buraco conhecido do modelo, já que
+`prestacao_contas` é dropada a cada boot e hoje prestação de contas só existe como texto
+dentro de um campo de situação. Desde 15/09/2026 o coletor usa a API inteira (§1.25).
 
 ### Erro meu corrigido nesta sessão
 
@@ -1424,6 +1424,46 @@ Nova Serrana, Santa Maria e Monte Sião.
 - **Modal de detalhe** (`GET /api/parcerias/proposta/{id}`, inteiro do banco, gate de tela
   + município da linha), com as abas Proposta (com indicadores e programa), Plano de
   Trabalho, Execução, Conta e Extrato (com OPP), Análise e Emenda e Instrumento.
+
+## 1.25. Fundo a Fundo: a API oficial INTEIRA (15/09/2026)
+
+Terceira API da série (§1.23 Especiais, §1.24 Parcerias). Também não havia raspagem a
+trocar: o coletor usava 3 das 21 rotas (beneficiários só para achar CNPJ, planos e
+relatórios). **SUS não está nesta API** — os 125 programas são de SPPE, DIRPP, SENASP,
+MinC, FNDE e MCID; o `fns_faf` segue sendo o fundo a fundo da saúde.
+
+**Coleta (PR A), `ingestion/faf_planos.py`:**
+- **Beneficiários de programa** (tabela nova `faf_programas_beneficiarios`): quanto cada
+  programa destina ao município, **com ou sem plano enviado**. A consulta já era feita e
+  a resposta ia fora. Na capital ela traz o Estado e as secretarias estaduais, e não há
+  campo de esfera: `ente_municipal` decide pela raiz de CNPJ de plano municipal ou pelo
+  nome.
+- **Catálogo** (`faf_programas`, 125 linhas): órgão, fundo, ação orçamentária e a
+  **janela para enviar plano**, com o programa da Gestão Ágil aninhado.
+- **Árvore do plano** (`faf_planos_acao.detalhe`): metas → ações, destinação da despesa,
+  histórico da situação, parecer (→ analista), termo de adesão (→ histórico, DOU),
+  empenhos, relatório de gestão (→ **% de execução física por ação** → parecer →
+  analista). A árvore também grava `relatorios_gestao`; a listagem não busca mais.
+- **Contas** (`faf_contas`, uma linha por conta): saldo da fonte, extrato inteiro e, por
+  lançamento, as **subtransações — quem recebeu** (nome, CPF mascarado pela fonte, valor,
+  categoria). ⚠️ A mesma conta serve a vários planos (Goiânia: 5 planos em 1126-8216):
+  buscada uma vez por rodada, e o saldo do município soma por conta.
+- `resumo_da_conta` classifica o extrato sem acento (a fonte come acento em parte das
+  linhas): recebido por OB, estorno, movimento interno (aplicação/resgate, fora das
+  somas), saídas, **pago a beneficiários**, **devolvido à União** (GRU para a raiz
+  00394460) e não classificado (contado, nunca descartado).
+- `/data-atualizacao` → `fonte_atualizacao` (`transferegov_fundoafundo`); `faf_planos`
+  entrou no vigia.
+
+**O caso que resume o ganho, Nova Palma 22557 (MinC, Aldir Blanc):** R$ 55.543,38
+entraram por OB em 04/03/2026 e saíram em 7 TEDs identificados (associações culturais e
+pessoas) entre 29/05 e 31/08; sobram R$ 4.683,01 na conta. Em Palmas (7523), a OB emitida
+em lote aparece por empresa de transporte, com a OB cancelada que voltou e R$ 26.730,50
+devolvidos ao Tesouro por GRU. Tudo isso só se via logado como o ente.
+
+**Task `faf-planos`:** `FAF_TETO_TAREFA_S=3150` dentro de `timeout -k 30 3300`, timeout
+do Coolify 3420, nos seis workers (`scripts/agenda_noturna.py`). Freitas passou para 07:00
+UTC e Trust para 07:20 — com até 55 min, 09:00 e 09:30 passariam das 10:00 UTC.
 
 ## 2. ESTADO ATUAL (2026-09-04)
 

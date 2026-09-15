@@ -56,13 +56,13 @@ collectors already treat as "could not ask", never as absence.
 `tests/test_filtro_ignorado_em_silencio.py` parses the collectors and fails naming any
 IBGE/CNPJ query that forgot it.
 
-**Queries by parent id get a ceiling too once a child table is big.** `parcerias` and
-`faf_planos` still query their few children without one. The Transferência Especial
-tree (`transferegov_te.arvore_do_plano`) goes through `_pub_filhos`, which applies
-`_TETO_FILHOS` (5.000) and discards a tree with a missing middle page. The reason: an
-ignored child filter hits a national table of 730.455 lançamentos (3.653 pages)
-and would save it as one plano's bank statement. `tests/test_te_arvore.py` fails if the
-tree calls `_pub_todos` directly.
+**Queries by parent id get a ceiling too.** All three trees go through a child helper
+that applies a ceiling (5.000) and discards a tree with a missing middle page:
+`transferegov_te._pub_filhos`, `parcerias._filhos` and `faf_planos._filhos` (bank
+statement: 20.000). The reason: an ignored child filter hits a national table
+(730.455 lançamentos in Especiais, 1.149.632 in Fundo a Fundo) and would save it as
+one plano's bank statement. `test_te_arvore.py`, `test_parcerias_arvore.py` and
+`test_faf_arvore.py` fail if a tree calls `buscar`/`_pub_todos` directly.
 
 When adding a filter, prove it filters: send an impossible value. `9999999` (or id `0`)
 must return **0**, not everything. The 21 child filters of `/especiais` were proven this
@@ -115,6 +115,33 @@ way on 14/09/2026.
   `/distribuicao-recurso-proposta` came back empty (HTTP 200) during the source's reload,
   and the upsert wiped every parliamentarian. The upsert now `COALESCE`s instrument and
   emenda fields, and a run with ≥20 proposals and zero emendas is logged as `partial`.
+
+## Fundo a Fundo — traps measured on 15/09/2026 (`ingestion/faf_planos.py`)
+
+- **Not health.** The 125 programs are SPPE, DIRPP, SENASP, MinC, FNDE and MCID. SUS
+  fundo a fundo stays in `fns_faf` (ConsultaFNS).
+- **`codigo_ibge_municipio_ente_recebedor_plano_acao` returns HTTP 500** (06, 07 and
+  15/09). Entry is `/programas-beneficiarios` by IBGE → CNPJs → `/planos-acao` by CNPJ.
+- **The CNPJ filter is "contains"** (13 digits return 94 lançamentos); keep only the equal
+  CNPJ in memory. **`id_agencia_conta` is exact** (`2352-1165` → 0) and returns **400**
+  on a malformed value.
+- **The balance is nested:** `saldo_final_dado_bancario.saldo_final_gestao_financeira`,
+  not the openapi's `saldo_final_conta_plano_acao_dado_bancario` (`saldo_da_conta` reads
+  both). Credits minus debits is zero on the checking account — the money sits in the
+  automatic investment — so the balance is the source's, never derived.
+- **One account serves several plans** (Goiânia: 5 plans on 1126-8216). Accounts live in
+  `faf_contas`, fetched once per run; the município balance is summed per account.
+- **Account `NNNN-0`** = plan with no account opened: no statement to ask for.
+- **The statement eats accents** on some rows ("Emisso de Ordem Bancria"): classify by
+  accent-free prefixes (`classifica_lancamento`); unknown descriptions are counted in
+  `nao_classificado`, never dropped.
+- **A debit to CNPJ root 00394460 (Ministério da Fazenda) is a GRU** — money returned to
+  the Union (`devolvido_uniao`), not a beneficiary payment.
+- **Beneficiaries have no sphere field.** A capital's IBGE also returns the state and its
+  secretariats; `ente_municipal` keeps the CNPJ root of a municipal plan, or a name with
+  MUNICIP/PREFEITURA, and drops names with ESTADO/GOVERNO DO/DISTRITO FEDERAL.
+- `relatorios-gestao-analises-responsaveis` only filters by `id_relatorio_gestao_analise`
+  — the natural-looking `id_analise_relatorio_gestao` returns the national 22.182.
 
 ## Authenticated sources
 

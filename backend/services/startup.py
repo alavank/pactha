@@ -595,6 +595,12 @@ MIGRATION_FILES = [
     # municipio. ⚠️ DEPOIS de `add_parcerias.sql`, que cria a tabela — guardado
     # por `tests/test_migrations_ordem_tabela.py`.
     "add_parcerias_detalhe.sql",
+    # Fundo a Fundo pela API INTEIRA: a arvore de cada plano (metas, parecer,
+    # historico, termo de adesao, relatorio com % fisico), as CONTAS com extrato e
+    # quem recebeu, os beneficiarios de programa e o catalogo de programas.
+    # ⚠️ DEPOIS de `add_faf_planos_acao.sql`, que cria a tabela — guardado por
+    # `tests/test_migrations_ordem_tabela.py`.
+    "add_faf_detalhe.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",

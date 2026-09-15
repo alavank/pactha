@@ -97,10 +97,10 @@ def test_sem_relatorio_a_coluna_fica_NULA_e_nunca_vazia():
 
 
 def test_a_rodada_sem_relatorio_NAO_apaga_o_que_ja_estava_gravado():
-    """⭐ O COALESCE do upsert. A busca dos relatórios é a parte cara e a
-    primeira a falhar quando a fonte está lenta; sem esta proteção, uma rodada
-    ruim apagaria a prestação de contas de todos os planos — em silêncio, porque
-    gravar NULL sobre dado não levanta erro."""
+    """⭐ O COALESCE do upsert. Desde 15/09 a listagem nem busca relatório (a
+    árvore busca e grava na coluna) e passa NULO em todo plano; sem esta
+    proteção, cada rodada apagaria a prestação de contas de todos os planos — em
+    silêncio, porque gravar NULL sobre dado não levanta erro."""
     assert "coalesce(EXCLUDED.relatorios_gestao" in _SQL
 
 
@@ -147,10 +147,9 @@ def test_o_caminho_de_entrada_contorna_o_filtro_quebrado_da_fonte():
     (88488358000156), enquanto no módulo de Parcerias as propostas do mesmo
     município são todas do FUNDO MUNICIPAL DA SAUDE (12240183000100)."""
     import inspect
-    from ingestion.faf_planos import cnpjs_do_municipio
-    fonte = inspect.getsource(cnpjs_do_municipio)
-    assert "programas-beneficiarios" in fonte
-    assert "cnpj_beneficiario_programa" in fonte
+    from ingestion.faf_planos import beneficiarios_do_municipio, cnpjs_do_municipio
+    assert "programas-beneficiarios" in inspect.getsource(beneficiarios_do_municipio)
+    assert "cnpj_beneficiario_programa" in inspect.getsource(cnpjs_do_municipio)
 
 
 # ---------------------------------------------------------------------------

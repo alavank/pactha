@@ -119,6 +119,16 @@ CMD_CAGEC_FREITAS = (f"CAGEC_LOTE_MUNICIPIOS=22 flock -n -E 99 {TRAVA_CAGEC} "
                      f"timeout -k 30 2100 python -u ingestion/cagec_scraper.py {SUFIXO}")
 
 
+# FUNDO A FUNDO pela API inteira (15/09/2026): listagem + beneficiarios + a arvore
+# de cada plano com as contas (extrato e quem recebeu). Teto interno 3150 s dentro
+# do kill de 3300 (o codigo nunca pede mais do que a task concede), e o timeout do
+# Coolify em 3420 = kill + 120, a regra de ouro. Com ate 55 min de rodada, quem
+# comecava 09:00 (freitas) e 09:30 (trust) terminaria depois das 10:00 UTC.
+CMD_FAF = ("flock -n -E 99 /tmp/faf_planos.lock timeout -k 30 3300 env FAF_TETO_TAREFA_S=3150 "
+           f"python -u ingestion/faf_planos.py {SUFIXO}")
+TIMEOUT_FAF = 3420
+
+
 def troca_trava(de: str, para: str):
     """Transformacao do comando ATUAL: so troca a trava, o resto fica como esta."""
     return lambda cmd: cmd.replace(de, para)
@@ -150,6 +160,7 @@ PLANO: dict[str, dict[str, dict]] = {
         "queue-sigcon":      {"command": FILA_SIGCON},
         "cagec":             {"frequency": "0 22,23 * * *", "command": CMD_CAGEC_FREITAS, "timeout": 3420},
         "transparencia-mg":  {"frequency": "20 1,7 * * *"},
+        "faf-planos":        {"frequency": "0 7 * * *", "command": CMD_FAF, "timeout": TIMEOUT_FAF},
     },
     "trust": {
         "transferegov-lote": {"frequency": "5 0-4,6-9 * * *", "command": CMD_LOTE, "timeout": TIMEOUT_LOTE},
@@ -157,6 +168,7 @@ PLANO: dict[str, dict[str, dict]] = {
         "sigcon":            {"command": SIGCON_TRAVA},
         "queue-sigcon":      {"command": FILA_SIGCON},
         "cagec":             {"frequency": "30 22 * * *", "command": CAGEC_TRAVA},
+        "faf-planos":        {"frequency": "20 7 * * *", "command": CMD_FAF, "timeout": TIMEOUT_FAF},
     },
     "montesiao": {
         "transferegov-lote": {"frequency": "30 22 * * *", "command": CMD_LOTE, "timeout": TIMEOUT_LOTE},
@@ -164,12 +176,12 @@ PLANO: dict[str, dict[str, dict]] = {
         "sigcon":            {"command": SIGCON_TRAVA},
         "queue-sigcon":      {"command": FILA_SIGCON},
         "cagec":             {"frequency": "45 22 * * *", "command": CAGEC_TRAVA},
-        "faf-planos":        {"frequency": "5 8 * * *"},
+        "faf-planos":        {"frequency": "5 8 * * *", "command": CMD_FAF, "timeout": TIMEOUT_FAF},
     },
     "santamaria": {
         "transferegov-lote": {"frequency": "0 22 * * *", "command": CMD_LOTE, "timeout": TIMEOUT_LOTE},
         "transferegov":      {"command": TG_BASE},
-        "faf-planos":        {"frequency": "15 8 * * *"},
+        "faf-planos":        {"frequency": "15 8 * * *", "command": CMD_FAF, "timeout": TIMEOUT_FAF},
         # FPE atende seg-sab 7h-22h30 BRT; CADIN idem ate 22h30. 19h BRT cabe nos dois.
         "fpe-rs":            {"frequency": "14 22 * * 1-6"},
         "cadin-rs":          {"frequency": "10 22 * * *"},
@@ -177,7 +189,7 @@ PLANO: dict[str, dict[str, dict]] = {
     "novapalma": {
         "transferegov-lote": {"frequency": "0 23 * * *", "command": CMD_LOTE, "timeout": TIMEOUT_LOTE},
         "transferegov":      {"command": TG_BASE},
-        "faf-planos":        {"frequency": "45 8 * * *"},
+        "faf-planos":        {"frequency": "45 8 * * *", "command": CMD_FAF, "timeout": TIMEOUT_FAF},
         "fpe-rs":            {"frequency": "44 22 * * 1-6"},
         "cadin-rs":          {"frequency": "40 22 * * *"},
     },
@@ -185,7 +197,7 @@ PLANO: dict[str, dict[str, dict]] = {
         "transferegov-lote": {"frequency": "35 4,6-8 * * *", "command": CMD_LOTE, "timeout": TIMEOUT_LOTE},
         # 06:00 e nao 06:32: com kill em 30 min, 06:05 encostava no slot 06:35 do lote.
         "transferegov":      {"frequency": "0 6 * * *", "command": TG_BASE},
-        "faf-planos":        {"frequency": "55 8 * * *"},
+        "faf-planos":        {"frequency": "55 8 * * *", "command": CMD_FAF, "timeout": TIMEOUT_FAF},
         "fpe-rs":            {"frequency": "51 22 * * 1-6"},
         "cadin-rs":          {"frequency": "47 22 * * *"},
     },
