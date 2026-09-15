@@ -107,6 +107,99 @@ def test_rm_tela_e_ia_usam_as_funcoes_comuns():
 # ---------------------------------------------------------------------------
 # As chaves da raspagem
 # ---------------------------------------------------------------------------
+class _Cur:
+    def __init__(self, log):
+        self.log = log
+
+    def execute(self, sql, params=None):
+        self.log.append((sql, params))
+
+    def close(self):
+        pass
+
+
+class _Conn:
+    def __init__(self, log):
+        self.log = log
+
+    def cursor(self):
+        return _Cur(self.log)
+
+    def commit(self):
+        pass
+
+    def close(self):
+        pass
+
+
+def _roda_base(monkeypatch, listagem: str | None, opendata_ok: bool = True):
+    """Roda o `run()` da coleta base com tudo de fora simulado. Devolve
+    (SQLs gravados, se o PAC rodou, se o navegador abriu)."""
+    import asyncio
+    import psycopg2
+    import playwright.async_api as pw
+    from ingestion import (siconv_convenio_backfill, siconv_emenda_backfill, siconv_licitacao,
+                           transferegov_opendata, transferegov_pac)
+    from ingestion import transferegov_voluntarias as tv
+    sqls, estado = [], {"pac": False, "navegador": False}
+
+    def _open():
+        if not opendata_ok:
+            raise RuntimeError("dump fora do ar")
+        return 3198
+
+    async def _pac(*a, **k):
+        estado["pac"] = True
+        return 0
+
+    def _abre(*a, **k):
+        estado["navegador"] = True
+        raise RuntimeError("o navegador NAO devia abrir")
+
+    if listagem is None:
+        monkeypatch.delenv("TG_LISTAGEM_BASE", raising=False)
+    else:
+        monkeypatch.setenv("TG_LISTAGEM_BASE", listagem)
+    monkeypatch.setenv("TG_OPENDATA", "1")
+    monkeypatch.setattr(tv, "_municipios_pacta", lambda: [{"id": 1, "nome": "Arcos"}, {"id": 2, "nome": "Toledo"}])
+    monkeypatch.setattr(transferegov_opendata, "run", _open)
+    monkeypatch.setattr(siconv_emenda_backfill, "backfill_parlamentar", lambda **k: 0)
+    monkeypatch.setattr(siconv_convenio_backfill, "backfill", lambda **k: 0)
+    monkeypatch.setattr(siconv_licitacao, "coletar", lambda **k: 0)
+    monkeypatch.setattr(transferegov_pac, "run", _pac)
+    monkeypatch.setattr(psycopg2, "connect", lambda *a, **k: _Conn(sqls))
+    monkeypatch.setattr(pw, "async_playwright", _abre)
+    try:
+        asyncio.run(tv.run())
+    except RuntimeError:
+        pass
+    return sqls, estado["pac"], estado["navegador"]
+
+
+def test_a_rodada_base_nao_abre_o_navegador_por_padrao(monkeypatch):
+    """Medido em 15/09/2026: ~65 min de Chromium por noite para uma listagem que
+    o dado aberto já cobre (ver o comentário em `run()`). O padrão agora é pular."""
+    sqls, pac, navegador = _roda_base(monkeypatch, listagem=None)
+    assert navegador is False
+    assert pac is True, "o PAC roda depois das voluntárias, com ou sem listagem"
+    log = [p for s, p in sqls if "INSERT INTO ingestion_log" in s]
+    assert len(log) == 1 and log[0][0] == "success"          # o vigia cobra esta linha
+    assert log[0][1] == 2 and "TG_LISTAGEM_BASE=0" in log[0][2]
+
+
+def test_sem_dado_aberto_e_sem_listagem_a_rodada_e_erro(monkeypatch):
+    sqls, _, navegador = _roda_base(monkeypatch, listagem="0", opendata_ok=False)
+    assert navegador is False
+    log = [p for s, p in sqls if "INSERT INTO ingestion_log" in s]
+    assert log[0][0] == "erro" and "dado aberto falhou" in log[0][2]
+
+
+def test_listagem_base_volta_com_a_chave(monkeypatch):
+    """RESERVA: TG_LISTAGEM_BASE=1 volta ao caminho antigo, e o navegador abre."""
+    _, _, navegador = _roda_base(monkeypatch, listagem="1")
+    assert navegador is True
+
+
 def test_as_chaves_separam_opsobs_de_obras_e_licitacao_e_reserva():
     src = (BACKEND / "ingestion" / "transferegov_voluntarias.py").read_text(encoding="utf-8")
     # Licitação pela tela: só com TG_PROC_EXEC=1 (padrão desligado).

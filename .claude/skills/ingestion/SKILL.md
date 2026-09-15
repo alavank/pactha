@@ -221,7 +221,11 @@ Reads 50 of the zips and hangs everything on the proposals **already in the DB**
 - **Session scraping is reserve since 15/09/2026:**
   - `TG_NES=0` and `TG_OPS_OBS=0` in the six workers;
   - `TG_OBRAS=1` keeps obras, because ART/RT is not in the dump;
-  - licitações need `TG_PROC_EXEC=1`, which is off by default.
+  - licitações need `TG_PROC_EXEC=1`, which is off by default;
+  - the daily base `run()` no longer opens Chromium (`TG_LISTAGEM_BASE=1` brings it
+    back). It cost ~65 min/night for `possui_parecer` (no reader), SIAFI-legacy
+    proposals, and a situação ~19 h fresher than the dump. The lote still lists every
+    município in its rodízio.
 
 ## Authenticated sources
 
