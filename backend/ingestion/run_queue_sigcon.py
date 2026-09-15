@@ -92,6 +92,19 @@ def _run_sigcon_pipeline():
         backfill()
     except Exception as e:
         logger.warning(f"ckan backfill falhou: {e}")
+    # Empenhos/pagamentos do Estado pelo CSV da SEGOV — depois do backfill, que
+    # promove o nr_siafi da juncao. Auto-limitado a 1x/dia no proprio ingest().
+    try:
+        from ingestion.segov_pagamentos import ingest as _segov_ingest
+        _segov_ingest()
+    except Exception as e:
+        logger.warning(f"segov pagamentos falhou: {e}")
+    # Data e nº da OB pelos dumps da CGE — depois da SEGOV (que produz as NEs).
+    try:
+        from ingestion.cge_despesa_ob import ingest as _cge_ingest
+        _cge_ingest()
+    except Exception as e:
+        logger.warning(f"cge despesa ob falhou: {e}")
 
 
 def main():

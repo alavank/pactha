@@ -70,3 +70,58 @@ def por_falhas(gravados: int, falhas: int, rotulo: str = "item") -> tuple[str, s
     if falhas:
         return "partial", f"{falhas} {rotulo}(s) sem dado"
     return "success", None
+
+
+def segov_pagamentos(arquivos_ok: int, arquivos_total: int,
+                     siafis_nossos: int, siafis_casados: int) -> tuple[str, str | None]:
+    """Empenhos/pagamentos estaduais pelo CSV da SEGOV (segov_pagamentos.py).
+
+    Zero NÃO é cego: sem recurso no `package_show` => o CKAN mudou de layout
+    (error); nenhum CSV baixado => WAF/rede (error); havia convênios NOSSOS com
+    SIAFI e nenhum casou => a chave do CSV mudou (partial); parte do lote falhou
+    => partial com a conta. Tenant sem convênio com SIAFI é sucesso legítimo —
+    não há o que casar.
+
+    ⚠️ SEM PISO DE COBERTURA, de propósito: os CSVs cobrem só 2022 em diante,
+    e um tenant cheio de convênios de 2015-2021 casa POUCO sem que nada esteja
+    errado. Cobertura baixa não é sinal; ZERO com convênios nossos é. O coletor
+    loga "N de M casaram" para quem quiser olhar."""
+    if arquivos_total == 0:
+        return "error", "package_show sem recursos 'Pagamentos'/'Restos a Pagar' (layout do CKAN mudou?)"
+    if arquivos_ok == 0:
+        return "error", f"nenhum dos {arquivos_total} CSVs baixou (WAF/rede)"
+    if siafis_nossos and siafis_casados == 0:
+        return "partial", f"{siafis_nossos} convenios com SIAFI e 0 casaram o CSV (chave mudou?)"
+    if arquivos_ok < arquivos_total:
+        return "partial", f"{arquivos_total - arquivos_ok} de {arquivos_total} CSVs falharam"
+    return "success", None
+
+
+def cge_despesa_ob(arquivos_ok: int, arquivos_total: int,
+                   nes_nossas: int, nes_resolvidas: int,
+                   rps_nossos: int = 0, rps_resolvidos: int = 0) -> tuple[str, str | None]:
+    """OBs (data/nº) pelos dumps da CGE (cge_despesa_ob.py).
+
+    Sem recurso no package_show => layout do CKAN mudou (error); nenhum dump
+    baixou => WAF/rede (error); recurso ausente ou dump que falhou => partial
+    com a conta (um dm_tipo_documento sumido nao pode virar 'success' com zero
+    OB); havia NEs (ou RPs) nossas do ano e NENHUMA resolveu => a chave mudou
+    (partial). Sem NE nossa (segov_pagamentos ainda nao rodou) e sucesso
+    legitimo — nao ha o que resolver.
+
+    ⚠️ RP AMBIGUO NAO E PARTIAL. Algum resto a pagar sempre fica sem NE de
+    origem (16 de 160 no Estado, ambiguos de verdade) — cobrar 'partial' por
+    isso deixaria a fonte eternamente amarela e o watchdog (que so conta
+    success) a acusaria parada todo dia. So o ZERO estrutural pesa; a conta
+    vai no log da rodada."""
+    if arquivos_total == 0:
+        return "error", "package_show sem os dumps da CGE (despesa/restos_pagar — layout mudou?)"
+    if arquivos_ok == 0:
+        return "error", f"nenhum dos {arquivos_total} dumps baixou (WAF/rede)"
+    if arquivos_ok < arquivos_total:
+        return "partial", f"{arquivos_total - arquivos_ok} de {arquivos_total} dumps ausentes/falharam"
+    if nes_nossas and nes_resolvidas == 0:
+        return "partial", f"{nes_nossas} NEs da SEGOV e 0 resolveram em dm_empenho (chave mudou?)"
+    if rps_nossos and rps_resolvidos == 0:
+        return "partial", f"{rps_nossos} restos a pagar da SEGOV e 0 resolveram (chave mudou?)"
+    return "success", None

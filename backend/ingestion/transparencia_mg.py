@@ -183,7 +183,15 @@ def classificar(detalhe_ok: bool, tem_rotulo: bool, historico: str | None,
 # lista do que falta cobrar, que e exatamente o que o dono pediu para ver.
 # O proprio `ler_pagamentos` ja dizia isso ("ha estados intermediarios que NAO
 # sao pagamento") e o resto do codigo nao escutava.
-_PGTO_CONFIRMA = ("acatad",)                 # medido: "Acatada pelo banco"
+#
+# "ob emitida" (15/09/2026): o rotulo que `cge_despesa_ob.py` grava nas OBs
+# lidas do DADO ABERTO da CGE — a mesma base do portal, sem a situacao
+# bancaria. DECISAO DO DONO (opcao 1): a OB emitida no SIAFI-MG conta como
+# desembolso, e o rotulo diz o que falta ("confirmacao bancaria indisponivel").
+# O estorno vem com o MESMO prefixo e valor NEGATIVO, de proposito: confirmado
+# e negativo, ele abate o total — "estornad" em _PGTO_NEGA nao o alcanca porque
+# o rotulo escreve "estorno".
+_PGTO_CONFIRMA = ("acatad", "ob emitida")    # medido: "Acatada pelo banco"; CGE: "OB emitida (...)"
 _PGTO_NEGA = ("devolvid", "cancelad", "estornad", "rejeitad", "anulad")
 
 
@@ -232,8 +240,12 @@ def montar_pagamentos(linhas: list[dict]) -> dict:
                 desconhecido += float(v)
         if conf is None:
             tem_desconhecido = True
-        if conf is True:
-            # A data do ULTIMO desembolso e a da ultima OP QUE PAGOU.
+        # A data do ULTIMO desembolso e a da ultima OP QUE PAGOU. `v > 0`
+        # (15/09/2026): o estorno do dado aberto da CGE e confirmado e NEGATIVO
+        # — sem esta guarda a data do estorno virava "ultimo desembolso" (e
+        # "Data de pagamento" no export) de um dinheiro que nao ficou. As
+        # linhas do portal nunca sao negativas, entao nada muda para elas.
+        if conf is True and v is not None and float(v) > 0:
             ultima = l.get("data") or ultima
         obs.append({
             "data_emissao_ob": l.get("data"),

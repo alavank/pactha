@@ -291,6 +291,34 @@ def _classifica_parte(esfera: str, situacao: str | None, dt_fim: date | None, si
     return 1 if esfera == "federal" else 2
 
 
+def _em_cadastramento(situacao) -> bool:
+    """O convenio estadual esta em CADASTRAMENTO — o estagio do SIGCON em que a
+    proposta ainda esta sendo registrada: sem analise, sem celebracao, sem
+    dinheiro. NAO entra no RM, de nenhum ano, anual ou completo.
+
+    ⭐ Decisao do dono (15/09/2026). O RM de Araujos imprimia "Seapa - SIGCON ·
+    Convenio 002567/2026 · Valor global R$ 0,00 · Situacao atual: Cadastramento ·
+    sem alteracoes registradas no SIGCON" — um cadastro vazio numa lista de
+    instrumentos. A regra de ano (`_fed_retem`) so barrava pre-empenho de ANOS
+    ANTERIORES; para ela Cadastramento e 'ativa', e do ano corrente ENTRA. E o
+    comentario que dizia "convenio em Cadastramento nao tem numero nem vigencia
+    -> segue fora" estava errado: o 002567/2026 tem numero, com "/", o que ainda
+    o rotulava "Convenio".
+
+    ⚠️ A PALAVRA INTEIRA, sem acento e sem caixa — e NAO a substring "cadastr".
+    O backfill do CKAN insere convenio com a situacao VERBATIM do Estado,
+    "CONVENIO CADASTRADO" (sigcon_ckan_backfill._situacao_por_convenio), que e
+    instrumento CELEBRADO e com repasse; "cadastr" o derrubaria junto, calado.
+    None/vazio devolve False: ausencia de situacao nao classifica.
+
+    ⚠️ SO SOBRE A COLUNA CRUA `situacao`, nunca sobre a narrativa montada por
+    `_situacao_estadual`: a ultima alteracao de um convenio VIGENTE pode ser
+    "CADASTRAMENTO DA ALTERACAO" (termo aditivo em cadastro), e a regex casaria
+    — derrubando um instrumento em vigor por causa do aditivo."""
+    s = _sem_acento(str(situacao or "")).casefold()
+    return re.search(r"\bcadastramento\b", s) is not None
+
+
 def _fed_status(situacao: str | None) -> str:
     """Status FEDERAL CONFIÁVEL (pelo estado do sistema, ignorando o flag
     detalhe->>'Empenhado' que é furado — havia propostas só "Aprovadas" marcadas
@@ -706,6 +734,261 @@ def _chave_data_br(v) -> str:
     import re as _re
     m = _re.search(r"(\d{2})/(\d{2})/(\d{4})", str(v or ""))
     return (m.group(3) + m.group(2) + m.group(1)) if m else ""
+
+
+def _so_digitos(v) -> str:
+    """So os digitos de um numero de processo, para JUNTAR dois lados que
+    escrevem a mesma coisa com pontuacao propria ('23400.002301/2021-01' no
+    SIMEC; o dado aberto do TransfereGov traz a dele). Vazio para None."""
+    return re.sub(r"\D", "", str(v or ""))
+
+
+def _segov_resumo(linhas) -> dict:
+    """Funde os empenhos do Estado (CSV da SEGOV, `segov_convenios_empenhos`)
+    de UM convenio estadual num bloco que o item do RM consome.
+
+    `linhas` = [(numero_empenho, dt_empenho, vr_empenhado, vr_liquidado, vr_pago,
+                 tipo, ano_arquivo, uo_sigla), ...]
+
+    Devolve {} quando nao ha linha — e {} e "NAO CONSULTADO", nunca "nao houve
+    empenho": o CSV e do Estado inteiro e a linha so entra quando casou por SIAFI.
+
+    ⚠️ SO O QUANTO. O CSV nao tem data de pagamento nem OB, entao este bloco NAO
+    fabrica `desembolsos` (lancamentos com data): `valor_pago` vira numero e a
+    caixa do PDF imprime so "Desembolsado: R$ X". A data que existe — a do
+    REGISTRO DO EMPENHO — vai na linha das NEs, com o rotulo certo.
+
+    ⚠️ UMA NE E UMA LINHA, e o ano e o DA NOTA. A mesma NE aparece em DOIS
+    arquivos da SEGOV — pagamento{ano} no exercicio em que foi empenhada e
+    pagamentorp{ano+1} quando o pago vira restos a pagar (medido em 15/09/2026:
+    99 das 160 linhas do rp2026 sao NEs de 2025 que tambem estao no pg2025).
+    Uma linha por arquivo rotulava a NE 634/2025 como "NE 634/2025 ... pago
+    R$ 0,00; NE 634/2026 (restos a pagar) ... pago R$ 99.932,16" — duas notas
+    de dois anos onde ha uma. Aqui as linhas de uma mesma (numero, UO, ano da
+    nota) se FUNDEM, o ano sai de `dt_empenho` (o do arquivo so na falta), e o
+    exercicio do RP fica entre parenteses ao lado do pago. As SOMAS nao mudam.
+
+    `valor_empenhado` fica None quando NENHUMA linha trouxe empenhado (so restos
+    a pagar, que nao tem a coluna): None e "nao medido" e o PDF omite a linha,
+    em vez de imprimir R$ 0,00 sobre um RP que e empenho por definicao."""
+    emp = liq = pago = 0.0
+    tem_emp = False
+    notas: dict = {}   # (numero, uo, ano da nota) -> acumulador, na ordem de chegada
+    n = 0
+    for l in (linhas or []):
+        try:
+            numero, dt, vr_e, vr_l, vr_p, tipo, ano, uo = (list(l) + [None] * 8)[:8]
+        except TypeError:
+            continue
+        n += 1
+        if vr_e is not None:
+            emp += _num0(vr_e)
+            tem_emp = True
+        liq += _num0(vr_l)
+        pago += _num0(vr_p)
+        ano_nota = dt.year if hasattr(dt, "year") else ano
+        k = (str(numero or "").strip(), str(uo or "").strip(), ano_nota)
+        a = notas.setdefault(k, {"emp": None, "pago": None, "dt": None, "rp": []})
+        if vr_e is not None:
+            a["emp"] = _num0(a["emp"]) + _num0(vr_e)
+        if vr_p is not None:
+            a["pago"] = _num0(a["pago"]) + _num0(vr_p)
+        if a["dt"] is None and dt:
+            a["dt"] = dt
+        if tipo == "rp":
+            a["rp"].append((ano, _num0(vr_p)))
+    if not n:
+        return {}
+    nes: list[str] = []
+    for (numero, _uo, ano_nota), a in notas.items():
+        partes = [f"NE {numero}/{ano_nota}" if ano_nota else f"NE {numero}"]
+        if a["emp"] is not None:
+            partes.append(_moeda_br(a["emp"]))
+        dt = a["dt"]
+        dts = dt.strftime("%d/%m/%Y") if hasattr(dt, "strftime") else str(dt or "").strip()
+        if dts:
+            partes.append(f"empenhado em {dts}")
+        if a["pago"] is not None:
+            txt = f"pago {_moeda_br(a['pago'])}"
+            rp = [(ano_rp, v) for ano_rp, v in a["rp"] if v]
+            if rp:
+                txt += " (" + ", ".join(f"{_moeda_br(v)} em restos a pagar {ano_rp}"
+                                        for ano_rp, v in rp) + ")"
+            partes.append(txt)
+        nes.append(" — ".join(partes))
+    return {
+        "valor_empenhado": round(emp, 2) if tem_emp else None,
+        "valor_liquidado": round(liq, 2),
+        "valor_pago": round(pago, 2),
+        "nes": "; ".join(nes),
+        "_qtd": n,
+    }
+
+
+def _segov_campos(sg: dict, mg_consultado: bool) -> dict:
+    """Chaves do item estadual vindas da SEGOV. Vazio sem dado.
+
+    `valor_desembolsado` SO quando o Joomla (Transparencia MG) NAO respondeu: la
+    ha data/OB/situacao por ordem e a caixa de desembolso ja e desenhada por
+    eles; sobrescrever o total pelo CSV misturaria duas medicoes no mesmo item.
+    `valor_empenhado`/`nes`/`empenhado` vem sempre daqui — o Joomla nao os grava
+    no convenio.
+
+    `empenhado` so afirma "Sim": a ausencia de linha no CSV nao prova "Nao"
+    (mesma disciplina de rm_pdf, que OMITE a linha em vez de negar)."""
+    if not sg:
+        return {}
+    out: dict = {}
+    if sg.get("nes"):
+        out["nes"] = sg["nes"]
+    if sg.get("valor_empenhado") is not None:
+        out["valor_empenhado"] = sg["valor_empenhado"]
+        if sg["valor_empenhado"] > 0:
+            out["empenhado"] = "Sim"
+    else:
+        out["valor_empenhado"] = None
+    if not mg_consultado:
+        out["valor_desembolsado"] = sg.get("valor_pago")
+    return out
+
+
+def _complemento_segov(sg: dict, mg_pg: dict, mg_des: dict) -> dict:
+    """O que a SEGOV diz que foi pago ALEM do que as OBs da CGE ja mostram.
+
+    Medido em 15/09/2026 nos dumps reais: NE a NE, a soma das OBs da CGE bate
+    com o `valor_pago` da SEGOV em 4.866 de 4.888. (As 22 que nao batiam eram
+    NEs ERRADAS do resolver antigo — candidato unico aceito sem conferir o
+    favorecido —, corrigidas no coletor; nao eram atraso.) O que RESTA de
+    diferenca legitima e o atraso do dump da CGE, que publica com dados de 2 a
+    5 dias antes enquanto a SEGOV e do dia, e a NE que o coletor nao conseguiu
+    resolver (ambigua/sem candidato: 229 de 5.117). Nos dois casos a SEGOV diz
+    "pago" mais do que as OBs listadas, e o marcador ficava para tras.
+
+    ⚠️ NAO se troca o total por um numero de outra origem: a diferenca entra
+    na caixa como uma LINHA PROPRIA, rotulada, sem data nem nº de OB (que a
+    SEGOV nao tem), e o total sobe junto — cabecalho, lista e marcador seguem
+    consistentes entre si, e o leitor ve de onde veio cada parcela. O rotulo
+    descreve o FATO (pago segundo a SEGOV, OB sem nº/data no dump), nao a
+    causa — o codigo nao distingue atraso de NE nao resolvida, e afirmar a
+    causa seria afirmar o nao medido. Quando a OB chegar, a linha some sozinha.
+
+    Vazio quando: nao ha SEGOV; a CGE/Joomla nao respondeu ou esta incerta
+    (`_incerto` — ai o RM cala, como sempre); ou a SEGOV nao diz mais que a
+    CGE (CGE mais fresca, estorno, ou iguais)."""
+    if not sg or not mg_pg or not mg_pg.get("_consultado") or mg_pg.get("_incerto"):
+        return {}
+    pago_segov = _num0(sg.get("valor_pago"))
+    pago_cge = _num0(mg_pg.get("valor_desembolsado"))
+    diff = round(pago_segov - pago_cge, 2)
+    if diff <= 0.01:
+        return {}
+    lanc = list((mg_des or {}).get("desembolsos") or [])
+    lanc.append({
+        "data": "",
+        "valor": diff,
+        "numero_ob": "",
+        "situacao": "pago segundo a SEGOV — OB sem nº/data no dump da CGE",
+    })
+    return {"valor_desembolsado": round(pago_cge + diff, 2), "desembolsos": lanc}
+
+
+def _simec_termos_mapa(linhas) -> dict:
+    """{digitos do processo: termo} a partir das linhas de `simec_termos`
+    (processo, nr_documento, tipo_documento, tipo_objeto, dt_vigencia, valor_termo,
+     valor_empenhado, valor_pago, saldo_bancario, prestacao_contas).
+
+    Termo sem processo nao entra (nao ha como casa-lo). Processo REPETIDO (o
+    portal lista o mesmo TC de novo no bloco de aditivos) fica com a linha de
+    MAIOR pago — a leitura mais recente do mesmo instrumento."""
+    out: dict = {}
+    for l in (linhas or []):
+        try:
+            (processo, nr_doc, tipo_doc, tipo_obj, dt_vig, v_termo,
+             v_emp, v_pago, saldo, pc) = (list(l) + [None] * 10)[:10]
+        except TypeError:
+            continue
+        k = _so_digitos(processo)
+        if not k:
+            continue
+        tc = {
+            "processo": str(processo or "").strip(),
+            "nr_documento": str(nr_doc or "").strip(),
+            "tipo_documento": tipo_doc or "",
+            "tipo_objeto": tipo_obj or "",
+            "dt_vigencia": dt_vig,
+            "valor_termo": v_termo,
+            "valor_empenhado": v_emp,
+            "valor_pago": v_pago,
+            "saldo_bancario": saldo,
+            "prestacao_contas": str(pc or "").strip(),
+        }
+        if k not in out or _num0(v_pago) > _num0(out[k].get("valor_pago")):
+            out[k] = tc
+    return out
+
+
+def _simec_na_linha(tc, vd_siconv) -> dict:
+    """O pago do SIMEC/PAR na PROPRIA linha da voluntaria (a creche 932836/2021).
+
+    Pedido do dono (15/09/2026): "da creche ainda falta o valor que ja foi pago,
+    esta no SIMEC" — e ele quer ve-lo na linha da creche, nao so no item
+    separado do Termo de Compromisso. A creche vem do SICONV com Desembolsado
+    R$ 0,00 porque o FNDE paga o PAR pelo SIMEC, nao por OB do SICONV.
+
+    A JUNCAO E PELO Nº DO PROCESSO (SEI), digitos apenas: o TransfereGov guarda
+    `numero_processo` (do dado aberto diario, NR_PROCESSO — "numero interno do
+    processo", pelo dicionario do SICONV) e o SIMEC guarda `processo`. No SIMEC
+    a creche e 23400.002301/2021-01 (medido: simec_termos id 6); que o SICONV
+    grave o MESMO numero na 059522/2021 e HIPOTESE ate a primeira conferencia
+    em producao — o repo nao tem esse valor. Sem processo igual NAO se junta:
+    casar por municipio+objeto e hipotese pior, e "juntar por hipotese vincula
+    pagamento ao convenio errado, que e pior do que nao vincular"
+    (add_transparencia_mg_empenhos.sql). O builder LOGA quando ha termo com
+    processo e nenhuma voluntaria casou — o falso negativo nao pode ser mudo.
+
+    Devolve {} sem termo. Com termo:
+      - `simec_pagamento`: a frase (empenhado NO SIMEC/pago/saldo + TC + processo)
+        — "no SIMEC" no rotulo porque a mesma linha ja imprime o "Valor
+        empenhado" das NEs do SICONV, e os dois numeros DIFEREM (R$ 819 mil x
+        R$ 1,87 mi na creche): sem a origem, o leitor ve contradicao;
+      - `valor_desembolsado`: o pago do SIMEC, SO quando o SICONV nao mediu
+        desembolso (None ou 0) e o SIMEC tem pago > 0. Onde a OB do SICONV
+        existe, ela e a medicao e fica. E, no mesmo gesto, `valor_a_desembolsar`
+        vira None — ver o comentario no corpo."""
+    if not tc:
+        return {}
+    pago = _money(tc.get("valor_pago"))
+    emp = _money(tc.get("valor_empenhado"))
+    saldo = _money(tc.get("saldo_bancario"))
+    partes = []
+    if emp is not None:
+        partes.append(f"empenhado no SIMEC {_moeda_br(emp)}")
+    if pago is not None:
+        partes.append(f"pago {_moeda_br(pago)}")
+    if saldo is not None:
+        partes.append(f"saldo bancário {_moeda_br(saldo)}")
+    ref = []
+    if tc.get("nr_documento"):
+        ref.append(f"TC {tc['nr_documento']}")
+    if tc.get("processo"):
+        ref.append(f"processo {tc['processo']}")
+    frase = " · ".join(partes)
+    if ref:
+        frase = (frase + " — " if frase else "") + ", ".join(ref)
+    if tc.get("prestacao_contas"):
+        frase += f" · prestação de contas: {tc['prestacao_contas']}"
+    out = {"simec_pagamento": frase}
+    if (pago or 0) > 0 and not (vd_siconv or 0):
+        out["valor_desembolsado"] = pago
+        # ⚠️ E ZERA o "a desembolsar" do SICONV no mesmo gesto. Sem isto a caixa
+        # do PDF imprimia "Desembolsado: R$ 572.978,05 · A desembolsar:
+        # R$ 3.819.853,65" — o pago do SIMEC ao lado do saldo do SICONV, somando
+        # mais que o valor global do instrumento, num documento que CONGELA em
+        # rm_relatorios.conteudo. Duas medicoes nao dividem a mesma caixa (a
+        # mesma regra de _segov_campos no estadual). Nao se recalcula a partir
+        # do valor do termo: seria uma terceira fonte na mesma linha.
+        out["valor_a_desembolsar"] = None
+    return out
 
 
 def _licitacao_aceita(processo_execucao) -> bool:
@@ -1396,7 +1679,7 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
         Selecao vazia deixa tudo passar, entao o RM completo sai identico ao de
         hoje."""
         if not fonte_no_escopo(fontes_filtro, str(item.get("fonte") or "")):
-            return
+            return False
         # ⭐ RECORTE POR ESTAGIO (pagas / pendentes / todas) — pedido do dono,
         # 26/08/2026. Fica AQUI pelos MESMOS tres motivos do recorte por consulta
         # logo acima: sao onze insercoes e oito fontes, um `continue` no topo de
@@ -1421,9 +1704,9 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
         _pago = item.pop("_pago", pago)
         if estagio_filtro and _pago is not None:
             if estagio_filtro == "pagas" and not _pago:
-                return
+                return False
             if estagio_filtro == "pendentes" and _pago:
-                return
+                return False
         # PADRONIZACAO DE MAIUSCULAS — PONTO UNICO (services/texto_rm).
         #
         # Todas as fontes (SIGCON, FNS individuais, FNS fallback, voluntarias,
@@ -1454,6 +1737,11 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
         if ano and not item.get("ano_item"):
             item["ano_item"] = int(ano)
         p["secoes"][secao][orgao].append(item)
+        # Devolve se o item ENTROU. E o que permite marcar "ja exibido" so do
+        # que saiu de fato: um conjunto `_*_ja_exibidos` alimentado ANTES do
+        # recorte por estagio suprimia o item irmao (o termo do SIMEC) de um RM
+        # "pagas" em que a voluntaria nem tinha entrado — o pago sumia dos dois.
+        return True
 
     mun = (await db.execute(
         select(Municipio).where(Municipio.id == municipio_id)
@@ -1497,6 +1785,23 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
            AND pagamentos IS NOT NULL
     """), {"mid": municipio_id})).all():
         _mg.setdefault(_cid, []).append(_pg)
+    # EMPENHOS DO ESTADO pelo DADO ABERTO da SEGOV (segov_convenios_empenhos):
+    # o QUANTO empenhado/liquidado/pago por NE, chaveado por SIAFI. E o plano B
+    # do Joomla acima, que da 403 na VPS — em producao e o que efetivamente
+    # responde. Uma consulta por municipio, pela mesma razao do `_mg`.
+    # Best-effort: tenant cujo boot ainda nao rodou a migration segue sem.
+    _segov: dict = {}
+    try:
+        for _r in (await db.execute(text("""
+            SELECT convenio_id, numero_empenho, dt_empenho, vr_empenhado,
+                   vr_liquidado, vr_pago, tipo, ano_arquivo, uo_sigla
+              FROM segov_convenios_empenhos
+             WHERE municipio_id = :mid AND convenio_id IS NOT NULL
+             ORDER BY ano_arquivo, tipo, numero_empenho
+        """), {"mid": municipio_id})).all():
+            _segov.setdefault(_r[0], []).append(tuple(_r[1:]))
+    except Exception as ex:
+        logger.warning(f"RM: segov_convenios_empenhos indisponivel p/ {municipio_id}: {str(ex)[:120]}")
 
     rs = await db.execute(
         select(ConvenioEstadual).where(ConvenioEstadual.municipio_id == municipio_id)
@@ -1652,17 +1957,27 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             continue
 
         # === SIGCON-MG (estadual) -> PARTE 2 ===
+        # ⭐ CADASTRAMENTO NAO ENTRA — em nenhum relatorio, de nenhum ano (dono,
+        # 15/09/2026). E o estagio em que a proposta ainda esta sendo registrada
+        # no SIGCON: sem instrumento de verdade, sem valor, sem alteracao. A
+        # regra de ano logo abaixo so barrava pre-empenho de anos ANTERIORES; o
+        # cadastramento do ano corrente (002567/2026, R$ 0,00) passava e saia
+        # impresso como "Convenio". ANTES do `_fed_retem` de proposito: e um
+        # corte de ESTAGIO, nao de ano. Ver _em_cadastramento.
+        if _em_cadastramento(c.situacao):
+            continue
         # Mesma regra de ANO do federal: as que NAO foram para frente
-        # (cadastramento / analise celebracao / cancelada) de anos anteriores NAO
-        # entram no relatorio do ano de referencia; avancadas (em execucao / em
-        # vigor / empenhada) e concluidas (encerrada / prestacao) permanecem.
+        # (analise celebracao / cancelada) de anos anteriores NAO entram no
+        # relatorio do ano de referencia; avancadas (em execucao / em vigor /
+        # empenhada) e concluidas (encerrada / prestacao) permanecem.
         ano_est = c.ano or _ano_de(nr_instr, nr_proposta, c.nr_sigcon)
         # `celebrado` + `dt_fim` vem ANTES do filtro: em "todos os anos", o que
         # resgata pre-empenho antiga e ter VIRADO INSTRUMENTO e a vigencia ainda
         # correr. `nr_instr` e o mesmo numero que decide `tipo_label` logo abaixo
         # ("Convenio" x "Proposta") — quem la ja e Proposta, aqui ja e barrado.
-        # Convenio em "Cadastramento" nao tem numero nem vigencia -> segue fora,
-        # que e exatamente o caso que a regra original queria barrar.
+        # ⚠️ "Convenio em Cadastramento nao tem numero nem vigencia -> segue fora"
+        # ERA FALSO (o 002567/2026 tem numero com "/"): e o corte explicito acima,
+        # e nao esta regra, que o barra.
         if not _fed_retem(ano_est, ano_emissao, c.situacao, completo,
                           anos_sel=anos_filtro, celebrado=bool(nr_instr),
                           dt_fim=(c.dt_vigencia_atual or c.dt_vigencia_final)):
@@ -1702,6 +2017,22 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
         # pagamento" do pedido). `{}` quando nao ha nada consultado, e ai a caixa
         # nao aparece.
         _mg_des = _desembolso_ops_obs(_mg_pg) if _mg_pg else {}
+        # SEGOV (dado aberto) para ESTE convenio. ESTAGIO DO DINHEIRO: o Joomla
+        # (OB a OB) quando respondeu; senao a SEGOV (o total por NE), em que
+        # "pode desembolsar" = ha empenho no CSV. Sem nenhum dos dois, cala.
+        _sg = _segov_resumo(_segov.get(c.id))
+        # O atraso do dump da CGE: a SEGOV pode registrar pago ALEM das OBs ja
+        # publicadas. A diferenca entra como linha propria na caixa e no total
+        # (ver _complemento_segov) — vazio quando nao ha o que complementar.
+        _compl = _complemento_segov(_sg, _mg_pg, _mg_des)
+        if _mg_pg.get("_consultado"):
+            _pode_est = not _mg_pg.get("_incerto")
+            _vd_est = _compl.get("valor_desembolsado", _mg_pg.get("valor_desembolsado"))
+        elif _sg:
+            _pode_est = (_sg.get("valor_empenhado") or 0) > 0
+            _vd_est = _sg.get("valor_pago")
+        else:
+            _pode_est, _vd_est = False, None
         add_item(parte, secao, orgao, {
             # ⭐ Marca o ESTÁGIO na origem, para o recorte pagas/pendentes
             # poder existir. `add_item` consome e REMOVE a chave — ela nunca
@@ -1741,8 +2072,7 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             # continuar valendo alguma coisa quando ele APARECE.
             "situacao_atual": _situacao_com_marcas(
                 _situacao_estadual(c.situacao, raw, c.qt_alteracoes), False,
-                bool(_mg_pg.get("_consultado")) and not _mg_pg.get("_incerto"),
-                _mg_pg.get("valor_desembolsado")),
+                _pode_est, _vd_est),
             # ⚠️ A situacao CRUA da fonte, ao lado da enriquecida. `situacao_atual`
             # passou a carregar a NARRATIVA da ultima alteracao, e quem CLASSIFICA
             # (rm_export._e_pendencia) nao pode ler narrativa: uma alteracao
@@ -1756,6 +2086,13 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             # com nenhuma acima, mas a ordem torna visivel que este bloco e o
             # ULTIMO a falar sobre dinheiro no item.
             **_mg_des,
+            # O que a SEGOV diz pago alem das OBs do dump (atraso da CGE): a
+            # linha extra na caixa e o total corrigido. DEPOIS de `**_mg_des`.
+            **_compl,
+            # SEGOV (dado aberto): NEs, valor empenhado, "Empenhado: Sim" e — so
+            # quando o Joomla nao respondeu — o total pago em `valor_desembolsado`.
+            # DEPOIS de `**_mg_des` de proposito: ver _segov_campos.
+            **_segov_campos(_sg, bool(_mg_pg.get("_consultado"))),
             "fonte": "sigcon",
             "fonte_ref": str(c.id),
         }, ano=ano_est)
@@ -1849,7 +2186,13 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
                -- (row[34] — a lista tem teto). Mandam sobre row[21]/row[16]:
                -- ver `voluntarias_dump.processo_execucao_preferido`.
                arvore->'processo_execucao',
-               arvore->'_resumo'->'n_licitacoes'
+               arvore->'_resumo'->'n_licitacoes',
+               -- Nº DO PROCESSO (SEI), do dado aberto diario (NR_PROCESSO). E a
+               -- chave que casa a voluntaria com o Termo de Compromisso do
+               -- SIMEC/PAR (`simec_termos.processo`) — a creche 932836/2021 e o
+               -- caso. ULTIMA coluna (row[35]), pela mesma razao das onze acima:
+               -- entrou DEPOIS das duas do dump, no merge com o PR 4.
+               numero_processo
         FROM transferegov_propostas WHERE municipio_id = :m
         -- ⚠️ SO A PREFEITURA entra no RM (15/09/2026). O filtro por IBGE traz o
         -- que esta sediado na cidade — o convenio do Estado de Goias nao e
@@ -1861,6 +2204,24 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
     # e vigencia) e outra como item do Novo PAC (que e so a etapa da selecao).
     # Preenchido aqui e consumido no bloco do PAC, mais abaixo — a ordem importa.
     _pac_ja_exibidos: set[str] = set()
+    # TERMOS DE COMPROMISSO do SIMEC/PAR deste municipio, por Nº DO PROCESSO
+    # (digitos). Quem casar com uma voluntaria pelo `numero_processo` (row[35])
+    # tem o pago do SIMEC impresso NA LINHA DA VOLUNTARIA (ver _simec_na_linha)
+    # e NAO sai de novo como item separado la embaixo — mesma disciplina do
+    # `_pac_ja_exibidos`, inclusive a de so contar como exibido o que pode
+    # entrar neste relatorio. Best-effort: sem a tabela, segue sem juncao.
+    _simec_tc: dict = {}
+    try:
+        _simec_tc = _simec_termos_mapa((await db.execute(text("""
+            SELECT processo, nr_documento, tipo_documento, tipo_objeto, dt_vigencia,
+                   valor_termo, valor_empenhado, valor_pago, saldo_bancario,
+                   prestacao_contas
+              FROM simec_termos WHERE municipio_id = :m
+        """), {"m": municipio_id})).all())
+    except Exception as ex:
+        logger.warning(f"RM: simec_termos (juncao por processo) indisponivel p/ "
+                       f"{municipio_id}: {str(ex)[:120]}")
+    _simec_ja_exibidos: set[str] = set()
     for row in vol.fetchall():
         sit = row[3] or ""
         # O DESEMBOLSO: o do dump (row[32]) quando existe, com NS/OP/situacao da
@@ -2007,8 +2368,13 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
         # `_ne` (rica ou fallback aberto): quando o dado aberto ja mostra a NE, o
         # relatorio deixa de marcar "PENDENTE DE EMPENHO" indevidamente — antes
         # calava por falta de dado; agora cala porque SABE que ha empenho.
+        # O TERMO DO SIMEC/PAR casado pelo nº do processo (row[35]) — resolvido
+        # ANTES de qualquer marcador de empenho: se o SIMEC diz que ha empenho,
+        # nao se imprime "Pendente de empenho" ao lado dele.
+        _tc = _simec_tc.get(_so_digitos(row[35])) if row[35] else None
+        _tc_empenhado = bool(_tc and (_money(_tc.get("valor_empenhado")) or 0) > 0)
         _pend_empenho = (_e_termo_compromisso(row[28]) and _sem_empenho(_ne)
-                         and not (_money(row[29]) or 0))
+                         and not (_money(row[29]) or 0) and not _tc_empenhado)
         if _pend_empenho:
             # Nao imprimir "Empenhado: Sim" ao lado de "PENDENTE DE EMPENHO" no
             # MESMO item: o Sim vem do ciclo e aqui existe MEDICAO dizendo que
@@ -2020,15 +2386,25 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
         _des = _desembolso_ops_obs(_ops_vol)
         _vd = _des.get("valor_desembolsado")
         _aceita = _licitacao_aceita(_pe_lista)
+        # O PAGO DO SIMEC/PAR NA LINHA (a creche). Onde o SICONV nao mediu
+        # desembolso, o pago do SIMEC vira o `valor_desembolsado` e o marcador
+        # "Desembolsado: R$ ..." — senao a creche paga pelo FNDE seguia impressa
+        # como "R$ 0,00". E com empenho no SIMEC o dinheiro ja deveria estar
+        # saindo: entra no `pode_desembolsar`, como a licitacao aceita entra na
+        # voluntaria. O "ja exibido" e marcado DEPOIS do add_item, la embaixo.
+        _tc_campos = _simec_na_linha(_tc, _vd)
+        if "valor_desembolsado" in _tc_campos:
+            _vd = _tc_campos["valor_desembolsado"]
+        _pode_vol = _aceita or _tc_empenhado
         # Composicao em funcao PURA (ver _situacao_com_marcas): com
         # `_pend_empenho` falso a string sai identica a de antes.
-        sit_exibida = _situacao_com_marcas(sit, _pend_empenho, _aceita, _vd)
+        sit_exibida = _situacao_com_marcas(sit, _pend_empenho, _pode_vol, _vd)
         # O NUMERO do convenio com o ANO DA PROPOSTA ao lado ("981397 /2025"): o
         # numero do instrumento sozinho nao diz de que ano ele e.
         _num_exib = row[2] or row[1] or ""
         if row[2] and row[1] and "/" in str(row[1]):
             _num_exib = f"{row[2]} /{str(row[1]).split('/')[-1].strip()}"
-        add_item(parte, secao, orgao, {
+        _entrou = add_item(parte, secao, orgao, {
             # ⭐ Marca o ESTÁGIO na origem, para o recorte pagas/pendentes
             # poder existir. `add_item` consome e REMOVE a chave — ela nunca
             # chega ao JSONB do relatório.
@@ -2077,6 +2453,10 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             "clausula_dt": _iso(clausula_dt) if clausula_dt else "",
             # DESEMBOLSO: valores + lancamentos (data/valor/OB) p/ o relatorio.
             **_des,
+            # O pago do SIMEC/PAR (creche): `simec_pagamento` e, so onde o
+            # SICONV nao mediu, o `valor_desembolsado`. DEPOIS de `**_des` de
+            # proposito: e ele quem vence quando as duas chaves existem.
+            **_tc_campos,
             # Processo de Execução (Licitações): só relevante p/ contratação Normal.
             # 0 = Normal SEM processo/licitação registrado (flag); N>0 = tem; None = n/c.
             "processo_execucao_qtd": _pe_qtd,
@@ -2112,6 +2492,20 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             "fonte": "voluntaria",
             "fonte_ref": row[1],
         }, ano=ano_prop)
+        # ⚠️ SO DEPOIS DE O ITEM ENTRAR. `add_item` devolve False no recorte
+        # por consulta e por ESTAGIO; marcar antes suprimia o termo do SIMEC de
+        # um RM "pagas" em que a creche (nao paga no SICONV) nem tinha entrado —
+        # o pago do FNDE sumia dos DOIS itens. O recorte de ANO (`_no_escopo`,
+        # no fim) e antecipado aqui pelo mesmo criterio dele: sem ano, entra.
+        if (_entrou and _tc and (not anos_filtro or ano_prop is None
+                                 or ano_prop in anos_filtro)):
+            _simec_ja_exibidos.add(_so_digitos(row[35]))
+    # O falso negativo da juncao nao pode ser mudo: ha termo do SIMEC com
+    # processo neste municipio e nenhuma voluntaria casou e entrou. O primeiro
+    # suspeito e `numero_processo` vazio ou diferente no dado aberto.
+    if _simec_tc and not _simec_ja_exibidos:
+        logger.info(f"RM {municipio_id}: {len(_simec_tc)} termo(s) do SIMEC com processo e "
+                    f"nenhuma voluntaria casou por numero_processo (e entrou no relatorio)")
 
     # === Transferencia Especial / Plano de Acao (Emenda Pix) — federal ===
     # Fonte PERSISTIDA: tabela transferegov_te, alimentada pelo coletor do worker
@@ -2339,6 +2733,20 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
     # As liberacoes (simec_par_liberacoes) sao os PAGAMENTOS; aqui entra o termo em
     # si — processo, tipo, vigencia e valor —, coletado de carregaTermos.php
     # (ingestion/simec_termos.py). Best-effort: tenant sem a tabela segue sem MEC.
+    #
+    # ⚠️ Termo que JA SAIU NA LINHA DA VOLUNTARIA (casado pelo nº do processo,
+    # `_simec_ja_exibidos`) NAO sai de novo aqui — seria o mesmo dinheiro duas
+    # vezes na mesma pagina. O conjunto so recebe processo de voluntaria que
+    # ENTROU (ver o `_entrou` la em cima), senao o recorte "pagas" perderia o
+    # termo pago de uma creche que ele proprio descartou.
+    #
+    # ⚠️ `completo` E SEMPRE TRUE EM PRODUCAO: os dois chamadores (routers/rm.py,
+    # criar e auto-popular) passam completo=True, e o "anual" da tela e a
+    # SELECAO de anos (`anos=[2026]`) sobre este mesmo modelo. Um instrumento
+    # de 2021 — a creche 932836/2021 — entra no "Todos os anos" e em qualquer
+    # selecao que inclua 2021; numa selecao so de 2026 ele nao entra, como
+    # nenhum outro instrumento de 2021 (`_fed_retem` + `_no_escopo`). Isso e
+    # o recorte por ano do RM, nao este bloco.
     if completo:
         try:
             tc = await db.execute(text("""
@@ -2352,6 +2760,8 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
                 FROM simec_termos WHERE municipio_id = :m
             """), {"m": municipio_id})
             for r in tc.fetchall():
+                if _so_digitos(r[0]) and _so_digitos(r[0]) in _simec_ja_exibidos:
+                    continue
                 venceu = bool(r[7]) and r[7] < date.today()
                 # Termo com vigencia vencida ou ja pago -> Parte 3 (anos anteriores /
                 # prestacao); vigente -> pendencia em Brasilia (Parte 1).

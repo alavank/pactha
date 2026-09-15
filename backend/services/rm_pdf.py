@@ -408,6 +408,13 @@ def _campos_do_item(item: dict) -> list[tuple[str, str]]:
         if item.get("pendente_empenho"):
             _ve += " — PENDENTE DE EMPENHO (Termo de Compromisso sem nota de empenho)"
         out.append(("Valor empenhado", _ve))
+    # PAGO PELO SIMEC/PAR — na linha da própria voluntária (a creche 932836/2021),
+    # casado pelo nº do processo em rm_builder._simec_na_linha. O SICONV mostra
+    # "Desembolsado: R$ 0,00" porque o FNDE paga o PAR por fora da OB; esta linha
+    # é o que o dono pediu para ver ("o valor que já foi pago está no SIMEC").
+    # Frase pronta do builder; ausente = nenhum termo casado, a linha não sai.
+    if item.get("simec_pagamento"):
+        out.append(("Pagamento SIMEC/PAR", item["simec_pagamento"]))
     # Situação de Contratação "Normal" aparece como linha simples; Cláusula
     # Suspensiva / Liminar Judicial vão para a CAIXA DE DESTAQUE (_clausula_destaque),
     # então NÃO entram aqui.

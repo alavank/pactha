@@ -2338,7 +2338,12 @@ def _upsert(mun_id: int, propostas: list[dict]):
         # autoritativo para este campo) continua corrigindo o resto.
         modalidade = _primeiro_campo(g("Modalidade"))
         situacao_siafi = g("Situação no SIAFI")
-        num_processo = g("Número do Processo")
+        # ⚠️ O MESMO CORTE da modalidade, pela mesma razao — e este campo virou
+        # CHAVE DE JUNCAO (rm_builder: voluntaria x Termo de Compromisso do
+        # SIMEC/PAR pelo nº do processo, 15/09/2026). O dado aberto sobrescreve
+        # o valor limpo 1x/dia, mas as rodadas do scraper gravariam o par
+        # seguinte colado por TAB no meio-tempo.
+        num_processo = _primeiro_campo(g("Número do Processo"))
         objeto = g("Objeto do Instrumento")
         programa = g("Programa", "Nome do Programa")
         # Só a data: a célula pode trazer o campo seguinte colado (ver `_data_br`).

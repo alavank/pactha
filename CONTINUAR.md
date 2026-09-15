@@ -1609,6 +1609,132 @@ As regras comuns ficam em `services/voluntarias_dump.py`.
   - A `transferegov-lote` segue listando cada município no rodízio (2 a 3 dias nos
     clientes grandes). Reserva: `TG_LISTAGEM_BASE=1`.
 
+## 1.23. A SESSÃO DE 15/09/2026 — pagamento nos estaduais (SEGOV) e o pago da creche na própria linha (PR #496)
+
+Teste de aceite do dono sobre o RM: três achados, duas decisões dele, um PR (#496, branch
+`feat/pagamentos-estaduais-segov-e-creche-simec`), revisado por 7 agentes adversariais antes de subir.
+
+1. **Estaduais sem informação de pagamento.** Banco/agência/conta tinham acabado de aparecer
+   (Conta Específica do SIGCON logado); a caixa de desembolso seguia vazia porque a única fonte
+   ligada a ela era a Transparência MG (Joomla), que dá **403 na VPS** e não tinha task.
+   Decisão: **"os dois"** — Fase 1 agora pelo **CSV aberto da SEGOV** (dataset
+   `portal_convenios_saida`: `pagamento{ano}.csv` + `pagamentorp{ano}.csv`, chave SIAFI,
+   republicado semanalmente — `metadata_modified` do `package_show` era o próprio dia 15/09; UA de
+   navegador passa o WAF), Fase 2 depois para **data/nº da OB** (destravar o Joomla por proxy ou ler
+   do SIGCON logado). O CSV traz `valor_pago_financeiro` (e `valor_pago_processado`/`nao_processado`
+   no RP); o que falta é a **data** e a **OB** — como a auditoria já registrava. ⚠️ A "junção 100%"
+   da auditoria foi medida **SEGOV×SEGOV** (`contratoconvenio_saida` × `convenios_saida.numero_siafi`);
+   contra o `nr_siafi` que o scraper grava é hipótese até a primeira carga — olhar o log
+   "N de M convenios com SIAFI casaram". Sem piso de cobertura no status: os CSVs só cobrem 2022+.
+   ⚠️ O arquivo é por **item de despesa** (uma NE com dois itens = duas linhas): o coletor agrega
+   por (SIAFI, NE, UO) antes do upsert, senão o "sobrescreve" ficava com a última linha.
+   - **Fase 2 (mesmo dia) — data e nº da OB, pelos dumps abertos da CGE.** Investigação com 5
+     agentes (4 fontes + crítico): o WS REST público do SIGCON tem OB por SIAFI mas **parou em
+     31/12/2025** (V2/GRP não alimenta); o Power BI da SEGOV tem só a data do crédito; o accordion
+     do SIGCON logado não modela OB; a extensão pro Joomla é refactor grande. O que resolve é o
+     dataset CKAN **`despesa`** (CGE, dados.mg.gov.br — mesmo host do backfill que já roda da VPS):
+     "o modelo dimensional que alimenta a consulta Despesa do Portal". `ft_despesa_{ano}` tem uma
+     linha por documento (OB = tipos "OP PAGA"/"OP PENDENTE", `cd_documento` = nº, `id_tempo` →
+     `dm_tempo_diario`, `vr_pago`; estorno = `tp_operacao` 1, negativo); `dm_empenho_desp_{ano}`
+     liga à NE por (nº, data) com desempate por valor — **4.888/5.117 = 95,5 % 1:1** no pg2026,
+     sem precisar do arquivo de favorecidos. Restos a pagar: `restos_pagar/ft_restos_pagar_{ano}`
+     (`dt_documento` direto) + `dm_empenho_resto_{ano}` por (nº, `dt_original`) — 143/160 1:1; a
+     OB do RP é pendurada na NE de origem. **Prova:** a OB 1939 de Pequi (25/03/2026, R$ 938.793,55)
+     que o Joomla mediu está idêntica, com o **mesmo `id_empenho`** (15264190) — por isso
+     `cge_despesa_ob.py` grava em **`transparencia_mg_empenhos`** com o id do portal, e o RM
+     (`_mg_pagamentos`) e o export dos Estaduais mostram data/OB **sem mudança de leitura**. O bloco
+     leva `_fonte='cge_despesa_ob'` e o upsert só sobrescreve bloco nosso ou nulo (o do Joomla,
+     com situação bancária, vence). **O que não vem:** a situação bancária — o dicionário do
+     `vr_pago` diz "pode estar pendente de transmissão ao banco e/ou sujeito a compensação"; a
+     tabela de situação (`fl_despesa_pgto`) não tem chave pra juntar. **Decisão do dono (opção 1):**
+     OB emitida conta como desembolso; rótulo "OB emitida (SIAFI-MG, dado aberto) — confirmação
+     bancária indisponível", reconhecido por `pagamento_confirmado`; estorno = mesmo prefixo,
+     negativo, abate. Escopo: ano corrente + anterior; todos os anos na 1ª rodada (`CGE_OB_BACKFILL`).
+     ⚠️ Não medido da VPS (chave SSH não está nesta máquina) — inferido do host compartilhado com o
+     backfill; `scripts/reconhecimento_fontes_vps.sh` tem as URLs se alguém quiser a formalidade.
+     **Validação nos dumps reais (15/09/2026, funções do coletor sobre pg2026/rp2026 × dumps de 12/09):**
+     pg2026 4.888 NEs resolvidas (125 ambíguas, 104 sem candidato; cobertura por valor 91,9 %) → 4.792
+     com OB; **NE a NE, soma das OBs da CGE = `valor_pago_financeiro` da SEGOV em 4.866/4.888**.
+     rp2026: 144 resolvidas, **144/144 iguais**. Pequi 7/7, OB a OB.
+     ⚠️ **As 22 que não batiam eram NEs ERRADAS, não atraso** — eu tinha escrito "atraso do dump"; a
+     revisão adversarial da Fase 2 (3 lentes) provou pelo CNPJ de `dm_favorecido` que o resolver
+     aceitava um **candidato único por (nº, data) sem conferir valor nem favorecido**, e o nº de NE é
+     sequencial **por unidade executora**: a NE 981 de 13/05 de uma pessoa física (R$ 35,70) casava
+     com a NE 981 de PM Catugi (R$ 801 mil) — OB de terceiro gravada no convênio da prefeitura.
+     Corrigido antes de subir: a varredura do `ft` traz `id_favorecido` e a soma EMPENHO+REFORCO+
+     ANULACAO dos candidatos; `dm_favorecido` (25 MB) dá o CNPJ; **favorecido igual aceita** (mesmo com
+     valor diferente — empenho estimado com reforço), **diferente rejeita** (`favorecido_diverge`),
+     desconhecido só com valor igual. Mais da mesma revisão: `pg` antes de `rp` sempre (a ordem do
+     SELECT decidia se as OBs do exercício entravam); NE de origem do RP por (nº, data original,
+     **unidade executora**) e a dimensão do ano de origem sempre carregada (38 % dos RP são de NE
+     mais velha que o ano anterior e sumiam nas rodadas normais); um índice de dimensão por vez
+     (400 mil linhas ≈ 340 MB cada); bloco existente **preservado** quando o exercício não é
+     re-varrido; recurso ausente no CKAN conta como falha; exceção no meio vira `error` no log;
+     `data_ultimo_desembolso` não avança com estorno; rótulo curto "OB emitida (SIAFI-MG) — sem
+     confirmação bancária" (48 c., cabe na linha). O que resta de diferença legítima SEGOV × CGE é o
+     atraso do dump (2–5 dias) e a NE não resolvida: `_complemento_segov` põe a diferença na caixa
+     como **linha própria** com rótulo de fato, não de causa ("pago segundo a SEGOV — OB sem nº/data
+     no dump da CGE"), e sobe o total junto.
+     **Re-medido com o resolver corrigido (mesmos dumps):** pg2026 **4.990 casadas (97,5 %), 23
+     rejeitadas por favorecido diferente, 104 sem candidato, 0 ambíguas** (a conferência resolveu as
+     125 que empatavam); cobertura por valor pago **96,7 %**; NE a NE **4.989/4.990 iguais**. rp2026
+     **158/160 casados, 158/158 iguais**.
+   - `ingestion/segov_pagamentos.py` → tabela `segov_convenios_empenhos` (só linhas que casaram
+     com um convênio nosso por SIAFI; `ON DELETE SET NULL` por causa do
+     `fix_duplicatas_chave_natural.sql`; IDs de recurso resolvidos por `package_show` a cada carga).
+     Pendurado no cron do SIGCON (`run_sigcon_cron` e `run_queue_sigcon`) **logo após o backfill
+     do CKAN**, que é quem promove o `nr_siafi`; auto-limitado a 1×/dia (`SEGOV_MIN_INTERVAL_H`,
+     `SEGOV_FORCE`, `SEGOV_ENABLED`). `ingestion_log` source `segov_pagamentos`, status honesto em
+     `status_coleta.segov_pagamentos`. Sem task nova no Coolify.
+   - RM (`rm_builder`, item estadual): **Situação do NEs** (NE, valor, data do *registro do
+     empenho*, pago), **Valor empenhado**, **Empenhado: Sim** e — só quando o Joomla não
+     respondeu — `valor_desembolsado` = total pago (→ "Desembolsado: R$ …" ou "Pendente de
+     desembolso" quando há empenho e nada pago). **Não fabrica lançamento com data**: o CSV não a
+     tem, e a caixa do PDF imprimiria a data do empenho como se fosse a do pagamento. A mesma NE
+     vem em **dois arquivos** (pagamento do ano + restos a pagar do ano seguinte): `_segov_resumo`
+     funde por (NE, UO, ano da nota) e rotula pelo **ano da nota** (`dt_empenho`), com o exercício
+     do RP entre parênteses — senão "NE 634/2025 … pago R$ 0,00; NE 634/2026 (restos a pagar) …
+     pago R$ 99.932,16" contava duas notas onde há uma.
+2. **Cadastramento / R$ 0,00 aparecendo no RM** ("Seapa - SIGCON · Convênio 002567/2026 · R$ 0,00 ·
+   Cadastramento · sem alterações registradas"). ⚠️ Eu li a tela como "não entram" e respondi que já
+   estava fora — errado: a tela **era o RM**. A regra de ano (`_fed_retem`) só barra pré-empenho de
+   anos **anteriores**; para ela Cadastramento é `ativa` e do ano corrente **entra**. E o comentário
+   "Cadastramento não tem número nem vigência → segue fora" era falso (o 002567/2026 tem número com
+   "/", e por isso ainda saía rotulado "Convênio"). Decisão do dono: **fora, sempre**. Corte próprio
+   `_em_cadastramento` (palavra inteira, sem acento/caixa — **não** a substring "cadastr", que
+   derrubaria o "CONVENIO CADASTRADO" celebrado que o backfill do CKAN insere), **antes** do
+   `_fed_retem`, valendo para anual e completo. Teste: `test_cadastramento_fora_do_rm.py`.
+3. **Creche 932836/2021 com "Desembolsado: R$ 0,00"** apesar de o SIMEC ter pago. O pago JÁ era
+   coletado (`simec_termos`, desde 31/08: R$ 1.875.147,32 empenhados / R$ 572.978,05 pagos) mas
+   saía como item separado. Decisão do dono: **na própria linha da creche, "em ambos" os RMs**.
+   Junção **pelo nº do processo (SEI), dígitos apenas**: `transferegov_propostas.numero_processo`
+   (do dado aberto diário, `NR_PROCESSO` — "número interno do processo" no dicionário do SICONV; não
+   depende da sessão gov.br) × `simec_termos.processo`. No SIMEC a creche é 23400.002301/2021-01
+   (medido, `simec_termos` id 6); **que o SICONV grave o mesmo número na 059522/2021 é hipótese até
+   conferir em produção** — o repo não tem esse valor, e o builder loga quando há termo com processo
+   e nenhuma voluntária casou. Sem processo igual **não junta**: casar por município+objeto é
+   hipótese pior. O termo casado imprime **"Pagamento SIMEC/PAR: empenhado no SIMEC … · pago … —
+   TC …, processo …"** na linha da voluntária ("no SIMEC" porque a linha já mostra o "Valor
+   empenhado" das NEs do SICONV, e os dois diferem: R$ 819 mil × R$ 1,87 mi), o pago vira
+   `valor_desembolsado` onde o SICONV não mediu e **zera o "a desembolsar" do SICONV** (a revisão
+   pegou a caixa somando R$ 4,39 mi num convênio de R$ 3,82 mi), o marcador "Pendente de empenho"
+   não sai quando o SIMEC tem empenho, e o item separado do Termo **não sai de novo**
+   (`_simec_ja_exibidos`) — marcado **só depois** de a voluntária **entrar** (`add_item` passou a
+   devolver bool): marcar antes fazia o recorte "pagas" perder o termo pago de uma creche que ele
+   mesmo descartara. ⚠️ **"Em ambos" na prática:** `completo` é sempre True em produção (os dois
+   chamadores) e o "anual" da tela é a **seleção de anos**; a creche (2021) sai em "Todos os anos"
+   e em qualquer seleção que inclua 2021 — numa seleção só de 2026 não sai, como nenhum instrumento
+   de 2021 (recorte por ano do RM, não desta mudança). O bloco dos termos ficou atrás do
+   `if completo:` como estava. `numero_processo` é a **décima coluna pendurada no fim** do SELECT
+   das voluntárias (`row[33]`).
+
+**Conferir depois do deploy:** `Migration OK: add_segov_convenios_empenhos.sql` no boot dos seis;
+após a primeira noite, em freitas `SELECT count(*) FROM segov_convenios_empenhos` > 0 e
+`ingestion_log.source='segov_pagamentos'` com `success`; regerar o RM de Araújos (Auto-popular) e
+olhar a **1261002153/2026** (estadual: NEs + Desembolsado) e a **932836/2021** (creche: linha
+"Pagamento SIMEC/PAR" e "Desembolsado: R$ 572.978,05"). Se a creche não casar, o primeiro suspeito é
+`numero_processo` vazio na proposta 059522/2021 — o dado aberto o preenche na rodada das 06:51 UTC.
+
 ## 2. ESTADO ATUAL (2026-09-04)
 
 **São CINCO tenants em produção**, todos do mesmo código, cada um com containers e banco próprios:

@@ -224,6 +224,19 @@ _SOURCES_POR_UF: dict[str, list[tuple[str, str, str | None]]] = {
         ("Acordo FES — Dívida saúde (MG)",
          "SELECT NULL::timestamptz, count(*) FROM acordofes_credor",
          "acordofes"),
+        # Empenhos/pagamentos dos convenios estaduais pelo CSV aberto da SEGOV
+        # (15/09/2026): o plano B da Transparencia MG, que da 403 na VPS. Conta
+        # so o que casou por SIAFI com um convenio nosso — zero e legitimo em
+        # tenant sem convenio estadual com SIAFI.
+        ("SEGOV — Empenhos/pagamentos estaduais (MG)",
+         "SELECT max(updated_at), count(*) FROM segov_convenios_empenhos",
+         "segov_pagamentos"),
+        # Data e nº da OB pelos dumps da CGE (15/09/2026): grava na tabela do
+        # Joomla com a marca `_fonte` no bloco — conta so as linhas nossas.
+        ("CGE — Ordens de pagamento dos convênios (MG)",
+         "SELECT max(updated_at), count(*) FROM transparencia_mg_empenhos "
+         "WHERE pagamentos->>'_fonte' = 'cge_despesa_ob'",
+         "cge_despesa_ob"),
     ],
     "RS": [
         ("CHE — Cadastro estadual (RS)",

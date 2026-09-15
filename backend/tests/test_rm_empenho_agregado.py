@@ -154,8 +154,14 @@ def test_a_coluna_nova_e_a_ULTIMA_do_select():
     # row[32]. `notas_empenho_aberto` segue em row[31].
     # 15/09/2026, PR 4: as licitações do dump (lista e contagem) entraram como
     # row[33] e row[34].
-    assert colunas[-2:] == ["arvore->'processo_execucao'", "arvore->'_resumo'->'n_licitacoes'"], \
-        f"a cauda virou {colunas[-2:]!r} — quem entrar depois vai no FIM"
+    # 15/09/2026, PR #496 (mergeado por cima do PR 4): `numero_processo` — a chave
+    # que casa a voluntaria com o Termo de Compromisso do SIMEC/PAR (a creche
+    # 932836/2021) — entrou DEPOIS das duas do dump, como row[35]. Mesma
+    # disciplina: coluna nova no FIM, indices ja lidos preservados.
+    assert colunas[-1] == "numero_processo", \
+        f"a ultima coluna virou {colunas[-1]!r} — quem entrar depois vai no FIM"
+    assert colunas.index("arvore->'processo_execucao'") == 33, "processo_execucao do dump saiu de row[33]"
+    assert colunas.index("arvore->'_resumo'->'n_licitacoes'") == 34, "n_licitacoes do dump saiu de row[34]"
     assert colunas.index("ops_obs_aberto") == 32, "ops_obs_aberto saiu de row[32]"
     assert colunas.index("notas_empenho_aberto") == 31, "notas_empenho_aberto saiu de row[31]"
     assert colunas.index("situacao_projeto_basico") == 30, "situacao_projeto_basico saiu de row[30]"
@@ -164,7 +170,7 @@ def test_a_coluna_nova_e_a_ULTIMA_do_select():
     assert colunas.index("modalidade") == 28, "modalidade deixou de ser row[28]"
     assert colunas.index("ops_obs") == 22, "ops_obs (o raspado) saiu de row[22]"
     assert colunas.index("processo_execucao") == 21, "processo_execucao (o raspado) saiu de row[21]"
-    assert len(colunas) == 35, f"o SELECT tem {len(colunas)} colunas, esperava 35"
+    assert len(colunas) == 36, f"o SELECT tem {len(colunas)} colunas, esperava 36"
 
 
 def test_o_item_usa_as_duas_fontes_e_nao_so_a_listagem():

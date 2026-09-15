@@ -615,6 +615,12 @@ MIGRATION_FILES = [
     # ops_obs_aberto) e as tabelas das listas grandes (licitacoes, pagamentos,
     # documentos de liquidacao) e das canceladas. FK so para `municipios`.
     "add_tg_arvore.sql",
+    # Empenhos/pagamentos dos convenios ESTADUAIS pelo CSV aberto da SEGOV
+    # (15/09/2026): o QUANTO empenhado/liquidado/pago por NE, chave SIAFI. E o
+    # plano B da Transparencia MG, que da 403 na VPS. FK para `municipios` e
+    # `convenios_estadual`, as duas do create_all — qualquer posicao acima da
+    # imutabilidade serve.
+    "add_segov_convenios_empenhos.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",
