@@ -1585,6 +1585,20 @@ interpolado: [`INFRA.md`](INFRA.md) §5.
 - **`*.sslip.io` é public suffix** → `pactha-...sslip.io` e `pactha-api-...sslip.io` são **cross-site** entre si; cookies `SameSite=Lax` httpOnly não trafegam entre eles. É exatamente por isso que existe o proxy same-origin no Next (decisão 7). **Se alguém apontar o front direto no subdomínio da API (`NEXT_PUBLIC_API_URL` absoluto), o refresh silencioso quebra e volta o re-login a cada ~60min.**
 - **`API_PROXY_TARGET` e `NEXT_PUBLIC_*` são BUILD-TIME.** Mudar o valor no Coolify sem rebuildar o frontend não tem efeito nenhum. Marque `is_build_time:true` e redeploy.
 - ~~**`transferegov_propostas` é criada tarde** nas migrations~~ — **RESOLVIDO.** A tabela foi movida para o `setup_db.py` (`CREATE TABLE IF NOT EXISTS`, hoje na linha 105), que é exatamente o conserto que este parágrafo propunha. **A lição fica, porque a classe do bug voltou:** migration que ALTERA tabela criada mais tarde em `MIGRATION_FILES` só quebra em **banco novo do zero** — invisível nos bancos herdados. Foi assim com `transferegov_propostas` e de novo com `add_detalhe_pagina_rodizio.sql` quando o Nova Palma nasceu (01/09). Hoje há guarda automática: `backend/tests/test_migrations_ordem_tabela.py`. **Não fixe aqui quantas são** — o número muda toda semana e este parágrafo já disse 22 e depois 105 quando eram outras tantas; conte com `len(MIGRATION_FILES)` em `backend/services/startup.py`, ou leia `Startup migrations: N/N executadas` no log do boot. O que não muda é a invariante: **`add_auditoria_imutavel.sql` é sempre a última da lista** (instala o gatilho append-only do `audit_log`; qualquer migration que ainda precise escrever nessa tabela tem de vir acima).
+- **O boot da API espera lock de coleta.** As migrations rodam a cada boot, e DDL
+  "idempotente" (`ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`,
+  `DROP ... CASCADE`) pede lock mesmo quando não muda nada. Com um coletor segurando
+  transação longa numa tabela viva, o boot espera, o healthcheck do Coolify desiste em
+  ~1 min e o container antigo volta. O workflow então **não troca o worker daquele
+  tenant**: o próximo deploy resolve.
+  - Aconteceu na api-freitas em 15/09/2026, com o `sigcon` rodando.
+  - O `setup_db.py` recriava oito tabelas do refactor lean, e o `drop_lean_tables.sql`
+    as derrubava a cada boot, pedindo lock em `parlamentares`/`municipios`/
+    `convenios_estadual`/`users`. Tirado do `setup_db`, com guarda em
+    `tests/test_boot_nao_recria_tabela_morta.py`.
+  - **A classe continua:** medido local, leitura longa em `municipios`, `users` ou
+    `convenios_estadual` ainda trava o boot no primeiro `ALTER` delas. Se um deploy
+    falhar assim, é isso: redeploy fora do horário do coletor.
 - **COFRE_KEY:** o Cofre e as sessões gov.br são cifrados com AES-256 usando a env `COFRE_KEY` (`backend/services/crypto.py`). Se a chave mudar, `decrypt()` volta `""` **silenciosamente** — sem erro, sem log. **Cada tenant tem a sua**; trocar ou cruzar chaves destrói o Cofre daquele cliente.
 - **must_change_password=True** no admin seed → o 1º login redireciona pra `/change-password`. Normal.
 - Worker aparece como `running:unknown` no Coolify (roda o reaper, sem healthcheck). Normal. Frontends sem healthcheck também.
