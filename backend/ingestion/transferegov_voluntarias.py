@@ -534,6 +534,27 @@ def _primeiro_campo(valor):
     return re.split(r"[\t\r\n]", str(valor))[0].strip() or None
 
 
+_RE_DATA_BR = re.compile(r"\d{2}/\d{2}/\d{4}")
+
+
+def _data_br(valor):
+    """A PRIMEIRA data dd/mm/aaaa do que o extrator devolveu, ou None.
+
+    Mesmo defeito do `_primeiro_campo`, nas colunas de data: a celula vem as
+    vezes com o par rotulo/valor seguinte colado por TAB ("06/07/2026\\tData
+    Assinatura\\t01/07/2026"). Nos bancos antigos a coluna nao tem limite e o
+    texto inteiro entrava na coluna de DATA; nos criados pelo `setup_db`
+    (VARCHAR(20)) nao cabe. Foi o que derrubou `fix_transferegov_datas_texto.sql`
+    em Santa Maria a cada boot, de 17/08 a 15/09/2026.
+
+    Texto sem data nenhuma vira None — e None faz o COALESCE do upsert
+    PRESERVAR o que ja esta na coluna, em vez de gravar lixo nela."""
+    if valor is None:
+        return None
+    m = _RE_DATA_BR.search(str(valor))
+    return m.group(0) if m else None
+
+
 def valores_coerentes(glob, repasse, contrap, tol: float = 0.02) -> bool:
     """O trio de valores fecha a conta? global == repasse + contrapartida.
 
@@ -2302,10 +2323,11 @@ def _upsert(mun_id: int, propostas: list[dict]):
         num_processo = g("Número do Processo")
         objeto = g("Objeto do Instrumento")
         programa = g("Programa", "Nome do Programa")
-        dt_ini_vig = g("Data Início de Vigência")
-        dt_fim_vig = g("Data Término de Vigência Atual", "Data Término de Vigência")
-        dt_prop = g("Data da Proposta")
-        dt_assin = g("Data Assinatura")
+        # Só a data: a célula pode trazer o campo seguinte colado (ver `_data_br`).
+        dt_ini_vig = _data_br(g("Data Início de Vigência"))
+        dt_fim_vig = _data_br(g("Data Término de Vigência Atual", "Data Término de Vigência"))
+        dt_prop = _data_br(g("Data da Proposta"))
+        dt_assin = _data_br(g("Data Assinatura"))
         valor_global = _money(g("Valor Global", "Valor Global do Instrumento"))
         valor_repasse = _money(g("Valor de Repasse", "Valor de Repasse da União", "Valor do Repasse"))
         valor_contrap = _money(g("Valor de Contrapartida", "Valor da Contrapartida"))

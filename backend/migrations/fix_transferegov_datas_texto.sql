@@ -56,30 +56,59 @@ END $$;
 -- errada na tela do gestor, e o coletor repõe na próxima rodada com o detalhe.
 --
 -- ⚠️ Guardado por `IS DISTINCT FROM`: roda uma vez, e nas próximas vira no-op.
--- Nos bancos antigos não encontra divergência (lá o texto sempre entrou íntegro).
+--
+-- ⚠️ SÓ A DATA, E NÃO A CÉLULA INTEIRA (15/09/2026). O extrator do detalhe às
+-- vezes devolve o valor com o PAR RÓTULO/VALOR SEGUINTE colado por TAB —
+-- "06/07/2026\tData Assinatura\t01/07/2026", o mesmo defeito que o
+-- `_primeiro_campo` já apara na modalidade. Copiada crua, essa célula não cabe
+-- no VARCHAR(20) que o bloco acima (e o `setup_db`) criam: `value too long for
+-- type character varying(20)`, e como o arquivo é UMA transação, o reparo
+-- inteiro era desfeito A CADA BOOT em Santa Maria desde 17/08 — as datas
+-- trocadas que ele existe para consertar ficavam trocadas. Nos bancos antigos
+-- (coluna sem limite) o mesmo texto entrava INTEIRO na coluna de data.
+--
+-- `substring(... from '<regex>')` devolve a PRIMEIRA data dd/mm/aaaa do texto,
+-- ou NULL quando não há nenhuma — e NULL no detalhe não sobrescreve nada (o
+-- `IS NOT NULL` de cada WHERE). É a mesma regra do coletor
+-- (`ingestion/transferegov_voluntarias._data_br`).
 UPDATE transferegov_propostas
-   SET dt_inicio_vigencia = raw_data->'detalhe'->>'Data Início de Vigência'
- WHERE raw_data->'detalhe'->>'Data Início de Vigência' IS NOT NULL
-   AND dt_inicio_vigencia IS DISTINCT FROM raw_data->'detalhe'->>'Data Início de Vigência';
+   SET dt_inicio_vigencia = substring(raw_data->'detalhe'->>'Data Início de Vigência'
+                                      from '[0-9]{2}/[0-9]{2}/[0-9]{4}')
+ WHERE substring(raw_data->'detalhe'->>'Data Início de Vigência'
+                 from '[0-9]{2}/[0-9]{2}/[0-9]{4}') IS NOT NULL
+   AND dt_inicio_vigencia IS DISTINCT FROM
+       substring(raw_data->'detalhe'->>'Data Início de Vigência'
+                 from '[0-9]{2}/[0-9]{2}/[0-9]{4}');
 
 UPDATE transferegov_propostas
-   SET dt_proposta = raw_data->'detalhe'->>'Data da Proposta'
- WHERE raw_data->'detalhe'->>'Data da Proposta' IS NOT NULL
-   AND dt_proposta IS DISTINCT FROM raw_data->'detalhe'->>'Data da Proposta';
+   SET dt_proposta = substring(raw_data->'detalhe'->>'Data da Proposta'
+                               from '[0-9]{2}/[0-9]{2}/[0-9]{4}')
+ WHERE substring(raw_data->'detalhe'->>'Data da Proposta'
+                 from '[0-9]{2}/[0-9]{2}/[0-9]{4}') IS NOT NULL
+   AND dt_proposta IS DISTINCT FROM
+       substring(raw_data->'detalhe'->>'Data da Proposta'
+                 from '[0-9]{2}/[0-9]{2}/[0-9]{4}');
 
 UPDATE transferegov_propostas
-   SET dt_assinatura = raw_data->'detalhe'->>'Data Assinatura'
- WHERE raw_data->'detalhe'->>'Data Assinatura' IS NOT NULL
-   AND dt_assinatura IS DISTINCT FROM raw_data->'detalhe'->>'Data Assinatura';
+   SET dt_assinatura = substring(raw_data->'detalhe'->>'Data Assinatura'
+                                 from '[0-9]{2}/[0-9]{2}/[0-9]{4}')
+ WHERE substring(raw_data->'detalhe'->>'Data Assinatura'
+                 from '[0-9]{2}/[0-9]{2}/[0-9]{4}') IS NOT NULL
+   AND dt_assinatura IS DISTINCT FROM
+       substring(raw_data->'detalhe'->>'Data Assinatura'
+                 from '[0-9]{2}/[0-9]{2}/[0-9]{4}');
 
 -- O término de vigência tem DOIS rótulos possíveis no portal, e o coletor já
 -- trata os dois (`g("Data Término de Vigência Atual", "Data Término de Vigência")`).
 UPDATE transferegov_propostas
-   SET dt_fim_vigencia = COALESCE(
+   SET dt_fim_vigencia = substring(COALESCE(
            raw_data->'detalhe'->>'Data Término de Vigência Atual',
            raw_data->'detalhe'->>'Data Término de Vigência')
- WHERE COALESCE(raw_data->'detalhe'->>'Data Término de Vigência Atual',
-                raw_data->'detalhe'->>'Data Término de Vigência') IS NOT NULL
-   AND dt_fim_vigencia IS DISTINCT FROM COALESCE(
+           from '[0-9]{2}/[0-9]{2}/[0-9]{4}')
+ WHERE substring(COALESCE(raw_data->'detalhe'->>'Data Término de Vigência Atual',
+                          raw_data->'detalhe'->>'Data Término de Vigência')
+                 from '[0-9]{2}/[0-9]{2}/[0-9]{4}') IS NOT NULL
+   AND dt_fim_vigencia IS DISTINCT FROM substring(COALESCE(
            raw_data->'detalhe'->>'Data Término de Vigência Atual',
-           raw_data->'detalhe'->>'Data Término de Vigência');
+           raw_data->'detalhe'->>'Data Término de Vigência')
+           from '[0-9]{2}/[0-9]{2}/[0-9]{4}');

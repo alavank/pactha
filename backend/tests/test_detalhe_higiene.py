@@ -8,7 +8,7 @@ import os
 import re
 
 from ingestion.transferegov_http import _parece_rotulo
-from ingestion.transferegov_voluntarias import _primeiro_campo
+from ingestion.transferegov_voluntarias import _data_br, _primeiro_campo
 
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VOL = os.path.join(RAIZ, "ingestion", "transferegov_voluntarias.py")
@@ -78,6 +78,45 @@ def test_o_corte_nao_inventa_valor():
     assert _primeiro_campo(None) is None
     assert _primeiro_campo("") is None
     assert _primeiro_campo("\t\t") is None
+
+
+# --- datas: o mesmo campo colado, e a migration que ele derrubava ---------------
+
+def test_a_data_perde_o_campo_colado():
+    """Célula com o par rótulo/valor seguinte colado por TAB: fica só a data. A
+    SEGUNDA data do texto é a do campo vizinho e não pode vencer."""
+    assert _data_br("06/07/2026\tData Assinatura\t01/07/2026") == "06/07/2026"
+    assert _data_br("30/09/2027") == "30/09/2027"
+
+
+def test_texto_sem_data_vira_None_e_nao_lixo():
+    """None faz o COALESCE do upsert preservar o que já está na coluna."""
+    for lixo in (None, "", "sem data", "\t\t", "2026"):
+        assert _data_br(lixo) is None, lixo
+
+
+def test_o_coletor_passa_as_quatro_datas_pelo_corte():
+    src = _codigo(VOL)
+    for rotulo in ("Data Início de Vigência", "Data Término de Vigência Atual",
+                   "Data da Proposta", "Data Assinatura"):
+        assert re.search(rf'_data_br\(g\("{rotulo}"', src), f"{rotulo} sem _data_br"
+
+
+def test_a_migration_das_datas_copia_so_a_data_e_cabe_no_varchar20():
+    """⚠️ `fix_transferegov_datas_texto.sql` copiava a célula INTEIRA do detalhe
+    para colunas VARCHAR(20): com o campo colado, `value too long`, e o arquivo
+    (uma transação só) era desfeito a cada boot em Santa Maria — de 17/08 a
+    15/09/2026 o reparo das datas trocadas nunca foi aplicado lá."""
+    import pglast
+    sql = open(os.path.join(RAIZ, "migrations", "fix_transferegov_datas_texto.sql"),
+               encoding="utf-8").read()
+    pglast.parse_sql(sql)
+    codigo = "\n".join(l for l in sql.splitlines() if not l.lstrip().startswith("--"))
+    sets = re.findall(r"SET\s+(dt_\w+)\s*=\s*(\w+)\(", codigo)
+    assert {c for c, _ in sets} == {"dt_inicio_vigencia", "dt_proposta",
+                                    "dt_assinatura", "dt_fim_vigencia"}
+    assert all(f == "substring" for _, f in sets), sets
+    assert codigo.count("from '[0-9]{2}/[0-9]{2}/[0-9]{4}'") == 12
 
 
 # --- medido e vazio -----------------------------------------------------------

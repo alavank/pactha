@@ -1346,6 +1346,18 @@ backlog. A rodada grava **uma** linha no `ingestion_log`, somando listagem e ár
   erro. Agora elas leem `transferegov_te`. `tests/test_ai_importa_o_que_existe.py` pega
   a próxima vez.
 
+**Achado no deploy de 15/09: `fix_transferegov_datas_texto.sql` falhava a cada boot em
+Santa Maria desde 17/08.**
+- **Causa:** ela copiava a célula inteira do detalhe para colunas `VARCHAR(20)`. A
+  célula às vezes vem com o campo seguinte colado por TAB
+  (`06/07/2026\tData Assinatura\t…`), e o `value too long` desfazia o arquivo inteiro.
+- **Efeito:** o reparo das datas trocadas nunca foi aplicado lá. Nos bancos antigos,
+  cuja coluna não tem limite, o texto colado entrava inteiro na coluna de data.
+- **Correção:** a migration e o coletor (`_data_br`) passaram a pegar só a primeira
+  data `dd/mm/aaaa`.
+- **Leitura do log de boot:** o "127/128" das outras APIs é outra coisa, a
+  `add_obrasgov.sql` pulada por já estar aplicada, e é inofensivo.
+
 ## 2. ESTADO ATUAL (2026-09-04)
 
 **São CINCO tenants em produção**, todos do mesmo código, cada um com containers e banco próprios:
