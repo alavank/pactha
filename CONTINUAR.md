@@ -1587,9 +1587,10 @@ nos convênios que a raspagem nunca leu.
 As regras comuns ficam em `services/voluntarias_dump.py`. As NEs trocam de ordem no PR 4,
 quando a raspagem desligar.
 
-## 1.23. A SESSÃO DE 15/09/2026 — pagamento nos estaduais (SEGOV) e o pago da creche na própria linha
+## 1.23. A SESSÃO DE 15/09/2026 — pagamento nos estaduais (SEGOV) e o pago da creche na própria linha (PR #496)
 
-Teste de aceite do dono sobre o RM: três achados, duas decisões dele, um PR.
+Teste de aceite do dono sobre o RM: três achados, duas decisões dele, um PR (#496, branch
+`feat/pagamentos-estaduais-segov-e-creche-simec`), revisado por 7 agentes adversariais antes de subir.
 
 1. **Estaduais sem informação de pagamento.** Banco/agência/conta tinham acabado de aparecer
    (Conta Específica do SIGCON logado); a caixa de desembolso seguia vazia porque a única fonte
