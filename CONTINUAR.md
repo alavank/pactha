@@ -520,10 +520,9 @@ requisições por município, sem 403, vínculo exato.
 - **A API oficial entrega acentuação correta** onde a SPA entrega mojibake
   ("Ampliação" vs "Amplia??o").
 
-**Os pagamentos ficaram na SPA, de propósito** (decisão do dono): só ela tem o CPF do
-ordenador/gestor e o histórico de eventos da OP. E o rate-limit nunca foi dela — os
-lookups por id fazem 590 requisições sequenciais com zero 403; quem punia era a listagem,
-que é justamente o que saiu.
+**Os pagamentos ficaram na SPA nesta fase**, e isso foi **desfeito em 14/09/2026** (ver
+§1.23). A cadeia DH → OP/OB inteira existe na API oficial. Da SPA sobrou só o que ela
+publica sozinha: o CPF do ordenador/gestor e o histórico de eventos da OP.
 
 **Dois consumidores tiveram de acompanhar, e um deles quebraria calado:**
 `routers/transferegov.buscar` lia o `raw_data` cru com as chaves camelCase da SPA — com a
@@ -539,10 +538,11 @@ creditados a alguém de dentro — esses nenhuma rodada visita, e ficariam para 
 de quem não é dono. `limpa_transferegov_te_vinculo_por_nome.sql` os apaga, exigindo prova
 dos dois lados (CNPJ na linha **e** no município) e respeitando `municipio_entidades`.
 
-⚠️ **PENDENTE, e é pré-requisito de operação:** rodar
-`scripts/reconhecimento_fontes_vps.sh` **na VPS**. Todas as medições acima saíram de IP
-residencial, e o host novo está atrás de Cloudflare — o TCE-RS já ensinou que isso muda
-tudo.
+✅ **O host novo responde à VPS.** A pendência era rodar
+`scripts/reconhecimento_fontes_vps.sh` lá, porque as medições tinham saído de IP
+residencial. A própria produção respondeu: a task `transferegov-te` roda da VPS nos seis
+tenants desde 07/09, e as execuções de 13 e 14/09 no Coolify deram `success`, com 0
+falhas na Freitas em 13/09.
 
 ## 1.11. A SESSÃO DE 07/09/2026 (Obras.gov.br — fase 3 da migração de APIs)
 
@@ -1272,6 +1272,67 @@ ruim para urgência — por isso o Telegram do worker continua sendo quem grita 
 `RESUMO_TELEGRAM_TOKEN`, `RESUMO_TELEGRAM_CHAT_ID`) e rodar o workflow uma vez pelo
 **Run workflow** com `dry_run=1` para ver a mensagem no log antes de ela começar a chegar
 sozinha às 07h.
+
+## 1.23. Transferência Especial: a API oficial INTEIRA (14/09/2026)
+
+O dono pediu para consumir **todo recurso** das quatro APIs de
+`api-publica.transferegov.gestao.gov.br`, uma por vez. Especiais foi a primeira. O
+`openapi.json` tem **25 rotas**; o PACTHA usava 3. Duas delas nem estão no modelo de
+dados oficial (`/devolucao-especiais` e `/relatorios-gestao-documento-liquidacao-especiais`).
+
+**O que mudou:** o coletor passou a ter três fases (`ingestion/transferegov_te.py`):
+1. **Listagem**, como antes.
+2. **Árvore do plano:** os outros 21 recursos pendurados em cada plano, gravados em
+   `transferegov_te.detalhe` (JSONB, migration `add_te_detalhe.sql`). Os pagamentos
+   passaram a sair dela.
+3. **Reserva na SPA:** só o CPF do ordenador/gestor e o histórico da OP, uma vez por OP.
+
+**Dado que o PACTHA não tinha:**
+- **quem recebeu o dinheiro do município** (documento de liquidação do relatório de
+  gestão: nome, CNPJ, valor, data);
+- o extrato da conta específica, com favorecido, e o saldo com a data;
+- devoluções, com multa, juros e motivo;
+- a vigência do plano de trabalho, as metas, os pareceres dos ministérios com o texto e
+  os históricos;
+- os empenhos.
+
+E também `/data-atualizacao`, gravada na tabela nova e genérica `fonte_atualizacao`. É a
+data em que **a fonte** se atualizou, que o Frescor agora expõe; até aqui ele só tinha a
+hora da nossa coleta.
+
+**O que a medição provou antes do código:**
+- **Os 21 filtros filhos filtram.** Com id `0`, todos devolvem 0. Com parâmetro
+  desconhecido, a fonte devolve a base nacional: 730.455 lançamentos. Por isso
+  **consulta por id do pai também tem teto** aqui (`_pub_filhos`), ao contrário das irmãs.
+- **A minuta tem a mesma marca nas duas APIs.** No plano 91573, `numero_documento_habil`
+  é nulo e não há OP.
+  - **Armadilha nova:** o `valor_rateio_dh` da minuta é o valor do **outro** documento.
+    O pagamento lê `valor_dh`.
+- **Paridade.** `tests/test_te_arvore.py` compara o 91573 pela SPA (payload de 24/08) e
+  pela oficial: o RM lê exatamente a mesma coisa.
+  - Rodando local contra Postgres 16 com Nova Palma e Monte Sião: **0 divergências em
+    23 planos**.
+  - O coletor loga `paridade plano=<id>` se aparecer alguma na primeira rodada de cada
+    tenant.
+- **`doc_favorecido` vem como texto de float** (`'394460055477.0'`), sem os zeros à
+  esquerda. `_doc_normalizado` recompõe.
+- **O nome do campo na resposta difere do filtro do openapi** (`…_mascarado_…`).
+- **O CPF que a SPA entrega também é mascarado** (`***.603.631-**`). "CPF completo" era
+  premissa errada, mas a tela mostra o dado, então ele fica.
+
+**Custo:** ~1,5 s por plano, medido local. A Freitas (405 planos) cabe em ~10 min, dentro
+do teto atual de 1.450 s. Por isso as tasks do Coolify **não precisaram mudar**. O teto é
+`TE_TETO_TAREFA_S`: quem subir o kill sobe essa env no mesmo comando.
+
+**Vigia:** `transferegov_te` entrou em `FRESCOR_HORAS_NACIONAL` (30 h), fechando o O2 do
+backlog. A rodada grava **uma** linha no `ingestion_log`, somando listagem e árvore
+(`status_da_rodada`).
+
+**Próximo passo (PR B):**
+- O modal da tela `dashboard/transferegov` ainda consulta a SPA ao vivo. Ele passa a ler
+  `detalhe` e ganha abas para plano de trabalho, conta e relatório de gestão.
+- O gate do detalhe ainda cobra a tela `transferegov`, que saiu do catálogo em 05/09.
+- As ferramentas de TE do `routers/ai.py` importam funções que não existem mais.
 
 ## 2. ESTADO ATUAL (2026-09-04)
 

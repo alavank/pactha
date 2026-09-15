@@ -33,7 +33,7 @@ Usuários"):
 | **P5** — remover fallbacks "MG" e placeholder "ARAUJOS" | ✅ **feito em 02/09/2026** | Eram TRÊS, não dois: `dashboard/dou/page.tsx`, `dashboard/fns/page.tsx` e — o mais grave, porque grava dado — `ingestion/fns_scraper.py`, que assumia Minas para resolver o código FNS pelo NOME e podia casar com município homônimo de outro estado |
 | **P6** — menu esconde módulos estaduais com UF desconhecida | ❌ pendente | `dashboard/layout.tsx:297` guarda com `ufAmbiente &&` → na dúvida mostra tudo |
 | **P7 / P8** — rótulos residuais + `/api/cagec` neutro | ❌ pendente | |
-| **O2** — TE e InvestSUS no catálogo de frescor/watchdog | ❌ pendente | conferido: zero ocorrências de `transferegov_te` / `investsus` em `routers/freshness.py` |
+| **O2** — TE e InvestSUS no catálogo de frescor/watchdog | 🟡 metade | **TE feita**: no `routers/freshness.py` desde 06/09/2026 e em `watchdog_coleta.FRESCOR_HORAS_NACIONAL` desde 14/09/2026 (CONTINUAR §1.23). **InvestSUS continua fora dos dois** (zero ocorrências de `investsus`, conferido em 14/09/2026) |
 
 ⚠️ **A Onda 0 não é verificável pelo repositório** — é tudo env var e Scheduled Task no
 Coolify. Precisa ser conferida no painel.
@@ -231,7 +231,7 @@ novo — um coletor a mais não recupera cliente perdido por parecer sistema de 
 | 6 | **GO** — coletor de emendas (SERINT/CKAN) | 0,5-1 dia |
 | 7 | **ES** — coletor de emendas (CKAN, 15 CSVs) | 0,5-1 dia |
 | 8 | **TO** — certidão CGE-TO por CNPJ + tela de regularidade | 0,5-1 dia |
-| — | **Em paralelo, barato:** O2 — incluir TE e InvestSUS no monitor de frescor | 1-2h |
+| — | **Em paralelo, barato:** O2 — incluir o InvestSUS no monitor de frescor e no vigia (a TE já entrou) | 1h |
 
 O item marcado "em paralelo" evita cegueira: hoje a Transferência Especial pode ficar meses
 sem coletar e ninguém ver — **já aconteceu**.

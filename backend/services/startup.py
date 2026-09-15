@@ -585,6 +585,11 @@ MIGRATION_FILES = [
     # trouxe e o coletor nao lia (retirada + dias). Depende so de
     # `transferegov_propostas`, criada muito antes.
     "add_clausula_suspensiva_retirada_dias.sql",
+    # A arvore do plano da Transferencia Especial pela API oficial (os 21
+    # recursos que nao eram coletados) e a tabela `fonte_atualizacao`, com a
+    # data em que a PROPRIA fonte se atualizou. Depende so de `transferegov_te`,
+    # criada muito antes (`add_transferegov_te.sql`).
+    "add_te_detalhe.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",

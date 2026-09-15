@@ -424,15 +424,23 @@ O desenho atual (13/09/2026, "coleta noturna"):
   requisição do IP) e, depois, disparos únicos espaçados (≥18 min) — nunca
   encadear de novo. Sintoma inequívoco: `error: nenhuma pagina coletada` em toda
   rodada, inclusive em janela "limpa".
-  ⭐ **06/09/2026: a LISTAGEM saiu dessa API e o parágrafo acima passou a valer só
-  para os PAGAMENTOS.** Os planos de ação agora vêm da API pública oficial
+  ⭐ **06/09/2026: a LISTAGEM saiu dessa API. Em 14/09/2026, os PAGAMENTOS também.**
+  Tudo vem agora da API pública oficial
   (`api-publica.transferegov.gestao.gov.br/especiais`, Comunicado nº 23/2026 do
-  MGI), que não pagina estado inteiro: são 2 requisições por município, entrando
-  pelo CNPJ. O que continua batendo em `especiais.transferegov.sistema.gov.br`
-  são os documentos hábeis e as OP/OB — lookups por id, que **nunca** foram o
-  que disparava a quota (590 requisições sequenciais, zero 403, medido em
-  23/08). A escada entre tenants e o `timeout` da task seguem valendo: eles
-  protegem justamente essa fase. Ver `ingestion/transferegov_te.py`.
+  MGI).
+  - **Listagem:** 2 requisições por município, entrando pelo CNPJ.
+  - **Árvore do plano:** os outros 21 recursos, com os pagamentos derivados dela.
+    Custa ~1,5 s por plano; a Freitas, com 405 planos, leva ~10 min (medido
+    em 14/09).
+  - **O que ainda bate em `especiais.transferegov.sistema.gov.br`:** só a fase 3
+    (`run_reserva_spa`). Ela busca o CPF do ordenador/gestor e o histórico da OP,
+    uma vez por OP nova, e **para na primeira recusa**. Por isso o parágrafo acima
+    vale só para ela.
+  - **A escada entre tenants e o `timeout` da task continuam como estão.** O
+    teto interno segue `TE_TETO_TAREFA_S` (padrão 1450, casado com o kill de
+    1600). Quem subir o kill da task sobe essa env **no mesmo comando**.
+
+  Ver `ingestion/transferegov_te.py`.
 
 > 🕐 **TUDO EM UTC. Brasília é UTC−3.** Host, `instance_timezone` do Coolify e
 > PHP do container em `Etc/UTC`. As faixas do CAGEC (10/15/19/23 UTC) são

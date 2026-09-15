@@ -81,9 +81,9 @@ _SOURCES = [
      "siconv_federal"),
     # Transferencia Especial / Emenda PIX. Ficava fora do monitor desde que o
     # coletor foi criado — mesmo defeito do item acima, mesmo commit de
-    # correcao. NACIONAL: a carteira e varrida por UF, mas a tabela nao separa
-    # por estado do tenant, entao fica na lista FIXA como as demais fontes
-    # federais desta secao.
+    # correcao. NACIONAL: a carteira entra pelo CNPJ do municipio, sem recorte
+    # de estado, entao fica na lista FIXA como as demais fontes federais desta
+    # secao. Desde 14/09/2026 e tambem a primeira com `fonte_atualizada_em`.
     ("TransfereGov — Transferências Especiais (Emenda Pix)",
      "SELECT max(updated_at), count(*) FROM transferegov_te",
      "transferegov_te"),
@@ -270,6 +270,28 @@ _SOURCES_POR_UF: dict[str, list[tuple[str, str, str | None]]] = {
 }
 
 
+# ⭐ QUANDO A PROPRIA FONTE SE ATUALIZOU (tabela `fonte_atualizacao`, 14/09/2026).
+# E outra coisa que as duas datas acima: `ultimo_dado` e o NOW() do nosso upsert
+# e `ultima_coleta` e a hora da nossa rodada — nenhuma das duas percebe uma fonte
+# que PAROU DE SE ATUALIZAR, porque o coletor continua rodando e regravando o
+# mesmo dado todo dia. As APIs novas do TransfereGov publicam `/data-atualizacao`.
+# source do ingestion_log -> chave em `fonte_atualizacao`.
+_FONTE_ATUALIZACAO = {
+    "transferegov_te": "transferegov_especiais",
+}
+
+
+async def _datas_das_fontes(db: AsyncSession) -> dict[str, datetime]:
+    """{chave: data_fonte}. Vazio em erro — a tabela nasce numa migration, e a
+    API sobe antes do boot que a roda."""
+    try:
+        r = await db.execute(text("SELECT fonte, data_fonte FROM fonte_atualizacao"))
+        return {f: d for f, d in r.fetchall() if d}
+    except Exception:
+        await db.rollback()
+        return {}
+
+
 async def _ufs_do_tenant(db: AsyncSession) -> set[str]:
     """UFs com municipio ativo. Vazio em caso de erro — melhor a lista curta de
     sempre do que uma tela de monitor que nao abre."""
@@ -330,6 +352,7 @@ async def freshness(
     except Exception:
         pass
 
+    datas_fonte = await _datas_das_fontes(db)
     ufs = await _ufs_do_tenant(db)
     fontes = list(_SOURCES)
     for uf, extras in _SOURCES_POR_UF.items():
@@ -366,10 +389,18 @@ async def freshness(
         st = (tent[1] or "").lower() if tent else ""
         degradada = st in _DEGRADADO
         falhando = bool(tent and st not in _SUCESSO)
+        fonte_em = next((datas_fonte[_FONTE_ATUALIZACAO[s]] for s in _srcs
+                         if s in _FONTE_ATUALIZACAO
+                         and _FONTE_ATUALIZACAO[s] in datas_fonte), None)
         out.append({
             "fonte": label,
             "ultimo_dado": last_data.isoformat() if last_data else None,
             "ultima_coleta": last_run.isoformat() if last_run else None,
+            # Quando a FONTE se atualizou (None = a fonte nao publica isso).
+            # Informativo: NAO entra no `status` — a data da fonte e da carga
+            # dela, e cobrar frescor por ela exigiria saber a cadencia de cada
+            # orgao, que ninguem mediu.
+            "fonte_atualizada_em": fonte_em.isoformat() if fonte_em else None,
             "referencia": last.isoformat() if last else None,
             "idade_dias": round(age_days, 1) if age_days is not None else None,
             "registros": count,

@@ -31,6 +31,8 @@ CADENCIA_MEDIDA = {
     "portal_transparencia": (24, "task `portal-transparencia`, 1x/dia"),
     "sismob": (24, "run_all(), com auto-limite de 1x/dia no próprio ingest()"),
     "siconfi": (24, "task `siconfi`, 1x/dia"),
+    "transferegov_te": (24, "task `transferegov-te`, 1x/dia nos seis workers "
+                            "(escada de 30 min entre tenants, medida em 14/09/2026)"),
 }
 
 CADENCIA_MEDIDA_POR_UF = {

@@ -222,7 +222,7 @@ _teto_listagem = _teto_listagem_s
 
 
 def test_a_listagem_nao_pode_engolir_o_orcamento_dos_pagamentos():
-    """Com os defaults de PRODUÇÃO (listagem 1500s, teto de tarefa 1450s), o
+    """Com os defaults de 24/08/2026 (listagem 1500s, teto de tarefa 1450s), o
     cálculo "pagamentos ficam com o que sobrar" dava −50s: eles NUNCA rodariam,
     e o log diria "sem tempo nesta rodada" para sempre, com a coluna
     `pagamentos` eternamente NULA e ninguém vendo erro nenhum.
