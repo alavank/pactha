@@ -1606,6 +1606,37 @@ Teste de aceite do dono sobre o RM: três achados, duas decisões dele, um PR (#
    "N de M convenios com SIAFI casaram". Sem piso de cobertura no status: os CSVs só cobrem 2022+.
    ⚠️ O arquivo é por **item de despesa** (uma NE com dois itens = duas linhas): o coletor agrega
    por (SIAFI, NE, UO) antes do upsert, senão o "sobrescreve" ficava com a última linha.
+   - **Fase 2 (mesmo dia) — data e nº da OB, pelos dumps abertos da CGE.** Investigação com 5
+     agentes (4 fontes + crítico): o WS REST público do SIGCON tem OB por SIAFI mas **parou em
+     31/12/2025** (V2/GRP não alimenta); o Power BI da SEGOV tem só a data do crédito; o accordion
+     do SIGCON logado não modela OB; a extensão pro Joomla é refactor grande. O que resolve é o
+     dataset CKAN **`despesa`** (CGE, dados.mg.gov.br — mesmo host do backfill que já roda da VPS):
+     "o modelo dimensional que alimenta a consulta Despesa do Portal". `ft_despesa_{ano}` tem uma
+     linha por documento (OB = tipos "OP PAGA"/"OP PENDENTE", `cd_documento` = nº, `id_tempo` →
+     `dm_tempo_diario`, `vr_pago`; estorno = `tp_operacao` 1, negativo); `dm_empenho_desp_{ano}`
+     liga à NE por (nº, data) com desempate por valor — **4.888/5.117 = 95,5 % 1:1** no pg2026,
+     sem precisar do arquivo de favorecidos. Restos a pagar: `restos_pagar/ft_restos_pagar_{ano}`
+     (`dt_documento` direto) + `dm_empenho_resto_{ano}` por (nº, `dt_original`) — 143/160 1:1; a
+     OB do RP é pendurada na NE de origem. **Prova:** a OB 1939 de Pequi (25/03/2026, R$ 938.793,55)
+     que o Joomla mediu está idêntica, com o **mesmo `id_empenho`** (15264190) — por isso
+     `cge_despesa_ob.py` grava em **`transparencia_mg_empenhos`** com o id do portal, e o RM
+     (`_mg_pagamentos`) e o export dos Estaduais mostram data/OB **sem mudança de leitura**. O bloco
+     leva `_fonte='cge_despesa_ob'` e o upsert só sobrescreve bloco nosso ou nulo (o do Joomla,
+     com situação bancária, vence). **O que não vem:** a situação bancária — o dicionário do
+     `vr_pago` diz "pode estar pendente de transmissão ao banco e/ou sujeito a compensação"; a
+     tabela de situação (`fl_despesa_pgto`) não tem chave pra juntar. **Decisão do dono (opção 1):**
+     OB emitida conta como desembolso; rótulo "OB emitida (SIAFI-MG, dado aberto) — confirmação
+     bancária indisponível", reconhecido por `pagamento_confirmado`; estorno = mesmo prefixo,
+     negativo, abate. Escopo: ano corrente + anterior; todos os anos na 1ª rodada (`CGE_OB_BACKFILL`).
+     ⚠️ Não medido da VPS (chave SSH não está nesta máquina) — inferido do host compartilhado com o
+     backfill; `scripts/reconhecimento_fontes_vps.sh` tem as URLs se alguém quiser a formalidade.
+     **Validação nos dumps reais (15/09/2026, funções do coletor sobre pg2026/rp2026 × dumps de 12/09):**
+     pg2026 4.888 NEs resolvidas (125 ambíguas, 104 sem candidato) → 4.792 com OB; **NE a NE, soma das
+     OBs da CGE = `valor_pago_financeiro` da SEGOV em 4.866/4.888 (99,5 %)**; as 22 diferenças são o
+     **atraso do dump** (CGE até 10/09 vs SEGOV 15/09 — ex.: SEGOV R$ 801 mil pagos, CGE só uma OB de
+     R$ 35,70 de maio). rp2026: 144 resolvidas, **144/144 iguais**. Pequi 7/7, OB a OB. Consequência:
+     por alguns dias a SEGOV pode dizer "pago" mais que a lista de OBs da CGE — o RM deve preferir o
+     maior dos dois no marcador "Desembolsado" (mesma contabilidade, o maior é o mais fresco).
    - `ingestion/segov_pagamentos.py` → tabela `segov_convenios_empenhos` (só linhas que casaram
      com um convênio nosso por SIAFI; `ON DELETE SET NULL` por causa do
      `fix_duplicatas_chave_natural.sql`; IDs de recurso resolvidos por `package_show` a cada carga).

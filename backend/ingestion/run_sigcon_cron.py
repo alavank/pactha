@@ -51,6 +51,13 @@ if __name__ == "__main__":
         _segov_ingest()
     except Exception as e:
         logging.getLogger("run_sigcon_cron").warning(f"segov pagamentos falhou: {e}")
+    # Data e nº da OB pelos dumps da CGE — DEPOIS da SEGOV, que produz as NEs
+    # que este coletor resolve. Auto-limitado a 1x/dia dentro do ingest().
+    try:
+        from ingestion.cge_despesa_ob import ingest as _cge_ingest
+        _cge_ingest()
+    except Exception as e:
+        logging.getLogger("run_sigcon_cron").warning(f"cge despesa ob falhou: {e}")
     # O orcamento interno do scraper (SIGCON_BUDGET_SECONDS, default 2700) foi
     # dimensionado para caber no teto externo do cron (timeout -k 30 3000)
     # CONTADO DO INICIO DO PROCESSO. Com dados abertos + backfill na frente,

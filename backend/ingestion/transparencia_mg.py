@@ -183,7 +183,15 @@ def classificar(detalhe_ok: bool, tem_rotulo: bool, historico: str | None,
 # lista do que falta cobrar, que e exatamente o que o dono pediu para ver.
 # O proprio `ler_pagamentos` ja dizia isso ("ha estados intermediarios que NAO
 # sao pagamento") e o resto do codigo nao escutava.
-_PGTO_CONFIRMA = ("acatad",)                 # medido: "Acatada pelo banco"
+#
+# "ob emitida" (15/09/2026): o rotulo que `cge_despesa_ob.py` grava nas OBs
+# lidas do DADO ABERTO da CGE — a mesma base do portal, sem a situacao
+# bancaria. DECISAO DO DONO (opcao 1): a OB emitida no SIAFI-MG conta como
+# desembolso, e o rotulo diz o que falta ("confirmacao bancaria indisponivel").
+# O estorno vem com o MESMO prefixo e valor NEGATIVO, de proposito: confirmado
+# e negativo, ele abate o total — "estornad" em _PGTO_NEGA nao o alcanca porque
+# o rotulo escreve "estorno".
+_PGTO_CONFIRMA = ("acatad", "ob emitida")    # medido: "Acatada pelo banco"; CGE: "OB emitida (...)"
 _PGTO_NEGA = ("devolvid", "cancelad", "estornad", "rejeitad", "anulad")
 
 

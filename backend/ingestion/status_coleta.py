@@ -95,3 +95,23 @@ def segov_pagamentos(arquivos_ok: int, arquivos_total: int,
     if arquivos_ok < arquivos_total:
         return "partial", f"{arquivos_total - arquivos_ok} de {arquivos_total} CSVs falharam"
     return "success", None
+
+
+def cge_despesa_ob(arquivos_ok: int, arquivos_total: int,
+                   nes_nossas: int, nes_resolvidas: int) -> tuple[str, str | None]:
+    """OBs (data/nº) pelos dumps da CGE (cge_despesa_ob.py).
+
+    Sem recurso no package_show => layout do CKAN mudou (error); nenhum dump
+    baixou => WAF/rede (error); havia NEs nossas do ano e nenhuma resolveu na
+    dimensao de empenhos => a chave (nr, data, valor) mudou (partial); parte
+    dos dumps falhou => partial com a conta. Sem NE nossa (segov_pagamentos
+    ainda nao rodou) e sucesso legitimo — nao ha o que resolver."""
+    if arquivos_total == 0:
+        return "error", "package_show sem os dumps da CGE (despesa/restos_pagar — layout mudou?)"
+    if arquivos_ok == 0:
+        return "error", f"nenhum dos {arquivos_total} dumps baixou (WAF/rede)"
+    if nes_nossas and nes_resolvidas == 0:
+        return "partial", f"{nes_nossas} NEs da SEGOV e 0 resolveram em dm_empenho (chave mudou?)"
+    if arquivos_ok < arquivos_total:
+        return "partial", f"{arquivos_total - arquivos_ok} de {arquivos_total} dumps falharam"
+    return "success", None

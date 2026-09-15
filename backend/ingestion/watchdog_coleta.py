@@ -204,6 +204,10 @@ FRESCOR_HORAS_POR_UF = {
         # grava log — por isso mora AQUI, e nao no catalogo nacional.
         # ⚠️ Entra no MESMO PR que a fonte (a regra do `siconv_licitacao`).
         "segov_pagamentos": 30,
+        # Data/nº da OB pelos dumps da CGE (Fase 2, 15/09/2026): mesmo cron,
+        # mesmo throttle de 20h, so MG. Grava em transparencia_mg_empenhos com
+        # source proprio no ingestion_log.
+        "cge_despesa_ob": 30,
         "cagec": 30,                 # 4x/dia -> 6h; 30h = quase cinco janelas
         # ⚠️ ESTA LINHA ERA A QUE VALIA, e ninguem via. O acordofes roda dentro
         # do run_all() do cron `sigcon` — 1x/dia — e o conserto de 09/09 subiu o

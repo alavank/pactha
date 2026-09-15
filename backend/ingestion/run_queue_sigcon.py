@@ -99,6 +99,12 @@ def _run_sigcon_pipeline():
         _segov_ingest()
     except Exception as e:
         logger.warning(f"segov pagamentos falhou: {e}")
+    # Data e nº da OB pelos dumps da CGE — depois da SEGOV (que produz as NEs).
+    try:
+        from ingestion.cge_despesa_ob import ingest as _cge_ingest
+        _cge_ingest()
+    except Exception as e:
+        logger.warning(f"cge despesa ob falhou: {e}")
 
 
 def main():

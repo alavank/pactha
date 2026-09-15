@@ -231,6 +231,12 @@ _SOURCES_POR_UF: dict[str, list[tuple[str, str, str | None]]] = {
         ("SEGOV — Empenhos/pagamentos estaduais (MG)",
          "SELECT max(updated_at), count(*) FROM segov_convenios_empenhos",
          "segov_pagamentos"),
+        # Data e nº da OB pelos dumps da CGE (15/09/2026): grava na tabela do
+        # Joomla com a marca `_fonte` no bloco — conta so as linhas nossas.
+        ("CGE — Ordens de pagamento dos convênios (MG)",
+         "SELECT max(updated_at), count(*) FROM transparencia_mg_empenhos "
+         "WHERE pagamentos->>'_fonte' = 'cge_despesa_ob'",
+         "cge_despesa_ob"),
     ],
     "RS": [
         ("CHE — Cadastro estadual (RS)",
