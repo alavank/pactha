@@ -180,6 +180,12 @@ FRESCOR_HORAS_NACIONAL = {
     # Entrou em 15/09/2026, no PR da API inteira: UMA linha somando listagem,
     # beneficiarios de programa e arvore do plano (com as contas). NACIONAL.
     "faf_planos": 30,
+    # VOLUNTARIAS — A ARVORE PELOS DUMPS (task `transferegov-arvore`, 1x/dia,
+    # auto-limite de 20h no ingest). Entrou no MESMO commit do coletor
+    # (15/09/2026): UMA linha por rodada, `partial` dizendo qual arquivo falhou.
+    # NACIONAL: a carteira sao as propostas que o `transferegov_opendata` ja
+    # gravou, e as canceladas entram pelo IBGE.
+    "transferegov_arvore": 30,
 }
 
 # Fontes que so existem para certas UFs. A chave e a UF do TENANT (ha municipio

@@ -161,6 +161,41 @@ way on 14/09/2026.
   - The same trap hit Parcerias (`nm_natureza_juridica`) and Fundo a Fundo (the state
     seated in the capital).
 
+### The tree of each proposal (`ingestion/transferegov_arvore.py`, task `transferegov-arvore`)
+
+Reads 50 of the zips and hangs everything on the proposals **already in the DB**
+(`id_proposta_siconv`, written by the base `transferegov`), so it runs after it.
+- **Where it lands:**
+  - `transferegov_propostas.arvore` (JSONB, small per-proposal lists + `_resumo`);
+  - `notas_empenho_aberto`, and `ops_obs_aberto` in the SAME shape as the scraped
+    `ops_obs`, so the RM reads either;
+  - `tg_licitacoes`, `tg_pagamentos`, `tg_documentos_liquidacao` for the big lists (up to
+    12.868 payments in ONE convênio);
+  - `tg_propostas_canceladas` (by IBGE; they are not in `siconv_proposta`).
+- **Header guard:** `ARQUIVOS` lists every column read by name. A missing one skips the
+  file, and the run is `partial` with the file named. The dump's risk is a renamed column,
+  not an ignored filter. `tests/test_transferegov_arvore.py` checks against the real
+  headers of 15/09/2026.
+- **A failed file keeps only its own key.** `DEPENDE` maps each top-level key to its files.
+  The write merges with `||`, so the old value stays and `_mantidas` says which. Numbers
+  that depend on it go `None` in `_resumo`, never 0.
+  - ⚠️ `siconv_convenio` is the root. Without it there are no `NR_CONVENIO`s, so reading
+    licitação/pagamento would "succeed" with zero rows and the swap would wipe the tables.
+    Both sections fail together with the root.
+  - An empty file and a section with zero matches over a non-empty table also refuse to
+    delete.
+- **Writes only what changed:** `IS DISTINCT FROM` on the tree, and upsert + delete-missing
+  on the tables. The nightly load repeats almost everything.
+- ⚠️ **`QTD_DIAS_SEM_DESEMBOLSO` is a BAND** (90/180/365 per the official dictionary), not
+  a day count. It is stored as `faixa_sem_desembolso`, and days are computed from
+  `data_ultimo_desembolso` at display time. Storing a day count would also rewrite every
+  tree daily.
+- **The source publishes NEs with `VALOR_EMPENHO` 0.** Convênio 901671: 25.529,72 empenhado
+  vs 213.220,28 desembolsado. `empenhado` is the sum of what the dump publishes.
+- **Pago > desembolsado is normal:** payments include the contrapartida.
+- **Cost measured** on a Trust-size carteira (7.639 proposals): 1 min download, 3 min scan,
+  **1,5 GB peak memory**. The tenants run one at a time, 30 min apart.
+
 ## Authenticated sources
 
 **SIGCON** needs a logged-in session. It reuses a session captured by the Chrome extension

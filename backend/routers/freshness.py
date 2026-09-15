@@ -109,6 +109,15 @@ _SOURCES = [
     ("TransfereGov — Fundo a Fundo (planos de ação)",
      "SELECT max(atualizado_em), count(*) FROM faf_planos_acao",
      "faf_planos"),
+    # ⭐ VOLUNTARIAS — A ARVORE PELOS DUMPS (15/09/2026). Execucao financeira,
+    # aditivos, plano de trabalho, obras e prestacao de contas de cada proposta,
+    # dos zips de Discricionarias — o que antes vinha da raspagem atras da
+    # sessao gov.br. A contagem e de propostas COM arvore; `ultimo_dado` e a
+    # ultima arvore que MUDOU (o coletor so regrava o que mudou), e a data da
+    # propria fonte vem da `data_carga_siconv` (`_FONTE_ATUALIZACAO`).
+    ("TransfereGov — Voluntárias: execução e prazos (dump)",
+     "SELECT max(arvore_atualizado_em), count(arvore) FROM transferegov_propostas",
+     "transferegov_arvore"),
     # ⚠️ FONTE SEM TABELA PROPRIA, e de proposito. A sessao gov.br nao produz
     # linha em lugar nenhum — ela HABILITA a coleta da fatia atras do login
     # (histórico de comunicações, NEs, projeto básico, licitação). Ate 31/08/2026
@@ -280,6 +289,8 @@ _FONTE_ATUALIZACAO = {
     "transferegov_te": "transferegov_especiais",
     "parcerias": "transferegov_parcerias",
     "faf_planos": "transferegov_fundoafundo",
+    # Discricionarias nao tem API: a data vem de `data_carga_siconv.zip`.
+    "transferegov_arvore": "transferegov_discricionarias",
 }
 
 

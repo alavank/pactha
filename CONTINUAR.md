@@ -1523,6 +1523,36 @@ Nada separava isso: o painel, os alertas, o RM e o ranking de parlamentar somava
   - a lista mostra as 369 em execução, 346 com o selo "não é da prefeitura", e tem o
     filtro "Recebedor".
 
+**PR 2 — a árvore de cada proposta pelos dumps** (`ingestion/transferegov_arvore.py`, task
+`transferegov-arvore`). O coletor lê 50 zips e pendura tudo nas propostas que já estão no
+banco. Sai da sessão:
+- empenhos e desembolsos/OB, no MESMO formato que o RM já lê;
+- licitações com contratos e itens;
+- obras e medições;
+- projeto básico;
+- histórico de situação.
+
+Entra o que nunca foi coletado:
+- aditivos, prorrogações e solicitações de alteração;
+- pagamentos com fornecedor, documento de liquidação e itens;
+- tributos, contrapartida, rendimento e desbloqueio;
+- metas e etapas, plano de aplicação, cronograma, justificativas;
+- indicadores de prestação de contas e cumprimento do objeto;
+- apoiadores da emenda e consórcios;
+- o elo com o Obras.gov (`id_projeto_investimento`);
+- as propostas canceladas.
+
+Onde cada coisa mora, e as guardas, estão na skill `ingestion` (seção "The tree of each
+proposal").
+
+Três achados da medição:
+- `QTD_DIAS_SEM_DESEMBOLSO` é uma **faixa** (90/180/365), não uma contagem de dias.
+- A fonte publica NEs com valor 0.
+- Pago > desembolsado é a contrapartida, não um erro.
+
+A tela (PR 3) e o desligamento das fases de sessão (PR 4) vêm depois de uma noite
+conferida em produção.
+
 ## 2. ESTADO ATUAL (2026-09-04)
 
 **São CINCO tenants em produção**, todos do mesmo código, cada um com containers e banco próprios:
