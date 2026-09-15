@@ -696,13 +696,14 @@ Transferência Especial faz, e com razão lá — não acharia nenhuma. Aqui o
 `cd_ibge_recebedor` filtra no servidor (11 de 89.400), então o vínculo vem pronto
 da fonte.
 
-**O escopo foi cortado por custo medido, não por esquecimento.** Buscar os 8 filhos
-de cada proposta custaria 4.418 requisições no freitas (27 min) e 5.668 no trust
-(35 min) — os tenants têm 547 e 706 propostas. O núcleo (proposta + instrumento +
-emenda, 2 filhos) custa 1.136 e 1.432, ~420s e ~530s. A execução financeira
-(empenho → documento hábil → ordem de pagamento → extrato) entra depois,
-incremental. O `/extrato-bancario` sozinho tem **1.275.217 registros** (6.377
-páginas) e nunca poderá ser varrido inteiro.
+**O escopo foi cortado por custo em 07/09 e voltou em 15/09 (§1.24).** A conta de então
+tinha dois números:
+- **A cadeia inteira:** 4.418 requisições no freitas e 5.668 no trust, contra 1.136 e
+  1.432 do núcleo.
+- **O extrato nacional:** `/extrato-bancario` tem 1,3 mi de registros no Brasil.
+
+A medição de 14/09 mostrou que o extrato **filtra por conta**, com poucas linhas por
+parceria, e que a árvore inteira custa ~1 s por proposta.
 
 **A TELA CHEGOU EM 07/09/2026** (`/dashboard/parcerias`, `routers/parcerias.py`), e o
 ranking por parlamentar abre a página porque é a leitura que o gestor faz primeiro:
@@ -1359,6 +1360,65 @@ Santa Maria desde 17/08.**
 - **Leitura do log de boot:** o "127/128" das outras APIs é outra coisa, a
   `add_obrasgov.sql` pulada por já estar aplicada, e é inofensivo.
 
+## 1.24. Gestão de Parcerias: a API oficial INTEIRA (15/09/2026)
+
+É a segunda API da série (§1.23 foi Especiais). Não havia raspagem a trocar, porque o
+coletor já nasceu na API, mas ele usava 3 das 18 rotas.
+
+**Coleta (PR A), `ingestion/parcerias.py`:**
+- **Fase 1b, emendas indicadas** (tabela nova `parcerias_emendas_indicadas`). É o que o
+  parlamentar já destinou ao município, **exista proposta ou não**: GND3/GND4 e as
+  indicações de apoiador.
+  - Entra por UF, uma consulta por rodada: Minas tem 9.737 registros.
+  - O município casa por igualdade de nome normalizado, porque o filtro de nome da fonte
+    é "contém" e é sensível a acento.
+- **Fase 2, árvore da proposta** (`parcerias_propostas.detalhe`):
+  - plano: metas com etapas e itens, cronograma, **parecer com texto** e indicadores de
+    resultado;
+  - por parceria: a **conta**, com saldo em conta corrente **e em investimento** e a
+    classificação de ingresso; o extrato; o **OPP** (pagamentos da conta a terceiros);
+    empenhos, e documento hábil → OP → **OB**.
+  - `_resumo` traz o pago (derivado da OB), o saldo e o não classificado.
+- **`nu_externo`** vira coluna. É o `nuProposta` do FNS, a chave para cruzar com as
+  propostas FNS.
+- `/data-atualizacao` vai para `fonte_atualizacao`, e `parcerias` entrou no vigia.
+
+**O caso que resume o ganho, Nova Palma 75376:**
+- a parceria diz "Aprovada";
+- os R$ 299.999,00 saíram por OB em 26/05/2026;
+- estão parados na conta de **investimento** (R$ 301.614,37 em 16/06);
+- o ingresso segue "Não Classificado".
+
+Nada disso aparecia no PACTHA.
+
+**Login gov.br:** nenhuma coleta que se sobrepõe a Parcerias dependia de sessão.
+- O FNS usa a API pública do ConsultaFNS, e o `fns_scraper.py` morto foi apagado.
+- O dado "que só se via logado" é o do **InvestSUS** (DATASUS com MFA, sem coletor). Para
+  as emendas de saúde de 2024+, conta, extrato e pagamentos agora vêm abertos por aqui.
+
+**Dois defeitos de produção achados no caminho:**
+1. **A task `parcerias` tinha a coluna `timeout` do Coolify em 300 s nos seis workers**,
+   com o comando em 1.500. A Trust morria todo dia sem log desde pelo menos 10/09.
+   - Corrigido para 1.620 em 15/09.
+   - A mesma varredura achou outras 15 tasks fora da regra de ouro (`faf-planos`,
+     `siconfi`, `obrasgov`), também corrigidas.
+2. **Em 14/09 às 06:00 UTC a fonte devolveu a lista de emendas vazia**, com HTTP 200,
+   para todas as propostas. O upsert apagou parlamentar e emenda de 547 propostas no
+   freitas e 326 no bgk.
+   - Agora o upsert faz `COALESCE` do instrumento e da emenda.
+   - Rodada com ≥20 propostas e zero emendas vira `partial`.
+
+**Verificação local:** Postgres 16, migrations reais aplicadas duas vezes, com Nova Palma,
+Nova Serrana, Santa Maria e Monte Sião.
+- 104 de 104 árvores em 91 s.
+- 89 emendas indicadas; Santa Maria sem as de Santa Maria do Herval, e Monte Sião achado
+  com acento.
+- Rodada forçada repetida sem duplicar nada.
+
+**Próximo (PR B):** a tela `dashboard/parcerias`, com um modal por proposta (plano,
+execução, conta e extrato, parecer), selos de pago, saldo e não classificado, e o bloco
+de emendas indicadas.
+
 ## 2. ESTADO ATUAL (2026-09-04)
 
 **São CINCO tenants em produção**, todos do mesmo código, cada um com containers e banco próprios:
@@ -1626,7 +1686,7 @@ vier em `MUNICIPIO_NOME` / `MUNICIPIO_IBGE` / `MUNICIPIO_UF` — mais nada.
 - **Scheduled Tasks:** `GET/POST $B/applications/<worker_uuid>/scheduled-tasks` (POST body `{name,frequency,command}`); `PATCH .../scheduled-tasks/<task_uuid>` p/ `{timeout}`.
 - **DB status/URL:** `GET $B/databases/<uuid>` (campos `status`, `internal_db_url`).
 - **Abrir o banco na mão:** `ssh -i ~/.ssh/coolify_localhost root@54.232.208.118` e `docker exec -it <db_uuid> psql -U pactha -d pactha`.
-- **Rodar um scraper na mão:** dispare a Scheduled Task correspondente no worker do tenant (ou `POST /api/convenios/refresh-sigcon` autenticado → enfileira, e a task `queue-sigcon` consome em ≤30min). Lembre: scrapers com login (SIGCON, FNS) só produzem dados se o **Cofre daquele tenant** tiver credenciais.
+- **Rodar um scraper na mão:** dispare a Scheduled Task correspondente no worker do tenant (ou `POST /api/convenios/refresh-sigcon` autenticado → enfileira, e a task `queue-sigcon` consome em ≤30min). Lembre: scraper com login (SIGCON) só produz dados se o **Cofre daquele tenant** tiver credenciais. O FNS deixou de precisar: `run_fns_local.py` usa a API pública do ConsultaFNS, e o `fns_scraper.py`, que usava sessão, foi apagado em 15/09/2026.
 
 ---
 

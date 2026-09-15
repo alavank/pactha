@@ -590,6 +590,11 @@ MIGRATION_FILES = [
     # data em que a PROPRIA fonte se atualizou. Depende so de `transferegov_te`,
     # criada muito antes (`add_transferegov_te.sql`).
     "add_te_detalhe.sql",
+    # A arvore de cada proposta de Gestao de Parcerias (conta, extrato, OPP,
+    # empenho, DH -> OP/OB, metas, itens, parecer) e as emendas indicadas ao
+    # municipio. ⚠️ DEPOIS de `add_parcerias.sql`, que cria a tabela — guardado
+    # por `tests/test_migrations_ordem_tabela.py`.
+    "add_parcerias_detalhe.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",

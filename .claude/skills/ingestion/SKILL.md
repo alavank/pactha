@@ -93,8 +93,36 @@ way on 14/09/2026.
   first refusal, because a rejected request extends the IP penalty.
 - **`TE_PGTO_FONTE=spa`** switches the old payment path back on as a full fallback.
 
+## Gestão de Parcerias — traps measured on 14-15/09/2026 (`ingestion/parcerias.py`)
+
+- **Text filters match by "contains".** `nm_municipio_beneficiario_emenda=SANTA MARIA`
+  also returns SANTA MARIA DO HERVAL, and `nr_cnpj_beneficiario_emenda=1` returns the whole
+  base (78,072). Text filters are also **accent-sensitive** (`MONTE SIAO` → 0, `Monte Sião`
+  → 12).
+  - Indicated emendas therefore come **per UF** (an enum the source validates: `ZZ` → 422),
+    one request per UF per run.
+  - The município is matched in memory by **equality** of the normalized name on both
+    sides (`_chave_nome`).
+- **`0` in a text filter means "no filter".** Prove a filter with a non-zero impossible
+  value, such as a 14-digit CNPJ of nines.
+- **Nested lists:** `meta-proposta.etapas_proposta`, `parceria-conta.classificacoes_ingresso`,
+  `item-proposta.classificacao_despesa`, `beneficiario_emenda_parlamentar.indicacoes_beneficiario`.
+- **The bank statement drops the CNPJ's leading zeros** (`530493000171` is FNS). `_doc_cnpj`
+  pads only 12–13 digits.
+- **`in_situacao_parceria` says "Aprovada" on partnerships that are already paid.** Paid
+  is derived from the OB (`execucao_da_arvore`).
+- **An empty list from the source is not absence.** On 14/09/2026 at 06:00 UTC every
+  `/distribuicao-recurso-proposta` came back empty (HTTP 200) during the source's reload,
+  and the upsert wiped every parliamentarian. The upsert now `COALESCE`s instrument and
+  emenda fields, and a run with ≥20 proposals and zero emendas is logged as `partial`.
+
 ## Authenticated sources
 
-Scrapers that need a logged-in gov.br session (SIGCON, FNS) reuse a session captured by the
-Chrome extension in `extension/` and posted to `POST /api/session-capture`. Captured sessions
-are encrypted at rest — see the `secrets` skill before touching that path.
+**SIGCON** needs a logged-in session. It reuses a session captured by the Chrome extension
+in `extension/` and posted to `POST /api/session-capture`. Captured sessions are encrypted
+at rest — see the `secrets` skill before touching that path.
+
+**FNS no longer does.** `run_fns_local.py` uses the public ConsultaFNS API. The
+session-based `fns_scraper.py` was dead and was deleted on 15/09/2026. **InvestSUS** is
+behind DATASUS login with MFA and has no collector. For health emendas from 2024 on, the
+same account, statement and payment data now come openly from Gestão de Parcerias.
