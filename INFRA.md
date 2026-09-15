@@ -95,8 +95,8 @@ cada build da `main`:
 
 | Ação | O que acontece em produção |
 |---|---|
-| merge/push na `main` (toca `backend/**`) | Builda `pactha-api`+`pactha-worker` e deploya os 6 tenants: **API primeiro** (roda migrations; deployment confirmado via `GET /deployments/{uuid}`), depois o **worker do mesmo tenant esperando janela sem coleta em voo**. API que não subiu = worker daquele tenant intocado. |
-| merge/push na `main` (toca `frontend/**`) | Builda as 6 imagens de frontend e deploya as 6 (sem gate — frontend não roda coleta). |
+| merge/push na `main` (toca `backend/**`) | Builda `pactha-api`+`pactha-worker` e deploya os 6 tenants em **duas ondas**. **Onda 1:** as seis APIs de uma vez; elas rodam as migrations, e cada deployment é confirmado via `GET /deployments/{uuid}`. **Onda 2:** os workers dos tenants cuja API confirmou, também de uma vez. API que não subiu = worker daquele tenant intocado. **Sem espera de janela de coleta desde 15/09/2026**, por decisão do dono: a coleta em voo é reiniciada e retoma na próxima rodada. |
+| merge/push na `main` (toca `frontend/**`) | Builda as 6 imagens de frontend e dispara o deploy das 6 de uma vez; depois confirma cada uma. |
 | deploy manual (rollback/exceção) | Continua possível: repontar `docker_registry_image_tag` + `GET /deploy?uuid=` — o mesmo que o CI faz. |
 
 Segredos do CI: `COOLIFY_URL` + `COOLIFY_TOKEN` nos **GitHub Secrets** do repo. Sem eles
@@ -116,10 +116,15 @@ o job de deploy falha com barulho (proposital — nunca em silêncio).
 mecânica (gates, margens, rollback de tag em falha) são os próprios
 `.github/workflows/build-backend.yml` e `build-frontend.yml`, comentados linha a linha.
 
-⚠️ A fila de deploy do Coolify tem **`concurrent_builds = 1`** e apps de OUTROS projetos
-buildam na própria VPS (licity: 15–20 min por build) — um deployment do pactha (que é só
-*pull*, 15–50s) pode esperar `queued` por >10 min. O CI já tolera isso; ao deployar na
-mão, não interprete `queued` demorado como falha.
+⚠️ **A fila de deploy do Coolify tem `concurrent_builds = 6`** (servidor `localhost`, uuid
+`piposzlrpt9fx2z1itgnl04a`).
+- **Desde quando:** 15/09/2026. Antes era 1, herança da máquina de 2 vCPU: um deploy por
+  vez no servidor inteiro, e as ondas do CI só enfileiravam.
+- **Onde muda:** pela API, `PATCH /servers/{uuid}` com `{"concurrent_builds": N}`.
+- **O que continua:** apps de OUTROS projetos ainda buildam na própria VPS (licity: 15–20
+  min por build) e ocupam slot, então um deployment do pactha (que é só *pull*, 15–50 s)
+  ainda pode ficar `queued` um tempo. O CI tolera isso. Ao deployar na mão, não
+  interprete `queued` demorado como falha.
 
 O campo `git_branch` voltou a importar de leve: `main` nas 9 (webhook desligado, mas o
 CI só deploya o que buildar da `main`).

@@ -98,7 +98,8 @@ Partiu de "as atualizações diárias estão falhando e não sabemos por quê" e
 sistema operando sozinho. Se você só ler um bloco deste arquivo, leia este:
 
 1. **Deploy é AUTOMÁTICO** (PRs #161-#163): merge na `main` → CI builda → deploya os
-   tenants (API→migrations confirmadas→worker esperando janela sem coleta). Auto-deploy
+   tenants em duas ondas (todas as APIs → migrations confirmadas → todos os workers;
+   sem espera de janela de coleta desde 15/09/2026, ver INFRA.md §4). Auto-deploy
    por webhook do Coolify DESLIGADO. Secrets `COOLIFY_URL`/`COOLIFY_TOKEN` no
    GitHub. Rollback = repontar tag na mão (continua funcionando).
    ⚠️ Eram **3 tenants / 9 apps** quando isto foi escrito; hoje são **5 / 15 + 5 bancos**.
@@ -1400,8 +1401,9 @@ Os cinco bancos já estão **populados com dados reais** (a migração vinda do 
 
 **⚠️ INVERTIDO EM 09/08: um merge na `main` DEPLOYA os cinco clientes, sozinho.** As 15
 aplicações seguem `build_pack = dockerimage`, mas o job `deploy` do CI avança a tag e
-dispara o deploy ao fim de cada build (API primeiro com migrations confirmadas; worker do
-mesmo tenant só em janela sem coleta em voo; falha = rollback de tag + run vermelho).
+dispara o deploy ao fim de cada build, em duas ondas: todas as APIs, com migrations
+confirmadas, e depois os workers dos tenants cuja API subiu, sem espera de janela de coleta
+desde 15/09/2026. Falha = rollback de tag + run vermelho.
 `is_auto_deploy_enabled` agora está **false** nas 9 (o webhook recriava containers com a
 tag antiga e matou coleta em voo). Mecânica e provas em [`INFRA.md`](INFRA.md) §2 e nos
 próprios workflows. **Tratar todo merge na `main` como um deploy em produção.**
